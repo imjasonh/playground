@@ -1,0 +1,85 @@
+name: PR Preview
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build preview
+        run: |
+          PR=${{ github.event.pull_request.number }}
+          mkdir -p "dist/preview/pr-${PR}"
+
+          for dir in */; do
+            d="${dir%/}"
+            if [ -f "$d/index.html" ]; then
+              cp -r "$d" "dist/preview/pr-${PR}/$d"
+            fi
+          done
+
+          # Index listing all apps in this preview
+          items=$(
+            for d in dist/preview/pr-${PR}/*/; do
+              name="${d#dist/preview/pr-${PR}/}"
+              name="${name%/}"
+              printf '  <li><a href="%s/">%s</a></li>\n' "$name" "$name"
+            done
+          )
+          TITLE="Preview — PR #${PR}" \
+          HEADING="Preview — PR #${PR}" \
+          ITEMS="$items" \
+          python - <<'PY' > "dist/preview/pr-${PR}/index.html"
+          import os
+          from pathlib import Path
+
+          template = Path(".github/pages/index.html.tmpl").read_text()
+          print(
+              template
+              .replace("__TITLE__", os.environ["TITLE"])
+              .replace("__HEADING__", os.environ["HEADING"])
+              .replace("__ITEMS__", os.environ["ITEMS"]),
+              end="",
+          )
+          PY
+
+      - name: Deploy preview
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          keep_files: true   # preserves production apps and other PR previews
+
+      - name: Comment preview URL on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request.number;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const url = `https://${owner}.github.io/${repo}/preview/pr-${pr}/`;
+            const marker = '<!-- gh-pages-preview -->';
+            const body = `${marker}\n## 🔍 Preview deployment\n\n**PR #${pr}** is deployed at: ${url}\n\n_Updated on every push to this PR._`;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner, repo, issue_number: pr,
+            });
+            const existing = comments.find(c => c.body.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner, repo, comment_id: existing.id, body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: pr, body,
+              });
+            }
