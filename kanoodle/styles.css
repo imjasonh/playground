@@ -1,0 +1,261 @@
+:root {
+  --bg: #1a1f2e;
+  --surface: #252b3d;
+  --surface-2: #2f364a;
+  --text: #eef1f8;
+  --muted: #9aa3b8;
+  --accent: #5b8def;
+  --accent-hover: #7aa3ff;
+  --success: #3ecf8e;
+  --fixed-outline: #f0c040;
+  --cell-size: 36px;
+  --gap: 4px;
+  --radius: 10px;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: radial-gradient(ellipse at top, #2a3350 0%, var(--bg) 55%);
+  color: var(--text);
+}
+
+.app {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+.header h1 {
+  margin: 0 0 0.25rem;
+  font-size: 2rem;
+  letter-spacing: 0.02em;
+}
+
+.subtitle {
+  margin: 0;
+  color: var(--muted);
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-end;
+  margin: 1.25rem 0 0.5rem;
+}
+
+.control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.control-group label {
+  font-size: 0.8rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+select,
+.btn {
+  font: inherit;
+  border-radius: 8px;
+  border: 1px solid #3d4660;
+  background: var(--surface);
+  color: var(--text);
+  padding: 0.5rem 0.75rem;
+}
+
+.btn {
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.btn:hover {
+  background: var(--surface-2);
+  border-color: #5a6788;
+}
+
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.btn.primary:hover {
+  background: var(--accent-hover);
+}
+
+.status {
+  min-height: 1.5rem;
+  margin: 0.5rem 0 1rem;
+  color: var(--muted);
+}
+
+.status.win {
+  color: var(--success);
+  font-weight: 600;
+}
+
+.play-area {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 860px) {
+  .play-area {
+    grid-template-columns: 1fr;
+  }
+}
+
+.board-wrap {
+  position: relative;
+  overflow: auto;
+  padding: 0.5rem;
+  background: var(--surface);
+  border-radius: var(--radius);
+  border: 1px solid #3a435c;
+}
+
+.board {
+  display: grid;
+  grid-template-columns: repeat(11, var(--cell-size));
+  grid-template-rows: repeat(5, var(--cell-size));
+  gap: var(--gap);
+  width: fit-content;
+  margin: 0 auto;
+  touch-action: none;
+}
+
+.cell {
+  width: var(--cell-size);
+  height: var(--cell-size);
+  border-radius: 50%;
+  background: #161b28;
+  border: 2px solid #2e3548;
+  position: relative;
+  cursor: pointer;
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+
+.cell.empty:hover {
+  background: #1e2433;
+  border-color: #455070;
+}
+
+.cell.filled {
+  border-color: rgba(255, 255, 255, 0.25);
+  box-shadow: inset 0 -2px 4px rgba(0, 0, 0, 0.25);
+}
+
+.cell.fixed {
+  outline: 2px solid var(--fixed-outline);
+  outline-offset: 1px;
+}
+
+.cell.drop-target {
+  background: rgba(91, 141, 239, 0.25);
+  border-color: var(--accent);
+}
+
+.ghost-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.tray-panel {
+  background: var(--surface);
+  border: 1px solid #3a435c;
+  border-radius: var(--radius);
+  padding: 1rem;
+}
+
+.tray-panel h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.1rem;
+}
+
+.hint {
+  margin: 0 0 1rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.tray {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.tray-piece {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem;
+  border-radius: 8px;
+  background: var(--surface-2);
+  border: 2px solid transparent;
+  cursor: grab;
+  user-select: none;
+}
+
+.tray-piece.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.tray-piece:active {
+  cursor: grabbing;
+}
+
+.piece-label {
+  font-size: 0.85rem;
+  min-width: 4.5rem;
+  color: var(--muted);
+}
+
+.piece-shape {
+  display: inline-grid;
+  gap: 3px;
+}
+
+.piece-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+}
+
+.selected-preview {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #3a435c;
+}
+
+.selected-preview h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+}
+
+#preview-shape .piece-dot {
+  width: 18px;
+  height: 18px;
+}
+
+.empty-tray {
+  color: var(--muted);
+  font-style: italic;
+  font-size: 0.9rem;
+}

@@ -1,0 +1,13 @@
+{
+  "name": "kanoodle",
+  "version": "1.0.0",
+  "description": "Browser-based Kanoodle puzzle game",
+  "type": "module",
+  "scripts": {
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "start": "npx --yes serve . -p 3000"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  }
+}
