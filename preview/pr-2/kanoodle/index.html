@@ -15,33 +15,37 @@
         </p>
       </header>
 
-      <section class="controls">
-        <div class="control-group">
-          <label for="difficulty">Difficulty</label>
-          <select id="difficulty" aria-label="Difficulty level">
-            <option value="1">Level 1 — fill 1 piece</option>
-            <option value="2">Level 2 — fill 2 pieces</option>
-            <option value="3">Level 3 — fill 3 pieces</option>
-            <option value="4">Level 4 — fill 4 pieces</option>
-            <option value="5">Level 5 — fill 6 pieces</option>
-            <option value="6">Level 6 — free play</option>
-          </select>
-        </div>
+      <details class="settings-panel" open>
+        <summary>Game settings</summary>
+        <section class="controls">
+          <div class="control-group">
+            <label for="difficulty">Difficulty</label>
+            <select id="difficulty" aria-label="Difficulty level">
+              <option value="1">Level 1 — fill 1 piece</option>
+              <option value="2">Level 2 — fill 2 pieces</option>
+              <option value="3">Level 3 — fill 3 pieces</option>
+              <option value="4">Level 4 — fill 4 pieces</option>
+              <option value="5">Level 5 — fill 6 pieces</option>
+              <option value="6">Level 6 — free play</option>
+            </select>
+          </div>
 
-        <div class="control-group">
-          <label for="puzzle-select">Classic puzzle</label>
-          <select id="puzzle-select" aria-label="Classic puzzle">
-            <option value="">Random (by difficulty)</option>
-          </select>
-        </div>
+          <div class="control-group">
+            <label for="puzzle-select">Classic puzzle</label>
+            <select id="puzzle-select" aria-label="Classic puzzle">
+              <option value="">Random (by difficulty)</option>
+            </select>
+          </div>
 
-        <button type="button" id="new-game" class="btn primary">New game</button>
-        <div class="action-buttons">
-          <button type="button" id="rotate-btn" class="btn" title="Rotate selected piece">Rotate ↻</button>
-          <button type="button" id="flip-btn" class="btn" title="Flip selected piece">Flip ↔</button>
-          <button type="button" id="return-btn" class="btn" title="Return selected piece to tray">Return</button>
-        </div>
-      </section>
+          <button type="button" id="new-game" class="btn primary">New game</button>
+        </section>
+      </details>
+
+      <div class="action-buttons" aria-label="Piece actions">
+        <button type="button" id="rotate-btn" class="btn" title="Rotate selected piece">Rotate ↻</button>
+        <button type="button" id="flip-btn" class="btn" title="Flip selected piece">Flip ↔</button>
+        <button type="button" id="return-btn" class="btn" title="Return selected piece to tray">Return</button>
+      </div>
 
       <p id="status" class="status" role="status" aria-live="polite"></p>
 
