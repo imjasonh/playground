@@ -16,12 +16,41 @@ jobs:
       apps: ${{ steps.discover.outputs.apps }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Find testable apps
+      - name: Find testable apps in changed directories
         id: discover
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
         run: |
-          apps=$(bash .github/scripts/discover-testable-apps.sh)
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            git fetch origin "$BASE_REF"
+            changed=$(git diff --name-only "origin/${BASE_REF}...HEAD")
+          elif [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            echo "No prior commit; testing all testable apps."
+            apps=$(bash .github/scripts/discover-testable-apps.sh --all)
+            echo "apps=${apps}" >> "$GITHUB_OUTPUT"
+            echo "Testable apps: ${apps}"
+            exit 0
+          else
+            changed=$(git diff --name-only "$BEFORE_SHA" "$HEAD_SHA")
+          fi
+
+          if [ -z "$changed" ]; then
+            apps='[]'
+          else
+            apps=$(printf '%s\n' "$changed" | bash .github/scripts/discover-testable-apps.sh --from-changes)
+          fi
+
           echo "apps=${apps}" >> "$GITHUB_OUTPUT"
+          echo "Changed paths:"
+          printf '%s\n' "$changed"
           echo "Testable apps: ${apps}"
 
   test:
@@ -71,4 +100,4 @@ jobs:
     if: needs.discover.outputs.apps == '[]'
     runs-on: ubuntu-latest
     steps:
-      - run: echo "No testable apps found (directories need index.html, package.json, and a test script)."
+      - run: echo "No testable apps changed (need changes under an app dir with index.html, package.json, and a test script)."

@@ -36,7 +36,7 @@ Hidden top-level directories (names starting with `.`) are ignored by discovery 
 | `deploy.yml` | push to `main` | Publishes all apps to GitHub Pages production |
 | `preview.yml` | pull request opened/sync | Deploys PR apps under `/preview/pr-<N>/` and comments the URL |
 | `cleanup.yml` | pull request closed | Removes that PR's preview directory from `gh-pages` |
-| `test.yml` | push to `main`, pull requests | Runs tests for every testable app (matrix) |
+| `test.yml` | push to `main`, pull requests | Runs tests for **changed** testable apps only (matrix) |
 
 All deploy workflows copy each app directory as-is (they do **not** run `npm install` or build). Only commit source files—never commit `node_modules/`.
 
@@ -55,24 +55,31 @@ The preview workflow posts the preview root URL on the PR.
 
 ## Testing (CI)
 
-The test workflow discovers apps with:
+The test workflow runs only for **testable apps whose top-level directory changed** in the PR or push. Unchanged apps are not tested.
+
+An app is testable when it has:
 
 1. `index.html` (is an app)
 2. `package.json` with a **`test`** script
 
-Apps without tests (e.g. `hello/`) are skipped—CI still passes.
+Apps without tests (e.g. `hello/`) are skipped. If no testable apps changed, CI passes without running tests.
 
-For each testable app, CI runs:
+For each selected app, CI runs:
 
 1. `npm ci`
 2. `npm test`
 3. `npm run test:e2e` if a `test:e2e` script exists (installs Playwright Chromium first)
 
+On the first push to `main` (no prior commit), all testable apps are tested.
+
 Discover locally:
 
 ```bash
-bash .github/scripts/discover-testable-apps.sh
-# → e.g. ["kanoodle"]
+# All testable apps
+bash .github/scripts/discover-testable-apps.sh --all
+
+# Apps touched by a diff (example)
+git diff --name-only origin/main...HEAD | bash .github/scripts/discover-testable-apps.sh --from-changes
 ```
 
 ## Adding a new app
@@ -133,7 +140,7 @@ npm start          # if defined (static server)
 ## Pull requests
 
 - Target branch: **`main`**
-- CI must pass (tests for all testable apps).
+- CI must pass (tests run for **changed** testable apps in that PR).
 - Preview deploy provides a live URL on the PR—use it to verify browser behavior, especially mobile.
 - If the repo uses Linear integration, include `Resolves ABC-123` in the PR body when applicable.
 
