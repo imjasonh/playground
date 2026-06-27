@@ -26,22 +26,18 @@ jobs:
           done
 
           # Generate a root index listing all apps
-          {
-            echo '<!DOCTYPE html>'
-            echo '<html lang="en"><head><meta charset="UTF-8">'
-            echo '<title>Playground</title>'
-            echo '<style>body{font-family:sans-serif;max-width:600px;margin:2rem auto}ul{line-height:2}</style>'
-            echo '</head><body>'
-            echo '<h1>🛝 Playground</h1>'
-            echo '<ul>'
+          items=$(
             for d in dist/*/; do
               name="${d#dist/}"
               name="${name%/}"
-              echo "  <li><a href=\"${name}/\">${name}</a></li>"
+              printf '  <li><a href="%s/">%s</a></li>\n' "$name" "$name"
             done
-            echo '</ul>'
-            echo '</body></html>'
-          } > dist/index.html
+          )
+          TITLE='Playground' \
+          HEADING='🛝 Playground' \
+          ITEMS="$items" \
+          perl -0pe 's/__TITLE__/$ENV{TITLE}/g; s/__HEADING__/$ENV{HEADING}/g; s/__ITEMS__/$ENV{ITEMS}/g' \
+            .github/pages/index.html.tmpl > dist/index.html
 
       - name: Deploy
         uses: peaceiris/actions-gh-pages@v4

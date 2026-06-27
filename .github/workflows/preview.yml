@@ -27,22 +27,18 @@ jobs:
           done
 
           # Index listing all apps in this preview
-          {
-            echo '<!DOCTYPE html>'
-            echo '<html lang="en"><head><meta charset="UTF-8">'
-            echo '<title>Preview — PR #'"${PR}"'</title>'
-            echo '<style>body{font-family:sans-serif;max-width:600px;margin:2rem auto}ul{line-height:2}</style>'
-            echo '</head><body>'
-            echo '<h1>🔍 Preview — PR #'"${PR}"'</h1>'
-            echo '<ul>'
+          items=$(
             for d in "dist/preview/pr-${PR}"/*/; do
               name="${d#dist/preview/pr-${PR}/}"
               name="${name%/}"
-              echo "  <li><a href=\"${name}/\">${name}</a></li>"
+              printf '  <li><a href="%s/">%s</a></li>\n' "$name" "$name"
             done
-            echo '</ul>'
-            echo '</body></html>'
-          } > "dist/preview/pr-${PR}/index.html"
+          )
+          TITLE="Preview — PR #${PR}" \
+          HEADING="🔍 Preview — PR #${PR}" \
+          ITEMS="$items" \
+          perl -0pe 's/__TITLE__/$ENV{TITLE}/g; s/__HEADING__/$ENV{HEADING}/g; s/__ITEMS__/$ENV{ITEMS}/g' \
+            .github/pages/index.html.tmpl > "dist/preview/pr-${PR}/index.html"
 
       - name: Deploy preview
         uses: peaceiris/actions-gh-pages@v4
