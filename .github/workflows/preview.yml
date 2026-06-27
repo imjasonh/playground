@@ -28,14 +28,14 @@ jobs:
 
           # Index listing all apps in this preview
           items=$(
-            for d in "dist/preview/pr-${PR}"/*/; do
+            for d in dist/preview/pr-${PR}/*/; do
               name="${d#dist/preview/pr-${PR}/}"
               name="${name%/}"
               printf '  <li><a href="%s/">%s</a></li>\n' "$name" "$name"
             done
           )
           TITLE="Preview — PR #${PR}" \
-          HEADING="🔍 Preview — PR #${PR}" \
+          HEADING="Preview — PR #${PR}" \
           ITEMS="$items" \
           perl -0pe 's/__TITLE__/$ENV{TITLE}/g; s/__HEADING__/$ENV{HEADING}/g; s/__ITEMS__/$ENV{ITEMS}/g' \
             .github/pages/index.html.tmpl > "dist/preview/pr-${PR}/index.html"

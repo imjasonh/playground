@@ -34,7 +34,7 @@ jobs:
             done
           )
           TITLE='Playground' \
-          HEADING='🛝 Playground' \
+          HEADING='Playground' \
           ITEMS="$items" \
           perl -0pe 's/__TITLE__/$ENV{TITLE}/g; s/__HEADING__/$ENV{HEADING}/g; s/__ITEMS__/$ENV{ITEMS}/g' \
             .github/pages/index.html.tmpl > dist/index.html
