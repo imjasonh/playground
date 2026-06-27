@@ -35,8 +35,8 @@ jobs:
             echo '</head><body>'
             echo '<h1>🔍 Preview — PR #'"${PR}"'</h1>'
             echo '<ul>'
-            for d in "dist/preview/pr-${PR}/"/*/; do
-              name="${d##*/pr-${PR}/}"
+            for d in "dist/preview/pr-${PR}"/*/; do
+              name="${d#dist/preview/pr-${PR}/}"
               name="${name%/}"
               echo "  <li><a href=\"${name}/\">${name}</a></li>"
             done
