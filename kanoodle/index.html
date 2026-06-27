@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Kanoodle</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
@@ -36,8 +36,11 @@
         </div>
 
         <button type="button" id="new-game" class="btn primary">New game</button>
-        <button type="button" id="rotate-btn" class="btn" title="Rotate selected piece">Rotate ↻</button>
-        <button type="button" id="flip-btn" class="btn" title="Flip selected piece">Flip ↔</button>
+        <div class="action-buttons">
+          <button type="button" id="rotate-btn" class="btn" title="Rotate selected piece">Rotate ↻</button>
+          <button type="button" id="flip-btn" class="btn" title="Flip selected piece">Flip ↔</button>
+          <button type="button" id="return-btn" class="btn" title="Return selected piece to tray">Return</button>
+        </div>
       </section>
 
       <p id="status" class="status" role="status" aria-live="polite"></p>
@@ -50,7 +53,7 @@
 
         <aside class="tray-panel">
           <h2>Pieces</h2>
-          <p class="hint">Click a piece, then drag it onto the board. Double-click a placed piece to return it.</p>
+          <p id="interaction-hint" class="hint"></p>
           <div id="tray" class="tray"></div>
           <div id="selected-preview" class="selected-preview" hidden>
             <h3>Selected</h3>

@@ -149,6 +149,35 @@ export class KanoodleGame {
     return true;
   }
 
+  /** Place the selected piece so it covers the given board cell. */
+  tryPlaceCovering(targetRow, targetCol) {
+    if (!this.selectedPieceId) {
+      return false;
+    }
+
+    const orientations = this.getOrientationsForPiece(this.selectedPieceId);
+    const tryOrder = [
+      this.selectedOrientationIndex,
+      ...orientations.map((_, index) => index).filter((index) => index !== this.selectedOrientationIndex),
+    ];
+
+    for (const orientationIndex of tryOrder) {
+      const orientation = orientations[orientationIndex];
+      for (const [dr, dc] of orientation) {
+        const anchorRow = targetRow - dr;
+        const anchorCol = targetCol - dc;
+        const previousIndex = this.selectedOrientationIndex;
+        this.selectedOrientationIndex = orientationIndex;
+        if (this.tryPlaceAt(anchorRow, anchorCol)) {
+          return true;
+        }
+        this.selectedOrientationIndex = previousIndex;
+      }
+    }
+
+    return false;
+  }
+
   removePieceToTray(pieceId) {
     if (this.state.fixedPieces.has(pieceId)) {
       return false;
