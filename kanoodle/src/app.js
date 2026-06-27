@@ -7,6 +7,7 @@ import {
   cellFromPoint,
   createPointerSession,
   interactionHint,
+  isScrollGesture,
   isTap,
   pointerMovedEnough,
   prefersTapPlacement,
@@ -37,6 +38,9 @@ let tapMode = prefersTapPlacement();
 
 function init() {
   document.body.classList.toggle('touch-mode', tapMode);
+  if (tapMode) {
+    document.querySelector('.settings-panel')?.removeAttribute('open');
+  }
   if (hintEl) {
     hintEl.textContent = interactionHint(tapMode);
   }
@@ -272,8 +276,10 @@ function onTrayPointerDown(event, pieceId) {
     return;
   }
 
-  event.preventDefault();
-  boardEl.setPointerCapture?.(event.pointerId);
+  if (!tapMode) {
+    event.preventDefault();
+    boardEl.setPointerCapture?.(event.pointerId);
+  }
 
   pointerSession = createPointerSession(event);
   pointerSession.source = 'tray';
@@ -285,8 +291,10 @@ function onBoardPointerDown(event, row, col, pieceId) {
     return;
   }
 
-  event.preventDefault();
-  boardEl.setPointerCapture(event.pointerId);
+  if (!tapMode) {
+    event.preventDefault();
+    boardEl.setPointerCapture(event.pointerId);
+  }
 
   pointerSession = createPointerSession(event);
   pointerSession.source = 'board';
@@ -298,11 +306,14 @@ function onPointerMove(event) {
     return;
   }
 
-  if (!pointerSession.dragging && pointerMovedEnough(pointerSession, event)) {
-    beginDrag();
-  }
-
   if (!pointerSession.dragging) {
+    if (tapMode && isScrollGesture(pointerSession, event)) {
+      pointerSession = null;
+      return;
+    }
+    if (pointerMovedEnough(pointerSession, event)) {
+      beginDrag(event);
+    }
     return;
   }
 
@@ -314,9 +325,13 @@ function onPointerMove(event) {
   }
 }
 
-function beginDrag() {
+function beginDrag(event) {
   pointerSession.dragging = true;
   updateBodyDragState(true);
+  boardEl.setPointerCapture?.(event.pointerId);
+  if (tapMode) {
+    event.preventDefault();
+  }
 
   const { source, context } = pointerSession;
   if (source === 'tray') {

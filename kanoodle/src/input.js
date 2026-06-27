@@ -39,6 +39,13 @@ export function pointerMovedEnough(session, event, threshold = DRAG_START_THRESH
   return Math.hypot(dx, dy) >= threshold;
 }
 
+/** True when vertical movement suggests the user is scrolling the page. */
+export function isScrollGesture(session, event, threshold = DRAG_START_THRESHOLD) {
+  const dx = Math.abs(event.clientX - session.startX);
+  const dy = Math.abs(event.clientY - session.startY);
+  return dy > dx && dy >= threshold;
+}
+
 export function isTap(session, event) {
   if (session.dragging) {
     return false;
@@ -71,7 +78,7 @@ export function updateBodyDragState(active) {
 
 export function interactionHint(prefersTap) {
   if (prefersTap) {
-    return 'Tap a piece to select it, then tap the board to place. Tap a placed piece to pick it up. Use Rotate and Flip below.';
+    return 'Tap a piece to select it, then scroll to the board and tap to place. Tap a placed piece to pick it up.';
   }
   return 'Click a piece, then drag it onto the board. Double-click a placed piece to return it.';
 }

@@ -7,6 +7,7 @@ import {
   DRAG_START_THRESHOLD,
   createPointerSession,
   interactionHint,
+  isScrollGesture,
   isTap,
   pointerMovedEnough,
   prefersTapPlacement,
@@ -49,8 +50,15 @@ describe('input gestures', () => {
     expect(pointerMovedEnough(session, { clientX: 10, clientY: 0 }, DRAG_START_THRESHOLD)).toBe(true);
   });
 
+  test('isScrollGesture detects vertical page scroll intent', () => {
+    const session = createPointerSession({ pointerId: 1, clientX: 100, clientY: 100 });
+    expect(isScrollGesture(session, { clientX: 102, clientY: 120 })).toBe(true);
+    expect(isScrollGesture(session, { clientX: 120, clientY: 102 })).toBe(false);
+  });
+
   test('interactionHint describes tap flow on touch devices', () => {
-    expect(interactionHint(true)).toMatch(/Tap a piece/i);
+    expect(interactionHint(true)).toMatch(/tap/i);
+    expect(interactionHint(true)).toMatch(/scroll/i);
     expect(interactionHint(false)).toMatch(/drag/i);
   });
 

@@ -1,6 +1,10 @@
 import { test, expect } from '@playwright/test';
 
 async function startFreePlay(page) {
+  const panel = page.locator('.settings-panel');
+  if (!(await panel.evaluate((el) => el.open))) {
+    await panel.locator('summary').click();
+  }
   await page.selectOption('#difficulty', '6');
   await page.locator('#new-game').click();
   await expect(page.locator('.tray-piece').first()).toBeVisible();
@@ -45,6 +49,20 @@ test('rotate and return buttons work after selecting a piece', async ({ page }) 
   await expect(firstTrayPiece).not.toHaveClass(/selected/);
 });
 
+test('page scrolls on mobile so tray and board are both reachable', async ({ page }) => {
+  await startFreePlay(page);
+
+  const metrics = await page.evaluate(() => ({
+    scrollHeight: document.documentElement.scrollHeight,
+    innerHeight: window.innerHeight,
+  }));
+
+  expect(metrics.scrollHeight).toBeGreaterThan(metrics.innerHeight);
+
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await expect(page.locator('.board-wrap')).toBeInViewport();
+});
+
 test('board fits within mobile viewport width', async ({ page }) => {
   const board = page.locator('.board');
   const viewport = page.viewportSize();
@@ -54,8 +72,8 @@ test('board fits within mobile viewport width', async ({ page }) => {
 });
 
 test('control buttons meet minimum touch target height', async ({ page }) => {
-  const newGame = page.locator('#new-game');
-  const box = await newGame.boundingBox();
+  const rotateBtn = page.locator('#rotate-btn');
+  const box = await rotateBtn.boundingBox();
   expect(box).not.toBeNull();
   expect(box.height).toBeGreaterThanOrEqual(44);
 });
