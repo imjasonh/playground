@@ -3,6 +3,15 @@ import { PIECES, getOrientations, pieceById, absoluteCells } from './pieces.js';
 import { createGameState } from './puzzle.js';
 import { listLibraryPuzzles } from './puzzleLibrary.js';
 import { KanoodleGame } from './game.js';
+import {
+  cellFromPoint,
+  createPointerSession,
+  interactionHint,
+  isTap,
+  pointerMovedEnough,
+  prefersTapPlacement,
+  updateBodyDragState,
+} from './input.js';
 
 const orientationCache = Object.fromEntries(
   PIECES.map((piece) => [piece.id, getOrientations(piece.dots)])
@@ -11,21 +20,30 @@ const orientationCache = Object.fromEntries(
 const boardEl = document.getElementById('board');
 const trayEl = document.getElementById('tray');
 const statusEl = document.getElementById('status');
+const hintEl = document.getElementById('interaction-hint');
 const difficultyEl = document.getElementById('difficulty');
 const puzzleSelectEl = document.getElementById('puzzle-select');
 const newGameBtn = document.getElementById('new-game');
 const rotateBtn = document.getElementById('rotate-btn');
 const flipBtn = document.getElementById('flip-btn');
+const returnBtn = document.getElementById('return-btn');
 const selectedPreviewEl = document.getElementById('selected-preview');
 const previewShapeEl = document.getElementById('preview-shape');
 const ghostLayerEl = document.getElementById('ghost-layer');
 
 let game = null;
-let dragState = null;
+let pointerSession = null;
+let tapMode = prefersTapPlacement();
 
 function init() {
+  document.body.classList.toggle('touch-mode', tapMode);
+  if (hintEl) {
+    hintEl.textContent = interactionHint(tapMode);
+  }
+
   populatePuzzleSelect();
   bindControls();
+  bindGlobalPointerHandlers();
   startNewGame();
 }
 
@@ -42,6 +60,7 @@ function bindControls() {
   newGameBtn.addEventListener('click', startNewGame);
   rotateBtn.addEventListener('click', () => game?.rotateSelected());
   flipBtn.addEventListener('click', () => game?.flipSelected());
+  returnBtn.addEventListener('click', () => returnSelectedPiece());
 
   document.addEventListener('keydown', (event) => {
     if (!game?.selectedPieceId) {
@@ -54,6 +73,20 @@ function bindControls() {
       game.flipSelected();
     }
   });
+
+  window.matchMedia('(pointer: coarse)').addEventListener('change', () => {
+    tapMode = prefersTapPlacement();
+    document.body.classList.toggle('touch-mode', tapMode);
+    if (hintEl) {
+      hintEl.textContent = interactionHint(tapMode);
+    }
+  });
+}
+
+function bindGlobalPointerHandlers() {
+  document.addEventListener('pointermove', onPointerMove);
+  document.addEventListener('pointerup', onPointerUp);
+  document.addEventListener('pointercancel', onPointerUp);
 }
 
 function startNewGame() {
@@ -71,11 +104,41 @@ function startNewGame() {
   render(game.getSnapshot());
 }
 
+function returnSelectedPiece() {
+  if (!game?.selectedPieceId) {
+    return;
+  }
+  const pieceId = game.selectedPieceId;
+  if (game.state.fixedPieces.has(pieceId)) {
+    return;
+  }
+  if (game.isOnBoard(pieceId)) {
+    game.pickUpBoardPiece(pieceId);
+  } else {
+    game.resetSelection();
+  }
+}
+
 function render(snapshot) {
   renderBoard(snapshot);
   renderTray(snapshot);
   renderStatus(snapshot);
   renderSelectedPreview(snapshot);
+  updateActionButtons(snapshot);
+}
+
+function updateActionButtons(snapshot) {
+  const hasSelection = Boolean(snapshot.selectedPieceId);
+  rotateBtn.disabled = !hasSelection;
+  flipBtn.disabled = !hasSelection;
+
+  const canReturn =
+    hasSelection &&
+    !snapshot.fixedPieces.has(snapshot.selectedPieceId) &&
+    (snapshot.trayPieces.includes(snapshot.selectedPieceId) ||
+      snapshot.board.some((row) => row.includes(snapshot.selectedPieceId)));
+
+  returnBtn.disabled = !canReturn;
 }
 
 function renderStatus(snapshot) {
@@ -88,12 +151,12 @@ function renderStatus(snapshot) {
 
   statusEl.classList.remove('win');
   const remaining = snapshot.trayPieces.length;
-  statusEl.textContent = `${difficultyLabel} — ${remaining} piece${remaining === 1 ? '' : 's'} left to place.`;
+  const selected = snapshot.selectedPieceId ? ` Selected: ${snapshot.selectedPieceId}.` : '';
+  statusEl.textContent = `${difficultyLabel} — ${remaining} piece${remaining === 1 ? '' : 's'} left.${selected}`;
 }
 
 function renderBoard(snapshot) {
   boardEl.innerHTML = '';
-  ghostLayerEl.innerHTML = '';
 
   for (let row = 0; row < ROWS; row += 1) {
     for (let col = 0; col < COLS; col += 1) {
@@ -111,21 +174,25 @@ function renderBoard(snapshot) {
         }
         cell.title = `Piece ${pieceId}${snapshot.fixedPieces.has(pieceId) ? ' (fixed)' : ''}`;
 
-        cell.addEventListener('dblclick', () => {
-          if (!snapshot.fixedPieces.has(pieceId)) {
-            game.pickUpBoardPiece(pieceId);
-          }
-        });
+        if (!tapMode) {
+          cell.addEventListener('dblclick', () => {
+            if (!snapshot.fixedPieces.has(pieceId)) {
+              game.pickUpBoardPiece(pieceId);
+            }
+          });
+        }
       } else {
         cell.classList.add('empty');
       }
 
-      cell.addEventListener('pointerdown', (event) => onBoardPointerDown(event, row, col, pieceId, snapshot));
-      cell.addEventListener('pointerenter', () => highlightDropTarget(row, col, snapshot));
-      cell.addEventListener('pointerleave', clearDropTargets);
-
+      cell.addEventListener('pointerdown', (event) => onBoardPointerDown(event, row, col, pieceId));
       boardEl.appendChild(cell);
     }
+  }
+
+  if (!pointerSession?.dragging) {
+    ghostLayerEl.innerHTML = '';
+    clearDropTargets();
   }
 }
 
@@ -142,7 +209,8 @@ function renderTray(snapshot) {
 
   for (const pieceId of snapshot.trayPieces) {
     const piece = pieceById(pieceId);
-    const item = document.createElement('div');
+    const item = document.createElement('button');
+    item.type = 'button';
     item.className = 'tray-piece';
     item.dataset.pieceId = pieceId;
     if (snapshot.selectedPieceId === pieceId) {
@@ -159,10 +227,9 @@ function renderTray(snapshot) {
         : orientationCache[pieceId][0];
 
     item.appendChild(label);
-    item.appendChild(buildShapeElement(orientation, piece.color, 14));
+    item.appendChild(buildShapeElement(orientation, piece.color, tapMode ? 16 : 14));
 
-    item.addEventListener('click', () => game.selectPiece(pieceId));
-    item.addEventListener('pointerdown', (event) => startDragFromTray(event, pieceId));
+    item.addEventListener('pointerdown', (event) => onTrayPointerDown(event, pieceId));
 
     trayEl.appendChild(item);
   }
@@ -177,7 +244,7 @@ function renderSelectedPreview(snapshot) {
   selectedPreviewEl.hidden = false;
   previewShapeEl.innerHTML = '';
   const piece = pieceById(snapshot.selectedPieceId);
-  previewShapeEl.appendChild(buildShapeElement(snapshot.selectedOrientation, piece.color, 18));
+  previewShapeEl.appendChild(buildShapeElement(snapshot.selectedOrientation, piece.color, 20));
 }
 
 function buildShapeElement(orientation, color, dotSize) {
@@ -200,87 +267,145 @@ function buildShapeElement(orientation, color, dotSize) {
   return wrap;
 }
 
-function onBoardPointerDown(event, row, col, pieceId, snapshot) {
+function onTrayPointerDown(event, pieceId) {
+  if (event.button !== 0 && event.pointerType !== 'touch') {
+    return;
+  }
+
+  event.preventDefault();
+  boardEl.setPointerCapture?.(event.pointerId);
+
+  pointerSession = createPointerSession(event);
+  pointerSession.source = 'tray';
+  pointerSession.context = { pieceId };
+}
+
+function onBoardPointerDown(event, row, col, pieceId) {
+  if (event.button !== 0 && event.pointerType !== 'touch') {
+    return;
+  }
+
+  event.preventDefault();
+  boardEl.setPointerCapture(event.pointerId);
+
+  pointerSession = createPointerSession(event);
+  pointerSession.source = 'board';
+  pointerSession.context = { row, col, pieceId };
+}
+
+function onPointerMove(event) {
+  if (!pointerSession || event.pointerId !== pointerSession.pointerId) {
+    return;
+  }
+
+  if (!pointerSession.dragging && pointerMovedEnough(pointerSession, event)) {
+    beginDrag();
+  }
+
+  if (!pointerSession.dragging) {
+    return;
+  }
+
+  event.preventDefault();
+  const cell = cellFromPoint(event.clientX, event.clientY);
+  if (cell) {
+    showGhost(pointerSession.context.pieceId ?? game.getSnapshot().selectedPieceId, cell.row, cell.col);
+    highlightDropTarget(cell.row, cell.col);
+  }
+}
+
+function beginDrag() {
+  pointerSession.dragging = true;
+  updateBodyDragState(true);
+
+  const { source, context } = pointerSession;
+  if (source === 'tray') {
+    game.selectPiece(context.pieceId);
+  } else if (source === 'board') {
+    const snapshot = game.getSnapshot();
+    const { pieceId, row, col } = context;
+    if (pieceId && !snapshot.fixedPieces.has(pieceId)) {
+      game.pickUpBoardPiece(pieceId);
+    } else if (snapshot.selectedPieceId) {
+      pointerSession.context.pieceId = snapshot.selectedPieceId;
+    } else {
+      pointerSession.dragging = false;
+      updateBodyDragState(false);
+    }
+  }
+
+  const pieceId = pointerSession.context.pieceId ?? game.getSnapshot().selectedPieceId;
+  if (pieceId && pointerSession.dragging) {
+    const cell = cellFromPoint(pointerSession.startX, pointerSession.startY);
+    showGhost(pieceId, cell?.row ?? 0, cell?.col ?? 0);
+  }
+}
+
+function onPointerUp(event) {
+  if (!pointerSession || event.pointerId !== pointerSession.pointerId) {
+    return;
+  }
+
+  boardEl.releasePointerCapture?.(event.pointerId);
+
+  const session = pointerSession;
+  pointerSession = null;
+
+  if (session.dragging) {
+    finishDrag(event);
+    return;
+  }
+
+  if (isTap(session, event)) {
+    handleTap(session, event);
+  }
+
+  ghostLayerEl.innerHTML = '';
+  clearDropTargets();
+  updateBodyDragState(false);
+}
+
+function handleTap(session, event) {
+  const snapshot = game.getSnapshot();
+
+  if (session.source === 'tray') {
+    game.selectPiece(session.context.pieceId);
+    return;
+  }
+
+  const cell = cellFromPoint(event.clientX, event.clientY) ?? session.context;
+  const { row, col, pieceId } = cell.row !== undefined ? cell : session.context;
+
   if (pieceId && !snapshot.fixedPieces.has(pieceId)) {
-    event.preventDefault();
     game.pickUpBoardPiece(pieceId);
-    startDrag(event, pieceId, row, col);
     return;
   }
 
   if (snapshot.selectedPieceId) {
-    event.preventDefault();
-    startDrag(event, snapshot.selectedPieceId, row, col);
+    game.tryPlaceCovering(row, col);
   }
 }
 
-function startDragFromTray(event, pieceId) {
-  event.preventDefault();
-  game.selectPiece(pieceId);
-  startDrag(event, pieceId, null, null);
-}
-
-function startDrag(event, pieceId, anchorRow, anchorCol) {
-  if (event.button !== 0) {
-    return;
-  }
-
-  dragState = {
-    pieceId,
-    pointerId: event.pointerId,
-    anchorRow,
-    anchorCol,
-    offsetRow: 0,
-    offsetCol: 0,
-  };
-
-  if (anchorRow !== null && anchorCol !== null) {
-    dragState.offsetRow = 0;
-    dragState.offsetCol = 0;
-  }
-
-  document.addEventListener('pointermove', onDragMove);
-  document.addEventListener('pointerup', onDragEnd);
-  document.addEventListener('pointercancel', onDragEnd);
-  showGhost(pieceId, anchorRow ?? 0, anchorCol ?? 0);
-}
-
-function onDragMove(event) {
-  if (!dragState || event.pointerId !== dragState.pointerId) {
-    return;
-  }
-
-  const cell = document.elementFromPoint(event.clientX, event.clientY)?.closest('.cell');
+function finishDrag(event) {
+  const cell = cellFromPoint(event.clientX, event.clientY);
   if (cell) {
-    const row = Number(cell.dataset.row);
-    const col = Number(cell.dataset.col);
-    showGhost(dragState.pieceId, row, col);
-    highlightDropTarget(row, col, game.getSnapshot());
-  }
-}
-
-function onDragEnd(event) {
-  if (!dragState || event.pointerId !== dragState.pointerId) {
-    return;
+    const pieceId = game.getSnapshot().selectedPieceId;
+    if (pieceId) {
+      game.selectPiece(pieceId);
+      game.tryPlaceCovering(cell.row, cell.col);
+    }
   }
 
-  const cell = document.elementFromPoint(event.clientX, event.clientY)?.closest('.cell');
-  if (cell) {
-    const row = Number(cell.dataset.row);
-    const col = Number(cell.dataset.col);
-    game.selectPiece(dragState.pieceId);
-    game.tryPlaceAt(row, col);
-  }
-
-  dragState = null;
   ghostLayerEl.innerHTML = '';
   clearDropTargets();
-  document.removeEventListener('pointermove', onDragMove);
-  document.removeEventListener('pointerup', onDragEnd);
-  document.removeEventListener('pointercancel', onDragEnd);
+  updateBodyDragState(false);
 }
 
 function showGhost(pieceId, row, col) {
+  if (!pieceId) {
+    return;
+  }
+
   const snapshot = game.getSnapshot();
   const orientation = snapshot.selectedOrientation || orientationCache[pieceId][0];
   const piece = pieceById(pieceId);
@@ -289,7 +414,6 @@ function showGhost(pieceId, row, col) {
   ghostLayerEl.hidden = false;
   ghostLayerEl.innerHTML = '';
 
-  const boardRect = boardEl.getBoundingClientRect();
   const wrapRect = boardEl.parentElement.getBoundingClientRect();
 
   for (const [r, c] of cells) {
@@ -302,20 +426,18 @@ function showGhost(pieceId, row, col) {
     }
     const rect = cellEl.getBoundingClientRect();
     const dot = document.createElement('div');
-    dot.className = 'piece-dot';
+    dot.className = 'piece-dot ghost-dot';
     dot.style.backgroundColor = piece.color;
-    dot.style.position = 'absolute';
     dot.style.width = `${rect.width}px`;
     dot.style.height = `${rect.height}px`;
     dot.style.left = `${rect.left - wrapRect.left}px`;
     dot.style.top = `${rect.top - wrapRect.top}px`;
-    dot.style.opacity = '0.6';
-    dot.style.borderRadius = '50%';
     ghostLayerEl.appendChild(dot);
   }
 }
 
-function highlightDropTarget(row, col, snapshot) {
+function highlightDropTarget(row, col) {
+  const snapshot = game.getSnapshot();
   if (!snapshot.selectedPieceId) {
     return;
   }

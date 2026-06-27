@@ -44,6 +44,15 @@ describe('puzzle', () => {
     expect(checkWin(state)).toBe(true);
   }, 30000);
 
+  test('tryPlaceCovering places piece on tapped cell', () => {
+    const state = createGameState({ difficulty: 6 });
+    const game = new KanoodleGame(state);
+    const pieceId = state.trayPieces[0];
+    game.selectPiece(pieceId);
+    expect(game.tryPlaceCovering(2, 5)).toBe(true);
+    expect(game.isOnBoard(pieceId)).toBe(true);
+  });
+
   test('game prevents moving fixed pieces', () => {
     const state = createGameState({ difficulty: 1, seed: 7 });
     const fixedId = [...state.fixedPieces][0];

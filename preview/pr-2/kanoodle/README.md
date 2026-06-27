@@ -25,13 +25,16 @@ Then visit http://localhost:3000
 
 - **New game** — start a puzzle at the selected difficulty, or load a classic puzzle from the dropdown.
 - **Difficulty** — levels 1–5 follow the official booklet style (more empty cells at higher levels). Level 6 is free play with an empty board.
-- **Rotate / Flip** — transform the selected piece (keyboard: `R` and `F`).
-- **Drag and drop** — click a tray piece, then drag onto the board. Double-click a placed piece to pick it up again.
+- **Rotate / Flip / Return** — transform or return the selected piece (keyboard: `R` and `F` on desktop).
+- **Desktop** — click a tray piece, then drag onto the board. Double-click a placed piece to pick it up.
+- **Mobile** — tap a piece to select, tap the board to place, tap a placed piece to pick it up (or use Return).
 
 ## Tests
 
 ```bash
-npm test
+npm test          # unit tests (Jest)
+npm run test:e2e  # mobile + desktop browser tests (Playwright)
+npm run test:all  # both
 ```
 
 ## Project layout
@@ -41,4 +44,6 @@ npm test
 - `src/solver.js` — backtracking solver for puzzle generation
 - `src/puzzle.js` — game state and win detection
 - `src/game.js` — interactive game controller
+- `src/input.js` — tap vs drag gesture detection
 - `src/app.js` — browser UI
+- `e2e/` — Playwright mobile/desktop tests
