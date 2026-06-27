@@ -1,5 +1,8 @@
 import { ROWS, COLS, DIFFICULTY_LABELS } from './constants.js';
 import { PIECES, getOrientations, pieceById, absoluteCells } from './pieces.js';
+import { createGameState } from './puzzle.js';
+import { listLibraryPuzzles } from './puzzleLibrary.js';
+import { KanoodleGame } from './game.js';
 
 const orientationCache = Object.fromEntries(
   PIECES.map((piece) => [piece.id, getOrientations(piece.dots)])
