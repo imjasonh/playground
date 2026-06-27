@@ -1,0 +1,78 @@
+name: PR Preview
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build preview
+        run: |
+          PR=${{ github.event.pull_request.number }}
+          mkdir -p "dist/preview/pr-${PR}"
+
+          for dir in */; do
+            d="${dir%/}"
+            if [ -f "$d/index.html" ]; then
+              cp -r "$d" "dist/preview/pr-${PR}/$d"
+            fi
+          done
+
+          # Index listing all apps in this preview
+          {
+            echo '<!DOCTYPE html>'
+            echo '<html lang="en"><head><meta charset="UTF-8">'
+            echo '<title>Preview — PR #'"${PR}"'</title>'
+            echo '<style>body{font-family:sans-serif;max-width:600px;margin:2rem auto}ul{line-height:2}</style>'
+            echo '</head><body>'
+            echo '<h1>🔍 Preview — PR #'"${PR}"'</h1>'
+            echo '<ul>'
+            for d in "dist/preview/pr-${PR}/"/*/; do
+              name="${d##*/pr-${PR}/}"
+              name="${name%/}"
+              echo "  <li><a href=\"${name}/\">${name}</a></li>"
+            done
+            echo '</ul>'
+            echo '</body></html>'
+          } > "dist/preview/pr-${PR}/index.html"
+
+      - name: Deploy preview
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          keep_files: true   # preserves production apps and other PR previews
+
+      - name: Comment preview URL on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request.number;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const url = `https://${owner}.github.io/${repo}/preview/pr-${pr}/`;
+            const marker = '<!-- gh-pages-preview -->';
+            const body = `${marker}\n## 🔍 Preview deployment\n\n**PR #${pr}** is deployed at: ${url}\n\n_Updated on every push to this PR._`;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner, repo, issue_number: pr,
+            });
+            const existing = comments.find(c => c.body.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner, repo, comment_id: existing.id, body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: pr, body,
+              });
+            }

@@ -1,0 +1,42 @@
+name: Cleanup PR Preview
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out gh-pages branch
+        id: checkout
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+        # If gh-pages doesn't exist yet this step will fail — that's fine,
+        # there's nothing to clean up.
+        continue-on-error: true
+
+      - name: Remove preview directory
+        if: steps.checkout.outcome == 'success'
+        run: |
+          PR=${{ github.event.pull_request.number }}
+          if [ ! -d "preview/pr-${PR}" ]; then
+            echo "No preview directory found for PR #${PR}, nothing to do."
+            exit 0
+          fi
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git rm -rf "preview/pr-${PR}"
+          git commit -m "chore: remove preview for PR #${PR}"
+
+          # Retry push up to 3 times to handle concurrent cleanup conflicts.
+          for attempt in 1 2 3; do
+            git pull --rebase origin gh-pages && git push && break
+            echo "Push attempt ${attempt} failed, retrying..."
+            sleep 5
+          done

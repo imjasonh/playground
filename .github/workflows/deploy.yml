@@ -1,0 +1,51 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build site
+        run: |
+          mkdir -p dist
+
+          # Copy every top-level directory that contains an index.html
+          for dir in */; do
+            d="${dir%/}"
+            if [ -f "$d/index.html" ]; then
+              cp -r "$d" "dist/$d"
+            fi
+          done
+
+          # Generate a root index listing all apps
+          {
+            echo '<!DOCTYPE html>'
+            echo '<html lang="en"><head><meta charset="UTF-8">'
+            echo '<title>Playground</title>'
+            echo '<style>body{font-family:sans-serif;max-width:600px;margin:2rem auto}ul{line-height:2}</style>'
+            echo '</head><body>'
+            echo '<h1>🛝 Playground</h1>'
+            echo '<ul>'
+            for d in dist/*/; do
+              name="${d#dist/}"
+              name="${name%/}"
+              echo "  <li><a href=\"${name}/\">${name}</a></li>"
+            done
+            echo '</ul>'
+            echo '</body></html>'
+          } > dist/index.html
+
+      - name: Deploy
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          keep_files: true   # preserves preview/ directory from PR deployments
