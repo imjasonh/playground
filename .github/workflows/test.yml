@@ -1,0 +1,74 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      apps: ${{ steps.discover.outputs.apps }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find testable apps
+        id: discover
+        run: |
+          apps=$(bash .github/scripts/discover-testable-apps.sh)
+          echo "apps=${apps}" >> "$GITHUB_OUTPUT"
+          echo "Testable apps: ${apps}"
+
+  test:
+    needs: discover
+    if: needs.discover.outputs.apps != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJson(needs.discover.outputs.apps) }}
+    name: test (${{ matrix.app }})
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ${{ matrix.app }}/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ${{ matrix.app }}
+        run: npm ci
+
+      - name: Run unit tests
+        working-directory: ${{ matrix.app }}
+        run: npm test
+
+      - name: Install Playwright browsers
+        working-directory: ${{ matrix.app }}
+        run: |
+          if node -e "const s=require('./package.json').scripts||{}; process.exit(s['test:e2e']?0:1)"; then
+            npx playwright install --with-deps chromium
+          fi
+
+      - name: Run e2e tests
+        working-directory: ${{ matrix.app }}
+        run: |
+          if node -e "const s=require('./package.json').scripts||{}; process.exit(s['test:e2e']?0:1)"; then
+            npm run test:e2e
+          else
+            echo "No test:e2e script; skipping."
+          fi
+
+  no-tests:
+    needs: discover
+    if: needs.discover.outputs.apps == '[]'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "No testable apps found (directories need index.html, package.json, and a test script)."
