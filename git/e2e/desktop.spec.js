@@ -117,3 +117,84 @@ test('returns focus to the trigger when the palette closes', async ({ page }) =>
   await expect(page.locator('#palette')).toBeHidden();
   await expect(page.getByRole('button', { name: 'Find files' })).toBeFocused();
 });
+
+/* ------------------------------------------------------------------ */
+/* Virtualized large repository (windowed tree / filter / palette)     */
+/* ------------------------------------------------------------------ */
+
+// Inject a synthetic 5,000-file RepoSource through the same public hook the
+// app exposes, so we can exercise the windowing without any network/clone.
+async function loadLargeRepo(page, fileCount = 5000) {
+  await page.goto('/');
+  await page.waitForFunction(() => !!(window.gitBrowser && window.gitBrowser.openSource));
+  await page.evaluate((n) => {
+    const files = [];
+    for (let i = 0; i < n; i += 1) files.push(`file${String(i).padStart(4, '0')}.txt`);
+    const enc = new TextEncoder();
+    window.gitBrowser.openSource({
+      fullName: 'big/repo',
+      url: null,
+      readOnly: true,
+      getCurrentBranch: () => 'main',
+      listBranches: async () => [{ name: 'main', current: true }],
+      setBranch: async () => {},
+      listFiles: async () => files,
+      readFile: async (p) => enc.encode(`contents of ${p}\n`),
+      headCommit: async () => null,
+      log: async () => [],
+      update: async () => ({ updated: false, changed: false }),
+    });
+  }, fileCount);
+  await expect(page.locator('#browser-view')).toBeVisible();
+  await expect(page.locator('#repo-meta')).toContainText('5000 files');
+}
+
+test('virtualizes the tree for a large repository', async ({ page }) => {
+  await loadLargeRepo(page);
+  await expect(page.locator('.tree-row').first()).toBeVisible();
+
+  // Only a windowed slice is in the DOM, not all 5,000 rows.
+  const rendered = await page.locator('.tree-row').count();
+  expect(rendered).toBeGreaterThan(0);
+  expect(rendered).toBeLessThan(200);
+
+  await expect(page.locator('.tree-row', { hasText: 'file0000.txt' })).toBeVisible();
+  await expect(page.locator('.tree-row', { hasText: 'file4999.txt' })).toHaveCount(0);
+});
+
+test('scrolling the tree reveals later rows', async ({ page }) => {
+  await loadLargeRepo(page);
+  await page.locator('.tree-scroll').evaluate((el) => {
+    el.scrollTop = el.scrollHeight;
+  });
+  await expect(page.locator('.tree-row', { hasText: 'file4999.txt' })).toBeVisible();
+  expect(await page.locator('.tree-row').count()).toBeLessThan(200);
+});
+
+test('virtualizes the flat filter results', async ({ page }) => {
+  await loadLargeRepo(page);
+  await page.locator('#tree-filter').fill('file');
+  await expect(page.locator('.flat-row').first()).toBeVisible();
+
+  const rendered = await page.locator('.flat-row').count();
+  expect(rendered).toBeGreaterThan(0);
+  expect(rendered).toBeLessThan(200);
+});
+
+test('palette keyboard navigation works with a windowed list', async ({ page }) => {
+  await loadLargeRepo(page);
+  await page.getByRole('button', { name: 'Find files' }).click();
+  await expect(page.locator('#palette')).toBeVisible();
+
+  await page.locator('#palette-input').fill('file');
+  await expect(page.locator('.palette-row').first()).toBeVisible();
+  const rendered = await page.locator('.palette-row').count();
+  expect(rendered).toBeGreaterThan(0);
+  expect(rendered).toBeLessThan(60);
+
+  await page.locator('#palette-input').press('ArrowDown');
+  await page.locator('#palette-input').press('ArrowDown');
+  await page.locator('#palette-input').press('Enter');
+  await expect(page.locator('#palette')).toBeHidden();
+  await expect(page.locator('#file-path')).toContainText('.txt');
+});

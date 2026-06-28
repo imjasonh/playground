@@ -17,6 +17,9 @@ branch switching, and commit history. Everything runs on-device with
   language detection, image preview, and binary/large-file guards.
 - **Quick file finder** — fuzzy search across every file. Press
   <kbd>Ctrl</kbd> / <kbd>Cmd</kbd> + <kbd>P</kbd>, or use the sidebar filter.
+- **Scales to large repos** — the tree, filter results, and finder are
+  virtualized (only the rows near the viewport are rendered), so a repository
+  with tens of thousands of files stays responsive.
 - **Branch switching** — pick any branch; the tree, viewer, and history update.
 - **Pull / Update** — a menu action fetches the latest commits from the remote.
 - **Stored repositories** — manage and reopen previously cloned repos; remove to
@@ -67,6 +70,7 @@ a few vendored libraries.
 - `src/ui/history.js` — commit history panel
 - `src/ui/recent.js` — preset and stored repositories
 - `src/ui/highlight.js` — shared fuzzy-match row rendering
+- `src/ui/virtualList.js` — windowing helpers for the large-list virtualization
 - `vendor/` — pre-bundled browser builds of the runtime libraries
 
 The whole UI talks to a `RepoSource` interface, so demo mode and the real clone
