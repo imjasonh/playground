@@ -155,6 +155,22 @@ describe('createContentSearchClient — synchronous fallback', () => {
     expect(summary.matches).toBeGreaterThanOrEqual(3);
   });
 
+  test('progress advances for every file and reaches total/total even with skips', async () => {
+    const client = createContentSearchClient({ useWorker: false });
+    const progress = [];
+    // logo.png is skipped by extension; src/util.js has no match — both must
+    // still advance the counter so the status can reach total instead of stalling.
+    const files = ['README.md', 'logo.png', 'src/util.js'];
+    await client.search(files, 'needle', {}, {
+      readFile,
+      onProgress: (processed, total) => progress.push([processed, total]),
+    });
+    expect(progress).toHaveLength(files.length);
+    expect(progress.every(([, total]) => total === files.length)).toBe(true);
+    expect(progress.map(([processed]) => processed).sort((a, b) => a - b)).toEqual([1, 2, 3]);
+    expect(progress.at(-1)).toEqual([files.length, files.length]);
+  });
+
   test('a newer search supersedes the previous one', async () => {
     const client = createContentSearchClient({ useWorker: false });
     const slowRead = (p) => new Promise((r) => setTimeout(() => r(enc.encode(FILES[p] ?? '')), 5));
@@ -213,5 +229,18 @@ describe('createContentSearchClient — worker backend', () => {
     client.dispose();
     expect(fake.terminated).toBe(true);
     expect(client.usingWorker).toBe(false);
+  });
+
+  test('dispose mid-search settles the in-flight promise instead of hanging', async () => {
+    const fake = new FakeWorker({ autoDeliver: false });
+    const client = createContentSearchClient({ createWorker: () => fake });
+
+    const pending = client.search(PATHS, 'needle', {}, { readFile });
+    await tick(); // lanes have posted file messages and are awaiting replies
+    client.dispose(); // worker gone with requests outstanding
+
+    const summary = await pending; // must resolve — the lanes fall back to sync
+    expect(fake.terminated).toBe(true);
+    expect(summary.matches).toBe(3);
   });
 });

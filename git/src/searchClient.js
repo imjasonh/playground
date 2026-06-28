@@ -65,6 +65,14 @@ export function createSearchClient(options = {}) {
       worker.onmessageerror = onWorkerFailure;
       worker.postMessage({ type: 'setFiles', epoch, files });
     } catch {
+      // Don't leak a worker that was created before a later step threw.
+      if (worker) {
+        try {
+          worker.terminate();
+        } catch {
+          /* already gone */
+        }
+      }
       worker = null;
     }
   }
@@ -119,6 +127,8 @@ export function createSearchClient(options = {}) {
     if (worker) {
       const id = (seq += 1);
       return new Promise((resolve) => {
+        // The entry's `epoch` (not the message) is what the result is later
+        // checked against; the worker stamps its reply with its own epoch.
         pending.set(id, { resolve, epoch, query, limit });
         worker.postMessage({ type: 'query', id, query, limit });
       });
@@ -135,6 +145,8 @@ export function createSearchClient(options = {}) {
       }
       worker = null;
     }
+    // Resolve (don't drop) anything in flight so awaiters can't hang forever.
+    for (const entry of pending.values()) entry.resolve(null);
     pending.clear();
   }
 

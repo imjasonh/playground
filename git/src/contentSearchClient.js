@@ -70,6 +70,14 @@ export function createContentSearchClient(options = {}) {
       worker.onerror = onWorkerFailure;
       worker.onmessageerror = onWorkerFailure;
     } catch {
+      // Don't leak a worker that was created before a later step threw.
+      if (worker) {
+        try {
+          worker.terminate();
+        } catch {
+          /* already gone */
+        }
+      }
       worker = null;
     }
   }
@@ -114,8 +122,8 @@ export function createContentSearchClient(options = {}) {
    * @param {{regex?: boolean, caseSensitive?: boolean}} queryOpts
    * @param {{
    *   readFile: (path: string) => Promise<Uint8Array>,
-   *   onResult?: (r: FileResult) => void,
-   *   onProgress?: (scanned: number, total: number) => void,
+ *   onResult?: (r: FileResult) => void,
+ *   onProgress?: (processed: number, total: number) => void,
    *   signal?: { aborted: boolean },
    * }} handlers
    * @returns {Promise<SearchSummary>}
@@ -134,47 +142,53 @@ export function createContentSearchClient(options = {}) {
 
     let fileHits = 0;
     let totalHits = 0;
-    let scanned = 0;
+    let scanned = 0; // files actually decoded+scanned (excludes skips)
+    let processed = 0; // files considered, including skips — drives progress
     let cursor = 0;
     let stopped = false; // hit the total cap
     const aborted = () => stopped || (signal && signal.aborted) || searchId !== searchSeq;
 
-    const tick = () => {
-      if (onProgress) onProgress(scanned, list.length);
-    };
-
     async function lane() {
-      while (cursor < list.length && !aborted()) {
-        const path = list[cursor];
+      while (!aborted()) {
+        const i = cursor;
+        if (i >= list.length) return;
         cursor += 1;
-        if (isBinaryExtension(path)) continue; // skip without an I/O read
-
-        let bytes;
+        const path = list[i];
+        // `finally` guarantees every file (matched, scanned, or skipped) advances
+        // progress, so the status can always reach total/total instead of stalling
+        // below it when binaries/oversize files are skipped.
         try {
-          bytes = await readFile(path);
-        } catch {
-          continue; // unreadable file — skip, keep going
-        }
-        if (aborted()) return;
-        if (!bytes || bytes.length > cfg.maxFileBytes || looksBinary(bytes)) continue;
+          if (isBinaryExtension(path)) continue; // skip without an I/O read
 
-        let matches;
-        if (worker) {
-          matches = await matchInWorker(searchId, path, bytes, limits);
-          if (matches === WORKER_FAILED) matches = searchContent(decoder.decode(bytes), re, limits);
-        } else {
-          matches = searchContent(decoder.decode(bytes), re, limits);
-        }
-        if (aborted()) return;
+          let bytes;
+          try {
+            bytes = await readFile(path);
+          } catch {
+            continue; // unreadable file — skip, keep going
+          }
+          if (aborted()) return;
+          if (!bytes || bytes.length > cfg.maxFileBytes || looksBinary(bytes)) continue;
 
-        scanned += 1;
-        if (matches && matches.length) {
-          fileHits += 1;
-          totalHits += matches.length;
-          if (onResult) onResult({ path, matches });
-          if (totalHits >= cfg.maxTotalMatches) stopped = true;
+          let matches;
+          if (worker) {
+            matches = await matchInWorker(searchId, path, bytes, limits);
+            if (matches === WORKER_FAILED) matches = searchContent(decoder.decode(bytes), re, limits);
+          } else {
+            matches = searchContent(decoder.decode(bytes), re, limits);
+          }
+          if (aborted()) return;
+
+          scanned += 1;
+          if (matches && matches.length) {
+            fileHits += 1;
+            totalHits += matches.length;
+            if (onResult) onResult({ path, matches });
+            if (totalHits >= cfg.maxTotalMatches) stopped = true;
+          }
+        } finally {
+          processed += 1;
+          if (onProgress) onProgress(processed, list.length);
         }
-        tick();
       }
     }
 
@@ -199,6 +213,9 @@ export function createContentSearchClient(options = {}) {
       }
       worker = null;
     }
+    // Unblock any awaiting lane (it will fall back to a synchronous scan) so a
+    // dispose mid-search can't leave a search() promise pending forever.
+    for (const resolve of pending.values()) resolve(WORKER_FAILED);
     pending.clear();
   }
 

@@ -98,8 +98,8 @@ export function createContentSearch(ctx) {
       onResult: (result) => {
         if (!signal.aborted) appendResult(result);
       },
-      onProgress: (scanned, total) => {
-        if (!signal.aborted) setStatus(`Searching… ${scanned}/${total}`);
+      onProgress: (processed, total) => {
+        if (!signal.aborted) setStatus(`Searching… ${processed}/${total}`);
       },
       signal,
     });
