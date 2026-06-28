@@ -401,6 +401,10 @@ kbd {
   margin: 0 0 0.75rem;
   font-size: 0.82rem;
 }
+.storage-usage {
+  font-size: 0.78rem !important;
+  color: var(--fg-faint) !important;
+}
 .recent-list {
   list-style: none;
   margin: 0;
