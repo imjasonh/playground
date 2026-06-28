@@ -104,7 +104,9 @@ function bindEvents() {
   dom.updateBtn.addEventListener('click', onUpdate);
   dom.historyBtn.addEventListener('click', toggleHistory);
   dom.findBtn.addEventListener('click', openPalette);
-  dom.treeFilter.addEventListener('input', renderSidebar);
+  // Debounced: the tree filter rescans every file on each keystroke, which is
+  // wasted work on large repos when someone is typing quickly.
+  dom.treeFilter.addEventListener('input', debounce(renderSidebar, 90));
   dom.paletteInput.addEventListener('input', renderPalette);
 
   document.addEventListener('keydown', onGlobalKey);
@@ -205,6 +207,11 @@ function cloneErrorMessage(err, corsProxy) {
   return `Clone failed: ${message}`;
 }
 
+// Monotonic token shared by every async load (open / branch switch / update).
+// Each load bumps it and re-checks after every await, so a slower in-flight
+// load can never overwrite the view produced by a newer one.
+let loadToken = 0;
+
 async function openSource(source) {
   state.source = source;
   state.activePath = null;
@@ -215,23 +222,29 @@ async function openSource(source) {
   dom.historyPanel.hidden = true;
   dom.historyBtn.setAttribute('aria-pressed', 'false');
 
+  const token = ++loadToken;
   showBrowser();
-  await refreshRepo();
+  await refreshRepo(token);
+  if (token !== loadToken) return;
   showPlaceholder();
 }
 
 /** Reload branch list, files, and header for the current branch. */
-async function refreshRepo() {
+async function refreshRepo(token) {
   const source = state.source;
   dom.repoName.textContent = source.fullName;
 
-  state.branches = await source.listBranches();
+  const branches = await source.listBranches();
+  if (token !== loadToken) return;
+  state.branches = branches;
   renderBranchSelect();
 
-  await reloadFiles();
+  await reloadFiles(token);
+  if (token !== loadToken) return;
 
   try {
     const head = await source.headCommit();
+    if (token !== loadToken) return;
     renderHead(head);
   } catch {
     dom.repoMeta.textContent = '';
@@ -240,8 +253,9 @@ async function refreshRepo() {
   if (state.historyOpen) loadHistory();
 }
 
-async function reloadFiles() {
+async function reloadFiles(token) {
   const files = await state.source.listFiles();
+  if (token !== loadToken) return;
   state.files = files;
   state.fileSet = new Set(files);
   state.tree = buildFileTree(files);
@@ -286,12 +300,11 @@ function renderBranchSelect() {
 
 async function onBranchChange() {
   const name = dom.branchSelect.value;
+  const token = ++loadToken;
   try {
     await state.source.setBranch(name);
-    await reloadFiles();
-    const head = await state.source.headCommit().catch(() => null);
-    renderHead(head);
-    if (state.historyOpen) loadHistory();
+    await refreshRepo(token);
+    if (token !== loadToken) return; // a newer switch/update superseded us
 
     // Re-open the active file on the new branch if it still exists.
     if (state.activePath && state.fileSet.has(state.activePath)) {
@@ -302,12 +315,13 @@ async function onBranchChange() {
     }
     toast(`Switched to ${name}`);
   } catch (err) {
-    toast(`Could not switch branch: ${err.message}`, 'error');
+    if (token === loadToken) toast(`Could not switch branch: ${err.message}`, 'error');
   }
 }
 
 async function onUpdate() {
   if (!state.source) return;
+  const token = ++loadToken;
   const btn = dom.updateBtn;
   btn.disabled = true;
   const original = btn.textContent;
@@ -316,17 +330,27 @@ async function onUpdate() {
     const result = await state.source.update((p) => {
       btn.textContent = p.phase ? `${p.phase}…` : 'Updating…';
     });
-    await refreshRepo();
-    if (state.activePath && state.fileSet.has(state.activePath)) {
-      openFile(state.activePath);
+    await refreshRepo(token);
+    if (token === loadToken) {
+      if (state.activePath && state.fileSet.has(state.activePath)) {
+        openFile(state.activePath);
+      }
+      toast(updateMessage(result), result.updated && result.changed ? 'success' : undefined);
     }
-    toast(result.updated === false ? 'Demo data is static — nothing to update.' : 'Updated from remote.', result.updated === false ? undefined : 'success');
   } catch (err) {
-    toast(`Update failed: ${err.message}`, 'error');
+    if (token === loadToken) toast(`Update failed: ${err.message}`, 'error');
   } finally {
+    // The button belongs to this invocation, so always restore it.
     btn.disabled = false;
     btn.textContent = original;
   }
+}
+
+function updateMessage(result) {
+  if (!result || result.updated === false) {
+    return 'Demo data is static — nothing to update.';
+  }
+  return result.changed ? 'Updated from remote.' : 'Already up to date.';
 }
 
 /* ------------------------------------------------------------------ */
@@ -355,21 +379,29 @@ function renderTree() {
     row.type = 'button';
     row.style.paddingLeft = `${0.4 + depth * 0.85}rem`;
     row.dataset.path = node.path;
+    row.setAttribute('role', 'treeitem');
+    row.setAttribute('aria-level', String(depth + 1));
 
     const twisty = el('span', 'twisty');
+    twisty.setAttribute('aria-hidden', 'true');
     if (node.type === 'dir') {
       twisty.textContent = '\u203A'; // ›
-      if (state.expanded.has(node.path)) row.classList.add('open');
+      const open = state.expanded.has(node.path);
+      if (open) row.classList.add('open');
+      row.setAttribute('aria-expanded', String(open));
     } else {
       twisty.textContent = '';
     }
     row.appendChild(twisty);
 
-    row.appendChild(el('span', 'node-icon', node.type === 'dir' ? '\u{1F4C1}' : '\u{1F4C4}'));
+    const icon = el('span', 'node-icon', node.type === 'dir' ? '\u{1F4C1}' : '\u{1F4C4}');
+    icon.setAttribute('aria-hidden', 'true');
+    row.appendChild(icon);
     row.appendChild(el('span', 'node-name', node.name));
 
     if (node.type === 'file' && node.path === state.activePath) {
       row.classList.add('active');
+      row.setAttribute('aria-current', 'true');
     }
 
     row.addEventListener('click', () => {
@@ -401,7 +433,11 @@ function renderFlatResults(query) {
   for (const result of results) {
     const row = el('li', 'flat-row');
     row.dataset.path = result.item;
-    if (result.item === state.activePath) row.classList.add('active');
+    row.setAttribute('role', 'option');
+    if (result.item === state.activePath) {
+      row.classList.add('active');
+      row.setAttribute('aria-selected', 'true');
+    }
 
     const nameStart = result.target.length - basename(result.target).length;
     const namePositions = result.positions
@@ -585,8 +621,11 @@ async function loadHistory() {
 /* Command palette (fuzzy finder)                                      */
 /* ------------------------------------------------------------------ */
 
+let paletteReturnFocus = null;
+
 function openPalette() {
   if (!state.source) return;
+  paletteReturnFocus = document.activeElement;
   dom.palette.hidden = false;
   dom.paletteInput.value = '';
   dom.paletteInput.focus();
@@ -594,7 +633,19 @@ function openPalette() {
 }
 
 function closePalette() {
+  const wasOpen = !dom.palette.hidden;
   dom.palette.hidden = true;
+  // Return focus to whatever opened the palette so keyboard users aren't
+  // dumped back at the top of the document.
+  if (
+    wasOpen &&
+    paletteReturnFocus &&
+    typeof paletteReturnFocus.focus === 'function' &&
+    document.contains(paletteReturnFocus)
+  ) {
+    paletteReturnFocus.focus();
+  }
+  paletteReturnFocus = null;
 }
 
 function renderPalette() {
@@ -750,6 +801,14 @@ async function openDemo() {
 /* ------------------------------------------------------------------ */
 /* Small UI helpers                                                    */
 /* ------------------------------------------------------------------ */
+
+function debounce(fn, ms) {
+  let timer = null;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), ms);
+  };
+}
 
 function showError(message) {
   dom.cloneError.textContent = message;
