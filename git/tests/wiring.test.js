@@ -56,8 +56,10 @@ describe('module imports', () => {
   const requiredSymbols = [
     ['buildFileTree', 'fileTree.js'],
     ['flattenVisible', 'fileTree.js'],
-    ['fuzzyFilter', 'fuzzy.js'],
+    ['buildIndex', 'fuzzy.js'],
+    ['fuzzyFilterIndex', 'fuzzy.js'],
     ['highlightSegments', 'fuzzy.js'],
+    ['createSearchClient', 'searchClient.js'],
     ['parseRepoUrl', 'repoUrl.js'],
     ['languageForPath', 'language.js'],
     ['createDemoSource', 'demoRepo.js'],
@@ -87,6 +89,8 @@ describe('entry / module layout', () => {
   const expectedFiles = [
     'src/controller.js',
     'src/store.js',
+    'src/searchClient.js',
+    'src/searchWorker.js',
     'src/ui/dom.js',
     'src/ui/viewer.js',
     'src/ui/tree.js',

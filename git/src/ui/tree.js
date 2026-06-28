@@ -11,7 +11,6 @@
 import { el } from './dom.js';
 import { appendMatch } from './highlight.js';
 import { flattenVisible } from '../fileTree.js';
-import { fuzzyFilter } from '../fuzzy.js';
 import { computeWindow, measureRowHeight } from './virtualList.js';
 
 const FILTER_LIMIT = 400;
@@ -33,6 +32,10 @@ export function createTree(ctx) {
   let scheduled = false;
   // Roving-tabindex cursor into treeRows for keyboard navigation.
   let focusIndex = 0;
+  // Filtering is async (it may round-trip to a worker); bumped on every
+  // renderSidebar so a slower flat-search result for a superseded query (or one
+  // that arrives after the filter was cleared) is discarded.
+  let renderSeq = 0;
 
   scroller.addEventListener('scroll', schedulePaint, { passive: true });
   if (typeof window !== 'undefined') {
@@ -59,15 +62,21 @@ export function createTree(ctx) {
   /** Render either the tree or the flat filter results for the current query. */
   function renderSidebar() {
     const query = dom.treeFilter.value.trim();
+    const token = (renderSeq += 1);
     if (query) {
       const fresh = query !== lastQuery || mode !== 'flat';
       mode = 'flat';
       dom.fileTree.hidden = true;
       dom.flatResults.hidden = false;
-      flatRows = fuzzyFilter(query, state.files, { limit: FILTER_LIMIT });
-      dom.treeEmpty.hidden = flatRows.length > 0;
-      if (fresh) scroller.scrollTop = 0; // a new search starts at the top
-      paintFlat();
+      ctx.search.search(query, { limit: FILTER_LIMIT }).then((results) => {
+        // null = corpus changed; stale token = a newer render (incl. clearing
+        // the filter back to the tree) has superseded this search.
+        if (results === null || token !== renderSeq) return;
+        flatRows = results;
+        dom.treeEmpty.hidden = flatRows.length > 0;
+        if (fresh) scroller.scrollTop = 0; // a new search starts at the top
+        paintFlat();
+      });
     } else {
       const leftSearch = mode !== 'tree';
       mode = 'tree';

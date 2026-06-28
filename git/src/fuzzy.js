@@ -27,18 +27,19 @@ function isBoundary(target, index) {
 }
 
 /**
- * @param {string} query
- * @param {string} target
+ * Score a single target against a non-empty, already-lowercased query.
+ *
+ * Both the lowercased query (`ql`) and the lowercased target (`tl`) are passed in
+ * so the hot path never re-lowercases — the index precomputes `tl` once (see
+ * {@link buildIndex}) and reuses it across every keystroke. The original-case
+ * `target` is still needed for word-boundary detection (camelCase humps).
+ *
+ * @param {string} ql      lowercased, trimmed, non-empty query
+ * @param {string} target  original-case target
+ * @param {string} tl      lowercased target (must equal target.toLowerCase())
  * @returns {{matched: boolean, score: number, positions: number[]}}
  */
-export function fuzzyMatch(query, target) {
-  const q = (query || '').trim();
-  if (q === '') return { matched: true, score: 0, positions: [] };
-  if (!target) return { matched: false, score: 0, positions: [] };
-
-  const ql = q.toLowerCase();
-  const tl = target.toLowerCase();
-
+function scorePrepared(ql, target, tl) {
   const positions = [];
   let score = 0;
   let ti = 0;
@@ -68,6 +69,83 @@ export function fuzzyMatch(query, target) {
 }
 
 /**
+ * @param {string} query
+ * @param {string} target
+ * @returns {{matched: boolean, score: number, positions: number[]}}
+ */
+export function fuzzyMatch(query, target) {
+  const q = (query || '').trim();
+  if (q === '') return { matched: true, score: 0, positions: [] };
+  if (!target) return { matched: false, score: 0, positions: [] };
+  return scorePrepared(q.toLowerCase(), target, target.toLowerCase());
+}
+
+/**
+ * Build a reusable search index from a list of items. This is the work that can
+ * be hoisted off the per-keystroke path (and off the main thread — see
+ * `searchWorker.js`): every target is lowercased exactly once here instead of on
+ * every query.
+ *
+ * @template T
+ * @param {T[]} items
+ * @param {(item: T) => string} [key]
+ * @returns {{items: T[], targets: string[], lowers: string[]}}
+ */
+export function buildIndex(items, key = (x) => x) {
+  const list = items || [];
+  const targets = new Array(list.length);
+  const lowers = new Array(list.length);
+  for (let i = 0; i < list.length; i += 1) {
+    const target = key(list[i]) || '';
+    targets[i] = target;
+    lowers[i] = target.toLowerCase();
+  }
+  return { items: list, targets, lowers };
+}
+
+/** Stable ranking: score desc, then shorter target, then lexicographic. */
+function compareResults(a, b) {
+  if (b.score !== a.score) return b.score - a.score;
+  if (a.target.length !== b.target.length) return a.target.length - b.target.length;
+  return a.target < b.target ? -1 : a.target > b.target ? 1 : 0;
+}
+
+/**
+ * Filter and rank a precomputed {@link buildIndex} by a query. Identical output
+ * to {@link fuzzyFilter}, but reuses the index's lowercased targets so it can run
+ * cheaply on every keystroke (and inside a worker).
+ *
+ * @template T
+ * @param {string} query
+ * @param {{items: T[], targets: string[], lowers: string[]}} index
+ * @param {{limit?: number}} [opts]
+ * @returns {{item: T, score: number, positions: number[], target: string}[]}
+ */
+export function fuzzyFilterIndex(query, index, opts = {}) {
+  const { items, targets, lowers } = index;
+  const q = (query || '').trim();
+
+  const results = [];
+  if (q === '') {
+    // Empty query keeps original order, mirroring fuzzyMatch('', …).
+    for (let i = 0; i < items.length; i += 1) {
+      results.push({ item: items[i], score: 0, positions: [], target: targets[i] });
+    }
+  } else {
+    const ql = q.toLowerCase();
+    for (let i = 0; i < items.length; i += 1) {
+      const target = targets[i];
+      if (!target) continue;
+      const { matched, score, positions } = scorePrepared(ql, target, lowers[i]);
+      if (matched) results.push({ item: items[i], score, positions, target });
+    }
+    results.sort(compareResults);
+  }
+
+  return typeof opts.limit === 'number' ? results.slice(0, opts.limit) : results;
+}
+
+/**
  * Filter and rank a list of items by a query.
  *
  * @template T
@@ -78,24 +156,7 @@ export function fuzzyMatch(query, target) {
  */
 export function fuzzyFilter(query, items, opts = {}) {
   const key = opts.key || ((x) => x);
-  const q = (query || '').trim();
-
-  const results = [];
-  for (const item of items) {
-    const target = key(item);
-    const { matched, score, positions } = fuzzyMatch(q, target);
-    if (matched) results.push({ item, score, positions, target });
-  }
-
-  if (q !== '') {
-    results.sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score;
-      if (a.target.length !== b.target.length) return a.target.length - b.target.length;
-      return a.target < b.target ? -1 : a.target > b.target ? 1 : 0;
-    });
-  }
-
-  return typeof opts.limit === 'number' ? results.slice(0, opts.limit) : results;
+  return fuzzyFilterIndex(query, buildIndex(items, key), opts);
 }
 
 /**
