@@ -539,7 +539,14 @@ export class GitStorage {
     if (ref) options.ref = ref;
     if (Number.isFinite(depth) && depth > 0) options.depth = depth;
 
-    await this._git.clone(options);
+    try {
+      await this._git.clone(options);
+    } catch (err) {
+      // A clone that fails mid-write leaves a half-populated dir the registry
+      // never records. Remove it so it can't accumulate or shadow a retry.
+      await rmrf(this._fs, dir).catch(() => {});
+      throw err;
+    }
 
     this._upsert({
       dir,
@@ -578,5 +585,72 @@ export class GitStorage {
     await this._ensure();
     await rmrf(this._fs, dir);
     writeRegistry(readRegistry().filter((r) => r.dir !== dir));
+  }
+
+  /**
+   * Reconcile the FS with the registry: delete repository directories that the
+   * registry doesn't know about (leftovers from a clone that failed before it
+   * was recorded, or a registry that was cleared) and prune the empty container
+   * dirs left behind. Returns the repo dirs that were removed.
+   */
+  async repair() {
+    await this._ensure();
+    const known = new Set(readRegistry().map((r) => r.dir));
+    const repoDirs = await this._findRepoDirs('/');
+    const removed = [];
+    for (const dir of repoDirs) {
+      if (!known.has(dir)) {
+        await rmrf(this._fs, dir);
+        removed.push(dir);
+      }
+    }
+    await this._pruneEmptyDirs('/');
+    return removed;
+  }
+
+  async _readdirSafe(path) {
+    try {
+      return await this._fs.promises.readdir(path);
+    } catch {
+      return [];
+    }
+  }
+
+  async _isDir(path) {
+    try {
+      return (await this._fs.promises.lstat(path)).isDirectory();
+    } catch {
+      return false;
+    }
+  }
+
+  /** Directories that look like git repositories (they contain a `.git` entry). */
+  async _findRepoDirs(base) {
+    const entries = await this._readdirSafe(base);
+    // A repo root: stop here rather than descending into its `.git`.
+    if (entries.includes('.git')) return [base];
+    const found = [];
+    for (const name of entries) {
+      const child = base === '/' ? `/${name}` : `${base}/${name}`;
+      if (await this._isDir(child)) found.push(...(await this._findRepoDirs(child)));
+    }
+    return found;
+  }
+
+  /** Depth-first removal of empty directories; never touches a repo root. */
+  async _pruneEmptyDirs(base) {
+    const entries = await this._readdirSafe(base);
+    if (entries.includes('.git')) return; // a repo root: keep it
+    for (const name of entries) {
+      const child = base === '/' ? `/${name}` : `${base}/${name}`;
+      if (await this._isDir(child)) await this._pruneEmptyDirs(child);
+    }
+    if (base !== '/' && (await this._readdirSafe(base)).length === 0) {
+      try {
+        await this._fs.promises.rmdir(base);
+      } catch {
+        /* racing with another tab, or not actually empty; leave it */
+      }
+    }
   }
 }

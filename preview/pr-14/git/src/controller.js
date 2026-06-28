@@ -19,6 +19,8 @@ import { isBinaryExtension, looksBinary } from './language.js';
 import { ancestors } from './pathUtils.js';
 import { parseRepoUrl, DEFAULT_CORS_PROXY } from './repoUrl.js';
 import { commitSummary, shortOid } from './format.js';
+import { cloneErrorMessage } from './cloneError.js';
+import { storageEstimate, describeStorage, isLowOnStorage } from './quota.js';
 import { createDemoSource } from './demoRepo.js';
 
 // Every element id the UI looks up. Kept in one list so the static wiring test
@@ -28,7 +30,7 @@ const DOM_IDS = [
   'history-btn', 'update-btn', 'close-btn', 'start-view', 'clone-form',
   'url-input', 'ref-input', 'depth-input', 'allbranches-input', 'proxy-input',
   'clone-btn', 'demo-btn', 'preset-list', 'clone-error', 'clone-progress', 'progress-fill',
-  'progress-label', 'recent', 'recent-list', 'browser-view', 'tree-filter',
+  'progress-label', 'recent', 'recent-list', 'storage-usage', 'browser-view', 'tree-filter',
   'file-tree', 'flat-results', 'tree-empty', 'viewer-head', 'file-path',
   'file-info', 'file-history-btn', 'viewer-body', 'viewer-placeholder', 'history-panel',
   'history-branch', 'history-compare', 'compare-select', 'commit-list', 'palette', 'palette-input',
@@ -87,7 +89,20 @@ export async function init() {
   dom.proxyInput.value = DEFAULT_CORS_PROXY;
 
   const { GitStorage } = await import('./gitClient.js').catch(() => ({}));
-  if (GitStorage) store.setState({ storage: new GitStorage() });
+  if (GitStorage) {
+    const storage = new GitStorage();
+    store.setState({ storage });
+    // Reconcile the FS with the registry in the background: a clone that failed
+    // before it was recorded can leave an orphaned dir behind. Best-effort.
+    storage
+      .repair()
+      .then((removed) => {
+        if (removed && removed.length) {
+          toast(`Cleaned up ${removed.length} orphaned clone${removed.length > 1 ? 's' : ''}.`);
+        }
+      })
+      .catch(() => {});
+  }
 
   bindEvents();
   recent.renderPresets();
@@ -189,6 +204,14 @@ export async function init() {
     const ref = dom.refInput.value.trim();
     const corsProxy = dom.proxyInput.value.trim();
 
+    // Non-blocking heads-up when IndexedDB is nearly full. A small repo may
+    // still fit, so warn rather than block; a real overflow surfaces a clear
+    // QuotaExceededError message from cloneErrorMessage.
+    const estimate = await storageEstimate();
+    if (isLowOnStorage(estimate)) {
+      toast(`Low on storage — ${describeStorage(estimate)}. Remove a stored repo if the clone fails.`, 'error');
+    }
+
     setCloning(true);
     showProgress('Connecting…', 0);
 
@@ -215,19 +238,6 @@ export async function init() {
       setCloning(false);
       hideProgress();
     }
-  }
-
-  function cloneErrorMessage(err, corsProxy) {
-    const message = (err && err.message) || String(err);
-    if (/Failed to fetch|NetworkError|CORS|ENOTFOUND/i.test(message)) {
-      return corsProxy
-        ? `Could not reach the repository. The CORS proxy may be down or the URL may be wrong. (${message})`
-        : `Could not reach the repository. Most hosts need a CORS proxy — set one in Advanced options. (${message})`;
-    }
-    if (/404|not found|Could not find/i.test(message)) {
-      return `Repository or ref not found. Check the URL and branch. (${message})`;
-    }
-    return `Clone failed: ${message}`;
   }
 
   function setCloning(busy) {

@@ -68,6 +68,8 @@ describe('module imports', () => {
     ['normalizeRef', 'repoSource.js'],
     ['refValue', 'repoSource.js'],
     ['diffLines', 'diff.js'],
+    ['cloneErrorMessage', 'cloneError.js'],
+    ['storageEstimate', 'quota.js'],
   ];
 
   test.each(requiredSymbols)('some module imports %s from %s', (symbol, mod) => {
