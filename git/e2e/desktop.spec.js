@@ -88,6 +88,47 @@ test('runs fuzzy file search in a Web Worker', async ({ page }) => {
   await expect(page.locator('.palette-row').first()).toContainText('storage.js');
 });
 
+test('searches file contents in a Web Worker and opens a match at its line', async ({ page }) => {
+  await loadDemo(page);
+
+  await expect
+    .poll(() => page.evaluate(() => window.gitBrowser?.contentSearch?.usingWorker))
+    .toBe(true);
+
+  await page.getByRole('button', { name: 'Search code' }).click();
+  await expect(page.locator('#content-search')).toBeVisible();
+
+  await page.locator('#content-search-input').fill('loadTasks');
+  // Results stream in grouped by file, with the matched text highlighted.
+  await expect(page.locator('.cs-file', { hasText: 'src/storage.js' })).toBeVisible();
+  await expect(page.locator('.cs-hit').first()).toBeVisible();
+  await expect(page.locator('#content-search-status')).toContainText(/match/);
+
+  // Clicking a match opens the file at that line and deep-links it.
+  await page
+    .locator('.cs-file', { hasText: 'src/storage.js' })
+    .locator('.cs-line')
+    .first()
+    .click();
+  await expect(page.locator('#content-search')).toBeHidden();
+  await expect(page.locator('#file-path')).toContainText('storage.js');
+  await expect(page.locator('.line-highlight')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => location.hash)).toContain('file=src/storage.js');
+});
+
+test('content search supports regex and reports an empty result', async ({ page }) => {
+  await loadDemo(page);
+  await page.keyboard.press('Control+Shift+F');
+  await expect(page.locator('#content-search')).toBeVisible();
+
+  await page.locator('#cs-regex').check();
+  await page.locator('#content-search-input').fill('export\\s+function');
+  await expect(page.locator('.cs-line').first()).toBeVisible();
+
+  await page.locator('#content-search-input').fill('zzz_no_such_text_zzz');
+  await expect(page.locator('#content-search-empty')).toBeVisible();
+});
+
 test('Ctrl/Cmd+P toggles the palette', async ({ page }) => {
   await loadDemo(page);
   await page.keyboard.press('Control+p');

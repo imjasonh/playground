@@ -33,6 +33,9 @@
           <button id="find-btn" class="btn" type="button" title="Find files (Ctrl / Cmd + P)">
             Find files
           </button>
+          <button id="search-btn" class="btn" type="button" title="Search file contents (Ctrl / Cmd + Shift + F)">
+            Search code
+          </button>
           <button id="history-btn" class="btn" type="button" aria-pressed="false">History</button>
           <button id="update-btn" class="btn" type="button" title="Fetch the latest commits from the remote">
             Pull / Update
@@ -200,6 +203,39 @@
         </aside>
       </section>
     </main>
+
+    <!-- Content search (grep across file contents) -->
+    <div class="search-overlay" id="content-search" hidden>
+      <div class="search-panel" role="dialog" aria-modal="true" aria-label="Search file contents">
+        <div class="search-head">
+          <input
+            id="content-search-input"
+            class="search-input"
+            type="text"
+            placeholder="Search in files…"
+            aria-label="Search file contents"
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck="false"
+          />
+          <div class="search-opts">
+            <label class="search-opt" title="Match case">
+              <input type="checkbox" id="cs-case" />
+              <span aria-hidden="true">Aa</span>
+              <span class="sr-only">Match case</span>
+            </label>
+            <label class="search-opt" title="Use regular expression">
+              <input type="checkbox" id="cs-regex" />
+              <span aria-hidden="true">.*</span>
+              <span class="sr-only">Regular expression</span>
+            </label>
+          </div>
+        </div>
+        <p class="search-status" id="content-search-status" role="status" aria-live="polite"></p>
+        <div class="search-results" id="content-search-results"></div>
+        <p class="search-empty" id="content-search-empty" hidden>No matches.</p>
+      </div>
+    </div>
 
     <!-- Command palette (fuzzy file finder) -->
     <div class="palette-overlay" id="palette" hidden>

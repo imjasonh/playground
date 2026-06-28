@@ -46,6 +46,17 @@ test('command palette has no a11y violations', async ({ page }) => {
   expect(results.violations).toEqual([]);
 });
 
+test('content search overlay has no a11y violations', async ({ page }) => {
+  await loadDemo(page);
+  await page.getByRole('button', { name: 'Search code' }).click();
+  await expect(page.locator('#content-search')).toBeVisible();
+  await page.locator('#content-search-input').fill('loadTasks');
+  await expect(page.locator('.cs-line').first()).toBeVisible();
+
+  const results = await scan(page, '#content-search');
+  expect(results.violations).toEqual([]);
+});
+
 test('history panel has no a11y violations', async ({ page }) => {
   await loadDemo(page);
   await page.getByRole('button', { name: 'History' }).click();
