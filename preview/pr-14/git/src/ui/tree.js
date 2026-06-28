@@ -283,7 +283,10 @@ export function createTree(ctx) {
     }
   }
 
-  /** Index of the nearest preceding row one level shallower, or -1. */
+  /**
+   * Index of the nearest preceding row one level shallower (the parent dir), or
+   * the row itself when it's already at the top level (so focus stays put).
+   */
   function parentIndex(index, depth) {
     for (let i = index - 1; i >= 0; i -= 1) {
       if (treeRows[i].depth === depth - 1) return i;
