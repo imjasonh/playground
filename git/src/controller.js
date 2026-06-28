@@ -92,6 +92,10 @@ export async function init() {
   if (GitStorage) {
     const storage = new GitStorage();
     store.setState({ storage });
+    // Keep the stored-repos list in sync when another tab clones/removes a repo.
+    if (typeof storage.onReposChanged === 'function') {
+      storage.onReposChanged(() => recent.renderRecent());
+    }
     // Reconcile the FS with the registry in the background: a clone that failed
     // before it was recorded can leave an orphaned dir behind. Best-effort.
     storage

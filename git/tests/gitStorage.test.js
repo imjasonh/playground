@@ -210,6 +210,94 @@ describe('GitStorage.repair (FS vs registry reconciliation)', () => {
   });
 });
 
+function deferred() {
+  let resolve;
+  const promise = new Promise((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
+describe('GitStorage multi-tab coordination', () => {
+  beforeEach(() => localStorage.clear());
+
+  test('_withLock serializes operations on the same dir', async () => {
+    const storage = new GitStorage({ fs: {}, git: {}, http: {} });
+    const order = [];
+    const gate = deferred();
+
+    const first = storage._withLock('/d', async () => {
+      order.push('start1');
+      await gate.promise;
+      order.push('end1');
+    });
+    const second = storage._withLock('/d', async () => {
+      order.push('start2');
+    });
+
+    // The second op must not begin until the first releases the lock.
+    await Promise.resolve();
+    expect(order).toEqual(['start1']);
+
+    gate.resolve();
+    await Promise.all([first, second]);
+    expect(order).toEqual(['start1', 'end1', 'start2']);
+  });
+
+  test('_withLock lets different dirs proceed concurrently', async () => {
+    const storage = new GitStorage({ fs: {}, git: {}, http: {} });
+    const order = [];
+    const gate = deferred();
+
+    const a = storage._withLock('/a', async () => {
+      order.push('a-start');
+      await gate.promise;
+      order.push('a-end');
+    });
+    const b = storage._withLock('/b', async () => {
+      order.push('b-done');
+    });
+
+    await b; // '/b' finishes while '/a' is still gated
+    expect(order).toEqual(['a-start', 'b-done']);
+    gate.resolve();
+    await a;
+  });
+
+  test('one failed locked op does not block the next', async () => {
+    const storage = new GitStorage({ fs: {}, git: {}, http: {} });
+    await expect(
+      storage._withLock('/d', async () => {
+        throw new Error('boom');
+      })
+    ).rejects.toThrow('boom');
+    await expect(storage._withLock('/d', async () => 'ok')).resolves.toBe('ok');
+  });
+
+  test('onReposChanged fires on a registry storage event and stops after unsubscribe', () => {
+    const storage = new GitStorage();
+    let calls = 0;
+    const off = storage.onReposChanged(() => {
+      calls += 1;
+    });
+
+    window.dispatchEvent(new StorageEvent('storage', { key: REGISTRY_KEY }));
+    expect(calls).toBe(1);
+
+    // An unrelated key is ignored.
+    window.dispatchEvent(new StorageEvent('storage', { key: 'unrelated' }));
+    expect(calls).toBe(1);
+
+    // A full clear (key === null) counts as a change.
+    window.dispatchEvent(new StorageEvent('storage', { key: null }));
+    expect(calls).toBe(2);
+
+    off();
+    window.dispatchEvent(new StorageEvent('storage', { key: REGISTRY_KEY }));
+    expect(calls).toBe(2);
+  });
+});
+
 describe('GitStorage.clone failure cleanup', () => {
   beforeEach(() => localStorage.clear());
 
