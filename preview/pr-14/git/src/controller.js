@@ -9,6 +9,7 @@ import { cacheDom, createFeedback, debounce, el } from './ui/dom.js';
 import { createViewer } from './ui/viewer.js';
 import { createTree } from './ui/tree.js';
 import { createPalette } from './ui/palette.js';
+import { createContentSearch } from './ui/contentSearch.js';
 import { createHistory } from './ui/history.js';
 import { createRecent } from './ui/recent.js';
 import { buildFileTree } from './fileTree.js';
@@ -25,11 +26,12 @@ import { storageEstimate, describeStorage, isLowOnStorage } from './quota.js';
 import { createDemoSource } from './demoRepo.js';
 import { parseHash, encodeHashState } from './hashState.js';
 import { createSearchClient } from './searchClient.js';
+import { createContentSearchClient } from './contentSearchClient.js';
 
 // Every element id the UI looks up. Kept in one list so the static wiring test
 // can confirm each one exists in index.html.
 const DOM_IDS = [
-  'repo-bar', 'repo-name', 'repo-meta', 'branch-select', 'find-btn',
+  'repo-bar', 'repo-name', 'repo-meta', 'branch-select', 'find-btn', 'search-btn',
   'history-btn', 'update-btn', 'close-btn', 'start-view', 'clone-form',
   'url-input', 'ref-input', 'depth-input', 'allbranches-input', 'proxy-input', 'token-input',
   'clone-btn', 'demo-btn', 'preset-list', 'clone-error', 'clone-progress', 'progress-fill',
@@ -37,7 +39,8 @@ const DOM_IDS = [
   'file-tree', 'flat-results', 'tree-empty', 'viewer-head', 'file-path',
   'file-info', 'file-history-btn', 'viewer-body', 'viewer-placeholder', 'history-panel',
   'history-branch', 'history-compare', 'compare-select', 'commit-list', 'palette', 'palette-input',
-  'palette-results', 'palette-empty', 'toast',
+  'palette-results', 'palette-empty', 'content-search', 'content-search-input', 'cs-case',
+  'cs-regex', 'content-search-status', 'content-search-results', 'content-search-empty', 'toast',
 ];
 
 export async function init() {
@@ -76,15 +79,19 @@ export async function init() {
   // the command palette and the tree filter; the controller keeps its corpus in
   // sync with the loaded file list (see reloadFiles / showStart).
   const search = createSearchClient();
+  // Off-main-thread content (grep) search. Reads come from the RepoSource on the
+  // main thread; the worker decodes + scans and streams matches back.
+  const contentSearch = createContentSearchClient();
 
   // The shared context handed to each UI module. Cross-module actions are
   // assigned below, after the modules exist; modules only call them at
   // event time, so the late binding is safe.
-  const ctx = { state, store, dom, toast, hideToast, search };
+  const ctx = { state, store, dom, toast, hideToast, search, contentSearch };
 
   const viewer = createViewer(ctx);
   const tree = createTree(ctx);
   const palette = createPalette(ctx);
+  const contentSearchUI = createContentSearch(ctx);
   const history = createHistory(ctx);
   const recent = createRecent(ctx);
 
@@ -140,7 +147,7 @@ export async function init() {
   const initialState = parseHash(location.hash);
   if (initialState) applyDeepLink(initialState);
 
-  window.gitBrowser = { openDemo, openSource, state, store, search };
+  window.gitBrowser = { openDemo, openSource, state, store, search, contentSearch };
 
   /* ---------------------------------------------------------------- */
   /* Event wiring                                                      */
@@ -157,6 +164,7 @@ export async function init() {
       if (state.activePath) history.showFile(state.activePath);
     });
     dom.findBtn.addEventListener('click', () => palette.open());
+    dom.searchBtn.addEventListener('click', () => contentSearchUI.open());
     // Debounced: the tree filter rescans every file on each keystroke, which is
     // wasted work on large repos when someone is typing quickly.
     dom.treeFilter.addEventListener('input', debounce(() => tree.renderSidebar(), 90));
@@ -170,15 +178,27 @@ export async function init() {
   }
 
   function onGlobalKey(event) {
-    const isFind = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'p';
-    if (isFind && state.source) {
+    const mod = event.metaKey || event.ctrlKey;
+    const key = event.key.toLowerCase();
+    // Ctrl/Cmd+Shift+F: search file contents (grep). Checked before the plain
+    // find shortcut so the two don't fight over modifier combos.
+    if (mod && event.shiftKey && key === 'f' && state.source) {
       event.preventDefault();
+      palette.close();
+      if (contentSearchUI.isOpen()) contentSearchUI.close();
+      else contentSearchUI.open();
+      return;
+    }
+    if (mod && !event.shiftKey && key === 'p' && state.source) {
+      event.preventDefault();
+      contentSearchUI.close();
       if (palette.isOpen()) palette.close();
       else palette.open();
       return;
     }
-    if (event.key === 'Escape' && palette.isOpen()) {
-      palette.close();
+    if (event.key === 'Escape') {
+      if (palette.isOpen()) palette.close();
+      if (contentSearchUI.isOpen()) contentSearchUI.close();
     }
   }
 
@@ -196,6 +216,7 @@ export async function init() {
     dom.startView.hidden = false;
     document.body.classList.remove('repo-open');
     palette.close();
+    contentSearchUI.close();
     recent.renderRecent();
     syncHash();
   }

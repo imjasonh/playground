@@ -994,6 +994,163 @@ kbd {
   font-size: 0.88rem;
 }
 
+/* ---------- Content search (grep) ---------- */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.search-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(1, 4, 9, 0.6);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 10vh;
+  z-index: 50;
+}
+.search-panel {
+  width: min(720px, 94vw);
+  max-height: 74vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+.search-head {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--border);
+}
+.search-input {
+  flex: 1 1 auto;
+  border: none;
+  border-radius: 0;
+  font-size: 1rem;
+  padding: 0.9rem 1rem;
+  background: transparent;
+}
+.search-input:focus {
+  outline: none;
+}
+.search-opts {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0 0.6rem;
+}
+.search-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--fg-muted);
+  padding: 0.25rem 0.45rem;
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+.search-opt:hover {
+  background: var(--bg);
+}
+.search-status {
+  padding: 0.45rem 1rem;
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--fg-muted);
+  border-bottom: 1px solid var(--border-soft);
+  min-height: 1.2rem;
+}
+.search-status.error {
+  color: var(--danger);
+}
+.search-results {
+  overflow-y: auto;
+  padding: 0.3rem;
+}
+.cs-file {
+  margin-bottom: 0.35rem;
+}
+.cs-file-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.35rem 0.55rem;
+  background: var(--bg);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.cs-file-path {
+  font-size: 0.82rem;
+  color: var(--fg);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cs-file-count {
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  color: var(--fg-faint);
+}
+.cs-line {
+  display: flex;
+  gap: 0.6rem;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  padding: 0.2rem 0.55rem;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+}
+.cs-line:hover,
+.cs-line.active {
+  background: var(--accent-soft);
+}
+.cs-line-no {
+  flex: 0 0 auto;
+  width: 3ch;
+  text-align: right;
+  color: var(--fg-faint);
+}
+.cs-line-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--fg-muted);
+}
+.cs-hit {
+  background: rgba(187, 128, 9, 0.4);
+  color: var(--fg);
+  border-radius: 2px;
+}
+.search-empty {
+  padding: 1.2rem;
+  text-align: center;
+  color: var(--fg-faint);
+  font-size: 0.88rem;
+}
+
 /* ---------- Toast ---------- */
 .toast {
   position: fixed;
