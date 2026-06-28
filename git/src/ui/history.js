@@ -8,10 +8,10 @@ import { commitSummary, relativeTime, shortOid } from '../format.js';
  * @param {{state: object, dom: Record<string, HTMLElement>}} ctx
  */
 export function createHistory(ctx) {
-  const { state, dom } = ctx;
+  const { state, store, dom } = ctx;
 
   function toggle() {
-    state.historyOpen = !state.historyOpen;
+    store.setState({ historyOpen: !state.historyOpen });
     dom.historyPanel.hidden = !state.historyOpen;
     dom.historyBtn.setAttribute('aria-pressed', String(state.historyOpen));
     if (state.historyOpen) load();
@@ -19,7 +19,7 @@ export function createHistory(ctx) {
 
   /** Close the panel (used when switching repositories). */
   function reset() {
-    state.historyOpen = false;
+    store.setState({ historyOpen: false });
     dom.historyPanel.hidden = true;
     dom.historyBtn.setAttribute('aria-pressed', 'false');
   }

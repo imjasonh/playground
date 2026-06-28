@@ -62,6 +62,8 @@ describe('module imports', () => {
     ['languageForPath', 'language.js'],
     ['createDemoSource', 'demoRepo.js'],
     ['formatBytes', 'format.js'],
+    ['createStore', 'store.js'],
+    ['createLoadController', 'store.js'],
   ];
 
   test.each(requiredSymbols)('some module imports %s from %s', (symbol, mod) => {
@@ -72,6 +74,7 @@ describe('module imports', () => {
 describe('entry / module layout', () => {
   const expectedFiles = [
     'src/controller.js',
+    'src/store.js',
     'src/ui/dom.js',
     'src/ui/viewer.js',
     'src/ui/tree.js',

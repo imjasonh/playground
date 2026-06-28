@@ -21,7 +21,7 @@ const OVERSCAN = 8;
  * @param {{state: object, dom: Record<string, HTMLElement>, openFile: Function}} ctx
  */
 export function createTree(ctx) {
-  const { state, dom } = ctx;
+  const { state, store, dom } = ctx;
   const scroller = dom.fileTree.parentElement; // .tree-scroll (the scroll box)
 
   let mode = 'tree'; // 'tree' | 'flat'
@@ -164,8 +164,10 @@ export function createTree(ctx) {
   }
 
   function toggleDir(path) {
-    if (state.expanded.has(path)) state.expanded.delete(path);
-    else state.expanded.add(path);
+    store.update((s) => {
+      if (s.expanded.has(path)) s.expanded.delete(path);
+      else s.expanded.add(path);
+    });
     treeRows = flattenVisible(state.tree, state.expanded);
     paintTree();
   }

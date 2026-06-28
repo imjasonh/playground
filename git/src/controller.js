@@ -12,6 +12,7 @@ import { createPalette } from './ui/palette.js';
 import { createHistory } from './ui/history.js';
 import { createRecent } from './ui/recent.js';
 import { buildFileTree } from './fileTree.js';
+import { createStore, createLoadController } from './store.js';
 import { ancestors } from './pathUtils.js';
 import { parseRepoUrl, DEFAULT_CORS_PROXY } from './repoUrl.js';
 import { commitSummary, shortOid } from './format.js';
@@ -36,7 +37,7 @@ export async function init() {
   const feedback = createFeedback(dom);
   const { toast, hideToast, showProgress, hideProgress, showError, hideError } = feedback;
 
-  const state = {
+  const store = createStore({
     storage: null,
     source: null,
     files: [],
@@ -46,17 +47,20 @@ export async function init() {
     activePath: null,
     branches: [],
     historyOpen: false,
-  };
+  });
+  // `state` is the single live read view; every write flows through the store.
+  const state = store.getState();
 
-  // Monotonic token shared by every async load (open / branch switch / update).
-  // Each load bumps it and re-checks after every await, so a slower in-flight
-  // load can never overwrite the view produced by a newer one.
-  let loadToken = 0;
+  // First-class "current load" shared by every async load (open / branch switch
+  // / update). Each load supersedes the previous one and re-checks `active`
+  // after every await, so a slower in-flight load can never overwrite the view
+  // produced by a newer one.
+  const loads = createLoadController();
 
   // The shared context handed to each UI module. Cross-module actions are
   // assigned below, after the modules exist; modules only call them at
   // event time, so the late binding is safe.
-  const ctx = { state, dom, toast, hideToast };
+  const ctx = { state, store, dom, toast, hideToast };
 
   const viewer = createViewer(ctx);
   const tree = createTree(ctx);
@@ -71,7 +75,7 @@ export async function init() {
   dom.proxyInput.value = DEFAULT_CORS_PROXY;
 
   const { GitStorage } = await import('./gitClient.js').catch(() => ({}));
-  if (GitStorage) state.storage = new GitStorage();
+  if (GitStorage) store.setState({ storage: new GitStorage() });
 
   bindEvents();
   recent.renderPresets();
@@ -81,7 +85,7 @@ export async function init() {
     openDemo();
   }
 
-  window.gitBrowser = { openDemo, openSource, state };
+  window.gitBrowser = { openDemo, openSource, state, store };
 
   /* ---------------------------------------------------------------- */
   /* Event wiring                                                      */
@@ -125,8 +129,8 @@ export async function init() {
   /* ---------------------------------------------------------------- */
 
   function showStart() {
-    state.source = null;
-    state.activePath = null;
+    loads.cancel();
+    store.setState({ source: null, activePath: null });
     viewer.dispose();
     dom.browserView.hidden = true;
     dom.repoBar.hidden = true;
@@ -221,36 +225,34 @@ export async function init() {
   }
 
   async function openSource(source) {
-    state.source = source;
-    state.activePath = null;
-    state.expanded = new Set();
+    store.setState({ source, activePath: null, expanded: new Set() });
     viewer.dispose();
     history.reset();
 
-    const token = ++loadToken;
+    const load = loads.begin();
     showBrowser();
     tree.resetScroll();
-    await refreshRepo(token);
-    if (token !== loadToken) return;
+    await refreshRepo(load);
+    if (!load.active) return;
     viewer.showPlaceholder();
   }
 
   /** Reload branch list, files, and header for the current branch. */
-  async function refreshRepo(token) {
+  async function refreshRepo(load) {
     const source = state.source;
     dom.repoName.textContent = source.fullName;
 
     const branches = await source.listBranches();
-    if (token !== loadToken) return;
-    state.branches = branches;
+    if (!load.active) return;
+    store.setState({ branches });
     renderBranchSelect();
 
-    await reloadFiles(token);
-    if (token !== loadToken) return;
+    await reloadFiles(load);
+    if (!load.active) return;
 
     try {
       const head = await source.headCommit();
-      if (token !== loadToken) return;
+      if (!load.active) return;
       renderHead(head);
     } catch {
       dom.repoMeta.textContent = '';
@@ -259,26 +261,30 @@ export async function init() {
     if (state.historyOpen) history.load();
   }
 
-  async function reloadFiles(token) {
+  async function reloadFiles(load) {
     const files = await state.source.listFiles();
-    if (token !== loadToken) return;
-    state.files = files;
-    state.fileSet = new Set(files);
-    state.tree = buildFileTree(files);
-    // Auto-expand a single top-level directory chain for convenience.
-    state.expanded = new Set();
-    autoExpand();
+    if (!load.active) return;
+    const fileTree = buildFileTree(files);
+    store.setState({
+      files,
+      fileSet: new Set(files),
+      tree: fileTree,
+      // Auto-expand a single top-level directory chain for convenience.
+      expanded: initialExpanded(fileTree),
+    });
     dom.treeFilter.value = '';
     tree.renderSidebar();
   }
 
-  function autoExpand() {
-    let nodes = state.tree.children;
-    // expand while there is exactly one directory at this level
+  /** Set of directory paths forming the single top-level chain to auto-open. */
+  function initialExpanded(fileTree) {
+    const expanded = new Set();
+    let nodes = fileTree.children;
     while (nodes.length === 1 && nodes[0].type === 'dir') {
-      state.expanded.add(nodes[0].path);
+      expanded.add(nodes[0].path);
       nodes = nodes[0].children;
     }
+    return expanded;
   }
 
   function renderHead(head) {
@@ -306,28 +312,28 @@ export async function init() {
 
   async function onBranchChange() {
     const name = dom.branchSelect.value;
-    const token = ++loadToken;
+    const load = loads.begin();
     try {
       await state.source.setBranch(name);
-      await refreshRepo(token);
-      if (token !== loadToken) return; // a newer switch/update superseded us
+      await refreshRepo(load);
+      if (!load.active) return; // a newer switch/update superseded us
 
       // Re-open the active file on the new branch if it still exists.
       if (state.activePath && state.fileSet.has(state.activePath)) {
         openFile(state.activePath);
       } else {
-        state.activePath = null;
+        store.setState({ activePath: null });
         viewer.showPlaceholder();
       }
       toast(`Switched to ${name}`);
     } catch (err) {
-      if (token === loadToken) toast(`Could not switch branch: ${err.message}`, 'error');
+      if (load.active) toast(`Could not switch branch: ${err.message}`, 'error');
     }
   }
 
   async function onUpdate() {
     if (!state.source) return;
-    const token = ++loadToken;
+    const load = loads.begin();
     const btn = dom.updateBtn;
     btn.disabled = true;
     const original = btn.textContent;
@@ -336,15 +342,15 @@ export async function init() {
       const result = await state.source.update((p) => {
         btn.textContent = p.phase ? `${p.phase}…` : 'Updating…';
       });
-      await refreshRepo(token);
-      if (token === loadToken) {
+      await refreshRepo(load);
+      if (load.active) {
         if (state.activePath && state.fileSet.has(state.activePath)) {
           openFile(state.activePath);
         }
         toast(updateMessage(result), result.updated && result.changed ? 'success' : undefined);
       }
     } catch (err) {
-      if (token === loadToken) toast(`Update failed: ${err.message}`, 'error');
+      if (load.active) toast(`Update failed: ${err.message}`, 'error');
     } finally {
       // The button belongs to this invocation, so always restore it.
       btn.disabled = false;
@@ -364,11 +370,13 @@ export async function init() {
   /* ---------------------------------------------------------------- */
 
   async function openFile(path) {
-    state.activePath = path;
     palette.close();
 
     // reveal in tree
-    for (const dir of ancestors(path)) state.expanded.add(dir);
+    store.update((s) => {
+      s.activePath = path;
+      for (const dir of ancestors(path)) s.expanded.add(dir);
+    });
     tree.renderSidebar();
 
     viewer.beginLoading(path);
