@@ -1,22 +1,43 @@
 /**
  * Command palette: the modal fuzzy file finder with keyboard navigation.
- * Owns its own result list + active index (they are only meaningful while the
- * palette is open) and restores focus to its trigger when it closes.
+ *
+ * The result list is virtualized, so the active selection is tracked as a
+ * logical index into the full result set rather than by walking rendered DOM
+ * children: navigating scrolls the active row into view and repaints the
+ * window. Owns its own state and restores focus to its trigger on close.
  */
 import { el } from './dom.js';
 import { appendMatch } from './highlight.js';
 import { fuzzyFilter } from '../fuzzy.js';
+import { computeWindow, measureRowHeight } from './virtualList.js';
 
 const PALETTE_LIMIT = 60;
+const OVERSCAN = 8;
 
 /**
  * @param {{state: object, dom: Record<string, HTMLElement>, openFile: Function}} ctx
  */
 export function createPalette(ctx) {
   const { state, dom } = ctx;
+  const scroller = dom.paletteResults; // overflow-y: auto, max-height
   let returnFocus = null;
   let rows = [];
   let activeIndex = 0;
+  let rowH = 0;
+  let scheduled = false;
+
+  scroller.addEventListener('scroll', schedulePaint, { passive: true });
+
+  function schedulePaint() {
+    if (scheduled) return;
+    scheduled = true;
+    const run = () => {
+      scheduled = false;
+      paint();
+    };
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run);
+    else setTimeout(run, 16);
+  }
 
   function isOpen() {
     return !dom.palette.hidden;
@@ -48,32 +69,62 @@ export function createPalette(ctx) {
 
   function render() {
     const query = dom.paletteInput.value.trim();
-    const results = fuzzyFilter(query, state.files, { limit: PALETTE_LIMIT });
-    rows = results;
+    rows = fuzzyFilter(query, state.files, { limit: PALETTE_LIMIT });
     activeIndex = 0;
+    dom.paletteEmpty.hidden = rows.length > 0;
+    scroller.scrollTop = 0;
+    paint();
+  }
 
-    const list = dom.paletteResults;
-    list.replaceChildren();
-    dom.paletteEmpty.hidden = results.length > 0;
-
-    results.forEach((result, index) => {
-      const row = el('li', 'palette-row');
-      row.dataset.path = result.item;
-      if (index === 0) row.classList.add('active');
-      appendMatch(row, result, 'pr-name', 'pr-path');
-      row.addEventListener('click', () => ctx.openFile(result.item));
-      list.appendChild(row);
+  function paint() {
+    if (!rowH) rowH = measureRowHeight(scroller, buildProbe);
+    const total = rows.length;
+    if (rowH > 0) {
+      const maxScroll = Math.max(0, total * rowH - scroller.clientHeight);
+      if (scroller.scrollTop > maxScroll) scroller.scrollTop = maxScroll;
+    }
+    const { start, end, padTop, padBottom } = computeWindow({
+      scrollTop: scroller.scrollTop,
+      viewportHeight: scroller.clientHeight,
+      rowHeight: rowH,
+      total,
+      overscan: OVERSCAN,
     });
+    scroller.style.paddingTop = `${padTop}px`;
+    scroller.style.paddingBottom = `${padBottom}px`;
+    const frag = document.createDocumentFragment();
+    for (let i = start; i < end; i += 1) frag.appendChild(buildRow(rows[i], i));
+    scroller.replaceChildren(frag);
+  }
+
+  function buildRow(result, index) {
+    const row = el('li', 'palette-row');
+    row.dataset.path = result.item;
+    if (index === activeIndex) row.classList.add('active');
+    appendMatch(row, result, 'pr-name', 'pr-path');
+    row.addEventListener('click', () => ctx.openFile(result.item));
+    return row;
+  }
+
+  function buildProbe() {
+    return buildRow({ item: 'sample/file.js', target: 'sample/file.js', positions: [] }, -1);
+  }
+
+  function scrollActiveIntoView() {
+    if (rowH <= 0) return;
+    const top = activeIndex * rowH;
+    const viewTop = scroller.scrollTop;
+    const viewBottom = viewTop + scroller.clientHeight;
+    if (top < viewTop) scroller.scrollTop = top;
+    else if (top + rowH > viewBottom) scroller.scrollTop = top + rowH - scroller.clientHeight;
   }
 
   function move(delta) {
-    const elements = dom.paletteResults.children;
-    if (elements.length === 0) return;
-    elements[activeIndex]?.classList.remove('active');
-    activeIndex = (activeIndex + delta + elements.length) % elements.length;
-    const active = elements[activeIndex];
-    active.classList.add('active');
-    active.scrollIntoView({ block: 'nearest' });
+    const total = rows.length;
+    if (total === 0) return;
+    activeIndex = (activeIndex + delta + total) % total;
+    scrollActiveIntoView();
+    paint();
   }
 
   function onKey(event) {
