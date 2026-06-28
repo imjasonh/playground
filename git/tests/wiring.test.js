@@ -70,6 +70,8 @@ describe('module imports', () => {
     ['diffLines', 'diff.js'],
     ['cloneErrorMessage', 'cloneError.js'],
     ['storageEstimate', 'quota.js'],
+    ['rememberToken', 'auth.js'],
+    ['makeOnAuth', 'auth.js'],
   ];
 
   test.each(requiredSymbols)('some module imports %s from %s', (symbol, mod) => {

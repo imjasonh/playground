@@ -22,6 +22,18 @@ export function cloneErrorMessage(err, corsProxy) {
     );
   }
 
+  // Authentication: a private repo (or a bad/expired token). isomorphic-git
+  // surfaces these as 401/403 or an explicit auth message.
+  if (
+    name === 'UserCanceledError' ||
+    /\b401\b|\b403\b|Unauthorized|Forbidden|authentication|HTTP Basic: Access denied/i.test(message)
+  ) {
+    return (
+      'Authentication required or failed. If this repository is private, add a read-only ' +
+      `access token in Advanced options and try again. (${message})`
+    );
+  }
+
   if (/Failed to fetch|NetworkError|CORS|ENOTFOUND/i.test(message)) {
     return corsProxy
       ? `Could not reach the repository. The CORS proxy may be down or the URL may be wrong. (${message})`

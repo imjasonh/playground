@@ -17,6 +17,7 @@ const VENDOR = {
 };
 
 import { normalizeRef } from './repoSource.js';
+import { makeOnAuth } from './auth.js';
 
 const FS_NAME = 'git-browser-fs';
 const REGISTRY_KEY = 'git-browser:repos';
@@ -182,6 +183,8 @@ export class GitRepoSource {
     this._current = 'HEAD';
     this._refType = 'branch';
     this._oidCache = new Map();
+    // Supplies a session-stored token (if any) for this repo's host on fetch.
+    this._onAuth = makeOnAuth();
   }
 
   async init() {
@@ -445,6 +448,7 @@ export class GitRepoSource {
       http: this._http,
       dir: this._dir,
       corsProxy: this._corsProxy,
+      onAuth: this._onAuth,
       ref: this._singleBranch && onBranch ? branch : undefined,
       singleBranch: this._singleBranch,
       depth: this._depth > 0 ? this._depth : undefined,
@@ -573,6 +577,7 @@ export class GitStorage {
       dir,
       url,
       corsProxy: corsProxy || undefined,
+      onAuth: makeOnAuth(),
       singleBranch: Boolean(singleBranch),
       noCheckout: true,
       onProgress,
