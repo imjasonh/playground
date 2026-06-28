@@ -105,6 +105,17 @@ dist/
 *.log
 `;
 
+const GITATTRIBUTES = `assets/intro.mp4 filter=lfs diff=lfs merge=lfs -text
+`;
+
+// A Git LFS pointer: what's committed for an LFS-tracked file is this small text
+// stub, not the real bytes. The viewer detects it and shows a notice instead of
+// rendering the metadata as the file.
+const INTRO_MP4_POINTER = `version https://git-lfs.github.com/spec/v1
+oid sha256:9a8b7c6d5e4f30211223344556677889900aabbccddeeff00112233445566778
+size 10485760
+`;
+
 const LICENSE = `MIT License
 
 Copyright (c) 2026 Tasklite contributors
@@ -165,11 +176,13 @@ const sharedFiles = {
   'README.md': README,
   'package.json': PACKAGE_JSON,
   '.gitignore': GITIGNORE,
+  '.gitattributes': GITATTRIBUTES,
   LICENSE,
   'src/storage.js': STORAGE_JS,
   'src/ui/render.js': RENDER_JS,
   'styles/main.css': MAIN_CSS,
   'assets/logo.svg': LOGO_SVG,
+  'assets/intro.mp4': INTRO_MP4_POINTER,
 };
 
 const mainCommits = [

@@ -145,6 +145,21 @@ test('renders an SVG image file as an image', async ({ page }) => {
   await expect(page.locator('#file-info')).toContainText(/Image/);
 });
 
+test('shows a Git LFS notice instead of rendering the pointer', async ({ page }) => {
+  await loadDemo(page);
+  await page.locator('#tree-filter').fill('intro.mp4');
+  await page.locator('.flat-row', { hasText: 'intro.mp4' }).click();
+
+  await expect(page.locator('#file-info')).toContainText('Git LFS');
+  await expect(page.locator('.notice')).toContainText(/Stored with Git LFS/i);
+  // The real size from the pointer is surfaced (10 MiB), not the pointer's size.
+  await expect(page.locator('.notice')).toContainText(/10 MB/);
+
+  // "View pointer" falls back to the raw pointer text on demand.
+  await page.getByRole('button', { name: 'View pointer' }).click();
+  await expect(page.locator('.code')).toContainText('git-lfs.github.com/spec/v1');
+});
+
 test('switching branches changes the available files', async ({ page }) => {
   await loadDemo(page);
 

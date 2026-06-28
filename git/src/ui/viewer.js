@@ -13,6 +13,7 @@ import {
   looksBinary,
 } from '../language.js';
 import { formatBytes } from '../format.js';
+import { parseLfsPointer } from '../lfs.js';
 import { highlight, grammarForPath, withinHighlightBudget } from '../highlightCode.js';
 
 const MAX_TEXT_BYTES = 2_000_000;
@@ -75,6 +76,15 @@ export function createViewer(ctx) {
   function render(path, bytes, opts = {}) {
     const size = bytes.length;
     dispose();
+
+    // Checked before the image/binary guards: an LFS-tracked file (even one with
+    // an image/binary extension) is committed as a tiny text pointer, so without
+    // this we'd try to render the pointer as the file and show garbage.
+    const pointer = parseLfsPointer(bytes);
+    if (pointer) {
+      renderLfsNotice(path, bytes, pointer, size);
+      return;
+    }
 
     if (isImagePath(path)) {
       renderImage(path, bytes, size);
@@ -232,6 +242,30 @@ export function createViewer(ctx) {
     const notice = el('div', 'notice');
     notice.appendChild(el('p', null, `Binary file — ${formatBytes(size)}.`));
     const btn = el('button', 'btn', 'View as text');
+    btn.type = 'button';
+    btn.addEventListener('click', () => renderText(path, bytes, size, { force: true }));
+    notice.appendChild(btn);
+    dom.viewerBody.replaceChildren(notice);
+  }
+
+  /**
+   * Git LFS pointer: the committed blob is metadata, not the real file (which
+   * lives on an LFS server this client never contacts). Show what we know and
+   * offer to view the raw pointer text rather than rendering it as the file.
+   */
+  function renderLfsNotice(path, bytes, pointer, size) {
+    dom.fileInfo.textContent = `Git LFS · ${formatBytes(pointer.size)}`;
+    const notice = el('div', 'notice');
+    notice.appendChild(
+      el(
+        'p',
+        null,
+        `Stored with Git LFS. The real file (${formatBytes(pointer.size)}) lives on an ` +
+          'LFS server and is not downloaded by this read-only client.'
+      )
+    );
+    notice.appendChild(el('p', 'lfs-oid', pointer.oid));
+    const btn = el('button', 'btn', 'View pointer');
     btn.type = 'button';
     btn.addEventListener('click', () => renderText(path, bytes, size, { force: true }));
     notice.appendChild(btn);
