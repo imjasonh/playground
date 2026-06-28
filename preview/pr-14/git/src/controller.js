@@ -23,6 +23,7 @@ import { cloneErrorMessage } from './cloneError.js';
 import { rememberToken } from './auth.js';
 import { storageEstimate, describeStorage, isLowOnStorage } from './quota.js';
 import { createDemoSource } from './demoRepo.js';
+import { parseHash, encodeHashState } from './hashState.js';
 
 // Every element id the UI looks up. Kept in one list so the static wiring test
 // can confirm each one exists in index.html.
@@ -53,6 +54,7 @@ export async function init() {
     activePath: null,
     branches: [],
     tags: [],
+    lines: null, // selected line range {start,end} in the active text file
     historyOpen: false,
     historyPath: null, // when set, the history panel shows this file's history
   });
@@ -86,6 +88,18 @@ export async function init() {
   ctx.browseRef = switchRef;
   ctx.showCommitDiff = showCommitDiff;
   ctx.showCompare = showCompare;
+  // The viewer calls this when a line number is clicked, so the selection
+  // becomes part of the shareable URL hash.
+  ctx.onLinesChange = (range) => {
+    store.setState({ lines: range });
+    syncHash();
+  };
+
+  // Hash/deep-link bookkeeping: the value (without '#') we last wrote or read,
+  // used to tell our own writes apart from real navigation; and a guard that
+  // suppresses interim writes while a deep link is being applied.
+  let lastHash = null;
+  let restoring = false;
 
   dom.proxyInput.value = DEFAULT_CORS_PROXY;
 
@@ -113,9 +127,12 @@ export async function init() {
   recent.renderPresets();
   recent.renderRecent();
 
-  if (location.hash === '#demo') {
-    openDemo();
-  }
+  // Restore a deep-linked view (repo + ref + file + lines) from the URL hash,
+  // and keep responding to later hash navigation (back/forward, shared links).
+  lastHash = location.hash.replace(/^#/, '');
+  window.addEventListener('hashchange', onHashChange);
+  const initialState = parseHash(location.hash);
+  if (initialState) applyDeepLink(initialState);
 
   window.gitBrowser = { openDemo, openSource, state, store };
 
@@ -165,7 +182,7 @@ export async function init() {
 
   function showStart() {
     loads.cancel();
-    store.setState({ source: null, activePath: null });
+    store.setState({ source: null, activePath: null, lines: null });
     viewer.dispose();
     dom.browserView.hidden = true;
     dom.repoBar.hidden = true;
@@ -173,6 +190,7 @@ export async function init() {
     document.body.classList.remove('repo-open');
     palette.close();
     recent.renderRecent();
+    syncHash();
   }
 
   function showBrowser() {
@@ -260,7 +278,7 @@ export async function init() {
   }
 
   async function openSource(source) {
-    store.setState({ source, activePath: null, expanded: new Set() });
+    store.setState({ source, activePath: null, lines: null, expanded: new Set() });
     viewer.dispose();
     history.reset();
     applyCapabilities(source);
@@ -271,6 +289,7 @@ export async function init() {
     await refreshRepo(load);
     if (!load.active) return;
     viewer.showPlaceholder();
+    syncHash();
   }
 
   /** Enable/disable repo-bar affordances based on what the source supports. */
@@ -400,7 +419,7 @@ export async function init() {
   }
 
   /** Switch the view to any ref (branch / tag / commit) and refresh. */
-  async function switchRef(ref) {
+  async function switchRef(ref, { quiet = false } = {}) {
     if (!state.source) return;
     const load = loads.begin();
     try {
@@ -412,10 +431,11 @@ export async function init() {
       if (state.activePath && state.fileSet.has(state.activePath)) {
         openFile(state.activePath);
       } else {
-        store.setState({ activePath: null });
+        store.setState({ activePath: null, lines: null });
         viewer.showPlaceholder();
+        syncHash();
       }
-      toast(`Switched to ${refLabel(ref)}`);
+      if (!quiet) toast(`Switched to ${refLabel(ref)}`);
     } catch (err) {
       if (load.active) toast(`Could not switch: ${err.message}`, 'error');
     }
@@ -459,13 +479,21 @@ export async function init() {
   /* Open a file (coordinates palette + tree + viewer)                 */
   /* ---------------------------------------------------------------- */
 
-  async function openFile(path) {
+  /**
+   * Open a file in the viewer.
+   *
+   * @param {string} path
+   * @param {{lines?: ?{start:number, end:number}}} [opts]  optional line target
+   */
+  async function openFile(path, opts = {}) {
     palette.close();
     const view = viewLoads.begin();
+    const lines = opts.lines || null;
 
     // reveal in tree
     store.update((s) => {
       s.activePath = path;
+      s.lines = lines;
       for (const dir of ancestors(path)) s.expanded.add(dir);
     });
     tree.renderSidebar();
@@ -481,7 +509,8 @@ export async function init() {
     }
 
     if (!view.active) return; // a newer open / diff superseded this one
-    viewer.render(path, bytes);
+    viewer.render(path, bytes, { lines });
+    syncHash();
   }
 
   /* ---------------------------------------------------------------- */
@@ -515,9 +544,11 @@ export async function init() {
       return;
     }
     palette.close();
-    // A diff isn't a file selection; clear the active file highlight.
-    store.setState({ activePath: null });
+    // A diff isn't a file selection; clear the active file highlight and drop
+    // the file/lines from the URL (diffs aren't deep-linked).
+    store.setState({ activePath: null, lines: null });
     tree.renderSidebar();
+    syncHash();
 
     const view = viewLoads.begin();
     viewer.showDiffLoading(title, subtitle);
@@ -549,6 +580,108 @@ export async function init() {
       return { binary: true };
     }
     return diffLines(decoder.decode(oldBytes), decoder.decode(newBytes));
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Deep links / URL hash                                             */
+  /* ---------------------------------------------------------------- */
+
+  /** The shareable view state for what's currently on screen, or null. */
+  function currentHashState() {
+    if (!state.source) return null;
+    const hashState = { repo: state.source.url || 'demo', ref: refValue(currentRef()) };
+    if (state.activePath) {
+      hashState.file = state.activePath;
+      if (state.lines) hashState.lines = state.lines;
+    }
+    return hashState;
+  }
+
+  /**
+   * Reflect the current view in `location.hash`. No-ops while a deep link is
+   * being applied (so intermediate steps don't pollute history) and whenever the
+   * URL already matches, so our own writes don't echo back through hashchange.
+   */
+  function syncHash({ replace = false } = {}) {
+    if (restoring) return;
+    const next = encodeHashState(currentHashState());
+    const inUrl = location.hash.replace(/^#/, '');
+    lastHash = next;
+    if (next === inUrl) return;
+    if (replace) {
+      const base = location.pathname + location.search;
+      history.replaceState(null, '', next ? `${base}#${next}` : base);
+    } else if (next) {
+      location.hash = next; // a normal navigation step (adds a history entry)
+    } else {
+      history.replaceState(null, '', location.pathname + location.search);
+    }
+  }
+
+  function onHashChange() {
+    const inUrl = location.hash.replace(/^#/, '');
+    if (inUrl === (lastHash || '')) return; // our own write, ignore
+    lastHash = inUrl;
+    applyDeepLink(parseHash(location.hash));
+  }
+
+  /** Open the repo/ref/file described by a parsed hash state. */
+  async function applyDeepLink(parsed) {
+    if (!parsed || restoring) return;
+    restoring = true;
+    try {
+      // 1. Make sure the right repository is open.
+      const openRepo = state.source ? state.source.url || 'demo' : null;
+      if (openRepo !== parsed.repo) {
+        const opened = await openForDeepLink(parsed.repo);
+        if (!opened) return; // couldn't open here (e.g. not cloned); URL prefilled
+      }
+      // 2. Switch to the requested ref if needed (quietly — no "Switched to…").
+      const targetRef = parsed.ref ? parseRefValue(parsed.ref) : null;
+      if (targetRef && refValue(currentRef()) !== refValue(targetRef)) {
+        await switchRef(targetRef, { quiet: true });
+      }
+      // 3. Open the file and apply the line selection.
+      if (parsed.file && state.fileSet.has(parsed.file)) {
+        await openFile(parsed.file, { lines: parsed.lines || null });
+      } else if (parsed.lines && viewer.currentTextPath() === parsed.file) {
+        viewer.applyLineSelection(parsed.lines, { scroll: true });
+      }
+    } finally {
+      restoring = false;
+      // Canonicalize the hash to what actually loaded (e.g. a missing file is
+      // dropped), but only when a repo is open so a prefilled URL stays linkable.
+      // Replace (don't push) so restoring doesn't leave a junk history entry.
+      if (state.source) syncHash({ replace: true });
+    }
+  }
+
+  /**
+   * Ensure the repo named by a deep link is the open source. Returns whether a
+   * source was opened; when the repo isn't available locally it prefills the
+   * clone form instead and returns false.
+   */
+  async function openForDeepLink(repo) {
+    if (repo === 'demo') {
+      await openSource(createDemoSource());
+      return true;
+    }
+    if (state.storage) {
+      const entry = state.storage.listRepos().find((r) => r.url === repo);
+      if (entry) {
+        try {
+          await openSource(await state.storage.open(entry.dir));
+          return true;
+        } catch {
+          /* fall through to prefilling the form */
+        }
+      }
+    }
+    // Not cloned in this browser: land on the start screen with the URL ready.
+    showStart();
+    dom.urlInput.value = repo;
+    toast('Clone this repository to open the linked file.');
+    return false;
   }
 
   /* ---------------------------------------------------------------- */

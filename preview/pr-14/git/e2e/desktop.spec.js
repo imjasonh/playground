@@ -240,6 +240,48 @@ test('returns focus to the trigger when the palette closes', async ({ page }) =>
 });
 
 /* ------------------------------------------------------------------ */
+/* Deep-linkable state (repo + ref + file + lines in the URL hash)     */
+/* ------------------------------------------------------------------ */
+
+test('encodes the open file and selected lines in the URL hash', async ({ page }) => {
+  await loadDemo(page);
+  await page.locator('.tree-row', { hasText: 'README.md' }).click();
+  await expect(page.locator('#file-path')).toContainText('README.md');
+  await expect(page).toHaveURL(/file=README\.md/);
+
+  // Clicking a line number selects it, highlights it, and records it in the URL.
+  await page.locator('.code-view .gutter').click({ position: { x: 6, y: 6 } });
+  await expect(page.locator('.code-view .line-highlight')).toBeVisible();
+  await expect(page).toHaveURL(/lines=1/);
+});
+
+test('reflects the current ref in the hash when switching branches', async ({ page }) => {
+  await loadDemo(page);
+  await page.selectOption('#branch-select', { label: 'feature/dark-mode' });
+  await expect(page.locator('#repo-meta')).toContainText('feature/dark-mode');
+  await expect(page).toHaveURL(/ref=branch:feature\/dark-mode/);
+});
+
+test('restores a deep-linked file and line range on load', async ({ page }) => {
+  await page.goto('/#repo=demo&ref=branch:main&file=src/storage.js&lines=2-4');
+  // The demo repo opens, the linked file is shown, and the lines are highlighted.
+  await expect(page.locator('#browser-view')).toBeVisible();
+  await expect(page.locator('#file-path')).toContainText('storage.js');
+  await expect(page.locator('.code-view .line-highlight')).toBeVisible();
+  // The deep link survives the round-trip.
+  await expect(page).toHaveURL(/file=src\/storage\.js/);
+  await expect(page).toHaveURL(/lines=2-4/);
+});
+
+test('restores a deep-linked non-default branch on load', async ({ page }) => {
+  await page.goto('/#repo=demo&ref=branch:feature/dark-mode&file=src/theme.js');
+  await expect(page.locator('#browser-view')).toBeVisible();
+  await expect(page.locator('#repo-meta')).toContainText('feature/dark-mode');
+  await expect(page.locator('#file-path')).toContainText('theme.js');
+  await expect(page.locator('.code-view .code')).toContainText('initTheme');
+});
+
+/* ------------------------------------------------------------------ */
 /* Virtualized large repository (windowed tree / filter / palette)     */
 /* ------------------------------------------------------------------ */
 

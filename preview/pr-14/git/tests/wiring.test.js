@@ -72,6 +72,8 @@ describe('module imports', () => {
     ['storageEstimate', 'quota.js'],
     ['rememberToken', 'auth.js'],
     ['makeOnAuth', 'auth.js'],
+    ['parseHash', 'hashState.js'],
+    ['encodeHashState', 'hashState.js'],
   ];
 
   test.each(requiredSymbols)('some module imports %s from %s', (symbol, mod) => {

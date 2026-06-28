@@ -24,6 +24,9 @@ export function createViewer(ctx) {
   const { dom } = ctx;
   const decoder = new TextDecoder('utf-8', { fatal: false });
   let imageUrl = null;
+  // Live handle on the currently-rendered text file, so line linking can
+  // re-position the highlight without re-rendering the whole file.
+  let text = null;
 
   /** Free the current image object URL, if any. */
   function dispose() {
@@ -31,6 +34,7 @@ export function createViewer(ctx) {
       URL.revokeObjectURL(imageUrl);
       imageUrl = null;
     }
+    text = null;
   }
 
   function showPlaceholder() {
@@ -42,6 +46,7 @@ export function createViewer(ctx) {
 
   /** Reveal the header and show a loading state while bytes are fetched. */
   function beginLoading(path) {
+    text = null;
     dom.viewerHead.hidden = false;
     renderFilePath(path);
     if (dom.fileHistoryBtn) dom.fileHistoryBtn.hidden = false;
@@ -50,12 +55,19 @@ export function createViewer(ctx) {
   }
 
   function showReadError(message) {
+    text = null;
     dom.viewerBody.replaceChildren(el('div', 'notice', `Could not read file: ${message}`));
     dom.fileInfo.textContent = '';
   }
 
-  /** Render fetched bytes, choosing image / binary / text presentation. */
-  function render(path, bytes) {
+  /**
+   * Render fetched bytes, choosing image / binary / text presentation.
+   *
+   * @param {string} path
+   * @param {Uint8Array} bytes
+   * @param {{lines?: {start:number, end:number}}} [opts]  initial line selection
+   */
+  function render(path, bytes, opts = {}) {
     const size = bytes.length;
     dispose();
 
@@ -70,7 +82,7 @@ export function createViewer(ctx) {
       return;
     }
 
-    renderText(path, bytes, size);
+    renderText(path, bytes, size, { lines: opts.lines });
   }
 
   function renderFilePath(path) {
@@ -82,20 +94,21 @@ export function createViewer(ctx) {
     dom.filePath.appendChild(el('span', 'name', basename(path)));
   }
 
-  function renderText(path, bytes, size, { force = false } = {}) {
-    const text = decoder.decode(bytes);
-    let lines = text.split('\n');
-    if (lines.length > 1 && lines[lines.length - 1] === '' && text.endsWith('\n')) {
+  function renderText(path, bytes, size, { force = false, lines: target = null } = {}) {
+    const decoded = decoder.decode(bytes);
+    let lines = decoded.split('\n');
+    if (lines.length > 1 && lines[lines.length - 1] === '' && decoded.endsWith('\n')) {
       lines = lines.slice(0, -1);
     }
 
     if (!force && (size > MAX_TEXT_BYTES || lines.length > MAX_TEXT_LINES)) {
+      text = null;
       dom.fileInfo.textContent = `${languageForPath(path)} · ${formatBytes(size)}`;
       const notice = el('div', 'notice');
       notice.appendChild(el('p', null, `Large file (${formatBytes(size)}, ${lines.length} lines).`));
       const btn = el('button', 'btn', 'Show anyway');
       btn.type = 'button';
-      btn.addEventListener('click', () => renderText(path, bytes, size, { force: true }));
+      btn.addEventListener('click', () => renderText(path, bytes, size, { force: true, lines: target }));
       notice.appendChild(btn);
       dom.viewerBody.replaceChildren(notice);
       return;
@@ -105,12 +118,72 @@ export function createViewer(ctx) {
       `${languageForPath(path)} · ${lines.length} lines · ${formatBytes(size)}`;
 
     const view = el('div', 'code-view');
+    const highlight = el('div', 'line-highlight');
+    highlight.hidden = true;
+    highlight.setAttribute('aria-hidden', 'true');
     const gutter = el('div', 'gutter');
     gutter.textContent = lines.map((_, i) => i + 1).join('\n');
+    gutter.title = 'Click a line number to link to it (Shift-click for a range)';
     const code = el('div', 'code');
     code.textContent = lines.join('\n');
-    view.append(gutter, code);
+    // Absolute overlay first so it sits behind the (positioned) code text.
+    view.append(highlight, gutter, code);
     dom.viewerBody.replaceChildren(view);
+
+    text = { path, count: lines.length, view, gutter, code, highlight, range: null };
+    gutter.addEventListener('click', onGutterClick);
+    if (target) applyLineSelection(target, { scroll: true, notify: false });
+  }
+
+  /* ---- line linking (highlight + click-to-select) ---------------------- */
+
+  /** Per-line height and top padding of the code column, in CSS pixels. */
+  function lineMetrics() {
+    const cs = getComputedStyle(text.code);
+    return { lineH: parseFloat(cs.lineHeight) || 0, padTop: parseFloat(cs.paddingTop) || 0 };
+  }
+
+  function onGutterClick(event) {
+    if (!text) return;
+    const { lineH, padTop } = lineMetrics();
+    if (!lineH) return;
+    const clicked = Math.floor((event.offsetY - padTop) / lineH) + 1;
+    const line = Math.max(1, Math.min(clicked, text.count));
+    // Shift-click extends from the existing anchor into a range.
+    const anchor = event.shiftKey && text.range ? text.range.start : line;
+    const range = { start: Math.min(anchor, line), end: Math.max(anchor, line) };
+    applyLineSelection(range, { scroll: false, notify: true });
+  }
+
+  /**
+   * Highlight a line range, optionally scroll it into view, and optionally
+   * notify the controller so it can sync the URL hash.
+   *
+   * @param {{start:number, end:number}} range
+   * @param {{scroll?: boolean, notify?: boolean}} [opts]
+   */
+  function applyLineSelection(range, { scroll = false, notify = false } = {}) {
+    if (!text) return;
+    const start = Math.max(1, Math.min(range.start, text.count));
+    const end = Math.max(start, Math.min(range.end, text.count));
+    text.range = { start, end };
+
+    const { lineH, padTop } = lineMetrics();
+    if (lineH) {
+      text.highlight.style.top = `${padTop + (start - 1) * lineH}px`;
+      text.highlight.style.height = `${(end - start + 1) * lineH}px`;
+      text.highlight.hidden = false;
+      if (scroll) {
+        // Leave a little context above the target line.
+        dom.viewerBody.scrollTop = Math.max(0, padTop + (start - 1) * lineH - lineH * 3);
+      }
+    }
+    if (notify && typeof ctx.onLinesChange === 'function') ctx.onLinesChange(text.range);
+  }
+
+  /** The path of the text file currently shown, or null. */
+  function currentTextPath() {
+    return text ? text.path : null;
   }
 
   function renderImage(path, bytes, size) {
@@ -142,6 +215,7 @@ export function createViewer(ctx) {
 
   function diffHeader(title, subtitle) {
     dispose();
+    text = null;
     dom.viewerHead.hidden = false;
     dom.filePath.replaceChildren(el('span', 'name', title));
     if (dom.fileHistoryBtn) dom.fileHistoryBtn.hidden = true; // a diff isn't a file
@@ -254,6 +328,8 @@ export function createViewer(ctx) {
     showPlaceholder,
     showDiffLoading,
     renderDiff,
+    applyLineSelection,
+    currentTextPath,
     dispose,
   };
 }

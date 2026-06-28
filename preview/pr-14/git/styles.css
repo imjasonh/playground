@@ -653,6 +653,17 @@ kbd {
   font-size: 0.82rem;
   line-height: 1.55;
   min-height: 100%;
+  position: relative;
+}
+/* Linked-line highlight: an absolute band behind the (positioned) code text.
+   The sticky gutter, later in source order, paints over it in its own column. */
+.line-highlight {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: rgba(187, 128, 9, 0.18);
 }
 .gutter {
   flex: 0 0 auto;
@@ -665,6 +676,8 @@ kbd {
   white-space: pre;
   position: sticky;
   left: 0;
+  z-index: 1;
+  cursor: pointer;
 }
 .code {
   padding: 0.6rem 1rem;
@@ -672,6 +685,8 @@ kbd {
   tab-size: 2;
   flex: 1 1 auto;
   color: var(--fg);
+  position: relative;
+  z-index: 1;
 }
 .notice {
   padding: 2rem;
