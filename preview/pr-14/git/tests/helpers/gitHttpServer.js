@@ -71,6 +71,8 @@ export function createServedRepo() {
   writeFileSync(join(work, 'src', 'index.js'), 'export default 1;\n');
   git(work, ['add', '.']);
   git(work, ['commit', '-q', '-m', 'Initial commit']);
+  // An annotated tag on the initial commit, so tag browsing is observable.
+  git(work, ['tag', '-a', 'v1.0', '-m', 'release 1.0']);
 
   // A second branch with an extra file so branch switching is observable.
   git(work, ['checkout', '-q', '-b', 'dev']);

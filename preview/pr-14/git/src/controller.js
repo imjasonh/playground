@@ -13,6 +13,9 @@ import { createHistory } from './ui/history.js';
 import { createRecent } from './ui/recent.js';
 import { buildFileTree } from './fileTree.js';
 import { createStore, createLoadController } from './store.js';
+import { capabilitiesOf, refLabel, refValue, parseRefValue } from './repoSource.js';
+import { diffLines } from './diff.js';
+import { isBinaryExtension, looksBinary } from './language.js';
 import { ancestors } from './pathUtils.js';
 import { parseRepoUrl, DEFAULT_CORS_PROXY } from './repoUrl.js';
 import { commitSummary, shortOid } from './format.js';
@@ -27,8 +30,8 @@ const DOM_IDS = [
   'clone-btn', 'demo-btn', 'preset-list', 'clone-error', 'clone-progress', 'progress-fill',
   'progress-label', 'recent', 'recent-list', 'browser-view', 'tree-filter',
   'file-tree', 'flat-results', 'tree-empty', 'viewer-head', 'file-path',
-  'file-info', 'viewer-body', 'viewer-placeholder', 'history-panel',
-  'history-branch', 'commit-list', 'palette', 'palette-input',
+  'file-info', 'file-history-btn', 'viewer-body', 'viewer-placeholder', 'history-panel',
+  'history-branch', 'history-compare', 'compare-select', 'commit-list', 'palette', 'palette-input',
   'palette-results', 'palette-empty', 'toast',
 ];
 
@@ -46,7 +49,9 @@ export async function init() {
     expanded: new Set(),
     activePath: null,
     branches: [],
+    tags: [],
     historyOpen: false,
+    historyPath: null, // when set, the history panel shows this file's history
   });
   // `state` is the single live read view; every write flows through the store.
   const state = store.getState();
@@ -56,6 +61,10 @@ export async function init() {
   // after every await, so a slower in-flight load can never overwrite the view
   // produced by a newer one.
   const loads = createLoadController();
+  // A second, finer-grained load controller for the viewer pane alone, so
+  // opening a file and showing a diff supersede each other cleanly.
+  const viewLoads = createLoadController();
+  const decoder = new TextDecoder('utf-8', { fatal: false });
 
   // The shared context handed to each UI module. Cross-module actions are
   // assigned below, after the modules exist; modules only call them at
@@ -71,6 +80,9 @@ export async function init() {
   ctx.openFile = openFile;
   ctx.openSource = openSource;
   ctx.startClone = startClone;
+  ctx.browseRef = switchRef;
+  ctx.showCommitDiff = showCommitDiff;
+  ctx.showCompare = showCompare;
 
   dom.proxyInput.value = DEFAULT_CORS_PROXY;
 
@@ -95,9 +107,12 @@ export async function init() {
     dom.cloneForm.addEventListener('submit', onCloneSubmit);
     dom.demoBtn.addEventListener('click', openDemo);
     dom.closeBtn.addEventListener('click', showStart);
-    dom.branchSelect.addEventListener('change', onBranchChange);
+    dom.branchSelect.addEventListener('change', onRefChange);
     dom.updateBtn.addEventListener('click', onUpdate);
     dom.historyBtn.addEventListener('click', () => history.toggle());
+    dom.fileHistoryBtn.addEventListener('click', () => {
+      if (state.activePath) history.showFile(state.activePath);
+    });
     dom.findBtn.addEventListener('click', () => palette.open());
     // Debounced: the tree filter rescans every file on each keystroke, which is
     // wasted work on large repos when someone is typing quickly.
@@ -228,6 +243,7 @@ export async function init() {
     store.setState({ source, activePath: null, expanded: new Set() });
     viewer.dispose();
     history.reset();
+    applyCapabilities(source);
 
     const load = loads.begin();
     showBrowser();
@@ -237,15 +253,27 @@ export async function init() {
     viewer.showPlaceholder();
   }
 
+  /** Enable/disable repo-bar affordances based on what the source supports. */
+  function applyCapabilities(source) {
+    const caps = capabilitiesOf(source);
+    dom.updateBtn.disabled = !caps.fetch;
+    dom.updateBtn.title = caps.fetch
+      ? 'Fetch the latest commits from the remote'
+      : 'This source has no remote to fetch from';
+  }
+
   /** Reload branch list, files, and header for the current branch. */
   async function refreshRepo(load) {
     const source = state.source;
     dom.repoName.textContent = source.fullName;
 
-    const branches = await source.listBranches();
+    const [branches, tags] = await Promise.all([
+      source.listBranches(),
+      typeof source.listTags === 'function' ? source.listTags().catch(() => []) : [],
+    ]);
     if (!load.active) return;
-    store.setState({ branches });
-    renderBranchSelect();
+    store.setState({ branches, tags });
+    renderRefPicker();
 
     await reloadFiles(load);
     if (!load.active) return;
@@ -293,41 +321,83 @@ export async function init() {
       return;
     }
     dom.repoMeta.textContent =
-      `${state.source.getCurrentBranch()} · ${shortOid(head.oid)} · ` +
+      `${refLabel(currentRef())} · ${shortOid(head.oid)} · ` +
       `${commitSummary(head.message)} · ${state.files.length} files`;
   }
 
-  function renderBranchSelect() {
-    const select = dom.branchSelect;
-    select.replaceChildren();
-    const current = state.source.getCurrentBranch();
-    for (const branch of state.branches) {
-      const option = el('option', null, branch.name);
-      option.value = branch.name;
-      if (branch.name === current) option.selected = true;
-      select.appendChild(option);
-    }
-    select.disabled = state.branches.length <= 1;
+  /** The current ref descriptor, tolerating sources without getCurrentRef. */
+  function currentRef() {
+    const source = state.source;
+    if (source && typeof source.getCurrentRef === 'function') return source.getCurrentRef();
+    return { type: 'branch', name: source ? source.getCurrentBranch() : '' };
   }
 
-  async function onBranchChange() {
-    const name = dom.branchSelect.value;
+  /** Render the branch/tag/commit picker reflecting the current ref. */
+  function renderRefPicker() {
+    const select = dom.branchSelect;
+    select.replaceChildren();
+    const current = currentRef();
+    const currentValue = refValue(current);
+
+    appendRefGroup(select, 'Branches', state.branches.map((b) => ['branch', b.name, b.name]));
+    appendRefGroup(select, 'Tags', state.tags.map((t) => ['tag', t, t]));
+
+    // Surface whatever ref is being viewed even when it isn't a listed branch
+    // or tag (a detached commit, or a tag/branch the source didn't enumerate).
+    const known = [...select.options].some((o) => o.value === currentValue);
+    if (!known && current.name) {
+      appendRefGroup(select, 'Viewing', [[current.type, current.name, refLabel(current)]]);
+    }
+
+    select.value = currentValue;
+    const switchable = state.branches.length + state.tags.length;
+    // Keep it interactive while detached so you can get back to a branch.
+    select.disabled = switchable <= 1 && known;
+  }
+
+  function appendRefGroup(select, label, entries) {
+    if (!entries.length) return;
+    const group = el('optgroup');
+    group.label = label;
+    for (const [type, name, text] of entries) {
+      const option = el('option', null, text);
+      option.value = refValue({ type, name });
+      group.appendChild(option);
+    }
+    select.appendChild(group);
+  }
+
+  function onRefChange() {
+    switchRef(parseRefValue(dom.branchSelect.value));
+  }
+
+  /** Apply a ref via setRef when supported, else fall back to setBranch. */
+  function applyRef(ref) {
+    const source = state.source;
+    if (typeof source.setRef === 'function') return source.setRef(ref);
+    if (ref.type === 'branch') return source.setBranch(ref.name);
+    return Promise.reject(new Error('This source cannot browse tags or commits.'));
+  }
+
+  /** Switch the view to any ref (branch / tag / commit) and refresh. */
+  async function switchRef(ref) {
+    if (!state.source) return;
     const load = loads.begin();
     try {
-      await state.source.setBranch(name);
+      await applyRef(ref);
       await refreshRepo(load);
       if (!load.active) return; // a newer switch/update superseded us
 
-      // Re-open the active file on the new branch if it still exists.
+      // Re-open the active file on the new ref if it still exists.
       if (state.activePath && state.fileSet.has(state.activePath)) {
         openFile(state.activePath);
       } else {
         store.setState({ activePath: null });
         viewer.showPlaceholder();
       }
-      toast(`Switched to ${name}`);
+      toast(`Switched to ${refLabel(ref)}`);
     } catch (err) {
-      if (load.active) toast(`Could not switch branch: ${err.message}`, 'error');
+      if (load.active) toast(`Could not switch: ${err.message}`, 'error');
     }
   }
 
@@ -371,6 +441,7 @@ export async function init() {
 
   async function openFile(path) {
     palette.close();
+    const view = viewLoads.begin();
 
     // reveal in tree
     store.update((s) => {
@@ -385,12 +456,79 @@ export async function init() {
     try {
       bytes = await state.source.readFile(path);
     } catch (err) {
-      viewer.showReadError(err.message);
+      if (view.active) viewer.showReadError(err.message);
       return;
     }
 
-    if (state.activePath !== path) return; // a newer open superseded this one
+    if (!view.active) return; // a newer open / diff superseded this one
     viewer.render(path, bytes);
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Diff view                                                         */
+  /* ---------------------------------------------------------------- */
+
+  /** Show a commit's changes (against its first parent, or the empty tree). */
+  function showCommitDiff(commit) {
+    const parent = commit.parent && commit.parent[0];
+    return showDiff({
+      title: `Changes in ${shortOid(commit.oid)}`,
+      subtitle: commitSummary(commit.message),
+      baseRef: parent ? { type: 'commit', name: parent } : null,
+      headRef: { type: 'commit', name: commit.oid },
+    });
+  }
+
+  /** Compare two refs (branch/tag/commit) directly. */
+  function showCompare(baseRef, headRef) {
+    return showDiff({
+      title: `Compare ${refLabel(baseRef)} \u2192 ${refLabel(headRef)}`,
+      subtitle: '',
+      baseRef,
+      headRef,
+    });
+  }
+
+  async function showDiff({ title, subtitle, baseRef, headRef }) {
+    if (!state.source || typeof state.source.changedFiles !== 'function') {
+      toast('Diffs are not supported for this source.', 'error');
+      return;
+    }
+    palette.close();
+    // A diff isn't a file selection; clear the active file highlight.
+    store.setState({ activePath: null });
+    tree.renderSidebar();
+
+    const view = viewLoads.begin();
+    viewer.showDiffLoading(title, subtitle);
+
+    let changes;
+    try {
+      changes = await state.source.changedFiles(baseRef, headRef);
+    } catch (err) {
+      if (view.active) viewer.showReadError(err.message);
+      return;
+    }
+    if (!view.active) return;
+
+    viewer.renderDiff({
+      title,
+      subtitle,
+      changes,
+      loadFileDiff: (change) => loadFileDiff(change, baseRef, headRef),
+    });
+  }
+
+  /** Read both sides of a changed file and produce its line diff. */
+  async function loadFileDiff(change, baseRef, headRef) {
+    let oldBytes = new Uint8Array(0);
+    let newBytes = new Uint8Array(0);
+    if (change.status !== 'added') oldBytes = await state.source.readFile(change.path, baseRef);
+    if (change.status !== 'removed') newBytes = await state.source.readFile(change.path, headRef);
+    if (isBinaryExtension(change.path) || looksBinary(oldBytes) || looksBinary(newBytes)) {
+      return { binary: true };
+    }
+    return diffLines(decoder.decode(oldBytes), decoder.decode(newBytes));
   }
 
   /* ---------------------------------------------------------------- */

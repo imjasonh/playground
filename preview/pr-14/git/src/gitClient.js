@@ -16,6 +16,8 @@ const VENDOR = {
   http: 'vendor/isomorphic-git/http-web.umd.js',
 };
 
+import { normalizeRef } from './repoSource.js';
+
 const FS_NAME = 'git-browser-fs';
 const REGISTRY_KEY = 'git-browser:repos';
 const REGISTRY_VERSION = 1;
@@ -151,6 +153,7 @@ function toCommit(entry) {
     message: c.message || '',
     author: { name: author.name || '', email: author.email || '' },
     timestamp: typeof author.timestamp === 'number' ? author.timestamp : 0,
+    parent: Array.isArray(c.parent) ? c.parent : [],
   };
 }
 
@@ -171,8 +174,13 @@ export class GitRepoSource {
     // instead of accidentally widening it (all branches / full history).
     this._singleBranch = Boolean(singleBranch);
     this._depth = Number.isFinite(depth) && depth > 0 ? depth : 0;
-    this.readOnly = true;
+    // A real clone is readable and can fetch from its remote; writing/pushing
+    // is not implemented yet, so it stays read-only.
+    this.capabilities = { read: true, fetch: true, write: false, push: false };
+    this.readOnly = !this.capabilities.write && !this.capabilities.push;
+    // The current ref is generalized: a branch, a tag, or a detached commit.
     this._current = 'HEAD';
+    this._refType = 'branch';
     this._oidCache = new Map();
   }
 
@@ -183,7 +191,10 @@ export class GitRepoSource {
         dir: this._dir,
         fullname: false,
       });
-      if (branch) this._current = branch;
+      if (branch) {
+        this._current = branch;
+        this._refType = 'branch';
+      }
     } catch {
       /* keep HEAD */
     }
@@ -192,6 +203,10 @@ export class GitRepoSource {
 
   getCurrentBranch() {
     return this._current;
+  }
+
+  getCurrentRef() {
+    return { type: this._refType, name: this._current };
   }
 
   async listBranches() {
@@ -211,23 +226,72 @@ export class GitRepoSource {
       .map((name) => ({ name, current: name === this._current }));
   }
 
+  async listTags() {
+    if (typeof this._git.listTags !== 'function') return [];
+    try {
+      const tags = await this._git.listTags({ fs: this._fs, dir: this._dir });
+      return tags.filter((name) => name !== 'HEAD').sort((a, b) => a.localeCompare(b));
+    } catch {
+      return [];
+    }
+  }
+
   async setBranch(name) {
     this._current = name;
+    this._refType = 'branch';
     this._oidCache.clear();
   }
 
+  /** Switch to any ref: a branch, a tag, or a detached commit (by oid). */
+  async setRef(ref) {
+    const r = normalizeRef(ref);
+    this._current = r.name;
+    this._refType = r.type;
+    this._oidCache.clear();
+  }
+
+  /** Ordered resolveRef candidates for a ref name of a given type. */
+  _candidatesFor(name, type) {
+    // 'HEAD' tracks the checked-out commit directly.
+    if (name === 'HEAD') return ['HEAD'];
+    if (type === 'tag') return [`refs/tags/${name}`, name];
+    // branch: prefer the remote-tracking ref. `fetch` advances
+    // refs/remotes/origin/* but never the local refs/heads/* of a read-only
+    // clone, so resolving the local head first would make "Pull / Update"
+    // silently show stale trees.
+    return [`refs/remotes/origin/${name}`, `refs/heads/${name}`, name];
+  }
+
   async _resolveOid(ref) {
-    const key = ref || this._current;
+    let type;
+    let name;
+    if (ref == null) {
+      type = this._refType;
+      name = this._current;
+    } else {
+      const r = normalizeRef(ref);
+      type = r.type;
+      name = r.name;
+    }
+    const key = `${type}:${name}`;
     if (this._oidCache.has(key)) return this._oidCache.get(key);
 
-    // Prefer the remote-tracking ref. `fetch` advances refs/remotes/origin/*
-    // but never the local refs/heads/* of a read-only clone, so resolving the
-    // local head first would make "Pull / Update" silently show stale trees.
-    // 'HEAD' is resolved as-is (it tracks the checked-out commit directly).
-    const candidates =
-      key === 'HEAD'
-        ? ['HEAD']
-        : [`refs/remotes/origin/${key}`, `refs/heads/${key}`, key];
+    // A commit ref *is* an oid; expand short oids when the engine supports it,
+    // otherwise trust it as a full oid.
+    if (type === 'commit') {
+      let oid = name;
+      if (typeof this._git.expandOid === 'function') {
+        try {
+          oid = await this._git.expandOid({ fs: this._fs, dir: this._dir, oid: name });
+        } catch {
+          /* assume a full oid */
+        }
+      }
+      this._oidCache.set(key, oid);
+      return oid;
+    }
+
+    const candidates = this._candidatesFor(name, type);
     let resolved = null;
     let lastErr = null;
     for (const candidate of candidates) {
@@ -243,7 +307,7 @@ export class GitRepoSource {
       }
     }
     if (!resolved) {
-      throw lastErr || new Error(`Could not resolve ref: ${key}`);
+      throw lastErr || new Error(`Could not resolve ref: ${name}`);
     }
     this._oidCache.set(key, resolved);
     return resolved;
@@ -281,6 +345,82 @@ export class GitRepoSource {
     return entries.map(toCommit);
   }
 
+  /** Commits that changed a given file (isomorphic-git's filepath-filtered log). */
+  async fileLog(path, limit = 50, ref) {
+    const oid = await this._resolveOid(ref);
+    const entries = await this._git.log({
+      fs: this._fs,
+      dir: this._dir,
+      ref: oid,
+      depth: limit,
+      filepath: path,
+      // Don't throw if the file is absent from the tip commit; just report the
+      // commits where it did exist/change.
+      force: true,
+    });
+    return entries.map(toCommit);
+  }
+
+  /**
+   * Files that differ between two refs by walking both trees. A null baseRef
+   * compares against the empty tree (every blob is an addition), which is what
+   * the root commit's diff needs.
+   */
+  async changedFiles(baseRef, headRef) {
+    const { TREE, walk } = this._git;
+    const headOid = await this._resolveOid(headRef);
+    const trees = [];
+    let baseOid = null;
+    if (baseRef != null) {
+      baseOid = await this._resolveOid(baseRef);
+      trees.push(TREE({ ref: baseOid }));
+    }
+    trees.push(TREE({ ref: headOid }));
+    const baseIdx = baseRef != null ? 0 : -1;
+    const headIdx = trees.length - 1;
+
+    const changes = await walk({
+      fs: this._fs,
+      dir: this._dir,
+      trees,
+      map: async (filepath, entries) => {
+        if (filepath === '.') return undefined;
+        const a = baseIdx >= 0 ? entries[baseIdx] : null;
+        const b = entries[headIdx];
+        const [aType, bType] = await Promise.all([
+          a ? a.type() : null,
+          b ? b.type() : null,
+        ]);
+        // Only compare blobs; let walk descend into directories on its own.
+        if (aType === 'tree' || bType === 'tree') return undefined;
+        const [aOid, bOid] = await Promise.all([
+          a ? a.oid() : null,
+          b ? b.oid() : null,
+        ]);
+        if (aOid === bOid) return undefined;
+        let status;
+        if (!aOid) status = 'added';
+        else if (!bOid) status = 'removed';
+        else status = 'modified';
+        return { path: filepath, status, oldOid: aOid, newOid: bOid };
+      },
+      // Flatten the per-node results, dropping the undefined (unchanged) ones.
+      reduce: async (parent, children) => {
+        const flat = [];
+        for (const child of children) {
+          if (Array.isArray(child)) flat.push(...child);
+          else if (child) flat.push(child);
+        }
+        if (parent) flat.push(parent);
+        return flat;
+      },
+    });
+
+    const list = Array.isArray(changes) ? changes : [];
+    list.sort((x, y) => (x.path < y.path ? -1 : x.path > y.path ? 1 : 0));
+    return list;
+  }
+
   /**
    * Fetch from origin using the same scope the repo was cloned with, then
    * report whether the current branch's tip actually moved.
@@ -288,12 +428,16 @@ export class GitRepoSource {
    * @returns {Promise<{updated: boolean, changed: boolean, oldOid: ?string, newOid: ?string}>}
    */
   async update(onProgress) {
+    // Only a branch checkout has a remote branch to narrow a single-branch
+    // fetch to; on a tag or detached commit we fetch the cloned scope and the
+    // tip simply won't move.
+    const onBranch = this._refType === 'branch';
     const branch = this._current;
     let oldOid = null;
     try {
-      oldOid = await this._resolveOid(branch);
+      oldOid = await this._resolveOid();
     } catch {
-      /* branch may not resolve yet; treat as unknown */
+      /* ref may not resolve yet; treat as unknown */
     }
 
     await this._git.fetch({
@@ -301,7 +445,7 @@ export class GitRepoSource {
       http: this._http,
       dir: this._dir,
       corsProxy: this._corsProxy,
-      ref: this._singleBranch ? branch : undefined,
+      ref: this._singleBranch && onBranch ? branch : undefined,
       singleBranch: this._singleBranch,
       depth: this._depth > 0 ? this._depth : undefined,
       tags: false,
@@ -313,7 +457,7 @@ export class GitRepoSource {
     this._oidCache.clear();
     let newOid = null;
     try {
-      newOid = await this._resolveOid(branch);
+      newOid = await this._resolveOid();
     } catch {
       /* ignore */
     }

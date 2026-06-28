@@ -26,9 +26,9 @@
           <span class="repo-meta" id="repo-meta"></span>
         </div>
         <div class="repo-actions">
-          <label class="branch-picker" title="Switch branch">
+          <label class="branch-picker" title="Switch branch, tag, or commit">
             <span class="branch-glyph" aria-hidden="true">&#9095;</span>
-            <select id="branch-select" aria-label="Branch"></select>
+            <select id="branch-select" aria-label="Branch, tag, or commit"></select>
           </label>
           <button id="find-btn" class="btn" type="button" title="Find files (Ctrl / Cmd + P)">
             Find files
@@ -153,7 +153,12 @@
         <section class="viewer">
           <div class="viewer-head" id="viewer-head" hidden>
             <span class="file-path" id="file-path"></span>
-            <span class="file-info" id="file-info"></span>
+            <div class="viewer-head-actions">
+              <span class="file-info" id="file-info"></span>
+              <button id="file-history-btn" class="btn ghost small" type="button" title="Show this file's commit history">
+                History
+              </button>
+            </div>
           </div>
           <div class="viewer-body" id="viewer-body">
             <div class="placeholder" id="viewer-placeholder">
@@ -167,8 +172,14 @@
 
         <aside class="history-panel" id="history-panel" hidden aria-label="Commit history">
           <div class="history-head">
-            <h3>History</h3>
-            <span id="history-branch" class="muted"></span>
+            <div class="history-head-row">
+              <h3>History</h3>
+              <span id="history-branch" class="muted"></span>
+            </div>
+            <label class="history-compare" id="history-compare">
+              <span class="muted">Compare with</span>
+              <select id="compare-select" aria-label="Compare the current ref with another"></select>
+            </label>
           </div>
           <ul class="commit-list" id="commit-list"></ul>
         </aside>

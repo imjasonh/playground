@@ -590,11 +590,22 @@ kbd {
 .file-path .dir {
   color: var(--fg-faint);
 }
+.viewer-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex: 0 0 auto;
+}
 .file-info {
   font-size: 0.74rem;
   color: var(--fg-faint);
   white-space: nowrap;
   flex: 0 0 auto;
+}
+.btn.small {
+  height: 26px;
+  padding: 0 0.6rem;
+  font-size: 0.76rem;
 }
 .viewer-body {
   flex: 1 1 auto;
@@ -685,9 +696,32 @@ kbd {
   padding: 0.85rem 1rem;
   border-bottom: 1px solid var(--border-soft);
 }
+.history-head-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
 .history-head h3 {
   margin: 0;
   font-size: 0.95rem;
+}
+.history-compare {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.55rem;
+  font-size: 0.74rem;
+}
+.history-compare select {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.2rem 0.4rem;
+  font: inherit;
+  font-size: 0.76rem;
 }
 .commit-list {
   list-style: none;
@@ -716,6 +750,130 @@ kbd {
 .commit-oid {
   font-family: var(--mono);
   color: var(--accent);
+}
+.commit-actions {
+  margin-top: 0.4rem;
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.commit-action {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--bg-elev-2);
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 0.72rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.commit-action:hover {
+  border-color: var(--accent);
+  color: #cbe0ff;
+  background: var(--accent-soft);
+}
+
+/* ---------- Diff view ---------- */
+.diff-list {
+  display: flex;
+  flex-direction: column;
+}
+.diff-file {
+  border-bottom: 1px solid var(--border-soft);
+}
+.diff-file-head {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  text-align: left;
+  appearance: none;
+  border: 0;
+  background: var(--bg-elev);
+  color: var(--fg);
+  font: inherit;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+}
+.diff-file-head:hover {
+  background: var(--bg-elev-2);
+}
+.diff-file-head::before {
+  content: '\25B8'; /* ▸ */
+  color: var(--fg-faint);
+  transition: transform 0.12s ease;
+}
+.diff-file-head.open::before {
+  transform: rotate(90deg);
+}
+.diff-file-path {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.diff-badge {
+  flex: 0 0 auto;
+  width: 1.2rem;
+  height: 1.2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #07120a;
+}
+.diff-badge.added {
+  background: #3fb950;
+}
+.diff-badge.removed {
+  background: #f85149;
+  color: #1a0606;
+}
+.diff-badge.modified {
+  background: #d29922;
+}
+.diff-file-body {
+  background: var(--bg);
+}
+.diff-rows {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  overflow-x: auto;
+}
+.diff-row {
+  display: flex;
+  white-space: pre;
+}
+.diff-row.add {
+  background: rgba(63, 185, 80, 0.14);
+}
+.diff-row.del {
+  background: rgba(248, 81, 73, 0.14);
+}
+.diff-ln {
+  flex: 0 0 auto;
+  width: 3rem;
+  padding: 0 0.5rem;
+  text-align: right;
+  color: var(--fg-faint);
+  user-select: none;
+  border-right: 1px solid var(--border-soft);
+}
+.diff-text {
+  padding: 0 0.75rem;
+  flex: 1 1 auto;
+}
+.diff-row.add .diff-text {
+  color: #aff0bd;
+}
+.diff-row.del .diff-text {
+  color: #ffb3ae;
 }
 
 /* ---------- Command palette ---------- */

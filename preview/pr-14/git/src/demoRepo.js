@@ -178,18 +178,30 @@ const mainCommits = [
     message: 'Persist tasks to localStorage',
     author: { name: 'Ada Lovelace', email: 'ada@example.com' },
     timestamp: 1717200000,
+    changed: ['src/storage.js', 'src/app.js'],
   },
   {
     oid: '3b2a1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b',
     message: 'Render task list and toggle completion',
     author: { name: 'Ada Lovelace', email: 'ada@example.com' },
     timestamp: 1717100000,
+    changed: ['src/ui/render.js', 'src/app.js', 'styles/main.css'],
   },
   {
     oid: '7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8d',
     message: 'Initial commit',
     author: { name: 'Grace Hopper', email: 'grace@example.com' },
     timestamp: 1717000000,
+    changed: [
+      'README.md',
+      'package.json',
+      '.gitignore',
+      'LICENSE',
+      'src/app.js',
+      'src/storage.js',
+      'styles/main.css',
+      'assets/logo.svg',
+    ],
   },
 ];
 
@@ -199,6 +211,7 @@ const darkCommits = [
     message: 'Add dark mode theme and toggle',
     author: { name: 'Katherine Johnson', email: 'kj@example.com' },
     timestamp: 1717300000,
+    changed: ['src/app.js', 'src/theme.js', 'styles/theme.css'],
   },
   ...mainCommits,
 ];
@@ -208,6 +221,9 @@ export function createDemoSource() {
     fullName: 'tasklite/demo',
     url: null,
     defaultBranch: 'main',
+    // A tag (aliased to a branch snapshot) so the ref picker shows tag browsing
+    // without a network. Matches package.json's version.
+    tags: { 'v0.3.0': 'main' },
     branches: {
       main: {
         files: {
