@@ -33,6 +33,12 @@ export function createViewer(ctx) {
   // Live handle on the currently-rendered text file, so line linking can
   // re-position the highlight without re-rendering the whole file.
   let text = null;
+  // The active file's data backing the header actions (copy / download / open).
+  // null whenever no real file is shown (placeholder, diff, or read error).
+  let current = null;
+
+  wireActions();
+  clearCurrent();
 
   /** Free the current image object URL, if any. */
   function dispose() {
@@ -45,6 +51,7 @@ export function createViewer(ctx) {
 
   function showPlaceholder() {
     dispose();
+    clearCurrent();
     dom.viewerHead.hidden = true;
     dom.viewerBody.replaceChildren(dom.viewerPlaceholder);
     dom.viewerPlaceholder.hidden = false;
@@ -53,15 +60,17 @@ export function createViewer(ctx) {
   /** Reveal the header and show a loading state while bytes are fetched. */
   function beginLoading(path) {
     text = null;
+    clearCurrent();
     dom.viewerHead.hidden = false;
     renderFilePath(path);
     if (dom.fileHistoryBtn) dom.fileHistoryBtn.hidden = false;
     dom.fileInfo.textContent = 'Loading…';
-    dom.viewerBody.replaceChildren(el('div', 'notice', 'Loading…'));
+    dom.viewerBody.replaceChildren(buildSkeleton());
   }
 
   function showReadError(message) {
     text = null;
+    clearCurrent();
     dom.viewerBody.replaceChildren(el('div', 'notice', `Could not read file: ${message}`));
     dom.fileInfo.textContent = '';
   }
@@ -118,6 +127,9 @@ export function createViewer(ctx) {
 
     if (!force && (size > MAX_TEXT_BYTES || lines.length > MAX_TEXT_LINES)) {
       text = null;
+      // Bytes are in hand, so download still works; "Copy contents" stays off
+      // until the text is actually rendered (via "Show anyway").
+      setCurrent(path, bytes, null);
       dom.fileInfo.textContent = `${languageForPath(path)} · ${formatBytes(size)}`;
       const notice = el('div', 'notice');
       notice.appendChild(el('p', null, `Large file (${formatBytes(size)}, ${lines.length} lines).`));
@@ -146,6 +158,9 @@ export function createViewer(ctx) {
     dom.viewerBody.replaceChildren(view);
 
     text = { path, count: lines.length, view, gutter, code, highlight: highlightBand, range: null };
+    // `decoded` keeps the file's exact bytes (incl. any trailing newline) for
+    // "Copy contents"; `lines` was trimmed only for display.
+    setCurrent(path, bytes, decoded);
     gutter.addEventListener('click', onGutterClick);
     if (target) applyLineSelection(target, { scroll: true, notify: false });
   }
@@ -217,6 +232,8 @@ export function createViewer(ctx) {
         dom.viewerBody.scrollTop = Math.max(0, padTop + (start - 1) * lineH - lineH * 3);
       }
     }
+    // Keep the "Open on host" link pointing at the current selection.
+    refreshOpenLink();
     if (notify && typeof ctx.onLinesChange === 'function') ctx.onLinesChange(text.range);
   }
 
@@ -226,6 +243,7 @@ export function createViewer(ctx) {
   }
 
   function renderImage(path, bytes, size) {
+    setCurrent(path, bytes, null);
     const blob = new Blob([bytes], { type: imageMimeType(path) });
     imageUrl = URL.createObjectURL(blob);
     dom.fileInfo.textContent = `Image · ${formatBytes(size)}`;
@@ -238,6 +256,7 @@ export function createViewer(ctx) {
   }
 
   function renderBinaryNotice(path, bytes, size) {
+    setCurrent(path, bytes, null);
     dom.fileInfo.textContent = `Binary · ${formatBytes(size)}`;
     const notice = el('div', 'notice');
     notice.appendChild(el('p', null, `Binary file — ${formatBytes(size)}.`));
@@ -254,6 +273,7 @@ export function createViewer(ctx) {
    * offer to view the raw pointer text rather than rendering it as the file.
    */
   function renderLfsNotice(path, bytes, pointer, size) {
+    setCurrent(path, bytes, null);
     dom.fileInfo.textContent = `Git LFS · ${formatBytes(pointer.size)}`;
     const notice = el('div', 'notice');
     notice.appendChild(
@@ -279,6 +299,7 @@ export function createViewer(ctx) {
   function diffHeader(title, subtitle) {
     dispose();
     text = null;
+    clearCurrent(); // a diff isn't a single file: no copy/download/open
     dom.viewerHead.hidden = false;
     dom.filePath.replaceChildren(el('span', 'name', title));
     if (dom.fileHistoryBtn) dom.fileHistoryBtn.hidden = true; // a diff isn't a file
@@ -382,6 +403,124 @@ export function createViewer(ctx) {
       rows.appendChild(line);
     }
     body.replaceChildren(rows);
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Header actions (copy path / copy contents / download / open)     */
+  /* ---------------------------------------------------------------- */
+
+  function wireActions() {
+    if (dom.fileCopyPathBtn) {
+      dom.fileCopyPathBtn.addEventListener('click', () =>
+        copyToClipboard(current && current.path, 'Path copied')
+      );
+    }
+    if (dom.fileCopyBtn) {
+      dom.fileCopyBtn.addEventListener('click', () =>
+        copyToClipboard(current && current.text, 'Contents copied')
+      );
+    }
+    if (dom.fileDownloadBtn) dom.fileDownloadBtn.addEventListener('click', downloadCurrent);
+  }
+
+  /** Record the active file (text is null when it can't be copied as text). */
+  function setCurrent(path, bytes, text) {
+    current = { path, bytes, text: text == null ? null : text };
+    refreshActions();
+  }
+
+  function clearCurrent() {
+    current = null;
+    refreshActions();
+  }
+
+  /** Show/hide each header action to match the active file. */
+  function refreshActions() {
+    const has = Boolean(current);
+    if (dom.fileCopyPathBtn) dom.fileCopyPathBtn.hidden = !has;
+    if (dom.fileDownloadBtn) dom.fileDownloadBtn.hidden = !has;
+    if (dom.fileCopyBtn) dom.fileCopyBtn.hidden = !(has && current.text != null);
+    refreshOpenLink();
+  }
+
+  /** Point the "Open" link at the active file on its host, or hide it. */
+  function refreshOpenLink() {
+    const a = dom.fileOpenBtn;
+    if (!a) return;
+    let url = null;
+    if (current && typeof ctx.fileWebUrl === 'function') {
+      const lines = text && text.path === current.path ? text.range : null;
+      url = ctx.fileWebUrl(current.path, lines);
+    }
+    if (url) {
+      const host = hostLabelFromUrl(url);
+      a.href = url;
+      a.title = `Open on ${host}`;
+      a.setAttribute('aria-label', `Open ${basename(current.path)} on ${host}`);
+      a.hidden = false;
+    } else {
+      a.removeAttribute('href');
+      a.hidden = true;
+    }
+  }
+
+  function hostLabelFromUrl(url) {
+    try {
+      const host = new URL(url).hostname;
+      if (host === 'github.com') return 'GitHub';
+      if (host === 'bitbucket.org') return 'Bitbucket';
+      if (host === 'gitlab.com' || host.startsWith('gitlab.')) return 'GitLab';
+      return host;
+    } catch {
+      return 'the host';
+    }
+  }
+
+  async function copyToClipboard(value, okMessage) {
+    if (value == null) return;
+    const clip = typeof navigator !== 'undefined' ? navigator.clipboard : null;
+    if (!clip || typeof clip.writeText !== 'function') {
+      toast('Clipboard is unavailable in this browser.', 'error');
+      return;
+    }
+    try {
+      await clip.writeText(value);
+      toast(okMessage, 'success');
+    } catch {
+      toast('Copy was blocked by the browser.', 'error');
+    }
+  }
+
+  /** Save the active file's raw bytes to disk via a transient object URL. */
+  function downloadCurrent() {
+    if (!current || !current.bytes) return;
+    const blob = new Blob([current.bytes]);
+    const url = URL.createObjectURL(blob);
+    const a = el('a');
+    a.href = url;
+    a.download = basename(current.path) || 'file';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
+  function toast(message, type) {
+    if (typeof ctx.toast === 'function') ctx.toast(message, type);
+  }
+
+  /** A shimmer placeholder shown while a file's bytes are being fetched. */
+  function buildSkeleton() {
+    const wrap = el('div', 'skeleton');
+    wrap.setAttribute('aria-hidden', 'true');
+    // A handful of bars of varied width read as "loading content".
+    const widths = [70, 45, 85, 60, 78, 38, 66, 90, 52, 74];
+    for (const w of widths) {
+      const bar = el('div', 'skeleton-line');
+      bar.style.width = `${w}%`;
+      wrap.appendChild(bar);
+    }
+    return wrap;
   }
 
   return {

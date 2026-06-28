@@ -56,6 +56,63 @@ test('syntax-highlights source files in the viewer', async ({ page }) => {
   await expect(page.locator('.code')).toContainText('export function loadTasks');
 });
 
+test('copies the path/contents and downloads the raw file', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await loadDemo(page);
+  await page.locator('#tree-filter').fill('storage.js');
+  await page.locator('.flat-row', { hasText: 'storage.js' }).click();
+  await expect(page.locator('#file-path')).toContainText('storage.js');
+
+  await page.getByRole('button', { name: 'Copy path' }).click();
+  await expect(page.locator('#toast')).toContainText('Path copied');
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('src/storage.js');
+
+  await page.getByRole('button', { name: 'Copy', exact: true }).click();
+  await expect(page.locator('#toast')).toContainText('Contents copied');
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain('loadTasks');
+
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('button', { name: 'Download' }).click(),
+  ]);
+  expect(download.suggestedFilename()).toBe('storage.js');
+
+  // The demo source has no origin URL, so there's nothing to "Open" on a host.
+  await expect(page.locator('#file-open-btn')).toBeHidden();
+});
+
+test('links the open file back to its origin host', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForFunction(() => !!(window.gitBrowser && window.gitBrowser.openSource));
+  await page.evaluate(() => {
+    const enc = new TextEncoder();
+    window.gitBrowser.openSource({
+      fullName: 'acme/widget',
+      url: 'https://github.com/acme/widget.git',
+      readOnly: true,
+      getCurrentBranch: () => 'main',
+      listBranches: async () => [{ name: 'main', current: true }],
+      setBranch: async () => {},
+      listFiles: async () => ['app.js'],
+      readFile: async () => enc.encode('const greeting = "hello";\n'),
+      headCommit: async () => null,
+      log: async () => [],
+      update: async () => ({ updated: false, changed: false }),
+    });
+  });
+  await expect(page.locator('#browser-view')).toBeVisible();
+  await page.locator('.tree-row', { hasText: 'app.js' }).click();
+
+  const open = page.locator('#file-open-btn');
+  await expect(open).toBeVisible();
+  await expect(open).toHaveAttribute('href', 'https://github.com/acme/widget/blob/main/app.js');
+  await expect(open).toHaveAttribute('aria-label', /Open app\.js on GitHub/);
+
+  // Selecting a line updates the link's anchor.
+  await page.locator('.code-view .gutter').click({ position: { x: 6, y: 6 } });
+  await expect(open).toHaveAttribute('href', /app\.js#L1$/);
+});
+
 test('finds files with the command palette', async ({ page }) => {
   await loadDemo(page);
   await page.getByRole('button', { name: 'Find files' }).click();

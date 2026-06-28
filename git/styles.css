@@ -605,6 +605,7 @@ kbd {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 3rem;
 }
 .file-path .dir {
   color: var(--fg-faint);
@@ -720,6 +721,44 @@ kbd {
   color: var(--fg-faint);
   word-break: break-all;
 }
+/* External-link affordance on the viewer's "Open on host" link. */
+.btn.external::after {
+  content: ' \2197'; /* ↗ — decorative; the accessible name covers the action */
+}
+
+/* Loading skeleton (shown while a file's bytes are fetched). */
+.skeleton {
+  padding: 0.8rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+.skeleton-line {
+  height: 0.72rem;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    var(--bg-elev) 25%,
+    var(--bg-elev-2) 37%,
+    var(--bg-elev) 63%
+  );
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.4s ease infinite;
+}
+@keyframes skeleton-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-line {
+    animation: none;
+  }
+}
+
 .image-view {
   display: flex;
   align-items: center;
@@ -1237,6 +1276,20 @@ kbd {
   }
   .branch-picker select {
     max-width: 38vw;
+  }
+
+  /* The viewer header gains several actions; let them scroll horizontally
+     instead of squeezing the file path or wrapping into a tall block. */
+  .viewer-head-actions {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .viewer-head-actions::-webkit-scrollbar {
+    display: none;
+  }
+  .viewer-head-actions > * {
+    flex: 0 0 auto;
   }
 
   .browser-view {
