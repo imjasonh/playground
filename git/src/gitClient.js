@@ -332,18 +332,26 @@ export class GitRepoSource {
  * clone / open / remove lifecycle. One instance per page.
  */
 export class GitStorage {
-  constructor() {
-    this._fs = null;
-    this._git = null;
-    this._http = null;
+  /**
+   * @param {{fs?: object, git?: object, http?: object}} [engine]
+   *   Optional pre-built engine. In the browser this is omitted and the
+   *   vendored isomorphic-git + lightning-fs bundles are lazy-loaded on first
+   *   use. A Node host (or a test) can inject its own `fs` / `git` / `http`
+   *   so the same clone / open / update logic runs without the browser
+   *   bootstrap (vendored `<script>` tags + lightning-fs).
+   */
+  constructor(engine = null) {
+    this._fs = (engine && engine.fs) || null;
+    this._git = (engine && engine.git) || null;
+    this._http = (engine && engine.http) || null;
   }
 
   async _ensure() {
-    if (this._fs) return;
+    if (this._fs && this._git && this._http) return;
     const { git, http, FS } = await loadGitGlobals();
-    this._git = git;
-    this._http = http;
-    this._fs = new FS(FS_NAME);
+    this._git = this._git || git;
+    this._http = this._http || http;
+    this._fs = this._fs || new FS(FS_NAME);
   }
 
   /** Registry entries (most recently used first). Sync; no engine needed. */
