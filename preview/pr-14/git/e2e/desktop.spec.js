@@ -69,6 +69,25 @@ test('finds files with the command palette', async ({ page }) => {
   await expect(page.locator('#file-path')).toContainText('render.js');
 });
 
+test('runs fuzzy file search in a Web Worker', async ({ page }) => {
+  await loadDemo(page);
+
+  // The worker is the active backend in a modern browser (it falls back to
+  // synchronous search only where Workers are unavailable).
+  await expect
+    .poll(() => page.evaluate(() => window.gitBrowser?.search?.usingWorker))
+    .toBe(true);
+
+  // Worker-backed tree filtering still returns ranked matches.
+  await page.locator('#tree-filter').fill('render');
+  await expect(page.locator('.flat-row').first()).toContainText('render.js');
+
+  // …and so does the palette, sharing the same worker.
+  await page.getByRole('button', { name: 'Find files' }).click();
+  await page.locator('#palette-input').fill('storage');
+  await expect(page.locator('.palette-row').first()).toContainText('storage.js');
+});
+
 test('Ctrl/Cmd+P toggles the palette', async ({ page }) => {
   await loadDemo(page);
   await page.keyboard.press('Control+p');

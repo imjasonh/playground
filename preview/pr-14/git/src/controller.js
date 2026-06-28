@@ -24,6 +24,7 @@ import { rememberToken } from './auth.js';
 import { storageEstimate, describeStorage, isLowOnStorage } from './quota.js';
 import { createDemoSource } from './demoRepo.js';
 import { parseHash, encodeHashState } from './hashState.js';
+import { createSearchClient } from './searchClient.js';
 
 // Every element id the UI looks up. Kept in one list so the static wiring test
 // can confirm each one exists in index.html.
@@ -71,10 +72,15 @@ export async function init() {
   const viewLoads = createLoadController();
   const decoder = new TextDecoder('utf-8', { fatal: false });
 
+  // Off-main-thread fuzzy file search (with a synchronous fallback). Shared by
+  // the command palette and the tree filter; the controller keeps its corpus in
+  // sync with the loaded file list (see reloadFiles / showStart).
+  const search = createSearchClient();
+
   // The shared context handed to each UI module. Cross-module actions are
   // assigned below, after the modules exist; modules only call them at
   // event time, so the late binding is safe.
-  const ctx = { state, store, dom, toast, hideToast };
+  const ctx = { state, store, dom, toast, hideToast, search };
 
   const viewer = createViewer(ctx);
   const tree = createTree(ctx);
@@ -134,7 +140,7 @@ export async function init() {
   const initialState = parseHash(location.hash);
   if (initialState) applyDeepLink(initialState);
 
-  window.gitBrowser = { openDemo, openSource, state, store };
+  window.gitBrowser = { openDemo, openSource, state, store, search };
 
   /* ---------------------------------------------------------------- */
   /* Event wiring                                                      */
@@ -183,6 +189,7 @@ export async function init() {
   function showStart() {
     loads.cancel();
     store.setState({ source: null, activePath: null, lines: null });
+    search.setFiles([]); // drop the corpus so the worker isn't holding a stale repo
     viewer.dispose();
     dom.browserView.hidden = true;
     dom.repoBar.hidden = true;
@@ -339,6 +346,8 @@ export async function init() {
       // Auto-expand a single top-level directory chain for convenience.
       expanded: initialExpanded(fileTree),
     });
+    // Hand the new corpus to the search backend (rebuilds the index off-thread).
+    search.setFiles(files);
     dom.treeFilter.value = '';
     tree.renderSidebar();
   }

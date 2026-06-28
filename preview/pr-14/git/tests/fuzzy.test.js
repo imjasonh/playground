@@ -1,4 +1,10 @@
-import { fuzzyMatch, fuzzyFilter, highlightSegments } from '../src/fuzzy.js';
+import {
+  fuzzyMatch,
+  fuzzyFilter,
+  fuzzyFilterIndex,
+  buildIndex,
+  highlightSegments,
+} from '../src/fuzzy.js';
 
 describe('fuzzyMatch', () => {
   test('empty query matches everything with score 0', () => {
@@ -54,6 +60,41 @@ describe('fuzzyFilter', () => {
     const items = files.map((path) => ({ path }));
     const results = fuzzyFilter('main', items, { key: (i) => i.path });
     expect(results[0].item.path).toBe('styles/main.css');
+  });
+});
+
+describe('buildIndex / fuzzyFilterIndex', () => {
+  const files = [
+    'src/app.js',
+    'src/ui/render.js',
+    'README.md',
+    'styles/main.css',
+    'package.json',
+  ];
+
+  test('index-based filtering matches fuzzyFilter exactly', () => {
+    const index = buildIndex(files);
+    for (const query of ['', 'app', 'render', 'main', 's', 'zzz']) {
+      expect(fuzzyFilterIndex(query, index)).toEqual(fuzzyFilter(query, files));
+    }
+  });
+
+  test('precomputes lowercased targets once', () => {
+    const index = buildIndex(['Src/App.JS']);
+    expect(index.targets).toEqual(['Src/App.JS']);
+    expect(index.lowers).toEqual(['src/app.js']);
+  });
+
+  test('supports a key accessor', () => {
+    const items = files.map((path) => ({ path }));
+    const index = buildIndex(items, (i) => i.path);
+    const results = fuzzyFilterIndex('main', index);
+    expect(results[0].item.path).toBe('styles/main.css');
+  });
+
+  test('tolerates an empty corpus', () => {
+    expect(fuzzyFilterIndex('anything', buildIndex([]))).toEqual([]);
+    expect(buildIndex().items).toEqual([]);
   });
 });
 
