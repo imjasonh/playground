@@ -78,10 +78,18 @@ npm run vendor    # refreshes vendor/ from node_modules (uses esbuild for the po
 ## Tests
 
 ```bash
-npm test          # unit tests (Jest) — pure logic + RepoSource contract
+npm test          # unit tests (Jest) — pure logic, RepoSource contract, real clone
 npm run test:e2e  # browser tests (Playwright) — drive the demo repo, no network
 npm run test:all  # both
 ```
 
 The e2e tests run entirely against the built-in demo repository, so they never
 touch the network while still exercising the real browser UI.
+
+The Jest suite also includes an integration test
+(`tests/realClone.integration.test.js`) that stands up a local
+`git http-backend` server on `127.0.0.1` and drives the actual isomorphic-git
+clone/fetch through `GitStorage` (with Node's `fs` + `git`/`http` injected).
+It needs the `git` binary on `PATH` — present on standard CI — and skips
+gracefully when `git http-backend` is unavailable. No external host is
+contacted.
