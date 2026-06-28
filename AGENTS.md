@@ -150,6 +150,9 @@ npm start          # if defined (static server)
   `main`, so the work silently never reaches `main` and is easily lost. If two
   changes are related, either keep them in separate `main`-based PRs that don't
   touch the same lines, or combine them into a single PR — never stack.
+- **Treat merged PRs as immutable.** Once a PR is merged, don't push more
+  commits to its branch, reopen it, or amend it. Make any follow-up change
+  (fix, revert, addition) in a **new** PR branched off `main`.
 - CI must pass (tests run for **changed** testable apps in that PR).
 - Preview deploy provides a live URL on the PR—use it to verify browser behavior, especially mobile.
 - If the repo uses Linear integration, include `Resolves ABC-123` in the PR body when applicable.
