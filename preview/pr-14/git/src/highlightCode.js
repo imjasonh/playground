@@ -15,6 +15,15 @@
  * concatenation of all token texts is always exactly the input — highlighting
  * can never corrupt the file or shift line numbers.
  *
+ * Cost: some rules greedily consume an identifier run and then look ahead (a
+ * function call wants a following `(`, a CSS property a following `:`). On a very
+ * long run that *isn't* one of those, the lookahead fails and the engine
+ * backtracks across the run, and because the tokenizer retries from each
+ * position this is O(line_length²) for a pathological line (e.g. a 100k-char
+ * minified/identifier blob). The blowup is bounded per line, so callers should
+ * gate large inputs with {@link withinHighlightBudget} and fall back to plain
+ * text — which the viewer does.
+ *
  * @typedef {Object} Token
  * @property {string} text
  * @property {?string} type  a token class suffix (e.g. 'string'), or null for plain
@@ -294,6 +303,30 @@ export function highlight(code, grammarKey) {
   } catch {
     return [{ text: code, type: null }];
   }
+}
+
+/**
+ * Worst-case tokenizing work is ~O(Σ line_length²) (see the cost note above).
+ * This budget keeps that under ~150ms on a typical machine; files past it (very
+ * long lines, i.e. minified/generated code) render as plain text instead.
+ */
+const HIGHLIGHT_COST_BUDGET = 80_000_000;
+
+/**
+ * True when `lines` are cheap enough to syntax-highlight. Bounds the summed
+ * per-line cost so a pathological long line can't freeze the tab; the dominant
+ * term is the longest line, so a single ~9k-char line already trips it.
+ *
+ * @param {string[]} lines  the file split into lines
+ * @returns {boolean}
+ */
+export function withinHighlightBudget(lines) {
+  let cost = 0;
+  for (const line of lines) {
+    cost += line.length * line.length;
+    if (cost > HIGHLIGHT_COST_BUDGET) return false;
+  }
+  return true;
 }
 
 // Exposed for tests.

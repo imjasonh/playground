@@ -19,6 +19,8 @@ const indexHtml = read('index.html');
 const appSource = read('src/app.js');
 const controllerSource = read('src/controller.js');
 const gitClientSource = read('src/gitClient.js');
+const searchClientSource = read('src/searchClient.js');
+const contentSearchClientSource = read('src/contentSearchClient.js');
 
 /** Every .js file under src/, recursively. */
 function srcFiles() {
@@ -82,6 +84,7 @@ describe('module imports', () => {
     ['encodeHashState', 'hashState.js'],
     ['highlight', 'highlightCode.js'],
     ['grammarForPath', 'highlightCode.js'],
+    ['withinHighlightBudget', 'highlightCode.js'],
   ];
 
   test.each(requiredSymbols)('some module imports %s from %s', (symbol, mod) => {
@@ -148,5 +151,18 @@ describe('vendored bundles', () => {
 
   test.each(vendorFiles)('gitClient.js references %s', (rel) => {
     expect(gitClientSource).toContain(rel);
+  });
+});
+
+describe('worker references', () => {
+  // Workers are spawned via `new URL('./xWorker.js', import.meta.url)`, not an
+  // import, so collectImports() can't see them. Guard the filename so renaming a
+  // worker can't silently break the browser while every unit test still passes.
+  test('searchClient references its worker', () => {
+    expect(searchClientSource).toContain('searchWorker.js');
+  });
+
+  test('contentSearchClient references its worker', () => {
+    expect(contentSearchClientSource).toContain('contentSearchWorker.js');
   });
 });

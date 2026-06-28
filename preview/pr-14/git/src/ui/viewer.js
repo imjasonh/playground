@@ -13,7 +13,7 @@ import {
   looksBinary,
 } from '../language.js';
 import { formatBytes } from '../format.js';
-import { highlight, grammarForPath } from '../highlightCode.js';
+import { highlight, grammarForPath, withinHighlightBudget } from '../highlightCode.js';
 
 const MAX_TEXT_BYTES = 2_000_000;
 const MAX_TEXT_LINES = 50_000;
@@ -130,7 +130,7 @@ export function createViewer(ctx) {
     gutter.textContent = lines.map((_, i) => i + 1).join('\n');
     gutter.title = 'Click a line number to link to it (Shift-click for a range)';
     const code = el('div', 'code');
-    paintCode(code, lines.join('\n'), path, size, lines.length);
+    paintCode(code, lines, path, size);
     // Absolute overlay first so it sits behind the (positioned) code text.
     view.append(highlightBand, gutter, code);
     dom.viewerBody.replaceChildren(view);
@@ -141,9 +141,18 @@ export function createViewer(ctx) {
   }
 
   /** Render code text into `code`, syntax-highlighted unless it's too large. */
-  function paintCode(code, source, path, size, lineCount) {
+  function paintCode(code, lines, path, size) {
+    const source = lines.join('\n');
     const grammar = grammarForPath(path);
-    if (grammar === 'plain' || size > MAX_HIGHLIGHT_BYTES || lineCount > MAX_HIGHLIGHT_LINES) {
+    // Skip highlighting for plain files, very large files, and files whose lines
+    // are long enough that tokenizing could be pathologically slow (minified /
+    // generated code) — render them as fast, correct plain text instead.
+    if (
+      grammar === 'plain' ||
+      size > MAX_HIGHLIGHT_BYTES ||
+      lines.length > MAX_HIGHLIGHT_LINES ||
+      !withinHighlightBudget(lines)
+    ) {
       code.textContent = source;
       return;
     }

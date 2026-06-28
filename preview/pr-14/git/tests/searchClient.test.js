@@ -160,4 +160,13 @@ describe('createSearchClient — worker backend', () => {
     expect(fake.terminated).toBe(true);
     expect(client.usingWorker).toBe(false);
   });
+
+  test('dispose resolves an in-flight query (null) instead of hanging', async () => {
+    const fake = new FakeWorker();
+    const client = createSearchClient({ createWorker: () => fake });
+    client.setFiles(['a.js']);
+    const pending = client.search('a'); // worker will never reply
+    client.dispose();
+    await expect(pending).resolves.toBeNull();
+  });
 });

@@ -81,10 +81,12 @@ export function searchContent(text, re, opts = {}) {
     let m;
     while ((m = re.exec(line)) !== null) {
       ranges.push([m.index, m.index + m[0].length]);
-      // A zero-width match (e.g. the regex `a*`) wouldn't advance lastIndex;
-      // nudge it so the scan terminates.
-      if (m.index === re.lastIndex) re.lastIndex += 1;
       if (ranges.length >= maxPerLine) break;
+      // Guarantee forward progress so the scan always terminates. A zero-width
+      // match (e.g. `a*`) leaves lastIndex at m.index; a non-global regex never
+      // advances it at all. buildPattern always produces a global regex, but this
+      // keeps searchContent hang-proof for any caller.
+      if (re.lastIndex <= m.index) re.lastIndex = m.index + 1;
     }
     if (ranges.length) {
       const clamped = clampLine(line, ranges, maxLineLength);
