@@ -87,7 +87,20 @@ export async function init() {
   dom.proxyInput.value = DEFAULT_CORS_PROXY;
 
   const { GitStorage } = await import('./gitClient.js').catch(() => ({}));
-  if (GitStorage) store.setState({ storage: new GitStorage() });
+  if (GitStorage) {
+    const storage = new GitStorage();
+    store.setState({ storage });
+    // Reconcile the FS with the registry in the background: a clone that failed
+    // before it was recorded can leave an orphaned dir behind. Best-effort.
+    storage
+      .repair()
+      .then((removed) => {
+        if (removed && removed.length) {
+          toast(`Cleaned up ${removed.length} orphaned clone${removed.length > 1 ? 's' : ''}.`);
+        }
+      })
+      .catch(() => {});
+  }
 
   bindEvents();
   recent.renderPresets();

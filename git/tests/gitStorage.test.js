@@ -11,6 +11,69 @@ import { GitStorage } from '../src/gitClient.js';
 
 const REGISTRY_KEY = 'git-browser:repos';
 
+/** A tiny in-memory POSIX-ish FS implementing the slice GitStorage uses. */
+function createMemFs() {
+  const nodes = new Map([['/', 'dir']]); // path -> 'dir' | 'file'
+  const norm = (p) => String(p).replace(/\/+/g, '/').replace(/(.)\/$/, '$1') || '/';
+  const childrenOf = (dir) => {
+    const d = norm(dir);
+    const prefix = d === '/' ? '/' : `${d}/`;
+    const names = new Set();
+    for (const key of nodes.keys()) {
+      if (key === d || !key.startsWith(prefix)) continue;
+      const rest = key.slice(prefix.length);
+      if (rest && !rest.includes('/')) names.add(rest);
+    }
+    return [...names];
+  };
+  const fail = (code) => Object.assign(new Error(code), { code });
+  const promises = {
+    async readdir(p) {
+      if (nodes.get(norm(p)) !== 'dir') throw fail('ENOENT');
+      return childrenOf(p);
+    },
+    async mkdir(p) {
+      if (nodes.has(norm(p))) throw fail('EEXIST');
+      nodes.set(norm(p), 'dir');
+    },
+    async rmdir(p) {
+      if (childrenOf(p).length) throw fail('ENOTEMPTY');
+      nodes.delete(norm(p));
+    },
+    async unlink(p) {
+      if (!nodes.has(norm(p))) throw fail('ENOENT');
+      nodes.delete(norm(p));
+    },
+    async writeFile(p) {
+      nodes.set(norm(p), 'file');
+    },
+    async lstat(p) {
+      if (!nodes.has(norm(p))) throw fail('ENOENT');
+      const type = nodes.get(norm(p));
+      return { isDirectory: () => type === 'dir', isFile: () => type === 'file' };
+    },
+  };
+  promises.stat = promises.lstat;
+  return { nodes, promises };
+}
+
+/** Create `path` (and ancestor dirs) in a mem FS; the leaf gets `type`. */
+function mkTree(fs, path, type = 'dir') {
+  const parts = String(path).split('/').filter(Boolean);
+  let cur = '';
+  parts.forEach((part, i) => {
+    cur += `/${part}`;
+    fs.nodes.set(cur, i === parts.length - 1 ? type : 'dir');
+  });
+}
+
+/** Make `dir` look like a cloned repo (working dir + .git + a file). */
+function makeRepo(fs, dir) {
+  mkTree(fs, dir);
+  mkTree(fs, `${dir}/.git`);
+  mkTree(fs, `${dir}/README.md`, 'file');
+}
+
 function stored() {
   return JSON.parse(localStorage.getItem(REGISTRY_KEY));
 }
@@ -100,5 +163,91 @@ describe('GitStorage registry (localStorage)', () => {
     // A subsequent write heals the stored value back to the envelope shape.
     storage._upsert(entry('/a'));
     expect(stored().version).toBe(1);
+  });
+});
+
+describe('GitStorage.repair (FS vs registry reconciliation)', () => {
+  beforeEach(() => localStorage.clear());
+
+  test('removes repo dirs absent from the registry, keeps the known ones', async () => {
+    const fs = createMemFs();
+    const storage = new GitStorage({ fs, git: {}, http: {} });
+
+    makeRepo(fs, '/github.com/acme/keep');
+    makeRepo(fs, '/github.com/acme/orphan');
+    storage._upsert(entry('/github.com/acme/keep'));
+
+    const removed = await storage.repair();
+
+    expect(removed).toEqual(['/github.com/acme/orphan']);
+    expect(fs.nodes.has('/github.com/acme/keep/.git')).toBe(true);
+    expect(fs.nodes.has('/github.com/acme/orphan')).toBe(false);
+    // The shared owner container is still in use by "keep", so it survives.
+    expect(fs.nodes.has('/github.com/acme')).toBe(true);
+  });
+
+  test('prunes empty container dirs left by a failed clone (no .git)', async () => {
+    const fs = createMemFs();
+    const storage = new GitStorage({ fs, git: {}, http: {} });
+    mkTree(fs, '/gitlab.com/foo/bar'); // dir chain but never populated
+
+    const removed = await storage.repair();
+
+    expect(removed).toEqual([]); // not a repo, so not reported as an orphan repo
+    expect(fs.nodes.has('/gitlab.com')).toBe(false); // empty chain pruned away
+  });
+
+  test('with an empty registry, every repo dir is an orphan', async () => {
+    const fs = createMemFs();
+    const storage = new GitStorage({ fs, git: {}, http: {} });
+    makeRepo(fs, '/github.com/a/one');
+    makeRepo(fs, '/github.com/b/two');
+
+    const removed = await storage.repair();
+
+    expect(removed.sort()).toEqual(['/github.com/a/one', '/github.com/b/two']);
+    expect(fs.nodes.has('/github.com')).toBe(false);
+  });
+});
+
+describe('GitStorage.clone failure cleanup', () => {
+  beforeEach(() => localStorage.clear());
+
+  test('removes the half-written dir and records nothing when clone throws', async () => {
+    const fs = createMemFs();
+    const git = {
+      clone: async () => {
+        throw new Error('network boom');
+      },
+    };
+    const storage = new GitStorage({ fs, git, http: {} });
+
+    await expect(
+      storage.clone({ url: 'https://x/y.git', dir: '/x/y', fullName: 'x/y', singleBranch: true })
+    ).rejects.toThrow(/network boom/);
+
+    expect(fs.nodes.has('/x/y')).toBe(false);
+    expect(storage.listRepos()).toEqual([]);
+  });
+
+  test('records the repo when clone succeeds', async () => {
+    const fs = createMemFs();
+    const git = {
+      clone: async ({ dir }) => makeRepo(fs, dir),
+    };
+    const storage = new GitStorage({ fs, git, http: {} });
+
+    // open() builds a GitRepoSource and calls init(); stub the bits it needs.
+    git.currentBranch = async () => 'main';
+
+    await storage.clone({
+      url: 'https://x/y.git',
+      dir: '/x/y',
+      fullName: 'x/y',
+      singleBranch: true,
+    });
+
+    expect(storage.listRepos().map((r) => r.dir)).toEqual(['/x/y']);
+    expect(fs.nodes.has('/x/y/.git')).toBe(true);
   });
 });
