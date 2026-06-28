@@ -142,6 +142,14 @@ npm start          # if defined (static server)
 ## Pull requests
 
 - Target branch: **`main`**
+- **No stacked PRs — branch every PR off `main`.** Each PR must be
+  independently mergeable on its own, in any order. Do **not** base one PR's
+  branch on another PR's branch (or on any non-`main` branch). Stacking has
+  bitten this repo: when the base PR merges first and its branch lingers, a
+  later merge of the "stacked" PR lands in that now-stale branch instead of
+  `main`, so the work silently never reaches `main` and is easily lost. If two
+  changes are related, either keep them in separate `main`-based PRs that don't
+  touch the same lines, or combine them into a single PR — never stack.
 - CI must pass (tests run for **changed** testable apps in that PR).
 - Preview deploy provides a live URL on the PR—use it to verify browser behavior, especially mobile.
 - If the repo uses Linear integration, include `Resolves ABC-123` in the PR body when applicable.
