@@ -85,3 +85,10 @@ npm run test:all  # both
 
 The e2e tests run entirely against the built-in demo repository, so they never
 touch the network while still exercising the real browser UI.
+
+## Roadmap
+
+Planned improvements and known gaps are tracked in
+[`future-work.md`](./future-work.md) — including a write/commit flow, diff and
+file-history views, content search, large-repo virtualization, and an
+integration test for the real clone path.
