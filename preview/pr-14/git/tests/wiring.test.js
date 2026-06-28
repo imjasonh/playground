@@ -74,6 +74,8 @@ describe('module imports', () => {
     ['makeOnAuth', 'auth.js'],
     ['parseHash', 'hashState.js'],
     ['encodeHashState', 'hashState.js'],
+    ['highlight', 'highlightCode.js'],
+    ['grammarForPath', 'highlightCode.js'],
   ];
 
   test.each(requiredSymbols)('some module imports %s from %s', (symbol, mod) => {

@@ -688,6 +688,24 @@ kbd {
   position: relative;
   z-index: 1;
 }
+/* Syntax-highlight token colors (all tuned to clear WCAG AA on --bg). */
+.tok-comment { color: #9aa4b2; font-style: italic; }
+.tok-string { color: #a5d6ff; }
+.tok-keyword { color: #ff7b72; }
+.tok-number,
+.tok-literal,
+.tok-property,
+.tok-heading { color: #79c0ff; }
+.tok-heading { font-weight: 600; }
+.tok-function { color: #d2a8ff; }
+.tok-type,
+.tok-variable { color: #ffa657; }
+.tok-tag { color: #7ee787; }
+.tok-attr { color: #d2a8ff; }
+.tok-meta { color: #ff7b72; }
+.tok-link { color: #a5d6ff; text-decoration: underline; }
+.tok-strong { font-weight: 700; }
+.tok-em { font-style: italic; }
 .notice {
   padding: 2rem;
   text-align: center;

@@ -13,9 +13,14 @@ import {
   looksBinary,
 } from '../language.js';
 import { formatBytes } from '../format.js';
+import { highlight, grammarForPath } from '../highlightCode.js';
 
 const MAX_TEXT_BYTES = 2_000_000;
 const MAX_TEXT_LINES = 50_000;
+// Highlighting builds a span per token; skip it for very large files (where the
+// extra DOM costs more than the readability win) and just render plain text.
+const MAX_HIGHLIGHT_BYTES = 500_000;
+const MAX_HIGHLIGHT_LINES = 5_000;
 
 /**
  * @param {{dom: Record<string, HTMLElement>}} ctx
@@ -118,21 +123,36 @@ export function createViewer(ctx) {
       `${languageForPath(path)} · ${lines.length} lines · ${formatBytes(size)}`;
 
     const view = el('div', 'code-view');
-    const highlight = el('div', 'line-highlight');
-    highlight.hidden = true;
-    highlight.setAttribute('aria-hidden', 'true');
+    const highlightBand = el('div', 'line-highlight');
+    highlightBand.hidden = true;
+    highlightBand.setAttribute('aria-hidden', 'true');
     const gutter = el('div', 'gutter');
     gutter.textContent = lines.map((_, i) => i + 1).join('\n');
     gutter.title = 'Click a line number to link to it (Shift-click for a range)';
     const code = el('div', 'code');
-    code.textContent = lines.join('\n');
+    paintCode(code, lines.join('\n'), path, size, lines.length);
     // Absolute overlay first so it sits behind the (positioned) code text.
-    view.append(highlight, gutter, code);
+    view.append(highlightBand, gutter, code);
     dom.viewerBody.replaceChildren(view);
 
-    text = { path, count: lines.length, view, gutter, code, highlight, range: null };
+    text = { path, count: lines.length, view, gutter, code, highlight: highlightBand, range: null };
     gutter.addEventListener('click', onGutterClick);
     if (target) applyLineSelection(target, { scroll: true, notify: false });
+  }
+
+  /** Render code text into `code`, syntax-highlighted unless it's too large. */
+  function paintCode(code, source, path, size, lineCount) {
+    const grammar = grammarForPath(path);
+    if (grammar === 'plain' || size > MAX_HIGHLIGHT_BYTES || lineCount > MAX_HIGHLIGHT_LINES) {
+      code.textContent = source;
+      return;
+    }
+    const frag = document.createDocumentFragment();
+    for (const token of highlight(source, grammar)) {
+      if (token.type) frag.appendChild(el('span', `tok-${token.type}`, token.text));
+      else frag.appendChild(document.createTextNode(token.text));
+    }
+    code.replaceChildren(frag);
   }
 
   /* ---- line linking (highlight + click-to-select) ---------------------- */

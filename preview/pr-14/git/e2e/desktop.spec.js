@@ -43,6 +43,19 @@ test('opens a file and renders contents with line numbers', async ({ page }) => 
   await expect(page.locator('#file-info')).toContainText(/lines/);
 });
 
+test('syntax-highlights source files in the viewer', async ({ page }) => {
+  await loadDemo(page);
+  await page.locator('#tree-filter').fill('storage.js');
+  await page.locator('.flat-row', { hasText: 'storage.js' }).click();
+  await expect(page.locator('#file-path')).toContainText('storage.js');
+
+  // Tokens render as colored spans; a JS file should have keywords and strings.
+  await expect(page.locator('.code .tok-keyword').first()).toBeVisible();
+  await expect(page.locator('.code .tok-string').first()).toBeVisible();
+  // The full text is still intact despite the wrapping spans.
+  await expect(page.locator('.code')).toContainText('export function loadTasks');
+});
+
 test('finds files with the command palette', async ({ page }) => {
   await loadDemo(page);
   await page.getByRole('button', { name: 'Find files' }).click();
