@@ -84,6 +84,7 @@ describe('module imports', () => {
     ['encodeHashState', 'hashState.js'],
     ['highlight', 'highlightCode.js'],
     ['grammarForPath', 'highlightCode.js'],
+    ['withinHighlightBudget', 'highlightCode.js'],
   ];
 
   test.each(requiredSymbols)('some module imports %s from %s', (symbol, mod) => {

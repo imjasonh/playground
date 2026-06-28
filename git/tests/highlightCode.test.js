@@ -3,6 +3,7 @@ import {
   tokenize,
   grammarForPath,
   canHighlight,
+  withinHighlightBudget,
   GRAMMAR_KEYS,
 } from '../src/highlightCode.js';
 
@@ -109,6 +110,28 @@ describe('highlight() fallbacks', () => {
       { text: 'anything at all', type: null },
     ]);
     expect(highlight('x', 'nope')).toEqual([{ text: 'x', type: null }]);
+  });
+});
+
+describe('withinHighlightBudget (cost guard)', () => {
+  test('ordinary source is within budget', () => {
+    const lines = Array.from({ length: 5000 }, () => 'const x = foo(bar) + baz; // ok');
+    expect(withinHighlightBudget(lines)).toBe(true);
+  });
+
+  test('a single pathologically long line is over budget', () => {
+    // The tokenizer is ~O(line_length²); a ~100k-char run would otherwise take
+    // seconds (measured ~20s), so it must be gated out.
+    expect(withinHighlightBudget(['a'.repeat(100_000)])).toBe(false);
+  });
+
+  test('many long lines (summed cost) are over budget', () => {
+    expect(withinHighlightBudget(Array.from({ length: 200 }, () => 'a'.repeat(5_000)))).toBe(false);
+  });
+
+  test('empty input is within budget', () => {
+    expect(withinHighlightBudget([])).toBe(true);
+    expect(withinHighlightBudget([''])).toBe(true);
   });
 });
 
