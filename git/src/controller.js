@@ -229,6 +229,7 @@ export async function init() {
 
     const token = ++loadToken;
     showBrowser();
+    tree.resetScroll();
     await refreshRepo(token);
     if (token !== loadToken) return;
     viewer.showPlaceholder();
