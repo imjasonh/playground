@@ -24,6 +24,16 @@ describe('cloneErrorMessage', () => {
     expect(noProxy).toMatch(/need a CORS proxy/i);
   });
 
+  test('maps 401/403 to an add-a-token hint for private repos', () => {
+    expect(cloneErrorMessage(new Error('HTTP Error: 401 Unauthorized'))).toMatch(
+      /access token in Advanced options/i
+    );
+    expect(cloneErrorMessage(new Error('403 Forbidden'))).toMatch(/Authentication required/i);
+    expect(
+      cloneErrorMessage(new Error('HTTP Basic: Access denied for fetch'))
+    ).toMatch(/private/i);
+  });
+
   test('maps 404 / not-found to a check-the-URL hint', () => {
     expect(cloneErrorMessage(new Error('HTTP 404: Not Found'))).toMatch(/not found/i);
     expect(cloneErrorMessage(new Error('Could not find ref'))).toMatch(/Check the URL/i);

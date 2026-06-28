@@ -98,6 +98,20 @@
                   Leave the default, clear it for self-hosted CORS-enabled servers, or run your own.
                 </small>
               </label>
+              <label class="field">
+                <span>Access token <small class="muted">(private repos)</small></span>
+                <input
+                  id="token-input"
+                  type="password"
+                  autocomplete="off"
+                  spellcheck="false"
+                  placeholder="GitHub personal access token"
+                />
+                <small class="muted">
+                  Kept only for this browser session (never saved to disk). Sent with requests —
+                  which pass through the CORS proxy above — so use a least-privilege, read-only token.
+                </small>
+              </label>
             </details>
 
             <div class="form-actions">

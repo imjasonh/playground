@@ -20,6 +20,7 @@ import { ancestors } from './pathUtils.js';
 import { parseRepoUrl, DEFAULT_CORS_PROXY } from './repoUrl.js';
 import { commitSummary, shortOid } from './format.js';
 import { cloneErrorMessage } from './cloneError.js';
+import { rememberToken } from './auth.js';
 import { storageEstimate, describeStorage, isLowOnStorage } from './quota.js';
 import { createDemoSource } from './demoRepo.js';
 
@@ -28,7 +29,7 @@ import { createDemoSource } from './demoRepo.js';
 const DOM_IDS = [
   'repo-bar', 'repo-name', 'repo-meta', 'branch-select', 'find-btn',
   'history-btn', 'update-btn', 'close-btn', 'start-view', 'clone-form',
-  'url-input', 'ref-input', 'depth-input', 'allbranches-input', 'proxy-input',
+  'url-input', 'ref-input', 'depth-input', 'allbranches-input', 'proxy-input', 'token-input',
   'clone-btn', 'demo-btn', 'preset-list', 'clone-error', 'clone-progress', 'progress-fill',
   'progress-label', 'recent', 'recent-list', 'storage-usage', 'browser-view', 'tree-filter',
   'file-tree', 'flat-results', 'tree-empty', 'viewer-head', 'file-path',
@@ -92,6 +93,10 @@ export async function init() {
   if (GitStorage) {
     const storage = new GitStorage();
     store.setState({ storage });
+    // Keep the stored-repos list in sync when another tab clones/removes a repo.
+    if (typeof storage.onReposChanged === 'function') {
+      storage.onReposChanged(() => recent.renderRecent());
+    }
     // Reconcile the FS with the registry in the background: a clone that failed
     // before it was recorded can leave an orphaned dir behind. Best-effort.
     storage
@@ -203,6 +208,11 @@ export async function init() {
     const singleBranch = !dom.allbranchesInput.checked;
     const ref = dom.refInput.value.trim();
     const corsProxy = dom.proxyInput.value.trim();
+
+    // Stash any access token for this host in session storage so the clone (and
+    // later fetches) can authenticate. Never persisted to disk or logged.
+    const token = dom.tokenInput ? dom.tokenInput.value.trim() : '';
+    if (token) rememberToken(parsed.host, token);
 
     // Non-blocking heads-up when IndexedDB is nearly full. A small repo may
     // still fit, so warn rather than block; a real overflow surfaces a clear

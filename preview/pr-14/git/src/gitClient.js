@@ -17,6 +17,7 @@ const VENDOR = {
 };
 
 import { normalizeRef } from './repoSource.js';
+import { makeOnAuth } from './auth.js';
 
 const FS_NAME = 'git-browser-fs';
 const REGISTRY_KEY = 'git-browser:repos';
@@ -182,6 +183,8 @@ export class GitRepoSource {
     this._current = 'HEAD';
     this._refType = 'branch';
     this._oidCache = new Map();
+    // Supplies a session-stored token (if any) for this repo's host on fetch.
+    this._onAuth = makeOnAuth();
   }
 
   async init() {
@@ -445,6 +448,7 @@ export class GitRepoSource {
       http: this._http,
       dir: this._dir,
       corsProxy: this._corsProxy,
+      onAuth: this._onAuth,
       ref: this._singleBranch && onBranch ? branch : undefined,
       singleBranch: this._singleBranch,
       depth: this._depth > 0 ? this._depth : undefined,
@@ -488,6 +492,9 @@ export class GitStorage {
     this._fs = (engine && engine.fs) || null;
     this._git = (engine && engine.git) || null;
     this._http = (engine && engine.http) || null;
+    // Per-dir promise chains used as an in-tab fallback when the Web Locks API
+    // (which also coordinates across tabs) isn't available.
+    this._lockChains = new Map();
   }
 
   async _ensure() {
@@ -518,9 +525,48 @@ export class GitStorage {
     }
   }
 
-  async clone({ url, dir, fullName, ref, depth, singleBranch, corsProxy, onProgress, onMessage }) {
-    await this._ensure();
+  /**
+   * Run `fn` while holding an exclusive lock for `dir`. Uses the Web Locks API
+   * when available (which serializes across tabs as well as within one), and
+   * falls back to a per-dir promise chain that at least serializes this tab.
+   */
+  _withLock(dir, fn) {
+    const locks = globalThis.navigator && globalThis.navigator.locks;
+    if (locks && typeof locks.request === 'function') {
+      return locks.request(`git-browser:op:${dir}`, fn);
+    }
+    const prev = this._lockChains.get(dir) || Promise.resolve();
+    const run = prev.then(() => fn());
+    // Keep the tail unrejected so one failed op can't poison the next.
+    this._lockChains.set(dir, run.then(() => {}, () => {}));
+    return run;
+  }
 
+  /**
+   * Subscribe to repository-set changes made by *other* tabs (a clone or
+   * remove). The browser fires a `storage` event in every *other* tab when the
+   * registry's localStorage value changes, which is exactly the cross-tab
+   * signal we need — no BroadcastChannel handle to manage. Returns an
+   * unsubscribe function.
+   */
+  onReposChanged(listener) {
+    if (typeof globalThis.addEventListener !== 'function') return () => {};
+    const onStorage = (e) => {
+      // key === null is a localStorage.clear(); otherwise only our key matters.
+      if (!e || e.key === null || e.key === REGISTRY_KEY) listener();
+    };
+    globalThis.addEventListener('storage', onStorage);
+    return () => globalThis.removeEventListener('storage', onStorage);
+  }
+
+  async clone(params) {
+    await this._ensure();
+    // Lock the destination so two tabs (or two quick submits) can't clone or
+    // remove the same dir concurrently and corrupt the FS / registry.
+    return this._withLock(params.dir, () => this._cloneLocked(params));
+  }
+
+  async _cloneLocked({ url, dir, fullName, ref, depth, singleBranch, corsProxy, onProgress, onMessage }) {
     // Start fresh so re-cloning the same location can't mix histories.
     await rmrf(this._fs, dir);
     await mkdirp(this._fs, dir);
@@ -531,6 +577,7 @@ export class GitStorage {
       dir,
       url,
       corsProxy: corsProxy || undefined,
+      onAuth: makeOnAuth(),
       singleBranch: Boolean(singleBranch),
       noCheckout: true,
       onProgress,
@@ -583,8 +630,10 @@ export class GitStorage {
 
   async remove(dir) {
     await this._ensure();
-    await rmrf(this._fs, dir);
-    writeRegistry(readRegistry().filter((r) => r.dir !== dir));
+    await this._withLock(dir, async () => {
+      await rmrf(this._fs, dir);
+      writeRegistry(readRegistry().filter((r) => r.dir !== dir));
+    });
   }
 
   /**
@@ -599,10 +648,15 @@ export class GitStorage {
     const repoDirs = await this._findRepoDirs('/');
     const removed = [];
     for (const dir of repoDirs) {
-      if (!known.has(dir)) {
+      if (known.has(dir)) continue;
+      // Lock per-dir and re-check the registry inside it: another tab may be
+      // mid-clone of this very path (created the dir, not yet recorded).
+      const didRemove = await this._withLock(dir, async () => {
+        if (readRegistry().some((r) => r.dir === dir)) return false;
         await rmrf(this._fs, dir);
-        removed.push(dir);
-      }
+        return true;
+      });
+      if (didRemove) removed.push(dir);
     }
     await this._pruneEmptyDirs('/');
     return removed;
