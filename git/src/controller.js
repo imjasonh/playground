@@ -9,26 +9,38 @@ import { cacheDom, createFeedback, debounce, el } from './ui/dom.js';
 import { createViewer } from './ui/viewer.js';
 import { createTree } from './ui/tree.js';
 import { createPalette } from './ui/palette.js';
+import { createContentSearch } from './ui/contentSearch.js';
 import { createHistory } from './ui/history.js';
 import { createRecent } from './ui/recent.js';
 import { buildFileTree } from './fileTree.js';
+import { createStore, createLoadController } from './store.js';
+import { capabilitiesOf, refLabel, refValue, parseRefValue } from './repoSource.js';
+import { diffLines } from './diff.js';
+import { isBinaryExtension, looksBinary } from './language.js';
 import { ancestors } from './pathUtils.js';
 import { parseRepoUrl, DEFAULT_CORS_PROXY } from './repoUrl.js';
 import { commitSummary, shortOid } from './format.js';
+import { cloneErrorMessage } from './cloneError.js';
+import { rememberToken } from './auth.js';
+import { storageEstimate, describeStorage, isLowOnStorage } from './quota.js';
 import { createDemoSource } from './demoRepo.js';
+import { parseHash, encodeHashState } from './hashState.js';
+import { createSearchClient } from './searchClient.js';
+import { createContentSearchClient } from './contentSearchClient.js';
 
 // Every element id the UI looks up. Kept in one list so the static wiring test
 // can confirm each one exists in index.html.
 const DOM_IDS = [
-  'repo-bar', 'repo-name', 'repo-meta', 'branch-select', 'find-btn',
+  'repo-bar', 'repo-name', 'repo-meta', 'branch-select', 'find-btn', 'search-btn',
   'history-btn', 'update-btn', 'close-btn', 'start-view', 'clone-form',
-  'url-input', 'ref-input', 'depth-input', 'allbranches-input', 'proxy-input',
+  'url-input', 'ref-input', 'depth-input', 'allbranches-input', 'proxy-input', 'token-input',
   'clone-btn', 'demo-btn', 'preset-list', 'clone-error', 'clone-progress', 'progress-fill',
-  'progress-label', 'recent', 'recent-list', 'browser-view', 'tree-filter',
+  'progress-label', 'recent', 'recent-list', 'storage-usage', 'browser-view', 'tree-filter',
   'file-tree', 'flat-results', 'tree-empty', 'viewer-head', 'file-path',
-  'file-info', 'viewer-body', 'viewer-placeholder', 'history-panel',
-  'history-branch', 'commit-list', 'palette', 'palette-input',
-  'palette-results', 'palette-empty', 'toast',
+  'file-info', 'file-history-btn', 'viewer-body', 'viewer-placeholder', 'history-panel',
+  'history-branch', 'history-compare', 'compare-select', 'commit-list', 'palette', 'palette-input',
+  'palette-results', 'palette-empty', 'content-search', 'content-search-input', 'cs-case',
+  'cs-regex', 'content-search-status', 'content-search-results', 'content-search-empty', 'toast',
 ];
 
 export async function init() {
@@ -36,7 +48,7 @@ export async function init() {
   const feedback = createFeedback(dom);
   const { toast, hideToast, showProgress, hideProgress, showError, hideError } = feedback;
 
-  const state = {
+  const store = createStore({
     storage: null,
     source: null,
     files: [],
@@ -45,43 +57,97 @@ export async function init() {
     expanded: new Set(),
     activePath: null,
     branches: [],
+    tags: [],
+    lines: null, // selected line range {start,end} in the active text file
     historyOpen: false,
-  };
+    historyPath: null, // when set, the history panel shows this file's history
+  });
+  // `state` is the single live read view; every write flows through the store.
+  const state = store.getState();
 
-  // Monotonic token shared by every async load (open / branch switch / update).
-  // Each load bumps it and re-checks after every await, so a slower in-flight
-  // load can never overwrite the view produced by a newer one.
-  let loadToken = 0;
+  // First-class "current load" shared by every async load (open / branch switch
+  // / update). Each load supersedes the previous one and re-checks `active`
+  // after every await, so a slower in-flight load can never overwrite the view
+  // produced by a newer one.
+  const loads = createLoadController();
+  // A second, finer-grained load controller for the viewer pane alone, so
+  // opening a file and showing a diff supersede each other cleanly.
+  const viewLoads = createLoadController();
+  const decoder = new TextDecoder('utf-8', { fatal: false });
+
+  // Off-main-thread fuzzy file search (with a synchronous fallback). Shared by
+  // the command palette and the tree filter; the controller keeps its corpus in
+  // sync with the loaded file list (see reloadFiles / showStart).
+  const search = createSearchClient();
+  // Off-main-thread content (grep) search. Reads come from the RepoSource on the
+  // main thread; the worker decodes + scans and streams matches back.
+  const contentSearch = createContentSearchClient();
 
   // The shared context handed to each UI module. Cross-module actions are
   // assigned below, after the modules exist; modules only call them at
   // event time, so the late binding is safe.
-  const ctx = { state, dom, toast, hideToast };
+  const ctx = { state, store, dom, toast, hideToast, search, contentSearch };
 
   const viewer = createViewer(ctx);
   const tree = createTree(ctx);
   const palette = createPalette(ctx);
+  const contentSearchUI = createContentSearch(ctx);
   const history = createHistory(ctx);
   const recent = createRecent(ctx);
 
   ctx.openFile = openFile;
   ctx.openSource = openSource;
   ctx.startClone = startClone;
+  ctx.browseRef = switchRef;
+  ctx.showCommitDiff = showCommitDiff;
+  ctx.showCompare = showCompare;
+  // The viewer calls this when a line number is clicked, so the selection
+  // becomes part of the shareable URL hash.
+  ctx.onLinesChange = (range) => {
+    store.setState({ lines: range });
+    syncHash();
+  };
+
+  // Hash/deep-link bookkeeping: the value (without '#') we last wrote or read,
+  // used to tell our own writes apart from real navigation; and a guard that
+  // suppresses interim writes while a deep link is being applied.
+  let lastHash = null;
+  let restoring = false;
 
   dom.proxyInput.value = DEFAULT_CORS_PROXY;
 
   const { GitStorage } = await import('./gitClient.js').catch(() => ({}));
-  if (GitStorage) state.storage = new GitStorage();
+  if (GitStorage) {
+    const storage = new GitStorage();
+    store.setState({ storage });
+    // Keep the stored-repos list in sync when another tab clones/removes a repo.
+    if (typeof storage.onReposChanged === 'function') {
+      storage.onReposChanged(() => recent.renderRecent());
+    }
+    // Reconcile the FS with the registry in the background: a clone that failed
+    // before it was recorded can leave an orphaned dir behind. Best-effort.
+    storage
+      .repair()
+      .then((removed) => {
+        if (removed && removed.length) {
+          toast(`Cleaned up ${removed.length} orphaned clone${removed.length > 1 ? 's' : ''}.`);
+        }
+      })
+      .catch(() => {});
+  }
 
   bindEvents();
   recent.renderPresets();
   recent.renderRecent();
 
-  if (location.hash === '#demo') {
-    openDemo();
-  }
+  // Restore a deep-linked view (repo + ref + file + lines) from the URL hash,
+  // and keep responding to later hash navigation (back/forward, shared links).
+  lastHash = location.hash.replace(/^#/, '');
+  window.addEventListener('hashchange', onHashChange);
+  const initialState = parseHash(location.hash);
+  if (initialState) applyDeepLink(initialState);
 
-  window.gitBrowser = { openDemo, openSource, state };
+  window.gitBrowser = { openDemo, openSource, state, store, search, contentSearch };
 
   /* ---------------------------------------------------------------- */
   /* Event wiring                                                      */
@@ -91,10 +157,14 @@ export async function init() {
     dom.cloneForm.addEventListener('submit', onCloneSubmit);
     dom.demoBtn.addEventListener('click', openDemo);
     dom.closeBtn.addEventListener('click', showStart);
-    dom.branchSelect.addEventListener('change', onBranchChange);
+    dom.branchSelect.addEventListener('change', onRefChange);
     dom.updateBtn.addEventListener('click', onUpdate);
     dom.historyBtn.addEventListener('click', () => history.toggle());
+    dom.fileHistoryBtn.addEventListener('click', () => {
+      if (state.activePath) history.showFile(state.activePath);
+    });
     dom.findBtn.addEventListener('click', () => palette.open());
+    dom.searchBtn.addEventListener('click', () => contentSearchUI.open());
     // Debounced: the tree filter rescans every file on each keystroke, which is
     // wasted work on large repos when someone is typing quickly.
     dom.treeFilter.addEventListener('input', debounce(() => tree.renderSidebar(), 90));
@@ -108,15 +178,27 @@ export async function init() {
   }
 
   function onGlobalKey(event) {
-    const isFind = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'p';
-    if (isFind && state.source) {
+    const mod = event.metaKey || event.ctrlKey;
+    const key = event.key.toLowerCase();
+    // Ctrl/Cmd+Shift+F: search file contents (grep). Checked before the plain
+    // find shortcut so the two don't fight over modifier combos.
+    if (mod && event.shiftKey && key === 'f' && state.source) {
       event.preventDefault();
+      palette.close();
+      if (contentSearchUI.isOpen()) contentSearchUI.close();
+      else contentSearchUI.open();
+      return;
+    }
+    if (mod && !event.shiftKey && key === 'p' && state.source) {
+      event.preventDefault();
+      contentSearchUI.close();
       if (palette.isOpen()) palette.close();
       else palette.open();
       return;
     }
-    if (event.key === 'Escape' && palette.isOpen()) {
-      palette.close();
+    if (event.key === 'Escape') {
+      if (palette.isOpen()) palette.close();
+      if (contentSearchUI.isOpen()) contentSearchUI.close();
     }
   }
 
@@ -125,15 +207,18 @@ export async function init() {
   /* ---------------------------------------------------------------- */
 
   function showStart() {
-    state.source = null;
-    state.activePath = null;
+    loads.cancel();
+    store.setState({ source: null, activePath: null, lines: null });
+    search.setFiles([]); // drop the corpus so the worker isn't holding a stale repo
     viewer.dispose();
     dom.browserView.hidden = true;
     dom.repoBar.hidden = true;
     dom.startView.hidden = false;
     document.body.classList.remove('repo-open');
     palette.close();
+    contentSearchUI.close();
     recent.renderRecent();
+    syncHash();
   }
 
   function showBrowser() {
@@ -170,6 +255,19 @@ export async function init() {
     const ref = dom.refInput.value.trim();
     const corsProxy = dom.proxyInput.value.trim();
 
+    // Stash any access token for this host in session storage so the clone (and
+    // later fetches) can authenticate. Never persisted to disk or logged.
+    const token = dom.tokenInput ? dom.tokenInput.value.trim() : '';
+    if (token) rememberToken(parsed.host, token);
+
+    // Non-blocking heads-up when IndexedDB is nearly full. A small repo may
+    // still fit, so warn rather than block; a real overflow surfaces a clear
+    // QuotaExceededError message from cloneErrorMessage.
+    const estimate = await storageEstimate();
+    if (isLowOnStorage(estimate)) {
+      toast(`Low on storage — ${describeStorage(estimate)}. Remove a stored repo if the clone fails.`, 'error');
+    }
+
     setCloning(true);
     showProgress('Connecting…', 0);
 
@@ -198,19 +296,6 @@ export async function init() {
     }
   }
 
-  function cloneErrorMessage(err, corsProxy) {
-    const message = (err && err.message) || String(err);
-    if (/Failed to fetch|NetworkError|CORS|ENOTFOUND/i.test(message)) {
-      return corsProxy
-        ? `Could not reach the repository. The CORS proxy may be down or the URL may be wrong. (${message})`
-        : `Could not reach the repository. Most hosts need a CORS proxy — set one in Advanced options. (${message})`;
-    }
-    if (/404|not found|Could not find/i.test(message)) {
-      return `Repository or ref not found. Check the URL and branch. (${message})`;
-    }
-    return `Clone failed: ${message}`;
-  }
-
   function setCloning(busy) {
     dom.cloneBtn.disabled = busy;
     dom.cloneBtn.textContent = busy ? 'Cloning…' : 'Clone';
@@ -221,36 +306,48 @@ export async function init() {
   }
 
   async function openSource(source) {
-    state.source = source;
-    state.activePath = null;
-    state.expanded = new Set();
+    store.setState({ source, activePath: null, lines: null, expanded: new Set() });
     viewer.dispose();
     history.reset();
+    applyCapabilities(source);
 
-    const token = ++loadToken;
+    const load = loads.begin();
     showBrowser();
     tree.resetScroll();
-    await refreshRepo(token);
-    if (token !== loadToken) return;
+    await refreshRepo(load);
+    if (!load.active) return;
     viewer.showPlaceholder();
+    syncHash();
+  }
+
+  /** Enable/disable repo-bar affordances based on what the source supports. */
+  function applyCapabilities(source) {
+    const caps = capabilitiesOf(source);
+    dom.updateBtn.disabled = !caps.fetch;
+    dom.updateBtn.title = caps.fetch
+      ? 'Fetch the latest commits from the remote'
+      : 'This source has no remote to fetch from';
   }
 
   /** Reload branch list, files, and header for the current branch. */
-  async function refreshRepo(token) {
+  async function refreshRepo(load) {
     const source = state.source;
     dom.repoName.textContent = source.fullName;
 
-    const branches = await source.listBranches();
-    if (token !== loadToken) return;
-    state.branches = branches;
-    renderBranchSelect();
+    const [branches, tags] = await Promise.all([
+      source.listBranches(),
+      typeof source.listTags === 'function' ? source.listTags().catch(() => []) : [],
+    ]);
+    if (!load.active) return;
+    store.setState({ branches, tags });
+    renderRefPicker();
 
-    await reloadFiles(token);
-    if (token !== loadToken) return;
+    await reloadFiles(load);
+    if (!load.active) return;
 
     try {
       const head = await source.headCommit();
-      if (token !== loadToken) return;
+      if (!load.active) return;
       renderHead(head);
     } catch {
       dom.repoMeta.textContent = '';
@@ -259,26 +356,32 @@ export async function init() {
     if (state.historyOpen) history.load();
   }
 
-  async function reloadFiles(token) {
+  async function reloadFiles(load) {
     const files = await state.source.listFiles();
-    if (token !== loadToken) return;
-    state.files = files;
-    state.fileSet = new Set(files);
-    state.tree = buildFileTree(files);
-    // Auto-expand a single top-level directory chain for convenience.
-    state.expanded = new Set();
-    autoExpand();
+    if (!load.active) return;
+    const fileTree = buildFileTree(files);
+    store.setState({
+      files,
+      fileSet: new Set(files),
+      tree: fileTree,
+      // Auto-expand a single top-level directory chain for convenience.
+      expanded: initialExpanded(fileTree),
+    });
+    // Hand the new corpus to the search backend (rebuilds the index off-thread).
+    search.setFiles(files);
     dom.treeFilter.value = '';
     tree.renderSidebar();
   }
 
-  function autoExpand() {
-    let nodes = state.tree.children;
-    // expand while there is exactly one directory at this level
+  /** Set of directory paths forming the single top-level chain to auto-open. */
+  function initialExpanded(fileTree) {
+    const expanded = new Set();
+    let nodes = fileTree.children;
     while (nodes.length === 1 && nodes[0].type === 'dir') {
-      state.expanded.add(nodes[0].path);
+      expanded.add(nodes[0].path);
       nodes = nodes[0].children;
     }
+    return expanded;
   }
 
   function renderHead(head) {
@@ -287,47 +390,90 @@ export async function init() {
       return;
     }
     dom.repoMeta.textContent =
-      `${state.source.getCurrentBranch()} · ${shortOid(head.oid)} · ` +
+      `${refLabel(currentRef())} · ${shortOid(head.oid)} · ` +
       `${commitSummary(head.message)} · ${state.files.length} files`;
   }
 
-  function renderBranchSelect() {
-    const select = dom.branchSelect;
-    select.replaceChildren();
-    const current = state.source.getCurrentBranch();
-    for (const branch of state.branches) {
-      const option = el('option', null, branch.name);
-      option.value = branch.name;
-      if (branch.name === current) option.selected = true;
-      select.appendChild(option);
-    }
-    select.disabled = state.branches.length <= 1;
+  /** The current ref descriptor, tolerating sources without getCurrentRef. */
+  function currentRef() {
+    const source = state.source;
+    if (source && typeof source.getCurrentRef === 'function') return source.getCurrentRef();
+    return { type: 'branch', name: source ? source.getCurrentBranch() : '' };
   }
 
-  async function onBranchChange() {
-    const name = dom.branchSelect.value;
-    const token = ++loadToken;
-    try {
-      await state.source.setBranch(name);
-      await refreshRepo(token);
-      if (token !== loadToken) return; // a newer switch/update superseded us
+  /** Render the branch/tag/commit picker reflecting the current ref. */
+  function renderRefPicker() {
+    const select = dom.branchSelect;
+    select.replaceChildren();
+    const current = currentRef();
+    const currentValue = refValue(current);
 
-      // Re-open the active file on the new branch if it still exists.
+    appendRefGroup(select, 'Branches', state.branches.map((b) => ['branch', b.name, b.name]));
+    appendRefGroup(select, 'Tags', state.tags.map((t) => ['tag', t, t]));
+
+    // Surface whatever ref is being viewed even when it isn't a listed branch
+    // or tag (a detached commit, or a tag/branch the source didn't enumerate).
+    const known = [...select.options].some((o) => o.value === currentValue);
+    if (!known && current.name) {
+      appendRefGroup(select, 'Viewing', [[current.type, current.name, refLabel(current)]]);
+    }
+
+    select.value = currentValue;
+    const switchable = state.branches.length + state.tags.length;
+    // Keep it interactive while detached so you can get back to a branch.
+    select.disabled = switchable <= 1 && known;
+  }
+
+  function appendRefGroup(select, label, entries) {
+    if (!entries.length) return;
+    const group = el('optgroup');
+    group.label = label;
+    for (const [type, name, text] of entries) {
+      const option = el('option', null, text);
+      option.value = refValue({ type, name });
+      group.appendChild(option);
+    }
+    select.appendChild(group);
+  }
+
+  function onRefChange() {
+    switchRef(parseRefValue(dom.branchSelect.value));
+  }
+
+  /** Apply a ref via setRef when supported, else fall back to setBranch. */
+  function applyRef(ref) {
+    const source = state.source;
+    if (typeof source.setRef === 'function') return source.setRef(ref);
+    if (ref.type === 'branch') return source.setBranch(ref.name);
+    return Promise.reject(new Error('This source cannot browse tags or commits.'));
+  }
+
+  /** Switch the view to any ref (branch / tag / commit) and refresh. */
+  async function switchRef(ref, { quiet = false } = {}) {
+    if (!state.source) return;
+    const load = loads.begin();
+    try {
+      await applyRef(ref);
+      await refreshRepo(load);
+      if (!load.active) return; // a newer switch/update superseded us
+
+      // Re-open the active file on the new ref if it still exists.
       if (state.activePath && state.fileSet.has(state.activePath)) {
         openFile(state.activePath);
       } else {
-        state.activePath = null;
+        store.setState({ activePath: null, lines: null });
         viewer.showPlaceholder();
+        syncHash();
       }
-      toast(`Switched to ${name}`);
+      if (!quiet) toast(`Switched to ${refLabel(ref)}`);
     } catch (err) {
-      if (token === loadToken) toast(`Could not switch branch: ${err.message}`, 'error');
+      if (load.active) toast(`Could not switch: ${err.message}`, 'error');
     }
   }
 
   async function onUpdate() {
     if (!state.source) return;
-    const token = ++loadToken;
+    const load = loads.begin();
     const btn = dom.updateBtn;
     btn.disabled = true;
     const original = btn.textContent;
@@ -336,15 +482,15 @@ export async function init() {
       const result = await state.source.update((p) => {
         btn.textContent = p.phase ? `${p.phase}…` : 'Updating…';
       });
-      await refreshRepo(token);
-      if (token === loadToken) {
+      await refreshRepo(load);
+      if (load.active) {
         if (state.activePath && state.fileSet.has(state.activePath)) {
           openFile(state.activePath);
         }
         toast(updateMessage(result), result.updated && result.changed ? 'success' : undefined);
       }
     } catch (err) {
-      if (token === loadToken) toast(`Update failed: ${err.message}`, 'error');
+      if (load.active) toast(`Update failed: ${err.message}`, 'error');
     } finally {
       // The button belongs to this invocation, so always restore it.
       btn.disabled = false;
@@ -363,12 +509,23 @@ export async function init() {
   /* Open a file (coordinates palette + tree + viewer)                 */
   /* ---------------------------------------------------------------- */
 
-  async function openFile(path) {
-    state.activePath = path;
+  /**
+   * Open a file in the viewer.
+   *
+   * @param {string} path
+   * @param {{lines?: ?{start:number, end:number}}} [opts]  optional line target
+   */
+  async function openFile(path, opts = {}) {
     palette.close();
+    const view = viewLoads.begin();
+    const lines = opts.lines || null;
 
     // reveal in tree
-    for (const dir of ancestors(path)) state.expanded.add(dir);
+    store.update((s) => {
+      s.activePath = path;
+      s.lines = lines;
+      for (const dir of ancestors(path)) s.expanded.add(dir);
+    });
     tree.renderSidebar();
 
     viewer.beginLoading(path);
@@ -377,12 +534,184 @@ export async function init() {
     try {
       bytes = await state.source.readFile(path);
     } catch (err) {
-      viewer.showReadError(err.message);
+      if (view.active) viewer.showReadError(err.message);
       return;
     }
 
-    if (state.activePath !== path) return; // a newer open superseded this one
-    viewer.render(path, bytes);
+    if (!view.active) return; // a newer open / diff superseded this one
+    viewer.render(path, bytes, { lines });
+    syncHash();
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Diff view                                                         */
+  /* ---------------------------------------------------------------- */
+
+  /** Show a commit's changes (against its first parent, or the empty tree). */
+  function showCommitDiff(commit) {
+    const parent = commit.parent && commit.parent[0];
+    return showDiff({
+      title: `Changes in ${shortOid(commit.oid)}`,
+      subtitle: commitSummary(commit.message),
+      baseRef: parent ? { type: 'commit', name: parent } : null,
+      headRef: { type: 'commit', name: commit.oid },
+    });
+  }
+
+  /** Compare two refs (branch/tag/commit) directly. */
+  function showCompare(baseRef, headRef) {
+    return showDiff({
+      title: `Compare ${refLabel(baseRef)} \u2192 ${refLabel(headRef)}`,
+      subtitle: '',
+      baseRef,
+      headRef,
+    });
+  }
+
+  async function showDiff({ title, subtitle, baseRef, headRef }) {
+    if (!state.source || typeof state.source.changedFiles !== 'function') {
+      toast('Diffs are not supported for this source.', 'error');
+      return;
+    }
+    palette.close();
+    // A diff isn't a file selection; clear the active file highlight and drop
+    // the file/lines from the URL (diffs aren't deep-linked).
+    store.setState({ activePath: null, lines: null });
+    tree.renderSidebar();
+    syncHash();
+
+    const view = viewLoads.begin();
+    viewer.showDiffLoading(title, subtitle);
+
+    let changes;
+    try {
+      changes = await state.source.changedFiles(baseRef, headRef);
+    } catch (err) {
+      if (view.active) viewer.showReadError(err.message);
+      return;
+    }
+    if (!view.active) return;
+
+    viewer.renderDiff({
+      title,
+      subtitle,
+      changes,
+      loadFileDiff: (change) => loadFileDiff(change, baseRef, headRef),
+    });
+  }
+
+  /** Read both sides of a changed file and produce its line diff. */
+  async function loadFileDiff(change, baseRef, headRef) {
+    let oldBytes = new Uint8Array(0);
+    let newBytes = new Uint8Array(0);
+    if (change.status !== 'added') oldBytes = await state.source.readFile(change.path, baseRef);
+    if (change.status !== 'removed') newBytes = await state.source.readFile(change.path, headRef);
+    if (isBinaryExtension(change.path) || looksBinary(oldBytes) || looksBinary(newBytes)) {
+      return { binary: true };
+    }
+    return diffLines(decoder.decode(oldBytes), decoder.decode(newBytes));
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Deep links / URL hash                                             */
+  /* ---------------------------------------------------------------- */
+
+  /** The shareable view state for what's currently on screen, or null. */
+  function currentHashState() {
+    if (!state.source) return null;
+    const hashState = { repo: state.source.url || 'demo', ref: refValue(currentRef()) };
+    if (state.activePath) {
+      hashState.file = state.activePath;
+      if (state.lines) hashState.lines = state.lines;
+    }
+    return hashState;
+  }
+
+  /**
+   * Reflect the current view in `location.hash`. No-ops while a deep link is
+   * being applied (so intermediate steps don't pollute history) and whenever the
+   * URL already matches, so our own writes don't echo back through hashchange.
+   */
+  function syncHash({ replace = false } = {}) {
+    if (restoring) return;
+    const next = encodeHashState(currentHashState());
+    const inUrl = location.hash.replace(/^#/, '');
+    lastHash = next;
+    if (next === inUrl) return;
+    if (replace) {
+      const base = location.pathname + location.search;
+      history.replaceState(null, '', next ? `${base}#${next}` : base);
+    } else if (next) {
+      location.hash = next; // a normal navigation step (adds a history entry)
+    } else {
+      history.replaceState(null, '', location.pathname + location.search);
+    }
+  }
+
+  function onHashChange() {
+    const inUrl = location.hash.replace(/^#/, '');
+    if (inUrl === (lastHash || '')) return; // our own write, ignore
+    lastHash = inUrl;
+    applyDeepLink(parseHash(location.hash));
+  }
+
+  /** Open the repo/ref/file described by a parsed hash state. */
+  async function applyDeepLink(parsed) {
+    if (!parsed || restoring) return;
+    restoring = true;
+    try {
+      // 1. Make sure the right repository is open.
+      const openRepo = state.source ? state.source.url || 'demo' : null;
+      if (openRepo !== parsed.repo) {
+        const opened = await openForDeepLink(parsed.repo);
+        if (!opened) return; // couldn't open here (e.g. not cloned); URL prefilled
+      }
+      // 2. Switch to the requested ref if needed (quietly — no "Switched to…").
+      const targetRef = parsed.ref ? parseRefValue(parsed.ref) : null;
+      if (targetRef && refValue(currentRef()) !== refValue(targetRef)) {
+        await switchRef(targetRef, { quiet: true });
+      }
+      // 3. Open the file and apply the line selection.
+      if (parsed.file && state.fileSet.has(parsed.file)) {
+        await openFile(parsed.file, { lines: parsed.lines || null });
+      } else if (parsed.lines && viewer.currentTextPath() === parsed.file) {
+        viewer.applyLineSelection(parsed.lines, { scroll: true });
+      }
+    } finally {
+      restoring = false;
+      // Canonicalize the hash to what actually loaded (e.g. a missing file is
+      // dropped), but only when a repo is open so a prefilled URL stays linkable.
+      // Replace (don't push) so restoring doesn't leave a junk history entry.
+      if (state.source) syncHash({ replace: true });
+    }
+  }
+
+  /**
+   * Ensure the repo named by a deep link is the open source. Returns whether a
+   * source was opened; when the repo isn't available locally it prefills the
+   * clone form instead and returns false.
+   */
+  async function openForDeepLink(repo) {
+    if (repo === 'demo') {
+      await openSource(createDemoSource());
+      return true;
+    }
+    if (state.storage) {
+      const entry = state.storage.listRepos().find((r) => r.url === repo);
+      if (entry) {
+        try {
+          await openSource(await state.storage.open(entry.dir));
+          return true;
+        } catch {
+          /* fall through to prefilling the form */
+        }
+      }
+    }
+    // Not cloned in this browser: land on the start screen with the URL ready.
+    showStart();
+    dom.urlInput.value = repo;
+    toast('Clone this repository to open the linked file.');
+    return false;
   }
 
   /* ---------------------------------------------------------------- */

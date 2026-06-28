@@ -4,6 +4,7 @@
  */
 import { el } from './dom.js';
 import { relativeTime } from '../format.js';
+import { storageEstimate, describeStorage } from '../quota.js';
 
 // One-tap sample repositories for the clone screen. Kept small (few files /
 // few branches) so a shallow clone over the CORS proxy stays fast on mobile.
@@ -83,6 +84,16 @@ export function createRecent(ctx) {
 
       dom.recentList.appendChild(item);
     }
+
+    renderStorageUsage();
+  }
+
+  /** Fill the IndexedDB usage meter, hiding it when the API is unavailable. */
+  async function renderStorageUsage() {
+    if (!dom.storageUsage) return;
+    const label = describeStorage(await storageEstimate());
+    dom.storageUsage.textContent = label ? `Storage: ${label}` : '';
+    dom.storageUsage.hidden = !label;
   }
 
   async function openStored(dir) {
