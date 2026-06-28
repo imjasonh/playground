@@ -153,6 +153,7 @@ function toCommit(entry) {
     message: c.message || '',
     author: { name: author.name || '', email: author.email || '' },
     timestamp: typeof author.timestamp === 'number' ? author.timestamp : 0,
+    parent: Array.isArray(c.parent) ? c.parent : [],
   };
 }
 
@@ -358,6 +359,66 @@ export class GitRepoSource {
       force: true,
     });
     return entries.map(toCommit);
+  }
+
+  /**
+   * Files that differ between two refs by walking both trees. A null baseRef
+   * compares against the empty tree (every blob is an addition), which is what
+   * the root commit's diff needs.
+   */
+  async changedFiles(baseRef, headRef) {
+    const { TREE, walk } = this._git;
+    const headOid = await this._resolveOid(headRef);
+    const trees = [];
+    let baseOid = null;
+    if (baseRef != null) {
+      baseOid = await this._resolveOid(baseRef);
+      trees.push(TREE({ ref: baseOid }));
+    }
+    trees.push(TREE({ ref: headOid }));
+    const baseIdx = baseRef != null ? 0 : -1;
+    const headIdx = trees.length - 1;
+
+    const changes = await walk({
+      fs: this._fs,
+      dir: this._dir,
+      trees,
+      map: async (filepath, entries) => {
+        if (filepath === '.') return undefined;
+        const a = baseIdx >= 0 ? entries[baseIdx] : null;
+        const b = entries[headIdx];
+        const [aType, bType] = await Promise.all([
+          a ? a.type() : null,
+          b ? b.type() : null,
+        ]);
+        // Only compare blobs; let walk descend into directories on its own.
+        if (aType === 'tree' || bType === 'tree') return undefined;
+        const [aOid, bOid] = await Promise.all([
+          a ? a.oid() : null,
+          b ? b.oid() : null,
+        ]);
+        if (aOid === bOid) return undefined;
+        let status;
+        if (!aOid) status = 'added';
+        else if (!bOid) status = 'removed';
+        else status = 'modified';
+        return { path: filepath, status, oldOid: aOid, newOid: bOid };
+      },
+      // Flatten the per-node results, dropping the undefined (unchanged) ones.
+      reduce: async (parent, children) => {
+        const flat = [];
+        for (const child of children) {
+          if (Array.isArray(child)) flat.push(...child);
+          else if (child) flat.push(child);
+        }
+        if (parent) flat.push(parent);
+        return flat;
+      },
+    });
+
+    const list = Array.isArray(changes) ? changes : [];
+    list.sort((x, y) => (x.path < y.path ? -1 : x.path > y.path ? 1 : 0));
+    return list;
   }
 
   /**

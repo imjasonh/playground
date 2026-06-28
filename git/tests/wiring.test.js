@@ -66,6 +66,8 @@ describe('module imports', () => {
     ['createLoadController', 'store.js'],
     ['capabilitiesOf', 'repoSource.js'],
     ['normalizeRef', 'repoSource.js'],
+    ['refValue', 'repoSource.js'],
+    ['diffLines', 'diff.js'],
   ];
 
   test.each(requiredSymbols)('some module imports %s from %s', (symbol, mod) => {

@@ -13,7 +13,9 @@ import { createHistory } from './ui/history.js';
 import { createRecent } from './ui/recent.js';
 import { buildFileTree } from './fileTree.js';
 import { createStore, createLoadController } from './store.js';
-import { capabilitiesOf, refLabel } from './repoSource.js';
+import { capabilitiesOf, refLabel, refValue, parseRefValue } from './repoSource.js';
+import { diffLines } from './diff.js';
+import { isBinaryExtension, looksBinary } from './language.js';
 import { ancestors } from './pathUtils.js';
 import { parseRepoUrl, DEFAULT_CORS_PROXY } from './repoUrl.js';
 import { commitSummary, shortOid } from './format.js';
@@ -29,7 +31,7 @@ const DOM_IDS = [
   'progress-label', 'recent', 'recent-list', 'browser-view', 'tree-filter',
   'file-tree', 'flat-results', 'tree-empty', 'viewer-head', 'file-path',
   'file-info', 'file-history-btn', 'viewer-body', 'viewer-placeholder', 'history-panel',
-  'history-branch', 'commit-list', 'palette', 'palette-input',
+  'history-branch', 'history-compare', 'compare-select', 'commit-list', 'palette', 'palette-input',
   'palette-results', 'palette-empty', 'toast',
 ];
 
@@ -59,6 +61,10 @@ export async function init() {
   // after every await, so a slower in-flight load can never overwrite the view
   // produced by a newer one.
   const loads = createLoadController();
+  // A second, finer-grained load controller for the viewer pane alone, so
+  // opening a file and showing a diff supersede each other cleanly.
+  const viewLoads = createLoadController();
+  const decoder = new TextDecoder('utf-8', { fatal: false });
 
   // The shared context handed to each UI module. Cross-module actions are
   // assigned below, after the modules exist; modules only call them at
@@ -75,6 +81,8 @@ export async function init() {
   ctx.openSource = openSource;
   ctx.startClone = startClone;
   ctx.browseRef = switchRef;
+  ctx.showCommitDiff = showCommitDiff;
+  ctx.showCompare = showCompare;
 
   dom.proxyInput.value = DEFAULT_CORS_PROXY;
 
@@ -329,7 +337,7 @@ export async function init() {
     const select = dom.branchSelect;
     select.replaceChildren();
     const current = currentRef();
-    const currentValue = `${current.type}:${current.name}`;
+    const currentValue = refValue(current);
 
     appendRefGroup(select, 'Branches', state.branches.map((b) => ['branch', b.name, b.name]));
     appendRefGroup(select, 'Tags', state.tags.map((t) => ['tag', t, t]));
@@ -353,16 +361,10 @@ export async function init() {
     group.label = label;
     for (const [type, name, text] of entries) {
       const option = el('option', null, text);
-      option.value = `${type}:${name}`;
+      option.value = refValue({ type, name });
       group.appendChild(option);
     }
     select.appendChild(group);
-  }
-
-  function parseRefValue(value) {
-    const idx = value.indexOf(':');
-    if (idx === -1) return { type: 'branch', name: value };
-    return { type: value.slice(0, idx), name: value.slice(idx + 1) };
   }
 
   function onRefChange() {
@@ -439,6 +441,7 @@ export async function init() {
 
   async function openFile(path) {
     palette.close();
+    const view = viewLoads.begin();
 
     // reveal in tree
     store.update((s) => {
@@ -453,12 +456,79 @@ export async function init() {
     try {
       bytes = await state.source.readFile(path);
     } catch (err) {
-      viewer.showReadError(err.message);
+      if (view.active) viewer.showReadError(err.message);
       return;
     }
 
-    if (state.activePath !== path) return; // a newer open superseded this one
+    if (!view.active) return; // a newer open / diff superseded this one
     viewer.render(path, bytes);
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Diff view                                                         */
+  /* ---------------------------------------------------------------- */
+
+  /** Show a commit's changes (against its first parent, or the empty tree). */
+  function showCommitDiff(commit) {
+    const parent = commit.parent && commit.parent[0];
+    return showDiff({
+      title: `Changes in ${shortOid(commit.oid)}`,
+      subtitle: commitSummary(commit.message),
+      baseRef: parent ? { type: 'commit', name: parent } : null,
+      headRef: { type: 'commit', name: commit.oid },
+    });
+  }
+
+  /** Compare two refs (branch/tag/commit) directly. */
+  function showCompare(baseRef, headRef) {
+    return showDiff({
+      title: `Compare ${refLabel(baseRef)} \u2192 ${refLabel(headRef)}`,
+      subtitle: '',
+      baseRef,
+      headRef,
+    });
+  }
+
+  async function showDiff({ title, subtitle, baseRef, headRef }) {
+    if (!state.source || typeof state.source.changedFiles !== 'function') {
+      toast('Diffs are not supported for this source.', 'error');
+      return;
+    }
+    palette.close();
+    // A diff isn't a file selection; clear the active file highlight.
+    store.setState({ activePath: null });
+    tree.renderSidebar();
+
+    const view = viewLoads.begin();
+    viewer.showDiffLoading(title, subtitle);
+
+    let changes;
+    try {
+      changes = await state.source.changedFiles(baseRef, headRef);
+    } catch (err) {
+      if (view.active) viewer.showReadError(err.message);
+      return;
+    }
+    if (!view.active) return;
+
+    viewer.renderDiff({
+      title,
+      subtitle,
+      changes,
+      loadFileDiff: (change) => loadFileDiff(change, baseRef, headRef),
+    });
+  }
+
+  /** Read both sides of a changed file and produce its line diff. */
+  async function loadFileDiff(change, baseRef, headRef) {
+    let oldBytes = new Uint8Array(0);
+    let newBytes = new Uint8Array(0);
+    if (change.status !== 'added') oldBytes = await state.source.readFile(change.path, baseRef);
+    if (change.status !== 'removed') newBytes = await state.source.readFile(change.path, headRef);
+    if (isBinaryExtension(change.path) || looksBinary(oldBytes) || looksBinary(newBytes)) {
+      return { binary: true };
+    }
+    return diffLines(decoder.decode(oldBytes), decoder.decode(newBytes));
   }
 
   /* ---------------------------------------------------------------- */

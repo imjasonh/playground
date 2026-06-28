@@ -129,6 +129,30 @@ describe('InMemoryRepoSource', () => {
     expect((await plain.fileLog('README.md')).length).toBe(2);
   });
 
+  test('log derives linear parent oids; the root has none', async () => {
+    const s = makeSource();
+    const log = await s.log();
+    expect(log[0]).toMatchObject({ oid: 'aaa', parent: ['bbb'] });
+    expect(log[1]).toMatchObject({ oid: 'bbb', parent: [] });
+  });
+
+  test('changedFiles reports add/remove/modify between branches', async () => {
+    const s = makeSource();
+    const changes = await s.changedFiles('main', 'dev');
+    const byPath = Object.fromEntries(changes.map((c) => [c.path, c.status]));
+    // dev adds src/extra.js, modifies README.md and src/index.js vs main.
+    expect(byPath['src/extra.js']).toBe('added');
+    expect(byPath['README.md']).toBe('modified');
+    expect(byPath['src/index.js']).toBe('modified');
+  });
+
+  test('changedFiles against a null base marks everything added', async () => {
+    const s = makeSource();
+    const changes = await s.changedFiles(null, 'main');
+    expect(changes.every((c) => c.status === 'added')).toBe(true);
+    expect(changes.map((c) => c.path).sort()).toEqual(['README.md', 'src/index.js']);
+  });
+
   test('update is a no-op for in-memory data', async () => {
     const s = makeSource();
     await expect(s.update()).resolves.toEqual({ updated: false, changed: false });

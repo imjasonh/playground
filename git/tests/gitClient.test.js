@@ -181,6 +181,7 @@ describe('GitRepoSource ref resolution', () => {
       message: 'main tip\n\nbody',
       author: { name: 'Ann', email: 'a@x' },
       timestamp: 100,
+      parent: [],
     });
     const log = await source.log(5);
     expect(log).toHaveLength(1);

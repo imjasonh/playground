@@ -44,6 +44,7 @@ export function createViewer(ctx) {
   function beginLoading(path) {
     dom.viewerHead.hidden = false;
     renderFilePath(path);
+    if (dom.fileHistoryBtn) dom.fileHistoryBtn.hidden = false;
     dom.fileInfo.textContent = 'Loading…';
     dom.viewerBody.replaceChildren(el('div', 'notice', 'Loading…'));
   }
@@ -135,5 +136,124 @@ export function createViewer(ctx) {
     dom.viewerBody.replaceChildren(notice);
   }
 
-  return { render, beginLoading, showReadError, showPlaceholder, dispose };
+  /* ---------------------------------------------------------------- */
+  /* Diff view (rendered into the same viewer real estate)            */
+  /* ---------------------------------------------------------------- */
+
+  function diffHeader(title, subtitle) {
+    dispose();
+    dom.viewerHead.hidden = false;
+    dom.filePath.replaceChildren(el('span', 'name', title));
+    if (dom.fileHistoryBtn) dom.fileHistoryBtn.hidden = true; // a diff isn't a file
+    dom.fileInfo.textContent = subtitle || '';
+  }
+
+  function showDiffLoading(title, subtitle) {
+    diffHeader(title, subtitle);
+    dom.viewerBody.replaceChildren(el('div', 'notice', 'Computing diff…'));
+  }
+
+  /**
+   * Render a changed-files summary; each row lazily loads its per-file line diff
+   * via `loadFileDiff(change)` (which resolves to a diff result or {binary:true}).
+   */
+  function renderDiff({ title, subtitle, changes, loadFileDiff }) {
+    diffHeader(title, subtitle);
+    const summary = summarizeChanges(changes);
+    dom.fileInfo.textContent = subtitle ? `${subtitle} · ${summary}` : summary;
+
+    if (!changes.length) {
+      dom.viewerBody.replaceChildren(el('div', 'notice', 'No changes between these refs.'));
+      return;
+    }
+    const list = el('div', 'diff-list');
+    for (const change of changes) list.appendChild(buildChangeRow(change, loadFileDiff));
+    dom.viewerBody.replaceChildren(list);
+  }
+
+  function summarizeChanges(changes) {
+    const counts = { added: 0, removed: 0, modified: 0 };
+    for (const c of changes) counts[c.status] = (counts[c.status] || 0) + 1;
+    const parts = [];
+    if (counts.added) parts.push(`${counts.added} added`);
+    if (counts.modified) parts.push(`${counts.modified} modified`);
+    if (counts.removed) parts.push(`${counts.removed} removed`);
+    return parts.join(' · ') || `${changes.length} files`;
+  }
+
+  function statusGlyph(status) {
+    if (status === 'added') return 'A';
+    if (status === 'removed') return 'D';
+    return 'M';
+  }
+
+  function buildChangeRow(change, loadFileDiff) {
+    const wrap = el('div', 'diff-file');
+    const head = el('button', 'diff-file-head');
+    head.type = 'button';
+    head.setAttribute('aria-expanded', 'false');
+    head.appendChild(el('span', `diff-badge ${change.status}`, statusGlyph(change.status)));
+    head.appendChild(el('span', 'diff-file-path', change.path));
+    wrap.appendChild(head);
+
+    const body = el('div', 'diff-file-body');
+    body.hidden = true;
+    wrap.appendChild(body);
+
+    let loaded = false;
+    head.addEventListener('click', async () => {
+      const open = body.hidden;
+      body.hidden = !open;
+      head.setAttribute('aria-expanded', String(open));
+      head.classList.toggle('open', open);
+      if (!open || loaded) return;
+      loaded = true;
+      body.replaceChildren(el('div', 'notice', 'Loading diff…'));
+      let result;
+      try {
+        result = await loadFileDiff(change);
+      } catch (err) {
+        body.replaceChildren(el('div', 'notice', `Diff unavailable: ${err.message}`));
+        return;
+      }
+      if (!body.isConnected) return; // navigated away while loading
+      renderFileDiff(body, result);
+    });
+    return wrap;
+  }
+
+  function renderFileDiff(body, result) {
+    if (result.binary) {
+      body.replaceChildren(el('div', 'notice', 'Binary file — no text diff.'));
+      return;
+    }
+    if (result.truncated) {
+      body.replaceChildren(el('div', 'notice', 'File too large to diff.'));
+      return;
+    }
+    if (!result.rows.length) {
+      body.replaceChildren(el('div', 'notice', 'No textual changes.'));
+      return;
+    }
+    const rows = el('div', 'diff-rows');
+    for (const row of result.rows) {
+      const line = el('div', `diff-row ${row.type}`);
+      line.appendChild(el('span', 'diff-ln', row.oldLine == null ? '' : String(row.oldLine)));
+      line.appendChild(el('span', 'diff-ln', row.newLine == null ? '' : String(row.newLine)));
+      const sign = row.type === 'add' ? '+' : row.type === 'del' ? '-' : ' ';
+      line.appendChild(el('span', 'diff-text', `${sign} ${row.text}`));
+      rows.appendChild(line);
+    }
+    body.replaceChildren(rows);
+  }
+
+  return {
+    render,
+    beginLoading,
+    showReadError,
+    showPlaceholder,
+    showDiffLoading,
+    renderDiff,
+    dispose,
+  };
 }

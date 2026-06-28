@@ -3,13 +3,15 @@
  */
 import { el } from './dom.js';
 import { commitSummary, relativeTime, shortOid } from '../format.js';
-import { refLabel } from '../repoSource.js';
+import { refLabel, refValue, parseRefValue } from '../repoSource.js';
 
 /**
  * @param {{state: object, dom: Record<string, HTMLElement>}} ctx
  */
 export function createHistory(ctx) {
   const { state, store, dom } = ctx;
+
+  if (dom.compareSelect) dom.compareSelect.addEventListener('change', onCompareChange);
 
   function toggle() {
     const open = !state.historyOpen;
@@ -40,16 +42,22 @@ export function createHistory(ctx) {
     dom.historyBtn.setAttribute('aria-pressed', 'false');
   }
 
-  function currentLabel() {
+  /** The current ref descriptor, tolerating sources without getCurrentRef. */
+  function currentRef() {
     const source = state.source;
-    if (source && typeof source.getCurrentRef === 'function') return refLabel(source.getCurrentRef());
-    return source ? source.getCurrentBranch() : '';
+    if (source && typeof source.getCurrentRef === 'function') return source.getCurrentRef();
+    return { type: 'branch', name: source ? source.getCurrentBranch() : '' };
+  }
+
+  function currentLabel() {
+    return state.source ? refLabel(currentRef()) : '';
   }
 
   async function load() {
     if (!state.source) return;
     const path = state.historyPath;
     dom.historyBranch.textContent = path ? path : currentLabel();
+    renderCompare();
     dom.commitList.replaceChildren(el('li', 'commit-item muted', 'Loading…'));
     try {
       const commits = path ? await loadFileLog(path) : await state.source.log(100);
@@ -75,6 +83,57 @@ export function createHistory(ctx) {
     return source.log(100); // source without per-file history: show full log
   }
 
+  /**
+   * Populate the "Compare with" picker with every branch/tag except the one we
+   * are already viewing. Hidden in file-history mode or when the source can't
+   * diff, and whenever there's nothing else to compare against.
+   */
+  function renderCompare() {
+    const select = dom.compareSelect;
+    const wrap = dom.historyCompare;
+    if (!select) return;
+    const source = state.source;
+    const canCompare =
+      !state.historyPath && ctx.showCompare && source && typeof source.changedFiles === 'function';
+
+    const current = currentRef();
+    const options = [];
+    if (canCompare) {
+      for (const b of state.branches || []) {
+        if (current.type === 'branch' && current.name === b.name) continue;
+        options.push(['branch', b.name, `Branch: ${b.name}`]);
+      }
+      for (const t of state.tags || []) {
+        if (current.type === 'tag' && current.name === t) continue;
+        options.push(['tag', t, `Tag: ${t}`]);
+      }
+    }
+
+    if (!options.length) {
+      if (wrap) wrap.hidden = true;
+      return;
+    }
+    if (wrap) wrap.hidden = false;
+    select.replaceChildren();
+    const placeholder = el('option', null, 'Compare with…');
+    placeholder.value = '';
+    select.appendChild(placeholder);
+    for (const [type, name, text] of options) {
+      const option = el('option', null, text);
+      option.value = refValue({ type, name });
+      select.appendChild(option);
+    }
+    select.value = '';
+  }
+
+  function onCompareChange() {
+    const value = dom.compareSelect.value;
+    if (!value || !ctx.showCompare) return;
+    // Reset so re-selecting the same ref fires again, then diff current -> picked.
+    dom.compareSelect.value = '';
+    ctx.showCompare(currentRef(), parseRefValue(value));
+  }
+
   /** A row that returns from file history to the current ref's history. */
   function backRow() {
     const li = el('li', 'commit-item history-back');
@@ -94,13 +153,22 @@ export function createHistory(ctx) {
     if (commit.timestamp) meta.appendChild(el('span', null, relativeTime(commit.timestamp)));
     item.appendChild(meta);
 
-    if (ctx.browseRef && commit.oid) {
+    if ((ctx.browseRef || ctx.showCommitDiff) && commit.oid) {
       const actions = el('div', 'commit-actions');
-      const browse = el('button', 'commit-action', 'Browse files');
-      browse.type = 'button';
-      browse.title = `Browse the tree at ${shortOid(commit.oid)}`;
-      browse.addEventListener('click', () => ctx.browseRef({ type: 'commit', name: commit.oid }));
-      actions.appendChild(browse);
+      if (ctx.showCommitDiff) {
+        const diff = el('button', 'commit-action', 'View changes');
+        diff.type = 'button';
+        diff.title = `Show files changed in ${shortOid(commit.oid)}`;
+        diff.addEventListener('click', () => ctx.showCommitDiff(commit));
+        actions.appendChild(diff);
+      }
+      if (ctx.browseRef) {
+        const browse = el('button', 'commit-action', 'Browse files');
+        browse.type = 'button';
+        browse.title = `Browse the tree at ${shortOid(commit.oid)}`;
+        browse.addEventListener('click', () => ctx.browseRef({ type: 'commit', name: commit.oid }));
+        actions.appendChild(browse);
+      }
       item.appendChild(actions);
     }
     return item;

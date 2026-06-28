@@ -154,6 +154,26 @@ describeMaybe('GitStorage real clone/fetch over local git http-backend', () => {
     await source.setBranch('main');
   });
 
+  test('changedFiles diffs two refs by walking their trees', async () => {
+    // main -> dev introduced src/dev.js (added), nothing else changed.
+    const changes = await source.changedFiles('main', 'dev');
+    const byPath = Object.fromEntries(changes.map((c) => [c.path, c.status]));
+    expect(byPath['src/dev.js']).toBe('added');
+    expect(Object.keys(byPath)).not.toContain('README.md');
+  });
+
+  test('changedFiles of a commit vs its parent (and the root commit)', async () => {
+    await source.setBranch('main');
+    const log = await source.log(10);
+    const root = log[log.length - 1];
+    expect(root.parent).toEqual([]);
+
+    // The root commit compared against an empty base: everything added.
+    const rootChanges = await source.changedFiles(null, { type: 'commit', name: root.oid });
+    expect(rootChanges.map((c) => c.path).sort()).toEqual(['README.md', 'src/index.js']);
+    expect(rootChanges.every((c) => c.status === 'added')).toBe(true);
+  });
+
   test('the clone is recorded in the registry and can be reopened', async () => {
     expect(storage.listRepos().map((r) => r.dir)).toContain(dir);
 

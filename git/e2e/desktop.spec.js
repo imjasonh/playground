@@ -102,7 +102,11 @@ test('browses the tree at a commit from history', async ({ page }) => {
   await page.getByRole('button', { name: 'History' }).click();
   await expect(page.locator('#history-panel')).toBeVisible();
 
-  await page.locator('.commit-item .commit-action').first().click();
+  await page
+    .locator('.commit-item')
+    .first()
+    .getByRole('button', { name: 'Browse files' })
+    .click();
   // The picker now reflects a detached "Viewing" entry and the tree still loads.
   await expect(page.locator('#branch-select optgroup[label="Viewing"]')).toHaveCount(1);
   await expect(page.locator('.tree-row', { hasText: 'README.md' })).toBeVisible();
@@ -132,6 +136,50 @@ test('shows file-scoped history from the viewer header', async ({ page }) => {
   await page.locator('.history-back .commit-action').click();
   await expect(page.locator('#history-branch')).toHaveText('main');
   await expect(page.locator('.commit-item .commit-msg').first()).toBeVisible();
+});
+
+test('compares the current ref with another from the history panel', async ({ page }) => {
+  await loadDemo(page);
+  await page.getByRole('button', { name: 'History' }).click();
+  await expect(page.locator('#history-panel')).toBeVisible();
+
+  // Compare main -> feature/dark-mode via the "Compare with" picker.
+  await page.selectOption('#compare-select', 'branch:feature/dark-mode');
+
+  // The viewer switches to a changed-files summary (3 files differ).
+  await expect(page.locator('#file-path')).toContainText('Compare');
+  await expect(page.locator('.diff-file')).toHaveCount(3);
+  // theme.js exists only on the dark-mode branch, so it reads as added.
+  await expect(
+    page.locator('.diff-file', { hasText: 'src/theme.js' }).locator('.diff-badge')
+  ).toHaveText('A');
+
+  // Expanding a modified file lazily reveals its per-line diff.
+  await page
+    .locator('.diff-file', { hasText: 'src/app.js' })
+    .locator('.diff-file-head')
+    .click();
+  await expect(
+    page.locator('.diff-file', { hasText: 'src/app.js' }).locator('.diff-row.add').first()
+  ).toBeVisible();
+});
+
+test("shows a commit's changed files from history", async ({ page }) => {
+  await loadDemo(page);
+  await page.getByRole('button', { name: 'History' }).click();
+  await expect(page.locator('#history-panel')).toBeVisible();
+
+  // The initial commit has no parent, so every file reads as an addition.
+  await page
+    .locator('.commit-item', { hasText: 'Initial commit' })
+    .getByRole('button', { name: 'View changes' })
+    .click();
+
+  await expect(page.locator('#file-path')).toContainText('Changes in');
+  await expect(page.locator('.diff-file').first()).toBeVisible();
+  await expect(
+    page.locator('.diff-file', { hasText: 'README.md' }).locator('.diff-badge')
+  ).toHaveText('A');
 });
 
 test('disables Pull / Update for a source with no remote (demo)', async ({ page }) => {

@@ -172,8 +172,14 @@
 
         <aside class="history-panel" id="history-panel" hidden aria-label="Commit history">
           <div class="history-head">
-            <h3>History</h3>
-            <span id="history-branch" class="muted"></span>
+            <div class="history-head-row">
+              <h3>History</h3>
+              <span id="history-branch" class="muted"></span>
+            </div>
+            <label class="history-compare" id="history-compare">
+              <span class="muted">Compare with</span>
+              <select id="compare-select" aria-label="Compare the current ref with another"></select>
+            </label>
           </div>
           <ul class="commit-list" id="commit-list"></ul>
         </aside>

@@ -12,6 +12,13 @@
  * @property {string} message
  * @property {{name: string, email: string}} author
  * @property {number} timestamp  seconds since epoch
+ * @property {string[]} parent   parent commit oids (empty for the root commit)
+ *
+ * @typedef {Object} FileChange
+ * @property {string} path
+ * @property {'added'|'removed'|'modified'} status
+ * @property {?string} [oldOid]
+ * @property {?string} [newOid]
  *
  * @typedef {Object} BranchInfo
  * @property {string} name
@@ -47,6 +54,7 @@
  * @property {(ref?: Ref|string) => Promise<Commit|null>} headCommit
  * @property {(limit?: number, ref?: Ref|string) => Promise<Commit[]>} log
  * @property {(path: string, limit?: number, ref?: Ref|string) => Promise<Commit[]>} [fileLog]
+ * @property {(baseRef: ?(Ref|string), headRef: Ref|string) => Promise<FileChange[]>} [changedFiles]
  * @property {(onProgress?: Function) => Promise<UpdateResult>} update
  */
 
@@ -103,11 +111,33 @@ export function refLabel(ref) {
   return r.type === 'commit' ? r.name.slice(0, 7) : r.name;
 }
 
+/** Encode a ref as a "type:name" string for option values / URLs. */
+export function refValue(ref) {
+  const r = normalizeRef(ref);
+  return `${r.type}:${r.name}`;
+}
+
+/** Parse a "type:name" string back into a ref descriptor. */
+export function parseRefValue(value) {
+  const str = String(value || '');
+  const idx = str.indexOf(':');
+  if (idx === -1) return { type: 'branch', name: str };
+  return normalizeRef({ type: str.slice(0, idx), name: str.slice(idx + 1) });
+}
+
 function toBytes(content) {
   if (content == null) return new Uint8Array(0);
   if (content instanceof Uint8Array) return content;
   if (ArrayBuffer.isView(content)) return new Uint8Array(content.buffer);
   return textEncoder.encode(String(content));
+}
+
+function bytesEqual(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
 }
 
 /**
@@ -217,14 +247,30 @@ export class InMemoryRepoSource {
     return toBytes(files[path]);
   }
 
+  /** Map spec commits to the Commit shape, deriving linear parents. */
+  _normalizeCommits(subset, all) {
+    const parentOf = new Map();
+    for (let i = 0; i < all.length; i += 1) {
+      parentOf.set(all[i].oid, i + 1 < all.length ? [all[i + 1].oid] : []);
+    }
+    return subset.map((c) => ({
+      oid: c.oid,
+      message: c.message || '',
+      author: { name: (c.author && c.author.name) || '', email: (c.author && c.author.email) || '' },
+      timestamp: typeof c.timestamp === 'number' ? c.timestamp : 0,
+      parent: parentOf.get(c.oid) || [],
+    }));
+  }
+
   async headCommit(ref) {
     const commits = this._snapshot(ref).commits || [];
-    return commits[0] || null;
+    if (!commits.length) return null;
+    return this._normalizeCommits([commits[0]], commits)[0];
   }
 
   async log(limit = 50, ref) {
     const commits = this._snapshot(ref).commits || [];
-    return commits.slice(0, limit);
+    return this._normalizeCommits(commits.slice(0, limit), commits);
   }
 
   /**
@@ -238,7 +284,29 @@ export class InMemoryRepoSource {
     const filtered = annotated
       ? commits.filter((c) => Array.isArray(c.changed) && c.changed.includes(path))
       : commits;
-    return filtered.slice(0, limit);
+    return this._normalizeCommits(filtered.slice(0, limit), commits);
+  }
+
+  /**
+   * Files that differ between two refs (a null base means "compare against an
+   * empty tree", i.e. every file is an addition).
+   */
+  async changedFiles(baseRef, headRef) {
+    const base = baseRef == null ? {} : this._snapshot(baseRef).files;
+    const head = this._snapshot(headRef).files;
+    const paths = new Set([...Object.keys(base), ...Object.keys(head)]);
+    const changes = [];
+    for (const path of paths) {
+      const inBase = path in base;
+      const inHead = path in head;
+      if (inBase && !inHead) changes.push({ path, status: 'removed' });
+      else if (!inBase && inHead) changes.push({ path, status: 'added' });
+      else if (!bytesEqual(toBytes(base[path]), toBytes(head[path]))) {
+        changes.push({ path, status: 'modified' });
+      }
+    }
+    changes.sort((x, y) => (x.path < y.path ? -1 : x.path > y.path ? 1 : 0));
+    return changes;
   }
 
   // Demo data is static; "update" is a no-op that reports no changes.
