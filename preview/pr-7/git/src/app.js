@@ -360,10 +360,10 @@ function renderBranchSelect() {
 async function onBranchChange() {
   const name = dom.branchSelect.value;
 
-  // Switching branches discards uncommitted working-tree edits, so confirm.
+  // Warn before leaving a branch that has uncommitted work.
   if (state.changedPaths.size > 0) {
     const ok = window.confirm(
-      `You have ${state.changedPaths.size} uncommitted change(s). Switching branches will discard them. Continue?`
+      `You have ${state.changedPaths.size} uncommitted change(s) on this branch. Switch branches anyway?`
     );
     if (!ok) {
       // Restore the select to the current branch.
