@@ -79,12 +79,21 @@ a few vendored libraries.
 - `src/repoSource.js` — the `RepoSource` interface (read + write) + in-memory source
 - `src/demoRepo.js` — sample repository for demo mode
 - `src/gitClient.js` — isomorphic-git + lightning-fs adapter (lazy-loaded)
-- `src/app.js` — UI controller
+- `src/app.js` — entry point that boots the controller
+- `src/controller.js` — repository lifecycle, load-race token, and module wiring
+- `src/ui/dom.js` — DOM helpers and toast/progress/error feedback
+- `src/ui/viewer.js` — file viewer (text/image/binary, large-file guard)
+- `src/ui/tree.js` — sidebar tree and flat filter results
+- `src/ui/palette.js` — command palette (fuzzy file finder)
+- `src/ui/history.js` — commit history panel
+- `src/ui/editing.js` — edit/create/delete, the Changes drawer, commit + push
+- `src/ui/recent.js` — preset and stored repositories
+- `src/ui/highlight.js` — shared fuzzy-match row rendering
 - `vendor/` — pre-bundled browser builds of the runtime libraries
 
 The whole UI talks to a `RepoSource` interface, so demo mode and the real clone
-share the exact same code browser. That also keeps the app fully testable
-without a network.
+share the exact same code browser and editing flow. That also keeps the app
+fully testable without a network.
 
 ### Re-vendoring
 
@@ -99,10 +108,19 @@ npm run vendor    # refreshes vendor/ from node_modules (uses esbuild for the po
 ## Tests
 
 ```bash
-npm test          # unit tests (Jest) — pure logic + RepoSource contract
+npm test          # unit tests (Jest) — pure logic, RepoSource contract, real clone
 npm run test:e2e  # browser tests (Playwright) — drive the demo repo, no network
 npm run test:all  # both
 ```
 
 The e2e tests run entirely against the built-in demo repository, so they never
-touch the network while still exercising the real browser UI.
+touch the network while still exercising the real browser UI — including the
+edit → stage → commit flow.
+
+The Jest suite also includes an integration test
+(`tests/realClone.integration.test.js`) that stands up a local
+`git http-backend` server on `127.0.0.1` and drives the actual isomorphic-git
+clone/fetch through `GitStorage` (with Node's `fs` + `git`/`http` injected).
+It needs the `git` binary on `PATH` — present on standard CI — and skips
+gracefully when `git http-backend` is unavailable. No external host is
+contacted.

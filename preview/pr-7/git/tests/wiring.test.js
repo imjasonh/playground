@@ -1,45 +1,99 @@
 /**
  * Static wiring checks that catch breakage the pure unit tests can't:
- *   - app.js imports every symbol it uses at runtime (a missing import would
- *     throw a ReferenceError only in the browser, leaving a blank page).
- *   - every DOM id app.js looks up actually exists in index.html.
+ *   - the app modules import every symbol they use at runtime (a missing import
+ *     would throw a ReferenceError only in the browser, leaving a blank page).
+ *   - every DOM id the controller looks up actually exists in index.html.
+ *   - the entry module boots the controller.
  *   - the vendored git bundles exist where gitClient.js expects them, so the
  *     deployed static site can lazy-load them.
  */
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname, join, basename } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..');
 const read = (rel) => readFileSync(join(root, rel), 'utf8');
 
-const appSource = read('src/app.js');
 const indexHtml = read('index.html');
+const appSource = read('src/app.js');
+const controllerSource = read('src/controller.js');
 const gitClientSource = read('src/gitClient.js');
 
-describe('app.js imports', () => {
+/** Every .js file under src/, recursively. */
+function srcFiles() {
+  return readdirSync(join(root, 'src'), { recursive: true })
+    .map(String)
+    .filter((p) => p.endsWith('.js'))
+    .map((p) => join('src', p));
+}
+
+/**
+ * Collect (importedSymbol, moduleBasename) pairs across all source files, so
+ * the check is agnostic to whether a module imports via './' or '../'.
+ */
+function collectImports() {
+  const pairs = new Set();
+  const importRe =
+    /import\s+(?:([A-Za-z_$][\w$]*)\s*,\s*)?(?:\{([^}]*)\})?\s*from\s*['"]([^'"]+)['"]/g;
+  for (const rel of srcFiles()) {
+    const source = read(rel);
+    for (const match of source.matchAll(importRe)) {
+      const mod = basename(match[3]);
+      if (match[1]) pairs.add(`${match[1]}@${mod}`); // default import
+      const named = match[2] || '';
+      for (const raw of named.split(',')) {
+        const name = raw.trim().split(/\s+as\s+/)[0].trim();
+        if (name) pairs.add(`${name}@${mod}`);
+      }
+    }
+  }
+  return pairs;
+}
+
+describe('module imports', () => {
+  const imports = collectImports();
   const requiredSymbols = [
-    ['buildFileTree', './fileTree.js'],
-    ['flattenVisible', './fileTree.js'],
-    ['fuzzyFilter', './fuzzy.js'],
-    ['highlightSegments', './fuzzy.js'],
-    ['parseRepoUrl', './repoUrl.js'],
-    ['languageForPath', './language.js'],
-    ['createDemoSource', './demoRepo.js'],
-    ['formatBytes', './format.js'],
+    ['buildFileTree', 'fileTree.js'],
+    ['flattenVisible', 'fileTree.js'],
+    ['fuzzyFilter', 'fuzzy.js'],
+    ['highlightSegments', 'fuzzy.js'],
+    ['parseRepoUrl', 'repoUrl.js'],
+    ['languageForPath', 'language.js'],
+    ['createDemoSource', 'demoRepo.js'],
+    ['formatBytes', 'format.js'],
   ];
 
-  test.each(requiredSymbols)('imports %s from %s', (symbol, modulePath) => {
-    const escaped = modulePath.replace(/[.]/g, '\\$&');
-    const re = new RegExp(`import[\\s\\S]*?\\b${symbol}\\b[\\s\\S]*?from\\s*['"]${escaped}['"]`);
-    expect(appSource).toMatch(re);
+  test.each(requiredSymbols)('some module imports %s from %s', (symbol, mod) => {
+    expect(imports.has(`${symbol}@${mod}`)).toBe(true);
+  });
+});
+
+describe('entry / module layout', () => {
+  const expectedFiles = [
+    'src/controller.js',
+    'src/ui/dom.js',
+    'src/ui/viewer.js',
+    'src/ui/tree.js',
+    'src/ui/palette.js',
+    'src/ui/history.js',
+    'src/ui/recent.js',
+    'src/ui/highlight.js',
+  ];
+
+  test.each(expectedFiles)('%s exists', (rel) => {
+    expect(existsSync(join(root, rel))).toBe(true);
+  });
+
+  test('the entry module boots the controller', () => {
+    expect(appSource).toMatch(/import\s*\{\s*init\s*\}\s*from\s*['"]\.\/controller\.js['"]/);
+    expect(appSource).toMatch(/\binit\b/);
   });
 });
 
 describe('DOM wiring', () => {
-  test('every id cached by app.js exists in index.html', () => {
-    const match = appSource.match(/const ids = \[([\s\S]*?)\];/);
+  test('every id the controller caches exists in index.html', () => {
+    const match = controllerSource.match(/const DOM_IDS = \[([\s\S]*?)\];/);
     expect(match).not.toBeNull();
     const ids = [...match[1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
     expect(ids.length).toBeGreaterThan(10);
