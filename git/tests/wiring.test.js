@@ -79,6 +79,7 @@ describe('entry / module layout', () => {
     'src/ui/history.js',
     'src/ui/recent.js',
     'src/ui/highlight.js',
+    'src/ui/virtualList.js',
   ];
 
   test.each(expectedFiles)('%s exists', (rel) => {
