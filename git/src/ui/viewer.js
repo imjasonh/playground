@@ -53,23 +53,29 @@ export function createViewer(ctx) {
     dom.fileInfo.textContent = '';
   }
 
-  /** Render fetched bytes, choosing image / binary / text presentation. */
+  /**
+   * Render fetched bytes, choosing image / binary / text presentation.
+   *
+   * @returns {'image'|'binary'|'text'} how the file was presented, so callers
+   *   (the editing module) can decide whether to offer an in-place editor.
+   */
   function render(path, bytes) {
     const size = bytes.length;
     dispose();
 
     if (isImagePath(path)) {
       renderImage(path, bytes, size);
-      return;
+      return 'image';
     }
 
     const binary = isBinaryExtension(path) || looksBinary(bytes);
     if (binary) {
       renderBinaryNotice(path, bytes, size);
-      return;
+      return 'binary';
     }
 
     renderText(path, bytes, size);
+    return 'text';
   }
 
   function renderFilePath(path) {
@@ -135,5 +141,5 @@ export function createViewer(ctx) {
     dom.viewerBody.replaceChildren(notice);
   }
 
-  return { render, beginLoading, showReadError, showPlaceholder, dispose };
+  return { render, beginLoading, showReadError, showPlaceholder, dispose, renderFilePath };
 }

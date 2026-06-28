@@ -117,3 +117,90 @@ test('returns focus to the trigger when the palette closes', async ({ page }) =>
   await expect(page.locator('#palette')).toBeHidden();
   await expect(page.getByRole('button', { name: 'Find files' })).toBeFocused();
 });
+
+// ---------------------------------------------------------------------------
+// Read-write flow (edit / create / delete -> stage -> commit). The demo repo
+// is editable but has no remote, so this exercises everything except push.
+// ---------------------------------------------------------------------------
+
+test('exposes editing affordances but hides push for the demo repo', async ({ page }) => {
+  await loadDemo(page);
+  await expect(page.locator('#changes-btn')).toBeVisible();
+  await expect(page.locator('#new-file-btn')).toBeVisible();
+
+  await page.locator('#changes-btn').click();
+  await expect(page.locator('#changes-panel')).toBeVisible();
+  // The in-memory demo has no remote, so the push controls stay hidden.
+  await expect(page.locator('#push-section')).toBeHidden();
+});
+
+test('edits a file, stages it, and commits', async ({ page }) => {
+  await loadDemo(page);
+  await page.locator('.tree-row', { hasText: 'README.md' }).click();
+  await expect(page.locator('#edit-btn')).toBeVisible();
+
+  await page.locator('#edit-btn').click();
+  const area = page.locator('.editor-area');
+  await expect(area).toBeVisible();
+  await area.fill('# Edited by the e2e test\n');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+
+  // The viewer reflects the staged edit and the badge counts one change.
+  await expect(page.locator('.code-view .code')).toContainText('Edited by the e2e test');
+  await expect(page.locator('#changes-count')).toHaveText('1');
+
+  await page.locator('#changes-btn').click();
+  await expect(page.locator('.change-item.modified', { hasText: 'README.md' })).toBeVisible();
+
+  await page.locator('#author-name').fill('Tester');
+  await page.locator('#author-email').fill('tester@example.com');
+  await page.locator('#commit-message').fill('Edit README in e2e');
+  await page.locator('#commit-btn').click();
+
+  await expect(page.locator('#toast')).toContainText(/Committed/);
+  await expect(page.locator('#changes-empty')).toBeVisible();
+  await expect(page.locator('#changes-count')).toBeHidden();
+
+  // The new commit tops the history.
+  await page.locator('#history-btn').click();
+  await expect(page.locator('.commit-item').first()).toContainText('Edit README in e2e');
+});
+
+test('creates a new file through the modal and stages it', async ({ page }) => {
+  await loadDemo(page);
+  await page.locator('#new-file-btn').click();
+  await expect(page.locator('#newfile-overlay')).toBeVisible();
+
+  await page.locator('#newfile-input').fill('notes/todo.md');
+  await page.locator('#newfile-create').click();
+
+  const area = page.locator('.editor-area');
+  await expect(area).toBeVisible();
+  await area.fill('- write more tests\n');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+
+  await expect(page.locator('#changes-count')).toHaveText('1');
+  await page.locator('#tree-filter').fill('todo.md');
+  await expect(page.locator('.flat-row', { hasText: 'todo.md' })).toBeVisible();
+});
+
+test('rejects a duplicate path in the new-file modal', async ({ page }) => {
+  await loadDemo(page);
+  await page.locator('#new-file-btn').click();
+  await page.locator('#newfile-input').fill('README.md');
+  await page.locator('#newfile-create').click();
+  await expect(page.locator('#newfile-error')).toBeVisible();
+  await expect(page.locator('#newfile-overlay')).toBeVisible();
+});
+
+test('deletes a file and stages the removal', async ({ page }) => {
+  await loadDemo(page);
+  await page.locator('.tree-row', { hasText: 'README.md' }).click();
+
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.locator('#delete-btn').click();
+
+  await expect(page.locator('#changes-count')).toHaveText('1');
+  await page.locator('#changes-btn').click();
+  await expect(page.locator('.change-item.deleted', { hasText: 'README.md' })).toBeVisible();
+});

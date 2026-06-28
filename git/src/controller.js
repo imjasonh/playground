@@ -11,6 +11,7 @@ import { createTree } from './ui/tree.js';
 import { createPalette } from './ui/palette.js';
 import { createHistory } from './ui/history.js';
 import { createRecent } from './ui/recent.js';
+import { createEditing } from './ui/editing.js';
 import { buildFileTree } from './fileTree.js';
 import { ancestors } from './pathUtils.js';
 import { parseRepoUrl, DEFAULT_CORS_PROXY } from './repoUrl.js';
@@ -21,14 +22,20 @@ import { createDemoSource } from './demoRepo.js';
 // can confirm each one exists in index.html.
 const DOM_IDS = [
   'repo-bar', 'repo-name', 'repo-meta', 'branch-select', 'find-btn',
-  'history-btn', 'update-btn', 'close-btn', 'start-view', 'clone-form',
+  'history-btn', 'changes-btn', 'changes-count', 'update-btn', 'close-btn',
+  'start-view', 'clone-form',
   'url-input', 'ref-input', 'depth-input', 'allbranches-input', 'proxy-input',
   'clone-btn', 'demo-btn', 'preset-list', 'clone-error', 'clone-progress', 'progress-fill',
   'progress-label', 'recent', 'recent-list', 'browser-view', 'tree-filter',
-  'file-tree', 'flat-results', 'tree-empty', 'viewer-head', 'file-path',
-  'file-info', 'viewer-body', 'viewer-placeholder', 'history-panel',
-  'history-branch', 'commit-list', 'palette', 'palette-input',
-  'palette-results', 'palette-empty', 'toast',
+  'new-file-btn', 'file-tree', 'flat-results', 'tree-empty', 'viewer-head', 'file-path',
+  'file-info', 'viewer-actions', 'edit-btn', 'delete-btn', 'viewer-body',
+  'viewer-placeholder', 'history-panel',
+  'history-branch', 'commit-list', 'changes-panel', 'changes-branch',
+  'changes-list', 'changes-empty', 'commit-form', 'author-name', 'author-email',
+  'commit-message', 'commit-btn', 'push-section', 'push-username', 'push-token',
+  'push-btn', 'palette', 'palette-input',
+  'palette-results', 'palette-empty', 'newfile-overlay', 'newfile-input',
+  'newfile-error', 'newfile-create', 'newfile-cancel', 'toast',
 ];
 
 export async function init() {
@@ -46,6 +53,11 @@ export async function init() {
     activePath: null,
     branches: [],
     historyOpen: false,
+    // Read-write editing state shared with the editing module: whether the
+    // in-place editor is open and which paths have uncommitted changes (the
+    // tree reads the latter to draw dirty markers).
+    editing: false,
+    changedPaths: new Set(),
   };
 
   // Monotonic token shared by every async load (open / branch switch / update).
@@ -63,10 +75,21 @@ export async function init() {
   const palette = createPalette(ctx);
   const history = createHistory(ctx);
   const recent = createRecent(ctx);
+  const editing = createEditing(ctx);
 
   ctx.openFile = openFile;
   ctx.openSource = openSource;
   ctx.startClone = startClone;
+  // Cross-module callbacks the editing module reaches the rest of the app
+  // through (late-bound, only invoked at event time).
+  ctx.renderSidebar = () => tree.renderSidebar();
+  ctx.renderFilePath = (path) => viewer.renderFilePath(path);
+  ctx.showPlaceholder = () => viewer.showPlaceholder();
+  ctx.renderHead = renderHead;
+  ctx.reloadHistory = async () => {
+    if (state.historyOpen) await history.load();
+  };
+  ctx.closeHistory = () => history.reset();
 
   dom.proxyInput.value = DEFAULT_CORS_PROXY;
 
@@ -93,8 +116,14 @@ export async function init() {
     dom.closeBtn.addEventListener('click', showStart);
     dom.branchSelect.addEventListener('change', onBranchChange);
     dom.updateBtn.addEventListener('click', onUpdate);
-    dom.historyBtn.addEventListener('click', () => history.toggle());
+    // History and Changes share the right-hand drawer, so opening one closes
+    // the other.
+    dom.historyBtn.addEventListener('click', () => {
+      editing.closeChanges();
+      history.toggle();
+    });
     dom.findBtn.addEventListener('click', () => palette.open());
+    editing.bindEvents();
     // Debounced: the tree filter rescans every file on each keystroke, which is
     // wasted work on large repos when someone is typing quickly.
     dom.treeFilter.addEventListener('input', debounce(() => tree.renderSidebar(), 90));
@@ -115,8 +144,9 @@ export async function init() {
       else palette.open();
       return;
     }
-    if (event.key === 'Escape' && palette.isOpen()) {
-      palette.close();
+    if (event.key === 'Escape') {
+      if (palette.isOpen()) palette.close();
+      else editing.onEscape();
     }
   }
 
@@ -133,6 +163,8 @@ export async function init() {
     dom.startView.hidden = false;
     document.body.classList.remove('repo-open');
     palette.close();
+    history.reset();
+    editing.reset();
     recent.renderRecent();
   }
 
@@ -226,6 +258,8 @@ export async function init() {
     state.expanded = new Set();
     viewer.dispose();
     history.reset();
+    editing.reset();
+    editing.applyEditableUI();
 
     const token = ++loadToken;
     showBrowser();
@@ -256,6 +290,7 @@ export async function init() {
     }
 
     if (state.historyOpen) history.load();
+    await editing.refreshChanges();
   }
 
   async function reloadFiles(token) {
@@ -305,8 +340,22 @@ export async function init() {
 
   async function onBranchChange() {
     const name = dom.branchSelect.value;
+
+    // Warn before leaving a branch that has uncommitted work.
+    if (state.changedPaths.size > 0) {
+      const ok = window.confirm(
+        `You have ${state.changedPaths.size} uncommitted change(s) on this branch. Switch branches anyway?`
+      );
+      if (!ok) {
+        // Restore the select to the current branch.
+        dom.branchSelect.value = state.source.getCurrentBranch();
+        return;
+      }
+    }
+
     const token = ++loadToken;
     try {
+      state.editing = false;
       await state.source.setBranch(name);
       await refreshRepo(token);
       if (token !== loadToken) return; // a newer switch/update superseded us
@@ -364,12 +413,14 @@ export async function init() {
 
   async function openFile(path) {
     state.activePath = path;
+    state.editing = false;
     palette.close();
 
     // reveal in tree
     for (const dir of ancestors(path)) state.expanded.add(dir);
     tree.renderSidebar();
 
+    editing.hideViewerActions();
     viewer.beginLoading(path);
 
     let bytes;
@@ -381,7 +432,8 @@ export async function init() {
     }
 
     if (state.activePath !== path) return; // a newer open superseded this one
-    viewer.render(path, bytes);
+    const kind = viewer.render(path, bytes);
+    editing.updateViewerActions(kind);
   }
 
   /* ---------------------------------------------------------------- */

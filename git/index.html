@@ -6,7 +6,7 @@
     <title>git · local browser client</title>
     <meta
       name="description"
-      content="Clone a git repository into your browser's local storage and browse the code, read-only, powered by isomorphic-git."
+      content="Clone a git repository into your browser's local storage, then browse, edit, commit, and push — powered by isomorphic-git."
     />
     <link rel="stylesheet" href="styles.css" />
   </head>
@@ -16,7 +16,7 @@
         <span class="brand-glyph" aria-hidden="true">&#9095;</span>
         <div class="brand-text">
           <h1>git</h1>
-          <p class="tagline">Local, read-only git client</p>
+          <p class="tagline">Local in-browser git client</p>
         </div>
       </div>
 
@@ -34,6 +34,9 @@
             Find files
           </button>
           <button id="history-btn" class="btn" type="button" aria-pressed="false">History</button>
+          <button id="changes-btn" class="btn" type="button" aria-pressed="false" title="Review, commit, and push your changes">
+            Changes<span id="changes-count" class="count-badge" hidden></span>
+          </button>
           <button id="update-btn" class="btn" type="button" title="Fetch the latest commits from the remote">
             Pull / Update
           </button>
@@ -50,7 +53,7 @@
           <p class="muted">
             The repository is cloned into your browser's local storage (IndexedDB) with
             <a href="https://isomorphic-git.org" target="_blank" rel="noreferrer">isomorphic-git</a>
-            and browsed entirely on-device. Read-only.
+            and browsed entirely on-device. You can edit files, commit, and push back with a token.
           </p>
 
           <form id="clone-form" novalidate>
@@ -142,6 +145,7 @@
               spellcheck="false"
               aria-label="Filter files"
             />
+            <button id="new-file-btn" class="icon-btn" type="button" title="New file" aria-label="New file">+</button>
           </div>
           <div class="tree-scroll">
             <ul class="tree" id="file-tree" role="tree" aria-label="Repository files"></ul>
@@ -153,7 +157,13 @@
         <section class="viewer">
           <div class="viewer-head" id="viewer-head" hidden>
             <span class="file-path" id="file-path"></span>
-            <span class="file-info" id="file-info"></span>
+            <div class="viewer-head-right">
+              <span class="file-info" id="file-info"></span>
+              <div class="viewer-actions" id="viewer-actions" hidden>
+                <button id="edit-btn" class="btn small" type="button" title="Edit this file">Edit</button>
+                <button id="delete-btn" class="btn small ghost" type="button" title="Delete this file">Delete</button>
+              </div>
+            </div>
           </div>
           <div class="viewer-body" id="viewer-body">
             <div class="placeholder" id="viewer-placeholder">
@@ -172,6 +182,53 @@
           </div>
           <ul class="commit-list" id="commit-list"></ul>
         </aside>
+
+        <aside class="changes-panel" id="changes-panel" hidden aria-label="Working changes">
+          <div class="history-head">
+            <h3>Changes</h3>
+            <span id="changes-branch" class="muted"></span>
+          </div>
+          <div class="changes-scroll">
+            <ul class="changes-list" id="changes-list"></ul>
+            <p class="empty" id="changes-empty" hidden>No changes yet. Edit, create, or delete a file.</p>
+
+            <form id="commit-form" class="commit-form" novalidate>
+              <div class="field-row">
+                <label class="field">
+                  <span>Author name</span>
+                  <input id="author-name" type="text" autocomplete="name" placeholder="Your name" />
+                </label>
+                <label class="field">
+                  <span>Author email</span>
+                  <input id="author-email" type="email" autocomplete="email" placeholder="you@example.com" />
+                </label>
+              </div>
+              <label class="field">
+                <span>Commit message</span>
+                <textarea id="commit-message" rows="3" placeholder="Describe your change…" spellcheck="false"></textarea>
+              </label>
+              <button id="commit-btn" class="btn primary" type="submit">Commit</button>
+
+              <div class="push-section" id="push-section" hidden>
+                <p class="push-label muted">Push the committed branch to its remote.</p>
+                <div class="field-row">
+                  <label class="field">
+                    <span>Username <small class="muted">(optional)</small></span>
+                    <input id="push-username" type="text" autocomplete="off" spellcheck="false" placeholder="git host username" />
+                  </label>
+                  <label class="field">
+                    <span>Token</span>
+                    <input id="push-token" type="password" autocomplete="off" spellcheck="false" placeholder="personal access token" />
+                  </label>
+                </div>
+                <small class="muted push-note">
+                  Your token is used only for this push and is never stored on disk.
+                </small>
+                <button id="push-btn" class="btn" type="button">Push to remote</button>
+              </div>
+            </form>
+          </div>
+        </aside>
       </section>
     </main>
 
@@ -189,6 +246,29 @@
         />
         <ul class="palette-results" id="palette-results"></ul>
         <p class="palette-empty" id="palette-empty" hidden>No matching files.</p>
+      </div>
+    </div>
+
+    <!-- New file modal -->
+    <div class="modal-overlay" id="newfile-overlay" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-label="New file">
+        <h3>New file</h3>
+        <label class="field">
+          <span>Path (relative to the repository root)</span>
+          <input
+            id="newfile-input"
+            type="text"
+            placeholder="e.g. docs/notes.md"
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck="false"
+          />
+        </label>
+        <p class="error" id="newfile-error" role="alert" hidden></p>
+        <div class="form-actions">
+          <button class="btn primary" id="newfile-create" type="button">Create file</button>
+          <button class="btn ghost" id="newfile-cancel" type="button">Cancel</button>
+        </div>
       </div>
     </div>
 

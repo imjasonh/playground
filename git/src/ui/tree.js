@@ -58,6 +58,14 @@ export function createTree(ctx) {
       row.appendChild(icon);
       row.appendChild(el('span', 'node-name', node.name));
 
+      if (node.type === 'file' && state.changedPaths && state.changedPaths.has(node.path)) {
+        row.classList.add('changed');
+        const dot = el('span', 'change-dot');
+        dot.setAttribute('aria-hidden', 'true');
+        dot.title = 'Uncommitted change';
+        row.appendChild(dot);
+      }
+
       if (node.type === 'file' && node.path === state.activePath) {
         row.classList.add('active');
         row.setAttribute('aria-current', 'true');
@@ -93,6 +101,7 @@ export function createTree(ctx) {
       const row = el('li', 'flat-row');
       row.dataset.path = result.item;
       row.setAttribute('role', 'option');
+      if (state.changedPaths && state.changedPaths.has(result.item)) row.classList.add('changed');
       if (result.item === state.activePath) {
         row.classList.add('active');
         row.setAttribute('aria-selected', 'true');
