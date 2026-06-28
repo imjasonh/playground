@@ -204,7 +204,74 @@ export class GitRepoSource {
     } catch {
       /* keep HEAD */
     }
+    try {
+      await this._adoptLocalCommits();
+    } catch {
+      /* best effort; fall back to the default remote-tracking read path */
+    }
     return this;
+  }
+
+  /**
+   * On open, decide whether the local branch is authoritative. A fresh clone
+   * has local == remote, and a plain `fetch` leaves the local head *behind*
+   * origin (so we keep preferring the remote-tracking ref). But once a local
+   * commit lands (this or a previous session, persisted in IndexedDB), the
+   * local head is *ahead* of origin and must win — otherwise reopening the repo
+   * would hide those commits, and the next edit would discard them.
+   *
+   * The resolved head is primed into the cache so this costs no extra ref reads
+   * on the subsequent first access.
+   */
+  async _adoptLocalCommits() {
+    const branch = this._current;
+    if (!branch || branch === 'HEAD') return;
+
+    let localHead = null;
+    try {
+      localHead = await this._git.resolveRef({ fs: this._fs, dir: this._dir, ref: `refs/heads/${branch}` });
+    } catch {
+      return; // no local branch ref; nothing to adopt
+    }
+    if (!localHead) return;
+
+    let remoteHead = null;
+    try {
+      remoteHead = await this._git.resolveRef({ fs: this._fs, dir: this._dir, ref: `refs/remotes/origin/${branch}` });
+    } catch {
+      remoteHead = null;
+    }
+
+    if (!remoteHead) {
+      // Local-only branch: the local head is the only truth.
+      this._editedBranches.add(branch);
+      this._oidCache.set(branch, localHead);
+      return;
+    }
+    if (localHead === remoteHead) {
+      this._oidCache.set(branch, remoteHead);
+      return;
+    }
+
+    let localAhead = false;
+    try {
+      localAhead = await this._git.isDescendent({
+        fs: this._fs,
+        dir: this._dir,
+        oid: localHead,
+        ancestor: remoteHead,
+        depth: -1,
+      });
+    } catch {
+      localAhead = false;
+    }
+
+    if (localAhead) {
+      this._editedBranches.add(branch);
+      this._oidCache.set(branch, localHead);
+    } else {
+      this._oidCache.set(branch, remoteHead);
+    }
   }
 
   getCurrentBranch() {

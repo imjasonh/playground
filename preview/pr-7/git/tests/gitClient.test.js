@@ -278,6 +278,7 @@ function writableModel() {
     pushCalls: [],
     commitSeq: 0,
     pushResult: null,
+    ancestors: {},
   };
 }
 
@@ -403,6 +404,9 @@ function makeWritableGit(model) {
       model.logs[newOid] = [{ oid: newOid, commit: { message, author } }, ...(model.logs[parentOid] || [])];
       return newOid;
     },
+    async isDescendent({ oid, ancestor }) {
+      return (model.ancestors[oid] || []).includes(ancestor);
+    },
     async push(opts) {
       model.pushCalls.push({
         ref: opts.ref,
@@ -519,5 +523,41 @@ describe('GitRepoSource editing', () => {
 
     const noRemote = await makeWritableSource(writableModel(), { url: null });
     await expect(noRemote.push({ token: 't' })).rejects.toThrow(/no remote/i);
+  });
+
+  test('reopening adopts local commits that are ahead of origin', async () => {
+    // Simulate a repo whose local head carries a commit (c2) not on origin (c1).
+    const model = writableModel();
+    model.localHeads.main = 'c2';
+    model.commitTrees.c2 = { 'README.md': '# committed locally', 'src/a.js': 'a' };
+    model.trees.c2 = ['README.md', 'src/a.js'];
+    model.logs.c2 = [
+      { oid: 'c2', commit: { message: 'local work', author: { name: 'Me', email: 'm@x' } } },
+      ...model.logs.c1,
+    ];
+    model.ancestors = { c2: ['c1'] }; // c2 descends from the remote tip c1
+
+    const source = await makeWritableSource(model);
+    // Reads follow the local head, not the stale remote-tracking tip.
+    expect(dec.decode(await source.readFile('README.md'))).toBe('# committed locally');
+    expect((await source.headCommit()).oid).toBe('c2');
+    expect((await source.log(5)).map((c) => c.oid)).toEqual(['c2', 'c1']);
+  });
+
+  test('does not adopt a local head that is merely behind origin', async () => {
+    // Plain fetched-but-not-merged clone: origin (c2) is ahead of local (c1).
+    const model = writableModel();
+    model.remoteHeads.main = 'c2';
+    model.commitTrees.c2 = { 'README.md': '# newer on origin', 'src/a.js': 'a' };
+    model.trees.c2 = ['README.md', 'src/a.js'];
+    model.logs.c2 = [
+      { oid: 'c2', commit: { message: 'origin work', author: { name: 'O', email: 'o@x' } } },
+      ...model.logs.c1,
+    ];
+    model.ancestors = { c2: ['c1'] }; // local c1 is NOT a descendant of remote c2
+
+    const source = await makeWritableSource(model);
+    expect(dec.decode(await source.readFile('README.md'))).toBe('# newer on origin');
+    expect((await source.headCommit()).oid).toBe('c2');
   });
 });
