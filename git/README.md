@@ -58,7 +58,15 @@ a few vendored libraries.
 - `src/repoSource.js` — the read-only `RepoSource` interface + in-memory source
 - `src/demoRepo.js` — sample repository for demo mode
 - `src/gitClient.js` — isomorphic-git + lightning-fs adapter (lazy-loaded)
-- `src/app.js` — UI controller
+- `src/app.js` — entry point that boots the controller
+- `src/controller.js` — repository lifecycle, load-race token, and module wiring
+- `src/ui/dom.js` — DOM helpers and toast/progress/error feedback
+- `src/ui/viewer.js` — file viewer (text/image/binary, large-file guard)
+- `src/ui/tree.js` — sidebar tree and flat filter results
+- `src/ui/palette.js` — command palette (fuzzy file finder)
+- `src/ui/history.js` — commit history panel
+- `src/ui/recent.js` — preset and stored repositories
+- `src/ui/highlight.js` — shared fuzzy-match row rendering
 - `vendor/` — pre-bundled browser builds of the runtime libraries
 
 The whole UI talks to a `RepoSource` interface, so demo mode and the real clone
