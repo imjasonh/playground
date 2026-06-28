@@ -199,6 +199,36 @@ test('exposes ARIA tree semantics for the file list', async ({ page }) => {
   await expect(page.locator('.tree-row[aria-expanded]').first()).toBeVisible();
 });
 
+test('navigates the file tree with the keyboard', async ({ page }) => {
+  await loadDemo(page);
+  const rows = page.locator('#file-tree .tree-row');
+
+  // Arrow keys move a roving focus through the rows.
+  await rows.first().focus();
+  await expect(rows.first()).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(rows.nth(1)).toBeFocused();
+  await page.keyboard.press('ArrowUp');
+  await expect(rows.first()).toBeFocused();
+
+  // ArrowRight expands a directory; a child row appears; ArrowLeft collapses it.
+  const srcDir = page.locator('#file-tree .tree-row', { hasText: 'src' }).first();
+  await srcDir.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(srcDir).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.locator('#file-tree .tree-row', { hasText: 'storage.js' })).toBeVisible();
+
+  await page.keyboard.press('ArrowLeft');
+  await expect(srcDir).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.locator('#file-tree .tree-row', { hasText: 'storage.js' })).toHaveCount(0);
+
+  // Enter on a file opens it in the viewer.
+  const readme = page.locator('#file-tree .tree-row', { hasText: 'README.md' });
+  await readme.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#file-path')).toContainText('README.md');
+});
+
 test('returns focus to the trigger when the palette closes', async ({ page }) => {
   await loadDemo(page);
   await page.getByRole('button', { name: 'Find files' }).click();

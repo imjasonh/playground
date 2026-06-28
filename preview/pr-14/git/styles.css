@@ -5,9 +5,13 @@
   --border: #30363d;
   --border-soft: #21262d;
   --fg: #e6edf3;
-  --fg-muted: #9198a1;
-  --fg-faint: #6e7681;
+  /* Muted/faint greys are tuned to clear WCAG AA (4.5:1) on the dark surfaces. */
+  --fg-muted: #9aa4b2;
+  --fg-faint: #868f9b;
   --accent: #2f81f7;
+  /* Darker accent for solid fills under white text (e.g. primary button):
+     clears WCAG AA (4.5:1) where the lighter --accent (3.7:1) would not. */
+  --accent-strong: #1f6feb;
   --accent-soft: rgba(47, 129, 247, 0.15);
   --danger: #f85149;
   --success: #3fb950;
@@ -43,6 +47,10 @@ a {
   text-decoration: none;
 }
 a:hover {
+  text-decoration: underline;
+}
+/* Inline links inside running text need a non-color cue (underline) at rest. */
+p a {
   text-decoration: underline;
 }
 
@@ -182,13 +190,14 @@ kbd {
   transform: translateY(1px);
 }
 .btn.primary {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
   color: #fff;
   font-weight: 600;
 }
 .btn.primary:hover {
-  background: #4b95ff;
+  background: #1a6ae0;
+  border-color: #1a6ae0;
 }
 .btn.ghost {
   background: transparent;
@@ -514,6 +523,10 @@ kbd {
 .tree-row:hover {
   background: var(--bg-elev-2);
 }
+.tree-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
 .tree-row.active {
   background: var(--accent-soft);
   color: #cbe0ff;
@@ -556,7 +569,9 @@ kbd {
   color: var(--fg-faint);
 }
 .match {
-  color: var(--accent);
+  /* Brighter than --accent so the highlight clears WCAG AA even on the
+     accent-tinted background of an active/selected row. */
+  color: #58a6ff;
   font-weight: 700;
 }
 .empty {
@@ -933,6 +948,11 @@ kbd {
 .palette-row .pr-path {
   font-size: 0.74rem;
   color: var(--fg-faint);
+}
+/* The active row's accent tint lifts the background; use the brighter muted
+   grey there so the path keeps a >=4.5:1 ratio. */
+.palette-row.active .pr-path {
+  color: var(--fg-muted);
 }
 .palette-empty {
   padding: 1rem;
