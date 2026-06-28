@@ -93,3 +93,27 @@ test('shows commit history for the current branch', async ({ page }) => {
   await expect(page.locator('#history-branch')).toHaveText('main');
   await expect(page.locator('.commit-item').first()).toBeVisible();
 });
+
+test('Pull / Update reports that demo data is static', async ({ page }) => {
+  await loadDemo(page);
+  await page.getByRole('button', { name: 'Pull / Update' }).click();
+  await expect(page.locator('#toast')).toContainText(/static/i);
+});
+
+test('exposes ARIA tree semantics for the file list', async ({ page }) => {
+  await loadDemo(page);
+  await expect(page.locator('#file-tree')).toHaveAttribute('role', 'tree');
+  await expect(page.locator('.tree-row[role="treeitem"]').first()).toBeVisible();
+  // Directories advertise their expanded state to assistive tech.
+  await expect(page.locator('.tree-row[aria-expanded]').first()).toBeVisible();
+});
+
+test('returns focus to the trigger when the palette closes', async ({ page }) => {
+  await loadDemo(page);
+  await page.getByRole('button', { name: 'Find files' }).click();
+  await expect(page.locator('#palette')).toBeVisible();
+
+  await page.locator('#palette-input').press('Escape');
+  await expect(page.locator('#palette')).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Find files' })).toBeFocused();
+});
