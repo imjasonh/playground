@@ -12,6 +12,7 @@ playground/
 │   ├── pages/             # shared HTML template for app index pages
 │   ├── scripts/           # CI helpers (e.g. discover testable apps)
 │   └── workflows/         # deploy, preview, test, cleanup
+├── git/                   # in-browser read-only git client (JS + Jest + Playwright)
 ├── hello/                 # example static app (HTML only)
 └── kanoodle/              # example app with tests (JS + Jest + Playwright)
 ```
@@ -22,6 +23,7 @@ A directory is an **app** when it contains **`index.html`** at its root. This is
 
 | Path | App? | Notes |
 |------|------|-------|
+| `git/` | yes | In-browser read-only git client; JS modules, npm scripts, tests |
 | `hello/` | yes | Static HTML; no build or tests |
 | `kanoodle/` | yes | Client-side JS modules, npm scripts, tests |
 | `.github/` | no | Infrastructure only |
@@ -148,6 +150,7 @@ npm start          # if defined (static server)
 
 | Directory | Type | Tests |
 |-----------|------|-------|
+| `git/` | In-browser read-only git client (clone, browse, branches, history) | Jest + Playwright |
 | `hello/` | Static demo | none |
 | `kanoodle/` | Kanoodle puzzle game (5×11 board, 12 pieces) | Jest + Playwright |
 
