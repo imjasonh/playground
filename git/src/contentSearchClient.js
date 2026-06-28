@@ -122,8 +122,8 @@ export function createContentSearchClient(options = {}) {
    * @param {{regex?: boolean, caseSensitive?: boolean}} queryOpts
    * @param {{
    *   readFile: (path: string) => Promise<Uint8Array>,
- *   onResult?: (r: FileResult) => void,
- *   onProgress?: (processed: number, total: number) => void,
+   *   onResult?: (r: FileResult) => void,
+   *   onProgress?: (processed: number, total: number) => void,
    *   signal?: { aborted: boolean },
    * }} handlers
    * @returns {Promise<SearchSummary>}
