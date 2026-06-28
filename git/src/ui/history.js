@@ -3,6 +3,7 @@
  */
 import { el } from './dom.js';
 import { commitSummary, relativeTime, shortOid } from '../format.js';
+import { refLabel } from '../repoSource.js';
 
 /**
  * @param {{state: object, dom: Record<string, HTMLElement>}} ctx
@@ -24,9 +25,15 @@ export function createHistory(ctx) {
     dom.historyBtn.setAttribute('aria-pressed', 'false');
   }
 
+  function currentLabel() {
+    const source = state.source;
+    if (source && typeof source.getCurrentRef === 'function') return refLabel(source.getCurrentRef());
+    return source ? source.getCurrentBranch() : '';
+  }
+
   async function load() {
     if (!state.source) return;
-    dom.historyBranch.textContent = state.source.getCurrentBranch();
+    dom.historyBranch.textContent = currentLabel();
     dom.commitList.replaceChildren(el('li', 'commit-item muted', 'Loading…'));
     try {
       const commits = await state.source.log(100);
@@ -36,18 +43,32 @@ export function createHistory(ctx) {
         return;
       }
       for (const commit of commits) {
-        const item = el('li', 'commit-item');
-        item.appendChild(el('p', 'commit-msg', commitSummary(commit.message)));
-        const meta = el('div', 'commit-meta');
-        meta.appendChild(el('span', 'commit-oid', shortOid(commit.oid)));
-        if (commit.author.name) meta.appendChild(el('span', null, commit.author.name));
-        if (commit.timestamp) meta.appendChild(el('span', null, relativeTime(commit.timestamp)));
-        item.appendChild(meta);
-        dom.commitList.appendChild(item);
+        dom.commitList.appendChild(commitRow(commit));
       }
     } catch (err) {
       dom.commitList.replaceChildren(el('li', 'commit-item muted', `History unavailable: ${err.message}`));
     }
+  }
+
+  function commitRow(commit) {
+    const item = el('li', 'commit-item');
+    item.appendChild(el('p', 'commit-msg', commitSummary(commit.message)));
+    const meta = el('div', 'commit-meta');
+    meta.appendChild(el('span', 'commit-oid', shortOid(commit.oid)));
+    if (commit.author.name) meta.appendChild(el('span', null, commit.author.name));
+    if (commit.timestamp) meta.appendChild(el('span', null, relativeTime(commit.timestamp)));
+    item.appendChild(meta);
+
+    if (ctx.browseRef && commit.oid) {
+      const actions = el('div', 'commit-actions');
+      const browse = el('button', 'commit-action', 'Browse files');
+      browse.type = 'button';
+      browse.title = `Browse the tree at ${shortOid(commit.oid)}`;
+      browse.addEventListener('click', () => ctx.browseRef({ type: 'commit', name: commit.oid }));
+      actions.appendChild(browse);
+      item.appendChild(actions);
+    }
+    return item;
   }
 
   return { toggle, reset, load };

@@ -79,11 +79,33 @@ test('switching branches changes the available files', async ({ page }) => {
   await page.locator('#tree-filter').fill('theme.js');
   await expect(page.locator('#tree-empty')).toBeVisible();
 
-  await page.selectOption('#branch-select', 'feature/dark-mode');
+  await page.selectOption('#branch-select', { label: 'feature/dark-mode' });
   await expect(page.locator('#repo-meta')).toContainText('feature/dark-mode');
 
   await page.locator('#tree-filter').fill('theme.js');
   await expect(page.locator('.flat-row', { hasText: 'theme.js' })).toBeVisible();
+});
+
+test('lists tags in the ref picker and can browse one', async ({ page }) => {
+  await loadDemo(page);
+  // Branches and Tags are grouped in the picker.
+  await expect(page.locator('#branch-select optgroup[label="Branches"]')).toHaveCount(1);
+  await expect(page.locator('#branch-select optgroup[label="Tags"]')).toHaveCount(1);
+
+  await page.selectOption('#branch-select', 'tag:v0.3.0');
+  await expect(page.locator('#repo-meta')).toContainText('v0.3.0');
+  await expect(page.locator('#toast')).toContainText(/Switched to v0\.3\.0/);
+});
+
+test('browses the tree at a commit from history', async ({ page }) => {
+  await loadDemo(page);
+  await page.getByRole('button', { name: 'History' }).click();
+  await expect(page.locator('#history-panel')).toBeVisible();
+
+  await page.locator('.commit-item .commit-action').first().click();
+  // The picker now reflects a detached "Viewing" entry and the tree still loads.
+  await expect(page.locator('#branch-select optgroup[label="Viewing"]')).toHaveCount(1);
+  await expect(page.locator('.tree-row', { hasText: 'README.md' })).toBeVisible();
 });
 
 test('shows commit history for the current branch', async ({ page }) => {

@@ -208,6 +208,9 @@ export function createDemoSource() {
     fullName: 'tasklite/demo',
     url: null,
     defaultBranch: 'main',
+    // A tag (aliased to a branch snapshot) so the ref picker shows tag browsing
+    // without a network. Matches package.json's version.
+    tags: { 'v0.3.0': 'main' },
     branches: {
       main: {
         files: {

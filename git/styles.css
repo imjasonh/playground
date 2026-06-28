@@ -717,6 +717,28 @@ kbd {
   font-family: var(--mono);
   color: var(--accent);
 }
+.commit-actions {
+  margin-top: 0.4rem;
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.commit-action {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--bg-elev-2);
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 0.72rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.commit-action:hover {
+  border-color: var(--accent);
+  color: #cbe0ff;
+  background: var(--accent-soft);
+}
 
 /* ---------- Command palette ---------- */
 .palette-overlay {
