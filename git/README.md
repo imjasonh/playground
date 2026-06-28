@@ -17,6 +17,9 @@ branch switching, and commit history. Everything runs on-device with
   language detection, image preview, and binary/large-file guards.
 - **Quick file finder** — fuzzy search across every file. Press
   <kbd>Ctrl</kbd> / <kbd>Cmd</kbd> + <kbd>P</kbd>, or use the sidebar filter.
+- **Scales to large repos** — the tree, filter results, and finder are
+  virtualized (only the rows near the viewport are rendered), so a repository
+  with tens of thousands of files stays responsive.
 - **Branch switching** — pick any branch; the tree, viewer, and history update.
 - **Pull / Update** — a menu action fetches the latest commits from the remote.
 - **Stored repositories** — manage and reopen previously cloned repos; remove to
@@ -58,7 +61,16 @@ a few vendored libraries.
 - `src/repoSource.js` — the read-only `RepoSource` interface + in-memory source
 - `src/demoRepo.js` — sample repository for demo mode
 - `src/gitClient.js` — isomorphic-git + lightning-fs adapter (lazy-loaded)
-- `src/app.js` — UI controller
+- `src/app.js` — entry point that boots the controller
+- `src/controller.js` — repository lifecycle, load-race token, and module wiring
+- `src/ui/dom.js` — DOM helpers and toast/progress/error feedback
+- `src/ui/viewer.js` — file viewer (text/image/binary, large-file guard)
+- `src/ui/tree.js` — sidebar tree and flat filter results
+- `src/ui/palette.js` — command palette (fuzzy file finder)
+- `src/ui/history.js` — commit history panel
+- `src/ui/recent.js` — preset and stored repositories
+- `src/ui/highlight.js` — shared fuzzy-match row rendering
+- `src/ui/virtualList.js` — windowing helpers for the large-list virtualization
 - `vendor/` — pre-bundled browser builds of the runtime libraries
 
 The whole UI talks to a `RepoSource` interface, so demo mode and the real clone
@@ -78,10 +90,18 @@ npm run vendor    # refreshes vendor/ from node_modules (uses esbuild for the po
 ## Tests
 
 ```bash
-npm test          # unit tests (Jest) — pure logic + RepoSource contract
+npm test          # unit tests (Jest) — pure logic, RepoSource contract, real clone
 npm run test:e2e  # browser tests (Playwright) — drive the demo repo, no network
 npm run test:all  # both
 ```
 
 The e2e tests run entirely against the built-in demo repository, so they never
 touch the network while still exercising the real browser UI.
+
+The Jest suite also includes an integration test
+(`tests/realClone.integration.test.js`) that stands up a local
+`git http-backend` server on `127.0.0.1` and drives the actual isomorphic-git
+clone/fetch through `GitStorage` (with Node's `fs` + `git`/`http` injected).
+It needs the `git` binary on `PATH` — present on standard CI — and skips
+gracefully when `git http-backend` is unavailable. No external host is
+contacted.
