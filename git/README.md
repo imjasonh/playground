@@ -13,17 +13,30 @@ branch switching, and commit history. Everything runs on-device with
 
 - **Clone into the browser** — paste an `https://` URL or `owner/repo` shorthand.
   The repo is stored in IndexedDB and reopens instantly on your next visit.
+  Private repos can use a session-only access token (never persisted or logged).
 - **Code browser** — collapsible file tree and a viewer with line numbers,
-  language detection, image preview, and binary/large-file guards.
-- **Quick file finder** — fuzzy search across every file. Press
+  offline syntax highlighting, language detection, image preview, and
+  binary/large-file guards. The tree is fully keyboard-navigable.
+- **Quick file finder** — fuzzy search across every file name. Press
   <kbd>Ctrl</kbd> / <kbd>Cmd</kbd> + <kbd>P</kbd>, or use the sidebar filter.
+- **Content search** — grep across file *contents*. Press
+  <kbd>Ctrl</kbd> / <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>F</kbd>; supports
+  literal or regex queries and opens each match at its line.
+- **Off-main-thread search** — both the fuzzy index and content grep run in Web
+  Workers (with a synchronous fallback), so searching stays smooth on big repos.
 - **Scales to large repos** — the tree, filter results, and finder are
   virtualized (only the rows near the viewport are rendered), so a repository
   with tens of thousands of files stays responsive.
-- **Branch switching** — pick any branch; the tree, viewer, and history update.
+- **Browse any ref** — switch between branches, tags, or a specific commit
+  (detached HEAD); the tree, viewer, and history follow.
+- **Diff & history** — view a commit's changed files with per-file line diffs,
+  compare two refs, and see the commit history for the repo or a single file.
+- **Deep links** — the repo, ref, file, and selected line range are encoded in
+  the URL hash, so any view is shareable, bookmarkable, and reload-safe.
 - **Pull / Update** — a menu action fetches the latest commits from the remote.
-- **Stored repositories** — manage and reopen previously cloned repos; remove to
-  free space.
+- **Stored repositories** — manage and reopen previously cloned repos (with an
+  IndexedDB usage meter); remove to free space. Clone/remove are coordinated
+  across browser tabs.
 - **Demo mode** — "Try a demo (no network)" loads a sample repo so you can see
   everything immediately, offline.
 
@@ -54,20 +67,31 @@ a few vendored libraries.
 
 - `src/pathUtils.js` — POSIX path helpers
 - `src/fileTree.js` — build/flatten the file tree from a flat path list
-- `src/fuzzy.js` — fuzzy subsequence matcher for the finder
+- `src/fuzzy.js` — fuzzy subsequence matcher + reusable search index
+- `src/searchClient.js` / `src/searchWorker.js` — off-thread fuzzy file search
+- `src/contentSearch.js` — grep query compiler + line scanner (pure)
+- `src/contentSearchClient.js` / `src/contentSearchWorker.js` — off-thread content grep
+- `src/highlightCode.js` — dependency-free, offline syntax highlighter
+- `src/hashState.js` — deep-link state encoded in the URL hash
+- `src/diff.js` — line-level (LCS) diff for the diff view
 - `src/repoUrl.js` — parse/validate clone URLs
 - `src/language.js` — extension → language, image/binary detection
 - `src/format.js` — byte sizes, short oids, relative times
+- `src/quota.js` — IndexedDB storage estimate/low-space helpers
+- `src/auth.js` — session-only access-token store wired to `onAuth`
+- `src/cloneError.js` — turn raw clone failures into friendly messages
+- `src/store.js` — observable store + first-class load controller
 - `src/repoSource.js` — the read-only `RepoSource` interface + in-memory source
 - `src/demoRepo.js` — sample repository for demo mode
 - `src/gitClient.js` — isomorphic-git + lightning-fs adapter (lazy-loaded)
 - `src/app.js` — entry point that boots the controller
 - `src/controller.js` — repository lifecycle, load-race token, and module wiring
 - `src/ui/dom.js` — DOM helpers and toast/progress/error feedback
-- `src/ui/viewer.js` — file viewer (text/image/binary, large-file guard)
-- `src/ui/tree.js` — sidebar tree and flat filter results
+- `src/ui/viewer.js` — file viewer (text/image/binary, highlight, line linking)
+- `src/ui/tree.js` — sidebar tree, flat filter results, keyboard navigation
 - `src/ui/palette.js` — command palette (fuzzy file finder)
-- `src/ui/history.js` — commit history panel
+- `src/ui/contentSearch.js` — content-search (grep) overlay
+- `src/ui/history.js` — commit history panel + ref compare
 - `src/ui/recent.js` — preset and stored repositories
 - `src/ui/highlight.js` — shared fuzzy-match row rendering
 - `src/ui/virtualList.js` — windowing helpers for the large-list virtualization
