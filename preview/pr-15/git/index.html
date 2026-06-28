@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>git · local browser client</title>
+    <meta
+      name="description"
+      content="Clone a git repository into your browser's local storage and browse the code, read-only, powered by isomorphic-git."
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-glyph" aria-hidden="true">&#9095;</span>
+        <div class="brand-text">
+          <h1>git</h1>
+          <p class="tagline">Local, read-only git client</p>
+        </div>
+      </div>
+
+      <div class="repo-bar" id="repo-bar" hidden>
+        <div class="repo-id">
+          <span class="repo-name" id="repo-name"></span>
+          <span class="repo-meta" id="repo-meta"></span>
+        </div>
+        <div class="repo-actions">
+          <label class="branch-picker" title="Switch branch, tag, or commit">
+            <span class="branch-glyph" aria-hidden="true">&#9095;</span>
+            <select id="branch-select" aria-label="Branch, tag, or commit"></select>
+          </label>
+          <button id="find-btn" class="btn" type="button" title="Find files (Ctrl / Cmd + P)">
+            Find files
+          </button>
+          <button id="search-btn" class="btn" type="button" title="Search file contents (Ctrl / Cmd + Shift + F)">
+            Search code
+          </button>
+          <button id="history-btn" class="btn" type="button" aria-pressed="false">History</button>
+          <button id="update-btn" class="btn" type="button" title="Fetch the latest commits from the remote">
+            Pull / Update
+          </button>
+          <button id="close-btn" class="btn ghost" type="button" title="Close repository">Close</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="content">
+      <!-- Start / clone view -->
+      <section id="start-view" class="start-view">
+        <div class="clone-card">
+          <h2>Clone a repository</h2>
+          <p class="muted">
+            The repository is cloned into your browser's local storage (IndexedDB) with
+            <a href="https://isomorphic-git.org" target="_blank" rel="noreferrer">isomorphic-git</a>
+            and browsed entirely on-device. Read-only.
+          </p>
+
+          <form id="clone-form" novalidate>
+            <label class="field">
+              <span>Repository URL</span>
+              <input
+                id="url-input"
+                type="text"
+                placeholder="https://github.com/owner/repo  ·  or  ·  owner/repo"
+                autocomplete="off"
+                autocapitalize="off"
+                spellcheck="false"
+              />
+            </label>
+
+            <div class="field-row">
+              <label class="field">
+                <span>Branch / ref <small class="muted">(optional)</small></span>
+                <input
+                  id="ref-input"
+                  type="text"
+                  placeholder="default branch"
+                  autocomplete="off"
+                  autocapitalize="off"
+                  spellcheck="false"
+                />
+              </label>
+              <label class="field field-narrow">
+                <span>Depth</span>
+                <input id="depth-input" type="number" min="0" step="1" value="1" />
+              </label>
+            </div>
+
+            <details class="advanced">
+              <summary>Advanced options</summary>
+              <label class="checkbox">
+                <input type="checkbox" id="allbranches-input" checked />
+                <span>Fetch all branches (lets you switch branches)</span>
+              </label>
+              <label class="field">
+                <span>CORS proxy</span>
+                <input id="proxy-input" type="text" autocomplete="off" spellcheck="false" />
+                <small class="muted">
+                  Browsers can't clone most hosts directly; requests are routed through this proxy.
+                  Leave the default, clear it for self-hosted CORS-enabled servers, or run your own.
+                </small>
+              </label>
+              <label class="field">
+                <span>Access token <small class="muted">(private repos)</small></span>
+                <input
+                  id="token-input"
+                  type="password"
+                  autocomplete="off"
+                  spellcheck="false"
+                  placeholder="GitHub personal access token"
+                />
+                <small class="muted">
+                  Kept only for this browser session (never saved to disk). Sent with requests —
+                  which pass through the CORS proxy above — so use a least-privilege, read-only token.
+                </small>
+              </label>
+            </details>
+
+            <div class="form-actions">
+              <button class="btn primary" id="clone-btn" type="submit">Clone</button>
+              <button class="btn" id="demo-btn" type="button">Try a demo (no network)</button>
+            </div>
+
+            <p class="error" id="clone-error" role="alert" hidden></p>
+          </form>
+
+          <div class="presets">
+            <p class="presets-label muted">Or clone a sample repository in one tap:</p>
+            <div class="preset-list" id="preset-list"></div>
+          </div>
+
+          <div class="progress" id="clone-progress" hidden>
+            <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+            <p class="progress-label" id="progress-label"></p>
+          </div>
+        </div>
+
+        <div class="recent" id="recent" hidden>
+          <div class="recent-head">
+            <h3>Stored repositories</h3>
+            <p class="muted">Opened instantly from local storage — no re-download.</p>
+            <p class="storage-usage muted" id="storage-usage" hidden></p>
+          </div>
+          <ul class="recent-list" id="recent-list"></ul>
+        </div>
+      </section>
+
+      <!-- Code browser view -->
+      <section id="browser-view" class="browser-view" hidden>
+        <aside class="sidebar">
+          <div class="sidebar-head">
+            <input
+              id="tree-filter"
+              class="tree-filter"
+              type="text"
+              placeholder="Filter files…"
+              autocomplete="off"
+              autocapitalize="off"
+              spellcheck="false"
+              aria-label="Filter files"
+            />
+          </div>
+          <div class="tree-scroll">
+            <ul class="tree" id="file-tree" role="tree" aria-label="Repository files"></ul>
+            <ul class="flat-results" id="flat-results" role="listbox" aria-label="File search results" hidden></ul>
+            <p class="empty" id="tree-empty" hidden>No files match.</p>
+          </div>
+        </aside>
+
+        <section class="viewer">
+          <div class="viewer-head" id="viewer-head" hidden>
+            <span class="file-path" id="file-path"></span>
+            <div class="viewer-head-actions">
+              <span class="file-info" id="file-info"></span>
+              <button id="file-history-btn" class="btn ghost small" type="button" title="Show this file's commit history">
+                History
+              </button>
+            </div>
+          </div>
+          <div class="viewer-body" id="viewer-body">
+            <div class="placeholder" id="viewer-placeholder">
+              <p class="placeholder-title">Select a file to view its contents.</p>
+              <p class="muted">
+                Press <kbd>Ctrl</kbd> / <kbd>Cmd</kbd> + <kbd>P</kbd> to find files quickly.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <aside class="history-panel" id="history-panel" hidden aria-label="Commit history">
+          <div class="history-head">
+            <div class="history-head-row">
+              <h3>History</h3>
+              <span id="history-branch" class="muted"></span>
+            </div>
+            <label class="history-compare" id="history-compare">
+              <span class="muted">Compare with</span>
+              <select id="compare-select" aria-label="Compare the current ref with another"></select>
+            </label>
+          </div>
+          <ul class="commit-list" id="commit-list"></ul>
+        </aside>
+      </section>
+    </main>
+
+    <!-- Content search (grep across file contents) -->
+    <div class="search-overlay" id="content-search" hidden>
+      <div class="search-panel" role="dialog" aria-modal="true" aria-label="Search file contents">
+        <div class="search-head">
+          <input
+            id="content-search-input"
+            class="search-input"
+            type="text"
+            placeholder="Search in files…"
+            aria-label="Search file contents"
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck="false"
+          />
+          <div class="search-opts">
+            <label class="search-opt" title="Match case">
+              <input type="checkbox" id="cs-case" />
+              <span aria-hidden="true">Aa</span>
+              <span class="sr-only">Match case</span>
+            </label>
+            <label class="search-opt" title="Use regular expression">
+              <input type="checkbox" id="cs-regex" />
+              <span aria-hidden="true">.*</span>
+              <span class="sr-only">Regular expression</span>
+            </label>
+          </div>
+        </div>
+        <p class="search-status" id="content-search-status" role="status" aria-live="polite"></p>
+        <div class="search-results" id="content-search-results"></div>
+        <p class="search-empty" id="content-search-empty" hidden>No matches.</p>
+      </div>
+    </div>
+
+    <!-- Command palette (fuzzy file finder) -->
+    <div class="palette-overlay" id="palette" hidden>
+      <div class="palette" role="dialog" aria-modal="true" aria-label="Find a file">
+        <input
+          id="palette-input"
+          class="palette-input"
+          type="text"
+          placeholder="Find a file by name…"
+          autocomplete="off"
+          autocapitalize="off"
+          spellcheck="false"
+        />
+        <ul class="palette-results" id="palette-results"></ul>
+        <p class="palette-empty" id="palette-empty" hidden>No matching files.</p>
+      </div>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+    <script type="module" src="src/app.js"></script>
+  </body>
+</html>
