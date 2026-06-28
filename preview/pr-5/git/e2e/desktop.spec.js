@@ -11,6 +11,16 @@ async function loadDemo(page) {
   await expect(page.locator('#browser-view')).toBeVisible();
 }
 
+test('offers one-tap preset repositories on the start screen', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('.preset')).toHaveCount(4);
+  await expect(page.locator('.preset', { hasText: 'octocat/Hello-World' })).toBeVisible();
+
+  // Clicking a preset fills the URL field (we don't assert the network clone).
+  await page.locator('.preset', { hasText: 'github/gitignore' }).click();
+  await expect(page.locator('#url-input')).toHaveValue('https://github.com/github/gitignore');
+});
+
 test('loads the demo repo and shows the file tree and branches', async ({ page }) => {
   await loadDemo(page);
   await expect(page.locator('#repo-name')).toHaveText('tasklite/demo');

@@ -7,6 +7,15 @@ test.beforeEach(async ({ page }) => {
   await expect(page.locator('#browser-view')).toBeVisible();
 });
 
+test('header stays compact when a repo is open', async ({ page }) => {
+  // The "git" brand is hidden on mobile while browsing, and the action row
+  // scrolls horizontally instead of wrapping into a tall block.
+  await expect(page.locator('.topbar .brand')).toBeHidden();
+  const topbar = await page.locator('.topbar').boundingBox();
+  expect(topbar).not.toBeNull();
+  expect(topbar.height).toBeLessThan(140);
+});
+
 test('demo loads on mobile and the sidebar spans the width', async ({ page }) => {
   const box = await page.locator('.sidebar').boundingBox();
   const viewport = page.viewportSize();

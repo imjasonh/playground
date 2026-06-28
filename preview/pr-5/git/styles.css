@@ -62,7 +62,7 @@ kbd {
 
 /* ---------- Topbar ---------- */
 .topbar {
-  height: var(--topbar-h);
+  min-height: var(--topbar-h);
   flex: 0 0 auto;
   display: flex;
   align-items: center;
@@ -311,6 +311,50 @@ kbd {
   display: flex;
   gap: 0.6rem;
   flex-wrap: wrap;
+}
+
+/* ---------- Preset repositories ---------- */
+.presets {
+  margin-top: 1.1rem;
+}
+.presets-label {
+  font-size: 0.82rem;
+  margin: 0 0 0.5rem;
+}
+.preset-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.preset {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.45rem 0.7rem;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+.preset:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.preset:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+.preset .p-name {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  color: var(--fg);
+}
+.preset .p-note {
+  font-size: 0.7rem;
+  color: var(--fg-faint);
 }
 .error {
   color: var(--danger);
@@ -768,16 +812,54 @@ kbd {
   .brand-text .tagline {
     display: none;
   }
+
+  .topbar {
+    flex-direction: column;
+    align-items: stretch;
+    height: auto;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+  }
+  /* Once a repo is open the repo bar carries the identity, so reclaim the
+     vertical space the "git" brand would otherwise use. */
+  .repo-open .topbar .brand {
+    display: none;
+  }
+
   .repo-bar {
-    flex-wrap: wrap;
+    flex-direction: column;
+    align-items: stretch;
     gap: 0.5rem;
   }
+  .repo-meta {
+    display: none;
+  }
+
+  /* Keep the controls on a single, horizontally scrollable row instead of
+     wrapping into a tall, cramped block. */
   .repo-actions {
-    flex-wrap: wrap;
+    gap: 0.4rem;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+  }
+  .repo-actions::-webkit-scrollbar {
+    display: none;
+  }
+  .repo-actions > * {
+    flex: 0 0 auto;
   }
   .repo-actions .btn {
     height: 38px;
   }
+  .branch-picker {
+    height: 38px;
+  }
+  .branch-picker select {
+    max-width: 38vw;
+  }
+
   .browser-view {
     flex-direction: column;
   }
@@ -785,7 +867,7 @@ kbd {
     flex: 0 0 auto;
     max-width: none;
     width: 100%;
-    max-height: 38vh;
+    max-height: 42vh;
     border-right: none;
     border-bottom: 1px solid var(--border);
   }

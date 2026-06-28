@@ -17,6 +17,15 @@ const MAX_TEXT_LINES = 50_000;
 const PALETTE_LIMIT = 60;
 const FILTER_LIMIT = 400;
 
+// One-tap sample repositories for the clone screen. Kept small (few files /
+// few branches) so a shallow clone over the CORS proxy stays fast on mobile.
+const PRESET_REPOS = [
+  { label: 'octocat/Hello-World', url: 'https://github.com/octocat/Hello-World', note: 'Tiny GitHub sample' },
+  { label: 'octocat/Spoon-Knife', url: 'https://github.com/octocat/Spoon-Knife', note: 'Classic fork demo' },
+  { label: 'imjasonh/playground', url: 'https://github.com/imjasonh/playground', note: 'This repo' },
+  { label: 'github/gitignore', url: 'https://github.com/github/gitignore', note: 'Lots of small files' },
+];
+
 const $ = (id) => document.getElementById(id);
 
 function el(tag, className, text) {
@@ -53,7 +62,7 @@ function cacheDom() {
     'repo-bar', 'repo-name', 'repo-meta', 'branch-select', 'find-btn',
     'history-btn', 'update-btn', 'close-btn', 'start-view', 'clone-form',
     'url-input', 'ref-input', 'depth-input', 'allbranches-input', 'proxy-input',
-    'clone-btn', 'demo-btn', 'clone-error', 'clone-progress', 'progress-fill',
+    'clone-btn', 'demo-btn', 'preset-list', 'clone-error', 'clone-progress', 'progress-fill',
     'progress-label', 'recent', 'recent-list', 'browser-view', 'tree-filter',
     'file-tree', 'flat-results', 'tree-empty', 'viewer-head', 'file-path',
     'file-info', 'viewer-body', 'viewer-placeholder', 'history-panel',
@@ -77,6 +86,7 @@ async function init() {
   if (GitStorage) state.storage = new GitStorage();
 
   bindEvents();
+  renderPresets();
   renderRecent();
 
   if (location.hash === '#demo') {
@@ -87,7 +97,7 @@ async function init() {
 }
 
 function bindEvents() {
-  dom.cloneForm.addEventListener('submit', onClone);
+  dom.cloneForm.addEventListener('submit', onCloneSubmit);
   dom.demoBtn.addEventListener('click', openDemo);
   dom.closeBtn.addEventListener('click', showStart);
   dom.branchSelect.addEventListener('change', onBranchChange);
@@ -115,6 +125,7 @@ function showStart() {
   dom.browserView.hidden = true;
   dom.repoBar.hidden = true;
   dom.startView.hidden = false;
+  document.body.classList.remove('repo-open');
   closePalette();
   renderRecent();
 }
@@ -123,14 +134,19 @@ function showBrowser() {
   dom.startView.hidden = true;
   dom.browserView.hidden = false;
   dom.repoBar.hidden = false;
+  document.body.classList.add('repo-open');
 }
 
 /* ------------------------------------------------------------------ */
 /* Clone / open                                                        */
 /* ------------------------------------------------------------------ */
 
-async function onClone(event) {
+function onCloneSubmit(event) {
   event.preventDefault();
+  startClone();
+}
+
+async function startClone() {
   hideError();
 
   const parsed = parseRepoUrl(dom.urlInput.value);
@@ -652,6 +668,22 @@ function onGlobalKey(event) {
 /* Recent repositories                                                 */
 /* ------------------------------------------------------------------ */
 
+function renderPresets() {
+  dom.presetList.replaceChildren();
+  for (const preset of PRESET_REPOS) {
+    const button = el('button', 'preset');
+    button.type = 'button';
+    button.appendChild(el('span', 'p-name', preset.label));
+    if (preset.note) button.appendChild(el('span', 'p-note', preset.note));
+    button.addEventListener('click', () => {
+      dom.urlInput.value = preset.url;
+      if (preset.ref) dom.refInput.value = preset.ref;
+      startClone();
+    });
+    dom.presetList.appendChild(button);
+  }
+}
+
 function renderRecent() {
   if (!state.storage) {
     dom.recent.hidden = true;
@@ -730,6 +762,10 @@ function hideError() {
 function setCloning(busy) {
   dom.cloneBtn.disabled = busy;
   dom.cloneBtn.textContent = busy ? 'Cloning…' : 'Clone';
+  dom.demoBtn.disabled = busy;
+  for (const button of dom.presetList.querySelectorAll('button')) {
+    button.disabled = busy;
+  }
 }
 
 function showProgress(label, pct) {
