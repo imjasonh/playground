@@ -38,9 +38,22 @@ function makeFakeGit(model) {
         if (model.localHeads[m[1]]) return model.localHeads[m[1]];
         throw new Error(`no local ref ${ref}`);
       }
+      m = /^refs\/tags\/(.+)$/.exec(ref);
+      if (m) {
+        if (model.tags && model.tags[m[1]]) return model.tags[m[1]];
+        throw new Error(`no tag ref ${ref}`);
+      }
       // A bare name resolves to a local branch, like real isomorphic-git.
       if (model.localHeads[ref]) return model.localHeads[ref];
       throw new Error(`cannot resolve ${ref}`);
+    },
+    async listTags() {
+      return Object.keys(model.tags || {});
+    },
+    async expandOid({ oid }) {
+      // Map a known short oid to its full form; otherwise echo it back.
+      const full = (model.oids || []).find((o) => o.startsWith(oid));
+      return full || oid;
     },
     async listFiles({ ref }) {
       return model.trees[ref] || [];
@@ -66,6 +79,8 @@ function baseModel() {
     // Local heads lag behind origin (stale, as in a fetched-but-not-merged clone).
     localHeads: { main: 'oid_local_main' },
     remoteHeads: { main: 'oid_origin_main', dev: 'oid_origin_dev' },
+    tags: { 'v1.0': 'oid_origin_dev' },
+    oids: ['oid_origin_main', 'oid_origin_dev'],
     trees: {
       oid_local_main: ['stale-only.txt'],
       oid_origin_main: ['README.md', 'src/index.js'],
@@ -181,6 +196,38 @@ describe('GitRepoSource branches', () => {
     expect(source.getCurrentBranch()).toBe('dev');
     expect((await source.listFiles()).sort()).toEqual(['README.md', 'src/dev.js']);
     expect(dec.decode(await source.readFile('README.md'))).toBe('# dev');
+  });
+});
+
+describe('GitRepoSource generalized refs', () => {
+  test('getCurrentRef reports a branch after init', async () => {
+    const source = await makeSource(baseModel());
+    expect(source.getCurrentRef()).toEqual({ type: 'branch', name: 'main' });
+  });
+
+  test('lists tags from the engine', async () => {
+    const source = await makeSource(baseModel());
+    expect(await source.listTags()).toEqual(['v1.0']);
+  });
+
+  test('setRef to a tag reads that tag\'s tree', async () => {
+    const source = await makeSource(baseModel());
+    await source.setRef({ type: 'tag', name: 'v1.0' });
+    expect(source.getCurrentRef()).toEqual({ type: 'tag', name: 'v1.0' });
+    expect((await source.listFiles()).sort()).toEqual(['README.md', 'src/dev.js']);
+  });
+
+  test('setRef to a commit resolves the oid (expanding a short oid)', async () => {
+    const source = await makeSource(baseModel());
+    await source.setRef({ type: 'commit', name: 'oid_origin_d' });
+    expect(source.getCurrentRef()).toEqual({ type: 'commit', name: 'oid_origin_d' });
+    expect((await source.listFiles()).sort()).toEqual(['README.md', 'src/dev.js']);
+  });
+
+  test('a string ref stays branch-centric for back-compat', async () => {
+    const source = await makeSource(baseModel());
+    // listFiles('dev') resolves the dev branch tip via the remote-tracking ref.
+    expect((await source.listFiles('dev')).sort()).toEqual(['README.md', 'src/dev.js']);
   });
 });
 

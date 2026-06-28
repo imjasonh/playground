@@ -74,6 +74,32 @@ describe('InMemoryRepoSource', () => {
     await expect(s.readFile('missing.txt')).rejects.toThrow(/not found/i);
   });
 
+  test('getCurrentRef and setRef cover branches, tags, and commits', async () => {
+    const s = new InMemoryRepoSource({
+      defaultBranch: 'main',
+      branches: {
+        main: { files: { 'a.txt': 'A' }, commits: [{ oid: 'm1', message: 'm' }] },
+        dev: { files: { 'a.txt': 'A', 'b.txt': 'B' }, commits: [{ oid: 'd1', message: 'd' }] },
+      },
+      tags: { 'v1.0': 'dev' },
+    });
+
+    expect(s.getCurrentRef()).toEqual({ type: 'branch', name: 'main' });
+    expect(await s.listTags()).toEqual(['v1.0']);
+
+    await s.setRef({ type: 'tag', name: 'v1.0' });
+    expect(s.getCurrentRef()).toEqual({ type: 'tag', name: 'v1.0' });
+    expect((await s.listFiles()).sort()).toEqual(['a.txt', 'b.txt']);
+    // A tag is not a branch, so no branch is flagged current.
+    expect((await s.listBranches()).every((b) => !b.current)).toBe(true);
+
+    await s.setRef({ type: 'commit', name: 'd1' });
+    expect(s.getCurrentRef()).toEqual({ type: 'commit', name: 'd1' });
+    expect((await s.listFiles()).sort()).toEqual(['a.txt', 'b.txt']);
+
+    await expect(s.setRef({ type: 'tag', name: 'nope' })).rejects.toThrow(/Unknown tag/);
+  });
+
   test('headCommit and log come from newest-first commits', async () => {
     const s = makeSource();
     const head = await s.headCommit();

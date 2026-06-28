@@ -16,6 +16,8 @@ const VENDOR = {
   http: 'vendor/isomorphic-git/http-web.umd.js',
 };
 
+import { normalizeRef } from './repoSource.js';
+
 const FS_NAME = 'git-browser-fs';
 const REGISTRY_KEY = 'git-browser:repos';
 const REGISTRY_VERSION = 1;
@@ -175,7 +177,9 @@ export class GitRepoSource {
     // is not implemented yet, so it stays read-only.
     this.capabilities = { read: true, fetch: true, write: false, push: false };
     this.readOnly = !this.capabilities.write && !this.capabilities.push;
+    // The current ref is generalized: a branch, a tag, or a detached commit.
     this._current = 'HEAD';
+    this._refType = 'branch';
     this._oidCache = new Map();
   }
 
@@ -186,7 +190,10 @@ export class GitRepoSource {
         dir: this._dir,
         fullname: false,
       });
-      if (branch) this._current = branch;
+      if (branch) {
+        this._current = branch;
+        this._refType = 'branch';
+      }
     } catch {
       /* keep HEAD */
     }
@@ -195,6 +202,10 @@ export class GitRepoSource {
 
   getCurrentBranch() {
     return this._current;
+  }
+
+  getCurrentRef() {
+    return { type: this._refType, name: this._current };
   }
 
   async listBranches() {
@@ -214,23 +225,72 @@ export class GitRepoSource {
       .map((name) => ({ name, current: name === this._current }));
   }
 
+  async listTags() {
+    if (typeof this._git.listTags !== 'function') return [];
+    try {
+      const tags = await this._git.listTags({ fs: this._fs, dir: this._dir });
+      return tags.filter((name) => name !== 'HEAD').sort((a, b) => a.localeCompare(b));
+    } catch {
+      return [];
+    }
+  }
+
   async setBranch(name) {
     this._current = name;
+    this._refType = 'branch';
     this._oidCache.clear();
   }
 
+  /** Switch to any ref: a branch, a tag, or a detached commit (by oid). */
+  async setRef(ref) {
+    const r = normalizeRef(ref);
+    this._current = r.name;
+    this._refType = r.type;
+    this._oidCache.clear();
+  }
+
+  /** Ordered resolveRef candidates for a ref name of a given type. */
+  _candidatesFor(name, type) {
+    // 'HEAD' tracks the checked-out commit directly.
+    if (name === 'HEAD') return ['HEAD'];
+    if (type === 'tag') return [`refs/tags/${name}`, name];
+    // branch: prefer the remote-tracking ref. `fetch` advances
+    // refs/remotes/origin/* but never the local refs/heads/* of a read-only
+    // clone, so resolving the local head first would make "Pull / Update"
+    // silently show stale trees.
+    return [`refs/remotes/origin/${name}`, `refs/heads/${name}`, name];
+  }
+
   async _resolveOid(ref) {
-    const key = ref || this._current;
+    let type;
+    let name;
+    if (ref == null) {
+      type = this._refType;
+      name = this._current;
+    } else {
+      const r = normalizeRef(ref);
+      type = r.type;
+      name = r.name;
+    }
+    const key = `${type}:${name}`;
     if (this._oidCache.has(key)) return this._oidCache.get(key);
 
-    // Prefer the remote-tracking ref. `fetch` advances refs/remotes/origin/*
-    // but never the local refs/heads/* of a read-only clone, so resolving the
-    // local head first would make "Pull / Update" silently show stale trees.
-    // 'HEAD' is resolved as-is (it tracks the checked-out commit directly).
-    const candidates =
-      key === 'HEAD'
-        ? ['HEAD']
-        : [`refs/remotes/origin/${key}`, `refs/heads/${key}`, key];
+    // A commit ref *is* an oid; expand short oids when the engine supports it,
+    // otherwise trust it as a full oid.
+    if (type === 'commit') {
+      let oid = name;
+      if (typeof this._git.expandOid === 'function') {
+        try {
+          oid = await this._git.expandOid({ fs: this._fs, dir: this._dir, oid: name });
+        } catch {
+          /* assume a full oid */
+        }
+      }
+      this._oidCache.set(key, oid);
+      return oid;
+    }
+
+    const candidates = this._candidatesFor(name, type);
     let resolved = null;
     let lastErr = null;
     for (const candidate of candidates) {
@@ -246,7 +306,7 @@ export class GitRepoSource {
       }
     }
     if (!resolved) {
-      throw lastErr || new Error(`Could not resolve ref: ${key}`);
+      throw lastErr || new Error(`Could not resolve ref: ${name}`);
     }
     this._oidCache.set(key, resolved);
     return resolved;
@@ -291,12 +351,16 @@ export class GitRepoSource {
    * @returns {Promise<{updated: boolean, changed: boolean, oldOid: ?string, newOid: ?string}>}
    */
   async update(onProgress) {
+    // Only a branch checkout has a remote branch to narrow a single-branch
+    // fetch to; on a tag or detached commit we fetch the cloned scope and the
+    // tip simply won't move.
+    const onBranch = this._refType === 'branch';
     const branch = this._current;
     let oldOid = null;
     try {
-      oldOid = await this._resolveOid(branch);
+      oldOid = await this._resolveOid();
     } catch {
-      /* branch may not resolve yet; treat as unknown */
+      /* ref may not resolve yet; treat as unknown */
     }
 
     await this._git.fetch({
@@ -304,7 +368,7 @@ export class GitRepoSource {
       http: this._http,
       dir: this._dir,
       corsProxy: this._corsProxy,
-      ref: this._singleBranch ? branch : undefined,
+      ref: this._singleBranch && onBranch ? branch : undefined,
       singleBranch: this._singleBranch,
       depth: this._depth > 0 ? this._depth : undefined,
       tags: false,
@@ -316,7 +380,7 @@ export class GitRepoSource {
     this._oidCache.clear();
     let newOid = null;
     try {
-      newOid = await this._resolveOid(branch);
+      newOid = await this._resolveOid();
     } catch {
       /* ignore */
     }

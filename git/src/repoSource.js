@@ -17,6 +17,10 @@
  * @property {string} name
  * @property {boolean} current
  *
+ * @typedef {Object} Ref
+ * @property {'branch'|'tag'|'commit'} type
+ * @property {string} name  branch/tag name, or the commit oid for type 'commit'
+ *
  * @typedef {Object} UpdateResult
  * @property {boolean} updated  whether a fetch ran (false for static sources)
  * @property {boolean} changed  whether the current branch tip actually moved
@@ -32,13 +36,16 @@
  * @property {string|null} url
  * @property {Capabilities} capabilities  what the UI may offer for this source
  * @property {boolean} readOnly  derived: no write and no push capability
- * @property {() => string} getCurrentBranch
+ * @property {() => string} getCurrentBranch  name of the current ref (back-compat)
+ * @property {() => Ref} getCurrentRef  the generalized current ref descriptor
  * @property {() => Promise<BranchInfo[]>} listBranches
+ * @property {() => Promise<string[]>} [listTags]  tag names, newest-ish first
  * @property {(name: string) => Promise<void>} setBranch
- * @property {(ref?: string) => Promise<string[]>} listFiles
- * @property {(path: string, ref?: string) => Promise<Uint8Array>} readFile
- * @property {(ref?: string) => Promise<Commit|null>} headCommit
- * @property {(limit?: number, ref?: string) => Promise<Commit[]>} log
+ * @property {(ref: Ref|string) => Promise<void>} setRef  switch to any ref
+ * @property {(ref?: Ref|string) => Promise<string[]>} listFiles
+ * @property {(path: string, ref?: Ref|string) => Promise<Uint8Array>} readFile
+ * @property {(ref?: Ref|string) => Promise<Commit|null>} headCommit
+ * @property {(limit?: number, ref?: Ref|string) => Promise<Commit[]>} log
  * @property {(onProgress?: Function) => Promise<UpdateResult>} update
  */
 
@@ -70,6 +77,31 @@ export function isReadOnly(capabilities) {
   return !capabilities.write && !capabilities.push;
 }
 
+const REF_TYPES = new Set(['branch', 'tag', 'commit']);
+
+/**
+ * Coerce a ref argument into a `{type, name}` descriptor. A bare string is
+ * treated as a branch (the historical, branch-centric behavior); an object is
+ * validated and defaulted to a branch when the type is missing/unknown.
+ *
+ * @param {Ref|string} ref
+ * @returns {Ref}
+ */
+export function normalizeRef(ref) {
+  if (typeof ref === 'string') return { type: 'branch', name: ref };
+  if (ref && typeof ref.name === 'string') {
+    const type = REF_TYPES.has(ref.type) ? ref.type : 'branch';
+    return { type, name: ref.name };
+  }
+  throw new Error('Invalid ref');
+}
+
+/** Short, human-readable label for a ref (commits are abbreviated). */
+export function refLabel(ref) {
+  const r = normalizeRef(ref);
+  return r.type === 'commit' ? r.name.slice(0, 7) : r.name;
+}
+
 function toBytes(content) {
   if (content == null) return new Uint8Array(0);
   if (content instanceof Uint8Array) return content;
@@ -86,7 +118,8 @@ function toBytes(content) {
  *       files: { '<path>': string | Uint8Array },
  *       commits: Commit[]   // newest first
  *     }
- *   }
+ *   },
+ *   tags: { '<tag>': '<branchName>' }   // optional: a tag aliases a branch snapshot
  * }
  */
 export class InMemoryRepoSource {
@@ -98,41 +131,85 @@ export class InMemoryRepoSource {
     this.capabilities = { ...BASELINE_CAPABILITIES };
     this.readOnly = isReadOnly(this.capabilities);
     this._branches = spec.branches || {};
+    this._tags = spec.tags || {};
     const names = Object.keys(this._branches);
     this._defaultBranch = spec.defaultBranch || names[0] || 'main';
-    this._current = this._defaultBranch;
+    this._ref = { type: 'branch', name: this._defaultBranch };
   }
 
   getCurrentBranch() {
-    return this._current;
+    return this._ref.name;
+  }
+
+  getCurrentRef() {
+    return { ...this._ref };
   }
 
   async listBranches() {
     return Object.keys(this._branches).map((name) => ({
       name,
-      current: name === this._current,
+      current: this._ref.type === 'branch' && name === this._ref.name,
     }));
+  }
+
+  async listTags() {
+    return Object.keys(this._tags);
   }
 
   async setBranch(name) {
     if (!this._branches[name]) {
       throw new Error(`Unknown branch: ${name}`);
     }
-    this._current = name;
+    this._ref = { type: 'branch', name };
   }
 
-  _branch(ref) {
-    const branch = this._branches[ref || this._current];
-    if (!branch) throw new Error(`Unknown branch: ${ref || this._current}`);
-    return branch;
+  async setRef(ref) {
+    const next = normalizeRef(ref);
+    this._snapshot(next); // throws if it doesn't resolve
+    this._ref = next;
+  }
+
+  /** Which branch a commit oid belongs to (first match), or null. */
+  _commitBranch(oid) {
+    for (const [name, branch] of Object.entries(this._branches)) {
+      const hit = (branch.commits || []).some(
+        (c) => c.oid === oid || (oid.length >= 4 && c.oid.startsWith(oid))
+      );
+      if (hit) return name;
+    }
+    return null;
+  }
+
+  /** Resolve a ref (descriptor, string, or current) to a branch snapshot. */
+  _snapshot(ref) {
+    if (ref == null) return this._snapshot(this._ref);
+    const r = normalizeRef(ref);
+    if (r.type === 'tag') {
+      const target = this._tags[r.name];
+      const branch = target && this._branches[target];
+      if (!branch) throw new Error(`Unknown tag: ${r.name}`);
+      return branch;
+    }
+    if (r.type === 'commit') {
+      const name = this._commitBranch(r.name);
+      if (!name) throw new Error(`Unknown commit: ${r.name}`);
+      return this._branches[name];
+    }
+    // branch — but tolerate a bare string that is actually a tag/commit so the
+    // optional `ref` argument stays forgiving for callers.
+    if (this._branches[r.name]) return this._branches[r.name];
+    if (this._tags[r.name]) return this._snapshot({ type: 'tag', name: r.name });
+    const commitBranch = this._commitBranch(r.name);
+    if (commitBranch) return this._branches[commitBranch];
+    throw new Error(`Unknown branch: ${r.name}`);
   }
 
   async listFiles(ref) {
-    return Object.keys(this._branch(ref).files);
+    return Object.keys(this._snapshot(ref).files);
   }
 
   async readFile(path, ref) {
-    const files = this._branch(ref).files;
+    const files = this._snapshot(ref).files;
     if (!(path in files)) {
       throw new Error(`File not found: ${path}`);
     }
@@ -140,12 +217,12 @@ export class InMemoryRepoSource {
   }
 
   async headCommit(ref) {
-    const commits = this._branch(ref).commits || [];
+    const commits = this._snapshot(ref).commits || [];
     return commits[0] || null;
   }
 
   async log(limit = 50, ref) {
-    const commits = this._branch(ref).commits || [];
+    const commits = this._snapshot(ref).commits || [];
     return commits.slice(0, limit);
   }
 

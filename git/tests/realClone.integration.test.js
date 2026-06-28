@@ -113,6 +113,34 @@ describeMaybe('GitStorage real clone/fetch over local git http-backend', () => {
     ]);
   });
 
+  test('browses the tree at an arbitrary commit (detached HEAD)', async () => {
+    await source.setBranch('main');
+    const [head] = await source.log(1);
+    expect(head.oid).toMatch(/^[0-9a-f]{40}$/);
+
+    await source.setRef({ type: 'commit', name: head.oid });
+    expect(source.getCurrentRef()).toEqual({ type: 'commit', name: head.oid });
+    expect((await source.listFiles()).sort()).toEqual(['README.md', 'src/index.js']);
+
+    // A short oid resolves to the same tree.
+    await source.setRef({ type: 'commit', name: head.oid.slice(0, 8) });
+    expect((await source.listFiles()).sort()).toEqual(['README.md', 'src/index.js']);
+
+    await source.setBranch('main');
+  });
+
+  test('lists and browses tags fetched from the remote', async () => {
+    const tags = await source.listTags();
+    expect(tags).toContain('v1.0');
+
+    await source.setRef({ type: 'tag', name: 'v1.0' });
+    expect(source.getCurrentRef()).toEqual({ type: 'tag', name: 'v1.0' });
+    // v1.0 points at the initial commit (before src/dev.js existed on dev).
+    expect((await source.listFiles()).sort()).toEqual(['README.md', 'src/index.js']);
+
+    await source.setBranch('main');
+  });
+
   test('the clone is recorded in the registry and can be reopened', async () => {
     expect(storage.listRepos().map((r) => r.dir)).toContain(dir);
 

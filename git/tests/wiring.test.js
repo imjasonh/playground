@@ -64,6 +64,8 @@ describe('module imports', () => {
     ['formatBytes', 'format.js'],
     ['createStore', 'store.js'],
     ['createLoadController', 'store.js'],
+    ['capabilitiesOf', 'repoSource.js'],
+    ['normalizeRef', 'repoSource.js'],
   ];
 
   test.each(requiredSymbols)('some module imports %s from %s', (symbol, mod) => {
