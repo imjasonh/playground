@@ -629,6 +629,8 @@ kbd {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .file-path .dir {
   color: var(--fg-faint);
@@ -1134,6 +1136,15 @@ kbd {
   .changes-panel {
     width: 100%;
     max-width: none;
+  }
+
+  /* The viewer header is tight on phones; drop the verbose file meta so the
+     Edit / Delete actions stay reachable (the same trick used for repo-meta). */
+  .viewer-head .file-info {
+    display: none;
+  }
+  .viewer-head-right {
+    gap: 0.4rem;
   }
   .btn {
     font-size: 0.8rem;

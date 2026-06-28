@@ -42,18 +42,24 @@ test('header action buttons meet a comfortable touch-target height', async ({ pa
   expect(box.height).toBeGreaterThanOrEqual(38);
 });
 
-test('can edit, stage, and commit a file on a mobile viewport', async ({ page }) => {
-  await page.locator('.tree-row', { hasText: 'README.md' }).click();
-  await page.locator('#edit-btn').click();
+test('can create, edit, stage, and commit a file on a mobile viewport', async ({ page }) => {
+  // Drive the editor from the sidebar's New file button (always in view on
+  // mobile) rather than the in-header Edit action, then commit.
+  await page.locator('#new-file-btn').click();
+  await expect(page.locator('#newfile-overlay')).toBeVisible();
+  await page.locator('#newfile-input').fill('mobile/note.md');
+  await page.locator('#newfile-create').click();
+
   const area = page.locator('.editor-area');
   await expect(area).toBeVisible();
-  await area.fill('# Mobile edit\n');
+  await area.fill('# Written on mobile\n');
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(page.locator('#changes-count')).toHaveText('1');
 
   await page.locator('#changes-btn').click();
   await expect(page.locator('#changes-panel')).toBeVisible();
-  await page.locator('#commit-message').fill('Mobile commit');
+  await page.locator('#commit-message').fill('Add mobile note');
   await page.locator('#commit-btn').click();
   await expect(page.locator('#toast')).toContainText(/Committed/);
+  await expect(page.locator('#changes-count')).toBeHidden();
 });
