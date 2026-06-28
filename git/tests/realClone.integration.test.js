@@ -113,6 +113,67 @@ describeMaybe('GitStorage real clone/fetch over local git http-backend', () => {
     ]);
   });
 
+  test('browses the tree at an arbitrary commit (detached HEAD)', async () => {
+    await source.setBranch('main');
+    const [head] = await source.log(1);
+    expect(head.oid).toMatch(/^[0-9a-f]{40}$/);
+
+    await source.setRef({ type: 'commit', name: head.oid });
+    expect(source.getCurrentRef()).toEqual({ type: 'commit', name: head.oid });
+    expect((await source.listFiles()).sort()).toEqual(['README.md', 'src/index.js']);
+
+    // A short oid resolves to the same tree.
+    await source.setRef({ type: 'commit', name: head.oid.slice(0, 8) });
+    expect((await source.listFiles()).sort()).toEqual(['README.md', 'src/index.js']);
+
+    await source.setBranch('main');
+  });
+
+  test('lists and browses tags fetched from the remote', async () => {
+    const tags = await source.listTags();
+    expect(tags).toContain('v1.0');
+
+    await source.setRef({ type: 'tag', name: 'v1.0' });
+    expect(source.getCurrentRef()).toEqual({ type: 'tag', name: 'v1.0' });
+    // v1.0 points at the initial commit (before src/dev.js existed on dev).
+    expect((await source.listFiles()).sort()).toEqual(['README.md', 'src/index.js']);
+
+    await source.setBranch('main');
+  });
+
+  test('fileLog returns only commits that touched a given file', async () => {
+    await source.setBranch('dev');
+    // src/dev.js was introduced on the dev branch in a single commit.
+    const devLog = await source.fileLog('src/dev.js');
+    expect(devLog.length).toBe(1);
+    expect(devLog[0].message).toMatch(/Add dev module/);
+
+    // README.md existed from the initial commit.
+    const readmeLog = await source.fileLog('README.md');
+    expect(readmeLog.length).toBeGreaterThanOrEqual(1);
+    await source.setBranch('main');
+  });
+
+  test('changedFiles diffs two refs by walking their trees', async () => {
+    // main -> dev introduced src/dev.js (added), nothing else changed.
+    const changes = await source.changedFiles('main', 'dev');
+    const byPath = Object.fromEntries(changes.map((c) => [c.path, c.status]));
+    expect(byPath['src/dev.js']).toBe('added');
+    expect(Object.keys(byPath)).not.toContain('README.md');
+  });
+
+  test('changedFiles of a commit vs its parent (and the root commit)', async () => {
+    await source.setBranch('main');
+    const log = await source.log(10);
+    const root = log[log.length - 1];
+    expect(root.parent).toEqual([]);
+
+    // The root commit compared against an empty base: everything added.
+    const rootChanges = await source.changedFiles(null, { type: 'commit', name: root.oid });
+    expect(rootChanges.map((c) => c.path).sort()).toEqual(['README.md', 'src/index.js']);
+    expect(rootChanges.every((c) => c.status === 'added')).toBe(true);
+  });
+
   test('the clone is recorded in the registry and can be reopened', async () => {
     expect(storage.listRepos().map((r) => r.dir)).toContain(dir);
 

@@ -8,7 +8,6 @@
  */
 import { el } from './dom.js';
 import { appendMatch } from './highlight.js';
-import { fuzzyFilter } from '../fuzzy.js';
 import { computeWindow, measureRowHeight } from './virtualList.js';
 
 const PALETTE_LIMIT = 60;
@@ -25,6 +24,9 @@ export function createPalette(ctx) {
   let activeIndex = 0;
   let rowH = 0;
   let scheduled = false;
+  // Search is async (it may round-trip to a worker); this token lets a slower
+  // earlier query's result be discarded when a newer keystroke has superseded it.
+  let renderSeq = 0;
 
   scroller.addEventListener('scroll', schedulePaint, { passive: true });
 
@@ -69,11 +71,16 @@ export function createPalette(ctx) {
 
   function render() {
     const query = dom.paletteInput.value.trim();
-    rows = fuzzyFilter(query, state.files, { limit: PALETTE_LIMIT });
-    activeIndex = 0;
-    dom.paletteEmpty.hidden = rows.length > 0;
-    scroller.scrollTop = 0;
-    paint();
+    const token = (renderSeq += 1);
+    ctx.search.search(query, { limit: PALETTE_LIMIT }).then((results) => {
+      // null = the corpus changed; stale token = a newer keystroke already ran.
+      if (results === null || token !== renderSeq) return;
+      rows = results;
+      activeIndex = 0;
+      dom.paletteEmpty.hidden = rows.length > 0;
+      scroller.scrollTop = 0;
+      paint();
+    });
   }
 
   function paint() {

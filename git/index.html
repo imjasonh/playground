@@ -26,12 +26,15 @@
           <span class="repo-meta" id="repo-meta"></span>
         </div>
         <div class="repo-actions">
-          <label class="branch-picker" title="Switch branch">
+          <label class="branch-picker" title="Switch branch, tag, or commit">
             <span class="branch-glyph" aria-hidden="true">&#9095;</span>
-            <select id="branch-select" aria-label="Branch"></select>
+            <select id="branch-select" aria-label="Branch, tag, or commit"></select>
           </label>
           <button id="find-btn" class="btn" type="button" title="Find files (Ctrl / Cmd + P)">
             Find files
+          </button>
+          <button id="search-btn" class="btn" type="button" title="Search file contents (Ctrl / Cmd + Shift + F)">
+            Search code
           </button>
           <button id="history-btn" class="btn" type="button" aria-pressed="false">History</button>
           <button id="update-btn" class="btn" type="button" title="Fetch the latest commits from the remote">
@@ -98,6 +101,20 @@
                   Leave the default, clear it for self-hosted CORS-enabled servers, or run your own.
                 </small>
               </label>
+              <label class="field">
+                <span>Access token <small class="muted">(private repos)</small></span>
+                <input
+                  id="token-input"
+                  type="password"
+                  autocomplete="off"
+                  spellcheck="false"
+                  placeholder="GitHub personal access token"
+                />
+                <small class="muted">
+                  Kept only for this browser session (never saved to disk). Sent with requests —
+                  which pass through the CORS proxy above — so use a least-privilege, read-only token.
+                </small>
+              </label>
             </details>
 
             <div class="form-actions">
@@ -123,6 +140,7 @@
           <div class="recent-head">
             <h3>Stored repositories</h3>
             <p class="muted">Opened instantly from local storage — no re-download.</p>
+            <p class="storage-usage muted" id="storage-usage" hidden></p>
           </div>
           <ul class="recent-list" id="recent-list"></ul>
         </div>
@@ -153,7 +171,12 @@
         <section class="viewer">
           <div class="viewer-head" id="viewer-head" hidden>
             <span class="file-path" id="file-path"></span>
-            <span class="file-info" id="file-info"></span>
+            <div class="viewer-head-actions">
+              <span class="file-info" id="file-info"></span>
+              <button id="file-history-btn" class="btn ghost small" type="button" title="Show this file's commit history">
+                History
+              </button>
+            </div>
           </div>
           <div class="viewer-body" id="viewer-body">
             <div class="placeholder" id="viewer-placeholder">
@@ -167,13 +190,52 @@
 
         <aside class="history-panel" id="history-panel" hidden aria-label="Commit history">
           <div class="history-head">
-            <h3>History</h3>
-            <span id="history-branch" class="muted"></span>
+            <div class="history-head-row">
+              <h3>History</h3>
+              <span id="history-branch" class="muted"></span>
+            </div>
+            <label class="history-compare" id="history-compare">
+              <span class="muted">Compare with</span>
+              <select id="compare-select" aria-label="Compare the current ref with another"></select>
+            </label>
           </div>
           <ul class="commit-list" id="commit-list"></ul>
         </aside>
       </section>
     </main>
+
+    <!-- Content search (grep across file contents) -->
+    <div class="search-overlay" id="content-search" hidden>
+      <div class="search-panel" role="dialog" aria-modal="true" aria-label="Search file contents">
+        <div class="search-head">
+          <input
+            id="content-search-input"
+            class="search-input"
+            type="text"
+            placeholder="Search in files…"
+            aria-label="Search file contents"
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck="false"
+          />
+          <div class="search-opts">
+            <label class="search-opt" title="Match case">
+              <input type="checkbox" id="cs-case" />
+              <span aria-hidden="true">Aa</span>
+              <span class="sr-only">Match case</span>
+            </label>
+            <label class="search-opt" title="Use regular expression">
+              <input type="checkbox" id="cs-regex" />
+              <span aria-hidden="true">.*</span>
+              <span class="sr-only">Regular expression</span>
+            </label>
+          </div>
+        </div>
+        <p class="search-status" id="content-search-status" role="status" aria-live="polite"></p>
+        <div class="search-results" id="content-search-results"></div>
+        <p class="search-empty" id="content-search-empty" hidden>No matches.</p>
+      </div>
+    </div>
 
     <!-- Command palette (fuzzy file finder) -->
     <div class="palette-overlay" id="palette" hidden>

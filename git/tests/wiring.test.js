@@ -19,6 +19,8 @@ const indexHtml = read('index.html');
 const appSource = read('src/app.js');
 const controllerSource = read('src/controller.js');
 const gitClientSource = read('src/gitClient.js');
+const searchClientSource = read('src/searchClient.js');
+const contentSearchClientSource = read('src/contentSearchClient.js');
 
 /** Every .js file under src/, recursively. */
 function srcFiles() {
@@ -56,12 +58,33 @@ describe('module imports', () => {
   const requiredSymbols = [
     ['buildFileTree', 'fileTree.js'],
     ['flattenVisible', 'fileTree.js'],
-    ['fuzzyFilter', 'fuzzy.js'],
+    ['buildIndex', 'fuzzy.js'],
+    ['fuzzyFilterIndex', 'fuzzy.js'],
     ['highlightSegments', 'fuzzy.js'],
+    ['createSearchClient', 'searchClient.js'],
+    ['createContentSearchClient', 'contentSearchClient.js'],
+    ['createContentSearch', 'contentSearch.js'],
+    ['buildPattern', 'contentSearch.js'],
+    ['searchContent', 'contentSearch.js'],
     ['parseRepoUrl', 'repoUrl.js'],
     ['languageForPath', 'language.js'],
     ['createDemoSource', 'demoRepo.js'],
     ['formatBytes', 'format.js'],
+    ['createStore', 'store.js'],
+    ['createLoadController', 'store.js'],
+    ['capabilitiesOf', 'repoSource.js'],
+    ['normalizeRef', 'repoSource.js'],
+    ['refValue', 'repoSource.js'],
+    ['diffLines', 'diff.js'],
+    ['cloneErrorMessage', 'cloneError.js'],
+    ['storageEstimate', 'quota.js'],
+    ['rememberToken', 'auth.js'],
+    ['makeOnAuth', 'auth.js'],
+    ['parseHash', 'hashState.js'],
+    ['encodeHashState', 'hashState.js'],
+    ['highlight', 'highlightCode.js'],
+    ['grammarForPath', 'highlightCode.js'],
+    ['withinHighlightBudget', 'highlightCode.js'],
   ];
 
   test.each(requiredSymbols)('some module imports %s from %s', (symbol, mod) => {
@@ -72,10 +95,17 @@ describe('module imports', () => {
 describe('entry / module layout', () => {
   const expectedFiles = [
     'src/controller.js',
+    'src/store.js',
+    'src/searchClient.js',
+    'src/searchWorker.js',
+    'src/contentSearchClient.js',
+    'src/contentSearchWorker.js',
+    'src/contentSearch.js',
     'src/ui/dom.js',
     'src/ui/viewer.js',
     'src/ui/tree.js',
     'src/ui/palette.js',
+    'src/ui/contentSearch.js',
     'src/ui/history.js',
     'src/ui/recent.js',
     'src/ui/highlight.js',
@@ -121,5 +151,18 @@ describe('vendored bundles', () => {
 
   test.each(vendorFiles)('gitClient.js references %s', (rel) => {
     expect(gitClientSource).toContain(rel);
+  });
+});
+
+describe('worker references', () => {
+  // Workers are spawned via `new URL('./xWorker.js', import.meta.url)`, not an
+  // import, so collectImports() can't see them. Guard the filename so renaming a
+  // worker can't silently break the browser while every unit test still passes.
+  test('searchClient references its worker', () => {
+    expect(searchClientSource).toContain('searchWorker.js');
+  });
+
+  test('contentSearchClient references its worker', () => {
+    expect(contentSearchClientSource).toContain('contentSearchWorker.js');
   });
 });

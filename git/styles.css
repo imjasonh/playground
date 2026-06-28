@@ -5,9 +5,13 @@
   --border: #30363d;
   --border-soft: #21262d;
   --fg: #e6edf3;
-  --fg-muted: #9198a1;
-  --fg-faint: #6e7681;
+  /* Muted/faint greys are tuned to clear WCAG AA (4.5:1) on the dark surfaces. */
+  --fg-muted: #9aa4b2;
+  --fg-faint: #868f9b;
   --accent: #2f81f7;
+  /* Darker accent for solid fills under white text (e.g. primary button):
+     clears WCAG AA (4.5:1) where the lighter --accent (3.7:1) would not. */
+  --accent-strong: #1f6feb;
   --accent-soft: rgba(47, 129, 247, 0.15);
   --danger: #f85149;
   --success: #3fb950;
@@ -43,6 +47,10 @@ a {
   text-decoration: none;
 }
 a:hover {
+  text-decoration: underline;
+}
+/* Inline links inside running text need a non-color cue (underline) at rest. */
+p a {
   text-decoration: underline;
 }
 
@@ -182,13 +190,14 @@ kbd {
   transform: translateY(1px);
 }
 .btn.primary {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
   color: #fff;
   font-weight: 600;
 }
 .btn.primary:hover {
-  background: #4b95ff;
+  background: #1a6ae0;
+  border-color: #1a6ae0;
 }
 .btn.ghost {
   background: transparent;
@@ -401,6 +410,10 @@ kbd {
   margin: 0 0 0.75rem;
   font-size: 0.82rem;
 }
+.storage-usage {
+  font-size: 0.78rem !important;
+  color: var(--fg-faint) !important;
+}
 .recent-list {
   list-style: none;
   margin: 0;
@@ -510,6 +523,10 @@ kbd {
 .tree-row:hover {
   background: var(--bg-elev-2);
 }
+.tree-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
 .tree-row.active {
   background: var(--accent-soft);
   color: #cbe0ff;
@@ -552,7 +569,9 @@ kbd {
   color: var(--fg-faint);
 }
 .match {
-  color: var(--accent);
+  /* Brighter than --accent so the highlight clears WCAG AA even on the
+     accent-tinted background of an active/selected row. */
+  color: #58a6ff;
   font-weight: 700;
 }
 .empty {
@@ -590,11 +609,22 @@ kbd {
 .file-path .dir {
   color: var(--fg-faint);
 }
+.viewer-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex: 0 0 auto;
+}
 .file-info {
   font-size: 0.74rem;
   color: var(--fg-faint);
   white-space: nowrap;
   flex: 0 0 auto;
+}
+.btn.small {
+  height: 26px;
+  padding: 0 0.6rem;
+  font-size: 0.76rem;
 }
 .viewer-body {
   flex: 1 1 auto;
@@ -623,6 +653,17 @@ kbd {
   font-size: 0.82rem;
   line-height: 1.55;
   min-height: 100%;
+  position: relative;
+}
+/* Linked-line highlight: an absolute band behind the (positioned) code text.
+   The sticky gutter, later in source order, paints over it in its own column. */
+.line-highlight {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: rgba(187, 128, 9, 0.18);
 }
 .gutter {
   flex: 0 0 auto;
@@ -635,6 +676,8 @@ kbd {
   white-space: pre;
   position: sticky;
   left: 0;
+  z-index: 1;
+  cursor: pointer;
 }
 .code {
   padding: 0.6rem 1rem;
@@ -642,7 +685,27 @@ kbd {
   tab-size: 2;
   flex: 1 1 auto;
   color: var(--fg);
+  position: relative;
+  z-index: 1;
 }
+/* Syntax-highlight token colors (all tuned to clear WCAG AA on --bg). */
+.tok-comment { color: #9aa4b2; font-style: italic; }
+.tok-string { color: #a5d6ff; }
+.tok-keyword { color: #ff7b72; }
+.tok-number,
+.tok-literal,
+.tok-property,
+.tok-heading { color: #79c0ff; }
+.tok-heading { font-weight: 600; }
+.tok-function { color: #d2a8ff; }
+.tok-type,
+.tok-variable { color: #ffa657; }
+.tok-tag { color: #7ee787; }
+.tok-attr { color: #d2a8ff; }
+.tok-meta { color: #ff7b72; }
+.tok-link { color: #a5d6ff; text-decoration: underline; }
+.tok-strong { font-weight: 700; }
+.tok-em { font-style: italic; }
 .notice {
   padding: 2rem;
   text-align: center;
@@ -685,9 +748,32 @@ kbd {
   padding: 0.85rem 1rem;
   border-bottom: 1px solid var(--border-soft);
 }
+.history-head-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
 .history-head h3 {
   margin: 0;
   font-size: 0.95rem;
+}
+.history-compare {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.55rem;
+  font-size: 0.74rem;
+}
+.history-compare select {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.2rem 0.4rem;
+  font: inherit;
+  font-size: 0.76rem;
 }
 .commit-list {
   list-style: none;
@@ -716,6 +802,130 @@ kbd {
 .commit-oid {
   font-family: var(--mono);
   color: var(--accent);
+}
+.commit-actions {
+  margin-top: 0.4rem;
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.commit-action {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--bg-elev-2);
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 0.72rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.commit-action:hover {
+  border-color: var(--accent);
+  color: #cbe0ff;
+  background: var(--accent-soft);
+}
+
+/* ---------- Diff view ---------- */
+.diff-list {
+  display: flex;
+  flex-direction: column;
+}
+.diff-file {
+  border-bottom: 1px solid var(--border-soft);
+}
+.diff-file-head {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  text-align: left;
+  appearance: none;
+  border: 0;
+  background: var(--bg-elev);
+  color: var(--fg);
+  font: inherit;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+}
+.diff-file-head:hover {
+  background: var(--bg-elev-2);
+}
+.diff-file-head::before {
+  content: '\25B8'; /* ▸ */
+  color: var(--fg-faint);
+  transition: transform 0.12s ease;
+}
+.diff-file-head.open::before {
+  transform: rotate(90deg);
+}
+.diff-file-path {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.diff-badge {
+  flex: 0 0 auto;
+  width: 1.2rem;
+  height: 1.2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #07120a;
+}
+.diff-badge.added {
+  background: #3fb950;
+}
+.diff-badge.removed {
+  background: #f85149;
+  color: #1a0606;
+}
+.diff-badge.modified {
+  background: #d29922;
+}
+.diff-file-body {
+  background: var(--bg);
+}
+.diff-rows {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  overflow-x: auto;
+}
+.diff-row {
+  display: flex;
+  white-space: pre;
+}
+.diff-row.add {
+  background: rgba(63, 185, 80, 0.14);
+}
+.diff-row.del {
+  background: rgba(248, 81, 73, 0.14);
+}
+.diff-ln {
+  flex: 0 0 auto;
+  width: 3rem;
+  padding: 0 0.5rem;
+  text-align: right;
+  color: var(--fg-faint);
+  user-select: none;
+  border-right: 1px solid var(--border-soft);
+}
+.diff-text {
+  padding: 0 0.75rem;
+  flex: 1 1 auto;
+}
+.diff-row.add .diff-text {
+  color: #aff0bd;
+}
+.diff-row.del .diff-text {
+  color: #ffb3ae;
 }
 
 /* ---------- Command palette ---------- */
@@ -772,10 +982,173 @@ kbd {
   font-size: 0.74rem;
   color: var(--fg-faint);
 }
+/* The active row's accent tint lifts the background; use the brighter muted
+   grey there so the path keeps a >=4.5:1 ratio. */
+.palette-row.active .pr-path {
+  color: var(--fg-muted);
+}
 .palette-empty {
   padding: 1rem;
   color: var(--fg-faint);
   text-align: center;
+  font-size: 0.88rem;
+}
+
+/* ---------- Content search (grep) ---------- */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.search-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(1, 4, 9, 0.6);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 10vh;
+  z-index: 50;
+}
+.search-panel {
+  width: min(720px, 94vw);
+  max-height: 74vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+.search-head {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--border);
+}
+.search-input {
+  flex: 1 1 auto;
+  border: none;
+  border-radius: 0;
+  font-size: 1rem;
+  padding: 0.9rem 1rem;
+  background: transparent;
+  color: var(--fg);
+}
+.search-input:focus {
+  outline: none;
+}
+.search-opts {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0 0.6rem;
+}
+.search-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--fg-muted);
+  padding: 0.25rem 0.45rem;
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+.search-opt:hover {
+  background: var(--bg);
+}
+.search-status {
+  padding: 0.45rem 1rem;
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--fg-muted);
+  border-bottom: 1px solid var(--border-soft);
+  min-height: 1.2rem;
+}
+.search-status.error {
+  color: var(--danger);
+}
+.search-results {
+  overflow-y: auto;
+  padding: 0.3rem;
+}
+.cs-file {
+  margin-bottom: 0.35rem;
+}
+.cs-file-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.35rem 0.55rem;
+  background: var(--bg);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.cs-file-path {
+  font-size: 0.82rem;
+  color: var(--fg);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cs-file-count {
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  color: var(--fg-faint);
+}
+.cs-line {
+  display: flex;
+  gap: 0.6rem;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  padding: 0.2rem 0.55rem;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+}
+.cs-line:hover,
+.cs-line.active {
+  background: var(--accent-soft);
+}
+.cs-line-no {
+  flex: 0 0 auto;
+  width: 3ch;
+  text-align: right;
+  color: var(--fg-faint);
+}
+.cs-line-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--fg-muted);
+}
+.cs-hit {
+  background: rgba(187, 128, 9, 0.4);
+  color: var(--fg);
+  border-radius: 2px;
+}
+.search-empty {
+  padding: 1.2rem;
+  text-align: center;
+  color: var(--fg-faint);
   font-size: 0.88rem;
 }
 
