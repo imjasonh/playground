@@ -77,9 +77,11 @@ describeMaybe('GitStorage real clone/fetch over local git http-backend', () => {
     else delete globalThis.localStorage;
   });
 
-  test('clone produces a working read-only source on the default branch', async () => {
+  test('clone produces a working editable source on the default branch', async () => {
     expect(source.fullName).toBe('acme/widget');
-    expect(source.readOnly).toBe(true);
+    // The real clone is read-write and, having a remote URL, can be pushed.
+    expect(source.readOnly).toBe(false);
+    expect(source.canPush).toBe(true);
     expect(source.getCurrentBranch()).toBe('main');
 
     await source.setBranch('main');

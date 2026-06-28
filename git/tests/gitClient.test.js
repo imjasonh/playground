@@ -107,10 +107,11 @@ async function makeSource(model, opts = {}) {
 }
 
 describe('GitRepoSource ref resolution', () => {
-  test('init adopts the checked-out branch and stays read-only', async () => {
+  test('init adopts the checked-out branch; editable, pushable with a url', async () => {
     const source = await makeSource(baseModel());
     expect(source.getCurrentBranch()).toBe('main');
-    expect(source.readOnly).toBe(true);
+    expect(source.readOnly).toBe(false);
+    expect(source.canPush).toBe(true);
     expect(source.fullName).toBe('acme/widget');
   });
 
@@ -248,5 +249,315 @@ describe('normalizeRegistry', () => {
     expect(normalizeRegistry(42)).toEqual([]);
     expect(normalizeRegistry({})).toEqual([]);
     expect(normalizeRegistry({ repos: 'nope' })).toEqual([]);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Write surface: edit -> stage -> commit -> push                      */
+/* ------------------------------------------------------------------ */
+
+function bytesEq(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+/** A starting point with one commit (`c1`) checked out on `main`. */
+function writableModel() {
+  return {
+    current: 'main',
+    headOid: 'c1',
+    localHeads: { main: 'c1' },
+    remoteHeads: { main: 'c1' },
+    commitTrees: { c1: { 'README.md': '# hi', 'src/a.js': 'a' } },
+    trees: { c1: ['README.md', 'src/a.js'] },
+    logs: { c1: [{ oid: 'c1', commit: { message: 'init', author: { name: 'I', email: 'i@x', timestamp: 1 } } }] },
+    workdir: null,
+    index: null,
+    checkedOut: null,
+    pushCalls: [],
+    commitSeq: 0,
+    pushResult: null,
+    ancestors: {},
+  };
+}
+
+/** Fake lightning-fs whose working directory is a shared Map on the model. */
+function makeFakeFs(model) {
+  const strip = (full) => full.replace(/^\/repo\//, '');
+  return {
+    promises: {
+      async writeFile(full, bytes) {
+        model.workdir.set(strip(full), bytes);
+      },
+      async readFile(full) {
+        const p = strip(full);
+        if (!model.workdir || !model.workdir.has(p)) {
+          const err = new Error(`ENOENT: ${p}`);
+          err.code = 'ENOENT';
+          throw err;
+        }
+        return model.workdir.get(p);
+      },
+      async unlink(full) {
+        if (model.workdir) model.workdir.delete(strip(full));
+      },
+      async mkdir() {
+        /* directories are implicit in the Map model */
+      },
+    },
+  };
+}
+
+/**
+ * Fake isomorphic-git that shares a working tree + index with makeFakeFs so the
+ * adapter's checkout / add / remove / statusMatrix / commit / push sequence can
+ * be exercised end to end without a real repo.
+ */
+function makeWritableGit(model) {
+  const tree = (oid) => model.commitTrees[oid] || {};
+  return {
+    async currentBranch() {
+      return model.current;
+    },
+    async listBranches({ remote }) {
+      return remote ? Object.keys(model.remoteHeads) : Object.keys(model.localHeads);
+    },
+    async resolveRef({ ref }) {
+      if (ref === 'HEAD') return model.localHeads[model.current];
+      let m = /^refs\/remotes\/origin\/(.+)$/.exec(ref);
+      if (m) {
+        if (model.remoteHeads[m[1]]) return model.remoteHeads[m[1]];
+        throw new Error(`no remote ref ${ref}`);
+      }
+      m = /^refs\/heads\/(.+)$/.exec(ref);
+      if (m) {
+        if (model.localHeads[m[1]]) return model.localHeads[m[1]];
+        throw new Error(`no local ref ${ref}`);
+      }
+      if (model.localHeads[ref]) return model.localHeads[ref];
+      throw new Error(`cannot resolve ${ref}`);
+    },
+    async listFiles({ ref }) {
+      return model.trees[ref] || [];
+    },
+    async readBlob({ oid, filepath }) {
+      const t = tree(oid);
+      if (!(filepath in t)) throw new Error(`not found: ${filepath}`);
+      return { blob: enc(t[filepath]), oid };
+    },
+    async log({ ref, depth }) {
+      return (model.logs[ref] || []).slice(0, depth);
+    },
+    async writeRef({ ref, value }) {
+      const m = /^refs\/heads\/(.+)$/.exec(ref);
+      if (m) model.localHeads[m[1]] = value;
+    },
+    async checkout({ ref }) {
+      const oid = model.localHeads[ref];
+      model.current = ref;
+      model.headOid = oid;
+      model.checkedOut = ref;
+      const t = tree(oid);
+      model.workdir = new Map(Object.entries(t).map(([p, c]) => [p, enc(c)]));
+      model.index = new Map(model.workdir);
+    },
+    async add({ filepath }) {
+      model.index.set(filepath, model.workdir.get(filepath));
+    },
+    async remove({ filepath }) {
+      model.index.delete(filepath);
+    },
+    async statusMatrix() {
+      const headTree = tree(model.headOid);
+      const paths = new Set([
+        ...Object.keys(headTree),
+        ...model.workdir.keys(),
+        ...model.index.keys(),
+      ]);
+      const rows = [];
+      for (const p of paths) {
+        const inHead = p in headTree;
+        const head = inHead ? 1 : 0;
+        let workdir = 0;
+        if (model.workdir.has(p)) {
+          workdir = inHead && bytesEq(model.workdir.get(p), enc(headTree[p])) ? 1 : 2;
+        }
+        let stage = 0;
+        if (model.index.has(p)) {
+          stage = inHead && bytesEq(model.index.get(p), enc(headTree[p])) ? 1 : 2;
+        }
+        rows.push([p, head, workdir, stage]);
+      }
+      rows.sort((a, b) => a[0].localeCompare(b[0]));
+      return rows;
+    },
+    async commit({ message, author }) {
+      const newOid = `commit_${++model.commitSeq}`;
+      const newTree = {};
+      for (const [p, bytes] of model.index.entries()) newTree[p] = dec.decode(bytes);
+      const parentOid = model.headOid;
+      model.commitTrees[newOid] = newTree;
+      model.trees[newOid] = Object.keys(newTree);
+      model.localHeads[model.current] = newOid;
+      model.headOid = newOid;
+      model.logs[newOid] = [{ oid: newOid, commit: { message, author } }, ...(model.logs[parentOid] || [])];
+      return newOid;
+    },
+    async isDescendent({ oid, ancestor }) {
+      return (model.ancestors[oid] || []).includes(ancestor);
+    },
+    async push(opts) {
+      model.pushCalls.push({
+        ref: opts.ref,
+        remote: opts.remote,
+        force: opts.force,
+        auth: opts.onAuth(),
+      });
+      return model.pushResult || { ok: true, error: null };
+    },
+  };
+}
+
+async function makeWritableSource(model, opts = {}) {
+  const source = new GitRepoSource({
+    fs: makeFakeFs(model),
+    http: {},
+    git: makeWritableGit(model),
+    dir: '/repo',
+    url: 'https://example.com/acme/widget',
+    fullName: 'acme/widget',
+    ...opts,
+  });
+  await source.init();
+  return source;
+}
+
+describe('GitRepoSource editing', () => {
+  test('canPush tracks whether there is a remote url', async () => {
+    expect((await makeWritableSource(writableModel())).canPush).toBe(true);
+    expect((await makeWritableSource(writableModel(), { url: null })).canPush).toBe(false);
+  });
+
+  test('first edit checks out the branch and stages the change', async () => {
+    const model = writableModel();
+    const source = await makeWritableSource(model);
+
+    await source.writeFile('README.md', '# edited');
+
+    expect(model.checkedOut).toBe('main');
+    // The local head was reset to the displayed (remote-tracking) commit.
+    expect(model.localHeads.main).toBe('c1');
+    expect(await source.status()).toEqual([{ path: 'README.md', status: 'modified' }]);
+    // Reads now reflect the uncommitted working-tree edit.
+    expect(dec.decode(await source.readFile('README.md'))).toBe('# edited');
+  });
+
+  test('new and deleted files surface in status and the file list', async () => {
+    const model = writableModel();
+    const source = await makeWritableSource(model);
+
+    await source.writeFile('docs/new.md', 'x');
+    await source.deleteFile('src/a.js');
+
+    const status = await source.status();
+    expect(status).toContainEqual({ path: 'docs/new.md', status: 'new' });
+    expect(status).toContainEqual({ path: 'src/a.js', status: 'deleted' });
+
+    const files = await source.listFiles();
+    expect(files).toContain('docs/new.md');
+    expect(files).not.toContain('src/a.js');
+  });
+
+  test('commit advances the local head, and reads then follow it', async () => {
+    const model = writableModel();
+    const source = await makeWritableSource(model);
+    await source.writeFile('README.md', '# v2');
+
+    const { oid } = await source.commit({
+      message: 'Update readme',
+      author: { name: 'Dev', email: 'd@x' },
+    });
+
+    expect(oid).toBe('commit_1');
+    expect(model.localHeads.main).toBe('commit_1');
+    expect(await source.status()).toEqual([]);
+
+    const head = await source.headCommit();
+    expect(head.oid).toBe('commit_1');
+    expect(head.message).toBe('Update readme');
+    expect((await source.log(5)).map((c) => c.oid)).toEqual(['commit_1', 'c1']);
+  });
+
+  test('commit rejects an empty tree and a blank message', async () => {
+    const source = await makeWritableSource(writableModel());
+    await expect(source.commit({ message: 'noop' })).rejects.toThrow(/nothing to commit/i);
+    await source.writeFile('a.txt', '1');
+    await expect(source.commit({ message: '   ' })).rejects.toThrow(/message/i);
+  });
+
+  test('push sends the current branch with token auth and reports success', async () => {
+    const model = writableModel();
+    const source = await makeWritableSource(model);
+
+    const res = await source.push({ token: 'ghp_secret' });
+    expect(res.ok).toBe(true);
+    expect(model.pushCalls).toHaveLength(1);
+    expect(model.pushCalls[0]).toMatchObject({ ref: 'main', remote: 'origin' });
+    // A bare token authenticates as the username (GitHub-style).
+    expect(model.pushCalls[0].auth).toEqual({ username: 'ghp_secret', password: '' });
+  });
+
+  test('push uses username + token when a username is supplied', async () => {
+    const model = writableModel();
+    const source = await makeWritableSource(model);
+    await source.push({ token: 'tok', username: 'octocat' });
+    expect(model.pushCalls[0].auth).toEqual({ username: 'octocat', password: 'tok' });
+  });
+
+  test('push surfaces a remote rejection and refuses without a remote', async () => {
+    const model = writableModel();
+    model.pushResult = { ok: false, error: 'non-fast-forward' };
+    const source = await makeWritableSource(model);
+    await expect(source.push({ token: 't' })).rejects.toThrow(/non-fast-forward/);
+
+    const noRemote = await makeWritableSource(writableModel(), { url: null });
+    await expect(noRemote.push({ token: 't' })).rejects.toThrow(/no remote/i);
+  });
+
+  test('reopening adopts local commits that are ahead of origin', async () => {
+    // Simulate a repo whose local head carries a commit (c2) not on origin (c1).
+    const model = writableModel();
+    model.localHeads.main = 'c2';
+    model.commitTrees.c2 = { 'README.md': '# committed locally', 'src/a.js': 'a' };
+    model.trees.c2 = ['README.md', 'src/a.js'];
+    model.logs.c2 = [
+      { oid: 'c2', commit: { message: 'local work', author: { name: 'Me', email: 'm@x' } } },
+      ...model.logs.c1,
+    ];
+    model.ancestors = { c2: ['c1'] }; // c2 descends from the remote tip c1
+
+    const source = await makeWritableSource(model);
+    // Reads follow the local head, not the stale remote-tracking tip.
+    expect(dec.decode(await source.readFile('README.md'))).toBe('# committed locally');
+    expect((await source.headCommit()).oid).toBe('c2');
+    expect((await source.log(5)).map((c) => c.oid)).toEqual(['c2', 'c1']);
+  });
+
+  test('does not adopt a local head that is merely behind origin', async () => {
+    // Plain fetched-but-not-merged clone: origin (c2) is ahead of local (c1).
+    const model = writableModel();
+    model.remoteHeads.main = 'c2';
+    model.commitTrees.c2 = { 'README.md': '# newer on origin', 'src/a.js': 'a' };
+    model.trees.c2 = ['README.md', 'src/a.js'];
+    model.logs.c2 = [
+      { oid: 'c2', commit: { message: 'origin work', author: { name: 'O', email: 'o@x' } } },
+      ...model.logs.c1,
+    ];
+    model.ancestors = { c2: ['c1'] }; // local c1 is NOT a descendant of remote c2
+
+    const source = await makeWritableSource(model);
+    expect(dec.decode(await source.readFile('README.md'))).toBe('# newer on origin');
+    expect((await source.headCommit()).oid).toBe('c2');
   });
 });

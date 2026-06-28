@@ -24,11 +24,13 @@ function makeSource() {
 const decoder = new TextDecoder();
 
 describe('InMemoryRepoSource', () => {
-  test('reports metadata and default branch', () => {
+  test('reports metadata and default branch, and is editable but not pushable', () => {
     const s = makeSource();
     expect(s.fullName).toBe('acme/widget');
     expect(s.getCurrentBranch()).toBe('main');
-    expect(s.readOnly).toBe(true);
+    // In-memory sources are fully editable locally but have no remote.
+    expect(s.readOnly).toBe(false);
+    expect(s.canPush).toBe(false);
   });
 
   test('lists branches with the current flag', async () => {
@@ -72,6 +74,80 @@ describe('InMemoryRepoSource', () => {
   test('update is a no-op for in-memory data', async () => {
     const s = makeSource();
     await expect(s.update()).resolves.toEqual({ updated: false, changed: false });
+  });
+});
+
+describe('InMemoryRepoSource editing', () => {
+  test('starts with a clean working tree', async () => {
+    const s = makeSource();
+    await expect(s.status()).resolves.toEqual([]);
+  });
+
+  test('writeFile modifies an existing file and shows it as modified', async () => {
+    const s = makeSource();
+    await s.writeFile('README.md', '# Changed');
+    expect(decoder.decode(await s.readFile('README.md'))).toBe('# Changed');
+    expect(await s.status()).toEqual([{ path: 'README.md', status: 'modified' }]);
+  });
+
+  test('writeFile creates a new (nested) file shown as new and listed', async () => {
+    const s = makeSource();
+    await s.writeFile('docs/guide.md', 'hello');
+    expect((await s.listFiles())).toContain('docs/guide.md');
+    expect(await s.status()).toEqual([{ path: 'docs/guide.md', status: 'new' }]);
+  });
+
+  test('deleteFile removes a file and shows it as deleted', async () => {
+    const s = makeSource();
+    await s.deleteFile('README.md');
+    expect(await s.listFiles()).not.toContain('README.md');
+    expect(await s.status()).toEqual([{ path: 'README.md', status: 'deleted' }]);
+    await expect(s.deleteFile('nope.txt')).rejects.toThrow(/not found/i);
+  });
+
+  test('rewriting a file back to its original content clears the change', async () => {
+    const s = makeSource();
+    const original = decoder.decode(await s.readFile('README.md'));
+    await s.writeFile('README.md', '# temporary');
+    expect(await s.status()).toHaveLength(1);
+    await s.writeFile('README.md', original);
+    expect(await s.status()).toEqual([]);
+  });
+
+  test('commit records a newest-first commit and clears status', async () => {
+    const s = makeSource();
+    await s.writeFile('NEW.md', 'x');
+    const { oid } = await s.commit({
+      message: 'Add NEW.md',
+      author: { name: 'Dev', email: 'dev@x' },
+    });
+    expect(oid).toMatch(/^[0-9a-f]{40}$/);
+    expect(await s.status()).toEqual([]);
+    const head = await s.headCommit();
+    expect(head.oid).toBe(oid);
+    expect(head.message).toBe('Add NEW.md');
+    expect(head.author).toEqual({ name: 'Dev', email: 'dev@x' });
+  });
+
+  test('commit rejects an empty tree or a blank message', async () => {
+    const s = makeSource();
+    await expect(s.commit({ message: 'nothing changed' })).rejects.toThrow(/nothing to commit/i);
+    await s.writeFile('a.txt', '1');
+    await expect(s.commit({ message: '   ' })).rejects.toThrow(/message/i);
+  });
+
+  test('edits are isolated per branch', async () => {
+    const s = makeSource();
+    await s.writeFile('README.md', '# main edit');
+    await s.setBranch('dev');
+    // The dev branch is untouched and clean.
+    expect(decoder.decode(await s.readFile('README.md'))).toBe('# Widget dev');
+    expect(await s.status()).toEqual([]);
+  });
+
+  test('cannot be pushed', async () => {
+    const s = makeSource();
+    await expect(s.push()).rejects.toThrow(/local-only/i);
   });
 });
 

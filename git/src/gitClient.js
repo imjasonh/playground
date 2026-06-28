@@ -154,9 +154,19 @@ function toCommit(entry) {
   };
 }
 
+/** Parent directory of a full lightning-fs path ("/a/b/c.txt" -> "/a/b"). */
+function parentDir(fullPath) {
+  const idx = fullPath.lastIndexOf('/');
+  return idx <= 0 ? '/' : fullPath.slice(0, idx);
+}
+
 /**
  * RepoSource backed by a cloned repository living in lightning-fs.
- * Read-only: branch switching just changes which tree we read from.
+ *
+ * Reading is lazy and tree-based: branch switching just changes which commit
+ * we read from. Writing is opt-in: the first edit materializes a working tree
+ * for the current branch (a checkout) and from then on reads, status, commits,
+ * and pushes operate against that working tree and the local branch ref.
  */
 export class GitRepoSource {
   constructor({ fs, git, http, dir, url, fullName, corsProxy, singleBranch, depth }) {
@@ -171,9 +181,16 @@ export class GitRepoSource {
     // instead of accidentally widening it (all branches / full history).
     this._singleBranch = Boolean(singleBranch);
     this._depth = Number.isFinite(depth) && depth > 0 ? depth : 0;
-    this.readOnly = true;
+    // Editable. Pushing additionally needs a remote URL.
+    this.readOnly = false;
+    this.canPush = Boolean(this.url);
     this._current = 'HEAD';
     this._oidCache = new Map();
+    // Which branch (if any) is currently checked out into the working dir, and
+    // which branches we now read from the local head (because they have been
+    // checked out and may carry local commits not yet on origin).
+    this._worktreeBranch = null;
+    this._editedBranches = new Set();
   }
 
   async init() {
@@ -187,7 +204,74 @@ export class GitRepoSource {
     } catch {
       /* keep HEAD */
     }
+    try {
+      await this._adoptLocalCommits();
+    } catch {
+      /* best effort; fall back to the default remote-tracking read path */
+    }
     return this;
+  }
+
+  /**
+   * On open, decide whether the local branch is authoritative. A fresh clone
+   * has local == remote, and a plain `fetch` leaves the local head *behind*
+   * origin (so we keep preferring the remote-tracking ref). But once a local
+   * commit lands (this or a previous session, persisted in IndexedDB), the
+   * local head is *ahead* of origin and must win — otherwise reopening the repo
+   * would hide those commits, and the next edit would discard them.
+   *
+   * The resolved head is primed into the cache so this costs no extra ref reads
+   * on the subsequent first access.
+   */
+  async _adoptLocalCommits() {
+    const branch = this._current;
+    if (!branch || branch === 'HEAD') return;
+
+    let localHead = null;
+    try {
+      localHead = await this._git.resolveRef({ fs: this._fs, dir: this._dir, ref: `refs/heads/${branch}` });
+    } catch {
+      return; // no local branch ref; nothing to adopt
+    }
+    if (!localHead) return;
+
+    let remoteHead = null;
+    try {
+      remoteHead = await this._git.resolveRef({ fs: this._fs, dir: this._dir, ref: `refs/remotes/origin/${branch}` });
+    } catch {
+      remoteHead = null;
+    }
+
+    if (!remoteHead) {
+      // Local-only branch: the local head is the only truth.
+      this._editedBranches.add(branch);
+      this._oidCache.set(branch, localHead);
+      return;
+    }
+    if (localHead === remoteHead) {
+      this._oidCache.set(branch, remoteHead);
+      return;
+    }
+
+    let localAhead = false;
+    try {
+      localAhead = await this._git.isDescendent({
+        fs: this._fs,
+        dir: this._dir,
+        oid: localHead,
+        ancestor: remoteHead,
+        depth: -1,
+      });
+    } catch {
+      localAhead = false;
+    }
+
+    if (localAhead) {
+      this._editedBranches.add(branch);
+      this._oidCache.set(branch, localHead);
+    } else {
+      this._oidCache.set(branch, remoteHead);
+    }
   }
 
   getCurrentBranch() {
@@ -216,18 +300,30 @@ export class GitRepoSource {
     this._oidCache.clear();
   }
 
+  /** True when the current branch is materialized in the working directory. */
+  _inWorktreeMode() {
+    return this._worktreeBranch !== null && this._worktreeBranch === this._current;
+  }
+
   async _resolveOid(ref) {
     const key = ref || this._current;
     if (this._oidCache.has(key)) return this._oidCache.get(key);
 
-    // Prefer the remote-tracking ref. `fetch` advances refs/remotes/origin/*
-    // but never the local refs/heads/* of a read-only clone, so resolving the
-    // local head first would make "Pull / Update" silently show stale trees.
-    // 'HEAD' is resolved as-is (it tracks the checked-out commit directly).
+    // For a branch we've started editing, the local head is authoritative: it
+    // was reset to the displayed commit at checkout and then advances with each
+    // local commit, so it must win over the (now older) remote-tracking ref.
+    //
+    // Otherwise prefer the remote-tracking ref: `fetch` advances
+    // refs/remotes/origin/* but never the local refs/heads/* of a fresh clone,
+    // so resolving the local head first would make "Pull / Update" show stale
+    // trees. 'HEAD' is resolved as-is (it tracks the checked-out commit).
+    const editing = this._editedBranches.has(key);
     const candidates =
       key === 'HEAD'
         ? ['HEAD']
-        : [`refs/remotes/origin/${key}`, `refs/heads/${key}`, key];
+        : editing
+          ? [`refs/heads/${key}`, `refs/remotes/origin/${key}`, key]
+          : [`refs/remotes/origin/${key}`, `refs/heads/${key}`, key];
     let resolved = null;
     let lastErr = null;
     for (const candidate of candidates) {
@@ -249,12 +345,27 @@ export class GitRepoSource {
     return resolved;
   }
 
+  /** True when a read for `ref` should come from the live working tree. */
+  _readsFromWorktree(ref) {
+    return this._inWorktreeMode() && (!ref || ref === this._current);
+  }
+
   async listFiles(ref) {
+    if (this._readsFromWorktree(ref)) {
+      // Derive the file list from the working tree so freshly created (and not
+      // yet deleted) files appear immediately, before they are committed.
+      const rows = await this._git.statusMatrix({ fs: this._fs, dir: this._dir });
+      return rows.filter((row) => row[2] !== 0).map((row) => row[0]);
+    }
     const oid = await this._resolveOid(ref);
     return this._git.listFiles({ fs: this._fs, dir: this._dir, ref: oid });
   }
 
   async readFile(path, ref) {
+    if (this._readsFromWorktree(ref)) {
+      // Read the working-tree copy so uncommitted edits are visible.
+      return this._fs.promises.readFile(`${this._dir}/${path}`);
+    }
     const oid = await this._resolveOid(ref);
     const { blob } = await this._git.readBlob({
       fs: this._fs,
@@ -324,6 +435,143 @@ export class GitRepoSource {
       oldOid,
       newOid,
     };
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Write surface                                                    */
+  /* ---------------------------------------------------------------- */
+
+  /**
+   * Materialize the current branch into the working directory so add / commit
+   * have a real tree and index to work against. The clone is `noCheckout`, so
+   * until this runs there is no working tree. Resets the local branch ref to
+   * the commit we are currently displaying (the remote-tracking tip) before
+   * checking out, so edits build on what the user actually sees.
+   */
+  async _ensureWorktree(onProgress) {
+    const branch = this._current;
+    if (branch === 'HEAD') {
+      throw new Error('Detached HEAD — open a branch before editing.');
+    }
+    if (this._worktreeBranch === branch) return;
+
+    const displayOid = await this._resolveOid(branch);
+    await this._git.writeRef({
+      fs: this._fs,
+      dir: this._dir,
+      ref: `refs/heads/${branch}`,
+      value: displayOid,
+      force: true,
+    });
+    await this._git.checkout({
+      fs: this._fs,
+      dir: this._dir,
+      ref: branch,
+      force: true,
+      onProgress,
+    });
+
+    this._worktreeBranch = branch;
+    this._editedBranches.add(branch);
+    // Subsequent reads of this branch follow the (now authoritative) local head.
+    this._oidCache.delete(branch);
+  }
+
+  async writeFile(path, content) {
+    await this._ensureWorktree();
+    const full = `${this._dir}/${path}`;
+    await mkdirp(this._fs, parentDir(full));
+    const bytes = content instanceof Uint8Array ? content : new TextEncoder().encode(String(content));
+    await this._fs.promises.writeFile(full, bytes);
+    await this._git.add({ fs: this._fs, dir: this._dir, filepath: path });
+    this._oidCache.delete(this._current);
+  }
+
+  async deleteFile(path) {
+    await this._ensureWorktree();
+    try {
+      await this._fs.promises.unlink(`${this._dir}/${path}`);
+    } catch (err) {
+      if (!err || err.code !== 'ENOENT') throw err;
+    }
+    await this._git.remove({ fs: this._fs, dir: this._dir, filepath: path });
+    this._oidCache.delete(this._current);
+  }
+
+  /** Working-tree changes (vs HEAD) staged for the next commit. */
+  async status() {
+    if (!this._inWorktreeMode()) return [];
+    const rows = await this._git.statusMatrix({ fs: this._fs, dir: this._dir });
+    const changes = [];
+    for (const [filepath, head, workdir] of rows) {
+      if (head === 1 && workdir === 1) continue; // unchanged
+      changes.push({
+        path: filepath,
+        status: head === 0 ? 'new' : workdir === 0 ? 'deleted' : 'modified',
+      });
+    }
+    changes.sort((a, b) => a.path.localeCompare(b.path));
+    return changes;
+  }
+
+  async commit({ message, author } = {}) {
+    await this._ensureWorktree();
+    const summary = (message || '').trim();
+    if (!summary) throw new Error('A commit message is required.');
+    const changes = await this.status();
+    if (changes.length === 0) throw new Error('Nothing to commit.');
+
+    const oid = await this._git.commit({
+      fs: this._fs,
+      dir: this._dir,
+      message: summary,
+      author: {
+        name: (author && author.name) || 'You',
+        email: (author && author.email) || 'you@example.com',
+        timestamp: Math.floor(Date.now() / 1000),
+      },
+    });
+
+    // The commit advanced refs/heads/<branch>; re-resolve from the local head.
+    this._oidCache.delete(this._current);
+    return { oid };
+  }
+
+  /**
+   * Push the current branch to origin. Authentication is supplied per-request
+   * via `onAuth` (a token, never persisted to disk by this layer).
+   */
+  async push({ token, username, onProgress, onMessage, force } = {}) {
+    if (!this.canPush) {
+      throw new Error('This repository has no remote to push to.');
+    }
+    const branch = this._current;
+    if (branch === 'HEAD') {
+      throw new Error('Detached HEAD — open a branch before pushing.');
+    }
+
+    const result = await this._git.push({
+      fs: this._fs,
+      http: this._http,
+      dir: this._dir,
+      corsProxy: this._corsProxy,
+      remote: 'origin',
+      ref: branch,
+      force: Boolean(force),
+      onProgress,
+      onMessage,
+      onAuth: () =>
+        token
+          ? username
+            ? { username, password: token }
+            : { username: token, password: '' }
+          : {},
+    });
+
+    if (result && (result.ok === false || result.error)) {
+      throw new Error(result.error || 'The remote rejected the push.');
+    }
+    return { ok: true, branch, result };
   }
 }
 
