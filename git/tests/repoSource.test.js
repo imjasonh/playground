@@ -71,7 +71,7 @@ describe('InMemoryRepoSource', () => {
 
   test('update is a no-op for in-memory data', async () => {
     const s = makeSource();
-    await expect(s.update()).resolves.toEqual({ updated: false });
+    await expect(s.update()).resolves.toEqual({ updated: false, changed: false });
   });
 });
 

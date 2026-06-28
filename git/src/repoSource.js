@@ -17,17 +17,22 @@
  * @property {string} name
  * @property {boolean} current
  *
+ * @typedef {Object} UpdateResult
+ * @property {boolean} updated  whether a fetch ran (false for static sources)
+ * @property {boolean} changed  whether the current branch tip actually moved
+ *
  * @typedef {Object} RepoSource
  * @property {string} fullName
  * @property {string|null} url
+ * @property {boolean} readOnly  the UI never mutates a source; always true today
  * @property {() => string} getCurrentBranch
  * @property {() => Promise<BranchInfo[]>} listBranches
  * @property {(name: string) => Promise<void>} setBranch
- * @property {() => Promise<string[]>} listFiles
- * @property {(path: string) => Promise<Uint8Array>} readFile
- * @property {() => Promise<Commit|null>} headCommit
- * @property {(limit?: number) => Promise<Commit[]>} log
- * @property {(onProgress?: Function) => Promise<{updated: boolean}>} update
+ * @property {(ref?: string) => Promise<string[]>} listFiles
+ * @property {(path: string, ref?: string) => Promise<Uint8Array>} readFile
+ * @property {(ref?: string) => Promise<Commit|null>} headCommit
+ * @property {(limit?: number, ref?: string) => Promise<Commit[]>} log
+ * @property {(onProgress?: Function) => Promise<UpdateResult>} update
  */
 
 const textEncoder = new TextEncoder();
@@ -110,6 +115,6 @@ export class InMemoryRepoSource {
 
   // Demo data is static; "update" is a no-op that reports no changes.
   async update() {
-    return { updated: false };
+    return { updated: false, changed: false };
   }
 }

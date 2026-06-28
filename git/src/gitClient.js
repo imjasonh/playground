@@ -18,6 +18,7 @@ const VENDOR = {
 
 const FS_NAME = 'git-browser-fs';
 const REGISTRY_KEY = 'git-browser:repos';
+const REGISTRY_VERSION = 1;
 
 let globalsPromise = null;
 
@@ -99,11 +100,33 @@ async function rmrf(fs, path) {
   }
 }
 
+/**
+ * Coerce whatever is in storage into a clean array of repo entries.
+ *
+ * Accepts both the current `{ version, repos }` envelope and the legacy
+ * bare-array format (so existing users don't lose their cloned repos), and
+ * drops anything that doesn't at least have a usable `dir`. Pure + exported so
+ * the migration is unit-testable without touching localStorage.
+ */
+export function normalizeRegistry(parsed) {
+  let repos;
+  if (Array.isArray(parsed)) {
+    repos = parsed; // legacy: registry was a bare array
+  } else if (parsed && Array.isArray(parsed.repos)) {
+    repos = parsed.repos;
+  } else {
+    return [];
+  }
+  return repos.filter(
+    (entry) => entry && typeof entry.dir === 'string' && entry.dir.length > 0
+  );
+}
+
 function readRegistry() {
   try {
     const raw = localStorage.getItem(REGISTRY_KEY);
-    const list = raw ? JSON.parse(raw) : [];
-    return Array.isArray(list) ? list : [];
+    if (!raw) return [];
+    return normalizeRegistry(JSON.parse(raw));
   } catch {
     return [];
   }
@@ -111,7 +134,10 @@ function readRegistry() {
 
 function writeRegistry(list) {
   try {
-    localStorage.setItem(REGISTRY_KEY, JSON.stringify(list));
+    localStorage.setItem(
+      REGISTRY_KEY,
+      JSON.stringify({ version: REGISTRY_VERSION, repos: list })
+    );
   } catch {
     /* storage may be unavailable; non-fatal */
   }
@@ -133,7 +159,7 @@ function toCommit(entry) {
  * Read-only: branch switching just changes which tree we read from.
  */
 export class GitRepoSource {
-  constructor({ fs, git, http, dir, url, fullName, corsProxy }) {
+  constructor({ fs, git, http, dir, url, fullName, corsProxy, singleBranch, depth }) {
     this._fs = fs;
     this._git = git;
     this._http = http;
@@ -141,6 +167,11 @@ export class GitRepoSource {
     this.url = url || null;
     this.fullName = fullName || dir.replace(/^\//, '');
     this._corsProxy = corsProxy || undefined;
+    // Remember how the repo was cloned so update() fetches the same scope
+    // instead of accidentally widening it (all branches / full history).
+    this._singleBranch = Boolean(singleBranch);
+    this._depth = Number.isFinite(depth) && depth > 0 ? depth : 0;
+    this.readOnly = true;
     this._current = 'HEAD';
     this._oidCache = new Map();
   }
@@ -189,11 +220,14 @@ export class GitRepoSource {
     const key = ref || this._current;
     if (this._oidCache.has(key)) return this._oidCache.get(key);
 
-    const candidates = [
-      key,
-      `refs/heads/${key}`,
-      `refs/remotes/origin/${key}`,
-    ];
+    // Prefer the remote-tracking ref. `fetch` advances refs/remotes/origin/*
+    // but never the local refs/heads/* of a read-only clone, so resolving the
+    // local head first would make "Pull / Update" silently show stale trees.
+    // 'HEAD' is resolved as-is (it tracks the checked-out commit directly).
+    const candidates =
+      key === 'HEAD'
+        ? ['HEAD']
+        : [`refs/remotes/origin/${key}`, `refs/heads/${key}`, key];
     let resolved = null;
     let lastErr = null;
     for (const candidate of candidates) {
@@ -247,20 +281,49 @@ export class GitRepoSource {
     return entries.map(toCommit);
   }
 
-  /** Fetch the latest commits for all branches and refresh resolved tips. */
+  /**
+   * Fetch from origin using the same scope the repo was cloned with, then
+   * report whether the current branch's tip actually moved.
+   *
+   * @returns {Promise<{updated: boolean, changed: boolean, oldOid: ?string, newOid: ?string}>}
+   */
   async update(onProgress) {
+    const branch = this._current;
+    let oldOid = null;
+    try {
+      oldOid = await this._resolveOid(branch);
+    } catch {
+      /* branch may not resolve yet; treat as unknown */
+    }
+
     await this._git.fetch({
       fs: this._fs,
       http: this._http,
       dir: this._dir,
       corsProxy: this._corsProxy,
-      singleBranch: false,
+      ref: this._singleBranch ? branch : undefined,
+      singleBranch: this._singleBranch,
+      depth: this._depth > 0 ? this._depth : undefined,
       tags: false,
-      prune: true,
+      // Pruning is only meaningful when we track every remote branch.
+      prune: !this._singleBranch,
       onProgress,
     });
+
     this._oidCache.clear();
-    return { updated: true };
+    let newOid = null;
+    try {
+      newOid = await this._resolveOid(branch);
+    } catch {
+      /* ignore */
+    }
+
+    return {
+      updated: true,
+      changed: Boolean(newOid && newOid !== oldOid),
+      oldOid,
+      newOid,
+    };
   }
 }
 
@@ -333,6 +396,7 @@ export class GitStorage {
       addedAt: Date.now(),
       lastUsed: Date.now(),
       singleBranch: Boolean(singleBranch),
+      depth: Number.isFinite(depth) && depth > 0 ? depth : 0,
       corsProxy: corsProxy || '',
     });
 
@@ -351,6 +415,8 @@ export class GitStorage {
       url: meta.url,
       fullName: meta.fullName,
       corsProxy: meta.corsProxy,
+      singleBranch: meta.singleBranch,
+      depth: meta.depth,
     });
     await source.init();
     return source;
