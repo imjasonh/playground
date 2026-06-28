@@ -46,6 +46,7 @@
  * @property {(path: string, ref?: Ref|string) => Promise<Uint8Array>} readFile
  * @property {(ref?: Ref|string) => Promise<Commit|null>} headCommit
  * @property {(limit?: number, ref?: Ref|string) => Promise<Commit[]>} log
+ * @property {(path: string, limit?: number, ref?: Ref|string) => Promise<Commit[]>} [fileLog]
  * @property {(onProgress?: Function) => Promise<UpdateResult>} update
  */
 
@@ -224,6 +225,20 @@ export class InMemoryRepoSource {
   async log(limit = 50, ref) {
     const commits = this._snapshot(ref).commits || [];
     return commits.slice(0, limit);
+  }
+
+  /**
+   * Commits that touched a given file. When the spec annotates commits with a
+   * `changed` path list this filters precisely; otherwise (no change data at
+   * all) it falls back to the full history so callers still get something.
+   */
+  async fileLog(path, limit = 50, ref) {
+    const commits = this._snapshot(ref).commits || [];
+    const annotated = commits.some((c) => Array.isArray(c.changed));
+    const filtered = annotated
+      ? commits.filter((c) => Array.isArray(c.changed) && c.changed.includes(path))
+      : commits;
+    return filtered.slice(0, limit);
   }
 
   // Demo data is static; "update" is a no-op that reports no changes.

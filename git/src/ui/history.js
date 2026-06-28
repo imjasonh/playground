@@ -12,15 +12,30 @@ export function createHistory(ctx) {
   const { state, store, dom } = ctx;
 
   function toggle() {
-    store.setState({ historyOpen: !state.historyOpen });
-    dom.historyPanel.hidden = !state.historyOpen;
-    dom.historyBtn.setAttribute('aria-pressed', String(state.historyOpen));
-    if (state.historyOpen) load();
+    const open = !state.historyOpen;
+    store.setState({ historyOpen: open, historyPath: null });
+    dom.historyPanel.hidden = !open;
+    dom.historyBtn.setAttribute('aria-pressed', String(open));
+    if (open) load();
+  }
+
+  /** Open the panel scoped to a single file's commit history. */
+  function showFile(path) {
+    store.setState({ historyOpen: true, historyPath: path });
+    dom.historyPanel.hidden = false;
+    dom.historyBtn.setAttribute('aria-pressed', 'true');
+    load();
+  }
+
+  /** Drop back from file history to the current ref's history. */
+  function showBranch() {
+    store.setState({ historyPath: null });
+    load();
   }
 
   /** Close the panel (used when switching repositories). */
   function reset() {
-    store.setState({ historyOpen: false });
+    store.setState({ historyOpen: false, historyPath: null });
     dom.historyPanel.hidden = true;
     dom.historyBtn.setAttribute('aria-pressed', 'false');
   }
@@ -33,13 +48,17 @@ export function createHistory(ctx) {
 
   async function load() {
     if (!state.source) return;
-    dom.historyBranch.textContent = currentLabel();
+    const path = state.historyPath;
+    dom.historyBranch.textContent = path ? path : currentLabel();
     dom.commitList.replaceChildren(el('li', 'commit-item muted', 'Loading…'));
     try {
-      const commits = await state.source.log(100);
+      const commits = path ? await loadFileLog(path) : await state.source.log(100);
       dom.commitList.replaceChildren();
+      if (path) dom.commitList.appendChild(backRow());
       if (commits.length === 0) {
-        dom.commitList.appendChild(el('li', 'commit-item muted', 'No history.'));
+        dom.commitList.appendChild(
+          el('li', 'commit-item muted', path ? 'No commits touched this file.' : 'No history.')
+        );
         return;
       }
       for (const commit of commits) {
@@ -48,6 +67,22 @@ export function createHistory(ctx) {
     } catch (err) {
       dom.commitList.replaceChildren(el('li', 'commit-item muted', `History unavailable: ${err.message}`));
     }
+  }
+
+  function loadFileLog(path) {
+    const source = state.source;
+    if (typeof source.fileLog === 'function') return source.fileLog(path, 100);
+    return source.log(100); // source without per-file history: show full log
+  }
+
+  /** A row that returns from file history to the current ref's history. */
+  function backRow() {
+    const li = el('li', 'commit-item history-back');
+    const btn = el('button', 'commit-action', '\u2190 Back to history');
+    btn.type = 'button';
+    btn.addEventListener('click', showBranch);
+    li.appendChild(btn);
+    return li;
   }
 
   function commitRow(commit) {
@@ -71,5 +106,5 @@ export function createHistory(ctx) {
     return item;
   }
 
-  return { toggle, reset, load };
+  return { toggle, showFile, showBranch, reset, load };
 }

@@ -116,6 +116,24 @@ test('shows commit history for the current branch', async ({ page }) => {
   await expect(page.locator('.commit-item').first()).toBeVisible();
 });
 
+test('shows file-scoped history from the viewer header', async ({ page }) => {
+  await loadDemo(page);
+  await page.locator('.tree-row', { hasText: 'README.md' }).click();
+  await expect(page.locator('#file-path')).toContainText('README.md');
+
+  await page.locator('#file-history-btn').click();
+  await expect(page.locator('#history-panel')).toBeVisible();
+  await expect(page.locator('#history-branch')).toHaveText('README.md');
+  // Per the demo annotations, README.md only changed in the initial commit.
+  await expect(page.locator('.commit-item .commit-msg')).toHaveCount(1);
+  await expect(page.locator('.commit-item', { hasText: 'Initial commit' })).toBeVisible();
+
+  // The back affordance returns to the ref's full history.
+  await page.locator('.history-back .commit-action').click();
+  await expect(page.locator('#history-branch')).toHaveText('main');
+  await expect(page.locator('.commit-item .commit-msg').first()).toBeVisible();
+});
+
 test('disables Pull / Update for a source with no remote (demo)', async ({ page }) => {
   await loadDemo(page);
   // The demo source advertises no fetch capability, so the affordance is

@@ -28,7 +28,7 @@ const DOM_IDS = [
   'clone-btn', 'demo-btn', 'preset-list', 'clone-error', 'clone-progress', 'progress-fill',
   'progress-label', 'recent', 'recent-list', 'browser-view', 'tree-filter',
   'file-tree', 'flat-results', 'tree-empty', 'viewer-head', 'file-path',
-  'file-info', 'viewer-body', 'viewer-placeholder', 'history-panel',
+  'file-info', 'file-history-btn', 'viewer-body', 'viewer-placeholder', 'history-panel',
   'history-branch', 'commit-list', 'palette', 'palette-input',
   'palette-results', 'palette-empty', 'toast',
 ];
@@ -49,6 +49,7 @@ export async function init() {
     branches: [],
     tags: [],
     historyOpen: false,
+    historyPath: null, // when set, the history panel shows this file's history
   });
   // `state` is the single live read view; every write flows through the store.
   const state = store.getState();
@@ -101,6 +102,9 @@ export async function init() {
     dom.branchSelect.addEventListener('change', onRefChange);
     dom.updateBtn.addEventListener('click', onUpdate);
     dom.historyBtn.addEventListener('click', () => history.toggle());
+    dom.fileHistoryBtn.addEventListener('click', () => {
+      if (state.activePath) history.showFile(state.activePath);
+    });
     dom.findBtn.addEventListener('click', () => palette.open());
     // Debounced: the tree filter rescans every file on each keystroke, which is
     // wasted work on large repos when someone is typing quickly.

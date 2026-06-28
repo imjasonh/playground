@@ -141,6 +141,19 @@ describeMaybe('GitStorage real clone/fetch over local git http-backend', () => {
     await source.setBranch('main');
   });
 
+  test('fileLog returns only commits that touched a given file', async () => {
+    await source.setBranch('dev');
+    // src/dev.js was introduced on the dev branch in a single commit.
+    const devLog = await source.fileLog('src/dev.js');
+    expect(devLog.length).toBe(1);
+    expect(devLog[0].message).toMatch(/Add dev module/);
+
+    // README.md existed from the initial commit.
+    const readmeLog = await source.fileLog('README.md');
+    expect(readmeLog.length).toBeGreaterThanOrEqual(1);
+    await source.setBranch('main');
+  });
+
   test('the clone is recorded in the registry and can be reopened', async () => {
     expect(storage.listRepos().map((r) => r.dir)).toContain(dir);
 

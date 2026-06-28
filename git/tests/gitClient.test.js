@@ -63,8 +63,14 @@ function makeFakeGit(model) {
       if (!blob) throw new Error(`not found: ${filepath}`);
       return { blob, oid };
     },
-    async log({ ref, depth }) {
-      return (model.logs[ref] || []).slice(0, depth);
+    async log({ ref, depth, filepath }) {
+      let entries = model.logs[ref] || [];
+      if (filepath) {
+        entries = entries.filter(
+          (e) => e.changed && e.changed.includes(filepath)
+        );
+      }
+      return entries.slice(0, depth);
     },
     async fetch(opts) {
       model.fetchCalls.push(opts);
@@ -95,6 +101,7 @@ function baseModel() {
         {
           oid: 'oid_origin_main',
           commit: { message: 'main tip\n\nbody', author: { name: 'Ann', email: 'a@x', timestamp: 100 } },
+          changed: ['README.md'],
         },
       ],
       oid_origin_dev: [
@@ -228,6 +235,13 @@ describe('GitRepoSource generalized refs', () => {
     const source = await makeSource(baseModel());
     // listFiles('dev') resolves the dev branch tip via the remote-tracking ref.
     expect((await source.listFiles('dev')).sort()).toEqual(['README.md', 'src/dev.js']);
+  });
+
+  test('fileLog filters the log by filepath', async () => {
+    const source = await makeSource(baseModel());
+    const touched = await source.fileLog('README.md');
+    expect(touched.map((c) => c.oid)).toEqual(['oid_origin_main']);
+    expect(await source.fileLog('does/not/exist.txt')).toEqual([]);
   });
 });
 

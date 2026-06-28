@@ -590,11 +590,22 @@ kbd {
 .file-path .dir {
   color: var(--fg-faint);
 }
+.viewer-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex: 0 0 auto;
+}
 .file-info {
   font-size: 0.74rem;
   color: var(--fg-faint);
   white-space: nowrap;
   flex: 0 0 auto;
+}
+.btn.small {
+  height: 26px;
+  padding: 0 0.6rem;
+  font-size: 0.76rem;
 }
 .viewer-body {
   flex: 1 1 auto;

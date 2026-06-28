@@ -344,6 +344,22 @@ export class GitRepoSource {
     return entries.map(toCommit);
   }
 
+  /** Commits that changed a given file (isomorphic-git's filepath-filtered log). */
+  async fileLog(path, limit = 50, ref) {
+    const oid = await this._resolveOid(ref);
+    const entries = await this._git.log({
+      fs: this._fs,
+      dir: this._dir,
+      ref: oid,
+      depth: limit,
+      filepath: path,
+      // Don't throw if the file is absent from the tip commit; just report the
+      // commits where it did exist/change.
+      force: true,
+    });
+    return entries.map(toCommit);
+  }
+
   /**
    * Fetch from origin using the same scope the repo was cloned with, then
    * report whether the current branch's tip actually moved.

@@ -109,6 +109,26 @@ describe('InMemoryRepoSource', () => {
     expect(log[0].message).toBe('second');
   });
 
+  test('fileLog filters by annotated changed paths, else falls back to full log', async () => {
+    const annotated = new InMemoryRepoSource({
+      branches: {
+        main: {
+          files: { 'a.txt': 'A', 'b.txt': 'B' },
+          commits: [
+            { oid: 'c2', message: 'edit a', changed: ['a.txt'] },
+            { oid: 'c1', message: 'init', changed: ['a.txt', 'b.txt'] },
+          ],
+        },
+      },
+    });
+    expect((await annotated.fileLog('a.txt')).map((c) => c.oid)).toEqual(['c2', 'c1']);
+    expect((await annotated.fileLog('b.txt')).map((c) => c.oid)).toEqual(['c1']);
+
+    // Unannotated commits: fall back to the full history.
+    const plain = makeSource();
+    expect((await plain.fileLog('README.md')).length).toBe(2);
+  });
+
   test('update is a no-op for in-memory data', async () => {
     const s = makeSource();
     await expect(s.update()).resolves.toEqual({ updated: false, changed: false });
