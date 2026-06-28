@@ -114,6 +114,16 @@ describe('GitRepoSource ref resolution', () => {
     expect(source.fullName).toBe('acme/widget');
   });
 
+  test('advertises fetch capability but not write/push', async () => {
+    const source = await makeSource(baseModel());
+    expect(source.capabilities).toEqual({
+      read: true,
+      fetch: true,
+      write: false,
+      push: false,
+    });
+  });
+
   test('resolves the remote-tracking ref, not the stale local head', async () => {
     // This is the Pull/Update regression guard: a read-only clone never moves
     // refs/heads/*, so reading must follow refs/remotes/origin/*.

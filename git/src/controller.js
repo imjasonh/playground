@@ -13,6 +13,7 @@ import { createHistory } from './ui/history.js';
 import { createRecent } from './ui/recent.js';
 import { buildFileTree } from './fileTree.js';
 import { createStore, createLoadController } from './store.js';
+import { capabilitiesOf } from './repoSource.js';
 import { ancestors } from './pathUtils.js';
 import { parseRepoUrl, DEFAULT_CORS_PROXY } from './repoUrl.js';
 import { commitSummary, shortOid } from './format.js';
@@ -228,6 +229,7 @@ export async function init() {
     store.setState({ source, activePath: null, expanded: new Set() });
     viewer.dispose();
     history.reset();
+    applyCapabilities(source);
 
     const load = loads.begin();
     showBrowser();
@@ -235,6 +237,15 @@ export async function init() {
     await refreshRepo(load);
     if (!load.active) return;
     viewer.showPlaceholder();
+  }
+
+  /** Enable/disable repo-bar affordances based on what the source supports. */
+  function applyCapabilities(source) {
+    const caps = capabilitiesOf(source);
+    dom.updateBtn.disabled = !caps.fetch;
+    dom.updateBtn.title = caps.fetch
+      ? 'Fetch the latest commits from the remote'
+      : 'This source has no remote to fetch from';
   }
 
   /** Reload branch list, files, and header for the current branch. */

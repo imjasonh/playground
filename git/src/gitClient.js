@@ -171,7 +171,10 @@ export class GitRepoSource {
     // instead of accidentally widening it (all branches / full history).
     this._singleBranch = Boolean(singleBranch);
     this._depth = Number.isFinite(depth) && depth > 0 ? depth : 0;
-    this.readOnly = true;
+    // A real clone is readable and can fetch from its remote; writing/pushing
+    // is not implemented yet, so it stays read-only.
+    this.capabilities = { read: true, fetch: true, write: false, push: false };
+    this.readOnly = !this.capabilities.write && !this.capabilities.push;
     this._current = 'HEAD';
     this._oidCache = new Map();
   }

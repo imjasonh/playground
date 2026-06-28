@@ -21,10 +21,17 @@
  * @property {boolean} updated  whether a fetch ran (false for static sources)
  * @property {boolean} changed  whether the current branch tip actually moved
  *
+ * @typedef {Object} Capabilities
+ * @property {boolean} read   can list/read files (true for every source today)
+ * @property {boolean} fetch  can fetch new commits from a remote (Pull/Update)
+ * @property {boolean} write  can stage/commit locally (no source does yet)
+ * @property {boolean} push   can push to a remote (no source does yet)
+ *
  * @typedef {Object} RepoSource
  * @property {string} fullName
  * @property {string|null} url
- * @property {boolean} readOnly  the UI never mutates a source; always true today
+ * @property {Capabilities} capabilities  what the UI may offer for this source
+ * @property {boolean} readOnly  derived: no write and no push capability
  * @property {() => string} getCurrentBranch
  * @property {() => Promise<BranchInfo[]>} listBranches
  * @property {(name: string) => Promise<void>} setBranch
@@ -36,6 +43,32 @@
  */
 
 const textEncoder = new TextEncoder();
+
+/** The safe read-only baseline for any capability flags a source omits. */
+const BASELINE_CAPABILITIES = { read: true, fetch: false, write: false, push: false };
+
+/**
+ * Normalize a source's capability flags, filling anything unspecified with the
+ * read-only baseline. The UI keys affordances off these (e.g. whether to enable
+ * Pull/Update) instead of sniffing which concrete source it holds.
+ *
+ * @param {{capabilities?: Partial<Capabilities>}} source
+ * @returns {Capabilities}
+ */
+export function capabilitiesOf(source) {
+  const caps = (source && source.capabilities) || {};
+  return {
+    read: caps.read !== false, // readable unless a source explicitly opts out
+    fetch: Boolean(caps.fetch),
+    write: Boolean(caps.write),
+    push: Boolean(caps.push),
+  };
+}
+
+/** A source is read-only when it can neither write locally nor push. */
+export function isReadOnly(capabilities) {
+  return !capabilities.write && !capabilities.push;
+}
 
 function toBytes(content) {
   if (content == null) return new Uint8Array(0);
@@ -60,7 +93,10 @@ export class InMemoryRepoSource {
   constructor(spec) {
     this.fullName = spec.fullName || 'demo/repo';
     this.url = spec.url || null;
-    this.readOnly = true;
+    // In-memory data is static: readable, but there is no remote to fetch from
+    // and nothing to write/push.
+    this.capabilities = { ...BASELINE_CAPABILITIES };
+    this.readOnly = isReadOnly(this.capabilities);
     this._branches = spec.branches || {};
     const names = Object.keys(this._branches);
     this._defaultBranch = spec.defaultBranch || names[0] || 'main';

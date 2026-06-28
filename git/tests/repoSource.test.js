@@ -1,4 +1,8 @@
-import { InMemoryRepoSource } from '../src/repoSource.js';
+import {
+  InMemoryRepoSource,
+  capabilitiesOf,
+  isReadOnly,
+} from '../src/repoSource.js';
 import { createDemoSource } from '../src/demoRepo.js';
 
 function makeSource() {
@@ -29,6 +33,16 @@ describe('InMemoryRepoSource', () => {
     expect(s.fullName).toBe('acme/widget');
     expect(s.getCurrentBranch()).toBe('main');
     expect(s.readOnly).toBe(true);
+  });
+
+  test('advertises read-only capabilities (no fetch/write/push)', () => {
+    const s = makeSource();
+    expect(s.capabilities).toEqual({
+      read: true,
+      fetch: false,
+      write: false,
+      push: false,
+    });
   });
 
   test('lists branches with the current flag', async () => {
@@ -72,6 +86,34 @@ describe('InMemoryRepoSource', () => {
   test('update is a no-op for in-memory data', async () => {
     const s = makeSource();
     await expect(s.update()).resolves.toEqual({ updated: false, changed: false });
+  });
+});
+
+describe('capabilitiesOf / isReadOnly', () => {
+  test('fills omitted flags with the read-only baseline', () => {
+    expect(capabilitiesOf({})).toEqual({
+      read: true,
+      fetch: false,
+      write: false,
+      push: false,
+    });
+    expect(capabilitiesOf(null)).toEqual({
+      read: true,
+      fetch: false,
+      write: false,
+      push: false,
+    });
+  });
+
+  test('honors explicit flags, including read:false', () => {
+    expect(capabilitiesOf({ capabilities: { fetch: true } }).fetch).toBe(true);
+    expect(capabilitiesOf({ capabilities: { read: false } }).read).toBe(false);
+  });
+
+  test('isReadOnly is true unless write or push is granted', () => {
+    expect(isReadOnly({ read: true, fetch: true, write: false, push: false })).toBe(true);
+    expect(isReadOnly({ write: true })).toBe(false);
+    expect(isReadOnly({ push: true })).toBe(false);
   });
 });
 

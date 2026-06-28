@@ -94,10 +94,13 @@ test('shows commit history for the current branch', async ({ page }) => {
   await expect(page.locator('.commit-item').first()).toBeVisible();
 });
 
-test('Pull / Update reports that demo data is static', async ({ page }) => {
+test('disables Pull / Update for a source with no remote (demo)', async ({ page }) => {
   await loadDemo(page);
-  await page.getByRole('button', { name: 'Pull / Update' }).click();
-  await expect(page.locator('#toast')).toContainText(/static/i);
+  // The demo source advertises no fetch capability, so the affordance is
+  // disabled rather than offering an action that can't do anything.
+  const update = page.getByRole('button', { name: 'Pull / Update' });
+  await expect(update).toBeDisabled();
+  await expect(update).toHaveAttribute('title', /no remote/i);
 });
 
 test('exposes ARIA tree semantics for the file list', async ({ page }) => {
