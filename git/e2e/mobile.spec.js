@@ -31,7 +31,10 @@ test('can open a file on a mobile viewport', async ({ page }) => {
 });
 
 test('renders a Markdown preview on a mobile viewport', async ({ page }) => {
-  await page.locator('.tree-row', { hasText: 'README.md' }).click();
+  // Locate README.md via the filter so the test doesn't depend on where the row
+  // lands in the virtualized tree on a short viewport.
+  await page.locator('#tree-filter').fill('README.md');
+  await page.locator('.flat-row', { hasText: 'README.md' }).click();
   await expect(page.locator('.markdown-body')).toBeVisible();
   await expect(page.locator('.markdown-body h1')).toHaveText('Tasklite');
 });

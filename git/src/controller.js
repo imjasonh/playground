@@ -540,6 +540,26 @@ export async function init() {
 
     viewer.beginLoading(path);
 
+    // Classify the entry first so we can show a clear notice for things that
+    // aren't ordinary blobs (symlinks, submodules) instead of rendering garbage.
+    let meta = null;
+    if (typeof state.source.entryMeta === 'function') {
+      try {
+        meta = await state.source.entryMeta(path);
+      } catch {
+        meta = null; // be forgiving: fall back to treating it as a normal file
+      }
+      if (!view.active) return;
+    }
+
+    // A submodule is a gitlink with no blob in this clone — there's nothing to
+    // read, so render its notice straight away.
+    if (meta && meta.kind === 'submodule') {
+      viewer.renderSubmodule(path, meta);
+      syncHash();
+      return;
+    }
+
     let bytes;
     try {
       bytes = await state.source.readFile(path);
@@ -549,7 +569,7 @@ export async function init() {
     }
 
     if (!view.active) return; // a newer open / diff superseded this one
-    viewer.render(path, bytes, { lines });
+    viewer.render(path, bytes, { lines, meta });
     syncHash();
   }
 

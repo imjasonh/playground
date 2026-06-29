@@ -23,6 +23,7 @@ import {
   hasGitHttpBackend,
   createServedRepo,
   startGitHttpServer,
+  SUBMODULE_OID,
 } from './helpers/gitHttpServer.js';
 
 const decoder = new TextDecoder();
@@ -172,6 +173,30 @@ describeMaybe('GitStorage real clone/fetch over local git http-backend', () => {
     const rootChanges = await source.changedFiles(null, { type: 'commit', name: root.oid });
     expect(rootChanges.map((c) => c.path).sort()).toEqual(['README.md', 'src/index.js']);
     expect(rootChanges.every((c) => c.status === 'added')).toBe(true);
+  });
+
+  test('classifies a real symlink and submodule from the tree', async () => {
+    await source.setBranch('special');
+    const files = await source.listFiles();
+    // Both the symlink (a blob) and the submodule (a gitlink) are listed.
+    expect(files).toContain('latest.js');
+    expect(files).toContain('vendor/widget');
+
+    // The symlink resolves to the path it points at.
+    const link = await source.entryMeta('latest.js');
+    expect(link.kind).toBe('symlink');
+    expect(link.target).toBe('src/index.js');
+
+    // The submodule reports its pinned oid and URL (from .gitmodules).
+    const sub = await source.entryMeta('vendor/widget');
+    expect(sub.kind).toBe('submodule');
+    expect(sub.oid).toBe(SUBMODULE_OID);
+    expect(sub.url).toBe('https://github.com/acme/widget.git');
+
+    // An ordinary file is just a file.
+    expect((await source.entryMeta('README.md')).kind).toBe('file');
+
+    await source.setBranch('main');
   });
 
   test('the clone is recorded in the registry and can be reopened', async () => {

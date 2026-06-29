@@ -18,6 +18,7 @@ const VENDOR = {
 
 import { normalizeRef } from './repoSource.js';
 import { makeOnAuth } from './auth.js';
+import { classifyGitMode, symlinkTarget, parseGitmodules } from './specialEntry.js';
 
 const FS_NAME = 'git-browser-fs';
 const REGISTRY_KEY = 'git-browser:repos';
@@ -183,6 +184,11 @@ export class GitRepoSource {
     this._current = 'HEAD';
     this._refType = 'branch';
     this._oidCache = new Map();
+    // Per-tree caches keyed by the (immutable) commit oid: the entry kinds for
+    // listFiles/entryMeta, and the parsed `.gitmodules`. Safe to keep across
+    // ref switches and fetches, since a new tip resolves to a different oid.
+    this._entryCache = new Map();
+    this._gitmodulesCache = new Map();
     // Supplies a session-stored token (if any) for this repo's host on fetch.
     this._onAuth = makeOnAuth();
   }
@@ -318,7 +324,8 @@ export class GitRepoSource {
 
   async listFiles(ref) {
     const oid = await this._resolveOid(ref);
-    return this._git.listFiles({ fs: this._fs, dir: this._dir, ref: oid });
+    const { kinds } = await this._entries(oid);
+    return [...kinds.keys()];
   }
 
   async readFile(path, ref) {
@@ -330,6 +337,105 @@ export class GitRepoSource {
       filepath: path,
     });
     return blob;
+  }
+
+  /**
+   * Classify a path so the viewer can render a symlink/submodule notice instead
+   * of treating it as an ordinary file. Returns `{ kind: 'file' }` for normal
+   * blobs (the common case) and for anything it can't resolve.
+   *
+   * @param {string} path
+   * @param {Ref|string} [ref]
+   * @returns {Promise<{kind: string, target?: string, url?: ?string, name?: ?string, oid?: ?string}>}
+   */
+  async entryMeta(path, ref) {
+    const oid = await this._resolveOid(ref);
+    const { kinds, submodules } = await this._entries(oid);
+    const kind = kinds.get(path) || 'file';
+    if (kind === 'symlink') {
+      let target = '';
+      try {
+        const { blob } = await this._git.readBlob({
+          fs: this._fs,
+          dir: this._dir,
+          oid,
+          filepath: path,
+        });
+        target = symlinkTarget(blob);
+      } catch {
+        /* fall back to an empty target */
+      }
+      return { kind, target };
+    }
+    if (kind === 'submodule') {
+      const info = (await this._gitmodules(oid)).get(path) || {};
+      return {
+        kind,
+        url: info.url || null,
+        name: info.name || null,
+        oid: submodules.get(path) || null,
+      };
+    }
+    return { kind };
+  }
+
+  /**
+   * Walk a commit's tree once, recording every non-directory entry's path and
+   * kind (so symlinks/submodules are navigable and classifiable) plus the
+   * pinned oid of each submodule. Cached per commit oid.
+   *
+   * @param {string} oid  commit oid
+   * @returns {Promise<{kinds: Map<string,string>, submodules: Map<string,string>}>}
+   */
+  async _entries(oid) {
+    if (this._entryCache.has(oid)) return this._entryCache.get(oid);
+    const { TREE, walk } = this._git;
+    const kinds = new Map();
+    const submodules = new Map();
+    await walk({
+      fs: this._fs,
+      dir: this._dir,
+      trees: [TREE({ ref: oid })],
+      map: async (filepath, [entry]) => {
+        if (filepath === '.' || !entry) return undefined;
+        const type = await entry.type();
+        if (type === 'tree') return undefined; // let walk descend on its own
+        if (type === 'commit') {
+          kinds.set(filepath, 'submodule');
+          try {
+            submodules.set(filepath, await entry.oid());
+          } catch {
+            /* a gitlink with no readable oid still lists as a submodule */
+          }
+          return undefined;
+        }
+        const mode = await entry.mode();
+        kinds.set(filepath, classifyGitMode(mode) === 'symlink' ? 'symlink' : 'file');
+        return undefined;
+      },
+    });
+    const result = { kinds, submodules };
+    this._entryCache.set(oid, result);
+    return result;
+  }
+
+  /** Parsed `.gitmodules` for a commit (empty map when absent). Cached per oid. */
+  async _gitmodules(oid) {
+    if (this._gitmodulesCache.has(oid)) return this._gitmodulesCache.get(oid);
+    let map = new Map();
+    try {
+      const { blob } = await this._git.readBlob({
+        fs: this._fs,
+        dir: this._dir,
+        oid,
+        filepath: '.gitmodules',
+      });
+      map = parseGitmodules(blob);
+    } catch {
+      /* no .gitmodules in this tree */
+    }
+    this._gitmodulesCache.set(oid, map);
+    return map;
   }
 
   async headCommit(ref) {
