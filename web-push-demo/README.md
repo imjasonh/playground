@@ -70,6 +70,8 @@ example `wrangler dev`'s URL).
 ## Requirements & notes
 
 - **HTTPS / localhost** — enforced by the browser for service workers + push.
+  When the demo is served over HTTPS, the Worker URL must be `https://` too — an
+  `http://` URL is blocked as mixed content (the page warns you).
 - **Notification permission** — you must allow notifications; if you deny it,
   reset it in the browser's site settings.
 - **iOS Safari** — add the page to the **Home Screen** and open it from there;

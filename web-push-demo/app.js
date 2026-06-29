@@ -110,8 +110,31 @@
     return base + path;
   }
 
+  // Surface the two URL mistakes that otherwise fail with an opaque
+  // "Failed to fetch": a missing scheme, or an http:// Worker called from this
+  // https:// page (blocked as mixed content).
+  function warnAboutBase() {
+    const base = getApiBase();
+    if (!base) return;
+    if (!/^https?:\/\//i.test(base)) {
+      log("Worker URL should start with https:// (or http:// for localhost).", "warn");
+      return;
+    }
+    try {
+      const target = new URL(base);
+      const localish = /^(localhost|127\.0\.0\.1|\[?::1\]?)$/.test(target.hostname);
+      if (window.location.protocol === "https:" && target.protocol === "http:" && !localish) {
+        log("This page is HTTPS but the Worker URL is HTTP — the browser will block it (mixed content). Use the https:// URL.", "warn");
+      }
+    } catch (_e) {
+      /* an unparseable URL will be surfaced by the fetch failure */
+    }
+  }
+
   async function apiFetch(path, options) {
-    const res = await fetch(apiUrl(path), options);
+    const url = apiUrl(path);
+    warnAboutBase();
+    const res = await fetch(url, options);
     const text = await res.text();
     let data = text;
     try {
@@ -156,8 +179,11 @@
   /* --------------------------- service worker ---------------------------- */
 
   async function ensureServiceWorker() {
-    if (activeRegistration) return activeRegistration;
-    activeRegistration = await navigator.serviceWorker.register(SW_URL);
+    if (!activeRegistration) {
+      activeRegistration = await navigator.serviceWorker.register(SW_URL);
+    }
+    // Always wait for an active worker before subscribing — on a return visit
+    // the cached registration may not be active yet.
     await navigator.serviceWorker.ready;
     return activeRegistration;
   }
@@ -270,7 +296,11 @@
       const permission = await Notification.requestPermission();
       refreshPermission();
       if (permission !== "granted") {
-        log(`Cannot subscribe: notification permission is "${permission}".`, "error");
+        const hint =
+          permission === "denied"
+            ? " Reset it in your browser's site settings to try again."
+            : "";
+        log(`Cannot subscribe: notification permission is "${permission}".${hint}`, "error");
         return;
       }
 
@@ -327,7 +357,6 @@
       const sub = await currentSubscription();
       if (!sub) {
         log("No active subscription on this device.", "warn");
-        await refreshSubscriptionState();
         return;
       }
       const endpoint = sub.endpoint;
@@ -345,10 +374,10 @@
       } catch (err) {
         log(`Could not tell the Worker (it will prune on next push): ${err.message}`, "warn");
       }
-      await refreshSubscriptionState();
     } catch (err) {
       log(`Unsubscribe failed: ${err.message}`, "error");
     } finally {
+      // Re-sync the UI regardless of which branch above ran.
       await refreshSubscriptionState();
     }
   }
@@ -365,7 +394,7 @@
       const request = { payload };
 
       const ttl = parseInt(el.notifyTtl.value, 10);
-      if (!Number.isNaN(ttl)) request.ttl = ttl;
+      if (!Number.isNaN(ttl) && ttl >= 0) request.ttl = ttl;
       if (el.notifyUrgency.value) request.urgency = el.notifyUrgency.value;
       if (el.notifyTopic.value.trim()) request.topic = el.notifyTopic.value.trim();
 
@@ -421,6 +450,8 @@
       /* ignore */
     }
     el.apiBase.value = (fromQuery || stored || "").trim();
+    // Persist a URL passed via ?api= so it survives a reload without the param.
+    if (fromQuery) saveApiBase();
 
     const ok = refreshSupport();
     refreshPermission();
