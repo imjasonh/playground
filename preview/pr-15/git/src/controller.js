@@ -19,6 +19,7 @@ import { diffLines } from './diff.js';
 import { isBinaryExtension, looksBinary } from './language.js';
 import { ancestors } from './pathUtils.js';
 import { parseRepoUrl, DEFAULT_CORS_PROXY } from './repoUrl.js';
+import { fileWebUrl } from './hostUrl.js';
 import { commitSummary, shortOid } from './format.js';
 import { cloneErrorMessage } from './cloneError.js';
 import { rememberToken } from './auth.js';
@@ -37,7 +38,8 @@ const DOM_IDS = [
   'clone-btn', 'demo-btn', 'preset-list', 'clone-error', 'clone-progress', 'progress-fill',
   'progress-label', 'recent', 'recent-list', 'storage-usage', 'browser-view', 'tree-filter',
   'file-tree', 'flat-results', 'tree-empty', 'viewer-head', 'file-path',
-  'file-info', 'file-history-btn', 'viewer-body', 'viewer-placeholder', 'history-panel',
+  'file-info', 'file-copy-path-btn', 'file-copy-btn', 'file-download-btn', 'file-open-btn',
+  'file-history-btn', 'viewer-body', 'viewer-placeholder', 'history-panel',
   'history-branch', 'history-compare', 'compare-select', 'commit-list', 'palette', 'palette-input',
   'palette-results', 'palette-empty', 'content-search', 'content-search-input', 'cs-case',
   'cs-regex', 'content-search-status', 'content-search-results', 'content-search-empty', 'toast',
@@ -101,6 +103,14 @@ export async function init() {
   ctx.browseRef = switchRef;
   ctx.showCommitDiff = showCommitDiff;
   ctx.showCompare = showCompare;
+  // Web URL for the active file on its origin host (GitHub/GitLab/Bitbucket),
+  // or null for the demo / an unknown host. The viewer uses this to decide
+  // whether to offer the "Open" link and where it points.
+  ctx.fileWebUrl = (path, lines) => {
+    const source = state.source;
+    if (!source || !source.url) return null;
+    return fileWebUrl(source.url, { ref: currentRef().name, path, lines: lines || null });
+  };
   // The viewer calls this when a line number is clicked, so the selection
   // becomes part of the shareable URL hash.
   ctx.onLinesChange = (range) => {
