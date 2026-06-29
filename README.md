@@ -10,5 +10,7 @@ is no shared build step at the repo root.
   into local storage and browse its files, branches, and commit history.
 - **[`hello/`](hello/)** — a minimal static demo.
 - **[`kanoodle/`](kanoodle/)** — the Kanoodle puzzle game (5×11 board, 12 pieces).
+- **[`mta/`](mta/)** — NYC Subway Live: realtime arrivals, train locations, and
+  service status from the MTA's GTFS-realtime feeds.
 
 See [`AGENTS.md`](AGENTS.md) for repository conventions, CI, and how to add a new app.

@@ -14,7 +14,8 @@ playground/
 │   └── workflows/         # deploy, preview, test, cleanup
 ├── git/                   # in-browser read-only git client (JS + Jest + Playwright)
 ├── hello/                 # example static app (HTML only)
-└── kanoodle/              # example app with tests (JS + Jest + Playwright)
+├── kanoodle/              # example app with tests (JS + Jest + Playwright)
+└── mta/                   # realtime NYC subway board from MTA GTFS-realtime (JS + Jest + Playwright)
 ```
 
 ### What counts as an app
@@ -26,6 +27,7 @@ A directory is an **app** when it contains **`index.html`** at its root. This is
 | `git/` | yes | In-browser read-only git client; JS modules, npm scripts, tests |
 | `hello/` | yes | Static HTML; no build or tests |
 | `kanoodle/` | yes | Client-side JS modules, npm scripts, tests |
+| `mta/` | yes | Realtime NYC subway board (GTFS-realtime); JS modules, npm scripts, tests |
 | `.github/` | no | Infrastructure only |
 | `README.md` | no | Not a directory |
 
@@ -164,5 +166,6 @@ npm start          # if defined (static server)
 | `git/` | In-browser read-only git client (clone, browse, branches, history) | Jest + Playwright |
 | `hello/` | Static demo | none |
 | `kanoodle/` | Kanoodle puzzle game (5×11 board, 12 pieces) | Jest + Playwright |
+| `mta/` | NYC Subway Live — realtime arrivals, train locations & service status from MTA GTFS-realtime | Jest + Playwright |
 
 See each app's `README.md` for game-specific rules and local development.
