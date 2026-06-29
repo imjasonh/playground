@@ -38,7 +38,7 @@ Hidden top-level directories (names starting with `.`) are ignored by discovery 
 | `deploy.yml` | push to `main` | Publishes all apps to GitHub Pages production |
 | `preview.yml` | pull request opened/sync | Deploys PR apps under `/preview/pr-<N>/` and comments the URL |
 | `cleanup.yml` | pull request closed | Removes that PR's preview directory from `gh-pages` |
-| `test.yml` | push to `main`, pull requests | Runs tests for **changed** testable apps only (matrix) |
+| `test.yml` | push to `main`, pull requests | Runs tests for **changed** testable apps only (single job) |
 
 All deploy workflows copy each app directory as-is (they do **not** run `npm install` or build). Only commit source files—never commit `node_modules/`.
 
@@ -57,14 +57,14 @@ The preview workflow posts the preview root URL on the PR.
 
 ## Testing (CI)
 
-The test workflow runs only for **testable apps whose top-level directory changed** in the PR or push. Unchanged apps are not tested.
+The test workflow tests only the **testable apps whose top-level directory changed** in the PR or push. Unchanged apps are not tested. The workflow is a single `test` job that always runs (so there is never a skipped CI leg); it discovers the changed testable apps and runs each one's tests in turn, exiting green with a "Nothing to test" message when none changed.
 
 An app is testable when it has:
 
 1. `index.html` (is an app)
 2. `package.json` with a **`test`** script
 
-Apps without tests (e.g. `hello/`) are skipped. If no testable apps changed, CI passes without running tests.
+Apps without tests (e.g. `hello/`) are not tested. If no testable apps changed, the `test` job still runs and passes without running any app tests.
 
 For each selected app, CI runs:
 
