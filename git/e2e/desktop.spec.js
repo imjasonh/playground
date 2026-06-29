@@ -521,6 +521,100 @@ test('reports how many commits a fetch pulled', async ({ page }) => {
   await expect(page.locator('#toast')).toContainText('2 new commits pulled');
 });
 
+test('polls upstream, auto-fetches new commits, and toasts', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForFunction(() => !!(window.gitBrowser && window.gitBrowser.openSource));
+  await page.evaluate(() => {
+    const enc = new TextEncoder();
+    const mk = (oid, message) => ({
+      oid,
+      message,
+      author: { name: 'A', email: 'a@x' },
+      timestamp: 1,
+      parent: [],
+    });
+    const commits = [mk('a', 'first')];
+    const files = ['app.js'];
+    // The remote already carries a commit we haven't fetched, so the next poll
+    // detects it and auto-fetches.
+    const remoteOid = 'b';
+    window.gitBrowser.openSource({
+      fullName: 'acme/widget',
+      url: 'https://github.com/acme/widget.git',
+      readOnly: true,
+      capabilities: { read: true, fetch: true, write: false, push: false },
+      getCurrentBranch: () => 'main',
+      getCurrentRef: () => ({ type: 'branch', name: 'main' }),
+      listBranches: async () => [{ name: 'main', current: true }],
+      setBranch: async () => {},
+      listFiles: async () => files.slice(),
+      readFile: async () => enc.encode('const x = 1;\n'),
+      headCommit: async () => commits[0],
+      log: async () => commits,
+      checkForUpdates: async () => ({
+        supported: true,
+        hasUpdates: remoteOid !== commits[0].oid,
+        localOid: commits[0].oid,
+        remoteOid,
+      }),
+      update: async () => {
+        // The background fetch brings the new commit (and a new file) local.
+        commits.unshift(mk('b', 'second'));
+        files.push('FETCHED.md');
+        return { updated: true, changed: true, oldOid: 'a', newOid: 'b' };
+      },
+    });
+  });
+  await expect(page.locator('#browser-view')).toBeVisible();
+
+  // Drive one poll tick deterministically (the real poller runs on a timer).
+  await page.evaluate(() => window.gitBrowser.pollNow());
+
+  await expect(page.locator('#toast')).toContainText('fetched from the remote');
+  await expect(page.locator('.tree-row', { hasText: 'FETCHED.md' })).toBeVisible();
+});
+
+test('a poll that finds no upstream changes neither fetches nor toasts', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForFunction(() => !!(window.gitBrowser && window.gitBrowser.openSource));
+  await page.evaluate(() => {
+    const enc = new TextEncoder();
+    const commit = {
+      oid: 'a',
+      message: 'first',
+      author: { name: 'A', email: 'a@x' },
+      timestamp: 1,
+      parent: [],
+    };
+    window.__autoFetched = false;
+    window.gitBrowser.openSource({
+      fullName: 'acme/widget',
+      url: 'https://github.com/acme/widget.git',
+      readOnly: true,
+      capabilities: { read: true, fetch: true, write: false, push: false },
+      getCurrentBranch: () => 'main',
+      getCurrentRef: () => ({ type: 'branch', name: 'main' }),
+      listBranches: async () => [{ name: 'main', current: true }],
+      setBranch: async () => {},
+      listFiles: async () => ['app.js'],
+      readFile: async () => enc.encode('const x = 1;\n'),
+      headCommit: async () => commit,
+      log: async () => [commit],
+      checkForUpdates: async () => ({ supported: true, hasUpdates: false, localOid: 'a', remoteOid: 'a' }),
+      update: async () => {
+        window.__autoFetched = true;
+        return { updated: true, changed: false };
+      },
+    });
+  });
+  await expect(page.locator('#browser-view')).toBeVisible();
+
+  await page.evaluate(() => window.gitBrowser.pollNow());
+  // The peek reported nothing new, so no fetch was triggered.
+  expect(await page.evaluate(() => window.__autoFetched)).toBe(false);
+  await expect(page.locator('#toast')).toBeHidden();
+});
+
 test('shows a friendly empty state for a repository with no files', async ({ page }) => {
   await page.goto('/');
   await page.waitForFunction(() => !!(window.gitBrowser && window.gitBrowser.openSource));

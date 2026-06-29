@@ -79,6 +79,7 @@ describe('module imports', () => {
     ['formatBytes', 'format.js'],
     ['createStore', 'store.js'],
     ['createLoadController', 'store.js'],
+    ['createUpdatePoller', 'poller.js'],
     ['capabilitiesOf', 'repoSource.js'],
     ['normalizeRef', 'repoSource.js'],
     ['refValue', 'repoSource.js'],
@@ -103,6 +104,7 @@ describe('entry / module layout', () => {
   const expectedFiles = [
     'src/controller.js',
     'src/store.js',
+    'src/poller.js',
     'src/searchClient.js',
     'src/searchWorker.js',
     'src/contentSearchClient.js',
