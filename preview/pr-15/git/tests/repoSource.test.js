@@ -185,6 +185,39 @@ describe('InMemoryRepoSource', () => {
     expect((await plain.fileLog('README.md')).length).toBe(2);
   });
 
+  test('blame attributes lines using per-commit fileVersions', async () => {
+    const s = new InMemoryRepoSource({
+      branches: {
+        main: {
+          files: { 'app.js': 'import x;\nconst a = 1;\nuse(a);\n' },
+          fileVersions: {
+            'app.js': [
+              { oid: 'c3', content: 'import x;\nconst a = 1;\nuse(a);\n' },
+              { oid: 'c2', content: 'const a = 1;\nuse(a);\n' },
+              { oid: 'c1', content: 'const a = 1;\n' },
+            ],
+          },
+          commits: [
+            { oid: 'c3', message: 'add import', author: { name: 'A', email: 'a@x' }, timestamp: 3 },
+            { oid: 'c2', message: 'use a', author: { name: 'B', email: 'b@x' }, timestamp: 2 },
+            { oid: 'c1', message: 'init', author: { name: 'C', email: 'c@x' }, timestamp: 1 },
+          ],
+        },
+      },
+    });
+    const rows = await s.blame('app.js');
+    expect(rows.map((r) => r.line)).toEqual(['import x;', 'const a = 1;', 'use(a);']);
+    // c3 introduced the import, c1 the declaration, c2 the use().
+    expect(rows.map((r) => r.commit.oid)).toEqual(['c3', 'c1', 'c2']);
+    // Full commit metadata rides along so the UI can label and link each chip.
+    expect(rows[0].commit).toMatchObject({ oid: 'c3', message: 'add import', author: { name: 'A' } });
+  });
+
+  test('blame returns null for a file without per-commit history', async () => {
+    const s = makeSource();
+    expect(await s.blame('README.md')).toBeNull();
+  });
+
   test('log derives linear parent oids; the root has none', async () => {
     const s = makeSource();
     const log = await s.log();
@@ -266,5 +299,33 @@ describe('createDemoSource', () => {
     const log = await demo.log();
     expect(log.length).toBeGreaterThan(0);
     expect(log[0]).toHaveProperty('oid');
+  });
+
+  test('blames src/app.js across its commits, matching the shown file', async () => {
+    const demo = createDemoSource();
+    const rows = await demo.blame('src/app.js');
+    expect(rows).not.toBeNull();
+
+    // Blame reproduces exactly the lines the viewer renders for the file.
+    const shown = decoder.decode(await demo.readFile('src/app.js')).replace(/\n$/, '');
+    expect(rows.map((r) => r.line).join('\n')).toBe(shown);
+
+    // Spot-check unambiguous lines, each introduced by a different commit.
+    const commitFor = new Map(rows.map((r) => [r.line, r.commit]));
+    expect(commitFor.get("import { loadTasks, saveTasks } from './storage.js';").message).toMatch(
+      /Persist tasks/
+    );
+    expect(commitFor.get("import { renderList } from './ui/render.js';").message).toMatch(
+      /Render task list/
+    );
+    expect(commitFor.get("const list = document.getElementById('list');").message).toMatch(
+      /Initial commit/
+    );
+    expect(commitFor.get('  saveTasks(tasks);').message).toMatch(/Persist tasks/);
+  });
+
+  test('blame is unavailable for demo files without snapshots', async () => {
+    const demo = createDemoSource();
+    expect(await demo.blame('README.md')).toBeNull();
   });
 });

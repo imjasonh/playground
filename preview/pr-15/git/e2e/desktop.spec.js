@@ -311,9 +311,56 @@ test('shows a submodule notice with its remote and pinned commit', async ({ page
     'https://github.com/acme/widget.git'
   );
   await expect(page.locator('.notice .submodule-oid')).toContainText('c0ffee00');
-  // A submodule has no blob, so there's nothing to download or copy-as-text.
+  // A submodule has no blob, so there's nothing to download, copy-as-text, or
+  // blame.
   await expect(page.locator('#file-download-btn')).toBeHidden();
   await expect(page.locator('#file-copy-btn')).toBeHidden();
+  await expect(page.locator('#file-blame-btn')).toBeHidden();
+});
+
+test('annotates lines with their last commit (blame) and links to the commit', async ({ page }) => {
+  await loadDemo(page);
+  await page.locator('#tree-filter').fill('app.js');
+  await page.locator('.flat-row', { hasText: 'app.js' }).click();
+  await expect(page.locator('.code-view')).toBeVisible();
+
+  // Blame is offered for a text file and opens the annotated view.
+  const blameBtn = page.locator('#file-blame-btn');
+  await expect(blameBtn).toBeVisible();
+  await blameBtn.click();
+
+  await expect(page.locator('.blame-view')).toBeVisible();
+  await expect(page.locator('#file-info')).toContainText('Blame');
+  // The demo's src/app.js was built up over three commits, so several distinct
+  // commit chips appear, and the source lines are reproduced.
+  expect(await page.locator('.blame-commit').count()).toBeGreaterThan(1);
+  await expect(page.locator('.blame-code', { hasText: 'saveTasks(tasks);' }).first()).toBeVisible();
+  // The first line (the storage import) was introduced by "Persist tasks…".
+  await expect(page.locator('.blame-commit').first()).toHaveAttribute('title', /Persist tasks/);
+
+  // "Back to file" restores the normal code view.
+  await page.getByRole('button', { name: 'Back to file' }).click();
+  await expect(page.locator('.code-view')).toBeVisible();
+
+  // Re-open blame; a chip opens that commit's diff (which leaves the blame view).
+  await blameBtn.click();
+  await expect(page.locator('.blame-view')).toBeVisible();
+  await page.locator('.blame-commit').first().click();
+  await expect(page.locator('#file-path')).toContainText('Changes in');
+});
+
+test('reports when blame has no per-commit history for a file', async ({ page }) => {
+  await loadDemo(page);
+  // README.md (Markdown) offers blame, but the demo only annotates src/app.js,
+  // so blaming it falls back to the file with a friendly message.
+  await page.locator('#tree-filter').fill('README.md');
+  await page.locator('.flat-row', { hasText: 'README.md' }).click();
+  await expect(page.locator('.markdown-body')).toBeVisible();
+
+  await page.locator('#file-blame-btn').click();
+  await expect(page.locator('#toast')).toContainText(/available/i);
+  // The file view is restored rather than left blank.
+  await expect(page.locator('.markdown-body')).toBeVisible();
 });
 
 test('switching branches changes the available files', async ({ page }) => {

@@ -19,10 +19,15 @@ const VENDOR = {
 import { normalizeRef } from './repoSource.js';
 import { makeOnAuth } from './auth.js';
 import { classifyGitMode, symlinkTarget, parseGitmodules } from './specialEntry.js';
+import { blameLines } from './blame.js';
 
 const FS_NAME = 'git-browser-fs';
 const REGISTRY_KEY = 'git-browser:repos';
 const REGISTRY_VERSION = 1;
+// How far back blame walks a file's history. Each step reads the file's blob at
+// one commit, so this caps the work (and the diff backstop in blame.js guards
+// each pair). Deep enough for real files; bounded so a long history can't hang.
+const BLAME_MAX_COMMITS = 200;
 
 let globalsPromise = null;
 
@@ -468,6 +473,38 @@ export class GitRepoSource {
       force: true,
     });
     return entries.map(toCommit);
+  }
+
+  /**
+   * Per-line blame: attribute each line of `path` (at `ref`) to the commit that
+   * last changed it. Built from the file's filtered history plus the blob's
+   * content at each of those commits, then the pure algorithm in blame.js.
+   *
+   * @param {string} path
+   * @param {Ref|string} [ref]
+   * @returns {Promise<{line: string, commit: Commit}[]>}  empty when untracked
+   */
+  async blame(path, ref) {
+    const commits = await this.fileLog(path, BLAME_MAX_COMMITS, ref);
+    if (!commits.length) return [];
+    const versions = [];
+    for (const commit of commits) {
+      let blob;
+      try {
+        ({ blob } = await this._git.readBlob({
+          fs: this._fs,
+          dir: this._dir,
+          oid: commit.oid,
+          filepath: path,
+        }));
+      } catch {
+        // The path didn't exist at this commit (a rename/creation boundary in a
+        // history that still lists it); the versions gathered so far suffice.
+        break;
+      }
+      versions.push({ commit, content: blob });
+    }
+    return blameLines(versions);
   }
 
   /**

@@ -73,6 +73,7 @@ describe('module imports', () => {
     ['classifyGitMode', 'specialEntry.js'],
     ['parseGitmodules', 'specialEntry.js'],
     ['symlinkTarget', 'specialEntry.js'],
+    ['blameLines', 'blame.js'],
     ['languageForPath', 'language.js'],
     ['createDemoSource', 'demoRepo.js'],
     ['formatBytes', 'format.js'],
@@ -120,6 +121,7 @@ describe('entry / module layout', () => {
     'src/hostUrl.js',
     'src/markdown.js',
     'src/specialEntry.js',
+    'src/blame.js',
   ];
 
   test.each(expectedFiles)('%s exists', (rel) => {

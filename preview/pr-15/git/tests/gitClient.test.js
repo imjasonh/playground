@@ -314,6 +314,37 @@ describe('GitRepoSource special entries', () => {
   });
 });
 
+describe('GitRepoSource blame', () => {
+  // A file's filtered history plus its blob at each of those commits — exactly
+  // what blame() reads (fileLog → readBlob per commit → the pure algorithm).
+  function blameModel() {
+    const model = baseModel();
+    model.logs.oid_origin_main = [
+      { oid: 'c3', commit: { message: 'add import', author: { name: 'A', email: 'a@x', timestamp: 3 } }, changed: ['app.js'] },
+      { oid: 'c2', commit: { message: 'use a', author: { name: 'B', email: 'b@x', timestamp: 2 } }, changed: ['app.js'] },
+      { oid: 'c1', commit: { message: 'init', author: { name: 'C', email: 'c@x', timestamp: 1 } }, changed: ['app.js'] },
+    ];
+    model.blobs.c3 = { 'app.js': enc('import x;\nconst a = 1;\nuse(a);\n') };
+    model.blobs.c2 = { 'app.js': enc('const a = 1;\nuse(a);\n') };
+    model.blobs.c1 = { 'app.js': enc('const a = 1;\n') };
+    return model;
+  }
+
+  test('attributes each line to the commit that last changed it', async () => {
+    const source = await makeSource(blameModel());
+    const rows = await source.blame('app.js');
+    expect(rows.map((r) => r.line)).toEqual(['import x;', 'const a = 1;', 'use(a);']);
+    // c3 added the import, c1 first declared `a`, c2 added the use().
+    expect(rows.map((r) => r.commit.oid)).toEqual(['c3', 'c1', 'c2']);
+    expect(rows[0].commit).toMatchObject({ message: 'add import', author: { name: 'A' } });
+  });
+
+  test('returns [] for a file with no history', async () => {
+    const source = await makeSource(baseModel());
+    expect(await source.blame('does/not/exist.txt')).toEqual([]);
+  });
+});
+
 describe('GitRepoSource update', () => {
   test('fetches with the cloned scope and reports a real change', async () => {
     const model = baseModel();

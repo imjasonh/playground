@@ -1210,6 +1210,80 @@ kbd {
   color: #ffb3ae;
 }
 
+/* ---------- Blame view ---------- */
+.blame-view {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+.blame-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--border-soft);
+}
+.blame-rows {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  line-height: 1.6;
+  overflow-x: auto;
+}
+.blame-row {
+  display: flex;
+  align-items: stretch;
+  white-space: pre;
+}
+.blame-row:hover {
+  background: var(--bg-elev);
+}
+/* Fixed-width chip column; only the first line of a commit run fills it. */
+.blame-commit-cell {
+  flex: 0 0 auto;
+  width: 6rem;
+  padding: 0 0.4rem;
+  border-right: 1px solid var(--border-soft);
+  display: flex;
+  align-items: center;
+}
+.blame-commit {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--accent);
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.blame-commit:hover:not(:disabled) {
+  text-decoration: underline;
+}
+.blame-commit:disabled {
+  color: var(--fg-faint);
+  cursor: default;
+}
+.blame-ln {
+  flex: 0 0 auto;
+  width: 3rem;
+  padding: 0 0.5rem;
+  text-align: right;
+  color: var(--fg-faint);
+  user-select: none;
+  border-right: 1px solid var(--border-soft);
+}
+.blame-code {
+  padding: 0 0.75rem;
+  flex: 1 1 auto;
+  color: var(--fg);
+}
+
 /* ---------- Command palette ---------- */
 .palette-overlay {
   position: fixed;

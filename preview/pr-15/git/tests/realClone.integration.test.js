@@ -199,6 +199,27 @@ describeMaybe('GitStorage real clone/fetch over local git http-backend', () => {
     await source.setBranch('main');
   });
 
+  test('blames a file edited across several commits', async () => {
+    await source.setBranch('history');
+    const rows = await source.blame('counter.js');
+
+    // Blame reproduces exactly the file's current lines.
+    const shown = decoder.decode(await source.readFile('counter.js')).replace(/\n$/, '');
+    expect(rows.map((r) => r.line).join('\n')).toBe(shown);
+
+    // Each distinct line is attributed to the commit that introduced it.
+    const messageFor = new Map(rows.map((r) => [r.line, r.commit.message]));
+    expect(messageFor.get('let count = 0;')).toMatch(/Add counter/);
+    expect(messageFor.get('export function reset() {')).toMatch(/Add reset/);
+    expect(messageFor.get('export function current() {')).toMatch(/Export current count/);
+    expect(messageFor.get('  return count;')).toMatch(/Export current count/);
+
+    // Every commit oid is a real 40-hex object from the served history.
+    expect(rows.every((r) => /^[0-9a-f]{40}$/.test(r.commit.oid))).toBe(true);
+
+    await source.setBranch('main');
+  });
+
   test('the clone is recorded in the registry and can be reopened', async () => {
     expect(storage.listRepos().map((r) => r.dir)).toContain(dir);
 
