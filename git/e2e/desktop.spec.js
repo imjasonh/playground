@@ -435,6 +435,76 @@ test('disables Pull / Update for a source with no remote (demo)', async ({ page 
   await expect(update).toHaveAttribute('title', /no remote/i);
 });
 
+test('reports how many commits a fetch pulled', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForFunction(() => !!(window.gitBrowser && window.gitBrowser.openSource));
+  await page.evaluate(() => {
+    const enc = new TextEncoder();
+    const mk = (oid, message) => ({
+      oid,
+      message,
+      author: { name: 'A', email: 'a@x' },
+      timestamp: 1,
+      parent: [],
+    });
+    const commits = [mk('a', 'first')];
+    window.gitBrowser.openSource({
+      fullName: 'acme/widget',
+      url: 'https://github.com/acme/widget.git',
+      readOnly: true,
+      capabilities: { read: true, fetch: true, write: false, push: false },
+      getCurrentBranch: () => 'main',
+      getCurrentRef: () => ({ type: 'branch', name: 'main' }),
+      listBranches: async () => [{ name: 'main', current: true }],
+      setBranch: async () => {},
+      listFiles: async () => ['app.js'],
+      readFile: async () => enc.encode('const x = 1;\n'),
+      headCommit: async () => commits[0],
+      log: async () => commits,
+      update: async () => {
+        // The fetch advances the tip by two commits.
+        commits.unshift(mk('c', 'third'), mk('b', 'second'));
+        return { updated: true, changed: true, oldOid: 'a', newOid: 'c' };
+      },
+    });
+  });
+  await expect(page.locator('#browser-view')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Pull / Update' }).click();
+  await expect(page.locator('#toast')).toContainText('2 new commits pulled');
+});
+
+test('shows a friendly empty state for a repository with no files', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForFunction(() => !!(window.gitBrowser && window.gitBrowser.openSource));
+  await page.evaluate(() => {
+    window.gitBrowser.openSource({
+      fullName: 'acme/empty',
+      url: null,
+      readOnly: true,
+      getCurrentBranch: () => 'main',
+      listBranches: async () => [{ name: 'main', current: true }],
+      setBranch: async () => {},
+      listFiles: async () => [],
+      readFile: async () => new Uint8Array(),
+      headCommit: async () => null,
+      log: async () => [],
+      update: async () => ({ updated: false, changed: false }),
+    });
+  });
+  await expect(page.locator('#browser-view')).toBeVisible();
+  await expect(page.locator('#tree-empty')).toBeVisible();
+  await expect(page.locator('#tree-empty')).toContainText(/no files/i);
+});
+
+test('names the query in the no-match empty state', async ({ page }) => {
+  await loadDemo(page);
+  await page.locator('#tree-filter').fill('zzz-no-such-file');
+  await expect(page.locator('#tree-empty')).toBeVisible();
+  await expect(page.locator('#tree-empty')).toContainText('No files match');
+  await expect(page.locator('#tree-empty')).toContainText('zzz-no-such-file');
+});
+
 test('exposes ARIA tree semantics for the file list', async ({ page }) => {
   await loadDemo(page);
   await expect(page.locator('#file-tree')).toHaveAttribute('role', 'tree');
@@ -498,6 +568,35 @@ test('encodes the open file and selected lines in the URL hash', async ({ page }
   await page.locator('.code-view .gutter').click({ position: { x: 6, y: 6 } });
   await expect(page.locator('.code-view .line-highlight')).toBeVisible();
   await expect(page).toHaveURL(/lines=1/);
+});
+
+test('remembers the last repo and offers it after landing on the bare URL', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForFunction(() => !!(window.gitBrowser && window.gitBrowser.openSource));
+  await page.evaluate(() => {
+    const enc = new TextEncoder();
+    window.gitBrowser.openSource({
+      fullName: 'acme/widget',
+      url: 'https://github.com/acme/widget.git',
+      readOnly: true,
+      getCurrentBranch: () => 'main',
+      getCurrentRef: () => ({ type: 'branch', name: 'main' }),
+      listBranches: async () => [{ name: 'main', current: true }],
+      setBranch: async () => {},
+      listFiles: async () => ['app.js'],
+      readFile: async () => enc.encode('const x = 1;\n'),
+      headCommit: async () => null,
+      log: async () => [],
+      update: async () => ({ updated: false, changed: false }),
+    });
+  });
+  await expect(page.locator('#browser-view')).toBeVisible();
+
+  // Land on the bare URL (no deep-link hash). The app remembers the last repo;
+  // since it isn't cloned in this browser it prefills the clone form for it.
+  await page.goto('/');
+  await expect(page.locator('#url-input')).toHaveValue('https://github.com/acme/widget.git');
+  await expect(page.locator('#start-view')).toBeVisible();
 });
 
 test('reflects the current ref in the hash when switching branches', async ({ page }) => {

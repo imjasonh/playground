@@ -20,7 +20,7 @@ import { isBinaryExtension, looksBinary } from './language.js';
 import { ancestors } from './pathUtils.js';
 import { parseRepoUrl, DEFAULT_CORS_PROXY } from './repoUrl.js';
 import { fileWebUrl } from './hostUrl.js';
-import { commitSummary, shortOid } from './format.js';
+import { commitSummary, shortOid, countNewCommits, newCommitsPhrase } from './format.js';
 import { cloneErrorMessage } from './cloneError.js';
 import { rememberToken } from './auth.js';
 import { storageEstimate, describeStorage, isLowOnStorage } from './quota.js';
@@ -44,6 +44,10 @@ const DOM_IDS = [
   'palette-results', 'palette-empty', 'content-search', 'content-search-input', 'cs-case',
   'cs-regex', 'content-search-status', 'content-search-results', 'content-search-empty', 'toast',
 ];
+
+// Where the "reopen what I had" session (last repo + ref + file) is remembered.
+// Distinct from the deep-link hash: this covers landing on the bare URL.
+const LAST_SESSION_KEY = 'git-browser:last';
 
 export async function init() {
   const dom = cacheDom(DOM_IDS);
@@ -155,7 +159,13 @@ export async function init() {
   lastHash = location.hash.replace(/^#/, '');
   window.addEventListener('hashchange', onHashChange);
   const initialState = parseHash(location.hash);
-  if (initialState) applyDeepLink(initialState);
+  if (initialState) {
+    applyDeepLink(initialState);
+  } else {
+    // No explicit deep link: reopen the last repo/ref/file if we remember one.
+    const last = loadLastSession();
+    if (last) applyDeepLink(last);
+  }
 
   window.gitBrowser = { openDemo, openSource, state, store, search, contentSearch };
 
@@ -166,7 +176,7 @@ export async function init() {
   function bindEvents() {
     dom.cloneForm.addEventListener('submit', onCloneSubmit);
     dom.demoBtn.addEventListener('click', openDemo);
-    dom.closeBtn.addEventListener('click', showStart);
+    dom.closeBtn.addEventListener('click', onCloseRepo);
     dom.branchSelect.addEventListener('change', onRefChange);
     dom.updateBtn.addEventListener('click', onUpdate);
     dom.historyBtn.addEventListener('click', () => history.toggle());
@@ -215,6 +225,12 @@ export async function init() {
   /* ---------------------------------------------------------------- */
   /* View switching                                                    */
   /* ---------------------------------------------------------------- */
+
+  /** The explicit "close repo" affordance: forget the session, then go home. */
+  function onCloseRepo() {
+    clearLastSession();
+    showStart();
+  }
 
   function showStart() {
     loads.cancel();
@@ -497,7 +513,8 @@ export async function init() {
         if (state.activePath && state.fileSet.has(state.activePath)) {
           openFile(state.activePath);
         }
-        toast(updateMessage(result), result.updated && result.changed ? 'success' : undefined);
+        const pulled = await aheadSummary(result);
+        toast(updateMessage(result, pulled), result.updated && result.changed ? 'success' : undefined);
       }
     } catch (err) {
       if (load.active) toast(`Update failed: ${err.message}`, 'error');
@@ -508,11 +525,23 @@ export async function init() {
     }
   }
 
-  function updateMessage(result) {
+  /** How many commits the fetch brought in, as a phrase ('' when none/unknown). */
+  async function aheadSummary(result) {
+    if (!result || !result.updated || !result.changed) return '';
+    try {
+      const recent = await state.source.log(100);
+      return newCommitsPhrase(countNewCommits(recent, result.oldOid));
+    } catch {
+      return '';
+    }
+  }
+
+  function updateMessage(result, pulled) {
     if (!result || result.updated === false) {
       return 'Demo data is static — nothing to update.';
     }
-    return result.changed ? 'Updated from remote.' : 'Already up to date.';
+    if (!result.changed) return 'Already up to date.';
+    return pulled ? `${pulled} pulled from the remote.` : 'Updated from remote.';
   }
 
   /* ---------------------------------------------------------------- */
@@ -664,7 +693,9 @@ export async function init() {
    */
   function syncHash({ replace = false } = {}) {
     if (restoring) return;
-    const next = encodeHashState(currentHashState());
+    const hashState = currentHashState();
+    saveLastSession(hashState);
+    const next = encodeHashState(hashState);
     const inUrl = location.hash.replace(/^#/, '');
     lastHash = next;
     if (next === inUrl) return;
@@ -683,6 +714,41 @@ export async function init() {
     if (inUrl === (lastHash || '')) return; // our own write, ignore
     lastHash = inUrl;
     applyDeepLink(parseHash(location.hash));
+  }
+
+  /**
+   * Remember the current view so a later visit to the bare URL can reopen it.
+   * The demo is intentionally not remembered — it's a one-off "try it", not a
+   * session worth restoring on top of the clone screen.
+   */
+  function saveLastSession(hashState) {
+    try {
+      if (hashState && hashState.repo && hashState.repo !== 'demo') {
+        localStorage.setItem(LAST_SESSION_KEY, JSON.stringify(hashState));
+      }
+    } catch {
+      /* storage may be unavailable; remembering is best-effort */
+    }
+  }
+
+  /** The remembered session from a previous visit, or null. */
+  function loadLastSession() {
+    try {
+      const raw = localStorage.getItem(LAST_SESSION_KEY);
+      const parsed = raw ? JSON.parse(raw) : null;
+      return parsed && parsed.repo ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Forget the remembered session (e.g. the user explicitly closed the repo). */
+  function clearLastSession() {
+    try {
+      localStorage.removeItem(LAST_SESSION_KEY);
+    } catch {
+      /* non-fatal */
+    }
   }
 
   /** Open the repo/ref/file described by a parsed hash state. */
@@ -740,7 +806,7 @@ export async function init() {
     // Not cloned in this browser: land on the start screen with the URL ready.
     showStart();
     dom.urlInput.value = repo;
-    toast('Clone this repository to open the linked file.');
+    toast('Clone this repository to open it.');
     return false;
   }
 
