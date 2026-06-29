@@ -1,4 +1,11 @@
-import { commitSummary, formatBytes, relativeTime, shortOid } from '../src/format.js';
+import {
+  commitSummary,
+  countNewCommits,
+  formatBytes,
+  newCommitsPhrase,
+  relativeTime,
+  shortOid,
+} from '../src/format.js';
 
 describe('formatBytes', () => {
   test('formats across units', () => {
@@ -26,6 +33,38 @@ describe('commitSummary', () => {
   test('returns the first line', () => {
     expect(commitSummary('Add feature\n\nLong body')).toBe('Add feature');
     expect(commitSummary('')).toBe('');
+  });
+});
+
+describe('countNewCommits', () => {
+  const log = [{ oid: 'd' }, { oid: 'c' }, { oid: 'b' }, { oid: 'a' }];
+
+  test('counts commits newer than the old tip (exact when found)', () => {
+    expect(countNewCommits(log, 'b')).toEqual({ count: 2, exact: true });
+    expect(countNewCommits(log, 'd')).toEqual({ count: 0, exact: true });
+  });
+
+  test('is inexact when the old tip is not in the (capped) list', () => {
+    expect(countNewCommits(log, 'zzz')).toEqual({ count: 4, exact: false });
+    // A null old tip (couldn't resolve before fetch) is never "found".
+    expect(countNewCommits(log, null)).toEqual({ count: 4, exact: false });
+  });
+
+  test('tolerates a non-array', () => {
+    expect(countNewCommits(undefined, 'x')).toEqual({ count: 0, exact: false });
+  });
+});
+
+describe('newCommitsPhrase', () => {
+  test('pluralizes and marks inexact counts', () => {
+    expect(newCommitsPhrase({ count: 1, exact: true })).toBe('1 new commit');
+    expect(newCommitsPhrase({ count: 3, exact: true })).toBe('3 new commits');
+    expect(newCommitsPhrase({ count: 5, exact: false })).toBe('5+ new commits');
+  });
+
+  test('is empty when there is nothing new', () => {
+    expect(newCommitsPhrase({ count: 0, exact: true })).toBe('');
+    expect(newCommitsPhrase()).toBe('');
   });
 });
 
