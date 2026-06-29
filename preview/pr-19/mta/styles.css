@@ -630,12 +630,17 @@ select,
   padding: 0.45rem 0.5rem;
   background: var(--bg-soft);
   border: 1px solid var(--line-soft);
+  border-left: 3px solid var(--line);
   border-radius: 10px;
 }
 
+.train-row.stopped { border-left-color: var(--good); }
+.train-row.incoming { border-left-color: var(--warn); }
+.train-row.transit { border-left-color: var(--info); }
+
 .train-row.at-selected {
-  border-color: rgba(74, 163, 255, 0.5);
-  background: rgba(74, 163, 255, 0.08);
+  background: rgba(74, 163, 255, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(74, 163, 255, 0.45);
 }
 
 .train-info {
@@ -657,21 +662,6 @@ select,
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
-.train-tag {
-  flex: 0 0 auto;
-  font-size: 0.66rem;
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
-  color: var(--muted);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 0.1rem 0.35rem;
-}
-
-.train-tag.stopped { color: #7ff0a8; border-color: rgba(46, 204, 113, 0.4); }
-.train-tag.incoming { color: #ffd479; border-color: rgba(245, 166, 35, 0.4); }
-.train-tag.transit { color: #9cc8ff; border-color: rgba(74, 163, 255, 0.4); }
 
 /* ---------- Alerts ---------- */
 .alerts {

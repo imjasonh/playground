@@ -460,7 +460,6 @@ function renderTrains() {
   const data = state.trains;
   if (!data) return;
 
-  const summary = document.createElement('span');
   if (data.total === 0) {
     el.trainsSummary.textContent = 'No trains reporting';
   } else {
@@ -477,7 +476,7 @@ function renderTrains() {
 
   for (const train of data.trains) {
     const row = document.createElement('div');
-    row.className = `train-row ${train.atSelected ? 'at-selected' : ''}`.trim();
+    row.className = `train-row ${train.statusKind} ${train.atSelected ? 'at-selected' : ''}`.trim();
     row.appendChild(makeBullet(train));
 
     const info = document.createElement('div');
@@ -496,11 +495,6 @@ function renderTrains() {
     sub.textContent = bits.join(' · ');
     info.appendChild(sub);
     row.appendChild(info);
-
-    const tag = document.createElement('span');
-    tag.className = `train-tag ${train.statusKind}`;
-    tag.textContent = train.statusKind;
-    row.appendChild(tag);
 
     el.trains.appendChild(row);
   }
