@@ -424,13 +424,18 @@ kbd {
 }
 .recent-item {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
+  flex-direction: column;
+  gap: 0.5rem;
   background: var(--bg-elev);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 0.6rem 0.8rem;
+}
+.recent-item .ri-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
 }
 .recent-item .ri-main {
   min-width: 0;
@@ -452,6 +457,40 @@ kbd {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.recent-item .ri-proxy-meta {
+  font-size: 0.72rem;
+  color: var(--fg-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.recent-item .ri-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.recent-item .ri-action {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--fg-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.72rem;
+  line-height: 1;
+  padding: 0.3rem 0.5rem;
+  border-radius: 6px;
+}
+.recent-item .ri-action:hover {
+  color: var(--fg);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.recent-item .ri-action[aria-expanded='true'] {
+  color: #cbe0ff;
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
 .recent-item .ri-remove {
   flex: 0 0 auto;
   background: transparent;
@@ -466,6 +505,30 @@ kbd {
 .recent-item .ri-remove:hover {
   color: var(--danger);
   background: rgba(248, 81, 73, 0.1);
+}
+.recent-item .ri-proxy-edit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  border-top: 1px solid var(--border-soft);
+  padding-top: 0.5rem;
+}
+.recent-item .ri-proxy-input {
+  flex: 1 1 12rem;
+  min-width: 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  border-radius: var(--radius);
+  padding: 0.4rem 0.6rem;
+  font: inherit;
+  font-size: 0.82rem;
+  outline: none;
+}
+.recent-item .ri-proxy-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 /* ---------- Browser view ---------- */

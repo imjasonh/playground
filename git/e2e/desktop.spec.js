@@ -21,6 +21,54 @@ test('offers one-tap preset repositories on the start screen', async ({ page }) 
   await expect(page.locator('#url-input')).toHaveValue('https://github.com/github/gitignore');
 });
 
+test('surfaces and overrides the CORS proxy per stored repository', async ({ page }) => {
+  // Seed the registry through the real storage API, then reload so the
+  // start-screen list renders from it (no network clone required).
+  await page.goto('/');
+  await page.waitForFunction(() => !!window.gitBrowser?.state?.storage);
+  await page.evaluate(() => {
+    const s = window.gitBrowser.state.storage;
+    s._upsert({
+      dir: '/acme-default',
+      url: 'https://github.com/acme/default.git',
+      fullName: 'acme/default',
+      lastUsed: Date.now(),
+      corsProxy: 'https://cors.isomorphic-git.org',
+    });
+    s._upsert({
+      dir: '/acme-direct',
+      url: 'https://git.acme.test/acme/direct.git',
+      fullName: 'acme/direct',
+      lastUsed: Date.now() - 1000,
+      corsProxy: '',
+    });
+  });
+  await page.reload();
+
+  const list = page.locator('#recent-list');
+  await expect(list.locator('.recent-item')).toHaveCount(2);
+
+  // Each repo surfaces the proxy it will route through.
+  const direct = list.locator('.recent-item', { hasText: 'acme/direct' });
+  const proxied = list.locator('.recent-item', { hasText: 'acme/default' });
+  await expect(proxied.locator('.ri-proxy-meta')).toContainText('via cors.isomorphic-git.org');
+  await expect(direct.locator('.ri-proxy-meta')).toContainText('directly (no proxy)');
+
+  // Override the proxy on one repo via the inline editor.
+  await proxied.getByRole('button', { name: 'Proxy' }).click();
+  const input = proxied.locator('.ri-proxy-input');
+  await expect(input).toBeFocused();
+  await input.fill('https://proxy.example.org');
+  await proxied.getByRole('button', { name: 'Save' }).click();
+
+  // The label updates and the override persists to the registry.
+  await expect(proxied.locator('.ri-proxy-meta')).toContainText('via proxy.example.org');
+  const stored = await page.evaluate(
+    () => window.gitBrowser.state.storage.listRepos().find((r) => r.dir === '/acme-default').corsProxy
+  );
+  expect(stored).toBe('https://proxy.example.org');
+});
+
 test('loads the demo repo and shows the file tree and branches', async ({ page }) => {
   await loadDemo(page);
   await expect(page.locator('#repo-name')).toHaveText('tasklite/demo');

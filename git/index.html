@@ -97,8 +97,11 @@
                 <span>CORS proxy</span>
                 <input id="proxy-input" type="text" autocomplete="off" spellcheck="false" />
                 <small class="muted">
-                  Browsers can't clone most hosts directly; requests are routed through this proxy.
-                  Leave the default, clear it for self-hosted CORS-enabled servers, or run your own.
+                  Browsers can't clone most hosts directly, so requests are routed through this proxy.
+                  The default is a public third party (<code>cors.isomorphic-git.org</code>) that can
+                  see the repo URLs, your token, and the content it relays. For anything private,
+                  run your own proxy or clear this for self-hosted CORS-enabled servers. You can also
+                  change the proxy per repository later from the stored-repositories list.
                 </small>
               </label>
               <label class="field">
