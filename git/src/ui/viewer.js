@@ -670,13 +670,8 @@ export function createViewer(ctx) {
       );
     }
     if (dom.fileDownloadBtn) dom.fileDownloadBtn.addEventListener('click', downloadCurrent);
-    if (dom.fileBlameBtn) {
-      dom.fileBlameBtn.addEventListener('click', () => {
-        if (current && current.path && typeof ctx.showBlame === 'function') {
-          ctx.showBlame(current.path);
-        }
-      });
-    }
+    // The Blame button is wired in the controller (next to History, the action
+    // it most resembles). Binding it here too would run blame twice per click.
   }
 
   /**

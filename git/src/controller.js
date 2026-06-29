@@ -107,10 +107,10 @@ export async function init() {
   ctx.browseRef = switchRef;
   ctx.showCommitDiff = showCommitDiff;
   ctx.showCompare = showCompare;
-  ctx.showBlame = showBlame;
   // Whether the active source can attribute lines to commits (blame). The
   // viewer keys the Blame affordance off this so it never offers blame for a
-  // source that can't compute it.
+  // source that can't compute it. (The Blame button's click is wired in
+  // bindEvents, alongside History.)
   ctx.canBlame = () => Boolean(state.source && typeof state.source.blame === 'function');
   // Web URL for the active file on its origin host (GitHub/GitLab/Bitbucket),
   // or null for the demo / an unknown host. The viewer uses this to decide
