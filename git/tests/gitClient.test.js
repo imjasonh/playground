@@ -95,6 +95,22 @@ function makeFakeGit(model) {
       model.fetchCalls.push(opts);
       if (model.onFetch) model.onFetch();
     },
+    // ls-remote: the server's current refs. `serverHeads` models the *remote*
+    // state (what a peek would see), distinct from `remoteHeads` which models
+    // the local remote-tracking refs (what we last fetched). Falls back to
+    // remoteHeads so a model that doesn't move the server reads as up to date.
+    async listServerRefs({ prefix } = {}) {
+      model.listServerRefsCalls = (model.listServerRefsCalls || 0) + 1;
+      model.lastPrefix = prefix;
+      if (model.onListServerRefs) model.onListServerRefs();
+      const heads = model.serverHeads || model.remoteHeads;
+      let refs = Object.keys(heads).map((name) => ({
+        ref: `refs/heads/${name}`,
+        oid: heads[name],
+      }));
+      if (prefix) refs = refs.filter((r) => r.ref.startsWith(prefix));
+      return refs;
+    },
   };
 }
 
@@ -391,6 +407,69 @@ describe('GitRepoSource update', () => {
       depth: undefined,
       prune: true,
     });
+  });
+});
+
+describe('GitRepoSource checkForUpdates', () => {
+  test('reports updates when the server tip is ahead of the fetched tip', async () => {
+    const model = baseModel();
+    // The server's main moved past the tip we last fetched (remoteHeads.main).
+    model.serverHeads = { main: 'oid_server_main_new', dev: 'oid_origin_dev' };
+    const source = await makeSource(model, { singleBranch: true });
+
+    const result = await source.checkForUpdates();
+    expect(result).toEqual({
+      supported: true,
+      hasUpdates: true,
+      localOid: 'oid_origin_main',
+      remoteOid: 'oid_server_main_new',
+    });
+    // It's an ls-remote peek, narrowed to the current branch — never a fetch.
+    expect(model.listServerRefsCalls).toBe(1);
+    expect(model.lastPrefix).toBe('refs/heads/main');
+    expect(model.fetchCalls).toHaveLength(0);
+  });
+
+  test('reports no updates when the server tip matches the fetched tip', async () => {
+    const model = baseModel();
+    model.serverHeads = { main: 'oid_origin_main' }; // same as remote-tracking
+    const source = await makeSource(model, { singleBranch: true });
+
+    const result = await source.checkForUpdates();
+    expect(result.supported).toBe(true);
+    expect(result.hasUpdates).toBe(false);
+    expect(result.remoteOid).toBe('oid_origin_main');
+  });
+
+  test('is an unsupported no-op on a tag or detached commit (no ls-remote)', async () => {
+    const model = baseModel();
+    const source = await makeSource(model, { singleBranch: true });
+    await source.setRef({ type: 'tag', name: 'v1.0' });
+
+    const result = await source.checkForUpdates();
+    expect(result).toEqual({
+      supported: false,
+      hasUpdates: false,
+      localOid: null,
+      remoteOid: null,
+    });
+    expect(model.listServerRefsCalls).toBeUndefined();
+  });
+
+  test('is an unsupported no-op without a known remote URL', async () => {
+    const source = await makeSource(baseModel(), { singleBranch: true, url: null });
+    const result = await source.checkForUpdates();
+    expect(result.supported).toBe(false);
+    expect(result.hasUpdates).toBe(false);
+  });
+
+  test('wraps a network failure so the poller can stay quiet', async () => {
+    const model = baseModel();
+    model.onListServerRefs = () => {
+      throw new Error('network down');
+    };
+    const source = await makeSource(model, { singleBranch: true });
+    await expect(source.checkForUpdates()).rejects.toThrow(/Could not check the remote/);
   });
 });
 
