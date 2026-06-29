@@ -136,17 +136,22 @@ wrangler dev      # local
 wrangler deploy   # production
 ```
 
-## Browser integration (sketch)
+## Browser integration
+
+A ready-to-use browser front-end lives in [`../web-push-demo`](../web-push-demo/) —
+a static page (deployed to GitHub Pages by this repo) that subscribes,
+unsubscribes, and sends notifications against a deployed Worker so you can see
+the whole round-trip. The essentials it performs:
 
 ```js
 // 1. Fetch the server's VAPID public key and subscribe.
-const { publicKey } = await (await fetch("/vapidPublicKey")).json();
-const reg = await navigator.serviceWorker.register("/sw.js");
+const { publicKey } = await (await fetch(`${API}/vapidPublicKey`)).json();
+const reg = await navigator.serviceWorker.register("sw.js");
 const sub = await reg.pushManager.subscribe({
   userVisibleOnly: true,
-  applicationServerKey: publicKey, // base64url; the browser decodes it
+  applicationServerKey: urlBase64ToUint8Array(publicKey), // base64url → bytes
 });
-await fetch("/subscribe", {
+await fetch(`${API}/subscribe`, {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify(sub),

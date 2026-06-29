@@ -462,6 +462,15 @@ wrangler dev      # local, with a simulated KV
 wrangler deploy   # production
 ```
 
+### See it in a real browser
+
+Once the Worker is reachable, open the **[`web-push-demo`](../../web-push-demo/)**
+front-end (a static page this repo deploys to GitHub Pages). Paste your Worker
+URL, click **Subscribe**, then **Send notification** — you'll watch a real push
+travel from `/notify` through the push service to the service worker's `push`
+event and a system notification. It's the browser half of the same flow the
+integration test exercises in memory.
+
 ---
 
 ## 9. Security & privacy
