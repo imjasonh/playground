@@ -106,6 +106,24 @@ export function createServedRepo() {
   git(work, ['commit', '-q', '-m', 'Add a symlink and a submodule']);
   git(work, ['checkout', '-q', 'main']);
 
+  // A fourth branch with one file edited across three commits, so blame has a
+  // real per-commit history to attribute lines against. Each commit appends a
+  // distinct, unambiguous line so the attribution can be asserted precisely.
+  git(work, ['checkout', '-q', '-b', 'history', 'main']);
+  const counterV1 = 'let count = 0;\nexport function inc() {\n  count += 1;\n}\n';
+  const counterV2 = `${counterV1}export function reset() {\n  count = 0;\n}\n`;
+  const counterV3 = `${counterV2}export function current() {\n  return count;\n}\n`;
+  writeFileSync(join(work, 'counter.js'), counterV1);
+  git(work, ['add', 'counter.js']);
+  git(work, ['commit', '-q', '-m', 'Add counter']);
+  writeFileSync(join(work, 'counter.js'), counterV2);
+  git(work, ['add', 'counter.js']);
+  git(work, ['commit', '-q', '-m', 'Add reset']);
+  writeFileSync(join(work, 'counter.js'), counterV3);
+  git(work, ['add', 'counter.js']);
+  git(work, ['commit', '-q', '-m', 'Export current count']);
+  git(work, ['checkout', '-q', 'main']);
+
   git(root, ['clone', '-q', '--bare', work, 'repo.git']);
   const bare = join(root, 'repo.git');
   git(bare, ['update-server-info']);

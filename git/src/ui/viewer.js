@@ -13,7 +13,7 @@ import {
   languageForPath,
   looksBinary,
 } from '../language.js';
-import { formatBytes } from '../format.js';
+import { formatBytes, shortOid, commitSummary, relativeTime } from '../format.js';
 import { parseLfsPointer } from '../lfs.js';
 import { renderMarkdown } from '../markdown.js';
 import { highlight, grammarForPath, withinHighlightBudget } from '../highlightCode.js';
@@ -56,6 +56,7 @@ export function createViewer(ctx) {
   function showPlaceholder() {
     dispose();
     clearCurrent();
+    showBlameButton(false);
     dom.viewerHead.hidden = true;
     dom.viewerBody.replaceChildren(dom.viewerPlaceholder);
     dom.viewerPlaceholder.hidden = false;
@@ -68,6 +69,8 @@ export function createViewer(ctx) {
     dom.viewerHead.hidden = false;
     renderFilePath(path);
     if (dom.fileHistoryBtn) dom.fileHistoryBtn.hidden = false;
+    // The file type (and thus whether blame applies) isn't known yet.
+    showBlameButton(false);
     dom.fileInfo.textContent = 'Loading…';
     dom.viewerBody.replaceChildren(buildSkeleton());
   }
@@ -75,8 +78,16 @@ export function createViewer(ctx) {
   function showReadError(message) {
     text = null;
     clearCurrent();
+    showBlameButton(false);
     dom.viewerBody.replaceChildren(el('div', 'notice', `Could not read file: ${message}`));
     dom.fileInfo.textContent = '';
+  }
+
+  /** Show/hide the Blame action — only meaningful for blame-capable sources. */
+  function showBlameButton(visible) {
+    if (!dom.fileBlameBtn) return;
+    const canBlame = typeof ctx.canBlame === 'function' ? ctx.canBlame() : false;
+    dom.fileBlameBtn.hidden = !(visible && canBlame);
   }
 
   /**
@@ -91,6 +102,9 @@ export function createViewer(ctx) {
   function render(path, bytes, opts = {}) {
     const size = bytes.length;
     dispose();
+    // Off by default; only the text / Markdown paths below (which render real
+    // lines to attribute) turn it back on.
+    showBlameButton(false);
 
     // A symlink's blob content is just the path it points at; show that as a
     // notice rather than rendering the target string as if it were the file.
@@ -161,6 +175,8 @@ export function createViewer(ctx) {
 
     dom.fileInfo.textContent =
       `${languageForPath(path)} · ${lines.length} lines · ${formatBytes(size)}`;
+    // Real lines are about to render, so blame can attribute them.
+    showBlameButton(true);
 
     const view = el('div', 'code-view');
     const highlightBand = el('div', 'line-highlight');
@@ -192,6 +208,7 @@ export function createViewer(ctx) {
     const source = decoder.decode(bytes);
     text = null; // no line-linking handle for the rendered view
     setCurrent(path, bytes, source); // Copy = raw Markdown, Download = bytes
+    showBlameButton(true); // blame attributes the raw Markdown lines
     dom.fileInfo.textContent = `${languageForPath(path)} · ${formatBytes(size)}`;
 
     const doc = el('div', 'md-doc');
@@ -387,6 +404,7 @@ export function createViewer(ctx) {
     dom.viewerHead.hidden = false;
     renderFilePath(path);
     if (dom.fileHistoryBtn) dom.fileHistoryBtn.hidden = false;
+    showBlameButton(false); // a submodule has no lines to attribute
     // No blob: copy the path, but there's nothing to copy-as-text, download, or
     // open as a file on the host.
     setCurrent(path, null, null, { web: false });
@@ -441,6 +459,7 @@ export function createViewer(ctx) {
     dom.viewerHead.hidden = false;
     dom.filePath.replaceChildren(el('span', 'name', title));
     if (dom.fileHistoryBtn) dom.fileHistoryBtn.hidden = true; // a diff isn't a file
+    showBlameButton(false); // nor blame
     dom.fileInfo.textContent = subtitle || '';
   }
 
@@ -544,6 +563,98 @@ export function createViewer(ctx) {
   }
 
   /* ---------------------------------------------------------------- */
+  /* Blame view (per-line last-change attribution)                    */
+  /* ---------------------------------------------------------------- */
+
+  /** Header + body placeholder while blame is being computed. */
+  function showBlameLoading(path) {
+    dispose();
+    text = null;
+    dom.viewerHead.hidden = false;
+    renderFilePath(path);
+    if (dom.fileHistoryBtn) dom.fileHistoryBtn.hidden = false;
+    showBlameButton(true);
+    // Keep copy-path available on the file; there are no bytes loaded for blame.
+    setCurrent(path, null, null, { web: false });
+    dom.fileInfo.textContent = 'Computing blame…';
+    dom.viewerBody.replaceChildren(buildSkeleton());
+  }
+
+  /**
+   * Render per-line blame: each line prefixed with the commit that last changed
+   * it. Consecutive lines from the same commit share one chip (as `git blame`
+   * does), and a chip click opens that commit's diff via `onOpenCommit`.
+   *
+   * @param {string} path
+   * @param {{line: string, commit: object}[]} rows
+   * @param {{onOpenCommit?: (commit: object) => void}} [opts]
+   */
+  function renderBlame(path, rows, { onOpenCommit } = {}) {
+    dispose();
+    text = null;
+    dom.viewerHead.hidden = false;
+    renderFilePath(path);
+    if (dom.fileHistoryBtn) dom.fileHistoryBtn.hidden = false;
+    showBlameButton(true);
+    setCurrent(path, null, null, { web: false });
+
+    const wrap = el('div', 'blame-view');
+    const toolbar = el('div', 'blame-toolbar');
+    const back = el('button', 'btn ghost small', '\u2190 Back to file');
+    back.type = 'button';
+    back.addEventListener('click', () => {
+      if (typeof ctx.openFile === 'function') ctx.openFile(path);
+    });
+    toolbar.appendChild(back);
+    wrap.appendChild(toolbar);
+
+    if (rows.length > MAX_TEXT_LINES) {
+      dom.fileInfo.textContent = `Blame · ${rows.length} lines`;
+      wrap.appendChild(el('div', 'notice', 'File is too large to blame.'));
+      dom.viewerBody.replaceChildren(wrap);
+      return;
+    }
+
+    const distinct = new Set(rows.map((r) => r.commit && r.commit.oid)).size;
+    dom.fileInfo.textContent =
+      `Blame · ${rows.length} lines · ${distinct} commit${distinct === 1 ? '' : 's'}`;
+
+    const grid = el('div', 'blame-rows');
+    let prevOid = null;
+    rows.forEach((row, i) => {
+      const commit = row.commit || {};
+      const line = el('div', 'blame-row');
+      const chipCell = el('div', 'blame-commit-cell');
+      // One chip per contiguous run of the same commit, like git blame.
+      if (commit.oid !== prevOid) chipCell.appendChild(buildBlameChip(commit, onOpenCommit));
+      line.appendChild(chipCell);
+      line.appendChild(el('span', 'blame-ln', String(i + 1)));
+      // A non-breaking space keeps blank source lines from collapsing to 0 height.
+      line.appendChild(el('span', 'blame-code', row.line === '' ? '\u00a0' : row.line));
+      grid.appendChild(line);
+      prevOid = commit.oid;
+    });
+    wrap.appendChild(grid);
+    dom.viewerBody.replaceChildren(wrap);
+  }
+
+  /** A clickable commit chip for a blame run (opens the commit when possible). */
+  function buildBlameChip(commit, onOpenCommit) {
+    const chip = el('button', 'blame-commit', shortOid(commit.oid || '') || '—');
+    chip.type = 'button';
+    const who = commit.author && commit.author.name ? ` · ${commit.author.name}` : '';
+    const when = commit.timestamp ? ` · ${relativeTime(commit.timestamp)}` : '';
+    const summary = commitSummary(commit.message);
+    chip.title = `${summary || shortOid(commit.oid || '')}${who}${when}`;
+    if (typeof onOpenCommit === 'function' && commit.oid) {
+      chip.addEventListener('click', () => onOpenCommit(commit));
+    } else {
+      chip.disabled = true;
+    }
+    return chip;
+  }
+
+  /* ---------------------------------------------------------------- */
   /* Header actions (copy path / copy contents / download / open)     */
   /* ---------------------------------------------------------------- */
 
@@ -559,6 +670,13 @@ export function createViewer(ctx) {
       );
     }
     if (dom.fileDownloadBtn) dom.fileDownloadBtn.addEventListener('click', downloadCurrent);
+    if (dom.fileBlameBtn) {
+      dom.fileBlameBtn.addEventListener('click', () => {
+        if (current && current.path && typeof ctx.showBlame === 'function') {
+          ctx.showBlame(current.path);
+        }
+      });
+    }
   }
 
   /**
@@ -678,6 +796,8 @@ export function createViewer(ctx) {
     showPlaceholder,
     showDiffLoading,
     renderDiff,
+    showBlameLoading,
+    renderBlame,
     applyLineSelection,
     currentTextPath,
     dispose,

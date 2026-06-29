@@ -164,6 +164,33 @@ initTheme();
 renderList(list, tasks, toggle);
 `;
 
+// Earlier snapshots of src/app.js, so blame() on `main` has real per-commit
+// content to attribute lines against. Newest (APP_JS_MAIN) first; each older
+// version drops the lines a later commit introduced:
+//   - "Initial commit" (Grace) — bare skeleton, no rendering or persistence,
+//   - "Render task list…" (Ada) — adds the render import and its calls,
+//   - "Persist tasks…" (Ada)   — adds storage import, loadTasks, saveTasks.
+const APP_JS_RENDER = `import { renderList } from './ui/render.js';
+
+const list = document.getElementById('list');
+let tasks = [];
+
+function toggle(id) {
+  tasks = tasks.map((t) => (t.id === id ? { ...t, done: !t.done } : t));
+  renderList(list, tasks, toggle);
+}
+
+renderList(list, tasks, toggle);
+`;
+
+const APP_JS_INITIAL = `const list = document.getElementById('list');
+let tasks = [];
+
+function toggle(id) {
+  tasks = tasks.map((t) => (t.id === id ? { ...t, done: !t.done } : t));
+}
+`;
+
 const THEME_JS = `const KEY = 'tasklite.theme';
 
 export function initTheme() {
@@ -254,6 +281,15 @@ const darkCommits = [
   ...mainCommits,
 ];
 
+// src/app.js content at each commit that changed it (newest first), so blame()
+// has real per-commit snapshots to attribute against. The oids mirror the
+// matching commits above so blame chips link back to the right history entries.
+const appJsHistory = [
+  { oid: mainCommits[0].oid, content: APP_JS_MAIN },
+  { oid: mainCommits[1].oid, content: APP_JS_RENDER },
+  { oid: mainCommits[2].oid, content: APP_JS_INITIAL },
+];
+
 export function createDemoSource() {
   return new InMemoryRepoSource({
     fullName: 'tasklite/demo',
@@ -270,6 +306,7 @@ export function createDemoSource() {
         },
         symlinks: sharedSymlinks,
         submodules: sharedSubmodules,
+        fileVersions: { 'src/app.js': appJsHistory },
         commits: mainCommits,
       },
       'feature/dark-mode': {

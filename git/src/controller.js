@@ -39,7 +39,7 @@ const DOM_IDS = [
   'progress-label', 'recent', 'recent-list', 'storage-usage', 'browser-view', 'tree-filter',
   'file-tree', 'flat-results', 'tree-empty', 'viewer-head', 'file-path',
   'file-info', 'file-copy-path-btn', 'file-copy-btn', 'file-download-btn', 'file-open-btn',
-  'file-history-btn', 'viewer-body', 'viewer-placeholder', 'history-panel',
+  'file-blame-btn', 'file-history-btn', 'viewer-body', 'viewer-placeholder', 'history-panel',
   'history-branch', 'history-compare', 'compare-select', 'commit-list', 'palette', 'palette-input',
   'palette-results', 'palette-empty', 'content-search', 'content-search-input', 'cs-case',
   'cs-regex', 'content-search-status', 'content-search-results', 'content-search-empty', 'toast',
@@ -107,6 +107,11 @@ export async function init() {
   ctx.browseRef = switchRef;
   ctx.showCommitDiff = showCommitDiff;
   ctx.showCompare = showCompare;
+  ctx.showBlame = showBlame;
+  // Whether the active source can attribute lines to commits (blame). The
+  // viewer keys the Blame affordance off this so it never offers blame for a
+  // source that can't compute it.
+  ctx.canBlame = () => Boolean(state.source && typeof state.source.blame === 'function');
   // Web URL for the active file on its origin host (GitHub/GitLab/Bitbucket),
   // or null for the demo / an unknown host. The viewer uses this to decide
   // whether to offer the "Open" link and where it points.
@@ -180,6 +185,9 @@ export async function init() {
     dom.branchSelect.addEventListener('change', onRefChange);
     dom.updateBtn.addEventListener('click', onUpdate);
     dom.historyBtn.addEventListener('click', () => history.toggle());
+    dom.fileBlameBtn.addEventListener('click', () => {
+      if (state.activePath) showBlame(state.activePath);
+    });
     dom.fileHistoryBtn.addEventListener('click', () => {
       if (state.activePath) history.showFile(state.activePath);
     });
@@ -669,6 +677,39 @@ export async function init() {
       return { binary: true };
     }
     return diffLines(decoder.decode(oldBytes), decoder.decode(newBytes));
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Blame view                                                        */
+  /* ---------------------------------------------------------------- */
+
+  /** Show per-line blame for a file: each line annotated with its last commit. */
+  async function showBlame(path) {
+    if (!state.source || typeof state.source.blame !== 'function') {
+      toast('Blame is not supported for this source.', 'error');
+      return;
+    }
+    const view = viewLoads.begin();
+    viewer.showBlameLoading(path);
+
+    let rows;
+    try {
+      rows = await state.source.blame(path);
+    } catch (err) {
+      if (view.active) viewer.showReadError(err.message);
+      return;
+    }
+    if (!view.active) return; // a newer open / diff / blame superseded this one
+
+    if (!rows || !rows.length) {
+      // The source supports blame in general but has no per-commit history for
+      // this file (e.g. the demo only annotates a sample file). Fall back to the
+      // file itself rather than leaving a blank view.
+      toast('Blame isn\u2019t available for this file.');
+      openFile(path);
+      return;
+    }
+    viewer.renderBlame(path, rows, { onOpenCommit: showCommitDiff });
   }
 
   /* ---------------------------------------------------------------- */

@@ -63,8 +63,15 @@
  * @property {(limit?: number, ref?: Ref|string) => Promise<Commit[]>} log
  * @property {(path: string, limit?: number, ref?: Ref|string) => Promise<Commit[]>} [fileLog]
  * @property {(baseRef: ?(Ref|string), headRef: Ref|string) => Promise<FileChange[]>} [changedFiles]
+ * @property {(path: string, ref?: Ref|string) => Promise<BlameRow[]>} [blame]
  * @property {(onProgress?: Function) => Promise<UpdateResult>} update
+ *
+ * @typedef {Object} BlameRow
+ * @property {string} line    the line's text (no trailing newline)
+ * @property {Commit} commit  the commit that last changed it
  */
+
+import { blameLines } from './blame.js';
 
 const textEncoder = new TextEncoder();
 
@@ -157,6 +164,7 @@ function bytesEqual(a, b) {
  *       files: { '<path>': string | Uint8Array },
  *       symlinks: { '<path>': '<target>' },           // optional
  *       submodules: { '<path>': { url, name?, oid? } }, // optional
+ *       fileVersions: { '<path>': [{ oid, content }] }, // optional, newest first
  *       commits: Commit[]   // newest first
  *     }
  *   },
@@ -165,7 +173,9 @@ function bytesEqual(a, b) {
  *
  * Symlinks live in `files` too (their content is the link target) so reads and
  * diffs work; `symlinks` only marks which paths are links. Submodules have no
- * blob, so they live solely in `submodules`.
+ * blob, so they live solely in `submodules`. `fileVersions` carries the content
+ * of a path at each commit that changed it (newest first) so blame() has real
+ * per-commit snapshots to attribute against; omit it for files without blame.
  */
 export class InMemoryRepoSource {
   constructor(spec) {
@@ -323,6 +333,33 @@ export class InMemoryRepoSource {
       ? commits.filter((c) => Array.isArray(c.changed) && c.changed.includes(path))
       : commits;
     return this._normalizeCommits(filtered.slice(0, limit), commits);
+  }
+
+  /**
+   * Per-line blame, available only for paths the spec annotates with
+   * `fileVersions` (the file's content at each commit that changed it). Returns
+   * null when there's no such data so the UI can treat blame as unavailable
+   * rather than fabricating an attribution from the current content alone.
+   *
+   * @param {string} path
+   * @param {Ref|string} [ref]
+   * @returns {Promise<BlameRow[]|null>}
+   */
+  async blame(path, ref) {
+    const snap = this._snapshot(ref);
+    const spec = (snap.fileVersions || {})[path];
+    if (!Array.isArray(spec) || !spec.length) return null;
+    const all = snap.commits || [];
+    const byOid = new Map(all.map((c) => [c.oid, c]));
+    const versions = [];
+    for (const v of spec) {
+      if (!v || !byOid.has(v.oid)) continue;
+      versions.push({
+        commit: this._normalizeCommits([byOid.get(v.oid)], all)[0],
+        content: v.content,
+      });
+    }
+    return blameLines(versions);
   }
 
   /**
