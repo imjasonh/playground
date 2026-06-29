@@ -10,16 +10,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  discover:
+  test:
     runs-on: ubuntu-latest
-    outputs:
-      apps: ${{ steps.discover.outputs.apps }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Find testable apps in changed directories
+      - name: Discover testable apps in changed directories
         id: discover
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -53,44 +51,37 @@ jobs:
           printf '%s\n' "$changed"
           echo "Testable apps: ${apps}"
 
-  test:
-    needs: discover
-    if: needs.discover.outputs.apps != '[]'
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        app: ${{ fromJson(needs.discover.outputs.apps) }}
-    name: test (${{ matrix.app }})
-    steps:
-      - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: ${{ matrix.app }}/package-lock.json
+          cache-dependency-path: '**/package-lock.json'
 
-      - name: Install dependencies
-        working-directory: ${{ matrix.app }}
-        run: npm ci
-
-      - name: Run unit tests
-        working-directory: ${{ matrix.app }}
-        run: npm test
-
-      - name: Install Playwright browsers
-        working-directory: ${{ matrix.app }}
+      - name: Run tests for changed apps
+        env:
+          APPS: ${{ steps.discover.outputs.apps }}
         run: |
-          if node -e "const s=require('./package.json').scripts||{}; process.exit(s['test:e2e']?0:1)"; then
-            npx playwright install --with-deps chromium
+          set -euo pipefail
+
+          mapfile -t apps < <(printf '%s' "${APPS:-[]}" | jq -r '.[]')
+
+          if [ "${#apps[@]}" -eq 0 ]; then
+            echo "No testable apps changed (need changes under an app dir with index.html, package.json, and a test script). Nothing to test."
+            exit 0
           fi
 
-      - name: Run e2e tests
-        working-directory: ${{ matrix.app }}
-        run: |
-          if node -e "const s=require('./package.json').scripts||{}; process.exit(s['test:e2e']?0:1)"; then
-            npm run test:e2e
-          else
-            echo "No test:e2e script; skipping."
-          fi
+          for app in "${apps[@]}"; do
+            echo "::group::Test ${app}"
+            (
+              cd "$app"
+              npm ci
+              npm test
+              if node -e "const s=require('./package.json').scripts||{}; process.exit(s['test:e2e']?0:1)"; then
+                npx playwright install --with-deps chromium
+                npm run test:e2e
+              else
+                echo "No test:e2e script; skipping e2e."
+              fi
+            )
+            echo "::endgroup::"
+          done
