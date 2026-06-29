@@ -11,6 +11,10 @@ etc.).
 > Pages deploy/preview workflows skip it. It is fully implemented and tested;
 > deploying requires your own Cloudflare account (see [Deploying](#deploying)).
 
+> **Learning the protocol?** Read **[docs/how-it-works.md](docs/how-it-works.md)** —
+> a thorough, diagram-driven walkthrough of Web Push, VAPID, and the encryption,
+> mapped to this code. This README is the quick reference.
+
 ## What it implements
 
 | RFC | Title | Where |

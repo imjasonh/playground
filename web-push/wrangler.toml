@@ -15,8 +15,10 @@ compatibility_date = "2024-11-01"
 command = "cargo install -q worker-build && worker-build --release"
 
 # KV namespace that stores subscriptions. Create with:
-#   wrangler kv:namespace create SUBSCRIPTIONS
-#   wrangler kv:namespace create SUBSCRIPTIONS --preview
+#   wrangler kv namespace create SUBSCRIPTIONS
+#   wrangler kv namespace create SUBSCRIPTIONS --preview
+# (older wrangler used a colon: `wrangler kv:namespace create SUBSCRIPTIONS`)
+# Paste the printed ids below. See docs/how-it-works.md section 8.
 [[kv_namespaces]]
 binding = "SUBSCRIPTIONS"
 id = "REPLACE_WITH_KV_NAMESPACE_ID"
