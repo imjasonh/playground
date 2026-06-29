@@ -526,6 +526,24 @@ export class GitStorage {
   }
 
   /**
+   * Override the stored CORS proxy for one repository. Takes effect the next
+   * time the repo is opened (an already-open source keeps the proxy it was
+   * built with). Sync; no engine needed. Returns whether an entry was updated.
+   *
+   * @param {string} dir
+   * @param {string} corsProxy  the proxy URL, or '' for none/self-hosted
+   * @returns {boolean}
+   */
+  setCorsProxy(dir, corsProxy) {
+    const list = readRegistry();
+    const entry = list.find((r) => r.dir === dir);
+    if (!entry) return false;
+    entry.corsProxy = corsProxy || '';
+    writeRegistry(list);
+    return true;
+  }
+
+  /**
    * Run `fn` while holding an exclusive lock for `dir`. Uses the Web Locks API
    * when available (which serializes across tabs as well as within one), and
    * falls back to a per-dir promise chain that at least serializes this tab.
