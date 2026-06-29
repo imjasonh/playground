@@ -74,6 +74,7 @@ export function createTree(ctx) {
         if (results === null || token !== renderSeq) return;
         flatRows = results;
         dom.treeEmpty.hidden = flatRows.length > 0;
+        if (!flatRows.length) dom.treeEmpty.textContent = `No files match \u201C${query}\u201D.`;
         if (fresh) scroller.scrollTop = 0; // a new search starts at the top
         paintFlat();
       });
@@ -84,6 +85,8 @@ export function createTree(ctx) {
       dom.fileTree.hidden = false;
       treeRows = flattenVisible(state.tree, state.expanded);
       dom.treeEmpty.hidden = treeRows.length > 0;
+      // No query, no rows → the repository itself is empty (not a filter miss).
+      if (!treeRows.length) dom.treeEmpty.textContent = 'This repository has no files.';
       if (leftSearch) scroller.scrollTop = 0;
       paintTree();
     }
