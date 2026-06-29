@@ -228,6 +228,34 @@ describeMaybe('GitStorage real clone/fetch over local git http-backend', () => {
     expect((await reopened.listFiles()).length).toBeGreaterThan(0);
   });
 
+  test('checkForUpdates peeks the remote and tracks a new commit', async () => {
+    await source.setBranch('main');
+
+    // Up to date right after a fetch: the peek sees no new commits.
+    const before = await source.checkForUpdates();
+    expect(before.supported).toBe(true);
+    expect(before.hasUpdates).toBe(false);
+    expect(before.localOid).toMatch(/^[0-9a-f]{40}$/);
+    expect(before.remoteOid).toBe(before.localOid);
+
+    // Push a commit to the served repo *without* fetching it locally.
+    repo.addCommitOnMain('POLLED.md', '# polled\n', 'Add POLLED.md');
+
+    // The peek now reports the remote is ahead — but it's just an ls-remote, so
+    // nothing has been downloaded and the working tree hasn't changed yet.
+    const after = await source.checkForUpdates();
+    expect(after.hasUpdates).toBe(true);
+    expect(after.remoteOid).not.toBe(after.localOid);
+    expect(await source.listFiles()).not.toContain('POLLED.md');
+
+    // Fetching it (what the poller does next) brings the commit local, and the
+    // peek goes quiet again.
+    const result = await source.update();
+    expect(result.changed).toBe(true);
+    expect(await source.listFiles()).toContain('POLLED.md');
+    expect((await source.checkForUpdates()).hasUpdates).toBe(false);
+  });
+
   test('update fetches a new commit pushed to the remote', async () => {
     await source.setBranch('main');
     const before = await source.listFiles();

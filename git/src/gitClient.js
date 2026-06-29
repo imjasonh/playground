@@ -616,6 +616,58 @@ export class GitRepoSource {
       newOid,
     };
   }
+
+  /**
+   * Lightweight upstream check for background polling: ask the remote for the
+   * current branch's tip (an `ls-remote`, no object download) and compare it to
+   * the tip we last fetched. The caller decides whether to follow up with a real
+   * `update()`. This is only meaningful for a branch checkout — a tag or a
+   * detached commit can't move — and is a no-op without a known remote URL.
+   *
+   * Throws on a network/protocol failure so the poller can stay quiet (a failed
+   * peek is not the same as "no updates").
+   *
+   * @returns {Promise<{supported: boolean, hasUpdates: boolean, localOid: ?string, remoteOid: ?string}>}
+   */
+  async checkForUpdates() {
+    const none = { supported: false, hasUpdates: false, localOid: null, remoteOid: null };
+    if (!this.url || this._refType !== 'branch') return none;
+    if (typeof this._git.listServerRefs !== 'function') return none;
+
+    const branch = this._current;
+    const wanted = `refs/heads/${branch}`;
+    // The last fetched tip is the remote-tracking ref (_resolveOid prefers it).
+    let localOid = null;
+    try {
+      localOid = await this._resolveOid();
+    } catch {
+      /* unknown local tip; the server's tip alone still tells us something */
+    }
+
+    let refs;
+    try {
+      refs = await this._git.listServerRefs({
+        http: this._http,
+        corsProxy: this._corsProxy,
+        url: this.url,
+        onAuth: this._onAuth,
+        // A v2 ref-prefix narrows the listing to just this branch; servers that
+        // only speak v1 ignore it and return everything, which we filter below.
+        prefix: wanted,
+      });
+    } catch (err) {
+      throw new Error(`Could not check the remote: ${err && err.message ? err.message : err}`);
+    }
+
+    const match = (refs || []).find((r) => r && r.ref === wanted);
+    const remoteOid = match ? match.oid : null;
+    return {
+      supported: true,
+      hasUpdates: Boolean(remoteOid && remoteOid !== localOid),
+      localOid,
+      remoteOid,
+    };
+  }
 }
 
 /**

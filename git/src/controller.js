@@ -14,6 +14,7 @@ import { createHistory } from './ui/history.js';
 import { createRecent } from './ui/recent.js';
 import { buildFileTree } from './fileTree.js';
 import { createStore, createLoadController } from './store.js';
+import { createUpdatePoller } from './poller.js';
 import { capabilitiesOf, refLabel, refValue, parseRefValue } from './repoSource.js';
 import { diffLines } from './diff.js';
 import { isBinaryExtension, looksBinary } from './language.js';
@@ -80,6 +81,15 @@ export async function init() {
   // opening a file and showing a diff supersede each other cleanly.
   const viewLoads = createLoadController();
   const decoder = new TextDecoder('utf-8', { fatal: false });
+
+  // Depth of in-flight, user-initiated loads (open / branch switch / manual
+  // update). The background update poller yields whenever this is > 0 so an
+  // automatic fetch never clobbers something the user is actively doing.
+  let busyDepth = 0;
+  // Polls the upstream while a fetch-capable repo is open and the tab is
+  // visible; on each live tick it peeks for new commits and auto-fetches them
+  // (see pollForUpdates). Created here, started/stopped as the source changes.
+  const poller = createUpdatePoller({ onPoll: pollForUpdates });
 
   // Off-main-thread fuzzy file search (with a synchronous fallback). Shared by
   // the command palette and the tree filter; the controller keeps its corpus in
@@ -172,7 +182,7 @@ export async function init() {
     if (last) applyDeepLink(last);
   }
 
-  window.gitBrowser = { openDemo, openSource, state, store, search, contentSearch };
+  window.gitBrowser = { openDemo, openSource, state, store, search, contentSearch, pollNow: pollForUpdates };
 
   /* ---------------------------------------------------------------- */
   /* Event wiring                                                      */
@@ -242,6 +252,7 @@ export async function init() {
 
   function showStart() {
     loads.cancel();
+    poller.stop();
     store.setState({ source: null, activePath: null, lines: null });
     search.setFiles([]); // drop the corpus so the worker isn't holding a stale repo
     viewer.dispose();
@@ -340,18 +351,32 @@ export async function init() {
   }
 
   async function openSource(source) {
-    store.setState({ source, activePath: null, lines: null, expanded: new Set() });
-    viewer.dispose();
-    history.reset();
-    applyCapabilities(source);
+    busyDepth += 1;
+    try {
+      store.setState({ source, activePath: null, lines: null, expanded: new Set() });
+      viewer.dispose();
+      history.reset();
+      applyCapabilities(source);
+      // Match the background poller to the new source (runs only for a source
+      // that can fetch; stopped for the demo and on close).
+      syncPoller();
 
-    const load = loads.begin();
-    showBrowser();
-    tree.resetScroll();
-    await refreshRepo(load);
-    if (!load.active) return;
-    viewer.showPlaceholder();
-    syncHash();
+      const load = loads.begin();
+      showBrowser();
+      tree.resetScroll();
+      await refreshRepo(load);
+      if (!load.active) return;
+      viewer.showPlaceholder();
+      syncHash();
+    } finally {
+      busyDepth -= 1;
+    }
+  }
+
+  /** Start or stop the upstream poller to match the current source. */
+  function syncPoller() {
+    if (state.source && capabilitiesOf(state.source).fetch) poller.start();
+    else poller.stop();
   }
 
   /** Enable/disable repo-bar affordances based on what the source supports. */
@@ -485,6 +510,7 @@ export async function init() {
   /** Switch the view to any ref (branch / tag / commit) and refresh. */
   async function switchRef(ref, { quiet = false } = {}) {
     if (!state.source) return;
+    busyDepth += 1;
     const load = loads.begin();
     try {
       await applyRef(ref);
@@ -502,11 +528,14 @@ export async function init() {
       if (!quiet) toast(`Switched to ${refLabel(ref)}`);
     } catch (err) {
       if (load.active) toast(`Could not switch: ${err.message}`, 'error');
+    } finally {
+      busyDepth -= 1;
     }
   }
 
   async function onUpdate() {
     if (!state.source) return;
+    busyDepth += 1;
     const load = loads.begin();
     const btn = dom.updateBtn;
     btn.disabled = true;
@@ -530,7 +559,66 @@ export async function init() {
       // The button belongs to this invocation, so always restore it.
       btn.disabled = false;
       btn.textContent = original;
+      busyDepth -= 1;
     }
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Background polling for upstream updates                           */
+  /* ---------------------------------------------------------------- */
+
+  /**
+   * One poll tick: peek at the upstream and, if the current branch's remote tip
+   * has moved, auto-fetch it. Wired to the poller's interval (and exposed as
+   * `window.gitBrowser.pollNow` for tests). Stays silent unless there's actually
+   * something new; never disturbs an in-flight user action.
+   */
+  async function pollForUpdates() {
+    const source = state.source;
+    if (!source || busyDepth > 0) return;
+    if (!capabilitiesOf(source).fetch || typeof source.checkForUpdates !== 'function') return;
+
+    let peek;
+    try {
+      peek = await source.checkForUpdates();
+    } catch {
+      return; // a transient peek failure; try again next tick, quietly
+    }
+    // Bail if the world moved under us while we were on the network.
+    if (state.source !== source || busyDepth > 0) return;
+    if (!peek || !peek.hasUpdates) return;
+
+    await autoUpdate();
+  }
+
+  /**
+   * Fetch the new commits the peek found, refresh the view, and toast the count.
+   * Uses the shared load token so a user action started mid-fetch supersedes the
+   * automatic refresh (the fetched objects still land locally regardless).
+   */
+  async function autoUpdate() {
+    const source = state.source;
+    const load = loads.begin();
+    try {
+      const result = await source.update();
+      if (!load.active) return;
+      await refreshRepo(load);
+      if (!load.active) return;
+      if (state.activePath && state.fileSet.has(state.activePath)) {
+        openFile(state.activePath);
+      }
+      if (result && result.updated && result.changed) {
+        const pulled = await aheadSummary(result);
+        if (load.active) toast(autoUpdateMessage(pulled), 'success');
+      }
+    } catch {
+      // A background fetch failure is non-fatal and intentionally silent; the
+      // manual Pull / Update button surfaces errors when the user asks for them.
+    }
+  }
+
+  function autoUpdateMessage(pulled) {
+    return pulled ? `${pulled} fetched from the remote.` : 'Fetched new commits from the remote.';
   }
 
   /** How many commits the fetch brought in, as a phrase ('' when none/unknown). */
