@@ -106,4 +106,33 @@ describe('blameLines', () => {
     );
     expect(oids(rows)).toEqual(['rewrite', 'rewrite']);
   });
+
+  // diff.js refuses to build its LCS table past a cell cap (~4M = ~2000² lines),
+  // which is far below the viewer's line limit. Blame must cope: a file that big
+  // can't be diffed, and silently blaming every line on the oldest commit would
+  // be confidently wrong for the whole file.
+  const bigFile = (tag) => `${Array.from({ length: 2100 }, (_, i) => `${tag}${i}`).join('\n')}\n`;
+
+  test('reports no blame when the newest pair is too large to diff', () => {
+    // Two large, entirely different versions: the very first diff is declined,
+    // so there is no real attribution — return empty rather than blame it all on
+    // the oldest commit. The controller treats empty as "blame unavailable".
+    const rows = blameLines(versions(['new', bigFile('a')], ['old', bigFile('b')]));
+    expect(rows).toEqual([]);
+  });
+
+  test('keeps partial blame when only a deeper pair is too large to diff', () => {
+    // Newest is tiny (one carried-over line + one new line), so its diff against
+    // the large predecessor is cheap; only the predecessor-vs-oldest diff is too
+    // large. The new line is still attributed; the survivor falls back to oldest.
+    const rows = blameLines(
+      versions(
+        ['new', 'a0\nEXTRA\n'], // shares "a0" with the large predecessor
+        ['mid', bigFile('a')],
+        ['old', bigFile('b')]
+      )
+    );
+    expect(rows.map((r) => r.line)).toEqual(['a0', 'EXTRA']);
+    expect(oids(rows)).toEqual(['old', 'new']);
+  });
 });

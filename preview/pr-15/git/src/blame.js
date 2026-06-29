@@ -63,10 +63,18 @@ export function blameLines(versions) {
   for (let v = 0; v < list.length - 1 && origin.length; v += 1) {
     const newerCommit = list[v].commit;
     const { rows, truncated } = diffLines(toText(list[v + 1].content), toText(list[v].content));
-    // We declined to diff this (pathologically large) pair, so we can't refine
-    // further; stop and let the tail attribute everything still tracked to the
-    // oldest commit.
-    if (truncated) break;
+    if (truncated) {
+      // This pair was too large to diff. If it's the very first (newest) pair we
+      // have no real attribution yet, so report "no blame" (empty) rather than
+      // falling through to the tail, which would confidently — and almost always
+      // wrongly — blame every line on the oldest commit. (Note diff.js truncates
+      // well below the viewer's line cap, so this is reachable for ordinary
+      // multi-thousand-line files, not just pathological ones.) For a deeper
+      // pair, keep what we've attributed so far and let the tail account for the
+      // still-tracked remainder.
+      if (v === 0) return [];
+      break;
+    }
 
     const nextOrigin = [];
     for (const row of rows) {
