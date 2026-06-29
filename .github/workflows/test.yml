@@ -94,10 +94,3 @@ jobs:
           else
             echo "No test:e2e script; skipping."
           fi
-
-  no-tests:
-    needs: discover
-    if: needs.discover.outputs.apps == '[]'
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo "No testable apps changed (need changes under an app dir with index.html, package.json, and a test script)."
