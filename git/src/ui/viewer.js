@@ -8,11 +8,14 @@ import { basename, dirname } from '../pathUtils.js';
 import {
   imageMimeType,
   isImagePath,
+  isMarkdownPath,
   isBinaryExtension,
   languageForPath,
   looksBinary,
 } from '../language.js';
-import { formatBytes } from '../format.js';
+import { formatBytes, shortOid, commitSummary, relativeTime } from '../format.js';
+import { parseLfsPointer } from '../lfs.js';
+import { renderMarkdown } from '../markdown.js';
 import { highlight, grammarForPath, withinHighlightBudget } from '../highlightCode.js';
 
 const MAX_TEXT_BYTES = 2_000_000;
@@ -32,6 +35,14 @@ export function createViewer(ctx) {
   // Live handle on the currently-rendered text file, so line linking can
   // re-position the highlight without re-rendering the whole file.
   let text = null;
+  // The active file's data backing the header actions (copy / download / open).
+  // null whenever no real file is shown (placeholder, diff, or read error).
+  let current = null;
+  // Remembered Markdown view mode so a Raw/Preview choice sticks across files.
+  let markdownMode = 'preview';
+
+  wireActions();
+  clearCurrent();
 
   /** Free the current image object URL, if any. */
   function dispose() {
@@ -44,6 +55,8 @@ export function createViewer(ctx) {
 
   function showPlaceholder() {
     dispose();
+    clearCurrent();
+    showBlameButton(false);
     dom.viewerHead.hidden = true;
     dom.viewerBody.replaceChildren(dom.viewerPlaceholder);
     dom.viewerPlaceholder.hidden = false;
@@ -52,17 +65,29 @@ export function createViewer(ctx) {
   /** Reveal the header and show a loading state while bytes are fetched. */
   function beginLoading(path) {
     text = null;
+    clearCurrent();
     dom.viewerHead.hidden = false;
     renderFilePath(path);
     if (dom.fileHistoryBtn) dom.fileHistoryBtn.hidden = false;
+    // The file type (and thus whether blame applies) isn't known yet.
+    showBlameButton(false);
     dom.fileInfo.textContent = 'Loading…';
-    dom.viewerBody.replaceChildren(el('div', 'notice', 'Loading…'));
+    dom.viewerBody.replaceChildren(buildSkeleton());
   }
 
   function showReadError(message) {
     text = null;
+    clearCurrent();
+    showBlameButton(false);
     dom.viewerBody.replaceChildren(el('div', 'notice', `Could not read file: ${message}`));
     dom.fileInfo.textContent = '';
+  }
+
+  /** Show/hide the Blame action — only meaningful for blame-capable sources. */
+  function showBlameButton(visible) {
+    if (!dom.fileBlameBtn) return;
+    const canBlame = typeof ctx.canBlame === 'function' ? ctx.canBlame() : false;
+    dom.fileBlameBtn.hidden = !(visible && canBlame);
   }
 
   /**
@@ -70,11 +95,32 @@ export function createViewer(ctx) {
    *
    * @param {string} path
    * @param {Uint8Array} bytes
-   * @param {{lines?: {start:number, end:number}}} [opts]  initial line selection
+   * @param {{lines?: {start:number, end:number}, meta?: object}} [opts]
+   *   `lines` is the initial selection; `meta` is the entry classification
+   *   (symlink/submodule/file) the controller resolved alongside the bytes.
    */
   function render(path, bytes, opts = {}) {
     const size = bytes.length;
     dispose();
+    // Off by default; only the text / Markdown paths below (which render real
+    // lines to attribute) turn it back on.
+    showBlameButton(false);
+
+    // A symlink's blob content is just the path it points at; show that as a
+    // notice rather than rendering the target string as if it were the file.
+    if (opts.meta && opts.meta.kind === 'symlink') {
+      renderSymlinkNotice(path, bytes, opts.meta);
+      return;
+    }
+
+    // Checked before the image/binary guards: an LFS-tracked file (even one with
+    // an image/binary extension) is committed as a tiny text pointer, so without
+    // this we'd try to render the pointer as the file and show garbage.
+    const pointer = parseLfsPointer(bytes);
+    if (pointer) {
+      renderLfsNotice(path, bytes, pointer, size);
+      return;
+    }
 
     if (isImagePath(path)) {
       renderImage(path, bytes, size);
@@ -84,6 +130,11 @@ export function createViewer(ctx) {
     const binary = isBinaryExtension(path) || looksBinary(bytes);
     if (binary) {
       renderBinaryNotice(path, bytes, size);
+      return;
+    }
+
+    if (isMarkdownPath(path)) {
+      renderMarkdownDoc(path, bytes, size);
       return;
     }
 
@@ -108,6 +159,9 @@ export function createViewer(ctx) {
 
     if (!force && (size > MAX_TEXT_BYTES || lines.length > MAX_TEXT_LINES)) {
       text = null;
+      // Bytes are in hand, so download still works; "Copy contents" stays off
+      // until the text is actually rendered (via "Show anyway").
+      setCurrent(path, bytes, null);
       dom.fileInfo.textContent = `${languageForPath(path)} · ${formatBytes(size)}`;
       const notice = el('div', 'notice');
       notice.appendChild(el('p', null, `Large file (${formatBytes(size)}, ${lines.length} lines).`));
@@ -121,6 +175,8 @@ export function createViewer(ctx) {
 
     dom.fileInfo.textContent =
       `${languageForPath(path)} · ${lines.length} lines · ${formatBytes(size)}`;
+    // Real lines are about to render, so blame can attribute them.
+    showBlameButton(true);
 
     const view = el('div', 'code-view');
     const highlightBand = el('div', 'line-highlight');
@@ -136,8 +192,59 @@ export function createViewer(ctx) {
     dom.viewerBody.replaceChildren(view);
 
     text = { path, count: lines.length, view, gutter, code, highlight: highlightBand, range: null };
+    // `decoded` keeps the file's exact bytes (incl. any trailing newline) for
+    // "Copy contents"; `lines` was trimmed only for display.
+    setCurrent(path, bytes, decoded);
     gutter.addEventListener('click', onGutterClick);
     if (target) applyLineSelection(target, { scroll: true, notify: false });
+  }
+
+  /**
+   * Render a Markdown file with a Preview/Raw toggle. Preview shows safe,
+   * offline-rendered HTML; Raw shows the source text. The chosen mode is
+   * remembered (`markdownMode`) so it sticks as you move between files.
+   */
+  function renderMarkdownDoc(path, bytes, size) {
+    const source = decoder.decode(bytes);
+    text = null; // no line-linking handle for the rendered view
+    setCurrent(path, bytes, source); // Copy = raw Markdown, Download = bytes
+    showBlameButton(true); // blame attributes the raw Markdown lines
+    dom.fileInfo.textContent = `${languageForPath(path)} · ${formatBytes(size)}`;
+
+    const doc = el('div', 'md-doc');
+    const toolbar = el('div', 'md-toolbar');
+    toolbar.setAttribute('role', 'group');
+    toolbar.setAttribute('aria-label', 'Markdown view');
+    const previewBtn = el('button', 'md-toggle', 'Preview');
+    previewBtn.type = 'button';
+    const rawBtn = el('button', 'md-toggle', 'Raw');
+    rawBtn.type = 'button';
+    toolbar.append(previewBtn, rawBtn);
+
+    const content = el('div', 'md-content');
+    doc.append(toolbar, content);
+    dom.viewerBody.replaceChildren(doc);
+
+    const show = (mode) => {
+      markdownMode = mode;
+      const preview = mode === 'preview';
+      previewBtn.classList.toggle('active', preview);
+      previewBtn.setAttribute('aria-pressed', String(preview));
+      rawBtn.classList.toggle('active', !preview);
+      rawBtn.setAttribute('aria-pressed', String(!preview));
+      if (preview) {
+        const body = el('div', 'markdown-body');
+        body.innerHTML = renderMarkdown(source);
+        content.replaceChildren(body);
+      } else {
+        const pre = el('pre', 'md-raw');
+        pre.textContent = source;
+        content.replaceChildren(pre);
+      }
+    };
+    previewBtn.addEventListener('click', () => show('preview'));
+    rawBtn.addEventListener('click', () => show('raw'));
+    show(markdownMode);
   }
 
   /** Render code text into `code`, syntax-highlighted unless it's too large. */
@@ -207,6 +314,8 @@ export function createViewer(ctx) {
         dom.viewerBody.scrollTop = Math.max(0, padTop + (start - 1) * lineH - lineH * 3);
       }
     }
+    // Keep the "Open on host" link pointing at the current selection.
+    refreshOpenLink();
     if (notify && typeof ctx.onLinesChange === 'function') ctx.onLinesChange(text.range);
   }
 
@@ -216,6 +325,7 @@ export function createViewer(ctx) {
   }
 
   function renderImage(path, bytes, size) {
+    setCurrent(path, bytes, null);
     const blob = new Blob([bytes], { type: imageMimeType(path) });
     imageUrl = URL.createObjectURL(blob);
     dom.fileInfo.textContent = `Image · ${formatBytes(size)}`;
@@ -228,6 +338,7 @@ export function createViewer(ctx) {
   }
 
   function renderBinaryNotice(path, bytes, size) {
+    setCurrent(path, bytes, null);
     dom.fileInfo.textContent = `Binary · ${formatBytes(size)}`;
     const notice = el('div', 'notice');
     notice.appendChild(el('p', null, `Binary file — ${formatBytes(size)}.`));
@@ -238,6 +349,105 @@ export function createViewer(ctx) {
     dom.viewerBody.replaceChildren(notice);
   }
 
+  /**
+   * Git LFS pointer: the committed blob is metadata, not the real file (which
+   * lives on an LFS server this client never contacts). Show what we know and
+   * offer to view the raw pointer text rather than rendering it as the file.
+   */
+  function renderLfsNotice(path, bytes, pointer, size) {
+    setCurrent(path, bytes, null);
+    dom.fileInfo.textContent = `Git LFS · ${formatBytes(pointer.size)}`;
+    const notice = el('div', 'notice');
+    notice.appendChild(
+      el(
+        'p',
+        null,
+        `Stored with Git LFS. The real file (${formatBytes(pointer.size)}) lives on an ` +
+          'LFS server and is not downloaded by this read-only client.'
+      )
+    );
+    notice.appendChild(el('p', 'lfs-oid', pointer.oid));
+    const btn = el('button', 'btn', 'View pointer');
+    btn.type = 'button';
+    btn.addEventListener('click', () => renderText(path, bytes, size, { force: true }));
+    notice.appendChild(btn);
+    dom.viewerBody.replaceChildren(notice);
+  }
+
+  /**
+   * Symlink: the committed blob is the link target path, not file content. Show
+   * where it points; copy/download still operate on the (tiny) raw blob.
+   */
+  function renderSymlinkNotice(path, bytes, meta) {
+    const target = (meta && meta.target) || decoder.decode(bytes || new Uint8Array()).trim();
+    setCurrent(path, bytes, target);
+    dom.fileInfo.textContent = 'Symlink';
+    const notice = el('div', 'notice');
+    notice.appendChild(
+      el('p', null, 'Symbolic link — this entry points to another path in the repository.')
+    );
+    const line = el('p', 'symlink-target');
+    line.appendChild(el('span', 'sym-arrow', '\u2192 '));
+    line.appendChild(el('span', 'sym-path', target || '(empty target)'));
+    notice.appendChild(line);
+    dom.viewerBody.replaceChildren(notice);
+  }
+
+  /**
+   * Submodule: a gitlink pinning another repository at a commit. Its objects
+   * live in that other repo, not this clone, so there's nothing to read.
+   * Rendered directly by the controller (there are no bytes to fetch first).
+   */
+  function renderSubmodule(path, meta = {}) {
+    dispose();
+    text = null;
+    dom.viewerHead.hidden = false;
+    renderFilePath(path);
+    if (dom.fileHistoryBtn) dom.fileHistoryBtn.hidden = false;
+    showBlameButton(false); // a submodule has no lines to attribute
+    // No blob: copy the path, but there's nothing to copy-as-text, download, or
+    // open as a file on the host.
+    setCurrent(path, null, null, { web: false });
+    dom.fileInfo.textContent = 'Submodule';
+
+    const notice = el('div', 'notice');
+    notice.appendChild(
+      el(
+        'p',
+        null,
+        'Git submodule — a pinned reference to another repository. Its files are ' +
+          'not part of this clone.'
+      )
+    );
+    if (meta.url) {
+      const line = el('p', null);
+      line.appendChild(document.createTextNode('Source: '));
+      const href = webUrlForRemote(meta.url);
+      if (href) {
+        const a = el('a', 'submodule-url', meta.url);
+        a.href = href;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        line.appendChild(a);
+      } else {
+        line.appendChild(el('span', 'submodule-url', meta.url));
+      }
+      notice.appendChild(line);
+    }
+    if (meta.oid) notice.appendChild(el('p', 'submodule-oid', `Pinned at ${meta.oid}`));
+    dom.viewerBody.replaceChildren(notice);
+  }
+
+  /** Best-effort https URL for a submodule's remote (so the link is clickable). */
+  function webUrlForRemote(url) {
+    if (typeof url !== 'string') return null;
+    const scp = url.match(/^git@([^:]+):(.+?)(?:\.git)?\/?$/);
+    if (scp) return `https://${scp[1]}/${scp[2]}`;
+    const m = url.match(/^(?:https?|git|ssh):\/\/(?:[^@/]+@)?([^/]+)\/(.+?)(?:\.git)?\/?$/);
+    if (m) return `https://${m[1]}/${m[2]}`;
+    return null;
+  }
+
   /* ---------------------------------------------------------------- */
   /* Diff view (rendered into the same viewer real estate)            */
   /* ---------------------------------------------------------------- */
@@ -245,9 +455,11 @@ export function createViewer(ctx) {
   function diffHeader(title, subtitle) {
     dispose();
     text = null;
+    clearCurrent(); // a diff isn't a single file: no copy/download/open
     dom.viewerHead.hidden = false;
     dom.filePath.replaceChildren(el('span', 'name', title));
     if (dom.fileHistoryBtn) dom.fileHistoryBtn.hidden = true; // a diff isn't a file
+    showBlameButton(false); // nor blame
     dom.fileInfo.textContent = subtitle || '';
   }
 
@@ -350,13 +562,237 @@ export function createViewer(ctx) {
     body.replaceChildren(rows);
   }
 
+  /* ---------------------------------------------------------------- */
+  /* Blame view (per-line last-change attribution)                    */
+  /* ---------------------------------------------------------------- */
+
+  /** Header + body placeholder while blame is being computed. */
+  function showBlameLoading(path) {
+    dispose();
+    text = null;
+    dom.viewerHead.hidden = false;
+    renderFilePath(path);
+    if (dom.fileHistoryBtn) dom.fileHistoryBtn.hidden = false;
+    showBlameButton(true);
+    // Keep copy-path available on the file; there are no bytes loaded for blame.
+    setCurrent(path, null, null, { web: false });
+    dom.fileInfo.textContent = 'Computing blame…';
+    dom.viewerBody.replaceChildren(buildSkeleton());
+  }
+
+  /**
+   * Render per-line blame: each line prefixed with the commit that last changed
+   * it. Consecutive lines from the same commit share one chip (as `git blame`
+   * does), and a chip click opens that commit's diff via `onOpenCommit`.
+   *
+   * @param {string} path
+   * @param {{line: string, commit: object}[]} rows
+   * @param {{onOpenCommit?: (commit: object) => void}} [opts]
+   */
+  function renderBlame(path, rows, { onOpenCommit } = {}) {
+    dispose();
+    text = null;
+    dom.viewerHead.hidden = false;
+    renderFilePath(path);
+    if (dom.fileHistoryBtn) dom.fileHistoryBtn.hidden = false;
+    showBlameButton(true);
+    setCurrent(path, null, null, { web: false });
+
+    const wrap = el('div', 'blame-view');
+    const toolbar = el('div', 'blame-toolbar');
+    const back = el('button', 'btn ghost small', '\u2190 Back to file');
+    back.type = 'button';
+    back.addEventListener('click', () => {
+      if (typeof ctx.openFile === 'function') ctx.openFile(path);
+    });
+    toolbar.appendChild(back);
+    wrap.appendChild(toolbar);
+
+    if (rows.length > MAX_TEXT_LINES) {
+      dom.fileInfo.textContent = `Blame · ${rows.length} lines`;
+      wrap.appendChild(el('div', 'notice', 'File is too large to blame.'));
+      dom.viewerBody.replaceChildren(wrap);
+      return;
+    }
+
+    const distinct = new Set(rows.map((r) => r.commit && r.commit.oid)).size;
+    dom.fileInfo.textContent =
+      `Blame · ${rows.length} lines · ${distinct} commit${distinct === 1 ? '' : 's'}`;
+
+    const grid = el('div', 'blame-rows');
+    let prevOid = null;
+    rows.forEach((row, i) => {
+      const commit = row.commit || {};
+      const line = el('div', 'blame-row');
+      const chipCell = el('div', 'blame-commit-cell');
+      // One chip per contiguous run of the same commit, like git blame.
+      if (commit.oid !== prevOid) chipCell.appendChild(buildBlameChip(commit, onOpenCommit));
+      line.appendChild(chipCell);
+      line.appendChild(el('span', 'blame-ln', String(i + 1)));
+      // A non-breaking space keeps blank source lines from collapsing to 0 height.
+      line.appendChild(el('span', 'blame-code', row.line === '' ? '\u00a0' : row.line));
+      grid.appendChild(line);
+      prevOid = commit.oid;
+    });
+    wrap.appendChild(grid);
+    dom.viewerBody.replaceChildren(wrap);
+  }
+
+  /** A clickable commit chip for a blame run (opens the commit when possible). */
+  function buildBlameChip(commit, onOpenCommit) {
+    const chip = el('button', 'blame-commit', shortOid(commit.oid || '') || '—');
+    chip.type = 'button';
+    const who = commit.author && commit.author.name ? ` · ${commit.author.name}` : '';
+    const when = commit.timestamp ? ` · ${relativeTime(commit.timestamp)}` : '';
+    const summary = commitSummary(commit.message);
+    chip.title = `${summary || shortOid(commit.oid || '')}${who}${when}`;
+    if (typeof onOpenCommit === 'function' && commit.oid) {
+      chip.addEventListener('click', () => onOpenCommit(commit));
+    } else {
+      chip.disabled = true;
+    }
+    return chip;
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Header actions (copy path / copy contents / download / open)     */
+  /* ---------------------------------------------------------------- */
+
+  function wireActions() {
+    if (dom.fileCopyPathBtn) {
+      dom.fileCopyPathBtn.addEventListener('click', () =>
+        copyToClipboard(current && current.path, 'Path copied')
+      );
+    }
+    if (dom.fileCopyBtn) {
+      dom.fileCopyBtn.addEventListener('click', () =>
+        copyToClipboard(current && current.text, 'Contents copied')
+      );
+    }
+    if (dom.fileDownloadBtn) dom.fileDownloadBtn.addEventListener('click', downloadCurrent);
+    // The Blame button is wired in the controller (next to History, the action
+    // it most resembles). Binding it here too would run blame twice per click.
+  }
+
+  /**
+   * Record the active file backing the header actions. `text` is null when the
+   * file can't be copied as text (binary/image/large); `bytes` is null when
+   * there's nothing to download (a submodule); `opts.web` is false when the
+   * entry has no meaningful "open as a file on the host" target.
+   */
+  function setCurrent(path, bytes, text, opts = {}) {
+    current = {
+      path,
+      bytes: bytes || null,
+      text: text == null ? null : text,
+      web: opts.web !== false,
+    };
+    refreshActions();
+  }
+
+  function clearCurrent() {
+    current = null;
+    refreshActions();
+  }
+
+  /** Show/hide each header action to match the active file. */
+  function refreshActions() {
+    if (dom.fileCopyPathBtn) dom.fileCopyPathBtn.hidden = !(current && current.path);
+    if (dom.fileDownloadBtn) dom.fileDownloadBtn.hidden = !(current && current.bytes);
+    if (dom.fileCopyBtn) dom.fileCopyBtn.hidden = !(current && current.text != null);
+    refreshOpenLink();
+  }
+
+  /** Point the "Open" link at the active file on its host, or hide it. */
+  function refreshOpenLink() {
+    const a = dom.fileOpenBtn;
+    if (!a) return;
+    let url = null;
+    if (current && current.web && typeof ctx.fileWebUrl === 'function') {
+      const lines = text && text.path === current.path ? text.range : null;
+      url = ctx.fileWebUrl(current.path, lines);
+    }
+    if (url) {
+      const host = hostLabelFromUrl(url);
+      a.href = url;
+      a.title = `Open on ${host}`;
+      a.setAttribute('aria-label', `Open ${basename(current.path)} on ${host}`);
+      a.hidden = false;
+    } else {
+      a.removeAttribute('href');
+      a.hidden = true;
+    }
+  }
+
+  function hostLabelFromUrl(url) {
+    try {
+      const host = new URL(url).hostname;
+      if (host === 'github.com') return 'GitHub';
+      if (host === 'bitbucket.org') return 'Bitbucket';
+      if (host === 'gitlab.com' || host.startsWith('gitlab.')) return 'GitLab';
+      return host;
+    } catch {
+      return 'the host';
+    }
+  }
+
+  async function copyToClipboard(value, okMessage) {
+    if (value == null) return;
+    const clip = typeof navigator !== 'undefined' ? navigator.clipboard : null;
+    if (!clip || typeof clip.writeText !== 'function') {
+      toast('Clipboard is unavailable in this browser.', 'error');
+      return;
+    }
+    try {
+      await clip.writeText(value);
+      toast(okMessage, 'success');
+    } catch {
+      toast('Copy was blocked by the browser.', 'error');
+    }
+  }
+
+  /** Save the active file's raw bytes to disk via a transient object URL. */
+  function downloadCurrent() {
+    if (!current || !current.bytes) return;
+    const blob = new Blob([current.bytes]);
+    const url = URL.createObjectURL(blob);
+    const a = el('a');
+    a.href = url;
+    a.download = basename(current.path) || 'file';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
+  function toast(message, type) {
+    if (typeof ctx.toast === 'function') ctx.toast(message, type);
+  }
+
+  /** A shimmer placeholder shown while a file's bytes are being fetched. */
+  function buildSkeleton() {
+    const wrap = el('div', 'skeleton');
+    wrap.setAttribute('aria-hidden', 'true');
+    // A handful of bars of varied width read as "loading content".
+    const widths = [70, 45, 85, 60, 78, 38, 66, 90, 52, 74];
+    for (const w of widths) {
+      const bar = el('div', 'skeleton-line');
+      bar.style.width = `${w}%`;
+      wrap.appendChild(bar);
+    }
+    return wrap;
+  }
+
   return {
     render,
+    renderSubmodule,
     beginLoading,
     showReadError,
     showPlaceholder,
     showDiffLoading,
     renderDiff,
+    showBlameLoading,
+    renderBlame,
     applyLineSelection,
     currentTextPath,
     dispose,

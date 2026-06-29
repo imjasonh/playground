@@ -15,8 +15,13 @@ branch switching, and commit history. Everything runs on-device with
   The repo is stored in IndexedDB and reopens instantly on your next visit.
   Private repos can use a session-only access token (never persisted or logged).
 - **Code browser** — collapsible file tree and a viewer with line numbers,
-  offline syntax highlighting, language detection, image preview, and
-  binary/large-file guards. The tree is fully keyboard-navigable.
+  offline syntax highlighting, language detection, image preview, a Markdown
+  raw/preview toggle, and binary/large-file guards. Symlinks, submodules, and
+  Git LFS pointers show a clear notice instead of raw bytes. The tree is fully
+  keyboard-navigable.
+- **File actions** — from the viewer header, copy a file's path or contents,
+  download its raw bytes, or open it on its origin host (GitHub/GitLab/Bitbucket)
+  when the clone URL is known.
 - **Quick file finder** — fuzzy search across every file name. Press
   <kbd>Ctrl</kbd> / <kbd>Cmd</kbd> + <kbd>P</kbd>, or use the sidebar filter.
 - **Content search** — grep across file *contents*. Press
@@ -29,14 +34,17 @@ branch switching, and commit history. Everything runs on-device with
   with tens of thousands of files stays responsive.
 - **Browse any ref** — switch between branches, tags, or a specific commit
   (detached HEAD); the tree, viewer, and history follow.
-- **Diff & history** — view a commit's changed files with per-file line diffs,
-  compare two refs, and see the commit history for the repo or a single file.
+- **Diff, history & blame** — view a commit's changed files with per-file line
+  diffs, compare two refs, see the commit history for the repo or a single file,
+  and blame a file to attribute each line to the commit that last changed it.
 - **Deep links** — the repo, ref, file, and selected line range are encoded in
   the URL hash, so any view is shareable, bookmarkable, and reload-safe.
-- **Pull / Update** — a menu action fetches the latest commits from the remote.
+- **Pull / Update** — a menu action fetches the latest commits from the remote
+  and reports how many new commits it pulled.
 - **Stored repositories** — manage and reopen previously cloned repos (with an
-  IndexedDB usage meter); remove to free space. Clone/remove are coordinated
-  across browser tabs.
+  IndexedDB usage meter); remove to free space, or override the CORS proxy per
+  repo. Clone/remove are coordinated across browser tabs. The last repo you had
+  open is reoffered when you return to the bare URL.
 - **Demo mode** — "Try a demo (no network)" loads a sample repo so you can see
   everything immediately, offline.
 
@@ -56,9 +64,11 @@ and click **Clone**. Or click **Try a demo** to explore without a network.
 Browsers cannot clone most git hosts directly because those servers don't send
 the necessary CORS headers, so requests are routed through a CORS proxy. The app
 defaults to the public `https://cors.isomorphic-git.org` proxy (configurable
-under **Advanced options**). For anything beyond casual use, run your own proxy
-([@isomorphic-git/cors-proxy](https://github.com/isomorphic-git/cors-proxy)) and
-set it there. Self-hosted CORS-enabled servers can clear the field.
+under **Advanced options**, and overridable per repository from the stored-repos
+list). That default is a third party that can see the repo URLs, any token, and
+the content it relays, so for anything beyond casual or public use, run your own
+proxy ([@isomorphic-git/cors-proxy](https://github.com/isomorphic-git/cors-proxy))
+and set it there. Self-hosted CORS-enabled servers can clear the field.
 
 ## How it's built
 
@@ -74,12 +84,17 @@ a few vendored libraries.
 - `src/highlightCode.js` — dependency-free, offline syntax highlighter
 - `src/hashState.js` — deep-link state encoded in the URL hash
 - `src/diff.js` — line-level (LCS) diff for the diff view
+- `src/blame.js` — per-line blame from a file's per-commit history (pure)
 - `src/repoUrl.js` — parse/validate clone URLs
 - `src/language.js` — extension → language, image/binary detection
+- `src/markdown.js` — safe, offline Markdown → HTML rendering
+- `src/lfs.js` — detect Git LFS pointer blobs
+- `src/specialEntry.js` — classify symlink/submodule tree entries, parse `.gitmodules`
+- `src/hostUrl.js` — build "open on host" URLs for GitHub/GitLab/Bitbucket
 - `src/format.js` — byte sizes, short oids, relative times
 - `src/quota.js` — IndexedDB storage estimate/low-space helpers
 - `src/auth.js` — session-only access-token store wired to `onAuth`
-- `src/cloneError.js` — turn raw clone failures into friendly messages
+- `src/cloneError.js` — turn raw clone failures into a typed kind + friendly message
 - `src/store.js` — observable store + first-class load controller
 - `src/repoSource.js` — the read-only `RepoSource` interface + in-memory source
 - `src/demoRepo.js` — sample repository for demo mode

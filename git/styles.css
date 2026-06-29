@@ -424,13 +424,18 @@ kbd {
 }
 .recent-item {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
+  flex-direction: column;
+  gap: 0.5rem;
   background: var(--bg-elev);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 0.6rem 0.8rem;
+}
+.recent-item .ri-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
 }
 .recent-item .ri-main {
   min-width: 0;
@@ -452,6 +457,40 @@ kbd {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.recent-item .ri-proxy-meta {
+  font-size: 0.72rem;
+  color: var(--fg-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.recent-item .ri-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.recent-item .ri-action {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--fg-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.72rem;
+  line-height: 1;
+  padding: 0.3rem 0.5rem;
+  border-radius: 6px;
+}
+.recent-item .ri-action:hover {
+  color: var(--fg);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.recent-item .ri-action[aria-expanded='true'] {
+  color: #cbe0ff;
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
 .recent-item .ri-remove {
   flex: 0 0 auto;
   background: transparent;
@@ -466,6 +505,30 @@ kbd {
 .recent-item .ri-remove:hover {
   color: var(--danger);
   background: rgba(248, 81, 73, 0.1);
+}
+.recent-item .ri-proxy-edit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  border-top: 1px solid var(--border-soft);
+  padding-top: 0.5rem;
+}
+.recent-item .ri-proxy-input {
+  flex: 1 1 12rem;
+  min-width: 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  border-radius: var(--radius);
+  padding: 0.4rem 0.6rem;
+  font: inherit;
+  font-size: 0.82rem;
+  outline: none;
+}
+.recent-item .ri-proxy-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 /* ---------- Browser view ---------- */
@@ -605,6 +668,7 @@ kbd {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 3rem;
 }
 .file-path .dir {
   color: var(--fg-faint);
@@ -714,6 +778,70 @@ kbd {
 .notice .btn {
   margin-top: 1rem;
 }
+.notice .lfs-oid {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--fg-faint);
+  word-break: break-all;
+}
+.notice .symlink-target {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--fg);
+  word-break: break-all;
+}
+.notice .symlink-target .sym-arrow {
+  color: var(--fg-faint);
+}
+.notice .submodule-url {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  word-break: break-all;
+}
+.notice .submodule-oid {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--fg-faint);
+  word-break: break-all;
+}
+/* External-link affordance on the viewer's "Open on host" link. */
+.btn.external::after {
+  content: ' \2197'; /* ↗ — decorative; the accessible name covers the action */
+}
+
+/* Loading skeleton (shown while a file's bytes are fetched). */
+.skeleton {
+  padding: 0.8rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+.skeleton-line {
+  height: 0.72rem;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    var(--bg-elev) 25%,
+    var(--bg-elev-2) 37%,
+    var(--bg-elev) 63%
+  );
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.4s ease infinite;
+}
+@keyframes skeleton-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-line {
+    animation: none;
+  }
+}
+
 .image-view {
   display: flex;
   align-items: center;
@@ -727,6 +855,160 @@ kbd {
   background: repeating-conic-gradient(#2a2a2a 0% 25%, #333 0% 50%) 50% / 20px 20px;
   border: 1px solid var(--border);
   border-radius: 6px;
+}
+
+/* ---------- Markdown preview ---------- */
+.md-doc {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+.md-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  gap: 0.3rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border-soft);
+}
+.md-toggle {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--bg-elev-2);
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 0.76rem;
+  padding: 0.15rem 0.7rem;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.md-toggle:hover {
+  border-color: var(--accent);
+  color: #cbe0ff;
+}
+.md-toggle.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: #cbe0ff;
+}
+.md-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.md-content {
+  flex: 1 1 auto;
+}
+.md-raw {
+  margin: 0;
+  padding: 0.8rem 1rem;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--fg);
+}
+
+.markdown-body {
+  padding: 1.25rem 1.5rem 2.5rem;
+  max-width: 54rem;
+  line-height: 1.6;
+  font-size: 0.92rem;
+  color: var(--fg);
+}
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  margin: 1.4em 0 0.6em;
+  line-height: 1.25;
+}
+.markdown-body h1 {
+  font-size: 1.7rem;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--border);
+}
+.markdown-body h2 {
+  font-size: 1.35rem;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--border-soft);
+}
+.markdown-body h3 {
+  font-size: 1.15rem;
+}
+.markdown-body > :first-child {
+  margin-top: 0;
+}
+.markdown-body p {
+  margin: 0 0 1em;
+}
+.markdown-body a {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.markdown-body ul,
+.markdown-body ol {
+  margin: 0 0 1em;
+  padding-left: 1.6em;
+}
+.markdown-body li {
+  margin: 0.2em 0;
+}
+.markdown-body blockquote {
+  margin: 0 0 1em;
+  padding: 0.1em 1em;
+  color: var(--fg-muted);
+  border-left: 3px solid var(--border);
+}
+.markdown-body blockquote > :last-child {
+  margin-bottom: 0;
+}
+.markdown-body code {
+  font-family: var(--mono);
+  font-size: 0.85em;
+  background: var(--bg-elev-2);
+  border-radius: 4px;
+  padding: 0.15em 0.4em;
+}
+.markdown-body pre {
+  margin: 0 0 1em;
+  padding: 0.9rem 1rem;
+  overflow-x: auto;
+  background: var(--bg-elev);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+}
+.markdown-body pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.82rem;
+}
+.markdown-body hr {
+  height: 1px;
+  border: 0;
+  margin: 1.5em 0;
+  background: var(--border);
+}
+.markdown-body img {
+  max-width: 100%;
+}
+.markdown-body table {
+  border-collapse: collapse;
+  margin: 0 0 1em;
+  display: block;
+  overflow-x: auto;
+}
+.markdown-body th,
+.markdown-body td {
+  border: 1px solid var(--border);
+  padding: 0.4em 0.7em;
+}
+.markdown-body th {
+  background: var(--bg-elev);
 }
 
 /* ---------- History panel ---------- */
@@ -926,6 +1208,80 @@ kbd {
 }
 .diff-row.del .diff-text {
   color: #ffb3ae;
+}
+
+/* ---------- Blame view ---------- */
+.blame-view {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+.blame-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--border-soft);
+}
+.blame-rows {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  line-height: 1.6;
+  overflow-x: auto;
+}
+.blame-row {
+  display: flex;
+  align-items: stretch;
+  white-space: pre;
+}
+.blame-row:hover {
+  background: var(--bg-elev);
+}
+/* Fixed-width chip column; only the first line of a commit run fills it. */
+.blame-commit-cell {
+  flex: 0 0 auto;
+  width: 6rem;
+  padding: 0 0.4rem;
+  border-right: 1px solid var(--border-soft);
+  display: flex;
+  align-items: center;
+}
+.blame-commit {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--accent);
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.blame-commit:hover:not(:disabled) {
+  text-decoration: underline;
+}
+.blame-commit:disabled {
+  color: var(--fg-faint);
+  cursor: default;
+}
+.blame-ln {
+  flex: 0 0 auto;
+  width: 3rem;
+  padding: 0 0.5rem;
+  text-align: right;
+  color: var(--fg-faint);
+  user-select: none;
+  border-right: 1px solid var(--border-soft);
+}
+.blame-code {
+  padding: 0 0.75rem;
+  flex: 1 1 auto;
+  color: var(--fg);
 }
 
 /* ---------- Command palette ---------- */
@@ -1231,6 +1587,20 @@ kbd {
   }
   .branch-picker select {
     max-width: 38vw;
+  }
+
+  /* The viewer header gains several actions; let them scroll horizontally
+     instead of squeezing the file path or wrapping into a tall block. */
+  .viewer-head-actions {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .viewer-head-actions::-webkit-scrollbar {
+    display: none;
+  }
+  .viewer-head-actions > * {
+    flex: 0 0 auto;
   }
 
   .browser-view {

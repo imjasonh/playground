@@ -3,9 +3,10 @@
 A running, prioritized list of follow-ups for the `git` app. The base was
 hardened first (correct Pull/Update ref resolution, scope-aware `update()`,
 versioned repo registry, a load-race guard, ARIA tree semantics, and a
-`GitRepoSource` unit suite). Since then the full **P1** and **P2** rounds have
-landed (see **Recently shipped**); what remains below is the **P3** layer —
-nice-to-have / opportunistic work, plus the one large write-flow project.
+`GitRepoSource` unit suite). Since then the full **P1**, **P2**, and **P3**
+rounds have all landed (see **Recently shipped**). What remains is the one large
+project the read-only app deliberately deferred: an actual write/commit/push
+flow.
 
 Priorities are a rough guide, not a schedule:
 
@@ -82,52 +83,52 @@ Priorities are a rough guide, not a schedule:
 - **Keyboard navigation for the tree** — arrow-key movement, expand/collapse, and
   Home/End following the WAI-ARIA tree pattern, asserted in e2e.
 
+**P3 round:**
+
+- **Structured clone-error taxonomy** — `classifyCloneError` in `src/cloneError.js`
+  reduces a raw failure to a stable `kind` (`quota`/`auth`/`network`/`not-found`/
+  `unknown`) via ordered data rules, and `cloneErrorMessage` builds the friendly,
+  actionable copy from that classification.
+- **Git LFS pointer detection** — `src/lfs.js` recognizes an LFS pointer blob, so
+  the viewer shows a "stored with Git LFS" notice (with the real size) instead of
+  rendering the metadata stub as the file.
+- **Viewer affordances** — copy path, copy contents, download the raw bytes, and
+  "open on host" (GitHub/GitLab/Bitbucket, via `src/hostUrl.js`) from the viewer
+  header, plus a loading skeleton in place of "Loading…" text.
+- **Markdown preview** — safe, fully-offline Markdown rendering (`src/markdown.js`,
+  with its own XSS-hardening tests) and a Raw/Preview toggle that sticks across
+  files.
+- **CORS proxy: privacy + per-repo override** — `GitStorage.setCorsProxy` plus an
+  inline editor in the stored-repos list let each repo route through its own
+  proxy, and an in-app note spells out the third-party hop the default implies.
+- **Symlinks & submodules** — `src/specialEntry.js` classifies tree-entry modes
+  and parses `.gitmodules`; the viewer shows a clear notice (symlink target, or a
+  submodule's remote + pinned commit) instead of rendering a gitlink as bytes.
+- **Blame** — per-line last-change attribution (`src/blame.js`): a pure algorithm
+  over a file's history and its content at each commit, surfaced as a viewer
+  "Blame" view where each contiguous run links back to the commit that wrote it.
+  Works on real clones (`GitRepoSource.blame`) and in the demo
+  (`InMemoryRepoSource.blame` over per-commit `fileVersions`).
+- **UX polish** — reopen the last repo/ref/file when landing on the bare URL, an
+  "N new commits" indicator after a fetch, and friendlier empty states (an empty
+  repo vs. a no-match filter name it differently).
+
 ---
 
 ## Extensibility toward a write flow
 
 The app is intentionally read-only today. The capability model and generalized
-ref model above prepared for an editing/commit flow; this is the flow itself.
+ref model prepared for an editing/commit flow; this is the flow itself, and the
+only item left on this list.
 
-### The actual write/commit/push flow (P3, large)
+### The actual write/commit/push flow (large)
 
 Staging, commit authoring, and push — plus the hard parts: authentication
 (tokens — the session-only PAT input already exists), conflict/merge handling,
-and a clear "you are editing a local copy" mental model. This is a project in
-itself; capture requirements before starting.
+and a clear "you are editing a local copy" mental model. The `capabilities`
+model already carries `write`/`push` flags (every source reports them `false`
+today) and the UI keys its affordances off them, so the seams exist; this is
+still a project in itself, so capture requirements before starting.
 
----
-
-## Features
-
-- **Blame (P3)** — annotate each line with its last-changing commit. A stretch
-  goal left over from file history; pairs with the existing per-file `log`.
-- **Markdown preview (P3)** — render `README.md` and friends with a raw/preview
-  toggle.
-- **Viewer affordances (P3)** — copy path, copy contents, download raw (esp. for
-  binaries, which currently only show a notice), and "open on GitHub/host" when
-  the origin URL is known.
-- **Submodules / symlinks / Git LFS (P3)** — currently unhandled; at minimum
-  detect and show a clear "not supported / pointer file" notice instead of
-  rendering garbage.
-
----
-
-## Robustness & correctness
-
-- **CORS proxy: privacy + per-repo override (P3)** — repo contents currently
-  route through the public `cors.isomorphic-git.org` by default. We already store
-  `corsProxy` per registry entry; expose it per-repo in the UI and add a short
-  in-app privacy note about the third-party hop.
-- **Structured error taxonomy (P3)** — `cloneErrorMessage` in `src/cloneError.js`
-  sniffs error strings with regexes. A small typed error mapping would be sturdier.
-
----
-
-## UX polish (P3)
-
-- Remember the last-opened repo/branch and restore it on load. (Deep links cover
-  the explicit case; this is the implicit "reopen what I had" case.)
-- Loading skeletons instead of "Loading…" text.
-- An ahead/behind indicator after a fetch ("3 new commits").
-- Friendlier empty/error states throughout.
+Everything else from the earlier P1–P3 rounds has shipped (see **Recently
+shipped** above).

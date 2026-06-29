@@ -67,6 +67,13 @@ describe('module imports', () => {
     ['buildPattern', 'contentSearch.js'],
     ['searchContent', 'contentSearch.js'],
     ['parseRepoUrl', 'repoUrl.js'],
+    ['fileWebUrl', 'hostUrl.js'],
+    ['parseLfsPointer', 'lfs.js'],
+    ['renderMarkdown', 'markdown.js'],
+    ['classifyGitMode', 'specialEntry.js'],
+    ['parseGitmodules', 'specialEntry.js'],
+    ['symlinkTarget', 'specialEntry.js'],
+    ['blameLines', 'blame.js'],
     ['languageForPath', 'language.js'],
     ['createDemoSource', 'demoRepo.js'],
     ['formatBytes', 'format.js'],
@@ -110,6 +117,11 @@ describe('entry / module layout', () => {
     'src/ui/recent.js',
     'src/ui/highlight.js',
     'src/ui/virtualList.js',
+    'src/lfs.js',
+    'src/hostUrl.js',
+    'src/markdown.js',
+    'src/specialEntry.js',
+    'src/blame.js',
   ];
 
   test.each(expectedFiles)('%s exists', (rel) => {

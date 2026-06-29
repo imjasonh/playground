@@ -152,6 +152,29 @@ describe('GitStorage registry (localStorage)', () => {
     expect(JSON.stringify(stored())).toBe(before);
   });
 
+  test('setCorsProxy overrides the stored proxy for one repo', () => {
+    storage._upsert(entry('/a', { corsProxy: 'https://old.example' }));
+    storage._upsert(entry('/b', { corsProxy: '' }));
+
+    expect(storage.setCorsProxy('/a', 'https://new.example')).toBe(true);
+    expect(storage.listRepos().find((r) => r.dir === '/a').corsProxy).toBe('https://new.example');
+    // The other repo is untouched.
+    expect(storage.listRepos().find((r) => r.dir === '/b').corsProxy).toBe('');
+  });
+
+  test('setCorsProxy normalizes a cleared proxy to an empty string', () => {
+    storage._upsert(entry('/a', { corsProxy: 'https://old.example' }));
+    expect(storage.setCorsProxy('/a', '')).toBe(true);
+    expect(storage.listRepos()[0].corsProxy).toBe('');
+  });
+
+  test('setCorsProxy is a no-op for an unknown dir', () => {
+    storage._upsert(entry('/a'));
+    const before = JSON.stringify(stored());
+    expect(storage.setCorsProxy('/missing', 'https://x')).toBe(false);
+    expect(JSON.stringify(stored())).toBe(before);
+  });
+
   test('reads a legacy bare-array registry written by an older build', () => {
     localStorage.setItem(REGISTRY_KEY, JSON.stringify([entry('/legacy', { lastUsed: 5 })]));
     expect(storage.listRepos().map((r) => r.dir)).toEqual(['/legacy']);
