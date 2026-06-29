@@ -111,6 +111,13 @@ const BINARY_EXTENSIONS = new Set([
   '.heic',
 ]);
 
+const MARKDOWN_EXTENSIONS = new Set(['.md', '.markdown']);
+
+/** True for Markdown files (eligible for the viewer's rendered preview). */
+export function isMarkdownPath(path) {
+  return MARKDOWN_EXTENSIONS.has(extname(path));
+}
+
 /** Map an SVG/image extension set check. */
 export function isImagePath(path) {
   return IMAGE_EXTENSIONS.has(extname(path));

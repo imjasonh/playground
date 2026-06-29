@@ -8,12 +8,14 @@ import { basename, dirname } from '../pathUtils.js';
 import {
   imageMimeType,
   isImagePath,
+  isMarkdownPath,
   isBinaryExtension,
   languageForPath,
   looksBinary,
 } from '../language.js';
 import { formatBytes } from '../format.js';
 import { parseLfsPointer } from '../lfs.js';
+import { renderMarkdown } from '../markdown.js';
 import { highlight, grammarForPath, withinHighlightBudget } from '../highlightCode.js';
 
 const MAX_TEXT_BYTES = 2_000_000;
@@ -36,6 +38,8 @@ export function createViewer(ctx) {
   // The active file's data backing the header actions (copy / download / open).
   // null whenever no real file is shown (placeholder, diff, or read error).
   let current = null;
+  // Remembered Markdown view mode so a Raw/Preview choice sticks across files.
+  let markdownMode = 'preview';
 
   wireActions();
   clearCurrent();
@@ -106,6 +110,11 @@ export function createViewer(ctx) {
       return;
     }
 
+    if (isMarkdownPath(path)) {
+      renderMarkdownDoc(path, bytes, size);
+      return;
+    }
+
     renderText(path, bytes, size, { lines: opts.lines });
   }
 
@@ -163,6 +172,53 @@ export function createViewer(ctx) {
     setCurrent(path, bytes, decoded);
     gutter.addEventListener('click', onGutterClick);
     if (target) applyLineSelection(target, { scroll: true, notify: false });
+  }
+
+  /**
+   * Render a Markdown file with a Preview/Raw toggle. Preview shows safe,
+   * offline-rendered HTML; Raw shows the source text. The chosen mode is
+   * remembered (`markdownMode`) so it sticks as you move between files.
+   */
+  function renderMarkdownDoc(path, bytes, size) {
+    const source = decoder.decode(bytes);
+    text = null; // no line-linking handle for the rendered view
+    setCurrent(path, bytes, source); // Copy = raw Markdown, Download = bytes
+    dom.fileInfo.textContent = `${languageForPath(path)} · ${formatBytes(size)}`;
+
+    const doc = el('div', 'md-doc');
+    const toolbar = el('div', 'md-toolbar');
+    toolbar.setAttribute('role', 'group');
+    toolbar.setAttribute('aria-label', 'Markdown view');
+    const previewBtn = el('button', 'md-toggle', 'Preview');
+    previewBtn.type = 'button';
+    const rawBtn = el('button', 'md-toggle', 'Raw');
+    rawBtn.type = 'button';
+    toolbar.append(previewBtn, rawBtn);
+
+    const content = el('div', 'md-content');
+    doc.append(toolbar, content);
+    dom.viewerBody.replaceChildren(doc);
+
+    const show = (mode) => {
+      markdownMode = mode;
+      const preview = mode === 'preview';
+      previewBtn.classList.toggle('active', preview);
+      previewBtn.setAttribute('aria-pressed', String(preview));
+      rawBtn.classList.toggle('active', !preview);
+      rawBtn.setAttribute('aria-pressed', String(!preview));
+      if (preview) {
+        const body = el('div', 'markdown-body');
+        body.innerHTML = renderMarkdown(source);
+        content.replaceChildren(body);
+      } else {
+        const pre = el('pre', 'md-raw');
+        pre.textContent = source;
+        content.replaceChildren(pre);
+      }
+    };
+    previewBtn.addEventListener('click', () => show('preview'));
+    rawBtn.addEventListener('click', () => show('raw'));
+    show(markdownMode);
   }
 
   /** Render code text into `code`, syntax-highlighted unless it's too large. */

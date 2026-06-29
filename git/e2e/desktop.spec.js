@@ -34,13 +34,36 @@ test('loads the demo repo and shows the file tree and branches', async ({ page }
 
 test('opens a file and renders contents with line numbers', async ({ page }) => {
   await loadDemo(page);
-  await page.locator('.tree-row', { hasText: 'README.md' }).click();
+  await page.locator('#tree-filter').fill('storage.js');
+  await page.locator('.flat-row', { hasText: 'storage.js' }).click();
 
   await expect(page.locator('#viewer-head')).toBeVisible();
-  await expect(page.locator('#file-path')).toContainText('README.md');
-  await expect(page.locator('.code-view .code')).toContainText('Tasklite');
+  await expect(page.locator('#file-path')).toContainText('storage.js');
+  await expect(page.locator('.code-view .code')).toContainText('loadTasks');
   await expect(page.locator('.code-view .gutter')).toContainText('1');
   await expect(page.locator('#file-info')).toContainText(/lines/);
+});
+
+test('renders Markdown as a preview with a Raw toggle', async ({ page }) => {
+  await loadDemo(page);
+  await page.locator('.tree-row', { hasText: 'README.md' }).click();
+  await expect(page.locator('#file-path')).toContainText('README.md');
+
+  // Preview is the default: the "# Tasklite" heading renders as an <h1>.
+  const body = page.locator('.markdown-body');
+  await expect(body).toBeVisible();
+  await expect(body.locator('h1')).toHaveText('Tasklite');
+  await expect(body.locator('li').first()).toBeVisible();
+  await expect(page.locator('.code-view')).toHaveCount(0);
+
+  // Toggling to Raw shows the source Markdown verbatim.
+  await page.getByRole('button', { name: 'Raw' }).click();
+  await expect(page.locator('.md-raw')).toContainText('# Tasklite');
+  await expect(page.locator('.markdown-body')).toHaveCount(0);
+
+  // Back to Preview.
+  await page.getByRole('button', { name: 'Preview' }).click();
+  await expect(page.locator('.markdown-body h1')).toHaveText('Tasklite');
 });
 
 test('syntax-highlights source files in the viewer', async ({ page }) => {
@@ -390,9 +413,10 @@ test('returns focus to the trigger when the palette closes', async ({ page }) =>
 
 test('encodes the open file and selected lines in the URL hash', async ({ page }) => {
   await loadDemo(page);
-  await page.locator('.tree-row', { hasText: 'README.md' }).click();
-  await expect(page.locator('#file-path')).toContainText('README.md');
-  await expect(page).toHaveURL(/file=README\.md/);
+  await page.locator('#tree-filter').fill('storage.js');
+  await page.locator('.flat-row', { hasText: 'storage.js' }).click();
+  await expect(page.locator('#file-path')).toContainText('storage.js');
+  await expect(page).toHaveURL(/file=src\/storage\.js/);
 
   // Clicking a line number selects it, highlights it, and records it in the URL.
   await page.locator('.code-view .gutter').click({ position: { x: 6, y: 6 } });
