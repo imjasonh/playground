@@ -51,6 +51,14 @@
  * @property {(ref: Ref|string) => Promise<void>} setRef  switch to any ref
  * @property {(ref?: Ref|string) => Promise<string[]>} listFiles
  * @property {(path: string, ref?: Ref|string) => Promise<Uint8Array>} readFile
+ * @property {(path: string, ref?: Ref|string) => Promise<EntryMeta>} [entryMeta]
+ *
+ * @typedef {Object} EntryMeta
+ * @property {'file'|'symlink'|'submodule'} kind
+ * @property {string} [target]  symlink: the path it points at
+ * @property {?string} [url]    submodule: its remote URL (from .gitmodules)
+ * @property {?string} [name]   submodule: its name (from .gitmodules)
+ * @property {?string} [oid]    submodule: the pinned commit oid
  * @property {(ref?: Ref|string) => Promise<Commit|null>} headCommit
  * @property {(limit?: number, ref?: Ref|string) => Promise<Commit[]>} log
  * @property {(path: string, limit?: number, ref?: Ref|string) => Promise<Commit[]>} [fileLog]
@@ -147,11 +155,17 @@ function bytesEqual(a, b) {
  *   branches: {
  *     <name>: {
  *       files: { '<path>': string | Uint8Array },
+ *       symlinks: { '<path>': '<target>' },           // optional
+ *       submodules: { '<path>': { url, name?, oid? } }, // optional
  *       commits: Commit[]   // newest first
  *     }
  *   },
  *   tags: { '<tag>': '<branchName>' }   // optional: a tag aliases a branch snapshot
  * }
+ *
+ * Symlinks live in `files` too (their content is the link target) so reads and
+ * diffs work; `symlinks` only marks which paths are links. Submodules have no
+ * blob, so they live solely in `submodules`.
  */
 export class InMemoryRepoSource {
   constructor(spec) {
@@ -236,7 +250,13 @@ export class InMemoryRepoSource {
   }
 
   async listFiles(ref) {
-    return Object.keys(this._snapshot(ref).files);
+    const snap = this._snapshot(ref);
+    // Submodules have no blob, so they aren't in `files`; surface them too so
+    // they're navigable (and resolve to a notice). Symlinks already live in
+    // `files`. De-dupe defensively.
+    const paths = new Set(Object.keys(snap.files));
+    for (const path of Object.keys(snap.submodules || {})) paths.add(path);
+    return [...paths];
   }
 
   async readFile(path, ref) {
@@ -245,6 +265,24 @@ export class InMemoryRepoSource {
       throw new Error(`File not found: ${path}`);
     }
     return toBytes(files[path]);
+  }
+
+  async entryMeta(path, ref) {
+    const snap = this._snapshot(ref);
+    const submodule = (snap.submodules || {})[path];
+    if (submodule) {
+      return {
+        kind: 'submodule',
+        url: submodule.url || null,
+        name: submodule.name || null,
+        oid: submodule.oid || null,
+      };
+    }
+    const target = (snap.symlinks || {})[path];
+    if (target != null) {
+      return { kind: 'symlink', target };
+    }
+    return { kind: 'file' };
   }
 
   /** Map spec commits to the Commit shape, deriving linear parents. */

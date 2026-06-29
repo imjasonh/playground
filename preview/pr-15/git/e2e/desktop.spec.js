@@ -288,6 +288,34 @@ test('shows a Git LFS notice instead of rendering the pointer', async ({ page })
   await expect(page.locator('.code')).toContainText('git-lfs.github.com/spec/v1');
 });
 
+test('shows a symlink notice with its target instead of rendering the link', async ({ page }) => {
+  await loadDemo(page);
+  await page.locator('#tree-filter').fill('latest.md');
+  await page.locator('.flat-row', { hasText: 'latest.md' }).click();
+
+  await expect(page.locator('#file-info')).toContainText('Symlink');
+  await expect(page.locator('.notice')).toContainText(/Symbolic link/i);
+  await expect(page.locator('.notice .symlink-target')).toContainText('../README.md');
+  // It's a link, not a Markdown document, despite the .md extension.
+  await expect(page.locator('.markdown-body')).toHaveCount(0);
+});
+
+test('shows a submodule notice with its remote and pinned commit', async ({ page }) => {
+  await loadDemo(page);
+  await page.locator('#tree-filter').fill('widget');
+  await page.locator('.flat-row', { hasText: 'widget' }).click();
+
+  await expect(page.locator('#file-info')).toContainText('Submodule');
+  await expect(page.locator('.notice')).toContainText(/Git submodule/i);
+  await expect(page.locator('.notice .submodule-url')).toContainText(
+    'https://github.com/acme/widget.git'
+  );
+  await expect(page.locator('.notice .submodule-oid')).toContainText('c0ffee00');
+  // A submodule has no blob, so there's nothing to download or copy-as-text.
+  await expect(page.locator('#file-download-btn')).toBeHidden();
+  await expect(page.locator('#file-copy-btn')).toBeHidden();
+});
+
 test('switching branches changes the available files', async ({ page }) => {
   await loadDemo(page);
 

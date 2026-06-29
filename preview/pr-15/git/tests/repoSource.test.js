@@ -74,6 +74,62 @@ describe('InMemoryRepoSource', () => {
     await expect(s.readFile('missing.txt')).rejects.toThrow(/not found/i);
   });
 
+  test('classifies symlinks and submodules via entryMeta', async () => {
+    const s = new InMemoryRepoSource({
+      defaultBranch: 'main',
+      branches: {
+        main: {
+          files: {
+            'README.md': '# Widget',
+            'docs/latest.md': '../README.md', // symlink: content is the target
+          },
+          symlinks: { 'docs/latest.md': '../README.md' },
+          submodules: {
+            'vendor/widget': {
+              name: 'widget',
+              url: 'https://github.com/acme/widget.git',
+              oid: 'c0ffee00',
+            },
+          },
+          commits: [{ oid: 'm1', message: 'm' }],
+        },
+      },
+    });
+
+    // Submodules have no blob, but are still listed so they're navigable.
+    expect((await s.listFiles()).sort()).toEqual([
+      'README.md',
+      'docs/latest.md',
+      'vendor/widget',
+    ]);
+
+    expect(await s.entryMeta('README.md')).toEqual({ kind: 'file' });
+    expect(await s.entryMeta('docs/latest.md')).toEqual({
+      kind: 'symlink',
+      target: '../README.md',
+    });
+    expect(await s.entryMeta('vendor/widget')).toEqual({
+      kind: 'submodule',
+      name: 'widget',
+      url: 'https://github.com/acme/widget.git',
+      oid: 'c0ffee00',
+    });
+  });
+
+  test('the demo source exposes a symlink and a submodule', async () => {
+    const demo = createDemoSource();
+    const files = await demo.listFiles();
+    expect(files).toContain('docs/latest.md');
+    expect(files).toContain('vendor/widget');
+
+    expect(await demo.entryMeta('docs/latest.md')).toMatchObject({ kind: 'symlink' });
+    expect(await demo.entryMeta('vendor/widget')).toMatchObject({
+      kind: 'submodule',
+      url: 'https://github.com/acme/widget.git',
+    });
+    expect(await demo.entryMeta('README.md')).toEqual({ kind: 'file' });
+  });
+
   test('getCurrentRef and setRef cover branches, tags, and commits', async () => {
     const s = new InMemoryRepoSource({
       defaultBranch: 'main',

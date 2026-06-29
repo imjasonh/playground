@@ -116,6 +116,13 @@ oid sha256:9a8b7c6d5e4f30211223344556677889900aabbccddeeff00112233445566778
 size 10485760
 `;
 
+// A `.gitmodules` entry describing the demo's submodule. The submodule itself is
+// a gitlink (a pinned commit of another repo); its files aren't in this clone.
+const GITMODULES = `[submodule "widget"]
+\tpath = vendor/widget
+\turl = https://github.com/acme/widget.git
+`;
+
 const LICENSE = `MIT License
 
 Copyright (c) 2026 Tasklite contributors
@@ -177,12 +184,30 @@ const sharedFiles = {
   'package.json': PACKAGE_JSON,
   '.gitignore': GITIGNORE,
   '.gitattributes': GITATTRIBUTES,
+  '.gitmodules': GITMODULES,
   LICENSE,
   'src/storage.js': STORAGE_JS,
   'src/ui/render.js': RENDER_JS,
   'styles/main.css': MAIN_CSS,
   'assets/logo.svg': LOGO_SVG,
   'assets/intro.mp4': INTRO_MP4_POINTER,
+  // A symlink is committed as a blob whose content is the link target. The
+  // viewer detects it (via entryMeta) and shows where it points.
+  'docs/latest.md': '../README.md',
+};
+
+// Paths in `sharedFiles` that are actually symbolic links (value = target).
+const sharedSymlinks = {
+  'docs/latest.md': '../README.md',
+};
+
+// A gitlink: pins github.com/acme/widget at a commit not stored in this clone.
+const sharedSubmodules = {
+  'vendor/widget': {
+    name: 'widget',
+    url: 'https://github.com/acme/widget.git',
+    oid: 'c0ffee0011223344556677889900aabbccddeeff',
+  },
 };
 
 const mainCommits = [
@@ -243,6 +268,8 @@ export function createDemoSource() {
           ...sharedFiles,
           'src/app.js': APP_JS_MAIN,
         },
+        symlinks: sharedSymlinks,
+        submodules: sharedSubmodules,
         commits: mainCommits,
       },
       'feature/dark-mode': {
@@ -252,6 +279,8 @@ export function createDemoSource() {
           'src/theme.js': THEME_JS,
           'styles/theme.css': THEME_CSS,
         },
+        symlinks: sharedSymlinks,
+        submodules: sharedSubmodules,
         commits: darkCommits,
       },
     },

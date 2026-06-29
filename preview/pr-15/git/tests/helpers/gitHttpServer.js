@@ -7,7 +7,7 @@
 import http from 'node:http';
 import { execFileSync, spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -41,6 +41,10 @@ const GIT_ENV = {
   GIT_CONFIG_GLOBAL: '/dev/null',
   GIT_CONFIG_SYSTEM: '/dev/null',
 };
+
+// A fabricated commit oid for the gitlink. A submodule references a commit that
+// lives in another repository, so this object need not exist in our store.
+export const SUBMODULE_OID = 'c0ffee0011223344556677889900aabbccddeeff';
 
 function git(cwd, args) {
   return execFileSync('git', args, {
@@ -79,6 +83,27 @@ export function createServedRepo() {
   writeFileSync(join(work, 'src', 'dev.js'), 'export const dev = true;\n');
   git(work, ['add', '.']);
   git(work, ['commit', '-q', '-m', 'Add dev module']);
+  git(work, ['checkout', '-q', 'main']);
+
+  // A third branch carrying a symlink and a submodule (gitlink), so the special-
+  // entry handling has real tree entries to classify. The submodule's commit
+  // object is intentionally absent (that's what a gitlink is) — we add it
+  // straight to the index with `update-index --cacheinfo`.
+  git(work, ['checkout', '-q', '-b', 'special', 'main']);
+  symlinkSync('src/index.js', join(work, 'latest.js'));
+  git(work, ['add', 'latest.js']);
+  git(work, [
+    'update-index',
+    '--add',
+    '--cacheinfo',
+    `160000,${SUBMODULE_OID},vendor/widget`,
+  ]);
+  writeFileSync(
+    join(work, '.gitmodules'),
+    '[submodule "widget"]\n\tpath = vendor/widget\n\turl = https://github.com/acme/widget.git\n'
+  );
+  git(work, ['add', '.gitmodules']);
+  git(work, ['commit', '-q', '-m', 'Add a symlink and a submodule']);
   git(work, ['checkout', '-q', 'main']);
 
   git(root, ['clone', '-q', '--bare', work, 'repo.git']);

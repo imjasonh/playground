@@ -56,7 +56,26 @@ function makeFakeGit(model) {
       return full || oid;
     },
     async listFiles({ ref }) {
-      return model.trees[ref] || [];
+      return (model.trees[ref] || []).map((e) => (typeof e === 'string' ? e : e.path));
+    },
+    // A minimal walk over a single tree: entries in model.trees[ref] are either
+    // a plain path string (a normal blob) or { path, type, mode, oid } so a test
+    // can model symlinks (mode 0o120000) and submodules (type 'commit').
+    TREE: ({ ref }) => ({ __ref: ref }),
+    async walk({ trees, map, reduce }) {
+      const list = model.trees[trees[0].__ref] || [];
+      const mapped = [];
+      for (const e of list) {
+        const norm = typeof e === 'string' ? { path: e } : e;
+        const entry = {
+          type: async () => norm.type || 'blob',
+          mode: async () => (norm.mode != null ? norm.mode : 0o100644),
+          oid: async () => norm.oid || null,
+        };
+        const r = await map(norm.path, trees.map(() => entry));
+        if (r !== undefined) mapped.push(r);
+      }
+      return reduce ? reduce(undefined, mapped) : mapped;
     },
     async readBlob({ oid, filepath }) {
       const blob = model.blobs[oid] && model.blobs[oid][filepath];
@@ -243,6 +262,55 @@ describe('GitRepoSource generalized refs', () => {
     const touched = await source.fileLog('README.md');
     expect(touched.map((c) => c.oid)).toEqual(['oid_origin_main']);
     expect(await source.fileLog('does/not/exist.txt')).toEqual([]);
+  });
+});
+
+describe('GitRepoSource special entries', () => {
+  // A tree with a normal file, a symlink (blob, mode 0o120000), and a submodule
+  // (gitlink, type 'commit'), plus a .gitmodules blob describing the submodule.
+  function specialModel() {
+    const model = baseModel();
+    model.trees.oid_origin_main = [
+      'README.md',
+      { path: 'docs/latest', type: 'blob', mode: 0o120000 },
+      { path: 'vendor/widget', type: 'commit', oid: 'sub_commit_oid' },
+      '.gitmodules',
+    ];
+    model.blobs.oid_origin_main = {
+      'README.md': enc('# main'),
+      'docs/latest': enc('../README.md'),
+      '.gitmodules':
+        enc('[submodule "widget"]\n\tpath = vendor/widget\n\turl = https://github.com/acme/widget.git\n'),
+    };
+    return model;
+  }
+
+  test('listFiles includes symlinks and submodules', async () => {
+    const source = await makeSource(specialModel());
+    expect((await source.listFiles()).sort()).toEqual([
+      '.gitmodules',
+      'README.md',
+      'docs/latest',
+      'vendor/widget',
+    ]);
+  });
+
+  test('entryMeta classifies a normal file, a symlink, and a submodule', async () => {
+    const source = await makeSource(specialModel());
+
+    expect(await source.entryMeta('README.md')).toEqual({ kind: 'file' });
+
+    expect(await source.entryMeta('docs/latest')).toEqual({
+      kind: 'symlink',
+      target: '../README.md',
+    });
+
+    expect(await source.entryMeta('vendor/widget')).toEqual({
+      kind: 'submodule',
+      url: 'https://github.com/acme/widget.git',
+      name: 'widget',
+      oid: 'sub_commit_oid',
+    });
   });
 });
 

@@ -70,6 +70,9 @@ describe('module imports', () => {
     ['fileWebUrl', 'hostUrl.js'],
     ['parseLfsPointer', 'lfs.js'],
     ['renderMarkdown', 'markdown.js'],
+    ['classifyGitMode', 'specialEntry.js'],
+    ['parseGitmodules', 'specialEntry.js'],
+    ['symlinkTarget', 'specialEntry.js'],
     ['languageForPath', 'language.js'],
     ['createDemoSource', 'demoRepo.js'],
     ['formatBytes', 'format.js'],
@@ -116,6 +119,7 @@ describe('entry / module layout', () => {
     'src/lfs.js',
     'src/hostUrl.js',
     'src/markdown.js',
+    'src/specialEntry.js',
   ];
 
   test.each(expectedFiles)('%s exists', (rel) => {

@@ -84,11 +84,20 @@ export function createViewer(ctx) {
    *
    * @param {string} path
    * @param {Uint8Array} bytes
-   * @param {{lines?: {start:number, end:number}}} [opts]  initial line selection
+   * @param {{lines?: {start:number, end:number}, meta?: object}} [opts]
+   *   `lines` is the initial selection; `meta` is the entry classification
+   *   (symlink/submodule/file) the controller resolved alongside the bytes.
    */
   function render(path, bytes, opts = {}) {
     const size = bytes.length;
     dispose();
+
+    // A symlink's blob content is just the path it points at; show that as a
+    // notice rather than rendering the target string as if it were the file.
+    if (opts.meta && opts.meta.kind === 'symlink') {
+      renderSymlinkNotice(path, bytes, opts.meta);
+      return;
+    }
 
     // Checked before the image/binary guards: an LFS-tracked file (even one with
     // an image/binary extension) is committed as a tiny text pointer, so without
@@ -348,6 +357,79 @@ export function createViewer(ctx) {
     dom.viewerBody.replaceChildren(notice);
   }
 
+  /**
+   * Symlink: the committed blob is the link target path, not file content. Show
+   * where it points; copy/download still operate on the (tiny) raw blob.
+   */
+  function renderSymlinkNotice(path, bytes, meta) {
+    const target = (meta && meta.target) || decoder.decode(bytes || new Uint8Array()).trim();
+    setCurrent(path, bytes, target);
+    dom.fileInfo.textContent = 'Symlink';
+    const notice = el('div', 'notice');
+    notice.appendChild(
+      el('p', null, 'Symbolic link — this entry points to another path in the repository.')
+    );
+    const line = el('p', 'symlink-target');
+    line.appendChild(el('span', 'sym-arrow', '\u2192 '));
+    line.appendChild(el('span', 'sym-path', target || '(empty target)'));
+    notice.appendChild(line);
+    dom.viewerBody.replaceChildren(notice);
+  }
+
+  /**
+   * Submodule: a gitlink pinning another repository at a commit. Its objects
+   * live in that other repo, not this clone, so there's nothing to read.
+   * Rendered directly by the controller (there are no bytes to fetch first).
+   */
+  function renderSubmodule(path, meta = {}) {
+    dispose();
+    text = null;
+    dom.viewerHead.hidden = false;
+    renderFilePath(path);
+    if (dom.fileHistoryBtn) dom.fileHistoryBtn.hidden = false;
+    // No blob: copy the path, but there's nothing to copy-as-text, download, or
+    // open as a file on the host.
+    setCurrent(path, null, null, { web: false });
+    dom.fileInfo.textContent = 'Submodule';
+
+    const notice = el('div', 'notice');
+    notice.appendChild(
+      el(
+        'p',
+        null,
+        'Git submodule — a pinned reference to another repository. Its files are ' +
+          'not part of this clone.'
+      )
+    );
+    if (meta.url) {
+      const line = el('p', null);
+      line.appendChild(document.createTextNode('Source: '));
+      const href = webUrlForRemote(meta.url);
+      if (href) {
+        const a = el('a', 'submodule-url', meta.url);
+        a.href = href;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        line.appendChild(a);
+      } else {
+        line.appendChild(el('span', 'submodule-url', meta.url));
+      }
+      notice.appendChild(line);
+    }
+    if (meta.oid) notice.appendChild(el('p', 'submodule-oid', `Pinned at ${meta.oid}`));
+    dom.viewerBody.replaceChildren(notice);
+  }
+
+  /** Best-effort https URL for a submodule's remote (so the link is clickable). */
+  function webUrlForRemote(url) {
+    if (typeof url !== 'string') return null;
+    const scp = url.match(/^git@([^:]+):(.+?)(?:\.git)?\/?$/);
+    if (scp) return `https://${scp[1]}/${scp[2]}`;
+    const m = url.match(/^(?:https?|git|ssh):\/\/(?:[^@/]+@)?([^/]+)\/(.+?)(?:\.git)?\/?$/);
+    if (m) return `https://${m[1]}/${m[2]}`;
+    return null;
+  }
+
   /* ---------------------------------------------------------------- */
   /* Diff view (rendered into the same viewer real estate)            */
   /* ---------------------------------------------------------------- */
@@ -479,9 +561,19 @@ export function createViewer(ctx) {
     if (dom.fileDownloadBtn) dom.fileDownloadBtn.addEventListener('click', downloadCurrent);
   }
 
-  /** Record the active file (text is null when it can't be copied as text). */
-  function setCurrent(path, bytes, text) {
-    current = { path, bytes, text: text == null ? null : text };
+  /**
+   * Record the active file backing the header actions. `text` is null when the
+   * file can't be copied as text (binary/image/large); `bytes` is null when
+   * there's nothing to download (a submodule); `opts.web` is false when the
+   * entry has no meaningful "open as a file on the host" target.
+   */
+  function setCurrent(path, bytes, text, opts = {}) {
+    current = {
+      path,
+      bytes: bytes || null,
+      text: text == null ? null : text,
+      web: opts.web !== false,
+    };
     refreshActions();
   }
 
@@ -492,10 +584,9 @@ export function createViewer(ctx) {
 
   /** Show/hide each header action to match the active file. */
   function refreshActions() {
-    const has = Boolean(current);
-    if (dom.fileCopyPathBtn) dom.fileCopyPathBtn.hidden = !has;
-    if (dom.fileDownloadBtn) dom.fileDownloadBtn.hidden = !has;
-    if (dom.fileCopyBtn) dom.fileCopyBtn.hidden = !(has && current.text != null);
+    if (dom.fileCopyPathBtn) dom.fileCopyPathBtn.hidden = !(current && current.path);
+    if (dom.fileDownloadBtn) dom.fileDownloadBtn.hidden = !(current && current.bytes);
+    if (dom.fileCopyBtn) dom.fileCopyBtn.hidden = !(current && current.text != null);
     refreshOpenLink();
   }
 
@@ -504,7 +595,7 @@ export function createViewer(ctx) {
     const a = dom.fileOpenBtn;
     if (!a) return;
     let url = null;
-    if (current && typeof ctx.fileWebUrl === 'function') {
+    if (current && current.web && typeof ctx.fileWebUrl === 'function') {
       const lines = text && text.path === current.path ? text.range : null;
       url = ctx.fileWebUrl(current.path, lines);
     }
@@ -581,6 +672,7 @@ export function createViewer(ctx) {
 
   return {
     render,
+    renderSubmodule,
     beginLoading,
     showReadError,
     showPlaceholder,
