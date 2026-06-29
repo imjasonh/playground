@@ -32,6 +32,12 @@
  * @property {boolean} updated  whether a fetch ran (false for static sources)
  * @property {boolean} changed  whether the current branch tip actually moved
  *
+ * @typedef {Object} UpdateCheck
+ * @property {boolean} supported  whether a meaningful upstream check was possible
+ * @property {boolean} hasUpdates whether the remote tip is ahead of what we have
+ * @property {?string} localOid   the tip we last fetched (remote-tracking ref)
+ * @property {?string} remoteOid  the remote's current tip for the branch
+ *
  * @typedef {Object} Capabilities
  * @property {boolean} read   can list/read files (true for every source today)
  * @property {boolean} fetch  can fetch new commits from a remote (Pull/Update)
@@ -65,6 +71,7 @@
  * @property {(baseRef: ?(Ref|string), headRef: Ref|string) => Promise<FileChange[]>} [changedFiles]
  * @property {(path: string, ref?: Ref|string) => Promise<BlameRow[]>} [blame]
  * @property {(onProgress?: Function) => Promise<UpdateResult>} update
+ * @property {() => Promise<UpdateCheck>} [checkForUpdates]  lightweight upstream peek for polling
  *
  * @typedef {Object} BlameRow
  * @property {string} line    the line's text (no trailing newline)
@@ -387,5 +394,11 @@ export class InMemoryRepoSource {
   // Demo data is static; "update" is a no-op that reports no changes.
   async update() {
     return { updated: false, changed: false };
+  }
+
+  // In-memory data has no remote to poll, so the background update poller has
+  // nothing to check (and never fires for it, since fetch capability is false).
+  async checkForUpdates() {
+    return { supported: false, hasUpdates: false, localOid: null, remoteOid: null };
   }
 }

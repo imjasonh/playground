@@ -41,6 +41,11 @@ branch switching, and commit history. Everything runs on-device with
   the URL hash, so any view is shareable, bookmarkable, and reload-safe.
 - **Pull / Update** — a menu action fetches the latest commits from the remote
   and reports how many new commits it pulled.
+- **Auto-update** — while a cloned repo is open and the tab is focused, the app
+  quietly polls the upstream for new commits (a lightweight `ls-remote`, no
+  download). When the current branch's remote tip has moved it auto-fetches the
+  new commits into local storage, refreshes the view, and toasts how many
+  arrived. Polling pauses on a hidden tab and never runs for the offline demo.
 - **Stored repositories** — manage and reopen previously cloned repos (with an
   IndexedDB usage meter); remove to free space, or override the CORS proxy per
   repo. Clone/remove are coordinated across browser tabs. The last repo you had
@@ -96,6 +101,7 @@ a few vendored libraries.
 - `src/auth.js` — session-only access-token store wired to `onAuth`
 - `src/cloneError.js` — turn raw clone failures into a typed kind + friendly message
 - `src/store.js` — observable store + first-class load controller
+- `src/poller.js` — visibility-aware polling scheduler (drives upstream auto-update)
 - `src/repoSource.js` — the read-only `RepoSource` interface + in-memory source
 - `src/demoRepo.js` — sample repository for demo mode
 - `src/gitClient.js` — isomorphic-git + lightning-fs adapter (lazy-loaded)

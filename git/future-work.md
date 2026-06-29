@@ -4,9 +4,11 @@ A running, prioritized list of follow-ups for the `git` app. The base was
 hardened first (correct Pull/Update ref resolution, scope-aware `update()`,
 versioned repo registry, a load-race guard, ARIA tree semantics, and a
 `GitRepoSource` unit suite). Since then the full **P1**, **P2**, and **P3**
-rounds have all landed (see **Recently shipped**). What remains is the one large
-project the read-only app deliberately deferred: an actual write/commit/push
-flow.
+rounds have all landed (see **Recently shipped**), plus background upstream
+auto-update. What remains are two larger projects the read-only app deliberately
+deferred: an actual write/commit/push flow, and a **size-aware clone strategy**
+(full clone by default, shallow + narrow for very large repos, widening as you
+browse).
 
 Priorities are a rough guide, not a schedule:
 
@@ -113,13 +115,100 @@ Priorities are a rough guide, not a schedule:
   "N new commits" indicator after a fetch, and friendlier empty states (an empty
   repo vs. a no-match filter name it differently).
 
+**Since P3:**
+
+- **Upstream auto-update** — while a cloned repo is open and the tab is visible,
+  a visibility-aware poller (`src/poller.js`) peeks the remote with a lightweight
+  `ls-remote` (`GitRepoSource.checkForUpdates`, via isomorphic-git's
+  `listServerRefs`). When the current branch's remote tip has moved it
+  auto-fetches the new commits into local storage, refreshes the view, and toasts
+  how many arrived. The poll yields to any in-flight user action (a `busyDepth`
+  guard plus the existing load-race token), pauses on a hidden tab, and never
+  runs for the offline demo (no `fetch` capability). Covered by unit tests
+  (`tests/poller.test.js`, `checkForUpdates` in `tests/gitClient.test.js`), a
+  real-server peek in `tests/realClone.integration.test.js`, and e2e
+  (`window.gitBrowser.pollNow()` drives a deterministic tick).
+
 ---
+
+## Size-aware cloning: full by default, shallow + narrow for huge repos (large, design needed)
+
+Today the clone scope is **manual**: the form defaults to `depth: 1`
+(shallow) with "fetch all branches" on, and `GitStorage.clone` passes those
+straight to isomorphic-git. The desired behavior is automatic:
+
+> **Default to a full clone** (full history, all branches — the richest
+> experience), **unless the repository is larger than ~100 MB**, in which case
+> fall back to a **shallow + narrow** clone and **widen as the user browses**.
+
+This is deferred because two of its three pieces need real design, and one of
+them runs into an isomorphic-git limitation. Capture requirements before
+building.
+
+### 1. Detect the repository size *before* cloning
+
+There is no size hint in the git smart-HTTP protocol itself, so size has to come
+from the host's REST API:
+
+| Host | Endpoint | Field |
+|------|----------|-------|
+| GitHub | `GET https://api.github.com/repos/{owner}/{repo}` | `size` (KiB) |
+| GitLab | `GET /api/v4/projects/{id}?statistics=true` | `statistics.repository_size` (bytes) |
+| Bitbucket | `GET /2.0/repositories/{ws}/{repo}` | `size` (bytes) |
+
+Open questions: those APIs are CORS-enabled for GitHub/GitLab but rate-limited
+(and need the session token for private repos); the URL parser in `repoUrl.js`
+already extracts host + `owner/repo`, but **unknown/self-hosted hosts have no
+size signal**. Fallback policy needs deciding — keep the current conservative
+shallow default, or probe with a `depth: 1` clone and read the pack size before
+committing to widening. `quota.js` already exposes IndexedDB headroom, which
+should also feed the decision (a 100 MB repo may not fit at all).
+
+### 2. Choose the clone scope from the size
+
+- **≤ threshold** → full clone: `depth: 0`, all branches (today the form must be
+  set by hand to get this).
+- **> threshold (~100 MB, a named constant)** → shallow (`depth: 1`) **and**
+  single-branch (the default ref only). The scope is already persisted in the
+  registry and honored by `update()`/`fetch`, so this part is mostly wiring a
+  pre-clone heuristic in front of `startClone`.
+
+### 3. Widen as the user browses (the hard part)
+
+"Narrow then widen" splits into three independent axes:
+
+- **History depth** — feasible. Deepen a shallow clone on demand (e.g. when
+  history/blame needs older commits) via `fetch({ depth: N })` /
+  `fetch({ relative: true, depth: N })`. Add a `GitRepoSource.widenHistory(n)`
+  that re-fetches deeper and clears the oid cache, plus a "fetch more history"
+  affordance in the history/blame UI.
+- **Branches** — feasible. On a single-branch clone, fetch a branch the first
+  time the user selects it in the ref picker (the generalized ref model already
+  lets the UI browse any ref; it just needs an on-demand fetch before the read).
+- **Files/blobs (true "narrow" clone)** — **blocked today.** A real narrow clone
+  is Git partial clone (`--filter=blob:none` / `blob:limit`) or sparse fetch,
+  and **isomorphic-git implements neither** in the browser. Realistic options to
+  evaluate: (a) accept that "narrow" means only shallow + single-branch and drop
+  blob-level narrowing from scope; (b) lazy-load individual blobs from the host's
+  raw/content API on open (abandons the "real on-device git" model and reintroduces
+  per-file CORS/auth); or (c) implement partial-clone filters against the smart
+  protocol (a substantial fork-level effort). This axis is the main reason the
+  item is punted.
+
+### Seams that already exist
+
+- Clone params flow through `GitStorage.clone` and are stored per repo
+  (`singleBranch`, `depth`, `corsProxy`); `update()` reuses them.
+- `GitRepoSource.checkForUpdates`/`update` show the pattern for an on-demand,
+  scope-preserving fetch that a `widenHistory`/`fetchRef` method would follow.
+- A clear "this clone is shallow/narrow — fetch more" notice would reuse the
+  existing toast + progress UI.
 
 ## Extensibility toward a write flow
 
 The app is intentionally read-only today. The capability model and generalized
 ref model prepared for an editing/commit flow; this is the flow itself, and the
-only item left on this list.
+other larger item left on this list (alongside size-aware cloning above).
 
 ### The actual write/commit/push flow (large)
 
@@ -130,5 +219,6 @@ model already carries `write`/`push` flags (every source reports them `false`
 today) and the UI keys its affordances off them, so the seams exist; this is
 still a project in itself, so capture requirements before starting.
 
-Everything else from the earlier P1–P3 rounds has shipped (see **Recently
-shipped** above).
+Everything from the earlier P1–P3 rounds (plus upstream auto-update) has
+shipped (see **Recently shipped** above); the write flow and size-aware cloning
+are the two larger items that remain.

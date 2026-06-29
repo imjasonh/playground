@@ -246,6 +246,16 @@ describe('InMemoryRepoSource', () => {
     const s = makeSource();
     await expect(s.update()).resolves.toEqual({ updated: false, changed: false });
   });
+
+  test('checkForUpdates reports nothing to poll for in-memory data', async () => {
+    const s = makeSource();
+    await expect(s.checkForUpdates()).resolves.toEqual({
+      supported: false,
+      hasUpdates: false,
+      localOid: null,
+      remoteOid: null,
+    });
+  });
 });
 
 describe('capabilitiesOf / isReadOnly', () => {
