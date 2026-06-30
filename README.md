@@ -1,8 +1,19 @@
 # playground
 
-A multi-app playground: each top-level directory is a self-contained browser app
-deployed to GitHub Pages, an independent Go command-line app, or a Rust app (such
-as a Cloudflare Worker). There is no shared build step at the repo root.
+A personal playground monorepo for small, self-contained side projects — browser
+toys, command-line tools, and the occasional backend service — collected in one
+place for fun and learning. There's no grand plan and no shared build at the
+root: each experiment is its own top-level directory that builds, tests, and
+ships entirely on its own, whether it's a static browser app deployed to GitHub
+Pages, a standalone Go command-line tool, or a Rust crate such as a Cloudflare
+Worker.
+
+The point is to keep trying things cheap and low-ceremony. Drop in a new
+directory, follow a couple of conventions, and open a PR: CI tests whatever
+changed, browser apps get a live preview link, and once merged they deploy
+themselves to GitHub Pages. A daily job keeps each project's dependencies current
+too, landing an upgrade only when it still builds and passes tests — so older
+experiments don't bit-rot.
 
 ## Apps
 
