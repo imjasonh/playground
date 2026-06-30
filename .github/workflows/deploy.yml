@@ -67,3 +67,9 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./dist
           keep_files: true   # preserves preview/ directory from PR deployments
+
+      - name: Verify deployed WASM assets
+        run: |
+          git fetch origin gh-pages
+          git cat-file -e "origin/gh-pages:gitdb-web/generated/wasm_exec.js"
+          git cat-file -e "origin/gh-pages:gitdb-web/generated/gitdb.wasm"

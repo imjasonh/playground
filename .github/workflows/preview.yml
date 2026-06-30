@@ -71,6 +71,13 @@ jobs:
           publish_dir: ./dist
           keep_files: true   # preserves production apps and other PR previews
 
+      - name: Verify deployed WASM assets
+        run: |
+          PR=${{ github.event.pull_request.number }}
+          git fetch origin gh-pages
+          git cat-file -e "origin/gh-pages:preview/pr-${PR}/gitdb-web/generated/wasm_exec.js"
+          git cat-file -e "origin/gh-pages:preview/pr-${PR}/gitdb-web/generated/gitdb.wasm"
+
       - name: Comment preview URL on PR
         uses: actions/github-script@v7
         with:
