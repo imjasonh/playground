@@ -85,7 +85,7 @@ Common flags:
   --ttl DURATION     freshness window for tag lists & tag->digest (default 6h)
   --format FORMAT    table | csv | json (default table)
 
-Tables: ` + strings.Join(tables.Names(), ", ") + `
+Tables: `+strings.Join(tables.Names(), ", ")+`
 
 Each table takes its target through HIDDEN columns constrained with '=', e.g.
   WHERE reference = 'nginx'           (image / index reference)
@@ -229,10 +229,10 @@ func metaCommand(w io.Writer, line string) (done bool) {
 		fmt.Fprintln(w, strings.Join(tables.Names(), "\n"))
 	case ".schema":
 		if len(fields) > 1 {
-			fmt.Fprintln(w, tables.Schema(fields[1]))
+			fmt.Fprintln(w, displaySchema(tables.Schema(fields[1])))
 		} else {
 			for _, n := range tables.Names() {
-				fmt.Fprintln(w, tables.Schema(n)+";")
+				fmt.Fprintln(w, displaySchema(tables.Schema(n))+";")
 			}
 		}
 	case ".help":
@@ -248,7 +248,7 @@ func metaCommand(w io.Writer, line string) (done bool) {
 func cmdSchema(args []string) error {
 	if len(args) == 0 {
 		for _, n := range tables.Names() {
-			fmt.Println(tables.Schema(n) + ";")
+			fmt.Println(displaySchema(tables.Schema(n)) + ";")
 			fmt.Println()
 		}
 		return nil
@@ -257,8 +257,26 @@ func cmdSchema(args []string) error {
 	if s == "" {
 		return fmt.Errorf("unknown table %q (have: %s)", args[0], strings.Join(tables.Names(), ", "))
 	}
-	fmt.Println(s + ";")
+	fmt.Println(displaySchema(s) + ";")
 	return nil
+}
+
+// displaySchema reformats a stored CREATE TABLE string (which carries Go source
+// indentation) into a tidy, evenly-indented form for display.
+func displaySchema(s string) string {
+	var out []string
+	for _, line := range strings.Split(s, "\n") {
+		t := strings.TrimSpace(line)
+		if t == "" {
+			continue
+		}
+		if strings.HasPrefix(t, "CREATE TABLE") || strings.HasPrefix(t, ")") {
+			out = append(out, t)
+		} else {
+			out = append(out, "  "+t)
+		}
+	}
+	return strings.Join(out, "\n")
 }
 
 func cmdDemo(args []string) error {
