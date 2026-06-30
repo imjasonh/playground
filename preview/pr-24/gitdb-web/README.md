@@ -1,11 +1,11 @@
 # gitdb-web
 
-A browser compatibility spike for [`gitdb`](../gitdb/) and
+A browser application for [`gitdb`](../gitdb/) and
 [`go-sqlite-fdw`](https://github.com/values-conflict/go-sqlite-fdw).
 
 The page runs a Go WebAssembly worker containing:
 
-- a deterministic in-memory repository built with `go-git`
+- a live smart-HTTP clone of the selected public repository using `go-git`
 - the existing `gitdb` `fdw.Source` and `fdw.Cursor` implementations
 - the `go-sqlite-fdw/ncruces` adapter
 - SQLite via `github.com/ncruces/go-sqlite3`
@@ -44,14 +44,26 @@ tables in Chromium.
 With Go 1.25, the stripped worker is approximately 31 MiB raw and 7.6 MiB with
 gzip. Only the compressed artifact is loaded by the browser, both to reduce
 transfer size and to stay below the per-file limit of the legacy Pages
-publisher. It initializes and runs the fixture queries off the main thread, but
+publisher. It initializes and runs repository queries off the main thread, but
 bundle size is an explicit tradeoff of maximizing Go code reuse in this
 approach.
 
-## Deliberate limits
+## Browser cloning
 
-The Git fixture is offline and read-only. The HTTP probe fetches only a bundled
-same-origin file. The spike proves the SQLite/FDW compatibility layer, worker
-bridge, planner callbacks, browser Fetch scheduling, and Pages deployment path.
-It does not yet provide remote cloning, a browser-backed Git object cache,
-authentication, or CORS proxying.
+Most Git hosts do not permit browser smart-HTTP requests directly. The UI
+defaults to `https://cors.isomorphic-git.org`, matching the existing browser Git
+app. The proxy can observe repository URLs and all public data it relays; clear
+the field for a CORS-enabled host or provide a proxy you control.
+
+Clone depth and default-branch controls bound memory use. A depth of zero
+requests full history.
+
+## Current limits
+
+- Repository objects are held in memory and disappear when the Worker closes.
+- Only public HTTP(S) repositories are supported; browser authentication is not
+  implemented yet.
+- Very large histories, full-tree content searches, and blame can consume
+  substantial browser memory and CPU.
+- SQL virtual tables are intentionally non-mutating: querying never pushes
+  changes back to the remote.
