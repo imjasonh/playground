@@ -15,6 +15,7 @@ playground/
 │   ├── pages/             # shared HTML template for app index pages
 │   ├── scripts/           # CI helpers for browser, Go, and Rust app discovery
 │   └── workflows/         # deploy, preview, test, cleanup, dependency updates
+├── cold-climb/            # touch-first two-handle arcade game (JS + Node tests)
 ├── git/                   # in-browser read-only git client (JS + Jest + Playwright)
 ├── gitdb/                 # Go CLI (Go module + Go tests)
 ├── hello/                 # example static app (HTML only)
@@ -31,6 +32,7 @@ its root. This is the same rule used by deploy and preview workflows.
 
 | Path | Browser app? | Notes |
 |------|--------------|-------|
+| `cold-climb/` | yes | Touch-first arcade game; JS modules, npm scripts, tests |
 | `git/` | yes | In-browser read-only git client; JS modules, npm scripts, tests |
 | `hello/` | yes | Static HTML; no build or tests |
 | `kanoodle/` | yes | Client-side JS modules, npm scripts, tests |
@@ -288,6 +290,7 @@ cargo test
 
 | Directory | Type | Tests |
 |-----------|------|-------|
+| `cold-climb/` | Two-handle ball-climbing arcade game | Node test runner |
 | `git/` | In-browser read-only git client (clone, browse, branches, history) | Jest + Playwright |
 | `hello/` | Static demo | none |
 | `kanoodle/` | Kanoodle puzzle game (5×11 board, 12 pieces) | Jest + Playwright |
