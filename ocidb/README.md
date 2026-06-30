@@ -395,8 +395,8 @@ Tests never touch the network: `internal/registrytest` provides an in-memory
 `registry.Backend` with a deterministic multi-arch fixture, and the table tests
 run real SQL against it through an in-memory SQLite database.
 
-## Note on the playground
+## Repository integration
 
-Unlike the other entries in this repo, `ocidb` is a command-line Go tool, not a
-static browser app — it has no `index.html`, so the deploy/preview/test
-workflows intentionally don't pick it up.
+`ocidb` is discovered as a Go app from its `go.mod`. Changes to this directory
+are built with `go build ./...` and tested with `go test ./...` in CI. It has no
+`index.html`, so it is not included in GitHub Pages deployments or PR previews.
