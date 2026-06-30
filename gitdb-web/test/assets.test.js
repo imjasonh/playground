@@ -14,8 +14,9 @@ test("app assets use preview-safe relative URLs", async () => {
   assert.match(html, /src="\.\/main\.js"/);
   assert.match(html, /href="\.\/styles\.css"/);
   assert.match(main, /new URL\("\.\/worker\.js", import\.meta\.url\)/);
-  assert.match(worker, /new URL\("\.\/generated\/gitdb\.wasm"/);
+  assert.match(worker, /new URL\("\.\/generated\/gitdb\.wasm\.gz"/);
   assert.match(worker, /new URL\("\.\/generated\/wasm_exec\.js"/);
+  assert.match(worker, /new DecompressionStream\("gzip"\)/);
   assert.doesNotMatch(`${html}\n${main}\n${worker}`, /\/playground\//);
 });
 

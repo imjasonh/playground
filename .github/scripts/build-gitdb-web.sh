@@ -23,6 +23,12 @@ mkdir -p "$output"
     ./cmd/wasm
 )
 
+gzip -9 -c "$output/gitdb.wasm" > "$output/gitdb.wasm.gz"
+# Pages' legacy publisher rejects the 31 MiB raw worker. Keep a tiny file at
+# the old tracked path so keep_files deployments replace, rather than preserve,
+# any raw WASM left by an earlier preview.
+printf '%s\n' 'Runtime compressed as gitdb.wasm.gz' > "$output/gitdb.wasm"
+
 wasm_exec="$(go env GOROOT)/lib/wasm/wasm_exec.js"
 if [ ! -f "$wasm_exec" ]; then
   wasm_exec="$(go env GOROOT)/misc/wasm/wasm_exec.js"

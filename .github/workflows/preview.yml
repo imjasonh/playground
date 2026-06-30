@@ -37,7 +37,8 @@ jobs:
           printf '%s\n' '!generated/' '!generated/**' \
             > "dist/preview/pr-${PR}/gitdb-web/.gitignore"
           test -s "dist/preview/pr-${PR}/gitdb-web/generated/wasm_exec.js"
-          test -s "dist/preview/pr-${PR}/gitdb-web/generated/gitdb.wasm"
+          test -s "dist/preview/pr-${PR}/gitdb-web/generated/gitdb.wasm.gz"
+          test "$(wc -c < "dist/preview/pr-${PR}/gitdb-web/generated/gitdb.wasm")" -lt 1024
 
           # Index listing all apps in this preview
           items=$(
@@ -76,7 +77,8 @@ jobs:
           PR=${{ github.event.pull_request.number }}
           git fetch origin gh-pages
           git cat-file -e "origin/gh-pages:preview/pr-${PR}/gitdb-web/generated/wasm_exec.js"
-          git cat-file -e "origin/gh-pages:preview/pr-${PR}/gitdb-web/generated/gitdb.wasm"
+          git cat-file -e "origin/gh-pages:preview/pr-${PR}/gitdb-web/generated/gitdb.wasm.gz"
+          test "$(git cat-file -s "origin/gh-pages:preview/pr-${PR}/gitdb-web/generated/gitdb.wasm")" -lt 1024
 
       - name: Comment preview URL on PR
         uses: actions/github-script@v7

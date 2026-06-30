@@ -34,7 +34,8 @@ jobs:
           bash .github/scripts/build-gitdb-web.sh "dist/gitdb-web/generated"
           printf '%s\n' '!generated/' '!generated/**' > "dist/gitdb-web/.gitignore"
           test -s "dist/gitdb-web/generated/wasm_exec.js"
-          test -s "dist/gitdb-web/generated/gitdb.wasm"
+          test -s "dist/gitdb-web/generated/gitdb.wasm.gz"
+          test "$(wc -c < "dist/gitdb-web/generated/gitdb.wasm")" -lt 1024
 
           # Generate a root index listing all apps
           items=$(
@@ -72,4 +73,5 @@ jobs:
         run: |
           git fetch origin gh-pages
           git cat-file -e "origin/gh-pages:gitdb-web/generated/wasm_exec.js"
-          git cat-file -e "origin/gh-pages:gitdb-web/generated/gitdb.wasm"
+          git cat-file -e "origin/gh-pages:gitdb-web/generated/gitdb.wasm.gz"
+          test "$(git cat-file -s "origin/gh-pages:gitdb-web/generated/gitdb.wasm")" -lt 1024
