@@ -1,4 +1,2 @@
-generated/
-node_modules/
-test-results/
-playwright-report/
+!generated/
+!generated/**
