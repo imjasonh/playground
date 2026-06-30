@@ -179,6 +179,8 @@ CREATE TABLE files(
   uid INTEGER,
   gid INTEGER,
   modtime TEXT,
+  present INTEGER,
+  whiteout TEXT,
   content TEXT
 );
 ```
@@ -188,9 +190,9 @@ CREATE TABLE files(
 - `mode` is the octal permission string (`0644`, `4755` for setuid, …).
 - `content` is the file body **as text**, and only for regular files that are
   valid UTF-8 and at most 1 MiB; larger or binary files report their `size` but
-  a `NULL` content. Rows are **per layer**, so a path edited by a later layer
-  appears once per layer that touches it (overlay/whiteout semantics are not
-  merged).
+  a `NULL` content.
+- `present` and `whiteout` describe how each entry fares in the final, squashed
+  filesystem — see [Layered vs squashed](#layered-vs-squashed-views) below.
 
 This follows the approach described in dagdotdev's
 [registry explorer](https://github.com/jonjohnsonjr/dagdotdev/blob/main/pkg/explore/README.md):
@@ -263,6 +265,56 @@ path              mode  size
 …
 /usr/bin/chage    2755  113848
 ```
+
+### Layered vs squashed views
+
+By default `files` is the **layered (raw) view**: every tar entry from every
+layer, exactly as stored — including copies that a later layer shadows, files a
+later layer deletes, and the `.wh.*` whiteout markers themselves. That's the
+right view for "which layer introduced X?" or "what does this layer actually
+ship?".
+
+For the **squashed view** — the filesystem you'd actually get by running the
+image — filter on `present = 1`. `ocidb` applies OCI overlay rules across the
+layers in order: a path in a higher layer replaces the same path lower down, a
+`.wh.<name>` whiteout deletes a lower path, and a `.wh..wh..opq` opaque whiteout
+clears a directory's lower contents. The `whiteout` column flags those control
+entries (`'file'` or `'opaque'`); they are never `present`.
+
+```sql
+-- The squashed filesystem: one row per surviving path
+SELECT path, size FROM files WHERE reference = 'redis' AND present = 1;
+```
+
+Because both views come from the same table, the interesting cases fall out of a
+`present = 0` filter — **bytes that ship in the layers but never reach the final
+filesystem** because a higher layer replaced or deleted them:
+
+```sql
+SELECT layer, path, printf('%.1f KB', size / 1024.0) AS wasted
+FROM files
+WHERE reference = 'redis' AND present = 0 AND type = 'file' AND whiteout IS NULL
+ORDER BY size DESC LIMIT 8;
+```
+
+```
+layer  path                                  wasted
+-----  ----                                  ------
+1      /var/cache/debconf/templates.dat      763.5 KB
+1      /var/cache/debconf/templates.dat-old  724.8 KB
+1      /var/lib/dpkg/status-old              68.0 KB
+1      /var/lib/dpkg/status                  67.9 KB
+1      /etc/ld.so.cache                      4.0 KB
+1      /etc/passwd                           0.8 KB
+…
+```
+
+(`type = 'file' AND whiteout IS NULL` keeps this to real content, excluding the
+tiny marker files that do the deleting.) To tell a *replaced* file from a
+*deleted* one: it was replaced if some layer still has that path `present`,
+otherwise a whiteout removed it —
+`… AND NOT EXISTS (SELECT 1 FROM files g WHERE g.reference = f.reference AND g.path = f.path AND g.present = 1)`
+selects only the deletions.
 
 > The first time you touch a layer, its (compressed) blob is downloaded and
 > cached on disk; subsequent file reads come straight from that cache. This is
