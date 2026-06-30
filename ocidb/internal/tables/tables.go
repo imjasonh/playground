@@ -124,15 +124,22 @@ func (s *source) BestIndex(info *fdw.IndexInfo) error {
 		argv++
 	}
 	info.IdxStr = strings.Join(order, ",")
-	// These tables hit the network, so make an unconstrained scan look
-	// astronomically expensive: the planner will prefer to push down the
-	// equality constraints we declared above.
+	// These tables hit the network, so a scan that leaves HIDDEN parameters
+	// unbound is ruinously expensive. Crucially, the cost must keep dropping as
+	// we push down *more* equality constraints: otherwise, for a join like
+	// `layers.platform = plats.platform`, the planner may pick a join order that
+	// only binds `reference` and leaves `platform` to be post-filtered -- which
+	// silently falls back to the default platform. Dividing the cost per pushed
+	// constraint makes the planner prefer the order that binds every parameter.
+	cost := 1e12
+	for range order {
+		cost /= 1000
+	}
+	info.EstimatedCost = cost
 	if len(order) == 0 {
-		info.EstimatedCost = 1e12
 		info.EstimatedRows = 1_000_000
 	} else {
-		info.EstimatedCost = 100
-		info.EstimatedRows = 64
+		info.EstimatedRows = 16
 	}
 	return nil
 }
