@@ -34,6 +34,9 @@ jobs:
 
           bash .github/scripts/build-gitdb-web.sh \
             "dist/preview/pr-${PR}/gitdb-web/generated"
+          rm -f "dist/preview/pr-${PR}/gitdb-web/.gitignore"
+          test -s "dist/preview/pr-${PR}/gitdb-web/generated/wasm_exec.js"
+          test -s "dist/preview/pr-${PR}/gitdb-web/generated/gitdb.wasm"
 
           # Index listing all apps in this preview
           items=$(

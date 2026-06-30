@@ -32,6 +32,9 @@ jobs:
           done
 
           bash .github/scripts/build-gitdb-web.sh "dist/gitdb-web/generated"
+          rm -f "dist/gitdb-web/.gitignore"
+          test -s "dist/gitdb-web/generated/wasm_exec.js"
+          test -s "dist/gitdb-web/generated/gitdb.wasm"
 
           # Generate a root index listing all apps
           items=$(
