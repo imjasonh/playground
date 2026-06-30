@@ -38,6 +38,7 @@ body {
 }
 
 button,
+input,
 select,
 textarea {
   font: inherit;
@@ -130,6 +131,12 @@ main {
   text-transform: uppercase;
 }
 
+#repository-label {
+  max-width: 680px;
+  overflow-wrap: anywhere;
+  text-transform: none;
+}
+
 h1,
 h2,
 p {
@@ -177,6 +184,124 @@ h2 {
 .pipeline i {
   color: var(--accent);
   font-style: normal;
+}
+
+.repository-loader {
+  margin-bottom: 1.5rem;
+  padding: 1.5rem;
+  border: 1px solid var(--border-bright);
+  border-radius: 12px;
+  background: rgba(16, 23, 32, 0.96);
+}
+
+.loader-heading {
+  display: flex;
+  gap: 2rem;
+  align-items: end;
+  justify-content: space-between;
+  margin-bottom: 1.4rem;
+}
+
+.loader-heading > p {
+  max-width: 520px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+#repository-form {
+  display: grid;
+  gap: 1rem;
+}
+
+#repository-form label {
+  display: grid;
+  gap: 0.4rem;
+  color: var(--muted);
+  font-family: var(--code);
+  font-size: 0.72rem;
+}
+
+#repository-form input[type="text"],
+#repository-form input[type="url"],
+#repository-form input[type="number"] {
+  width: 100%;
+  padding: 0.72rem 0.8rem;
+  border: 1px solid var(--border-bright);
+  border-radius: 7px;
+  outline: 0;
+  color: var(--text);
+  background: #090e14;
+  font-family: var(--code);
+  font-size: 0.82rem;
+}
+
+#repository-form input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(113, 230, 177, 0.1);
+}
+
+#repository-form small {
+  color: #708194;
+}
+
+.clone-options {
+  display: grid;
+  grid-template-columns: minmax(140px, 220px) 1fr;
+  gap: 1rem;
+  align-items: end;
+}
+
+#repository-form .checkbox-field {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  min-height: 42px;
+  color: var(--text);
+}
+
+.checkbox-field input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--accent-strong);
+}
+
+#repository-form details {
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: rgba(9, 14, 20, 0.6);
+}
+
+#repository-form summary {
+  color: var(--muted);
+  cursor: pointer;
+  font-family: var(--code);
+  font-size: 0.75rem;
+}
+
+#repository-form details[open] summary {
+  margin-bottom: 0.8rem;
+}
+
+#repository-form details p {
+  margin: 0.6rem 0 0;
+  color: #77889a;
+  font-size: 0.75rem;
+}
+
+.loader-actions {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+#clone-status {
+  margin: 0;
+  color: var(--muted);
+  font-family: var(--code);
+  font-size: 0.74rem;
+  white-space: pre-line;
 }
 
 .workbench {
@@ -255,6 +380,11 @@ textarea {
 
 textarea:focus {
   box-shadow: inset 0 0 0 1px rgba(113, 230, 177, 0.55);
+}
+
+textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .query-actions {
@@ -453,6 +583,20 @@ footer {
 
   .example-picker select {
     width: 100%;
+  }
+
+  .loader-heading,
+  .loader-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .clone-options {
+    grid-template-columns: 1fr;
+  }
+
+  #load-repository {
+    justify-content: center;
   }
 
   .editor-shell {

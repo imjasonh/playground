@@ -25,9 +25,11 @@ Go WebAssembly worker. The CLI registers them with the `modernc` backend; the
 browser build registers them with `go-sqlite-fdw/ncruces` and queries both
 through `database/sql`.
 
-The current browser demo uses a deterministic in-memory repository so it can
-run offline. Remote cloning, browser-backed object storage, and registry-style
-CORS proxying are intentionally left for a follow-up.
+The browser app clones a selected public HTTP(S) repository into an in-memory
+go-git object store, then creates the same six virtual tables against it. A
+configurable CORS proxy handles Git hosts that do not permit smart-HTTP requests
+from browsers. Persistent browser storage and private-repository authentication
+remain follow-up work.
 
 ## Build
 

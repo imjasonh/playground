@@ -41,7 +41,7 @@ ORDER BY c.author_when DESC, cf.path;`,
   substr(commit_hash, 1, 10) AS commit_id,
   content
 FROM blame
-WHERE path = 'src.txt'
+WHERE path = 'README.md'
 ORDER BY line_no;`,
   planner: `EXPLAIN QUERY PLAN
 SELECT hash, author_name
@@ -49,7 +49,7 @@ FROM commits
 WHERE hash = (
   SELECT commit_hash
   FROM commit_files
-  WHERE path = 'notes.txt'
+  WHERE path = 'README.md'
   LIMIT 1
 );`,
   network: `SELECT
@@ -94,11 +94,15 @@ class GitDBWorker {
 
     const request = this.pending.get(message.id);
     if (!request) return;
+    if (message.type === "progress") {
+      request.onProgress?.(message.message || "Working…");
+      return;
+    }
     this.pending.delete(message.id);
     if (message.type === "error") {
       request.reject(new Error(message.error || "Query failed"));
     } else {
-      request.resolve(message.result);
+      request.resolve(message.type === "loaded" ? message.repository : message.result);
     }
   }
 
@@ -109,17 +113,33 @@ class GitDBWorker {
   }
 
   async query(sql) {
+    return this.send("query", { sql });
+  }
+
+  async clone(options, onProgress) {
+    return this.send("clone", options, onProgress);
+  }
+
+  async send(type, payload, onProgress) {
     await this.ready;
     const id = String(++this.sequence);
     const promise = new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      this.pending.set(id, { resolve, reject, onProgress });
     });
-    this.worker.postMessage(JSON.stringify({ type: "query", id, sql }));
+    this.worker.postMessage(JSON.stringify({ type, id, ...payload }));
     return promise;
   }
 }
 
 const elements = {
+  repositoryForm: document.querySelector("#repository-form"),
+  repositoryURL: document.querySelector("#repository-url"),
+  proxy: document.querySelector("#cors-proxy"),
+  depth: document.querySelector("#clone-depth"),
+  singleBranch: document.querySelector("#single-branch"),
+  load: document.querySelector("#load-repository"),
+  cloneStatus: document.querySelector("#clone-status"),
+  repositoryLabel: document.querySelector("#repository-label"),
   run: document.querySelector("#run-query"),
   sql: document.querySelector("#sql-input"),
   examples: document.querySelector("#example-select"),
@@ -134,13 +154,18 @@ const elements = {
 };
 
 const client = new GitDBWorker();
-let busy = false;
+let runtimeReady = false;
+let repositoryLoaded = false;
+let cloneBusy = false;
+let queryBusy = false;
 
-function setBusy(value) {
-  busy = value;
-  elements.run.disabled = value;
-  elements.examples.disabled = value;
-  elements.run.lastChild.textContent = value ? " Running…" : " Run query";
+function syncControls() {
+  elements.load.disabled = !runtimeReady || cloneBusy || queryBusy;
+  elements.run.disabled = !repositoryLoaded || cloneBusy || queryBusy;
+  elements.examples.disabled = !repositoryLoaded || cloneBusy || queryBusy;
+  elements.sql.disabled = !repositoryLoaded || cloneBusy;
+  elements.load.textContent = cloneBusy ? "Cloning…" : "Clone & open";
+  elements.run.lastChild.textContent = queryBusy ? " Running…" : " Run query";
 }
 
 function showError(error) {
@@ -190,8 +215,9 @@ function renderResult(result) {
 }
 
 async function runQuery() {
-  if (busy) return;
-  setBusy(true);
+  if (queryBusy || cloneBusy || !repositoryLoaded) return;
+  queryBusy = true;
+  syncControls();
   elements.error.hidden = true;
   elements.queryStatus.textContent = "Running in the worker…";
   try {
@@ -199,14 +225,50 @@ async function runQuery() {
   } catch (error) {
     showError(error);
   } finally {
-    setBusy(false);
+    queryBusy = false;
+    syncControls();
   }
+}
+
+async function loadRepository(event) {
+  event.preventDefault();
+  if (cloneBusy || queryBusy || !runtimeReady) return;
+
+  cloneBusy = true;
+  syncControls();
+  elements.error.hidden = true;
+  elements.cloneStatus.textContent = "Starting clone…";
+  try {
+    const repository = await client.clone({
+      url: elements.repositoryURL.value.trim(),
+      proxy: elements.proxy.value.trim(),
+      depth: Number.parseInt(elements.depth.value, 10) || 0,
+      singleBranch: elements.singleBranch.checked,
+    }, (message) => {
+      elements.cloneStatus.textContent = message;
+    });
+    repositoryLoaded = true;
+    const head = repository.head ? ` @ ${repository.head.slice(0, 10)}` : "";
+    elements.repositoryLabel.textContent = `${repository.url}${head}`;
+    elements.cloneStatus.textContent = "Repository loaded. SQL tables are ready.";
+  } catch (error) {
+    const proxyHint = elements.proxy.value.trim()
+      ? " Check the repository URL and CORS proxy."
+      : " Most Git hosts require a CORS proxy in the browser.";
+    elements.cloneStatus.textContent = `${error.message}${proxyHint}`;
+    return;
+  } finally {
+    cloneBusy = false;
+    syncControls();
+  }
+  runQuery();
 }
 
 elements.examples.addEventListener("change", () => {
   elements.sql.value = EXAMPLES[elements.examples.value];
   elements.sql.focus();
 });
+elements.repositoryForm.addEventListener("submit", loadRepository);
 elements.run.addEventListener("click", runQuery);
 elements.sql.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
@@ -216,14 +278,16 @@ elements.sql.addEventListener("keydown", (event) => {
 });
 
 client.ready.then(() => {
+  runtimeReady = true;
   elements.statusDot.classList.add("ready");
   elements.runtimeStatus.textContent = "Go/WASM + SQLite ready";
-  elements.queryStatus.textContent = "Ready";
-  setBusy(false);
-  runQuery();
+  elements.cloneStatus.textContent = "Enter a repository and clone it into this tab.";
+  elements.queryStatus.textContent = "Load a repository to begin";
+  syncControls();
 }).catch((error) => {
   elements.statusDot.classList.add("failed");
   elements.runtimeStatus.textContent = "Runtime failed";
-  elements.run.disabled = true;
+  runtimeReady = false;
+  syncControls();
   showError(error);
 });

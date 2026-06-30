@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Browser compatibility spike for gitdb and go-sqlite-fdw",
+  "description": "Clone and query Git repositories with gitdb in the browser",
   "scripts": {
     "build": "bash ../.github/scripts/build-gitdb-web.sh generated",
     "test": "node --test",

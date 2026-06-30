@@ -25,4 +25,7 @@ test("UI documents the backend compatibility boundary", async () => {
   assert.match(html, /go-sqlite-fdw/);
   assert.match(html, /ncruces SQLite backend/);
   assert.match(html, /modernc\.org\/sqlite/);
+  assert.match(html, /id="repository-url"/);
+  assert.match(html, /id="cors-proxy"/);
+  assert.match(html, /id="clone-depth"/);
 });
