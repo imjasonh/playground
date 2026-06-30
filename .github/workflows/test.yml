@@ -51,4 +51,3 @@ jobs:
         env:
           MODULES: ${{ steps.discover.outputs.modules }}
         run: bash .github/scripts/test-go-modules.sh
-
