@@ -15,6 +15,11 @@ ball sideways, and land in the glowing pocket without touching any dark pocket.
 The ten targets are played from bottom to top. A successful target resets the
 bar at the bottom and lights the next pocket; a miss costs one of three balls.
 
+Every game lays the ten pockets out fresh: each pocket gets a random position,
+climbing from pocket 1 at the bottom to pocket 10 at the top. Placement is
+constrained so a layout is always winnable — pockets stay within the bar's
+reach and never crowd one another, leaving a clear corridor to climb through.
+
 ## Run locally
 
 The game has no runtime dependencies and can be served as static files:
