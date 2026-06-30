@@ -17,6 +17,8 @@ Not every top-level directory is a browser app. Go command-line tools live here
 too. CI builds and tests each changed Go module; because these tools have no
 `index.html`, GitHub Pages deploy and preview workflows skip them:
 
+- **[`gitdb/`](gitdb/)** — query a git repo's history, files, blame, and file
+  contents with SQL, via SQLite virtual tables over go-git (Go CLI).
 - **[`ocidb/`](ocidb/)** — explore OCI container images on Docker Hub with SQL,
   via SQLite virtual tables over go-containerregistry (Go CLI).
 
