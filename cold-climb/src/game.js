@@ -20,22 +20,67 @@ export const BOARD = Object.freeze({
   resetGrace: 0.5,
 });
 
-export const HOLES = Object.freeze(
-  [
-    { id: 1, x: 485, y: 870, radius: 32 },
-    { id: 2, x: 210, y: 785, radius: 32 },
-    { id: 3, x: 550, y: 705, radius: 32 },
-    { id: 4, x: 350, y: 620, radius: 32 },
-    { id: 5, x: 145, y: 530, radius: 32 },
-    { id: 6, x: 495, y: 455, radius: 32 },
-    { id: 7, x: 270, y: 365, radius: 32 },
-    { id: 8, x: 570, y: 285, radius: 32 },
-    { id: 9, x: 170, y: 205, radius: 32 },
-    { id: 10, x: 420, y: 132, radius: 32 },
-  ].map(Object.freeze),
-);
+export const HOLE_COUNT = 10;
+
+const HOLE_RADIUS = 32;
+
+// Bounds for the randomly generated pocket centers. The ball center can reach
+// roughly [minBarY - ballOffset, maxBarY - ballOffset] = [110, 982] vertically
+// and [barLeftX + ballRadius, barRightX - ballRadius] = [89, 631] horizontally,
+// so these stay comfortably inside that envelope (and inside the side rails) to
+// keep every pocket reachable.
+export const HOLE_BOUNDS = Object.freeze({
+  minX: 130,
+  maxX: 590,
+  minY: 150,
+  maxY: 900,
+});
+
+// Each pocket lives in its own horizontal band, laid out from the bottom
+// (id 1) to the top (id 10). The bands are spaced far enough apart that the
+// capture zones of neighbouring pockets never overlap, which guarantees a
+// clear vertical corridor to climb through — so a random layout is always
+// winnable. Bands are ~83px apart; keep the jitter small enough that the
+// minimum gap between adjacent pocket centers stays comfortably above the
+// 2 * captureRadius (56px) needed to keep that corridor open.
+const VERTICAL_JITTER = 8;
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+function randomInRange(random, min, max) {
+  return min + (max - min) * random();
+}
+
+// Build a fresh, randomised set of pockets. `random` defaults to Math.random
+// but can be injected (e.g. a seeded generator) for deterministic tests.
+export function createHoles(random = Math.random) {
+  const sample = typeof random === "function" ? random : Math.random;
+  const bandSpacing = (HOLE_BOUNDS.maxY - HOLE_BOUNDS.minY) / (HOLE_COUNT - 1);
+  const holes = [];
+
+  for (let index = 0; index < HOLE_COUNT; index += 1) {
+    // Band 0 sits at the bottom (largest y) and is the first target; each
+    // higher id climbs toward the top of the wall, matching the original feel.
+    const bandCenter = HOLE_BOUNDS.maxY - bandSpacing * index;
+    const y = clamp(
+      bandCenter + randomInRange(sample, -VERTICAL_JITTER, VERTICAL_JITTER),
+      HOLE_BOUNDS.minY,
+      HOLE_BOUNDS.maxY,
+    );
+    const x = randomInRange(sample, HOLE_BOUNDS.minX, HOLE_BOUNDS.maxX);
+
+    holes.push(
+      Object.freeze({
+        id: index + 1,
+        x: Math.round(x),
+        y: Math.round(y),
+        radius: HOLE_RADIUS,
+      }),
+    );
+  }
+
+  return Object.freeze(holes);
+}
 
 export function axisFromDrag(startY, currentY, travel = 58) {
   if (!Number.isFinite(startY) || !Number.isFinite(currentY) || travel <= 0) {
@@ -61,7 +106,9 @@ export function pointToSegmentDistanceSquared(px, py, ax, ay, bx, by) {
 }
 
 export class ColdClimbGame {
-  constructor() {
+  constructor(random = Math.random) {
+    this.random = typeof random === "function" ? random : Math.random;
+    this.holes = createHoles(this.random);
     this.events = [];
     this.phase = "ready";
     this.level = 0;
@@ -79,7 +126,7 @@ export class ColdClimbGame {
   }
 
   get target() {
-    return HOLES[this.level] ?? null;
+    return this.holes[this.level] ?? null;
   }
 
   get ballY() {
@@ -116,6 +163,7 @@ export class ColdClimbGame {
     this.score = 0;
     this.lives = 3;
     this.events.length = 0;
+    this.holes = createHoles(this.random);
     this.#resetRound();
     this.events.push({ type: "started", target: this.target });
   }
@@ -228,7 +276,7 @@ export class ColdClimbGame {
     let capturedHole = null;
     let closestDistanceSquared = Number.POSITIVE_INFINITY;
 
-    for (const hole of HOLES) {
+    for (const hole of this.holes) {
       const distanceSquared = pointToSegmentDistanceSquared(
         hole.x,
         hole.y,
@@ -276,7 +324,7 @@ export class ColdClimbGame {
       this.score += points;
       this.level += 1;
 
-      if (this.level >= HOLES.length) {
+      if (this.level >= this.holes.length) {
         this.phase = "won";
         this.fall = null;
         this.events.push({ type: "won", points, score: this.score });

@@ -1,4 +1,4 @@
-import { BOARD, ColdClimbGame, HOLES, axisFromDrag } from "./game.js";
+import { BOARD, ColdClimbGame, HOLE_COUNT, axisFromDrag } from "./game.js";
 
 const canvas = document.querySelector("#game-canvas");
 const context = canvas.getContext("2d");
@@ -157,8 +157,8 @@ function showEndScreen(won) {
   overlayKicker.textContent = won ? "Perfect pour" : "Ball return";
   overlayTitle.textContent = won ? "You cleared the wall!" : "Last call";
   overlayCopy.textContent = won
-    ? `All ${HOLES.length} pockets cleared with ${game.score.toLocaleString()} points.`
-    : `You reached target ${Math.min(game.level + 1, HOLES.length)} with ${game.score.toLocaleString()} points.`;
+    ? `All ${HOLE_COUNT} pockets cleared with ${game.score.toLocaleString()} points.`
+    : `You reached target ${Math.min(game.level + 1, HOLE_COUNT)} with ${game.score.toLocaleString()} points.`;
   startButton.textContent = "Play again";
   overlay.hidden = false;
   updateHud();
@@ -169,8 +169,8 @@ function setMessage(text) {
 }
 
 function updateHud() {
-  const shownTarget = Math.min(game.level + 1, HOLES.length);
-  targetValue.textContent = `${shownTarget}/${HOLES.length}`;
+  const shownTarget = Math.min(game.level + 1, HOLE_COUNT);
+  targetValue.textContent = `${shownTarget}/${HOLE_COUNT}`;
   scoreValue.textContent = game.score.toLocaleString().padStart(5, "0");
   bestValue.textContent = highScore.toLocaleString().padStart(5, "0");
   livesValue.textContent = `${"●".repeat(game.lives)}${"○".repeat(3 - game.lives)}`;
@@ -362,7 +362,7 @@ function drawPlayfield(now) {
   context.textAlign = "left";
   context.fillText("TWO-HANDLE PRECISION TEST", 24, 34);
   context.textAlign = "right";
-  context.fillText(`POCKET ${Math.min(game.level + 1, HOLES.length)}`, 696, 34);
+  context.fillText(`POCKET ${Math.min(game.level + 1, HOLE_COUNT)}`, 696, 34);
   context.restore();
 }
 
@@ -392,7 +392,7 @@ function drawRails() {
 function drawHoles(now) {
   const pulse = 0.5 + Math.sin(now / 170) * 0.5;
 
-  for (const hole of HOLES) {
+  for (const hole of game.holes) {
     const isTarget = hole.id === game.target?.id && game.phase !== "won";
 
     context.save();
