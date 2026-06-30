@@ -57,7 +57,7 @@ discovery scripts.
 | `deploy.yml` | push to `main` | Publishes all browser apps to GitHub Pages production |
 | `preview.yml` | pull request opened/sync | Deploys browser apps under `/preview/pr-<N>/` and comments the URL |
 | `cleanup.yml` | pull request closed | Removes that PR's preview directory from `gh-pages` |
-| `test.yml` | push to `main`, pull requests | Tests changed browser apps and fans out build/test jobs for changed Go apps |
+| `test.yml` | push to `main`, pull requests | Tests changed browser and Go apps in one job |
 | `deps.yaml` | daily at 00:00 UTC, manual | Updates every testable browser app and Go app; pushes passing updates to `main`, otherwise opens a PR |
 
 Deploy workflows copy browser app directories as-is (they do **not** run
@@ -101,16 +101,16 @@ On the first push to `main` (no prior commit), all testable apps are tested.
 
 ## Testing Go apps (CI)
 
-The test workflow discovers changed Go apps independently of browser apps and
-fans them out into one job per module. For every selected module, CI runs:
+The test workflow discovers changed Go apps alongside changed browser apps in
+its single test job. For every selected module, CI runs:
 
 1. `go build ./...`
 2. `go test ./...`
 
 Changing any path under a Go app selects that module. Adding a top-level
-`<name>/go.mod` selects the new app. Changes to the Go discovery script or the
-Go CI workflow test every Go app so CI infrastructure changes exercise the
-full fan-out. On the first push to `main`, every Go app is tested.
+`<name>/go.mod` selects the new app. On the first push to `main`, every Go app
+is tested. When no Go app changed, the job does not set up Go or run Go
+build/test steps, and no separate Go check is created.
 
 The daily dependency workflow upgrades every testable browser app's direct npm
 dependencies, refreshes its lockfile and any `vendor` script output, and runs
