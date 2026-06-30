@@ -17,152 +17,37 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Discover testable apps in changed directories
+      - name: Discover changed browser and Go apps
         id: discover
         env:
           EVENT_NAME: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
           BEFORE_SHA: ${{ github.event.before }}
           HEAD_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-
-          if [ "$EVENT_NAME" = "pull_request" ]; then
-            git fetch origin "$BASE_REF"
-            changed=$(git diff --name-only "origin/${BASE_REF}...HEAD")
-          elif [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
-            echo "No prior commit; testing all testable apps."
-            apps=$(bash .github/scripts/discover-testable-apps.sh --all)
-            echo "apps=${apps}" >> "$GITHUB_OUTPUT"
-            echo "Testable apps: ${apps}"
-            exit 0
-          else
-            changed=$(git diff --name-only "$BEFORE_SHA" "$HEAD_SHA")
-          fi
-
-          if [ -z "$changed" ]; then
-            apps='[]'
-          else
-            apps=$(printf '%s\n' "$changed" | bash .github/scripts/discover-testable-apps.sh --from-changes)
-          fi
-
-          echo "apps=${apps}" >> "$GITHUB_OUTPUT"
-          echo "Changed paths:"
-          printf '%s\n' "$changed"
-          echo "Testable apps: ${apps}"
+        run: bash .github/scripts/discover-changed-apps.sh
 
       - uses: actions/setup-node@v4
+        if: ${{ steps.discover.outputs.apps != '[]' }}
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: '**/package-lock.json'
 
       - name: Run tests for changed apps
+        if: ${{ steps.discover.outputs.apps != '[]' }}
         env:
           APPS: ${{ steps.discover.outputs.apps }}
-        run: |
-          set -euo pipefail
-
-          mapfile -t apps < <(printf '%s' "${APPS:-[]}" | jq -r '.[]')
-
-          if [ "${#apps[@]}" -eq 0 ]; then
-            echo "No testable apps changed (need changes under an app dir with index.html, package.json, and a test script). Nothing to test."
-            exit 0
-          fi
-
-          for app in "${apps[@]}"; do
-            echo "::group::Test ${app}"
-            (
-              cd "$app"
-              npm ci
-              npm test
-              if node -e "const s=require('./package.json').scripts||{}; process.exit(s['test:e2e']?0:1)"; then
-                npx playwright install --with-deps chromium
-                npm run test:e2e
-              else
-                echo "No test:e2e script; skipping e2e."
-              fi
-            )
-            echo "::endgroup::"
-          done
-
-  discover-go:
-    name: Discover changed Go apps
-    runs-on: ubuntu-latest
-    outputs:
-      modules: ${{ steps.discover.outputs.modules }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - name: Discover Go modules in changed directories
-        id: discover
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_REF: ${{ github.base_ref }}
-          BEFORE_SHA: ${{ github.event.before }}
-          HEAD_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-
-          if [ "$EVENT_NAME" = "pull_request" ]; then
-            git fetch origin "$BASE_REF"
-            changed=$(git diff --name-only "origin/${BASE_REF}...HEAD")
-          elif [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
-            echo "No prior commit; testing all Go apps."
-            modules=$(bash .github/scripts/discover-go-modules.sh --all)
-            echo "modules=${modules}" >> "$GITHUB_OUTPUT"
-            echo "Go apps: ${modules}"
-            exit 0
-          else
-            changed=$(git diff --name-only "$BEFORE_SHA" "$HEAD_SHA")
-          fi
-
-          test_all=false
-          while IFS= read -r path; do
-            case "$path" in
-              .github/scripts/discover-go-modules.sh|.github/workflows/test.yml)
-                test_all=true
-                ;;
-            esac
-          done <<< "$changed"
-
-          if [ "$test_all" = true ]; then
-            echo "Go CI infrastructure changed; testing all Go apps."
-            modules=$(bash .github/scripts/discover-go-modules.sh --all)
-          elif [ -z "$changed" ]; then
-            modules='[]'
-          else
-            modules=$(printf '%s\n' "$changed" | bash .github/scripts/discover-go-modules.sh --from-changes)
-          fi
-
-          echo "modules=${modules}" >> "$GITHUB_OUTPUT"
-          echo "Changed paths:"
-          printf '%s\n' "$changed"
-          echo "Go apps: ${modules}"
-
-  test-go:
-    name: Go (${{ matrix.module }})
-    if: ${{ needs.discover-go.outputs.modules != '[]' }}
-    needs: discover-go
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        module: ${{ fromJSON(needs.discover-go.outputs.modules) }}
-    steps:
-      - uses: actions/checkout@v7
+        run: bash .github/scripts/test-browser-apps.sh
 
       - uses: actions/setup-go@v6
+        if: ${{ steps.discover.outputs.modules != '[]' }}
         with:
-          go-version-file: ${{ matrix.module }}/go.mod
+          go-version: 'stable'
+          check-latest: true
           cache: false
 
-      - name: Build
-        working-directory: ${{ matrix.module }}
-        run: go build ./...
-
-      - name: Test
-        working-directory: ${{ matrix.module }}
-        run: go test ./...
+      - name: Build and test changed Go apps
+        if: ${{ steps.discover.outputs.modules != '[]' }}
+        env:
+          MODULES: ${{ steps.discover.outputs.modules }}
+        run: bash .github/scripts/test-go-modules.sh

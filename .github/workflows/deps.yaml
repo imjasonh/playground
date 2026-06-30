@@ -1,4 +1,4 @@
-name: Update Go dependencies
+name: Update dependencies
 
 on:
   schedule:
@@ -10,12 +10,12 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: update-go-dependencies
+  group: update-dependencies
   cancel-in-progress: false
 
 jobs:
   update:
-    name: Update, build, and test Go apps
+    name: Update, build, and test apps
     if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     steps:
@@ -30,136 +30,92 @@ jobs:
           check-latest: true
           cache: false
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: '**/package-lock.json'
+
       - name: Update, build, and test every Go app
-        id: update
-        run: |
-          set -uo pipefail
+        id: update_go
+        run: bash .github/scripts/update-go-dependencies.sh
 
-          result=success
-          {
-            echo "### Daily Go dependency update"
-            echo
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          modules=()
-          if modules_json=$(bash .github/scripts/discover-go-modules.sh --all); then
-            if module_lines=$(printf '%s' "$modules_json" | jq -r '.[]'); then
-              if [ -n "$module_lines" ]; then
-                mapfile -t modules <<< "$module_lines"
-              fi
-            else
-              result=failure
-              echo "::error title=Go app discovery failed::Discovery returned invalid JSON."
-              echo "- ❌ Go app discovery returned invalid JSON." >> "$GITHUB_STEP_SUMMARY"
-            fi
-          else
-            result=failure
-            echo "::error title=Go app discovery failed::Could not discover Go app modules."
-            echo "- ❌ Could not discover Go app modules." >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-          if [ "${#modules[@]}" -eq 0 ]; then
-            echo "No Go apps found."
-            if [ "$result" = success ]; then
-              echo "- No Go apps found." >> "$GITHUB_STEP_SUMMARY"
-            fi
-          fi
-
-          for module in "${modules[@]}"; do
-            echo "::group::Update and verify ${module}"
-
-            if (
-              cd "$module"
-              go get -u ./...
-            ); then
-              echo "- ✅ \`${module}\`: dependencies updated" >> "$GITHUB_STEP_SUMMARY"
-            else
-              result=failure
-              echo "::error title=Dependency update failed::${module}: go get -u ./..."
-              echo "- ❌ \`${module}\`: dependency update failed" >> "$GITHUB_STEP_SUMMARY"
-            fi
-
-            if (
-              cd "$module"
-              go build ./...
-            ); then
-              echo "- ✅ \`${module}\`: build passed" >> "$GITHUB_STEP_SUMMARY"
-            else
-              result=failure
-              echo "::error title=Build failed::${module}: go build ./..."
-              echo "- ❌ \`${module}\`: build failed" >> "$GITHUB_STEP_SUMMARY"
-            fi
-
-            if (
-              cd "$module"
-              go test ./...
-            ); then
-              echo "- ✅ \`${module}\`: tests passed" >> "$GITHUB_STEP_SUMMARY"
-            else
-              result=failure
-              echo "::error title=Tests failed::${module}: go test ./..."
-              echo "- ❌ \`${module}\`: tests failed" >> "$GITHUB_STEP_SUMMARY"
-            fi
-
-            echo "::endgroup::"
-          done
-
-          if [ -n "$(git status --porcelain -- ':(glob)*/go.mod' ':(glob)*/go.sum')" ]; then
-            has_changes=true
-          else
-            has_changes=false
-          fi
-
-          echo "result=${result}" >> "$GITHUB_OUTPUT"
-          echo "has_changes=${has_changes}" >> "$GITHUB_OUTPUT"
+      - name: Update and test every JavaScript app
+        id: update_js
+        run: bash .github/scripts/update-js-dependencies.sh
 
       - name: Push passing updates to main
         id: push
-        if: ${{ steps.update.outputs.result == 'success' && steps.update.outputs.has_changes == 'true' }}
+        if: >-
+          ${{
+            steps.update_go.outputs.result == 'success' &&
+            steps.update_js.outputs.result == 'success' &&
+            (
+              steps.update_go.outputs.has_changes == 'true' ||
+              steps.update_js.outputs.has_changes == 'true'
+            )
+          }}
         continue-on-error: true
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- ':(glob)*/go.mod' ':(glob)*/go.sum'
-          git commit -m "chore(deps): update Go dependencies"
-          git push origin HEAD:main
+        run: bash .github/scripts/manage-dependency-update.sh push
 
       - name: Create an empty failure commit when nothing changed
-        if: ${{ steps.update.outputs.result == 'failure' && steps.update.outputs.has_changes != 'true' }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit --allow-empty -m "chore(deps): report failed Go dependency update"
+        if: >-
+          ${{
+            (
+              steps.update_go.outputs.result == 'failure' ||
+              steps.update_js.outputs.result == 'failure'
+            ) &&
+            steps.update_go.outputs.has_changes != 'true' &&
+            steps.update_js.outputs.has_changes != 'true'
+          }}
+        run: bash .github/scripts/manage-dependency-update.sh failure-commit
 
       - name: Open a pull request when automatic update fails
-        if: ${{ steps.update.outputs.result == 'failure' || steps.push.outcome == 'failure' }}
+        if: >-
+          ${{
+            steps.update_go.outputs.result == 'failure' ||
+            steps.update_js.outputs.result == 'failure' ||
+            steps.push.outcome == 'failure'
+          }}
         uses: peter-evans/create-pull-request@v8
         with:
-          branch: automation/go-dependency-updates
+          branch: automation/dependency-updates
           base: main
           add-paths: |
             */go.mod
             */go.sum
-          commit-message: 'chore(deps): update Go dependencies'
-          title: 'chore(deps): update Go dependencies'
+            */package.json
+            */package-lock.json
+            */vendor/**
+          commit-message: 'chore(deps): update dependencies'
+          title: 'chore(deps): update dependencies'
           body: |
-            The daily Go dependency updater could not safely push these changes
-            directly to `main`. At least one dependency update, build, test, or
-            push step failed.
+            The daily dependency updater could not safely push these changes
+            directly to `main`. At least one dependency update, generated-asset
+            refresh, build, test, or push step failed.
 
             Review the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
             before merging.
           delete-branch: true
 
       - name: Close a stale dependency-update pull request
-        if: ${{ steps.update.outputs.result == 'success' && steps.push.outcome != 'failure' }}
+        if: >-
+          ${{
+            steps.update_go.outputs.result == 'success' &&
+            steps.update_js.outputs.result == 'success' &&
+            steps.push.outcome != 'failure'
+          }}
         uses: peter-evans/create-pull-request@v8
         with:
-          branch: automation/go-dependency-updates
+          branch: automation/dependency-updates
           base: main
           delete-branch: true
 
       - name: Report unsuccessful automatic update
-        if: ${{ steps.update.outputs.result == 'failure' || steps.push.outcome == 'failure' }}
-        run: exit 1
+        if: >-
+          ${{
+            steps.update_go.outputs.result == 'failure' ||
+            steps.update_js.outputs.result == 'failure' ||
+            steps.push.outcome == 'failure'
+          }}
+        run: bash .github/scripts/manage-dependency-update.sh report-failure
