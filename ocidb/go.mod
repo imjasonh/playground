@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/google/go-containerregistry v0.20.6
+	github.com/klauspost/compress v1.18.0
 	github.com/values-conflict/go-sqlite-fdw v0.0.0
 	github.com/values-conflict/go-sqlite-fdw/modernc v0.0.0-20260630071241-65cea68abcec
 	modernc.org/sqlite v1.53.0
@@ -16,7 +17,6 @@ require (
 	github.com/docker/docker-credential-helpers v0.9.3 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect

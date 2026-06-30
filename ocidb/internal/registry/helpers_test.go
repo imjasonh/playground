@@ -1,6 +1,10 @@
 package registry
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
+	"io"
 	"testing"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -58,6 +62,74 @@ func TestPickPlatform(t *testing.T) {
 func TestDigestFile(t *testing.T) {
 	if got := digestFile("sha256:abc123"); got != "sha256-abc123" {
 		t.Errorf("digestFile = %q, want sha256-abc123", got)
+	}
+}
+
+func TestNormalizeTarPath(t *testing.T) {
+	cases := map[string]string{
+		"etc/os-release":   "/etc/os-release",
+		"./etc/os-release": "/etc/os-release",
+		"/etc/os-release":  "/etc/os-release",
+		"etc/":             "/etc/",
+		"":                 "/",
+	}
+	for in, want := range cases {
+		if got := normalizeTarPath(in); got != want {
+			t.Errorf("normalizeTarPath(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestTarType(t *testing.T) {
+	cases := map[byte]string{
+		tar.TypeReg:     "file",
+		tar.TypeDir:     "dir",
+		tar.TypeSymlink: "symlink",
+		tar.TypeLink:    "hardlink",
+		tar.TypeFifo:    "fifo",
+		byte('Z'):       "other",
+	}
+	for flag, want := range cases {
+		if got := tarType(flag); got != want {
+			t.Errorf("tarType(%q) = %q, want %q", flag, got, want)
+		}
+	}
+}
+
+func TestDecompressAndWalkTOC(t *testing.T) {
+	// Uncompressed input is passed through unchanged.
+	rc, err := decompress([]byte("plain bytes"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(rc)
+	rc.Close()
+	if string(b) != "plain bytes" {
+		t.Errorf("raw decompress = %q, want %q", b, "plain bytes")
+	}
+
+	// A gzipped tar round-trips through decompress + walkTOC.
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(zw)
+	_ = tw.WriteHeader(&tar.Header{Name: "a.txt", Mode: 0o644, Size: 3, Typeflag: tar.TypeReg})
+	_, _ = tw.Write([]byte("abc"))
+	_ = tw.WriteHeader(&tar.Header{Name: "d/", Mode: 0o755, Typeflag: tar.TypeDir})
+	_ = tw.Close()
+	_ = zw.Close()
+
+	toc, err := walkTOC(buf.Bytes())
+	if err != nil {
+		t.Fatalf("walkTOC: %v", err)
+	}
+	if len(toc) != 2 {
+		t.Fatalf("toc len = %d, want 2", len(toc))
+	}
+	if toc[0].Path != "/a.txt" || toc[0].Type != "file" || toc[0].Size != 3 {
+		t.Errorf("entry0 = %+v, want /a.txt file size 3", toc[0])
+	}
+	if toc[1].Path != "/d/" || toc[1].Type != "dir" {
+		t.Errorf("entry1 = %+v, want /d/ dir", toc[1])
 	}
 }
 

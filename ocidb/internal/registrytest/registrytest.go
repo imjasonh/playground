@@ -6,6 +6,9 @@
 package registrytest
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -131,15 +134,22 @@ func New() *Fake {
 	return f
 }
 
+type builtLayer struct {
+	digest string
+	gz     []byte
+}
+
 type builtImage struct {
 	manifestBytes  []byte
 	manifestDigest string
 	configBytes    []byte
 	configDigest   string
+	layers         []builtLayer
 }
 
 // addImage builds an image, registers its manifest (addressable by digest under
-// repo) and its config blob, and returns the build for wiring into an index.
+// repo), its config blob, and every layer blob, and returns the build for
+// wiring into an index.
 func (f *Fake) addImage(repo, arch, variant string, layerSizes []int64) builtImage {
 	img := buildImage(arch, variant, layerSizes)
 	f.manifests[repo+"@"+img.manifestDigest] = registry.Manifest{
@@ -149,6 +159,9 @@ func (f *Fake) addImage(repo, arch, variant string, layerSizes []int64) builtIma
 		Raw:       img.manifestBytes,
 	}
 	f.blobs[repo+"@"+img.configDigest] = img.configBytes
+	for _, l := range img.layers {
+		f.blobs[repo+"@"+l.digest] = l.gz
+	}
 	return img
 }
 
@@ -180,19 +193,26 @@ func buildImage(arch, variant string, layerSizes []int64) builtImage {
 	cfgBytes, _ := json.Marshal(cfg)
 	cfgDigest := digestOf(cfgBytes)
 
-	layers := make([]v1.Descriptor, len(layerSizes))
+	descs := make([]v1.Descriptor, len(layerSizes))
+	built := make([]builtLayer, len(layerSizes))
 	for i, sz := range layerSizes {
-		layers[i] = v1.Descriptor{
+		gz := makeLayer(layerFiles(arch, i))
+		dig := digestOf(gz)
+		descs[i] = v1.Descriptor{
 			MediaType: types.DockerLayer,
-			Size:      sz,
-			Digest:    mustHash(digestOf([]byte(fmt.Sprintf("%s-%s-layer-%d", arch, variant, i)))),
+			// Size is the synthetic value the size-oriented tests assert on; it
+			// need not equal the real blob length (nothing verifies it here),
+			// while Digest must match the real blob so file reads can find it.
+			Size:   sz,
+			Digest: mustHash(dig),
 		}
+		built[i] = builtLayer{digest: dig, gz: gz}
 	}
 	mf := v1.Manifest{
 		SchemaVersion: 2,
 		MediaType:     types.DockerManifestSchema2,
 		Config:        v1.Descriptor{MediaType: types.DockerConfigJSON, Size: int64(len(cfgBytes)), Digest: mustHash(cfgDigest)},
-		Layers:        layers,
+		Layers:        descs,
 	}
 	mfBytes, _ := json.Marshal(mf)
 	return builtImage{
@@ -200,7 +220,82 @@ func buildImage(arch, variant string, layerSizes []int64) builtImage {
 		manifestDigest: digestOf(mfBytes),
 		configBytes:    cfgBytes,
 		configDigest:   cfgDigest,
+		layers:         built,
 	}
+}
+
+// fileSpec is one member of a fixture layer's tar stream.
+type fileSpec struct {
+	name string
+	body []byte
+	mode int64
+	typ  byte
+	link string
+	uid  int
+	gid  int
+}
+
+// layerFiles returns the tar members for layer idx of an image built for arch.
+// Bodies embed the arch so that each platform's layers have distinct digests,
+// and so content queries can tell platforms apart.
+func layerFiles(arch string, idx int) []fileSpec {
+	switch idx {
+	case 0:
+		return []fileSpec{
+			{name: "etc/", typ: tar.TypeDir, mode: 0o755},
+			{name: "etc/os-release", typ: tar.TypeReg, mode: 0o644, body: []byte("PRETTY_NAME=\"Demo Linux (" + arch + ")\"\nID=demo\nVERSION_ID=1\n")},
+			{name: "usr/bin/", typ: tar.TypeDir, mode: 0o755},
+			// setuid root binary with non-UTF-8 (ELF-ish) bytes.
+			{name: "usr/bin/su", typ: tar.TypeReg, mode: 0o4755, body: []byte{0x7f, 'E', 'L', 'F', 0x00, 0x01, 0x02, 0xff}},
+			{name: "bin/sh", typ: tar.TypeSymlink, mode: 0o777, link: "busybox"},
+		}
+	case 1:
+		return []fileSpec{
+			{name: "app/", typ: tar.TypeDir, mode: 0o755},
+			{name: "app/run.sh", typ: tar.TypeReg, mode: 0o755, uid: 1000, gid: 1000, body: []byte("#!/bin/sh\necho hello from " + arch + "\n")},
+			{name: "app/config.json", typ: tar.TypeReg, mode: 0o644, uid: 1000, gid: 1000, body: []byte("{\"name\":\"demo\",\"arch\":\"" + arch + "\"}")},
+		}
+	default:
+		return []fileSpec{
+			{name: fmt.Sprintf("data/file-%d.txt", idx), typ: tar.TypeReg, mode: 0o644, body: []byte(fmt.Sprintf("layer %d on %s\n", idx, arch))},
+		}
+	}
+}
+
+// makeLayer writes specs into a gzipped tar, the standard OCI layer format.
+func makeLayer(specs []fileSpec) []byte {
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(zw)
+	for _, s := range specs {
+		hdr := &tar.Header{
+			Name:     s.name,
+			Mode:     s.mode,
+			Typeflag: s.typ,
+			Linkname: s.link,
+			Uid:      s.uid,
+			Gid:      s.gid,
+			ModTime:  Created,
+		}
+		if s.typ == tar.TypeReg {
+			hdr.Size = int64(len(s.body))
+		}
+		if err := tw.WriteHeader(hdr); err != nil {
+			panic(err)
+		}
+		if s.typ == tar.TypeReg {
+			if _, err := tw.Write(s.body); err != nil {
+				panic(err)
+			}
+		}
+	}
+	if err := tw.Close(); err != nil {
+		panic(err)
+	}
+	if err := zw.Close(); err != nil {
+		panic(err)
+	}
+	return buf.Bytes()
 }
 
 func digestOf(b []byte) string {

@@ -171,6 +171,84 @@ func TestContentAddressedCachedForever(t *testing.T) {
 	}
 }
 
+func TestLayerTOCAndCaching(t *testing.T) {
+	f := registrytest.New()
+	c := newClient(t, f, registry.DefaultTTL)
+	iv, err := c.ResolveImage("demo", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dig := iv.Layers[0].Digest.String()
+
+	toc, err := c.LayerTOC("demo", dig)
+	if err != nil {
+		t.Fatalf("LayerTOC: %v", err)
+	}
+	byPath := map[string]registry.TarEntry{}
+	for _, e := range toc {
+		byPath[e.Path] = e
+	}
+	if e, ok := byPath["/etc/os-release"]; !ok || e.Type != "file" {
+		t.Errorf("/etc/os-release = %+v, want a file entry", e)
+	}
+	if e, ok := byPath["/etc/"]; !ok || e.Type != "dir" {
+		t.Errorf("/etc/ = %+v, want a dir entry", e)
+	}
+	if e, ok := byPath["/bin/sh"]; !ok || e.Type != "symlink" || e.Linkname != "busybox" {
+		t.Errorf("/bin/sh = %+v, want symlink -> busybox", e)
+	}
+
+	// The TOC is cached by digest, so a second call must not refetch the blob.
+	_, blobsBefore, _ := f.Calls()
+	if _, err := c.LayerTOC("demo", dig); err != nil {
+		t.Fatal(err)
+	}
+	_, blobsAfter, _ := f.Calls()
+	if blobsAfter != blobsBefore {
+		t.Fatalf("second LayerTOC fetched %d blobs, want 0 (cached)", blobsAfter-blobsBefore)
+	}
+}
+
+func TestReadLayerFiles(t *testing.T) {
+	c := newClient(t, registrytest.New(), registry.DefaultTTL)
+	iv, err := c.ResolveImage("demo", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dig := iv.Layers[0].Digest.String()
+
+	one, err := c.ReadLayerFiles("demo", dig, map[string]bool{"/etc/os-release": true}, 0)
+	if err != nil {
+		t.Fatalf("ReadLayerFiles(one): %v", err)
+	}
+	if len(one) != 1 || !strings.Contains(string(one["/etc/os-release"]), "Demo Linux (amd64)") {
+		t.Fatalf("single read = %v, want just os-release", one)
+	}
+
+	all, err := c.ReadLayerFiles("demo", dig, nil, 0)
+	if err != nil {
+		t.Fatalf("ReadLayerFiles(all): %v", err)
+	}
+	if _, ok := all["/etc/os-release"]; !ok {
+		t.Error("full read missing /etc/os-release")
+	}
+	if _, ok := all["/etc/"]; ok {
+		t.Error("a directory should not appear as a file body")
+	}
+	if _, ok := all["/bin/sh"]; ok {
+		t.Error("a symlink should not appear as a file body")
+	}
+
+	// A tiny size cap drops file bodies larger than it.
+	capped, err := c.ReadLayerFiles("demo", dig, nil, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := capped["/etc/os-release"]; ok {
+		t.Error("os-release exceeds the 4-byte cap and should be skipped")
+	}
+}
+
 func TestNewRequiresDir(t *testing.T) {
 	if _, err := registry.New(registry.Options{}); err == nil {
 		t.Fatal("expected error when Dir is empty")
