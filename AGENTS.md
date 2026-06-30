@@ -1,8 +1,9 @@
 # Agent guide: playground
 
-This repository is a **multi-app playground**. Each top-level directory can be
-either a self-contained browser app deployed to GitHub Pages or an independent
-Go command-line app. There is no shared build step at the repo root.
+This repository is a **multi-app playground**. Each top-level directory can be a
+self-contained browser app deployed to GitHub Pages, an independent Go
+command-line app, or a Rust app (e.g. a Cloudflare Worker). There is no shared
+build step at the repo root.
 
 ## Repository layout
 
@@ -12,13 +13,15 @@ playground/
 ├── README.md
 ├── .github/
 │   ├── pages/             # shared HTML template for app index pages
-│   ├── scripts/           # CI helpers for browser and Go app discovery
+│   ├── scripts/           # CI helpers for browser, Go, and Rust app discovery
 │   └── workflows/         # deploy, preview, test, cleanup, dependency updates
 ├── git/                   # in-browser read-only git client (JS + Jest + Playwright)
 ├── gitdb/                 # Go CLI (Go module + Go tests)
 ├── hello/                 # example static app (HTML only)
 ├── kanoodle/              # example app with tests (JS + Jest + Playwright)
-└── ocidb/                 # Go CLI (Go module + Go tests)
+├── ocidb/                 # Go CLI (Go module + Go tests)
+├── web-push/              # Rust Cloudflare Worker (Cargo + tests; not a Pages app)
+└── web-push-demo/         # static browser front-end for the web-push Worker
 ```
 
 ### Browser apps
@@ -31,8 +34,10 @@ its root. This is the same rule used by deploy and preview workflows.
 | `git/` | yes | In-browser read-only git client; JS modules, npm scripts, tests |
 | `hello/` | yes | Static HTML; no build or tests |
 | `kanoodle/` | yes | Client-side JS modules, npm scripts, tests |
+| `web-push-demo/` | yes | Static front-end for `web-push`; HTML/JS, no build or tests |
 | `gitdb/` | no | Go CLI; no `index.html` |
 | `ocidb/` | no | Go CLI; no `index.html` |
+| `web-push/` | no | Rust Cloudflare Worker; no `index.html` |
 | `.github/` | no | Infrastructure only |
 | `README.md` | no | Not a directory |
 
@@ -47,6 +52,20 @@ Each Go app is an isolated module. Keep its Go sources, tests, `go.mod`, and
 `go.sum` inside its own top-level directory; do not add a repo-root Go module or
 `go.work` file.
 
+### Rust apps
+
+A top-level directory is a **Rust app** when it contains **`Cargo.toml`** at its
+root. Rust apps (e.g. `web-push`, a Cloudflare Worker) are built, linted, and
+tested by CI but are not copied to GitHub Pages and do not receive PR preview
+deployments. A Rust app may have a companion browser app that *is* deployed —
+`web-push` pairs with `web-push-demo`.
+
+Each Rust app is an isolated crate. Keep its sources, tests, `Cargo.toml`, and
+`Cargo.lock` inside its own top-level directory; do not add a repo-root crate or
+Cargo workspace. Pin the toolchain with a `rust-toolchain.toml` (channel,
+components, and any extra targets such as `wasm32-unknown-unknown`) so local
+builds and CI agree.
+
 Hidden top-level directories (names starting with `.`) are ignored by all app
 discovery scripts.
 
@@ -57,12 +76,12 @@ discovery scripts.
 | `deploy.yml` | push to `main` | Publishes all browser apps to GitHub Pages production |
 | `preview.yml` | pull request opened/sync | Deploys browser apps under `/preview/pr-<N>/` and comments the URL |
 | `cleanup.yml` | pull request closed | Removes that PR's preview directory from `gh-pages` |
-| `test.yml` | push to `main`, pull requests | Tests changed browser and Go apps in one job |
-| `deps.yaml` | daily at 00:00 UTC, manual | Updates every testable browser app and Go app; pushes passing updates to `main`, otherwise opens a PR |
+| `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps in one job |
+| `deps.yaml` | daily at 00:00 UTC, manual | Updates every testable browser app, Go app, and Rust app; pushes passing updates to `main`, otherwise opens a PR |
 
 Deploy workflows copy browser app directories as-is (they do **not** run
-`npm install` or build). Go app directories are not deployed. Only commit
-source files—never commit `node_modules/` or Go build artifacts.
+`npm install` or build). Go and Rust app directories are not deployed. Only
+commit source files—never commit `node_modules/` or Go/Rust build artifacts.
 
 ### Production URLs
 
@@ -115,10 +134,27 @@ build/test steps, and no separate Go check is created.
 The daily dependency workflow upgrades every testable browser app's direct npm
 dependencies, refreshes its lockfile and any `vendor` script output, and runs
 its unit and optional end-to-end tests. It also runs `go get -u ./...`,
-`go build ./...`, and `go test ./...` in every Go app module. Only when every
-update, build, and test succeeds does it commit dependency changes directly to
-`main`. If any of those steps or the push fails, it puts the changes (or an
-empty failure-report commit) on a pull request instead.
+`go build ./...`, and `go test ./...` in every Go app module. For every Rust app
+it runs `cargo update`, then `cargo clippy`, `cargo test`, and (for Cloudflare
+Worker apps) a `wasm32-unknown-unknown` release build. Only when every update,
+build, and test succeeds does it commit dependency changes directly to `main`.
+If any of those steps or the push fails, it puts the changes (or an empty
+failure-report commit) on a pull request instead.
+
+## Testing Rust apps (CI)
+
+The test workflow discovers changed Rust apps alongside browser and Go apps in
+its single test job. For every selected app, CI runs:
+
+1. `cargo fmt --check`
+2. `cargo clippy --locked --all-targets -- -D warnings`
+3. `cargo test --locked`
+
+Cloudflare Worker apps (those with a `wrangler.toml`) additionally run clippy
+and a release build for the `wasm32-unknown-unknown` target. Each app's
+toolchain comes from its `rust-toolchain.toml` (defaulting to stable); `web-push`
+pins Rust 1.83. Adding a top-level `<name>/Cargo.toml` selects the new app, and
+on the first push to `main`, every Rust app is tested.
 
 Discover apps locally:
 
@@ -134,6 +170,12 @@ bash .github/scripts/discover-go-modules.sh --all
 
 # Go apps touched by a diff
 git diff --name-only origin/main...HEAD | bash .github/scripts/discover-go-modules.sh --from-changes
+
+# All Rust apps
+bash .github/scripts/discover-rust-apps.sh --all
+
+# Rust apps touched by a diff
+git diff --name-only origin/main...HEAD | bash .github/scripts/discover-rust-apps.sh --from-changes
 ```
 
 ## Adding a new browser app
@@ -204,14 +246,39 @@ go build ./...
 go test ./...
 ```
 
+## Adding a new Rust app
+
+1. Create a **top-level directory** (for example, `my-worker/`).
+2. Initialize an independent crate at `my-worker/Cargo.toml` and commit
+   `Cargo.lock`.
+3. Keep all Rust sources and tests inside that directory.
+4. Add `my-worker/rust-toolchain.toml` pinning the toolchain (and, for a
+   Cloudflare Worker, the `wasm32-unknown-unknown` target).
+5. Add `my-worker/README.md` and a `my-worker/.gitignore` (at least `target/`).
+6. Do **not** add `index.html`; Rust apps are not deployed or previewed. If you
+   want a UI, add a separate browser app (see `web-push-demo`).
+
+No workflow edits are required. CI discovers a new Rust app from its
+`Cargo.toml`, and the daily dependency workflow includes it automatically.
+
+Run locally:
+
+```bash
+cd my-worker
+cargo fmt --check
+cargo clippy --all-targets
+cargo test
+```
+
 ## Implementation conventions
 
 - **Browser apps are client-side**: they must be static sites suitable for GitHub Pages (no server-side runtime in production).
 - **Prefer plain HTML + JS** for browser apps unless an app already uses a framework; match the style of neighboring code in that app directory.
 - **Go apps are independent modules**: each app owns its `go.mod` and `go.sum`; avoid cross-app imports.
-- **Keep all apps isolated**: do not add repo-root `package.json`, `go.mod`, or `go.work` files unless the maintainers explicitly request a monorepo toolchain.
+- **Rust apps are independent crates**: each app owns its `Cargo.toml`, `Cargo.lock`, and `rust-toolchain.toml`; avoid cross-app imports.
+- **Keep all apps isolated**: do not add repo-root `package.json`, `go.mod`, `go.work`, or Cargo workspace files unless the maintainers explicitly request a monorepo toolchain.
 - **Minimize scope**: when fixing or extending one app, avoid unrelated changes in other directories.
-- **Do not commit**: `node_modules/`, secrets, env files, browser or Go build artifacts, or Playwright/Jest output (`test-results/`, `coverage/`).
+- **Do not commit**: `node_modules/`, secrets, env files, browser/Go/Rust build artifacts (`target/`), or Playwright/Jest output (`test-results/`, `coverage/`).
 
 ## Pull requests
 
@@ -227,7 +294,7 @@ go test ./...
 - **Treat merged PRs as immutable.** Once a PR is merged, don't push more
   commits to its branch, reopen it, or amend it. Make any follow-up change
   (fix, revert, addition) in a **new** PR branched off `main`.
-- CI must pass (changed browser apps are tested; changed Go apps are built and tested).
+- CI must pass (changed browser apps are tested; changed Go and Rust apps are built and tested).
 - Preview deploy provides a live URL for browser apps only—use it to verify browser behavior, especially mobile.
 - If the repo uses Linear integration, include `Resolves ABC-123` in the PR body when applicable.
 
@@ -238,6 +305,7 @@ go test ./...
 | `git/` | In-browser read-only git client (clone, browse, branches, history) | Jest + Playwright |
 | `hello/` | Static demo | none |
 | `kanoodle/` | Kanoodle puzzle game (5×11 board, 12 pieces) | Jest + Playwright |
+| `web-push-demo/` | Browser front-end for `web-push` (subscribe/unsubscribe/notify) | none (static) |
 
 ## Current Go apps
 
@@ -245,5 +313,11 @@ go test ./...
 |-----------|------|-------|
 | `gitdb/` | git repository explorer backed by SQLite virtual tables | `go test ./...` |
 | `ocidb/` | OCI registry explorer backed by SQLite virtual tables | `go test ./...` |
+
+## Current Rust apps
+
+| Directory | Type | Tests |
+|-----------|------|-------|
+| `web-push/` | Web Push backend — Cloudflare Worker (RFC 8030/8188/8291/8292) | `cargo test` + clippy + wasm build |
 
 See each app's `README.md` for app-specific rules and local development.
