@@ -16,10 +16,10 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",
-    "@playwright/test": "^1.49.1",
+    "@playwright/test": "^1.61.1",
     "buffer": "^6.0.3",
     "esbuild": "^0.28.1",
-    "jest": "^29.7.0",
-    "jest-environment-jsdom": "^29.7.0"
+    "jest": "^30.4.2",
+    "jest-environment-jsdom": "^30.4.1"
   }
 }
