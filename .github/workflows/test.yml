@@ -143,26 +143,28 @@ jobs:
           echo "Go apps: ${modules}"
 
   test-go:
-    name: Go (${{ matrix.module }})
-    if: ${{ needs.discover-go.outputs.modules != '[]' }}
+    name: Go (${{ matrix.module || 'nothing to test' }})
     needs: discover-go
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        module: ${{ fromJSON(needs.discover-go.outputs.modules) }}
+        module: ${{ fromJSON(needs.discover-go.outputs.modules != '[]' && needs.discover-go.outputs.modules || '[""]') }}
     steps:
       - uses: actions/checkout@v7
 
       - uses: actions/setup-go@v6
+        if: ${{ matrix.module != '' }}
         with:
           go-version-file: ${{ matrix.module }}/go.mod
           cache: false
 
       - name: Build
+        if: ${{ matrix.module != '' }}
         working-directory: ${{ matrix.module }}
         run: go build ./...
 
       - name: Test
+        if: ${{ matrix.module != '' }}
         working-directory: ${{ matrix.module }}
         run: go test ./...
