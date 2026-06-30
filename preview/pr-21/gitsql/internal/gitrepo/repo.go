@@ -9,6 +9,7 @@
 package gitrepo
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -28,10 +29,12 @@ import (
 // Manager resolves repo specs to opened repositories, cloning and caching
 // remote repos locally. It is safe for concurrent use.
 type Manager struct {
-	cacheDir string
-	offline  bool
-	update   bool
-	progress io.Writer
+	cacheDir      string
+	offline       bool
+	update        bool
+	progress      io.Writer
+	detectRenames bool
+	renameLimit   uint
 
 	mu    sync.Mutex
 	repos map[string]*Repo
@@ -48,6 +51,13 @@ type Options struct {
 	Update bool
 	// Progress, when non-nil, receives clone/fetch progress output.
 	Progress io.Writer
+	// DisableRenames turns off rename detection in commit_files. Renames then
+	// appear as a delete plus an add, but per-commit diffing is much faster on
+	// large or merge-heavy repositories.
+	DisableRenames bool
+	// RenameLimit caps the files compared when detecting renames (deletes ×
+	// adds). 0 means no limit (go-git's default). Ignored when DisableRenames.
+	RenameLimit uint
 }
 
 // NewManager returns a Manager using the given options.
@@ -60,14 +70,27 @@ func NewManager(opts Options) (*Manager, error) {
 		}
 		dir = filepath.Join(base, "gitsql")
 	}
+	// Cap content-based rename detection by default. It is O(adds × deletes)
+	// per commit, so an unlimited limit (go-git's default) lets a single
+	// many-file commit dominate a full-history scan. Commits above the cap fall
+	// back to cheap exact-rename detection only; --no-renames disables it.
+	renameLimit := opts.RenameLimit
+	if renameLimit == 0 {
+		renameLimit = defaultRenameLimit
+	}
 	return &Manager{
-		cacheDir: dir,
-		offline:  opts.Offline,
-		update:   opts.Update,
-		progress: opts.Progress,
-		repos:    map[string]*Repo{},
+		cacheDir:      dir,
+		offline:       opts.Offline,
+		update:        opts.Update,
+		progress:      opts.Progress,
+		detectRenames: !opts.DisableRenames,
+		renameLimit:   renameLimit,
+		repos:         map[string]*Repo{},
 	}, nil
 }
+
+// defaultRenameLimit bounds per-commit content-rename comparisons.
+const defaultRenameLimit = 200
 
 // CacheDir reports the directory used to store cached clones.
 func (m *Manager) CacheDir() string { return m.cacheDir }
@@ -109,12 +132,14 @@ func (m *Manager) Resolve(spec string) (*Repo, error) {
 	}
 
 	r := &Repo{
-		Spec:     spec,
-		CloneURL: cloneURL,
-		Path:     path,
-		Local:    local,
-		repo:     gr,
-		stats:    map[plumbing.Hash][]FileChange{},
+		Spec:          spec,
+		CloneURL:      cloneURL,
+		Path:          path,
+		Local:         local,
+		repo:          gr,
+		detectRenames: m.detectRenames,
+		renameLimit:   m.renameLimit,
+		stats:         map[plumbing.Hash][]FileChange{},
 	}
 	m.repos[key] = r
 	return r, nil
@@ -170,7 +195,9 @@ type Repo struct {
 	Path     string // on-disk location (cache dir or local path)
 	Local    bool
 
-	repo *git.Repository
+	repo          *git.Repository
+	detectRenames bool
+	renameLimit   uint
 
 	mu    sync.Mutex
 	stats map[plumbing.Hash][]FileChange
@@ -217,7 +244,18 @@ func (r *Repo) CommitChanges(c *object.Commit) ([]FileChange, error) {
 			return nil, err
 		}
 	}
-	patch, err := parentTree.Patch(fromTree)
+	// Diff the trees ourselves so rename detection is configurable: it is the
+	// dominant cost (O(deletes × adds)) on large/merge-heavy repos.
+	changes, err := object.DiffTreeWithOptions(context.Background(), parentTree, fromTree,
+		&object.DiffTreeOptions{
+			DetectRenames: r.detectRenames,
+			RenameScore:   60,
+			RenameLimit:   r.renameLimit,
+		})
+	if err != nil {
+		return nil, err
+	}
+	patch, err := changes.PatchContext(context.Background())
 	if err != nil {
 		return nil, err
 	}

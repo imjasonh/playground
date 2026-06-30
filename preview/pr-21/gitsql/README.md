@@ -72,6 +72,8 @@ gitsql .
 | `-cache <dir>` | cache directory (default `<user cache>/gitsql`) |
 | `-update` | fetch new commits for a cached repo before querying |
 | `-offline` | never hit the network; require a cached clone |
+| `-no-renames` | disable rename detection in `commit_files` (faster on large repos) |
+| `-rename-limit <n>` | cap files compared for rename detection per commit (0 = default 200) |
 | `-quiet` | suppress clone/fetch progress |
 
 ### Interactive prompt
@@ -317,6 +319,81 @@ fast-forward of A?" (it is exactly when `srcd_only = 0`).
   the life of the process, so a full-history `commit_files` scan followed by a
   `JOIN` doesn't recompute diffs.
 
+## Performance
+
+Short version: **point lookups and recent-history queries are fast on repos of
+any size; whole-history diff aggregations are inherently expensive and scale
+with the age of the repo, not the query.**
+
+Measured on `git/git` (**81,348 commits, 4,765 files, history since 2005**),
+cloned once and queried offline:
+
+| Query | Time |
+|-------|------|
+| `SELECT * FROM commits LIMIT 10` (recent history) | ~80 ms |
+| `SELECT … FROM commits WHERE hash = ?` (point lookup) | ~60 ms |
+| `SELECT … FROM files WHERE path = ?` (direct tree lookup) | ~70 ms |
+| `SELECT count(*) FROM files` (whole HEAD tree, no blobs) | ~70 ms |
+| `SELECT count(*) FROM commits` (walk all history) | ~3 s |
+| `… FROM files WHERE contents LIKE ?` (reads every blob at HEAD) | ~0.9 s |
+| `SELECT count(*) FROM commit_files` (diff **every** commit) | **minutes — did not finish in 5 min before tuning** |
+
+### Cost model
+
+| Pattern | Cost | Examples |
+|---------|------|----------|
+| Pushed-down equality | direct object/tree lookup | `commits.hash`, `commit_files.commit_hash`, `files.path`, `blame.path` |
+| Streaming with `LIMIT` / early-out | O(rows returned) | recent commits, "first match" — the go-git log/tree iterators are lazy |
+| Small enumerations | O(refs/tags) | `refs`, `tags` |
+| Tree at a ref | O(files) + O(bytes) if you read `size`/`lines`/`is_binary`/`contents` | `files`, content search |
+| **History × diff** | O(commits × per-commit diff) | `commit_files`, `churn`, `lines-by-author` |
+
+That last row is the only genuinely expensive class: computing a numstat means
+diffing every commit against its parent, so it scales with how much the project
+has ever changed. (`git log --numstat` over the same history is also slow; our
+pure-Go diff is a few× slower than C git.)
+
+### What gitsql already does
+
+1. **Index push-down (`BestIndex`).** Equality on `hash` / `commit_hash` /
+   `path` / `ref` becomes a direct lookup instead of a scan — so point queries
+   and JOIN probes (`commit_files cf JOIN commits c ON c.hash = cf.commit_hash`)
+   stay fast even on huge repos.
+2. **Lazy cursors + `LIMIT`.** History/tree walks stream, so `… LIMIT 50` stops
+   after 50 rows rather than reading everything.
+3. **Lazy blob reads.** `files` only reads blob bytes when you select
+   `size`/`lines`/`is_binary`/`contents`; `SELECT path FROM files` never touches
+   blob content.
+4. **Merge commits are skipped in `commit_files` scans** (matches
+   `git log --numstat`): it avoids re-diffing whole merged branches and
+   double-counting a branch's work in churn/authorship. (An explicit
+   `WHERE commit_hash = '<merge>'` still returns its first-parent diff.)
+5. **Bounded rename detection.** Content-based rename detection is O(adds ×
+   deletes) per commit and was the single worst offender — with go-git's default
+   (unlimited) a full `git/git` churn **did not finish in 5 minutes**. gitsql
+   caps it (`--rename-limit`, default 200; commits above the cap keep only cheap
+   exact-rename detection) and `--no-renames` turns it off entirely.
+6. **Caching.** Remote repos are bare-cloned once and reused across runs; within
+   a run, per-commit diffs are memoized, so a `churn` scan followed by a JOIN on
+   the same commits doesn't recompute them.
+
+### Tips for large, complex repos
+
+- Prefer point/recent queries and add `LIMIT`.
+- Push down `path` / `commit_hash` for per-file or per-commit detail.
+- Scope history-wide work with `WHERE ref = '<tag/branch>'` to a release or
+  recent range instead of all of history.
+- For full-history analytics, add `--no-renames` (often the biggest win) and
+  expect a one-off "grab a coffee" scan on a repo with tens of thousands of
+  commits. On `BurntSushi/ripgrep` (~2.2k commits) a full churn is ~4–5 s; on
+  `git/git` it is minutes.
+
+### Not done yet
+
+Persisting computed per-commit stats to an on-disk cache (so a full churn is
+paid once across runs) and parallelizing per-commit diffing would both help the
+history-wide case; neither is implemented.
+
 ## Architecture
 
 ```
@@ -346,6 +423,10 @@ cross-table JOIN.
 
 - Read-only. The tables never write to the repo.
 - `blame` and full-history `commit_files` scans are O(history) and can be slow on
-  very large repositories; prefer pushing down `commit_hash`/`path`, or scope
-  with `WHERE ref = …`.
-- Rename detection in `commit_files` follows go-git's default diff behavior.
+  very large repositories — see [Performance](#performance). Prefer pushing down
+  `commit_hash`/`path`, scope with `WHERE ref = …`, and consider `--no-renames`.
+- `commit_files` skips merge commits in a full scan (it diffs non-merge commits
+  against their first parent), matching `git log --numstat`. Query a merge
+  explicitly with `WHERE commit_hash = '<merge>'` to see its first-parent diff.
+- Rename detection is bounded (`--rename-limit`, default 200) and can be disabled
+  (`--no-renames`); above the cap, only exact renames are detected.

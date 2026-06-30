@@ -56,7 +56,13 @@ func init() {
 type filesSource struct{ repo *gitrepo.Repo }
 
 func (s *filesSource) BestIndex(info *fdw.IndexInfo) error {
-	eqFilter(info, map[int]bool{fRef: true}, map[int]bool{fRef: true}, nil)
+	// path= becomes a direct tree lookup (one entry) instead of a full walk;
+	// ref= selects the revision.
+	eqFilter(info,
+		map[int]bool{fPath: true, fRef: true},
+		map[int]bool{fPath: true, fRef: true},
+		map[int]bool{fPath: true},
+	)
 	return nil
 }
 
@@ -72,11 +78,12 @@ type filesEntry struct {
 }
 
 type filesCursor struct {
-	repo  *gitrepo.Repo
-	ref   string
-	walk  *object.TreeWalker
-	cur   *filesEntry
-	rowid int64
+	repo   *gitrepo.Repo
+	ref    string
+	walk   *object.TreeWalker
+	cur    *filesEntry
+	single bool
+	rowid  int64
 
 	// lazy per-row blob content cache
 	loaded  bool
@@ -87,6 +94,7 @@ type filesCursor struct {
 func (c *filesCursor) Filter(_ int, idxStr string, args []fdw.Value) error {
 	c.close()
 	c.rowid = 0
+	c.single = false
 	f := parseFilters(idxStr, args)
 	ref, _ := filterText(f, fRef)
 
@@ -99,8 +107,27 @@ func (c *filesCursor) Filter(_ int, idxStr string, args []fdw.Value) error {
 	if err != nil {
 		return err
 	}
+
+	// path= : resolve a single entry directly instead of walking the tree.
+	if path, ok := filterText(f, fPath); ok {
+		c.single = true
+		entry, err := tree.FindEntry(path)
+		if err != nil || entry.Mode == filemode.Dir {
+			c.cur = nil // not found (or a directory) → no rows
+			return nil
+		}
+		c.setRow(path, *entry)
+		return nil
+	}
+
 	c.walk = object.NewTreeWalker(tree, true, nil)
 	return c.advance()
+}
+
+func (c *filesCursor) setRow(path string, entry object.TreeEntry) {
+	c.cur = &filesEntry{path: path, mode: entry.Mode, hash: entry.Hash.String(), gh: entry}
+	c.rowid++
+	c.loaded, c.content, c.readErr = false, nil, nil
 }
 
 func (c *filesCursor) advance() error {
@@ -113,15 +140,19 @@ func (c *filesCursor) advance() error {
 		if entry.Mode == filemode.Dir {
 			continue
 		}
-		c.cur = &filesEntry{path: name, mode: entry.Mode, hash: entry.Hash.String(), gh: entry}
-		c.rowid++
-		c.loaded, c.content, c.readErr = false, nil, nil
+		c.setRow(name, entry)
 		return nil
 	}
 }
 
-func (c *filesCursor) Next() error { return c.advance() }
-func (c *filesCursor) EOF() bool   { return c.cur == nil }
+func (c *filesCursor) Next() error {
+	if c.single {
+		c.cur = nil
+		return nil
+	}
+	return c.advance()
+}
+func (c *filesCursor) EOF() bool { return c.cur == nil }
 
 // load reads (and caches) the current blob's bytes for size/binary/line columns.
 func (c *filesCursor) load() ([]byte, error) {

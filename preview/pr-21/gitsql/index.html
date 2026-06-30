@@ -203,7 +203,8 @@ Marc Tiehuis      7        2017-03-01    2017-05-19</pre>
 
   <div class="card">
     <h3>Net lines per author — a JOIN across two virtual tables</h3>
-    <p class="desc"><code>commit_files</code> (numstat) joined to <code>commits</code> on the commit hash.</p>
+    <p class="desc"><code>commit_files</code> (numstat) joined to <code>commits</code> on the commit hash.
+       Merge commits are excluded from the scan, so a branch's work isn't double-counted.</p>
 <pre class="sqlblock"><span class="kw">SELECT</span> c.author_name,
        sum(cf.additions)                <span class="kw">AS</span> added,
        sum(cf.deletions)                <span class="kw">AS</span> removed,
@@ -214,12 +215,12 @@ Marc Tiehuis      7        2017-03-01    2017-05-19</pre>
 <span class="kw">GROUP BY</span> c.author_name <span class="kw">ORDER BY</span> added <span class="kw">DESC</span> <span class="kw">LIMIT</span> <span class="num">6</span>;</pre>
 <pre class="out">author_name         added   removed  net
 ------------------  ------  -------  -----
-Andrew Gallant      138426  71317    67109
+Andrew Gallant      129237  67490    61747
 dana                1802    748      1054
 Lucas Trzesniewski  1454    226      1228
 Balaji Sivaraman    1175    261      914
 Marc Tiehuis        557     107      450
-William Johnson     358     1        357</pre>
+Behnam Esfahbod ✅   524     3        521</pre>
   </div>
 
   <div class="card">
@@ -233,11 +234,11 @@ William Johnson     358     1        357</pre>
 <pre class="out">path                        touched_by_commits  added  removed  churn
 --------------------------  ------------------  -----  -------  -----
 grep/src/data/sherlock.txt  2                   13052  13052    26104
-Cargo.lock                  484                 6271   5640     11911
-src/args.rs                 174                 4926   3272     8198
+Cargo.lock                  477                 6130   5560     11690
 crates/core/flags/defs.rs   28                  7853   74       7927
-src/app.rs                  127                 5079   1668     6747
-ignore/src/walk.rs          51                  4640   1107     5747</pre>
+src/args.rs                 162                 4282   2477     6759
+src/app.rs                  123                 4620   1665     6285
+tests/tests.rs              118                 2642   2620     5262</pre>
   </div>
 
   <div class="card">

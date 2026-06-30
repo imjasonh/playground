@@ -51,6 +51,8 @@ func run(argv []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		cacheDir     = fs.String("cache", "", "cache directory for cloned repos (default: <user cache>/gitsql)")
 		offline      = fs.Bool("offline", false, "never hit the network; require a cached clone")
 		update       = fs.Bool("update", false, "fetch new commits for a cached repo before querying")
+		noRenames    = fs.Bool("no-renames", false, "disable rename detection in commit_files (much faster on large repos)")
+		renameLimit  = fs.Uint("rename-limit", 0, "cap files compared for rename detection per commit (0 = default 200)")
 		schema       = fs.Bool("schema", false, "print the schema of every table and exit")
 		maxWidth     = fs.Int("max-width", 60, "truncate table cells to this width (0 = unlimited)")
 		quiet        = fs.Bool("quiet", false, "suppress clone/fetch progress output")
@@ -102,10 +104,12 @@ func run(argv []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		progress = stderr
 	}
 	mgr, err := gitrepo.NewManager(gitrepo.Options{
-		CacheDir: *cacheDir,
-		Offline:  *offline,
-		Update:   *update,
-		Progress: progress,
+		CacheDir:       *cacheDir,
+		Offline:        *offline,
+		Update:         *update,
+		Progress:       progress,
+		DisableRenames: *noRenames,
+		RenameLimit:    *renameLimit,
 	})
 	if err != nil {
 		return err

@@ -119,6 +119,11 @@ func (c *commitFilesCursor) reset() {
 }
 
 // loadNextCommit advances to the next commit that touched at least one file.
+// Merge commits are skipped in a full scan: diffing a merge against its first
+// parent re-attributes every change from the merged branch (double-counting for
+// churn/authorship) and is the most expensive diff in the repo. This matches
+// `git log --numstat`, which shows nothing for merges by default. An explicit
+// `WHERE commit_hash = '<merge>'` still returns the first-parent diff.
 func (c *commitFilesCursor) loadNextCommit() error {
 	for {
 		commit, err := c.iter.Next()
@@ -130,6 +135,9 @@ func (c *commitFilesCursor) loadNextCommit() error {
 			c.err = err
 			c.pending = nil
 			return err
+		}
+		if commit.NumParents() > 1 {
+			continue
 		}
 		changes, err := c.repo.CommitChanges(commit)
 		if err != nil {
