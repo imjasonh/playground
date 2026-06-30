@@ -38,183 +38,11 @@ jobs:
 
       - name: Update, build, and test every Go app
         id: update_go
-        run: |
-          set -uo pipefail
-
-          result=success
-          {
-            echo "### Daily Go dependency update"
-            echo
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          modules=()
-          if modules_json=$(bash .github/scripts/discover-go-modules.sh --all); then
-            if module_lines=$(printf '%s' "$modules_json" | jq -r '.[]'); then
-              if [ -n "$module_lines" ]; then
-                mapfile -t modules <<< "$module_lines"
-              fi
-            else
-              result=failure
-              echo "::error title=Go app discovery failed::Discovery returned invalid JSON."
-              echo "- ❌ Go app discovery returned invalid JSON." >> "$GITHUB_STEP_SUMMARY"
-            fi
-          else
-            result=failure
-            echo "::error title=Go app discovery failed::Could not discover Go app modules."
-            echo "- ❌ Could not discover Go app modules." >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-          if [ "${#modules[@]}" -eq 0 ]; then
-            echo "No Go apps found."
-            if [ "$result" = success ]; then
-              echo "- No Go apps found." >> "$GITHUB_STEP_SUMMARY"
-            fi
-          fi
-
-          for module in "${modules[@]}"; do
-            echo "::group::Update and verify ${module}"
-
-            if (
-              cd "$module"
-              go get -u ./...
-            ); then
-              echo "- ✅ \`${module}\`: dependencies updated" >> "$GITHUB_STEP_SUMMARY"
-            else
-              result=failure
-              echo "::error title=Dependency update failed::${module}: go get -u ./..."
-              echo "- ❌ \`${module}\`: dependency update failed" >> "$GITHUB_STEP_SUMMARY"
-            fi
-
-            if (
-              cd "$module"
-              go build ./...
-            ); then
-              echo "- ✅ \`${module}\`: build passed" >> "$GITHUB_STEP_SUMMARY"
-            else
-              result=failure
-              echo "::error title=Build failed::${module}: go build ./..."
-              echo "- ❌ \`${module}\`: build failed" >> "$GITHUB_STEP_SUMMARY"
-            fi
-
-            if (
-              cd "$module"
-              go test ./...
-            ); then
-              echo "- ✅ \`${module}\`: tests passed" >> "$GITHUB_STEP_SUMMARY"
-            else
-              result=failure
-              echo "::error title=Tests failed::${module}: go test ./..."
-              echo "- ❌ \`${module}\`: tests failed" >> "$GITHUB_STEP_SUMMARY"
-            fi
-
-            echo "::endgroup::"
-          done
-
-          if [ -n "$(git status --porcelain -- ':(glob)*/go.mod' ':(glob)*/go.sum')" ]; then
-            has_changes=true
-          else
-            has_changes=false
-          fi
-
-          echo "result=${result}" >> "$GITHUB_OUTPUT"
-          echo "has_changes=${has_changes}" >> "$GITHUB_OUTPUT"
+        run: bash .github/scripts/update-go-dependencies.sh
 
       - name: Update and test every JavaScript app
         id: update_js
-        run: |
-          set -uo pipefail
-
-          result=success
-          {
-            echo
-            echo "### Daily JavaScript dependency update"
-            echo
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          apps=()
-          if apps_json=$(bash .github/scripts/discover-testable-apps.sh --all); then
-            if app_lines=$(printf '%s' "$apps_json" | jq -r '.[]'); then
-              if [ -n "$app_lines" ]; then
-                mapfile -t apps <<< "$app_lines"
-              fi
-            else
-              result=failure
-              echo "::error title=JavaScript app discovery failed::Discovery returned invalid JSON."
-              echo "- ❌ JavaScript app discovery returned invalid JSON." >> "$GITHUB_STEP_SUMMARY"
-            fi
-          else
-            result=failure
-            echo "::error title=JavaScript app discovery failed::Could not discover testable JavaScript apps."
-            echo "- ❌ Could not discover testable JavaScript apps." >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-          if [ "${#apps[@]}" -eq 0 ]; then
-            echo "No testable JavaScript apps found."
-            if [ "$result" = success ]; then
-              echo "- No testable JavaScript apps found." >> "$GITHUB_STEP_SUMMARY"
-            fi
-          fi
-
-          for app in "${apps[@]}"; do
-            echo "::group::Update and verify ${app}"
-
-            if (
-              set -euo pipefail
-              cd "$app"
-              npx --yes npm-check-updates@latest --upgrade
-              npm install
-              npm run vendor --if-present
-            ); then
-              echo "- ✅ \`${app}\`: dependencies updated" >> "$GITHUB_STEP_SUMMARY"
-            else
-              result=failure
-              echo "::error title=Dependency update failed::${app}: npm dependency update"
-              echo "- ❌ \`${app}\`: dependency update failed" >> "$GITHUB_STEP_SUMMARY"
-            fi
-
-            if (
-              set -euo pipefail
-              cd "$app"
-              npm test
-            ); then
-              echo "- ✅ \`${app}\`: tests passed" >> "$GITHUB_STEP_SUMMARY"
-            else
-              result=failure
-              echo "::error title=Tests failed::${app}: npm test"
-              echo "- ❌ \`${app}\`: tests failed" >> "$GITHUB_STEP_SUMMARY"
-            fi
-
-            if (
-              cd "$app"
-              node -e "const s=require('./package.json').scripts||{}; process.exit(s['test:e2e']?0:1)"
-            ); then
-              if (
-                set -euo pipefail
-                cd "$app"
-                npx playwright install --with-deps chromium
-                npm run test:e2e
-              ); then
-                echo "- ✅ \`${app}\`: end-to-end tests passed" >> "$GITHUB_STEP_SUMMARY"
-              else
-                result=failure
-                echo "::error title=End-to-end tests failed::${app}: npm run test:e2e"
-                echo "- ❌ \`${app}\`: end-to-end tests failed" >> "$GITHUB_STEP_SUMMARY"
-              fi
-            else
-              echo "- \`${app}\`: no end-to-end tests" >> "$GITHUB_STEP_SUMMARY"
-            fi
-
-            echo "::endgroup::"
-          done
-
-          if [ -n "$(git status --porcelain -- ':(glob)*/package.json' ':(glob)*/package-lock.json' ':(glob)*/vendor/**')" ]; then
-            has_changes=true
-          else
-            has_changes=false
-          fi
-
-          echo "result=${result}" >> "$GITHUB_OUTPUT"
-          echo "has_changes=${has_changes}" >> "$GITHUB_OUTPUT"
+        run: bash .github/scripts/update-js-dependencies.sh
 
       - name: Push passing updates to main
         id: push
@@ -228,18 +56,7 @@ jobs:
             )
           }}
         continue-on-error: true
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- \
-            ':(glob)*/go.mod' \
-            ':(glob)*/go.sum' \
-            ':(glob)*/package.json' \
-            ':(glob)*/package-lock.json' \
-            ':(glob)*/vendor/**'
-          git commit -m "chore(deps): update dependencies"
-          git push origin HEAD:main
+        run: bash .github/scripts/manage-dependency-update.sh push
 
       - name: Create an empty failure commit when nothing changed
         if: >-
@@ -251,10 +68,7 @@ jobs:
             steps.update_go.outputs.has_changes != 'true' &&
             steps.update_js.outputs.has_changes != 'true'
           }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit --allow-empty -m "chore(deps): report failed dependency update"
+        run: bash .github/scripts/manage-dependency-update.sh failure-commit
 
       - name: Open a pull request when automatic update fails
         if: >-
@@ -304,4 +118,4 @@ jobs:
             steps.update_js.outputs.result == 'failure' ||
             steps.push.outcome == 'failure'
           }}
-        run: exit 1
+        run: bash .github/scripts/manage-dependency-update.sh report-failure
