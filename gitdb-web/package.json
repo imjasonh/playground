@@ -1,0 +1,17 @@
+{
+  "name": "gitdb-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser compatibility spike for gitdb and go-sqlite-fdw",
+  "scripts": {
+    "build": "bash ../.github/scripts/build-gitdb-web.sh generated",
+    "test": "node --test",
+    "test:e2e": "npm run build && playwright test",
+    "start": "npm run build && serve . -l 3000"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "serve": "^14.2.6"
+  }
+}

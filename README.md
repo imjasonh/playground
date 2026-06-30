@@ -19,6 +19,8 @@ experiments don't bit-rot.
 
 - **[`git/`](git/)** — an in-browser, read-only git client: clone a repository
   into local storage and browse its files, branches, and commit history.
+- **[`gitdb-web/`](gitdb-web/)** — a Go/WASM compatibility spike that runs
+  `gitdb`'s SQLite virtual tables entirely in a browser worker.
 - **[`hello/`](hello/)** — a minimal static demo.
 - **[`kanoodle/`](kanoodle/)** — the Kanoodle puzzle game (5×11 board, 12 pieces).
 - **[`web-push-demo/`](web-push-demo/)** — a browser front-end for the

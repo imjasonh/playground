@@ -18,6 +18,17 @@ It wires three pieces together:
 Remote repositories are cloned **once** (bare) into a local cache and reused on
 later runs, so re-querying the same repo is fast and works offline.
 
+## Browser compatibility spike
+
+[`gitdb-web`](../gitdb-web/) runs these same virtual-table implementations in a
+Go WebAssembly worker. The CLI registers them with the `modernc` backend; the
+browser build registers them with `go-sqlite-fdw/ncruces` and queries both
+through `database/sql`.
+
+The current browser demo uses a deterministic in-memory repository so it can
+run offline. Remote cloning, browser-backed object storage, and registry-style
+CORS proxying are intentionally left for a follow-up.
+
 ## Build
 
 Requires Go 1.25+ (the toolchain auto-downloads via `GOTOOLCHAIN=auto` if your

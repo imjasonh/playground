@@ -26,6 +26,20 @@ for module in "${modules[@]}"; do
     result=1
   fi
 
+  if [ -d "$module/cmd/wasm" ]; then
+    if (
+      cd "$module"
+      output=$(mktemp)
+      trap 'rm -f "$output"' EXIT
+      GOOS=js GOARCH=wasm go build -o "$output" ./cmd/wasm
+    ); then
+      echo "${module}: browser WASM build passed"
+    else
+      echo "::error title=Go WASM build failed::${module}: GOOS=js GOARCH=wasm go build ./cmd/wasm"
+      result=1
+    fi
+  fi
+
   if (
     cd "$module"
     go test ./...

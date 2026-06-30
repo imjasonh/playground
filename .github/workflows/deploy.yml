@@ -13,6 +13,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-go@v6
+        with:
+          go-version: 'stable'
+          check-latest: true
+          cache: false
+
       - name: Build site
         run: |
           mkdir -p dist
@@ -24,6 +30,8 @@ jobs:
               cp -r "$d" "dist/$d"
             fi
           done
+
+          bash .github/scripts/build-gitdb-web.sh "dist/gitdb-web/generated"
 
           # Generate a root index listing all apps
           items=$(

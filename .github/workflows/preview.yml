@@ -14,6 +14,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-go@v6
+        with:
+          go-version: 'stable'
+          check-latest: true
+          cache: false
+
       - name: Build preview
         run: |
           PR=${{ github.event.pull_request.number }}
@@ -25,6 +31,9 @@ jobs:
               cp -r "$d" "dist/preview/pr-${PR}/$d"
             fi
           done
+
+          bash .github/scripts/build-gitdb-web.sh \
+            "dist/preview/pr-${PR}/gitdb-web/generated"
 
           # Index listing all apps in this preview
           items=$(

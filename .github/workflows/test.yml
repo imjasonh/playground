@@ -26,6 +26,13 @@ jobs:
           HEAD_SHA: ${{ github.sha }}
         run: bash .github/scripts/discover-changed-apps.sh
 
+      - uses: actions/setup-go@v6
+        if: ${{ steps.discover.outputs.modules != '[]' || contains(fromJSON(steps.discover.outputs.apps), 'gitdb-web') }}
+        with:
+          go-version: 'stable'
+          check-latest: true
+          cache: false
+
       - uses: actions/setup-node@v4
         if: ${{ steps.discover.outputs.apps != '[]' }}
         with:
@@ -38,13 +45,6 @@ jobs:
         env:
           APPS: ${{ steps.discover.outputs.apps }}
         run: bash .github/scripts/test-browser-apps.sh
-
-      - uses: actions/setup-go@v6
-        if: ${{ steps.discover.outputs.modules != '[]' }}
-        with:
-          go-version: 'stable'
-          check-latest: true
-          cache: false
 
       - name: Build and test changed Go apps
         if: ${{ steps.discover.outputs.modules != '[]' }}
