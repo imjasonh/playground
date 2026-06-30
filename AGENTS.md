@@ -58,7 +58,7 @@ discovery scripts.
 | `preview.yml` | pull request opened/sync | Deploys browser apps under `/preview/pr-<N>/` and comments the URL |
 | `cleanup.yml` | pull request closed | Removes that PR's preview directory from `gh-pages` |
 | `test.yml` | push to `main`, pull requests | Tests changed browser apps and fans out build/test jobs for changed Go apps |
-| `deps.yaml` | daily at 00:00 UTC, manual | Updates every Go app's dependencies; pushes passing updates to `main`, otherwise opens a PR |
+| `deps.yaml` | daily at 00:00 UTC, manual | Updates every testable browser app and Go app; pushes passing updates to `main`, otherwise opens a PR |
 
 Deploy workflows copy browser app directories as-is (they do **not** run
 `npm install` or build). Go app directories are not deployed. Only commit
@@ -112,10 +112,13 @@ Changing any path under a Go app selects that module. Adding a top-level
 Go CI workflow test every Go app so CI infrastructure changes exercise the
 full fan-out. On the first push to `main`, every Go app is tested.
 
-The daily dependency workflow runs `go get -u ./...`, `go build ./...`, and
-`go test ./...` in every Go app module. It commits passing dependency changes
-directly to `main`. If updating, building, testing, or pushing fails, it puts
-the changes (or an empty failure-report commit) on a pull request instead.
+The daily dependency workflow upgrades every testable browser app's direct npm
+dependencies, refreshes its lockfile and any `vendor` script output, and runs
+its unit and optional end-to-end tests. It also runs `go get -u ./...`,
+`go build ./...`, and `go test ./...` in every Go app module. Only when every
+update, build, and test succeeds does it commit dependency changes directly to
+`main`. If any of those steps or the push fails, it puts the changes (or an
+empty failure-report commit) on a pull request instead.
 
 Discover apps locally:
 
