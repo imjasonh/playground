@@ -249,6 +249,59 @@ func TestReadLayerFiles(t *testing.T) {
 	}
 }
 
+func TestOverlay(t *testing.T) {
+	file := func(p string) registry.TarEntry { return registry.TarEntry{Path: p, Type: "file"} }
+	dir := func(p string) registry.TarEntry { return registry.TarEntry{Path: p, Type: "dir"} }
+
+	layers := [][]registry.TarEntry{
+		{ // layer 0 (base)
+			file("/a"),
+			file("/b"),
+			dir("/dir/"),
+			file("/dir/x"),
+			dir("/op/"),
+			file("/op/low"),
+		},
+		{ // layer 1: replace /a, delete /dir/x via whiteout
+			file("/a"),
+			file("/dir/.wh.x"),
+		},
+		{ // layer 2: opaque-clear /op lower contents, add /op/new
+			file("/op/.wh..wh..opq"),
+			file("/op/new"),
+		},
+	}
+	info := registry.Overlay(layers)
+
+	type want struct {
+		present  bool
+		whiteout string
+	}
+	cases := []struct {
+		layer, entry int
+		path         string
+		want         want
+	}{
+		{0, 0, "/a", want{false, ""}},      // replaced by layer 1
+		{0, 1, "/b", want{true, ""}},       // survives
+		{0, 2, "/dir/", want{true, ""}},    // dir survives
+		{0, 3, "/dir/x", want{false, ""}},  // whiteout-deleted
+		{0, 4, "/op/", want{true, ""}},     // opaque keeps the dir itself
+		{0, 5, "/op/low", want{false, ""}}, // opaque clears lower contents
+		{1, 0, "/a", want{true, ""}},       // winning copy of /a
+		{1, 1, "/dir/.wh.x", want{false, "file"}},
+		{2, 0, "/op/.wh..wh..opq", want{false, "opaque"}},
+		{2, 1, "/op/new", want{true, ""}}, // added above the opaque marker
+	}
+	for _, c := range cases {
+		got := info[c.layer][c.entry]
+		if got.Present != c.want.present || got.Whiteout != c.want.whiteout {
+			t.Errorf("%s (layer %d): present=%v whiteout=%q, want present=%v whiteout=%q",
+				c.path, c.layer, got.Present, got.Whiteout, c.want.present, c.want.whiteout)
+		}
+	}
+}
+
 func TestNewRequiresDir(t *testing.T) {
 	if _, err := registry.New(registry.Options{}); err == nil {
 		t.Fatal("expected error when Dir is empty")

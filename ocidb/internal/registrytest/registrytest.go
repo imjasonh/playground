@@ -24,8 +24,9 @@ import (
 
 // Repository names used by the fixture (fully normalized, as the client sees them).
 const (
-	DemoRepo   = "index.docker.io/library/demo"
-	SingleRepo = "index.docker.io/library/single"
+	DemoRepo    = "index.docker.io/library/demo"
+	SingleRepo  = "index.docker.io/library/single"
+	OverlayRepo = "index.docker.io/library/overlay"
 )
 
 // Created is the fixed build timestamp baked into every fixture image.
@@ -95,12 +96,12 @@ func New() *Fake {
 	}
 
 	// Two single-arch images that the index points at.
-	amd := f.addImage(DemoRepo, "amd64", "", []int64{1000, 2000})
-	arm := f.addImage(DemoRepo, "arm64", "v8", []int64{1100, 2100})
+	amd := f.addImage(DemoRepo, "amd64", "", []int64{1000, 2000}, defaultLayerSpecs("amd64", 2))
+	arm := f.addImage(DemoRepo, "arm64", "v8", []int64{1100, 2100}, defaultLayerSpecs("arm64", 2))
 
 	// A buildkit attestation child (platform unknown/unknown) that should be
 	// ignored by platform listing and resolution.
-	att := buildImage("unknown", "", []int64{1})
+	att := buildImage("unknown", "", []int64{1}, defaultLayerSpecs("unknown", 1))
 	attMf := att.manifestBytes
 	attDigest := digestOf(attMf)
 
@@ -122,13 +123,25 @@ func New() *Fake {
 	f.manifests[DemoRepo+"@"+idxDigest] = idxManifest
 
 	// A plain single-arch repo (no index).
-	single := f.addImage(SingleRepo, "amd64", "", []int64{4242})
+	single := f.addImage(SingleRepo, "amd64", "", []int64{4242}, defaultLayerSpecs("amd64", 1))
 	f.tags[SingleRepo] = []string{"latest"}
 	f.manifests[SingleRepo+":latest"] = registry.Manifest{
 		Digest:    single.manifestDigest,
 		MediaType: string(types.DockerManifestSchema2),
 		Size:      int64(len(single.manifestBytes)),
 		Raw:       single.manifestBytes,
+	}
+
+	// A single-arch repo whose layers exercise overlay/whiteout semantics:
+	// layer 2 replaces a file from layer 1, and layer 3 deletes files via a
+	// regular whiteout and an opaque whiteout.
+	overlay := f.addImage(OverlayRepo, "amd64", "", []int64{500, 300, 200}, overlayLayerSpecs())
+	f.tags[OverlayRepo] = []string{"latest"}
+	f.manifests[OverlayRepo+":latest"] = registry.Manifest{
+		Digest:    overlay.manifestDigest,
+		MediaType: string(types.DockerManifestSchema2),
+		Size:      int64(len(overlay.manifestBytes)),
+		Raw:       overlay.manifestBytes,
 	}
 
 	return f
@@ -150,8 +163,8 @@ type builtImage struct {
 // addImage builds an image, registers its manifest (addressable by digest under
 // repo), its config blob, and every layer blob, and returns the build for
 // wiring into an index.
-func (f *Fake) addImage(repo, arch, variant string, layerSizes []int64) builtImage {
-	img := buildImage(arch, variant, layerSizes)
+func (f *Fake) addImage(repo, arch, variant string, layerSizes []int64, specs [][]fileSpec) builtImage {
+	img := buildImage(arch, variant, layerSizes, specs)
 	f.manifests[repo+"@"+img.manifestDigest] = registry.Manifest{
 		Digest:    img.manifestDigest,
 		MediaType: string(types.DockerManifestSchema2),
@@ -165,7 +178,7 @@ func (f *Fake) addImage(repo, arch, variant string, layerSizes []int64) builtIma
 	return img
 }
 
-func buildImage(arch, variant string, layerSizes []int64) builtImage {
+func buildImage(arch, variant string, layerSizes []int64, specs [][]fileSpec) builtImage {
 	cfg := v1.ConfigFile{
 		Architecture: arch,
 		Variant:      variant,
@@ -196,7 +209,7 @@ func buildImage(arch, variant string, layerSizes []int64) builtImage {
 	descs := make([]v1.Descriptor, len(layerSizes))
 	built := make([]builtLayer, len(layerSizes))
 	for i, sz := range layerSizes {
-		gz := makeLayer(layerFiles(arch, i))
+		gz := makeLayer(specs[i])
 		dig := digestOf(gz)
 		descs[i] = v1.Descriptor{
 			MediaType: types.DockerLayer,
@@ -259,6 +272,46 @@ func layerFiles(arch string, idx int) []fileSpec {
 		return []fileSpec{
 			{name: fmt.Sprintf("data/file-%d.txt", idx), typ: tar.TypeReg, mode: 0o644, body: []byte(fmt.Sprintf("layer %d on %s\n", idx, arch))},
 		}
+	}
+}
+
+// defaultLayerSpecs returns the file specs for the first n layers of a normal
+// fixture image built for arch.
+func defaultLayerSpecs(arch string, n int) [][]fileSpec {
+	specs := make([][]fileSpec, n)
+	for i := 0; i < n; i++ {
+		specs[i] = layerFiles(arch, i)
+	}
+	return specs
+}
+
+// overlayLayerSpecs returns three layers exercising overlay/whiteout semantics:
+//   - layer 1 lays down files (some of which later layers shadow or delete);
+//   - layer 2 replaces /etc/replaced.txt and adds /etc/added.txt;
+//   - layer 3 deletes /data/old.bin via a regular whiteout, clears
+//     /opaquedir/* via an opaque whiteout, and adds /opaquedir/new.txt.
+func overlayLayerSpecs() [][]fileSpec {
+	return [][]fileSpec{
+		{
+			{name: "etc/", typ: tar.TypeDir, mode: 0o755},
+			{name: "etc/keep.txt", typ: tar.TypeReg, mode: 0o644, body: []byte("keep me\n")},
+			{name: "etc/replaced.txt", typ: tar.TypeReg, mode: 0o644, body: []byte("version 1\n")},
+			{name: "data/", typ: tar.TypeDir, mode: 0o755},
+			{name: "data/old.bin", typ: tar.TypeReg, mode: 0o644, body: []byte("old binary data")},
+			{name: "opaquedir/", typ: tar.TypeDir, mode: 0o755},
+			{name: "opaquedir/lower.txt", typ: tar.TypeReg, mode: 0o644, body: []byte("lower\n")},
+		},
+		{
+			{name: "etc/replaced.txt", typ: tar.TypeReg, mode: 0o644, body: []byte("version 2 is longer\n")},
+			{name: "etc/added.txt", typ: tar.TypeReg, mode: 0o644, body: []byte("added in layer 2\n")},
+		},
+		{
+			// Regular whiteout: deletes /data/old.bin from lower layers.
+			{name: "data/.wh.old.bin", typ: tar.TypeReg, mode: 0o644},
+			// Opaque whiteout: clears lower contributions under /opaquedir.
+			{name: "opaquedir/.wh..wh..opq", typ: tar.TypeReg, mode: 0o644},
+			{name: "opaquedir/new.txt", typ: tar.TypeReg, mode: 0o644, body: []byte("new in layer 3\n")},
+		},
 	}
 }
 
