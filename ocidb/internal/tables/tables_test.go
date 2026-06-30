@@ -379,6 +379,74 @@ func TestFilesContentServedFromCache(t *testing.T) {
 	}
 }
 
+func TestFilesSquashedView(t *testing.T) {
+	db, _ := setup(t)
+	// present = 1 is the final, squashed filesystem: replaced/deleted entries
+	// and whiteout markers are gone.
+	got := query(t, db, `SELECT path FROM files WHERE reference = 'overlay' AND present = 1 ORDER BY path`)
+	var paths []string
+	for _, r := range got {
+		paths = append(paths, r[0].(string))
+	}
+	want := []string{
+		"/data/",
+		"/etc/",
+		"/etc/added.txt",
+		"/etc/keep.txt",
+		"/etc/replaced.txt",
+		"/opaquedir/",
+		"/opaquedir/new.txt",
+	}
+	if !reflect.DeepEqual(paths, want) {
+		t.Fatalf("squashed paths = %v, want %v", paths, want)
+	}
+}
+
+func TestFilesReplacedAndDeleted(t *testing.T) {
+	db, _ := setup(t)
+	// Real file bytes that don't survive to the final FS: replaced by a higher
+	// layer or removed by a whiteout. Exclude the (tiny) whiteout markers.
+	got := query(t, db, `
+		SELECT path, layer, size FROM files
+		WHERE reference = 'overlay' AND present = 0 AND type = 'file' AND whiteout IS NULL
+		ORDER BY path`)
+	want := [][]any{
+		{"/data/old.bin", int64(1), int64(len("old binary data"))},
+		{"/etc/replaced.txt", int64(1), int64(len("version 1\n"))},
+		{"/opaquedir/lower.txt", int64(1), int64(len("lower\n"))},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("replaced/deleted files = %v, want %v", got, want)
+	}
+}
+
+func TestFilesWhiteoutMarkers(t *testing.T) {
+	db, _ := setup(t)
+	got := query(t, db, `SELECT path, whiteout FROM files WHERE reference = 'overlay' AND whiteout IS NOT NULL ORDER BY path`)
+	want := [][]any{
+		{"/data/.wh.old.bin", "file"},
+		{"/opaquedir/.wh..wh..opq", "opaque"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("whiteout markers = %v, want %v", got, want)
+	}
+}
+
+func TestFilesSquashedContentWinsFromHigherLayer(t *testing.T) {
+	db, _ := setup(t)
+	// Layered view: /etc/replaced.txt appears in two layers.
+	layered := query(t, db, `SELECT layer, present FROM files WHERE reference = 'overlay' AND path = '/etc/replaced.txt' ORDER BY layer`)
+	want := [][]any{{int64(1), int64(0)}, {int64(2), int64(1)}}
+	if !reflect.DeepEqual(layered, want) {
+		t.Fatalf("layered replaced.txt = %v, want %v", layered, want)
+	}
+	// Squashed view: only the higher layer's content is current.
+	squashed := query(t, db, `SELECT content FROM files WHERE reference = 'overlay' AND path = '/etc/replaced.txt' AND present = 1`)
+	if len(squashed) != 1 || squashed[0][0] != "version 2 is longer\n" {
+		t.Fatalf("squashed replaced.txt content = %v, want the layer-2 version", squashed)
+	}
+}
+
 func TestSchemaAndNames(t *testing.T) {
 	names := tables.Names()
 	if len(names) != 9 {

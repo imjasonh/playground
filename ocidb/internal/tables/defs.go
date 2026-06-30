@@ -13,7 +13,7 @@ import (
 // filesContentCol is the index of the `content` column in the files table
 // schema below. BestIndex sets it in the columns bitmask only when a query
 // references content, letting the fetch skip reading file bodies otherwise.
-const filesContentCol = 12
+const filesContentCol = 14
 
 // defs is the catalog of virtual tables. Column order in each fetch function
 // must match the order in the schema string exactly (including HIDDEN columns).
@@ -321,6 +321,8 @@ var defs = []tableDef{
 			uid INTEGER,
 			gid INTEGER,
 			modtime TEXT,
+			present INTEGER,
+			whiteout TEXT,
 			content TEXT
 		)`,
 		// path is a regular (non-HIDDEN) column, but we still let an equality on
@@ -339,13 +341,23 @@ var defs = []tableDef{
 			if err != nil {
 				return nil, err
 			}
-			var rows []fdw.Row
+
+			// Load every layer's table of contents (cheap once cached) so we can
+			// compute overlay/whiteout semantics across the whole image, even
+			// when the query is filtered to a single path.
+			layerEntries := make([][]registry.TarEntry, len(iv.Layers))
 			for i, l := range iv.Layers {
-				digest := l.Digest.String()
-				entries, err := c.LayerTOC(ref, digest)
+				entries, err := c.LayerTOC(ref, l.Digest.String())
 				if err != nil {
 					return nil, err
 				}
+				layerEntries[i] = entries
+			}
+			overlay := registry.Overlay(layerEntries)
+
+			var rows []fdw.Row
+			for i, l := range iv.Layers {
+				digest := l.Digest.String()
 				// Only crack open file bodies when the query asked for content.
 				var bodies map[string][]byte
 				if wantContent {
@@ -358,10 +370,11 @@ var defs = []tableDef{
 						return nil, err
 					}
 				}
-				for _, e := range entries {
+				for ei, e := range layerEntries[i] {
 					if wantPath != "" && e.Path != wantPath {
 						continue
 					}
+					info := overlay[i][ei]
 					content := fdw.NullValue()
 					if wantContent && e.Type == "file" {
 						if body, ok := bodies[e.Path]; ok {
@@ -381,6 +394,8 @@ var defs = []tableDef{
 						intVal(int64(e.UID)),
 						intVal(int64(e.GID)),
 						timeVal(e.ModTime),
+						boolVal(info.Present),
+						nullableText(info.Whiteout),
 						content,
 					})
 				}
