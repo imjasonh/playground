@@ -32,7 +32,7 @@ jobs:
           done
 
           bash .github/scripts/build-gitdb-web.sh "dist/gitdb-web/generated"
-          rm -f "dist/gitdb-web/.gitignore"
+          printf '%s\n' '!generated/' '!generated/**' > "dist/gitdb-web/.gitignore"
           test -s "dist/gitdb-web/generated/wasm_exec.js"
           test -s "dist/gitdb-web/generated/gitdb.wasm"
 

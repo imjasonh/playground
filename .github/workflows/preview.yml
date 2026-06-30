@@ -34,7 +34,8 @@ jobs:
 
           bash .github/scripts/build-gitdb-web.sh \
             "dist/preview/pr-${PR}/gitdb-web/generated"
-          rm -f "dist/preview/pr-${PR}/gitdb-web/.gitignore"
+          printf '%s\n' '!generated/' '!generated/**' \
+            > "dist/preview/pr-${PR}/gitdb-web/.gitignore"
           test -s "dist/preview/pr-${PR}/gitdb-web/generated/wasm_exec.js"
           test -s "dist/preview/pr-${PR}/gitdb-web/generated/gitdb.wasm"
 
