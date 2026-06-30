@@ -1,9 +1,0 @@
-# Go
-/gitsql
-gitsql
-*.test
-*.out
-coverage.*
-
-# Local cache of cloned repos (if ever placed here)
-/cache/
