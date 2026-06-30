@@ -95,6 +95,31 @@ const defaultRenameLimit = 200
 // CacheDir reports the directory used to store cached clones.
 func (m *Manager) CacheDir() string { return m.cacheDir }
 
+// Bind registers an already-open repository under spec. It is primarily useful
+// for callers whose repositories do not live on the host filesystem, such as
+// browser builds backed by go-git's in-memory storage.
+func (m *Manager) Bind(spec string, gr *git.Repository) error {
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		return errors.New("empty repository spec")
+	}
+	if gr == nil {
+		return errors.New("nil git repository")
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.repos[spec] = &Repo{
+		Spec:          spec,
+		Local:         true,
+		repo:          gr,
+		detectRenames: m.detectRenames,
+		renameLimit:   m.renameLimit,
+		stats:         map[plumbing.Hash][]FileChange{},
+	}
+	return nil
+}
+
 // Resolve returns the opened repository for spec, cloning and caching it first
 // if necessary. Repeated calls with the same spec return the same *Repo.
 func (m *Manager) Resolve(spec string) (*Repo, error) {
@@ -102,6 +127,14 @@ func (m *Manager) Resolve(spec string) (*Repo, error) {
 	if spec == "" {
 		return nil, errors.New("empty repository spec")
 	}
+
+	m.mu.Lock()
+	if r, ok := m.repos[spec]; ok {
+		m.mu.Unlock()
+		return r, nil
+	}
+	m.mu.Unlock()
+
 	cloneURL, key, local, err := classifySpec(spec)
 	if err != nil {
 		return nil, err
