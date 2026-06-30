@@ -45,19 +45,24 @@ type Manifest struct {
 	Raw       []byte
 }
 
-// backend performs the actual network I/O. It is an interface so tests can
-// substitute a fake without touching the network.
-type backend interface {
-	listTags(repo string) ([]string, error)
-	getManifest(ref string) (Manifest, error)
-	getBlob(repo, digest string) ([]byte, error)
+// Backend performs the actual registry I/O behind the cache. The default
+// implementation talks to a real registry via go-containerregistry; tests (and
+// any caller wanting a different transport) can supply their own via
+// Options.Backend.
+type Backend interface {
+	// ListTags returns the tags of a repository (e.g. "index.docker.io/library/nginx").
+	ListTags(repo string) ([]string, error)
+	// GetManifest resolves a reference and returns its raw manifest + descriptor.
+	GetManifest(ref string) (Manifest, error)
+	// GetBlob fetches a blob (e.g. a config blob) by digest from a repository.
+	GetBlob(repo, digest string) ([]byte, error)
 }
 
 // Client reads a registry through a local on-disk cache.
 type Client struct {
 	dir string
 	ttl time.Duration
-	be  backend
+	be  Backend
 
 	mu     sync.Mutex
 	hits   int
@@ -79,6 +84,9 @@ type Options struct {
 	// honours `docker login` credentials and otherwise falls back to
 	// anonymous access (subject to stricter rate limits).
 	Keychain authn.Keychain
+	// Backend overrides the registry I/O implementation. Nil uses a
+	// go-containerregistry-backed default.
+	Backend Backend
 }
 
 // New builds a Client backed by go-containerregistry.
@@ -105,10 +113,14 @@ func New(opts Options) (*Client, error) {
 	if ua == "" {
 		ua = "ocidb"
 	}
+	be := opts.Backend
+	if be == nil {
+		be = &remoteBackend{ctx: ctx, keychain: kc, userAgent: ua}
+	}
 	return &Client{
 		dir: opts.Dir,
 		ttl: ttl,
-		be:  &remoteBackend{ctx: ctx, keychain: kc, userAgent: ua},
+		be:  be,
 	}, nil
 }
 
@@ -137,7 +149,7 @@ func (c *Client) Tags(repoInput string) ([]string, error) {
 		return env.Tags, nil
 	}
 	c.miss()
-	tags, err := c.be.listTags(key)
+	tags, err := c.be.ListTags(key)
 	if err != nil {
 		return nil, err
 	}
@@ -178,7 +190,7 @@ func (c *Client) Manifest(refInput string) (Manifest, error) {
 }
 
 func (c *Client) fetchManifest(ref name.Reference) (Manifest, error) {
-	m, err := c.be.getManifest(ref.Name())
+	m, err := c.be.GetManifest(ref.Name())
 	if err != nil {
 		return Manifest{}, err
 	}
@@ -227,7 +239,7 @@ func (c *Client) Blob(repo, digest string) ([]byte, error) {
 		return b, nil
 	}
 	c.miss()
-	b, err := c.be.getBlob(repo, digest)
+	b, err := c.be.GetBlob(repo, digest)
 	if err != nil {
 		return nil, err
 	}
@@ -513,6 +525,8 @@ func digestFile(digest string) string {
 
 // --- live backend -----------------------------------------------------------
 
+var _ Backend = (*remoteBackend)(nil)
+
 type remoteBackend struct {
 	ctx       context.Context
 	keychain  authn.Keychain
@@ -527,7 +541,7 @@ func (b *remoteBackend) options() []remote.Option {
 	}
 }
 
-func (b *remoteBackend) listTags(repoStr string) ([]string, error) {
+func (b *remoteBackend) ListTags(repoStr string) ([]string, error) {
 	repo, err := name.NewRepository(repoStr)
 	if err != nil {
 		return nil, fmt.Errorf("parse repository %q: %w", repoStr, err)
@@ -539,7 +553,7 @@ func (b *remoteBackend) listTags(repoStr string) ([]string, error) {
 	return tags, nil
 }
 
-func (b *remoteBackend) getManifest(refStr string) (Manifest, error) {
+func (b *remoteBackend) GetManifest(refStr string) (Manifest, error) {
 	ref, err := name.ParseReference(refStr)
 	if err != nil {
 		return Manifest{}, fmt.Errorf("parse reference %q: %w", refStr, err)
@@ -557,7 +571,7 @@ func (b *remoteBackend) getManifest(refStr string) (Manifest, error) {
 	}, nil
 }
 
-func (b *remoteBackend) getBlob(repoStr, digest string) ([]byte, error) {
+func (b *remoteBackend) GetBlob(repoStr, digest string) ([]byte, error) {
 	dig, err := name.NewDigest(repoStr + "@" + digest)
 	if err != nil {
 		return nil, fmt.Errorf("parse digest %q: %w", repoStr+"@"+digest, err)
