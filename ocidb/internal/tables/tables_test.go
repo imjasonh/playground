@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -277,15 +278,121 @@ func TestQueriesAreCached(t *testing.T) {
 	}
 }
 
+func TestFilesListing(t *testing.T) {
+	db, _ := setup(t)
+	got := query(t, db, `SELECT layer, path, type, linkname, mode FROM files WHERE reference = 'demo' ORDER BY layer, path`)
+	if len(got) != 8 {
+		t.Fatalf("file count = %d, want 8: %v", len(got), got)
+	}
+	byPath := map[string][]any{}
+	for _, r := range got {
+		byPath[r[1].(string)] = r
+	}
+	type want struct {
+		layer    int64
+		typ      string
+		linkname any
+		mode     string
+	}
+	checks := map[string]want{
+		"/etc/":            {1, "dir", nil, "0755"},
+		"/etc/os-release":  {1, "file", nil, "0644"},
+		"/usr/bin/su":      {1, "file", nil, "4755"},
+		"/bin/sh":          {1, "symlink", "busybox", "0777"},
+		"/app/run.sh":      {2, "file", nil, "0755"},
+		"/app/config.json": {2, "file", nil, "0644"},
+	}
+	for p, w := range checks {
+		r, ok := byPath[p]
+		if !ok {
+			t.Errorf("missing file %q", p)
+			continue
+		}
+		if r[0].(int64) != w.layer {
+			t.Errorf("%s layer = %v, want %d", p, r[0], w.layer)
+		}
+		if r[2] != w.typ {
+			t.Errorf("%s type = %v, want %q", p, r[2], w.typ)
+		}
+		if !reflect.DeepEqual(r[3], w.linkname) {
+			t.Errorf("%s linkname = %v, want %v", p, r[3], w.linkname)
+		}
+		if r[4] != w.mode {
+			t.Errorf("%s mode = %v, want %q", p, r[4], w.mode)
+		}
+	}
+}
+
+func TestFilesContentByPath(t *testing.T) {
+	db, _ := setup(t)
+	// Path equality is pushed down, so exactly one row comes back.
+	got := query(t, db, `SELECT content FROM files WHERE reference = 'demo' AND path = '/etc/os-release'`)
+	if len(got) != 1 {
+		t.Fatalf("rows = %d, want 1", len(got))
+	}
+	if got[0][0] == nil || !strings.Contains(got[0][0].(string), `Demo Linux (amd64)`) {
+		t.Fatalf("content = %v, want os-release text", got[0][0])
+	}
+}
+
+func TestFilesBinaryContentIsNull(t *testing.T) {
+	db, _ := setup(t)
+	got := query(t, db, `SELECT size, content, mode FROM files WHERE reference = 'demo' AND path = '/usr/bin/su'`)
+	if len(got) != 1 {
+		t.Fatalf("rows = %d, want 1", len(got))
+	}
+	if got[0][0].(int64) != 8 {
+		t.Errorf("size = %v, want 8", got[0][0])
+	}
+	if got[0][1] != nil {
+		t.Errorf("content = %v, want NULL for a binary file", got[0][1])
+	}
+	if got[0][2] != "4755" {
+		t.Errorf("mode = %v, want 4755 (setuid)", got[0][2])
+	}
+}
+
+func TestFilesPlatformContent(t *testing.T) {
+	db, _ := setup(t)
+	got := query(t, db, `SELECT content FROM files WHERE reference = 'demo' AND platform = 'linux/arm64' AND path = '/etc/os-release'`)
+	if len(got) != 1 || got[0][0] == nil || !strings.Contains(got[0][0].(string), `Demo Linux (arm64)`) {
+		t.Fatalf("arm64 os-release content = %v, want arm64 text", got)
+	}
+}
+
+// TestFilesContentServedFromCache exercises the content gating + caching: after
+// a metadata-only listing has warmed the per-layer TOC and blob caches, reading
+// a file's content must not trigger any new registry blob fetches.
+func TestFilesContentServedFromCache(t *testing.T) {
+	db, f := setup(t)
+	query(t, db, `SELECT path FROM files WHERE reference = 'demo' ORDER BY path`)
+	_, blobsBefore, _ := f.Calls()
+
+	got := query(t, db, `SELECT content FROM files WHERE reference = 'demo' AND path = '/app/run.sh'`)
+	_, blobsAfter, _ := f.Calls()
+
+	if blobsAfter != blobsBefore {
+		t.Fatalf("content read caused %d new blob fetches, want 0 (cached)", blobsAfter-blobsBefore)
+	}
+	if len(got) != 1 || got[0][0] == nil || !strings.Contains(got[0][0].(string), "hello from amd64") {
+		t.Fatalf("run.sh content = %v", got)
+	}
+}
+
 func TestSchemaAndNames(t *testing.T) {
 	names := tables.Names()
-	if len(names) != 8 {
-		t.Fatalf("table count = %d, want 8", len(names))
+	if len(names) != 9 {
+		t.Fatalf("table count = %d, want 9", len(names))
 	}
+	want := map[string]bool{}
 	for _, n := range names {
+		want[n] = true
 		if tables.Schema(n) == "" {
 			t.Errorf("missing schema for %q", n)
 		}
+	}
+	if !want["files"] {
+		t.Errorf("expected a 'files' table in %v", names)
 	}
 	if tables.Schema("does-not-exist") != "" {
 		t.Error("expected empty schema for unknown table")

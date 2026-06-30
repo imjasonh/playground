@@ -1,6 +1,7 @@
 package tables
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 
@@ -9,6 +10,11 @@ import (
 	"github.com/imjasonh/playground/ocidb/internal/registry"
 )
 
+// filesContentCol is the index of the `content` column in the files table
+// schema below. BestIndex sets it in the columns bitmask only when a query
+// references content, letting the fetch skip reading file bodies otherwise.
+const filesContentCol = 12
+
 // defs is the catalog of virtual tables. Column order in each fetch function
 // must match the order in the schema string exactly (including HIDDEN columns).
 var defs = []tableDef{
@@ -16,7 +22,7 @@ var defs = []tableDef{
 		name:   "tags",
 		schema: `CREATE TABLE tags(tag TEXT, repository TEXT HIDDEN)`,
 		params: []param{{name: "repository", col: 1, required: true}},
-		fetch: func(c *registry.Client, args map[string]string) ([]fdw.Row, error) {
+		fetch: func(c *registry.Client, args map[string]string, _ uint64) ([]fdw.Row, error) {
 			repo := args["repository"]
 			tagList, err := c.Tags(repo)
 			if err != nil {
@@ -44,7 +50,7 @@ var defs = []tableDef{
 			raw TEXT
 		)`,
 		params: []param{{name: "reference", col: 0, required: true}},
-		fetch: func(c *registry.Client, args map[string]string) ([]fdw.Row, error) {
+		fetch: func(c *registry.Client, args map[string]string, _ uint64) ([]fdw.Row, error) {
 			ref := args["reference"]
 			mv, err := c.ManifestView(ref)
 			if err != nil {
@@ -86,7 +92,7 @@ var defs = []tableDef{
 			size INTEGER
 		)`,
 		params: []param{{name: "reference", col: 0, required: true}},
-		fetch: func(c *registry.Client, args map[string]string) ([]fdw.Row, error) {
+		fetch: func(c *registry.Client, args map[string]string, _ uint64) ([]fdw.Row, error) {
 			ref := args["reference"]
 			descs, err := c.Platforms(ref)
 			if err != nil {
@@ -127,7 +133,7 @@ var defs = []tableDef{
 			{name: "reference", col: 0, required: true},
 			{name: "platform", col: 1},
 		},
-		fetch: func(c *registry.Client, args map[string]string) ([]fdw.Row, error) {
+		fetch: func(c *registry.Client, args map[string]string, _ uint64) ([]fdw.Row, error) {
 			ref, plat := args["reference"], args["platform"]
 			iv, err := c.ResolveImage(ref, plat)
 			if err != nil {
@@ -174,7 +180,7 @@ var defs = []tableDef{
 			{name: "reference", col: 0, required: true},
 			{name: "platform", col: 1},
 		},
-		fetch: func(c *registry.Client, args map[string]string) ([]fdw.Row, error) {
+		fetch: func(c *registry.Client, args map[string]string, _ uint64) ([]fdw.Row, error) {
 			ref, plat := args["reference"], args["platform"]
 			iv, err := c.ResolveImage(ref, plat)
 			if err != nil {
@@ -223,7 +229,7 @@ var defs = []tableDef{
 			{name: "reference", col: 0, required: true},
 			{name: "platform", col: 1},
 		},
-		fetch: func(c *registry.Client, args map[string]string) ([]fdw.Row, error) {
+		fetch: func(c *registry.Client, args map[string]string, _ uint64) ([]fdw.Row, error) {
 			ref, plat := args["reference"], args["platform"]
 			iv, err := c.ResolveImage(ref, plat)
 			if err != nil {
@@ -256,7 +262,7 @@ var defs = []tableDef{
 			{name: "reference", col: 0, required: true},
 			{name: "platform", col: 1},
 		},
-		fetch: func(c *registry.Client, args map[string]string) ([]fdw.Row, error) {
+		fetch: func(c *registry.Client, args map[string]string, _ uint64) ([]fdw.Row, error) {
 			ref, plat := args["reference"], args["platform"]
 			iv, err := c.ResolveImage(ref, plat)
 			if err != nil {
@@ -282,7 +288,7 @@ var defs = []tableDef{
 			{name: "reference", col: 0, required: true},
 			{name: "platform", col: 1},
 		},
-		fetch: func(c *registry.Client, args map[string]string) ([]fdw.Row, error) {
+		fetch: func(c *registry.Client, args map[string]string, _ uint64) ([]fdw.Row, error) {
 			ref, plat := args["reference"], args["platform"]
 			iv, err := c.ResolveImage(ref, plat)
 			if err != nil {
@@ -296,6 +302,88 @@ var defs = []tableDef{
 			rows := make([]fdw.Row, 0, len(keys))
 			for _, k := range keys {
 				rows = append(rows, fdw.Row{text(ref), text(iv.Platform), text(k), text(iv.Config.Config.Labels[k])})
+			}
+			return rows, nil
+		},
+	},
+	{
+		name: "files",
+		schema: `CREATE TABLE files(
+			reference TEXT HIDDEN,
+			platform TEXT HIDDEN,
+			layer INTEGER,
+			layer_digest TEXT,
+			path TEXT,
+			type TEXT,
+			size INTEGER,
+			mode TEXT,
+			linkname TEXT,
+			uid INTEGER,
+			gid INTEGER,
+			modtime TEXT,
+			content TEXT
+		)`,
+		// path is a regular (non-HIDDEN) column, but we still let an equality on
+		// it push down so that `WHERE path = '/etc/os-release'` reads just that
+		// one file instead of every body in the layer.
+		params: []param{
+			{name: "reference", col: 0, required: true},
+			{name: "platform", col: 1},
+			{name: "path", col: 4},
+		},
+		fetch: func(c *registry.Client, args map[string]string, cols uint64) ([]fdw.Row, error) {
+			ref, plat, wantPath := args["reference"], args["platform"], args["path"]
+			wantContent := cols&(1<<filesContentCol) != 0
+
+			iv, err := c.ResolveImage(ref, plat)
+			if err != nil {
+				return nil, err
+			}
+			var rows []fdw.Row
+			for i, l := range iv.Layers {
+				digest := l.Digest.String()
+				entries, err := c.LayerTOC(ref, digest)
+				if err != nil {
+					return nil, err
+				}
+				// Only crack open file bodies when the query asked for content.
+				var bodies map[string][]byte
+				if wantContent {
+					var only map[string]bool
+					if wantPath != "" {
+						only = map[string]bool{wantPath: true}
+					}
+					bodies, err = c.ReadLayerFiles(ref, digest, only, registry.DefaultMaxFileSize)
+					if err != nil {
+						return nil, err
+					}
+				}
+				for _, e := range entries {
+					if wantPath != "" && e.Path != wantPath {
+						continue
+					}
+					content := fdw.NullValue()
+					if wantContent && e.Type == "file" {
+						if body, ok := bodies[e.Path]; ok {
+							content = textContent(body)
+						}
+					}
+					rows = append(rows, fdw.Row{
+						text(ref),
+						text(iv.Platform),
+						intVal(int64(i + 1)),
+						text(digest),
+						text(e.Path),
+						text(e.Type),
+						intVal(e.Size),
+						text(fmt.Sprintf("%04o", e.Mode&0o7777)),
+						nullableText(e.Linkname),
+						intVal(int64(e.UID)),
+						intVal(int64(e.GID)),
+						timeVal(e.ModTime),
+						content,
+					})
+				}
 			}
 			return rows, nil
 		},

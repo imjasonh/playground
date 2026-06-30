@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	fdw "github.com/values-conflict/go-sqlite-fdw"
 	"github.com/values-conflict/go-sqlite-fdw/modernc"
@@ -83,11 +84,16 @@ type param struct {
 }
 
 // tableDef describes one virtual table.
+//
+// fetch receives the bound HIDDEN/pushed-down parameters plus cols, the bitmask
+// of columns the query actually references (bit n == column n). Tables use cols
+// to skip expensive work for columns nobody asked for -- notably, the files
+// table only reads file *bodies* when the `content` column is selected.
 type tableDef struct {
 	name   string
 	schema string
 	params []param
-	fetch  func(c *registry.Client, args map[string]string) ([]fdw.Row, error)
+	fetch  func(c *registry.Client, args map[string]string, cols uint64) ([]fdw.Row, error)
 }
 
 func (d *tableDef) paramByCol(col int) *param {
@@ -124,6 +130,12 @@ func (s *source) BestIndex(info *fdw.IndexInfo) error {
 		argv++
 	}
 	info.IdxStr = strings.Join(order, ",")
+	// Carry the set of referenced columns to Filter via IdxNum so fetch can
+	// avoid materializing expensive columns (e.g. file content) when the query
+	// does not select them. ColumnsUsed is a property of the query, not the
+	// chosen plan, so it is identical across BestIndex calls. Our tables have
+	// far fewer than 31 columns, so the low bits are sufficient.
+	info.IdxNum = int32(info.ColumnsUsed & 0x7fffffff)
 	// These tables hit the network, so a scan that leaves HIDDEN parameters
 	// unbound is ruinously expensive. Crucially, the cost must keep dropping as
 	// we push down *more* equality constraints: otherwise, for a join like
@@ -159,7 +171,7 @@ type cursor struct {
 	pos    int
 }
 
-func (c *cursor) Filter(_ int, idxStr string, args []fdw.Value) error {
+func (c *cursor) Filter(idxNum int, idxStr string, args []fdw.Value) error {
 	c.rows = nil
 	c.pos = 0
 
@@ -177,7 +189,7 @@ func (c *cursor) Filter(_ int, idxStr string, args []fdw.Value) error {
 		}
 	}
 
-	rows, err := c.def.fetch(c.client, params)
+	rows, err := c.def.fetch(c.client, params, uint64(uint32(idxNum)))
 	if err != nil {
 		return err
 	}
@@ -232,6 +244,17 @@ func jsonArray(items []string) fdw.Value {
 	}
 	b, err := json.Marshal(items)
 	if err != nil {
+		return fdw.NullValue()
+	}
+	return fdw.TextValue(string(b))
+}
+
+// textContent exposes a file body as a TEXT value when it is valid UTF-8, and
+// NULL otherwise. Keeping the column textual makes LIKE/GLOB searches behave and
+// avoids dumping binary into the terminal; callers use the `size` column to see
+// how big a (possibly binary) file really is.
+func textContent(b []byte) fdw.Value {
+	if !utf8.Valid(b) {
 		return fdw.NullValue()
 	}
 	return fdw.TextValue(string(b))
