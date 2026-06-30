@@ -22,8 +22,8 @@ func TestLoadQueriesParsesEmbeddedSQL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadQueries: %v", err)
 	}
-	if len(qs) != 14 {
-		t.Fatalf("loaded %d queries, want 14", len(qs))
+	if len(qs) != 15 {
+		t.Fatalf("loaded %d queries, want 15", len(qs))
 	}
 	for _, q := range qs {
 		if strings.TrimSpace(q.title) == "" {
