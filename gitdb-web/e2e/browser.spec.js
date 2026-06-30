@@ -23,6 +23,7 @@ async function loadRepository(page) {
   await page.locator("#repository-url").fill(
     `${gitServer.url}/${fixture.repoPath}`,
   );
+  await page.locator("#repository-form summary").click();
   await page.locator("#cors-proxy").fill("");
   await page.locator("#clone-depth").fill("0");
   await page.locator("#load-repository").click();
