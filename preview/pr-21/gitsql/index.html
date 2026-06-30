@@ -138,7 +138,7 @@ cd gitsql &amp;&amp; go build -o gitsql .
     <tr><td><code>tags</code></td><td>tag (annotated or lightweight)</td>
         <td><code>name, type, target, tagger_name, tagger_when, message</code></td></tr>
     <tr><td><code>files</code></td><td>file in the tree at a ref</td>
-        <td><code>path, name, mode, type, size, blob_hash, is_binary, lines</code></td></tr>
+        <td><code>path, name, mode, type, size, blob_hash, is_binary, lines</code> + hidden <code>contents</code></td></tr>
     <tr><td><code>commit_files</code></td><td>file changed by a commit (like <code>--numstat</code>)</td>
         <td><code>commit_hash, path, old_path, change, additions, deletions, binary</code></td></tr>
     <tr><td><code>blame</code></td><td>line of a file (needs <code>WHERE path = '…'</code>)</td>
@@ -146,7 +146,9 @@ cd gitsql &amp;&amp; go build -o gitsql .
   </table>
   <p class="note">Tables <code class="inline">commits</code>, <code class="inline">files</code>,
      <code class="inline">commit_files</code>, and <code class="inline">blame</code> accept a hidden
-     <code class="inline">ref</code> column, e.g. <code class="inline">… WHERE ref = 'v1.0.0'</code>.
+     <code class="inline">ref</code> column, e.g. <code class="inline">… WHERE ref = 'v1.0.0'</code>;
+     <code class="inline">files</code> also has a hidden <code class="inline">contents</code> column for
+     searching blob text.
      Timestamps come in two flavors: <code class="inline">*_when</code> is the author's wall clock
      (so <code class="inline">strftime('%H', author_when)</code> is their local hour) and
      <code class="inline">*_unix</code> is the true epoch.</p>
@@ -254,6 +256,40 @@ crates/ignore/src/walk.rs                          85092   2494</pre>
   </div>
 
   <div class="card">
+    <h3>Search file contents — at any revision</h3>
+    <p class="desc">The hidden <code>contents</code> column reads each blob lazily (binary files are
+       <code>NULL</code>); pair it with the hidden <code>ref</code> to search any tag or branch.</p>
+<pre class="sqlblock"><span class="com">-- which files mention "recursively"? (at HEAD)</span>
+<span class="kw">SELECT</span> path, lines <span class="kw">FROM</span> files <span class="kw">WHERE</span> contents <span class="kw">LIKE</span> <span class="str">'%recursively%'</span>;
+
+<span class="com">-- ...and how that count grew across releases</span>
+<span class="kw">SELECT</span> count(*) <span class="kw">FROM</span> files <span class="kw">WHERE</span> ref = <span class="str">'13.0.0'</span> <span class="kw">AND</span> contents <span class="kw">LIKE</span> <span class="str">'%recursively%'</span>;</pre>
+<pre class="out">path                                  lines        ref      files
+------------------------------------  -----        -------  -----
+Cargo.toml                            117          0.4.0    9
+GUIDE.md                              1025         11.0.0   14
+crates/core/flags/defs.rs             7779         13.0.0   15
+crates/ignore/src/walk.rs             2494         HEAD     16
+crates/globset/src/lib.rs             1139
+... (16 files at HEAD)</pre>
+  </div>
+
+  <div class="card">
+    <h3>Follow one file's history</h3>
+    <p class="desc">Every commit that touched <code>README.md</code> — <code>commit_files</code> joined to <code>commits</code>.</p>
+<pre class="sqlblock"><span class="kw">SELECT</span> c.author_when, substr(cf.commit_hash, <span class="num">1</span>, <span class="num">8</span>) <span class="kw">AS</span> rev,
+       cf.change, cf.additions, cf.deletions, c.author_name
+<span class="kw">FROM</span> commit_files cf <span class="kw">JOIN</span> commits c <span class="kw">ON</span> c.hash = cf.commit_hash
+<span class="kw">WHERE</span> cf.path = <span class="str">'README.md'</span> <span class="kw">ORDER BY</span> c.author_unix <span class="kw">DESC</span>;</pre>
+<pre class="out">author_when          rev       change  additions  deletions  author_name
+-------------------  --------  ------  ---------  ---------  --------------
+2025-09-24T08:10:23  9802945e  modify  21         6          Andrew Gallant
+2025-08-19T16:07:07  2ebd768d  modify  0          9          Andrew Gallant
+2025-05-30T20:30:52  cbc598f2  modify  2          2          wm
+2025-01-30T17:00:18  c0373100  modify  11         0          wackget</pre>
+  </div>
+
+  <div class="card">
     <h3>Who owns README.md? — per-line blame, aggregated</h3>
     <p class="desc"><code>blame</code> needs a <code>path</code>; here we group its lines by author.</p>
 <pre class="sqlblock"><span class="kw">SELECT</span> author_name, count(*) <span class="kw">AS</span> lines
@@ -270,16 +306,29 @@ sitiom           8</pre>
   </div>
 
   <div class="card">
-    <h3>Across repositories</h3>
-    <p class="desc">Create a table bound to another repo and query both in one session.</p>
-<pre class="sqlblock"><span class="kw">CREATE VIRTUAL TABLE</span> rg <span class="kw">USING</span> git_commits(<span class="str">'BurntSushi/ripgrep'</span>);
-<span class="kw">SELECT</span> <span class="str">'ripgrep'</span> <span class="kw">AS</span> repo, count(*) <span class="kw">AS</span> commits <span class="kw">FROM</span> rg
-<span class="kw">UNION ALL</span>
-<span class="kw">SELECT</span> <span class="str">'go-sqlite-fdw'</span>, count(*) <span class="kw">FROM</span> commits;</pre>
-<pre class="out">repo           commits
--------------  -------
-ripgrep        2217
-go-sqlite-fdw  9</pre>
+    <h3>Across repositories — shared commits &amp; ahead/behind</h3>
+    <p class="desc">Bind a second repo and compare commit sets. <code>go-git/go-git</code> is the
+       community continuation of the archived <code>src-d/go-git</code>: same 2015 origin, src-d
+       froze in 2020, the fork carried on.</p>
+<pre class="sqlblock"><span class="kw">CREATE VIRTUAL TABLE</span> orig <span class="kw">USING</span> git_commits(<span class="str">'src-d/go-git'</span>);
+
+<span class="com">-- commits in both histories</span>
+<span class="kw">SELECT</span> count(*) <span class="kw">AS</span> shared <span class="kw">FROM</span> commits c <span class="kw">JOIN</span> orig o <span class="kw">ON</span> c.hash = o.hash;
+
+<span class="com">-- how far each is ahead of the other</span>
+<span class="kw">SELECT</span> (<span class="kw">SELECT</span> count(*) <span class="kw">FROM</span> commits <span class="kw">WHERE</span> hash <span class="kw">NOT IN</span> (<span class="kw">SELECT</span> hash <span class="kw">FROM</span> orig))    <span class="kw">AS</span> gogit_ahead,
+       (<span class="kw">SELECT</span> count(*) <span class="kw">FROM</span> orig    <span class="kw">WHERE</span> hash <span class="kw">NOT IN</span> (<span class="kw">SELECT</span> hash <span class="kw">FROM</span> commits)) <span class="kw">AS</span> srcd_only;</pre>
+<pre class="out">shared
+------
+1538
+
+gogit_ahead  srcd_only
+-----------  ---------
+2171         2</pre>
+    <p class="desc" style="margin-top:.7rem">The two repos share <strong>1,538</strong> commits, the fork is
+       <strong>2,171</strong> ahead, and src-d has just <strong>2</strong> commits the fork never took —
+       its final "this project has moved" README note (and its merge). <code>srcd_only = 0</code> would
+       mean the fork is a strict fast-forward.</p>
   </div>
 
   <h2>How it works</h2>

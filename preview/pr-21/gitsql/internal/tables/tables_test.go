@@ -140,6 +140,21 @@ func query(t *testing.T, db *sql.DB, q string, args ...any) [][]any {
 	return out
 }
 
+// columns returns the result column names of a query.
+func columns(t *testing.T, db *sql.DB, q string, args ...any) []string {
+	t.Helper()
+	rows, err := db.Query(q, args...)
+	if err != nil {
+		t.Fatalf("query %q: %v", q, err)
+	}
+	defer rows.Close()
+	cols, err := rows.Columns()
+	if err != nil {
+		t.Fatalf("columns: %v", err)
+	}
+	return cols
+}
+
 // scalar runs a query expected to return a single row/column.
 func scalar(t *testing.T, db *sql.DB, q string, args ...any) any {
 	t.Helper()
@@ -251,6 +266,38 @@ func TestFiles(t *testing.T) {
 	// The feature ref only has README.md and a.txt (no b.txt yet).
 	if got := scalar(t, db, "SELECT count(*) FROM files WHERE ref='feature' AND path='b.txt'"); got != int64(0) {
 		t.Errorf("b.txt should not exist on feature")
+	}
+}
+
+func TestFileContents(t *testing.T) {
+	dir, _, _ := buildRepo(t)
+	db := open(t, dir)
+
+	// The contents column returns the blob text.
+	if got := scalar(t, db, "SELECT contents FROM files WHERE path='a.txt'"); got != "alpha\nBETA\ngamma\ndelta\n" {
+		t.Errorf("a.txt contents = %q", got)
+	}
+	// Binary files have NULL contents.
+	if got := scalar(t, db, "SELECT contents FROM files WHERE path='bin.dat'"); got != nil {
+		t.Errorf("bin.dat contents = %v, want NULL", got)
+	}
+	// Content search across the tree.
+	rows := query(t, db, "SELECT path FROM files WHERE contents LIKE '%BETA%' ORDER BY path")
+	if len(rows) != 1 || rows[0][0] != "a.txt" {
+		t.Errorf("content search = %v, want [a.txt]", rows)
+	}
+	// contents is hidden: SELECT * must not include it (only the 8 visible columns).
+	cols := columns(t, db, "SELECT * FROM files LIMIT 1")
+	for _, c := range cols {
+		if c == "contents" || c == "ref" {
+			t.Errorf("SELECT * exposed hidden column %q (cols=%v)", c, cols)
+		}
+	}
+
+	// Search a specific revision via the hidden ref column: README.md on the
+	// feature branch contains "two", b.txt does not exist there.
+	if got := scalar(t, db, "SELECT count(*) FROM files WHERE ref='feature' AND contents LIKE '%line two%'"); got != int64(1) {
+		t.Errorf("feature content search = %v, want 1", got)
 	}
 }
 

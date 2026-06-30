@@ -21,6 +21,7 @@ const filesSchema = `CREATE TABLE files(
 	blob_hash TEXT,
 	is_binary INTEGER,
 	lines     INTEGER,
+	contents  TEXT HIDDEN,
 	ref       TEXT HIDDEN
 )`
 
@@ -33,6 +34,7 @@ const (
 	fBlobHash
 	fIsBinary
 	fLines
+	fContents
 	fRef
 )
 
@@ -180,6 +182,18 @@ func (c *filesCursor) Column(n int) (fdw.Value, error) {
 			return fdw.NullValue(), nil
 		}
 		return intval(int64(countLines(b))), nil
+	case fContents:
+		if e.mode == filemode.Submodule {
+			return fdw.NullValue(), nil
+		}
+		b, err := c.load()
+		if err != nil {
+			return fdw.NullValue(), err
+		}
+		if looksBinary(b) {
+			return fdw.NullValue(), nil
+		}
+		return text(string(b)), nil
 	case fRef:
 		return textOrNull(c.ref), nil
 	}
