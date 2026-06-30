@@ -1,0 +1,52 @@
+[package]
+name = "web-push-worker"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Web Push (RFC 8030/8188/8291/8292) application-server backend for Cloudflare Workers, written in Rust"
+repository = "https://github.com/imjasonh/playground"
+readme = "README.md"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+# Dependencies that build on every target (native + wasm). All crypto is
+# pure-Rust (RustCrypto) so the exact same code path is exercised by native
+# `cargo test` and by the wasm32 Worker build.
+[dependencies]
+base64 = "0.22"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+hkdf = "0.12"
+aes-gcm = "0.10"
+# Only the raw-byte ECDSA/ECDH APIs are used (no PEM/PKCS8), so default
+# features are disabled to avoid the der/base64ct dependency chain.
+p256 = { version = "0.13", default-features = false, features = ["ecdsa", "ecdh", "arithmetic"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
+async-trait = "0.1"
+
+# --- MSRV pins -------------------------------------------------------------
+# This toolchain is Rust 1.83. A few transitive crates raised their MSRV in
+# later patch releases; pin them to the last versions that still build on 1.83.
+zeroize = "=1.8.1"
+
+# The Cloudflare Workers runtime bindings are wasm-only. Gating them to the
+# wasm32 target keeps native `cargo test` free of the JS/wasm-bindgen glue, so
+# all business logic stays testable on the host.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+worker = "0.5"
+getrandom = { version = "0.2", features = ["js"] }
+# MSRV pin (Rust 1.83): worker -> url -> idna pulls idna_adapter 1.2.x, which
+# requires edition2024 via the icu crates. 1.1.0 uses unicode-normalization and
+# builds on 1.83.
+idna_adapter = "=1.1.0"
+
+[dev-dependencies]
+futures = "0.3"
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true

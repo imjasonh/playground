@@ -1,0 +1,33 @@
+# Cloudflare Workers configuration for the Web Push backend.
+#
+# This project is not deployed by the repository's GitHub Pages workflows (it
+# has no index.html). To deploy it yourself you need a Cloudflare account and
+# `wrangler`/`worker-build`; see README.md. The values below are templates —
+# replace the KV namespace ids and set the VAPID secret before deploying.
+
+name = "web-push-worker"
+main = "build/worker/shim.mjs"
+compatibility_date = "2024-11-01"
+
+# Build the wasm Worker from Rust. `worker-build` wraps `cargo build
+# --target wasm32-unknown-unknown` and emits the JS shim referenced by `main`.
+[build]
+command = "cargo install -q worker-build && worker-build --release"
+
+# KV namespace that stores subscriptions. Create with:
+#   wrangler kv namespace create SUBSCRIPTIONS
+#   wrangler kv namespace create SUBSCRIPTIONS --preview
+# (older wrangler used a colon: `wrangler kv:namespace create SUBSCRIPTIONS`)
+# Paste the printed ids below. See docs/how-it-works.md section 8.
+[[kv_namespaces]]
+binding = "SUBSCRIPTIONS"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+preview_id = "REPLACE_WITH_PREVIEW_KV_NAMESPACE_ID"
+
+# Public, non-secret configuration. The VAPID contact (a mailto: or https: URI).
+[vars]
+VAPID_SUBJECT = "mailto:admin@example.com"
+
+# VAPID_PRIVATE_KEY is a secret, NOT a var. Set it out of band with:
+#   cargo run --example genvapid          # generate a key pair
+#   wrangler secret put VAPID_PRIVATE_KEY  # paste the private key

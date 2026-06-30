@@ -1,0 +1,13 @@
+# Rust build output
+/target
+
+# worker-build / wrangler output
+/build
+.wrangler/
+
+# Node (only present if wrangler is installed locally)
+node_modules/
+
+# Local secrets / dev vars — never commit
+.dev.vars
+*.env

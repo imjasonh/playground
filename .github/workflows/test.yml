@@ -51,3 +51,17 @@ jobs:
         env:
           MODULES: ${{ steps.discover.outputs.modules }}
         run: bash .github/scripts/test-go-modules.sh
+
+      # Baseline stable toolchain; an app's rust-toolchain.toml (e.g. web-push
+      # pins 1.83) overrides it per directory when cargo runs.
+      - uses: dtolnay/rust-toolchain@stable
+        if: ${{ steps.discover.outputs.rust != '[]' }}
+        with:
+          components: clippy, rustfmt
+          targets: wasm32-unknown-unknown
+
+      - name: Lint, build, and test changed Rust apps
+        if: ${{ steps.discover.outputs.rust != '[]' }}
+        env:
+          RUST_APPS: ${{ steps.discover.outputs.rust }}
+        run: bash .github/scripts/test-rust-apps.sh

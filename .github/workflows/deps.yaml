@@ -36,6 +36,13 @@ jobs:
           cache: npm
           cache-dependency-path: '**/package-lock.json'
 
+      # Baseline stable toolchain; an app's rust-toolchain.toml (e.g. web-push
+      # pins 1.83) overrides it per directory when cargo runs.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+          targets: wasm32-unknown-unknown
+
       - name: Update, build, and test every Go app
         id: update_go
         run: bash .github/scripts/update-go-dependencies.sh
@@ -44,15 +51,21 @@ jobs:
         id: update_js
         run: bash .github/scripts/update-js-dependencies.sh
 
+      - name: Update, build, and test every Rust app
+        id: update_rust
+        run: bash .github/scripts/update-rust-dependencies.sh
+
       - name: Push passing updates to main
         id: push
         if: >-
           ${{
             steps.update_go.outputs.result == 'success' &&
             steps.update_js.outputs.result == 'success' &&
+            steps.update_rust.outputs.result == 'success' &&
             (
               steps.update_go.outputs.has_changes == 'true' ||
-              steps.update_js.outputs.has_changes == 'true'
+              steps.update_js.outputs.has_changes == 'true' ||
+              steps.update_rust.outputs.has_changes == 'true'
             )
           }}
         continue-on-error: true
@@ -63,10 +76,12 @@ jobs:
           ${{
             (
               steps.update_go.outputs.result == 'failure' ||
-              steps.update_js.outputs.result == 'failure'
+              steps.update_js.outputs.result == 'failure' ||
+              steps.update_rust.outputs.result == 'failure'
             ) &&
             steps.update_go.outputs.has_changes != 'true' &&
-            steps.update_js.outputs.has_changes != 'true'
+            steps.update_js.outputs.has_changes != 'true' &&
+            steps.update_rust.outputs.has_changes != 'true'
           }}
         run: bash .github/scripts/manage-dependency-update.sh failure-commit
 
@@ -75,6 +90,7 @@ jobs:
           ${{
             steps.update_go.outputs.result == 'failure' ||
             steps.update_js.outputs.result == 'failure' ||
+            steps.update_rust.outputs.result == 'failure' ||
             steps.push.outcome == 'failure'
           }}
         uses: peter-evans/create-pull-request@v8
@@ -87,6 +103,8 @@ jobs:
             */package.json
             */package-lock.json
             */vendor/**
+            */Cargo.toml
+            */Cargo.lock
           commit-message: 'chore(deps): update dependencies'
           title: 'chore(deps): update dependencies'
           body: |
@@ -103,6 +121,7 @@ jobs:
           ${{
             steps.update_go.outputs.result == 'success' &&
             steps.update_js.outputs.result == 'success' &&
+            steps.update_rust.outputs.result == 'success' &&
             steps.push.outcome != 'failure'
           }}
         uses: peter-evans/create-pull-request@v8
@@ -116,6 +135,7 @@ jobs:
           ${{
             steps.update_go.outputs.result == 'failure' ||
             steps.update_js.outputs.result == 'failure' ||
+            steps.update_rust.outputs.result == 'failure' ||
             steps.push.outcome == 'failure'
           }}
         run: bash .github/scripts/manage-dependency-update.sh report-failure
