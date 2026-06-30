@@ -1,0 +1,12 @@
+# Built binary
+/ocidb
+ocidb.exe
+
+# Go test/coverage artifacts
+*.test
+*.out
+coverage.txt
+
+# Local registry cache (when pointed at the working tree)
+.cache/
+cache/
