@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>gitsql — query a git repo with SQL</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --panel2: #0b0f14;
+    --border: #30363d;
+    --fg: #e6edf3;
+    --muted: #9da7b3;
+    --accent: #58a6ff;
+    --accent2: #3fb950;
+    --kw: #ff7b72;
+    --str: #a5d6ff;
+    --num: #79c0ff;
+    --com: #8b949e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 1.2rem 5rem; }
+  header {
+    background: radial-gradient(1200px 400px at 50% -120px, #1f6feb33, transparent),
+                var(--panel2);
+    border-bottom: 1px solid var(--border);
+    padding: 3.2rem 1.2rem 2.4rem;
+    text-align: center;
+  }
+  header h1 { font-size: 2.7rem; margin: 0; letter-spacing: -1px; }
+  header h1 .sql { color: var(--accent2); }
+  header p.tag { font-size: 1.18rem; color: var(--muted); margin: .6rem auto 1.2rem; max-width: 640px; }
+  .pills { display: flex; gap: .5rem; flex-wrap: wrap; justify-content: center; }
+  .pill {
+    font-size: .8rem; color: var(--muted); background: var(--panel);
+    border: 1px solid var(--border); border-radius: 999px; padding: .25rem .8rem;
+  }
+  h2 { margin-top: 2.6rem; font-size: 1.5rem; border-bottom: 1px solid var(--border); padding-bottom: .4rem; }
+  h3 { margin-top: 1.8rem; font-size: 1.12rem; color: var(--fg); }
+  p.lead { color: var(--muted); }
+  code.inline {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 5px;
+    padding: .1rem .35rem; font-size: .9em;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  pre {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: .9rem 1rem; overflow-x: auto; font-size: .82rem; line-height: 1.5;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  pre.out { background: var(--panel2); color: #c9d1d9; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 1rem 1.1rem; margin: 1rem 0; }
+  .card h3 { margin-top: 0; }
+  .card .desc { color: var(--muted); font-size: .92rem; margin: 0 0 .7rem; }
+  .sqlblock { margin: 0 0 .7rem; }
+  .kw { color: var(--kw); } .str { color: var(--str); } .num { color: var(--num); } .com { color: var(--com); }
+  table.cat { width: 100%; border-collapse: collapse; font-size: .9rem; }
+  table.cat th, table.cat td { text-align: left; padding: .45rem .6rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+  table.cat th { color: var(--accent); }
+  table.cat td code { color: var(--str); font-family: ui-monospace, monospace; }
+  .chart { display: grid; grid-template-columns: 2.6rem 1fr 2.8rem; gap: .25rem .5rem; align-items: center; font-size: .8rem; font-family: ui-monospace, monospace; }
+  .chart .lbl { color: var(--muted); text-align: right; }
+  .chart .barwrap { background: var(--panel2); border-radius: 4px; overflow: hidden; }
+  .chart .bar { background: linear-gradient(90deg, #1f6feb, #58a6ff); height: 14px; border-radius: 4px; }
+  .chart .val { color: var(--muted); }
+  .note { font-size: .85rem; color: var(--muted); }
+  footer { border-top: 1px solid var(--border); margin-top: 3rem; padding-top: 1.2rem; color: var(--muted); font-size: .9rem; }
+  .src-note { background: #1f6feb14; border: 1px solid #1f6feb44; border-radius: 8px; padding: .7rem 1rem; font-size: .9rem; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>git<span class="sql">sql</span></h1>
+  <p class="tag">Point it at any git repository and explore its history, files, authors,
+     and line-by-line blame with plain&nbsp;SQL.</p>
+  <div class="pills">
+    <span class="pill">go-git for git access</span>
+    <span class="pill">SQLite virtual tables (FDW)</span>
+    <span class="pill">pure-Go modernc.org/sqlite — no CGo</span>
+    <span class="pill">clones cached locally</span>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <p class="lead">
+    <strong>gitsql</strong> exposes a repository as a handful of SQLite
+    <a href="https://sqlite.org/vtab.html">virtual tables</a> &mdash; the SQLite
+    equivalent of a foreign data wrapper. Each table is backed by
+    <a href="https://github.com/go-git/go-git">go-git</a>, wired into SQLite through
+    <a href="https://pkg.go.dev/github.com/values-conflict/go-sqlite-fdw/modernc">go-sqlite-fdw/modernc</a>,
+    which runs on the pure-Go <a href="https://pkg.go.dev/modernc.org/sqlite">modernc.org/sqlite</a>
+    engine. Remote repos are cloned <em>once</em> into a local cache and reused on
+    later runs, so re-querying is instant and works offline.
+  </p>
+
+  <div class="src-note">
+    Every result on this page is real output from
+    <code class="inline">gitsql BurntSushi/ripgrep</code> (≈2,200 commits since 2016),
+    captured with the bundled example queries.
+  </div>
+
+  <h2>Quick start</h2>
+<pre class="sqlblock"><span class="com"># build it (Go 1.25+; the toolchain auto-downloads)</span>
+cd gitsql &amp;&amp; go build -o gitsql .
+
+<span class="com"># run an example query against a public repo (clones + caches on first run)</span>
+./gitsql --example top-authors BurntSushi/ripgrep
+
+<span class="com"># run your own SQL</span>
+./gitsql BurntSushi/ripgrep <span class="str">"SELECT count(*) FROM commits"</span>
+
+<span class="com"># or open an interactive prompt over the current repo</span>
+./gitsql .</pre>
+  <p class="note">Flags come before the repo: <code class="inline">gitsql [flags] [repo] [sql]</code>.
+     <code class="inline">repo</code> is a local path, a clone URL, or an <code class="inline">owner/repo</code>
+     GitHub shorthand (default <code class="inline">.</code>). Output formats:
+     <code class="inline">table</code> (default), <code class="inline">csv</code>,
+     <code class="inline">tsv</code>, <code class="inline">json</code>, <code class="inline">md</code>.</p>
+
+  <h2>The tables</h2>
+  <table class="cat">
+    <tr><th>Table</th><th>One row per…</th><th>Notable columns</th></tr>
+    <tr><td><code>commits</code></td><td>commit reachable from a ref (HEAD by default)</td>
+        <td><code>hash, author_name, author_when, author_unix, message, summary, parents, is_merge</code></td></tr>
+    <tr><td><code>refs</code></td><td>branch, tag, remote, or HEAD ref</td>
+        <td><code>name, short_name, type, target, hash, is_branch, is_tag, is_head</code></td></tr>
+    <tr><td><code>tags</code></td><td>tag (annotated or lightweight)</td>
+        <td><code>name, type, target, tagger_name, tagger_when, message</code></td></tr>
+    <tr><td><code>files</code></td><td>file in the tree at a ref</td>
+        <td><code>path, name, mode, type, size, blob_hash, is_binary, lines</code></td></tr>
+    <tr><td><code>commit_files</code></td><td>file changed by a commit (like <code>--numstat</code>)</td>
+        <td><code>commit_hash, path, old_path, change, additions, deletions, binary</code></td></tr>
+    <tr><td><code>blame</code></td><td>line of a file (needs <code>WHERE path = '…'</code>)</td>
+        <td><code>path, line_no, content, commit_hash, author_name, author_when</code></td></tr>
+  </table>
+  <p class="note">Tables <code class="inline">commits</code>, <code class="inline">files</code>,
+     <code class="inline">commit_files</code>, and <code class="inline">blame</code> accept a hidden
+     <code class="inline">ref</code> column, e.g. <code class="inline">… WHERE ref = 'v1.0.0'</code>.
+     Timestamps come in two flavors: <code class="inline">*_when</code> is the author's wall clock
+     (so <code class="inline">strftime('%H', author_when)</code> is their local hour) and
+     <code class="inline">*_unix</code> is the true epoch.</p>
+
+  <h2>Fun queries</h2>
+
+  <div class="card">
+    <h3>Repository at a glance</h3>
+    <p class="desc">A one-row summary built from four tables at once.</p>
+<pre class="sqlblock"><span class="kw">SELECT</span>
+  (<span class="kw">SELECT</span> count(*) <span class="kw">FROM</span> commits)                            <span class="kw">AS</span> commits,
+  (<span class="kw">SELECT</span> count(*) <span class="kw">FROM</span> refs <span class="kw">WHERE</span> is_branch)             <span class="kw">AS</span> branches,
+  (<span class="kw">SELECT</span> count(*) <span class="kw">FROM</span> tags)                                <span class="kw">AS</span> tags,
+  (<span class="kw">SELECT</span> count(*) <span class="kw">FROM</span> files)                               <span class="kw">AS</span> files_at_head,
+  (<span class="kw">SELECT</span> min(date(author_unix, <span class="str">'unixepoch'</span>)) <span class="kw">FROM</span> commits) <span class="kw">AS</span> first_commit,
+  (<span class="kw">SELECT</span> max(date(author_unix, <span class="str">'unixepoch'</span>)) <span class="kw">FROM</span> commits) <span class="kw">AS</span> latest_commit;</pre>
+<pre class="out">commits  branches  tags  files_at_head  first_commit  latest_commit
+-------  --------  ----  -------------  ------------  -------------
+2217     1         259   222            2016-02-27    2026-06-21</pre>
+  </div>
+
+  <div class="card">
+    <h3>Who writes the code?</h3>
+    <p class="desc">Top authors by commit count, with their active span.</p>
+<pre class="sqlblock"><span class="kw">SELECT</span> author_name, count(*) <span class="kw">AS</span> commits,
+       min(date(author_unix, <span class="str">'unixepoch'</span>)) <span class="kw">AS</span> first_commit,
+       max(date(author_unix, <span class="str">'unixepoch'</span>)) <span class="kw">AS</span> last_commit
+<span class="kw">FROM</span> commits <span class="kw">GROUP BY</span> author_name <span class="kw">ORDER BY</span> commits <span class="kw">DESC</span> <span class="kw">LIMIT</span> <span class="num">6</span>;</pre>
+<pre class="out">author_name       commits  first_commit  last_commit
+----------------  -------  ------------  -----------
+Andrew Gallant    1539     2016-02-27    2026-06-05
+dana              46       2017-07-01    2025-07-13
+Igor Gnatenko     10       2017-02-25    2018-01-12
+Balaji Sivaraman  10       2018-01-01    2018-02-21
+jgart             9        2021-04-04    2022-11-02
+Marc Tiehuis      7        2017-03-01    2017-05-19</pre>
+  </div>
+
+  <div class="card">
+    <h3>What hour do people commit? (author's local clock)</h3>
+    <p class="desc"><code>strftime('%H', author_when)</code> over <code>commits</code>. ripgrep is an evening project.</p>
+<pre class="sqlblock"><span class="kw">SELECT</span> strftime(<span class="str">'%H'</span>, author_when) <span class="kw">AS</span> hour, count(*) <span class="kw">AS</span> commits
+<span class="kw">FROM</span> commits <span class="kw">GROUP BY</span> hour <span class="kw">ORDER BY</span> hour;</pre>
+    <div class="chart" id="hourchart"></div>
+  </div>
+
+  <div class="card">
+    <h3>…and which weekday?</h3>
+    <p class="desc">Weekends edge out the week — Sunday is the single busiest day.</p>
+    <div class="chart" id="daychart"></div>
+  </div>
+
+  <div class="card">
+    <h3>Net lines per author — a JOIN across two virtual tables</h3>
+    <p class="desc"><code>commit_files</code> (numstat) joined to <code>commits</code> on the commit hash.</p>
+<pre class="sqlblock"><span class="kw">SELECT</span> c.author_name,
+       sum(cf.additions)                <span class="kw">AS</span> added,
+       sum(cf.deletions)                <span class="kw">AS</span> removed,
+       sum(cf.additions - cf.deletions) <span class="kw">AS</span> net
+<span class="kw">FROM</span> commit_files cf
+<span class="kw">JOIN</span> commits c <span class="kw">ON</span> c.hash = cf.commit_hash
+<span class="kw">WHERE</span> cf.binary = <span class="num">0</span>
+<span class="kw">GROUP BY</span> c.author_name <span class="kw">ORDER BY</span> added <span class="kw">DESC</span> <span class="kw">LIMIT</span> <span class="num">6</span>;</pre>
+<pre class="out">author_name         added   removed  net
+------------------  ------  -------  -----
+Andrew Gallant      138426  71317    67109
+dana                1802    748      1054
+Lucas Trzesniewski  1454    226      1228
+Balaji Sivaraman    1175    261      914
+Marc Tiehuis        557     107      450
+William Johnson     358     1        357</pre>
+  </div>
+
+  <div class="card">
+    <h3>Code hotspots — churn across all of history</h3>
+    <p class="desc">Total lines added + removed per file, over every commit (results are memoized).</p>
+<pre class="sqlblock"><span class="kw">SELECT</span> path, count(*) <span class="kw">AS</span> touched_by_commits,
+       sum(additions) <span class="kw">AS</span> added, sum(deletions) <span class="kw">AS</span> removed,
+       sum(additions + deletions) <span class="kw">AS</span> churn
+<span class="kw">FROM</span> commit_files <span class="kw">WHERE</span> binary = <span class="num">0</span>
+<span class="kw">GROUP BY</span> path <span class="kw">ORDER BY</span> churn <span class="kw">DESC</span> <span class="kw">LIMIT</span> <span class="num">6</span>;</pre>
+<pre class="out">path                        touched_by_commits  added  removed  churn
+--------------------------  ------------------  -----  -------  -----
+grep/src/data/sherlock.txt  2                   13052  13052    26104
+Cargo.lock                  484                 6271   5640     11911
+src/args.rs                 174                 4926   3272     8198
+crates/core/flags/defs.rs   28                  7853   74       7927
+src/app.rs                  127                 5079   1668     6747
+ignore/src/walk.rs          51                  4640   1107     5747</pre>
+  </div>
+
+  <div class="card">
+    <h3>Biggest tracked files right now</h3>
+    <p class="desc"><code>files</code> reads the tree at HEAD; <code>size</code> and <code>lines</code> are computed lazily.</p>
+<pre class="sqlblock"><span class="kw">SELECT</span> path, size, lines <span class="kw">FROM</span> files
+<span class="kw">WHERE</span> is_binary = <span class="num">0</span> <span class="kw">ORDER BY</span> size <span class="kw">DESC</span> <span class="kw">LIMIT</span> <span class="num">6</span>;</pre>
+<pre class="out">path                                               size    lines
+-------------------------------------------------  ------  -----
+crates/core/flags/defs.rs                          235435  7779
+benchsuite/runs/2016-09-20-ubuntu1604-ec2/raw.csv  226710  1611
+crates/printer/src/standard.rs                     136288  3987
+tests/data/sherlock-nul.txt                        90314   2133
+CHANGELOG.md                                        89143   1845
+crates/ignore/src/walk.rs                          85092   2494</pre>
+  </div>
+
+  <div class="card">
+    <h3>Who owns README.md? — per-line blame, aggregated</h3>
+    <p class="desc"><code>blame</code> needs a <code>path</code>; here we group its lines by author.</p>
+<pre class="sqlblock"><span class="kw">SELECT</span> author_name, count(*) <span class="kw">AS</span> lines
+<span class="kw">FROM</span> blame <span class="kw">WHERE</span> path = <span class="str">'README.md'</span>
+<span class="kw">GROUP BY</span> author_name <span class="kw">ORDER BY</span> lines <span class="kw">DESC</span> <span class="kw">LIMIT</span> <span class="num">6</span>;</pre>
+<pre class="out">author_name      lines
+---------------  -----
+Andrew Gallant   376
+Wesley Moore     13
+Crestwave        12
+Anton Zhiyanov   10
+Sylvestre Ledru  9
+sitiom           8</pre>
+  </div>
+
+  <div class="card">
+    <h3>Across repositories</h3>
+    <p class="desc">Create a table bound to another repo and query both in one session.</p>
+<pre class="sqlblock"><span class="kw">CREATE VIRTUAL TABLE</span> rg <span class="kw">USING</span> git_commits(<span class="str">'BurntSushi/ripgrep'</span>);
+<span class="kw">SELECT</span> <span class="str">'ripgrep'</span> <span class="kw">AS</span> repo, count(*) <span class="kw">AS</span> commits <span class="kw">FROM</span> rg
+<span class="kw">UNION ALL</span>
+<span class="kw">SELECT</span> <span class="str">'go-sqlite-fdw'</span>, count(*) <span class="kw">FROM</span> commits;</pre>
+<pre class="out">repo           commits
+-------------  -------
+ripgrep        2217
+go-sqlite-fdw  9</pre>
+  </div>
+
+  <h2>How it works</h2>
+  <p class="lead">
+    A repo spec is resolved by a small manager: local paths open in place; remote
+    URLs and <code class="inline">owner/repo</code> shorthands are bare-cloned into
+    <code class="inline">&lt;cache&gt;/gitsql/repos/…</code> and reused thereafter
+    (<code class="inline">--update</code> fetches, <code class="inline">--offline</code> forbids the network).
+    Each table is an <code class="inline">fdw.Source</code> whose cursor pulls from go-git
+    (a commit-time-ordered log, a recursive tree walk, a numstat diff, a blame), and
+    SQLite's <code class="inline">BestIndex</code> hook pushes down equality on keys like
+    <code class="inline">hash</code>, <code class="inline">commit_hash</code>, and
+    <code class="inline">path</code> so point lookups stay fast. Expensive per-commit diffs
+    are memoized for the life of the process.
+  </p>
+
+  <footer>
+    Part of the <a href="../">playground</a>. See the
+    <a href="https://github.com/imjasonh/playground/tree/main/gitsql">source &amp; README</a>
+    for the full table reference, flags, and the complete set of example queries
+    (<code class="inline">gitsql --list-examples</code>).
+  </footer>
+</div>
+
+<script>
+  // Tiny CSS bar charts for the time-of-day data (real ripgrep numbers).
+  const hours = [29,19,4,11,14,11,28,62,120,118,115,97,89,125,126,103,128,138,154,175,185,160,148,58];
+  const days = [["Sun",407],["Mon",374],["Tue",275],["Wed",317],["Thu",240],["Fri",247],["Sat",357]];
+
+  function renderChart(el, rows, max) {
+    el.innerHTML = rows.map(([lbl, val]) =>
+      `<div class="lbl">${lbl}</div>` +
+      `<div class="barwrap"><div class="bar" style="width:${Math.max(2, val / max * 100)}%"></div></div>` +
+      `<div class="val">${val}</div>`
+    ).join("");
+  }
+  renderChart(
+    document.getElementById("hourchart"),
+    hours.map((v, i) => [String(i).padStart(2, "0"), v]),
+    Math.max(...hours)
+  );
+  renderChart(
+    document.getElementById("daychart"),
+    days,
+    Math.max(...days.map(d => d[1]))
+  );
+</script>
+</body>
+</html>
