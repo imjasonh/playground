@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"syscall/js"
 	"time"
 
@@ -20,6 +22,8 @@ import (
 	"github.com/go-git/go-git/v5/storage/memory"
 	sqlite3 "github.com/ncruces/go-sqlite3"
 	sqlite3driver "github.com/ncruces/go-sqlite3/driver"
+	fdw "github.com/values-conflict/go-sqlite-fdw"
+	ncrucesfdw "github.com/values-conflict/go-sqlite-fdw/ncruces"
 
 	"github.com/imjasonh/playground/gitdb/internal/gitrepo"
 	"github.com/imjasonh/playground/gitdb/internal/tables"
@@ -94,7 +98,10 @@ func openDemo() (*sql.DB, error) {
 	tables.Init(manager)
 
 	db, err := sqlite3driver.Open(":memory:", func(conn *sqlite3.Conn) error {
-		return tables.RegisterNcruces(conn)
+		if err := tables.RegisterNcruces(conn); err != nil {
+			return err
+		}
+		return ncrucesfdw.Register(conn, "browser_http", browserHTTPFactory, browserHTTPFactory)
 	})
 	if err != nil {
 		return nil, err
@@ -106,6 +113,10 @@ func openDemo() (*sql.DB, error) {
 		return nil, err
 	}
 	if err := tables.CreateAll(db, demoSpec); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if _, err := db.Exec("CREATE VIRTUAL TABLE network_probe USING browser_http()"); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -199,6 +210,89 @@ func writeFile(fs billy.Filesystem, name string, content []byte) error {
 	}
 	_, writeErr := file.Write(content)
 	return errors.Join(writeErr, file.Close())
+}
+
+// browserHTTPFactory is a deliberately small network-backed FDW used to prove
+// that a Go browser fetch can suspend and resume from inside Cursor.Filter.
+func browserHTTPFactory(fdw.ConnectArgs) (fdw.Source, string, error) {
+	return &browserHTTPSource{},
+		"CREATE TABLE x(http_status INTEGER, body TEXT, url TEXT HIDDEN)",
+		nil
+}
+
+type browserHTTPSource struct{}
+
+func (*browserHTTPSource) BestIndex(info *fdw.IndexInfo) error {
+	info.ConstraintUsage = make([]fdw.IndexConstraintUsage, len(info.Constraints))
+	info.EstimatedCost = 1e12
+	info.EstimatedRows = 1_000_000
+	for i, constraint := range info.Constraints {
+		if constraint.Column == 2 && constraint.Op == fdw.OpEQ && constraint.Usable {
+			info.ConstraintUsage[i] = fdw.IndexConstraintUsage{ArgvIndex: 1, Omit: true}
+			info.IdxNum = 1
+			info.EstimatedCost = 1
+			info.EstimatedRows = 1
+			info.IdxFlags = fdw.IndexScanUnique
+			break
+		}
+	}
+	return nil
+}
+
+func (*browserHTTPSource) Open() (fdw.Cursor, error) { return &browserHTTPCursor{}, nil }
+func (*browserHTTPSource) Disconnect() error         { return nil }
+func (*browserHTTPSource) Destroy() error            { return nil }
+
+type browserHTTPCursor struct {
+	status int64
+	body   string
+	url    string
+	done   bool
+}
+
+func (c *browserHTTPCursor) Filter(idxNum int, _ string, args []fdw.Value) error {
+	c.done = false
+	c.status = 0
+	c.body = ""
+	c.url = ""
+	if idxNum != 1 || len(args) != 1 || args[0].Type() != fdw.Text {
+		return errors.New("network_probe: add WHERE url = 'https://...' to the query")
+	}
+
+	c.url = args[0].Text()
+	client := http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(c.url)
+	if err != nil {
+		return fmt.Errorf("network_probe: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	if err != nil {
+		return fmt.Errorf("network_probe: read response: %w", err)
+	}
+	c.status = int64(resp.StatusCode)
+	c.body = string(body)
+	return nil
+}
+
+func (c *browserHTTPCursor) Next() error  { c.done = true; return nil }
+func (c *browserHTTPCursor) EOF() bool    { return c.done }
+func (c *browserHTTPCursor) Close() error { return nil }
+func (c *browserHTTPCursor) RowID() (int64, error) {
+	return 1, nil
+}
+
+func (c *browserHTTPCursor) Column(column int) (fdw.Value, error) {
+	switch column {
+	case 0:
+		return fdw.IntValue(c.status), nil
+	case 1:
+		return fdw.TextValue(c.body), nil
+	case 2:
+		return fdw.TextValue(c.url), nil
+	default:
+		return fdw.NullValue(), nil
+	}
 }
 
 func handleRequest(db *sql.DB, raw string) {

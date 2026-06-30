@@ -17,7 +17,7 @@ func TestRun(t *testing.T) {
 	db.SetMaxOpenConns(1)
 
 	result, err := Run(context.Background(), db, `
-		SELECT 7 AS n, 'hello' AS text, x'0001' AS data, NULL AS nothing
+		SELECT 7 AS n, 'hello' AS text, x'0001' AS data, NULL AS empty_value
 		UNION ALL
 		SELECT 8, 'later', x'02', NULL
 	`, 1)

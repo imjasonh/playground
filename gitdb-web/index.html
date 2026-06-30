@@ -51,6 +51,7 @@
               <option value="changes">Commit changes</option>
               <option value="blame">Line blame</option>
               <option value="planner">Query plan</option>
+              <option value="network">Fetch inside xFilter</option>
             </select>
           </label>
         </div>
@@ -62,7 +63,7 @@
           </div>
           <label class="sr-only" for="sql-input">SQL query</label>
           <textarea id="sql-input" spellcheck="false">SELECT
-  substr(hash, 1, 10) AS commit,
+  substr(hash, 1, 10) AS commit_id,
   author_name,
   summary,
   author_when
@@ -101,6 +102,7 @@ ORDER BY author_when DESC;</textarea>
           <li>The native CLI continues to use <code>modernc.org/sqlite</code>.</li>
           <li>This worker uses <code>go-sqlite3</code> and the ncruces FDW adapter.</li>
           <li>Both execute the same <code>Source</code>, <code>Cursor</code>, and planner code.</li>
+          <li>A same-origin fetch runs inside an FDW callback without deadlocking the worker.</li>
           <li>The fixture is intentionally offline; live cloning and browser storage are follow-up work.</li>
         </ul>
       </section>
