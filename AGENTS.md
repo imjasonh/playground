@@ -96,87 +96,73 @@ commit source files—never commit `node_modules/` or Go/Rust build artifacts.
 
 The preview workflow posts the preview root URL on the PR.
 
-## Testing browser apps (CI)
+## Testing (`test.yml`)
 
-The browser test job tests only the **testable browser apps whose top-level
-directory changed** in the PR or push. Unchanged browser apps are not tested.
-The job always runs, discovering changed testable apps and testing them in
-turn; it exits green with a "Nothing to test" message when none changed.
+Every push to `main` and every pull request runs a single `test` job. It first
+discovers which apps changed
+(`.github/scripts/discover-changed-apps.sh`), then tests **only the changed apps
+of each type**, installing each toolchain (Node, Go, Rust) only when that type
+has work to do. When a type has no changes its steps are skipped, so the run is
+one `test` check with no empty or skipped legs. On the first push to `main` (no
+prior commit), every app is tested.
 
-A browser app is testable when it has:
+Discovery is by **top-level directory**: a change under `kanoodle/` selects
+`kanoodle`, a change under `web-push/` selects `web-push`, and so on. Hidden
+directories (names starting with `.`) and changes outside any app directory
+(e.g. a lone top-level file) select nothing — so a PR that only edits CI scripts
+or the root `README.md` runs no app tests.
 
-1. `index.html` (is a browser app)
-2. `package.json` with a **`test`** script
+| App type | Selected when its dir has | CI runs, per changed app |
+|----------|---------------------------|--------------------------|
+| Browser | `index.html` **and** `package.json` with a `test` script | `npm ci` → `npm test` → `npm run test:e2e` (if defined; installs Playwright Chromium first) |
+| Go | `go.mod` | `go build ./...` → `go test ./...` |
+| Rust | `Cargo.toml` | `cargo fmt --check` → `cargo clippy --locked --all-targets -D warnings` → `cargo test --locked`; Cloudflare Worker apps (with `wrangler.toml`) also run wasm clippy + a release `wasm32-unknown-unknown` build |
 
-Apps without tests (e.g. `hello/`) are not tested. If no testable apps changed, the `test` job still runs and passes without running any app tests.
+Browser apps without a `test` script (e.g. `hello/`) are never tested. Each Rust
+app's toolchain comes from its `rust-toolchain.toml` (defaulting to stable);
+`web-push` pins Rust 1.83.
 
-For each selected app, CI runs:
-
-1. `npm ci`
-2. `npm test`
-3. `npm run test:e2e` if a `test:e2e` script exists (installs Playwright Chromium first)
-
-On the first push to `main` (no prior commit), all testable apps are tested.
-
-## Testing Go apps (CI)
-
-The test workflow discovers changed Go apps alongside changed browser apps in
-its single test job. For every selected module, CI runs:
-
-1. `go build ./...`
-2. `go test ./...`
-
-Changing any path under a Go app selects that module. Adding a top-level
-`<name>/go.mod` selects the new app. On the first push to `main`, every Go app
-is tested. When no Go app changed, the job does not set up Go or run Go
-build/test steps, and no separate Go check is created.
-
-The daily dependency workflow upgrades every testable browser app's direct npm
-dependencies, refreshes its lockfile and any `vendor` script output, and runs
-its unit and optional end-to-end tests. It also runs `go get -u ./...`,
-`go build ./...`, and `go test ./...` in every Go app module. For every Rust app
-it runs `cargo update`, then `cargo clippy`, `cargo test`, and (for Cloudflare
-Worker apps) a `wasm32-unknown-unknown` release build. Only when every update,
-build, and test succeeds does it commit dependency changes directly to `main`.
-If any of those steps or the push fails, it puts the changes (or an empty
-failure-report commit) on a pull request instead.
-
-## Testing Rust apps (CI)
-
-The test workflow discovers changed Rust apps alongside browser and Go apps in
-its single test job. For every selected app, CI runs:
-
-1. `cargo fmt --check`
-2. `cargo clippy --locked --all-targets -- -D warnings`
-3. `cargo test --locked`
-
-Cloudflare Worker apps (those with a `wrangler.toml`) additionally run clippy
-and a release build for the `wasm32-unknown-unknown` target. Each app's
-toolchain comes from its `rust-toolchain.toml` (defaulting to stable); `web-push`
-pins Rust 1.83. Adding a top-level `<name>/Cargo.toml` selects the new app, and
-on the first push to `main`, every Rust app is tested.
-
-Discover apps locally:
+Run the per-type discovery helpers locally to see what CI would select:
 
 ```bash
-# All testable browser apps
-bash .github/scripts/discover-testable-apps.sh --all
+# Every app of one type
+bash .github/scripts/discover-testable-apps.sh --all   # browser
+bash .github/scripts/discover-go-modules.sh --all      # Go
+bash .github/scripts/discover-rust-apps.sh --all       # Rust
 
-# Browser apps touched by a diff
-git diff --name-only origin/main...HEAD | bash .github/scripts/discover-testable-apps.sh --from-changes
-
-# All Go apps
-bash .github/scripts/discover-go-modules.sh --all
-
-# Go apps touched by a diff
-git diff --name-only origin/main...HEAD | bash .github/scripts/discover-go-modules.sh --from-changes
-
-# All Rust apps
-bash .github/scripts/discover-rust-apps.sh --all
-
-# Rust apps touched by a diff
+# Only what a diff touched (what CI uses on a PR)
 git diff --name-only origin/main...HEAD | bash .github/scripts/discover-rust-apps.sh --from-changes
 ```
+
+## Dependency updates (`deps.yaml`)
+
+A scheduled workflow (daily at 00:00 UTC, or on demand via *Run workflow*) keeps
+every app's dependencies fresh. For each app it upgrades dependencies with that
+ecosystem's idiomatic tool, then verifies the result with the same checks the
+test workflow gates on:
+
+| App type | Upgrade | Verify |
+|----------|---------|--------|
+| Browser | `npx npm-check-updates --upgrade` → `npm install` → `npm run vendor` (if defined) | `npm test` (+ `npm run test:e2e` if defined) |
+| Go | `go get -u ./...` | `go build ./...` → `go test ./...` |
+| Rust | `cargo update` | `cargo clippy -D warnings` → `cargo test`; Worker apps also wasm clippy + a release `wasm32-unknown-unknown` build |
+
+Publishing is all-or-nothing, so a green run never lands a half-broken bump:
+
+- **Everything upgraded, built, and tested** → it commits the changed
+  lockfiles/manifests (`go.mod`/`go.sum`, `package.json`/`package-lock.json`
+  plus vendored output, `Cargo.toml`/`Cargo.lock`) straight to `main` as a
+  single `chore(deps): update dependencies` commit, and closes any stale
+  automation PR.
+- **Any upgrade, build, test, or the push fails** → it opens (or updates) a pull
+  request on the `automation/dependency-updates` branch with whatever it could
+  change — or an empty commit when nothing did — so a human can finish the
+  upgrade, and the run is marked failed.
+
+Each ecosystem's work lives in its own script (`update-go-dependencies.sh`,
+`update-js-dependencies.sh`, `update-rust-dependencies.sh`), and
+`manage-dependency-update.sh` performs the shared commit / PR / report step. New
+apps are discovered automatically — no workflow edits are needed.
 
 ## Adding a new browser app
 
