@@ -1,8 +1,8 @@
 # playground
 
-A multi-app playground: each top-level directory is a self-contained,
-client-side browser app deployed to GitHub Pages. Apps are independent — there
-is no shared build step at the repo root.
+A multi-app playground: each top-level directory is either a self-contained
+browser app deployed to GitHub Pages or an independent Go command-line app.
+There is no shared build step at the repo root.
 
 ## Apps
 
@@ -13,8 +13,9 @@ is no shared build step at the repo root.
 
 ## Tools
 
-Not every top-level directory is a browser app. Command-line tools live here too
-(they have no `index.html`, so the deploy/preview/test workflows skip them):
+Not every top-level directory is a browser app. Go command-line tools live here
+too. CI builds and tests each changed Go module; because these tools have no
+`index.html`, GitHub Pages deploy and preview workflows skip them:
 
 - **[`ocidb/`](ocidb/)** — explore OCI container images on Docker Hub with SQL,
   via SQLite virtual tables over go-containerregistry (Go CLI).
