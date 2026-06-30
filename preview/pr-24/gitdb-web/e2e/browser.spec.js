@@ -17,8 +17,8 @@ test("runs the real gitdb virtual tables in WebAssembly", async ({ page }) => {
     "SELECT count(*) AS commits FROM commits WHERE ref = 'prototype';",
   );
   await page.locator("#run-query").click();
-  await expect(page.locator("#result-table th")).toHaveText("commits");
-  await expect(page.locator("#result-table td")).toHaveText("1");
+  await expect(page.getByRole("columnheader", { name: "commits" })).toBeVisible();
+  await expect(page.locator("#result-table tbody td")).toHaveText("1");
 
   expect(pageErrors).toEqual([]);
 });
@@ -38,5 +38,31 @@ test("surfaces SQLite errors without terminating the worker", async ({ page }) =
 
   await page.locator("#sql-input").fill("SELECT count(*) AS files FROM files;");
   await page.locator("#run-query").click();
-  await expect(page.locator("#result-table td")).toHaveText("4");
+  await expect(page.getByRole("columnheader", { name: "files" })).toBeVisible();
+  await expect(page.locator("#result-table tbody td")).toHaveText("4");
+});
+
+test("executes every bundled virtual-table example", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#runtime-status")).toHaveText(
+    "Go/WASM + SQLite ready",
+    { timeout: 60_000 },
+  );
+
+  const examples = [
+    ["authors", "lines_added"],
+    ["files", "path"],
+    ["changes", "change"],
+    ["blame", "line_no"],
+    ["planner", "detail"],
+    ["network", "http_status"],
+  ];
+  for (const [example, expectedColumn] of examples) {
+    await page.locator("#example-select").selectOption(example);
+    await page.locator("#run-query").click();
+    await expect(
+      page.getByRole("columnheader", { name: expectedColumn }),
+    ).toBeVisible();
+    await expect(page.locator("#error-panel")).toBeHidden();
+  }
 });

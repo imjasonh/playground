@@ -1,6 +1,8 @@
+const probeURL = new URL("./probe.json", import.meta.url).href.replaceAll("'", "''");
+
 const EXAMPLES = {
   commits: `SELECT
-  substr(hash, 1, 10) AS commit,
+  substr(hash, 1, 10) AS commit_id,
   author_name,
   summary,
   author_when
@@ -24,7 +26,7 @@ ORDER BY lines_added DESC;`,
 FROM files
 ORDER BY path;`,
   changes: `SELECT
-  substr(cf.commit_hash, 1, 10) AS commit,
+  substr(cf.commit_hash, 1, 10) AS commit_id,
   c.author_name,
   cf.change,
   cf.path,
@@ -36,7 +38,7 @@ ORDER BY c.author_when DESC, cf.path;`,
   blame: `SELECT
   line_no,
   author_name,
-  substr(commit_hash, 1, 10) AS commit,
+  substr(commit_hash, 1, 10) AS commit_id,
   content
 FROM blame
 WHERE path = 'src.txt'
@@ -50,6 +52,11 @@ WHERE hash = (
   WHERE path = 'notes.txt'
   LIMIT 1
 );`,
+  network: `SELECT
+  http_status,
+  body
+FROM network_probe
+WHERE url = '${probeURL}';`,
 };
 
 class GitDBWorker {
