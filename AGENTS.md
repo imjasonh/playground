@@ -15,6 +15,7 @@ playground/
 │   ├── scripts/           # CI helpers for browser and Go app discovery
 │   └── workflows/         # deploy, preview, test, cleanup, dependency updates
 ├── git/                   # in-browser read-only git client (JS + Jest + Playwright)
+├── gitdb/                 # Go CLI (Go module + Go tests)
 ├── hello/                 # example static app (HTML only)
 ├── kanoodle/              # example app with tests (JS + Jest + Playwright)
 └── ocidb/                 # Go CLI (Go module + Go tests)
@@ -30,6 +31,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `git/` | yes | In-browser read-only git client; JS modules, npm scripts, tests |
 | `hello/` | yes | Static HTML; no build or tests |
 | `kanoodle/` | yes | Client-side JS modules, npm scripts, tests |
+| `gitdb/` | no | Go CLI; no `index.html` |
 | `ocidb/` | no | Go CLI; no `index.html` |
 | `.github/` | no | Infrastructure only |
 | `README.md` | no | Not a directory |
@@ -238,6 +240,7 @@ go test ./...
 
 | Directory | Type | Tests |
 |-----------|------|-------|
+| `gitdb/` | git repository explorer backed by SQLite virtual tables | `go test ./...` |
 | `ocidb/` | OCI registry explorer backed by SQLite virtual tables | `go test ./...` |
 
 See each app's `README.md` for app-specific rules and local development.

@@ -1,0 +1,12 @@
+# Built binary
+/gitdb
+gitdb.exe
+
+# Go test/coverage artifacts
+*.test
+*.out
+coverage.txt
+
+# Local cache (when pointed at the working tree)
+.cache/
+cache/
