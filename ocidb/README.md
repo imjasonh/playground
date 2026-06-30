@@ -74,6 +74,7 @@ inputs explicit.
 | `history` | `reference` | `platform` | one build step (≈ a Dockerfile line) |
 | `env` | `reference` | `platform` | one environment variable |
 | `labels` | `reference` | `platform` | one label |
+| `files` | `reference` | `platform`, `path` | one file/dir/symlink inside the image, optionally with its `content` |
 
 - `reference` is any image reference: `nginx`, `python:3.12-slim`,
   `bitnami/redis`, `ghcr.io/owner/img@sha256:…` — short Docker Hub names are
@@ -157,12 +158,125 @@ linux/arm64   7       51.63 MB
 (3 rows)
 ```
 
+## Reading files inside images
+
+The `files` table exposes the **filesystem inside an image**: one row per tar
+member (file, directory, symlink, …) across all of the resolved platform's
+layers, with an optional `content` column holding the file's bytes.
+
+```console
+$ ocidb schema files
+CREATE TABLE files(
+  reference TEXT HIDDEN,
+  platform TEXT HIDDEN,
+  layer INTEGER,
+  layer_digest TEXT,
+  path TEXT,
+  type TEXT,
+  size INTEGER,
+  mode TEXT,
+  linkname TEXT,
+  uid INTEGER,
+  gid INTEGER,
+  modtime TEXT,
+  content TEXT
+);
+```
+
+- `path` is the absolute path (`/etc/os-release`); `type` is one of `file`,
+  `dir`, `symlink`, `hardlink`, `char`, `block`, `fifo`.
+- `mode` is the octal permission string (`0644`, `4755` for setuid, …).
+- `content` is the file body **as text**, and only for regular files that are
+  valid UTF-8 and at most 1 MiB; larger or binary files report their `size` but
+  a `NULL` content. Rows are **per layer**, so a path edited by a later layer
+  appears once per layer that touches it (overlay/whiteout semantics are not
+  merged).
+
+This follows the approach described in dagdotdev's
+[registry explorer](https://github.com/jonjohnsonjr/dagdotdev/blob/main/pkg/explore/README.md):
+walk a layer's tar exactly once to build a **table of contents** (the tar
+headers), and lean on content-addressability to cache aggressively. Because a
+layer is named by digest and never changes, both its blob and its derived TOC
+are cached **forever** — listing files for an already-seen layer costs zero
+network and zero decompression.
+
+### Searching files efficiently
+
+Two things keep file search cheap:
+
+1. **Content is only read when you ask for it.** `BestIndex` inspects which
+   columns the query references; file *bodies* are decompressed only when the
+   `content` column is selected. Metadata-only searches (by `path`, `size`,
+   `mode`, `type`, …) read just the cached tables of contents.
+2. **`path =` is pushed down.** An equality on `path` is bound at the source, so
+   `WHERE path = '/etc/passwd'` reads a single file rather than every body in
+   the layer.
+
+Find which images ship a binary (metadata only — reads just the TOCs):
+
+```sql
+WITH refs(ref) AS (VALUES ('alpine'), ('busybox'), ('debian'), ('ubuntu'))
+SELECT ref AS image,
+       CASE WHEN EXISTS (
+         SELECT 1 FROM files WHERE reference = refs.ref AND path = '/usr/bin/bash'
+       ) THEN 'yes' ELSE 'no' END AS has_bash
+FROM refs ORDER BY ref;
+```
+
+```
+image    has_bash
+-----    --------
+alpine   no
+busybox  no
+debian   yes
+ubuntu   yes
+(4 rows)
+```
+
+Read a file's contents across several images at once (path push-down means only
+that one file is cracked open per image):
+
+```sql
+WITH refs(ref) AS (VALUES ('alpine'), ('debian'), ('ubuntu'))
+SELECT refs.ref AS image,
+       replace(trim(f.content), char(10), ' | ') AS os_release
+FROM refs
+JOIN files f ON f.reference = refs.ref AND f.path = '/usr/lib/os-release';
+```
+
+Hunt for setuid/setgid binaries (a leading octal digit of 1–7 means a special
+permission bit is set):
+
+```sql
+SELECT path, mode, size FROM files
+WHERE reference = 'debian' AND type = 'file'
+  AND substr(mode, 1, 1) IN ('1','2','3','4','5','6','7')
+ORDER BY mode DESC, path;
+```
+
+```
+path              mode  size
+----              ----  ----
+/usr/bin/chfn     4755  70888
+/usr/bin/passwd   4755  118168
+/usr/bin/su       4755  84360
+…
+/usr/bin/chage    2755  113848
+```
+
+> The first time you touch a layer, its (compressed) blob is downloaded and
+> cached on disk; subsequent file reads come straight from that cache. This is
+> the one place `ocidb` may pull whole layers — the explorer instead serves
+> single files with HTTP Range requests over a gzip seek index, an optimization
+> that matters for a hosted service but less so for a local cache.
+
 ## Caching
 
 Everything fetched is written under the cache directory:
 
-- **Content addressed by digest** — manifests (`manifests/`) and config blobs
-  (`blobs/`) — is immutable and cached **forever**.
+- **Content addressed by digest** — manifests (`manifests/`), config + layer
+  blobs (`blobs/`) and the per-layer tables of contents (`toc/`) — is immutable
+  and cached **forever**.
 - **Mutable lookups** — tag lists (`tags/`) and tag→digest resolution (`refs/`) —
   are cached with a **TTL** (default 6h, `--ttl`).
 
