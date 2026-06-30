@@ -25,8 +25,9 @@ npm install
 npm start
 ```
 
-Open <http://localhost:3000>. The build writes `gitdb.wasm` and the matching Go
-runtime into the ignored `generated/` directory.
+Open <http://localhost:3000>. The build writes `gitdb.wasm.gz` and the matching
+Go runtime into the ignored `generated/` directory. The Worker uses the browser
+`DecompressionStream` API before instantiating the module.
 
 ## Test
 
@@ -40,10 +41,12 @@ tables in Chromium.
 
 ## Current footprint
 
-With Go 1.25, the stripped worker is approximately 31 MiB before HTTP
-compression and 7.6 MiB with gzip. It initializes and runs the fixture queries
-off the main thread, but bundle size is an explicit tradeoff of maximizing Go
-code reuse in this approach.
+With Go 1.25, the stripped worker is approximately 31 MiB raw and 7.6 MiB with
+gzip. Only the compressed artifact is loaded by the browser, both to reduce
+transfer size and to stay below the per-file limit of the legacy Pages
+publisher. It initializes and runs the fixture queries off the main thread, but
+bundle size is an explicit tradeoff of maximizing Go code reuse in this
+approach.
 
 ## Deliberate limits
 
