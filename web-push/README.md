@@ -107,9 +107,11 @@ known-answer test.
 
 ### Minimum supported Rust
 
-The crate builds on Rust **1.83+**. A few transitive dependencies raised their
-MSRV in later patch releases and are pinned in `Cargo.toml` (`zeroize`,
-`idna_adapter`); `Cargo.lock` is committed for reproducible builds.
+The crate targets Rust **1.83**, pinned in `rust-toolchain.toml` so local builds
+and CI use the same toolchain (and the `wasm32-unknown-unknown` target). A few
+transitive dependencies raised their MSRV in later patch releases and are pinned
+in `Cargo.toml` (`zeroize`, `idna_adapter`); `Cargo.lock` is committed for
+reproducible builds.
 
 ## Deploying
 
