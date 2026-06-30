@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
 
+# Production, preview, and cleanup workflows all update the same branch.
+concurrency:
+  group: gh-pages-publish
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
