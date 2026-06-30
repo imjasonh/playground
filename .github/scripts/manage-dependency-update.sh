@@ -18,7 +18,9 @@ case "${1:-}" in
       ':(glob)*/go.sum' \
       ':(glob)*/package.json' \
       ':(glob)*/package-lock.json' \
-      ':(glob)*/vendor/**'
+      ':(glob)*/vendor/**' \
+      ':(glob)*/Cargo.toml' \
+      ':(glob)*/Cargo.lock'
     git commit -m "chore(deps): update dependencies"
     git push origin HEAD:main
     ;;
