@@ -362,9 +362,9 @@ export function chooseComputerAim({
   }
 
   const accuracyRoll = sample();
-  const spread = accuracyRoll < 0.1 ? 0.55 : accuracyRoll > 0.75 ? 1.8 : 1.2;
-  const angleError = (sample() * 2 - 1) * 5 * spread;
-  const powerError = (sample() * 2 - 1) * 8 * spread;
+  const spread = accuracyRoll < 0.1 ? 0.5 : accuracyRoll > 0.75 ? 2 : 1.35;
+  const angleError = (sample() * 2 - 1) * 6 * spread;
+  const powerError = ((sample() * 2 - 1) * 10 - 2) * spread;
   const aim = normalizeAim(best.angle + angleError, best.power + powerError);
 
   return Object.freeze({
