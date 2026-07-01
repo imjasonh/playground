@@ -7,10 +7,11 @@ Scope: single GCE host, one scale-to-zero instance per app, many concurrent user
 Future scope: multiple hosts, per-app replicas, and user sharding
 
 This document designs a platform for hosting interactive terminal applications
-at names such as `abc.imjasonh.dev`. Users connect with an SSH client,
-authenticate at the platform edge, and join a shared app instance. An app may
-give a user interactive control or a read-only view. App state is ephemeral by
-default; an app may opt into limited durable local state.
+through `apps.imjasonh.dev`. Users select an app with a command such as
+`ssh abc@apps.imjasonh.dev`, authenticate at the platform edge, and join a
+shared app instance. An app may give a user interactive control or a read-only
+view. App state is ephemeral by default; an app may opt into limited durable
+local state.
 
 “Serverless” here means the app author supplies an artifact and policy while the
 platform owns placement, startup, scale-to-zero, routing, isolation, updates,
@@ -46,7 +47,8 @@ health, and accounting. It does not mean there are no servers.
 
 ### Goals
 
-- Route `ssh abc.imjasonh.dev` to the app named `abc`.
+- Route `ssh abc@apps.imjasonh.dev` to the app named `abc`, and present an app
+  picker when no valid app route is supplied.
 - Authenticate people at the platform boundary, without giving apps raw SSH
   credentials or private keys.
 - Let many users share one live app process and its local state.
@@ -82,10 +84,10 @@ evolve behind the contracts in this document.
 |------|----------|
 | Publishers | Owner only initially, then trusted publishers; design the boundary for untrusted publishers later |
 | Visibility | Public apps for authenticated users initially; private app policy later |
-| Public endpoint | One dual-stack GCE VM; use its external IPv6 `/96` for zero-config per-app addresses and one shared IPv4 fallback |
-| App selection | Destination IPv6 when available; app-as-username or an optional route command on shared IPv4 |
+| Public endpoint | One dual-stack GCE VM and one shared `apps.imjasonh.dev` address |
+| App selection | SSH protocol username is the app slug; unknown/reserved usernames enter the picker |
 | SSH edge | A platform-owned SSH gateway terminating SSH and authorizing sessions |
-| User auth | Automatic stable profile from an SSH public key; OIDC device flow and account linking for users without a key |
+| User auth | OIDC establishes identity on first use; a proven SSH key is linked for silent subsequent login |
 | Guest protocol | Gateway-to-guest private `AF_VSOCK` stream with a small framed session protocol |
 | App SDK | Go/Charm SDK; the platform terminates SSH and apps implement the platform session contract |
 | Packaging | OCI image indexes in Artifact Registry, pinned by digest |
@@ -143,10 +145,12 @@ authorized-key files, sshd configuration, and network listeners per app.
 ```mermaid
 flowchart TB
     U["User SSH client"]
-    DNS["Wildcard DNS<br/>*.imjasonh.dev"]
+    B["User browser"]
+    DNS["DNS<br/>apps.imjasonh.dev"]
 
     subgraph GCE["GCE VM"]
         GW["SSH gateway<br/>auth, route, PTY, policy"]
+        ID["Identity bridge<br/>OIDC callback + key linking"]
         MGR["Instance manager<br/>reconcile, deploy, update"]
         DB[("SQLite<br/>desired state + event outbox")]
         OBS["Telemetry agent<br/>logs, metrics, usage"]
@@ -167,6 +171,8 @@ flowchart TB
         MGR <--> DB
         MGR --> REG
         GW --> DB
+        GW <--> ID
+        ID <--> DB
         GW --> OBS
         MGR --> OBS
         AG --> OBS
@@ -174,9 +180,12 @@ flowchart TB
 
     AR["Artifact Registry<br/>signed OCI releases"]
     MON["Cloud Monitoring / Logging<br/>or Prometheus-compatible backend"]
+    OIDC["Managed OIDC provider<br/>login, MFA, recovery"]
 
     U -->|"TCP 22"| GW
     U -.-> DNS
+    B -->|"HTTPS"| ID
+    ID <-->|"Authorization Code + PKCE"| OIDC
     REG <-->|"pull by digest"| AR
     OBS --> MON
 ```
@@ -189,8 +198,8 @@ The only internet-facing process. It:
 
 1. completes the SSH handshake using platform host keys;
 2. authenticates a platform user;
-3. obtains the original hostname from a platform route request;
-4. resolves it to an app and checks authorization;
+3. interprets the SSH protocol username as an app slug or picker request;
+4. resolves the app and checks visibility and authorization;
 5. requests or locates the running instance;
 6. opens a private vsock stream to the guest agent;
 7. proxies terminal bytes, resize events, signals, and disconnects;
@@ -200,6 +209,15 @@ The gateway should use an SSH protocol library, not shell out to `sshd`. A
 purpose-built server can reject port forwarding, file transfer, agent
 forwarding, arbitrary commands, and unsupported channels before they reach an
 app.
+
+#### Identity bridge
+
+A small HTTPS service creates expiring SSH login transactions, redirects the
+browser to the managed OIDC provider, validates callbacks, and links proven SSH
+keys to platform users. The gateway remains responsible for SSH signatures and
+app authorization; the OIDC provider remains responsible for passwords, MFA,
+and account recovery. The bridge and gateway communicate with opaque
+transaction/connection IDs, never by forwarding OIDC tokens into app guests.
 
 #### Instance manager
 
@@ -420,75 +438,52 @@ This permits emergency kernel/agent rollouts without rebuilding every app.
 
 ## 7. SSH routing and identity
 
-### A hostname caveat
+### App selection
 
-SSH does not send the DNS hostname in its base protocol the way TLS sends SNI.
-After DNS resolution, the server normally sees only a TCP connection. Therefore
-wildcard DNS alone cannot tell the gateway whether the user typed
-`abc.imjasonh.dev` or `xyz.imjasonh.dev`.
-
-GCE provides a useful low-friction path for IPv6 clients: a dual-stack VM
-network interface [receives an external `/96` IPv6
-range](https://cloud.google.com/compute/docs/ip-addresses/configure-ipv6-address),
-and addresses within the range can be configured on the host OS and routed to
-that VM. Allocate a stable `/128` from that range for every app, publish it as
-the app's `AAAA` record, and map the accepted socket's local destination address
-back to the app. Then the desired command works without client configuration:
+SSH does not send the destination hostname like an HTTP `Host` header or TLS
+SNI. The canonical endpoint therefore uses the SSH protocol username as the app
+route:
 
 ```console
-$ ssh abc.imjasonh.dev
+$ ssh foo@apps.imjasonh.dev
 ```
 
-The same trick is not available behind one shared IPv4 address. All app `A`
-records lead to an indistinguishable listener. The zero-configuration IPv4
-fallback puts the app in the SSH username:
+The gateway interprets `foo` as an app slug, not as a user account. The person's
+identity comes independently from the proven SSH key or OIDC identity. This
+works with unmodified SSH clients over both IPv4 and IPv6 and requires only one
+public address.
+
+If the protocol username is reserved or does not match an enabled visible app,
+the gateway presents a searchable picker after authentication. This makes the
+common no-explicit-username form useful:
 
 ```console
-$ ssh abc@ssh.imjasonh.dev
+$ ssh apps.imjasonh.dev
+
+Choose an app:
+> cold-climb
+  kanoodle
+  ...
 ```
 
-User identity comes from authentication, not this protocol username, so the
-gateway is free to interpret `abc` as the route.
+An SSH client always sends a username, even when the person omitted it on the
+command line; it defaults to the local operating-system username. The protocol
+does not reveal whether `user@` was typed. Consequently, a local username that
+exactly matches an app slug routes directly to that app. This is harmless for
+public apps but means the no-username form cannot guarantee the picker.
+`ssh picker@apps.imjasonh.dev` is the guaranteed form. Reserve `picker`,
+`apps`, `root`, `admin`, `ubuntu`, `user`, and other common system names from
+app registration.
 
-Users who want the prettier app hostname over IPv4 can install this one-time
-OpenSSH configuration. `RemoteCommand` supports `%n`, which expands to the
-original hostname as entered on the command line before `HostName` rewriting:
-
-```sshconfig
-Host *.imjasonh.dev
-  HostName ssh.imjasonh.dev
-  RemoteCommand route %n
-  RequestTTY force
-```
-
-The client opens a session channel and requests execution of
-`route abc.imjasonh.dev`. The gateway treats this as platform metadata rather
-than a guest command, validates the exact grammar and DNS suffix, and routes to
-`abc`.
-
-This configuration reserves `RemoteCommand`, so a user cannot also pass an
-arbitrary command on the same invocation. That is consistent with the v1 app
-contract, which exposes an interactive app rather than remote command
-execution. A platform CLI can construct the equivalent SSH request for clients
-that cannot use this configuration. A generated per-app `SetEnv` entry is also
-possible, but
-`SetEnv SSHAPPS_HOST=%h` is **not**: OpenSSH does not expand hostname tokens in
-`SetEnv`.
-
-Another viable protocol extension is an SSH certificate critical option or a
-custom pre-session request, but stock clients do not make it as ergonomic.
-Routing precedence is destination IPv6, exact route request, then protocol
-username. Reject conflicting values. Test IPv6 reachability, IPv4 fallback,
-Happy Eyeballs behavior, and OpenSSH configuration on every supported client.
+Routing happens only after authentication and visibility checks. An unknown,
+disabled, or private app must not leak its existence through distinguishable
+pre-authentication errors or timing.
 
 ### DNS and host keys
 
-- `ssh.imjasonh.dev` points to the VM's shared IPv4 and primary IPv6 addresses.
-- Each app `A` record points to the shared IPv4 address; each app `AAAA` record
-  points to its allocated `/128` within the VM's static external IPv6 `/96`.
-- Keep the `/96` static. Moving an app to another host later requires an edge
-  routing layer or DNS update; do not make the address its durable instance ID.
-- The gateway presents the same platform host key for every app hostname.
+- `apps.imjasonh.dev` points to the gateway's shared IPv4 and IPv6 addresses.
+- The gateway presents one platform host key for this stable hostname, so users
+  approve it once rather than once per app.
 - Publish SSHFP records if DNSSEC is available, but do not rely on SSHFP alone.
 - Store host private keys in a tightly permissioned persistent host path or
   retrieve them from Secret Manager at boot.
@@ -499,32 +494,191 @@ Happy Eyeballs behavior, and OpenSSH configuration on every supported client.
 Every session requires authentication; there is no anonymous participant or
 observer mode.
 
-The lowest-friction path accepts a valid SSH public-key proof and automatically
-creates a stable, randomly named profile keyed by its fingerprint. This proves
-continuity of a pseudonymous identity, not a person's real-world identity.
-There is no registration form or allowlist for public apps:
+Authentication deliberately separates three values that traditional SSH often
+conflates:
 
-1. client proves possession of a supported modern SSH key (prefer Ed25519 and
-   hardware-backed security-key algorithms);
-2. gateway looks up the fingerprint or creates an immutable user ID and random
-   display profile;
-3. app authorization is evaluated for that user ID;
-4. only normalized identity claims are sent to the guest.
+```text
+SSH protocol username "foo"       -> requested app
+SSH key fingerprint               -> reusable login credential
+OIDC (issuer, subject)            -> durable external person identity
+```
 
-For clients without a key, offer SSH keyboard-interactive authentication with
-an OIDC device flow: display a short URL and code, wait for browser completion,
-then create a profile and authorize the SSH connection. The browser flow can
-also link additional SSH keys to an existing profile. Never accept a reusable
-platform password.
+OIDC establishes who the user is on first use. The SSH key is then a
+passwordless credential linked to that identity; it is not itself the source of
+account identity. This delegates passwords, MFA, account recovery, and identity
+verification to the OIDC provider while preserving normal one-command SSH after
+enrollment.
 
-Later, the same OIDC identity can issue short-lived OpenSSH user certificates.
-Certificates reduce key lookup latency and support expiration and roles, but
-require careful CA protection and revocation semantics. Account linking must
-require proof of both the existing account and new key; fingerprint collision
-or unverified email matching must never merge profiles.
+#### Host key versus user key
 
-Never pass `SSH_AUTH_SOCK`, public-key blobs, OIDC tokens, source credentials, or
-agent forwarding into a guest. Apps receive:
+Two unrelated SSH key types appear during connection:
+
+- The **platform host key** proves that the client reached
+  `apps.imjasonh.dev`. The user may approve it on the first connection, after
+  which it is stored in `known_hosts`.
+- The **user key** proves that this connection controls a private key associated
+  with a platform profile. The private key remains in the client or SSH agent;
+  the gateway receives the public key and a signature.
+
+Using one stable gateway hostname means the host-key prompt happens once, not
+once per app.
+
+#### First login with an SSH key
+
+The intended first-use experience is:
+
+```console
+$ ssh foo@apps.imjasonh.dev
+
+Sign in to continue:
+
+  https://auth.imjasonh.dev/ssh/7KQ2-MNPR
+
+Waiting for browser authentication...
+
+✓ Signed in as Jason
+✓ Linked SSH key SHA256:abc123...
+✓ Joining foo
+```
+
+The URL should use an OSC 8 terminal hyperlink when supported and also be
+printable as text or a QR code. The browser:
+
+1. redirects to the configured OIDC provider;
+2. completes the provider's login and MFA;
+3. displays the requested app, platform profile, SSH algorithm, and key
+   fingerprint;
+4. asks the user to confirm linking that key;
+5. signals the waiting SSH gateway after confirmation.
+
+The terminal waits and proceeds automatically; the user should not need to copy
+an access token back into it. A login transaction expires after five minutes
+and cancellation or browser denial closes the SSH session cleanly.
+
+#### Subsequent login
+
+After linking, the normal path has no browser interaction:
+
+```console
+$ ssh foo@apps.imjasonh.dev
+✓ Joining foo as swift-otter
+```
+
+The gateway verifies the SSH signature, maps the fingerprint to the platform
+user, checks account/key status and app authorization, and attaches the
+session. OIDC provider availability is not on this path, so existing users can
+connect during an identity-provider outage.
+
+#### SSH protocol flow
+
+A client may first ask whether a public key is acceptable before sending a
+signature. Do not create a profile or record an unproven candidate at that
+stage. For a linked key, request and verify the signature and complete
+authentication.
+
+The SSH authentication signature is bound to the protocol username, so a
+signature made for `foo@apps.imjasonh.dev` cannot be replayed as another
+request. The gateway nevertheless authorizes keys globally rather than keeping
+Unix-style per-username `authorized_keys`: the same linked key may prove the
+same platform user while requesting any app slug, after which normal app
+authorization applies.
+
+For an unlinked key:
+
+1. request and cryptographically verify a signature over the SSH authentication
+   exchange;
+2. retain only that proven public key and its canonical SHA-256 fingerprint in
+   connection state;
+3. report partial authentication and require keyboard-interactive OIDC;
+4. run the browser login transaction;
+5. transactionally bind the key to the OIDC-backed profile;
+6. complete SSH authentication and continue to app selection/authorization.
+
+SSH supports partial authentication followed by another method. The selected Go
+SSH library must expose that mechanism and be tested with OpenSSH, Termius,
+Blink, PuTTY, and other supported clients. If a library cannot express partial
+success, it may accept the proven key into a tightly restricted gateway login
+session and perform the OIDC gate before permitting picker or app access. It
+must never treat that restricted state as an authorized app session.
+
+Clients and agents often offer several keys. Limit attempts, do not persist
+unsigned candidates, and bind only the key for which the client completed a
+signature and browser confirmation.
+
+#### Clients without an SSH key
+
+When no usable public key is offered, advertise keyboard-interactive
+authentication and run the same browser flow. Successful OIDC creates or finds
+the platform profile and permits that connection, but there is no reusable SSH
+credential. The next connection repeats browser authentication.
+
+After login, offer instructions or an account page to generate and link a key:
+
+```console
+$ ssh-keygen -t ed25519
+```
+
+Do not require a key merely to try the platform, and never introduce a reusable
+SSH password as the fallback.
+
+#### OIDC bridge
+
+The platform still needs a small identity bridge, but it does not handle user
+passwords or MFA. It owns:
+
+- a cryptographically random, single-use login transaction;
+- a short HTTPS URL and optional human-readable verification code;
+- OIDC Authorization Code flow with PKCE, `state`, and `nonce`;
+- callback validation of issuer, audience, signature, expiry, and nonce;
+- transactional creation/linking of the platform profile and SSH key;
+- notification to the waiting gateway connection;
+- expiry, cancellation, audit, and rate limiting.
+
+Identify an external account only by the exact `(issuer, subject)` pair. Email,
+name, and handle are mutable display metadata and must never drive automatic
+account merging. Store no OIDC access or refresh token unless a later feature
+requires provider API access; discard login tokens after validation.
+
+The login URL contains at least 128 bits of unguessable entropy and is stored
+hashed. The browser confirmation page repeats a short verification phrase or
+code shown in the terminal, requested app, and SSH fingerprint to prevent
+session swapping and login-CSRF confusion. A transaction is bound to one SSH
+connection and one proven key, if present, and cannot be replayed.
+
+#### Profiles, key linking, and recovery
+
+A platform user may have multiple OIDC identities and SSH keys, but every
+linking operation requires proof of the signed-in account and possession of the
+new key. A fingerprint can belong to only one active profile. Never silently
+move a key between profiles or merge profiles based on email.
+
+The account page supports:
+
+- listing key algorithm, fingerprint, added time, and last-used time;
+- adding a key through a signed SSH linking flow;
+- naming and revoking keys;
+- reviewing active sessions and recent login events;
+- linking or unlinking an OIDC identity with a safe last-credential check;
+- changing the generated display profile.
+
+OIDC is the recovery path when all SSH keys are lost. Revocation takes effect at
+the next connection and may optionally terminate active sessions. Two people
+sharing one private key are indistinguishable to the platform and are treated
+as one credential holder.
+
+Accept a narrow modern key algorithm policy—initially Ed25519 and
+hardware-backed `sk-ssh-ed25519`; add RSA-SHA2 only when client compatibility
+requires it. Never accept `ssh-rsa` signatures using SHA-1.
+
+Later, the OIDC identity may issue short-lived OpenSSH user certificates.
+Certificates can improve managed-device and organization flows, but require CA
+protection and revocation semantics and are unnecessary for the first version.
+
+#### Identity passed to apps
+
+Never pass `SSH_AUTH_SOCK`, public-key blobs, fingerprints, OIDC tokens, source
+credentials, or agent forwarding into a guest. Apps receive only normalized
+platform claims:
 
 ```json
 {
@@ -533,9 +687,13 @@ agent forwarding into a guest. Apps receive:
   "display_name": "Alice",
   "roles": ["participant"],
   "mode": "interactive",
+  "authentication": "linked-ssh-key",
   "connected_at": "2026-07-01T00:00:00Z"
 }
 ```
+
+`user_id` is stable across key rotation and OIDC display-name changes. Apps
+must use it—not display name—as the durable user key.
 
 ### Authorization
 
@@ -557,9 +715,8 @@ Allow only:
 - one `session` channel;
 - PTY allocation with sanitized terminal type and bounded dimensions;
 - terminal resize events;
-- the platform route command when needed;
 - a small signal allowlist;
-- optional platform-defined commands such as `status`.
+- picker navigation and optional platform-defined commands such as `status`.
 
 Reject shell escape commands, arbitrary `exec`, subsystems (`sftp`/`scp`), TCP
 and Unix forwarding, X11 forwarding, agent forwarding, and unrecognized
@@ -1073,6 +1230,13 @@ unauthenticated connections, and cryptographic algorithm policy. Prefer modern
 algorithms and remove legacy SHA-1/RSA modes. Avoid username enumeration through
 different public error messages.
 
+Also limit outstanding login transactions per IP, key, OIDC subject, and
+connection; cap OIDC polling; expire transactions promptly; reject callback
+replay; and prevent repeated unknown keys from creating durable database rows.
+The identity bridge must fail closed if callback validation or transaction
+storage is unavailable. Existing linked-key login does not depend on the bridge
+or OIDC provider.
+
 ### Session abuse
 
 Limit:
@@ -1106,7 +1270,7 @@ Audit every:
 
 - app/release/policy/secret reference change;
 - deploy, rollback, restart, disable, delete, and purge;
-- key registration/revocation and role change;
+- OIDC login, identity link/unlink, key registration/revocation, and role change;
 - operator access and break-glass action;
 - session start/end and authorization denial;
 - backup and restore.
@@ -1141,6 +1305,7 @@ existing data volumes.
 | Gateway exits | Existing proxied sessions drop; supervisor restarts gateway |
 | Manager exits | Existing VMs/sessions continue; reconciliation pauses |
 | SQLite unavailable | Reject mutations; gateway may use a bounded read cache, fail closed on auth |
+| OIDC provider/bridge unavailable | Linked keys continue; first login, recovery, and key linking fail closed |
 | Registry unavailable | Running/cached releases continue; new uncached deploys wait/fail |
 | Telemetry backend unavailable | Buffer bounded events locally; drop low-value logs before audit/usage |
 | Host disk pressure | Stop pulls/snapshots first, reject risky starts, preserve running apps |
@@ -1177,8 +1342,10 @@ Firecracker isolates workloads; it does not provide host availability.
 
 | Entity | Important fields |
 |--------|------------------|
-| User | immutable ID, random/default display name, linked OIDC subjects, status |
-| SSH key | fingerprint, user ID, added/revoked timestamps |
+| User | immutable ID, generated/display name, status, created time |
+| OIDC identity | user ID, exact issuer and subject, display metadata, linked time |
+| SSH key | canonical public key, SHA-256 fingerprint, algorithm, user ID, added/revoked/last-used timestamps |
+| Login transaction | secret hash, SSH connection ID, proven key, requested app, OIDC state/nonce, expiry, result |
 | App | name, owner ID, visibility, desired release, enabled, generation |
 | Membership | app/group/user, role |
 | Release | digest, manifest, signature/provenance result, created time |
@@ -1190,7 +1357,8 @@ Firecracker isolates workloads; it does not provide host availability.
 | Audit event | actor, action, target, result, request ID |
 | Outbox event | event ID, schema, payload, attempts, exported time |
 
-Use opaque immutable IDs internally and a separately validated app slug for DNS.
+Use opaque immutable IDs internally and a separately validated app slug for SSH
+routing.
 App slugs should be lowercase DNS labels, reserved against control names such as
 `ssh`, `admin`, and `api`, and never recycled immediately after deletion.
 
@@ -1223,6 +1391,7 @@ be idempotent after process or host restart. Demand moves `stopped` to
 Keep internal APIs versioned:
 
 - control API: declarative app/release/policy operations;
+- identity API: OIDC login transaction, callback, key linking, and revocation;
 - manager API: reconcile/status/operation records;
 - gateway API: resolve route, authenticate/authorize, acquire session endpoint;
 - guest protocol: bootstrap, health, lifecycle, and session streams;
@@ -1411,8 +1580,12 @@ feature.
 ### Phase 0: contract prototype
 
 - Build a purpose-specific SSH gateway.
-- Prove app-specific GCE `/96` IPv6 routing, shared-IPv4 username routing, and
-  optional OpenSSH `RemoteCommand` routing with supported stock clients.
+- Prove app-as-username routing and the authenticated picker with supported
+  stock clients.
+- Implement the OIDC identity bridge, partial SSH authentication, first-use key
+  linking, linked-key fast path, no-key browser path, revocation, and recovery.
+- Validate login with OpenSSH, Termius, Blink, PuTTY, and representative SSH
+  agents before fixing the protocol contract.
 - Define and fuzz the session framing protocol.
 - Build the first Go/Charm SDK.
 - Run one example collaborative app behind a Unix socket without Firecracker.
@@ -1436,8 +1609,8 @@ declared limits in the tested threat model.
 
 - Add SQLite desired state and reconciliation.
 - Add users, keys, app authorization, app slug routing, and admission limits.
-- Add automatic key profiles, OIDC device authentication/account linking, and
-  the ten-minute scale-to-zero lifecycle.
+- Productionize identity/audit storage, account and key management, and the
+  ten-minute scale-to-zero lifecycle.
 - Add deployments, drain, snapshot, rollback, and garbage collection.
 - Add structured logs, metrics, audit, usage outbox, and alerts.
 - Add backup and tested restore.
@@ -1472,11 +1645,12 @@ The design is based on these product decisions:
 1. The platform owner is the only initial publisher, followed by trusted users;
    the isolation and ownership model must allow untrusted public publishing
    later.
-2. Connection UX should minimize setup. Use zero-configuration per-app IPv6
-   addresses, an app-as-username IPv4 fallback, and optional client
-   configuration for the prettiest hostname form.
-3. Every user authenticates. An SSH key creates a stable automatic profile;
-   OIDC device authentication supports unfamiliar clients and account linking.
+2. Connection UX uses `ssh foo@apps.imjasonh.dev`; `foo` is an app route, not
+   user identity. Unknown/reserved usernames enter a picker, with
+   `picker@apps.imjasonh.dev` as the guaranteed picker.
+3. Every user authenticates. OIDC establishes the durable identity on first
+   use, then a proven SSH key is linked for silent subsequent login. Clients
+   without keys may use browser authentication on every connection.
 4. Apps are public to authenticated users initially. Private-app policy can be
    added later.
 5. App network egress is denied by default.
