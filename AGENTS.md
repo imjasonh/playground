@@ -20,6 +20,7 @@ playground/
 ├── gitdb/                 # Go CLI (Go module + Go tests)
 ├── hello/                 # example static app (HTML only)
 ├── kanoodle/              # example app with tests (JS + Jest + Playwright)
+├── mpeg-player/           # worker/WASM MPEG-TS canvas player (Node + Playwright tests)
 ├── ocidb/                 # Go CLI (Go module + Go tests)
 ├── web-push/              # Rust Cloudflare Worker (Cargo + tests; not a Pages app)
 └── web-push-demo/         # static browser front-end for the web-push Worker
@@ -36,6 +37,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `git/` | yes | In-browser read-only git client; JS modules, npm scripts, tests |
 | `hello/` | yes | Static HTML; no build or tests |
 | `kanoodle/` | yes | Client-side JS modules, npm scripts, tests |
+| `mpeg-player/` | yes | Worker/WASM MPEG-TS player; Node and Playwright tests |
 | `web-push-demo/` | yes | Static front-end for `web-push`; HTML/JS, no build or tests |
 | `gitdb/` | no | Go CLI; no `index.html` |
 | `ocidb/` | no | Go CLI; no `index.html` |
@@ -294,6 +296,7 @@ cargo test
 | `git/` | In-browser read-only git client (clone, browse, branches, history) | Jest + Playwright |
 | `hello/` | Static demo | none |
 | `kanoodle/` | Kanoodle puzzle game (5×11 board, 12 pieces) | Jest + Playwright |
+| `mpeg-player/` | MPEG-TS canvas player (worker, WASM, WebGL, Web Audio) | Node test runner + Playwright |
 | `web-push-demo/` | Browser front-end for `web-push` (subscribe/unsubscribe/notify) | none (static) |
 
 ## Current Go apps

@@ -23,6 +23,8 @@ experiments don't bit-rot.
   balance a ball up the wall while avoiding unlit pockets.
 - **[`hello/`](hello/)** — a minimal static demo.
 - **[`kanoodle/`](kanoodle/)** — the Kanoodle puzzle game (5×11 board, 12 pieces).
+- **[`mpeg-player/`](mpeg-player/)** — a worker-first MPEG-TS player with
+  WebAssembly decoding, OffscreenCanvas rendering, and AudioWorklet sound.
 - **[`web-push-demo/`](web-push-demo/)** — a browser front-end for the
   `web-push` Worker: subscribe/unsubscribe and send notifications end to end.
 
