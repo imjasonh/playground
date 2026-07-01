@@ -2,8 +2,9 @@ export const WORLD = Object.freeze({
   width: 1200,
   height: 640,
   gravity: 245,
-  windScale: 4,
+  windScale: 7,
   speedScale: 5.15,
+  projectileTimeScale: 1.7,
   projectileRadius: 6,
   tankRadius: 28,
   tankHalfHeight: 16,
@@ -16,32 +17,15 @@ export const WORLD = Object.freeze({
   craterRadius: 54,
   craterDepth: 34,
   directDamage: 62,
-  explosionDuration: 0.88,
+  explosionDuration: 0.55,
   maxShotTime: 10,
 });
 
 const TANK_X = Object.freeze([150, 1050]);
 const FIXED_STEP = 1 / 120;
-
-const TERRAIN_POINTS = Object.freeze([
-  [0, 476],
-  [74, 457],
-  [112, 458],
-  [192, 458],
-  [268, 488],
-  [360, 472],
-  [458, 503],
-  [548, 471],
-  [620, 426],
-  [694, 451],
-  [770, 499],
-  [862, 469],
-  [968, 486],
-  [1010, 451],
-  [1090, 451],
-  [1140, 465],
-  [1200, 478],
-]);
+const TERRAIN_CONTROL_SPACING = 100;
+const PAD_HALF_WIDTH = 46;
+const PAD_BLEND_WIDTH = 42;
 
 export function clamp(value, minimum, maximum) {
   return Math.min(maximum, Math.max(minimum, value));
@@ -55,24 +39,60 @@ function smoothstep(amount) {
   return amount * amount * (3 - 2 * amount);
 }
 
-export function createTerrain() {
+function flattenTankPad(terrain, centerX, preferredHeight) {
+  const padHeight = Number.isFinite(preferredHeight)
+    ? preferredHeight
+    : Math.round(terrainHeightAt(terrain, centerX));
+  const outerRadius = PAD_HALF_WIDTH + PAD_BLEND_WIDTH;
+  const start = Math.max(0, Math.floor(centerX - outerRadius));
+  const end = Math.min(terrain.length - 1, Math.ceil(centerX + outerRadius));
+
+  for (let x = start; x <= end; x += 1) {
+    const distance = Math.abs(x - centerX);
+    if (distance <= PAD_HALF_WIDTH) {
+      terrain[x] = padHeight;
+      continue;
+    }
+
+    const amount = smoothstep((distance - PAD_HALF_WIDTH) / PAD_BLEND_WIDTH);
+    terrain[x] = padHeight + (terrain[x] - padHeight) * amount;
+  }
+}
+
+export function createTerrain(random = Math.random) {
+  const sample = typeof random === "function" ? random : Math.random;
+  const controlPoints = [];
+  let previousHeight = 466;
+
+  for (let x = 0; x <= WORLD.width; x += TERRAIN_CONTROL_SPACING) {
+    const proposedHeight = 466 + (sample() * 2 - 1) * 54;
+    const height = clamp(
+      proposedHeight,
+      Math.max(414, previousHeight - 44),
+      Math.min(520, previousHeight + 44),
+    );
+    controlPoints.push([x, height]);
+    previousHeight = height;
+  }
+
   const terrain = new Float64Array(WORLD.width + 1);
   let pointIndex = 0;
 
   for (let x = 0; x <= WORLD.width; x += 1) {
     while (
-      pointIndex < TERRAIN_POINTS.length - 2 &&
-      x > TERRAIN_POINTS[pointIndex + 1][0]
+      pointIndex < controlPoints.length - 2 &&
+      x > controlPoints[pointIndex + 1][0]
     ) {
       pointIndex += 1;
     }
 
-    const [leftX, leftY] = TERRAIN_POINTS[pointIndex];
-    const [rightX, rightY] = TERRAIN_POINTS[pointIndex + 1];
+    const [leftX, leftY] = controlPoints[pointIndex];
+    const [rightX, rightY] = controlPoints[pointIndex + 1];
     const amount = smoothstep((x - leftX) / (rightX - leftX));
     terrain[x] = leftY + (rightY - leftY) * amount;
   }
 
+  TANK_X.forEach((x) => flattenTankPad(terrain, x));
   return terrain;
 }
 
@@ -130,8 +150,8 @@ export function normalizeAim(angle, power) {
 
 export function randomWind(random = Math.random) {
   const sample = typeof random === "function" ? random : Math.random;
-  const wind = Math.round((sample() * 24 - 12) * 10) / 10;
-  return Math.abs(wind) < 0.8 ? 0 : wind;
+  const wind = Math.round((sample() * 32 - 16) * 10) / 10;
+  return Math.abs(wind) < 0.9 ? 0 : wind;
 }
 
 export function pointToSegmentDistanceSquared(px, py, ax, ay, bx, by) {
@@ -158,7 +178,7 @@ export function tankPose(terrain, playerIndex) {
     x,
     y: terrainHeightAt(terrain, x) - WORLD.tankHalfHeight,
     direction: index === 0 ? 1 : -1,
-    groundAngle: Math.atan2(rightGround - leftGround, 36),
+    groundAngle: clamp(Math.atan2(rightGround - leftGround, 36), -0.24, 0.24),
   };
 }
 
@@ -166,12 +186,10 @@ export function barrelPose(terrain, playerIndex, aim) {
   const pose = tankPose(terrain, playerIndex);
   const normalizedAim = normalizeAim(aim?.angle, aim?.power);
   const radians = (normalizedAim.angle * Math.PI) / 180;
-  const localX = pose.direction * Math.cos(radians);
-  const localY = -Math.sin(radians);
   const groundCosine = Math.cos(pose.groundAngle);
   const groundSine = Math.sin(pose.groundAngle);
-  const vectorX = localX * groundCosine - localY * groundSine;
-  const vectorY = localX * groundSine + localY * groundCosine;
+  const vectorX = pose.direction * Math.cos(radians);
+  const vectorY = -Math.sin(radians);
   const baseX = pose.x + 7 * groundSine;
   const baseY = pose.y - 7 * groundCosine;
 
@@ -304,6 +322,7 @@ export function chooseComputerAim({
   random = Math.random,
 }) {
   const sample = typeof random === "function" ? random : Math.random;
+  const estimatedWind = wind + (sample() * 2 - 1) * 4.5;
   let best = { angle: 45, power: 72, score: Number.POSITIVE_INFINITY };
 
   const consider = (angle, power) => {
@@ -322,7 +341,7 @@ export function chooseComputerAim({
       shooterIndex,
       angle,
       power,
-      wind,
+      wind: estimatedWind,
     });
     if (score < best.score) {
       best = { angle, power, score };
@@ -342,14 +361,16 @@ export function chooseComputerAim({
     }
   }
 
-  const wildness = sample() < 0.16 ? 1.8 : 1;
-  const angleError = (sample() * 2 - 1) * 2.8 * wildness;
-  const powerError = (sample() * 2 - 1) * 4.2 * wildness;
+  const accuracyRoll = sample();
+  const spread = accuracyRoll < 0.1 ? 0.55 : accuracyRoll > 0.75 ? 1.8 : 1.2;
+  const angleError = (sample() * 2 - 1) * 5 * spread;
+  const powerError = (sample() * 2 - 1) * 8 * spread;
   const aim = normalizeAim(best.angle + angleError, best.power + powerError);
 
   return Object.freeze({
     ...aim,
     solutionDistance: best.score,
+    estimatedWind,
   });
 }
 
@@ -366,7 +387,7 @@ export class ArtilleryGame {
   constructor(random = Math.random) {
     this.random = typeof random === "function" ? random : Math.random;
     this.events = [];
-    this.terrain = createTerrain();
+    this.terrain = createTerrain(this.random);
     this.tanks = createTanks(this.terrain);
     this.aims = [normalizeAim(45, 72), normalizeAim(45, 72)];
     this.activePlayer = 0;
@@ -382,7 +403,7 @@ export class ArtilleryGame {
   }
 
   start(firstPlayer = 0) {
-    this.terrain = createTerrain();
+    this.terrain = createTerrain(this.random);
     this.tanks = createTanks(this.terrain);
     this.aims = [normalizeAim(45, 72), normalizeAim(45, 72)];
     this.activePlayer = firstPlayer === 1 ? 1 : 0;
@@ -463,7 +484,7 @@ export class ArtilleryGame {
     const projectile = this.projectile;
     const previousX = projectile.x;
     const previousY = projectile.y;
-    advanceProjectile(projectile, deltaSeconds);
+    advanceProjectile(projectile, deltaSeconds * WORLD.projectileTimeScale);
 
     for (let index = 0; index < this.tanks.length; index += 1) {
       if (index === projectile.shooter && projectile.age < 0.28) {
@@ -516,6 +537,9 @@ export class ArtilleryGame {
   #beginResolution(impact) {
     const shooter = this.activePlayer;
     const tankPositions = this.tanks.map((tank) => ({ x: tank.x, y: tank.y }));
+    const tankGroundHeights = this.tanks.map(
+      (tank) => tank.y + WORLD.tankHalfHeight,
+    );
     const damages = this.tanks.map((tank, index) => {
       if (impact.kind === "out") {
         return 0;
@@ -539,8 +563,9 @@ export class ArtilleryGame {
 
     if (impact.kind !== "out") {
       deformTerrain(this.terrain, impact.x);
-      this.tanks.forEach((tank) => {
-        tank.y = terrainHeightAt(this.terrain, tank.x) - WORLD.tankHalfHeight;
+      this.tanks.forEach((tank, index) => {
+        flattenTankPad(this.terrain, tank.x, tankGroundHeights[index]);
+        tank.y = tankGroundHeights[index] - WORLD.tankHalfHeight;
       });
     }
 

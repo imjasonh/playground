@@ -176,7 +176,7 @@ function resetOverlayCopy() {
   overlayKicker.textContent = "Frontier protocol";
   overlayTitle.innerHTML = "Read the wind.<br>Own the horizon.";
   overlayCopy.textContent =
-    "Set your angle and powder, then send it. Direct hits deal maximum damage; nearby blasts still bite.";
+    "Every duel redraws the frontier. Set your angle and powder, then send it—crosswind can bend the whole shot.";
   const [cpuButton, localButton] = modeButtons;
   cpuButton.querySelector("strong").textContent = "Vs. Vector AI";
   cpuButton.querySelector("small").textContent = "Imperfect machine rival";
@@ -206,7 +206,7 @@ function showEndScreen(winner) {
   const [cpuButton, localButton] = modeButtons;
   cpuButton.querySelector("strong").textContent =
     mode === "cpu" ? "Rematch AI" : "Challenge the AI";
-  cpuButton.querySelector("small").textContent = "New armor, same battlefield";
+  cpuButton.querySelector("small").textContent = "New armor, fresh terrain";
   localButton.querySelector("strong").textContent =
     mode === "local" ? "Play again" : "Two-player duel";
   localButton.querySelector("small").textContent = "Local pass-and-play";
@@ -264,8 +264,8 @@ function queueComputerTurn() {
         processGameEvents();
         syncHud();
       }
-    }, 620);
-  }, 720);
+    }, 320);
+  }, 360);
 }
 
 function impactMessage(event) {
@@ -896,8 +896,13 @@ function drawTank(tank, index, now) {
   const pose = tankPose(game.terrain, index);
   const groundAngle = pose.groundAngle;
   const aim = game.aims[index];
-  const direction = index === 0 ? 1 : -1;
-  const radians = (aim.angle * Math.PI) / 180;
+  const barrel = barrelPose(game.terrain, index, aim);
+  const groundCosine = Math.cos(groundAngle);
+  const groundSine = Math.sin(groundAngle);
+  const localBarrelX =
+    barrel.vectorX * groundCosine + barrel.vectorY * groundSine;
+  const localBarrelY =
+    -barrel.vectorX * groundSine + barrel.vectorY * groundCosine;
   const color = index === 0 ? "#39f2db" : "#ff4ea3";
   const darkColor = index === 0 ? "#0c7f79" : "#8e275a";
   const active =
@@ -934,8 +939,8 @@ function drawTank(tank, index, now) {
   context.beginPath();
   context.moveTo(0, -7);
   context.lineTo(
-    direction * Math.cos(radians) * WORLD.barrelLength,
-    -7 - Math.sin(radians) * WORLD.barrelLength,
+    localBarrelX * WORLD.barrelLength,
+    -7 + localBarrelY * WORLD.barrelLength,
   );
   context.stroke();
   context.strokeStyle = color;
@@ -990,7 +995,6 @@ function drawTank(tank, index, now) {
     muzzleFlash?.player === index &&
     performance.now() - muzzleFlash.started < 170
   ) {
-    const barrel = barrelPose(game.terrain, index, aim);
     const progress = (performance.now() - muzzleFlash.started) / 170;
     context.save();
     context.globalAlpha = 1 - progress;
