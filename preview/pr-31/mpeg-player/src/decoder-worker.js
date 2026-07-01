@@ -13,6 +13,8 @@ self.document = {
     return new OffscreenCanvas(1, 1);
   },
 };
+self.module = { exports: {} };
+self.exports = self.module.exports;
 
 if (typeof self.requestAnimationFrame !== "function") {
   self.requestAnimationFrame = (callback) =>
