@@ -1,7 +1,9 @@
 # Serverless SSH app platform
 
-Status: proposed design  
-Scope: single GCE host, one long-lived instance per app, many concurrent users  
+Status: proposed design
+
+Scope: single GCE host, one long-lived instance per app, many concurrent users
+
 Future scope: multiple hosts, per-app replicas, and user sharding
 
 This document designs a platform for hosting interactive terminal applications
