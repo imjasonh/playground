@@ -322,7 +322,7 @@ export function chooseComputerAim({
   random = Math.random,
 }) {
   const sample = typeof random === "function" ? random : Math.random;
-  const estimatedWind = wind + (sample() * 2 - 1) * 4.5;
+  const estimatedWind = wind + (sample() * 2 - 1) * 6;
   let best = { angle: 45, power: 72, score: Number.POSITIVE_INFINITY };
 
   const consider = (angle, power) => {
@@ -364,7 +364,7 @@ export function chooseComputerAim({
   const accuracyRoll = sample();
   const spread = accuracyRoll < 0.1 ? 0.5 : accuracyRoll > 0.75 ? 2 : 1.35;
   const angleError = (sample() * 2 - 1) * 6 * spread;
-  const powerError = ((sample() * 2 - 1) * 10 - 2) * spread;
+  const powerError = ((sample() * 2 - 1) * 10 - 2.5) * spread;
   const aim = normalizeAim(best.angle + angleError, best.power + powerError);
 
   return Object.freeze({
