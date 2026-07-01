@@ -651,9 +651,11 @@ self.onmessage = ({ data: message }) => {
       case "pause":
         if (player && message.loadId === activeLoadId) {
           if (playbackState === "draining") {
+            const interruptedAt = currentTime();
             clearTimeout(endTimer);
             endTimer = null;
             player.audioOut?.hardReset();
+            player.seek(interruptedAt);
             playbackState = "paused";
             sendStatus();
           } else if (!player.paused) {
