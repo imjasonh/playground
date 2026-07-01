@@ -17,6 +17,8 @@ experiments don't bit-rot.
 
 ## Apps
 
+- **[`artillery/`](artillery/)** — a touch-first, turn-based artillery duel with
+  shifting wind, destructible terrain, local multiplayer, and an imperfect AI.
 - **[`git/`](git/)** — an in-browser, read-only git client: clone a repository
   into local storage and browse its files, branches, and commit history.
 - **[`cold-climb/`](cold-climb/)** — a touch-first, two-handle arcade game:
