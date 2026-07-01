@@ -31,7 +31,7 @@ const statusEl = document.querySelector("#status");
 const hintEl = document.querySelector("#hint");
 
 const SENSOR_HINT =
-  "Tip: rest the phone on the surface, then tap Calibrate to zero out any wobble.";
+  "Tip: rest the phone on a surface and tap Calibrate to zero it — or switch between the Surface, Horizontal, and Vertical levels with the tabs.";
 const PREVIEW_HINT =
   "Preview mode: drag inside the circle or use the arrow keys (press 0 to re-center). On a phone the real gyroscope drives the level.";
 
