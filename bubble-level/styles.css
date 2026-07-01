@@ -12,8 +12,8 @@
   --level-glow: rgba(62, 207, 142, 0.55);
   --radius: 16px;
   --touch-min: 48px;
-  --vial-size: min(78vw, 340px);
-  --vial-travel: calc(var(--vial-size) * 0.5 - 34px);
+  --vial-size: min(70vw, 300px);
+  --vial-travel: calc(var(--vial-size) * 0.5 - 32px);
   font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
@@ -46,10 +46,10 @@ body {
 .app {
   max-width: 560px;
   margin: 0 auto;
-  padding: 1.25rem 1rem 2.5rem;
+  padding: 1rem 1rem 1.5rem;
   display: flex;
   flex-direction: column;
-  gap: 1.1rem;
+  gap: 0.9rem;
 }
 
 .header h1 {
@@ -161,7 +161,7 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1.2rem;
+  gap: 1rem;
 }
 
 .bullseye-wrap {
@@ -284,18 +284,18 @@ body {
 }
 
 .tube-h {
-  --th-travel: 106px;
-  width: 260px;
-  max-width: 80vw;
-  height: 46px;
-  border-radius: 23px;
+  --th-travel: 88px;
+  width: 220px;
+  max-width: 74vw;
+  height: 44px;
+  border-radius: 22px;
 }
 
 .tube-v {
-  --tv-travel: 106px;
-  width: 46px;
-  height: 260px;
-  border-radius: 23px;
+  --tv-travel: 88px;
+  width: 44px;
+  height: 220px;
+  border-radius: 22px;
 }
 
 .tube-target {
