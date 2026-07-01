@@ -91,8 +91,7 @@ export class MpegPlayerController extends EventTarget {
     this.audioCapable = Boolean(
       AudioContext &&
         window.AudioWorkletNode &&
-        window.MessageChannel &&
-        AudioContext.prototype.audioWorklet !== null,
+        window.MessageChannel,
     );
   }
 
