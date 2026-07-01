@@ -45,6 +45,13 @@ test("the decoder imports the vendored WASM build and uses OffscreenCanvas", () 
   assert.ok(existsSync(join(root, "vendor", "JSMpeg-LICENSE.txt")));
 });
 
+test("the vendored decoder version matches package.json", () => {
+  const packageJson = JSON.parse(read("package.json"));
+  const manifest = JSON.parse(read("vendor/manifest.json"));
+  assert.equal(manifest.package, "@seydx/jsmpeg");
+  assert.equal(manifest.version, packageJson.dependencies["@seydx/jsmpeg"]);
+});
+
 test("PCM moves directly over a MessagePort into the AudioWorklet", () => {
   assert.match(worker, /audioPort\?\.postMessage/);
   assert.match(worklet, /data\?\.type === "attach"/);

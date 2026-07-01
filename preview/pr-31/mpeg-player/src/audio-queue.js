@@ -4,11 +4,15 @@
  * and keeps audio scheduling off the main thread.
  */
 export class PlanarAudioQueue {
-  constructor(outputSampleRate) {
+  constructor(outputSampleRate, maxBufferedSeconds = 2) {
     if (!Number.isFinite(outputSampleRate) || outputSampleRate <= 0) {
       throw new TypeError("outputSampleRate must be positive");
     }
+    if (!Number.isFinite(maxBufferedSeconds) || maxBufferedSeconds <= 0) {
+      throw new TypeError("maxBufferedSeconds must be positive");
+    }
     this.outputSampleRate = outputSampleRate;
+    this.maxBufferedSeconds = maxBufferedSeconds;
     this.reset();
   }
 
@@ -19,6 +23,7 @@ export class PlanarAudioQueue {
     this.sourceSampleRate = 0;
     this.phase = 0;
     this.underruns = 0;
+    this.droppedFrames = 0;
   }
 
   get bufferedSeconds() {
@@ -50,6 +55,15 @@ export class PlanarAudioQueue {
     this.sourceSampleRate = sourceSampleRate;
     this.chunks.push({ left, right });
     this.availableFrames += left.length;
+
+    const maximumFrames = Math.ceil(
+      this.sourceSampleRate * this.maxBufferedSeconds,
+    );
+    if (this.availableFrames > maximumFrames) {
+      const excess = this.availableFrames - maximumFrames;
+      this.#consume(excess);
+      this.droppedFrames += excess;
+    }
     return true;
   }
 
@@ -75,12 +89,24 @@ export class PlanarAudioQueue {
         break;
       }
 
-      const current = this.#peek(0);
-      const next = this.#peek(1);
+      const first = this.chunks[0];
+      const sourceIndex = this.readOffset;
+      const currentLeft = first.left[sourceIndex];
+      const currentRight = first.right[sourceIndex];
+      let nextLeft;
+      let nextRight;
+      if (sourceIndex + 1 < first.left.length) {
+        nextLeft = first.left[sourceIndex + 1];
+        nextRight = first.right[sourceIndex + 1];
+      } else {
+        const second = this.chunks[1];
+        nextLeft = second.left[0];
+        nextRight = second.right[0];
+      }
       outputLeft[index] =
-        current.left + (next.left - current.left) * this.phase;
+        currentLeft + (nextLeft - currentLeft) * this.phase;
       outputRight[index] =
-        current.right + (next.right - current.right) * this.phase;
+        currentRight + (nextRight - currentRight) * this.phase;
       rendered += 1;
 
       this.phase += ratio;
@@ -92,21 +118,6 @@ export class PlanarAudioQueue {
     }
 
     return rendered;
-  }
-
-  #peek(distance) {
-    const first = this.chunks[0];
-    const index = this.readOffset + distance;
-    if (index < first.left.length) {
-      return { left: first.left[index], right: first.right[index] };
-    }
-
-    const second = this.chunks[1];
-    const secondIndex = index - first.left.length;
-    return {
-      left: second.left[secondIndex],
-      right: second.right[secondIndex],
-    };
   }
 
   #consume(count) {

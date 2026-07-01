@@ -2,6 +2,7 @@ import { formatBytes, formatTime, normalizeMediaUrl } from "./media.js";
 import { MpegPlayerController } from "./player-controller.js";
 
 const DOM_IDS = [
+  "player-panel",
   "video-canvas",
   "drop-zone",
   "drop-prompt",
@@ -48,6 +49,16 @@ let activeSource = { name: "", size: 0 };
 function setStatus(message, error = false) {
   elements.status.textContent = message;
   elements.status.classList.toggle("is-error", error);
+  elements.status.setAttribute("role", error ? "alert" : "status");
+  elements.status.setAttribute("aria-live", error ? "assertive" : "polite");
+}
+
+function showError(message) {
+  setLoading(false);
+  setPlayable(false);
+  elements["empty-state"].hidden = false;
+  updatePlaybackState("error");
+  setStatus(message, true);
 }
 
 function setLoading(loading) {
@@ -80,6 +91,7 @@ function updatePlaybackState(state) {
       paused: "paused",
       playing: "playing",
       buffering: "buffering",
+      draining: "finishing",
       ended: "ended",
       error: "error",
     }[state] || state;
@@ -93,6 +105,7 @@ function updatePlaybackState(state) {
 }
 
 function beginLoad(name, size = 0) {
+  controller.pause();
   setSource(name, size);
   setPlayable(false);
   setLoading(true);
@@ -113,8 +126,7 @@ async function runLoad(load) {
     await load();
   } catch (error) {
     if (error.name !== "AbortError") {
-      setLoading(false);
-      setStatus(error.message, true);
+      showError(error.message);
     }
   }
 }
@@ -184,7 +196,7 @@ controller.addEventListener("metadata", ({ detail }) => {
   elements["render-badge"].textContent = detail.renderer.toLowerCase();
   if (detail.hasAudio && detail.sampleRate) {
     elements["audio-value"].textContent =
-      `${(detail.sampleRate / 1000).toFixed(1)} kHz · stereo`;
+      `${(detail.sampleRate / 1000).toFixed(1)} kHz · 2-channel output`;
   } else if (detail.hasAudio) {
     elements["audio-value"].textContent = "MP2 · starts on play";
   } else if (detail.hasAudio === false) {
@@ -215,12 +227,19 @@ controller.addEventListener("status", ({ detail }) => {
     elements["decode-value"].textContent =
       `${detail.decodeMilliseconds.toFixed(2)} ms/frame${rate}`;
   }
-  if (detail.audioBufferedSeconds > 0 || detail.audioUnderruns > 0) {
+  if (
+    detail.audioBufferedSeconds > 0 ||
+    detail.audioUnderruns > 0 ||
+    detail.audioDroppedFrames > 0
+  ) {
     const underruns = detail.audioUnderruns
       ? ` · ${detail.audioUnderruns} underrun${detail.audioUnderruns === 1 ? "" : "s"}`
       : "";
+    const dropped = detail.audioDroppedFrames
+      ? ` · ${detail.audioDroppedFrames} dropped`
+      : "";
     elements["buffer-value"].textContent =
-      `${Math.round(detail.audioBufferedSeconds * 1000)} ms${underruns}`;
+      `${Math.round(detail.audioBufferedSeconds * 1000)} ms${underruns}${dropped}`;
   }
 
   if (detail.state === "buffering") {
@@ -242,8 +261,11 @@ controller.addEventListener("warning", ({ detail }) => {
 });
 
 controller.addEventListener("error", ({ detail }) => {
-  setLoading(false);
-  setStatus(detail.message, true);
+  showError(detail.message);
+});
+
+controller.addEventListener("audiostate", ({ detail }) => {
+  setStatus(detail.message);
 });
 
 elements["file-input"].addEventListener("change", () => {
@@ -260,7 +282,7 @@ elements["url-form"].addEventListener("submit", (event) => {
     beginLoad(name);
     runLoad(() => controller.loadUrl(url));
   } catch (error) {
-    setStatus(error.message, true);
+    showError(error.message);
     elements["url-input"].focus();
   }
 });
@@ -323,7 +345,7 @@ elements["fullscreen-button"].addEventListener("click", async () => {
     if (document.fullscreenElement) {
       await document.exitFullscreen();
     } else {
-      await elements["drop-zone"].requestFullscreen();
+      await elements["player-panel"].requestFullscreen();
     }
   } catch {
     setStatus("Fullscreen is not available in this browser.", true);
@@ -399,6 +421,5 @@ controller.init().then(() => {
     loadDemo();
   }
 }).catch((error) => {
-  setStatus(error.message, true);
-  updatePlaybackState("error");
+  showError(error.message);
 });

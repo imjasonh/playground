@@ -6,6 +6,27 @@ import {
 
 const SOURCE_READY_TIMEOUT = 15_000;
 const CHUNK_TIMEOUT = 30_000;
+export const MAX_MEDIA_BYTES = 256 * 1024 * 1024;
+
+function assertMediaSize(bytes) {
+  if (bytes > MAX_MEDIA_BYTES) {
+    throw new Error(
+      "This player limits sources to 256 MiB to keep browser memory bounded.",
+    );
+  }
+}
+
+function safeDecodePathSegment(pathName) {
+  const segment = pathName.split("/").pop();
+  if (!segment) {
+    return "Remote MPEG stream";
+  }
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
 
 function deferred(timeoutMilliseconds, message) {
   let resolve;
@@ -84,6 +105,7 @@ export class MpegPlayerController extends EventTarget {
     this.audioNode = null;
     this.gainNode = null;
     this.audioInitialization = null;
+    this.fatalError = null;
     this.volume = 0.85;
     this.muted = false;
 
@@ -121,9 +143,14 @@ export class MpegPlayerController extends EventTarget {
     this.worker.onmessage = ({ data }) => this.#receive(data);
     this.worker.onerror = (event) => {
       event.preventDefault();
-      const error = new Error(event.message || "The decoder worker crashed.");
+      const error = new Error(
+        `${event.message || "The decoder worker crashed."} Reload the page to recover.`,
+      );
+      this.fatalError = error;
+      this.state = "error";
       this.#rejectPending(error);
       this.#emit("error", { message: error.message });
+      this.#emit("statechange", { state: this.state });
     };
     this.worker.onmessageerror = () => {
       this.#emit("error", {
@@ -156,6 +183,7 @@ export class MpegPlayerController extends EventTarget {
     if (!(file instanceof Blob) || typeof file.stream !== "function") {
       throw new TypeError("Choose a local MPEG-TS file.");
     }
+    assertMediaSize(file.size);
     return this.#loadStream(file.stream(), {
       name: file.name || "Local MPEG stream",
       size: file.size,
@@ -187,8 +215,14 @@ export class MpegPlayerController extends EventTarget {
     }
 
     const pathName = new URL(response.url || url).pathname;
-    const name = decodeURIComponent(pathName.split("/").pop()) || "Remote MPEG stream";
+    const name = safeDecodePathSegment(pathName);
     const size = Number(response.headers.get("content-length")) || 0;
+    try {
+      assertMediaSize(size);
+    } catch (error) {
+      this.fetchAbortController.abort();
+      throw error;
+    }
     return this.#loadStream(response.body, { name, size }, false);
   }
 
@@ -196,6 +230,9 @@ export class MpegPlayerController extends EventTarget {
     await this.init();
     if (cancelExisting) {
       await this.#cancelTransfer();
+    }
+    if (this.fatalError) {
+      throw this.fatalError;
     }
 
     const loadId = ++this.loadId;
@@ -231,6 +268,7 @@ export class MpegPlayerController extends EventTarget {
       }
 
       let loaded = probe.bytes.byteLength;
+      assertMediaSize(loaded);
       await this.#sendChunk(loadId, probe.bytes, loaded, source.size);
       this.#emit("loadprogress", { loaded, total: source.size });
 
@@ -243,6 +281,7 @@ export class MpegPlayerController extends EventTarget {
         }
 
         loaded += result.value.byteLength;
+        assertMediaSize(loaded);
         await this.#sendChunk(loadId, result.value, loaded, source.size);
         this.#emit("loadprogress", { loaded, total: source.size });
       }
@@ -282,19 +321,24 @@ export class MpegPlayerController extends EventTarget {
 
   async play() {
     await this.init();
+    const loadId = this.loadId;
     await this.#ensureAudio();
     if (this.audioContext?.state === "suspended") {
       await this.audioContext.resume();
     }
-    this.worker.postMessage({ type: "play" });
+    if (loadId !== this.loadId || this.fatalError) {
+      return false;
+    }
+    this.worker.postMessage({ type: "play", loadId });
+    return true;
   }
 
   pause() {
-    this.worker?.postMessage({ type: "pause" });
+    this.worker?.postMessage({ type: "pause", loadId: this.loadId });
   }
 
   seek(time) {
-    this.worker?.postMessage({ type: "seek", time });
+    this.worker?.postMessage({ type: "seek", loadId: this.loadId, time });
   }
 
   setVolume(value) {
@@ -328,6 +372,15 @@ export class MpegPlayerController extends EventTarget {
   async #initializeAudio() {
     const AudioContext = window.AudioContext || window.webkitAudioContext;
     this.audioContext = new AudioContext({ latencyHint: "interactive" });
+    this.audioContext.addEventListener("statechange", () => {
+      if (this.audioContext.state !== "running" && this.state === "playing") {
+        this.pause();
+        this.#emit("audiostate", {
+          state: this.audioContext.state,
+          message: "Playback paused because the audio device was interrupted.",
+        });
+      }
+    });
     await this.audioContext.audioWorklet.addModule(
       new URL("./audio-worklet.js", import.meta.url),
     );
@@ -444,7 +497,9 @@ export class MpegPlayerController extends EventTarget {
 
       case "ready":
         if (message.loadId === this.loadId) {
-          this.state = "ready";
+          if (this.state === "loading" || this.state === "buffering") {
+            this.state = "ready";
+          }
           this.#emit("ready", { loadId: message.loadId });
           this.#emit("statechange", { state: this.state });
         }
