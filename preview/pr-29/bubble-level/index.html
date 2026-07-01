@@ -73,40 +73,97 @@
         </dl>
       </section>
 
-      <section class="vials">
-        <div class="bullseye-wrap">
-          <div
-            id="bullseye"
-            class="bullseye"
-            role="img"
-            aria-label="Surface level bubble position"
+      <section class="levels" aria-label="Levels">
+        <div class="tabs" role="tablist" aria-label="Level type">
+          <button
+            type="button"
+            class="tab"
+            role="tab"
+            id="tab-surface"
+            aria-controls="panel-surface"
+            aria-selected="true"
           >
-            <span class="ring ring-outer" aria-hidden="true"></span>
-            <span class="ring ring-inner" aria-hidden="true"></span>
-            <span class="crosshair crosshair-h" aria-hidden="true"></span>
-            <span class="crosshair crosshair-v" aria-hidden="true"></span>
-            <span id="bubble" class="bubble" aria-hidden="true"></span>
-          </div>
+            <span class="tab-icon" aria-hidden="true">◎</span>Surface
+          </button>
+          <button
+            type="button"
+            class="tab"
+            role="tab"
+            id="tab-horizontal"
+            aria-controls="panel-horizontal"
+            aria-selected="false"
+            tabindex="-1"
+          >
+            <span class="tab-icon" aria-hidden="true">↔</span>Horizontal
+          </button>
+          <button
+            type="button"
+            class="tab"
+            role="tab"
+            id="tab-vertical"
+            aria-controls="panel-vertical"
+            aria-selected="false"
+            tabindex="-1"
+          >
+            <span class="tab-icon" aria-hidden="true">↕</span>Vertical
+          </button>
         </div>
 
-        <div class="tubes">
+        <div class="panels">
           <div
-            id="tube-h"
-            class="tube tube-h"
-            role="img"
-            aria-label="Left to right level"
+            class="panel"
+            role="tabpanel"
+            id="panel-surface"
+            aria-labelledby="tab-surface"
           >
-            <span class="tube-target" aria-hidden="true"></span>
-            <span id="tube-h-bubble" class="tube-bubble" aria-hidden="true"></span>
+            <div
+              id="bullseye"
+              class="bullseye"
+              role="img"
+              aria-label="Surface level bubble position"
+            >
+              <span class="ring ring-outer" aria-hidden="true"></span>
+              <span class="ring ring-inner" aria-hidden="true"></span>
+              <span class="crosshair crosshair-h" aria-hidden="true"></span>
+              <span class="crosshair crosshair-v" aria-hidden="true"></span>
+              <span id="bubble" class="bubble" aria-hidden="true"></span>
+            </div>
           </div>
+
           <div
-            id="tube-v"
-            class="tube tube-v"
-            role="img"
-            aria-label="Front to back level"
+            class="panel"
+            role="tabpanel"
+            id="panel-horizontal"
+            aria-labelledby="tab-horizontal"
+            hidden
           >
-            <span class="tube-target" aria-hidden="true"></span>
-            <span id="tube-v-bubble" class="tube-bubble" aria-hidden="true"></span>
+            <div
+              id="tube-h"
+              class="tube tube-h"
+              role="img"
+              aria-label="Left to right level"
+            >
+              <span class="tube-target" aria-hidden="true"></span>
+              <span id="tube-h-bubble" class="tube-bubble" aria-hidden="true"></span>
+            </div>
+          </div>
+
+          <div
+            class="panel"
+            role="tabpanel"
+            id="panel-vertical"
+            aria-labelledby="tab-vertical"
+            hidden
+          >
+            <div
+              id="tube-v"
+              class="tube tube-v"
+              role="img"
+              aria-label="Front to back level"
+            >
+              <span class="tube-target" aria-hidden="true"></span>
+              <span id="tube-v-bubble" class="tube-bubble" aria-hidden="true"></span>
+            </div>
           </div>
         </div>
       </section>
