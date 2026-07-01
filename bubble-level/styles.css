@@ -21,6 +21,12 @@
   box-sizing: border-box;
 }
 
+/* Keep the HTML `hidden` attribute authoritative over layout `display` rules
+   (e.g. the permission panel below sets display:flex). */
+[hidden] {
+  display: none !important;
+}
+
 html {
   -webkit-text-size-adjust: 100%;
 }
