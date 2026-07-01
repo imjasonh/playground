@@ -68,6 +68,9 @@ health, and accounting. It does not mean there are no servers.
 - Arbitrary public TCP/UDP services. SSH is the only public app protocol.
 - A general-purpose VM product or shell account. The app gets one declared
   executable, not an SSH daemon or login shell.
+- Arbitrary command execution, remote shells, file transfer, port forwarding,
+  build runners, proxies, VPNs, or user-programmable compute disguised as an
+  app. This prohibition applies even when the publisher and users are trusted.
 - Exactly-once session accounting. Durable, idempotent at-least-once event
   ingestion is sufficient.
 - Platform-level terminal recording. This has substantial privacy, secret
@@ -82,7 +85,7 @@ evolve behind the contracts in this document.
 
 | Area | Decision |
 |------|----------|
-| Publishers | Owner only initially, then trusted publishers; design the boundary for untrusted publishers later |
+| Publishers | Explicit owner/trusted/untrusted tiers with capability ceilings; only owner is enabled initially |
 | Visibility | Public apps for authenticated users initially; private app policy later |
 | Public endpoint | One dual-stack GCE VM and one shared `apps.imjasonh.dev` address |
 | App selection | SSH protocol username is the app slug; unknown/reserved usernames enter the picker |
@@ -91,7 +94,7 @@ evolve behind the contracts in this document.
 | Guest protocol | Gateway-to-guest private `AF_VSOCK` stream with a small framed session protocol |
 | App SDK | Go/Charm SDK; the platform terminates SSH and apps implement the platform session contract |
 | Packaging | OCI image indexes in Artifact Registry, pinned by digest |
-| Guest image | Platform-owned minimal kernel + root filesystem; app image unpacked into a read-only root |
+| Guest image | Platform-owned minimal kernel/root; release contributes one static app binary and non-executable assets |
 | Supply chain | Keyless Sigstore signature and provenance policy before deployment |
 | Isolation | One Firecracker microVM per app instance, never one shared guest for multiple apps |
 | Process model | One long-lived app supervisor/process per app instance; sessions attach over local IPC |
@@ -256,10 +259,15 @@ data plane and should never contain terminal streams.
 
 An app release consists of:
 
-1. a Linux OCI image for one supported architecture;
+1. an OCI artifact containing exactly one statically linked Linux app
+   executable at `/app/app` plus optional non-executable assets;
 2. an app manifest attached as an OCI artifact or stored at a fixed image path;
-3. a process that implements the local session protocol;
+3. an app that implements the platform session protocol through the Go SDK;
 4. optional migration, health, readiness, and shutdown hooks.
+
+The OCI artifact is a distribution envelope, not a container root filesystem.
+The platform ignores image `ENTRYPOINT`, `CMD`, user, capabilities, and exposed
+ports. Publishers cannot choose an executable path or command line.
 
 Example manifest:
 
@@ -270,7 +278,6 @@ metadata:
   name: abc
 spec:
   image: us-docker.pkg.dev/PROJECT/ssh-apps/abc@sha256:...
-  command: ["/app/abc", "serve"]
   session:
     protocol: sshapps-session-v1
     interactivePolicy: single-writer
@@ -303,7 +310,8 @@ spec:
 
 The contract is:
 
-- `/app`: read-only app content from the release;
+- `/app/app`: the only publisher-supplied executable, mounted read-only;
+- `/app/assets`: optional publisher content, mounted read-only and `noexec`;
 - `/data`: writable app-instance state, ephemeral by default and durable only
   when `state.mode` is `persistent`;
 - `/tmp`: writable tmpfs with a size limit;
@@ -327,7 +335,9 @@ promise made to every app.
 
 ### Process behavior
 
-The process receives:
+The guest agent always launches `/app/app` directly as the unprivileged app UID.
+It does not invoke a shell, honor OCI entrypoint metadata, or provide a login
+TTY. The process receives:
 
 - `SSHAPPS_APP_NAME`;
 - `SSHAPPS_INSTANCE_ID`;
@@ -338,6 +348,55 @@ The process receives:
 
 It writes structured JSON logs to stdout/stderr. It must not use stdout as the
 user's terminal stream; terminal sessions travel through the session socket.
+Within the startup timeout it must complete a versioned SDK handshake with the
+guest agent before it can become ready.
+
+### Not a shell or general-purpose VM
+
+An app is a purpose-built collaborative terminal UI, not an SSH server or a
+machine account. The following are prohibited for every publisher tier:
+
+- embedding `sshd`, Wish, or another SSH listener;
+- exposing a shell, interpreter, REPL, or arbitrary command/job execution;
+- accepting executable uploads or providing SCP, SFTP, rsync, tunnels, port
+  forwarding, a package manager, compiler, build runner, proxy, or VPN;
+- presenting the guest filesystem or process environment as a user-navigable
+  machine;
+- using the platform as a generic compute rental, relay, scanner, bot, or
+  cryptocurrency miner.
+
+The gateway never passes SSH channels through to a guest. It terminates SSH,
+rejects exec/subsystem/forwarding channels, and translates an authorized session
+into typed SDK events. The app gets no PTY, SSH socket, user public key, agent,
+or raw SSH byte stream. Therefore shipping an `sshd` cannot make it reachable.
+
+Artifact and runtime controls make accidental or off-the-shelf shell deployment
+difficult:
+
+- require one statically linked ELF executable and reject dynamic interpreters,
+  scripts, additional executable files, setuid/setgid bits, file capabilities,
+  device nodes, and executable assets;
+- provide a platform root without a shell, SSH server, package manager,
+  compiler, debugger, downloader, or general-purpose command-line tools;
+- mount every writable filesystem `noexec` with no exceptions;
+- use an enforced guest AppArmor/LSM profile that permits initial execution of
+  `/app/app` but denies execution of other paths;
+- use seccomp to deny `fork`, `vfork`, process-creating `clone` variants,
+  `ptrace`, namespace creation, mounts, raw/packet/vsock sockets, and other
+  syscalls outside the Go/Charm profile while retaining thread creation needed
+  by Go;
+- expose only the SDK Unix socket to the app UID; reserve `/dev/vsock`,
+  lifecycle, health, bootstrap, and Firecracker console interfaces for the
+  guest agent;
+- run SDK conformance tests that exercise session attach, input, output,
+  observer mode, shutdown, resource limits, and forbidden channel behavior.
+
+These controls cannot prove that a malicious static binary does not implement a
+shell-like language inside itself. That is a semantic property, not something
+Firecracker or an ELF scanner can decide. Publisher policy, source/provenance
+review, conformance testing, runtime abuse detection, reports, and rapid
+suspension remain required. No publisher receives an exception to turn a shell
+into a supported app; operator maintenance uses separate audited host access.
 
 ### Go/Charm SDK
 
@@ -353,8 +412,8 @@ SSH server. The SDK should expose:
 - controller handoff for single-writer apps;
 - health, quiesce, and optional state migration hooks.
 
-Apps built around Wish can reuse their Bubble Tea models and views, but do not
-embed a Wish SSH listener. This keeps authentication, routing, watch-only
+Authors can reuse Bubble Tea models and views, but not a Wish SSH listener or
+other server wrapper. This keeps authentication, routing, watch-only
 enforcement, resource accounting, and terminal policy at one platform edge.
 
 ### Health
@@ -400,10 +459,12 @@ Recommended pipeline:
 6. Sign the digest with keyless Sigstore in CI.
 7. Submit the immutable digest to the platform.
 
-The host verifies registry location, signature identity, provenance builder, and
-optional vulnerability policy before caching any release. Verification happens
-again at activation time so a compromised control-plane row cannot bypass
-policy.
+The host verifies registry location, publisher-specific signature identity,
+source repository/ref, provenance builder, and tier-specific vulnerability
+policy before caching any release. Verification happens again at activation
+time so a compromised control-plane row cannot bypass policy. Signature policy
+is keyed by app owner; one publisher's valid CI identity cannot sign another
+publisher's release.
 
 ### Turning OCI into a microVM root
 
@@ -411,11 +472,15 @@ Use a stable, platform-owned kernel and base guest filesystem. For each release,
 the image preparer:
 
 1. pulls and verifies OCI layers;
-2. safely unpacks them without preserving unsafe device nodes, setuid bits, or
-   host ownership;
-3. creates a deterministic read-only ext4 or EROFS release image;
-4. records its source digest and generated image digest;
-5. caches it by digest.
+2. extracts only the fixed `/app/app` executable and optional `/app/assets`
+   tree, rejecting path escapes and every unsupported file type or permission;
+3. verifies that `/app/app` is a static ELF for the selected architecture and
+   that no other executable or interpreter exists;
+4. creates a deterministic read-only ext4 or EROFS release image with assets
+   marked non-executable;
+5. records its source digest, generated image digest, executable hash, and
+   validation policy version;
+6. caches it by digest.
 
 Do not ask every app author to produce a kernel/rootfs pair. That couples apps
 to Firecracker internals and makes security patching, guest-agent upgrades, and
@@ -601,6 +666,26 @@ success, it may accept the proven key into a tightly restricted gateway login
 session and perform the OIDC gate before permitting picker or app access. It
 must never treat that restricted state as an authorized app session.
 
+Enforce authentication as a state machine rather than scattered booleans:
+
+```text
+transport_established
+  -> key_proven
+      -> linked_identity_resolved
+          -> app_authorized -> attached
+      -> oidc_complete -> key_linked
+          -> app_authorized -> attached
+  -> oidc_complete_without_key
+      -> app_authorized -> attached
+```
+
+There is no transition from `transport_established` or `key_proven` directly to
+picker, instance start, app authorization, or attach. Each transition records
+one immutable connection ID and checks that the prior state is current.
+Disconnect, timeout, denial, callback mismatch, or storage failure transitions
+to terminal `failed`. Negative integration tests must prove that partial auth,
+replayed callbacks, races, and gateway restarts cannot skip a state.
+
 Clients and agents often offer several keys. Limit attempts, do not persist
 unsigned candidates, and bind only the key for which the client completed a
 signature and browser confirmation.
@@ -642,8 +727,11 @@ requires provider API access; discard login tokens after validation.
 The login URL contains at least 128 bits of unguessable entropy and is stored
 hashed. The browser confirmation page repeats a short verification phrase or
 code shown in the terminal, requested app, and SSH fingerprint to prevent
-session swapping and login-CSRF confusion. A transaction is bound to one SSH
-connection and one proven key, if present, and cannot be replayed.
+session swapping and login-CSRF confusion. The code is confirmation, not a
+bearer credential. If manual code entry is supported, use at least 40 bits of
+uniform entropy, constant-time comparison, and at most five attempts before
+invalidating the transaction. A transaction is bound to one SSH connection and
+one proven key, if present, and cannot be replayed.
 
 #### Profiles, key linking, and recovery
 
@@ -707,6 +795,36 @@ The gateway makes the authoritative decision:
 - suspended users and disabled apps are rejected before an instance starts.
 
 The guest receives the resulting mode and claims but cannot upgrade them.
+
+### App authenticity and user trust
+
+Before the first guest-controlled byte, the gateway renders a platform-owned
+connection banner containing the exact app slug, publisher identity, publisher
+trust badge, first-published date, requested mode, and shortened release digest.
+Require first-connect confirmation for non-owner apps and whenever publisher
+ownership changes. The picker displays the same provenance and never allows app
+output to overwrite its UI.
+
+App slugs are lowercase ASCII DNS-label characters only. Reserve platform and
+common system names, reject Unicode/confusable characters, check similarity
+against existing popular/verified apps, and retain tombstones so deleted names
+cannot be immediately recycled. A “verified” badge means publisher identity,
+not that the app is safe or correct.
+
+An app controls its rendered terminal content and receives interactive input. It
+can imitate platform text or mishandle data despite VM isolation. Platform
+authentication occurs only before attach and only through
+`auth.imjasonh.dev`; the platform never asks for OIDC credentials, SSH private
+keys, tokens, or passwords inside an app. State this in the gateway banner and
+user documentation. Provide a gateway-controlled disconnect/report escape that
+the app cannot intercept.
+
+Observer enforcement guarantees only that observer input is not delivered. The
+app decides what each session sees and may accidentally or maliciously expose
+one user's data to another. The SDK must make per-user and broadcast views
+explicit, include cross-user isolation tests, and require conformance review
+before a non-owner app becomes public. Users should not enter secrets into an
+app unless they trust its publisher.
 
 ### SSH features
 
@@ -791,14 +909,45 @@ Each app instance gets:
 - a unique Firecracker process and jail directory;
 - a unique vsock CID;
 - a read-only app/root block device;
-- a dedicated writable data block device;
-- its own network namespace and TAP device if egress is enabled;
+- an ephemeral or optional dedicated persistent data block device;
+- no guest NIC; approved outbound HTTP uses the platform egress capability;
 - fixed vCPU and memory allocation;
 - no host filesystem mounts;
 - no host devices beyond explicitly configured virtual devices.
 
 Never place unrelated apps in the same guest. That would collapse the primary
 security boundary and complicate resource and usage accounting.
+
+### Host-to-guest channel authentication
+
+A vsock CID is routing metadata, not sufficient authorization. Use fixed,
+allowlisted guest-agent ports for bootstrap, health/lifecycle, session attach,
+and approved capability brokering. The app UID cannot open `/dev/vsock` or the
+guest-agent control sockets.
+
+Every VM boot gets a random `boot_id`. Before opening a session stream:
+
+1. the gateway authenticates the user and authorizes the app/mode;
+2. the mutually authenticated gateway-manager API returns the current
+   `(instance_id, boot_id, vsock_cid, observed_generation)`;
+3. the gateway signs a single-use attach token containing app, instance, boot,
+   release, session, user, mode, issue/expiry times, and nonce;
+4. the token is the first framed message on the session attach port;
+5. the guest agent verifies the platform public key, exact local
+   app/instance/boot/release claims, a short expiry, and unused nonce before
+   exposing the session to the SDK.
+
+Use a dedicated session-token signing key, not the SSH host key. Give the guest
+only its public verification key, so guest compromise cannot mint tokens for
+itself or another instance. Nonces are scoped to a boot and retained until
+expiry. Tokens are never accepted on lifecycle/bootstrap ports.
+
+Gateway-manager RPC uses a root-owned Unix socket, strict filesystem
+permissions, peer credential checks, and mutually authenticated workload
+credentials. The manager rejects stale generations, stopped/draining instances,
+and mismatched app ownership. Bootstrap secrets similarly bind to app,
+instance, boot, release, and one-time delivery. CID reuse after VM termination
+cannot revive an old token because `boot_id` changes.
 
 ### Jailer and host hardening
 
@@ -828,7 +977,9 @@ The platform kernel should:
   filesystems/protocols;
 - boot with a read-only root;
 - run the app as a non-root UID;
-- apply guest seccomp and rlimits;
+- enforce the app-specific AppArmor/LSM, seccomp, cgroup, and rlimit profile;
+- deny the app access to vsock, guest-agent control sockets, raw block devices,
+  the Firecracker console, kernel logs, and other processes;
 - have no sshd, package manager, compiler, shell, or cloud metadata credentials.
 
 The guest agent must treat every manifest value, image path, frame, and log line
@@ -863,8 +1014,8 @@ small volume-count and byte quotas.
 Each persistent instance owns a sparse ext4 file or logical volume on a zonal
 GCE Persistent Disk, identified independently of any release. The manager
 attaches it as a virtio block device; the guest agent mounts it at `/data` with
-`nodev,nosuid,noexec` by default. Apps that need executable state must request
-an exception.
+`nodev,nosuid,noexec`. There is no executable-state exception; generated code,
+plugins, and binaries on persistent storage are outside the product contract.
 
 Use project quotas or fixed-size block devices so an app cannot fill the host
 filesystem. Monitor bytes and inodes. Leave deliberate host headroom for image
@@ -1037,16 +1188,17 @@ protected by strong identity-aware access.
 
 ### Egress
 
-Default to no guest NIC. Apps that need outbound access declare it and receive a
-TAP device in a dedicated network namespace. Apply nftables rules on the host.
+Default to no guest NIC and no IP sockets. There is no `unrestricted` manifest
+mode, including for the owner tier. Raw outbound TCP/UDP is outside the app
+product.
 
-Useful policy levels:
-
-- `deny`: no IP networking;
-- `https`: DNS plus outbound TCP 443, with metadata/private ranges blocked;
-- `allowlist`: declared CIDRs and ports;
-- `unrestricted`: exceptional, still blocking host/control-plane/metadata
-  networks.
+An app with an operator-approved use case receives a platform egress capability,
+not a general network interface. The SDK sends bounded HTTP requests through a
+guest-agent socket to a host egress proxy. The grant names exact HTTPS origins,
+allowed methods, request/response size, connection and byte rates, and expiry.
+The proxy resolves and revalidates destinations, prevents DNS rebinding,
+terminates or validates TLS according to policy, and records destination/status
+metadata without logging authorization headers or bodies.
 
 Always block:
 
@@ -1054,11 +1206,13 @@ Always block:
 - host link-local and management addresses;
 - RFC1918/VPC ranges unless explicitly needed;
 - other guest subnets;
-- SMTP and commonly abused amplification ports by default.
+- SMTP and commonly abused amplification ports;
+- redirects to an origin outside the grant.
 
-DNS can undermine hostname allowlists because addresses change. Prefer a
-policy-aware egress proxy for hostname restrictions, or treat CIDR rules as the
-actual security boundary. Rate-limit bytes and connections.
+Trusted publishers require operator approval for every grant. Untrusted
+publishers receive no egress initially. If raw networking ever becomes
+necessary, it is a separate product/security design—not an extension of this
+manifest.
 
 ### Secrets
 
@@ -1069,8 +1223,11 @@ environment when possible. Secrets must be redacted from logs and never copied
 to `/data`, snapshots, manifests, image layers, or usage events by the platform.
 
 The host service account should have per-secret access, Artifact Registry read,
-telemetry write, and snapshot permissions—no broad project editor role. Guests
-get no GCP identity.
+telemetry write, and snapshot permissions—no broad project editor role. The
+secret broker verifies app and instance identity against an app-scoped grant;
+publisher control-plane access alone cannot read secret values. Guests get no
+GCP identity. Untrusted publishers receive brokered operations rather than raw
+secret material.
 
 ## 13. Observability and usage records
 
@@ -1113,8 +1270,23 @@ Never log:
 - full command payloads supplied by users;
 - raw IP addresses beyond the documented security retention window.
 
-Apps can opt into their own content logging, but that is an app privacy policy,
-not a platform default.
+An app necessarily sees input delivered to it and output it renders, so a
+malicious app can retain or reveal that content inside its own shared state.
+Isolation cannot make an untrusted app safe for secrets. The platform must not
+turn stdout, metrics, traces, crash reports, or usage fields into a convenient
+publisher exfiltration channel:
+
+- production app stdout/stderr is operator-only, short-retention, strictly
+  rate/size bounded, and unavailable to untrusted publishers;
+- publisher-visible telemetry is aggregate and schema-bounded, with no arbitrary
+  labels or payload fields;
+- a temporary raw-debug-log grant requires operator approval, expiry, an audit
+  event, and conspicuous user notice while active;
+- crash dumps of app memory are disabled by default and never publisher-visible.
+
+These controls reduce accidental/platform-assisted recording but cannot stop an
+app from remembering data users voluntarily send it. The gateway warning and
+publisher trust model remain the primary semantic boundary.
 
 ### Traces
 
@@ -1207,11 +1379,65 @@ Initial SLIs:
 
 ## 14. Security and abuse controls
 
+### Publisher trust and capabilities
+
+Publisher trust controls who may request capabilities; it never weakens the
+runtime sandbox or the prohibition on shells. Treat even a friend's artifact as
+potentially malicious because their account or CI may be compromised.
+
+| Capability | Owner | Trusted publisher | Untrusted publisher |
+|------------|-------|-------------------|---------------------|
+| Availability | Initial launch | Explicit invitation after controls below ship | Future phase only |
+| Deploy | Own apps from owner-approved signing identity | Own apps from per-publisher approved repository/builder identity | Review queue, sandbox/canary, then own apps |
+| Resources | Operator policy ceiling | Lower fixed per-app and aggregate ceiling | Lowest fixed ceiling; initially 1 vCPU, 256 MiB, 32 PIDs |
+| Egress | Denied by default; explicit operator approval through proxy | Denied; operator-approved destination capability only | Denied; no raw internet egress |
+| Persistence | Explicit opt-in and quota | Operator approval plus publisher quota | None initially |
+| Secrets | App-scoped Secret Manager references | Only secrets scoped to owned app and individually approved | No raw secrets; future brokered integrations only |
+| Deploy rate | Audited platform limit | Per-publisher rate limit | Strict review and rate limit |
+| Shell/runtime exceptions | None | None | None |
+
+The control plane derives effective policy as the intersection of the manifest,
+publisher tier, app-specific grants, and host capacity. Publishers cannot set
+their tier, approve their own egress/persistence/secrets, change signing
+identity, or bypass ceilings. Unknown manifest fields fail closed. Every grant
+has an actor, reason, expiry or review date, and audit event.
+
+Sigstore verification is namespaced per publisher: accepted issuer, repository,
+workflow/ref, and builder provenance must match the app owner. A valid signature
+from one publisher cannot deploy another publisher's app. Trusted publishers
+may operate only their app, releases, scoped secret references, backups, and
+usage—not host policy, identity, other apps, or platform signing policy.
+
+Before inviting trusted publishers, require tier enforcement, scoped control
+APIs, artifact/runtime anti-shell controls, egress approval, quotas, and an
+operator kill switch. Before untrusted publishing, additionally require source
+and provenance review, automated malware/vulnerability policy, public reporting
+and moderation, catalog anti-phishing controls, billing/abuse limits, sandboxed
+first deployment, and separation of durable identity/control state from worker
+hosts.
+
+### Abuse response
+
+Provide independently authorized, idempotent actions to:
+
+- cordon or immediately stop an app;
+- revoke a release digest or publisher signing identity;
+- suspend a publisher and all owned apps;
+- disable one app's egress or the global egress proxy;
+- revoke app secret access and rotate exposed values;
+- preserve bounded audit/forensic metadata without recording terminal content;
+- notify affected users and restore only after explicit review.
+
+Automated triggers include egress anomalies, cold-start fan-out, sustained
+resource-limit violations, crash loops, log floods, malware/signature policy
+changes, and credible user reports. A suspended app must not be startable from
+cache or an old desired-state generation.
+
 ### Threat boundaries
 
 Assume:
 
-- app images can be malicious;
+- app releases and publisher CI can be malicious or compromised;
 - users can be malicious;
 - an app may try to impersonate users or access another app's data;
 - terminal bytes and dimensions are attacker-controlled;
@@ -1259,20 +1485,31 @@ Reject:
 - unsigned or incorrectly signed releases;
 - unknown manifest fields in security-sensitive sections;
 - paths containing traversal or symlink escapes;
-- device nodes, setuid/setgid files, file capabilities, and unsupported
+- anything other than the fixed static `/app/app` ELF and non-executable regular
+  assets: scripts, interpreters, additional ELF files, symlinks escaping assets,
+  device nodes, setuid/setgid files, file capabilities, and unsupported
   filesystem features;
+- OCI entrypoint/command attempts, SSH listeners, known shells/toolchains, or a
+  release that fails SDK and forbidden-channel conformance tests;
 - resource values outside operator-set bounds;
-- attempts to request privileged devices or host mounts.
+- attempts to request privileged devices, host mounts, raw networking,
+  executable writable state, or a capability above the publisher's tier.
+
+Record the policy-engine version and results with the release. Re-evaluate
+cached artifacts when policy changes; a valid signature proves publisher
+identity, not safety. A revoked or newly noncompliant digest cannot start.
 
 ### Audit
 
 Audit every:
 
 - app/release/policy/secret reference change;
+- publisher tier/signing identity change, capability grant/expiry, policy-engine
+  decision, app report, suspension, and reactivation;
 - deploy, rollback, restart, disable, delete, and purge;
 - OIDC login, identity link/unlink, key registration/revocation, and role change;
 - operator access and break-glass action;
-- session start/end and authorization denial;
+- session start/end, authorization denial, and attach-token rejection;
 - backup and restore.
 
 Audit records include actor, action, target, result, time, request ID, and
@@ -1346,7 +1583,9 @@ Firecracker isolates workloads; it does not provide host availability.
 | OIDC identity | user ID, exact issuer and subject, display metadata, linked time |
 | SSH key | canonical public key, SHA-256 fingerprint, algorithm, user ID, added/revoked/last-used timestamps |
 | Login transaction | secret hash, SSH connection ID, proven key, requested app, OIDC state/nonce, expiry, result |
+| Publisher | user/org ID, trust tier, status, quotas, approved signing identities |
 | App | name, owner ID, visibility, desired release, enabled, generation |
+| Capability grant | app, capability, constrained policy, approver, reason, expiry/review time |
 | Membership | app/group/user, role |
 | Release | digest, manifest, signature/provenance result, created time |
 | Instance | app, stable ID, runtime digest, optional volume, idle deadline, observed generation, state |
@@ -1354,6 +1593,7 @@ Firecracker isolates workloads; it does not provide host availability.
 | Session | app/instance/user, mode, start/end, reason, counters |
 | Volume | instance, path/device ID, size, schema version, lifecycle |
 | Backup | volume, snapshot ID, consistency, release, schema, timestamps |
+| App report | reporter, app/release/publisher, category, state, resolution |
 | Audit event | actor, action, target, result, request ID |
 | Outbox event | event ID, schema, payload, attempts, exported time |
 
@@ -1437,6 +1677,23 @@ Track:
 
 Memory can initially be non-overcommitted for predictable behavior. CPU can be
 moderately overcommitted with cgroup weights/quotas. Disk must have hard quotas.
+
+Admission control is mandatory before a session can wake an app. Enforce:
+
+- hard host-wide limits for running microVMs, allocated memory, and simultaneous
+  starts;
+- per-user and per-publisher budgets for distinct cold starts and start rate;
+- one in-flight start per instance with all legitimate waiters joining it;
+- reserved capacity for the gateway/manager and for one bounded blue/green
+  update;
+- a bounded queue with deadlines and user-visible backpressure rather than
+  unconstrained start attempts;
+- lower priority and stricter fan-out limits for newly created or abusive
+  profiles, without allowing owner traffic to starve the system indefinitely.
+
+Repeatedly touching many app slugs must not keep them warm: only authenticated,
+authorized sessions count as demand, disconnected waiters cancel their demand,
+and anomaly detection can suspend a profile before it exhausts host capacity.
 
 ### Maintenance
 
@@ -1589,7 +1846,8 @@ feature.
 - Define and fuzz the session framing protocol.
 - Build the first Go/Charm SDK.
 - Run one example collaborative app behind a Unix socket without Firecracker.
-- Validate interactive, observer, resize, disconnect, and slow-client behavior.
+- Validate interactive, observer, resize, disconnect, slow-client, forbidden
+  exec/subsystem/forwarding, and partial-auth bypass behavior.
 
 Exit criterion: the user experience and app contract work independently of the
 VM runtime.
@@ -1598,7 +1856,10 @@ VM runtime.
 
 - Build signed OCI artifact ingestion and deterministic root image preparation.
 - Boot platform kernel/guest agent/app in Firecracker with vsock.
-- Apply jailer, cgroup, filesystem, and no-network policies.
+- Enforce the single-static-binary contract, jailer, AppArmor/LSM, seccomp,
+  cgroup, no-executable-writable-filesystem, and no-network policies.
+- Implement signed single-use session attach tokens and mutually authenticated
+  gateway-manager/bootstrap channels.
 - Attach quota-bounded ephemeral `/data` and an optional persistent volume.
 - Implement startup/readiness/liveness and restart behavior.
 
@@ -1616,12 +1877,19 @@ declared limits in the tested threat model.
 - Add backup and tested restore.
 
 Exit criterion: multiple apps survive service and host restarts, update safely,
-and produce actionable telemetry.
+produce actionable telemetry, and remain owner-published only.
 
-### Phase 3: production hardening
+### Phase 3: production hardening and trusted-publisher gate
 
 - Threat model and external security review.
 - Image signature/provenance enforcement and vulnerability response process.
+- Enforce publisher tiers, per-publisher signing identities, scoped APIs,
+  aggregate quotas, and operator-approved persistence/secrets/egress.
+- Add catalog provenance UI, slug anti-phishing rules, reporting, app/publisher
+  kill switches, and incident exercises.
+- Test shell/toolchain artifacts, user-programmable static binaries, log-based
+  exfiltration, egress abuse, cold-start fan-out, guest-agent attack, and vsock
+  token replay as adversarial cases.
 - Fault injection for manager, gateway, disk, registry, and telemetry failures.
 - Host/runtime patch automation and recovery drills.
 - Privacy/retention documentation and operator runbooks.
@@ -1629,7 +1897,24 @@ and produce actionable telemetry.
   pressure.
 
 Exit criterion: published SLOs, recovery objectives, support boundaries, and
-known single-host limitations.
+known single-host limitations; a friend can deploy only within the trusted tier
+without gaining shell, raw network, cross-app, or policy-administration access.
+
+### Phase 4: future untrusted publishing
+
+- Move durable identity/control state off worker hosts and minimize cached
+  credential data.
+- Require reviewed source/provenance, sandboxed first deploys, stricter artifact
+  and vulnerability policy, and lowest resource ceilings.
+- Keep egress, persistence, raw secrets, executable state, and runtime
+  exceptions unavailable.
+- Operate moderation, reporting, automated anomaly suspension, publisher
+  verification, user safety notices, and billing/abuse controls.
+- Repeat external security review and red-team the complete publisher-to-user
+  path.
+
+Exit criterion: a malicious publisher is an explicit tested threat actor, not an
+extension of the trusted-friend model.
 
 ### Future: distributed control plane
 
@@ -1642,9 +1927,9 @@ known single-host limitations.
 
 The design is based on these product decisions:
 
-1. The platform owner is the only initial publisher, followed by trusted users;
-   the isolation and ownership model must allow untrusted public publishing
-   later.
+1. The platform owner is the only initial publisher, followed by a constrained
+   trusted tier and eventually a separately gated untrusted tier. Publisher
+   status never weakens the anti-shell runtime.
 2. Connection UX uses `ssh foo@apps.imjasonh.dev`; `foo` is an app route, not
    user identity. Unknown/reserved usernames enter a picker, with
    `picker@apps.imjasonh.dev` as the guaranteed picker.
@@ -1653,7 +1938,9 @@ The design is based on these product decisions:
    without keys may use browser authentication on every connection.
 4. Apps are public to authenticated users initially. Private-app policy can be
    added later.
-5. App network egress is denied by default.
+5. App network egress is denied by default. There is no unrestricted mode;
+   approved owner/trusted use cases receive narrow platform-brokered HTTPS
+   capabilities, and untrusted apps initially receive none.
 6. State is ephemeral by default. Limited opt-in persistence uses a zonal
    Persistent Disk and daily snapshots initially.
 7. An app with no active users scales to zero after ten minutes.
@@ -1666,8 +1953,9 @@ The design is based on these product decisions:
     requires a separate explicit privacy and security design.
 11. V1 availability is best effort on one host. Contracts must preserve a path
     to fenced multi-host failover and multi-region placement.
-12. The first app platform targets Go and Charm. Apps are built for the platform
-    SDK rather than treated as arbitrary existing SSH servers.
+12. The first app platform targets one static Go/Charm binary using the platform
+    SDK. Apps cannot run SSH listeners, shells, interpreters, arbitrary commands,
+    executable writable state, raw networking, or general-purpose VM workloads.
 
 These choices leave implementation parameters such as exact quotas, retention
 periods, and cold-start SLOs to be measured during the prototype without
