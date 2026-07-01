@@ -361,6 +361,10 @@ export class MpegPlayerController extends EventTarget {
 
     this.audioInitialization = this.#initializeAudio().catch((error) => {
       this.audioCapable = false;
+      this.worker?.postMessage({
+        type: "audio-disabled",
+        loadId: this.loadId,
+      });
       this.#emit("warning", {
         message: `Web Audio is unavailable; playback will be silent. ${error.message}`,
       });
@@ -373,7 +377,10 @@ export class MpegPlayerController extends EventTarget {
     const AudioContext = window.AudioContext || window.webkitAudioContext;
     this.audioContext = new AudioContext({ latencyHint: "interactive" });
     this.audioContext.addEventListener("statechange", () => {
-      if (this.audioContext.state !== "running" && this.state === "playing") {
+      if (
+        this.audioContext.state !== "running" &&
+        ["playing", "buffering", "draining"].includes(this.state)
+      ) {
         this.pause();
         this.#emit("audiostate", {
           state: this.audioContext.state,
