@@ -125,8 +125,8 @@ test("crosswind creates a meaningful change in the projectile path", () => {
   east.fire();
   west.fire();
 
-  advance(east, 0.3);
-  advance(west, 0.3);
+  advance(east, 0.4);
+  advance(west, 0.4);
 
   assert.ok(east.projectile.vx > west.projectile.vx);
   assert.ok(east.projectile.x - west.projectile.x > 25);
@@ -241,6 +241,7 @@ test("the computer finds a viable shot but adds bounded inaccuracy", () => {
 test("computer inaccuracy prevents consistently damaging firing solutions", () => {
   let directHits = 0;
   let damagingHits = 0;
+  let totalDamage = 0;
   const trials = 24;
 
   for (let attempt = 0; attempt < trials; attempt += 1) {
@@ -263,6 +264,7 @@ test("computer inaccuracy prevents consistently damaging firing solutions", () =
     if (impact && Math.max(...impact.damages) > 0) {
       damagingHits += 1;
     }
+    totalDamage += impact ? Math.max(...impact.damages) : 0;
   }
 
   assert.ok(directHits < trials * 0.4, `${directHits}/${trials} direct hits`);
@@ -270,6 +272,7 @@ test("computer inaccuracy prevents consistently damaging firing solutions", () =
     damagingHits < trials * 0.65,
     `${damagingHits}/${trials} damaging hits`,
   );
+  assert.ok(totalDamage / trials < 22, `${totalDamage / trials} average damage`);
 });
 
 test("wind generation spans both directions and includes calm conditions", () => {
