@@ -12,7 +12,8 @@
   --level-glow: rgba(62, 207, 142, 0.55);
   --radius: 16px;
   --touch-min: 48px;
-  --vial-size: min(70vw, 300px);
+  /* Cap by height too so the dial still fits when the phone is turned sideways. */
+  --vial-size: min(70vw, 58vh, 300px);
   --vial-travel: calc(var(--vial-size) * 0.5 - 32px);
   font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
 }
@@ -456,5 +457,45 @@ body.is-level .level-badge {
   .bubble,
   .tube-bubble {
     transition: none;
+  }
+}
+
+/* Short landscape (a phone turned sideways): put the readout on the left and the
+   dial on the right so the level stays visible without scrolling. The bullseye
+   already reports both axes, so the redundant tube vials are hidden here. */
+@media (orientation: landscape) and (max-height: 640px) {
+  .app {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 1.5rem;
+    row-gap: 0.55rem;
+    max-width: 940px;
+    padding-top: 0.75rem;
+    padding-bottom: 0.75rem;
+  }
+
+  .header,
+  .enable-panel,
+  .readout,
+  .controls,
+  #status,
+  .hint {
+    grid-column: 1;
+    width: 100%;
+  }
+
+  .vials {
+    grid-column: 2;
+    grid-row: 1 / span 12;
+    align-self: center;
+  }
+
+  .tubes {
+    display: none;
+  }
+
+  .subtitle {
+    display: none;
   }
 }

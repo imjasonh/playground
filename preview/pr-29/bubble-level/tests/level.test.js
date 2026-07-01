@@ -7,6 +7,8 @@ import {
   clamp,
   isLevel,
   normalizeAngle,
+  rotateVector,
+  screenVector,
   tiltAngle,
   tiltComponents,
 } from '../src/level.js';
@@ -172,5 +174,82 @@ describe('bubbleVector', () => {
     const v = bubbleVector(Number.NaN, undefined);
     expect(v.x).toBeCloseTo(0, 6);
     expect(v.y).toBeCloseTo(0, 6);
+  });
+});
+
+describe('rotateVector', () => {
+  test('rotates a rightward vector clockwise on screen (y grows down)', () => {
+    const r = rotateVector({ x: 1, y: 0 }, 90);
+    expect(r.x).toBeCloseTo(0, 6);
+    expect(r.y).toBeCloseTo(1, 6);
+  });
+
+  test('a full turn is the identity and preserves magnitude', () => {
+    const r = rotateVector({ x: 0.3, y: -0.4 }, 360);
+    expect(r.x).toBeCloseTo(0.3, 6);
+    expect(r.y).toBeCloseTo(-0.4, 6);
+    expect(Math.hypot(r.x, r.y)).toBeCloseTo(0.5, 6);
+  });
+});
+
+describe('screen-orientation compensation', () => {
+  // In portrait, raising the device's natural right edge (gamma < 0) sends the
+  // bubble to screen-right. As the screen rotates, that same physical tilt must
+  // move the bubble to a different screen edge so "up" stays visually up.
+  test('portrait (0): raised right edge -> bubble right', () => {
+    const { x, y } = bubbleOffset(0, -20, DEFAULT_SENSITIVITY_DEG, 0);
+    expect(x).toBeGreaterThan(0.3);
+    expect(y).toBeCloseTo(0, 1);
+  });
+
+  test('landscape (90): raised right edge -> bubble up the screen', () => {
+    const { x, y } = bubbleOffset(0, -20, DEFAULT_SENSITIVITY_DEG, 90);
+    expect(y).toBeLessThan(-0.3);
+    expect(x).toBeCloseTo(0, 1);
+  });
+
+  test('landscape (270): raised right edge -> bubble down the screen', () => {
+    const { y } = bubbleOffset(0, -20, DEFAULT_SENSITIVITY_DEG, 270);
+    expect(y).toBeGreaterThan(0.3);
+  });
+
+  test('upside down (180): raised right edge -> bubble left', () => {
+    const { x } = bubbleOffset(0, -20, DEFAULT_SENSITIVITY_DEG, 180);
+    expect(x).toBeLessThan(-0.3);
+  });
+
+  test('tube axes follow the screen frame too', () => {
+    // A pure left/right (portrait) tilt becomes a front/back tilt in landscape.
+    const portrait = axisOffsets(0, -20, DEFAULT_SENSITIVITY_DEG, 0);
+    expect(Math.abs(portrait.x)).toBeGreaterThan(0.3);
+
+    const landscape = axisOffsets(0, -20, DEFAULT_SENSITIVITY_DEG, 90);
+    expect(Math.abs(landscape.y)).toBeGreaterThan(0.3);
+  });
+
+  test('tiltComponents swap axes with orientation', () => {
+    const portrait = tiltComponents(0, -12, 0);
+    expect(portrait.x).toBeGreaterThan(0);
+    expect(Math.abs(portrait.y)).toBeCloseTo(0, 1);
+
+    const landscape = tiltComponents(0, -12, 90);
+    expect(landscape.y).toBeGreaterThan(0);
+    expect(Math.abs(landscape.x)).toBeCloseTo(0, 1);
+  });
+
+  test('total tilt is unchanged by screen rotation', () => {
+    const base = tiltComponents(8, -12, 0).total;
+    for (const angle of [90, 180, 270]) {
+      expect(tiltComponents(8, -12, angle).total).toBeCloseTo(base, 6);
+    }
+  });
+
+  test('screenVector preserves magnitude across orientations', () => {
+    const base = bubbleVector(10, -15);
+    const mag = Math.hypot(base.x, base.y);
+    for (const angle of [0, 90, 180, 270]) {
+      const v = screenVector(10, -15, angle);
+      expect(Math.hypot(v.x, v.y)).toBeCloseTo(mag, 6);
+    }
   });
 });

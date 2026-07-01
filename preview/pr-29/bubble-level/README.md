@@ -20,6 +20,12 @@ that math lives in `src/level.js` as pure, framework-free functions.
 - **Calibrate** — zero the level against whatever surface the phone is resting on
   so a slightly-off table reads as flat. The offset is saved in `localStorage`;
   **Reset calibration** clears it.
+- **Rotation-aware** — `deviceorientation` always reports tilt in the device's
+  natural (portrait) frame, so the bubble vector is rotated by
+  `screen.orientation.angle` to stay correct when the phone is turned to
+  landscape (rather than relying on orientation lock, which needs fullscreen and
+  isn't supported on iOS Safari). In short landscape the layout also switches to
+  a side-by-side view so the dial stays visible.
 
 ## Play
 

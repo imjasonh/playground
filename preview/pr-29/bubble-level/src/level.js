@@ -53,18 +53,45 @@ export function bubbleVector(beta, gamma) {
   };
 }
 
+// Rotate a CSS-space vector (x right, y down) by `angleDeg`, using the standard
+// rotation matrix. Positive angles rotate clockwise on screen (because y grows
+// downward).
+export function rotateVector(vector, angleDeg) {
+  const a = (Number.isFinite(angleDeg) ? angleDeg : 0) * DEG;
+  const cos = Math.cos(a);
+  const sin = Math.sin(a);
+  const x = vector.x;
+  const y = vector.y;
+  return {
+    x: x * cos - y * sin,
+    y: x * sin + y * cos,
+  };
+}
+
+// The bubble direction expressed in the CURRENT screen's frame.
+//
+// `beta`/`gamma` from DeviceOrientationEvent are always reported in the device's
+// natural (portrait) frame, but once the OS rotates the screen to landscape the
+// page's CSS axes rotate with it. `screenAngle` is `screen.orientation.angle`
+// (0/90/180/270). Rotating the natural-frame vector by `-screenAngle` cancels
+// that out so "up" always points to the top of what the user is looking at.
+export function screenVector(beta, gamma, screenAngle = 0) {
+  return rotateVector(bubbleVector(beta, gamma), -screenAngle);
+}
+
 // Total tilt away from level, in degrees (0 = flat, 90 = screen vertical).
 export function tiltAngle(beta, gamma) {
   const { x, y } = bubbleVector(beta, gamma);
   return Math.asin(clamp(Math.hypot(x, y), 0, 1)) / DEG;
 }
 
-// Signed per-axis tilt angles (degrees) that match the bubble's direction:
-//   x > 0  the right edge is raised (bubble drifts right)
-//   y > 0  the top/far edge is raised (bubble drifts up the screen)
-// `total` is the combined tilt from level and is always >= 0.
-export function tiltComponents(beta, gamma) {
-  const { x, y } = bubbleVector(beta, gamma);
+// Signed per-axis tilt angles (degrees), in the current screen frame, that match
+// the bubble's direction:
+//   x > 0  the screen's right edge is raised (bubble drifts right)
+//   y > 0  the screen's top edge is raised (bubble drifts up the screen)
+// `total` is the combined tilt from level and is always >= 0 (orientation-independent).
+export function tiltComponents(beta, gamma, screenAngle = 0) {
+  const { x, y } = screenVector(beta, gamma, screenAngle);
   return {
     x: Math.asin(clamp(x, -1, 1)) / DEG,
     y: Math.asin(clamp(-y, -1, 1)) / DEG,
@@ -75,9 +102,14 @@ export function tiltComponents(beta, gamma) {
 // Normalized bubble position inside a circular (bullseye) vial. Both components
 // live in [-1, 1] and the pair is clamped to the unit disk so the bubble never
 // leaves the ring. x is rightward, y is downward (CSS axes).
-export function bubbleOffset(beta, gamma, sensitivityDeg = DEFAULT_SENSITIVITY_DEG) {
+export function bubbleOffset(
+  beta,
+  gamma,
+  sensitivityDeg = DEFAULT_SENSITIVITY_DEG,
+  screenAngle = 0,
+) {
   const scale = Math.sin(clamp(sensitivityDeg, 1, 89) * DEG) || 1;
-  const v = bubbleVector(beta, gamma);
+  const v = screenVector(beta, gamma, screenAngle);
   let x = v.x / scale;
   let y = v.y / scale;
   const magnitude = Math.hypot(x, y);
@@ -91,9 +123,14 @@ export function bubbleOffset(beta, gamma, sensitivityDeg = DEFAULT_SENSITIVITY_D
 // Normalized bubble positions for the two single-axis (tube) vials. Each axis is
 // clamped independently to [-1, 1] so a horizontal tube reads left/right tilt and
 // a vertical tube reads front/back tilt without one starving the other.
-export function axisOffsets(beta, gamma, sensitivityDeg = DEFAULT_SENSITIVITY_DEG) {
+export function axisOffsets(
+  beta,
+  gamma,
+  sensitivityDeg = DEFAULT_SENSITIVITY_DEG,
+  screenAngle = 0,
+) {
   const scale = Math.sin(clamp(sensitivityDeg, 1, 89) * DEG) || 1;
-  const v = bubbleVector(beta, gamma);
+  const v = screenVector(beta, gamma, screenAngle);
   return {
     x: clamp(v.x / scale, -1, 1),
     y: clamp(v.y / scale, -1, 1),
