@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta
+      name="description"
+      content="Decode MPEG-1 video and MP2 audio off the main thread with WebAssembly, OffscreenCanvas, WebGL, and Web Audio."
+    />
+    <meta name="theme-color" content="#0b0d12" />
+    <title>MPEG Canvas · worker-first video player</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="back-link" href="../" aria-label="Back to playground">playground /</a>
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <i></i><i></i><i></i>
+        </span>
+        <div>
+          <h1>MPEG Canvas</h1>
+          <p>worker-first software video</p>
+        </div>
+      </div>
+      <div class="pipeline" aria-label="Playback pipeline">
+        <span>WASM</span><b aria-hidden="true">→</b>
+        <span>worker</span><b aria-hidden="true">→</b>
+        <span>canvas + audio</span>
+      </div>
+    </header>
+
+    <main class="app-shell">
+      <section class="player-panel" aria-label="MPEG player">
+        <div id="drop-zone" class="stage" style="--video-aspect: 16 / 9">
+          <canvas
+            id="video-canvas"
+            width="640"
+            height="360"
+            aria-label="Decoded MPEG video"
+          ></canvas>
+
+          <div id="empty-state" class="stage-overlay empty-state">
+            <div class="reel" aria-hidden="true">
+              <span></span><span></span><span></span><span></span>
+            </div>
+            <p class="eyebrow">MPEG-TS · MPEG-1 VIDEO · MP2 AUDIO</p>
+            <h2>Drop a transport stream</h2>
+            <p>
+              Decoding and rendering stay off the main thread. Your local file
+              never leaves this browser.
+            </p>
+            <div class="hero-actions">
+              <label class="button primary" for="file-input">Choose a file</label>
+              <button id="demo-button" class="button" type="button">Play the demo</button>
+            </div>
+          </div>
+
+          <div id="loading-overlay" class="stage-overlay loading-overlay" hidden>
+            <span class="loader" aria-hidden="true"></span>
+            <strong id="loading-label">Preparing decoder…</strong>
+            <div class="load-track" aria-hidden="true">
+              <span id="load-progress"></span>
+            </div>
+          </div>
+
+          <div class="stage-hud" aria-hidden="true">
+            <span id="stage-state" class="stage-state">
+              <i></i><span>idle</span>
+            </span>
+            <span id="render-badge">offscreen canvas</span>
+          </div>
+          <div id="drop-prompt" class="drop-prompt" hidden>Drop to decode</div>
+        </div>
+
+        <div class="controls" aria-label="Playback controls">
+          <button
+            id="play-button"
+            class="icon-button play-button"
+            type="button"
+            aria-label="Play"
+            disabled
+          >
+            <span aria-hidden="true">▶</span>
+          </button>
+
+          <div class="timeline">
+            <input
+              id="seek-input"
+              type="range"
+              min="0"
+              max="0"
+              step="0.01"
+              value="0"
+              aria-label="Seek position"
+              disabled
+            />
+            <div class="time-row">
+              <span id="current-time">0:00</span>
+              <span id="duration-time">0:00</span>
+            </div>
+          </div>
+
+          <button
+            id="mute-button"
+            class="icon-button"
+            type="button"
+            aria-label="Mute"
+            aria-pressed="false"
+          >
+            <span aria-hidden="true">◕</span>
+          </button>
+          <input
+            id="volume-input"
+            class="volume"
+            type="range"
+            min="0"
+            max="1"
+            step="0.01"
+            value="0.85"
+            aria-label="Volume"
+          />
+          <button
+            id="fullscreen-button"
+            class="icon-button"
+            type="button"
+            aria-label="Enter fullscreen"
+          >
+            <span aria-hidden="true">⛶</span>
+          </button>
+        </div>
+
+        <p id="status" class="status" role="status" aria-live="polite">
+          Initializing the worker and WebAssembly decoder…
+        </p>
+      </section>
+
+      <aside class="side-panel">
+        <section class="card source-card">
+          <div class="card-heading">
+            <div>
+              <p class="eyebrow">Input</p>
+              <h2>Source</h2>
+            </div>
+            <span id="source-size" class="source-size">no file</span>
+          </div>
+          <p id="source-name" class="source-name">Nothing loaded</p>
+
+          <input
+            id="file-input"
+            class="visually-hidden"
+            type="file"
+            accept=".ts,.mpeg,.mpg,video/mp2t,video/mpeg"
+          />
+          <div class="source-actions">
+            <label class="button primary" for="file-input">Open local file</label>
+            <button id="side-demo-button" class="button" type="button">Demo</button>
+          </div>
+
+          <div class="divider"><span>or fetch with CORS</span></div>
+          <form id="url-form">
+            <label for="url-input">MPEG-TS URL</label>
+            <div class="url-row">
+              <input
+                id="url-input"
+                type="url"
+                inputmode="url"
+                autocomplete="url"
+                spellcheck="false"
+                placeholder="https://example.com/video.ts"
+              />
+              <button class="button" type="submit">Load</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="card telemetry-card">
+          <div class="card-heading">
+            <div>
+              <p class="eyebrow">Live</p>
+              <h2>Pipeline telemetry</h2>
+            </div>
+            <span class="live-pill"><i></i> local</span>
+          </div>
+          <dl class="telemetry">
+            <div>
+              <dt>Decoder</dt>
+              <dd id="decoder-value">WebAssembly</dd>
+            </div>
+            <div>
+              <dt>Renderer</dt>
+              <dd id="renderer-value">Offscreen canvas</dd>
+            </div>
+            <div>
+              <dt>Video</dt>
+              <dd id="video-value">—</dd>
+            </div>
+            <div>
+              <dt>Audio</dt>
+              <dd id="audio-value">Web Audio ready</dd>
+            </div>
+            <div>
+              <dt>Decode</dt>
+              <dd id="decode-value">—</dd>
+            </div>
+            <div>
+              <dt>Audio queue</dt>
+              <dd id="buffer-value">—</dd>
+            </div>
+          </dl>
+        </section>
+
+        <details class="card format-card">
+          <summary>Supported input and conversion</summary>
+          <p>
+            This player accepts 188-byte MPEG transport streams containing
+            MPEG-1 video and optional MP2 audio. B-frames are not supported.
+          </p>
+          <code>ffmpeg -i input.mp4 -c:v mpeg1video -bf 0 -c:a mp2 -f mpegts output.ts</code>
+        </details>
+      </aside>
+    </main>
+
+    <footer>
+      <span>Nothing is uploaded.</span>
+      <span>WASM decode · worker render · AudioWorklet output</span>
+    </footer>
+
+    <script type="module" src="src/app.js"></script>
+  </body>
+</html>

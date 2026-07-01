@@ -1,0 +1,6 @@
+{
+  "package": "@seydx/jsmpeg",
+  "version": "1.0.1",
+  "upstream": "https://github.com/phoboslab/jsmpeg",
+  "generatedBy": "npm run vendor"
+}
