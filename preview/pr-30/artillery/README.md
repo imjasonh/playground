@@ -6,7 +6,8 @@ and wear the opposing tank's armor down to zero.
 
 The app is a static site with no runtime dependencies. It includes a local
 two-player pass-and-play mode and a computer opponent that searches for a viable
-firing solution, then adds enough error to remain beatable.
+firing solution using an imperfect wind estimate, then adds enough error to
+remain beatable.
 
 ## Controls
 
@@ -16,8 +17,10 @@ firing solution, then adds enough error to remain beatable.
 - **Sound:** toggle the synthesized sound effects from the header.
 - **New duel:** return to the mode selector at any point.
 
-Crosswind changes after every shot. Direct hits inflict 62 armor damage, while
-nearby explosions cause distance-based splash damage and carve a crater into
+Every duel generates a new landscape with level starting pads. Crosswind changes
+after every shot and can strongly bend a round, while cannon elevation remains
+relative to the horizon even if a crater tilts the tank. Direct hits inflict 62
+armor damage; nearby explosions cause distance-based splash damage and deform
 the battlefield. The first tank reduced from 100 armor to zero loses.
 
 ## Run locally
