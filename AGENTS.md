@@ -15,6 +15,7 @@ playground/
 │   ├── pages/             # shared HTML template for app index pages
 │   ├── scripts/           # CI helpers for browser, Go, and Rust app discovery
 │   └── workflows/         # deploy, preview, test, cleanup, dependency updates
+├── artillery/             # touch-first turn-based artillery duel (JS + Node tests)
 ├── cold-climb/            # touch-first two-handle arcade game (JS + Node tests)
 ├── git/                   # in-browser read-only git client (JS + Jest + Playwright)
 ├── gitdb/                 # Go CLI (Go module + Go tests)
@@ -32,6 +33,7 @@ its root. This is the same rule used by deploy and preview workflows.
 
 | Path | Browser app? | Notes |
 |------|--------------|-------|
+| `artillery/` | yes | Turn-based artillery duel; JS modules, npm scripts, tests |
 | `cold-climb/` | yes | Touch-first arcade game; JS modules, npm scripts, tests |
 | `git/` | yes | In-browser read-only git client; JS modules, npm scripts, tests |
 | `hello/` | yes | Static HTML; no build or tests |
@@ -290,6 +292,7 @@ cargo test
 
 | Directory | Type | Tests |
 |-----------|------|-------|
+| `artillery/` | Turn-based artillery duel with local and AI modes | Node test runner |
 | `cold-climb/` | Two-handle ball-climbing arcade game | Node test runner |
 | `git/` | In-browser read-only git client (clone, browse, branches, history) | Jest + Playwright |
 | `hello/` | Static demo | none |
