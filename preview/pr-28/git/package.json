@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@isomorphic-git/lightning-fs": "4.6.2",
-    "isomorphic-git": "1.38.5"
+    "isomorphic-git": "1.38.6"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",
