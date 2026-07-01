@@ -122,8 +122,12 @@ class WorkerAudioOutput {
     this.queueEnd = nowSeconds();
     this.stopped = false;
     this.draining = false;
-    this.pausePosition = 0;
+    this.clockDetached = false;
+    this.pausePosition = null;
+    this.drainDuration = 0;
+    this.epoch = 0;
     this.sequence = 0;
+    this.reconciliationFloor = 0;
     this.pendingDurations = new Map();
     Object.defineProperty(this, "enqueuedTime", {
       get: () => this.getEnqueuedTime(),
@@ -142,24 +146,32 @@ class WorkerAudioOutput {
       this.stopped = false;
     }
 
-    const leftCopy = left.slice();
-    const rightCopy = right.slice();
-    const duration = leftCopy.length / sampleRate;
+    const duration = left.length / sampleRate;
     const sequence = ++this.sequence;
-    this.pendingDurations.set(sequence, duration);
     this.queueEnd = Math.max(this.queueEnd, now) + duration;
 
-    audioPort?.postMessage(
-      {
-        type: "samples",
-        generation: this.generation,
-        sequence,
-        sampleRate,
-        left: leftCopy,
-        right: rightCopy,
-      },
-      [leftCopy.buffer, rightCopy.buffer],
-    );
+    if (audioPort) {
+      const leftCopy = left.slice();
+      const rightCopy = right.slice();
+      this.pendingDurations.set(sequence, duration);
+      if (this.pendingDurations.size > 256) {
+        const oldestSequence = this.pendingDurations.keys().next().value;
+        this.pendingDurations.delete(oldestSequence);
+        this.reconciliationFloor = oldestSequence;
+      }
+      audioPort.postMessage(
+        {
+          type: "samples",
+          generation: this.generation,
+          epoch: this.epoch,
+          sequence,
+          sampleRate,
+          left: leftCopy,
+          right: rightCopy,
+        },
+        [leftCopy.buffer, rightCopy.buffer],
+      );
+    }
   }
 
   stop() {
@@ -167,6 +179,7 @@ class WorkerAudioOutput {
     this.stopped = true;
     if (pauseReason === null && player?.source?.completed) {
       this.draining = true;
+      this.drainDuration = this.getDrainTime();
       return;
     }
     this.#resetRemote();
@@ -184,14 +197,25 @@ class WorkerAudioOutput {
     this.queueEnd = nowSeconds();
     this.stopped = true;
     this.draining = false;
+    this.clockDetached = false;
+    this.pausePosition = null;
+    this.drainDuration = 0;
+    this.epoch += 1;
+    this.reconciliationFloor = 0;
     this.pendingDurations.clear();
     this.#resetRemote();
+  }
+
+  detachClock() {
+    this.clockDetached = true;
   }
 
   reconcile(message) {
     if (
       this.stopped ||
       message.generation !== this.generation ||
+      message.epoch !== this.epoch ||
+      message.sequence < this.reconciliationFloor ||
       !Number.isFinite(message.bufferedSeconds)
     ) {
       return;
@@ -210,6 +234,10 @@ class WorkerAudioOutput {
   }
 
   getEnqueuedTime() {
+    return this.clockDetached ? 0 : this.getDrainTime();
+  }
+
+  getDrainTime() {
     return Math.max(this.queueEnd - nowSeconds(), 0);
   }
 
@@ -217,6 +245,7 @@ class WorkerAudioOutput {
     audioPort?.postMessage({
       type: "reset",
       generation: this.generation,
+      epoch: this.epoch,
     });
   }
 }
@@ -285,6 +314,18 @@ function duration() {
 function currentTime() {
   if (!player) {
     return 0;
+  }
+  const output = player.audioOut;
+  if (
+    output?.draining &&
+    output.clockDetached &&
+    Number.isFinite(output.pausePosition)
+  ) {
+    const elapsed = output.drainDuration - output.getDrainTime();
+    return Math.min(
+      duration() || Infinity,
+      Math.max(0, output.pausePosition + elapsed),
+    );
   }
   const value = player.currentTime;
   return Number.isFinite(value) ? Math.max(0, value) : 0;
@@ -400,12 +441,15 @@ function createPlayer(message) {
       onPause() {
         const output = player?.audioOut;
         if (output?.draining) {
+          output.detachClock();
           playbackState = "draining";
           sendStatus();
           return;
         }
 
-        const pausePosition = output?.pausePosition;
+        const pausePosition = player?.audio?.canPlay
+          ? output?.pausePosition
+          : null;
         output?.hardReset();
         if (Number.isFinite(pausePosition)) {
           player.seek(pausePosition);
@@ -416,13 +460,20 @@ function createPlayer(message) {
       onEnded() {
         const loadId = activeLoadId;
         const remaining = player?.audioOut?.draining
-          ? player.audioOut.getEnqueuedTime()
+          ? player.audioOut.getDrainTime()
           : 0;
+        const finalPosition = player?.audioOut?.draining
+          ? Math.min(
+              duration() || Infinity,
+              player.audioOut.pausePosition + player.audioOut.drainDuration,
+            )
+          : currentTime();
         const finish = () => {
           if (loadId !== activeLoadId || !player) {
             return;
           }
           player.audioOut?.hardReset();
+          player.seek(finalPosition);
           playbackState = "ended";
           send({ type: "ended", loadId });
           sendStatus();
@@ -466,7 +517,8 @@ function attachAudioPort(port) {
   audioPort.onmessage = ({ data }) => {
     if (
       data?.type !== "telemetry" ||
-      data.generation !== activeLoadId
+      data.generation !== activeLoadId ||
+      data.epoch !== player?.audioOut?.epoch
     ) {
       return;
     }
@@ -481,6 +533,7 @@ function attachAudioPort(port) {
     audioPort.postMessage({
       type: "reset",
       generation: activeLoadId,
+      epoch: player?.audioOut?.epoch ?? 0,
     });
   }
 }
@@ -499,6 +552,8 @@ function seek(time) {
     return;
   }
 
+  clearTimeout(endTimer);
+  endTimer = null;
   const target = Math.max(0, Math.min(Number(time) || 0, duration() || Infinity));
   const shouldResume = !player.paused;
   if (shouldResume) {
@@ -533,6 +588,15 @@ self.onmessage = ({ data: message }) => {
 
       case "audio-port":
         attachAudioPort(message.port);
+        break;
+
+      case "audio-disabled":
+        if (message.loadId === activeLoadId) {
+          audioCapable = false;
+          audioPort?.close();
+          audioPort = null;
+          player?.audioOut?.hardReset();
+        }
         break;
 
       case "load":
@@ -585,12 +649,16 @@ self.onmessage = ({ data: message }) => {
         break;
 
       case "pause":
-        if (
-          player &&
-          message.loadId === activeLoadId &&
-          !player.paused
-        ) {
-          pausePlayer("user");
+        if (player && message.loadId === activeLoadId) {
+          if (playbackState === "draining") {
+            clearTimeout(endTimer);
+            endTimer = null;
+            player.audioOut?.hardReset();
+            playbackState = "paused";
+            sendStatus();
+          } else if (!player.paused) {
+            pausePlayer("user");
+          }
         }
         break;
 

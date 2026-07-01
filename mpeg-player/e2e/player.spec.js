@@ -2,6 +2,9 @@ import { test, expect } from "@playwright/test";
 import { fileURLToPath } from "node:url";
 
 const demoPath = fileURLToPath(new URL("../assets/demo.ts", import.meta.url));
+const videoOnlyPath = fileURLToPath(
+  new URL("../tests/fixtures/video-only.ts", import.meta.url),
+);
 
 async function waitForDemo(page) {
   await page.goto("/#demo");
@@ -69,6 +72,27 @@ test("plays, advances, and pauses without main-thread frame copies", async ({
   expect(Math.abs(stillPausedAt - pausedAt)).toBeLessThan(0.05);
 });
 
+test("drains queued audio before reporting the end", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop-chrome");
+  await waitForDemo(page);
+
+  const duration = await page.evaluate(
+    () => window.mpegCanvasPlayer.controller.duration,
+  );
+  const startedAt = Date.now();
+  await page.locator("#play-button").click();
+  await expect(page.locator("#stage-state")).toContainText("ended", {
+    timeout: 8_000,
+  });
+
+  const elapsed = (Date.now() - startedAt) / 1000;
+  const endedAt = await page.evaluate(
+    () => window.mpegCanvasPlayer.controller.currentTime,
+  );
+  expect(elapsed).toBeGreaterThan(duration - 0.15);
+  expect(endedAt).toBeGreaterThan(duration - 0.1);
+});
+
 test("accepts a local transport stream through the file picker", async ({
   page,
 }) => {
@@ -80,6 +104,34 @@ test("accepts a local transport stream through the file picker", async ({
   });
   await expect(page.locator("#source-name")).toHaveText("demo.ts");
   await expect(page.locator("#source-size")).not.toHaveText("no file");
+});
+
+test("pauses video-only MPEG without rewinding its playhead", async ({ page }) => {
+  await page.goto("/");
+  await page.locator("#file-input").setInputFiles(videoOnlyPath);
+  await expect(page.locator("#stage-state")).toContainText("ready");
+  await expect(page.locator("#audio-value")).toContainText("No MP2");
+
+  await page.locator("#play-button").click();
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => window.mpegCanvasPlayer.controller.currentTime),
+      { timeout: 3_000 },
+    )
+    .toBeGreaterThan(0.15);
+  await page.locator("#play-button").click();
+  await expect(page.locator("#stage-state")).toContainText("paused");
+
+  const pausedAt = await page.evaluate(
+    () => window.mpegCanvasPlayer.controller.currentTime,
+  );
+  expect(pausedAt).toBeGreaterThan(0.1);
+  await page.waitForTimeout(300);
+  const later = await page.evaluate(
+    () => window.mpegCanvasPlayer.controller.currentTime,
+  );
+  expect(Math.abs(later - pausedAt)).toBeLessThan(0.05);
 });
 
 test("keeps player controls usable at the configured viewport", async ({
