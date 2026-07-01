@@ -36,6 +36,7 @@ let mediaWidth = 0;
 let mediaHeight = 0;
 let audioBufferedSeconds = 0;
 let audioUnderruns = 0;
+let audioDroppedFrames = 0;
 let decodedFrames = 0;
 let measuredFrames = 0;
 let measuredDecodeSeconds = 0;
@@ -43,6 +44,8 @@ let lastDecodeMilliseconds = 0;
 let lastMeasurementAt = performance.now();
 let webglSupported = null;
 let reportedAudioSampleRate = 0;
+let pauseReason = null;
+let endTimer = null;
 
 function send(message) {
   self.postMessage(message);
@@ -118,6 +121,10 @@ class WorkerAudioOutput {
     this.volume = 1;
     this.queueEnd = nowSeconds();
     this.stopped = false;
+    this.draining = false;
+    this.pausePosition = 0;
+    this.sequence = 0;
+    this.pendingDurations = new Map();
     Object.defineProperty(this, "enqueuedTime", {
       get: () => this.getEnqueuedTime(),
     });
@@ -131,19 +138,22 @@ class WorkerAudioOutput {
 
     const now = nowSeconds();
     if (this.stopped) {
-      this.queueEnd = now;
+      this.hardReset();
       this.stopped = false;
-      this.#resetRemote();
     }
 
     const leftCopy = left.slice();
     const rightCopy = right.slice();
-    this.queueEnd = Math.max(this.queueEnd, now) + leftCopy.length / sampleRate;
+    const duration = leftCopy.length / sampleRate;
+    const sequence = ++this.sequence;
+    this.pendingDurations.set(sequence, duration);
+    this.queueEnd = Math.max(this.queueEnd, now) + duration;
 
     audioPort?.postMessage(
       {
         type: "samples",
         generation: this.generation,
+        sequence,
         sampleRate,
         left: leftCopy,
         right: rightCopy,
@@ -153,19 +163,50 @@ class WorkerAudioOutput {
   }
 
   stop() {
-    // Keep queueEnd until Player reads currentTime and seeks back to the audible
-    // playhead. The next play() starts a fresh queue immediately.
+    this.pausePosition = currentTime();
     this.stopped = true;
+    if (pauseReason === null && player?.source?.completed) {
+      this.draining = true;
+      return;
+    }
     this.#resetRemote();
   }
 
   destroy() {
-    this.stop();
+    this.hardReset();
   }
 
   resetEnqueuedTime() {
+    this.hardReset();
+  }
+
+  hardReset() {
     this.queueEnd = nowSeconds();
+    this.stopped = true;
+    this.draining = false;
+    this.pendingDurations.clear();
     this.#resetRemote();
+  }
+
+  reconcile(message) {
+    if (
+      this.stopped ||
+      message.generation !== this.generation ||
+      !Number.isFinite(message.bufferedSeconds)
+    ) {
+      return;
+    }
+
+    let pendingSeconds = 0;
+    for (const [sequence, duration] of this.pendingDurations) {
+      if (sequence <= message.sequence) {
+        this.pendingDurations.delete(sequence);
+      } else {
+        pendingSeconds += duration;
+      }
+    }
+    this.queueEnd =
+      nowSeconds() + Math.max(0, message.bufferedSeconds) + pendingSeconds;
   }
 
   getEnqueuedTime() {
@@ -207,6 +248,7 @@ function resetMeasurements() {
   mediaHeight = 0;
   audioBufferedSeconds = 0;
   audioUnderruns = 0;
+  audioDroppedFrames = 0;
   decodedFrames = 0;
   measuredFrames = 0;
   measuredDecodeSeconds = 0;
@@ -292,6 +334,7 @@ function sendStatus() {
     decodeMilliseconds: lastDecodeMilliseconds,
     audioBufferedSeconds,
     audioUnderruns,
+    audioDroppedFrames,
   });
 }
 
@@ -299,10 +342,15 @@ function destroyPlayer() {
   if (!player) {
     return;
   }
+  clearTimeout(endTimer);
+  endTimer = null;
   try {
+    pauseReason = "destroy";
     player.destroy();
   } catch (error) {
     console.warn("Failed to destroy MPEG player", error);
+  } finally {
+    pauseReason = null;
   }
   player = null;
 }
@@ -330,6 +378,9 @@ function createPlayer(message) {
         decodedFrames += 1;
         measuredFrames += 1;
         measuredDecodeSeconds += elapsedSeconds;
+        if (playbackState === "buffering" && !player.paused) {
+          playbackState = "playing";
+        }
       },
       onAudioDecode(decoder) {
         if (
@@ -341,19 +392,49 @@ function createPlayer(message) {
         }
       },
       onPlay() {
+        clearTimeout(endTimer);
+        endTimer = null;
         playbackState = "playing";
         sendStatus();
       },
       onPause() {
-        if (playbackState !== "ended") {
-          playbackState = "paused";
+        const output = player?.audioOut;
+        if (output?.draining) {
+          playbackState = "draining";
+          sendStatus();
+          return;
         }
+
+        const pausePosition = output?.pausePosition;
+        output?.hardReset();
+        if (Number.isFinite(pausePosition)) {
+          player.seek(pausePosition);
+        }
+        playbackState = "paused";
         sendStatus();
       },
       onEnded() {
-        playbackState = "ended";
-        send({ type: "ended", loadId: activeLoadId });
-        sendStatus();
+        const loadId = activeLoadId;
+        const remaining = player?.audioOut?.draining
+          ? player.audioOut.getEnqueuedTime()
+          : 0;
+        const finish = () => {
+          if (loadId !== activeLoadId || !player) {
+            return;
+          }
+          player.audioOut?.hardReset();
+          playbackState = "ended";
+          send({ type: "ended", loadId });
+          sendStatus();
+        };
+
+        if (remaining > 0.01) {
+          playbackState = "draining";
+          sendStatus();
+          endTimer = setTimeout(finish, (remaining + 0.02) * 1000);
+        } else {
+          finish();
+        }
       },
       onStalled() {
         if (!player?.source?.completed) {
@@ -383,11 +464,16 @@ function attachAudioPort(port) {
   audioPort?.close();
   audioPort = port;
   audioPort.onmessage = ({ data }) => {
-    if (data?.type !== "telemetry") {
+    if (
+      data?.type !== "telemetry" ||
+      data.generation !== activeLoadId
+    ) {
       return;
     }
     audioBufferedSeconds = Number(data.bufferedSeconds) || 0;
     audioUnderruns = Number(data.underruns) || 0;
+    audioDroppedFrames = Number(data.droppedFrames) || 0;
+    player?.audioOut?.reconcile(data);
   };
   audioPort.start();
 
@@ -399,6 +485,15 @@ function attachAudioPort(port) {
   }
 }
 
+function pausePlayer(reason) {
+  pauseReason = reason;
+  try {
+    player.pause();
+  } finally {
+    pauseReason = null;
+  }
+}
+
 function seek(time) {
   if (!player) {
     return;
@@ -407,9 +502,9 @@ function seek(time) {
   const target = Math.max(0, Math.min(Number(time) || 0, duration() || Infinity));
   const shouldResume = !player.paused;
   if (shouldResume) {
-    player.pause();
+    pausePlayer("seek");
   } else {
-    player.audioOut?.stop();
+    player.audioOut?.hardReset();
   }
   player.seek(target);
   if (player.video?.canPlay) {
@@ -468,7 +563,7 @@ self.onmessage = ({ data: message }) => {
             );
             break;
           }
-          playbackState = "ready";
+          playbackState = player.paused ? "ready" : "playing";
           sendMetadata();
           send({ type: "ready", loadId: activeLoadId });
           sendStatus();
@@ -476,8 +571,11 @@ self.onmessage = ({ data: message }) => {
         break;
 
       case "play":
-        if (player) {
-          if (playbackState === "ended") {
+        if (player && message.loadId === activeLoadId) {
+          if (playbackState === "ended" || playbackState === "draining") {
+            clearTimeout(endTimer);
+            endTimer = null;
+            player.audioOut?.hardReset();
             seek(0);
           }
           playbackState = "playing";
@@ -487,13 +585,19 @@ self.onmessage = ({ data: message }) => {
         break;
 
       case "pause":
-        if (player && !player.paused) {
-          player.pause();
+        if (
+          player &&
+          message.loadId === activeLoadId &&
+          !player.paused
+        ) {
+          pausePlayer("user");
         }
         break;
 
       case "seek":
-        seek(message.time);
+        if (message.loadId === activeLoadId) {
+          seek(message.time);
+        }
         break;
 
       case "cancel":

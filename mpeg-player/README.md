@@ -42,13 +42,16 @@ ffmpeg -i input.mp4 \
 ```
 
 Remote URLs must allow browser CORS requests. Local files are read in chunks
-and never uploaded.
+and never uploaded. Sources are capped at 256 MiB because static JSMpeg
+playback retains compressed data for seeking; the limit prevents an endless
+response or oversized file from exhausting browser memory.
 
 ## Run and test
 
 ```bash
 npm install
 npm run vendor
+npm run demo # optional: regenerate assets/demo.ts (requires FFmpeg)
 npm start
 
 npm test
@@ -62,10 +65,11 @@ into `vendor/`, keeping the deployed GitHub Pages app independent of a CDN.
 
 - JSMpeg's MPEG-1 and MP2 WebAssembly decoders
 - Dedicated decoder/demux worker
-- Transferable input chunks with backpressure
+- One in-flight transferable input chunk at a time
 - `OffscreenCanvas` rendering in the worker
 - WebGL shader-based YCbCr-to-RGB conversion, with Canvas 2D fallback
 - A direct `MessageChannel` from the decoder worker to an `AudioWorklet`
+- A bounded, allocation-light PCM queue with sample-rate conversion
 - No per-frame RGBA copies through the UI thread
 - Playback pauses when the tab is hidden
 

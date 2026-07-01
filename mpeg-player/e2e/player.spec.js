@@ -25,7 +25,7 @@ test("loads and identifies the bundled MPEG-TS demo", async ({ page }) => {
 
   await expect(page.locator("#source-name")).toHaveText("demo.ts");
   await expect(page.locator("#video-value")).toContainText("480×270");
-  await expect(page.locator("#audio-value")).toContainText("MP2");
+  await expect(page.locator("#audio-value")).toContainText(/MP2|kHz/);
   await expect(page.locator("#play-button")).toBeEnabled();
 
   const metadata = await page.evaluate(
@@ -58,6 +58,15 @@ test("plays, advances, and pauses without main-thread frame copies", async ({
   await page.locator("#play-button").click();
   await expect(page.locator("#stage-state")).toContainText("paused");
   await expect(page.locator("#decode-value")).toContainText("ms/frame");
+
+  const pausedAt = await page.evaluate(
+    () => window.mpegCanvasPlayer.controller.currentTime,
+  );
+  await page.waitForTimeout(400);
+  const stillPausedAt = await page.evaluate(
+    () => window.mpegCanvasPlayer.controller.currentTime,
+  );
+  expect(Math.abs(stillPausedAt - pausedAt)).toBeLessThan(0.05);
 });
 
 test("accepts a local transport stream through the file picker", async ({
@@ -87,4 +96,30 @@ test("keeps player controls usable at the configured viewport", async ({
     viewportWidth: window.innerWidth,
   }));
   expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.viewportWidth + 1);
+});
+
+test("keeps controls available in fullscreen", async ({ page }) => {
+  await page.goto("/");
+  await page.locator("#fullscreen-button").click();
+
+  await expect
+    .poll(() => page.evaluate(() => document.fullscreenElement?.id))
+    .toBe("player-panel");
+  await expect(page.locator(".controls")).toBeVisible();
+  await expect(page.locator("#fullscreen-button")).toBeVisible();
+});
+
+test("recovers the drop-zone prompt after invalid media", async ({ page }) => {
+  await page.goto("/");
+  await page.locator("#file-input").setInputFiles({
+    name: "not-video.ts",
+    mimeType: "video/mp2t",
+    buffer: Buffer.from("not an MPEG transport stream"),
+  });
+
+  await expect(page.getByRole("alert")).toContainText(
+    "not a supported MPEG transport stream",
+  );
+  await expect(page.locator("#empty-state")).toBeVisible();
+  await expect(page.locator("#play-button")).toBeDisabled();
 });

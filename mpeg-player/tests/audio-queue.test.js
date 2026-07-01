@@ -98,3 +98,18 @@ test("rejects malformed PCM chunks", () => {
   );
   assert.equal(queue.availableFrames, 0);
 });
+
+test("bounds queued PCM and drops the oldest frames", () => {
+  const queue = new PlanarAudioQueue(10, 0.3);
+  queue.push(
+    10,
+    new Float32Array([0, 1, 2, 3, 4]),
+    new Float32Array([10, 11, 12, 13, 14]),
+  );
+
+  assert.equal(queue.availableFrames, 3);
+  assert.equal(queue.droppedFrames, 2);
+  const output = pull(queue, 2);
+  assert.deepEqual(output.left, [2, 3]);
+  assert.deepEqual(output.right, [12, 13]);
+});

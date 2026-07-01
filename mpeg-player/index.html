@@ -34,7 +34,7 @@
     </header>
 
     <main class="app-shell">
-      <section class="player-panel" aria-label="MPEG player">
+      <section id="player-panel" class="player-panel" aria-label="MPEG player">
         <div id="drop-zone" class="stage" style="--video-aspect: 16 / 9">
           <canvas
             id="video-canvas"
@@ -153,7 +153,7 @@
             id="file-input"
             class="visually-hidden"
             type="file"
-            accept=".ts,.mpeg,.mpg,video/mp2t,video/mpeg"
+            accept=".ts,video/mp2t"
           />
           <div class="source-actions">
             <label class="button primary" for="file-input">Open local file</label>

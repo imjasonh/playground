@@ -6,6 +6,7 @@ class MpegPcmOutput extends AudioWorkletProcessor {
     this.queue = new PlanarAudioQueue(sampleRate);
     this.streamPort = null;
     this.generation = 0;
+    this.latestSequence = 0;
     this.renderQuanta = 0;
 
     this.port.onmessage = ({ data }) => {
@@ -25,6 +26,7 @@ class MpegPcmOutput extends AudioWorkletProcessor {
   #receive(message) {
     if (message?.type === "reset") {
       this.generation = message.generation;
+      this.latestSequence = 0;
       this.queue.reset();
       return;
     }
@@ -33,6 +35,7 @@ class MpegPcmOutput extends AudioWorkletProcessor {
       message?.type === "samples" &&
       message.generation === this.generation
     ) {
+      this.latestSequence = message.sequence;
       this.queue.push(message.sampleRate, message.left, message.right);
     }
   }
@@ -51,8 +54,11 @@ class MpegPcmOutput extends AudioWorkletProcessor {
     if (this.streamPort && this.renderQuanta % 32 === 0) {
       this.streamPort.postMessage({
         type: "telemetry",
+        generation: this.generation,
+        sequence: this.latestSequence,
         bufferedSeconds: this.queue.bufferedSeconds,
         underruns: this.queue.underruns,
+        droppedFrames: this.queue.droppedFrames,
       });
     }
     return true;
