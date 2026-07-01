@@ -75,6 +75,39 @@ test('calibration zeroes out the current surface', async ({ page }) => {
   await expect(page.locator('#level-badge')).toHaveText(/off by/i);
 });
 
+test('compensates for landscape screen rotation', async ({ page }) => {
+  // Make screen.orientation.angle scriptable so we can simulate turning the phone.
+  await page.addInitScript(() => {
+    let angle = 0;
+    try {
+      Object.defineProperty(window.screen.orientation, 'angle', {
+        configurable: true,
+        get: () => angle,
+      });
+    } catch {
+      // If the property can't be shadowed the test will surface it below.
+    }
+    window.__setScreenAngle = (value) => {
+      angle = value;
+    };
+  });
+  await page.reload();
+  await expect(page.locator('#bullseye')).toBeVisible();
+
+  // Portrait: raising the natural right edge floats the bubble right.
+  await page.evaluate(() => window.__setScreenAngle(0));
+  await setOrientation(page, { beta: 0, gamma: -20 });
+  await expect.poll(() => cssVar(page, '#bubble', '--bx')).toBeGreaterThan(0.3);
+
+  // Turn the phone to landscape: the same physical tilt should now float the
+  // bubble UP the screen, not sideways.
+  await page.evaluate(() => window.__setScreenAngle(90));
+  await expect.poll(() => cssVar(page, '#bubble', '--by')).toBeLessThan(-0.3);
+  await expect
+    .poll(async () => Math.abs(await cssVar(page, '#bubble', '--bx')))
+    .toBeLessThan(0.15);
+});
+
 test('control buttons meet the minimum touch-target height', async ({ page }) => {
   const box = await page.locator('#calibrate-btn').boundingBox();
   expect(box).not.toBeNull();

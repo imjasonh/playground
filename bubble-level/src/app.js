@@ -248,6 +248,20 @@ function vibrate(pattern) {
   }
 }
 
+// Degrees the screen is rotated from its natural orientation (0/90/180/270).
+// DeviceOrientationEvent reports beta/gamma in the device's natural frame, so we
+// use this to rotate the bubble back into the frame the user is looking at.
+function getScreenAngle() {
+  const orientation = window.screen && window.screen.orientation;
+  if (orientation && typeof orientation.angle === "number") {
+    return orientation.angle;
+  }
+  if (typeof window.orientation === "number") {
+    return window.orientation;
+  }
+  return 0;
+}
+
 function render() {
   requestAnimationFrame(render);
   if (!hasReading) {
@@ -258,9 +272,10 @@ function render() {
   smoothBeta += (adjusted.beta - smoothBeta) * SMOOTHING;
   smoothGamma += (adjusted.gamma - smoothGamma) * SMOOTHING;
 
-  const offset = bubbleOffset(smoothBeta, smoothGamma, SENSITIVITY);
-  const axes = axisOffsets(smoothBeta, smoothGamma, SENSITIVITY);
-  const components = tiltComponents(smoothBeta, smoothGamma);
+  const screenAngle = getScreenAngle();
+  const offset = bubbleOffset(smoothBeta, smoothGamma, SENSITIVITY, screenAngle);
+  const axes = axisOffsets(smoothBeta, smoothGamma, SENSITIVITY, screenAngle);
+  const components = tiltComponents(smoothBeta, smoothGamma, screenAngle);
   const level = isLevel(smoothBeta, smoothGamma, TOLERANCE);
 
   bubble.style.setProperty("--bx", offset.x.toFixed(4));
