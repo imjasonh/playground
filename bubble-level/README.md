@@ -13,10 +13,11 @@ tilt. Those angles are turned into a bubble position by projecting gravity onto
 the plane of the screen and floating the bubble toward the raised side. All of
 that math lives in `src/level.js` as pure, framework-free functions.
 
-- **Bullseye vial** — the round center vial reads tilt on both axes at once
-  (best for a phone lying flat).
-- **Tube vials** — the horizontal tube reads left/right tilt, the vertical tube
-  reads front/back tilt.
+- **Three levels, one tap away** — a tab bar switches between the **Surface**
+  bullseye (both axes at once, best for a phone lying flat), a **Horizontal** tube
+  (left/right), and a **Vertical** tube (front/back). The chosen tab is remembered
+  in `localStorage`, and the tabs work in any orientation so you never lose an
+  axis when the phone is turned.
 - **Calibrate** — zero the level against whatever surface the phone is resting on
   so a slightly-off table reads as flat. The offset is saved in `localStorage`;
   **Reset calibration** clears it.
@@ -24,8 +25,8 @@ that math lives in `src/level.js` as pure, framework-free functions.
   natural (portrait) frame, so the bubble vector is rotated by
   `screen.orientation.angle` to stay correct when the phone is turned to
   landscape (rather than relying on orientation lock, which needs fullscreen and
-  isn't supported on iOS Safari). In short landscape the layout also switches to
-  a side-by-side view so the dial stays visible.
+  isn't supported on iOS Safari). In short landscape the layout switches to a
+  side-by-side view (readout beside the active level) so it stays visible.
 
 ## Play
 

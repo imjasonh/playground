@@ -54,6 +54,17 @@ test('arrow keys nudge the bubble and 0 re-centers it', async ({ page }) => {
     .toBeLessThan(0.1);
 });
 
+test('arrow keys navigate the level tabs', async ({ page }) => {
+  await page.locator('#tab-surface').focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.locator('#tab-horizontal')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('#tube-h')).toBeVisible();
+
+  await page.keyboard.press('ArrowRight');
+  await expect(page.locator('#tab-vertical')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('#tube-v')).toBeVisible();
+});
+
 test('calibrating in preview re-zeroes the current tilt', async ({ page }) => {
   await dragBullseye(page, 0.85, 0.5);
   await expect.poll(() => cssVar(page, '#bubble', '--bx')).toBeGreaterThan(0.3);

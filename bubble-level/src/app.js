@@ -214,6 +214,13 @@ function attachPreviewControls() {
     if (!previewMode) {
       return;
     }
+    // Let the tablist handle arrow keys when a tab is focused.
+    if (
+      document.activeElement &&
+      document.activeElement.getAttribute("role") === "tab"
+    ) {
+      return;
+    }
     const step = 2;
     let handled = true;
     switch (event.key) {
@@ -333,8 +340,67 @@ enableBtn.addEventListener("click", () => {
   }
 });
 
+// --- Level tabs (Surface / Horizontal / Vertical) ---
+const TAB_STORAGE_KEY = "bubble-level-tab";
+const tabButtons = Array.from(document.querySelectorAll('[role="tab"]'));
+
+function selectTab(tab, { focus = false, persist = true } = {}) {
+  for (const button of tabButtons) {
+    const selected = button === tab;
+    button.setAttribute("aria-selected", String(selected));
+    button.tabIndex = selected ? 0 : -1;
+    const panel = document.getElementById(button.getAttribute("aria-controls"));
+    if (panel) {
+      panel.hidden = !selected;
+    }
+  }
+  if (focus) {
+    tab.focus();
+  }
+  if (persist) {
+    try {
+      localStorage.setItem(TAB_STORAGE_KEY, tab.id);
+    } catch {
+      // Ignore storage errors.
+    }
+  }
+}
+
+tabButtons.forEach((tab, index) => {
+  tab.addEventListener("click", () => selectTab(tab));
+  tab.addEventListener("keydown", (event) => {
+    let next = null;
+    if (event.key === "ArrowRight") {
+      next = tabButtons[(index + 1) % tabButtons.length];
+    } else if (event.key === "ArrowLeft") {
+      next = tabButtons[(index - 1 + tabButtons.length) % tabButtons.length];
+    } else if (event.key === "Home") {
+      next = tabButtons[0];
+    } else if (event.key === "End") {
+      next = tabButtons[tabButtons.length - 1];
+    }
+    if (next) {
+      event.preventDefault();
+      selectTab(next, { focus: true });
+    }
+  });
+});
+
+function restoreTab() {
+  try {
+    const savedId = localStorage.getItem(TAB_STORAGE_KEY);
+    const saved = savedId && tabButtons.find((tab) => tab.id === savedId);
+    if (saved) {
+      selectTab(saved, { persist: false });
+    }
+  } catch {
+    // Ignore storage errors.
+  }
+}
+
 function init() {
   resetBtn.disabled = !isCalibrated();
+  restoreTab();
 
   if (typeof DeviceOrientationEvent === "undefined") {
     enablePreview("Motion sensors aren't supported here — drag the dial to preview.");

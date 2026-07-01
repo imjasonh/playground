@@ -108,6 +108,32 @@ test('compensates for landscape screen rotation', async ({ page }) => {
     .toBeLessThan(0.15);
 });
 
+test('tabs switch between the surface, horizontal, and vertical levels', async ({ page }) => {
+  await expect(page.locator('#tab-surface')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('#panel-surface')).toBeVisible();
+  await expect(page.locator('#panel-horizontal')).toBeHidden();
+
+  await page.locator('#tab-horizontal').tap();
+  await expect(page.locator('#tab-horizontal')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('#tube-h')).toBeVisible();
+  await expect(page.locator('#panel-surface')).toBeHidden();
+
+  await page.locator('#tab-vertical').tap();
+  await expect(page.locator('#tab-vertical')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('#tube-v')).toBeVisible();
+  await expect(page.locator('#panel-horizontal')).toBeHidden();
+});
+
+test('remembers the selected level across reloads', async ({ page }) => {
+  await page.locator('#tab-vertical').tap();
+  await expect(page.locator('#tab-vertical')).toHaveAttribute('aria-selected', 'true');
+
+  await page.reload();
+  await expect(page.locator('#tab-vertical')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('#tube-v')).toBeVisible();
+  await expect(page.locator('#panel-surface')).toBeHidden();
+});
+
 test('control buttons meet the minimum touch-target height', async ({ page }) => {
   const box = await page.locator('#calibrate-btn').boundingBox();
   expect(box).not.toBeNull();

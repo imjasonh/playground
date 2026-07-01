@@ -167,17 +167,75 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* Vials */
-.vials {
+/* Levels (tabbed: Surface / Horizontal / Vertical) */
+.levels {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 1rem;
 }
 
-.bullseye-wrap {
+.tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.tab {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.9rem;
+  min-height: 40px;
+  padding: 0.45rem 0.85rem;
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.tab:hover[aria-selected="false"] {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.tab[aria-selected="true"] {
+  background: var(--accent);
+  color: #061224;
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--accent-hover);
+  outline-offset: 2px;
+}
+
+.tab-icon {
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.panels {
   display: flex;
   justify-content: center;
+  align-items: center;
+  width: 100%;
+  min-height: var(--vial-size);
+}
+
+.panel {
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
 
 .bullseye {
@@ -272,14 +330,6 @@ body {
 }
 
 /* Tube vials */
-.tubes {
-  display: flex;
-  gap: 1.1rem;
-  align-items: center;
-  justify-content: center;
-  flex-wrap: wrap;
-}
-
 .tube {
   position: relative;
   background:
@@ -295,18 +345,19 @@ body {
 }
 
 .tube-h {
-  --th-travel: 88px;
-  width: 220px;
-  max-width: 74vw;
-  height: 44px;
-  border-radius: 22px;
+  --tube-len: min(440px, 90vw);
+  --th-travel: calc(var(--tube-len) / 2 - 34px);
+  width: var(--tube-len);
+  height: 60px;
+  border-radius: 30px;
 }
 
 .tube-v {
-  --tv-travel: 88px;
-  width: 44px;
-  height: 220px;
-  border-radius: 22px;
+  --tube-len: min(300px, 55vh);
+  --tv-travel: calc(var(--tube-len) / 2 - 34px);
+  width: 60px;
+  height: var(--tube-len);
+  border-radius: 30px;
 }
 
 .tube-target {
@@ -321,13 +372,13 @@ body {
 }
 
 .tube-h .tube-target {
-  width: 52px;
+  width: 64px;
   height: 100%;
 }
 
 .tube-v .tube-target {
   width: 100%;
-  height: 52px;
+  height: 64px;
 }
 
 .tube-bubble {
@@ -336,8 +387,8 @@ body {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 38px;
-  height: 38px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   background: radial-gradient(
     circle at 36% 32%,
@@ -461,8 +512,7 @@ body.is-level .level-badge {
 }
 
 /* Short landscape (a phone turned sideways): put the readout on the left and the
-   dial on the right so the level stays visible without scrolling. The bullseye
-   already reports both axes, so the redundant tube vials are hidden here. */
+   active level on the right so it stays visible without scrolling. */
 @media (orientation: landscape) and (max-height: 640px) {
   .app {
     display: grid;
@@ -485,14 +535,10 @@ body.is-level .level-badge {
     width: 100%;
   }
 
-  .vials {
+  .levels {
     grid-column: 2;
     grid-row: 1 / span 12;
     align-self: center;
-  }
-
-  .tubes {
-    display: none;
   }
 
   .subtitle {
