@@ -2,20 +2,19 @@
 
 Status: proposed design
 
-Scope: single GCE host, one long-lived instance per app, many concurrent users
+Scope: single GCE host, one scale-to-zero instance per app, many concurrent users
 
 Future scope: multiple hosts, per-app replicas, and user sharding
 
 This document designs a platform for hosting interactive terminal applications
 at names such as `abc.imjasonh.dev`. Users connect with an SSH client,
 authenticate at the platform edge, and join a shared app instance. An app may
-give a user interactive control or a read-only view. Its durable state is local
-to that app instance.
+give a user interactive control or a read-only view. App state is ephemeral by
+default; an app may opt into limited durable local state.
 
 “Serverless” here means the app author supplies an artifact and policy while the
-platform owns placement, startup, routing, isolation, updates, health, and
-accounting. It does not mean there are no servers, nor that apps are initially
-scaled to zero.
+platform owns placement, startup, scale-to-zero, routing, isolation, updates,
+health, and accounting. It does not mean there are no servers.
 
 ## Contents
 
@@ -39,7 +38,7 @@ scaled to zero.
 18. [Future scaling](#18-future-scaling)
 19. [Alternatives considered](#19-alternatives-considered)
 20. [Delivery phases](#20-delivery-phases)
-21. [Open decisions](#21-open-decisions)
+21. [Confirmed product decisions](#21-confirmed-product-decisions)
 
 ---
 
@@ -56,13 +55,13 @@ scaled to zero.
 - Isolate untrusted or buggy app code more strongly than a normal container.
 - Measure sessions and resource consumption without recording terminal contents
   by default.
+- Stop an app after ten minutes with no active users and start it on demand.
 - Make one GCE VM operationally sound before introducing distributed systems.
-- Preserve an upgrade path to multiple hosts and sharded app instances.
+- Preserve an upgrade path to clean multi-host failover, multiple regions, and
+  sharded app instances.
 
 ### Non-goals for the first version
 
-- Scaling to zero. Shared state and startup latency make an always-on instance
-  the simpler initial contract.
 - Horizontal replicas or transparent live migration.
 - Arbitrary public TCP/UDP services. SSH is the only public app protocol.
 - A general-purpose VM product or shell account. The app gets one declared
@@ -76,32 +75,36 @@ scaled to zero.
 
 ## 2. Decisions at a glance
 
-These are recommended defaults. The small set that requires an explicit product
-choice before launch is listed in [Open decisions](#21-open-decisions).
+These choices are confirmed for the initial product. Implementation details can
+evolve behind the contracts in this document.
 
 | Area | Decision |
 |------|----------|
-| Public endpoint | One static GCE IP; wildcard `*.imjasonh.dev` DNS points to it |
-| App selection | An explicit route command containing the SSH client's original hostname |
+| Publishers | Owner only initially, then trusted publishers; design the boundary for untrusted publishers later |
+| Visibility | Public apps for authenticated users initially; private app policy later |
+| Public endpoint | One dual-stack GCE VM; use its external IPv6 `/96` for zero-config per-app addresses and one shared IPv4 fallback |
+| App selection | Destination IPv6 when available; app-as-username or an optional route command on shared IPv4 |
 | SSH edge | A platform-owned SSH gateway terminating SSH and authorizing sessions |
-| User auth | SSH public keys first; optional short-lived OpenSSH user certificates later |
+| User auth | Automatic stable profile from an SSH public key; OIDC device flow and account linking for users without a key |
 | Guest protocol | Gateway-to-guest private `AF_VSOCK` stream with a small framed session protocol |
+| App SDK | Go/Charm SDK; the platform terminates SSH and apps implement the platform session contract |
 | Packaging | OCI image indexes in Artifact Registry, pinned by digest |
 | Guest image | Platform-owned minimal kernel + root filesystem; app image unpacked into a read-only root |
 | Supply chain | Keyless Sigstore signature and provenance policy before deployment |
 | Isolation | One Firecracker microVM per app instance, never one shared guest for multiple apps |
 | Process model | One long-lived app supervisor/process per app instance; sessions attach over local IPC |
-| Persistent state | Dedicated ext4 data volume mounted at `/data`; never stored in the app image |
-| Updates | Pull by digest, verify, stop old app, snapshot data, boot new app, health-check, then commit |
+| State | Ephemeral by default; opt-in dedicated ext4 volume with daily snapshots for limited durable state |
+| Scale-to-zero | Stop after ten minutes with no active users; serialize cold starts on the next connection |
+| Updates | Blue/green drain for ephemeral apps; single-writer drain/snapshot/recreate for persistent apps |
 | Availability | Brief maintenance window for stateful updates in v1; no pretend zero-downtime guarantee |
 | Ingress | SSH only; no guest listener exposed on the host network |
-| Egress | Deny by default, allow DNS/HTTPS or explicit destinations per app |
+| Egress | Denied by default; explicit policy required to enable any destination |
 | Secrets | Inject at boot into guest memory; do not bake into image or persistent disk |
 | Logs | Structured platform/app logs; no session payloads by default |
 | Metrics | OpenTelemetry/Prometheus-compatible metrics for gateway, manager, host, and guests |
-| Usage | Append-only session and periodic resource events, aggregated separately |
+| Usage | Durable pseudonymous session and resource events suitable for later usage billing |
 | Control plane | SQLite on the single host with WAL and backups; API boundaries designed for replacement |
-| Restart policy | Restore desired app release and attach its persistent disk after host restart |
+| Restart policy | Start apps on demand; attach the persistent volume only for apps that opted into one |
 
 ## 3. System model
 
@@ -110,23 +113,25 @@ The platform has three important nouns:
 - **App**: named configuration and authorization policy, for example `abc`.
 - **Release**: immutable app artifact and configuration schema, identified by an
   OCI digest.
-- **Instance**: a running Firecracker microVM for an app, with one persistent
-  data volume and one or more user sessions.
+- **Instance**: the stable identity of an app runtime. Its Firecracker microVM
+  may be stopped, and it has a persistent data volume only when the app opts in.
 
-In v1 there is exactly one desired instance for each enabled app:
+In v1 there is exactly one logical instance for each enabled app:
 
 ```text
 app "abc"
   └── instance "abc/default"
         ├── release sha256:123...
-        ├── data volume abc-default
+        ├── optional data volume abc-default
         ├── interactive session (Alice)
         ├── observer session (Bob)
         └── observer session (Chen)
 ```
 
 This distinction matters even on one machine. Releases are replaceable;
-instances own identity and data; sessions are ephemeral.
+instances own identity and optional data; sessions and default app state are
+ephemeral. A stopped logical instance consumes storage metadata but no guest CPU
+or memory.
 
 The app itself is not an SSH server. It is a terminal application implementing
 the platform's local session protocol. Keeping SSH out of guests gives the
@@ -151,7 +156,7 @@ flowchart TB
             AG["Guest agent<br/>session multiplexer"]
             APP["App process"]
             ROOT["Read-only release root"]
-            DATA[("/data volume")]
+            DATA[("optional /data volume")]
             AG <--> APP
             APP --> DATA
             APP --> ROOT
@@ -211,7 +216,7 @@ endpoints over a narrow authenticated local API.
 
 PID 1 inside every microVM. It:
 
-- mounts the persistent data volume;
+- mounts an ephemeral data filesystem or the app's optional persistent volume;
 - sets resource and process limits inside the guest;
 - obtains boot configuration and secrets over vsock;
 - launches the app as an unprivileged UID;
@@ -252,8 +257,9 @@ spec:
     protocol: sshapps-session-v1
     interactivePolicy: single-writer
     observers: true
-    idleTimeout: 30m
     maxDuration: 8h
+  runtime:
+    scaleDownAfter: 10m
   resources:
     vcpu: 1
     memory: 256Mi
@@ -263,8 +269,8 @@ spec:
   network:
     egress: deny
   state:
+    mode: ephemeral
     mount: /data
-    backupPolicy: daily
   health:
     startupTimeout: 15s
     interval: 10s
@@ -280,13 +286,26 @@ spec:
 The contract is:
 
 - `/app`: read-only app content from the release;
-- `/data`: writable, durable app-instance state;
+- `/data`: writable app-instance state, ephemeral by default and durable only
+  when `state.mode` is `persistent`;
 - `/tmp`: writable tmpfs with a size limit;
 - `/run/sshapps`: guest-agent sockets and ephemeral metadata;
 - all other filesystem paths read-only or ephemeral.
 
 Apps must not depend on writes outside `/data`. The platform may replace every
-other byte on restart or update.
+other byte on restart or update. With the default `ephemeral` mode, it may also
+replace `/data` whenever the microVM stops. A persistent app instead declares:
+
+```yaml
+state:
+  mode: persistent
+  mount: /data
+  size: 2Gi
+  backupPolicy: daily
+```
+
+Persistent state is intentionally an opt-in capability rather than an accidental
+promise made to every app.
 
 ### Process behavior
 
@@ -301,6 +320,24 @@ The process receives:
 
 It writes structured JSON logs to stdout/stderr. It must not use stdout as the
 user's terminal stream; terminal sessions travel through the session socket.
+
+### Go/Charm SDK
+
+The first supported authoring experience is a Go SDK designed to compose with
+Charm's Bubble Tea and Lip Gloss libraries. The platform, not the app, runs the
+SSH server. The SDK should expose:
+
+- app startup and shutdown hooks;
+- a stable shared model/store for the singleton app instance;
+- authenticated session identity and participant/observer mode;
+- per-session terminal size, renderer, input stream, and cancellation;
+- broadcast/state-change primitives that trigger redraws for all sessions;
+- controller handoff for single-writer apps;
+- health, quiesce, and optional state migration hooks.
+
+Apps built around Wish can reuse their Bubble Tea models and views, but do not
+embed a Wish SSH listener. This keeps authentication, routing, watch-only
+enforcement, resource accounting, and terminal policy at one platform edge.
 
 ### Health
 
@@ -390,22 +427,38 @@ After DNS resolution, the server normally sees only a TCP connection. Therefore
 wildcard DNS alone cannot tell the gateway whether the user typed
 `abc.imjasonh.dev` or `xyz.imjasonh.dev`.
 
-The client must explicitly send the destination. OpenSSH's `RemoteCommand`
-supports `%n`, which expands to the original hostname as entered on the command
-line (before `HostName` rewriting). The recommended one-time client
-configuration is:
+GCE provides a useful low-friction path for IPv6 clients: a dual-stack VM
+network interface [receives an external `/96` IPv6
+range](https://cloud.google.com/compute/docs/ip-addresses/configure-ipv6-address),
+and addresses within the range can be configured on the host OS and routed to
+that VM. Allocate a stable `/128` from that range for every app, publish it as
+the app's `AAAA` record, and map the accepted socket's local destination address
+back to the app. Then the desired command works without client configuration:
+
+```console
+$ ssh abc.imjasonh.dev
+```
+
+The same trick is not available behind one shared IPv4 address. All app `A`
+records lead to an indistinguishable listener. The zero-configuration IPv4
+fallback puts the app in the SSH username:
+
+```console
+$ ssh abc@ssh.imjasonh.dev
+```
+
+User identity comes from authentication, not this protocol username, so the
+gateway is free to interpret `abc` as the route.
+
+Users who want the prettier app hostname over IPv4 can install this one-time
+OpenSSH configuration. `RemoteCommand` supports `%n`, which expands to the
+original hostname as entered on the command line before `HostName` rewriting:
 
 ```sshconfig
 Host *.imjasonh.dev
   HostName ssh.imjasonh.dev
   RemoteCommand route %n
   RequestTTY force
-```
-
-Then:
-
-```console
-$ ssh abc.imjasonh.dev
 ```
 
 The client opens a session channel and requests execution of
@@ -417,25 +470,24 @@ This configuration reserves `RemoteCommand`, so a user cannot also pass an
 arbitrary command on the same invocation. That is consistent with the v1 app
 contract, which exposes an interactive app rather than remote command
 execution. A platform CLI can construct the equivalent SSH request for clients
-that cannot use this configuration. The portable fallback is:
-
-```console
-$ ssh -l alice+abc ssh.imjasonh.dev
-```
-
-The username fallback is less clean and should not be the canonical identity
-format. A generated per-app `SetEnv` entry is also possible, but
+that cannot use this configuration. A generated per-app `SetEnv` entry is also
+possible, but
 `SetEnv SSHAPPS_HOST=%h` is **not**: OpenSSH does not expand hostname tokens in
 `SetEnv`.
 
 Another viable protocol extension is an SSH certificate critical option or a
-custom pre-session request, but stock clients do not make it as ergonomic. This
-routing configuration must be tested against every supported client before
-advertising plain `ssh abc.imjasonh.dev`.
+custom pre-session request, but stock clients do not make it as ergonomic.
+Routing precedence is destination IPv6, exact route request, then protocol
+username. Reject conflicting values. Test IPv6 reachability, IPv4 fallback,
+Happy Eyeballs behavior, and OpenSSH configuration on every supported client.
 
 ### DNS and host keys
 
-- `ssh.imjasonh.dev` and `*.imjasonh.dev` point to one reserved external IP.
+- `ssh.imjasonh.dev` points to the VM's shared IPv4 and primary IPv6 addresses.
+- Each app `A` record points to the shared IPv4 address; each app `AAAA` record
+  points to its allocated `/128` within the VM's static external IPv6 `/96`.
+- Keep the `/96` static. Moving an app to another host later requires an edge
+  routing layer or DNS update; do not make the address its durable instance ID.
 - The gateway presents the same platform host key for every app hostname.
 - Publish SSHFP records if DNSSEC is available, but do not rely on SSHFP alone.
 - Store host private keys in a tightly permissioned persistent host path or
@@ -444,17 +496,32 @@ advertising plain `ssh abc.imjasonh.dev`.
 
 ### Authentication
 
-Start with registered Ed25519 public keys:
+Every session requires authentication; there is no anonymous participant or
+observer mode.
 
-1. user signs up through a small HTTPS admin/control surface;
-2. user proves control of the key;
-3. gateway maps the presented key fingerprint to an immutable user ID;
-4. app authorization is evaluated for that user ID;
-5. only normalized identity claims are sent to the guest.
+The lowest-friction path accepts a valid SSH public-key proof and automatically
+creates a stable, randomly named profile keyed by its fingerprint. This proves
+continuity of a pseudonymous identity, not a person's real-world identity.
+There is no registration form or allowlist for public apps:
 
-Later, issue short-lived OpenSSH user certificates after OIDC login. Certificates
-reduce key lookup latency and support expiration and roles, but require careful
-CA protection and revocation semantics.
+1. client proves possession of a supported modern SSH key (prefer Ed25519 and
+   hardware-backed security-key algorithms);
+2. gateway looks up the fingerprint or creates an immutable user ID and random
+   display profile;
+3. app authorization is evaluated for that user ID;
+4. only normalized identity claims are sent to the guest.
+
+For clients without a key, offer SSH keyboard-interactive authentication with
+an OIDC device flow: display a short URL and code, wait for browser completion,
+then create a profile and authorize the SSH connection. The browser flow can
+also link additional SSH keys to an existing profile. Never accept a reusable
+platform password.
+
+Later, the same OIDC identity can issue short-lived OpenSSH user certificates.
+Certificates reduce key lookup latency and support expiration and roles, but
+require careful CA protection and revocation semantics. Account linking must
+require proof of both the existing account and new key; fingerprint collision
+or unverified email matching must never merge profiles.
 
 Never pass `SSH_AUTH_SOCK`, public-key blobs, OIDC tokens, source credentials, or
 agent forwarding into a guest. Apps receive:
@@ -474,7 +541,9 @@ agent forwarding into a guest. Apps receive:
 
 The gateway makes the authoritative decision:
 
-- app is public, allowlisted, or group-restricted;
+- apps are public to every authenticated profile initially;
+- private, allowlisted, and group-restricted policy can be added later without
+  changing the guest identity contract;
 - user may observe, interact, administer, or not connect;
 - per-user and per-app concurrency limits are available;
 - suspended users and disabled apps are rejected before an instance starts.
@@ -488,7 +557,7 @@ Allow only:
 - one `session` channel;
 - PTY allocation with sanitized terminal type and bounded dimensions;
 - terminal resize events;
-- the route environment variable;
+- the platform route command when needed;
 - a small signal allowlist;
 - optional platform-defined commands such as `status`.
 
@@ -621,12 +690,24 @@ whether out-of-memory kills restart the instance or mark it unhealthy.
 
 ## 10. State and storage
 
+### Ephemeral default
+
+Most apps get an instance-scoped ephemeral `/data`. It survives app-process
+restarts inside one microVM but is discarded when that microVM scales to zero,
+is replaced, or the host fails. This is the inexpensive default and must be
+visible in the app manifest, SDK, and operator UI.
+
+An app opts into persistence only when its product semantics require it. The
+platform can limit which publishers receive persistent volumes and enforce
+small volume-count and byte quotas.
+
 ### Volume model
 
-Each instance owns a sparse ext4 file or logical volume identified independently
-of any release. The manager attaches it as a virtio block device; the guest
-agent mounts it at `/data` with `nodev,nosuid,noexec` by default. Apps that need
-executable state must request an exception.
+Each persistent instance owns a sparse ext4 file or logical volume on a zonal
+GCE Persistent Disk, identified independently of any release. The manager
+attaches it as a virtio block device; the guest agent mounts it at `/data` with
+`nodev,nosuid,noexec` by default. Apps that need executable state must request
+an exception.
 
 Use project quotas or fixed-size block devices so an app cannot fill the host
 filesystem. Monitor bytes and inodes. Leave deliberate host headroom for image
@@ -634,19 +715,21 @@ pulls, snapshots, logs, SQLite, and crash dumps.
 
 ### Consistency
 
-Local state means:
+Persistent local state means:
 
 - one attached writer at a time;
 - no transparent relocation while running;
 - update and backup operations coordinate with the app;
-- loss of the host disk without backup can lose app state.
+- loss of the VM does not lose the zonal Persistent Disk, but zone loss,
+  corruption, or operator error can require snapshot recovery.
 
 Document that apps must flush durable state before reporting quiesced. `fsync`
 semantics ultimately rely on the GCE persistent disk and host filesystem.
 
 ### Backup
 
-Use application-consistent backups where possible:
+Take daily snapshots initially, using application-consistent backups where
+possible:
 
 1. mark the app not ready and stop new sessions;
 2. ask it to quiesce and flush;
@@ -656,20 +739,63 @@ Use application-consistent backups where possible:
 
 Crash-consistent snapshots are acceptable only for apps whose storage format
 explicitly tolerates them. Encrypt snapshots, set retention, test restoration,
-and record both the app release and platform runtime needed for recovery.
+and record both the app release and platform runtime needed for recovery. Daily
+snapshots imply up to 24 hours of recovery-point loss after corruption or
+deletion; stronger policies can be added per app later.
 
 ### Data lifecycle
 
-Disabling an app stops compute but retains data. Deleting an app should enter a
-recoverable tombstone period before removing its volume and backups. Require a
-separate explicit purge action, audit it, and make it idempotent.
+Disabling an app stops compute and retains only opted-in persistent data.
+Deleting an app should enter a recoverable tombstone period before removing its
+volume and backups. Require a separate explicit purge action, audit it, and
+make it idempotent. Ephemeral state is deleted immediately when its microVM
+stops and is not recoverable.
+
+### Scale-to-zero
+
+When the active session count reaches zero, start a ten-minute idle timer. A new
+authenticated session cancels the timer. If it expires:
+
+1. mark the instance `stopping` so only one lifecycle operation can win;
+2. ask the app to flush and stop within a short grace period;
+3. stop and destroy the microVM;
+4. discard ephemeral `/data`, or detach and retain persistent `/data`;
+5. retain the release image cache and logical instance metadata.
+
+The next authorized connection atomically changes the instance to `starting`.
+Concurrent arrivals join one start operation rather than launching duplicate
+microVMs. Keep the SSH connection alive with platform-generated startup status,
+enforce a startup deadline, and attach all waiting sessions after readiness.
+Measure cold-start latency from authenticated admission to first app byte.
 
 ## 11. Deployment and updates
 
 ### Desired-state deployment
 
 Deploying means changing an app's desired release digest. The manager reconciles
-to it; an API request does not manually mutate a Firecracker process.
+to it; an API request does not manually mutate a Firecracker process. The
+strategy depends on whether the app uses ephemeral or persistent state.
+
+### Ephemeral update semantics
+
+Ephemeral apps use a blue/green drain:
+
+1. pull, verify, boot, and health-check the new release while the old one runs;
+2. atomically route new sessions to the new instance;
+3. cordon the old instance but leave existing sessions attached;
+4. notify those sessions and allow up to the default five-minute drain deadline;
+5. disconnect any sessions still present at the deadline and destroy the old
+   instance.
+
+If the new release fails readiness, keep routing to the old instance and mark
+the deployment failed. During the bounded drain, old users share the old
+in-memory state while new users share the new state. This is an explicit,
+temporary exception to the normal one-instance rule and is acceptable only
+because the state is declared ephemeral. Apps may configure a shorter deadline.
+
+### Persistent update semantics
+
+The following sequence applies to apps with a single-writer persistent volume:
 
 ```mermaid
 sequenceDiagram
@@ -697,15 +823,14 @@ sequenceDiagram
     end
 ```
 
-### Stateful update semantics
-
 True zero-downtime updates are not generally possible for a singleton process
 with a single-writer local volume. V1 should promise a controlled maintenance
 window:
 
 1. pull and prepare the new release while the old one runs;
 2. stop admitting sessions;
-3. notify connected users and wait up to the drain deadline;
+3. notify connected users and wait up to the default five-minute drain
+   deadline;
 4. ask the app to quiesce;
 5. snapshot `/data`;
 6. stop the old microVM;
@@ -880,6 +1005,12 @@ then export asynchronously. Consumers deduplicate by `event_id` and compute
 deltas from cumulative counters. Synchronize the host clock and use monotonic
 time for durations.
 
+Collect these counters from the beginning for capacity analysis and future
+usage-based billing, but do not call them billable until correction events,
+late-event windows, pricing versions, user-visible statements, dispute handling,
+and retention are specified. Usage identity is pseudonymous; terminal content
+is never a usage dimension.
+
 ### Retention
 
 Define retention before collecting data. A reasonable starting point:
@@ -913,7 +1044,7 @@ Initial SLIs:
 - gateway successful handshake rate;
 - authorized session attach success rate;
 - p50/p95 time to first app byte;
-- healthy-instance availability;
+- availability of instances with current session demand;
 - successful backup freshness;
 - deployment success/rollback rate.
 
@@ -991,12 +1122,15 @@ On boot:
 
 1. verify required filesystems, free space, KVM, network policy, and database;
 2. start telemetry and the instance manager;
-3. reconcile enabled apps with bounded parallelism;
+3. reconcile app metadata, volumes, and interrupted operations without starting
+   idle apps;
 4. expose the SSH gateway only when authentication and routing state is ready;
-5. report apps as starting until each passes readiness.
+5. start an app only when a connection demands it or an explicit operation
+   requires a health check.
 
 Unexpected host restart causes all sessions to disconnect. Clients reconnect;
-instances restart against their existing data volumes.
+instances remain stopped until demanded and persistent apps reattach their
+existing data volumes.
 
 ### Failure behavior
 
@@ -1043,12 +1177,12 @@ Firecracker isolates workloads; it does not provide host availability.
 
 | Entity | Important fields |
 |--------|------------------|
-| User | immutable ID, display name, status |
+| User | immutable ID, random/default display name, linked OIDC subjects, status |
 | SSH key | fingerprint, user ID, added/revoked timestamps |
-| App | name, visibility, desired release, enabled, generation |
+| App | name, owner ID, visibility, desired release, enabled, generation |
 | Membership | app/group/user, role |
 | Release | digest, manifest, signature/provenance result, created time |
-| Instance | app, stable ID, runtime digest, data volume, observed generation, state |
+| Instance | app, stable ID, runtime digest, optional volume, idle deadline, observed generation, state |
 | Deployment | from/to release, actor, phases, result, timestamps |
 | Session | app/instance/user, mode, start/end, reason, counters |
 | Volume | instance, path/device ID, size, schema version, lifecycle |
@@ -1060,21 +1194,29 @@ Use opaque immutable IDs internally and a separately validated app slug for DNS.
 App slugs should be lowercase DNS labels, reserved against control names such as
 `ssh`, `admin`, and `api`, and never recycled immediately after deletion.
 
+The platform owner is the only publisher initially. The authorization model
+still records app ownership from the start. Trusted publishers later receive
+role-scoped control over only their apps, releases, secret references, backups,
+and usage. Platform administration, host policy, signing policy, and publisher
+admission remain separate privileges. Before opening publishing to anyone,
+enforce quotas, moderation/abuse response, malicious-image policy, and
+publisher-level billing limits in addition to the Firecracker boundary.
+
 ### State machine
 
 Instance states:
 
 ```text
-disabled
-   |
-   v
-preparing -> starting -> ready -> draining -> stopped
-    |           |          |         |
-    +-----------+----------+---------+--> failed
+disabled -> stopped
+stopped  -> preparing -> starting -> ready
+ready    -> draining  -> stopped
+preparing | starting | ready | draining -> failed
+failed   -> stopped (operator action or bounded automatic recovery)
 ```
 
 Every transition records reason, generation, and timestamp. Reconciliation must
-be idempotent after process or host restart.
+be idempotent after process or host restart. Demand moves `stopped` to
+`preparing`; ten idle minutes move `ready` through `draining` back to `stopped`.
 
 ### API shape
 
@@ -1093,7 +1235,8 @@ future host agents and a central scheduler possible.
 
 ### Administrative surface
 
-Start with an authenticated CLI calling a private API. Required operations:
+Start with an owner-authenticated CLI calling a private API; later expose the
+same operations through app-owner-scoped authorization. Required operations:
 
 - create/disable/inspect app;
 - register release and deploy digest;
@@ -1166,14 +1309,25 @@ The public SSH gateway can remain separate from workers. A connection routes:
 app name -> shard/instance -> host -> guest
 ```
 
+For clean failover, the scheduler must use expiring ownership leases plus
+storage fencing; a replacement host must not attach or start an instance until
+the old owner can no longer write. Sessions still disconnect and reconnect
+unless a separate resumable-session protocol is added.
+
+### Multiple regions
+
+Keep user identity, app/release metadata, DNS/routing, audit, and usage in a
+region-independent control plane. Place ephemeral apps near users freely.
+Persistent apps need an explicit home region until their state is replicated or
+migrated; a zonal disk cannot provide cross-region failover. Multi-region
+support therefore requires either app-level replication, a replicated storage
+service, or a controlled backup restore with a stated RPO—not merely another
+Firecracker host.
+
 ### Autoscaling
 
-There are two distinct features:
-
-1. **Scale to zero**: stop an idle instance but retain its data volume. First
-   connection starts it, with explicit cold-start UX and serialized startup.
-2. **Scale out**: run multiple instances. This changes app semantics because
-   local state is no longer shared.
+V1 already scales singleton instances to zero. Future scale-out runs multiple
+instances and changes app semantics because local state is no longer shared.
 
 Do not call multiple replicas transparent. An app must declare a sharding key
 and data model:
@@ -1257,8 +1411,10 @@ feature.
 ### Phase 0: contract prototype
 
 - Build a purpose-specific SSH gateway.
-- Prove hostname routing with supported stock clients.
+- Prove app-specific GCE `/96` IPv6 routing, shared-IPv4 username routing, and
+  optional OpenSSH `RemoteCommand` routing with supported stock clients.
 - Define and fuzz the session framing protocol.
+- Build the first Go/Charm SDK.
 - Run one example collaborative app behind a Unix socket without Firecracker.
 - Validate interactive, observer, resize, disconnect, and slow-client behavior.
 
@@ -1270,7 +1426,7 @@ VM runtime.
 - Build signed OCI artifact ingestion and deterministic root image preparation.
 - Boot platform kernel/guest agent/app in Firecracker with vsock.
 - Apply jailer, cgroup, filesystem, and no-network policies.
-- Attach a quota-bounded `/data` volume.
+- Attach quota-bounded ephemeral `/data` and an optional persistent volume.
 - Implement startup/readiness/liveness and restart behavior.
 
 Exit criterion: a malicious test app cannot access host/other-app data or exceed
@@ -1280,6 +1436,8 @@ declared limits in the tested threat model.
 
 - Add SQLite desired state and reconciliation.
 - Add users, keys, app authorization, app slug routing, and admission limits.
+- Add automatic key profiles, OIDC device authentication/account linking, and
+  the ten-minute scale-to-zero lifecycle.
 - Add deployments, drain, snapshot, rollback, and garbage collection.
 - Add structured logs, metrics, audit, usage outbox, and alerts.
 - Add backup and tested restore.
@@ -1304,50 +1462,39 @@ known single-host limitations.
 
 - Extract host agent and scheduler.
 - Add leases/fencing and host-to-gateway transport.
-- Add scale-to-zero, rooms/shards, and topology-aware storage.
+- Add regions, rooms/shards, and topology-aware replicated storage.
 - Introduce replicas only for apps with explicit distributed-state semantics.
 
-## 21. Open decisions
+## 21. Confirmed product decisions
 
-Most implementation choices can evolve behind the contracts above. These
-product decisions should be answered before launch:
+The design is based on these product decisions:
 
-1. **Who may publish apps?** First-party-only allows a smaller threat model.
-   Third-party images require treating manifests, images, logs, and egress as
-   actively hostile and justify the full Firecracker boundary.
-2. **What client setup is acceptable?** Because SSH has no hostname/SNI field,
-   true `ssh abc.imjasonh.dev` requires the wildcard `RemoteCommand route %n`
-   configuration above or a helper CLI. This should be decided and
-   usability-tested first.
-3. **What does “auth” mean initially?** Registered SSH keys are the recommended
-   MVP. If browser/OIDC onboarding is required on day one, define account
-   linking, recovery, key revocation, and certificate issuance.
-4. **Who can interact versus watch?** Choose defaults for public visibility,
-   anonymous access, and whether an app or platform administrator assigns the
-   active writer.
-5. **Are apps allowed outbound internet access?** Deny-by-default is safest.
-   If common apps need HTTPS, decide whether broad HTTPS or a policy-aware proxy
-   is acceptable.
-6. **What durability is promised?** Select backup frequency, retention, RPO,
-   RTO, and whether app-consistent quiesce is mandatory.
-7. **What maintenance interruption is acceptable?** Stateful singleton updates
-   necessarily disconnect or drain sessions in v1. Define maximum drain and
-   maintenance windows.
-8. **Will usage become billing?** If yes, event immutability, clock behavior,
-   corrections, aggregation, user-visible statements, and retention need a
-   stricter specification before collection is called billable.
-9. **Are terminal recordings ever required?** The recommendation is no. A yes
-   requires a separate privacy and security design before implementation.
-10. **What host-level availability is required?** A single VM is a clear SPOF.
-    If the initial service needs zonal failure tolerance, the architecture must
-    start with external control state and restorable/reattachable app volumes.
+1. The platform owner is the only initial publisher, followed by trusted users;
+   the isolation and ownership model must allow untrusted public publishing
+   later.
+2. Connection UX should minimize setup. Use zero-configuration per-app IPv6
+   addresses, an app-as-username IPv4 fallback, and optional client
+   configuration for the prettiest hostname form.
+3. Every user authenticates. An SSH key creates a stable automatic profile;
+   OIDC device authentication supports unfamiliar clients and account linking.
+4. Apps are public to authenticated users initially. Private-app policy can be
+   added later.
+5. App network egress is denied by default.
+6. State is ephemeral by default. Limited opt-in persistence uses a zonal
+   Persistent Disk and daily snapshots initially.
+7. An app with no active users scales to zero after ten minutes.
+8. Ephemeral updates route new sessions to a healthy new release while old
+   sessions drain for up to five minutes. Persistent updates drain before
+   transferring the single-writer volume.
+9. Usage events retain pseudonymous session/resource counters for capacity
+   analysis and possible later billing, never terminal contents.
+10. Terminal sessions are not recorded by default. Any future recording feature
+    requires a separate explicit privacy and security design.
+11. V1 availability is best effort on one host. Contracts must preserve a path
+    to fenced multi-host failover and multi-region placement.
+12. The first app platform targets Go and Charm. Apps are built for the platform
+    SDK rather than treated as arbitrary existing SSH servers.
 
-Recommended MVP answers are: first-party apps; OpenSSH clients configured with
-`RemoteCommand route %n`; registered SSH keys; allowlisted users with
-app-declared collaboration policy; no egress unless requested; daily
-app-consistent backups; announced draining updates; usage for capacity analysis
-rather than billing; no terminal recording; and explicitly best-effort
-single-host availability.
-
-Those defaults produce a coherent first version without closing off later
-multi-host scheduling, scale-to-zero, or app-defined sharding.
+These choices leave implementation parameters such as exact quotas, retention
+periods, and cold-start SLOs to be measured during the prototype without
+reopening the product architecture.
