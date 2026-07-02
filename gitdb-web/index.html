@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>gitdb in the browser</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="./" aria-label="gitdb browser demo home">
+        <span class="brand-mark" aria-hidden="true">&gt;_</span>
+        <span>gitdb / wasm</span>
+      </a>
+      <div class="runtime-status" role="status" aria-live="polite">
+        <span id="status-dot" class="status-dot" aria-hidden="true"></span>
+        <span id="runtime-status">Loading Go and SQLite…</span>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <p class="eyebrow">Live browser database</p>
+        <h1>Query any Git repository with SQLite—entirely in your browser.</h1>
+        <p class="lede">
+          This page runs the real <code>gitdb</code> virtual-table implementations
+          through <code>go-sqlite-fdw</code> and the ncruces SQLite backend. Clone
+          a public repository, then query its actual commits, refs, files, changes,
+          tags, and blame data.
+        </p>
+        <div class="pipeline" aria-label="Runtime architecture">
+          <span>SQL</span><i aria-hidden="true">→</i>
+          <span>SQLite</span><i aria-hidden="true">→</i>
+          <span>sqlite-fdw</span><i aria-hidden="true">→</i>
+          <span>go-git</span>
+        </div>
+      </section>
+
+      <section class="repository-loader" aria-labelledby="repository-heading">
+        <div class="loader-heading">
+          <div>
+            <p class="section-label">Step 1</p>
+            <h2 id="repository-heading">Load a repository</h2>
+          </div>
+          <p>
+            Repositories are cloned into this tab's memory. Nothing is written
+            back to the remote.
+          </p>
+        </div>
+        <form id="repository-form">
+          <label class="repo-url-field">
+            <span>HTTPS URL or owner/repo</span>
+            <input
+              id="repository-url"
+              type="text"
+              value="imjasonh/playground"
+              autocomplete="off"
+              spellcheck="false"
+              required
+            >
+          </label>
+          <div class="clone-options">
+            <label>
+              <span>History depth <small>(0 = full)</small></span>
+              <input id="clone-depth" type="number" min="0" max="10000" value="100">
+            </label>
+            <label class="checkbox-field">
+              <input id="single-branch" type="checkbox" checked>
+              <span>Default branch only</span>
+            </label>
+          </div>
+          <details>
+            <summary>Network options</summary>
+            <label>
+              <span>CORS proxy <small>(clear for a CORS-enabled host)</small></span>
+              <input
+                id="cors-proxy"
+                type="url"
+                value="https://cors.isomorphic-git.org"
+                autocomplete="off"
+                spellcheck="false"
+              >
+            </label>
+            <p>
+              The public proxy can observe repository URLs and transferred public
+              data. Use your own proxy for sensitive repositories.
+            </p>
+          </details>
+          <div class="loader-actions">
+            <button id="load-repository" type="submit" disabled>
+              Clone &amp; open
+            </button>
+            <p id="clone-status" role="status" aria-live="polite">
+              Waiting for the WebAssembly runtime…
+            </p>
+          </div>
+        </form>
+      </section>
+
+      <section class="workbench" aria-labelledby="query-heading">
+        <div class="workbench-header">
+          <div>
+            <p id="repository-label" class="section-label">No repository loaded</p>
+            <h2 id="query-heading">SQL workbench</h2>
+          </div>
+          <label class="example-picker">
+            <span>Example</span>
+            <select id="example-select" disabled>
+              <option value="commits">Recent commits</option>
+              <option value="authors">Author activity</option>
+              <option value="files">Files at HEAD</option>
+              <option value="changes">Commit changes</option>
+              <option value="blame">Line blame</option>
+              <option value="planner">Query plan</option>
+              <option value="network">Fetch inside xFilter</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="editor-shell">
+          <div class="editor-bar">
+            <span>query.sql</span>
+            <span class="shortcut">Ctrl/⌘ + Enter</span>
+          </div>
+          <label class="sr-only" for="sql-input">SQL query</label>
+          <textarea id="sql-input" spellcheck="false" disabled>SELECT
+  substr(hash, 1, 10) AS commit_id,
+  author_name,
+  summary,
+  author_when
+FROM commits
+ORDER BY author_when DESC;</textarea>
+        </div>
+
+        <div class="query-actions">
+          <button id="run-query" type="button" disabled>
+            <span aria-hidden="true">▶</span>
+            Run query
+          </button>
+          <p id="query-status" role="status" aria-live="polite">
+            Initializing the WebAssembly worker…
+          </p>
+        </div>
+
+        <div id="error-panel" class="error-panel" role="alert" hidden></div>
+        <div id="result-panel" class="result-panel" hidden>
+          <div class="result-meta">
+            <span id="result-summary"></span>
+            <span id="result-timing"></span>
+          </div>
+          <div class="table-scroll">
+            <table id="result-table"></table>
+          </div>
+        </div>
+      </section>
+
+      <section class="notes" aria-labelledby="notes-heading">
+        <div>
+          <p class="section-label">What this proves</p>
+          <h2 id="notes-heading">One FDW implementation, two SQLite runtimes.</h2>
+        </div>
+        <ul>
+          <li>The native CLI continues to use <code>modernc.org/sqlite</code>.</li>
+          <li>This worker uses <code>go-sqlite3</code> and the ncruces FDW adapter.</li>
+          <li>Both execute the same <code>Source</code>, <code>Cursor</code>, and planner code.</li>
+          <li>Go-git clones the selected remote into memory using smart HTTP.</li>
+          <li>Depth and branch controls bound browser memory use for large repositories.</li>
+        </ul>
+      </section>
+    </main>
+
+    <footer>
+      Live repository data · SQL results are limited to 500 rows
+    </footer>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

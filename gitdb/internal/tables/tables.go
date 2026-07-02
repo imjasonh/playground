@@ -18,11 +18,9 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	fdw "github.com/values-conflict/go-sqlite-fdw"
-	"github.com/values-conflict/go-sqlite-fdw/modernc"
 
 	"github.com/imjasonh/playground/gitdb/internal/gitrepo"
 )
@@ -47,26 +45,6 @@ type def struct {
 var registry []def
 
 func add(d def) { registry = append(registry, d) }
-
-var (
-	regOnce sync.Once
-	regErr  error
-)
-
-// Register registers every git virtual table module on the modernc driver. It
-// is idempotent: module registration is process-global, so repeated calls after
-// the first are no-ops.
-func Register(db *sql.DB) error {
-	regOnce.Do(func() {
-		for _, d := range registry {
-			if err := modernc.Register(db, d.module, d.factory, d.factory); err != nil {
-				regErr = fmt.Errorf("register %s: %w", d.module, err)
-				return
-			}
-		}
-	})
-	return regErr
-}
 
 // CreateAll creates the friendly virtual tables (commits, refs, tags, files,
 // commit_files, blame) bound to spec on db.

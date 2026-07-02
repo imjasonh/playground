@@ -9,6 +9,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/storage/memory"
 )
 
 func TestClassifySpec(t *testing.T) {
@@ -67,6 +68,33 @@ func TestResolveEmpty(t *testing.T) {
 	}
 	if _, err := m.Resolve("   "); err == nil {
 		t.Errorf("expected error resolving empty spec")
+	}
+}
+
+func TestBind(t *testing.T) {
+	m, err := NewManager(Options{CacheDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo, err := git.Init(memory.NewStorage(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Bind("demo", repo); err != nil {
+		t.Fatal(err)
+	}
+	got, err := m.Resolve(" demo ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Git() != repo {
+		t.Fatal("Resolve did not return the bound repository")
+	}
+	if err := m.Bind("", repo); err == nil {
+		t.Fatal("expected empty spec error")
+	}
+	if err := m.Bind("nil", nil); err == nil {
+		t.Fatal("expected nil repository error")
 	}
 }
 

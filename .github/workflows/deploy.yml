@@ -18,6 +18,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-go@v6
+        with:
+          go-version: 'stable'
+          check-latest: true
+          cache: false
+
       - name: Build site
         run: |
           mkdir -p dist
@@ -29,6 +35,12 @@ jobs:
               cp -r "$d" "dist/$d"
             fi
           done
+
+          bash .github/scripts/build-gitdb-web.sh "dist/gitdb-web/generated"
+          printf '%s\n' '!generated/' '!generated/**' > "dist/gitdb-web/.gitignore"
+          test -s "dist/gitdb-web/generated/wasm_exec.js"
+          test -s "dist/gitdb-web/generated/gitdb.wasm.gz"
+          test "$(wc -c < "dist/gitdb-web/generated/gitdb.wasm")" -lt 1024
 
           # Generate a root index listing all apps
           items=$(
@@ -61,3 +73,10 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./dist
           keep_files: true   # preserves preview/ directory from PR deployments
+
+      - name: Verify deployed WASM assets
+        run: |
+          git fetch origin gh-pages
+          git cat-file -e "origin/gh-pages:gitdb-web/generated/wasm_exec.js"
+          git cat-file -e "origin/gh-pages:gitdb-web/generated/gitdb.wasm.gz"
+          test "$(git cat-file -s "origin/gh-pages:gitdb-web/generated/gitdb.wasm")" -lt 1024

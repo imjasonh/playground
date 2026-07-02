@@ -23,6 +23,8 @@ experiments don't bit-rot.
   into local storage and browse its files, branches, and commit history.
 - **[`cold-climb/`](cold-climb/)** — a touch-first, two-handle arcade game:
   balance a ball up the wall while avoiding unlit pockets.
+- **[`gitdb-web/`](gitdb-web/)** — clone a public Git repository and query
+  `gitdb`'s SQLite virtual tables in a Go/WASM browser worker.
 - **[`hello/`](hello/)** — a minimal static demo.
 - **[`kanoodle/`](kanoodle/)** — the Kanoodle puzzle game (5×11 board, 12 pieces).
 - **[`web-push-demo/`](web-push-demo/)** — a browser front-end for the
