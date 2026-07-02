@@ -2,7 +2,8 @@
 
 Status: proposed design
 
-Scope: single GCE host, one scale-to-zero instance per app, many concurrent users
+Scope: one active GCE worker plus rollout candidate, one scale-to-zero instance
+per app, many concurrent users
 
 Future scope: multiple hosts, per-app replicas, and user sharding
 
@@ -58,7 +59,8 @@ health, and accounting. It does not mean there are no servers.
 - Measure sessions and resource consumption without recording terminal contents
   by default.
 - Stop an app after ten minutes with no active users and start it on demand.
-- Make one GCE VM operationally sound before introducing distributed systems.
+- Run one active GCE worker in steady state, with a temporary candidate worker
+  during infrastructure rollouts.
 - Preserve an upgrade path to clean multi-host failover, multiple regions, and
   sharded app instances.
 
@@ -87,7 +89,7 @@ evolve behind the contracts in this document.
 |------|----------|
 | Publishers | Explicit owner/trusted/untrusted tiers with capability ceilings; only owner is enabled initially |
 | Visibility | Public apps for authenticated users initially; private app policy later |
-| Public endpoint | One dual-stack GCE VM and one shared `apps.imjasonh.dev` address |
+| Public endpoint | Regional external passthrough Network Load Balancer with static IPv4/IPv6 frontends for `apps.imjasonh.dev` |
 | App selection | SSH protocol username is the app slug; unknown/reserved usernames enter the picker |
 | SSH edge | A platform-owned SSH gateway terminating SSH and authorizing sessions |
 | User auth | OIDC establishes identity on first use; a proven SSH key is linked for silent subsequent login |
@@ -101,14 +103,15 @@ evolve behind the contracts in this document.
 | State | Ephemeral by default; opt-in dedicated ext4 volume with daily snapshots for limited durable state |
 | Scale-to-zero | Stop after ten minutes with no active users; serialize cold starts on the next connection |
 | Updates | Blue/green drain for ephemeral apps; single-writer drain/snapshot/recreate for persistent apps |
-| Availability | Brief maintenance window for stateful updates in v1; no pretend zero-downtime guarantee |
+| Availability | Routine worker rollouts preserve established SSH connections by draining the old slot; unexpected worker loss remains best effort |
 | Ingress | SSH only; no guest listener exposed on the host network |
 | Egress | Denied by default; explicit policy required to enable any destination |
 | Secrets | Inject at boot into guest memory; do not bake into image or persistent disk |
 | Logs | Structured platform/app logs; no session payloads by default |
 | Metrics | OpenTelemetry/Prometheus-compatible metrics for gateway, manager, host, and guests |
 | Usage | Durable pseudonymous session and resource events suitable for later usage billing |
-| Control plane | SQLite on the single host with WAL and backups; API boundaries designed for replacement |
+| Control plane | Firestore Native mode so active and candidate workers share desired state, identity, leases, and rollout state |
+| Infrastructure | Terraform-managed GCP resources; immutable worker images; application-aware blue/green rollout |
 | Restart policy | Start apps on demand; attach the persistent volume only for apps that opted into one |
 
 ## 3. System model
@@ -149,62 +152,100 @@ authorized-key files, sshd configuration, and network listeners per app.
 flowchart TB
     U["User SSH client"]
     B["User browser"]
-    DNS["DNS<br/>apps.imjasonh.dev"]
+    DNS["Cloud DNS<br/>apps + auth"]
+    NLB["Regional external passthrough NLB<br/>static IPv4 + IPv6 frontends · TCP 22"]
+    HTTPS["External HTTPS load balancer<br/>auth.imjasonh.dev"]
 
-    subgraph GCE["GCE VM"]
-        GW["SSH gateway<br/>auth, route, PTY, policy"]
-        ID["Identity bridge<br/>OIDC callback + key linking"]
-        MGR["Instance manager<br/>reconcile, deploy, update"]
-        DB[("SQLite<br/>desired state + event outbox")]
-        OBS["Telemetry agent<br/>logs, metrics, usage"]
-        REG["Artifact cache"]
-
-        subgraph FC["Firecracker microVM: abc/default"]
-            AG["Guest agent<br/>session multiplexer"]
-            APP["App process"]
-            ROOT["Read-only release root"]
-            DATA[("optional /data volume")]
-            AG <--> APP
-            APP --> DATA
-            APP --> ROOT
+    subgraph GCP["GCP region (one project/environment)"]
+        subgraph BLUE["Worker slot blue — active or draining"]
+            GW1["SSH gateway"]
+            MGR1["Instance manager"]
+            FC1["Firecracker microVMs"]
+            GW1 <-->|"local vsock"| FC1
+            MGR1 -->|"Firecracker API"| FC1
         end
 
-        GW <-->|"vsock session streams"| AG
-        MGR -->|"Firecracker API"| FC
-        MGR <--> DB
-        MGR --> REG
-        GW --> DB
-        GW <--> ID
-        ID <--> DB
-        GW --> OBS
-        MGR --> OBS
-        AG --> OBS
+        subgraph GREEN["Worker slot green — candidate during rollout"]
+            GW2["SSH gateway"]
+            MGR2["Instance manager"]
+            FC2["Firecracker microVMs"]
+            GW2 <-->|"local vsock"| FC2
+            MGR2 -->|"Firecracker API"| FC2
+        end
+
+        ID["Cloud Run identity bridge<br/>OIDC callback + key linking"]
+        FS[("Firestore<br/>identity · desired state · leases · rollout")]
+        AR["Artifact Registry<br/>signed app releases"]
+        IMG["Immutable GCE image<br/>gateway · manager · Firecracker runtime"]
+        SM["Secret Manager"]
+        PD[("Per-app zonal Persistent Disks<br/>exclusive attachment")]
+        EVENTS["Pub/Sub<br/>audit + usage events"]
+        MON["Cloud Logging + Monitoring"]
+
+        GW1 <--> FS
+        GW2 <--> FS
+        MGR1 <--> FS
+        MGR2 <--> FS
+        ID <--> FS
+        MGR1 --> AR
+        MGR2 --> AR
+        MGR1 --> SM
+        MGR2 --> SM
+        FC1 -.->|"exclusive while blue owns lease"| PD
+        FC2 -.->|"exclusive after fenced handoff"| PD
+        GW1 --> EVENTS
+        GW2 --> EVENTS
+        MGR1 --> EVENTS
+        MGR2 --> EVENTS
+        BLUE --> MON
+        GREEN --> MON
+        ID --> MON
     end
 
-    AR["Artifact Registry<br/>signed OCI releases"]
-    MON["Cloud Monitoring / Logging<br/>or Prometheus-compatible backend"]
-    OIDC["Managed OIDC provider<br/>login, MFA, recovery"]
+    OIDC["Managed OIDC provider<br/>passwords · MFA · recovery"]
+    CI["Cloud Build / GitHub Actions<br/>build signed immutable artifacts"]
+    TF["Terraform<br/>GCS remote state"]
 
-    U -->|"TCP 22"| GW
+    U -->|"SSH TCP 22"| NLB
+    NLB -->|"new + pinned existing flows"| GW1
+    NLB -.->|"candidate/new flows during rollout"| GW2
     U -.-> DNS
-    B -->|"HTTPS"| ID
+    DNS -.-> NLB
+    DNS -.-> HTTPS
+    B -->|"HTTPS"| HTTPS
+    HTTPS --> ID
     ID <-->|"Authorization Code + PKCE"| OIDC
-    REG <-->|"pull by digest"| AR
-    OBS --> MON
+    CI --> AR
+    CI --> IMG
+    IMG -.-> BLUE
+    IMG -.-> GREEN
+    TF -.-> NLB
+    TF -.-> BLUE
+    TF -.-> GREEN
+    TF -.-> HTTPS
+    TF -.-> FS
 ```
+
+In steady state only one worker slot runs. During an infrastructure rollout,
+Terraform adds the other slot without changing the public IP. The load balancer
+pins established TCP flows to their original worker; application-level
+readiness sends new flows to the candidate while the old worker remains alive
+until its session count reaches zero.
 
 ### Components
 
 #### SSH gateway
 
-The only internet-facing process. It:
+Each worker runs a gateway behind the passthrough Network Load Balancer. The
+load balancer is the only public SSH endpoint; the gateway remains the protocol
+and policy boundary. It:
 
 1. completes the SSH handshake using platform host keys;
 2. authenticates a platform user;
 3. interprets the SSH protocol username as an app slug or picker request;
 4. resolves the app and checks visibility and authorization;
 5. requests or locates the running instance;
-6. opens a private vsock stream to the guest agent;
+6. opens a local private vsock stream to the guest agent;
 7. proxies terminal bytes, resize events, signals, and disconnects;
 8. emits session lifecycle and byte-count events.
 
@@ -215,19 +256,22 @@ app.
 
 #### Identity bridge
 
-A small HTTPS service creates expiring SSH login transactions, redirects the
-browser to the managed OIDC provider, validates callbacks, and links proven SSH
-keys to platform users. The gateway remains responsible for SSH signatures and
-app authorization; the OIDC provider remains responsible for passwords, MFA,
-and account recovery. The bridge and gateway communicate with opaque
-transaction/connection IDs, never by forwarding OIDC tokens into app guests.
+A Cloud Run service behind `auth.imjasonh.dev` creates expiring SSH login
+transactions, redirects the browser to the managed OIDC provider, validates
+callbacks, and links proven SSH keys to platform users. The gateway remains
+responsible for SSH signatures and app authorization; the OIDC provider remains
+responsible for passwords, MFA, and account recovery. The bridge and gateway
+communicate through Firestore using opaque transaction/connection IDs, never by
+forwarding OIDC tokens into app guests.
 
 #### Instance manager
 
 A privileged host service that reconciles declared desired state with running
 microVMs. It owns artifact verification, image preparation, Firecracker
 configuration, volumes, network policy, health checks, restart backoff,
-updates, backups, and garbage collection.
+updates, backups, and garbage collection. During a rollout it also acquires and
+fences per-instance ownership leases in Firestore; two workers may never own the
+same persistent instance generation.
 
 Only this process needs access to `/dev/kvm`, Firecracker control sockets, block
 devices, and host networking. The SSH gateway asks it for instance/session
@@ -250,10 +294,107 @@ The guest agent is part of the trusted platform image, not supplied by the app.
 
 #### State store
 
-SQLite is appropriate for desired state and event buffering on one host. Use
-WAL mode, strict migrations, foreign keys, a busy timeout, and regular online
-backups. Store large logs and snapshots elsewhere. The database is not the app
-data plane and should never contain terminal streams.
+V0 uses Firestore Native mode because an active and candidate worker must
+overlap safely. Store users, keys, app/release metadata, desired and observed
+generations, ownership leases, login transactions, capability grants, and
+rollout state in strongly consistent documents and transactions. Use
+deterministic document IDs for uniqueness constraints such as SSH fingerprints
+and OIDC `(issuer, subject)`, TTL for transient login records, point-in-time
+recovery/backups, and explicit schema versions.
+
+Publish audit and usage records to Pub/Sub with stable event IDs; consumers are
+idempotent. Firestore is not the app data plane and never contains terminal
+streams, release blobs, memory snapshots, or persistent app filesystem data.
+
+### GCP resource layout
+
+Use one GCP project per environment and one region for v0. Keep both worker
+slots in the same zone so a zonal app Persistent Disk can move between them.
+Terraform manages:
+
+- a custom VPC/subnet with Private Google Access, host-only Cloud NAT where
+  required, firewall rules scoped by service account, load-balancer health-check
+  ingress, and an IAP-only break-glass administration path;
+- reserved regional IPv4 and IPv6 frontends, a backend-service-based regional
+  external passthrough Network Load Balancer, dedicated health check, forwarding
+  rules, and two worker instance-group slots;
+- Firestore Native mode with point-in-time recovery/backups and TTL policy for
+  login transactions;
+- the Cloud Run identity bridge, serverless NEG, external HTTPS load balancer,
+  managed certificate, and Cloud DNS records;
+- Artifact Registry, Secret Manager resources/grants, Pub/Sub topics and dead
+  letter policies, log sinks, dashboards, alerts, and snapshot policies;
+- separate deploy, worker, and identity service accounts with least-privilege
+  custom roles and no service-account keys.
+
+Workers have no per-instance external address. The passthrough load balancer
+delivers TCP 22 while preserving the client source address. System `sshd` is
+disabled on that port; emergency host access uses an independently restricted
+IAP/OS Login path and is never exposed as an app feature.
+
+Persistent app disks are runtime resources because apps are created dynamically,
+not Terraform resources. The instance manager creates/labels them under a
+constrained service identity, records ownership in Firestore, attaches at most
+one writer, and applies Terraform-provisioned snapshot policy. Terraform owns
+the policy and IAM boundary, not each app's lifecycle.
+
+### Immutable worker image
+
+Cloud Build or GitHub Actions builds a versioned GCE image containing the
+hardened host OS, SSH gateway, instance manager, Firecracker/jailer, guest
+kernel and root image, policy files, and telemetry agent. Sign and scan the
+build, publish its immutable image self-link/digest, and pass that value to
+Terraform. Startup scripts perform only identity/configuration and health
+registration; they do not install packages or fetch mutable `latest` binaries.
+
+Each worker slot is a size-zero-or-one zonal managed instance group created from
+an immutable instance template. The template:
+
+- enables nested virtualization for `/dev/kvm`;
+- pins a machine family/CPU policy compatible with the selected Firecracker
+  runtime and future snapshot experiments;
+- uses a non-Spot VM, automatic restart, and `on_host_maintenance = MIGRATE`
+  when the chosen machine type supports it;
+- enables Shielded VM controls that are compatible with nested virtualization
+  and the custom image;
+- uses a read-only/immutable boot image plus bounded scratch/cache disk;
+- attaches only the worker service account and required OAuth scopes.
+
+GCE live migration of the outer worker during host maintenance is distinct from
+migrating a Firecracker microVM between workers. Validate nested KVM behavior
+under a simulated maintenance event before relying on `MIGRATE`; otherwise use
+`TERMINATE` plus the documented best-effort restart behavior.
+
+### Terraform structure and state
+
+Keep infrastructure separate from runtime reconciliation:
+
+```text
+infra/
+  bootstrap/             # project APIs, deploy identity, GCS state bucket
+  modules/
+    network/
+    edge/
+    control-plane/
+    worker-slot/
+    observability/
+  environments/
+    dev/
+    prod/
+```
+
+Bootstrap state creates a dedicated GCS backend bucket with uniform access,
+public-access prevention, versioning, retention, encryption, and state locking.
+Environment state uses that backend. Terraform state may contain resource
+metadata and generated identifiers but never app or OIDC secrets.
+
+Pin Terraform, provider, and module versions and commit the lock file. CI uses
+Workload Identity Federation rather than a JSON service-account key. Pull
+requests run formatting, validation, policy checks, and a saved plan; protected
+approval applies the exact reviewed plan. Production apply concurrency is one.
+No provisioner or `null_resource` performs app lifecycle, database migration,
+cordon, drain, or disk handoff: those need platform state and belong to the
+rollout controller.
 
 ## 5. The app contract
 
@@ -1019,7 +1160,7 @@ plugins, and binaries on persistent storage are outside the product contract.
 
 Use project quotas or fixed-size block devices so an app cannot fill the host
 filesystem. Monitor bytes and inodes. Leave deliberate host headroom for image
-pulls, snapshots, logs, SQLite, and crash dumps.
+pulls, snapshots, local event buffers, logs, and crash diagnostics.
 
 ### Consistency
 
@@ -1177,14 +1318,128 @@ Even with one instance:
 - expose deployment events and reasons;
 - garbage-collect only unreferenced artifacts after a safety period.
 
+### Infrastructure updates in v0
+
+Routine worker updates use two explicit slots and do not restart a gateway in
+place. “Graceful” means an established SSH TCP connection continues on the old
+worker until the user disconnects or the configured maximum session duration
+expires. It does not promise survival of an unexpected host failure, emergency
+security shutdown, or regional outage.
+
+#### Load-balancer behavior
+
+Configure the regional external passthrough Network Load Balancer backend
+service with per-connection tracking and
+`connection_persistence_on_unhealthy_backends = ALWAYS_PERSIST`. Workers expose
+a dedicated readiness health-check port:
+
+- `ready`: eligible for new SSH connections;
+- `cordoned`: fail readiness but keep the SSH listener and every established
+  connection alive;
+- `drained`: zero sessions and no persistent volume ownership.
+
+The gateway emits an SSH transport keepalive at least every 30 seconds so an
+otherwise idle session does not age out of the load balancer's approximately
+60-second connection-tracking idle window.
+
+GCP connection draining after backend removal is capped at one hour. It is only
+a safety net, not the graceful-rollout mechanism. The old VM remains running,
+inside its backend instance group, and unhealthy-for-new-connections until the
+platform reports it fully drained. Terraform removes it only afterward.
+
+#### Preconditions
+
+Every worker release must:
+
+- be an immutable, signed GCE image tested with nested KVM and a smoke-test
+  Firecracker microVM;
+- support control/session/Firestore schemas from both release `N` and `N-1`;
+- use additive Firestore migrations readable by the old and new workers;
+- load the same stable platform SSH host key from Secret Manager and verify its
+  expected public fingerprint before becoming ready;
+- fit alongside the old worker and any temporary duplicate ephemeral
+  microVMs within quota and budget;
+- use the same zone and compatible machine/CPU policy for v0 persistent disks;
+- pass gateway, manager, artifact, Secret Manager, telemetry, disk, KVM, and
+  load-balancer readiness checks before traffic.
+
+#### Rollout sequence
+
+1. CI builds, scans, signs, and publishes the candidate GCE image and records
+   its immutable identifier.
+2. A reviewed Terraform plan updates the inactive slot's instance template and
+   scales that slot from zero to one. It cannot resize or destroy the active
+   slot in this apply.
+3. The candidate boots in `standby`, joins Firestore, verifies host/runtime
+   policy, pulls representative artifacts, and boots a disposable smoke-test
+   microVM. Its external readiness remains false.
+4. The rollout controller acquires a singleton rollout lease and records active
+   slot, candidate slot, image IDs, compatibility versions, actor, and phase in
+   Firestore.
+5. The controller marks the candidate `ready` and the old worker `cordoned`.
+   Health-check convergence can briefly send a new connection to either worker;
+   both remain valid. After convergence, new connections select only the
+   candidate while established flows remain pinned to the old worker.
+6. For an ephemeral app, the candidate starts a new microVM on demand. Existing
+   users continue in the old in-memory instance; new users share the candidate
+   instance. This temporary split is visible in rollout state and ends when the
+   old sessions finish.
+7. For a persistent app, the candidate accepts the SSH connection but shows a
+   platform-controlled “waiting for maintenance handoff” screen. It does not
+   start a second writer. Existing old-worker sessions continue normally and no
+   new session is attached there.
+8. When a persistent app reaches zero old sessions, the old manager quiesces and
+   stops it, takes the required snapshot, and transactionally releases its
+   fenced ownership lease. The controller waits for GCE detach completion,
+   grants a higher lease generation to the candidate, attaches the disk there,
+   boots the app, and releases waiting sessions after readiness.
+9. The old worker remains available for every connection still pinned to it.
+   The gateway's maximum session duration bounds routine drain time; v0 does not
+   force an earlier disconnect merely to finish an ordinary rollout.
+10. After session count is zero, every persistent disk is detached, no lease is
+    owned, and a safety quiet period passes, the controller marks the old slot
+    `retired` and emits an auditable retirement token.
+11. A second reviewed Terraform plan makes the candidate the active slot and
+    scales the retired slot to zero. CI rejects this plan without the matching
+    retirement state/token.
+12. Observe attach failures, resets, auth latency, cold starts, volume handoff,
+    and error rates through a soak period before declaring success.
+
+Terraform creates and removes capacity; the rollout controller owns steps 4–10.
+Do not model session drain with `time_sleep`, provisioners, fixed Terraform
+timeouts, or a managed-instance-group rolling-update timer.
+
+#### Rollback
+
+- Before candidate traffic, mark the candidate failed and scale it back to zero.
+- After traffic shifts, mark the candidate not ready and the old worker ready
+  for new connections. Keep both alive while sessions already pinned to either
+  side drain.
+- A persistent app stays on the worker currently holding its fenced volume.
+  Moving it back repeats the same zero-session detach/attach protocol; never
+  “roll back” by attaching the disk to both.
+- Firestore migrations remain backward compatible through the rollout. Never
+  restore or destructively downgrade shared control state as an automatic
+  rollback.
+- An urgent vulnerability may override graceful drain. Record the reason,
+  notify sessions, revoke affected releases/secrets, and terminate at a
+  deliberate operator deadline.
+
+Cloud Run identity-bridge revisions use normal revision readiness and gradual
+traffic migration; they do not affect established key-authenticated SSH
+sessions. Network, static IP, Firestore, state-bucket, and persistent-disk
+replacements are protected by Terraform policy/`prevent_destroy` and require a
+separate reviewed migration plan rather than the worker rollout.
+
 ## 12. Networking
 
 ### Ingress
 
-Only the SSH gateway accepts public traffic. Guests receive session streams over
-vsock, which avoids exposing guest ports or using network identity for trust.
-The host administration API should be private, bound to localhost/IAP, or
-protected by strong identity-aware access.
+The load balancer and SSH gateways are the only public app ingress. The separate
+identity bridge accepts HTTPS solely for OIDC login/account flows. Guests
+receive session streams over vsock, which avoids exposing guest ports or using
+network identity for trust. The host administration API is private, bound to
+localhost/IAP, or protected by strong identity-aware access.
 
 ### Egress
 
@@ -1521,11 +1776,14 @@ before/after hashes for configuration—not secret values.
 
 On boot:
 
-1. verify required filesystems, free space, KVM, network policy, and database;
+1. verify required filesystems, free space, nested KVM, network policy, and
+   Firestore connectivity;
 2. start telemetry and the instance manager;
-3. reconcile app metadata, volumes, and interrupted operations without starting
-   idle apps;
-4. expose the SSH gateway only when authentication and routing state is ready;
+3. register the worker boot/image/slot identity as `standby`, then reconcile app
+   metadata, leases, volumes, and interrupted operations without starting idle
+   apps;
+4. start the SSH listener when authentication and routing state is ready, but
+   report load-balancer readiness only when rollout state makes the slot active;
 5. start an app only when a connection demands it or an explicit operation
    requires a health check.
 
@@ -1541,20 +1799,20 @@ existing data volumes.
 | Guest kernel/VM exits | Manager records reason and recreates with same release/data |
 | Gateway exits | Existing proxied sessions drop; supervisor restarts gateway |
 | Manager exits | Existing VMs/sessions continue; reconciliation pauses |
-| SQLite unavailable | Reject mutations; gateway may use a bounded read cache, fail closed on auth |
+| Firestore unavailable | Reject mutations/new authorization; bounded linked-key/app cache may serve only explicitly safe reads, otherwise fail closed |
 | OIDC provider/bridge unavailable | Linked keys continue; first login, recovery, and key linking fail closed |
 | Registry unavailable | Running/cached releases continue; new uncached deploys wait/fail |
 | Telemetry backend unavailable | Buffer bounded events locally; drop low-value logs before audit/usage |
 | Host disk pressure | Stop pulls/snapshots first, reject risky starts, preserve running apps |
-| GCE host lost | Recreate host and restore volumes/database from backup; sessions are lost |
+| GCE worker lost | Sessions are lost; recreate from immutable image, retain Firestore state, and reattach or restore persistent app disks after fencing |
 
 ### Recovery objectives
 
 Choose and publish RPO/RTO rather than imply durability:
 
 - App data RPO follows its backup policy.
-- Control-plane RPO should be much shorter through frequent SQLite backup or a
-  separately persisted disk.
+- Control-plane RPO follows Firestore point-in-time recovery and scheduled
+  backup policy; identity/audit recovery is tested independently of workers.
 - Host RTO includes provisioning, artifact pulls, volume restore/attach, and
   per-app startup.
 
@@ -1565,10 +1823,10 @@ application.
 
 The first version has intentional shared failure domains:
 
-- one public IP/gateway;
-- one GCE host and KVM;
-- one local desired-state database;
-- one host disk capacity pool.
+- one regional public load balancer and one active worker/KVM in steady state;
+- one worker zone and zonal persistent app disks;
+- one worker capacity pool, despite a temporary candidate during rollout;
+- no automatic app failover after an unexpected worker loss.
 
 This is acceptable for learning and low-criticality apps if explicitly stated.
 Firecracker isolates workloads; it does not provide host availability.
@@ -1589,6 +1847,9 @@ Firecracker isolates workloads; it does not provide host availability.
 | Membership | app/group/user, role |
 | Release | digest, manifest, signature/provenance result, created time |
 | Instance | app, stable ID, runtime digest, optional volume, idle deadline, observed generation, state |
+| Instance lease | instance, worker/boot ID, fencing generation, expiry, state |
+| Worker | slot, boot ID, image ID, compatibility versions, readiness, session/volume counts |
+| Infrastructure rollout | active/candidate slots and images, phase, actor, lease, retirement token |
 | Deployment | from/to release, actor, phases, result, timestamps |
 | Session | app/instance/user, mode, start/end, reason, counters |
 | Volume | instance, path/device ID, size, schema version, lifecycle |
@@ -1634,6 +1895,8 @@ Keep internal APIs versioned:
 - identity API: OIDC login transaction, callback, key linking, and revocation;
 - manager API: reconcile/status/operation records;
 - gateway API: resolve route, authenticate/authorize, acquire session endpoint;
+- rollout API: worker registration, readiness/cordon, lease transfer, drain
+  status, and retirement authorization;
 - guest protocol: bootstrap, health, lifecycle, and session streams;
 - event schemas: append-only and versioned.
 
@@ -1657,8 +1920,8 @@ same operations through app-owner-scoped authorization. Required operations:
 - delete and separately purge;
 - inspect capacity and usage.
 
-Avoid making direct edits to SQLite, volume files, or Firecracker sockets part of
-normal operations.
+Avoid making direct edits to Firestore documents, volume files, or Firecracker
+sockets part of normal operations.
 
 ### Capacity
 
@@ -1776,17 +2039,42 @@ replicated storage or app-level state replication.
 
 ### Live migration
 
-Firecracker snapshot/restore may reduce startup time, but it is not automatically
-safe for:
+Cross-worker Firecracker migration is explicitly deferred beyond v0. Snapshot
+and restore is not connection migration:
 
-- active SSH TCP streams;
-- host-specific vsock/network identities;
-- writable block storage;
-- guest clocks and entropy;
-- changed Firecracker/kernel versions.
+- Firecracker snapshot compatibility depends on CPU model/features,
+  Firecracker version, and host kernel/KVM behavior; Intel/AMD or incompatible
+  CPU-model migration is unsupported;
+- snapshot/restore resets vsock and closes existing gateway-to-guest streams;
+- the public SSH TCP connection terminates in the old worker gateway and cannot
+  move to another GCE VM through the load balancer;
+- memory snapshots can be large and v0 has no pre-copy, dirty-page tracking
+  orchestration, secure transfer, or bounded pause-time SLO;
+- writable app disks still require quiesce, exclusive attachment, and fencing;
+- clocks, entropy, in-flight SDK frames, attach-token boot identity, and
+  telemetry all need explicit resume semantics.
 
-Treat snapshots as a future optimization after correctness, not as the primary
-availability design.
+The v0 blue/green rollout therefore leaves the old microVM and gateway running
+for the lifetime of their existing connections. It duplicates ephemeral apps
+for new sessions and performs a stopped, fenced handoff for persistent apps.
+This is simpler and more reliable than calling snapshot/restore “live.”
+
+Revisit migration only in a dedicated milestone after:
+
+1. gateway and worker lifecycles are separated, or the SSH session protocol can
+   pause and resume through a different gateway without reconnecting the client;
+2. SDK sessions have replay-safe sequence numbers, bounded buffering, and a
+   tested resume handshake;
+3. workers use an invariant CPU template and verified Firecracker/kernel matrix;
+4. memory transfer, encryption, destination admission, and rollback are
+   implemented;
+5. vsock reconnect issues a new `boot_id` and attach tokens without duplicating
+   a user session;
+6. persistent storage fencing remains correct through every failure injection.
+
+Adopt it only if measured pause time and operational complexity materially beat
+draining. Firecracker snapshots may still be useful earlier for cold-start
+optimization when no user session is active.
 
 ## 19. Alternatives considered
 
@@ -1854,6 +2142,10 @@ VM runtime.
 
 ### Phase 1: one isolated app
 
+- Bootstrap Terraform remote state and provision the VPC, static load-balancer
+  frontends, Firestore, Cloud Run identity bridge, Artifact Registry, Secret
+  Manager/IAM, Pub/Sub, monitoring, and blue/green worker slots.
+- Build and attest the immutable nested-virtualization worker image.
 - Build signed OCI artifact ingestion and deterministic root image preparation.
 - Boot platform kernel/guest agent/app in Firecracker with vsock.
 - Enforce the single-static-binary contract, jailer, AppArmor/LSM, seccomp,
@@ -1868,11 +2160,14 @@ declared limits in the tested threat model.
 
 ### Phase 2: multi-app platform
 
-- Add SQLite desired state and reconciliation.
+- Add Firestore desired state, ownership leases, and reconciliation.
 - Add users, keys, app authorization, app slug routing, and admission limits.
 - Productionize identity/audit storage, account and key management, and the
   ten-minute scale-to-zero lifecycle.
 - Add deployments, drain, snapshot, rollback, and garbage collection.
+- Implement and fault-test the two-apply infrastructure rollout controller,
+  load-balancer cordon behavior, 30-second SSH keepalive, persistent-volume
+  fencing/handoff, rollback, and retirement authorization.
 - Add structured logs, metrics, audit, usage outbox, and alerts.
 - Add backup and tested restore.
 
@@ -1902,8 +2197,8 @@ without gaining shell, raw network, cross-app, or policy-administration access.
 
 ### Phase 4: future untrusted publishing
 
-- Move durable identity/control state off worker hosts and minimize cached
-  credential data.
+- Minimize cached credential data on workers and move privileged Compute/disk
+  mutation behind a separately deployed control service.
 - Require reviewed source/provenance, sandboxed first deploys, stricter artifact
   and vulnerability policy, and lowest resource ceilings.
 - Keep egress, persistence, raw secrets, executable state, and runtime
@@ -1918,8 +2213,8 @@ extension of the trusted-friend model.
 
 ### Future: distributed control plane
 
-- Extract host agent and scheduler.
-- Add leases/fencing and host-to-gateway transport.
+- Add a multi-worker scheduler and cross-host gateway transport.
+- Extend v0 fencing leases to zonal failure and scheduler failover.
 - Add regions, rooms/shards, and topology-aware replicated storage.
 - Introduce replicas only for apps with explicit distributed-state semantics.
 
@@ -1951,11 +2246,16 @@ The design is based on these product decisions:
    analysis and possible later billing, never terminal contents.
 10. Terminal sessions are not recorded by default. Any future recording feature
     requires a separate explicit privacy and security design.
-11. V1 availability is best effort on one host. Contracts must preserve a path
-    to fenced multi-host failover and multi-region placement.
+11. V0 has one active worker plus a temporary candidate. Routine infrastructure
+    rollouts preserve established SSH connections by retaining the cordoned
+    worker until drain; unexpected worker loss is still best effort. Contracts
+    preserve a path to fenced multi-host failover and multi-region placement.
 12. The first app platform targets one static Go/Charm binary using the platform
     SDK. Apps cannot run SSH listeners, shells, interpreters, arbitrary commands,
     executable writable state, raw networking, or general-purpose VM workloads.
+13. Terraform owns durable GCP infrastructure and immutable worker capacity;
+    the rollout controller owns cordon, drain, leases, and volume handoff.
+    Cross-worker Firecracker live migration is deferred beyond v0.
 
 These choices leave implementation parameters such as exact quotas, retention
 periods, and cold-start SLOs to be measured during the prototype without
