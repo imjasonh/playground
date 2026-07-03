@@ -1,8 +1,7 @@
 # RC Pro Loop
 
 A browser racing toy inspired by **Super RC Pro-Am**: tiny RC cars on a carpet
-oval, a three-lap sprint, and four computer opponents with their own pace and
-line.
+circuit with a hairpin, esses, and a loop around the infield carpet pile.
 
 ## Play locally
 

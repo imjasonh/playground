@@ -5,14 +5,12 @@ import {
   CAR,
   RCProAmGame,
   TRACK,
-  WORLD,
   aiControlsForCar,
   applyCarInputs,
   centerlinePoint,
   createCar,
   createGridPositions,
   isOnTrack,
-  progressFromPoint,
   pushOntoTrack,
   rankCars,
   resolveTrackCollision,
@@ -33,45 +31,50 @@ test("steer drag becomes a clamped axis", () => {
   assert.equal(steerAxisFromDrag(Number.NaN, 100), 0);
 });
 
-test("centerline points stay inside the carpet ring", () => {
+test("centerline points stay on the circuit", () => {
   for (let index = 0; index < 64; index += 1) {
     const point = centerlinePoint(index / 64);
     assert.ok(isOnTrack(point.x, point.y));
   }
 });
 
-test("off-track points get pushed back to the boundary", () => {
-  const outside = pushOntoTrack(WORLD.cx + TRACK.outerA + 20, WORLD.cy);
-  assert.equal(outside.wall, "outer");
-  assert.ok(isOnTrack(outside.x, outside.y));
+test("off-track points get nudged back without large jumps", () => {
+  const onLine = centerlinePoint(0.25);
+  const offX = onLine.x - onLine.tangentY * (TRACK.halfWidth + 12);
+  const offY = onLine.y + onLine.tangentX * (TRACK.halfWidth + 12);
 
-  const inside = pushOntoTrack(WORLD.cx + TRACK.innerA - 20, WORLD.cy);
-  assert.equal(inside.wall, "inner");
-  assert.ok(isOnTrack(inside.x, inside.y));
+  const corrected = pushOntoTrack(offX, offY);
+  assert.equal(corrected.wall, "edge");
+  assert.ok(isOnTrack(corrected.x, corrected.y));
+  assert.ok(Math.hypot(corrected.x - offX, corrected.y - offY) < 22);
 });
 
 test("throttle and steering produce forward motion with lateral grip", () => {
-  const car = createCar({ id: "test", x: WORLD.cx, y: WORLD.cy + TRACK.centerB - 20, angle: -Math.PI / 2 });
+  const start = centerlinePoint(0.1);
+  const car = createCar({ id: "test", x: start.x, y: start.y, angle: start.angle });
 
   applyCarInputs(car, 1, 0.4, 0.2);
   assert.ok(car.vx ** 2 + car.vy ** 2 > 0);
   assert.ok(car.skid >= 0);
 });
 
-test("wall collisions bleed speed off the boundary normal", () => {
+test("wall collisions slide along the barrier instead of teleporting", () => {
+  const start = centerlinePoint(0.6);
   const car = createCar({
     id: "test",
-    x: WORLD.cx + TRACK.outerA + 5,
-    y: WORLD.cy,
-    angle: 0,
-    vx: 120,
-    vy: 0,
+    x: start.x - start.tangentY * (TRACK.halfWidth + 6),
+    y: start.y + start.tangentX * (TRACK.halfWidth + 6),
+    angle: start.angle,
+    vx: Math.cos(start.angle) * 120,
+    vy: Math.sin(start.angle) * 120,
   });
+  const beforeX = car.x;
+  const beforeY = car.y;
 
   const hit = resolveTrackCollision(car);
   assert.equal(hit, true);
   assert.ok(isOnTrack(car.x, car.y));
-  assert.ok(Math.abs(car.vx) < 120);
+  assert.ok(Math.hypot(car.x - beforeX, car.y - beforeY) < 20);
 });
 
 test("lap counter detects a finish-line crossing", () => {
@@ -102,11 +105,12 @@ test("rankCars orders by laps then progress", () => {
 });
 
 test("AI produces bounded throttle and steering", () => {
+  const start = centerlinePoint(0.2);
   const car = createCar({
     id: "volt",
-    x: centerlinePoint(0.2).x,
-    y: centerlinePoint(0.2).y,
-    angle: centerlinePoint(0.2).angle,
+    x: start.x,
+    y: start.y,
+    angle: start.angle,
     aiSkill: 0.8,
     aiAggression: 0.6,
   });
@@ -158,4 +162,26 @@ test("computer opponents keep moving on track during a race", () => {
     assert.ok(Math.hypot(car.vx, car.vy) > 5, `${car.id} should be moving`);
     assert.ok(isOnTrack(car.x, car.y), `${car.id} should stay on track`);
   }
+});
+
+test("repeated wall hits stay near the impact point", () => {
+  const start = centerlinePoint(0.35);
+  const car = createCar({
+    id: "test",
+    x: start.x - start.tangentY * (TRACK.halfWidth + 10),
+    y: start.y + start.tangentX * (TRACK.halfWidth + 10),
+    angle: start.angle,
+    vx: Math.cos(start.angle + 0.8) * 160,
+    vy: Math.sin(start.angle + 0.8) * 160,
+  });
+  const originX = car.x;
+  const originY = car.y;
+
+  for (let step = 0; step < 8; step += 1) {
+    applyCarInputs(car, 1, 0.6, 1 / 60);
+    resolveTrackCollision(car);
+  }
+
+  assert.ok(Math.hypot(car.x - originX, car.y - originY) < 80);
+  assert.ok(isOnTrack(car.x, car.y));
 });
