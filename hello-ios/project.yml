@@ -1,0 +1,77 @@
+name: HelloIOS
+
+# This single YAML is the source of truth for the Xcode project (and the
+# discovery marker for the iOS app type). `xcodegen generate` produces
+# HelloIOS.xcodeproj, which is git-ignored — never commit the generated project.
+
+options:
+  bundleIdPrefix: io.github.imjasonh.playground
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+  minimumXcodeGenVersion: "2.38.0"
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    VERSIONING_SYSTEM: apple-generic
+    # DEVELOPMENT_TEAM is injected by CI (fastlane / xcargs) at signing time so
+    # the checked-in spec stays account-agnostic.
+
+targets:
+  HelloIOS:
+    type: application
+    platform: iOS
+    sources:
+      - Sources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.imjasonh.playground.helloios
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Hello iOS
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        # Declares no non-exempt encryption so TestFlight uploads don't stall on
+        # the export-compliance question.
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
+
+  HelloIOSTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - Tests/HelloIOSTests
+    dependencies:
+      - target: HelloIOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.imjasonh.playground.helloios.tests
+        GENERATE_INFOPLIST_FILE: YES
+
+  HelloIOSUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - Tests/HelloIOSUITests
+    dependencies:
+      - target: HelloIOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.imjasonh.playground.helloios.uitests
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  HelloIOS:
+    build:
+      targets:
+        HelloIOS: all
+    test:
+      gatherCoverageData: true
+      targets:
+        - HelloIOSTests
+        - HelloIOSUITests
+    run:
+      config: Debug
+    archive:
+      config: Release

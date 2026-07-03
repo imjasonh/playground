@@ -1,0 +1,8 @@
+# Code-signing storage for fastlane match. The certificates and provisioning
+# profiles live in a *separate private git repo* (never this one), encrypted with
+# MATCH_PASSWORD. Seed it once locally with `fastlane match appstore`; CI reads
+# it read-only.
+git_url(ENV["MATCH_GIT_URL"]) if ENV["MATCH_GIT_URL"]
+storage_mode("git")
+type("appstore")
+app_identifier([ENV.fetch("APP_BUNDLE_ID", "io.github.imjasonh.playground.helloios")])
