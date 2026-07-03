@@ -53,6 +53,7 @@ deployed to GitHub Pages:
   reference iOS app: unit + UI tests plus continuous delivery to TestFlight.
 
 See [`docs/ios-testflight-design.md`](docs/ios-testflight-design.md) for the iOS
-CD/preview design and the one-time Apple-side setup.
+CD/preview design, and [`docs/ios-testflight-setup.md`](docs/ios-testflight-setup.md)
+for a click-by-click, beginner-friendly Apple/TestFlight setup guide.
 
 See [`AGENTS.md`](AGENTS.md) for repository conventions, CI, and how to add a new app.

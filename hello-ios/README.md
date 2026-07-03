@@ -78,10 +78,17 @@ The `beta` lane needs these (configured as GitHub Actions secrets for CI):
 | `ASC_KEY_ID` | App Store Connect API key ID |
 | `ASC_ISSUER_ID` | App Store Connect API issuer ID |
 | `ASC_API_KEY_P8` | The `.p8` private key contents, **base64-encoded** |
+| `APPLE_TEAM_ID` | Your 10-character Apple Developer Team ID |
 | `MATCH_GIT_URL` | Private git repo holding `match` certs/profiles |
 | `MATCH_PASSWORD` | Passphrase that decrypts the `match` repo |
 | `MATCH_GIT_BASIC_AUTHORIZATION` | Base64 `user:token` to read the match repo (or a deploy key) |
 
 Until these exist, CI still runs the full test suite and simply **skips** the
-TestFlight upload. See [`docs/ios-testflight-design.md`](../docs/ios-testflight-design.md)
-for the end-to-end design and the one-time Apple-side setup checklist.
+TestFlight upload.
+
+**New to this?** Follow the click-by-click
+[**iOS → TestFlight setup guide**](../docs/ios-testflight-setup.md), which walks
+through Apple Developer enrollment, creating the app, the API key, signing with
+`fastlane match`, and adding every secret above. See
+[`docs/ios-testflight-design.md`](../docs/ios-testflight-design.md) for the
+end-to-end design.

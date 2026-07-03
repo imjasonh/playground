@@ -93,7 +93,8 @@ or any signing material (`*.p8`, `*.p12`, `*.mobileprovision`). TestFlight
 delivery requires Apple credentials configured as repo secrets; without them CI
 still runs the tests and skips the upload. See
 [`docs/ios-testflight-design.md`](docs/ios-testflight-design.md) for the design
-and the one-time Apple-side setup. iOS apps are not yet covered by the daily
+and [`docs/ios-testflight-setup.md`](docs/ios-testflight-setup.md) for a
+click-by-click Apple-side setup guide. iOS apps are not yet covered by the daily
 dependency workflow.
 
 Hidden top-level directories (names starting with `.`) are ignored by all app

@@ -247,7 +247,10 @@ end
 
 ## 8. What YOU need to do (can't be automated from this repo)
 
-These are the human/Apple-side prerequisites. Roughly in order:
+These are the human/Apple-side prerequisites. Roughly in order. **A detailed,
+beginner-friendly, click-by-click version of this list lives in
+[`ios-testflight-setup.md`](ios-testflight-setup.md)** — follow that if you've
+never done it before; the summary here is just the map.
 
 1. **Enroll in the Apple Developer Program** ($99/yr) for the account/org that
    will own the apps.
@@ -261,9 +264,11 @@ These are the human/Apple-side prerequisites. Roughly in order:
    fastlane `match`** and run `fastlane match appstore` / `match adhoc` once
    locally to seed certs + profiles; pick a **match passphrase**. (Alternative:
    API-key cloud signing, no cert repo.)
-5. **Add GitHub repository secrets** so CI can sign and upload, e.g.:
-   - `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_API_KEY_P8` (the key contents)
-   - `MATCH_GIT_URL`, `MATCH_PASSWORD`, and a deploy key/PAT to read the match repo
+5. **Add GitHub repository secrets** so CI can sign and upload:
+   - `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_API_KEY_P8` (the key contents, base64)
+   - `APPLE_TEAM_ID` (your 10-character Team ID)
+   - `MATCH_GIT_URL`, `MATCH_PASSWORD`, `MATCH_GIT_BASIC_AUTHORIZATION`
+     (base64 `user:token` to read the match repo)
    - (These become Cloud Agent secrets too if you want agents to run the lanes.)
 6. **Register tester device UDIDs** in the Developer portal for **Option B**
    (OTA ad-hoc previews), and rebuild the ad-hoc profile via `match` when the
