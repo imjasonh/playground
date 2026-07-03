@@ -10,7 +10,9 @@ platform :ios do
     run_tests(
       project: XCODEPROJ,
       scheme: APP_SCHEME,
-      destination: "platform=iOS Simulator,name=iPhone 15,OS=latest",
+      # Device name is chosen at runtime by ios-ci.sh (falls back to a common
+      # one) so we don't hardcode a simulator that a given Xcode may not ship.
+      devices: [ENV.fetch("IOS_SIM_DEVICE", "iPhone 16")],
       result_bundle: true,
       output_directory: "fastlane/test_output"
     )

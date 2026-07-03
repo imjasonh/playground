@@ -24,6 +24,24 @@ if [ "${#apps[@]}" -eq 0 ]; then
   exit 0
 fi
 
+# `xcodebuild -showBuildSettings` can take well over fastlane's tiny 3s default
+# on a cold CI machine; give it room instead of failing the run.
+export FASTLANE_XCODEBUILD_SETTINGS_TIMEOUT="${FASTLANE_XCODEBUILD_SETTINGS_TIMEOUT:-120}"
+export FASTLANE_XCODEBUILD_SETTINGS_RETRIES="${FASTLANE_XCODEBUILD_SETTINGS_RETRIES:-10}"
+
+# Pick a simulator that actually exists on this runner's Xcode (device names
+# change between Xcode versions), unless the caller pinned one.
+if [ -z "${IOS_SIM_DEVICE:-}" ]; then
+  IOS_SIM_DEVICE=$(
+    xcrun simctl list devices available \
+      | grep -E '^[[:space:]]+iPhone' \
+      | head -1 \
+      | sed -E 's/ \(.*//; s/^[[:space:]]+//'
+  )
+  export IOS_SIM_DEVICE
+fi
+echo "Using simulator device: ${IOS_SIM_DEVICE:-<none found>}"
+
 deploy="${DEPLOY:-false}"
 result=0
 
