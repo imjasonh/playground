@@ -11,8 +11,9 @@ Worker.
 The point is to keep trying things cheap and low-ceremony. Drop in a new
 directory, follow a couple of conventions, and open a PR: CI tests whatever
 changed, browser apps get a live preview link, and once merged they deploy
-themselves to GitHub Pages. A daily job keeps each project's dependencies current
-too, landing an upgrade only when it still builds and passes tests — so older
+themselves to GitHub Pages. iOS apps go a step further and ship to TestFlight on
+merge to `main`. A daily job keeps each project's dependencies current too,
+landing an upgrade only when it still builds and passes tests — so older
 experiments don't bit-rot.
 
 ## Apps
@@ -41,5 +42,17 @@ skip them:
   via SQLite virtual tables over go-containerregistry (Go CLI).
 - **[`web-push/`](web-push/)** — a Web Push application-server backend
   (RFC 8030/8188/8291/8292) for Cloudflare Workers, in Rust.
+
+## iOS apps
+
+iOS apps (a top-level directory with an XcodeGen `project.yml`) build and test on
+a macOS runner and ship to **TestFlight** on merge to `main`. They aren't
+deployed to GitHub Pages:
+
+- **[`hello-ios/`](hello-ios/)** — a SwiftUI temperature converter and the
+  reference iOS app: unit + UI tests plus continuous delivery to TestFlight.
+
+See [`docs/ios-testflight-design.md`](docs/ios-testflight-design.md) for the iOS
+CD/preview design and the one-time Apple-side setup.
 
 See [`AGENTS.md`](AGENTS.md) for repository conventions, CI, and how to add a new app.
