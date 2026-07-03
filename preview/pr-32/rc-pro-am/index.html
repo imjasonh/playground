@@ -6,132 +6,41 @@
       name="viewport"
       content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"
     />
-    <meta name="theme-color" content="#171109" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <title>RC Pro Loop — Carpet Oval Racing</title>
+    <meta name="theme-color" content="#1a2418" />
+    <title>RC Pro Loop</title>
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <main class="game-shell">
-      <header class="topbar">
-        <div class="brand">
-          <span class="eyebrow">Super RC inspired</span>
-          <h1>RC Pro Loop</h1>
-        </div>
-        <div class="header-actions">
-          <button
-            id="sound-button"
-            class="utility-button"
-            type="button"
-            aria-pressed="true"
-          >
-            Sound on
-          </button>
-          <button
-            id="reset-button"
-            class="utility-button"
-            type="button"
-            disabled
-          >
-            Restart
-          </button>
-        </div>
+    <main>
+      <header class="hud" aria-live="polite">
+        <span id="lap-value">Lap 1/3</span>
+        <span id="place-value">P—</span>
+        <span id="time-value">0:00</span>
       </header>
 
-      <section class="machine" aria-label="RC Pro Loop race">
-        <div class="scoreboard" aria-label="Race status">
-          <div class="score-cell">
-            <span class="score-label">Lap</span>
-            <strong id="lap-value">1/3</strong>
-          </div>
-          <div class="score-cell score-main">
-            <span class="score-label">Place</span>
-            <strong id="place-value">—</strong>
-          </div>
-          <div class="score-cell">
-            <span class="score-label">Time</span>
-            <strong id="time-value">00:00</strong>
-          </div>
-          <div class="score-cell">
-            <span class="score-label">Best</span>
-            <strong id="best-value">—</strong>
-          </div>
+      <div class="stage">
+        <canvas
+          id="game-canvas"
+          width="800"
+          height="600"
+          aria-label="RC cars on a carpet circuit"
+        ></canvas>
+
+        <div id="screen-overlay" class="overlay">
+          <h1>RC Pro Loop</h1>
+          <p id="overlay-copy">Three laps. Four rivals. Stay on the carpet.</p>
+          <button id="start-button" type="button">Race</button>
         </div>
+      </div>
 
-        <div class="playfield-frame">
-          <canvas
-            id="game-canvas"
-            width="800"
-            height="600"
-            aria-label="Top-down carpet oval with five RC cars"
-          ></canvas>
+      <div class="touch-bar" aria-label="Touch driving controls">
+        <button id="left-control" type="button" aria-label="Steer">Steer</button>
+        <button id="right-control" type="button" aria-label="Gas">Gas</button>
+      </div>
 
-          <div id="screen-overlay" class="screen-overlay">
-            <span id="overlay-kicker" class="overlay-kicker">Tiny tires, big loop</span>
-            <h2 id="overlay-title">Grid up</h2>
-            <p id="overlay-copy">
-              Race three laps around the carpet oval against four computer
-              drivers. Feather the throttle, hug the inside line, and tap
-              boost on the straight.
-            </p>
-            <div class="mini-controls" aria-hidden="true">
-              <span>↔</span>
-              <i></i>
-              <span>▲</span>
-            </div>
-            <button id="start-button" class="start-button" type="button">
-              Start race
-            </button>
-          </div>
-        </div>
-
-        <div class="message-panel">
-          <span class="status-light" aria-hidden="true"></span>
-          <p id="message" role="status" aria-live="polite">
-            Five RC cars are staged on the grid.
-          </p>
-        </div>
-      </section>
-
-      <section class="control-deck" aria-label="Driving controls">
-        <button
-          id="left-control"
-          class="touch-control steer-control"
-          type="button"
-          aria-label="Steer left while held"
-        >
-          <span class="control-name">Steer</span>
-          <span class="control-track" aria-hidden="true">
-            <span class="control-knob">↔</span>
-          </span>
-          <span class="control-hint">hold to turn in</span>
-        </button>
-
-        <div class="deck-center" aria-hidden="true">
-          <span>Tap boost</span>
-          <i></i>
-          <span>Shift / turbo</span>
-        </div>
-
-        <button
-          id="right-control"
-          class="touch-control throttle-control"
-          type="button"
-          aria-label="Throttle while held"
-        >
-          <span class="control-name">Gas</span>
-          <span class="control-track" aria-hidden="true">
-            <span class="control-knob">▲</span>
-          </span>
-          <span class="control-hint">hold to drive</span>
-        </button>
-      </section>
-
-      <p class="keyboard-help">
-        Keyboard: <kbd>↑</kbd>/<kbd>↓</kbd> or <kbd>W</kbd>/<kbd>S</kbd> throttle ·
-        <kbd>←</kbd>/<kbd>→</kbd> or <kbd>A</kbd>/<kbd>D</kbd> steer ·
-        <kbd>Shift</kbd> boost · <kbd>R</kbd> restart
+      <p class="help">
+        Drive with arrows or WASD · Shift boost · R restart · Space to start
       </p>
     </main>
 

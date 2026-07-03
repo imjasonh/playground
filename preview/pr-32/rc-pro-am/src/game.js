@@ -1,19 +1,12 @@
 export const WORLD = Object.freeze({
   width: 800,
   height: 600,
-  cx: 400,
-  cy: 300,
 });
 
 export const TRACK = Object.freeze({
-  outerA: 318,
-  outerB: 218,
-  innerA: 168,
-  innerB: 114,
-  centerA: 243,
-  centerB: 166,
+  halfWidth: 58,
   lapCount: 3,
-  finishAngle: 0,
+  finishT: 0,
 });
 
 export const CAR = Object.freeze({
@@ -26,7 +19,7 @@ export const CAR = Object.freeze({
   drag: 1.35,
   grip: 7.2,
   steerRate: 3.45,
-  wallBounce: 0.34,
+  wallBounce: 0.38,
   bumpStrength: 0.55,
 });
 
@@ -35,7 +28,85 @@ export const RACE = Object.freeze({
   minSpeedForLap: 28,
 });
 
+// Closed circuit: long straights, a hairpin, esses, and a loop around the carpet pile.
+const CONTROL_POINTS = Object.freeze([
+  [500, 520],
+  [640, 508],
+  [730, 450],
+  [748, 340],
+  [690, 175],
+  [530, 92],
+  [350, 98],
+  [190, 175],
+  [118, 285],
+  [165, 395],
+  [285, 468],
+  [410, 512],
+]);
+
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+function catmullRom(p0, p1, p2, p3, t) {
+  const t2 = t * t;
+  const t3 = t2 * t;
+  return {
+    x:
+      0.5 *
+      (2 * p1[0] +
+        (-p0[0] + p2[0]) * t +
+        (2 * p0[0] - 5 * p1[0] + 4 * p2[0] - p3[0]) * t2 +
+        (-p0[0] + 3 * p1[0] - 3 * p2[0] + p3[0]) * t3),
+    y:
+      0.5 *
+      (2 * p1[1] +
+        (-p0[1] + p2[1]) * t +
+        (2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1]) * t2 +
+        (-p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1]) * t3),
+  };
+}
+
+function buildCenterline(samplesPerSegment = 10) {
+  const count = CONTROL_POINTS.length;
+  const points = [];
+
+  for (let index = 0; index < count; index += 1) {
+    const p0 = CONTROL_POINTS[(index - 1 + count) % count];
+    const p1 = CONTROL_POINTS[index];
+    const p2 = CONTROL_POINTS[(index + 1) % count];
+    const p3 = CONTROL_POINTS[(index + 2) % count];
+
+    for (let step = 0; step < samplesPerSegment; step += 1) {
+      const t = step / samplesPerSegment;
+      const sample = catmullRom(p0, p1, p2, p3, t);
+      const previous = points.at(-1);
+      if (previous && Math.hypot(sample.x - previous.x, sample.y - previous.y) < 0.5) {
+        continue;
+      }
+      points.push(sample);
+    }
+  }
+
+  let totalLength = 0;
+  for (let index = 0; index < points.length; index += 1) {
+    const next = points[(index + 1) % points.length];
+    const length = Math.hypot(next.x - points[index].x, next.y - points[index].y);
+    points[index].segmentLength = length;
+    totalLength += length;
+  }
+
+  let traveled = 0;
+  for (const point of points) {
+    point.arc = traveled / totalLength;
+    traveled += point.segmentLength;
+  }
+
+  return Object.freeze({
+    points: Object.freeze(points.map((point) => Object.freeze({ ...point }))),
+    length: totalLength,
+  });
+}
+
+export const CENTERLINE = buildCenterline();
 
 export function steerAxisFromDrag(startX, currentX, travel = 42) {
   if (!Number.isFinite(startX) || !Number.isFinite(currentX) || travel <= 0) {
@@ -52,84 +123,152 @@ export function normalizeAngle(angle) {
   return next;
 }
 
-export function ellipseNorm(x, y, cx, cy, a, b) {
-  const dx = (x - cx) / a;
-  const dy = (y - cy) / b;
-  return dx * dx + dy * dy;
+function pointAtIndex(index, centerline = CENTERLINE) {
+  const points = centerline.points;
+  const current = points[index];
+  const next = points[(index + 1) % points.length];
+  const tangentX = next.x - current.x;
+  const tangentY = next.y - current.y;
+  const length = Math.hypot(tangentX, tangentY) || 1;
+  return {
+    x: current.x,
+    y: current.y,
+    t: current.arc,
+    tangentX: tangentX / length,
+    tangentY: tangentY / length,
+  };
 }
 
-export function isOnTrack(x, y, track = TRACK, world = WORLD) {
-  const outer = ellipseNorm(
-    x,
-    y,
-    world.cx,
-    world.cy,
-    track.outerA,
-    track.outerB,
-  );
-  const inner = ellipseNorm(
-    x,
-    y,
-    world.cx,
-    world.cy,
-    track.innerA,
-    track.innerB,
-  );
-  return outer <= 1 && inner >= 1;
+export function centerlinePoint(t, centerline = CENTERLINE) {
+  const target = ((t % 1) + 1) % 1;
+  const points = centerline.points;
+
+  for (let index = 0; index < points.length; index += 1) {
+    const nextArc = points[(index + 1) % points.length].arc;
+    const endArc = index === points.length - 1 ? 1 : nextArc;
+    if (target >= points[index].arc && target <= endArc) {
+      const span = endArc - points[index].arc || 1;
+      const amount = (target - points[index].arc) / span;
+      const current = points[index];
+      const next = points[(index + 1) % points.length];
+      const x = current.x + (next.x - current.x) * amount;
+      const y = current.y + (next.y - current.y) * amount;
+      const tangentX = next.x - current.x;
+      const tangentY = next.y - current.y;
+      const length = Math.hypot(tangentX, tangentY) || 1;
+      const tx = tangentX / length;
+      const ty = tangentY / length;
+      return Object.freeze({
+        x,
+        y,
+        t: target,
+        angle: Math.atan2(ty, tx),
+        tangentX: tx,
+        tangentY: ty,
+      });
+    }
+  }
+
+  return pointAtIndex(0, centerline);
 }
 
-export function centerlinePoint(t, track = TRACK, world = WORLD) {
-  const angle = t * Math.PI * 2;
-  const tx = -Math.sin(angle);
-  const ty = Math.cos(angle);
-  return Object.freeze({
-    x: world.cx + track.centerA * Math.cos(angle),
-    y: world.cy + track.centerB * Math.sin(angle),
-    angle: Math.atan2(ty, tx),
-    tangentX: tx,
-    tangentY: ty,
-    trackAngle: angle,
-  });
+export function nearestTrackPoint(x, y, centerline = CENTERLINE) {
+  const points = centerline.points;
+  let best = null;
+
+  for (let index = 0; index < points.length; index += 1) {
+    const start = points[index];
+    const end = points[(index + 1) % points.length];
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const lengthSquared = dx * dx + dy * dy;
+
+    let amount = 0;
+    if (lengthSquared > 0) {
+      amount = clamp(((x - start.x) * dx + (y - start.y) * dy) / lengthSquared, 0, 1);
+    }
+
+    const px = start.x + dx * amount;
+    const py = start.y + dy * amount;
+    const distance = Math.hypot(x - px, y - py);
+    const segmentLength = Math.hypot(dx, dy) || 1;
+    const tangentX = dx / segmentLength;
+    const tangentY = dy / segmentLength;
+    const nextArc = points[(index + 1) % points.length].arc;
+    const endArc = index === points.length - 1 ? 1 : nextArc;
+    const span = endArc - start.arc || 1;
+    const t = start.arc + amount * span;
+
+    if (!best || distance < best.distance) {
+      const normalX = distance > 0.001 ? (x - px) / distance : -tangentY;
+      const normalY = distance > 0.001 ? (y - py) / distance : tangentX;
+      best = {
+        x: px,
+        y: py,
+        t,
+        distance,
+        tangentX,
+        tangentY,
+        normalX,
+        normalY,
+      };
+    }
+  }
+
+  return best;
 }
 
-export function progressFromPoint(x, y, world = WORLD) {
-  const angle = Math.atan2(y - world.cy, x - world.cx);
-  return ((angle / (Math.PI * 2)) % 1 + 1) % 1;
+export function isOnTrack(x, y, track = TRACK, centerline = CENTERLINE) {
+  const nearest = nearestTrackPoint(x, y, centerline);
+  return nearest.distance <= track.halfWidth - 0.5;
 }
 
-export function pushOntoTrack(x, y, track = TRACK, world = WORLD) {
-  const angle = Math.atan2(y - world.cy, x - world.cx);
-  const cos = Math.cos(angle);
-  const sin = Math.sin(angle);
+export function progressFromPoint(x, y, centerline = CENTERLINE) {
+  return nearestTrackPoint(x, y, centerline).t;
+}
 
-  const outerDist = Math.hypot(
-    (world.cx + track.outerA * cos - x),
-    (world.cy + track.outerB * sin - y),
-  );
-  const innerDist = Math.hypot(
-    (x - (world.cx + track.innerA * cos)),
-    (y - (world.cy + track.innerB * sin)),
-  );
-
-  if (outerDist < innerDist) {
-    const scale = 1 / Math.sqrt(
-      ellipseNorm(x, y, world.cx, world.cy, track.outerA, track.outerB),
-    );
+export function pushOntoTrack(x, y, track = TRACK, centerline = CENTERLINE) {
+  const nearest = nearestTrackPoint(x, y, centerline);
+  const limit = track.halfWidth - CAR.radius;
+  if (nearest.distance <= limit) {
     return {
-      x: world.cx + track.outerA * cos * scale,
-      y: world.cy + track.outerB * sin * scale,
-      wall: "outer",
+      x,
+      y,
+      wall: null,
+      normalX: nearest.normalX,
+      normalY: nearest.normalY,
     };
   }
 
-  const scale = 1 / Math.sqrt(
-    ellipseNorm(x, y, world.cx, world.cy, track.innerA, track.innerB),
-  );
+  const penetration = nearest.distance - limit;
   return {
-    x: world.cx + track.innerA * cos * scale,
-    y: world.cy + track.innerB * sin * scale,
-    wall: "inner",
+    x: x - nearest.normalX * penetration,
+    y: y - nearest.normalY * penetration,
+    wall: "edge",
+    normalX: nearest.normalX,
+    normalY: nearest.normalY,
   };
+}
+
+export function trackEdges(centerline = CENTERLINE, track = TRACK) {
+  const inner = [];
+  const outer = [];
+
+  for (let index = 0; index < centerline.points.length; index += 1) {
+    const point = pointAtIndex(index, centerline);
+    const nx = -point.tangentY;
+    const ny = point.tangentX;
+    inner.push({
+      x: point.x - nx * track.halfWidth,
+      y: point.y - ny * track.halfWidth,
+    });
+    outer.push({
+      x: point.x + nx * track.halfWidth,
+      y: point.y + ny * track.halfWidth,
+    });
+  }
+
+  return { inner, outer };
 }
 
 export function createCar(options = {}) {
@@ -220,8 +359,8 @@ export const DEFAULT_RACERS = Object.freeze([
   },
 ]);
 
-export function createGridPositions(count, track = TRACK, world = WORLD) {
-  const start = centerlinePoint(0.985, track, world);
+export function createGridPositions(count, centerline = CENTERLINE) {
+  const start = centerlinePoint(0.97, centerline);
   const positions = [];
   for (let index = 0; index < count; index += 1) {
     const row = Math.floor(index / 2);
@@ -247,7 +386,6 @@ export function applyCarInputs(car, throttle, steer, deltaSeconds, constants = C
   const headingY = Math.sin(car.angle);
   const forwardSpeed = car.vx * headingX + car.vy * headingY;
   const lateralSpeed = car.vx * -headingY + car.vy * headingX;
-  const speed = Math.hypot(car.vx, car.vy);
 
   const boostMultiplier =
     car.boostTime > 0 ? 1.22 + Math.min(car.boostTime, 0.35) * 0.4 : 1;
@@ -266,9 +404,9 @@ export function applyCarInputs(car, throttle, steer, deltaSeconds, constants = C
   const nextLateral = lateralSpeed * Math.exp(-grip * deltaSeconds);
   car.skid = clamp(Math.abs(lateralSpeed) / 70, 0, 1);
 
+  const speed = Math.hypot(car.vx, car.vy);
   const steerScale = clamp(speed / constants.maxSpeed, 0.22, 1);
-  car.angle +=
-    steerInput * constants.steerRate * steerScale * deltaSeconds;
+  car.angle += steerInput * constants.steerRate * steerScale * deltaSeconds;
 
   const newHeadingX = Math.cos(car.angle);
   const newHeadingY = Math.sin(car.angle);
@@ -290,29 +428,30 @@ export function applyCarInputs(car, throttle, steer, deltaSeconds, constants = C
   car.y += car.vy * deltaSeconds;
 }
 
-export function resolveTrackCollision(car, constants = CAR, track = TRACK, world = WORLD) {
-  if (isOnTrack(car.x, car.y, track, world)) {
-    return false;
+export function resolveTrackCollision(car, constants = CAR, track = TRACK, centerline = CENTERLINE) {
+  let hit = false;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const nearest = nearestTrackPoint(car.x, car.y, centerline);
+    const limit = track.halfWidth - constants.radius;
+    if (nearest.distance <= limit) {
+      break;
+    }
+
+    const penetration = nearest.distance - limit;
+    car.x -= nearest.normalX * penetration;
+    car.y -= nearest.normalY * penetration;
+
+    const impact = car.vx * nearest.normalX + car.vy * nearest.normalY;
+    if (impact > 0) {
+      car.vx -= impact * (1 + constants.wallBounce) * nearest.normalX;
+      car.vy -= impact * (1 + constants.wallBounce) * nearest.normalY;
+    }
+
+    hit = true;
   }
 
-  const corrected = pushOntoTrack(car.x, car.y, track, world);
-  car.x = corrected.x;
-  car.y = corrected.y;
-
-  const normalX = Math.cos(Math.atan2(car.y - world.cy, car.x - world.cx));
-  const normalY = Math.sin(Math.atan2(car.y - world.cy, car.x - world.cx));
-  const impact =
-    car.vx * normalX + car.vy * normalY;
-
-  if (corrected.wall === "outer" && impact > 0) {
-    car.vx -= impact * (1 + constants.wallBounce) * normalX;
-    car.vy -= impact * (1 + constants.wallBounce) * normalY;
-  } else if (corrected.wall === "inner" && impact < 0) {
-    car.vx -= impact * (1 + constants.wallBounce) * normalX;
-    car.vy -= impact * (1 + constants.wallBounce) * normalY;
-  }
-
-  return true;
+  return hit;
 }
 
 export function resolveCarCollisions(cars, constants = CAR) {
@@ -351,11 +490,11 @@ export function resolveCarCollisions(cars, constants = CAR) {
   }
 }
 
-export function aiControlsForCar(car, track = TRACK, world = WORLD) {
-  const progress = progressFromPoint(car.x, car.y, world);
+export function aiControlsForCar(car, centerline = CENTERLINE) {
+  const progress = progressFromPoint(car.x, car.y, centerline);
   const speed = Math.hypot(car.vx, car.vy);
   const lookahead = clamp(0.045 + car.aiSkill * 0.04 + speed / 2400, 0.04, 0.12);
-  const target = centerlinePoint((progress + lookahead) % 1, track, world);
+  const target = centerlinePoint((progress + lookahead) % 1, centerline);
 
   const desired = Math.atan2(target.y - car.y, target.x - car.x);
   const steer = clamp(normalizeAngle(desired - car.angle) / 0.75, -1, 1);
@@ -374,10 +513,10 @@ export function aiControlsForCar(car, track = TRACK, world = WORLD) {
   };
 }
 
-export function updateLapCounter(car, track = TRACK, race = RACE) {
+export function updateLapCounter(car, track = TRACK, race = RACE, centerline = CENTERLINE) {
   const speed = Math.hypot(car.vx, car.vy);
   car.lastProgress = car.progress;
-  car.progress = progressFromPoint(car.x, car.y);
+  car.progress = progressFromPoint(car.x, car.y, centerline);
 
   if (car.finished || speed < race.minSpeedForLap) {
     return false;
@@ -397,7 +536,7 @@ export function updateLapCounter(car, track = TRACK, race = RACE) {
   return false;
 }
 
-export function rankCars(cars, track = TRACK) {
+export function rankCars(cars) {
   const ranked = [...cars].sort((left, right) => {
     if (left.finished && right.finished) {
       return (left.finishTime ?? 0) - (right.finishTime ?? 0);
@@ -533,6 +672,10 @@ export class RCProAmGame {
     for (const car of this.cars) {
       if (car.finished) {
         continue;
+      }
+
+      if (car.isPlayer) {
+        resolveTrackCollision(car);
       }
 
       const completedLap = updateLapCounter(car);
