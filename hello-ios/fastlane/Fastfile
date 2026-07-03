@@ -50,11 +50,33 @@ platform :ios do
         Integer(ENV.fetch("GITHUB_RUN_NUMBER", "1"))
       end
 
+    team_id = ENV.fetch("APPLE_TEAM_ID")
+    profile_name = "match AppStore #{APP_IDENTIFIER}"
+
     build_app(
       project: XCODEPROJ,
       scheme: APP_SCHEME,
       export_method: "app-store",
-      xcargs: "CURRENT_PROJECT_VERSION=#{build_number}",
+      # Force manual signing with the certificate + profile that `match`
+      # installed, so the archive step doesn't try (and fail) to sign
+      # automatically on a CI machine with no Apple account logged in.
+      # Values containing spaces ("Apple Distribution", the profile name) must be
+      # quoted — xcargs is passed through a shell.
+      xcargs: [
+        "CURRENT_PROJECT_VERSION=#{build_number}",
+        "DEVELOPMENT_TEAM=#{team_id}",
+        "CODE_SIGN_STYLE=Manual",
+        "CODE_SIGN_IDENTITY='Apple Distribution'",
+        "PROVISIONING_PROFILE_SPECIFIER='#{profile_name}'"
+      ].join(" "),
+      export_options: {
+        method: "app-store",
+        signingStyle: "manual",
+        teamID: team_id,
+        provisioningProfiles: {
+          APP_IDENTIFIER => profile_name
+        }
+      },
       output_directory: "fastlane/build"
     )
 
