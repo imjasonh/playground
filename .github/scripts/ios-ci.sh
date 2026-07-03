@@ -12,7 +12,12 @@ set -uo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 cd "$repo_root"
 
-mapfile -t apps < <(printf '%s' "${IOS_APPS:-[]}" | jq -r '.[]')
+# macOS runners ship bash 3.2, which has no `mapfile`/`readarray`. Read the JSON
+# array into a plain array with a portable while-read loop instead.
+apps=()
+while IFS= read -r app; do
+  [ -n "$app" ] && apps+=("$app")
+done < <(printf '%s' "${IOS_APPS:-[]}" | jq -r '.[]')
 
 if [ "${#apps[@]}" -eq 0 ]; then
   echo "No iOS apps changed. Nothing to do."
