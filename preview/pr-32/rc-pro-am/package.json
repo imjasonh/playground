@@ -1,0 +1,14 @@
+{
+  "name": "rc-pro-am",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Super RC Pro Am inspired carpet oval racing with AI opponents",
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "start": "npx --yes serve . -p 3000"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
