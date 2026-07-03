@@ -17,6 +17,7 @@ playground/
 │   └── workflows/         # deploy, preview, test, cleanup, dependency updates
 ├── artillery/             # touch-first turn-based artillery duel (JS + Node tests)
 ├── cold-climb/            # touch-first two-handle arcade game (JS + Node tests)
+├── rc-pro-am/             # Super RC Pro-Am inspired carpet oval racer (JS + Node tests)
 ├── git/                   # in-browser read-only git client (JS + Jest + Playwright)
 ├── gitdb/                 # Go CLI (Go module + Go tests)
 ├── hello/                 # example static app (HTML only)
@@ -35,6 +36,7 @@ its root. This is the same rule used by deploy and preview workflows.
 |------|--------------|-------|
 | `artillery/` | yes | Turn-based artillery duel; JS modules, npm scripts, tests |
 | `cold-climb/` | yes | Touch-first arcade game; JS modules, npm scripts, tests |
+| `rc-pro-am/` | yes | Super RC Pro-Am inspired carpet oval racer; JS modules, npm scripts, tests |
 | `git/` | yes | In-browser read-only git client; JS modules, npm scripts, tests |
 | `hello/` | yes | Static HTML; no build or tests |
 | `kanoodle/` | yes | Client-side JS modules, npm scripts, tests |
@@ -294,6 +296,7 @@ cargo test
 |-----------|------|-------|
 | `artillery/` | Turn-based artillery duel with local and AI modes | Node test runner |
 | `cold-climb/` | Two-handle ball-climbing arcade game | Node test runner |
+| `rc-pro-am/` | Super RC Pro-Am inspired carpet oval RC racing with AI rivals | Node test runner |
 | `git/` | In-browser read-only git client (clone, browse, branches, history) | Jest + Playwright |
 | `hello/` | Static demo | none |
 | `kanoodle/` | Kanoodle puzzle game (5×11 board, 12 pieces) | Jest + Playwright |
