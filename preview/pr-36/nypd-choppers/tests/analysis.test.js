@@ -6,6 +6,7 @@ import {
   aggregateDays,
   analyzeAircraft,
   analyzeDay,
+  estimateSampleInterval,
   formatDuration,
   haversineKm,
   isAirborne,
@@ -60,6 +61,42 @@ test("segmentFlights sorts unordered input and ignores grounded samples", () => 
   assert.equal(flights.length, 1);
   assert.equal(flights[0].sampleCount, 2);
   assert.equal(flights[0].startT, T0);
+});
+
+test("segmentFlights splits on the readsb new-leg flag even without a time gap", () => {
+  const samples = [
+    airborneSample({ t: T0 }),
+    airborneSample({ t: T0 + 60 }),
+    airborneSample({ t: T0 + 300, leg: true }), // takeoff after a brief landing
+    airborneSample({ t: T0 + 360 }),
+  ];
+  const flights = segmentFlights(samples);
+  assert.equal(flights.length, 2);
+  assert.equal(flights[0].sampleCount, 2);
+  assert.equal(flights[1].sampleCount, 2);
+});
+
+test("estimateSampleInterval returns the clamped median observation gap", () => {
+  // Dense ~30s trace data.
+  const dense = [0, 30, 60, 90, 120].map((dt) => airborneSample({ t: T0 + dt }));
+  assert.equal(estimateSampleInterval(dense), 30);
+  // Sparse hourly data clamps to the max.
+  const sparse = [0, HOUR, 2 * HOUR].map((dt) => airborneSample({ t: T0 + dt }));
+  assert.equal(estimateSampleInterval(sparse), DEFAULTS.maxSampleIntervalSec);
+  // No gaps -> fallback default.
+  assert.equal(estimateSampleInterval([airborneSample({ t: T0 })]), DEFAULTS.sampleIntervalSec);
+});
+
+test("analyzeDay adapts credited time to dense trace data", () => {
+  const fleet = [{ hex: "ACB1F5", tail: "N917PD", model: "Bell 429", fuelGph: 50, color: "#1" }];
+  // 30 minutes of 30s-spaced points => ~30 min estimated, not ~1.5h.
+  const samples = [];
+  for (let dt = 0; dt <= 1800; dt += 30) {
+    samples.push({ hex: "ACB1F5", lat: 40.7 + dt / 100000, lon: -74, alt: 1000, gs: 90, ground: false, t: T0 + dt });
+  }
+  const { totals } = analyzeDay(samples, { fleet });
+  // span 1800s + one 30s interval = 1830s.
+  assert.ok(Math.abs(totals.estimatedSeconds - 1830) <= 5, `${totals.estimatedSeconds}`);
 });
 
 test("a single-sample flight is credited about one sampling interval", () => {

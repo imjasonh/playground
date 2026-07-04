@@ -72,16 +72,20 @@
       <h2>How these numbers are estimated</h2>
       <ul>
         <li>
-          A scheduled job samples each fleet aircraft's live ADS-B position
-          roughly <strong>once per hour</strong> and stores only airborne
-          snapshots. Paths connect those hourly points, so they are coarse
-          approximations, not continuous tracks.
+          A scheduled job fetches each fleet aircraft's full-day ADS-B
+          <strong>trace</strong> &mdash; the same dense position history
+          (roughly every 30&nbsp;seconds while airborne) the tracking networks
+          use to draw an aircraft's path &mdash; and merges it into per-day
+          files. Because the whole day is re-fetched and de-duplicated, brief
+          flights between hourly runs are not missed and paths follow the
+          actual route, not straight hops between hourly dots.
         </li>
         <li>
-          <strong>Airborne time</strong> per flight is credited as the observed
-          span between the first and last sample plus one sampling interval, so
-          a helicopter caught by a single scrape is counted as roughly one hour
-          aloft. Real flight time can differ, especially for brief hops.
+          <strong>Airborne time</strong> per flight is the observed span between
+          its first and last airborne sample (flights split on long gaps and on
+          the trace's takeoff/landing markers). It is close to actual with dense
+          trace data; if only sparse fallback data is available for a day, each
+          detection is credited with roughly its sampling interval instead.
         </li>
         <li>
           <strong>Fuel</strong> = estimated airborne hours &times; a per-model
@@ -91,9 +95,9 @@
           estimates for public interest, not operational or budget data.
         </li>
         <li>
-          Fleet identified by FAA tail number &rarr; ICAO Mode-S hex. Data via
-          <a href="https://adsb.lol" rel="noopener">adsb.lol</a> and compatible
-          community aggregators.
+          Fleet identified by FAA tail number &rarr; ICAO Mode-S hex. Trace
+          data via <a href="https://adsb.lol" rel="noopener">adsb.lol</a>
+          (ODbL) and compatible community aggregators.
         </li>
       </ul>
     </footer>
