@@ -25,6 +25,9 @@ experiments don't bit-rot.
   balance a ball up the wall while avoiding unlit pockets.
 - **[`hello/`](hello/)** — a minimal static demo.
 - **[`kanoodle/`](kanoodle/)** — the Kanoodle puzzle game (5×11 board, 12 pieces).
+- **[`nypd-choppers/`](nypd-choppers/)** — daily flight paths, airborne hours,
+  and estimated fuel cost for NYPD Aviation Unit helicopters, from public ADS-B
+  data collected by an hourly scrape workflow.
 - **[`web-push-demo/`](web-push-demo/)** — a browser front-end for the
   `web-push` Worker: subscribe/unsubscribe and send notifications end to end.
 
