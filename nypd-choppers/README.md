@@ -70,6 +70,11 @@ reported hex codes in the tests):
 - Paths are drawn from the dense trace points, so they follow the actual route.
   Flights are split on long gaps and on the trace's takeoff/landing (new-leg)
   markers.
+- Each path segment can be **shaded by barometric altitude** (the *Path color*
+  control, default). The ramp runs cool→warm (blue = low, red = high) and is
+  normalised to the altitude range of the tracks currently shown, so climbs and
+  descents stand out even for low-flying helicopters; switch to *Aircraft* to
+  colour whole paths by tail instead.
 - **Airborne time** for a flight = observed span (first→last airborne sample)
   plus one observation interval. The interval is **derived from the data**
   (tens of seconds for dense trace data → airborne time is close to actual; up
@@ -128,6 +133,7 @@ nypd-choppers/
 │   ├── app.js            # browser wiring (DOM + Leaflet)
 │   ├── nnumber.js        # FAA N-number → ICAO hex converter
 │   ├── fleet.js          # NYPD fleet roster + fuel burn + colours
+│   ├── altitude.js       # altitude → colour ramp for map traces (pure)
 │   ├── analysis.js       # flights, airborne time, distance, fuel, cost (pure)
 │   ├── trace.js          # readsb/tar1090 trace → samples (pure)
 │   └── scrape-lib.js     # ADS-B response → samples, day-file merge (pure)

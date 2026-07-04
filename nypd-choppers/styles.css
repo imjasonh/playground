@@ -213,6 +213,33 @@ button.ghost:hover {
   flex: none;
 }
 
+.legend-title {
+  font-weight: 600;
+  margin-bottom: 0.3rem;
+}
+
+.alt-legend {
+  display: flex;
+  align-items: stretch;
+  gap: 0.4rem;
+  height: 110px;
+}
+
+.alt-bar {
+  width: 12px;
+  border-radius: 3px;
+  flex: none;
+  border: 1px solid var(--border);
+}
+
+.alt-ticks {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .table-wrap {
   background: var(--panel);
   border: 1px solid var(--border);

@@ -38,6 +38,13 @@
         <span>Jet-A price ($/gal)</span>
         <input id="price" type="number" min="0" step="0.25" value="6.50" />
       </label>
+      <label class="control">
+        <span>Path color</span>
+        <select id="color-mode">
+          <option value="altitude">Altitude</option>
+          <option value="aircraft">Aircraft</option>
+        </select>
+      </label>
       <button id="refresh" type="button" class="ghost">Reload data</button>
     </section>
 
@@ -78,7 +85,11 @@
           use to draw an aircraft's path &mdash; and merges it into per-day
           files. Because the whole day is re-fetched and de-duplicated, brief
           flights between hourly runs are not missed and paths follow the
-          actual route, not straight hops between hourly dots.
+          actual route, not straight hops between hourly dots. Each path
+          segment is shaded by barometric <strong>altitude</strong> (blue = low
+          &rarr; red = high, scaled to the tracks shown) so climbs and descents
+          are visible; switch <em>Path color</em> to <em>Aircraft</em> to colour
+          whole paths by tail instead.
         </li>
         <li>
           <strong>Airborne time</strong> per flight is the observed span between

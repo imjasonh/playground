@@ -9,6 +9,11 @@ import {
   formatDuration,
   kmToMiles,
 } from "./analysis.js";
+import {
+  altitudeColor,
+  altitudeLegendStops,
+  altitudeRange,
+} from "./altitude.js";
 
 const NYC = [40.7128, -74.006];
 const ALL_DAYS = "__all__";
@@ -23,6 +28,7 @@ const state = {
 const el = {
   daySelect: document.getElementById("day-select"),
   price: document.getElementById("price"),
+  colorMode: document.getElementById("color-mode"),
   refresh: document.getElementById("refresh"),
   summary: document.getElementById("summary"),
   rows: document.getElementById("aircraft-rows"),
@@ -116,6 +122,14 @@ function currentPrice() {
   return Number.isFinite(v) && v >= 0 ? v : 0;
 }
 
+function currentColorMode() {
+  return el.colorMode.value === "aircraft" ? "aircraft" : "altitude";
+}
+
+function fmtAltitude(ft) {
+  return `${Math.round(ft).toLocaleString()} ft`;
+}
+
 async function render() {
   const price = currentPrice();
   const ctx = { fleet: FLEET, fleetByHex: FLEET_BY_HEX };
@@ -195,23 +209,51 @@ function renderTable(analysis) {
 }
 
 // Draw flight paths for the given samples. For a single day this shows the
-// detailed per-flight segments; for "all days" it overlays everything.
+// detailed per-flight segments; for "all days" it overlays everything. In
+// "altitude" mode each segment is shaded by barometric altitude; in "aircraft"
+// mode the whole path uses the aircraft's colour.
 function renderMap(selection, samples, price, ctx) {
   flightLayer.clearLayers();
+  const mode = currentColorMode();
   const perAircraft = analyzeDay(samples, ctx, { pricePerGallon: price }).perAircraft;
   const bounds = [];
   const legendItems = [];
 
+  // Normalise the altitude ramp to the airborne samples actually being drawn.
+  const altRange = altitudeRange(samples);
+  const byAltitude = mode === "altitude" && altRange != null;
+
   for (const a of perAircraft) {
     let drewAny = false;
     for (const flight of a.flights) {
-      const latlngs = flight.points.map((p) => [p.lat, p.lon]);
-      latlngs.forEach((ll) => bounds.push(ll));
-      if (latlngs.length >= 2) {
-        L.polyline(latlngs, { color: a.color, weight: 3, opacity: 0.85 }).addTo(flightLayer);
+      const pts = flight.points;
+      pts.forEach((p) => bounds.push([p.lat, p.lon]));
+      if (pts.length >= 2) {
+        if (byAltitude) {
+          // One coloured segment per hop, tinted by the mean altitude of its
+          // endpoints, so climbs and descents read as a colour gradient.
+          for (let i = 1; i < pts.length; i++) {
+            const prev = pts[i - 1];
+            const cur = pts[i];
+            const alt = meanAlt(prev.alt, cur.alt);
+            const color = altitudeColor(alt, altRange.min, altRange.max);
+            L.polyline([[prev.lat, prev.lon], [cur.lat, cur.lon]], {
+              color,
+              weight: 3,
+              opacity: 0.9,
+            }).addTo(flightLayer);
+          }
+        } else {
+          L.polyline(pts.map((p) => [p.lat, p.lon]), {
+            color: a.color,
+            weight: 3,
+            opacity: 0.85,
+          }).addTo(flightLayer);
+        }
         drewAny = true;
       }
-      // Start marker for each flight.
+      // Start marker for each flight (always the aircraft colour, so tracks can
+      // still be attributed to a tail even when shaded by altitude).
       const start = flight.points[0];
       L.circleMarker([start.lat, start.lon], {
         radius: 4,
@@ -223,7 +265,8 @@ function renderMap(selection, samples, price, ctx) {
         .bindPopup(
           `<strong>${a.tail ?? a.hex}</strong><br>${a.model ?? ""}<br>` +
             `Flight ${formatDuration(flight.estimatedSeconds)} \u00b7 ` +
-            `${Math.round(kmToMiles(flight.distanceKm))} mi (est.)`,
+            `${Math.round(kmToMiles(flight.distanceKm))} mi (est.)` +
+            altitudePopupLine(flight),
         )
         .addTo(flightLayer);
       drewAny = true;
@@ -231,7 +274,11 @@ function renderMap(selection, samples, price, ctx) {
     if (drewAny) legendItems.push(a);
   }
 
-  renderLegend(legendItems);
+  if (byAltitude) {
+    renderAltitudeLegend(altRange);
+  } else {
+    renderAircraftLegend(legendItems);
+  }
 
   if (bounds.length) {
     map.fitBounds(bounds, { padding: [30, 30], maxZoom: 12 });
@@ -240,7 +287,22 @@ function renderMap(selection, samples, price, ctx) {
   }
 }
 
-function renderLegend(items) {
+function meanAlt(a, b) {
+  const vals = [a, b].filter((v) => Number.isFinite(v));
+  if (!vals.length) return null;
+  return vals.reduce((s, v) => s + v, 0) / vals.length;
+}
+
+function altitudePopupLine(flight) {
+  const range = altitudeRange(flight.points);
+  if (!range) return "";
+  const peak = `Peak ${fmtAltitude(range.max)}`;
+  return range.min === range.max
+    ? `<br>${peak}`
+    : `<br>${fmtAltitude(range.min)}\u2013${fmtAltitude(range.max)}`;
+}
+
+function renderAircraftLegend(items) {
   if (!items.length) {
     el.legend.classList.remove("show");
     el.legend.innerHTML = "";
@@ -253,6 +315,26 @@ function renderLegend(items) {
         `${a.tail ?? a.hex}</div>`,
     )
     .join("");
+  el.legend.classList.add("show");
+}
+
+function renderAltitudeLegend(range) {
+  const stops = altitudeLegendStops(range.min, range.max);
+  if (!stops.length) {
+    el.legend.classList.remove("show");
+    el.legend.innerHTML = "";
+    return;
+  }
+  const gradient = stops.map((s) => s.color).join(", ");
+  el.legend.innerHTML =
+    `<div class="legend-title">Altitude</div>` +
+    `<div class="alt-legend">` +
+    `<span class="alt-bar" style="background:linear-gradient(to top, ${gradient})"></span>` +
+    `<span class="alt-ticks">` +
+    `<span>${fmtAltitude(range.max)}</span>` +
+    `<span>${fmtAltitude(range.min)}</span>` +
+    `</span>` +
+    `</div>`;
   el.legend.classList.add("show");
 }
 
@@ -281,6 +363,9 @@ el.daySelect.addEventListener("change", () => {
   render().catch((e) => console.error(e));
 });
 el.price.addEventListener("change", () => {
+  render().catch((e) => console.error(e));
+});
+el.colorMode.addEventListener("change", () => {
   render().catch((e) => console.error(e));
 });
 el.refresh.addEventListener("click", async () => {
