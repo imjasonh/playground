@@ -82,6 +82,7 @@ discovery scripts.
 | `cleanup.yml` | pull request closed | Removes that PR's preview directory from `gh-pages` |
 | `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps in one job |
 | `deps.yaml` | daily at 00:00 UTC, manual | Updates every testable browser app, Go app, and Rust app; pushes passing updates to `main`, otherwise opens a PR |
+| `nypd-choppers-scrape.yml` | hourly, manual | **App-specific:** scrapes NYPD helicopter ADS-B positions and commits per-day JSON to `gh-pages` under `nypd-choppers/data/`. Not generalized; shares the `gh-pages-publish` concurrency group with deploy/preview/cleanup |
 
 Deploy workflows copy browser app directories as-is (they do **not** run
 `npm install` or build). Go and Rust app directories are not deployed. Only
@@ -297,7 +298,14 @@ cargo test
 | `git/` | In-browser read-only git client (clone, browse, branches, history) | Jest + Playwright |
 | `hello/` | Static demo | none |
 | `kanoodle/` | Kanoodle puzzle game (5×11 board, 12 pieces) | Jest + Playwright |
+| `nypd-choppers/` | NYPD helicopter daily flight paths, hours, and fuel-cost estimates from ADS-B | Node test runner |
 | `web-push-demo/` | Browser front-end for `web-push` (subscribe/unsubscribe/notify) | none (static) |
+
+> **`nypd-choppers` has an intentionally non-standard lifecycle.** Because free
+> ADS-B APIs are blocked by CORS and only serve live data, it relies on the
+> hourly `nypd-choppers-scrape.yml` workflow to accumulate historical data,
+> which it commits to the `gh-pages` branch (never `main`). Do not try to fold
+> this data-collection pattern into the shared deploy/test/deps workflows.
 
 ## Current Go apps
 
