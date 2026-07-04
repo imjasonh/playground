@@ -14,12 +14,17 @@ import {
   altitudeLegendStops,
   altitudeRange,
 } from "./altitude.js";
+import { resolveDataBase } from "./datasource.js";
 
 const NYC = [40.7128, -74.006];
 const ALL_DAYS = "__all__";
 
+// Where scraped data lives. In a PR preview this points back at the production
+// data directory so previews show the latest real flights, not sample data.
+const DATA_BASE = resolveDataBase(window.location.origin, window.location.pathname);
+
 const state = {
-  base: "data", // "data" (live) or "sample" (fallback demo)
+  base: DATA_BASE, // live data base URL, or "sample" (bundled demo fallback)
   index: null, // { days: [{date, samples}] }
   dayCache: new Map(), // date -> { samples: [...] }
   selectedDay: null,
@@ -59,9 +64,9 @@ async function fetchJson(path) {
 // sample data so the app is never empty during local dev or before first scrape.
 async function loadIndex() {
   try {
-    const idx = await fetchJson("data/index.json");
+    const idx = await fetchJson(`${DATA_BASE}/index.json`);
     if (idx && Array.isArray(idx.days) && idx.days.length > 0) {
-      state.base = "data";
+      state.base = DATA_BASE;
       state.index = idx;
       setBadge("live", "Live scraped data");
       return;

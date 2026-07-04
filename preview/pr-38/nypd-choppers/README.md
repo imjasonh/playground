@@ -110,6 +110,13 @@ true` marks a takeoff/landing boundary from the trace.)
 Until the live scraper has published anything, the app falls back to the bundled
 demo data in [`sample/`](sample/) and shows a "sample data" badge.
 
+**PR previews reuse the production data.** The scraper only publishes to
+`<site>/nypd-choppers/data/`, never into a `/preview/pr-<n>/` copy. So when the
+app is served from a preview path it strips the preview segment and fetches the
+same production data (see `src/datasource.js`), meaning a preview shows the
+latest real flights instead of sample data — and no scraped JSON is duplicated
+into each preview.
+
 ## Develop & test
 
 ```bash
@@ -134,6 +141,7 @@ nypd-choppers/
 │   ├── nnumber.js        # FAA N-number → ICAO hex converter
 │   ├── fleet.js          # NYPD fleet roster + fuel burn + colours
 │   ├── altitude.js       # altitude → colour ramp for map traces (pure)
+│   ├── datasource.js     # resolve data URL (previews reuse prod data) (pure)
 │   ├── analysis.js       # flights, airborne time, distance, fuel, cost (pure)
 │   ├── trace.js          # readsb/tar1090 trace → samples (pure)
 │   └── scrape-lib.js     # ADS-B response → samples, day-file merge (pure)
