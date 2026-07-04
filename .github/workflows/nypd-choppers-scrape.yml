@@ -52,13 +52,16 @@ jobs:
       - name: Commit and push new samples to gh-pages
         working-directory: pages
         run: |
-          if [ -z "$(git status --porcelain nypd-choppers/data)" ]; then
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # The app ships a .gitignore that ignores data/ (so locally scraped
+          # data is never committed to main); it is also present on gh-pages, so
+          # force-add past it here to publish the scraped snapshots.
+          git add -f nypd-choppers/data
+          if git diff --cached --quiet; then
             echo "No data changes to publish."
             exit 0
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add nypd-choppers/data
           git commit -m "chore(nypd-choppers): hourly ADS-B snapshot"
           # gh-pages is updated by multiple workflows; rebase + retry on races.
           for attempt in 1 2 3 4; do
