@@ -1,0 +1,74 @@
+# App-specific lifecycle for the `nypd-choppers` tracker.
+#
+# Free ADS-B APIs are unusable directly from the browser (CORS) and only expose
+# *live* positions, not history. So this job runs hourly, samples the NYPD
+# fleet's current ADS-B positions, and appends airborne snapshots to per-day
+# JSON files committed straight to the `gh-pages` branch under
+# `nypd-choppers/data/`. The deployed app reads those files to reconstruct
+# daily flight paths, airborne hours, and fuel-cost estimates.
+#
+# This is intentionally NOT generalized to other apps: only nypd-choppers
+# accumulates published data on a schedule. It writes to gh-pages directly
+# (never to main) so the app's source stays clean, and shares the
+# `gh-pages-publish` concurrency group with deploy/preview/cleanup so the
+# branch is only ever updated by one job at a time.
+
+name: NYPD choppers hourly scrape
+
+on:
+  schedule:
+    - cron: '17 * * * *' # hourly, at :17 to avoid the top-of-hour rush
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gh-pages-publish
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out app sources (main)
+        uses: actions/checkout@v4
+
+      - name: Check out published site (gh-pages)
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: pages
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Scrape current fleet positions
+        env:
+          NYPD_DATA_DIR: ${{ github.workspace }}/pages/nypd-choppers/data
+        run: node nypd-choppers/scripts/scrape.js
+
+      - name: Commit and push new samples to gh-pages
+        working-directory: pages
+        run: |
+          if [ -z "$(git status --porcelain nypd-choppers/data)" ]; then
+            echo "No data changes to publish."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add nypd-choppers/data
+          git commit -m "chore(nypd-choppers): hourly ADS-B snapshot"
+          # gh-pages is updated by multiple workflows; rebase + retry on races.
+          for attempt in 1 2 3 4; do
+            if git push origin gh-pages; then
+              echo "Pushed on attempt $attempt."
+              exit 0
+            fi
+            echo "Push failed (attempt $attempt); rebasing and retrying..."
+            git pull --rebase origin gh-pages || true
+            sleep $((attempt * 4))
+          done
+          echo "Failed to push after retries." >&2
+          exit 1
