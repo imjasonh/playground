@@ -24,6 +24,7 @@ const ROSTER = [
   { tail: "N918PD", model: "Bell 429" },
   { tail: "N919PD", model: "Bell 429" },
   { tail: "N920PD", model: "Bell 429" },
+  { tail: "N921PD", model: "Bell 429" },
   { tail: "N922PD", model: "Bell 412EPX" },
   { tail: "N412PD", model: "Bell 412EP" },
   { tail: "N414PD", model: "Bell 412EP" },

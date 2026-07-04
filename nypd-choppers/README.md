@@ -60,7 +60,7 @@ reported hex codes in the tests):
 
 | Tail | Model | Est. burn (gal/hr) |
 |------|-------|--------------------|
-| N917PD–N920PD | Bell 429 | ~50 |
+| N917PD–N921PD | Bell 429 | ~50 |
 | N922PD | Subaru Bell 412EPX | ~100 |
 | N412PD, N414PD, N422PD | Bell 412EP | ~100 |
 | N407NY | Bell 407 | ~40 |
