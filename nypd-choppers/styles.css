@@ -283,3 +283,17 @@ tbody tr:hover {
 .methodology li {
   margin: 0.4rem 0;
 }
+
+.fleet-roster {
+  margin: 1rem 0 0.35rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  color: var(--text);
+  font-size: 0.86rem;
+}
+
+.fleet-roster-note {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+}

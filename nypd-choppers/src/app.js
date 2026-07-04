@@ -153,8 +153,9 @@ function renderSummary(analysis, selection) {
       label: "Estimated airborne",
       sub: selection === ALL_DAYS ? `across ${t.days} days` : "this day",
     },
-    { value: String(t.flightCount), label: "Flights", sub: `${t.activeAircraft ?? analysis.perAircraft.length} aircraft aloft` },
-    { value: `${Math.round(kmToMiles(t.distanceKm)).toLocaleString()} mi`, label: "Distance flown", sub: `${Math.round(t.distanceKm).toLocaleString()} km` },
+    { value: `${t.activeAircraft ?? analysis.perAircraft.length} / ${FLEET.length}`, label: "Fleet aircraft aloft", sub: "others grounded / not transmitting" },
+    { value: String(t.flightCount), label: "Flights", sub: "distinct legs flown" },
+    { value: `${Math.round(kmToMiles(t.distanceKm)).toLocaleString()} mi`, label: "Distance flown", sub: `along the actual track` },
     { value: `${Math.round(t.estimatedGallons).toLocaleString()} gal`, label: "Estimated Jet-A", sub: "turbine cruise burn" },
     { value: fmtMoney(t.estimatedCost), label: "Estimated fuel cost", sub: `@ ${fmtMoney(currentPrice())}/gal` },
   ];
@@ -264,7 +265,24 @@ function fmtMoney(n) {
   });
 }
 
+function renderFleetRoster() {
+  const elRoster = document.getElementById("fleet-roster");
+  if (!elRoster) return;
+  const byModel = new Map();
+  for (const a of FLEET) {
+    if (!byModel.has(a.model)) byModel.set(a.model, []);
+    byModel.get(a.model).push(a.tail);
+  }
+  const parts = [...byModel.entries()].map(
+    ([model, tails]) => `${tails.join(", ")} (${model})`,
+  );
+  elRoster.innerHTML =
+    `<strong>Tracking ${FLEET.length} NYPD helicopters:</strong> ` +
+    parts.join("; ") + ".";
+}
+
 async function boot() {
+  renderFleetRoster();
   initMap();
   try {
     await loadIndex();
