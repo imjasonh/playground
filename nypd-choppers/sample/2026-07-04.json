@@ -1,0 +1,127 @@
+{
+  "date": "2026-07-04",
+  "tz": "America/New_York",
+  "updated": 1783181056,
+  "samples": [
+    {
+      "hex": "ACBF73",
+      "r": "N920PD",
+      "flight": null,
+      "t": 1783170000,
+      "lat": 40.59,
+      "lon": -73.88,
+      "alt": null,
+      "gs": 0,
+      "track": null,
+      "ground": true
+    },
+    {
+      "hex": "ACB1F5",
+      "r": "N917PD",
+      "flight": null,
+      "t": 1783173600,
+      "lat": 40.706,
+      "lon": -74.01,
+      "alt": 1200,
+      "gs": 85,
+      "track": 40,
+      "ground": false
+    },
+    {
+      "hex": "ACB1F5",
+      "r": "N917PD",
+      "flight": null,
+      "t": 1783177200,
+      "lat": 40.758,
+      "lon": -73.985,
+      "alt": 1500,
+      "gs": 95,
+      "track": 20,
+      "ground": false
+    },
+    {
+      "hex": "ACB1F5",
+      "r": "N917PD",
+      "flight": null,
+      "t": 1783180800,
+      "lat": 40.82,
+      "lon": -73.93,
+      "alt": 1400,
+      "gs": 90,
+      "track": 300,
+      "ground": false
+    },
+    {
+      "hex": "ACB1F5",
+      "r": "N917PD",
+      "flight": null,
+      "t": 1783184400,
+      "lat": 40.78,
+      "lon": -73.96,
+      "alt": 1300,
+      "gs": 80,
+      "track": 210,
+      "ground": false
+    },
+    {
+      "hex": "ACB1F5",
+      "r": "N917PD",
+      "flight": null,
+      "t": 1783188000,
+      "lat": 40.712,
+      "lon": -74.006,
+      "alt": 1100,
+      "gs": 70,
+      "track": 180,
+      "ground": false
+    },
+    {
+      "hex": "ACB963",
+      "r": "N919PD",
+      "flight": null,
+      "t": 1783191600,
+      "lat": 40.73,
+      "lon": -73.87,
+      "alt": 1300,
+      "gs": 110,
+      "track": 80,
+      "ground": false
+    },
+    {
+      "hex": "ACC6E1",
+      "r": "N922PD",
+      "flight": null,
+      "t": 1783209600,
+      "lat": 40.689,
+      "lon": -74.045,
+      "alt": 900,
+      "gs": 80,
+      "track": 120,
+      "ground": false
+    },
+    {
+      "hex": "ACC6E1",
+      "r": "N922PD",
+      "flight": null,
+      "t": 1783213200,
+      "lat": 40.65,
+      "lon": -73.98,
+      "alt": 1100,
+      "gs": 90,
+      "track": 90,
+      "ground": false
+    },
+    {
+      "hex": "ACC6E1",
+      "r": "N922PD",
+      "flight": null,
+      "t": 1783216800,
+      "lat": 40.64,
+      "lon": -73.93,
+      "alt": 1000,
+      "gs": 85,
+      "track": 100,
+      "ground": false
+    }
+  ]
+}
