@@ -12,6 +12,7 @@ concurrency:
 permissions:
   actions: read
   contents: write
+  pages: write
   pull-requests: write
 
 jobs:
@@ -64,73 +65,81 @@ jobs:
           publish_dir: ./dist
           keep_files: true   # preserves production apps and other PR previews
 
-      - name: Wait for GitHub Pages deployment
+      - name: Ensure GitHub Pages publishes this commit
         uses: actions/github-script@v7
         with:
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
-            const workflowName = 'pages build and deployment';
-            const timeoutMs = 20 * 60 * 1000;
+            const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+            // This repo serves Pages with the legacy "deploy from a branch"
+            // builder on gh-pages. deploy/preview/cleanup AND the hourly
+            // nypd-choppers scrape all push to that one branch, and the builder
+            // only ever serves the LAST successful build — so when pushes land
+            // close together an earlier build gets cancelled ("errored", 0s) or
+            // stalls in "building", leaving the newest commit (this preview)
+            // unpublished. Poll the build; if it errors, serves a stale commit,
+            // or stalls, explicitly request a rebuild of the current tip so the
+            // preview actually goes live.
+            const timeoutMs = 12 * 60 * 1000;
             const pollMs = 15 * 1000;
+            const stallMs = 3 * 60 * 1000; // "building" longer than this => nudge
             const startedAt = Date.now();
 
-            function sleep(ms) {
-              return new Promise((resolve) => setTimeout(resolve, ms));
-            }
-
             const { data: ref } = await github.rest.git.getRef({
-              owner,
-              repo,
-              ref: 'heads/gh-pages',
+              owner, repo, ref: 'heads/gh-pages',
             });
-            const targetSha = ref.object.sha;
-            core.info(`Waiting for Pages deployment of gh-pages commit ${targetSha}`);
+            const tip = ref.object.sha;
+            core.info(`Ensuring Pages serves gh-pages commit ${tip}`);
+
+            let lastRequestAt = 0;
+            const requestRebuild = async (why) => {
+              // Never hammer the builder; one request per ~90s at most.
+              if (Date.now() - lastRequestAt < 90 * 1000) return;
+              lastRequestAt = Date.now();
+              core.info(`Requesting a Pages rebuild (${why}).`);
+              try {
+                await github.rest.repos.requestPagesBuild({ owner, repo });
+              } catch (e) {
+                core.info(`Rebuild request failed (${e.status || e.message}); will retry.`);
+              }
+            };
 
             while (Date.now() - startedAt < timeoutMs) {
-              const workflows = await github.paginate(github.rest.actions.listRepoWorkflows, {
-                owner,
-                repo,
-                per_page: 100,
-              });
-              const pagesWorkflow = workflows.find(
-                (w) => (w.name || '').toLowerCase() === workflowName,
-              );
-
-              if (!pagesWorkflow) {
-                core.info('Pages workflow is not configured; skipping wait.');
+              let build;
+              try {
+                ({ data: build } = await github.rest.repos.getLatestPagesBuild({ owner, repo }));
+              } catch (e) {
+                core.warning(`Could not read Pages build status (${e.status || e.message}); skipping wait.`);
                 return;
               }
 
-              const { data: runsData } = await github.rest.actions.listWorkflowRuns({
-                owner,
-                repo,
-                workflow_id: pagesWorkflow.id,
-                head_sha: targetSha,
-                event: 'push',
-                per_page: 1,
-              });
-              const run = runsData.workflow_runs[0];
+              const buildAge = Date.now() - Date.parse(build.updated_at || build.created_at || 0);
+              core.info(`Pages build: status=${build.status} commit=${build.commit} age=${Math.round(buildAge / 1000)}s`);
 
-              if (!run) {
-                core.info(`No Pages run yet for ${targetSha}; retrying...`);
-                await sleep(pollMs);
-                continue;
+              if (build.status === 'built') {
+                if (build.commit === tip) {
+                  core.info('Pages is serving this commit.');
+                  return;
+                }
+                // A newer push (e.g. the scrape) may legitimately have advanced
+                // the tip; keep_files means it still contains this preview, so a
+                // rebuild of the current tip publishes us too.
+                await requestRebuild('serving an older commit');
+              } else if (build.status === 'errored') {
+                await requestRebuild('previous build errored');
+              } else if (build.status === 'building' && buildAge > stallMs) {
+                await requestRebuild('build appears stalled');
               }
 
-              core.info(`Pages run ${run.id} status=${run.status} conclusion=${run.conclusion}`);
-              if (run.status !== 'completed') {
-                await sleep(pollMs);
-                continue;
-              }
-
-              if (run.conclusion !== 'success') {
-                core.setFailed(`Pages deployment for ${targetSha} concluded with ${run.conclusion}.`);
-              }
-              return;
+              await sleep(pollMs);
             }
 
-            core.setFailed(`Timed out waiting for Pages deployment on ${targetSha}.`);
+            core.warning(
+              `Pages did not confirm publication of ${tip} within the timeout. ` +
+              `The files are on gh-pages; the next successful build will serve them.`,
+            );
 
       - name: Comment preview URL on PR
         uses: actions/github-script@v7
