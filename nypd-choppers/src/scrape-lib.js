@@ -40,6 +40,19 @@ export function buildSnapshot(body, fallbackNowMs = Date.now()) {
   return { t: nowSec, samples };
 }
 
+// Group samples by their local calendar date (default US Eastern). A single
+// full-day UTC trace can straddle two New York dates, so route each point to
+// the day it belongs to. Returns a Map of "YYYY-MM-DD" -> samples[].
+export function groupByLocalDate(samples, timeZone = "America/New_York") {
+  const byDate = new Map();
+  for (const s of samples) {
+    const date = localDateString(s.t * 1000, timeZone);
+    if (!byDate.has(date)) byDate.set(date, []);
+    byDate.get(date).push(s);
+  }
+  return byDate;
+}
+
 // "YYYY-MM-DD" for the given epoch-ms in a timezone (default US Eastern).
 export function localDateString(ms, timeZone = "America/New_York") {
   // en-CA formats as YYYY-MM-DD.
