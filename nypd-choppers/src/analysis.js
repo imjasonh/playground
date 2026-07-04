@@ -19,9 +19,14 @@ export const DEFAULTS = {
   // Consecutive airborne samples farther apart than this (seconds) are treated
   // as separate flights rather than one continuous track.
   maxFlightGapSec: 5400, // 90 minutes
-  // Nominal spacing between scrapes (seconds). Each airborne detection is
-  // credited with roughly this much flight time (see estimateFlightSeconds).
-  sampleIntervalSec: 3600, // 1 hour
+  // Nominal spacing between observations (seconds). Each flight is credited
+  // with one extra interval of coverage (see estimateFlightSeconds). This is
+  // derived from the data by default (dense trace data => tens of seconds;
+  // sparse snapshot fallback => up to an hour) and only used as a fallback.
+  sampleIntervalSec: 3600,
+  // Clamp range for the auto-derived observation interval.
+  minSampleIntervalSec: 20,
+  maxSampleIntervalSec: 3600,
   // Jet-A price used when the caller does not override it (US$/gallon).
   pricePerGallon: 6.5,
 };
@@ -73,7 +78,40 @@ export function estimateFlightSeconds(spanSeconds, opts = {}) {
 }
 
 /**
- * Split one aircraft's samples into approximate flights.
+ * Estimate the typical spacing between observations (seconds) as the median
+ * gap between an aircraft's consecutive samples, clamped to a sane range. This
+ * lets the same code credit dense trace data (~30s spacing) accurately while
+ * still giving sparse snapshot data ~hourly credit.
+ */
+export function estimateSampleInterval(samples, opts = {}) {
+  const { minSampleIntervalSec, maxSampleIntervalSec, sampleIntervalSec } = {
+    ...DEFAULTS,
+    ...opts,
+  };
+  const byHex = new Map();
+  for (const s of samples || []) {
+    const key = String(s.hex || "").toUpperCase();
+    if (!byHex.has(key)) byHex.set(key, []);
+    byHex.get(key).push(s.t);
+  }
+  const gaps = [];
+  for (const times of byHex.values()) {
+    times.sort((a, b) => a - b);
+    for (let i = 1; i < times.length; i++) {
+      const d = times[i] - times[i - 1];
+      if (d > 0) gaps.push(d);
+    }
+  }
+  if (!gaps.length) return sampleIntervalSec;
+  gaps.sort((a, b) => a - b);
+  const median = gaps[Math.floor(gaps.length / 2)];
+  return Math.min(maxSampleIntervalSec, Math.max(minSampleIntervalSec, median));
+}
+
+/**
+ * Split one aircraft's samples into approximate flights. A new flight begins
+ * when the gap since the previous airborne sample exceeds maxFlightGapSec, or
+ * when a sample carries the readsb "new leg" flag (takeoff/landing boundary).
  * @returns {Array<{startT,endT,spanSeconds,estimatedSeconds,distanceKm,points}>}
  */
 export function segmentFlights(samples, opts = {}) {
@@ -86,7 +124,10 @@ export function segmentFlights(samples, opts = {}) {
   const flights = [];
   let current = null;
   for (const s of airborne) {
-    if (current && s.t - current.points[current.points.length - 1].t > cfg.maxFlightGapSec) {
+    const prev = current && current.points[current.points.length - 1];
+    const gapSplit = prev && s.t - prev.t > cfg.maxFlightGapSec;
+    const legSplit = current && s.leg === true;
+    if (gapSplit || legSplit) {
       flights.push(finalizeFlight(current, cfg));
       current = null;
     }
@@ -151,6 +192,11 @@ export function analyzeAircraft(member, samples, opts = {}) {
  */
 export function analyzeDay(samples, ctx, opts = {}) {
   const cfg = { ...DEFAULTS, ...opts };
+  // Adapt the coverage credit to the actual observation density unless the
+  // caller pinned it explicitly.
+  if (opts.sampleIntervalSec == null) {
+    cfg.sampleIntervalSec = estimateSampleInterval(samples, cfg);
+  }
   const fleet = ctx?.fleet ?? [];
   const byHex =
     ctx?.fleetByHex ?? new Map(fleet.map((m) => [m.hex.toUpperCase(), m]));

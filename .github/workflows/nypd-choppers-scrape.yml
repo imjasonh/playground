@@ -1,11 +1,13 @@
 # App-specific lifecycle for the `nypd-choppers` tracker.
 #
-# Free ADS-B APIs are unusable directly from the browser (CORS) and only expose
-# *live* positions, not history. So this job runs hourly, samples the NYPD
-# fleet's current ADS-B positions, and appends airborne snapshots to per-day
-# JSON files committed straight to the `gh-pages` branch under
-# `nypd-choppers/data/`. The deployed app reads those files to reconstruct
-# daily flight paths, airborne hours, and fuel-cost estimates.
+# Free ADS-B APIs are unusable directly from the browser (CORS) and their live
+# endpoints only expose an aircraft's *current* position. So this job fetches
+# each fleet aircraft's full-day **trace** (dense ~30s position history) and
+# merges it (de-duplicated) into per-day JSON files committed straight to the
+# `gh-pages` branch under `nypd-choppers/data/`. Running hourly and re-merging
+# the whole day means brief flights between runs are never missed even though
+# the scheduler is best-effort. The deployed app reads those files to
+# reconstruct daily flight paths, airborne hours, and fuel-cost estimates.
 #
 # This is intentionally NOT generalized to other apps: only nypd-choppers
 # accumulates published data on a schedule. It writes to gh-pages directly
@@ -44,7 +46,7 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Scrape current fleet positions
+      - name: Collect fleet flight traces
         env:
           NYPD_DATA_DIR: ${{ github.workspace }}/pages/nypd-choppers/data
         run: node nypd-choppers/scripts/scrape.js
@@ -62,7 +64,7 @@ jobs:
             echo "No data changes to publish."
             exit 0
           fi
-          git commit -m "chore(nypd-choppers): hourly ADS-B snapshot"
+          git commit -m "chore(nypd-choppers): hourly ADS-B trace merge"
           # gh-pages is updated by multiple workflows; rebase + retry on races.
           for attempt in 1 2 3 4; do
             if git push origin gh-pages; then

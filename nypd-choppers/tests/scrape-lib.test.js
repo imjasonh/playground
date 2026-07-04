@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   buildSnapshot,
+  groupByLocalDate,
   localDateString,
   mergeDay,
   normalizeAircraft,
@@ -68,6 +69,18 @@ test("mergeDay de-duplicates on hex+time and keeps sorted order", () => {
   ], "2026-07-04");
   assert.equal(second.added, 1);
   assert.equal(second.day.samples.length, 3);
+});
+
+test("groupByLocalDate routes points to their New York calendar date", () => {
+  // A UTC-day trace straddling New York midnight: 03:30Z is still the prior
+  // NY day, 05:30Z is the next NY day.
+  const samples = [
+    { hex: "A", t: Date.parse("2026-07-05T03:30:00Z") / 1000 },
+    { hex: "A", t: Date.parse("2026-07-05T05:30:00Z") / 1000 },
+  ];
+  const byDate = groupByLocalDate(samples);
+  assert.deepEqual([...byDate.keys()].sort(), ["2026-07-04", "2026-07-05"]);
+  assert.equal(byDate.get("2026-07-04").length, 1);
 });
 
 test("updateIndex replaces the entry for a day and sorts", () => {
