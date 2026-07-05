@@ -64,6 +64,7 @@
           <input id="invite-link" class="mono" type="text" readonly />
           <button id="copy-invite" class="ghost" type="button">Copy</button>
         </div>
+        <div id="invite-qr" class="qr hidden"></div>
 
         <h2>2. Paste their reply code</h2>
         <p class="muted">
@@ -75,7 +76,12 @@
           rows="3"
           placeholder="Paste the reply code here…"
         ></textarea>
-        <button id="answer-connect" class="primary" type="button">Connect</button>
+        <div class="button-row">
+          <button id="answer-connect" class="primary" type="button">Connect</button>
+          <button id="scan-reply" class="ghost hidden" type="button">
+            Scan reply with camera
+          </button>
+        </div>
         <p id="invite-status" class="status" role="status"></p>
       </section>
 
@@ -90,6 +96,7 @@
           <textarea id="reply-code" class="mono" rows="4" readonly></textarea>
         </div>
         <button id="copy-reply" class="ghost" type="button">Copy reply code</button>
+        <div id="reply-qr" class="qr hidden"></div>
         <p id="reply-status" class="status" role="status"></p>
       </section>
 
@@ -139,6 +146,14 @@
           </div>
         </div>
       </section>
+
+      <div id="scanner" class="scanner hidden">
+        <div class="scanner-inner">
+          <p class="muted">Point the camera at the reply QR code</p>
+          <video id="scan-video" playsinline></video>
+          <button id="scan-cancel" class="ghost" type="button">Cancel</button>
+        </div>
+      </div>
 
       <footer class="footnote">
         <p>
