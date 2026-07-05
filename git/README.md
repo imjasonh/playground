@@ -39,6 +39,9 @@ branch switching, and commit history. Everything runs on-device with
   and blame a file to attribute each line to the commit that last changed it.
 - **Deep links** — the repo, ref, file, and selected line range are encoded in
   the URL hash, so any view is shareable, bookmarkable, and reload-safe.
+- **Share** — a repo-bar action shows the current deep link with a one-tap copy
+  and an on-device QR code (no network, no third-party image service) to hand
+  the view off to a phone.
 - **Pull / Update** — a menu action fetches the latest commits from the remote
   and reports how many new commits it pulled.
 - **Auto-update** — while a cloned repo is open and the tab is focused, the app
@@ -88,6 +91,7 @@ a few vendored libraries.
 - `src/contentSearchClient.js` / `src/contentSearchWorker.js` — off-thread content grep
 - `src/highlightCode.js` — dependency-free, offline syntax highlighter
 - `src/hashState.js` — deep-link state encoded in the URL hash
+- `src/qrcode.js` — dependency-free QR Code encoder (byte mode, versions 1–10)
 - `src/diff.js` — line-level (LCS) diff for the diff view
 - `src/blame.js` — per-line blame from a file's per-commit history (pure)
 - `src/repoUrl.js` — parse/validate clone URLs
@@ -114,6 +118,7 @@ a few vendored libraries.
 - `src/ui/contentSearch.js` — content-search (grep) overlay
 - `src/ui/history.js` — commit history panel + ref compare
 - `src/ui/recent.js` — preset and stored repositories
+- `src/ui/share.js` — share panel (deep link + rendered QR code)
 - `src/ui/highlight.js` — shared fuzzy-match row rendering
 - `src/ui/virtualList.js` — windowing helpers for the large-list virtualization
 - `vendor/` — pre-bundled browser builds of the runtime libraries

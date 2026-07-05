@@ -711,6 +711,29 @@ test('encodes the open file and selected lines in the URL hash', async ({ page }
   await expect(page).toHaveURL(/lines=1/);
 });
 
+test('shares the current view as a link and a QR code', async ({ page }) => {
+  await loadDemo(page);
+
+  // Open a file so the shared link carries more than just the repo.
+  await page.locator('#tree-filter').fill('storage.js');
+  await page.locator('.flat-row', { hasText: 'storage.js' }).click();
+  await expect(page.locator('#file-path')).toContainText('storage.js');
+
+  await page.getByRole('button', { name: 'Share' }).click();
+  await expect(page.locator('#share-overlay')).toBeVisible();
+
+  // The link mirrors the current URL, and a QR code is rendered for it.
+  const shared = await page.locator('#share-url').inputValue();
+  expect(shared).toBe(page.url());
+  expect(shared).toContain('file=src/storage.js');
+  await expect(page.locator('#share-qr svg')).toBeVisible();
+
+  // Escape closes the panel and returns focus to the Share button.
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#share-overlay')).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Share' })).toBeFocused();
+});
+
 test('remembers the last repo and offers it after landing on the bare URL', async ({ page }) => {
   await page.goto('/');
   await page.waitForFunction(() => !!(window.gitBrowser && window.gitBrowser.openSource));

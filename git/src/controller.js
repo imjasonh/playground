@@ -12,6 +12,7 @@ import { createPalette } from './ui/palette.js';
 import { createContentSearch } from './ui/contentSearch.js';
 import { createHistory } from './ui/history.js';
 import { createRecent } from './ui/recent.js';
+import { createShare } from './ui/share.js';
 import { buildFileTree } from './fileTree.js';
 import { createStore, createLoadController } from './store.js';
 import { createUpdatePoller } from './poller.js';
@@ -34,7 +35,8 @@ import { createContentSearchClient } from './contentSearchClient.js';
 // can confirm each one exists in index.html.
 const DOM_IDS = [
   'repo-bar', 'repo-name', 'repo-meta', 'branch-select', 'find-btn', 'search-btn',
-  'history-btn', 'update-btn', 'close-btn', 'start-view', 'clone-form',
+  'history-btn', 'update-btn', 'share-btn', 'close-btn', 'start-view', 'clone-form',
+  'share-overlay', 'share-url', 'share-copy-btn', 'share-close-btn', 'share-qr', 'share-hint',
   'url-input', 'ref-input', 'depth-input', 'allbranches-input', 'proxy-input', 'token-input',
   'clone-btn', 'demo-btn', 'preset-list', 'clone-error', 'clone-progress', 'progress-fill',
   'progress-label', 'recent', 'recent-list', 'storage-usage', 'browser-view', 'tree-filter',
@@ -110,6 +112,7 @@ export async function init() {
   const contentSearchUI = createContentSearch(ctx);
   const history = createHistory(ctx);
   const recent = createRecent(ctx);
+  const share = createShare(ctx);
 
   ctx.openFile = openFile;
   ctx.openSource = openSource;
@@ -203,6 +206,7 @@ export async function init() {
     });
     dom.findBtn.addEventListener('click', () => palette.open());
     dom.searchBtn.addEventListener('click', () => contentSearchUI.open());
+    dom.shareBtn.addEventListener('click', () => share.open());
     // Debounced: the tree filter rescans every file on each keystroke, which is
     // wasted work on large repos when someone is typing quickly.
     dom.treeFilter.addEventListener('input', debounce(() => tree.renderSidebar(), 90));
@@ -237,6 +241,7 @@ export async function init() {
     if (event.key === 'Escape') {
       if (palette.isOpen()) palette.close();
       if (contentSearchUI.isOpen()) contentSearchUI.close();
+      if (share.isOpen()) share.close();
     }
   }
 
@@ -262,6 +267,7 @@ export async function init() {
     document.body.classList.remove('repo-open');
     palette.close();
     contentSearchUI.close();
+    share.close();
     recent.renderRecent();
     syncHash();
   }

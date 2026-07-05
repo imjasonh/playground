@@ -20,6 +20,7 @@
     "buffer": "^6.0.3",
     "esbuild": "^0.28.1",
     "jest": "^30.4.2",
-    "jest-environment-jsdom": "^30.4.1"
+    "jest-environment-jsdom": "^30.4.1",
+    "qrcode": "^1.5.4"
   }
 }

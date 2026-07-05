@@ -40,6 +40,9 @@
           <button id="update-btn" class="btn" type="button" title="Fetch the latest commits from the remote">
             Pull / Update
           </button>
+          <button id="share-btn" class="btn" type="button" title="Share a link to this view, with a QR code">
+            Share
+          </button>
           <button id="close-btn" class="btn ghost" type="button" title="Close repository">Close</button>
         </div>
       </div>
@@ -269,6 +272,34 @@
         />
         <ul class="palette-results" id="palette-results"></ul>
         <p class="palette-empty" id="palette-empty" hidden>No matching files.</p>
+      </div>
+    </div>
+
+    <!-- Share this view (deep link + QR code) -->
+    <div class="share-overlay" id="share-overlay" hidden>
+      <div class="share-dialog" role="dialog" aria-modal="true" aria-labelledby="share-title">
+        <div class="share-head">
+          <h2 id="share-title">Share this view</h2>
+          <button id="share-close-btn" class="btn ghost small" type="button" aria-label="Close share panel">
+            &#215;
+          </button>
+        </div>
+        <div class="share-qr" id="share-qr"></div>
+        <p class="share-hint muted" id="share-hint">
+          Scan to open this repository, branch, and file on another device.
+        </p>
+        <div class="share-link-row">
+          <input
+            id="share-url"
+            class="share-url"
+            type="text"
+            readonly
+            aria-label="Shareable link"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button id="share-copy-btn" class="btn primary small" type="button">Copy</button>
+        </div>
       </div>
     </div>
 

@@ -57,6 +57,16 @@ test('content search overlay has no a11y violations', async ({ page }) => {
   expect(results.violations).toEqual([]);
 });
 
+test('share panel has no a11y violations', async ({ page }) => {
+  await loadDemo(page);
+  await page.getByRole('button', { name: 'Share' }).click();
+  await expect(page.locator('#share-overlay')).toBeVisible();
+  await expect(page.locator('#share-qr svg')).toBeVisible();
+
+  const results = await scan(page, '#share-overlay');
+  expect(results.violations).toEqual([]);
+});
+
 test('history panel has no a11y violations', async ({ page }) => {
   await loadDemo(page);
   await page.getByRole('button', { name: 'History' }).click();
