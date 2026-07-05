@@ -8,13 +8,13 @@
 // no media or messages pass through any server we run.
 
 import {
-  encodeSignal,
-  decodeSignal,
-  safeDecodeSignal,
-  buildLink,
+  encodeSignalCompressed,
+  buildCompressedLink,
+  decodeAnySignal,
   tokenFromUrl,
   extractToken,
 } from "./signaling.js";
+import { renderToCanvas, QrCapacityError } from "./qr.js";
 import {
   CHUNK_SIZE,
   MESSAGE_KIND,
@@ -71,12 +71,18 @@ function cacheElements() {
     "start-error",
     "invite-link",
     "copy-invite",
+    "invite-qr",
+    "scan-reply",
     "answer-input",
     "answer-connect",
     "invite-status",
     "reply-code",
     "copy-reply",
+    "reply-qr",
     "reply-status",
+    "scanner",
+    "scan-video",
+    "scan-cancel",
     "local-video",
     "remote-video",
     "remote-placeholder",
@@ -205,9 +211,11 @@ async function startAsHost() {
   await state.pc.setLocalDescription(offer);
   await waitForIceGatheringComplete(state.pc);
 
-  const token = encodeSignal(state.pc.localDescription);
-  const link = buildLink(window.location.href, token);
+  const link = await buildCompressedLink(window.location.href, state.pc.localDescription);
   el["invite-link"].value = link;
+  showQr(el["invite-qr"], link, "Scan with a phone camera to join");
+  // Offer to scan the guest's reply with the camera, where supported.
+  if ("BarcodeDetector" in window) el["scan-reply"].classList.remove("hidden");
   attachLocalPreview();
   setStatus(el["invite-status"], "Waiting for a reply code…");
   showScreen("screen-invite");
@@ -215,7 +223,14 @@ async function startAsHost() {
 
 async function acceptAnswer() {
   const token = extractToken(el["answer-input"].value);
-  const answer = token ? safeDecodeSignal(token) : null;
+  let answer = null;
+  if (token) {
+    try {
+      answer = await decodeAnySignal(token);
+    } catch {
+      answer = null;
+    }
+  }
   if (!answer || answer.type !== "answer") {
     setStatus(el["invite-status"], "That doesn't look like a valid reply code.", "error");
     return;
@@ -242,8 +257,9 @@ async function startAsGuest(offer) {
   await state.pc.setLocalDescription(answer);
   await waitForIceGatheringComplete(state.pc);
 
-  const token = encodeSignal(state.pc.localDescription);
+  const token = await encodeSignalCompressed(state.pc.localDescription);
   el["reply-code"].value = token;
+  showQr(el["reply-qr"], token, "Or let them scan this");
   attachLocalPreview();
   setStatus(el["reply-status"], "Send this reply back, then keep this tab open…");
   showScreen("screen-reply");
@@ -472,6 +488,80 @@ function finalizeIncomingFile() {
 }
 
 // ---------------------------------------------------------------------------
+// QR codes + camera scanning
+// ---------------------------------------------------------------------------
+
+function showQr(container, text, caption) {
+  container.innerHTML = "";
+  try {
+    const canvas = renderToCanvas(text, { size: 360 });
+    canvas.setAttribute("role", "img");
+    canvas.setAttribute("alt", "QR code");
+    container.append(canvas);
+    if (caption) {
+      const cap = document.createElement("p");
+      cap.className = "qr-caption";
+      cap.textContent = caption;
+      container.append(cap);
+    }
+    container.classList.remove("hidden");
+  } catch (err) {
+    // Too much data for a QR (unusually large SDP) — fall back to the link.
+    container.classList.add("hidden");
+    if (!(err instanceof QrCapacityError)) throw err;
+  }
+}
+
+function stopScanner() {
+  if (state.scanStop) {
+    state.scanStop();
+    state.scanStop = null;
+  }
+  el["scanner"].classList.add("hidden");
+}
+
+async function startScanner(onResult) {
+  if (!("BarcodeDetector" in window)) return;
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "environment" },
+    });
+  } catch {
+    return; // no camera / denied
+  }
+  const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
+  const video = el["scan-video"];
+  video.srcObject = stream;
+  await video.play().catch(() => {});
+  el["scanner"].classList.remove("hidden");
+
+  let stopped = false;
+  state.scanStop = () => {
+    stopped = true;
+    for (const t of stream.getTracks()) t.stop();
+    video.srcObject = null;
+  };
+
+  const tick = async () => {
+    if (stopped) return;
+    try {
+      const codes = await detector.detect(video);
+      if (codes.length && codes[0].rawValue) {
+        const value = codes[0].rawValue;
+        stopScanner();
+        onResult(value);
+        return;
+      }
+    } catch {
+      // transient detect errors are ignored; keep scanning
+    }
+    setTimeout(tick, 250);
+  };
+  tick();
+}
+
+// ---------------------------------------------------------------------------
 // Wiring
 // ---------------------------------------------------------------------------
 
@@ -510,6 +600,14 @@ function bindEvents() {
     copyToClipboard(el["reply-code"].value, el["copy-reply"]),
   );
   el["answer-connect"].addEventListener("click", acceptAnswer);
+
+  el["scan-reply"].addEventListener("click", () =>
+    startScanner((value) => {
+      el["answer-input"].value = value;
+      acceptAnswer();
+    }),
+  );
+  el["scan-cancel"].addEventListener("click", stopScanner);
 
   el["chat-send"].addEventListener("click", sendChat);
   el["chat-input"].addEventListener("keydown", (e) => {
@@ -552,20 +650,42 @@ function init() {
     return;
   }
 
-  const token = tokenFromUrl(window.location.href);
-  const signal = token ? safeDecodeSignal(token) : null;
-  if (signal && signal.type === "offer") {
-    state.role = "guest";
-    state.pendingOffer = signal;
-    el["start-title"].textContent = "You've been invited to a chat";
-    el["start-intro"].textContent =
-      "Choose what to share, then join. You'll get a short reply code to send back to the person who invited you.";
-    el["start-button"].textContent = "Join chat";
-  } else {
-    state.role = "host";
-  }
   showScreen("screen-start");
-  // Signal that event handlers are wired up (used by e2e/smoke tests).
+
+  const token = tokenFromUrl(window.location.href);
+  if (!token) {
+    state.role = "host";
+    markReady();
+    return;
+  }
+
+  // A token is present, so this is likely a join. Decoding may be async
+  // (compressed links), so disable the button until the role is resolved.
+  state.role = "host";
+  el["start-button"].disabled = true;
+  decodeAnySignal(token)
+    .then((signal) => {
+      if (signal && signal.type === "offer") {
+        state.role = "guest";
+        state.pendingOffer = signal;
+        el["start-title"].textContent = "You've been invited to a chat";
+        el["start-intro"].textContent =
+          "Choose what to share, then join. You'll get a short reply code to send back to the person who invited you.";
+        el["start-button"].textContent = "Join chat";
+      }
+    })
+    .catch(() => {
+      // Not a usable offer token; fall back to hosting.
+    })
+    .finally(() => {
+      el["start-button"].disabled = false;
+      markReady();
+    });
+}
+
+function markReady() {
+  // Signal that event handlers are wired up and the role is resolved
+  // (used by e2e/smoke tests).
   document.body.dataset.linkchatReady = "1";
 }
 

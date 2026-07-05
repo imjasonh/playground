@@ -50,8 +50,33 @@ Other practical notes:
 - Real-time text chat over a WebRTC data channel
 - File transfer of any size (chunked with backpressure), with progress bars and
   a download link on the receiving side
+- **QR codes** for both the invite link and the reply code — scan to join
 - Toggle camera / mic mid-call; hang up to reset
-- No dependencies, no build step — plain HTML + ES modules
+- One small vendored dependency (a QR encoder); no build step — plain HTML + ES
+  modules
+
+## Sharing via QR code
+
+Both the invite and the reply are shown as QR codes as well as text:
+
+- The **invite** QR encodes the full invite URL, so the other person can scan
+  it with their **phone's native camera** to open the link and join — no app or
+  copy-paste needed.
+- The **reply** QR encodes the reply code. The host can read it with the
+  **Scan reply with camera** button (shown where the browser supports the
+  `BarcodeDetector` API — Chrome/Edge on Android, Windows, macOS, ChromeOS), or
+  just copy-paste the code. (Safari/iOS lack in-app `BarcodeDetector`, so use
+  copy-paste there.)
+
+### Why the links had to be compressed first
+
+A QR code holds at most ~2953 bytes, but a raw WebRTC session description is
+~7–9 KB — far too big. LinkChat therefore **DEFLATE-compresses** each payload
+(via the Compression Streams API) before encoding it, which shrinks a typical
+description ~4× (to ~1.7 KB) so it fits in a QR and also keeps the copyable link
+short. Compressed links use a `#z=` hash; older uncompressed `#c=` links are
+still accepted. If a session description is unusually large and still won't fit
+a QR, the code is hidden and you fall back to the copyable link/code.
 
 ## Run locally
 
@@ -80,9 +105,15 @@ linkchat/
 ├── styles.css
 ├── src/
 │   ├── signaling.js      # encode/decode offers & answers into shareable tokens
+│   ├── codec.js          # DEFLATE compress/inflate (Compression Streams API)
 │   ├── fileTransfer.js   # chunking + reassembly protocol helpers
-│   └── app.js            # WebRTC wiring, media, chat, file UI
+│   ├── qr.js             # QR render wrapper (canvas)
+│   ├── app.js            # WebRTC wiring, media, chat, file + QR/scanner UI
+│   └── vendor/
+│       └── qrcode-generator.js   # vendored MIT QR encoder (ES module wrapper)
 └── tests/
     ├── signaling.test.js
-    └── fileTransfer.test.js
+    ├── codec.test.js
+    ├── fileTransfer.test.js
+    └── qr.test.js
 ```

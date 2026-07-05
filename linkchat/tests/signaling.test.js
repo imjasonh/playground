@@ -4,10 +4,15 @@ import assert from "node:assert/strict";
 import {
   SIGNAL_VERSION,
   LINK_KEY,
+  COMPRESSED_KEY,
   encodeSignal,
   decodeSignal,
   safeDecodeSignal,
+  encodeSignalCompressed,
+  decodeSignalCompressed,
+  decodeAnySignal,
   buildLink,
+  buildCompressedLink,
   tokenFromUrl,
   extractToken,
 } from "../src/signaling.js";
@@ -86,4 +91,44 @@ test("extractToken accepts either a full link or a bare token", () => {
   assert.equal(extractToken(`  ${token}  `), token);
   assert.equal(extractToken(""), null);
   assert.equal(extractToken(null), null);
+});
+
+test("compressed encode/decode round-trips and shrinks large SDPs", async () => {
+  const bigOffer = {
+    type: "offer",
+    sdp: "v=0\r\n" + "a=candidate:demo host\r\n".repeat(200),
+  };
+  const token = await encodeSignalCompressed(bigOffer);
+  assert.match(token, /^[A-Za-z0-9_-]+$/);
+  // Compressed token is far smaller than the plain base64 token.
+  assert.ok(token.length < encodeSignal(bigOffer).length / 2);
+  assert.deepEqual(await decodeSignalCompressed(token), bigOffer);
+});
+
+test("decodeAnySignal handles both plain and compressed tokens", async () => {
+  const plain = encodeSignal(sampleOffer);
+  const compressed = await encodeSignalCompressed(sampleOffer);
+  assert.deepEqual(await decodeAnySignal(plain), {
+    type: "offer",
+    sdp: sampleOffer.sdp,
+  });
+  assert.deepEqual(await decodeAnySignal(compressed), {
+    type: "offer",
+    sdp: sampleOffer.sdp,
+  });
+});
+
+test("buildCompressedLink uses the z key and round-trips via tokenFromUrl", async () => {
+  const link = await buildCompressedLink("https://example.com/linkchat/", sampleOffer);
+  assert.ok(link.includes(`#${COMPRESSED_KEY}=`));
+  const token = tokenFromUrl(link);
+  assert.deepEqual(await decodeAnySignal(token), {
+    type: "offer",
+    sdp: sampleOffer.sdp,
+  });
+});
+
+test("tokenFromUrl prefers the compressed key when both are present", () => {
+  const link = `https://example.com/#${COMPRESSED_KEY}=ZZZ&${LINK_KEY}=CCC`;
+  assert.equal(tokenFromUrl(link), "ZZZ");
 });
