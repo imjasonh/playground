@@ -37,9 +37,9 @@ describe('parseHash', () => {
     expect(parseHash('#ref=branch:main')).toBeNull();
   });
 
-  test('legacy bare demo', () => {
-    expect(parseHash('#demo')).toEqual({ repo: 'demo' });
-    expect(parseHash('demo')).toEqual({ repo: 'demo' });
+  test('a bare "demo" is no longer a magic link', () => {
+    expect(parseHash('#demo')).toBeNull();
+    expect(parseHash('demo')).toBeNull();
   });
 
   test('full state', () => {
@@ -71,8 +71,8 @@ describe('encodeHashState', () => {
     expect(encodeHashState({})).toBe('');
   });
 
-  test('demo collapses to the short form', () => {
-    expect(encodeHashState({ repo: 'demo' })).toBe('demo');
+  test('demo uses the explicit repo= form', () => {
+    expect(encodeHashState({ repo: 'demo' })).toBe('repo=demo');
   });
 
   test('demo with a file uses the long form', () => {

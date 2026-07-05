@@ -1,9 +1,9 @@
 import { test, expect } from '@playwright/test';
 
-// Mobile tests use the #demo deep link to auto-load the demo repo.
+// Mobile tests use the #repo=demo deep link to auto-load the demo repo.
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('/#demo');
+  await page.goto('/#repo=demo');
   await expect(page.locator('#browser-view')).toBeVisible();
 });
 

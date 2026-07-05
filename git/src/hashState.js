@@ -11,9 +11,6 @@
  * literal (both are legal in a fragment) so the hash stays human-readable; only
  * the genuinely unsafe characters are percent-encoded.
  *
- * The bare legacy `#demo` is still understood (it predates this module and the
- * mobile e2e suite links to it).
- *
  * Everything here is pure and dependency-free so it can be unit-tested without a
  * DOM.
  *
@@ -66,8 +63,6 @@ export function parseHash(hash) {
   let raw = String(hash || '');
   if (raw.startsWith('#')) raw = raw.slice(1);
   if (!raw) return null;
-  // Legacy bare "#demo".
-  if (raw === 'demo') return { repo: 'demo' };
 
   const params = new URLSearchParams(raw);
   const repo = params.get('repo');
@@ -85,15 +80,13 @@ export function parseHash(hash) {
 
 /**
  * Encode a {@link HashState} into a hash string *without* the leading '#'.
- * Returns '' for an empty/invalid state. Demo with nothing else collapses to
- * the short, legacy-compatible `demo`.
+ * Returns '' for an empty/invalid state.
  *
  * @param {?HashState} state
  * @returns {string}
  */
 export function encodeHashState(state) {
   if (!state || !state.repo) return '';
-  if (state.repo === 'demo' && !state.ref && !state.file) return 'demo';
 
   const parts = [`repo=${encodeValue(state.repo)}`];
   if (state.ref) parts.push(`ref=${encodeValue(state.ref)}`);
