@@ -1,0 +1,14 @@
+{
+  "name": "linkchat",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Serverless, link-based WebRTC chat with audio, video, and file transfer",
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "start": "npx --yes serve . -p 3000"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
