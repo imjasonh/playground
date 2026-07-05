@@ -1,0 +1,14 @@
+{
+  "name": "artillery",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A touch-first futuristic artillery duel",
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "start": "npx --yes serve . -p 3000"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
