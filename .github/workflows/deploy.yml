@@ -30,34 +30,24 @@ jobs:
             fi
           done
 
-          # Generate a root index listing all apps
-          items=$(
-            for d in dist/*/; do
-              name="${d#dist/}"
-              name="${name%/}"
-              printf '  <li><a href="%s/">%s</a></li>\n' "$name" "$name"
-            done
-          )
-          TITLE='Playground' \
-          HEADING='Playground' \
-          ITEMS="$items" \
-          python - <<'PY' > dist/index.html
-          import os
-          from pathlib import Path
-
-          template = Path(".github/pages/index.html.tmpl").read_text()
-          print(
-              template
-              .replace("__TITLE__", os.environ["TITLE"])
-              .replace("__HEADING__", os.environ["HEADING"])
-              .replace("__ITEMS__", os.environ["ITEMS"]),
-              end="",
-          )
-          PY
-
       - name: Deploy
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./dist
           keep_files: true   # preserves preview/ directory from PR deployments
+
+      # Regenerate the root index from the published site so it lists the apps
+      # and any active PR previews (preview/pr-<N>/preview.json). Runs after the
+      # deploy above so the gh-pages checkout reflects the just-published apps.
+      - name: Check out gh-pages
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+
+      - name: Refresh site index
+        env:
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          bash .github/scripts/publish-site-index.sh gh-pages "$REPO_URL" "chore: update site index"
