@@ -19,43 +19,52 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # need base history to detect changed browser apps
 
       - name: Build preview
+        env:
+          PR: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          BASE_REF: ${{ github.base_ref }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
         run: |
-          PR=${{ github.event.pull_request.number }}
-          mkdir -p "dist/preview/pr-${PR}"
+          set -euo pipefail
+          dest="dist/preview/pr-${PR}"
+          mkdir -p "$dest"
 
           for dir in */; do
             d="${dir%/}"
             if [ -f "$d/index.html" ]; then
-              cp -r "$d" "dist/preview/pr-${PR}/$d"
+              cp -r "$d" "$dest/$d"
             fi
           done
 
-          # Index listing all apps in this preview
-          items=$(
-            for d in dist/preview/pr-${PR}/*/; do
-              name="${d#dist/preview/pr-${PR}/}"
-              name="${name%/}"
-              printf '  <li><a href="%s/">%s</a></li>\n' "$name" "$name"
-            done
-          )
-          TITLE="Preview — PR #${PR}" \
-          HEADING="Preview — PR #${PR}" \
-          ITEMS="$items" \
-          python - <<'PY' > "dist/preview/pr-${PR}/index.html"
-          import os
-          from pathlib import Path
+          # Per-PR preview index listing the apps bundled in this preview.
+          python3 .github/scripts/render-index.py preview \
+            --dir "$dest" --pr "$PR" --repo-url "$REPO_URL" \
+            --output "$dest/index.html"
 
-          template = Path(".github/pages/index.html.tmpl").read_text()
-          print(
-              template
-              .replace("__TITLE__", os.environ["TITLE"])
-              .replace("__HEADING__", os.environ["HEADING"])
-              .replace("__ITEMS__", os.environ["ITEMS"]),
-              end="",
-          )
+          # Record a manifest only when this PR changes a browser app, so the
+          # production home page lists a preview for it (and not for PRs that
+          # only touch Go/Rust/CI, whose preview is identical to production).
+          git fetch --no-tags origin "$BASE_REF"
+          changed=$(git diff --name-only "origin/${BASE_REF}...HEAD")
+          apps=$(printf '%s\n' "$changed" | bash .github/scripts/discover-browser-apps.sh --from-changes)
+          echo "Changed browser apps: ${apps}"
+
+          if [ "$apps" != "[]" ]; then
+            PR_NUMBER="$PR" PR_TITLE="$PR_TITLE" APPS="$apps" python3 - <<'PY' > "$dest/preview.json"
+          import json, os
+          print(json.dumps({
+              "number": int(os.environ["PR_NUMBER"]),
+              "title": os.environ["PR_TITLE"],
+              "apps": json.loads(os.environ["APPS"]),
+          }))
           PY
+          else
+            echo "No browser app changed; this preview will not be listed on the home page."
+          fi
 
       - name: Deploy preview
         uses: peaceiris/actions-gh-pages@v4
@@ -63,6 +72,20 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./dist
           keep_files: true   # preserves production apps and other PR previews
+
+      # Regenerate the production root index so it lists this PR's preview
+      # (when it changed a browser app). Runs after the deploy so the gh-pages
+      # checkout includes the preview.json written above.
+      - name: Check out gh-pages
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+
+      - name: Refresh site index
+        env:
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: bash .github/scripts/publish-site-index.sh gh-pages "$REPO_URL"
 
       - name: Wait for GitHub Pages deployment
         uses: actions/github-script@v7
