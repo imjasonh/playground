@@ -1,0 +1,25 @@
+{
+  "name": "git-browser",
+  "version": "1.0.0",
+  "description": "In-browser read-only git client: clone a repo into local storage with isomorphic-git and browse the code",
+  "type": "module",
+  "scripts": {
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "test:e2e": "playwright test",
+    "test:all": "npm test && npm run test:e2e",
+    "vendor": "node scripts/vendor.js",
+    "start": "npx --yes serve . -p 3000"
+  },
+  "dependencies": {
+    "@isomorphic-git/lightning-fs": "4.6.2",
+    "isomorphic-git": "1.38.6"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
+    "@playwright/test": "^1.61.1",
+    "buffer": "^6.0.3",
+    "esbuild": "^0.28.1",
+    "jest": "^30.4.2",
+    "jest-environment-jsdom": "^30.4.1"
+  }
+}
