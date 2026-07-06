@@ -14,8 +14,14 @@ Two modes:
            section.
 
 The template lives at ../pages/index.html.tmpl relative to this script and
-exposes four placeholders: __TITLE__, __HEADING__, __ITEMS__, __PREVIEWS__ and
-__REPO_URL__.
+exposes these placeholders: __TITLE__, __HEADING__, __ITEMS__, __PREVIEWS__,
+__WORKERS__ and __REPO_URL__.
+
+Browser apps and previews are discovered from the published site directory
+(``--dir``). Cloudflare Worker apps are not served from Pages, so they are
+discovered instead by scanning the repository source tree (``--source-dir``,
+defaulting to the repo checkout this script lives in) for wrangler.toml, and
+linked to their source on GitHub.
 """
 from __future__ import annotations
 
@@ -25,6 +31,8 @@ import json
 from pathlib import Path
 
 TEMPLATE_PATH = Path(__file__).resolve().parents[1] / "pages" / "index.html.tmpl"
+# The repository root: two levels up from .github/scripts/render-index.py.
+SOURCE_ROOT = Path(__file__).resolve().parents[2]
 
 
 def scan_apps(root: Path) -> list[str]:
@@ -45,6 +53,27 @@ def scan_apps(root: Path) -> list[str]:
         if (child / "index.html").is_file():
             apps.append(name)
     return apps
+
+
+def scan_workers(root: Path) -> list[str]:
+    """Top-level Cloudflare Worker apps in ``root`` (directories with wrangler.toml).
+
+    Hidden directories are ignored, matching the deploy-workers definition of a
+    Worker app. This scans the repository source tree, not the published site,
+    because Workers are deployed to Cloudflare rather than to GitHub Pages.
+    """
+    workers = []
+    if not root.is_dir():
+        return workers
+    for child in sorted(root.iterdir(), key=lambda p: p.name):
+        if not child.is_dir():
+            continue
+        name = child.name
+        if name.startswith("."):
+            continue
+        if (child / "wrangler.toml").is_file():
+            workers.append(name)
+    return workers
 
 
 def scan_previews(root: Path) -> list[dict]:
@@ -83,6 +112,32 @@ def scan_previews(root: Path) -> list[dict]:
 def render_items(apps: list[str]) -> str:
     return "\n".join(
         f'      <li><a href="{html.escape(a)}/">{html.escape(a)}</a></li>' for a in apps
+    )
+
+
+def render_workers_section(workers: list[str], repo_url: str) -> str:
+    """Render the Cloudflare Workers section, or '' when there are none.
+
+    Workers are not served from Pages, so each card links to its source
+    directory on GitHub (falling back to a relative path when repo_url is
+    unknown).
+    """
+    if not workers:
+        return ""
+    items = []
+    for w in workers:
+        href = f"{repo_url}/tree/main/{w}" if repo_url else w
+        items.append(
+            f'      <li><a href="{html.escape(href)}">{html.escape(w)}</a></li>'
+        )
+    return (
+        '\n  <section class="workers">\n'
+        "    <h2>Cloudflare Workers apps</h2>\n"
+        '    <ul class="cards">\n'
+        + "\n".join(items)
+        + "\n"
+        "    </ul>\n"
+        "  </section>\n"
     )
 
 
@@ -129,6 +184,7 @@ def render(
     apps: list[str],
     previews: list[dict],
     repo_url: str,
+    workers: list[str] | None = None,
     template: str | None = None,
 ) -> str:
     tmpl = template if template is not None else TEMPLATE_PATH.read_text()
@@ -137,6 +193,7 @@ def render(
         .replace("__HEADING__", html.escape(heading))
         .replace("__ITEMS__", render_items(apps))
         .replace("__PREVIEWS__", render_previews_section(previews, repo_url))
+        .replace("__WORKERS__", render_workers_section(workers or [], repo_url))
         .replace("__REPO_URL__", html.escape(repo_url))
     )
 
@@ -147,6 +204,11 @@ def main(argv: list[str] | None = None) -> None:
 
     site = sub.add_parser("site", help="render the production root index")
     site.add_argument("--dir", required=True, help="published site directory to scan")
+    site.add_argument(
+        "--source-dir",
+        default=str(SOURCE_ROOT),
+        help="repository source tree to scan for Cloudflare Worker apps",
+    )
     site.add_argument("--repo-url", default="", help="repository URL, e.g. https://github.com/owner/repo")
     site.add_argument("--title", default="Playground")
     site.add_argument("--heading", default="Playground")
@@ -168,6 +230,7 @@ def main(argv: list[str] | None = None) -> None:
             scan_apps(root),
             scan_previews(root),
             args.repo_url,
+            workers=scan_workers(Path(args.source_dir)),
         )
     else:
         label = f"Preview — PR #{args.pr}"

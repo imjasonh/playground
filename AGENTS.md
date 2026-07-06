@@ -97,8 +97,13 @@ Deploy workflows copy browser app directories as-is (they do **not** run
 commit source files—never commit `node_modules/` or Go/Rust build artifacts.
 
 The production home page (`index.html` at the Pages root) is generated at build
-time by `.github/scripts/render-index.py` from the shared template. Besides the
-app list, it lists **active PR previews**: `preview.yml` writes a
+time by `.github/scripts/render-index.py` from the shared template. It has a
+**Browser apps** section (the deployed `index.html` directories) and a separate
+**Cloudflare Workers apps** section (directories with `wrangler.toml`). Workers
+are not served from Pages, so the renderer discovers them by scanning the repo
+source tree (`--source-dir`, defaulting to the checkout it runs from) and links
+each to its source on GitHub. Under the browser apps it lists **active PR
+previews** (only browser apps get previews): `preview.yml` writes a
 `preview/pr-<N>/preview.json` manifest **only for PRs that change a browser
 app** (so Go/Rust/CI-only PRs, whose preview would be identical to production,
 are not listed), and `deploy.yml`, `preview.yml`, and `cleanup.yml` each
