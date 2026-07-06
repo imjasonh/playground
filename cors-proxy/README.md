@@ -108,14 +108,18 @@ cargo build --release --target wasm32-unknown-unknown
 
 ## Deploy
 
-Needs a Cloudflare account and [`wrangler`](https://developers.cloudflare.com/workers/wrangler/).
+Pushes to `main` deploy this Worker automatically via `deploy-workers.yml`
+(`wrangler deploy`), using the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`
+repo secrets — no per-app secrets or KV namespaces are needed. To deploy by hand
+you need a Cloudflare account and [`wrangler`](https://developers.cloudflare.com/workers/wrangler/):
 
 ```bash
 cd cors-proxy
-npx wrangler deploy      # builds the wasm Worker via worker-build and publishes
+cargo +stable install worker-build@0.1.14   # tool build; see wrangler.toml note
+npx wrangler deploy                          # builds the wasm Worker and publishes
 ```
 
 `wrangler.toml`'s `[build]` command installs `worker-build` and compiles the
 crate to wasm. This app has no `index.html`, so the repo's GitHub Pages
-workflows do **not** deploy it; the companion browser playground lives in
+workflows do **not** serve it; the companion browser playground lives in
 [`../cors-proxy-demo`](../cors-proxy-demo).
