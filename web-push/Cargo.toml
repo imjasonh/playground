@@ -42,6 +42,14 @@ getrandom = { version = "0.2", features = ["js"] }
 # requires edition2024 via the icu crates. 1.1.0 uses unicode-normalization and
 # builds on 1.83.
 idna_adapter = "=1.1.0"
+# Deploy pin: the deploy step builds the Worker with worker-build 0.1.x (the
+# line that supports worker 0.5), which bundles the wasm-bindgen CLI 0.2.105.
+# The wasm-bindgen *library* schema must match that CLI exactly, so pin it here.
+# This also transitively holds js-sys/web-sys/wasm-bindgen-futures to the 0.2.105
+# family and stops the dependency-update bot from bumping it (which would build
+# and test fine but break `worker-build` at deploy). Bump this in lock-step with
+# the worker-build version in wrangler.toml, or when moving to worker >= 0.8.
+wasm-bindgen = "=0.2.105"
 
 [dev-dependencies]
 futures = "0.3"
