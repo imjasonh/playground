@@ -793,6 +793,21 @@ kbd {
 .notice .symlink-target .sym-arrow {
   color: var(--fg-faint);
 }
+.notice .symlink-target .sym-link {
+  font: inherit;
+  color: var(--accent-strong);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  text-decoration: underline;
+  word-break: break-all;
+}
+.notice .symlink-target .sym-link:hover,
+.notice .symlink-target .sym-link:focus-visible {
+  text-decoration: none;
+}
 .notice .submodule-url {
   font-family: var(--mono);
   font-size: 0.82rem;

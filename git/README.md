@@ -16,9 +16,10 @@ branch switching, and commit history. Everything runs on-device with
   Private repos can use a session-only access token (never persisted or logged).
 - **Code browser** — collapsible file tree and a viewer with line numbers,
   offline syntax highlighting, language detection, image preview, a Markdown
-  raw/preview toggle, and binary/large-file guards. Symlinks, submodules, and
-  Git LFS pointers show a clear notice instead of raw bytes. The tree is fully
-  keyboard-navigable.
+  raw/preview toggle, and binary/large-file guards. Submodules and Git LFS
+  pointers show a clear notice instead of raw bytes; a symlink shows its target
+  as a link that opens the pointed-to file when it resolves inside the repo. The
+  tree is fully keyboard-navigable.
 - **File actions** — from the viewer header, copy a file's path or contents,
   download its raw bytes, or open it on its origin host (GitHub/GitLab/Bitbucket)
   when the clone URL is known.
