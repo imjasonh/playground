@@ -13,7 +13,7 @@ playground/
 ├── README.md
 ├── .github/
 │   ├── pages/             # shared HTML template for app index pages
-│   ├── scripts/           # CI helpers for browser, Go, and Rust app discovery
+│   ├── scripts/           # CI helpers: app discovery + index-page rendering
 │   └── workflows/         # deploy, preview, test, cleanup, dependency updates
 ├── artillery/             # touch-first turn-based artillery duel (JS + Node tests)
 ├── cold-climb/            # touch-first two-handle arcade game (JS + Node tests)
@@ -79,7 +79,7 @@ discovery scripts.
 |----------|---------|---------|
 | `deploy.yml` | push to `main` | Publishes all browser apps to GitHub Pages production |
 | `preview.yml` | pull request opened/sync | Deploys browser apps under `/preview/pr-<N>/` and comments the URL |
-| `cleanup.yml` | pull request closed | Removes that PR's preview directory from `gh-pages` |
+| `cleanup.yml` | pull request closed | Removes that PR's preview directory from `gh-pages` and refreshes the root index |
 | `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps in one job |
 | `deps.yaml` | daily at 00:00 UTC, manual | Updates every testable browser app, Go app, and Rust app; pushes passing updates to `main`, otherwise opens a PR |
 | `nypd-choppers-scrape.yml` | hourly, manual | **App-specific:** fetches NYPD helicopter full-day ADS-B traces and merges per-day JSON to `gh-pages` under `nypd-choppers/data/`. Not generalized; shares the `gh-pages-publish` concurrency group with deploy/preview/cleanup |
@@ -87,6 +87,17 @@ discovery scripts.
 Deploy workflows copy browser app directories as-is (they do **not** run
 `npm install` or build). Go and Rust app directories are not deployed. Only
 commit source files—never commit `node_modules/` or Go/Rust build artifacts.
+
+The production home page (`index.html` at the Pages root) is generated at build
+time by `.github/scripts/render-index.py` from the shared template. Besides the
+app list, it lists **active PR previews**: `preview.yml` writes a
+`preview/pr-<N>/preview.json` manifest **only for PRs that change a browser
+app** (so Go/Rust/CI-only PRs, whose preview would be identical to production,
+are not listed), and `deploy.yml`, `preview.yml`, and `cleanup.yml` each
+regenerate the root index from the published `gh-pages` tree so the list stays
+current as previews come and go. `discover-browser-apps.sh` reports which
+browser apps a change set touched; `render-index_test.py` covers the renderer
+(run `python3 .github/scripts/render-index_test.py`).
 
 ### Production URLs
 

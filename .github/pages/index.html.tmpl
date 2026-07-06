@@ -115,7 +115,6 @@
   }
   ul.cards a:hover::after { transform: translateX(3px); color: var(--accent); }
 
-  #previews[hidden] { display: none; }
   .preview-list {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
@@ -124,7 +123,7 @@
   .preview-card {
     display: flex;
     flex-direction: column;
-    gap: .5rem;
+    gap: .4rem;
     padding: 1rem 1.1rem;
     background: var(--card);
     border: 1px solid var(--border);
@@ -143,6 +142,10 @@
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
+  }
+  .preview-card .apps {
+    font-size: .8rem;
+    color: var(--muted);
   }
   .preview-card .links {
     display: flex;
@@ -191,96 +194,7 @@
 __ITEMS__
     </ul>
   </section>
-
-  <section id="previews" hidden>
-    <h2>Active previews <span class="count" id="previews-count"></span></h2>
-    <div class="preview-list" id="previews-list"></div>
-  </section>
-
-  <footer id="footer"></footer>
+__PREVIEWS__
+  <footer>Source on <a href="__REPO_URL__">GitHub</a>.</footer>
 </main>
-
-<script>
-(function () {
-  // Derive owner/repo from the GitHub Pages URL: https://<owner>.github.io/<repo>/...
-  var host = location.hostname || "";
-  var owner = host.split(".")[0];
-  var repo = (location.pathname.split("/").filter(Boolean)[0]) || "";
-
-  // Footer link back to the source repo (best-effort).
-  if (owner && repo && host.indexOf("github.io") !== -1) {
-    var footer = document.getElementById("footer");
-    if (footer) {
-      footer.innerHTML =
-        'Source on <a href="https://github.com/' + owner + "/" + repo +
-        '">GitHub</a>.';
-    }
-  }
-
-  // The "Active previews" list only makes sense on the production site root,
-  // not inside a per-PR preview page.
-  if (location.pathname.indexOf("/preview/") !== -1) return;
-  if (!owner || !repo || host.indexOf("github.io") === -1) return;
-
-  var section = document.getElementById("previews");
-  var listEl = document.getElementById("previews-list");
-  var countEl = document.getElementById("previews-count");
-
-  function esc(s) {
-    return String(s).replace(/[&<>"']/g, function (c) {
-      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
-    });
-  }
-
-  function previewUrl(number) {
-    return "/" + repo + "/preview/pr-" + number + "/";
-  }
-
-  // A preview is "active" only if its directory still exists on gh-pages
-  // (cleanup.yml removes it when the PR closes).
-  function previewExists(number) {
-    return fetch(previewUrl(number), { method: "GET", cache: "no-store" })
-      .then(function (r) { return r.ok; })
-      .catch(function () { return false; });
-  }
-
-  function render(prs) {
-    if (!prs.length) return;
-    countEl.textContent = String(prs.length);
-    listEl.innerHTML = prs.map(function (pr) {
-      return (
-        '<div class="preview-card">' +
-          '<span class="pr">PR #' + pr.number + "</span>" +
-          '<span class="title">' + esc(pr.title) + "</span>" +
-          '<span class="links">' +
-            '<a class="open" href="' + previewUrl(pr.number) + '">Open preview</a>' +
-            '<a href="' + esc(pr.html_url) + '">View PR</a>' +
-          "</span>" +
-        "</div>"
-      );
-    }).join("");
-    section.hidden = false;
-  }
-
-  fetch(
-    "https://api.github.com/repos/" + owner + "/" + repo +
-      "/pulls?state=open&per_page=100&sort=updated&direction=desc",
-    { headers: { Accept: "application/vnd.github+json" } }
-  )
-    .then(function (r) { return r.ok ? r.json() : []; })
-    .then(function (prs) {
-      if (!Array.isArray(prs) || !prs.length) return;
-      return Promise.all(
-        prs.map(function (pr) {
-          return previewExists(pr.number).then(function (ok) {
-            return ok ? pr : null;
-          });
-        })
-      ).then(function (checked) {
-        render(checked.filter(Boolean));
-      });
-    })
-    .catch(function () { /* leave the previews section hidden on any failure */ });
-})();
-</script>
 </body></html>

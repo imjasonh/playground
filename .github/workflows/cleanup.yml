@@ -16,32 +16,35 @@ jobs:
   cleanup:
     runs-on: ubuntu-latest
     steps:
+      # The scripts and template used to regenerate the root index live on the
+      # default branch, so check it out at the root.
+      - name: Check out scripts
+        uses: actions/checkout@v4
+
       - name: Check out gh-pages branch
         id: checkout
         uses: actions/checkout@v4
         with:
           ref: gh-pages
+          path: gh-pages
         # If gh-pages doesn't exist yet this step will fail — that's fine,
         # there's nothing to clean up.
         continue-on-error: true
 
-      - name: Remove preview directory
+      - name: Remove preview and refresh index
         if: steps.checkout.outcome == 'success'
+        env:
+          PR: ${{ github.event.pull_request.number }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
         run: |
-          PR=${{ github.event.pull_request.number }}
-          if [ ! -d "preview/pr-${PR}" ]; then
-            echo "No preview directory found for PR #${PR}, nothing to do."
-            exit 0
+          set -euo pipefail
+          if [ -d "gh-pages/preview/pr-${PR}" ]; then
+            git -C gh-pages rm -rf "preview/pr-${PR}"
+          else
+            echo "No preview directory found for PR #${PR}."
           fi
 
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git rm -rf "preview/pr-${PR}"
-          git commit -m "chore: remove preview for PR #${PR}"
-
-          # Retry push up to 3 times to handle concurrent cleanup conflicts.
-          for attempt in 1 2 3; do
-            git pull --rebase origin gh-pages && git push && break
-            echo "Push attempt ${attempt} failed, retrying..."
-            sleep 5
-          done
+          # Regenerate the root index (dropping this PR's card) and push the
+          # removal together with the refreshed index.
+          bash .github/scripts/publish-site-index.sh gh-pages "$REPO_URL" \
+            "chore: remove preview for PR #${PR} and refresh index"
