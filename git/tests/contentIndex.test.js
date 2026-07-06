@@ -3,6 +3,10 @@ import {
   queryTrigrams,
   buildTrigramIndex,
   candidatePaths,
+  indexedPaths,
+  indexFile,
+  removeFile,
+  createIndex,
   serializeIndex,
   deserializeIndex,
   INDEX_FORMAT_VERSION,
@@ -74,7 +78,50 @@ describe('buildTrigramIndex + candidatePaths', () => {
 
   test('ignores malformed entries', () => {
     const idx = buildTrigramIndex([null, { text: 'no path' }, { path: 'ok', text: 'needle' }]);
-    expect(idx.paths).toEqual(['ok']);
+    expect(indexedPaths(idx)).toEqual(['ok']);
+  });
+});
+
+describe('incremental indexFile / removeFile', () => {
+  test('adds a file so it becomes a candidate', () => {
+    const idx = createIndex();
+    indexFile(idx, 'a.txt', 'contains needle');
+    expect(candidatePaths(idx, 'needle')).toEqual(['a.txt']);
+    expect(indexedPaths(idx)).toEqual(['a.txt']);
+  });
+
+  test('re-indexing a path replaces its content (modified file)', () => {
+    const idx = createIndex();
+    indexFile(idx, 'a.txt', 'has needle');
+    indexFile(idx, 'a.txt', 'now has haystack');
+    expect(candidatePaths(idx, 'needle')).toEqual([]);
+    expect(candidatePaths(idx, 'haystack')).toEqual(['a.txt']);
+    // The path is still indexed exactly once.
+    expect(indexedPaths(idx)).toEqual(['a.txt']);
+  });
+
+  test('removeFile drops a file from every posting set', () => {
+    const idx = buildTrigramIndex([
+      { path: 'a.txt', text: 'shared needle' },
+      { path: 'b.txt', text: 'shared needle' },
+    ]);
+    removeFile(idx, 'a.txt');
+    expect(candidatePaths(idx, 'needle')).toEqual(['b.txt']);
+    expect(indexedPaths(idx)).toEqual(['b.txt']);
+  });
+
+  test('removeFile prunes now-empty posting sets (removing the last owner)', () => {
+    const idx = createIndex();
+    indexFile(idx, 'only.txt', 'unique');
+    removeFile(idx, 'only.txt');
+    expect(idx.postings.size).toBe(0);
+    expect(candidatePaths(idx, 'unique')).toEqual([]);
+  });
+
+  test('removeFile is a no-op for an unknown path', () => {
+    const idx = buildTrigramIndex([{ path: 'a.txt', text: 'needle' }]);
+    removeFile(idx, 'missing.txt');
+    expect(candidatePaths(idx, 'needle')).toEqual(['a.txt']);
   });
 });
 
@@ -86,9 +133,17 @@ describe('serialize / deserialize', () => {
 
   test('round-trips to an equivalent index', () => {
     const restored = deserializeIndex(serializeIndex(index));
-    expect(restored.paths).toEqual(index.paths);
+    expect(indexedPaths(restored).sort()).toEqual(indexedPaths(index).sort());
     expect(candidatePaths(restored, 'world').sort()).toEqual(['a.txt', 'b.txt']);
     expect(candidatePaths(restored, 'hello')).toEqual(['a.txt']);
+  });
+
+  test('a round-tripped index is still incrementally updatable', () => {
+    const restored = deserializeIndex(serializeIndex(index));
+    // fileTrigrams was reconstructed by inversion, so removal still works.
+    removeFile(restored, 'a.txt');
+    expect(candidatePaths(restored, 'hello')).toEqual([]);
+    expect(candidatePaths(restored, 'world')).toEqual(['b.txt']);
   });
 
   test('serialized form is plain JSON with a version', () => {
@@ -96,7 +151,7 @@ describe('serialize / deserialize', () => {
     expect(obj.version).toBe(INDEX_FORMAT_VERSION);
     expect(Array.isArray(obj.paths)).toBe(true);
     const clone = JSON.parse(JSON.stringify(obj));
-    expect(deserializeIndex(clone).paths).toEqual(index.paths);
+    expect(indexedPaths(deserializeIndex(clone)).sort()).toEqual(indexedPaths(index).sort());
   });
 
   test('rejects missing, corrupt, or wrong-version payloads', () => {
