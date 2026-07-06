@@ -3,6 +3,9 @@ name: Deploy Cloudflare Workers
 on:
   push:
     branches: [main]
+  # Manual "Run workflow": redeploy every Worker app on demand (e.g. to roll a
+  # config/secret change that didn't touch the app's own directory).
+  workflow_dispatch:
 
 # Worker deploys are independent of the GitHub Pages publish, but serialize
 # among themselves so two pushes don't race the same Cloudflare deployment.
@@ -14,7 +17,8 @@ permissions:
   contents: read
 
 jobs:
-  # Select the Worker apps this push changed (all of them on the first push).
+  # Select the Worker apps to deploy: the ones this push changed, or every app
+  # on the first push and on a manual workflow_dispatch.
   discover:
     runs-on: ubuntu-latest
     outputs:
@@ -24,9 +28,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Discover changed Worker apps
+      - name: Discover Worker apps to deploy
         id: discover
         env:
+          EVENT_NAME: ${{ github.event_name }}
           BEFORE_SHA: ${{ github.event.before }}
           HEAD_SHA: ${{ github.sha }}
         run: bash .github/scripts/discover-changed-workers.sh
