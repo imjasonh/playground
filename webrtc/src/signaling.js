@@ -1,7 +1,7 @@
-// Serverless signaling helpers for LinkChat.
+// Serverless signaling helpers for the WebRTC app.
 //
 // WebRTC needs peers to exchange session descriptions (SDP) before a
-// connection can form. Normally a signaling *server* relays these. LinkChat
+// connection can form. Normally a signaling *server* relays these. This app
 // has no backend, so instead we pack a session description into a compact,
 // URL-safe token that a human can share (as a link, or pasted into a box).
 //

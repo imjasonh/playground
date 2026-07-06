@@ -1,4 +1,5 @@
-// LinkChat — serverless, link-based WebRTC chat with audio, video, and files.
+// WebRTC — serverless, link-based peer-to-peer app with audio, video, files,
+// live location sharing, and payment requests.
 //
 // There is no backend. To start a call, one person ("host") creates an offer
 // that is packed into a shareable link. The other person ("guest") opens the
@@ -201,7 +202,7 @@ async function startAsHost() {
   await acquireMedia();
   state.pc = createPeerConnection();
 
-  const channel = state.pc.createDataChannel("linkchat", { ordered: true });
+  const channel = state.pc.createDataChannel("webrtc", { ordered: true });
   setupChannel(channel);
 
   const offer = await state.pc.createOffer({
@@ -643,7 +644,7 @@ function init() {
   if (!("RTCPeerConnection" in window)) {
     setStatus(
       el["start-error"],
-      "This browser doesn't support WebRTC, so LinkChat can't run here.",
+      "This browser doesn't support WebRTC, so this app can't run here.",
       "error",
     );
     el["start-button"].disabled = true;
@@ -686,7 +687,7 @@ function init() {
 function markReady() {
   // Signal that event handlers are wired up and the role is resolved
   // (used by e2e/smoke tests).
-  document.body.dataset.linkchatReady = "1";
+  document.body.dataset.webrtcReady = "1";
 }
 
 if (typeof document !== "undefined") {

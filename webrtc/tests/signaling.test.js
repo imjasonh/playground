@@ -67,8 +67,8 @@ test("safeDecodeSignal returns null instead of throwing", () => {
 
 test("buildLink puts the token in the hash under LINK_KEY", () => {
   const token = encodeSignal(sampleOffer);
-  const link = buildLink("https://example.com/linkchat/", token);
-  assert.equal(link, `https://example.com/linkchat/#${LINK_KEY}=${token}`);
+  const link = buildLink("https://example.com/webrtc/", token);
+  assert.equal(link, `https://example.com/webrtc/#${LINK_KEY}=${token}`);
 });
 
 test("buildLink replaces an existing hash rather than appending", () => {
@@ -79,14 +79,14 @@ test("buildLink replaces an existing hash rather than appending", () => {
 
 test("tokenFromUrl reads the token back out of a link", () => {
   const token = encodeSignal(sampleOffer);
-  const link = buildLink("https://example.com/linkchat/", token);
+  const link = buildLink("https://example.com/webrtc/", token);
   assert.equal(tokenFromUrl(link), token);
-  assert.equal(tokenFromUrl("https://example.com/linkchat/"), null);
+  assert.equal(tokenFromUrl("https://example.com/webrtc/"), null);
 });
 
 test("extractToken accepts either a full link or a bare token", () => {
   const token = encodeSignal(sampleOffer);
-  const link = buildLink("https://example.com/linkchat/", token);
+  const link = buildLink("https://example.com/webrtc/", token);
   assert.equal(extractToken(link), token);
   assert.equal(extractToken(`  ${token}  `), token);
   assert.equal(extractToken(""), null);
@@ -119,7 +119,7 @@ test("decodeAnySignal handles both plain and compressed tokens", async () => {
 });
 
 test("buildCompressedLink uses the z key and round-trips via tokenFromUrl", async () => {
-  const link = await buildCompressedLink("https://example.com/linkchat/", sampleOffer);
+  const link = await buildCompressedLink("https://example.com/webrtc/", sampleOffer);
   assert.ok(link.includes(`#${COMPRESSED_KEY}=`));
   const token = tokenFromUrl(link);
   assert.deepEqual(await decodeAnySignal(token), {
