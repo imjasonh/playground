@@ -66,6 +66,7 @@ export async function init() {
     branches: [],
     tags: [],
     lines: null, // selected line range {start,end} in the active text file
+    headOid: null, // current ref's head commit oid (keys the content-search index)
     historyOpen: false,
     historyPath: null, // when set, the history panel shows this file's history
   });
@@ -122,6 +123,33 @@ export async function init() {
   // source that can't compute it. (The Blame button's click is wired in
   // bindEvents, alongside History.)
   ctx.canBlame = () => Boolean(state.source && typeof state.source.blame === 'function');
+  // Identity of the current repo content state, used to key (and persist) the
+  // content-search index: a stable repo id plus the head commit oid, so the
+  // index is reused while the content is unchanged and rebuilt when it moves.
+  //
+  // For now we persist an index only for the **default branch**. On any other
+  // ref (a different branch, a tag, or a detached commit) we return no repo id,
+  // which makes the search client use an ephemeral, session-only index instead
+  // of persisting a second copy. Indexing all branch heads / tags into one
+  // shared, deduplicated index is future work.
+  ctx.repoIndexId = () => {
+    const source = state.source;
+    if (!source) return null;
+    return source.url || source.fullName || 'demo';
+  };
+  ctx.onDefaultBranch = () => {
+    const source = state.source;
+    if (!source || typeof source.getDefaultBranch !== 'function') return false;
+    const def = source.getDefaultBranch();
+    if (!def) return false;
+    const ref = currentRef();
+    return ref.type === 'branch' && ref.name === def;
+  };
+  ctx.contentIndexKey = () => {
+    if (!state.source) return null;
+    if (!ctx.onDefaultBranch()) return {}; // ephemeral: don't persist non-default refs
+    return { repoId: ctx.repoIndexId(), oid: state.headOid || '' };
+  };
   // Web URL for the active file on its origin host (GitHub/GitLab/Bitbucket),
   // or null for the demo / an unknown host. The viewer uses this to decide
   // whether to offer the "Open" link and where it points.
@@ -253,7 +281,7 @@ export async function init() {
   function showStart() {
     loads.cancel();
     poller.stop();
-    store.setState({ source: null, activePath: null, lines: null });
+    store.setState({ source: null, activePath: null, lines: null, headOid: null });
     search.setFiles([]); // drop the corpus so the worker isn't holding a stale repo
     viewer.dispose();
     dom.browserView.hidden = true;
@@ -407,8 +435,10 @@ export async function init() {
     try {
       const head = await source.headCommit();
       if (!load.active) return;
+      store.setState({ headOid: head ? head.oid : null });
       renderHead(head);
     } catch {
+      store.setState({ headOid: null });
       dom.repoMeta.textContent = '';
     }
 
@@ -547,6 +577,7 @@ export async function init() {
       });
       await refreshRepo(load);
       if (load.active) {
+        await syncContentIndex(result);
         if (state.activePath && state.fileSet.has(state.activePath)) {
           openFile(state.activePath);
         }
@@ -604,6 +635,7 @@ export async function init() {
       if (!load.active) return;
       await refreshRepo(load);
       if (!load.active) return;
+      await syncContentIndex(result);
       if (state.activePath && state.fileSet.has(state.activePath)) {
         openFile(state.activePath);
       }
@@ -614,6 +646,41 @@ export async function init() {
     } catch {
       // A background fetch failure is non-fatal and intentionally silent; the
       // manual Pull / Update button surfaces errors when the user asks for them.
+    }
+  }
+
+  /**
+   * After an update moved the default branch's tip, advance the content-search
+   * index by only the files that changed between the old and new commits instead
+   * of rebuilding it. A no-op unless we're on the default branch (the only ref we
+   * index for now) and an index already exists; best-effort, since a failure just
+   * falls back to a lazy full rebuild on the next search.
+   */
+  async function syncContentIndex(result) {
+    if (!result || !result.changed) return;
+    if (!ctx.onDefaultBranch()) return;
+    const source = state.source;
+    if (!source || typeof source.changedFiles !== 'function') return;
+    const { oldOid, newOid } = result;
+    if (!oldOid || !newOid || oldOid === newOid) return;
+    const repoId = ctx.repoIndexId();
+    if (!repoId) return;
+    try {
+      // Pass the tips as explicit commit refs so they resolve as oids (not ref
+      // names) regardless of source.
+      const changes = await source.changedFiles(
+        { type: 'commit', name: oldOid },
+        { type: 'commit', name: newOid },
+      );
+      await contentSearch.updateIndex({
+        repoId,
+        prevOid: oldOid,
+        oid: newOid,
+        changes,
+        readFile: (path) => source.readFile(path),
+      });
+    } catch {
+      // Best-effort: on any failure the next search rebuilds the index fresh.
     }
   }
 

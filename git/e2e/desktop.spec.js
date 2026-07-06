@@ -298,6 +298,13 @@ test('shows a symlink notice with its target instead of rendering the link', asy
   await expect(page.locator('.notice .symlink-target')).toContainText('../README.md');
   // It's a link, not a Markdown document, despite the .md extension.
   await expect(page.locator('.markdown-body')).toHaveCount(0);
+
+  // The target resolves to a real file in the tree, so it's a clickable link
+  // that opens the pointed-to file (docs/latest.md -> ../README.md == README.md).
+  await page.locator('.notice .symlink-target .sym-link').click();
+  await expect(page.locator('#file-path')).toContainText('README.md');
+  await expect(page.locator('#file-info')).not.toContainText('Symlink');
+  await expect(page.locator('.markdown-body')).toBeVisible();
 });
 
 test('shows a submodule notice with its remote and pinned commit', async ({ page }) => {

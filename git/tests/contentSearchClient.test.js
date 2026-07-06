@@ -13,6 +13,30 @@ const FILES = {
 const PATHS = Object.keys(FILES);
 const readFile = (path) => Promise.resolve(enc.encode(FILES[path] ?? ''));
 
+/** A minimal in-memory index-persistence store for the persistence tests. */
+function fakeStore() {
+  const map = new Map();
+  return {
+    available: true,
+    saves: 0,
+    loads: 0,
+    async load(repoId, oid) {
+      this.loads += 1;
+      const rec = map.get(repoId);
+      return rec && rec.oid === oid ? rec.data : null;
+    },
+    async save(repoId, oid, data) {
+      this.saves += 1;
+      map.set(repoId, { oid, data });
+      return true;
+    },
+    async remove(repoId) {
+      map.delete(repoId);
+      return true;
+    },
+  };
+}
+
 /**
  * Faithful stand-in for contentSearchWorker.js that runs the real pure logic but
  * lets the test control *when* replies are delivered (so we can kill the worker
@@ -87,7 +111,7 @@ describe('createContentSearchClient — synchronous fallback', () => {
     expect(summary.error).toBeUndefined();
   });
 
-  test('skips files binary by extension (never reads them)', async () => {
+  test('skips files binary by extension (never reads them, even while indexing)', async () => {
     const client = createContentSearchClient({ useWorker: false });
     const reads = [];
     const read = (p) => {
@@ -115,7 +139,7 @@ describe('createContentSearchClient — synchronous fallback', () => {
     expect(summary.matches).toBe(0);
   });
 
-  test('returns an error for an invalid regex (scans nothing)', async () => {
+  test('returns an error for an invalid regex (reads nothing, builds nothing)', async () => {
     const client = createContentSearchClient({ useWorker: false });
     let called = false;
     const read = (p) => {
@@ -127,7 +151,7 @@ describe('createContentSearchClient — synchronous fallback', () => {
     expect(called).toBe(false);
   });
 
-  test('bounds the number of concurrent reads', async () => {
+  test('bounds the number of concurrent reads (during the index build)', async () => {
     let active = 0;
     let peak = 0;
     const slowRead = (path) =>
@@ -155,20 +179,18 @@ describe('createContentSearchClient — synchronous fallback', () => {
     expect(summary.matches).toBeGreaterThanOrEqual(3);
   });
 
-  test('progress advances for every file and reaches total/total even with skips', async () => {
+  test('scan progress advances over the candidate set and reaches total/total', async () => {
     const client = createContentSearchClient({ useWorker: false });
     const progress = [];
-    // logo.png is skipped by extension; src/util.js has no match — both must
-    // still advance the counter so the status can reach total instead of stalling.
-    const files = ['README.md', 'logo.png', 'src/util.js'];
-    await client.search(files, 'needle', {}, {
+    // Only README.md and src/app.js contain "needle"; those are the candidates,
+    // so the scan progress runs over 2 files, not the whole corpus.
+    await client.search(PATHS, 'needle', {}, {
       readFile,
       onProgress: (processed, total) => progress.push([processed, total]),
     });
-    expect(progress).toHaveLength(files.length);
-    expect(progress.every(([, total]) => total === files.length)).toBe(true);
-    expect(progress.map(([processed]) => processed).sort((a, b) => a - b)).toEqual([1, 2, 3]);
-    expect(progress.at(-1)).toEqual([files.length, files.length]);
+    expect(progress).toHaveLength(2);
+    expect(progress.every(([, total]) => total === 2)).toBe(true);
+    expect(progress.at(-1)).toEqual([2, 2]);
   });
 
   test('a newer search supersedes the previous one', async () => {
@@ -192,8 +214,235 @@ describe('createContentSearchClient — synchronous fallback', () => {
   });
 });
 
+describe('createContentSearchClient — index reuse', () => {
+  test('builds the index once, then only reads candidate files on later searches', async () => {
+    const client = createContentSearchClient({ useWorker: false });
+    const reads = [];
+    const read = (p) => {
+      reads.push(p);
+      return readFile(p);
+    };
+
+    // First search builds the index (reads all text files) then scans candidates.
+    await client.search(PATHS, 'needle', {}, { readFile: read, repoId: 'r', oid: '1' });
+    const buildReads = reads.length;
+    expect(buildReads).toBeGreaterThanOrEqual(3); // README, src/app.js, src/util.js
+
+    reads.length = 0;
+    // A different query on the same corpus reuses the cached index: it must only
+    // read the candidate files, not re-scan the entire repo.
+    await client.search(PATHS, 'const', {}, { readFile: read, repoId: 'r', oid: '1' });
+    expect(reads.sort()).toEqual(['src/app.js', 'src/util.js']);
+  });
+
+  test('reports a one-time building phase, absent on reuse', async () => {
+    const client = createContentSearchClient({ useWorker: false });
+    const first = [];
+    await client.search(PATHS, 'needle', {}, {
+      readFile,
+      repoId: 'r',
+      oid: '1',
+      onStatus: (info) => first.push(info.phase),
+    });
+    expect(first).toContain('building');
+
+    const second = [];
+    await client.search(PATHS, 'needle', {}, {
+      readFile,
+      repoId: 'r',
+      oid: '1',
+      onStatus: (info) => second.push(info.phase),
+    });
+    expect(second).not.toContain('building');
+  });
+
+  test('prepareIndex warms the index so a later search reuses it', async () => {
+    const client = createContentSearchClient({ useWorker: false });
+    expect(client.hasIndex('r', '1')).toBe(false);
+    const ready = await client.prepareIndex({ files: PATHS, readFile, repoId: 'r', oid: '1' });
+    expect(ready).toBe(true);
+    expect(client.hasIndex('r', '1')).toBe(true);
+  });
+
+  test('regex queries scan every indexed file (no trigram narrowing)', async () => {
+    const client = createContentSearchClient({ useWorker: false });
+    const results = [];
+    await client.search(PATHS, 'export|needle', { regex: true }, {
+      readFile,
+      repoId: 'r',
+      oid: '1',
+      onResult: (r) => results.push(r),
+    });
+    expect(results.map((r) => r.path).sort()).toEqual(['README.md', 'src/app.js', 'src/util.js']);
+  });
+
+  test('sub-trigram queries scan every indexed file', async () => {
+    const client = createContentSearchClient({ useWorker: false });
+    const results = [];
+    await client.search(PATHS, 'x', {}, {
+      readFile,
+      repoId: 'r',
+      oid: '1',
+      onResult: (r) => results.push(r),
+    });
+    // "x" appears in "import x;" and in "export const ok".
+    expect(results.map((r) => r.path).sort()).toEqual(['src/app.js', 'src/util.js']);
+  });
+});
+
+describe('createContentSearchClient — persistence', () => {
+  test('persists the built index and reuses it on a fresh client (no rebuild)', async () => {
+    const store = fakeStore();
+    const first = createContentSearchClient({ useWorker: false, store });
+    await first.search(PATHS, 'needle', {}, { readFile, repoId: 'r', oid: '1' });
+    expect(store.saves).toBe(1);
+
+    // A brand-new client with the same store loads the persisted index instead of
+    // rebuilding: it reads only candidate files, never the whole corpus.
+    const second = createContentSearchClient({ useWorker: false, store });
+    const reads = [];
+    const read = (p) => {
+      reads.push(p);
+      return readFile(p);
+    };
+    const results = [];
+    await second.search(PATHS, 'needle', {}, {
+      readFile: read,
+      repoId: 'r',
+      oid: '1',
+      onResult: (r) => results.push(r),
+    });
+    expect(reads.sort()).toEqual(['README.md', 'src/app.js']);
+    expect(results.map((r) => r.path).sort()).toEqual(['README.md', 'src/app.js']);
+    expect(store.saves).toBe(1); // no second build/save
+  });
+
+  test('rebuilds and re-persists when the oid moves (content changed)', async () => {
+    const store = fakeStore();
+    const client = createContentSearchClient({ useWorker: false, store });
+    await client.search(PATHS, 'needle', {}, { readFile, repoId: 'r', oid: '1' });
+    expect(store.saves).toBe(1);
+    await client.search(PATHS, 'needle', {}, { readFile, repoId: 'r', oid: '2' });
+    expect(store.saves).toBe(2);
+  });
+});
+
+describe('createContentSearchClient — incremental update', () => {
+  const NEXT = {
+    ...FILES,
+    'README.md': '# Title\nnothing to look for here\n', // lost "needle"
+    'src/util.js': 'export const needle = true;\n', // gained "needle"
+  };
+  const readNext = (p) => Promise.resolve(enc.encode(NEXT[p] ?? ''));
+
+  test('updateIndex advances the index by only the changed files', async () => {
+    const store = fakeStore();
+    const client = createContentSearchClient({ useWorker: false, store });
+    await client.search(PATHS, 'needle', {}, { readFile, repoId: 'r', oid: '1' });
+    expect(store.saves).toBe(1);
+
+    const reads = [];
+    const readCounting = (p) => {
+      reads.push(p);
+      return readNext(p);
+    };
+    const updated = await client.updateIndex({
+      repoId: 'r',
+      prevOid: '1',
+      oid: '2',
+      changes: [
+        { path: 'README.md', status: 'modified' },
+        { path: 'src/util.js', status: 'modified' },
+      ],
+      readFile: readCounting,
+    });
+    expect(updated).toBe(true);
+    // Only the two changed files were re-read — not the whole corpus.
+    expect(reads.sort()).toEqual(['README.md', 'src/util.js']);
+    expect(store.saves).toBe(2);
+    expect(client.hasIndex('r', '2')).toBe(true);
+    expect(client.hasIndex('r', '1')).toBe(false);
+
+    // A search at the new oid reuses the advanced index without rebuilding.
+    const results = [];
+    await client.search(PATHS, 'needle', {}, {
+      readFile: readNext,
+      repoId: 'r',
+      oid: '2',
+      onResult: (r) => results.push(r),
+    });
+    expect(results.map((r) => r.path).sort()).toEqual(['src/app.js', 'src/util.js']);
+  });
+
+  test('updateIndex drops removed files', async () => {
+    const store = fakeStore();
+    const client = createContentSearchClient({ useWorker: false, store });
+    await client.search(PATHS, 'needle', {}, { readFile, repoId: 'r', oid: '1' });
+    await client.updateIndex({
+      repoId: 'r',
+      prevOid: '1',
+      oid: '2',
+      changes: [{ path: 'README.md', status: 'removed' }],
+      readFile,
+    });
+    const results = [];
+    await client.search(PATHS, 'needle', {}, {
+      readFile,
+      repoId: 'r',
+      oid: '2',
+      onResult: (r) => results.push(r),
+    });
+    expect(results.map((r) => r.path).sort()).toEqual(['src/app.js']);
+  });
+
+  test('updateIndex is a no-op (false) when there is no base index', async () => {
+    const store = fakeStore();
+    const client = createContentSearchClient({ useWorker: false, store });
+    const updated = await client.updateIndex({
+      repoId: 'r',
+      prevOid: '1',
+      oid: '2',
+      changes: [],
+      readFile,
+    });
+    expect(updated).toBe(false);
+    expect(store.saves).toBe(0);
+  });
+
+  test('updateIndex can advance a persisted index from a fresh client', async () => {
+    const store = fakeStore();
+    const first = createContentSearchClient({ useWorker: false, store });
+    await first.search(PATHS, 'needle', {}, { readFile, repoId: 'r', oid: '1' });
+
+    const second = createContentSearchClient({ useWorker: false, store });
+    const updated = await second.updateIndex({
+      repoId: 'r',
+      prevOid: '1',
+      oid: '2',
+      changes: [{ path: 'src/util.js', status: 'modified' }],
+      readFile: (p) => Promise.resolve(enc.encode(p === 'src/util.js' ? 'needle here' : FILES[p] ?? '')),
+    });
+    expect(updated).toBe(true);
+    expect(second.hasIndex('r', '2')).toBe(true);
+  });
+});
+
+describe('createContentSearchClient — removeIndex', () => {
+  test('forgets the in-memory and persisted index for a repo', async () => {
+    const store = fakeStore();
+    const client = createContentSearchClient({ useWorker: false, store });
+    await client.search(PATHS, 'needle', {}, { readFile, repoId: 'r', oid: '1' });
+    expect(client.hasIndex('r', '1')).toBe(true);
+    expect(await store.load('r', '1')).not.toBeNull();
+
+    await client.removeIndex('r');
+    expect(client.hasIndex('r', '1')).toBe(false);
+    expect(await store.load('r', '1')).toBeNull();
+  });
+});
+
 describe('createContentSearchClient — worker backend', () => {
-  test('uses the worker: posts begin + a file per non-binary file, streams matches', async () => {
+  test('uses the worker: posts begin + a file per candidate, streams matches', async () => {
     const fake = new FakeWorker();
     const client = createContentSearchClient({ createWorker: () => fake });
     expect(client.usingWorker).toBe(true);
@@ -201,8 +450,9 @@ describe('createContentSearchClient — worker backend', () => {
     const results = [];
     const summary = await client.search(PATHS, 'needle', {}, { readFile, onResult: (r) => results.push(r) });
 
-    // logo.png is filtered before any worker message.
-    expect(fake.fileMessages).toBe(3);
+    // Only the two candidates (README.md, src/app.js) reach the worker; the index
+    // build reads files directly and never messages the worker.
+    expect(fake.fileMessages).toBe(2);
     expect(results.map((r) => r.path).sort()).toEqual(['README.md', 'src/app.js']);
     expect(summary).toMatchObject({ files: 2, matches: 3 });
   });
@@ -213,7 +463,7 @@ describe('createContentSearchClient — worker backend', () => {
 
     const results = [];
     const pending = client.search(PATHS, 'needle', {}, { readFile, onResult: (r) => results.push(r) });
-    await tick(); // lanes have read + posted; replies are queued, not delivered
+    await tick(); // index built, candidates read + posted; replies queued
     fake.fail(); // unblock the in-flight files → they recompute synchronously
 
     const summary = await pending;
