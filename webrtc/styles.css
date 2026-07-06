@@ -574,7 +574,7 @@ textarea {
   flex-basis: 100%;
 }
 
-/* Extras: location sharing + payment requests */
+/* Extras: location sharing */
 .extras {
   margin-top: 18px;
   border: 1px solid var(--line);
@@ -586,33 +586,6 @@ textarea {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-}
-
-.pay-form {
-  margin-top: 12px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-
-.pay-fields {
-  display: flex;
-  flex: 1;
-  gap: 8px;
-  min-width: 220px;
-}
-
-.pay-fields input[type="number"],
-.pay-fields input[type="text"] {
-  width: auto;
-  flex: 1;
-}
-
-.pay-currency {
-  flex: 0 0 64px !important;
-  text-transform: uppercase;
-  text-align: center;
 }
 
 .extras-log {

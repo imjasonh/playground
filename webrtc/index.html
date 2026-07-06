@@ -9,9 +9,9 @@
     <meta name="theme-color" content="#0b1020" />
     <meta
       name="description"
-      content="Serverless peer-to-peer video, voice, file, and location sharing plus payment requests. Share a link to connect — no backend, no accounts."
+      content="Serverless peer-to-peer video, voice, file, and location sharing with live captions and translation. Share a link to connect — no backend, no accounts."
     />
-    <title>WebRTC — Serverless P2P Video, Files, Location &amp; Pay</title>
+    <title>WebRTC — Serverless P2P Video, Files, Location &amp; Captions</title>
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="styles.css" />
   </head>
@@ -23,8 +23,8 @@
           <div>
             <h1>WebRTC</h1>
             <p class="tagline">
-              Peer-to-peer video, voice, files, location &amp; pay. No server —
-              just a link.
+              Peer-to-peer video, voice, files, location &amp; captions. No
+              server — just a link.
             </p>
           </div>
         </div>
@@ -143,7 +143,7 @@
           <span id="caption-hint" class="hint"></span>
         </div>
 
-        <!-- Location sharing + payment requests (no backend) -->
+        <!-- Location sharing (no backend) -->
         <section class="extras">
           <div class="extras-bar">
             <button id="share-location" class="ghost" type="button" disabled>
@@ -152,41 +152,8 @@
             <button id="toggle-live-location" class="ghost" type="button" disabled>
               Live location off
             </button>
-            <button id="request-money" class="ghost" type="button" disabled>
-              💸 Request money
-            </button>
           </div>
           <p id="perm-hint" class="hint"></p>
-
-          <form id="pay-form" class="pay-form hidden">
-            <div class="pay-fields">
-              <input
-                id="pay-amount"
-                type="number"
-                min="0.01"
-                step="0.01"
-                inputmode="decimal"
-                placeholder="Amount"
-                required
-              />
-              <input
-                id="pay-currency"
-                class="pay-currency"
-                type="text"
-                maxlength="3"
-                value="USD"
-                aria-label="Currency code"
-              />
-              <input
-                id="pay-note"
-                type="text"
-                placeholder="What's it for? (optional)"
-              />
-            </div>
-            <button id="pay-send" class="primary" type="submit">
-              Send request
-            </button>
-          </form>
 
           <div id="extras-log" class="extras-log" aria-live="polite"></div>
         </section>

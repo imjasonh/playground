@@ -1,6 +1,6 @@
 // WebRTC — serverless, link-based peer-to-peer app with audio, video, files,
-// live location sharing, payment requests, and speech-to-text captions with
-// on-device translation and text-to-speech.
+// live location sharing, and speech-to-text captions with on-device
+// translation and text-to-speech.
 //
 // There is no backend. To start a call, one person ("host") creates an offer
 // that is packed into a shareable link. The other person ("guest") opens the
@@ -37,17 +37,6 @@ import {
   formatAccuracy,
   mapsLink,
 } from "./location.js";
-import {
-  PAYMENT_REQUEST_KIND,
-  PAYMENT_RESULT_KIND,
-  createPaymentRequestMessage,
-  parsePaymentRequestMessage,
-  createPaymentResultMessage,
-  parsePaymentResultMessage,
-  formatAmount,
-  buildPaymentMethodData,
-  buildPaymentDetails,
-} from "./payments.js";
 import {
   CAPTION_KIND,
   createCaptionMessage,
@@ -153,12 +142,7 @@ function cacheElements() {
     "file-list",
     "share-location",
     "toggle-live-location",
-    "request-money",
     "perm-hint",
-    "pay-form",
-    "pay-amount",
-    "pay-currency",
-    "pay-note",
     "extras-log",
   ];
   for (const id of ids) el[id] = $(id);
@@ -380,12 +364,6 @@ function handleChannelMessage(data) {
       if (loc) renderLocation("them", loc);
     } else if (msg.kind === LOCATION_STOP_KIND) {
       renderExtraNote("Peer stopped sharing live location.");
-    } else if (msg.kind === PAYMENT_REQUEST_KIND) {
-      const req = parsePaymentRequestMessage(msg);
-      if (req) renderIncomingPaymentRequest(req);
-    } else if (msg.kind === PAYMENT_RESULT_KIND) {
-      const result = parsePaymentResultMessage(msg);
-      if (result) applyPaymentResult(result);
     } else if (msg.kind === CAPTION_KIND) {
       const cap = parseCaptionMessage(msg);
       if (cap) handleRemoteCaption(cap);
@@ -503,11 +481,11 @@ function hangup() {
 }
 
 // ---------------------------------------------------------------------------
-// Extras: enable/disable, location sharing, screen share, payments
+// Extras: enable/disable, location sharing, screen share
 // ---------------------------------------------------------------------------
 
 function enableExtras(on) {
-  const ids = ["share-location", "toggle-live-location", "request-money", "share-screen"];
+  const ids = ["share-location", "toggle-live-location", "share-screen"];
   for (const id of ids) {
     if (el[id]) el[id].disabled = !on;
   }
@@ -680,77 +658,6 @@ function toggleScreenShare() {
     stopScreenShare();
   } else {
     shareScreen();
-  }
-}
-
-function sendPaymentRequest() {
-  if (!channelOpen()) return;
-  let msg;
-  try {
-    msg = createPaymentRequestMessage({
-      amount: el["pay-amount"].value,
-      currency: el["pay-currency"].value || "USD",
-      note: el["pay-note"].value,
-    });
-  } catch (err) {
-    renderExtraNote(`Invalid request: ${err.message}`, "error");
-    return;
-  }
-  state.channel.send(JSON.stringify(msg));
-  renderOutgoingPaymentRequest(msg);
-  el["pay-form"].classList.add("hidden");
-  el["pay-amount"].value = "";
-  el["pay-note"].value = "";
-}
-
-// The payer's side: launch the Web Payments UI for an incoming request.
-async function payViaWebPayments(req, cardEl) {
-  const statusEl = cardEl.querySelector(".extra-status");
-  const payBtn = cardEl.querySelector("button");
-  const report = (status, detail, kind) => {
-    if (channelOpen()) {
-      state.channel.send(JSON.stringify(createPaymentResultMessage(req.id, status, detail)));
-    }
-    if (statusEl) {
-      statusEl.textContent = detail;
-      statusEl.className = `extra-status ${kind || ""}`;
-    }
-  };
-
-  if (typeof window.PaymentRequest !== "function") {
-    report("unsupported", "Web Payments isn't supported in this browser.", "warn");
-    return;
-  }
-  if (payBtn) payBtn.disabled = true;
-
-  try {
-    const request = new window.PaymentRequest(
-      buildPaymentMethodData(),
-      buildPaymentDetails(req),
-    );
-    // Not all browsers expose canMakePayment; treat missing as "try anyway".
-    if (typeof request.canMakePayment === "function") {
-      const ok = await request.canMakePayment().catch(() => null);
-      if (ok === false) {
-        report(
-          "unsupported",
-          "No payment app is available to complete this on your device.",
-          "warn",
-        );
-        if (payBtn) payBtn.disabled = false;
-        return;
-      }
-    }
-    const response = await request.show();
-    await response.complete("success");
-    report("paid", "Paid — thanks!", "ok");
-  } catch (err) {
-    if (err && err.name === "AbortError") {
-      report("declined", "Payment cancelled.", "warn");
-    } else {
-      report("failed", `Payment failed (${(err && err.name) || err}).`, "error");
-    }
-    if (payBtn) payBtn.disabled = false;
   }
 }
 
@@ -1061,7 +968,7 @@ function finalizeIncomingFile() {
   state.incoming = null;
 }
 
-// --- Extras feed (location + payments) ---
+// --- Extras feed (location notes) ---
 
 function extraCard(who) {
   const card = document.createElement("div");
@@ -1123,83 +1030,6 @@ function renderLocation(who, loc) {
     sub.textContent = bits.join(" · ");
     card.append(sub);
   }
-}
-
-function paymentCardId(id) {
-  return `pay-${id}`;
-}
-
-function renderOutgoingPaymentRequest(msg) {
-  const card = extraCard("me");
-  card.id = paymentCardId(msg.id);
-  const head = document.createElement("div");
-  head.className = "extra-head";
-  head.append(whoLabel("me"));
-  const label = document.createElement("span");
-  label.className = "extra-body";
-  label.textContent = `💸 Requested ${formatAmount(msg.amount, msg.currency)}`;
-  head.append(label);
-  card.append(head);
-  if (msg.note) {
-    const sub = document.createElement("div");
-    sub.className = "extra-sub";
-    sub.textContent = msg.note;
-    card.append(sub);
-  }
-  const status = document.createElement("div");
-  status.className = "extra-status";
-  status.textContent = "Waiting for peer to pay…";
-  card.append(status);
-}
-
-function renderIncomingPaymentRequest(req) {
-  const card = extraCard("them");
-  card.id = paymentCardId(req.id);
-  const head = document.createElement("div");
-  head.className = "extra-head";
-  head.append(whoLabel("them"));
-  const label = document.createElement("span");
-  label.className = "extra-body";
-  label.textContent = `💸 Requests ${formatAmount(req.amount, req.currency)}`;
-  head.append(label);
-  card.append(head);
-  if (req.note) {
-    const sub = document.createElement("div");
-    sub.className = "extra-sub";
-    sub.textContent = req.note;
-    card.append(sub);
-  }
-  const actions = document.createElement("div");
-  actions.className = "extra-actions";
-  const payBtn = document.createElement("button");
-  payBtn.type = "button";
-  payBtn.className = "primary";
-  payBtn.textContent = `Pay ${formatAmount(req.amount, req.currency)}`;
-  payBtn.addEventListener("click", () => payViaWebPayments(req, card));
-  const status = document.createElement("span");
-  status.className = "extra-status";
-  actions.append(payBtn, status);
-  card.append(actions);
-}
-
-function applyPaymentResult(result) {
-  const card = document.getElementById(paymentCardId(result.id));
-  if (!card) return;
-  let status = card.querySelector(".extra-status");
-  if (!status) {
-    status = document.createElement("div");
-    status.className = "extra-status";
-    card.append(status);
-  }
-  const map = {
-    paid: ["Peer paid this request.", "ok"],
-    declined: ["Peer cancelled the payment.", "warn"],
-    unsupported: ["Peer's browser can't complete Web Payments.", "warn"],
-    failed: ["Payment failed on the peer's device.", "error"],
-  };
-  const [text, kind] = map[result.status] || ["Payment update.", ""];
-  status.textContent = result.detail ? `${text} (${result.detail})` : text;
-  status.className = `extra-status ${kind}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1351,7 +1181,7 @@ function bindEvents() {
   });
   el["hangup"].addEventListener("click", hangup);
 
-  // Extras: screen share, captions, location sharing, and payment requests.
+  // Extras: screen share, captions, and location sharing.
   el["share-screen"].addEventListener("click", toggleScreenShare);
   el["toggle-captions"].addEventListener("click", toggleCaptions);
   el["caption-lang"].addEventListener("change", (e) => {
@@ -1366,14 +1196,6 @@ function bindEvents() {
   });
   el["share-location"].addEventListener("click", shareLocationOnce);
   el["toggle-live-location"].addEventListener("click", toggleLiveLocation);
-  el["request-money"].addEventListener("click", () => {
-    el["pay-form"].classList.toggle("hidden");
-    if (!el["pay-form"].classList.contains("hidden")) el["pay-amount"].focus();
-  });
-  el["pay-form"].addEventListener("submit", (e) => {
-    e.preventDefault();
-    sendPaymentRequest();
-  });
 }
 
 function init() {

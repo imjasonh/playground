@@ -27,7 +27,8 @@ experiments don't bit-rot.
 - **[`kanoodle/`](kanoodle/)** — the Kanoodle puzzle game (5×11 board, 12 pieces).
 - **[`webrtc/`](webrtc/)** — serverless, link-based WebRTC app: share a link to
   open a direct peer-to-peer session with video, voice, text, file transfer,
-  live location sharing, and payment requests — all with no backend.
+  live location sharing, and live captions (with on-device translation) — all
+  with no backend.
 - **[`nypd-choppers/`](nypd-choppers/)** — daily flight paths, airborne hours,
   and estimated fuel cost for NYPD Aviation Unit helicopters, from public ADS-B
   data collected by an hourly scrape workflow.
