@@ -11,8 +11,11 @@ compatibility_date = "2024-11-01"
 
 # Build the wasm Worker from Rust. `worker-build` wraps `cargo build
 # --target wasm32-unknown-unknown` and emits the JS shim referenced by `main`.
+# Build the worker-build *tool* with the stable toolchain (its newer deps need a
+# recent Cargo to parse their manifests); worker-build then compiles this crate
+# with the pinned toolchain from rust-toolchain.toml (rustup honors it per-dir).
 [build]
-command = "cargo install -q worker-build && worker-build --release"
+command = "cargo +stable install -q worker-build && worker-build --release"
 
 # KV namespace that stores subscriptions. Create with:
 #   wrangler kv namespace create SUBSCRIPTIONS

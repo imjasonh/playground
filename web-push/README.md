@@ -141,8 +141,9 @@ secrets on the account.
 To deploy or iterate manually (equivalent steps, done by hand):
 
 ```bash
-# Install tooling
-cargo install worker-build
+# Install tooling. Build worker-build with stable — its deps need a recent
+# Cargo, while this crate itself builds with the pinned toolchain.
+cargo +stable install worker-build
 npm install -g wrangler
 
 # Provision KV + VAPID once, then deploy
