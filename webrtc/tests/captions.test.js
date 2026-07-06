@@ -21,6 +21,18 @@ test("createCaptionMessage carries the kind, text, and final flag", () => {
   assert.throws(() => createCaptionMessage(42));
 });
 
+test("createCaptionMessage includes a language tag only when provided", () => {
+  assert.equal("lang" in createCaptionMessage("hi", false), false);
+  assert.equal(createCaptionMessage("hi", false, "en-US").lang, "en-US");
+  assert.equal("lang" in createCaptionMessage("hi", false, ""), false);
+});
+
+test("parseCaptionMessage round-trips the language tag when present", () => {
+  const msg = createCaptionMessage("hola", true, "es-ES");
+  assert.deepEqual(parseCaptionMessage(msg), { text: "hola", final: true, lang: "es-ES" });
+  assert.equal("lang" in parseCaptionMessage({ kind: CAPTION_KIND, text: "x" }), false);
+});
+
 test("caption text is clamped to a max length", () => {
   const long = "a".repeat(MAX_CAPTION_LENGTH + 50);
   assert.equal(createCaptionMessage(long).text.length, MAX_CAPTION_LENGTH);

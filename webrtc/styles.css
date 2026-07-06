@@ -549,6 +549,31 @@ textarea {
   background: #05070f;
 }
 
+/* Caption translation + text-to-speech controls */
+.caption-settings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.caption-settings select {
+  background: #0e1428;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 9px 10px;
+  font: inherit;
+}
+
+.caption-settings .hint {
+  margin: 0;
+  flex-basis: 100%;
+}
+
 /* Extras: location sharing + payment requests */
 .extras {
   margin-top: 18px;
