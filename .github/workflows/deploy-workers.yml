@@ -1,0 +1,66 @@
+name: Deploy Cloudflare Workers
+
+on:
+  push:
+    branches: [main]
+
+# Worker deploys are independent of the GitHub Pages publish, but serialize
+# among themselves so two pushes don't race the same Cloudflare deployment.
+concurrency:
+  group: deploy-workers
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # Select the Worker apps this push changed (all of them on the first push).
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      workers: ${{ steps.discover.outputs.workers }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Discover changed Worker apps
+        id: discover
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: bash .github/scripts/discover-changed-workers.sh
+
+  deploy:
+    needs: discover
+    if: ${{ needs.discover.outputs.workers != '[]' }}
+    runs-on: ubuntu-latest
+    strategy:
+      # Deploy each Worker independently; one failing deploy shouldn't cancel
+      # the others.
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.discover.outputs.workers) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Each Worker app pins its toolchain via rust-toolchain.toml; rustup honors
+      # it when cargo runs in the app directory. wrangler's [build] command
+      # (worker-build) compiles the wasm artifact during deploy.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Deploy ${{ matrix.app }}
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: ${{ matrix.app }}
+          # Before deploying, create-or-get the KV namespaces this Worker needs
+          # and rewrite the placeholder ids in wrangler.toml with the real ones.
+          preCommands: python3 "$GITHUB_WORKSPACE/.github/scripts/provision-worker-kv.py"
+          # After deploying (the script now exists), get-or-generate its
+          # VAPID_PRIVATE_KEY secret. Both commands inherit CLOUDFLARE_API_TOKEN
+          # and CLOUDFLARE_ACCOUNT_ID from wrangler-action and run in the app dir.
+          postCommands: bash "$GITHUB_WORKSPACE/.github/scripts/ensure-worker-vapid.sh"
