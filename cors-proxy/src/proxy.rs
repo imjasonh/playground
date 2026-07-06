@@ -15,6 +15,20 @@ pub const MAX_REDIRECTS: usize = 5;
 /// `MAX_RESPONSE_BYTES` var is unset or unparseable.
 pub const DEFAULT_MAX_RESPONSE_BYTES: usize = 25 * 1024 * 1024;
 
+/// Default cap on the inbound request body the proxy will read and forward
+/// (10 MiB), used when the `MAX_REQUEST_BYTES` var is unset or unparseable.
+pub const DEFAULT_MAX_REQUEST_BYTES: usize = 10 * 1024 * 1024;
+
+/// Headers carrying caller credentials. They are forwarded on the first hop but
+/// dropped when a redirect crosses to a different origin, so a redirect to an
+/// attacker-controlled host cannot harvest them.
+const CREDENTIAL_HEADERS: &[&str] = &[
+    "authorization",
+    "proxy-authorization",
+    "cookie",
+    "x-api-key",
+];
+
 /// Request headers that must never be forwarded to the upstream: hop-by-hop
 /// headers, identity/forwarding leakage, and headers the runtime sets itself.
 const STRIP_REQUEST_HEADERS: &[&str] = &[
@@ -89,6 +103,25 @@ pub fn filtered_response_headers(headers: &[(String, String)]) -> Vec<(String, S
         })
         .cloned()
         .collect()
+}
+
+/// Whether a header name carries caller credentials (see [`CREDENTIAL_HEADERS`]).
+pub fn is_credential_header(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    CREDENTIAL_HEADERS.contains(&lower.as_str())
+}
+
+/// Remove credential-bearing headers from an outbound header set in place.
+pub fn strip_credential_headers(headers: &mut Vec<(String, String)>) {
+    headers.retain(|(name, _)| !is_credential_header(name));
+}
+
+/// Whether two URLs share an origin (scheme + host + effective port). Used to
+/// decide when a redirect crosses an origin boundary.
+pub fn same_origin(a: &url::Url, b: &url::Url) -> bool {
+    a.scheme() == b.scheme()
+        && a.host_str() == b.host_str()
+        && a.port_or_known_default() == b.port_or_known_default()
 }
 
 /// Whether an upstream `Content-Length` header advertises a body larger than
@@ -202,7 +235,7 @@ fn hex_val(b: u8) -> Option<u8> {
 }
 
 /// A JSON usage/help document returned from `GET /` with no target.
-pub fn usage_json(max_response_bytes: usize) -> Value {
+pub fn usage_json(max_response_bytes: usize, max_request_bytes: usize) -> Value {
     json!({
         "service": "cors-proxy",
         "description": "An SSRF-hardened CORS proxy for Cloudflare Workers.",
@@ -214,6 +247,7 @@ pub fn usage_json(max_response_bytes: usize) -> Value {
         "limits": {
             "schemes": ["http", "https"],
             "maxResponseBytes": max_response_bytes,
+            "maxRequestBytes": max_request_bytes,
             "maxRedirects": MAX_REDIRECTS,
         },
         "notes": [
@@ -357,6 +391,39 @@ mod tests {
         assert_eq!(extract_target("https://proxy.dev/"), None);
         assert_eq!(extract_target("https://proxy.dev/favicon.ico"), None);
         assert_eq!(extract_target("https://proxy.dev/?url="), None);
+    }
+
+    #[test]
+    fn credential_headers_detected_and_stripped() {
+        assert!(is_credential_header("Authorization"));
+        assert!(is_credential_header("cookie"));
+        assert!(is_credential_header("X-API-Key"));
+        assert!(!is_credential_header("Accept"));
+        assert!(!is_credential_header("Content-Type"));
+
+        let mut headers = h(&[
+            ("Accept", "*/*"),
+            ("Authorization", "Bearer secret"),
+            ("X-Api-Key", "k"),
+        ]);
+        strip_credential_headers(&mut headers);
+        let names = names(&headers);
+        assert_eq!(names, vec!["accept".to_string()]);
+    }
+
+    #[test]
+    fn same_origin_compares_scheme_host_port() {
+        let a = url::Url::parse("https://example.com/a").unwrap();
+        let b = url::Url::parse("https://example.com/b?x=1").unwrap();
+        let c = url::Url::parse("https://example.com:8443/a").unwrap();
+        let d = url::Url::parse("http://example.com/a").unwrap();
+        let e = url::Url::parse("https://evil.com/a").unwrap();
+        let f = url::Url::parse("https://example.com:443/a").unwrap();
+        assert!(same_origin(&a, &b));
+        assert!(same_origin(&a, &f)); // 443 is the default https port
+        assert!(!same_origin(&a, &c));
+        assert!(!same_origin(&a, &d));
+        assert!(!same_origin(&a, &e));
     }
 
     #[test]

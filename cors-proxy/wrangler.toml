@@ -20,8 +20,13 @@ command = "cargo install -q worker-build && worker-build --release"
 # security section first). Example:
 #   ALLOWED_ORIGINS = "https://example.com,https://app.example.com"
 #
-# MAX_RESPONSE_BYTES: reject upstream responses whose Content-Length exceeds
-# this many bytes (defaults to 26214400 = 25 MiB when unset).
+# MAX_RESPONSE_BYTES: reject upstream responses larger than this many bytes
+# (defaults to 26214400 = 25 MiB when unset). Enforced while streaming, so a
+# chunked response can't force the whole body to be buffered.
+#
+# MAX_REQUEST_BYTES: reject inbound request bodies larger than this many bytes
+# (defaults to 10485760 = 10 MiB when unset).
 [vars]
 ALLOWED_ORIGINS = "*"
 MAX_RESPONSE_BYTES = "26214400"
+MAX_REQUEST_BYTES = "10485760"

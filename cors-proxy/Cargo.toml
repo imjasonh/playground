@@ -32,6 +32,9 @@ idna_adapter = "=1.1.0"
 # all business logic stays testable on the host.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 worker = "0.5"
+# Used to consume the upstream response as a stream so the size cap can abort
+# before the whole body is buffered in memory.
+futures = "0.3"
 
 [profile.release]
 opt-level = "s"

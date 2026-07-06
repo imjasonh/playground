@@ -10,6 +10,7 @@
 //!   re-validating every `Location` hop against the SSRF guard;
 //! * relays the response with sanitized headers and our own CORS headers.
 
+use futures::StreamExt;
 use serde_json::json;
 use worker::js_sys::Uint8Array;
 use worker::{
@@ -20,7 +21,8 @@ use worker::{
 use crate::error::GuardError;
 use crate::proxy::{
     content_length_exceeds, decide_cors, extract_target, filtered_response_headers,
-    outbound_request_headers, usage_json, CorsDecision, DEFAULT_MAX_RESPONSE_BYTES, MAX_REDIRECTS,
+    outbound_request_headers, same_origin, strip_credential_headers, usage_json, CorsDecision,
+    DEFAULT_MAX_REQUEST_BYTES, DEFAULT_MAX_RESPONSE_BYTES, MAX_REDIRECTS,
 };
 use crate::url_guard;
 
@@ -28,6 +30,7 @@ use crate::url_guard;
 struct Config {
     allowed_origins: String,
     max_response_bytes: usize,
+    max_request_bytes: usize,
 }
 
 impl Config {
@@ -36,17 +39,24 @@ impl Config {
             .var("ALLOWED_ORIGINS")
             .map(|v| v.to_string())
             .unwrap_or_else(|_| "*".to_string());
-        let max_response_bytes = env
-            .var("MAX_RESPONSE_BYTES")
-            .ok()
-            .and_then(|v| v.to_string().trim().parse::<usize>().ok())
-            .filter(|n| *n > 0)
-            .unwrap_or(DEFAULT_MAX_RESPONSE_BYTES);
         Config {
             allowed_origins,
-            max_response_bytes,
+            max_response_bytes: parse_size_var(
+                env,
+                "MAX_RESPONSE_BYTES",
+                DEFAULT_MAX_RESPONSE_BYTES,
+            ),
+            max_request_bytes: parse_size_var(env, "MAX_REQUEST_BYTES", DEFAULT_MAX_REQUEST_BYTES),
         }
     }
+}
+
+fn parse_size_var(env: &Env, name: &str, default: usize) -> usize {
+    env.var(name)
+        .ok()
+        .and_then(|v| v.to_string().trim().parse::<usize>().ok())
+        .filter(|n| *n > 0)
+        .unwrap_or(default)
 }
 
 /// A fetched upstream response, reduced to plain data.
@@ -79,7 +89,13 @@ async fn fetch(mut req: Request, env: Env, _ctx: Context) -> Result<Response> {
     let request_url = req.url()?.to_string();
     let target_raw = match extract_target(&request_url) {
         Some(target) => target,
-        None => return json_response(200, usage_json(config.max_response_bytes), &cors),
+        None => {
+            return json_response(
+                200,
+                usage_json(config.max_response_bytes, config.max_request_bytes),
+                &cors,
+            )
+        }
     };
 
     let target = match url_guard::validate(&target_raw) {
@@ -89,8 +105,25 @@ async fn fetch(mut req: Request, env: Env, _ctx: Context) -> Result<Response> {
 
     let method = req.method();
     let req_headers: Vec<(String, String)> = req.headers().entries().collect();
+    // Refuse an over-large inbound body before reading it, using the advertised
+    // Content-Length, then again after the read (chunked uploads have none).
+    if content_length_exceeds(&req_headers, config.max_request_bytes) {
+        return json_response(
+            413,
+            json!({ "error": format!("request body exceeds {} bytes", config.max_request_bytes) }),
+            &cors,
+        );
+    }
     let body = if method_has_body(&method) {
-        req.bytes().await.unwrap_or_default()
+        let bytes = req.bytes().await.unwrap_or_default();
+        if bytes.len() > config.max_request_bytes {
+            return json_response(
+                413,
+                json!({ "error": format!("request body exceeds {} bytes", config.max_request_bytes) }),
+                &cors,
+            );
+        }
+        bytes
     } else {
         Vec::new()
     };
@@ -120,7 +153,7 @@ async fn proxy_fetch(
     body: Vec<u8>,
     config: &Config,
 ) -> std::result::Result<Upstream, ProxyError> {
-    let outbound = outbound_request_headers(&req_headers);
+    let mut outbound = outbound_request_headers(&req_headers);
     let mut cur_method = method;
     let mut cur_body = body;
 
@@ -155,6 +188,11 @@ async fn proxy_fetch(
                     .join(&location)
                     .map_err(|_| ProxyError::Guard(GuardError::InvalidUrl))?;
                 url_guard::validate_url(&next).map_err(ProxyError::Guard)?;
+                // Don't replay the caller's credentials to a different origin: a
+                // redirect to an attacker-controlled host must not harvest them.
+                if !same_origin(&target, &next) {
+                    strip_credential_headers(&mut outbound);
+                }
                 // 303 (and, by long-standing convention, 301/302) turn the
                 // follow-up into a bodyless GET; 307/308 preserve method+body.
                 if status != 307 && status != 308 {
@@ -170,22 +208,37 @@ async fn proxy_fetch(
         if content_length_exceeds(&resp_headers, config.max_response_bytes) {
             return Err(ProxyError::TooLarge(config.max_response_bytes));
         }
-        let bytes = response
-            .bytes()
-            .await
-            .map_err(|e| ProxyError::Upstream(e.to_string()))?;
-        if bytes.len() > config.max_response_bytes {
-            return Err(ProxyError::TooLarge(config.max_response_bytes));
-        }
+        let body = read_body_capped(&mut response, config.max_response_bytes).await?;
 
         return Ok(Upstream {
             status,
             headers: resp_headers,
-            body: bytes,
+            body,
         });
     }
 
     Err(ProxyError::Guard(GuardError::TooManyRedirects))
+}
+
+/// Read an upstream response body, aborting as soon as it exceeds `max` bytes so
+/// a chunked (no `Content-Length`) response can't force us to buffer the whole
+/// payload in the isolate.
+async fn read_body_capped(
+    response: &mut Response,
+    max: usize,
+) -> std::result::Result<Vec<u8>, ProxyError> {
+    let mut stream = response
+        .stream()
+        .map_err(|e| ProxyError::Upstream(e.to_string()))?;
+    let mut buf: Vec<u8> = Vec::new();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| ProxyError::Upstream(e.to_string()))?;
+        if buf.len() + chunk.len() > max {
+            return Err(ProxyError::TooLarge(max));
+        }
+        buf.extend_from_slice(&chunk);
+    }
+    Ok(buf)
 }
 
 /// Build the browser-facing response from an upstream result.
