@@ -81,7 +81,7 @@ discovery scripts.
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
 | `deploy.yml` | push to `main` | Publishes all browser apps to GitHub Pages production |
-| `deploy-workers.yml` | push to `main` | Deploys changed Cloudflare Worker apps (those with `wrangler.toml`) with `wrangler`, using the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets |
+| `deploy-workers.yml` | push to `main` | Deploys changed Cloudflare Worker apps (those with `wrangler.toml`) with `wrangler`, using the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets. Before deploy it create-or-gets each Worker's KV namespaces and substitutes the placeholder ids in `wrangler.toml`; after deploy it get-or-generates a `VAPID_PRIVATE_KEY` secret for any Worker shipping an `examples/genvapid.rs` |
 | `preview.yml` | pull request opened/sync | Deploys browser apps under `/preview/pr-<N>/` and comments the URL |
 | `cleanup.yml` | pull request closed | Removes that PR's preview directory from `gh-pages` and refreshes the root index |
 | `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps in one job |
@@ -265,9 +265,12 @@ go test ./...
    previewed. If you want a UI, add a separate browser app (see `web-push-demo`).
 7. For a Cloudflare Worker, add a `wrangler.toml`. `deploy-workers.yml` then
    deploys it on pushes to `main` automatically (no workflow edits needed); it
-   relies on the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets
-   and on any Worker-specific config (KV namespace ids, `wrangler secret`s) you
-   provision in your Cloudflare account.
+   relies on the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets.
+   The deploy self-provisions Cloudflare-side config: KV namespaces referenced
+   with a placeholder id (e.g. `id = "REPLACE_WITH_..."`) are created-or-fetched
+   and rewritten to real ids before deploy, and a Worker that ships
+   `examples/genvapid.rs` gets a `VAPID_PRIVATE_KEY` secret generated once (only
+   if absent, so the key is stable across deploys).
 
 No workflow edits are required. CI discovers a new Rust app from its
 `Cargo.toml`, the deploy workflow discovers a new Worker from its
