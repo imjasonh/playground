@@ -1,0 +1,27 @@
+# Cloudflare Workers configuration for the CORS proxy.
+#
+# This project is not deployed by the repository's GitHub Pages workflows (it
+# has no index.html). To deploy it yourself you need a Cloudflare account and
+# `wrangler`/`worker-build`; see README.md.
+
+name = "cors-proxy-worker"
+main = "build/worker/shim.mjs"
+compatibility_date = "2024-11-01"
+
+# Build the wasm Worker from Rust. `worker-build` wraps `cargo build
+# --target wasm32-unknown-unknown` and emits the JS shim referenced by `main`.
+[build]
+command = "cargo install -q worker-build && worker-build --release"
+
+# Public, non-secret configuration.
+#
+# ALLOWED_ORIGINS: comma-separated list of browser Origins allowed to call the
+# proxy. Use "*" to allow any origin (a fully open proxy — read the README's
+# security section first). Example:
+#   ALLOWED_ORIGINS = "https://example.com,https://app.example.com"
+#
+# MAX_RESPONSE_BYTES: reject upstream responses whose Content-Length exceeds
+# this many bytes (defaults to 26214400 = 25 MiB when unset).
+[vars]
+ALLOWED_ORIGINS = "*"
+MAX_RESPONSE_BYTES = "26214400"
