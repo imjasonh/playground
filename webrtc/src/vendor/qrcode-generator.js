@@ -2296,7 +2296,7 @@ var qrcode = function() {
     return qrcode;
 }));
 
-// --- Added for LinkChat: expose as an ES module (upstream is UMD). ---
+// --- Added for the WebRTC app: expose as an ES module (upstream is UMD). ---
 // The UMD block above is a no-op under ESM (its `typeof` guards are false), so
 // `qrcode` remains a module-scoped binding we can export unchanged.
 export default qrcode;

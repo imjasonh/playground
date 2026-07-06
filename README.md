@@ -25,8 +25,9 @@ experiments don't bit-rot.
   balance a ball up the wall while avoiding unlit pockets.
 - **[`hello/`](hello/)** — a minimal static demo.
 - **[`kanoodle/`](kanoodle/)** — the Kanoodle puzzle game (5×11 board, 12 pieces).
-- **[`linkchat/`](linkchat/)** — serverless, link-based WebRTC chat: share a link
-  to open a direct peer-to-peer video, voice, text, and file-transfer session
+- **[`webrtc/`](webrtc/)** — serverless, link-based WebRTC app: share a link to
+  open a direct peer-to-peer session with video, voice, text, file transfer,
+  live location sharing, and live captions (with on-device translation) — all
   with no backend.
 - **[`nypd-choppers/`](nypd-choppers/)** — daily flight paths, airborne hours,
   and estimated fuel cost for NYPD Aviation Unit helicopters, from public ADS-B

@@ -172,6 +172,12 @@ button:disabled {
   border-color: var(--warn);
 }
 
+.ghost.active {
+  color: #cfe0ff;
+  border-color: var(--accent);
+  background: rgba(91, 140, 255, 0.14);
+}
+
 .danger {
   background: transparent;
   color: var(--error);
@@ -293,6 +299,29 @@ textarea {
   font-size: 14px;
   text-align: center;
   padding: 12px;
+}
+
+/* Live captions overlaid on the video */
+.caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  margin: 0;
+  padding: 10px 14px;
+  color: #fff;
+  font-size: 15px;
+  line-height: 1.35;
+  text-align: center;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95);
+  background: linear-gradient(0deg, rgba(0, 0, 0, 0.75), transparent);
+  pointer-events: none;
+}
+
+.video-wrap.local .caption {
+  padding: 4px 6px;
+  font-size: 11px;
 }
 
 .controls {
@@ -518,6 +547,138 @@ textarea {
   border-radius: 14px;
   border: 1px solid var(--line);
   background: #05070f;
+}
+
+/* Caption translation + text-to-speech controls */
+.caption-settings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.caption-settings select {
+  background: #0e1428;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 9px 10px;
+  font: inherit;
+}
+
+.caption-settings .hint {
+  margin: 0;
+  flex-basis: 100%;
+}
+
+/* Extras: location sharing */
+.extras {
+  margin-top: 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px;
+}
+
+.extras-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.extras-log {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.extras-log:empty {
+  display: none;
+}
+
+.extra-card {
+  background: #0e1428;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
+.extra-card.me {
+  border-color: rgba(91, 140, 255, 0.4);
+  background: rgba(91, 140, 255, 0.1);
+}
+
+.extra-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.extra-who {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.extra-badge {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(67, 209, 158, 0.16);
+  color: var(--ok);
+}
+
+.extra-badge.live {
+  background: rgba(245, 196, 81, 0.18);
+  color: var(--warn);
+}
+
+.extra-body {
+  color: var(--text);
+}
+
+.extra-sub {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.extra-link {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.extra-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.extra-status {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.extra-status.ok {
+  color: var(--ok);
+}
+
+.extra-status.warn {
+  color: var(--warn);
+}
+
+.extra-status.error {
+  color: var(--error);
 }
 
 .footnote {

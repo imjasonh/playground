@@ -1,4 +1,4 @@
-// File-transfer protocol helpers for LinkChat.
+// File-transfer protocol helpers for the WebRTC app.
 //
 // Files are sent over the WebRTC data channel as a short JSON "meta" control
 // message, followed by a sequence of binary chunks, then a JSON "end" message.

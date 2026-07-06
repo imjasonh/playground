@@ -1,4 +1,4 @@
-// Compression codec for LinkChat signaling payloads.
+// Compression codec for WebRTC signaling payloads.
 //
 // A WebRTC session description is several kilobytes of highly repetitive text
 // (codec lists, ICE candidates). That's far too big for a QR code, whose
