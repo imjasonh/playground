@@ -47,8 +47,11 @@ could never reach themselves, from the proxy's network vantage point:
    loopback, private, link-local, CGNAT (`100.64/10`), benchmarking
    (`198.18/15`), documentation, and reserved (`240/4`) ranges, plus multicast
    and broadcast. IPv6 unwraps IPv4-mapped (`::ffff:a.b.c.d`) and
-   IPv4-compatible forms and applies the IPv4 rules, and blocks `fe80::/10`,
-   `fc00::/7`, and `2001:db8::/32`.
+   IPv4-compatible forms and applies the IPv4 rules, blocks `fe80::/10`,
+   `fc00::/7`, and `2001:db8::/32`, and — because transition mechanisms embed a
+   routable IPv4 address — unwraps 6to4 (`2002::/16`) and NAT64 (`64:ff9b::/96`)
+   and applies the IPv4 rules to the embedded address (so `2002:7f00:1::` or
+   `64:ff9b::7f00:1`, both loopback, are refused).
 4. **Blocks local/internal hostnames**: `localhost`, `*.localhost`, `*.local`,
    `*.internal`, `*.home.arpa`, and known metadata names.
 
@@ -60,6 +63,14 @@ sets `redirect: manual` and, for each `Location`, resolves it against the curren
 URL and runs the **full guard again** before making the next request (max 5
 hops). `301`/`302`/`303` collapse to a bodyless `GET`; `307`/`308` preserve the
 method and body.
+
+Redirects are also where caller credentials leak. If the caller sends an
+`Authorization` (or `X-Api-Key`, etc.) header for host A and A replies
+`302 → https://attacker.example/`, a client that blindly replays the same
+headers hands the secret to the attacker. So when a redirect **crosses to a
+different origin** (scheme + host + port), the Worker drops the credential
+headers (`Authorization`, `Proxy-Authorization`, `Cookie`, `X-Api-Key`) before
+the next hop — the same thing well-behaved HTTP clients do.
 
 ### The DNS-rebinding gap (be honest about it)
 
@@ -83,8 +94,13 @@ step — the IP checks alone are not enough there.**
 
 An open proxy is attractive to scrapers and as an IP launderer, so:
 
-- **Size cap.** `MAX_RESPONSE_BYTES` (default 25 MiB) is checked against the
-  upstream `Content-Length` and again against the actual body length.
+- **Response size cap.** `MAX_RESPONSE_BYTES` (default 25 MiB) is checked
+  against the upstream `Content-Length` and then enforced **while streaming** the
+  body, so a chunked response with no (or a lying) `Content-Length` can't force
+  the whole payload to be buffered in the isolate.
+- **Request size cap.** `MAX_REQUEST_BYTES` (default 10 MiB) rejects an
+  over-large inbound body (by `Content-Length` and after reading) so an
+  anonymous caller can't push large uploads through an open deployment.
 - **Redirect cap.** At most 5 hops.
 - **Header hygiene.** Inbound `X-Forwarded-*`, `CF-*`, `X-Real-IP`, `Via`,
   `Forwarded` are stripped so the proxy can't be used to spoof identity headers
