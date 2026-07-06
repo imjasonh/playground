@@ -66,6 +66,8 @@ Other practical notes:
   standard **Web Payments** (`PaymentRequest`) UI and reports the result back.
   See [Sending money](#sending-money-with-the-web-payments-api) for what this can
   and can't do without a backend.
+- **Live captions** — realtime speech-to-text subtitles for the call via the
+  Web Speech API. See [Live captions](#live-captions).
 - **Screen sharing** — swap your outgoing camera feed for your screen
   (`getDisplayMedia`), no renegotiation needed.
 - **Native share** of the invite link via the Web Share API where supported.
@@ -88,6 +90,24 @@ The browser prompts for permission before the first read. Where the
 available, the hint under the buttons reflects whether location is granted,
 prompt-on-use, or blocked. Received coordinates are shown with their accuracy and
 a link to OpenStreetMap; nothing is stored or sent anywhere but to your peer.
+
+## Live captions
+
+Toggle **Captions** during a call to get realtime subtitles, powered by the
+[Web Speech API](https://developer.mozilla.org/docs/Web/API/Web_Speech_API)
+(`SpeechRecognition`).
+
+Recognition only ever hears your **own** microphone, so captions in a two-way
+call are cooperative: each peer transcribes their own speech on-device and
+streams the text to the other over the data channel. Your words show over your
+local preview; your peer's words show over their video — no captions server, no
+audio ever leaves the call for transcription by us.
+
+Interim results update live as you speak and finalized lines linger briefly
+before clearing. It's Chromium-only in practice (Chrome/Edge, and Safari with
+the `webkit` prefix); where `SpeechRecognition` is unavailable (e.g. Firefox)
+the Captions button stays disabled. The recognition language follows
+`navigator.language`.
 
 ## Sending money with the Web Payments API
 
@@ -118,9 +138,9 @@ Once two browsers share a `RTCPeerConnection` + data channel, a surprising
 amount is possible with **no backend** — the data channel is just a reliable,
 ordered, low-latency pipe, and the peers are ordinary web pages with access to
 the full platform. Implemented here: **Geolocation**, **Permissions**,
-**Web Payments**, **Screen Capture** (`getDisplayMedia`), **Web Share**,
-**Clipboard**, **Compression Streams** (link compression), and
-**Barcode Detection** (QR reply scanning).
+**Web Payments**, **Screen Capture** (`getDisplayMedia`), **Web Speech**
+(live captions), **Web Share**, **Clipboard**, **Compression Streams** (link
+compression), and **Barcode Detection** (QR reply scanning).
 
 Other capabilities that fit the same "just a link, no server" model and would be
 natural additions:
@@ -138,7 +158,8 @@ natural additions:
 - **Gamepad / Pointer / Device Orientation** — real-time input sharing for P2P
   games or remote control.
 - **Media Session API** — lock-screen/hardware media controls for the call.
-- **Web Speech API** — on-device speech-to-text captions.
+- **Web Speech API (synthesis)** — read incoming chat messages aloud, or add
+  live translation on top of the existing captions.
 - **Contact Picker / Web Share Target** — smoother invite sharing on mobile.
 - **IndexedDB** — persist chat/transfer history locally (per browser, no server).
 - **WebCodecs / Insertable Streams** — custom encoding or end-to-end media
@@ -183,8 +204,8 @@ invite in one, open the link in the other, and pass the reply code back.
 
 ## Test
 
-Pure signaling, file-protocol, location, and payment helpers are unit tested
-with the Node test runner (no browser needed):
+Pure signaling, file-protocol, location, payment, and caption helpers are unit
+tested with the Node test runner (no browser needed):
 
 ```bash
 npm test
@@ -202,6 +223,7 @@ webrtc/
 │   ├── fileTransfer.js   # chunking + reassembly protocol helpers
 │   ├── location.js       # geolocation message + formatting helpers
 │   ├── payments.js       # Web Payments request/result protocol + helpers
+│   ├── captions.js       # Web Speech caption protocol + transcript helpers
 │   ├── qr.js             # QR render wrapper (canvas)
 │   ├── app.js            # WebRTC wiring, media, chat, files, location, pay, QR
 │   └── vendor/
@@ -212,5 +234,6 @@ webrtc/
     ├── fileTransfer.test.js
     ├── location.test.js
     ├── payments.test.js
+    ├── captions.test.js
     └── qr.test.js
 ```

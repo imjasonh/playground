@@ -110,9 +110,11 @@
             <div id="remote-placeholder" class="placeholder">
               Waiting for peer's video…
             </div>
+            <div id="remote-caption" class="caption hidden" aria-live="polite"></div>
           </div>
           <div class="video-wrap local">
             <video id="local-video" autoplay playsinline muted></video>
+            <div id="local-caption" class="caption hidden"></div>
           </div>
         </div>
 
@@ -121,6 +123,9 @@
           <button id="toggle-cam" class="ghost" type="button" disabled>Camera on</button>
           <button id="share-screen" class="ghost" type="button" disabled>
             Share screen
+          </button>
+          <button id="toggle-captions" class="ghost" type="button" disabled>
+            Captions off
           </button>
           <button id="hangup" class="danger" type="button">Hang up</button>
         </div>

@@ -1,5 +1,5 @@
 // WebRTC — serverless, link-based peer-to-peer app with audio, video, files,
-// live location sharing, and payment requests.
+// live location sharing, payment requests, and speech-to-text captions.
 //
 // There is no backend. To start a call, one person ("host") creates an offer
 // that is packed into a shareable link. The other person ("guest") opens the
@@ -47,6 +47,14 @@ import {
   buildPaymentMethodData,
   buildPaymentDetails,
 } from "./payments.js";
+import {
+  CAPTION_KIND,
+  createCaptionMessage,
+  parseCaptionMessage,
+  getSpeechRecognition,
+  isSpeechRecognitionSupported,
+  collectTranscript,
+} from "./captions.js";
 
 // Public STUN servers only. STUN just tells each peer its public address; it
 // never relays media. Symmetric-NAT networks that need a TURN *relay* won't
@@ -74,6 +82,8 @@ const state = {
   watchId: null, // geolocation watch id while sharing live location
   screenStream: null, // active getDisplayMedia stream
   cameraTrack: null, // camera track parked while screen sharing
+  recognition: null, // active SpeechRecognition for captions
+  captionsOn: false,
 };
 
 const el = {};
@@ -112,9 +122,12 @@ function cacheElements() {
     "local-video",
     "remote-video",
     "remote-placeholder",
+    "remote-caption",
+    "local-caption",
     "toggle-cam",
     "toggle-mic",
     "share-screen",
+    "toggle-captions",
     "hangup",
     "call-status",
     "chat-log",
@@ -319,6 +332,9 @@ function setupChannel(channel) {
     el["chat-input"].disabled = false;
     el["chat-send"].disabled = false;
     el["file-input"].disabled = false;
+    if (el["toggle-captions"]) {
+      el["toggle-captions"].disabled = !isSpeechRecognitionSupported(window);
+    }
     enableExtras(true);
   });
   channel.addEventListener("close", () => {
@@ -353,6 +369,9 @@ function handleChannelMessage(data) {
     } else if (msg.kind === PAYMENT_RESULT_KIND) {
       const result = parsePaymentResultMessage(msg);
       if (result) applyPaymentResult(result);
+    } else if (msg.kind === CAPTION_KIND) {
+      const cap = parseCaptionMessage(msg);
+      if (cap) updateCaption(el["remote-caption"], cap.text, cap.final);
     }
     return;
   }
@@ -448,6 +467,7 @@ function toggleTrack(kind) {
 
 function hangup() {
   stopLiveLocation();
+  stopCaptions();
   if (state.screenStream) {
     for (const t of state.screenStream.getTracks()) t.stop();
     state.screenStream = null;
@@ -729,6 +749,115 @@ async function shareInvite() {
     });
   } catch {
     // User dismissed the share sheet, or sharing is unavailable — no-op.
+  }
+}
+
+// --- Live captions (Web Speech API) ---
+
+function toggleCaptions() {
+  if (state.captionsOn) stopCaptions();
+  else startCaptions();
+}
+
+function startCaptions() {
+  const Recognition = getSpeechRecognition(window);
+  if (!Recognition) {
+    renderExtraNote(
+      "Live captions need the Web Speech API (try Chrome or Edge).",
+      "warn",
+    );
+    return;
+  }
+  const rec = new Recognition();
+  rec.continuous = true;
+  rec.interimResults = true;
+  rec.lang = (typeof navigator !== "undefined" && navigator.language) || "en-US";
+
+  rec.addEventListener("result", (event) => {
+    const { interim, final } = collectTranscript(event.results, event.resultIndex);
+    // Show my own words locally and stream them to the peer. Recognition only
+    // hears my mic, so the peer relies on these messages for my captions.
+    if (final) {
+      updateCaption(el["local-caption"], final, true);
+      sendCaption(final, true);
+    } else if (interim) {
+      updateCaption(el["local-caption"], interim, false);
+      sendCaption(interim, false);
+    }
+  });
+
+  rec.addEventListener("error", (event) => {
+    if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+      renderExtraNote("Microphone permission is required for captions.", "error");
+      stopCaptions();
+    }
+    // Transient errors (e.g. "no-speech", "aborted") are ignored; the "end"
+    // handler restarts recognition while captions stay on.
+  });
+
+  rec.addEventListener("end", () => {
+    // Recognition ends itself after pauses; keep it going while enabled.
+    if (state.captionsOn && state.recognition === rec) {
+      try {
+        rec.start();
+      } catch {
+        // start() throws if it's already running — safe to ignore.
+      }
+    }
+  });
+
+  state.recognition = rec;
+  state.captionsOn = true;
+  setCaptionButton(true);
+  try {
+    rec.start();
+  } catch {
+    // Ignore: a rapid toggle can leave it mid-start.
+  }
+}
+
+function stopCaptions() {
+  state.captionsOn = false;
+  if (state.recognition) {
+    try {
+      state.recognition.stop();
+    } catch {
+      // ignore
+    }
+    state.recognition = null;
+  }
+  updateCaption(el["local-caption"], "", true);
+  setCaptionButton(false);
+}
+
+function setCaptionButton(on) {
+  const btn = el["toggle-captions"];
+  if (!btn) return;
+  btn.textContent = on ? "Captions on" : "Captions off";
+  btn.classList.toggle("active", on);
+}
+
+function sendCaption(text, final) {
+  if (!channelOpen()) return;
+  try {
+    state.channel.send(JSON.stringify(createCaptionMessage(text, final)));
+  } catch {
+    // Channel may have closed between the check and the send — ignore.
+  }
+}
+
+// Show a caption line, replacing any interim text. Final lines linger briefly
+// then clear so the overlay doesn't hold stale text.
+function updateCaption(node, text, final) {
+  if (!node) return;
+  clearTimeout(node._captionTimer);
+  node.textContent = text || "";
+  node.classList.toggle("hidden", !text);
+  if (final && text) {
+    node._captionTimer = setTimeout(() => {
+      node.textContent = "";
+      node.classList.add("hidden");
+    }, 4000);
   }
 }
 
@@ -1104,8 +1233,9 @@ function bindEvents() {
   });
   el["hangup"].addEventListener("click", hangup);
 
-  // Extras: screen share, location sharing, and payment requests.
+  // Extras: screen share, captions, location sharing, and payment requests.
   el["share-screen"].addEventListener("click", toggleScreenShare);
+  el["toggle-captions"].addEventListener("click", toggleCaptions);
   el["share-location"].addEventListener("click", shareLocationOnce);
   el["toggle-live-location"].addEventListener("click", toggleLiveLocation);
   el["request-money"].addEventListener("click", () => {
