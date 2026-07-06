@@ -199,6 +199,19 @@
     const data = event.data || {};
     if (data.type === "push") {
       logObject("Push received by service worker:", data.payload, "success");
+      if (data.error) {
+        log(`showNotification failed: ${data.error}`, "error");
+      } else if (typeof data.active === "number" && data.active > 0) {
+        log(
+          `Notification created (${data.active} active for this site). If you didn't see a banner, the push worked but your OS is hiding it — check Do Not Disturb / Focus and this browser's notification settings (macOS: System Settings ▸ Notifications ▸ your browser; Windows: Focus assist), then look in the system Notification Center.`,
+          "warn",
+        );
+      } else {
+        log(
+          "The push was received, but the browser reports no active notification. Check that notifications are enabled for this browser at the OS level.",
+          "warn",
+        );
+      }
     } else if (data.type === "resubscribed") {
       log("Service worker re-subscribed after a key rotation.", "success");
     } else if (data.type === "error") {

@@ -52,8 +52,24 @@ self.addEventListener("push", (event) => {
     (async () => {
       // Chrome requires a user-visible notification for every push when the
       // subscription used `userVisibleOnly: true`.
-      await self.registration.showNotification(title, options);
-      await broadcast({ type: "push", payload, at: Date.now() });
+      let error = null;
+      try {
+        await self.registration.showNotification(title, options);
+      } catch (err) {
+        error = String(err);
+      }
+      // Report how many notifications the browser now has for this
+      // registration. showNotification can resolve while the OS still shows
+      // nothing (Do Not Disturb / Focus, or per-app notification settings), so
+      // a non-zero count tells the page the push worked and the issue is an OS
+      // display setting rather than the web app.
+      let active = null;
+      try {
+        active = (await self.registration.getNotifications()).length;
+      } catch (_e) {
+        /* getNotifications may be unavailable; leave active null */
+      }
+      await broadcast({ type: "push", payload, at: Date.now(), shown: error === null, active, error });
     })(),
   );
 });
