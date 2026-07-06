@@ -141,9 +141,11 @@ secrets on the account.
 To deploy or iterate manually (equivalent steps, done by hand):
 
 ```bash
-# Install tooling. Build worker-build with stable — its deps need a recent
-# Cargo, while this crate itself builds with the pinned toolchain.
-cargo +stable install worker-build
+# Install tooling. worker-build is pinned to the 0.1.x line (it supports
+# worker 0.5 and bundles the wasm-bindgen CLI that matches the pinned
+# wasm-bindgen in Cargo.toml). Build it with stable — its deps need a recent
+# Cargo — while this crate itself builds with the pinned toolchain.
+cargo +stable install worker-build@0.1.14
 npm install -g wrangler
 
 # Provision KV + VAPID once, then deploy
