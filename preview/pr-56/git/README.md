@@ -27,10 +27,14 @@ branch switching, and commit history. Everything runs on-device with
 - **Content search** — grep across file *contents*. Press
   <kbd>Ctrl</kbd> / <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>F</kbd>; supports
   literal or regex queries and opens each match at its line. A **trigram index**
-  is built once per repository (keyed by the head commit and persisted to
+  is built once for the default branch (keyed by its head commit and persisted to
   IndexedDB), so typing narrows to a handful of candidate files instead of
   re-reading the whole repo on every keystroke; the index is reused across
-  keystrokes, reopens, and reloads, and rebuilt only when the content changes.
+  keystrokes, reopens, and reloads. When you Pull/Update, only the files that
+  changed between the old and new commit are reindexed — the index is advanced,
+  not rebuilt — and clearing a repo from browser storage also deletes its index.
+  (Non-default branches/tags currently use a lighter session-only index;
+  indexing every ref into one shared, deduplicated index is future work.)
 - **Off-main-thread search** — both the fuzzy index and content grep run in Web
   Workers (with a synchronous fallback), so searching stays smooth on big repos.
 - **Scales to large repos** — the tree, filter results, and finder are

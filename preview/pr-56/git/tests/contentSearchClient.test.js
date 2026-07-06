@@ -327,6 +327,120 @@ describe('createContentSearchClient — persistence', () => {
   });
 });
 
+describe('createContentSearchClient — incremental update', () => {
+  const NEXT = {
+    ...FILES,
+    'README.md': '# Title\nnothing to look for here\n', // lost "needle"
+    'src/util.js': 'export const needle = true;\n', // gained "needle"
+  };
+  const readNext = (p) => Promise.resolve(enc.encode(NEXT[p] ?? ''));
+
+  test('updateIndex advances the index by only the changed files', async () => {
+    const store = fakeStore();
+    const client = createContentSearchClient({ useWorker: false, store });
+    await client.search(PATHS, 'needle', {}, { readFile, repoId: 'r', oid: '1' });
+    expect(store.saves).toBe(1);
+
+    const reads = [];
+    const readCounting = (p) => {
+      reads.push(p);
+      return readNext(p);
+    };
+    const updated = await client.updateIndex({
+      repoId: 'r',
+      prevOid: '1',
+      oid: '2',
+      changes: [
+        { path: 'README.md', status: 'modified' },
+        { path: 'src/util.js', status: 'modified' },
+      ],
+      readFile: readCounting,
+    });
+    expect(updated).toBe(true);
+    // Only the two changed files were re-read — not the whole corpus.
+    expect(reads.sort()).toEqual(['README.md', 'src/util.js']);
+    expect(store.saves).toBe(2);
+    expect(client.hasIndex('r', '2')).toBe(true);
+    expect(client.hasIndex('r', '1')).toBe(false);
+
+    // A search at the new oid reuses the advanced index without rebuilding.
+    const results = [];
+    await client.search(PATHS, 'needle', {}, {
+      readFile: readNext,
+      repoId: 'r',
+      oid: '2',
+      onResult: (r) => results.push(r),
+    });
+    expect(results.map((r) => r.path).sort()).toEqual(['src/app.js', 'src/util.js']);
+  });
+
+  test('updateIndex drops removed files', async () => {
+    const store = fakeStore();
+    const client = createContentSearchClient({ useWorker: false, store });
+    await client.search(PATHS, 'needle', {}, { readFile, repoId: 'r', oid: '1' });
+    await client.updateIndex({
+      repoId: 'r',
+      prevOid: '1',
+      oid: '2',
+      changes: [{ path: 'README.md', status: 'removed' }],
+      readFile,
+    });
+    const results = [];
+    await client.search(PATHS, 'needle', {}, {
+      readFile,
+      repoId: 'r',
+      oid: '2',
+      onResult: (r) => results.push(r),
+    });
+    expect(results.map((r) => r.path).sort()).toEqual(['src/app.js']);
+  });
+
+  test('updateIndex is a no-op (false) when there is no base index', async () => {
+    const store = fakeStore();
+    const client = createContentSearchClient({ useWorker: false, store });
+    const updated = await client.updateIndex({
+      repoId: 'r',
+      prevOid: '1',
+      oid: '2',
+      changes: [],
+      readFile,
+    });
+    expect(updated).toBe(false);
+    expect(store.saves).toBe(0);
+  });
+
+  test('updateIndex can advance a persisted index from a fresh client', async () => {
+    const store = fakeStore();
+    const first = createContentSearchClient({ useWorker: false, store });
+    await first.search(PATHS, 'needle', {}, { readFile, repoId: 'r', oid: '1' });
+
+    const second = createContentSearchClient({ useWorker: false, store });
+    const updated = await second.updateIndex({
+      repoId: 'r',
+      prevOid: '1',
+      oid: '2',
+      changes: [{ path: 'src/util.js', status: 'modified' }],
+      readFile: (p) => Promise.resolve(enc.encode(p === 'src/util.js' ? 'needle here' : FILES[p] ?? '')),
+    });
+    expect(updated).toBe(true);
+    expect(second.hasIndex('r', '2')).toBe(true);
+  });
+});
+
+describe('createContentSearchClient — removeIndex', () => {
+  test('forgets the in-memory and persisted index for a repo', async () => {
+    const store = fakeStore();
+    const client = createContentSearchClient({ useWorker: false, store });
+    await client.search(PATHS, 'needle', {}, { readFile, repoId: 'r', oid: '1' });
+    expect(client.hasIndex('r', '1')).toBe(true);
+    expect(await store.load('r', '1')).not.toBeNull();
+
+    await client.removeIndex('r');
+    expect(client.hasIndex('r', '1')).toBe(false);
+    expect(await store.load('r', '1')).toBeNull();
+  });
+});
+
 describe('createContentSearchClient — worker backend', () => {
   test('uses the worker: posts begin + a file per candidate, streams matches', async () => {
     const fake = new FakeWorker();

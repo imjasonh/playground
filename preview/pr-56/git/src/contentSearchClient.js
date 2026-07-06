@@ -38,6 +38,9 @@ import { buildPattern, searchContent } from './contentSearch.js';
 import {
   buildTrigramIndex,
   candidatePaths,
+  indexedPaths,
+  indexFile,
+  removeFile,
   serializeIndex,
   deserializeIndex,
 } from './contentIndex.js';
@@ -163,6 +166,23 @@ export function createContentSearchClient(options = {}) {
   }
 
   /**
+   * Read a single file and decode it to text, or null when it isn't indexable
+   * searchable text (binary by extension/content, over the byte cap, or
+   * unreadable). Shared by the full build and the incremental update.
+   */
+  async function readIndexableText(path, readFile) {
+    if (isBinaryExtension(path)) return null;
+    let bytes;
+    try {
+      bytes = await readFile(path);
+    } catch {
+      return null; // unreadable — treat as absent
+    }
+    if (!bytes || bytes.length > cfg.maxFileBytes || looksBinary(bytes)) return null;
+    return decoder.decode(bytes);
+  }
+
+  /**
    * Read + decode every text file once and build a trigram index. Returns null
    * if the client is disposed before it finishes (so a stale/partial index is
    * never cached). Ignores per-search aborts on purpose: the build is a
@@ -180,16 +200,8 @@ export function createContentSearchClient(options = {}) {
         if (i >= list.length) return;
         cursor += 1;
         const path = list[i];
-        if (!isBinaryExtension(path)) {
-          try {
-            const bytes = await readFile(path);
-            if (bytes && bytes.length <= cfg.maxFileBytes && !looksBinary(bytes)) {
-              entries[i] = { path, text: decoder.decode(bytes) };
-            }
-          } catch {
-            // Unreadable file — skip; it just won't be searchable.
-          }
-        }
+        const text = await readIndexableText(path, readFile);
+        if (text != null) entries[i] = { path, text };
         processed += 1;
         if (onStatus) onStatus({ phase: 'building', processed, total: list.length });
       }
@@ -271,6 +283,69 @@ export function createContentSearchClient(options = {}) {
     return Boolean(repoId) && indexCache.has(cacheKey(repoId, oid));
   }
 
+  /**
+   * Incrementally advance an existing index from `prevOid` to `oid` by applying
+   * only the files that changed between those commits, instead of rebuilding.
+   * A no-op that returns false when there is no base index to advance (the next
+   * search then lazily builds a fresh one for `oid`).
+   *
+   * @param {{
+   *   repoId: string,
+   *   prevOid: string,
+   *   oid: string,
+   *   changes: Array<{path: string, status: 'added'|'removed'|'modified'}>,
+   *   readFile: (path: string) => Promise<Uint8Array>,
+   * }} args
+   * @returns {Promise<boolean>} whether an index was updated
+   */
+  async function updateIndex({ repoId, prevOid, oid, changes, readFile }) {
+    if (!repoId || prevOid === oid) return false;
+    const prevKey = cacheKey(repoId, prevOid);
+
+    // Find the base index (at prevOid): memory first, then persistence.
+    let index = indexCache.get(prevKey);
+    if (!index) {
+      const raw = await store.load(repoId, prevOid).catch(() => null);
+      index = raw ? deserializeIndex(raw) : null;
+    }
+    if (!index) return false; // nothing to advance — leave the lazy rebuild path
+
+    for (const change of changes || []) {
+      if (!change || typeof change.path !== 'string') continue;
+      if (change.status === 'removed') {
+        removeFile(index, change.path);
+        continue;
+      }
+      // added / modified: re-read the new content and (re)index it, or drop it if
+      // it's no longer indexable text (deleted, became binary, or grew too big).
+      const text = await readIndexableText(change.path, readFile);
+      if (text == null) removeFile(index, change.path);
+      else indexFile(index, change.path, text);
+    }
+
+    // Re-key to the new content state and re-persist the advanced index.
+    indexCache.delete(prevKey);
+    cacheIndex(cacheKey(repoId, oid), index);
+    store.save(repoId, oid, serializeIndex(index)).catch(() => {});
+    return true;
+  }
+
+  /**
+   * Forget a repository's index — both the in-memory copies and the persisted
+   * record — so clearing a repo from browser storage doesn't leave its index
+   * behind.
+   *
+   * @param {string} repoId
+   */
+  async function removeIndex(repoId) {
+    if (!repoId) return;
+    const prefix = `${repoId}\u0000`;
+    for (const key of [...indexCache.keys()]) {
+      if (key.startsWith(prefix)) indexCache.delete(key);
+    }
+    await store.remove(repoId).catch(() => {});
+  }
+
   /* ---------------------------------------------------------------- */
   /* Search                                                           */
   /* ---------------------------------------------------------------- */
@@ -318,7 +393,7 @@ export function createContentSearchClient(options = {}) {
     // scanning the whole (text) corpus.
     let list;
     if (!index) list = (files || []).filter((path) => !isBinaryExtension(path));
-    else if (queryOpts.regex) list = index.paths;
+    else if (queryOpts.regex) list = indexedPaths(index);
     else list = candidatePaths(index, query);
 
     const limits = { maxMatches: cfg.maxMatchesPerFile };
@@ -409,6 +484,8 @@ export function createContentSearchClient(options = {}) {
     search,
     prepareIndex,
     hasIndex,
+    updateIndex,
+    removeIndex,
     dispose,
     get usingWorker() {
       return Boolean(worker);
