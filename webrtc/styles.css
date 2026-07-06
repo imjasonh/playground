@@ -172,6 +172,12 @@ button:disabled {
   border-color: var(--warn);
 }
 
+.ghost.active {
+  color: #cfe0ff;
+  border-color: var(--accent);
+  background: rgba(91, 140, 255, 0.14);
+}
+
 .danger {
   background: transparent;
   color: var(--error);
@@ -293,6 +299,29 @@ textarea {
   font-size: 14px;
   text-align: center;
   padding: 12px;
+}
+
+/* Live captions overlaid on the video */
+.caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  margin: 0;
+  padding: 10px 14px;
+  color: #fff;
+  font-size: 15px;
+  line-height: 1.35;
+  text-align: center;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95);
+  background: linear-gradient(0deg, rgba(0, 0, 0, 0.75), transparent);
+  pointer-events: none;
+}
+
+.video-wrap.local .caption {
+  padding: 4px 6px;
+  font-size: 11px;
 }
 
 .controls {

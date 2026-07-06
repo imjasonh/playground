@@ -2,7 +2,7 @@
   "name": "webrtc",
   "version": "1.0.0",
   "private": true,
-  "description": "Serverless, link-based WebRTC chat with audio, video, files, location sharing, and payment requests",
+  "description": "Serverless, link-based WebRTC chat with audio, video, files, location sharing, payment requests, and live captions",
   "type": "module",
   "scripts": {
     "test": "node --test",
