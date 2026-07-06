@@ -1,5 +1,9 @@
 # playground
 
+[![CI](https://github.com/imjasonh/playground/actions/workflows/test.yml/badge.svg)](https://github.com/imjasonh/playground/actions/workflows/test.yml)
+[![GitHub Pages](https://github.com/imjasonh/playground/actions/workflows/deploy.yml/badge.svg)](https://github.com/imjasonh/playground/actions/workflows/deploy.yml)
+[![Cloudflare Workers](https://github.com/imjasonh/playground/actions/workflows/deploy-workers.yml/badge.svg)](https://github.com/imjasonh/playground/actions/workflows/deploy-workers.yml)
+
 A personal playground monorepo for small, self-contained side projects — browser
 toys, command-line tools, and the occasional backend service — collected in one
 place for fun and learning. There's no grand plan and no shared build at the
