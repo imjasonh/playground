@@ -4,7 +4,7 @@
  * exposes dispose() so the controller can free it on close / reload.
  */
 import { el } from './dom.js';
-import { basename, dirname } from '../pathUtils.js';
+import { basename, dirname, resolveSymlinkTarget } from '../pathUtils.js';
 import {
   imageMimeType,
   isImagePath,
@@ -386,9 +386,27 @@ export function createViewer(ctx) {
     notice.appendChild(
       el('p', null, 'Symbolic link — this entry points to another path in the repository.')
     );
+
+    // Resolve the target (relative to the link's directory) and, when it lands on
+    // a file that exists in this tree, offer it as a link that opens that file
+    // rather than showing the raw "-> target" text alone.
+    const resolved = resolveSymlinkTarget(path, target);
+    const fileSet = ctx.state && ctx.state.fileSet;
+    const canOpen = Boolean(resolved && fileSet && fileSet.has(resolved));
+
     const line = el('p', 'symlink-target');
     line.appendChild(el('span', 'sym-arrow', '\u2192 '));
-    line.appendChild(el('span', 'sym-path', target || '(empty target)'));
+    if (canOpen) {
+      const link = el('button', 'sym-link', target);
+      link.type = 'button';
+      link.title = `Open ${resolved}`;
+      link.addEventListener('click', () => {
+        if (typeof ctx.openFile === 'function') ctx.openFile(resolved);
+      });
+      line.appendChild(link);
+    } else {
+      line.appendChild(el('span', 'sym-path', target || '(empty target)'));
+    }
     notice.appendChild(line);
     dom.viewerBody.replaceChildren(notice);
   }
