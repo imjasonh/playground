@@ -1,7 +1,7 @@
 # WebRTC
 
 Serverless, peer-to-peer app with **audio, video, text, file transfer, live
-location sharing, and payment requests** — no backend, no accounts, no signaling
+location sharing, and live captions** — no backend, no accounts, no signaling
 server. Two browsers connect directly over WebRTC; you bootstrap the connection
 by **sharing a link**.
 
@@ -28,7 +28,7 @@ This app replaces that server with **manual, link-based signaling**:
 3. **Guest** sends that reply code back (any channel — chat, email…). **Host**
    pastes it and clicks _Connect_.
 4. The direct peer-to-peer connection opens. Video, voice, chat, files,
-   location, and payment requests all flow browser-to-browser.
+   location, and captions all flow browser-to-browser.
 
 Public **STUN** servers (Google's) are used purely to discover each peer's
 public address for NAT traversal — they never see your media or messages, and
@@ -45,12 +45,12 @@ Everything else (same LAN, most home networks) works directly.
 Other practical notes:
 
 - **HTTPS is required** for camera/microphone, geolocation, screen capture, and
-  the Web Payments UI, so use the deployed GitHub Pages URL (or `localhost`)
+  speech recognition, so use the deployed GitHub Pages URL (or `localhost`)
   rather than a raw `file://` page.
 - The handshake is a two-way exchange (invite out, reply back) because WebRTC
   needs both sides' descriptions. That's inherent to serverless signaling.
-- Text chat, file transfer, location, and payment requests work even if you turn
-  the camera and mic off.
+- Text chat, file transfer, and location sharing work even if you turn the
+  camera and mic off.
 
 ## Features
 
@@ -62,10 +62,6 @@ Other practical notes:
   location** that updates as you move. Permission-gated by the browser
   (Geolocation API), with the current grant reflected via the Permissions API.
   Shared positions render as a map link (OpenStreetMap, no API key).
-- **Payment requests** — ask your peer for money; their browser opens the
-  standard **Web Payments** (`PaymentRequest`) UI and reports the result back.
-  See [Sending money](#sending-money-with-the-web-payments-api) for what this can
-  and can't do without a backend.
 - **Live captions** — realtime speech-to-text subtitles for the call via the
   Web Speech API, with optional **on-device translation** and **text-to-speech**
   in another language. See [Live captions](#live-captions).
@@ -134,28 +130,15 @@ Translator API isn't available (currently Chrome-only), the language picker is
 disabled with a hint; text-to-speech falls back to the caption's original
 language when translation is off or unavailable.
 
-## Sending money with the Web Payments API
+## A note on payments
 
-You can **request** money in-app: enter an amount, currency, and note, and the
-request travels over the data channel. On the payer's device the browser opens
-the standard [`PaymentRequest`](https://developer.mozilla.org/docs/Web/API/Payment_Request_API)
-UI; the outcome (paid / cancelled / unsupported) is reported back and shown on
-the original request.
-
-**What "without a backend" really means here.** The Web Payments API
-standardizes the payment *request and hand-off UX* — it does **not** move money
-by itself. Settlement is performed by a **payment handler** (a payment app the
-payer has installed, resolved from a URL-based payment method identifier) or a
-payment processor, both of which run their own backend. So:
-
-- This app can compose and present a payment request and defer to whatever
-  payment handler the payer has — all without a backend **of ours**.
-- It cannot itself settle funds, and if the payer has **no** compatible payment
-  handler, `PaymentRequest.canMakePayment()` is false and the flow degrades
-  gracefully to just showing the requested amount.
-
-The default payment method identifier is overridable in `src/payments.js`
-(`DEFAULT_PAYMENT_METHODS`) so a deployment can point at its own handlers.
+An earlier version experimented with **requesting money via the Web Payments
+API** (`PaymentRequest`). It was removed: that API only *presents* a request and
+then hands off to a payment handler/processor to actually move the money — and a
+payment handler is itself a backend. With no handler installed, `show()` opens
+the native sheet and spins on "Processing…" forever, because nothing ever
+settles the payment. A genuinely serverless app can't provide that handler, so
+the feature couldn't actually work here and was dropped.
 
 ## What else can a serverless P2P app do with browser APIs?
 
@@ -163,11 +146,11 @@ Once two browsers share a `RTCPeerConnection` + data channel, a surprising
 amount is possible with **no backend** — the data channel is just a reliable,
 ordered, low-latency pipe, and the peers are ordinary web pages with access to
 the full platform. Implemented here: **Geolocation**, **Permissions**,
-**Web Payments**, **Screen Capture** (`getDisplayMedia`), **Web Speech**
-(recognition for live captions **and** synthesis for text-to-speech), the
-built-in-AI **Translator API** (on-device caption translation), **Web Share**,
-**Clipboard**, **Compression Streams** (link compression), and
-**Barcode Detection** (QR reply scanning).
+**Screen Capture** (`getDisplayMedia`), **Web Speech** (recognition for live
+captions **and** synthesis for text-to-speech), the built-in-AI **Translator
+API** (on-device caption translation), **Web Share**, **Clipboard**,
+**Compression Streams** (link compression), and **Barcode Detection** (QR reply
+scanning).
 
 Other capabilities that fit the same "just a link, no server" model and would be
 natural additions:
@@ -231,8 +214,8 @@ invite in one, open the link in the other, and pass the reply code back.
 
 ## Test
 
-Pure signaling, file-protocol, location, payment, caption, and translation
-helpers are unit tested with the Node test runner (no browser needed):
+Pure signaling, file-protocol, location, caption, and translation helpers are
+unit tested with the Node test runner (no browser needed):
 
 ```bash
 npm test
@@ -249,11 +232,10 @@ webrtc/
 │   ├── codec.js          # DEFLATE compress/inflate (Compression Streams API)
 │   ├── fileTransfer.js   # chunking + reassembly protocol helpers
 │   ├── location.js       # geolocation message + formatting helpers
-│   ├── payments.js       # Web Payments request/result protocol + helpers
 │   ├── captions.js       # Web Speech caption protocol + transcript helpers
 │   ├── translation.js    # Translator API + SpeechSynthesis helpers
 │   ├── qr.js             # QR render wrapper (canvas)
-│   ├── app.js            # WebRTC wiring, media, chat, files, location, pay, QR
+│   ├── app.js            # WebRTC wiring, media, chat, files, location, captions, QR
 │   └── vendor/
 │       └── qrcode-generator.js   # vendored MIT QR encoder (ES module wrapper)
 └── tests/
@@ -261,7 +243,6 @@ webrtc/
     ├── codec.test.js
     ├── fileTransfer.test.js
     ├── location.test.js
-    ├── payments.test.js
     ├── captions.test.js
     ├── translation.test.js
     └── qr.test.js
