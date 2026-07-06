@@ -1,1 +1,1 @@
-{"number": 56, "title": "git: back content search with a persisted trigram index", "apps": ["git"]}
+{"number": 56, "title": "git: persisted/incremental content-search index + clickable symlink targets", "apps": ["git"]}
