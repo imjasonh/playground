@@ -26,6 +26,27 @@ import {
   formatBytes,
   FileAssembler,
 } from "./fileTransfer.js";
+import {
+  LOCATION_KIND,
+  LOCATION_STOP_KIND,
+  createLocationMessage,
+  createLocationStop,
+  parseLocationMessage,
+  formatCoords,
+  formatAccuracy,
+  mapsLink,
+} from "./location.js";
+import {
+  PAYMENT_REQUEST_KIND,
+  PAYMENT_RESULT_KIND,
+  createPaymentRequestMessage,
+  parsePaymentRequestMessage,
+  createPaymentResultMessage,
+  parsePaymentResultMessage,
+  formatAmount,
+  buildPaymentMethodData,
+  buildPaymentDetails,
+} from "./payments.js";
 
 // Public STUN servers only. STUN just tells each peer its public address; it
 // never relays media. Symmetric-NAT networks that need a TURN *relay* won't
@@ -50,6 +71,9 @@ const state = {
   wantMic: true,
   incoming: null, // active FileAssembler
   sending: false,
+  watchId: null, // geolocation watch id while sharing live location
+  screenStream: null, // active getDisplayMedia stream
+  cameraTrack: null, // camera track parked while screen sharing
 };
 
 const el = {};
@@ -72,6 +96,7 @@ function cacheElements() {
     "start-error",
     "invite-link",
     "copy-invite",
+    "share-invite",
     "invite-qr",
     "scan-reply",
     "answer-input",
@@ -89,6 +114,7 @@ function cacheElements() {
     "remote-placeholder",
     "toggle-cam",
     "toggle-mic",
+    "share-screen",
     "hangup",
     "call-status",
     "chat-log",
@@ -96,6 +122,15 @@ function cacheElements() {
     "chat-send",
     "file-input",
     "file-list",
+    "share-location",
+    "toggle-live-location",
+    "request-money",
+    "perm-hint",
+    "pay-form",
+    "pay-amount",
+    "pay-currency",
+    "pay-note",
+    "extras-log",
   ];
   for (const id of ids) el[id] = $(id);
 }
@@ -215,6 +250,10 @@ async function startAsHost() {
   const link = await buildCompressedLink(window.location.href, state.pc.localDescription);
   el["invite-link"].value = link;
   showQr(el["invite-qr"], link, "Scan with a phone camera to join");
+  // Offer the native share sheet (Web Share API) where available.
+  if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+    el["share-invite"].classList.remove("hidden");
+  }
   // Offer to scan the guest's reply with the camera, where supported.
   if ("BarcodeDetector" in window) el["scan-reply"].classList.remove("hidden");
   attachLocalPreview();
@@ -280,6 +319,7 @@ function setupChannel(channel) {
     el["chat-input"].disabled = false;
     el["chat-send"].disabled = false;
     el["file-input"].disabled = false;
+    enableExtras(true);
   });
   channel.addEventListener("close", () => {
     setStatus(el["call-status"], "Channel closed.", "warn");
@@ -302,6 +342,17 @@ function handleChannelMessage(data) {
       renderIncomingFile(msg, 0);
     } else if (msg.kind === MESSAGE_KIND.fileEnd) {
       finalizeIncomingFile();
+    } else if (msg.kind === LOCATION_KIND) {
+      const loc = parseLocationMessage(msg);
+      if (loc) renderLocation("them", loc);
+    } else if (msg.kind === LOCATION_STOP_KIND) {
+      renderExtraNote("Peer stopped sharing live location.");
+    } else if (msg.kind === PAYMENT_REQUEST_KIND) {
+      const req = parsePaymentRequestMessage(msg);
+      if (req) renderIncomingPaymentRequest(req);
+    } else if (msg.kind === PAYMENT_RESULT_KIND) {
+      const result = parsePaymentResultMessage(msg);
+      if (result) applyPaymentResult(result);
     }
     return;
   }
@@ -396,6 +447,11 @@ function toggleTrack(kind) {
 }
 
 function hangup() {
+  stopLiveLocation();
+  if (state.screenStream) {
+    for (const t of state.screenStream.getTracks()) t.stop();
+    state.screenStream = null;
+  }
   if (state.channel) try { state.channel.close(); } catch {}
   if (state.pc) try { state.pc.close(); } catch {}
   if (state.localStream) {
@@ -404,6 +460,276 @@ function hangup() {
   // Return to a clean start screen for a fresh call.
   window.location.hash = "";
   window.location.reload();
+}
+
+// ---------------------------------------------------------------------------
+// Extras: enable/disable, location sharing, screen share, payments
+// ---------------------------------------------------------------------------
+
+function enableExtras(on) {
+  const ids = ["share-location", "toggle-live-location", "request-money", "share-screen"];
+  for (const id of ids) {
+    if (el[id]) el[id].disabled = !on;
+  }
+  // getDisplayMedia isn't available everywhere (notably most mobile browsers).
+  const canScreenShare =
+    typeof navigator !== "undefined" &&
+    navigator.mediaDevices &&
+    typeof navigator.mediaDevices.getDisplayMedia === "function";
+  if (el["share-screen"]) el["share-screen"].disabled = !on || !canScreenShare;
+  if (on) reflectGeolocationPermission();
+}
+
+// Reflect the current Geolocation permission in the hint text via the
+// Permissions API, where supported. Purely informational — the actual prompt
+// still happens on first use.
+async function reflectGeolocationPermission() {
+  if (!el["perm-hint"]) return;
+  if (!("geolocation" in navigator)) {
+    el["perm-hint"].textContent = "Geolocation isn't supported in this browser.";
+    return;
+  }
+  if (!navigator.permissions || typeof navigator.permissions.query !== "function") {
+    el["perm-hint"].textContent = "Your browser will ask permission before sharing location.";
+    return;
+  }
+  try {
+    const status = await navigator.permissions.query({ name: "geolocation" });
+    const describe = () => {
+      const map = {
+        granted: "Location permission granted.",
+        prompt: "Your browser will ask permission before sharing location.",
+        denied: "Location permission is blocked — enable it in site settings to share.",
+      };
+      el["perm-hint"].textContent = map[status.state] || "";
+    };
+    describe();
+    status.addEventListener("change", describe);
+  } catch {
+    el["perm-hint"].textContent = "";
+  }
+}
+
+function getPosition(options) {
+  return new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(resolve, reject, options);
+  });
+}
+
+async function shareLocationOnce() {
+  if (!("geolocation" in navigator)) {
+    renderExtraNote("Geolocation isn't supported here.", "error");
+    return;
+  }
+  if (!channelOpen()) return;
+  el["share-location"].disabled = true;
+  try {
+    const position = await getPosition({ enableHighAccuracy: true, timeout: 10000 });
+    const msg = createLocationMessage(position, { live: false });
+    state.channel.send(JSON.stringify(msg));
+    renderLocation("me", parseLocationMessage(msg));
+  } catch (err) {
+    renderExtraNote(`Couldn't get your location (${err.message || err.code}).`, "error");
+  } finally {
+    el["share-location"].disabled = !channelOpen();
+    reflectGeolocationPermission();
+  }
+}
+
+function toggleLiveLocation() {
+  if (state.watchId != null) {
+    stopLiveLocation();
+    if (channelOpen()) state.channel.send(JSON.stringify(createLocationStop()));
+    return;
+  }
+  if (!("geolocation" in navigator) || !channelOpen()) return;
+  state.watchId = navigator.geolocation.watchPosition(
+    (position) => {
+      const msg = createLocationMessage(position, { live: true });
+      if (channelOpen()) state.channel.send(JSON.stringify(msg));
+      renderLocation("me", parseLocationMessage(msg));
+    },
+    (err) => {
+      renderExtraNote(`Live location error (${err.message || err.code}).`, "error");
+      stopLiveLocation();
+    },
+    { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 },
+  );
+  setLiveLocationButton(true);
+  reflectGeolocationPermission();
+}
+
+function stopLiveLocation() {
+  if (state.watchId != null) {
+    navigator.geolocation.clearWatch(state.watchId);
+    state.watchId = null;
+  }
+  setLiveLocationButton(false);
+}
+
+function setLiveLocationButton(on) {
+  const btn = el["toggle-live-location"];
+  if (!btn) return;
+  btn.textContent = on ? "Live location on" : "Live location off";
+  btn.classList.toggle("off", !on);
+}
+
+async function shareScreen() {
+  if (!navigator.mediaDevices || typeof navigator.mediaDevices.getDisplayMedia !== "function") {
+    renderExtraNote("Screen sharing isn't supported in this browser.", "error");
+    return;
+  }
+  // Screen share swaps the outgoing camera track via replaceTrack, which needs
+  // no renegotiation. Our one-shot serverless signaling can't add brand-new
+  // media mid-call, so an existing outgoing video track is required.
+  const sender =
+    state.pc &&
+    state.pc.getSenders().find((s) => s.track && s.track.kind === "video");
+  if (!sender) {
+    renderExtraNote(
+      "Start the call with your camera on to share your screen — serverless signaling can't add new video mid-call.",
+      "warn",
+    );
+    return;
+  }
+  try {
+    const display = await navigator.mediaDevices.getDisplayMedia({ video: true });
+    const screenTrack = display.getVideoTracks()[0];
+    state.screenStream = display;
+    state.cameraTrack = state.cameraTrack || sender.track;
+    await sender.replaceTrack(screenTrack);
+    el["local-video"].srcObject = display;
+    setScreenShareButton(true);
+    // Restore the camera when the user stops sharing from the browser UI.
+    screenTrack.addEventListener("ended", () => stopScreenShare());
+  } catch (err) {
+    if (err && err.name !== "NotAllowedError") {
+      renderExtraNote(`Couldn't share screen (${err.name || err.message}).`, "error");
+    }
+  }
+}
+
+async function stopScreenShare() {
+  if (!state.screenStream) return;
+  for (const t of state.screenStream.getTracks()) t.stop();
+  state.screenStream = null;
+  const sender =
+    state.pc &&
+    state.pc.getSenders().find((s) => s.track && s.track.kind === "video");
+  if (sender && state.cameraTrack) {
+    try {
+      await sender.replaceTrack(state.cameraTrack);
+    } catch {
+      // ignore — camera may have been stopped
+    }
+  }
+  state.cameraTrack = null;
+  attachLocalPreview();
+  setScreenShareButton(false);
+}
+
+function setScreenShareButton(on) {
+  const btn = el["share-screen"];
+  if (!btn) return;
+  btn.textContent = on ? "Stop sharing screen" : "Share screen";
+  btn.classList.toggle("off", on);
+}
+
+function toggleScreenShare() {
+  if (state.screenStream) {
+    stopScreenShare();
+  } else {
+    shareScreen();
+  }
+}
+
+function sendPaymentRequest() {
+  if (!channelOpen()) return;
+  let msg;
+  try {
+    msg = createPaymentRequestMessage({
+      amount: el["pay-amount"].value,
+      currency: el["pay-currency"].value || "USD",
+      note: el["pay-note"].value,
+    });
+  } catch (err) {
+    renderExtraNote(`Invalid request: ${err.message}`, "error");
+    return;
+  }
+  state.channel.send(JSON.stringify(msg));
+  renderOutgoingPaymentRequest(msg);
+  el["pay-form"].classList.add("hidden");
+  el["pay-amount"].value = "";
+  el["pay-note"].value = "";
+}
+
+// The payer's side: launch the Web Payments UI for an incoming request.
+async function payViaWebPayments(req, cardEl) {
+  const statusEl = cardEl.querySelector(".extra-status");
+  const payBtn = cardEl.querySelector("button");
+  const report = (status, detail, kind) => {
+    if (channelOpen()) {
+      state.channel.send(JSON.stringify(createPaymentResultMessage(req.id, status, detail)));
+    }
+    if (statusEl) {
+      statusEl.textContent = detail;
+      statusEl.className = `extra-status ${kind || ""}`;
+    }
+  };
+
+  if (typeof window.PaymentRequest !== "function") {
+    report("unsupported", "Web Payments isn't supported in this browser.", "warn");
+    return;
+  }
+  if (payBtn) payBtn.disabled = true;
+
+  try {
+    const request = new window.PaymentRequest(
+      buildPaymentMethodData(),
+      buildPaymentDetails(req),
+    );
+    // Not all browsers expose canMakePayment; treat missing as "try anyway".
+    if (typeof request.canMakePayment === "function") {
+      const ok = await request.canMakePayment().catch(() => null);
+      if (ok === false) {
+        report(
+          "unsupported",
+          "No payment app is available to complete this on your device.",
+          "warn",
+        );
+        if (payBtn) payBtn.disabled = false;
+        return;
+      }
+    }
+    const response = await request.show();
+    await response.complete("success");
+    report("paid", "Paid — thanks!", "ok");
+  } catch (err) {
+    if (err && err.name === "AbortError") {
+      report("declined", "Payment cancelled.", "warn");
+    } else {
+      report("failed", `Payment failed (${(err && err.name) || err}).`, "error");
+    }
+    if (payBtn) payBtn.disabled = false;
+  }
+}
+
+function channelOpen() {
+  return state.channel && state.channel.readyState === "open";
+}
+
+async function shareInvite() {
+  const url = el["invite-link"].value;
+  if (!url) return;
+  try {
+    await navigator.share({
+      title: "Join my private WebRTC call",
+      text: "Open this link to start a direct, serverless peer-to-peer session:",
+      url,
+    });
+  } catch {
+    // User dismissed the share sheet, or sharing is unavailable — no-op.
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -486,6 +812,147 @@ function finalizeIncomingFile() {
     note.append(link);
   }
   state.incoming = null;
+}
+
+// --- Extras feed (location + payments) ---
+
+function extraCard(who) {
+  const card = document.createElement("div");
+  card.className = `extra-card ${who === "me" ? "me" : "them"}`;
+  el["extras-log"].prepend(card);
+  return card;
+}
+
+function whoLabel(who) {
+  const span = document.createElement("span");
+  span.className = "extra-who";
+  span.textContent = who === "me" ? "You" : "Peer";
+  return span;
+}
+
+function renderExtraNote(text, kind = "") {
+  const card = extraCard("them");
+  const body = document.createElement("div");
+  body.className = `extra-body extra-status ${kind}`;
+  body.textContent = text;
+  card.append(body);
+}
+
+function renderLocation(who, loc) {
+  if (!loc) return;
+  const card = extraCard(who);
+  const head = document.createElement("div");
+  head.className = "extra-head";
+  head.append(whoLabel(who));
+  const label = document.createElement("span");
+  label.className = "extra-body";
+  label.textContent = "📍 Location";
+  head.append(label);
+  if (loc.live) {
+    const badge = document.createElement("span");
+    badge.className = "extra-badge live";
+    badge.textContent = "Live";
+    head.append(badge);
+  }
+  card.append(head);
+
+  const link = document.createElement("a");
+  link.className = "extra-link";
+  link.href = mapsLink(loc.lat, loc.lon);
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  link.textContent = formatCoords(loc.lat, loc.lon);
+  const body = document.createElement("div");
+  body.className = "extra-body";
+  body.append(link);
+  card.append(body);
+
+  const bits = [];
+  if (Number.isFinite(loc.accuracy)) bits.push(`accuracy ${formatAccuracy(loc.accuracy)}`);
+  if (loc.ts) bits.push(new Date(loc.ts).toLocaleTimeString());
+  if (bits.length) {
+    const sub = document.createElement("div");
+    sub.className = "extra-sub";
+    sub.textContent = bits.join(" · ");
+    card.append(sub);
+  }
+}
+
+function paymentCardId(id) {
+  return `pay-${id}`;
+}
+
+function renderOutgoingPaymentRequest(msg) {
+  const card = extraCard("me");
+  card.id = paymentCardId(msg.id);
+  const head = document.createElement("div");
+  head.className = "extra-head";
+  head.append(whoLabel("me"));
+  const label = document.createElement("span");
+  label.className = "extra-body";
+  label.textContent = `💸 Requested ${formatAmount(msg.amount, msg.currency)}`;
+  head.append(label);
+  card.append(head);
+  if (msg.note) {
+    const sub = document.createElement("div");
+    sub.className = "extra-sub";
+    sub.textContent = msg.note;
+    card.append(sub);
+  }
+  const status = document.createElement("div");
+  status.className = "extra-status";
+  status.textContent = "Waiting for peer to pay…";
+  card.append(status);
+}
+
+function renderIncomingPaymentRequest(req) {
+  const card = extraCard("them");
+  card.id = paymentCardId(req.id);
+  const head = document.createElement("div");
+  head.className = "extra-head";
+  head.append(whoLabel("them"));
+  const label = document.createElement("span");
+  label.className = "extra-body";
+  label.textContent = `💸 Requests ${formatAmount(req.amount, req.currency)}`;
+  head.append(label);
+  card.append(head);
+  if (req.note) {
+    const sub = document.createElement("div");
+    sub.className = "extra-sub";
+    sub.textContent = req.note;
+    card.append(sub);
+  }
+  const actions = document.createElement("div");
+  actions.className = "extra-actions";
+  const payBtn = document.createElement("button");
+  payBtn.type = "button";
+  payBtn.className = "primary";
+  payBtn.textContent = `Pay ${formatAmount(req.amount, req.currency)}`;
+  payBtn.addEventListener("click", () => payViaWebPayments(req, card));
+  const status = document.createElement("span");
+  status.className = "extra-status";
+  actions.append(payBtn, status);
+  card.append(actions);
+}
+
+function applyPaymentResult(result) {
+  const card = document.getElementById(paymentCardId(result.id));
+  if (!card) return;
+  let status = card.querySelector(".extra-status");
+  if (!status) {
+    status = document.createElement("div");
+    status.className = "extra-status";
+    card.append(status);
+  }
+  const map = {
+    paid: ["Peer paid this request.", "ok"],
+    declined: ["Peer cancelled the payment.", "warn"],
+    unsupported: ["Peer's browser can't complete Web Payments.", "warn"],
+    failed: ["Payment failed on the peer's device.", "error"],
+  };
+  const [text, kind] = map[result.status] || ["Payment update.", ""];
+  status.textContent = result.detail ? `${text} (${result.detail})` : text;
+  status.className = `extra-status ${kind}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -597,6 +1064,7 @@ function bindEvents() {
   el["copy-invite"].addEventListener("click", () =>
     copyToClipboard(el["invite-link"].value, el["copy-invite"]),
   );
+  el["share-invite"].addEventListener("click", shareInvite);
   el["copy-reply"].addEventListener("click", () =>
     copyToClipboard(el["reply-code"].value, el["copy-reply"]),
   );
@@ -635,6 +1103,19 @@ function bindEvents() {
     el["toggle-mic"].classList.toggle("off", !on);
   });
   el["hangup"].addEventListener("click", hangup);
+
+  // Extras: screen share, location sharing, and payment requests.
+  el["share-screen"].addEventListener("click", toggleScreenShare);
+  el["share-location"].addEventListener("click", shareLocationOnce);
+  el["toggle-live-location"].addEventListener("click", toggleLiveLocation);
+  el["request-money"].addEventListener("click", () => {
+    el["pay-form"].classList.toggle("hidden");
+    if (!el["pay-form"].classList.contains("hidden")) el["pay-amount"].focus();
+  });
+  el["pay-form"].addEventListener("submit", (e) => {
+    e.preventDefault();
+    sendPaymentRequest();
+  });
 }
 
 function init() {

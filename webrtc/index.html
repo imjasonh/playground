@@ -64,6 +64,7 @@
         <div class="copy-row">
           <input id="invite-link" class="mono" type="text" readonly />
           <button id="copy-invite" class="ghost" type="button">Copy</button>
+          <button id="share-invite" class="ghost hidden" type="button">Share…</button>
         </div>
         <div id="invite-qr" class="qr hidden"></div>
 
@@ -118,9 +119,60 @@
         <div class="controls">
           <button id="toggle-mic" class="ghost" type="button" disabled>Mic on</button>
           <button id="toggle-cam" class="ghost" type="button" disabled>Camera on</button>
+          <button id="share-screen" class="ghost" type="button" disabled>
+            Share screen
+          </button>
           <button id="hangup" class="danger" type="button">Hang up</button>
         </div>
         <p id="call-status" class="status" role="status"></p>
+
+        <!-- Location sharing + payment requests (no backend) -->
+        <section class="extras">
+          <div class="extras-bar">
+            <button id="share-location" class="ghost" type="button" disabled>
+              📍 Share location
+            </button>
+            <button id="toggle-live-location" class="ghost" type="button" disabled>
+              Live location off
+            </button>
+            <button id="request-money" class="ghost" type="button" disabled>
+              💸 Request money
+            </button>
+          </div>
+          <p id="perm-hint" class="hint"></p>
+
+          <form id="pay-form" class="pay-form hidden">
+            <div class="pay-fields">
+              <input
+                id="pay-amount"
+                type="number"
+                min="0.01"
+                step="0.01"
+                inputmode="decimal"
+                placeholder="Amount"
+                required
+              />
+              <input
+                id="pay-currency"
+                class="pay-currency"
+                type="text"
+                maxlength="3"
+                value="USD"
+                aria-label="Currency code"
+              />
+              <input
+                id="pay-note"
+                type="text"
+                placeholder="What's it for? (optional)"
+              />
+            </div>
+            <button id="pay-send" class="primary" type="submit">
+              Send request
+            </button>
+          </form>
+
+          <div id="extras-log" class="extras-log" aria-live="polite"></div>
+        </section>
 
         <div class="talk">
           <div class="chat">
