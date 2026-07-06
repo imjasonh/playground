@@ -56,5 +56,19 @@ if [ -z "$private_key" ]; then
   exit 1
 fi
 
-printf '%s' "$private_key" | wrangler secret put VAPID_PRIVATE_KEY
+# Set the secret through the Cloudflare API rather than `wrangler secret put`:
+# inside wrangler-action, wrangler is only reachable via `npx`, not on PATH, and
+# the API call is version-independent. Build the body with jq (so the key is
+# JSON-encoded) and stream it via stdin to keep the secret out of the argv.
+body=$(jq -nc --arg text "$private_key" '{name: "VAPID_PRIVATE_KEY", text: $text, type: "secret_text"}')
+resp=$(printf '%s' "$body" | curl --fail-with-body -sS -X PUT \
+  -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+  -H "Content-Type: application/json" \
+  --data @- \
+  "${api}/workers/scripts/${script_name}/secrets")
+
+if [ "$(printf '%s' "$resp" | jq -r '.success')" != "true" ]; then
+  echo "Failed to set VAPID_PRIVATE_KEY on ${script_name}: ${resp}" >&2
+  exit 1
+fi
 echo "VAPID_PRIVATE_KEY set on ${script_name}."
