@@ -24,7 +24,7 @@ spec.loader.exec_module(ri)
 
 TEMPLATE = (
     "T=__TITLE__ H=__HEADING__ R=__REPO_URL__\n"
-    "<ul>\n__ITEMS__\n</ul>\n__PREVIEWS__END"
+    "<ul>\n__ITEMS__\n</ul>\n__PREVIEWS__\n__WORKERS__END"
 )
 
 
@@ -37,9 +37,17 @@ def make_site(tmp: Path) -> Path:
     # Not a browser app (no index.html) -> ignored.
     (tmp / "gitdb").mkdir()
     (tmp / "gitdb" / "go.mod").write_text("module gitdb")
+    # Cloudflare Worker apps (wrangler.toml) -> not browser apps, listed
+    # separately. web-push also has an index.html-free demo companion.
+    (tmp / "web-push").mkdir()
+    (tmp / "web-push" / "wrangler.toml").write_text("name = 'web-push'")
+    (tmp / "cors-proxy").mkdir()
+    (tmp / "cors-proxy" / "wrangler.toml").write_text("name = 'cors-proxy'")
     # Hidden dir -> ignored.
     (tmp / ".git").mkdir()
     (tmp / ".git" / "index.html").write_text("x")
+    (tmp / ".hidden-worker").mkdir()
+    (tmp / ".hidden-worker" / "wrangler.toml").write_text("x")
 
     preview = tmp / "preview"
     (preview / "pr-7").mkdir(parents=True)
@@ -68,6 +76,16 @@ def test_scan_apps() -> None:
         check(apps == ["artillery", "kanoodle"], f"scan_apps sorted browser apps: {apps}")
 
 
+def test_scan_workers() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = make_site(Path(d))
+        workers = ri.scan_workers(root)
+        check(
+            workers == ["cors-proxy", "web-push"],
+            f"scan_workers sorted, hidden excluded: {workers}",
+        )
+
+
 def test_scan_previews_sorted_and_filtered() -> None:
     with tempfile.TemporaryDirectory() as d:
         root = make_site(Path(d))
@@ -77,7 +95,7 @@ def test_scan_previews_sorted_and_filtered() -> None:
         check(previews[0]["apps"] == ["artillery", "git"], "preview apps preserved")
 
 
-def test_render_site_has_apps_and_previews() -> None:
+def test_render_site_has_apps_previews_and_workers() -> None:
     with tempfile.TemporaryDirectory() as d:
         root = make_site(Path(d))
         out = ri.render(
@@ -86,20 +104,33 @@ def test_render_site_has_apps_and_previews() -> None:
             ri.scan_apps(root),
             ri.scan_previews(root),
             "https://github.com/o/r",
+            workers=ri.scan_workers(root),
             template=TEMPLATE,
         )
         check('<a href="kanoodle/">kanoodle</a>' in out, "app link rendered")
         check('href="preview/pr-12/"' in out, "preview open link rendered")
         check('href="https://github.com/o/r/pull/12"' in out, "PR link rendered")
         check('class="count">2<' in out, "preview count rendered")
+        check("Cloudflare Workers apps" in out, "workers heading rendered")
+        check(
+            '<a href="https://github.com/o/r/tree/main/web-push">web-push</a>' in out,
+            "worker source link rendered",
+        )
         check("__PREVIEWS__" not in out, "previews placeholder replaced")
+        check("__WORKERS__" not in out, "workers placeholder replaced")
         check("__REPO_URL__" not in out, "repo url placeholder replaced")
 
 
-def test_render_without_previews_omits_section() -> None:
+def test_render_without_previews_or_workers_omits_sections() -> None:
     out = ri.render("t", "h", ["hello"], [], "", template=TEMPLATE)
-    check(out.rstrip().endswith("END"), "previews section empty when no previews")
+    check(out.rstrip().endswith("END"), "trailing sections empty when nothing to show")
     check("preview-card" not in out, "no preview cards when empty")
+    check("Cloudflare Workers apps" not in out, "no workers section when empty")
+
+
+def test_render_workers_relative_link_without_repo_url() -> None:
+    out = ri.render("t", "h", [], [], "", workers=["web-push"], template=TEMPLATE)
+    check('<a href="web-push">web-push</a>' in out, "relative worker link fallback")
 
 
 def test_render_escapes_title() -> None:
