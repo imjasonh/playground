@@ -6,10 +6,14 @@ browser push subscriptions and sends encrypted, VAPID-authenticated push
 messages to any standards-compliant push service (FCM, Mozilla autopush, Apple,
 etc.).
 
-> **Not deployed by this repo.** Unlike the other directories here, this is a
-> Cloudflare Worker, not a GitHub Pages app (it has no `index.html`), so the
-> Pages deploy/preview workflows skip it. It is fully implemented and tested;
-> deploying requires your own Cloudflare account (see [Deploying](#deploying)).
+> **Not a Pages app.** Unlike most directories here, this is a Cloudflare
+> Worker, not a GitHub Pages app (it has no `index.html`), so the Pages
+> deploy/preview workflows skip it. Instead, `deploy-workers.yml` deploys it to
+> Cloudflare with `wrangler` on every push to `main`. That still requires a
+> configured Cloudflare account: the repo secrets `CLOUDFLARE_API_TOKEN` and
+> `CLOUDFLARE_ACCOUNT_ID`, plus the Worker's own config (real KV namespace ids
+> in `wrangler.toml` and the `VAPID_PRIVATE_KEY` secret). See
+> [Deploying](#deploying).
 
 > **Learning the protocol?** Read **[docs/how-it-works.md](docs/how-it-works.md)** —
 > a thorough, diagram-driven walkthrough of Web Push, VAPID, and the encryption,
@@ -115,25 +119,35 @@ reproducible builds.
 
 ## Deploying
 
-Deployment needs a Cloudflare account and is **not** wired into this repo's CI.
+Pushes to `main` deploy this Worker automatically via `deploy-workers.yml`,
+which runs `wrangler deploy` with the repo secrets `CLOUDFLARE_API_TOKEN` and
+`CLOUDFLARE_ACCOUNT_ID`. For that deploy to succeed you must first provision the
+Worker's own configuration in your Cloudflare account (one-time setup):
 
 ```bash
-# 1. Install tooling
+# 1. Install tooling (also used for local dev)
 cargo install worker-build
 npm install -g wrangler
 
 # 2. Generate VAPID keys; keep the private key secret
 cargo run --example genvapid
 
-# 3. Create the KV namespace and put its id in wrangler.toml
+# 3. Create the KV namespace and put its real id in wrangler.toml
+#    (replace the REPLACE_WITH_… placeholders)
 wrangler kv:namespace create SUBSCRIPTIONS
 wrangler kv:namespace create SUBSCRIPTIONS --preview
 
 # 4. Configure the VAPID identity
 wrangler secret put VAPID_PRIVATE_KEY   # paste the generated private key
 #   VAPID_SUBJECT is set in wrangler.toml [vars]
+```
 
-# 5. Develop / deploy
+The KV namespace ids and the `VAPID_PRIVATE_KEY` secret live in Cloudflare, not
+in this repo, so committing `wrangler.toml` with placeholder ids will make the
+CI deploy fail until you paste the real ids. Once configured, deploys happen on
+merge to `main`. To deploy or iterate manually:
+
+```bash
 wrangler dev      # local
 wrangler deploy   # production
 ```

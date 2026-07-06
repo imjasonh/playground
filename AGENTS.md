@@ -61,7 +61,10 @@ Each Go app is an isolated module. Keep its Go sources, tests, `go.mod`, and
 A top-level directory is a **Rust app** when it contains **`Cargo.toml`** at its
 root. Rust apps (e.g. `web-push`, a Cloudflare Worker) are built, linted, and
 tested by CI but are not copied to GitHub Pages and do not receive PR preview
-deployments. A Rust app may have a companion browser app that *is* deployed —
+deployments. A Cloudflare Worker app (a Rust app with a `wrangler.toml`) is
+instead deployed by `deploy-workers.yml` on pushes to `main` with `wrangler`,
+using the repo secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. A
+Rust app may also have a companion browser app that *is* served from Pages —
 `web-push` pairs with `web-push-demo`.
 
 Each Rust app is an isolated crate. Keep its sources, tests, `Cargo.toml`, and
@@ -78,6 +81,7 @@ discovery scripts.
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
 | `deploy.yml` | push to `main` | Publishes all browser apps to GitHub Pages production |
+| `deploy-workers.yml` | push to `main` | Deploys changed Cloudflare Worker apps (those with `wrangler.toml`) with `wrangler`, using the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets |
 | `preview.yml` | pull request opened/sync | Deploys browser apps under `/preview/pr-<N>/` and comments the URL |
 | `cleanup.yml` | pull request closed | Removes that PR's preview directory from `gh-pages` and refreshes the root index |
 | `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps in one job |
@@ -257,11 +261,17 @@ go test ./...
 4. Add `my-worker/rust-toolchain.toml` pinning the toolchain (and, for a
    Cloudflare Worker, the `wasm32-unknown-unknown` target).
 5. Add `my-worker/README.md` and a `my-worker/.gitignore` (at least `target/`).
-6. Do **not** add `index.html`; Rust apps are not deployed or previewed. If you
-   want a UI, add a separate browser app (see `web-push-demo`).
+6. Do **not** add `index.html`; Rust apps are not served from Pages or
+   previewed. If you want a UI, add a separate browser app (see `web-push-demo`).
+7. For a Cloudflare Worker, add a `wrangler.toml`. `deploy-workers.yml` then
+   deploys it on pushes to `main` automatically (no workflow edits needed); it
+   relies on the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets
+   and on any Worker-specific config (KV namespace ids, `wrangler secret`s) you
+   provision in your Cloudflare account.
 
 No workflow edits are required. CI discovers a new Rust app from its
-`Cargo.toml`, and the daily dependency workflow includes it automatically.
+`Cargo.toml`, the deploy workflow discovers a new Worker from its
+`wrangler.toml`, and the daily dependency workflow includes it automatically.
 
 Run locally:
 
