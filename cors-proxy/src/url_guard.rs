@@ -121,6 +121,12 @@ fn ipv6_blocked(ip: Ipv6Addr) -> bool {
     if let Some(v4) = ip.to_ipv4() {
         return ipv4_blocked(v4);
     }
+    // Transition mechanisms embed an IPv4 address that the network may route to.
+    // Validate the embedded address so e.g. a 6to4/NAT64 wrapper for 127.0.0.1
+    // or 169.254.169.254 can't smuggle past the checks below.
+    if let Some(v4) = embedded_ipv4(ip) {
+        return ipv4_blocked(v4);
+    }
     let seg = ip.segments();
     ip.is_unspecified()                 // ::
         || ip.is_loopback()             // ::1
@@ -128,6 +134,37 @@ fn ipv6_blocked(ip: Ipv6Addr) -> bool {
         || (seg[0] & 0xffc0) == 0xfe80  // fe80::/10 link-local
         || (seg[0] & 0xfe00) == 0xfc00  // fc00::/7 unique local
         || (seg[0] == 0x2001 && seg[1] == 0x0db8) // 2001:db8::/32 documentation
+}
+
+/// Extract the IPv4 address embedded by a transition mechanism, if any:
+/// 6to4 (`2002::/16`) or well-known NAT64 (`64:ff9b::/96`).
+fn embedded_ipv4(ip: Ipv6Addr) -> Option<Ipv4Addr> {
+    let seg = ip.segments();
+    // 6to4: 2002:AABB:CCDD::/48 carries the IPv4 A.B.C.D in segments 1 and 2.
+    if seg[0] == 0x2002 {
+        return Some(Ipv4Addr::new(
+            (seg[1] >> 8) as u8,
+            (seg[1] & 0xff) as u8,
+            (seg[2] >> 8) as u8,
+            (seg[2] & 0xff) as u8,
+        ));
+    }
+    // NAT64 well-known prefix 64:ff9b::/96 carries the IPv4 in the last 32 bits.
+    if seg[0] == 0x0064
+        && seg[1] == 0xff9b
+        && seg[2] == 0
+        && seg[3] == 0
+        && seg[4] == 0
+        && seg[5] == 0
+    {
+        return Some(Ipv4Addr::new(
+            (seg[6] >> 8) as u8,
+            (seg[6] & 0xff) as u8,
+            (seg[7] >> 8) as u8,
+            (seg[7] & 0xff) as u8,
+        ));
+    }
+    None
 }
 
 #[cfg(test)]
@@ -248,6 +285,34 @@ mod tests {
             err("http://[::ffff:169.254.169.254]/"),
             GuardError::BlockedIp(_)
         ));
+    }
+
+    #[test]
+    fn blocks_transition_mechanism_embedded_private_ipv4() {
+        // 6to4 wrapper for 127.0.0.1 (2002:7f00:0001::) and for 169.254.169.254.
+        assert!(matches!(
+            err("http://[2002:7f00:1::]/"),
+            GuardError::BlockedIp(_)
+        ));
+        assert!(matches!(
+            err("http://[2002:a9fe:a9fe::]/"),
+            GuardError::BlockedIp(_)
+        ));
+        // NAT64 well-known prefix wrapping 127.0.0.1 and 10.0.0.1.
+        assert!(matches!(
+            err("http://[64:ff9b::7f00:1]/"),
+            GuardError::BlockedIp(_)
+        ));
+        assert!(matches!(
+            err("http://[64:ff9b::a00:1]/"),
+            GuardError::BlockedIp(_)
+        ));
+    }
+
+    #[test]
+    fn allows_transition_mechanism_embedding_public_ipv4() {
+        // 6to4 for 8.8.8.8 embeds a public address, which stays allowed.
+        assert!(validate("http://[2002:808:808::]/").is_ok());
     }
 
     #[test]
