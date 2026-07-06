@@ -1,0 +1,41 @@
+# Cloudflare Workers configuration for the CORS proxy.
+#
+# This project has no index.html, so the GitHub Pages workflows skip it; it is
+# deployed to Cloudflare by `deploy-workers.yml` on pushes to `main` (using the
+# CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID repo secrets). To deploy it
+# yourself you need a Cloudflare account and `wrangler`/`worker-build`; see
+# README.md.
+
+name = "cors-proxy-worker"
+main = "build/worker/shim.mjs"
+compatibility_date = "2024-11-01"
+
+# Build the wasm Worker from Rust. `worker-build` wraps `cargo build
+# --target wasm32-unknown-unknown` and emits the JS shim referenced by `main`.
+#
+# worker-build is pinned to the 0.1.x line: it is the release series that
+# supports `worker = "0.5"`, and it bundles the wasm-bindgen CLI 0.2.105, which
+# must match the wasm-bindgen library pinned in Cargo.toml (bump the two
+# together). Build the *tool* with the stable toolchain — its deps need a recent
+# Cargo — while worker-build then compiles this crate with the pinned toolchain
+# from rust-toolchain.toml (rustup honors it per-directory).
+[build]
+command = "cargo +stable install -q worker-build@0.1.14 && worker-build --release"
+
+# Public, non-secret configuration.
+#
+# ALLOWED_ORIGINS: comma-separated list of browser Origins allowed to call the
+# proxy. Use "*" to allow any origin (a fully open proxy — read the README's
+# security section first). Example:
+#   ALLOWED_ORIGINS = "https://example.com,https://app.example.com"
+#
+# MAX_RESPONSE_BYTES: reject upstream responses larger than this many bytes
+# (defaults to 26214400 = 25 MiB when unset). Enforced while streaming, so a
+# chunked response can't force the whole body to be buffered.
+#
+# MAX_REQUEST_BYTES: reject inbound request bodies larger than this many bytes
+# (defaults to 10485760 = 10 MiB when unset).
+[vars]
+ALLOWED_ORIGINS = "*"
+MAX_RESPONSE_BYTES = "26214400"
+MAX_REQUEST_BYTES = "10485760"
