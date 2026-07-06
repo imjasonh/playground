@@ -199,15 +199,20 @@
     cacheElements();
 
     const params = new URLSearchParams(window.location.search);
-    const fromQuery = params.get("proxy");
+    const fromQuery = (params.get("proxy") || "").trim();
     let stored = null;
     try {
       stored = localStorage.getItem(STORAGE_KEY);
     } catch (_e) {
       /* ignore */
     }
+
+    // A proxy URL from the link is only *prefilled*, never auto-trusted: it is
+    // not persisted and we don't auto-connect to it. Otherwise a shared link
+    // like ?proxy=https://attacker.example could silently route a victim's
+    // requests (URLs, headers, bodies) through an attacker's proxy.
+    const linkSuppliedProxy = fromQuery && fromQuery !== (stored || "");
     el.proxyBase.value = (fromQuery || stored || "").trim();
-    if (fromQuery) saveProxyBase();
 
     refreshBodyVisibility();
     updateProxiedPreview();
@@ -239,8 +244,18 @@
       });
     });
 
-    log("Ready. Set your proxy URL, then Send a request.");
-    if (getProxyBase()) checkProxy();
+    if (linkSuppliedProxy) {
+      log(
+        `A proxy URL was supplied via this link: ${fromQuery} — verify you trust it before sending requests. ` +
+          "It has NOT been saved or connected to automatically.",
+        "warn"
+      );
+    } else {
+      log("Ready. Set your proxy URL, then Send a request.");
+    }
+    // Only auto-connect to a proxy the user chose themselves (from storage),
+    // never one that arrived in the URL.
+    if (getProxyBase() && !linkSuppliedProxy) checkProxy();
   }
 
   if (document.readyState === "loading") {
