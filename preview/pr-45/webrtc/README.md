@@ -67,7 +67,8 @@ Other practical notes:
   See [Sending money](#sending-money-with-the-web-payments-api) for what this can
   and can't do without a backend.
 - **Live captions** — realtime speech-to-text subtitles for the call via the
-  Web Speech API. See [Live captions](#live-captions).
+  Web Speech API, with optional **on-device translation** and **text-to-speech**
+  in another language. See [Live captions](#live-captions).
 - **Screen sharing** — swap your outgoing camera feed for your screen
   (`getDisplayMedia`), no renegotiation needed.
 - **Native share** of the invite link via the Web Share API where supported.
@@ -107,7 +108,31 @@ Interim results update live as you speak and finalized lines linger briefly
 before clearing. It's Chromium-only in practice (Chrome/Edge, and Safari with
 the `webkit` prefix); where `SpeechRecognition` is unavailable (e.g. Firefox)
 the Captions button stays disabled. The recognition language follows
-`navigator.language`.
+`navigator.language`, and each caption line is tagged with that language so the
+receiver can translate it.
+
+### Realtime translation + text-to-speech
+
+Because captions arrive as tagged text, the receiver can go further with two
+more on-device, no-backend browser APIs:
+
+- **Translate captions to** — pick a language and incoming captions are
+  translated locally with the built-in-AI
+  [Translator API](https://developer.mozilla.org/docs/Web/API/Translator)
+  (`Translator.create({ sourceLanguage, targetLanguage })`). The model runs
+  on-device (the first use downloads a small language pack); nothing is sent to
+  a translation server. Only settled (final) lines are translated, so interim
+  text stays responsive.
+- **🔊 Speak** — read incoming captions aloud with the Web Speech API's
+  [`SpeechSynthesis`](https://developer.mozilla.org/docs/Web/API/SpeechSynthesis),
+  using a voice that matches the target language. Combined with translation,
+  this gives spoken, live interpretation of your peer's speech in your language.
+
+Both are receive-side: your peer speaks and captions in their language, and your
+browser translates/speaks in yours — no protocol change and no server. Where the
+Translator API isn't available (currently Chrome-only), the language picker is
+disabled with a hint; text-to-speech falls back to the caption's original
+language when translation is off or unavailable.
 
 ## Sending money with the Web Payments API
 
@@ -139,8 +164,10 @@ amount is possible with **no backend** — the data channel is just a reliable,
 ordered, low-latency pipe, and the peers are ordinary web pages with access to
 the full platform. Implemented here: **Geolocation**, **Permissions**,
 **Web Payments**, **Screen Capture** (`getDisplayMedia`), **Web Speech**
-(live captions), **Web Share**, **Clipboard**, **Compression Streams** (link
-compression), and **Barcode Detection** (QR reply scanning).
+(recognition for live captions **and** synthesis for text-to-speech), the
+built-in-AI **Translator API** (on-device caption translation), **Web Share**,
+**Clipboard**, **Compression Streams** (link compression), and
+**Barcode Detection** (QR reply scanning).
 
 Other capabilities that fit the same "just a link, no server" model and would be
 natural additions:
@@ -158,8 +185,8 @@ natural additions:
 - **Gamepad / Pointer / Device Orientation** — real-time input sharing for P2P
   games or remote control.
 - **Media Session API** — lock-screen/hardware media controls for the call.
-- **Web Speech API (synthesis)** — read incoming chat messages aloud, or add
-  live translation on top of the existing captions.
+- **Language Detector API** — auto-detect a caption's language when the sender
+  doesn't tag it, before translating.
 - **Contact Picker / Web Share Target** — smoother invite sharing on mobile.
 - **IndexedDB** — persist chat/transfer history locally (per browser, no server).
 - **WebCodecs / Insertable Streams** — custom encoding or end-to-end media
@@ -204,8 +231,8 @@ invite in one, open the link in the other, and pass the reply code back.
 
 ## Test
 
-Pure signaling, file-protocol, location, payment, and caption helpers are unit
-tested with the Node test runner (no browser needed):
+Pure signaling, file-protocol, location, payment, caption, and translation
+helpers are unit tested with the Node test runner (no browser needed):
 
 ```bash
 npm test
@@ -224,6 +251,7 @@ webrtc/
 │   ├── location.js       # geolocation message + formatting helpers
 │   ├── payments.js       # Web Payments request/result protocol + helpers
 │   ├── captions.js       # Web Speech caption protocol + transcript helpers
+│   ├── translation.js    # Translator API + SpeechSynthesis helpers
 │   ├── qr.js             # QR render wrapper (canvas)
 │   ├── app.js            # WebRTC wiring, media, chat, files, location, pay, QR
 │   └── vendor/
@@ -235,5 +263,6 @@ webrtc/
     ├── location.test.js
     ├── payments.test.js
     ├── captions.test.js
+    ├── translation.test.js
     └── qr.test.js
 ```

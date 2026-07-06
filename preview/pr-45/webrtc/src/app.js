@@ -1,5 +1,6 @@
 // WebRTC — serverless, link-based peer-to-peer app with audio, video, files,
-// live location sharing, payment requests, and speech-to-text captions.
+// live location sharing, payment requests, and speech-to-text captions with
+// on-device translation and text-to-speech.
 //
 // There is no backend. To start a call, one person ("host") creates an offer
 // that is packed into a shareable link. The other person ("guest") opens the
@@ -55,6 +56,15 @@ import {
   isSpeechRecognitionSupported,
   collectTranscript,
 } from "./captions.js";
+import {
+  COMMON_LANGUAGES,
+  baseLanguage,
+  shouldTranslate,
+  isTranslatorSupported,
+  isSpeechSynthesisSupported,
+  translatorKey,
+  pickVoice,
+} from "./translation.js";
 
 // Public STUN servers only. STUN just tells each peer its public address; it
 // never relays media. Symmetric-NAT networks that need a TURN *relay* won't
@@ -84,6 +94,9 @@ const state = {
   cameraTrack: null, // camera track parked while screen sharing
   recognition: null, // active SpeechRecognition for captions
   captionsOn: false,
+  captionLang: "", // base language to translate incoming captions to ("" = off)
+  speakOn: false, // read incoming captions aloud via SpeechSynthesis
+  translators: new Map(), // cache of source:target -> Promise<Translator>
 };
 
 const el = {};
@@ -128,6 +141,9 @@ function cacheElements() {
     "toggle-mic",
     "share-screen",
     "toggle-captions",
+    "caption-lang",
+    "toggle-speak",
+    "caption-hint",
     "hangup",
     "call-status",
     "chat-log",
@@ -335,6 +351,7 @@ function setupChannel(channel) {
     if (el["toggle-captions"]) {
       el["toggle-captions"].disabled = !isSpeechRecognitionSupported(window);
     }
+    enableCaptionSettings();
     enableExtras(true);
   });
   channel.addEventListener("close", () => {
@@ -371,7 +388,7 @@ function handleChannelMessage(data) {
       if (result) applyPaymentResult(result);
     } else if (msg.kind === CAPTION_KIND) {
       const cap = parseCaptionMessage(msg);
-      if (cap) updateCaption(el["remote-caption"], cap.text, cap.final);
+      if (cap) handleRemoteCaption(cap);
     }
     return;
   }
@@ -468,6 +485,9 @@ function toggleTrack(kind) {
 function hangup() {
   stopLiveLocation();
   stopCaptions();
+  if (isSpeechSynthesisSupported(window)) {
+    try { window.speechSynthesis.cancel(); } catch {}
+  }
   if (state.screenStream) {
     for (const t of state.screenStream.getTracks()) t.stop();
     state.screenStream = null;
@@ -839,11 +859,109 @@ function setCaptionButton(on) {
 
 function sendCaption(text, final) {
   if (!channelOpen()) return;
+  const lang = state.recognition ? state.recognition.lang : undefined;
   try {
-    state.channel.send(JSON.stringify(createCaptionMessage(text, final)));
+    state.channel.send(JSON.stringify(createCaptionMessage(text, final, lang)));
   } catch {
     // Channel may have closed between the check and the send — ignore.
   }
+}
+
+// --- Caption translation + text-to-speech (receive side) ---
+
+function enableCaptionSettings() {
+  populateCaptionLanguages();
+  if (el["caption-lang"]) el["caption-lang"].disabled = !isTranslatorSupported(window);
+  if (el["toggle-speak"]) el["toggle-speak"].disabled = !isSpeechSynthesisSupported(window);
+  const bits = [];
+  if (!isTranslatorSupported(window)) {
+    bits.push("On-device translation needs the Translator API (Chrome).");
+  }
+  if (!isSpeechSynthesisSupported(window)) {
+    bits.push("Text-to-speech isn't available in this browser.");
+  }
+  if (el["caption-hint"]) el["caption-hint"].textContent = bits.join(" ");
+  // Warm up the SpeechSynthesis voice list (populated asynchronously).
+  if (isSpeechSynthesisSupported(window)) window.speechSynthesis.getVoices();
+}
+
+function populateCaptionLanguages() {
+  const select = el["caption-lang"];
+  if (!select || select.dataset.filled === "1") return;
+  for (const lang of COMMON_LANGUAGES) {
+    const option = document.createElement("option");
+    option.value = lang.code;
+    option.textContent = lang.label;
+    select.append(option);
+  }
+  select.dataset.filled = "1";
+}
+
+async function handleRemoteCaption(cap) {
+  const source = cap.lang || "";
+  const target = state.captionLang;
+
+  if (!target || !isTranslatorSupported(window) || !shouldTranslate(source, target)) {
+    updateCaption(el["remote-caption"], cap.text, cap.final);
+    if (cap.final) speakCaption(cap.text, source || undefined);
+    return;
+  }
+
+  // Show interim results untranslated for responsiveness; only translate the
+  // settled final line (and speak it) to avoid hammering the translator.
+  if (!cap.final) {
+    updateCaption(el["remote-caption"], cap.text, false);
+    return;
+  }
+  try {
+    const translated = await translateText(cap.text, source, target);
+    updateCaption(el["remote-caption"], translated, true);
+    speakCaption(translated, target);
+  } catch {
+    updateCaption(el["remote-caption"], cap.text, true);
+    speakCaption(cap.text, source || undefined);
+  }
+}
+
+function getTranslator(source, target) {
+  const key = translatorKey(source, target);
+  if (state.translators.has(key)) return state.translators.get(key);
+  const promise = (async () => {
+    const T = window.Translator;
+    const config = { sourceLanguage: baseLanguage(source), targetLanguage: baseLanguage(target) };
+    if (typeof T.availability === "function") {
+      const availability = await T.availability(config);
+      if (availability === "unavailable") {
+        throw new Error(`translation ${key} unavailable`);
+      }
+    }
+    return T.create(config);
+  })();
+  // Don't cache a rejected setup, so a later attempt can retry.
+  promise.catch(() => state.translators.delete(key));
+  state.translators.set(key, promise);
+  return promise;
+}
+
+async function translateText(text, source, target) {
+  const translator = await getTranslator(source, target);
+  return translator.translate(text);
+}
+
+function speakCaption(text, lang) {
+  if (!state.speakOn || !text || !isSpeechSynthesisSupported(window)) return;
+  const utterance = new window.SpeechSynthesisUtterance(text);
+  if (lang) utterance.lang = lang;
+  const voice = pickVoice(window.speechSynthesis.getVoices(), lang);
+  if (voice) utterance.voice = voice;
+  window.speechSynthesis.speak(utterance);
+}
+
+function setSpeakButton(on) {
+  const btn = el["toggle-speak"];
+  if (!btn) return;
+  btn.textContent = on ? "🔊 Speak on" : "🔊 Speak off";
+  btn.classList.toggle("active", on);
 }
 
 // Show a caption line, replacing any interim text. Final lines linger briefly
@@ -1236,6 +1354,16 @@ function bindEvents() {
   // Extras: screen share, captions, location sharing, and payment requests.
   el["share-screen"].addEventListener("click", toggleScreenShare);
   el["toggle-captions"].addEventListener("click", toggleCaptions);
+  el["caption-lang"].addEventListener("change", (e) => {
+    state.captionLang = baseLanguage(e.target.value);
+  });
+  el["toggle-speak"].addEventListener("click", () => {
+    state.speakOn = !state.speakOn;
+    if (!state.speakOn && isSpeechSynthesisSupported(window)) {
+      window.speechSynthesis.cancel();
+    }
+    setSpeakButton(state.speakOn);
+  });
   el["share-location"].addEventListener("click", shareLocationOnce);
   el["toggle-live-location"].addEventListener("click", toggleLiveLocation);
   el["request-money"].addEventListener("click", () => {

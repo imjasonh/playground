@@ -18,15 +18,20 @@ export const MAX_CAPTION_LENGTH = 240;
 
 // Build the JSON message carrying a caption line. `final` marks a settled
 // (non-interim) transcript so the receiver can let it linger, then clear.
-export function createCaptionMessage(text, final = false) {
+// `lang` is the BCP-47 language the speaker was recognized in (e.g. "en-US"),
+// which lets the receiver translate it; it's optional for backward
+// compatibility with senders that don't tag their language.
+export function createCaptionMessage(text, final = false, lang) {
   if (typeof text !== "string") {
     throw new TypeError("createCaptionMessage expects a string");
   }
-  return {
+  const msg = {
     kind: CAPTION_KIND,
     text: text.slice(0, MAX_CAPTION_LENGTH),
     final: Boolean(final),
   };
+  if (typeof lang === "string" && lang) msg.lang = lang;
+  return msg;
 }
 
 // Validate + normalize an incoming caption message. Returns a clean object or
@@ -34,7 +39,9 @@ export function createCaptionMessage(text, final = false) {
 export function parseCaptionMessage(msg) {
   if (!msg || msg.kind !== CAPTION_KIND) return null;
   if (typeof msg.text !== "string") return null;
-  return { text: msg.text.slice(0, MAX_CAPTION_LENGTH), final: Boolean(msg.final) };
+  const out = { text: msg.text.slice(0, MAX_CAPTION_LENGTH), final: Boolean(msg.final) };
+  if (typeof msg.lang === "string" && msg.lang) out.lang = msg.lang;
+  return out;
 }
 
 // Return the SpeechRecognition constructor for the given global scope, or null
