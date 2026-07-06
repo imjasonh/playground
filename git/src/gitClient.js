@@ -188,6 +188,10 @@ export class GitRepoSource {
     // The current ref is generalized: a branch, a tag, or a detached commit.
     this._current = 'HEAD';
     this._refType = 'branch';
+    // The branch the clone checked out (its default). Remembered separately from
+    // `_current` so it survives branch switches — used to scope the content
+    // search index to the default branch for now.
+    this._defaultBranch = null;
     this._oidCache = new Map();
     // Per-tree caches keyed by the (immutable) commit oid: the entry kinds for
     // listFiles/entryMeta, and the parsed `.gitmodules`. Safe to keep across
@@ -208,6 +212,7 @@ export class GitRepoSource {
       if (branch) {
         this._current = branch;
         this._refType = 'branch';
+        this._defaultBranch = branch;
       }
     } catch {
       /* keep HEAD */
@@ -217,6 +222,10 @@ export class GitRepoSource {
 
   getCurrentBranch() {
     return this._current;
+  }
+
+  getDefaultBranch() {
+    return this._defaultBranch || (this._refType === 'branch' ? this._current : null);
   }
 
   getCurrentRef() {
