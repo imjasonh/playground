@@ -26,7 +26,11 @@ branch switching, and commit history. Everything runs on-device with
   <kbd>Ctrl</kbd> / <kbd>Cmd</kbd> + <kbd>P</kbd>, or use the sidebar filter.
 - **Content search** — grep across file *contents*. Press
   <kbd>Ctrl</kbd> / <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>F</kbd>; supports
-  literal or regex queries and opens each match at its line.
+  literal or regex queries and opens each match at its line. A **trigram index**
+  is built once per repository (keyed by the head commit and persisted to
+  IndexedDB), so typing narrows to a handful of candidate files instead of
+  re-reading the whole repo on every keystroke; the index is reused across
+  keystrokes, reopens, and reloads, and rebuilt only when the content changes.
 - **Off-main-thread search** — both the fuzzy index and content grep run in Web
   Workers (with a synchronous fallback), so searching stays smooth on big repos.
 - **Scales to large repos** — the tree, filter results, and finder are
@@ -85,7 +89,9 @@ a few vendored libraries.
 - `src/fuzzy.js` — fuzzy subsequence matcher + reusable search index
 - `src/searchClient.js` / `src/searchWorker.js` — off-thread fuzzy file search
 - `src/contentSearch.js` — grep query compiler + line scanner (pure)
-- `src/contentSearchClient.js` / `src/contentSearchWorker.js` — off-thread content grep
+- `src/contentIndex.js` — trigram content-search index: build, candidate lookup, (de)serialize (pure)
+- `src/contentIndexStore.js` — IndexedDB persistence for the content-search index (one per repo)
+- `src/contentSearchClient.js` / `src/contentSearchWorker.js` — index-backed, off-thread content grep
 - `src/highlightCode.js` — dependency-free, offline syntax highlighter
 - `src/hashState.js` — deep-link state encoded in the URL hash
 - `src/diff.js` — line-level (LCS) diff for the diff view

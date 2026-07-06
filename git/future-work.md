@@ -117,6 +117,20 @@ Priorities are a rough guide, not a schedule:
 
 **Since P3:**
 
+- **Indexed content search** — the grep overlay (<kbd>Ctrl</kbd>/<kbd>Cmd</kbd> +
+  <kbd>Shift</kbd> + <kbd>F</kbd>) no longer re-reads and re-scans every file on
+  each keystroke. A **trigram index** (`src/contentIndex.js`) is built once per
+  repository content state, keyed by the head commit oid, and persisted to
+  IndexedDB (`src/contentIndexStore.js`, one record per repo so a new commit
+  overwrites the stale one). A literal query intersects its trigrams' posting
+  lists down to a small candidate set that is then scanned (still off the main
+  thread, streaming, in `src/contentSearchWorker.js`) to confirm exact matches;
+  regex / sub-trigram queries fall back to scanning every indexed text file. The
+  built index is reused from memory across keystrokes, from IndexedDB across
+  reopens/reloads, and rebuilt only when the content changes. Covered by
+  `tests/contentIndex.test.js`, `tests/contentIndexStore.test.js`, and the
+  rewritten `tests/contentSearchClient.test.js` (build-once/reuse, persistence,
+  candidate narrowing), plus the existing content-search e2e.
 - **Upstream auto-update** — while a cloned repo is open and the tab is visible,
   a visibility-aware poller (`src/poller.js`) peeks the remote with a lightweight
   `ls-remote` (`GitRepoSource.checkForUpdates`, via isomorphic-git's
