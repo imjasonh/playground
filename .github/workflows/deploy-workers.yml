@@ -62,6 +62,10 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: ${{ matrix.app }}
+          # wrangler-action defaults to an old bundled wrangler (3.x); pin a
+          # current v4 so deploys don't run on an out-of-date CLI. Bump this
+          # periodically (the dependency-update bot doesn't manage it).
+          wranglerVersion: "4.107.0"
           # Before deploying, create-or-get the KV namespaces this Worker needs
           # and rewrite the placeholder ids in wrangler.toml with the real ones.
           preCommands: python3 "$GITHUB_WORKSPACE/.github/scripts/provision-worker-kv.py"
