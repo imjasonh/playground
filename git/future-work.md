@@ -119,18 +119,33 @@ Priorities are a rough guide, not a schedule:
 
 - **Indexed content search** — the grep overlay (<kbd>Ctrl</kbd>/<kbd>Cmd</kbd> +
   <kbd>Shift</kbd> + <kbd>F</kbd>) no longer re-reads and re-scans every file on
-  each keystroke. A **trigram index** (`src/contentIndex.js`) is built once per
-  repository content state, keyed by the head commit oid, and persisted to
-  IndexedDB (`src/contentIndexStore.js`, one record per repo so a new commit
-  overwrites the stale one). A literal query intersects its trigrams' posting
-  lists down to a small candidate set that is then scanned (still off the main
-  thread, streaming, in `src/contentSearchWorker.js`) to confirm exact matches;
-  regex / sub-trigram queries fall back to scanning every indexed text file. The
-  built index is reused from memory across keystrokes, from IndexedDB across
-  reopens/reloads, and rebuilt only when the content changes. Covered by
-  `tests/contentIndex.test.js`, `tests/contentIndexStore.test.js`, and the
-  rewritten `tests/contentSearchClient.test.js` (build-once/reuse, persistence,
-  candidate narrowing), plus the existing content-search e2e.
+  each keystroke. A **trigram index** (`src/contentIndex.js`) is built once for
+  the default branch, keyed by its head commit oid, and persisted to IndexedDB
+  (`src/contentIndexStore.js`, one record per repo so a new commit overwrites the
+  stale one). A literal query intersects its trigrams' posting lists down to a
+  small candidate set that is then scanned (still off the main thread, streaming,
+  in `src/contentSearchWorker.js`) to confirm exact matches; regex / sub-trigram
+  queries fall back to scanning every indexed text file. The built index is
+  reused from memory across keystrokes and from IndexedDB across reopens/reloads.
+  The index is **incrementally maintained**: the structure supports single-file
+  add/remove/update, so a Pull/Update advances it by only the files that changed
+  between the old and new commit (via `RepoSource.changedFiles`, wired through
+  `syncContentIndex` in `src/controller.js` and `contentSearchClient.updateIndex`)
+  instead of rebuilding. Clearing a repo from browser storage also deletes its
+  index (`contentSearchClient.removeIndex`, wired into the stored-repos remove
+  button). Covered by `tests/contentIndex.test.js`,
+  `tests/contentIndexStore.test.js`, and `tests/contentSearchClient.test.js`
+  (build-once/reuse, persistence, incremental update/remove, candidate
+  narrowing), plus the existing content-search e2e.
+
+  **Only the default branch is indexed for now.** Other refs (a different branch,
+  a tag, or a detached commit) use an ephemeral, session-only index so a second
+  persisted copy is never written. A natural next step is to index all branch
+  heads and tags into a single **hybrid index that shares postings across refs**
+  (most files are identical across branches) rather than storing N whole copies —
+  e.g. key postings by blob oid and map each ref's tree to the blob oids it
+  contains, so a trigram's posting list is stored once and reused by every ref
+  that includes that blob.
 - **Upstream auto-update** — while a cloned repo is open and the tab is visible,
   a visibility-aware poller (`src/poller.js`) peeks the remote with a lightweight
   `ls-remote` (`GitRepoSource.checkForUpdates`, via isomorphic-git's
