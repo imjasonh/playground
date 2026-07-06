@@ -66,6 +66,7 @@ export async function init() {
     branches: [],
     tags: [],
     lines: null, // selected line range {start,end} in the active text file
+    headOid: null, // current ref's head commit oid (keys the content-search index)
     historyOpen: false,
     historyPath: null, // when set, the history panel shows this file's history
   });
@@ -122,6 +123,15 @@ export async function init() {
   // source that can't compute it. (The Blame button's click is wired in
   // bindEvents, alongside History.)
   ctx.canBlame = () => Boolean(state.source && typeof state.source.blame === 'function');
+  // Identity of the current repo content state, used to key (and persist) the
+  // content-search index: a stable repo id plus the head commit oid, so the
+  // index is reused while the content is unchanged and rebuilt when it moves.
+  ctx.contentIndexKey = () => {
+    const source = state.source;
+    if (!source) return null;
+    const repoId = source.url || source.fullName || 'demo';
+    return { repoId, oid: state.headOid || '' };
+  };
   // Web URL for the active file on its origin host (GitHub/GitLab/Bitbucket),
   // or null for the demo / an unknown host. The viewer uses this to decide
   // whether to offer the "Open" link and where it points.
@@ -253,7 +263,7 @@ export async function init() {
   function showStart() {
     loads.cancel();
     poller.stop();
-    store.setState({ source: null, activePath: null, lines: null });
+    store.setState({ source: null, activePath: null, lines: null, headOid: null });
     search.setFiles([]); // drop the corpus so the worker isn't holding a stale repo
     viewer.dispose();
     dom.browserView.hidden = true;
@@ -407,8 +417,10 @@ export async function init() {
     try {
       const head = await source.headCommit();
       if (!load.active) return;
+      store.setState({ headOid: head ? head.oid : null });
       renderHead(head);
     } catch {
+      store.setState({ headOid: null });
       dom.repoMeta.textContent = '';
     }
 
