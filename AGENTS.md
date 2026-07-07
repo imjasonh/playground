@@ -108,9 +108,17 @@ previews** (only browser apps get previews): `preview.yml` writes a
 app** (so Go/Rust/CI-only PRs, whose preview would be identical to production,
 are not listed), and `deploy.yml`, `preview.yml`, and `cleanup.yml` each
 regenerate the root index from the published `gh-pages` tree so the list stays
-current as previews come and go. `discover-browser-apps.sh` reports which
+current as previews come and go. Because the deploy publishes with
+`keep_files: true` (to preserve `preview/`), a browser app that is renamed or
+removed in the source tree would otherwise linger on `gh-pages` and keep showing
+up on the home page. `deploy.yml` therefore runs
+`.github/scripts/prune-orphaned-apps.sh` before regenerating the index to delete
+published app directories (those with `index.html`, excluding `preview/`) that
+no longer exist as source browser apps. `discover-browser-apps.sh` reports which
 browser apps a change set touched; `render-index_test.py` covers the renderer
-(run `python3 .github/scripts/render-index_test.py`).
+(run `python3 .github/scripts/render-index_test.py`), and
+`prune-orphaned-apps_test.sh` covers the pruner (run
+`bash .github/scripts/prune-orphaned-apps_test.sh`).
 
 ### Production URLs
 

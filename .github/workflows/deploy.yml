@@ -46,6 +46,13 @@ jobs:
           ref: gh-pages
           path: gh-pages
 
+      # keep_files: true preserves the preview/ directory, but it also preserves
+      # app directories that were removed or renamed in the source tree (e.g.
+      # linkchat -> webrtc). Prune those orphans so the published set — and the
+      # regenerated index below — matches the current source apps.
+      - name: Prune orphaned apps
+        run: bash .github/scripts/prune-orphaned-apps.sh gh-pages "$GITHUB_WORKSPACE"
+
       - name: Refresh site index
         env:
           REPO_URL: ${{ github.server_url }}/${{ github.repository }}
