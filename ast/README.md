@@ -34,10 +34,13 @@ go test ./...
 ## Usage
 
 ```
-ast languages                                list supported languages and extensions
-ast tree     [-l lang] <file>                print the syntax tree (S-expression)
-ast query    -q QUERY [-l lang] <file>...    print AST nodes matching a selector
-ast rewrite  -q QUERY [ops] [-w] <file>...   rewrite matched nodes
+ast languages                                     list supported languages and extensions
+ast kinds     [-l lang]                           list normalized node kinds (--kind vocabulary)
+ast tree      [-l lang] <file>                    print the syntax tree (S-expression)
+ast query     -q QUERY [-l lang] <file>...        print AST nodes matching a selector
+ast query     --kind KIND [-l lang] <file>...     print AST nodes by normalized kind
+ast rewrite   -q QUERY [ops] [-w] <file>...       rewrite matched nodes
+ast rename    --to NEW (--at L:C | --name OLD) [-w] <file>   scope-aware rename
 ```
 
 The language is inferred from the file extension; override it with `-l/--lang`.
@@ -87,6 +90,36 @@ $ ast query -q '((function_declaration name: (identifier) @n) (#match? @n "^Test
 
 Flags: `-c/--capture NAME` shows only one capture; `--json` emits structured
 results (with byte offsets and row/column ranges) for scripting.
+
+#### Selecting by normalized kind (`--kind`)
+
+Writing a raw query means knowing each grammar's node names
+(`function_declaration` in Go, `function_item` in Rust, `function_definition`
+in Python…). Instead you can select by a **normalized, cross-language kind** —
+an idea borrowed from LSP's `SymbolKind` vocabulary:
+
+```bash
+# Every function definition, regardless of language
+$ ast query --kind function main.go
+$ ast query --kind function app.py
+$ ast query --kind function lib.rs
+
+# Multiple kinds at once
+$ ast query --kind function --kind call app.py
+app.py:1:5: @function (identifier) "helper"
+app.py:2:12: @call (identifier) "compute"
+```
+
+Run `ast kinds` to see the full vocabulary (`function`, `method`, `class`,
+`struct`, `interface`, `enum`, `type`, `constant`, `variable`, `field`,
+`module`, `import`, `call`, `comment`, `string`, `number`, `keyword`,
+`parameter`), and `ast kinds -l <language>` to see which are available for a
+language.
+
+`--kind` is powered by curated `tags.scm` / `highlights.scm` queries and is
+available for **go, python, javascript, typescript, tsx, and rust**. Other
+languages fall back to raw `-q` queries. `--kind` and `-q` are mutually
+exclusive.
 
 ### `ast rewrite` — change nodes
 
@@ -140,6 +173,51 @@ $ git apply -p1 rename.patch
 Edits may be supplied in any order and are applied end-to-start so byte offsets
 stay valid; overlapping edits are rejected.
 
+### `ast rename` — scope-aware rename
+
+`rewrite` is purely textual: `--replace @id=bar` renames *every* matching
+identifier. `rename` is **scope-aware** — it renames a local binding and only
+the references that resolve to it, like an editor's rename refactor. This is
+modeled on LSP's semantic rename and is powered by curated `locals.scm`
+scope/definition/reference queries.
+
+Target the binding either by position (`--at LINE:COL`, 1-based, like clicking
+an identifier) or by name (`--name OLD`, every local binding of that name):
+
+```bash
+# Rename the x in f() to n — the unrelated x in g() is left alone
+$ ast rename --at 4:2 --to n --diff scope.go
+--- a/scope.go
++++ b/scope.go
+@@ -1,8 +1,8 @@
+ func f() {
+-	x := 1
+-	println(x)
++	n := 1
++	println(n)
+ }
+ func g() {
+ 	x := 2      # untouched
+
+# Rename a parameter and its uses (but not same-named locals in other scopes)
+$ ast rename --name name --to label -w handler.py
+```
+
+Because it resolves references to definitions, `rename` renames recursive calls
+(the function name is a binding), skips member accesses that merely share a name
+(e.g. Python `obj.name`), and refuses to rename free symbols:
+
+```bash
+$ ast rename --at 5:2 --to nope scope.go
+ast: scope.go: "println" ... does not resolve to a local binding
+    (it may be a package-level, imported, or built-in symbol); use `ast rewrite` instead
+```
+
+`rename` takes exactly one file (locals are resolved per file), supports the
+same `-w` / `--diff` / `--patch` output modes as `rewrite`, and is available for
+**go, python, javascript, typescript, tsx, and rust**. For package-level or
+cross-file symbols, use `ast rewrite` with an `#eq?` predicate.
+
 ## Supported languages
 
 31 languages, each parsed by a grammar compiled into the binary:
@@ -152,6 +230,13 @@ sql  svelte  swift  toml  tsx  typescript  yaml
 
 Run `ast languages` (or `ast languages --json`) for the authoritative list with
 file extensions and aliases (e.g. `js`, `ts`, `py`, `golang`, `c++`, `terraform`).
+
+`query` (raw `-q`), `tree`, and `rewrite` (raw `-q`) work for **all** of these.
+The higher-level features — `--kind` selectors and scope-aware `rename` — need
+curated `tags.scm` / `highlights.scm` / `locals.scm` query files and currently
+cover **go, python, javascript, typescript, tsx, and rust**. Adding a language
+is just dropping new files into `internal/langs/queries/<lang>/` (no code
+changes); see [`future-work.md`](future-work.md).
 
 ## How it works
 
@@ -167,6 +252,15 @@ Rewrites deliberately splice source text rather than re-serialize a modified
 tree: tree-sitter does not losslessly print trees back to source, and byte-range
 splicing keeps every rewrite faithful to the original file.
 
+`--kind` selection and `rename` add two more layers on top, both driven by
+curated tree-sitter query files (the same convention editors use):
+
+- **`--kind`** runs `tags.scm` (definitions/references) and `highlights.scm`
+  (tokens) and maps their captures to a normalized cross-language vocabulary.
+- **`rename`** runs `locals.scm` to build a scope tree with definitions and
+  references, then resolves the target binding and rewrites only the
+  occurrences that resolve to it.
+
 ## Testing
 
 ```bash
@@ -174,10 +268,12 @@ cd ast
 go test ./...
 ```
 
-The tests cover the language registry, the query engine and edit application,
-and the full CLI, with a cross-language matrix that parses, queries, and
-rewrites Go, Python, JavaScript/TypeScript/TSX, Rust, Java, C/C++, Ruby, C#,
-PHP, Bash, Lua, Scala, Kotlin, Swift, YAML, TOML, CSS, SQL, HCL, and HTML.
+The tests cover the language registry, the curated query files (each is
+compiled against its grammar), the query engine and edit application, the
+normalized-kind selectors and scope-aware rename (`internal/nav`), and the full
+CLI, with a cross-language matrix that parses, queries, and rewrites Go, Python,
+JavaScript/TypeScript/TSX, Rust, Java, C/C++, Ruby, C#, PHP, Bash, Lua, Scala,
+Kotlin, Swift, YAML, TOML, CSS, SQL, HCL, and HTML.
 
 ### Golden CLI tests (testscript)
 
@@ -290,11 +386,12 @@ fn caller() -> i32 {
 ```
 
 Other scripts cover Python (`#match?` predicate selection), a TypeScript syntax
-tree, an in-place Go rename (`-w`), writing a patch file (`--patch`), and the
-`languages` command. `rewrite_patch_git_apply.txtar` generates a patch and
-applies it with real `git` (via testscript's `exec`), skipping itself with
-`[!exec:git] skip` when git is not installed. Regenerate the golden output after
-intentional changes with:
+tree, a raw-query in-place Go rename (`-w`), normalized `--kind` selection
+(`query_kind.txtar`), scope-aware `rename` (`rename_scope.txtar`), writing a
+patch file (`--patch`), and the `languages` command. `rewrite_patch_git_apply.txtar`
+generates a patch and applies it with real `git` (via testscript's `exec`),
+skipping itself with `[!exec:git] skip` when git is not installed. Regenerate the
+golden output after intentional changes with:
 
 ```bash
 go test -run TestScripts -update
