@@ -63,12 +63,9 @@ measured-ish reflective appearance:
 - lifted black point (low contrast ratio)
 - desaturated color inks (CFA and ACeP inks are noticeably muted)
 - optional paper grain texture and a pixel grid when zoomed in
-- **Actual-size zoom**: view a panel at roughly its true physical dimensions
-  (from its PPI), so small high-density panels look as small as they do in real
-  life and their dither blends — instead of being magnified into harsh noise by
-  "Fit to window". When shown below 1:1 the dither is area-averaged the way the
-  eye integrates it at the panel's dot pitch; zoom in past 1:1 to inspect the
-  individual ink dots.
+- **Viewing scale**: when a panel is shown below 1:1 (e.g. "Fit to window" for a
+  large panel) the dither is area-averaged the way the eye integrates it at the
+  panel's dot pitch; zoom in past 1:1 to inspect the individual ink dots.
 
 Toggle the reflective response off to compare against ideal colors, and use the
 **pre-processing** sliders (saturation / contrast / brightness / gamma) to
