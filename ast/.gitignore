@@ -1,0 +1,6 @@
+# Compiled binary
+/ast
+# Go build/test artifacts
+*.test
+*.out
+coverage.txt

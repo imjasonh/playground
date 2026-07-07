@@ -1,0 +1,105 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"io"
+
+	"github.com/imjasonh/playground/ast/internal/engine"
+)
+
+func cmdQuery(args []string, stdout io.Writer) error {
+	fs := flag.NewFlagSet("query", flag.ContinueOnError)
+	fs.SetOutput(stdout)
+	var (
+		langName string
+		query    string
+		capture  string
+	)
+	fs.StringVar(&langName, "l", "", "language name (default: infer from extension)")
+	fs.StringVar(&langName, "lang", "", "language name (default: infer from extension)")
+	fs.StringVar(&query, "q", "", "tree-sitter query selector (required)")
+	fs.StringVar(&query, "query", "", "tree-sitter query selector (required)")
+	fs.StringVar(&capture, "c", "", "only show this capture name")
+	fs.StringVar(&capture, "capture", "", "only show this capture name")
+	asJSON := fs.Bool("json", false, "output as JSON")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if query == "" {
+		return fmt.Errorf("query requires -q/--query")
+	}
+	if fs.NArg() == 0 {
+		return fmt.Errorf("query requires at least one file (or - for stdin)")
+	}
+
+	type fileResult struct {
+		File    string         `json:"file"`
+		Matches []engine.Match `json:"matches"`
+	}
+	var results []fileResult
+	total := 0
+
+	for _, path := range fs.Args() {
+		src, err := loadSource(path, langName, stdinReader())
+		if err != nil {
+			return err
+		}
+		matches, err := engine.Query(context.Background(), src.data, src.sitter(), query)
+		if err != nil {
+			return fmt.Errorf("%s: %w", path, err)
+		}
+		matches = filterCaptures(matches, capture)
+		results = append(results, fileResult{File: path, Matches: matches})
+		for _, m := range matches {
+			total += len(m.Captures)
+		}
+	}
+
+	if *asJSON {
+		enc := json.NewEncoder(stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(results)
+	}
+
+	for _, r := range results {
+		for _, m := range r.Matches {
+			for _, c := range m.Captures {
+				fmt.Fprintf(stdout, "%s:%d:%d: @%s (%s) %s\n",
+					r.File, c.Start.Row+1, c.Start.Column+1, c.Name, c.Type, oneLine(c.Text))
+			}
+		}
+	}
+	fmt.Fprintf(stdout, "\n%d node(s) matched\n", total)
+	return nil
+}
+
+// filterCaptures optionally restricts each match to a single capture name.
+func filterCaptures(matches []engine.Match, name string) []engine.Match {
+	if name == "" {
+		return matches
+	}
+	name = trimAt(name)
+	var out []engine.Match
+	for _, m := range matches {
+		var kept []engine.Capture
+		for _, c := range m.Captures {
+			if c.Name == name {
+				kept = append(kept, c)
+			}
+		}
+		if len(kept) > 0 {
+			out = append(out, engine.Match{PatternIndex: m.PatternIndex, Captures: kept})
+		}
+	}
+	return out
+}
+
+func trimAt(s string) string {
+	if len(s) > 0 && s[0] == '@' {
+		return s[1:]
+	}
+	return s
+}

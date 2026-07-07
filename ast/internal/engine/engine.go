@@ -1,0 +1,175 @@
+// Package engine contains the language-agnostic core of the ast tool: parsing
+// source into a tree-sitter tree, running tree-sitter queries (the selector
+// language) against it, and applying byte-range edits back to the source.
+//
+// Rewrites are performed as text splices at node byte ranges rather than by
+// re-serializing a modified tree. tree-sitter does not losslessly print trees
+// back to source, and byte-range splicing keeps every rewrite faithful to the
+// original file (whitespace, comments, and formatting are untouched outside the
+// edited spans). This is what makes the tool work uniformly across languages.
+package engine
+
+import (
+	"context"
+	"fmt"
+	"sort"
+	"strings"
+
+	sitter "github.com/smacker/go-tree-sitter"
+)
+
+// Position is a 0-based row and column (in bytes) within a source file.
+type Position struct {
+	Row    uint32 `json:"row"`
+	Column uint32 `json:"column"`
+}
+
+// Capture is a single named node captured by a query.
+type Capture struct {
+	Name      string   `json:"name"`
+	Type      string   `json:"type"`
+	Text      string   `json:"text"`
+	StartByte uint32   `json:"startByte"`
+	EndByte   uint32   `json:"endByte"`
+	Start     Position `json:"start"`
+	End       Position `json:"end"`
+
+	node *sitter.Node
+}
+
+// Node returns the underlying tree-sitter node for the capture.
+func (c Capture) Node() *sitter.Node { return c.node }
+
+// Match is one result of a query: the pattern that matched plus every node it
+// captured.
+type Match struct {
+	PatternIndex int       `json:"patternIndex"`
+	Captures     []Capture `json:"captures"`
+}
+
+// Capture returns the first capture with the given name (without a leading
+// "@"), reporting whether one was found.
+func (m Match) Capture(name string) (Capture, bool) {
+	name = strings.TrimPrefix(name, "@")
+	for _, c := range m.Captures {
+		if c.Name == name {
+			return c, true
+		}
+	}
+	return Capture{}, false
+}
+
+// Parse parses src with the given grammar and returns the syntax tree.
+func Parse(ctx context.Context, src []byte, lang *sitter.Language) (*sitter.Tree, error) {
+	parser := sitter.NewParser()
+	parser.SetLanguage(lang)
+	tree, err := parser.ParseCtx(ctx, nil, src)
+	if err != nil {
+		return nil, fmt.Errorf("parsing source: %w", err)
+	}
+	return tree, nil
+}
+
+// Query parses src and returns every match of the tree-sitter query pattern.
+// Query predicates such as #eq? and #match? are honored.
+func Query(ctx context.Context, src []byte, lang *sitter.Language, pattern string) ([]Match, error) {
+	q, err := sitter.NewQuery([]byte(pattern), lang)
+	if err != nil {
+		return nil, fmt.Errorf("invalid query: %w", err)
+	}
+	defer q.Close()
+
+	if q.CaptureCount() == 0 {
+		return nil, fmt.Errorf("query has no captures: add at least one capture such as @x so results reference concrete nodes")
+	}
+
+	tree, err := Parse(ctx, src, lang)
+	if err != nil {
+		return nil, err
+	}
+	defer tree.Close()
+
+	cursor := sitter.NewQueryCursor()
+	defer cursor.Close()
+	cursor.Exec(q, tree.RootNode())
+
+	var matches []Match
+	for {
+		m, ok := cursor.NextMatch()
+		if !ok {
+			break
+		}
+		m = cursor.FilterPredicates(m, src)
+		if len(m.Captures) == 0 {
+			continue
+		}
+		match := Match{PatternIndex: int(m.PatternIndex)}
+		for _, c := range m.Captures {
+			node := c.Node
+			match.Captures = append(match.Captures, Capture{
+				Name:      q.CaptureNameForId(c.Index),
+				Type:      node.Type(),
+				Text:      node.Content(src),
+				StartByte: node.StartByte(),
+				EndByte:   node.EndByte(),
+				Start:     Position{node.StartPoint().Row, node.StartPoint().Column},
+				End:       Position{node.EndPoint().Row, node.EndPoint().Column},
+				node:      node,
+			})
+		}
+		matches = append(matches, match)
+	}
+	return matches, nil
+}
+
+// Edit is a replacement of the half-open byte range [Start, End) with Text.
+// A pure insertion has Start == End; a deletion has Text == "".
+type Edit struct {
+	Start uint32
+	End   uint32
+	Text  string
+}
+
+// Apply returns a copy of src with the edits applied. Edits may be supplied in
+// any order; they are applied from the end of the file backwards so earlier
+// byte offsets stay valid. Overlapping edits are rejected. A zero-width
+// insertion is allowed to sit at the boundary of an adjacent replacement.
+func Apply(src []byte, edits []Edit) ([]byte, error) {
+	if len(edits) == 0 {
+		return append([]byte(nil), src...), nil
+	}
+
+	ordered := make([]Edit, len(edits))
+	copy(ordered, edits)
+	for i, e := range ordered {
+		if e.Start > e.End {
+			return nil, fmt.Errorf("edit %d has start %d after end %d", i, e.Start, e.End)
+		}
+		if int(e.End) > len(src) {
+			return nil, fmt.Errorf("edit %d end %d is past end of source (%d bytes)", i, e.End, len(src))
+		}
+	}
+
+	// Sort ascending by start, then end, so overlap detection is simple and
+	// insertions are applied in a stable order relative to their neighbours.
+	sort.SliceStable(ordered, func(i, j int) bool {
+		if ordered[i].Start != ordered[j].Start {
+			return ordered[i].Start < ordered[j].Start
+		}
+		return ordered[i].End < ordered[j].End
+	})
+	for i := 1; i < len(ordered); i++ {
+		prev, cur := ordered[i-1], ordered[i]
+		if cur.Start < prev.End {
+			return nil, fmt.Errorf("overlapping edits: [%d,%d) and [%d,%d)", prev.Start, prev.End, cur.Start, cur.End)
+		}
+	}
+
+	// Apply from the end backwards so offsets remain valid as we splice.
+	out := append([]byte(nil), src...)
+	for i := len(ordered) - 1; i >= 0; i-- {
+		e := ordered[i]
+		out = append(out[:e.Start], append([]byte(e.Text), out[e.End:]...)...)
+	}
+	return out, nil
+}
