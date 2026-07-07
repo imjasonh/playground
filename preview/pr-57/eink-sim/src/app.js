@@ -537,11 +537,10 @@ function drawToView(width, height, response) {
 
   const ctx = view.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, cssW, cssH);
 
   const sourceCanvas = state.showOriginal ? els.sourceCanvas : state.panelCanvas;
-  ctx.drawImage(sourceCanvas, 0, 0, cssW, cssH);
+  drawPanelScaled(ctx, sourceCanvas, width, height, cssW, cssH);
 
   // Bezel tint reflects the substrate color.
   els.device.style.setProperty(
@@ -559,6 +558,44 @@ function drawToView(width, height, response) {
   if (els.showGrid.checked && effectiveScale >= 5 && !state.showOriginal) {
     drawGrid(ctx, width, height, effectiveScale);
   }
+}
+
+// Draw the native panel image into the view, matching how a real reflective
+// panel is actually perceived:
+//   - When the panel is shown at or above 1:1 (zoomed in), keep pixels crisp so
+//     you can inspect the individual ink dots and the dither pattern.
+//   - When shown below 1:1 (the common "fit" case for large panels), the eye
+//     integrates neighboring dots at the panel's dot pitch, blending the dither
+//     into smooth tone. We reproduce that by area-averaging the downscale in
+//     halving steps. Drawing the native dither with nearest-neighbor instead
+//     would alias it into harsh salt-and-pepper noise and moire that no real
+//     panel shows.
+function drawPanelScaled(ctx, source, srcW, srcH, cssW, cssH) {
+  if (cssW >= srcW) {
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(source, 0, 0, cssW, cssH);
+    return;
+  }
+  let cur = source;
+  let curW = srcW;
+  let curH = srcH;
+  while (Math.floor(curW / 2) > cssW) {
+    const nextW = Math.max(cssW, Math.round(curW / 2));
+    const nextH = Math.max(cssH, Math.round(curH / 2));
+    const tmp = document.createElement("canvas");
+    tmp.width = nextW;
+    tmp.height = nextH;
+    const tctx = tmp.getContext("2d");
+    tctx.imageSmoothingEnabled = true;
+    tctx.imageSmoothingQuality = "high";
+    tctx.drawImage(cur, 0, 0, nextW, nextH);
+    cur = tmp;
+    curW = nextW;
+    curH = nextH;
+  }
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(cur, 0, 0, cssW, cssH);
 }
 
 let textureCanvas = null;
