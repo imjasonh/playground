@@ -6,9 +6,12 @@
 // Usage:
 //
 //	ast languages                              list supported languages
+//	ast kinds    [-l lang]                     list normalized node kinds
 //	ast tree     [-l lang] <file>              print the syntax tree
 //	ast query    -q <query> [-l lang] <file>…  print nodes matching a selector
+//	ast query    --kind function <file>…       print nodes by normalized kind
 //	ast rewrite  -q <query> [ops] [-w] <file>… edit matched nodes
+//	ast rename   --to NEW (--at L:C|--name X) <file>  scope-aware rename
 //
 // The selector is a tree-sitter query (an S-expression pattern with @captures),
 // the same query language used by editors and the tree-sitter CLI. For example
@@ -52,8 +55,12 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return cmdTree(rest, stdout)
 	case "query", "q", "select":
 		return cmdQuery(rest, stdout)
+	case "kinds":
+		return cmdKinds(rest, stdout)
 	case "rewrite", "edit", "replace":
 		return cmdRewrite(rest, stdout, stderr)
+	case "rename":
+		return cmdRename(rest, stdout, stderr)
 	case "help", "-h", "--help":
 		usage(stdout)
 		return nil
@@ -68,12 +75,20 @@ func usage(w io.Writer) {
 
 Usage:
   ast languages                                list supported languages and extensions
-  ast tree     [-l lang] <file>                print the syntax tree (S-expression)
-  ast query    -q QUERY [-l lang] <file>...    print AST nodes matching a selector
-  ast rewrite  -q QUERY [ops] [-w] <file>...   rewrite matched nodes
+  ast kinds     [-l lang]                      list normalized node kinds (--kind vocabulary)
+  ast tree      [-l lang] <file>               print the syntax tree (S-expression)
+  ast query     -q QUERY [-l lang] <file>...   print AST nodes matching a selector
+  ast query     --kind KIND [-l lang] <file>... print AST nodes by normalized kind
+  ast rewrite   -q QUERY [ops] [-w] <file>...  rewrite matched nodes
+  ast rename    --to NEW (--at L:C | --name OLD) [-w] <file>   scope-aware rename
 
 The selector is a tree-sitter query, e.g.
   '(function_declaration name: (identifier) @name)'
+
+Or select by a normalized, cross-language kind (function, class, call, comment,
+string, keyword, parameter, ...); see 'ast kinds'. Curated kind selectors and
+scope-aware rename are available for go, python, javascript, typescript, tsx,
+and rust.
 
 Rewrite operations (each may be repeated; target a @capture from the query):
   --replace       @cap=TEXT   replace the captured node's text

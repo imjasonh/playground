@@ -1,0 +1,35 @@
+# Scope-aware rename: renaming the x in f() must not touch the unrelated x in
+# g(). The identifier is targeted by 1-based LINE:COL.
+ast rename --at 4:2 --to n --diff scope.go
+cmp stdout rename.golden
+
+# A free/builtin symbol cannot be renamed as a local.
+! ast rename --at 5:2 --to nope scope.go
+stderr 'does not resolve to a local binding'
+
+-- scope.go --
+package main
+
+func f() {
+	x := 1
+	println(x)
+}
+
+func g() {
+	x := 2
+	println(x)
+}
+-- rename.golden --
+--- a/scope.go
++++ b/scope.go
+@@ -1,8 +1,8 @@
+ package main
+ 
+ func f() {
+-	x := 1
+-	println(x)
++	n := 1
++	println(n)
+ }
+ 
+ func g() {

@@ -1,0 +1,18 @@
+# Select nodes by normalized, cross-language kind rather than raw node types.
+ast query --kind function --kind call app.py
+cmp stdout kinds.golden
+
+-- app.py --
+def helper():
+    return compute(1)
+
+
+def main():
+    helper()
+-- kinds.golden --
+app.py:1:5: @function (identifier) "helper"
+app.py:2:12: @call (identifier) "compute"
+app.py:5:5: @function (identifier) "main"
+app.py:6:5: @call (identifier) "helper"
+
+4 node(s) matched

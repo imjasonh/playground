@@ -7,7 +7,9 @@
 package langs
 
 import (
+	"embed"
 	"fmt"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -62,6 +64,47 @@ func (l *Language) Sitter() *sitter.Language { return l.getLang() }
 // Aliases returns the alternate names that also resolve to this language.
 func (l *Language) Aliases() []string {
 	return append([]string(nil), l.aliases...)
+}
+
+// queryFS holds the curated tree-sitter query files (tags/highlights/locals)
+// that power the normalized `--kind` selectors and scope-aware rename. The
+// bundled grammars ship only parsers, not queries, so these are maintained
+// in-tree under queries/<lang>/<kind>.scm.
+//
+//go:embed queries
+var queryFS embed.FS
+
+// queryAlias maps a language to another whose query files it reuses (the tsx
+// grammar shares TypeScript's node types for the constructs we query).
+var queryAlias = map[string]string{"tsx": "typescript"}
+
+// QueryKinds are the supported curated query files.
+const (
+	QueryTags       = "tags"
+	QueryHighlights = "highlights"
+	QueryLocals     = "locals"
+)
+
+// LoadQuery returns the embedded query source of the given kind
+// ("tags"/"highlights"/"locals") for this language, or false if none is
+// curated for it.
+func (l *Language) LoadQuery(kind string) (string, bool) {
+	name := l.Name
+	if a, ok := queryAlias[name]; ok {
+		name = a
+	}
+	b, err := queryFS.ReadFile(path.Join("queries", name, kind+".scm"))
+	if err != nil {
+		return "", false
+	}
+	return string(b), true
+}
+
+// HasQueries reports whether curated queries (needed for --kind and rename)
+// exist for this language.
+func (l *Language) HasQueries() bool {
+	_, ok := l.LoadQuery(QueryLocals)
+	return ok
 }
 
 // registry is the full set of supported languages. Extensions and aliases must

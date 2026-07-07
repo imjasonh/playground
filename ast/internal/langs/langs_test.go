@@ -99,6 +99,55 @@ func TestAllGrammarsLoadAndParse(t *testing.T) {
 	}
 }
 
+func TestCuratedQueriesCompile(t *testing.T) {
+	wantCurated := []string{"go", "python", "javascript", "typescript", "tsx", "rust"}
+	for _, name := range wantCurated {
+		l, ok := ByName(name)
+		if !ok {
+			t.Fatalf("language %q not found", name)
+		}
+		if !l.HasQueries() {
+			t.Errorf("%s: expected curated queries", name)
+			continue
+		}
+		for _, kind := range []string{QueryTags, QueryHighlights, QueryLocals} {
+			src, ok := l.LoadQuery(kind)
+			if !ok {
+				t.Errorf("%s: missing %s query", name, kind)
+				continue
+			}
+			q, err := sitter.NewQuery([]byte(src), l.Sitter())
+			if err != nil {
+				t.Errorf("%s/%s does not compile: %v", name, kind, err)
+				continue
+			}
+			q.Close()
+		}
+	}
+}
+
+func TestLoadQueryMissing(t *testing.T) {
+	l, _ := ByName("bash")
+	if _, ok := l.LoadQuery(QueryLocals); ok {
+		t.Error("bash should not have a locals query")
+	}
+	if l.HasQueries() {
+		t.Error("bash should report no curated queries")
+	}
+}
+
+func TestTsxAliasesTypescriptQueries(t *testing.T) {
+	tsx, _ := ByName("tsx")
+	ts, _ := ByName("typescript")
+	for _, kind := range []string{QueryTags, QueryHighlights, QueryLocals} {
+		a, _ := tsx.LoadQuery(kind)
+		b, _ := ts.LoadQuery(kind)
+		if a == "" || a != b {
+			t.Errorf("tsx %s query should alias typescript's", kind)
+		}
+	}
+}
+
 func TestAliases(t *testing.T) {
 	l, ok := ByName("go")
 	if !ok {

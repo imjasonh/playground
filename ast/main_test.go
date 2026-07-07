@@ -309,6 +309,112 @@ func TestRewriteCrossLanguage(t *testing.T) {
 	}
 }
 
+func TestQueryByKind(t *testing.T) {
+	f := writeTemp(t, "x.go", "package main\nfunc Foo() {}\nfunc Bar() {}\n")
+	out, _, err := runCLI(t, "query", "--kind", "function", f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "@function") || !strings.Contains(out, "Foo") || !strings.Contains(out, "Bar") {
+		t.Errorf("--kind function output wrong:\n%s", out)
+	}
+}
+
+func TestQueryKindAndQueryExclusive(t *testing.T) {
+	f := writeTemp(t, "x.go", "package main\n")
+	_, _, err := runCLI(t, "query", "-q", "(identifier)@a", "--kind", "function", f)
+	if err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Fatalf("expected mutual-exclusion error, got %v", err)
+	}
+}
+
+func TestQueryKindUnavailableLanguage(t *testing.T) {
+	f := writeTemp(t, "x.sh", "echo hi\n")
+	_, _, err := runCLI(t, "query", "--kind", "function", f)
+	if err == nil || !strings.Contains(err.Error(), "not available") {
+		t.Fatalf("expected not-available error, got %v", err)
+	}
+}
+
+func TestKindsCommand(t *testing.T) {
+	out, _, err := runCLI(t, "kinds")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"function", "call", "comment", "string", "parameter"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("kinds output missing %q:\n%s", want, out)
+		}
+	}
+
+	out, _, err = runCLI(t, "kinds", "-l", "go", "--json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `"language": "go"`) || !strings.Contains(out, `"function"`) {
+		t.Errorf("kinds -l go --json wrong:\n%s", out)
+	}
+}
+
+func TestRenameScopeAwareDiff(t *testing.T) {
+	src := "package main\n\nfunc f() {\n\tx := 1\n\tprintln(x)\n}\n\nfunc g() {\n\tx := 2\n\tprintln(x)\n}\n"
+	f := writeTemp(t, "x.go", src)
+	out, _, err := runCLI(t, "rename", "--at", "4:2", "--to", "n", "--diff", f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "-\tx := 1") || !strings.Contains(out, "+\tn := 1") {
+		t.Errorf("rename diff wrong:\n%s", out)
+	}
+	if strings.Contains(out, "x := 2") && strings.Contains(out, "-\tx := 2") {
+		t.Errorf("g's x should not be in the diff:\n%s", out)
+	}
+}
+
+func TestRenameByNameWrite(t *testing.T) {
+	f := writeTemp(t, "x.py", "def outer(name):\n    return name\n\ndef other(name):\n    return name.upper()\n")
+	_, stderr, err := runCLI(t, "rename", "--name", "name", "--to", "label", "-w", f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(f)
+	got := string(b)
+	if !strings.Contains(got, "def outer(label):") || !strings.Contains(got, "def other(label):") {
+		t.Errorf("rename --name did not rename both params:\n%s", got)
+	}
+	// The attribute access must survive.
+	if !strings.Contains(got, "label.upper()") {
+		t.Errorf("attribute reference should have been renamed as a local ref:\n%s", got)
+	}
+	if !strings.Contains(stderr, "renamed") {
+		t.Errorf("expected rename summary, got %q", stderr)
+	}
+}
+
+func TestRenameErrors(t *testing.T) {
+	goFile := writeTemp(t, "x.go", "package main\nfunc f(){ x := 1; _ = x }\n")
+	cases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"missing --to", []string{"rename", "--at", "2:11", goFile}, "requires --to"},
+		{"both at and name", []string{"rename", "--to", "y", "--at", "2:11", "--name", "x", goFile}, "exactly one"},
+		{"neither at nor name", []string{"rename", "--to", "y", goFile}, "exactly one"},
+		{"multiple files", []string{"rename", "--to", "y", "--name", "x", goFile, goFile}, "exactly one file"},
+		{"write with diff", []string{"rename", "--to", "y", "--name", "x", "-w", "--diff", goFile}, "cannot be combined"},
+		{"bad at", []string{"rename", "--to", "y", "--at", "nope", goFile}, "LINE:COL"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := runCLI(t, tc.args...)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error = %v, want substring %q", err, tc.want)
+			}
+		})
+	}
+}
+
 func TestForcedLanguageOverride(t *testing.T) {
 	// A file with a misleading extension parsed as Python via -l.
 	f := writeTemp(t, "script.txt", "def foo():\n    pass\n")

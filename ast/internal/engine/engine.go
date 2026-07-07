@@ -25,20 +25,22 @@ type Position struct {
 }
 
 // Capture is a single named node captured by a query.
+//
+// Field is the field name under which this node sits in its parent (e.g.
+// "name", "body", or "" when the node fills no named field). It is computed
+// while the syntax tree is alive so consumers can reason about a node's role
+// without holding a reference to the tree (whose lifetime ends when Query
+// returns).
 type Capture struct {
 	Name      string   `json:"name"`
 	Type      string   `json:"type"`
 	Text      string   `json:"text"`
+	Field     string   `json:"field,omitempty"`
 	StartByte uint32   `json:"startByte"`
 	EndByte   uint32   `json:"endByte"`
 	Start     Position `json:"start"`
 	End       Position `json:"end"`
-
-	node *sitter.Node
 }
-
-// Node returns the underlying tree-sitter node for the capture.
-func (c Capture) Node() *sitter.Node { return c.node }
 
 // Match is one result of a query: the pattern that matched plus every node it
 // captured.
@@ -111,16 +113,38 @@ func Query(ctx context.Context, src []byte, lang *sitter.Language, pattern strin
 				Name:      q.CaptureNameForId(c.Index),
 				Type:      node.Type(),
 				Text:      node.Content(src),
+				Field:     fieldName(node),
 				StartByte: node.StartByte(),
 				EndByte:   node.EndByte(),
 				Start:     Position{Row: start.Row, Column: start.Column},
 				End:       Position{Row: end.Row, Column: end.Column},
-				node:      node,
 			})
 		}
 		matches = append(matches, match)
 	}
 	return matches, nil
+}
+
+// fieldName returns the field name under which n sits in its parent, or "".
+// It must be called while the syntax tree is alive.
+func fieldName(n *sitter.Node) string {
+	parent := n.Parent()
+	if parent == nil {
+		return ""
+	}
+	cursor := sitter.NewTreeCursor(parent)
+	defer cursor.Close()
+	if !cursor.GoToFirstChild() {
+		return ""
+	}
+	for {
+		if cursor.CurrentNode().Equal(n) {
+			return cursor.CurrentFieldName()
+		}
+		if !cursor.GoToNextSibling() {
+			return ""
+		}
+	}
 }
 
 // Edit is a replacement of the half-open byte range [Start, End) with Text.
