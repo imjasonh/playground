@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -36,6 +37,7 @@ func cmdRewrite(args []string, stdout, stderr io.Writer) error {
 		query                                          string
 		replaces, deletes, insertsBefore, insertsAfter stringSlice
 		write, diff                                    bool
+		patchFile                                      string
 	)
 	fs.StringVar(&langName, "l", "", "language name (default: infer from extension)")
 	fs.StringVar(&langName, "lang", "", "language name (default: infer from extension)")
@@ -47,7 +49,8 @@ func cmdRewrite(args []string, stdout, stderr io.Writer) error {
 	fs.Var(&insertsAfter, "insert-after", "@cap=TEXT: insert after the node (repeatable)")
 	fs.BoolVar(&write, "w", false, "write changes back to files")
 	fs.BoolVar(&write, "write", false, "write changes back to files")
-	fs.BoolVar(&diff, "diff", false, "print a unified diff instead of the result")
+	fs.BoolVar(&diff, "diff", false, "print a unified diff without applying it")
+	fs.StringVar(&patchFile, "patch", "", "write a unified diff to this file without applying it")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -56,6 +59,9 @@ func cmdRewrite(args []string, stdout, stderr io.Writer) error {
 	}
 	if fs.NArg() == 0 {
 		return fmt.Errorf("rewrite requires at least one file (or - for stdin)")
+	}
+	if write && (diff || patchFile != "") {
+		return fmt.Errorf("-w/--write cannot be combined with --diff or --patch (both are preview-only modes that do not apply changes)")
 	}
 
 	ops, err := parseOps(replaces, deletes, insertsBefore, insertsAfter)
@@ -67,7 +73,9 @@ func cmdRewrite(args []string, stdout, stderr io.Writer) error {
 	}
 
 	multi := fs.NArg() > 1
+	preview := diff || patchFile != ""
 	changedFiles, totalEdits := 0, 0
+	var patchBuf bytes.Buffer
 
 	for _, path := range fs.Args() {
 		src, err := loadSource(path, langName, stdinReader())
@@ -94,9 +102,18 @@ func cmdRewrite(args []string, stdout, stderr io.Writer) error {
 		}
 
 		switch {
-		case diff:
+		case preview:
+			// Preview modes never touch the source files. Compute the diff
+			// once and route it to stdout (--diff) and/or the patch file
+			// (--patch).
 			if changed {
-				fmt.Fprint(stdout, unifiedDiff(path, src.data, out))
+				d := unifiedDiff(path, src.data, out)
+				if diff {
+					fmt.Fprint(stdout, d)
+				}
+				if patchFile != "" {
+					patchBuf.WriteString(d)
+				}
 			}
 		case write:
 			if path == "-" {
@@ -123,6 +140,12 @@ func cmdRewrite(args []string, stdout, stderr io.Writer) error {
 		}
 	}
 
+	if patchFile != "" {
+		if err := os.WriteFile(patchFile, patchBuf.Bytes(), 0o644); err != nil {
+			return err
+		}
+		fmt.Fprintf(stderr, "wrote patch %s (%d edit(s) across %d file(s))\n", patchFile, totalEdits, changedFiles)
+	}
 	if write {
 		fmt.Fprintf(stderr, "%d edit(s) across %d file(s)\n", totalEdits, changedFiles)
 	}

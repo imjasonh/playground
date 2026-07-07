@@ -89,7 +89,8 @@ Common flags:
   -q, --query  the tree-sitter selector (required for query/rewrite)
       --json   machine-readable output (query, tree)
   -w, --write  write rewrites back to files instead of printing to stdout
-      --diff   print a unified diff of rewrites
+      --diff   print a unified diff of rewrites without applying them
+      --patch  write a unified diff to the given file without applying (--patch=out.patch)
 
 Pass "-" as the file to read from stdin (requires -l).
 

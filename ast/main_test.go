@@ -215,6 +215,50 @@ func TestRewriteDiff(t *testing.T) {
 	}
 }
 
+func TestRewritePatchFile(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "x.go")
+	if err := os.WriteFile(src, []byte("package main\n\nfunc Foo() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	patch := filepath.Join(dir, "out.patch")
+	_, stderr, err := runCLI(t, "rewrite",
+		"-q", `((identifier) @id (#eq? @id "Foo"))`,
+		"--replace", "@id=Bar", "--patch="+patch, src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The source file must be untouched (preview mode).
+	if b, _ := os.ReadFile(src); !strings.Contains(string(b), "func Foo()") {
+		t.Errorf("source changed by --patch: %s", b)
+	}
+	// The patch file must contain a valid-looking unified diff.
+	b, err := os.ReadFile(patch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(b)
+	for _, want := range []string{"--- a/", "+++ b/", "@@", "-func Foo() {}", "+func Bar() {}"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("patch missing %q:\n%s", want, got)
+		}
+	}
+	if !strings.Contains(stderr, "wrote patch") {
+		t.Errorf("expected patch summary on stderr, got %q", stderr)
+	}
+}
+
+func TestRewriteWriteConflictsWithPreview(t *testing.T) {
+	f := writeTemp(t, "x.go", "package main\n")
+	for _, previewFlag := range []string{"--diff", "--patch=out.patch"} {
+		_, _, err := runCLI(t, "rewrite", "-q", "(identifier)@a",
+			"--replace", "@a=b", "-w", previewFlag, f)
+		if err == nil || !strings.Contains(err.Error(), "cannot be combined") {
+			t.Errorf("-w with %s: expected conflict error, got %v", previewFlag, err)
+		}
+	}
+}
+
 // TestRewriteCrossLanguage renames foo -> renamed across a variety of
 // languages, exercising the whole pipeline (parse, query, edit, apply).
 func TestRewriteCrossLanguage(t *testing.T) {

@@ -1,0 +1,28 @@
+# Write a unified diff to a patch file without applying it, then confirm the
+# patch matches golden and the source file is left untouched.
+ast rewrite -q '((identifier) @id (#eq? @id "old_api"))' --replace '@id=new_api' --patch=rename.patch config.py
+stderr 'wrote patch rename\.patch'
+cmp rename.patch patch.golden
+
+# The source file must be unchanged by --patch (it is a preview mode).
+grep 'def old_api' config.py
+
+-- config.py --
+def old_api():
+    return 1
+
+
+def caller():
+    return old_api()
+-- patch.golden --
+--- a/config.py
++++ b/config.py
+@@ -1,6 +1,6 @@
+-def old_api():
++def new_api():
+     return 1
+ 
+ 
+ def caller():
+-    return old_api()
++    return new_api()

@@ -101,10 +101,23 @@ repeated:
 | `--insert-before @cap=TEXT` | insert `TEXT` immediately before the node |
 | `--insert-after @cap=TEXT` | insert `TEXT` immediately after the node |
 
-`TEXT` may interpolate other captures **from the same match** with `{{name}}`.
+`TEXT` may interpolate other captures **from the same match** with `{{name}}`
+and understands the escapes `\n`, `\t`, `\r`, and `\\`.
 
-By default the rewritten source is printed to stdout. Use `--diff` to preview a
-unified diff, or `-w/--write` to edit files in place.
+By default the rewritten source is printed to stdout. The output mode is chosen
+with these mutually-exclusive flags:
+
+| Flag | Effect |
+|------|--------|
+| *(none)* | print the rewritten source to stdout |
+| `-w`, `--write` | apply the edits and write them back to the files in place |
+| `--diff` | print a unified diff to stdout **without applying** anything |
+| `--patch=FILE` | write a unified diff to `FILE` **without applying** anything |
+
+`--diff` and `--patch` are preview-only, so they never modify the source files;
+combining either with `-w` is an error. The emitted diff is a standard unified
+diff (with `a/`…`b/` headers) that `git apply -p1` or `patch -p1` can consume,
+and `--patch` aggregates the diffs for all files into one patch file.
 
 ```bash
 # Rename foo -> bar everywhere, in place
@@ -118,6 +131,10 @@ $ ast rewrite \
 
 # Delete an import declaration
 $ ast rewrite -q '(import_declaration) @imp' --delete '@imp' -w main.go
+
+# Write a patch without applying it, then apply it with git
+$ ast rewrite -q '((identifier) @id (#eq? @id "foo"))' --replace '@id=bar' --patch=rename.patch *.go
+$ git apply -p1 rename.patch
 ```
 
 Edits may be supplied in any order and are applied end-to-start so byte offsets
@@ -273,8 +290,9 @@ fn caller() -> i32 {
 ```
 
 Other scripts cover Python (`#match?` predicate selection), a TypeScript syntax
-tree, an in-place Go rename (`-w`), and the `languages` command. Regenerate the
-golden output after intentional changes with:
+tree, an in-place Go rename (`-w`), writing a patch file (`--patch`), and the
+`languages` command. Regenerate the golden output after intentional changes
+with:
 
 ```bash
 go test -run TestScripts -update

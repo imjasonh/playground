@@ -18,9 +18,14 @@ func unifiedDiff(path string, oldSrc, newSrc []byte) string {
 		return ""
 	}
 
+	// Normalize the path for the diff header so `a/` + path never yields a
+	// doubled slash (e.g. for absolute paths) and stays applyable with
+	// `patch -p1` / `git apply -p1`.
+	hdr := strings.TrimLeft(strings.TrimPrefix(path, "./"), "/")
+
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "--- a/%s\n", path)
-	fmt.Fprintf(&sb, "+++ b/%s\n", path)
+	fmt.Fprintf(&sb, "--- a/%s\n", hdr)
+	fmt.Fprintf(&sb, "+++ b/%s\n", hdr)
 	for _, h := range hunks {
 		fmt.Fprintf(&sb, "@@ -%d,%d +%d,%d @@\n", h.aStart, h.aLines, h.bStart, h.bLines)
 		for _, ln := range h.lines {
