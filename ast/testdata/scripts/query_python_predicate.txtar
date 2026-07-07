@@ -1,0 +1,21 @@
+# Use a #match? predicate to select only the Python functions whose name
+# starts with "test_".
+ast query -q '((function_definition name: (identifier) @name) (#match? @name "^test_"))' suite.py
+cmp stdout query.golden
+
+-- suite.py --
+def helper():
+    return 1
+
+
+def test_add():
+    assert 1 + 1 == 2
+
+
+def test_sub():
+    assert 2 - 1 == 1
+-- query.golden --
+suite.py:5:5: @name (identifier) "test_add"
+suite.py:9:5: @name (identifier) "test_sub"
+
+2 node(s) matched

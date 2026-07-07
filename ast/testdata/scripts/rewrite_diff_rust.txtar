@@ -1,0 +1,28 @@
+# Preview a Rust rewrite as a unified diff (nothing is written to disk).
+ast rewrite -q '((identifier) @id (#eq? @id "old_name"))' --replace '@id=new_name' --diff lib.rs
+cmp stdout diff.golden
+
+# The source file must be untouched by a --diff run.
+grep 'fn old_name' lib.rs
+
+-- lib.rs --
+fn old_name() -> i32 {
+    42
+}
+
+fn caller() -> i32 {
+    old_name()
+}
+-- diff.golden --
+--- a/lib.rs
++++ b/lib.rs
+@@ -1,7 +1,7 @@
+-fn old_name() -> i32 {
++fn new_name() -> i32 {
+     42
+ }
+ 
+ fn caller() -> i32 {
+-    old_name()
++    new_name()
+ }

@@ -161,3 +161,121 @@ The tests cover the language registry, the query engine and edit application,
 and the full CLI, with a cross-language matrix that parses, queries, and
 rewrites Go, Python, JavaScript/TypeScript/TSX, Rust, Java, C/C++, Ruby, C#,
 PHP, Bash, Lua, Scala, Kotlin, Swift, YAML, TOML, CSS, SQL, HCL, and HTML.
+
+### Golden CLI tests (testscript)
+
+The CLI is also exercised end-to-end with
+[`rogpeppe/go-internal/testscript`](https://pkg.go.dev/github.com/rogpeppe/go-internal/testscript).
+Each script under `testdata/scripts/*.txtar` embeds source files in a given
+language, runs `ast` against them exactly as a user would, and asserts the
+output matches embedded **golden** files with `cmp`. `TestMain` registers the
+`ast` binary as a command inside the scripts:
+
+```go
+func TestMain(m *testing.M) {
+	os.Exit(testscript.RunMain(m, map[string]func() int{"ast": astMain}))
+}
+
+func TestScripts(t *testing.T) {
+	testscript.Run(t, testscript.Params{Dir: "testdata/scripts", UpdateScripts: *update})
+}
+```
+
+A script is a self-contained input + expected-output fixture. For example,
+`testdata/scripts/query_go.txtar` selects Go function names and checks the
+printed nodes:
+
+```
+# Select every Go function name with a tree-sitter query and compare the
+# printed nodes against golden output.
+ast query -q '(function_declaration name: (identifier) @name)' greet.go
+cmp stdout query.golden
+
+-- greet.go --
+package main
+
+import "fmt"
+
+func greet(name string) string {
+	return fmt.Sprintf("hello %s", name)
+}
+
+func main() {
+	fmt.Println(greet("world"))
+}
+-- query.golden --
+greet.go:5:6: @name (identifier) "greet"
+greet.go:9:6: @name (identifier) "main"
+
+2 node(s) matched
+```
+
+`testdata/scripts/rewrite_insert_js.txtar` inserts a JSDoc comment before every
+JavaScript function, interpolating the captured name, and checks the rewritten
+output:
+
+```
+ast rewrite -q '(function_declaration name: (identifier) @name) @fn' --insert-before '@fn=/** {{name}}() */\n' app.js
+cmp stdout out.golden
+
+-- app.js --
+function add(a, b) {
+  return a + b;
+}
+
+function sub(a, b) {
+  return a - b;
+}
+-- out.golden --
+/** add() */
+function add(a, b) {
+  return a + b;
+}
+
+/** sub() */
+function sub(a, b) {
+  return a - b;
+}
+```
+
+And `testdata/scripts/rewrite_diff_rust.txtar` previews a Rust rename as a
+unified diff and asserts the source file is left untouched:
+
+```
+# Preview a Rust rewrite as a unified diff (nothing is written to disk).
+ast rewrite -q '((identifier) @id (#eq? @id "old_name"))' --replace '@id=new_name' --diff lib.rs
+cmp stdout diff.golden
+
+# The source file must be untouched by a --diff run.
+grep 'fn old_name' lib.rs
+
+-- lib.rs --
+fn old_name() -> i32 {
+    42
+}
+
+fn caller() -> i32 {
+    old_name()
+}
+-- diff.golden --
+--- a/lib.rs
++++ b/lib.rs
+@@ -1,7 +1,7 @@
+-fn old_name() -> i32 {
++fn new_name() -> i32 {
+     42
+ }
+ 
+ fn caller() -> i32 {
+-    old_name()
++    new_name()
+ }
+```
+
+Other scripts cover Python (`#match?` predicate selection), a TypeScript syntax
+tree, an in-place Go rename (`-w`), and the `languages` command. Regenerate the
+golden output after intentional changes with:
+
+```bash
+go test -run TestScripts -update
+```

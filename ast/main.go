@@ -26,11 +26,17 @@ import (
 
 const progName = "ast"
 
-func main() {
+func main() { os.Exit(astMain()) }
+
+// astMain runs the CLI and returns a process exit code. It is separated from
+// main so it can be registered as a command with testscript (see the golden
+// CLI tests in scripts_test.go).
+func astMain() int {
 	if err := run(os.Args[1:], os.Stdout, os.Stderr); err != nil {
 		fmt.Fprintln(os.Stderr, progName+":", err)
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
 
 func run(args []string, stdout, stderr io.Writer) error {
@@ -75,7 +81,8 @@ Rewrite operations (each may be repeated; target a @capture from the query):
   --insert-before @cap=TEXT   insert TEXT immediately before the node
   --insert-after  @cap=TEXT   insert TEXT immediately after the node
 
-TEXT may interpolate other captures from the same match with {{name}}.
+TEXT may interpolate other captures from the same match with {{name}}, and
+understands the escapes \n, \t, \r, and \\.
 
 Common flags:
   -l, --lang   force a language instead of inferring from the file extension

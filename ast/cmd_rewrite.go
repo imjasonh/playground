@@ -183,7 +183,7 @@ func buildEdits(matches []engine.Match, ops []op) ([]engine.Edit, error) {
 			if !ok {
 				continue
 			}
-			text, err := interpolate(o.text, m)
+			text, err := interpolate(unescape(o.text), m)
 			if err != nil {
 				return nil, err
 			}
@@ -219,6 +219,41 @@ func interpolate(text string, m engine.Match) (string, error) {
 		return "", fmt.Errorf("template references unknown capture {{%s}} in this match", bad)
 	}
 	return out, nil
+}
+
+// unescape interprets the common backslash escapes \n, \t, \r, and \\ in
+// replacement text so newlines and tabs can be expressed on the command line.
+// Unknown escape sequences are left untouched.
+func unescape(s string) string {
+	if !strings.Contains(s, `\`) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' && i+1 < len(s) {
+			switch s[i+1] {
+			case 'n':
+				b.WriteByte('\n')
+				i++
+				continue
+			case 't':
+				b.WriteByte('\t')
+				i++
+				continue
+			case 'r':
+				b.WriteByte('\r')
+				i++
+				continue
+			case '\\':
+				b.WriteByte('\\')
+				i++
+				continue
+			}
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
 }
 
 func bytesEqual(a, b []byte) bool {

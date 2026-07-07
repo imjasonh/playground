@@ -1,0 +1,22 @@
+# Select every Go function name with a tree-sitter query and compare the
+# printed nodes against golden output.
+ast query -q '(function_declaration name: (identifier) @name)' greet.go
+cmp stdout query.golden
+
+-- greet.go --
+package main
+
+import "fmt"
+
+func greet(name string) string {
+	return fmt.Sprintf("hello %s", name)
+}
+
+func main() {
+	fmt.Println(greet("world"))
+}
+-- query.golden --
+greet.go:5:6: @name (identifier) "greet"
+greet.go:9:6: @name (identifier) "main"
+
+2 node(s) matched

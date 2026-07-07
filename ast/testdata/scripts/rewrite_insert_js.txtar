@@ -1,0 +1,23 @@
+# Insert a JSDoc comment before every JavaScript function, interpolating the
+# captured function name into the inserted text. Output goes to stdout.
+ast rewrite -q '(function_declaration name: (identifier) @name) @fn' --insert-before '@fn=/** {{name}}() */\n' app.js
+cmp stdout out.golden
+
+-- app.js --
+function add(a, b) {
+  return a + b;
+}
+
+function sub(a, b) {
+  return a - b;
+}
+-- out.golden --
+/** add() */
+function add(a, b) {
+  return a + b;
+}
+
+/** sub() */
+function sub(a, b) {
+  return a - b;
+}

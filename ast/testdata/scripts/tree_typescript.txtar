@@ -1,0 +1,29 @@
+# Print the syntax tree of a TypeScript snippet (language inferred from the
+# .ts extension) and compare against golden output.
+ast tree add.ts
+cmp stdout tree.golden
+
+-- add.ts --
+function add(a: number, b: number): number {
+  return a + b;
+}
+-- tree.golden --
+program [1:1-4:1]
+  function_declaration [1:1-3:2]
+    name: identifier [1:10-1:13]  "add"
+    parameters: formal_parameters [1:13-1:35]
+      required_parameter [1:14-1:23]
+        pattern: identifier [1:14-1:15]  "a"
+        type: type_annotation [1:15-1:23]
+          predefined_type [1:17-1:23]  "number"
+      required_parameter [1:25-1:34]
+        pattern: identifier [1:25-1:26]  "b"
+        type: type_annotation [1:26-1:34]
+          predefined_type [1:28-1:34]  "number"
+    return_type: type_annotation [1:35-1:43]
+      predefined_type [1:37-1:43]  "number"
+    body: statement_block [1:44-3:2]
+      return_statement [2:3-2:16]
+        binary_expression [2:10-2:15]
+          left: identifier [2:10-2:11]  "a"
+          right: identifier [2:14-2:15]  "b"

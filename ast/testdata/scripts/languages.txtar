@@ -1,0 +1,11 @@
+# The languages command lists supported languages; assert a few are present in
+# both the table and JSON forms.
+ast languages
+stdout 'go'
+stdout 'python'
+stdout 'typescript'
+stdout '31 languages supported'
+
+ast languages --json
+stdout '"name": "go"'
+stdout '"\.rs"'

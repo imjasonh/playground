@@ -1,0 +1,30 @@
+# Rename every identifier "greet" to "hello" in place with -w, then confirm
+# the rewritten file matches golden and the summary is printed to stderr.
+ast rewrite -q '((identifier) @id (#eq? @id "greet"))' --replace '@id=hello' -w greet.go
+stderr 'rewrote greet\.go \(2 edit\(s\)\)'
+cmp greet.go greet.golden
+
+-- greet.go --
+package main
+
+import "fmt"
+
+func greet(name string) string {
+	return fmt.Sprintf("hello %s", name)
+}
+
+func main() {
+	fmt.Println(greet("world"))
+}
+-- greet.golden --
+package main
+
+import "fmt"
+
+func hello(name string) string {
+	return fmt.Sprintf("hello %s", name)
+}
+
+func main() {
+	fmt.Println(hello("world"))
+}
