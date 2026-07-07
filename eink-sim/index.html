@@ -134,7 +134,8 @@
           <label class="field">
             <span class="field-label">Zoom</span>
             <select id="zoom-select">
-              <option value="fit">Fit</option>
+              <option value="fit">Fit to window (max)</option>
+              <option value="actual">Actual size (real life)</option>
               <option value="1">1× pixels</option>
               <option value="2">2×</option>
               <option value="3">3×</option>
@@ -143,6 +144,9 @@
               <option value="8">8×</option>
             </select>
           </label>
+          <p class="hint" id="zoom-hint" hidden>
+            Approximate physical size — accuracy depends on your monitor.
+          </p>
         </section>
       </aside>
 
