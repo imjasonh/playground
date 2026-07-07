@@ -806,6 +806,10 @@ function applyUrlParams() {
   if (dither && DITHER_METHODS.includes(dither)) {
     els.ditherSelect.value = dither;
   }
+  const zoom = params.get("zoom");
+  if (zoom && [...els.zoomSelect.options].some((o) => o.value === zoom)) {
+    els.zoomSelect.value = zoom;
+  }
   return params.get("sample");
 }
 

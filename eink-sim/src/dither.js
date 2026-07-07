@@ -102,6 +102,14 @@ function quantizeChannel(value, levels) {
   return Math.round((level / step) * 255);
 }
 
+// Clamp an error-diffusion accumulator to the representable range while keeping
+// its fractional part (so dithering stays smooth).
+function clampWork(value) {
+  if (value < 0) return 0;
+  if (value > 255) return 255;
+  return value;
+}
+
 // Returns the number of distinct colors a palette can render (for UI display).
 export function paletteColorCount(palette) {
   if (palette.kind === "list") return palette.colors.length;
@@ -364,9 +372,14 @@ export function quantizeImage(img, palette, options = {}) {
 
     for (let x = xStart; x !== xEnd; x += xStep) {
       const p = (y * width + x) * 3;
-      const or = working[p];
-      const og = working[p + 1];
-      const ob = working[p + 2];
+      // Clamp the accumulated value into the representable [0,255] range before
+      // quantizing. Without this, near a high-contrast edge (e.g. a vivid image
+      // against white paper) the diffused error grows unbounded and smears
+      // saturated ink into regions that should stay clean, producing comet-tail
+      // streaks. Clamping bounds the error the way real converters do.
+      const or = clampWork(working[p]);
+      const og = clampWork(working[p + 1]);
+      const ob = clampWork(working[p + 2]);
       map(or, og, ob, chosen);
       writePixel(dst, img, x, y, chosen);
 

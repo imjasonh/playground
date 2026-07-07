@@ -156,6 +156,42 @@ test("quantize preserves dimensions and alpha", () => {
   assert.equal(out.data[3], 200);
 });
 
+test("error diffusion does not smear ink into a far clean-white region", () => {
+  // A large saturated region with no exact palette match (magenta) sitting
+  // above a white region is the worst case for runaway error accumulation.
+  // Every error-diffusion method must leave the far white rows white instead of
+  // bleeding colored ink into them.
+  const w = 48;
+  const h = 48;
+  const img = createImage(w, h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      const white = y >= (h * 2) / 3;
+      img.data[i] = 255;
+      img.data[i + 1] = white ? 255 : 0;
+      img.data[i + 2] = 255;
+      img.data[i + 3] = 255;
+    }
+  }
+  const diffusionMethods = DITHER_METHODS.filter(
+    (m) => m !== "none" && !m.startsWith("bayer"),
+  );
+  for (const method of diffusionMethods) {
+    const out = quantizeImage(img, SPECTRA6, { method });
+    // The last two rows are far from the edge and were pure white input.
+    for (let y = h - 2; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        assert.deepEqual(
+          px(out, x, y).slice(0, 3),
+          [255, 255, 255],
+          `${method} bled ink into white at (${x},${y})`,
+        );
+      }
+    }
+  }
+});
+
 test("unknown dither method throws", () => {
   assert.throws(() => quantizeImage(solid(2, 2, [0, 0, 0]), BW, { method: "nope" }));
 });
