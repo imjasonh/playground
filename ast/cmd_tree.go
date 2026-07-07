@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"unicode/utf8"
 
 	sitter "github.com/smacker/go-tree-sitter"
 
@@ -100,8 +101,8 @@ func oneLine(s string) string {
 		s = strings.TrimRight(s[:i], " \t") + " …"
 	}
 	const max = 60
-	if len(s) > max {
-		s = s[:max] + "…"
+	if utf8.RuneCountInString(s) > max {
+		s = string([]rune(s)[:max]) + "…"
 	}
 	return fmt.Sprintf("%q", s)
 }

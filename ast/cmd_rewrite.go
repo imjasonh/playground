@@ -95,7 +95,7 @@ func cmdRewrite(args []string, stdout, stderr io.Writer) error {
 			return fmt.Errorf("%s: %w", path, err)
 		}
 
-		changed := !bytesEqual(out, src.data)
+		changed := !bytes.Equal(out, src.data)
 		if changed {
 			changedFiles++
 			totalEdits += len(edits)
@@ -156,9 +156,9 @@ func cmdRewrite(args []string, stdout, stderr io.Writer) error {
 func parseOps(replaces, deletes, insertsBefore, insertsAfter stringSlice) ([]op, error) {
 	var ops []op
 	add := func(kind opKind, raw string, needsValue bool) error {
-		cap, text, hasEq := strings.Cut(raw, "=")
-		cap = trimAt(strings.TrimSpace(cap))
-		if cap == "" {
+		capName, text, hasEq := strings.Cut(raw, "=")
+		capName = trimAt(strings.TrimSpace(capName))
+		if capName == "" {
 			return fmt.Errorf("operation %q is missing a capture name", raw)
 		}
 		if needsValue && !hasEq {
@@ -167,7 +167,7 @@ func parseOps(replaces, deletes, insertsBefore, insertsAfter stringSlice) ([]op,
 		if !needsValue && hasEq {
 			return fmt.Errorf("delete operation %q must not include a value", raw)
 		}
-		ops = append(ops, op{kind: kind, capture: cap, text: text})
+		ops = append(ops, op{kind: kind, capture: capName, text: text})
 		return nil
 	}
 	for _, r := range replaces {
@@ -202,7 +202,7 @@ func buildEdits(matches []engine.Match, ops []op) ([]engine.Edit, error) {
 	var edits []engine.Edit
 	for _, m := range matches {
 		for _, o := range ops {
-			cap, ok := m.Capture(o.capture)
+			capture, ok := m.Capture(o.capture)
 			if !ok {
 				continue
 			}
@@ -212,13 +212,13 @@ func buildEdits(matches []engine.Match, ops []op) ([]engine.Edit, error) {
 			}
 			switch o.kind {
 			case opReplace:
-				edits = append(edits, engine.Edit{Start: cap.StartByte, End: cap.EndByte, Text: text})
+				edits = append(edits, engine.Edit{Start: capture.StartByte, End: capture.EndByte, Text: text})
 			case opDelete:
-				edits = append(edits, engine.Edit{Start: cap.StartByte, End: cap.EndByte, Text: ""})
+				edits = append(edits, engine.Edit{Start: capture.StartByte, End: capture.EndByte, Text: ""})
 			case opInsertBefore:
-				edits = append(edits, engine.Edit{Start: cap.StartByte, End: cap.StartByte, Text: text})
+				edits = append(edits, engine.Edit{Start: capture.StartByte, End: capture.StartByte, Text: text})
 			case opInsertAfter:
-				edits = append(edits, engine.Edit{Start: cap.EndByte, End: cap.EndByte, Text: text})
+				edits = append(edits, engine.Edit{Start: capture.EndByte, End: capture.EndByte, Text: text})
 			}
 		}
 	}
@@ -277,16 +277,4 @@ func unescape(s string) string {
 		b.WriteByte(s[i])
 	}
 	return b.String()
-}
-
-func bytesEqual(a, b []byte) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }

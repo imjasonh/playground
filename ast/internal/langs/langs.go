@@ -59,6 +59,11 @@ type Language struct {
 // Sitter returns the compiled tree-sitter grammar for the language.
 func (l *Language) Sitter() *sitter.Language { return l.getLang() }
 
+// Aliases returns the alternate names that also resolve to this language.
+func (l *Language) Aliases() []string {
+	return append([]string(nil), l.aliases...)
+}
+
 // registry is the full set of supported languages. Extensions and aliases must
 // be unique across the whole registry; init() enforces that.
 var registry = []*Language{

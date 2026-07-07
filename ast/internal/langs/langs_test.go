@@ -99,6 +99,22 @@ func TestAllGrammarsLoadAndParse(t *testing.T) {
 	}
 }
 
+func TestAliases(t *testing.T) {
+	l, ok := ByName("go")
+	if !ok {
+		t.Fatal("go not found")
+	}
+	got := l.Aliases()
+	if len(got) != 1 || got[0] != "golang" {
+		t.Errorf("go aliases = %v, want [golang]", got)
+	}
+	// Aliases() must return a copy, not the backing slice.
+	got[0] = "mutated"
+	if again := l.Aliases(); again[0] != "golang" {
+		t.Errorf("Aliases() leaked its backing slice: %v", again)
+	}
+}
+
 func TestNamesAndAllConsistent(t *testing.T) {
 	if len(Names()) != len(All()) {
 		t.Fatalf("Names()=%d All()=%d", len(Names()), len(All()))

@@ -38,13 +38,29 @@ func TestLanguagesCommand(t *testing.T) {
 	}
 }
 
+func TestLanguagesShowsAliases(t *testing.T) {
+	out, _, err := runCLI(t, "languages")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "ALIASES") {
+		t.Errorf("languages table missing ALIASES column:\n%s", out)
+	}
+	// "go" has the alias "golang"; it must appear in go's row.
+	if !strings.Contains(out, "golang") {
+		t.Errorf("languages table missing go alias 'golang':\n%s", out)
+	}
+}
+
 func TestLanguagesJSON(t *testing.T) {
 	out, _, err := runCLI(t, "languages", "--json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, `"name": "go"`) || !strings.Contains(out, `".go"`) {
-		t.Errorf("languages --json missing expected content:\n%s", out)
+	for _, want := range []string{`"name": "go"`, `".go"`, `"aliases"`, `"golang"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("languages --json missing %q:\n%s", want, out)
+		}
 	}
 }
 

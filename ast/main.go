@@ -87,7 +87,8 @@ understands the escapes \n, \t, \r, and \\.
 Common flags:
   -l, --lang   force a language instead of inferring from the file extension
   -q, --query  the tree-sitter selector (required for query/rewrite)
-      --json   machine-readable output (query, tree)
+      --json   machine-readable output (languages, query)
+      --sexp   print the tree as a raw S-expression (tree)
   -w, --write  write rewrites back to files instead of printing to stdout
       --diff   print a unified diff of rewrites without applying them
       --patch  write a unified diff to the given file without applying (--patch=out.patch)

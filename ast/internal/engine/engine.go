@@ -106,14 +106,15 @@ func Query(ctx context.Context, src []byte, lang *sitter.Language, pattern strin
 		match := Match{PatternIndex: int(m.PatternIndex)}
 		for _, c := range m.Captures {
 			node := c.Node
+			start, end := node.StartPoint(), node.EndPoint()
 			match.Captures = append(match.Captures, Capture{
 				Name:      q.CaptureNameForId(c.Index),
 				Type:      node.Type(),
 				Text:      node.Content(src),
 				StartByte: node.StartByte(),
 				EndByte:   node.EndByte(),
-				Start:     Position{node.StartPoint().Row, node.StartPoint().Column},
-				End:       Position{node.EndPoint().Row, node.EndPoint().Column},
+				Start:     Position{Row: start.Row, Column: start.Column},
+				End:       Position{Row: end.Row, Column: end.Column},
 				node:      node,
 			})
 		}
@@ -165,11 +166,15 @@ func Apply(src []byte, edits []Edit) ([]byte, error) {
 		}
 	}
 
-	// Apply from the end backwards so offsets remain valid as we splice.
-	out := append([]byte(nil), src...)
-	for i := len(ordered) - 1; i >= 0; i-- {
-		e := ordered[i]
-		out = append(out[:e.Start], append([]byte(e.Text), out[e.End:]...)...)
+	// Reconstruct the output left-to-right from the sorted, non-overlapping
+	// edits: copy the untouched span before each edit, then the replacement.
+	var out []byte
+	prev := uint32(0)
+	for _, e := range ordered {
+		out = append(out, src[prev:e.Start]...)
+		out = append(out, e.Text...)
+		prev = e.End
 	}
+	out = append(out, src[prev:]...)
 	return out, nil
 }

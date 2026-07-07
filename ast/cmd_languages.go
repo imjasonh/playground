@@ -23,11 +23,12 @@ func cmdLanguages(args []string, stdout io.Writer) error {
 	if *asJSON {
 		type entry struct {
 			Name       string   `json:"name"`
+			Aliases    []string `json:"aliases"`
 			Extensions []string `json:"extensions"`
 		}
 		out := make([]entry, 0, len(all))
 		for _, l := range all {
-			out = append(out, entry{Name: l.Name, Extensions: l.Extensions})
+			out = append(out, entry{Name: l.Name, Aliases: l.Aliases(), Extensions: l.Extensions})
 		}
 		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")
@@ -35,9 +36,13 @@ func cmdLanguages(args []string, stdout io.Writer) error {
 	}
 
 	tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "LANGUAGE\tEXTENSIONS")
+	fmt.Fprintln(tw, "LANGUAGE\tALIASES\tEXTENSIONS")
 	for _, l := range all {
-		fmt.Fprintf(tw, "%s\t%s\n", l.Name, strings.Join(l.Extensions, " "))
+		aliases := strings.Join(l.Aliases(), " ")
+		if aliases == "" {
+			aliases = "-"
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\n", l.Name, aliases, strings.Join(l.Extensions, " "))
 	}
 	if err := tw.Flush(); err != nil {
 		return err
