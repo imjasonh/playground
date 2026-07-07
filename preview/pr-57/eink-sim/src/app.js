@@ -41,6 +41,7 @@ const els = {
   paperTexture: document.querySelector("#paper-texture"),
   showGrid: document.querySelector("#show-grid"),
   zoomSelect: document.querySelector("#zoom-select"),
+  zoomHint: document.querySelector("#zoom-hint"),
   stageTitle: document.querySelector("#stage-title"),
   compare: document.querySelector("#compare"),
   download: document.querySelector("#download"),
@@ -515,8 +516,18 @@ function render() {
   updateRenderCaption(width, height, palette);
 }
 
+// CSS defines a reference pixel as 1/96 inch, so a panel drawn at
+// (96 / ppi) native-pixels-per-CSS-pixel appears at roughly its true physical
+// size on a correctly configured monitor. High-density panels (e.g. 300 ppi)
+// therefore render small, matching real life, and their dither blends instead
+// of being magnified into harsh noise.
+const CSS_PPI = 96;
+
 function computeScale(width, height) {
   const zoom = els.zoomSelect.value;
+  if (zoom === "actual") {
+    return CSS_PPI / state.display.ppi;
+  }
   if (zoom !== "fit") return Number(zoom);
   const rect = els.viewport.getBoundingClientRect();
   const maxW = Math.max(240, rect.width - 48);
@@ -658,9 +669,21 @@ function updateRenderCaption(width, height, palette) {
       : palette.grayscale
         ? `${count} gray levels`
         : `${count.toLocaleString()} colors`;
+  const d = state.display;
+  const wMm = (width / d.ppi) * 25.4;
+  const hMm = (height / d.ppi) * 25.4;
+  const zoom = els.zoomSelect.value;
+  let zoomLabel = "";
+  if (zoom === "actual") {
+    zoomLabel = ` · ~actual size (${wMm.toFixed(0)}×${hMm.toFixed(0)} mm)`;
+  } else if (zoom !== "fit") {
+    zoomLabel = ` · ${zoom}× pixels`;
+  }
+  els.zoomHint.hidden = zoom !== "actual";
   els.renderCaption.textContent =
     `${width}×${height} · ${colorLabel} · ${method}` +
-    (els.realism.checked ? " · reflective response on" : " · ideal colors");
+    (els.realism.checked ? " · reflective response on" : " · ideal colors") +
+    zoomLabel;
 }
 
 // ---------------------------------------------------------------------------
