@@ -291,8 +291,10 @@ fn caller() -> i32 {
 
 Other scripts cover Python (`#match?` predicate selection), a TypeScript syntax
 tree, an in-place Go rename (`-w`), writing a patch file (`--patch`), and the
-`languages` command. Regenerate the golden output after intentional changes
-with:
+`languages` command. `rewrite_patch_git_apply.txtar` generates a patch and
+applies it with real `git` (via testscript's `exec`), skipping itself with
+`[!exec:git] skip` when git is not installed. Regenerate the golden output after
+intentional changes with:
 
 ```bash
 go test -run TestScripts -update

@@ -1,0 +1,26 @@
+# Generate a patch with `ast rewrite --patch`, then apply it with real git to
+# prove the emitted diff is a valid unified patch. Skips when git is not
+# installed.
+[!exec:git] skip 'git is not available'
+
+# --patch writes a unified diff without applying it, so the source still has
+# the old name afterwards.
+ast rewrite -q '((identifier) @id (#eq? @id "old_name"))' --replace '@id=new_name' --patch=rename.patch main.go
+stderr 'wrote patch rename\.patch'
+grep 'func old_name' main.go
+
+# Applying the generated patch with git performs the rename in the file.
+exec git apply -p1 rename.patch
+grep 'func new_name' main.go
+! grep 'old_name' main.go
+
+-- main.go --
+package main
+
+func old_name() int {
+	return old_name() + 1
+}
+
+func caller() int {
+	return old_name()
+}
