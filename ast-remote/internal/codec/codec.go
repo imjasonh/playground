@@ -1,19 +1,21 @@
 // Package codec encodes source files as compact tree-sitter-derived payloads
 // and rehydrates the original bytes on decode.
 //
-// A full AST dump is usually *larger* than the source: every intermediate node
-// adds type/field metadata while leaf texts still contain every token. The
-// representation that can actually compete with gzip is a **leaf stream**:
-// walk the tree-sitter tree in order, intern leaf texts and the trivia gaps
-// between them into a string table, and drop the interior nodes. That is still
-// "AST-first" (the leaf order and token boundaries come from the parse), but
-// it only stores what rehydration needs.
+// Iteration history (sizes vs gzip(raw) on gitdb/):
 //
-// EncodeFile therefore emits the smaller of (leaf-stream+gzip) and gzip(raw).
+//	AST1 leaf stream + string table + gzip     ~158%
+//	AST2 interleaved atoms (V3) + gzip         ~123%
+//	AST2 in-place atom substitution + gzip     ~100%
+//	AST2 subst (compact frame) + raw flate     ~98.5%
+//	raw + fixed language zlib dictionary       ~95–97%
+//
+// EncodeFile adaptively stores the smallest of those candidates (plus optional
+// full-tree for experiments) so the remote never loses to plain gzip on size.
 package codec
 
 import (
 	"bytes"
+	"compress/flate"
 	"compress/gzip"
 	"encoding/binary"
 	"errors"
@@ -26,46 +28,58 @@ import (
 )
 
 const (
-	magic   = "AST1"
-	version = 1
+	magicAST1 = "AST1"
+	magicAST2 = "AST2"
+	version1  = 1
+	version2  = 1
 
 	flagLossless = 1 << 0
-	modeLeaves   = 1 // leaf stream + trivia (default, compact)
-	modeFullTree = 2 // full flattened tree (usually larger; for experiments)
+	modeLeaves   = 1 // AST1 leaf stream + trivia
+	modeFullTree = 2 // AST1 full flattened tree
+
+	// AST2 body kinds
+	ast2Subst = 12 // in-place multi-byte atom substitution
 )
 
 // Encoding names stored in the object store metadata.
 const (
-	EncodingRaw     = "raw"
-	EncodingASTGzip = "ast-gzip" // AST1 leaf-stream (or full tree) + gzip
+	EncodingRaw     = "raw"      // gzip(source)
+	EncodingRawDict = "raw-dict" // flate(source, langDict)
+	EncodingASTGzip = "ast-gzip" // AST2 subst (or AST1) + flate/gzip
+	EncodingASTDict = "ast-dict" // AST2 subst + flate(langDict)
+
+	magicFlate = "FLA1" // prefix for raw-flate-wrapped AST payloads
 )
 
 // Result is the outcome of encoding one blob.
 type Result struct {
-	Encoding      string // EncodingASTGzip or EncodingRaw
+	Encoding      string
 	Payload       []byte
 	Lang          string
 	RawSize       int
 	PayloadSize   int
-	GzipRawSize   int // gzip(source) for comparison
-	LeafASTSize   int // gzip(leaf-stream) before adaptive choice
+	GzipRawSize   int // gzip(source) baseline (BestCompression)
+	LeafASTSize   int // AST2 subst+gzip (primary AST candidate)
 	FullASTSize   int // gzip(full-tree), 0 if not computed
-	StringCount   int
-	NodeCount     int // leaves for leaf-mode; all nodes for full-tree
+	RawDictSize   int // flate(raw, langDict), 0 if no dict
+	ASTDictSize   int // flate(subst, langDict), 0 if no dict
+	StringCount   int // AST1 string table size; 0 for AST2
+	NodeCount     int // leaf count
 	Mode          string
 	SkippedReason string
 }
 
 // EncodeOptions controls experimental variants.
 type EncodeOptions struct {
-	// PreferFullTree stores the full flattened tree instead of the leaf stream.
-	// Almost always larger; useful for benchmarks.
+	// PreferFullTree stores the AST1 full flattened tree (usually larger).
 	PreferFullTree bool
-	// AlsoMeasureFullTree computes FullASTSize even when storing leaves.
+	// AlsoMeasureFullTree computes FullASTSize even when not storing it.
 	AlsoMeasureFullTree bool
-	// NoAdaptive disables "pick min(ast, gzip)" and always stores the AST form
-	// when parsing succeeds.
+	// NoAdaptive disables picking the min candidate and always stores AST
+	// (subst+gzip, or full-tree when PreferFullTree).
 	NoAdaptive bool
+	// PreferLeaves forces the legacy AST1 leaf-stream packing (for comparison).
+	PreferLeaves bool
 }
 
 // EncodeFile losslessly encodes source for path using default options.
@@ -92,13 +106,136 @@ func EncodeFileOpts(path string, source []byte, opts EncodeOptions) (*Result, er
 		base.SkippedReason = "unsupported extension"
 		return base, nil
 	}
+	base.Lang = lang.Name
 
-	leafPayload, leafStrs, leafCount, err := encodeLeaves(lang, source)
+	if opts.PreferFullTree || opts.PreferLeaves {
+		return encodeLegacy(lang, source, gzipRaw, base, opts)
+	}
+
+	substPayload, leafCount, err := encodeSubst(lang, source)
 	if err != nil {
 		base.Encoding = EncodingRaw
 		base.Payload = gzipRaw
 		base.PayloadSize = len(gzipRaw)
-		base.Lang = lang.Name
+		base.SkippedReason = err.Error()
+		return base, nil
+	}
+	substFlate, err := wrapFlate(substPayload)
+	if err != nil {
+		return nil, err
+	}
+	base.LeafASTSize = len(substFlate)
+	base.NodeCount = leafCount
+	base.Mode = "subst"
+
+	dict := dictForLang(lang.Name)
+	var rawDict, astDict []byte
+	if len(dict) > 0 {
+		rawBody, err := flateDictBytes(source, dict)
+		if err != nil {
+			return nil, err
+		}
+		astBody, err := flateDictBytes(substPayload, dict)
+		if err != nil {
+			return nil, err
+		}
+		rawDict = wrapDictPayload(lang.Name, rawBody)
+		astDict = wrapDictPayload(lang.Name, astBody)
+		base.RawDictSize = len(rawDict)
+		base.ASTDictSize = len(astDict)
+	}
+
+	if opts.AlsoMeasureFullTree {
+		fullPayload, _, fn, err := encodeFullTree(lang, source)
+		if err != nil {
+			return nil, err
+		}
+		fullGZ, err := gzipBytes(fullPayload)
+		if err != nil {
+			return nil, err
+		}
+		base.FullASTSize = len(fullGZ)
+		_ = fn
+	}
+
+	type cand struct {
+		enc  string
+		mode string
+		pay  []byte
+	}
+	cands := []cand{
+		{EncodingASTGzip, "subst", substFlate},
+	}
+	if len(rawDict) > 0 {
+		cands = append(cands, cand{EncodingRawDict, "raw-dict", rawDict})
+	}
+	if len(astDict) > 0 {
+		cands = append(cands, cand{EncodingASTDict, "ast-dict", astDict})
+	}
+
+	if opts.NoAdaptive {
+		chosen := cands[0]
+		base.Encoding = chosen.enc
+		base.Payload = chosen.pay
+		base.PayloadSize = len(chosen.pay)
+		base.Mode = chosen.mode
+		return base, nil
+	}
+
+	best := cand{EncodingRaw, "raw", gzipRaw}
+	for _, c := range cands {
+		if len(c.pay) < len(best.pay) {
+			best = c
+		}
+	}
+	base.Encoding = best.enc
+	base.Payload = best.pay
+	base.PayloadSize = len(best.pay)
+	base.Mode = best.mode
+	if best.enc == EncodingRaw {
+		base.SkippedReason = fmt.Sprintf("gzip smaller than AST candidates (%d)", len(gzipRaw))
+	}
+	return base, nil
+}
+
+func encodeLegacy(lang *langs.Language, source, gzipRaw []byte, base *Result, opts EncodeOptions) (*Result, error) {
+	if opts.PreferFullTree {
+		fullPayload, strs, nodes, err := encodeFullTree(lang, source)
+		if err != nil {
+			base.Encoding = EncodingRaw
+			base.Payload = gzipRaw
+			base.PayloadSize = len(gzipRaw)
+			base.SkippedReason = err.Error()
+			return base, nil
+		}
+		fullGZ, err := gzipBytes(fullPayload)
+		if err != nil {
+			return nil, err
+		}
+		base.FullASTSize = len(fullGZ)
+		base.LeafASTSize = len(fullGZ)
+		base.StringCount = strs
+		base.NodeCount = nodes
+		base.Mode = "full-tree"
+		if !opts.NoAdaptive && len(gzipRaw) <= len(fullGZ) {
+			base.Encoding = EncodingRaw
+			base.Payload = gzipRaw
+			base.PayloadSize = len(gzipRaw)
+			base.SkippedReason = fmt.Sprintf("gzip smaller than full-tree (%d ≤ %d)", len(gzipRaw), len(fullGZ))
+			return base, nil
+		}
+		base.Encoding = EncodingASTGzip
+		base.Payload = fullGZ
+		base.PayloadSize = len(fullGZ)
+		return base, nil
+	}
+
+	// PreferLeaves: AST1 leaf stream
+	leafPayload, strs, nodes, err := encodeLeaves(lang, source)
+	if err != nil {
+		base.Encoding = EncodingRaw
+		base.Payload = gzipRaw
+		base.PayloadSize = len(gzipRaw)
 		base.SkippedReason = err.Error()
 		return base, nil
 	}
@@ -107,50 +244,27 @@ func EncodeFileOpts(path string, source []byte, opts EncodeOptions) (*Result, er
 		return nil, err
 	}
 	base.LeafASTSize = len(leafGZ)
-	base.Lang = lang.Name
-
-	var fullGZ []byte
-	var fullStrs, fullNodes int
-	if opts.PreferFullTree || opts.AlsoMeasureFullTree {
-		fullPayload, fs, fn, err := encodeFullTree(lang, source)
-		if err != nil {
-			return nil, err
+	base.StringCount = strs
+	base.NodeCount = nodes
+	base.Mode = "leaves"
+	if opts.AlsoMeasureFullTree {
+		fullPayload, _, _, err := encodeFullTree(lang, source)
+		if err == nil {
+			if fullGZ, err := gzipBytes(fullPayload); err == nil {
+				base.FullASTSize = len(fullGZ)
+			}
 		}
-		fullGZ, err = gzipBytes(fullPayload)
-		if err != nil {
-			return nil, err
-		}
-		base.FullASTSize = len(fullGZ)
-		fullStrs, fullNodes = fs, fn
 	}
-
-	useFull := opts.PreferFullTree
-	var chosen []byte
-	var mode string
-	var strs, nodes int
-	if useFull {
-		chosen, mode, strs, nodes = fullGZ, "full-tree", fullStrs, fullNodes
-	} else {
-		chosen, mode, strs, nodes = leafGZ, "leaves", leafStrs, leafCount
-	}
-
-	if !opts.NoAdaptive && len(gzipRaw) <= len(chosen) {
+	if !opts.NoAdaptive && len(gzipRaw) <= len(leafGZ) {
 		base.Encoding = EncodingRaw
 		base.Payload = gzipRaw
 		base.PayloadSize = len(gzipRaw)
-		base.Mode = mode
-		base.StringCount = strs
-		base.NodeCount = nodes
-		base.SkippedReason = fmt.Sprintf("gzip smaller than %s AST (%d ≤ %d)", mode, len(gzipRaw), len(chosen))
+		base.SkippedReason = fmt.Sprintf("gzip smaller than leaves (%d ≤ %d)", len(gzipRaw), len(leafGZ))
 		return base, nil
 	}
-
 	base.Encoding = EncodingASTGzip
-	base.Payload = chosen
-	base.PayloadSize = len(chosen)
-	base.Mode = mode
-	base.StringCount = strs
-	base.NodeCount = nodes
+	base.Payload = leafGZ
+	base.PayloadSize = len(leafGZ)
 	return base, nil
 }
 
@@ -159,8 +273,16 @@ func Decode(encoding string, payload []byte) ([]byte, error) {
 	switch encoding {
 	case EncodingRaw, "":
 		return gunzipBytes(payload)
+	case EncodingRawDict:
+		return decodeRawDict(payload)
 	case EncodingASTGzip:
-		raw, err := gunzipBytes(payload)
+		raw, err := unwrapCompressed(payload)
+		if err != nil {
+			return nil, err
+		}
+		return decodeAST(raw)
+	case EncodingASTDict:
+		raw, err := inflateDictPayload(payload)
 		if err != nil {
 			return nil, err
 		}
@@ -170,16 +292,63 @@ func Decode(encoding string, payload []byte) ([]byte, error) {
 	}
 }
 
-func encodeLeaves(lang *langs.Language, source []byte) ([]byte, int, int, error) {
+// encodeSubst builds an AST2 in-place atom-substitution payload.
+// Multi-byte keywords/operators/idents (len>=3) become 0x01 + atomID; other
+// bytes stay as-is (0x01 in source is escaped as 0x01 0x01). The result is
+// near-source bytes with shorter repeated tokens — typically slightly under
+// gzip(raw) once wrapped in raw flate.
+func encodeSubst(lang *langs.Language, source []byte) ([]byte, int, error) {
 	root, err := parseRoot(lang, source)
 	if err != nil {
-		return nil, 0, 0, err
+		return nil, 0, err
 	}
-	st := newStringTable()
-	langID := st.Intern(lang.Name)
+	leaves := collectLeafNodes(root)
+	atoms := atomsForLang(lang.Name)
 
+	var body bytes.Buffer
+	pos := 0
+	for _, n := range leaves {
+		writeEscaped(&body, source[pos:n.StartByte()])
+		text := string(source[n.StartByte():n.EndByte()])
+		if id, ok := atoms[text]; ok && len(text) >= 3 {
+			body.WriteByte(atomEscape)
+			body.WriteByte(id)
+		} else {
+			writeEscaped(&body, []byte(text))
+		}
+		pos = int(n.EndByte())
+	}
+	writeEscaped(&body, source[pos:])
+
+	// Compact header: AST2 | ver | kind | u8(langLen) | lang | body
+	// (drops srcLen; length is implicit after atom expansion)
+	if len(lang.Name) > 255 {
+		return nil, 0, fmt.Errorf("language name too long: %q", lang.Name)
+	}
+	var buf bytes.Buffer
+	buf.WriteString(magicAST2)
+	buf.WriteByte(version2)
+	buf.WriteByte(ast2Subst)
+	buf.WriteByte(byte(len(lang.Name)))
+	buf.WriteString(lang.Name)
+	buf.Write(body.Bytes())
+	return buf.Bytes(), len(leaves), nil
+}
+
+func writeEscaped(b *bytes.Buffer, data []byte) {
+	for _, c := range data {
+		if c == atomEscape {
+			b.WriteByte(atomEscape)
+			b.WriteByte(atomEscape)
+		} else {
+			b.WriteByte(c)
+		}
+	}
+}
+
+func collectLeafNodes(root *sitter.Node) []*sitter.Node {
 	var leaves []*sitter.Node
-	var walk func(n *sitter.Node)
+	var walk func(*sitter.Node)
 	walk = func(n *sitter.Node) {
 		if n.ChildCount() == 0 {
 			leaves = append(leaves, n)
@@ -192,7 +361,18 @@ func encodeLeaves(lang *langs.Language, source []byte) ([]byte, int, int, error)
 		}
 	}
 	walk(root)
+	return leaves
+}
 
+func encodeLeaves(lang *langs.Language, source []byte) ([]byte, int, int, error) {
+	root, err := parseRoot(lang, source)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	st := newStringTable()
+	langID := st.Intern(lang.Name)
+
+	leaves := collectLeafNodes(root)
 	leafIDs := make([]uint32, len(leaves))
 	gaps := make([]uint32, 0, len(leaves)+1)
 	var prevEnd uint32
@@ -205,8 +385,8 @@ func encodeLeaves(lang *langs.Language, source []byte) ([]byte, int, int, error)
 	gaps = append(gaps, st.InternBytes(source[prevEnd:]))
 
 	var buf bytes.Buffer
-	buf.WriteString(magic)
-	buf.WriteByte(version)
+	buf.WriteString(magicAST1)
+	buf.WriteByte(version1)
 	buf.WriteByte(flagLossless)
 	buf.WriteByte(modeLeaves)
 	_ = binary.Write(&buf, binary.BigEndian, langID)
@@ -267,21 +447,7 @@ func encodeFullTree(lang *langs.Language, source []byte) ([]byte, int, int, erro
 	}
 	_ = walk(root, "")
 
-	var sitterLeaves []*sitter.Node
-	var walkLeaves func(n *sitter.Node)
-	walkLeaves = func(n *sitter.Node) {
-		if n.ChildCount() == 0 {
-			sitterLeaves = append(sitterLeaves, n)
-			return
-		}
-		for i := 0; i < int(n.ChildCount()); i++ {
-			if ch := n.Child(i); ch != nil {
-				walkLeaves(ch)
-			}
-		}
-	}
-	walkLeaves(root)
-
+	sitterLeaves := collectLeafNodes(root)
 	gaps := make([]uint32, 0, len(sitterLeaves)+1)
 	var prevEnd uint32
 	for _, ln := range sitterLeaves {
@@ -292,8 +458,8 @@ func encodeFullTree(lang *langs.Language, source []byte) ([]byte, int, int, erro
 	gaps = append(gaps, st.InternBytes(source[prevEnd:]))
 
 	var buf bytes.Buffer
-	buf.WriteString(magic)
-	buf.WriteByte(version)
+	buf.WriteString(magicAST1)
+	buf.WriteByte(version1)
 	buf.WriteByte(flagLossless)
 	buf.WriteByte(modeFullTree)
 	_ = binary.Write(&buf, binary.BigEndian, langID)
@@ -345,20 +511,95 @@ func writeStringTable(buf *bytes.Buffer, st *stringTable) {
 	}
 }
 
+func writeUvarint(buf *bytes.Buffer, x uint64) {
+	var tmp [binary.MaxVarintLen64]byte
+	n := binary.PutUvarint(tmp[:], x)
+	buf.Write(tmp[:n])
+}
+
 func decodeAST(payload []byte) ([]byte, error) {
+	if len(payload) < 4 {
+		return nil, errors.New("payload too short")
+	}
+	switch string(payload[:4]) {
+	case magicAST2:
+		return decodeAST2(payload)
+	case magicAST1:
+		return decodeAST1(payload)
+	default:
+		return nil, fmt.Errorf("bad magic %q", payload[:4])
+	}
+}
+
+func decodeAST2(payload []byte) ([]byte, error) {
 	r := bytes.NewReader(payload)
 	mag := make([]byte, 4)
 	if _, err := io.ReadFull(r, mag); err != nil {
 		return nil, err
 	}
-	if string(mag) != magic {
-		return nil, fmt.Errorf("bad magic %q", mag)
+	ver, err := r.ReadByte()
+	if err != nil {
+		return nil, err
+	}
+	if ver != version2 {
+		return nil, fmt.Errorf("unsupported AST2 version %d", ver)
+	}
+	kind, err := r.ReadByte()
+	if err != nil {
+		return nil, err
+	}
+	if kind != ast2Subst {
+		return nil, fmt.Errorf("unknown AST2 kind %d", kind)
+	}
+	langLen, err := r.ReadByte()
+	if err != nil {
+		return nil, err
+	}
+	langBuf := make([]byte, langLen)
+	if _, err := io.ReadFull(r, langBuf); err != nil {
+		return nil, err
+	}
+	langName := string(langBuf)
+	body, err := io.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+	byID := atomByID(langName)
+	var out bytes.Buffer
+	out.Grow(len(body) + len(body)/4)
+	for i := 0; i < len(body); i++ {
+		if body[i] != atomEscape {
+			out.WriteByte(body[i])
+			continue
+		}
+		i++
+		if i >= len(body) {
+			return nil, errors.New("truncated escape")
+		}
+		if body[i] == atomEscape {
+			out.WriteByte(atomEscape)
+			continue
+		}
+		s, ok := byID[body[i]]
+		if !ok {
+			return nil, fmt.Errorf("unknown atom id %d for %s", body[i], langName)
+		}
+		out.WriteString(s)
+	}
+	return out.Bytes(), nil
+}
+
+func decodeAST1(payload []byte) ([]byte, error) {
+	r := bytes.NewReader(payload)
+	mag := make([]byte, 4)
+	if _, err := io.ReadFull(r, mag); err != nil {
+		return nil, err
 	}
 	ver, err := r.ReadByte()
 	if err != nil {
 		return nil, err
 	}
-	if ver != version {
+	if ver != version1 {
 		return nil, fmt.Errorf("unsupported version %d", ver)
 	}
 	flags, err := r.ReadByte()
@@ -559,6 +800,79 @@ func decodeFullTree(r *bytes.Reader, get func(uint32) ([]byte, error)) ([]byte, 
 	return out.Bytes(), nil
 }
 
+// raw-dict / ast-dict wire format: "DICT" + uvarint(langLen) + lang + flate bytes.
+// The language selects the fixed dictionary on both sides.
+const magicDict = "DICT"
+
+func flateDictBytes(data, dict []byte) ([]byte, error) {
+	var body bytes.Buffer
+	w, err := flate.NewWriterDict(&body, flate.BestCompression, dict)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := w.Write(data); err != nil {
+		return nil, err
+	}
+	if err := w.Close(); err != nil {
+		return nil, err
+	}
+	return body.Bytes(), nil
+}
+
+func wrapDictPayload(lang string, flateBody []byte) []byte {
+	var buf bytes.Buffer
+	buf.WriteString(magicDict)
+	writeUvarint(&buf, uint64(len(lang)))
+	buf.WriteString(lang)
+	buf.Write(flateBody)
+	return buf.Bytes()
+}
+
+func decodeRawDict(payload []byte) ([]byte, error) {
+	lang, body, err := splitDictPayload(payload)
+	if err != nil {
+		return nil, err
+	}
+	dict := dictForLang(lang)
+	if len(dict) == 0 {
+		return nil, fmt.Errorf("no dictionary for language %q", lang)
+	}
+	r := flate.NewReaderDict(bytes.NewReader(body), dict)
+	defer r.Close()
+	return io.ReadAll(r)
+}
+
+func inflateDictPayload(payload []byte) ([]byte, error) {
+	lang, body, err := splitDictPayload(payload)
+	if err != nil {
+		return nil, err
+	}
+	dict := dictForLang(lang)
+	if len(dict) == 0 {
+		return nil, fmt.Errorf("no dictionary for language %q", lang)
+	}
+	r := flate.NewReaderDict(bytes.NewReader(body), dict)
+	defer r.Close()
+	return io.ReadAll(r)
+}
+
+func splitDictPayload(payload []byte) (lang string, body []byte, err error) {
+	if len(payload) < 4 || string(payload[:4]) != magicDict {
+		return "", nil, fmt.Errorf("bad dict magic")
+	}
+	r := bytes.NewReader(payload[4:])
+	n, err := binary.ReadUvarint(r)
+	if err != nil {
+		return "", nil, err
+	}
+	lb := make([]byte, n)
+	if _, err := io.ReadFull(r, lb); err != nil {
+		return "", nil, err
+	}
+	rest, err := io.ReadAll(r)
+	return string(lb), rest, err
+}
+
 type stringTable struct {
 	index map[string]uint32
 	all   [][]byte
@@ -589,7 +903,10 @@ func (st *stringTable) All() [][]byte { return st.all }
 
 func gzipBytes(b []byte) ([]byte, error) {
 	var buf bytes.Buffer
-	w := gzip.NewWriter(&buf)
+	w, err := gzip.NewWriterLevel(&buf, gzip.BestCompression)
+	if err != nil {
+		return nil, err
+	}
 	if _, err := w.Write(b); err != nil {
 		return nil, err
 	}
@@ -606,4 +923,32 @@ func gunzipBytes(b []byte) ([]byte, error) {
 	}
 	defer r.Close()
 	return io.ReadAll(r)
+}
+
+func wrapFlate(data []byte) ([]byte, error) {
+	var body bytes.Buffer
+	w, err := flate.NewWriter(&body, flate.BestCompression)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := w.Write(data); err != nil {
+		return nil, err
+	}
+	if err := w.Close(); err != nil {
+		return nil, err
+	}
+	out := make([]byte, 0, 4+body.Len())
+	out = append(out, magicFlate...)
+	out = append(out, body.Bytes()...)
+	return out, nil
+}
+
+func unwrapCompressed(payload []byte) ([]byte, error) {
+	if len(payload) >= 4 && string(payload[:4]) == magicFlate {
+		r := flate.NewReader(bytes.NewReader(payload[4:]))
+		defer r.Close()
+		return io.ReadAll(r)
+	}
+	// Legacy AST1/AST2 payloads were gzip-wrapped.
+	return gunzipBytes(payload)
 }

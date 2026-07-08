@@ -57,14 +57,15 @@ Usage:
 
 Encode flags:
   -o FILE         write chosen payload to file
-  -full-tree      store full flattened tree (usually larger)
-  -no-adaptive    always store AST form even if gzip(raw) is smaller
+  -full-tree      store AST1 full flattened tree (usually larger)
+  -leaves         store AST1 leaf-stream (legacy; usually larger)
+  -no-adaptive    always store AST subst form (skip dict/gzip min)
 
 Bench flags:
   -out FILE       write JSON results to FILE
   -repeat N       repeat encode/decode timing (default 3)
   -limit N        max source files to include (0 = all)
-  -no-adaptive    force AST storage (disable gzip fallback)
+  -no-adaptive    force AST subst storage (disable adaptive min)
 
   ast-remote bench-remote [flags] <dir>    push/fetch wall time vs file:// remote
     -repeat N     repeats (default 3)
@@ -75,8 +76,9 @@ Bench flags:
 func cmdEncode(args []string) {
 	fs := flag.NewFlagSet("encode", flag.ExitOnError)
 	outPath := fs.String("o", "", "write payload to file")
-	full := fs.Bool("full-tree", false, "prefer full tree over leaf stream")
-	noAdapt := fs.Bool("no-adaptive", false, "disable gzip-vs-AST adaptive choice")
+	full := fs.Bool("full-tree", false, "prefer AST1 full tree")
+	leaves := fs.Bool("leaves", false, "prefer AST1 leaf stream")
+	noAdapt := fs.Bool("no-adaptive", false, "disable adaptive min (force AST subst)")
 	fs.Parse(args)
 	if fs.NArg() != 1 {
 		fmt.Fprintln(os.Stderr, "encode requires one file")
@@ -87,6 +89,7 @@ func cmdEncode(args []string) {
 	must(err)
 	res, err := codec.EncodeFileOpts(path, src, codec.EncodeOptions{
 		PreferFullTree:      *full,
+		PreferLeaves:        *leaves,
 		AlsoMeasureFullTree: true,
 		NoAdaptive:          *noAdapt,
 	})
@@ -97,7 +100,13 @@ func cmdEncode(args []string) {
 	fmt.Printf("raw:        %d bytes\n", res.RawSize)
 	fmt.Printf("gzip(raw):  %d bytes\n", res.GzipRawSize)
 	if res.LeafASTSize > 0 {
-		fmt.Printf("leaf+gzip:  %d bytes (%.1f%% of gzip)\n", res.LeafASTSize, pct(res.LeafASTSize, res.GzipRawSize))
+		fmt.Printf("subst+gzip: %d bytes (%.1f%% of gzip)\n", res.LeafASTSize, pct(res.LeafASTSize, res.GzipRawSize))
+	}
+	if res.RawDictSize > 0 {
+		fmt.Printf("raw+dict:   %d bytes (%.1f%% of gzip)\n", res.RawDictSize, pct(res.RawDictSize, res.GzipRawSize))
+	}
+	if res.ASTDictSize > 0 {
+		fmt.Printf("subst+dict: %d bytes (%.1f%% of gzip)\n", res.ASTDictSize, pct(res.ASTDictSize, res.GzipRawSize))
 	}
 	if res.FullASTSize > 0 {
 		fmt.Printf("full+gzip:  %d bytes (%.1f%% of gzip)\n", res.FullASTSize, pct(res.FullASTSize, res.GzipRawSize))
@@ -108,7 +117,9 @@ func cmdEncode(args []string) {
 		pct(res.PayloadSize, res.GzipRawSize))
 	if res.NodeCount > 0 {
 		fmt.Printf("nodes:      %d\n", res.NodeCount)
-		fmt.Printf("strings:    %d\n", res.StringCount)
+		if res.StringCount > 0 {
+			fmt.Printf("strings:    %d\n", res.StringCount)
+		}
 	}
 	if res.SkippedReason != "" {
 		fmt.Printf("note:       %s\n", res.SkippedReason)
@@ -148,10 +159,13 @@ type FileStat struct {
 	Mode           string  `json:"mode"`
 	RawBytes       int     `json:"raw_bytes"`
 	GzipBytes      int     `json:"gzip_bytes"`
-	LeafASTBytes   int     `json:"leaf_ast_bytes"`
+	LeafASTBytes   int     `json:"leaf_ast_bytes"` // AST2 subst+gzip
+	RawDictBytes   int     `json:"raw_dict_bytes"`
+	ASTDictBytes   int     `json:"ast_dict_bytes"`
 	FullASTBytes   int     `json:"full_ast_bytes"`
 	StoredBytes    int     `json:"stored_bytes"`
 	LeafVsGzip     float64 `json:"leaf_vs_gzip_pct"`
+	RawDictVsGzip  float64 `json:"raw_dict_vs_gzip_pct"`
 	FullVsGzip     float64 `json:"full_vs_gzip_pct"`
 	StoredVsGzip   float64 `json:"stored_vs_gzip_pct"`
 	EncodeMs       float64 `json:"encode_ms"`
@@ -174,13 +188,17 @@ type BenchReport struct {
 type Summary struct {
 	Files             int     `json:"files"`
 	ASTStored         int     `json:"ast_stored"`
+	DictStored        int     `json:"dict_stored"`
 	GzipFallback      int     `json:"gzip_fallback"`
 	TotalRaw          int64   `json:"total_raw_bytes"`
 	TotalGzip         int64   `json:"total_gzip_bytes"`
 	TotalLeafAST      int64   `json:"total_leaf_ast_bytes"`
+	TotalRawDict      int64   `json:"total_raw_dict_bytes"`
+	TotalASTDict      int64   `json:"total_ast_dict_bytes"`
 	TotalFullAST      int64   `json:"total_full_ast_bytes"`
 	TotalStored       int64   `json:"total_stored_bytes"`
 	LeafVsGzipPct     float64 `json:"leaf_vs_gzip_pct"`
+	RawDictVsGzipPct  float64 `json:"raw_dict_vs_gzip_pct"`
 	FullVsGzipPct     float64 `json:"full_vs_gzip_pct"`
 	StoredVsGzipPct   float64 `json:"stored_vs_gzip_pct"`
 	MedianLeafVsGzip  float64 `json:"median_leaf_vs_gzip_pct"`
@@ -269,9 +287,12 @@ func cmdBench(args []string) {
 			RawBytes:      last.RawSize,
 			GzipBytes:     last.GzipRawSize,
 			LeafASTBytes:  last.LeafASTSize,
+			RawDictBytes:  last.RawDictSize,
+			ASTDictBytes:  last.ASTDictSize,
 			FullASTBytes:  last.FullASTSize,
 			StoredBytes:   last.PayloadSize,
 			LeafVsGzip:    pct(last.LeafASTSize, last.GzipRawSize),
+			RawDictVsGzip: pct(last.RawDictSize, last.GzipRawSize),
 			FullVsGzip:    pct(last.FullASTSize, last.GzipRawSize),
 			StoredVsGzip:  pct(last.PayloadSize, last.GzipRawSize),
 			EncodeMs:      encMs / n,
@@ -304,15 +325,20 @@ func summarize(files []FileStat, leafRatios []float64) Summary {
 		s.TotalRaw += int64(f.RawBytes)
 		s.TotalGzip += int64(f.GzipBytes)
 		s.TotalLeafAST += int64(f.LeafASTBytes)
+		s.TotalRawDict += int64(f.RawDictBytes)
+		s.TotalASTDict += int64(f.ASTDictBytes)
 		s.TotalFullAST += int64(f.FullASTBytes)
 		s.TotalStored += int64(f.StoredBytes)
 		enc += f.EncodeMs
 		dec += f.DecodeMs
 		gzEnc += f.GzipEncodeMs
 		gzDec += f.GzipDecodeMs
-		if f.Encoding == codec.EncodingASTGzip {
+		switch f.Encoding {
+		case codec.EncodingASTGzip, codec.EncodingASTDict:
 			s.ASTStored++
-		} else {
+		case codec.EncodingRawDict:
+			s.DictStored++
+		default:
 			s.GzipFallback++
 		}
 	}
@@ -324,6 +350,7 @@ func summarize(files []FileStat, leafRatios []float64) Summary {
 		s.MeanGzipDecodeMs = gzDec / n
 	}
 	s.LeafVsGzipPct = pct64(s.TotalLeafAST, s.TotalGzip)
+	s.RawDictVsGzipPct = pct64(s.TotalRawDict, s.TotalGzip)
 	s.FullVsGzipPct = pct64(s.TotalFullAST, s.TotalGzip)
 	s.StoredVsGzipPct = pct64(s.TotalStored, s.TotalGzip)
 	if len(leafRatios) > 0 {
@@ -331,15 +358,18 @@ func summarize(files []FileStat, leafRatios []float64) Summary {
 		s.MedianLeafVsGzip = leafRatios[len(leafRatios)/2]
 	}
 	switch {
-	case s.LeafVsGzipPct < 90:
-		s.Verdict = "leaf-stream AST+gzip beats plain gzip on total bytes for this corpus"
-	case s.LeafVsGzipPct < 110:
-		s.Verdict = "leaf-stream AST+gzip is roughly tied with plain gzip"
+	case s.StoredVsGzipPct < 95:
+		s.Verdict = "adaptive AST/dict store beats plain gzip on total bytes for this corpus"
+	case s.StoredVsGzipPct <= 100.5:
+		s.Verdict = "adaptive AST/dict store is at or under plain gzip"
 	default:
-		s.Verdict = "leaf-stream AST+gzip is larger than plain gzip; full trees are worse still"
+		s.Verdict = "adaptive store still larger than gzip (unexpected)"
 	}
-	if s.StoredVsGzipPct <= 100.5 && s.GzipFallback > 0 {
-		s.Verdict += "; adaptive store equals gzip (falls back when AST loses)"
+	if s.LeafVsGzipPct > 0 && s.LeafVsGzipPct < 105 {
+		s.Verdict += "; AST2 subst+gzip is near parity with gzip alone"
+	}
+	if s.RawDictVsGzipPct > 0 && s.RawDictVsGzipPct < 100 {
+		s.Verdict += fmt.Sprintf("; fixed lang dict alone is %.1f%% of gzip", s.RawDictVsGzipPct)
 	}
 	return s
 }
@@ -347,13 +377,21 @@ func summarize(files []FileStat, leafRatios []float64) Summary {
 func printSummary(r BenchReport) {
 	s := r.Summary
 	fmt.Printf("Source:           %s\n", r.Source)
-	fmt.Printf("Files:            %d (%d AST-stored, %d gzip-fallback)\n", s.Files, s.ASTStored, s.GzipFallback)
+	fmt.Printf("Files:            %d (%d AST, %d dict, %d gzip)\n", s.Files, s.ASTStored, s.DictStored, s.GzipFallback)
 	fmt.Printf("Total raw:        %d bytes\n", s.TotalRaw)
 	fmt.Printf("Total gzip:       %d bytes (%.1f%% of raw)\n", s.TotalGzip, pct64(s.TotalGzip, s.TotalRaw))
-	fmt.Printf("Total leaf+gzip:  %d bytes (%.1f%% of gzip)\n", s.TotalLeafAST, s.LeafVsGzipPct)
-	fmt.Printf("Total full+gzip:  %d bytes (%.1f%% of gzip)\n", s.TotalFullAST, s.FullVsGzipPct)
+	fmt.Printf("Total subst+gzip: %d bytes (%.1f%% of gzip)\n", s.TotalLeafAST, s.LeafVsGzipPct)
+	if s.TotalRawDict > 0 {
+		fmt.Printf("Total raw+dict:   %d bytes (%.1f%% of gzip)\n", s.TotalRawDict, s.RawDictVsGzipPct)
+	}
+	if s.TotalASTDict > 0 {
+		fmt.Printf("Total subst+dict: %d bytes (%.1f%% of gzip)\n", s.TotalASTDict, pct64(s.TotalASTDict, s.TotalGzip))
+	}
+	if s.TotalFullAST > 0 {
+		fmt.Printf("Total full+gzip:  %d bytes (%.1f%% of gzip)\n", s.TotalFullAST, s.FullVsGzipPct)
+	}
 	fmt.Printf("Total stored:     %d bytes (%.1f%% of gzip) [adaptive min]\n", s.TotalStored, s.StoredVsGzipPct)
-	fmt.Printf("Median leaf/gzip: %.1f%%\n", s.MedianLeafVsGzip)
+	fmt.Printf("Median subst/gzip:%.1f%%\n", s.MedianLeafVsGzip)
 	fmt.Printf("Mean encode:      AST %.2f ms  vs gzip %.2f ms\n", s.MeanEncodeMs, s.MeanGzipEncodeMs)
 	fmt.Printf("Mean decode:      AST %.2f ms  vs gzip %.2f ms\n", s.MeanDecodeMs, s.MeanGzipDecodeMs)
 	fmt.Printf("Verdict:          %s\n", s.Verdict)
