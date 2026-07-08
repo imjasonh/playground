@@ -1,5 +1,0 @@
-node_modules/
-# Live scraped data is published to the gh-pages branch by the hourly workflow,
-# never committed to main. Ignore any locally scraped output.
-data/
-*.log
