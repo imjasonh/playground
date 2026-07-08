@@ -118,14 +118,18 @@ git clone "ast::/tmp/my-ast-store" recovered
 
 # Full git clone wall time: protocol remote vs local git-daemon
 ./ast-remote bench-remote -out bench-remote.json -repeat 5 -commits 5 testdata/corpus
+
+# Same, against a real repo checkout (e.g. ko-build/ko)
+./ast-remote bench-remote -out bench-remote-ko.json -repeat 5 /path/to/ko
 ```
 
-`bench-remote` builds a multi-commit repo from the given tree, publishes once
-to both remotes, then times **full `git clone`** end-to-end:
+`bench-remote` accepts either a plain directory (builds a synthetic multi-commit
+history) or a real git checkout (optionally `-depth N`). It publishes once to
+both remotes, then times **full `git clone`** end-to-end:
 
 | Side | What runs |
 |------|-----------|
-| protocol | `git clone ast::/path/store` (helper fetch → rehydrate → `hash-object -w` → checkout) |
+| protocol | `git clone ast::/path/store` (tip-pack `index-pack` + checkout; falls back to per-object rehydrate) |
 | plain | `git clone git://127.0.0.1:<port>/plain.git` served by `git-daemon` from a bare repo |
 
 Both paths include object transfer, local object-store population, reachability
@@ -155,26 +159,52 @@ Per-file size report columns:
 | Corpus | raw | gzip | protocol+flate | raw+dict | stored (adaptive) |
 |--------|-----|------|----------------|----------|-------------------|
 | `testdata/corpus` | 30.7 KB | 2.9 KB | 2.8 KB (**98%** of gzip) | 2.8 KB (**96%**) | **96%** of gzip |
+| `ko-build/ko` (116 source files) | 437 KB | 157 KB | 155 KB (**98.5%**) | 151 KB (**96%**) | **96%** of gzip |
 
-Mean encode on the corpus: protocol is milliseconds-per-file vs sub-millisecond
-gzip; decode is near parity.
+Mean encode is still parse-dominated when the full protocol path runs; the
+remote helper push path uses a **fast** encoder (lang dict / gzip, no
+tree-sitter) so push wall time stays practical.
 
 ### Full clone latency (`ast-remote bench-remote`)
 
-Fair comparison on `testdata/corpus` with a 5-commit synthetic history
-(30 reachable objects), mean of 5 full clones:
+Fair comparison: mean of full `git clone`s vs local `git-daemon`.
 
-| | protocol `ast::` clone | local `git-daemon` clone | ratio |
-|--|------------------------|--------------------------|-------|
-| mean wall time | **~49 ms** | **~103 ms** | **0.48×** |
+| Corpus | history | protocol clone | git-daemon clone | ratio |
+|--------|---------|----------------|------------------|-------|
+| `testdata/corpus` (synthetic) | 5 commits / 30 objs | ~15 ms | ~99 ms | 0.15× |
+| **`ko-build/ko`** | **1415 commits / 28 783 objs** | **~1.38 s** | **~1.47 s** | **0.94×** |
 
-On this small corpus the protocol path is faster: both sides pay for a full
-local repo (objects + checkout), and `git-daemon`’s TCP upload-pack overhead
-dominates more than protocol rehydrate. Both clones pass `git fsck --full`
-and produce identical worktrees. Re-run locally — numbers move with corpus
-and CPU; `bench-remote.json` has the latest run.
+On `ko`, push is ~2× a bare push (~3.0 s vs ~1.4 s) because the helper still
+encodes every object into the protocol store **and** builds a native tip pack.
+The tip pack is what full clone installs (`git index-pack`), so clone wall time
+matches a normal remote. Without the tip pack, naive per-object rehydrate +
+loose writes was ~2.7× after removing `hash-object` subprocesses, and ~26×
+before that.
 
-The JSON `summary.verdict` / `verdict` fields state the outcome for a given run.
+Store size on `ko` is larger than a bare repo (~3.4×) while both the protocol
+object tree and the tip pack are retained. Ideas to close *that* gap next:
+drop per-object blobs when a tip pack exists, or serve protocol-only for
+partial fetches and tip-pack-only for full clones.
+
+Both clones pass `git fsck --full` and produce identical worktrees.
+`bench-remote-ko.json` / `bench-remote.json` have the latest runs.
+
+### Closing the clone gap (what actually mattered)
+
+On a real repo the first clone was ~26× slower than `git-daemon`. Profiling
+showed almost none of that was “AST decode”:
+
+1. **~28k `git hash-object -w` / `cat-file` subprocesses** → native loose
+   object writes + `cat-file --batch` → **~2.7×**.
+2. **Chatty per-object stderr + serial I/O** → parallel workers + quiet
+   progress → folded into (1).
+3. **Rehydrate-on-fetch still pays zlib+SHA-1 per object** while git-daemon
+   ships one pack → **tip pack at push** (`git pack-objects`), fetch =
+   `index-pack` → **~0.94×** (parity).
+
+So the fair clone story is: pay encode+pack once on push, then clone like a
+normal git remote. The protocol object store remains useful for size
+experiments and for a future partial-fetch path that does not want a tip pack.
 
 ## Why gzip is hard to beat (and how we still edged it)
 

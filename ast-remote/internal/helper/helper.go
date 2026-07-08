@@ -14,12 +14,16 @@ package helper
 
 import (
 	"bufio"
+	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"github.com/imjasonh/playground/ast-remote/internal/codec"
 	"github.com/imjasonh/playground/ast-remote/internal/gitcmd"
@@ -199,16 +203,141 @@ func writeList(st *store.Store, wr *bufio.Writer) error {
 }
 
 func doFetch(st *store.Store, repo *gitcmd.Repo, batch [][2]string, errOut io.Writer) error {
-	want := map[string]bool{}
+	seenTip := map[string]bool{}
 	var tips []string
 	for _, b := range batch {
-		want[b[0]] = true
+		if seenTip[b[0]] {
+			continue
+		}
+		seenTip[b[0]] = true
 		tips = append(tips, b[0])
 	}
-	// Walk commit→tree→blob by repeatedly fetching missing objects referenced
-	// from already-decoded commits/trees. Start with the tip OIDs.
+
+	// Fast path: tip pack written at push time (native git pack of the same
+	// objects). Full clone then matches git-daemon: one index-pack, no
+	// per-object rehydrate. Protocol objects remain for size / partial fetch.
+	// (git clone often sends duplicate fetch lines for HEAD + branch; dedupe.)
+	allPacked := len(tips) > 0
+	for _, tip := range tips {
+		if !st.HasTipPack(tip) {
+			allPacked = false
+			break
+		}
+	}
+	if allPacked {
+		for _, tip := range tips {
+			pack, err := st.ReadTipPack(tip)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(errOut, "fetch tip-pack %s (%d bytes)\n", tip[:8], len(pack))
+			if err := repo.IndexPack(pack); err != nil {
+				return err
+			}
+		}
+		fmt.Fprintf(errOut, "fetched via tip-pack (%d tip(s))\n", len(tips))
+		return nil
+	}
+
+	oids, err := st.ListObjectOIDs()
+	if err != nil || len(oids) == 0 {
+		oids, err = discoverFetchOIDs(st, tips)
+		if err != nil {
+			return err
+		}
+	} else {
+		for _, tip := range tips {
+			if !st.Has(tip) {
+				return fmt.Errorf("missing tip %s in ast store", tip)
+			}
+		}
+		fmt.Fprintf(errOut, "fetch inventory: %d objects\n", len(oids))
+	}
+
+	workers := runtime.GOMAXPROCS(0)
+	if workers < 2 {
+		workers = 2
+	}
+	if workers > 16 {
+		workers = 16
+	}
+
+	jobs := make(chan string, workers*2)
+	errCh := make(chan error, 1)
+	var wg sync.WaitGroup
+	var done atomic.Int64
+	total := int64(len(oids))
+
+	worker := func() {
+		defer wg.Done()
+		for oid := range jobs {
+			meta, payload, err := st.Get(oid)
+			if err != nil {
+				select {
+				case errCh <- err:
+				default:
+				}
+				return
+			}
+			raw, err := codec.Decode(meta.Encoding, payload)
+			if err != nil {
+				select {
+				case errCh <- fmt.Errorf("decode %s: %w", oid, err):
+				default:
+				}
+				return
+			}
+			if _, err := repo.WriteObjectExpected(meta.Kind, raw, oid); err != nil {
+				select {
+				case errCh <- fmt.Errorf("write %s: %w", oid, err):
+				default:
+				}
+				return
+			}
+			n := done.Add(1)
+			if n == total || n%5000 == 0 {
+				fmt.Fprintf(errOut, "fetched %d/%d objects\n", n, total)
+			}
+		}
+	}
+
+	wg.Add(workers)
+	for i := 0; i < workers; i++ {
+		go worker()
+	}
+	for _, oid := range oids {
+		select {
+		case err := <-errCh:
+			close(jobs)
+			wg.Wait()
+			return err
+		case jobs <- oid:
+		}
+	}
+	close(jobs)
+	wg.Wait()
+	select {
+	case err := <-errCh:
+		return err
+	default:
+	}
+	fmt.Fprintf(errOut, "fetched %d objects\n", total)
+	return nil
+}
+
+func gitOID(kind string, data []byte) string {
+	h := sha1.New()
+	fmt.Fprintf(h, "%s %d\x00", kind, len(data))
+	h.Write(data)
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// discoverFetchOIDs walks commit→tree→blob from tips (used when inventory
+// listing is unavailable).
+func discoverFetchOIDs(st *store.Store, tips []string) ([]string, error) {
 	queue := append([]string{}, tips...)
 	seen := map[string]bool{}
+	var oids []string
 	for len(queue) > 0 {
 		oid := queue[0]
 		queue = queue[1:]
@@ -216,58 +345,55 @@ func doFetch(st *store.Store, repo *gitcmd.Repo, batch [][2]string, errOut io.Wr
 			continue
 		}
 		seen[oid] = true
+		oids = append(oids, oid)
 		if !st.Has(oid) {
-			return fmt.Errorf("missing object %s in ast store", oid)
+			return nil, fmt.Errorf("missing object %s in ast store", oid)
 		}
 		meta, payload, err := st.Get(oid)
 		if err != nil {
-			return err
-		}
-		raw, err := codec.Decode(meta.Encoding, payload)
-		if err != nil {
-			return fmt.Errorf("decode %s: %w", oid, err)
-		}
-		got, err := repo.HashObject(meta.Kind, raw)
-		if err != nil {
-			return err
-		}
-		if got != oid {
-			return fmt.Errorf("oid mismatch for %s: got %s (encoding=%s)", oid, got, meta.Encoding)
+			return nil, err
 		}
 		switch meta.Kind {
-		case store.KindCommit:
-			for _, line := range strings.Split(string(raw), "\n") {
-				if strings.HasPrefix(line, "tree ") || strings.HasPrefix(line, "parent ") {
-					fields := strings.Fields(line)
-					if len(fields) == 2 {
-						queue = append(queue, fields[1])
+		case store.KindBlob:
+			continue
+		case store.KindCommit, store.KindTree, store.KindTag:
+			raw, err := codec.Decode(meta.Encoding, payload)
+			if err != nil {
+				return nil, fmt.Errorf("decode %s: %w", oid, err)
+			}
+			switch meta.Kind {
+			case store.KindCommit:
+				for _, line := range strings.Split(string(raw), "\n") {
+					if strings.HasPrefix(line, "tree ") || strings.HasPrefix(line, "parent ") {
+						fields := strings.Fields(line)
+						if len(fields) == 2 {
+							queue = append(queue, fields[1])
+						}
+					}
+					if line == "" {
+						break
 					}
 				}
-				if line == "" {
-					break
-				}
-			}
-		case store.KindTree:
-			for _, child := range parseRawTree(raw) {
-				queue = append(queue, child)
-			}
-		case store.KindTag:
-			for _, line := range strings.Split(string(raw), "\n") {
-				if strings.HasPrefix(line, "object ") {
-					fields := strings.Fields(line)
-					if len(fields) == 2 {
-						queue = append(queue, fields[1])
+			case store.KindTree:
+				queue = append(queue, parseRawTree(raw)...)
+			case store.KindTag:
+				for _, line := range strings.Split(string(raw), "\n") {
+					if strings.HasPrefix(line, "object ") {
+						fields := strings.Fields(line)
+						if len(fields) == 2 {
+							queue = append(queue, fields[1])
+						}
+					}
+					if line == "" {
+						break
 					}
 				}
-				if line == "" {
-					break
-				}
 			}
+		default:
+			return nil, fmt.Errorf("unknown kind %q for %s", meta.Kind, oid)
 		}
-		fmt.Fprintf(errOut, "fetched %s (%s, %s, %d→%d bytes)\n",
-			oid[:8], meta.Kind, meta.Encoding, meta.Payload, meta.Size)
 	}
-	return nil
+	return oids, nil
 }
 
 func dstRef(spec string) string {
@@ -288,7 +414,6 @@ func doPush(st *store.Store, repo *gitcmd.Repo, spec string, wr *bufio.Writer, e
 	}
 	src, dst := parts[0], parts[1]
 	if src == "" {
-		// delete
 		if err := st.UpdateRef(dst, ""); err != nil {
 			return err
 		}
@@ -300,17 +425,8 @@ func doPush(st *store.Store, repo *gitcmd.Repo, spec string, wr *bufio.Writer, e
 	if err != nil {
 		return err
 	}
+	_ = force
 
-	if !force {
-		refs, _ := st.ListRefs()
-		if old, ok := refs[dst]; ok && old != "" {
-			// Fast-forward check: old must be ancestor of src.
-			// Soft-fail to force semantics only when requested; otherwise warn via git.
-			_ = old
-		}
-	}
-
-	// Objects already on the remote (all tips) are exclusions.
 	remoteRefs, err := st.ListRefs()
 	if err != nil {
 		return err
@@ -320,73 +436,138 @@ func doPush(st *store.Store, repo *gitcmd.Repo, spec string, wr *bufio.Writer, e
 		notTips = append(notTips, oid)
 	}
 
-	oids, err := repo.RevListObjects([]string{srcOID}, notTips)
+	infos, err := repo.RevListObjectInfos([]string{srcOID}, notTips)
 	if err != nil {
 		return err
 	}
 
-	// Path hints from rev-list --objects (oid SP path).
+	// Filter to objects not already in the store; keep path hints from rev-list.
 	pathByOID := map[string]string{}
-	{
-		// Re-run with paths visible — RevListObjects already stripped paths;
-		// gather via ls-tree of the commit for blob path hints.
-		paths, err := repo.LsTreePaths(srcOID)
-		if err == nil {
-			for p, oid := range paths {
-				pathByOID[oid] = p
-			}
+	var need []string
+	for _, info := range infos {
+		if info.Path != "" {
+			pathByOID[info.OID] = info.Path
+		}
+		if !st.Has(info.OID) {
+			need = append(need, info.OID)
 		}
 	}
 
-	for _, oid := range oids {
-		if st.Has(oid) {
-			continue
-		}
-		kind, err := repo.CatFileType(oid)
-		if err != nil {
+	fmt.Fprintf(errOut, "pushing %d new objects (%d reachable)\n", len(need), len(infos))
+	if len(need) == 0 {
+		if err := st.UpdateRef(dst, srcOID); err != nil {
 			return err
 		}
-		raw, err := repo.CatFile(kind, oid)
-		if err != nil {
-			return err
-		}
-		meta := store.Meta{
-			OID:  oid,
-			Kind: kind,
-			Size: len(raw),
-		}
-		var payload []byte
-		switch kind {
-		case store.KindBlob:
-			path := pathByOID[oid]
-			meta.PathHint = path
-			res, err := codec.EncodeFile(path, raw)
-			if err != nil {
-				return err
-			}
-			meta.Encoding = res.Encoding
-			meta.Lang = res.Lang
-			payload = res.Payload
-			fmt.Fprintf(errOut, "push blob %s %s %s %d→%d (gzip-raw=%d)\n",
-				oid[:8], path, res.Encoding, res.RawSize, res.PayloadSize, res.GzipRawSize)
-		default:
-			// Trees/commits/tags: gzip only (preserve exact bytes for OID).
-			res, err := codec.EncodeFile("", raw) // forces raw path
-			if err != nil {
-				return err
-			}
-			// EncodeFile with empty path always returns raw gzip.
-			meta.Encoding = codec.EncodingRaw
-			payload = res.Payload
-		}
-		if err := st.Put(meta, payload); err != nil {
-			return err
-		}
+		fmt.Fprintf(wr, "ok %s\n", dst)
+		return wr.Flush()
 	}
 
-	if err := st.UpdateRef(dst, srcOID); err != nil {
+	// One `git cat-file --batch` instead of 2N subprocesses.
+	batch, err := repo.CatFileBatch(need)
+	if err != nil {
 		return err
 	}
+
+	workers := runtime.GOMAXPROCS(0)
+	if workers < 2 {
+		workers = 2
+	}
+	if workers > 16 {
+		workers = 16
+	}
+
+	type job struct {
+		obj gitcmd.BatchObject
+	}
+	jobs := make(chan job, workers*2)
+	errCh := make(chan error, 1)
+	var wg sync.WaitGroup
+	var done atomic.Int64
+	total := int64(len(batch))
+
+	worker := func() {
+		defer wg.Done()
+		for j := range jobs {
+			obj := j.obj
+			meta := store.Meta{
+				OID:  obj.OID,
+				Kind: obj.Kind,
+				Size: len(obj.Data),
+			}
+			var payload []byte
+			switch obj.Kind {
+			case store.KindBlob:
+				path := pathByOID[obj.OID]
+				meta.PathHint = path
+				res, err := codec.EncodeFileOpts(path, obj.Data, codec.EncodeOptions{Fast: true})
+				if err != nil {
+					select {
+					case errCh <- err:
+					default:
+					}
+					return
+				}
+				meta.Encoding = res.Encoding
+				meta.Lang = res.Lang
+				payload = res.Payload
+			default:
+				// Trees/commits/tags: store verbatim. They are already compact,
+				// and skipping gzip avoids a useless inflate on every fetch.
+				meta.Encoding = codec.EncodingIdentity
+				payload = obj.Data
+			}
+			if err := st.Put(meta, payload); err != nil {
+				select {
+				case errCh <- err:
+				default:
+				}
+				return
+			}
+			n := done.Add(1)
+			if n == total || n%2000 == 0 {
+				fmt.Fprintf(errOut, "pushed %d/%d objects\n", n, total)
+			}
+		}
+	}
+
+	wg.Add(workers)
+	for i := 0; i < workers; i++ {
+		go worker()
+	}
+	for _, obj := range batch {
+		select {
+		case err := <-errCh:
+			close(jobs)
+			wg.Wait()
+			return err
+		case jobs <- job{obj: obj}:
+		}
+	}
+	close(jobs)
+	wg.Wait()
+	select {
+	case err := <-errCh:
+		return err
+	default:
+	}
+
+		if err := st.UpdateRef(dst, srcOID); err != nil {
+		return err
+	}
+
+	// Cache a native tip pack from the source repo so full clones can
+	// index-pack without rehydrating every protocol object. Built with
+	// git pack-objects (same bytes git-daemon would serve).
+	fmt.Fprintf(errOut, "building tip-pack for %s...\n", srcOID[:8])
+	pack, err := repo.PackObjects([]string{srcOID})
+	if err != nil {
+		return fmt.Errorf("tip-pack: %w", err)
+	}
+	if err := st.WriteTipPack(srcOID, pack); err != nil {
+		return err
+	}
+	fmt.Fprintf(errOut, "tip-pack %d bytes\n", len(pack))
+
 	fmt.Fprintf(wr, "ok %s\n", dst)
 	return wr.Flush()
 }

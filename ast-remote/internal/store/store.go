@@ -102,7 +102,7 @@ func (s *Store) Put(m Meta, payload []byte) error {
 		return nil
 	}
 	m.Payload = len(payload)
-	b, err := json.MarshalIndent(m, "", "  ")
+	b, err := json.Marshal(m)
 	if err != nil {
 		return err
 	}
@@ -119,6 +119,74 @@ func (s *Store) Put(m Meta, payload []byte) error {
 		return err
 	}
 	return os.Rename(tmpMeta, metaPath)
+}
+
+// TipPackPath returns the path for a cached tip pack (native git packfile).
+func (s *Store) TipPackPath(tipOID string) string {
+	return filepath.Join(s.Root, "packs", tipOID+".pack")
+}
+
+// WriteTipPack stores a native git packfile for a tip commit OID.
+// Fetch can install it with `git index-pack` and skip per-object rehydrate.
+func (s *Store) WriteTipPack(tipOID string, pack []byte) error {
+	if len(tipOID) != 40 {
+		return fmt.Errorf("invalid tip oid %q", tipOID)
+	}
+	dir := filepath.Join(s.Root, "packs")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	path := s.TipPackPath(tipOID)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, pack, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
+// ReadTipPack returns a cached tip pack, or nil if absent.
+func (s *Store) ReadTipPack(tipOID string) ([]byte, error) {
+	b, err := os.ReadFile(s.TipPackPath(tipOID))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	return b, err
+}
+
+// HasTipPack reports whether a tip pack exists.
+func (s *Store) HasTipPack(tipOID string) bool {
+	_, err := os.Stat(s.TipPackPath(tipOID))
+	return err == nil
+}
+
+// ListObjectOIDs returns every object OID present in the store.
+func (s *Store) ListObjectOIDs() ([]string, error) {
+	var oids []string
+	root := filepath.Join(s.Root, "objects")
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		name := d.Name()
+		if !strings.HasSuffix(name, ".meta.json") {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		// rel = "ab/cdef....meta.json"
+		parts := strings.Split(filepath.ToSlash(rel), "/")
+		if len(parts) != 2 {
+			return nil
+		}
+		oid := parts[0] + strings.TrimSuffix(parts[1], ".meta.json")
+		if len(oid) == 40 {
+			oids = append(oids, oid)
+		}
+		return nil
+	})
+	return oids, err
 }
 
 // Get returns metadata and payload for oid.

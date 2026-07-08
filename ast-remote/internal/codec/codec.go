@@ -41,10 +41,11 @@ const (
 
 // Encoding names stored in the object store metadata.
 const (
-	EncodingRaw     = "raw"      // gzip(source)
-	EncodingRawDict = "raw-dict" // flate(source, langDict)
-	EncodingAST     = "ast"      // protocol + raw flate
-	EncodingASTDict = "ast-dict" // protocol + flate(langDict)
+	EncodingRaw      = "raw"      // gzip(source)
+	EncodingRawDict  = "raw-dict" // flate(source, langDict)
+	EncodingAST      = "ast"      // protocol + raw flate
+	EncodingASTDict  = "ast-dict" // protocol + flate(langDict)
+	EncodingIdentity = "identity" // raw bytes, no compression (trees/commits)
 )
 
 // Result is the outcome of encoding one blob.
@@ -68,6 +69,11 @@ type EncodeOptions struct {
 	// NoAdaptive disables picking the min candidate and always stores the
 	// protocol+flate form when parsing succeeds.
 	NoAdaptive bool
+
+	// Fast skips tree-sitter protocol candidates and uses BestSpeed deflate.
+	// Used by the remote helper push path where wall-clock dominates; size
+	// benches keep the full adaptive protocol path.
+	Fast bool
 }
 
 // EncodeFile losslessly encodes source for path using default options.
@@ -77,7 +83,14 @@ func EncodeFile(path string, source []byte) (*Result, error) {
 
 // EncodeFileOpts is EncodeFile with explicit options.
 func EncodeFileOpts(path string, source []byte, opts EncodeOptions) (*Result, error) {
-	gzipRaw, err := gzipBytes(source)
+	level := gzip.BestCompression
+	flateLevel := flate.BestCompression
+	if opts.Fast {
+		level = gzip.BestSpeed
+		flateLevel = flate.BestSpeed
+	}
+
+	gzipRaw, err := gzipBytesLevel(source, level)
 	if err != nil {
 		return nil, err
 	}
@@ -96,6 +109,32 @@ func EncodeFileOpts(path string, source []byte, opts EncodeOptions) (*Result, er
 	}
 	base.Lang = lang.Name
 
+	// Fast push path: skip tree-sitter. Prefer fixed language dict, else gzip.
+	if opts.Fast {
+		dict := dictForLang(lang.Name)
+		if len(dict) > 0 {
+			rawBody, err := flateDictBytesLevel(source, dict, flateLevel)
+			if err != nil {
+				return nil, err
+			}
+			rawDict := wrapDictPayload(lang.Name, rawBody)
+			if len(rawDict) < len(gzipRaw) {
+				base.Encoding = EncodingRawDict
+				base.Payload = rawDict
+				base.PayloadSize = len(rawDict)
+				base.RawDictSize = len(rawDict)
+				base.Mode = "raw-dict"
+				return base, nil
+			}
+			base.RawDictSize = len(rawDict)
+		}
+		base.Encoding = EncodingRaw
+		base.Payload = gzipRaw
+		base.PayloadSize = len(gzipRaw)
+		base.Mode = "raw"
+		return base, nil
+	}
+
 	proto, leafCount, err := encodeProtocol(lang, source)
 	if err != nil {
 		base.Encoding = EncodingRaw
@@ -104,7 +143,7 @@ func EncodeFileOpts(path string, source []byte, opts EncodeOptions) (*Result, er
 		base.SkippedReason = err.Error()
 		return base, nil
 	}
-	astFlate, err := wrapFlate(proto)
+	astFlate, err := wrapFlateLevel(proto, flateLevel)
 	if err != nil {
 		return nil, err
 	}
@@ -115,11 +154,11 @@ func EncodeFileOpts(path string, source []byte, opts EncodeOptions) (*Result, er
 	dict := dictForLang(lang.Name)
 	var rawDict, astDict []byte
 	if len(dict) > 0 {
-		rawBody, err := flateDictBytes(source, dict)
+		rawBody, err := flateDictBytesLevel(source, dict, flateLevel)
 		if err != nil {
 			return nil, err
 		}
-		astBody, err := flateDictBytes(proto, dict)
+		astBody, err := flateDictBytesLevel(proto, dict, flateLevel)
 		if err != nil {
 			return nil, err
 		}
@@ -172,6 +211,10 @@ func Decode(encoding string, payload []byte) ([]byte, error) {
 	switch encoding {
 	case EncodingRaw, "":
 		return gunzipBytes(payload)
+	case EncodingIdentity:
+		out := make([]byte, len(payload))
+		copy(out, payload)
+		return out, nil
 	case EncodingRawDict:
 		return decodeDictRaw(payload)
 	case EncodingAST:
@@ -338,8 +381,12 @@ func decodeProtocol(payload []byte) ([]byte, error) {
 }
 
 func flateDictBytes(data, dict []byte) ([]byte, error) {
+	return flateDictBytesLevel(data, dict, flate.BestCompression)
+}
+
+func flateDictBytesLevel(data, dict []byte, level int) ([]byte, error) {
 	var body bytes.Buffer
-	w, err := flate.NewWriterDict(&body, flate.BestCompression, dict)
+	w, err := flate.NewWriterDict(&body, level, dict)
 	if err != nil {
 		return nil, err
 	}
@@ -407,8 +454,12 @@ func splitDictPayload(payload []byte) (lang string, body []byte, err error) {
 }
 
 func gzipBytes(b []byte) ([]byte, error) {
+	return gzipBytesLevel(b, gzip.BestCompression)
+}
+
+func gzipBytesLevel(b []byte, level int) ([]byte, error) {
 	var buf bytes.Buffer
-	w, err := gzip.NewWriterLevel(&buf, gzip.BestCompression)
+	w, err := gzip.NewWriterLevel(&buf, level)
 	if err != nil {
 		return nil, err
 	}
@@ -431,8 +482,12 @@ func gunzipBytes(b []byte) ([]byte, error) {
 }
 
 func wrapFlate(data []byte) ([]byte, error) {
+	return wrapFlateLevel(data, flate.BestCompression)
+}
+
+func wrapFlateLevel(data []byte, level int) ([]byte, error) {
 	var body bytes.Buffer
-	w, err := flate.NewWriter(&body, flate.BestCompression)
+	w, err := flate.NewWriter(&body, level)
 	if err != nil {
 		return nil, err
 	}
