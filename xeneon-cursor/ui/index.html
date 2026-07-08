@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <title>Xeneon Cursor</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Sora:wght@600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./css/app.css" />
+  </head>
+  <body>
+    <div class="app" id="app">
+      <header class="topbar">
+        <div class="brand">
+          <h1>Xeneon Cursor</h1>
+          <span class="tag">Cloud agents</span>
+        </div>
+        <div class="top-actions">
+          <div class="pill" id="connPill" title="API connection">
+            <span class="dot"></span>
+            <span id="connLabel">Connecting…</span>
+          </div>
+          <button class="btn ghost" id="refreshBtn" type="button">Refresh</button>
+          <button class="btn ghost" id="cycleBtn" type="button">Next needing me</button>
+          <button class="btn primary" id="newBtn" type="button">New agent</button>
+        </div>
+      </header>
+
+      <main class="main">
+        <section class="panel">
+          <div class="panel-header">
+            <h2>Agents</h2>
+            <span class="meta" id="agentCount">—</span>
+          </div>
+          <div class="agent-rail" id="agentRail" aria-label="Cloud agents"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <h2>Selected</h2>
+            <span class="meta" id="selectedMeta">Tap a card</span>
+          </div>
+          <div class="detail" id="detail">
+            <div class="detail-empty">Select an agent to follow up, cancel, or open in Cursor.</div>
+          </div>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <div>
+          Designed for Corsair XENEON EDGE · <code>2560×720</code>
+        </div>
+        <div id="versionLabel">v0.1.0</div>
+      </footer>
+    </div>
+
+    <div class="modal-backdrop" id="modalBackdrop" role="dialog" aria-modal="true">
+      <form class="modal" id="newForm">
+        <h2 id="modalTitle">New cloud agent</h2>
+        <div class="field">
+          <label for="promptInput">Prompt</label>
+          <textarea id="promptInput" required placeholder="What should the agent do?"></textarea>
+        </div>
+        <div class="field">
+          <label for="repoInput">Repository URL (optional)</label>
+          <input id="repoInput" list="repoList" placeholder="https://github.com/org/repo" />
+          <datalist id="repoList"></datalist>
+        </div>
+        <div class="field">
+          <label for="refInput">Branch / ref</label>
+          <input id="refInput" value="main" />
+        </div>
+        <div class="field">
+          <label for="modelInput">Model (optional)</label>
+          <select id="modelInput">
+            <option value="">Default</option>
+          </select>
+        </div>
+        <div class="modal-actions">
+          <button class="btn ghost" type="button" id="cancelModalBtn">Cancel</button>
+          <button class="btn primary" type="submit" id="submitModalBtn">Launch</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="toast" id="toast" role="status"></div>
+
+    <script type="module" src="./js/app.js"></script>
+  </body>
+</html>

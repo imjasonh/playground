@@ -1,0 +1,14 @@
+node_modules/
+.DS_Store
+dist/
+build/
+*.app/
+*.zip
+.swiftpm/
+.derivedData/
+macos/.build/
+coverage/
+test-results/
+.env
+.env.*
+!.env.example

@@ -38,6 +38,9 @@ experiments don't bit-rot.
   data collected by an hourly scrape workflow.
 - **[`web-push-demo/`](web-push-demo/)** — a browser front-end for the
   `web-push` Worker: subscribe/unsubscribe and send notifications end to end.
+- **[`xeneon-cursor/`](xeneon-cursor/)** — macOS app (WKWebView kiosk) that
+  manages Cursor cloud agents on a Corsair XENEON EDGE touchscreen strip;
+  CI builds the `.app` and publishes installable releases.
 
 ## Tools
 
@@ -52,5 +55,7 @@ skip them:
   via SQLite virtual tables over go-containerregistry (Go CLI).
 - **[`web-push/`](web-push/)** — a Web Push application-server backend
   (RFC 8030/8188/8291/8292) for Cloudflare Workers, in Rust.
+- **[`xeneon-cursor/`](xeneon-cursor/)** — native macOS HUD for Cursor cloud
+  agents (not a Pages app; see its README for install via GitHub Releases).
 
 See [`AGENTS.md`](AGENTS.md) for repository conventions, CI, and how to add a new app.

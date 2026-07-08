@@ -1,0 +1,102 @@
+name: Xeneon Cursor
+
+on:
+  pull_request:
+    paths:
+      - 'xeneon-cursor/**'
+      - '.github/workflows/xeneon-cursor.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'xeneon-cursor/**'
+      - '.github/workflows/xeneon-cursor.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: xeneon-cursor-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: xeneon-cursor
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run unit tests
+        run: npm test
+
+  build-macos:
+    needs: test
+    runs-on: macos-14
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: xeneon-cursor
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version
+        id: version
+        run: echo "version=$(tr -d '[:space:]' < VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Package macOS app
+        run: bash scripts/package-macos.sh "${{ steps.version.outputs.version }}"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: XeneonCursor-macos
+          path: |
+            xeneon-cursor/dist/XeneonCursor-macos.zip
+            xeneon-cursor/dist/SHA256SUMS
+          if-no-files-found: error
+
+      - name: Publish GitHub Release (main only)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          TAG="xeneon-cursor-v${VERSION}"
+          TITLE="Xeneon Cursor v${VERSION}"
+          NOTES="$(cat <<EOF
+          ## Xeneon Cursor v${VERSION}
+
+          Touch-first Cursor cloud agent manager for the Corsair XENEON EDGE.
+
+          ### Install / update
+          \`\`\`bash
+          curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/xeneon-cursor/scripts/install.sh | bash
+          \`\`\`
+
+          Or download \`XeneonCursor-macos.zip\`, unzip, and move \`XeneonCursor.app\` to \`~/Applications\`.
+
+          ### Notes
+          - Ad-hoc signed (not Developer ID). First launch: right-click → Open, or clear quarantine via the install script.
+          - Set a Cloud Agents API key from [cursor.com/dashboard/api](https://cursor.com/dashboard/api) (⌘K in the app).
+          - Commit: \`${SHA}\`
+          EOF
+          )"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG exists — uploading/replacing assets."
+            gh release upload "$TAG" \
+              dist/XeneonCursor-macos.zip \
+              dist/SHA256SUMS \
+              --clobber
+            gh release edit "$TAG" --title "$TITLE" --notes "$NOTES"
+          else
+            gh release create "$TAG" \
+              dist/XeneonCursor-macos.zip \
+              dist/SHA256SUMS \
+              --title "$TITLE" \
+              --notes "$NOTES"
+          fi

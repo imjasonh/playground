@@ -25,7 +25,8 @@ playground/
 ├── kanoodle/              # example app with tests (JS + Jest + Playwright)
 ├── ocidb/                 # Go CLI (Go module + Go tests)
 ├── web-push/              # Rust Cloudflare Worker (Cargo + tests; not a Pages app)
-└── web-push-demo/         # static browser front-end for the web-push Worker
+├── web-push-demo/         # static browser front-end for the web-push Worker
+└── xeneon-cursor/         # macOS WKWebView app: Cursor cloud agent HUD for XENEON EDGE
 ```
 
 ### Browser apps
@@ -91,6 +92,7 @@ discovery scripts.
 | `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps in one job |
 | `deps.yaml` | daily at 00:00 UTC, manual | Updates every testable browser app, Go app, and Rust app; pushes passing updates to `main`, otherwise opens a PR |
 | `nypd-choppers-scrape.yml` | hourly, manual | **App-specific:** fetches NYPD helicopter full-day ADS-B traces and merges per-day JSON to `gh-pages` under `nypd-choppers/data/`. Not generalized; shares the `gh-pages-publish` concurrency group with deploy/preview/cleanup |
+| `xeneon-cursor.yml` | PR / push touching `xeneon-cursor/` | **App-specific:** tests the HUD/proxy on Ubuntu, builds `XeneonCursor.app` on `macos-14`, and on `main` publishes/updates a `xeneon-cursor-v*` GitHub Release zip |
 
 Deploy workflows copy browser app directories as-is (they do **not** run
 `npm install` or build). Go and Rust app directories are not deployed. Only
@@ -349,6 +351,12 @@ cargo test
 > flight traces and accumulate historical data, which it commits to the
 > `gh-pages` branch (never `main`). Do not try to fold this data-collection
 > pattern into the shared deploy/test/deps workflows.
+
+## Current native / non-Pages apps
+
+| Directory | Type | Tests / CI |
+|-----------|------|------------|
+| `xeneon-cursor/` | macOS WKWebView kiosk for Cursor cloud agents on the Corsair XENEON EDGE (not a Pages app; no root `index.html`) | `npm test`; macOS `.app` build + GitHub Release via `xeneon-cursor.yml` |
 
 ## Current Go apps
 
