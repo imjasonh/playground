@@ -1,0 +1,16 @@
+# Built binaries
+/ast-remote
+/git-remote-ast
+ast-remote.exe
+git-remote-ast.exe
+
+# Go test/coverage artifacts
+*.test
+*.out
+coverage.txt
+coverage.html
+
+# Local benchmark / scratch output
+/bench-out/
+/tmp-store/
+*.bench.json

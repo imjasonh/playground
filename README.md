@@ -50,6 +50,9 @@ skip them:
   contents with SQL, via SQLite virtual tables over go-git (Go CLI).
 - **[`ocidb/`](ocidb/)** — explore OCI container images on Docker Hub with SQL,
   via SQLite virtual tables over go-containerregistry (Go CLI).
+- **[`ast-remote/`](ast-remote/)** — experiment: a git remote helper that
+  stores source as tree-sitter AST leaf-streams (then rehydrates on fetch),
+  with benchmarks vs gzip (Go CLI; needs cgo).
 - **[`web-push/`](web-push/)** — a Web Push application-server backend
   (RFC 8030/8188/8291/8292) for Cloudflare Workers, in Rust.
 

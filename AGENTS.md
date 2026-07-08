@@ -24,6 +24,7 @@ playground/
 ├── hello/                 # example static app (HTML only)
 ├── kanoodle/              # example app with tests (JS + Jest + Playwright)
 ├── ocidb/                 # Go CLI (Go module + Go tests)
+├── ast-remote/            # Go CLI: AST-compressed git remote helper (cgo)
 ├── web-push/              # Rust Cloudflare Worker (Cargo + tests; not a Pages app)
 └── web-push-demo/         # static browser front-end for the web-push Worker
 ```
@@ -44,6 +45,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `web-push-demo/` | yes | Static front-end for `web-push`; HTML/JS, no build or tests |
 | `gitdb/` | no | Go CLI; no `index.html` |
 | `ocidb/` | no | Go CLI; no `index.html` |
+| `ast-remote/` | no | Go CLI (cgo/tree-sitter); no `index.html` |
 | `web-push/` | no | Rust Cloudflare Worker; no `index.html` |
 | `cors-proxy/` | no | Rust Cloudflare Worker; no `index.html` |
 | `.github/` | no | Infrastructure only |
@@ -356,6 +358,7 @@ cargo test
 |-----------|------|-------|
 | `gitdb/` | git repository explorer backed by SQLite virtual tables | `go test ./...` |
 | `ocidb/` | OCI registry explorer backed by SQLite virtual tables | `go test ./...` |
+| `ast-remote/` | AST-compressed git remote helper (tree-sitter) + size/latency benches | `go test ./...` (needs cgo) |
 
 ## Current Rust apps
 
