@@ -1,7 +1,12 @@
 // Package asp1 implements the ASP1 tip stream: a zstd-compressed concatenation
 // of raw git objects used for full-clone fast path.
 //
-// Wire format:
+// Wire format (v2, current):
+//
+//	"ASP1" | version(u8)=2 | codec(u8)=1 (zstd)
+//	| nframes(u16be) | repeated: clen(u32be) | zstd(payload_i)
+//
+// Wire format (v1, still readable):
 //
 //	"ASP1" | version(u8)=1 | codec(u8)=1 (zstd) | zstd(payload)
 //
@@ -13,7 +18,7 @@
 //
 // Objects are encoded in path-sorted order (type, then path, then oid) so a
 // large-window zstd pass can exploit cross-version similarity of same-path
-// blobs. On fetch we inflate once and write loose objects in parallel.
+// blobs. Multiple frames let fetch decompress and write in parallel.
 package asp1
 
 import (
@@ -26,6 +31,7 @@ import (
 	"runtime"
 	"sort"
 	"sync"
+	"sync/atomic"
 
 	"github.com/klauspost/compress/zlib"
 	"github.com/klauspost/compress/zstd"
@@ -33,9 +39,11 @@ import (
 
 const (
 	Magic      = "ASP1"
-	Version    = 1
+	Version    = 2
+	VersionV1  = 1
 	CodecZstd  = 1
 	windowSize = 1 << 27 // 128 MiB
+	numFrames  = 8
 )
 
 // Object is one git object to pack into an ASP1 stream.
@@ -106,16 +114,10 @@ func SortForEncode(objs []Object) {
 	})
 }
 
-// Encode builds an ASP1 stream from objs. Objects are sorted for compression
-// (caller Path hints are used; order of objs is not preserved).
-func Encode(objs []Object) ([]byte, error) {
-	sorted := make([]Object, len(objs))
-	copy(sorted, objs)
-	SortForEncode(sorted)
-
+func buildPayload(objs []Object) ([]byte, error) {
 	var payload bytes.Buffer
-	payload.Grow(estimatePayload(sorted))
-	for _, o := range sorted {
+	payload.Grow(estimatePayload(objs))
+	for _, o := range objs {
 		tb, err := typeByte(o.Kind)
 		if err != nil {
 			return nil, err
@@ -137,9 +139,10 @@ func Encode(objs []Object) ([]byte, error) {
 			return nil, err
 		}
 	}
+	return payload.Bytes(), nil
+}
 
-	// BetterCompression + path-sort beats a native tip pack on size while
-	// staying much faster to encode than SpeedBestCompression on large repos.
+func compressPayload(payload []byte) ([]byte, error) {
 	enc, err := zstd.NewWriter(nil,
 		zstd.WithEncoderLevel(zstd.SpeedBetterCompression),
 		zstd.WithWindowSize(windowSize),
@@ -147,14 +150,84 @@ func Encode(objs []Object) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	comp := enc.EncodeAll(payload.Bytes(), make([]byte, 0, len(payload.Bytes())/4))
+	comp := enc.EncodeAll(payload, make([]byte, 0, len(payload)/4))
 	_ = enc.Close()
+	return comp, nil
+}
 
-	out := make([]byte, 0, 6+len(comp))
-	out = append(out, Magic...)
-	out = append(out, Version, CodecZstd)
-	out = append(out, comp...)
-	return out, nil
+// Encode builds an ASP1 v2 multi-frame stream from objs.
+// Objects are path-sorted; frames are encoded in parallel.
+func Encode(objs []Object) ([]byte, error) {
+	sorted := make([]Object, len(objs))
+	copy(sorted, objs)
+	SortForEncode(sorted)
+
+	frames := splitFrames(sorted, numFrames)
+	comps := make([][]byte, len(frames))
+	errCh := make(chan error, 1)
+	var wg sync.WaitGroup
+	for i, chunk := range frames {
+		wg.Add(1)
+		go func(i int, chunk []Object) {
+			defer wg.Done()
+			payload, err := buildPayload(chunk)
+			if err != nil {
+				select {
+				case errCh <- err:
+				default:
+				}
+				return
+			}
+			comp, err := compressPayload(payload)
+			if err != nil {
+				select {
+				case errCh <- err:
+				default:
+				}
+				return
+			}
+			comps[i] = comp
+		}(i, chunk)
+	}
+	wg.Wait()
+	select {
+	case err := <-errCh:
+		return nil, err
+	default:
+	}
+
+	var out bytes.Buffer
+	out.WriteString(Magic)
+	out.WriteByte(Version)
+	out.WriteByte(CodecZstd)
+	_ = binary.Write(&out, binary.BigEndian, uint16(len(comps)))
+	for _, c := range comps {
+		_ = binary.Write(&out, binary.BigEndian, uint32(len(c)))
+		out.Write(c)
+	}
+	return out.Bytes(), nil
+}
+
+func splitFrames(objs []Object, n int) [][]Object {
+	if len(objs) == 0 {
+		return nil
+	}
+	if n < 1 {
+		n = 1
+	}
+	if n > len(objs) {
+		n = len(objs)
+	}
+	chunk := (len(objs) + n - 1) / n
+	var frames [][]Object
+	for i := 0; i < len(objs); i += chunk {
+		end := i + chunk
+		if end > len(objs) {
+			end = len(objs)
+		}
+		frames = append(frames, objs[i:end])
+	}
+	return frames
 }
 
 func estimatePayload(objs []Object) int {
@@ -165,12 +238,7 @@ func estimatePayload(objs []Object) int {
 	return n
 }
 
-// Decode decompresses an ASP1 stream into objects (does not write to disk).
-func Decode(stream []byte) ([]Object, error) {
-	payload, err := decompress(stream)
-	if err != nil {
-		return nil, err
-	}
+func parsePayload(payload []byte) ([]Object, error) {
 	var objs []Object
 	off := 0
 	for off < len(payload) {
@@ -194,32 +262,109 @@ func Decode(stream []byte) ([]Object, error) {
 	return objs, nil
 }
 
-func decompress(stream []byte) ([]byte, error) {
-	if len(stream) < 6 || string(stream[:4]) != Magic {
-		return nil, fmt.Errorf("asp1: bad magic")
-	}
-	if stream[4] != Version {
-		return nil, fmt.Errorf("asp1: unsupported version %d", stream[4])
-	}
-	if stream[5] != CodecZstd {
-		return nil, fmt.Errorf("asp1: unsupported codec %d", stream[5])
-	}
-	dec, err := zstd.NewReader(nil, zstd.WithDecoderMaxWindow(1<<30))
+// Decode decompresses an ASP1 stream into objects (does not write to disk).
+func Decode(stream []byte) ([]Object, error) {
+	frames, err := framePayloads(stream)
 	if err != nil {
 		return nil, err
 	}
-	defer dec.Close()
-	return dec.DecodeAll(stream[6:], nil)
+	var objs []Object
+	for _, p := range frames {
+		part, err := parsePayload(p)
+		if err != nil {
+			return nil, err
+		}
+		objs = append(objs, part...)
+	}
+	return objs, nil
+}
+
+func framePayloads(stream []byte) ([][]byte, error) {
+	if len(stream) < 6 || string(stream[:4]) != Magic {
+		return nil, fmt.Errorf("asp1: bad magic")
+	}
+	ver := stream[4]
+	if stream[5] != CodecZstd {
+		return nil, fmt.Errorf("asp1: unsupported codec %d", stream[5])
+	}
+	switch ver {
+	case VersionV1:
+		dec, err := zstd.NewReader(nil, zstd.WithDecoderMaxWindow(1<<30))
+		if err != nil {
+			return nil, err
+		}
+		defer dec.Close()
+		payload, err := dec.DecodeAll(stream[6:], nil)
+		if err != nil {
+			return nil, err
+		}
+		return [][]byte{payload}, nil
+	case Version:
+		if len(stream) < 8 {
+			return nil, fmt.Errorf("asp1: truncated v2 header")
+		}
+		n := int(binary.BigEndian.Uint16(stream[6:8]))
+		off := 8
+		out := make([][]byte, n)
+		var wg sync.WaitGroup
+		errCh := make(chan error, 1)
+		type job struct {
+			i   int
+			raw []byte
+		}
+		jobs := make([]job, 0, n)
+		for i := 0; i < n; i++ {
+			if off+4 > len(stream) {
+				return nil, fmt.Errorf("asp1: truncated frame %d len", i)
+			}
+			clen := int(binary.BigEndian.Uint32(stream[off : off+4]))
+			off += 4
+			if off+clen > len(stream) {
+				return nil, fmt.Errorf("asp1: truncated frame %d data", i)
+			}
+			jobs = append(jobs, job{i, stream[off : off+clen]})
+			off += clen
+		}
+		for _, j := range jobs {
+			wg.Add(1)
+			go func(j job) {
+				defer wg.Done()
+				dec, err := zstd.NewReader(nil, zstd.WithDecoderMaxWindow(1<<30))
+				if err != nil {
+					select {
+					case errCh <- err:
+					default:
+					}
+					return
+				}
+				payload, err := dec.DecodeAll(j.raw, nil)
+				dec.Close()
+				if err != nil {
+					select {
+					case errCh <- err:
+					default:
+					}
+					return
+				}
+				out[j.i] = payload
+			}(j)
+		}
+		wg.Wait()
+		select {
+		case err := <-errCh:
+			return nil, err
+		default:
+		}
+		return out, nil
+	default:
+		return nil, fmt.Errorf("asp1: unsupported version %d", ver)
+	}
 }
 
 // Install writes ASP1 objects as loose objects under gitDir/objects.
-// OID checks are performed; zlib uses BestSpeed. Parallel writers keep
-// large-repo ingest competitive with git index-pack of a tip pack.
+// Frames are decompressed and written in parallel. Store-produced streams are
+// trusted (no per-object SHA-1 verify). zlib uses BestSpeed.
 func Install(gitDir string, stream []byte) (int, error) {
-	payload, err := decompress(stream)
-	if err != nil {
-		return 0, err
-	}
 	objDir := filepath.Join(gitDir, "objects")
 	for i := 0; i < 256; i++ {
 		if err := os.MkdirAll(filepath.Join(objDir, fmt.Sprintf("%02x", i)), 0o755); err != nil {
@@ -227,89 +372,100 @@ func Install(gitDir string, stream []byte) (int, error) {
 		}
 	}
 
-	type entry struct {
-		kind string
-		oid  string
-		data []byte
+	if len(stream) < 6 || string(stream[:4]) != Magic {
+		return 0, fmt.Errorf("asp1: bad magic")
 	}
-	var entries []entry
-	off := 0
-	for off < len(payload) {
-		if off+25 > len(payload) {
-			return 0, fmt.Errorf("asp1: truncated entry at %d", off)
-		}
-		kind, err := kindFromType(payload[off])
-		if err != nil {
-			return 0, err
-		}
-		oid := hex.EncodeToString(payload[off+1 : off+21])
-		size := int(binary.BigEndian.Uint32(payload[off+21 : off+25]))
-		off += 25
-		if off+size > len(payload) {
-			return 0, fmt.Errorf("asp1: truncated data for %s", oid)
-		}
-		entries = append(entries, entry{kind, oid, payload[off : off+size]})
-		off += size
+	ver := stream[4]
+	if stream[5] != CodecZstd {
+		return 0, fmt.Errorf("asp1: unsupported codec %d", stream[5])
 	}
 
-	workers := runtime.GOMAXPROCS(0)
-	if workers < 2 {
-		workers = 2
-	}
-	if workers > 32 {
-		workers = 32
-	}
-	jobs := make(chan entry, workers*4)
+	var total atomic.Int64
 	errCh := make(chan error, 1)
-	var wg sync.WaitGroup
-	worker := func() {
-		defer wg.Done()
-		var zbuf bytes.Buffer
-		zw, _ := zlib.NewWriterLevel(&zbuf, zlib.BestSpeed)
-		hdr := make([]byte, 0, 64)
-		for e := range jobs {
-			hdr = hdr[:0]
-			hdr = append(hdr, e.kind...)
-			hdr = append(hdr, ' ')
-			hdr = append(hdr, fmt.Sprintf("%d", len(e.data))...)
-			hdr = append(hdr, 0)
-			// Trust store-produced ASP1 streams: skip per-object SHA-1 verify
-			// (Encode already keyed by OID; verify in tests via Decode round-trip).
-			zbuf.Reset()
-			zw.Reset(&zbuf)
-			if _, err := zw.Write(hdr); err != nil {
+
+	installPayload := func(payload []byte) {
+		type entry struct {
+			kind string
+			oid  string
+			data []byte
+		}
+		var entries []entry
+		off := 0
+		for off < len(payload) {
+			if off+25 > len(payload) {
+				select {
+				case errCh <- fmt.Errorf("asp1: truncated entry at %d", off):
+				default:
+				}
+				return
+			}
+			kind, err := kindFromType(payload[off])
+			if err != nil {
 				select {
 				case errCh <- err:
 				default:
 				}
 				return
 			}
-			if _, err := zw.Write(e.data); err != nil {
+			oid := hex.EncodeToString(payload[off+1 : off+21])
+			size := int(binary.BigEndian.Uint32(payload[off+21 : off+25]))
+			off += 25
+			if off+size > len(payload) {
 				select {
-				case errCh <- err:
+				case errCh <- fmt.Errorf("asp1: truncated data for %s", oid):
 				default:
 				}
 				return
 			}
-			if err := zw.Close(); err != nil {
-				select {
-				case errCh <- err:
-				default:
+			entries = append(entries, entry{kind, oid, payload[off : off+size]})
+			off += size
+		}
+
+		workers := runtime.GOMAXPROCS(0)
+		if workers < 2 {
+			workers = 2
+		}
+		if workers > 16 {
+			workers = 16
+		}
+		jobs := make(chan entry, workers*8)
+		var wg sync.WaitGroup
+		worker := func() {
+			defer wg.Done()
+			var zbuf bytes.Buffer
+			zw, _ := zlib.NewWriterLevel(&zbuf, zlib.BestSpeed)
+			hdr := make([]byte, 0, 64)
+			for e := range jobs {
+				hdr = hdr[:0]
+				hdr = append(hdr, e.kind...)
+				hdr = append(hdr, ' ')
+				hdr = append(hdr, fmt.Sprintf("%d", len(e.data))...)
+				hdr = append(hdr, 0)
+				zbuf.Reset()
+				zw.Reset(&zbuf)
+				if _, err := zw.Write(hdr); err != nil {
+					select {
+					case errCh <- err:
+					default:
+					}
+					return
 				}
-				return
-			}
-			path := filepath.Join(objDir, e.oid[:2], e.oid[2:])
-			tmp := path + ".tmp"
-			if err := os.WriteFile(tmp, zbuf.Bytes(), 0o444); err != nil {
-				select {
-				case errCh <- err:
-				default:
+				if _, err := zw.Write(e.data); err != nil {
+					select {
+					case errCh <- err:
+					default:
+					}
+					return
 				}
-				return
-			}
-			if err := os.Rename(tmp, path); err != nil {
-				_ = os.Remove(tmp)
-				if _, statErr := os.Stat(path); statErr != nil {
+				if err := zw.Close(); err != nil {
+					select {
+					case errCh <- err:
+					default:
+					}
+					return
+				}
+				path := filepath.Join(objDir, e.oid[:2], e.oid[2:])
+				if err := os.WriteFile(path, zbuf.Bytes(), 0o444); err != nil {
 					select {
 					case errCh <- err:
 					default:
@@ -318,26 +474,86 @@ func Install(gitDir string, stream []byte) (int, error) {
 				}
 			}
 		}
-	}
-	wg.Add(workers)
-	for i := 0; i < workers; i++ {
-		go worker()
-	}
-	for _, e := range entries {
-		select {
-		case err := <-errCh:
-			close(jobs)
-			wg.Wait()
-			return 0, err
-		case jobs <- e:
+		wg.Add(workers)
+		for i := 0; i < workers; i++ {
+			go worker()
 		}
+		for _, e := range entries {
+			jobs <- e
+		}
+		close(jobs)
+		wg.Wait()
+		total.Add(int64(len(entries)))
 	}
-	close(jobs)
-	wg.Wait()
+
+	switch ver {
+	case VersionV1:
+		dec, err := zstd.NewReader(nil, zstd.WithDecoderMaxWindow(1<<30))
+		if err != nil {
+			return 0, err
+		}
+		payload, err := dec.DecodeAll(stream[6:], nil)
+		dec.Close()
+		if err != nil {
+			return 0, err
+		}
+		installPayload(payload)
+	case Version:
+		if len(stream) < 8 {
+			return 0, fmt.Errorf("asp1: truncated v2 header")
+		}
+		n := int(binary.BigEndian.Uint16(stream[6:8]))
+		off := 8
+		type frame struct {
+			raw []byte
+		}
+		frames := make([]frame, 0, n)
+		for i := 0; i < n; i++ {
+			if off+4 > len(stream) {
+				return 0, fmt.Errorf("asp1: truncated frame %d len", i)
+			}
+			clen := int(binary.BigEndian.Uint32(stream[off : off+4]))
+			off += 4
+			if off+clen > len(stream) {
+				return 0, fmt.Errorf("asp1: truncated frame %d data", i)
+			}
+			frames = append(frames, frame{stream[off : off+clen]})
+			off += clen
+		}
+		var wg sync.WaitGroup
+		for _, fr := range frames {
+			wg.Add(1)
+			go func(raw []byte) {
+				defer wg.Done()
+				dec, err := zstd.NewReader(nil, zstd.WithDecoderMaxWindow(1<<30))
+				if err != nil {
+					select {
+					case errCh <- err:
+					default:
+					}
+					return
+				}
+				payload, err := dec.DecodeAll(raw, nil)
+				dec.Close()
+				if err != nil {
+					select {
+					case errCh <- err:
+					default:
+					}
+					return
+				}
+				installPayload(payload)
+			}(fr.raw)
+		}
+		wg.Wait()
+	default:
+		return 0, fmt.Errorf("asp1: unsupported version %d", ver)
+	}
+
 	select {
 	case err := <-errCh:
 		return 0, err
 	default:
 	}
-	return len(entries), nil
+	return int(total.Load()), nil
 }

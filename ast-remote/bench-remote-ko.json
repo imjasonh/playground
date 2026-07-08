@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-08T18:05:05Z",
+  "generated_at": "2026-07-08T18:42:51Z",
   "go_version": "go1.22.2",
   "source": "/tmp/bench-repos/ko",
   "source_kind": "git-repo",
@@ -7,18 +7,18 @@
   "commits": 1415,
   "repeats": 5,
   "reachable_objects": 28783,
-  "protocol_push_ms": 6187.365,
-  "plain_push_ms": 1451.991,
-  "protocol_clone_ms": 1331.3562,
-  "plain_clone_ms": 1538.541,
-  "clone_ratio_protocol_over_plain": 0.8653368353524541,
-  "ast_store_bytes": 30779823,
-  "plain_remote_bytes": 50418283,
+  "protocol_push_ms": 2236.287,
+  "plain_push_ms": 1454.632,
+  "protocol_clone_ms": 909.8556000000001,
+  "plain_clone_ms": 1536.7776,
+  "clone_ratio_protocol_over_plain": 0.5920541788219715,
+  "ast_store_bytes": 31659213,
+  "plain_remote_bytes": 50418315,
   "protocol_clone_git_bytes": 118409924,
   "plain_clone_git_bytes": 50443491,
   "protocol_worktree_bytes": 1019029,
   "plain_worktree_bytes": 1019029,
   "fsck_ok": true,
   "worktrees_match": true,
-  "verdict": "protocol full clone is faster than local git-daemon (0.87x)"
+  "verdict": "protocol full clone is faster than local git-daemon (0.59x)"
 }

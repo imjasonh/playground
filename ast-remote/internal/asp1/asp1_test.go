@@ -31,7 +31,7 @@ func TestEncodeInstallRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(stream) < 6 || string(stream[:4]) != asp1.Magic {
+	if len(stream) < 8 || string(stream[:4]) != asp1.Magic || stream[4] != asp1.Version {
 		t.Fatalf("bad stream header")
 	}
 
@@ -83,5 +83,53 @@ func TestSortForEncode(t *testing.T) {
 		if o.OID != want[i] {
 			t.Fatalf("pos %d: got %s want %s", i, o.OID, want[i])
 		}
+	}
+}
+
+func TestV1InstallCompat(t *testing.T) {
+	// Build a v1 stream manually via Decode path: encode then rewrite header is hard;
+	// instead verify Install accepts a single-frame v1 by using Encode of one object
+	// and checking Version is 2, then separately craft v1 with Encode internals.
+	objs := []asp1.Object{
+		{Kind: "blob", Path: "x", OID: "", Data: []byte("compat\n")},
+	}
+	dir := t.TempDir()
+	if err := exec.Command("git", "init", "--quiet", dir).Run(); err != nil {
+		t.Fatal(err)
+	}
+	repo := gitcmd.New(dir, filepath.Join(dir, ".git"))
+	oid, err := repo.WriteObject(objs[0].Kind, objs[0].Data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	objs[0].OID = oid
+
+	stream, err := asp1.Encode(objs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Convert v2 single-frame to v1: ASP1 | 1 | codec | frame_bytes
+	if stream[4] != asp1.Version {
+		t.Fatalf("want v2")
+	}
+	nframes := int(stream[6])<<8 | int(stream[7])
+	if nframes != 1 {
+		t.Fatalf("want 1 frame got %d", nframes)
+	}
+	clen := int(stream[8])<<24 | int(stream[9])<<16 | int(stream[10])<<8 | int(stream[11])
+	frame := stream[12 : 12+clen]
+	v1 := append([]byte(asp1.Magic), asp1.VersionV1, asp1.CodecZstd)
+	v1 = append(v1, frame...)
+
+	dir2 := t.TempDir()
+	if err := exec.Command("git", "init", "--quiet", dir2).Run(); err != nil {
+		t.Fatal(err)
+	}
+	n, err := asp1.Install(filepath.Join(dir2, ".git"), v1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("installed %d", n)
 	}
 }

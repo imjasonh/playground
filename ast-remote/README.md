@@ -129,7 +129,7 @@ both remotes, then times **full `git clone`** end-to-end:
 
 | Side | What runs |
 |------|-----------|
-| protocol | `git clone ast::/path/store` (tip-pack `index-pack` + checkout; falls back to per-object rehydrate) |
+| protocol | `git clone ast::/path/store` (ASP1 tip stream → parallel loose install + checkout; falls back to per-object rehydrate) |
 | plain | `git clone git://127.0.0.1:<port>/plain.git` served by `git-daemon` from a bare repo |
 
 Both paths include object transfer, local object-store population, reachability
@@ -165,46 +165,48 @@ Mean encode is still parse-dominated when the full protocol path runs; the
 remote helper push path uses a **fast** encoder (lang dict / gzip, no
 tree-sitter) so push wall time stays practical.
 
-### Full clone latency (`ast-remote bench-remote`)
+### Full clone latency + store size (`ast-remote bench-remote`)
 
-Fair comparison: mean of full `git clone`s vs local `git-daemon`.
+Fair comparison: mean of full `git clone`s vs local `git-daemon`. Full-tip
+pushes store a single **ASP1** tip stream (path-sorted raw objects under
+large-window zstd, multi-frame for parallel inflate+write) — not tip-pack +
+per-object protocol blobs.
 
-| Corpus | history | protocol clone | git-daemon clone | ratio |
-|--------|---------|----------------|------------------|-------|
-| `testdata/corpus` (synthetic) | 5 commits / 30 objs | ~15 ms | ~99 ms | 0.15× |
-| **`ko-build/ko`** | **1415 commits / 28 783 objs** | **~1.38 s** | **~1.47 s** | **0.94×** |
+| Corpus | history | store vs bare | protocol clone | git-daemon | ratio |
+|--------|---------|---------------|----------------|------------|-------|
+| `testdata/corpus` | 5 commits / 30 objs | ~13% | ~23 ms | ~104 ms | **0.22×** |
+| **`ko-build/ko`** | 1415 commits / 28 783 objs | **~63%** | ~0.91 s | ~1.54 s | **0.59×** |
+| **kubernetes depth-5** | 16 commits / 29 516 objs | **~70%** | ~3.12 s | ~3.13 s | **1.00×** |
+| **kubernetes shallow-30** | 3678 commits / 136 171 objs | **~46%** | ~7.0 s | ~8.5 s | **0.83×** |
 
-On `ko`, push is ~2× a bare push (~3.0 s vs ~1.4 s) because the helper still
-encodes every object into the protocol store **and** builds a native tip pack.
-The tip pack is what full clone installs (`git index-pack`), so clone wall time
-matches a normal remote. Without the tip pack, naive per-object rehydrate +
-loose writes was ~2.7× after removing `hash-object` subprocesses, and ~26×
-before that.
+Both clones pass `git fsck --full` and produce identical worktrees (shallow
+boundary restored when present). JSON reports:
+`bench-remote.json`, `bench-remote-ko.json`, `bench-remote-k8s-d5.json`,
+`bench-remote-k8s-shallow.json`.
 
-Store size on `ko` is larger than a bare repo (~3.4×) while both the protocol
-object tree and the tip pack are retained. Ideas to close *that* gap next:
-drop per-object blobs when a tip pack exists, or serve protocol-only for
-partial fetches and tip-pack-only for full clones.
+Push is still slower than bare (`pack-objects`) because ASP1 encode pays
+zstd-better over the full tip closure (~1.5–2× on ko/k8s-d5; ~2× on
+k8s-shallow). That cost is offline relative to the clone ratio.
 
-Both clones pass `git fsck --full` and produce identical worktrees.
-`bench-remote-ko.json` / `bench-remote.json` have the latest runs.
+### Closing the clone + size gap (what actually mattered)
 
-### Closing the clone gap (what actually mattered)
+On a real repo the first clone was ~26× slower than `git-daemon`, and early
+tip-pack stores were ~3.4× bare. Profiling and packing experiments:
 
-On a real repo the first clone was ~26× slower than `git-daemon`. Profiling
-showed almost none of that was “AST decode”:
+1. **~28k `git hash-object -w` subprocesses** → native loose writes +
+   `cat-file --batch` → **~2.7×**.
+2. **Tip pack at push** (`git pack-objects` + `index-pack`) → clone **~0.94×**,
+   but store **~3.4×** bare (protocol objects + pack).
+3. **ASP1 tip stream** — raw object bodies under large-window zstd, **ASP1-only**
+   full-tip push (no per-object blobs) → store **~60%** of bare on ko, but
+   unsorted order left multi-version histories near tip-pack size.
+4. **Path-sorted encode** (type → path → oid) so same-path blob versions
+   cluster for zstd → k8s-shallow store **~46%** of bare (was ~98% unsorted).
+5. **Multi-frame ASP1 (v2)** — 8 zstd frames encoded/decoded in parallel →
+   clone **≤ git-daemon** on ko, k8s-d5, and k8s-shallow.
 
-1. **~28k `git hash-object -w` / `cat-file` subprocesses** → native loose
-   object writes + `cat-file --batch` → **~2.7×**.
-2. **Chatty per-object stderr + serial I/O** → parallel workers + quiet
-   progress → folded into (1).
-3. **Rehydrate-on-fetch still pays zlib+SHA-1 per object** while git-daemon
-   ships one pack → **tip pack at push** (`git pack-objects`), fetch =
-   `index-pack` → **~0.94×** (parity).
-
-So the fair clone story is: pay encode+pack once on push, then clone like a
-normal git remote. The protocol object store remains useful for size
-experiments and for a future partial-fetch path that does not want a tip pack.
+Per-file protocol codecs remain useful for size experiments and a future
+partial-fetch path; full clone is ASP1.
 
 ## Why gzip is hard to beat (and how we still edged it)
 
@@ -230,6 +232,7 @@ ast-remote/
 ├── main.go                 # ast-remote CLI (encode/decode/bench)
 ├── cmd/git-remote-ast/     # git remote helper binary
 ├── internal/
+│   ├── asp1/               # ASP1 tip stream (path-sorted multi-frame zstd)
 │   ├── codec/              # the protocol + dict wrappers
 │   ├── langs/              # extension → tree-sitter grammar
 │   ├── store/              # filesystem remote object store

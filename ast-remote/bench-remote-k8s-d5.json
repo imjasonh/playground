@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-08T18:12:57Z",
+  "generated_at": "2026-07-08T18:43:32Z",
   "go_version": "go1.22.2",
   "source": "/tmp/bench-repos/k8s-d5",
   "source_kind": "git-repo",
@@ -7,12 +7,12 @@
   "commits": 16,
   "repeats": 3,
   "reachable_objects": 29516,
-  "protocol_push_ms": 5507.096,
-  "plain_push_ms": 1390.289,
-  "protocol_clone_ms": 3479.7566666666667,
-  "plain_clone_ms": 3152.382,
-  "clone_ratio_protocol_over_plain": 1.1038499352764566,
-  "ast_store_bytes": 29147834,
+  "protocol_push_ms": 1630.005,
+  "plain_push_ms": 1390.504,
+  "protocol_clone_ms": 3122.056,
+  "plain_clone_ms": 3126.0886666666665,
+  "clone_ratio_protocol_over_plain": 0.998709996069636,
+  "ast_store_bytes": 32417992,
   "plain_remote_bytes": 46368515,
   "protocol_clone_git_bytes": 74623368,
   "plain_clone_git_bytes": 50681263,
@@ -20,5 +20,5 @@
   "plain_worktree_bytes": 265319989,
   "fsck_ok": true,
   "worktrees_match": true,
-  "verdict": "protocol full clone is slower than git-daemon but under 2×"
+  "verdict": "protocol full clone is within ~10% of a local git-daemon clone"
 }
