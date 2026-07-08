@@ -6,10 +6,10 @@ fetch, do we win on storage or latency?
 
 **Short answer:** a *full* AST dump is a clear loss (often 5–20× gzip). The
 protocol uses in-place atom substitution + raw flate and lands slightly
-*under* plain `gzip(source)` (~98% on `gitdb/`). A fixed **per-language zlib
-dictionary** (no corpus training) does a bit better still (~96%). The remote
-helper stores the adaptive min of those candidates so it never loses to gzip
-on size. Encode latency is still dominated by parsing.
+*under* plain `gzip(source)` (~98% on `testdata/corpus`). A fixed
+**per-language zlib dictionary** (no corpus training) does a bit better still
+(~96%). The remote helper stores the adaptive min of those candidates so it
+never loses to gzip on size. Encode latency is still dominated by parsing.
 
 This directory is a working experiment: `git-remote-ast` plus `ast-remote bench`.
 
@@ -113,11 +113,31 @@ git clone "ast::/tmp/my-ast-store" recovered
 ### Benchmarks
 
 ```bash
+# Per-file size / encode latency vs gzip
 ./ast-remote bench -out bench-results.json testdata/corpus
-./ast-remote bench -repeat 5 -out /tmp/bench.json ../gitdb
+
+# Full git clone wall time: protocol remote vs local git-daemon
+./ast-remote bench-remote -out bench-remote.json -repeat 5 -commits 5 testdata/corpus
 ```
 
-Per file and in aggregate the report compares:
+`bench-remote` builds a multi-commit repo from the given tree, publishes once
+to both remotes, then times **full `git clone`** end-to-end:
+
+| Side | What runs |
+|------|-----------|
+| protocol | `git clone ast::/path/store` (helper fetch → rehydrate → `hash-object -w` → checkout) |
+| plain | `git clone git://127.0.0.1:<port>/plain.git` served by `git-daemon` from a bare repo |
+
+Both paths include object transfer, local object-store population, reachability
+work git does during clone, and worktree checkout. After timing, both clones
+are `git fsck --full`'d and their worktrees compared for equality. Setup push
+times are reported separately and are not part of the clone ratio.
+
+`file://` clones are intentionally **not** the baseline: same-machine
+`file://` can short-circuit via hardlinks/`--local` and skip the network
+upload-pack path a real server uses.
+
+Per-file size report columns:
 
 | Metric | Meaning |
 |--------|---------|
@@ -135,24 +155,26 @@ Per file and in aggregate the report compares:
 | Corpus | raw | gzip | protocol+flate | raw+dict | stored (adaptive) |
 |--------|-----|------|----------------|----------|-------------------|
 | `testdata/corpus` | 30.7 KB | 2.9 KB | 2.8 KB (**98%** of gzip) | 2.8 KB (**96%**) | **96%** of gzip |
-| `gitdb/` (16 Go files) | 83.6 KB | 30.5 KB | 29.8 KB (**98%**) | 29.1 KB (**96%**) | **96%** of gzip |
 
-Mean encode on `gitdb/`: protocol **~12 ms** vs gzip **~0.3 ms**. Decode is near parity.
+Mean encode on the corpus: protocol is milliseconds-per-file vs sub-millisecond
+gzip; decode is near parity.
 
-### Push/fetch latency (`ast-remote bench-remote`)
+### Full clone latency (`ast-remote bench-remote`)
 
-Against a local `file://` bare remote on `gitdb/`:
+Fair comparison on `testdata/corpus` with a 5-commit synthetic history
+(30 reachable objects), mean of 5 full clones:
 
-| | protocol remote | file:// | ratio |
-|--|-----------------|---------|-------|
-| push | ~58 ms | ~19 ms | ~3.1× |
-| clone/fetch | ~27 ms | ~18 ms | ~1.5× |
+| | protocol `ast::` clone | local `git-daemon` clone | ratio |
+|--|------------------------|--------------------------|-------|
+| mean wall time | **~49 ms** | **~103 ms** | **0.48×** |
 
-Re-run locally — numbers move with corpus and CPU — but the shape is stable:
-the protocol is near or under gzip, language dicts win a few more percent,
-adaptive storage stays at or under gzip, and push pays for parse time.
+On this small corpus the protocol path is faster: both sides pay for a full
+local repo (objects + checkout), and `git-daemon`’s TCP upload-pack overhead
+dominates more than protocol rehydrate. Both clones pass `git fsck --full`
+and produce identical worktrees. Re-run locally — numbers move with corpus
+and CPU; `bench-remote.json` has the latest run.
 
-The JSON `summary.verdict` states the outcome for a given tree.
+The JSON `summary.verdict` / `verdict` fields state the outcome for a given run.
 
 ## Why gzip is hard to beat (and how we still edged it)
 

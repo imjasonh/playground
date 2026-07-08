@@ -1,0 +1,20 @@
+{
+  "generated_at": "2026-07-08T16:48:30Z",
+  "go_version": "go1.22.2",
+  "source": "testdata/corpus",
+  "commits": 5,
+  "repeats": 5,
+  "reachable_objects": 30,
+  "protocol_push_ms": 113.264,
+  "plain_push_ms": 19.797,
+  "protocol_clone_ms": 49.3786,
+  "plain_clone_ms": 102.6212,
+  "clone_ratio_protocol_over_plain": 0.4811734807232813,
+  "protocol_clone_git_bytes": 33873,
+  "plain_clone_git_bytes": 34821,
+  "protocol_worktree_bytes": 30756,
+  "plain_worktree_bytes": 30756,
+  "fsck_ok": true,
+  "worktrees_match": true,
+  "verdict": "protocol full clone is faster than local git-daemon (0.48x)"
+}

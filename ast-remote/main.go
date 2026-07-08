@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -52,7 +53,8 @@ func usage() {
 Usage:
   ast-remote encode [flags] <file>         encode one file; print size stats
   ast-remote decode --encoding=E <file>    decode payload from file to stdout
-  ast-remote bench [flags] <repo-or-dir>   benchmark protocol vs gzip
+  ast-remote bench [flags] <repo-or-dir>   benchmark protocol vs gzip (sizes)
+  ast-remote bench-remote [flags] <dir>    full git clone wall time vs git-daemon
   ast-remote languages                     list supported languages
 
 Encode flags:
@@ -65,9 +67,12 @@ Bench flags:
   -limit N        max source files to include (0 = all)
   -no-adaptive    force protocol+flate storage (disable adaptive min)
 
-  ast-remote bench-remote [flags] <dir>    push/fetch wall time vs file:// remote
-    -repeat N     repeats (default 3)
-    -helper PATH  path to git-remote-ast (default ./git-remote-ast)
+bench-remote flags:
+  -out FILE       write JSON results to FILE
+  -repeat N       clone repeats (default 5)
+  -commits N      synthetic history depth (default 5)
+  -helper PATH    path to git-remote-ast (default ./git-remote-ast)
+  -port N         git-daemon listen port (default 0 = ephemeral)
 `)
 }
 
@@ -434,21 +439,56 @@ func must(err error) {
 	}
 }
 
+// RemoteBenchReport is written by `ast-remote bench-remote`.
+type RemoteBenchReport struct {
+	GeneratedAt   string  `json:"generated_at"`
+	GoVersion     string  `json:"go_version"`
+	Source        string  `json:"source"`
+	Commits       int     `json:"commits"`
+	Repeats       int     `json:"repeats"`
+	Objects       int     `json:"reachable_objects"`
+	ProtoPushMs   float64 `json:"protocol_push_ms"`
+	PlainPushMs   float64 `json:"plain_push_ms"`
+	ProtoCloneMs  float64 `json:"protocol_clone_ms"`
+	PlainCloneMs  float64 `json:"plain_clone_ms"`
+	CloneRatio    float64 `json:"clone_ratio_protocol_over_plain"`
+	ProtoGitBytes int64   `json:"protocol_clone_git_bytes"`
+	PlainGitBytes int64   `json:"plain_clone_git_bytes"`
+	ProtoWorkBytes int64  `json:"protocol_worktree_bytes"`
+	PlainWorkBytes int64  `json:"plain_worktree_bytes"`
+	FsckOK        bool    `json:"fsck_ok"`
+	TreesMatch    bool    `json:"worktrees_match"`
+	Verdict       string  `json:"verdict"`
+}
+
 func cmdBenchRemote(args []string) {
 	fs := flag.NewFlagSet("bench-remote", flag.ExitOnError)
-	repeat := fs.Int("repeat", 3, "repeats")
+	outPath := fs.String("out", "", "write JSON report")
+	repeat := fs.Int("repeat", 5, "clone repeats")
+	commits := fs.Int("commits", 5, "synthetic history depth")
 	helperPath := fs.String("helper", "./git-remote-ast", "path to git-remote-ast binary")
+	portFlag := fs.Int("port", 0, "git-daemon port (0 = ephemeral)")
 	fs.Parse(args)
 	if fs.NArg() != 1 {
 		fmt.Fprintln(os.Stderr, "bench-remote requires a source directory to commit")
 		os.Exit(2)
 	}
 	srcDir := fs.Arg(0)
+	if *commits < 1 {
+		*commits = 1
+	}
+	if *repeat < 1 {
+		*repeat = 1
+	}
 
 	absHelper, err := filepath.Abs(*helperPath)
 	must(err)
 	if _, err := os.Stat(absHelper); err != nil {
 		must(fmt.Errorf("build git-remote-ast first (%s): %w", absHelper, err))
+	}
+	daemonBin := gitDaemonPath()
+	if daemonBin == "" {
+		must(fmt.Errorf("git-daemon not found; needed for a fair local-server baseline"))
 	}
 
 	tmp, err := os.MkdirTemp("", "ast-remote-bench-*")
@@ -459,54 +499,129 @@ func cmdBenchRemote(args []string) {
 	must(runCmd(tmp, nil, "git", "init", "-b", "main", repo))
 	must(runCmd(repo, nil, "git", "config", "user.email", "bench@example.com"))
 	must(runCmd(repo, nil, "git", "config", "user.name", "Bench"))
-	must(copyFlatSources(srcDir, repo))
-	dateEnv := append(os.Environ(),
-		"GIT_AUTHOR_DATE=2020-01-01T00:00:00",
-		"GIT_COMMITTER_DATE=2020-01-01T00:00:00",
-	)
-	must(runCmd(repo, nil, "git", "add", "-A"))
-	must(runCmd(repo, dateEnv, "git", "commit", "-m", "bench"))
+	must(runCmd(repo, nil, "git", "config", "commit.gpgsign", "false"))
+	must(seedSyntheticHistory(srcDir, repo, *commits))
+
+	objCount := countReachableObjects(repo)
 
 	astStore := filepath.Join(tmp, "ast-store")
-	plainRemote := filepath.Join(tmp, "plain.git")
+	remotesDir := filepath.Join(tmp, "remotes")
+	plainRemote := filepath.Join(remotesDir, "plain.git")
+	must(os.MkdirAll(remotesDir, 0o755))
+	must(runCmd(tmp, nil, "git", "init", "--bare", "-b", "main", plainRemote))
 
 	helperDir := filepath.Dir(absHelper)
 	pathEnv := append(os.Environ(), "PATH="+helperDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	var astPush, astFetch, plainPush, plainFetch time.Duration
+	// One-time publish to both remotes (setup cost, reported separately).
+	tPushProto := time.Now()
+	must(runCmd(repo, pathEnv, "git", "push", "ast::"+astStore, "main"))
+	protoPush := time.Since(tPushProto)
+
+	tPushPlain := time.Now()
+	must(runCmd(repo, nil, "git", "push", plainRemote, "main"))
+	plainPush := time.Since(tPushPlain)
+
+	port := *portFlag
+	if port == 0 {
+		port = freeTCPPort()
+	}
+	daemonLog := filepath.Join(tmp, "git-daemon.log")
+	daemon, err := startGitDaemon(daemonBin, remotesDir, port, daemonLog)
+	must(err)
+	defer stopCmd(daemon)
+
+	plainURL := fmt.Sprintf("git://127.0.0.1:%d/plain.git", port)
+	// Warm the daemon with one untimed clone so listen/accept isn't in the sample.
+	warm := filepath.Join(tmp, "warm-plain")
+	must(runCmd(tmp, nil, "git", "clone", plainURL, warm))
+	_ = os.RemoveAll(warm)
+
+	var protoClone, plainClone time.Duration
+	var lastProto, lastPlain string
 	for i := 0; i < *repeat; i++ {
-		_ = os.RemoveAll(astStore)
-		_ = os.RemoveAll(plainRemote)
-		must(runCmd(tmp, nil, "git", "init", "--bare", plainRemote))
-
+		cloneProto := filepath.Join(tmp, fmt.Sprintf("clone-proto-%d", i))
 		t0 := time.Now()
-		must(runCmd(repo, pathEnv, "git", "push", "ast::"+astStore, "main"))
-		astPush += time.Since(t0)
-
-		cloneAst := filepath.Join(tmp, fmt.Sprintf("clone-ast-%d", i))
-		t1 := time.Now()
-		must(runCmd(tmp, pathEnv, "git", "clone", "ast::"+astStore, cloneAst))
-		astFetch += time.Since(t1)
-
-		t2 := time.Now()
-		must(runCmd(repo, nil, "git", "push", "file://"+plainRemote, "main"))
-		plainPush += time.Since(t2)
+		must(runCmd(tmp, pathEnv, "git", "clone", "ast::"+astStore, cloneProto))
+		protoClone += time.Since(t0)
+		lastProto = cloneProto
 
 		clonePlain := filepath.Join(tmp, fmt.Sprintf("clone-plain-%d", i))
-		t3 := time.Now()
-		must(runCmd(tmp, nil, "git", "clone", "file://"+plainRemote, clonePlain))
-		plainFetch += time.Since(t3)
+		t1 := time.Now()
+		must(runCmd(tmp, nil, "git", "clone", plainURL, clonePlain))
+		plainClone += time.Since(t1)
+		lastPlain = clonePlain
 	}
 
 	n := float64(*repeat)
-	fmt.Printf("Source tree:     %s\n", srcDir)
-	fmt.Printf("Repeats:         %d\n", *repeat)
-	fmt.Printf("protocol push:   %.1f ms (mean)\n", float64(astPush.Microseconds())/1000.0/n)
-	fmt.Printf("protocol fetch:  %.1f ms (mean)\n", float64(astFetch.Microseconds())/1000.0/n)
-	fmt.Printf("file:// push:    %.1f ms (mean)\n", float64(plainPush.Microseconds())/1000.0/n)
-	fmt.Printf("file:// clone:   %.1f ms (mean)\n", float64(plainFetch.Microseconds())/1000.0/n)
-	fmt.Printf("Push ratio:      protocol/plain = %.2fx\n", float64(astPush)/float64(plainPush))
-	fmt.Printf("Fetch ratio:     protocol/plain = %.2fx\n", float64(astFetch)/float64(plainFetch))
+	protoMs := float64(protoClone.Microseconds()) / 1000.0 / n
+	plainMs := float64(plainClone.Microseconds()) / 1000.0 / n
+
+	// Thoroughness checks on the last clones: full object reachability (fsck)
+	// and identical worktrees. These are correctness, not part of clone timing —
+	// but they confirm both paths paid for a complete local repo.
+	must(runCmd(lastProto, nil, "git", "fsck", "--full", "--no-progress"))
+	must(runCmd(lastPlain, nil, "git", "fsck", "--full", "--no-progress"))
+	treesMatch := worktreesEqual(lastProto, lastPlain)
+	if !treesMatch {
+		must(fmt.Errorf("cloned worktrees differ between protocol and plain remotes"))
+	}
+
+	protoGit, protoWork := dirBytes(filepath.Join(lastProto, ".git")), worktreeBytes(lastProto)
+	plainGit, plainWork := dirBytes(filepath.Join(lastPlain, ".git")), worktreeBytes(lastPlain)
+
+	report := RemoteBenchReport{
+		GeneratedAt:    time.Now().UTC().Format(time.RFC3339),
+		GoVersion:      runtime.Version(),
+		Source:         srcDir,
+		Commits:        *commits,
+		Repeats:        *repeat,
+		Objects:        objCount,
+		ProtoPushMs:    float64(protoPush.Microseconds()) / 1000.0,
+		PlainPushMs:    float64(plainPush.Microseconds()) / 1000.0,
+		ProtoCloneMs:   protoMs,
+		PlainCloneMs:   plainMs,
+		CloneRatio:     protoMs / plainMs,
+		ProtoGitBytes:  protoGit,
+		PlainGitBytes:  plainGit,
+		ProtoWorkBytes: protoWork,
+		PlainWorkBytes: plainWork,
+		FsckOK:         true,
+		TreesMatch:     treesMatch,
+	}
+	switch {
+	case report.CloneRatio < 0.9:
+		report.Verdict = fmt.Sprintf("protocol full clone is faster than local git-daemon (%.2fx)", report.CloneRatio)
+	case report.CloneRatio < 1.1:
+		report.Verdict = "protocol full clone is within ~10% of a local git-daemon clone"
+	case report.CloneRatio < 2:
+		report.Verdict = "protocol full clone is slower than git-daemon but under 2×"
+	default:
+		report.Verdict = fmt.Sprintf("protocol full clone is %.1f× a local git-daemon clone (parse/rehydrate dominated)", report.CloneRatio)
+	}
+
+	fmt.Printf("Source tree:          %s\n", srcDir)
+	fmt.Printf("History:              %d commits, %d reachable objects\n", *commits, objCount)
+	fmt.Printf("Repeats:              %d full git clone(s)\n", *repeat)
+	fmt.Printf("Baseline remote:      %s (git-daemon)\n", plainURL)
+	fmt.Printf("Protocol remote:      ast::%s\n", astStore)
+	fmt.Printf("Setup push protocol:  %.1f ms\n", report.ProtoPushMs)
+	fmt.Printf("Setup push plain:     %.1f ms\n", report.PlainPushMs)
+	fmt.Printf("Mean clone protocol:  %.1f ms  (.git %d B, worktree %d B)\n",
+		report.ProtoCloneMs, report.ProtoGitBytes, report.ProtoWorkBytes)
+	fmt.Printf("Mean clone plain:     %.1f ms  (.git %d B, worktree %d B)\n",
+		report.PlainCloneMs, report.PlainGitBytes, report.PlainWorkBytes)
+	fmt.Printf("Clone ratio:          protocol/plain = %.2fx\n", report.CloneRatio)
+	fmt.Printf("Post-clone fsck:      ok (both)\n")
+	fmt.Printf("Worktrees match:      %v\n", treesMatch)
+	fmt.Printf("Verdict:              %s\n", report.Verdict)
+
+	if *outPath != "" {
+		b, err := json.MarshalIndent(report, "", "  ")
+		must(err)
+		must(os.WriteFile(*outPath, append(b, '\n'), 0o644))
+		fmt.Printf("\nwrote %s\n", *outPath)
+	}
 }
 
 func runCmd(dir string, env []string, name string, args ...string) error {
@@ -522,30 +637,231 @@ func runCmd(dir string, env []string, name string, args ...string) error {
 	return nil
 }
 
-func copyFlatSources(src, dst string) error {
-	entries, err := os.ReadDir(src)
+func gitDaemonPath() string {
+	if p, err := exec.LookPath("git-daemon"); err == nil {
+		return p
+	}
+	candidates := []string{
+		"/usr/lib/git-core/git-daemon",
+		"/usr/libexec/git-core/git-daemon",
+	}
+	for _, c := range candidates {
+		if st, err := os.Stat(c); err == nil && !st.IsDir() {
+			return c
+		}
+	}
+	return ""
+}
+
+func freeTCPPort() int {
+	// Ask the kernel for an ephemeral port, then release it for git-daemon.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	must(err)
+	defer ln.Close()
+	return ln.Addr().(*net.TCPAddr).Port
+}
+
+func startGitDaemon(bin, basePath string, port int, logPath string) (*exec.Cmd, error) {
+	logF, err := os.Create(logPath)
 	if err != nil {
+		return nil, err
+	}
+	cmd := exec.Command(bin,
+		"--reuseaddr",
+		"--listen=127.0.0.1",
+		fmt.Sprintf("--port=%d", port),
+		"--base-path="+basePath,
+		"--export-all",
+		basePath,
+	)
+	cmd.Stdout = logF
+	cmd.Stderr = logF
+	if err := cmd.Start(); err != nil {
+		logF.Close()
+		return nil, err
+	}
+	// Wait until the port accepts connections.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		c, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 100*time.Millisecond)
+		if err == nil {
+			c.Close()
+			return cmd, nil
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	stopCmd(cmd)
+	return nil, fmt.Errorf("git-daemon did not become ready on port %d (see %s)", port, logPath)
+}
+
+func stopCmd(cmd *exec.Cmd) {
+	if cmd == nil || cmd.Process == nil {
+		return
+	}
+	_ = cmd.Process.Kill()
+	_, _ = cmd.Process.Wait()
+}
+
+// seedSyntheticHistory copies the source tree and creates N commits so clone
+// must walk a real object graph (parents, trees, blobs), not a single tip.
+func seedSyntheticHistory(srcDir, repo string, n int) error {
+	if err := copyTree(srcDir, filepath.Join(repo, "src")); err != nil {
 		return err
 	}
-	n := 0
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
+	for i := 1; i <= n; i++ {
+		marker := filepath.Join(repo, "src", fmt.Sprintf("commit_%02d.txt", i))
+		if err := os.WriteFile(marker, []byte(fmt.Sprintf("commit %d\n", i)), 0o644); err != nil {
+			return err
 		}
-		in := filepath.Join(src, e.Name())
-		data, err := os.ReadFile(in)
+		// Touch a source file each commit so trees/blobs change.
+		touch := filepath.Join(repo, "src", "bench_note.go")
+		body := fmt.Sprintf("package src\n\n// bench commit %d\nconst BenchN = %d\n", i, i)
+		if err := os.WriteFile(touch, []byte(body), 0o644); err != nil {
+			return err
+		}
+		date := fmt.Sprintf("2020-01-%02dT12:00:00", i)
+		env := append(os.Environ(),
+			"GIT_AUTHOR_DATE="+date,
+			"GIT_COMMITTER_DATE="+date,
+		)
+		if err := runCmd(repo, nil, "git", "add", "-A"); err != nil {
+			return err
+		}
+		if err := runCmd(repo, env, "git", "commit", "-m", fmt.Sprintf("bench commit %d", i)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func copyTree(src, dst string) error {
+	return filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if err := os.WriteFile(filepath.Join(dst, e.Name()), data, 0o644); err != nil {
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
 			return err
 		}
-		n++
+		if rel == "." {
+			return os.MkdirAll(dst, 0o755)
+		}
+		out := filepath.Join(dst, rel)
+		if d.IsDir() {
+			if d.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return os.MkdirAll(out, 0o755)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
+			return err
+		}
+		return os.WriteFile(out, data, 0o644)
+	})
+}
+
+func countReachableObjects(repo string) int {
+	out, err := exec.Command("git", "-C", repo, "rev-list", "--objects", "--all").Output()
+	must(err)
+	n := 0
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.TrimSpace(line) != "" {
+			n++
+		}
 	}
-	if n == 0 {
-		return fmt.Errorf("no files copied from %s", src)
+	return n
+}
+
+func worktreesEqual(a, b string) bool {
+	type file struct {
+		rel  string
+		data []byte
 	}
-	return nil
+	collect := func(root string) ([]file, error) {
+		var files []file
+		err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			rel, err := filepath.Rel(root, path)
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				if d.Name() == ".git" {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			files = append(files, file{rel: rel, data: data})
+			return nil
+		})
+		sort.Slice(files, func(i, j int) bool { return files[i].rel < files[j].rel })
+		return files, err
+	}
+	fa, err := collect(a)
+	if err != nil {
+		return false
+	}
+	fb, err := collect(b)
+	if err != nil {
+		return false
+	}
+	if len(fa) != len(fb) {
+		return false
+	}
+	for i := range fa {
+		if fa[i].rel != fb[i].rel || string(fa[i].data) != string(fb[i].data) {
+			return false
+		}
+	}
+	return true
+}
+
+func dirBytes(root string) int64 {
+	var n int64
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		n += info.Size()
+		return nil
+	})
+	return n
+}
+
+func worktreeBytes(root string) int64 {
+	var n int64
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if d.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		n += info.Size()
+		return nil
+	})
+	return n
 }
 
 var _ = io.Discard
