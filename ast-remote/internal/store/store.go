@@ -121,24 +121,36 @@ func (s *Store) Put(m Meta, payload []byte) error {
 	return os.Rename(tmpMeta, metaPath)
 }
 
-// TipPackPath returns the path for a cached tip pack (native git packfile).
+// TipPackPath returns the path for a legacy native git tip packfile.
 func (s *Store) TipPackPath(tipOID string) string {
 	return filepath.Join(s.Root, "packs", tipOID+".pack")
 }
 
+// TipASP1Path returns the path for an ASP1 tip stream.
+func (s *Store) TipASP1Path(tipOID string) string {
+	return filepath.Join(s.Root, "packs", tipOID+".asp1")
+}
+
 // WriteTipPack stores a native git packfile for a tip commit OID.
-// Fetch can install it with `git index-pack` and skip per-object rehydrate.
+// Prefer WriteTipASP1 for new pushes — ASP1 is smaller under zstd.
 func (s *Store) WriteTipPack(tipOID string, pack []byte) error {
+	return s.writePackFile(s.TipPackPath(tipOID), tipOID, pack)
+}
+
+// WriteTipASP1 stores an ASP1 tip stream for a tip commit OID.
+func (s *Store) WriteTipASP1(tipOID string, stream []byte) error {
+	return s.writePackFile(s.TipASP1Path(tipOID), tipOID, stream)
+}
+
+func (s *Store) writePackFile(path, tipOID string, data []byte) error {
 	if len(tipOID) != 40 {
 		return fmt.Errorf("invalid tip oid %q", tipOID)
 	}
-	dir := filepath.Join(s.Root, "packs")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	path := s.TipPackPath(tipOID)
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, pack, 0o644); err != nil {
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)
@@ -153,10 +165,44 @@ func (s *Store) ReadTipPack(tipOID string) ([]byte, error) {
 	return b, err
 }
 
-// HasTipPack reports whether a tip pack exists.
+// ReadTipASP1 returns a cached ASP1 tip stream, or nil if absent.
+func (s *Store) ReadTipASP1(tipOID string) ([]byte, error) {
+	b, err := os.ReadFile(s.TipASP1Path(tipOID))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	return b, err
+}
+
+// HasTipPack reports whether a legacy tip pack exists.
 func (s *Store) HasTipPack(tipOID string) bool {
 	_, err := os.Stat(s.TipPackPath(tipOID))
 	return err == nil
+}
+
+// HasTipASP1 reports whether an ASP1 tip stream exists.
+func (s *Store) HasTipASP1(tipOID string) bool {
+	_, err := os.Stat(s.TipASP1Path(tipOID))
+	return err == nil
+}
+
+// TipShallowPath returns the path for a tip's shallow boundary file (optional).
+func (s *Store) TipShallowPath(tipOID string) string {
+	return filepath.Join(s.Root, "packs", tipOID+".shallow")
+}
+
+// WriteTipShallow stores the source repo's .git/shallow lines for a tip.
+func (s *Store) WriteTipShallow(tipOID string, data []byte) error {
+	return s.writePackFile(s.TipShallowPath(tipOID), tipOID, data)
+}
+
+// ReadTipShallow returns shallow boundary bytes, or nil if absent.
+func (s *Store) ReadTipShallow(tipOID string) ([]byte, error) {
+	b, err := os.ReadFile(s.TipShallowPath(tipOID))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	return b, err
 }
 
 // ListObjectOIDs returns every object OID present in the store.
@@ -246,6 +292,20 @@ func (s *Store) ReadHEAD() (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(b)), nil
+}
+
+// SetHEAD writes the HEAD file (symbolic "ref: refs/heads/..." or a peeled OID).
+func (s *Store) SetHEAD(value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fmt.Errorf("empty HEAD")
+	}
+	path := filepath.Join(s.Root, "HEAD")
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(value+"\n"), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 // UpdateRef writes refs/<...> to oid (or deletes if oid == "").

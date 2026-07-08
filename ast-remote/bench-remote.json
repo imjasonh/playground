@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-08T17:11:38Z",
+  "generated_at": "2026-07-08T18:04:15Z",
   "go_version": "go1.22.2",
   "source": "/workspace/ast-remote/testdata/corpus",
   "source_kind": "directory",
@@ -7,18 +7,18 @@
   "commits": 5,
   "repeats": 5,
   "reachable_objects": 30,
-  "protocol_push_ms": 21.109,
-  "plain_push_ms": 21.085,
-  "protocol_clone_ms": 14.9234,
-  "plain_clone_ms": 98.69059999999999,
-  "clone_ratio_protocol_over_plain": 0.15121399606446817,
+  "protocol_push_ms": 23.999,
+  "plain_push_ms": 19.808,
+  "protocol_clone_ms": 17.9406,
+  "plain_clone_ms": 102.69200000000001,
+  "clone_ratio_protocol_over_plain": 0.1747029953647801,
   "ast_store_bytes": 14959,
   "plain_remote_bytes": 31967,
-  "protocol_clone_git_bytes": 34957,
+  "protocol_clone_git_bytes": 34953,
   "plain_clone_git_bytes": 34821,
   "protocol_worktree_bytes": 30756,
   "plain_worktree_bytes": 30756,
   "fsck_ok": true,
   "worktrees_match": true,
-  "verdict": "protocol full clone is faster than local git-daemon (0.15x)"
+  "verdict": "protocol full clone is faster than local git-daemon (0.17x)"
 }

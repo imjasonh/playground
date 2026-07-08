@@ -25,6 +25,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/imjasonh/playground/ast-remote/internal/asp1"
 	"github.com/imjasonh/playground/ast-remote/internal/codec"
 	"github.com/imjasonh/playground/ast-remote/internal/gitcmd"
 	"github.com/imjasonh/playground/ast-remote/internal/store"
@@ -193,7 +194,15 @@ func writeList(st *store.Store, wr *bufio.Writer) error {
 		if oid, ok := refs[target]; ok {
 			fmt.Fprintf(wr, "%s HEAD\n", oid)
 		} else {
-			fmt.Fprintf(wr, "@%s HEAD\n", target)
+			// Default HEAD target missing (e.g. store defaulted to main but
+			// the only branch is master). Point HEAD at any available tip.
+			for name, oid := range refs {
+				if strings.HasPrefix(name, "refs/heads/") {
+					fmt.Fprintf(wr, "%s HEAD\n", oid)
+					_ = st.SetHEAD("ref: " + name)
+					break
+				}
+			}
 		}
 	} else if len(head) == 40 {
 		fmt.Fprintf(wr, "%s HEAD\n", head)
@@ -206,17 +215,58 @@ func doFetch(st *store.Store, repo *gitcmd.Repo, batch [][2]string, errOut io.Wr
 	seenTip := map[string]bool{}
 	var tips []string
 	for _, b := range batch {
-		if seenTip[b[0]] {
+		oid := b[0]
+		if oid == "" || oid == "0000000000000000000000000000000000000000" {
 			continue
 		}
-		seenTip[b[0]] = true
-		tips = append(tips, b[0])
+		if seenTip[oid] {
+			continue
+		}
+		seenTip[oid] = true
+		tips = append(tips, oid)
+	}
+	if len(tips) == 0 {
+		return nil
 	}
 
-	// Fast path: tip pack written at push time (native git pack of the same
-	// objects). Full clone then matches git-daemon: one index-pack, no
-	// per-object rehydrate. Protocol objects remain for size / partial fetch.
-	// (git clone often sends duplicate fetch lines for HEAD + branch; dedupe.)
+	// Fast path: ASP1 tip stream (preferred) or legacy native tip pack.
+	// git clone often sends duplicate fetch lines for HEAD + branch; tips are deduped above.
+	allASP1 := len(tips) > 0
+	for _, tip := range tips {
+		if !st.HasTipASP1(tip) {
+			allASP1 = false
+			break
+		}
+	}
+	if allASP1 {
+		gitDir, err := repo.AbsoluteGitDir()
+		if err != nil {
+			return err
+		}
+		for _, tip := range tips {
+			stream, err := st.ReadTipASP1(tip)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(errOut, "fetch tip-asp1 %s (%d bytes)\n", tip[:8], len(stream))
+			n, err := asp1.Install(gitDir, stream)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(errOut, "installed %d objects from tip-asp1\n", n)
+			if shallow, err := st.ReadTipShallow(tip); err != nil {
+				return err
+			} else if len(shallow) > 0 {
+				if err := repo.WriteShallow(shallow); err != nil {
+					return err
+				}
+				fmt.Fprintf(errOut, "restored shallow boundary (%d bytes)\n", len(shallow))
+			}
+		}
+		fmt.Fprintf(errOut, "fetched via tip-asp1 (%d tip(s))\n", len(tips))
+		return nil
+	}
+
 	allPacked := len(tips) > 0
 	for _, tip := range tips {
 		if !st.HasTipPack(tip) {
@@ -453,21 +503,100 @@ func doPush(st *store.Store, repo *gitcmd.Repo, spec string, wr *bufio.Writer, e
 		}
 	}
 
-	fmt.Fprintf(errOut, "pushing %d new objects (%d reachable)\n", len(need), len(infos))
-	if len(need) == 0 {
-		if err := st.UpdateRef(dst, srcOID); err != nil {
-			return err
-		}
-		fmt.Fprintf(wr, "ok %s\n", dst)
-		return wr.Flush()
-	}
+	fmt.Fprintf(errOut, "pushing %d new objects (%d reachable from tip excluding remotes)\n", len(need), len(infos))
 
-	// One `git cat-file --batch` instead of 2N subprocesses.
-	batch, err := repo.CatFileBatch(need)
+	// ASP1 needs the *full* tip closure (ignore notTips) so zstd sees every
+	// object body and cross-version similarity compresses well.
+	fullInfos, err := repo.RevListObjectInfos([]string{srcOID}, nil)
+	if err != nil {
+		return err
+	}
+	for _, info := range fullInfos {
+		if info.Path != "" {
+			pathByOID[info.OID] = info.Path
+		}
+	}
+	allOIDs := make([]string, len(fullInfos))
+	for i, info := range fullInfos {
+		allOIDs[i] = info.OID
+	}
+	allBatch, err := repo.CatFileBatch(allOIDs)
 	if err != nil {
 		return err
 	}
 
+	// Prefer ASP1 tip stream for full clones. Skip per-object protocol blobs when
+	// this push covers the whole tip (empty remote) so the store is the ASP1 file
+	// — typically well under a native tip pack — not 3× bare.
+	fullTip := len(notTips) == 0
+	if !fullTip && len(need) > 0 {
+		needSet := map[string]bool{}
+		for _, oid := range need {
+			needSet[oid] = true
+		}
+		var needBatch []gitcmd.BatchObject
+		// Cat only the delta objects for protocol store.
+		needOIDs := make([]string, 0, len(need))
+		needOIDs = append(needOIDs, need...)
+		needBatch, err = repo.CatFileBatch(needOIDs)
+		if err != nil {
+			return err
+		}
+		_ = needSet
+		if err := putProtocolObjects(st, needBatch, pathByOID, errOut); err != nil {
+			return err
+		}
+	} else if fullTip {
+		fmt.Fprintf(errOut, "full tip push: ASP1-only store (no per-object blobs)\n")
+	}
+
+	if err := st.UpdateRef(dst, srcOID); err != nil {
+		return err
+	}
+	// Keep HEAD pointing at a real branch (store defaults to refs/heads/main).
+	if strings.HasPrefix(dst, "refs/heads/") {
+		head, _ := st.ReadHEAD()
+		if strings.HasPrefix(head, "ref: ") {
+			target := strings.TrimPrefix(head, "ref: ")
+			refs, _ := st.ListRefs()
+			if _, ok := refs[target]; !ok {
+				_ = st.SetHEAD("ref: " + dst)
+			}
+		}
+	}
+
+	fmt.Fprintf(errOut, "building tip-asp1 for %s (%d objects)...\n", srcOID[:8], len(allBatch))
+	aspObjs := make([]asp1.Object, len(allBatch))
+	for i, obj := range allBatch {
+		aspObjs[i] = asp1.Object{
+			Kind: obj.Kind,
+			OID:  obj.OID,
+			Path: pathByOID[obj.OID],
+			Data: obj.Data,
+		}
+	}
+	stream, err := asp1.Encode(aspObjs)
+	if err != nil {
+		return fmt.Errorf("tip-asp1: %w", err)
+	}
+	if err := st.WriteTipASP1(srcOID, stream); err != nil {
+		return err
+	}
+	fmt.Fprintf(errOut, "tip-asp1 %d bytes\n", len(stream))
+	if shallow, err := repo.ReadShallow(); err != nil {
+		return err
+	} else if len(shallow) > 0 {
+		if err := st.WriteTipShallow(srcOID, shallow); err != nil {
+			return err
+		}
+		fmt.Fprintf(errOut, "tip-shallow %d bytes\n", len(shallow))
+	}
+
+	fmt.Fprintf(wr, "ok %s\n", dst)
+	return wr.Flush()
+}
+
+func putProtocolObjects(st *store.Store, batch []gitcmd.BatchObject, pathByOID map[string]string, errOut io.Writer) error {
 	workers := runtime.GOMAXPROCS(0)
 	if workers < 2 {
 		workers = 2
@@ -476,10 +605,7 @@ func doPush(st *store.Store, repo *gitcmd.Repo, spec string, wr *bufio.Writer, e
 		workers = 16
 	}
 
-	type job struct {
-		obj gitcmd.BatchObject
-	}
-	jobs := make(chan job, workers*2)
+	jobs := make(chan gitcmd.BatchObject, workers*2)
 	errCh := make(chan error, 1)
 	var wg sync.WaitGroup
 	var done atomic.Int64
@@ -487,8 +613,7 @@ func doPush(st *store.Store, repo *gitcmd.Repo, spec string, wr *bufio.Writer, e
 
 	worker := func() {
 		defer wg.Done()
-		for j := range jobs {
-			obj := j.obj
+		for obj := range jobs {
 			meta := store.Meta{
 				OID:  obj.OID,
 				Kind: obj.Kind,
@@ -511,8 +636,6 @@ func doPush(st *store.Store, repo *gitcmd.Repo, spec string, wr *bufio.Writer, e
 				meta.Lang = res.Lang
 				payload = res.Payload
 			default:
-				// Trees/commits/tags: store verbatim. They are already compact,
-				// and skipping gzip avoids a useless inflate on every fetch.
 				meta.Encoding = codec.EncodingIdentity
 				payload = obj.Data
 			}
@@ -540,7 +663,7 @@ func doPush(st *store.Store, repo *gitcmd.Repo, spec string, wr *bufio.Writer, e
 			close(jobs)
 			wg.Wait()
 			return err
-		case jobs <- job{obj: obj}:
+		case jobs <- obj:
 		}
 	}
 	close(jobs)
@@ -550,26 +673,7 @@ func doPush(st *store.Store, repo *gitcmd.Repo, spec string, wr *bufio.Writer, e
 		return err
 	default:
 	}
-
-		if err := st.UpdateRef(dst, srcOID); err != nil {
-		return err
-	}
-
-	// Cache a native tip pack from the source repo so full clones can
-	// index-pack without rehydrating every protocol object. Built with
-	// git pack-objects (same bytes git-daemon would serve).
-	fmt.Fprintf(errOut, "building tip-pack for %s...\n", srcOID[:8])
-	pack, err := repo.PackObjects([]string{srcOID})
-	if err != nil {
-		return fmt.Errorf("tip-pack: %w", err)
-	}
-	if err := st.WriteTipPack(srcOID, pack); err != nil {
-		return err
-	}
-	fmt.Fprintf(errOut, "tip-pack %d bytes\n", len(pack))
-
-	fmt.Fprintf(wr, "ok %s\n", dst)
-	return wr.Flush()
+	return nil
 }
 
 // parseRawTree extracts child OIDs from a raw git tree object.

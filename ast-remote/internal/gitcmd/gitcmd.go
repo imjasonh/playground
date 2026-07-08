@@ -7,6 +7,7 @@ import (
 	"compress/zlib"
 	"crypto/sha1"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -311,6 +312,58 @@ func (r *Repo) WriteObjectExpected(kind string, data []byte, expectedOID string)
 		return "", err
 	}
 	return oid, nil
+}
+
+// ObjectsDir returns the absolute path to the repo's objects directory.
+func (r *Repo) ObjectsDir() (string, error) {
+	return r.objectsDir()
+}
+
+// AbsoluteGitDir returns the resolved .git directory path.
+func (r *Repo) AbsoluteGitDir() (string, error) {
+	if r.GitDir != "" {
+		return r.GitDir, nil
+	}
+	out, err := r.run("rev-parse", "--git-dir")
+	if err != nil {
+		return "", err
+	}
+	p := strings.TrimSpace(out)
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(r.Dir, p)
+	}
+	return p, nil
+}
+
+// ReadShallow returns .git/shallow contents, or nil if the repo is not shallow.
+func (r *Repo) ReadShallow() ([]byte, error) {
+	gitDir, err := r.AbsoluteGitDir()
+	if err != nil {
+		return nil, err
+	}
+	b, err := os.ReadFile(filepath.Join(gitDir, "shallow"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	return b, err
+}
+
+// WriteShallow writes .git/shallow (creates or replaces). Empty data removes it.
+func (r *Repo) WriteShallow(data []byte) error {
+	gitDir, err := r.AbsoluteGitDir()
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(gitDir, "shallow")
+	if len(data) == 0 {
+		_ = os.Remove(path)
+		return nil
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 // UpdateRef sets ref to oid.

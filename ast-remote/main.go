@@ -520,6 +520,8 @@ func cmdBenchRemote(args []string) {
 	plainRemote := filepath.Join(remotesDir, "plain.git")
 	must(os.MkdirAll(remotesDir, 0o755))
 	must(runCmd(tmp, nil, "git", "init", "--bare", "-b", ref, plainRemote))
+	// Shallow source repos (e.g. kubernetes --depth=N) need this to publish to bare.
+	must(runCmd(plainRemote, nil, "git", "config", "receive.shallowUpdate", "true"))
 
 	helperDir := filepath.Dir(absHelper)
 	pathEnv := append(os.Environ(), "PATH="+helperDir+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -587,7 +589,8 @@ func cmdBenchRemote(args []string) {
 	}
 	treesMatch := worktreesEqual(lastProto, lastPlain)
 	if !treesMatch {
-		must(fmt.Errorf("cloned worktrees differ between protocol and plain remotes"))
+		detail := worktreeDiffSummary(lastProto, lastPlain)
+		must(fmt.Errorf("cloned worktrees differ between protocol and plain remotes: %s", detail))
 	}
 
 	protoGit, protoWork := dirBytes(filepath.Join(lastProto, ".git")), worktreeBytes(lastProto)
@@ -922,9 +925,14 @@ func countReachableObjects(repo string) int {
 }
 
 func worktreesEqual(a, b string) bool {
+	return worktreeDiffSummary(a, b) == ""
+}
+
+func worktreeDiffSummary(a, b string) string {
 	type file struct {
 		rel  string
 		data []byte
+		mode os.FileMode
 	}
 	collect := func(root string) ([]file, error) {
 		var files []file
@@ -942,11 +950,23 @@ func worktreesEqual(a, b string) bool {
 				}
 				return nil
 			}
+			info, err := d.Info()
+			if err != nil {
+				return err
+			}
+			if info.Mode()&os.ModeSymlink != 0 {
+				target, err := os.Readlink(path)
+				if err != nil {
+					return err
+				}
+				files = append(files, file{rel: rel, data: []byte("symlink->" + target), mode: info.Mode()})
+				return nil
+			}
 			data, err := os.ReadFile(path)
 			if err != nil {
 				return err
 			}
-			files = append(files, file{rel: rel, data: data})
+			files = append(files, file{rel: rel, data: data, mode: info.Mode()})
 			return nil
 		})
 		sort.Slice(files, func(i, j int) bool { return files[i].rel < files[j].rel })
@@ -954,21 +974,27 @@ func worktreesEqual(a, b string) bool {
 	}
 	fa, err := collect(a)
 	if err != nil {
-		return false
+		return "collect a: " + err.Error()
 	}
 	fb, err := collect(b)
 	if err != nil {
-		return false
+		return "collect b: " + err.Error()
 	}
 	if len(fa) != len(fb) {
-		return false
+		return fmt.Sprintf("file count %d vs %d", len(fa), len(fb))
 	}
 	for i := range fa {
-		if fa[i].rel != fb[i].rel || string(fa[i].data) != string(fb[i].data) {
-			return false
+		if fa[i].rel != fb[i].rel {
+			return fmt.Sprintf("path %q vs %q", fa[i].rel, fb[i].rel)
+		}
+		if fa[i].mode != fb[i].mode {
+			return fmt.Sprintf("%s mode %v vs %v", fa[i].rel, fa[i].mode, fb[i].mode)
+		}
+		if string(fa[i].data) != string(fb[i].data) {
+			return fmt.Sprintf("%s content (%d vs %d bytes)", fa[i].rel, len(fa[i].data), len(fb[i].data))
 		}
 	}
-	return true
+	return ""
 }
 
 func dirBytes(root string) int64 {
