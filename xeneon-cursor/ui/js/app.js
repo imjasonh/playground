@@ -110,7 +110,7 @@ function renderRail() {
     .map((agent) => {
       const tone = statusTone(agent.status);
       const selected = agent.id === state.selectedId ? 'selected' : '';
-      const attention = needsAttention(agent) ? '• needs you' : '';
+      const attention = needsAttention(agent);
       return `
         <button class="agent-card ${selected}" type="button" data-id="${escapeAttr(agent.id)}">
           <div class="row">
@@ -124,7 +124,7 @@ function renderRail() {
           <div class="chips">
             <span class="chip">${escapeHtml(agent.repoLabel)}</span>
             ${agent.model ? `<span class="chip">${escapeHtml(agent.model)}</span>` : ''}
-            ${attention ? `<span class="chip">${attention}</span>` : ''}
+            ${attention ? `<span class="chip attention">needs you</span>` : ''}
           </div>
         </button>
       `;
@@ -241,7 +241,10 @@ function openModal(mode) {
   els.refInput.disabled = mode === 'followup';
   els.modelInput.disabled = mode === 'followup';
   els.modalBackdrop.classList.add('open');
-  els.promptInput.focus();
+  // Focus the prompt so a Mac keyboard can type immediately after the tap that opened the modal.
+  requestAnimationFrame(() => {
+    els.promptInput.focus({ preventScroll: true });
+  });
 }
 
 function closeModal() {

@@ -48,6 +48,11 @@ Grant **Accessibility** + **Input Monitoring**, then keep this HUD fullscreen on
 - **Open in Cursor** (desktop deeplink) or open web / PR
 - **Next needing me** cycles IDLE / FINISHED / ERROR agents
 
+### Typing on the EDGE
+
+There is no on-screen keyboard. Tap a field (e.g. the New agent prompt) so it
+focuses, then type with your regular Mac keyboard (or paste). Same for follow-up.
+
 ## Develop without the .app
 
 Browser + local proxy (mock data, no API key):

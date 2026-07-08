@@ -3,6 +3,17 @@
 Touch-first Cursor cloud-agent HUD for the Corsair XENEON EDGE (14.5″ / 2560×720).
 See `README.md` for install, run, and test instructions.
 
+## Visual direction
+
+Match **Cursor Dark** (flat near-black chrome/content, soft borders, blue
+primary `#81A1C1`, system UI fonts). Avoid neon gradients, glow pulses, oversized
+display type, and generic “AI dashboard” chrome.
+
+## Input
+
+No on-screen keyboard. Fields are normal focused inputs: tap to focus, then type
+or paste with the Mac keyboard. Opening New agent / Follow-up focuses the prompt.
+
 ## Pull request screenshots
 
 When you open or update a pull request that changes this app’s UI (or behavior

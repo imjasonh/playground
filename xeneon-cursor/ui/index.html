@@ -8,12 +8,6 @@
     />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <title>Xeneon Cursor</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Sora:wght@600;700&display=swap"
-      rel="stylesheet"
-    />
     <link rel="stylesheet" href="./css/app.css" />
   </head>
   <body>
@@ -21,7 +15,7 @@
       <header class="topbar">
         <div class="brand">
           <h1>Xeneon Cursor</h1>
-          <span class="tag">Cloud agents</span>
+          <span class="tag">Cloud Agents</span>
         </div>
         <div class="top-actions">
           <div class="pill" id="connPill" title="API connection">
@@ -56,7 +50,7 @@
 
       <footer class="footer">
         <div>
-          Designed for Corsair XENEON EDGE · <code>2560×720</code>
+          Corsair XENEON EDGE · <code>2560×720</code>
         </div>
         <div id="versionLabel">v0.1.0</div>
       </footer>
@@ -67,16 +61,23 @@
         <h2 id="modalTitle">New cloud agent</h2>
         <div class="field">
           <label for="promptInput">Prompt</label>
-          <textarea id="promptInput" required placeholder="What should the agent do?"></textarea>
+          <textarea
+            id="promptInput"
+            required
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck="true"
+            placeholder="What should the agent do?"
+          ></textarea>
         </div>
         <div class="field">
           <label for="repoInput">Repository URL (optional)</label>
-          <input id="repoInput" list="repoList" placeholder="https://github.com/org/repo" />
+          <input id="repoInput" list="repoList" autocomplete="off" placeholder="https://github.com/org/repo" />
           <datalist id="repoList"></datalist>
         </div>
         <div class="field">
           <label for="refInput">Branch / ref</label>
-          <input id="refInput" value="main" />
+          <input id="refInput" value="main" autocomplete="off" />
         </div>
         <div class="field">
           <label for="modelInput">Model (optional)</label>
