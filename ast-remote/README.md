@@ -1,15 +1,15 @@
-# ast-remote — AST-compressed git remote helper
+# ast-remote — protocol-compressed git remote helper
 
-**Question:** if we parse source into a tree-sitter AST, store/transmit that
-instead of raw text, and rehydrate human-readable source on fetch, do we win
-on storage or latency?
+**Question:** if we parse source with tree-sitter, store/transmit a compact
+protocol form instead of raw text, and rehydrate human-readable source on
+fetch, do we win on storage or latency?
 
-**Short answer:** a *full* AST is a clear loss (often 5–20× gzip). After
-iterating on packing, **AST2 in-place atom substitution + raw flate** lands
-slightly *under* plain `gzip(source)` (~98% on `gitdb/`). A fixed
-**per-language zlib dictionary** (no corpus training) does a bit better still
-(~96%). The remote helper stores the adaptive min of those candidates so it
-never loses to gzip on size. Encode latency is still dominated by parsing.
+**Short answer:** a *full* AST dump is a clear loss (often 5–20× gzip). The
+protocol uses in-place atom substitution + raw flate and lands slightly
+*under* plain `gzip(source)` (~98% on `gitdb/`). A fixed **per-language zlib
+dictionary** (no corpus training) does a bit better still (~96%). The remote
+helper stores the adaptive min of those candidates so it never loses to gzip
+on size. Encode latency is still dominated by parsing.
 
 This directory is a working experiment: `git-remote-ast` plus `ast-remote bench`.
 
@@ -19,7 +19,7 @@ This directory is a working experiment: `git-remote-ast` plus `ast-remote bench`
 ┌─────────────┐   push (git-remote-ast)   ┌──────────────────────┐
 │  local git  │ ───────────────────────► │  ast::/path/store    │
 │  (normal    │   source blobs →         │  objects keyed by    │
-│   OIDs)     │   AST2 subst / lang-dict │  original git OID    │
+│   OIDs)     │   protocol / lang-dict   │  original git OID    │
 │             │ ◄─────────────────────── │  refs/heads/...      │
 └─────────────┘   fetch: rehydrate       └──────────────────────┘
                   → exact original bytes
@@ -28,34 +28,34 @@ This directory is a working experiment: `git-remote-ast` plus `ast-remote bench`
 
 ### Codec (`internal/codec`)
 
-Lossless payloads. Default path is **AST2**; AST1 remains for experiments and
-decode compatibility.
+Lossless payloads. The protocol walks the parse tree's leaves and substitutes
+known multi-byte tokens (keywords, operators, common idents) with 2-byte
+atoms, preserving layout so deflate still sees source-like structure.
 
-| Mode / encoding | What is stored | Typical size vs gzip(raw) |
-|-----------------|----------------|---------------------------|
-| `subst` (`ast-gzip`) | in-place replace of multi-byte keywords/ops/idents with 2-byte atoms, then raw flate | ~98% |
+| Encoding | What is stored | Typical size vs gzip(raw) |
+|----------|----------------|---------------------------|
+| `ast` | protocol payload + raw flate | ~98% |
 | `raw-dict` | flate(source, fixed language dictionary) | ~95–97% |
-| `ast-dict` | flate(AST2 subst, language dictionary) | ~96–98% |
-| `leaves` (AST1) | ordered leaf texts + trivia, string table, gzip | ~150–180% |
-| `full-tree` (AST1) | every AST node + gaps | often 5–20× |
+| `ast-dict` | flate(protocol, language dictionary) | ~96–98% |
+| `raw` | gzip(source) | 100% (baseline / fallback) |
 
-Whitespace/comments between tokens are preserved in the substituted byte stream
-(AST2) or as explicit trivia gaps (AST1), so round-trips are byte-exact.
+Whitespace and comments between tokens stay in the substituted byte stream, so
+round-trips are byte-exact.
 
-`EncodeFile` adaptively stores `min(subst+flate, raw-dict, ast-dict, gzip(raw))`.
+`EncodeFile` adaptively stores `min(protocol+flate, raw-dict, ast-dict, gzip(raw))`.
 
 Unsupported extensions, parse errors, and non-blobs always use gzip(raw).
 
 ### How we closed the gap
 
-Starting from AST1 leaf streams (~160% of gzip), packing experiments showed:
+Packing experiments showed:
 
 1. **String-table interning hurts gzip** — uint32 IDs add entropy gzip cannot
    reuse as well as raw token text.
 2. **Interleaved atom streams** (~123%) beat tables but still lose.
 3. **In-place substitution** (keep source layout; shrink only long tokens)
-   brings AST+deflate to ~parity with gzip.
-4. **Drop gzip headers** (raw flate) and shrink the AST2 frame → ~98%.
+   brings the protocol+deflate to ~parity with gzip.
+4. **Drop gzip headers** (raw flate) and shrink the frame → ~98%.
 5. **Fixed language dictionaries** (keywords + idioms, not corpus-trained)
    beat gzip by ~4% on Go; adaptive storage picks them when smaller.
 
@@ -73,8 +73,9 @@ the original bytes and `git hash-object -w` them, so history is unchanged.
 
 ### Why not rewrite OIDs?
 
-Content-addressed AST objects would break every commit hash. Keeping original
-OIDs means the remote is a compressed *transport/store*, not a new object model.
+Content-addressed protocol objects would break every commit hash. Keeping
+original OIDs means the remote is a compressed *transport/store*, not a new
+object model.
 
 ## Build
 
@@ -96,8 +97,6 @@ Put `git-remote-ast` on your `PATH`.
 ```bash
 ./ast-remote encode testdata/corpus/sample.go
 ./ast-remote encode -no-adaptive testdata/corpus/repetitive.go
-./ast-remote encode -leaves -no-adaptive testdata/corpus/repetitive.go   # AST1
-./ast-remote encode -full-tree -no-adaptive testdata/corpus/repetitive.go
 ```
 
 ### End-to-end push / fetch
@@ -124,9 +123,8 @@ Per file and in aggregate the report compares:
 |--------|---------|
 | raw | original source size |
 | gzip | `gzip(source)` baseline (BestCompression) |
-| subst+gzip | AST2 atom substitution + flate (labeled leaf_ast in JSON) |
+| protocol | atom substitution + flate |
 | raw+dict | fixed language dictionary + flate |
-| full+gzip | AST1 full flattened tree (experimental) |
 | stored | adaptive min of candidates |
 | encode/decode ms | parse+pack vs inflate+rehydrate |
 
@@ -134,45 +132,41 @@ Per file and in aggregate the report compares:
 
 ### Size (`ast-remote bench`)
 
-| Corpus | raw | gzip | subst+flate | raw+dict | stored (adaptive) |
-|--------|-----|------|-------------|----------|-------------------|
+| Corpus | raw | gzip | protocol+flate | raw+dict | stored (adaptive) |
+|--------|-----|------|----------------|----------|-------------------|
 | `testdata/corpus` | 30.7 KB | 2.9 KB | 2.8 KB (**98%** of gzip) | 2.8 KB (**96%**) | **96%** of gzip |
 | `gitdb/` (16 Go files) | 83.6 KB | 30.5 KB | 29.8 KB (**98%**) | 29.1 KB (**96%**) | **96%** of gzip |
 
-Earlier AST1 leaf+gzip on the same corpora was ~160–183% of gzip; full trees
-remain ~5–16×.
-
-Mean encode on `gitdb/`: AST **~12 ms** vs gzip **~0.3 ms**. Decode is near parity.
+Mean encode on `gitdb/`: protocol **~12 ms** vs gzip **~0.3 ms**. Decode is near parity.
 
 ### Push/fetch latency (`ast-remote bench-remote`)
 
 Against a local `file://` bare remote on `gitdb/`:
 
-| | AST remote | file:// | ratio |
-|--|------------|---------|-------|
+| | protocol remote | file:// | ratio |
+|--|-----------------|---------|-------|
 | push | ~58 ms | ~19 ms | ~3.1× |
 | clone/fetch | ~27 ms | ~18 ms | ~1.5× |
 
 Re-run locally — numbers move with corpus and CPU — but the shape is stable:
-full trees lose badly, AST2 subst is near or under gzip, language dicts win a
-few more percent, adaptive storage stays at or under gzip, and push pays for
-parse time.
+the protocol is near or under gzip, language dicts win a few more percent,
+adaptive storage stays at or under gzip, and push pays for parse time.
 
 The JSON `summary.verdict` states the outcome for a given tree.
 
 ## Why gzip is hard to beat (and how we still edged it)
 
-1. A lossless codec must retain every character; the AST cannot discard tokens.
+1. A lossless codec must retain every character; the protocol cannot discard tokens.
 2. Gzip already finds repeated tokens via its sliding window.
-3. Heavy AST framing (string tables, per-node metadata) adds overhead that only
+3. Heavy framing (string tables, per-node metadata) adds overhead that only
    pays off on highly repetitive / generated code.
-4. **Light** AST use — tokenizing just enough to substitute known multi-byte
-   atoms, then letting deflate cook — preserves gzip-friendly layout while
-   shortening the common tokens gzip would otherwise spell out repeatedly.
+4. **Light** use of the parse tree — tokenizing just enough to substitute known
+   multi-byte atoms, then letting deflate cook — preserves gzip-friendly layout
+   while shortening the common tokens gzip would otherwise spell out repeatedly.
 5. A **shared language prior** (fixed dict) is the remaining win: it is
    knowledge gzip cannot have from a single file alone. That is not “AST
-   storage” per se, but it is a fair peer for an AST-aware remote that already
-   knows the language.
+   storage” per se, but it is a fair peer for a language-aware remote that
+   already knows the language.
 
 Semantic / format-normalized storage would shrink further — but would change
 OIDs and stop being a transparent git remote.
@@ -184,7 +178,7 @@ ast-remote/
 ├── main.go                 # ast-remote CLI (encode/decode/bench)
 ├── cmd/git-remote-ast/     # git remote helper binary
 ├── internal/
-│   ├── codec/              # AST2 subst + dict + AST1 legacy
+│   ├── codec/              # the protocol + dict wrappers
 │   ├── langs/              # extension → tree-sitter grammar
 │   ├── store/              # filesystem remote object store
 │   ├── gitcmd/             # git plumbing wrappers
@@ -195,7 +189,7 @@ ast-remote/
 ## Limitations
 
 - Directory remotes only (`ast::/path`); SSH/HTTP would wrap the same store.
-- Trees/commits/tags are gzip(raw), not AST-encoded.
+- Trees/commits/tags are gzip(raw), not protocol-encoded.
 - cgo + bundled grammars → large helper binary.
 - Language dictionaries are fixed snapshots; they help most on idiomatic code
   in supported languages (Go dict is the most fleshed out).
@@ -205,4 +199,4 @@ ast-remote/
 
 The sibling `ast/` app (structural search/rewrite) shares tree-sitter but is
 about editing, not transport. This experiment is specifically about
-**storage/transport** of source via ASTs.
+**storage/transport** of source via a parse-derived protocol.

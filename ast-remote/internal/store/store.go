@@ -231,7 +231,7 @@ func (s *Store) ComputeStats() (Stats, error) {
 		st.RawBytes += int64(m.Size)
 		st.PayloadBytes += int64(m.Payload)
 		switch m.Encoding {
-		case "ast-gzip", "ast-dict":
+		case "ast", "ast-dict":
 			st.ASTObjects++
 		default:
 			st.RawObjects++

@@ -3,8 +3,8 @@ package codec
 // Per-language atom tables and fixed zlib dictionaries.
 //
 // Atoms are multi-byte tokens (keywords, operators, common idents) replaced
-// in-place by a 2-byte escape during AST2 packing. Dictionaries are fixed per
-// language so every encoder/decoder agrees without shipping corpus-trained bytes.
+// in-place by a 2-byte escape in the protocol payload. Dictionaries are fixed
+// per language so every encoder/decoder agrees without corpus-trained bytes.
 
 // atomID 0 and 1 are reserved (1 is the escape byte).
 const atomEscape = 0x01
