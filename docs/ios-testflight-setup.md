@@ -189,49 +189,17 @@ iOS. We avoid all of that with **fastlane match**, which:
 3. **Generate** and copy the token (starts with `github_pat_...`). Keep it handy
    for the next steps.
 
-### 6c. Install fastlane and run match
+### 6c. Choose your passphrase now
 
-On your computer (Mac recommended; Linux/WSL works for this command too):
+Pick a strong passphrase for match and keep it safe — it encrypts the signing
+files in the repo. This value becomes your **`MATCH_PASSWORD`** secret.
 
-```bash
-# 1. Install Ruby's bundler + fastlane (skip if you already have fastlane)
-gem install fastlane
-
-# 2. Work from the sample app so match picks up its Appfile/Matchfile
-cd hello-ios
-
-# 3. Tell git how to authenticate to the private signing repo for this command
-#    (replace YOUR_GH_USERNAME and the token from step 6b)
-export MATCH_GIT_URL="https://github.com/imjasonh/ios-signing.git"
-export MATCH_PASSWORD="choose-a-strong-passphrase-and-remember-it"
-export MATCH_GIT_BASIC_AUTHORIZATION="$(printf 'YOUR_GH_USERNAME:github_pat_XXXX' | base64)"
-
-# 4. Point match at your App Store Connect API key from Step 5
-export ASC_KEY_ID="XXXXXXXXXX"
-export ASC_ISSUER_ID="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-export APP_STORE_CONNECT_API_KEY_PATH="/absolute/path/to/AuthKey_XXXXXXXXXX.p8"
-
-# 5. Create + store the distribution certificate and App Store profile
-fastlane match appstore
-```
-
-What happens:
-
-- match asks Apple (via your API key) to create a **distribution certificate**
-  and an **App Store provisioning profile** for
-  `io.github.imjasonh.playground.helloios`.
-- It encrypts them with your `MATCH_PASSWORD` and **pushes them to the
-  `ios-signing` repo**.
-- The passphrase you picked is your **`MATCH_PASSWORD`** secret; the base64
-  string you built is your **`MATCH_GIT_BASIC_AUTHORIZATION`** secret.
+You do **not** run any command yet. The certificate itself is created in **Step
+9**, *after* the secrets are in place — either automatically in CI (recommended,
+no Mac needed) or locally. Continue to Step 7.
 
 > **Never run `fastlane match nuke`** unless you intend to revoke and recreate
 > all certificates — it deletes them from Apple.
-
-> **Alternative if you can't run match locally:** you can instead add the secrets
-> first (Step 7–8) and run match once from a temporary macOS GitHub Actions job.
-> Ask and I can add a small `workflow_dispatch` helper for that. Running it once
-> locally is simpler if you can.
 
 ---
 
@@ -284,7 +252,49 @@ printf 'YOUR_GH_USERNAME:github_pat_XXXX' | base64 | pbcopy   # macOS
 
 ---
 
-## Step 9 — Add yourself as a TestFlight tester
+## Step 9 — Create your signing certificate (one time)
+
+Now that the secrets exist, create the distribution certificate + App Store
+provisioning profile and store them (encrypted) in your `ios-signing` repo. Do
+this **once**. Pick one option:
+
+### Option A (recommended — no Mac needed): run it in CI
+
+1. In this repo go to the **Actions** tab → **iOS signing bootstrap** workflow.
+2. Click **Run workflow**, leave the app as `hello-ios`, and **Run**.
+3. It runs on a macOS runner, creates the certificate + profile via your API
+   key, encrypts them with `MATCH_PASSWORD`, and pushes them to `ios-signing`.
+   When it's green, signing is ready.
+
+If it fails complaining a secret is missing, finish Step 8 and re-run it.
+
+### Option B: run it locally (needs Ruby; Mac or Linux/WSL)
+
+```bash
+cd hello-ios
+gem install fastlane          # skip if already installed
+
+export MATCH_GIT_URL="https://github.com/imjasonh/ios-signing.git"
+export MATCH_PASSWORD="the-passphrase-you-chose"
+export MATCH_GIT_BASIC_AUTHORIZATION="$(printf 'YOUR_GH_USERNAME:github_pat_XXXX' | base64)"
+export ASC_KEY_ID="XXXXXXXXXX"
+export ASC_ISSUER_ID="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+export ASC_API_KEY_P8="$(base64 < /path/to/AuthKey_XXXXXXXXXX.p8)"
+export APPLE_TEAM_ID="A1B2C3D4E5"
+
+bundle install
+bundle exec fastlane signing_bootstrap
+```
+
+Either way, match creates a **distribution certificate** and an **App Store
+provisioning profile** named `match AppStore io.github.imjasonh.playground.helloios`
+and stores them in the `ios-signing` repo. Future TestFlight builds read them
+read-only — you never need to repeat this unless the certificate expires or you
+add another app.
+
+---
+
+## Step 10 — Add yourself as a TestFlight tester
 
 So you actually receive the build.
 
@@ -296,7 +306,7 @@ So you actually receive the build.
 4. Add testers: they must be users in **Users and Access** (add yourself/others
    there first if needed). **Internal** testers get every new build immediately,
    **with no Beta App Review**.
-5. After the first build finishes processing (Step 10), you'll get a TestFlight
+5. After the first build finishes processing (Step 11), you'll get a TestFlight
    invite; accept it in the TestFlight app to install.
 
 > **External testers** (people outside your ASC team, up to 10,000) are also
@@ -306,9 +316,10 @@ So you actually receive the build.
 
 ---
 
-## Step 10 — Ship it and verify
+## Step 11 — Ship it and verify
 
-1. Merge this PR (or push any change under `hello-ios/` to `main`).
+1. **Merge this PR to `main`** (the iOS workflow must be on `main` for
+   push-to-main delivery), or push any change under `hello-ios/` to `main`.
 2. Go to the repo's **Actions** tab → the **iOS** workflow run.
    - The `discover` job detects the changed iOS app.
    - The `ios` job (on macOS) generates the project, runs tests, and — because
@@ -326,7 +337,7 @@ So you actually receive the build.
   all set yet (the deploy gate checks `ASC_KEY_ID`). Recheck Step 8.
 - **`No matching provisioning profiles found` / signing errors:** the profile
   name must be `match AppStore io.github.imjasonh.playground.helloios`. Re-run
-  `fastlane match appstore` (Step 6c) and confirm `APPLE_TEAM_ID` is correct.
+  the signing bootstrap (Step 9) and confirm `APPLE_TEAM_ID` is correct.
 - **`Authentication credentials are missing or invalid` from Apple:** the API
   key is wrong or lacks permission. Confirm `ASC_KEY_ID` / `ASC_ISSUER_ID`, that
   `ASC_API_KEY_P8` is the **base64** of the `.p8`, and that the key's role is

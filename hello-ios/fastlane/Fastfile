@@ -4,6 +4,18 @@ APP_SCHEME = "HelloIOS"
 XCODEPROJ = "HelloIOS.xcodeproj"
 APP_IDENTIFIER = ENV.fetch("APP_BUNDLE_ID", "io.github.imjasonh.playground.helloios")
 
+# Build an App Store Connect API token from the CI env. Shared by the lanes
+# that talk to Apple.
+def asc_api_key
+  app_store_connect_api_key(
+    key_id: ENV.fetch("ASC_KEY_ID"),
+    issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+    key_content: ENV.fetch("ASC_API_KEY_P8"),
+    is_key_content_base64: true,
+    in_house: false
+  )
+end
+
 platform :ios do
   desc "Run unit + UI tests on a simulator (no signing required)"
   lane :test do
@@ -18,20 +30,29 @@ platform :ios do
     )
   end
 
+  desc "One-time: create the distribution certificate + App Store profile and " \
+       "store them (encrypted) in the match repo. Run via the " \
+       "'iOS signing bootstrap' workflow after the secrets are set."
+  lane :signing_bootstrap do
+    setup_ci # temporary CI keychain to hold the new certificate
+    match(
+      type: "appstore",
+      readonly: false, # create + push the signing assets
+      app_identifier: APP_IDENTIFIER,
+      api_key: asc_api_key
+    )
+    UI.success("Signing assets created and stored in the match repo. " \
+               "Future 'beta' runs will read them read-only.")
+  end
+
   desc "Build a signed app-store IPA and upload it to TestFlight"
   lane :beta do
     setup_ci # creates a temporary CI keychain
 
-    api_key = app_store_connect_api_key(
-      key_id: ENV.fetch("ASC_KEY_ID"),
-      issuer_id: ENV.fetch("ASC_ISSUER_ID"),
-      key_content: ENV.fetch("ASC_API_KEY_P8"),
-      is_key_content_base64: true,
-      in_house: false
-    )
+    api_key = asc_api_key
 
-    # Fetch certs + provisioning profiles from the private `match` repo. Set up
-    # once locally with `fastlane match appstore`; CI only reads them.
+    # Fetch certs + provisioning profiles from the private `match` repo, created
+    # once by the `signing_bootstrap` lane; CI only reads them here.
     match(
       type: "appstore",
       readonly: true,

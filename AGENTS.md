@@ -109,6 +109,7 @@ discovery scripts.
 | `cleanup.yml` | pull request closed | Removes that PR's preview directory from `gh-pages` |
 | `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps in one job |
 | `ios.yml` | push to `main`, pull requests | Tests changed iOS apps on macOS; on `main`, delivers them to TestFlight |
+| `ios-signing-bootstrap.yml` | manual (`workflow_dispatch`) | One-time: creates & stores an iOS app's signing certificate/profile in the `match` repo |
 | `deps.yaml` | daily at 00:00 UTC, manual | Updates every testable browser app, Go app, and Rust app; pushes passing updates to `main`, otherwise opens a PR |
 
 Deploy workflows copy browser app directories as-is (they do **not** run
