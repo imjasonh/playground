@@ -35,7 +35,10 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.imjasonh.playground
         TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_CFBundleDisplayName: Playground
+        # Home-screen name. Must be globally unique for App Store Connect
+        # (plain "Playground" is already taken → ITMS-90129). Matches the unique
+        # App Store record name; change to any unique short name you prefer.
+        INFOPLIST_KEY_CFBundleDisplayName: imjasonh playground
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         # App icon (required by App Store / TestFlight). The single 1024px icon
         # in Assets.xcassets is expanded to all required sizes at build time.
