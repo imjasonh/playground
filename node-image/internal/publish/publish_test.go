@@ -14,6 +14,7 @@ func TestEmptyImageDeterministic(t *testing.T) {
 		Workdir:    "/app",
 		Entrypoint: []string{"/nodejs/bin/node"},
 		Cmd:        []string{"/app/index.js"},
+		Env:        []string{"NODE_ENV=production"},
 		Platform:   v1.Platform{OS: "linux", Architecture: "amd64"},
 	}
 	img1, err := publish.EmptyImage(opts, []publish.LayerFiles{{Files: files}})
@@ -28,5 +29,19 @@ func TestEmptyImageDeterministic(t *testing.T) {
 	d2, _ := img2.Digest()
 	if d1 != d2 {
 		t.Fatalf("%s vs %s", d1, d2)
+	}
+	cfg, err := img1.ConfigFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, e := range cfg.Config.Env {
+		if e == "NODE_ENV=production" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected NODE_ENV=production in %v", cfg.Config.Env)
 	}
 }

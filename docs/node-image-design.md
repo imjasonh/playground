@@ -431,7 +431,7 @@ someone objects:
 | 6 | Config key | `"node-image"` in `package.json` |
 | 7 | Default base | Distroless Node on Debian (glibc); confirm digest in impl spike |
 | 8 | Base pin | Allow tags with warning; docs prefer digest |
-| 9 | Entrypoint | `package.json#main`, overridable in config |
+| 9 | Entrypoint | Resolved JS main (`package.json#main`, or `dist/…` when main is `.ts`); overridable via `node-image.main` / `cmd`. Image env defaults `NODE_ENV=production`. |
 | 10 | Success bar | TS app: one command builds+pushes multi-arch; code-only rebuild ≪ deps; dep bump ~one store layer; layout oracle green; image path works without using host `node_modules` |
 
 ## 12. Risks

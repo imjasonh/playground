@@ -38,4 +38,8 @@ func TestBuildTSAppWithCompile(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(fixture, "dist", "index.js")); err != nil {
 		t.Fatalf("expected compile output: %v\nstderr=%s", err, stderr.String())
 	}
+	// package.json main is src/index.ts; builder should pick dist/index.js.
+	if !bytes.Contains(stderr.Bytes(), []byte("entrypoint: using dist/index.js")) {
+		t.Fatalf("expected entrypoint resolution message, stderr=%s", stderr.String())
+	}
 }

@@ -109,6 +109,19 @@ func Run(opt Options) (string, error) {
 		}
 	}
 
+	// Resolve the JS entrypoint after compile so dist/ exists for TypeScript apps
+	// whose package.json#main still points at a .ts source file.
+	if len(cfg.CmdOverride) == 0 {
+		resolved, err := config.ResolveMain(cfg.Dir, cfg.Main, cfg.BuildScript != "")
+		if err != nil {
+			return "", err
+		}
+		if resolved != cfg.Main && cfg.Main != "" {
+			fmt.Fprintf(stderr, "entrypoint: using %s (package.json main was %q)\n", resolved, cfg.Main)
+		}
+		cfg.Main = resolved
+	}
+
 	cacheDir, err := fetch.DefaultDir()
 	if err != nil {
 		return "", err
@@ -207,6 +220,7 @@ func Run(opt Options) (string, error) {
 			User:       cfg.User,
 			Entrypoint: cfg.Entrypoint,
 			Cmd:        cfg.Cmd(),
+			Env:        cfg.EnvList(),
 			Platform:   plat,
 		}
 

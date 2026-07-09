@@ -36,6 +36,7 @@ type Options struct {
 	User       string
 	Entrypoint []string
 	Cmd        []string
+	Env        []string // KEY=VAL entries merged into image config
 	Platform   v1.Platform
 }
 
@@ -92,6 +93,9 @@ func appendAndConfigure(base v1.Image, opts Options, layers []LayerFiles) (v1.Im
 	if len(opts.Cmd) > 0 {
 		cfg.Config.Cmd = opts.Cmd
 	}
+	if len(opts.Env) > 0 {
+		cfg.Config.Env = mergeEnv(cfg.Config.Env, opts.Env)
+	}
 	if opts.Platform.OS != "" {
 		cfg.OS = opts.Platform.OS
 	}
@@ -99,6 +103,37 @@ func appendAndConfigure(base v1.Image, opts Options, layers []LayerFiles) (v1.Im
 		cfg.Architecture = opts.Platform.Architecture
 	}
 	return mutate.ConfigFile(img, cfg)
+}
+
+// mergeEnv overlays overrides onto base (same KEY wins from overrides).
+func mergeEnv(base, overrides []string) []string {
+	m := map[string]string{}
+	order := make([]string, 0, len(base)+len(overrides))
+	for _, e := range base {
+		k, _, ok := strings.Cut(e, "=")
+		if !ok {
+			continue
+		}
+		if _, exists := m[k]; !exists {
+			order = append(order, k)
+		}
+		m[k] = e[len(k)+1:]
+	}
+	for _, e := range overrides {
+		k, _, ok := strings.Cut(e, "=")
+		if !ok {
+			continue
+		}
+		if _, exists := m[k]; !exists {
+			order = append(order, k)
+		}
+		m[k] = e[len(k)+1:]
+	}
+	out := make([]string, 0, len(order))
+	for _, k := range order {
+		out = append(out, k+"="+m[k])
+	}
+	return out
 }
 
 // layerFromFiles returns a layer that streams deterministic tar+gzip from disk
