@@ -1,8 +1,30 @@
 # Design: dockerless Node.js / TypeScript image builds
 
-> Status: **Design only.** This document proposes a `ko`/`pymage`-style CLI for
-> Node.js (including TypeScript) apps. Nothing here is implemented yet. Open
-> questions in §11 are meant to steer the first cut.
+> Status: **Design only** (decisions partially locked — see §0).
+> Proposes a `ko`/`pymage`-style Go CLI for Node.js (including TypeScript)
+> apps. Nothing here is implemented yet.
+
+## 0. Locked decisions (2026-07-09)
+
+| Topic | Decision |
+|-------|----------|
+| Package manager | **pnpm only** for v1 (require `pnpm-lock.yaml`) |
+| Scripts | Default **`--ignore-scripts`**; aim for hermeticity |
+| Layering | **Per-package sharding is v1** (with `auto` bucket fallback under a layer budget) |
+| Multi-arch | **Must for v1** (at least `linux/amd64` + `linux/arm64` index) |
+
+Rationale notes:
+
+- **pnpm-only does limit adoption** vs npm-default shops, but it is the right
+  constraint for this product: content-addressable store ≈ per-package layers,
+  lockfile integrities, first-class `--ignore-scripts`, and
+  [`supportedArchitectures`](https://pnpm.io/settings#supportedarchitectures)
+  so one host can fetch linux/amd64 *and* linux/arm64 optional deps. Same
+  tradeoff as `pymage` requiring `uv`. npm/yarn can be a later backend; v1
+  docs should say "bring a pnpm lock" (or `pnpm import`).
+- **Hermetic + ignore-scripts + multi-arch reinforce each other.** You cannot
+  honestly multi-arch if install scripts compile native code on the host.
+  Prebuilds / platform optional packages only.
 
 ## 1. Goal
 
@@ -12,31 +34,28 @@ A single **Go CLI** (same family as [`ko`](https://ko.build),
 images for Node.js applications **without a Docker daemon**, and that is fast
 because it exploits content-addressed layering:
 
-- **Dependencies are split into reusable layers.** Changing app code without
-  changing deps updates only the app layer. Bumping one dependency updates only
-  that dependency's layer (or its bucket).
-- **Host / package-manager caches are reused.** The tool should not force a
-  cold `npm install` inside a container when the developer or CI runner already
-  has a warm cache.
+- **Dependencies are split into reusable per-package layers.** Changing app
+  code without changing deps updates only the app layer. Bumping one dependency
+  updates only that package's layer (or its bucket under the layer budget).
+- **Outside-of-Docker caches are reused** — especially the **pnpm store** and
+  locally cached package tarballs — so rebuilds are not cold network fetches.
+- **Hermetic by default:** no dependency lifecycle scripts; install layout
+  derived from the lock + fetched tarballs.
 - **Base image is configurable**, defaulting to a slim distroless/Chainguard
   Node image (e.g. `cgr.dev/chainguard/node`).
+- **Multi-arch from day one** via an OCI image index.
 - Builds are **unprivileged** and talk to registries via
-  [`go-containerregistry`](https://github.com/google/go-containerregistry)
-  (HEAD / mount / upload), like `ko` and `pymage`.
+  [`go-containerregistry`](https://github.com/google/go-containerregistry).
 
-Working name for this doc: **`nok`** ("Node ko"). Naming is an open question
-(§11.1).
+Working name for this doc: **`nok`** ("Node ko"). Naming still open (§11.1).
 
 ### Non-goals (initially)
 
 - A general-purpose Dockerfile / BuildKit interpreter.
-- Replacing npm/yarn/pnpm/bun as the dependency *resolver* — we consume lockfiles
-  (and optionally shell out to the package manager for install).
-- Guaranteeing every package with a native `node-gyp` build works hermetically
-  on day one (see §6).
+- Supporting npm/yarn/bun lockfiles in v1 (pnpm only).
+- Compiling native addons from source (`node-gyp`) during the image build.
 - Electron / browser-extension packaging.
-- Running the app's `postinstall` / `prepare` scripts inside an untrusted sandbox
-  we invent.
+- Inventing a sandbox to safely run arbitrary `postinstall` scripts.
 
 ## 2. Why this is worth doing (and why Node is harder than Go/Python)
 
@@ -49,29 +68,20 @@ Working name for this doc: **`nok`** ("Node ko"). Naming is an open question
    reuse** when a layer digest already exists.
 3. A manifest is small JSON. Unchanged deps ⇒ only the app layer + manifest move.
 
-For Node, the payoff is the same as for Python: `node_modules` is often hundreds
-of MB; app code is small. Today most Node Dockerfiles either:
-
-- invalidate `npm ci` on every source change (slow), or
-- carefully order `COPY package*.json` → `npm ci` → `COPY .` (better, but still
-  one giant deps layer, and still requires a Docker daemon / BuildKit).
-
-A dedicated builder can do better: **shard deps**, reuse the **host install
-cache**, and push **only changed layers**.
+For Node, `node_modules` is often hundreds of MB; app code is small. A dedicated
+builder can **shard deps**, reuse the **pnpm store**, and push **only changed
+layers** — without a Docker daemon.
 
 ### 2.2 Why Node is not "pymage with tarballs"
 
 | Concern | Go (`ko`) | Python (`pymage`) | Node (this proposal) |
 |---------|-----------|-------------------|----------------------|
-| Artifact | Single static binary | Pre-built wheels | Tree of packages + optional compile |
-| Install = unzip? | N/A | Mostly yes | **No** — layout, hoisting, symlinks, bins |
-| Build-time code execution | Compiler only | Avoided (wheels-only) | **Common** (`postinstall`, `node-gyp`) |
-| Multi-arch | Cross-compile | Per-platform wheels | Per-platform optional deps + native addons |
-| Package managers | One (`go`) | Several, `uv` preferred | **npm / yarn / pnpm / bun**, incompatible layouts |
-| TypeScript | N/A | N/A | Needs an explicit compile step |
-
-The design must pick a stance on **who runs install** and **what happens to
-lifecycle scripts / native addons**. That choice dominates everything else.
+| Artifact | Single static binary | Pre-built wheels | Tree of packages + optional native bits |
+| Install = unzip? | N/A | Mostly yes | Layout + symlinks (pnpm virtual store) |
+| Build-time code execution | Compiler only | Avoided (wheels-only) | **Default off** (`--ignore-scripts`); fail if compile required |
+| Multi-arch | Cross-compile | Per-platform wheels | Per-platform optional deps + shared pure-JS layers |
+| Package managers | One (`go`) | `uv` preferred | **pnpm only (v1)** |
+| TypeScript | N/A | N/A | Explicit compile step (app scripts, not dep scripts) |
 
 ## 3. Prior art
 
@@ -82,43 +92,41 @@ builder. Closest options:
 
 | Project | What it does | Gap vs this goal |
 |---------|--------------|------------------|
-| **[FTL](https://github.com/GoogleCloudPlatform/runtimes-common/tree/master/ftl)** (Google, ~2018) | Dockerless Node/Python/PHP builders; registry-as-cache; language-aware layers | Effectively abandoned; Node FTL predates lockfile-first npm, pnpm, workspaces |
-| **[`pymage`](https://github.com/imjasonh/pymage)** | Per-wheel layers, `uv.lock`, Go + ggcr | Python-only; wheels-only model does not map cleanly to npm |
-| **[`ko`](https://ko.build)** / **[`krust`](https://github.com/imjasonh/krust)** | Compile → one layer on base | Single-artifact languages; no dep sharding needed |
-| **[Jib](https://github.com/GoogleContainerTools/jib)** | Java deps layered separately from classes | Maven/Gradle classpath model ≠ `node_modules` |
+| **[FTL](https://github.com/GoogleCloudPlatform/runtimes-common/tree/master/ftl)** (Google, ~2018) | Dockerless Node/Python/PHP builders; registry-as-cache | Abandoned; predates modern pnpm |
+| **[`pymage`](https://github.com/imjasonh/pymage)** | Per-wheel layers, `uv.lock`, Go + ggcr | Python-only; closest design template |
+| **[`ko`](https://ko.build)** / **[`krust`](https://github.com/imjasonh/krust)** | Compile → one layer on base | Single-artifact languages |
+| **[Jib](https://github.com/GoogleContainerTools/jib)** | Java deps layered separately from classes | Classpath ≠ `node_modules` |
 
 ### 3.2 Node-specific dockerless tools
 
 | Project | What it does | Gap |
 |---------|--------------|-----|
-| **[containerify](https://github.com/eoftedal/containerify)** | Pull base, add `package.json`+lock+`node_modules` as **one** layer, app as another; push; no Docker daemon | Coarse layering (any dep change rebuilds whole deps layer); assumes you already ran install; JS implementation |
-| **[nodejs-container-image-builder](https://github.com/google/nodejs-container-image-builder)** | Node library to append files to a base and push | Library, not a CLI; no dep sharding / lock awareness |
-| **[tko](https://github.com/dskiff/tko)** | `(base) + (artifacts) → push` | Language-agnostic; you bring a finished tree; no Node layering |
+| **[containerify](https://github.com/eoftedal/containerify)** | Base + one deps layer + app layer; no daemon | Coarse layering; assumes pre-installed tree |
+| **[nodejs-container-image-builder](https://github.com/google/nodejs-container-image-builder)** | Node library to append files and push | Library; no sharding |
+| **[tko](https://github.com/dskiff/tko)** | `(base) + (artifacts) → push` | Language-agnostic |
 
 ### 3.3 Related but different
 
 | Project | Relevance |
 |---------|-----------|
-| **Bazel [`js_image_layer`](https://github.com/aspect-build/rules_js)** + `rules_oci` | Splits into ~5 layers (Node toolchain, 3p store, 1p store, `node_modules` symlinks, app). Closest *sharding* story in production — but requires Bazel. |
-| **Paketo / CNB Node buildpacks** | Cache `node_modules` keyed on lockfile; still run install in a build container; not a local unprivileged CLI. |
-| **Kaniko / Buildah / BuildKit** | General Dockerfile builders; daemonless-ish, but not Node-specialized and still "run Dockerfile steps". |
-| **apko + melange** | Declarative apk → OCI; Node apps would need packaging as apk first. |
-| **Optimized Dockerfiles** | Multi-stage + `COPY package*.json` + BuildKit cache mounts — good practice, still Docker-centric, one deps layer. |
+| **Bazel [`js_image_layer`](https://github.com/aspect-build/rules_js)** + `rules_oci` | Splits Node toolchain / 3p store / 1p store / symlinks / app — closest sharding story; requires Bazel. **Layout inspiration for pnpm store + link farm.** |
+| **Paketo / CNB Node buildpacks** | Lockfile-keyed `node_modules` cache; still a build-container model |
+| **Kaniko / Buildah / BuildKit** | General Dockerfile builders |
+| **pnpm `deploy` / Docker docs** | Portable prod trees for workspaces; useful for monorepo packaging, not registry-as-cache sharding |
 
-**Conclusion:** the niche is real. FTL proved the idea for Node years ago;
-`containerify` covers the coarse dockerless case; Bazel covers fine layering
-inside a heavy toolchain. A modern `pymage`-shaped CLI for everyday npm/pnpm
-apps does not appear to exist.
+**Conclusion:** niche is real. FTL proved Node dockerless builds; Bazel proved
+fine-grained JS layers; pymage is the template. A modern pnpm-native CLI with
+per-package layers + multi-arch does not appear to exist.
 
-## 4. Proposed product shape
+## 4. Product shape
 
 ```
 nok build [dir]          # default: .
 nok build -t v1.2.3
-docker run "$(nok build)"
+docker run "$(nok build)"   # index digest; runtime picks platform
 ```
 
-Config in `package.json` (idiomatic for Node tooling), e.g.:
+Config in `package.json` (or `pnpm-workspace.yaml` / dedicated file — TBD):
 
 ```json
 {
@@ -126,323 +134,337 @@ Config in `package.json` (idiomatic for Node tooling), e.g.:
   "main": "dist/index.js",
   "nok": {
     "repo": "registry.example.com/me/myapp",
-    "base": "cgr.dev/chainguard/node:latest",
+    "base": "cgr.dev/chainguard/node@sha256:…",
     "platforms": ["linux/amd64", "linux/arm64"]
   }
 }
 ```
 
-(Exact key name — `nok` vs `ko`-style `.ko.yaml` vs `package.json#nok` — TBD.)
-
-Defaults (proposed):
+Defaults:
 
 | Knob | Default |
 |------|---------|
-| Base | `cgr.dev/chainguard/node` (pin by digest in docs) |
+| Package manager | pnpm (`pnpm-lock.yaml` required) |
+| Scripts | `--ignore-scripts` (deps); opt-in `--allow-scripts` escape hatch |
+| Base | `cgr.dev/chainguard/node` (docs push digest pins) |
+| Platforms | intersection of base image platforms and config; default aim `linux/amd64,linux/arm64` |
 | Workdir | `/app` |
 | User | non-root from base (or `65532`) |
-| Entrypoint / Cmd | `node` + resolved main / `package.json#main` / configured entry |
-| Production deps only | yes (`omit=dev`) |
-| Layer strategy | `auto` (per-package until layer budget, then name-hash buckets) — same idea as pymage |
-| Max layers | ~127 including base |
+| Cmd | `["node", "<main>"]` — never `npm`/`pnpm` as PID 1 |
+| Production deps only | yes (`--prod`) |
+| Layer strategy | `per-package`, with `auto` bucketing when over `max-layers` |
+| Max layers | ~127 including base (pymage-aligned; revisit for huge trees) |
 
-Auth: standard Docker keychain via ggcr (same as `ko`/`pymage`).
+Auth: standard Docker keychain via ggcr.
 
-## 5. Recommended architecture: hybrid "host install + deterministic shard"
+## 5. Recommended architecture: hermetic pnpm fetch + per-package layers
 
-After comparing pure-hermetic vs host-install approaches (§6), the recommended
-**v1** is:
+v1 default is **not** "run a normal host install with scripts." It is:
 
-> **Let the package manager produce `node_modules` on the host (reusing its
-> cache), then have `nok` deterministically shard that tree into OCI layers and
-> push.**
+> **From `pnpm-lock.yaml`, fetch package tarballs (reusing the pnpm store),
+> materialize a deterministic per-package filesystem layout without lifecycle
+> scripts, shard one OCI layer per package, append to the base, and publish a
+> multi-arch index.**
 
 ```
-package.json + lockfile + source
+pnpm-lock.yaml + package.json + source
         │
         ▼
-1. Detect package manager (lockfile / packageManager field)
+1. Require pnpm; parse lock (importers, packages, snapshots, integrities)
         │
         ▼
-2. Ensure production install on host
-     npm ci --omit=dev   |  pnpm install --prod  |  yarn workspaces focus …
-     (skip if node_modules already matches lock — optional verify)
+2. Resolve per-target-platform closure
+     supportedArchitectures / lock os+cpu+libc fields
+     pure-JS packages shared across arches
+     platform optional deps (e.g. @esbuild/linux-arm64) per arch
         │
         ▼
-3. Optional app build
-     npm run build   (or configured script: tsc / esbuild / next build …)
+3. Fetch tarballs into pnpm store (or Go content-addressed cache keyed by
+   integrity). Never run dependency lifecycle scripts.
         │
         ▼
-4. Inventory installable units
-     each top-level package in node_modules (and nested where not hoisted),
-     or each pnpm store package + link graph
+4. Optional app build (see §8) — may use a separate full install with
+   devDeps; must not poison the production layer set
         │
         ▼
-5. Shard into deterministic layers (per-package or hashed buckets)
-   + app/source layer (dist/ + package.json, excluding node_modules)
+5. For each platform:
+     materialize install layout under /app
+     one deterministic layer per package (+ link/symlink layer if needed)
+     + app layer last
         │
         ▼
-6. Append to base (by digest), rewrite config, HEAD/mount/upload, PUT manifest
+6. HEAD/mount/upload blobs; PUT per-arch manifests; PUT image index
 ```
 
-### Why this hybrid for v1
+### 5.1 Two viable materialization strategies
 
-- **Reuses outside-of-Docker build cache** — the user's explicit goal. `npm`/`pnpm`
-  local stores stay warm; CI cache dirs (`~/.npm`, pnpm store) keep working.
-- **Lifecycle scripts and native addons mostly "just work"** on the host the
-  same way they do for local `npm ci`, without reimplementing npm in Go.
-- **Layer sharding still delivers registry-side reuse** — the part Docker
-  Dockerfiles cannot do well (per-dep layers + blob mounts).
-- **TypeScript fits naturally**: run the project's build script on the host,
-  package `dist/` (or configured output) as the app layer.
+**A. Shell out to pnpm (preferred if "hermeticity is easy")**
 
-### What we still make deterministic
+Per target platform, in an isolated directory:
 
-Even when install runs on the host, **layer tarballs must be byte-stable**:
+```bash
+pnpm fetch --prod   # or install with store-dir, frozen lockfile
+pnpm install --prod --frozen-lockfile --ignore-scripts \
+  --config.supportedArchitectures.os[]=linux \
+  --config.supportedArchitectures.cpu[]=x64 \  # or arm64
+  --config.supportedArchitectures.libc[]=glibc \
+  --modules-dir … --store-dir …
+```
+
+Then walk the resulting virtual store + `node_modules` link farm and shard.
+
+- **Pros:** pnpm owns layout correctness; we reuse store cache; less Go code.
+- **Cons:** pnpm becomes a hard runtime dependency; must pin/detect pnpm
+  version (corepack); determinism depends on pnpm's on-disk layout stability
+  across versions; need careful isolation so two platform installs do not
+  clobber each other.
+
+**B. Go-native tarball extract (pymage-strict)**
+
+Parse lock → download by integrity → extract each tarball into
+`/app/node_modules/.pnpm/<name>@<ver>/node_modules/<name>` (or a simplified
+hoisted tree) → synthesize bins/symlinks ourselves.
+
+- **Pros:** strongest hermeticity and bit-stability; multi-arch without
+  caring about host arch; no pnpm binary required at build time (only lock).
+- **Cons:** reimplementing pnpm layout is non-trivial (peers, bins, nested
+  deps, `node_modules/.bin`).
+
+**Recommendation:** start with **A** for layout fidelity, but treat the
+**layer input as content-addressed by lock integrity** so we can swap in **B**
+later. If pnpm layout proves non-deterministic across minor versions, invest
+in B sooner.
+
+### 5.2 What "hermetic" means here
+
+| Allowed | Not allowed (default) |
+|---------|------------------------|
+| Read lock + package metadata | Run dependency `preinstall` / `install` / `postinstall` |
+| Fetch tarballs by integrity into store | `node-gyp rebuild` / compile native code |
+| Extract / link files into image layout | Network calls from package scripts |
+| Run **app** build script with an explicit, separate policy (§8) | Silent fallback to "just install with scripts" |
+
+If a required package cannot work without scripts (no `prebuildify` /
+`node-gyp-build` prebuilds in the tarball, not a pure optional platform
+package), **fail fast** with a clear error and document `--allow-scripts` as
+an explicit, non-default escape hatch (and note that `--allow-scripts` may
+break multi-arch).
+
+### 5.3 Determinism requirements
+
+Layer tarballs must be byte-stable:
 
 - Fixed `mtime` / uid / gid / modes; sorted tar entries; deterministic gzip
-  (or cache compressed blobs by content).
-- Stable path prefix (`/app/node_modules/...`).
-- Stable assignment of packages → layer buckets (hash of package name, like
-  pymage).
-- Ignore junk: `**/.cache`, `**/*.map` (configurable), VCS dirs, nested
-  `.git`.
+  **or** cache compressed blobs by content.
+- Stable path prefix under `/app`.
+- Package → layer assignment: one layer per package identity
+  `(name, version, integrity)`; when over budget, bucket by `hash(name)`.
+- Symlinks preserved as symlinks with stable targets (do not follow into
+  duplicate file copies unless using a dedicated "store layer + link layer"
+  split like Bazel).
+- Exclude junk: `**/.cache`, VCS dirs, optional `**/*.map`.
 
-Cache key for a dep layer roughly:
+Cache key:
 
 ```
-(package-name, version, resolved-integrity-from-lock, layout-version, platform)
+(package-name, version, integrity, layout-version, platform-or-any)
 ```
 
-If integrity matches and the layer blob exists in the registry → mount, no upload.
+Pure-JS packages use `platform=any` and are **shared** across the multi-arch
+index (same blob digest referenced from each arch manifest).
 
-## 6. Alternative approaches (and why they're secondary)
+## 6. Alternatives (secondary)
 
-### 6.A Hermetic tarball install in Go (pymage-strict)
+### 6.A Host install with scripts (rejected as default)
 
-Download each package tarball from the lock (`resolved` + `integrity`), extract
-into a layout we control, **never run lifecycle scripts**.
+Fastest path to "apps just work," but fights hermeticity and multi-arch.
+Kept only as `--allow-scripts` escape hatch.
 
-- **Pros:** hermetic, multi-arch friendly, no host Node required for deps,
-  closest to pymage.
-- **Cons:** reinventing install layout (especially pnpm); native addons that
-  need `node-gyp` fail; packages that *require* `postinstall` break; large
-  engineering surface.
-- **Fit:** strong **v2 / strict mode** for pure-JS apps and for CI that wants
-  "no scripts". Fail fast when a package needs compile and no prebuild is in
-  the tarball.
+### 6.B Bundle-first (esbuild → one file)
 
-### 6.B Bundle-first (esbuild/rollup → one JS file)
-
-Compile the app (+ deps) into a single artifact, then `ko`-style one layer.
-
-- **Pros:** tiny images, trivial layering, multi-arch if pure JS.
-- **Cons:** different product (bundler semantics, dynamic `require`, native
-  addons); not "ship node_modules".
-- **Fit:** optional mode later (`--bundle`), not the default.
+Different product. Optional later (`--bundle`), not default.
 
 ### 6.C Coarse two-layer (containerify)
 
-`node_modules` one layer + app one layer.
+`--layer-strategy=single-deps-layer` fallback only.
 
-- **Pros:** small implementation; already exists (containerify).
-- **Cons:** misses the "small dependency change → small layer change" goal.
-- **Fit:** `--layer-strategy=single-deps-layer` fallback, not the headline.
-
-## 7. Layering strategy (detail)
-
-Mirror pymage's knobs:
+## 7. Layering strategy (v1)
 
 | Strategy | Behavior |
 |----------|----------|
-| `auto` (default) | One layer per package while under `max-layers`; else bin-pack by hash(name) → K buckets |
-| `per-package` | One layer per package, no cap |
-| `single-deps-layer` | All deps in one layer |
+| `per-package` | Headline path: one layer per package |
+| `auto` (default knobs) | `per-package` while under `max-layers`; else name-hash buckets (pymage-style) so one dep bump touches one bucket |
+| `single-deps-layer` | Escape hatch |
 
-**App layer last**, containing:
+**Suggested physical split** (inspired by Bazel `js_image_layer`):
 
-- Built output (`dist/`, `.next/standalone`, etc. — configurable)
-- Root `package.json` (and lockfile if useful for diagnostics)
-- Non-`node_modules` runtime files the app needs
-- Explicitly **not** re-including deps
+1. **Store layers** — one per package contents under the virtual store path
+   (content-addressed; maximum reuse).
+2. **Link / `node_modules` layer(s)** — symlink farm + `.bin` (changes when
+   the dependency *graph* changes even if package bytes do not).
+3. **App layer** — last: `dist/` / configured output + root `package.json`.
 
-**pnpm note:** pnpm's content-addressable store + symlink farm is awkward for
-naive per-directory tarring (symlinks must resolve inside the image). Options:
+If implementing the full store/link split is too much for alpha, v1 can ship
+**one layer per package including its link edges** at the cost of slightly
+worse reuse when only the graph changes — but still far better than a monolith
+`node_modules` layer.
 
-1. Prefer `node-linker=hoisted` / `shamefully-hoist` for images (simpler tree).
-2. Or emit layers as (store packages) + (symlink/`node_modules` structure)
-   similar to Bazel's `js_image_layer` split — more correct, more work.
+**App layer last**, never re-embedding deps.
 
-**npm/yarn hoisting:** nested duplicates of the same version should map to the
-**same** layer digest when integrity matches (content-addressed), even if
-linked from multiple paths — either via hardlink-aware tar or by putting the
-package once and relying on Node's resolution (harder). v1 can tar the real
-tree as-is (simpler, some duplication) and optimize later.
+## 8. TypeScript and app builds
 
-## 8. TypeScript and "build" integration
+Tension: hermetic **dependency** installs vs apps that need `tsc` / bundlers
+(**devDependencies** + running the app's own scripts).
 
-Node apps are often not runnable as raw `src/`. Proposed model:
+Proposed model:
 
-1. Config key `build` / `package.json#scripts.build` — if present, `nok` runs it
-   (or a configured script name) **before** packaging, on the host, with the
-   already-installed (possibly full, including devDeps) tree.
-2. Practical flow for TS:
-   - install **all** deps (including dev) → `npm run build` → prune / reinstall
-     production-only → shard production `node_modules` + `dist/`.
-   - Or: two-phase like multi-stage Dockerfiles, but both phases on the host.
-3. Entrypoint defaults to `node dist/index.js` or `package.json#main` after
-   build.
+1. **Production image closure** is always built with `--ignore-scripts --prod`.
+2. **App compile** is a separate phase:
+   - If `nok.buildScript` / `--build` / `scripts.build` is enabled, run a
+     **dev install** (may allow scripts only for the root package, still
+     prefer `--ignore-scripts` for deps) → run build → take outputs
+     (`dist/`, etc.).
+   - Then materialize the **production** dep layers from the lock (no
+     devDeps) + app output layer.
+3. Fail closed on `*.ts` entrypoints without a build unless the user opts into
+   a TS-runner base.
 
-Open question: should `nok` refuse to package `*.ts` entrypoints without a
-build, or allow `tsx`/ts-node bases? Recommendation: **fail closed** unless
-base clearly includes a TS runner and user opts in.
+Framework-specific graphs (Next standalone, etc.) are **out of scope for
+alpha** — "bring your build output path" via config.
 
-## 9. Base image, Node ABI, and native addons
+## 9. Multi-arch (v1 requirement)
 
-- Default base: **Chainguard Node** (or distroless node). Document digest
-  pinning.
-- Detect Node major/minor from the base (image env / apko metadata / `node -p`
-  if we ever exec — prefer metadata) and **warn/fail** if host install used a
-  different major (native `.node` binaries are ABI-sensitive).
-- Native addons:
-  - **Best case:** `prebuildify` / bundled `prebuilds/` → works with
-    `--ignore-scripts` and hermetic mode.
-  - **Common case:** `postinstall` downloads or builds → needs host install
-    mode and matching libc/arch (building linux/arm64 deps on macOS amd64 is
-    a problem).
-- Multi-arch: for v1, either
-  - require building on each arch (or in qemu/CI matrix), or
-  - support hermetic mode only for pure-JS closures on multi-arch.
+### 9.1 How it works with pnpm
 
-This is the largest practical footgun vs pymage (which can fetch
-`manylinux` wheels from any host).
+For each target platform `linux/<arch>`:
+
+1. Set `supportedArchitectures` to that os/cpu/libc (and/or rely on lock
+   platform fields).
+2. Compute the package closure; fetch any missing tarballs (optional deps for
+   that arch).
+3. Build arch-specific image (shared pure-JS layers by digest; unique layers
+   for platform packages).
+4. Publish an **OCI image index** listing both manifests.
+
+This matches pymage's "pure wheels shared, platform wheels per arch" model.
+
+### 9.2 Native addons policy under multi-arch
+
+| Package kind | Multi-arch behavior |
+|--------------|---------------------|
+| Pure JS | One shared layer |
+| Optional platform package (`@esbuild/linux-x64`, …) | Per-arch layer; fetched via `supportedArchitectures` |
+| `prebuildify` / in-tarball `prebuilds/` | Shared layer; runtime picks `.node` |
+| Needs `node-gyp` at install time | **Build fails** unless `--allow-scripts` (and then multi-arch is best-effort / same-arch only) |
+
+Detect base image Node major (env / apko metadata) and **hard-error** on
+mismatch with the lock's expected engine when native prebuilds are present.
+
+### 9.3 libc
+
+Chainguard/Wolfi bases are musl-ish/apk; many native optional packages publish
+`glibc` vs `musl` variants. **Must validate** `supportedArchitectures.libc`
+against the base (or document "glibc Node base only" / "Chainguard Node is X").
+This is an easy footgun — treat as a first-class check, not an afterthought.
 
 ## 10. Implementation sketch (Go)
 
-New top-level module (name TBD), mirroring `pymage` / playground Go apps:
-
 ```
-nok/                     # or whatever name
+nok/
 ├── go.mod
 ├── README.md
-├── DESIGN.md            # this doc, or link to docs/
-├── cmd/nok/             # or main at root like pymage
+├── DESIGN.md
 ├── internal/
-│   ├── lock/            # parse package-lock v2/v3, pnpm-lock, yarn
-│   ├── install/         # shell out to npm/pnpm/yarn; verify
-│   ├── layout/          # walk node_modules → package units
-│   ├── layer/           # deterministic tar + bucket strategy
-│   ├── app/             # source/dist layer + ignore rules
-│   ├── base/            # pull manifest/config, Node version detect
-│   └── publish/         # ggcr assemble, HEAD/mount/push, index
-└── testdata/
+│   ├── lock/       # pnpm-lock.yaml parser (v6/v9 as needed)
+│   ├── fetch/      # integrity-addressed tarball cache; optional pnpm store interop
+│   ├── install/    # invoke pnpm ignore-scripts + supportedArchitectures, or Go layout
+│   ├── layer/      # per-package deterministic tar + auto buckets
+│   ├── app/        # dist/source layer + ignores
+│   ├── base/       # manifest/config, Node version + libc detect
+│   └── publish/    # ggcr assemble, mount/push, image index
+└── testdata/       # small pnpm apps: pure JS, optional platform dep, TS build
 ```
 
-Phased delivery:
+Phased delivery (aligned to locked decisions):
 
-1. Deterministic tar + push app files onto configurable base (tko-like MVP).
-2. Single deps layer from existing `node_modules` (containerify parity).
-3. Per-package / auto bucket sharding + local layer cache.
-4. Lock-aware install orchestration (`npm ci` / pnpm) + production omit.
-5. Build-script hook for TypeScript.
-6. Multi-arch index (pure-JS / hermetic path first).
-7. Optional hermetic `--ignore-scripts` tarball mode.
-8. SBOM from lockfile integrities; optional cosign.
+1. Deterministic tar helpers + push single-arch app-on-base (smoke).
+2. pnpm lock parse + fetch/store reuse + **ignore-scripts** prod install.
+3. **Per-package layers** + registry HEAD/mount reuse demo.
+4. **Multi-arch index** with `supportedArchitectures` + shared pure-JS blobs.
+5. App build phase for TypeScript.
+6. Fail-fast diagnostics for script-requiring / ABI / libc mismatches.
+7. SBOM from lock integrities; optional cosign.
+8. (Later) Go-native layout; npm backend; `--allow-scripts` hardening.
 
-## 11. Open questions (please steer)
+## 11. Remaining open questions
 
 ### 11.1 Naming & home
 
-1. Name: `nok`? `npmage`? `nodeko`? something else?
-2. Live as its own GitHub repo (like `pymage`/`krust`) or as a playground Go
-   app under this monorepo first?
+1. Name: `nok`? `pnpmage`? something else?
+2. Standalone repo (like pymage) vs incubate in this playground?
 
-### 11.2 Install model (load-bearing)
+### 11.2 Hermetic mechanics
 
-3. Confirm **host install + shard** as v1 default? Or prefer **hermetic
-   tarball / no scripts** from day one (narrower app compatibility, stronger
-   reproducibility story)?
-4. Should `nok` invoke the package manager itself, or require the user to
-   present a finished `node_modules` (containerify-style) and only package?
-5. Which package managers are in-scope for v1: **npm only**, npm+pnpm, or all
-   of npm/yarn/pnpm/bun?
+3. Materialization **A (shell out to pnpm)** vs **B (Go extract)** for alpha?
+4. Is `--allow-scripts` in v1 at all, or omit until someone screams?
+5. Pin pnpm via **corepack** / `packageManager` field — hard requirement?
 
-### 11.3 TypeScript / build
+### 11.3 Layout
 
-6. Always run `scripts.build` when present, or require explicit
-   `nok.buildScript` / `--build`?
-7. After build, how aggressive should pruning be (`npm prune --omit=dev` vs
-   reinstall prod-only vs leave it to the user)?
-8. First-class support for frameworks with non-obvious output graphs
-   (Next.js standalone, Nest, Remix)? Or "bring your `dist/`" only?
+6. Full **store layers + symlink layer** (Bazel-like) in v1, or simpler
+   per-package tars of the visible tree?
+7. Default `max-layers` 127 — OK for Node's wide trees, or start lower/higher?
+8. Hoist (`node-linker=hoisted`) for simpler images, or embrace default
+   isolated linker?
 
-### 11.4 Layering & layout
+### 11.4 TypeScript / workspaces
 
-9. Is per-package layering the headline feature, or is "deps layer + app
-   layer" enough for v1 with sharding as v2?
-10. For pnpm: require hoisted linker for images, or invest in store+symlink
-    layers up front?
-11. Layer budget default: pymage's 127, or something smaller for Node
-    (registry/runtime pain with thousands of micro-packages)?
+9. Auto-run `scripts.build` when present, or require explicit opt-in?
+10. Monorepos: require `pnpm deploy --filter=…`, a `--filter` flag, or
+    single-package repos only for alpha?
 
-### 11.5 Native addons & multi-arch
+### 11.5 Base / runtime
 
-12. Accept that **multi-arch v1 = CI matrix / same-arch only** when native
-    addons are present?
-13. Fail the build if any dependency has an `install`/`postinstall` script
-    unless `--allow-scripts` (secure default) — or allow scripts by default
-    because otherwise too many apps break?
-14. Should matching host Node major to base Node major be a hard error?
+11. Hard-require base digest, or allow tags with a loud warning?
+12. libc policy for default Chainguard Node — confirm musl/glibc story and
+    which optional native packages we claim to support.
+13. Default entry: always `node <main>`, with `main` resolved how
+    (`package.json#main` vs `nok.entrypoint` vs `bin`)?
 
-### 11.6 Runtime contract
+### 11.6 Success bar for alpha
 
-15. Default base image tag vs digest policy (float `latest` with warning, or
-    require digest)?
-16. Default command: `node <main>` vs `npm start` (signal handling argues
-    against npm as PID 1)?
-17. Monorepos / workspaces: build one workspace package at a time
-    (`--filter`), or whole repo?
-
-### 11.7 Success metrics
-
-18. What makes this "done" for an alpha: containerify feature parity, or
-    pymage-style per-dep reuse demo on a real app (e.g. Express + a few
-    native-free deps)?
-19. Target demo story: `nok build && docker run …` on a TypeScript API, with
-    a second build after a one-line code change uploading ≪ full
-    `node_modules`?
+14. Demo: TS API on pnpm, multi-arch push to ttl.sh/ghcr, second build after
+    one-line edit uploads ≪ full deps; bump one dep uploads ~one layer.
 
 ## 12. Risks
 
-- **Reimplementing or trusting install incorrectly** → subtle runtime
-  differences vs local `node_modules`.
-- **Non-determinism** in tar/gzip silently killing layer reuse.
-- **Script / RCE surface** if hermetic mode later shells out carelessly.
-- **ABI skew** between build host and base image Node.
-- **pnpm symlink semantics** producing broken images if followed or not
-  followed wrongly.
-- **Layer explosion** on apps with 1k+ transitive packages → need `auto`
-  bucketing defaults that are good out of the box.
-- **Competing with "just use a good Dockerfile + BuildKit cache"** — the
-  differentiator must be clear: **no daemon + per-dep registry reuse + host
-  cache**.
+- **pnpm-only adoption ceiling** — mitigated by `pnpm import` docs; accept for v1.
+- **`--ignore-scripts` breaks popular packages** — fail with actionable errors;
+  track a compatibility allowlist of known-good patterns (prebuildify, pure JS,
+  platform optional deps).
+- **libc / Node ABI skew** vs Chainguard base — detect and fail.
+- **pnpm layout non-determinism** across pnpm versions — pin pnpm; cache by
+  integrity; golden tests.
+- **Symlink farms** copied wrong → broken images — integration tests that
+  actually `node -e "require('…')"` in a container per arch.
+- **Layer explosion** — `auto` bucketing must be default-on when over budget.
+- **App build vs hermetic deps** — keep phases strictly separated.
 
-## 13. Suggested decision defaults (if we want to start coding)
-
-Until the questions above are answered, proposed defaults for an alpha:
+## 13. Decision summary (coding defaults)
 
 | Decision | Default |
 |----------|---------|
 | Name | `nok` (placeholder) |
-| Install | Host `npm ci --omit=dev` when `package-lock.json` present; else fail with guidance |
-| Package managers v1 | npm only (lockfile v2/v3) |
-| Layering | `auto` buckets, deps + app |
-| Scripts | Allow install scripts on host; document risk |
-| TS | Run `build` script if defined; package `dist/` if it exists else `.` |
-| Base | `cgr.dev/chainguard/node` (document digest pin) |
-| Cmd | `["node", "<main>"]` — never `npm start` as PID 1 |
-| Multi-arch | Single platform = host arch, unless pure lock + hermetic mode |
-| Repo home | Standalone repo (like pymage), design doc can live here until then |
+| Lockfile | `pnpm-lock.yaml` required |
+| Dep scripts | ignored (`--ignore-scripts`) |
+| Layering | per-package (+ auto bucket under max-layers) |
+| Multi-arch | yes — image index, shared pure-JS layers |
+| Install driver | shell out to pnpm first; Go-native layout later if needed |
+| TS | explicit build phase; prod layers stay script-free |
+| Base | `cgr.dev/chainguard/node` (prefer digest) |
+| Cmd | `["node", "<main>"]` |
+| Escape hatch | `--allow-scripts` (optional in alpha; disables multi-arch guarantees) |
+| Repo home | TBD (lean standalone, like pymage) |
 
 ## 14. References
 
@@ -454,5 +476,7 @@ Until the questions above are answered, proposed defaults for an alpha:
 - [tko](https://github.com/dskiff/tko)
 - [google/nodejs-container-image-builder](https://github.com/google/nodejs-container-image-builder)
 - [aspect `js_image_layer`](https://github.com/aspect-build/rules_js) / [rules_oci JS docs](https://github.com/bazel-contrib/rules_oci/blob/main/docs/javascript.md)
+- [pnpm `supportedArchitectures`](https://pnpm.io/settings#supportedarchitectures)
+- [pnpm `deploy`](https://pnpm.io/cli/deploy) / [pnpm + Docker](https://pnpm.io/docker)
 - [Paketo Node.js reference](https://paketo.io/docs/reference/nodejs-reference/)
 - Stack Overflow: [Equivalent of Google's Jib for Node.JS?](https://stackoverflow.com/questions/61598311/equivalent-of-googles-jib-for-node-js)
