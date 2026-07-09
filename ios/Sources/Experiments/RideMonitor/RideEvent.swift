@@ -1,7 +1,7 @@
 import Foundation
 
 /// How hard a jolt was, in rough increasing severity.
-enum RideSeverity: String, CaseIterable {
+enum RideSeverity: String, CaseIterable, Codable {
     case shake
     case pothole
     case impact
@@ -29,7 +29,7 @@ enum RideSeverity: String, CaseIterable {
 
 /// A detected motion event during a ride. The detection core fills `severity`,
 /// `peakG`, and `at`; the session manager attaches the location afterwards.
-struct RideEvent: Identifiable {
+struct RideEvent: Identifiable, Codable {
     let id = UUID()
     let severity: RideSeverity
     /// Peak acceleration magnitude (gravity removed), in g.

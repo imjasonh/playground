@@ -36,6 +36,15 @@ struct RideMonitorView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 
+                NavigationLink {
+                    RideListView()
+                } label: {
+                    Label("Past rides", systemImage: "list.bullet.rectangle")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("pastRidesButton")
+
                 eventLog
 
                 disclaimer
