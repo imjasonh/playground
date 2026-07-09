@@ -449,6 +449,6 @@ bundle exec fastlane test
 
 | Directory | Type | Tests |
 |-----------|------|-------|
-| `ios/` | The single "Playground" SwiftUI app — a launcher hosting experiments (e.g. Ride Monitor); TestFlight CD on `main` | XCTest unit tests + XCUITest UI tests (`fastlane test`) |
+| `ios/` | The single "Playground" SwiftUI app — a launcher hosting experiments (e.g. Ride Monitor, T9 Keyboard); TestFlight CD on `main` | XCTest unit tests + XCUITest UI tests (`fastlane test`) |
 
 See each app's `README.md` for app-specific rules and local development.

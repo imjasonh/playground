@@ -47,5 +47,6 @@ struct Experiment: Identifiable {
 enum ExperimentCatalog {
     static let all: [Experiment] = [
         RideMonitorExperiment.experiment,
+        T9KeyboardExperiment.experiment,
     ]
 }

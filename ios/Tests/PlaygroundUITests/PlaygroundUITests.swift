@@ -27,6 +27,7 @@ final class PlaygroundUITests: XCTestCase {
 
         XCTAssertTrue(app.navigationBars["Playground"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Ride Monitor"].exists)
+        XCTAssertTrue(app.staticTexts["T9 Keyboard"].exists)
     }
 
     func testRideMonitorExperimentOpens() {
@@ -36,5 +37,15 @@ final class PlaygroundUITests: XCTestCase {
         openExperiment("ride-monitor", title: "Ride Monitor", in: app)
 
         XCTAssertTrue(app.buttons["startRideButton"].waitForExistence(timeout: 5))
+    }
+
+    func testT9KeyboardExperimentOpens() {
+        let app = XCUIApplication()
+        app.launch()
+
+        openExperiment("t9-keyboard", title: "T9 Keyboard", in: app)
+
+        XCTAssertTrue(app.buttons["t9OpenSettingsButton"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["t9-key-2"].waitForExistence(timeout: 5))
     }
 }
