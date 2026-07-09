@@ -1,7 +1,6 @@
 package publish
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"net"
@@ -102,14 +101,19 @@ func appendAndConfigure(base v1.Image, opts Options, layers []LayerFiles) (v1.Im
 	return mutate.ConfigFile(img, cfg)
 }
 
+// layerFromFiles returns a layer that streams deterministic tar+gzip from disk
+// (or in-memory Body for tiny test files). The compressed blob is never retained
+// as a []byte — each digest/upload re-streams through a pipe.
 func layerFromFiles(files []layer.File) (v1.Layer, error) {
-	_, _, compressed, err := layer.CompressedDigest(files)
-	if err != nil {
-		return nil, err
+	files = append([]layer.File(nil), files...)
+	opener := func() (io.ReadCloser, error) {
+		pr, pw := io.Pipe()
+		go func() {
+			pw.CloseWithError(layer.WriteCompressed(pw, files))
+		}()
+		return pr, nil
 	}
-	return tarball.LayerFromOpener(func() (io.ReadCloser, error) {
-		return io.NopCloser(bytes.NewReader(compressed)), nil
-	})
+	return tarball.LayerFromOpener(opener, tarball.WithMediaType(types.OCILayer))
 }
 
 // WriteDigestSummary writes digest + layer digests for offline tests.
@@ -253,8 +257,9 @@ func PushIndex(repo string, tags []string, idx v1.ImageIndex) (string, error) {
 	return fmt.Sprintf("%s@%s", repoName.Name(), d.String()), nil
 }
 
-// LoadLocal writes img into the local Docker daemon and returns
-// node-image.local/…@sha256:… suitable for `docker run --rm $(node-image build -L)`.
+// LoadLocal writes img into the local Docker daemon and returns a runnable
+// tag reference (node-image.local/…:tag). Docker does not populate RepoDigests
+// for daemon-loaded images, so a digest ref would trigger a failed registry pull.
 func LoadLocal(repo string, tags []string, img v1.Image) (string, error) {
 	localRepo, err := localRepository(repo)
 	if err != nil {
@@ -268,16 +273,12 @@ func LoadLocal(repo string, tags []string, img v1.Image) (string, error) {
 	if _, err := daemon.Write(dst, img); err != nil {
 		return "", fmt.Errorf("load into docker daemon: %w\nHint: is the Docker daemon running? Try `docker info`", err)
 	}
-	d, err := img.Digest()
-	if err != nil {
-		return "", err
-	}
 	for _, t := range tags[1:] {
 		if err := daemon.Tag(dst, localRepo.Tag(t)); err != nil {
 			return "", fmt.Errorf("tag %s: %w", t, err)
 		}
 	}
-	return fmt.Sprintf("%s@%s", localRepo.Name(), d.String()), nil
+	return dst.Name(), nil
 }
 
 func parseRepository(repo string) (name.Repository, error) {

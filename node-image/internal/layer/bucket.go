@@ -114,23 +114,21 @@ func StorePackagesFromDir(stage string) ([]PackageStore, error) {
 }
 
 func packageNameFromDepPath(depPath string) string {
-	// strip peer suffix
-	if i := strings.IndexByte(depPath, '('); i >= 0 {
-		depPath = depPath[:i]
-	}
-	// @scope/name@version or name@version
-	if strings.HasPrefix(depPath, "@") {
-		i := strings.LastIndex(depPath, "@")
-		if i > 0 {
-			return depPath[:i]
+	// depPath may be a pnpm virtual-store directory name ("/" → "+").
+	s := depPath
+	if strings.HasPrefix(s, "@") {
+		rest := s[1:]
+		i := strings.Index(rest, "@")
+		if i <= 0 {
+			return strings.ReplaceAll(s, "+", "/")
 		}
-		return depPath
+		return "@" + strings.ReplaceAll(rest[:i], "+", "/")
 	}
-	i := strings.Index(depPath, "@")
+	i := strings.Index(s, "@")
 	if i > 0 {
-		return depPath[:i]
+		return s[:i]
 	}
-	return depPath
+	return strings.ReplaceAll(s, "+", "/")
 }
 
 // Ensure Directory entries exist — FromDir already adds dirs.

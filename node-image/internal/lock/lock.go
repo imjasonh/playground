@@ -10,10 +10,13 @@ import (
 
 // Lock is a parsed pnpm-lock.yaml (v9).
 type Lock struct {
-	LockfileVersion string                    `yaml:"lockfileVersion"`
-	Importers       map[string]*Importer      `yaml:"importers"`
-	Packages        map[string]*Package       `yaml:"packages"`
-	Snapshots       map[string]*Snapshot      `yaml:"snapshots"`
+	LockfileVersion     string               `yaml:"lockfileVersion"`
+	Importers           map[string]*Importer `yaml:"importers"`
+	Packages            map[string]*Package  `yaml:"packages"`
+	Snapshots           map[string]*Snapshot `yaml:"snapshots"`
+	PatchedDependencies map[string]any       `yaml:"patchedDependencies"`
+	Overrides           map[string]any       `yaml:"overrides"`
+	Catalogs            map[string]any       `yaml:"catalogs"`
 }
 
 // Importer is one workspace package / project root entry.
@@ -91,6 +94,19 @@ func Parse(b []byte) (*Lock, error) {
 }
 
 func (l *Lock) checkUnsupported() error {
+	if len(l.PatchedDependencies) > 0 {
+		names := make([]string, 0, len(l.PatchedDependencies))
+		for k := range l.PatchedDependencies {
+			names = append(names, k)
+		}
+		return fmt.Errorf("pnpm patchedDependencies are not supported (%s)\nHint: remove patches from the lockfile / package.json pnpm.patchedDependencies, or vendor a pre-patched tarball published to a registry", strings.Join(names, ", "))
+	}
+	if len(l.Overrides) > 0 {
+		return fmt.Errorf("pnpm overrides are not supported yet\nHint: resolve overrides into ordinary registry dependencies and re-lock, or remove pnpm.overrides")
+	}
+	if len(l.Catalogs) > 0 {
+		return fmt.Errorf("pnpm catalogs are not supported yet\nHint: replace catalog: specifiers with concrete versions and re-lock")
+	}
 	for id, p := range l.Packages {
 		if p == nil {
 			continue
@@ -100,6 +116,9 @@ func (l *Lock) checkUnsupported() error {
 		}
 		if p.Resolution.Type == "directory" || p.Resolution.Directory != "" {
 			return fmt.Errorf("package %s uses a directory/file dependency, which node-image does not support yet\nHint: for workspace packages, point node-image at that package directory (it will use the parent lock); otherwise pack and publish the dependency", id)
+		}
+		if strings.HasPrefix(p.Resolution.Tarball, "file:") || strings.HasPrefix(p.Resolution.Tarball, "link:") {
+			return fmt.Errorf("package %s uses a local file/link tarball (%s), which node-image does not support yet", id, p.Resolution.Tarball)
 		}
 		if p.Resolution.Integrity == "" && p.Resolution.Tarball == "" {
 			return fmt.Errorf("package %s is missing integrity/tarball in the lockfile\nHint: run `pnpm install` to refresh pnpm-lock.yaml, and ensure the dependency resolves from a registry", id)

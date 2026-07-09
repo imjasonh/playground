@@ -34,19 +34,30 @@ func TestDeterministicDiffIDAndDigest(t *testing.T) {
 		t.Fatalf("diffID depends on input order: %s vs %s", d1, d3)
 	}
 
-	c1, s1, b1, err := layer.CompressedDigest(files)
+	c1, s1, err := layer.CompressedDigest(files)
 	if err != nil {
 		t.Fatal(err)
 	}
-	c2, s2, b2, err := layer.CompressedDigest(files)
+	c2, s2, err := layer.CompressedDigest(files)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c1 != c2 || s1 != s2 || string(b1) != string(b2) {
+	if c1 != c2 || s1 != s2 {
 		t.Fatalf("compressed digest not stable: %s/%d vs %s/%d", c1, s1, c2, s2)
 	}
 	if c1 == d1 {
 		t.Fatal("compressed digest unexpectedly equals diffID")
+	}
+	_, _, b1, err := layer.CompressedDigestBytes(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, b2, err := layer.CompressedDigestBytes(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b1) != string(b2) {
+		t.Fatal("compressed bytes not stable")
 	}
 }
 

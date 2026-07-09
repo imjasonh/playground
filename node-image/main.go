@@ -118,13 +118,14 @@ Flags:
   -t string            tags (comma-separated)
   --skip-build         skip pnpm compile step
   --no-push            write local digest summary instead of pushing
-  --local, -L          load into local Docker daemon (prints node-image.local/...@sha256:...)
+  --local, -L          load into local Docker daemon (prints node-image.local/...:tag)
   --oci-dir string     output dir for --no-push
   --empty-base         scratch base (tests)
   --max-layers int     max total layers including base (default 127)
 
-Stdout prints exactly one line: the fully resolved image ref (repo@sha256:...),
-so docker run --rm $(node-image build -L ...) works. Progress goes to stderr.
+Stdout prints exactly one line: the fully resolved image ref (repo@sha256:...
+on push, or node-image.local/...:tag with --local), so
+docker run --rm $(node-image build -L ...) works. Progress goes to stderr.
 
 dir defaults to . and must contain package.json; pnpm-lock.yaml may be in a parent.
 `)

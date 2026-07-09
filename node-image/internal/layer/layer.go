@@ -19,55 +19,73 @@ import (
 // Epoch is the fixed mtime used for deterministic tarballs.
 var Epoch = time.Unix(0, 0).UTC()
 
-// File is a regular file or symlink to include in a layer.
+// File is a regular file, directory, or symlink to include in a layer.
+//
+// Regular file contents come from either Body (small / tests) or DiskPath
+// (streamed from disk — preferred for real packages so we never buffer the
+// whole tree in memory).
 type File struct {
 	// Rel is the path inside the layer (forward slashes, no leading slash).
 	Rel string
 	// Mode is the file mode bits (type + perms). For symlinks, type should be fs.ModeSymlink.
 	Mode fs.FileMode
-	// Body is file contents (ignored for symlinks).
+	// Body is in-memory file contents (ignored for symlinks/dirs; ignored if DiskPath is set).
 	Body []byte
+	// DiskPath, when set, is opened and streamed into the tar (preferred over Body).
+	DiskPath string
 	// Link is the symlink target (only for symlinks).
 	Link string
 }
 
 // DiffID returns the sha256 of the uncompressed tar (OCI diff_id).
 func DiffID(files []File) (string, error) {
-	var buf bytes.Buffer
-	if err := writeTar(&buf, files); err != nil {
+	h := sha256.New()
+	if err := WriteTar(h, files); err != nil {
 		return "", err
 	}
-	sum := sha256.Sum256(buf.Bytes())
-	return "sha256:" + hex.EncodeToString(sum[:]), nil
+	return "sha256:" + hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// CompressedDigest returns the sha256 of the gzip-compressed tar (OCI layer digest)
-// and the compressed size.
-func CompressedDigest(files []File) (digest string, size int64, compressed []byte, err error) {
-	var raw bytes.Buffer
-	if err := writeTar(&raw, files); err != nil {
+// CompressedDigest streams tar→gzip through a hasher and returns the compressed
+// digest and size. The compressed bytes are NOT retained — callers that need the
+// blob should stream via WriteCompressed or publish.LayerFromFiles.
+func CompressedDigest(files []File) (digest string, size int64, err error) {
+	h := sha256.New()
+	cw := &countingWriter{w: h}
+	if err := WriteCompressed(cw, files); err != nil {
+		return "", 0, err
+	}
+	return "sha256:" + hex.EncodeToString(h.Sum(nil)), cw.n, nil
+}
+
+// CompressedDigestBytes is like CompressedDigest but also returns the compressed
+// blob. Prefer streaming APIs for real builds; this exists for small unit tests.
+func CompressedDigestBytes(files []File) (digest string, size int64, compressed []byte, err error) {
+	var buf bytes.Buffer
+	if err := WriteCompressed(&buf, files); err != nil {
 		return "", 0, nil, err
 	}
-	var gz bytes.Buffer
-	zw := gzip.NewWriter(&gz)
-	// Deterministic gzip header: zero mtime, no name.
-	zw.Header.ModTime = Epoch
-	zw.Header.Name = ""
-	zw.Header.OS = 255 // unknown, stable across Go versions historically varies; pin
-	if _, err := io.Copy(zw, &raw); err != nil {
-		_ = zw.Close()
-		return "", 0, nil, err
-	}
-	if err := zw.Close(); err != nil {
-		return "", 0, nil, err
-	}
-	out := gz.Bytes()
+	out := buf.Bytes()
 	sum := sha256.Sum256(out)
 	return "sha256:" + hex.EncodeToString(sum[:]), int64(len(out)), out, nil
 }
 
+// WriteCompressed writes a deterministic gzip-compressed tar of files to w.
+func WriteCompressed(w io.Writer, files []File) error {
+	zw := gzip.NewWriter(w)
+	zw.Header.ModTime = Epoch
+	zw.Header.Name = ""
+	zw.Header.OS = 255
+	if err := WriteTar(zw, files); err != nil {
+		_ = zw.Close()
+		return err
+	}
+	return zw.Close()
+}
+
 // FromDir walks root and returns deterministic Files with paths relative to
 // root, prefixed with prefix (e.g. "app"). Symlinks are preserved.
+// Regular file contents are referenced by DiskPath (not loaded into memory).
 func FromDir(root, prefix string) ([]File, error) {
 	var files []File
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -112,10 +130,6 @@ func FromDir(root, prefix string) ([]File, error) {
 		if !d.Type().IsRegular() {
 			return fmt.Errorf("unsupported file type %s: %s", d.Type(), path)
 		}
-		body, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
 		mode := info.Mode().Perm()
 		if mode&0o111 != 0 {
 			mode = 0o755
@@ -123,9 +137,9 @@ func FromDir(root, prefix string) ([]File, error) {
 			mode = 0o644
 		}
 		files = append(files, File{
-			Rel:  name,
-			Mode: mode,
-			Body: body,
+			Rel:      name,
+			Mode:     mode,
+			DiskPath: path,
 		})
 		return nil
 	})
@@ -136,7 +150,9 @@ func FromDir(root, prefix string) ([]File, error) {
 	return files, nil
 }
 
-func writeTar(w io.Writer, files []File) error {
+// WriteTar writes a deterministic uncompressed tar of files to w.
+// File bodies are streamed from DiskPath when set.
+func WriteTar(w io.Writer, files []File) error {
 	files = append([]File(nil), files...)
 	sortFiles(files)
 	tw := tar.NewWriter(w)
@@ -175,11 +191,15 @@ func writeTar(w io.Writer, files []File) error {
 				return err
 			}
 		default:
+			size, err := fileSize(f)
+			if err != nil {
+				return err
+			}
 			hdr := &tar.Header{
 				Name:     f.Rel,
 				Mode:     int64(f.Mode.Perm()),
 				Typeflag: tar.TypeReg,
-				Size:     int64(len(f.Body)),
+				Size:     size,
 				ModTime:  Epoch,
 				Uid:      0,
 				Gid:      0,
@@ -187,12 +207,37 @@ func writeTar(w io.Writer, files []File) error {
 			if err := tw.WriteHeader(hdr); err != nil {
 				return err
 			}
-			if _, err := tw.Write(f.Body); err != nil {
+			if err := copyFileBody(tw, f); err != nil {
 				return err
 			}
 		}
 	}
 	return tw.Close()
+}
+
+func fileSize(f File) (int64, error) {
+	if f.DiskPath != "" {
+		st, err := os.Stat(f.DiskPath)
+		if err != nil {
+			return 0, err
+		}
+		return st.Size(), nil
+	}
+	return int64(len(f.Body)), nil
+}
+
+func copyFileBody(w io.Writer, f File) error {
+	if f.DiskPath != "" {
+		in, err := os.Open(f.DiskPath)
+		if err != nil {
+			return err
+		}
+		defer in.Close()
+		_, err = io.Copy(w, in)
+		return err
+	}
+	_, err := w.Write(f.Body)
+	return err
 }
 
 func ensureParentDirs(tw *tar.Writer, rel string, seen map[string]struct{}) error {
@@ -230,4 +275,15 @@ func sortFiles(files []File) {
 	sort.Slice(files, func(i, j int) bool {
 		return files[i].Rel < files[j].Rel
 	})
+}
+
+type countingWriter struct {
+	w io.Writer
+	n int64
+}
+
+func (c *countingWriter) Write(p []byte) (int, error) {
+	n, err := c.w.Write(p)
+	c.n += int64(n)
+	return n, err
 }

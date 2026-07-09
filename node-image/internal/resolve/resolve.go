@@ -3,6 +3,7 @@ package resolve
 import (
 	"fmt"
 	"runtime"
+	"sort"
 	"strings"
 
 	"github.com/imjasonh/playground/node-image/internal/lock"
@@ -64,25 +65,37 @@ func Closure(l *lock.Lock, importerKey string, plat Platform) ([]PackageRef, err
 	var queue []item
 	seen := map[string]bool{}
 
-	enqueue := func(name, version string, optional bool) {
+	enqueue := func(name, version string, optional bool) error {
 		if version == "" || name == "" {
-			return
+			return nil
 		}
-		// Importer/snapshot values are usually "1.2.3" or "1.2.3(peer@1)",
-		// not a full package id. Form the dep path as name@version…
+		if strings.HasPrefix(version, "link:") || strings.HasPrefix(version, "workspace:") || strings.HasPrefix(version, "file:") {
+			return fmt.Errorf("importer dependency %q resolves to %q; workspace/link/file dependencies are not supported in image builds\nHint: bundle the workspace package into the app (e.g. tsc project references / bundler), publish it to a registry, or point node-image at a package that only depends on registry tarballs", name, version)
+		}
 		depPath := depPathFrom(name, version)
 		if seen[depPath] {
-			return
+			// If we previously saw this as optional but now as required, upgrade.
+			for i := range queue {
+				if queue[i].depPath == depPath && queue[i].optional && !optional {
+					queue[i].optional = false
+				}
+			}
+			return nil
 		}
 		seen[depPath] = true
 		queue = append(queue, item{depPath: depPath, optional: optional})
+		return nil
 	}
 
 	for name, d := range imp.Dependencies {
-		enqueue(name, d.Version, false)
+		if err := enqueue(name, d.Version, false); err != nil {
+			return nil, err
+		}
 	}
 	for name, d := range imp.OptionalDependencies {
-		enqueue(name, d.Version, true)
+		if err := enqueue(name, d.Version, true); err != nil {
+			return nil, err
+		}
 	}
 	// production only: skip DevDependencies
 
@@ -90,6 +103,8 @@ func Closure(l *lock.Lock, importerKey string, plat Platform) ([]PackageRef, err
 	for i := 0; i < len(queue); i++ {
 		it := queue[i]
 		pkgID := lock.PackageIDFromDepPath(it.depPath)
+		// Strip pnpm patch_hash peer-like suffixes from package id lookup.
+		pkgID = stripPatchHash(pkgID)
 		pkg := l.Packages[pkgID]
 		if pkg == nil {
 			return nil, fmt.Errorf("package %s (from %s) missing from lock packages", pkgID, it.depPath)
@@ -131,14 +146,42 @@ func Closure(l *lock.Lock, importerKey string, plat Platform) ([]PackageRef, err
 			continue
 		}
 		for depName, ver := range snap.Dependencies {
-			_ = depName
-			enqueue(depName, ver, it.optional)
+			if err := enqueue(depName, ver, it.optional); err != nil {
+				return nil, err
+			}
 		}
 		for depName, ver := range snap.OptionalDependencies {
-			enqueue(depName, ver, true)
+			if err := enqueue(depName, ver, true); err != nil {
+				return nil, err
+			}
 		}
 	}
 	return out, nil
+}
+
+func stripPatchHash(pkgID string) string {
+	if i := strings.Index(pkgID, "(patch_hash="); i >= 0 {
+		return pkgID[:i]
+	}
+	return pkgID
+}
+
+// DirectNames returns production direct dependency names for an importer
+// (dependencies + optionalDependencies; not devDependencies).
+func DirectNames(l *lock.Lock, importerKey string) []string {
+	imp := l.Importers[importerKey]
+	if imp == nil {
+		return nil
+	}
+	var names []string
+	for name := range imp.Dependencies {
+		names = append(names, name)
+	}
+	for name := range imp.OptionalDependencies {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 func platformMatch(p *lock.Package, plat Platform) bool {
@@ -191,13 +234,36 @@ func muslOnly(p *lock.Package) bool {
 	return hasMusl && !hasGlibc
 }
 
-// depPathFrom builds a snapshots key from a dependency name + version field.
-func depPathFrom(name, version string) string {
+// DepPathFrom builds a snapshots key from a dependency name + version field.
+// Handles aliases where version is already a package id (e.g. name
+// "strip-ansi-cjs" with version "strip-ansi@6.0.1").
+func DepPathFrom(name, version string) string {
 	if strings.HasPrefix(version, name+"@") {
+		return version
+	}
+	if strings.HasPrefix(version, "npm:") {
+		version = strings.TrimPrefix(version, "npm:")
+	}
+	if looksLikePackageID(version) {
 		return version
 	}
 	return name + "@" + version
 }
+
+func looksLikePackageID(s string) bool {
+	if strings.HasPrefix(s, "@") {
+		// @scope/name@version
+		rest := s[1:]
+		return strings.Count(rest, "@") >= 1 && strings.Contains(rest, "/")
+	}
+	// name@version (exactly one @ before peer suffix)
+	if i := strings.IndexByte(s, '@'); i > 0 {
+		return true
+	}
+	return false
+}
+
+func depPathFrom(name, version string) string { return DepPathFrom(name, version) }
 
 func splitNameVersion(id string) (name, version string, err error) {
 	// @scope/name@version or name@version

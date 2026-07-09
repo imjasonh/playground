@@ -59,8 +59,11 @@ func TestDockerRunBuiltImage(t *testing.T) {
 	if strings.Contains(outLine, "\n") {
 		t.Fatalf("stdout must be a single line, got %q", stdout.String())
 	}
-	if !strings.HasPrefix(outLine, "node-image.local/") || !strings.Contains(outLine, "@sha256:") {
-		t.Fatalf("expected node-image.local/…@sha256:…, got %q", outLine)
+	if !strings.HasPrefix(outLine, "node-image.local/") {
+		t.Fatalf("expected node-image.local/… tag, got %q", outLine)
+	}
+	if strings.Contains(outLine, "@sha256:") {
+		t.Fatalf("--local must print a daemon tag, not a digest ref (Docker has no RepoDigests after load): %q", outLine)
 	}
 
 	cmd := exec.Command("docker", "run", "--rm", outLine)

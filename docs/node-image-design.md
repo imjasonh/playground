@@ -123,9 +123,10 @@ docker run --rm "$(node-image build -L --platform linux/amd64)"
 `node-image build [dir]` is the common case: find `package.json` in `dir`,
 find `pnpm-lock.yaml` (in `dir` or a parent), fetch → layout → shard → push
 multi-arch index (or `--local` / `-L` into the Docker daemon). **Stdout is
-exactly one line** — the fully resolved image ref (`repo@sha256:…`) — so
-command substitution works with `docker run`. Progress and diagnostics go to
-stderr.
+exactly one line** — the fully resolved image ref (`repo@sha256:…` on push, or
+`node-image.local/…:tag` with `--local`) — so command substitution works with
+`docker run`. Progress and diagnostics go to stderr. Layer blobs are streamed
+(tar+gzip from disk paths) rather than buffered as full `[]byte`s.
 
 Optional later: `fetch` / `pack` / `push` as split steps. Alpha can ship only
 `build`.

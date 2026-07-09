@@ -162,6 +162,7 @@ func Run(opt Options) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		direct := resolve.DirectNames(l, importer)
 		tarballs := map[string]string{}
 		for _, ref := range refs {
 			path, err := cache.Ensure(ref.Tarball, ref.Integrity)
@@ -175,7 +176,7 @@ func Run(opt Options) (string, error) {
 		if err := os.MkdirAll(stage, 0o755); err != nil {
 			return "", err
 		}
-		if _, err := layout.Materialize(stage, l, refs, tarballs); err != nil {
+		if _, err := layout.Materialize(stage, l, refs, tarballs, direct); err != nil {
 			return "", err
 		}
 

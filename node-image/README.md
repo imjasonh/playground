@@ -35,9 +35,12 @@ docker run --rm "$(./node-image build ./testdata/pure-js \
 ```
 
 `build` prints **exactly one line on stdout**: the fully resolved image ref
-(`registry/repo@sha256:…` or `node-image.local/…@sha256:…` with `--local` /
+(`registry/repo@sha256:…` on push, or `node-image.local/…:tag` with `--local` /
 `-L`). Progress goes to stderr, so command substitution works with
-`docker run --rm $(node-image build …)`.
+`docker run --rm $(node-image build -L …)`.
+
+Layer tar+gzip is **streamed** (re-opened from disk paths) — compressed blobs
+are not retained as `[]byte` in memory.
 
 Requirements for a real push: Go 1.23+, network, and registry credentials via
 the normal Docker keychain. `--local` needs a running Docker daemon. App
