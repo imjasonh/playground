@@ -22,35 +22,36 @@ struct T9SwiftUIPadView: View {
         .background(Color(white: 0.12))
     }
 
-    @ViewBuilder
     private func keyButton(_ key: T9PadKey) -> some View {
         let emphasized = key == .star || key == .hash
-        let subtitle: String = {
-            if key == .star { return model.shiftLabel }
-            return key.subtitle
-        }()
+        let subtitle = key == .star ? model.shiftLabel : key.subtitle
 
-        VStack(spacing: 2) {
-            Text(key.title)
-                .font(.system(size: 22, weight: .semibold))
-            Text(subtitle)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(Color.white.opacity(0.75))
+        return Button {
+            model.tap(key)
+        } label: {
+            VStack(spacing: 2) {
+                Text(key.title)
+                    .font(.system(size: 22, weight: .semibold))
+                Text(subtitle)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.white.opacity(0.75))
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color(white: emphasized ? 0.22 : 0.28))
+            )
         }
-        .foregroundStyle(.white)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color(white: emphasized ? 0.22 : 0.28))
+        .buttonStyle(.plain)
+        // Long-press inserts the digit; may also deliver a short tap afterward —
+        // acceptable for the in-app demo. The system keyboard extension uses the
+        // UIKit pad which suppresses the follow-up tap correctly.
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.45).onEnded { _ in
+                model.longPress(key)
+            }
         )
-        .contentShape(Rectangle())
-        // Prefer gesture handlers over Button so a successful long-press does
-        // not also fire a short tap (which would start multi-tap cycling).
-        .onTapGesture { model.tap(key) }
-        .onLongPressGesture(minimumDuration: 0.45) { model.longPress(key) }
-        .accessibilityAddTraits(.isButton)
         .accessibilityIdentifier("t9-key-\(key.title)")
-        .accessibilityLabel(key.title)
-        .accessibilityHint(subtitle)
     }
 }
