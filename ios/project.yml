@@ -94,6 +94,9 @@ targets:
     platform: iOS
     sources:
       - path: T9Keyboard
+        excludes:
+          - README.md
+          - "*.png"
       - path: Shared/T9
     settings:
       base:

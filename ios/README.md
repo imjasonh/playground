@@ -18,7 +18,7 @@ ios/
 ├── Gemfile                        # pins fastlane
 ├── fastlane/                      # Fastfile (test / beta / signing_bootstrap), Appfile, Matchfile
 ├── Shared/T9/                     # multi-tap engine + pad UI (app + keyboard extension)
-├── T9Keyboard/                    # Custom Keyboard extension (UIInputViewController)
+├── T9Keyboard/                    # Custom Keyboard extension (+ README / screenshots)
 ├── Sources/
 │   ├── PlaygroundApp.swift        # @main app shell
 │   ├── RootView.swift             # the launcher: lists every experiment
