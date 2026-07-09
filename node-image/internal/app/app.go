@@ -14,7 +14,7 @@ func Compile(dir, lockRoot, script string) error {
 	}
 	pnpm, err := exec.LookPath("pnpm")
 	if err != nil {
-		return fmt.Errorf("scripts.%s is set but pnpm is not on PATH (required for app compile)", script)
+		return fmt.Errorf("scripts.%s is set but pnpm is not on PATH\nHint: install pnpm (https://pnpm.io/installation) or corepack enable, or pass --skip-build if outputs are already compiled", script)
 	}
 	install := exec.Command(pnpm, "install", "--frozen-lockfile")
 	install.Dir = lockRoot
@@ -59,7 +59,7 @@ func CollectOutputs(dir string) (map[string]string, error) {
 		}
 	}
 	if len(out) == 0 {
-		return nil, fmt.Errorf("no app outputs found in %s (expected dist/ or index.js)", dir)
+		return nil, fmt.Errorf("no app outputs found in %s\nHint: expected dist/ after `pnpm run build`, or an index.js / package.json at the package root. For TypeScript apps ensure scripts.build writes to dist/, or pass --skip-build only after compiling yourself", dir)
 	}
 	return out, nil
 }

@@ -96,14 +96,13 @@ func (l *Lock) checkUnsupported() error {
 			continue
 		}
 		if p.Resolution.Type == "git" || strings.HasPrefix(p.Resolution.Tarball, "git+") {
-			return fmt.Errorf("package %s: git dependencies are not supported in alpha", id)
+			return fmt.Errorf("package %s uses a git dependency, which node-image does not support yet\nHint: publish the package to an npm registry (or vendor a tarball with integrity) and re-lock with pnpm", id)
 		}
 		if p.Resolution.Type == "directory" || p.Resolution.Directory != "" {
-			return fmt.Errorf("package %s: directory/file dependencies are not supported in alpha", id)
+			return fmt.Errorf("package %s uses a directory/file dependency, which node-image does not support yet\nHint: for workspace packages, point node-image at that package directory (it will use the parent lock); otherwise pack and publish the dependency", id)
 		}
 		if p.Resolution.Integrity == "" && p.Resolution.Tarball == "" {
-			// workspace protocol sometimes appears differently; catch empty resolution
-			return fmt.Errorf("package %s: missing integrity/tarball resolution", id)
+			return fmt.Errorf("package %s is missing integrity/tarball in the lockfile\nHint: run `pnpm install` to refresh pnpm-lock.yaml, and ensure the dependency resolves from a registry", id)
 		}
 	}
 	return nil
@@ -132,7 +131,7 @@ func FindLockfile(dir string) (lockPath, lockRoot string, err error) {
 		}
 		parent := parentDir(cur)
 		if parent == cur {
-			return "", "", fmt.Errorf("pnpm-lock.yaml not found from %s", dir)
+			return "", "", fmt.Errorf("pnpm-lock.yaml not found starting from %s\nHint: run `pnpm install` in the app (or workspace root) to create pnpm-lock.yaml, or `pnpm import` from another lockfile", dir)
 		}
 		cur = parent
 	}

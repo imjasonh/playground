@@ -186,7 +186,7 @@ func CheckScriptsInDir(ref resolve.PackageRef, pkgDir string, pj packageJSON) er
 		if hasPrebuilds {
 			continue
 		}
-		return fmt.Errorf("package %s declares %s script; node-image never runs dependency lifecycle scripts (multi-arch). Use prebuildify/platform optional packages, or remove the dependency", ref.PackageID, s)
+		return fmt.Errorf("package %s declares a %s lifecycle script; node-image never runs dependency install scripts (required for multi-arch hermetic builds)\nHint: prefer packages that ship prebuilds/ (prebuildify) or platform-specific optionalDependencies (e.g. @esbuild/linux-x64). Remove or replace %s if it must compile from source", ref.PackageID, s, ref.PackageID)
 	}
 	return nil
 }

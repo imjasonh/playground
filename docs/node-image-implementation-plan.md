@@ -66,7 +66,7 @@ node-image build ./testdata/ts-app --repo ttl.sh/node-image-demo -t latest
 
 - [x] `internal/publish`: append layers; `--no-push` digest summary; push helper
 - [x] Config from `package.json#node-image` + flags
-- [ ] Full OCI layout export; base Node/libc detection polish
+- [x] Base Node/libc detection (`internal/base`) with loud glibc failures
 
 ### M5 — App compile phase
 
@@ -80,7 +80,9 @@ node-image build ./testdata/ts-app --repo ttl.sh/node-image-demo -t latest
 
 ### M7 — Polish for usable v1
 
-- [ ] Loud errors polish; layer auto-bucketing; README quickstart polish
+- [x] Loud errors with hints (lock, scripts, fetch, outputs, platforms)
+- [x] Per-package store layers + auto name-hash bucketing under max-layers
+- [x] README quickstart polish; design status alpha
 - [x] CI installs pnpm when testing `node-image`
 
 ## Package layout

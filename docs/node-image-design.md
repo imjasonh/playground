@@ -1,8 +1,8 @@
 # Design: `node-image` — dockerless Node.js / TypeScript image builds
 
-> Status: **Alpha in progress** (see §0 for locked decisions; implementation
-> plan in [`node-image-implementation-plan.md`](./node-image-implementation-plan.md)).
-> Code lives in `node-image/`.
+> Status: **Alpha (M0–M7)** — usable CLI with tests in `node-image/`.
+> See [`node-image-implementation-plan.md`](./node-image-implementation-plan.md).
+> Remaining polish is iterative (SBOM, musl mode, npm locks), not blockers for v1.
 
 ## 0. Locked decisions
 

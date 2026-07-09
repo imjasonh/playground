@@ -10,6 +10,7 @@ import (
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/imjasonh/playground/node-image/internal/app"
+	"github.com/imjasonh/playground/node-image/internal/base"
 	"github.com/imjasonh/playground/node-image/internal/config"
 	"github.com/imjasonh/playground/node-image/internal/fetch"
 	"github.com/imjasonh/playground/node-image/internal/layer"
@@ -30,6 +31,7 @@ type Options struct {
 	NoPush    bool
 	OCIDir    string
 	EmptyBase bool
+	MaxLayers int // 0 = use config default
 	Stdout    io.Writer
 	Stderr    io.Writer
 }
@@ -67,9 +69,12 @@ func Run(opt Options) (string, error) {
 	cfg.SkipBuild = opt.SkipBuild
 	cfg.NoPush = opt.NoPush
 	cfg.OCIDir = opt.OCIDir
+	if opt.MaxLayers > 0 {
+		cfg.MaxLayers = opt.MaxLayers
+	}
 
 	if !cfg.NoPush && cfg.Repo == "" {
-		return "", fmt.Errorf("--repo is required unless --no-push")
+		return "", fmt.Errorf("--repo is required to push an image\nHint: pass --repo registry.example.com/my/app, or use --no-push --oci-dir /tmp/out for a local digest summary")
 	}
 
 	lockPath, lockRoot, err := lock.FindLockfile(cfg.Dir)
@@ -83,6 +88,9 @@ func Run(opt Options) (string, error) {
 	importer, err := lock.ImporterKey(lockRoot, cfg.Dir)
 	if err != nil {
 		return "", err
+	}
+	if l.Importers[importer] == nil {
+		return "", fmt.Errorf("importer %q not found in %s\nHint: the package directory must be a workspace member (or .) relative to the lockfile root %s", importer, lockPath, lockRoot)
 	}
 
 	if !cfg.SkipBuild && cfg.BuildScript != "" {
@@ -103,6 +111,30 @@ func Run(opt Options) (string, error) {
 		platforms = []string{"linux/amd64"}
 	}
 
+	// Inspect base once (first platform) for libc/Node/layer budget unless empty-base.
+	var baseInfo *base.Info
+	if opt.EmptyBase || cfg.Base == "scratch" {
+		baseInfo = base.ScratchInfo()
+	} else {
+		firstPlat, err := publish.ParsePlatform(platforms[0])
+		if err != nil {
+			return "", err
+		}
+		baseInfo, err = base.Inspect(cfg.Base, firstPlat)
+		if err != nil {
+			return "", err
+		}
+		if err := base.RequireGlibc(baseInfo); err != nil {
+			return "", err
+		}
+		if err := base.CheckEngines(cfg.EnginesNode, baseInfo); err != nil {
+			return "", err
+		}
+		for _, w := range baseInfo.Warnings {
+			fmt.Fprintf(stderr, "warning: %s\n", w)
+		}
+	}
+
 	stageRoot := filepath.Join(os.TempDir(), fmt.Sprintf("node-image-%d", os.Getpid()))
 	defer os.RemoveAll(stageRoot)
 
@@ -110,7 +142,7 @@ func Run(opt Options) (string, error) {
 	for _, pstr := range platforms {
 		plat, err := publish.ParsePlatform(pstr)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("invalid --platform %q: %w\nHint: use forms like linux/amd64 or linux/arm64", pstr, err)
 		}
 		rplat := resolve.Platform{
 			OS:   plat.OS,
@@ -125,7 +157,7 @@ func Run(opt Options) (string, error) {
 		for _, ref := range refs {
 			path, err := cache.Ensure(ref.Tarball, ref.Integrity)
 			if err != nil {
-				return "", err
+				return "", fmt.Errorf("fetch %s: %w\nHint: check network access to the npm registry and that the integrity in pnpm-lock.yaml is current", ref.PackageID, err)
 			}
 			tarballs[ref.PackageID] = path
 		}
@@ -152,15 +184,9 @@ func Run(opt Options) (string, error) {
 			}
 		}
 
-		storeFiles, linkFiles, appFiles, err := splitLayers(stage)
+		layers, err := assembleLayers(stage, cfg, baseInfo, stderr)
 		if err != nil {
 			return "", err
-		}
-		prefix := strings.TrimPrefix(cfg.Workdir, "/")
-		layers := []publish.LayerFiles{
-			{Files: prefixFiles(prefix, storeFiles)},
-			{Files: prefixFiles(prefix, linkFiles)},
-			{Files: prefixFiles(prefix, appFiles)},
 		}
 		popts := publish.Options{
 			Base:       cfg.Base,
@@ -253,18 +279,43 @@ func prefixFiles(prefix string, files []layer.File) []layer.File {
 	return out
 }
 
-func splitLayers(stage string) (store, links, appFiles []layer.File, err error) {
-	nm := filepath.Join(stage, "node_modules")
-	pnpmDir := filepath.Join(nm, ".pnpm")
-	if st, e := os.Stat(pnpmDir); e == nil && st.IsDir() {
-		store, err = layer.FromDir(pnpmDir, "node_modules/.pnpm")
-		if err != nil {
-			return nil, nil, nil, err
-		}
+func assembleLayers(stage string, cfg *config.Config, baseInfo *base.Info, stderr io.Writer) ([]publish.LayerFiles, error) {
+	pkgs, err := layer.StorePackagesFromDir(stage)
+	if err != nil {
+		return nil, err
 	}
+	linkFiles, appFiles, err := linkAndAppLayers(stage)
+	if err != nil {
+		return nil, err
+	}
+	budget := layer.Budget{
+		MaxLayers:   cfg.MaxLayers,
+		BaseLayers:  baseInfo.LayerCount,
+		ExtraLayers: 2, // symlink + app
+	}
+	slots := budget.StoreSlots()
+	if len(pkgs) > slots {
+		fmt.Fprintf(stderr, "layer budget: %d store packages into %d buckets (max-layers=%d, base=%d, extra=2)\n",
+			len(pkgs), slots, cfg.MaxLayers, baseInfo.LayerCount)
+	}
+	storeGroups := layer.BucketStorePackages(pkgs, slots)
+	prefix := strings.TrimPrefix(cfg.Workdir, "/")
+	out := make([]publish.LayerFiles, 0, len(storeGroups)+2)
+	for _, g := range storeGroups {
+		out = append(out, publish.LayerFiles{Files: prefixFiles(prefix, g)})
+	}
+	out = append(out,
+		publish.LayerFiles{Files: prefixFiles(prefix, linkFiles)},
+		publish.LayerFiles{Files: prefixFiles(prefix, appFiles)},
+	)
+	return out, nil
+}
+
+func linkAndAppLayers(stage string) (links, appFiles []layer.File, err error) {
+	nm := filepath.Join(stage, "node_modules")
 	entries, err := os.ReadDir(nm)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 	for _, e := range entries {
 		name := e.Name()
@@ -274,13 +325,13 @@ func splitLayers(stage string) (store, links, appFiles []layer.File, err error) 
 		p := filepath.Join(nm, name)
 		info, err := os.Lstat(p)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, err
 		}
 		rel := "node_modules/" + name
 		if info.Mode()&os.ModeSymlink != 0 {
 			target, err := os.Readlink(p)
 			if err != nil {
-				return nil, nil, nil, err
+				return nil, nil, err
 			}
 			links = append(links, layer.File{Rel: rel, Mode: fs.ModeSymlink | 0o777, Link: filepath.ToSlash(target)})
 			continue
@@ -288,14 +339,14 @@ func splitLayers(stage string) (store, links, appFiles []layer.File, err error) 
 		if info.IsDir() {
 			sub, err := layer.FromDir(p, rel)
 			if err != nil {
-				return nil, nil, nil, err
+				return nil, nil, err
 			}
 			links = append(links, sub...)
 			continue
 		}
 		b, err := os.ReadFile(p)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, err
 		}
 		links = append(links, layer.File{Rel: rel, Mode: 0o644, Body: b})
 	}
@@ -340,5 +391,5 @@ func splitLayers(stage string) (store, links, appFiles []layer.File, err error) 
 		appFiles = append(appFiles, layer.File{Rel: rel, Mode: mode, Body: b})
 		return nil
 	})
-	return store, links, appFiles, err
+	return links, appFiles, err
 }

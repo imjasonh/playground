@@ -98,7 +98,10 @@ func Closure(l *lock.Lock, importerKey string, plat Platform) ([]PackageRef, err
 			if it.optional {
 				continue
 			}
-			return nil, fmt.Errorf("package %s is required but incompatible with %s/%s/%s", pkgID, plat.OS, plat.CPU, plat.Libc)
+			return nil, fmt.Errorf("required package %s does not support %s/%s (libc=%s)\nHint: this often means a native optional dependency was promoted to required, or the lock was generated on another OS. Re-lock on linux or adjust optionalDependencies", pkgID, plat.OS, plat.CPU, plat.Libc)
+		}
+		if muslOnly(pkg) && plat.Libc == "glibc" && !it.optional {
+			return nil, fmt.Errorf("required package %s is musl-only (os/cpu/libc markers), but this build targets glibc\nHint: use glibc builds of the native package, or wait for --libc musl support with a musl Node base", pkgID)
 		}
 		name, version, err := splitNameVersion(pkgID)
 		if err != nil {
@@ -170,6 +173,22 @@ func containsOrAny(list []string, want string) bool {
 		}
 	}
 	return onlyExclusions
+}
+
+func muslOnly(p *lock.Package) bool {
+	if len(p.Libc) == 0 {
+		return false
+	}
+	hasMusl, hasGlibc := false, false
+	for _, v := range p.Libc {
+		switch v {
+		case "musl":
+			hasMusl = true
+		case "glibc":
+			hasGlibc = true
+		}
+	}
+	return hasMusl && !hasGlibc
 }
 
 // depPathFrom builds a snapshots key from a dependency name + version field.

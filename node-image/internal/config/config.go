@@ -5,31 +5,42 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Config is build configuration from package.json + flags.
 type Config struct {
-	Dir        string
-	Repo       string
-	Base       string
-	Platforms  []string
-	Tags       []string
-	SkipBuild  bool
-	NoPush     bool
-	OCIDir     string
+	Dir         string
+	Repo        string
+	Base        string
+	Platforms   []string
+	Tags        []string
+	SkipBuild   bool
+	NoPush      bool
+	OCIDir      string
 	BuildScript string
-	Entrypoint []string
-	Main       string
-	User       string
-	Workdir    string
-	MaxLayers  int
+	Entrypoint  []string
+	Main        string
+	User        string
+	Workdir     string
+	MaxLayers   int
+	EnginesNode string // package.json engines.node, if set
 }
 
 type packageJSON struct {
-	Name    string            `json:"name"`
-	Main    string            `json:"main"`
-	Scripts map[string]string `json:"scripts"`
-	NodeImage *nodeImageBlock `json:"node-image"`
+	Name      string            `json:"name"`
+	Main      string            `json:"main"`
+	Scripts   map[string]string `json:"scripts"`
+	Engines   map[string]string `json:"engines"`
+	NodeImage *nodeImageBlock   `json:"node-image"`
+}
+
+// EnginesNode returns package.json engines.node if set.
+func (p *packageJSON) EnginesNode() string {
+	if p == nil || p.Engines == nil {
+		return ""
+	}
+	return p.Engines["node"]
 }
 
 type nodeImageBlock struct {
@@ -38,8 +49,9 @@ type nodeImageBlock struct {
 	Platforms  []string `json:"platforms"`
 	Entrypoint []string `json:"entrypoint"`
 	BuildScript string  `json:"buildScript"`
-	User       string   `json:"user"`
-	Workdir    string   `json:"workdir"`
+	User        string  `json:"user"`
+	Workdir     string  `json:"workdir"`
+	MaxLayers   int     `json:"maxLayers"`
 }
 
 // DefaultBase is a glibc distroless Node image.
@@ -71,6 +83,7 @@ func Load(dir string) (*Config, *packageJSON, error) {
 	if cfg.Main == "" {
 		cfg.Main = "index.js"
 	}
+	cfg.EnginesNode = pj.EnginesNode()
 	if pj.NodeImage != nil {
 		n := pj.NodeImage
 		if n.Repo != "" {
@@ -94,14 +107,19 @@ func Load(dir string) (*Config, *packageJSON, error) {
 		if n.Workdir != "" {
 			cfg.Workdir = n.Workdir
 		}
+		if n.MaxLayers > 0 {
+			cfg.MaxLayers = n.MaxLayers
+		}
 	}
 	if cfg.BuildScript == "" && pj.Scripts["build"] != "" {
 		cfg.BuildScript = "build"
 	}
 	if len(cfg.Entrypoint) == 0 {
-		cfg.Entrypoint = []string{"/nodejs/bin/node", filepath.ToSlash(filepath.Join(cfg.Workdir, cfg.Main))}
-		// distroless node often uses node as entrypoint with cmd; keep simple:
+		// Distroless node images typically ship node at /nodejs/bin/node.
 		cfg.Entrypoint = []string{"/nodejs/bin/node"}
+	}
+	if strings.Contains(cfg.Main, ".ts") && cfg.BuildScript == "" {
+		return nil, nil, fmt.Errorf("package.json main %q looks like TypeScript but no scripts.build (or node-image.buildScript) is configured\nHint: add a build script that emits JS to dist/, set main to the compiled file, or use a JS entrypoint", cfg.Main)
 	}
 	return cfg, &pj, nil
 }

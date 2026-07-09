@@ -42,7 +42,7 @@ func runBuild(args []string) error {
 	noPush := fs.Bool("no-push", false, "do not push; write digest summary instead")
 	ociDir := fs.String("oci-dir", "", "output directory for --no-push digest summary")
 	emptyBase := fs.Bool("empty-base", false, "use scratch instead of pulling base (testing)")
-	// Allow: node-image build [dir] --flags…  (flags after the directory).
+	maxLayers := fs.Int("max-layers", 0, "max total image layers including base (default 127)")
 	dir, flagArgs := splitDirAndFlags(args)
 	if err := fs.Parse(flagArgs); err != nil {
 		return err
@@ -68,6 +68,7 @@ func runBuild(args []string) error {
 		NoPush:    *noPush,
 		OCIDir:    *ociDir,
 		EmptyBase: *emptyBase,
+		MaxLayers: *maxLayers,
 	})
 	return err
 }
@@ -116,6 +117,7 @@ Flags:
   --no-push            write local digest summary instead of pushing
   --oci-dir string     output dir for --no-push
   --empty-base         scratch base (tests)
+  --max-layers int     max total layers including base (default 127)
 
 dir defaults to . and must contain package.json; pnpm-lock.yaml may be in a parent.
 `)
