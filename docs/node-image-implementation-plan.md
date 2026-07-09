@@ -75,8 +75,8 @@ node-image build ./testdata/ts-app --repo ttl.sh/node-image-demo -t latest
 
 ### M6 — Multi-arch
 
-- [ ] Per-platform closure sharing pure-JS digests in an OCI index
-- [x] Per-platform resolve/layout path exists (push still single-arch with warning)
+- [x] Per-platform closure + layout; OCI image index for push and `--no-push`
+- [x] Integration test: two-arch index on pure-js fixture
 
 ### M7 — Polish for usable v1
 
