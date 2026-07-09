@@ -356,13 +356,15 @@ There is only one iOS app (`ios/`). You add functionality as an **experiment**
 inside it — never as a new top-level iOS directory. This is the iOS analog of
 adding one browser app under the Pages site.
 
-1. Create `ios/Sources/Experiments/<YourExperiment>/` with a SwiftUI view. Keep
-   the interesting logic in plain types so it can be unit-tested without a
-   simulator; add accessibility identifiers to controls so UI tests can drive
-   them.
-2. Register it in `ExperimentCatalog.all` in `ios/Sources/Experiment.swift` with
-   a stable, unique `id` (ids double as UI-test accessibility identifiers).
-3. Add tests under `ios/Tests/PlaygroundTests/` (and a UI flow under
+1. Create `ios/Sources/Experiments/<YourExperiment>/` — **one directory per
+   experiment** — with a SwiftUI view. Keep the interesting logic in plain types
+   so it can be unit-tested without a simulator; add accessibility identifiers
+   to controls so UI tests can drive them.
+2. In that folder, add a `*Experiment.swift` that exposes a static
+   `experiment: Experiment` (stable unique `id`, title, summary, icon,
+   destination). Ids double as UI-test accessibility identifiers.
+3. Append that static to `ExperimentCatalog.all` in `ios/Sources/Experiment.swift`.
+4. Add tests under `ios/Tests/PlaygroundTests/` (and a UI flow under
    `ios/Tests/PlaygroundUITests/` if useful).
 
 No `project.yml`, workflow, or bundle-identifier changes are needed — the
@@ -447,6 +449,6 @@ bundle exec fastlane test
 
 | Directory | Type | Tests |
 |-----------|------|-------|
-| `ios/` | The single "Playground" SwiftUI app — a launcher hosting many experiments (temperature converter, counter); TestFlight CD on `main` | XCTest unit tests + XCUITest UI tests (`fastlane test`) |
+| `ios/` | The single "Playground" SwiftUI app — a launcher hosting experiments (e.g. Ride Monitor); TestFlight CD on `main` | XCTest unit tests + XCUITest UI tests (`fastlane test`) |
 
 See each app's `README.md` for app-specific rules and local development.

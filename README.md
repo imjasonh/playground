@@ -62,10 +62,10 @@ the Pages site hosts many browser apps, this one TestFlight app hosts many
 experiments internally:
 
 - **[`ios/`](ios/)** — the **Playground** app: a launcher that hosts many
-  self-contained experiments (a temperature converter and a counter to start).
-  Add an experiment by dropping a SwiftUI view into `ios/Sources/Experiments/`
-  and registering it — no new app, no CI changes. Unit + UI tests, continuous
-  delivery to TestFlight.
+  self-contained experiments (one folder each under
+  `ios/Sources/Experiments/`). Add an experiment by creating that folder,
+  self-declaring a `*Experiment.swift`, and appending it to the catalog — no
+  new app, no CI changes. Unit + UI tests, continuous delivery to TestFlight.
 
 See [`docs/ios-testflight-design.md`](docs/ios-testflight-design.md) for the iOS
 CD/preview design, and [`docs/ios-testflight-setup.md`](docs/ios-testflight-setup.md)

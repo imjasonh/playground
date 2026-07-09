@@ -20,7 +20,7 @@ final class ExperimentCatalogTests: XCTestCase {
         }
     }
 
-    func testIncludesTheTemperatureConverter() {
-        XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "temperature-converter" })
+    func testIncludesRideMonitor() {
+        XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "ride-monitor" })
     }
 }

@@ -26,45 +26,15 @@ final class PlaygroundUITests: XCTestCase {
         app.launch()
 
         XCTAssertTrue(app.navigationBars["Playground"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Temperature Converter"].exists)
-        XCTAssertTrue(app.staticTexts["Counter"].exists)
+        XCTAssertTrue(app.staticTexts["Ride Monitor"].exists)
     }
 
-    func testTemperatureConverterExperiment() {
+    func testRideMonitorExperimentOpens() {
         let app = XCUIApplication()
         app.launch()
 
-        openExperiment("temperature-converter", title: "Temperature Converter", in: app)
+        openExperiment("ride-monitor", title: "Ride Monitor", in: app)
 
-        let input = app.textFields["temperatureInput"]
-        XCTAssertTrue(input.waitForExistence(timeout: 5))
-        input.tap()
-        input.typeText("100")
-
-        let result = app.staticTexts["convertedResult"]
-        XCTAssertTrue(result.waitForExistence(timeout: 5))
-        XCTAssertTrue(result.label.contains("212.0"))
-        XCTAssertTrue(result.label.contains("°F"))
-    }
-
-    func testCounterExperiment() {
-        let app = XCUIApplication()
-        app.launch()
-
-        openExperiment("counter", title: "Counter", in: app)
-
-        let value = app.staticTexts["counterValue"]
-        XCTAssertTrue(value.waitForExistence(timeout: 5))
-        XCTAssertEqual(value.label, "0")
-
-        app.buttons["incrementButton"].tap()
-        app.buttons["incrementButton"].tap()
-        XCTAssertEqual(value.label, "2")
-
-        app.buttons["decrementButton"].tap()
-        XCTAssertEqual(value.label, "1")
-
-        app.buttons["resetButton"].tap()
-        XCTAssertEqual(value.label, "0")
+        XCTAssertTrue(app.buttons["startRideButton"].waitForExistence(timeout: 5))
     }
 }

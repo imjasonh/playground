@@ -3,8 +3,9 @@ name: Playground
 # This single YAML is the source of truth for the one iOS app (and the discovery
 # marker for the iOS app type). There is exactly ONE iOS app in this repo — the
 # "Playground" container — and it hosts many experiments internally. Add new
-# experiments as SwiftUI views under Sources/Experiments/ and register them in
-# ExperimentCatalog; do NOT create additional top-level iOS app directories.
+# experiments under Sources/Experiments/<Name>/ (one folder each), self-declare
+# via a *Experiment.swift, and append that entry to ExperimentCatalog; do NOT
+# create additional top-level iOS app directories.
 #
 # `xcodegen generate` produces Playground.xcodeproj, which is git-ignored.
 
