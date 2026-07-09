@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // Compile runs pnpm install + pnpm run <script> in dir when script is non-empty.
@@ -62,4 +63,25 @@ func CollectOutputs(dir string) (map[string]string, error) {
 		return nil, fmt.Errorf("no app outputs found in %s\nHint: expected dist/ after `pnpm run build`, or an index.js / package.json at the package root. For TypeScript apps ensure scripts.build writes to dist/, or pass --skip-build only after compiling yourself", dir)
 	}
 	return out, nil
+}
+
+// RequireMain ensures the configured package.json#main will exist in the image
+// app layer. main is interpreted relative to the package directory.
+func RequireMain(dir, main string, outputs map[string]string) error {
+	if main == "" {
+		return nil
+	}
+	if filepath.IsAbs(main) {
+		// Absolute container paths are the caller's responsibility.
+		return nil
+	}
+	rel := filepath.ToSlash(filepath.Clean(main))
+	rel = strings.TrimPrefix(rel, "./")
+	if _, ok := outputs[rel]; ok {
+		return nil
+	}
+	if st, err := os.Stat(filepath.Join(dir, filepath.FromSlash(rel))); err == nil && !st.IsDir() {
+		return nil
+	}
+	return fmt.Errorf("package.json main %q is missing from app outputs\nHint: run the build so %s exists, set \"main\" to a file under dist/ or index.js, or pass --skip-build only after compiling", main, rel)
 }

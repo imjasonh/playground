@@ -23,7 +23,8 @@ type Result struct {
 // tarballs maps PackageID → local .tgz path.
 // Edges from the lock are used to create store-internal dependency symlinks.
 // Only importer direct dependencies are linked at the top level (plus root .bin).
-func Materialize(root string, l *lock.Lock, refs []resolve.PackageRef, tarballs map[string]string, direct []string) (*Result, error) {
+// direct binds top-level link names (including aliases) to resolved dep paths.
+func Materialize(root string, l *lock.Lock, refs []resolve.PackageRef, tarballs map[string]string, direct []resolve.DirectDep) (*Result, error) {
 	nm := filepath.Join(root, "node_modules")
 	store := filepath.Join(nm, ".pnpm")
 	if err := os.MkdirAll(store, 0o755); err != nil {
@@ -31,10 +32,8 @@ func Materialize(root string, l *lock.Lock, refs []resolve.PackageRef, tarballs 
 	}
 
 	byDepPath := make(map[string]resolve.PackageRef, len(refs))
-	byName := make(map[string]resolve.PackageRef, len(refs))
 	for _, ref := range refs {
 		byDepPath[ref.DepPath] = ref
-		byName[ref.Name] = ref
 	}
 
 	type installed struct {
@@ -114,7 +113,7 @@ func Materialize(root string, l *lock.Lock, refs []resolve.PackageRef, tarballs 
 		return nil, err
 	}
 	// Root node_modules/.bin for direct deps that expose bins.
-	if err := linkRootBins(root, refs, direct, byName); err != nil {
+	if err := linkRootBins(root, byDepPath, direct); err != nil {
 		return nil, err
 	}
 	return &Result{Root: root}, nil
@@ -130,30 +129,38 @@ func VirtualStoreDir(depPath string) string {
 	return s
 }
 
-// LinkTopLevel creates node_modules/<name> → .pnpm/.../node_modules/<name>
-// for importer direct dependencies only.
-func LinkTopLevel(root string, refs []resolve.PackageRef, direct []string) error {
+// LinkTopLevel creates node_modules/<linkName> → .pnpm/.../node_modules/<pkgName>
+// for importer direct dependencies. linkName may be an alias (npm:…).
+func LinkTopLevel(root string, refs []resolve.PackageRef, direct []resolve.DirectDep) error {
 	nm := filepath.Join(root, "node_modules")
-	want := map[string]struct{}{}
-	if len(direct) == 0 {
-		// Back-compat: if caller didn't pass directs, link everything (tests).
-		for _, ref := range refs {
-			want[ref.Name] = struct{}{}
-		}
-	} else {
-		for _, n := range direct {
-			want[n] = struct{}{}
-		}
-	}
-	byName := map[string]resolve.PackageRef{}
+	byDepPath := make(map[string]resolve.PackageRef, len(refs))
 	for _, ref := range refs {
-		if _, ok := want[ref.Name]; ok {
-			byName[ref.Name] = ref
+		byDepPath[ref.DepPath] = ref
+	}
+	links := direct
+	if len(links) == 0 {
+		// Back-compat: if caller didn't pass directs, link every package by its real name.
+		for _, ref := range refs {
+			links = append(links, resolve.DirectDep{LinkName: ref.Name, DepPath: ref.DepPath})
 		}
 	}
-	for name, ref := range byName {
+	for _, d := range links {
+		ref, ok := byDepPath[d.DepPath]
+		if !ok {
+			// Try package-id form / alias target already encoded as dep path.
+			for _, r := range refs {
+				if r.PackageID == d.DepPath || r.DepPath == d.DepPath {
+					ref = r
+					ok = true
+					break
+				}
+			}
+		}
+		if !ok {
+			return fmt.Errorf("direct dependency %q → %q not found in resolved closure", d.LinkName, d.DepPath)
+		}
 		targetAbs := filepath.Join(nm, ".pnpm", VirtualStoreDir(ref.DepPath), "node_modules", filepath.FromSlash(ref.Name))
-		link := filepath.Join(nm, filepath.FromSlash(name))
+		link := filepath.Join(nm, filepath.FromSlash(d.LinkName))
 		if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
 			return err
 		}
@@ -169,23 +176,24 @@ func LinkTopLevel(root string, refs []resolve.PackageRef, direct []string) error
 	return nil
 }
 
-func linkRootBins(root string, refs []resolve.PackageRef, direct []string, byName map[string]resolve.PackageRef) error {
-	want := map[string]struct{}{}
-	if len(direct) == 0 {
-		for _, ref := range refs {
-			want[ref.Name] = struct{}{}
-		}
-	} else {
-		for _, n := range direct {
-			want[n] = struct{}{}
+func linkRootBins(root string, byDepPath map[string]resolve.PackageRef, direct []resolve.DirectDep) error {
+	nm := filepath.Join(root, "node_modules")
+	links := direct
+	if len(links) == 0 {
+		for _, ref := range byDepPath {
+			links = append(links, resolve.DirectDep{LinkName: ref.Name, DepPath: ref.DepPath})
 		}
 	}
-	nm := filepath.Join(root, "node_modules")
-	for name := range want {
-		ref, ok := byName[name]
+	seen := map[string]struct{}{}
+	for _, d := range links {
+		ref, ok := byDepPath[d.DepPath]
 		if !ok {
 			continue
 		}
+		if _, dup := seen[ref.DepPath]; dup {
+			continue
+		}
+		seen[ref.DepPath] = struct{}{}
 		pkgDir := filepath.Join(root, "node_modules", ".pnpm", VirtualStoreDir(ref.DepPath), "node_modules", filepath.FromSlash(ref.Name))
 		pj, err := readPackageJSON(pkgDir)
 		if err != nil {
@@ -338,6 +346,13 @@ func parseBin(pj packageJSON) (map[string]string, error) {
 }
 
 func extractNPMTarball(tgzPath, destDir string) error {
+	destAbs, err := filepath.Abs(destDir)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(destAbs, 0o755); err != nil {
+		return err
+	}
 	f, err := os.Open(tgzPath)
 	if err != nil {
 		return err
@@ -349,9 +364,6 @@ func extractNPMTarball(tgzPath, destDir string) error {
 	}
 	defer gr.Close()
 	tr := tar.NewReader(gr)
-	if err := os.MkdirAll(destDir, 0o755); err != nil {
-		return err
-	}
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
@@ -369,12 +381,15 @@ func extractNPMTarball(tgzPath, destDir string) error {
 		if rel == "" {
 			continue
 		}
-		// Reject path traversal.
 		clean := filepath.Clean(filepath.FromSlash(rel))
-		if strings.HasPrefix(clean, "..") || filepath.IsAbs(clean) {
+		if clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(os.PathSeparator)) || filepath.IsAbs(clean) {
 			return fmt.Errorf("refusing unsafe path in tarball: %s", hdr.Name)
 		}
-		out := filepath.Join(destDir, clean)
+		out := filepath.Join(destAbs, clean)
+		// Ensure the joined path stays under destAbs even if Clean tricks slip through.
+		if !isWithinDir(destAbs, out) {
+			return fmt.Errorf("refusing path escape in tarball: %s", hdr.Name)
+		}
 		switch hdr.Typeflag {
 		case tar.TypeDir:
 			if err := os.MkdirAll(out, 0o755); err != nil {
@@ -384,10 +399,19 @@ func extractNPMTarball(tgzPath, destDir string) error {
 			if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
 				return err
 			}
+			// Do not follow a symlink when creating the file (symlink escape).
 			mode := hdr.FileInfo().Mode().Perm()
-			w, err := os.OpenFile(out, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+			w, err := os.OpenFile(out, os.O_CREATE|os.O_WRONLY|os.O_TRUNC|os.O_EXCL, mode)
 			if err != nil {
-				return err
+				// If something already exists, refuse to overwrite through a symlink.
+				if st, lerr := os.Lstat(out); lerr == nil && st.Mode()&os.ModeSymlink != 0 {
+					return fmt.Errorf("refusing to write through symlink in tarball: %s", hdr.Name)
+				}
+				_ = os.Remove(out)
+				w, err = os.OpenFile(out, os.O_CREATE|os.O_WRONLY|os.O_TRUNC|os.O_EXCL, mode)
+				if err != nil {
+					return err
+				}
 			}
 			if _, err := io.Copy(w, tr); err != nil {
 				w.Close()
@@ -397,14 +421,42 @@ func extractNPMTarball(tgzPath, destDir string) error {
 				return err
 			}
 		case tar.TypeSymlink:
-			if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
+			target := hdr.Linkname
+			if filepath.IsAbs(target) || strings.HasPrefix(filepath.Clean(target), "..") {
+				return fmt.Errorf("refusing unsafe symlink target in tarball: %s -> %s", hdr.Name, target)
+			}
+			// Resolve relative to the link's directory and require it stay in destAbs.
+			linkDir := filepath.Dir(out)
+			resolved := filepath.Clean(filepath.Join(linkDir, filepath.FromSlash(target)))
+			if !isWithinDir(destAbs, resolved) {
+				return fmt.Errorf("refusing symlink escape in tarball: %s -> %s", hdr.Name, target)
+			}
+			if err := os.MkdirAll(linkDir, 0o755); err != nil {
 				return err
 			}
 			_ = os.Remove(out)
-			if err := os.Symlink(hdr.Linkname, out); err != nil {
+			if err := os.Symlink(target, out); err != nil {
 				return err
 			}
+		case tar.TypeLink:
+			return fmt.Errorf("refusing hardlink in tarball: %s", hdr.Name)
 		}
 	}
 	return nil
 }
+
+func isWithinDir(root, path string) bool {
+	root = filepath.Clean(root)
+	path = filepath.Clean(path)
+	if path == root {
+		return true
+	}
+	sep := string(os.PathSeparator)
+	return strings.HasPrefix(path, root+sep)
+}
+
+// ExtractNPMTarballForTest exposes extractNPMTarball for security tests.
+func ExtractNPMTarballForTest(tgzPath, destDir string) error {
+	return extractNPMTarball(tgzPath, destDir)
+}
+

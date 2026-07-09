@@ -52,6 +52,21 @@ type PackageRef struct {
 	Optional bool
 }
 
+// DirectDep is an importer-facing dependency name bound to a resolved store path.
+// LinkName is the top-level node_modules entry (may be an alias); DepPath is the
+// snapshots / virtual-store key for the real package.
+type DirectDep struct {
+	LinkName string
+	DepPath  string
+}
+
+type visitState struct {
+	optional        bool
+	done            bool
+	skippedPlatform bool
+	outIdx          int // index in out, or -1
+}
+
 // Closure returns the production dependency closure for an importer.
 func Closure(l *lock.Lock, importerKey string, plat Platform) ([]PackageRef, error) {
 	imp := l.Importers[importerKey]
@@ -63,7 +78,7 @@ func Closure(l *lock.Lock, importerKey string, plat Platform) ([]PackageRef, err
 		optional bool
 	}
 	var queue []item
-	seen := map[string]bool{}
+	state := map[string]*visitState{}
 
 	enqueue := func(name, version string, optional bool) error {
 		if version == "" || name == "" {
@@ -73,17 +88,27 @@ func Closure(l *lock.Lock, importerKey string, plat Platform) ([]PackageRef, err
 			return fmt.Errorf("importer dependency %q resolves to %q; workspace/link/file dependencies are not supported in image builds\nHint: bundle the workspace package into the app (e.g. tsc project references / bundler), publish it to a registry, or point node-image at a package that only depends on registry tarballs", name, version)
 		}
 		depPath := depPathFrom(name, version)
-		if seen[depPath] {
-			// If we previously saw this as optional but now as required, upgrade.
-			for i := range queue {
-				if queue[i].depPath == depPath && queue[i].optional && !optional {
-					queue[i].optional = false
-				}
-			}
+		st := state[depPath]
+		if st == nil {
+			state[depPath] = &visitState{optional: optional, outIdx: -1}
+			queue = append(queue, item{depPath: depPath, optional: optional})
 			return nil
 		}
-		seen[depPath] = true
-		queue = append(queue, item{depPath: depPath, optional: optional})
+		if st.optional && !optional {
+			// Upgrade optional → required.
+			if st.skippedPlatform {
+				return fmt.Errorf("required package %s does not support %s/%s (libc=%s)\nHint: this package was first reached as optional and skipped for this platform, but is also required via another path", depPath, plat.OS, plat.CPU, plat.Libc)
+			}
+			st.optional = false
+			if st.done {
+				if st.outIdx >= 0 {
+					// Will be updated by caller after we have out; mark for re-queue
+					// of children as required by re-enqueueing this node.
+				}
+				st.done = false
+				queue = append(queue, item{depPath: depPath, optional: false})
+			}
+		}
 		return nil
 	}
 
@@ -97,25 +122,41 @@ func Closure(l *lock.Lock, importerKey string, plat Platform) ([]PackageRef, err
 			return nil, err
 		}
 	}
-	// production only: skip DevDependencies
 
 	var out []PackageRef
 	for i := 0; i < len(queue); i++ {
 		it := queue[i]
+		st := state[it.depPath]
+		if st == nil {
+			continue
+		}
+		// Prefer required if upgraded while sitting in queue.
+		optional := st.optional
+		if st.done && optional {
+			continue
+		}
+		if st.done && !optional {
+			// Reprocessing after upgrade: refresh Optional flag and children.
+			if st.outIdx >= 0 {
+				out[st.outIdx].Optional = false
+			}
+		}
+
 		pkgID := lock.PackageIDFromDepPath(it.depPath)
-		// Strip pnpm patch_hash peer-like suffixes from package id lookup.
 		pkgID = stripPatchHash(pkgID)
 		pkg := l.Packages[pkgID]
 		if pkg == nil {
 			return nil, fmt.Errorf("package %s (from %s) missing from lock packages", pkgID, it.depPath)
 		}
 		if !platformMatch(pkg, plat) {
-			if it.optional {
+			if optional {
+				st.done = true
+				st.skippedPlatform = true
 				continue
 			}
 			return nil, fmt.Errorf("required package %s does not support %s/%s (libc=%s)\nHint: this often means a native optional dependency was promoted to required, or the lock was generated on another OS. Re-lock on linux or adjust optionalDependencies", pkgID, plat.OS, plat.CPU, plat.Libc)
 		}
-		if muslOnly(pkg) && plat.Libc == "glibc" && !it.optional {
+		if muslOnly(pkg) && plat.Libc == "glibc" && !optional {
 			return nil, fmt.Errorf("required package %s is musl-only (os/cpu/libc markers), but this build targets glibc\nHint: use glibc builds of the native package, or wait for --libc musl support with a musl Node base", pkgID)
 		}
 		name, version, err := splitNameVersion(pkgID)
@@ -126,27 +167,35 @@ func Closure(l *lock.Lock, importerKey string, plat Platform) ([]PackageRef, err
 		if tarball == "" {
 			tarball = defaultRegistryTarball(name, version)
 		}
-		ref := PackageRef{
-			DepPath:   it.depPath,
-			PackageID: pkgID,
-			Name:      name,
-			Version:   version,
-			Integrity: pkg.Resolution.Integrity,
-			Tarball:   tarball,
-			Optional:  it.optional,
+
+		if st.outIdx >= 0 {
+			out[st.outIdx].Optional = optional
+		} else {
+			ref := PackageRef{
+				DepPath:   it.depPath,
+				PackageID: pkgID,
+				Name:      name,
+				Version:   version,
+				Integrity: pkg.Resolution.Integrity,
+				Tarball:   tarball,
+				Optional:  optional,
+			}
+			st.outIdx = len(out)
+			out = append(out, ref)
 		}
-		out = append(out, ref)
+		st.done = true
+		st.optional = optional
+		st.skippedPlatform = false
 
 		snap := l.Snapshots[it.depPath]
 		if snap == nil {
-			// some locks only key snapshots by package id
 			snap = l.Snapshots[pkgID]
 		}
 		if snap == nil {
 			continue
 		}
 		for depName, ver := range snap.Dependencies {
-			if err := enqueue(depName, ver, it.optional); err != nil {
+			if err := enqueue(depName, ver, optional); err != nil {
 				return nil, err
 			}
 		}
@@ -166,21 +215,45 @@ func stripPatchHash(pkgID string) string {
 	return pkgID
 }
 
-// DirectNames returns production direct dependency names for an importer
-// (dependencies + optionalDependencies; not devDependencies).
-func DirectNames(l *lock.Lock, importerKey string) []string {
+// DirectDeps returns production direct dependencies for an importer as
+// (top-level link name, resolved dep path) pairs. Link names may be aliases.
+func DirectDeps(l *lock.Lock, importerKey string) []DirectDep {
 	imp := l.Importers[importerKey]
 	if imp == nil {
 		return nil
 	}
-	var names []string
-	for name := range imp.Dependencies {
-		names = append(names, name)
+	var out []DirectDep
+	add := func(name string, d lock.ImporterDep) {
+		if d.Version == "" {
+			return
+		}
+		out = append(out, DirectDep{
+			LinkName: name,
+			DepPath:  DepPathFrom(name, d.Version),
+		})
 	}
-	for name := range imp.OptionalDependencies {
-		names = append(names, name)
+	for name, d := range imp.Dependencies {
+		add(name, d)
 	}
-	sort.Strings(names)
+	for name, d := range imp.OptionalDependencies {
+		add(name, d)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].LinkName != out[j].LinkName {
+			return out[i].LinkName < out[j].LinkName
+		}
+		return out[i].DepPath < out[j].DepPath
+	})
+	return out
+}
+
+// DirectNames returns production direct dependency link names for an importer.
+func DirectNames(l *lock.Lock, importerKey string) []string {
+	deps := DirectDeps(l, importerKey)
+	names := make([]string, 0, len(deps))
+	for _, d := range deps {
+		names = append(names, d.LinkName)
+	}
 	return names
 }
 
@@ -202,12 +275,10 @@ func containsOrAny(list []string, want string) bool {
 		if v == want || v == "*" {
 			return true
 		}
-		// pnpm uses "!win32" style exclusions
 		if strings.HasPrefix(v, "!") && v[1:] == want {
 			return false
 		}
 	}
-	// if only exclusions present, allow when not excluded
 	onlyExclusions := true
 	for _, v := range list {
 		if !strings.HasPrefix(v, "!") {
@@ -252,11 +323,9 @@ func DepPathFrom(name, version string) string {
 
 func looksLikePackageID(s string) bool {
 	if strings.HasPrefix(s, "@") {
-		// @scope/name@version
 		rest := s[1:]
 		return strings.Count(rest, "@") >= 1 && strings.Contains(rest, "/")
 	}
-	// name@version (exactly one @ before peer suffix)
 	if i := strings.IndexByte(s, '@'); i > 0 {
 		return true
 	}
@@ -266,7 +335,6 @@ func looksLikePackageID(s string) bool {
 func depPathFrom(name, version string) string { return DepPathFrom(name, version) }
 
 func splitNameVersion(id string) (name, version string, err error) {
-	// @scope/name@version or name@version
 	if strings.HasPrefix(id, "@") {
 		i := strings.LastIndex(id, "@")
 		if i <= 0 {
@@ -282,7 +350,6 @@ func splitNameVersion(id string) (name, version string, err error) {
 }
 
 func defaultRegistryTarball(name, version string) string {
-	// https://registry.npmjs.org/<name>/-/<basename>-<version>.tgz
 	base := name
 	if i := strings.LastIndex(name, "/"); i >= 0 {
 		base = name[i+1:]

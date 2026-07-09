@@ -10,11 +10,23 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
+
+// DefaultHTTPTimeout bounds each tarball download.
+const DefaultHTTPTimeout = 2 * time.Minute
 
 // Cache stores tarballs by integrity.
 type Cache struct {
-	Dir string
+	Dir        string
+	HTTPClient *http.Client
+}
+
+func (c *Cache) client() *http.Client {
+	if c.HTTPClient != nil {
+		return c.HTTPClient
+	}
+	return &http.Client{Timeout: DefaultHTTPTimeout}
 }
 
 // DefaultDir returns ~/.cache/node-image/packages.
@@ -45,7 +57,7 @@ func (c *Cache) Ensure(tarballURL, integrity string) (string, error) {
 		}
 		_ = os.Remove(path)
 	}
-	resp, err := http.Get(tarballURL)
+	resp, err := c.client().Get(tarballURL)
 	if err != nil {
 		return "", fmt.Errorf("fetch %s: %w", tarballURL, err)
 	}
@@ -53,21 +65,24 @@ func (c *Cache) Ensure(tarballURL, integrity string) (string, error) {
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("fetch %s: %s", tarballURL, resp.Status)
 	}
-	tmp := path + ".tmp"
-	f, err := os.Create(tmp)
+	// Unique temp file so concurrent Ensure calls for the same integrity cannot
+	// clobber each other's downloads.
+	f, err := os.CreateTemp(c.Dir, key+".*.tmp")
 	if err != nil {
 		return "", err
 	}
+	tmp := f.Name()
 	h := sha512.New()
 	w := io.MultiWriter(f, h)
-	if _, err := io.Copy(w, resp.Body); err != nil {
-		f.Close()
+	_, copyErr := io.Copy(w, resp.Body)
+	closeErr := f.Close()
+	if copyErr != nil {
 		_ = os.Remove(tmp)
-		return "", err
+		return "", copyErr
 	}
-	if err := f.Close(); err != nil {
+	if closeErr != nil {
 		_ = os.Remove(tmp)
-		return "", err
+		return "", closeErr
 	}
 	sum := h.Sum(nil)
 	if err := checkSRI(integrity, sum); err != nil {
@@ -76,6 +91,12 @@ func (c *Cache) Ensure(tarballURL, integrity string) (string, error) {
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		_ = os.Remove(tmp)
+		// Another concurrent writer may have won the rename race with a good file.
+		if st, statErr := os.Stat(path); statErr == nil && st.Size() > 0 {
+			if verifyFile(path, integrity) == nil {
+				return path, nil
+			}
+		}
 		return "", err
 	}
 	return path, nil

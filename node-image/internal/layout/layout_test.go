@@ -43,7 +43,7 @@ func TestMaterializePureJSRequiresMS(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := layout.Materialize(root, l, refs, tarballs, resolve.DirectNames(l, ".")); err != nil {
+	if _, err := layout.Materialize(root, l, refs, tarballs, resolve.DirectDeps(l, ".")); err != nil {
 		t.Fatal(err)
 	}
 	msLink := filepath.Join(root, "node_modules", "ms")
@@ -109,7 +109,7 @@ func TestConformanceAgainstPnpm(t *testing.T) {
 		tarballs[ref.PackageID] = path
 	}
 	ours := t.TempDir()
-	if _, err := layout.Materialize(ours, l, refs, tarballs, resolve.DirectNames(l, ".")); err != nil {
+	if _, err := layout.Materialize(ours, l, refs, tarballs, resolve.DirectDeps(l, ".")); err != nil {
 		t.Fatal(err)
 	}
 

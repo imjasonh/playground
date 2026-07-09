@@ -42,7 +42,7 @@ func materializeFixture(t *testing.T, name string) (root string, refs []resolve.
 			t.Fatal(err)
 		}
 	}
-	if _, err := layout.Materialize(root, l, refs, tarballs, resolve.DirectNames(l, ".")); err != nil {
+	if _, err := layout.Materialize(root, l, refs, tarballs, resolve.DirectDeps(l, ".")); err != nil {
 		t.Fatal(err)
 	}
 	return root, refs

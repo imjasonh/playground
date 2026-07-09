@@ -162,7 +162,7 @@ func Run(opt Options) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		direct := resolve.DirectNames(l, importer)
+		direct := resolve.DirectDeps(l, importer)
 		tarballs := map[string]string{}
 		for _, ref := range refs {
 			path, err := cache.Ensure(ref.Tarball, ref.Integrity)
@@ -182,6 +182,9 @@ func Run(opt Options) (string, error) {
 
 		outputs, err := app.CollectOutputs(cfg.Dir)
 		if err != nil {
+			return "", err
+		}
+		if err := app.RequireMain(cfg.Dir, cfg.Main, outputs); err != nil {
 			return "", err
 		}
 		for rel, src := range outputs {
