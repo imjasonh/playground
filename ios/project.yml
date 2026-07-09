@@ -37,6 +37,14 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: Playground
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        # App icon (required by App Store / TestFlight). The single 1024px icon
+        # in Assets.xcassets is expanded to all required sizes at build time.
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Supported orientations. iPad multitasking requires these to be declared
+        # or the upload is rejected; space-separated values become the Info.plist
+        # UISupportedInterfaceOrientations arrays.
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         # Declares no non-exempt encryption so TestFlight uploads don't stall on
         # the export-compliance question.
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
