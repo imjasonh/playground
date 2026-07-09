@@ -41,7 +41,17 @@ platform :ios do
       app_identifier: APP_IDENTIFIER,
       api_key: asc_api_key
     )
-    UI.success("Signing assets created and stored in the match repo. " \
+    # match only *warns* (doesn't fail) if it can't push to the git repo — e.g.
+    # the token lacks write access — which would leave this lane falsely green
+    # and the repo empty. Verify by re-fetching read-only: this clones the remote
+    # fresh and fails if the assets never actually landed there.
+    match(
+      type: "appstore",
+      readonly: true,
+      app_identifier: APP_IDENTIFIER,
+      api_key: asc_api_key
+    )
+    UI.success("Signing assets created and verified in the match repo. " \
                "Future 'beta' runs will read them read-only.")
   end
 
@@ -74,7 +84,12 @@ platform :ios do
       end
 
     team_id = ENV.fetch("APPLE_TEAM_ID")
-    profile_name = "match AppStore #{APP_IDENTIFIER}"
+    # Use the exact profile name that match just installed rather than a
+    # hardcoded guess: match appends a unique suffix when a base-named profile
+    # already exists on the portal (e.g. left over from an earlier run), so the
+    # real name may be "match AppStore <id> <digits>".
+    profile_name = ENV["sigh_#{APP_IDENTIFIER}_appstore_profile-name"] ||
+                   "match AppStore #{APP_IDENTIFIER}"
 
     build_app(
       project: XCODEPROJ,
