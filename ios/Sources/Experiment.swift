@@ -35,34 +35,17 @@ struct Experiment: Identifiable {
     }
 }
 
-/// The registry of every experiment in the app. **To add an experiment:** create
-/// its SwiftUI view under `Sources/Experiments/`, then add one entry here. Keep
-/// `id`s stable and unique (they double as UI-test accessibility identifiers).
+/// The registry of every experiment in the app.
+///
+/// **To add an experiment:**
+/// 1. Create `Sources/Experiments/<YourExperiment>/` (one folder per experiment).
+/// 2. Add a `*Experiment.swift` in that folder that exposes a static
+///    `experiment: Experiment` (id, title, summary, icon, destination view).
+/// 3. Append that static to `all` below.
+///
+/// Keep `id`s stable and unique (they double as UI-test accessibility identifiers).
 enum ExperimentCatalog {
     static let all: [Experiment] = [
-        Experiment(
-            id: "temperature-converter",
-            title: "Temperature Converter",
-            summary: "Convert between Celsius and Fahrenheit.",
-            icon: "thermometer.medium"
-        ) {
-            TemperatureConverterView()
-        },
-        Experiment(
-            id: "counter",
-            title: "Counter",
-            summary: "A simple bounded tap counter.",
-            icon: "plusminus.circle"
-        ) {
-            CounterView()
-        },
-        Experiment(
-            id: "ride-monitor",
-            title: "Ride Monitor",
-            summary: "Detect shakes, potholes & crashes while biking — runs in the background.",
-            icon: "bicycle"
-        ) {
-            RideMonitorView()
-        }
+        RideMonitorExperiment.experiment,
     ]
 }

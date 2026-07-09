@@ -22,8 +22,9 @@ ios/
 │   ├── RootView.swift             # the launcher: lists every experiment
 │   ├── Experiment.swift           # Experiment model + ExperimentCatalog registry
 │   └── Experiments/               # one folder per experiment
-│       ├── TemperatureConverter/
-│       └── Counter/
+│       └── RideMonitor/
+│           ├── RideMonitorExperiment.swift  # self-declares metadata + destination
+│           └── …                            # views, models, logic
 └── Tests/
     ├── PlaygroundTests/           # XCTest unit tests (logic + catalog)
     └── PlaygroundUITests/         # XCUITest launcher/experiment flows
@@ -31,11 +32,13 @@ ios/
 
 ## Adding an experiment
 
-1. Create `Sources/Experiments/<YourExperiment>/` with a SwiftUI view (keep the
-   testable logic in plain types, add accessibility identifiers to controls).
-2. Register it in `ExperimentCatalog.all` in `Sources/Experiment.swift` with a
-   stable, unique `id`.
-3. Add tests under `Tests/PlaygroundTests/` (and a UI flow if useful).
+1. Create `Sources/Experiments/<YourExperiment>/` — **one directory per
+   experiment**. Put the SwiftUI view and any logic there (keep testable logic
+   in plain types; add accessibility identifiers to controls).
+2. In that folder, add a `*Experiment.swift` that exposes a static
+   `experiment: Experiment` (id, title, summary, icon, destination view).
+3. Append that static to `ExperimentCatalog.all` in `Sources/Experiment.swift`.
+4. Add tests under `Tests/PlaygroundTests/` (and a UI flow if useful).
 
 That's it — no project or CI changes, and no new TestFlight app. The launcher
 picks it up automatically and the next push to `main` ships it in the same
