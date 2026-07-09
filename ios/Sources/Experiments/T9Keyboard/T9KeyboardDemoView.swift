@@ -3,18 +3,26 @@ import UIKit
 
 /// In-app playground for the T9 multi-tap pad, plus instructions for enabling
 /// the real system keyboard extension that ships with this app.
+///
+/// The UIKit pad sits **outside** the `ScrollView`. Embedding a large nested
+/// `UIButton` hierarchy inside scroll content makes XCUITest accessibility
+/// snapshots time out when querying `app.buttons`.
 struct T9KeyboardDemoView: View {
     @StateObject private var model = T9DemoModel()
     @FocusState private var systemFieldFocused: Bool
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                howToEnable
-                tryHere
-                systemField
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    howToEnable
+                    demoChrome
+                    systemField
+                }
+                .padding()
             }
-            .padding()
+
+            padSection
         }
         .background(Color(uiColor: UIColor(white: 0.08, alpha: 1)).ignoresSafeArea())
         .onDisappear {
@@ -50,7 +58,8 @@ struct T9KeyboardDemoView: View {
         .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
     }
 
-    private var tryHere: some View {
+    /// Text preview + shift mode + delete/clear — no UIKit pad here.
+    private var demoChrome: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("Try it here")
@@ -81,11 +90,6 @@ struct T9KeyboardDemoView: View {
             .frame(minHeight: 56)
             .background(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.2)))
 
-            T9PadViewRepresentable(model: model)
-                .frame(height: 280)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .accessibilityIdentifier("t9Pad")
-
             HStack {
                 Button("Delete") { model.delete() }
                     .accessibilityIdentifier("t9DemoDeleteButton")
@@ -97,6 +101,16 @@ struct T9KeyboardDemoView: View {
         }
         .padding()
         .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
+    }
+
+    private var padSection: some View {
+        VStack(spacing: 0) {
+            Divider().overlay(Color.white.opacity(0.12))
+            T9PadViewRepresentable(model: model)
+                .frame(height: 280)
+                .accessibilityIdentifier("t9Pad")
+        }
+        .background(Color(uiColor: UIColor(white: 0.12, alpha: 1)))
     }
 
     private var systemField: some View {
@@ -178,7 +192,9 @@ struct T9PadViewRepresentable: UIViewRepresentable {
     func makeUIView(context: Context) -> T9PadView {
         let pad = T9PadView(engine: model.padEngine)
         pad.accessibilityIdentifier = "t9Pad"
-        pad.isAccessibilityElement = false
+        // Keep the 12-key UIKit tree out of XCUITest snapshots. Querying
+        // `app.buttons[…]` otherwise walks every key and can time out.
+        pad.accessibilityElementsHidden = true
         pad.onShiftModeChange = { mode in
             model.shiftLabel = mode.label
         }
