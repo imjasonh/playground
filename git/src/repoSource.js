@@ -50,6 +50,7 @@
  * @property {Capabilities} capabilities  what the UI may offer for this source
  * @property {boolean} readOnly  derived: no write and no push capability
  * @property {() => string} getCurrentBranch  name of the current ref (back-compat)
+ * @property {() => string} [getDefaultBranch]  the repo's default branch name
  * @property {() => Ref} getCurrentRef  the generalized current ref descriptor
  * @property {() => Promise<BranchInfo[]>} listBranches
  * @property {() => Promise<string[]>} [listTags]  tag names, newest-ish first
@@ -205,6 +206,10 @@ export class InMemoryRepoSource {
 
   getCurrentRef() {
     return { ...this._ref };
+  }
+
+  getDefaultBranch() {
+    return this._defaultBranch;
   }
 
   async listBranches() {

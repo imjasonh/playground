@@ -100,6 +100,11 @@ export function createRecent(ctx) {
       e.stopPropagation();
       try {
         await state.storage.remove(repo.dir);
+        // Clearing the repo from browser storage also drops its content-search
+        // index (built from the same repoId the source reports).
+        if (ctx.contentSearch && typeof ctx.contentSearch.removeIndex === 'function') {
+          await ctx.contentSearch.removeIndex(repo.url || repo.fullName || repo.dir);
+        }
         renderRecent();
         ctx.toast('Removed from local storage');
       } catch (err) {

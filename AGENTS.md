@@ -13,10 +13,12 @@ playground/
 ├── README.md
 ├── .github/
 │   ├── pages/             # shared HTML template for app index pages
-│   ├── scripts/           # CI helpers for browser, Go, and Rust app discovery
+│   ├── scripts/           # CI helpers: app discovery + index-page rendering
 │   └── workflows/         # deploy, preview, test, cleanup, dependency updates
 ├── artillery/             # touch-first turn-based artillery duel (JS + Node tests)
 ├── cold-climb/            # touch-first two-handle arcade game (JS + Node tests)
+├── cors-proxy/            # Rust Cloudflare Worker: SSRF-hardened CORS proxy (not a Pages app)
+├── cors-proxy-demo/       # static browser front-end for the cors-proxy Worker
 ├── git/                   # in-browser read-only git client (JS + Jest + Playwright)
 ├── gitdb/                 # Go CLI (Go module + Go tests)
 ├── hello/                 # example static app (HTML only)
@@ -36,6 +38,7 @@ its root. This is the same rule used by deploy and preview workflows.
 |------|--------------|-------|
 | `artillery/` | yes | Turn-based artillery duel; JS modules, npm scripts, tests |
 | `cold-climb/` | yes | Touch-first arcade game; JS modules, npm scripts, tests |
+| `cors-proxy-demo/` | yes | Static front-end for `cors-proxy`; HTML/JS, no build or tests |
 | `git/` | yes | In-browser read-only git client; JS modules, npm scripts, tests |
 | `hello/` | yes | Static HTML; no build or tests |
 | `kanoodle/` | yes | Client-side JS modules, npm scripts, tests |
@@ -43,6 +46,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `gitdb/` | no | Go CLI; no `index.html` |
 | `ocidb/` | no | Go CLI; no `index.html` |
 | `web-push/` | no | Rust Cloudflare Worker; no `index.html` |
+| `cors-proxy/` | no | Rust Cloudflare Worker; no `index.html` |
 | `hello-ios/` | no | iOS app (XcodeGen + SwiftUI); no `index.html` |
 | `.github/` | no | Infrastructure only |
 | `README.md` | no | Not a directory |
@@ -63,7 +67,10 @@ Each Go app is an isolated module. Keep its Go sources, tests, `go.mod`, and
 A top-level directory is a **Rust app** when it contains **`Cargo.toml`** at its
 root. Rust apps (e.g. `web-push`, a Cloudflare Worker) are built, linted, and
 tested by CI but are not copied to GitHub Pages and do not receive PR preview
-deployments. A Rust app may have a companion browser app that *is* deployed —
+deployments. A Cloudflare Worker app (a Rust app with a `wrangler.toml`) is
+instead deployed by `deploy-workers.yml` on pushes to `main` with `wrangler`,
+using the repo secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. A
+Rust app may also have a companion browser app that *is* served from Pages —
 `web-push` pairs with `web-push-demo`.
 
 Each Rust app is an isolated crate. Keep its sources, tests, `Cargo.toml`, and
@@ -105,16 +112,42 @@ discovery scripts.
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
 | `deploy.yml` | push to `main` | Publishes all browser apps to GitHub Pages production |
+| `deploy-workers.yml` | push to `main`, manual | Deploys changed Cloudflare Worker apps (those with `wrangler.toml`) with `wrangler`, using the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets; a manual *Run workflow* (`workflow_dispatch`) redeploys all of them. Before deploy it create-or-gets each Worker's KV namespaces and substitutes the placeholder ids in `wrangler.toml`; after deploy it get-or-generates a `VAPID_PRIVATE_KEY` secret for any Worker shipping an `examples/genvapid.rs` |
 | `preview.yml` | pull request opened/sync | Deploys browser apps under `/preview/pr-<N>/` and comments the URL |
-| `cleanup.yml` | pull request closed | Removes that PR's preview directory from `gh-pages` |
+| `cleanup.yml` | pull request closed | Removes that PR's preview directory from `gh-pages` and refreshes the root index |
 | `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps in one job |
 | `ios.yml` | push to `main`, pull requests | Tests changed iOS apps on macOS; on `main`, delivers them to TestFlight |
 | `ios-signing-bootstrap.yml` | manual (`workflow_dispatch`) | One-time: creates & stores an iOS app's signing certificate/profile in the `match` repo |
 | `deps.yaml` | daily at 00:00 UTC, manual | Updates every testable browser app, Go app, and Rust app; pushes passing updates to `main`, otherwise opens a PR |
+| `nypd-choppers-scrape.yml` | hourly, manual | **App-specific:** fetches NYPD helicopter full-day ADS-B traces and merges per-day JSON to `gh-pages` under `nypd-choppers/data/`. Not generalized; shares the `gh-pages-publish` concurrency group with deploy/preview/cleanup |
 
 Deploy workflows copy browser app directories as-is (they do **not** run
 `npm install` or build). Go and Rust app directories are not deployed. Only
 commit source files—never commit `node_modules/` or Go/Rust build artifacts.
+
+The production home page (`index.html` at the Pages root) is generated at build
+time by `.github/scripts/render-index.py` from the shared template. It has a
+**Browser apps** section (the deployed `index.html` directories) and a separate
+**Cloudflare Workers apps** section (directories with `wrangler.toml`). Workers
+are not served from Pages, so the renderer discovers them by scanning the repo
+source tree (`--source-dir`, defaulting to the checkout it runs from) and links
+each to its source on GitHub. Under the browser apps it lists **active PR
+previews** (only browser apps get previews): `preview.yml` writes a
+`preview/pr-<N>/preview.json` manifest **only for PRs that change a browser
+app** (so Go/Rust/CI-only PRs, whose preview would be identical to production,
+are not listed), and `deploy.yml`, `preview.yml`, and `cleanup.yml` each
+regenerate the root index from the published `gh-pages` tree so the list stays
+current as previews come and go. Because the deploy publishes with
+`keep_files: true` (to preserve `preview/`), a browser app that is renamed or
+removed in the source tree would otherwise linger on `gh-pages` and keep showing
+up on the home page. `deploy.yml` therefore runs
+`.github/scripts/prune-orphaned-apps.sh` before regenerating the index to delete
+published app directories (those with `index.html`, excluding `preview/`) that
+no longer exist as source browser apps. `discover-browser-apps.sh` reports which
+browser apps a change set touched; `render-index_test.py` covers the renderer
+(run `python3 .github/scripts/render-index_test.py`), and
+`prune-orphaned-apps_test.sh` covers the pruner (run
+`bash .github/scripts/prune-orphaned-apps_test.sh`).
 
 ### Production URLs
 
@@ -288,11 +321,20 @@ go test ./...
 4. Add `my-worker/rust-toolchain.toml` pinning the toolchain (and, for a
    Cloudflare Worker, the `wasm32-unknown-unknown` target).
 5. Add `my-worker/README.md` and a `my-worker/.gitignore` (at least `target/`).
-6. Do **not** add `index.html`; Rust apps are not deployed or previewed. If you
-   want a UI, add a separate browser app (see `web-push-demo`).
+6. Do **not** add `index.html`; Rust apps are not served from Pages or
+   previewed. If you want a UI, add a separate browser app (see `web-push-demo`).
+7. For a Cloudflare Worker, add a `wrangler.toml`. `deploy-workers.yml` then
+   deploys it on pushes to `main` automatically (no workflow edits needed); it
+   relies on the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets.
+   The deploy self-provisions Cloudflare-side config: KV namespaces referenced
+   with a placeholder id (e.g. `id = "REPLACE_WITH_..."`) are created-or-fetched
+   and rewritten to real ids before deploy, and a Worker that ships
+   `examples/genvapid.rs` gets a `VAPID_PRIVATE_KEY` secret generated once (only
+   if absent, so the key is stable across deploys).
 
 No workflow edits are required. CI discovers a new Rust app from its
-`Cargo.toml`, and the daily dependency workflow includes it automatically.
+`Cargo.toml`, the deploy workflow discovers a new Worker from its
+`wrangler.toml`, and the daily dependency workflow includes it automatically.
 
 Run locally:
 
@@ -369,10 +411,19 @@ bundle exec fastlane test
 |-----------|------|-------|
 | `artillery/` | Turn-based artillery duel with local and AI modes | Node test runner |
 | `cold-climb/` | Two-handle ball-climbing arcade game | Node test runner |
+| `cors-proxy-demo/` | Browser playground for the `cors-proxy` Worker (send a request, inspect the CORS response) | none (static) |
 | `git/` | In-browser read-only git client (clone, browse, branches, history) | Jest + Playwright |
 | `hello/` | Static demo | none |
 | `kanoodle/` | Kanoodle puzzle game (5×11 board, 12 pieces) | Jest + Playwright |
+| `nypd-choppers/` | NYPD helicopter daily flight paths, hours, and fuel-cost estimates from ADS-B | Node test runner |
 | `web-push-demo/` | Browser front-end for `web-push` (subscribe/unsubscribe/notify) | none (static) |
+
+> **`nypd-choppers` has an intentionally non-standard lifecycle.** Because free
+> ADS-B APIs are blocked by CORS and only serve live (current-position) data, it
+> relies on the hourly `nypd-choppers-scrape.yml` workflow to fetch full-day
+> flight traces and accumulate historical data, which it commits to the
+> `gh-pages` branch (never `main`). Do not try to fold this data-collection
+> pattern into the shared deploy/test/deps workflows.
 
 ## Current Go apps
 
@@ -386,6 +437,7 @@ bundle exec fastlane test
 | Directory | Type | Tests |
 |-----------|------|-------|
 | `web-push/` | Web Push backend — Cloudflare Worker (RFC 8030/8188/8291/8292) | `cargo test` + clippy + wasm build |
+| `cors-proxy/` | SSRF-hardened CORS proxy — Cloudflare Worker | `cargo test` + clippy + wasm build |
 
 ## Current iOS apps
 

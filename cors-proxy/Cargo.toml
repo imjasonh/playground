@@ -1,0 +1,50 @@
+[package]
+name = "cors-proxy-worker"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "A self-hostable, SSRF-hardened CORS proxy for Cloudflare Workers, written in Rust"
+repository = "https://github.com/imjasonh/playground"
+readme = "README.md"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+# Dependencies that build on every target (native + wasm). Keeping the URL
+# parsing and request/response filtering here (rather than in the wasm-only
+# entry) means the security-critical logic is exercised by native `cargo test`.
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# WHATWG-compliant URL parsing. Using a real parser (rather than string
+# munging) avoids parser-differential bugs that are a classic SSRF bypass.
+url = "2"
+
+# --- MSRV pins -------------------------------------------------------------
+# This toolchain is Rust 1.83. `url` -> `idna` can pull `idna_adapter` 1.2.x,
+# which requires edition2024 via the icu crates. 1.1.0 uses
+# unicode-normalization and still builds on 1.83.
+idna_adapter = "=1.1.0"
+
+# The Cloudflare Workers runtime bindings are wasm-only. Gating them to the
+# wasm32 target keeps native `cargo test` free of the JS/wasm-bindgen glue, so
+# all business logic stays testable on the host.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+worker = "0.5"
+# Used to consume the upstream response as a stream so the size cap can abort
+# before the whole body is buffered in memory.
+futures = "0.3"
+# Deploy pin: the deploy step builds the Worker with worker-build 0.1.x (the
+# line that supports worker 0.5), which bundles the wasm-bindgen CLI 0.2.105.
+# The wasm-bindgen *library* schema must match that CLI exactly, so pin it here.
+# This also transitively holds js-sys/web-sys/wasm-bindgen-futures to the 0.2.105
+# family and stops the dependency-update bot from bumping it (which would build
+# and test fine but break `worker-build` at deploy). Bump this in lock-step with
+# the worker-build version in wrangler.toml, or when moving to worker >= 0.8.
+wasm-bindgen = "=0.2.105"
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true
