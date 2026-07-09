@@ -61,6 +61,14 @@ targets:
         # No non-exempt encryption → TestFlight upload doesn't stall on the
         # export-compliance question.
         ITSAppUsesNonExemptEncryption: false
+        # Ride Monitor experiment: motion + background location. UIBackgroundModes
+        # is an Info.plist key only (no entitlement / App ID capability), so this
+        # ships to TestFlight without changing signing.
+        NSMotionUsageDescription: Detects shakes, potholes, and possible crashes from the accelerometer while you ride.
+        NSLocationWhenInUseUsageDescription: Records where jolts and crashes happen and keeps the ride recording while the screen is off.
+        NSLocationAlwaysAndWhenInUseUsageDescription: Records where jolts and crashes happen and keeps the ride recording while the screen is off.
+        UIBackgroundModes:
+          - location
         # iPad multitasking requires declared orientations or the upload is
         # rejected.
         UISupportedInterfaceOrientations:

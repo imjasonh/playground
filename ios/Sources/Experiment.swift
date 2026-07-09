@@ -55,6 +55,14 @@ enum ExperimentCatalog {
             icon: "plusminus.circle"
         ) {
             CounterView()
+        },
+        Experiment(
+            id: "ride-monitor",
+            title: "Ride Monitor",
+            summary: "Detect shakes, potholes & crashes while biking — runs in the background.",
+            icon: "bicycle"
+        ) {
+            RideMonitorView()
         }
     ]
 }
