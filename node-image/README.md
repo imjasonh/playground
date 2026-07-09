@@ -24,15 +24,25 @@ go build -o node-image .
   --platform linux/amd64 \
   --oci-dir /tmp/ts-out
 
+# Load into local Docker and run (stdout is only the image ref)
+docker run --rm "$(./node-image build ./testdata/pure-js \
+  --local --skip-build --platform linux/amd64)"
+
 # Push to a registry (multi-arch index)
 ./node-image build ./testdata/pure-js \
   --repo registry.example.com/me/myapp -t latest \
   --skip-build
 ```
 
+`build` prints **exactly one line on stdout**: the fully resolved image ref
+(`registry/repo@sha256:…` or `node-image.local/…@sha256:…` with `--local` /
+`-L`). Progress goes to stderr, so command substitution works with
+`docker run --rm $(node-image build …)`.
+
 Requirements for a real push: Go 1.23+, network, and registry credentials via
-the normal Docker keychain. App compile needs `pnpm` on `PATH` when
-`scripts.build` is present (unless `--skip-build`).
+the normal Docker keychain. `--local` needs a running Docker daemon. App
+compile needs `pnpm` on `PATH` when `scripts.build` is present (unless
+`--skip-build`).
 
 ## What it does
 
@@ -60,12 +70,13 @@ the normal Docker keychain. App compile needs `pnpm` on `PATH` when
 ```
 node-image build [dir] [flags]
 
-  --repo string        destination repository (required unless --no-push)
+  --repo string        destination repository (required unless --no-push / --local)
   --base string        base image override
   --platform string    linux/amd64,linux/arm64
   -t string            tags (comma-separated)
   --skip-build         skip pnpm compile step
   --no-push            write local digest summary instead of pushing
+  --local, -L          load into local Docker daemon
   --oci-dir string     output dir for --no-push
   --empty-base         scratch base (tests / offline)
   --max-layers int     max total layers including base (default 127)
@@ -80,8 +91,10 @@ go test ./...
 ```
 
 Includes lock/resolve/layer units, pnpm layout conformance (skips without
-`pnpm`/network), build determinism, TypeScript compile, and multi-arch index
-tests. CI installs pnpm when this module is selected.
+`pnpm`/network), build determinism, TypeScript compile, multi-arch index,
+stdout digest-ref contract (push to an in-process registry), and a
+`docker run --rm $(node-image build -L …)` e2e that skips without Docker.
+CI installs pnpm when this module is selected.
 
 ## Non-goals (v1)
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/daemon"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -18,6 +20,9 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/imjasonh/playground/node-image/internal/layer"
 )
+
+// LocalRegistry is the registry host used when loading into a local Docker daemon.
+const LocalRegistry = "node-image.local"
 
 // PlatformImage pairs an image with its platform for index assembly.
 type PlatformImage struct {
@@ -194,13 +199,14 @@ func WriteIndexSummary(dir string, idx v1.ImageIndex) (string, error) {
 	return d.String(), nil
 }
 
-// Push pushes img to repo with tags; returns repo@sha256:…
+// Push pushes img to repo with tags; returns the fully resolved repo@sha256:… ref.
+// That string is the only thing `node-image build` prints on stdout so
+// `docker run --rm $(node-image build …)` works.
 func Push(repo string, tags []string, img v1.Image) (string, error) {
-	ref, err := name.ParseReference(repo, name.WeakValidation)
+	repoName, err := parseRepository(repo)
 	if err != nil {
 		return "", err
 	}
-	repoName := ref.Context()
 	tag := "latest"
 	if len(tags) > 0 {
 		tag = tags[0]
@@ -221,13 +227,12 @@ func Push(repo string, tags []string, img v1.Image) (string, error) {
 	return fmt.Sprintf("%s@%s", repoName.Name(), d.String()), nil
 }
 
-// PushIndex pushes an image index with tags; returns repo@sha256:…
+// PushIndex pushes an image index with tags; returns the fully resolved repo@sha256:… ref.
 func PushIndex(repo string, tags []string, idx v1.ImageIndex) (string, error) {
-	ref, err := name.ParseReference(repo, name.WeakValidation)
+	repoName, err := parseRepository(repo)
 	if err != nil {
 		return "", err
 	}
-	repoName := ref.Context()
 	tag := "latest"
 	if len(tags) > 0 {
 		tag = tags[0]
@@ -246,6 +251,90 @@ func PushIndex(repo string, tags []string, idx v1.ImageIndex) (string, error) {
 		}
 	}
 	return fmt.Sprintf("%s@%s", repoName.Name(), d.String()), nil
+}
+
+// LoadLocal writes img into the local Docker daemon and returns
+// node-image.local/…@sha256:… suitable for `docker run --rm $(node-image build -L)`.
+func LoadLocal(repo string, tags []string, img v1.Image) (string, error) {
+	localRepo, err := localRepository(repo)
+	if err != nil {
+		return "", err
+	}
+	tag := "latest"
+	if len(tags) > 0 {
+		tag = tags[0]
+	}
+	dst := localRepo.Tag(tag)
+	if _, err := daemon.Write(dst, img); err != nil {
+		return "", fmt.Errorf("load into docker daemon: %w\nHint: is the Docker daemon running? Try `docker info`", err)
+	}
+	d, err := img.Digest()
+	if err != nil {
+		return "", err
+	}
+	for _, t := range tags[1:] {
+		if err := daemon.Tag(dst, localRepo.Tag(t)); err != nil {
+			return "", fmt.Errorf("tag %s: %w", t, err)
+		}
+	}
+	return fmt.Sprintf("%s@%s", localRepo.Name(), d.String()), nil
+}
+
+func parseRepository(repo string) (name.Repository, error) {
+	opts := []name.Option{name.WeakValidation}
+	if insecureHost(repo) {
+		opts = append(opts, name.Insecure)
+	}
+	ref, err := name.ParseReference(repo, opts...)
+	if err != nil {
+		return name.Repository{}, err
+	}
+	return ref.Context(), nil
+}
+
+// LocalRepoName returns the daemon repository name for --local loads.
+func LocalRepoName(repo string) (string, error) {
+	r, err := localRepository(repo)
+	if err != nil {
+		return "", err
+	}
+	return r.Name(), nil
+}
+
+func localRepository(repo string) (name.Repository, error) {
+	path := strings.TrimSpace(repo)
+	if path == "" {
+		path = "app"
+	}
+	// Strip a registry host if present so we always land under node-image.local.
+	if strings.Contains(path, "/") {
+		first, rest, ok := strings.Cut(path, "/")
+		if ok && (strings.Contains(first, ".") || strings.Contains(first, ":") || first == "localhost") {
+			path = rest
+		}
+	}
+	path = strings.Trim(path, "/")
+	if path == "" {
+		path = "app"
+	}
+	full := LocalRegistry + "/" + path
+	return name.NewRepository(full, name.WeakValidation)
+}
+
+func insecureHost(repo string) bool {
+	host := repo
+	if i := strings.Index(repo, "/"); i >= 0 {
+		host = repo[:i]
+	}
+	h := host
+	if hh, _, err := net.SplitHostPort(host); err == nil {
+		h = hh
+	}
+	switch h {
+	case "localhost", "127.0.0.1", "::1":
+		return true
+	}
+	return strings.HasSuffix(h, ".local")
 }
 
 // ParsePlatform converts "linux/amd64" into v1.Platform.

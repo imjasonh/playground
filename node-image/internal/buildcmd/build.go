@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -29,6 +30,7 @@ type Options struct {
 	Tags      []string
 	SkipBuild bool
 	NoPush    bool
+	Local     bool // load into local Docker daemon (ko-style -L)
 	OCIDir    string
 	EmptyBase bool
 	MaxLayers int // 0 = use config default
@@ -68,13 +70,20 @@ func Run(opt Options) (string, error) {
 	}
 	cfg.SkipBuild = opt.SkipBuild
 	cfg.NoPush = opt.NoPush
+	cfg.Local = opt.Local
 	cfg.OCIDir = opt.OCIDir
 	if opt.MaxLayers > 0 {
 		cfg.MaxLayers = opt.MaxLayers
 	}
 
-	if !cfg.NoPush && cfg.Repo == "" {
-		return "", fmt.Errorf("--repo is required to push an image\nHint: pass --repo registry.example.com/my/app, or use --no-push --oci-dir /tmp/out for a local digest summary")
+	if cfg.Local && cfg.NoPush {
+		return "", fmt.Errorf("--local and --no-push are mutually exclusive\nHint: use --local (-L) to load into Docker, or --no-push for a digest summary")
+	}
+	if !cfg.NoPush && !cfg.Local && cfg.Repo == "" {
+		return "", fmt.Errorf("--repo is required to push an image\nHint: pass --repo registry.example.com/my/app, use --local (-L) to load into Docker, or --no-push --oci-dir /tmp/out for a digest summary")
+	}
+	if cfg.Local && cfg.Repo == "" {
+		cfg.Repo = "app"
 	}
 
 	lockPath, lockRoot, err := lock.FindLockfile(cfg.Dir)
@@ -212,7 +221,8 @@ func Run(opt Options) (string, error) {
 	var lastRef string
 	if len(built) == 1 {
 		image := built[0].Image
-		if cfg.NoPush {
+		switch {
+		case cfg.NoPush:
 			outDir := cfg.OCIDir
 			if outDir == "" {
 				outDir = filepath.Join(cfg.Dir, ".node-image-out")
@@ -223,7 +233,13 @@ func Run(opt Options) (string, error) {
 			}
 			fmt.Fprintf(stderr, "wrote %s (%s)\n", outDir, dig)
 			lastRef = dig
-		} else {
+		case cfg.Local:
+			ref, err := publish.LoadLocal(cfg.Repo, cfg.Tags, image)
+			if err != nil {
+				return "", err
+			}
+			lastRef = ref
+		default:
 			ref, err := publish.Push(cfg.Repo, cfg.Tags, image)
 			if err != nil {
 				return "", err
@@ -235,7 +251,8 @@ func Run(opt Options) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		if cfg.NoPush {
+		switch {
+		case cfg.NoPush:
 			outDir := cfg.OCIDir
 			if outDir == "" {
 				outDir = filepath.Join(cfg.Dir, ".node-image-out")
@@ -246,7 +263,9 @@ func Run(opt Options) (string, error) {
 			}
 			fmt.Fprintf(stderr, "wrote multi-arch index %s (%s)\n", outDir, dig)
 			lastRef = dig
-		} else {
+		case cfg.Local:
+			return "", fmt.Errorf("--local does not support multi-arch indexes (Docker daemon loads a single image)\nHint: pass --platform linux/%s (or one arch) with -L", hostArchHint())
+		default:
 			ref, err := publish.PushIndex(cfg.Repo, cfg.Tags, idx)
 			if err != nil {
 				return "", err
@@ -255,8 +274,17 @@ func Run(opt Options) (string, error) {
 		}
 	}
 
+	// Contract: stdout is exactly one line — the fully resolved image ref —
+	// so `docker run --rm $(node-image build …)` works. Progress goes to stderr.
 	fmt.Fprintln(stdout, lastRef)
 	return lastRef, nil
+}
+
+func hostArchHint() string {
+	if runtime.GOARCH == "arm64" {
+		return "arm64"
+	}
+	return "amd64"
 }
 
 func copyFile(src, dst string) error {

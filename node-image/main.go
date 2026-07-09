@@ -40,6 +40,8 @@ func runBuild(args []string) error {
 	tag := fs.String("t", "", "comma-separated tags")
 	skipBuild := fs.Bool("skip-build", false, "skip pnpm run build even if scripts.build exists")
 	noPush := fs.Bool("no-push", false, "do not push; write digest summary instead")
+	local := fs.Bool("local", false, "load image into local Docker daemon instead of pushing")
+	fs.BoolVar(local, "L", false, "shorthand for --local")
 	ociDir := fs.String("oci-dir", "", "output directory for --no-push digest summary")
 	emptyBase := fs.Bool("empty-base", false, "use scratch instead of pulling base (testing)")
 	maxLayers := fs.Int("max-layers", 0, "max total image layers including base (default 127)")
@@ -66,6 +68,7 @@ func runBuild(args []string) error {
 		Tags:      tags,
 		SkipBuild: *skipBuild,
 		NoPush:    *noPush,
+		Local:     *local,
 		OCIDir:    *ociDir,
 		EmptyBase: *emptyBase,
 		MaxLayers: *maxLayers,
@@ -109,15 +112,19 @@ Usage:
   node-image build [dir] [flags]
 
 Flags:
-  --repo string        destination repository (required unless --no-push)
+  --repo string        destination repository (required unless --no-push / --local)
   --base string        base image override
   --platform string    linux/amd64,linux/arm64
   -t string            tags (comma-separated)
   --skip-build         skip pnpm compile step
   --no-push            write local digest summary instead of pushing
+  --local, -L          load into local Docker daemon (prints node-image.local/...@sha256:...)
   --oci-dir string     output dir for --no-push
   --empty-base         scratch base (tests)
   --max-layers int     max total layers including base (default 127)
+
+Stdout prints exactly one line: the fully resolved image ref (repo@sha256:...),
+so docker run --rm $(node-image build -L ...) works. Progress goes to stderr.
 
 dir defaults to . and must contain package.json; pnpm-lock.yaml may be in a parent.
 `)

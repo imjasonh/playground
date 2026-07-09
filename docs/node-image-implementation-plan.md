@@ -116,8 +116,8 @@ node-image/
 |-------|------|
 | Unit | lock parse, resolve, tar determinism, SRI verify, bin/symlink writers |
 | Conformance | layout vs pnpm oracle on fixtures (requires network + pnpm in CI) |
-| Integration | `--no-push` OCI layout; multi-arch index structure; layer digest stability across two runs |
-| Manual / e2e (optional in CI) | push to ttl.sh when `NODE_IMAGE_E2E=1` |
+| Integration | `--no-push` OCI layout; multi-arch index structure; layer digest stability across two runs; stdout is exactly one fully resolved `repo@sha256:…` line (in-process registry) |
+| Manual / e2e (optional in CI) | `docker run --rm $(node-image build -L …)` when Docker is available (auto-skip otherwise); push to ttl.sh when `NODE_IMAGE_E2E=1` |
 
 CI: existing Go discovery runs `go build ./...` and `go test ./...`. Conformance
 tests that need pnpm/network should use build tags or detect tools:

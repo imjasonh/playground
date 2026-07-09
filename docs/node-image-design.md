@@ -117,12 +117,15 @@ builder that is hermetic and multi-arch. Closest options:
 node-image build              # dir defaults to .
 node-image build ./apps/api   # directory with package.json
 node-image build -t v1.2.3
-docker run "$(node-image build)"
+docker run --rm "$(node-image build -L --platform linux/amd64)"
 ```
 
 `node-image build [dir]` is the common case: find `package.json` in `dir`,
 find `pnpm-lock.yaml` (in `dir` or a parent), fetch → layout → shard → push
-multi-arch index. Prints the image reference by digest.
+multi-arch index (or `--local` / `-L` into the Docker daemon). **Stdout is
+exactly one line** — the fully resolved image ref (`repo@sha256:…`) — so
+command substitution works with `docker run`. Progress and diagnostics go to
+stderr.
 
 Optional later: `fetch` / `pack` / `push` as split steps. Alpha can ship only
 `build`.

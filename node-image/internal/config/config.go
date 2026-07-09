@@ -17,6 +17,7 @@ type Config struct {
 	Tags        []string
 	SkipBuild   bool
 	NoPush      bool
+	Local       bool
 	OCIDir      string
 	BuildScript string
 	Entrypoint  []string
