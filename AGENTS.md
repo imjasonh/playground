@@ -115,7 +115,7 @@ discovery scripts.
 |----------|---------|---------|
 | `deploy.yml` | push to `main` | Publishes all browser apps to GitHub Pages production |
 | `deploy-workers.yml` | push to `main`, manual | Deploys changed Cloudflare Worker apps (those with `wrangler.toml`) with `wrangler`, using the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets; a manual *Run workflow* (`workflow_dispatch`) redeploys all of them. Before deploy it create-or-gets each Worker's KV namespaces and substitutes the placeholder ids in `wrangler.toml`; after deploy it get-or-generates a `VAPID_PRIVATE_KEY` secret for any Worker shipping an `examples/genvapid.rs` |
-| `preview.yml` | pull request opened/sync | Deploys browser apps under `/preview/pr-<N>/` and comments the URL |
+| `preview.yml` | pull request opened/sync | When a browser app changed: deploys under `/preview/pr-<N>/` and comments the URL; otherwise no-ops |
 | `cleanup.yml` | pull request closed | Removes that PR's preview directory from `gh-pages` and refreshes the root index |
 | `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps in one job |
 | `ios.yml` | push to `main`, pull requests | Tests changed iOS apps on macOS; on `main`, delivers them to TestFlight |
@@ -134,10 +134,11 @@ time by `.github/scripts/render-index.py` from the shared template. It has a
 are not served from Pages, so the renderer discovers them by scanning the repo
 source tree (`--source-dir`, defaulting to the checkout it runs from) and links
 each to its source on GitHub. Under the browser apps it lists **active PR
-previews** (only browser apps get previews): `preview.yml` writes a
-`preview/pr-<N>/preview.json` manifest **only for PRs that change a browser
-app** (so Go/Rust/CI-only PRs, whose preview would be identical to production,
-are not listed), and `deploy.yml`, `preview.yml`, and `cleanup.yml` each
+previews** (only browser apps get previews): `preview.yml` discovers changed
+browser apps first and **skips deploy + PR comment** when none changed (so
+Go/Rust/iOS/CI-only PRs, whose preview would be identical to production, stay
+quiet). When a browser app did change it writes `preview/pr-<N>/preview.json`
+and comments the URL. `deploy.yml`, `preview.yml`, and `cleanup.yml` each
 regenerate the root index from the published `gh-pages` tree so the list stays
 current as previews come and go. Because the deploy publishes with
 `keep_files: true` (to preserve `preview/`), a browser app that is renamed or
@@ -162,7 +163,9 @@ browser apps a change set touched; `render-index_test.py` covers the renderer
 - Preview root: `https://<owner>.github.io/<repo>/preview/pr-<N>/`
 - App: `https://<owner>.github.io/<repo>/preview/pr-<N>/<app-name>/`
 
-The preview workflow posts the preview root URL on the PR.
+The preview workflow posts the preview root URL on the PR only when the PR
+changes a browser app (same condition as writing `preview.json`); Go/Rust/iOS/
+CI-only PRs get neither a deploy nor a comment.
 
 ## Testing (`test.yml`)
 
