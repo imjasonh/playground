@@ -258,8 +258,10 @@ func readPackageJSON(dir string) (packageJSON, error) {
 	return pj, nil
 }
 
-// CheckScriptsInDir fails if a non-optional package needs lifecycle scripts
-// without a workable offline alternative (prebuilds/ or platform optionalDependencies).
+// CheckScriptsInDir fails when a non-optional package appears to need a native
+// compile (node-gyp / binding.gyp) and has no prebuilds or platform optionals.
+// Telemetry / no-op postinstall scripts (e.g. @scarf/scarf) are allowed — we
+// never run them, and the package still works.
 func CheckScriptsInDir(ref resolve.PackageRef, pkgDir string, pj packageJSON) error {
 	if ref.Optional {
 		return nil
@@ -268,8 +270,6 @@ func CheckScriptsInDir(ref resolve.PackageRef, pkgDir string, pj packageJSON) er
 	if st, err := os.Stat(filepath.Join(pkgDir, "prebuilds")); err == nil && st.IsDir() {
 		hasPrebuilds = true
 	}
-	// Packages like esbuild ship a postinstall that only selects an optional
-	// platform binary already present via optionalDependencies — allow that.
 	hasPlatformOptionals := false
 	if pj.OptionalDependencies != nil {
 		for name := range pj.OptionalDependencies {
@@ -279,16 +279,33 @@ func CheckScriptsInDir(ref resolve.PackageRef, pkgDir string, pj packageJSON) er
 			}
 		}
 	}
-	for _, s := range []string{"preinstall", "install", "postinstall"} {
-		if pj.Scripts[s] == "" {
-			continue
-		}
-		if hasPrebuilds || hasPlatformOptionals {
-			continue
-		}
-		return fmt.Errorf("package %s declares a %s lifecycle script; node-image never runs dependency install scripts (required for multi-arch hermetic builds)\nHint: prefer packages that ship prebuilds/ (prebuildify) or platform-specific optionalDependencies (e.g. @esbuild/linux-x64). Remove or replace %s if it must compile from source", ref.PackageID, s, ref.PackageID)
+	if hasPrebuilds || hasPlatformOptionals {
+		return nil
 	}
-	return nil
+
+	needsNative := false
+	if _, err := os.Stat(filepath.Join(pkgDir, "binding.gyp")); err == nil {
+		needsNative = true
+	}
+	for _, s := range []string{"preinstall", "install", "postinstall"} {
+		body := pj.Scripts[s]
+		if body == "" {
+			continue
+		}
+		lower := strings.ToLower(body)
+		if strings.Contains(lower, "node-gyp") ||
+			strings.Contains(lower, "node-pre-gyp") ||
+			strings.Contains(lower, "prebuild-install") ||
+			strings.Contains(lower, "nan ") ||
+			strings.Contains(lower, "cmake-js") {
+			needsNative = true
+			break
+		}
+	}
+	if !needsNative {
+		return nil
+	}
+	return fmt.Errorf("package %s appears to require a native build (node-gyp/binding.gyp) and node-image never runs dependency install scripts\nHint: prefer packages that ship prebuilds/ or platform-specific optionalDependencies (e.g. @esbuild/linux-x64). Remove or replace %s if it must compile from source", ref.PackageID, ref.PackageID)
 }
 
 func writeBins(nodeModulesDir, pkgDir string, pj packageJSON) error {
@@ -458,5 +475,10 @@ func isWithinDir(root, path string) bool {
 // ExtractNPMTarballForTest exposes extractNPMTarball for security tests.
 func ExtractNPMTarballForTest(tgzPath, destDir string) error {
 	return extractNPMTarball(tgzPath, destDir)
+}
+
+// ReadPackageJSONForTest exposes readPackageJSON for policy tests.
+func ReadPackageJSONForTest(dir string) (packageJSON, error) {
+	return readPackageJSON(dir)
 }
 

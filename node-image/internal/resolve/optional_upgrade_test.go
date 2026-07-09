@@ -77,6 +77,26 @@ snapshots:
 	}
 }
 
+func TestDepPathFromPeerSuffixVersion(t *testing.T) {
+	// Real lock shape from edwinhern/express-typescript:
+	// version: 7.3.4(zod@3.25.76) must become name@version(peers), not the bare version.
+	got := resolve.DepPathFrom("@asteasolutions/zod-to-openapi", "7.3.4(zod@3.25.76)")
+	want := "@asteasolutions/zod-to-openapi@7.3.4(zod@3.25.76)"
+	if got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+	got = resolve.DepPathFrom("express-rate-limit", "8.3.1(express@5.2.1)")
+	want = "express-rate-limit@8.3.1(express@5.2.1)"
+	if got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+	// Alias form must still be recognized as a package id.
+	got = resolve.DepPathFrom("strip-ansi-cjs", "strip-ansi@6.0.1")
+	if got != "strip-ansi@6.0.1" {
+		t.Fatalf("alias: got %q", got)
+	}
+}
+
 func TestDirectDepsAliasLinkName(t *testing.T) {
 	yaml := []byte(`
 lockfileVersion: '9.0'

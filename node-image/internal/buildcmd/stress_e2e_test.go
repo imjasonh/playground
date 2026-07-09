@@ -68,25 +68,9 @@ func TestE2EOptionalPlatformMultiArch(t *testing.T) {
 	}
 }
 
-func TestE2ELifecycleScriptsRejected(t *testing.T) {
-	dir := fixtureDir(t, "lifecycle-scripts")
-	var stdout, stderr bytes.Buffer
-	_, err := buildcmd.Run(buildcmd.Options{
-		Dir:       dir,
-		NoPush:    true,
-		OCIDir:    t.TempDir(),
-		EmptyBase: true,
-		SkipBuild: true,
-		Platforms: []string{"linux/amd64"},
-		Stdout:    &stdout,
-		Stderr:    &stderr,
-	})
-	if err == nil {
-		t.Fatal("expected lifecycle script package to fail")
-	}
-	if !strings.Contains(err.Error(), "lifecycle script") {
-		t.Fatalf("want lifecycle script error, got: %v", err)
-	}
+func TestE2ELifecycleNoopScriptsAllowed(t *testing.T) {
+	// es5-ext has a no-op postinstall; it must still build (we never run the script).
+	_, _, _ = buildNoPush(t, fixtureDir(t, "lifecycle-scripts"), nil)
 }
 
 func TestE2EPatchedRejected(t *testing.T) {

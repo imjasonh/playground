@@ -322,14 +322,31 @@ func DepPathFrom(name, version string) string {
 }
 
 func looksLikePackageID(s string) bool {
+	if s == "" {
+		return false
+	}
 	if strings.HasPrefix(s, "@") {
+		// @scope/name@version…
 		rest := s[1:]
-		return strings.Count(rest, "@") >= 1 && strings.Contains(rest, "/")
+		at := strings.IndexByte(rest, '@')
+		return at > 0 && strings.Contains(rest[:at], "/")
 	}
-	if i := strings.IndexByte(s, '@'); i > 0 {
-		return true
+	// Bare versions (optionally with peer suffix) look like "1.2.3" or
+	// "7.3.4(zod@3.25.76)" — those are NOT package ids even though they
+	// contain '@' inside the peer suffix.
+	if s[0] >= '0' && s[0] <= '9' {
+		return false
 	}
-	return false
+	at := strings.IndexByte(s, '@')
+	if at <= 0 {
+		return false
+	}
+	// '@' must appear before any peer '(' so "name@1(peer@2)" counts but
+	// we already excluded leading-digit versions above.
+	if paren := strings.IndexByte(s, '('); paren >= 0 && paren < at {
+		return false
+	}
+	return true
 }
 
 func depPathFrom(name, version string) string { return DepPathFrom(name, version) }
