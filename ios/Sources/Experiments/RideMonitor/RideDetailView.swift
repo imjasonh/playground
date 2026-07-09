@@ -21,6 +21,14 @@ struct RideDetailView: View {
                 }
             }
 
+            if hasCoordinates {
+                Section("Route") {
+                    RideMapView(track: ride.track, events: ride.events)
+                        .frame(height: 260)
+                        .listRowInsets(EdgeInsets())
+                }
+            }
+
             if !ride.motion.isEmpty {
                 Section("Acceleration over time") {
                     Chart {
@@ -67,6 +75,10 @@ struct RideDetailView: View {
         }
         .navigationTitle("Ride")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var hasCoordinates: Bool {
+        !ride.track.isEmpty || ride.events.contains { $0.latitude != nil && $0.longitude != nil }
     }
 
     private func stat(_ label: String, _ value: String) -> some View {
