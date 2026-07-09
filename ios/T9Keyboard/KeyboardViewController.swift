@@ -1,6 +1,7 @@
 import UIKit
 
 /// System keyboard extension entry point — old Nokia-style multi-tap T9.
+@objc(KeyboardViewController)
 final class KeyboardViewController: UIInputViewController {
     private var engine: T9MultiTapEngine!
     private var padView: T9PadView!
