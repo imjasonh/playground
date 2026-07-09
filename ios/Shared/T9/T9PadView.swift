@@ -117,6 +117,9 @@ final class T9PadView: UIView {
         config.baseBackgroundColor = emphasized
             ? UIColor(white: 0.22, alpha: 1)
             : UIColor(white: 0.28, alpha: 1)
+        // Color via baseForegroundColor only — setting AttributeContainer
+        // `.foregroundColor` pulls in SwiftUI symbols, which the keyboard
+        // extension does not link.
         config.baseForegroundColor = .white
         config.cornerStyle = .medium
         config.titleAlignment = .center
@@ -125,13 +128,11 @@ final class T9PadView: UIView {
         config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
             var outgoing = incoming
             outgoing.font = UIFont.systemFont(ofSize: 22, weight: .semibold)
-            outgoing.foregroundColor = .white
             return outgoing
         }
         config.subtitleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
             var outgoing = incoming
             outgoing.font = UIFont.systemFont(ofSize: 11, weight: .medium)
-            outgoing.foregroundColor = UIColor(white: 0.75, alpha: 1)
             return outgoing
         }
         return config
