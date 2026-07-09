@@ -15,8 +15,9 @@ Worker.
 The point is to keep trying things cheap and low-ceremony. Drop in a new
 directory, follow a couple of conventions, and open a PR: CI tests whatever
 changed, browser apps get a live preview link, and once merged they deploy
-themselves to GitHub Pages. A daily job keeps each project's dependencies current
-too, landing an upgrade only when it still builds and passes tests — so older
+themselves to GitHub Pages. iOS apps go a step further and ship to TestFlight on
+merge to `main`. A daily job keeps each project's dependencies current too,
+landing an upgrade only when it still builds and passes tests — so older
 experiments don't bit-rot.
 
 ## Apps
@@ -57,5 +58,22 @@ skip them:
   (RFC 8030/8188/8291/8292) for Cloudflare Workers, in Rust.
 - **[`xeneon-cursor/`](xeneon-cursor/)** — native macOS HUD for Cursor cloud
   agents (not a Pages app; see its README for install via GitHub Releases).
+
+## iOS app
+
+There is a **single** iOS app that builds and tests on a macOS runner and ships
+to **TestFlight** on merge to `main` (it isn't deployed to GitHub Pages). Just as
+the Pages site hosts many browser apps, this one TestFlight app hosts many
+experiments internally:
+
+- **[`ios/`](ios/)** — the **Playground** app: a launcher that hosts many
+  self-contained experiments (a temperature converter and a counter to start).
+  Add an experiment by dropping a SwiftUI view into `ios/Sources/Experiments/`
+  and registering it — no new app, no CI changes. Unit + UI tests, continuous
+  delivery to TestFlight.
+
+See [`docs/ios-testflight-design.md`](docs/ios-testflight-design.md) for the iOS
+CD/preview design, and [`docs/ios-testflight-setup.md`](docs/ios-testflight-setup.md)
+for a click-by-click, beginner-friendly Apple/TestFlight setup guide.
 
 See [`AGENTS.md`](AGENTS.md) for repository conventions, CI, and how to add a new app.

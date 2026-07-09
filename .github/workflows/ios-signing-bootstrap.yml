@@ -1,0 +1,60 @@
+name: iOS signing bootstrap
+
+# One-time (manual) helper to create your iOS distribution certificate + App
+# Store provisioning profile and store them, encrypted, in your private `match`
+# repo — so you don't need a Mac locally. Run it from the Actions tab once all
+# the signing secrets are set (see docs/ios-testflight-setup.md). After it
+# succeeds, pushes to main can ship to TestFlight.
+
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: iOS app directory to bootstrap signing for
+        required: true
+        default: ios
+
+jobs:
+  bootstrap:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Verify signing secrets are present
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
+        run: |
+          missing=0
+          for v in ASC_KEY_ID ASC_ISSUER_ID ASC_API_KEY_P8 APPLE_TEAM_ID \
+                   MATCH_GIT_URL MATCH_PASSWORD MATCH_GIT_BASIC_AUTHORIZATION; do
+            if [ -z "${!v}" ]; then
+              echo "::error title=Missing secret::$v is not set. See docs/ios-testflight-setup.md."
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Create + store signing assets
+        working-directory: ${{ github.event.inputs.app }}
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
+        run: |
+          bundle install
+          bundle exec fastlane signing_bootstrap
