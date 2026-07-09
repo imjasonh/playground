@@ -1,0 +1,12 @@
+{
+  "name": "with-bin-fixture",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.js",
+  "dependencies": {
+    "rimraf": "5.0.5"
+  },
+  "node-image": {
+    "repo": "example.com/with-bin"
+  }
+}

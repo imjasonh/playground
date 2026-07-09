@@ -1,0 +1,12 @@
+{
+  "name": "optional-platform-fixture",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.js",
+  "dependencies": {
+    "esbuild": "0.21.5"
+  },
+  "node-image": {
+    "repo": "example.com/optional-platform"
+  }
+}
