@@ -1,0 +1,10 @@
+/node-image
+node-image.exe
+*.test
+*.out
+coverage.txt
+.cache/
+
+# Fixture install leftovers
+testdata/**/node_modules/
+testdata/**/dist/

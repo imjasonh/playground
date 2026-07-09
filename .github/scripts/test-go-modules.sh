@@ -26,6 +26,17 @@ for module in "${modules[@]}"; do
     result=1
   fi
 
+  # node-image layout conformance tests compare against pnpm; install it when needed.
+  if [ "$module" = "node-image" ]; then
+    if ! command -v pnpm >/dev/null 2>&1; then
+      echo "Installing pnpm for node-image conformance tests"
+      npm install -g pnpm@10
+    fi
+    if ! command -v node >/dev/null 2>&1; then
+      echo "::warning title=node missing::node-image conformance tests that need node will skip"
+    fi
+  fi
+
   if (
     cd "$module"
     go test ./...

@@ -1,8 +1,8 @@
 # Design: `node-image` — dockerless Node.js / TypeScript image builds
 
-> Status: **Design only** (see §0 for locked decisions).
-> Proposes a `ko`/`pymage`-style Go CLI for Node.js (including TypeScript)
-> apps. Nothing here is implemented yet.
+> Status: **Alpha in progress** (see §0 for locked decisions; implementation
+> plan in [`node-image-implementation-plan.md`](./node-image-implementation-plan.md)).
+> Code lives in `node-image/`.
 
 ## 0. Locked decisions
 

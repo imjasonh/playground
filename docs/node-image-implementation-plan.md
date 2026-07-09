@@ -38,67 +38,50 @@ node-image build ./testdata/ts-app --repo ttl.sh/node-image-demo -t latest
 
 ### M0 — Skeleton (this PR start)
 
-- [ ] `node-image/` Go module (`github.com/imjasonh/playground/node-image`)
-- [ ] `README.md`, `.gitignore`, `main.go` CLI stub (`build` subcommand)
-- [ ] `go build ./...` and `go test ./...` pass (even if mostly empty)
-- [ ] Discovered automatically by existing `test.yml` via `go.mod`
+- [x] `node-image/` Go module (`github.com/imjasonh/playground/node-image`)
+- [x] `README.md`, `.gitignore`, `main.go` CLI stub (`build` subcommand)
+- [x] `go build ./...` and `go test ./...` pass
+- [x] Discovered automatically by existing `test.yml` via `go.mod`
 
 ### M1 — Deterministic layers
 
-- [ ] `internal/layer`: normalized tar (epoch mtime, uid/gid 0, sorted entries,
-      stable gzip or cached compressed blobs)
-- [ ] Unit tests: same input → same diffID / compressed digest
+- [x] `internal/layer`: normalized tar (epoch mtime, uid/gid 0, sorted entries,
+      stable gzip)
+- [x] Unit tests: same input → same diffID / compressed digest
 
 ### M2 — Lock parse + resolve
 
-- [ ] `internal/lock`: parse pnpm-lock.yaml v9 (`importers`, `packages`,
-      `snapshots`, integrities, os/cpu/libc)
-- [ ] `internal/resolve`: production closure for an importer path + platform
-- [ ] Reject unsupported lock versions, patches, git/file exotics
-- [ ] Fixture locks in `testdata/` (pure JS; optional platform package)
+- [x] `internal/lock`: parse pnpm-lock.yaml v9
+- [x] `internal/resolve`: production closure for an importer path + platform
+- [x] Reject unsupported lock versions, patches, git/file exotics
+- [x] Fixture locks in `testdata/` (pure JS; TS app)
 
 ### M3 — Fetch + layout (Go-native install)
 
-- [ ] `internal/fetch`: download by URL, verify SRI, cache under
-      `~/.cache/node-image/packages/`
-- [ ] `internal/layout`: extract to `.pnpm/<depPath>/node_modules/<name>`,
-      write top-level + nested symlinks, write `.bin`
-- [ ] Refuse non-optional packages that require install scripts without
-      detectable prebuilds
-- [ ] **Conformance tests**: compare layout file digests + symlink targets to
-      `pnpm install --ignore-scripts --prod` (pnpm required in CI for these
-      tests only; skip if `pnpm` missing with clear message, or install via
-      corepack in test helper)
+- [x] `internal/fetch`: download by URL, verify SRI, cache
+- [x] `internal/layout`: extract + symlinks + bins + scripts policy
+- [x] Conformance tests vs `pnpm install --ignore-scripts --prod`
 
 ### M4 — Image assemble + push
 
-- [ ] `internal/base`: pull base manifest/config; detect Node major; glibc check
-- [ ] `internal/publish`: append store layers + symlink layer + app layer via
-      go-containerregistry; HEAD/mount/upload; print digest
-- [ ] `--no-push` writes OCI layout for local inspection/tests
-- [ ] Config from `package.json#node-image` + flags (`--repo`, `--base`,
-      `--platform`, `-t`, `--skip-build`)
+- [x] `internal/publish`: append layers; `--no-push` digest summary; push helper
+- [x] Config from `package.json#node-image` + flags
+- [ ] Full OCI layout export; base Node/libc detection polish
 
 ### M5 — App compile phase
 
-- [ ] If `scripts.build` (or config) present and not `--skip-build`: run
-      `pnpm install` then `pnpm run <script>` in package dir
-- [ ] App layer = build outputs (`dist/` default) + `package.json`
-- [ ] Testdata TypeScript app fixture
+- [x] `pnpm install` + `pnpm run build` when script present
+- [x] Testdata TypeScript app fixture + CI test
 
 ### M6 — Multi-arch
 
-- [ ] Per-platform closure + layout; share pure-JS store layer digests
-- [ ] Publish OCI image index
-- [ ] Integration test: build index for amd64+arm64 to OCI layout; assert two
-      manifests + shared blob digests for pure-JS packages
+- [ ] Per-platform closure sharing pure-JS digests in an OCI index
+- [x] Per-platform resolve/layout path exists (push still single-arch with warning)
 
 ### M7 — Polish for usable v1
 
-- [ ] Loud errors: libc mismatch, script-requiring dep, missing main, bad lock
-- [ ] Layer `auto` bucketing when over max-layers
-- [ ] README with quickstart; update design doc status to “alpha in progress”
-- [ ] Optional: SBOM stub from lock integrities (can slip to v1.1)
+- [ ] Loud errors polish; layer auto-bucketing; README quickstart polish
+- [x] CI installs pnpm when testing `node-image`
 
 ## Package layout
 

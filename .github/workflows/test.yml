@@ -27,7 +27,7 @@ jobs:
         run: bash .github/scripts/discover-changed-apps.sh
 
       - uses: actions/setup-node@v4
-        if: ${{ steps.discover.outputs.apps != '[]' }}
+        if: ${{ steps.discover.outputs.apps != '[]' || contains(steps.discover.outputs.modules, 'node-image') }}
         with:
           node-version: '22'
           cache: npm
