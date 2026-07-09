@@ -30,6 +30,7 @@ type PlanOptions struct {
 	// SpoolRoot is the integrity spool directory (see SpoolDir).
 	SpoolRoot string
 	// IntegrityKey maps PackageID → filesystem key (e.g. sha512-<hex> from fetch.Cache).
+	// Required for every PackageID in refs.
 	IntegrityKey map[string]string
 }
 
@@ -39,6 +40,9 @@ type PlanOptions struct {
 func PlanLayout(l *lock.Lock, refs []resolve.PackageRef, tarballs map[string]string, direct []resolve.DirectDep, opt PlanOptions) (*PlannedLayout, error) {
 	if opt.SpoolRoot == "" {
 		return nil, fmt.Errorf("PlanLayout: SpoolRoot required")
+	}
+	if opt.IntegrityKey == nil {
+		return nil, fmt.Errorf("PlanLayout: IntegrityKey required")
 	}
 	byDepPath := make(map[string]resolve.PackageRef, len(refs))
 	for _, ref := range refs {
@@ -55,13 +59,9 @@ func PlanLayout(l *lock.Lock, refs []resolve.PackageRef, tarballs map[string]str
 		if !ok {
 			return nil, fmt.Errorf("missing tarball for %s", ref.PackageID)
 		}
-		key := ""
-		if opt.IntegrityKey != nil {
-			key = opt.IntegrityKey[ref.PackageID]
-		}
+		key := opt.IntegrityKey[ref.PackageID]
 		if key == "" {
-			key = filepath.Base(tgz)
-			key = strings.TrimSuffix(key, ".tgz")
+			return nil, fmt.Errorf("missing integrity key for %s", ref.PackageID)
 		}
 		pkgDir, err := SpoolPackage(opt.SpoolRoot, key, tgz)
 		if err != nil {
@@ -80,10 +80,16 @@ func PlanLayout(l *lock.Lock, refs []resolve.PackageRef, tarballs map[string]str
 		if err != nil {
 			return nil, err
 		}
-		// Nested dependency symlinks + store-local .bin live in the same store
-		// package layer as the extracted files (pnpm layout).
-		files = append(files, storeDepSymlinks(ref, l, byDepPath)...)
-		files = append(files, storeBinSymlinks(ref, pj)...)
+		depLinks, err := storeDepSymlinks(ref, l, byDepPath)
+		if err != nil {
+			return nil, err
+		}
+		binLinks, err := storeBinSymlinks(ref, pj)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, depLinks...)
+		files = append(files, binLinks...)
 		sortLayerFiles(files)
 		out.Store = append(out.Store, layer.PackageStore{
 			Name:    ref.Name,
@@ -101,18 +107,21 @@ func PlanLayout(l *lock.Lock, refs []resolve.PackageRef, tarballs map[string]str
 	return out, nil
 }
 
-func storeDepSymlinks(parent resolve.PackageRef, l *lock.Lock, byDepPath map[string]resolve.PackageRef) []layer.File {
+func storeDepSymlinks(parent resolve.PackageRef, l *lock.Lock, byDepPath map[string]resolve.PackageRef) ([]layer.File, error) {
 	snap := l.Snapshots[parent.DepPath]
 	if snap == nil {
 		snap = l.Snapshots[parent.PackageID]
 	}
 	if snap == nil {
-		return nil
+		return nil, nil
 	}
 	parentV := VirtualStoreDir(parent.DepPath)
 	parentNM := "node_modules/.pnpm/" + parentV + "/node_modules"
 	var files []layer.File
-	add := func(linkName, ver string) {
+	add := func(linkName, ver string) error {
+		if !validNodeModulesName(linkName) {
+			return fmt.Errorf("package %s: dependency link name %q is not a valid node_modules entry", parent.PackageID, linkName)
+		}
 		depPath := resolve.DepPathFrom(linkName, ver)
 		ref, ok := byDepPath[depPath]
 		if !ok {
@@ -127,32 +136,44 @@ func storeDepSymlinks(parent resolve.PackageRef, l *lock.Lock, byDepPath map[str
 			}
 		}
 		if !ok {
-			return
+			return nil // filtered optional / missing
 		}
-		// Relative from parentNM/<linkName> → ../../<depV>/node_modules/<name>
-		// Mirror filepath.Rel used by linkStoreDeps on a real tree.
 		linkRel := parentNM + "/" + strings.Trim(filepath.ToSlash(linkName), "/")
+		if err := safeLayerRel(linkRel); err != nil {
+			return err
+		}
 		targetAbs := "node_modules/.pnpm/" + VirtualStoreDir(ref.DepPath) + "/node_modules/" + strings.Trim(filepath.ToSlash(ref.Name), "/")
-		rel := relSymlink(path.Dir(linkRel), targetAbs)
+		rel, err := relSymlink(path.Dir(linkRel), targetAbs)
+		if err != nil {
+			return err
+		}
 		files = append(files, layer.File{
 			Rel:  linkRel,
 			Mode: fs.ModeSymlink | 0o777,
 			Link: rel,
 		})
+		return nil
 	}
 	for name, ver := range snap.Dependencies {
-		add(name, ver)
+		if err := add(name, ver); err != nil {
+			return nil, err
+		}
 	}
 	for name, ver := range snap.OptionalDependencies {
-		add(name, ver)
+		if err := add(name, ver); err != nil {
+			return nil, err
+		}
 	}
-	return files
+	return files, nil
 }
 
-func storeBinSymlinks(ref resolve.PackageRef, pj packageJSON) []layer.File {
+func storeBinSymlinks(ref resolve.PackageRef, pj packageJSON) ([]layer.File, error) {
 	bins, err := parseBin(pj)
-	if err != nil || len(bins) == 0 {
-		return nil
+	if err != nil {
+		return nil, err
+	}
+	if len(bins) == 0 {
+		return nil, nil
 	}
 	vdir := VirtualStoreDir(ref.DepPath)
 	binDir := "node_modules/.pnpm/" + vdir + "/node_modules/.bin"
@@ -164,15 +185,20 @@ func storeBinSymlinks(ref resolve.PackageRef, pj packageJSON) []layer.File {
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		rel := strings.TrimPrefix(filepath.ToSlash(bins[name]), "./")
+		rel := bins[name] // already sanitized by parseBin
 		target := pkgPrefix + "/" + rel
+		linkRel := binDir + "/" + name
+		sym, err := relSymlink(binDir, target)
+		if err != nil {
+			return nil, err
+		}
 		files = append(files, layer.File{
-			Rel:  binDir + "/" + name,
+			Rel:  linkRel,
 			Mode: fs.ModeSymlink | 0o777,
-			Link: relSymlink(binDir, target),
+			Link: sym,
 		})
 	}
-	return files
+	return files, nil
 }
 
 func planLinkLayer(refs []resolve.PackageRef, direct []resolve.DirectDep, pjs map[string]packageJSON, byDepPath map[string]resolve.PackageRef) ([]layer.File, error) {
@@ -185,6 +211,9 @@ func planLinkLayer(refs []resolve.PackageRef, direct []resolve.DirectDep, pjs ma
 	var files []layer.File
 	seenTop := map[string]struct{}{}
 	for _, d := range links {
+		if !validNodeModulesName(d.LinkName) {
+			return nil, fmt.Errorf("direct dependency link name %q is not a valid node_modules entry", d.LinkName)
+		}
 		ref, ok := byDepPath[d.DepPath]
 		if !ok {
 			for _, r := range refs {
@@ -199,19 +228,25 @@ func planLinkLayer(refs []resolve.PackageRef, direct []resolve.DirectDep, pjs ma
 			return nil, fmt.Errorf("direct dependency %q → %q not found in resolved closure", d.LinkName, d.DepPath)
 		}
 		linkRel := "node_modules/" + strings.Trim(filepath.ToSlash(d.LinkName), "/")
+		if err := safeLayerRel(linkRel); err != nil {
+			return nil, err
+		}
 		if _, dup := seenTop[linkRel]; dup {
 			continue
 		}
 		seenTop[linkRel] = struct{}{}
 		target := "node_modules/.pnpm/" + VirtualStoreDir(ref.DepPath) + "/node_modules/" + strings.Trim(filepath.ToSlash(ref.Name), "/")
+		sym, err := relSymlink(path.Dir(linkRel), target)
+		if err != nil {
+			return nil, err
+		}
 		files = append(files, layer.File{
 			Rel:  linkRel,
 			Mode: fs.ModeSymlink | 0o777,
-			Link: relSymlink(path.Dir(linkRel), target),
+			Link: sym,
 		})
 	}
 
-	// Root node_modules/.bin for direct deps.
 	seenBinPkg := map[string]struct{}{}
 	for _, d := range links {
 		ref, ok := byDepPath[d.DepPath]
@@ -227,7 +262,10 @@ func planLinkLayer(refs []resolve.PackageRef, direct []resolve.DirectDep, pjs ma
 			continue
 		}
 		bins, err := parseBin(pj)
-		if err != nil || len(bins) == 0 {
+		if err != nil {
+			return nil, err
+		}
+		if len(bins) == 0 {
 			continue
 		}
 		binDir := "node_modules/.bin"
@@ -238,12 +276,16 @@ func planLinkLayer(refs []resolve.PackageRef, direct []resolve.DirectDep, pjs ma
 		}
 		sort.Strings(names)
 		for _, name := range names {
-			rel := strings.TrimPrefix(filepath.ToSlash(bins[name]), "./")
+			rel := bins[name]
 			target := pkgPrefix + "/" + rel
+			sym, err := relSymlink(binDir, target)
+			if err != nil {
+				return nil, err
+			}
 			files = append(files, layer.File{
 				Rel:  binDir + "/" + name,
 				Mode: fs.ModeSymlink | 0o777,
-				Link: relSymlink(binDir, target),
+				Link: sym,
 			})
 		}
 	}
@@ -251,17 +293,21 @@ func planLinkLayer(refs []resolve.PackageRef, direct []resolve.DirectDep, pjs ma
 	return files, nil
 }
 
-// relSymlink returns a relative symlink target from linkDir to target, using
-// forward slashes (OCI / Linux layout). Both paths are slash-separated and
-// relative to the same root (no leading slash).
-func relSymlink(linkDir, target string) string {
+// relSymlink returns a relative symlink target from linkDir to target.
+// Both paths are slash-separated and relative to the same root. Fails closed
+// if Rel cannot produce a relative path (never emits absolute targets).
+func relSymlink(linkDir, target string) (string, error) {
 	linkDir = path.Clean("/" + strings.TrimPrefix(linkDir, "/"))
 	target = path.Clean("/" + strings.TrimPrefix(target, "/"))
 	rel, err := filepath.Rel(filepath.FromSlash(linkDir), filepath.FromSlash(target))
 	if err != nil {
-		return target
+		return "", fmt.Errorf("symlink %s -> %s: %w", linkDir, target, err)
 	}
-	return filepath.ToSlash(rel)
+	rel = filepath.ToSlash(rel)
+	if filepath.IsAbs(rel) || strings.HasPrefix(rel, "/") {
+		return "", fmt.Errorf("refusing absolute symlink target for %s -> %s", linkDir, target)
+	}
+	return rel, nil
 }
 
 func sortLayerFiles(files []layer.File) {

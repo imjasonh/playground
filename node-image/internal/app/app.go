@@ -36,14 +36,21 @@ func Compile(dir, lockRoot, script string) error {
 
 // CollectOutputs returns files to place in the app layer under workdir prefix.
 // Prefer dist/ if it exists; otherwise package.json + non-node_modules JS/JSON at root.
+// Symlinks are rejected so a malicious build cannot pull host files into the image.
 func CollectOutputs(dir string) (map[string]string, error) {
-	// map relative path → absolute source path
 	out := map[string]string{}
 	dist := filepath.Join(dir, "dist")
-	if st, err := os.Stat(dist); err == nil && st.IsDir() {
+	if st, err := os.Lstat(dist); err == nil && st.IsDir() {
 		err := filepath.Walk(dist, func(path string, info os.FileInfo, err error) error {
-			if err != nil || info.IsDir() {
+			if err != nil {
 				return err
+			}
+			if info.IsDir() {
+				return nil
+			}
+			if info.Mode()&os.ModeSymlink != 0 {
+				rel, _ := filepath.Rel(dir, path)
+				return fmt.Errorf("refusing symlink in app outputs: %s\nHint: build artifacts under dist/ must be regular files", filepath.ToSlash(rel))
 			}
 			rel, _ := filepath.Rel(dir, path)
 			out[filepath.ToSlash(rel)] = path
@@ -55,9 +62,14 @@ func CollectOutputs(dir string) (map[string]string, error) {
 	}
 	for _, name := range []string{"package.json", "index.js", "index.mjs", "index.cjs"} {
 		p := filepath.Join(dir, name)
-		if st, err := os.Stat(p); err == nil && !st.IsDir() {
-			out[name] = p
+		st, err := os.Lstat(p)
+		if err != nil || st.IsDir() {
+			continue
 		}
+		if st.Mode()&os.ModeSymlink != 0 {
+			return nil, fmt.Errorf("refusing symlink in app outputs: %s", name)
+		}
+		out[name] = p
 	}
 	if len(out) == 0 {
 		return nil, fmt.Errorf("no app outputs found in %s\nHint: expected dist/ after `pnpm run build`, or an index.js / package.json at the package root. For TypeScript apps ensure scripts.build writes to dist/, or pass --skip-build only after compiling yourself", dir)

@@ -46,3 +46,21 @@ func TestRequireMainPresent(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestCollectOutputsRejectsSymlink(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "dist"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(dir, "secret")
+	if err := os.WriteFile(outside, []byte("secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(dir, "dist", "index.js")); err != nil {
+		t.Fatal(err)
+	}
+	_, err := app.CollectOutputs(dir)
+	if err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("expected symlink rejection, got %v", err)
+	}
+}

@@ -240,6 +240,9 @@ func LinkTopLevel(root string, refs []resolve.PackageRef, direct []resolve.Direc
 		}
 	}
 	for _, d := range links {
+		if !validNodeModulesName(d.LinkName) {
+			return fmt.Errorf("direct dependency link name %q is not a valid node_modules entry", d.LinkName)
+		}
 		ref, ok := byDepPath[d.DepPath]
 		if !ok {
 			// Try package-id form / alias target already encoded as dep path.
@@ -256,6 +259,9 @@ func LinkTopLevel(root string, refs []resolve.PackageRef, direct []resolve.Direc
 		}
 		targetAbs := filepath.Join(nm, ".pnpm", VirtualStoreDir(ref.DepPath), "node_modules", filepath.FromSlash(ref.Name))
 		link := filepath.Join(nm, filepath.FromSlash(d.LinkName))
+		if !isWithinDir(nm, link) && link != nm {
+			return fmt.Errorf("direct dependency link %q escapes node_modules", d.LinkName)
+		}
 		if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
 			return err
 		}
@@ -309,8 +315,14 @@ type namedDep struct {
 func linkStoreDeps(root string, parent resolve.PackageRef, deps []namedDep) error {
 	parentNM := filepath.Join(root, "node_modules", ".pnpm", VirtualStoreDir(parent.DepPath), "node_modules")
 	for _, dep := range deps {
+		if !validNodeModulesName(dep.linkName) {
+			return fmt.Errorf("store dependency link name %q is not a valid node_modules entry", dep.linkName)
+		}
 		depPkg := filepath.Join(root, "node_modules", ".pnpm", VirtualStoreDir(dep.ref.DepPath), "node_modules", filepath.FromSlash(dep.ref.Name))
 		link := filepath.Join(parentNM, filepath.FromSlash(dep.linkName))
+		if !isWithinDir(parentNM, link) && link != parentNM {
+			return fmt.Errorf("store dependency link %q escapes parent node_modules", dep.linkName)
+		}
 		if _, err := os.Lstat(link); err == nil {
 			continue
 		}
@@ -429,8 +441,22 @@ func writeBins(nodeModulesDir, pkgDir string, pj packageJSON) error {
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		return err
 	}
+	pkgAbs, err := filepath.Abs(pkgDir)
+	if err != nil {
+		return err
+	}
 	for name, rel := range bins {
-		target := filepath.Join(pkgDir, filepath.FromSlash(rel))
+		if !validBinName(name) {
+			return fmt.Errorf("package %s: invalid bin name %q", pj.Name, name)
+		}
+		safeRel, ok := safeBinRel(rel)
+		if !ok {
+			return fmt.Errorf("package %s: bin %q target %q escapes package directory", pj.Name, name, rel)
+		}
+		target := filepath.Join(pkgAbs, filepath.FromSlash(safeRel))
+		if !isWithinDir(pkgAbs, target) {
+			return fmt.Errorf("package %s: bin %q target %q escapes package directory", pj.Name, name, rel)
+		}
 		link := filepath.Join(binDir, name)
 		relTarget, err := filepath.Rel(binDir, target)
 		if err != nil {
@@ -444,32 +470,43 @@ func writeBins(nodeModulesDir, pkgDir string, pj packageJSON) error {
 	return nil
 }
 
+// parseBin returns bin name → package-relative path. Invalid names/targets that
+// escape the package are omitted with an error (fail closed, like rejecting a
+// bad tarball path — stronger than pnpm's warn-and-skip for escapes).
 func parseBin(pj packageJSON) (map[string]string, error) {
 	out := map[string]string{}
-	if len(pj.Bin) != 0 && string(pj.Bin) != "null" {
-		var asString string
-		if err := json.Unmarshal(pj.Bin, &asString); err == nil {
-			name := pj.Name
-			if i := strings.LastIndex(name, "/"); i >= 0 {
-				name = name[i+1:]
-			}
-			out[name] = asString
-		} else {
-			var asMap map[string]string
-			if err := json.Unmarshal(pj.Bin, &asMap); err != nil {
-				return nil, err
-			}
-			for k, v := range asMap {
-				out[k] = v
-			}
-		}
+	if len(pj.Bin) == 0 || string(pj.Bin) == "null" {
+		return out, nil
 	}
-	if pj.Directories != nil && pj.Directories.Bin != "" {
-		// directories.bin is a directory of executables; we only record the dir
-		// marker by linking each file when present on disk — caller may not
-		// have extracted yet, so skip if missing.
-		binDir := filepath.Join(filepath.Dir(pj.Name), pj.Directories.Bin) // unused path helper
-		_ = binDir
+	var asString string
+	if err := json.Unmarshal(pj.Bin, &asString); err == nil {
+		name := pj.Name
+		if i := strings.LastIndex(name, "/"); i >= 0 {
+			name = name[i+1:]
+		}
+		if !validBinName(name) {
+			return nil, fmt.Errorf("package %s: invalid bin name %q", pj.Name, name)
+		}
+		safeRel, ok := safeBinRel(asString)
+		if !ok {
+			return nil, fmt.Errorf("package %s: bin target %q escapes package directory", pj.Name, asString)
+		}
+		out[name] = safeRel
+		return out, nil
+	}
+	var asMap map[string]string
+	if err := json.Unmarshal(pj.Bin, &asMap); err != nil {
+		return nil, err
+	}
+	for k, v := range asMap {
+		if !validBinName(k) {
+			return nil, fmt.Errorf("package %s: invalid bin name %q", pj.Name, k)
+		}
+		safeRel, ok := safeBinRel(v)
+		if !ok {
+			return nil, fmt.Errorf("package %s: bin %q target %q escapes package directory", pj.Name, k, v)
+		}
+		out[k] = safeRel
 	}
 	return out, nil
 }
@@ -646,4 +683,13 @@ func ExtractNPMTarballForTest(tgzPath, destDir string) error {
 func ReadPackageJSONForTest(dir string) (packageJSON, error) {
 	return readPackageJSON(dir)
 }
+
+// ValidNodeModulesNameForTest exposes validNodeModulesName for tests.
+func ValidNodeModulesNameForTest(name string) bool { return validNodeModulesName(name) }
+
+// SafeBinRelForTest exposes safeBinRel for tests.
+func SafeBinRelForTest(rel string) (string, bool) { return safeBinRel(rel) }
+
+// ParseBinForTest exposes parseBin for tests.
+func ParseBinForTest(pj packageJSON) (map[string]string, error) { return parseBin(pj) }
 

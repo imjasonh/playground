@@ -34,7 +34,7 @@ func (c *BlobCache) EnsureCompressed(files []File) (digest string, size int64, p
 	if c == nil || c.Dir == "" {
 		return "", 0, "", fmt.Errorf("BlobCache: Dir required")
 	}
-	if err := os.MkdirAll(c.Dir, 0o755); err != nil {
+	if err := os.MkdirAll(c.Dir, 0o700); err != nil {
 		return "", 0, "", err
 	}
 	diffID, err := DiffID(files)
@@ -45,18 +45,15 @@ func (c *BlobCache) EnsureCompressed(files []File) (digest string, size int64, p
 	final := filepath.Join(c.Dir, key+".tar.gz")
 	meta := filepath.Join(c.Dir, key+".sha256")
 	if st, statErr := os.Stat(final); statErr == nil && st.Size() > 0 {
-		if b, readErr := os.ReadFile(meta); readErr == nil {
-			d := strings.TrimSpace(string(b))
-			if strings.HasPrefix(d, "sha256:") {
-				return d, st.Size(), final, nil
-			}
-		}
-		// Meta missing — hash the cached blob once and write meta.
+		// Always re-hash the cached blob; do not trust the sidecar alone.
 		sum, sz, herr := hashFile(final)
-		if herr == nil {
-			_ = os.WriteFile(meta, []byte(sum+"\n"), 0o644)
+		if herr == nil && sz == st.Size() {
+			_ = os.WriteFile(meta, []byte(sum+"\n"), 0o600)
 			return sum, sz, final, nil
 		}
+		// Corrupt cache entry — fall through and rebuild.
+		_ = os.Remove(final)
+		_ = os.Remove(meta)
 	}
 
 	tmp, err := os.CreateTemp(c.Dir, "layer-*.tmp")
@@ -82,7 +79,7 @@ func (c *BlobCache) EnsureCompressed(files []File) (digest string, size int64, p
 		_ = os.Remove(tmpPath)
 		return "", 0, "", err
 	}
-	_ = os.WriteFile(meta, []byte(digest+"\n"), 0o644)
+	_ = os.WriteFile(meta, []byte(digest+"\n"), 0o600)
 	return digest, size, final, nil
 }
 

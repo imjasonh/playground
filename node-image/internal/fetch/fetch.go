@@ -43,7 +43,7 @@ func (c *Cache) Ensure(tarballURL, integrity string) (string, error) {
 	if integrity == "" {
 		return "", fmt.Errorf("missing integrity for %s", tarballURL)
 	}
-	if err := os.MkdirAll(c.Dir, 0o755); err != nil {
+	if err := os.MkdirAll(c.Dir, 0o700); err != nil {
 		return "", err
 	}
 	key, err := integrityKey(integrity)

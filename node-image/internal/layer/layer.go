@@ -170,6 +170,9 @@ func WriteTar(w io.Writer, files []File) error {
 
 	seenDirs := map[string]struct{}{}
 	for _, f := range files {
+		if err := validateLayerRel(f.Rel); err != nil {
+			return err
+		}
 		if err := ensureParentDirs(tw, f.Rel, seenDirs); err != nil {
 			return err
 		}
@@ -300,6 +303,22 @@ func sortFiles(files []File) {
 	sort.Slice(files, func(i, j int) bool {
 		return files[i].Rel < files[j].Rel
 	})
+}
+
+func validateLayerRel(rel string) error {
+	rel = filepath.ToSlash(rel)
+	if rel == "" {
+		return fmt.Errorf("empty layer path")
+	}
+	if filepath.IsAbs(rel) || strings.HasPrefix(rel, "/") {
+		return fmt.Errorf("absolute layer path %q", rel)
+	}
+	for _, part := range strings.Split(rel, "/") {
+		if part == "" || part == ".." {
+			return fmt.Errorf("unsafe layer path %q", rel)
+		}
+	}
+	return nil
 }
 
 type countingWriter struct {
