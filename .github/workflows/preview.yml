@@ -4,30 +4,55 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
-# Production, preview, and cleanup workflows all update the same branch.
-concurrency:
-  group: gh-pages-publish
-  cancel-in-progress: false
-
 permissions:
   actions: read
   contents: write
   pull-requests: write
 
 jobs:
-  preview:
+  # Cheap discovery before contending for the gh-pages-publish lock. Go/Rust/
+  # iOS/CI-only PRs exit here with no deploy and no PR comment.
+  discover:
     runs-on: ubuntu-latest
+    outputs:
+      apps: ${{ steps.discover.outputs.apps }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # need base history to detect changed browser apps
 
+      - name: Discover changed browser apps
+        id: discover
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$BASE_REF"
+          changed=$(git diff --name-only "origin/${BASE_REF}...HEAD")
+          apps=$(printf '%s\n' "$changed" | bash .github/scripts/discover-browser-apps.sh --from-changes)
+          echo "Changed browser apps: ${apps}"
+          echo "apps=${apps}" >> "$GITHUB_OUTPUT"
+          if [ "$apps" = "[]" ]; then
+            echo "No browser app changed; skipping preview deploy and PR comment."
+          fi
+
+  preview:
+    needs: discover
+    if: ${{ needs.discover.outputs.apps != '[]' }}
+    runs-on: ubuntu-latest
+    # Production, preview, and cleanup workflows all update the same branch.
+    concurrency:
+      group: gh-pages-publish
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
       - name: Build preview
         env:
           PR: ${{ github.event.pull_request.number }}
           PR_TITLE: ${{ github.event.pull_request.title }}
-          BASE_REF: ${{ github.base_ref }}
           REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+          APPS: ${{ needs.discover.outputs.apps }}
         run: |
           set -euo pipefail
           dest="dist/preview/pr-${PR}"
@@ -45,16 +70,9 @@ jobs:
             --dir "$dest" --pr "$PR" --repo-url "$REPO_URL" \
             --output "$dest/index.html"
 
-          # Record a manifest only when this PR changes a browser app, so the
-          # production home page lists a preview for it (and not for PRs that
-          # only touch Go/Rust/CI, whose preview is identical to production).
-          git fetch --no-tags origin "$BASE_REF"
-          changed=$(git diff --name-only "origin/${BASE_REF}...HEAD")
-          apps=$(printf '%s\n' "$changed" | bash .github/scripts/discover-browser-apps.sh --from-changes)
-          echo "Changed browser apps: ${apps}"
-
-          if [ "$apps" != "[]" ]; then
-            PR_NUMBER="$PR" PR_TITLE="$PR_TITLE" APPS="$apps" python3 - <<'PY' > "$dest/preview.json"
+          # Manifest so the production home page lists this preview (only
+          # written when discover found a browser-app change).
+          PR_NUMBER="$PR" PR_TITLE="$PR_TITLE" APPS="$APPS" python3 - <<'PY' > "$dest/preview.json"
           import json, os
           print(json.dumps({
               "number": int(os.environ["PR_NUMBER"]),
@@ -62,9 +80,6 @@ jobs:
               "apps": json.loads(os.environ["APPS"]),
           }))
           PY
-          else
-            echo "No browser app changed; this preview will not be listed on the home page."
-          fi
 
       - name: Deploy preview
         uses: peaceiris/actions-gh-pages@v4
@@ -73,9 +88,8 @@ jobs:
           publish_dir: ./dist
           keep_files: true   # preserves production apps and other PR previews
 
-      # Regenerate the production root index so it lists this PR's preview
-      # (when it changed a browser app). Runs after the deploy so the gh-pages
-      # checkout includes the preview.json written above.
+      # Regenerate the production root index so it lists this PR's preview.
+      # Runs after the deploy so the gh-pages checkout includes preview.json.
       - name: Check out gh-pages
         uses: actions/checkout@v4
         with:
