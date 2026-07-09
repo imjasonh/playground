@@ -103,6 +103,12 @@ func (c *Cache) Ensure(tarballURL, integrity string) (string, error) {
 }
 
 func integrityKey(integrity string) (string, error) {
+	return IntegrityKey(integrity)
+}
+
+// IntegrityKey turns an SRI string (sha512-<base64>) into the filesystem key
+// used under the tarball cache and integrity spool (sha512-<hex>).
+func IntegrityKey(integrity string) (string, error) {
 	algo, b64, ok := strings.Cut(integrity, "-")
 	if !ok {
 		return "", fmt.Errorf("bad integrity %q", integrity)

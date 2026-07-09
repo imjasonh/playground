@@ -39,8 +39,12 @@ docker run --rm "$(./node-image build ./testdata/pure-js \
 `-L`). Progress goes to stderr, so command substitution works with
 `docker run --rm $(node-image build -L …)`.
 
-Layer tar+gzip is **streamed** (re-opened from disk paths) — compressed blobs
-are not retained as `[]byte` in memory.
+Layer tar+gzip is **streamed** (re-opened from disk paths / integrity spool) —
+compressed blobs are not retained as `[]byte` in memory. Store packages are
+extracted once into `~/.cache/node-image/spool/<integrity>/` and referenced by
+`DiskPath`; symlink/bin edges are synthesized from the lock (no per-build
+staging tree). Compressed layers are teed to `~/.cache/node-image/layers/`
+(keyed by DiffID) so Digest()/upload reopeners skip recompression.
 
 Requirements for a real push: Go 1.23+, network, and registry credentials via
 the normal Docker keychain. `--local` needs a running Docker daemon. App

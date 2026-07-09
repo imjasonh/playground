@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -157,8 +158,15 @@ func Run(opt Options) (string, error) {
 		}
 	}
 
-	stageRoot := filepath.Join(os.TempDir(), fmt.Sprintf("node-image-%d", os.Getpid()))
-	defer os.RemoveAll(stageRoot)
+	spoolRoot, err := layout.SpoolDir()
+	if err != nil {
+		return "", err
+	}
+	blobCacheDir, err := layer.DefaultBlobCacheDir()
+	if err != nil {
+		return "", err
+	}
+	blobCache := &layer.BlobCache{Dir: blobCacheDir}
 
 	var built []publish.PlatformImage
 	for _, pstr := range platforms {
@@ -177,19 +185,25 @@ func Run(opt Options) (string, error) {
 		}
 		direct := resolve.DirectDeps(l, importer)
 		tarballs := map[string]string{}
+		integrityKeys := map[string]string{}
 		for _, ref := range refs {
 			path, err := cache.Ensure(ref.Tarball, ref.Integrity)
 			if err != nil {
 				return "", fmt.Errorf("fetch %s: %w\nHint: check network access to the npm registry and that the integrity in pnpm-lock.yaml is current", ref.PackageID, err)
 			}
 			tarballs[ref.PackageID] = path
+			key, err := fetch.IntegrityKey(ref.Integrity)
+			if err != nil {
+				return "", err
+			}
+			integrityKeys[ref.PackageID] = key
 		}
 
-		stage := filepath.Join(stageRoot, strings.ReplaceAll(pstr, "/", "-"))
-		if err := os.MkdirAll(stage, 0o755); err != nil {
-			return "", err
-		}
-		if _, err := layout.Materialize(stage, l, refs, tarballs, direct); err != nil {
+		planned, err := layout.PlanLayout(l, refs, tarballs, direct, layout.PlanOptions{
+			SpoolRoot:    spoolRoot,
+			IntegrityKey: integrityKeys,
+		})
+		if err != nil {
 			return "", err
 		}
 
@@ -200,17 +214,9 @@ func Run(opt Options) (string, error) {
 		if err := app.RequireMain(cfg.Dir, cfg.Main, outputs); err != nil {
 			return "", err
 		}
-		for rel, src := range outputs {
-			dst := filepath.Join(stage, filepath.FromSlash(rel))
-			if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-				return "", err
-			}
-			if err := copyFile(src, dst); err != nil {
-				return "", err
-			}
-		}
+		appFiles := appLayerFiles(outputs)
 
-		layers, err := assembleLayers(stage, cfg, baseInfo, stderr)
+		layers, err := assemblePlannedLayers(planned, appFiles, cfg, baseInfo, stderr)
 		if err != nil {
 			return "", err
 		}
@@ -222,6 +228,7 @@ func Run(opt Options) (string, error) {
 			Cmd:        cfg.Cmd(),
 			Env:        cfg.EnvList(),
 			Platform:   plat,
+			BlobCache:  blobCache,
 		}
 
 		var image v1.Image
@@ -305,14 +312,6 @@ func hostArchHint() string {
 	return "amd64"
 }
 
-func copyFile(src, dst string) error {
-	in, err := os.ReadFile(src)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(dst, in, 0o644)
-}
-
 func prefixFiles(prefix string, files []layer.File) []layer.File {
 	if prefix == "" {
 		return files
@@ -325,117 +324,64 @@ func prefixFiles(prefix string, files []layer.File) []layer.File {
 	return out
 }
 
-func assembleLayers(stage string, cfg *config.Config, baseInfo *base.Info, stderr io.Writer) ([]publish.LayerFiles, error) {
-	pkgs, err := layer.StorePackagesFromDir(stage)
-	if err != nil {
-		return nil, err
-	}
-	linkFiles, appFiles, err := linkAndAppLayers(stage)
-	if err != nil {
-		return nil, err
-	}
+func assemblePlannedLayers(planned *layout.PlannedLayout, appFiles []layer.File, cfg *config.Config, baseInfo *base.Info, stderr io.Writer) ([]publish.LayerFiles, error) {
 	budget := layer.Budget{
 		MaxLayers:   cfg.MaxLayers,
 		BaseLayers:  baseInfo.LayerCount,
 		ExtraLayers: 2, // symlink + app
 	}
 	slots := budget.StoreSlots()
-	if len(pkgs) > slots {
+	if len(planned.Store) > slots {
 		fmt.Fprintf(stderr, "layer budget: %d store packages into %d buckets (max-layers=%d, base=%d, extra=2)\n",
-			len(pkgs), slots, cfg.MaxLayers, baseInfo.LayerCount)
+			len(planned.Store), slots, cfg.MaxLayers, baseInfo.LayerCount)
 	}
-	storeGroups := layer.BucketStorePackages(pkgs, slots)
+	storeGroups := layer.BucketStorePackages(planned.Store, slots)
 	prefix := strings.TrimPrefix(cfg.Workdir, "/")
 	out := make([]publish.LayerFiles, 0, len(storeGroups)+2)
 	for _, g := range storeGroups {
 		out = append(out, publish.LayerFiles{Files: prefixFiles(prefix, g)})
 	}
 	out = append(out,
-		publish.LayerFiles{Files: prefixFiles(prefix, linkFiles)},
+		publish.LayerFiles{Files: prefixFiles(prefix, planned.Links)},
 		publish.LayerFiles{Files: prefixFiles(prefix, appFiles)},
 	)
 	return out, nil
 }
 
-func linkAndAppLayers(stage string) (links, appFiles []layer.File, err error) {
-	nm := filepath.Join(stage, "node_modules")
-	entries, err := os.ReadDir(nm)
-	if err != nil {
-		return nil, nil, err
+// appLayerFiles turns CollectOutputs (rel → abs source) into layer files that
+// stream from DiskPath — no staging copy.
+func appLayerFiles(outputs map[string]string) []layer.File {
+	rels := make([]string, 0, len(outputs))
+	for rel := range outputs {
+		rels = append(rels, rel)
 	}
-	for _, e := range entries {
-		name := e.Name()
-		if name == ".pnpm" || name == ".modules.yaml" || strings.HasPrefix(name, ".pnpm-") {
-			continue
-		}
-		p := filepath.Join(nm, name)
-		info, err := os.Lstat(p)
-		if err != nil {
-			return nil, nil, err
-		}
-		rel := "node_modules/" + name
-		if info.Mode()&os.ModeSymlink != 0 {
-			target, err := os.Readlink(p)
-			if err != nil {
-				return nil, nil, err
+	sort.Strings(rels)
+	var files []layer.File
+	seenDir := map[string]struct{}{}
+	for _, rel := range rels {
+		src := outputs[rel]
+		// Ensure parent dir entries exist in the layer.
+		parts := strings.Split(rel, "/")
+		cur := ""
+		for _, p := range parts[:len(parts)-1] {
+			if cur == "" {
+				cur = p
+			} else {
+				cur += "/" + p
 			}
-			links = append(links, layer.File{Rel: rel, Mode: fs.ModeSymlink | 0o777, Link: filepath.ToSlash(target)})
-			continue
-		}
-		if info.IsDir() {
-			sub, err := layer.FromDir(p, rel)
-			if err != nil {
-				return nil, nil, err
+			if _, ok := seenDir[cur]; ok {
+				continue
 			}
-			links = append(links, sub...)
-			continue
+			seenDir[cur] = struct{}{}
+			files = append(files, layer.File{Rel: cur, Mode: fs.ModeDir | 0o755})
 		}
-		b, err := os.ReadFile(p)
-		if err != nil {
-			return nil, nil, err
+		mode := fs.FileMode(0o644)
+		if st, err := os.Stat(src); err == nil {
+			if st.Mode().Perm()&0o111 != 0 {
+				mode = 0o755
+			}
 		}
-		links = append(links, layer.File{Rel: rel, Mode: 0o644, Body: b})
+		files = append(files, layer.File{Rel: rel, Mode: mode, DiskPath: src})
 	}
-
-	err = filepath.Walk(stage, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, _ := filepath.Rel(stage, path)
-		if rel == "." {
-			return nil
-		}
-		rel = filepath.ToSlash(rel)
-		if rel == "node_modules" || strings.HasPrefix(rel, "node_modules/") {
-			if info.IsDir() && rel == "node_modules" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if info.IsDir() {
-			appFiles = append(appFiles, layer.File{Rel: rel, Mode: fs.ModeDir | 0o755})
-			return nil
-		}
-		if info.Mode()&os.ModeSymlink != 0 {
-			target, err := os.Readlink(path)
-			if err != nil {
-				return err
-			}
-			appFiles = append(appFiles, layer.File{Rel: rel, Mode: fs.ModeSymlink | 0o777, Link: filepath.ToSlash(target)})
-			return nil
-		}
-		b, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		mode := info.Mode().Perm()
-		if mode&0o111 != 0 {
-			mode = 0o755
-		} else {
-			mode = 0o644
-		}
-		appFiles = append(appFiles, layer.File{Rel: rel, Mode: mode, Body: b})
-		return nil
-	})
-	return links, appFiles, err
+	return files
 }

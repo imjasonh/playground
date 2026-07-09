@@ -38,6 +38,9 @@ type Options struct {
 	Cmd        []string
 	Env        []string // KEY=VAL entries merged into image config
 	Platform   v1.Platform
+	// BlobCache, when set, tees each compressed layer blob to a local cache
+	// keyed by DiffID so Digest()/upload reopeners skip recompression.
+	BlobCache *layer.BlobCache
 }
 
 // LayerFiles is one OCI layer's files.
@@ -66,7 +69,7 @@ func EmptyImage(opts Options, layers []LayerFiles) (v1.Image, error) {
 func appendAndConfigure(base v1.Image, opts Options, layers []LayerFiles) (v1.Image, error) {
 	var add []mutate.Addendum
 	for _, lf := range layers {
-		l, err := layerFromFiles(lf.Files)
+		l, err := layerFromFiles(lf.Files, opts.BlobCache)
 		if err != nil {
 			return nil, err
 		}
@@ -136,17 +139,22 @@ func mergeEnv(base, overrides []string) []string {
 	return out
 }
 
-// layerFromFiles returns a layer that streams deterministic tar+gzip from disk
-// (or in-memory Body for tiny test files). The compressed blob is never retained
-// as a []byte — each digest/upload re-streams through a pipe.
-func layerFromFiles(files []layer.File) (v1.Layer, error) {
+// layerFromFiles returns a layer that streams deterministic tar+gzip.
+// When cache is non-nil, the compressed blob is teed to the local layer cache
+// on first open and subsequent Digest()/upload calls reopen that file.
+func layerFromFiles(files []layer.File, cache *layer.BlobCache) (v1.Layer, error) {
 	files = append([]layer.File(nil), files...)
-	opener := func() (io.ReadCloser, error) {
-		pr, pw := io.Pipe()
-		go func() {
-			pw.CloseWithError(layer.WriteCompressed(pw, files))
-		}()
-		return pr, nil
+	var opener tarball.Opener
+	if cache != nil {
+		opener = cache.CachedOpener(files)
+	} else {
+		opener = func() (io.ReadCloser, error) {
+			pr, pw := io.Pipe()
+			go func() {
+				pw.CloseWithError(layer.WriteCompressed(pw, files))
+			}()
+			return pr, nil
+		}
 	}
 	return tarball.LayerFromOpener(opener, tarball.WithMediaType(types.OCILayer))
 }

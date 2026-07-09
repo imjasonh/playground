@@ -21,18 +21,28 @@ var Epoch = time.Unix(0, 0).UTC()
 
 // File is a regular file, directory, or symlink to include in a layer.
 //
-// Regular file contents come from either Body (small / tests) or DiskPath
-// (streamed from disk — preferred for real packages so we never buffer the
-// whole tree in memory).
+// Regular file contents come from, in order of preference:
+//  1. Opener — reopened for each tar write (streaming; preferred)
+//  2. DiskPath — opened from disk for each tar write
+//  3. Body — in-memory bytes (small files / tests only)
+//
+// Size, when > 0, is the uncompressed byte length used for the tar header.
+// When Size is 0, fileSize falls back to DiskPath stat or len(Body).
 type File struct {
 	// Rel is the path inside the layer (forward slashes, no leading slash).
 	Rel string
 	// Mode is the file mode bits (type + perms). For symlinks, type should be fs.ModeSymlink.
 	Mode fs.FileMode
-	// Body is in-memory file contents (ignored for symlinks/dirs; ignored if DiskPath is set).
+	// Body is in-memory file contents (ignored for symlinks/dirs; ignored if Opener/DiskPath is set).
 	Body []byte
 	// DiskPath, when set, is opened and streamed into the tar (preferred over Body).
 	DiskPath string
+	// Opener, when set, returns a fresh reader for the file body on each tar write.
+	// Preferred over DiskPath/Body for streaming sources (e.g. integrity spool).
+	Opener func() (io.ReadCloser, error)
+	// Size is the uncompressed content length for tar headers when Opener is used.
+	// Ignored when DiskPath is set (stat is used) unless Opener is also set.
+	Size int64
 	// Link is the symlink target (only for symlinks).
 	Link string
 }
@@ -216,6 +226,12 @@ func WriteTar(w io.Writer, files []File) error {
 }
 
 func fileSize(f File) (int64, error) {
+	if f.Opener != nil {
+		if f.Size < 0 {
+			return 0, fmt.Errorf("file %s: Opener requires Size >= 0", f.Rel)
+		}
+		return f.Size, nil
+	}
 	if f.DiskPath != "" {
 		st, err := os.Stat(f.DiskPath)
 		if err != nil {
@@ -227,6 +243,15 @@ func fileSize(f File) (int64, error) {
 }
 
 func copyFileBody(w io.Writer, f File) error {
+	if f.Opener != nil {
+		in, err := f.Opener()
+		if err != nil {
+			return err
+		}
+		defer in.Close()
+		_, err = io.Copy(w, in)
+		return err
+	}
 	if f.DiskPath != "" {
 		in, err := os.Open(f.DiskPath)
 		if err != nil {

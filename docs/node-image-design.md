@@ -265,10 +265,13 @@ compatibility, stronger hermeticity and multi-arch.**
 ### 5.2 Local cache (outside-of-Docker reuse)
 
 - Content-addressed dir, e.g. `~/.cache/node-image/packages/sha512-…`.
-- Optionally read from an existing pnpm store if the same integrity is already
-  present (best-effort speedup) — still no need to *run* pnpm.
-- Layer blob cache: `integrity → {compressed digest, diffID, size}` so rebuilds
-  skip recompression and registry uploads via HEAD/mount.
+- Integrity **spool** (`~/.cache/node-image/spool/<integrity>/`): extract each
+  tarball once; OCI store layers stream file bodies from the spool via
+  `DiskPath` (no per-build staging tree). Symlink/bin edges are synthesized
+  from the lock.
+- Layer blob cache: `~/.cache/node-image/layers/<diffID>.tar.gz` — first
+  compress tees into the cache; Digest()/upload reopeners skip recompression.
+  Registry HEAD/mount still reuses blobs that already exist remotely.
 
 ### 5.3 Determinism
 
