@@ -1,0 +1,10 @@
+diff --git a/index.js b/index.js
+index ea734fb73820316ed1c0f6a2f6e96dce0e3eb6f0..8818484a1cdd4a58993a459e96bd9a4005378071 100644
+--- a/index.js
++++ b/index.js
+@@ -160,3 +160,5 @@ function plural(ms, msAbs, n, name) {
+   var isPlural = msAbs >= n * 1.5;
+   return Math.round(ms / n) + ' ' + name + (isPlural ? 's' : '');
+ }
++
++// node-image patched fixture marker

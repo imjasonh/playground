@@ -1,0 +1,12 @@
+{
+  "name": "scoped-dep-fixture",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.js",
+  "dependencies": {
+    "@sindresorhus/is": "4.6.0"
+  },
+  "node-image": {
+    "repo": "example.com/scoped-dep"
+  }
+}

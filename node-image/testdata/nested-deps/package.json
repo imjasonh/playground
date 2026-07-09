@@ -1,0 +1,12 @@
+{
+  "name": "nested-deps-fixture",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.js",
+  "dependencies": {
+    "debug": "4.3.4"
+  },
+  "node-image": {
+    "repo": "example.com/nested-deps"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "lifecycle-scripts-fixture",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.js",
+  "dependencies": {
+    "es5-ext": "0.10.64"
+  },
+  "node-image": {
+    "repo": "example.com/lifecycle-scripts"
+  }
+}
