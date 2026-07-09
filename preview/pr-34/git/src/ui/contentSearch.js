@@ -47,7 +47,36 @@ export function createContentSearch(ctx) {
     dom.contentSearch.hidden = false;
     dom.contentSearchInput.focus();
     dom.contentSearchInput.select();
+    // Warm the trigram index up front so the first keystroke is fast. Building is
+    // a one-time cost per repo content state; afterwards it's loaded from memory
+    // or IndexedDB. Only surface a status when a build actually has to happen.
+    warmIndex();
     run(); // re-run any retained query so reopening shows current results
+  }
+
+  function indexKey() {
+    return typeof ctx.contentIndexKey === 'function' ? ctx.contentIndexKey() : {};
+  }
+
+  async function warmIndex() {
+    const key = indexKey();
+    if (!key || ctx.contentSearch.hasIndex(key.repoId, key.oid)) return;
+    // If the query box already has text, run() shows its own status; don't fight
+    // it. Otherwise surface a lightweight "building" note while it warms.
+    const quiet = Boolean(dom.contentSearchInput.value.trim());
+    await ctx.contentSearch.prepareIndex({
+      ...key,
+      files: state.files,
+      readFile: (path) => state.source.readFile(path),
+      onStatus: (info) => {
+        if (!quiet && isOpen() && info.phase === 'building') setStatus(indexingText(info));
+      },
+    });
+  }
+
+  function indexingText(info) {
+    if (info && info.total) return `Building search index… ${info.processed}/${info.total}`;
+    return 'Building search index…';
   }
 
   function close() {
@@ -94,12 +123,18 @@ export function createContentSearch(ctx) {
     setStatus('Searching…');
 
     const summary = await ctx.contentSearch.search(state.files, query, queryOptions(), {
+      ...indexKey(),
       readFile: (path) => state.source.readFile(path),
       onResult: (result) => {
         if (!signal.aborted) appendResult(result);
       },
       onProgress: (processed, total) => {
         if (!signal.aborted) setStatus(`Searching… ${processed}/${total}`);
+      },
+      onStatus: (info) => {
+        // Shown only while the one-time index build runs; once it's cached,
+        // subsequent searches skip straight to the candidate scan.
+        if (!signal.aborted && info.phase === 'building') setStatus(indexingText(info));
       },
       signal,
     });

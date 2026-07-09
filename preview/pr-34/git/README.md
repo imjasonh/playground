@@ -16,9 +16,10 @@ branch switching, and commit history. Everything runs on-device with
   Private repos can use a session-only access token (never persisted or logged).
 - **Code browser** — collapsible file tree and a viewer with line numbers,
   offline syntax highlighting, language detection, image preview, a Markdown
-  raw/preview toggle, and binary/large-file guards. Symlinks, submodules, and
-  Git LFS pointers show a clear notice instead of raw bytes. The tree is fully
-  keyboard-navigable.
+  raw/preview toggle, and binary/large-file guards. Submodules and Git LFS
+  pointers show a clear notice instead of raw bytes; a symlink shows its target
+  as a link that opens the pointed-to file when it resolves inside the repo. The
+  tree is fully keyboard-navigable.
 - **File actions** — from the viewer header, copy a file's path or contents,
   download its raw bytes, or open it on its origin host (GitHub/GitLab/Bitbucket)
   when the clone URL is known.
@@ -26,7 +27,15 @@ branch switching, and commit history. Everything runs on-device with
   <kbd>Ctrl</kbd> / <kbd>Cmd</kbd> + <kbd>P</kbd>, or use the sidebar filter.
 - **Content search** — grep across file *contents*. Press
   <kbd>Ctrl</kbd> / <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>F</kbd>; supports
-  literal or regex queries and opens each match at its line.
+  literal or regex queries and opens each match at its line. A **trigram index**
+  is built once for the default branch (keyed by its head commit and persisted to
+  IndexedDB), so typing narrows to a handful of candidate files instead of
+  re-reading the whole repo on every keystroke; the index is reused across
+  keystrokes, reopens, and reloads. When you Pull/Update, only the files that
+  changed between the old and new commit are reindexed — the index is advanced,
+  not rebuilt — and clearing a repo from browser storage also deletes its index.
+  (Non-default branches/tags currently use a lighter session-only index;
+  indexing every ref into one shared, deduplicated index is future work.)
 - **Off-main-thread search** — both the fuzzy index and content grep run in Web
   Workers (with a synchronous fallback), so searching stays smooth on big repos.
 - **Scales to large repos** — the tree, filter results, and finder are
@@ -85,7 +94,9 @@ a few vendored libraries.
 - `src/fuzzy.js` — fuzzy subsequence matcher + reusable search index
 - `src/searchClient.js` / `src/searchWorker.js` — off-thread fuzzy file search
 - `src/contentSearch.js` — grep query compiler + line scanner (pure)
-- `src/contentSearchClient.js` / `src/contentSearchWorker.js` — off-thread content grep
+- `src/contentIndex.js` — trigram content-search index: build, candidate lookup, (de)serialize (pure)
+- `src/contentIndexStore.js` — IndexedDB persistence for the content-search index (one per repo)
+- `src/contentSearchClient.js` / `src/contentSearchWorker.js` — index-backed, off-thread content grep
 - `src/highlightCode.js` — dependency-free, offline syntax highlighter
 - `src/hashState.js` — deep-link state encoded in the URL hash
 - `src/diff.js` — line-level (LCS) diff for the diff view

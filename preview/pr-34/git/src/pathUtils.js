@@ -50,6 +50,37 @@ export function joinPath(...parts) {
 }
 
 /**
+ * Resolve a symlink's target to a repo-root-relative path, applying POSIX
+ * symlink semantics: the target is interpreted relative to the directory that
+ * *contains* the link, with `.`/`..` collapsed.
+ *
+ * Returns null when the target can't be a path inside this repository — it's
+ * empty, absolute (starts with '/', so it points outside the tree), or it walks
+ * above the repo root with `..`. Callers treat null as "not a navigable link".
+ *
+ * @param {string} linkPath  the symlink's own path (e.g. 'a/b/link')
+ * @param {string} target    the link target (e.g. '../c/file.txt')
+ * @returns {string|null}    resolved repo path (e.g. 'a/c/file.txt'), or null
+ */
+export function resolveSymlinkTarget(linkPath, target) {
+  if (target == null) return null;
+  const raw = String(target).replace(/\\/g, '/').trim();
+  if (raw === '' || raw.startsWith('/')) return null;
+
+  const stack = splitPath(dirname(linkPath));
+  for (const segment of raw.split('/')) {
+    if (segment === '' || segment === '.') continue;
+    if (segment === '..') {
+      if (stack.length === 0) return null; // escapes the repository root
+      stack.pop();
+    } else {
+      stack.push(segment);
+    }
+  }
+  return stack.length ? stack.join('/') : null;
+}
+
+/**
  * Every ancestor directory path of a file, root-first.
  * ancestors('a/b/c.txt') -> ['a', 'a/b']
  */
