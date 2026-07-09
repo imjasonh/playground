@@ -1,7 +1,7 @@
 import Foundation
 
-/// View model backing `ContentView`. Holds the user's input and the selected
-/// source scale, and derives display strings. Marked `@MainActor` because it
+/// View model backing `TemperatureConverterView`. Holds the user's input and the
+/// selected source scale, and derives display strings. `@MainActor` because it
 /// drives SwiftUI state; the derivation logic is still synchronous and testable.
 @MainActor
 final class ConverterViewModel: ObservableObject {

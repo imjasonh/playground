@@ -1,5 +1,5 @@
 import XCTest
-@testable import HelloIOS
+@testable import Playground
 
 final class TemperatureConverterTests: XCTestCase {
     private let accuracy = 0.0001

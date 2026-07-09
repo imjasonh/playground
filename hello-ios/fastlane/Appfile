@@ -1,4 +1,0 @@
-# The bundle identifier. Authentication uses an App Store Connect API key
-# (see the `beta` lane), so no apple_id / itc/dev portal team fields are needed
-# here. Override the bundle id via the APP_BUNDLE_ID env var if you fork this.
-app_identifier(ENV.fetch("APP_BUNDLE_ID", "io.github.imjasonh.playground.helloios"))

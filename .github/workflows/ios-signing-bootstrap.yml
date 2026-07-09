@@ -12,7 +12,7 @@ on:
       app:
         description: iOS app directory to bootstrap signing for
         required: true
-        default: hello-ios
+        default: ios
 
 jobs:
   bootstrap:

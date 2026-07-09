@@ -1,11 +1,22 @@
-# Design: iOS apps with TestFlight CD and PR previews
+# Design: the Playground iOS app with TestFlight CD and PR previews
 
-> Status: **proposal / design only**. Nothing here is wired up yet. This document
-> describes how to add first-class iOS apps to the playground so they get the
-> same low-ceremony treatment as browser apps: **continuous delivery to
-> TestFlight on merge to `main`**, and a **per-PR preview** you can install on a
-> device from a link/QR code in a preview tab, mirroring the existing gh-pages
-> preview flow.
+> **Adopted architecture (important):** unlike browser apps (many top-level
+> directories, each its own site under Pages), there is exactly **one iOS app** —
+> the **Playground** app in `ios/` (bundle id `io.github.imjasonh.playground`).
+> It is a **container** that hosts many **experiments** internally, the same way
+> the single Pages site hosts many browser apps. New functionality is added as an
+> experiment inside `ios/`, not as a new iOS app / bundle / TestFlight record.
+> The CD/testing machinery below is now implemented; the PR-preview options
+> (Section 5) remain a design.
+>
+> This document describes **continuous delivery to TestFlight on merge to
+> `main`** and a possible **per-PR preview** installable from a link/QR code,
+> mirroring the existing gh-pages preview flow.
+
+Where earlier drafts of this doc spoke of "iOS apps" as a per-directory type
+(mirroring Go/Rust), read that as the mechanism (a directory with a `project.yml`
+marker, discovered by `discover-ios-apps.sh`) — but the **policy** is a single
+`ios/` app. The discovery is generic, yet by convention only `ios/` exists.
 
 ## 1. Goals & how they map to what we already do
 
@@ -292,8 +303,8 @@ Once the Section 8 prerequisites (at least an Apple account + ASC API key +
 
 1. Add `discover-ios-apps.sh` and extend `discover-changed-apps.sh`
    (`ios=` output). *(No Apple creds needed; safe to land first.)*
-2. Add a scaffold iOS app (e.g. `hello-ios/` with `project.yml`, a trivial
-   SwiftUI view, one XCTest) as the reference app — the iOS analog of `hello/`.
+2. Add the single `ios/` "Playground" app (`project.yml`, a launcher +
+   experiments, unit + UI tests). New features are experiments inside it.
 3. Add `ios-test.yml` (or an iOS job): `macos-latest` → XcodeGen → `xcodebuild
    test` on a Simulator. *(No signing needed; can run on any PR immediately.)*
 4. Add **Option A** preview: upload the Simulator `.app` as a PR artifact.

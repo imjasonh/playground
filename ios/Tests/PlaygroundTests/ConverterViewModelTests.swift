@@ -1,5 +1,5 @@
 import XCTest
-@testable import HelloIOS
+@testable import Playground
 
 @MainActor
 final class ConverterViewModelTests: XCTestCase {

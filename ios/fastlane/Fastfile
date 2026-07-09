@@ -1,8 +1,8 @@
 default_platform(:ios)
 
-APP_SCHEME = "HelloIOS"
-XCODEPROJ = "HelloIOS.xcodeproj"
-APP_IDENTIFIER = ENV.fetch("APP_BUNDLE_ID", "io.github.imjasonh.playground.helloios")
+APP_SCHEME = "Playground"
+XCODEPROJ = "Playground.xcodeproj"
+APP_IDENTIFIER = ENV.fetch("APP_BUNDLE_ID", "io.github.imjasonh.playground")
 
 # Build an App Store Connect API token from the CI env. Shared by the lanes
 # that talk to Apple.

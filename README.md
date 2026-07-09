@@ -54,14 +54,18 @@ skip them:
 - **[`web-push/`](web-push/)** — a Web Push application-server backend
   (RFC 8030/8188/8291/8292) for Cloudflare Workers, in Rust.
 
-## iOS apps
+## iOS app
 
-iOS apps (a top-level directory with an XcodeGen `project.yml`) build and test on
-a macOS runner and ship to **TestFlight** on merge to `main`. They aren't
-deployed to GitHub Pages:
+There is a **single** iOS app that builds and tests on a macOS runner and ships
+to **TestFlight** on merge to `main` (it isn't deployed to GitHub Pages). Just as
+the Pages site hosts many browser apps, this one TestFlight app hosts many
+experiments internally:
 
-- **[`hello-ios/`](hello-ios/)** — a SwiftUI temperature converter and the
-  reference iOS app: unit + UI tests plus continuous delivery to TestFlight.
+- **[`ios/`](ios/)** — the **Playground** app: a launcher that hosts many
+  self-contained experiments (a temperature converter and a counter to start).
+  Add an experiment by dropping a SwiftUI view into `ios/Sources/Experiments/`
+  and registering it — no new app, no CI changes. Unit + UI tests, continuous
+  delivery to TestFlight.
 
 See [`docs/ios-testflight-design.md`](docs/ios-testflight-design.md) for the iOS
 CD/preview design, and [`docs/ios-testflight-setup.md`](docs/ios-testflight-setup.md)

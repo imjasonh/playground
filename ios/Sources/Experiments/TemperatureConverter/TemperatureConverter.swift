@@ -23,7 +23,7 @@ enum TemperatureScale: CaseIterable, Equatable {
 }
 
 /// Pure, dependency-free temperature math. Everything here is deterministic and
-/// trivially unit-testable — the reason the app's logic lives outside the views.
+/// trivially unit-testable — the reason the logic lives outside the views.
 enum TemperatureConverter {
     static func celsiusToFahrenheit(_ celsius: Double) -> Double {
         celsius * 9.0 / 5.0 + 32.0

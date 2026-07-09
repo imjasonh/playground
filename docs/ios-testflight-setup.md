@@ -39,7 +39,7 @@ your enrollment** in Step 1 (often under an hour, occasionally 24–48 hours).
 **Jargon cheat-sheet** (don't worry, each is explained when you reach it):
 
 - **Bundle ID** — your app's unique reverse-domain name, e.g.
-  `io.github.imjasonh.playground.helloios`.
+  `io.github.imjasonh.playground`.
 - **Team ID** — a 10-character code identifying your developer account.
 - **App Store Connect (ASC)** — Apple's web dashboard for apps & TestFlight.
 - **Certificate / Provisioning profile** — the cryptographic files that let a
@@ -80,9 +80,9 @@ your enrollment** in Step 1 (often under an hour, occasionally 24–48 hours).
 
 ## Step 3 — Register your app's Bundle ID
 
-The bundle ID uniquely identifies the app. Our sample app uses
-`io.github.imjasonh.playground.helloios` — use that unless you've changed it in
-`hello-ios/project.yml`.
+The bundle ID uniquely identifies the app. The Playground app uses
+`io.github.imjasonh.playground` — use that unless you've changed it in
+`ios/project.yml`.
 
 1. Go to <https://developer.apple.com/account/resources/identifiers/list>
    (**Certificates, Identifiers & Profiles → Identifiers**).
@@ -90,9 +90,9 @@ The bundle ID uniquely identifies the app. Our sample app uses
 3. Select **App IDs** → **Continue**.
 4. Select type **App** → **Continue**.
 5. Fill in:
-   - **Description:** `Hello iOS` (any human-readable label).
+   - **Description:** `Playground` (any human-readable label).
    - **Bundle ID:** choose **Explicit** and type
-     `io.github.imjasonh.playground.helloios` exactly.
+     `io.github.imjasonh.playground` exactly.
 6. **Capabilities:** leave everything unchecked — this app needs none.
 7. Click **Continue** → **Register**.
 
@@ -110,13 +110,13 @@ TestFlight needs an "app" to receive builds into.
 3. Fill in the dialog:
    - **Platforms:** check **iOS**.
    - **Name:** the public app name. ⚠️ This must be **unique across the entire
-     App Store**, so `Hello iOS` may be taken — try something like
-     `Hello iOS (yourname)`. (You can change it before any public release; it
+     App Store**, so `Playground` may be taken — try something like
+     `Playground (yourname)`. (You can change it before any public release; it
      doesn't affect TestFlight builds.)
    - **Primary Language:** e.g. English (U.S.).
-   - **Bundle ID:** pick `io.github.imjasonh.playground.helloios` from the
+   - **Bundle ID:** pick `io.github.imjasonh.playground` from the
      dropdown (the one you registered in Step 3).
-   - **SKU:** any unique internal string, e.g. `helloios` (never shown to users).
+   - **SKU:** any unique internal string, e.g. `playground` (never shown to users).
    - **User Access:** **Full Access** is fine.
 4. Click **Create**.
 
@@ -261,7 +261,7 @@ this **once**. Pick one option:
 ### Option A (recommended — no Mac needed): run it in CI
 
 1. In this repo go to the **Actions** tab → **iOS signing bootstrap** workflow.
-2. Click **Run workflow**, leave the app as `hello-ios`, and **Run**.
+2. Click **Run workflow**, leave the app as `ios`, and **Run**.
 3. It runs on a macOS runner, creates the certificate + profile via your API
    key, encrypts them with `MATCH_PASSWORD`, and pushes them to `ios-signing`.
    When it's green, signing is ready.
@@ -271,7 +271,7 @@ If it fails complaining a secret is missing, finish Step 8 and re-run it.
 ### Option B: run it locally (needs Ruby; Mac or Linux/WSL)
 
 ```bash
-cd hello-ios
+cd ios
 gem install fastlane          # skip if already installed
 
 export MATCH_GIT_URL="https://github.com/imjasonh/ios-signing.git"
@@ -287,7 +287,7 @@ bundle exec fastlane signing_bootstrap
 ```
 
 Either way, match creates a **distribution certificate** and an **App Store
-provisioning profile** named `match AppStore io.github.imjasonh.playground.helloios`
+provisioning profile** named `match AppStore io.github.imjasonh.playground`
 and stores them in the `ios-signing` repo. Future TestFlight builds read them
 read-only — you never need to repeat this unless the certificate expires or you
 add another app.
@@ -319,7 +319,7 @@ So you actually receive the build.
 ## Step 11 — Ship it and verify
 
 1. **Merge this PR to `main`** (the iOS workflow must be on `main` for
-   push-to-main delivery), or push any change under `hello-ios/` to `main`.
+   push-to-main delivery), or push any change under `ios/` to `main`.
 2. Go to the repo's **Actions** tab → the **iOS** workflow run.
    - The `discover` job detects the changed iOS app.
    - The `ios` job (on macOS) generates the project, runs tests, and — because
@@ -336,7 +336,7 @@ So you actually receive the build.
 - **"TestFlight upload skipped" warning in CI, tests pass:** the secrets aren't
   all set yet (the deploy gate checks `ASC_KEY_ID`). Recheck Step 8.
 - **`No matching provisioning profiles found` / signing errors:** the profile
-  name must be `match AppStore io.github.imjasonh.playground.helloios`. Re-run
+  name must be `match AppStore io.github.imjasonh.playground`. Re-run
   the signing bootstrap (Step 9) and confirm `APPLE_TEAM_ID` is correct.
 - **`Authentication credentials are missing or invalid` from Apple:** the API
   key is wrong or lacks permission. Confirm `ASC_KEY_ID` / `ASC_ISSUER_ID`, that
