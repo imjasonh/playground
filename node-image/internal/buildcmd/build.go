@@ -103,11 +103,11 @@ func Run(opt Options) (string, error) {
 		platforms = []string{"linux/amd64"}
 	}
 
-	var lastRef string
 	stageRoot := filepath.Join(os.TempDir(), fmt.Sprintf("node-image-%d", os.Getpid()))
 	defer os.RemoveAll(stageRoot)
 
-	for i, pstr := range platforms {
+	var built []publish.PlatformImage
+	for _, pstr := range platforms {
 		plat, err := publish.ParsePlatform(pstr)
 		if err != nil {
 			return "", err
@@ -180,14 +180,16 @@ func Run(opt Options) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		built = append(built, publish.PlatformImage{Platform: plat, Image: image})
+	}
 
+	var lastRef string
+	if len(built) == 1 {
+		image := built[0].Image
 		if cfg.NoPush {
 			outDir := cfg.OCIDir
 			if outDir == "" {
 				outDir = filepath.Join(cfg.Dir, ".node-image-out")
-			}
-			if len(platforms) > 1 {
-				outDir = filepath.Join(outDir, strings.ReplaceAll(pstr, "/", "-"))
 			}
 			dig, err := publish.WriteDigestSummary(outDir, image)
 			if err != nil {
@@ -195,18 +197,36 @@ func Run(opt Options) (string, error) {
 			}
 			fmt.Fprintf(stderr, "wrote %s (%s)\n", outDir, dig)
 			lastRef = dig
-			continue
+		} else {
+			ref, err := publish.Push(cfg.Repo, cfg.Tags, image)
+			if err != nil {
+				return "", err
+			}
+			lastRef = ref
 		}
-
-		if i > 0 {
-			fmt.Fprintf(stderr, "warning: multi-arch index not yet implemented; pushed %s only\n", platforms[0])
-			break
-		}
-		ref, err := publish.Push(cfg.Repo, cfg.Tags, image)
+	} else {
+		idx, err := publish.MakeIndex(built)
 		if err != nil {
 			return "", err
 		}
-		lastRef = ref
+		if cfg.NoPush {
+			outDir := cfg.OCIDir
+			if outDir == "" {
+				outDir = filepath.Join(cfg.Dir, ".node-image-out")
+			}
+			dig, err := publish.WriteIndexSummary(outDir, idx)
+			if err != nil {
+				return "", err
+			}
+			fmt.Fprintf(stderr, "wrote multi-arch index %s (%s)\n", outDir, dig)
+			lastRef = dig
+		} else {
+			ref, err := publish.PushIndex(cfg.Repo, cfg.Tags, idx)
+			if err != nil {
+				return "", err
+			}
+			lastRef = ref
+		}
 	}
 
 	fmt.Fprintln(stdout, lastRef)

@@ -19,6 +19,12 @@ import (
 	"github.com/imjasonh/playground/node-image/internal/layer"
 )
 
+// PlatformImage pairs an image with its platform for index assembly.
+type PlatformImage struct {
+	Platform v1.Platform
+	Image    v1.Image
+}
+
 // Options controls image assembly.
 type Options struct {
 	Base       string
@@ -132,6 +138,62 @@ func WriteDigestSummary(dir string, img v1.Image) (string, error) {
 	return d.String(), nil
 }
 
+// MakeIndex builds an OCI image index from per-platform images.
+func MakeIndex(images []PlatformImage) (v1.ImageIndex, error) {
+	if len(images) == 0 {
+		return nil, fmt.Errorf("no images for index")
+	}
+	idx := mutate.AppendManifests(empty.Index, platformAdds(images)...)
+	return idx, nil
+}
+
+func platformAdds(images []PlatformImage) []mutate.IndexAddendum {
+	adds := make([]mutate.IndexAddendum, 0, len(images))
+	for _, pi := range images {
+		p := pi.Platform
+		adds = append(adds, mutate.IndexAddendum{
+			Add: pi.Image,
+			Descriptor: v1.Descriptor{
+				Platform: &p,
+			},
+		})
+	}
+	return adds
+}
+
+// WriteIndexSummary writes the index digest and per-platform image digests.
+func WriteIndexSummary(dir string, idx v1.ImageIndex) (string, error) {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	d, err := idx.Digest()
+	if err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "digest"), []byte(d.String()), 0o644); err != nil {
+		return "", err
+	}
+	mf, err := idx.IndexManifest()
+	if err != nil {
+		return "", err
+	}
+	var b strings.Builder
+	for _, m := range mf.Manifests {
+		plat := "unknown"
+		if m.Platform != nil {
+			plat = m.Platform.OS + "/" + m.Platform.Architecture
+		}
+		b.WriteString(plat)
+		b.WriteByte('\t')
+		b.WriteString(m.Digest.String())
+		b.WriteByte('\n')
+	}
+	if err := os.WriteFile(filepath.Join(dir, "platforms"), []byte(b.String()), 0o644); err != nil {
+		return "", err
+	}
+	return d.String(), nil
+}
+
 // Push pushes img to repo with tags; returns repo@sha256:…
 func Push(repo string, tags []string, img v1.Image) (string, error) {
 	ref, err := name.ParseReference(repo, name.WeakValidation)
@@ -153,6 +215,33 @@ func Push(repo string, tags []string, img v1.Image) (string, error) {
 	}
 	for _, t := range tags[1:] {
 		if err := remote.Tag(repoName.Tag(t), img, remote.WithAuthFromKeychain(authn.DefaultKeychain)); err != nil {
+			return "", err
+		}
+	}
+	return fmt.Sprintf("%s@%s", repoName.Name(), d.String()), nil
+}
+
+// PushIndex pushes an image index with tags; returns repo@sha256:…
+func PushIndex(repo string, tags []string, idx v1.ImageIndex) (string, error) {
+	ref, err := name.ParseReference(repo, name.WeakValidation)
+	if err != nil {
+		return "", err
+	}
+	repoName := ref.Context()
+	tag := "latest"
+	if len(tags) > 0 {
+		tag = tags[0]
+	}
+	dst := repoName.Tag(tag)
+	if err := remote.WriteIndex(dst, idx, remote.WithAuthFromKeychain(authn.DefaultKeychain)); err != nil {
+		return "", err
+	}
+	d, err := idx.Digest()
+	if err != nil {
+		return "", err
+	}
+	for _, t := range tags[1:] {
+		if err := remote.Tag(repoName.Tag(t), idx, remote.WithAuthFromKeychain(authn.DefaultKeychain)); err != nil {
 			return "", err
 		}
 	}
