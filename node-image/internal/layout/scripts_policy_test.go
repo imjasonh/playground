@@ -29,6 +29,29 @@ func TestCheckScriptsAllowsTelemetryPostinstall(t *testing.T) {
 	}
 }
 
+func TestCheckScriptsAllowsNonStringScriptEntries(t *testing.T) {
+	dir := t.TempDir()
+	// alce@1.2.0 stores an object under scripts.blanket — must not fail JSON parse.
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{
+		"name": "alce",
+		"version": "1.2.0",
+		"scripts": {
+			"blanket": {"pattern": "x"},
+			"test": "mocha"
+		}
+	}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pj, err := layout.ReadPackageJSONForTest(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := resolve.PackageRef{PackageID: "alce@1.2.0", Name: "alce"}
+	if err := layout.CheckScriptsInDir(ref, dir, pj); err != nil {
+		t.Fatalf("non-string scripts should be ignored: %v", err)
+	}
+}
+
 func TestCheckScriptsRejectsBindingGyp(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{

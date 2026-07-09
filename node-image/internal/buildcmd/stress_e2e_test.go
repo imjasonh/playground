@@ -125,13 +125,37 @@ func TestE2EWorkspaceRejected(t *testing.T) {
 
 func TestVirtualStoreDirEncoding(t *testing.T) {
 	cases := map[string]string{
-		"ms@2.1.3": "ms@2.1.3",
-		"@sindresorhus/is@4.6.0": "@sindresorhus+is@4.6.0",
+		"ms@2.1.3":                           "ms@2.1.3",
+		"@sindresorhus/is@4.6.0":             "@sindresorhus+is@4.6.0",
 		"eslint-config-prettier@9.1.0(eslint@8.57.0)": "eslint-config-prettier@9.1.0_eslint@8.57.0",
 	}
 	for in, want := range cases {
 		if got := layout.VirtualStoreDir(in); got != want {
 			t.Fatalf("%q: got %q want %q", in, got, want)
 		}
+	}
+}
+
+func TestVirtualStoreDirHashesLongPeerPath(t *testing.T) {
+	// Real depPath from ultimate-nestjs-boilerplate (pnpm 9.12, maxLength=120).
+	depPath := `@nest-lab/fastify-multer@1.2.0(@nestjs/common@10.4.12(class-transformer@0.5.1)(class-validator@0.14.1)(reflect-metadata@0.2.2)(rxjs@7.8.1))(@nestjs/platform-fastify@10.4.12(@fastify/static@7.0.4)(@fastify/view@8.2.0)(@nestjs/common@10.4.12(class-transformer@0.5.1)(class-validator@0.14.1)(reflect-metadata@0.2.2)(rxjs@7.8.1))(@nestjs/core@10.4.12))(rxjs@7.8.1)`
+	want := `@nest-lab+fastify-multer@1.2.0_@nestjs+common@10.4.12_class-transformer@0.5.1_class-validator_pgdisg3jb4n57fpqoatyzbhrnu`
+	got := layout.VirtualStoreDir(depPath)
+	if got != want {
+		t.Fatalf("got %q\nwant %q", got, want)
+	}
+	if len(got) > layout.DefaultVirtualStoreDirMaxLength {
+		t.Fatalf("len %d > %d", len(got), layout.DefaultVirtualStoreDirMaxLength)
+	}
+}
+
+func TestVirtualStoreDirHashesMixedCase(t *testing.T) {
+	// pnpm hashes mixed-case names even when short (case-insensitive FS safety).
+	got := layout.VirtualStoreDir("JSONSteam@1.0.0")
+	if !strings.Contains(got, "_") {
+		t.Fatalf("expected hash suffix, got %q", got)
+	}
+	if len(got) > layout.DefaultVirtualStoreDirMaxLength {
+		t.Fatalf("len %d", len(got))
 	}
 }

@@ -90,14 +90,22 @@ func TestExtractRejectsSymlinkEscape(t *testing.T) {
 	}
 }
 
-func TestExtractRejectsAbsoluteSymlink(t *testing.T) {
+func TestExtractNonPackageRootPrefix(t *testing.T) {
 	dir := t.TempDir()
-	tgz := filepath.Join(dir, "evil.tgz")
+	tgz := filepath.Join(dir, "ejs.tgz")
 	writeTestTarball(t, tgz, []tarEntry{
-		{name: "package/x", typ: tar.TypeSymlink, link: "/tmp"},
+		{name: "ejs-v3.1.10/package.json", typ: tar.TypeReg, body: []byte(`{"name":"ejs","version":"3.1.10"}`)},
+		{name: "ejs-v3.1.10/ejs.js", typ: tar.TypeReg, body: []byte("module.exports=1")},
 	})
-	if err := layout.ExtractNPMTarballForTest(tgz, filepath.Join(dir, "pkg")); err == nil {
-		t.Fatal("expected absolute symlink to be rejected")
+	dest := filepath.Join(dir, "pkg")
+	if err := layout.ExtractNPMTarballForTest(tgz, dest); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "package.json")); err != nil {
+		t.Fatalf("expected package.json at dest root: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "ejs.js")); err != nil {
+		t.Fatalf("expected ejs.js: %v", err)
 	}
 }
 

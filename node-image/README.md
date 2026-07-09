@@ -66,8 +66,9 @@ compile needs `pnpm` on `PATH` when `scripts.build` is present (unless
 | Directory | Contains `package.json` (CLI arg, default `.`) |
 | Lockfile | `pnpm-lock.yaml` in that dir or a parent workspace root |
 | Config | Optional `"node-image"` key in `package.json` (`repo`, `base`, `platforms`, `buildScript`, `main`, `cmd`, `env`, `maxLayers`, …) |
-| Entrypoint | `node` + resolved JS main. If `package.json#main` is `.ts`, prefers `dist/index.js` (etc.) after compile. Override with `"node-image"."main"`. |
+| Entrypoint | `node` + resolved JS main. If `package.json#main` is `.ts` or unset, prefers `dist/index.js` / `dist/main.js` after compile. Override with `"node-image"."main"`. |
 | Env | Defaults `NODE_ENV=production`. Override/extend via `"node-image"."env"`. |
+| Virtual store | Matches pnpm 9 `depPathToFilename` (peer `)(` → `_`, truncate+base32 hash at 120 chars). |
 | Base | Default `gcr.io/distroless/nodejs22-debian12` (**glibc**). Musl bases (Alpine/Wolfi/Chainguard) fail loudly. Prefer `@sha256:…` pins. |
 
 ## Flags

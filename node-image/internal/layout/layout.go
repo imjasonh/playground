@@ -3,12 +3,15 @@ package layout
 import (
 	"archive/tar"
 	"compress/gzip"
+	"crypto/md5"
+	"encoding/base32"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/imjasonh/playground/node-image/internal/lock"
 	"github.com/imjasonh/playground/node-image/internal/resolve"
@@ -119,14 +122,106 @@ func Materialize(root string, l *lock.Lock, refs []resolve.PackageRef, tarballs 
 	return &Result{Root: root}, nil
 }
 
+// DefaultVirtualStoreDirMaxLength is pnpm's default virtualStoreDirMaxLength on
+// Linux/macOS (see pnpm's virtual-store-dir-max-length). Paths longer than this
+// (or with uppercase letters) are truncated and given a base32(md5) suffix —
+// without that, peer-heavy Nest/ESLint graphs exceed Linux NAME_MAX (255).
+const DefaultVirtualStoreDirMaxLength = 120
+
+// base32HashLen is the length of createBase32Hash output (md5 → base32, no pad).
+const base32HashLen = 26
+
 // VirtualStoreDir encodes a lock depPath the way pnpm names directories under
-// node_modules/.pnpm: '/' → '+', '(' → '_', ')' removed.
+// node_modules/.pnpm (pnpm 9.x / lockfile v9):
+//
+//	depPathToFilename: '/' and other illegal chars → '+';
+//	strip a trailing ')'; then ')(' / '(' / ')' → '_';
+//	if len > max or mixed case → truncate + '_' + base32(md5).
+//
 // e.g. "@scope/pkg@1.0.0(peer@2)" → "@scope+pkg@1.0.0_peer@2"
 func VirtualStoreDir(depPath string) string {
-	s := strings.ReplaceAll(depPath, "/", "+")
-	s = strings.ReplaceAll(s, "(", "_")
-	s = strings.ReplaceAll(s, ")", "")
-	return s
+	return VirtualStoreDirMax(depPath, DefaultVirtualStoreDirMaxLength)
+}
+
+// VirtualStoreDirMax is VirtualStoreDir with an explicit max length (pnpm's
+// virtualStoreDirMaxLength). maxLength <= 0 uses the default.
+func VirtualStoreDirMax(depPath string, maxLength int) string {
+	if maxLength <= 0 {
+		maxLength = DefaultVirtualStoreDirMaxLength
+	}
+	filename := depPathToFilenameUnescaped(depPath)
+	// pnpm 9: replace / \ : * ? " < > |
+	filename = strings.Map(func(r rune) rune {
+		switch r {
+		case '/', '\\', ':', '*', '?', '"', '<', '>', '|':
+			return '+'
+		default:
+			return r
+		}
+	}, filename)
+	if strings.Contains(filename, "(") {
+		filename = strings.TrimSuffix(filename, ")")
+		// ')(' | '(' | ')' → '_'  (order matters: collapse peer-group seams first)
+		var b strings.Builder
+		b.Grow(len(filename))
+		for i := 0; i < len(filename); i++ {
+			c := filename[i]
+			if c == ')' && i+1 < len(filename) && filename[i+1] == '(' {
+				b.WriteByte('_')
+				i++
+				continue
+			}
+			if c == '(' || c == ')' {
+				b.WriteByte('_')
+				continue
+			}
+			b.WriteByte(c)
+		}
+		filename = b.String()
+	}
+	needsHash := len(filename) > maxLength || (filename != strings.ToLower(filename) && !strings.HasPrefix(filename, "file+"))
+	if !needsHash {
+		return filename
+	}
+	// pnpm 9.12: substring(0, maxLength - 27) + '_' + createBase32Hash
+	keep := maxLength - base32HashLen - 1
+	if keep < 0 {
+		keep = 0
+	}
+	if keep > len(filename) {
+		keep = len(filename)
+	}
+	return filename[:keep] + "_" + createBase32Hash(filename)
+}
+
+func depPathToFilenameUnescaped(depPath string) string {
+	if strings.HasPrefix(depPath, "file:") {
+		return strings.Replace(depPath, ":", "+", 1)
+	}
+	if strings.HasPrefix(depPath, "/") {
+		depPath = depPath[1:]
+	}
+	// pnpm rewrites name@version around the '@' after index 0; for registry
+	// packages this is a no-op (same string). Kept for file:/ absolute forms.
+	index := -1
+	if len(depPath) > 1 {
+		index = strings.IndexByte(depPath[1:], '@')
+		if index >= 0 {
+			index++ // restore absolute index
+		}
+	}
+	if index == -1 {
+		return depPath
+	}
+	return depPath[:index] + "@" + depPath[index+1:]
+}
+
+func createBase32Hash(s string) string {
+	sum := md5.Sum([]byte(s))
+	enc := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(sum[:])
+	return strings.Map(func(r rune) rune {
+		return unicode.ToLower(r)
+	}, enc)
 }
 
 // LinkTopLevel creates node_modules/<linkName> → .pnpm/.../node_modules/<pkgName>
@@ -234,12 +329,12 @@ func linkStoreDeps(root string, parent resolve.PackageRef, deps []namedDep) erro
 }
 
 type packageJSON struct {
-	Name                 string            `json:"name"`
-	Version              string            `json:"version"`
-	Bin                  json.RawMessage   `json:"bin"`
-	Directories          *directoriesJSON  `json:"directories"`
-	Scripts              map[string]string `json:"scripts"`
-	OptionalDependencies map[string]string `json:"optionalDependencies"`
+	Name                 string                     `json:"name"`
+	Version              string                     `json:"version"`
+	Bin                  json.RawMessage            `json:"bin"`
+	Directories          *directoriesJSON           `json:"directories"`
+	Scripts              map[string]json.RawMessage `json:"scripts"`
+	OptionalDependencies map[string]string          `json:"optionalDependencies"`
 }
 
 type directoriesJSON struct {
@@ -256,6 +351,23 @@ func readPackageJSON(dir string) (packageJSON, error) {
 		return pj, err
 	}
 	return pj, nil
+}
+
+// scriptString returns a lifecycle script body when it is a JSON string.
+// Some packages (e.g. alce) stash non-string values under scripts.* — ignore those.
+func (pj packageJSON) scriptString(name string) string {
+	if pj.Scripts == nil {
+		return ""
+	}
+	raw, ok := pj.Scripts[name]
+	if !ok || len(raw) == 0 {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return ""
+	}
+	return s
 }
 
 // CheckScriptsInDir fails when a non-optional package appears to need a native
@@ -288,7 +400,7 @@ func CheckScriptsInDir(ref resolve.PackageRef, pkgDir string, pj packageJSON) er
 		needsNative = true
 	}
 	for _, s := range []string{"preinstall", "install", "postinstall"} {
-		body := pj.Scripts[s]
+		body := pj.scriptString(s)
 		if body == "" {
 			continue
 		}
@@ -370,6 +482,10 @@ func extractNPMTarball(tgzPath, destDir string) error {
 	if err := os.MkdirAll(destAbs, 0o755); err != nil {
 		return err
 	}
+	prefix, err := npmTarballRootPrefix(tgzPath)
+	if err != nil {
+		return err
+	}
 	f, err := os.Open(tgzPath)
 	if err != nil {
 		return err
@@ -389,16 +505,20 @@ func extractNPMTarball(tgzPath, destDir string) error {
 		if err != nil {
 			return err
 		}
-		name := hdr.Name
-		name = strings.TrimPrefix(name, "./")
-		if !strings.HasPrefix(name, "package/") {
+		name := strings.TrimPrefix(hdr.Name, "./")
+		if prefix != "" {
+			if name == strings.TrimSuffix(prefix, "/") {
+				continue // root dir entry
+			}
+			if !strings.HasPrefix(name, prefix) {
+				continue
+			}
+			name = strings.TrimPrefix(name, prefix)
+		}
+		if name == "" {
 			continue
 		}
-		rel := strings.TrimPrefix(name, "package/")
-		if rel == "" {
-			continue
-		}
-		clean := filepath.Clean(filepath.FromSlash(rel))
+		clean := filepath.Clean(filepath.FromSlash(name))
 		if clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(os.PathSeparator)) || filepath.IsAbs(clean) {
 			return fmt.Errorf("refusing unsafe path in tarball: %s", hdr.Name)
 		}
@@ -460,6 +580,51 @@ func extractNPMTarball(tgzPath, destDir string) error {
 		}
 	}
 	return nil
+}
+
+// npmTarballRootPrefix returns the single top-level directory prefix to strip
+// (e.g. "package/" or "ejs-v3.1.10/"). npm pack uses "package/"; some older or
+// republished tarballs use "{name}-v{version}/" or "{name}/". If entries do not
+// share one root, returns "" (extract as-is).
+func npmTarballRootPrefix(tgzPath string) (string, error) {
+	f, err := os.Open(tgzPath)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	gr, err := gzip.NewReader(f)
+	if err != nil {
+		return "", err
+	}
+	defer gr.Close()
+	tr := tar.NewReader(gr)
+	var root string
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return "", err
+		}
+		name := strings.TrimPrefix(hdr.Name, "./")
+		if name == "" || name == "." {
+			continue
+		}
+		parts := strings.SplitN(name, "/", 2)
+		top := parts[0]
+		if root == "" {
+			root = top
+			continue
+		}
+		if top != root {
+			return "", nil // mixed roots — do not strip
+		}
+	}
+	if root == "" {
+		return "", nil
+	}
+	return root + "/", nil
 }
 
 func isWithinDir(root, path string) bool {
