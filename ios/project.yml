@@ -1,0 +1,81 @@
+name: Playground
+
+# This single YAML is the source of truth for the one iOS app (and the discovery
+# marker for the iOS app type). There is exactly ONE iOS app in this repo — the
+# "Playground" container — and it hosts many experiments internally. Add new
+# experiments as SwiftUI views under Sources/Experiments/ and register them in
+# ExperimentCatalog; do NOT create additional top-level iOS app directories.
+#
+# `xcodegen generate` produces Playground.xcodeproj, which is git-ignored.
+
+options:
+  bundleIdPrefix: io.github.imjasonh
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+  minimumXcodeGenVersion: "2.38.0"
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    VERSIONING_SYSTEM: apple-generic
+    # DEVELOPMENT_TEAM is injected by CI (fastlane / xcargs) at signing time so
+    # the checked-in spec stays account-agnostic.
+
+targets:
+  Playground:
+    type: application
+    platform: iOS
+    sources:
+      - Sources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.imjasonh.playground
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Playground
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        # Declares no non-exempt encryption so TestFlight uploads don't stall on
+        # the export-compliance question.
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
+
+  PlaygroundTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - Tests/PlaygroundTests
+    dependencies:
+      - target: Playground
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.imjasonh.playground.tests
+        GENERATE_INFOPLIST_FILE: YES
+
+  PlaygroundUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - Tests/PlaygroundUITests
+    dependencies:
+      - target: Playground
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.imjasonh.playground.uitests
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  Playground:
+    build:
+      targets:
+        Playground: all
+    test:
+      gatherCoverageData: true
+      targets:
+        - PlaygroundTests
+        - PlaygroundUITests
+    run:
+      config: Debug
+    archive:
+      config: Release

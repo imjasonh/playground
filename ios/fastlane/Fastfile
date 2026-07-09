@@ -1,0 +1,113 @@
+default_platform(:ios)
+
+APP_SCHEME = "Playground"
+XCODEPROJ = "Playground.xcodeproj"
+APP_IDENTIFIER = ENV.fetch("APP_BUNDLE_ID", "io.github.imjasonh.playground")
+
+# Build an App Store Connect API token from the CI env. Shared by the lanes
+# that talk to Apple.
+def asc_api_key
+  app_store_connect_api_key(
+    key_id: ENV.fetch("ASC_KEY_ID"),
+    issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+    key_content: ENV.fetch("ASC_API_KEY_P8"),
+    is_key_content_base64: true,
+    in_house: false
+  )
+end
+
+platform :ios do
+  desc "Run unit + UI tests on a simulator (no signing required)"
+  lane :test do
+    run_tests(
+      project: XCODEPROJ,
+      scheme: APP_SCHEME,
+      # Device name is chosen at runtime by ios-ci.sh (falls back to a common
+      # one) so we don't hardcode a simulator that a given Xcode may not ship.
+      devices: [ENV.fetch("IOS_SIM_DEVICE", "iPhone 16")],
+      result_bundle: true,
+      output_directory: "fastlane/test_output"
+    )
+  end
+
+  desc "One-time: create the distribution certificate + App Store profile and " \
+       "store them (encrypted) in the match repo. Run via the " \
+       "'iOS signing bootstrap' workflow after the secrets are set."
+  lane :signing_bootstrap do
+    setup_ci # temporary CI keychain to hold the new certificate
+    match(
+      type: "appstore",
+      readonly: false, # create + push the signing assets
+      app_identifier: APP_IDENTIFIER,
+      api_key: asc_api_key
+    )
+    UI.success("Signing assets created and stored in the match repo. " \
+               "Future 'beta' runs will read them read-only.")
+  end
+
+  desc "Build a signed app-store IPA and upload it to TestFlight"
+  lane :beta do
+    setup_ci # creates a temporary CI keychain
+
+    api_key = asc_api_key
+
+    # Fetch certs + provisioning profiles from the private `match` repo, created
+    # once by the `signing_bootstrap` lane; CI only reads them here.
+    match(
+      type: "appstore",
+      readonly: true,
+      app_identifier: APP_IDENTIFIER,
+      api_key: api_key
+    )
+
+    # Pick a build number strictly greater than the newest one on TestFlight so
+    # every upload is unique; fall back to the CI run number if the API lookup
+    # fails (e.g. the very first upload before the app has any builds).
+    build_number =
+      begin
+        latest_testflight_build_number(
+          api_key: api_key,
+          app_identifier: APP_IDENTIFIER
+        ) + 1
+      rescue StandardError
+        Integer(ENV.fetch("GITHUB_RUN_NUMBER", "1"))
+      end
+
+    team_id = ENV.fetch("APPLE_TEAM_ID")
+    profile_name = "match AppStore #{APP_IDENTIFIER}"
+
+    build_app(
+      project: XCODEPROJ,
+      scheme: APP_SCHEME,
+      export_method: "app-store",
+      # Force manual signing with the certificate + profile that `match`
+      # installed, so the archive step doesn't try (and fail) to sign
+      # automatically on a CI machine with no Apple account logged in.
+      # Values containing spaces ("Apple Distribution", the profile name) must be
+      # quoted — xcargs is passed through a shell.
+      xcargs: [
+        "CURRENT_PROJECT_VERSION=#{build_number}",
+        "DEVELOPMENT_TEAM=#{team_id}",
+        "CODE_SIGN_STYLE=Manual",
+        "CODE_SIGN_IDENTITY='Apple Distribution'",
+        "PROVISIONING_PROFILE_SPECIFIER='#{profile_name}'"
+      ].join(" "),
+      export_options: {
+        method: "app-store",
+        signingStyle: "manual",
+        teamID: team_id,
+        provisioningProfiles: {
+          APP_IDENTIFIER => profile_name
+        }
+      },
+      output_directory: "fastlane/build"
+    )
+
+    upload_to_testflight(
+      api_key: api_key,
+      app_identifier: APP_IDENTIFIER,
+      distribute_external: false, # internal testers only; no Beta App Review
+      skip_waiting_for_build_processing: true
+    )
+  end
+end

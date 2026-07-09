@@ -2,8 +2,8 @@
 
 This repository is a **multi-app playground**. Each top-level directory can be a
 self-contained browser app deployed to GitHub Pages, an independent Go
-command-line app, or a Rust app (e.g. a Cloudflare Worker). There is no shared
-build step at the repo root.
+command-line app, a Rust app (e.g. a Cloudflare Worker), or an iOS app delivered
+to TestFlight. There is no shared build step at the repo root.
 
 ## Repository layout
 
@@ -22,6 +22,7 @@ playground/
 ├── git/                   # in-browser read-only git client (JS + Jest + Playwright)
 ├── gitdb/                 # Go CLI (Go module + Go tests)
 ├── hello/                 # example static app (HTML only)
+├── ios/                   # the single "Playground" iOS app (SwiftUI; TestFlight CD)
 ├── kanoodle/              # example app with tests (JS + Jest + Playwright)
 ├── ocidb/                 # Go CLI (Go module + Go tests)
 ├── web-push/              # Rust Cloudflare Worker (Cargo + tests; not a Pages app)
@@ -46,6 +47,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `ocidb/` | no | Go CLI; no `index.html` |
 | `web-push/` | no | Rust Cloudflare Worker; no `index.html` |
 | `cors-proxy/` | no | Rust Cloudflare Worker; no `index.html` |
+| `ios/` | no | The single "Playground" iOS app (XcodeGen + SwiftUI); no `index.html` |
 | `.github/` | no | Infrastructure only |
 | `README.md` | no | Not a directory |
 
@@ -77,6 +79,33 @@ Cargo workspace. Pin the toolchain with a `rust-toolchain.toml` (channel,
 components, and any extra targets such as `wasm32-unknown-unknown`) so local
 builds and CI agree.
 
+### iOS apps
+
+Unlike browser/Go/Rust apps, there is exactly **one** iOS app: the **Playground**
+app in **`ios/`** (marker: **`project.yml`**, an
+[XcodeGen](https://github.com/yonaskolb/XcodeGen) spec that is the single source
+of truth for the Xcode project). This mirrors the way the Pages site is one site
+hosting many browser apps: the one TestFlight app hosts many **experiments**
+internally. **Do not create additional top-level iOS app directories** — add an
+experiment inside `ios/` instead (see "Adding an experiment to the iOS app").
+The generated `*.xcodeproj` is git-ignored and regenerated in CI.
+
+The iOS app is **not** a browser app: it has no `index.html`. It is built and
+tested on a macOS runner and, on push to `main`, delivered to **TestFlight**; it
+is not copied to GitHub Pages and (today) does not receive PR preview installs —
+the `ios.yml` workflow tests it on PRs but only ships from `main`.
+
+The app owns its `project.yml`, `fastlane/`, and single bundle identifier
+(`io.github.imjasonh.playground`); do not add a repo-root Xcode workspace. Do not
+commit build artifacts (`*.xcodeproj`, `DerivedData/`, `*.ipa`, `*.xcarchive`)
+or any signing material (`*.p8`, `*.p12`, `*.mobileprovision`). TestFlight
+delivery requires Apple credentials configured as repo secrets; without them CI
+still runs the tests and skips the upload. See
+[`docs/ios-testflight-design.md`](docs/ios-testflight-design.md) for the design
+and [`docs/ios-testflight-setup.md`](docs/ios-testflight-setup.md) for a
+click-by-click Apple-side setup guide. The iOS app is not yet covered by the
+daily dependency workflow.
+
 Hidden top-level directories (names starting with `.`) are ignored by all app
 discovery scripts.
 
@@ -89,6 +118,8 @@ discovery scripts.
 | `preview.yml` | pull request opened/sync | Deploys browser apps under `/preview/pr-<N>/` and comments the URL |
 | `cleanup.yml` | pull request closed | Removes that PR's preview directory from `gh-pages` and refreshes the root index |
 | `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps in one job |
+| `ios.yml` | push to `main`, pull requests | Tests changed iOS apps on macOS; on `main`, delivers them to TestFlight |
+| `ios-signing-bootstrap.yml` | manual (`workflow_dispatch`) | One-time: creates & stores an iOS app's signing certificate/profile in the `match` repo |
 | `deps.yaml` | daily at 00:00 UTC, manual | Updates every testable browser app, Go app, and Rust app; pushes passing updates to `main`, otherwise opens a PR |
 | `nypd-choppers-scrape.yml` | hourly, manual | **App-specific:** fetches NYPD helicopter full-day ADS-B traces and merges per-day JSON to `gh-pages` under `nypd-choppers/data/`. Not generalized; shares the `gh-pages-publish` concurrency group with deploy/preview/cleanup |
 
@@ -158,6 +189,20 @@ or the root `README.md` runs no app tests.
 Browser apps without a `test` script (e.g. `hello/`) are never tested. Each Rust
 app's toolchain comes from its `rust-toolchain.toml` (defaulting to stable);
 `web-push` pins Rust 1.83.
+
+**The iOS app is tested by a separate workflow (`ios.yml`), not `test.yml`,**
+because it needs a macOS runner. A cheap Linux `discover` job reuses the same
+`discover-changed-apps.sh` logic (it now also emits an `ios` list) and only then
+spins up a `macos-latest` job — so browser/Go/Rust-only PRs never pay for macOS
+minutes. When `ios/` changed, CI runs XcodeGen → `bundle exec fastlane test`
+(unit + UI tests on a Simulator; no signing needed). On push to `main` with
+Apple signing secrets present, it additionally runs `fastlane beta` to upload to
+TestFlight. Run discovery locally with:
+
+```bash
+bash .github/scripts/discover-ios-apps.sh --all
+git diff --name-only origin/main...HEAD | bash .github/scripts/discover-ios-apps.sh --from-changes
+```
 
 Run the per-type discovery helpers locally to see what CI would select:
 
@@ -302,12 +347,43 @@ cargo clippy --all-targets
 cargo test
 ```
 
+## Adding an experiment to the iOS app
+
+There is only one iOS app (`ios/`). You add functionality as an **experiment**
+inside it — never as a new top-level iOS directory. This is the iOS analog of
+adding one browser app under the Pages site.
+
+1. Create `ios/Sources/Experiments/<YourExperiment>/` with a SwiftUI view. Keep
+   the interesting logic in plain types so it can be unit-tested without a
+   simulator; add accessibility identifiers to controls so UI tests can drive
+   them.
+2. Register it in `ExperimentCatalog.all` in `ios/Sources/Experiment.swift` with
+   a stable, unique `id` (ids double as UI-test accessibility identifiers).
+3. Add tests under `ios/Tests/PlaygroundTests/` (and a UI flow under
+   `ios/Tests/PlaygroundUITests/` if useful).
+
+No `project.yml`, workflow, or bundle-identifier changes are needed — the
+launcher picks the experiment up, and the next push to `main` ships it inside
+the same Playground TestFlight build. TestFlight delivery only happens once the
+Apple signing secrets are configured (see `docs/ios-testflight-setup.md`); until
+then CI runs the tests and skips the upload.
+
+Run locally (macOS + Xcode):
+
+```bash
+cd ios
+brew install xcodegen && bundle install
+xcodegen generate
+bundle exec fastlane test
+```
+
 ## Implementation conventions
 
 - **Browser apps are client-side**: they must be static sites suitable for GitHub Pages (no server-side runtime in production).
 - **Prefer plain HTML + JS** for browser apps unless an app already uses a framework; match the style of neighboring code in that app directory.
 - **Go apps are independent modules**: each app owns its `go.mod` and `go.sum`; avoid cross-app imports.
 - **Rust apps are independent crates**: each app owns its `Cargo.toml`, `Cargo.lock`, and `rust-toolchain.toml`; avoid cross-app imports.
+- **There is one iOS app** (`ios/`, the "Playground" container): add features as experiments inside it, not as new top-level iOS directories. Never commit the generated `*.xcodeproj` or signing material.
 - **Keep all apps isolated**: do not add repo-root `package.json`, `go.mod`, `go.work`, or Cargo workspace files unless the maintainers explicitly request a monorepo toolchain.
 - **Minimize scope**: when fixing or extending one app, avoid unrelated changes in other directories.
 - **Do not commit**: `node_modules/`, secrets, env files, browser/Go/Rust build artifacts (`target/`), or Playwright/Jest output (`test-results/`, `coverage/`).
@@ -363,5 +439,11 @@ cargo test
 |-----------|------|-------|
 | `web-push/` | Web Push backend — Cloudflare Worker (RFC 8030/8188/8291/8292) | `cargo test` + clippy + wasm build |
 | `cors-proxy/` | SSRF-hardened CORS proxy — Cloudflare Worker | `cargo test` + clippy + wasm build |
+
+## The iOS app
+
+| Directory | Type | Tests |
+|-----------|------|-------|
+| `ios/` | The single "Playground" SwiftUI app — a launcher hosting many experiments (temperature converter, counter); TestFlight CD on `main` | XCTest unit tests + XCUITest UI tests (`fastlane test`) |
 
 See each app's `README.md` for app-specific rules and local development.

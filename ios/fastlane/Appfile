@@ -1,0 +1,4 @@
+# The bundle identifier for the single Playground app. Authentication uses an
+# App Store Connect API key (see the `beta` lane), so no apple_id / team fields
+# are needed here. Override via APP_BUNDLE_ID if you fork this.
+app_identifier(ENV.fetch("APP_BUNDLE_ID", "io.github.imjasonh.playground"))
