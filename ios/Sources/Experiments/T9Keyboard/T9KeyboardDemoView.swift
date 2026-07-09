@@ -4,25 +4,20 @@ import UIKit
 /// In-app playground for the T9 multi-tap pad, plus instructions for enabling
 /// the real system keyboard extension that ships with this app.
 ///
-/// The UIKit pad sits **outside** the `ScrollView`. Embedding a large nested
-/// `UIButton` hierarchy inside scroll content makes XCUITest accessibility
-/// snapshots time out when querying `app.buttons`.
+/// The demo uses a **SwiftUI** pad (not the UIKit extension pad) so XCUITest can
+/// open this screen without timing out on nested UIButton accessibility trees.
 struct T9KeyboardDemoView: View {
     @StateObject private var model = T9DemoModel()
     @FocusState private var systemFieldFocused: Bool
 
     var body: some View {
-        VStack(spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    howToEnable
-                    demoChrome
-                    systemField
-                }
-                .padding()
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                howToEnable
+                tryHere
+                systemField
             }
-
-            padSection
+            .padding()
         }
         .background(Color(uiColor: UIColor(white: 0.08, alpha: 1)).ignoresSafeArea())
         .onDisappear {
@@ -58,8 +53,7 @@ struct T9KeyboardDemoView: View {
         .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
     }
 
-    /// Text preview + shift mode + delete/clear — no UIKit pad here.
-    private var demoChrome: some View {
+    private var tryHere: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("Try it here")
@@ -90,6 +84,11 @@ struct T9KeyboardDemoView: View {
             .frame(minHeight: 56)
             .background(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.2)))
 
+            T9SwiftUIPadView(model: model)
+                .frame(height: 280)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .accessibilityIdentifier("t9Pad")
+
             HStack {
                 Button("Delete") { model.delete() }
                     .accessibilityIdentifier("t9DemoDeleteButton")
@@ -101,16 +100,6 @@ struct T9KeyboardDemoView: View {
         }
         .padding()
         .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
-    }
-
-    private var padSection: some View {
-        VStack(spacing: 0) {
-            Divider().overlay(Color.white.opacity(0.12))
-            T9PadViewRepresentable(model: model)
-                .frame(height: 280)
-                .accessibilityIdentifier("t9Pad")
-        }
-        .background(Color(uiColor: UIColor(white: 0.12, alpha: 1)))
     }
 
     private var systemField: some View {
@@ -162,7 +151,13 @@ final class T9DemoModel: ObservableObject {
         )
     }()
 
-    var padEngine: T9MultiTapEngine { engine }
+    func tap(_ key: T9PadKey) {
+        engine.tap(key)
+    }
+
+    func longPress(_ key: T9PadKey) {
+        engine.longPress(key)
+    }
 
     func delete() {
         engine.deleteBackward()
@@ -181,31 +176,6 @@ final class T9DemoModel: ObservableObject {
     private func syncFromEngine() {
         pending = engine.pendingPreview
         shiftLabel = engine.shiftMode.label
-    }
-}
-
-// MARK: - UIKit pad bridge
-
-struct T9PadViewRepresentable: UIViewRepresentable {
-    @ObservedObject var model: T9DemoModel
-
-    func makeUIView(context: Context) -> T9PadView {
-        let pad = T9PadView(engine: model.padEngine)
-        pad.accessibilityIdentifier = "t9Pad"
-        // Keep the 12-key UIKit tree out of XCUITest snapshots. Querying
-        // `app.buttons[…]` otherwise walks every key and can time out.
-        pad.accessibilityElementsHidden = true
-        pad.onShiftModeChange = { mode in
-            model.shiftLabel = mode.label
-        }
-        pad.onPendingChange = { pending in
-            model.pending = pending
-        }
-        return pad
-    }
-
-    func updateUIView(_ uiView: T9PadView, context: Context) {
-        uiView.refreshChrome()
     }
 }
 

@@ -45,11 +45,9 @@ final class PlaygroundUITests: XCTestCase {
 
         openExperiment("t9-keyboard", title: "T9 Keyboard", in: app)
 
-        // Assert SwiftUI chrome only. The UIKit pad hides its accessibility
-        // subtree so XCUITest does not time out walking twelve key buttons.
         XCTAssertTrue(app.navigationBars["T9 Keyboard"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Try it here"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["t9OpenSettingsButton"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["t9DemoDeleteButton"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["t9-key-2"].waitForExistence(timeout: 5))
     }
 }
