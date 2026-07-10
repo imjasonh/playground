@@ -39,6 +39,8 @@ pub mod diff;
 pub mod fileapi;
 pub mod http;
 pub mod maintenance;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod memtrack;
 pub mod metrics;
 pub mod object;
 pub mod odb;

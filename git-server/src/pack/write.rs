@@ -95,6 +95,38 @@ impl PackWriter {
         self.written += 1;
     }
 
+    // -- Resumable copy API ---------------------------------------------------
+    // Copy paths (fetch emission, repack) append an entry's compressed
+    // payload in block-sized pieces rather than as one buffer, so a huge
+    // object never has to be resident: begin_*, then any number of
+    // append_payload calls, then end_entry.
+
+    /// Start a full (non-delta) entry whose payload will follow via
+    /// [`Self::append_payload`].
+    pub fn begin_full_precompressed(&mut self, ty: u8, inflated_size: u64) {
+        debug_assert!((1..=4).contains(&ty));
+        let header = encode_entry_header(ty, inflated_size);
+        self.emit(&header);
+    }
+
+    /// Start a REF_DELTA entry whose compressed delta payload will follow
+    /// via [`Self::append_payload`].
+    pub fn begin_ref_delta_precompressed(&mut self, base: Oid, delta_inflated_size: u64) {
+        let header = encode_entry_header(TYPE_REF_DELTA, delta_inflated_size);
+        self.emit(&header);
+        self.emit(&base.0);
+    }
+
+    /// Append part of the current entry's already-compressed payload.
+    pub fn append_payload(&mut self, bytes: &[u8]) {
+        self.emit(bytes);
+    }
+
+    /// Finish the entry started by a `begin_*` call.
+    pub fn end_entry(&mut self) {
+        self.written += 1;
+    }
+
     /// Take whatever has accumulated, leaving the writer ready for more. Call
     /// between entries to bound memory when streaming to storage/response.
     pub fn take_chunk(&mut self) -> Vec<u8> {

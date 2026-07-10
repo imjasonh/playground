@@ -53,6 +53,13 @@ static NONCE: AtomicU64 = AtomicU64::new(1);
 
 impl TestServer {
     pub fn start() -> TestServer {
+        Self::start_with_push_limit(git_server::http::DEFAULT_PUSH_LIMIT_BYTES)
+    }
+
+    /// Start with a custom per-push size limit (production default is
+    /// Cloudflare's ~100 MB request-body cap; tests shrink it so the
+    /// rejection path is exercised without moving 100 MB).
+    pub fn start_with_push_limit(push_limit_bytes: u64) -> TestServer {
         let store = MemStore::new();
         let states = MemStateStore::new();
         let server = tiny_http::Server::http("127.0.0.1:0").expect("bind test server");
@@ -76,7 +83,7 @@ impl TestServer {
                 }
                 Err(_) => return,
             };
-            serve_one(&store2, &states2, request);
+            serve_one(&store2, &states2, push_limit_bytes, request);
         });
 
         TestServer {
@@ -146,7 +153,12 @@ impl Drop for TestServer {
     }
 }
 
-fn serve_one(store: &MemStore, states: &MemStateStore, mut request: tiny_http::Request) {
+fn serve_one(
+    store: &MemStore,
+    states: &MemStateStore,
+    push_limit_bytes: u64,
+    mut request: tiny_http::Request,
+) {
     let method = request.method().as_str().to_string();
     let url = request.url().to_string();
     let (path, query) = match url.split_once('?') {
@@ -163,7 +175,11 @@ fn serve_one(store: &MemStore, states: &MemStateStore, mut request: tiny_http::R
     let git_protocol = header("Git-Protocol");
     let content_encoding = header("Content-Encoding");
 
-    let server = GitHttp { store, states };
+    let server = GitHttp::new(
+        std::rc::Rc::new(store.clone()),
+        std::rc::Rc::new(states.clone()),
+    )
+    .with_push_limit(push_limit_bytes);
     let git_req = GitRequest {
         method: &method,
         path: &path,
@@ -177,8 +193,12 @@ fn serve_one(store: &MemStore, states: &MemStateStore, mut request: tiny_http::R
     };
     let nonce = format!("t{}", NONCE.fetch_add(1, Ordering::Relaxed));
     let mut resp = futures::executor::block_on(server.handle(&git_req, &mut body, &nonce));
+    let body_bytes = futures::executor::block_on(
+        std::mem::replace(&mut resp.body, git_server::http::Body::Full(Vec::new())).into_bytes(),
+    )
+    .unwrap_or_else(|e| format!("stream error: {e}").into_bytes());
 
-    let mut response = tiny_http::Response::from_data(std::mem::take(&mut resp.body))
+    let mut response = tiny_http::Response::from_data(body_bytes)
         .with_status_code(resp.status)
         .with_header(
             tiny_http::Header::from_bytes(&b"Content-Type"[..], resp.content_type.as_bytes())

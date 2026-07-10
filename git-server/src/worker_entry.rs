@@ -358,12 +358,20 @@ fn request_nonce() -> String {
 
 #[event(fetch)]
 async fn fetch(mut req: Request, env: Env, _ctx: Context) -> worker::Result<Response> {
-    let store = R2Store::new(&env)?;
-    let states = DoStateStore { env: env.clone() };
-    let server = GitHttp {
-        store: &store,
-        states: &states,
-    };
+    let mut server = GitHttp::new(
+        std::rc::Rc::new(R2Store::new(&env)?),
+        std::rc::Rc::new(DoStateStore { env: env.clone() }),
+    );
+    // Optional override for zones with a higher request-body cap
+    // (Business/Enterprise); defaults to the Free/Pro 100 MB limit.
+    if let Some(limit) = env
+        .var("PUSH_LIMIT_BYTES")
+        .ok()
+        .and_then(|v| v.to_string().trim().parse::<u64>().ok())
+        .filter(|n| *n > 0)
+    {
+        server = server.with_push_limit(limit);
+    }
 
     let url = req.url()?;
     let path = url.path().to_string();
@@ -427,9 +435,17 @@ async fn fetch(mut req: Request, env: Env, _ctx: Context) -> worker::Result<Resp
     if let Some((m, total_ms)) = &resp.metrics {
         worker::console_log!("{}", m.log_json(&method, &path, resp.status, *total_ms));
     }
-    Ok(Response::from_bytes(resp.body)?
-        .with_status(resp.status)
-        .with_headers(headers))
+    // Full bodies relay directly; streamed bodies (fetch packs, large blobs)
+    // flow chunk-by-chunk through a ReadableStream so a response of any size
+    // fits the isolate memory limit.
+    let out = match resp.body {
+        crate::http::Body::Full(bytes) => Response::from_bytes(bytes)?,
+        crate::http::Body::Stream(stream) => {
+            use futures::TryStreamExt;
+            Response::from_stream(stream.map_err(worker::Error::RustError))?
+        }
+    };
+    Ok(out.with_status(resp.status).with_headers(headers))
 }
 
 /// Scheduled maintenance: repack every registered repo that has accumulated

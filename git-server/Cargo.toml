@@ -29,6 +29,10 @@ flate2 = { version = "1", default-features = false, features = ["rust_backend"] 
 hex = "0.4"
 async-trait = "0.1"
 futures = "0.3"
+# Generator-style async streams for the fetch response path: packs are
+# emitted chunk-by-chunk (never fully buffered), which is what keeps clones
+# of arbitrarily large repos inside the Workers isolate memory limit.
+async-stream = "0.3"
 
 # The Cloudflare Workers runtime bindings are wasm-only. Gating them to the
 # wasm32 target keeps native `cargo test` free of the JS/wasm-bindgen glue, so

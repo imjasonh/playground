@@ -359,23 +359,84 @@ CPU cost from the most bandwidth-heavy operation.
 
 ## Memory & CPU discipline (Workers limits)
 
-* Push ingest: carry buffer + 32 KiB scratch + ~50 B/entry; the pack itself
-  streams through 5 MiB multipart parts.
-* Delta resolution: byte-budgeted cache (32 MiB); worst case one full object
-  + its delta resident at once.
-* Odb reads: byte-budgeted cache (48 MiB) shared within a request.
-* Pack generation: writer buffer drained per entry.
-* The peak resident item is a single largest object (a delta base must be
-  materialized to apply a delta). Truly huge blobs (multi-GiB) would need the
-  planned chunked-blob path (store large blobs undeltified; stream inflate →
-  deflate per block); the wire format permits it because blob payloads can be
-  copied verbatim when stored full.
-* CPU: measured on the native benches, ingest scans ~30-75 MiB/s (dominated by
-  zlib inflate) and pack copy ~800 GiB/s-equivalent (memcpy + SHA-1). Workers
-  CPU limits (30 s HTTP, 15 min cron) bound a single push's pack scan to
-  roughly a GiB per request-CPU-second budget; larger pushes need the
-  documented resumable-ingest extension (scan continues from a byte offset via
-  ranged reads after the upload completes).
+The isolate memory limit (128 MiB) is a *correctness* boundary, not a
+tuning knob: exceeding it is Cloudflare error 1102, the client sees a 503,
+and — because wasm linear memory never shrinks — one bloated request
+permanently inflates the isolate for every request after it. The first
+production deployment demonstrated this: buffered fetch responses made
+pushes/clones of >~30 MiB repos fail intermittently. Three consequences:
+
+* **Response bodies proportional to repo size are streamed, never
+  buffered.** The fetch pack is emitted through `repo::PackEmitter` — the
+  object-selection *plan* (~100 B/object) is built in the handler, then the
+  response body is an async stream that copies each entry's compressed
+  payload in ≤1 MiB pieces into side-band chunks. Large file-API blobs are
+  chunked out of a single shared buffer. The Workers glue relays streams via
+  `ReadableStream` (`Response::from_stream`), the same shape as piping an R2
+  object to a response in JS.
+* **Enforced in CI** (`tests/memory.rs`): a tracking global allocator
+  measures peak live heap while a 48 MiB incompressible repo is pushed and
+  cloned through the same handler the Worker runs; the test fails if a
+  request's transient footprint exceeds a 64 MiB budget (headroom below the
+  128 MiB limit for the wasm module, runtime, and JS-side copies). Measured
+  after the streaming rewrite: push ≈ 32 MiB peak / ~0 transient over
+  stored-bytes growth; clone ≈ 21 MiB peak while streaming 48 MiB.
+* **Cache budgets are small and permanent-growth-aware** (wasm memory never
+  returns to the OS): odb content cache 24 MiB, delta-resolution cache
+  24 MiB, block cache 16 MiB per pack, multipart buffer 5 MiB.
+
+Remaining bounds: push ingest is carry buffer + 32 KiB scratch + ~50 B/entry
+(the pack streams through 5 MiB multipart parts); the peak resident item is
+a single largest *materialized* object (a delta base must be whole to apply
+a delta). Truly huge blobs (multi-GiB) would need the planned chunked-blob
+path (store large blobs undeltified; stream inflate → deflate per block).
+CPU: ingest scans ~30-75 MiB/s (zlib-bound), pack copy is memcpy+SHA-1;
+Workers CPU limits (30 s HTTP, 15 min cron) bound a single push to roughly a
+GiB per request-CPU-second budget; larger pushes need the documented
+resumable-ingest extension.
+
+## Size limits
+
+What actually caps transfer sizes, post-streaming:
+
+| Direction | Cap | Set by |
+|---|---|---|
+| **pull / clone** | none practical | streamed body; O(bytes/4 MiB) requests; copy-path CPU >1 GiB/s |
+| **push** | **~100 MB per push** (Free/Pro zone; 200 MB Business, 500 MB Enterprise) | **Cloudflare's HTTP request-body limit — not our code** |
+
+**Pull** footnotes: a delta entry whose base the client lacks (rare
+`Materialize` mode) must fit in memory as one object (tens of MiB), and plan
+metadata is ~100 B/object, so fetches of tens of millions of objects would
+need the plan to spill — both far beyond prototype scale.
+
+**Push is capped by Cloudflare, not by this design.** Git smart HTTP sends
+the whole pack as a single POST body, and Cloudflare rejects over-limit
+bodies with a 413 *before the Worker runs* — no server-side change can raise
+it. This is the most important operational limitation of the service today.
+Practical workaround for large imports: split history into several pushes
+(`git push origin <old-sha>:refs/heads/main`, then progressively newer
+commits), each under the limit; maintenance repacks the resulting packs into
+one anyway. Behind that ceiling sit our own (higher) bounds: ingest CPU
+(~0.5-1 GiB per push at the default 30 s CPU budget; raisable via
+`limits.cpu_ms`, then the resumable-ingest extension) and ~50 B/entry scan
+metadata (~1M objects per push comfortably).
+
+**Enforced locally, not just at the edge.** Because the 413 happens in
+Cloudflare's proxy, neither the native harness nor workerd under `wrangler
+dev` would otherwise exhibit it — a test could pass with a 500 MB push that
+production rejects. `receive_pack` therefore enforces the same limit itself
+(`GitHttp::push_limit_bytes`, default 100 MB, overridable via the
+`PUSH_LIMIT_BYTES` var for higher-tier zones), counting body bytes as they
+stream and aborting the staged upload with a readable report-status error
+(including the split-push hint). The integration suite exercises the
+rejection path with a shrunken limit
+(`tests/integration.rs::rejects_push_over_size_limit`): the over-limit push
+fails with the hint, the ref is untouched, and no staged pack is published.
+
+Adjacent, about repo *shape* rather than transfer size: the state document
+is one Durable Object value, and DO values cap at 128 KiB — roughly a few
+thousand refs plus the pack manifest. A refs-heavy repo needs the state doc
+sharded (e.g. refs split across keys) before any transfer limit matters.
 
 ## Observability
 
@@ -420,9 +481,12 @@ network and R2 latency in the loop.
 
 Not built yet (documented options): a typed Workers Analytics Engine
 binding doesn't exist in worker-rs 0.5, so time-series metrics would
-currently need raw JS interop — Workers Logs covers the need for now; and
+currently need raw JS interop — Workers Logs covers the need for now;
 request logs are unsampled (one line per request), which is fine at
-prototype traffic and a knob to add before serious volume.
+prototype traffic and a knob to add before serious volume; and for
+*streamed* response bodies (fetch packs, large blobs) the Server-Timing
+header and log line cover the handler phase only — backend ops issued while
+the body streams are not yet folded into the totals.
 
 ## Consistency summary
 

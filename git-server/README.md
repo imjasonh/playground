@@ -45,7 +45,7 @@ runtime is glue over the same code that the native tests exercise.
 ## Test
 
 ```bash
-cargo test          # unit tests + integration tests driving a real `git` client
+cargo test          # unit + integration (real `git` client) + isolate-memory tests
 cargo bench         # hot-path benchmarks (pack scan/resolve/write, diff)
 cargo clippy --all-targets
 
@@ -81,6 +81,12 @@ The integration tests start a localhost HTTP server backed by in-memory
 storage and run actual `git clone` / `push` / `pull` / `fsck` / `blame`
 against it, verifying our blame output line-by-line against `git blame`.
 
+`tests/memory.rs` enforces the **Workers isolate memory limit** in CI: a
+tracking allocator measures peak heap while a 48 MiB repo is pushed and
+cloned, and fails the build if a request's transient footprint could not
+fit the 128 MiB isolate (the failure mode is production 503s via
+Cloudflare error 1102, so this is the regression test for it).
+
 ## End-to-end against workerd (miniflare) or a deployment
 
 ```bash
@@ -106,6 +112,14 @@ packs (see `src/maintenance.rs`).
 
 ## Requirements & limitations (prototype)
 
+* **Pushes are capped at ~100 MB each** (Cloudflare's HTTP request-body
+  limit on Free/Pro zones — a push is one POST; rejected with a 413 before
+  the Worker runs). The server enforces the same limit itself (configurable
+  via `PUSH_LIMIT_BYTES`), so local testing behaves like production and
+  clients get a readable error with the workaround: split large imports
+  into several pushes of ≤100 MB (`git push origin <old-sha>:refs/heads/main`,
+  then newer commits). Pulls/clones are streamed and have no practical size
+  cap. See "Size limits" in [`docs/design.md`](docs/design.md).
 * Clients need git ≥ 2.26 (protocol v2 for fetch — the default since 2.26).
 * SHA-1 repositories (git's default object format).
 * No shallow or partial clone (`--depth`, `--filter`) yet; rejected cleanly.

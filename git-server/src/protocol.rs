@@ -99,8 +99,22 @@ pub fn advertise_receive_pack(state: &RepoState) -> Vec<u8> {
 // ---------------------------------------------------------------------------
 
 /// Handle a `POST /<repo>/git-upload-pack` body (protocol v2 command
-/// request). Negotiation bodies are small, so buffering them is fine.
-pub async fn upload_pack(repo: &Repo<'_>, body: &[u8]) -> Result<Vec<u8>, String> {
+/// request). Negotiation bodies are small, so buffering *them* is fine; the
+/// `fetch` **response** (which carries the pack) is streamed — see [`fetch`].
+///
+/// Takes owned handles because a streamed response body outlives the request
+/// handler.
+pub async fn upload_pack(
+    store: std::rc::Rc<dyn crate::storage::Store>,
+    states: std::rc::Rc<dyn crate::refs::StateStore>,
+    repo_name: &str,
+    body: &[u8],
+) -> Result<crate::http::Body, String> {
+    let repo = Repo {
+        store: store.as_ref(),
+        states: states.as_ref(),
+        name: repo_name,
+    };
     let pkts = pktline::parse_all(body).map_err(|e| e.to_string())?;
     let mut it = pkts.iter();
     let command = loop {
@@ -139,9 +153,11 @@ pub async fn upload_pack(repo: &Repo<'_>, body: &[u8]) -> Result<Vec<u8>, String
     }
 
     match command.as_str() {
-        "ls-refs" => ls_refs(repo, &args).await,
-        "fetch" => fetch(repo, &args).await,
-        other => Ok(error_response(&format!("unknown command {other}"))),
+        "ls-refs" => Ok(crate::http::Body::Full(ls_refs(&repo, &args).await?)),
+        "fetch" => fetch(store, states, repo_name, &args).await,
+        other => Ok(crate::http::Body::Full(error_response(&format!(
+            "unknown command {other}"
+        )))),
     }
 }
 
@@ -211,7 +227,20 @@ async fn ls_refs(repo: &Repo<'_>, args: &[String]) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
-async fn fetch(repo: &Repo<'_>, args: &[String]) -> Result<Vec<u8>, String> {
+/// The `fetch` command. Negotiation and object selection run in the handler;
+/// the pack itself is emitted through a **streamed** response body, one
+/// object at a time, so the response is never resident in memory. This is a
+/// hard requirement of the Workers isolate memory limit (128 MiB): buffering
+/// the pack made clones of >~30 MiB repos die with Cloudflare error 1102
+/// (surfaced to clients as 503s). `tests/memory.rs` enforces the bound.
+async fn fetch(
+    store: std::rc::Rc<dyn crate::storage::Store>,
+    states: std::rc::Rc<dyn crate::refs::StateStore>,
+    repo_name: &str,
+    args: &[String],
+) -> Result<crate::http::Body, String> {
+    use crate::http::Body;
+
     let mut wants: Vec<Oid> = Vec::new();
     let mut haves: Vec<Oid> = Vec::new();
     let mut done = false;
@@ -233,21 +262,26 @@ async fn fetch(repo: &Repo<'_>, args: &[String]) -> Result<Vec<u8>, String> {
                         || other.starts_with("deepen")
                         || other.starts_with("filter") =>
                 {
-                    return Ok(error_response(&format!(
+                    return Ok(Body::Full(error_response(&format!(
                         "unsupported fetch option: {other}"
-                    )));
+                    ))));
                 }
                 _ => {}
             }
         }
     }
     if wants.is_empty() {
-        return Ok(error_response("fetch: no wants"));
+        return Ok(Body::Full(error_response("fetch: no wants")));
     }
 
+    let repo = Repo {
+        store: store.as_ref(),
+        states: states.as_ref(),
+        name: repo_name,
+    };
     let (state, _) = repo.load_state().await?;
     if state.packs.is_empty() {
-        return Ok(error_response("repository is empty"));
+        return Ok(Body::Full(error_response("repository is empty")));
     }
     let odb = repo.odb(&state).await?;
 
@@ -274,36 +308,76 @@ async fn fetch(repo: &Repo<'_>, args: &[String]) -> Result<Vec<u8>, String> {
         let _t = crate::timing::Phase::start("fetch: collect set");
         collect_fetch_set(&odb, &wants, &haves).await?
     };
+    // The selection is turned into a plain (pack, record) list here so the
+    // response stream doesn't need the odb (or its caches) alive; it re-opens
+    // a lean odb of its own.
+    let plan = crate::repo::plan_pack(&odb, &set, thin_pack)?;
+    let object_count = plan.entries.len();
+    drop(odb);
 
-    let mut out = Vec::new();
+    // Section header: negotiation acks (stateless: always `ready`), then the
+    // packfile section marker — all tiny, sent as the stream's first chunk.
+    let mut head = Vec::new();
     if !done {
-        // Stateless negotiation: acknowledge commons and declare ready — the
-        // pack follows in this same response, so fetch is one round trip.
-        out.extend_from_slice(&pktline::text_pkt("acknowledgments"));
+        head.extend_from_slice(&pktline::text_pkt("acknowledgments"));
         if set.common.is_empty() {
-            out.extend_from_slice(&pktline::text_pkt("NAK"));
+            head.extend_from_slice(&pktline::text_pkt("NAK"));
         } else {
             for c in &set.common {
-                out.extend_from_slice(&pktline::text_pkt(&format!("ACK {c}")));
+                head.extend_from_slice(&pktline::text_pkt(&format!("ACK {c}")));
             }
         }
-        out.extend_from_slice(&pktline::text_pkt("ready"));
-        out.extend_from_slice(pktline::delim_pkt());
+        head.extend_from_slice(&pktline::text_pkt("ready"));
+        head.extend_from_slice(pktline::delim_pkt());
     }
-    out.extend_from_slice(&pktline::text_pkt("packfile"));
+    head.extend_from_slice(&pktline::text_pkt("packfile"));
     if !no_progress {
         let mut msg = Vec::new();
         msg.push(band::PROGRESS);
-        msg.extend_from_slice(format!("packing {} objects\r\n", set.include.len()).as_bytes());
-        out.extend_from_slice(&pktline::data_pkt(&msg));
+        msg.extend_from_slice(format!("packing {object_count} objects\r\n").as_bytes());
+        head.extend_from_slice(&pktline::data_pkt(&msg));
     }
-    let pack = {
-        let _t = crate::timing::Phase::start("fetch: build pack");
-        crate::repo::build_pack(&odb, &set, thin_pack).await?
+
+    let repo_name = repo_name.to_string();
+    let stream = async_stream::stream! {
+        yield Ok(head);
+        let repo = Repo {
+            store: store.as_ref(),
+            states: states.as_ref(),
+            name: &repo_name,
+        };
+        let odb = match repo.odb(&state).await {
+            Ok(odb) => odb,
+            Err(e) => {
+                yield Err(e);
+                return;
+            }
+        };
+        let mut emitter = crate::repo::PackEmitter::new(plan);
+        loop {
+            match emitter.next_chunk(&odb).await {
+                // Wrap pack bytes into side-band DATA pkts as they emerge.
+                Ok(Some(pack_bytes)) => {
+                    let mut out = Vec::with_capacity(pack_bytes.len() + 64);
+                    pktline::write_band_pkts(&mut out, band::DATA, &pack_bytes);
+                    yield Ok(out);
+                }
+                Ok(None) => break,
+                Err(e) => {
+                    // Mid-stream failure: report on the error band, then cut
+                    // the stream (the truncated pack fails the client's
+                    // checksum, so no corruption is possible).
+                    let mut out = Vec::new();
+                    pktline::write_band_pkts(&mut out, band::ERROR, e.as_bytes());
+                    yield Ok(out);
+                    yield Err(e);
+                    return;
+                }
+            }
+        }
+        yield Ok(pktline::flush_pkt().to_vec());
     };
-    pktline::write_band_pkts(&mut out, band::DATA, &pack);
-    out.extend_from_slice(pktline::flush_pkt());
-    Ok(out)
+    Ok(Body::Stream(Box::pin(stream)))
 }
 
 /// A v2 error response (`ERR` pkt).
@@ -322,6 +396,13 @@ fn error_response(message: &str) -> Vec<u8> {
 /// commands, a flush, then (unless every command is a delete) the pack —
 /// which is streamed straight into R2 while being scanned.
 ///
+/// `push_limit_bytes` mirrors Cloudflare's HTTP request-body cap (~100 MB on
+/// Free/Pro zones), which in production rejects over-limit pushes with a 413
+/// *before the Worker runs*. Enforcing the same limit here means local
+/// harnesses and CI behave like production instead of silently accepting
+/// pushes that would fail deployed — and, where our check does fire first,
+/// the client gets a readable report-status error instead of a bare 413.
+///
 /// `nonce` provides per-push uniqueness for the staged pack's storage key
 /// (randomness is the caller's responsibility; this crate is runtime-
 /// agnostic).
@@ -329,8 +410,10 @@ pub async fn receive_pack(
     repo: &Repo<'_>,
     body: &mut dyn BodyStream,
     nonce: &str,
+    push_limit_bytes: u64,
 ) -> Result<Vec<u8>, String> {
     let (state, version) = repo.load_state().await?;
+    let mut body_bytes: u64 = 0;
 
     // Phase 1: pkt-line command section.
     let mut parser = PktParser::new();
@@ -342,6 +425,10 @@ pub async fn receive_pack(
             Some(c) => c,
             None => break,
         };
+        body_bytes += chunk.len() as u64;
+        if body_bytes > push_limit_bytes {
+            return Ok(push_too_large(&caps, &commands, push_limit_bytes));
+        }
         parser.feed(&chunk);
         while let Some(pkt) = parser.next_pkt().map_err(|e| e.to_string())? {
             match pkt {
@@ -408,6 +495,11 @@ pub async fn receive_pack(
             match body.next_chunk().await? {
                 Some(chunk) if !chunk.is_empty() => {
                     got_any = true;
+                    body_bytes += chunk.len() as u64;
+                    if body_bytes > push_limit_bytes {
+                        let _ = ingest.abort().await;
+                        return Ok(push_too_large(&caps, &commands, push_limit_bytes));
+                    }
                     if let Err(e) = ingest.feed(&chunk).await {
                         let _ = ingest.abort().await;
                         return Err(e);
@@ -446,6 +538,23 @@ pub async fn receive_pack(
         .map(|r| (r.name.clone(), r.error.clone()))
         .collect();
     Ok(report_status(&caps, "unpack ok", &lines))
+}
+
+/// The report-status for a push whose body exceeded the size limit.
+fn push_too_large(caps: &BTreeMap<String, String>, commands: &[RefUpdate], limit: u64) -> Vec<u8> {
+    let reason = format!(
+        "push exceeds the {:.0} MB per-push limit; split into smaller pushes \
+         (git push origin <older-sha>:<ref>, then newer commits)",
+        limit as f64 / 1e6
+    );
+    report_status(
+        caps,
+        &format!("unpack {reason}"),
+        &commands
+            .iter()
+            .map(|c| (c.name.clone(), Some(reason.clone())))
+            .collect::<Vec<_>>(),
+    )
 }
 
 /// Format a report-status response, side-band-wrapped if negotiated.
