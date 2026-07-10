@@ -7,6 +7,7 @@ directories are intentionally omitted.
 
 ## Core
 
+- `hello-e2e/` - sample app for Docker-socket e2e (`node-image-e2e-ok` on stdout).
 - `pure-js/` - depends on `ms@2.1.3`.
 - `nested-deps/` - depends on `debug@4.3.4`, which pulls nested `ms`.
 - `scoped-dep/` - depends on `@sindresorhus/is@4.6.0`.

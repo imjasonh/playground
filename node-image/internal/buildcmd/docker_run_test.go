@@ -13,20 +13,28 @@ import (
 	"github.com/imjasonh/playground/node-image/internal/config"
 )
 
-// TestDockerRunBuiltImage checks the end-to-end contract:
-//
-//	docker run --rm $(node-image build -L …)
-//
-// Skips when Docker is unavailable (common in CI without a daemon).
-func TestDockerRunBuiltImage(t *testing.T) {
+const helloE2EExpectedOutput = "node-image-e2e-ok"
+
+// requireDocker skips when the Docker CLI or daemon (local socket / DOCKER_HOST)
+// is unavailable. Cloud agent VMs often lack a daemon; GitHub Actions runners
+// typically have one, so this e2e runs in CI.
+func requireDocker(t *testing.T) {
+	t.Helper()
 	if _, err := exec.LookPath("docker"); err != nil {
 		t.Skip("docker not on PATH")
 	}
 	if err := exec.Command("docker", "info").Run(); err != nil {
-		t.Skip("docker daemon not available")
+		t.Skip("docker daemon not available (no local socket / DOCKER_HOST)")
 	}
+}
 
-	fixture, err := filepath.Abs(filepath.Join("..", "..", "testdata", "pure-js"))
+// TestE2EDockerSocketBuildAndRun builds testdata/hello-e2e with --local (load
+// into the daemon via the Docker socket), then `docker run --rm` and asserts
+// the container prints the expected marker. Skips when Docker is missing.
+func TestE2EDockerSocketBuildAndRun(t *testing.T) {
+	requireDocker(t)
+
+	fixture, err := filepath.Abs(filepath.Join("..", "..", "testdata", "hello-e2e"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,16 +48,16 @@ func TestDockerRunBuiltImage(t *testing.T) {
 	ref, err := buildcmd.Run(buildcmd.Options{
 		Dir:       fixture,
 		Local:     true,
-		Repo:      "pure-js-fixture",
+		Repo:      "hello-e2e",
 		Base:      config.DefaultBase,
 		SkipBuild: true,
 		Platforms: []string{plat},
-		Tags:      []string{"test"},
+		Tags:      []string{"e2e"},
 		Stdout:    &stdout,
 		Stderr:    &stderr,
 	})
 	if err != nil {
-		t.Fatalf("%v\nstderr=%s", err, stderr.String())
+		t.Fatalf("node-image build --local: %v\nstderr=%s", err, stderr.String())
 	}
 
 	outLine := strings.TrimSpace(stdout.String())
@@ -63,7 +71,7 @@ func TestDockerRunBuiltImage(t *testing.T) {
 		t.Fatalf("expected node-image.local/… tag, got %q", outLine)
 	}
 	if strings.Contains(outLine, "@sha256:") {
-		t.Fatalf("--local must print a daemon tag, not a digest ref (Docker has no RepoDigests after load): %q", outLine)
+		t.Fatalf("--local must print a daemon tag, not a digest ref: %q", outLine)
 	}
 
 	cmd := exec.Command("docker", "run", "--rm", outLine)
@@ -76,7 +84,7 @@ func TestDockerRunBuiltImage(t *testing.T) {
 			outLine, err, runOut.String(), runErr.String(), stderr.String())
 	}
 	got := strings.TrimSpace(runOut.String())
-	if got != "1m" {
-		t.Fatalf("container output %q, want %q\nstderr=%s", got, "1m", runErr.String())
+	if got != helloE2EExpectedOutput {
+		t.Fatalf("container output %q, want %q\nstderr=%s", got, helloE2EExpectedOutput, runErr.String())
 	}
 }

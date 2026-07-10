@@ -38,8 +38,9 @@ go build -o node-image .
 ./node-image diagnose ./testdata/patched
 
 # Load into local Docker and run (stdout is only the image ref)
-docker run --rm "$(./node-image build ./testdata/pure-js \
+docker run --rm "$(./node-image build ./testdata/hello-e2e \
   --local --skip-build --platform linux/amd64)"
+# → prints: node-image-e2e-ok
 ```
 
 `build` prints **exactly one line on stdout**: the fully resolved image ref
@@ -109,6 +110,9 @@ go test ./...
 Includes lock/resolve/layout units, patch/workspace/catalog/override fixtures,
 app glob packing, npm auth header injection, multi-command builds, diagnose
 importer isolation, and docker/pnpm e2e (auto-skip when tools are missing).
+`TestE2EDockerSocketBuildAndRun` builds `testdata/hello-e2e`, loads it via the
+local Docker socket (`--local`), runs the container, and asserts stdout is
+`node-image-e2e-ok` (skipped without a daemon; CI runners have Docker).
 
 ## Non-goals
 
