@@ -16,7 +16,7 @@ struct MegaManCharacter: Identifiable, Hashable, Codable, Sendable {
         return String(format: "%@_%02d", id, wrapped)
     }
 
-    static let metalMan = MegaManCharacter(id: "metal-man", name: "Metal Man", frameCount: 8)
+    static let metalMan = MegaManCharacter(id: "metal-man", name: "Metal Man", frameCount: 16)
 
     static let all: [MegaManCharacter] = [.metalMan]
 

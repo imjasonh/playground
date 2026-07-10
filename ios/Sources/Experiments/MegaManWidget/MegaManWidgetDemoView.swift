@@ -42,7 +42,7 @@ struct MegaManWidgetDemoView: View {
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .accessibilityIdentifier("megamanAnimationPreview")
 
-            Text("Walk → throw Metal Blade → jump loop via public timer APIs")
+            Text("Boss-fight loop: run in place → jump → throw Metal Blades → land")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)

@@ -80,6 +80,6 @@ final class PlaygroundUITests: XCTestCase {
             || app.staticTexts["Metal Man"].waitForExistence(timeout: 2))
         XCTAssertTrue(app.otherElements["megamanAnimationPreview"].waitForExistence(timeout: 5)
             || app.images["megamanAnimationPreview"].waitForExistence(timeout: 2)
-            || app.staticTexts["Walk → throw Metal Blade → jump loop via public timer APIs"].waitForExistence(timeout: 2))
+            || app.staticTexts["Boss-fight loop: run in place → jump → throw Metal Blades → land"].waitForExistence(timeout: 2))
     }
 }

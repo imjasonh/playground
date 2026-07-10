@@ -3,9 +3,11 @@
     {
       "id": "metal-man",
       "name": "Metal Man",
-      "frameCount": 8,
-      "source": "sheet"
+      "frameCount": 16,
+      "source": "sheet",
+      "loop": "walk\u00d74 \u2192 ready \u2192 jump \u2192 air-throw\u00d72 \u2192 land \u2192 idle"
     }
   ],
-  "frameCount": 8
+  "frameCount": 16,
+  "framesPerSecond": 8
 }
