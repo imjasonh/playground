@@ -38,22 +38,7 @@ func TestBuildNoPushEmptyBase(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(out, "layers")); err != nil {
 		t.Fatal(err)
 	}
-	// Second build should be deterministic
-	out2 := t.TempDir()
-	ref2, err := buildcmd.Run(buildcmd.Options{
-		Dir:       fixture,
-		NoPush:    true,
-		OCIDir:    out2,
-		EmptyBase: true,
-		SkipBuild: true,
-		Platforms: []string{"linux/amd64"},
-		Stdout:    &bytes.Buffer{},
-		Stderr:    &bytes.Buffer{},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if ref != ref2 {
-		t.Fatalf("not deterministic: %s vs %s", ref, ref2)
-	}
+	// Determinism across isolated caches is covered by
+	// TestBuildDeterministicWithoutCache; warm reuse by
+	// TestBuildWarmCacheReusesDigestQuickly.
 }
