@@ -470,6 +470,19 @@ until emission) and emitted two ways:
   client never surfaces. Scheduled repacks log an equivalent
   `{"evt":"req","method":"CRON",...}` line per repo.
 
+Persistent invocation logs are enabled in `wrangler.toml`
+(`[observability]`; it is opt-in and was initially missed, which is why the
+first production incident had to be diagnosed by live probing). Every
+invocation stores Cloudflare's `outcome` field alongside our log lines —
+diagnostic signatures worth knowing:
+
+| Symptom | Signature in logs |
+|---|---|
+| client saw 503, body `error code: 1102` | `outcome: "exceededMemory"`, **no** `{"evt":"req"}` line (isolate killed before our logging ran) |
+| client saw 503/504 on a huge push | `outcome: "exceededCpu"` |
+| client saw 413 | *nothing* — the edge rejected it before the Worker ran; no invocation exists |
+| handler bug | `outcome: "exception"` with the panic/exception text |
+
 The native test server and benches emit the identical header (the in-memory
 stores feed the same collector), an integration test asserts its shape, and
 **`scripts/bench-remote.sh`** turns it into a report: it pushes/clones a
