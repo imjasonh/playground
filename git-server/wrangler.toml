@@ -40,6 +40,7 @@ new_classes = ["RepoStateDo"]
 [[kv_namespaces]]
 binding = "GIT_REPOS"
 id = "REPLACE_WITH_GIT_REPOS_KV_ID"
+preview_id = "REPLACE_WITH_GIT_REPOS_PREVIEW_KV_ID"
 
 # Nightly pack consolidation (see src/maintenance.rs): merges each repo's
 # accumulated push packs into one, without recompressing anything.
