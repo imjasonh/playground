@@ -1,0 +1,50 @@
+{
+  "characters": [
+    {
+      "id": "mega-man",
+      "name": "Mega Man",
+      "frameCount": 8
+    },
+    {
+      "id": "metal-man",
+      "name": "Metal Man",
+      "frameCount": 8
+    },
+    {
+      "id": "wood-man",
+      "name": "Wood Man",
+      "frameCount": 8
+    },
+    {
+      "id": "heat-man",
+      "name": "Heat Man",
+      "frameCount": 8
+    },
+    {
+      "id": "flash-man",
+      "name": "Flash Man",
+      "frameCount": 8
+    },
+    {
+      "id": "quick-man",
+      "name": "Quick Man",
+      "frameCount": 8
+    },
+    {
+      "id": "crash-man",
+      "name": "Crash Man",
+      "frameCount": 8
+    },
+    {
+      "id": "bubble-man",
+      "name": "Bubble Man",
+      "frameCount": 8
+    },
+    {
+      "id": "air-man",
+      "name": "Air Man",
+      "frameCount": 8
+    }
+  ],
+  "frameCount": 8
+}

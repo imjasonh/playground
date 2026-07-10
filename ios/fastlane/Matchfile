@@ -5,8 +5,9 @@
 git_url(ENV["MATCH_GIT_URL"]) if ENV["MATCH_GIT_URL"]
 storage_mode("git")
 type("appstore")
-# Host app + embedded T9 keyboard extension (each needs its own App ID / profile).
+# Host app + embedded extensions (each needs its own App ID / profile).
 app_identifier([
   ENV.fetch("APP_BUNDLE_ID", "io.github.imjasonh.playground"),
   ENV.fetch("KEYBOARD_BUNDLE_ID", "io.github.imjasonh.playground.t9keyboard"),
+  ENV.fetch("WIDGET_BUNDLE_ID", "io.github.imjasonh.playground.megamanwidget"),
 ])

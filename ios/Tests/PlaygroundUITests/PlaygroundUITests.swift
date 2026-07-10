@@ -29,6 +29,7 @@ final class PlaygroundUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Ride Monitor"].exists)
         XCTAssertTrue(app.staticTexts["T9 Keyboard"].exists)
         XCTAssertTrue(app.staticTexts["Follow the Hum"].exists)
+        XCTAssertTrue(app.staticTexts["Mega Man 2 Widget"].exists)
     }
 
     func testRideMonitorExperimentOpens() {
@@ -66,5 +67,19 @@ final class PlaygroundUITests: XCTestCase {
         XCTAssertTrue(app.otherElements["humStatusMessage"].waitForExistence(timeout: 5)
             || app.staticTexts["humStatusMessage"].waitForExistence(timeout: 2)
             || app.staticTexts["Put on AirPods, then start a hunt."].waitForExistence(timeout: 2))
+    }
+
+    func testMegaManWidgetExperimentOpens() {
+        let app = XCUIApplication()
+        app.launch()
+
+        openExperiment("megaman-widget", title: "Mega Man 2 Widget", in: app)
+
+        XCTAssertTrue(app.navigationBars["Mega Man 2 Widget"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["megamanSelectedName"].waitForExistence(timeout: 5)
+            || app.staticTexts["Mega Man"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.buttons["megamanCharacter-metal-man"].waitForExistence(timeout: 5))
+        app.buttons["megamanCharacter-metal-man"].tap()
+        XCTAssertTrue(app.staticTexts["Metal Man"].waitForExistence(timeout: 5))
     }
 }

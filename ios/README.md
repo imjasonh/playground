@@ -20,7 +20,7 @@ On every push to `main`, CI builds, tests, and (with signing secrets) uploads to
 | Custom Keyboard / other **app extension** | Host + **extension id** (Apple requires it) | **Yes, once** for that extension |
 
 Bootstrap is **not** per experiment. It is once for the host app, and once more
-when you add a new extension Bundle ID (today: T9 keyboard).
+when you add a new extension Bundle ID (today: T9 keyboard, Mega Man widget).
 
 ## How it's structured
 
@@ -30,7 +30,9 @@ ios/
 ├── project.yml
 ├── fastlane/
 ├── Shared/T9/                 # multi-tap engine (app + keyboard extension)
+├── Shared/MegaManWidget/      # sprites + timer animation (app + widget)
 ├── T9Keyboard/                # system Custom Keyboard appex
+├── MegaManWidget/             # Home Screen WidgetKit appex
 ├── Sources/Experiments/       # in-app experiments
 └── Tests/
 ```
@@ -42,6 +44,7 @@ ios/
 | `ride-monitor` | Ride Monitor | In-app; background motion + GPS |
 | `t9-keyboard` | T9 Keyboard | In-app demo **and** system keyboard extension |
 | `follow-the-hum` | Follow the Hum | In-app; AirPods spatial hum hunt |
+| `megaman-widget` | Mega Man 2 Widget | In-app preview **and** Home Screen widget (iOS 17+) |
 
 ### T9 Keyboard
 
@@ -56,6 +59,21 @@ Old Nokia-style **multi-tap**. Same engine powers:
 After cloning a tree that adds/changes that extension, run **iOS signing
 bootstrap** once so match has its App Store profile. Later in-app experiments
 do not need that.
+
+### Mega Man 2 Widget
+
+Home Screen widget that plays a walk / jump / shoot sprite loop using public
+**timer-mask** animation (no private APIs). Same engine powers:
+
+1. **In-app preview** under the Mega Man 2 Widget experiment (character picker).
+2. **Home Screen widget** — Bundle ID
+   `io.github.imjasonh.playground.megamanwidget` (required by Apple for
+   WidgetKit). Add via the widget gallery on **iOS 17+**, then edit the widget
+   to pick Mega Man or a Robot Master.
+
+Sprites are original NES-style pixel art (not Capcom rips). Blink font is from
+Bryce Bostwick’s MIT WidgetAnimation sample. After this extension lands, run
+**iOS signing bootstrap** once for its App Store profile.
 
 ### Follow the Hum
 

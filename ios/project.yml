@@ -7,9 +7,10 @@ name: Playground
 # via a *Experiment.swift, and append that entry to ExperimentCatalog; do NOT
 # create additional top-level iOS app directories.
 #
-# The T9Keyboard target is a Custom Keyboard app extension embedded in
-# Playground. Apple requires it to have its own Bundle ID; in-app experiments
-# still share the host id. See AGENTS.md.
+# Embedded Apple app extensions (each needs its own Bundle ID; in-app
+# experiments still share the host id). See AGENTS.md.
+# - T9Keyboard: Custom Keyboard
+# - MegaManWidget: Home Screen WidgetKit extension (iOS 17+)
 #
 # `xcodegen generate` produces Playground.xcodeproj, which is git-ignored.
 
@@ -36,8 +37,15 @@ targets:
     sources:
       - path: Sources
       - path: Shared/T9
+      - path: Shared/MegaManWidget
+        excludes:
+          - "**/*.md"
+          - Fonts/LICENSE*
+          - sprite-manifest.json
     dependencies:
       - target: T9Keyboard
+        embed: true
+      - target: MegaManWidget
         embed: true
     settings:
       base:
@@ -70,6 +78,9 @@ targets:
         # No non-exempt encryption → TestFlight upload doesn't stall on the
         # export-compliance question.
         ITSAppUsesNonExemptEncryption: false
+        # Blink font for Mega Man widget timer-mask animation (in-app preview).
+        UIAppFonts:
+          - Custom-Regular.otf
         # Ride Monitor experiment: motion + background location. UIBackgroundModes
         # is an Info.plist key only (no entitlement / App ID capability), so this
         # ships to TestFlight without changing signing.
@@ -89,6 +100,40 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
+
+  MegaManWidget:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: MegaManWidget
+        excludes:
+          - README.md
+      - path: Shared/MegaManWidget
+        excludes:
+          - "**/*.md"
+          - Fonts/LICENSE*
+          - sprite-manifest.json
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.imjasonh.playground.megamanwidget
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SKIP_INSTALL: YES
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"
+        IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+    info:
+      path: MegaManWidget-Info.plist
+      properties:
+        CFBundleDisplayName: Mega Man 2
+        CFBundleName: Mega Man 2
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundlePackageType: XPC!
+        # Blink font for timer-mask sprite animation.
+        UIAppFonts:
+          - Custom-Regular.otf
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
 
   T9Keyboard:
     type: app-extension
@@ -153,6 +198,7 @@ schemes:
       targets:
         Playground: all
         T9Keyboard: all
+        MegaManWidget: all
     test:
       gatherCoverageData: true
       targets:

@@ -31,4 +31,8 @@ final class ExperimentCatalogTests: XCTestCase {
     func testIncludesFollowTheHum() {
         XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "follow-the-hum" })
     }
+
+    func testIncludesMegaManWidget() {
+        XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "megaman-widget" })
+    }
 }

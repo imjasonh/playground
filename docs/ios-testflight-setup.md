@@ -115,6 +115,20 @@ this when adding Ride Monitor–style experiments.
 > Skip manual registration if bootstrap’s `ensure_bundle_ids!` creates it for
 > you; still run bootstrap so the profile lands in the match repo.
 
+### Step 3c — Mega Man widget Bundle ID (Apple requirement)
+
+A **Home Screen Widget** also needs its own Bundle ID. Register (or let
+**iOS signing bootstrap** create via API):
+
+1. **+** → **App IDs** → **App**.
+2. **Description:** `Playground Mega Man Widget`.
+3. **Bundle ID:** Explicit → `io.github.imjasonh.playground.megamanwidget`.
+4. Capabilities unchecked (no App Group required — character pick uses App Intents).
+5. **Register**.
+
+Then re-run **iOS signing bootstrap** so match stores
+`match AppStore io.github.imjasonh.playground.megamanwidget`.
+
 ---
 
 ## Step 4 — Create the app record in App Store Connect
@@ -304,8 +318,9 @@ bundle exec fastlane signing_bootstrap
 
 Either way, match creates a **distribution certificate** and **App Store
 provisioning profiles** named like
-`match AppStore io.github.imjasonh.playground` and
-`match AppStore io.github.imjasonh.playground.t9keyboard`
+`match AppStore io.github.imjasonh.playground`,
+`match AppStore io.github.imjasonh.playground.t9keyboard`, and
+`match AppStore io.github.imjasonh.playground.megamanwidget`
 (one profile per App ID in `ios/fastlane/Matchfile`) and stores them in the
 `ios-signing` repo. Future TestFlight builds read them read-only. Re-run
 bootstrap when the certificate expires or you add another **app extension**
@@ -356,8 +371,9 @@ So you actually receive the build.
   all set yet (the deploy gate checks `ASC_KEY_ID`). Recheck Step 8.
 - **`No matching provisioning profiles found` / signing errors:** the host app
   profile name must be `match AppStore io.github.imjasonh.playground` (and the
-  keyboard extension
-  `match AppStore io.github.imjasonh.playground.t9keyboard`). Re-run the
+  keyboard / widget extensions
+  `match AppStore io.github.imjasonh.playground.t9keyboard` /
+  `match AppStore io.github.imjasonh.playground.megamanwidget`). Re-run the
   **iOS signing bootstrap** workflow (Step 9) if you added an extension and the
   match repo does not yet contain its profile, and confirm `APPLE_TEAM_ID` is
   correct.
