@@ -1,0 +1,48 @@
+# Cloudflare Workers configuration for the git smart-HTTP server.
+#
+# This project has no index.html, so the GitHub Pages workflows skip it; it is
+# deployed to Cloudflare by `deploy-workers.yml` on pushes to `main` (using the
+# CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID repo secrets).
+#
+# NOTE: unlike KV namespaces (which the deploy workflow self-provisions), the
+# R2 bucket must exist before the first deploy:
+#   wrangler r2 bucket create git-server-repos
+
+name = "git-server-worker"
+main = "build/worker/shim.mjs"
+compatibility_date = "2024-11-01"
+
+# Build the wasm Worker from Rust. `worker-build` wraps `cargo build
+# --target wasm32-unknown-unknown` and emits the JS shim referenced by `main`.
+# Pinned to the 0.1.x line to match worker 0.5 / wasm-bindgen 0.2.105 (see
+# Cargo.toml); bump the two together.
+[build]
+command = "cargo +stable install -q worker-build@0.1.14 && worker-build --release"
+
+# All bulk data: packs, pack indexes, file-log segments.
+[[r2_buckets]]
+binding = "GIT_BUCKET"
+bucket_name = "git-server-repos"
+
+# Per-repo mutable state (refs + pack manifest), one Durable Object instance
+# per repo — the serialization point that makes pushes atomic.
+[durable_objects]
+bindings = [
+  { name = "REPO_STATE", class_name = "RepoStateDo" },
+]
+
+[[migrations]]
+tag = "v1"
+new_classes = ["RepoStateDo"]
+
+# Repo registry for scheduled maintenance (repos are registered on push).
+# The placeholder id is substituted by .github/scripts/provision-worker-kv.py
+# during deploy (it creates-or-gets the namespace).
+[[kv_namespaces]]
+binding = "GIT_REPOS"
+id = "REPLACE_WITH_GIT_REPOS_KV_ID"
+
+# Nightly pack consolidation (see src/maintenance.rs): merges each repo's
+# accumulated push packs into one, without recompressing anything.
+[triggers]
+crons = ["17 3 * * *"]
