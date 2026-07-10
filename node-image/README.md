@@ -1,7 +1,13 @@
 # node-image
 
-Dockerless OCI image builds for Node.js / TypeScript apps — the Node cousin of
+Dockerless OCI **packaging** for Node.js apps — the Node cousin of
 [`ko`](https://ko.build) and [`pymage`](https://github.com/imjasonh/pymage).
+
+**node-image is complementary to pnpm, not a replacement.** pnpm (or
+turbo/esbuild/prisma/etc.) owns install and compile. node-image reads
+`pnpm-lock.yaml`, fetches hermetic production deps, lays out a pnpm-compatible
+virtual store, and pushes OCI layers — without running dependency lifecycle
+scripts.
 
 **Design:** [`docs/node-image-design.md`](../docs/node-image-design.md) ·
 **Plan:** [`docs/node-image-implementation-plan.md`](../docs/node-image-implementation-plan.md) ·
@@ -19,81 +25,76 @@ go build -o node-image .
   --platform linux/amd64,linux/arm64 \
   --oci-dir /tmp/node-image-out
 
-# TypeScript app: compiles with pnpm, then packages hermetic prod deps
-./node-image build ./testdata/ts-app \
-  --no-push --empty-base \
+# Workspace app (materializes workspace:* packages into the image)
+./node-image build ./testdata/workspace-app/apps/api \
+  --no-push --empty-base --skip-build \
   --platform linux/amd64 \
-  --oci-dir /tmp/ts-out
+  --oci-dir /tmp/ws-out
+
+# Monorepo CI shape: compile externally, then pack
+./node-image build ./apps/server --skip-build --repo registry.example.com/me/server
+
+# Diagnose lock issues for one importer (all findings at once)
+./node-image diagnose ./testdata/patched
 
 # Load into local Docker and run (stdout is only the image ref)
 docker run --rm "$(./node-image build ./testdata/pure-js \
   --local --skip-build --platform linux/amd64)"
-
-# Push to a registry (multi-arch index)
-./node-image build ./testdata/pure-js \
-  --repo registry.example.com/me/myapp -t latest \
-  --skip-build
 ```
 
 `build` prints **exactly one line on stdout**: the fully resolved image ref
 (`registry/repo@sha256:…` on push, or `node-image.local/…:tag` with `--local` /
-`-L`). Progress goes to stderr, so command substitution works with
-`docker run --rm $(node-image build -L …)`.
-
-Layer tar+gzip is **streamed** (re-opened from disk paths / integrity spool) —
-compressed blobs are not retained as `[]byte` in memory. Store packages are
-extracted once into `~/.cache/node-image/spool/<integrity>/` and referenced by
-`DiskPath`; symlink/bin edges are synthesized from the lock (no per-build
-staging tree). Compressed layers are teed to `~/.cache/node-image/layers/`
-(keyed by DiffID) so Digest()/upload reopeners skip recompression.
-
-Requirements for a real push: Go 1.23+, network, and registry credentials via
-the normal Docker keychain. `--local` needs a running Docker daemon. App
-compile needs `pnpm` on `PATH` when `scripts.build` is present (unless
-`--skip-build`).
+`-L`). Progress goes to stderr.
 
 ## What it does
 
-1. **Compile (optional):** if `scripts.build` exists, runs `pnpm install` +
-   `pnpm run build` on the host.
+1. **Optional compile:** if `scripts.build` exists and `--skip-build` is not
+   set, runs `pnpm install` + `pnpm run build` on the host. Large monorepos
+   should prefer `--skip-build` / `node-image.skipBuild` after turbo/esbuild.
 2. **Hermetic image deps:** parses `pnpm-lock.yaml` (v9), fetches tarballs by
-   integrity, extracts a pnpm-compatible virtual store, writes symlinks/bins —
-   **never** runs dependency lifecycle scripts.
-3. **Layers:** one store layer per package (auto name-hash buckets when over
-   the layer budget) + symlink/`node_modules` layer + app layer.
+   integrity (with npm auth), materializes workspace/link packages, applies
+   lock-recorded patches, writes symlinks/bins — **never** runs dependency
+   lifecycle scripts (named `allowScripts` only skips the hard-fail).
+3. **Layers:** one store layer per package (auto name-hash buckets + optional
+   `unbucketed` hot-list when over the layer budget) + symlink layer + app layer.
 4. **Multi-arch:** builds `linux/amd64` and `linux/arm64` by default and
    publishes an OCI image index.
 
-## Project layout expectations
+## Config (`package.json` → `"node-image"`)
 
-| Input | Rule |
-|-------|------|
-| Directory | Contains `package.json` (CLI arg, default `.`) |
-| Lockfile | `pnpm-lock.yaml` in that dir or a parent workspace root |
-| Config | Optional `"node-image"` key in `package.json` (`repo`, `base`, `platforms`, `buildScript`, `main`, `cmd`, `env`, `maxLayers`, …) |
-| Entrypoint | `node` + resolved JS main. If `package.json#main` is `.ts` or unset, prefers `dist/index.js` / `dist/main.js` after compile. Override with `"node-image"."main"`. |
-| Env | Defaults `NODE_ENV=production`. Override/extend via `"node-image"."env"`. |
-| Virtual store | Matches pnpm 9 `depPathToFilename` (peer `)(` → `_`, truncate+base32 hash at 120 chars). |
-| Base | Default `gcr.io/distroless/nodejs22-debian12` (**glibc**). Musl bases (Alpine/Wolfi/Chainguard) fail loudly. Prefer `@sha256:…` pins. |
+Flags override the package.json block. Point `node-image build` at the package
+directory you want to image (that package’s config applies).
+
+| Key | Purpose |
+|-----|---------|
+| `repo`, `base`, `platforms` | Push destination / base / arches |
+| `entrypoint`, `cmd`, `main` | Image Entrypoint / Cmd / JS main |
+| `commands` | Named Cmds; select with `--command worker` |
+| `include` / `exclude` | App-layer globs (default: `dist/` or `build/` + root) |
+| `skipBuild` | Prefer external compile (monorepo CI) |
+| `allowScripts` | Named packages allowed to need natives (scripts still not run) |
+| `unbucketed` | Package names that always get their own store layer |
+| `env`, `workdir`, `user`, `maxLayers` | Runtime / layer budget |
 
 ## Flags
 
 ```
 node-image build [dir] [flags]
+node-image diagnose [dir]
 
-  --repo string        destination repository (required unless --no-push / --local)
-  --base string        base image override
-  --platform string    linux/amd64,linux/arm64
-  -t string            tags (comma-separated)
-  --skip-build         skip pnpm compile step
-  --no-push            write local digest summary instead of pushing
-  --local, -L          load into local Docker daemon
-  --oci-dir string     output dir for --no-push
-  --empty-base         scratch base (tests / offline)
-  --max-layers int     max total layers including base (default 127)
+  --repo string          destination repository
+  --base string          base image override
+  --platform string      linux/amd64,linux/arm64
+  -t string              tags
+  --skip-build           skip pnpm compile; pack existing outputs
+  --command string       named Cmd from node-image.commands
+  --allow-scripts list   named packages allowed to need natives
+  --cache-dir string     portable cache root (packages/spool/layers)
+  --entrypoint list      override entrypoint (e.g. node)
+  --no-push / --local    digest summary / Docker load
+  --empty-base           scratch base (tests)
+  --max-layers int       default 127
 ```
-
-`dir` may appear before or after flags.
 
 ## Test
 
@@ -101,12 +102,13 @@ node-image build [dir] [flags]
 go test ./...
 ```
 
-Includes lock/resolve/layer units, pnpm layout conformance (skips without
-`pnpm`/network), build determinism, TypeScript compile, multi-arch index,
-stdout digest-ref contract (push to an in-process registry), and a
-`docker run --rm $(node-image build -L …)` e2e that skips without Docker.
-CI installs pnpm when this module is selected.
+Includes lock/resolve/layout units, patch/workspace/catalog/override fixtures,
+app glob packing, npm auth header injection, multi-command builds, diagnose
+importer isolation, and docker/pnpm e2e (auto-skip when tools are missing).
 
-## Non-goals (v1)
+## Non-goals
 
-- npm/yarn lockfiles, `--allow-scripts` for image deps, musl mode, Electron
+- Replacing pnpm for install or workspace linking
+- npm/yarn/bun lockfiles (pnpm-lock only)
+- Running arbitrary dependency install scripts by default
+- musl mode (glibc default; loud fail otherwise)

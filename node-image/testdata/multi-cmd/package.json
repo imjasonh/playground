@@ -1,0 +1,16 @@
+{
+  "name": "multi-cmd-fixture",
+  "version": "1.0.0",
+  "private": true,
+  "main": "build/index.js",
+  "node-image": {
+    "repo": "example.com/multi-cmd",
+    "skipBuild": true,
+    "main": "build/index.js",
+    "include": ["build/**", "package.json"],
+    "commands": {
+      "api": ["build/index.js"],
+      "worker": ["build/worker.js"]
+    }
+  }
+}

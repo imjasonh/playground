@@ -10,24 +10,31 @@ import (
 
 // Config is build configuration from package.json + flags.
 type Config struct {
-	Dir         string
-	Repo        string
-	Base        string
-	Platforms   []string
-	Tags        []string
-	SkipBuild   bool
-	NoPush      bool
-	Local       bool
-	OCIDir      string
-	BuildScript string
-	Entrypoint  []string
-	CmdOverride []string // explicit node-image.cmd, if set
-	Main        string
-	User        string
-	Workdir     string
-	MaxLayers   int
-	Env         map[string]string
-	EnginesNode string // package.json engines.node, if set
+	Dir          string
+	Repo         string
+	Base         string
+	Platforms    []string
+	Tags         []string
+	SkipBuild    bool
+	NoPush       bool
+	Local        bool
+	OCIDir       string
+	BuildScript  string
+	Entrypoint   []string
+	CmdOverride  []string // explicit node-image.cmd, if set
+	Main         string
+	User         string
+	Workdir      string
+	MaxLayers    int
+	Env          map[string]string
+	EnginesNode  string // package.json engines.node, if set
+	Include      []string
+	Exclude      []string
+	Commands     map[string][]string
+	CommandName  string // selected named command (from --command)
+	AllowScripts []string
+	Unbucketed   []string
+	CacheDir     string
 }
 
 type packageJSON struct {
@@ -47,17 +54,23 @@ func (p *packageJSON) EnginesNode() string {
 }
 
 type nodeImageBlock struct {
-	Repo        string            `json:"repo"`
-	Base        string            `json:"base"`
-	Platforms   []string          `json:"platforms"`
-	Entrypoint  []string          `json:"entrypoint"`
-	Cmd         []string          `json:"cmd"`
-	Main        string            `json:"main"`
-	BuildScript string            `json:"buildScript"`
-	User        string            `json:"user"`
-	Workdir     string            `json:"workdir"`
-	MaxLayers   int               `json:"maxLayers"`
-	Env         map[string]string `json:"env"`
+	Repo         string              `json:"repo"`
+	Base         string              `json:"base"`
+	Platforms    []string            `json:"platforms"`
+	Entrypoint   []string            `json:"entrypoint"`
+	Cmd          []string            `json:"cmd"`
+	Main         string              `json:"main"`
+	BuildScript  string              `json:"buildScript"`
+	SkipBuild    *bool               `json:"skipBuild"`
+	User         string              `json:"user"`
+	Workdir      string              `json:"workdir"`
+	MaxLayers    int                 `json:"maxLayers"`
+	Env          map[string]string   `json:"env"`
+	Include      []string            `json:"include"`
+	Exclude      []string            `json:"exclude"`
+	Commands     map[string][]string `json:"commands"`
+	AllowScripts []string            `json:"allowScripts"`
+	Unbucketed   []string            `json:"unbucketed"`
 }
 
 // DefaultBase is a glibc distroless Node image.
@@ -111,6 +124,9 @@ func Load(dir string) (*Config, *packageJSON, error) {
 		if n.BuildScript != "" {
 			cfg.BuildScript = n.BuildScript
 		}
+		if n.SkipBuild != nil && *n.SkipBuild {
+			cfg.SkipBuild = true
+		}
 		if n.User != "" {
 			cfg.User = n.User
 		}
@@ -125,17 +141,52 @@ func Load(dir string) (*Config, *packageJSON, error) {
 				cfg.Env[k] = v
 			}
 		}
+		if len(n.Include) > 0 {
+			cfg.Include = append([]string(nil), n.Include...)
+		}
+		if len(n.Exclude) > 0 {
+			cfg.Exclude = append([]string(nil), n.Exclude...)
+		}
+		if len(n.Commands) > 0 {
+			cfg.Commands = n.Commands
+		}
+		if len(n.AllowScripts) > 0 {
+			cfg.AllowScripts = append([]string(nil), n.AllowScripts...)
+		}
+		if len(n.Unbucketed) > 0 {
+			cfg.Unbucketed = append([]string(nil), n.Unbucketed...)
+		}
 	}
 	if cfg.BuildScript == "" && pj.Scripts["build"] != "" {
 		cfg.BuildScript = "build"
 	}
 	if len(cfg.Entrypoint) == 0 {
 		// Distroless node images typically ship node at /nodejs/bin/node.
+		// Custom bases should set node-image.entrypoint (e.g. ["node"]).
 		cfg.Entrypoint = []string{"/nodejs/bin/node"}
 	}
-	// Main is resolved after compile (see ResolveMain) — dist/ often does not
-	// exist yet when Load runs.
 	return cfg, &pj, nil
+}
+
+// ApplyCommand selects a named command from node-image.commands into CmdOverride.
+func (c *Config) ApplyCommand(name string) error {
+	if name == "" {
+		return nil
+	}
+	if c.Commands == nil {
+		return fmt.Errorf("unknown --command %q (no node-image.commands configured)", name)
+	}
+	cmd, ok := c.Commands[name]
+	if !ok {
+		keys := make([]string, 0, len(c.Commands))
+		for k := range c.Commands {
+			keys = append(keys, k)
+		}
+		return fmt.Errorf("unknown --command %q (have: %s)", name, strings.Join(keys, ", "))
+	}
+	c.CommandName = name
+	c.CmdOverride = append([]string(nil), cmd...)
+	return nil
 }
 
 // ResolveMain picks the JS file node should run.
@@ -152,6 +203,7 @@ func ResolveMain(dir, main string, hasBuildScript bool) (string, error) {
 			candidates = append(candidates,
 				filepath.ToSlash(filepath.Join("dist", filepath.Base(base)+".js")),
 				filepath.ToSlash(filepath.Join("dist", base+".js")),
+				filepath.ToSlash(filepath.Join("build", filepath.Base(base)+".js")),
 				base+".js",
 			)
 		}
@@ -160,6 +212,8 @@ func ResolveMain(dir, main string, hasBuildScript bool) (string, error) {
 		"dist/index.js",
 		"dist/index.mjs",
 		"dist/main.js",
+		"build/index.js",
+		"build/index.mjs",
 		"index.js",
 		"index.mjs",
 		"index.cjs",
@@ -180,7 +234,6 @@ func ResolveMain(dir, main string, hasBuildScript bool) (string, error) {
 			if firstMissingTS == "" {
 				firstMissingTS = c
 			}
-			// Never run .ts in the image.
 			continue
 		}
 		if st, err := os.Stat(filepath.Join(dir, filepath.FromSlash(c))); err == nil && !st.IsDir() {
@@ -189,13 +242,13 @@ func ResolveMain(dir, main string, hasBuildScript bool) (string, error) {
 	}
 
 	if hasBuildScript {
-		return "", fmt.Errorf("could not find a compiled JS entrypoint (looked for dist/index.js and friends)\nHint: package.json main is %q; after `pnpm run build` set node-image.main to the emitted file (e.g. \"dist/index.js\"), or ensure the build writes dist/index.js", main)
+		return "", fmt.Errorf("could not find a compiled JS entrypoint (looked for dist/index.js, build/index.js, and friends)\nHint: package.json main is %q; after compile set node-image.main to the emitted file, or set node-image.include", main)
 	}
 	if firstMissingTS != "" {
-		return "", fmt.Errorf("package.json main %q looks like TypeScript but no scripts.build is configured and no compiled JS was found\nHint: add a build script that emits JS to dist/, set \"node-image\".\"main\" to that file, or use a JS entrypoint", firstMissingTS)
+		return "", fmt.Errorf("package.json main %q looks like TypeScript but no scripts.build is configured and no compiled JS was found\nHint: add a build script that emits JS, set \"node-image\".\"main\" to that file, use --skip-build after compiling externally, or use a JS entrypoint", firstMissingTS)
 	}
 	if main != "" {
-		return main, nil // let RequireMain fail later with a clearer missing-file error
+		return main, nil
 	}
 	return "index.js", nil
 }
@@ -203,7 +256,15 @@ func ResolveMain(dir, main string, hasBuildScript bool) (string, error) {
 // Cmd returns the container Cmd (args to node).
 func (c *Config) Cmd() []string {
 	if len(c.CmdOverride) > 0 {
-		return append([]string(nil), c.CmdOverride...)
+		out := make([]string, len(c.CmdOverride))
+		for i, a := range c.CmdOverride {
+			if !filepath.IsAbs(a) && !strings.HasPrefix(a, "/") {
+				out[i] = filepath.ToSlash(filepath.Join(c.Workdir, a))
+			} else {
+				out[i] = a
+			}
+		}
+		return out
 	}
 	main := c.Main
 	if !filepath.IsAbs(main) {
@@ -227,7 +288,6 @@ func (c *Config) EnvList() []string {
 	for k := range env {
 		keys = append(keys, k)
 	}
-	// stable order
 	for i := 0; i < len(keys); i++ {
 		for j := i + 1; j < len(keys); j++ {
 			if keys[j] < keys[i] {
@@ -240,6 +300,26 @@ func (c *Config) EnvList() []string {
 		out = append(out, k+"="+env[k])
 	}
 	return out
+}
+
+// AllowsScript reports whether packageName is on the allowScripts list.
+func (c *Config) AllowsScript(packageName string) bool {
+	for _, a := range c.AllowScripts {
+		name := a
+		if i := strings.Index(a, "@"); i > 0 && !strings.HasPrefix(a, "@") {
+			name = a[:i]
+		} else if strings.HasPrefix(a, "@") {
+			// @scope/name or @scope/name@1.0.0
+			rest := a[1:]
+			if j := strings.Index(rest, "@"); j > 0 {
+				name = "@" + rest[:j]
+			}
+		}
+		if name == packageName || a == packageName {
+			return true
+		}
+	}
+	return false
 }
 
 func copyEnv(in map[string]string) map[string]string {

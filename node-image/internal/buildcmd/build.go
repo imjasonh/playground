@@ -24,19 +24,23 @@ import (
 
 // Options are CLI-facing build options (override config).
 type Options struct {
-	Dir       string
-	Repo      string
-	Base      string
-	Platforms []string
-	Tags      []string
-	SkipBuild bool
-	NoPush    bool
-	Local     bool // load into local Docker daemon (ko-style -L)
-	OCIDir    string
-	EmptyBase bool
-	MaxLayers int // 0 = use config default
-	Stdout    io.Writer
-	Stderr    io.Writer
+	Dir          string
+	Repo         string
+	Base         string
+	Platforms    []string
+	Tags         []string
+	SkipBuild    bool
+	NoPush       bool
+	Local        bool
+	OCIDir       string
+	EmptyBase    bool
+	MaxLayers    int
+	Command      string
+	AllowScripts []string
+	CacheDir     string
+	Entrypoint   []string
+	Stdout       io.Writer
+	Stderr       io.Writer
 }
 
 // Run executes a build and returns the image reference / digest string.
@@ -69,12 +73,26 @@ func Run(opt Options) (string, error) {
 	if len(opt.Tags) > 0 {
 		cfg.Tags = opt.Tags
 	}
-	cfg.SkipBuild = opt.SkipBuild
+	if opt.SkipBuild {
+		cfg.SkipBuild = true
+	}
 	cfg.NoPush = opt.NoPush
 	cfg.Local = opt.Local
 	cfg.OCIDir = opt.OCIDir
 	if opt.MaxLayers > 0 {
 		cfg.MaxLayers = opt.MaxLayers
+	}
+	if len(opt.AllowScripts) > 0 {
+		cfg.AllowScripts = append(cfg.AllowScripts, opt.AllowScripts...)
+	}
+	if opt.CacheDir != "" {
+		cfg.CacheDir = opt.CacheDir
+	}
+	if len(opt.Entrypoint) > 0 {
+		cfg.Entrypoint = append([]string(nil), opt.Entrypoint...)
+	}
+	if err := cfg.ApplyCommand(opt.Command); err != nil {
+		return "", err
 	}
 
 	if cfg.Local && cfg.NoPush {
@@ -103,6 +121,17 @@ func Run(opt Options) (string, error) {
 		return "", fmt.Errorf("importer %q not found in %s\nHint: the package directory must be a workspace member (or .) relative to the lockfile root %s", importer, lockPath, lockRoot)
 	}
 
+	// Importer-scoped diagnose: surface errors for the selected closure only.
+	report := l.Diagnose(lock.DiagnoseOptions{ImporterKey: importer})
+	if report.HasErrors() {
+		return "", fmt.Errorf("%s", strings.TrimSpace(report.String()))
+	}
+	for _, f := range report.Findings {
+		if f.Severity == "warning" {
+			fmt.Fprintf(stderr, "warning: %s: %s\n", f.Code, f.Message)
+		}
+	}
+
 	if !cfg.SkipBuild && cfg.BuildScript != "" {
 		fmt.Fprintf(stderr, "compiling with pnpm run %s\n", cfg.BuildScript)
 		if err := app.Compile(cfg.Dir, lockRoot, cfg.BuildScript); err != nil {
@@ -110,10 +139,8 @@ func Run(opt Options) (string, error) {
 		}
 	}
 
-	// Resolve the JS entrypoint after compile so dist/ exists for TypeScript apps
-	// whose package.json#main still points at a .ts source file.
 	if len(cfg.CmdOverride) == 0 {
-		resolved, err := config.ResolveMain(cfg.Dir, cfg.Main, cfg.BuildScript != "")
+		resolved, err := config.ResolveMain(cfg.Dir, cfg.Main, cfg.BuildScript != "" && !cfg.SkipBuild)
 		if err != nil {
 			return "", err
 		}
@@ -123,9 +150,14 @@ func Run(opt Options) (string, error) {
 		cfg.Main = resolved
 	}
 
-	cacheDir, err := fetch.DefaultDir()
-	if err != nil {
-		return "", err
+	cacheDir := cfg.CacheDir
+	if cacheDir == "" {
+		cacheDir, err = fetch.DefaultDir()
+		if err != nil {
+			return "", err
+		}
+	} else {
+		cacheDir = filepath.Join(cacheDir, "packages")
 	}
 	cache := &fetch.Cache{Dir: cacheDir}
 
@@ -134,7 +166,6 @@ func Run(opt Options) (string, error) {
 		platforms = []string{"linux/amd64"}
 	}
 
-	// Inspect base once (first platform) for libc/Node/layer budget unless empty-base.
 	var baseInfo *base.Info
 	if opt.EmptyBase || cfg.Base == "scratch" {
 		baseInfo = base.ScratchInfo()
@@ -156,15 +187,33 @@ func Run(opt Options) (string, error) {
 		for _, w := range baseInfo.Warnings {
 			fmt.Fprintf(stderr, "warning: %s\n", w)
 		}
+		// Custom bases often lack /nodejs/bin/node — if entrypoint is still the
+		// distroless default and the base is not distroless-like, prefer "node".
+		if len(opt.Entrypoint) == 0 && len(cfg.Entrypoint) == 1 && cfg.Entrypoint[0] == "/nodejs/bin/node" {
+			if !strings.Contains(cfg.Base, "distroless") {
+				cfg.Entrypoint = []string{"node"}
+				fmt.Fprintf(stderr, "entrypoint: using [node] for non-distroless base (set node-image.entrypoint to override)\n")
+			}
+		}
 	}
 
-	spoolRoot, err := layout.SpoolDir()
-	if err != nil {
-		return "", err
+	spoolRoot := ""
+	if cfg.CacheDir != "" {
+		spoolRoot = filepath.Join(cfg.CacheDir, "spool")
+	} else {
+		spoolRoot, err = layout.SpoolDir()
+		if err != nil {
+			return "", err
+		}
 	}
-	blobCacheDir, err := layer.DefaultBlobCacheDir()
-	if err != nil {
-		return "", err
+	blobCacheDir := ""
+	if cfg.CacheDir != "" {
+		blobCacheDir = filepath.Join(cfg.CacheDir, "layers")
+	} else {
+		blobCacheDir, err = layer.DefaultBlobCacheDir()
+		if err != nil {
+			return "", err
+		}
 	}
 	blobCache := &layer.BlobCache{Dir: blobCacheDir}
 
@@ -179,7 +228,7 @@ func Run(opt Options) (string, error) {
 			CPU:  publish.ResolveCPU(plat.Architecture),
 			Libc: "glibc",
 		}
-		refs, err := resolve.Closure(l, importer, rplat)
+		refs, err := resolve.ClosureOpts(l, importer, rplat, resolve.ClosureOptions{LockRoot: lockRoot})
 		if err != nil {
 			return "", err
 		}
@@ -187,9 +236,17 @@ func Run(opt Options) (string, error) {
 		tarballs := map[string]string{}
 		integrityKeys := map[string]string{}
 		for _, ref := range refs {
+			if ref.IsLocal {
+				key, err := layout.LocalContentKey(ref.LocalPath)
+				if err != nil {
+					return "", fmt.Errorf("hash local %s: %w", ref.PackageID, err)
+				}
+				integrityKeys[ref.PackageID] = key
+				continue
+			}
 			path, err := cache.Ensure(ref.Tarball, ref.Integrity)
 			if err != nil {
-				return "", fmt.Errorf("fetch %s: %w\nHint: check network access to the npm registry and that the integrity in pnpm-lock.yaml is current", ref.PackageID, err)
+				return "", fmt.Errorf("fetch %s: %w\nHint: check network access and npm auth (.npmrc / NODE_AUTH_TOKEN) for the tarball host", ref.PackageID, err)
 			}
 			tarballs[ref.PackageID] = path
 			key, err := fetch.IntegrityKey(ref.Integrity)
@@ -202,12 +259,17 @@ func Run(opt Options) (string, error) {
 		planned, err := layout.PlanLayout(l, refs, tarballs, direct, layout.PlanOptions{
 			SpoolRoot:    spoolRoot,
 			IntegrityKey: integrityKeys,
+			LockRoot:     lockRoot,
+			AllowScripts: cfg.AllowScripts,
 		})
 		if err != nil {
 			return "", err
 		}
 
-		outputs, err := app.CollectOutputs(cfg.Dir)
+		outputs, err := app.CollectOutputsOpts(cfg.Dir, app.CollectOptions{
+			Include: cfg.Include,
+			Exclude: cfg.Exclude,
+		})
 		if err != nil {
 			return "", err
 		}
@@ -299,10 +361,40 @@ func Run(opt Options) (string, error) {
 		}
 	}
 
-	// Contract: stdout is exactly one line — the fully resolved image ref —
-	// so `docker run --rm $(node-image build …)` works. Progress goes to stderr.
 	fmt.Fprintln(stdout, lastRef)
 	return lastRef, nil
+}
+
+// Diagnose prints a lock/importer report to stderr and returns whether errors exist.
+func Diagnose(dir string, w io.Writer) error {
+	if w == nil {
+		w = os.Stderr
+	}
+	if dir == "" {
+		dir = "."
+	}
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return err
+	}
+	lockPath, lockRoot, err := lock.FindLockfile(abs)
+	if err != nil {
+		return err
+	}
+	l, err := lock.ParseFile(lockPath)
+	if err != nil {
+		return err
+	}
+	importer, err := lock.ImporterKey(lockRoot, abs)
+	if err != nil {
+		return err
+	}
+	report := l.Diagnose(lock.DiagnoseOptions{ImporterKey: importer})
+	fmt.Fprint(w, report.String())
+	if report.HasErrors() {
+		return fmt.Errorf("diagnose found errors")
+	}
+	return nil
 }
 
 func hostArchHint() string {
@@ -335,7 +427,9 @@ func assemblePlannedLayers(planned *layout.PlannedLayout, appFiles []layer.File,
 		fmt.Fprintf(stderr, "layer budget: %d store packages into %d buckets (max-layers=%d, base=%d, extra=2)\n",
 			len(planned.Store), slots, cfg.MaxLayers, baseInfo.LayerCount)
 	}
-	storeGroups := layer.BucketStorePackages(planned.Store, slots)
+	storeGroups := layer.BucketStorePackagesOpts(planned.Store, slots, layer.BucketOptions{
+		Unbucketed: cfg.Unbucketed,
+	})
 	prefix := strings.TrimPrefix(cfg.Workdir, "/")
 	out := make([]publish.LayerFiles, 0, len(storeGroups)+2)
 	for _, g := range storeGroups {
@@ -348,8 +442,6 @@ func assemblePlannedLayers(planned *layout.PlannedLayout, appFiles []layer.File,
 	return out, nil
 }
 
-// appLayerFiles turns CollectOutputs (rel → abs source) into layer files that
-// stream from DiskPath — no staging copy.
 func appLayerFiles(outputs map[string]string) []layer.File {
 	rels := make([]string, 0, len(outputs))
 	for rel := range outputs {
@@ -360,7 +452,6 @@ func appLayerFiles(outputs map[string]string) []layer.File {
 	seenDir := map[string]struct{}{}
 	for _, rel := range rels {
 		src := outputs[rel]
-		// Ensure parent dir entries exist in the layer.
 		parts := strings.Split(rel, "/")
 		cur := ""
 		for _, p := range parts[:len(parts)-1] {

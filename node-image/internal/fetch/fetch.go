@@ -1,12 +1,14 @@
 package fetch
 
 import (
+	"bufio"
 	"crypto/sha512"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,6 +22,9 @@ const DefaultHTTPTimeout = 2 * time.Minute
 type Cache struct {
 	Dir        string
 	HTTPClient *http.Client
+	// Auth resolves Authorization / token headers for a tarball URL.
+	// When nil, DefaultNPMAuth is used (reads .npmrc + env).
+	Auth func(*http.Request) error
 }
 
 func (c *Cache) client() *http.Client {
@@ -57,7 +62,18 @@ func (c *Cache) Ensure(tarballURL, integrity string) (string, error) {
 		}
 		_ = os.Remove(path)
 	}
-	resp, err := c.client().Get(tarballURL)
+	req, err := http.NewRequest(http.MethodGet, tarballURL, nil)
+	if err != nil {
+		return "", err
+	}
+	auth := c.Auth
+	if auth == nil {
+		auth = DefaultNPMAuth
+	}
+	if err := auth(req); err != nil {
+		return "", err
+	}
+	resp, err := c.client().Do(req)
 	if err != nil {
 		return "", fmt.Errorf("fetch %s: %w", tarballURL, err)
 	}
@@ -65,8 +81,6 @@ func (c *Cache) Ensure(tarballURL, integrity string) (string, error) {
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("fetch %s: %s", tarballURL, resp.Status)
 	}
-	// Unique temp file so concurrent Ensure calls for the same integrity cannot
-	// clobber each other's downloads.
 	f, err := os.CreateTemp(c.Dir, key+".*.tmp")
 	if err != nil {
 		return "", err
@@ -91,7 +105,6 @@ func (c *Cache) Ensure(tarballURL, integrity string) (string, error) {
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		_ = os.Remove(tmp)
-		// Another concurrent writer may have won the rename race with a good file.
 		if st, statErr := os.Stat(path); statErr == nil && st.Size() > 0 {
 			if verifyFile(path, integrity) == nil {
 				return path, nil
@@ -162,4 +175,100 @@ func subtleConstantCompare(a, b []byte) bool {
 		v |= a[i] ^ b[i]
 	}
 	return v == 0
+}
+
+// DefaultNPMAuth attaches npm-style auth from env and ~/.npmrc / project .npmrc.
+// Never logs token values. Supports:
+//   - NPM_TOKEN / NODE_AUTH_TOKEN → Bearer for any host
+//   - //host/:_authToken=… in .npmrc
+func DefaultNPMAuth(req *http.Request) error {
+	if req.URL == nil {
+		return nil
+	}
+	host := req.URL.Host
+	if token := firstEnv("NODE_AUTH_TOKEN", "NPM_TOKEN"); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+		return nil
+	}
+	token := lookupNPMRCToken(host)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	return nil
+}
+
+func firstEnv(keys ...string) string {
+	for _, k := range keys {
+		if v := os.Getenv(k); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func lookupNPMRCToken(host string) string {
+	paths := npmrcPaths()
+	for _, p := range paths {
+		if tok := readNPMRCToken(p, host); tok != "" {
+			return tok
+		}
+	}
+	return ""
+}
+
+func npmrcPaths() []string {
+	var out []string
+	if wd, err := os.Getwd(); err == nil {
+		out = append(out, filepath.Join(wd, ".npmrc"))
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		out = append(out, filepath.Join(home, ".npmrc"))
+	}
+	return out
+}
+
+func readNPMRCToken(path, host string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	wantPrefix := "//" + host + "/:_authToken="
+	wantPrefixNoSlash := "//" + host + ":_authToken="
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
+			continue
+		}
+		for _, prefix := range []string{wantPrefix, wantPrefixNoSlash} {
+			if strings.HasPrefix(line, prefix) {
+				return strings.TrimSpace(strings.TrimPrefix(line, prefix))
+			}
+		}
+		// Match registry host from URL-shaped keys.
+		if strings.Contains(line, ":_authToken=") {
+			u := strings.SplitN(line, ":_authToken=", 2)
+			if len(u) == 2 && hostMatchesNPMRC(u[0], host) {
+				return strings.TrimSpace(u[1])
+			}
+		}
+	}
+	return ""
+}
+
+func hostMatchesNPMRC(key, host string) bool {
+	key = strings.TrimPrefix(key, "//")
+	key = strings.TrimSuffix(key, "/")
+	if i := strings.Index(key, "/"); i >= 0 {
+		key = key[:i]
+	}
+	if key == host {
+		return true
+	}
+	// Compare URL host if key looks like a URL.
+	if u, err := url.Parse("https://" + key); err == nil && u.Host == host {
+		return true
+	}
+	return false
 }

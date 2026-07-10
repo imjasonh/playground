@@ -1,0 +1,13 @@
+{
+  "name": "build-globs-fixture",
+  "version": "1.0.0",
+  "private": true,
+  "main": "build/index.js",
+  "node-image": {
+    "repo": "example.com/build-globs",
+    "skipBuild": true,
+    "main": "build/index.js",
+    "include": ["build/**", "package.json"],
+    "exclude": ["**/*.map"]
+  }
+}

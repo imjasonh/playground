@@ -60,6 +60,31 @@ func TestBucketStableHashWhenOverBudget(t *testing.T) {
 	}
 }
 
+func TestBucketUnbucketedHotList(t *testing.T) {
+	var pkgs []layer.PackageStore
+	for _, name := range []string{"alpha", "beta", "gamma", "delta", "epsilon", "hotpkg"} {
+		pkgs = append(pkgs, layer.PackageStore{
+			Name:    name,
+			DepPath: name + "@1.0.0",
+			Files:   []layer.File{{Rel: "p/" + name, Mode: 0o644, Body: []byte(name)}},
+		})
+	}
+	got := layer.BucketStorePackagesOpts(pkgs, 3, layer.BucketOptions{Unbucketed: []string{"hotpkg"}})
+	if len(got) < 2 {
+		t.Fatalf("buckets=%d", len(got))
+	}
+	// hotpkg should appear as its own layer (single-file body "hotpkg")
+	foundDedicated := false
+	for _, g := range got {
+		if len(g) == 1 && string(g[0].Body) == "hotpkg" {
+			foundDedicated = true
+		}
+	}
+	if !foundDedicated {
+		t.Fatal("expected dedicated hotpkg layer")
+	}
+}
+
 func TestBudgetStoreSlots(t *testing.T) {
 	b := layer.Budget{MaxLayers: 127, BaseLayers: 10, ExtraLayers: 2}
 	if b.StoreSlots() != 115 {

@@ -1,15 +1,11 @@
 # Roadmap: `node-image` for real-world pnpm monorepos
 
-> Status: **planning only** — no implementation in this doc.
-> Companion to [`node-image-design.md`](./node-image-design.md) and
-> [`node-image-implementation-plan.md`](./node-image-implementation-plan.md).
+> Status: **implementation in progress on feature branch** — see also the
+> code in `node-image/`. Planning companion to
+> [`node-image-design.md`](./node-image-design.md).
 >
-> Alpha (M0–M7) shipped a hermetic, multi-arch builder for **simple** pnpm v9
-> apps. A gap analysis against a large production monorepo (hundreds of
-> importers, thousands of packages, private registries, workspace packages,
-> patches, overrides, catalogs, git deps, fat custom bases) showed that alpha
-> is not yet sufficient for that class of app. This document is the plan to
-> close those gaps.
+> **Positioning reminder:** node-image packages a pnpm-resolved prod graph into
+> OCI layers. It is complementary to pnpm, not a replacement.
 
 ## 0. Framing
 
