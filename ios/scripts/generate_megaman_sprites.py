@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
-"""Build Mega Man widget sprite assets.
+"""Build Metal Man widget sprite assets from the authentic Mega Man 2 sheet.
 
-Metal Man frames are sliced from the authentic sheet at
-`Shared/MegaManWidget/SourcesSheets/metal-man.gif` (walk / throw / jump / blade).
-
-Other characters still use simple original placeholder pixel art until real
-sheets are added the same way.
+Source: Shared/MegaManWidget/SourcesSheets/metal-man.gif
+Output: Shared/MegaManWidget/Assets.xcassets/metal-man_{00…07}.imageset
 """
 
 from __future__ import annotations
@@ -20,415 +17,6 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "Shared" / "MegaManWidget" / "Assets.xcassets"
 SHEETS = ROOT / "Shared" / "MegaManWidget" / "SourcesSheets"
 METAL_SHEET = SHEETS / "metal-man.gif"
-
-SIZE = 32
-SCALE_PLACEHOLDER = 4
-T = None
-
-PLACEHOLDER_CHARS = {
-    "mega-man": {
-        "name": "Mega Man",
-        "colors": {
-            "O": (20, 20, 40),
-            "B": (0, 112, 236),
-            "D": (0, 56, 168),
-            "C": (0, 232, 216),
-            "S": (252, 216, 168),
-            "W": (252, 252, 252),
-            "R": (248, 56, 0),
-            "Y": (252, 216, 0),
-        },
-    },
-    "wood-man": {
-        "name": "Wood Man",
-        "colors": {
-            "O": (40, 24, 8),
-            "B": (152, 88, 40),
-            "D": (96, 48, 16),
-            "C": (72, 168, 48),
-            "S": (252, 216, 168),
-            "W": (232, 200, 120),
-            "R": (200, 48, 32),
-            "Y": (200, 220, 64),
-        },
-    },
-    "heat-man": {
-        "name": "Heat Man",
-        "colors": {
-            "O": (40, 8, 0),
-            "B": (248, 120, 0),
-            "D": (184, 48, 0),
-            "C": (252, 200, 64),
-            "S": (252, 216, 168),
-            "W": (252, 252, 200),
-            "R": (248, 32, 0),
-            "Y": (252, 252, 0),
-        },
-    },
-    "flash-man": {
-        "name": "Flash Man",
-        "colors": {
-            "O": (8, 24, 64),
-            "B": (48, 120, 248),
-            "D": (24, 56, 168),
-            "C": (120, 216, 252),
-            "S": (252, 216, 168),
-            "W": (252, 252, 252),
-            "R": (248, 200, 0),
-            "Y": (252, 252, 120),
-        },
-    },
-    "quick-man": {
-        "name": "Quick Man",
-        "colors": {
-            "O": (48, 0, 0),
-            "B": (216, 40, 40),
-            "D": (136, 16, 16),
-            "C": (252, 120, 120),
-            "S": (252, 216, 168),
-            "W": (252, 252, 252),
-            "R": (252, 200, 0),
-            "Y": (252, 252, 0),
-        },
-    },
-    "crash-man": {
-        "name": "Crash Man",
-        "colors": {
-            "O": (40, 8, 8),
-            "B": (232, 72, 48),
-            "D": (152, 32, 24),
-            "C": (252, 160, 96),
-            "S": (252, 216, 168),
-            "W": (252, 252, 252),
-            "R": (80, 80, 96),
-            "Y": (252, 216, 0),
-        },
-    },
-    "bubble-man": {
-        "name": "Bubble Man",
-        "colors": {
-            "O": (0, 32, 64),
-            "B": (32, 144, 216),
-            "D": (16, 72, 136),
-            "C": (120, 216, 248),
-            "S": (252, 216, 168),
-            "W": (232, 248, 252),
-            "R": (248, 120, 160),
-            "Y": (200, 240, 252),
-        },
-    },
-    "air-man": {
-        "name": "Air Man",
-        "colors": {
-            "O": (24, 16, 40),
-            "B": (120, 104, 168),
-            "D": (64, 48, 104),
-            "C": (184, 168, 216),
-            "S": (252, 216, 168),
-            "W": (240, 240, 248),
-            "R": (200, 64, 96),
-            "Y": (252, 216, 0),
-        },
-    },
-}
-
-
-def grid(*rows: str) -> list[str]:
-    assert all(len(r) == SIZE for r in rows), f"expected {SIZE}-wide rows"
-    assert len(rows) == SIZE
-    return list(rows)
-
-
-STAND = grid(
-    "................................",
-    "................................",
-    "............OOOOOO..............",
-    "...........OBBBBBOO.............",
-    "..........OBWWWWBBO.............",
-    "..........OBWSWSBBO.............",
-    "..........OBSSSSBBO.............",
-    "...........OBSSBOO..............",
-    "..........OODDDDOO..............",
-    ".........ODBCCCCBDO.............",
-    "........ODBCCCCCCBDO............",
-    "........ODBCCCCCCBDO............",
-    "........OOBCCCCCCBOO............",
-    ".........OBBCCCCBBO.............",
-    "..........OOBBBBOO..............",
-    ".........ODBBOOBBDO.............",
-    "........ODBBO..OBBDO............",
-    ".......ODBBO....OBBDO...........",
-    ".......OBBBO....OBBBO...........",
-    ".......OBBDO....ODBBO...........",
-    ".......OOBBO....OBBOO...........",
-    "........OBBO....OBBO............",
-    "........OBDO....ODBO............",
-    "........OBBO....OBBO............",
-    ".......OOBBO....OBBOO...........",
-    ".......OBBBO....OBBBO...........",
-    ".......ODDDO....ODDDO...........",
-    "........OOOO....OOOO............",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-)
-
-WALK_A = grid(
-    "................................",
-    "................................",
-    "............OOOOOO..............",
-    "...........OBBBBBOO.............",
-    "..........OBWWWWBBO.............",
-    "..........OBWSWSBBO.............",
-    "..........OBSSSSBBO.............",
-    "...........OBSSBOO..............",
-    "..........OODDDDOO..............",
-    ".........ODBCCCCBDO.............",
-    "........ODBCCCCCCBDO............",
-    "........ODBCCCCCCBDO............",
-    "........OOBCCCCCCBOO............",
-    ".........OBBCCCCBBO.............",
-    "..........OOBBBBOO..............",
-    ".........ODBBOOBBDO.............",
-    "........ODBBO..OBBDO............",
-    ".......ODBBO....OBBDO...........",
-    "......ODBBO......OBBDO..........",
-    "......OBBBO......OBBBO..........",
-    "......OOBBO......OBBOO..........",
-    ".......OBBO......OBBO...........",
-    ".......OBDO......ODBO...........",
-    "......OOBBO......OBBOO..........",
-    ".....OBBBBO......OBBBBO.........",
-    ".....ODDDDO......ODDDDO.........",
-    "......OOOO........OOOO..........",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-)
-
-WALK_B = grid(
-    "................................",
-    "................................",
-    "............OOOOOO..............",
-    "...........OBBBBBOO.............",
-    "..........OBWWWWBBO.............",
-    "..........OBWSWSBBO.............",
-    "..........OBSSSSBBO.............",
-    "...........OBSSBOO..............",
-    "..........OODDDDOO..............",
-    ".........ODBCCCCBDO.............",
-    "........ODBCCCCCCBDO............",
-    "........ODBCCCCCCBDO............",
-    "........OOBCCCCCCBOO............",
-    ".........OBBCCCCBBO.............",
-    "..........OOBBBBOO..............",
-    ".........ODBBOOBBDO.............",
-    "........ODBBO..OBBDO............",
-    ".......ODBBO....OBBDO...........",
-    ".......OBBBO....OBBBO...........",
-    ".......OBBDO....ODBBO...........",
-    ".......OOBBO....OBBOO...........",
-    "........OBBO....OBBO............",
-    ".......OOBDO....ODBOO...........",
-    "......OBBBBO....OBBBBO..........",
-    "......ODDDDO....ODDDDO..........",
-    ".......OOOO......OOOO...........",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-)
-
-WALK_C = grid(
-    "................................",
-    "................................",
-    "............OOOOOO..............",
-    "...........OBBBBBOO.............",
-    "..........OBWWWWBBO.............",
-    "..........OBWSWSBBO.............",
-    "..........OBSSSSBBO.............",
-    "...........OBSSBOO..............",
-    "..........OODDDDOO..............",
-    ".........ODBCCCCBDO.............",
-    "........ODBCCCCCCBDO............",
-    "........ODBCCCCCCBDO............",
-    "........OOBCCCCCCBOO............",
-    ".........OBBCCCCBBO.............",
-    "..........OOBBBBOO..............",
-    ".........ODBBOOBBDO.............",
-    "........ODBBO..OBBDO............",
-    ".......ODBBO....OBBDO...........",
-    "......ODBBO......OBBDO..........",
-    ".....ODBBO........OBBDO.........",
-    ".....OBBBO........OBBBO.........",
-    ".....OOBBO........OBBOO.........",
-    "......OBDO........ODBO..........",
-    ".....OOBBO........OBBOO.........",
-    "....OBBBBO........OBBBBO........",
-    "....ODDDDO........ODDDDO........",
-    ".....OOOO..........OOOO.........",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-)
-
-SHOOT = grid(
-    "................................",
-    "................................",
-    "............OOOOOO..............",
-    "...........OBBBBBOO.............",
-    "..........OBWWWWBBO.............",
-    "..........OBWSWSBBO.............",
-    "..........OBSSSSBBO.............",
-    "...........OBSSBOO..............",
-    "..........OODDDDOO..............",
-    ".........ODBCCCCBDO.............",
-    "........ODBCCCCCCBDO............",
-    "........ODBCCCCCCBDO............",
-    "........OOBCCCCCCBOO............",
-    ".........OBBCCCCBBO.............",
-    "..........OOBBBBOO..............",
-    ".........ODBBOOBBBBOOOOO........",
-    "........ODBBO..OBBBBRRYYOO......",
-    ".......ODBBO....OBBBOOOOO.......",
-    ".......OBBBO....OBBBO...........",
-    ".......OBBDO....ODBBO...........",
-    ".......OOBBO....OBBOO...........",
-    "........OBBO....OBBO............",
-    "........OBDO....ODBO............",
-    "........OBBO....OBBO............",
-    ".......OOBBO....OBBOO...........",
-    ".......OBBBO....OBBBO...........",
-    ".......ODDDO....ODDDO...........",
-    "........OOOO....OOOO............",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-)
-
-JUMP = grid(
-    "................................",
-    "............OOOOOO..............",
-    "...........OBBBBBOO.............",
-    "..........OBWWWWBBO.............",
-    "..........OBWSWSBBO.............",
-    "..........OBSSSSBBO.............",
-    "...........OBSSBOO..............",
-    "..........OODDDDOO..............",
-    ".........ODBCCCCBDO.............",
-    "........ODBCCCCCCBDO............",
-    "........ODBCCCCCCBDO............",
-    "........OOBCCCCCCBOO............",
-    ".........OBBCCCCBBO.............",
-    "..........OOBBBBOO..............",
-    ".........ODBBOOBBDO.............",
-    "........ODBBO..OBBDO............",
-    ".......ODBBO....OBBDO...........",
-    "......ODBBO......OBBDO..........",
-    ".....ODBBO........OBBDO.........",
-    ".....OBBBO........OBBBO.........",
-    ".....OOBBO........OBBOO.........",
-    "......OBBO........OBBO..........",
-    ".....OOBDO........ODBOO.........",
-    "....OBBBBO........OBBBBO........",
-    "....ODDDDO........ODDDDO........",
-    ".....OOOO..........OOOO.........",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-)
-
-JUMP_SHOOT = grid(
-    "................................",
-    "............OOOOOO..............",
-    "...........OBBBBBOO.............",
-    "..........OBWWWWBBO.............",
-    "..........OBWSWSBBO.............",
-    "..........OBSSSSBBO.............",
-    "...........OBSSBOO..............",
-    "..........OODDDDOO..............",
-    ".........ODBCCCCBDO.............",
-    "........ODBCCCCCCBDO............",
-    "........ODBCCCCCCBDO............",
-    "........OOBCCCCCCBOO............",
-    ".........OBBCCCCBBO.............",
-    "..........OOBBBBOO..............",
-    ".........ODBBOOBBBBOOOOO........",
-    "........ODBBO..OBBBBRRYYOO......",
-    ".......ODBBO....OBBBOOOOO.......",
-    "......ODBBO......OBBDO..........",
-    ".....ODBBO........OBBDO.........",
-    ".....OBBBO........OBBBO.........",
-    ".....OOBBO........OBBOO.........",
-    "......OBBO........OBBO..........",
-    ".....OOBDO........ODBOO.........",
-    "....OBBBBO........OBBBBO........",
-    "....ODDDDO........ODDDDO........",
-    ".....OOOO..........OOOO.........",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-)
-
-LAND = grid(
-    "................................",
-    "................................",
-    "................................",
-    "............OOOOOO..............",
-    "...........OBBBBBOO.............",
-    "..........OBWWWWBBO.............",
-    "..........OBWSWSBBO.............",
-    "..........OBSSSSBBO.............",
-    "...........OBSSBOO..............",
-    "..........OODDDDOO..............",
-    ".........ODBCCCCBDO.............",
-    "........ODBCCCCCCBDO............",
-    "........ODBCCCCCCBDO............",
-    "........OOBCCCCCCBOO............",
-    ".........OBBCCCCBBO.............",
-    "..........OOBBBBOO..............",
-    ".........ODBBOOBBDO.............",
-    "........ODBBO..OBBDO............",
-    ".......ODBBO....OBBDO...........",
-    "......ODBBO......OBBDO..........",
-    "......OBBBO......OBBBO..........",
-    "......OOBBO......OBBOO..........",
-    ".......OBDO......ODBO...........",
-    "......OOBBO......OBBOO..........",
-    ".....OBBBBO......OBBBBO.........",
-    ".....ODDDDO......ODDDDO.........",
-    "......OOOO........OOOO..........",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-    "................................",
-)
-
-PLACEHOLDER_FRAMES = [
-    ("00", WALK_A),
-    ("01", WALK_B),
-    ("02", WALK_C),
-    ("03", SHOOT),
-    ("04", JUMP),
-    ("05", JUMP_SHOOT),
-    ("06", LAND),
-    ("07", STAND),
-]
 
 
 def is_bg(c: tuple[int, int, int, int]) -> bool:
@@ -451,18 +39,6 @@ def write_imageset(imageset: Path, img: Image.Image, name: str) -> None:
         )
         + "\n"
     )
-
-
-def render_placeholder(rows: list[str], palette: dict[str, tuple[int, int, int]]) -> Image.Image:
-    img = Image.new("RGBA", (SIZE, SIZE), (255, 255, 255, 255))
-    px = img.load()
-    for y, row in enumerate(rows):
-        for x, ch in enumerate(row):
-            if ch == ".":
-                px[x, y] = (255, 255, 255, 255)
-            else:
-                px[x, y] = (*palette[ch], 255)
-    return img.resize((SIZE * SCALE_PLACEHOLDER, SIZE * SCALE_PLACEHOLDER), Image.NEAREST)
 
 
 def slice_metal_man_sheet(path: Path) -> list[Image.Image]:
@@ -527,7 +103,6 @@ def paste_nonwhite(base: Image.Image, overlay: Image.Image, anchor: tuple[int, i
 def build_metal_man_loop(sheet: Path, scale: int = 6) -> list[Image.Image]:
     """Sheet order: idle, ready, throw_a, throw_b, walk×3, jump, hurt, blade×2."""
     raw = slice_metal_man_sheet(sheet)
-    # Persist labeled slices next to the sheet for inspection / reuse.
     frames_dir = SHEETS / "metal-man-frames"
     frames_dir.mkdir(parents=True, exist_ok=True)
     labels = [
@@ -576,34 +151,39 @@ def build_metal_man_loop(sheet: Path, scale: int = 6) -> list[Image.Image]:
 
 
 def main() -> None:
+    if not METAL_SHEET.exists():
+        raise SystemExit(f"missing Metal Man sheet: {METAL_SHEET}")
+
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / "Contents.json").write_text(
         json.dumps({"info": {"author": "xcode", "version": 1}}, indent=2) + "\n"
     )
 
-    catalog = []
+    # Drop any leftover non-Metal-Man imagesets from earlier placeholder art.
+    for path in OUT.iterdir():
+        if path.is_dir() and path.name.endswith(".imageset") and not path.name.startswith("metal-man_"):
+            for child in path.iterdir():
+                child.unlink()
+            path.rmdir()
 
-    # Metal Man from authentic sheet
-    if not METAL_SHEET.exists():
-        raise SystemExit(f"missing Metal Man sheet: {METAL_SHEET}")
     for i, img in enumerate(build_metal_man_loop(METAL_SHEET)):
         name = f"metal-man_{i:02d}"
         write_imageset(OUT / f"{name}.imageset", img, name)
-    catalog.append({"id": "metal-man", "name": "Metal Man", "frameCount": 8, "source": "sheet"})
-
-    for char_id, meta in PLACEHOLDER_CHARS.items():
-        palette = meta["colors"]
-        for frame_id, rows in PLACEHOLDER_FRAMES:
-            asset_name = f"{char_id}_{frame_id}"
-            img = render_placeholder(rows, palette)
-            write_imageset(OUT / f"{asset_name}.imageset", img, asset_name)
-        catalog.append(
-            {"id": char_id, "name": meta["name"], "frameCount": len(PLACEHOLDER_FRAMES), "source": "placeholder"}
-        )
 
     manifest = OUT.parent / "sprite-manifest.json"
-    manifest.write_text(json.dumps({"characters": catalog, "frameCount": 8}, indent=2) + "\n")
-    print(f"Wrote assets for {len(catalog)} characters to {OUT}")
+    manifest.write_text(
+        json.dumps(
+            {
+                "characters": [
+                    {"id": "metal-man", "name": "Metal Man", "frameCount": 8, "source": "sheet"}
+                ],
+                "frameCount": 8,
+            },
+            indent=2,
+        )
+        + "\n"
+    )
+    print(f"Wrote Metal Man loop to {OUT}")
 
 
 if __name__ == "__main__":

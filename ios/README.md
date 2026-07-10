@@ -44,7 +44,7 @@ ios/
 | `ride-monitor` | Ride Monitor | In-app; background motion + GPS |
 | `t9-keyboard` | T9 Keyboard | In-app demo **and** system keyboard extension |
 | `follow-the-hum` | Follow the Hum | In-app; AirPods spatial hum hunt |
-| `megaman-widget` | Mega Man 2 Widget | In-app preview **and** Home Screen widget (iOS 17+) |
+| `megaman-widget` | Mega Man 2 Widget | Metal Man Home Screen widget (iOS 17+) + in-app preview |
 
 ### T9 Keyboard
 
@@ -62,18 +62,17 @@ do not need that.
 
 ### Mega Man 2 Widget
 
-Home Screen widget that plays a walk / jump / shoot sprite loop using public
+Home Screen widget that plays Metal Man’s walk / throw / jump loop using public
 **timer-mask** animation (no private APIs). Same engine powers:
 
-1. **In-app preview** under the Mega Man 2 Widget experiment (character picker).
+1. **In-app preview** under the Mega Man 2 Widget experiment.
 2. **Home Screen widget** — Bundle ID
    `io.github.imjasonh.playground.megamanwidget` (required by Apple for
-   WidgetKit). Add via the widget gallery on **iOS 17+**, then edit the widget
-   to pick Mega Man or a Robot Master.
+   WidgetKit). Add via the widget gallery on **iOS 17+**.
 
-Sprites are original NES-style pixel art (not Capcom rips). Blink font is from
-Bryce Bostwick’s MIT WidgetAnimation sample. After this extension lands, run
-**iOS signing bootstrap** once for its App Store profile.
+Frames are sliced from the classic Mega Man 2 Metal Man sheet. Blink font is
+from Bryce Bostwick’s MIT WidgetAnimation sample. After this extension lands,
+run **iOS signing bootstrap** once for its App Store profile.
 
 ### Follow the Hum
 

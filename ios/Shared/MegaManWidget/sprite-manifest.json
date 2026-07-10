@@ -5,54 +5,6 @@
       "name": "Metal Man",
       "frameCount": 8,
       "source": "sheet"
-    },
-    {
-      "id": "mega-man",
-      "name": "Mega Man",
-      "frameCount": 8,
-      "source": "placeholder"
-    },
-    {
-      "id": "wood-man",
-      "name": "Wood Man",
-      "frameCount": 8,
-      "source": "placeholder"
-    },
-    {
-      "id": "heat-man",
-      "name": "Heat Man",
-      "frameCount": 8,
-      "source": "placeholder"
-    },
-    {
-      "id": "flash-man",
-      "name": "Flash Man",
-      "frameCount": 8,
-      "source": "placeholder"
-    },
-    {
-      "id": "quick-man",
-      "name": "Quick Man",
-      "frameCount": 8,
-      "source": "placeholder"
-    },
-    {
-      "id": "crash-man",
-      "name": "Crash Man",
-      "frameCount": 8,
-      "source": "placeholder"
-    },
-    {
-      "id": "bubble-man",
-      "name": "Bubble Man",
-      "frameCount": 8,
-      "source": "placeholder"
-    },
-    {
-      "id": "air-man",
-      "name": "Air Man",
-      "frameCount": 8,
-      "source": "placeholder"
     }
   ],
   "frameCount": 8

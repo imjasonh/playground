@@ -1,14 +1,13 @@
 import Foundation
 
-/// A selectable Mega Man 2–inspired character for the animated widget.
+/// Metal Man sprite set for the animated Home Screen widget.
 ///
-/// Metal Man uses frames sliced from the authentic sheet in
-/// `Shared/MegaManWidget/SourcesSheets/metal-man.gif`. Other characters are
-/// placeholder pixel art until real sheets are added the same way.
+/// Frames are sliced from `Shared/MegaManWidget/SourcesSheets/metal-man.gif`
+/// into `{id}_{00…07}` images in the asset catalog.
 struct MegaManCharacter: Identifiable, Hashable, Codable, Sendable {
     let id: String
     let name: String
-    /// Number of unique frames in the walk / jump / shoot loop.
+    /// Number of unique frames in the walk / throw / jump loop.
     let frameCount: Int
 
     /// Asset catalog name for frame `index` (wraps).
@@ -17,21 +16,9 @@ struct MegaManCharacter: Identifiable, Hashable, Codable, Sendable {
         return String(format: "%@_%02d", id, wrapped)
     }
 
-    static let all: [MegaManCharacter] = [
-        .init(id: "metal-man", name: "Metal Man", frameCount: 8),
-        .init(id: "mega-man", name: "Mega Man", frameCount: 8),
-        .init(id: "wood-man", name: "Wood Man", frameCount: 8),
-        .init(id: "heat-man", name: "Heat Man", frameCount: 8),
-        .init(id: "flash-man", name: "Flash Man", frameCount: 8),
-        .init(id: "quick-man", name: "Quick Man", frameCount: 8),
-        .init(id: "crash-man", name: "Crash Man", frameCount: 8),
-        .init(id: "bubble-man", name: "Bubble Man", frameCount: 8),
-        .init(id: "air-man", name: "Air Man", frameCount: 8),
-    ]
+    static let metalMan = MegaManCharacter(id: "metal-man", name: "Metal Man", frameCount: 8)
 
-    static let `default` = all[0]
+    static let all: [MegaManCharacter] = [.metalMan]
 
-    static func named(_ id: String) -> MegaManCharacter {
-        all.first { $0.id == id } ?? .default
-    }
+    static let `default` = metalMan
 }

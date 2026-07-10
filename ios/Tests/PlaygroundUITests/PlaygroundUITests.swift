@@ -78,8 +78,8 @@ final class PlaygroundUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Mega Man 2 Widget"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["megamanSelectedName"].waitForExistence(timeout: 5)
             || app.staticTexts["Metal Man"].waitForExistence(timeout: 2))
-        XCTAssertTrue(app.buttons["megamanCharacter-mega-man"].waitForExistence(timeout: 5))
-        app.buttons["megamanCharacter-mega-man"].tap()
-        XCTAssertTrue(app.staticTexts["Mega Man"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.otherElements["megamanAnimationPreview"].waitForExistence(timeout: 5)
+            || app.images["megamanAnimationPreview"].waitForExistence(timeout: 2)
+            || app.staticTexts["Walk → throw Metal Blade → jump loop via public timer APIs"].waitForExistence(timeout: 2))
     }
 }

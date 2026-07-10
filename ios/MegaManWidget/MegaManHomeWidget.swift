@@ -4,25 +4,21 @@ import WidgetKit
 @available(iOS 17.0, *)
 struct MegaManEntry: TimelineEntry {
     let date: Date
-    let character: MegaManCharacter
 }
 
 @available(iOS 17.0, *)
-struct MegaManTimelineProvider: AppIntentTimelineProvider {
+struct MegaManTimelineProvider: TimelineProvider {
     func placeholder(in context: Context) -> MegaManEntry {
-        MegaManEntry(date: Date(), character: .default)
+        MegaManEntry(date: Date())
     }
 
-    func snapshot(for configuration: MegaManWidgetIntent, in context: Context) async -> MegaManEntry {
-        MegaManEntry(date: Date(), character: configuration.character.character)
+    func getSnapshot(in context: Context, completion: @escaping (MegaManEntry) -> Void) {
+        completion(MegaManEntry(date: Date()))
     }
 
-    func timeline(for configuration: MegaManWidgetIntent, in context: Context) async -> Timeline<MegaManEntry> {
+    func getTimeline(in context: Context, completion: @escaping (Timeline<MegaManEntry>) -> Void) {
         // Animation is driven by timer Text views, not timeline reloads.
-        Timeline(
-            entries: [MegaManEntry(date: Date(), character: configuration.character.character)],
-            policy: .never
-        )
+        completion(Timeline(entries: [MegaManEntry(date: Date())], policy: .never))
     }
 }
 
@@ -31,11 +27,7 @@ struct MegaManHomeWidget: Widget {
     let kind = "MegaManHomeWidget"
 
     var body: some WidgetConfiguration {
-        AppIntentConfiguration(
-            kind: kind,
-            intent: MegaManWidgetIntent.self,
-            provider: MegaManTimelineProvider()
-        ) { entry in
+        StaticConfiguration(kind: kind, provider: MegaManTimelineProvider()) { entry in
             MegaManWidgetEntryView(entry: entry)
                 .containerBackground(for: .widget) {
                     LinearGradient(
@@ -48,8 +40,8 @@ struct MegaManHomeWidget: Widget {
                     )
                 }
         }
-        .configurationDisplayName("Mega Man 2")
-        .description("Walk / jump / shoot loop — pick Mega Man or a boss.")
+        .configurationDisplayName("Metal Man")
+        .description("Mega Man 2 Metal Man — walk, throw, and jump loop.")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
 }
@@ -63,11 +55,11 @@ struct MegaManWidgetEntryView: View {
         let size: CGFloat = family == .systemMedium ? 140 : 110
         VStack(spacing: 6) {
             MegaManTimerAnimationView(
-                character: entry.character,
+                character: .metalMan,
                 framesPerSecond: 8,
                 spriteSize: size
             )
-            Text(entry.character.name)
+            Text("Metal Man")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.white.opacity(0.9))
                 .minimumScaleFactor(0.7)
