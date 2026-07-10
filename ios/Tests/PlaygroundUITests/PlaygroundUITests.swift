@@ -28,6 +28,7 @@ final class PlaygroundUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Playground"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Ride Monitor"].exists)
         XCTAssertTrue(app.staticTexts["T9 Keyboard"].exists)
+        XCTAssertTrue(app.staticTexts["Follow the Hum"].exists)
     }
 
     func testRideMonitorExperimentOpens() {
@@ -52,5 +53,18 @@ final class PlaygroundUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Try it here"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["t9OpenSettingsButton"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["t9DemoDeleteButton"].waitForExistence(timeout: 5))
+    }
+
+    func testFollowTheHumExperimentOpens() {
+        let app = XCUIApplication()
+        app.launch()
+
+        openExperiment("follow-the-hum", title: "Follow the Hum", in: app)
+
+        XCTAssertTrue(app.navigationBars["Follow the Hum"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["startHumHuntButton"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.otherElements["humStatusMessage"].waitForExistence(timeout: 5)
+            || app.staticTexts["humStatusMessage"].waitForExistence(timeout: 2)
+            || app.staticTexts["Put on AirPods, then start a hunt."].waitForExistence(timeout: 2))
     }
 }

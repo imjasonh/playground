@@ -48,5 +48,6 @@ enum ExperimentCatalog {
     static let all: [Experiment] = [
         RideMonitorExperiment.experiment,
         T9KeyboardExperiment.experiment,
+        FollowTheHumExperiment.experiment,
     ]
 }
