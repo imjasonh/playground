@@ -101,17 +101,19 @@ The bundle ID uniquely identifies the app. The Playground app uses
 
 ### Step 3b — Register the keyboard extension Bundle ID
 
+You can skip this and let the **iOS signing bootstrap** workflow create the
+Bundle ID automatically (it calls the App Store Connect API before `match`).
+To register it by hand instead:
+
 1. Click **+** again → **App IDs** → **App**.
 2. **Description:** `Playground T9 Keyboard`.
 3. **Bundle ID:** Explicit → `io.github.imjasonh.playground.t9keyboard`.
 4. **Capabilities:** leave unchecked (sandboxed keyboard; no open access).
 5. **Continue** → **Register**.
 
-> You can skip both registrations if you let `fastlane match` create the
-> identifiers for you in Step 6, but doing them manually now makes the later
-> steps clearer. After adding the keyboard (or any new extension), re-run the
-> **iOS signing bootstrap** workflow so match stores an App Store profile for
-> the new id.
+> After adding any new extension Bundle ID (manually or via bootstrap), the
+> match repo must contain an App Store profile for it — re-run **iOS signing
+> bootstrap** if `beta` complains that the profile is missing.
 
 ---
 

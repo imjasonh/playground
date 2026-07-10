@@ -65,8 +65,9 @@ globe key. (Third-party keyboards cannot be fully exercised in UI tests.)
 
 The keyboard extension needs its **own App ID + App Store provisioning
 profile**. Re-run the iOS signing bootstrap workflow (or `fastlane signing_bootstrap`)
-after pulling this so match creates
-`match AppStore io.github.imjasonh.playground.t9keyboard`.
+after pulling this — bootstrap now creates the missing Bundle ID via the App
+Store Connect API, then stores
+`match AppStore io.github.imjasonh.playground.t9keyboard` in the match repo.
 
 ## Adding an experiment
 
