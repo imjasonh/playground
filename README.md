@@ -53,6 +53,9 @@ skip them:
   via SQLite virtual tables over go-containerregistry (Go CLI).
 - **[`web-push/`](web-push/)** — a Web Push application-server backend
   (RFC 8030/8188/8291/8292) for Cloudflare Workers, in Rust.
+- **[`git-server/`](git-server/)** — a git smart-HTTP server for Cloudflare
+  Workers, in Rust: repositories in R2, refs in Durable Objects, plus
+  file/tree/blame APIs and streaming pack ingest.
 
 ## iOS app
 

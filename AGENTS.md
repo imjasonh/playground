@@ -20,6 +20,7 @@ playground/
 ├── cors-proxy/            # Rust Cloudflare Worker: SSRF-hardened CORS proxy (not a Pages app)
 ├── cors-proxy-demo/       # static browser front-end for the cors-proxy Worker
 ├── git/                   # in-browser read-only git client (JS + Jest + Playwright)
+├── git-server/            # Rust Cloudflare Worker: git smart-HTTP server on R2/DO (not a Pages app)
 ├── gitdb/                 # Go CLI (Go module + Go tests)
 ├── hello/                 # example static app (HTML only)
 ├── ios/                   # the single "Playground" iOS app (SwiftUI; TestFlight CD)
@@ -47,6 +48,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `ocidb/` | no | Go CLI; no `index.html` |
 | `web-push/` | no | Rust Cloudflare Worker; no `index.html` |
 | `cors-proxy/` | no | Rust Cloudflare Worker; no `index.html` |
+| `git-server/` | no | Rust Cloudflare Worker; no `index.html` |
 | `ios/` | no | The single "Playground" iOS app (XcodeGen + SwiftUI); no `index.html` |
 | `.github/` | no | Infrastructure only |
 | `README.md` | no | Not a directory |
@@ -449,6 +451,7 @@ bundle exec fastlane test
 |-----------|------|-------|
 | `web-push/` | Web Push backend — Cloudflare Worker (RFC 8030/8188/8291/8292) | `cargo test` + clippy + wasm build |
 | `cors-proxy/` | SSRF-hardened CORS proxy — Cloudflare Worker | `cargo test` + clippy + wasm build |
+| `git-server/` | git smart-HTTP server on R2 + Durable Objects — Cloudflare Worker | `cargo test` (incl. real-git integration) + clippy + wasm build |
 
 ## The iOS app
 
