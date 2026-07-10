@@ -1,0 +1,13 @@
+{
+  "name": "hello-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.js",
+  "dependencies": {
+    "ms": "2.1.3"
+  },
+  "node-image": {
+    "repo": "example.com/hello-e2e",
+    "skipBuild": true
+  }
+}

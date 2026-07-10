@@ -1,23 +1,34 @@
-# Design: `node-image` — dockerless Node.js / TypeScript image builds
+# Design: `node-image` — dockerless Node.js OCI packaging
 
-> Status: **Alpha (M0–M7)** — usable CLI with tests in `node-image/`.
+> Status: **Monorepo-ready** — usable CLI with tests in `node-image/`.
 > See [`node-image-implementation-plan.md`](./node-image-implementation-plan.md).
-> Remaining polish is iterative (SBOM, musl mode, npm locks), not blockers for v1.
+> For the phased monorepo gap plan, see
+> [`node-image-monorepo-roadmap.md`](./node-image-monorepo-roadmap.md).
+>
+> **Positioning:** node-image is a **packaging** tool complementary to pnpm.
+> pnpm (or turbo/esbuild/etc.) owns install and compile; node-image packs the
+> lock-resolved production graph into OCI layers. It is not an all-in-one
+> Node build system and does not replace pnpm.
 
 ## 0. Locked decisions
 
 | Topic | Decision |
 |-------|----------|
 | Name / home | **`node-image`**, as a Go app in **this repo** (`node-image/`) |
-| Lockfile | **`pnpm-lock.yaml` required** (pnpm ecosystem lock; see below) |
-| pnpm binary | **Not used for image dependency layout.** Go reads the lock, fetches tarballs, lays out the store + symlinks (pymage-style). **May invoke `pnpm` for the app compile phase only** (TypeScript / `scripts.build`). |
-| Dep scripts | **Never run dependency lifecycle scripts** when materializing image layers. No `--allow-scripts`. Fail if a required package cannot work without them. |
-| App build | **Do-it-all `build` compiles the app** when a build script is present — typically by invoking `pnpm run build` (or configured script) on the host after a normal pnpm install for compile. |
-| Input | A **directory containing `package.json`** (CLI arg, default `.`). Walk up for `pnpm-lock.yaml` if needed. |
-| Layering | **Per-package store layers + symlink/`node_modules` layer(s)**; `auto` bucket fallback under a layer budget |
-| Multi-arch | **Must for v1** (`linux/amd64` + `linux/arm64` index) |
-| libc | **glibc by default**; **loud fail** if the app needs musl-only natives (or base libc mismatches) |
-| CLI shape | One easy do-it-all `node-image build [dir]`; optional finer commands later |
+| Role | **OCI packaging** from a pnpm lock — complementary to pnpm, not a replacement |
+| Lockfile | **`pnpm-lock.yaml` required** (pnpm ecosystem lock) |
+| pnpm binary | **Not used for image dependency layout.** Go reads the lock, fetches tarballs, lays out the store + symlinks. **May invoke `pnpm` for the app compile phase only** when not `--skip-build`. |
+| Dep scripts | **Never run** dependency lifecycle scripts. Named **`allowScripts`** only skips the hard-fail for packages that need natives (still no script execution). |
+| App build | Default may compile via pnpm; **`--skip-build` / `skipBuild` is the primary monorepo path** (external compile contract). |
+| Input | A **directory containing `package.json`**. Walk up for `pnpm-lock.yaml`. |
+| Workspace | **Materialize** `workspace:` / `link:` / `directory` packages into the virtual store (deploy-like). |
+| Patches | **Apply** lock-recorded `patchedDependencies` during extract. |
+| Catalogs / overrides | **Honor** via the already-resolved lock graph; fail only on unresolved `catalog:` *versions*. |
+| Layering | **Per-package store layers + symlink layer(s)**; name-hash buckets + optional `unbucketed` hot-list under budget |
+| Multi-arch | **Yes** (`linux/amd64` + `linux/arm64` index) |
+| libc | **glibc by default**; loud fail on musl-only natives / musl bases |
+| Config | `package.json#node-image` with **CLI flag overrides** |
+| CLI shape | `node-image build [dir]`; `node-image diagnose [dir]` |
 
 Rationale notes:
 
@@ -61,13 +72,12 @@ Node.js applications **without a Docker daemon**, in the spirit of
 ### Non-goals (initially)
 
 - A general-purpose Dockerfile / BuildKit interpreter.
-- Supporting npm/yarn/bun lockfiles in v1 (pnpm-lock only).
+- Supporting npm/yarn/bun lockfiles (pnpm-lock only).
 - Using `pnpm` to populate the **image's** production `node_modules` layers.
-- Compiling native addons from source (`node-gyp`) for image dependency layers.
-- Running dependency `preinstall` / `install` / `postinstall` / `prepare`
-  when materializing image layers (no escape hatch in v1).
+- Compiling native addons from source (`node-gyp`) inside node-image (prefer
+  prebuilds / platform optionals; named `allowScripts` only skips the fail).
+- Replacing pnpm for install, linking, or workspace management.
 - Electron / browser-extension packaging.
-- Building an entire pnpm workspace as one image (point at one package dir).
 
 ## 2. Why this is worth doing (and why Node is harder than Go/Python)
 

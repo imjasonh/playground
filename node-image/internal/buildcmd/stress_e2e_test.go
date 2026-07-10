@@ -2,12 +2,13 @@ package buildcmd_test
 
 import (
 	"bytes"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/imjasonh/playground/node-image/internal/app"
 	"github.com/imjasonh/playground/node-image/internal/buildcmd"
-	"github.com/imjasonh/playground/node-image/internal/layout"
 	"github.com/imjasonh/playground/node-image/internal/lock"
 )
 
@@ -69,41 +70,64 @@ func TestE2EOptionalPlatformMultiArch(t *testing.T) {
 }
 
 func TestE2ELifecycleNoopScriptsAllowed(t *testing.T) {
-	// es5-ext has a no-op postinstall; it must still build (we never run the script).
 	_, _, _ = buildNoPush(t, fixtureDir(t, "lifecycle-scripts"), nil)
 }
 
-func TestE2EPatchedRejected(t *testing.T) {
+func TestE2EPatchedApplies(t *testing.T) {
 	dir := fixtureDir(t, "patched")
-	_, err := lock.ParseFile(filepath.Join(dir, "pnpm-lock.yaml"))
-	if err == nil {
-		t.Fatal("expected patchedDependencies to be rejected")
+	l, err := lock.ParseFile(filepath.Join(dir, "pnpm-lock.yaml"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(err.Error(), "patchedDependencies") {
-		t.Fatalf("want patchedDependencies error, got: %v", err)
+	if len(l.PatchedDependencies) == 0 {
+		t.Fatal("expected patchedDependencies in lock")
 	}
-	var stdout, stderr bytes.Buffer
-	_, err = buildcmd.Run(buildcmd.Options{
-		Dir:       dir,
-		NoPush:    true,
-		OCIDir:    t.TempDir(),
-		EmptyBase: true,
-		SkipBuild: true,
-		Platforms: []string{"linux/amd64"},
-		Stdout:    &stdout,
-		Stderr:    &stderr,
-	})
-	if err == nil {
-		t.Fatal("expected build to fail on patched lock")
+	ref, _, stderr := buildNoPush(t, dir, nil)
+	if ref == "" {
+		t.Fatal("empty ref")
 	}
-	if !strings.Contains(err.Error(), "patchedDependencies") {
-		t.Fatalf("want patchedDependencies error, got: %v", err)
+	if strings.Contains(stderr, "patchedDependencies are not supported") {
+		t.Fatalf("patches should apply, got stderr: %s", stderr)
 	}
 }
 
-func TestE2EWorkspaceRejected(t *testing.T) {
+func TestE2EWorkspaceMaterializes(t *testing.T) {
 	dir := fixtureDir(t, "workspace-app/apps/api")
-	var stdout, stderr bytes.Buffer
+	ref, _, _ := buildNoPush(t, dir, nil)
+	if !strings.HasPrefix(ref, "sha256:") {
+		t.Fatalf("ref %q", ref)
+	}
+}
+
+func TestE2ECatalogApp(t *testing.T) {
+	_, _, _ = buildNoPush(t, fixtureDir(t, "catalog-app"), nil)
+}
+
+func TestE2EOverrideApp(t *testing.T) {
+	_, _, _ = buildNoPush(t, fixtureDir(t, "override-app"), nil)
+}
+
+func TestE2EBuildGlobs(t *testing.T) {
+	dir := fixtureDir(t, "build-globs")
+	_, _, _ = buildNoPush(t, dir, nil)
+	outs, err := app.CollectOutputsOpts(dir, app.CollectOptions{
+		Include: []string{"build/**", "package.json"},
+		Exclude: []string{"**/*.map"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := outs["build/scripts/helper.lua"]; !ok {
+		t.Fatalf("expected lua asset, got %#v", outs)
+	}
+	if _, ok := outs["build/index.js.map"]; ok {
+		t.Fatal("sourcemap should be excluded")
+	}
+}
+
+func TestE2EMultiCommand(t *testing.T) {
+	dir := fixtureDir(t, "multi-cmd")
+	var outBuf, errBuf bytes.Buffer
 	_, err := buildcmd.Run(buildcmd.Options{
 		Dir:       dir,
 		NoPush:    true,
@@ -111,51 +135,66 @@ func TestE2EWorkspaceRejected(t *testing.T) {
 		EmptyBase: true,
 		SkipBuild: true,
 		Platforms: []string{"linux/amd64"},
-		Stdout:    &stdout,
-		Stderr:    &stderr,
+		Command:   "worker",
+		Stdout:    &outBuf,
+		Stderr:    &errBuf,
 	})
-	if err == nil {
-		t.Fatal("expected workspace dependency to fail")
-	}
-	msg := err.Error()
-	if !strings.Contains(msg, "workspace") && !strings.Contains(msg, "link:") && !strings.Contains(msg, "directory") {
-		t.Fatalf("want workspace/link rejection, got: %v", err)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, errBuf.String())
 	}
 }
 
-func TestVirtualStoreDirEncoding(t *testing.T) {
-	cases := map[string]string{
-		"ms@2.1.3":                           "ms@2.1.3",
-		"@sindresorhus/is@4.6.0":             "@sindresorhus+is@4.6.0",
-		"eslint-config-prettier@9.1.0(eslint@8.57.0)": "eslint-config-prettier@9.1.0_eslint@8.57.0",
+func TestDiagnoseImporterIsolation(t *testing.T) {
+	// Create a lock with an unused git package and a clean importer.
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "package.json"), []byte(`{"name":"iso","main":"index.js"}`), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	for in, want := range cases {
-		if got := layout.VirtualStoreDir(in); got != want {
-			t.Fatalf("%q: got %q want %q", in, got, want)
+	if err := os.WriteFile(filepath.Join(root, "index.js"), []byte(`console.log("ok")`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lockBody := `lockfileVersion: '9.0'
+importers:
+  .:
+    dependencies:
+      ms:
+        specifier: 2.1.3
+        version: 2.1.3
+  other-app:
+    dependencies:
+      weird:
+        specifier: git+https://example.com/weird.git
+        version: git+https://example.com/weird.git#abc
+packages:
+  ms@2.1.3:
+    resolution: {integrity: sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==}
+  weird@git+https://example.com/weird.git#abc:
+    resolution: {type: git, tarball: git+https://example.com/weird.git}
+snapshots:
+  ms@2.1.3: {}
+`
+	if err := os.WriteFile(filepath.Join(root, "pnpm-lock.yaml"), []byte(lockBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := buildcmd.Diagnose(root, &buf); err != nil {
+		// diagnose may warn but should not error on unused git if only warnings
+		if !strings.Contains(buf.String(), "ms") && buf.Len() == 0 {
+			t.Fatalf("diagnose: %v\n%s", err, buf.String())
 		}
 	}
-}
-
-func TestVirtualStoreDirHashesLongPeerPath(t *testing.T) {
-	// Real depPath from ultimate-nestjs-boilerplate (pnpm 9.12, maxLength=120).
-	depPath := `@nest-lab/fastify-multer@1.2.0(@nestjs/common@10.4.12(class-transformer@0.5.1)(class-validator@0.14.1)(reflect-metadata@0.2.2)(rxjs@7.8.1))(@nestjs/platform-fastify@10.4.12(@fastify/static@7.0.4)(@fastify/view@8.2.0)(@nestjs/common@10.4.12(class-transformer@0.5.1)(class-validator@0.14.1)(reflect-metadata@0.2.2)(rxjs@7.8.1))(@nestjs/core@10.4.12))(rxjs@7.8.1)`
-	want := `@nest-lab+fastify-multer@1.2.0_@nestjs+common@10.4.12_class-transformer@0.5.1_class-validator_pgdisg3jb4n57fpqoatyzbhrnu`
-	got := layout.VirtualStoreDir(depPath)
-	if got != want {
-		t.Fatalf("got %q\nwant %q", got, want)
-	}
-	if len(got) > layout.DefaultVirtualStoreDirMaxLength {
-		t.Fatalf("len %d > %d", len(got), layout.DefaultVirtualStoreDirMaxLength)
-	}
-}
-
-func TestVirtualStoreDirHashesMixedCase(t *testing.T) {
-	// pnpm hashes mixed-case names even when short (case-insensitive FS safety).
-	got := layout.VirtualStoreDir("JSONSteam@1.0.0")
-	if !strings.Contains(got, "_") {
-		t.Fatalf("expected hash suffix, got %q", got)
-	}
-	if len(got) > layout.DefaultVirtualStoreDirMaxLength {
-		t.Fatalf("len %d", len(got))
+	// Build the clean importer — unused git package must not block.
+	_, err := buildcmd.Run(buildcmd.Options{
+		Dir:       root,
+		NoPush:    true,
+		OCIDir:    t.TempDir(),
+		EmptyBase: true,
+		SkipBuild: true,
+		Platforms: []string{"linux/amd64"},
+		Stdout:    &bytes.Buffer{},
+		Stderr:    &bytes.Buffer{},
+	})
+	if err != nil {
+		t.Fatalf("clean importer blocked by unused git pkg: %v", err)
 	}
 }

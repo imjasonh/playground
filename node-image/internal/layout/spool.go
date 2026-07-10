@@ -20,9 +20,10 @@ import (
 const spoolMetaName = ".node-image-spool.json"
 
 type spoolMeta struct {
-	IntegrityKey string `json:"integrityKey"`
-	TarballSHA512 string `json:"tarballSHA512"`
-	TarballSize  int64  `json:"tarballSize"`
+	IntegrityKey   string `json:"integrityKey"`
+	TarballSHA512  string `json:"tarballSHA512"`
+	TarballSize    int64  `json:"tarballSize"`
+	TarballModNano int64  `json:"tarballModNano,omitempty"`
 }
 
 // SpoolDir returns ~/.cache/node-image/spool — content-addressed extracted
@@ -41,9 +42,8 @@ func SpoolDir() (string, error) {
 // spoolRoot/<integrityKey>/ (package contents only — no package/ wrapper).
 // Returns the absolute package directory.
 //
-// On cache hit the source tarball is re-hashed and compared to metadata written
-// at extract time (same trust model as fetch.Cache). The spool tree is also
-// checked for path-escaping symlinks before reuse.
+// Warm hit: if spool meta matches integrityKey and the tarball's size+mtime
+// are unchanged, skip re-hashing the tarball (integrity was verified at fetch).
 func SpoolPackage(spoolRoot, integrityKey, tgzPath string) (pkgDir string, err error) {
 	if integrityKey == "" {
 		return "", fmt.Errorf("empty integrity key for spool")
@@ -54,6 +54,15 @@ func SpoolPackage(spoolRoot, integrityKey, tgzPath string) (pkgDir string, err e
 	pkgDir = filepath.Join(spoolRoot, integrityKey)
 	metaPath := filepath.Join(pkgDir, spoolMetaName)
 
+	st, err := os.Stat(tgzPath)
+	if err != nil {
+		return "", err
+	}
+	// Fast path: trust size+mtime sidecar when integrity key matches.
+	if hit, _ := spoolHitFast(pkgDir, metaPath, integrityKey, st.Size(), st.ModTime().UnixNano()); hit {
+		return pkgDir, nil
+	}
+
 	sum, size, err := hashTarball(tgzPath)
 	if err != nil {
 		return "", err
@@ -61,6 +70,13 @@ func SpoolPackage(spoolRoot, integrityKey, tgzPath string) (pkgDir string, err e
 	if hit, err := spoolHitOK(pkgDir, metaPath, integrityKey, sum, size); err != nil {
 		return "", err
 	} else if hit {
+		// Refresh mtime sidecar for future fast hits.
+		_ = writeSpoolMeta(metaPath, spoolMeta{
+			IntegrityKey:   integrityKey,
+			TarballSHA512:  sum,
+			TarballSize:    size,
+			TarballModNano: st.ModTime().UnixNano(),
+		})
 		return pkgDir, nil
 	}
 
@@ -78,28 +94,56 @@ func SpoolPackage(spoolRoot, integrityKey, tgzPath string) (pkgDir string, err e
 		return "", fmt.Errorf("extracted spool unsafe: %w", err)
 	}
 	meta := spoolMeta{
-		IntegrityKey:  integrityKey,
-		TarballSHA512: sum,
-		TarballSize:   size,
+		IntegrityKey:   integrityKey,
+		TarballSHA512:  sum,
+		TarballSize:    size,
+		TarballModNano: st.ModTime().UnixNano(),
 	}
-	b, err := json.Marshal(meta)
-	if err != nil {
-		return "", err
-	}
-	if err := os.WriteFile(filepath.Join(tmp, spoolMetaName), append(b, '\n'), 0o600); err != nil {
+	if err := writeSpoolMeta(filepath.Join(tmp, spoolMetaName), meta); err != nil {
 		return "", err
 	}
 	if err := os.RemoveAll(pkgDir); err != nil && !os.IsNotExist(err) {
 		return "", err
 	}
 	if err := os.Rename(tmp, pkgDir); err != nil {
-		// Another process may have won the race — accept only if their hit verifies.
 		if hit, err2 := spoolHitOK(pkgDir, metaPath, integrityKey, sum, size); err2 == nil && hit {
 			return pkgDir, nil
 		}
 		return "", err
 	}
 	return pkgDir, nil
+}
+
+func writeSpoolMeta(path string, meta spoolMeta) error {
+	b, err := json.Marshal(meta)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(b, '\n'), 0o600)
+}
+
+func spoolHitFast(pkgDir, metaPath, integrityKey string, size, modNano int64) (bool, error) {
+	st, err := os.Stat(pkgDir)
+	if err != nil || !st.IsDir() {
+		return false, nil
+	}
+	b, err := os.ReadFile(metaPath)
+	if err != nil {
+		return false, nil
+	}
+	var meta spoolMeta
+	if json.Unmarshal(b, &meta) != nil {
+		return false, nil
+	}
+	if meta.IntegrityKey != integrityKey || meta.TarballSize != size {
+		return false, nil
+	}
+	if meta.TarballModNano == 0 || meta.TarballModNano != modNano {
+		return false, nil
+	}
+	// Skip assertSafeSpoolTree on the fast path — the tree was validated at
+	// extract time and the tarball identity (size+mtime+integrity key) matches.
+	return true, nil
 }
 
 func spoolHitOK(pkgDir, metaPath, integrityKey, sum string, size int64) (bool, error) {

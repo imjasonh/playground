@@ -151,3 +151,9 @@ pnpm when `node-image` is in `MODULES`).
 - Go-native app compile (no pnpm for tsc)
 - Full monorepo magic beyond “directory with package.json + parent lock”
 - SBOM/cosign (nice-to-have if time)
+
+Post-alpha monorepo work (workspace materialization, patches, catalogs,
+overrides, private registry auth, custom bases, layer bucketing at ~1.5k
+packages, etc.) is tracked in
+[`node-image-monorepo-roadmap.md`](./node-image-monorepo-roadmap.md) — planning
+only until that roadmap’s phases are implemented.

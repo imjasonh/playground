@@ -34,14 +34,14 @@ type ImporterDep struct {
 
 // Package is metadata for a package id (name@version).
 type Package struct {
-	Resolution   Resolution      `yaml:"resolution"`
-	Engines      map[string]string `yaml:"engines"`
-	CPU          []string        `yaml:"cpu"`
-	OS           []string        `yaml:"os"`
-	Libc         []string        `yaml:"libc"`
-	Deprecated   string          `yaml:"deprecated"`
-	HasBin       bool            `yaml:"hasBin"`
-	RequiresBuild bool           `yaml:"requiresBuild"`
+	Resolution    Resolution        `yaml:"resolution"`
+	Engines       map[string]string `yaml:"engines"`
+	CPU           []string          `yaml:"cpu"`
+	OS            []string          `yaml:"os"`
+	Libc          []string          `yaml:"libc"`
+	Deprecated    string            `yaml:"deprecated"`
+	HasBin        bool              `yaml:"hasBin"`
+	RequiresBuild bool              `yaml:"requiresBuild"`
 }
 
 // Resolution holds fetch identity.
@@ -50,6 +50,8 @@ type Resolution struct {
 	Tarball   string `yaml:"tarball"`
 	Type      string `yaml:"type"`
 	Directory string `yaml:"directory"`
+	Repo      string `yaml:"repo"`
+	Commit    string `yaml:"commit"`
 }
 
 // Snapshot is the resolved dependency graph node (may include peer suffixes).
@@ -67,7 +69,8 @@ func ParseFile(path string) (*Lock, error) {
 	return Parse(b)
 }
 
-// Parse parses lockfile bytes.
+// Parse parses lockfile bytes. Unsupported features are not rejected here —
+// use Diagnose for a full report, and resolve/layout for closure-scoped errors.
 func Parse(b []byte) (*Lock, error) {
 	var l Lock
 	if err := yaml.Unmarshal(b, &l); err != nil {
@@ -76,7 +79,7 @@ func Parse(b []byte) (*Lock, error) {
 	ver := strings.TrimSpace(l.LockfileVersion)
 	// YAML may parse 9.0 as number into string oddly; accept "9.0" / "9".
 	if !strings.HasPrefix(ver, "9") {
-		return nil, fmt.Errorf("unsupported pnpm lockfileVersion %q (alpha supports v9 only)", ver)
+		return nil, fmt.Errorf("unsupported pnpm lockfileVersion %q (supports v9 only)", ver)
 	}
 	if l.Importers == nil {
 		l.Importers = map[string]*Importer{}
@@ -87,44 +90,7 @@ func Parse(b []byte) (*Lock, error) {
 	if l.Snapshots == nil {
 		l.Snapshots = map[string]*Snapshot{}
 	}
-	if err := l.checkUnsupported(); err != nil {
-		return nil, err
-	}
 	return &l, nil
-}
-
-func (l *Lock) checkUnsupported() error {
-	if len(l.PatchedDependencies) > 0 {
-		names := make([]string, 0, len(l.PatchedDependencies))
-		for k := range l.PatchedDependencies {
-			names = append(names, k)
-		}
-		return fmt.Errorf("pnpm patchedDependencies are not supported (%s)\nHint: remove patches from the lockfile / package.json pnpm.patchedDependencies, or vendor a pre-patched tarball published to a registry", strings.Join(names, ", "))
-	}
-	if len(l.Overrides) > 0 {
-		return fmt.Errorf("pnpm overrides are not supported yet\nHint: resolve overrides into ordinary registry dependencies and re-lock, or remove pnpm.overrides")
-	}
-	if len(l.Catalogs) > 0 {
-		return fmt.Errorf("pnpm catalogs are not supported yet\nHint: replace catalog: specifiers with concrete versions and re-lock")
-	}
-	for id, p := range l.Packages {
-		if p == nil {
-			continue
-		}
-		if p.Resolution.Type == "git" || strings.HasPrefix(p.Resolution.Tarball, "git+") {
-			return fmt.Errorf("package %s uses a git dependency, which node-image does not support yet\nHint: publish the package to an npm registry (or vendor a tarball with integrity) and re-lock with pnpm", id)
-		}
-		if p.Resolution.Type == "directory" || p.Resolution.Directory != "" {
-			return fmt.Errorf("package %s uses a directory/file dependency, which node-image does not support yet\nHint: for workspace packages, point node-image at that package directory (it will use the parent lock); otherwise pack and publish the dependency", id)
-		}
-		if strings.HasPrefix(p.Resolution.Tarball, "file:") || strings.HasPrefix(p.Resolution.Tarball, "link:") {
-			return fmt.Errorf("package %s uses a local file/link tarball (%s), which node-image does not support yet", id, p.Resolution.Tarball)
-		}
-		if p.Resolution.Integrity == "" && p.Resolution.Tarball == "" {
-			return fmt.Errorf("package %s is missing integrity/tarball in the lockfile\nHint: run `pnpm install` to refresh pnpm-lock.yaml, and ensure the dependency resolves from a registry", id)
-		}
-	}
-	return nil
 }
 
 // PackageIDFromDepPath strips peer-suffix from a snapshot/dep path key.

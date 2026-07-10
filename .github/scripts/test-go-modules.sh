@@ -39,11 +39,17 @@ for module in "${modules[@]}"; do
 
   if (
     cd "$module"
-    go test ./...
+    # -v so CI logs show each test (including Docker e2e PASS vs SKIP).
+    # node-image Docker-socket e2e builds/runs several images; allow headroom.
+    if [ "$module" = "node-image" ]; then
+      go test -v -timeout 30m ./...
+    else
+      go test -v ./...
+    fi
   ); then
     echo "${module}: tests passed"
   else
-    echo "::error title=Go tests failed::${module}: go test ./..."
+    echo "::error title=Go tests failed::${module}: go test -v ./..."
     result=1
   fi
 

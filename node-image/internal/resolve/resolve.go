@@ -2,6 +2,7 @@ package resolve
 
 import (
 	"fmt"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
@@ -50,6 +51,16 @@ type PackageRef struct {
 	Tarball string
 	// Optional is true if this node was reached only via optionalDependencies.
 	Optional bool
+	// LocalPath is set for workspace/link/directory packages (absolute or
+	// lock-root-relative path to the package directory on disk).
+	LocalPath string
+	// IsLocal is true when the package is materialized from the workspace tree
+	// rather than a registry/git tarball.
+	IsLocal bool
+	// PatchPath is a lock-root-relative path to a patch file, if any.
+	PatchPath string
+	// PatchHash is the pnpm patch hash from the lock, if any.
+	PatchHash string
 }
 
 // DirectDep is an importer-facing dependency name bound to a resolved store path.
@@ -67,8 +78,20 @@ type visitState struct {
 	outIdx          int // index in out, or -1
 }
 
+// ClosureOptions configures Closure.
+type ClosureOptions struct {
+	// LockRoot is the directory containing pnpm-lock.yaml (for resolving
+	// workspace/link/directory paths).
+	LockRoot string
+}
+
 // Closure returns the production dependency closure for an importer.
 func Closure(l *lock.Lock, importerKey string, plat Platform) ([]PackageRef, error) {
+	return ClosureOpts(l, importerKey, plat, ClosureOptions{})
+}
+
+// ClosureOpts is Closure with extra options (workspace path resolution).
+func ClosureOpts(l *lock.Lock, importerKey string, plat Platform, opt ClosureOptions) ([]PackageRef, error) {
 	imp := l.Importers[importerKey]
 	if imp == nil {
 		return nil, fmt.Errorf("importer %q not found in lockfile", importerKey)
@@ -76,6 +99,8 @@ func Closure(l *lock.Lock, importerKey string, plat Platform) ([]PackageRef, err
 	type item struct {
 		depPath  string
 		optional bool
+		linkName string // original dependency name (for local packages)
+		version  string // raw version field (may be link:/workspace:)
 	}
 	var queue []item
 	state := map[string]*visitState{}
@@ -84,29 +109,24 @@ func Closure(l *lock.Lock, importerKey string, plat Platform) ([]PackageRef, err
 		if version == "" || name == "" {
 			return nil
 		}
-		if strings.HasPrefix(version, "link:") || strings.HasPrefix(version, "workspace:") || strings.HasPrefix(version, "file:") {
-			return fmt.Errorf("importer dependency %q resolves to %q; workspace/link/file dependencies are not supported in image builds\nHint: bundle the workspace package into the app (e.g. tsc project references / bundler), publish it to a registry, or point node-image at a package that only depends on registry tarballs", name, version)
+		if strings.HasPrefix(version, "catalog:") {
+			return fmt.Errorf("dependency %q has unresolved catalog specifier %q\nHint: re-lock with pnpm so catalog: expands to a concrete version", name, version)
 		}
 		depPath := depPathFrom(name, version)
 		st := state[depPath]
 		if st == nil {
 			state[depPath] = &visitState{optional: optional, outIdx: -1}
-			queue = append(queue, item{depPath: depPath, optional: optional})
+			queue = append(queue, item{depPath: depPath, optional: optional, linkName: name, version: version})
 			return nil
 		}
 		if st.optional && !optional {
-			// Upgrade optional → required.
 			if st.skippedPlatform {
 				return fmt.Errorf("required package %s does not support %s/%s (libc=%s)\nHint: this package was first reached as optional and skipped for this platform, but is also required via another path", depPath, plat.OS, plat.CPU, plat.Libc)
 			}
 			st.optional = false
 			if st.done {
-				if st.outIdx >= 0 {
-					// Will be updated by caller after we have out; mark for re-queue
-					// of children as required by re-enqueueing this node.
-				}
 				st.done = false
-				queue = append(queue, item{depPath: depPath, optional: false})
+				queue = append(queue, item{depPath: depPath, optional: false, linkName: name, version: version})
 			}
 		}
 		return nil
@@ -130,24 +150,88 @@ func Closure(l *lock.Lock, importerKey string, plat Platform) ([]PackageRef, err
 		if st == nil {
 			continue
 		}
-		// Prefer required if upgraded while sitting in queue.
 		optional := st.optional
 		if st.done && optional {
 			continue
 		}
 		if st.done && !optional {
-			// Reprocessing after upgrade: refresh Optional flag and children.
 			if st.outIdx >= 0 {
 				out[st.outIdx].Optional = false
 			}
+		}
+
+		// Local workspace / link / file packages.
+		if isLocalVersion(it.version) {
+			ref, err := localRef(l, opt.LockRoot, it.linkName, it.version, it.depPath, optional)
+			if err != nil {
+				return nil, err
+			}
+			if st.outIdx >= 0 {
+				out[st.outIdx].Optional = optional
+			} else {
+				st.outIdx = len(out)
+				out = append(out, ref)
+			}
+			st.done = true
+			st.optional = optional
+			// Local packages may still have snapshot edges if present.
+			snap := l.Snapshots[it.depPath]
+			if snap != nil {
+				for depName, ver := range snap.Dependencies {
+					if err := enqueue(depName, ver, optional); err != nil {
+						return nil, err
+					}
+				}
+				for depName, ver := range snap.OptionalDependencies {
+					if err := enqueue(depName, ver, true); err != nil {
+						return nil, err
+					}
+				}
+			}
+			continue
 		}
 
 		pkgID := lock.PackageIDFromDepPath(it.depPath)
 		pkgID = stripPatchHash(pkgID)
 		pkg := l.Packages[pkgID]
 		if pkg == nil {
-			return nil, fmt.Errorf("package %s (from %s) missing from lock packages", pkgID, it.depPath)
+			// Directory packages sometimes appear only as resolution.type=directory
+			// under a different key — try the raw depPath.
+			pkg = l.Packages[it.depPath]
+			if pkg == nil {
+				return nil, fmt.Errorf("package %s (from %s) missing from lock packages", pkgID, it.depPath)
+			}
 		}
+
+		// Directory resolution recorded on the package entry.
+		if pkg.Resolution.Type == "directory" || pkg.Resolution.Directory != "" {
+			localPath := pkg.Resolution.Directory
+			if opt.LockRoot != "" && !filepath.IsAbs(localPath) {
+				localPath = filepath.Join(opt.LockRoot, filepath.FromSlash(localPath))
+			}
+			name, version, err := splitNameVersion(pkgID)
+			if err != nil {
+				name, version = it.linkName, "0.0.0"
+			}
+			ref := PackageRef{
+				DepPath:   it.depPath,
+				PackageID: pkgID,
+				Name:      name,
+				Version:   version,
+				Optional:  optional,
+				LocalPath: localPath,
+				IsLocal:   true,
+			}
+			if st.outIdx >= 0 {
+				out[st.outIdx] = ref
+			} else {
+				st.outIdx = len(out)
+				out = append(out, ref)
+			}
+			st.done = true
+			continue
+		}
+
 		if !platformMatch(pkg, plat) {
 			if optional {
 				st.done = true
@@ -164,8 +248,16 @@ func Closure(l *lock.Lock, importerKey string, plat Platform) ([]PackageRef, err
 			return nil, err
 		}
 		tarball := pkg.Resolution.Tarball
+		if tarball == "" && pkg.Resolution.Type == "git" && pkg.Resolution.Repo != "" {
+			tarball = gitArchiveURL(pkg.Resolution)
+		}
 		if tarball == "" {
 			tarball = defaultRegistryTarball(name, version)
+		}
+
+		patchPath, patchHash := "", ""
+		if e, ok := l.PatchedLookup(pkgID); ok {
+			patchPath, patchHash = e.Path, e.Hash
 		}
 
 		if st.outIdx >= 0 {
@@ -179,6 +271,8 @@ func Closure(l *lock.Lock, importerKey string, plat Platform) ([]PackageRef, err
 				Integrity: pkg.Resolution.Integrity,
 				Tarball:   tarball,
 				Optional:  optional,
+				PatchPath: patchPath,
+				PatchHash: patchHash,
 			}
 			st.outIdx = len(out)
 			out = append(out, ref)
@@ -206,6 +300,151 @@ func Closure(l *lock.Lock, importerKey string, plat Platform) ([]PackageRef, err
 		}
 	}
 	return out, nil
+}
+
+func isLocalVersion(version string) bool {
+	return strings.HasPrefix(version, "link:") ||
+		strings.HasPrefix(version, "workspace:") ||
+		strings.HasPrefix(version, "file:")
+}
+
+func localRef(l *lock.Lock, lockRoot, linkName, version, depPath string, optional bool) (PackageRef, error) {
+	rel := version
+	switch {
+	case strings.HasPrefix(version, "link:"):
+		rel = strings.TrimPrefix(version, "link:")
+	case strings.HasPrefix(version, "file:"):
+		rel = strings.TrimPrefix(version, "file:")
+	case strings.HasPrefix(version, "workspace:"):
+		// workspace:* without a path — resolve via importers / packages name.
+		return resolveWorkspaceStar(l, lockRoot, linkName, version, depPath, optional)
+	}
+	localPath := rel
+	if lockRoot != "" && !filepath.IsAbs(rel) {
+		// pnpm link: paths are relative to the *importer* directory, not the
+		// lock root. depPath is "name@link:../../packages/lib" for importer
+		// apps/api → resolve from lockRoot/apps/api.
+		base := lockRoot
+		if importerDir := importerDirFromLinkDep(l, lockRoot, linkName, version); importerDir != "" {
+			base = importerDir
+		}
+		localPath = filepath.Clean(filepath.Join(base, filepath.FromSlash(rel)))
+	}
+	name, ver := linkName, "0.0.0"
+	if pj, err := readNameVersion(localPath); err == nil {
+		if pj.name != "" {
+			name = pj.name
+		}
+		if pj.version != "" {
+			ver = pj.version
+		}
+	}
+	pkgID := name + "@" + ver
+	return PackageRef{
+		DepPath:   depPath,
+		PackageID: pkgID,
+		Name:      name,
+		Version:   ver,
+		Optional:  optional,
+		LocalPath: localPath,
+		IsLocal:   true,
+	}, nil
+}
+
+// importerDirFromLinkDep finds the importer directory that declares linkName
+// with the given link:/file: version, so relative paths resolve correctly.
+func importerDirFromLinkDep(l *lock.Lock, lockRoot, linkName, version string) string {
+	for key, imp := range l.Importers {
+		if imp == nil {
+			continue
+		}
+		check := func(deps map[string]lock.ImporterDep) bool {
+			if d, ok := deps[linkName]; ok && d.Version == version {
+				return true
+			}
+			return false
+		}
+		if check(imp.Dependencies) || check(imp.OptionalDependencies) {
+			if key == "" || key == "." {
+				return lockRoot
+			}
+			return filepath.Join(lockRoot, filepath.FromSlash(key))
+		}
+	}
+	return ""
+}
+
+func resolveWorkspaceStar(l *lock.Lock, lockRoot, linkName, version, depPath string, optional bool) (PackageRef, error) {
+	// Prefer an importer whose package.json name matches linkName.
+	if lockRoot != "" {
+		for key := range l.Importers {
+			if key == "" || key == "." {
+				continue
+			}
+			dir := filepath.Join(lockRoot, filepath.FromSlash(key))
+			pj, err := readNameVersion(dir)
+			if err != nil {
+				continue
+			}
+			if pj.name == linkName {
+				ver := pj.version
+				if ver == "" {
+					ver = "0.0.0"
+				}
+				return PackageRef{
+					DepPath:   depPath,
+					PackageID: linkName + "@" + ver,
+					Name:      linkName,
+					Version:   ver,
+					Optional:  optional,
+					LocalPath: dir,
+					IsLocal:   true,
+				}, nil
+			}
+		}
+	}
+	return PackageRef{}, fmt.Errorf("workspace dependency %q (%s) could not be resolved to a workspace package directory\nHint: ensure the package is listed in pnpm-workspace.yaml and appears as an importer in the lock", linkName, version)
+}
+
+type nameVer struct {
+	name, version string
+}
+
+func readNameVersion(dir string) (nameVer, error) {
+	b, err := osReadFile(filepath.Join(dir, "package.json"))
+	if err != nil {
+		return nameVer{}, err
+	}
+	// Tiny parse to avoid importing encoding/json cycles in tests — use json.
+	return parseNameVersionJSON(b)
+}
+
+// osReadFile / parseNameVersionJSON are thin wrappers so tests can stay simple.
+var osReadFile = func(path string) ([]byte, error) {
+	return readFile(path)
+}
+
+func gitArchiveURL(r lock.Resolution) string {
+	repo := r.Repo
+	commit := r.Commit
+	if repo == "" || commit == "" {
+		return ""
+	}
+	// Normalize git@github.com:org/repo.git and https://github.com/org/repo.git
+	repo = strings.TrimSuffix(repo, ".git")
+	repo = strings.TrimPrefix(repo, "git+")
+	if strings.HasPrefix(repo, "git@github.com:") {
+		repo = "https://github.com/" + strings.TrimPrefix(repo, "git@github.com:")
+	}
+	if strings.Contains(repo, "github.com/") {
+		// https://github.com/org/repo → codeload archive
+		parts := strings.Split(repo, "github.com/")
+		if len(parts) == 2 {
+			path := strings.TrimSuffix(parts[1], "/")
+			return fmt.Sprintf("https://codeload.github.com/%s/tar.gz/%s", path, commit)
+		}
+	}
+	return ""
 }
 
 func stripPatchHash(pkgID string) string {
@@ -309,6 +548,12 @@ func muslOnly(p *lock.Package) bool {
 // Handles aliases where version is already a package id (e.g. name
 // "strip-ansi-cjs" with version "strip-ansi@6.0.1").
 func DepPathFrom(name, version string) string {
+	if strings.HasPrefix(version, "link:") || strings.HasPrefix(version, "file:") {
+		return name + "@" + version
+	}
+	if strings.HasPrefix(version, "workspace:") {
+		return name + "@" + version
+	}
 	if strings.HasPrefix(version, name+"@") {
 		return version
 	}
@@ -326,14 +571,10 @@ func looksLikePackageID(s string) bool {
 		return false
 	}
 	if strings.HasPrefix(s, "@") {
-		// @scope/name@version…
 		rest := s[1:]
 		at := strings.IndexByte(rest, '@')
 		return at > 0 && strings.Contains(rest[:at], "/")
 	}
-	// Bare versions (optionally with peer suffix) look like "1.2.3" or
-	// "7.3.4(zod@3.25.76)" — those are NOT package ids even though they
-	// contain '@' inside the peer suffix.
 	if s[0] >= '0' && s[0] <= '9' {
 		return false
 	}
@@ -341,8 +582,6 @@ func looksLikePackageID(s string) bool {
 	if at <= 0 {
 		return false
 	}
-	// '@' must appear before any peer '(' so "name@1(peer@2)" counts but
-	// we already excluded leading-digit versions above.
 	if paren := strings.IndexByte(s, '('); paren >= 0 && paren < at {
 		return false
 	}

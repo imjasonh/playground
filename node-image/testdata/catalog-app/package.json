@@ -1,0 +1,13 @@
+{
+  "name": "catalog-app-fixture",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.js",
+  "dependencies": {
+    "ms": "catalog:"
+  },
+  "node-image": {
+    "repo": "example.com/catalog-app",
+    "skipBuild": true
+  }
+}

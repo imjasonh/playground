@@ -47,17 +47,35 @@ func Materialize(root string, l *lock.Lock, refs []resolve.PackageRef, tarballs 
 	inst := make([]installed, 0, len(refs))
 
 	for _, ref := range refs {
-		tgz, ok := tarballs[ref.PackageID]
-		if !ok {
-			return nil, fmt.Errorf("missing tarball for %s", ref.PackageID)
-		}
-		depDir := filepath.Join(store, VirtualStoreDir(ref.DepPath), "node_modules")
-		pkgDir := filepath.Join(depDir, filepath.FromSlash(ref.Name))
-		if err := os.MkdirAll(filepath.Dir(pkgDir), 0o755); err != nil {
-			return nil, err
-		}
-		if err := extractNPMTarball(tgz, pkgDir); err != nil {
-			return nil, fmt.Errorf("extract %s: %w", ref.PackageID, err)
+		var pkgDir string
+		if ref.IsLocal {
+			depDir := filepath.Join(store, VirtualStoreDir(ref.DepPath), "node_modules")
+			pkgDir = filepath.Join(depDir, filepath.FromSlash(ref.Name))
+			if err := os.MkdirAll(filepath.Dir(pkgDir), 0o755); err != nil {
+				return nil, err
+			}
+			if err := copyPackageTree(ref.LocalPath, pkgDir); err != nil {
+				return nil, fmt.Errorf("copy local %s: %w", ref.PackageID, err)
+			}
+		} else {
+			tgz, ok := tarballs[ref.PackageID]
+			if !ok {
+				return nil, fmt.Errorf("missing tarball for %s", ref.PackageID)
+			}
+			depDir := filepath.Join(store, VirtualStoreDir(ref.DepPath), "node_modules")
+			pkgDir = filepath.Join(depDir, filepath.FromSlash(ref.Name))
+			if err := os.MkdirAll(filepath.Dir(pkgDir), 0o755); err != nil {
+				return nil, err
+			}
+			if err := extractNPMTarball(tgz, pkgDir); err != nil {
+				return nil, fmt.Errorf("extract %s: %w", ref.PackageID, err)
+			}
+			if ref.PatchPath != "" {
+				// Patches applied relative to lock root must be passed by caller via absolute PatchPath.
+				if err := ApplyPatch(pkgDir, ref.PatchPath); err != nil {
+					return nil, fmt.Errorf("patch %s: %w", ref.PackageID, err)
+				}
+			}
 		}
 		pj, err := readPackageJSON(pkgDir)
 		if err != nil {
@@ -387,7 +405,17 @@ func (pj packageJSON) scriptString(name string) string {
 // Telemetry / no-op postinstall scripts (e.g. @scarf/scarf) are allowed — we
 // never run them, and the package still works.
 func CheckScriptsInDir(ref resolve.PackageRef, pkgDir string, pj packageJSON) error {
+	return CheckScriptsInDirAllow(ref, pkgDir, pj, nil)
+}
+
+// CheckScriptsInDirAllow is CheckScriptsInDir with a named allowlist. Allowed
+// packages still never have their scripts executed; the allowlist only skips
+// the hard failure so a pre-vendored or externally-built artifact can ship.
+func CheckScriptsInDirAllow(ref resolve.PackageRef, pkgDir string, pj packageJSON, allow map[string]bool) error {
 	if ref.Optional {
+		return nil
+	}
+	if allow[ref.Name] || allow[ref.PackageID] {
 		return nil
 	}
 	hasPrebuilds := false
@@ -429,7 +457,7 @@ func CheckScriptsInDir(ref resolve.PackageRef, pkgDir string, pj packageJSON) er
 	if !needsNative {
 		return nil
 	}
-	return fmt.Errorf("package %s appears to require a native build (node-gyp/binding.gyp) and node-image never runs dependency install scripts\nHint: prefer packages that ship prebuilds/ or platform-specific optionalDependencies (e.g. @esbuild/linux-x64). Remove or replace %s if it must compile from source", ref.PackageID, ref.PackageID)
+	return fmt.Errorf("package %s appears to require a native build (node-gyp/binding.gyp) and node-image never runs dependency install scripts\nHint: prefer packages that ship prebuilds/ or platform-specific optionalDependencies (e.g. @esbuild/linux-x64). Or add %q to node-image.allowScripts / --allow-scripts (scripts still are not executed — you must vendor a prebuilt binary). Remove or replace %s if it must compile from source", ref.PackageID, ref.Name, ref.PackageID)
 }
 
 func writeBins(nodeModulesDir, pkgDir string, pj packageJSON) error {

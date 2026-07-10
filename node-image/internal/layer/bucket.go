@@ -39,10 +39,22 @@ func (b Budget) StoreSlots() int {
 	return slots
 }
 
+// BucketOptions tunes BucketStorePackages.
+type BucketOptions struct {
+	// Unbucketed package names always get their own store layer (consume slots
+	// first). Remaining packages fill hash buckets.
+	Unbucketed []string
+}
+
 // BucketStorePackages assigns packages to store layers.
 // If len(packages) <= slots, one layer per package (sorted by DepPath).
 // Otherwise packages are hashed by Name into exactly slots buckets (stable).
 func BucketStorePackages(packages []PackageStore, slots int) [][]File {
+	return BucketStorePackagesOpts(packages, slots, BucketOptions{})
+}
+
+// BucketStorePackagesOpts is BucketStorePackages with a hot-list of unbucketed names.
+func BucketStorePackagesOpts(packages []PackageStore, slots int, opt BucketOptions) [][]File {
 	if slots < 1 {
 		slots = 1
 	}
@@ -57,15 +69,42 @@ func BucketStorePackages(packages []PackageStore, slots int) [][]File {
 		return out
 	}
 
-	buckets := make([][]File, slots)
+	hot := map[string]bool{}
+	for _, n := range opt.Unbucketed {
+		hot[n] = true
+	}
+
+	var dedicated [][]File
+	var rest []PackageStore
 	for _, p := range pkgs {
+		if hot[p.Name] && len(dedicated)+1 < slots {
+			dedicated = append(dedicated, p.Files)
+			continue
+		}
+		rest = append(rest, p)
+	}
+	remain := slots - len(dedicated)
+	if remain < 1 {
+		remain = 1
+	}
+	if len(rest) == 0 {
+		return dedicated
+	}
+	if len(rest) <= remain {
+		for _, p := range rest {
+			dedicated = append(dedicated, p.Files)
+		}
+		return dedicated
+	}
+
+	buckets := make([][]File, remain)
+	for _, p := range rest {
 		h := fnv.New32a()
 		_, _ = h.Write([]byte(p.Name))
-		i := int(h.Sum32() % uint32(slots))
+		i := int(h.Sum32() % uint32(remain))
 		buckets[i] = append(buckets[i], p.Files...)
 	}
-	// Drop empty buckets (possible when slots > distinct hash range — not with FNV)
-	out := make([][]File, 0, slots)
+	out := append([][]File{}, dedicated...)
 	for _, b := range buckets {
 		if len(b) == 0 {
 			continue
@@ -99,7 +138,6 @@ func StorePackagesFromDir(stage string) ([]PackageStore, error) {
 		if !e.IsDir() || name == "lock.yaml" || strings.HasPrefix(name, ".") {
 			continue
 		}
-		// skip non-package dirs like node_modules at this level if any
 		depPath := name
 		abs := filepath.Join(pnpmDir, depPath)
 		files, err := FromDir(abs, "node_modules/.pnpm/"+filepath.ToSlash(depPath))
@@ -114,7 +152,6 @@ func StorePackagesFromDir(stage string) ([]PackageStore, error) {
 }
 
 func packageNameFromDepPath(depPath string) string {
-	// depPath may be a pnpm virtual-store directory name ("/" → "+").
 	s := depPath
 	if strings.HasPrefix(s, "@") {
 		rest := s[1:]
@@ -130,8 +167,6 @@ func packageNameFromDepPath(depPath string) string {
 	}
 	return strings.ReplaceAll(s, "+", "/")
 }
-
-// Ensure Directory entries exist — FromDir already adds dirs.
 
 // MergeFiles concatenates and sorts files (for tests).
 func MergeFiles(groups [][]File) []File {
