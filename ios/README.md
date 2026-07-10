@@ -37,6 +37,14 @@ ios/
 |----|-------|-------|
 | `ride-monitor` | Ride Monitor | Background motion + GPS ride recorder |
 | `t9-keyboard` | T9 Keyboard | In-app multi-tap pad + system Custom Keyboard extension |
+| `follow-the-hum` | Follow the Hum | Hide a nearby walkable spot; steer with a spatial AirPods hum |
+
+### Follow the Hum
+
+Outdoor sound-hunt: the app hides a walkable spot ~120–320 m away and plays a
+soft stereo hum in your headphones. Turn until the hum sits in front of you,
+then walk — it brightens and clears as you get closer. Arrive within ~22 m to
+win. Needs a real device with location + compass (not the Simulator).
 
 ### T9 Keyboard
 

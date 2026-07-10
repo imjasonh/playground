@@ -73,7 +73,7 @@ targets:
         # is an Info.plist key only (no entitlement / App ID capability), so this
         # ships to TestFlight without changing signing.
         NSMotionUsageDescription: Detects shakes, potholes, and possible crashes from the accelerometer while you ride.
-        NSLocationWhenInUseUsageDescription: Records where jolts and crashes happen and keeps the ride recording while the screen is off.
+        NSLocationWhenInUseUsageDescription: Ride Monitor records where jolts happen. Follow the Hum uses your location and compass to hide a nearby spot and steer you with sound.
         NSLocationAlwaysAndWhenInUseUsageDescription: Records where jolts and crashes happen and keeps the ride recording while the screen is off.
         UIBackgroundModes:
           - location
