@@ -8,14 +8,15 @@ final class MegaManCharacterTests: XCTestCase {
         XCTAssertTrue(ids.contains("metal-man"))
         XCTAssertTrue(ids.contains("wood-man"))
         XCTAssertEqual(MegaManCharacter.all.count, 9)
+        XCTAssertEqual(MegaManCharacter.default.id, "metal-man")
     }
 
     func testFrameAssetNamesWrap() {
-        let mega = MegaManCharacter.default
-        XCTAssertEqual(mega.frameAssetName(0), "mega-man_00")
-        XCTAssertEqual(mega.frameAssetName(7), "mega-man_07")
-        XCTAssertEqual(mega.frameAssetName(8), "mega-man_00")
-        XCTAssertEqual(mega.frameAssetName(-1), "mega-man_07")
+        let metal = MegaManCharacter.default
+        XCTAssertEqual(metal.frameAssetName(0), "metal-man_00")
+        XCTAssertEqual(metal.frameAssetName(7), "metal-man_07")
+        XCTAssertEqual(metal.frameAssetName(8), "metal-man_00")
+        XCTAssertEqual(metal.frameAssetName(-1), "metal-man_07")
     }
 
     func testNamedFallsBackToDefault() {

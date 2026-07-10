@@ -130,8 +130,9 @@ struct MegaManWidgetDemoView: View {
                 "Widget extensions cannot run a normal game loop. This preview (and the "
                     + "Home Screen widget) stacks opaque sprite frames and reveals them with "
                     + "Text timer masks — the public-API approach from Bryce Bostwick’s "
-                    + "“Apple’s Widget Backdoor.” Sprites are original NES-style pixel art "
-                    + "inspired by Mega Man 2 poses (not Capcom rips)."
+                    + "“Apple’s Widget Backdoor.” Metal Man uses frames sliced from the "
+                    + "classic Mega Man 2 sheet; other characters are placeholders until "
+                    + "their sheets are added the same way."
             )
             .font(.subheadline)
             .foregroundStyle(.secondary)

@@ -25,8 +25,10 @@ No App Group is required.
 
 ## Assets
 
-- Sprites: original NES-style pixel art under
-  `Shared/MegaManWidget/Assets.xcassets` (regenerate with
-  `python3 ios/scripts/generate_megaman_sprites.py`).
+- **Metal Man:** sliced from `Shared/MegaManWidget/SourcesSheets/metal-man.gif`
+  (walk / throw / jump / blade). Labeled slices live in
+  `SourcesSheets/metal-man-frames/`.
+- **Other characters:** placeholder pixel art until real sheets are added.
+- Regenerate: `python3 ios/scripts/generate_megaman_sprites.py`
 - Blink font: `Shared/MegaManWidget/Fonts/Custom-Regular.otf` from Bryce’s MIT
   [WidgetAnimation](https://github.com/brycebostwick/WidgetAnimation) sample.

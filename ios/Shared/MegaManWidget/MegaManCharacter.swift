@@ -2,8 +2,9 @@ import Foundation
 
 /// A selectable Mega Man 2–inspired character for the animated widget.
 ///
-/// Sprite frames are original NES-style pixel art (not Capcom rips), stored in
-/// `Shared/MegaManWidget/Assets.xcassets` as `{id}_{00…07}`.
+/// Metal Man uses frames sliced from the authentic sheet in
+/// `Shared/MegaManWidget/SourcesSheets/metal-man.gif`. Other characters are
+/// placeholder pixel art until real sheets are added the same way.
 struct MegaManCharacter: Identifiable, Hashable, Codable, Sendable {
     let id: String
     let name: String
@@ -17,8 +18,8 @@ struct MegaManCharacter: Identifiable, Hashable, Codable, Sendable {
     }
 
     static let all: [MegaManCharacter] = [
-        .init(id: "mega-man", name: "Mega Man", frameCount: 8),
         .init(id: "metal-man", name: "Metal Man", frameCount: 8),
+        .init(id: "mega-man", name: "Mega Man", frameCount: 8),
         .init(id: "wood-man", name: "Wood Man", frameCount: 8),
         .init(id: "heat-man", name: "Heat Man", frameCount: 8),
         .init(id: "flash-man", name: "Flash Man", frameCount: 8),

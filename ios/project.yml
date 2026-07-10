@@ -42,6 +42,7 @@ targets:
           - "**/*.md"
           - Fonts/LICENSE*
           - sprite-manifest.json
+          - SourcesSheets/**
     dependencies:
       - target: T9Keyboard
         embed: true
@@ -114,6 +115,7 @@ targets:
           - "**/*.md"
           - Fonts/LICENSE*
           - sprite-manifest.json
+          - SourcesSheets/**
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.imjasonh.playground.megamanwidget

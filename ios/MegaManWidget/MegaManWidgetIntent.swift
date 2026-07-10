@@ -40,6 +40,6 @@ struct MegaManWidgetIntent: WidgetConfigurationIntent {
         "Walk, jump, and shoot loop for Mega Man or a Robot Master."
     )
 
-    @Parameter(title: "Character", default: .megaMan)
+    @Parameter(title: "Character", default: .metalMan)
     var character: MegaManCharacterAppEnum
 }
