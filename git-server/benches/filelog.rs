@@ -11,12 +11,12 @@
 //! Env:  FL_PATHS=50000 FL_DIRS=200 FL_VERSIONS=4   (history shape)
 
 use futures::executor::block_on;
-use git_server_worker::refs::RepoState;
-use git_server_worker::repo::{
+use git_server::refs::RepoState;
+use git_server::repo::{
     load_filelog_scoped, records_for_path, write_sharded_filelog, Change, FileLogRecord,
     FileLogSegment, FileLogView, FilelogScope,
 };
-use git_server_worker::storage::{MemStore, Store};
+use git_server::storage::{MemStore, Store};
 use std::time::Instant;
 
 fn env_usize(name: &str, default: usize) -> usize {

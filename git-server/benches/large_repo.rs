@@ -9,10 +9,10 @@
 //! commits touching random subsets — large enough that quadratic behavior or
 //! per-object overheads dominate and show up clearly in the phase report.
 
-use git_server_worker::http::{GitHttp, Request as GitRequest};
-use git_server_worker::protocol::BodyStream;
-use git_server_worker::refs::MemStateStore;
-use git_server_worker::storage::MemStore;
+use git_server::http::{GitHttp, Request as GitRequest};
+use git_server::protocol::BodyStream;
+use git_server::refs::MemStateStore;
+use git_server::storage::MemStore;
 use std::io::Read;
 use std::path::Path;
 use std::process::Command;
@@ -235,7 +235,7 @@ fn main() {
             .iter()
             .filter(|k| k.ends_with(".pack"))
             .map(|k| {
-                futures::executor::block_on(git_server_worker::storage::Store::size(store, k))
+                futures::executor::block_on(git_server::storage::Store::size(store, k))
                     .unwrap()
                     .unwrap_or(0)
             })
@@ -362,7 +362,7 @@ fn main() {
         .keys()
         .iter()
         .map(|k| {
-            futures::executor::block_on(git_server_worker::storage::Store::size(&store, k))
+            futures::executor::block_on(git_server::storage::Store::size(&store, k))
                 .unwrap()
                 .unwrap_or(0)
         })

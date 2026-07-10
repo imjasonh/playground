@@ -6,7 +6,8 @@
 # self-provisions the KV namespace (placeholder id substituted) and creates the
 # R2 bucket below if it doesn't exist yet.
 
-name = "git-server-worker"
+# Deployed at git.<account>.workers.dev.
+name = "git"
 main = "build/worker/shim.mjs"
 compatibility_date = "2024-11-01"
 

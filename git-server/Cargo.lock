@@ -253,7 +253,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "git-server-worker"
+name = "git-server"
 version = "0.1.0"
 dependencies = [
  "async-trait",

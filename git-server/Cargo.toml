@@ -1,5 +1,8 @@
 [package]
-name = "git-server-worker"
+# The Cloudflare Worker itself is named just "git" (see wrangler.toml); the
+# crate keeps the directory's name to stay distinct from the `git/` browser
+# app elsewhere in this repo.
+name = "git-server"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"

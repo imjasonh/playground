@@ -1,12 +1,12 @@
-//! Native test harness: serves [`git_server_worker::http::GitHttp`] over real
+//! Native test harness: serves [`git_server::http::GitHttp`] over real
 //! localhost HTTP (tiny_http) so integration tests can drive it with an
 //! actual `git` client — the same handler code that runs in the Worker, with
 //! in-memory storage in place of R2/Durable Objects.
 
-use git_server_worker::http::{GitHttp, Request as GitRequest};
-use git_server_worker::protocol::BodyStream;
-use git_server_worker::refs::MemStateStore;
-use git_server_worker::storage::MemStore;
+use git_server::http::{GitHttp, Request as GitRequest};
+use git_server::protocol::BodyStream;
+use git_server::refs::MemStateStore;
+use git_server::storage::MemStore;
 use std::io::Read;
 use std::path::Path;
 use std::process::Command;

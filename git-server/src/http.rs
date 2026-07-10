@@ -160,7 +160,7 @@ impl<'a> GitHttp<'a> {
             }
             [] => Response::ok(
                 "text/plain",
-                b"git-server-worker: a git smart-HTTP server on Cloudflare Workers\n".to_vec(),
+                b"git: a git smart-HTTP server on Cloudflare Workers\n".to_vec(),
             ),
             _ => Response::error(404, "not found"),
         }

@@ -8,11 +8,11 @@
 //! Run: `cargo bench` (add `-- <filter>` to select benchmarks by name).
 
 use futures::executor::block_on;
-use git_server_worker::object::ObjType;
-use git_server_worker::pack::index::{resolve_pack, NoExternalBases, PackIndex};
-use git_server_worker::pack::write::{test_support::build_pack, PackWriter};
-use git_server_worker::pack::PackScanner;
-use git_server_worker::storage::{MemStore, Store};
+use git_server::object::ObjType;
+use git_server::pack::index::{resolve_pack, NoExternalBases, PackIndex};
+use git_server::pack::write::{test_support::build_pack, PackWriter};
+use git_server::pack::PackScanner;
+use git_server::storage::{MemStore, Store};
 use std::time::Instant;
 
 fn bench<F: FnMut()>(name: &str, bytes_per_iter: u64, mut f: F) {
@@ -59,7 +59,7 @@ fn main() {
         .unwrap_or_default();
     let run = |name: &str| filter.is_empty() || name.contains(&filter);
 
-    println!("git-server-worker benchmarks\n");
+    println!("git-server benchmarks\n");
 
     // --- Pack scanning (the receive-pack ingest hot path) ------------------
     let pack_small = synthetic_pack(1_000, 512); // many small objects
@@ -150,7 +150,7 @@ fn main() {
     }
     if run("write/precompressed-copy") {
         let content = vec![7u8; 64 * 1024];
-        let z = git_server_worker::pack::write::deflate(&content);
+        let z = git_server::pack::write::deflate(&content);
         bench(
             "write/precompressed-copy (100 x 64KiB)",
             (content.len() * 100) as u64,
@@ -181,7 +181,7 @@ fn main() {
             "diff/similar-files (2k lines, 2% edits)",
             (old.len() + new.len()) as u64,
             || {
-                let m = git_server_worker::diff::match_lines(old.as_bytes(), new.as_bytes());
+                let m = git_server::diff::match_lines(old.as_bytes(), new.as_bytes());
                 assert!(m.len() > 1_900);
             },
         );

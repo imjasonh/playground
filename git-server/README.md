@@ -71,7 +71,7 @@ headers). See "Observability" in [`docs/design.md`](docs/design.md).
 ```bash
 # Measure a deployed backend: bulk push/clone GiB/s, per-API latency, and
 # the server's own op-count/cost figures per endpoint (before/after repack).
-GIT_SERVER_URL=https://git-server-worker.example.workers.dev ./scripts/bench-remote.sh
+GIT_SERVER_URL=https://git.example.workers.dev ./scripts/bench-remote.sh
 
 # Same report against a local `wrangler dev --local` (starts it for you).
 ./scripts/bench-remote.sh
@@ -91,7 +91,7 @@ against it, verifying our blame output line-by-line against `git blame`.
 ./scripts/e2e.sh
 
 # Same suite against a deployed backend (creates a uniquely named repo):
-GIT_SERVER_URL=https://git-server-worker.example.workers.dev ./scripts/e2e.sh
+GIT_SERVER_URL=https://git.example.workers.dev ./scripts/e2e.sh
 ```
 
 ## Deploy

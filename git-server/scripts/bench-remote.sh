@@ -3,7 +3,7 @@
 # latency, throughput, and per-operation cost as measured *by the server
 # itself* (via the Server-Timing header every response carries).
 #
-#   GIT_SERVER_URL=https://git-server-worker.<acct>.workers.dev ./scripts/bench-remote.sh
+#   GIT_SERVER_URL=https://git.<account>.workers.dev ./scripts/bench-remote.sh
 #   ./scripts/bench-remote.sh          # no URL: builds + runs wrangler dev --local
 #
 # Tunables:

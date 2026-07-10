@@ -22,7 +22,7 @@ use crate::repo::{collect_fetch_set, PackIngest, RefUpdate, Repo};
 use std::collections::BTreeMap;
 
 /// Server agent string advertised to clients.
-pub const AGENT: &str = "git-server-worker/0.1";
+pub const AGENT: &str = "git-server/0.1";
 
 /// Incremental request-body source. Implemented over the Workers request
 /// stream and over the native test server's reader.
