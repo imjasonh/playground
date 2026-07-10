@@ -2,11 +2,9 @@
 #
 # This project has no index.html, so the GitHub Pages workflows skip it; it is
 # deployed to Cloudflare by `deploy-workers.yml` on pushes to `main` (using the
-# CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID repo secrets).
-#
-# NOTE: unlike KV namespaces (which the deploy workflow self-provisions), the
-# R2 bucket must exist before the first deploy:
-#   wrangler r2 bucket create git-server-repos
+# CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID repo secrets). The deploy
+# self-provisions the KV namespace (placeholder id substituted) and creates the
+# R2 bucket below if it doesn't exist yet.
 
 name = "git-server-worker"
 main = "build/worker/shim.mjs"
