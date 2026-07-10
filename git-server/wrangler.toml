@@ -49,6 +49,18 @@ preview_id = "REPLACE_WITH_GIT_REPOS_PREVIEW_KV_ID"
 [triggers]
 crons = ["17 3 * * *"]
 
+# Persist per-invocation logs (opt-in!) so failures are diagnosable *after*
+# the fact, not only while `wrangler tail` happens to be attached. Each
+# invocation records its `outcome` — "ok", "exception", "exceededMemory",
+# "exceededCpu", "canceled" — plus our structured {"evt":"req"} lines.
+# `outcome=exceededMemory` with no {"evt":"req"} line is the isolate-OOM
+# (error 1102 / client-visible 503) signature that took manual probing to
+# diagnose the first time. Head-based sampling at 100% is fine at prototype
+# traffic; dial down before serious volume.
+[observability]
+enabled = true
+head_sampling_rate = 1
+
 # Optional (uncomment on Business/Enterprise zones, whose request-body cap is
 # higher than the Free/Pro 100 MB): the server-side per-push size limit, in
 # bytes. Defaults to 100 MB to match the edge cap — see docs/design.md
