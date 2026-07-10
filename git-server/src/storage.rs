@@ -76,6 +76,89 @@ pub trait Store {
 }
 
 // ---------------------------------------------------------------------------
+// Block-cached reads
+// ---------------------------------------------------------------------------
+
+/// Read granularity for [`BlockReader`]. R2 charges per request, not per
+/// byte, and Worker→R2 bandwidth is free, so reading 4 MiB to serve a
+/// 300-byte pack entry costs the same as reading 300 bytes — while turning
+/// thousands of per-object reads into a handful when access has locality
+/// (git packs cluster commits/trees/blobs together, and this crate sorts its
+/// bulk operations by pack offset).
+pub const BLOCK_SIZE: u64 = 4 * 1024 * 1024;
+
+/// Cached blocks per reader (LRU). 8 × 4 MiB = 32 MiB ceiling per instance.
+const BLOCK_CACHE_SLOTS: usize = 8;
+
+/// A block-aligned, LRU-cached ranged reader over one stored object.
+///
+/// Every bulk read path in this crate (delta resolution, fetch pack copy,
+/// repack, odb object reads) goes through one of these instead of issuing raw
+/// `get_range` calls: sequential or clustered access patterns then cost
+/// O(bytes / 4 MiB) backend requests instead of O(objects).
+pub struct BlockReader {
+    key: String,
+    /// (block index, bytes) in LRU order — most recently used last.
+    blocks: std::cell::RefCell<Vec<(u64, std::rc::Rc<Vec<u8>>)>>,
+}
+
+impl BlockReader {
+    pub fn new(key: &str) -> Self {
+        BlockReader {
+            key: key.to_string(),
+            blocks: std::cell::RefCell::new(Vec::new()),
+        }
+    }
+
+    async fn block(&self, store: &dyn Store, idx: u64) -> Result<std::rc::Rc<Vec<u8>>> {
+        {
+            let mut blocks = self.blocks.borrow_mut();
+            if let Some(pos) = blocks.iter().position(|(i, _)| *i == idx) {
+                let hit = blocks.remove(pos);
+                let data = hit.1.clone();
+                blocks.push(hit);
+                return Ok(data);
+            }
+        }
+        let data = store
+            .get_range(&self.key, idx * BLOCK_SIZE, BLOCK_SIZE)
+            .await?
+            .ok_or_else(|| StorageError(format!("{} vanished", self.key)))?;
+        let data = std::rc::Rc::new(data);
+        let mut blocks = self.blocks.borrow_mut();
+        if blocks.len() >= BLOCK_CACHE_SLOTS {
+            blocks.remove(0);
+        }
+        blocks.push((idx, data.clone()));
+        Ok(data)
+    }
+
+    /// Read `[start, end)`, served from cached blocks where possible.
+    pub async fn read(&self, store: &dyn Store, start: u64, end: u64) -> Result<Vec<u8>> {
+        let mut out = Vec::with_capacity((end - start) as usize);
+        let mut pos = start;
+        while pos < end {
+            let idx = pos / BLOCK_SIZE;
+            let block = self.block(store, idx).await?;
+            let block_start = idx * BLOCK_SIZE;
+            let from = (pos - block_start) as usize;
+            let to = ((end - block_start) as usize).min(block.len());
+            if from >= block.len() {
+                return Err(StorageError(format!(
+                    "{}: read past end of object ({} of {} block bytes)",
+                    self.key,
+                    from,
+                    block.len()
+                )));
+            }
+            out.extend_from_slice(&block[from..to]);
+            pos = block_start + to as u64;
+        }
+        Ok(out)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // In-memory implementation (tests, benchmarks, native integration server).
 // ---------------------------------------------------------------------------
 

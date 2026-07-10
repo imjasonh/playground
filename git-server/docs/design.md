@@ -62,21 +62,25 @@ expensive tier) everywhere.
 Git's own `.idx` format assumes mmap. Ours (`GSIX`, one per pack) is built for
 "loaded in one small read, guides exact ranged reads":
 
-per entry (74 bytes, sorted by oid): `oid`, `header_start`, `data_start`,
-`data_end`, `stored_type`, `final_type`, `final_size`, `base_oid`.
+per entry (82 bytes, sorted by oid): `oid`, `header_start`, `data_start`,
+`data_end`, `stored_type`, `final_type`, `final_size`, `payload_size`,
+`base_oid`.
 
-Three fields do the heavy lifting:
+Four fields do the heavy lifting:
 
 * `data_start..data_end` — the exact compressed byte range, so reading an
   object's payload is **one** ranged GET of exactly the right size.
 * `final_type`/`final_size` — the object's identity after delta resolution, so
   type/size queries never touch the pack.
+* `payload_size` — the inflated size of the stored payload itself (the delta
+  blob's size, for delta entries), so pack-copy paths can re-emit entry
+  headers without inflating anything.
 * `base_oid` — for delta entries, the *resolved* base object id. This turns
   delta chains into pure oid lookups at read time, and (crucially) lets
   repacking rewrite position-dependent `OFS_DELTA` entries as position-
   independent `REF_DELTA` without touching payload bytes.
 
-An index entry is 74 B/object (~74 MB per million objects). The current
+An index entry is 82 B/object (~82 MB per million objects). The current
 prototype loads a pack's whole index per request; the format is already
 sorted, so the planned upgrade for very large packs is fanout + binary search
 via ranged reads (log₂ probes of ~74 bytes each), plus a KV/Cache-API layer
@@ -155,9 +159,19 @@ changed path yields a record:
   prev_commit, prev_blob }   # the previous record for this path
 ```
 
-Records for one push form one immutable *file-log segment* in R2; the state
-document lists segments; maintenance merges them. The `prev_*` pointers chain
-each path's versions backwards through time.
+Records for one push form one immutable *file-log segment* in R2 (a compact
+binary format, `GSFL` — less than half the size of the equivalent JSON and
+~10× faster to parse, which matters because read APIs load segments per
+request); the state document lists segments; maintenance merges them. The
+`prev_*` pointers chain each path's versions backwards through time.
+
+Read APIs build a one-pass `FileLogView` (newest record per path, ordered so
+directory-prefix queries are range scans) per request. The known scaling
+limit is segment *load* time: a merged segment for a 100k-change history
+parses in ~30-50 ms, which dominates tree/blame API latency on big repos.
+The planned fixes are sharding segments by path prefix (so a request loads
+only the shard it needs) and an in-isolate parsed-segment cache keyed by
+segment id (segments are immutable, so caching is trivially safe).
 
 * **Directory listing with attribution**: newest record per path (or path
   prefix, for subdirectories) across segments, newest segment first.
@@ -203,6 +217,30 @@ single GETs. For truly huge repos the same budgeted, resumable structure
 applies: consolidate the K smallest packs per run (geometric repacking)
 instead of all packs at once.
 
+## Block-cached reads: request count is the real currency
+
+R2 charges per *request*, not per byte, and Worker→R2 bandwidth is free — so
+the naive "one exact ranged GET per object" design, while byte-optimal, is
+request-pessimal: the large-repo benchmark measured a full clone of a 175k-
+object repo at ~250,000 Class B operations (~$0.09 *per clone*; a real R2
+round-trip per object would also make it minutes slow).
+
+Every bulk read path therefore goes through a `BlockReader`: 4 MiB-aligned
+ranged reads with a small per-pack LRU (8 blocks, 32 MiB ceiling). To make
+the cache hit, bulk operations are ordered by *pack offset* rather than
+selection order:
+
+* delta resolution already scans entries in pack order (bases cluster before
+  their deltas — git writes packs that way);
+* fetch pack generation sorts the send set by (source pack, offset) before
+  copying — legal because we emit only full and `REF_DELTA` entries, which
+  `git index-pack` accepts in any order;
+* repack sorts its source entries the same way.
+
+Measured effect on the 175k-object repo: clone went from ~250k Class B reads
+to **12**, push from ~311k to ~31, repack from ~175k to ~14 — request counts
+now scale with bytes/4 MiB, not with object count.
+
 ## Cost model
 
 R2 pricing shape (2025): Class A (writes, multipart ops, lists) ≈ $4.50/M,
@@ -211,29 +249,35 @@ free**. DO requests ≈ $0.15/M + duration; KV reads ≈ $0.50/M. Per operation:
 
 | Operation | DO | R2 Class A | R2 Class B |
 |---|---|---|---|
-| push (P packs, size S) | 1 load + 1 commit | multipart: ⌈S/5MiB⌉+2; idx put: 1; filelog put: 1 | P index loads + delta-resolution ranged reads + filelog load |
-| clone (1 pack repo) | 1 load | 0 | 1 idx + ~1 ranged read per object *(see below)* |
-| incremental fetch | 1 load | 0 | P idx + ranged reads for objects sent |
-| file API | 1 load | 0 | P idx + ranged read per path component |
-| blame | 1 load | 0 | P idx + filelog + 1 ranged read per version |
-| repack | 1 load + 1 commit | ⌈S/5MiB⌉+2 + deletes | 1 ranged read per object + idx reads |
+| push (P packs, size S) | 1 load + 1 commit | multipart: ⌈S/5MiB⌉+2; idx put: 1; filelog put: 1 | P idx + ⌈S/4MiB⌉ block reads + filelog load |
+| clone (1 pack repo, size S) | 1 load | 0 | 1 idx + ⌈S/4MiB⌉ block reads |
+| incremental fetch | 1 load | 0 | P idx + blocks covering the objects sent |
+| file API | 1 load | 0 | P idx + blocks covering the path walk |
+| blame | 1 load | 0 | P idx + filelog + blocks covering the versions |
+| repack (size S) | 1 load + 1 commit | ⌈S/5MiB⌉+2 + deletes | ⌈S/4MiB⌉ block reads + idx reads |
 
-The MemStore in the test suite counts these classes, and the integration
-tests assert the bounds (e.g. clone performs zero Class A operations).
+Measured on the large-repo benchmark (175k objects, 57 MiB stored): push 31
+Class B, clone 12, incremental push/pull ≤ 8, file/tree/blame APIs ≤ 10,
+repack 14. The MemStore in the test suite counts these classes, and the
+integration tests assert the bounds (e.g. clone performs zero Class A
+operations).
 
-Two planned optimizations matter at scale, and both are pure additions:
+One planned optimization still matters at scale, and it is a pure addition:
 
-1. **Ranged-read coalescing for clones.** A full clone currently issues one
-   ranged GET per object. Since a repacked repo is one pack and a full clone
-   wants *all* of it, the send path can read the pack in large sequential
-   ranges (e.g. 32 MiB → ~300 reads for a 10 GiB repo) instead of per-object.
-2. **`packfile-uris`**: after repack, keep a snapshot pack; serve full clones
+1. **`packfile-uris`**: after repack, keep a snapshot pack; serve full clones
    as a redirect to the R2 object (free egress, zero Worker CPU while the
    client downloads) plus a small top-up pack for commits since the snapshot.
    Protocol v2 supports this natively (`packfile-uris`); stock git clients
    opt in with `fetch.uriprotocols=https`. This is the single biggest lever
-   for large-repo clone cost and is why "snapshot pack per repack" is part of
-   the maintenance design.
+   for large-repo clone cost (it removes the Worker from the bulk-bytes path
+   entirely) and is why "snapshot pack per repack" is part of the
+   maintenance design.
+
+Full clones additionally skip the reachability walk entirely: when a fetch
+has no `have`s and wants every advertised tip, the server sends the whole
+pack manifest as-is (objects awaiting maintenance GC ride along as dangling
+objects, which git tolerates). This removes the one history-proportional
+CPU cost from the most bandwidth-heavy operation.
 
 ## Memory & CPU discipline (Workers limits)
 
@@ -296,4 +340,17 @@ Same core, three harnesses (this is why the crate keeps runtime glue thin):
    against production, safe to run anytime (uses a uniquely named repo).
 
 `cargo bench` measures the CPU hot paths natively (scan, resolve, index
-serialize, pack write both paths, diff) with throughput reporting.
+serialize, pack write both paths, diff) with throughput reporting, and
+`cargo bench --bench large_repo` runs a whole-lifecycle benchmark — a real
+git client pushing/cloning/pulling a synthetic repo (default 200 commits /
+2k files; `LR_COMMITS`/`LR_FILES`/`LR_DIRS` to scale it up) — reporting
+wall time and R2 Class A/B op counts per phase. Set `GIT_SERVER_TIMING=1`
+to break server time down by pipeline phase (scan, resolve, filelog build,
+fetch selection, pack build).
+
+Current large-repo numbers (175k objects, 57 MiB, 1000 commits × 10k files,
+native release build): initial push ~6 s server CPU (0.7 s scan, 1.1 s
+resolve, 1.9 s file-log build), full clone ~2 s end-to-end (~150 ms of that
+is server pack-build; the rest is the git client indexing and checking out),
+incremental push/pull ~100-200 ms, file API ~5-15 ms, tree/blame APIs
+~50-100 ms (dominated by file-log segment parse — see above), repack ~0.4 s.

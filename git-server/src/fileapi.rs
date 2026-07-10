@@ -8,7 +8,7 @@
 use crate::object::{ObjType, Oid};
 use crate::odb::Odb;
 use crate::refs::RepoState;
-use crate::repo::{latest_for_path, latest_for_prefix, FileLogSegment};
+use crate::repo::{FileLogSegment, FileLogView};
 use serde::Serialize;
 
 /// Resolve a "refish" — a full hex oid, `HEAD`, a branch, or a tag — to a
@@ -101,8 +101,11 @@ pub async fn list_tree(
         _ => return Ok(None),
     };
     let entries = odb.read_tree(tree).await?;
+    // One pass over the file-log builds the lookup index; per-entry queries
+    // are then O(log paths) instead of full scans.
+    let view = FileLogView::new(segments);
     let mut out = Vec::with_capacity(entries.len());
-    for e in entries {
+    for e in entries.iter() {
         let full_path = if path.is_empty() {
             e.name.clone()
         } else {
@@ -112,15 +115,15 @@ pub async fn list_tree(
             (
                 "tree",
                 None,
-                latest_for_prefix(segments, &format!("{full_path}/")),
+                view.latest_for_prefix(&format!("{full_path}/")),
             )
         } else {
             let size = odb.locate(e.oid).map(|(_, rec)| rec.size);
-            ("blob", size, latest_for_path(segments, &full_path))
+            ("blob", size, view.latest_for_path(&full_path))
         };
         out.push(TreeEntryInfo {
-            name: e.name,
-            mode: e.mode,
+            name: e.name.clone(),
+            mode: e.mode.clone(),
             kind,
             oid: e.oid.to_hex(),
             size,

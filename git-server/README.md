@@ -48,6 +48,11 @@ runtime is glue over the same code that the native tests exercise.
 cargo test          # unit tests + integration tests driving a real `git` client
 cargo bench         # hot-path benchmarks (pack scan/resolve/write, diff)
 cargo clippy --all-targets
+
+# Whole-lifecycle benchmark: real git client + synthetic large repo, with
+# per-phase wall time and R2 operation counts (LR_* env vars scale it up;
+# GIT_SERVER_TIMING=1 breaks down server-side phases).
+cargo bench --bench large_repo
 ```
 
 The integration tests start a localhost HTTP server backed by in-memory
@@ -70,14 +75,10 @@ GIT_SERVER_URL=https://git-server-worker.example.workers.dev ./scripts/e2e.sh
 ## Deploy
 
 Deployed by `.github/workflows/deploy-workers.yml` on pushes to `main`, like
-the other Worker apps. One manual prerequisite (the deploy workflow
-self-provisions KV, but not R2):
-
-```bash
-wrangler r2 bucket create git-server-repos
-```
-
-The Durable Object migration and the KV repo registry are declared in
+the other Worker apps. The deploy self-provisions everything the Worker
+declares: the KV repo registry (`provision-worker-kv.py` substitutes the
+placeholder id) and the R2 bucket (`provision-worker-r2.py` creates
+`git-server-repos` if absent). The Durable Object migration is declared in
 `wrangler.toml`. A nightly cron consolidates each repo's accumulated push
 packs (see `src/maintenance.rs`).
 

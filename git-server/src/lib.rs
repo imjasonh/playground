@@ -47,6 +47,7 @@ pub mod protocol;
 pub mod refs;
 pub mod repo;
 pub mod storage;
+pub mod timing;
 
 #[cfg(target_arch = "wasm32")]
 mod worker_entry;

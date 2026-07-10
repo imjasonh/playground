@@ -37,6 +37,10 @@ pub struct EntryRecord {
     pub final_type: ObjType,
     /// Final (fully inflated, delta-applied) object size.
     pub size: u64,
+    /// Inflated size of the stored payload itself (== `size` for full
+    /// entries; the delta blob's size for delta entries). Recorded so pack
+    /// copy paths can re-emit entry headers without inflating the payload.
+    pub payload_size: u64,
     /// For delta entries: the resolved base object id.
     pub base_oid: Option<Oid>,
 }
@@ -93,26 +97,32 @@ pub async fn resolve_pack(
 
     let mut resolver = Resolver {
         store,
-        pack_key,
+        reader: crate::storage::BlockReader::new(pack_key),
         entries,
         by_offset,
         cache: HashMap::new(),
         cache_bytes: 0,
         external,
-        resolved: vec![None; entries.len()],
     };
 
     let mut records: Vec<EntryRecord> = Vec::with_capacity(entries.len());
     #[allow(clippy::needless_range_loop)] // `records` is also indexed below
     for i in 0..entries.len() {
-        let (ty, content) = resolver.content_of(i, &oid_to_idx).await?;
         let e = &entries[i];
-        let oid = match e.oid {
-            Some(o) => o,
-            None => {
-                let o = hash_object(ty, &content);
-                oid_to_idx.insert(o, i);
-                o
+        // Non-delta entries were fully identified during the streaming scan
+        // (oid hashed, size known): no need to touch their payloads again.
+        // Only delta entries require materialization.
+        let (ty, oid, size) = match (e.oid, e.base) {
+            (Some(oid), BaseRef::None) => {
+                let ty = ObjType::from_pack_type(e.stored_type)
+                    .ok_or_else(|| format!("bad stored type {}", e.stored_type))?;
+                (ty, oid, e.inflated_size)
+            }
+            _ => {
+                let (ty, content) = resolver.content_of(i, &oid_to_idx).await?;
+                let oid = hash_object(ty, &content);
+                oid_to_idx.insert(oid, i);
+                (ty, oid, content.len() as u64)
             }
         };
         let base_oid = match e.base {
@@ -133,10 +143,10 @@ pub async fn resolve_pack(
             data_end: e.data_end,
             stored_type: e.stored_type,
             final_type: ty,
-            size: content.len() as u64,
+            size,
+            payload_size: e.inflated_size,
             base_oid,
         });
-        resolver.resolved[i] = Some((ty, oid));
     }
     records.sort_by(|a, b| a.oid.cmp(&b.oid));
     Ok(records)
@@ -144,25 +154,25 @@ pub async fn resolve_pack(
 
 struct Resolver<'a> {
     store: &'a dyn Store,
-    pack_key: &'a str,
+    /// Block-cached reads over the stored pack: entries are processed in
+    /// offset order and delta bases cluster near their deltas, so this turns
+    /// per-entry ranged reads into O(pack bytes / block size) requests.
+    reader: crate::storage::BlockReader,
     entries: &'a [crate::pack::scan::ScanEntry],
     by_offset: HashMap<u64, usize>,
     cache: HashMap<usize, (ObjType, Rc<Vec<u8>>)>,
     cache_bytes: usize,
     external: &'a dyn ExternalBases,
-    resolved: Vec<Option<(ObjType, Oid)>>,
 }
 
 impl Resolver<'_> {
     async fn read_payload(&self, i: usize) -> Result<Vec<u8>, String> {
         let e = &self.entries[i];
-        let len = e.data_end - e.data_start;
         let raw = self
-            .store
-            .get_range(self.pack_key, e.data_start, len)
+            .reader
+            .read(self.store, e.data_start, e.data_end)
             .await
-            .map_err(|se: StorageError| se.to_string())?
-            .ok_or("pack object vanished from storage")?;
+            .map_err(|se: StorageError| se.to_string())?;
         inflate(&raw, e.inflated_size)
     }
 
@@ -249,8 +259,8 @@ impl Resolver<'_> {
 const GSIX_MAGIC: &[u8; 4] = b"GSIX";
 const GSIX_VERSION: u32 = 1;
 /// oid(20) + header_start(8) + data_start(8) + data_end(8) + stored_type(1) +
-/// final_type(1) + size(8) + base_oid(20)
-const RECORD_LEN: usize = 74;
+/// final_type(1) + size(8) + payload_size(8) + base_oid(20)
+const RECORD_LEN: usize = 82;
 
 /// A parsed pack index: records sorted by oid.
 #[derive(Debug, Clone, Default)]
@@ -292,6 +302,7 @@ impl PackIndex {
             out.push(r.stored_type);
             out.push(r.final_type.pack_type());
             out.extend_from_slice(&r.size.to_be_bytes());
+            out.extend_from_slice(&r.payload_size.to_be_bytes());
             out.extend_from_slice(&r.base_oid.unwrap_or(Oid::ZERO).0);
         }
         out
@@ -313,7 +324,7 @@ impl PackIndex {
         for i in 0..count {
             let p = 12 + i * RECORD_LEN;
             let r = &data[p..p + RECORD_LEN];
-            let base = Oid::from_bytes(&r[54..74]).unwrap();
+            let base = Oid::from_bytes(&r[62..82]).unwrap();
             records.push(EntryRecord {
                 oid: Oid::from_bytes(&r[..20]).unwrap(),
                 header_start: u64::from_be_bytes(r[20..28].try_into().unwrap()),
@@ -323,6 +334,7 @@ impl PackIndex {
                 final_type: ObjType::from_pack_type(r[45])
                     .ok_or_else(|| format!("bad final type {}", r[45]))?,
                 size: u64::from_be_bytes(r[46..54].try_into().unwrap()),
+                payload_size: u64::from_be_bytes(r[54..62].try_into().unwrap()),
                 base_oid: if base.is_zero() { None } else { Some(base) },
             });
         }

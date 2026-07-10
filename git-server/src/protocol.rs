@@ -250,7 +250,30 @@ async fn fetch(repo: &Repo<'_>, args: &[String]) -> Result<Vec<u8>, String> {
         return Ok(error_response("repository is empty"));
     }
     let odb = repo.odb(&state).await?;
-    let set = collect_fetch_set(&odb, &wants, &haves).await?;
+
+    // Full-clone fast path: no haves and the wants cover every ref tip means
+    // the client needs everything we have — skip the reachability walk (the
+    // only history-proportional CPU in a fetch) and send the whole manifest.
+    // Objects that are stored but unreachable (e.g. force-pushed-away
+    // history awaiting maintenance) ride along harmlessly as dangling
+    // objects on the client.
+    let want_set: std::collections::HashSet<Oid> = wants.iter().copied().collect();
+    let is_full_clone = haves.is_empty()
+        && state.refs.values().all(|hex| {
+            Oid::from_hex(hex)
+                .map(|o| want_set.contains(&o))
+                .unwrap_or(false)
+        });
+    let set = if is_full_clone {
+        crate::repo::FetchSet {
+            include: odb.all_oids(),
+            common: Vec::new(),
+            client_has: std::collections::HashSet::new(),
+        }
+    } else {
+        let _t = crate::timing::Phase::start("fetch: collect set");
+        collect_fetch_set(&odb, &wants, &haves).await?
+    };
 
     let mut out = Vec::new();
     if !done {
@@ -274,7 +297,10 @@ async fn fetch(repo: &Repo<'_>, args: &[String]) -> Result<Vec<u8>, String> {
         msg.extend_from_slice(format!("packing {} objects\r\n", set.include.len()).as_bytes());
         out.extend_from_slice(&pktline::data_pkt(&msg));
     }
-    let pack = crate::repo::build_pack(&odb, &set, thin_pack).await?;
+    let pack = {
+        let _t = crate::timing::Phase::start("fetch: build pack");
+        crate::repo::build_pack(&odb, &set, thin_pack).await?
+    };
     pktline::write_band_pkts(&mut out, band::DATA, &pack);
     out.extend_from_slice(pktline::flush_pkt());
     Ok(out)
@@ -367,6 +393,7 @@ pub async fn receive_pack(
     // carry no pack.
     let expect_pack = commands.iter().any(|c| !c.new.is_zero());
     let ingested = if expect_pack {
+        let _t = crate::timing::Phase::start("push: stream+scan");
         let mut ingest = PackIngest::start(repo, nonce).await?;
         let mut got_any = false;
         let leftover = parser.take_remainder();

@@ -27,6 +27,9 @@ pub fn index_key(repo: &str, pack_id: &str) -> String {
 struct PackHandle {
     pack_id: String,
     index: PackIndex,
+    /// Block-cached reader over the pack: turns clustered per-object reads
+    /// into a handful of 4 MiB ranged gets (see [`crate::storage::BlockReader`]).
+    reader: crate::storage::BlockReader,
 }
 
 /// A materialized object: type + shared content.
@@ -36,10 +39,13 @@ pub type CachedObject = (ObjType, Rc<Vec<u8>>);
 /// at the time the request began — a consistent snapshot).
 pub struct Odb<'a> {
     store: &'a dyn Store,
-    repo: &'a str,
     packs: Vec<PackHandle>,
     cache: RefCell<HashMap<Oid, CachedObject>>,
     cache_bytes: RefCell<usize>,
+    /// Parsed-tree cache: tree walks (filelog build, fetch selection, file
+    /// API) revisit the same trees; parsing entries once per oid instead of
+    /// per visit is a large win on big pushes.
+    tree_cache: RefCell<HashMap<Oid, Rc<Vec<TreeEntry>>>>,
 }
 
 /// Cache budget: enough for tree walks over big repos without threatening the
@@ -63,14 +69,15 @@ impl<'a> Odb<'a> {
             packs.push(PackHandle {
                 pack_id: id.clone(),
                 index: PackIndex::from_bytes(&bytes)?,
+                reader: crate::storage::BlockReader::new(&pack_key(repo, id)),
             });
         }
         Ok(Odb {
             store,
-            repo,
             packs,
             cache: RefCell::new(HashMap::new()),
             cache_bytes: RefCell::new(0),
+            tree_cache: RefCell::new(HashMap::new()),
         })
     }
 
@@ -103,21 +110,23 @@ impl<'a> Odb<'a> {
         out
     }
 
-    /// Read an object's compressed payload verbatim (for pack-copy reuse).
+    /// Read an object's compressed payload verbatim (for pack-copy reuse),
+    /// through the pack's block cache.
     pub async fn read_compressed(
         &self,
         pack_id: &str,
         rec: &EntryRecord,
     ) -> Result<Vec<u8>, String> {
-        self.store
-            .get_range(
-                &pack_key(self.repo, pack_id),
-                rec.data_start,
-                rec.data_end - rec.data_start,
-            )
+        let handle = self
+            .packs
+            .iter()
+            .find(|p| p.pack_id == pack_id)
+            .ok_or_else(|| format!("pack {pack_id} not open"))?;
+        handle
+            .reader
+            .read(self.store, rec.data_start, rec.data_end)
             .await
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("pack {pack_id} vanished"))
+            .map_err(|e| e.to_string())
     }
 
     /// Read and fully materialize an object.
@@ -190,9 +199,20 @@ impl<'a> Odb<'a> {
         crate::object::parse_commit(&data)
     }
 
-    pub async fn read_tree(&self, oid: Oid) -> Result<Vec<TreeEntry>, String> {
+    pub async fn read_tree(&self, oid: Oid) -> Result<Rc<Vec<TreeEntry>>, String> {
+        if let Some(hit) = self.tree_cache.borrow().get(&oid) {
+            return Ok(hit.clone());
+        }
         let data = self.read_typed(oid, ObjType::Tree).await?;
-        crate::object::parse_tree(&data)
+        let parsed = Rc::new(crate::object::parse_tree(&data)?);
+        // Parsed entries are ~the size of the raw tree; keep the cache in the
+        // same ballpark as the content cache by piggybacking on its budget
+        // accounting (a tree's raw bytes are already counted there).
+        if self.tree_cache.borrow().len() > 100_000 {
+            self.tree_cache.borrow_mut().clear();
+        }
+        self.tree_cache.borrow_mut().insert(oid, parsed.clone());
+        Ok(parsed)
     }
 
     /// Peel an object to a commit: commits pass through, annotated tags are

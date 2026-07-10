@@ -55,10 +55,16 @@ tiny_http = "0.12"
 # edition2024.
 tempfile = "=3.14.0"
 
-# Hand-rolled harness (see benches/pack.rs) rather than criterion: criterion's
-# clap dependency requires edition2024, which Rust 1.83's cargo cannot parse.
+# Hand-rolled harnesses rather than criterion: criterion's clap dependency
+# requires edition2024, which Rust 1.83's cargo cannot parse.
 [[bench]]
 name = "pack"
+harness = false
+
+# End-to-end large-repo benchmark (real git client + native server) with
+# per-phase timing and backend-op counts. `cargo bench --bench large_repo`.
+[[bench]]
+name = "large_repo"
 harness = false
 
 [profile.release]

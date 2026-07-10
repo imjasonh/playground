@@ -22,7 +22,7 @@
 
 use crate::odb::{index_key, pack_key};
 use crate::pack::index::{EntryRecord, PackIndex};
-use crate::pack::write::{inflated_len, PackWriter};
+use crate::pack::write::PackWriter;
 use crate::pack::TYPE_REF_DELTA;
 use crate::refs::{PackMeta, StateError};
 use crate::repo::{filelog_key, load_filelog, FileLogSegment, Repo};
@@ -48,6 +48,16 @@ pub async fn repack(repo: &Repo<'_>, nonce: &str) -> Result<RepackOutcome, Strin
     let odb = repo.odb(&state).await?;
     let oids = odb.all_oids();
 
+    // Copy in (source pack, offset) order so reads walk each source pack
+    // sequentially through the block cache — O(bytes / block size) backend
+    // requests instead of one per object.
+    let mut sources: Vec<(String, EntryRecord)> = Vec::with_capacity(oids.len());
+    for &oid in &oids {
+        let (pack_id, rec) = odb.locate(oid).ok_or("object vanished during repack")?;
+        sources.push((pack_id.to_string(), rec.clone()));
+    }
+    sources.sort_by(|a, b| (&a.0, a.1.data_start).cmp(&(&b.0, b.1.data_start)));
+
     let new_id = format!("m-{nonce}");
     let new_key = pack_key(repo.name, &new_id);
     let mut uploader = repo
@@ -58,9 +68,9 @@ pub async fn repack(repo: &Repo<'_>, nonce: &str) -> Result<RepackOutcome, Strin
 
     let mut w = PackWriter::new(oids.len() as u32);
     let mut records: Vec<EntryRecord> = Vec::with_capacity(oids.len());
-    for &oid in &oids {
-        let (pack_id, rec) = odb.locate(oid).ok_or("object vanished during repack")?;
-        let (pack_id, rec) = (pack_id.to_string(), rec.clone());
+    for (pack_id, rec) in &sources {
+        let (pack_id, rec) = (pack_id.clone(), rec.clone());
+        let oid = rec.oid;
         let z = odb.read_compressed(&pack_id, &rec).await?;
         let header_start = w.emitted();
         let stored_type = match rec.base_oid {
@@ -69,7 +79,7 @@ pub async fn repack(repo: &Repo<'_>, nonce: &str) -> Result<RepackOutcome, Strin
                 rec.stored_type
             }
             Some(base) => {
-                w.add_ref_delta_precompressed(base, inflated_len(&z)?, &z);
+                w.add_ref_delta_precompressed(base, rec.payload_size, &z);
                 TYPE_REF_DELTA
             }
         };
@@ -82,6 +92,7 @@ pub async fn repack(repo: &Repo<'_>, nonce: &str) -> Result<RepackOutcome, Strin
             stored_type,
             final_type: rec.final_type,
             size: rec.size,
+            payload_size: rec.payload_size,
             base_oid: rec.base_oid,
         });
         // Keep the writer's buffer bounded: stream out per entry.
@@ -110,10 +121,7 @@ pub async fn repack(repo: &Repo<'_>, nonce: &str) -> Result<RepackOutcome, Strin
     let has_filelog = !merged.records.is_empty();
     if has_filelog {
         repo.store
-            .put(
-                &filelog_key(repo.name, &new_id),
-                serde_json::to_vec(&merged).map_err(|e| e.to_string())?,
-            )
+            .put(&filelog_key(repo.name, &new_id), merged.to_bytes())
             .await
             .map_err(|e| e.to_string())?;
     }

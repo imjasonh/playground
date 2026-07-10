@@ -52,26 +52,26 @@ pub async fn blame(
     at_commit: Oid,
     path: &str,
 ) -> Result<Option<Vec<BlameLine>>, String> {
-    // Find the newest record for the path at-or-before `at_commit`. If the
-    // requested commit itself touched the path there is an exact record;
-    // otherwise the newest record is the right starting point for a tip
-    // commit (see module docs for the branching caveat).
-    let at_hex = at_commit.to_hex();
-    let mut start: Option<&crate::repo::FileLogRecord> = None;
-    'outer: for seg in segments {
-        for r in seg.records.iter().rev() {
-            if r.path == path && (start.is_none() || r.commit == at_hex) {
-                start = Some(r);
-                if r.commit == at_hex {
-                    break 'outer;
-                }
-            }
-        }
+    // All of the path's records, newest first, collected in ONE pass over the
+    // segments (the chain is then resolved from a commit→record map instead
+    // of re-scanning per hop).
+    let path_records = crate::repo::records_for_path(segments, path);
+    if path_records.is_empty() {
+        return Ok(None);
     }
-    let start = match start {
-        Some(r) => r,
-        None => return Ok(None),
-    };
+    let by_commit: std::collections::HashMap<&str, &crate::repo::FileLogRecord> = path_records
+        .iter()
+        .map(|r| (r.commit.as_str(), *r))
+        .collect();
+
+    // Find the starting record: exact match if `at_commit` touched the path,
+    // else the newest record (right for tip commits — the UI case; see module
+    // docs for the branching caveat).
+    let at_hex = at_commit.to_hex();
+    let start = by_commit
+        .get(at_hex.as_str())
+        .copied()
+        .unwrap_or(path_records[0]);
     if start.change == Change::Delete {
         return Ok(None);
     }
@@ -94,7 +94,7 @@ pub async fn blame(
             break;
         }
         cursor = match (&rec.prev_commit, &rec.prev_blob) {
-            (Some(pc), Some(_)) => find_record(segments, path, pc),
+            (Some(pc), Some(_)) => by_commit.get(pc.as_str()).copied(),
             _ => None,
         };
     }
@@ -163,19 +163,4 @@ pub async fn blame(
         })
         .collect();
     Ok(Some(out))
-}
-
-fn find_record<'a>(
-    segments: &'a [FileLogSegment],
-    path: &str,
-    commit_hex: &str,
-) -> Option<&'a crate::repo::FileLogRecord> {
-    for seg in segments {
-        for r in seg.records.iter().rev() {
-            if r.path == path && r.commit == commit_hex {
-                return Some(r);
-            }
-        }
-    }
-    None
 }
