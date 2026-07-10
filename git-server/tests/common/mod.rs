@@ -163,7 +163,10 @@ fn serve_one(store: &MemStore, states: &MemStateStore, mut request: tiny_http::R
     let git_protocol = header("Git-Protocol");
     let content_encoding = header("Content-Encoding");
 
-    let server = GitHttp { store, states };
+    let server = GitHttp {
+        store: std::rc::Rc::new(store.clone()),
+        states: std::rc::Rc::new(states.clone()),
+    };
     let git_req = GitRequest {
         method: &method,
         path: &path,
@@ -177,8 +180,12 @@ fn serve_one(store: &MemStore, states: &MemStateStore, mut request: tiny_http::R
     };
     let nonce = format!("t{}", NONCE.fetch_add(1, Ordering::Relaxed));
     let mut resp = futures::executor::block_on(server.handle(&git_req, &mut body, &nonce));
+    let body_bytes = futures::executor::block_on(
+        std::mem::replace(&mut resp.body, git_server::http::Body::Full(Vec::new())).into_bytes(),
+    )
+    .unwrap_or_else(|e| format!("stream error: {e}").into_bytes());
 
-    let mut response = tiny_http::Response::from_data(std::mem::take(&mut resp.body))
+    let mut response = tiny_http::Response::from_data(body_bytes)
         .with_status_code(resp.status)
         .with_header(
             tiny_http::Header::from_bytes(&b"Content-Type"[..], resp.content_type.as_bytes())

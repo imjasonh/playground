@@ -62,7 +62,8 @@ export GIT_AUTHOR_NAME="Bench" GIT_AUTHOR_EMAIL="bench@example.com"
 export GIT_COMMITTER_NAME="Bench" GIT_COMMITTER_EMAIL="bench@example.com"
 export GIT_CONFIG_NOSYSTEM=1 HOME="$TMP"
 
-now_ms() { date +%s%3N; }
+# Portable millisecond clock (BSD/macOS date has no %N).
+now_ms() { perl -MTime::HiRes=time -e 'printf("%d", time()*1000)'; }
 
 # --- Build the synthetic repo -------------------------------------------------
 SRC="$TMP/src"

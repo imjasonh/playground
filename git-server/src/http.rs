@@ -34,14 +34,56 @@ pub struct Request<'a> {
     pub content_encoding: Option<&'a str>,
 }
 
+/// A response body: fully materialized, or streamed in chunks.
+///
+/// Streaming is not an optimization here — it is a *correctness* requirement:
+/// the Workers isolate has a hard 128 MiB memory limit (exceeding it is
+/// Cloudflare error 1102; clients see a 503), so any body proportional to
+/// repo size must never be resident at once. `tests/memory.rs` enforces this
+/// in CI with a tracking allocator.
+pub enum Body {
+    Full(Vec<u8>),
+    /// Chunks are yielded in order; an `Err` aborts the response mid-stream
+    /// (git clients detect the truncated pkt-line/pack framing).
+    Stream(futures::stream::LocalBoxStream<'static, Result<Vec<u8>, String>>),
+}
+
+impl Body {
+    /// Length if fully materialized.
+    pub fn len_if_full(&self) -> Option<usize> {
+        match self {
+            Body::Full(b) => Some(b.len()),
+            Body::Stream(_) => None,
+        }
+    }
+
+    /// Drain to a single buffer (test/benchmark harnesses; native servers
+    /// that don't stream).
+    pub async fn into_bytes(self) -> Result<Vec<u8>, String> {
+        use futures::StreamExt;
+        match self {
+            Body::Full(b) => Ok(b),
+            Body::Stream(mut s) => {
+                let mut out = Vec::new();
+                while let Some(chunk) = s.next().await {
+                    out.extend_from_slice(&chunk?);
+                }
+                Ok(out)
+            }
+        }
+    }
+}
+
 /// Response to relay to the transport.
 pub struct Response {
     pub status: u16,
     pub content_type: String,
-    pub body: Vec<u8>,
+    pub body: Body,
     /// Request metrics and total handler milliseconds, populated by
     /// [`GitHttp::handle`]. Transports emit these as a `Server-Timing`
-    /// header and/or a structured log line.
+    /// header and/or a structured log line. For streamed bodies these cover
+    /// the handler phase only (backend ops that occur while the body
+    /// streams are not yet accounted; noted in docs/design.md).
     pub metrics: Option<(crate::metrics::Metrics, f64)>,
 }
 
@@ -50,7 +92,19 @@ impl Response {
         Response {
             status: 200,
             content_type: content_type.to_string(),
-            body,
+            body: Body::Full(body),
+            metrics: None,
+        }
+    }
+
+    fn streamed(
+        content_type: &str,
+        stream: futures::stream::LocalBoxStream<'static, Result<Vec<u8>, String>>,
+    ) -> Response {
+        Response {
+            status: 200,
+            content_type: content_type.to_string(),
+            body: Body::Stream(stream),
             metrics: None,
         }
     }
@@ -59,7 +113,7 @@ impl Response {
         Response {
             status,
             content_type: "application/json".to_string(),
-            body: value.to_string().into_bytes(),
+            body: Body::Full(value.to_string().into_bytes()),
             metrics: None,
         }
     }
@@ -77,10 +131,11 @@ impl Response {
     }
 }
 
-/// The server: byte store + state store.
-pub struct GitHttp<'a> {
-    pub store: &'a dyn Store,
-    pub states: &'a dyn StateStore,
+/// The server: byte store + state store. Held by `Rc` so streamed response
+/// bodies (which outlive the request handler) can own what they read from.
+pub struct GitHttp {
+    pub store: std::rc::Rc<dyn Store>,
+    pub states: std::rc::Rc<dyn StateStore>,
 }
 
 fn query_param<'q>(query: Option<&'q str>, key: &str) -> Option<&'q str> {
@@ -103,14 +158,11 @@ fn valid_repo_name(name: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
 }
 
-impl<'a> GitHttp<'a> {
-    fn repo<'r>(&self, name: &'r str) -> Repo<'r>
-    where
-        'a: 'r,
-    {
+impl GitHttp {
+    fn repo<'r>(&'r self, name: &'r str) -> Repo<'r> {
         Repo {
-            store: self.store,
-            states: self.states,
+            store: self.store.as_ref(),
+            states: self.states.as_ref(),
             name,
         }
     }
@@ -132,7 +184,9 @@ impl<'a> GitHttp<'a> {
         let mut resp = self.route(req, body, nonce).await;
         let total_ms = crate::metrics::now_ms() - start;
         if let Some(mut m) = crate::metrics::take() {
-            m.bytes_out += resp.body.len() as u64;
+            if let Some(n) = resp.body.len_if_full() {
+                m.bytes_out += n as u64;
+            }
             resp.metrics = Some((m, total_ms));
         }
         resp
@@ -224,9 +278,14 @@ impl<'a> GitHttp<'a> {
                 Err(e) => return Response::error(400, &e),
             };
         }
-        let repo = self.repo(repo_name);
-        match protocol::upload_pack(&repo, &buf).await {
-            Ok(out) => Response::ok("application/x-git-upload-pack-result", out),
+        match protocol::upload_pack(self.store.clone(), self.states.clone(), repo_name, &buf).await
+        {
+            Ok(body) => Response {
+                status: 200,
+                content_type: "application/x-git-upload-pack-result".to_string(),
+                body,
+                metrics: None,
+            },
             Err(e) => Response::error(500, &e),
         }
     }
@@ -281,7 +340,13 @@ impl<'a> GitHttp<'a> {
         match self.resolve(repo, refish).await {
             Ok((_state, odb, commit)) => {
                 match crate::fileapi::file_contents(&odb, commit, path).await {
-                    Ok(Some(data)) => Response::ok("application/octet-stream", data),
+                    // Large blobs are chunked out of one shared buffer rather
+                    // than copied whole into the response (and again into the
+                    // JS body) - a third of the peak memory for big files.
+                    Ok(Some(data)) => Response::streamed(
+                        "application/octet-stream",
+                        chunk_shared(std::rc::Rc::new(data)),
+                    ),
                     Ok(None) => Response::error(404, "no such file at that ref"),
                     Err(e) => Response::error(500, &e),
                 }
@@ -379,6 +444,21 @@ impl<'a> GitHttp<'a> {
 /// Allow both `/repo` and `/repo.git` remote URLs.
 fn strip_git(name: &str) -> &str {
     name.strip_suffix(".git").unwrap_or(name)
+}
+
+/// Stream a shared buffer as 1 MiB chunks (each chunk is a transient copy;
+/// the buffer itself stays resident exactly once).
+fn chunk_shared(
+    data: std::rc::Rc<Vec<u8>>,
+) -> futures::stream::LocalBoxStream<'static, Result<Vec<u8>, String>> {
+    use futures::StreamExt;
+    let len = data.len();
+    futures::stream::iter((0..len).step_by(1024 * 1024).collect::<Vec<_>>())
+        .map(move |start| {
+            let end = (start + 1024 * 1024).min(data.len());
+            Ok(data[start..end].to_vec())
+        })
+        .boxed_local()
 }
 
 fn is_gzip(encoding: &str) -> bool {

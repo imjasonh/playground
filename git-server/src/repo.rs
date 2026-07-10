@@ -1093,54 +1093,143 @@ async fn collect_new_tree_objects(
     Ok(())
 }
 
-/// Build the response pack for a fetch set, reusing compressed bytes wherever
-/// the representation allows. Returns raw pack bytes.
+/// How one planned object will be emitted into the response pack.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EmitMode {
+    /// Copy the stored compressed payload verbatim (full entry).
+    Copy,
+    /// Copy the stored compressed delta verbatim as `REF_DELTA` on this base.
+    RefDelta(Oid),
+    /// Base unavailable to the client: materialize and re-deflate.
+    Materialize,
+}
+
+/// A fully decided pack emission plan: which entries, from which packs, in
+/// which representation. Metadata only (~100 B/object) — payload bytes are
+/// read during emission, not planning.
+pub struct PackPlan {
+    pub entries: Vec<(String, EntryRecord, EmitMode)>,
+}
+
+/// Decide the emission plan for a fetch set, reusing compressed bytes
+/// wherever the representation allows.
 ///
 /// Objects are emitted in *source pack offset order*, not selection order:
 /// reads then walk each pack sequentially, so the odb's block cache turns
 /// per-object ranged reads into O(bytes / block size) backend requests.
 /// (Entry order within a pack is ours to choose — we only emit full and
 /// `REF_DELTA` entries, which `git index-pack` accepts in any order.)
-pub async fn build_pack(odb: &Odb<'_>, set: &FetchSet, thin_ok: bool) -> Result<Vec<u8>, String> {
+pub fn plan_pack(odb: &Odb<'_>, set: &FetchSet, thin_ok: bool) -> Result<PackPlan, String> {
     let included: HashSet<Oid> = set.include.iter().copied().collect();
-    let mut located: Vec<(String, EntryRecord)> = Vec::with_capacity(set.include.len());
+    let mut entries: Vec<(String, EntryRecord, EmitMode)> = Vec::with_capacity(set.include.len());
     for &oid in &set.include {
         let (pack_id, rec) = odb.locate(oid).ok_or_else(|| format!("{oid} vanished"))?;
-        located.push((pack_id.to_string(), rec.clone()));
-    }
-    located.sort_by(|a, b| (&a.0, a.1.data_start).cmp(&(&b.0, b.1.data_start)));
-
-    let mut w = crate::pack::write::PackWriter::new(set.include.len() as u32);
-    let mut out: Vec<u8> = Vec::new();
-    for (pack_id, rec) in located {
-        let oid = rec.oid;
-        match rec.base_oid {
-            None => {
-                let z = odb.read_compressed(&pack_id, &rec).await?;
-                w.add_full_precompressed(rec.stored_type, delta_payload_size(&rec), &z);
-            }
+        let mode = match rec.base_oid {
+            None => EmitMode::Copy,
             Some(base)
                 if included.contains(&base) || (thin_ok && set.client_has.contains(&base)) =>
             {
-                let z = odb.read_compressed(&pack_id, &rec).await?;
-                w.add_ref_delta_precompressed(base, rec.payload_size, &z);
+                EmitMode::RefDelta(base)
             }
-            Some(_) => {
-                // Base isn't available to the client: materialize fully.
-                let (ty, content) = odb.read(oid).await?.ok_or("object vanished")?;
-                w.add_full(ty, &content);
-            }
-        }
-        out.extend_from_slice(&w.take_chunk());
+            Some(_) => EmitMode::Materialize,
+        };
+        entries.push((pack_id.to_string(), rec.clone(), mode));
     }
-    let (tail, _sum) = w.finish();
-    out.extend_from_slice(&tail);
-    Ok(out)
+    entries.sort_by(|a, b| (&a.0, a.1.data_start).cmp(&(&b.0, b.1.data_start)));
+    Ok(PackPlan { entries })
 }
 
-/// For non-delta records the payload's inflated size is the object size.
-fn delta_payload_size(rec: &EntryRecord) -> u64 {
-    rec.size
+/// Incremental pack emission: yields the pack in bounded chunks so a
+/// response can stream a repo of any size without holding it in memory (the
+/// Workers isolate limit is a hard 128 MiB — see `tests/memory.rs`).
+///
+/// Copied payloads are appended in ≤1 MiB pieces via ranged reads (a single
+/// huge blob is never resident); only [`EmitMode::Materialize`] entries
+/// (deltas whose base the client lacks — rare) materialize a whole object.
+pub struct PackEmitter {
+    entries: Vec<(String, EntryRecord, EmitMode)>,
+    idx: usize,
+    /// Payload bytes of the current entry already appended.
+    payload_pos: u64,
+    header_written: bool,
+    writer: Option<crate::pack::write::PackWriter>,
+}
+
+/// Target response chunk size, and the piece size for copied payload reads.
+const EMIT_CHUNK: usize = 1024 * 1024;
+
+impl PackEmitter {
+    pub fn new(plan: PackPlan) -> PackEmitter {
+        let writer = crate::pack::write::PackWriter::new(plan.entries.len() as u32);
+        PackEmitter {
+            entries: plan.entries,
+            idx: 0,
+            payload_pos: 0,
+            header_written: false,
+            writer: Some(writer),
+        }
+    }
+
+    /// Produce the next ~[`EMIT_CHUNK`] of pack bytes, or `None` when done.
+    pub async fn next_chunk(&mut self, odb: &Odb<'_>) -> Result<Option<Vec<u8>>, String> {
+        let Some(w) = self.writer.as_mut() else {
+            return Ok(None);
+        };
+        while self.idx < self.entries.len() && w.buffered() < EMIT_CHUNK {
+            let (pack_id, rec, mode) = &self.entries[self.idx];
+            match mode {
+                EmitMode::Materialize => {
+                    let (ty, content) = odb.read(rec.oid).await?.ok_or("object vanished")?;
+                    w.add_full(ty, &content);
+                    self.idx += 1;
+                }
+                EmitMode::Copy | EmitMode::RefDelta(_) => {
+                    if !self.header_written {
+                        match mode {
+                            EmitMode::Copy => w.begin_full_precompressed(rec.stored_type, rec.size),
+                            EmitMode::RefDelta(base) => {
+                                w.begin_ref_delta_precompressed(*base, rec.payload_size)
+                            }
+                            EmitMode::Materialize => unreachable!(),
+                        }
+                        self.header_written = true;
+                        self.payload_pos = 0;
+                    }
+                    let total = rec.data_end - rec.data_start;
+                    let piece = (total - self.payload_pos).min(EMIT_CHUNK as u64);
+                    let bytes = odb
+                        .read_compressed_range(pack_id, rec, self.payload_pos, piece)
+                        .await?;
+                    w.append_payload(&bytes);
+                    self.payload_pos += piece;
+                    if self.payload_pos >= total {
+                        w.end_entry();
+                        self.header_written = false;
+                        self.idx += 1;
+                    }
+                }
+            }
+        }
+        if self.idx < self.entries.len() {
+            return Ok(Some(w.take_chunk()));
+        }
+        // All entries emitted: flush whatever is buffered plus the trailer.
+        let mut out = w.take_chunk();
+        let (tail, _sum) = self.writer.take().unwrap().finish();
+        out.extend_from_slice(&tail);
+        Ok(Some(out))
+    }
+}
+
+/// Build a whole response pack in memory (tests and benchmarks; production
+/// streams via [`PackEmitter`]).
+pub async fn build_pack(odb: &Odb<'_>, set: &FetchSet, thin_ok: bool) -> Result<Vec<u8>, String> {
+    let mut emitter = PackEmitter::new(plan_pack(odb, set, thin_ok)?);
+    let mut out = Vec::new();
+    while let Some(chunk) = emitter.next_chunk(odb).await? {
+        out.extend_from_slice(&chunk);
+    }
+    Ok(out)
 }
 
 #[cfg(test)]

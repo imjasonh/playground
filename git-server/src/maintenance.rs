@@ -71,23 +71,41 @@ pub async fn repack(repo: &Repo<'_>, nonce: &str) -> Result<RepackOutcome, Strin
     for (pack_id, rec) in &sources {
         let (pack_id, rec) = (pack_id.clone(), rec.clone());
         let oid = rec.oid;
-        let z = odb.read_compressed(&pack_id, &rec).await?;
         let header_start = w.emitted();
+        // Copy the payload in ≤1 MiB pieces so a huge object is never
+        // resident (Workers isolate memory limit).
         let stored_type = match rec.base_oid {
             None => {
-                w.add_full_precompressed(rec.stored_type, rec.size, &z);
+                w.begin_full_precompressed(rec.stored_type, rec.size);
                 rec.stored_type
             }
             Some(base) => {
-                w.add_ref_delta_precompressed(base, rec.payload_size, &z);
+                w.begin_ref_delta_precompressed(base, rec.payload_size);
                 TYPE_REF_DELTA
             }
         };
+        let data_start = w.emitted();
+        let total = rec.data_end - rec.data_start;
+        let mut pos = 0u64;
+        while pos < total {
+            let piece = (total - pos).min(1024 * 1024);
+            let bytes = odb
+                .read_compressed_range(&pack_id, &rec, pos, piece)
+                .await?;
+            w.append_payload(&bytes);
+            pos += piece;
+            // Keep the writer's buffer bounded: stream out as we go.
+            if w.buffered() >= 4 * 1024 * 1024 {
+                let chunk = w.take_chunk();
+                uploader.write(&chunk).await.map_err(|e| e.to_string())?;
+            }
+        }
+        w.end_entry();
         let data_end = w.emitted();
         records.push(EntryRecord {
             oid,
             header_start,
-            data_start: data_end - z.len() as u64,
+            data_start,
             data_end,
             stored_type,
             final_type: rec.final_type,
@@ -95,7 +113,6 @@ pub async fn repack(repo: &Repo<'_>, nonce: &str) -> Result<RepackOutcome, Strin
             payload_size: rec.payload_size,
             base_oid: rec.base_oid,
         });
-        // Keep the writer's buffer bounded: stream out per entry.
         let chunk = w.take_chunk();
         uploader.write(&chunk).await.map_err(|e| e.to_string())?;
     }

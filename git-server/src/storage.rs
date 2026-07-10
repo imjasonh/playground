@@ -87,8 +87,11 @@ pub trait Store {
 /// bulk operations by pack offset).
 pub const BLOCK_SIZE: u64 = 4 * 1024 * 1024;
 
-/// Cached blocks per reader (LRU). 8 × 4 MiB = 32 MiB ceiling per instance.
-const BLOCK_CACHE_SLOTS: usize = 8;
+/// Cached blocks per reader (LRU). 4 × 4 MiB = 16 MiB ceiling per instance.
+/// Bulk access patterns are offset-sorted (fetch emission, repack, delta
+/// resolution), so a small window suffices; note the ceiling is per *pack*
+/// in a multi-pack odb, which is why it stays small.
+const BLOCK_CACHE_SLOTS: usize = 4;
 
 /// A block-aligned, LRU-cached ranged reader over one stored object.
 ///

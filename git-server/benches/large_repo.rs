@@ -72,8 +72,8 @@ fn start_server(store: MemStore, states: MemStateStore) -> (u16, std::thread::Jo
             let git_protocol = header("Git-Protocol");
             let content_encoding = header("Content-Encoding");
             let git = GitHttp {
-                store: &store,
-                states: &states,
+                store: std::rc::Rc::new(store.clone()),
+                states: std::rc::Rc::new(states.clone()),
             };
             let req = GitRequest {
                 method: &method,
@@ -88,14 +88,15 @@ fn start_server(store: MemStore, states: MemStateStore) -> (u16, std::thread::Jo
             };
             let resp =
                 futures::executor::block_on(git.handle(&req, &mut body, &format!("b{nonce}")));
-            let response = tiny_http::Response::from_data(resp.body)
-                .with_status_code(resp.status)
+            let status = resp.status;
+            let content_type = resp.content_type.clone();
+            let body_bytes = futures::executor::block_on(resp.body.into_bytes())
+                .unwrap_or_else(|e| format!("stream error: {e}").into_bytes());
+            let response = tiny_http::Response::from_data(body_bytes)
+                .with_status_code(status)
                 .with_header(
-                    tiny_http::Header::from_bytes(
-                        &b"Content-Type"[..],
-                        resp.content_type.as_bytes(),
-                    )
-                    .unwrap(),
+                    tiny_http::Header::from_bytes(&b"Content-Type"[..], content_type.as_bytes())
+                        .unwrap(),
                 );
             let _ = request.respond(response);
         }
@@ -294,8 +295,8 @@ fn main() {
     // Read APIs straight through the router (no HTTP client noise).
     let api = |path: String| {
         let git = GitHttp {
-            store: &store,
-            states: &states,
+            store: std::rc::Rc::new(store.clone()),
+            states: std::rc::Rc::new(states.clone()),
         };
         let req = GitRequest {
             method: "GET",
@@ -309,13 +310,10 @@ fn main() {
             done: false,
         };
         let resp = futures::executor::block_on(git.handle(&req, &mut body, "api"));
-        assert_eq!(
-            resp.status,
-            200,
-            "{path}: {}",
-            String::from_utf8_lossy(&resp.body)
-        );
-        resp.body.len()
+        let status = resp.status;
+        let body = futures::executor::block_on(resp.body.into_bytes()).unwrap();
+        assert_eq!(status, 200, "{path}: {}", String::from_utf8_lossy(&body));
+        body.len()
     };
     run_phase("file API (1 file)", 0, &mut || {
         api("/api/bench/file/main/dir00/file0.txt".to_string());
@@ -329,8 +327,8 @@ fn main() {
 
     run_phase("repack", 0, &mut || {
         let git = GitHttp {
-            store: &store,
-            states: &states,
+            store: std::rc::Rc::new(store.clone()),
+            states: std::rc::Rc::new(states.clone()),
         };
         let req = GitRequest {
             method: "POST",
@@ -345,7 +343,8 @@ fn main() {
         };
         let resp = futures::executor::block_on(git.handle(&req, &mut body, "repack"));
         assert_eq!(resp.status, 200);
-        assert!(String::from_utf8_lossy(&resp.body).contains("Repacked"));
+        let body = futures::executor::block_on(resp.body.into_bytes()).unwrap();
+        assert!(String::from_utf8_lossy(&body).contains("Repacked"));
     });
 
     let repacked_bytes = stored_pack_bytes(&store);

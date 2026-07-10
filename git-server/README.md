@@ -45,7 +45,7 @@ runtime is glue over the same code that the native tests exercise.
 ## Test
 
 ```bash
-cargo test          # unit tests + integration tests driving a real `git` client
+cargo test          # unit + integration (real `git` client) + isolate-memory tests
 cargo bench         # hot-path benchmarks (pack scan/resolve/write, diff)
 cargo clippy --all-targets
 
@@ -80,6 +80,12 @@ GIT_SERVER_URL=https://git.example.workers.dev ./scripts/bench-remote.sh
 The integration tests start a localhost HTTP server backed by in-memory
 storage and run actual `git clone` / `push` / `pull` / `fsck` / `blame`
 against it, verifying our blame output line-by-line against `git blame`.
+
+`tests/memory.rs` enforces the **Workers isolate memory limit** in CI: a
+tracking allocator measures peak heap while a 48 MiB repo is pushed and
+cloned, and fails the build if a request's transient footprint could not
+fit the 128 MiB isolate (the failure mode is production 503s via
+Cloudflare error 1102, so this is the regression test for it).
 
 ## End-to-end against workerd (miniflare) or a deployment
 

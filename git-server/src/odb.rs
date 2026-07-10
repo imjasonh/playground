@@ -48,9 +48,10 @@ pub struct Odb<'a> {
     tree_cache: RefCell<HashMap<Oid, Rc<Vec<TreeEntry>>>>,
 }
 
-/// Cache budget: enough for tree walks over big repos without threatening the
-/// 128 MiB isolate limit.
-const CONTENT_CACHE_BUDGET: usize = 48 * 1024 * 1024;
+/// Cache budget: enough for tree walks over big repos while leaving the
+/// 128 MiB isolate plenty of headroom (wasm memory never shrinks, so cache
+/// budgets are effectively permanent isolate growth).
+const CONTENT_CACHE_BUDGET: usize = 24 * 1024 * 1024;
 
 impl<'a> Odb<'a> {
     /// Load the indexes for `pack_ids` (one Class B read per pack).
@@ -117,14 +118,30 @@ impl<'a> Odb<'a> {
         pack_id: &str,
         rec: &EntryRecord,
     ) -> Result<Vec<u8>, String> {
+        self.read_compressed_range(pack_id, rec, 0, rec.data_end - rec.data_start)
+            .await
+    }
+
+    /// Read `len` bytes of an entry's compressed payload starting at
+    /// `offset` (streamed pack emission copies huge payloads in pieces so
+    /// they are never fully resident).
+    pub async fn read_compressed_range(
+        &self,
+        pack_id: &str,
+        rec: &EntryRecord,
+        offset: u64,
+        len: u64,
+    ) -> Result<Vec<u8>, String> {
         let handle = self
             .packs
             .iter()
             .find(|p| p.pack_id == pack_id)
             .ok_or_else(|| format!("pack {pack_id} not open"))?;
+        let start = rec.data_start + offset;
+        let end = (start + len).min(rec.data_end);
         handle
             .reader
-            .read(self.store, rec.data_start, rec.data_end)
+            .read(self.store, start, end)
             .await
             .map_err(|e| e.to_string())
     }
