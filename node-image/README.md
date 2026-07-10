@@ -60,6 +60,10 @@ docker run --rm "$(./node-image build ./testdata/pure-js \
 4. **Multi-arch:** builds `linux/amd64` and `linux/arm64` by default and
    publishes an OCI image index.
 
+Warm rebuilds reuse content-addressed caches (packages/spool/layers) and an
+image-level fingerprint under `builds/` (or `--cache-dir`). Identical
+lock+closure+app+config skips PlanLayout and layer DiffID entirely.
+
 ## Config (`package.json` → `"node-image"`)
 
 Flags override the package.json block. Point `node-image build` at the package
