@@ -6,8 +6,10 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/imjasonh/playground/node-image/internal/layer"
 	"github.com/imjasonh/playground/node-image/internal/lock"
@@ -33,6 +35,9 @@ type PlanOptions struct {
 	// IntegrityKey maps PackageID → filesystem key (e.g. sha512-<hex> from fetch.Cache).
 	// Required for every non-local PackageID in refs.
 	IntegrityKey map[string]string
+	// LocalContentSHA512 maps PackageID → precomputed hashTree hex for local
+	// packages so SpoolLocalPackage skips a second walk.
+	LocalContentSHA512 map[string]string
 	// LockRoot is the directory containing pnpm-lock.yaml (for patch paths).
 	LockRoot string
 	// AllowScripts is a named allowlist of packages permitted to need native builds
@@ -41,9 +46,8 @@ type PlanOptions struct {
 }
 
 // PlanLayout builds store + symlink layer file lists from the lock and cached
-// tarballs (or workspace directories). Tarball contents are extracted once into
-// the integrity spool (if missing) and then referenced by DiskPath for
-// streaming into OCI layers.
+// tarballs (or workspace directories). Per-package spool/walk work runs in
+// parallel; the top-level link layer is assembled serially afterward.
 func PlanLayout(l *lock.Lock, refs []resolve.PackageRef, tarballs map[string]string, direct []resolve.DirectDep, opt PlanOptions) (*PlannedLayout, error) {
 	if opt.SpoolRoot == "" {
 		return nil, fmt.Errorf("PlanLayout: SpoolRoot required")
@@ -62,47 +66,83 @@ func PlanLayout(l *lock.Lock, refs []resolve.PackageRef, tarballs map[string]str
 	}
 	allow := allowSet(opt.AllowScripts)
 
-	for _, ref := range refs {
-		pkgDir, err := spoolRef(opt, ref, tarballs)
-		if err != nil {
-			return nil, err
-		}
-		if ref.PatchPath != "" {
-			pkgDir, err = ensurePatchedSpool(opt, ref, pkgDir)
+	type plannedPkg struct {
+		ref  resolve.PackageRef
+		pj   packageJSON
+		store layer.PackageStore
+		err  error
+	}
+	results := make([]plannedPkg, len(refs))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, runtime.GOMAXPROCS(0)*2)
+	if cap(sem) < 4 {
+		sem = make(chan struct{}, 4)
+	}
+	for i, ref := range refs {
+		wg.Add(1)
+		go func(i int, ref resolve.PackageRef) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			pkgDir, err := spoolRef(opt, ref, tarballs)
 			if err != nil {
-				return nil, err
+				results[i] = plannedPkg{ref: ref, err: err}
+				return
 			}
-		}
-		pj, err := readPackageJSON(pkgDir)
-		if err != nil {
-			return nil, fmt.Errorf("%s package.json: %w", ref.PackageID, err)
-		}
-		if err := CheckScriptsInDirAllow(ref, pkgDir, pj, allow); err != nil {
-			return nil, err
-		}
-		out.PackageJSON[ref.DepPath] = pj
+			if ref.PatchPath != "" {
+				pkgDir, err = ensurePatchedSpool(opt, ref, pkgDir)
+				if err != nil {
+					results[i] = plannedPkg{ref: ref, err: err}
+					return
+				}
+			}
+			pj, err := readPackageJSON(pkgDir)
+			if err != nil {
+				results[i] = plannedPkg{ref: ref, err: fmt.Errorf("%s package.json: %w", ref.PackageID, err)}
+				return
+			}
+			if err := CheckScriptsInDirAllow(ref, pkgDir, pj, allow); err != nil {
+				results[i] = plannedPkg{ref: ref, err: err}
+				return
+			}
+			files, err := StoreFilesFromSpool(pkgDir, ref.DepPath, ref.Name)
+			if err != nil {
+				results[i] = plannedPkg{ref: ref, err: err}
+				return
+			}
+			files = FilterSpoolMeta(files)
+			depLinks, err := storeDepSymlinks(ref, l, byDepPath)
+			if err != nil {
+				results[i] = plannedPkg{ref: ref, err: err}
+				return
+			}
+			binLinks, err := storeBinSymlinks(ref, pj)
+			if err != nil {
+				results[i] = plannedPkg{ref: ref, err: err}
+				return
+			}
+			files = append(files, depLinks...)
+			files = append(files, binLinks...)
+			sortLayerFiles(files)
+			results[i] = plannedPkg{
+				ref: ref,
+				pj:  pj,
+				store: layer.PackageStore{
+					Name:    ref.Name,
+					DepPath: VirtualStoreDir(ref.DepPath),
+					Files:   files,
+				},
+			}
+		}(i, ref)
+	}
+	wg.Wait()
 
-		files, err := StoreFilesFromSpool(pkgDir, ref.DepPath, ref.Name)
-		if err != nil {
-			return nil, err
+	for _, r := range results {
+		if r.err != nil {
+			return nil, r.err
 		}
-		files = FilterSpoolMeta(files)
-		depLinks, err := storeDepSymlinks(ref, l, byDepPath)
-		if err != nil {
-			return nil, err
-		}
-		binLinks, err := storeBinSymlinks(ref, pj)
-		if err != nil {
-			return nil, err
-		}
-		files = append(files, depLinks...)
-		files = append(files, binLinks...)
-		sortLayerFiles(files)
-		out.Store = append(out.Store, layer.PackageStore{
-			Name:    ref.Name,
-			DepPath: VirtualStoreDir(ref.DepPath),
-			Files:   files,
-		})
+		out.PackageJSON[r.ref.DepPath] = r.pj
+		out.Store = append(out.Store, r.store)
 	}
 	sort.Slice(out.Store, func(i, j int) bool { return out.Store[i].DepPath < out.Store[j].DepPath })
 
@@ -120,14 +160,18 @@ func spoolRef(opt PlanOptions, ref resolve.PackageRef, tarballs map[string]strin
 			return "", fmt.Errorf("local package %s missing LocalPath", ref.PackageID)
 		}
 		key := opt.IntegrityKey[ref.PackageID]
+		sum := ""
+		if opt.LocalContentSHA512 != nil {
+			sum = opt.LocalContentSHA512[ref.PackageID]
+		}
 		if key == "" {
 			var err error
-			key, err = LocalContentKey(ref.LocalPath)
+			key, sum, err = LocalContentKeyAndHash(ref.LocalPath)
 			if err != nil {
 				return "", err
 			}
 		}
-		pkgDir, err := SpoolLocalPackage(opt.SpoolRoot, key, ref.LocalPath)
+		pkgDir, err := SpoolLocalPackageHash(opt.SpoolRoot, key, ref.LocalPath, sum)
 		if err != nil {
 			return "", fmt.Errorf("spool local %s: %w", ref.PackageID, err)
 		}

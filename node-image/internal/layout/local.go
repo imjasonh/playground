@@ -17,7 +17,17 @@ import (
 // SpoolLocalPackage copies a workspace/directory package into the spool under
 // key (typically "local-<contenthash>"). Excludes node_modules, VCS, and
 // common junk. Returns the absolute package directory in the spool.
+//
+// contentSHA512, when non-empty, is the precomputed hashTree result (from
+// LocalContentKeyAndHash). Passing it avoids a second full tree walk on the
+// warm path — the biggest local-package win.
 func SpoolLocalPackage(spoolRoot, key, srcDir string) (pkgDir string, err error) {
+	return SpoolLocalPackageHash(spoolRoot, key, srcDir, "")
+}
+
+// SpoolLocalPackageHash is SpoolLocalPackage with an optional precomputed
+// content SHA-512 hex digest.
+func SpoolLocalPackageHash(spoolRoot, key, srcDir, contentSHA512 string) (pkgDir string, err error) {
 	if key == "" {
 		return "", fmt.Errorf("empty spool key for local package")
 	}
@@ -30,9 +40,12 @@ func SpoolLocalPackage(spoolRoot, key, srcDir string) (pkgDir string, err error)
 	if err != nil {
 		return "", err
 	}
-	sum, err := hashTree(srcAbs)
-	if err != nil {
-		return "", err
+	sum := contentSHA512
+	if sum == "" {
+		sum, err = hashTree(srcAbs)
+		if err != nil {
+			return "", err
+		}
 	}
 	if st, err := os.Stat(pkgDir); err == nil && st.IsDir() {
 		if b, err := os.ReadFile(metaPath); err == nil {
@@ -78,11 +91,17 @@ func SpoolLocalPackage(spoolRoot, key, srcDir string) (pkgDir string, err error)
 
 // LocalContentKey returns a stable spool key for a local package directory.
 func LocalContentKey(srcDir string) (string, error) {
+	key, _, err := LocalContentKeyAndHash(srcDir)
+	return key, err
+}
+
+// LocalContentKeyAndHash returns the spool key and full sha512 hex in one walk.
+func LocalContentKeyAndHash(srcDir string) (key, sha512hex string, err error) {
 	sum, err := hashTree(srcDir)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	return "local-" + sum[:32], nil
+	return "local-" + sum[:32], sum, nil
 }
 
 func hashTree(root string) (string, error) {

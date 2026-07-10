@@ -5,6 +5,7 @@ import (
 	"crypto/sha512"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -56,11 +57,25 @@ func (c *Cache) Ensure(tarballURL, integrity string) (string, error) {
 		return "", err
 	}
 	path := filepath.Join(c.Dir, key+".tgz")
+	metaPath := filepath.Join(c.Dir, key+".ok")
 	if st, err := os.Stat(path); err == nil && st.Size() > 0 {
+		// Warm hit: trust size+mtime sidecar written after a prior verified download.
+		// Integrity is already encoded in the filename key.
+		if b, err := os.ReadFile(metaPath); err == nil {
+			var meta struct {
+				Size    int64 `json:"size"`
+				ModNano int64 `json:"modNano"`
+			}
+			if json.Unmarshal(b, &meta) == nil && meta.Size == st.Size() && meta.ModNano == st.ModTime().UnixNano() {
+				return path, nil
+			}
+		}
 		if err := verifyFile(path, integrity); err == nil {
+			_ = writeFetchMeta(metaPath, st)
 			return path, nil
 		}
 		_ = os.Remove(path)
+		_ = os.Remove(metaPath)
 	}
 	req, err := http.NewRequest(http.MethodGet, tarballURL, nil)
 	if err != nil {
@@ -107,12 +122,27 @@ func (c *Cache) Ensure(tarballURL, integrity string) (string, error) {
 		_ = os.Remove(tmp)
 		if st, statErr := os.Stat(path); statErr == nil && st.Size() > 0 {
 			if verifyFile(path, integrity) == nil {
+				_ = writeFetchMeta(filepath.Join(c.Dir, key+".ok"), st)
 				return path, nil
 			}
 		}
 		return "", err
 	}
+	if st, err := os.Stat(path); err == nil {
+		_ = writeFetchMeta(filepath.Join(c.Dir, key+".ok"), st)
+	}
 	return path, nil
+}
+
+func writeFetchMeta(path string, st os.FileInfo) error {
+	b, err := json.Marshal(struct {
+		Size    int64 `json:"size"`
+		ModNano int64 `json:"modNano"`
+	}{Size: st.Size(), ModNano: st.ModTime().UnixNano()})
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(b, '\n'), 0o600)
 }
 
 func integrityKey(integrity string) (string, error) {

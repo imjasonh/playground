@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"time"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/imjasonh/playground/node-image/internal/app"
@@ -217,7 +218,17 @@ func Run(opt Options) (string, error) {
 	}
 	blobCache := &layer.BlobCache{Dir: blobCacheDir}
 
-	var built []publish.PlatformImage
+	// Phase 1: resolve + fetch for every platform (needed for fingerprint + build).
+	type platWork struct {
+		platform      v1.Platform
+		refs          []resolve.PackageRef
+		direct        []resolve.DirectDep
+		tarballs      map[string]string
+		integrityKeys map[string]string
+		localSHA      map[string]string
+	}
+	works := make([]platWork, 0, len(platforms))
+	allClosureKeys := map[string]string{} // packageID → key (union across platforms)
 	for _, pstr := range platforms {
 		plat, err := publish.ParsePlatform(pstr)
 		if err != nil {
@@ -235,13 +246,16 @@ func Run(opt Options) (string, error) {
 		direct := resolve.DirectDeps(l, importer)
 		tarballs := map[string]string{}
 		integrityKeys := map[string]string{}
+		localSHA := map[string]string{}
 		for _, ref := range refs {
 			if ref.IsLocal {
-				key, err := layout.LocalContentKey(ref.LocalPath)
+				key, sum, err := layout.LocalContentKeyAndHash(ref.LocalPath)
 				if err != nil {
 					return "", fmt.Errorf("hash local %s: %w", ref.PackageID, err)
 				}
 				integrityKeys[ref.PackageID] = key
+				localSHA[ref.PackageID] = sum
+				allClosureKeys[ref.PackageID] = key
 				continue
 			}
 			path, err := cache.Ensure(ref.Tarball, ref.Integrity)
@@ -254,30 +268,77 @@ func Run(opt Options) (string, error) {
 				return "", err
 			}
 			integrityKeys[ref.PackageID] = key
+			allClosureKeys[ref.PackageID] = key
 		}
+		works = append(works, platWork{
+			platform:      plat,
+			refs:          refs,
+			direct:        direct,
+			tarballs:      tarballs,
+			integrityKeys: integrityKeys,
+			localSHA:      localSHA,
+		})
+	}
 
-		planned, err := layout.PlanLayout(l, refs, tarballs, direct, layout.PlanOptions{
-			SpoolRoot:    spoolRoot,
-			IntegrityKey: integrityKeys,
-			LockRoot:     lockRoot,
-			AllowScripts: cfg.AllowScripts,
+	outputs, err := app.CollectOutputsOpts(cfg.Dir, app.CollectOptions{
+		Include: cfg.Include,
+		Exclude: cfg.Exclude,
+	})
+	if err != nil {
+		return "", err
+	}
+	if err := app.RequireMain(cfg.Dir, cfg.Main, outputs); err != nil {
+		return "", err
+	}
+	appFiles := appLayerFiles(outputs)
+
+	var buildFP string
+	if !cfg.Local {
+		appLines, err := appOutputLines(outputs)
+		if err != nil {
+			return "", err
+		}
+		lockDig, err := lockFileDigest(lockPath)
+		if err != nil {
+			return "", err
+		}
+		closureLines := make([]string, 0, len(allClosureKeys))
+		for id, key := range allClosureKeys {
+			closureLines = append(closureLines, id+"="+key)
+		}
+		sort.Strings(closureLines)
+		buildFP = fingerprintFromConfig(cfg, lockDig, importer, platforms, opt.EmptyBase || cfg.Base == "scratch",
+			closureLines, appLines)
+		if rec, ok := lookupBuildRecord(cacheRootFor(cfg), buildFP); ok && rec.Ref != "" && sameStringSet(rec.Platforms, platforms) {
+			fmt.Fprintf(stderr, "cache hit: identical build fingerprint %s… → %s\n", buildFP[:12], rec.Ref)
+			if cfg.NoPush {
+				outDir := cfg.OCIDir
+				if outDir == "" {
+					outDir = filepath.Join(cfg.Dir, ".node-image-out")
+				}
+				if err := writeCachedDigestSummary(outDir, rec); err != nil {
+					return "", err
+				}
+				fmt.Fprintf(stderr, "wrote %s (%s) [cache]\n", outDir, rec.Ref)
+			}
+			fmt.Fprintln(stdout, rec.Ref)
+			return rec.Ref, nil
+		}
+	}
+
+	// Phase 2: plan + assemble layers per platform.
+	var built []publish.PlatformImage
+	for _, w := range works {
+		planned, err := layout.PlanLayout(l, w.refs, w.tarballs, w.direct, layout.PlanOptions{
+			SpoolRoot:          spoolRoot,
+			IntegrityKey:       w.integrityKeys,
+			LocalContentSHA512: w.localSHA,
+			LockRoot:           lockRoot,
+			AllowScripts:       cfg.AllowScripts,
 		})
 		if err != nil {
 			return "", err
 		}
-
-		outputs, err := app.CollectOutputsOpts(cfg.Dir, app.CollectOptions{
-			Include: cfg.Include,
-			Exclude: cfg.Exclude,
-		})
-		if err != nil {
-			return "", err
-		}
-		if err := app.RequireMain(cfg.Dir, cfg.Main, outputs); err != nil {
-			return "", err
-		}
-		appFiles := appLayerFiles(outputs)
-
 		layers, err := assemblePlannedLayers(planned, appFiles, cfg, baseInfo, stderr)
 		if err != nil {
 			return "", err
@@ -289,7 +350,7 @@ func Run(opt Options) (string, error) {
 			Entrypoint: cfg.Entrypoint,
 			Cmd:        cfg.Cmd(),
 			Env:        cfg.EnvList(),
-			Platform:   plat,
+			Platform:   w.platform,
 			BlobCache:  blobCache,
 		}
 
@@ -302,7 +363,7 @@ func Run(opt Options) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		built = append(built, publish.PlatformImage{Platform: plat, Image: image})
+		built = append(built, publish.PlatformImage{Platform: w.platform, Image: image})
 	}
 
 	var lastRef string
@@ -359,6 +420,29 @@ func Run(opt Options) (string, error) {
 			}
 			lastRef = ref
 		}
+	}
+
+	if buildFP != "" && !cfg.Local {
+		rec := buildRecord{
+			Fingerprint: buildFP,
+			Ref:         lastRef,
+			Platforms:   append([]string(nil), platforms...),
+			CreatedAt:   time.Now().UTC(),
+		}
+		if cfg.NoPush {
+			outDir := cfg.OCIDir
+			if outDir == "" {
+				outDir = filepath.Join(cfg.Dir, ".node-image-out")
+			}
+			// Capture summary files so a later cache hit can restore them.
+			if b, err := os.ReadFile(filepath.Join(outDir, "layers")); err == nil {
+				rec.LayersSummary = string(b)
+			}
+			if b, err := os.ReadFile(filepath.Join(outDir, "platforms")); err == nil {
+				rec.PlatformsSummary = string(b)
+			}
+		}
+		_ = storeBuildRecord(cacheRootFor(cfg), rec)
 	}
 
 	fmt.Fprintln(stdout, lastRef)

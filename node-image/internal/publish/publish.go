@@ -67,13 +67,26 @@ func EmptyImage(opts Options, layers []LayerFiles) (v1.Image, error) {
 }
 
 func appendAndConfigure(base v1.Image, opts Options, layers []LayerFiles) (v1.Image, error) {
-	var add []mutate.Addendum
-	for _, lf := range layers {
-		l, err := layerFromFiles(lf.Files, opts.BlobCache)
-		if err != nil {
-			return nil, err
+	add := make([]mutate.Addendum, len(layers))
+	type result struct {
+		i int
+		l v1.Layer
+		e error
+	}
+	ch := make(chan result, len(layers))
+	for i, lf := range layers {
+		i, lf := i, lf
+		go func() {
+			l, err := layerFromFiles(lf.Files, opts.BlobCache)
+			ch <- result{i: i, l: l, e: err}
+		}()
+	}
+	for range layers {
+		r := <-ch
+		if r.e != nil {
+			return nil, r.e
 		}
-		add = append(add, mutate.Addendum{Layer: l, MediaType: types.OCILayer})
+		add[r.i] = mutate.Addendum{Layer: r.l, MediaType: types.OCILayer}
 	}
 	img, err := mutate.Append(base, add...)
 	if err != nil {
@@ -140,21 +153,23 @@ func mergeEnv(base, overrides []string) []string {
 }
 
 // layerFromFiles returns a layer that streams deterministic tar+gzip.
-// When cache is non-nil, the compressed blob is teed to the local layer cache
-// on first open and subsequent Digest()/upload calls reopen that file.
+// When cache is non-nil, warm hits return a CachedBlob-backed layer that
+// exposes known DiffID/Digest without gunzip/rehash (the big warm-path win).
 func layerFromFiles(files []layer.File, cache *layer.BlobCache) (v1.Layer, error) {
 	files = append([]layer.File(nil), files...)
-	var opener tarball.Opener
 	if cache != nil {
-		opener = cache.CachedOpener(files)
-	} else {
-		opener = func() (io.ReadCloser, error) {
-			pr, pw := io.Pipe()
-			go func() {
-				pw.CloseWithError(layer.WriteCompressed(pw, files))
-			}()
-			return pr, nil
+		blob, err := cache.Ensure(files)
+		if err != nil {
+			return nil, err
 		}
+		return layer.LayerFromCachedBlob(blob)
+	}
+	opener := func() (io.ReadCloser, error) {
+		pr, pw := io.Pipe()
+		go func() {
+			pw.CloseWithError(layer.WriteCompressed(pw, files))
+		}()
+		return pr, nil
 	}
 	return tarball.LayerFromOpener(opener, tarball.WithMediaType(types.OCILayer))
 }
