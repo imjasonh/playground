@@ -23,4 +23,8 @@ final class ExperimentCatalogTests: XCTestCase {
     func testIncludesRideMonitor() {
         XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "ride-monitor" })
     }
+
+    func testIncludesT9Keyboard() {
+        XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "t9-keyboard" })
+    }
 }

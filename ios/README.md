@@ -2,10 +2,10 @@
 
 The **single** iOS app for this repo. Like the GitHub Pages site hosts many
 browser apps, this one **TestFlight app ("Playground")** hosts many
-**experiments** internally. There is exactly one iOS app, one bundle identifier
-(`io.github.imjasonh.playground`), and one App Store Connect record; you add
-functionality by adding *experiments inside this app*, never by creating another
-iOS app.
+**experiments** internally. There is exactly one iOS app, one App Store Connect
+record (`io.github.imjasonh.playground`), and optionally embedded app
+extensions (today: a Custom Keyboard). You add functionality by adding
+*experiments inside this app*, never by creating another top-level iOS app.
 
 On every push to `main`, CI builds this app, runs its tests, and (once the Apple
 signing secrets are set) uploads a new build to **TestFlight**.
@@ -17,18 +17,45 @@ ios/
 ├── project.yml                    # XcodeGen spec (source of truth + discovery marker)
 ├── Gemfile                        # pins fastlane
 ├── fastlane/                      # Fastfile (test / beta / signing_bootstrap), Appfile, Matchfile
+├── Shared/T9/                     # multi-tap engine + pad UI (app + keyboard extension)
+├── T9Keyboard/                    # Custom Keyboard extension (+ README / screenshots)
 ├── Sources/
 │   ├── PlaygroundApp.swift        # @main app shell
 │   ├── RootView.swift             # the launcher: lists every experiment
 │   ├── Experiment.swift           # Experiment model + ExperimentCatalog registry
 │   └── Experiments/               # one folder per experiment
-│       └── RideMonitor/
-│           ├── RideMonitorExperiment.swift  # self-declares metadata + destination
-│           └── …                            # views, models, logic
+│       ├── RideMonitor/
+│       └── T9Keyboard/            # in-app demo + enable instructions
 └── Tests/
     ├── PlaygroundTests/           # XCTest unit tests (logic + catalog)
     └── PlaygroundUITests/         # XCUITest launcher/experiment flows
 ```
+
+## Experiments
+
+| Id | Title | Notes |
+|----|-------|-------|
+| `ride-monitor` | Ride Monitor | Background motion + GPS ride recorder |
+| `t9-keyboard` | T9 Keyboard | In-app multi-tap pad + system Custom Keyboard extension |
+
+### T9 Keyboard
+
+Old Nokia-style **multi-tap**: tap `2` once for `a`, twice for `b`, thrice for `c`,
+four times for `2`. Wait ~1s (or tap another key) to commit. `*` cycles
+`abc` → `Abc` → `ABC` → `123`; `#` inserts a space; long-press a key for its
+digit. The same engine powers:
+
+1. The **in-app demo** under the T9 Keyboard experiment (works in Simulator).
+2. The **system keyboard** `T9 Multi-tap` (`io.github.imjasonh.playground.t9keyboard`).
+
+Enable the system keyboard on a device: **Settings → General → Keyboard →
+Keyboards → Add New Keyboard… → T9 Multi-tap**, then switch to it with the
+globe key. (Third-party keyboards cannot be fully exercised in UI tests.)
+
+The keyboard extension needs its **own App ID + App Store provisioning
+profile**. Re-run the iOS signing bootstrap workflow (or `fastlane signing_bootstrap`)
+after pulling this so match creates
+`match AppStore io.github.imjasonh.playground.t9keyboard`.
 
 ## Adding an experiment
 
@@ -40,9 +67,13 @@ ios/
 3. Append that static to `ExperimentCatalog.all` in `Sources/Experiment.swift`.
 4. Add tests under `Tests/PlaygroundTests/` (and a UI flow if useful).
 
-That's it — no project or CI changes, and no new TestFlight app. The launcher
-picks it up automatically and the next push to `main` ships it in the same
-Playground build.
+That's it for in-app-only experiments — no project or CI changes, and no new
+TestFlight app. The launcher picks it up automatically and the next push to
+`main` ships it in the same Playground build.
+
+If you add another **app extension** (keyboard, widget, …), also update
+`project.yml`, register the extension App ID, and teach `fastlane` match / beta
+about the extra bundle identifier (see the T9 keyboard as a template).
 
 ## Local development (macOS + Xcode)
 

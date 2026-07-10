@@ -7,6 +7,9 @@ name: Playground
 # via a *Experiment.swift, and append that entry to ExperimentCatalog; do NOT
 # create additional top-level iOS app directories.
 #
+# The T9Keyboard target is a Custom Keyboard app extension embedded in
+# Playground (same TestFlight app). Shared multi-tap logic lives in Shared/T9/.
+#
 # `xcodegen generate` produces Playground.xcodeproj, which is git-ignored.
 
 options:
@@ -30,7 +33,11 @@ targets:
     type: application
     platform: iOS
     sources:
-      - Sources
+      - path: Sources
+      - path: Shared/T9
+    dependencies:
+      - target: T9Keyboard
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.imjasonh.playground
@@ -82,6 +89,39 @@ targets:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
 
+  T9Keyboard:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: T9Keyboard
+        excludes:
+          - README.md
+          - "*.png"
+      - path: Shared/T9
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.imjasonh.playground.t9keyboard
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SKIP_INSTALL: YES
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"
+    info:
+      path: T9Keyboard-Info.plist
+      properties:
+        CFBundleDisplayName: T9 Multi-tap
+        CFBundleName: T9 Multi-tap
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundlePackageType: XPC!
+        NSExtension:
+          NSExtensionAttributes:
+            IsASCIICapable: true
+            PrefersRightToLeft: false
+            PrimaryLanguage: en-US
+            # Sandboxed keyboard — no network / shared container access.
+            RequestsOpenAccess: false
+          NSExtensionPointIdentifier: com.apple.keyboard-service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).KeyboardViewController
+
   PlaygroundTests:
     type: bundle.unit-test
     platform: iOS
@@ -111,6 +151,7 @@ schemes:
     build:
       targets:
         Playground: all
+        T9Keyboard: all
     test:
       gatherCoverageData: true
       targets:
