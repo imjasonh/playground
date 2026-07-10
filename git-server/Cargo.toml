@@ -67,6 +67,11 @@ harness = false
 name = "large_repo"
 harness = false
 
+# File-log query microbenchmark: monolithic vs path-range-sharded layouts.
+[[bench]]
+name = "filelog"
+harness = false
+
 [profile.release]
 opt-level = "s"
 lto = true

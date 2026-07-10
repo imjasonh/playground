@@ -165,13 +165,40 @@ binary format, `GSFL` — less than half the size of the equivalent JSON and
 request); the state document lists segments; maintenance merges them. The
 `prev_*` pointers chain each path's versions backwards through time.
 
+**Path-range sharding.** Loading a whole merged history to answer a
+one-path question was the measured hotspot of the read APIs (a 200k-record /
+22 MiB history parses in ~50-90 ms — dominating blame and tree latency).
+Merged segments are therefore *sharded by path range*: records are stably
+sorted by path (preserving per-path chronological order) and split at path
+boundaries into ~256 KiB shards, described by a small `GSFI` index object
+`(shard → [min_path, max_path])`. A path's records are never split across
+shards, so:
+
+* **blame** (exact path) loads the index + exactly one shard;
+* **tree** (directory prefix) loads the index + the shard(s) whose range
+  intersects the prefix — usually one, fetched concurrently when several;
+* **push prev-pointer lookup** scopes its load to the pushed paths' shards;
+* the root listing (`prefix=""`) still intersects every shard — the honest
+  worst case, no slower than the monolithic layout (shards are fetched
+  concurrently and parse the same total bytes).
+
+Maintenance writes the merged log sharded; an oversized *push* segment (a
+huge initial import) is sharded immediately at push time too, so read APIs
+are fast right away. Measured (`cargo bench --bench filelog`, 50k paths × 4
+versions = 200k records, 90 shards):
+
+| query | monolithic (before) | sharded (after) | speedup |
+|---|---|---|---|
+| blame chain (one path) | ~50 ms | **~0.6 ms** | ~85× |
+| directory listing | ~85 ms | **~1.5 ms** | ~55× |
+| root listing (worst case) | ~85 ms | ~75 ms (91 reads) | ~1× |
+
+In the whole-lifecycle benchmark (1000 commits × 10k files, post-repack),
+tree API latency went from ~90 ms to ~5 ms and blame from ~55 ms to ~10 ms.
 Read APIs build a one-pass `FileLogView` (newest record per path, ordered so
-directory-prefix queries are range scans) per request. The known scaling
-limit is segment *load* time: a merged segment for a 100k-change history
-parses in ~30-50 ms, which dominates tree/blame API latency on big repos.
-The planned fixes are sharding segments by path prefix (so a request loads
-only the shard it needs) and an in-isolate parsed-segment cache keyed by
-segment id (segments are immutable, so caching is trivially safe).
+directory-prefix queries are range scans) over whatever shards were loaded.
+A remaining planned addition is an in-isolate parsed-shard cache keyed by
+shard key (shards are immutable, so caching is trivially safe).
 
 * **Directory listing with attribution**: newest record per path (or path
   prefix, for subdirectories) across segments, newest segment first.
@@ -203,8 +230,9 @@ are bad at (CPU, memory) and what R2 makes cheap (streaming copies):
   rewriting only entry *headers*: `OFS_DELTA` becomes `REF_DELTA` using the
   `base_oid` recorded in GSIX. **No inflation, no recompression, no delta
   re-discovery.** Per-byte CPU is effectively just the SHA-1 of the output.
-* Merge file-log segments into one (concatenation in push order).
-* Write new pack + index + merged segment, then CAS the state document; only
+* Merge file-log segments (concatenation in push order) and re-shard the
+  result by path range (see "Path-range sharding" above).
+* Write new pack + index + merged file-log, then CAS the state document; only
   after the flip delete the old objects. A racing push fails the CAS and the
   repack discards its staged output and retries next schedule — pushes always
   win over maintenance.
@@ -249,18 +277,68 @@ free**. DO requests ≈ $0.15/M + duration; KV reads ≈ $0.50/M. Per operation:
 
 | Operation | DO | R2 Class A | R2 Class B |
 |---|---|---|---|
-| push (P packs, size S) | 1 load + 1 commit | multipart: ⌈S/5MiB⌉+2; idx put: 1; filelog put: 1 | P idx + ⌈S/4MiB⌉ block reads + filelog load |
+| push (P packs, size S) | 1 load + 1 commit | multipart: ⌈S/5MiB⌉+2; idx put: 1; filelog put(s) | P idx + ⌈S/4MiB⌉ block reads + scoped filelog shards |
 | clone (1 pack repo, size S) | 1 load | 0 | 1 idx + ⌈S/4MiB⌉ block reads |
 | incremental fetch | 1 load | 0 | P idx + blocks covering the objects sent |
 | file API | 1 load | 0 | P idx + blocks covering the path walk |
-| blame | 1 load | 0 | P idx + filelog + blocks covering the versions |
-| repack (size S) | 1 load + 1 commit | ⌈S/5MiB⌉+2 + deletes | ⌈S/4MiB⌉ block reads + idx reads |
+| blame | 1 load | 0 | P idx + filelog index + ~1 shard + blocks covering the versions |
+| repack (size S) | 1 load + 1 commit | ⌈S/5MiB⌉+2 + filelog shards + deletes | ⌈S/4MiB⌉ block reads + idx + filelog reads |
 
-Measured on the large-repo benchmark (175k objects, 57 MiB stored): push 31
-Class B, clone 12, incremental push/pull ≤ 8, file/tree/blame APIs ≤ 10,
-repack 14. The MemStore in the test suite counts these classes, and the
-integration tests assert the bounds (e.g. clone performs zero Class A
-operations).
+The MemStore/MemStateStore in the test suite count these classes (including
+modelled 5 MiB UploadParts), the integration tests assert the bounds (e.g.
+clone performs zero Class A operations), and `cargo bench --bench
+large_repo` prices every phase.
+
+### Measured $ and throughput
+
+Two benchmark shapes: **bulk** (one 512 MiB incompressible blob — bytes
+dominate) and **many-object** (1000 commits × 10k files, 175k objects,
+57 MiB — requests dominate). Wall times are native release builds over
+loopback with in-memory storage, so they measure *our* code plus the real
+git client, not network or R2 latency; dollar figures are the marginal
+request costs (R2 Class A/B + DO) from the op counters, which do not depend
+on where they run.
+
+**Bulk transfer — $ per GiB and GiB/s:**
+
+| operation | request cost / GiB | dominated by | end-to-end throughput |
+|---|---|---|---|
+| push | **~$0.00096 / GiB** | ⌈GiB/5 MiB⌉ ≈ 205 UploadParts × $4.5/M | ~0.04 GiB/s (client zlib + server scan) |
+| clone / pull | **~$0.000096 / GiB** | ⌈GiB/4 MiB⌉ = 256 block reads × $0.36/M | ~0.08 GiB/s (server copy is >1 GiB/s; client `index-pack` dominates) |
+| repack | ~$0.001 / GiB per run | parts (A) + block reads (B) | ~0.25 GiB/s |
+| storage | $0.015 / GiB·month | — | — |
+
+Egress is free, so pull cost is *pure request overhead*: cloning the same
+GiB a million times costs ~$96 in requests and $0 in bandwidth. (For
+comparison, serving that from S3 would be ~$90,000 of egress.) Server-side
+CPU is the other pull-side cost: pack copy is memcpy+SHA-1 (~2 s CPU/GiB ⇒
+~$0.00004/GiB at $0.02 per million CPU-ms on Workers Standard); push-side
+scan+resolve is zlib-bound (~30-75 MiB/s ⇒ ~$0.0003-0.0007/GiB). Even
+all-in, **a GiB pushed costs ~$0.002 and a GiB pulled ~$0.0002**, plus
+$0.015/GiB·month at rest.
+
+**API calls — $ per op and latency** (many-object shape, post-repack,
+i.e. worst realistic history size for these paths):
+
+| API | requests (B + DO) | request cost / op | cost / 1M ops | latency (ours) |
+|---|---|---|---|---|
+| file | 4 + 1 | $0.0000016 | ~$1.60 | ~4-15 ms |
+| tree (dir + last-commit) | 7 + 1 | $0.0000027 | ~$2.70 | ~5 ms |
+| blame | 9 + 1 | $0.0000034 | ~$3.40 | ~10 ms |
+| incremental push | 9 B + 4 A + 3 DO | $0.0000217 | ~$21.70 | ~30-80 ms |
+| incremental pull | 7 + 2 | $0.0000028 | ~$2.80 | ~50-170 ms |
+
+Add Workers invocation ($0.30/M requests) and CPU ($0.02/M CPU-ms; these
+handlers use ~2-15 CPU-ms natively, call it 2-3× on wasm) and each read API
+lands at **roughly $2-6 per million calls, all-in** — the R2/DO request
+costs and the Worker costs are the same order of magnitude, and nothing
+scales per-object or per-history. Every operation's request count is
+O(bytes/block) or O(1), which is the property to defend as the design
+evolves.
+
+Also note the one KV touch: a push checks the maintenance registry with a
+read ($0.50/M) and writes only on first push ($5.00/M once per repo) —
+negligible.
 
 One planned optimization still matters at scale, and it is a pure addition:
 

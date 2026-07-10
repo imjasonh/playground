@@ -16,7 +16,7 @@
 
 use crate::protocol::{self, BodyStream, BufferedBody};
 use crate::refs::StateStore;
-use crate::repo::{load_filelog, Repo};
+use crate::repo::Repo;
 use crate::storage::Store;
 use serde_json::json;
 
@@ -264,10 +264,20 @@ impl<'a> GitHttp<'a> {
     async fn api_tree(&self, repo: &Repo<'_>, refish: &str, path: &str) -> Response {
         match self.resolve(repo, refish).await {
             Ok((state, odb, commit)) => {
-                let segments = match load_filelog(repo.store, repo.name, &state).await {
-                    Ok(s) => s,
-                    Err(e) => return Response::error(500, &e),
+                // Load only the file-log shards covering this directory.
+                let prefix = if path.is_empty() {
+                    String::new()
+                } else {
+                    format!("{path}/")
                 };
+                let scope = crate::repo::FilelogScope::Prefix(&prefix);
+                let segments =
+                    match crate::repo::load_filelog_scoped(repo.store, repo.name, &state, &scope)
+                        .await
+                    {
+                        Ok(s) => s,
+                        Err(e) => return Response::error(500, &e),
+                    };
                 match crate::fileapi::list_tree(&odb, &segments, commit, path).await {
                     Ok(Some(entries)) => Response::json(
                         200,
@@ -284,10 +294,15 @@ impl<'a> GitHttp<'a> {
     async fn api_blame(&self, repo: &Repo<'_>, refish: &str, path: &str) -> Response {
         match self.resolve(repo, refish).await {
             Ok((state, odb, commit)) => {
-                let segments = match load_filelog(repo.store, repo.name, &state).await {
-                    Ok(s) => s,
-                    Err(e) => return Response::error(500, &e),
-                };
+                // Blame needs only the shard(s) containing this exact path.
+                let scope = crate::repo::FilelogScope::Path(path);
+                let segments =
+                    match crate::repo::load_filelog_scoped(repo.store, repo.name, &state, &scope)
+                        .await
+                    {
+                        Ok(s) => s,
+                        Err(e) => return Response::error(500, &e),
+                    };
                 match crate::blame::blame(&odb, &segments, commit, path).await {
                     Ok(Some(lines)) => Response::json(
                         200,

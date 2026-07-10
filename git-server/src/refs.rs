@@ -98,17 +98,29 @@ pub trait StateStore {
 #[derive(Default, Clone)]
 pub struct MemStateStore {
     inner: Arc<Mutex<BTreeMap<String, (RepoState, u64)>>>,
+    /// Durable Object requests this store would have made in production
+    /// (each `load` and `commit` is one DO request), for cost-model checks.
+    ops: Arc<Mutex<u64>>,
 }
 
 impl MemStateStore {
     pub fn new() -> Self {
         Self::default()
     }
+
+    pub fn op_count(&self) -> u64 {
+        *self.ops.lock().unwrap()
+    }
+
+    pub fn reset_op_count(&self) {
+        *self.ops.lock().unwrap() = 0;
+    }
 }
 
 #[async_trait(?Send)]
 impl StateStore for MemStateStore {
     async fn load(&self, repo: &str) -> Result<(RepoState, u64), StateError> {
+        *self.ops.lock().unwrap() += 1;
         Ok(self
             .inner
             .lock()
@@ -124,6 +136,7 @@ impl StateStore for MemStateStore {
         expected_version: u64,
         state: &RepoState,
     ) -> Result<u64, StateError> {
+        *self.ops.lock().unwrap() += 1;
         let mut map = self.inner.lock().unwrap();
         let current = map.get(repo).map(|(_, v)| *v).unwrap_or(0);
         if current != expected_version {

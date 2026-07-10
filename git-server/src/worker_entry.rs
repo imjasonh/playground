@@ -372,6 +372,8 @@ async fn fetch(mut req: Request, env: Env, _ctx: Context) -> worker::Result<Resp
     let resp = server.handle(&http_req, &mut body, &nonce).await;
 
     // Register the repo for scheduled maintenance after a successful push.
+    // Read-before-write: a KV read is ~10x cheaper than a write, and every
+    // push after the first hits the read path.
     if method == "POST" && path.ends_with("/git-receive-pack") && resp.status == 200 {
         if let Some(repo) = path
             .trim_matches('/')
@@ -380,7 +382,12 @@ async fn fetch(mut req: Request, env: Env, _ctx: Context) -> worker::Result<Resp
             .map(|r| r.trim_end_matches(".git"))
         {
             if let Ok(kv) = env.kv(REPOS_KV_BINDING) {
-                let _ = kv.put(repo, "1").map(|p| p.execute());
+                let known = kv.get(repo).text().await.ok().flatten().is_some();
+                if !known {
+                    if let Ok(put) = kv.put(repo, "1") {
+                        let _ = put.execute().await;
+                    }
+                }
             }
         }
     }

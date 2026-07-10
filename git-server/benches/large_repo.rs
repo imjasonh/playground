@@ -134,12 +134,34 @@ struct Phase {
     wall: Duration,
     class_a: u64,
     class_b: u64,
+    do_ops: u64,
+    /// Pack bytes moved (push: received; clone/pull: sent). 0 for APIs.
+    bytes: u64,
+}
+
+// Cloudflare list prices (2025-2026), $ per operation. Storage and Worker
+// invocation/CPU are excluded here (reported separately in docs/design.md):
+// these are the *per-request* marginal costs the op counters measure.
+const R2_CLASS_A_USD: f64 = 4.50 / 1e6;
+const R2_CLASS_B_USD: f64 = 0.36 / 1e6;
+const DO_REQUEST_USD: f64 = 0.15 / 1e6;
+
+impl Phase {
+    fn cost_usd(&self) -> f64 {
+        self.class_a as f64 * R2_CLASS_A_USD
+            + self.class_b as f64 * R2_CLASS_B_USD
+            + self.do_ops as f64 * DO_REQUEST_USD
+    }
 }
 
 fn main() {
     let commits = env_usize("LR_COMMITS", 200);
     let files = env_usize("LR_FILES", 2_000);
     let dirs = env_usize("LR_DIRS", 50);
+    // Optional bulk payload: LR_BLOB_MB adds that many MiB of incompressible
+    // binary in the initial commit, so push/pull GiB/s reflects bulk byte
+    // movement rather than many-tiny-object overhead.
+    let blob_mb = env_usize("LR_BLOB_MB", 0);
 
     let tmp = tempfile::tempdir().unwrap();
     let src = tmp.path().join("src");
@@ -165,6 +187,17 @@ fn main() {
             content.push_str(&format!("file {f} line {line} :: {}\n", rand() % 100000));
         }
         std::fs::write(dir.join(format!("file{f}.txt")), content).unwrap();
+    }
+    if blob_mb > 0 {
+        let mut data = Vec::with_capacity(blob_mb * 1024 * 1024);
+        let mut x = 0x9e3779b97f4a7c15u64;
+        while data.len() < blob_mb * 1024 * 1024 {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            data.extend_from_slice(&x.to_le_bytes());
+        }
+        std::fs::write(src.join("bulk.bin"), &data).unwrap();
     }
     git(&src, &["add", "."]);
     git(&src, &["commit", "-q", "-m", "initial import"]);
@@ -196,27 +229,46 @@ fn main() {
     let url = format!("http://127.0.0.1:{port}/bench");
     git(&src, &["remote", "add", "origin", &url]);
 
-    let mut phases: Vec<Phase> = Vec::new();
-    let mut run_phase = |name: &'static str, f: &mut dyn FnMut()| {
+    let stored_pack_bytes = |store: &MemStore| -> u64 {
+        store
+            .keys()
+            .iter()
+            .filter(|k| k.ends_with(".pack"))
+            .map(|k| {
+                futures::executor::block_on(git_server_worker::storage::Store::size(store, k))
+                    .unwrap()
+                    .unwrap_or(0)
+            })
+            .sum()
+    };
+
+    let phases: std::cell::RefCell<Vec<Phase>> = std::cell::RefCell::new(Vec::new());
+    let run_phase = |name: &'static str, bytes: u64, f: &mut dyn FnMut()| {
         store.reset_op_counts();
+        states.reset_op_count();
         let start = Instant::now();
         f();
+        let wall = start.elapsed();
         let ops = store.op_counts();
-        phases.push(Phase {
+        phases.borrow_mut().push(Phase {
             name,
-            wall: start.elapsed(),
+            wall,
             class_a: ops.class_a,
             class_b: ops.class_b,
+            do_ops: states.op_count(),
+            bytes,
         });
     };
 
     // --- Phases -------------------------------------------------------------
-    run_phase("push (full history)", &mut || {
+    run_phase("push (full history)", 0, &mut || {
         git(&src, &["push", "-q", "origin", "main"]);
     });
+    let full_pack_bytes = stored_pack_bytes(&store);
+    phases.borrow_mut().last_mut().unwrap().bytes = full_pack_bytes;
 
     let clone1 = tmp.path().join("clone1");
-    run_phase("clone (full)", &mut || {
+    run_phase("clone (full)", full_pack_bytes, &mut || {
         git(tmp.path(), &["clone", "-q", &url, clone1.to_str().unwrap()]);
     });
 
@@ -229,10 +281,13 @@ fn main() {
         git(&src, &["add", "."]);
         git(&src, &["commit", "-q", "-m", &format!("inc {c}")]);
     }
-    run_phase("push (incremental, 5 commits)", &mut || {
+    run_phase("push (incremental, 5 commits)", 0, &mut || {
         git(&src, &["push", "-q", "origin", "main"]);
     });
-    run_phase("pull (incremental)", &mut || {
+    let inc_pack_bytes = stored_pack_bytes(&store) - full_pack_bytes;
+    phases.borrow_mut().last_mut().unwrap().bytes = inc_pack_bytes;
+
+    run_phase("pull (incremental)", inc_pack_bytes, &mut || {
         git(&clone1, &["pull", "-q", "origin", "main"]);
     });
 
@@ -262,17 +317,17 @@ fn main() {
         );
         resp.body.len()
     };
-    run_phase("file API (1 file)", &mut || {
+    run_phase("file API (1 file)", 0, &mut || {
         api("/api/bench/file/main/dir00/file0.txt".to_string());
     });
-    run_phase("tree API (1 dir)", &mut || {
+    run_phase("tree API (1 dir)", 0, &mut || {
         api("/api/bench/tree/main/dir00".to_string());
     });
-    run_phase("blame API (hot file)", &mut || {
+    run_phase("blame API (hot file)", 0, &mut || {
         api("/api/bench/blame/main/dir00/file0.txt".to_string());
     });
 
-    run_phase("repack", &mut || {
+    run_phase("repack", 0, &mut || {
         let git = GitHttp {
             store: &store,
             states: &states,
@@ -293,11 +348,12 @@ fn main() {
         assert!(String::from_utf8_lossy(&resp.body).contains("Repacked"));
     });
 
+    let repacked_bytes = stored_pack_bytes(&store);
     let clone2 = tmp.path().join("clone2");
-    run_phase("clone (after repack)", &mut || {
+    run_phase("clone (after repack)", repacked_bytes, &mut || {
         git(tmp.path(), &["clone", "-q", &url, clone2.to_str().unwrap()]);
     });
-    run_phase("blame API (after repack)", &mut || {
+    run_phase("blame API (after repack)", 0, &mut || {
         api("/api/bench/blame/main/dir00/file0.txt".to_string());
     });
 
@@ -317,13 +373,49 @@ fn main() {
         stored as f64 / (1024.0 * 1024.0)
     );
     println!(
-        "{:<32} {:>12} {:>10} {:>10}",
-        "phase", "wall", "R2 classA", "R2 classB"
+        "{:<32} {:>11} {:>9} {:>9} {:>4} {:>10} {:>12}",
+        "phase", "wall", "classA", "classB", "DO", "thru", "op cost"
     );
+    let phases = phases.into_inner();
     for p in &phases {
+        let thru = if p.bytes > 0 {
+            let gib_s = p.bytes as f64 / (1024.0 * 1024.0 * 1024.0) / p.wall.as_secs_f64();
+            if gib_s >= 0.01 {
+                format!("{gib_s:.2} GiB/s")
+            } else {
+                format!("{:.1} MiB/s", gib_s * 1024.0)
+            }
+        } else {
+            "-".to_string()
+        };
         println!(
-            "{:<32} {:>12.2?} {:>10} {:>10}",
-            p.name, p.wall, p.class_a, p.class_b
+            "{:<32} {:>11.2?} {:>9} {:>9} {:>4} {:>10} {:>10.3}µ$",
+            p.name,
+            p.wall,
+            p.class_a,
+            p.class_b,
+            p.do_ops,
+            thru,
+            p.cost_usd() * 1e6,
+        );
+    }
+
+    // Marginal $ per GiB moved (R2/DO request costs only; egress is free and
+    // Worker request+CPU costs are covered in docs/design.md). Only phases
+    // moving enough data for per-GiB extrapolation to be meaningful: tiny
+    // transfers are dominated by fixed per-request costs (see the per-op
+    // column above for those).
+    println!();
+    for p in &phases {
+        if p.bytes < 8 * 1024 * 1024 {
+            continue;
+        }
+        let gib = p.bytes as f64 / (1024.0 * 1024.0 * 1024.0);
+        println!(
+            "{:<32} {:>10.2} MiB moved -> {:>8.2} µ$/GiB (request costs)",
+            p.name,
+            p.bytes as f64 / (1024.0 * 1024.0),
+            p.cost_usd() / gib * 1e6,
         );
     }
 }

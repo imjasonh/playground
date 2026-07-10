@@ -248,6 +248,7 @@ impl Store for MemStore {
             store: self.clone(),
             key: key.to_string(),
             buf: Vec::new(),
+            unparted: 0,
         }))
     }
 }
@@ -256,16 +257,20 @@ struct MemUploader {
     store: MemStore,
     key: String,
     buf: Vec<u8>,
+    /// Bytes not yet attributed to a modelled UploadPart call.
+    unparted: usize,
 }
 
 #[async_trait(?Send)]
 impl Uploader for MemUploader {
     async fn write(&mut self, chunk: &[u8]) -> Result<()> {
         self.buf.extend_from_slice(chunk);
-        // Model R2 UploadPart (Class A) per ~5 MiB of data, matching the part
-        // buffering the R2 uploader does.
-        if self.buf.len() % (5 * 1024 * 1024) < chunk.len() {
+        // Model R2 UploadPart (Class A) per 5 MiB of data, matching the part
+        // buffering the production R2 uploader does.
+        self.unparted += chunk.len();
+        while self.unparted >= 5 * 1024 * 1024 {
             self.store.ops.lock().unwrap().class_a += 1;
+            self.unparted -= 5 * 1024 * 1024;
         }
         Ok(())
     }

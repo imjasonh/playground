@@ -25,7 +25,7 @@ use crate::pack::index::{EntryRecord, PackIndex};
 use crate::pack::write::PackWriter;
 use crate::pack::TYPE_REF_DELTA;
 use crate::refs::{PackMeta, StateError};
-use crate::repo::{filelog_key, load_filelog, FileLogSegment, Repo};
+use crate::repo::{delete_filelog, load_filelog, write_sharded_filelog, FileLogSegment, Repo};
 
 /// What a repack run did.
 #[derive(Debug, PartialEq, Eq)]
@@ -112,19 +112,17 @@ pub async fn repack(repo: &Repo<'_>, nonce: &str) -> Result<RepackOutcome, Strin
         .map_err(|e| e.to_string())?;
 
     // Merge file-log segments (they're loaded newest-first; merged output
-    // must be oldest-first to preserve within-segment append order).
+    // must be oldest-first to preserve within-segment append order), then
+    // write the result *sharded by path range* so read APIs can load only
+    // the shard(s) covering their path or directory instead of the whole
+    // history (see `write_sharded_filelog`).
     let mut merged = FileLogSegment::default();
     let segments = load_filelog(repo.store, repo.name, &state).await?;
     for seg in segments.into_iter().rev() {
         merged.records.extend(seg.records);
     }
-    let has_filelog = !merged.records.is_empty();
-    if has_filelog {
-        repo.store
-            .put(&filelog_key(repo.name, &new_id), merged.to_bytes())
-            .await
-            .map_err(|e| e.to_string())?;
-    }
+    let has_filelog =
+        write_sharded_filelog(repo.store, repo.name, &new_id, merged.records).await? > 0;
 
     let mut next = state.clone();
     next.packs = vec![PackMeta {
@@ -146,7 +144,7 @@ pub async fn repack(repo: &Repo<'_>, nonce: &str) -> Result<RepackOutcome, Strin
                 let _ = repo.store.delete(&index_key(repo.name, &p.id)).await;
             }
             for f in &state.filelog {
-                let _ = repo.store.delete(&filelog_key(repo.name, f)).await;
+                let _ = delete_filelog(repo.store, repo.name, f).await;
             }
             Ok(RepackOutcome::Repacked {
                 packs: state.packs.len(),
@@ -158,7 +156,7 @@ pub async fn repack(repo: &Repo<'_>, nonce: &str) -> Result<RepackOutcome, Strin
             let _ = repo.store.delete(&new_key).await;
             let _ = repo.store.delete(&index_key(repo.name, &new_id)).await;
             if has_filelog {
-                let _ = repo.store.delete(&filelog_key(repo.name, &new_id)).await;
+                let _ = delete_filelog(repo.store, repo.name, &new_id).await;
             }
             Ok(RepackOutcome::LostRace)
         }

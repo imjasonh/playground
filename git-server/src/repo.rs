@@ -160,23 +160,248 @@ pub fn filelog_key(repo: &str, seg_id: &str) -> String {
     format!("{repo}/filelog/{seg_id}")
 }
 
-/// Load all of a repo's file-log segments, newest first.
-pub async fn load_filelog(
+// ---------------------------------------------------------------------------
+// Sharded file-log (path-range shards + GSFI index)
+// ---------------------------------------------------------------------------
+
+/// Target shard size. Small enough that a scoped query parses ~1 shard in a
+/// fraction of a millisecond; large enough that shard count (and thus Class B
+/// reads for whole-log loads) stays low.
+pub const FILELOG_SHARD_TARGET_BYTES: usize = 256 * 1024;
+
+const GSFI_MAGIC: &[u8; 4] = b"GSFI";
+const GSFI_VERSION: u32 = 1;
+
+/// One shard's entry in a `GSFI` index: records for paths in
+/// `[min_path, max_path]` live in `<segment-id>.<k>`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShardInfo {
+    pub min_path: String,
+    pub max_path: String,
+    pub records: u32,
+}
+
+/// Serialize a shard index.
+fn shard_index_to_bytes(shards: &[ShardInfo]) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(GSFI_MAGIC);
+    out.extend_from_slice(&GSFI_VERSION.to_be_bytes());
+    out.extend_from_slice(&(shards.len() as u32).to_be_bytes());
+    for s in shards {
+        out.extend_from_slice(&(s.min_path.len() as u16).to_be_bytes());
+        out.extend_from_slice(s.min_path.as_bytes());
+        out.extend_from_slice(&(s.max_path.len() as u16).to_be_bytes());
+        out.extend_from_slice(s.max_path.as_bytes());
+        out.extend_from_slice(&s.records.to_be_bytes());
+    }
+    out
+}
+
+fn shard_index_from_bytes(data: &[u8]) -> Result<Vec<ShardInfo>, String> {
+    if data.len() < 12 || &data[..4] != GSFI_MAGIC {
+        return Err("bad GSFI magic".into());
+    }
+    let version = u32::from_be_bytes(data[4..8].try_into().unwrap());
+    if version != GSFI_VERSION {
+        return Err(format!("unsupported GSFI version {version}"));
+    }
+    let count = u32::from_be_bytes(data[8..12].try_into().unwrap()) as usize;
+    let mut p = 12usize;
+    let take = |p: &mut usize, n: usize| -> Result<&[u8], String> {
+        let s = data.get(*p..*p + n).ok_or("GSFI truncated")?;
+        *p += n;
+        Ok(s)
+    };
+    let mut shards = Vec::with_capacity(count);
+    for _ in 0..count {
+        let min_len = u16::from_be_bytes(take(&mut p, 2)?.try_into().unwrap()) as usize;
+        let min_path = String::from_utf8_lossy(take(&mut p, min_len)?).into_owned();
+        let max_len = u16::from_be_bytes(take(&mut p, 2)?.try_into().unwrap()) as usize;
+        let max_path = String::from_utf8_lossy(take(&mut p, max_len)?).into_owned();
+        let records = u32::from_be_bytes(take(&mut p, 4)?.try_into().unwrap());
+        shards.push(ShardInfo {
+            min_path,
+            max_path,
+            records,
+        });
+    }
+    Ok(shards)
+}
+
+fn shard_key(repo: &str, seg_id: &str, k: usize) -> String {
+    format!("{repo}/filelog/{seg_id}.{k}")
+}
+
+/// Write `records` as a sharded file-log segment: records are stably sorted
+/// by path (preserving per-path chronological order), split at path
+/// boundaries into ~[`FILELOG_SHARD_TARGET_BYTES`] shards, and described by a
+/// `GSFI` index at the segment's own key. A path's records are never split
+/// across shards, so any single-path query touches exactly one shard.
+///
+/// Returns the number of shards written (0 if `records` was empty).
+pub async fn write_sharded_filelog(
+    store: &dyn Store,
+    repo: &str,
+    seg_id: &str,
+    mut records: Vec<FileLogRecord>,
+) -> Result<usize, String> {
+    if records.is_empty() {
+        return Ok(0);
+    }
+    records.sort_by(|a, b| a.path.cmp(&b.path)); // stable: keeps time order per path
+
+    let mut shards: Vec<ShardInfo> = Vec::new();
+    let mut current: Vec<FileLogRecord> = Vec::new();
+    let mut current_bytes = 0usize;
+
+    async fn flush(
+        store: &dyn Store,
+        repo: &str,
+        seg_id: &str,
+        shards: &mut Vec<ShardInfo>,
+        current: &mut Vec<FileLogRecord>,
+    ) -> Result<(), String> {
+        if current.is_empty() {
+            return Ok(());
+        }
+        let info = ShardInfo {
+            min_path: current.first().unwrap().path.clone(),
+            max_path: current.last().unwrap().path.clone(),
+            records: current.len() as u32,
+        };
+        let seg = FileLogSegment {
+            records: std::mem::take(current),
+        };
+        store
+            .put(&shard_key(repo, seg_id, shards.len()), seg.to_bytes())
+            .await
+            .map_err(|e| e.to_string())?;
+        shards.push(info);
+        Ok(())
+    }
+
+    let mut records = records.into_iter().peekable();
+    while let Some(r) = records.next() {
+        current_bytes += 91 + r.path.len(); // fixed record size + path
+        let path_changes = records
+            .peek()
+            .map(|next| next.path != r.path)
+            .unwrap_or(true);
+        current.push(r);
+        if current_bytes >= FILELOG_SHARD_TARGET_BYTES && path_changes {
+            flush(store, repo, seg_id, &mut shards, &mut current).await?;
+            current_bytes = 0;
+        }
+    }
+    flush(store, repo, seg_id, &mut shards, &mut current).await?;
+
+    store
+        .put(&filelog_key(repo, seg_id), shard_index_to_bytes(&shards))
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(shards.len())
+}
+
+/// Delete a file-log segment, whether plain or sharded.
+pub async fn delete_filelog(store: &dyn Store, repo: &str, seg_id: &str) -> Result<(), String> {
+    let key = filelog_key(repo, seg_id);
+    if let Some(bytes) = store.get(&key).await.map_err(|e| e.to_string())? {
+        if bytes.len() >= 4 && &bytes[..4] == GSFI_MAGIC {
+            if let Ok(shards) = shard_index_from_bytes(&bytes) {
+                for k in 0..shards.len() {
+                    let _ = store.delete(&shard_key(repo, seg_id, k)).await;
+                }
+            }
+        }
+    }
+    store.delete(&key).await.map_err(|e| e.to_string())
+}
+
+/// What part of the file-log a request needs. Scoped loads read only the
+/// shards whose path range intersects the scope — the difference between
+/// parsing a whole repo's history and parsing ~one shard.
+pub enum FilelogScope<'a> {
+    /// Everything (push prev-pointer indexing over arbitrary paths).
+    All,
+    /// One exact path (blame).
+    Path(&'a str),
+    /// All paths under a prefix (directory listings; `""` = whole tree).
+    Prefix(&'a str),
+    /// A specific set of paths (push prev-pointers when changes are known).
+    Paths(&'a std::collections::HashSet<String>),
+}
+
+impl FilelogScope<'_> {
+    /// Does a shard covering `[min, max]` possibly contain scoped records?
+    fn intersects(&self, min: &str, max: &str) -> bool {
+        match self {
+            FilelogScope::All => true,
+            FilelogScope::Path(p) => *p >= min && *p <= max,
+            FilelogScope::Prefix(pre) => {
+                // Paths with this prefix form the range [pre, successor(pre)).
+                // A shard whose min is above the prefix without *carrying* it
+                // is entirely past that range (first differing byte is
+                // larger); a shard whose max is below `pre` is entirely
+                // before it. Everything else may contain prefixed paths.
+                max >= *pre && (min.starts_with(*pre) || *pre >= min)
+            }
+            FilelogScope::Paths(set) => set.iter().any(|p| p.as_str() >= min && p.as_str() <= max),
+        }
+    }
+}
+
+/// Load the file-log segments a request needs, newest first. Plain (per-push)
+/// segments are always loaded whole — they are small and recent. Sharded
+/// (maintenance-merged) segments contribute only the shards intersecting
+/// `scope`, fetched **concurrently** (shards are independent R2 objects, so a
+/// wide query pays ~one round trip of latency, not shard-count round trips).
+pub async fn load_filelog_scoped(
     store: &dyn Store,
     repo: &str,
     state: &RepoState,
+    scope: &FilelogScope<'_>,
 ) -> Result<Vec<FileLogSegment>, String> {
     let _t = crate::timing::Phase::start("filelog: load+parse");
-    let mut segs = Vec::with_capacity(state.filelog.len());
+    let mut segs = Vec::new();
     for id in state.filelog.iter().rev() {
         let bytes = store
             .get(&filelog_key(repo, id))
             .await
             .map_err(|e| e.to_string())?
             .ok_or_else(|| format!("missing filelog segment {id}"))?;
-        segs.push(FileLogSegment::from_bytes(&bytes)?);
+        if bytes.len() >= 4 && &bytes[..4] == GSFI_MAGIC {
+            let shards = shard_index_from_bytes(&bytes)?;
+            let fetches = shards
+                .iter()
+                .enumerate()
+                .filter(|(_, info)| scope.intersects(&info.min_path, &info.max_path))
+                .map(|(k, _)| {
+                    let key = shard_key(repo, id, k);
+                    async move {
+                        store
+                            .get(&key)
+                            .await
+                            .map_err(|e| e.to_string())?
+                            .ok_or_else(|| format!("missing filelog shard {key}"))
+                    }
+                });
+            for shard_bytes in futures::future::try_join_all(fetches).await? {
+                segs.push(FileLogSegment::from_bytes(&shard_bytes)?);
+            }
+        } else {
+            segs.push(FileLogSegment::from_bytes(&bytes)?);
+        }
     }
     Ok(segs)
+}
+
+/// Load all of a repo's file-log segments, newest first.
+pub async fn load_filelog(
+    store: &dyn Store,
+    repo: &str,
+    state: &RepoState,
+) -> Result<Vec<FileLogSegment>, String> {
+    load_filelog_scoped(store, repo, state, &FilelogScope::All).await
 }
 
 /// Find the newest record for `path` across segments (newest first).
@@ -451,17 +676,25 @@ impl<'a> Repo<'a> {
             }
         }
 
-        // Build the file-log segment for the new commits.
+        // Build the file-log segment for the new commits. Typical pushes
+        // write one small plain segment; a huge push (e.g. an initial
+        // import) is sharded immediately so the read APIs are fast right
+        // away rather than only after the next maintenance merge.
         if let Some((meta, index)) = &new_pack {
             let _t = crate::timing::Phase::start("push: filelog build");
             let segment = self
                 .build_filelog_segment(&odb, &old_odb, index, &state)
                 .await?;
             if !segment.records.is_empty() {
-                self.store
-                    .put(&filelog_key(self.name, &meta.id), segment.to_bytes())
-                    .await
-                    .map_err(|e| e.to_string())?;
+                let bytes = segment.to_bytes();
+                if bytes.len() > 2 * FILELOG_SHARD_TARGET_BYTES {
+                    write_sharded_filelog(self.store, self.name, &meta.id, segment.records).await?;
+                } else {
+                    self.store
+                        .put(&filelog_key(self.name, &meta.id), bytes)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                }
                 next.filelog.push(meta.id.clone());
             }
             next.packs.push(meta.clone());
@@ -545,12 +778,8 @@ impl<'a> Repo<'a> {
             }
         }
 
-        // Previous-touch lookup: existing segments (loaded once, indexed in
-        // one pass) + the records we generate during this push.
-        let existing = load_filelog(self.store, self.name, state).await?;
-        let existing_view = FileLogView::new(&existing);
-        let mut in_push_latest: HashMap<String, (String, String)> = HashMap::new(); // path → (commit, blob)
-
+        // Pass 1: diff every new commit, collecting records without their
+        // prev-pointers (so we know the full changed-path set up front).
         let mut segment = FileLogSegment::default();
         for c in ordered {
             let commit = &parsed[&c];
@@ -561,25 +790,38 @@ impl<'a> Repo<'a> {
             let mut changes = Vec::new();
             diff_trees(odb, parent_tree, Some(commit.tree), "", &mut changes).await?;
             for (path, change, blob) in changes {
-                let (prev_commit, prev_blob) = match in_push_latest.get(&path) {
-                    Some((pc, pb)) => (Some(pc.clone()), Some(pb.clone())),
-                    None => match existing_view.latest_for_path(&path) {
-                        Some(r) => (Some(r.commit.clone()), Some(r.blob.clone())),
-                        None => (None, None),
-                    },
-                };
-                let blob_hex = blob.map(|b| b.to_hex()).unwrap_or_default();
-                in_push_latest.insert(path.clone(), (c.to_hex(), blob_hex.clone()));
                 segment.records.push(FileLogRecord {
                     path,
                     commit: c.to_hex(),
                     time: commit.commit_time,
                     change,
-                    blob: blob_hex,
-                    prev_commit,
-                    prev_blob,
+                    blob: blob.map(|b| b.to_hex()).unwrap_or_default(),
+                    prev_commit: None,
+                    prev_blob: None,
                 });
             }
+        }
+
+        // Pass 2: fill in prev-pointers. The existing file-log is loaded
+        // *scoped to the changed paths*, so a push touching a handful of
+        // files reads a handful of shards, not the whole history.
+        let changed: HashSet<String> = segment.records.iter().map(|r| r.path.clone()).collect();
+        let existing =
+            load_filelog_scoped(self.store, self.name, state, &FilelogScope::Paths(&changed))
+                .await?;
+        let existing_view = FileLogView::new(&existing);
+        let mut in_push_latest: HashMap<String, (String, String)> = HashMap::new(); // path → (commit, blob)
+        for r in &mut segment.records {
+            let (prev_commit, prev_blob) = match in_push_latest.get(&r.path) {
+                Some((pc, pb)) => (Some(pc.clone()), Some(pb.clone())),
+                None => match existing_view.latest_for_path(&r.path) {
+                    Some(prev) => (Some(prev.commit.clone()), Some(prev.blob.clone())),
+                    None => (None, None),
+                },
+            };
+            r.prev_commit = prev_commit;
+            r.prev_blob = prev_blob;
+            in_push_latest.insert(r.path.clone(), (r.commit.clone(), r.blob.clone()));
         }
         Ok(segment)
     }
@@ -899,4 +1141,124 @@ pub async fn build_pack(odb: &Odb<'_>, set: &FetchSet, thin_ok: bool) -> Result<
 /// For non-delta records the payload's inflated size is the object size.
 fn delta_payload_size(rec: &EntryRecord) -> u64 {
     rec.size
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::MemStore;
+    use futures::executor::block_on;
+
+    fn record(path: &str, n: u64) -> FileLogRecord {
+        // Offset by 1: the all-zero oid encodes "absent" in GSFL.
+        FileLogRecord {
+            path: path.to_string(),
+            commit: format!("{:040x}", n + 1),
+            time: n as i64,
+            change: if n == 0 { Change::Add } else { Change::Modify },
+            blob: format!("{:040x}", n + 1_000_000),
+            prev_commit: (n > 0).then(|| format!("{n:040x}")),
+            prev_blob: (n > 0).then(|| format!("{:040x}", n + 999_999)),
+        }
+    }
+
+    #[test]
+    fn filelog_segment_binary_roundtrip() {
+        let seg = FileLogSegment {
+            records: vec![record("a/b.txt", 0), record("a/b.txt", 1), record("z", 5)],
+        };
+        let parsed = FileLogSegment::from_bytes(&seg.to_bytes()).unwrap();
+        assert_eq!(parsed.records.len(), 3);
+        assert_eq!(parsed.records[0].path, "a/b.txt");
+        assert_eq!(parsed.records[0].change, Change::Add);
+        assert_eq!(parsed.records[1].prev_commit, seg.records[1].prev_commit);
+        assert!(FileLogSegment::from_bytes(b"JUNK").is_err());
+    }
+
+    #[test]
+    fn sharded_filelog_roundtrip_and_scoped_loads() {
+        block_on(async {
+            let store = MemStore::new();
+            // Enough records across enough paths to force several shards.
+            let mut records = Vec::new();
+            for p in 0..3_000 {
+                let path = format!("dir{:02}/subdir/file{p:05}.txt", p % 20);
+                for v in 0..3 {
+                    records.push(record(&path, v));
+                }
+            }
+            let shards = write_sharded_filelog(&store, "r", "seg", records.clone())
+                .await
+                .unwrap();
+            assert!(shards >= 3, "expected several shards, got {shards}");
+
+            let state = RepoState {
+                filelog: vec!["seg".to_string()],
+                ..RepoState::empty()
+            };
+
+            // Exact-path scope: exactly one shard is loaded (a path's records
+            // are never split), and the chain is complete and in order.
+            store.reset_op_counts();
+            let target = "dir07/subdir/file00707.txt";
+            let segs = load_filelog_scoped(&store, "r", &state, &FilelogScope::Path(target))
+                .await
+                .unwrap();
+            // index + 1 shard = 2 reads
+            assert_eq!(store.op_counts().class_b, 2, "one shard per path query");
+            let chain = records_for_path(&segs, target);
+            assert_eq!(chain.len(), 3);
+            assert_eq!(chain[0].time, 2, "newest first");
+            assert_eq!(chain[2].change, Change::Add);
+
+            // Prefix scope: sees every path in the directory.
+            let segs =
+                load_filelog_scoped(&store, "r", &state, &FilelogScope::Prefix("dir07/subdir/"))
+                    .await
+                    .unwrap();
+            let view = FileLogView::new(&segs);
+            for p in 0..3_000u32 {
+                if p % 20 == 7 {
+                    let path = format!("dir07/subdir/file{p:05}.txt");
+                    assert!(view.latest_for_path(&path).is_some(), "{path} visible");
+                }
+            }
+            assert!(view.latest_for_prefix("dir07/").is_some());
+
+            // Scoped load must return a strict subset of the whole log.
+            store.reset_op_counts();
+            let all = load_filelog_scoped(&store, "r", &state, &FilelogScope::All)
+                .await
+                .unwrap();
+            let all_reads = store.op_counts().class_b;
+            assert_eq!(all.iter().map(|s| s.records.len()).sum::<usize>(), 9_000);
+            assert_eq!(all_reads as usize, 1 + shards);
+
+            // Deleting removes the index and every shard.
+            delete_filelog(&store, "r", "seg").await.unwrap();
+            assert!(store.keys().iter().all(|k| !k.contains("filelog")));
+        });
+    }
+
+    #[test]
+    fn scope_intersection_rules() {
+        let hit = |scope: &FilelogScope<'_>, min: &str, max: &str| scope.intersects(min, max);
+        // Path scope.
+        assert!(hit(&FilelogScope::Path("m"), "a", "z"));
+        assert!(!hit(&FilelogScope::Path("a"), "b", "z"));
+        assert!(!hit(&FilelogScope::Path("z"), "a", "y"));
+        // Prefix scope: shards strictly before or after the prefix range are
+        // excluded…
+        assert!(!hit(&FilelogScope::Prefix("src/"), "a", "b"));
+        assert!(!hit(&FilelogScope::Prefix("src/"), "srcz", "zzz"));
+        // …but shards starting inside or spanning the range are included.
+        assert!(hit(&FilelogScope::Prefix("src/"), "src/zz", "zzz"));
+        assert!(hit(&FilelogScope::Prefix("src/"), "a", "zzz"));
+        assert!(hit(&FilelogScope::Prefix(""), "a", "b")); // root: everything
+                                                           // Paths scope.
+        let mut set = std::collections::HashSet::new();
+        set.insert("m/file".to_string());
+        assert!(hit(&FilelogScope::Paths(&set), "a", "z"));
+        assert!(!hit(&FilelogScope::Paths(&set), "n", "z"));
+    }
 }

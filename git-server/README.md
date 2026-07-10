@@ -50,9 +50,13 @@ cargo bench         # hot-path benchmarks (pack scan/resolve/write, diff)
 cargo clippy --all-targets
 
 # Whole-lifecycle benchmark: real git client + synthetic large repo, with
-# per-phase wall time and R2 operation counts (LR_* env vars scale it up;
-# GIT_SERVER_TIMING=1 breaks down server-side phases).
+# per-phase wall time, R2/DO operation counts, throughput, and estimated $
+# cost per operation (LR_* env vars scale it up; LR_BLOB_MB adds a bulk
+# binary payload; GIT_SERVER_TIMING=1 breaks down server-side phases).
 cargo bench --bench large_repo
+
+# File-log layout microbenchmark: monolithic vs path-range-sharded queries.
+cargo bench --bench filelog
 ```
 
 The integration tests start a localhost HTTP server backed by in-memory
