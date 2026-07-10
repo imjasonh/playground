@@ -395,6 +395,37 @@ Workers CPU limits (30 s HTTP, 15 min cron) bound a single push to roughly a
 GiB per request-CPU-second budget; larger pushes need the documented
 resumable-ingest extension.
 
+## Size limits
+
+What actually caps transfer sizes, post-streaming:
+
+| Direction | Cap | Set by |
+|---|---|---|
+| **pull / clone** | none practical | streamed body; O(bytes/4 MiB) requests; copy-path CPU >1 GiB/s |
+| **push** | **~100 MB per push** (Free/Pro zone; 200 MB Business, 500 MB Enterprise) | **Cloudflare's HTTP request-body limit — not our code** |
+
+**Pull** footnotes: a delta entry whose base the client lacks (rare
+`Materialize` mode) must fit in memory as one object (tens of MiB), and plan
+metadata is ~100 B/object, so fetches of tens of millions of objects would
+need the plan to spill — both far beyond prototype scale.
+
+**Push is capped by Cloudflare, not by this design.** Git smart HTTP sends
+the whole pack as a single POST body, and Cloudflare rejects over-limit
+bodies with a 413 *before the Worker runs* — no server-side change can raise
+it. This is the most important operational limitation of the service today.
+Practical workaround for large imports: split history into several pushes
+(`git push origin <old-sha>:refs/heads/main`, then progressively newer
+commits), each under the limit; maintenance repacks the resulting packs into
+one anyway. Behind that ceiling sit our own (higher) bounds: ingest CPU
+(~0.5-1 GiB per push at the default 30 s CPU budget; raisable via
+`limits.cpu_ms`, then the resumable-ingest extension) and ~50 B/entry scan
+metadata (~1M objects per push comfortably).
+
+Adjacent, about repo *shape* rather than transfer size: the state document
+is one Durable Object value, and DO values cap at 128 KiB — roughly a few
+thousand refs plus the pack manifest. A refs-heavy repo needs the state doc
+sharded (e.g. refs split across keys) before any transfer limit matters.
+
 ## Observability
 
 The deployed Worker reports the same quantities the cost model and the
