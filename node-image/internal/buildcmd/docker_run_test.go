@@ -16,14 +16,21 @@ import (
 const helloE2EExpectedOutput = "node-image-e2e-ok"
 
 // requireDocker skips when the Docker CLI or daemon (local socket / DOCKER_HOST)
-// is unavailable. Cloud agent VMs often lack a daemon; GitHub Actions runners
-// typically have one, so this e2e runs in CI.
+// is unavailable locally. On GitHub Actions it fails instead of skipping so CI
+// cannot silently miss the e2e (ubuntu-latest runners have a Docker socket).
 func requireDocker(t *testing.T) {
 	t.Helper()
+	inCI := os.Getenv("GITHUB_ACTIONS") == "true"
 	if _, err := exec.LookPath("docker"); err != nil {
+		if inCI {
+			t.Fatalf("docker not on PATH in CI (required for e2e): %v", err)
+		}
 		t.Skip("docker not on PATH")
 	}
 	if err := exec.Command("docker", "info").Run(); err != nil {
+		if inCI {
+			t.Fatalf("docker daemon not available in CI (required for e2e): %v", err)
+		}
 		t.Skip("docker daemon not available (no local socket / DOCKER_HOST)")
 	}
 }

@@ -39,11 +39,12 @@ for module in "${modules[@]}"; do
 
   if (
     cd "$module"
-    go test ./...
+    # -v so CI logs show each test (including Docker e2e PASS vs SKIP).
+    go test -v ./...
   ); then
     echo "${module}: tests passed"
   else
-    echo "::error title=Go tests failed::${module}: go test ./..."
+    echo "::error title=Go tests failed::${module}: go test -v ./..."
     result=1
   fi
 
