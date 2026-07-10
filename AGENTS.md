@@ -356,6 +356,9 @@ There is only one iOS app (`ios/`). You add functionality as an **experiment**
 inside it — never as a new top-level iOS directory. This is the iOS analog of
 adding one browser app under the Pages site.
 
+**Full contract (one Bundle ID, no re-signing for experiments, when bootstrap
+is required):** see [`ios/AGENTS.md`](ios/AGENTS.md).
+
 1. Create `ios/Sources/Experiments/<YourExperiment>/` — **one directory per
    experiment** — with a SwiftUI view. Keep the interesting logic in plain types
    so it can be unit-tested without a simulator; add accessibility identifiers
@@ -367,11 +370,12 @@ adding one browser app under the Pages site.
 4. Add tests under `ios/Tests/PlaygroundTests/` (and a UI flow under
    `ios/Tests/PlaygroundUITests/` if useful).
 
-No `project.yml`, workflow, or bundle-identifier changes are needed — the
-launcher picks the experiment up, and the next push to `main` ships it inside
-the same Playground TestFlight build. TestFlight delivery only happens once the
-Apple signing secrets are configured (see `docs/ios-testflight-setup.md`); until
-then CI runs the tests and skips the upload.
+No `project.yml` signing, workflow, or bundle-identifier changes are needed for
+a normal experiment — the launcher picks it up, and the next push to `main`
+ships it inside the same Playground TestFlight build. TestFlight delivery only
+happens once the Apple signing secrets are configured (see
+`docs/ios-testflight-setup.md`); until then CI runs the tests and skips the
+upload.
 
 Run locally (macOS + Xcode):
 

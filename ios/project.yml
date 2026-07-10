@@ -11,6 +11,7 @@ name: Playground
 # Experiments never need new App IDs or re-signing. Avoid app extensions
 # (Custom Keyboard, Watch, widgets, …) unless you deliberately accept a second
 # Bundle ID + match bootstrap — Apple requires a separate id per extension.
+# Full agent contract: AGENTS.md in this directory.
 #
 # `xcodegen generate` produces Playground.xcodeproj, which is git-ignored.
 

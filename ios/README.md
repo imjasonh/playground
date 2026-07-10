@@ -1,5 +1,8 @@
 # ios — the Playground app
 
+> **Agents:** read [`AGENTS.md`](AGENTS.md) first — one Bundle ID, experiments
+> never require re-signing, avoid app extensions.
+
 The **single** iOS app for this repo. Like the GitHub Pages site hosts many
 browser apps, this one **TestFlight app ("Playground")** hosts many
 **experiments** internally. There is exactly one iOS app, one Bundle ID
