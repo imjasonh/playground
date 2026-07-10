@@ -32,7 +32,9 @@ bindings = [
 
 [[migrations]]
 tag = "v1"
-new_classes = ["RepoStateDo"]
+# SQLite-backed Durable Objects: same storage API, available on every
+# Workers plan (`new_classes` DOs require the paid plan).
+new_sqlite_classes = ["RepoStateDo"]
 
 # Repo registry for scheduled maintenance (repos are registered on push).
 # The placeholder id is substituted by .github/scripts/provision-worker-kv.py
