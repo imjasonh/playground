@@ -4,7 +4,8 @@ Dockerless OCI image builds for Node.js / TypeScript apps — the Node cousin of
 [`ko`](https://ko.build) and [`pymage`](https://github.com/imjasonh/pymage).
 
 **Design:** [`docs/node-image-design.md`](../docs/node-image-design.md) ·
-**Plan:** [`docs/node-image-implementation-plan.md`](../docs/node-image-implementation-plan.md)
+**Plan:** [`docs/node-image-implementation-plan.md`](../docs/node-image-implementation-plan.md) ·
+**Monorepo roadmap:** [`docs/node-image-monorepo-roadmap.md`](../docs/node-image-monorepo-roadmap.md)
 
 ## Quick start
 

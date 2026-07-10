@@ -2,7 +2,9 @@
 
 > Status: **Alpha (M0–M7)** — usable CLI with tests in `node-image/`.
 > See [`node-image-implementation-plan.md`](./node-image-implementation-plan.md).
-> Remaining polish is iterative (SBOM, musl mode, npm locks), not blockers for v1.
+> For real-world pnpm monorepo gaps (workspace deploy-like layout, patches,
+> catalogs, private registries, custom bases, layer economics), see the
+> post-alpha plan: [`node-image-monorepo-roadmap.md`](./node-image-monorepo-roadmap.md).
 
 ## 0. Locked decisions
 
