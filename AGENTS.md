@@ -388,7 +388,7 @@ bundle exec fastlane test
 - **Prefer plain HTML + JS** for browser apps unless an app already uses a framework; match the style of neighboring code in that app directory.
 - **Go apps are independent modules**: each app owns its `go.mod` and `go.sum`; avoid cross-app imports.
 - **Rust apps are independent crates**: each app owns its `Cargo.toml`, `Cargo.lock`, and `rust-toolchain.toml`; avoid cross-app imports.
-- **There is one iOS app** (`ios/`, the "Playground" container): add features as experiments inside it, not as new top-level iOS directories. Never commit the generated `*.xcodeproj` or signing material.
+- **There is one iOS app** (`ios/`, the "Playground" container): add features as experiments inside it, not as new top-level iOS directories. One Bundle ID (`io.github.imjasonh.playground`) — experiments never need their own App ID or re-signing. Avoid app extensions unless you accept Apple’s extra Bundle ID requirement. Never commit the generated `*.xcodeproj` or signing material.
 - **Keep all apps isolated**: do not add repo-root `package.json`, `go.mod`, `go.work`, or Cargo workspace files unless the maintainers explicitly request a monorepo toolchain.
 - **Minimize scope**: when fixing or extending one app, avoid unrelated changes in other directories.
 - **Do not commit**: `node_modules/`, secrets, env files, browser/Go/Rust build artifacts (`target/`), or Playwright/Jest output (`test-results/`, `coverage/`).

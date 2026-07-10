@@ -1,7 +1,6 @@
 # XcodeGen output — regenerated from project.yml, never committed.
 *.xcodeproj
 Playground-Info.plist
-T9Keyboard-Info.plist
 
 # Xcode / build artifacts
 DerivedData/
