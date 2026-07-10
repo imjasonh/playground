@@ -20,6 +20,7 @@ playground/
 ├── cors-proxy/            # Rust Cloudflare Worker: SSRF-hardened CORS proxy (not a Pages app)
 ├── cors-proxy-demo/       # static browser front-end for the cors-proxy Worker
 ├── git/                   # in-browser read-only git client (JS + Jest + Playwright)
+├── git-server/            # Rust Cloudflare Worker: git smart-HTTP server on R2/DO (not a Pages app)
 ├── gitdb/                 # Go CLI (Go module + Go tests)
 ├── hello/                 # example static app (HTML only)
 ├── ios/                   # the single "Playground" iOS app (SwiftUI; TestFlight CD)
@@ -47,6 +48,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `ocidb/` | no | Go CLI; no `index.html` |
 | `web-push/` | no | Rust Cloudflare Worker; no `index.html` |
 | `cors-proxy/` | no | Rust Cloudflare Worker; no `index.html` |
+| `git-server/` | no | Rust Cloudflare Worker; no `index.html` |
 | `ios/` | no | The single "Playground" iOS app (XcodeGen + SwiftUI); no `index.html` |
 | `.github/` | no | Infrastructure only |
 | `README.md` | no | Not a directory |
@@ -114,7 +116,7 @@ discovery scripts.
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
 | `deploy.yml` | push to `main` | Publishes all browser apps to GitHub Pages production |
-| `deploy-workers.yml` | push to `main`, manual | Deploys changed Cloudflare Worker apps (those with `wrangler.toml`) with `wrangler`, using the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets; a manual *Run workflow* (`workflow_dispatch`) redeploys all of them. Before deploy it create-or-gets each Worker's KV namespaces and substitutes the placeholder ids in `wrangler.toml`; after deploy it get-or-generates a `VAPID_PRIVATE_KEY` secret for any Worker shipping an `examples/genvapid.rs` |
+| `deploy-workers.yml` | push to `main`, manual | Deploys changed Cloudflare Worker apps (those with `wrangler.toml`) with `wrangler`, using the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets; a manual *Run workflow* (`workflow_dispatch`) redeploys all of them. Before deploy it create-or-gets each Worker's KV namespaces (substituting the placeholder ids in `wrangler.toml`) and creates any declared R2 buckets that don't exist; after deploy it get-or-generates a `VAPID_PRIVATE_KEY` secret for any Worker shipping an `examples/genvapid.rs` |
 | `preview.yml` | pull request opened/sync | When a browser app changed: deploys under `/preview/pr-<N>/` and comments the URL; otherwise no-ops |
 | `cleanup.yml` | pull request closed | Removes that PR's preview directory from `gh-pages` and refreshes the root index |
 | `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps in one job |
@@ -331,11 +333,12 @@ go test ./...
 7. For a Cloudflare Worker, add a `wrangler.toml`. `deploy-workers.yml` then
    deploys it on pushes to `main` automatically (no workflow edits needed); it
    relies on the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets.
-   The deploy self-provisions Cloudflare-side config: KV namespaces referenced
-   with a placeholder id (e.g. `id = "REPLACE_WITH_..."`) are created-or-fetched
-   and rewritten to real ids before deploy, and a Worker that ships
-   `examples/genvapid.rs` gets a `VAPID_PRIVATE_KEY` secret generated once (only
-   if absent, so the key is stable across deploys).
+ The deploy self-provisions Cloudflare-side config: KV namespaces referenced
+ with a placeholder id (e.g. `id = "REPLACE_WITH_..."`) are created-or-fetched
+ and rewritten to real ids before deploy, R2 buckets named by `[[r2_buckets]]`
+ entries are created if absent, and a Worker that ships
+ `examples/genvapid.rs` gets a `VAPID_PRIVATE_KEY` secret generated once (only
+ if absent, so the key is stable across deploys).
 
 No workflow edits are required. CI discovers a new Rust app from its
 `Cargo.toml`, the deploy workflow discovers a new Worker from its
@@ -449,6 +452,7 @@ bundle exec fastlane test
 |-----------|------|-------|
 | `web-push/` | Web Push backend — Cloudflare Worker (RFC 8030/8188/8291/8292) | `cargo test` + clippy + wasm build |
 | `cors-proxy/` | SSRF-hardened CORS proxy — Cloudflare Worker | `cargo test` + clippy + wasm build |
+| `git-server/` | git smart-HTTP server on R2 + Durable Objects — Cloudflare Worker | `cargo test` (incl. real-git integration) + clippy + wasm build |
 
 ## The iOS app
 

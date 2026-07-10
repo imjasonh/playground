@@ -67,8 +67,11 @@ jobs:
           # periodically (the dependency-update bot doesn't manage it).
           wranglerVersion: "4.107.0"
           # Before deploying, create-or-get the KV namespaces this Worker needs
-          # and rewrite the placeholder ids in wrangler.toml with the real ones.
-          preCommands: python3 "$GITHUB_WORKSPACE/.github/scripts/provision-worker-kv.py"
+          # (rewriting the placeholder ids in wrangler.toml with the real ones)
+          # and create any R2 buckets it declares that don't exist yet.
+          preCommands: |
+            python3 "$GITHUB_WORKSPACE/.github/scripts/provision-worker-kv.py"
+            python3 "$GITHUB_WORKSPACE/.github/scripts/provision-worker-r2.py"
           # After deploying (the script now exists), get-or-generate its
           # VAPID_PRIVATE_KEY secret. Both commands inherit CLOUDFLARE_API_TOKEN
           # and CLOUDFLARE_ACCOUNT_ID from wrangler-action and run in the app dir.

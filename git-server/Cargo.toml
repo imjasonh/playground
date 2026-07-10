@@ -1,0 +1,88 @@
+[package]
+# The Cloudflare Worker itself is named just "git" (see wrangler.toml); the
+# crate keeps the directory's name to stay distinct from the `git/` browser
+# app elsewhere in this repo.
+name = "git-server"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "A git smart-HTTP server for Cloudflare Workers (R2 + Durable Objects), written in Rust"
+repository = "https://github.com/imjasonh/playground"
+readme = "README.md"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+# Dependencies that build on every target (native + wasm). All of the git
+# plumbing (pkt-line, pack parsing/indexing, delta resolution, protocol v2,
+# push-time indexes, blame) lives here so the exact same code path is exercised
+# by native `cargo test`, by miniflare (wasm), and in production.
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# SHA-1 for git object ids (pure Rust, wasm-friendly).
+sha1 = "0.10"
+# Streaming zlib inflate/deflate with the pure-Rust miniz_oxide backend so the
+# same compressor runs natively and on wasm32 (no C toolchain).
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+hex = "0.4"
+async-trait = "0.1"
+futures = "0.3"
+
+# The Cloudflare Workers runtime bindings are wasm-only. Gating them to the
+# wasm32 target keeps native `cargo test` free of the JS/wasm-bindgen glue, so
+# all business logic stays testable on the host.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+worker = "0.5"
+# Wall clock for request metrics (Date.now); version family is pinned by the
+# wasm-bindgen pin below.
+js-sys = "0.3"
+# The `#[durable_object]` macro expands to code referencing these two crates
+# directly, so they must be declared even though `worker` re-exports them.
+wasm-bindgen-futures = "0.4"
+serde-wasm-bindgen = "0.6"
+# MSRV pin (Rust 1.83): worker -> url -> idna pulls idna_adapter 1.2.x, which
+# requires edition2024 via the icu crates. 1.1.0 uses unicode-normalization and
+# builds on 1.83.
+idna_adapter = "=1.1.0"
+# Deploy pin: the deploy step builds the Worker with worker-build 0.1.x (the
+# line that supports worker 0.5), which bundles the wasm-bindgen CLI 0.2.105.
+# The wasm-bindgen *library* schema must match that CLI exactly, so pin it here.
+# Bump this in lock-step with the worker-build version in wrangler.toml, or
+# when moving to worker >= 0.8.
+wasm-bindgen = "=0.2.105"
+
+[dev-dependencies]
+# Minimal blocking HTTP server used by the native integration tests to serve
+# the transport-agnostic handler to a *real* `git` client over localhost.
+tiny_http = "0.12"
+# MSRV pin (Rust 1.83): newer tempfile pulls getrandom 0.4, which requires
+# edition2024.
+tempfile = "=3.14.0"
+
+# Hand-rolled harnesses rather than criterion: criterion's clap dependency
+# requires edition2024, which Rust 1.83's cargo cannot parse.
+[[bench]]
+name = "pack"
+harness = false
+
+# End-to-end large-repo benchmark (real git client + native server) with
+# per-phase timing and backend-op counts. `cargo bench --bench large_repo`.
+[[bench]]
+name = "large_repo"
+harness = false
+
+# File-log query microbenchmark: monolithic vs path-range-sharded layouts.
+[[bench]]
+name = "filelog"
+harness = false
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true
+
+# Benchmarks want optimized code even in `cargo bench` default profile.
+[profile.bench]
+opt-level = 3
