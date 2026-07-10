@@ -206,17 +206,20 @@ impl MemStore {
 #[async_trait(?Send)]
 impl Store for MemStore {
     async fn put(&self, key: &str, data: Vec<u8>) -> Result<()> {
+        let _t = crate::metrics::BackendTimer::start(crate::metrics::Op::R2ClassA);
         self.ops.lock().unwrap().class_a += 1;
         self.objects.lock().unwrap().insert(key.to_string(), data);
         Ok(())
     }
 
     async fn get(&self, key: &str) -> Result<Option<Vec<u8>>> {
+        let _t = crate::metrics::BackendTimer::start(crate::metrics::Op::R2ClassB);
         self.ops.lock().unwrap().class_b += 1;
         Ok(self.objects.lock().unwrap().get(key).cloned())
     }
 
     async fn get_range(&self, key: &str, offset: u64, len: u64) -> Result<Option<Vec<u8>>> {
+        let _t = crate::metrics::BackendTimer::start(crate::metrics::Op::R2ClassB);
         self.ops.lock().unwrap().class_b += 1;
         Ok(self.objects.lock().unwrap().get(key).map(|data| {
             let start = (offset as usize).min(data.len());
@@ -226,6 +229,7 @@ impl Store for MemStore {
     }
 
     async fn size(&self, key: &str) -> Result<Option<u64>> {
+        let _t = crate::metrics::BackendTimer::start(crate::metrics::Op::R2ClassB);
         self.ops.lock().unwrap().class_b += 1;
         Ok(self
             .objects
@@ -236,6 +240,7 @@ impl Store for MemStore {
     }
 
     async fn delete(&self, key: &str) -> Result<()> {
+        let _t = crate::metrics::BackendTimer::start(crate::metrics::Op::R2ClassA);
         self.ops.lock().unwrap().class_a += 1;
         self.objects.lock().unwrap().remove(key);
         Ok(())
@@ -243,6 +248,7 @@ impl Store for MemStore {
 
     async fn start_upload(&self, key: &str) -> Result<Box<dyn Uploader>> {
         // R2 CreateMultipartUpload is Class A.
+        crate::metrics::backend(crate::metrics::Op::R2ClassA, 0.0);
         self.ops.lock().unwrap().class_a += 1;
         Ok(Box::new(MemUploader {
             store: self.clone(),
@@ -269,6 +275,7 @@ impl Uploader for MemUploader {
         // buffering the production R2 uploader does.
         self.unparted += chunk.len();
         while self.unparted >= 5 * 1024 * 1024 {
+            crate::metrics::backend(crate::metrics::Op::R2ClassA, 0.0);
             self.store.ops.lock().unwrap().class_a += 1;
             self.unparted -= 5 * 1024 * 1024;
         }
@@ -276,7 +283,8 @@ impl Uploader for MemUploader {
     }
 
     async fn complete(self: Box<Self>) -> Result<u64> {
-        self.store.ops.lock().unwrap().class_a += 1; // CompleteMultipartUpload
+        crate::metrics::backend(crate::metrics::Op::R2ClassA, 0.0); // CompleteMultipartUpload
+        self.store.ops.lock().unwrap().class_a += 1;
         let len = self.buf.len() as u64;
         self.store
             .objects
@@ -287,6 +295,7 @@ impl Uploader for MemUploader {
     }
 
     async fn abort(self: Box<Self>) -> Result<()> {
+        crate::metrics::backend(crate::metrics::Op::R2ClassA, 0.0);
         self.store.ops.lock().unwrap().class_a += 1;
         Ok(())
     }

@@ -377,6 +377,53 @@ CPU cost from the most bandwidth-heavy operation.
   documented resumable-ingest extension (scan continues from a byte offset via
   ranged reads after the upload completes).
 
+## Observability
+
+The deployed Worker reports the same quantities the cost model and the
+native benchmarks are built on, so production assumptions are checkable
+instead of hopeful. Everything is collected per request by a thread-local
+in `src/metrics.rs` (a few clock reads per backend call; no allocation
+until emission) and emitted two ways:
+
+* **`Server-Timing` response header** on every response — standard,
+  machine-parseable, visible in `curl -v`, browser dev tools, and RUM
+  tooling:
+
+  ```
+  Server-Timing: total;dur=35.0, backend;dur=34.0, r2a;desc="0",
+    r2b;desc="5", do;desc="1", kv;desc="0", cost;desc="1.950u$",
+    filelog_load_parse;dur=1.0, ...
+  ```
+
+  `total` is handler wall time, `backend` is milliseconds awaited on
+  R2/DO/KV (the gap between them is our own CPU), the `desc` counters are
+  the R2 Class A/B, Durable Object, and KV op counts, `cost` prices them at
+  list rates, and each pipeline phase (`src/timing.rs` spans: scan, resolve,
+  filelog build, fetch selection, pack build…) gets its own entry.
+
+* **One structured JSON log line per request** (`{"evt":"req",...}` with
+  method, path, status, ms, backend_ms, op counts, bytes in/out, cost, and
+  a phase map) via `console.log` — queryable in the Workers Logs dashboard
+  and streamable with `npx wrangler tail --format json`. This is the only
+  window into the git-protocol endpoints, whose response headers a git
+  client never surfaces. Scheduled repacks log an equivalent
+  `{"evt":"req","method":"CRON",...}` line per repo.
+
+The native test server and benches emit the identical header (the in-memory
+stores feed the same collector), an integration test asserts its shape, and
+**`scripts/bench-remote.sh`** turns it into a report: it pushes/clones a
+synthetic repo against `GIT_SERVER_URL` (or a local `wrangler dev`),
+measures client-side GiB/s and per-API median latency, and prints the
+server's own backend-ms/op-count/µ$ figures per endpoint, before and after
+repack. Run it after deploying to validate the cost table above with real
+network and R2 latency in the loop.
+
+Not built yet (documented options): a typed Workers Analytics Engine
+binding doesn't exist in worker-rs 0.5, so time-series metrics would
+currently need raw JS interop — Workers Logs covers the need for now; and
+request logs are unsampled (one line per request), which is fine at
+prototype traffic and a knob to add before serious volume.
+
 ## Consistency summary
 
 | Guarantee | Mechanism |

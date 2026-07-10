@@ -32,6 +32,9 @@ futures = "0.3"
 # all business logic stays testable on the host.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 worker = "0.5"
+# Wall clock for request metrics (Date.now); version family is pinned by the
+# wasm-bindgen pin below.
+js-sys = "0.3"
 # The `#[durable_object]` macro expands to code referencing these two crates
 # directly, so they must be declared even though `worker` re-exports them.
 wasm-bindgen-futures = "0.4"

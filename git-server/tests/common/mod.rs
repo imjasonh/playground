@@ -94,14 +94,23 @@ impl TestServer {
 
     /// Simple blocking HTTP GET against the server (for the read APIs).
     pub fn get(&self, path: &str) -> (u16, Vec<u8>) {
-        self.request("GET", path)
+        let (status, _, body) = self.request("GET", path);
+        (status, body)
     }
 
     pub fn post(&self, path: &str) -> (u16, Vec<u8>) {
-        self.request("POST", path)
+        let (status, _, body) = self.request("POST", path);
+        (status, body)
     }
 
-    fn request(&self, method: &str, path: &str) -> (u16, Vec<u8>) {
+    /// GET returning (status, response header block, body) for tests that
+    /// assert on headers (e.g. Server-Timing).
+    #[allow(dead_code)]
+    pub fn get_with_headers(&self, path: &str) -> (u16, String, Vec<u8>) {
+        self.request("GET", path)
+    }
+
+    fn request(&self, method: &str, path: &str) -> (u16, String, Vec<u8>) {
         use std::io::Write;
         let mut stream = std::net::TcpStream::connect(("127.0.0.1", self.port)).expect("connect");
         // HTTP/1.0 keeps the response un-chunked, so body extraction is a
@@ -124,7 +133,7 @@ impl TestServer {
             .and_then(|l| l.split_whitespace().nth(1))
             .and_then(|s| s.parse().ok())
             .expect("status line");
-        (status, raw[split + 4..].to_vec())
+        (status, head, raw[split + 4..].to_vec())
     }
 }
 
@@ -167,14 +176,21 @@ fn serve_one(store: &MemStore, states: &MemStateStore, mut request: tiny_http::R
         done: false,
     };
     let nonce = format!("t{}", NONCE.fetch_add(1, Ordering::Relaxed));
-    let resp = futures::executor::block_on(server.handle(&git_req, &mut body, &nonce));
+    let mut resp = futures::executor::block_on(server.handle(&git_req, &mut body, &nonce));
 
-    let response = tiny_http::Response::from_data(resp.body)
+    let mut response = tiny_http::Response::from_data(std::mem::take(&mut resp.body))
         .with_status_code(resp.status)
         .with_header(
             tiny_http::Header::from_bytes(&b"Content-Type"[..], resp.content_type.as_bytes())
                 .unwrap(),
         );
+    // Emit metrics exactly as the Worker does, so tests can assert on them
+    // and the local benchmark scripts read the same header as remote ones.
+    if let Some(header) = resp.server_timing() {
+        response = response.with_header(
+            tiny_http::Header::from_bytes(&b"Server-Timing"[..], header.as_bytes()).unwrap(),
+        );
+    }
     let _ = request.respond(response);
 }
 

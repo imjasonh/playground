@@ -120,6 +120,7 @@ impl MemStateStore {
 #[async_trait(?Send)]
 impl StateStore for MemStateStore {
     async fn load(&self, repo: &str) -> Result<(RepoState, u64), StateError> {
+        let _t = crate::metrics::BackendTimer::start(crate::metrics::Op::DoRequest);
         *self.ops.lock().unwrap() += 1;
         Ok(self
             .inner
@@ -136,6 +137,7 @@ impl StateStore for MemStateStore {
         expected_version: u64,
         state: &RepoState,
     ) -> Result<u64, StateError> {
+        let _t = crate::metrics::BackendTimer::start(crate::metrics::Op::DoRequest);
         *self.ops.lock().unwrap() += 1;
         let mut map = self.inner.lock().unwrap();
         let current = map.get(repo).map(|(_, v)| *v).unwrap_or(0);

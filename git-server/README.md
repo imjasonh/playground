@@ -59,6 +59,24 @@ cargo bench --bench large_repo
 cargo bench --bench filelog
 ```
 
+## Observability & remote benchmarking
+
+Every response carries a `Server-Timing` header with handler/backend
+milliseconds, R2/DO/KV op counts, per-phase timings, and the estimated
+request cost; every request also logs one structured JSON line (view with
+`npx wrangler tail --format json` or the Workers Logs dashboard — that's
+where push/clone metrics live, since git clients don't surface response
+headers). See "Observability" in [`docs/design.md`](docs/design.md).
+
+```bash
+# Measure a deployed backend: bulk push/clone GiB/s, per-API latency, and
+# the server's own op-count/cost figures per endpoint (before/after repack).
+GIT_SERVER_URL=https://git-server-worker.example.workers.dev ./scripts/bench-remote.sh
+
+# Same report against a local `wrangler dev --local` (starts it for you).
+./scripts/bench-remote.sh
+```
+
 The integration tests start a localhost HTTP server backed by in-memory
 storage and run actual `git clone` / `push` / `pull` / `fsck` / `blame`
 against it, verifying our blame output line-by-line against `git blame`.

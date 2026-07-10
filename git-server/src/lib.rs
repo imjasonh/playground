@@ -39,6 +39,7 @@ pub mod diff;
 pub mod fileapi;
 pub mod http;
 pub mod maintenance;
+pub mod metrics;
 pub mod object;
 pub mod odb;
 pub mod pack;

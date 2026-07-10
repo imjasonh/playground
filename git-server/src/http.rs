@@ -39,6 +39,10 @@ pub struct Response {
     pub status: u16,
     pub content_type: String,
     pub body: Vec<u8>,
+    /// Request metrics and total handler milliseconds, populated by
+    /// [`GitHttp::handle`]. Transports emit these as a `Server-Timing`
+    /// header and/or a structured log line.
+    pub metrics: Option<(crate::metrics::Metrics, f64)>,
 }
 
 impl Response {
@@ -47,6 +51,7 @@ impl Response {
             status: 200,
             content_type: content_type.to_string(),
             body,
+            metrics: None,
         }
     }
 
@@ -55,7 +60,16 @@ impl Response {
             status,
             content_type: "application/json".to_string(),
             body: value.to_string().into_bytes(),
+            metrics: None,
         }
+    }
+
+    /// The `Server-Timing` header value for this response, if metrics were
+    /// collected.
+    pub fn server_timing(&self) -> Option<String> {
+        self.metrics
+            .as_ref()
+            .map(|(m, total)| m.server_timing(*total))
     }
 
     fn error(status: u16, message: &str) -> Response {
@@ -104,12 +118,27 @@ impl<'a> GitHttp<'a> {
     /// Handle one request. `nonce` must be unique per request (used to name
     /// staged pack uploads); the caller supplies randomness because this
     /// crate is runtime-agnostic.
+    ///
+    /// Collects request metrics (backend op counts, phase timings, bytes)
+    /// and attaches them to the response for the transport to emit.
     pub async fn handle(
         &self,
         req: &Request<'_>,
         body: &mut dyn BodyStream,
         nonce: &str,
     ) -> Response {
+        crate::metrics::begin();
+        let start = crate::metrics::now_ms();
+        let mut resp = self.route(req, body, nonce).await;
+        let total_ms = crate::metrics::now_ms() - start;
+        if let Some(mut m) = crate::metrics::take() {
+            m.bytes_out += resp.body.len() as u64;
+            resp.metrics = Some((m, total_ms));
+        }
+        resp
+    }
+
+    async fn route(&self, req: &Request<'_>, body: &mut dyn BodyStream, nonce: &str) -> Response {
         let segments: Vec<&str> = req.path.split('/').filter(|s| !s.is_empty()).collect();
         match segments.as_slice() {
             ["api", rest @ ..] => self.handle_api(req, rest, nonce).await,

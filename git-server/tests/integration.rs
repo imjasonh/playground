@@ -105,6 +105,19 @@ fn end_to_end() {
     let refs: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(refs["refs"]["refs/heads/main"].as_str().unwrap(), head);
 
+    // Observability: every response carries a Server-Timing header with the
+    // cost-model op counters and phase timings.
+    let (status, headers, _) = server.get_with_headers("/api/test/blame/main/src/lib.rs");
+    assert_eq!(status, 200);
+    let timing = headers
+        .lines()
+        .find(|l| l.to_ascii_lowercase().starts_with("server-timing:"))
+        .expect("Server-Timing header present");
+    assert!(timing.contains("total;dur="), "{timing}");
+    assert!(timing.contains("r2b;desc="), "{timing}");
+    assert!(timing.contains("do;desc=\"1\""), "{timing}");
+    assert!(timing.contains("cost;desc="), "{timing}");
+
     // --- 5. Blame matches git blame. ----------------------------------------
     assert_blame_matches(&server, &src, "src/lib.rs");
 

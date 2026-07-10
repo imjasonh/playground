@@ -14,6 +14,7 @@
 //!   updated on push) and runs pack consolidation on repos that need it.
 
 use crate::http::{GitHttp, Request as HttpRequest};
+use crate::metrics::{BackendTimer, Op};
 use crate::protocol::BodyStream;
 use crate::refs::{RepoState, StateError, StateStore};
 use crate::storage::{Result as StorageResult, StorageError, Store, Uploader};
@@ -55,11 +56,13 @@ impl R2Store {
 #[async_trait(?Send)]
 impl Store for R2Store {
     async fn put(&self, key: &str, data: Vec<u8>) -> StorageResult<()> {
+        let _t = BackendTimer::start(Op::R2ClassA);
         self.bucket.put(key, data).execute().await.map_err(s_err)?;
         Ok(())
     }
 
     async fn get(&self, key: &str) -> StorageResult<Option<Vec<u8>>> {
+        let _t = BackendTimer::start(Op::R2ClassB);
         match self.bucket.get(key).execute().await.map_err(s_err)? {
             Some(obj) => match obj.body() {
                 Some(body) => Ok(Some(body.bytes().await.map_err(s_err)?)),
@@ -70,6 +73,7 @@ impl Store for R2Store {
     }
 
     async fn get_range(&self, key: &str, offset: u64, len: u64) -> StorageResult<Option<Vec<u8>>> {
+        let _t = BackendTimer::start(Op::R2ClassB);
         let got = self
             .bucket
             .get(key)
@@ -90,6 +94,7 @@ impl Store for R2Store {
     }
 
     async fn size(&self, key: &str) -> StorageResult<Option<u64>> {
+        let _t = BackendTimer::start(Op::R2ClassB);
         Ok(self
             .bucket
             .head(key)
@@ -99,10 +104,12 @@ impl Store for R2Store {
     }
 
     async fn delete(&self, key: &str) -> StorageResult<()> {
+        let _t = BackendTimer::start(Op::R2ClassA);
         self.bucket.delete(key).await.map_err(s_err)
     }
 
     async fn start_upload(&self, key: &str) -> StorageResult<Box<dyn Uploader>> {
+        let _t = BackendTimer::start(Op::R2ClassA);
         let upload = self
             .bucket
             .create_multipart_upload(key)
@@ -133,6 +140,7 @@ impl R2Uploader {
             return Ok(());
         }
         let data = std::mem::take(&mut self.buf);
+        let _t = BackendTimer::start(Op::R2ClassA);
         let part = self
             .upload
             .upload_part(self.next_part, data)
@@ -152,6 +160,7 @@ impl Uploader for R2Uploader {
         while self.buf.len() >= PART_SIZE {
             let rest = self.buf.split_off(PART_SIZE);
             let full = std::mem::replace(&mut self.buf, rest);
+            let _t = BackendTimer::start(Op::R2ClassA);
             let part = self
                 .upload
                 .upload_part(self.next_part, full)
@@ -166,11 +175,13 @@ impl Uploader for R2Uploader {
     async fn complete(mut self: Box<Self>) -> StorageResult<u64> {
         self.flush_part().await?;
         let parts = std::mem::take(&mut self.parts);
+        let _t = BackendTimer::start(Op::R2ClassA);
         self.upload.complete(parts).await.map_err(s_err)?;
         Ok(self.total)
     }
 
     async fn abort(self: Box<Self>) -> StorageResult<()> {
+        let _t = BackendTimer::start(Op::R2ClassA);
         self.upload.abort().await.map_err(s_err)
     }
 }
@@ -262,6 +273,7 @@ impl DoStateStore {
         }
         let req = Request::new_with_init(&format!("https://do{path}"), &init)
             .map_err(|e| StateError::Backend(e.to_string()))?;
+        let _t = BackendTimer::start(Op::DoRequest);
         stub.fetch_with_request(req)
             .await
             .map_err(|e| StateError::Backend(e.to_string()))
@@ -321,7 +333,10 @@ impl BodyStream for WorkerBody {
     async fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, String> {
         match &mut self.stream {
             Some(s) => match s.next().await {
-                Some(Ok(chunk)) => Ok(Some(chunk)),
+                Some(Ok(chunk)) => {
+                    crate::metrics::add_bytes_in(chunk.len() as u64);
+                    Ok(Some(chunk))
+                }
                 Some(Err(e)) => Err(e.to_string()),
                 None => Ok(None),
             },
@@ -369,11 +384,12 @@ async fn fetch(mut req: Request, env: Env, _ctx: Context) -> worker::Result<Resp
     };
 
     let nonce = request_nonce();
-    let resp = server.handle(&http_req, &mut body, &nonce).await;
+    let mut resp = server.handle(&http_req, &mut body, &nonce).await;
 
     // Register the repo for scheduled maintenance after a successful push.
     // Read-before-write: a KV read is ~10x cheaper than a write, and every
-    // push after the first hits the read path.
+    // push after the first hits the read path. (This runs after the metrics
+    // collector was drained, so account for it directly.)
     if method == "POST" && path.ends_with("/git-receive-pack") && resp.status == 200 {
         if let Some(repo) = path
             .trim_matches('/')
@@ -382,19 +398,35 @@ async fn fetch(mut req: Request, env: Env, _ctx: Context) -> worker::Result<Resp
             .map(|r| r.trim_end_matches(".git"))
         {
             if let Ok(kv) = env.kv(REPOS_KV_BINDING) {
+                let kv_start = crate::metrics::now_ms();
                 let known = kv.get(repo).text().await.ok().flatten().is_some();
+                let mut kv_ops = 1;
                 if !known {
                     if let Ok(put) = kv.put(repo, "1") {
                         let _ = put.execute().await;
+                        kv_ops += 1;
                     }
+                }
+                if let Some((m, _)) = resp.metrics.as_mut() {
+                    m.kv_ops += kv_ops;
+                    m.backend_ms += crate::metrics::now_ms() - kv_start;
                 }
             }
         }
     }
 
+    // Emit observability: a Server-Timing header (curl / browser visible)
+    // and one structured JSON log line per request (Workers Logs /
+    // `wrangler tail`) carrying the cost-model op counts and phase timings.
     let mut headers = worker::Headers::new();
     headers.set("Content-Type", &resp.content_type)?;
     headers.set("Cache-Control", "no-cache")?;
+    if let Some(header) = resp.server_timing() {
+        headers.set("Server-Timing", &header)?;
+    }
+    if let Some((m, total_ms)) = &resp.metrics {
+        worker::console_log!("{}", m.log_json(&method, &path, resp.status, *total_ms));
+    }
     Ok(Response::from_bytes(resp.body)?
         .with_status(resp.status)
         .with_headers(headers))
@@ -433,9 +465,20 @@ async fn scheduled(_event: worker::ScheduledEvent, env: Env, _ctx: worker::Sched
             states: &states,
             name: &key.name,
         };
-        match crate::maintenance::repack(&repo, &request_nonce()).await {
+        crate::metrics::begin();
+        let start = crate::metrics::now_ms();
+        let result = crate::maintenance::repack(&repo, &request_nonce()).await;
+        let total_ms = crate::metrics::now_ms() - start;
+        let metrics = crate::metrics::take();
+        match result {
             Ok(outcome) => {
-                worker::console_log!("repack {}: {:?}", key.name, outcome)
+                worker::console_log!("repack {}: {:?}", key.name, outcome);
+                if let Some(m) = metrics {
+                    worker::console_log!(
+                        "{}",
+                        m.log_json("CRON", &format!("/repack/{}", key.name), 200, total_ms)
+                    );
+                }
             }
             Err(e) => worker::console_error!("repack {} failed: {e}", key.name),
         }
