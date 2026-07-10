@@ -50,6 +50,12 @@ pub struct Metrics {
     pub phases: Vec<(&'static str, f64)>,
     pub bytes_in: u64,
     pub bytes_out: u64,
+    /// Largest single request-body chunk observed. Diagnostic for edge
+    /// buffering: if a chunked (Transfer-Encoding) upload arrives as one
+    /// giant chunk instead of a stream of small ones, its JS+wasm copies
+    /// blow the isolate memory limit — this field proves or disproves that
+    /// from a single log line.
+    pub max_chunk_in: u64,
 }
 
 thread_local! {
@@ -108,7 +114,12 @@ pub fn phase(label: &'static str, ms: f64) {
 }
 
 pub fn add_bytes_in(n: u64) {
-    with_active(|m| m.bytes_in += n);
+    with_active(|m| {
+        m.bytes_in += n;
+        if n > m.max_chunk_in {
+            m.max_chunk_in = n;
+        }
+    });
 }
 
 pub fn add_bytes_out(n: u64) {
@@ -141,6 +152,7 @@ impl Metrics {
             format!("do;desc=\"{}\"", self.do_requests),
             format!("kv;desc=\"{}\"", self.kv_ops),
             format!("cost;desc=\"{:.3}u$\"", self.cost_usd() * 1e6),
+            format!("maxchunk;desc=\"{}\"", self.max_chunk_in),
         ];
         for (label, ms) in &self.phases {
             // Phase labels become header-safe tokens: "push: stream+scan" →
@@ -168,13 +180,14 @@ impl Metrics {
         format!(
             "{{\"evt\":\"req\",\"method\":\"{method}\",\"path\":\"{path}\",\"status\":{status},\
              \"ms\":{total_ms:.1},\"backend_ms\":{:.1},\"r2a\":{},\"r2b\":{},\"do\":{},\"kv\":{},\
-             \"bytes_in\":{},\"bytes_out\":{},\"cost_usd\":{:.9},\"phases\":{{{}}}}}",
+             \"bytes_in\":{},\"max_chunk_in\":{},\"bytes_out\":{},\"cost_usd\":{:.9},\"phases\":{{{}}}}}",
             self.backend_ms,
             self.r2_class_a,
             self.r2_class_b,
             self.do_requests,
             self.kv_ops,
             self.bytes_in,
+            self.max_chunk_in,
             self.bytes_out,
             self.cost_usd(),
             phases.join(",")
@@ -216,6 +229,7 @@ mod tests {
         backend(Op::DoRequest, 3.0);
         phase("fetch: build pack", 7.0);
         add_bytes_in(10);
+        add_bytes_in(4);
         add_bytes_out(20);
         let m = take().expect("metrics active");
         assert_eq!(m.r2_class_b, 2);
@@ -223,7 +237,8 @@ mod tests {
         assert_eq!(m.do_requests, 1);
         assert!((m.backend_ms - 7.0).abs() < 1e-9);
         assert_eq!(m.phases, vec![("fetch: build pack", 7.0)]);
-        assert_eq!((m.bytes_in, m.bytes_out), (10, 20));
+        assert_eq!((m.bytes_in, m.bytes_out), (14, 20));
+        assert_eq!(m.max_chunk_in, 10);
         // Second take is empty; recording without begin is a no-op.
         assert!(take().is_none());
         backend(Op::Kv, 1.0);
