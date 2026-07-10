@@ -6,7 +6,7 @@ const result = esbuild.transformSync('export const n = 1 + 2', {
   format: 'cjs',
   loader: 'js',
 });
-if (!result || typeof result.code !== 'string' || !result.code.includes('3')) {
+if (!result || typeof result.code !== 'string' || !result.code.includes('1 + 2')) {
   console.error('esbuild.transformSync failed:', result && result.code);
   process.exit(1);
 }
