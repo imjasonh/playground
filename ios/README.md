@@ -42,9 +42,12 @@ ios/
 ### Follow the Hum
 
 Outdoor sound-hunt: the app hides a walkable spot ~120–320 m away and plays a
-soft stereo hum in your headphones. Turn until the hum sits in front of you,
-then walk — it brightens and clears as you get closer. Arrive within ~22 m to
-win. Needs a real device with location + compass (not the Simulator).
+soft stereo hum in your headphones. **AirPods Pro/Max head tracking** keeps the
+hum fixed in the world as you turn your head (phone compass locks north once at
+start, then the phone can go in a pocket). Turn until the hum sits in front of
+you, then walk — it brightens and clears as you get closer. Arrive within ~22 m
+to win. Needs a real device with location + compass; head tracking needs
+compatible AirPods.
 
 ### T9 Keyboard
 

@@ -1,9 +1,14 @@
 import Combine
 import CoreLocation
+import CoreMotion
 import Foundation
 
-/// Owns location/heading permissions, the pure `HumGame`, and the hum audio
-/// engine. The SwiftUI view observes this object.
+/// Owns location/heading permissions, AirPods head tracking, the pure `HumGame`,
+/// and the hum audio engine. The SwiftUI view observes this object.
+///
+/// Steering uses **head** facing when AirPods motion is available: we lock
+/// headphone yaw to true north once via the phone compass at hunt start, then
+/// the phone can go in a pocket while the hum follows your head.
 final class HumHuntSession: NSObject, ObservableObject {
     @Published private(set) var phase: HumGame.Phase = .idle
     @Published private(set) var statusMessage = "Put on AirPods, then start a hunt."
@@ -11,16 +16,22 @@ final class HumHuntSession: NSObject, ObservableObject {
     @Published private(set) var relativeBearingDegrees: Double?
     @Published private(set) var authorizationDenied = false
     @Published private(set) var headingAvailable = true
+    @Published private(set) var usingHeadTracking = false
     @Published private(set) var lastCoordinate: CLLocationCoordinate2D?
     @Published private(set) var lastHeadingDegrees: Double?
 
     private let game = HumGame()
     private let locationManager = CLLocationManager()
+    private let headphoneMotion = CMHeadphoneMotionManager()
+    private let motionQueue = OperationQueue()
     private let audio = HumAudioEngine()
+    private var fusion = HumHeadingFusion()
     private var wantsHunt = false
 
     override init() {
         super.init()
+        motionQueue.name = "FollowTheHum.headMotion"
+        motionQueue.maxConcurrentOperationCount = 1
         locationManager.delegate = self
         locationManager.desiredAccuracy = kCLLocationAccuracyBest
         locationManager.activityType = .fitness
@@ -34,6 +45,8 @@ final class HumHuntSession: NSObject, ObservableObject {
     func requestPermissionsAndStart() {
         wantsHunt = true
         authorizationDenied = false
+        fusion.reset()
+        usingHeadTracking = false
         switch locationManager.authorizationStatus {
         case .notDetermined:
             locationManager.requestWhenInUseAuthorization()
@@ -53,11 +66,13 @@ final class HumHuntSession: NSObject, ObservableObject {
         wantsHunt = false
         game.stop()
         audio.stop()
-        locationManager.stopUpdatingLocation()
-        locationManager.stopUpdatingHeading()
+        stopSensors()
+        fusion.reset()
+        usingHeadTracking = false
         phase = .idle
         distanceMeters = nil
         relativeBearingDegrees = nil
+        lastHeadingDegrees = nil
         statusMessage = "Hunt stopped. Start again when you're ready."
     }
 
@@ -71,6 +86,7 @@ final class HumHuntSession: NSObject, ObservableObject {
         headingAvailable = true
         locationManager.startUpdatingLocation()
         locationManager.startUpdatingHeading()
+        startHeadTrackingIfAvailable()
 
         if let coordinate = lastCoordinate {
             startHuntIfNeeded(from: coordinate)
@@ -79,13 +95,49 @@ final class HumHuntSession: NSObject, ObservableObject {
         }
     }
 
-    private func startHuntIfNeeded(from coordinate: CLLocationCoordinate2D) {
-        guard wantsHunt, phase != .hunting else { return }
-        // Prefer a real heading before hiding the spot so the first hum pan is meaningful.
-        guard lastHeadingDegrees != nil else {
-            statusMessage = "Calibrating compass — walk a few steps in a figure‑eight if needed…"
+    private func startHeadTrackingIfAvailable() {
+        guard headphoneMotion.isDeviceMotionAvailable else {
+            // Still playable with phone compass (hold the phone facing forward).
             return
         }
+        headphoneMotion.startDeviceMotionUpdates(to: motionQueue) { [weak self] motion, error in
+            guard let self else { return }
+            if error != nil { return }
+            guard let motion else { return }
+            // CMAttitude.yaw is radians; convert. Same axis used for left/right turns.
+            let yawDegrees = motion.attitude.yaw * 180 / .pi
+            DispatchQueue.main.async {
+                self.fusion.ingestHeadYaw(yawDegrees)
+                self.usingHeadTracking = self.fusion.isHeadLocked
+                self.tickFromSensors()
+            }
+        }
+    }
+
+    private func stopSensors() {
+        locationManager.stopUpdatingLocation()
+        locationManager.stopUpdatingHeading()
+        if headphoneMotion.isDeviceMotionActive {
+            headphoneMotion.stopDeviceMotionUpdates()
+        }
+    }
+
+    private func startHuntIfNeeded(from coordinate: CLLocationCoordinate2D) {
+        guard wantsHunt, phase != .hunting else { return }
+        guard let facing = fusion.facingDegrees() else {
+            if headphoneMotion.isDeviceMotionAvailable, fusion.lastHeadYawDegrees == nil {
+                statusMessage = "Waiting for AirPods head tracking — keep them in your ears…"
+            } else {
+                statusMessage = "Calibrating compass — hold the phone in front of you, face forward…"
+            }
+            return
+        }
+        // If AirPods are connected, wait for the yaw↔compass lock so pocket play works.
+        if headphoneMotion.isDeviceMotionAvailable, !fusion.isHeadLocked {
+            statusMessage = "Locking hum to your head — hold the phone facing the same way you're looking…"
+            return
+        }
+
         do {
             try audio.start()
         } catch {
@@ -94,14 +146,37 @@ final class HumHuntSession: NSObject, ObservableObject {
             return
         }
         _ = game.startHunt(from: coordinate)
-        publish(game.update(location: coordinate, headingDegrees: lastHeadingDegrees ?? 0))
+        lastHeadingDegrees = facing
+        usingHeadTracking = fusion.isHeadLocked
+        publish(game.update(location: coordinate, headingDegrees: facing))
+    }
+
+    private func tickFromSensors() {
+        guard wantsHunt else { return }
+        guard let coordinate = lastCoordinate else { return }
+
+        if phase == .idle || phase == .found {
+            startHuntIfNeeded(from: coordinate)
+            return
+        }
+        guard phase == .hunting, let facing = fusion.facingDegrees() else { return }
+        lastHeadingDegrees = facing
+        usingHeadTracking = fusion.activeSource() == .airPodsHead
+        publish(game.update(location: coordinate, headingDegrees: facing))
     }
 
     private func publish(_ snapshot: HumHuntSnapshot) {
         phase = snapshot.phase
         distanceMeters = snapshot.distanceMeters
         relativeBearingDegrees = snapshot.relativeBearingDegrees
-        statusMessage = snapshot.statusMessage
+
+        if snapshot.phase == .hunting, usingHeadTracking {
+            statusMessage = snapshot.statusMessage
+        } else if snapshot.phase == .hunting {
+            statusMessage = snapshot.statusMessage + " (phone compass — AirPods head tracking unavailable)"
+        } else {
+            statusMessage = snapshot.statusMessage
+        }
 
         if let audioParams = snapshot.audio, snapshot.phase == .hunting {
             audio.apply(audioParams)
@@ -117,8 +192,7 @@ final class HumHuntSession: NSObject, ObservableObject {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { [weak self] in
                 self?.audio.stop()
             }
-            locationManager.stopUpdatingLocation()
-            locationManager.stopUpdatingHeading()
+            stopSensors()
             wantsHunt = false
         }
     }
@@ -140,27 +214,21 @@ extension HumHuntSession: CLLocationManagerDelegate {
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.last, location.horizontalAccuracy >= 0 else { return }
-        // Ignore very coarse fixes for hiding / winning.
         guard location.horizontalAccuracy <= 40 else { return }
 
         lastCoordinate = location.coordinate
-        if wantsHunt, phase == .idle || phase == .found {
-            startHuntIfNeeded(from: location.coordinate)
-        } else if phase == .hunting, let heading = lastHeadingDegrees {
-            publish(game.update(location: location.coordinate, headingDegrees: heading))
-        }
+        tickFromSensors()
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateHeading newHeading: CLHeading) {
         let trueHeading = newHeading.trueHeading >= 0 ? newHeading.trueHeading : newHeading.magneticHeading
         guard trueHeading >= 0 else { return }
-        lastHeadingDegrees = trueHeading
-        if wantsHunt, (phase == .idle || phase == .found), let coordinate = lastCoordinate {
-            startHuntIfNeeded(from: coordinate)
-            return
+        // Only use phone compass to establish (or refresh before lock) world offset.
+        // After AirPods are locked, ignore pocketed-phone compass noise.
+        if !fusion.isHeadLocked {
+            fusion.ingestPhoneHeading(trueHeading)
         }
-        guard phase == .hunting, let coordinate = lastCoordinate else { return }
-        publish(game.update(location: coordinate, headingDegrees: trueHeading))
+        tickFromSensors()
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
