@@ -1,36 +1,78 @@
 import SwiftUI
+import UIKit
 
-/// In-app Nokia-style multi-tap pad. Lives entirely inside the Playground app
-/// (same Bundle ID) — no Custom Keyboard extension, so no extra App ID or
-/// re-signing when this experiment ships.
+/// In-app playground for the T9 multi-tap pad, plus instructions for enabling
+/// the real system keyboard extension that ships with this app.
+///
+/// The demo uses a **SwiftUI** pad (not the UIKit extension pad) so XCUITest can
+/// open this screen without timing out on nested UIButton accessibility trees.
 struct T9KeyboardDemoView: View {
     @StateObject private var model = T9DemoModel()
+    @FocusState private var systemFieldFocused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                howToEnable
+                tryHere
+                systemField
+            }
+            .padding()
+        }
+        .background(Color(uiColor: UIColor(white: 0.08, alpha: 1)).ignoresSafeArea())
+        .onDisappear {
+            model.commit()
+        }
+    }
+
+    private var howToEnable: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("System keyboard")
+                .font(.headline)
+                .foregroundStyle(.white)
             Text(
-                "Tap a key repeatedly to cycle letters (2 = a/b/c/2). " +
-                "* cycles abc → Abc → ABC → 123. # inserts a space. " +
-                "Long-press a key for its digit."
+                """
+                1. Open Settings → General → Keyboard → Keyboards → Add New Keyboard…
+                2. Under Third-Party Keyboards, choose “T9 Multi-tap” (ImJasonH Playground).
+                3. Tap it in any text field, or hold the globe key to switch.
+                """
             )
             .font(.subheadline)
             .foregroundStyle(.secondary)
 
+            Button {
+                openSettings()
+            } label: {
+                Label("Open Settings", systemImage: "gear")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .accessibilityIdentifier("t9OpenSettingsButton")
+        }
+        .padding()
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
+    }
+
+    private var tryHere: some View {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("Mode")
-                    .foregroundStyle(.secondary)
+                Text("Try it here")
+                    .font(.headline)
+                    .foregroundStyle(.white)
                 Spacer()
                 Text(model.shiftLabel)
                     .font(.caption.monospaced())
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(Capsule().fill(Color.primary.opacity(0.08)))
+                    .background(Capsule().fill(Color.white.opacity(0.12)))
+                    .foregroundStyle(.white)
                     .accessibilityIdentifier("t9ShiftModeLabel")
             }
 
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text(model.text.isEmpty ? " " : model.text)
                     .font(.title2.monospaced())
+                    .foregroundStyle(.white)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityIdentifier("t9DemoText")
                 Text(model.pending.isEmpty ? " " : model.pending)
@@ -40,7 +82,7 @@ struct T9KeyboardDemoView: View {
             }
             .padding(12)
             .frame(minHeight: 56)
-            .background(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.15)))
+            .background(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.2)))
 
             T9SwiftUIPadView(model: model)
                 .frame(height: 280)
@@ -55,13 +97,33 @@ struct T9KeyboardDemoView: View {
                     .accessibilityIdentifier("t9DemoClearButton")
             }
             .buttonStyle(.bordered)
-
-            Spacer(minLength: 0)
         }
         .padding()
-        .onDisappear {
-            model.commit()
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
+    }
+
+    private var systemField: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Test with the system keyboard")
+                .font(.headline)
+                .foregroundStyle(.white)
+            Text("After enabling T9 Multi-tap, tap below and switch to it with the globe key.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            TextField("Type here…", text: $model.systemText, axis: .vertical)
+                .lineLimit(3...6)
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.08)))
+                .focused($systemFieldFocused)
+                .accessibilityIdentifier("t9SystemTextField")
         }
+        .padding()
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
+    }
+
+    private func openSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(url)
     }
 }
 
@@ -72,6 +134,7 @@ final class T9DemoModel: ObservableObject {
     @Published var text = ""
     @Published var pending = ""
     @Published var shiftLabel = T9ShiftMode.lowercase.label
+    @Published var systemText = ""
 
     private lazy var engine: T9MultiTapEngine = {
         T9MultiTapEngine(

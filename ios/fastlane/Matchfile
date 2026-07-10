@@ -2,11 +2,11 @@
 # profiles live in a *separate private git repo* (never this one), encrypted with
 # MATCH_PASSWORD. Seed it once with the 'iOS signing bootstrap' workflow (or
 # `fastlane match appstore` locally); CI reads it read-only.
-#
-# One Bundle ID for the whole Playground app. Experiments do not get their own
-# App IDs or profiles — do not add extension targets lightly (keyboard, Watch,
-# widgets each force an extra App ID + bootstrap).
 git_url(ENV["MATCH_GIT_URL"]) if ENV["MATCH_GIT_URL"]
 storage_mode("git")
 type("appstore")
-app_identifier([ENV.fetch("APP_BUNDLE_ID", "io.github.imjasonh.playground")])
+# Host app + embedded T9 keyboard extension (each needs its own App ID / profile).
+app_identifier([
+  ENV.fetch("APP_BUNDLE_ID", "io.github.imjasonh.playground"),
+  ENV.fetch("KEYBOARD_BUNDLE_ID", "io.github.imjasonh.playground.t9keyboard"),
+])

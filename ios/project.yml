@@ -7,11 +7,9 @@ name: Playground
 # via a *Experiment.swift, and append that entry to ExperimentCatalog; do NOT
 # create additional top-level iOS app directories.
 #
-# One Bundle ID (`io.github.imjasonh.playground`), one TestFlight record.
-# Experiments never need new App IDs or re-signing. Avoid app extensions
-# (Custom Keyboard, Watch, widgets, …) unless you deliberately accept a second
-# Bundle ID + match bootstrap — Apple requires a separate id per extension.
-# Full agent contract: AGENTS.md in this directory.
+# The T9Keyboard target is a Custom Keyboard app extension embedded in
+# Playground. Apple requires it to have its own Bundle ID; in-app experiments
+# still share the host id. See AGENTS.md.
 #
 # `xcodegen generate` produces Playground.xcodeproj, which is git-ignored.
 
@@ -38,10 +36,9 @@ targets:
     sources:
       - path: Sources
       - path: Shared/T9
-        excludes:
-          # UIKit pad was for a Custom Keyboard extension we no longer ship;
-          # the in-app experiment uses T9SwiftUIPadView instead.
-          - T9PadView.swift
+    dependencies:
+      - target: T9Keyboard
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.imjasonh.playground
@@ -93,6 +90,39 @@ targets:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
 
+  T9Keyboard:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: T9Keyboard
+        excludes:
+          - README.md
+          - "*.png"
+      - path: Shared/T9
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.imjasonh.playground.t9keyboard
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SKIP_INSTALL: YES
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"
+    info:
+      path: T9Keyboard-Info.plist
+      properties:
+        CFBundleDisplayName: T9 Multi-tap
+        CFBundleName: T9 Multi-tap
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundlePackageType: XPC!
+        NSExtension:
+          NSExtensionAttributes:
+            IsASCIICapable: true
+            PrefersRightToLeft: false
+            PrimaryLanguage: en-US
+            # Sandboxed keyboard — no network / shared container access.
+            RequestsOpenAccess: false
+          NSExtensionPointIdentifier: com.apple.keyboard-service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).KeyboardViewController
+
   PlaygroundTests:
     type: bundle.unit-test
     platform: iOS
@@ -122,6 +152,7 @@ schemes:
     build:
       targets:
         Playground: all
+        T9Keyboard: all
     test:
       gatherCoverageData: true
       targets:

@@ -80,10 +80,9 @@ your enrollment** in Step 1 (often under an hour, occasionally 24–48 hours).
 
 ## Step 3 — Register your app's Bundle ID
 
-The bundle ID uniquely identifies the app. The Playground app uses
-`io.github.imjasonh.playground` — use that unless you've changed it in
-`ios/project.yml`. There is **one** Bundle ID for the whole playground: new
-experiments do **not** get their own App IDs.
+The **host** app uses `io.github.imjasonh.playground` (see `ios/project.yml`).
+In-app experiments share this id — do **not** register a Bundle ID per
+experiment.
 
 1. Go to <https://developer.apple.com/account/resources/identifiers/list>
    (**Certificates, Identifiers & Profiles → Identifiers**).
@@ -94,17 +93,27 @@ experiments do **not** get their own App IDs.
    - **Description:** `Playground` (any human-readable label).
    - **Bundle ID:** choose **Explicit** and type
      `io.github.imjasonh.playground` exactly.
-6. **Capabilities:** leave everything unchecked unless an experiment truly
-   needs an entitlement (most do not — privacy strings / background modes are
-   Info.plist only).
+6. **Capabilities:** leave unchecked unless you truly need an entitlement
+   (most experiments only need Info.plist privacy strings).
 7. Click **Continue** → **Register**.
 
-> You can skip this step if you let `fastlane match` create the identifier for
-> you in Step 6, but doing it manually now makes the later steps clearer.
->
-> **Do not** add app extensions (Custom Keyboard, Watch, widgets, …) lightly:
-> Apple requires a **separate** Bundle ID + profile per extension, which means
-> re-running signing bootstrap. Prefer in-app experiments instead.
+### Step 3b — Keyboard extension Bundle ID (Apple requirement)
+
+A **Custom Keyboard** cannot share the host Bundle ID. Register (or let
+**iOS signing bootstrap** create via API):
+
+1. **+** → **App IDs** → **App**.
+2. **Description:** `Playground T9 Keyboard`.
+3. **Bundle ID:** Explicit → `io.github.imjasonh.playground.t9keyboard`.
+4. Capabilities unchecked (sandboxed keyboard).
+5. **Register**.
+
+Then run **iOS signing bootstrap** once so match stores
+`match AppStore io.github.imjasonh.playground.t9keyboard`. You do **not** repeat
+this when adding Ride Monitor–style experiments.
+
+> Skip manual registration if bootstrap’s `ensure_bundle_ids!` creates it for
+> you; still run bootstrap so the profile lands in the match repo.
 
 ---
 
@@ -293,13 +302,14 @@ bundle install
 bundle exec fastlane signing_bootstrap
 ```
 
-Either way, match creates a **distribution certificate** and an **App Store
-provisioning profile** named like
-`match AppStore io.github.imjasonh.playground`
-and stores them in the `ios-signing` repo. Future TestFlight builds read them
-read-only — you never need to repeat this when adding experiments. Only re-run
-bootstrap if the certificate expires or you deliberately add an app extension
-(which needs its own Bundle ID).
+Either way, match creates a **distribution certificate** and **App Store
+provisioning profiles** named like
+`match AppStore io.github.imjasonh.playground` and
+`match AppStore io.github.imjasonh.playground.t9keyboard`
+(one profile per App ID in `ios/fastlane/Matchfile`) and stores them in the
+`ios-signing` repo. Future TestFlight builds read them read-only. Re-run
+bootstrap when the certificate expires or you add another **app extension**
+Bundle ID — not when you add in-app experiments.
 
 ---
 
@@ -344,11 +354,13 @@ So you actually receive the build.
 
 - **"TestFlight upload skipped" warning in CI, tests pass:** the secrets aren't
   all set yet (the deploy gate checks `ASC_KEY_ID`). Recheck Step 8.
-- **`No matching provisioning profiles found` / signing errors:** the profile
-  name must be `match AppStore io.github.imjasonh.playground`. Re-run the
-  signing bootstrap (Step 9) and confirm `APPLE_TEAM_ID` is correct. If you
-  added an app extension, that is a separate Bundle ID — prefer removing the
-  extension and keeping the feature as an in-app experiment instead.
+- **`No matching provisioning profiles found` / signing errors:** the host app
+  profile name must be `match AppStore io.github.imjasonh.playground` (and the
+  keyboard extension
+  `match AppStore io.github.imjasonh.playground.t9keyboard`). Re-run the
+  **iOS signing bootstrap** workflow (Step 9) if you added an extension and the
+  match repo does not yet contain its profile, and confirm `APPLE_TEAM_ID` is
+  correct.
 - **`Authentication credentials are missing or invalid` from Apple:** the API
   key is wrong or lacks permission. Confirm `ASC_KEY_ID` / `ASC_ISSUER_ID`, that
   `ASC_API_KEY_P8` is the **base64** of the `.p8`, and that the key's role is

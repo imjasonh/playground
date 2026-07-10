@@ -47,10 +47,12 @@ final class PlaygroundUITests: XCTestCase {
         openExperiment("t9-keyboard", title: "T9 Keyboard", in: app)
 
         // Smoke-test that the experiment pushed; multi-tap logic is covered by
-        // T9MultiTapEngineTests unit tests.
+        // T9MultiTapEngineTests unit tests. Avoid depending on how SwiftUI
+        // exposes individual pad keys in the accessibility tree.
         XCTAssertTrue(app.navigationBars["T9 Keyboard"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Try it here"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["t9OpenSettingsButton"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["t9DemoDeleteButton"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["t9DemoClearButton"].waitForExistence(timeout: 5))
     }
 
     func testFollowTheHumExperimentOpens() {
