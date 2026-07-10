@@ -100,8 +100,9 @@ struct FollowTheHumView: View {
 
     private var tips: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("AirPods on, phone in hand or pocket", systemImage: "headphones")
-            Label("Center the hum in front of your face, then walk", systemImage: "ear")
+            Label("AirPods in ears — the hum follows your head, not the phone", systemImage: "headphones")
+            Label("At start, hold the phone facing the way you're looking (locks north)", systemImage: "location.north.line")
+            Label("Then pocket the phone; turn until the hum is centered and walk", systemImage: "ear")
             Label("It brightens and clears as you get closer", systemImage: "sparkles")
         }
         .font(.footnote)

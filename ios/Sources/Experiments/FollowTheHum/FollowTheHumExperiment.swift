@@ -5,7 +5,7 @@ enum FollowTheHumExperiment {
     static let experiment = Experiment(
         id: "follow-the-hum",
         title: "Follow the Hum",
-        summary: "A nearby spot is hidden — follow a spatial hum in your AirPods to find it.",
+        summary: "Hide a nearby spot and find it with a head-tracked AirPods hum.",
         icon: "waveform.circle"
     ) {
         FollowTheHumView()
