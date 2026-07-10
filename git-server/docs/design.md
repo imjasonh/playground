@@ -421,6 +421,18 @@ one anyway. Behind that ceiling sit our own (higher) bounds: ingest CPU
 `limits.cpu_ms`, then the resumable-ingest extension) and ~50 B/entry scan
 metadata (~1M objects per push comfortably).
 
+**Enforced locally, not just at the edge.** Because the 413 happens in
+Cloudflare's proxy, neither the native harness nor workerd under `wrangler
+dev` would otherwise exhibit it — a test could pass with a 500 MB push that
+production rejects. `receive_pack` therefore enforces the same limit itself
+(`GitHttp::push_limit_bytes`, default 100 MB, overridable via the
+`PUSH_LIMIT_BYTES` var for higher-tier zones), counting body bytes as they
+stream and aborting the staged upload with a readable report-status error
+(including the split-push hint). The integration suite exercises the
+rejection path with a shrunken limit
+(`tests/integration.rs::rejects_push_over_size_limit`): the over-limit push
+fails with the hint, the ref is untouched, and no staged pack is published.
+
 Adjacent, about repo *shape* rather than transfer size: the state document
 is one Durable Object value, and DO values cap at 128 KiB — roughly a few
 thousand refs plus the pack manifest. A refs-heavy repo needs the state doc

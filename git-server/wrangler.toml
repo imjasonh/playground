@@ -48,3 +48,10 @@ preview_id = "REPLACE_WITH_GIT_REPOS_PREVIEW_KV_ID"
 # accumulated push packs into one, without recompressing anything.
 [triggers]
 crons = ["17 3 * * *"]
+
+# Optional (uncomment on Business/Enterprise zones, whose request-body cap is
+# higher than the Free/Pro 100 MB): the server-side per-push size limit, in
+# bytes. Defaults to 100 MB to match the edge cap — see docs/design.md
+# "Size limits".
+# [vars]
+# PUSH_LIMIT_BYTES = "200000000"

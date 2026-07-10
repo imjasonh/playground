@@ -137,10 +137,10 @@ fn large_push_and_clone_fit_isolate_memory() {
     let live_before = memtrack::live_bytes();
     memtrack::reset_peak();
     let resp = block_on(async {
-        let server = GitHttp {
-            store: std::rc::Rc::new(store.clone()),
-            states: std::rc::Rc::new(states.clone()),
-        };
+        let server = GitHttp::new(
+            std::rc::Rc::new(store.clone()),
+            std::rc::Rc::new(states.clone()),
+        );
         let req = GitRequest {
             method: "POST",
             path: "/big/git-receive-pack",
@@ -192,10 +192,10 @@ fn large_push_and_clone_fit_isolate_memory() {
     let live_before = memtrack::live_bytes();
     memtrack::reset_peak();
     let total_streamed = block_on(async {
-        let server = GitHttp {
-            store: std::rc::Rc::new(store.clone()),
-            states: std::rc::Rc::new(states.clone()),
-        };
+        let server = GitHttp::new(
+            std::rc::Rc::new(store.clone()),
+            std::rc::Rc::new(states.clone()),
+        );
         let req = GitRequest {
             method: "POST",
             path: "/big/git-upload-pack",

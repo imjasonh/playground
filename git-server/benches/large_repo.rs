@@ -71,10 +71,10 @@ fn start_server(store: MemStore, states: MemStateStore) -> (u16, std::thread::Jo
             };
             let git_protocol = header("Git-Protocol");
             let content_encoding = header("Content-Encoding");
-            let git = GitHttp {
-                store: std::rc::Rc::new(store.clone()),
-                states: std::rc::Rc::new(states.clone()),
-            };
+            let git = GitHttp::new(
+                std::rc::Rc::new(store.clone()),
+                std::rc::Rc::new(states.clone()),
+            );
             let req = GitRequest {
                 method: &method,
                 path: &path,
@@ -294,10 +294,10 @@ fn main() {
 
     // Read APIs straight through the router (no HTTP client noise).
     let api = |path: String| {
-        let git = GitHttp {
-            store: std::rc::Rc::new(store.clone()),
-            states: std::rc::Rc::new(states.clone()),
-        };
+        let git = GitHttp::new(
+            std::rc::Rc::new(store.clone()),
+            std::rc::Rc::new(states.clone()),
+        );
         let req = GitRequest {
             method: "GET",
             path: &path,
@@ -326,10 +326,10 @@ fn main() {
     });
 
     run_phase("repack", 0, &mut || {
-        let git = GitHttp {
-            store: std::rc::Rc::new(store.clone()),
-            states: std::rc::Rc::new(states.clone()),
-        };
+        let git = GitHttp::new(
+            std::rc::Rc::new(store.clone()),
+            std::rc::Rc::new(states.clone()),
+        );
         let req = GitRequest {
             method: "POST",
             path: "/api/bench/repack",

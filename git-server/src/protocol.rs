@@ -396,6 +396,13 @@ fn error_response(message: &str) -> Vec<u8> {
 /// commands, a flush, then (unless every command is a delete) the pack —
 /// which is streamed straight into R2 while being scanned.
 ///
+/// `push_limit_bytes` mirrors Cloudflare's HTTP request-body cap (~100 MB on
+/// Free/Pro zones), which in production rejects over-limit pushes with a 413
+/// *before the Worker runs*. Enforcing the same limit here means local
+/// harnesses and CI behave like production instead of silently accepting
+/// pushes that would fail deployed — and, where our check does fire first,
+/// the client gets a readable report-status error instead of a bare 413.
+///
 /// `nonce` provides per-push uniqueness for the staged pack's storage key
 /// (randomness is the caller's responsibility; this crate is runtime-
 /// agnostic).
@@ -403,8 +410,10 @@ pub async fn receive_pack(
     repo: &Repo<'_>,
     body: &mut dyn BodyStream,
     nonce: &str,
+    push_limit_bytes: u64,
 ) -> Result<Vec<u8>, String> {
     let (state, version) = repo.load_state().await?;
+    let mut body_bytes: u64 = 0;
 
     // Phase 1: pkt-line command section.
     let mut parser = PktParser::new();
@@ -416,6 +425,10 @@ pub async fn receive_pack(
             Some(c) => c,
             None => break,
         };
+        body_bytes += chunk.len() as u64;
+        if body_bytes > push_limit_bytes {
+            return Ok(push_too_large(&caps, &commands, push_limit_bytes));
+        }
         parser.feed(&chunk);
         while let Some(pkt) = parser.next_pkt().map_err(|e| e.to_string())? {
             match pkt {
@@ -482,6 +495,11 @@ pub async fn receive_pack(
             match body.next_chunk().await? {
                 Some(chunk) if !chunk.is_empty() => {
                     got_any = true;
+                    body_bytes += chunk.len() as u64;
+                    if body_bytes > push_limit_bytes {
+                        let _ = ingest.abort().await;
+                        return Ok(push_too_large(&caps, &commands, push_limit_bytes));
+                    }
                     if let Err(e) = ingest.feed(&chunk).await {
                         let _ = ingest.abort().await;
                         return Err(e);
@@ -520,6 +538,23 @@ pub async fn receive_pack(
         .map(|r| (r.name.clone(), r.error.clone()))
         .collect();
     Ok(report_status(&caps, "unpack ok", &lines))
+}
+
+/// The report-status for a push whose body exceeded the size limit.
+fn push_too_large(caps: &BTreeMap<String, String>, commands: &[RefUpdate], limit: u64) -> Vec<u8> {
+    let reason = format!(
+        "push exceeds the {:.0} MB per-push limit; split into smaller pushes \
+         (git push origin <older-sha>:<ref>, then newer commits)",
+        limit as f64 / 1e6
+    );
+    report_status(
+        caps,
+        &format!("unpack {reason}"),
+        &commands
+            .iter()
+            .map(|c| (c.name.clone(), Some(reason.clone())))
+            .collect::<Vec<_>>(),
+    )
 }
 
 /// Format a report-status response, side-band-wrapped if negotiated.

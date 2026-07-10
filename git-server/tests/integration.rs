@@ -284,6 +284,54 @@ fn rejects_non_fast_forward() {
     assert_eq!(head, a_head);
 }
 
+/// Pushes over the size limit are rejected — mirroring Cloudflare's
+/// request-body cap (~100 MB), which in production 413s over-limit pushes at
+/// the edge before the Worker runs. Enforcing (a shrunken) limit locally
+/// keeps the harness honest about production behavior, per docs/design.md
+/// "Size limits".
+#[test]
+fn rejects_push_over_size_limit() {
+    let server = TestServer::start_with_push_limit(256 * 1024);
+    let tmp = tempfile::tempdir().unwrap();
+    let src = tmp.path().join("src");
+    std::fs::create_dir(&src).unwrap();
+    git(&src, &["init", "-q", "-b", "main", "."]);
+    git(&src, &["remote", "add", "origin", &server.url("capped")]);
+
+    // A small push under the limit succeeds…
+    write_file(&src, "ok.txt", "fine\n");
+    git(&src, &["add", "."]);
+    git(&src, &["commit", "-q", "-m", "small"]);
+    git(&src, &["push", "-q", "origin", "main"]);
+
+    // …but an incompressible 1 MiB blob blows the 256 KiB limit.
+    let mut data = Vec::with_capacity(1024 * 1024);
+    let mut x = 0x2545f4914f6cdd1du64;
+    while data.len() < 1024 * 1024 {
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        data.extend_from_slice(&x.to_le_bytes());
+    }
+    std::fs::write(src.join("big.bin"), &data).unwrap();
+    git(&src, &["add", "."]);
+    git(&src, &["commit", "-q", "-m", "too big"]);
+    let (ok, output) = git_try(&src, &["push", "origin", "main"]);
+    assert!(!ok, "over-limit push must fail: {output}");
+    assert!(
+        output.contains("per-push limit"),
+        "client should see the limit message with the split-push hint: {output}"
+    );
+
+    // The refused push left no trace: the ref still points at the small
+    // commit, and no staged pack was published.
+    let (_, body) = server.get("/api/capped/refs");
+    let refs: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let head = refs["refs"]["refs/heads/main"].as_str().unwrap();
+    let small = git(&src, &["rev-parse", "HEAD~1"]).trim().to_string();
+    assert_eq!(head, small, "ref must still point at the pre-limit commit");
+}
+
 /// A push with a moderately large binary blob exercises multi-chunk
 /// streaming ingest and multi-chunk fetch.
 #[test]

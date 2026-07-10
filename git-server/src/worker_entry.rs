@@ -358,10 +358,20 @@ fn request_nonce() -> String {
 
 #[event(fetch)]
 async fn fetch(mut req: Request, env: Env, _ctx: Context) -> worker::Result<Response> {
-    let server = GitHttp {
-        store: std::rc::Rc::new(R2Store::new(&env)?),
-        states: std::rc::Rc::new(DoStateStore { env: env.clone() }),
-    };
+    let mut server = GitHttp::new(
+        std::rc::Rc::new(R2Store::new(&env)?),
+        std::rc::Rc::new(DoStateStore { env: env.clone() }),
+    );
+    // Optional override for zones with a higher request-body cap
+    // (Business/Enterprise); defaults to the Free/Pro 100 MB limit.
+    if let Some(limit) = env
+        .var("PUSH_LIMIT_BYTES")
+        .ok()
+        .and_then(|v| v.to_string().trim().parse::<u64>().ok())
+        .filter(|n| *n > 0)
+    {
+        server = server.with_push_limit(limit);
+    }
 
     let url = req.url()?;
     let path = url.path().to_string();

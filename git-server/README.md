@@ -114,10 +114,12 @@ packs (see `src/maintenance.rs`).
 
 * **Pushes are capped at ~100 MB each** (Cloudflare's HTTP request-body
   limit on Free/Pro zones — a push is one POST; rejected with a 413 before
-  the Worker runs). Split large imports into several pushes of ≤100 MB
-  (`git push origin <old-sha>:refs/heads/main`, then newer commits).
-  Pulls/clones are streamed and have no practical size cap. See "Size
-  limits" in [`docs/design.md`](docs/design.md).
+  the Worker runs). The server enforces the same limit itself (configurable
+  via `PUSH_LIMIT_BYTES`), so local testing behaves like production and
+  clients get a readable error with the workaround: split large imports
+  into several pushes of ≤100 MB (`git push origin <old-sha>:refs/heads/main`,
+  then newer commits). Pulls/clones are streamed and have no practical size
+  cap. See "Size limits" in [`docs/design.md`](docs/design.md).
 * Clients need git ≥ 2.26 (protocol v2 for fetch — the default since 2.26).
 * SHA-1 repositories (git's default object format).
 * No shallow or partial clone (`--depth`, `--filter`) yet; rejected cleanly.

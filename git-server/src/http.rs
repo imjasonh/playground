@@ -131,11 +131,36 @@ impl Response {
     }
 }
 
+/// Default per-push body limit: Cloudflare's HTTP request-body cap on
+/// Free/Pro zones (decimal 100 MB). In production over-limit pushes are
+/// 413'd at the edge before the Worker runs; enforcing the same number here
+/// keeps local harnesses and CI honest about it (see docs/design.md "Size
+/// limits").
+pub const DEFAULT_PUSH_LIMIT_BYTES: u64 = 100_000_000;
+
 /// The server: byte store + state store. Held by `Rc` so streamed response
 /// bodies (which outlive the request handler) can own what they read from.
 pub struct GitHttp {
     pub store: std::rc::Rc<dyn Store>,
     pub states: std::rc::Rc<dyn StateStore>,
+    /// Per-push body limit ([`DEFAULT_PUSH_LIMIT_BYTES`] unless overridden —
+    /// e.g. raised on Business/Enterprise zones, lowered in tests).
+    pub push_limit_bytes: u64,
+}
+
+impl GitHttp {
+    pub fn new(store: std::rc::Rc<dyn Store>, states: std::rc::Rc<dyn StateStore>) -> GitHttp {
+        GitHttp {
+            store,
+            states,
+            push_limit_bytes: DEFAULT_PUSH_LIMIT_BYTES,
+        }
+    }
+
+    pub fn with_push_limit(mut self, bytes: u64) -> GitHttp {
+        self.push_limit_bytes = bytes;
+        self
+    }
 }
 
 fn query_param<'q>(query: Option<&'q str>, key: &str) -> Option<&'q str> {
@@ -300,7 +325,7 @@ impl GitHttp {
             return Response::error(400, "invalid repo name");
         }
         let repo = self.repo(repo_name);
-        match protocol::receive_pack(&repo, body, nonce).await {
+        match protocol::receive_pack(&repo, body, nonce, self.push_limit_bytes).await {
             Ok(out) => Response::ok("application/x-git-receive-pack-result", out),
             Err(e) => Response::error(500, &e),
         }
