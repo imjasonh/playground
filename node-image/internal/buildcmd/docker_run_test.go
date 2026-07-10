@@ -35,31 +35,57 @@ func requireDocker(t *testing.T) {
 	}
 }
 
-// TestE2EDockerSocketBuildAndRun builds testdata/hello-e2e with --local (load
-// into the daemon via the Docker socket), then `docker run --rm` and asserts
-// the container prints the expected marker. Skips when Docker is missing.
-func TestE2EDockerSocketBuildAndRun(t *testing.T) {
-	requireDocker(t)
+func dockerHostPlatform() string {
+	if runtime.GOARCH == "arm64" {
+		return "linux/arm64"
+	}
+	return "linux/amd64"
+}
 
-	fixture, err := filepath.Abs(filepath.Join("..", "..", "testdata", "hello-e2e"))
+type dockerRunCase struct {
+	name     string
+	fixture  string // path under testdata/
+	repo     string
+	command  string // optional node-image --command
+	runBuild bool   // if true, run host compile (needs pnpm); else --skip-build
+	wantOut  string
+	wantCode int // expected docker run exit code; 0 default
+}
+
+func buildLocalAndRun(t *testing.T, tc dockerRunCase) {
+	t.Helper()
+
+	fixture, err := filepath.Abs(filepath.Join("..", "..", "testdata", filepath.FromSlash(tc.fixture)))
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := os.Stat(fixture); err != nil {
+		t.Fatalf("fixture %s: %v", fixture, err)
+	}
+	if tc.runBuild {
+		if _, err := exec.LookPath("pnpm"); err != nil {
+			if os.Getenv("GITHUB_ACTIONS") == "true" {
+				t.Fatalf("pnpm required for %s compile e2e in CI: %v", tc.name, err)
+			}
+			t.Skip("pnpm not on PATH (needed to compile fixture)")
+		}
+	}
 
-	plat := "linux/amd64"
-	if runtime.GOARCH == "arm64" {
-		plat = "linux/arm64"
+	repo := tc.repo
+	if repo == "" {
+		repo = strings.ReplaceAll(tc.name, "/", "-")
 	}
 
 	var stdout, stderr bytes.Buffer
 	ref, err := buildcmd.Run(buildcmd.Options{
 		Dir:       fixture,
 		Local:     true,
-		Repo:      "hello-e2e",
+		Repo:      repo,
 		Base:      config.DefaultBase,
-		SkipBuild: true,
-		Platforms: []string{plat},
+		SkipBuild: !tc.runBuild,
+		Platforms: []string{dockerHostPlatform()},
 		Tags:      []string{"e2e"},
+		Command:   tc.command,
 		Stdout:    &stdout,
 		Stderr:    &stderr,
 	})
@@ -86,12 +112,131 @@ func TestE2EDockerSocketBuildAndRun(t *testing.T) {
 	var runOut, runErr bytes.Buffer
 	cmd.Stdout = &runOut
 	cmd.Stderr = &runErr
+	runErrCode := 0
 	if err := cmd.Run(); err != nil {
-		t.Fatalf("docker run %s: %v\nstdout=%s\nstderr=%s\nbuild stderr=%s",
-			outLine, err, runOut.String(), runErr.String(), stderr.String())
+		if ee, ok := err.(*exec.ExitError); ok {
+			runErrCode = ee.ExitCode()
+		} else {
+			t.Fatalf("docker run %s: %v\nstdout=%s\nstderr=%s\nbuild stderr=%s",
+				outLine, err, runOut.String(), runErr.String(), stderr.String())
+		}
+	}
+	wantCode := tc.wantCode
+	if runErrCode != wantCode {
+		t.Fatalf("docker run exit %d, want %d\nstdout=%s\nstderr=%s\nbuild stderr=%s",
+			runErrCode, wantCode, runOut.String(), runErr.String(), stderr.String())
 	}
 	got := strings.TrimSpace(runOut.String())
-	if got != helloE2EExpectedOutput {
-		t.Fatalf("container output %q, want %q\nstderr=%s", got, helloE2EExpectedOutput, runErr.String())
+	if got != tc.wantOut {
+		t.Fatalf("container output %q, want %q\nstderr=%s", got, tc.wantOut, runErr.String())
+	}
+}
+
+// TestE2EDockerSocketBuildAndRun is the cheap smoke: pure JS + one dep.
+func TestE2EDockerSocketBuildAndRun(t *testing.T) {
+	requireDocker(t)
+	buildLocalAndRun(t, dockerRunCase{
+		name:    "hello-e2e",
+		fixture: "hello-e2e",
+		repo:    "hello-e2e",
+		wantOut: helloE2EExpectedOutput,
+	})
+}
+
+// TestE2EDockerSocketRuntimeCases covers shapes that often build cleanly but
+// fail inside distroless at runtime (natives, patches, workspace links, bins,
+// nested/scoped resolution, Cmd selection, app globs).
+func TestE2EDockerSocketRuntimeCases(t *testing.T) {
+	requireDocker(t)
+
+	cases := []dockerRunCase{
+		{
+			name:    "optional-native-esbuild",
+			fixture: "optional-platform",
+			repo:    "optional-platform-e2e",
+			wantOut: "esbuild-native-ok",
+		},
+		{
+			name:    "workspace-link",
+			fixture: "workspace-app/apps/api",
+			repo:    "workspace-api-e2e",
+			wantOut: "ok",
+		},
+		{
+			name:    "patched-dep",
+			fixture: "patched",
+			repo:    "patched-e2e",
+			wantOut: "patched-ok",
+		},
+		{
+			name:    "nested-deps",
+			fixture: "nested-deps",
+			repo:    "nested-deps-e2e",
+			wantOut: "ok",
+		},
+		{
+			name:    "scoped-dep",
+			fixture: "scoped-dep",
+			repo:    "scoped-dep-e2e",
+			wantOut: "ok",
+		},
+		{
+			name:    "with-bin",
+			fixture: "with-bin",
+			repo:    "with-bin-e2e",
+			wantOut: "ok",
+		},
+		{
+			name:    "lifecycle-noop",
+			fixture: "lifecycle-scripts",
+			repo:    "lifecycle-e2e",
+			wantOut: "ok",
+		},
+		{
+			name:    "build-globs",
+			fixture: "build-globs",
+			repo:    "build-globs-e2e",
+			wantOut: "globs-ok",
+		},
+		{
+			name:    "multi-cmd-api",
+			fixture: "multi-cmd",
+			repo:    "multi-cmd-api-e2e",
+			command: "api",
+			wantOut: "api",
+		},
+		{
+			name:    "multi-cmd-worker",
+			fixture: "multi-cmd",
+			repo:    "multi-cmd-worker-e2e",
+			command: "worker",
+			wantOut: "worker",
+		},
+		{
+			name:    "catalog-app",
+			fixture: "catalog-app",
+			repo:    "catalog-e2e",
+			wantOut: "1m",
+		},
+		{
+			name:    "override-app",
+			fixture: "override-app",
+			repo:    "override-e2e",
+			wantOut: "1m",
+		},
+		{
+			name:     "ts-app-compile",
+			fixture:  "ts-app",
+			repo:     "ts-app-e2e",
+			runBuild: true,
+			wantOut:  "2m",
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			buildLocalAndRun(t, tc)
+		})
 	}
 }

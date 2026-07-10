@@ -110,9 +110,11 @@ go test ./...
 Includes lock/resolve/layout units, patch/workspace/catalog/override fixtures,
 app glob packing, npm auth header injection, multi-command builds, diagnose
 importer isolation, and docker/pnpm e2e (auto-skip when tools are missing).
-`TestE2EDockerSocketBuildAndRun` builds `testdata/hello-e2e`, loads it via the
-local Docker socket (`--local`), runs the container, and asserts stdout is
-`node-image-e2e-ok` (skipped without a daemon; CI runners have Docker).
+Docker-socket e2e (`--local` + `docker run`) covers `hello-e2e` plus unusual
+runtime shapes: esbuild native optionals, workspace/link packages, patched
+deps, nested/scoped resolution, `.bin` symlinks, lifecycle-noop packages,
+app globs, multi-command Cmds, catalog/override locks, and `ts-app` dist.
+Skipped without a daemon locally; CI fails if Docker is missing.
 
 ## Non-goals
 
