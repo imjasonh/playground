@@ -352,9 +352,11 @@ cargo test
 
 ## Adding an experiment to the iOS app
 
-There is only one iOS app (`ios/`). You add functionality as an **experiment**
-inside it — never as a new top-level iOS directory. This is the iOS analog of
-adding one browser app under the Pages site.
+There is only one iOS **host** app (`ios/`). Add functionality as an
+**experiment** inside it — never as a new top-level iOS directory.
+
+**Contract (host Bundle ID vs keyboard extension, when bootstrap is required):**
+[`ios/AGENTS.md`](ios/AGENTS.md).
 
 1. Create `ios/Sources/Experiments/<YourExperiment>/` — **one directory per
    experiment** — with a SwiftUI view. Keep the interesting logic in plain types
@@ -367,11 +369,10 @@ adding one browser app under the Pages site.
 4. Add tests under `ios/Tests/PlaygroundTests/` (and a UI flow under
    `ios/Tests/PlaygroundUITests/` if useful).
 
-No `project.yml`, workflow, or bundle-identifier changes are needed — the
-launcher picks the experiment up, and the next push to `main` ships it inside
-the same Playground TestFlight build. TestFlight delivery only happens once the
-Apple signing secrets are configured (see `docs/ios-testflight-setup.md`); until
-then CI runs the tests and skips the upload.
+In-app experiments need **no** new Bundle ID and **no** signing bootstrap. A
+Custom Keyboard (or other app extension) is different — Apple requires a second
+Bundle ID; see `ios/AGENTS.md`. TestFlight delivery needs Apple signing secrets
+(`docs/ios-testflight-setup.md`); until then CI tests and skips upload.
 
 Run locally (macOS + Xcode):
 
@@ -388,7 +389,11 @@ bundle exec fastlane test
 - **Prefer plain HTML + JS** for browser apps unless an app already uses a framework; match the style of neighboring code in that app directory.
 - **Go apps are independent modules**: each app owns its `go.mod` and `go.sum`; avoid cross-app imports.
 - **Rust apps are independent crates**: each app owns its `Cargo.toml`, `Cargo.lock`, and `rust-toolchain.toml`; avoid cross-app imports.
-- **There is one iOS app** (`ios/`, the "Playground" container): add features as experiments inside it, not as new top-level iOS directories. Never commit the generated `*.xcodeproj` or signing material.
+- **There is one iOS host app** (`ios/`, the "Playground" container): add
+  features as **experiments** inside it (same Bundle ID, no re-bootstrap). A
+  Custom Keyboard or other **app extension** needs a second Bundle ID (Apple
+  rule) and a one-time match bootstrap — see [`ios/AGENTS.md`](ios/AGENTS.md).
+  Never commit the generated `*.xcodeproj` or signing material.
 - **Keep all apps isolated**: do not add repo-root `package.json`, `go.mod`, `go.work`, or Cargo workspace files unless the maintainers explicitly request a monorepo toolchain.
 - **Minimize scope**: when fixing or extending one app, avoid unrelated changes in other directories.
 - **Do not commit**: `node_modules/`, secrets, env files, browser/Go/Rust build artifacts (`target/`), or Playwright/Jest output (`test-results/`, `coverage/`).

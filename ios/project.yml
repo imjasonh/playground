@@ -8,7 +8,8 @@ name: Playground
 # create additional top-level iOS app directories.
 #
 # The T9Keyboard target is a Custom Keyboard app extension embedded in
-# Playground (same TestFlight app). Shared multi-tap logic lives in Shared/T9/.
+# Playground. Apple requires it to have its own Bundle ID; in-app experiments
+# still share the host id. See AGENTS.md.
 #
 # `xcodegen generate` produces Playground.xcodeproj, which is git-ignored.
 

@@ -1,113 +1,85 @@
 # ios — the Playground app
 
-The **single** iOS app for this repo. Like the GitHub Pages site hosts many
-browser apps, this one **TestFlight app ("Playground")** hosts many
-**experiments** internally. There is exactly one iOS app, one App Store Connect
-record (`io.github.imjasonh.playground`), and optionally embedded app
-extensions (today: a Custom Keyboard). You add functionality by adding
-*experiments inside this app*, never by creating another top-level iOS app.
+> **Agents:** read [`AGENTS.md`](AGENTS.md) — in-app experiments share one Bundle
+> ID (no re-bootstrap); Apple app extensions (e.g. Custom Keyboard) need a
+> second Bundle ID once.
 
-On every push to `main`, CI builds this app, runs its tests, and (once the Apple
-signing secrets are set) uploads a new build to **TestFlight**.
+The **single** iOS **host** app for this repo. Like the GitHub Pages site hosts
+many browser apps, this one TestFlight app ("Playground") hosts many
+**experiments** internally under Bundle ID `io.github.imjasonh.playground`.
+
+On every push to `main`, CI builds, tests, and (with signing secrets) uploads to
+**TestFlight**.
+
+## Signing policy
+
+| What you’re adding | Bundle ID | Re-run signing bootstrap? |
+|--------------------|-----------|---------------------------|
+| In-app experiment (Ride Monitor–style) | Host only | **No** |
+| Info.plist privacy / background modes | Host only | **No** |
+| Custom Keyboard / other **app extension** | Host + **extension id** (Apple requires it) | **Yes, once** for that extension |
+
+Bootstrap is **not** per experiment. It is once for the host app, and once more
+when you add a new extension Bundle ID (today: T9 keyboard).
 
 ## How it's structured
 
 ```
 ios/
-├── project.yml                    # XcodeGen spec (source of truth + discovery marker)
-├── Gemfile                        # pins fastlane
-├── fastlane/                      # Fastfile (test / beta / signing_bootstrap), Appfile, Matchfile
-├── Shared/T9/                     # multi-tap engine + pad UI (app + keyboard extension)
-├── T9Keyboard/                    # Custom Keyboard extension (+ README / screenshots)
-├── Sources/
-│   ├── PlaygroundApp.swift        # @main app shell
-│   ├── RootView.swift             # the launcher: lists every experiment
-│   ├── Experiment.swift           # Experiment model + ExperimentCatalog registry
-│   └── Experiments/               # one folder per experiment
-│       ├── RideMonitor/
-│       └── T9Keyboard/            # in-app demo + enable instructions
+├── AGENTS.md
+├── project.yml
+├── fastlane/
+├── Shared/T9/                 # multi-tap engine (app + keyboard extension)
+├── T9Keyboard/                # system Custom Keyboard appex
+├── Sources/Experiments/       # in-app experiments
 └── Tests/
-    ├── PlaygroundTests/           # XCTest unit tests (logic + catalog)
-    └── PlaygroundUITests/         # XCUITest launcher/experiment flows
 ```
 
 ## Experiments
 
 | Id | Title | Notes |
 |----|-------|-------|
-| `ride-monitor` | Ride Monitor | Background motion + GPS ride recorder |
-| `t9-keyboard` | T9 Keyboard | In-app multi-tap pad + system Custom Keyboard extension |
-| `follow-the-hum` | Follow the Hum | Hide a nearby walkable spot; steer with a spatial AirPods hum |
-
-### Follow the Hum
-
-Outdoor sound-hunt: the app hides a walkable spot ~120–320 m away and plays a
-soft stereo hum in your headphones. **AirPods Pro/Max head tracking** keeps the
-hum fixed in the world as you turn your head (phone compass locks north once at
-start, then the phone can go in a pocket). Turn until the hum sits in front of
-you, then walk — it brightens and clears as you get closer. Arrive within ~22 m
-to win. Needs a real device with location + compass; head tracking needs
-compatible AirPods.
+| `ride-monitor` | Ride Monitor | In-app; background motion + GPS |
+| `t9-keyboard` | T9 Keyboard | In-app demo **and** system keyboard extension |
+| `follow-the-hum` | Follow the Hum | In-app; AirPods spatial hum hunt |
 
 ### T9 Keyboard
 
-Old Nokia-style **multi-tap**: tap `2` once for `a`, twice for `b`, thrice for `c`,
-four times for `2`. Wait ~1s (or tap another key) to commit. `*` cycles
-`abc` → `Abc` → `ABC` → `123`; `#` inserts a space; long-press a key for its
-digit. The same engine powers:
+Old Nokia-style **multi-tap**. Same engine powers:
 
-1. The **in-app demo** under the T9 Keyboard experiment (works in Simulator).
-2. The **system keyboard** `T9 Multi-tap` (`io.github.imjasonh.playground.t9keyboard`).
+1. **In-app demo** (Simulator-friendly) under the T9 Keyboard experiment.
+2. **System keyboard** `T9 Multi-tap` — Bundle ID
+   `io.github.imjasonh.playground.t9keyboard` (required by Apple for a Custom
+   Keyboard). Enable: Settings → General → Keyboard → Keyboards → Add New
+   Keyboard… → T9 Multi-tap.
 
-Enable the system keyboard on a device: **Settings → General → Keyboard →
-Keyboards → Add New Keyboard… → T9 Multi-tap**, then switch to it with the
-globe key. (Third-party keyboards cannot be fully exercised in UI tests.)
+After cloning a tree that adds/changes that extension, run **iOS signing
+bootstrap** once so match has its App Store profile. Later in-app experiments
+do not need that.
 
-The keyboard extension needs its **own App ID + App Store provisioning
-profile**. Re-run the iOS signing bootstrap workflow (or `fastlane signing_bootstrap`)
-after pulling this so match creates
-`match AppStore io.github.imjasonh.playground.t9keyboard`.
+### Follow the Hum
+
+Outdoor sound-hunt with AirPods head tracking. Needs a real device; see
+experiment UI for details.
 
 ## Adding an experiment
 
-1. Create `Sources/Experiments/<YourExperiment>/` — **one directory per
-   experiment**. Put the SwiftUI view and any logic there (keep testable logic
-   in plain types; add accessibility identifiers to controls).
-2. In that folder, add a `*Experiment.swift` that exposes a static
-   `experiment: Experiment` (id, title, summary, icon, destination view).
-3. Append that static to `ExperimentCatalog.all` in `Sources/Experiment.swift`.
-4. Add tests under `Tests/PlaygroundTests/` (and a UI flow if useful).
+1. `Sources/Experiments/<YourExperiment>/`
+2. `*Experiment.swift` → `static let experiment: Experiment`
+3. Append to `ExperimentCatalog.all`
+4. Tests under `Tests/PlaygroundTests/`
 
-That's it for in-app-only experiments — no project or CI changes, and no new
-TestFlight app. The launcher picks it up automatically and the next push to
-`main` ships it in the same Playground build.
+No new Bundle ID. No bootstrap. See [`AGENTS.md`](AGENTS.md).
 
-If you add another **app extension** (keyboard, widget, …), also update
-`project.yml`, register the extension App ID, and teach `fastlane` match / beta
-about the extra bundle identifier (see the T9 keyboard as a template).
-
-## Local development (macOS + Xcode)
+## Local development
 
 ```bash
-brew install xcodegen
-bundle install
+brew install xcodegen && bundle install
 xcodegen generate
-open Playground.xcodeproj        # optional
-
-# tests (what CI runs)
 bundle exec fastlane test
-# or:
-xcodebuild test -project Playground.xcodeproj -scheme Playground \
-  -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest'
 ```
-
-The generated `Playground.xcodeproj` is git-ignored; regenerate it with
-XcodeGen.
 
 ## Shipping to TestFlight
 
-CI runs `fastlane beta` automatically on push to `main` once the signing secrets
-exist. See [`docs/ios-testflight-setup.md`](../docs/ios-testflight-setup.md) for
-the click-by-click Apple/TestFlight setup and
-[`docs/ios-testflight-design.md`](../docs/ios-testflight-design.md) for the
-design.
+[`docs/ios-testflight-setup.md`](../docs/ios-testflight-setup.md) ·
+[`docs/ios-testflight-design.md`](../docs/ios-testflight-design.md)

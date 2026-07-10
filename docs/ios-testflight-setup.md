@@ -80,10 +80,9 @@ your enrollment** in Step 1 (often under an hour, occasionally 24–48 hours).
 
 ## Step 3 — Register your app's Bundle ID
 
-The bundle ID uniquely identifies the app. The Playground app uses
-`io.github.imjasonh.playground` — use that unless you've changed it in
-`ios/project.yml`. The embedded **T9 Multi-tap** keyboard extension uses
-`io.github.imjasonh.playground.t9keyboard` (register that too — Step 3b).
+The **host** app uses `io.github.imjasonh.playground` (see `ios/project.yml`).
+In-app experiments share this id — do **not** register a Bundle ID per
+experiment.
 
 1. Go to <https://developer.apple.com/account/resources/identifiers/list>
    (**Certificates, Identifiers & Profiles → Identifiers**).
@@ -94,24 +93,27 @@ The bundle ID uniquely identifies the app. The Playground app uses
    - **Description:** `Playground` (any human-readable label).
    - **Bundle ID:** choose **Explicit** and type
      `io.github.imjasonh.playground` exactly.
-6. **Capabilities:** leave everything unchecked — the host app still needs none
-   for Ride Monitor / the in-app T9 demo. (A Custom Keyboard is an *extension*
-   App ID, not a host-app capability checkbox.)
+6. **Capabilities:** leave unchecked unless you truly need an entitlement
+   (most experiments only need Info.plist privacy strings).
 7. Click **Continue** → **Register**.
 
-### Step 3b — Register the keyboard extension Bundle ID
+### Step 3b — Keyboard extension Bundle ID (Apple requirement)
 
-1. Click **+** again → **App IDs** → **App**.
+A **Custom Keyboard** cannot share the host Bundle ID. Register (or let
+**iOS signing bootstrap** create via API):
+
+1. **+** → **App IDs** → **App**.
 2. **Description:** `Playground T9 Keyboard`.
 3. **Bundle ID:** Explicit → `io.github.imjasonh.playground.t9keyboard`.
-4. **Capabilities:** leave unchecked (sandboxed keyboard; no open access).
-5. **Continue** → **Register**.
+4. Capabilities unchecked (sandboxed keyboard).
+5. **Register**.
 
-> You can skip both registrations if you let `fastlane match` create the
-> identifiers for you in Step 6, but doing them manually now makes the later
-> steps clearer. After adding the keyboard (or any new extension), re-run the
-> **iOS signing bootstrap** workflow so match stores an App Store profile for
-> the new id.
+Then run **iOS signing bootstrap** once so match stores
+`match AppStore io.github.imjasonh.playground.t9keyboard`. You do **not** repeat
+this when adding Ride Monitor–style experiments.
+
+> Skip manual registration if bootstrap’s `ensure_bundle_ids!` creates it for
+> you; still run bootstrap so the profile lands in the match repo.
 
 ---
 
@@ -304,10 +306,10 @@ Either way, match creates a **distribution certificate** and **App Store
 provisioning profiles** named like
 `match AppStore io.github.imjasonh.playground` and
 `match AppStore io.github.imjasonh.playground.t9keyboard`
-(one profile per App ID in `ios/fastlane/Matchfile`).
-and stores them in the `ios-signing` repo. Future TestFlight builds read them
-read-only — you never need to repeat this unless the certificate expires or you
-add another app.
+(one profile per App ID in `ios/fastlane/Matchfile`) and stores them in the
+`ios-signing` repo. Future TestFlight builds read them read-only. Re-run
+bootstrap when the certificate expires or you add another **app extension**
+Bundle ID — not when you add in-app experiments.
 
 ---
 
