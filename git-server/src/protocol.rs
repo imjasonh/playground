@@ -480,7 +480,7 @@ pub async fn receive_pack(
     // carry no pack.
     let expect_pack = commands.iter().any(|c| !c.new.is_zero());
     let ingested = if expect_pack {
-        let _t = crate::timing::Phase::start("push: stream+scan");
+        let _t = crate::timing::Phase::start("push: upload");
         let mut ingest = PackIngest::start(repo, nonce).await?;
         let mut got_any = false;
         let leftover = parser.take_remainder();
@@ -513,7 +513,7 @@ pub async fn receive_pack(
             let _ = ingest.abort().await;
             return Err("push updates refs but sent no pack".into());
         }
-        match ingest.finish().await {
+        match ingest.finish(repo).await {
             Ok(v) => Some(v),
             Err(e) => {
                 return Ok(report_status(

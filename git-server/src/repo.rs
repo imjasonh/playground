@@ -474,11 +474,27 @@ impl<'a> FileLogView<'a> {
 // ---------------------------------------------------------------------------
 
 /// Streaming pack ingest: uploads raw pack bytes to R2 while scanning them.
+/// Streaming pack ingest: relays raw pack bytes to R2 as fast as they
+/// arrive, then scans the pack *from R2* once the upload completes.
+///
+/// The scan used to run inline with the upload, but production showed why it
+/// must not: the edge delivers `Transfer-Encoding: chunked` bodies (i.e.
+/// every real `git push`) into the isolate at line rate with **no
+/// backpressure**, so any consumer slower than the network accumulates the
+/// difference in the runtime's stream queue until the isolate OOMs (error
+/// 1102; measured failing at ≥8 MB/s client rate and succeeding at 4 MB/s
+/// with the identical body). Inline zlib scanning capped consumption at a
+/// few MB/s. Ingest is now upload-only — memcpy speed — and the scan reads
+/// the uploaded pack back from R2 in blocks, where the data is at rest and
+/// nothing can back up. Cost: ⌈size/4 MiB⌉ extra Class B reads per push.
 pub struct PackIngest {
     uploader: Box<dyn Uploader>,
-    scanner: PackScanner,
     pack_id: String,
+    bytes: u64,
 }
+
+/// Block size for the post-upload scan read-back.
+const SCAN_BLOCK_BYTES: u64 = 4 * 1024 * 1024;
 
 impl PackIngest {
     /// `nonce` must be unique per push (the caller provides randomness since
@@ -492,24 +508,53 @@ impl PackIngest {
             .map_err(|e| e.to_string())?;
         Ok(PackIngest {
             uploader,
-            scanner: PackScanner::new(),
             pack_id,
+            bytes: 0,
         })
     }
 
     pub async fn feed(&mut self, chunk: &[u8]) -> Result<(), String> {
-        self.uploader
-            .write(chunk)
-            .await
-            .map_err(|e| e.to_string())?;
-        self.scanner.feed(chunk)
+        self.bytes += chunk.len() as u64;
+        self.uploader.write(chunk).await.map_err(|e| e.to_string())
     }
 
-    /// Complete the upload and scan. Returns (pack id, scan result).
-    pub async fn finish(self) -> Result<(String, ScannedPack), String> {
-        let scanned = self.scanner.finish()?;
-        self.uploader.complete().await.map_err(|e| e.to_string())?;
-        Ok((self.pack_id, scanned))
+    /// Complete the upload, then scan the stored pack. Returns (pack id,
+    /// scan result). A pack that fails the scan (truncated, corrupt,
+    /// checksum mismatch) is deleted from storage before returning the
+    /// error, so rejected pushes leave nothing behind.
+    pub async fn finish(self, repo: &Repo<'_>) -> Result<(String, ScannedPack), String> {
+        let total = self.uploader.complete().await.map_err(|e| e.to_string())?;
+        let key = pack_key(repo.name, &self.pack_id);
+
+        let scan = async {
+            let _t = crate::timing::Phase::start("push: scan from store");
+            let mut scanner = PackScanner::new();
+            let mut pos = 0u64;
+            while pos < total {
+                let len = (total - pos).min(SCAN_BLOCK_BYTES);
+                let block = repo
+                    .store
+                    .get_range(&key, pos, len)
+                    .await
+                    .map_err(|e| e.to_string())?
+                    .ok_or("uploaded pack vanished before scan")?;
+                if block.is_empty() {
+                    return Err("uploaded pack shorter than expected".to_string());
+                }
+                pos += block.len() as u64;
+                scanner.feed(&block)?;
+            }
+            scanner.finish()
+        }
+        .await;
+
+        match scan {
+            Ok(scanned) => Ok((self.pack_id, scanned)),
+            Err(e) => {
+                let _ = repo.store.delete(&key).await;
+                Err(e)
+            }
+        }
     }
 
     /// Abort (push rejected mid-stream).

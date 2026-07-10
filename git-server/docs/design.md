@@ -86,24 +86,35 @@ sorted, so the planned upgrade for very large packs is fanout + binary search
 via ranged reads (log₂ probes of ~74 bytes each), plus a KV/Cache-API layer
 for hot indexes. That changes `Odb::open`, nothing else.
 
-## Push (receive-pack): streaming ingest
+## Push (receive-pack): upload at line rate, scan from R2
 
 ```
-client ──pack stream──▶ Worker ──┬─▶ R2 multipart upload  (5 MiB parts)
-                                 └─▶ PackScanner          (incremental)
+client ──pack stream──▶ Worker ──▶ R2 multipart upload   (5 MiB parts)
+                                   │ (upload completes)
+R2 ──4 MiB blocks──▶ PackScanner   ◀┘   (read-back scan)
 ```
 
 1. **Command section** (pkt-lines) is parsed incrementally; the rest of the
    body is the pack.
-2. **Every raw pack byte is teed** to an R2 multipart upload *and* to the
-   incremental scanner. The scanner finds entry boundaries (inflating as it
-   goes — zlib streams have no length prefix), records each entry's byte
+2. **The body is relayed straight into an R2 multipart upload** — memcpy
+   speed, nothing slower in the path. This ordering is load-bearing:
+   production showed the edge delivers chunked (`Transfer-Encoding:
+   chunked`, i.e. every real `git push`) bodies into the isolate at line
+   rate with **no backpressure** — a consumer slower than the network
+   accumulates the difference in the runtime's stream queue until the
+   isolate OOMs (error 1102). The identical 48 MB body failed at ≥8 MB/s
+   client rate and passed at 4 MB/s when the zlib scan ran inline; the scan
+   therefore runs *after* the upload completes.
+3. **The scanner reads the stored pack back in 4 MiB blocks** (⌈size/4 MiB⌉
+   Class B reads), finds entry boundaries (inflating as it goes — zlib
+   streams have no length prefix), records each entry's byte
    range/type/delta-base, hashes non-delta objects on the fly, and verifies
-   the pack's trailing SHA-1. Memory: a partial-chunk carry buffer + 32 KiB
-   inflate scratch + ~50 B/entry of metadata. The client's own compression is
-   preserved — we never recompress a push.
+   the pack's trailing SHA-1; packs that fail the scan are deleted. Memory:
+   a partial-block carry buffer + 32 KiB inflate scratch + ~50 B/entry of
+   metadata. The client's own compression is preserved — we never
+   recompress a push.
 3. **Delta resolution** then assigns final oids/types to delta entries by
-   reading their payloads back from the just-uploaded pack with ranged reads,
+   reading their payloads from the uploaded pack with ranged reads,
    walking chains root-first with a byte-budgeted content cache. Thin-pack
    bases (git pushes are thin by default) come from the existing odb by oid.
    The result is the GSIX index, written next to the pack.
@@ -277,7 +288,7 @@ free**. DO requests ≈ $0.15/M + duration; KV reads ≈ $0.50/M. Per operation:
 
 | Operation | DO | R2 Class A | R2 Class B |
 |---|---|---|---|
-| push (P packs, size S) | 1 load + 1 commit | multipart: ⌈S/5MiB⌉+2; idx put: 1; filelog put(s) | P idx + ⌈S/4MiB⌉ block reads + scoped filelog shards |
+| push (P packs, size S) | 1 load + 1 commit | multipart: ⌈S/5MiB⌉+2; idx put: 1; filelog put(s) | P idx + 2×⌈S/4MiB⌉ block reads (scan read-back + delta resolution) + scoped filelog shards |
 | clone (1 pack repo, size S) | 1 load | 0 | 1 idx + ⌈S/4MiB⌉ block reads |
 | incremental fetch | 1 load | 0 | P idx + blocks covering the objects sent |
 | file API | 1 load | 0 | P idx + blocks covering the path walk |
