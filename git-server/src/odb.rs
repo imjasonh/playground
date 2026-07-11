@@ -123,7 +123,7 @@ impl<'a> Odb<'a> {
 
     /// Read an object's compressed payload verbatim (for pack-copy reuse),
     /// through the pack's block cache.
-    pub async fn read_compressed(
+    async fn read_compressed(
         &self,
         pack_id: &str,
         rec: &EntryRecord,

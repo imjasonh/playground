@@ -198,20 +198,14 @@ struct LoadReply {
 }
 
 #[derive(Serialize, Deserialize)]
-struct CommitRequest {
-    expected_version: u64,
-    state: RepoState,
-}
-
-#[derive(Serialize, Deserialize)]
 struct LeaseRequest {
     now_ms: i64,
     ttl_ms: i64,
 }
 
 /// The per-repo Durable Object. Every request for a given repo name routes to
-/// the same instance, whose single-threaded execution makes `commit` a true
-/// compare-and-swap.
+/// the same instance, whose single-threaded execution makes each merge-apply
+/// endpoint (`/apply-push`, `/swap`) an atomic read-merge-write.
 #[durable_object]
 pub struct RepoStateDo {
     state: State,
@@ -233,16 +227,6 @@ impl DurableObject for RepoStateDo {
                     .await
                     .unwrap_or_else(|_| RepoState::empty());
                 Response::from_json(&LoadReply { state, version })
-            }
-            "/commit" => {
-                let body: CommitRequest = req.json().await?;
-                if body.expected_version != version {
-                    return Response::error("conflict", 409);
-                }
-                let next = version + 1;
-                self.state.storage().put("state", &body.state).await?;
-                self.state.storage().put("version", next).await?;
-                Response::from_json(&serde_json::json!({ "version": next }))
             }
             // Merge-apply one push's delta against the current state
             // (per-ref CAS + commuting appends). Single-threaded execution
@@ -352,34 +336,6 @@ impl StateStore for DoStateStore {
             .await
             .map_err(|e| StateError::Backend(e.to_string()))?;
         Ok((reply.state, reply.version))
-    }
-
-    async fn commit(
-        &self,
-        repo: &str,
-        expected_version: u64,
-        state: &RepoState,
-    ) -> Result<u64, StateError> {
-        let body = serde_json::to_string(&CommitRequest {
-            expected_version,
-            state: state.clone(),
-        })
-        .map_err(|e| StateError::Backend(e.to_string()))?;
-        let mut resp = self.call(repo, "/commit", Some(body)).await?;
-        if resp.status_code() == 409 {
-            return Err(StateError::Conflict);
-        }
-        if resp.status_code() != 200 {
-            return Err(StateError::Backend(format!(
-                "commit failed with status {}",
-                resp.status_code()
-            )));
-        }
-        let value: serde_json::Value = resp
-            .json()
-            .await
-            .map_err(|e| StateError::Backend(e.to_string()))?;
-        Ok(value["version"].as_u64().unwrap_or(0))
     }
 
     async fn apply_push(&self, repo: &str, delta: &PushDelta) -> Result<PushApplied, StateError> {

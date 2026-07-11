@@ -17,7 +17,6 @@
 use crate::object::{hash_object, ObjType, Oid};
 use crate::pack::scan::{BaseRef, ScannedPack};
 use crate::pack::write::inflate;
-use crate::pack::{TYPE_OFS_DELTA, TYPE_REF_DELTA};
 use crate::storage::{StorageError, Store};
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -43,12 +42,6 @@ pub struct EntryRecord {
     pub payload_size: u64,
     /// For delta entries: the resolved base object id.
     pub base_oid: Option<Oid>,
-}
-
-impl EntryRecord {
-    pub fn is_delta(&self) -> bool {
-        self.stored_type == TYPE_OFS_DELTA || self.stored_type == TYPE_REF_DELTA
-    }
 }
 
 /// Provider of base objects that live *outside* the pack being resolved
@@ -192,7 +185,9 @@ impl Resolver<'_> {
         // Walk up the chain until a cached / non-delta / external root.
         let mut chain: Vec<usize> = Vec::new(); // deltas to apply, deepest last
         let mut cursor = i;
-        let (mut ty, mut content): (ObjType, Rc<Vec<u8>>) = loop {
+        // Delta application never changes the object type, so `ty` is fixed
+        // once the chain root is found.
+        let (ty, mut content): (ObjType, Rc<Vec<u8>>) = loop {
             if let Some(hit) = self.cache.get(&cursor) {
                 break hit.clone();
             }
@@ -237,8 +232,6 @@ impl Resolver<'_> {
             let applied = crate::pack::delta::apply_delta(&content, &delta)?;
             content = Rc::new(applied);
             self.cache_put(di, ty, content.clone());
-            // Delta application never changes the object type.
-            let _ = &mut ty;
         }
         Ok((ty, content))
     }
@@ -282,14 +275,6 @@ impl PackIndex {
             .binary_search_by(|r| r.oid.cmp(&oid))
             .ok()
             .map(|i| &self.records[i])
-    }
-
-    pub fn len(&self) -> usize {
-        self.records.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.records.is_empty()
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {

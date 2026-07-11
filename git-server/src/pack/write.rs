@@ -152,29 +152,6 @@ impl PackWriter {
     }
 }
 
-/// Inflated length of a complete zlib stream (used when re-emitting a copied
-/// delta payload, whose entry header must carry its inflated size).
-pub fn inflated_len(z: &[u8]) -> Result<u64, String> {
-    let mut dec = flate2::Decompress::new(true);
-    let mut scratch = vec![0u8; 64 * 1024];
-    let mut pos = 0usize;
-    loop {
-        let before_in = dec.total_in();
-        let before_out = dec.total_out();
-        let status = dec
-            .decompress(&z[pos..], &mut scratch, flate2::FlushDecompress::None)
-            .map_err(|e| format!("zlib: {e}"))?;
-        pos += (dec.total_in() - before_in) as usize;
-        match status {
-            flate2::Status::StreamEnd => return Ok(dec.total_out()),
-            _ if pos >= z.len() && dec.total_out() == before_out => {
-                return Err("zlib: truncated".into())
-            }
-            _ => {}
-        }
-    }
-}
-
 /// Deflate `content` (helper for tests and for re-compressed entries).
 pub fn deflate(content: &[u8]) -> Vec<u8> {
     let mut enc = ZlibEncoder::new(Vec::new(), Compression::default());
@@ -213,7 +190,9 @@ pub fn inflate(data: &[u8], expected_size: u64) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
-/// Test-support pack builder shared by unit tests across modules.
+/// Test-support pack builder shared by unit tests and benchmarks across
+/// modules. Excluded from the wasm (production Worker) build.
+#[cfg(not(target_arch = "wasm32"))]
 pub mod test_support {
     use super::*;
 

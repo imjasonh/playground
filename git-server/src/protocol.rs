@@ -142,12 +142,8 @@ pub async fn upload_pack(
                     args.push(t.to_string());
                 }
             }
-            Pkt::Data(_) => {
-                if let Some(t) = pkt.as_text() {
-                    // Tolerate capability lines before the delim.
-                    let _ = t;
-                }
-            }
+            // Capability lines before the delim (agent=, object-format=) are
+            // tolerated and ignored.
             _ => {}
         }
     }
@@ -314,14 +310,9 @@ async fn fetch(
     let filter_ref = filter.as_ref();
     let set = if let Some(depth) = deepen {
         let _t = crate::timing::Phase::start("fetch: collect shallow set");
-        let plan = crate::repo::collect_shallow_set_filtered(
-            &odb,
-            &wants,
-            depth,
-            &client_shallow,
-            filter_ref,
-        )
-        .await?;
+        let plan =
+            crate::repo::collect_shallow_set(&odb, &wants, depth, &client_shallow, filter_ref)
+                .await?;
         shallow_boundary = plan.shallow;
         unshallow = plan.unshallow;
         plan.set
@@ -342,7 +333,7 @@ async fn fetch(
             }
         } else {
             let _t = crate::timing::Phase::start("fetch: collect set");
-            crate::repo::collect_fetch_set_filtered(&odb, &wants, &haves, filter_ref).await?
+            crate::repo::collect_fetch_set(&odb, &wants, &haves, filter_ref).await?
         }
     };
     // The selection is turned into a plain (pack, record) list here so the

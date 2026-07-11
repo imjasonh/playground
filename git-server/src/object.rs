@@ -32,11 +32,6 @@ impl Oid {
     pub fn is_zero(&self) -> bool {
         self.0 == [0u8; 20]
     }
-
-    /// First byte, used for pack-index fan-out.
-    pub fn first_byte(&self) -> u8 {
-        self.0[0]
-    }
 }
 
 impl std::fmt::Debug for Oid {
@@ -67,16 +62,6 @@ impl ObjType {
             ObjType::Tree => "tree",
             ObjType::Blob => "blob",
             ObjType::Tag => "tag",
-        }
-    }
-
-    pub fn from_name(name: &str) -> Option<ObjType> {
-        match name {
-            "commit" => Some(ObjType::Commit),
-            "tree" => Some(ObjType::Tree),
-            "blob" => Some(ObjType::Blob),
-            "tag" => Some(ObjType::Tag),
-            _ => None,
         }
     }
 
@@ -254,19 +239,6 @@ fn parse_ident_time(ident: &str) -> Option<i64> {
     let mut it = ident.rsplitn(3, ' ');
     let _tz = it.next()?;
     it.next()?.parse().ok()
-}
-
-/// A fully materialized object (type + raw content).
-#[derive(Debug, Clone)]
-pub struct Object {
-    pub ty: ObjType,
-    pub data: Vec<u8>,
-}
-
-impl Object {
-    pub fn oid(&self) -> Oid {
-        hash_object(self.ty, &self.data)
-    }
 }
 
 #[cfg(test)]

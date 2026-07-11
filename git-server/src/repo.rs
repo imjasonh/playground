@@ -405,22 +405,6 @@ pub async fn load_filelog(
     load_filelog_scoped(store, repo, state, &FilelogScope::All).await
 }
 
-/// Find the newest record for `path` across segments (newest first).
-/// One-shot linear scan; request handlers that do many lookups should build a
-/// [`FileLogView`] instead.
-pub fn latest_for_path<'a>(
-    segments: &'a [FileLogSegment],
-    path: &str,
-) -> Option<&'a FileLogRecord> {
-    for seg in segments {
-        // Within a segment records are appended oldest→newest; scan backward.
-        if let Some(r) = seg.records.iter().rev().find(|r| r.path == path) {
-            return Some(r);
-        }
-    }
-    None
-}
-
 /// All records for one path, newest first (blame's version chain source).
 /// Single pass over the segments, however many versions the chain has.
 pub fn records_for_path<'a>(segments: &'a [FileLogSegment], path: &str) -> Vec<&'a FileLogRecord> {
@@ -938,15 +922,6 @@ pub async fn collect_fetch_set(
     odb: &Odb<'_>,
     wants: &[Oid],
     haves: &[Oid],
-) -> Result<FetchSet, String> {
-    collect_fetch_set_filtered(odb, wants, haves, None).await
-}
-
-/// Like [`collect_fetch_set`], with an optional partial-clone object filter.
-pub async fn collect_fetch_set_filtered(
-    odb: &Odb<'_>,
-    wants: &[Oid],
-    haves: &[Oid],
     filter: Option<&ObjectFilter>,
 ) -> Result<FetchSet, String> {
     // Ancestors of haves (bounded: stop exploring once a commit is known).
@@ -1075,16 +1050,6 @@ pub struct ShallowPlan {
 /// an existing shallow clone); commits among them that we now include with
 /// parents become `unshallow`.
 pub async fn collect_shallow_set(
-    odb: &Odb<'_>,
-    wants: &[Oid],
-    depth: usize,
-    client_shallow: &HashSet<Oid>,
-) -> Result<ShallowPlan, String> {
-    collect_shallow_set_filtered(odb, wants, depth, client_shallow, None).await
-}
-
-/// Like [`collect_shallow_set`], with an optional partial-clone object filter.
-pub async fn collect_shallow_set_filtered(
     odb: &Odb<'_>,
     wants: &[Oid],
     depth: usize,
@@ -1384,17 +1349,6 @@ impl PackEmitter {
     }
 }
 
-/// Build a whole response pack in memory (tests and benchmarks; production
-/// streams via [`PackEmitter`]).
-pub async fn build_pack(odb: &Odb<'_>, set: &FetchSet, thin_ok: bool) -> Result<Vec<u8>, String> {
-    let mut emitter = PackEmitter::new(plan_pack(odb, set, thin_ok)?);
-    let mut out = Vec::new();
-    while let Some(chunk) = emitter.next_chunk(odb).await? {
-        out.extend_from_slice(&chunk);
-    }
-    Ok(out)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1574,7 +1528,7 @@ mod tests {
             let (commit, tree, small, large, id) = install_fixture(&store, "r").await;
             let odb = Odb::open(&store, "r", &[id]).await.unwrap();
             let filter = ObjectFilter::BlobNone;
-            let set = collect_fetch_set_filtered(&odb, &[commit], &[], Some(&filter))
+            let set = collect_fetch_set(&odb, &[commit], &[], Some(&filter))
                 .await
                 .unwrap();
             let have: HashSet<Oid> = set.include.iter().copied().collect();
@@ -1592,7 +1546,7 @@ mod tests {
             let (commit, _tree, small, large, id) = install_fixture(&store, "r").await;
             let odb = Odb::open(&store, "r", &[id]).await.unwrap();
             let filter = ObjectFilter::BlobLimit(100);
-            let set = collect_fetch_set_filtered(&odb, &[commit], &[], Some(&filter))
+            let set = collect_fetch_set(&odb, &[commit], &[], Some(&filter))
                 .await
                 .unwrap();
             let have: HashSet<Oid> = set.include.iter().copied().collect();
@@ -1609,7 +1563,7 @@ mod tests {
             let odb = Odb::open(&store, "r", &[id]).await.unwrap();
             let filter = ObjectFilter::BlobNone;
             // Skeleton + explicit want for one blob (follow-up fetch pattern).
-            let set = collect_fetch_set_filtered(&odb, &[commit, large], &[], Some(&filter))
+            let set = collect_fetch_set(&odb, &[commit, large], &[], Some(&filter))
                 .await
                 .unwrap();
             let have: HashSet<Oid> = set.include.iter().copied().collect();
