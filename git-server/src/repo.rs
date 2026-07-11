@@ -10,8 +10,14 @@
 //! 4. build the file-log segment for the new commits (first-parent tree
 //!    diffs), giving the read APIs their "which commit last touched this
 //!    path" chain without history walks;
-//! 5. CAS the repo state document: refs, pack manifest, file-log manifest
-//!    flip together, atomically.
+//! 5. merge-apply the push's delta to the repo state document: refs, pack
+//!    manifest, file-log manifest flip together, atomically.
+//!
+//! The fetch side selects objects ([`collect_fetch_set`] for reachability
+//! walks, [`collect_shallow_set`] for depth-bounded ones — both honoring an
+//! optional partial-clone [`ObjectFilter`]), plans per-object emission
+//! ([`plan_pack`]: verbatim copy, `REF_DELTA` copy, or materialize), and
+//! streams the pack in bounded chunks ([`PackEmitter`]).
 
 use crate::filter::ObjectFilter;
 use crate::object::{ObjType, Oid, TreeEntry};
@@ -74,6 +80,12 @@ pub struct FileLogSegment {
 
 const GSFL_MAGIC: &[u8; 4] = b"GSFL";
 const GSFL_VERSION: u32 = 1;
+
+/// Serialized size of one GSFL record minus its variable-length path:
+/// path_len(2) + commit(20) + time(8) + change(1) + blob(20) +
+/// prev_commit(20) + prev_blob(20). Keep in sync with
+/// [`FileLogSegment::to_bytes`]; used for shard-size accounting.
+const GSFL_RECORD_FIXED_BYTES: usize = 2 + 20 + 8 + 1 + 20 + 20 + 20;
 
 impl FileLogSegment {
     /// Serialize: header, then per record `path_len(u16) path commit(20)
@@ -283,7 +295,7 @@ pub async fn write_sharded_filelog(
 
     let mut records = records.into_iter().peekable();
     while let Some(r) = records.next() {
-        current_bytes += 91 + r.path.len(); // fixed record size + path
+        current_bytes += GSFL_RECORD_FIXED_BYTES + r.path.len();
         let path_changes = records
             .peek()
             .map(|next| next.path != r.path)
@@ -1007,7 +1019,7 @@ pub async fn collect_fetch_set(
     }
     for &c in &include_commits {
         // Direct tree/blob wants land here too; read() dispatches on type.
-        let (ty, data) = odb.read(c).await?.ok_or("included object vanished")?;
+        let (ty, data) = odb.read(c).await?.ok_or_else(|| format!("object {c} not found"))?;
         if ty != ObjType::Commit {
             continue;
         }
@@ -1118,7 +1130,7 @@ pub async fn collect_shallow_set(
         }
     }
     for &c in &include_commits {
-        let (ty, data) = odb.read(c).await?.ok_or("included object vanished")?;
+        let (ty, data) = odb.read(c).await?.ok_or_else(|| format!("object {c} not found"))?;
         if ty != ObjType::Commit {
             continue;
         }
@@ -1251,7 +1263,7 @@ pub fn plan_pack(odb: &Odb<'_>, set: &FetchSet, thin_ok: bool) -> Result<PackPla
     let included: HashSet<Oid> = set.include.iter().copied().collect();
     let mut entries: Vec<(String, EntryRecord, EmitMode)> = Vec::with_capacity(set.include.len());
     for &oid in &set.include {
-        let (pack_id, rec) = odb.locate(oid).ok_or_else(|| format!("{oid} vanished"))?;
+        let (pack_id, rec) = odb.locate(oid).ok_or_else(|| format!("object {oid} not found"))?;
         let mode = match rec.base_oid {
             None => EmitMode::Copy,
             Some(base)
@@ -1307,7 +1319,7 @@ impl PackEmitter {
             let (pack_id, rec, mode) = &self.entries[self.idx];
             match mode {
                 EmitMode::Materialize => {
-                    let (ty, content) = odb.read(rec.oid).await?.ok_or("object vanished")?;
+                    let (ty, content) = odb.read(rec.oid).await?.ok_or_else(|| format!("object {} not found", rec.oid))?;
                     w.add_full(ty, &content);
                     self.idx += 1;
                 }

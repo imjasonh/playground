@@ -49,12 +49,14 @@ pub struct Odb<'a> {
 }
 
 /// Cache budget for materialized objects, sized for tree walks / blame /
-/// fetch-set collection over big repos. Was briefly halved to 24 MiB while
-/// chasing a suspected memory bug; the real large-push failure was CPU
-/// (free-tier cap), not memory, so this is restored to 48 MiB — a smaller
-/// cache just meant more R2 re-reads on the read paths for no safety gain.
-/// Bounded well under the 128 MiB isolate (see `tests/memory.rs`).
+/// fetch-set collection over big repos: large enough to keep hot objects
+/// resident across a walk, bounded well under the 128 MiB isolate
+/// (enforced by `tests/memory.rs`). Smaller budgets just trade memory
+/// headroom for repeat R2 reads on the read paths.
 const CONTENT_CACHE_BUDGET: usize = 48 * 1024 * 1024;
+
+/// Parsed-tree cache entry cap (see `read_tree`).
+const TREE_CACHE_MAX_ENTRIES: usize = 100_000;
 
 impl<'a> Odb<'a> {
     /// Load the indexes for `pack_ids` (one Class B read per pack).
@@ -189,7 +191,7 @@ impl<'a> Odb<'a> {
                 Some(base) => {
                     chain.push((pack_id, rec));
                     cursor = base;
-                    if chain.len() > 10_000 {
+                    if chain.len() > crate::pack::MAX_DELTA_CHAIN {
                         return Err("delta chain too long".into());
                     }
                 }
@@ -232,10 +234,10 @@ impl<'a> Odb<'a> {
         }
         let data = self.read_typed(oid, ObjType::Tree).await?;
         let parsed = Rc::new(crate::object::parse_tree(&data)?);
-        // Parsed entries are ~the size of the raw tree; keep the cache in the
-        // same ballpark as the content cache by piggybacking on its budget
-        // accounting (a tree's raw bytes are already counted there).
-        if self.tree_cache.borrow().len() > 100_000 {
+        // Entry-count cap (not byte-budgeted like the content cache): parsed
+        // trees are small, so a generous count bound keeps memory modest
+        // while letting big tree walks stay fully cached.
+        if self.tree_cache.borrow().len() > TREE_CACHE_MAX_ENTRIES {
             self.tree_cache.borrow_mut().clear();
         }
         self.tree_cache.borrow_mut().insert(oid, parsed.clone());

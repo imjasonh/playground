@@ -16,7 +16,6 @@ use std::sync::Arc;
 /// A running test server.
 pub struct TestServer {
     pub store: MemStore,
-    #[allow(dead_code)] // handy for tests that inspect state directly
     pub states: MemStateStore,
     pub port: u16,
     shutdown: Arc<std::sync::atomic::AtomicBool>,
@@ -112,7 +111,6 @@ impl TestServer {
 
     /// GET returning (status, response header block, body) for tests that
     /// assert on headers (e.g. Server-Timing).
-    #[allow(dead_code)]
     pub fn get_with_headers(&self, path: &str) -> (u16, String, Vec<u8>) {
         self.request("GET", path)
     }

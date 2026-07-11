@@ -55,6 +55,7 @@ pub fn apply_delta(base: &[u8], delta: &[u8]) -> Result<Vec<u8>, String> {
                 }
             }
             if size == 0 {
+                // gitformat-pack(5): a copy size of zero encodes 0x10000.
                 size = 0x10000;
             }
             let start = offset as usize;

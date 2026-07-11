@@ -7,8 +7,8 @@
 //!   packs flow to R2 without ever being resident in the isolate;
 //! * [`DoStateStore`] — implements [`crate::refs::StateStore`] by calling the
 //!   per-repo `RepoStateDo` Durable Object, the repo's single serialization
-//!   point (load, whole-document CAS commit for maintenance, and per-push
-//!   merge-apply, over a tiny JSON protocol);
+//!   point (load, per-push merge-apply, and the repack manifest swap, over a
+//!   tiny JSON protocol);
 //! * `#[event(fetch)]` — adapts the Workers request (streamed body) to
 //!   [`crate::http::GitHttp`];
 //! * `#[event(scheduled)]` — walks the repo registry (a KV namespace,
@@ -231,9 +231,8 @@ impl DurableObject for RepoStateDo {
             // Merge-apply one push's delta against the current state
             // (per-ref CAS + commuting appends). Single-threaded execution
             // plus the storage input gate make read-merge-write atomic, so
-            // concurrent pushes to disjoint refs all land instead of racing
-            // one whole-document CAS. Bumps the version so a racing repack's
-            // `/commit` still loses.
+            // concurrent pushes to disjoint refs all land. Bumps the
+            // monotonic state version surfaced by the status API.
             "/apply" => {
                 let delta: PushDelta = req.json().await?;
                 let mut state: RepoState = storage

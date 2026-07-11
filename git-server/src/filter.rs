@@ -33,7 +33,7 @@ impl ObjectFilter {
         if let Some(rest) = spec.strip_prefix("tree:") {
             let depth: usize = rest
                 .parse()
-                .map_err(|_| format!("bad tree: depth: {rest}"))?;
+                .map_err(|_| format!("bad tree filter depth: {rest}"))?;
             return Ok(ObjectFilter::TreeDepth(depth));
         }
         Err(format!("unsupported filter-spec: {spec}"))

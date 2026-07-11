@@ -63,10 +63,9 @@ impl ExternalBases for NoExternalBases {
 
 /// Byte budget for the delta-resolution content cache. Bases are usually
 /// clustered (git orders packs so deltas sit near their bases), so this
-/// cache eliminates nearly all repeat reads while resolving a pushed pack.
-/// Restored to 32 MiB (from a brief 24 MiB dip taken while chasing a
-/// phantom memory bug — the real large-push limit was CPU, not memory);
-/// still comfortably within the 128 MiB isolate.
+/// cache eliminates nearly all repeat reads while resolving a pushed pack,
+/// while staying comfortably within the 128 MiB isolate (enforced by
+/// `tests/memory.rs`).
 const RESOLVE_CACHE_BUDGET: usize = 32 * 1024 * 1024;
 
 /// Resolve all entries of a scanned pack stored at `pack_key` in `store`,
@@ -222,7 +221,7 @@ impl Resolver<'_> {
                     }
                 }
             }
-            if chain.len() > 10_000 {
+            if chain.len() > crate::pack::MAX_DELTA_CHAIN {
                 return Err("delta chain too long".into());
             }
         };

@@ -17,10 +17,11 @@
 //!   what lifts the per-repo write ceiling measured in
 //!   `docs/loadtest-scaling.md` — the old whole-document CAS made the entire
 //!   multi-second push pipeline one conflict window.
-//! * **Maintenance (repack)** rewrites the pack list wholesale, so it keeps
-//!   whole-document optimistic concurrency (`commit` checks the expected
-//!   version). Every applied push bumps the version, so a repack racing any
-//!   push loses and discards its staged output.
+//! * **Maintenance (repack)** applies a manifest *swap*
+//!   ([`StateStore::apply_repack`]): replace exactly the consumed
+//!   pack/segment ids, in place. Racing pushes only append, so they never
+//!   invalidate a swap; only a concurrent repack that consumed one of the
+//!   same ids makes the swap fail, discarding the staged output.
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -282,11 +283,11 @@ pub struct PushApplied {
 
 /// One repack run's manifest change: replace a set of consumed pack ids
 /// (and their file-log segment ids) with the consolidated pack, in place.
-/// Applied via [`StateStore::apply_repack`], which — unlike a whole-document
-/// CAS — **commutes with racing pushes**: a push only appends packs, so it
-/// can never invalidate the swap. The swap fails only if a consumed id is
-/// gone, i.e. another repack raced this one. Serializable: it crosses the
-/// Durable Object boundary as JSON.
+/// Applied via [`StateStore::apply_repack`], which **commutes with racing
+/// pushes**: a push only appends packs, so it can never invalidate the
+/// swap. The swap fails only if a consumed id is gone, i.e. another repack
+/// raced this one. Serializable: it crosses the Durable Object boundary as
+/// JSON.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RepackSwap {
     /// Pack ids consumed by the consolidation (all must still be present).

@@ -1,6 +1,6 @@
 //! Git object model: ids, types, header hashing, and tree/commit parsing.
 //!
-//! This prototype targets SHA-1 repositories (git's default object format;
+//! This server targets SHA-1 repositories (git's default object format;
 //! `object-format=sha1` is what stock clients negotiate). The [`Oid`] type is
 //! a fixed 20-byte array so the hot paths (pack indexing, oid maps) never
 //! allocate per id.

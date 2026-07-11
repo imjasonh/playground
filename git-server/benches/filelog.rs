@@ -85,8 +85,9 @@ fn main() {
         ..RepoState::empty()
     };
 
-    // Layout A: monolithic merged segment (what maintenance wrote before
-    // sharding — every query loads and parses the entire history).
+    // Layout A: one monolithic merged segment — a synthetic pre-sharding
+    // baseline for comparison (every query loads and parses the entire
+    // history). Production maintenance writes sharded segments (layout B).
     block_on(
         store.put(
             "r/filelog/mono",

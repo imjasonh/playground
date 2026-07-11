@@ -135,7 +135,7 @@ impl PackScanner {
                 total_len: self.total_len,
             }),
             _ => Err(format!(
-                "pack stream truncated (state {:?}, {} of {} entries)",
+                "pack stream truncated in {} ({} of {} entries)",
                 match self.state {
                     State::Header => "header",
                     State::EntryHeader => "entry-header",
