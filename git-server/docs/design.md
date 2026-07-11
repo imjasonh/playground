@@ -553,6 +553,13 @@ the body streams are not yet folded into the totals.
 | Crash mid-push | staged pack unreferenced; state untouched; multipart upload GC |
 | Push retry after dropped response | delta appends are idempotent (packs content-addressed, deduped by id) |
 
+The whole-document CAS caps a single repo at ~0.5 successful pushes/s (the
+CAS window spans the entire push pipeline, so goodput is `1 / push latency`
+regardless of concurrency). A production load test measured this exactly;
+[`loadtest-scaling.md`](loadtest-scaling.md) has the methodology, numbers,
+and the plan to lift it (merge disjoint ref updates in the DO instead of
+whole-document CAS).
+
 ## What's deliberately out of scope (prototype)
 
 * **Auth**: single hook point at the router; Workers-native options (service
