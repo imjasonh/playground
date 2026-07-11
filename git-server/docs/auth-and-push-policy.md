@@ -282,8 +282,8 @@ scopes speak:
 | `repo.maintenance` | `POST /api/<repo>/repack` |
 | `repo.manageAccess` | edit visibility + grants |
 | `repo.managePolicy` | edit the policy document |
-| `policy.approve` | may create review approvals (phase 3) |
-| `policy.override` | may satisfy the permission half of a two-party policy override (phase 3) |
+| `policy.approve` | may create review approvals (phase 3); path-confinable |
+| `policy.override` | override coverage for two-party policy overrides (phase 3); path-confinable |
 | `server.manageUsers` | create/disable users and service accounts, grant server roles |
 
 Splitting push into `repo.push` / `refs.create` / `refs.delete` /
@@ -495,8 +495,9 @@ account); for `review`, the `policy.approve` permission on the repo (the
 `writer` role has it — peers review peers); for `override`, any
 authenticated user with `repo.read` — the permission gate for overrides
 is on *using* the approval (the two-party check below), not on stating
-one. The server records whether the approver holds `policy.override`, so
-the push-time check needs no second identity lookup.
+one. The server snapshots the approver's `policy.approve` and
+`policy.override` path coverage into the approval, so the push-time
+coverage checks need no second identity lookup.
 
 The server mints an **approval JWS** — a compact JWT under the rotating
 keys whose claims are the approval itself:
@@ -509,7 +510,9 @@ keys whose claims are the approval itself:
   "ref": "refs/heads/main", "new": "<oid>",
   "rule": null,                    // set for overrides
   "reason": "LGTM — reviewed the diff",
-  "approver_has_override": false }
+  "approve_paths": ["services/payments/**"],  // approver's policy.approve
+                                   // coverage at mint time; ["**"] if unconfined
+  "override_paths": null }         // ditto for policy.override; null = none
 ```
 
 The JWS is returned to the approver *and* a pending-approval stub (jti,
@@ -534,28 +537,44 @@ when full — approvals are ephemeral work-in-flight, not storage, so the
 128 KiB DO document never becomes the bottleneck. The durable record
 lives in the audit space, below.
 
-#### Override: two parties, one permission
+#### Override: two parties, covered paths
 
 Overriding a rule is deliberately heavier than satisfying it:
 
-1. **Two parties.** The pusher and a prior approver, with
-   `approver.sub ≠ pusher.sub` — and both necessarily human, per above.
-2. **One permission between them.** At least one of the two must hold
-   `policy.override` on the repo. (Both parties are approving the
-   override — the pusher approves by pushing.) A junior engineer can push
-   an approved exception their lead signed off on, and equally a lead can
-   push with a junior's ack; two unprivileged users cannot waive policy
-   between themselves.
-3. **The override must be explicit** — `git push -o policy.override=<rule>`;
+1. **Two parties, per rule.** Every overridden rule needs at least one
+   prior approval from someone other than the pusher
+   (`approver.sub ≠ pusher.sub`) — and both parties are necessarily
+   human, per above.
+2. **Coverage, per path.** `policy.override` is path-confinable exactly
+   like `policy.approve` (the grant's `paths` globs). Every path a
+   violation names must be covered by the override coverage of the
+   pusher *or* of an approver of that rule. Violations that name no path
+   (ref rules like `deny force`, commit rules like a message pattern)
+   need coverage from someone path-*unconfined*.
+3. **The override must be explicit** — one `-o policy.override=<rule>`
+   push option per overridden rule (git happily sends several);
    eligibility without the option still enforces the rule.
 
-At push time the server checks: matching unconsumed approval (rule + ref
-+ oid-if-bound + unexpired), distinct parties, and
-`pusher_has_override ∨ approver_has_override`. Any miss is a normal
-rejection with the established vocabulary:
+Coverage **composes**. A push violating `services/foo`'s subtree rule and
+`services/bar`'s subtree rule is overridable with two approvals — foo's
+override approver for the foo violation, bar's for the bar violation —
+without involving any approver of `/` or a shared parent (an unconfined
+approver also works, it's just never *required*). The same composition
+applies within one rule: a root rule violated at paths in both
+directories can be waived jointly by the two directory approvers, each
+covering their own paths. And the two-party junior/lead flow survives
+path-scoping: a foo-confined lead can push with an unprivileged junior's
+approval (the lead's own coverage covers the paths; the junior supplies
+the second party), and vice versa.
+
+At push time, per overridden rule, the server checks: at least one
+matching unconsumed approval (rule + ref + oid-if-bound + unexpired) from
+a non-pusher, and every violating path covered by
+`override_paths(pusher) ∪ ⋃ override_paths(approvers of that rule)`. Any
+miss is a normal rejection with the established vocabulary:
 `ng <ref> policy "workflows-frozen": override requires approval`,
 `… approval expired`, `… approver and pusher must differ`,
-`… override not permitted`.
+`… override not permitted for path <path>`.
 
 **Who may override is *not* configured per rule.** An earlier draft had
 per-rule `bypass = ["user:…"]` lists; they're gone deliberately. User
@@ -647,9 +666,11 @@ target ref and the **new tip oid** it admitted. Each blob is a
 Two signature layers, verifiable offline against
 `/.well-known/jwks.json` years later (phase 1 retains rotated-out public
 keys verify-only for exactly this): the embedded approval JWSes are the
-approvers' claims — who approved what, when, holding which permission —
+approvers' claims — who approved what, when, with what path coverage —
 and the outer JWS is the server's attestation of what was actually pushed
-under them.
+under them. A record carries *all* composing approvals: a multi-directory
+override or owner-review lists each directory's approver, so "who was
+responsible for this part" is in the same single record.
 
 **Answering the queries.** "Why/when was this merge approved?" is a
 single tree lookup at the audit tip — `GET
@@ -729,7 +750,10 @@ anything else is `ng <ref> grant does not cover path <path>`. Token
 it *couldn't* touch `services/billing/**` even if the account could).
 Like ref scoping, path scoping is **write-only** — read stays
 repo-granular, by the same shared-object-graph argument. Path-confined
-`policy.approve` is what makes review path-aware, below.
+`policy.approve` is what makes review path-aware (below), and
+path-confined `policy.override` scopes who can waive rules for which
+directories — both compose across owners, so multi-directory changes
+need only the touched directories' people, never a parent's.
 
 #### Delegated subtree policies
 
@@ -814,6 +838,13 @@ principle as overrides, and the same place grants already live. A subtree
 policy may require review for its own directory even when the root
 doesn't (a monotonic add); the root's `per_path` rule automatically
 *becomes* owner-review wherever owners are path-confined.
+
+Coverage **composes across owners**, exactly like override coverage: a
+change spanning `services/foo/**` and `services/bar/**` is satisfied by
+one approval from foo's owner plus one from bar's owner — no root-covering
+approver is required (one would also work; unconfined coverage is a
+superset, never a prerequisite). The hierarchy above the touched
+directories is never bothered.
 
 Audit records for `per_path` reviews embed each approval's covered paths,
 so "who approved the change to `services/payments/api.rs` in that merge"
@@ -945,7 +976,7 @@ blobs so the gap is visible.
 
 ## Worked scenarios: a monorepo, end to end
 
-One fixture, eight pushes. Repo `mono` (public), default branch `main`.
+One fixture, nine pushes. Repo `mono` (public), default branch `main`.
 
 **Grants:**
 
@@ -1050,7 +1081,10 @@ Alice's merge to `main` touches `services/payments/fees.rs` **and**
 Bob (unconfined) also approves the same tip; Alice re-pushes the same
 merge. Both approvals match, every path covered, push lands, **both**
 JWSes are embedded in the one audit record with their covered paths — so
-"who approved the `libs/` part" is still one lookup.
+"who approved the `libs/` part" is still one lookup. A `libs/`-confined
+owner's approval would have worked identically in Bob's place: coverage
+composes, and an unconfined approver is a convenience, never a
+requirement.
 
 **End state:** owner review emerged from grants alone: nobody wrote a
 CODEOWNERS file, and Carol's approval was necessary for her subtree but
@@ -1070,8 +1104,9 @@ Root's `policy-files-guarded` denies all changes to `**/.policy.toml`.
    `POST /api/mono/approvals {use: "override", rule: "policy-files-guarded",
    ref: "refs/heads/main", new: <tip>}`.
 4. Carol re-pushes with the option. Checks: pending approval matches;
-   Dave ≠ Carol; `approver_has_override = true` satisfies "one permission
-   between them" (Carol holds none). The new `.policy.toml` content is
+   Dave ≠ Carol; Dave's `override_paths` (unconfined, he's a maintainer)
+   cover the violating path, so coverage is satisfied even though Carol
+   holds no override herself. The new `.policy.toml` content is
    itself validated (parse, confinement, monotonicity, allowed kinds) as
    part of the push. Note `main-requires-review` still applies to this
    push too — Dave's *override* approval doesn't double as a *review*
@@ -1132,6 +1167,41 @@ matching. After fetching, its merge is of the *new* tip; the approval is
 already consumed, so landing again requires a fresh review of whatever
 the new merge is — which is the correct outcome, not an inconvenience.
 
+### S9 — two directories fail, two owners override, no root involved
+
+Extend the fixture: a second delegation, `libs/telemetry`, with its own
+`.policy.toml` (`no-binaries`); Frank holds
+`policy.override, paths: ["services/payments/**"]` and Grace holds
+`policy.override, paths: ["libs/telemetry/**"]`. Neither can waive
+anything outside their directory; nobody with repo-wide override
+coverage is on this team.
+
+1. Alice's merge to `main` vendors a binary test fixture into **both**
+   `services/payments/testdata/` and `libs/telemetry/testdata/`. Both
+   subtree `no-binaries` rules fail:
+   `ng … policy "services/payments:no-binaries": …` and
+   `… "libs/telemetry:no-binaries": …`.
+2. Frank approves the override for the payments rule
+   (`{use: "override", rule: "services/payments:no-binaries", new: <tip>}`);
+   Grace approves the telemetry one. Each approval's `override_paths`
+   snapshot is their own directory.
+3. Alice re-pushes with both options:
+   `-o policy.override=services/payments:no-binaries
+    -o policy.override=libs/telemetry:no-binaries`.
+   Per rule: an approval from a non-pusher exists, and the violating
+   paths are covered — payments paths by Frank, telemetry paths by
+   Grace. Review (`per_path`) is satisfied the same compositional way.
+   The push lands.
+
+**End state:** one audit record under `overrides/…` for the commit,
+embedding both approval JWSes with their coverage — Frank answers for
+the payments waiver, Grace for telemetry, and no approver of `/` or any
+shared parent was consulted, because none needed to be. Had the binary
+also landed in a *third*, un-delegated directory under a root rule, the
+same composition would apply — but only someone whose override coverage
+includes that path (an unconfined approver, in this fixture nobody)
+could complete it: coverage composes, it doesn't stretch.
+
 **What the scenarios establish**
 
 | Property | Shown in |
@@ -1144,6 +1214,7 @@ the new merge is — which is the correct outcome, not an inconvenience.
 | Some rules are absolute (`overridable = false`) | S6 |
 | Subtree policies can't escape, and broken ones fail closed with a repair path | S7 |
 | Concurrency resolves by CAS, not by approval double-spend | S8 |
+| Coverage composes: touched directories' owners suffice, parents are never required | S4, S9 |
 
 ---
 
@@ -1153,7 +1224,7 @@ the new merge is — which is the correct outcome, not an inconvenience.
 |---|---|---|
 | 1 | auth store DO (users, service accounts, sessions, keys), device flow, OIDC token exchange for service accounts, JWT mint/verify, JWKS + rotation, Bearer + Basic-fallback parsing, credential helper | full login → push round-trip in integration tests (native JWT mint against a test key; `TestServer` with `Authorization` headers); OIDC exchange against a test issuer (issuer/subject/audience matrix); expiry; refresh rotation; session revocation; kid rollover |
 | 2 | permission/role model, grants on `RepoState` (users + service accounts), `/api/<repo>/access`, `PUT /api/<repo>/head`, token scope caps + ref-scope enforcement, claim-on-first-push, 401/403 flow | every permission's allow and deny; scoped-token narrowing (never widening); ref-scope rejection before ingest; default-branch permission split |
-| 3 | `src/policy.rs`, policy storage + API, tiers 0–3, approvals (`/api/<repo>/approvals`, both uses), `require_review`, audit records on `refs/audit`, audit flattening in maintenance, warn channel | every rule type's reject *and* warn branch; the two-party matrix (self-approval, neither-permissioned, expired/consumed/revoked approval, oid-bound mismatch); **service-account approval rejected** (both uses); review satisfaction arms (fast-forward to approved oid; merge of old + approved; N-distinct-approvers); single-use under concurrent pushes; pending-approval cap; audit-record signature round-trip against the JWKS; audit lookup by commit oid via the file API; flattening preserves the tree; `refs/audit/**` unwritable by clients; policy-validation-at-write |
+| 3 | `src/policy.rs`, policy storage + API, tiers 0–3, approvals (`/api/<repo>/approvals`, both uses), `require_review`, audit records on `refs/audit`, audit flattening in maintenance, warn channel | every rule type's reject *and* warn branch; the two-party matrix (self-approval, neither-covered, expired/consumed/revoked approval, oid-bound mismatch); override coverage composition (multi-rule, multi-approver, pathless-violation-needs-unconfined); **service-account approval rejected** (both uses); review satisfaction arms (fast-forward to approved oid; merge of old + approved; N-distinct-approvers); single-use under concurrent pushes; pending-approval cap; audit-record signature round-trip against the JWKS; audit lookup by commit oid via the file API; flattening preserves the tree; `refs/audit/**` unwritable by clients; policy-validation-at-write |
 | 4 | content scanner, pattern packs, lint checks, budgets | secret hit / lint hit / budget-exceeded paths; memory-test variant under `TRANSIENT_BUDGET` |
 | 5 | monorepo layer: path-confined grants + token `scope.paths`, delegation loader, subtree `.policy.toml` evaluation, `per_path` review | path-grant coverage allow/deny (push touching in/out-of-grant paths); scope-cap narrowing; confinement/monotonicity/allowed-kinds rejected when the policy file is *pushed*; fail-closed on drift-invalid subtree policy with the repair-push carve-out; old-tree governance (a push editing `.policy.toml` is judged by the previous version); per-path coverage matrix incl. mixed-ownership pushes; delegated-read budget |
 
