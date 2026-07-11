@@ -554,13 +554,13 @@ repack. Run it after deploying to validate the cost table above with real
 network and R2 latency in the loop.
 
 Not built yet (documented options): a typed Workers Analytics Engine
-binding doesn't exist in worker-rs 0.5, so time-series metrics would
-currently need raw JS interop — Workers Logs covers the need for now;
-request logs are unsampled (one line per request), which is fine at
-prototype traffic and a knob to add before serious volume; and for
-*streamed* response bodies (fetch packs, large blobs) the Server-Timing
-header and log line cover the handler phase only — backend ops issued while
-the body streams are not yet folded into the totals.
+binding exists in worker-rs 0.6+ (this crate is on 0.8) but is not wired
+here yet — Workers Logs covers the need for now; request logs are
+unsampled (one line per request), which is fine at prototype traffic and
+a knob to add before serious volume; and for *streamed* response bodies
+(fetch packs, large blobs) the Server-Timing header and log line cover
+the handler phase only — backend ops issued while the body streams are
+not yet folded into the totals.
 
 ## Consistency summary
 

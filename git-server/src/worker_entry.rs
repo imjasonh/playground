@@ -25,8 +25,8 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use worker::{
-    durable_object, event, Bucket, Context, Env, Method, MultipartUpload, Range, Request,
-    RequestInit, Response, State, UploadedPart,
+    durable_object, event, Bucket, Context, DurableObject, Env, Method, MultipartUpload, Range,
+    Request, RequestInit, Response, State, UploadedPart,
 };
 
 const BUCKET_BINDING: &str = "GIT_BUCKET";
@@ -215,22 +215,21 @@ pub struct RepoStateDo {
     state: State,
 }
 
-#[durable_object]
 impl DurableObject for RepoStateDo {
     fn new(state: State, _env: Env) -> Self {
         RepoStateDo { state }
     }
 
-    async fn fetch(&mut self, mut req: Request) -> worker::Result<Response> {
+    // worker >= 0.6: DO handlers take `&self` (storage is interior-mutable).
+    // worker >= 0.7: `storage.get` returns `Result<Option<T>>` (missing key is
+    // `Ok(None)`, not an error).
+    async fn fetch(&self, mut req: Request) -> worker::Result<Response> {
         let storage = self.state.storage();
-        let version: u64 = storage.get("version").await.unwrap_or(0);
+        let version: u64 = storage.get("version").await?.unwrap_or(0);
         match req.path().as_str() {
             "/load" => {
-                let state: RepoState = storage
-                    .get("state")
-                    .await
-                    .unwrap_or_else(|_| RepoState::empty());
-                let lease_until_ms: i64 = storage.get("lease_until").await.unwrap_or(0);
+                let state: RepoState = storage.get("state").await?.unwrap_or_else(RepoState::empty);
+                let lease_until_ms: i64 = storage.get("lease_until").await?.unwrap_or(0);
                 Response::from_json(&LoadReply {
                     state,
                     version,
@@ -244,10 +243,8 @@ impl DurableObject for RepoStateDo {
             // monotonic state version surfaced by the status API.
             "/apply" => {
                 let delta: PushDelta = req.json().await?;
-                let mut state: RepoState = storage
-                    .get("state")
-                    .await
-                    .unwrap_or_else(|_| RepoState::empty());
+                let mut state: RepoState =
+                    storage.get("state").await?.unwrap_or_else(RepoState::empty);
                 let applied = state.merge_push(&delta);
                 if applied.applied {
                     self.state.storage().put("state", &state).await?;
@@ -261,10 +258,8 @@ impl DurableObject for RepoStateDo {
             // consumed one of the same ids first.
             "/swap" => {
                 let swap: RepackSwap = req.json().await?;
-                let mut state: RepoState = storage
-                    .get("state")
-                    .await
-                    .unwrap_or_else(|_| RepoState::empty());
+                let mut state: RepoState =
+                    storage.get("state").await?.unwrap_or_else(RepoState::empty);
                 let applied = state.merge_repack(&swap);
                 if applied {
                     self.state.storage().put("state", &state).await?;
@@ -278,7 +273,7 @@ impl DurableObject for RepoStateDo {
             // TTL bounds a crashed holder.
             "/lease" => {
                 let body: LeaseRequest = req.json().await?;
-                let until: i64 = storage.get("lease_until").await.unwrap_or(0);
+                let until: i64 = storage.get("lease_until").await?.unwrap_or(0);
                 if until > body.now_ms {
                     return Response::from_json(&serde_json::json!({ "acquired": false }));
                 }
@@ -649,7 +644,7 @@ async fn fetch_inner(ctx: FetchCtx) -> worker::Result<Response> {
     // Emit observability: a Server-Timing header (curl / browser visible)
     // and one structured JSON log line per request (Workers Logs /
     // `wrangler tail`) carrying the cost-model op counts and phase timings.
-    let mut headers = worker::Headers::new();
+    let headers = worker::Headers::new();
     headers.set("Content-Type", &resp.content_type)?;
     headers.set("Cache-Control", "no-cache")?;
     if let Some(header) = resp.server_timing() {

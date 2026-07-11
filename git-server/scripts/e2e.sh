@@ -11,7 +11,7 @@
 #                                 # deployed backend (no build, no wrangler)
 #
 # Requirements (local mode): node/npx (wrangler is fetched via npx), the Rust
-# wasm32 target, and worker-build (`cargo +stable install worker-build@0.1.14`).
+# wasm32 target, and worker-build (`cargo +stable install worker-build@0.8.5`).
 #
 # The test pushes to a uniquely named repo, clones it back, verifies contents
 # and `git fsck`, exercises incremental push/pull, the file/tree/blame APIs,

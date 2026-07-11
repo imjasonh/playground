@@ -158,7 +158,7 @@ async fn proxy_fetch(
     let mut cur_body = body;
 
     for _ in 0..=MAX_REDIRECTS {
-        let mut headers = Headers::new();
+        let headers = Headers::new();
         for (name, value) in &outbound {
             let _ = headers.set(name, value);
         }
@@ -243,11 +243,11 @@ async fn read_body_capped(
 
 /// Build the browser-facing response from an upstream result.
 fn relay(upstream: Upstream, cors: &CorsDecision) -> Result<Response> {
-    let mut headers = Headers::new();
+    let headers = Headers::new();
     for (name, value) in filtered_response_headers(&upstream.headers) {
         let _ = headers.set(&name, &value);
     }
-    apply_cors(&mut headers, cors);
+    apply_cors(&headers, cors);
     Ok(Response::from_bytes(upstream.body)?
         .with_status(upstream.status)
         .with_headers(headers))
@@ -258,8 +258,8 @@ fn preflight(req: &Request, origin: Option<&str>, config: &Config) -> Result<Res
     if cors == CorsDecision::Denied {
         return Ok(Response::empty()?.with_status(403));
     }
-    let mut headers = Headers::new();
-    apply_cors(&mut headers, &cors);
+    let headers = Headers::new();
+    apply_cors(&headers, &cors);
     // Echo the requested headers so arbitrary custom request headers are allowed.
     let requested = req
         .headers()
@@ -272,7 +272,9 @@ fn preflight(req: &Request, origin: Option<&str>, config: &Config) -> Result<Res
 }
 
 /// Apply our CORS headers according to the allow-list decision.
-fn apply_cors(headers: &mut Headers, cors: &CorsDecision) {
+///
+/// worker >= 0.6: `Headers::set` takes `&self` (interior mutability).
+fn apply_cors(headers: &Headers, cors: &CorsDecision) {
     let origin = match cors {
         CorsDecision::Wildcard => Some("*".to_string()),
         CorsDecision::Reflect(o) => {
@@ -298,9 +300,9 @@ fn guard_error(err: &GuardError, cors: &CorsDecision) -> Result<Response> {
 }
 
 fn json_response(status: u16, value: serde_json::Value, cors: &CorsDecision) -> Result<Response> {
-    let mut headers = Headers::new();
+    let headers = Headers::new();
     let _ = headers.set("Content-Type", "application/json");
-    apply_cors(&mut headers, cors);
+    apply_cors(&headers, cors);
     Ok(Response::from_bytes(value.to_string().into_bytes())?
         .with_status(status)
         .with_headers(headers))
