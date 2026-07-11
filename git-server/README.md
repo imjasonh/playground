@@ -25,6 +25,30 @@ POST /api/<repo>/repack                         # consolidate packs now
 There is **no authentication** in this prototype — anyone can push. Don't
 point it at anything you care about.
 
+## Measured performance (per repo)
+
+Production load tests ([`docs/loadtest-scaling.md`](docs/loadtest-scaling.md))
+measured, against one repository:
+
+* **~6.7 pushes/s** sustained (48 concurrent writers on separate branches,
+  zero conflicts, zero errors) — client-bound, still climbing when the load
+  generator saturated. Concurrent pushes to different branches don't contend:
+  ref updates merge per-ref in the repo's Durable Object.
+* **~150 shallow-clone fetches/s** at the protocol level (~29 MB/s of built
+  and streamed packs) — capped by the test client's bandwidth, with server
+  latency flat (~90 ms) the whole ramp. Stock `git clone` from one machine
+  manages ~46/s before local process overhead congests; the ref-advertisement
+  path served 7,500+ req/s without strain.
+* The repo **maintains itself under load**: pushes that leave enough small
+  packs trigger a bounded background repack (a per-repo lease collapses
+  concurrent triggers), so pack count — and therefore per-request cost —
+  tracks the write rate instead of growing over time.
+
+These are **per-repo** ceilings, and every one was set by the test client,
+not the server. The serialization point (one Durable Object per repo),
+maintenance, and R2 layout are all per-repo, so two repos can both sustain
+this traffic simultaneously — aggregate throughput scales with repo count.
+
 ## Layout
 
 | Piece | Where |
