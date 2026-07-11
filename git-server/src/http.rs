@@ -8,8 +8,8 @@
 //! | `GET /<repo>/info/refs?service=…` | smart-HTTP advertisement |
 //! | `POST /<repo>/git-upload-pack` | fetch (protocol v2) |
 //! | `POST /<repo>/git-receive-pack` | push |
+//! | `GET /api/<repo>` | repo status: state, default branch, last push, size |
 //! | `GET /api/<repo>/refs` | JSON ref listing |
-//! | `GET /api/<repo>/status` | repo status: state, default branch, last push, size |
 //! | `GET /api/<repo>/file/<refish>/<path>` | raw file contents |
 //! | `GET /api/<repo>/tree/<refish>/<path>` | JSON dir listing + last-commit |
 //! | `GET /api/<repo>/blame/<refish>/<path>` | JSON line-level blame |
@@ -346,7 +346,7 @@ impl GitHttp {
                 }
                 Err(e) => Response::error(500, &e),
             },
-            ("GET", ["status"]) => self.api_status(&repo).await,
+            ("GET", []) => self.api_status(&repo).await,
             ("POST", ["repack"]) => match crate::maintenance::repack(&repo, nonce).await {
                 Ok(outcome) => Response::json(200, json!({ "result": format!("{outcome:?}") })),
                 Err(e) => Response::error(500, &e),
@@ -364,7 +364,7 @@ impl GitHttp {
         }
     }
 
-    /// `GET /api/<repo>/status` — repository summary: state, default branch,
+    /// `GET /api/<repo>` — repository summary: state, default branch,
     /// last-push time, and size counters.
     ///
     /// `state` is `EMPTY` (never pushed) or `READY` today. Once the migration
