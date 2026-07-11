@@ -46,8 +46,11 @@ Protocol-v2 fetch (`ls-refs` / `fetch`). Request body is the pkt-line command;
 the response (`application/x-git-upload-pack-result`) streams the packfile.
 Negotiation is single-round (server ACKs and sends the pack in one response).
 Shallow clone (`deepen <n>`) is supported (with a `shallow-info` section and
-`--unshallow` deepening); `deepen-since`/`deepen-not` and `filter` (partial
-clone) are rejected in-band.
+`--unshallow` deepening). Partial clone (`filter <spec>`) is supported for
+`blob:none`, `blob:limit=<n>` (with `k`/`m`/`g` suffixes), and `tree:<depth>`;
+objects that fail the filter are omitted unless named in an explicit `want`
+(so a follow-up blob fetch after `blob:none` works). `deepen-since` /
+`deepen-not` are rejected in-band.
 
 ### `POST /<repo>/git-receive-pack`
 Push. Body is the ref-update commands followed by the packfile, streamed to R2
@@ -161,8 +164,8 @@ Plain-text banner identifying the service. Any other unmatched path is `404`.
 ## Not yet supported
 
 * Authentication / authorization.
-* Partial clone (`--filter`) and date-based shallow (`--shallow-since`) —
-  rejected in-band. (Depth-based shallow, `--depth`/`--unshallow`, *is*
+* Date-based shallow (`--shallow-since` / `deepen-since`, `deepen-not`) —
+  rejected in-band. (Depth-based shallow and partial clone `--filter` *are*
   supported.)
 * SHA-256 repos.
 * `/migrate` bulk import — proposed in

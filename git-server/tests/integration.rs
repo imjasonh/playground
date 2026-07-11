@@ -601,6 +601,139 @@ fn shallow_clone_and_deepen() {
     );
 }
 
+/// Partial clone (`--filter=blob:none`): the initial pack omits blobs; a
+/// follow-up fetch (checkout / lazy promisor fetch) brings them in.
+#[test]
+fn partial_clone_blob_none_then_fetch_blobs() {
+    let server = TestServer::start();
+    let tmp = tempfile::tempdir().unwrap();
+    let src = tmp.path().join("src");
+    std::fs::create_dir(&src).unwrap();
+    git(&src, &["init", "-q", "-b", "main", "."]);
+    git(&src, &["remote", "add", "origin", &server.url("partial")]);
+
+    write_file(&src, "readme.txt", "hello partial\n");
+    write_file(&src, "dir/nested.txt", "nested content\n");
+    // A second commit so history isn't trivial.
+    git(&src, &["add", "."]);
+    git(&src, &["commit", "-q", "-m", "first"]);
+    write_file(&src, "readme.txt", "hello partial v2\n");
+    git(&src, &["add", "."]);
+    git(&src, &["commit", "-q", "-m", "second"]);
+    git(&src, &["push", "-q", "origin", "main"]);
+
+    let readme_blob = git(&src, &["rev-parse", "HEAD:readme.txt"])
+        .trim()
+        .to_string();
+    let nested_blob = git(&src, &["rev-parse", "HEAD:dir/nested.txt"])
+        .trim()
+        .to_string();
+    let tree = git(&src, &["rev-parse", "HEAD^{tree}"]).trim().to_string();
+    let tip = git(&src, &["rev-parse", "HEAD"]).trim().to_string();
+
+    // --no-checkout: clone must not lazy-fetch blobs for a working tree yet.
+    git(
+        tmp.path(),
+        &[
+            "clone",
+            "-q",
+            "--filter=blob:none",
+            "--no-checkout",
+            &server.url("partial"),
+            "skel",
+        ],
+    );
+    let skel = tmp.path().join("skel");
+
+    // Client recorded the filter and commits/trees arrived.
+    assert_eq!(
+        git(&skel, &["config", "--get", "remote.origin.partialclonefilter"]).trim(),
+        "blob:none"
+    );
+    assert_eq!(git(&skel, &["rev-parse", "HEAD"]).trim(), tip);
+    let (ok, _) = git_try(&skel, &["cat-file", "-e", &tree]);
+    assert!(ok, "tree must be present after blob:none clone");
+    let (ok, _) = git_try(&skel, &["cat-file", "-e", &tip]);
+    assert!(ok, "commit must be present after blob:none clone");
+
+    // Blobs were filtered out of the initial pack.
+    let (ok, _) = git_try(&skel, &["cat-file", "-e", &readme_blob]);
+    assert!(!ok, "readme blob must be absent before follow-up fetch");
+    let (ok, _) = git_try(&skel, &["cat-file", "-e", &nested_blob]);
+    assert!(!ok, "nested blob must be absent before follow-up fetch");
+
+    // Follow-up: checkout triggers promisor lazy-fetch of needed blobs.
+    git(&skel, &["checkout", "-q", "HEAD"]);
+    git(&skel, &["fsck", "--strict"]);
+
+    let (ok, _) = git_try(&skel, &["cat-file", "-e", &readme_blob]);
+    assert!(ok, "readme blob fetchable after checkout");
+    let (ok, _) = git_try(&skel, &["cat-file", "-e", &nested_blob]);
+    assert!(ok, "nested blob fetchable after checkout");
+    assert_eq!(
+        std::fs::read_to_string(skel.join("readme.txt")).unwrap(),
+        "hello partial v2\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(skel.join("dir/nested.txt")).unwrap(),
+        "nested content\n"
+    );
+}
+
+/// `blob:limit` keeps small blobs in the initial pack and omits large ones
+/// until a follow-up fetch.
+#[test]
+fn partial_clone_blob_limit_then_fetch_large() {
+    let server = TestServer::start();
+    let tmp = tempfile::tempdir().unwrap();
+    let src = tmp.path().join("src");
+    std::fs::create_dir(&src).unwrap();
+    git(&src, &["init", "-q", "-b", "main", "."]);
+    git(&src, &["remote", "add", "origin", &server.url("limit")]);
+
+    write_file(&src, "small.txt", "ok\n");
+    let large = "Y".repeat(8 * 1024);
+    write_file(&src, "large.bin", &large);
+    git(&src, &["add", "."]);
+    git(&src, &["commit", "-q", "-m", "mixed"]);
+    git(&src, &["push", "-q", "origin", "main"]);
+
+    let small_oid = git(&src, &["rev-parse", "HEAD:small.txt"])
+        .trim()
+        .to_string();
+    let large_oid = git(&src, &["rev-parse", "HEAD:large.bin"])
+        .trim()
+        .to_string();
+
+    git(
+        tmp.path(),
+        &[
+            "clone",
+            "-q",
+            "--filter=blob:limit=1k",
+            "--no-checkout",
+            &server.url("limit"),
+            "lim",
+        ],
+    );
+    let lim = tmp.path().join("lim");
+
+    let (ok, _) = git_try(&lim, &["cat-file", "-e", &small_oid]);
+    assert!(ok, "small blob under limit should be present initially");
+    let (ok, _) = git_try(&lim, &["cat-file", "-e", &large_oid]);
+    assert!(!ok, "large blob over limit must be absent initially");
+
+    // Explicit follow-up fetch of the missing blob oid.
+    git(&lim, &["fetch", "-q", "origin", &large_oid]);
+    let (ok, _) = git_try(&lim, &["cat-file", "-e", &large_oid]);
+    assert!(ok, "large blob fetchable in follow-up");
+    assert_eq!(
+        git(&lim, &["cat-file", "-p", &large_oid]),
+        large,
+        "fetched large blob content"
+    );
+}
+
 /// A push with a moderately large binary blob exercises multi-chunk
 /// streaming ingest and multi-chunk fetch.
 #[test]

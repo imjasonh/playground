@@ -37,6 +37,7 @@
 pub mod blame;
 pub mod diff;
 pub mod fileapi;
+pub mod filter;
 pub mod http;
 pub mod maintenance;
 #[cfg(not(target_arch = "wasm32"))]

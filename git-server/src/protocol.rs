@@ -18,7 +18,7 @@
 use crate::object::Oid;
 use crate::pktline::{self, band, Pkt, PktParser};
 use crate::refs::RepoState;
-use crate::repo::{collect_fetch_set, PackIngest, RefUpdate, Repo};
+use crate::repo::{PackIngest, RefUpdate, Repo};
 use std::collections::BTreeMap;
 
 /// Server agent string advertised to clients.
@@ -61,7 +61,7 @@ pub fn advertise_upload_pack_v2() -> Vec<u8> {
     out.extend_from_slice(&pktline::text_pkt("version 2"));
     out.extend_from_slice(&pktline::text_pkt(&format!("agent={AGENT}")));
     out.extend_from_slice(&pktline::text_pkt("ls-refs=unborn"));
-    out.extend_from_slice(&pktline::text_pkt("fetch=thin-pack shallow"));
+    out.extend_from_slice(&pktline::text_pkt("fetch=thin-pack shallow filter"));
     out.extend_from_slice(&pktline::text_pkt("object-format=sha1"));
     out.extend_from_slice(pktline::flush_pkt());
     out
@@ -248,6 +248,7 @@ async fn fetch(
     let mut no_progress = false;
     let mut deepen: Option<usize> = None;
     let mut client_shallow: std::collections::HashSet<Oid> = std::collections::HashSet::new();
+    let mut filter: Option<crate::filter::ObjectFilter> = None;
     for a in args {
         if let Some(w) = a.strip_prefix("want ") {
             wants.push(Oid::from_hex(w).ok_or("bad want oid")?);
@@ -260,15 +261,22 @@ async fn fetch(
             }
         } else if let Some(d) = a.strip_prefix("deepen ") {
             deepen = Some(d.trim().parse::<usize>().map_err(|_| "bad deepen depth")?);
+        } else if let Some(spec) = a.strip_prefix("filter ") {
+            match crate::filter::ObjectFilter::parse(spec) {
+                Ok(f) => filter = Some(f),
+                Err(e) => {
+                    return Ok(Body::Full(error_response(&e)));
+                }
+            }
         } else {
             match a.as_str() {
                 "done" => done = true,
                 "thin-pack" => thin_pack = true,
                 "no-progress" => no_progress = true,
                 "ofs-delta" | "include-tag" | "wait-for-done" => {}
-                // deepen-since / deepen-not (date/ref-based shallow) and
-                // partial-clone filters remain unsupported.
-                other if other.starts_with("deepen-") || other.starts_with("filter") => {
+                // deepen-since / deepen-not (date/ref-based shallow) remain
+                // unsupported; partial-clone `filter` is handled above.
+                other if other.starts_with("deepen-") => {
                     return Ok(Body::Full(error_response(&format!(
                         "unsupported fetch option: {other}"
                     ))));
@@ -292,25 +300,35 @@ async fn fetch(
     }
     let odb = repo.odb(&state).await?;
 
-    // Full-clone fast path: no haves and the wants cover every ref tip means
-    // the client needs everything we have — skip the reachability walk (the
-    // only history-proportional CPU in a fetch) and send the whole manifest.
-    // Objects that are stored but unreachable (e.g. force-pushed-away
-    // history awaiting maintenance) ride along harmlessly as dangling
-    // objects on the client.
+    // Full-clone fast path: no haves, no filter, and the wants cover every
+    // ref tip means the client needs everything we have — skip the
+    // reachability walk (the only history-proportional CPU in a fetch) and
+    // send the whole manifest. Objects that are stored but unreachable
+    // (e.g. force-pushed-away history awaiting maintenance) ride along
+    // harmlessly as dangling objects on the client.
     // Shallow (`--depth N`) fetch: bounded history walk with a shallow-info
     // section. Takes precedence over the full-clone fast path.
+    // Partial clone (`filter`): must walk + filter; never use all_oids().
     let mut shallow_boundary: Vec<Oid> = Vec::new();
     let mut unshallow: Vec<Oid> = Vec::new();
+    let filter_ref = filter.as_ref();
     let set = if let Some(depth) = deepen {
         let _t = crate::timing::Phase::start("fetch: collect shallow set");
-        let plan = crate::repo::collect_shallow_set(&odb, &wants, depth, &client_shallow).await?;
+        let plan = crate::repo::collect_shallow_set_filtered(
+            &odb,
+            &wants,
+            depth,
+            &client_shallow,
+            filter_ref,
+        )
+        .await?;
         shallow_boundary = plan.shallow;
         unshallow = plan.unshallow;
         plan.set
     } else {
         let want_set: std::collections::HashSet<Oid> = wants.iter().copied().collect();
-        let is_full_clone = haves.is_empty()
+        let is_full_clone = filter.is_none()
+            && haves.is_empty()
             && state.refs.values().all(|hex| {
                 Oid::from_hex(hex)
                     .map(|o| want_set.contains(&o))
@@ -324,7 +342,7 @@ async fn fetch(
             }
         } else {
             let _t = crate::timing::Phase::start("fetch: collect set");
-            collect_fetch_set(&odb, &wants, &haves).await?
+            crate::repo::collect_fetch_set_filtered(&odb, &wants, &haves, filter_ref).await?
         }
     };
     // The selection is turned into a plain (pack, record) list here so the
@@ -673,5 +691,9 @@ mod tests {
         assert!(texts.contains(&"version 2".to_string()));
         assert!(texts.iter().any(|t| t.starts_with("ls-refs")));
         assert!(texts.iter().any(|t| t.starts_with("fetch")));
+        let fetch = texts.iter().find(|t| t.starts_with("fetch=")).unwrap();
+        assert!(fetch.contains("thin-pack"), "{fetch}");
+        assert!(fetch.contains("shallow"), "{fetch}");
+        assert!(fetch.contains("filter"), "{fetch}");
     }
 }

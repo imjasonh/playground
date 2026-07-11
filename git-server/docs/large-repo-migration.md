@@ -241,9 +241,9 @@ and for ongoing sync.
 * A **job driver** (DO alarms or a Queue) and the `/migrate` + status API.
 * Blob **enumeration + byte-bounded batching** with a resumable frontier.
 * Optional: presigned-R2 upload + `/ingest-bundle` for the alternative path.
-* Note: our *server* currently rejects inbound `filter`/`deepen` fetch options
-  (we don't yet *serve* partial clones). That is independent of *emitting*
-  them as a client; serving partial clones is separate future work.
+* Note: our *server* serves inbound `filter` (partial clone) and `deepen`
+  (shallow) fetch options. That is independent of *emitting* them as a
+  migration client against an external host.
 
 ## Open questions & risks
 
