@@ -581,8 +581,10 @@ of numbers, and what's next.
 * **Shallow clone (`--depth` / `deepen`)**: supported — a depth-bounded
   commit walk with a `shallow-info` response section (`ls-refs`/`fetch`
   advertise `shallow`), including `--unshallow` deepening. **Partial clone
-  (`filter=…`) and date/ref-based shallow (`deepen-since` / `deepen-not`)**
-  remain rejected with a clean protocol error.
+  (`filter=blob:none` / `blob:limit=…` / `tree:<depth>`)** is also supported
+  (advertised on the `fetch=` capability line; explicit `want`s bypass the
+  filter for blob backfill). **Date/ref-based shallow (`deepen-since` /
+  `deepen-not`)** remain rejected with a clean protocol error.
 * **Symrefs beyond HEAD, reflogs, hooks, force-push policy** — policy layers
   above the CAS, not storage problems.
 * **SHA-256 repos**: `Oid` is 20 bytes today; format negotiation exists in

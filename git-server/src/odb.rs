@@ -100,6 +100,13 @@ impl<'a> Odb<'a> {
         self.locate(oid).is_some()
     }
 
+    /// Final type and inflated size from the pack index, without reading
+    /// content. Used by partial-clone filters (`blob:limit=…`) to decide
+    /// omission without materializing the object.
+    pub fn meta(&self, oid: Oid) -> Option<(ObjType, u64)> {
+        self.locate(oid).map(|(_, rec)| (rec.final_type, rec.size))
+    }
+
     /// All oids across all packs (deduplicated), for clone reachability.
     pub fn all_oids(&self) -> Vec<Oid> {
         let mut seen = std::collections::HashSet::new();

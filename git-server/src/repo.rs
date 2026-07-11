@@ -13,6 +13,7 @@
 //! 5. CAS the repo state document: refs, pack manifest, file-log manifest
 //!    flip together, atomically.
 
+use crate::filter::ObjectFilter;
 use crate::object::{ObjType, Oid, TreeEntry};
 use crate::odb::{index_key, pack_key, Odb};
 use crate::pack::index::{resolve_pack, ExternalBases, PackIndex};
@@ -930,11 +931,23 @@ pub struct FetchSet {
 }
 
 /// Compute the object set for a fetch: everything reachable from `wants`
-/// minus everything reachable from `haves`.
+/// minus everything reachable from `haves`. When `filter` is set, tree-walk
+/// discoveries that fail the filter are omitted; oids named in `wants` are
+/// always included (gitprotocol-pack: explicit wants bypass the filter).
 pub async fn collect_fetch_set(
     odb: &Odb<'_>,
     wants: &[Oid],
     haves: &[Oid],
+) -> Result<FetchSet, String> {
+    collect_fetch_set_filtered(odb, wants, haves, None).await
+}
+
+/// Like [`collect_fetch_set`], with an optional partial-clone object filter.
+pub async fn collect_fetch_set_filtered(
+    odb: &Odb<'_>,
+    wants: &[Oid],
+    haves: &[Oid],
+    filter: Option<&ObjectFilter>,
 ) -> Result<FetchSet, String> {
     // Ancestors of haves (bounded: stop exploring once a commit is known).
     let mut have_commits: HashSet<Oid> = HashSet::new();
@@ -1024,8 +1037,16 @@ pub async fn collect_fetch_set(
             continue;
         }
         let commit = crate::object::parse_commit(&data)?;
-        collect_new_tree_objects(odb, commit.tree, &client_has, &mut included, &mut include)
-            .await?;
+        collect_new_tree_objects(
+            odb,
+            commit.tree,
+            &client_has,
+            &mut included,
+            &mut include,
+            filter,
+            0,
+        )
+        .await?;
     }
 
     Ok(FetchSet {
@@ -1048,17 +1069,27 @@ pub struct ShallowPlan {
 
 /// Compute the object set for a depth-bounded fetch. Walks commits from
 /// `wants` to at most `depth` commits deep (the tip is depth 1, matching
-/// `git --depth`), includes each reached commit's full tree closure (a
-/// shallow clone still ships the whole *snapshot*, just not history), and
-/// records the depth-boundary commits as shallow. `client_shallow` are the
-/// boundaries the client already has (for deepening an existing shallow
-/// clone); commits among them that we now include with parents become
-/// `unshallow`.
+/// `git --depth`), includes each reached commit's tree closure (optionally
+/// filtered), and records the depth-boundary commits as shallow.
+/// `client_shallow` are the boundaries the client already has (for deepening
+/// an existing shallow clone); commits among them that we now include with
+/// parents become `unshallow`.
 pub async fn collect_shallow_set(
     odb: &Odb<'_>,
     wants: &[Oid],
     depth: usize,
     client_shallow: &HashSet<Oid>,
+) -> Result<ShallowPlan, String> {
+    collect_shallow_set_filtered(odb, wants, depth, client_shallow, None).await
+}
+
+/// Like [`collect_shallow_set`], with an optional partial-clone object filter.
+pub async fn collect_shallow_set_filtered(
+    odb: &Odb<'_>,
+    wants: &[Oid],
+    depth: usize,
+    client_shallow: &HashSet<Oid>,
+    filter: Option<&ObjectFilter>,
 ) -> Result<ShallowPlan, String> {
     let depth = depth.max(1);
     let mut include_commits: Vec<Oid> = Vec::new();
@@ -1127,7 +1158,16 @@ pub async fn collect_shallow_set(
             continue;
         }
         let commit = crate::object::parse_commit(&data)?;
-        collect_new_tree_objects(odb, commit.tree, &skip, &mut included, &mut include).await?;
+        collect_new_tree_objects(
+            odb,
+            commit.tree,
+            &skip,
+            &mut included,
+            &mut include,
+            filter,
+            0,
+        )
+        .await?;
     }
 
     Ok(ShallowPlan {
@@ -1161,24 +1201,56 @@ async fn collect_tree_closure(
     Ok(())
 }
 
-/// Add tree-closure objects not already in `skip`/`included`.
+/// Add tree-closure objects not already in `skip`/`included`, honouring an
+/// optional object filter. `tree_depth` is 0 for a commit's root tree.
+/// Explicit wants are added by the caller before this walk, so they are never
+/// re-evaluated here.
 async fn collect_new_tree_objects(
     odb: &Odb<'_>,
     tree: Oid,
     skip: &HashSet<Oid>,
     included: &mut HashSet<Oid>,
     out: &mut Vec<Oid>,
+    filter: Option<&ObjectFilter>,
+    tree_depth: usize,
 ) -> Result<(), String> {
     if skip.contains(&tree) || !included.insert(tree) {
         return Ok(());
+    }
+    // tree:<depth> can omit the tree itself (and everything under it).
+    if let Some(f) = filter {
+        if !f.include_tree_at(tree_depth) {
+            included.remove(&tree);
+            return Ok(());
+        }
     }
     out.push(tree);
     let entries = odb.read_tree(tree).await?;
     for e in entries.iter() {
         if e.is_tree() {
-            Box::pin(collect_new_tree_objects(odb, e.oid, skip, included, out)).await?;
-        } else if !skip.contains(&e.oid) && included.insert(e.oid) {
-            out.push(e.oid);
+            Box::pin(collect_new_tree_objects(
+                odb,
+                e.oid,
+                skip,
+                included,
+                out,
+                filter,
+                tree_depth + 1,
+            ))
+            .await?;
+        } else {
+            // Blob / symlink / gitlink. Filter only applies to blob objects;
+            // gitlinks (commits) and anything we can't type stay included so
+            // we don't break submodule-bearing trees.
+            if let Some(f) = filter {
+                match odb.meta(e.oid) {
+                    Some((ObjType::Blob, size)) if !f.include_blob(size) => continue,
+                    _ => {}
+                }
+            }
+            if !skip.contains(&e.oid) && included.insert(e.oid) {
+                out.push(e.oid);
+            }
         }
     }
     Ok(())
@@ -1440,5 +1512,109 @@ mod tests {
         set.insert("m/file".to_string());
         assert!(hit(&FilelogScope::Paths(&set), "a", "z"));
         assert!(!hit(&FilelogScope::Paths(&set), "n", "z"));
+    }
+
+    /// Tiny commit+tree+blobs fixture for filter selection tests.
+    async fn install_fixture(store: &MemStore, repo: &str) -> (Oid, Oid, Oid, Oid, String) {
+        use crate::object::{encode_tree, hash_object};
+        use crate::pack::index::{resolve_pack, NoExternalBases, PackIndex};
+        use crate::pack::write::PackWriter;
+        use crate::pack::PackScanner;
+
+        let small = b"tiny".to_vec();
+        let large = vec![b'X'; 2048];
+        let small_oid = hash_object(ObjType::Blob, &small);
+        let large_oid = hash_object(ObjType::Blob, &large);
+        let mut entries = vec![
+            TreeEntry {
+                mode: "100644".into(),
+                name: "large.bin".into(),
+                oid: large_oid,
+            },
+            TreeEntry {
+                mode: "100644".into(),
+                name: "small.txt".into(),
+                oid: small_oid,
+            },
+        ];
+        entries.sort_by(|a, b| a.name.cmp(&b.name));
+        let tree = encode_tree(&entries);
+        let tree_oid = hash_object(ObjType::Tree, &tree);
+        let commit = format!(
+            "tree {tree_oid}\nauthor T <t@x> 1700000000 +0000\ncommitter T <t@x> 1700000000 +0000\n\nmsg\n"
+        );
+        let commit_oid = hash_object(ObjType::Commit, commit.as_bytes());
+
+        let mut w = PackWriter::new(4);
+        w.add_full(ObjType::Blob, &small);
+        w.add_full(ObjType::Blob, &large);
+        w.add_full(ObjType::Tree, &tree);
+        w.add_full(ObjType::Commit, commit.as_bytes());
+        let (pack, _) = w.finish();
+
+        let mut s = PackScanner::new();
+        s.feed(&pack).unwrap();
+        let scanned = s.finish().unwrap();
+        let id = hex::encode(scanned.checksum);
+        store.put(&pack_key(repo, &id), pack).await.unwrap();
+        let recs = resolve_pack(store, &pack_key(repo, &id), &scanned, &NoExternalBases)
+            .await
+            .unwrap();
+        store
+            .put(&index_key(repo, &id), PackIndex::new(recs).to_bytes())
+            .await
+            .unwrap();
+        (commit_oid, tree_oid, small_oid, large_oid, id)
+    }
+
+    #[test]
+    fn fetch_set_blob_none_omits_blobs_keeps_tree() {
+        block_on(async {
+            let store = MemStore::new();
+            let (commit, tree, small, large, id) = install_fixture(&store, "r").await;
+            let odb = Odb::open(&store, "r", &[id]).await.unwrap();
+            let filter = ObjectFilter::BlobNone;
+            let set = collect_fetch_set_filtered(&odb, &[commit], &[], Some(&filter))
+                .await
+                .unwrap();
+            let have: HashSet<Oid> = set.include.iter().copied().collect();
+            assert!(have.contains(&commit), "commit included");
+            assert!(have.contains(&tree), "tree included");
+            assert!(!have.contains(&small), "small blob filtered");
+            assert!(!have.contains(&large), "large blob filtered");
+        });
+    }
+
+    #[test]
+    fn fetch_set_blob_limit_keeps_small_omits_large() {
+        block_on(async {
+            let store = MemStore::new();
+            let (commit, _tree, small, large, id) = install_fixture(&store, "r").await;
+            let odb = Odb::open(&store, "r", &[id]).await.unwrap();
+            let filter = ObjectFilter::BlobLimit(100);
+            let set = collect_fetch_set_filtered(&odb, &[commit], &[], Some(&filter))
+                .await
+                .unwrap();
+            let have: HashSet<Oid> = set.include.iter().copied().collect();
+            assert!(have.contains(&small), "small blob under limit");
+            assert!(!have.contains(&large), "large blob over limit");
+        });
+    }
+
+    #[test]
+    fn fetch_set_explicit_blob_want_bypasses_filter() {
+        block_on(async {
+            let store = MemStore::new();
+            let (commit, _tree, small, large, id) = install_fixture(&store, "r").await;
+            let odb = Odb::open(&store, "r", &[id]).await.unwrap();
+            let filter = ObjectFilter::BlobNone;
+            // Skeleton + explicit want for one blob (follow-up fetch pattern).
+            let set = collect_fetch_set_filtered(&odb, &[commit, large], &[], Some(&filter))
+                .await
+                .unwrap();
+            let have: HashSet<Oid> = set.include.iter().copied().collect();
+            assert!(have.contains(&large), "explicit want overrides filter");
+            assert!(!have.contains(&small), "non-wanted blob still filtered");
+        });
     }
 }
