@@ -553,12 +553,15 @@ the body streams are not yet folded into the totals.
 | Crash mid-push | staged pack unreferenced; state untouched; multipart upload GC |
 | Push retry after dropped response | delta appends are idempotent (packs content-addressed, deduped by id) |
 
-The whole-document CAS caps a single repo at ~0.5 successful pushes/s (the
-CAS window spans the entire push pipeline, so goodput is `1 / push latency`
-regardless of concurrency). A production load test measured this exactly;
-[`loadtest-scaling.md`](loadtest-scaling.md) has the methodology, numbers,
-and the plan to lift it (merge disjoint ref updates in the DO instead of
-whole-document CAS).
+Pushes originally CASed the whole state document, which capped a single repo
+at ~0.5 successful pushes/s (the CAS window spanned the entire push pipeline,
+so goodput was `1 / push latency` regardless of concurrency). The merge-apply
+delta path above replaced it after a production load test measured that
+ceiling exactly; a rerun then confirmed goodput scales with concurrency (12×
+demonstrated, zero conflicts) and exposed the next bound — pack accumulation
+outrunning repack under sustained writes. See
+[`loadtest-scaling.md`](loadtest-scaling.md) for the methodology, both rounds
+of numbers, and what's next.
 
 ## What's deliberately out of scope (prototype)
 
