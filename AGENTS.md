@@ -189,7 +189,7 @@ or the root `README.md` runs no app tests.
 |----------|---------------------------|--------------------------|
 | Browser | `index.html` **and** `package.json` with a `test` script | `npm ci` → `npm test` → `npm run test:e2e` (if defined; installs Playwright Chromium first) |
 | Go | `go.mod` | `go build ./...` → `go test ./...` |
-| Rust | `Cargo.toml` | `cargo fmt --check` → `cargo clippy --locked --all-targets -D warnings` → `cargo test --locked`; Cloudflare Worker apps (with `wrangler.toml`) also run wasm clippy + a release `wasm32-unknown-unknown` build |
+| Rust | `Cargo.toml` | `cargo fmt --check` → `cargo clippy --locked --all-targets -D warnings` → `cargo test --locked`; Cloudflare Worker apps (with `wrangler.toml`) also run wasm clippy + a release `wasm32-unknown-unknown` build, then the wrangler `[build]` command (with a decoy `package.json` like wrangler-action creates) so Test covers the deploy artifact path |
 
 Browser apps without a `test` script (e.g. `hello/`) are never tested. Each Rust
 app's toolchain comes from its `rust-toolchain.toml` (defaulting to stable);
@@ -232,7 +232,7 @@ test workflow gates on:
 |----------|---------|--------|
 | Browser | `npx npm-check-updates --upgrade` → `npm install` → `npm run vendor` (if defined) | `npm test` (+ `npm run test:e2e` if defined) |
 | Go | `go get -u ./...` | `go build ./...` → `go test ./...` |
-| Rust | `cargo update` | `cargo clippy -D warnings` → `cargo test`; Worker apps also wasm clippy + a release `wasm32-unknown-unknown` build |
+| Rust | `cargo update` | `cargo clippy -D warnings` → `cargo test`; Worker apps also wasm clippy + a release `wasm32-unknown-unknown` build + the wrangler `[build]` command |
 
 Publishing is all-or-nothing, so a green run never lands a half-broken bump:
 

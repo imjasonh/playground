@@ -79,7 +79,8 @@ for app in "${apps[@]}"; do
     echo "- ❌ \`${app}\`: tests failed" >> "$GITHUB_STEP_SUMMARY"
   fi
 
-  # Cloudflare Worker apps compile to wasm; verify the deployable artifact too.
+  # Cloudflare Worker apps: same deploy build path as test-rust-apps.sh (wasm
+  # clippy/build plus wrangler [build] command with a decoy package.json).
   if [ -f "$app/wrangler.toml" ]; then
     if (
       set -euo pipefail
@@ -87,12 +88,19 @@ for app in "${apps[@]}"; do
       rustup target add wasm32-unknown-unknown
       cargo clippy --target wasm32-unknown-unknown -- -D warnings
       cargo build --release --target wasm32-unknown-unknown
+      printf '%s\n' '{"dependencies":{"wrangler":"4.107.0"}}' > package.json
+      build_cmd=$(
+        python3 -c "import pathlib, tomllib; print(tomllib.loads(pathlib.Path('wrangler.toml').read_text())['build']['command'])"
+      )
+      bash -c "$build_cmd"
+      rm -f package.json package-lock.json
+      test -f build/worker/shim.mjs
     ); then
-      echo "- ✅ \`${app}\`: wasm build passed" >> "$GITHUB_STEP_SUMMARY"
+      echo "- ✅ \`${app}\`: wasm + worker-build passed" >> "$GITHUB_STEP_SUMMARY"
     else
       result=failure
-      echo "::error title=wasm build failed::${app}: wasm32-unknown-unknown clippy/build"
-      echo "- ❌ \`${app}\`: wasm build failed" >> "$GITHUB_STEP_SUMMARY"
+      echo "::error title=Worker build failed::${app}: wasm32 clippy/build or wrangler [build] command"
+      echo "- ❌ \`${app}\`: wasm + worker-build failed" >> "$GITHUB_STEP_SUMMARY"
     fi
   fi
 
