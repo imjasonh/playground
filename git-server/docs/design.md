@@ -416,7 +416,10 @@ it. This is the most important operational limitation of the service today.
 Practical workaround for large imports: split history into several pushes
 (`git push origin <old-sha>:refs/heads/main`, then progressively newer
 commits), each under the limit; maintenance repacks the resulting packs into
-one anyway.
+one anyway. For repos too large to seed this way at all (13 GB+ monorepos),
+the proposed answer is a server-side pull-based importer that sidesteps the
+inbound cap entirely by making *us* the git client — see
+[`large-repo-migration.md`](large-repo-migration.md).
 
 **A paid Workers plan is required to reach that ceiling.** The push pipeline
 scans the pack as it streams in (zlib-bound, ~30 MiB/s on wasm), so a large
