@@ -65,9 +65,21 @@ for module in "${modules[@]}"; do
     echo "- ❌ \`${module}\`: build failed" >> "$GITHUB_STEP_SUMMARY"
   fi
 
+  # Match test-go-modules.sh: node-image compile e2e needs pnpm on PATH in CI.
+  if [ "$module" = "node-image" ]; then
+    if ! command -v pnpm >/dev/null 2>&1; then
+      echo "Installing pnpm for node-image conformance tests"
+      npm install -g pnpm@10
+    fi
+  fi
+
   if (
     cd "$module"
-    go test ./...
+    if [ "$module" = "node-image" ]; then
+      go test -timeout 30m ./...
+    else
+      go test ./...
+    fi
   ); then
     echo "- ✅ \`${module}\`: tests passed" >> "$GITHUB_STEP_SUMMARY"
   else
