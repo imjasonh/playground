@@ -159,5 +159,6 @@ packs (see `src/maintenance.rs`).
   based shallow (`--shallow-since`) is not and is rejected cleanly.
 * Blame follows the first-parent line (like `git blame --first-parent`) and
   does not follow renames.
-* No auth. (Users/tokens plus declarative push-time policy checks are
-  proposed in [`docs/auth-and-push-policy.md`](docs/auth-and-push-policy.md).)
+* No auth. (OAuth + JWT bearer tokens, IAM with branch-scoped tokens, and
+  declarative push-time policy checks are proposed in
+  [`docs/auth-and-push-policy.md`](docs/auth-and-push-policy.md).)

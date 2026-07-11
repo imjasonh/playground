@@ -177,7 +177,8 @@ Plain-text banner identifying the service. Any other unmatched path is `404`.
 
 ## Not yet supported
 
-* Authentication / authorization, and push-time policy checks — proposed in
+* Authentication / authorization (OAuth + JWT bearer tokens, IAM), and
+  push-time policy checks — proposed in
   [`auth-and-push-policy.md`](auth-and-push-policy.md).
 * Date-based shallow (`--shallow-since` / `deepen-since`, `deepen-not`) —
   rejected in-band. (Depth-based shallow and partial clone `--filter` *are*

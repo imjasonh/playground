@@ -1,18 +1,28 @@
-# Design: users, auth, and push-time policy
+# Design: OAuth, IAM, and push-time policy
 
-Status: **design only, not yet built.** This document proposes (1) users and
-authentication, (2) a declarative push-time policy engine that can reference
-those users, and (3) blob-content checks (secret scanning and lint rules)
-that run inside the policy engine. The three land as separate phases, in
-that order — identity must exist before "who can bypass this rule" means
-anything.
+Status: **design only, not yet built.** This document proposes, in order:
+
+1. **Authentication** — OAuth login, with the server minting short-lived
+   **signed JWTs** (bearer tokens) under rotating keys, delivered to git via
+   a credential helper.
+2. **IAM** — permissions and roles; per-repo grants; tokens **scoped to
+   branches or branch patterns**; a separate permission for managing the
+   default branch.
+3. **Push-time policy** — a declarative rule engine evaluated during
+   receive-pack, able to reference IAM principals and permissions
+   (including explicit policy override).
+4. **Content checks** — budgeted blob scanning (secret patterns, lint
+   rules) inside the policy engine.
+
+Identity comes first: "who may bypass this rule" and "which branches may
+this token touch" are meaningless without it.
 
 Everything here is constrained by what the Worker actually is: wasm, CPU
 metered (`cpu_ms = 300000` on the paid plan, see `wrangler.toml`), a hard
 128 MiB isolate memory ceiling (enforced by `tests/memory.rs`), and **no
-ability to run user-supplied code**. So policy is *data*, not hooks: a
-declarative rule set evaluated by the server, at points in the push
-pipeline where the needed facts are already cheap.
+ability to run user-supplied code**. So policy is *data*, not hooks, and
+auth is designed so the per-request cost is one signature verification —
+no identity-store read on the hot path.
 
 ## Where the push pipeline offers facts
 
@@ -27,8 +37,10 @@ The receive-pack path (`src/protocol.rs::receive_pack` →
 | File-log build (`build_filelog_segment`) | per new commit: parsed headers (author, committer, message, parents) and **changed paths** with mode + blob oid, via `diff_trees` (cost ∝ changed paths) | free (already computed) |
 | Explicit `Odb::read` | full blob content | **not** free — inflate ≈ 30 MiB/s on wasm, bytes count against the transient-heap budget |
 
-The last row is why content checks (phase 3) get their own byte budgets;
-everything above it is metadata the pipeline produces anyway.
+The last row is why content checks (phase 4) get their own byte budgets;
+everything above it is metadata the pipeline produces anyway. Note that
+token **ref scoping** and IAM push checks need only the first row — they
+reject before the pack uploads.
 
 Rejections surface through the existing report-status path
 (`src/protocol.rs::report_status`): `ng <ref> <reason>` per ref, with the
@@ -39,145 +51,281 @@ failures; the maintenance sweep already collects those.
 
 ---
 
-## Phase 1: users and authentication
+## Phase 1: OAuth + JWT bearer tokens
 
-### Requirements
+### Shape of the system
 
-* Stock git clients only — so **HTTP Basic auth** (username + token), which
-  every git credential helper speaks natively. SSH is out (Workers is
-  HTTP-only).
-* Identity must be available to the push path cheaply, so policy rules can
-  scope to users and honor bypass lists.
-* No expensive password hashing per request. The Worker is CPU-metered;
-  an argon2/bcrypt verification on every `git fetch` is real money and
-  latency. Tokens, not passwords, make this a non-issue (below).
-* Fits the existing storage shape: Durable Objects for small consistent
-  state, R2 for bulk, KV for the registry.
+The Worker plays two OAuth roles:
 
-### Model
+* **Client / relying party** toward an upstream identity provider
+  (GitHub first; the interface is provider-shaped, not GitHub-shaped, so
+  another OIDC provider can slot in). We never store passwords and never
+  build a login UI.
+* **Authorization server** toward git: it exchanges a proven upstream
+  identity for **our own JWTs**, which are what every subsequent request
+  carries.
 
-**Users are server-wide** (not per-repo). A user document:
+Splitting it this way keeps the hot path stateless: verifying a request is
+one Ed25519 signature check in wasm (sub-millisecond, no I/O), not an
+identity-store read.
 
-```jsonc
-{
-  "login": "alice",              // <repo>-style charset: [A-Za-z0-9._-], ≤100
-  "emails": ["alice@example.com"],  // for author/committer policy checks
-  "server_role": "user",         // "user" | "admin"
-  "tokens": [
-    { "id": "t1", "sha256": "<hex>", "label": "laptop",
-      "created_ms": 0, "expires_ms": null }
-  ]
-}
+### Login flow (device authorization grant)
+
+Git is a CLI, so the natural flow is the device grant (RFC 8628),
+server-mediated so the helper stays dumb and provider-agnostic:
+
+```
+helper                        worker                        provider
+  |-- POST /auth/device -------->|                              |
+  |                              |-- device code request ------>|
+  |<- user_code, verify_uri, ----|<- device/user codes ---------|
+  |   handle                     |                              |
+  |   (user opens browser,       |                              |
+  |    approves)                 |                              |
+  |-- POST /auth/device/token -->|                              |
+  |   {handle}   (poll)          |-- poll provider ------------>|
+  |                              |<- provider access token -----|
+  |                              |   verify identity, JIT-map   |
+  |<- {access JWT, refresh tok} -|   to user record             |
 ```
 
-**Per-repo access lives on `RepoState`** (the per-repo DO document), next to
-refs and the pack manifest, so it is read in the same state load every
-request already performs:
+On first successful login, the user record is **provisioned just-in-time**
+in the auth store: login (from the provider handle, e.g. `github:alice` →
+`alice`), verified emails (from the provider — used by the policy engine's
+author-email checks), and default server role `user`.
 
-```jsonc
-{
-  "visibility": "public",        // "public" (anonymous read) | "private"
-  "maintainers": ["alice"],      // push + edit access/policy
-  "writers": ["bot-deploy"]      // push only
-}
-```
+### Tokens
 
-Semantics:
+Three kinds, all JWS compact JWTs signed EdDSA (Ed25519) except the
+refresh token:
 
-| Principal | Public repo | Private repo |
+| Kind | Lifetime | Purpose |
 |---|---|---|
-| anonymous | read | nothing |
-| authenticated, no grant | read | nothing |
-| writer | read + push | read + push |
-| maintainer | + edit access & policy | same |
-| server admin | everything, on every repo | same |
+| **access token** | short (default 1 h) | every git / API request; stateless verification |
+| **refresh token** | rolling (default 30 d) | opaque random secret, stored **hashed** server-side → a revocable session; `POST /auth/token` exchanges it for a fresh access token (and rotates it) |
+| **service token** | bounded (max 90 d) | minted via API for bots/CI; scoped tightly (below); revocable via jti denylist |
 
-The first **authenticated** push to an empty repo makes the pusher its
-maintainer (repo claiming). Server admins bootstrap users; maintainers
-manage their repos.
+Access-token claims:
 
-### Tokens, not passwords
+```jsonc
+{
+  "iss": "https://git.<account>.workers.dev",
+  "aud": "git",
+  "sub": "alice",
+  "iat": 1760000000, "exp": 1760003600,
+  "jti": "…",                       // for the denylist
+  "roles": ["user"],                // server-wide roles only (see IAM)
+  "scope": {                        // the token's CAP, not a grant
+    "repos": ["*"],                 // repo-name globs
+    "refs":  ["refs/heads/feature/*"],  // ref globs; ["*"] = unrestricted
+    "permissions": ["repo.read", "repo.push", "refs.create"]
+  }
+}
+```
 
-Tokens are server-generated, high-entropy (128-bit) secrets with a
-recognizable prefix for secret-scanner friendliness, e.g.
-`gsv1_<32 hex chars>`. The server stores only `SHA-256(token)`.
-Verification is: hash the presented token, look up the hash. Because the
-token is uniform random, SHA-256 preimage resistance is sufficient — no
-KDF, no per-request CPU cost, and the lookup is constant-time by
-construction (an index probe on the digest, not a string compare against
-each candidate).
+`scope` is a **cap**: the effective authority of a request is
+*live grants ∩ token scope* (see IAM below for where grants live). A token
+can therefore only ever narrow what its owner may do — minting a scoped
+token never escalates. Scoped minting (`POST /auth/token` with a requested
+scope, or the `--scope` flags on the helper's login) is how "a token that
+can only push to `refs/heads/deploy/*`" exists, per the requirement.
 
-The Basic-auth username must match the token's user; a mismatch is
-`bad credentials` (same error as an unknown token — don't oracle which part
-was wrong).
+Why the cap/grant split matters for revocation: per-repo grants live on
+`RepoState`, which **every request already loads** — so revoking someone's
+access to a repo is effective immediately, no matter what tokens they
+hold. Only server-wide roles ride inside the JWT and are as stale as the
+token is old (bounded by the 1 h expiry).
 
-### Where identities live
+### Keys and rotation
 
-A new **single-instance `AuthDo`** (SQLite-backed Durable Object, same
-migration mechanism as `RepoStateDo`): user documents plus a
-token-hash → login index. One DO read per authenticated request, from one
-global instance.
+* Signing keys are Ed25519, generated inside the auth store DO, identified
+  by `kid`. The store keeps **current** (signs new tokens) and **previous**
+  (still verifies) keys.
+* Rotation is scheduled on the existing cron trigger (`wrangler.toml`
+  already runs nightly maintenance): promote a fresh key to current, demote
+  current to previous, drop older. With a 1 h access-token lifetime, a
+  two-key window is ample; refresh-token exchange re-signs under the
+  current key naturally.
+* Public keys are published at **`GET /.well-known/jwks.json`** — standard
+  JWKS, so anything else (a future web UI, external services) can verify
+  our tokens without a shared secret.
+* Verification in the Worker caches the JWKS in-isolate; a `kid` miss
+  refetches once. No secret material leaves the DO except public keys.
 
-Two mitigations for that being a global serialization point:
+### Revocation, honestly
 
-* Reads of public repos stay anonymous — no auth lookup at all on today's
-  dominant traffic.
-* A small in-isolate cache (token hash → login, TTL ~60 s, bounded entries)
-  absorbs bursts like a clone's advertisement + fetch pair. Revocation
-  latency is the TTL, which is acceptable at seconds.
+Stateless bearer tokens trade revocation latency for hot-path cost. The
+design's stance:
 
-KV was considered and rejected for the authoritative store: KV is
-eventually consistent (minutes), which turns token revocation into a
-window, and tokens are exactly the thing you revoke in a hurry.
+* **Access tokens**: revoked by expiry (1 h). Per-repo de-permissioning is
+  immediate anyway (grants are live, above).
+* **Sessions** (refresh tokens): server-side hashed record → deleting it
+  ends the session at next refresh, ≤1 h of residual access-token life.
+* **Service tokens**: the emergency path is a **jti denylist** in the auth
+  store, consulted **only on mutating requests** (push, `/api` writes) so
+  reads stay lookup-free. Deny entries expire with the token's own `exp`,
+  so the list stays small.
+
+### The credential helper
+
+A small client-side helper — `git-credential-git-server` — speaks git's
+credential-helper protocol:
+
+* On `get`: return a cached access token if fresh; else refresh via the
+  session; else run the device flow (prints the code, opens the browser).
+* With git ≥ 2.46, the helper returns `authtype=bearer` + `credential=<jwt>`
+  and git sends a real `Authorization: Bearer` header. For older git, the
+  server **also** accepts HTTP Basic with any username and the JWT as the
+  password — same verification path, so the fallback costs nothing.
+* Tokens cache in the OS credential store where available, else a
+  `0600` file under `$XDG_STATE_HOME`.
+* `login --scope repos=myrepo --scope refs=refs/heads/feature/*` mints a
+  narrowed session for the paranoid or for per-project shells.
+
+This intentionally relaxes the project's earlier "stock git only" stance
+for *authenticated* use: anonymous reads of public repos still need
+nothing, and Basic-with-JWT works helper-less (paste the token). The
+helper is a client tool, not part of the Worker; it would live as its own
+top-level app per repo conventions (likely Go, like `gitdb`/`ocidb`) —
+exact home decided when built.
 
 ### Bootstrap
 
-The deploy workflow get-or-generates a `GIT_ROOT_TOKEN` Worker secret,
-exactly like it already does for `web-push`'s `VAPID_PRIVATE_KEY` (see
-`deploy-workers.yml`): generated once, stable across deploys. That token
-authenticates the virtual user `root` (server admin) without touching
-`AuthDo`, and is used to create the first real users via the API.
+No secret to provision. A `SERVER_ADMINS` var in `wrangler.toml` lists
+upstream identities (e.g. `"github:imjasonh"`); when one of them completes
+the device flow, their JIT-provisioned record gets the server-wide `admin`
+role. Everything else is granted from there via the API.
 
-### HTTP integration
+### New auth surface (added to `api.md` when built)
 
-* Protected routes answer `401` with `WWW-Authenticate: Basic realm="git"`;
-  stock git prompts or consults its credential helper and retries. This is
-  the entire client-side story — nothing to install.
-* **Push always requires auth** once this phase ships. The prototype's
-  anonymous push dies at that flag day; an `ALLOW_ANONYMOUS_PUSH` var
-  exists only as a rollback lever and defaults off.
-* Fetch and the read `/api/…` routes require auth only for
-  `visibility = "private"` repos. Existing repos default to `public`, so
-  nothing currently readable becomes unreadable.
-
-### New API surface (added to `api.md` when built)
-
-| Route | Who | What |
+| Route | Auth | What |
 |---|---|---|
-| `GET /api/whoami` | any token | the authenticated login + role |
-| `PUT /api/users/<login>` | admin | create/update a user |
-| `GET /api/users/<login>` | admin or self | user doc (token hashes elided) |
-| `POST /api/users/<login>/tokens` | admin or self | mint a token; plaintext returned **once** |
-| `DELETE /api/users/<login>/tokens/<id>` | admin or self | revoke |
-| `GET /api/<repo>/access` | maintainer | visibility + grants |
-| `PUT /api/<repo>/access` | maintainer | update them |
+| `POST /auth/device` | none | start device flow → user code + poll handle |
+| `POST /auth/device/token` | none | poll → access JWT + refresh token |
+| `POST /auth/token` | refresh or access token | refresh, or mint a **narrowed** access/service token (requested scope ∩ caller authority) |
+| `DELETE /auth/sessions/<id>` | self or admin | end a session |
+| `DELETE /auth/tokens/<jti>` | self or admin | denylist a service token |
+| `GET /.well-known/jwks.json` | none | public verification keys |
+| `GET /api/whoami` | token | resolved login, roles, effective scope |
 
-Out of scope for this phase: OAuth/OIDC, SSH keys, sessions/cookies, and
-failed-auth rate limiting (noted as an open question; a KV counter with a
-short TTL is the likely cheap answer if probing shows up in logs).
+Out of scope for phase 1: a web UI, SSH keys, non-device OAuth flows
+(authorization-code + PKCE with a localhost redirect is a natural later
+addition for browsers), and failed-auth rate limiting (open question).
 
 ---
 
-## Phase 2: the policy engine
+## Phase 2: IAM — permissions, roles, grants
+
+### Permissions
+
+Atomic, dotted, resource-verb strings — the unit both grants and token
+scopes speak:
+
+| Permission | Allows |
+|---|---|
+| `repo.read` | fetch/clone; read `/api/<repo>/…` |
+| `repo.push` | fast-forward updates to existing branches |
+| `refs.create` | create branches/tags |
+| `refs.delete` | delete branches/tags |
+| `refs.forcePush` | non-fast-forward updates |
+| `repo.setDefaultBranch` | change HEAD (see below) |
+| `repo.maintenance` | `POST /api/<repo>/repack` |
+| `repo.manageAccess` | edit visibility + grants |
+| `repo.managePolicy` | edit the policy document |
+| `policy.override` | eligible to bypass policy rules (phase 3) |
+| `server.manageUsers` | create/disable users, grant server roles |
+
+Splitting push into `repo.push` / `refs.create` / `refs.delete` /
+`refs.forcePush` matches what receive-pack already distinguishes per
+command (old=zero → create, new=zero → delete, non-ancestor → force), so
+enforcement is a table lookup at command parse.
+
+**`repo.setDefaultBranch` is deliberately its own permission.** Today HEAD
+is implicit: `RepoState::empty()` defaults it to `refs/heads/main` and
+`merge_push` silently re-points it when its branch disappears. Under IAM,
+HEAD gets an explicit surface — **`PUT /api/<repo>/head`** — and only two
+things may move it: that endpoint (requires `repo.setDefaultBranch`), and
+the very first push to an empty repo (which establishes it). The
+`merge_push` fallback survives purely as a safety net for
+HEAD-branch-deleted, and deleting the HEAD branch itself requires
+`repo.setDefaultBranch` *in addition to* `refs.delete` — so nobody
+repoints the default branch by the back door.
+
+### Roles
+
+Named permission bundles. Built-in:
+
+| Role | Permissions |
+|---|---|
+| `reader` | `repo.read` |
+| `writer` | reader + `repo.push`, `refs.create` |
+| `maintainer` | writer + `refs.delete`, `refs.forcePush`, `repo.setDefaultBranch`, `repo.maintenance`, `repo.manageAccess`, `repo.managePolicy`, `policy.override` |
+| `admin` (server-wide only) | everything, every repo |
+
+Grants can also name **individual permissions**, additive to a role — the
+motivating cases both come from the requirements: a release bot holding
+`writer` + `repo.setDefaultBranch` (can flip HEAD, can't edit policy), or
+a `reader` + `policy.override` auditor. Custom named roles are an open
+question; individual-permission grants cover the known cases without a
+role-editor surface.
+
+### Where grants live, and how a request is decided
+
+* **Per-repo grants** live on `RepoState` (the per-repo DO document,
+  already loaded by every request): `visibility: "public" | "private"`,
+  plus `grants: { login → { role, permissions: [...] } }`. Well under the
+  128 KiB DO value cap. Edited via `GET/PUT /api/<repo>/access`
+  (`repo.manageAccess`).
+* **Server-wide roles** live on the user record and are embedded in the
+  JWT's `roles` claim (stale ≤ token lifetime).
+* The **first authenticated push** to an empty repo grants the pusher
+  `maintainer` on it (repo claiming).
+
+Every request is decided by one pure function, in a transport-agnostic
+module so it's natively testable:
+
+```
+effective(request) =
+    permissions(server roles from JWT)
+  ∪ permissions(repo grant for sub)
+  ∩ token.scope.permissions
+  ∩ (repo matches token.scope.repos)
+allowed = required_permission ∈ effective
+        ∧ (if the action targets a ref: ref matches token.scope.refs)
+```
+
+Anonymous requests get `repo.read` on public repos and nothing else.
+**Push always requires auth** once this ships; an `ALLOW_ANONYMOUS_PUSH`
+var exists only as a rollback lever and defaults off. Existing repos
+default to `public` + no grants, so nothing currently readable goes dark
+at the flag day.
+
+### Branch-scoped tokens at enforcement time
+
+`token.scope.refs` is checked at **command parse** in `receive_pack`: every
+`RefUpdate.name` must match a scope glob, or that ref's command is
+rejected (`ng <ref> token scope does not include this ref`) **before
+`PackIngest::start`** — no R2 write, no scan. The same check guards
+`PUT /api/<repo>/head` (the target ref must be in scope).
+
+Ref scoping is a **write** control only. Branch-level *read* restriction
+is deliberately not offered: a git object graph is shared across refs
+(a fetch negotiates wants by oid, packs deltify across branches), so
+per-ref read filtering leaks through object reachability and would be
+false security. Read scoping stays repo-granular (`scope.repos`).
+
+---
+
+## Phase 3: the policy engine
 
 ### Rule shape
 
 A per-repo **policy document**: an ordered list of named rules, each
 `scope × check × action`. Stored as a `policy` field on `RepoState`
-(versioned and CAS-swapped with the rest of the state doc; the 128 KiB DO
-value cap is ample for rules), edited via `PUT /api/<repo>/policy`
-(maintainer), retrieved via `GET /api/<repo>/policy`. TOML on the wire for
-humans, canonical JSON in the DO.
+(versioned and CAS-swapped with the rest of the state doc), edited via
+`PUT /api/<repo>/policy` (requires `repo.managePolicy`), retrieved via
+`GET /api/<repo>/policy`. TOML on the wire for humans, canonical JSON in
+the DO.
 
 ```toml
 [[rule]]
@@ -189,11 +337,12 @@ deny  = ["delete", "force"]          # tier-0 verbs: create | delete | force
 name  = "workflows-frozen"
 paths = [".github/workflows/**"]     # glob on changed paths (tree diff)
 deny  = ["add", "modify", "delete"]
-bypass = ["user:alice", "role:maintainer"]
+bypass = ["user:alice"]              # narrows who may override (see below)
 
 [[rule]]
 name = "no-big-blobs"
 max_blob_bytes = "5MB"
+overridable = false                  # nobody bypasses this one
 
 [[rule]]
 name = "ticket-ref"
@@ -202,7 +351,8 @@ commit_message_pattern = 'Resolves [A-Z]+-\d+'
 
 [[rule]]
 name = "you-are-you"
-require_author_email_matches_pusher = true   # author email ∈ pusher's emails
+require_author_email_matches_pusher = true   # author email ∈ pusher's
+                                             # provider-verified emails
 
 [[rule]]
 name = "no-secrets"
@@ -222,18 +372,28 @@ on_budget_exceeded = "reject"        # fail closed for secrets
 | 1 — pack shape | `max_blob_bytes` (fast-fail during scan for non-delta entries; authoritative after resolve), max objects per push | `PackScanner` / `resolve_pack` |
 | 2 — path | frozen paths, deny path globs (`node_modules/**`, `*.env`), case-collision, path charset/length, mode rules (no symlinks / no gitlinks / executable-bit scoping), per-path-glob size caps | `diff_trees` output (already built for the file-log) |
 | 3 — commit | author/committer email patterns, `require_author_email_matches_pusher`, message pattern, merge policy (parent count), signature *presence*, timestamp sanity | commits already parsed for the file-log |
-| 4 — content | secret patterns, lint checks | `Odb::read`, budgeted — phase 3 below |
+| 4 — content | secret patterns, lint checks | `Odb::read`, budgeted — phase 4 below |
 
-"Force" at tier 0 means: `old` is a non-ancestor of `new`. The pipeline's
-CAS already rejects *stale* olds; the force check additionally needs an
+Note the overlap by design between tier-0 policy and IAM: `refs.forcePush`
+is *authority* ("may this principal ever force-push here"), while
+`deny = ["force"]` is *policy* ("nobody force-pushes main without an
+explicit override"). IAM is evaluated first; policy applies to the
+already-authorized.
+
+"Force" means: `old` is a non-ancestor of `new`. The pipeline's CAS
+already rejects *stale* olds; the force check additionally needs an
 ancestry walk between two commits in the (old ∪ new) odb, bounded like the
-existing connectivity check.
+existing connectivity check. IAM's `refs.forcePush` gate uses the same
+walk — one implementation.
 
-### Users in policy: bypass is explicit
+### Override: permissioned and explicit
 
-`bypass` lists principals (`user:<login>`, `role:maintainer`,
-`role:admin`) who **may** override the rule — but override is never
-silent. A bypass-eligible pusher must say so:
+Bypass eligibility is the **`policy.override` permission** (within the
+token's scope cap, like everything else). A rule can narrow eligibility
+further with `bypass = ["user:…", "role:…"]`, or forbid override entirely
+with `overridable = false`.
+
+Eligibility alone never bypasses anything — the pusher must say so:
 
 ```
 git push -o policy.override=workflows-frozen
@@ -242,10 +402,9 @@ git push -o policy.override=workflows-frozen
 The server advertises the `push-options` capability; options arrive in the
 command section, before any pack bytes. An override without eligibility is
 rejected (`ng <ref> policy "workflows-frozen": override not permitted`);
-eligibility without the option still enforces the rule. This keeps
-maintainers subject to policy by default, makes every exception a
-deliberate act, and gives structured logs an audit line (pusher, rule,
-refs) for free.
+eligibility without the option still enforces the rule. Maintainers stay
+subject to policy by default, every exception is a deliberate act, and
+each override emits a structured audit log line (sub, jti, rule, refs).
 
 ### Semantics
 
@@ -258,8 +417,9 @@ refs) for free.
 * Error text is API:
   `ng <ref> policy "<rule-name>": <detail>` — e.g.
   `ng refs/heads/main policy "workflows-frozen": .github/workflows/ci.yml`.
-* One glob implementation (gitignore-style `**`) shared by `refs` and
-  `paths` — a new "single home" per `AGENTS.md`.
+* One glob implementation (gitignore-style `**`) shared by policy `refs` /
+  `paths`, token `scope.refs` / `scope.repos` — a single home per
+  `AGENTS.md`.
 * Custom regexes (`commit_message_pattern`, custom content patterns) are
   compiled with the linear-time `regex` engine — no backtracking, so no
   ReDoS — with caps on pattern count and compiled size, validated at
@@ -268,21 +428,23 @@ refs) for free.
 
 ### Enforcement points
 
-Tier 0 evaluates right after command parse in `receive_pack` — before
-`PackIngest::start`, so a protected-ref rejection never writes to R2.
-Tier 1's fast-fail lives in the scan feed loop and aborts the multipart
-upload. Tiers 2–4 evaluate inside `apply_push`, after `resolve_pack` and
-the file-log build produced their facts, **before** `StateStore::apply_push`
-— the same slot as today's connectivity check, with the same orphan-pack
+Right after command parse in `receive_pack`, in order: token ref-scope
+check, IAM per-command check, tier-0 policy — all **before
+`PackIngest::start`**, so none of them costs an R2 write. Tier 1's
+fast-fail lives in the scan feed loop and aborts the multipart upload.
+Tiers 2–4 evaluate inside `apply_push`, after `resolve_pack` and the
+file-log build produced their facts, **before** `StateStore::apply_push` —
+the same slot as today's connectivity check, with the same orphan-pack
 consequence on rejection (already handled by the maintenance sweep).
 
-All of it lives in transport-agnostic modules (a new `src/policy.rs`), so
-`cargo test` exercises the same code the Worker runs, and every rejection
-branch gets an integration test per the crate's error-path rule.
+All of it lives in transport-agnostic modules (new `src/auth.rs`,
+`src/iam.rs`, `src/policy.rs`), so `cargo test` exercises the same code
+the Worker runs, and every rejection branch gets an integration test per
+the crate's error-path rule.
 
 ---
 
-## Phase 3: content checks (tier 4)
+## Phase 4: content checks (tier 4)
 
 The only tier that must *read blob bytes*, so the only tier with a real
 CPU/memory budget question.
@@ -318,8 +480,9 @@ noise under `cpu_ms = 300000`. Memory: one buffer, capped at the largest
 maintained in the crate (`aws-key`, `pem-private-key`, `github-token`,
 `slack-token`, …), so most policies never write a regex; custom
 `regex = '…'` entries are allowed under the same linear-time-engine caps as
-phase 2. Findings are reported as rule + path + line number — **never** the
-matched text; the report-status channel must not echo secrets back.
+phase 3. Findings are reported as rule + path + line number — **never** the
+matched text; the report-status channel must not echo secrets back. Our own
+JWTs are a pattern-pack entry too.
 
 **Lint checks** — declarative built-ins, each a flag or small param:
 
@@ -360,24 +523,35 @@ blobs so the gap is visible.
 
 | Phase | Lands | Proves |
 |---|---|---|
-| 1 | `AuthDo`, token auth, repo access, `/api/users` + `/api/<repo>/access`, 401 flow | git credential round-trip in integration tests (`TestServer` with `Authorization` headers); revocation; claim-on-first-push |
-| 2 | `src/policy.rs`, policy storage + API, tiers 0–3, bypass/override, warn channel | every rule type's reject *and* warn branch; override audit line; policy-validation-at-write |
-| 3 | content scanner, pattern packs, lint checks, budgets | secret hit / lint hit / budget-exceeded paths; memory-test variant under `TRANSIENT_BUDGET` |
+| 1 | auth store DO (users, sessions, keys), device flow, JWT mint/verify, JWKS + rotation, Bearer + Basic-fallback parsing, credential helper | full login → push round-trip in integration tests (native JWT mint against a test key; `TestServer` with `Authorization` headers); expiry; refresh rotation; session revocation; kid rollover |
+| 2 | permission/role model, grants on `RepoState`, `/api/<repo>/access`, `PUT /api/<repo>/head`, token scope caps + ref-scope enforcement, claim-on-first-push, 401/403 flow | every permission's allow and deny; scoped-token narrowing (never widening); ref-scope rejection before ingest; default-branch permission split |
+| 3 | `src/policy.rs`, policy storage + API, tiers 0–3, permissioned override, warn channel | every rule type's reject *and* warn branch; override eligibility × option matrix; policy-validation-at-write |
+| 4 | content scanner, pattern packs, lint checks, budgets | secret hit / lint hit / budget-exceeded paths; memory-test variant under `TRANSIENT_BUDGET` |
 
 Each phase updates `docs/api.md` in the same change (hard rule), and each
-new rejection path ships with the test that triggers it.
+new rejection path ships with the test that triggers it. The credential
+helper is client-side and gets its own home and test suite per repo
+conventions.
 
 ## Open questions
 
+* **Second identity provider.** GitHub device flow first; the exchange
+  endpoint is shaped for any OIDC provider, but generic-OIDC config
+  (issuer discovery, client registration) is unspecified until a second
+  provider is real.
+* **Custom roles.** Individual-permission grants cover the known cases;
+  a role editor is deferred until repeated grants make one earn its keep.
+* **Service-token ceiling.** 90 d max proposed; too long for taste, but
+  shorter forces bot-credential rotation machinery that doesn't exist yet.
+  The jti denylist is the compensating control.
+* **Failed-auth rate limiting.** Signature verification is cheap enough
+  that probing costs us little; device-flow and refresh endpoints are the
+  ones to watch. A KV counter keyed by IP with a short TTL if logs show
+  abuse.
 * **Retro-scanning.** A policy added after a secret already landed doesn't
   scan history. A `POST /api/<repo>/scan` walking existing blobs under the
-  same budget machinery (repeated calls to converge, like `/repack`) is the
-  likely shape — not in scope for phase 3.
-* **Failed-auth rate limiting.** Token probing is cheap for an attacker
-  and each probe costs us an `AuthDo` read (cache misses only). A KV
-  counter keyed by IP with a short TTL if logs show probing.
-* **Default visibility at flag day.** Proposed: existing repos stay
-  `public` (read) but push locks to authenticated users everywhere,
-  with `ALLOW_ANONYMOUS_PUSH` as the rollback lever only.
-* **Token expiry defaults.** Proposed: no default expiry (prototype), but
-  the field exists so policy can later require expiring tokens.
+  same budget machinery (repeated calls to converge, like `/repack`) is
+  the likely shape — not in scope for phase 4.
+* **Web flow.** Authorization-code + PKCE (localhost redirect) as a
+  second grant type once anything browser-shaped exists; the token
+  machinery is unchanged by it.
