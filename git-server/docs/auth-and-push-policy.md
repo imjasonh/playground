@@ -519,7 +519,9 @@ design can't:
 
 * **Single use.** The approval is consumed in the same DO CAS that
   applies the push — it cannot authorize two pushes, and a concurrent
-  race gets exactly one winner.
+  race gets exactly one winner. Consumption happens only on a push that
+  *lands*: a push rejected for any other reason leaves its approvals
+  pending, so a failed attempt doesn't burn the review.
 * **Pusher UX.** No token pasting. Review approvals are matched
   automatically when the rule evaluates; overrides need only the explicit
   `-o policy.override=<rule>` push option.
@@ -764,7 +766,25 @@ in the root policy: after `diff_trees`, the server knows which delegated
 roots the push touched, reads exactly those `.policy.toml` blobs
 (size-capped, through the same budgeted read path as content rules — a
 push touching no delegated subtree reads none), and evaluates their rules
-alongside the root's. No repo-wide policy discovery walk, ever.
+alongside the root's. No repo-wide policy discovery walk, ever. In `ng`
+lines and audit records, subtree rules are namespaced by their delegation
+path — `policy "services/payments:valid-json"` — so a violation names
+which layer produced it.
+
+Subtree policy **content is validated at push time**: a push that adds or
+modifies a `.policy.toml` under a delegated path parses it and enforces
+confinement, monotonicity, and the delegation's allowed rule kinds as
+part of validating that push — a broken or overreaching policy file is
+rejected before it lands, exactly like a bad root policy is rejected at
+`PUT /api/<repo>/policy`. If a committed subtree policy is nonetheless
+invalid *at load* (possible only through drift — e.g. the root delegation
+later narrowed its `allow` list), the subtree **fails closed**: pushes
+touching that subtree are rejected
+(`ng <ref> policy "services/payments:.policy.toml": invalid — <detail>`)
+— **except** a push whose only changes under that subtree fix the
+`.policy.toml` itself, so the repair path never deadlocks (and it still
+passes the root layer's guards, e.g. the override on
+`policy-files-guarded`).
 
 **Which version of a policy file governs?** The one in the **old tree of
 the ref being pushed** — the policy in force when the push arrives. A
@@ -923,6 +943,210 @@ blobs so the gap is visible.
 
 ---
 
+## Worked scenarios: a monorepo, end to end
+
+One fixture, eight pushes. Repo `mono` (public), default branch `main`.
+
+**Grants:**
+
+| Principal | Grant |
+|---|---|
+| `alice` | `writer` (unconfined) |
+| `bob` | `writer` (unconfined — his `policy.approve` covers every path) |
+| `carol` | `writer`, `paths: ["services/payments/**"]` (payments owner) |
+| `dave` | `maintainer` (holds `policy.override`) |
+| `sa:payments-ci` | `writer`, `paths: ["services/payments/gen/**"]` |
+
+**Root policy:** `protect-main` (deny delete/force on `main`);
+`main-requires-review` (`approvals = 1, per_path = true` on `main`);
+`policy-files-guarded` (deny changes to `**/.policy.toml`); `no-secrets`
+(content rule, `overridable = false`); a delegation of
+`services/payments` with `allow = ["paths", "commit", "content", "review"]`.
+
+**Subtree policy** `services/payments/.policy.toml` (committed by the
+payments team): `valid-json` (`require_json` on `**/*.json`, confined to
+the subtree) and `no-binaries` (`deny_binary` on `**`).
+
+### S1 — the happy path (baseline)
+
+1. Alice pushes `refs/heads/feature/limits`, tip `F1`, adding
+   `services/payments/limits.json`. Command parse: token scope ok, no
+   tier-0 rule targets feature branches. Pack ingests to R2; at apply,
+   IAM path check passes (alice unconfined), no `main` rules apply.
+   `ok` — the branch lands.
+2. Bob reviews and approves:
+   `POST /api/mono/approvals {use: "review", ref: "refs/heads/main", new: F1}`.
+   Bob is a user with `policy.approve`; a pending stub lands on
+   `RepoState`; Bob gets back the approval JWS.
+3. Alice pushes merge `M1` (parents: old `main` tip `O`, and `F1`) to
+   `main`. At apply: changed paths (from `diff_trees`) are all under
+   `services/payments/`; the delegation loader reads `.policy.toml` from
+   `main`'s **old** tree; `valid-json` passes, `no-binaries` passes;
+   review matching finds Bob's approval — `M1` is a merge of `O` + `F1`,
+   Bob ≠ Alice, Bob's coverage (unconfined) covers every changed path.
+4. One DO CAS: `main → M1`, Bob's approval stub consumed, audit ref
+   advanced. The audit pack (built by `PackWriter`) adds
+   `reviews/refs/heads/main/<M1[..2]>/<M1>.json` — Bob's approval JWS +
+   the server attestation.
+
+**End state:** client sees `ok main`; audit query
+`GET /api/mono/file/refs/audit/reviews/refs/heads/main/…/<M1>.json`
+answers "why was this merge approved" forever.
+
+### S2 — subtree rule fails at push time (the centerpiece)
+
+1. Alice pushes `feature/limits2`, tip `F2`, editing
+   `services/payments/limits.json` — with a trailing comma. Feature
+   branches have no rules: **lands fine**. Nothing in the pipeline
+   objects to broken JSON existing on a feature branch.
+2. Bob approves `F2` for `main`.
+3. Alice pushes merge `M2` to `main`. Command parse: fine. Pack uploads,
+   resolves, file-log builds. At apply: review check **passes** (Bob's
+   approval matches). Then the subtree layer runs `valid-json` — the
+   content scanner reads the changed blob, JSON parse fails.
+4. Report-status:
+   `ng refs/heads/main policy "services/payments:valid-json": services/payments/limits.json`.
+   git prints `! [remote rejected] main -> main`. **Nothing moved**: the
+   DO CAS never ran, `main` still points at `M1`, and Bob's approval is
+   **not consumed** (approvals burn only on pushes that land). The
+   uploaded pack is now an orphan in R2; the nightly maintenance sweep
+   collects it — the same lifecycle as any rejected push today.
+5. Alice fixes the JSON: new commit `F3` on the feature branch. But Bob's
+   pending approval binds `F2` — a merge of `O + F3` matches nothing.
+   **The fix invalidated the review**, by design: what Bob vouched for is
+   not what's being pushed anymore. Bob re-approves (`new: F3`; the stale
+   `F2` stub just expires).
+6. Alice pushes merge `M2′`. All layers pass. CAS: ref flips, `F3`
+   approval consumed, audit appended.
+
+**End state:** one audit record (for `M2′`); the failed attempt left only
+a swept pack and a structured log line. Total extra cost of the failure:
+one push round-trip and one re-approval.
+
+### S3 — path-confined writer strays
+
+Carol (confined to `services/payments/**`) pushes a branch that edits
+`services/payments/router.rs` **and** `libs/common/retry.rs`. Command
+parse and ingest pass (path facts don't exist until the tree diff). At
+apply, the IAM path check walks the changed paths:
+`ng refs/heads/feature/retry grant does not cover path libs/common/retry.rs`.
+
+**End state:** ref untouched, pack orphaned-then-swept. Carol either
+splits the change (her half lands; Alice picks up the `libs/` half) or
+asks a maintainer to widen her grant — an IAM operation
+(`PUT /api/mono/access`, by `repo.manageAccess`), not a policy edit.
+
+### S4 — per-path review coverage gap
+
+Alice's merge to `main` touches `services/payments/fees.rs` **and**
+`libs/common/math.rs`. Carol approved the tip — but Carol's
+`policy.approve` coverage is her grant's `paths`:
+`services/payments/**` only.
+
+* Review matching: `services/payments/fees.rs` → covered (Carol).
+  `libs/common/math.rs` → covered by **nobody**.
+* `ng refs/heads/main policy "main-requires-review": libs/common/math.rs has no covering approval`.
+
+Bob (unconfined) also approves the same tip; Alice re-pushes the same
+merge. Both approvals match, every path covered, push lands, **both**
+JWSes are embedded in the one audit record with their covered paths — so
+"who approved the `libs/` part" is still one lookup.
+
+**End state:** owner review emerged from grants alone: nobody wrote a
+CODEOWNERS file, and Carol's approval was necessary for her subtree but
+insufficient outside it.
+
+### S5 — overriding a frozen file (two-party)
+
+The payments team needs to change their own `.policy.toml` (add a rule).
+Root's `policy-files-guarded` denies all changes to `**/.policy.toml`.
+
+1. Carol pushes the edit directly: rejected —
+   `ng … policy "policy-files-guarded": services/payments/.policy.toml`.
+2. Carol pushes again with `-o policy.override=policy-files-guarded`:
+   still rejected — `override requires approval`. The option alone is
+   never enough.
+3. Dave (maintainer, `policy.override`) reviews the diff and approves:
+   `POST /api/mono/approvals {use: "override", rule: "policy-files-guarded",
+   ref: "refs/heads/main", new: <tip>}`.
+4. Carol re-pushes with the option. Checks: pending approval matches;
+   Dave ≠ Carol; `approver_has_override = true` satisfies "one permission
+   between them" (Carol holds none). The new `.policy.toml` content is
+   itself validated (parse, confinement, monotonicity, allowed kinds) as
+   part of the push. Note `main-requires-review` still applies to this
+   push too — Dave's *override* approval doesn't double as a *review*
+   approval; with `per_path`, Dave (unconfined maintainer) or Bob must
+   also have review-approved the tip. Say Dave did both.
+5. CAS: ref flips, both approvals consumed, audit gains **two** records
+   for the same commit — one under `overrides/…`, one under `reviews/…`.
+
+**End state:** the exceptional act is the most-documented event in the
+repo: who wanted it, who allowed it, which rule was waived, exactly what
+landed — all offline-verifiable. If instead `sa:payments-ci` had tried
+step 3, the approval endpoint returns 403 (`kind: "service"`): a bot can
+never be Dave.
+
+### S6 — a secret, and why override says no
+
+Alice's merge includes an AWS access key in `services/payments/deploy.env`.
+Review approval exists; everything passes until tier 4; the secret
+pattern hits:
+`ng refs/heads/main policy "no-secrets": services/payments/deploy.env:3`
+(path and line, **never** the matched text). `no-secrets` sets
+`overridable = false`, so there is no approval, no push option, and no
+pair of humans that lands this push. The only path forward is rewriting
+the commit. The same fail-closed shape applies if Alice's push contains a
+blob over the scan cap: `on_budget_exceeded = "reject"` refuses what it
+cannot vet, and the `ng` detail names the unscanned blob.
+
+**End state:** the secret exists only in an orphaned pack that the sweep
+deletes — it never becomes reachable from any ref, which is materially
+better than "pushed, then scrubbed."
+
+### S7 — a subtree policy that overreaches
+
+The payments team (via S5's process) tries to land a `.policy.toml`
+containing `paths = ["libs/**"]` — constraining a directory they don't
+own. The push-time validation of the changed policy file rejects it:
+`ng … policy "services/payments:.policy.toml": rule "grab-libs" escapes the delegated subtree`.
+Confinement is enforced at write, so the invalid file never lands.
+
+The drift variant: the file was valid, but a root-policy edit later
+narrows the delegation's `allow` (say, drops `"content"`). The committed
+`valid-json` rule is now unauthorized — the subtree **fails closed**:
+every push touching `services/payments/**` is rejected with
+`policy "services/payments:.policy.toml": invalid — rule kind "content" not delegated`,
+**except** a push whose only subtree change fixes `.policy.toml` (which
+still needs the S5 override dance for `policy-files-guarded`). The repair
+is always possible, always audited, and the window is loud rather than
+silently unenforced.
+
+### S8 — two pushes race one approval
+
+Two release managers both try to land merges of the approved tip while
+the approval is pending. Both pushes upload packs; both reach the DO CAS.
+The first CAS wins: ref flips, approval consumed, audit written. The
+second push's CAS sees a stale `old` for `main` and reports the standard
+`ng refs/heads/main fetch first` — it never even reaches approval
+matching. After fetching, its merge is of the *new* tip; the approval is
+already consumed, so landing again requires a fresh review of whatever
+the new merge is — which is the correct outcome, not an inconvenience.
+
+**What the scenarios establish**
+
+| Property | Shown in |
+|---|---|
+| Feature branches stay friction-free; protected refs carry the weight | S1, S2 |
+| Failures reject cleanly: no partial state, approvals survive, orphans swept | S2, S3, S6 |
+| A fix after review requires re-review (oid binding is load-bearing) | S2 |
+| Ownership = grants; review coverage = the same grants | S3, S4 |
+| Override is explicit, two-party, human-only, and double-audited alongside review | S5 |
+| Some rules are absolute (`overridable = false`) | S6 |
+| Subtree policies can't escape, and broken ones fail closed with a repair path | S7 |
+| Concurrency resolves by CAS, not by approval double-spend | S8 |
+
+---
+
 ## Phasing and test plan
 
 | Phase | Lands | Proves |
@@ -931,7 +1155,7 @@ blobs so the gap is visible.
 | 2 | permission/role model, grants on `RepoState` (users + service accounts), `/api/<repo>/access`, `PUT /api/<repo>/head`, token scope caps + ref-scope enforcement, claim-on-first-push, 401/403 flow | every permission's allow and deny; scoped-token narrowing (never widening); ref-scope rejection before ingest; default-branch permission split |
 | 3 | `src/policy.rs`, policy storage + API, tiers 0–3, approvals (`/api/<repo>/approvals`, both uses), `require_review`, audit records on `refs/audit`, audit flattening in maintenance, warn channel | every rule type's reject *and* warn branch; the two-party matrix (self-approval, neither-permissioned, expired/consumed/revoked approval, oid-bound mismatch); **service-account approval rejected** (both uses); review satisfaction arms (fast-forward to approved oid; merge of old + approved; N-distinct-approvers); single-use under concurrent pushes; pending-approval cap; audit-record signature round-trip against the JWKS; audit lookup by commit oid via the file API; flattening preserves the tree; `refs/audit/**` unwritable by clients; policy-validation-at-write |
 | 4 | content scanner, pattern packs, lint checks, budgets | secret hit / lint hit / budget-exceeded paths; memory-test variant under `TRANSIENT_BUDGET` |
-| 5 | monorepo layer: path-confined grants + token `scope.paths`, delegation loader, subtree `.policy.toml` evaluation, `per_path` review | path-grant coverage allow/deny (push touching in/out-of-grant paths); scope-cap narrowing; confinement and monotonicity rejected at subtree-policy load; old-tree governance (a push editing `.policy.toml` is judged by the previous version); per-path coverage matrix incl. mixed-ownership pushes; delegated-read budget |
+| 5 | monorepo layer: path-confined grants + token `scope.paths`, delegation loader, subtree `.policy.toml` evaluation, `per_path` review | path-grant coverage allow/deny (push touching in/out-of-grant paths); scope-cap narrowing; confinement/monotonicity/allowed-kinds rejected when the policy file is *pushed*; fail-closed on drift-invalid subtree policy with the repair-push carve-out; old-tree governance (a push editing `.policy.toml` is judged by the previous version); per-path coverage matrix incl. mixed-ownership pushes; delegated-read budget |
 
 Each phase updates `docs/api.md` in the same change (hard rule), and each
 new rejection path ships with the test that triggers it. The credential
