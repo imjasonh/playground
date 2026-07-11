@@ -389,6 +389,90 @@ fn concurrent_disjoint_pushes_both_land() {
     git(&tmp.path().join("check"), &["fsck", "--strict"]);
 }
 
+/// Incremental repack: with a pack-count budget smaller than the backlog,
+/// each run folds only a bounded selection (leaving the rest), repeated runs
+/// converge to a single pack, and the repo stays fully readable throughout.
+#[test]
+fn incremental_repack_converges_within_budget() {
+    use futures::executor::block_on;
+    use git_server::maintenance::{repack_with_budget, RepackBudget, RepackOutcome};
+    use git_server::repo::Repo;
+
+    let server = TestServer::start();
+    let tmp = tempfile::tempdir().unwrap();
+    let src = tmp.path().join("src");
+    std::fs::create_dir(&src).unwrap();
+    git(&src, &["init", "-q", "-b", "main", "."]);
+    git(&src, &["remote", "add", "origin", &server.url("inc")]);
+    for i in 1..=7 {
+        write_file(&src, "f.txt", &format!("{i}\n"));
+        write_file(&src, &format!("dir/g{i}.txt"), "x\n");
+        git(&src, &["add", "."]);
+        git(&src, &["commit", "-q", "-m", &format!("c{i}")]);
+        git(&src, &["push", "-q", "origin", "main"]);
+    }
+    let status: Value = serde_json::from_slice(&server.get("/api/inc").1).unwrap();
+    assert_eq!(status["packs"], 7);
+
+    let repo = Repo {
+        store: &server.store,
+        states: &server.states,
+        name: "inc",
+    };
+    let budget = RepackBudget {
+        max_packs: 3,
+        ..Default::default()
+    };
+
+    // First run folds exactly the budgeted number of packs, not everything.
+    match block_on(repack_with_budget(&repo, "r0", &budget)).unwrap() {
+        RepackOutcome::Repacked {
+            packs, remaining, ..
+        } => {
+            assert_eq!(packs, 3);
+            assert_eq!(remaining, 4);
+        }
+        other => panic!("expected bounded consolidation, got {other:?}"),
+    }
+    // The partially-consolidated repo is fully readable.
+    let (s, body) = server.get("/api/inc/blame/main/f.txt");
+    assert_eq!(s, 200, "{}", String::from_utf8_lossy(&body));
+
+    // Repeated bounded runs converge to a single pack.
+    let mut runs = 0;
+    loop {
+        match block_on(repack_with_budget(
+            &repo,
+            &format!("r{}", runs + 1),
+            &budget,
+        ))
+        .unwrap()
+        {
+            RepackOutcome::NoOp => break,
+            RepackOutcome::Repacked { packs, .. } => assert!(packs <= 3),
+            other => panic!("unexpected {other:?}"),
+        }
+        runs += 1;
+        assert!(runs < 10, "repack failed to converge");
+    }
+    let status: Value = serde_json::from_slice(&server.get("/api/inc").1).unwrap();
+    assert_eq!(status["packs"], 1, "converged to a single pack");
+
+    // Everything still clones, fscks, and blames correctly.
+    git(
+        tmp.path(),
+        &["clone", "-q", &server.url("inc"), "inc-check"],
+    );
+    let d = tmp.path().join("inc-check");
+    git(&d, &["fsck", "--strict"]);
+    assert_eq!(git(&d, &["rev-list", "--count", "HEAD"]).trim(), "7");
+    assert_eq!(std::fs::read_to_string(d.join("f.txt")).unwrap(), "7\n");
+    let (s, body) = server.get("/api/inc/blame/main/f.txt");
+    assert_eq!(s, 200);
+    let blame: Value = serde_json::from_slice(&body).unwrap();
+    assert!(blame["lines"].as_array().is_some());
+}
+
 /// Pushes over the size limit are rejected — mirroring Cloudflare's
 /// request-body cap (~100 MB), which in production 413s over-limit pushes at
 /// the edge before the Worker runs. Enforcing (a shrunken) limit locally

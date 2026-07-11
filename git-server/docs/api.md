@@ -136,15 +136,18 @@ following. `404` if the path has no blame (never touched / not a file).
 ```
 
 ### `POST /api/<repo>/repack`
-Trigger pack consolidation now (normally a nightly cron). Returns the outcome.
+Trigger one pack-consolidation run now (normally a nightly cron). Each run is
+budget-bounded: it folds a contiguous selection of packs and reports how many
+packs it left untouched (`remaining: 0` means the repo is now one pack); call
+repeatedly to converge a backlog. Returns the outcome:
 
 ```json
-{ "result": "Repacked { packs: 3, objects: 549 }" }
+{ "result": "Repacked { packs: 3, objects: 549, remaining: 0 }" }
 ```
 
-Note: repack currently runs whole-repo in one invocation and is intended for
-small/medium repos; see [`design.md` → Repacking](design.md) for the scaling
-limits and the planned geometric/resumable rework.
+Other outcomes: `NoOp` (nothing to fold within budget) and `LostRace` (a
+concurrent repack consumed one of the selected packs; racing *pushes* never
+conflict with repack). See [`design.md` → Repacking](design.md).
 
 ---
 

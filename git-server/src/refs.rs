@@ -137,6 +137,80 @@ impl RepoState {
             applied: true,
         }
     }
+
+    /// Apply a repack's swap against the current state (pure — shared by the
+    /// Durable Object and [`MemStateStore`]). Returns `false` (state
+    /// untouched) if any consumed id is missing, which can only mean another
+    /// repack raced this one: pushes append packs, they never remove them.
+    ///
+    /// The consolidated pack takes the position of the first removed pack,
+    /// so the manifest's oldest-first shadowing order relative to packs
+    /// outside the swap is preserved (the consolidation itself deduplicated
+    /// oids keeping the newest copy within the consumed range).
+    pub fn merge_repack(&mut self, swap: &RepackSwap) -> bool {
+        let have_packs: std::collections::HashSet<&str> =
+            self.packs.iter().map(|p| p.id.as_str()).collect();
+        if !swap
+            .remove_packs
+            .iter()
+            .all(|id| have_packs.contains(id.as_str()))
+        {
+            return false;
+        }
+        let have_filelog: std::collections::HashSet<&str> =
+            self.filelog.iter().map(String::as_str).collect();
+        if !swap
+            .remove_filelog
+            .iter()
+            .all(|id| have_filelog.contains(id.as_str()))
+        {
+            return false;
+        }
+
+        let removed: std::collections::HashSet<&str> =
+            swap.remove_packs.iter().map(String::as_str).collect();
+        let mut packs = Vec::with_capacity(self.packs.len() + 1 - swap.remove_packs.len());
+        let mut inserted = false;
+        for p in &self.packs {
+            if removed.contains(p.id.as_str()) {
+                if !inserted {
+                    packs.push(swap.new_pack.clone());
+                    inserted = true;
+                }
+            } else {
+                packs.push(p.clone());
+            }
+        }
+        if !inserted {
+            // remove_packs was empty (filelog-only consolidation): append.
+            packs.push(swap.new_pack.clone());
+        }
+        self.packs = packs;
+
+        let removed_fl: std::collections::HashSet<&str> =
+            swap.remove_filelog.iter().map(String::as_str).collect();
+        let mut filelog = Vec::with_capacity(self.filelog.len() + 1);
+        let mut inserted_fl = false;
+        for f in &self.filelog {
+            if removed_fl.contains(f.as_str()) {
+                if !inserted_fl {
+                    if let Some(new) = &swap.new_filelog {
+                        filelog.push(new.clone());
+                    }
+                    inserted_fl = true;
+                }
+            } else {
+                filelog.push(f.clone());
+            }
+        }
+        if !inserted_fl {
+            if let Some(new) = &swap.new_filelog {
+                filelog.push(new.clone());
+            }
+        }
+        self.filelog = filelog;
+        true
+    }
 }
 
 /// One ref update inside a [`PushDelta`]: hex oids, all-zeros meaning
@@ -172,6 +246,27 @@ pub struct PushApplied {
     pub results: Vec<Option<String>>,
     /// True iff at least one ref landed and the state was persisted.
     pub applied: bool,
+}
+
+/// One repack run's manifest change: replace a set of consumed pack ids
+/// (and their file-log segment ids) with the consolidated pack, in place.
+/// Applied via [`StateStore::apply_repack`], which — unlike a whole-document
+/// CAS — **commutes with racing pushes**: a push only appends packs, so it
+/// can never invalidate the swap. The swap fails only if a consumed id is
+/// gone, i.e. another repack raced this one. Serializable: it crosses the
+/// Durable Object boundary as JSON.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RepackSwap {
+    /// Pack ids consumed by the consolidation (all must still be present).
+    pub remove_packs: Vec<String>,
+    /// The consolidated pack, inserted at the first removed pack's position
+    /// so shadowing order relative to unselected packs is preserved.
+    pub new_pack: PackMeta,
+    /// File-log segment ids consumed by the merge (all must be present).
+    pub remove_filelog: Vec<String>,
+    /// The merged segment id (`None` when the merge produced no records).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub new_filelog: Option<String>,
 }
 
 /// Errors from the state store.
@@ -216,6 +311,13 @@ pub trait StateStore {
     /// appends. Bumps the version when applied, so racing `commit` callers
     /// (repack) observe the change.
     async fn apply_push(&self, repo: &str, delta: &PushDelta) -> Result<PushApplied, StateError>;
+
+    /// Atomically apply a repack's swap ([`RepoState::merge_repack`]):
+    /// replace the consumed pack/file-log ids with the consolidated ones,
+    /// in place. Returns `Ok(false)` (state untouched) when a consumed id is
+    /// gone — another repack raced. Racing *pushes* never conflict with
+    /// this: they only append. Bumps the version when applied.
+    async fn apply_repack(&self, repo: &str, swap: &RepackSwap) -> Result<bool, StateError>;
 }
 
 /// In-memory [`StateStore`] for tests/benchmarks. Cheap to clone and
@@ -281,6 +383,18 @@ impl StateStore for MemStateStore {
         let (mut state, version) = map.get(repo).cloned().unwrap_or((RepoState::empty(), 0));
         let applied = state.merge_push(delta);
         if applied.applied {
+            map.insert(repo.to_string(), (state, version + 1));
+        }
+        Ok(applied)
+    }
+
+    async fn apply_repack(&self, repo: &str, swap: &RepackSwap) -> Result<bool, StateError> {
+        let _t = crate::metrics::BackendTimer::start(crate::metrics::Op::DoRequest);
+        *self.ops.lock().unwrap() += 1;
+        let mut map = self.inner.lock().unwrap();
+        let (mut state, version) = map.get(repo).cloned().unwrap_or((RepoState::empty(), 0));
+        let applied = state.merge_repack(swap);
+        if applied {
             map.insert(repo.to_string(), (state, version + 1));
         }
         Ok(applied)
@@ -421,6 +535,76 @@ mod tests {
         state.merge_push(&d);
         assert_eq!(state.packs.len(), 1);
         assert_eq!(state.filelog.len(), 1);
+    }
+
+    fn pack(id: &str) -> PackMeta {
+        PackMeta {
+            id: id.to_string(),
+            bytes: 10,
+            objects: 2,
+        }
+    }
+
+    #[test]
+    fn merge_repack_replaces_in_place() {
+        let mut state = RepoState::empty();
+        state.packs = vec![pack("base"), pack("p1"), pack("p2"), pack("p3")];
+        state.filelog = vec!["p1".into(), "p2".into(), "p3".into()];
+        let ok = state.merge_repack(&RepackSwap {
+            remove_packs: vec!["p1".into(), "p2".into()],
+            new_pack: pack("m-1"),
+            remove_filelog: vec!["p1".into(), "p2".into()],
+            new_filelog: Some("m-1".into()),
+        });
+        assert!(ok);
+        let ids: Vec<&str> = state.packs.iter().map(|p| p.id.as_str()).collect();
+        assert_eq!(ids, vec!["base", "m-1", "p3"], "in-place, order preserved");
+        assert_eq!(state.filelog, vec!["m-1".to_string(), "p3".to_string()]);
+    }
+
+    #[test]
+    fn merge_repack_commutes_with_racing_push_appends() {
+        // Repack planned against [p1, p2]; a push appends p3 before the swap
+        // lands. The swap still applies; p3 is untouched.
+        let mut state = RepoState::empty();
+        state.packs = vec![pack("p1"), pack("p2")];
+        state.merge_push(&PushDelta {
+            ref_updates: vec![RefDelta {
+                name: "refs/heads/x".into(),
+                old: ZERO.into(),
+                new: "a".repeat(40),
+            }],
+            new_pack: Some(pack("p3")),
+            filelog: Some("p3".into()),
+            last_push_ms: 1,
+        });
+        let ok = state.merge_repack(&RepackSwap {
+            remove_packs: vec!["p1".into(), "p2".into()],
+            new_pack: pack("m-1"),
+            remove_filelog: vec![],
+            new_filelog: None,
+        });
+        assert!(ok, "push appends never invalidate a repack swap");
+        let ids: Vec<&str> = state.packs.iter().map(|p| p.id.as_str()).collect();
+        assert_eq!(ids, vec!["m-1", "p3"]);
+        assert_eq!(state.filelog, vec!["p3".to_string()]);
+    }
+
+    #[test]
+    fn merge_repack_conflicts_when_a_consumed_pack_is_gone() {
+        // A racing repack already consumed p1: the swap must not apply.
+        let mut state = RepoState::empty();
+        state.packs = vec![pack("m-other"), pack("p2")];
+        state.filelog = vec!["p2".into()];
+        let before = state.clone();
+        let ok = state.merge_repack(&RepackSwap {
+            remove_packs: vec!["p1".into(), "p2".into()],
+            new_pack: pack("m-1"),
+            remove_filelog: vec![],
+            new_filelog: None,
+        });
+        assert!(!ok);
+        assert_eq!(state, before, "state untouched on conflict");
     }
 
     #[test]

@@ -17,7 +17,7 @@
 use crate::http::{GitHttp, Request as HttpRequest};
 use crate::metrics::{BackendTimer, Op};
 use crate::protocol::BodyStream;
-use crate::refs::{PushApplied, PushDelta, RepoState, StateError, StateStore};
+use crate::refs::{PushApplied, PushDelta, RepackSwap, RepoState, StateError, StateStore};
 use crate::storage::{Result as StorageResult, StorageError, Store, Uploader};
 use async_trait::async_trait;
 use futures::StreamExt;
@@ -257,6 +257,23 @@ impl DurableObject for RepoStateDo {
                 }
                 Response::from_json(&applied)
             }
+            // Repack's manifest swap: replace consumed pack/file-log ids
+            // with the consolidated ones, in place. Commutes with racing
+            // pushes (they only append); fails only if another repack
+            // consumed one of the same ids first.
+            "/swap" => {
+                let swap: RepackSwap = req.json().await?;
+                let mut state: RepoState = storage
+                    .get("state")
+                    .await
+                    .unwrap_or_else(|_| RepoState::empty());
+                let applied = state.merge_repack(&swap);
+                if applied {
+                    self.state.storage().put("state", &state).await?;
+                    self.state.storage().put("version", version + 1).await?;
+                }
+                Response::from_json(&serde_json::json!({ "applied": applied }))
+            }
             _ => Response::error("not found", 404),
         }
     }
@@ -351,6 +368,22 @@ impl StateStore for DoStateStore {
         resp.json()
             .await
             .map_err(|e| StateError::Backend(e.to_string()))
+    }
+
+    async fn apply_repack(&self, repo: &str, swap: &RepackSwap) -> Result<bool, StateError> {
+        let body = serde_json::to_string(swap).map_err(|e| StateError::Backend(e.to_string()))?;
+        let mut resp = self.call(repo, "/swap", Some(body)).await?;
+        if resp.status_code() != 200 {
+            return Err(StateError::Backend(format!(
+                "swap failed with status {}",
+                resp.status_code()
+            )));
+        }
+        let value: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| StateError::Backend(e.to_string()))?;
+        Ok(value["applied"].as_bool().unwrap_or(false))
     }
 }
 
