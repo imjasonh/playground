@@ -15,7 +15,10 @@ Status: **design only, not yet built.** This document proposes, in order:
    **two-party approval**, and rules can require **review approval for
    merges into protected branches**. Both write **signed audit records
    into the repo itself**, in a form that stays cheap to store and O(1)
-   to query. Service accounts can never approve.
+   to query. Service accounts can never approve. For monorepos, policy
+   layers: an API-managed **root policy** applies to the whole repo and
+   delegates path-confined, monotonically-tightening **subtree policies**
+   to directory owners.
 4. **Content checks** — budgeted blob scanning (secret patterns, lint
    rules) inside the policy engine.
 
@@ -155,6 +158,7 @@ Access-token claims:
   "scope": {                        // the token's CAP, not a grant
     "repos": ["*"],                 // repo-name globs
     "refs":  ["refs/heads/feature/*"],  // ref globs; ["*"] = unrestricted
+    "paths": ["services/payments/**"],  // write-path globs (monorepos)
     "permissions": ["repo.read", "repo.push", "refs.create"]
   }
 }
@@ -320,11 +324,13 @@ role-editor surface.
 
 * **Per-repo grants** live on `RepoState` (the per-repo DO document,
   already loaded by every request): `visibility: "public" | "private"`,
-  plus `grants: { principal → { role, permissions: [...] } }`, where a
-  principal is a user login or a service account (`sa:deploy-bot`) —
-  grants are kind-blind; only approval acts (phase 3) discriminate. Well
-  under the 128 KiB DO value cap. Edited via `GET/PUT /api/<repo>/access`
-  (`repo.manageAccess`).
+  plus `grants: { principal → { role, permissions: [...], paths: [...] } }`,
+  where a principal is a user login or a service account (`sa:deploy-bot`)
+  — grants are kind-blind; only approval acts (phase 3) discriminate. The
+  optional `paths` globs confine a grant's *write* authority (and its
+  `policy.approve` coverage) to a subtree — the monorepo ownership story,
+  detailed in phase 3's monorepo section. Well under the 128 KiB DO value
+  cap. Edited via `GET/PUT /api/<repo>/access` (`repo.manageAccess`).
 * **Server-wide roles** live on the user record and are embedded in the
   JWT's `roles` claim (stale ≤ token lifetime).
 * The **first authenticated push** to an empty repo grants the pusher
@@ -341,6 +347,9 @@ effective(request) =
   ∩ (repo matches token.scope.repos)
 allowed = required_permission ∈ effective
         ∧ (if the action targets a ref: ref matches token.scope.refs)
+        ∧ (if the action writes tree content and the grant or token scope
+           is path-confined: every changed path matches — evaluated at the
+           apply stage from the same tree diff tier-2 policy uses)
 ```
 
 Anonymous requests get `repo.read` on public repos and nothing else.
@@ -398,6 +407,11 @@ name  = "workflows-frozen"
 paths = [".github/workflows/**"]     # glob on changed paths (tree diff)
 deny  = ["add", "modify", "delete"]  # overridable (the default) — but only
                                      # via two-party approval (see below)
+
+[[rule]]
+name = "policy-files-guarded"
+paths = ["**/.policy.toml"]          # subtree policies (see Monorepos) change
+deny  = ["add", "modify", "delete"]  # only via two-party override
 
 [[rule]]
 name = "no-big-blobs"
@@ -684,6 +698,118 @@ token did this" to "alice's own key signed this" — but it drags in client
 key management for marginal gain over authenticated bearer requests.
 Noted as a possible later hardening, not designed here.
 
+### Monorepos: root policy plus delegated subtree policies
+
+The engine is monorepo-friendly on *cost* by construction — every
+evaluation scales with the change, not the repo: path rules ride
+`diff_trees` (∝ changed paths), content rules scan only blobs the push
+introduces, audit lookups are O(1) by commit. What a monorepo adds is
+*organizational*: directories owned by different teams, each wanting its
+own rules and reviewers, without every change funneling through whoever
+holds `repo.managePolicy`. Three additions cover it.
+
+#### Path-scoped IAM (ownership)
+
+Grants and token scopes optionally carry `paths` globs (shapes shown in
+phases 1–2):
+
+```jsonc
+"grants": {
+  "sa:payments-ci": { "role": "writer", "paths": ["services/payments/**"] },
+  "carol":          { "role": "writer", "paths": ["services/payments/**"] }
+}
+```
+
+A path-confined writer's push may only touch matching paths — checked at
+the apply stage against the same `diff_trees` output tier-2 rules use;
+anything else is `ng <ref> grant does not cover path <path>`. Token
+`scope.paths` is the same check as a cap (mint the payments-CI token so
+it *couldn't* touch `services/billing/**` even if the account could).
+Like ref scoping, path scoping is **write-only** — read stays
+repo-granular, by the same shared-object-graph argument. Path-confined
+`policy.approve` is what makes review path-aware, below.
+
+#### Delegated subtree policies
+
+Two policy layers:
+
+* The **root policy** — the API-managed document on `RepoState`, exactly
+  as designed above. It applies to the whole repo unconditionally, and it
+  is the only layer that can declare **delegations**:
+
+```toml
+[[delegate]]
+path  = "services/payments"
+allow = ["paths", "commit", "content", "review"]  # rule kinds the subtree may add
+```
+
+* A **subtree policy** — an ordinary committed file,
+  `services/payments/.policy.toml`, owned and evolved by the team that
+  owns the directory, subject to two invariants enforced when the server
+  loads it:
+
+  * **Confinement.** Every subtree rule's path scope is intersected with
+    the delegated subtree. A subtree policy cannot observe, much less
+    constrain, anything outside its directory, and may only use the rule
+    kinds its delegation allows.
+  * **Monotonicity.** Subtree rules only *add* checks. They cannot mark a
+    root rule overridable, relax a budget, waive a review requirement, or
+    grant anything. Where both layers speak, the stricter wins. (This is
+    what makes in-repo policy safe at all — the root layer's guarantees
+    are unconditional, so the worst a subtree file can do is over-tighten
+    its own directory.)
+
+Evaluation stays cheap because delegations are **explicitly enumerated**
+in the root policy: after `diff_trees`, the server knows which delegated
+roots the push touched, reads exactly those `.policy.toml` blobs
+(size-capped, through the same budgeted read path as content rules — a
+push touching no delegated subtree reads none), and evaluates their rules
+alongside the root's. No repo-wide policy discovery walk, ever.
+
+**Which version of a policy file governs?** The one in the **old tree of
+the ref being pushed** — the policy in force when the push arrives. A
+push that edits `.policy.toml` is judged under the *previous* rules (a
+push can never weaken the rules that judge it) and its changes take
+effect from the next push. Branch creations (old = zero) are judged under
+the root policy alone. And `.policy.toml` files are themselves just
+files: the root policy sample above freezes `**/.policy.toml` behind the
+two-party override, so subtree-policy evolution is itself audited; a
+`require_review` + path-aware setup works too.
+
+#### Path-aware review (owners)
+
+```toml
+[[rule]]
+name  = "owners-review"
+refs  = ["refs/heads/main"]
+require_review = { approvals = 1, per_path = true }
+```
+
+With `per_path = true`, every path the push changes must be covered by at
+least one matching approval whose approver's `policy.approve` grant
+covers that path (a path-unconfined approve grant covers everything).
+This is the CODEOWNERS idea with the membership kept in IAM grants
+instead of a usernames file in the repo — the same no-user-lists-in-policy
+principle as overrides, and the same place grants already live. A subtree
+policy may require review for its own directory even when the root
+doesn't (a monotonic add); the root's `per_path` rule automatically
+*becomes* owner-review wherever owners are path-confined.
+
+Audit records for `per_path` reviews embed each approval's covered paths,
+so "who approved the change to `services/payments/api.rs` in that merge"
+is still the same single record lookup by commit oid.
+
+#### Scale honesty
+
+The grants document shares `RepoState`'s 128 KiB DO value cap. Hundreds
+of principals with path lists fit comfortably; a monorepo with thousands
+of individually-granted engineers hits the same wall the design already
+acknowledges for refs-heavy repos (state-doc sharding,
+`design.md` → Size limits) — and groups (open question) are the real
+compression: grant `group:payments` once, membership lives in the auth
+store. Subtree policy count is a non-issue: files live in the repo,
+and only the touched ones are ever read.
+
 ### Semantics
 
 * Rules evaluate **per ref command**, against the facts of the commits that
@@ -805,6 +931,7 @@ blobs so the gap is visible.
 | 2 | permission/role model, grants on `RepoState` (users + service accounts), `/api/<repo>/access`, `PUT /api/<repo>/head`, token scope caps + ref-scope enforcement, claim-on-first-push, 401/403 flow | every permission's allow and deny; scoped-token narrowing (never widening); ref-scope rejection before ingest; default-branch permission split |
 | 3 | `src/policy.rs`, policy storage + API, tiers 0–3, approvals (`/api/<repo>/approvals`, both uses), `require_review`, audit records on `refs/audit`, audit flattening in maintenance, warn channel | every rule type's reject *and* warn branch; the two-party matrix (self-approval, neither-permissioned, expired/consumed/revoked approval, oid-bound mismatch); **service-account approval rejected** (both uses); review satisfaction arms (fast-forward to approved oid; merge of old + approved; N-distinct-approvers); single-use under concurrent pushes; pending-approval cap; audit-record signature round-trip against the JWKS; audit lookup by commit oid via the file API; flattening preserves the tree; `refs/audit/**` unwritable by clients; policy-validation-at-write |
 | 4 | content scanner, pattern packs, lint checks, budgets | secret hit / lint hit / budget-exceeded paths; memory-test variant under `TRANSIENT_BUDGET` |
+| 5 | monorepo layer: path-confined grants + token `scope.paths`, delegation loader, subtree `.policy.toml` evaluation, `per_path` review | path-grant coverage allow/deny (push touching in/out-of-grant paths); scope-cap narrowing; confinement and monotonicity rejected at subtree-policy load; old-tree governance (a push editing `.policy.toml` is judged by the previous version); per-path coverage matrix incl. mixed-ownership pushes; delegated-read budget |
 
 Each phase updates `docs/api.md` in the same change (hard rule), and each
 new rejection path ships with the test that triggers it. The credential
@@ -819,12 +946,14 @@ conventions.
   provider is real.
 * **Custom roles / groups.** Individual-permission grants cover the known
   cases; a role editor is deferred until repeated grants make one earn its
-  keep. Groups are the same question wearing an override hat: if some rule
-  ever needs a *specific* approver set ("only the release team may approve
-  overrides of `workflows-frozen`"), the mechanism should be IAM groups as
-  grantees of `policy.override` — possibly per-rule `approvers = "group:…"`
-  referencing them — not user lists inside policy documents. Deferred until
-  a real case.
+  keep. Groups are the same question wearing two hats: per-rule approver
+  sets ("only the release team may approve overrides of
+  `workflows-frozen`") and monorepo ownership at scale (grant
+  `group:payments` → `paths: ["services/payments/**"]` once, instead of
+  per-engineer grants pressing on the DO value cap). Both point at IAM
+  groups as grantees — membership in the auth store, never user lists
+  inside policy documents. Deferred until a real case, but the monorepo
+  layer is where it will first pinch.
 * **Sock-puppet approvals, residual.** Service accounts can't approve
   (hard rule), which closes the human-plus-their-bot quorum. The residual
   is one human with two *user* accounts — only upstream-provider identity
