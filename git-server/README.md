@@ -6,8 +6,9 @@ transactional ref updates. Stock `git` clients push and pull against it; a
 JSON API serves file contents, directory listings, and line-level blame that
 are consistent the moment a push is acknowledged.
 
-See [`docs/design.md`](docs/design.md) for the architecture, streaming
-strategy, cost model, and repacking design.
+See [`docs/api.md`](docs/api.md) for the full API reference, and
+[`docs/design.md`](docs/design.md) for the architecture, streaming strategy,
+cost model, and repacking design.
 
 ```
 git clone https://<worker-host>/<repo>          # protocol v2 fetch
