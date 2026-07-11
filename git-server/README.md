@@ -120,6 +120,12 @@ packs (see `src/maintenance.rs`).
   into several pushes of ≤100 MB (`git push origin <old-sha>:refs/heads/main`,
   then newer commits). Pulls/clones are streamed and have no practical size
   cap. See "Size limits" in [`docs/design.md`](docs/design.md).
+* **Requires a paid Workers plan** (Workers Standard, $5/mo). The push
+  pipeline scans the pack (CPU-bound), and the free plan's ~2 s CPU cap
+  kills pushes above ~40 MB; the paid plan lets `wrangler.toml` raise
+  `limits.cpu_ms` (set to the 300 s max here). The 128 MiB isolate *memory*
+  limit is the same on both plans — clones/pulls stream to stay under it
+  regardless.
 * Clients need git ≥ 2.26 (protocol v2 for fetch — the default since 2.26).
 * SHA-1 repositories (git's default object format).
 * No shallow or partial clone (`--depth`, `--filter`) yet; rejected cleanly.

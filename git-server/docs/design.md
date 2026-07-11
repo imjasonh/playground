@@ -416,10 +416,32 @@ it. This is the most important operational limitation of the service today.
 Practical workaround for large imports: split history into several pushes
 (`git push origin <old-sha>:refs/heads/main`, then progressively newer
 commits), each under the limit; maintenance repacks the resulting packs into
-one anyway. Behind that ceiling sit our own (higher) bounds: ingest CPU
-(~0.5-1 GiB per push at the default 30 s CPU budget; raisable via
-`limits.cpu_ms`, then the resumable-ingest extension) and ~50 B/entry scan
-metadata (~1M objects per push comfortably).
+one anyway.
+
+**A paid Workers plan is required to reach that ceiling.** The push pipeline
+scans the pack as it streams in (zlib-bound, ~30 MiB/s on wasm), so a large
+push needs several CPU-seconds. The **free plan's ~2 s per-invocation CPU
+cap** kills pushes at ~40 MB — and, tellingly, the failure surfaces to the
+client as a bare `error code: 1102` / 503, *identical to an out-of-memory
+kill* unless you look at the invocation's `outcome` field
+(`exceededCpu` vs `exceededMemory`). That ambiguity sent an early
+investigation chasing a memory bug that wasn't there; enabling persistent
+logs (the `outcome` field) is what finally distinguished them. The paid plan
+(Workers Standard, $5/mo) lets us raise the budget via `limits.cpu_ms`; we
+set the maximum (`cpu_ms = 300000` in `wrangler.toml`), which makes CPU a
+non-issue below the request-body cap. **Measured on the paid plan:** a real
+`git push` of a 90 MB incompressible repo completes (`outcome: ok`,
+~2.75 s CPU) and clones back byte-identical. Behind the edge cap sit only
+our own (higher) bounds now: ~50 B/entry scan metadata (~1M objects per
+push comfortably) and the per-push size guard.
+
+Note the memory/CPU split by plan: the **128 MiB isolate memory limit
+applies on every plan** (so the streamed fetch/clone response — never
+buffering a whole pack — is load-bearing regardless of plan), whereas the
+CPU cap is the only thing the paid upgrade lifts. Ingest itself is bounded
+memory on any plan (streamed straight to the R2 multipart upload while
+scanned in place — a carry buffer + 32 KiB inflate scratch + ~50 B/entry),
+so it is CPU, not memory, that gates push size.
 
 **Enforced locally, not just at the edge.** Because the 413 happens in
 Cloudflare's proxy, neither the native harness nor workerd under `wrangler
