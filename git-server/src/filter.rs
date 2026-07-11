@@ -4,8 +4,6 @@
 //! fails the filter is omitted from the pack **unless** it was named in an
 //! explicit `want` line (so a follow-up blob fetch after `blob:none` works).
 
-use crate::object::ObjType;
-
 /// A parsed object filter. Currently: `blob:none`, `blob:limit=<n>`, and
 /// `tree:<depth>` (the filters stock `git clone --filter=…` uses).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,7 +33,7 @@ impl ObjectFilter {
         if let Some(rest) = spec.strip_prefix("tree:") {
             let depth: usize = rest
                 .parse()
-                .map_err(|_| format!("bad tree: depth: {rest}"))?;
+                .map_err(|_| format!("bad tree filter depth: {rest}"))?;
             return Ok(ObjectFilter::TreeDepth(depth));
         }
         Err(format!("unsupported filter-spec: {spec}"))
@@ -62,16 +60,6 @@ impl ObjectFilter {
             // Callers only ask about blobs for entries under an included tree;
             // tree:N still omits those blobs (matching git's tree:N filter).
             ObjectFilter::TreeDepth(_) => false,
-        }
-    }
-
-    /// Type-level check used when we already know `(type, size)`.
-    pub fn include_object(&self, ty: ObjType, size: u64, tree_depth: usize) -> bool {
-        match ty {
-            ObjType::Blob => self.include_blob(size),
-            ObjType::Tree => self.include_tree_at(tree_depth),
-            // Commits/tags are never filtered by these specs.
-            ObjType::Commit | ObjType::Tag => true,
         }
     }
 }
@@ -162,8 +150,6 @@ mod tests {
         assert!(!f.include_blob(1_000_000));
         assert!(f.include_tree_at(0));
         assert!(f.include_tree_at(99));
-        assert!(f.include_object(ObjType::Commit, 0, 0));
-        assert!(!f.include_object(ObjType::Blob, 10, 0));
     }
 
     #[test]

@@ -88,14 +88,12 @@ pub trait Store {
 pub const BLOCK_SIZE: u64 = 4 * 1024 * 1024;
 
 /// Cached blocks per reader (LRU). 4 × 4 MiB = 16 MiB ceiling per instance.
-/// Unlike the odb/resolve content caches (restored after the memory scare
-/// turned out to be a free-tier CPU limit), this one is intentionally *not*
-/// raised: the ceiling is per *pack*, so in a multi-pack odb it multiplies
-/// (N packs × 16 MiB) — a real memory concern, not a phantom one. Bulk
-/// access is offset-sorted (fetch emission, repack, delta resolution), so a
-/// small sequential window suffices anyway; a bigger cache would add memory
-/// risk without cutting reads. (A shared cross-pack budget is the right
-/// lever if this ever needs to grow.)
+/// This ceiling is per *pack*, so in a multi-pack odb it multiplies
+/// (N packs × 16 MiB) — keep it small. Bulk access is offset-sorted (fetch
+/// emission, repack, delta resolution), so a small sequential window
+/// suffices; a bigger cache would add memory risk without cutting reads.
+/// (A shared cross-pack budget is the right lever if this ever needs to
+/// grow.)
 const BLOCK_CACHE_SLOTS: usize = 4;
 
 /// A block-aligned, LRU-cached ranged reader over one stored object.
@@ -326,6 +324,20 @@ mod tests {
             assert_eq!(s.get("missing").await.unwrap(), None);
             s.delete("k").await.unwrap();
             assert_eq!(s.get("k").await.unwrap(), None);
+        });
+    }
+
+    #[test]
+    fn block_reader_rejects_read_past_end() {
+        block_on(async {
+            let s = MemStore::new();
+            s.put("obj", b"0123456789".to_vec()).await.unwrap();
+            let r = BlockReader::new("obj");
+            assert_eq!(s.size("obj").await.unwrap(), Some(10));
+            assert_eq!(r.read(&s, 2, 6).await.unwrap(), b"2345");
+            // A range starting beyond the object is corruption, not empty.
+            let err = r.read(&s, 20, 25).await.unwrap_err();
+            assert!(err.0.contains("read past end"), "{}", err.0);
         });
     }
 

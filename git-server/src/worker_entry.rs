@@ -7,8 +7,8 @@
 //!   packs flow to R2 without ever being resident in the isolate;
 //! * [`DoStateStore`] — implements [`crate::refs::StateStore`] by calling the
 //!   per-repo `RepoStateDo` Durable Object, the repo's single serialization
-//!   point (load, whole-document CAS commit for maintenance, and per-push
-//!   merge-apply, over a tiny JSON protocol);
+//!   point (load, per-push merge-apply, and the repack manifest swap, over a
+//!   tiny JSON protocol);
 //! * `#[event(fetch)]` — adapts the Workers request (streamed body) to
 //!   [`crate::http::GitHttp`];
 //! * `#[event(scheduled)]` — walks the repo registry (a KV namespace,
@@ -38,6 +38,18 @@ fn s_err<E: std::fmt::Display>(e: E) -> StorageError {
     StorageError(e.to_string())
 }
 
+/// Materialize an R2 object body (shared by `get` / `get_range`): a present
+/// object with no body reads as empty bytes.
+async fn object_bytes(got: Option<worker::Object>) -> StorageResult<Option<Vec<u8>>> {
+    match got {
+        Some(obj) => match obj.body() {
+            Some(body) => Ok(Some(body.bytes().await.map_err(s_err)?)),
+            None => Ok(Some(Vec::new())),
+        },
+        None => Ok(None),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // R2-backed Store
 // ---------------------------------------------------------------------------
@@ -64,13 +76,8 @@ impl Store for R2Store {
 
     async fn get(&self, key: &str) -> StorageResult<Option<Vec<u8>>> {
         let _t = BackendTimer::start(Op::R2ClassB);
-        match self.bucket.get(key).execute().await.map_err(s_err)? {
-            Some(obj) => match obj.body() {
-                Some(body) => Ok(Some(body.bytes().await.map_err(s_err)?)),
-                None => Ok(Some(Vec::new())),
-            },
-            None => Ok(None),
-        }
+        let got = self.bucket.get(key).execute().await.map_err(s_err)?;
+        object_bytes(got).await
     }
 
     async fn get_range(&self, key: &str, offset: u64, len: u64) -> StorageResult<Option<Vec<u8>>> {
@@ -85,13 +92,7 @@ impl Store for R2Store {
             .execute()
             .await
             .map_err(s_err)?;
-        match got {
-            Some(obj) => match obj.body() {
-                Some(body) => Ok(Some(body.bytes().await.map_err(s_err)?)),
-                None => Ok(Some(Vec::new())),
-            },
-            None => Ok(None),
-        }
+        object_bytes(got).await
     }
 
     async fn size(&self, key: &str) -> StorageResult<Option<u64>> {
@@ -136,11 +137,8 @@ struct R2Uploader {
 }
 
 impl R2Uploader {
-    async fn flush_part(&mut self) -> StorageResult<()> {
-        if self.buf.is_empty() {
-            return Ok(());
-        }
-        let data = std::mem::take(&mut self.buf);
+    /// Upload one part (the only place part numbers advance).
+    async fn upload_part(&mut self, data: Vec<u8>) -> StorageResult<()> {
         let _t = BackendTimer::start(Op::R2ClassA);
         let part = self
             .upload
@@ -150,6 +148,14 @@ impl R2Uploader {
         self.parts.push(part);
         self.next_part += 1;
         Ok(())
+    }
+
+    async fn flush_part(&mut self) -> StorageResult<()> {
+        if self.buf.is_empty() {
+            return Ok(());
+        }
+        let data = std::mem::take(&mut self.buf);
+        self.upload_part(data).await
     }
 }
 
@@ -161,14 +167,7 @@ impl Uploader for R2Uploader {
         while self.buf.len() >= PART_SIZE {
             let rest = self.buf.split_off(PART_SIZE);
             let full = std::mem::replace(&mut self.buf, rest);
-            let _t = BackendTimer::start(Op::R2ClassA);
-            let part = self
-                .upload
-                .upload_part(self.next_part, full)
-                .await
-                .map_err(s_err)?;
-            self.parts.push(part);
-            self.next_part += 1;
+            self.upload_part(full).await?;
         }
         Ok(())
     }
@@ -198,20 +197,14 @@ struct LoadReply {
 }
 
 #[derive(Serialize, Deserialize)]
-struct CommitRequest {
-    expected_version: u64,
-    state: RepoState,
-}
-
-#[derive(Serialize, Deserialize)]
 struct LeaseRequest {
     now_ms: i64,
     ttl_ms: i64,
 }
 
 /// The per-repo Durable Object. Every request for a given repo name routes to
-/// the same instance, whose single-threaded execution makes `commit` a true
-/// compare-and-swap.
+/// the same instance, whose single-threaded execution makes each merge-apply
+/// endpoint (`/apply-push`, `/swap`) an atomic read-merge-write.
 #[durable_object]
 pub struct RepoStateDo {
     state: State,
@@ -234,22 +227,11 @@ impl DurableObject for RepoStateDo {
                     .unwrap_or_else(|_| RepoState::empty());
                 Response::from_json(&LoadReply { state, version })
             }
-            "/commit" => {
-                let body: CommitRequest = req.json().await?;
-                if body.expected_version != version {
-                    return Response::error("conflict", 409);
-                }
-                let next = version + 1;
-                self.state.storage().put("state", &body.state).await?;
-                self.state.storage().put("version", next).await?;
-                Response::from_json(&serde_json::json!({ "version": next }))
-            }
             // Merge-apply one push's delta against the current state
             // (per-ref CAS + commuting appends). Single-threaded execution
             // plus the storage input gate make read-merge-write atomic, so
-            // concurrent pushes to disjoint refs all land instead of racing
-            // one whole-document CAS. Bumps the version so a racing repack's
-            // `/commit` still loses.
+            // concurrent pushes to disjoint refs all land. Bumps the
+            // monotonic state version surfaced by the status API.
             "/apply" => {
                 let delta: PushDelta = req.json().await?;
                 let mut state: RepoState = storage
@@ -352,34 +334,6 @@ impl StateStore for DoStateStore {
             .await
             .map_err(|e| StateError::Backend(e.to_string()))?;
         Ok((reply.state, reply.version))
-    }
-
-    async fn commit(
-        &self,
-        repo: &str,
-        expected_version: u64,
-        state: &RepoState,
-    ) -> Result<u64, StateError> {
-        let body = serde_json::to_string(&CommitRequest {
-            expected_version,
-            state: state.clone(),
-        })
-        .map_err(|e| StateError::Backend(e.to_string()))?;
-        let mut resp = self.call(repo, "/commit", Some(body)).await?;
-        if resp.status_code() == 409 {
-            return Err(StateError::Conflict);
-        }
-        if resp.status_code() != 200 {
-            return Err(StateError::Backend(format!(
-                "commit failed with status {}",
-                resp.status_code()
-            )));
-        }
-        let value: serde_json::Value = resp
-            .json()
-            .await
-            .map_err(|e| StateError::Backend(e.to_string()))?;
-        Ok(value["version"].as_u64().unwrap_or(0))
     }
 
     async fn apply_push(&self, repo: &str, delta: &PushDelta) -> Result<PushApplied, StateError> {

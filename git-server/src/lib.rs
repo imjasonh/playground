@@ -35,6 +35,7 @@
 //! model, and repacking design.
 
 pub mod blame;
+pub(crate) mod cache;
 pub mod diff;
 pub mod fileapi;
 pub mod filter;
@@ -51,6 +52,8 @@ pub mod protocol;
 pub mod refs;
 pub mod repo;
 pub mod storage;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod testutil;
 pub mod timing;
 
 #[cfg(target_arch = "wasm32")]

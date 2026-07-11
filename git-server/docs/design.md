@@ -40,11 +40,12 @@ Object:
 }
 ```
 
-The document is versioned. Maintenance (repack) updates it by whole-document
-compare-and-swap on the version; pushes send a **delta** (per-ref old→new
-updates plus pack/file-log appends) that the DO merges atomically against the
-current state — per-ref CAS, git's actual contract. This split is the whole
-consistency story:
+The document carries a monotonic version (bumped on every applied change,
+surfaced by the status API). Pushes send a **delta** (per-ref old→new updates
+plus pack/file-log appends) that the DO merges atomically against the current
+state — per-ref CAS, git's actual contract. Maintenance (repack) applies a
+**manifest swap** that replaces exactly the pack/segment ids it consumed (see
+"Repacking"). This split is the whole consistency story:
 
 * R2 objects are immutable and written *before* the state document references
   them, so a reader can never see a dangling reference.
@@ -407,8 +408,10 @@ pushes/clones of >~30 MiB repos fail intermittently. Three consequences:
   after the streaming rewrite: push ≈ 32 MiB peak / ~0 transient over
   stored-bytes growth; clone ≈ 21 MiB peak while streaming 48 MiB.
 * **Cache budgets are small and permanent-growth-aware** (wasm memory never
-  returns to the OS): odb content cache 24 MiB, delta-resolution cache
-  24 MiB, block cache 16 MiB per pack, multipart buffer 5 MiB.
+  returns to the OS): odb content cache 48 MiB (`CONTENT_CACHE_BUDGET`),
+  delta-resolution cache 32 MiB (`RESOLVE_CACHE_BUDGET`), block cache
+  16 MiB per pack (`BLOCK_SIZE` × `BLOCK_CACHE_SLOTS`), multipart buffer
+  5 MiB.
 
 Remaining bounds: push ingest is carry buffer + 32 KiB scratch + ~50 B/entry
 (the pack streams through 5 MiB multipart parts); the peak resident item is

@@ -6,7 +6,7 @@
 
 mod common;
 
-use common::{git, git_try, write_file, TestServer};
+use common::{deterministic_noise, git, git_try, write_file, TestServer};
 use serde_json::Value;
 use std::path::Path;
 use std::process::Command;
@@ -538,14 +538,7 @@ fn rejects_push_over_size_limit() {
     git(&src, &["push", "-q", "origin", "main"]);
 
     // …but an incompressible 1 MiB blob blows the 256 KiB limit.
-    let mut data = Vec::with_capacity(1024 * 1024);
-    let mut x = 0x2545f4914f6cdd1du64;
-    while data.len() < 1024 * 1024 {
-        x ^= x << 13;
-        x ^= x >> 7;
-        x ^= x << 17;
-        data.extend_from_slice(&x.to_le_bytes());
-    }
+    let data = deterministic_noise(1024 * 1024, 0x2545f4914f6cdd1d);
     std::fs::write(src.join("big.bin"), &data).unwrap();
     git(&src, &["add", "."]);
     git(&src, &["commit", "-q", "-m", "too big"]);
@@ -788,14 +781,7 @@ fn large_blob_roundtrip() {
     git(&src, &["remote", "add", "origin", &server.url("big")]);
 
     // ~8 MiB of pseudo-random (incompressible) bytes.
-    let mut data = Vec::with_capacity(8 * 1024 * 1024);
-    let mut x = 0x9e3779b97f4a7c15u64;
-    while data.len() < 8 * 1024 * 1024 {
-        x ^= x << 13;
-        x ^= x >> 7;
-        x ^= x << 17;
-        data.extend_from_slice(&x.to_le_bytes());
-    }
+    let data = deterministic_noise(8 * 1024 * 1024, 0x9e3779b97f4a7c15);
     std::fs::write(src.join("blob.bin"), &data).unwrap();
     git(&src, &["add", "."]);
     git(&src, &["commit", "-q", "-m", "big blob"]);
@@ -861,4 +847,282 @@ fn assert_blame_matches(server: &TestServer, src: &std::path::Path, path: &str) 
         got, expected,
         "blame mismatch for {path}: ours vs git blame"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Protocol edge cases driven without a git client (raw v2 POST bodies).
+// ---------------------------------------------------------------------------
+
+/// Build a protocol-v2 command request body (command, delim, args, flush).
+fn v2_body(command: &str, args: &[&str]) -> Vec<u8> {
+    use git_server::pktline;
+    let mut b = Vec::new();
+    b.extend_from_slice(&pktline::text_pkt(&format!("command={command}")));
+    b.extend_from_slice(pktline::delim_pkt());
+    for a in args {
+        b.extend_from_slice(&pktline::text_pkt(a));
+    }
+    b.extend_from_slice(pktline::flush_pkt());
+    b
+}
+
+/// Push one commit so the repo is non-empty; returns its tip oid.
+fn seed_one_commit(server: &TestServer, tmp: &Path, repo: &str) -> String {
+    let src = tmp.join(format!("seed-{repo}"));
+    std::fs::create_dir(&src).unwrap();
+    git(&src, &["init", "-q", "-b", "main", "."]);
+    git(&src, &["remote", "add", "origin", &server.url(repo)]);
+    write_file(&src, "f.txt", "seed\n");
+    git(&src, &["add", "."]);
+    git(&src, &["commit", "-q", "-m", "seed"]);
+    git(&src, &["push", "-q", "origin", "main"]);
+    git(&src, &["rev-parse", "HEAD"]).trim().to_string()
+}
+
+/// Every in-band fetch rejection answers 200 with an `ERR` pkt (not an HTTP
+/// error), which is what lets stock git print the server's message.
+#[test]
+fn fetch_error_responses() {
+    let server = TestServer::start();
+    let tmp = tempfile::tempdir().unwrap();
+    let tip = seed_one_commit(&server, tmp.path(), "errs");
+
+    let post = |body: Vec<u8>| -> String {
+        let (status, resp) = server.post_with_body(
+            "/errs/git-upload-pack",
+            &[("Content-Type", "application/x-git-upload-pack-request")],
+            &body,
+        );
+        assert_eq!(status, 200);
+        String::from_utf8_lossy(&resp).into_owned()
+    };
+
+    // No wants at all.
+    let resp = post(v2_body("fetch", &["done"]));
+    assert!(resp.contains("ERR fetch: no wants"), "{resp}");
+
+    // Unsupported filter spec (partial clone supports blob/tree specs only).
+    let resp = post(v2_body(
+        "fetch",
+        &[&format!("want {tip}"), "filter sparse:oid=abc", "done"],
+    ));
+    assert!(resp.contains("ERR unsupported filter-spec"), "{resp}");
+
+    // Date-based shallow remains unsupported.
+    let resp = post(v2_body(
+        "fetch",
+        &[&format!("want {tip}"), "deepen-since 1700000000", "done"],
+    ));
+    assert!(
+        resp.contains("ERR unsupported fetch option: deepen-since"),
+        "{resp}"
+    );
+
+    // Fetch from a repo that has never been pushed to.
+    let (status, resp) = server.post_with_body(
+        "/nosuchrepo/git-upload-pack",
+        &[("Content-Type", "application/x-git-upload-pack-request")],
+        &v2_body("fetch", &[&format!("want {tip}"), "done"]),
+    );
+    assert_eq!(status, 200);
+    let resp = String::from_utf8_lossy(&resp);
+    assert!(resp.contains("ERR repository is empty"), "{resp}");
+}
+
+/// git gzips large negotiation POST bodies (`Content-Encoding: gzip`); the
+/// server must transparently decode them.
+#[test]
+fn gzip_encoded_request_body() {
+    use std::io::Write;
+    let server = TestServer::start();
+    let tmp = tempfile::tempdir().unwrap();
+    seed_one_commit(&server, tmp.path(), "gz");
+
+    let body = v2_body("ls-refs", &["peel", "symrefs"]);
+    let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    enc.write_all(&body).unwrap();
+    let gzipped = enc.finish().unwrap();
+
+    let (status, resp) = server.post_with_body(
+        "/gz/git-upload-pack",
+        &[
+            ("Content-Type", "application/x-git-upload-pack-request"),
+            ("Content-Encoding", "gzip"),
+        ],
+        &gzipped,
+    );
+    assert_eq!(status, 200);
+    let text = String::from_utf8_lossy(&resp);
+    assert!(text.contains("refs/heads/main"), "{text}");
+    assert!(text.contains("HEAD"), "{text}");
+}
+
+/// A push whose pack bytes are garbage must be rejected without corrupting
+/// anything: the ref is not created and the repo stays usable.
+#[test]
+fn corrupt_pack_push_rejected() {
+    use git_server::pktline;
+    let server = TestServer::start();
+
+    let new_oid = "1".repeat(40);
+    let zero = "0".repeat(40);
+    let mut body = Vec::new();
+    body.extend_from_slice(&pktline::text_pkt(&format!(
+        "{zero} {new_oid} refs/heads/main\0report-status"
+    )));
+    body.extend_from_slice(pktline::flush_pkt());
+    body.extend_from_slice(b"THIS IS NOT A PACKFILE");
+
+    let (status, resp) = server.post_with_body(
+        "/corrupt/git-receive-pack",
+        &[("Content-Type", "application/x-git-receive-pack-request")],
+        &body,
+    );
+    let text = String::from_utf8_lossy(&resp);
+    assert!(status != 200 || text.contains("unpack"), "{status}: {text}");
+
+    // The bad push left no trace: repo still reports EMPTY.
+    let (status, body) = server.get("/api/corrupt");
+    assert_eq!(status, 200);
+    let s: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(s["status"], "EMPTY", "{s}");
+}
+
+/// A push that promises ref updates but sends no pack is an error, not a
+/// silent ref creation.
+#[test]
+fn push_without_pack_rejected() {
+    use git_server::pktline;
+    let server = TestServer::start();
+
+    let new_oid = "2".repeat(40);
+    let zero = "0".repeat(40);
+    let mut body = Vec::new();
+    body.extend_from_slice(&pktline::text_pkt(&format!(
+        "{zero} {new_oid} refs/heads/main\0report-status"
+    )));
+    body.extend_from_slice(pktline::flush_pkt());
+
+    let (status, resp) = server.post_with_body(
+        "/nopack/git-receive-pack",
+        &[("Content-Type", "application/x-git-receive-pack-request")],
+        &body,
+    );
+    let text = String::from_utf8_lossy(&resp);
+    assert!(
+        status != 200 || text.contains("no pack"),
+        "{status}: {text}"
+    );
+    let (_, body) = server.get("/api/nopack");
+    let s: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(s["status"], "EMPTY", "{s}");
+}
+
+/// Cloning a repo that has never been pushed to yields an empty local repo
+/// (unborn-HEAD advertisement), which can then push normally.
+#[test]
+fn clone_empty_repo_then_push() {
+    let server = TestServer::start();
+    let tmp = tempfile::tempdir().unwrap();
+
+    git(
+        tmp.path(),
+        &["clone", "-q", &server.url("virgin"), "empty-clone"],
+    );
+    let clone = tmp.path().join("empty-clone");
+    let (ok, _) = git_try(&clone, &["rev-parse", "--verify", "HEAD"]);
+    assert!(!ok, "fresh clone of empty repo has no commits");
+
+    // The clone is fully functional: commit and push upstream.
+    write_file(&clone, "hello.txt", "first\n");
+    git(&clone, &["add", "."]);
+    git(&clone, &["commit", "-q", "-m", "first"]);
+    git(&clone, &["push", "-q", "origin", "HEAD"]);
+
+    let (_, body) = server.get("/api/virgin");
+    let s: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(s["status"], "READY", "{s}");
+}
+
+/// `git ls-remote` shows annotated tags with their peeled (`^{}`) targets,
+/// which exercises the ls-refs `peel` argument.
+#[test]
+fn ls_remote_peels_annotated_tags() {
+    let server = TestServer::start();
+    let tmp = tempfile::tempdir().unwrap();
+    let src = tmp.path().join("src");
+    std::fs::create_dir(&src).unwrap();
+    git(&src, &["init", "-q", "-b", "main", "."]);
+    git(&src, &["remote", "add", "origin", &server.url("peel")]);
+    write_file(&src, "f.txt", "content\n");
+    git(&src, &["add", "."]);
+    git(&src, &["commit", "-q", "-m", "c1"]);
+    git(&src, &["tag", "-a", "v1", "-m", "annotated"]);
+    git(&src, &["push", "-q", "origin", "main", "v1"]);
+    let commit = git(&src, &["rev-parse", "HEAD"]).trim().to_string();
+    let tag = git(&src, &["rev-parse", "v1"]).trim().to_string();
+    assert_ne!(commit, tag, "annotated tag is its own object");
+
+    let out = git(&src, &["ls-remote", "origin"]);
+    assert!(
+        out.contains(&format!("{tag}\trefs/tags/v1")),
+        "tag object listed: {out}"
+    );
+    assert!(
+        out.contains(&format!("{commit}\trefs/tags/v1^{{}}")),
+        "peeled target listed: {out}"
+    );
+}
+
+/// A path that flips between file and directory across commits exercises the
+/// tree-diff merge walk's rename-kind arms (file->dir and dir->file).
+#[test]
+fn path_flips_between_file_and_directory() {
+    let server = TestServer::start();
+    let tmp = tempfile::tempdir().unwrap();
+    let src = tmp.path().join("src");
+    std::fs::create_dir(&src).unwrap();
+    git(&src, &["init", "-q", "-b", "main", "."]);
+    git(&src, &["remote", "add", "origin", &server.url("flip")]);
+
+    // Commit 1: `x` is a file.
+    write_file(&src, "x", "plain file\n");
+    write_file(&src, "keep.txt", "constant\n");
+    git(&src, &["add", "."]);
+    git(&src, &["commit", "-q", "-m", "x as file"]);
+    git(&src, &["push", "-q", "origin", "main"]);
+
+    // Commit 2: `x` becomes a directory.
+    std::fs::remove_file(src.join("x")).unwrap();
+    write_file(&src, "x/inner.txt", "now nested\n");
+    git(&src, &["add", "-A", "."]);
+    git(&src, &["commit", "-q", "-m", "x as dir"]);
+    git(&src, &["push", "-q", "origin", "main"]);
+
+    // Commit 3: back to a file.
+    git(&src, &["rm", "-q", "-r", "x"]);
+    write_file(&src, "x", "file again\n");
+    git(&src, &["add", "-A", "."]);
+    git(&src, &["commit", "-q", "-m", "x as file again"]);
+    git(&src, &["push", "-q", "origin", "main"]);
+
+    // The server-side file APIs agree with the final shape…
+    let (status, body) = server.get("/api/flip/file/main/x");
+    assert_eq!(status, 200);
+    assert_eq!(body, b"file again\n");
+    let (status, _) = server.get("/api/flip/tree/main/x");
+    assert_eq!(status, 404, "x is not a directory at HEAD");
+
+    // …the middle commit is browsable…
+    let mid = git(&src, &["rev-parse", "HEAD~1"]).trim().to_string();
+    let (status, body) = server.get(&format!("/api/flip/file/{mid}/x/inner.txt"));
+    assert_eq!(status, 200);
+    assert_eq!(body, b"now nested\n");
+
+    // …and a fresh clone of the full history is intact.
+    git(
+        tmp.path(),
+        &["clone", "-q", &server.url("flip"), "flipclone"],
+    );
+    git(&tmp.path().join("flipclone"), &["fsck", "--strict"]);
 }

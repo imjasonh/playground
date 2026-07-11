@@ -27,3 +27,9 @@ pub use scan::{PackScanner, ScanEntry, ScannedPack};
 /// Pack entry storage types (the on-disk header values).
 pub const TYPE_OFS_DELTA: u8 = 6;
 pub const TYPE_REF_DELTA: u8 = 7;
+
+/// Delta chains longer than this are treated as corrupt (git's own packs
+/// keep chains around 50; this bound only guards against malicious or
+/// damaged input). Shared by push-time resolution and read-time
+/// materialization.
+pub const MAX_DELTA_CHAIN: usize = 10_000;

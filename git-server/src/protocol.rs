@@ -6,7 +6,11 @@
 //!   (no connection state between rounds). Negotiation is short-circuited:
 //!   we ACK every common `have` and declare `ready`, sending the pack in the
 //!   same response — one round trip for fetches, which also minimizes billable
-//!   requests.
+//!   requests. Supported fetch features: `thin-pack`, shallow (`deepen <n>`,
+//!   with `shallow-info` and `--unshallow`), and partial clone
+//!   (`filter blob:none` / `blob:limit=<n>` / `tree:<depth>`); a full clone
+//!   (no haves, wants covering every ref tip, no filter) skips the
+//!   reachability walk entirely and sends the whole object manifest.
 //! * **Push**: the classic receive-pack flow (gitprotocol-pack(5)) — the ref
 //!   advertisement, then a POST whose body is ref-update commands followed by
 //!   a pack, answered with report-status. (There is no protocol v2 for push.)
@@ -142,12 +146,8 @@ pub async fn upload_pack(
                     args.push(t.to_string());
                 }
             }
-            Pkt::Data(_) => {
-                if let Some(t) = pkt.as_text() {
-                    // Tolerate capability lines before the delim.
-                    let _ = t;
-                }
-            }
+            // Capability lines before the delim (agent=, object-format=) are
+            // tolerated and ignored.
             _ => {}
         }
     }
@@ -255,7 +255,10 @@ async fn fetch(
         } else if let Some(h) = a.strip_prefix("have ") {
             haves.push(Oid::from_hex(h).ok_or("bad have oid")?);
         } else if let Some(s) = a.strip_prefix("shallow ") {
-            // Client tells us its existing shallow boundary.
+            // Client tells us its existing shallow boundary. Unlike a bad
+            // `want`/`have` (hard error), a malformed boundary oid is
+            // deliberately ignored: it only means we may resend objects the
+            // client already has, which git dedupes harmlessly.
             if let Some(o) = Oid::from_hex(s) {
                 client_shallow.insert(o);
             }
@@ -314,14 +317,9 @@ async fn fetch(
     let filter_ref = filter.as_ref();
     let set = if let Some(depth) = deepen {
         let _t = crate::timing::Phase::start("fetch: collect shallow set");
-        let plan = crate::repo::collect_shallow_set_filtered(
-            &odb,
-            &wants,
-            depth,
-            &client_shallow,
-            filter_ref,
-        )
-        .await?;
+        let plan =
+            crate::repo::collect_shallow_set(&odb, &wants, depth, &client_shallow, filter_ref)
+                .await?;
         shallow_boundary = plan.shallow;
         unshallow = plan.unshallow;
         plan.set
@@ -342,7 +340,7 @@ async fn fetch(
             }
         } else {
             let _t = crate::timing::Phase::start("fetch: collect set");
-            crate::repo::collect_fetch_set_filtered(&odb, &wants, &haves, filter_ref).await?
+            crate::repo::collect_fetch_set(&odb, &wants, &haves, filter_ref).await?
         }
     };
     // The selection is turned into a plain (pack, record) list here so the

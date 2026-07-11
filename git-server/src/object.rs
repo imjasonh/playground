@@ -1,6 +1,6 @@
 //! Git object model: ids, types, header hashing, and tree/commit parsing.
 //!
-//! This prototype targets SHA-1 repositories (git's default object format;
+//! This server targets SHA-1 repositories (git's default object format;
 //! `object-format=sha1` is what stock clients negotiate). The [`Oid`] type is
 //! a fixed 20-byte array so the hot paths (pack indexing, oid maps) never
 //! allocate per id.
@@ -32,11 +32,6 @@ impl Oid {
     pub fn is_zero(&self) -> bool {
         self.0 == [0u8; 20]
     }
-
-    /// First byte, used for pack-index fan-out.
-    pub fn first_byte(&self) -> u8 {
-        self.0[0]
-    }
 }
 
 impl std::fmt::Debug for Oid {
@@ -67,16 +62,6 @@ impl ObjType {
             ObjType::Tree => "tree",
             ObjType::Blob => "blob",
             ObjType::Tag => "tag",
-        }
-    }
-
-    pub fn from_name(name: &str) -> Option<ObjType> {
-        match name {
-            "commit" => Some(ObjType::Commit),
-            "tree" => Some(ObjType::Tree),
-            "blob" => Some(ObjType::Blob),
-            "tag" => Some(ObjType::Tag),
-            _ => None,
         }
     }
 
@@ -148,8 +133,14 @@ pub struct TreeEntry {
 
 impl TreeEntry {
     pub fn is_tree(&self) -> bool {
-        self.mode == "40000" || self.mode == "040000"
+        is_tree_mode(&self.mode)
     }
+}
+
+/// Whether a tree-entry mode string names a directory (both spellings git
+/// produces). The single source of truth for this check.
+pub fn is_tree_mode(mode: &str) -> bool {
+    mode == "40000" || mode == "040000"
 }
 
 /// Parse a tree object's content into entries.
@@ -254,19 +245,6 @@ fn parse_ident_time(ident: &str) -> Option<i64> {
     let mut it = ident.rsplitn(3, ' ');
     let _tz = it.next()?;
     it.next()?.parse().ok()
-}
-
-/// A fully materialized object (type + raw content).
-#[derive(Debug, Clone)]
-pub struct Object {
-    pub ty: ObjType,
-    pub data: Vec<u8>,
-}
-
-impl Object {
-    pub fn oid(&self) -> Oid {
-        hash_object(self.ty, &self.data)
-    }
 }
 
 #[cfg(test)]

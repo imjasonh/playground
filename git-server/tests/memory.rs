@@ -40,17 +40,7 @@ const TRANSIENT_BUDGET: usize = 64 * 1024 * 1024;
 /// (+48 MiB) blows TRANSIENT_BUDGET immediately.
 const BULK_BYTES: usize = 48 * 1024 * 1024;
 
-fn deterministic_noise(len: usize, mut seed: u64) -> Vec<u8> {
-    let mut out = Vec::with_capacity(len);
-    while out.len() < len {
-        seed ^= seed << 13;
-        seed ^= seed >> 7;
-        seed ^= seed << 17;
-        out.extend_from_slice(&seed.to_le_bytes());
-    }
-    out.truncate(len);
-    out
-}
+use git_server::testutil::deterministic_noise;
 
 /// Build (commit oid, pack bytes) for a one-commit repo whose tree holds
 /// `blobs` incompressible blobs of `blob_len` bytes each.

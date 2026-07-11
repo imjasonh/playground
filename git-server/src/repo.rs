@@ -10,8 +10,14 @@
 //! 4. build the file-log segment for the new commits (first-parent tree
 //!    diffs), giving the read APIs their "which commit last touched this
 //!    path" chain without history walks;
-//! 5. CAS the repo state document: refs, pack manifest, file-log manifest
-//!    flip together, atomically.
+//! 5. merge-apply the push's delta to the repo state document: refs, pack
+//!    manifest, file-log manifest flip together, atomically.
+//!
+//! The fetch side selects objects ([`collect_fetch_set`] for reachability
+//! walks, [`collect_shallow_set`] for depth-bounded ones — both honoring an
+//! optional partial-clone [`ObjectFilter`]), plans per-object emission
+//! ([`plan_pack`]: verbatim copy, `REF_DELTA` copy, or materialize), and
+//! streams the pack in bounded chunks ([`PackEmitter`]).
 
 use crate::filter::ObjectFilter;
 use crate::object::{ObjType, Oid, TreeEntry};
@@ -74,6 +80,12 @@ pub struct FileLogSegment {
 
 const GSFL_MAGIC: &[u8; 4] = b"GSFL";
 const GSFL_VERSION: u32 = 1;
+
+/// Serialized size of one GSFL record minus its variable-length path:
+/// path_len(2) + commit(20) + time(8) + change(1) + blob(20) +
+/// prev_commit(20) + prev_blob(20). Keep in sync with
+/// [`FileLogSegment::to_bytes`]; used for shard-size accounting.
+const GSFL_RECORD_FIXED_BYTES: usize = 2 + 20 + 8 + 1 + 20 + 20 + 20;
 
 impl FileLogSegment {
     /// Serialize: header, then per record `path_len(u16) path commit(20)
@@ -283,7 +295,7 @@ pub async fn write_sharded_filelog(
 
     let mut records = records.into_iter().peekable();
     while let Some(r) = records.next() {
-        current_bytes += 91 + r.path.len(); // fixed record size + path
+        current_bytes += GSFL_RECORD_FIXED_BYTES + r.path.len();
         let path_changes = records
             .peek()
             .map(|next| next.path != r.path)
@@ -403,22 +415,6 @@ pub async fn load_filelog(
     state: &RepoState,
 ) -> Result<Vec<FileLogSegment>, String> {
     load_filelog_scoped(store, repo, state, &FilelogScope::All).await
-}
-
-/// Find the newest record for `path` across segments (newest first).
-/// One-shot linear scan; request handlers that do many lookups should build a
-/// [`FileLogView`] instead.
-pub fn latest_for_path<'a>(
-    segments: &'a [FileLogSegment],
-    path: &str,
-) -> Option<&'a FileLogRecord> {
-    for seg in segments {
-        // Within a segment records are appended oldest→newest; scan backward.
-        if let Some(r) = seg.records.iter().rev().find(|r| r.path == path) {
-            return Some(r);
-        }
-    }
-    None
 }
 
 /// All records for one path, newest first (blame's version chain source).
@@ -938,15 +934,6 @@ pub async fn collect_fetch_set(
     odb: &Odb<'_>,
     wants: &[Oid],
     haves: &[Oid],
-) -> Result<FetchSet, String> {
-    collect_fetch_set_filtered(odb, wants, haves, None).await
-}
-
-/// Like [`collect_fetch_set`], with an optional partial-clone object filter.
-pub async fn collect_fetch_set_filtered(
-    odb: &Odb<'_>,
-    wants: &[Oid],
-    haves: &[Oid],
     filter: Option<&ObjectFilter>,
 ) -> Result<FetchSet, String> {
     // Ancestors of haves (bounded: stop exploring once a commit is known).
@@ -1032,7 +1019,10 @@ pub async fn collect_fetch_set_filtered(
     }
     for &c in &include_commits {
         // Direct tree/blob wants land here too; read() dispatches on type.
-        let (ty, data) = odb.read(c).await?.ok_or("included object vanished")?;
+        let (ty, data) = odb
+            .read(c)
+            .await?
+            .ok_or_else(|| format!("object {c} not found"))?;
         if ty != ObjType::Commit {
             continue;
         }
@@ -1075,16 +1065,6 @@ pub struct ShallowPlan {
 /// an existing shallow clone); commits among them that we now include with
 /// parents become `unshallow`.
 pub async fn collect_shallow_set(
-    odb: &Odb<'_>,
-    wants: &[Oid],
-    depth: usize,
-    client_shallow: &HashSet<Oid>,
-) -> Result<ShallowPlan, String> {
-    collect_shallow_set_filtered(odb, wants, depth, client_shallow, None).await
-}
-
-/// Like [`collect_shallow_set`], with an optional partial-clone object filter.
-pub async fn collect_shallow_set_filtered(
     odb: &Odb<'_>,
     wants: &[Oid],
     depth: usize,
@@ -1153,7 +1133,10 @@ pub async fn collect_shallow_set_filtered(
         }
     }
     for &c in &include_commits {
-        let (ty, data) = odb.read(c).await?.ok_or("included object vanished")?;
+        let (ty, data) = odb
+            .read(c)
+            .await?
+            .ok_or_else(|| format!("object {c} not found"))?;
         if ty != ObjType::Commit {
             continue;
         }
@@ -1286,7 +1269,9 @@ pub fn plan_pack(odb: &Odb<'_>, set: &FetchSet, thin_ok: bool) -> Result<PackPla
     let included: HashSet<Oid> = set.include.iter().copied().collect();
     let mut entries: Vec<(String, EntryRecord, EmitMode)> = Vec::with_capacity(set.include.len());
     for &oid in &set.include {
-        let (pack_id, rec) = odb.locate(oid).ok_or_else(|| format!("{oid} vanished"))?;
+        let (pack_id, rec) = odb
+            .locate(oid)
+            .ok_or_else(|| format!("object {oid} not found"))?;
         let mode = match rec.base_oid {
             None => EmitMode::Copy,
             Some(base)
@@ -1342,7 +1327,10 @@ impl PackEmitter {
             let (pack_id, rec, mode) = &self.entries[self.idx];
             match mode {
                 EmitMode::Materialize => {
-                    let (ty, content) = odb.read(rec.oid).await?.ok_or("object vanished")?;
+                    let (ty, content) = odb
+                        .read(rec.oid)
+                        .await?
+                        .ok_or_else(|| format!("object {} not found", rec.oid))?;
                     w.add_full(ty, &content);
                     self.idx += 1;
                 }
@@ -1382,17 +1370,6 @@ impl PackEmitter {
         out.extend_from_slice(&tail);
         Ok(Some(out))
     }
-}
-
-/// Build a whole response pack in memory (tests and benchmarks; production
-/// streams via [`PackEmitter`]).
-pub async fn build_pack(odb: &Odb<'_>, set: &FetchSet, thin_ok: bool) -> Result<Vec<u8>, String> {
-    let mut emitter = PackEmitter::new(plan_pack(odb, set, thin_ok)?);
-    let mut out = Vec::new();
-    while let Some(chunk) = emitter.next_chunk(odb).await? {
-        out.extend_from_slice(&chunk);
-    }
-    Ok(out)
 }
 
 #[cfg(test)]
@@ -1517,9 +1494,7 @@ mod tests {
     /// Tiny commit+tree+blobs fixture for filter selection tests.
     async fn install_fixture(store: &MemStore, repo: &str) -> (Oid, Oid, Oid, Oid, String) {
         use crate::object::{encode_tree, hash_object};
-        use crate::pack::index::{resolve_pack, NoExternalBases, PackIndex};
         use crate::pack::write::PackWriter;
-        use crate::pack::PackScanner;
 
         let small = b"tiny".to_vec();
         let large = vec![b'X'; 2048];
@@ -1552,18 +1527,7 @@ mod tests {
         w.add_full(ObjType::Commit, commit.as_bytes());
         let (pack, _) = w.finish();
 
-        let mut s = PackScanner::new();
-        s.feed(&pack).unwrap();
-        let scanned = s.finish().unwrap();
-        let id = hex::encode(scanned.checksum);
-        store.put(&pack_key(repo, &id), pack).await.unwrap();
-        let recs = resolve_pack(store, &pack_key(repo, &id), &scanned, &NoExternalBases)
-            .await
-            .unwrap();
-        store
-            .put(&index_key(repo, &id), PackIndex::new(recs).to_bytes())
-            .await
-            .unwrap();
+        let id = crate::testutil::install_pack(store, repo, &pack).await;
         (commit_oid, tree_oid, small_oid, large_oid, id)
     }
 
@@ -1574,7 +1538,7 @@ mod tests {
             let (commit, tree, small, large, id) = install_fixture(&store, "r").await;
             let odb = Odb::open(&store, "r", &[id]).await.unwrap();
             let filter = ObjectFilter::BlobNone;
-            let set = collect_fetch_set_filtered(&odb, &[commit], &[], Some(&filter))
+            let set = collect_fetch_set(&odb, &[commit], &[], Some(&filter))
                 .await
                 .unwrap();
             let have: HashSet<Oid> = set.include.iter().copied().collect();
@@ -1592,7 +1556,7 @@ mod tests {
             let (commit, _tree, small, large, id) = install_fixture(&store, "r").await;
             let odb = Odb::open(&store, "r", &[id]).await.unwrap();
             let filter = ObjectFilter::BlobLimit(100);
-            let set = collect_fetch_set_filtered(&odb, &[commit], &[], Some(&filter))
+            let set = collect_fetch_set(&odb, &[commit], &[], Some(&filter))
                 .await
                 .unwrap();
             let have: HashSet<Oid> = set.include.iter().copied().collect();
@@ -1609,7 +1573,7 @@ mod tests {
             let odb = Odb::open(&store, "r", &[id]).await.unwrap();
             let filter = ObjectFilter::BlobNone;
             // Skeleton + explicit want for one blob (follow-up fetch pattern).
-            let set = collect_fetch_set_filtered(&odb, &[commit, large], &[], Some(&filter))
+            let set = collect_fetch_set(&odb, &[commit, large], &[], Some(&filter))
                 .await
                 .unwrap();
             let have: HashSet<Oid> = set.include.iter().copied().collect();

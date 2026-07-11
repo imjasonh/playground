@@ -17,7 +17,6 @@
 use crate::object::{hash_object, ObjType, Oid};
 use crate::pack::scan::{BaseRef, ScannedPack};
 use crate::pack::write::inflate;
-use crate::pack::{TYPE_OFS_DELTA, TYPE_REF_DELTA};
 use crate::storage::{StorageError, Store};
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -45,12 +44,6 @@ pub struct EntryRecord {
     pub base_oid: Option<Oid>,
 }
 
-impl EntryRecord {
-    pub fn is_delta(&self) -> bool {
-        self.stored_type == TYPE_OFS_DELTA || self.stored_type == TYPE_REF_DELTA
-    }
-}
-
 /// Provider of base objects that live *outside* the pack being resolved
 /// (thin-pack bases). Returns (type, content).
 #[async_trait::async_trait(?Send)]
@@ -70,10 +63,9 @@ impl ExternalBases for NoExternalBases {
 
 /// Byte budget for the delta-resolution content cache. Bases are usually
 /// clustered (git orders packs so deltas sit near their bases), so this
-/// cache eliminates nearly all repeat reads while resolving a pushed pack.
-/// Restored to 32 MiB (from a brief 24 MiB dip taken while chasing a
-/// phantom memory bug — the real large-push limit was CPU, not memory);
-/// still comfortably within the 128 MiB isolate.
+/// cache eliminates nearly all repeat reads while resolving a pushed pack,
+/// while staying comfortably within the 128 MiB isolate (enforced by
+/// `tests/memory.rs`).
 const RESOLVE_CACHE_BUDGET: usize = 32 * 1024 * 1024;
 
 /// Resolve all entries of a scanned pack stored at `pack_key` in `store`,
@@ -103,8 +95,7 @@ pub async fn resolve_pack(
         reader: crate::storage::BlockReader::new(pack_key),
         entries,
         by_offset,
-        cache: HashMap::new(),
-        cache_bytes: 0,
+        cache: crate::cache::ByteBudgetCache::new(RESOLVE_CACHE_BUDGET),
         external,
     };
 
@@ -151,7 +142,8 @@ pub async fn resolve_pack(
             base_oid,
         });
     }
-    records.sort_by(|a, b| a.oid.cmp(&b.oid));
+    // Records are in pack (offset) order here; [`PackIndex::new`] sorts by
+    // oid, and every caller goes through it.
     Ok(records)
 }
 
@@ -163,8 +155,7 @@ struct Resolver<'a> {
     reader: crate::storage::BlockReader,
     entries: &'a [crate::pack::scan::ScanEntry],
     by_offset: HashMap<u64, usize>,
-    cache: HashMap<usize, (ObjType, Rc<Vec<u8>>)>,
-    cache_bytes: usize,
+    cache: crate::cache::ByteBudgetCache<usize>,
     external: &'a dyn ExternalBases,
 }
 
@@ -187,14 +178,16 @@ impl Resolver<'_> {
         oid_to_idx: &HashMap<Oid, usize>,
     ) -> Result<(ObjType, Rc<Vec<u8>>), String> {
         if let Some(hit) = self.cache.get(&i) {
-            return Ok(hit.clone());
+            return Ok(hit);
         }
         // Walk up the chain until a cached / non-delta / external root.
         let mut chain: Vec<usize> = Vec::new(); // deltas to apply, deepest last
         let mut cursor = i;
-        let (mut ty, mut content): (ObjType, Rc<Vec<u8>>) = loop {
+        // Delta application never changes the object type, so `ty` is fixed
+        // once the chain root is found.
+        let (ty, mut content): (ObjType, Rc<Vec<u8>>) = loop {
             if let Some(hit) = self.cache.get(&cursor) {
-                break hit.clone();
+                break hit;
             }
             let e = &self.entries[cursor];
             match e.base {
@@ -227,7 +220,7 @@ impl Resolver<'_> {
                     }
                 }
             }
-            if chain.len() > 10_000 {
+            if chain.len() > crate::pack::MAX_DELTA_CHAIN {
                 return Err("delta chain too long".into());
             }
         };
@@ -237,21 +230,12 @@ impl Resolver<'_> {
             let applied = crate::pack::delta::apply_delta(&content, &delta)?;
             content = Rc::new(applied);
             self.cache_put(di, ty, content.clone());
-            // Delta application never changes the object type.
-            let _ = &mut ty;
         }
         Ok((ty, content))
     }
 
     fn cache_put(&mut self, i: usize, ty: ObjType, content: Rc<Vec<u8>>) {
-        if self.cache_bytes + content.len() > RESOLVE_CACHE_BUDGET {
-            // Crude but bounded: drop everything. Bases cluster near their
-            // deltas, so the working set rebuilds quickly.
-            self.cache.clear();
-            self.cache_bytes = 0;
-        }
-        self.cache_bytes += content.len();
-        self.cache.insert(i, (ty, content));
+        self.cache.put(i, ty, content);
     }
 }
 
@@ -282,14 +266,6 @@ impl PackIndex {
             .binary_search_by(|r| r.oid.cmp(&oid))
             .ok()
             .map(|i| &self.records[i])
-    }
-
-    pub fn len(&self) -> usize {
-        self.records.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.records.is_empty()
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
@@ -340,6 +316,12 @@ impl PackIndex {
                 payload_size: u64::from_be_bytes(r[54..62].try_into().unwrap()),
                 base_oid: if base.is_zero() { None } else { Some(base) },
             });
+        }
+        // `lookup` binary-searches, so the on-disk order must be sorted
+        // (it is written that way by `to_bytes`). Reject corruption rather
+        // than silently missing objects.
+        if !records.windows(2).all(|w| w[0].oid <= w[1].oid) {
+            return Err("GSIX records not sorted by oid".into());
         }
         Ok(PackIndex { records })
     }

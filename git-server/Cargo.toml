@@ -34,6 +34,11 @@ futures = "0.3"
 # of arbitrarily large repos inside the Workers isolate memory limit.
 async-stream = "0.3"
 
+# Native-only: the localhost HTTP harness (`testutil`) shared by integration
+# tests and benchmarks. Never compiled into the wasm Worker.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tiny_http = "0.12"
+
 # The Cloudflare Workers runtime bindings are wasm-only. Gating them to the
 # wasm32 target keeps native `cargo test` free of the JS/wasm-bindgen glue, so
 # all business logic stays testable on the host.
@@ -58,12 +63,11 @@ idna_adapter = "=1.1.0"
 wasm-bindgen = "=0.2.105"
 
 [dev-dependencies]
-# Minimal blocking HTTP server used by the native integration tests to serve
-# the transport-agnostic handler to a *real* `git` client over localhost.
-tiny_http = "0.12"
 # MSRV pin (Rust 1.83): newer tempfile pulls getrandom 0.4, which requires
 # edition2024.
 tempfile = "=3.14.0"
+# Gzip encoding for protocol tests (git clients gzip large POST bodies).
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 
 # Hand-rolled harnesses rather than criterion: criterion's clap dependency
 # requires edition2024, which Rust 1.83's cargo cannot parse.

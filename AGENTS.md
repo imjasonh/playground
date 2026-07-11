@@ -454,9 +454,11 @@ bundle exec fastlane test
 | `cors-proxy/` | SSRF-hardened CORS proxy — Cloudflare Worker | `cargo test` + clippy + wasm build |
 | `git-server/` | git smart-HTTP server on R2 + Durable Objects — Cloudflare Worker | `cargo test` (incl. real-git integration) + clippy + wasm build |
 
-> **`git-server` API docs:** `git-server` exposes an HTTP API
-> (`git-server/docs/api.md`). Any change that adds, removes, or alters an API
-> method — a git smart-HTTP route or a `/api/…` endpoint — **must update
+> **`git-server` has its own agent guide:** read
+> [`git-server/AGENTS.md`](git-server/AGENTS.md) before working in that
+> directory. In particular, `git-server` exposes an HTTP API
+> (`git-server/docs/api.md`), and any change that adds, removes, or alters an
+> API method — a git smart-HTTP route or a `/api/…` endpoint — **must update
 > `git-server/docs/api.md` in the same change**, keeping it an accurate list
 > of everything the router handles.
 

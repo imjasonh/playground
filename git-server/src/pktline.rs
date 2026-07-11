@@ -72,14 +72,6 @@ pub fn response_end_pkt() -> &'static [u8] {
     b"0002"
 }
 
-/// Append `payload` to `out`, split into as many data pkt-lines as needed.
-/// Used for streaming pack data inside side-band or fetch responses.
-pub fn write_data_pkts(out: &mut Vec<u8>, payload: &[u8]) {
-    for chunk in payload.chunks(MAX_PKT_PAYLOAD) {
-        out.extend_from_slice(&data_pkt(chunk));
-    }
-}
-
 /// Side-band-64k channel numbers (gitprotocol-pack(5)).
 pub mod band {
     /// Pack data.

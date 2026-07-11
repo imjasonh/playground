@@ -13,7 +13,11 @@ use serde::Serialize;
 
 /// Resolve a "refish" — a full hex oid, `HEAD`, a branch, or a tag — to a
 /// commit oid.
-pub async fn resolve_refish(state: &RepoState, odb: &Odb<'_>, refish: &str) -> Result<Oid, String> {
+pub(crate) async fn resolve_refish(
+    state: &RepoState,
+    odb: &Odb<'_>,
+    refish: &str,
+) -> Result<Oid, String> {
     if let Some(oid) = Oid::from_hex(refish) {
         return odb.peel_to_commit(oid).await;
     }
@@ -62,7 +66,7 @@ pub async fn file_contents(
     path: &str,
 ) -> Result<Option<Vec<u8>>, String> {
     match resolve_path(odb, commit, path).await? {
-        Some((mode, oid)) if mode != "40000" && mode != "040000" => {
+        Some((mode, oid)) if !crate::object::is_tree_mode(&mode) => {
             let data = odb.read_typed(oid, ObjType::Blob).await?;
             Ok(Some((*data).clone()))
         }
@@ -97,7 +101,7 @@ pub async fn list_tree(
     path: &str,
 ) -> Result<Option<Vec<TreeEntryInfo>>, String> {
     let tree = match resolve_path(odb, commit, path).await? {
-        Some((mode, oid)) if mode == "40000" || mode == "040000" => oid,
+        Some((mode, oid)) if crate::object::is_tree_mode(&mode) => oid,
         _ => return Ok(None),
     };
     let entries = odb.read_tree(tree).await?;

@@ -17,10 +17,11 @@
 //!   what lifts the per-repo write ceiling measured in
 //!   `docs/loadtest-scaling.md` — the old whole-document CAS made the entire
 //!   multi-second push pipeline one conflict window.
-//! * **Maintenance (repack)** rewrites the pack list wholesale, so it keeps
-//!   whole-document optimistic concurrency (`commit` checks the expected
-//!   version). Every applied push bumps the version, so a repack racing any
-//!   push loses and discards its staged output.
+//! * **Maintenance (repack)** applies a manifest *swap*
+//!   ([`StateStore::apply_repack`]): replace exactly the consumed
+//!   pack/segment ids, in place. Racing pushes only append, so they never
+//!   invalidate a swap; only a concurrent repack that consumed one of the
+//!   same ids makes the swap fail, discarding the staged output.
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -282,11 +283,11 @@ pub struct PushApplied {
 
 /// One repack run's manifest change: replace a set of consumed pack ids
 /// (and their file-log segment ids) with the consolidated pack, in place.
-/// Applied via [`StateStore::apply_repack`], which — unlike a whole-document
-/// CAS — **commutes with racing pushes**: a push only appends packs, so it
-/// can never invalidate the swap. The swap fails only if a consumed id is
-/// gone, i.e. another repack raced this one. Serializable: it crosses the
-/// Durable Object boundary as JSON.
+/// Applied via [`StateStore::apply_repack`], which **commutes with racing
+/// pushes**: a push only appends packs, so it can never invalidate the
+/// swap. The swap fails only if a consumed id is gone, i.e. another repack
+/// raced this one. Serializable: it crosses the Durable Object boundary as
+/// JSON.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RepackSwap {
     /// Pack ids consumed by the consolidation (all must still be present).
@@ -336,21 +337,9 @@ pub trait StateStore {
     /// to returns `(RepoState::empty(), 0)`.
     async fn load(&self, repo: &str) -> Result<(RepoState, u64), StateError>;
 
-    /// Atomically replace the state iff the stored version still equals
-    /// `expected_version`. Returns the new version. Used by maintenance
-    /// (repack), which rewrites the pack list wholesale and must lose to any
-    /// racing push.
-    async fn commit(
-        &self,
-        repo: &str,
-        expected_version: u64,
-        state: &RepoState,
-    ) -> Result<u64, StateError>;
-
     /// Atomically merge one push's delta against the *current* state
     /// ([`RepoState::merge_push`]): per-ref old-value CAS plus commuting
-    /// appends. Bumps the version when applied, so racing `commit` callers
-    /// (repack) observe the change.
+    /// appends. Bumps the version when applied.
     async fn apply_push(&self, repo: &str, delta: &PushDelta) -> Result<PushApplied, StateError>;
 
     /// Atomically apply a repack's swap ([`RepoState::merge_repack`]):
@@ -412,24 +401,6 @@ impl StateStore for MemStateStore {
             .unwrap_or((RepoState::empty(), 0)))
     }
 
-    async fn commit(
-        &self,
-        repo: &str,
-        expected_version: u64,
-        state: &RepoState,
-    ) -> Result<u64, StateError> {
-        let _t = crate::metrics::BackendTimer::start(crate::metrics::Op::DoRequest);
-        *self.ops.lock().unwrap() += 1;
-        let mut map = self.inner.lock().unwrap();
-        let current = map.get(repo).map(|(_, v)| *v).unwrap_or(0);
-        if current != expected_version {
-            return Err(StateError::Conflict);
-        }
-        let next = current + 1;
-        map.insert(repo.to_string(), (state.clone(), next));
-        Ok(next)
-    }
-
     async fn apply_push(&self, repo: &str, delta: &PushDelta) -> Result<PushApplied, StateError> {
         let _t = crate::metrics::BackendTimer::start(crate::metrics::Op::DoRequest);
         *self.ops.lock().unwrap() += 1;
@@ -479,27 +450,12 @@ mod tests {
     use futures::executor::block_on;
 
     #[test]
-    fn cas_semantics() {
+    fn empty_repo_loads_at_version_zero() {
         block_on(async {
             let s = MemStateStore::new();
             let (state, v) = s.load("r").await.unwrap();
             assert_eq!(v, 0);
             assert!(state.refs.is_empty());
-
-            let mut next = state.clone();
-            next.refs.insert("refs/heads/main".into(), "a".repeat(40));
-            let v1 = s.commit("r", v, &next).await.unwrap();
-            assert_eq!(v1, 1);
-
-            // Stale version loses.
-            assert!(matches!(
-                s.commit("r", 0, &next).await,
-                Err(StateError::Conflict)
-            ));
-
-            let (loaded, v) = s.load("r").await.unwrap();
-            assert_eq!(v, 1);
-            assert_eq!(loaded.refs.len(), 1);
         });
     }
 
@@ -730,20 +686,15 @@ mod tests {
     }
 
     #[test]
-    fn apply_push_bumps_version_for_repack_cas() {
+    fn apply_push_bumps_version() {
         block_on(async {
             let s = MemStateStore::new();
-            let (state, v0) = s.load("r").await.unwrap();
+            let (_, v0) = s.load("r").await.unwrap();
             let out = s
                 .apply_push("r", &delta(&[("refs/heads/main", ZERO, &"a".repeat(40))]))
                 .await
                 .unwrap();
             assert!(out.applied);
-            // A repack that loaded before the push must lose its CAS.
-            assert!(matches!(
-                s.commit("r", v0, &state).await,
-                Err(StateError::Conflict)
-            ));
             let (_, v1) = s.load("r").await.unwrap();
             assert_eq!(v1, v0 + 1);
         });

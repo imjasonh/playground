@@ -19,12 +19,7 @@ use git_server::repo::{
 use git_server::storage::{MemStore, Store};
 use std::time::Instant;
 
-fn env_usize(name: &str, default: usize) -> usize {
-    std::env::var(name)
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(default)
-}
+use git_server::testutil::env_usize;
 
 fn synthetic_records(paths: usize, dirs: usize, versions: usize) -> Vec<FileLogRecord> {
     let mut records = Vec::with_capacity(paths * versions);
@@ -85,8 +80,9 @@ fn main() {
         ..RepoState::empty()
     };
 
-    // Layout A: monolithic merged segment (what maintenance wrote before
-    // sharding — every query loads and parses the entire history).
+    // Layout A: one monolithic merged segment — a synthetic pre-sharding
+    // baseline for comparison (every query loads and parses the entire
+    // history). Production maintenance writes sharded segments (layout B).
     block_on(
         store.put(
             "r/filelog/mono",

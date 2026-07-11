@@ -15,8 +15,11 @@
 #
 # The test pushes to a uniquely named repo, clones it back, verifies contents
 # and `git fsck`, exercises incremental push/pull, the file/tree/blame APIs,
-# and repack — the same flow as tests/integration.rs, but through the full
-# wasm + Workers-runtime + storage stack.
+# and repack — a smoke test of the full wasm + Workers-runtime + storage
+# stack. It intentionally covers only the core lifecycle; the exhaustive
+# suite (shallow/partial clone, races, error paths, memory budgets) is
+# `cargo test` (tests/integration.rs, tests/memory.rs), which runs the same
+# handler code natively.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."

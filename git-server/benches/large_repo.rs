@@ -10,127 +10,11 @@
 //! per-object overheads dominate and show up clearly in the phase report.
 
 use git_server::http::{GitHttp, Request as GitRequest};
-use git_server::protocol::BodyStream;
-use git_server::refs::MemStateStore;
 use git_server::storage::MemStore;
-use std::io::Read;
-use std::path::Path;
-use std::process::Command;
+use git_server::testutil::{deterministic_noise, env_usize, git, ReaderBody, TestServer};
 use std::time::{Duration, Instant};
 
-// --- minimal copy of the test harness (benches can't import tests/) --------
-
-struct ReaderBody<R: Read> {
-    reader: R,
-    done: bool,
-}
-
-#[async_trait::async_trait(?Send)]
-impl<R: Read> BodyStream for ReaderBody<R> {
-    async fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, String> {
-        if self.done {
-            return Ok(None);
-        }
-        let mut buf = vec![0u8; 64 * 1024];
-        match self.reader.read(&mut buf) {
-            Ok(0) => {
-                self.done = true;
-                Ok(None)
-            }
-            Ok(n) => {
-                buf.truncate(n);
-                Ok(Some(buf))
-            }
-            Err(e) => Err(e.to_string()),
-        }
-    }
-}
-
-fn start_server(store: MemStore, states: MemStateStore) -> (u16, std::thread::JoinHandle<()>) {
-    let server = tiny_http::Server::http("127.0.0.1:0").expect("bind");
-    let port = match server.server_addr() {
-        tiny_http::ListenAddr::IP(addr) => addr.port(),
-        _ => unreachable!(),
-    };
-    let handle = std::thread::spawn(move || {
-        let mut nonce = 0u64;
-        for mut request in server.incoming_requests() {
-            nonce += 1;
-            let method = request.method().as_str().to_string();
-            let url = request.url().to_string();
-            let (path, query) = match url.split_once('?') {
-                Some((p, q)) => (p.to_string(), Some(q.to_string())),
-                None => (url, None),
-            };
-            let header = |name: &str| -> Option<String> {
-                request
-                    .headers()
-                    .iter()
-                    .find(|h| h.field.as_str().as_str().eq_ignore_ascii_case(name))
-                    .map(|h| h.value.as_str().to_string())
-            };
-            let git_protocol = header("Git-Protocol");
-            let content_encoding = header("Content-Encoding");
-            let git = GitHttp::new(
-                std::rc::Rc::new(store.clone()),
-                std::rc::Rc::new(states.clone()),
-            );
-            let req = GitRequest {
-                method: &method,
-                path: &path,
-                query: query.as_deref(),
-                git_protocol: git_protocol.as_deref(),
-                content_encoding: content_encoding.as_deref(),
-            };
-            let mut body = ReaderBody {
-                reader: request.as_reader(),
-                done: false,
-            };
-            let resp =
-                futures::executor::block_on(git.handle(&req, &mut body, &format!("b{nonce}")));
-            let status = resp.status;
-            let content_type = resp.content_type.clone();
-            let body_bytes = futures::executor::block_on(resp.body.into_bytes())
-                .unwrap_or_else(|e| format!("stream error: {e}").into_bytes());
-            let response = tiny_http::Response::from_data(body_bytes)
-                .with_status_code(status)
-                .with_header(
-                    tiny_http::Header::from_bytes(&b"Content-Type"[..], content_type.as_bytes())
-                        .unwrap(),
-                );
-            let _ = request.respond(response);
-        }
-    });
-    (port, handle)
-}
-
-fn git(dir: &Path, args: &[&str]) {
-    let out = Command::new("git")
-        .args(args)
-        .current_dir(dir)
-        .env("GIT_AUTHOR_NAME", "Bench")
-        .env("GIT_AUTHOR_EMAIL", "bench@example.com")
-        .env("GIT_COMMITTER_NAME", "Bench")
-        .env("GIT_COMMITTER_EMAIL", "bench@example.com")
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("HOME", dir) // isolate from any user gitconfig (proxies, rewrites)
-        .output()
-        .expect("run git");
-    assert!(
-        out.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-}
-
-fn env_usize(name: &str, default: usize) -> usize {
-    std::env::var(name)
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(default)
-}
-
-struct Phase {
+struct BenchPhase {
     name: &'static str,
     wall: Duration,
     class_a: u64,
@@ -140,18 +24,11 @@ struct Phase {
     bytes: u64,
 }
 
-// Cloudflare list prices (2025-2026), $ per operation. Storage and Worker
-// invocation/CPU are excluded here (reported separately in docs/design.md):
-// these are the *per-request* marginal costs the op counters measure.
-const R2_CLASS_A_USD: f64 = 4.50 / 1e6;
-const R2_CLASS_B_USD: f64 = 0.36 / 1e6;
-const DO_REQUEST_USD: f64 = 0.15 / 1e6;
-
-impl Phase {
+impl BenchPhase {
+    /// Marginal request cost (shared model: [`git_server::metrics::cost`]).
+    /// KV is a production-only concern, so it's 0 here.
     fn cost_usd(&self) -> f64 {
-        self.class_a as f64 * R2_CLASS_A_USD
-            + self.class_b as f64 * R2_CLASS_B_USD
-            + self.do_ops as f64 * DO_REQUEST_USD
+        git_server::metrics::cost::marginal_usd(self.class_a, self.class_b, self.do_ops, 0)
     }
 }
 
@@ -190,14 +67,7 @@ fn main() {
         std::fs::write(dir.join(format!("file{f}.txt")), content).unwrap();
     }
     if blob_mb > 0 {
-        let mut data = Vec::with_capacity(blob_mb * 1024 * 1024);
-        let mut x = 0x9e3779b97f4a7c15u64;
-        while data.len() < blob_mb * 1024 * 1024 {
-            x ^= x << 13;
-            x ^= x >> 7;
-            x ^= x << 17;
-            data.extend_from_slice(&x.to_le_bytes());
-        }
+        let data = deterministic_noise(blob_mb * 1024 * 1024, 0x9e3779b97f4a7c15);
         std::fs::write(src.join("bulk.bin"), &data).unwrap();
     }
     git(&src, &["add", "."]);
@@ -224,10 +94,9 @@ fn main() {
     }
     println!("generated in {:.1?}", gen_start.elapsed());
 
-    let store = MemStore::new();
-    let states = MemStateStore::new();
-    let (port, _server) = start_server(store.clone(), states.clone());
-    let url = format!("http://127.0.0.1:{port}/bench");
+    let server = TestServer::start();
+    let (store, states) = (server.store.clone(), server.states.clone());
+    let url = server.url("bench");
     git(&src, &["remote", "add", "origin", &url]);
 
     let stored_pack_bytes = |store: &MemStore| -> u64 {
@@ -243,7 +112,7 @@ fn main() {
             .sum()
     };
 
-    let phases: std::cell::RefCell<Vec<Phase>> = std::cell::RefCell::new(Vec::new());
+    let phases: std::cell::RefCell<Vec<BenchPhase>> = std::cell::RefCell::new(Vec::new());
     let run_phase = |name: &'static str, bytes: u64, f: &mut dyn FnMut()| {
         store.reset_op_counts();
         states.reset_op_count();
@@ -251,7 +120,7 @@ fn main() {
         f();
         let wall = start.elapsed();
         let ops = store.op_counts();
-        phases.borrow_mut().push(Phase {
+        phases.borrow_mut().push(BenchPhase {
             name,
             wall,
             class_a: ops.class_a,
@@ -305,10 +174,7 @@ fn main() {
             git_protocol: None,
             content_encoding: None,
         };
-        let mut body = ReaderBody {
-            reader: std::io::empty(),
-            done: false,
-        };
+        let mut body = ReaderBody::new(std::io::empty());
         let resp = futures::executor::block_on(git.handle(&req, &mut body, "api"));
         let status = resp.status;
         let body = futures::executor::block_on(resp.body.into_bytes()).unwrap();
@@ -337,10 +203,7 @@ fn main() {
             git_protocol: None,
             content_encoding: None,
         };
-        let mut body = ReaderBody {
-            reader: std::io::empty(),
-            done: false,
-        };
+        let mut body = ReaderBody::new(std::io::empty());
         let resp = futures::executor::block_on(git.handle(&req, &mut body, "repack"));
         assert_eq!(resp.status, 200);
         let body = futures::executor::block_on(resp.body.into_bytes()).unwrap();

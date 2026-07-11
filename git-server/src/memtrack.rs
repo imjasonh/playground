@@ -7,31 +7,25 @@
 //! how a buffering bug can pass CI and 503 in production.
 //!
 //! [`TrackingAllocator`] closes that gap: test/bench binaries install it as
-//! their `#[global_allocator]` and assert that peak live heap during a
-//! request stays inside the isolate budget. It wraps the system allocator
-//! with two atomics; overhead is negligible.
+//! their `#[global_allocator]` and assert that a request's *transient* heap
+//! (peak minus the live level when the request began) stays inside a budget
+//! chosen below the isolate limit. It wraps the system allocator with two
+//! atomics; overhead is negligible. `tests/memory.rs` is the canonical
+//! consumer and documents the budget arithmetic:
 //!
 //! ```ignore
 //! #[global_allocator]
 //! static ALLOC: git_server::memtrack::TrackingAllocator =
 //!     git_server::memtrack::TrackingAllocator::new();
 //!
+//! let live_before = memtrack::live_bytes();
 //! memtrack::reset_peak();
 //! // ... exercise the server ...
-//! assert!(memtrack::peak_bytes() < memtrack::ISOLATE_BUDGET_BYTES);
+//! assert!(memtrack::peak_delta_since_reset(live_before) < BUDGET);
 //! ```
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};
-
-/// The Workers isolate memory limit.
-pub const ISOLATE_LIMIT_BYTES: usize = 128 * 1024 * 1024;
-
-/// What a request may use of it in these tests: the isolate limit minus
-/// headroom for the wasm module, runtime structures, and the JS copy of the
-/// response body that the shim makes when relaying it (native tests can't
-/// see that copy, so it's budgeted here instead).
-pub const ISOLATE_BUDGET_BYTES: usize = 96 * 1024 * 1024;
 
 static LIVE: AtomicUsize = AtomicUsize::new(0);
 static PEAK: AtomicUsize = AtomicUsize::new(0);

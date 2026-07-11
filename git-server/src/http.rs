@@ -431,13 +431,10 @@ impl GitHttp {
                     format!("{path}/")
                 };
                 let scope = crate::repo::FilelogScope::Prefix(&prefix);
-                let segments =
-                    match crate::repo::load_filelog_scoped(repo.store, repo.name, &state, &scope)
-                        .await
-                    {
-                        Ok(s) => s,
-                        Err(e) => return Response::error(500, &e),
-                    };
+                let segments = match load_filelog(repo, &state, &scope).await {
+                    Ok(s) => s,
+                    Err(resp) => return resp,
+                };
                 match crate::fileapi::list_tree(&odb, &segments, commit, path).await {
                     Ok(Some(entries)) => Response::json(
                         200,
@@ -456,13 +453,10 @@ impl GitHttp {
             Ok((state, odb, commit)) => {
                 // Blame needs only the shard(s) containing this exact path.
                 let scope = crate::repo::FilelogScope::Path(path);
-                let segments =
-                    match crate::repo::load_filelog_scoped(repo.store, repo.name, &state, &scope)
-                        .await
-                    {
-                        Ok(s) => s,
-                        Err(e) => return Response::error(500, &e),
-                    };
+                let segments = match load_filelog(repo, &state, &scope).await {
+                    Ok(s) => s,
+                    Err(resp) => return resp,
+                };
                 match crate::blame::blame(&odb, &segments, commit, path).await {
                     Ok(Some(lines)) => Response::json(
                         200,
@@ -512,19 +506,37 @@ fn strip_git(name: &str) -> &str {
     name.strip_suffix(".git").unwrap_or(name)
 }
 
-/// Stream a shared buffer as 1 MiB chunks (each chunk is a transient copy;
-/// the buffer itself stays resident exactly once).
+/// Load scoped file-log segments, mapping failure to a 500 response
+/// (shared by the tree and blame APIs).
+async fn load_filelog(
+    repo: &Repo<'_>,
+    state: &crate::refs::RepoState,
+    scope: &crate::repo::FilelogScope<'_>,
+) -> Result<Vec<crate::repo::FileLogSegment>, Response> {
+    crate::repo::load_filelog_scoped(repo.store, repo.name, state, scope)
+        .await
+        .map_err(|e| Response::error(500, &e))
+}
+
+/// Response-body chunk size for streamed blobs (matches the pack emitter's
+/// chunking; bounds each transient copy).
+const STREAM_CHUNK: usize = 1024 * 1024;
+
+/// Stream a shared buffer as [`STREAM_CHUNK`]-sized chunks (each chunk is a
+/// transient copy; the buffer itself stays resident exactly once).
 fn chunk_shared(
     data: std::rc::Rc<Vec<u8>>,
 ) -> futures::stream::LocalBoxStream<'static, Result<Vec<u8>, String>> {
     use futures::StreamExt;
-    let len = data.len();
-    futures::stream::iter((0..len).step_by(1024 * 1024).collect::<Vec<_>>())
-        .map(move |start| {
-            let end = (start + 1024 * 1024).min(data.len());
-            Ok(data[start..end].to_vec())
-        })
-        .boxed_local()
+    futures::stream::unfold((data, 0usize), |(data, start)| async move {
+        if start >= data.len() {
+            return None;
+        }
+        let end = (start + STREAM_CHUNK).min(data.len());
+        let chunk = data[start..end].to_vec();
+        Some((Ok(chunk), (data, end)))
+    })
+    .boxed_local()
 }
 
 fn is_gzip(encoding: &str) -> bool {
