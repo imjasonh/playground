@@ -58,17 +58,9 @@ report-status error (see [`design.md` → Size limits](design.md)).
 
 ## JSON / read API
 
-All under `/api/<repo>/…`.
+All under `/api/<repo>` (the repo resource itself) and `/api/<repo>/…`.
 
-### `GET /api/<repo>/refs`
-All refs and the HEAD symref target.
-
-```json
-{ "head": "refs/heads/main",
-  "refs": { "refs/heads/main": "<oid>", "refs/tags/v1": "<oid>" } }
-```
-
-### `GET /api/<repo>/status`
+### `GET /api/<repo>`
 Repository summary — the one call for "is this repo usable, and how big?".
 
 ```jsonc
@@ -89,6 +81,14 @@ Repository summary — the one call for "is this repo usable, and how big?".
 Never returns `404` for a valid repo name: an unknown repo reports
 `"status": "EMPTY"`. (A future `"MIGRATING"` state with import progress is
 specified in [`large-repo-migration.md`](large-repo-migration.md).)
+
+### `GET /api/<repo>/refs`
+All refs and the HEAD symref target.
+
+```json
+{ "head": "refs/heads/main",
+  "refs": { "refs/heads/main": "<oid>", "refs/tags/v1": "<oid>" } }
+```
 
 ### `GET /api/<repo>/file/<refish>/<path>`
 Raw bytes of a blob at a ref/commit, as `application/octet-stream`.
