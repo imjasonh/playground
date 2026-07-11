@@ -34,6 +34,11 @@ futures = "0.3"
 # of arbitrarily large repos inside the Workers isolate memory limit.
 async-stream = "0.3"
 
+# Native-only: the localhost HTTP harness (`testutil`) shared by integration
+# tests and benchmarks. Never compiled into the wasm Worker.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tiny_http = "0.12"
+
 # The Cloudflare Workers runtime bindings are wasm-only. Gating them to the
 # wasm32 target keeps native `cargo test` free of the JS/wasm-bindgen glue, so
 # all business logic stays testable on the host.

@@ -95,8 +95,7 @@ pub async fn resolve_pack(
         reader: crate::storage::BlockReader::new(pack_key),
         entries,
         by_offset,
-        cache: HashMap::new(),
-        cache_bytes: 0,
+        cache: crate::cache::ByteBudgetCache::new(RESOLVE_CACHE_BUDGET),
         external,
     };
 
@@ -143,7 +142,8 @@ pub async fn resolve_pack(
             base_oid,
         });
     }
-    records.sort_by(|a, b| a.oid.cmp(&b.oid));
+    // Records are in pack (offset) order here; [`PackIndex::new`] sorts by
+    // oid, and every caller goes through it.
     Ok(records)
 }
 
@@ -155,8 +155,7 @@ struct Resolver<'a> {
     reader: crate::storage::BlockReader,
     entries: &'a [crate::pack::scan::ScanEntry],
     by_offset: HashMap<u64, usize>,
-    cache: HashMap<usize, (ObjType, Rc<Vec<u8>>)>,
-    cache_bytes: usize,
+    cache: crate::cache::ByteBudgetCache<usize>,
     external: &'a dyn ExternalBases,
 }
 
@@ -179,7 +178,7 @@ impl Resolver<'_> {
         oid_to_idx: &HashMap<Oid, usize>,
     ) -> Result<(ObjType, Rc<Vec<u8>>), String> {
         if let Some(hit) = self.cache.get(&i) {
-            return Ok(hit.clone());
+            return Ok(hit);
         }
         // Walk up the chain until a cached / non-delta / external root.
         let mut chain: Vec<usize> = Vec::new(); // deltas to apply, deepest last
@@ -188,7 +187,7 @@ impl Resolver<'_> {
         // once the chain root is found.
         let (ty, mut content): (ObjType, Rc<Vec<u8>>) = loop {
             if let Some(hit) = self.cache.get(&cursor) {
-                break hit.clone();
+                break hit;
             }
             let e = &self.entries[cursor];
             match e.base {
@@ -236,14 +235,7 @@ impl Resolver<'_> {
     }
 
     fn cache_put(&mut self, i: usize, ty: ObjType, content: Rc<Vec<u8>>) {
-        if self.cache_bytes + content.len() > RESOLVE_CACHE_BUDGET {
-            // Crude but bounded: drop everything. Bases cluster near their
-            // deltas, so the working set rebuilds quickly.
-            self.cache.clear();
-            self.cache_bytes = 0;
-        }
-        self.cache_bytes += content.len();
-        self.cache.insert(i, (ty, content));
+        self.cache.put(i, ty, content);
     }
 }
 
@@ -324,6 +316,12 @@ impl PackIndex {
                 payload_size: u64::from_be_bytes(r[54..62].try_into().unwrap()),
                 base_oid: if base.is_zero() { None } else { Some(base) },
             });
+        }
+        // `lookup` binary-searches, so the on-disk order must be sorted
+        // (it is written that way by `to_bytes`). Reject corruption rather
+        // than silently missing objects.
+        if !records.windows(2).all(|w| w[0].oid <= w[1].oid) {
+            return Err("GSIX records not sorted by oid".into());
         }
         Ok(PackIndex { records })
     }

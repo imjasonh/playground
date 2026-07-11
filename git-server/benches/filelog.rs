@@ -19,12 +19,7 @@ use git_server::repo::{
 use git_server::storage::{MemStore, Store};
 use std::time::Instant;
 
-fn env_usize(name: &str, default: usize) -> usize {
-    std::env::var(name)
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(default)
-}
+use git_server::testutil::env_usize;
 
 fn synthetic_records(paths: usize, dirs: usize, versions: usize) -> Vec<FileLogRecord> {
     let mut records = Vec::with_capacity(paths * versions);

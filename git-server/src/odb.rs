@@ -6,8 +6,9 @@
 //! oid. A per-instance content cache keeps tree walks (file API, blame,
 //! reachability) from re-reading hot objects.
 
+use crate::cache::ByteBudgetCache;
 use crate::object::{Commit, ObjType, Oid, TreeEntry};
-use crate::pack::write::inflate;
+use crate::pack::write::{inflate, inflate_unchecked};
 use crate::pack::{delta::apply_delta, EntryRecord, PackIndex};
 use crate::storage::Store;
 use std::cell::RefCell;
@@ -32,16 +33,12 @@ struct PackHandle {
     reader: crate::storage::BlockReader,
 }
 
-/// A materialized object: type + shared content.
-pub type CachedObject = (ObjType, Rc<Vec<u8>>);
-
 /// Object database over a fixed set of packs (the repo state's pack manifest
 /// at the time the request began — a consistent snapshot).
 pub struct Odb<'a> {
     store: &'a dyn Store,
     packs: Vec<PackHandle>,
-    cache: RefCell<HashMap<Oid, CachedObject>>,
-    cache_bytes: RefCell<usize>,
+    cache: RefCell<ByteBudgetCache<Oid>>,
     /// Parsed-tree cache: tree walks (filelog build, fetch selection, file
     /// API) revisit the same trees; parsing entries once per oid instead of
     /// per visit is a large win on big pushes.
@@ -81,8 +78,7 @@ impl<'a> Odb<'a> {
         Ok(Odb {
             store,
             packs,
-            cache: RefCell::new(HashMap::new()),
-            cache_bytes: RefCell::new(0),
+            cache: RefCell::new(ByteBudgetCache::new(CONTENT_CACHE_BUDGET)),
             tree_cache: RefCell::new(HashMap::new()),
         })
     }
@@ -161,14 +157,14 @@ impl<'a> Odb<'a> {
     /// Read and fully materialize an object.
     pub async fn read(&self, oid: Oid) -> Result<Option<(ObjType, Rc<Vec<u8>>)>, String> {
         if let Some(hit) = self.cache.borrow().get(&oid) {
-            return Ok(Some(hit.clone()));
+            return Ok(Some(hit));
         }
         // Collect the delta chain (root last), then apply downward.
         let mut chain: Vec<(String, EntryRecord)> = Vec::new();
         let mut cursor = oid;
         let (ty, mut content) = loop {
             if let Some(hit) = self.cache.borrow().get(&cursor) {
-                break hit.clone();
+                break hit;
             }
             let (pack_id, rec) = match self.locate(cursor) {
                 Some((p, r)) => (p.to_string(), r.clone()),
@@ -268,36 +264,7 @@ impl<'a> Odb<'a> {
     }
 
     fn cache_put(&self, oid: Oid, ty: ObjType, content: Rc<Vec<u8>>) {
-        let mut bytes = self.cache_bytes.borrow_mut();
-        if *bytes + content.len() > CONTENT_CACHE_BUDGET {
-            self.cache.borrow_mut().clear();
-            *bytes = 0;
-        }
-        *bytes += content.len();
-        self.cache.borrow_mut().insert(oid, (ty, content));
-    }
-}
-
-/// Inflate a zlib stream whose inflated size we don't know in advance.
-fn inflate_unchecked(data: &[u8]) -> Result<Vec<u8>, String> {
-    let mut out = Vec::new();
-    let mut dec = flate2::Decompress::new(true);
-    let mut scratch = vec![0u8; 64 * 1024];
-    let mut pos = 0usize;
-    loop {
-        let before_in = dec.total_in();
-        let before_out = dec.total_out();
-        let status = dec
-            .decompress(&data[pos..], &mut scratch, flate2::FlushDecompress::None)
-            .map_err(|e| format!("zlib: {e}"))?;
-        pos += (dec.total_in() - before_in) as usize;
-        let produced = (dec.total_out() - before_out) as usize;
-        out.extend_from_slice(&scratch[..produced]);
-        match status {
-            flate2::Status::StreamEnd => return Ok(out),
-            _ if produced == 0 && pos >= data.len() => return Err("zlib: truncated stream".into()),
-            _ => {}
-        }
+        self.cache.borrow_mut().put(oid, ty, content);
     }
 }
 

@@ -6,7 +6,7 @@
 
 mod common;
 
-use common::{git, git_try, write_file, TestServer};
+use common::{deterministic_noise, git, git_try, write_file, TestServer};
 use serde_json::Value;
 use std::path::Path;
 use std::process::Command;
@@ -538,14 +538,7 @@ fn rejects_push_over_size_limit() {
     git(&src, &["push", "-q", "origin", "main"]);
 
     // …but an incompressible 1 MiB blob blows the 256 KiB limit.
-    let mut data = Vec::with_capacity(1024 * 1024);
-    let mut x = 0x2545f4914f6cdd1du64;
-    while data.len() < 1024 * 1024 {
-        x ^= x << 13;
-        x ^= x >> 7;
-        x ^= x << 17;
-        data.extend_from_slice(&x.to_le_bytes());
-    }
+    let data = deterministic_noise(1024 * 1024, 0x2545f4914f6cdd1d);
     std::fs::write(src.join("big.bin"), &data).unwrap();
     git(&src, &["add", "."]);
     git(&src, &["commit", "-q", "-m", "too big"]);
@@ -788,14 +781,7 @@ fn large_blob_roundtrip() {
     git(&src, &["remote", "add", "origin", &server.url("big")]);
 
     // ~8 MiB of pseudo-random (incompressible) bytes.
-    let mut data = Vec::with_capacity(8 * 1024 * 1024);
-    let mut x = 0x9e3779b97f4a7c15u64;
-    while data.len() < 8 * 1024 * 1024 {
-        x ^= x << 13;
-        x ^= x >> 7;
-        x ^= x << 17;
-        data.extend_from_slice(&x.to_le_bytes());
-    }
+    let data = deterministic_noise(8 * 1024 * 1024, 0x9e3779b97f4a7c15);
     std::fs::write(src.join("blob.bin"), &data).unwrap();
     git(&src, &["add", "."]);
     git(&src, &["commit", "-q", "-m", "big blob"]);

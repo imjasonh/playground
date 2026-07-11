@@ -127,7 +127,7 @@ fn main() {
             bytes.len() as u64,
             || {
                 let parsed = PackIndex::from_bytes(&idx.to_bytes()).unwrap();
-                assert_eq!(parsed.len(), 1_000);
+                assert_eq!(parsed.records.len(), 1_000);
             },
         );
     }

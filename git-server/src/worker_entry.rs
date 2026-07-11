@@ -38,6 +38,18 @@ fn s_err<E: std::fmt::Display>(e: E) -> StorageError {
     StorageError(e.to_string())
 }
 
+/// Materialize an R2 object body (shared by `get` / `get_range`): a present
+/// object with no body reads as empty bytes.
+async fn object_bytes(got: Option<worker::Object>) -> StorageResult<Option<Vec<u8>>> {
+    match got {
+        Some(obj) => match obj.body() {
+            Some(body) => Ok(Some(body.bytes().await.map_err(s_err)?)),
+            None => Ok(Some(Vec::new())),
+        },
+        None => Ok(None),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // R2-backed Store
 // ---------------------------------------------------------------------------
@@ -64,13 +76,8 @@ impl Store for R2Store {
 
     async fn get(&self, key: &str) -> StorageResult<Option<Vec<u8>>> {
         let _t = BackendTimer::start(Op::R2ClassB);
-        match self.bucket.get(key).execute().await.map_err(s_err)? {
-            Some(obj) => match obj.body() {
-                Some(body) => Ok(Some(body.bytes().await.map_err(s_err)?)),
-                None => Ok(Some(Vec::new())),
-            },
-            None => Ok(None),
-        }
+        let got = self.bucket.get(key).execute().await.map_err(s_err)?;
+        object_bytes(got).await
     }
 
     async fn get_range(&self, key: &str, offset: u64, len: u64) -> StorageResult<Option<Vec<u8>>> {
@@ -85,13 +92,7 @@ impl Store for R2Store {
             .execute()
             .await
             .map_err(s_err)?;
-        match got {
-            Some(obj) => match obj.body() {
-                Some(body) => Ok(Some(body.bytes().await.map_err(s_err)?)),
-                None => Ok(Some(Vec::new())),
-            },
-            None => Ok(None),
-        }
+        object_bytes(got).await
     }
 
     async fn size(&self, key: &str) -> StorageResult<Option<u64>> {
@@ -136,11 +137,8 @@ struct R2Uploader {
 }
 
 impl R2Uploader {
-    async fn flush_part(&mut self) -> StorageResult<()> {
-        if self.buf.is_empty() {
-            return Ok(());
-        }
-        let data = std::mem::take(&mut self.buf);
+    /// Upload one part (the only place part numbers advance).
+    async fn upload_part(&mut self, data: Vec<u8>) -> StorageResult<()> {
         let _t = BackendTimer::start(Op::R2ClassA);
         let part = self
             .upload
@@ -150,6 +148,14 @@ impl R2Uploader {
         self.parts.push(part);
         self.next_part += 1;
         Ok(())
+    }
+
+    async fn flush_part(&mut self) -> StorageResult<()> {
+        if self.buf.is_empty() {
+            return Ok(());
+        }
+        let data = std::mem::take(&mut self.buf);
+        self.upload_part(data).await
     }
 }
 
@@ -161,14 +167,7 @@ impl Uploader for R2Uploader {
         while self.buf.len() >= PART_SIZE {
             let rest = self.buf.split_off(PART_SIZE);
             let full = std::mem::replace(&mut self.buf, rest);
-            let _t = BackendTimer::start(Op::R2ClassA);
-            let part = self
-                .upload
-                .upload_part(self.next_part, full)
-                .await
-                .map_err(s_err)?;
-            self.parts.push(part);
-            self.next_part += 1;
+            self.upload_part(full).await?;
         }
         Ok(())
     }

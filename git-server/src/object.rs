@@ -133,8 +133,14 @@ pub struct TreeEntry {
 
 impl TreeEntry {
     pub fn is_tree(&self) -> bool {
-        self.mode == "40000" || self.mode == "040000"
+        is_tree_mode(&self.mode)
     }
+}
+
+/// Whether a tree-entry mode string names a directory (both spellings git
+/// produces). The single source of truth for this check.
+pub fn is_tree_mode(mode: &str) -> bool {
+    mode == "40000" || mode == "040000"
 }
 
 /// Parse a tree object's content into entries.

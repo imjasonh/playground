@@ -60,23 +60,15 @@ impl PackWriter {
 
     /// Append a full (non-delta) object, compressing `content`.
     pub fn add_full(&mut self, ty: ObjType, content: &[u8]) {
-        let header = encode_entry_header(ty.pack_type(), content.len() as u64);
-        self.emit(&header);
-        let mut enc = ZlibEncoder::new(Vec::new(), Compression::default());
-        enc.write_all(content).expect("in-memory deflate");
-        let compressed = enc.finish().expect("in-memory deflate");
-        self.emit(&compressed);
-        self.written += 1;
+        self.add_full_precompressed(ty.pack_type(), content.len() as u64, &deflate(content));
     }
 
     /// Append a full object whose zlib stream we already have (verbatim copy
     /// from an existing pack).
     pub fn add_full_precompressed(&mut self, ty: u8, inflated_size: u64, zlib_data: &[u8]) {
-        debug_assert!((1..=4).contains(&ty));
-        let header = encode_entry_header(ty, inflated_size);
-        self.emit(&header);
-        self.emit(zlib_data);
-        self.written += 1;
+        self.begin_full_precompressed(ty, inflated_size);
+        self.append_payload(zlib_data);
+        self.end_entry();
     }
 
     /// Append a REF_DELTA entry with an already-compressed delta payload.
@@ -88,11 +80,9 @@ impl PackWriter {
         delta_inflated_size: u64,
         zlib_delta: &[u8],
     ) {
-        let header = encode_entry_header(TYPE_REF_DELTA, delta_inflated_size);
-        self.emit(&header);
-        self.emit(&base.0);
-        self.emit(zlib_delta);
-        self.written += 1;
+        self.begin_ref_delta_precompressed(base, delta_inflated_size);
+        self.append_payload(zlib_delta);
+        self.end_entry();
     }
 
     // -- Resumable copy API ---------------------------------------------------
@@ -159,11 +149,16 @@ pub fn deflate(content: &[u8]) -> Vec<u8> {
     enc.finish().expect("in-memory deflate")
 }
 
-/// Inflate a complete zlib stream (helper for read paths).
-pub fn inflate(data: &[u8], expected_size: u64) -> Result<Vec<u8>, String> {
-    let mut out = Vec::with_capacity(expected_size as usize);
+/// Scratch buffer size for the one-shot inflate helpers.
+const ZLIB_SCRATCH_BYTES: usize = 64 * 1024;
+
+/// Decompress a complete in-memory zlib stream. The single implementation
+/// behind [`inflate`] / [`inflate_unchecked`]; `capacity` is a buffer
+/// pre-size hint only.
+fn inflate_all(data: &[u8], capacity: usize) -> Result<Vec<u8>, String> {
+    let mut out = Vec::with_capacity(capacity);
     let mut dec = flate2::Decompress::new(true);
-    let mut scratch = vec![0u8; 64 * 1024];
+    let mut scratch = vec![0u8; ZLIB_SCRATCH_BYTES];
     let mut pos = 0usize;
     loop {
         let before_in = dec.total_in();
@@ -175,11 +170,17 @@ pub fn inflate(data: &[u8], expected_size: u64) -> Result<Vec<u8>, String> {
         let produced = (dec.total_out() - before_out) as usize;
         out.extend_from_slice(&scratch[..produced]);
         match status {
-            flate2::Status::StreamEnd => break,
+            flate2::Status::StreamEnd => return Ok(out),
             _ if produced == 0 && pos >= data.len() => return Err("zlib: truncated stream".into()),
             _ => {}
         }
     }
+}
+
+/// Inflate a complete zlib stream whose inflated size is known (from a pack
+/// entry header or index record); the size is verified.
+pub fn inflate(data: &[u8], expected_size: u64) -> Result<Vec<u8>, String> {
+    let out = inflate_all(data, expected_size as usize)?;
     if out.len() as u64 != expected_size {
         return Err(format!(
             "inflated size {} != expected {}",
@@ -188,6 +189,13 @@ pub fn inflate(data: &[u8], expected_size: u64) -> Result<Vec<u8>, String> {
         ));
     }
     Ok(out)
+}
+
+/// Inflate a complete zlib stream whose inflated size isn't known in advance
+/// (e.g. a stored delta payload, whose index record carries the *resolved*
+/// object size instead).
+pub fn inflate_unchecked(data: &[u8]) -> Result<Vec<u8>, String> {
+    inflate_all(data, 0)
 }
 
 /// Test-support pack builder shared by unit tests and benchmarks across

@@ -62,7 +62,7 @@ pub async fn file_contents(
     path: &str,
 ) -> Result<Option<Vec<u8>>, String> {
     match resolve_path(odb, commit, path).await? {
-        Some((mode, oid)) if mode != "40000" && mode != "040000" => {
+        Some((mode, oid)) if !crate::object::is_tree_mode(&mode) => {
             let data = odb.read_typed(oid, ObjType::Blob).await?;
             Ok(Some((*data).clone()))
         }
@@ -97,7 +97,7 @@ pub async fn list_tree(
     path: &str,
 ) -> Result<Option<Vec<TreeEntryInfo>>, String> {
     let tree = match resolve_path(odb, commit, path).await? {
-        Some((mode, oid)) if mode == "40000" || mode == "040000" => oid,
+        Some((mode, oid)) if crate::object::is_tree_mode(&mode) => oid,
         _ => return Ok(None),
     };
     let entries = odb.read_tree(tree).await?;

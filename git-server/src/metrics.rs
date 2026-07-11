@@ -126,16 +126,36 @@ pub fn add_bytes_out(n: u64) {
     with_active(|m| m.bytes_out += n);
 }
 
+/// Cloudflare list prices (2025-2026), $ per operation — the marginal
+/// per-request cost model shared by production metrics, `docs/design.md`,
+/// and the benchmarks. Storage and Worker invocation/CPU are excluded
+/// (covered separately in `docs/design.md`).
+pub mod cost {
+    pub const R2_CLASS_A_USD: f64 = 4.50 / 1e6;
+    pub const R2_CLASS_B_USD: f64 = 0.36 / 1e6;
+    pub const DO_REQUEST_USD: f64 = 0.15 / 1e6;
+    /// KV reads/writes differ ($0.50 vs $5.00 per M); the hot path only
+    /// reads, so reads are what the model counts.
+    pub const KV_READ_USD: f64 = 0.50 / 1e6;
+
+    /// Marginal cost of a request that performed the given operation counts.
+    pub fn marginal_usd(r2_class_a: u64, r2_class_b: u64, do_requests: u64, kv_reads: u64) -> f64 {
+        r2_class_a as f64 * R2_CLASS_A_USD
+            + r2_class_b as f64 * R2_CLASS_B_USD
+            + do_requests as f64 * DO_REQUEST_USD
+            + kv_reads as f64 * KV_READ_USD
+    }
+}
+
 impl Metrics {
-    /// Marginal request cost in USD (R2 Class A/B + DO + KV list prices;
-    /// the same model as `docs/design.md` and the benchmarks).
+    /// Marginal request cost in USD (see [`cost`]).
     pub fn cost_usd(&self) -> f64 {
-        self.r2_class_a as f64 * 4.50 / 1e6
-            + self.r2_class_b as f64 * 0.36 / 1e6
-            + self.do_requests as f64 * 0.15 / 1e6
-            // KV reads/writes differ ($0.50 vs $5.00 per M); count reads,
-            // which is what the hot path does.
-            + self.kv_ops as f64 * 0.50 / 1e6
+        cost::marginal_usd(
+            self.r2_class_a,
+            self.r2_class_b,
+            self.do_requests,
+            self.kv_ops,
+        )
     }
 
     /// `Server-Timing` header value (RFC-style `name;dur=..;desc=".."`).
