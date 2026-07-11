@@ -69,10 +69,12 @@ impl ExternalBases for NoExternalBases {
 }
 
 /// Byte budget for the delta-resolution content cache. Bases are usually
-/// clustered (git orders packs so deltas sit near their bases), so a modest
-/// cache eliminates nearly all repeat reads. Kept small: this coexists with
-/// the block cache and the multipart buffer inside a 128 MiB isolate.
-const RESOLVE_CACHE_BUDGET: usize = 24 * 1024 * 1024;
+/// clustered (git orders packs so deltas sit near their bases), so this
+/// cache eliminates nearly all repeat reads while resolving a pushed pack.
+/// Restored to 32 MiB (from a brief 24 MiB dip taken while chasing a
+/// phantom memory bug — the real large-push limit was CPU, not memory);
+/// still comfortably within the 128 MiB isolate.
+const RESOLVE_CACHE_BUDGET: usize = 32 * 1024 * 1024;
 
 /// Resolve all entries of a scanned pack stored at `pack_key` in `store`,
 /// producing index records sorted by oid.

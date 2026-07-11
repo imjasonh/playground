@@ -19,6 +19,7 @@ use crate::protocol::BodyStream;
 use crate::refs::{RepoState, StateError, StateStore};
 use crate::storage::{Result as StorageResult, StorageError, Store, Uploader};
 use async_trait::async_trait;
+use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use worker::{
     durable_object, event, Bucket, Context, Env, Method, MultipartUpload, Range, Request,
@@ -323,97 +324,32 @@ impl StateStore for DoStateStore {
 // Request body streaming
 // ---------------------------------------------------------------------------
 
-/// Streams the request body by driving the JS `ReadableStream` reader
-/// directly, slicing each JS chunk into ≤[`BODY_SLICE_BYTES`] wasm copies.
+/// Streams the request body chunk-by-chunk from the Workers runtime.
 ///
-/// Why not `worker::ByteStream`? It copies each JS chunk *wholesale* into a
-/// wasm `Vec`. Production probing showed the edge can deliver a chunked
-/// (`Transfer-Encoding: chunked`) upload as very large chunks — so a 44 MB
-/// push became 44 MB of JS buffer *plus* a 44 MB wasm copy at once, and the
-/// isolate died with error 1102. Slicing keeps the wasm side at 1 MiB per
-/// step regardless of how the edge frames the body (the JS-side buffer is
-/// the runtime's own and can't be avoided, but it is no longer doubled).
-///
-/// Each JS chunk's true size is recorded via `metrics::add_bytes_in`, so the
-/// `max_chunk_in` field in logs/Server-Timing shows exactly how the edge
-/// framed the body — the diagnostic this hypothesis rests on.
+/// Uses `worker::ByteStream` directly: the edge delivers the body in small
+/// frames (~4 KiB, confirmed in production via the `max_chunk_in` metric), so
+/// each chunk copied into wasm is tiny and there is no whole-body buffering to
+/// avoid. (An earlier version hand-drove the JS `ReadableStream` reader and
+/// re-sliced every chunk to guard against the edge delivering multi-MB chunks
+/// — a scenario the measurements disproved; that guard only added a
+/// per-chunk `Reflect` lookup, so it was removed.)
 struct WorkerBody {
-    /// The `ReadableStreamDefaultReader`, driven via `js_sys::Reflect` so no
-    /// extra web-sys feature flags are needed.
-    reader: Option<wasm_bindgen::JsValue>,
-    /// Current JS chunk and the read offset within it.
-    pending: Option<(worker::js_sys::Uint8Array, u32)>,
-}
-
-/// Per-step wasm copy size when consuming the request body.
-const BODY_SLICE_BYTES: u32 = 1024 * 1024;
-
-impl WorkerBody {
-    fn new(req: &Request) -> WorkerBody {
-        use wasm_bindgen::JsCast;
-        let raw: &wasm_bindgen::JsValue = req.inner().as_ref();
-        let reader = worker::js_sys::Reflect::get(raw, &"body".into())
-            .ok()
-            .filter(|b| !b.is_null() && !b.is_undefined())
-            .and_then(|body| {
-                let get_reader = worker::js_sys::Reflect::get(&body, &"getReader".into()).ok()?;
-                let get_reader: worker::js_sys::Function = get_reader.dyn_into().ok()?;
-                get_reader.call0(&body).ok()
-            });
-        WorkerBody {
-            reader,
-            pending: None,
-        }
-    }
+    stream: Option<worker::ByteStream>,
 }
 
 #[async_trait(?Send)]
 impl BodyStream for WorkerBody {
     async fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, String> {
-        use wasm_bindgen::JsCast;
-        loop {
-            // Serve the next slice of the current JS chunk, if any.
-            if let Some((arr, off)) = self.pending.take() {
-                let len = arr.length();
-                if off < len {
-                    let end = (off + BODY_SLICE_BYTES).min(len);
-                    let slice = arr.subarray(off, end).to_vec();
-                    if end < len {
-                        self.pending = Some((arr, end));
-                    }
-                    return Ok(Some(slice));
+        match &mut self.stream {
+            Some(s) => match s.next().await {
+                Some(Ok(chunk)) => {
+                    crate::metrics::add_bytes_in(chunk.len() as u64);
+                    Ok(Some(chunk))
                 }
-            }
-            // Pull the next JS chunk from the reader.
-            let Some(reader) = self.reader.as_ref() else {
-                return Ok(None);
-            };
-            let read_fn = worker::js_sys::Reflect::get(reader, &"read".into())
-                .ok()
-                .and_then(|f| f.dyn_into::<worker::js_sys::Function>().ok())
-                .ok_or("request body reader has no read()")?;
-            let promise: worker::js_sys::Promise = read_fn
-                .call0(reader)
-                .map_err(|e| format!("body read() failed: {e:?}"))?
-                .unchecked_into();
-            let result = wasm_bindgen_futures::JsFuture::from(promise)
-                .await
-                .map_err(|e| format!("body read rejected: {e:?}"))?;
-            let done = worker::js_sys::Reflect::get(&result, &"done".into())
-                .ok()
-                .and_then(|v| v.as_bool())
-                .unwrap_or(true);
-            if done {
-                self.reader = None;
-                return Ok(None);
-            }
-            let value = worker::js_sys::Reflect::get(&result, &"value".into())
-                .map_err(|e| format!("body chunk missing value: {e:?}"))?;
-            let arr: worker::js_sys::Uint8Array = value.unchecked_into();
-            // Record the *JS-side* chunk size: this is how the edge framed
-            // the body, which max_chunk_in exposes in logs.
-            crate::metrics::add_bytes_in(arr.length() as u64);
-            self.pending = Some((arr, 0));
+                Some(Err(e)) => Err(e.to_string()),
+                None => Ok(None),
+            },
+            None => Ok(None),
         }
     }
 }
@@ -430,7 +366,7 @@ fn request_nonce() -> String {
 }
 
 #[event(fetch)]
-async fn fetch(req: Request, env: Env, _ctx: Context) -> worker::Result<Response> {
+async fn fetch(mut req: Request, env: Env, _ctx: Context) -> worker::Result<Response> {
     let mut server = GitHttp::new(
         std::rc::Rc::new(R2Store::new(&env)?),
         std::rc::Rc::new(DoStateStore { env: env.clone() }),
@@ -460,7 +396,9 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> worker::Result<Response
         git_protocol: git_protocol.as_deref(),
         content_encoding: content_encoding.as_deref(),
     };
-    let mut body = WorkerBody::new(&req);
+    let mut body = WorkerBody {
+        stream: req.stream().ok(),
+    };
 
     let nonce = request_nonce();
     let mut resp = server.handle(&http_req, &mut body, &nonce).await;
