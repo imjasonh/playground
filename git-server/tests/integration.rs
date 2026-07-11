@@ -325,6 +325,70 @@ fn rejects_non_fast_forward() {
     assert_eq!(head, a_head);
 }
 
+/// Truly concurrent pushes — both prepared against the same (now stale)
+/// state snapshot, simulating temporal overlap the sequential test server
+/// can't produce — land when they touch disjoint refs, because the state
+/// store merges per-ref deltas instead of CASing the whole document. A
+/// same-ref race still fails per-ref with "fetch first".
+#[test]
+fn concurrent_disjoint_pushes_both_land() {
+    use futures::executor::block_on;
+    use git_server::object::Oid;
+    use git_server::repo::{RefUpdate, Repo};
+
+    let server = TestServer::start();
+    let tmp = tempfile::tempdir().unwrap();
+    let src = tmp.path().join("src");
+    std::fs::create_dir(&src).unwrap();
+    git(&src, &["init", "-q", "-b", "main", "."]);
+    git(&src, &["remote", "add", "origin", &server.url("conc")]);
+    write_file(&src, "f.txt", "1\n");
+    git(&src, &["add", "."]);
+    git(&src, &["commit", "-q", "-m", "one"]);
+    git(&src, &["push", "-q", "origin", "main"]);
+    let tip = Oid::from_hex(git(&src, &["rev-parse", "HEAD"]).trim()).unwrap();
+
+    let repo = Repo {
+        store: &server.store,
+        states: &server.states,
+        name: "conc",
+    };
+    // Both "pushes" load the same snapshot before either applies — the
+    // interleaving that made the old whole-document CAS reject the loser.
+    let (snapshot, _) = block_on(repo.load_state()).unwrap();
+
+    let create = |name: &str| {
+        vec![RefUpdate {
+            name: name.to_string(),
+            old: Oid::ZERO,
+            new: tip,
+        }]
+    };
+    let out_a =
+        block_on(repo.apply_push(create("refs/heads/a"), None, snapshot.clone(), 1)).unwrap();
+    let out_b =
+        block_on(repo.apply_push(create("refs/heads/b"), None, snapshot.clone(), 2)).unwrap();
+    assert!(out_a.applied && out_a.results[0].error.is_none());
+    assert!(
+        out_b.applied && out_b.results[0].error.is_none(),
+        "disjoint-ref push from a stale snapshot must land: {:?}",
+        out_b.results[0].error
+    );
+
+    // A same-ref race (still claiming the ref is absent) loses, per-ref.
+    let out_c = block_on(repo.apply_push(create("refs/heads/a"), None, snapshot, 3)).unwrap();
+    assert!(!out_c.applied);
+    assert_eq!(out_c.results[0].error.as_deref(), Some("fetch first"));
+
+    // Both branches are visible and cloneable.
+    let (_, body) = server.get("/api/conc/refs");
+    let refs: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(refs["refs"]["refs/heads/a"], tip.to_hex());
+    assert_eq!(refs["refs"]["refs/heads/b"], tip.to_hex());
+    git(tmp.path(), &["clone", "-q", &server.url("conc"), "check"]);
+    git(&tmp.path().join("check"), &["fsck", "--strict"]);
+}
+
 /// Pushes over the size limit are rejected — mirroring Cloudflare's
 /// request-body cap (~100 MB), which in production 413s over-limit pushes at
 /// the edge before the Worker runs. Enforcing (a shrunken) limit locally

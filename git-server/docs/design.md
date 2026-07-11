@@ -40,17 +40,26 @@ Object:
 }
 ```
 
-The document is versioned; updates are compare-and-swap on the version. This
-split is the whole consistency story:
+The document is versioned. Maintenance (repack) updates it by whole-document
+compare-and-swap on the version; pushes send a **delta** (per-ref old→new
+updates plus pack/file-log appends) that the DO merges atomically against the
+current state — per-ref CAS, git's actual contract. This split is the whole
+consistency story:
 
 * R2 objects are immutable and written *before* the state document references
   them, so a reader can never see a dangling reference.
-* A push becomes visible atomically when the CAS lands: refs, the pack
+* A push becomes visible atomically when its delta is applied: refs, the pack
   manifest, and the file-log manifest flip together. Readers always get a
   consistent snapshot (they read the state doc once per request).
-* Two concurrent pushes to the same repo: one CAS wins, the loser's commands
-  are all reported `ng … concurrent update, retry` and its staged pack becomes
-  garbage (cleaned by maintenance; it was never referenced).
+* Two concurrent pushes to the same repo **merge**: updates to disjoint refs
+  all land (pack appends commute), so pushes to different branches never
+  conflict. Only a true same-ref race fails — per-ref, `ng … fetch first`,
+  with other refs in the same push unaffected — and the loser's staged pack
+  becomes garbage (cleaned by maintenance; it was never referenced). This is
+  what lifts the per-repo write ceiling measured in
+  [`loadtest-scaling.md`](loadtest-scaling.md): with a whole-document CAS the
+  entire multi-second push pipeline was one conflict window, capping goodput
+  at ~0.5 pushes/s per repo regardless of concurrency.
 
 There are deliberately **no loose objects**: every object arrives in a pack
 and stays in a pack. There is also deliberately **no `list` on hot paths** —
@@ -107,14 +116,18 @@ client ──pack stream──▶ Worker ──┬─▶ R2 multipart upload  (5
    walking chains root-first with a byte-budgeted content cache. Thin-pack
    bases (git pushes are thin by default) come from the existing odb by oid.
    The result is the GSIX index, written next to the pack.
-4. **Validation**: each pushed ref must CAS from its advertised old value;
-   ref targets must exist and (for commits) have their root tree present.
-   Honest clients are fully covered because the pack itself was verified
+4. **Validation** (Worker-side, where the odb is): ref targets must exist and
+   (for commits) have their root tree present. Honest clients are fully
+   covered because the pack itself was verified
    self-contained-or-thin-against-us; full reachability audit is a documented
-   maintenance-time job rather than a push-time cost.
+   maintenance-time job rather than a push-time cost. Ref *freshness* is not
+   checked here — the snapshot may be stale.
 5. **File-log segment** (below) is built for the new commits.
-6. **CAS the state document.** Only after this does report-status say `ok` —
-   so every derived view is consistent the instant the client sees success.
+6. **Merge-apply the delta in the DO.** Each ref update lands iff the ref's
+   *current* value equals the advertised old value (per-ref CAS); the pack and
+   file-log appends commute with racing pushes. Only after this does
+   report-status say `ok` — so every derived view is consistent the instant
+   the client sees success.
 
 ## Fetch (upload-pack, protocol v2): copy, don't compress
 
@@ -232,10 +245,11 @@ are bad at (CPU, memory) and what R2 makes cheap (streaming copies):
   re-discovery.** Per-byte CPU is effectively just the SHA-1 of the output.
 * Merge file-log segments (concatenation in push order) and re-shard the
   result by path range (see "Path-range sharding" above).
-* Write new pack + index + merged file-log, then CAS the state document; only
-  after the flip delete the old objects. A racing push fails the CAS and the
-  repack discards its staged output and retries next schedule — pushes always
-  win over maintenance.
+* Write new pack + index + merged file-log, then CAS the state document
+  (whole-document, versioned — unlike pushes, repack rewrites the pack list
+  wholesale); only after the flip delete the old objects. A racing push bumps
+  the version, so the repack's CAS fails and it discards its staged output
+  and retries next schedule — pushes always win over maintenance.
 * The scheduled handler walks a KV registry of repos (registered on push).
 
 The current implementation consolidates **all** packs in one invocation and
@@ -531,12 +545,13 @@ the body streams are not yet folded into the totals.
 
 | Guarantee | Mechanism |
 |---|---|
-| Push atomicity (all-or-nothing visibility) | single CAS on the DO state document |
+| Push atomicity (all-or-nothing visibility) | one DO transaction merge-applies the push's delta (refs + pack + file-log together) |
 | Read snapshot isolation | state doc read once per request; all R2 objects it names are immutable |
-| Blame/file APIs consistent immediately after push | file-log segment built and referenced in the same CAS, before report-status |
-| Concurrent pushes | DO CAS; loser gets `ng … retry` |
-| Repack vs push race | repack CAS loses, discards staged output |
+| Blame/file APIs consistent immediately after push | file-log segment referenced in the same DO transaction, before report-status |
+| Concurrent pushes | merged in the DO: disjoint refs all land; a same-ref race gets a per-ref `ng … fetch first` |
+| Repack vs push race | repack's whole-document CAS loses (every applied push bumps the version), discards staged output |
 | Crash mid-push | staged pack unreferenced; state untouched; multipart upload GC |
+| Push retry after dropped response | delta appends are idempotent (packs content-addressed, deduped by id) |
 
 ## What's deliberately out of scope (prototype)
 

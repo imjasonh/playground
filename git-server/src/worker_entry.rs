@@ -7,7 +7,8 @@
 //!   packs flow to R2 without ever being resident in the isolate;
 //! * [`DoStateStore`] — implements [`crate::refs::StateStore`] by calling the
 //!   per-repo `RepoStateDo` Durable Object, the repo's single serialization
-//!   point (load / compare-and-swap commit over a tiny JSON protocol);
+//!   point (load, whole-document CAS commit for maintenance, and per-push
+//!   merge-apply, over a tiny JSON protocol);
 //! * `#[event(fetch)]` — adapts the Workers request (streamed body) to
 //!   [`crate::http::GitHttp`];
 //! * `#[event(scheduled)]` — walks the repo registry (a KV namespace,
@@ -16,7 +17,7 @@
 use crate::http::{GitHttp, Request as HttpRequest};
 use crate::metrics::{BackendTimer, Op};
 use crate::protocol::BodyStream;
-use crate::refs::{RepoState, StateError, StateStore};
+use crate::refs::{PushApplied, PushDelta, RepoState, StateError, StateStore};
 use crate::storage::{Result as StorageResult, StorageError, Store, Uploader};
 use async_trait::async_trait;
 use futures::StreamExt;
@@ -237,6 +238,25 @@ impl DurableObject for RepoStateDo {
                 self.state.storage().put("version", next).await?;
                 Response::from_json(&serde_json::json!({ "version": next }))
             }
+            // Merge-apply one push's delta against the current state
+            // (per-ref CAS + commuting appends). Single-threaded execution
+            // plus the storage input gate make read-merge-write atomic, so
+            // concurrent pushes to disjoint refs all land instead of racing
+            // one whole-document CAS. Bumps the version so a racing repack's
+            // `/commit` still loses.
+            "/apply" => {
+                let delta: PushDelta = req.json().await?;
+                let mut state: RepoState = storage
+                    .get("state")
+                    .await
+                    .unwrap_or_else(|_| RepoState::empty());
+                let applied = state.merge_push(&delta);
+                if applied.applied {
+                    self.state.storage().put("state", &state).await?;
+                    self.state.storage().put("version", version + 1).await?;
+                }
+                Response::from_json(&applied)
+            }
             _ => Response::error("not found", 404),
         }
     }
@@ -317,6 +337,20 @@ impl StateStore for DoStateStore {
             .await
             .map_err(|e| StateError::Backend(e.to_string()))?;
         Ok(value["version"].as_u64().unwrap_or(0))
+    }
+
+    async fn apply_push(&self, repo: &str, delta: &PushDelta) -> Result<PushApplied, StateError> {
+        let body = serde_json::to_string(delta).map_err(|e| StateError::Backend(e.to_string()))?;
+        let mut resp = self.call(repo, "/apply", Some(body)).await?;
+        if resp.status_code() != 200 {
+            return Err(StateError::Backend(format!(
+                "apply failed with status {}",
+                resp.status_code()
+            )));
+        }
+        resp.json()
+            .await
+            .map_err(|e| StateError::Backend(e.to_string()))
     }
 }
 

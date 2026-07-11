@@ -18,7 +18,7 @@ use crate::odb::{index_key, pack_key, Odb};
 use crate::pack::index::{resolve_pack, ExternalBases, PackIndex};
 use crate::pack::scan::ScannedPack;
 use crate::pack::{EntryRecord, PackScanner};
-use crate::refs::{PackMeta, RepoState, StateError, StateStore};
+use crate::refs::{PackMeta, PushDelta, RefDelta, RepoState, StateStore};
 use crate::storage::{Store, Uploader};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
@@ -551,6 +551,18 @@ pub struct PushOutcome {
     pub applied: bool,
 }
 
+/// Zip commands with their per-command errors into report-status results.
+fn to_results(commands: &[RefUpdate], errors: Vec<Option<String>>) -> Vec<RefResult> {
+    commands
+        .iter()
+        .zip(errors)
+        .map(|(c, error)| RefResult {
+            name: c.name.clone(),
+            error,
+        })
+        .collect()
+}
+
 impl<'a> Repo<'a> {
     pub async fn load_state(&self) -> Result<(RepoState, u64), String> {
         self.states.load(self.name).await.map_err(|e| e.to_string())
@@ -563,13 +575,17 @@ impl<'a> Repo<'a> {
 
     /// Complete a push: the pack (if any) has been streamed via
     /// [`PackIngest`]; resolve it, index it, build the file-log segment,
-    /// verify, and CAS the state.
+    /// verify, and send the resulting [`PushDelta`] to the state store,
+    /// which merges it against the *current* state (per-ref CAS +
+    /// commuting appends — see [`crate::refs`]). `state` is the snapshot
+    /// loaded at request start; it drives the odb view and file-log build,
+    /// but ref freshness is decided at apply time, so concurrent pushes to
+    /// disjoint refs all land.
     pub async fn apply_push(
         &self,
         commands: Vec<RefUpdate>,
         ingested: Option<(String, ScannedPack)>,
         state: RepoState,
-        version: u64,
         now_ms: i64,
     ) -> Result<PushOutcome, String> {
         let old_odb = self.odb(&state).await?;
@@ -602,85 +618,55 @@ impl<'a> Repo<'a> {
         }
         let odb = Odb::open(self.store, self.name, &pack_ids).await?;
 
-        // Validate each command against the current state.
-        let mut results = Vec::new();
-        let mut next = state.clone();
-        let mut any_ok = false;
-        for cmd in &commands {
-            let current = next
-                .refs
-                .get(&cmd.name)
-                .and_then(|h| Oid::from_hex(h))
-                .unwrap_or(Oid::ZERO);
-            if current != cmd.old {
-                results.push(RefResult {
-                    name: cmd.name.clone(),
-                    error: Some("fetch first".into()),
-                });
-                continue;
-            }
-            if cmd.new.is_zero() {
-                next.refs.remove(&cmd.name);
-                results.push(RefResult {
-                    name: cmd.name.clone(),
-                    error: None,
-                });
-                any_ok = true;
-                continue;
-            }
-            // Connectivity (cheap tier): the target must exist, and if it is
-            // a commit its root tree must too. Full connectivity is enforced
-            // by construction for honest clients (the pack was verified
-            // self-contained or thin against our own bases).
-            match odb.read(cmd.new).await? {
-                None => {
-                    results.push(RefResult {
-                        name: cmd.name.clone(),
-                        error: Some("missing necessary objects".into()),
-                    });
+        // Validate each command Worker-side, where the odb is: connectivity
+        // (cheap tier — the target must exist, and if it is a commit its
+        // root tree must too; full connectivity is enforced by construction
+        // for honest clients, whose pack was verified self-contained or thin
+        // against our own bases). Ref *freshness* is deliberately not
+        // checked here: the snapshot may be stale, and the authoritative
+        // per-ref old-value check happens at apply time in the state store.
+        // `errors[i]` = Some(reason) for commands rejected here.
+        let mut errors: Vec<Option<String>> = vec![None; commands.len()];
+        let mut updates = Vec::new();
+        for (i, cmd) in commands.iter().enumerate() {
+            if !cmd.new.is_zero() {
+                let missing = match odb.read(cmd.new).await? {
+                    None => true,
+                    Some((ObjType::Commit, data)) => {
+                        let commit = crate::object::parse_commit(&data)?;
+                        odb.read(commit.tree).await?.is_none()
+                    }
+                    Some(_) => false,
+                };
+                if missing {
+                    errors[i] = Some("missing necessary objects".to_string());
                     continue;
                 }
-                Some((ObjType::Commit, data)) => {
-                    let commit = crate::object::parse_commit(&data)?;
-                    if odb.read(commit.tree).await?.is_none() {
-                        results.push(RefResult {
-                            name: cmd.name.clone(),
-                            error: Some("missing necessary objects".into()),
-                        });
-                        continue;
-                    }
-                }
-                Some(_) => {}
             }
-            next.refs.insert(cmd.name.clone(), cmd.new.to_hex());
-            results.push(RefResult {
-                name: cmd.name.clone(),
-                error: None,
-            });
-            any_ok = true;
+            updates.push((
+                i,
+                RefDelta {
+                    name: cmd.name.clone(),
+                    old: cmd.old.to_hex(),
+                    new: cmd.new.to_hex(),
+                },
+            ));
         }
 
-        if !any_ok {
+        if updates.is_empty() {
+            // Nothing valid to apply; the staged pack (if any) is an orphan
+            // for the sweep.
             return Ok(PushOutcome {
-                results,
+                results: to_results(&commands, errors),
                 applied: false,
             });
-        }
-
-        // Keep HEAD pointing at a branch that exists: if its target is gone
-        // (or was never created), fall back to `main`, then the first branch.
-        if !next.refs.contains_key(&next.head) {
-            if next.refs.contains_key("refs/heads/main") {
-                next.head = "refs/heads/main".to_string();
-            } else if let Some(first) = next.refs.keys().find(|r| r.starts_with("refs/heads/")) {
-                next.head = first.clone();
-            }
         }
 
         // Build the file-log segment for the new commits. Typical pushes
         // write one small plain segment; a huge push (e.g. an initial
         // import) is sharded immediately so the read APIs are fast right
         // away rather than only after the next maintenance merge.
+        let mut filelog_id = None;
         if let Some((meta, index)) = &new_pack {
             let _t = crate::timing::Phase::start("push: filelog build");
             let segment = self
@@ -696,35 +682,30 @@ impl<'a> Repo<'a> {
                         .await
                         .map_err(|e| e.to_string())?;
                 }
-                next.filelog.push(meta.id.clone());
+                filelog_id = Some(meta.id.clone());
             }
-            next.packs.push(meta.clone());
         }
 
-        // Stamp the accepted push time (surfaced by the status API).
-        next.last_push_ms = Some(now_ms);
-
-        match self.states.commit(self.name, version, &next).await {
-            Ok(_) => Ok(PushOutcome {
-                results,
-                applied: true,
-            }),
-            Err(StateError::Conflict) => {
-                // Racing push won. Fail all commands; client retries.
-                let results = commands
-                    .iter()
-                    .map(|c| RefResult {
-                        name: c.name.clone(),
-                        error: Some("concurrent update, retry".into()),
-                    })
-                    .collect();
-                Ok(PushOutcome {
-                    results,
-                    applied: false,
-                })
-            }
-            Err(e) => Err(e.to_string()),
+        // Merge-apply against the current state: per-ref CAS decides
+        // freshness; the pack/filelog appends commute with racing pushes.
+        let delta = PushDelta {
+            ref_updates: updates.iter().map(|(_, u)| u.clone()).collect(),
+            new_pack: new_pack.as_ref().map(|(meta, _)| meta.clone()),
+            filelog: filelog_id,
+            last_push_ms: now_ms,
+        };
+        let applied = self
+            .states
+            .apply_push(self.name, &delta)
+            .await
+            .map_err(|e| e.to_string())?;
+        for ((i, _), result) in updates.iter().zip(applied.results) {
+            errors[*i] = result;
         }
+        Ok(PushOutcome {
+            results: to_results(&commands, errors),
+            applied: applied.applied,
+        })
     }
 
     /// Diff each new commit against its first parent, producing file-log
