@@ -44,6 +44,14 @@ binding = "GIT_REPOS"
 id = "REPLACE_WITH_GIT_REPOS_KV_ID"
 preview_id = "REPLACE_WITH_GIT_REPOS_PREVIEW_KV_ID"
 
+# Per-invocation CPU budget. Requires a paid Workers plan (the free plan is
+# capped at ~2 s, which kills pushes >~40 MB mid-scan with a 1102/503 —
+# see docs/design.md "Size limits"). 300000 ms is the paid maximum and makes
+# CPU a non-issue below the request-body cap; pushes scan the pack at
+# ~30 MiB/s (zlib-bound), so a near-cap 100 MB push needs a few CPU-seconds.
+[limits]
+cpu_ms = 300000
+
 # Nightly pack consolidation (see src/maintenance.rs): merges each repo's
 # accumulated push packs into one, without recompressing anything.
 [triggers]
