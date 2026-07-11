@@ -238,12 +238,13 @@ are bad at (CPU, memory) and what R2 makes cheap (streaming copies):
   win over maintenance.
 * The scheduled handler walks a KV registry of repos (registered on push).
 
-Because entries are copied by (offset-sorted would be ideal; currently
-oid-iteration) ranged reads, a future refinement is iterating in pack-offset
-order to make source reads sequential, and coalescing adjacent ranges into
-single GETs. For truly huge repos the same budgeted, resumable structure
-applies: consolidate the K smallest packs per run (geometric repacking)
-instead of all packs at once.
+The current implementation consolidates **all** packs in one invocation and
+holds O(objects) metadata in memory — fine for small/medium repos, but it
+fails on very large ones (memory, then the per-invocation subrequest cap,
+then CPU, in that order). The incremental, bounded, resumable redesign that
+keeps repacking feasible for arbitrarily large repos — geometric
+consolidation of the small end, leaving the large base pack immutable — is
+sketched in [`large-repo-repacking.md`](large-repo-repacking.md).
 
 ## Block-cached reads: request count is the real currency
 
