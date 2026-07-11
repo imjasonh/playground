@@ -33,6 +33,10 @@ pub struct Request<'a> {
     /// Value of the `Content-Encoding` header, if present (git's HTTP client
     /// gzips larger negotiation bodies).
     pub content_encoding: Option<&'a str>,
+    /// Cloudflare `CF-Ray` for this request, when the edge supplied one.
+    /// Surfaced in structured logs and side-band progress for correlation
+    /// with Workers Traces.
+    pub cf_ray: Option<&'a str>,
 }
 
 /// A response body: fully materialized, or streamed in chunks.
@@ -206,6 +210,9 @@ impl GitHttp {
         nonce: &str,
     ) -> Response {
         crate::metrics::begin();
+        if let Some(ray) = req.cf_ray {
+            crate::trace::set_ray(Some(ray.to_string()));
+        }
         let start = crate::metrics::now_ms();
         let mut resp = self.route(req, body, nonce).await;
         let total_ms = crate::metrics::now_ms() - start;

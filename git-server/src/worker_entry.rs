@@ -452,7 +452,7 @@ fn request_nonce() -> String {
 const DEFAULT_REPACK_TRIGGER_PACKS: usize = 8;
 
 #[event(fetch)]
-async fn fetch(mut req: Request, env: Env, ctx: Context) -> worker::Result<Response> {
+async fn fetch(req: Request, env: Env, ctx: Context) -> worker::Result<Response> {
     let mut server = GitHttp::new(
         std::rc::Rc::new(R2Store::new(&env)?),
         std::rc::Rc::new(DoStateStore { env: env.clone() }),
@@ -474,13 +474,80 @@ async fn fetch(mut req: Request, env: Env, ctx: Context) -> worker::Result<Respo
     let method = req.method().to_string();
     let git_protocol = req.headers().get("Git-Protocol").ok().flatten();
     let content_encoding = req.headers().get("Content-Encoding").ok().flatten();
+    let cf_ray = req.headers().get("cf-ray").ok().flatten();
 
+    let span_name = if path.contains("git-receive-pack") {
+        "git.receive_pack"
+    } else if path.contains("git-upload-pack") {
+        "git.upload_pack"
+    } else if path.starts_with("/api/") {
+        "git.api"
+    } else {
+        "git.handle"
+    };
+
+    let method_for_span = method.clone();
+    let path_for_span = path.clone();
+    let ray_for_span = cf_ray.clone();
+
+    crate::trace::span_async(span_name, move |span| async move {
+        if span.is_traced() {
+            span.set_attribute("http.request.method", &method_for_span);
+            span.set_attribute("url.path", &path_for_span);
+            if let Some(ref r) = ray_for_span {
+                span.set_attribute("cloudflare.ray_id", r);
+            }
+        }
+        fetch_inner(FetchCtx {
+            req,
+            env,
+            ctx,
+            server,
+            method,
+            path,
+            query,
+            git_protocol,
+            content_encoding,
+            cf_ray,
+        })
+        .await
+    })
+    .await
+}
+
+struct FetchCtx {
+    req: Request,
+    env: Env,
+    ctx: Context,
+    server: GitHttp,
+    method: String,
+    path: String,
+    query: Option<String>,
+    git_protocol: Option<String>,
+    content_encoding: Option<String>,
+    cf_ray: Option<String>,
+}
+
+async fn fetch_inner(ctx: FetchCtx) -> worker::Result<Response> {
+    let FetchCtx {
+        mut req,
+        env,
+        ctx,
+        server,
+        method,
+        path,
+        query,
+        git_protocol,
+        content_encoding,
+        cf_ray,
+    } = ctx;
     let http_req = HttpRequest {
         method: &method,
         path: &path,
         query: query.as_deref(),
         git_protocol: git_protocol.as_deref(),
         content_encoding: content_encoding.as_deref(),
+        cf_ray: cf_ray.as_deref(),
     };
     let mut body = WorkerBody {
         stream: req.stream().ok(),
@@ -526,40 +593,54 @@ async fn fetch(mut req: Request, env: Env, ctx: Context) -> worker::Result<Respo
             if trigger > 0 {
                 let env2 = env.clone();
                 let repo_name = repo.to_string();
+                let parent_ray = cf_ray.clone();
                 ctx.wait_until(async move {
-                    let store = match R2Store::new(&env2) {
-                        Ok(s) => s,
-                        Err(_) => return,
-                    };
-                    let states = DoStateStore { env: env2.clone() };
-                    let repo = crate::repo::Repo {
-                        store: &store,
-                        states: &states,
-                        name: &repo_name,
-                    };
-                    let packs = match repo.load_state().await {
-                        Ok(loaded) => loaded.state.packs.len(),
-                        Err(_) => return,
-                    };
-                    if packs < trigger {
-                        return;
-                    }
-                    let start = crate::metrics::now_ms();
-                    match crate::maintenance::repack(&repo, &request_nonce()).await {
-                        Ok(outcome) => worker::console_log!(
-                            "{}",
-                            serde_json::json!({
-                                "evt": "auto_repack",
-                                "repo": repo_name,
-                                "packs": packs,
-                                "outcome": format!("{outcome:?}"),
-                                "ms": crate::metrics::now_ms() - start,
-                            })
-                        ),
-                        Err(e) => {
-                            worker::console_error!("auto repack {repo_name} failed: {e}")
+                    let _ = crate::trace::span_async("git.auto_repack", move |span| async move {
+                        if let Some(ref r) = parent_ray {
+                            crate::trace::set_ray(Some(r.clone()));
+                            if span.is_traced() {
+                                span.set_attribute("cloudflare.ray_id", r);
+                                span.set_attribute("git.repo", &repo_name);
+                            }
                         }
-                    }
+                        let store = match R2Store::new(&env2) {
+                            Ok(s) => s,
+                            Err(_) => return,
+                        };
+                        let states = DoStateStore { env: env2.clone() };
+                        let repo = crate::repo::Repo {
+                            store: &store,
+                            states: &states,
+                            name: &repo_name,
+                        };
+                        let packs = match repo.load_state().await {
+                            Ok(loaded) => loaded.state.packs.len(),
+                            Err(_) => return,
+                        };
+                        if packs < trigger {
+                            return;
+                        }
+                        let start = crate::metrics::now_ms();
+                        match crate::maintenance::repack(&repo, &request_nonce()).await {
+                            Ok(outcome) => {
+                                let mut body = serde_json::json!({
+                                    "evt": "auto_repack",
+                                    "repo": repo_name,
+                                    "packs": packs,
+                                    "outcome": format!("{outcome:?}"),
+                                    "ms": crate::metrics::now_ms() - start,
+                                });
+                                if let Some(r) = crate::trace::ray() {
+                                    body["ray"] = serde_json::Value::String(r);
+                                }
+                                worker::console_log!("{}", body);
+                            }
+                            Err(e) => {
+                                worker::console_error!("auto repack {repo_name} failed: {e}")
+                            }
+                        }
+                    })
+                    .await;
                 });
             }
         }
@@ -595,50 +676,58 @@ async fn fetch(mut req: Request, env: Env, ctx: Context) -> worker::Result<Respo
 /// per repo).
 #[event(scheduled)]
 async fn scheduled(_event: worker::ScheduledEvent, env: Env, _ctx: worker::ScheduleContext) {
-    let store = match R2Store::new(&env) {
-        Ok(s) => s,
-        Err(e) => {
-            worker::console_error!("scheduled: no bucket: {e}");
-            return;
-        }
-    };
-    let states = DoStateStore { env: env.clone() };
-    let kv = match env.kv(REPOS_KV_BINDING) {
-        Ok(kv) => kv,
-        Err(e) => {
-            worker::console_error!("scheduled: no repo registry: {e}");
-            return;
-        }
-    };
-    let repos = match kv.list().execute().await {
-        Ok(list) => list.keys,
-        Err(e) => {
-            worker::console_error!("scheduled: list failed: {e}");
-            return;
-        }
-    };
-    for key in repos {
-        let repo = crate::repo::Repo {
-            store: &store,
-            states: &states,
-            name: &key.name,
-        };
-        crate::metrics::begin();
-        let start = crate::metrics::now_ms();
-        let result = crate::maintenance::repack(&repo, &request_nonce()).await;
-        let total_ms = crate::metrics::now_ms() - start;
-        let metrics = crate::metrics::take();
-        match result {
-            Ok(outcome) => {
-                worker::console_log!("repack {}: {:?}", key.name, outcome);
-                if let Some(m) = metrics {
-                    worker::console_log!(
-                        "{}",
-                        m.log_json("CRON", &format!("/repack/{}", key.name), 200, total_ms)
-                    );
-                }
+    let _ = crate::trace::span_async("git.scheduled", move |_span| async move {
+        let store = match R2Store::new(&env) {
+            Ok(s) => s,
+            Err(e) => {
+                worker::console_error!("scheduled: no bucket: {e}");
+                return;
             }
-            Err(e) => worker::console_error!("repack {} failed: {e}", key.name),
+        };
+        let states = DoStateStore { env: env.clone() };
+        let kv = match env.kv(REPOS_KV_BINDING) {
+            Ok(kv) => kv,
+            Err(e) => {
+                worker::console_error!("scheduled: no repo registry: {e}");
+                return;
+            }
+        };
+        let repos = match kv.list().execute().await {
+            Ok(list) => list.keys,
+            Err(e) => {
+                worker::console_error!("scheduled: list failed: {e}");
+                return;
+            }
+        };
+        for key in repos {
+            crate::trace::with_active_span(|span| {
+                if span.is_traced() {
+                    span.set_attribute("git.repo", &key.name);
+                }
+            });
+            let repo = crate::repo::Repo {
+                store: &store,
+                states: &states,
+                name: &key.name,
+            };
+            crate::metrics::begin();
+            let start = crate::metrics::now_ms();
+            let result = crate::maintenance::repack(&repo, &request_nonce()).await;
+            let total_ms = crate::metrics::now_ms() - start;
+            let metrics = crate::metrics::take();
+            match result {
+                Ok(outcome) => {
+                    worker::console_log!("repack {}: {:?}", key.name, outcome);
+                    if let Some(m) = metrics {
+                        worker::console_log!(
+                            "{}",
+                            m.log_json("CRON", &format!("/repack/{}", key.name), 200, total_ms)
+                        );
+                    }
+                }
+                Err(e) => worker::console_error!("repack {} failed: {e}", key.name),
+            }
         }
-    }
+    })
+    .await;
 }

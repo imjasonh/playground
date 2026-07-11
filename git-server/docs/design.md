@@ -497,8 +497,16 @@ The deployed Worker reports the same quantities the cost model and the
 native benchmarks are built on, so production assumptions are checkable
 instead of hopeful. Everything is collected per request by a thread-local
 in `src/metrics.rs` (a few clock reads per backend call; no allocation
-until emission) and emitted two ways:
+until emission) and emitted three ways:
 
+* **Workers Traces** — Cloudflare's built-in OpenTelemetry tracing
+  (`[observability.traces]` in `wrangler.toml`). Automatic spans cover the
+  fetch/scheduled handlers and every R2 / KV / Durable Object binding call.
+  Custom spans from `src/trace.rs` (`git.upload_pack`, `git.receive_pack`,
+  `git.api`, `git.auto_repack`, `git.scheduled`) nest under those; pipeline
+  [`Phase`](src/timing.rs) durations attach as `git.phase.*_ms` attributes
+  on the active custom span. `CF-Ray` is recorded as `cloudflare.ray_id` and
+  mirrored into structured logs / side-band progress for correlation.
 * **`Server-Timing` response header** on every response — standard,
   machine-parseable, visible in `curl -v`, browser dev tools, and RUM
   tooling:
@@ -516,16 +524,16 @@ until emission) and emitted two ways:
   filelog build, fetch selection, pack build…) gets its own entry.
 
 * **One structured JSON log line per request** (`{"evt":"req",...}` with
-  method, path, status, ms, backend_ms, op counts, bytes in/out, cost, and
-  a phase map) via `console.log` — queryable in the Workers Logs dashboard
-  and streamable with `npx wrangler tail --format json`. This is the only
-  window into the git-protocol endpoints, whose response headers a git
-  client never surfaces. Scheduled repacks log an equivalent
-  `{"evt":"req","method":"CRON",...}` line per repo.
+  method, path, status, ms, backend_ms, op counts, bytes in/out, cost,
+  phases, and optional `ray`) via `console.log` — queryable in the Workers
+  Logs dashboard and streamable with `npx wrangler tail --format json`.
+  This is the only window into the git-protocol endpoints, whose response
+  headers a git client never surfaces (aside from side-band PROGRESS).
+  Scheduled repacks log an equivalent `{"evt":"req","method":"CRON",...}`
+  line per repo.
 
-Persistent invocation logs are enabled in `wrangler.toml`
-(`[observability]`; it is opt-in and was initially missed, which is why the
-first production incident had to be diagnosed by live probing). Every
+Persistent invocation logs and traces are enabled in `wrangler.toml`
+(`[observability]` / `[observability.traces]`; both are opt-in). Every
 invocation stores Cloudflare's `outcome` field alongside our log lines —
 diagnostic signatures worth knowing:
 

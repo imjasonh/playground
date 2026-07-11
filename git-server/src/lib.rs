@@ -30,6 +30,7 @@
 //! * [`maintenance`] — budgeted, resumable repacking for scheduled Workers.
 //! * [`http`] — the transport-agnostic HTTP request router shared by the
 //!   Workers entry point, the native test server, and the benchmarks.
+//! * [`trace`] — Cloudflare Workers custom-span tracing (no-op natively).
 //!
 //! See `docs/design.md` for the full architecture, streaming strategy, cost
 //! model, and repacking design.
@@ -56,6 +57,7 @@ pub mod storage;
 pub mod testutil;
 pub mod timefmt;
 pub mod timing;
+pub mod trace;
 
 #[cfg(target_arch = "wasm32")]
 mod worker_entry;
