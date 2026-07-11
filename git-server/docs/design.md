@@ -238,27 +238,37 @@ Every push adds a pack; each pack costs one index read per request, so
 consolidation keeps reads O(1). The repack is designed around what Workers
 are bad at (CPU, memory) and what R2 makes cheap (streaming copies):
 
-* Iterate all oids (newest pack wins duplicates); copy every entry's
-  compressed payload verbatim into one new pack via multipart upload,
-  rewriting only entry *headers*: `OFS_DELTA` becomes `REF_DELTA` using the
-  `base_oid` recorded in GSIX. **No inflation, no recompression, no delta
-  re-discovery.** Per-byte CPU is effectively just the SHA-1 of the output.
-* Merge file-log segments (concatenation in push order) and re-shard the
-  result by path range (see "Path-range sharding" above).
-* Write new pack + index + merged file-log, then CAS the state document
-  (whole-document, versioned — unlike pushes, repack rewrites the pack list
-  wholesale); only after the flip delete the old objects. A racing push bumps
-  the version, so the repack's CAS fails and it discards its staged output
-  and retries next schedule — pushes always win over maintenance.
+* **Each run is bounded.** Selection picks the longest *contiguous* run of
+  packs (in manifest order) fitting per-run budgets — bytes, objects, pack
+  count — sized so one run always fits a single invocation's subrequest and
+  memory caps, whatever the repo's total size. Only the selected packs'
+  indexes are opened. A pack too big to fold within budget is simply never
+  selected: it becomes the immutable "base" tier, and repeated runs converge
+  the small end geometrically (see
+  [`large-repo-repacking.md`](large-repo-repacking.md); the deferred-deletion
+  and base-rewrite parts of that design remain future work).
+* Iterate the selection's oids (newest pack wins duplicates); copy every
+  entry's compressed payload verbatim into one new pack via multipart
+  upload, rewriting only entry *headers*: `OFS_DELTA` becomes `REF_DELTA`
+  using the `base_oid` recorded in GSIX. **No inflation, no recompression,
+  no delta re-discovery.** Per-byte CPU is effectively just the SHA-1 of the
+  output. (A `REF_DELTA` whose base lives outside the selection keeps
+  working: reads resolve bases by oid across packs.)
+* Merge the selected packs' file-log segments (concatenation in push order)
+  and re-shard the result by path range (see "Path-range sharding" above).
+* Write new pack + index + merged file-log, then **swap the manifest in the
+  repo's Durable Object**: replace exactly the consumed pack/segment ids
+  with the new ones, in place. The swap **commutes with racing pushes** —
+  a push only appends packs, so it can never invalidate the swap (essential
+  now that merge-apply lets pushes land at high rate; a whole-document CAS
+  here would lose to every push landing during the run). The swap fails only
+  if a *concurrent repack* consumed one of the same ids, in which case the
+  staged output is discarded. Superseded objects are **not deleted at swap
+  time**: an in-flight request that loaded the pre-swap manifest may still
+  be reading them. The swap moves their ids to a `retired` list; a later run
+  deletes the storage after a grace period (longer than any plausible
+  request) and sweeps the list.
 * The scheduled handler walks a KV registry of repos (registered on push).
-
-The current implementation consolidates **all** packs in one invocation and
-holds O(objects) metadata in memory — fine for small/medium repos, but it
-fails on very large ones (memory, then the per-invocation subrequest cap,
-then CPU, in that order). The incremental, bounded, resumable redesign that
-keeps repacking feasible for arbitrarily large repos — geometric
-consolidation of the small end, leaving the large base pack immutable — is
-sketched in [`large-repo-repacking.md`](large-repo-repacking.md).
 
 ## Block-cached reads: request count is the real currency
 
@@ -549,7 +559,8 @@ the body streams are not yet folded into the totals.
 | Read snapshot isolation | state doc read once per request; all R2 objects it names are immutable |
 | Blame/file APIs consistent immediately after push | file-log segment referenced in the same DO transaction, before report-status |
 | Concurrent pushes | merged in the DO: disjoint refs all land; a same-ref race gets a per-ref `ng … fetch first` |
-| Repack vs push race | repack's whole-document CAS loses (every applied push bumps the version), discards staged output |
+| Repack vs push race | none by construction: the repack swap replaces only the ids it consumed; push appends commute |
+| Repack vs repack race | the second swap finds a consumed id gone, fails, and discards its staged output |
 | Crash mid-push | staged pack unreferenced; state untouched; multipart upload GC |
 | Push retry after dropped response | delta appends are idempotent (packs content-addressed, deduped by id) |
 

@@ -1,16 +1,29 @@
 # Design: incremental repacking for large repositories
 
-Status: **design only, not yet built.** This proposes replacing the current
-whole-repo repack with an incremental, bounded, crash-safe algorithm that
-keeps repacking feasible for arbitrarily large repos inside the Workers
-limits.
+Status: **core algorithm implemented; hard cases still future.** The bounded
+consolidation below shipped in `maintenance::repack`: budget-bounded
+contiguous selection (bytes / objects / pack count, sliding-window, never
+selecting a pack too big to fold), partial odb open (only selected indexes),
+verbatim streaming copy, scoped file-log merge, and an atomic manifest
+**swap** in the Durable Object that replaces exactly the consumed ids — so
+racing pushes (which only append) never conflict with maintenance, only a
+concurrent repack does — plus **deferred deletion** (consumed ids move to a
+`retired` list at swap time; a later run deletes their storage after a grace
+period and sweeps the list, closing the read-under-delete race noted below).
+What was *not* built yet: the **segmented/checkpointed base rewrite** and
+**GC**. The urgency came from a different direction than this doc
+anticipated: the write-scaling load test
+([`loadtest-scaling.md`](loadtest-scaling.md)) showed a *busy* repo hits the
+whole-repo-repack wall via pack **count** (hundreds of small packs outrunning
+consolidation, inflating every push/clone) long before any repo hits it via
+size.
 
-## Why the current repack won't scale
+## Why the original whole-repo repack couldn't scale
 
-`maintenance::repack` today consolidates **every** pack into one, in a single
-invocation, holding O(objects) metadata in memory (`all_oids()`, a
+`maintenance::repack` originally consolidated **every** pack into one, in a
+single invocation, holding O(objects) metadata in memory (`all_oids()`, a
 `sources` vector, a `records` vector, and every pack's whole `GSIX` index via
-the odb). It is correct and cheap at the tested scale (hundreds of objects,
+the odb). It was correct and cheap at the tested scale (hundreds of objects,
 tens of MB) but hits three independent walls on a 13 GB / multi-million-object
 repo, in this order:
 
