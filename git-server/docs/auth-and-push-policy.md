@@ -2,16 +2,20 @@
 
 Status: **design only, not yet built.** This document proposes, in order:
 
-1. **Authentication** — OAuth login, with the server minting short-lived
-   **signed JWTs** (bearer tokens) under rotating keys, delivered to git via
-   a credential helper.
+1. **Authentication** — OAuth login for **users** and OIDC federation for
+   **service accounts**, with the server minting short-lived **signed
+   JWTs** (bearer tokens) under rotating keys, delivered to git via a
+   credential helper.
 2. **IAM** — permissions and roles; per-repo grants; tokens **scoped to
    branches or branch patterns**; a separate permission for managing the
    default branch.
 3. **Push-time policy** — a declarative rule engine evaluated during
-   receive-pack, able to reference IAM permissions; overriding a rule
-   requires **two-party approval** and writes a **signed audit record into
-   the repo itself**.
+   receive-pack, able to reference IAM permissions. One **approval
+   mechanism** serves two rule interactions: overriding a rule requires
+   **two-party approval**, and rules can require **review approval for
+   merges into protected branches**. Both write **signed audit records
+   into the repo itself**, in a form that stays cheap to store and O(1)
+   to query. Service accounts can never approve.
 4. **Content checks** — budgeted blob scanning (secret patterns, lint
    rules) inside the policy engine.
 
@@ -95,16 +99,47 @@ in the auth store: login (from the provider handle, e.g. `github:alice` →
 `alice`), verified emails (from the provider — used by the policy engine's
 author-email checks), and default server role `user`.
 
+### Two principal kinds: users and service accounts
+
+* A **user** is a human, tied to an upstream OAuth account, who logs in
+  interactively (device flow above) and holds a refresh-token session.
+* A **service account** is a registered non-human principal
+  (`sa:deploy-bot`) that is never logged into — it is **assumed** via OIDC
+  federation: a workload (CI job, cron, another service) presents an ID
+  token from a **trusted OIDC issuer**, and the server exchanges it for a
+  short-lived access JWT for the service account.
+
+A service account record (created by an admin) names what may assume it:
+
+```jsonc
+{ "name": "sa:deploy-bot",
+  "assume": [ { "issuer": "https://token.actions.githubusercontent.com",
+                "subject": "repo:imjasonh/playground:ref:refs/heads/main",
+                "audience": "https://git.<account>.workers.dev" } ] }
+```
+
+The exchange (`POST /auth/token`, `grant_type=…:token-exchange`) verifies
+the presented ID token against the issuer's published JWKS, matches
+issuer/subject/audience to a service account's `assume` rules, and mints
+an ordinary access JWT — same 1 h lifetime, same scope-cap machinery, but
+`"kind": "service"`. There are **no long-lived bot credentials to store,
+leak, or rotate**: the workload's ambient OIDC identity is the credential,
+and every assumed token dies within the hour. Service accounts get no
+refresh tokens and no sessions.
+
+The `kind` claim is load-bearing downstream: **service accounts can never
+act as approvers** — not for policy overrides, not for merge review
+(phase 3). The approver endpoints reject `kind: "service"` tokens
+outright. Bots push, deploy, and mirror; humans vouch.
+
 ### Tokens
 
-Three kinds, all JWS compact JWTs signed EdDSA (Ed25519) except the
-refresh token:
+All JWS compact JWTs signed EdDSA (Ed25519) except the refresh token:
 
 | Kind | Lifetime | Purpose |
 |---|---|---|
-| **access token** | short (default 1 h) | every git / API request; stateless verification |
-| **refresh token** | rolling (default 30 d) | opaque random secret, stored **hashed** server-side → a revocable session; `POST /auth/token` exchanges it for a fresh access token (and rotates it) |
-| **service token** | bounded (max 90 d) | minted via API for bots/CI; scoped tightly (below); revocable via jti denylist |
+| **access token** | short (default 1 h) | every git / API request; stateless verification; `kind` claim says user vs service |
+| **refresh token** | rolling (default 30 d) | users only; opaque random secret, stored **hashed** server-side → a revocable session; `POST /auth/token` exchanges it for a fresh access token (and rotates it) |
 
 Access-token claims:
 
@@ -112,7 +147,8 @@ Access-token claims:
 {
   "iss": "https://git.<account>.workers.dev",
   "aud": "git",
-  "sub": "alice",
+  "sub": "alice",                   // or "sa:deploy-bot"
+  "kind": "user",                   // "user" | "service"
   "iat": 1760000000, "exp": 1760003600,
   "jti": "…",                       // for the denylist
   "roles": ["user"],                // server-wide roles only (see IAM)
@@ -167,10 +203,13 @@ design's stance:
   immediate anyway (grants are live, above).
 * **Sessions** (refresh tokens): server-side hashed record → deleting it
   ends the session at next refresh, ≤1 h of residual access-token life.
-* **Service tokens**: the emergency path is a **jti denylist** in the auth
-  store, consulted **only on mutating requests** (push, `/api` writes) so
-  reads stay lookup-free. Deny entries expire with the token's own `exp`,
-  so the list stays small.
+* **Service accounts**: disabling the account or editing its `assume`
+  rules stops the *next* exchange; outstanding assumed tokens die within
+  the hour. No stored bot credential exists to leak, so there is nothing
+  long-lived to revoke.
+* **Emergency**: a **jti denylist** in the auth store, consulted **only on
+  mutating requests** (push, `/api` writes) so reads stay lookup-free.
+  Deny entries expire with the token's own `exp`, so the list stays small.
 
 ### The credential helper
 
@@ -208,9 +247,10 @@ role. Everything else is granted from there via the API.
 |---|---|---|
 | `POST /auth/device` | none | start device flow → user code + poll handle |
 | `POST /auth/device/token` | none | poll → access JWT + refresh token |
-| `POST /auth/token` | refresh or access token | refresh, or mint a **narrowed** access/service token (requested scope ∩ caller authority) |
+| `POST /auth/token` | refresh token, access token, or upstream OIDC ID token | refresh; mint a **narrowed** access token (requested scope ∩ caller authority); or the token-exchange grant that assumes a service account |
+| `PUT /api/service-accounts/<name>` | admin | create/update a service account and its `assume` rules |
 | `DELETE /auth/sessions/<id>` | self or admin | end a session |
-| `DELETE /auth/tokens/<jti>` | self or admin | denylist a service token |
+| `DELETE /auth/tokens/<jti>` | self or admin | denylist a token (emergency) |
 | `GET /.well-known/jwks.json` | none | public verification keys |
 | `GET /api/whoami` | token | resolved login, roles, effective scope |
 
@@ -238,8 +278,9 @@ scopes speak:
 | `repo.maintenance` | `POST /api/<repo>/repack` |
 | `repo.manageAccess` | edit visibility + grants |
 | `repo.managePolicy` | edit the policy document |
+| `policy.approve` | may create review approvals (phase 3) |
 | `policy.override` | may satisfy the permission half of a two-party policy override (phase 3) |
-| `server.manageUsers` | create/disable users, grant server roles |
+| `server.manageUsers` | create/disable users and service accounts, grant server roles |
 
 Splitting push into `repo.push` / `refs.create` / `refs.delete` /
 `refs.forcePush` matches what receive-pack already distinguishes per
@@ -264,7 +305,7 @@ Named permission bundles. Built-in:
 | Role | Permissions |
 |---|---|
 | `reader` | `repo.read` |
-| `writer` | reader + `repo.push`, `refs.create` |
+| `writer` | reader + `repo.push`, `refs.create`, `policy.approve` |
 | `maintainer` | writer + `refs.delete`, `refs.forcePush`, `repo.setDefaultBranch`, `repo.maintenance`, `repo.manageAccess`, `repo.managePolicy`, `policy.override` |
 | `admin` (server-wide only) | everything, every repo |
 
@@ -279,8 +320,10 @@ role-editor surface.
 
 * **Per-repo grants** live on `RepoState` (the per-repo DO document,
   already loaded by every request): `visibility: "public" | "private"`,
-  plus `grants: { login → { role, permissions: [...] } }`. Well under the
-  128 KiB DO value cap. Edited via `GET/PUT /api/<repo>/access`
+  plus `grants: { principal → { role, permissions: [...] } }`, where a
+  principal is a user login or a service account (`sa:deploy-bot`) —
+  grants are kind-blind; only approval acts (phase 3) discriminate. Well
+  under the 128 KiB DO value cap. Edited via `GET/PUT /api/<repo>/access`
   (`repo.manageAccess`).
 * **Server-wide roles** live on the user record and are embedded in the
   JWT's `roles` claim (stale ≤ token lifetime).
@@ -316,8 +359,8 @@ rejected (`ng <ref> token scope does not include this ref`) **before
 
 One namespace is reserved: **`refs/audit/**` is never client-writable** —
 no token scope may include it and no grant permits pushing to it. The
-server itself appends there (phase 3's override audit trail); clients can
-only fetch it.
+server itself appends there (phase 3's audit trail); clients can only
+fetch it.
 
 Ref scoping is a **write** control only. Branch-level *read* restriction
 is deliberately not offered: a git object graph is shared across refs
@@ -343,6 +386,12 @@ the DO.
 name = "protect-main"                # names are API: they appear in ng lines
 refs  = ["refs/heads/main"]          # glob scope; default: all refs
 deny  = ["delete", "force"]          # tier-0 verbs: create | delete | force
+
+[[rule]]
+name = "main-requires-review"
+refs  = ["refs/heads/main"]
+require_review = { approvals = 1 }   # merges into main need a prior
+                                     # review approval (see Approvals)
 
 [[rule]]
 name  = "workflows-frozen"
@@ -382,7 +431,7 @@ on_budget_exceeded = "reject"        # fail closed for secrets
 | 0 — ref | protected refs (`deny = create/delete/force`), ref-name patterns, max refs per push | parsed commands; **rejects before the pack uploads** |
 | 1 — pack shape | `max_blob_bytes` (fast-fail during scan for non-delta entries; authoritative after resolve), max objects per push | `PackScanner` / `resolve_pack` |
 | 2 — path | frozen paths, deny path globs (`node_modules/**`, `*.env`), case-collision, path charset/length, mode rules (no symlinks / no gitlinks / executable-bit scoping), per-path-glob size caps | `diff_trees` output (already built for the file-log) |
-| 3 — commit | author/committer email patterns, `require_author_email_matches_pusher`, message pattern, merge policy (parent count), signature *presence*, timestamp sanity | commits already parsed for the file-log |
+| 3 — commit | author/committer email patterns, `require_author_email_matches_pusher`, message pattern, merge policy (parent count), signature *presence*, timestamp sanity, `require_review` (needs the parsed tip commit's parents + an ancestry check) | commits already parsed for the file-log |
 | 4 — content | secret patterns, lint checks | `Odb::read`, budgeted — phase 4 below |
 
 Note the overlap by design between tier-0 policy and IAM: `refs.forcePush`
@@ -397,21 +446,100 @@ ancestry walk between two commits in the (old ∪ new) odb, bounded like the
 existing connectivity check. IAM's `refs.forcePush` gate uses the same
 walk — one implementation.
 
-### Override: two parties, one permission, and a record in the repo
+### Approvals: one mechanism, two uses
 
-Overriding a rule is deliberately heavier than satisfying it. Three
-properties, in increasing order of novelty:
+An **approval** is a signed statement by a *user* — "I, bob, approve X
+against ref Y, valid until T" — minted by the server, held pending on the
+repo, consumed by a push, and archived in the repo's audit space. Two rule
+interactions use it:
 
-1. **Two parties.** An override needs two distinct humans: the pusher and
-   a prior approver, `approver.sub ≠ pusher.sub`.
+* **Override approvals** — waiving a rule a push would otherwise violate
+  (exceptional, two-party, permissioned).
+* **Review approvals** — satisfying a `require_review` rule on a protected
+  branch (routine: "merges into main must be approved").
+
+**Service accounts can never approve.** The approval endpoint rejects
+`kind: "service"` tokens outright, for both uses. A CI bot can push,
+deploy, and mirror; it cannot vouch. This is what makes "two parties"
+mean two *humans* — a person plus their own bot is not a quorum — and
+it's a hard rule, not policy: no rule setting re-enables bot approvers.
+
+#### Creating an approval
+
+```
+POST /api/<repo>/approvals
+{ "use": "review",                // "review" | "override"
+  "ref": "refs/heads/main",
+  "new": "<oid>",                 // review: required. override: optional
+  "rule": "workflows-frozen",     // override only: the rule being waived
+  "reason": "LGTM — reviewed the diff",
+  "ttl_s": 86400 }                // review default 7 d; override default 1 h
+```
+
+Requirements at mint time: an authenticated **user** (never a service
+account); for `review`, the `policy.approve` permission on the repo (the
+`writer` role has it — peers review peers); for `override`, any
+authenticated user with `repo.read` — the permission gate for overrides
+is on *using* the approval (the two-party check below), not on stating
+one. The server records whether the approver holds `policy.override`, so
+the push-time check needs no second identity lookup.
+
+The server mints an **approval JWS** — a compact JWT under the rotating
+keys whose claims are the approval itself:
+
+```jsonc
+{ "iss": "…", "aud": "git-approval",
+  "sub": "bob", "kind": "user",    // the approver; never a service account
+  "iat": 1760000000, "exp": 1760086400, "jti": "ap-…",
+  "repo": "myrepo", "use": "review",
+  "ref": "refs/heads/main", "new": "<oid>",
+  "rule": null,                    // set for overrides
+  "reason": "LGTM — reviewed the diff",
+  "approver_has_override": false }
+```
+
+The JWS is returned to the approver *and* a pending-approval stub (jti,
+use, rule, ref, oid, expiry, the JWS itself) is stored on `RepoState`.
+Storing the stub buys three things a pure hand-the-JWT-to-the-pusher
+design can't:
+
+* **Single use.** The approval is consumed in the same DO CAS that
+  applies the push — it cannot authorize two pushes, and a concurrent
+  race gets exactly one winner.
+* **Pusher UX.** No token pasting. Review approvals are matched
+  automatically when the rule evaluates; overrides need only the explicit
+  `-o policy.override=<rule>` push option.
+* **Revocability.** `DELETE /api/<repo>/approvals/<jti>` (the approver or
+  anyone with `repo.managePolicy`) withdraws an approval before use.
+
+The pending set is **bounded**: expired stubs are pruned on every write,
+and a cap (`MAX_PENDING_APPROVALS`, order of 64) rejects new approvals
+when full — approvals are ephemeral work-in-flight, not storage, so the
+128 KiB DO document never becomes the bottleneck. The durable record
+lives in the audit space, below.
+
+#### Override: two parties, one permission
+
+Overriding a rule is deliberately heavier than satisfying it:
+
+1. **Two parties.** The pusher and a prior approver, with
+   `approver.sub ≠ pusher.sub` — and both necessarily human, per above.
 2. **One permission between them.** At least one of the two must hold
    `policy.override` on the repo. (Both parties are approving the
-   override — the pusher approves by pushing — so the requirement reads:
-   at least one *approver* is permissioned.) A junior engineer can push an
-   approved exception their lead signed off on, and equally a lead can
+   override — the pusher approves by pushing.) A junior engineer can push
+   an approved exception their lead signed off on, and equally a lead can
    push with a junior's ack; two unprivileged users cannot waive policy
    between themselves.
-3. **A signed record lands in the repo itself** — below.
+3. **The override must be explicit** — `git push -o policy.override=<rule>`;
+   eligibility without the option still enforces the rule.
+
+At push time the server checks: matching unconsumed approval (rule + ref
++ oid-if-bound + unexpired), distinct parties, and
+`pusher_has_override ∨ approver_has_override`. Any miss is a normal
+rejection with the established vocabulary:
+`ng <ref> policy "workflows-frozen": override requires approval`,
+`… approval expired`, `… approver and pusher must differ`,
+`… override not permitted`.
 
 **Who may override is *not* configured per rule.** An earlier draft had
 per-rule `bypass = ["user:…"]` lists; they're gone deliberately. User
@@ -424,100 +552,136 @@ If different rules ever genuinely need different approver *sets*, the
 right mechanism is IAM groups as grantees, not names inside rules — an
 open question below, deferred until a real case shows up.
 
-#### The approval flow
+#### Required review for protected branches
 
-Approvals are created ahead of the push, server-side:
-
-```
-POST /api/<repo>/overrides
-{ "rule": "workflows-frozen",
-  "ref": "refs/heads/main",       // glob allowed; narrower = better
-  "new": "<oid>",                 // optional: bind to the exact commit
-  "reason": "hotfix for incident 42",
-  "ttl_s": 3600 }                 // ≤ 24 h cap; default 1 h
+```toml
+[[rule]]
+name = "main-requires-review"
+refs  = ["refs/heads/main"]
+require_review = { approvals = 1 }
 ```
 
-Creating an approval requires an authenticated user with at least
-`repo.read` on the repo — the permission gate is on *using* the approval
-(the two-party check at push time), not on stating one. The server
-verifies the approver's token, records whether the approver
-holds `policy.override` (that fact is part of the approval, so the
-two-party permission check at push time needs no second identity lookup),
-and mints an **approval JWS**: a compact JWT signed with the server's
-rotating keys whose claims are the approval itself —
+This server has no pull-request object — a "PR" here is a branch plus a
+review approval bound to a commit. The workflow:
+
+1. Alice pushes `refs/heads/feature/x` (no rule applies there).
+2. Bob fetches, reviews, and approves the tip:
+   `POST /api/<repo>/approvals {use: "review", ref: "refs/heads/main",
+   new: "<feature tip oid>"}`.
+3. Alice pushes to `main`. No push option needed — the rule finds the
+   matching approval automatically.
+
+A push `old → new` on the protected ref satisfies a review approval bound
+to commit `A` when:
+
+* `new == A` (a fast-forward to exactly the approved commit), **or**
+* `new` is a merge commit whose parents include both `old` (first parent
+  — history stays first-parent linear on the protected branch) and `A`
+  (the approved work).
+
+The second arm is what lets approval precede the merge commit: the merge
+oid doesn't exist when the reviewer approves, so the approval binds to
+the branch tip being merged, and the ancestry check (same bounded walk as
+the force check) ties them together. Known and accepted gap, same as
+GitHub's: conflict-resolution content *inside* the merge commit itself
+isn't separately re-reviewed. Approving the merge commit's own oid
+(re-approval after creating it locally) closes the gap when it matters.
+
+`approvals = N` requires N matching approvals from N **distinct**
+approvers, each distinct from the pusher. The pusher's own approval never
+counts (`approver ≠ pusher` applies per approval). Like any rule,
+`require_review` is overridable through the two-party override above —
+the incident escape hatch, itself audited — unless the rule sets
+`overridable = false`, in which case unreviewed code cannot reach the
+branch at all.
+
+Review approvals evaluate at the apply stage (the tip commit's parents
+are already parsed for the file-log; the ancestry walk is the shared
+force-check implementation).
+
+#### The audit space: one ref, records keyed by commit
+
+Every consumed approval — override or review — lands in the repo itself,
+under the reserved **`refs/audit`** ref. The design goal is threefold, per
+the requirements: **verifiable** (signed claims), **bounded** (growth
+can't degrade the repo), and **queryable** ("why/when was this merge
+approved" in one lookup, no history walk).
+
+The tip of `refs/audit` is a tree keyed by *what was admitted*, fanned out
+like a pack index:
+
+```
+reviews/refs/heads/main/ab/abcdef…40hex.json
+overrides/refs/heads/main/12/123456…40hex.json
+```
+
+— one JSON blob per admitted push event, at a path derived from the
+target ref and the **new tip oid** it admitted. Each blob is a
+**server-signed JWS** (`aud: "git-audit"`) over the full record:
 
 ```jsonc
-{ "iss": "…", "aud": "git-policy-override",
-  "sub": "bob",                    // the approver
-  "iat": 1760000000, "exp": 1760003600, "jti": "ov-…",
-  "repo": "myrepo", "rule": "workflows-frozen",
-  "ref": "refs/heads/main", "new": "<oid-or-absent>",
-  "reason": "hotfix for incident 42",
-  "approver_has_override": true }
-```
-
-The JWS is returned to the approver *and* a pending-approval stub
-(jti, rule, ref, expiry, the JWS itself) is stored on `RepoState` —
-approvals are rare, small, and expiring, so they fit the state doc
-comfortably. Storing the stub buys three things a pure hand-the-JWT-to-
-the-pusher design can't:
-
-* **Single use.** The approval is consumed in the same DO CAS that
-  applies the push — it cannot authorize two pushes, and a concurrent
-  race gets exactly one winner.
-* **Pusher UX.** The pusher doesn't paste a token; the push option stays
-  `-o policy.override=<rule>` and the server matches the pending approval
-  (rule + ref + oid-if-bound + unexpired + approver ≠ pusher).
-* **Revocability.** `DELETE /api/<repo>/overrides/<jti>` (the approver or
-  anyone with `repo.managePolicy`) withdraws an approval before it's used.
-
-At push time, the rule still evaluates; if violated and the pusher sent
-the override option, the server checks: matching unconsumed approval,
-distinct parties, and `pusher_has_override ∨ approver_has_override`. Any
-miss is a normal rejection with the established vocabulary:
-`ng <ref> policy "workflows-frozen": override requires approval`,
-`… approval expired`, `… approver and pusher must differ`,
-`… override not permitted`.
-
-#### The audit record: in the repo, verifiable offline
-
-Every consumed override appends a commit to the reserved
-**`refs/audit/overrides`** ref — an append-only chain of tiny commits the
-server synthesizes, each carrying one record blob:
-
-```jsonc
-{ "kind": "policy-override", "v": 1,
-  "rule": "workflows-frozen",
+{ "kind": "review", "v": 1,
+  "rule": "main-requires-review",
   "ref": "refs/heads/main", "old": "<oid>", "new": "<oid>",
-  "pusher": { "sub": "alice", "jti": "…", "iat": 1760001000 },
-  "approval": "<the approval JWS, verbatim>",
+  "pusher": { "sub": "alice", "kind": "user", "jti": "…", "iat": 1760001000 },
+  "approvals": [ "<approval JWS, verbatim>", … ],
   "pushed_at": "2026-07-11T18:04:05.123Z" }
 ```
 
-…wrapped in a **server-signed JWS** (same rotating keys, `aud`
-`git-audit`) covering the whole record. So the blob contains two
-signatures: the approver's claim (the approval JWS — who approved what,
-when, with what permission) and the server's attestation of what was
-actually pushed under it. Anyone who clones the repo can verify both
-against `/.well-known/jwks.json`, offline, years later — which is why
-phase 1 retains rotated-out public keys indefinitely.
+Two signature layers, verifiable offline against
+`/.well-known/jwks.json` years later (phase 1 retains rotated-out public
+keys verify-only for exactly this): the embedded approval JWSes are the
+approvers' claims — who approved what, when, holding which permission —
+and the outer JWS is the server's attestation of what was actually pushed
+under them.
 
-Mechanically this reuses machinery the server already has: `PackWriter`
-produces a small pack holding the blob + tree + commit (parent: previous
-audit tip), and the audit ref update rides in the same `PushDelta` as the
-user's refs — atomic by the existing DO CAS, no new consistency story.
-The pack is a normal pack; the audit trail survives repack, clones with
-`--mirror`, and inspection with stock `git log refs/audit/overrides`.
+**Answering the queries.** "Why/when was this merge approved?" is a
+single tree lookup at the audit tip — `GET
+/api/<repo>/file/refs/audit/reviews/refs/heads/main/ab/<oid>.json` — no
+history walk, cost independent of how many approvals the repo has ever
+recorded. Directory listings (`/api/<repo>/tree/…`) browse recent records
+per ref, and the push-time file-log gives each record's own
+`last_commit_time` attribution for free. `git log refs/audit` works too,
+for humans who prefer git. No new read API is needed; if ergonomics
+demand it later, a convenience route can wrap the same lookup.
 
-Rejected override *attempts* don't touch the repo — they get the `ng`
-line and a structured log entry (sub, jti, rule, refs), same as any other
+**Bounding growth.** Records are ~1–2 KiB (two compact JWSes plus
+metadata); ten thousand approvals is ~15 MiB of R2 — real but unalarming,
+and it lives in ordinary packs that repack consolidates like everything
+else. The structures that must *not* grow are protected by construction:
+
+* **The DO state doc** gains exactly one refs entry (`refs/audit`) and
+  the bounded pending-approval stubs — audit volume never touches it.
+* **The audit commit chain** is redundant with its own tip tree (every
+  record is self-describing and individually signed; ordering and
+  timestamps live inside the records). Nightly maintenance therefore
+  **flattens** `refs/audit` history — when the chain exceeds a threshold,
+  it's rewritten to a single commit carrying the same tree — so the chain
+  never becomes an unbounded walk for anything.
+* **Normal git traffic never pays.** `refs/audit` is outside
+  `refs/heads/*` and `refs/tags/*`, so default clones and fetches don't
+  download it; only `--mirror` or an explicit refspec does.
+* **Appending stays O(changed path)**: the per-push audit update is one
+  blob + the trees along its fanout path, built by the existing
+  `PackWriter`, riding in the same `PushDelta` as the user's refs —
+  atomic via the existing DO CAS, no new consistency story.
+
+The flattening trade-off, stated plainly: rewriting audit history means
+the git chain itself is not tamper-evidence — but it never really was,
+since the server writes it and the server is the enforcement point. The
+integrity guarantees live in the signatures on each record. If
+independent tamper-evidence is ever wanted, each record can chain a hash
+of its predecessor inside the signed payload (open question below).
+
+Rejected pushes and rejected approval attempts don't touch the repo —
+they get the `ng` line and a structured log entry, same as any other
 rejection.
 
-What this is **not**: a client-side signature by the pusher. Git does have
-one (`git push --signed`, the `push-cert` capability), and supporting it
-would strengthen the record from "the server attests alice's token pushed
-this" to "alice's own key signed this ref update" — but it drags in
-client key management for marginal gain over authenticated bearer pushes.
+What this is **not**: a client-side signature by the pusher or approver.
+Git does have one (`git push --signed`, the `push-cert` capability), and
+supporting it would strengthen records from "the server attests alice's
+token did this" to "alice's own key signed this" — but it drags in client
+key management for marginal gain over authenticated bearer requests.
 Noted as a possible later hardening, not designed here.
 
 ### Semantics
@@ -637,9 +801,9 @@ blobs so the gap is visible.
 
 | Phase | Lands | Proves |
 |---|---|---|
-| 1 | auth store DO (users, sessions, keys), device flow, JWT mint/verify, JWKS + rotation, Bearer + Basic-fallback parsing, credential helper | full login → push round-trip in integration tests (native JWT mint against a test key; `TestServer` with `Authorization` headers); expiry; refresh rotation; session revocation; kid rollover |
-| 2 | permission/role model, grants on `RepoState`, `/api/<repo>/access`, `PUT /api/<repo>/head`, token scope caps + ref-scope enforcement, claim-on-first-push, 401/403 flow | every permission's allow and deny; scoped-token narrowing (never widening); ref-scope rejection before ingest; default-branch permission split |
-| 3 | `src/policy.rs`, policy storage + API, tiers 0–3, override approvals (`/api/<repo>/overrides`), audit commits on `refs/audit/overrides`, warn channel | every rule type's reject *and* warn branch; the two-party matrix (self-approval, neither-permissioned, expired/consumed/revoked approval, oid-bound mismatch); single-use under concurrent pushes; audit-record signature round-trip against the JWKS; `refs/audit/**` unwritable by clients; policy-validation-at-write |
+| 1 | auth store DO (users, service accounts, sessions, keys), device flow, OIDC token exchange for service accounts, JWT mint/verify, JWKS + rotation, Bearer + Basic-fallback parsing, credential helper | full login → push round-trip in integration tests (native JWT mint against a test key; `TestServer` with `Authorization` headers); OIDC exchange against a test issuer (issuer/subject/audience matrix); expiry; refresh rotation; session revocation; kid rollover |
+| 2 | permission/role model, grants on `RepoState` (users + service accounts), `/api/<repo>/access`, `PUT /api/<repo>/head`, token scope caps + ref-scope enforcement, claim-on-first-push, 401/403 flow | every permission's allow and deny; scoped-token narrowing (never widening); ref-scope rejection before ingest; default-branch permission split |
+| 3 | `src/policy.rs`, policy storage + API, tiers 0–3, approvals (`/api/<repo>/approvals`, both uses), `require_review`, audit records on `refs/audit`, audit flattening in maintenance, warn channel | every rule type's reject *and* warn branch; the two-party matrix (self-approval, neither-permissioned, expired/consumed/revoked approval, oid-bound mismatch); **service-account approval rejected** (both uses); review satisfaction arms (fast-forward to approved oid; merge of old + approved; N-distinct-approvers); single-use under concurrent pushes; pending-approval cap; audit-record signature round-trip against the JWKS; audit lookup by commit oid via the file API; flattening preserves the tree; `refs/audit/**` unwritable by clients; policy-validation-at-write |
 | 4 | content scanner, pattern packs, lint checks, budgets | secret hit / lint hit / budget-exceeded paths; memory-test variant under `TRANSIENT_BUDGET` |
 
 Each phase updates `docs/api.md` in the same change (hard rule), and each
@@ -661,17 +825,26 @@ conventions.
   grantees of `policy.override` — possibly per-rule `approvers = "group:…"`
   referencing them — not user lists inside policy documents. Deferred until
   a real case.
-* **Sock-puppet approvals.** "Two distinct `sub`s" is only as strong as
-  account provisioning: one human with a bot's service token is two subs.
-  Proposed mitigations, in escalating order: approvals must come from
-  interactive sessions (not service tokens) — cheap and probably right;
-  audit records already expose the pattern for review; requiring the
-  *approver* (not just one of the two) to hold `policy.override` would
-  close it fully but breaks the junior-pushes-lead-approves flow. Start
-  with the first.
-* **Service-token ceiling.** 90 d max proposed; too long for taste, but
-  shorter forces bot-credential rotation machinery that doesn't exist yet.
-  The jti denylist is the compensating control.
+* **Sock-puppet approvals, residual.** Service accounts can't approve
+  (hard rule), which closes the human-plus-their-bot quorum. The residual
+  is one human with two *user* accounts — only upstream-provider identity
+  hygiene catches that, and audit records at least expose the pairing for
+  review. Requiring the *approver* (not just one of the two parties) to
+  hold `policy.override` would narrow it further but breaks the
+  junior-pushes-lead-approves flow; not proposed.
+* **Bot-driven approvals.** Dependabot-style auto-merge wants a bot to
+  approve its own upgrades. Deliberately impossible here (service
+  accounts never approve). If it's ever wanted, the shape is a human
+  pre-approving a *pattern* (e.g. standing approval for lockfile-only
+  diffs) rather than weakening the approver rule — a policy feature, not
+  an IAM one. Deferred.
+* **Audit tamper-evidence.** Flattening means the audit ref's git history
+  is not a hash chain; each record is individually signed but the server
+  could theoretically drop one silently. If independent tamper-evidence
+  is wanted, chain a predecessor-record hash inside each signed payload
+  (making omission detectable), or periodically anchor the audit tip
+  externally. Deferred — the server is already the trusted enforcement
+  point.
 * **Failed-auth rate limiting.** Signature verification is cheap enough
   that probing costs us little; device-flow and refresh endpoints are the
   ones to watch. A KV counter keyed by IP with a short TTL if logs show
