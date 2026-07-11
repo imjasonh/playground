@@ -401,6 +401,7 @@ fn concurrent_disjoint_pushes_both_land() {
 fn incremental_repack_converges_within_budget() {
     use futures::executor::block_on;
     use git_server::maintenance::{repack_with_budget, RepackBudget, RepackOutcome};
+    use git_server::refs::StateStore;
     use git_server::repo::Repo;
 
     let server = TestServer::start();
@@ -431,6 +432,15 @@ fn incremental_repack_converges_within_budget() {
         grace_ms: 0,
         ..Default::default()
     };
+
+    // A held maintenance lease makes a run skip as Busy, without work.
+    let now = git_server::metrics::now_ms() as i64;
+    assert!(block_on(server.states.repack_lease("inc", now, 60_000)).unwrap());
+    assert_eq!(
+        block_on(repack_with_budget(&repo, "held", &budget)).unwrap(),
+        RepackOutcome::Busy
+    );
+    block_on(server.states.repack_unlease("inc")).unwrap();
 
     // First run folds exactly the budgeted number of packs, not everything.
     match block_on(repack_with_budget(&repo, "r0", &budget)).unwrap() {

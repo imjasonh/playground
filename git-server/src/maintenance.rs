@@ -33,6 +33,15 @@
 //! only if another repack consumed one of the same ids first, in which case
 //! all staged output is discarded.
 //!
+//! Repack runs from three triggers, all safe to overlap: the nightly cron,
+//! the on-demand API, and — the one that matters under load — a **per-push
+//! self-trigger** (an accepted push that leaves the repo with many packs
+//! schedules a bounded run in its invocation's background via `wait_until`).
+//! A per-repo **maintenance lease** in the Durable Object collapses
+//! concurrent triggers to one holder: losers return [`RepackOutcome::Busy`]
+//! after a single cheap DO call instead of consolidating in parallel and
+//! losing the swap race.
+//!
 //! Superseded packs/indexes/segments are **not deleted immediately**: a
 //! request that loaded the pre-swap manifest may still be reading them
 //! (under sustained load this is the common case, not a corner — swaps land
@@ -98,7 +107,15 @@ pub enum RepackOutcome {
     /// output was discarded. (Pushes never cause this — their appends
     /// commute with the swap.)
     LostRace,
+    /// Another repack holds the maintenance lease; skipped without doing
+    /// any work. The common way concurrent triggers (per-push self-trigger,
+    /// cron, on-demand API) collapse to one run.
+    Busy,
 }
+
+/// Maintenance lease TTL: must exceed the longest plausible bounded run
+/// (tens of seconds) but bound how long a crashed holder blocks maintenance.
+const LEASE_TTL_MS: i64 = 120_000;
 
 /// Select the longest contiguous run of packs fitting the budget (ties go to
 /// the newer window). Returns the index range into `state.packs`.
@@ -144,6 +161,27 @@ pub async fn repack_with_budget(
     budget: &RepackBudget,
 ) -> Result<RepackOutcome, String> {
     let now_ms = crate::metrics::now_ms() as i64;
+    // One maintainer per repo at a time: concurrent triggers skip cheaply
+    // instead of consolidating in parallel and losing the swap race.
+    if !repo
+        .states
+        .repack_lease(repo.name, now_ms, LEASE_TTL_MS)
+        .await
+        .map_err(|e| e.to_string())?
+    {
+        return Ok(RepackOutcome::Busy);
+    }
+    let outcome = repack_leased(repo, nonce, budget, now_ms).await;
+    let _ = repo.states.repack_unlease(repo.name).await;
+    outcome
+}
+
+async fn repack_leased(
+    repo: &Repo<'_>,
+    nonce: &str,
+    budget: &RepackBudget,
+    now_ms: i64,
+) -> Result<RepackOutcome, String> {
     let (state, _) = repo.load_state().await?;
 
     // Deferred deletion: retired ids past their grace period can no longer

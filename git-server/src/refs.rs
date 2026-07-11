@@ -359,6 +359,17 @@ pub trait StateStore {
     /// gone — another repack raced. Racing *pushes* never conflict with
     /// this: they only append. Bumps the version when applied.
     async fn apply_repack(&self, repo: &str, swap: &RepackSwap) -> Result<bool, StateError>;
+
+    /// Try to acquire the repo's single maintenance lease until
+    /// `now_ms + ttl_ms`. Returns `false` if another holder's lease has not
+    /// yet expired. The lease makes concurrent repack triggers (per-push
+    /// self-trigger, cron, the on-demand API) cheap to collapse: losers skip
+    /// instead of doing a full consolidation's work and then losing the
+    /// swap. The TTL bounds the damage of a crashed holder.
+    async fn repack_lease(&self, repo: &str, now_ms: i64, ttl_ms: i64) -> Result<bool, StateError>;
+
+    /// Release the maintenance lease (best-effort; expiry also releases).
+    async fn repack_unlease(&self, repo: &str) -> Result<(), StateError>;
 }
 
 /// In-memory [`StateStore`] for tests/benchmarks. Cheap to clone and
@@ -366,6 +377,8 @@ pub trait StateStore {
 #[derive(Default, Clone)]
 pub struct MemStateStore {
     inner: Arc<Mutex<BTreeMap<String, (RepoState, u64)>>>,
+    /// Maintenance lease expiry (epoch ms) per repo.
+    leases: Arc<Mutex<BTreeMap<String, i64>>>,
     /// Durable Object requests this store would have made in production
     /// (each `load` and `commit` is one DO request), for cost-model checks.
     ops: Arc<Mutex<u64>>,
@@ -439,6 +452,24 @@ impl StateStore for MemStateStore {
             map.insert(repo.to_string(), (state, version + 1));
         }
         Ok(applied)
+    }
+
+    async fn repack_lease(&self, repo: &str, now_ms: i64, ttl_ms: i64) -> Result<bool, StateError> {
+        let _t = crate::metrics::BackendTimer::start(crate::metrics::Op::DoRequest);
+        *self.ops.lock().unwrap() += 1;
+        let mut leases = self.leases.lock().unwrap();
+        if leases.get(repo).is_some_and(|until| *until > now_ms) {
+            return Ok(false);
+        }
+        leases.insert(repo.to_string(), now_ms + ttl_ms);
+        Ok(true)
+    }
+
+    async fn repack_unlease(&self, repo: &str) -> Result<(), StateError> {
+        let _t = crate::metrics::BackendTimer::start(crate::metrics::Op::DoRequest);
+        *self.ops.lock().unwrap() += 1;
+        self.leases.lock().unwrap().remove(repo);
+        Ok(())
     }
 }
 
@@ -679,6 +710,23 @@ mod tests {
         assert!(state.retired.is_empty());
         let ids: Vec<&str> = state.packs.iter().map(|p| p.id.as_str()).collect();
         assert_eq!(ids, vec!["m-2"]);
+    }
+
+    #[test]
+    fn repack_lease_mutual_exclusion_expiry_release() {
+        block_on(async {
+            let s = MemStateStore::new();
+            // Acquire; a second holder is refused until expiry.
+            assert!(s.repack_lease("r", 1000, 100).await.unwrap());
+            assert!(!s.repack_lease("r", 1050, 100).await.unwrap());
+            // Expired: acquirable again.
+            assert!(s.repack_lease("r", 1101, 100).await.unwrap());
+            // Explicit release frees it immediately.
+            s.repack_unlease("r").await.unwrap();
+            assert!(s.repack_lease("r", 1102, 100).await.unwrap());
+            // Leases are per-repo.
+            assert!(s.repack_lease("other", 1103, 100).await.unwrap());
+        });
     }
 
     #[test]
