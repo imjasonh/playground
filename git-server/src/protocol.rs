@@ -61,7 +61,7 @@ pub fn advertise_upload_pack_v2() -> Vec<u8> {
     out.extend_from_slice(&pktline::text_pkt("version 2"));
     out.extend_from_slice(&pktline::text_pkt(&format!("agent={AGENT}")));
     out.extend_from_slice(&pktline::text_pkt("ls-refs=unborn"));
-    out.extend_from_slice(&pktline::text_pkt("fetch=thin-pack"));
+    out.extend_from_slice(&pktline::text_pkt("fetch=thin-pack shallow"));
     out.extend_from_slice(&pktline::text_pkt("object-format=sha1"));
     out.extend_from_slice(pktline::flush_pkt());
     out
@@ -246,22 +246,29 @@ async fn fetch(
     let mut done = false;
     let mut thin_pack = false;
     let mut no_progress = false;
+    let mut deepen: Option<usize> = None;
+    let mut client_shallow: std::collections::HashSet<Oid> = std::collections::HashSet::new();
     for a in args {
         if let Some(w) = a.strip_prefix("want ") {
             wants.push(Oid::from_hex(w).ok_or("bad want oid")?);
         } else if let Some(h) = a.strip_prefix("have ") {
             haves.push(Oid::from_hex(h).ok_or("bad have oid")?);
+        } else if let Some(s) = a.strip_prefix("shallow ") {
+            // Client tells us its existing shallow boundary.
+            if let Some(o) = Oid::from_hex(s) {
+                client_shallow.insert(o);
+            }
+        } else if let Some(d) = a.strip_prefix("deepen ") {
+            deepen = Some(d.trim().parse::<usize>().map_err(|_| "bad deepen depth")?);
         } else {
             match a.as_str() {
                 "done" => done = true,
                 "thin-pack" => thin_pack = true,
                 "no-progress" => no_progress = true,
                 "ofs-delta" | "include-tag" | "wait-for-done" => {}
-                other
-                    if other.starts_with("shallow")
-                        || other.starts_with("deepen")
-                        || other.starts_with("filter") =>
-                {
+                // deepen-since / deepen-not (date/ref-based shallow) and
+                // partial-clone filters remain unsupported.
+                other if other.starts_with("deepen-") || other.starts_with("filter") => {
                     return Ok(Body::Full(error_response(&format!(
                         "unsupported fetch option: {other}"
                     ))));
@@ -291,22 +298,34 @@ async fn fetch(
     // Objects that are stored but unreachable (e.g. force-pushed-away
     // history awaiting maintenance) ride along harmlessly as dangling
     // objects on the client.
-    let want_set: std::collections::HashSet<Oid> = wants.iter().copied().collect();
-    let is_full_clone = haves.is_empty()
-        && state.refs.values().all(|hex| {
-            Oid::from_hex(hex)
-                .map(|o| want_set.contains(&o))
-                .unwrap_or(false)
-        });
-    let set = if is_full_clone {
-        crate::repo::FetchSet {
-            include: odb.all_oids(),
-            common: Vec::new(),
-            client_has: std::collections::HashSet::new(),
-        }
+    // Shallow (`--depth N`) fetch: bounded history walk with a shallow-info
+    // section. Takes precedence over the full-clone fast path.
+    let mut shallow_boundary: Vec<Oid> = Vec::new();
+    let mut unshallow: Vec<Oid> = Vec::new();
+    let set = if let Some(depth) = deepen {
+        let _t = crate::timing::Phase::start("fetch: collect shallow set");
+        let plan = crate::repo::collect_shallow_set(&odb, &wants, depth, &client_shallow).await?;
+        shallow_boundary = plan.shallow;
+        unshallow = plan.unshallow;
+        plan.set
     } else {
-        let _t = crate::timing::Phase::start("fetch: collect set");
-        collect_fetch_set(&odb, &wants, &haves).await?
+        let want_set: std::collections::HashSet<Oid> = wants.iter().copied().collect();
+        let is_full_clone = haves.is_empty()
+            && state.refs.values().all(|hex| {
+                Oid::from_hex(hex)
+                    .map(|o| want_set.contains(&o))
+                    .unwrap_or(false)
+            });
+        if is_full_clone {
+            crate::repo::FetchSet {
+                include: odb.all_oids(),
+                common: Vec::new(),
+                client_has: std::collections::HashSet::new(),
+            }
+        } else {
+            let _t = crate::timing::Phase::start("fetch: collect set");
+            collect_fetch_set(&odb, &wants, &haves).await?
+        }
     };
     // The selection is turned into a plain (pack, record) list here so the
     // response stream doesn't need the odb (or its caches) alive; it re-opens
@@ -315,8 +334,9 @@ async fn fetch(
     let object_count = plan.entries.len();
     drop(odb);
 
-    // Section header: negotiation acks (stateless: always `ready`), then the
-    // packfile section marker — all tiny, sent as the stream's first chunk.
+    // Section header: negotiation acks (stateless: always `ready`), an
+    // optional shallow-info section, then the packfile marker — all tiny,
+    // sent as the stream's first chunk.
     let mut head = Vec::new();
     if !done {
         head.extend_from_slice(&pktline::text_pkt("acknowledgments"));
@@ -328,6 +348,18 @@ async fn fetch(
             }
         }
         head.extend_from_slice(&pktline::text_pkt("ready"));
+        head.extend_from_slice(pktline::delim_pkt());
+    }
+    // shallow-info (gitprotocol-v2(5)): the new shallow boundary and any
+    // commits that are no longer shallow. Only emitted for a shallow fetch.
+    if !shallow_boundary.is_empty() || !unshallow.is_empty() {
+        head.extend_from_slice(&pktline::text_pkt("shallow-info"));
+        for c in &shallow_boundary {
+            head.extend_from_slice(&pktline::text_pkt(&format!("shallow {c}")));
+        }
+        for c in &unshallow {
+            head.extend_from_slice(&pktline::text_pkt(&format!("unshallow {c}")));
+        }
         head.extend_from_slice(pktline::delim_pkt());
     }
     head.extend_from_slice(&pktline::text_pkt("packfile"));

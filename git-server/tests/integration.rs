@@ -373,6 +373,60 @@ fn rejects_push_over_size_limit() {
     assert_eq!(head, small, "ref must still point at the pre-limit commit");
 }
 
+/// Shallow clone (`--depth`) and deepening, driven by a real `git` client.
+#[test]
+fn shallow_clone_and_deepen() {
+    let server = TestServer::start();
+    let tmp = tempfile::tempdir().unwrap();
+    let src = tmp.path().join("src");
+    std::fs::create_dir(&src).unwrap();
+    git(&src, &["init", "-q", "-b", "main", "."]);
+    git(&src, &["remote", "add", "origin", &server.url("shallow")]);
+
+    // Five commits so depth actually truncates history.
+    for i in 1..=5 {
+        write_file(&src, "f.txt", &format!("line {i}\n"));
+        git(&src, &["add", "."]);
+        git(&src, &["commit", "-q", "-m", &format!("c{i}")]);
+    }
+    git(&src, &["push", "-q", "origin", "main"]);
+    let tip = git(&src, &["rev-parse", "HEAD"]).trim().to_string();
+
+    // --depth 1: exactly one commit, correct tip content, fsck-clean.
+    let d1 = tmp.path().join("d1");
+    git(
+        tmp.path(),
+        &["clone", "-q", "--depth", "1", &server.url("shallow"), "d1"],
+    );
+    git(&d1, &["fsck", "--strict"]);
+    let count = git(&d1, &["rev-list", "--count", "HEAD"]);
+    assert_eq!(count.trim(), "1", "depth-1 clone has one commit");
+    assert_eq!(git(&d1, &["rev-parse", "HEAD"]).trim(), tip);
+    assert_eq!(
+        std::fs::read_to_string(d1.join("f.txt")).unwrap(),
+        "line 5\n"
+    );
+    assert!(d1.join(".git/shallow").exists(), "clone is marked shallow");
+
+    // --depth 3: three commits.
+    let d3 = tmp.path().join("d3");
+    git(
+        tmp.path(),
+        &["clone", "-q", "--depth", "3", &server.url("shallow"), "d3"],
+    );
+    git(&d3, &["fsck", "--strict"]);
+    assert_eq!(git(&d3, &["rev-list", "--count", "HEAD"]).trim(), "3");
+
+    // Deepen the depth-1 clone to full history.
+    git(&d1, &["fetch", "-q", "--unshallow", "origin"]);
+    git(&d1, &["fsck", "--strict"]);
+    assert_eq!(
+        git(&d1, &["rev-list", "--count", "HEAD"]).trim(),
+        "5",
+        "unshallow recovers full history"
+    );
+}
+
 /// A push with a moderately large binary blob exercises multi-chunk
 /// streaming ingest and multi-chunk fetch.
 #[test]
