@@ -317,3 +317,29 @@ pub fn env_usize(name: &str, default: usize) -> usize {
         .and_then(|v| v.parse().ok())
         .unwrap_or(default)
 }
+
+/// Store `pack` and its resolved GSIX index under `repo` in `store`,
+/// returning the pack id — the fixture step shared by odb/repo unit tests.
+pub async fn install_pack(store: &MemStore, repo: &str, pack: &[u8]) -> String {
+    use crate::odb::{index_key, pack_key};
+    use crate::pack::index::{resolve_pack, NoExternalBases, PackIndex};
+    use crate::pack::PackScanner;
+    use crate::storage::Store;
+
+    let mut s = PackScanner::new();
+    s.feed(pack).unwrap();
+    let scanned = s.finish().unwrap();
+    let id = hex::encode(scanned.checksum);
+    store
+        .put(&pack_key(repo, &id), pack.to_vec())
+        .await
+        .unwrap();
+    let recs = resolve_pack(store, &pack_key(repo, &id), &scanned, &NoExternalBases)
+        .await
+        .unwrap();
+    store
+        .put(&index_key(repo, &id), PackIndex::new(recs).to_bytes())
+        .await
+        .unwrap();
+    id
+}

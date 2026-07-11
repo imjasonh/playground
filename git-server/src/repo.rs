@@ -1483,9 +1483,7 @@ mod tests {
     /// Tiny commit+tree+blobs fixture for filter selection tests.
     async fn install_fixture(store: &MemStore, repo: &str) -> (Oid, Oid, Oid, Oid, String) {
         use crate::object::{encode_tree, hash_object};
-        use crate::pack::index::{resolve_pack, NoExternalBases, PackIndex};
         use crate::pack::write::PackWriter;
-        use crate::pack::PackScanner;
 
         let small = b"tiny".to_vec();
         let large = vec![b'X'; 2048];
@@ -1518,18 +1516,7 @@ mod tests {
         w.add_full(ObjType::Commit, commit.as_bytes());
         let (pack, _) = w.finish();
 
-        let mut s = PackScanner::new();
-        s.feed(&pack).unwrap();
-        let scanned = s.finish().unwrap();
-        let id = hex::encode(scanned.checksum);
-        store.put(&pack_key(repo, &id), pack).await.unwrap();
-        let recs = resolve_pack(store, &pack_key(repo, &id), &scanned, &NoExternalBases)
-            .await
-            .unwrap();
-        store
-            .put(&index_key(repo, &id), PackIndex::new(recs).to_bytes())
-            .await
-            .unwrap();
+        let id = crate::testutil::install_pack(store, repo, &pack).await;
         (commit_oid, tree_oid, small_oid, large_oid, id)
     }
 

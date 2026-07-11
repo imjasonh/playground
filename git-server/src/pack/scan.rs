@@ -350,10 +350,18 @@ mod tests {
 
     #[test]
     fn rejects_truncation() {
+        // The truncation error names the scan state and entry progress.
         let pack = build_pack(&[(ObjType::Blob, b"hello".to_vec())]);
         let mut scanner = PackScanner::new();
         scanner.feed(&pack[..pack.len() - 5]).unwrap();
-        assert!(scanner.finish().is_err());
+        let err = scanner.finish().unwrap_err();
+        assert!(err.contains("truncated in"), "{err}");
+        assert!(err.contains("of 1 entries"), "{err}");
+        // Cut inside the pack header.
+        let mut scanner = PackScanner::new();
+        scanner.feed(&pack[..10]).unwrap();
+        let err = scanner.finish().unwrap_err();
+        assert!(err.contains("truncated in header"), "{err}");
     }
 
     #[test]

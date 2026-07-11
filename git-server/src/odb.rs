@@ -272,31 +272,10 @@ impl<'a> Odb<'a> {
 mod tests {
     use super::*;
     use crate::object::hash_object;
-    use crate::pack::index::{resolve_pack, NoExternalBases, PackIndex};
     use crate::pack::write::test_support::build_pack;
-    use crate::pack::PackScanner;
     use crate::storage::MemStore;
+    use crate::testutil::install_pack;
     use futures::executor::block_on;
-
-    /// Store a pack + index under `repo` and return its pack id.
-    pub async fn install_pack(store: &MemStore, repo: &str, pack: &[u8]) -> String {
-        let mut s = PackScanner::new();
-        s.feed(pack).unwrap();
-        let scanned = s.finish().unwrap();
-        let id = hex::encode(scanned.checksum);
-        store
-            .put(&pack_key(repo, &id), pack.to_vec())
-            .await
-            .unwrap();
-        let recs = resolve_pack(store, &pack_key(repo, &id), &scanned, &NoExternalBases)
-            .await
-            .unwrap();
-        store
-            .put(&index_key(repo, &id), PackIndex::new(recs).to_bytes())
-            .await
-            .unwrap();
-        id
-    }
 
     #[test]
     fn reads_across_multiple_packs() {
@@ -314,6 +293,39 @@ mod tests {
             assert_eq!(*odb.read(beta).await.unwrap().unwrap().1, b"beta");
             assert!(odb.read(Oid::ZERO).await.unwrap().is_none());
             assert_eq!(odb.all_oids().len(), 2);
+        });
+    }
+
+    #[test]
+    fn read_typed_rejects_type_mismatch() {
+        block_on(async {
+            let store = MemStore::new();
+            let pack = build_pack(&[(ObjType::Blob, b"data".to_vec())]);
+            let id = install_pack(&store, "r", &pack).await;
+            let odb = Odb::open(&store, "r", &[id]).await.unwrap();
+            let blob = hash_object(ObjType::Blob, b"data");
+
+            assert_eq!(*odb.read_typed(blob, ObjType::Blob).await.unwrap(), b"data");
+            let err = odb.read_typed(blob, ObjType::Commit).await.unwrap_err();
+            assert!(err.contains("is a blob, expected commit"), "{err}");
+            let err = odb.read_typed(Oid::ZERO, ObjType::Blob).await.unwrap_err();
+            assert!(err.contains("not found"), "{err}");
+        });
+    }
+
+    #[test]
+    fn peel_to_commit_rejects_non_commit() {
+        block_on(async {
+            let store = MemStore::new();
+            let pack = build_pack(&[(ObjType::Blob, b"data".to_vec())]);
+            let id = install_pack(&store, "r", &pack).await;
+            let odb = Odb::open(&store, "r", &[id]).await.unwrap();
+            let blob = hash_object(ObjType::Blob, b"data");
+
+            let err = odb.peel_to_commit(blob).await.unwrap_err();
+            assert!(err.contains("peels to a blob"), "{err}");
+            let err = odb.peel_to_commit(Oid::ZERO).await.unwrap_err();
+            assert!(err.contains("not found"), "{err}");
         });
     }
 }

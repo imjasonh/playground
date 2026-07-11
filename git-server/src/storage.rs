@@ -328,6 +328,20 @@ mod tests {
     }
 
     #[test]
+    fn block_reader_rejects_read_past_end() {
+        block_on(async {
+            let s = MemStore::new();
+            s.put("obj", b"0123456789".to_vec()).await.unwrap();
+            let r = BlockReader::new("obj");
+            assert_eq!(s.size("obj").await.unwrap(), Some(10));
+            assert_eq!(r.read(&s, 2, 6).await.unwrap(), b"2345");
+            // A range starting beyond the object is corruption, not empty.
+            let err = r.read(&s, 20, 25).await.unwrap_err();
+            assert!(err.0.contains("read past end"), "{}", err.0);
+        });
+    }
+
+    #[test]
     fn uploader_streams() {
         block_on(async {
             let s = MemStore::new();
