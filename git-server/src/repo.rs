@@ -561,7 +561,7 @@ fn to_results(commands: &[RefUpdate], errors: Vec<Option<String>>) -> Vec<RefRes
 }
 
 impl<'a> Repo<'a> {
-    pub async fn load_state(&self) -> Result<(RepoState, u64), String> {
+    pub async fn load_state(&self) -> Result<crate::refs::LoadResult, String> {
         self.states.load(self.name).await.map_err(|e| e.to_string())
     }
 

@@ -8,7 +8,7 @@
 //! | `GET /<repo>/info/refs?service=…` | smart-HTTP advertisement |
 //! | `POST /<repo>/git-upload-pack` | fetch (protocol v2) |
 //! | `POST /<repo>/git-receive-pack` | push |
-//! | `GET /api/<repo>` | repo status: state, default branch, last push, size |
+//! | `GET /api/<repo>` | repo status: state, timestamps, lease, size |
 //! | `GET /api/<repo>/refs` | JSON ref listing |
 //! | `GET /api/<repo>/file/<refish>/<path>` | raw file contents |
 //! | `GET /api/<repo>/tree/<refish>/<path>` | JSON dir listing + last-commit |
@@ -270,9 +270,9 @@ impl GitHttp {
                 )
             }
             Some("git-receive-pack") => match repo.load_state().await {
-                Ok((state, _)) => Response::ok(
+                Ok(loaded) => Response::ok(
                     "application/x-git-receive-pack-advertisement",
-                    protocol::advertise_receive_pack(&state),
+                    protocol::advertise_receive_pack(&loaded.state),
                 ),
                 Err(e) => Response::error(500, &e),
             },
@@ -341,9 +341,10 @@ impl GitHttp {
         let repo = self.repo(repo_name);
         match (req.method, rest) {
             ("GET", ["refs"]) => match repo.load_state().await {
-                Ok((state, _)) => {
-                    Response::json(200, json!({ "head": state.head, "refs": state.refs }))
-                }
+                Ok(loaded) => Response::json(
+                    200,
+                    json!({ "head": loaded.state.head, "refs": loaded.state.refs }),
+                ),
                 Err(e) => Response::error(500, &e),
             },
             ("GET", []) => self.api_status(&repo).await,
@@ -365,17 +366,18 @@ impl GitHttp {
     }
 
     /// `GET /api/<repo>` — repository summary: state, default branch,
-    /// last-push time, and size counters.
+    /// last-push / last-repack times, maintenance lease, and size counters.
     ///
     /// `state` is `EMPTY` (never pushed) or `READY` today. Once the migration
     /// importer (`docs/large-repo-migration.md`) exists, an in-progress import
     /// reports `MIGRATING` here with progress fields; the shape is designed to
     /// carry that without breaking existing consumers.
     async fn api_status(&self, repo: &Repo<'_>) -> Response {
-        let (state, version) = match repo.load_state().await {
+        let loaded = match repo.load_state().await {
             Ok(s) => s,
             Err(e) => return Response::error(500, &e),
         };
+        let state = &loaded.state;
         let empty = state.packs.is_empty() && state.refs.is_empty();
         // Default branch: HEAD's symref target with the refs/heads/ prefix
         // stripped, when it points at a local branch.
@@ -385,6 +387,8 @@ impl GitHttp {
             .map(|s| s.to_string());
         let objects: u64 = state.packs.iter().map(|p| p.objects).sum();
         let bytes: u64 = state.packs.iter().map(|p| p.bytes).sum();
+        let now_ms = crate::metrics::now_ms() as i64;
+        let lease_held = loaded.lease_until_ms > now_ms;
         Response::json(
             200,
             json!({
@@ -392,12 +396,19 @@ impl GitHttp {
                 "head": state.head,
                 "default_branch": default_branch,
                 "head_commit": state.head_oid(),
-                "last_push_ms": state.last_push_ms,
+                "last_push": state.last_push_ms.map(crate::timefmt::rfc3339_ms),
+                "last_repack": state.last_repack_ms.map(crate::timefmt::rfc3339_ms),
+                "repack_lease_until": if lease_held {
+                    Some(crate::timefmt::rfc3339_ms(loaded.lease_until_ms))
+                } else {
+                    None
+                },
                 "refs": state.refs.len(),
                 "packs": state.packs.len(),
+                "retired": state.retired.len(),
                 "objects": objects,
                 "bytes": bytes,
-                "version": version,
+                "version": loaded.version,
             }),
         )
     }
@@ -483,10 +494,11 @@ impl GitHttp {
         ),
         Response,
     > {
-        let (state, _) = repo
+        let loaded = repo
             .load_state()
             .await
             .map_err(|e| Response::error(500, &e))?;
+        let state = loaded.state;
         if state.packs.is_empty() {
             return Err(Response::error(404, "repository is empty"));
         }

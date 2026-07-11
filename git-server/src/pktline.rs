@@ -84,12 +84,94 @@ pub mod band {
 
 /// Append `payload` split across side-band data pkt-lines on `channel`.
 pub fn write_band_pkts(out: &mut Vec<u8>, channel: u8, payload: &[u8]) {
-    // One byte of each pkt payload is the channel number.
-    for chunk in payload.chunks(MAX_PKT_PAYLOAD - 1) {
-        let mut buf = Vec::with_capacity(chunk.len() + 1);
-        buf.push(channel);
-        buf.extend_from_slice(chunk);
-        out.extend_from_slice(&data_pkt(&buf));
+    BufPktWriter { buf: out }.band(channel, payload);
+}
+
+/// Writable sink for pkt-line framed output.
+///
+/// Protocol handlers write through this trait so extra channels (progress,
+/// debug, timing) can be added without threading raw `Vec<u8>` appends.
+/// [`BufPktWriter`] is the in-memory implementation used today; a streaming
+/// sink can be added later without changing call sites that take `&mut dyn
+/// PktWriter`.
+pub trait PktWriter {
+    /// Append one already-framed pkt-line (or a flush/delim/response-end).
+    fn write_raw(&mut self, framed: &[u8]);
+
+    /// Encode and write one data pkt-line.
+    fn data(&mut self, payload: &[u8]) {
+        let pkt = data_pkt(payload);
+        self.write_raw(&pkt);
+    }
+
+    /// Encode and write one textual pkt-line (trailing `\n` added).
+    fn text(&mut self, line: &str) {
+        let pkt = text_pkt(line);
+        self.write_raw(&pkt);
+    }
+
+    /// Write a `0000` flush packet.
+    fn flush_pkt(&mut self) {
+        self.write_raw(flush_pkt());
+    }
+
+    /// Write a `0001` delimiter packet.
+    fn delim_pkt(&mut self) {
+        self.write_raw(delim_pkt());
+    }
+
+    /// Write a `0002` response-end packet.
+    fn response_end_pkt(&mut self) {
+        self.write_raw(response_end_pkt());
+    }
+
+    /// Split `payload` across side-band pkt-lines on `channel`.
+    fn band(&mut self, channel: u8, payload: &[u8]) {
+        for chunk in payload.chunks(MAX_PKT_PAYLOAD - 1) {
+            let mut buf = Vec::with_capacity(chunk.len() + 1);
+            buf.push(channel);
+            buf.extend_from_slice(chunk);
+            self.data(&buf);
+        }
+    }
+
+    /// Side-band PROGRESS (band 2). Appends `\r\n` when `msg` has no newline,
+    /// matching git's progress-line convention.
+    fn progress(&mut self, msg: &str) {
+        let mut payload = Vec::with_capacity(msg.len() + 2);
+        payload.extend_from_slice(msg.as_bytes());
+        if !msg.ends_with('\n') {
+            payload.extend_from_slice(b"\r\n");
+        }
+        self.band(band::PROGRESS, &payload);
+    }
+
+    /// Side-band ERROR (band 3).
+    fn error_band(&mut self, msg: &str) {
+        self.band(band::ERROR, msg.as_bytes());
+    }
+}
+
+/// [`PktWriter`] that appends into a byte buffer.
+pub struct BufPktWriter<'a> {
+    pub buf: &'a mut Vec<u8>,
+}
+
+impl BufPktWriter<'_> {
+    pub fn new(buf: &mut Vec<u8>) -> BufPktWriter<'_> {
+        BufPktWriter { buf }
+    }
+}
+
+impl PktWriter for BufPktWriter<'_> {
+    fn write_raw(&mut self, framed: &[u8]) {
+        self.buf.extend_from_slice(framed);
+    }
+}
+
+impl PktWriter for Vec<u8> {
+    fn write_raw(&mut self, framed: &[u8]) {
+        self.extend_from_slice(framed);
     }
 }
 
@@ -264,6 +346,21 @@ mod tests {
                 assert_eq!(a.len() - 1 + b.len() - 1, payload.len());
             }
             _ => panic!("expected data pkts"),
+        }
+    }
+
+    #[test]
+    fn pkt_writer_progress() {
+        let mut out = Vec::new();
+        out.progress("hello");
+        let pkts = parse_all(&out).unwrap();
+        assert_eq!(pkts.len(), 1);
+        match &pkts[0] {
+            Pkt::Data(d) => {
+                assert_eq!(d[0], band::PROGRESS);
+                assert_eq!(&d[1..], b"hello\r\n");
+            }
+            _ => panic!("expected data"),
         }
     }
 }

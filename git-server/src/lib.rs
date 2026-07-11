@@ -54,6 +54,7 @@ pub mod repo;
 pub mod storage;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod testutil;
+pub mod timefmt;
 pub mod timing;
 
 #[cfg(target_arch = "wasm32")]

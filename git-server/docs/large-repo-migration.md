@@ -95,26 +95,26 @@ request that created the job; `/migrate` just enqueues and returns.
 
 ### Surfaced through the repo status API
 
-The repo status endpoint (`GET /api/<repo>/status`) is the front door for "is
+The repo status endpoint (`GET /api/<repo>`) is the front door for "is
 this repo usable yet?", so migration state is reported there too, not only
 under `/migrate/<job>`. Its `status` field — today `EMPTY` (never pushed) or
 `READY` — gains a third value **`MIGRATING`** while an import is in flight,
 alongside a `migration` progress object:
 
 ```jsonc
-GET /api/<repo>/status
+GET /api/<repo>
 {
   "status": "MIGRATING",              // EMPTY | READY | MIGRATING
   "head": "refs/heads/main",
   "default_branch": "main",
-  "last_push_ms": null,               // no accepted push yet during initial import
+  "last_push": null,                  // no accepted push yet during initial import
   "objects": 812345, "bytes": 4123456789,   // grows as batches land
   "migration": {
     "job": "<id>",
     "phase": "backfill",              // discover | skeleton | enumerate | backfill | finalize
     "batches_done": 6, "batches_total": 14,
     "bytes_done": 4123456789, "bytes_total_est": 9876543210,
-    "started_ms": 1783726000000,
+    "started": "2026-07-11T14:28:00.000Z",
     "errors": []
   }
 }
@@ -123,9 +123,9 @@ GET /api/<repo>/status
 Because migration objects stay under the `refs/migrate/*` staging namespace
 until the final atomic CAS, a repo reads `MIGRATING` (not `READY`) for the
 whole import even as bytes accumulate; it flips to `READY` — with the target
-refs and a normal `last_push_ms` / `head_commit` — only at finalize. A repo
+refs and a normal `last_push` / `head_commit` — only at finalize. A repo
 with no active job never shows `MIGRATING`. So a client or UI can poll
-`/api/<repo>/status` alone to render both "ready to clone" and "importing,
+`/api/<repo>` alone to render both "ready to clone" and "importing,
 N% done" without knowing the job id. (The `EMPTY`/`READY` states and the
 non-migration fields exist today; `MIGRATING` + `migration` arrive with this
 importer.)

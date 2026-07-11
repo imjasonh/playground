@@ -17,7 +17,9 @@
 use crate::http::{GitHttp, Request as HttpRequest};
 use crate::metrics::{BackendTimer, Op};
 use crate::protocol::BodyStream;
-use crate::refs::{PushApplied, PushDelta, RepackSwap, RepoState, StateError, StateStore};
+use crate::refs::{
+    LoadResult, PushApplied, PushDelta, RepackSwap, RepoState, StateError, StateStore,
+};
 use crate::storage::{Result as StorageResult, StorageError, Store, Uploader};
 use async_trait::async_trait;
 use futures::StreamExt;
@@ -194,6 +196,9 @@ impl Uploader for R2Uploader {
 struct LoadReply {
     state: RepoState,
     version: u64,
+    /// Absolute epoch ms when the maintenance lease expires; 0 if free.
+    #[serde(default)]
+    lease_until_ms: i64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -225,7 +230,12 @@ impl DurableObject for RepoStateDo {
                     .get("state")
                     .await
                     .unwrap_or_else(|_| RepoState::empty());
-                Response::from_json(&LoadReply { state, version })
+                let lease_until_ms: i64 = storage.get("lease_until").await.unwrap_or(0);
+                Response::from_json(&LoadReply {
+                    state,
+                    version,
+                    lease_until_ms,
+                })
             }
             // Merge-apply one push's delta against the current state
             // (per-ref CAS + commuting appends). Single-threaded execution
@@ -327,13 +337,17 @@ impl DoStateStore {
 
 #[async_trait(?Send)]
 impl StateStore for DoStateStore {
-    async fn load(&self, repo: &str) -> Result<(RepoState, u64), StateError> {
+    async fn load(&self, repo: &str) -> Result<LoadResult, StateError> {
         let mut resp = self.call(repo, "/load", None).await?;
         let reply: LoadReply = resp
             .json()
             .await
             .map_err(|e| StateError::Backend(e.to_string()))?;
-        Ok((reply.state, reply.version))
+        Ok(LoadResult {
+            state: reply.state,
+            version: reply.version,
+            lease_until_ms: reply.lease_until_ms,
+        })
     }
 
     async fn apply_push(&self, repo: &str, delta: &PushDelta) -> Result<PushApplied, StateError> {
@@ -524,7 +538,7 @@ async fn fetch(mut req: Request, env: Env, ctx: Context) -> worker::Result<Respo
                         name: &repo_name,
                     };
                     let packs = match repo.load_state().await {
-                        Ok((state, _)) => state.packs.len(),
+                        Ok(loaded) => loaded.state.packs.len(),
                         Err(_) => return,
                     };
                     if packs < trigger {

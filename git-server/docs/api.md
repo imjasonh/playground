@@ -52,11 +52,18 @@ objects that fail the filter are omitted unless named in an explicit `want`
 (so a follow-up blob fetch after `blob:none` works). `deepen-since` /
 `deepen-not` are rejected in-band.
 
+Unless the client sends `no-progress`, the packfile section also carries
+side-band **PROGRESS** lines with repo debug (`packs` / `objects` / `bytes` /
+`retired`, `last_push` / `last_repack` / `lease_until`) and a
+Server-Timing-style summary (same tokens as the HTTP `Server-Timing` header).
+
 ### `POST /<repo>/git-receive-pack`
 Push. Body is the ref-update commands followed by the packfile, streamed to R2
 as it arrives. Response (`application/x-git-receive-pack-result`) is the
-report-status. **Size limit:** the body is subject to Cloudflare's request cap
-(~100 MB on our plan); over-limit pushes are refused with a readable
+report-status. When the client negotiated `side-band-64k` (stock git does),
+the same PROGRESS debug + Server-Timing-style lines are emitted after the
+report-status. **Size limit:** the body is subject to Cloudflare's request
+cap (~100 MB on our plan); over-limit pushes are refused with a readable
 report-status error (see [`design.md` → Size limits](design.md)).
 
 ---
@@ -73,7 +80,7 @@ All refs and the HEAD symref target.
   "refs": { "refs/heads/main": "<oid>", "refs/tags/v1": "<oid>" } }
 ```
 
-### `GET /api/<repo>/status`
+### `GET /api/<repo>`
 Repository summary — the one call for "is this repo usable, and how big?".
 
 ```jsonc
@@ -82,14 +89,20 @@ Repository summary — the one call for "is this repo usable, and how big?".
   "head": "refs/heads/main",
   "default_branch": "main",   // HEAD's branch, or null if HEAD isn't a local branch
   "head_commit": "<oid>",     // oid HEAD resolves to, or null
-  "last_push_ms": 1783726000000,  // epoch ms of last accepted push, or null
+  "last_push": "2026-07-11T14:28:00.123Z",  // RFC 3339 UTC of last accepted push, or null
+  "last_repack": "2026-07-11T15:00:00.000Z", // RFC 3339 UTC of last pack consolidation, or null
+  "repack_lease_until": null, // RFC 3339 UTC while a repack holds the lease, else null
   "refs": 3,                  // ref count
   "packs": 1,                 // stored pack count
+  "retired": 0,               // packs/segments awaiting deferred deletion
   "objects": 12345,
   "bytes": 6789012,           // total stored pack bytes
   "version": 7                // monotonic state version
 }
 ```
+
+Timestamps in API responses are always RFC 3339 UTC with millisecond
+precision (e.g. `2026-07-11T14:28:00.123Z`), never epoch milliseconds.
 
 Never returns `404` for a valid repo name: an unknown repo reports
 `"status": "EMPTY"`. (A future `"MIGRATING"` state with import progress is
