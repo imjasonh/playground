@@ -176,16 +176,21 @@ fn end_to_end() {
     let result: Value = serde_json::from_slice(&body).unwrap();
     assert!(result["result"].as_str().unwrap().contains("Repacked"));
 
-    let packs_after: Vec<String> = server
+    // The manifest now names a single pack. Superseded pack *storage* is
+    // deliberately still present (deferred deletion: retired ids are swept
+    // only after the grace period, so in-flight readers never lose data).
+    let status_after: Value = serde_json::from_slice(&server.get("/api/test").1).unwrap();
+    assert_eq!(status_after["packs"], 1, "one manifest pack after repack");
+    let stored_packs = server
         .store
         .keys()
-        .into_iter()
+        .iter()
         .filter(|k| k.ends_with(".pack"))
-        .collect();
+        .count();
     assert_eq!(
-        packs_after.len(),
-        1,
-        "one pack after repack: {packs_after:?}"
+        stored_packs,
+        packs_before + 1,
+        "superseded packs retained for the grace period"
     );
 
     // A fresh clone from the consolidated pack must still fsck cleanly.
@@ -419,8 +424,11 @@ fn incremental_repack_converges_within_budget() {
         states: &server.states,
         name: "inc",
     };
+    // grace_ms: 0 — no concurrent readers here, so sweep retired storage on
+    // the next run (exercises the deferred-deletion path end-to-end).
     let budget = RepackBudget {
         max_packs: 3,
+        grace_ms: 0,
         ..Default::default()
     };
 
@@ -457,6 +465,14 @@ fn incremental_repack_converges_within_budget() {
     }
     let status: Value = serde_json::from_slice(&server.get("/api/inc").1).unwrap();
     assert_eq!(status["packs"], 1, "converged to a single pack");
+    // The final NoOp run swept all previously-retired ids (grace 0), so
+    // nothing superseded lingers in the manifest.
+    let (final_state, _) = block_on(repo.load_state()).unwrap();
+    assert!(
+        final_state.retired.is_empty(),
+        "retired not swept: {:?}",
+        final_state.retired
+    );
 
     // Everything still clones, fscks, and blames correctly.
     git(

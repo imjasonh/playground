@@ -56,6 +56,21 @@ pub struct RepoState {
     /// status API as `last_push`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_push_ms: Option<i64>,
+    /// Packs/segments superseded by a repack swap but not yet deleted from
+    /// storage (deferred deletion): an in-flight request that loaded the
+    /// pre-swap manifest may still be reading them. A later repack run
+    /// deletes entries older than its grace period and sweeps them from
+    /// this list.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub retired: Vec<RetiredId>,
+}
+
+/// One deferred-deletion entry: a superseded pack/segment id and the swap
+/// time that retired it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RetiredId {
+    pub id: String,
+    pub ms: i64,
 }
 
 impl RepoState {
@@ -146,7 +161,10 @@ impl RepoState {
     /// The consolidated pack takes the position of the first removed pack,
     /// so the manifest's oldest-first shadowing order relative to packs
     /// outside the swap is preserved (the consolidation itself deduplicated
-    /// oids keeping the newest copy within the consumed range).
+    /// oids keeping the newest copy within the consumed range). Consumed ids
+    /// move to `retired` (deferred deletion — an in-flight reader may still
+    /// hold the pre-swap manifest); ids in `sweep`, whose storage the caller
+    /// already deleted after their grace period, leave `retired`.
     pub fn merge_repack(&mut self, swap: &RepackSwap) -> bool {
         let have_packs: std::collections::HashSet<&str> =
             self.packs.iter().map(|p| p.id.as_str()).collect();
@@ -167,48 +185,62 @@ impl RepoState {
             return false;
         }
 
-        let removed: std::collections::HashSet<&str> =
-            swap.remove_packs.iter().map(String::as_str).collect();
-        let mut packs = Vec::with_capacity(self.packs.len() + 1 - swap.remove_packs.len());
-        let mut inserted = false;
-        for p in &self.packs {
-            if removed.contains(p.id.as_str()) {
-                if !inserted {
-                    packs.push(swap.new_pack.clone());
-                    inserted = true;
-                }
-            } else {
-                packs.push(p.clone());
-            }
-        }
-        if !inserted {
-            // remove_packs was empty (filelog-only consolidation): append.
-            packs.push(swap.new_pack.clone());
-        }
-        self.packs = packs;
-
-        let removed_fl: std::collections::HashSet<&str> =
-            swap.remove_filelog.iter().map(String::as_str).collect();
-        let mut filelog = Vec::with_capacity(self.filelog.len() + 1);
-        let mut inserted_fl = false;
-        for f in &self.filelog {
-            if removed_fl.contains(f.as_str()) {
-                if !inserted_fl {
-                    if let Some(new) = &swap.new_filelog {
-                        filelog.push(new.clone());
+        if !swap.remove_packs.is_empty() {
+            let new_pack = match &swap.new_pack {
+                Some(p) => p,
+                None => return false, // consolidation without a result pack
+            };
+            let removed: std::collections::HashSet<&str> =
+                swap.remove_packs.iter().map(String::as_str).collect();
+            let mut packs = Vec::with_capacity(self.packs.len() + 1 - swap.remove_packs.len());
+            let mut inserted = false;
+            for p in &self.packs {
+                if removed.contains(p.id.as_str()) {
+                    if !inserted {
+                        packs.push(new_pack.clone());
+                        inserted = true;
                     }
-                    inserted_fl = true;
+                } else {
+                    packs.push(p.clone());
                 }
-            } else {
-                filelog.push(f.clone());
+            }
+            self.packs = packs;
+
+            let removed_fl: std::collections::HashSet<&str> =
+                swap.remove_filelog.iter().map(String::as_str).collect();
+            let mut filelog = Vec::with_capacity(self.filelog.len() + 1);
+            let mut inserted_fl = false;
+            for f in &self.filelog {
+                if removed_fl.contains(f.as_str()) {
+                    if !inserted_fl {
+                        if let Some(new) = &swap.new_filelog {
+                            filelog.push(new.clone());
+                        }
+                        inserted_fl = true;
+                    }
+                } else {
+                    filelog.push(f.clone());
+                }
+            }
+            self.filelog = filelog;
+
+            // Retire the consumed ids (pack ids ∪ filelog ids — a push's
+            // segment shares its pack's id, so dedupe).
+            for id in swap.remove_packs.iter().chain(&swap.remove_filelog) {
+                if !self.retired.iter().any(|r| &r.id == id) {
+                    self.retired.push(RetiredId {
+                        id: id.clone(),
+                        ms: swap.now_ms,
+                    });
+                }
             }
         }
-        if !inserted_fl {
-            if let Some(new) = &swap.new_filelog {
-                filelog.push(new.clone());
-            }
+
+        if !swap.sweep.is_empty() {
+            let swept: std::collections::HashSet<&str> =
+                swap.sweep.iter().map(String::as_str).collect();
+            self.retired.retain(|r| !swept.contains(r.id.as_str()));
         }
-        self.filelog = filelog;
         true
     }
 }
@@ -261,12 +293,21 @@ pub struct RepackSwap {
     pub remove_packs: Vec<String>,
     /// The consolidated pack, inserted at the first removed pack's position
     /// so shadowing order relative to unselected packs is preserved.
-    pub new_pack: PackMeta,
+    /// `None` for a sweep-only swap (no consolidation this run).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub new_pack: Option<PackMeta>,
     /// File-log segment ids consumed by the merge (all must be present).
     pub remove_filelog: Vec<String>,
     /// The merged segment id (`None` when the merge produced no records).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub new_filelog: Option<String>,
+    /// Swap time (epoch ms): stamped on the retired ids for the deferred-
+    /// deletion grace period.
+    pub now_ms: i64,
+    /// Retired ids whose grace period has expired and whose storage the
+    /// caller has already deleted: drop them from `retired`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sweep: Vec<String>,
 }
 
 /// Errors from the state store.
@@ -545,21 +586,37 @@ mod tests {
         }
     }
 
+    fn swap(
+        remove: &[&str],
+        new_pack: &str,
+        remove_fl: &[&str],
+        new_fl: Option<&str>,
+    ) -> RepackSwap {
+        RepackSwap {
+            remove_packs: remove.iter().map(|s| s.to_string()).collect(),
+            new_pack: Some(pack(new_pack)),
+            remove_filelog: remove_fl.iter().map(|s| s.to_string()).collect(),
+            new_filelog: new_fl.map(String::from),
+            now_ms: 1000,
+            sweep: Vec::new(),
+        }
+    }
+
     #[test]
-    fn merge_repack_replaces_in_place() {
+    fn merge_repack_replaces_in_place_and_retires() {
         let mut state = RepoState::empty();
         state.packs = vec![pack("base"), pack("p1"), pack("p2"), pack("p3")];
         state.filelog = vec!["p1".into(), "p2".into(), "p3".into()];
-        let ok = state.merge_repack(&RepackSwap {
-            remove_packs: vec!["p1".into(), "p2".into()],
-            new_pack: pack("m-1"),
-            remove_filelog: vec!["p1".into(), "p2".into()],
-            new_filelog: Some("m-1".into()),
-        });
+        let ok = state.merge_repack(&swap(&["p1", "p2"], "m-1", &["p1", "p2"], Some("m-1")));
         assert!(ok);
         let ids: Vec<&str> = state.packs.iter().map(|p| p.id.as_str()).collect();
         assert_eq!(ids, vec!["base", "m-1", "p3"], "in-place, order preserved");
         assert_eq!(state.filelog, vec!["m-1".to_string(), "p3".to_string()]);
+        // Consumed ids are retired (deduped: pack + segment share an id),
+        // not gone from storage yet.
+        let retired: Vec<&str> = state.retired.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(retired, vec!["p1", "p2"]);
+        assert!(state.retired.iter().all(|r| r.ms == 1000));
     }
 
     #[test]
@@ -578,12 +635,7 @@ mod tests {
             filelog: Some("p3".into()),
             last_push_ms: 1,
         });
-        let ok = state.merge_repack(&RepackSwap {
-            remove_packs: vec!["p1".into(), "p2".into()],
-            new_pack: pack("m-1"),
-            remove_filelog: vec![],
-            new_filelog: None,
-        });
+        let ok = state.merge_repack(&swap(&["p1", "p2"], "m-1", &[], None));
         assert!(ok, "push appends never invalidate a repack swap");
         let ids: Vec<&str> = state.packs.iter().map(|p| p.id.as_str()).collect();
         assert_eq!(ids, vec!["m-1", "p3"]);
@@ -597,14 +649,36 @@ mod tests {
         state.packs = vec![pack("m-other"), pack("p2")];
         state.filelog = vec!["p2".into()];
         let before = state.clone();
-        let ok = state.merge_repack(&RepackSwap {
-            remove_packs: vec!["p1".into(), "p2".into()],
-            new_pack: pack("m-1"),
-            remove_filelog: vec![],
-            new_filelog: None,
-        });
+        let ok = state.merge_repack(&swap(&["p1", "p2"], "m-1", &[], None));
         assert!(!ok);
         assert_eq!(state, before, "state untouched on conflict");
+    }
+
+    #[test]
+    fn merge_repack_sweep_clears_retired() {
+        let mut state = RepoState::empty();
+        state.packs = vec![pack("p1"), pack("p2"), pack("p3")];
+        assert!(state.merge_repack(&swap(&["p1", "p2"], "m-1", &[], None)));
+        assert_eq!(state.retired.len(), 2);
+        // Next run: consolidates [m-1, p3] and sweeps the expired ids.
+        let mut s2 = swap(&["m-1", "p3"], "m-2", &[], None);
+        s2.sweep = vec!["p1".into(), "p2".into()];
+        assert!(state.merge_repack(&s2));
+        let retired: Vec<&str> = state.retired.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(retired, vec!["m-1", "p3"], "old sweep out, new retire in");
+        // Sweep-only swap (NoOp run with expired retired ids).
+        let clear = RepackSwap {
+            remove_packs: Vec::new(),
+            new_pack: None,
+            remove_filelog: Vec::new(),
+            new_filelog: None,
+            now_ms: 2000,
+            sweep: vec!["m-1".into(), "p3".into()],
+        };
+        assert!(state.merge_repack(&clear));
+        assert!(state.retired.is_empty());
+        let ids: Vec<&str> = state.packs.iter().map(|p| p.id.as_str()).collect();
+        assert_eq!(ids, vec!["m-2"]);
     }
 
     #[test]

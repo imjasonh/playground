@@ -263,7 +263,11 @@ are bad at (CPU, memory) and what R2 makes cheap (streaming copies):
   now that merge-apply lets pushes land at high rate; a whole-document CAS
   here would lose to every push landing during the run). The swap fails only
   if a *concurrent repack* consumed one of the same ids, in which case the
-  staged output is discarded. Old objects are deleted only after the swap.
+  staged output is discarded. Superseded objects are **not deleted at swap
+  time**: an in-flight request that loaded the pre-swap manifest may still
+  be reading them. The swap moves their ids to a `retired` list; a later run
+  deletes the storage after a grace period (longer than any plausible
+  request) and sweeps the list.
 * The scheduled handler walks a KV registry of repos (registered on push).
 
 ## Block-cached reads: request count is the real currency

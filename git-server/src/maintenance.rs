@@ -33,10 +33,14 @@
 //! only if another repack consumed one of the same ids first, in which case
 //! all staged output is discarded.
 //!
-//! Superseded packs/indexes/segments are deleted immediately after the swap
-//! (as before; a reader holding the pre-swap manifest for the duration of
-//! its request can in principle race this — the deferred-deletion design in
-//! `docs/large-repo-repacking.md` remains future work).
+//! Superseded packs/indexes/segments are **not deleted immediately**: a
+//! request that loaded the pre-swap manifest may still be reading them
+//! (under sustained load this is the common case, not a corner — swaps land
+//! *while* pushes and clones are in flight). The swap moves the consumed ids
+//! to the state's `retired` list with a timestamp; a later run deletes the
+//! storage of entries older than the grace period and sweeps them from the
+//! list. Only a `LostRace` discards its own staged output immediately (it
+//! was never referenced by any manifest).
 
 use crate::odb::{index_key, pack_key};
 use crate::pack::index::{EntryRecord, PackIndex};
@@ -60,6 +64,11 @@ pub struct RepackBudget {
     /// Max packs per run: bounds per-pack overhead (index load + first
     /// ranged read each).
     pub max_packs: usize,
+    /// Deferred-deletion grace period: a superseded pack's storage is
+    /// deleted only this long after the swap retired it, so any request
+    /// that loaded the pre-swap manifest has finished reading. Must exceed
+    /// the longest plausible request (a near-cap push/clone runs minutes).
+    pub grace_ms: i64,
 }
 
 impl Default for RepackBudget {
@@ -68,6 +77,7 @@ impl Default for RepackBudget {
             max_bytes: 512 * 1024 * 1024,
             max_objects: 200_000,
             max_packs: 200,
+            grace_ms: 15 * 60 * 1000,
         }
     }
 }
@@ -133,7 +143,25 @@ pub async fn repack_with_budget(
     nonce: &str,
     budget: &RepackBudget,
 ) -> Result<RepackOutcome, String> {
+    let now_ms = crate::metrics::now_ms() as i64;
     let (state, _) = repo.load_state().await?;
+
+    // Deferred deletion: retired ids past their grace period can no longer
+    // be referenced by any in-flight request. Delete their storage now (all
+    // three keys — a segment shares its pack's id; deletes are idempotent)
+    // and drop them from `retired` in this run's swap.
+    let sweep: Vec<String> = state
+        .retired
+        .iter()
+        .filter(|r| now_ms - r.ms >= budget.grace_ms)
+        .map(|r| r.id.clone())
+        .collect();
+    for id in &sweep {
+        let _ = repo.store.delete(&pack_key(repo.name, id)).await;
+        let _ = repo.store.delete(&index_key(repo.name, id)).await;
+        let _ = delete_filelog(repo.store, repo.name, id).await;
+    }
+
     let range = select_packs(&state, budget);
     let selected: Vec<PackMeta> = state.packs[range.clone()].to_vec();
     let selected_ids: Vec<String> = selected.iter().map(|p| p.id.clone()).collect();
@@ -144,7 +172,24 @@ pub async fn repack_with_budget(
         .cloned()
         .collect();
     // Nothing to fold: one pack holding one merged segment is steady state.
+    // Still record the sweep, if any.
     if selected.len() < 2 && selected_filelog.len() < 2 {
+        if !sweep.is_empty() {
+            let _ = repo
+                .states
+                .apply_repack(
+                    repo.name,
+                    &RepackSwap {
+                        remove_packs: Vec::new(),
+                        new_pack: None,
+                        remove_filelog: Vec::new(),
+                        new_filelog: None,
+                        now_ms,
+                        sweep,
+                    },
+                )
+                .await;
+        }
         return Ok(RepackOutcome::NoOp);
     }
 
@@ -253,24 +298,22 @@ pub async fn repack_with_budget(
 
     let swap = RepackSwap {
         remove_packs: selected_ids.clone(),
-        new_pack: PackMeta {
+        new_pack: Some(PackMeta {
             id: new_id.clone(),
             bytes: total_bytes,
             objects: oids.len() as u64,
-        },
+        }),
         remove_filelog: selected_filelog.clone(),
         new_filelog: has_filelog.then(|| new_id.clone()),
+        now_ms,
+        sweep,
     };
     match repo.states.apply_repack(repo.name, &swap).await {
         Ok(true) => {
-            // Swap landed: delete the superseded objects.
-            for id in &selected_ids {
-                let _ = repo.store.delete(&pack_key(repo.name, id)).await;
-                let _ = repo.store.delete(&index_key(repo.name, id)).await;
-            }
-            for f in &selected_filelog {
-                let _ = delete_filelog(repo.store, repo.name, f).await;
-            }
+            // Swap landed. The consumed packs/segments are now `retired`,
+            // not deleted: a request that loaded the pre-swap manifest may
+            // still be reading them. A later run sweeps them after the
+            // grace period.
             Ok(RepackOutcome::Repacked {
                 packs: selected.len(),
                 objects: oids.len(),
@@ -278,7 +321,8 @@ pub async fn repack_with_budget(
             })
         }
         Ok(false) => {
-            // Another repack consumed one of our packs. Discard staged output.
+            // Another repack consumed one of our packs. Discard staged
+            // output (never referenced, so immediate deletion is safe).
             let _ = repo.store.delete(&new_key).await;
             let _ = repo.store.delete(&index_key(repo.name, &new_id)).await;
             if has_filelog {

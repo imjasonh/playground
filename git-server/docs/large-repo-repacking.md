@@ -7,11 +7,12 @@ selecting a pack too big to fold), partial odb open (only selected indexes),
 verbatim streaming copy, scoped file-log merge, and an atomic manifest
 **swap** in the Durable Object that replaces exactly the consumed ids — so
 racing pushes (which only append) never conflict with maintenance, only a
-concurrent repack does. What was *not* built yet: **deferred deletion**
-(superseded packs are still deleted immediately after the swap, leaving the
-narrow read-under-delete race noted below), the **segmented/checkpointed base
-rewrite**, and **GC**. The urgency came from a different direction than this
-doc anticipated: the write-scaling load test
+concurrent repack does — plus **deferred deletion** (consumed ids move to a
+`retired` list at swap time; a later run deletes their storage after a grace
+period and sweeps the list, closing the read-under-delete race noted below).
+What was *not* built yet: the **segmented/checkpointed base rewrite** and
+**GC**. The urgency came from a different direction than this doc
+anticipated: the write-scaling load test
 ([`loadtest-scaling.md`](loadtest-scaling.md)) showed a *busy* repo hits the
 whole-repo-repack wall via pack **count** (hundreds of small packs outrunning
 consolidation, inflating every push/clone) long before any repo hits it via
