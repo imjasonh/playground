@@ -1054,6 +1054,112 @@ pub async fn collect_fetch_set(
     })
 }
 
+/// A shallow (`--depth N`) fetch plan: the objects to send, plus the
+/// shallow-boundary bookkeeping the client needs in the `shallow-info`
+/// response section.
+pub struct ShallowPlan {
+    pub set: FetchSet,
+    /// Commits whose parents are omitted (the new shallow boundary).
+    pub shallow: Vec<Oid>,
+    /// Commits the client held as shallow that are now fully included.
+    pub unshallow: Vec<Oid>,
+}
+
+/// Compute the object set for a depth-bounded fetch. Walks commits from
+/// `wants` to at most `depth` commits deep (the tip is depth 1, matching
+/// `git --depth`), includes each reached commit's full tree closure (a
+/// shallow clone still ships the whole *snapshot*, just not history), and
+/// records the depth-boundary commits as shallow. `client_shallow` are the
+/// boundaries the client already has (for deepening an existing shallow
+/// clone); commits among them that we now include with parents become
+/// `unshallow`.
+pub async fn collect_shallow_set(
+    odb: &Odb<'_>,
+    wants: &[Oid],
+    depth: usize,
+    client_shallow: &HashSet<Oid>,
+) -> Result<ShallowPlan, String> {
+    let depth = depth.max(1);
+    let mut include_commits: Vec<Oid> = Vec::new();
+    let mut seen: HashSet<Oid> = HashSet::new();
+    let mut shallow: Vec<Oid> = Vec::new();
+    let mut tags: Vec<Oid> = Vec::new();
+    let mut queue: VecDeque<(Oid, usize)> = VecDeque::new();
+
+    for &w in wants {
+        let (ty, _) = odb
+            .read(w)
+            .await?
+            .ok_or_else(|| format!("want {w} not found"))?;
+        match ty {
+            ObjType::Tag => {
+                tags.push(w);
+                queue.push_back((odb.peel_to_commit(w).await?, 1));
+            }
+            ObjType::Commit => queue.push_back((w, 1)),
+            _ => include_commits.push(w),
+        }
+    }
+
+    while let Some((c, d)) = queue.pop_front() {
+        if !seen.insert(c) {
+            continue;
+        }
+        include_commits.push(c);
+        let commit = odb.read_commit(c).await?;
+        if d >= depth {
+            // Boundary: omit parents. If it has any, the client sees it as
+            // shallow.
+            if !commit.parents.is_empty() {
+                shallow.push(c);
+            }
+        } else {
+            for p in commit.parents {
+                queue.push_back((p, d + 1));
+            }
+        }
+    }
+
+    // A previously-shallow boundary the client now has in full (its parents
+    // are included this round) is no longer shallow.
+    let boundary: HashSet<Oid> = shallow.iter().copied().collect();
+    let unshallow: Vec<Oid> = client_shallow
+        .iter()
+        .copied()
+        .filter(|c| seen.contains(c) && !boundary.contains(c))
+        .collect();
+
+    // Objects: tree closure of every included commit. Sending objects the
+    // client may already have (on a re-deepen) is harmless — git dedupes —
+    // so the skip set is empty.
+    let skip: HashSet<Oid> = HashSet::new();
+    let mut include: Vec<Oid> = tags;
+    let mut included: HashSet<Oid> = include.iter().copied().collect();
+    for &c in &include_commits {
+        if included.insert(c) {
+            include.push(c);
+        }
+    }
+    for &c in &include_commits {
+        let (ty, data) = odb.read(c).await?.ok_or("included object vanished")?;
+        if ty != ObjType::Commit {
+            continue;
+        }
+        let commit = crate::object::parse_commit(&data)?;
+        collect_new_tree_objects(odb, commit.tree, &skip, &mut included, &mut include).await?;
+    }
+
+    Ok(ShallowPlan {
+        set: FetchSet {
+            include,
+            common: Vec::new(),
+            client_has: HashSet::new(),
+        },
+        shallow,
+        unshallow,
+    })
+}
+
 /// Add every object in `tree`'s closure to `out`.
 async fn collect_tree_closure(
     odb: &Odb<'_>,

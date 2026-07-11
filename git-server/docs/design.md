@@ -542,9 +542,11 @@ the body streams are not yet folded into the totals.
 
 * **Auth**: single hook point at the router; Workers-native options (service
   tokens, Access) slot in front.
-* **Shallow/partial clone (`filter`, `deepen`)**: rejected with a clean
-  protocol error; design accommodates them later (the object walk is already
-  the isolation point).
+* **Shallow clone (`--depth` / `deepen`)**: supported — a depth-bounded
+  commit walk with a `shallow-info` response section (`ls-refs`/`fetch`
+  advertise `shallow`), including `--unshallow` deepening. **Partial clone
+  (`filter=…`) and date/ref-based shallow (`deepen-since` / `deepen-not`)**
+  remain rejected with a clean protocol error.
 * **Symrefs beyond HEAD, reflogs, hooks, force-push policy** — policy layers
   above the CAS, not storage problems.
 * **SHA-256 repos**: `Oid` is 20 bytes today; format negotiation exists in

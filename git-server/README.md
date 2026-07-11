@@ -130,7 +130,9 @@ packs (see `src/maintenance.rs`).
   regardless.
 * Clients need git ≥ 2.26 (protocol v2 for fetch — the default since 2.26).
 * SHA-1 repositories (git's default object format).
-* No shallow or partial clone (`--depth`, `--filter`) yet; rejected cleanly.
+* Shallow clone (`--depth`) and `--unshallow` are supported. Partial clone
+  (`--filter`) and date-based shallow (`--shallow-since`) are not; rejected
+  cleanly.
 * Blame follows the first-parent line (like `git blame --first-parent`) and
   does not follow renames.
 * No auth.
