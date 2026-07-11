@@ -93,6 +93,43 @@ either **Durable Object alarms** or a **Cloudflare Queue** consumer — each
 wake does one bounded unit of work and schedules the next. Nothing runs in the
 request that created the job; `/migrate` just enqueues and returns.
 
+### Surfaced through the repo status API
+
+The repo status endpoint (`GET /api/<repo>/status`) is the front door for "is
+this repo usable yet?", so migration state is reported there too, not only
+under `/migrate/<job>`. Its `status` field — today `EMPTY` (never pushed) or
+`READY` — gains a third value **`MIGRATING`** while an import is in flight,
+alongside a `migration` progress object:
+
+```jsonc
+GET /api/<repo>/status
+{
+  "status": "MIGRATING",              // EMPTY | READY | MIGRATING
+  "head": "refs/heads/main",
+  "default_branch": "main",
+  "last_push_ms": null,               // no accepted push yet during initial import
+  "objects": 812345, "bytes": 4123456789,   // grows as batches land
+  "migration": {
+    "job": "<id>",
+    "phase": "backfill",              // discover | skeleton | enumerate | backfill | finalize
+    "batches_done": 6, "batches_total": 14,
+    "bytes_done": 4123456789, "bytes_total_est": 9876543210,
+    "started_ms": 1783726000000,
+    "errors": []
+  }
+}
+```
+
+Because migration objects stay under the `refs/migrate/*` staging namespace
+until the final atomic CAS, a repo reads `MIGRATING` (not `READY`) for the
+whole import even as bytes accumulate; it flips to `READY` — with the target
+refs and a normal `last_push_ms` / `head_commit` — only at finalize. A repo
+with no active job never shows `MIGRATING`. So a client or UI can poll
+`/api/<repo>/status` alone to render both "ready to clone" and "importing,
+N% done" without knowing the job id. (The `EMPTY`/`READY` states and the
+non-migration fields exist today; `MIGRATING` + `migration` arrive with this
+importer.)
+
 ### Phases
 
 1. **Discover** — `ls-refs` the source; record target refs and tips; estimate
