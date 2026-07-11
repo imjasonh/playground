@@ -9,6 +9,7 @@
 //! | `POST /<repo>/git-upload-pack` | fetch (protocol v2) |
 //! | `POST /<repo>/git-receive-pack` | push |
 //! | `GET /api/<repo>/refs` | JSON ref listing |
+//! | `GET /api/<repo>/status` | repo status: state, default branch, last push, size |
 //! | `GET /api/<repo>/file/<refish>/<path>` | raw file contents |
 //! | `GET /api/<repo>/tree/<refish>/<path>` | JSON dir listing + last-commit |
 //! | `GET /api/<repo>/blame/<refish>/<path>` | JSON line-level blame |
@@ -325,7 +326,8 @@ impl GitHttp {
             return Response::error(400, "invalid repo name");
         }
         let repo = self.repo(repo_name);
-        match protocol::receive_pack(&repo, body, nonce, self.push_limit_bytes).await {
+        let now_ms = crate::metrics::now_ms() as i64;
+        match protocol::receive_pack(&repo, body, nonce, self.push_limit_bytes, now_ms).await {
             Ok(out) => Response::ok("application/x-git-receive-pack-result", out),
             Err(e) => Response::error(500, &e),
         }
@@ -344,6 +346,7 @@ impl GitHttp {
                 }
                 Err(e) => Response::error(500, &e),
             },
+            ("GET", ["status"]) => self.api_status(&repo).await,
             ("POST", ["repack"]) => match crate::maintenance::repack(&repo, nonce).await {
                 Ok(outcome) => Response::json(200, json!({ "result": format!("{outcome:?}") })),
                 Err(e) => Response::error(500, &e),
@@ -359,6 +362,44 @@ impl GitHttp {
             }
             _ => Response::error(404, "not found"),
         }
+    }
+
+    /// `GET /api/<repo>/status` — repository summary: state, default branch,
+    /// last-push time, and size counters.
+    ///
+    /// `state` is `EMPTY` (never pushed) or `READY` today. Once the migration
+    /// importer (`docs/large-repo-migration.md`) exists, an in-progress import
+    /// reports `MIGRATING` here with progress fields; the shape is designed to
+    /// carry that without breaking existing consumers.
+    async fn api_status(&self, repo: &Repo<'_>) -> Response {
+        let (state, version) = match repo.load_state().await {
+            Ok(s) => s,
+            Err(e) => return Response::error(500, &e),
+        };
+        let empty = state.packs.is_empty() && state.refs.is_empty();
+        // Default branch: HEAD's symref target with the refs/heads/ prefix
+        // stripped, when it points at a local branch.
+        let default_branch = state
+            .head
+            .strip_prefix("refs/heads/")
+            .map(|s| s.to_string());
+        let objects: u64 = state.packs.iter().map(|p| p.objects).sum();
+        let bytes: u64 = state.packs.iter().map(|p| p.bytes).sum();
+        Response::json(
+            200,
+            json!({
+                "status": if empty { "EMPTY" } else { "READY" },
+                "head": state.head,
+                "default_branch": default_branch,
+                "head_commit": state.head_oid(),
+                "last_push_ms": state.last_push_ms,
+                "refs": state.refs.len(),
+                "packs": state.packs.len(),
+                "objects": objects,
+                "bytes": bytes,
+                "version": version,
+            }),
+        )
     }
 
     async fn api_file(&self, repo: &Repo<'_>, refish: &str, path: &str) -> Response {

@@ -411,6 +411,7 @@ pub async fn receive_pack(
     body: &mut dyn BodyStream,
     nonce: &str,
     push_limit_bytes: u64,
+    now_ms: i64,
 ) -> Result<Vec<u8>, String> {
     let (state, version) = repo.load_state().await?;
     let mut body_bytes: u64 = 0;
@@ -531,7 +532,9 @@ pub async fn receive_pack(
     };
 
     // Phase 3: resolve, index, build derived indexes, CAS the state.
-    let outcome = repo.apply_push(commands, ingested, state, version).await?;
+    let outcome = repo
+        .apply_push(commands, ingested, state, version, now_ms)
+        .await?;
     let lines: Vec<(String, Option<String>)> = outcome
         .results
         .iter()
