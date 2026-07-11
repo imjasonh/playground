@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Log in with Spotify, search the catalog, and play tracks in the browser with the Web Playback SDK.">
+  <title>Spotify Play</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="ambient" aria-hidden="true"></div>
+
+  <header class="top">
+    <a class="brand" href="./">
+      <span class="brand__mark" aria-hidden="true"></span>
+      <span class="brand__name">Spotify Play</span>
+    </a>
+    <p id="status" class="status" aria-live="polite"></p>
+    <button id="logout" type="button" class="ghost" hidden>Log out</button>
+  </header>
+
+  <p id="error" class="banner" role="alert" hidden></p>
+
+  <main>
+    <section id="gate" class="gate">
+      <div class="gate__copy">
+        <p class="eyebrow">Web Playback SDK</p>
+        <h1>Find a track.<br>Play it here.</h1>
+        <p class="lede">
+          Sign in with your Spotify account, search the catalog, and stream
+          through a Connect player that lives in this tab.
+        </p>
+        <p class="note">
+          Playback needs a <strong>Spotify Premium</strong> account. Create a
+          free app in the
+          <a href="https://developer.spotify.com/dashboard" rel="noopener noreferrer" target="_blank">Spotify Developer Dashboard</a>,
+          copy its Client ID, and add this exact Redirect URI:
+        </p>
+        <code id="redirect-hint" class="redirect"></code>
+      </div>
+
+      <form id="login-form" class="login" autocomplete="off">
+        <label for="client-id">Spotify Client ID</label>
+        <input
+          id="client-id"
+          name="clientId"
+          type="text"
+          spellcheck="false"
+          autocomplete="off"
+          placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+          required
+        >
+        <button type="submit" class="primary">Log in with Spotify</button>
+        <p class="fine">
+          Authorization uses PKCE — no client secret is stored in this page.
+          Your Client ID is saved only in this browser.
+        </p>
+      </form>
+    </section>
+
+    <section id="app" class="studio" hidden>
+      <form id="search-form" class="search" role="search">
+        <label class="sr-only" for="search-input">Search tracks</label>
+        <input
+          id="search-input"
+          type="search"
+          placeholder="Search songs, artists, albums…"
+          enterkeyhint="search"
+          autocomplete="off"
+        >
+        <button id="search-btn" type="submit" class="primary">Search</button>
+      </form>
+      <div id="results" class="results" aria-live="polite"></div>
+    </section>
+  </main>
+
+  <aside id="now-playing" class="now" hidden aria-live="polite">
+    <img id="np-art" class="now__art" alt="" width="64" height="64" hidden>
+    <div class="now__meta">
+      <p id="np-title" class="now__title">—</p>
+      <p id="np-artist" class="now__artist">—</p>
+      <div class="now__meter">
+        <progress id="np-progress" max="1000" value="0"></progress>
+        <span id="np-time" class="now__time">0:00 / 0:00</span>
+      </div>
+    </div>
+    <div class="now__controls">
+      <button id="prev" type="button" class="icon" aria-label="Previous track">⏮</button>
+      <button id="toggle-play" type="button" class="primary compact" aria-label="Play">Play</button>
+      <button id="next" type="button" class="icon" aria-label="Next track">⏭</button>
+    </div>
+  </aside>
+
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>
