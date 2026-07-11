@@ -27,7 +27,8 @@ playground/
 ├── kanoodle/              # example app with tests (JS + Jest + Playwright)
 ├── ocidb/                 # Go CLI (Go module + Go tests)
 ├── web-push/              # Rust Cloudflare Worker (Cargo + tests; not a Pages app)
-└── web-push-demo/         # static browser front-end for the web-push Worker
+├── web-push-demo/         # static browser front-end for the web-push Worker
+└── spotify/               # Spotify login + search + Web Playback SDK player
 ```
 
 ### Browser apps
@@ -44,6 +45,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `hello/` | yes | Static HTML; no build or tests |
 | `kanoodle/` | yes | Client-side JS modules, npm scripts, tests |
 | `web-push-demo/` | yes | Static front-end for `web-push`; HTML/JS, no build or tests |
+| `spotify/` | yes | Spotify Web Playback SDK player; JS modules, npm scripts, tests |
 | `gitdb/` | no | Go CLI; no `index.html` |
 | `ocidb/` | no | Go CLI; no `index.html` |
 | `web-push/` | no | Rust Cloudflare Worker; no `index.html` |
@@ -431,6 +433,7 @@ bundle exec fastlane test
 | `kanoodle/` | Kanoodle puzzle game (5×11 board, 12 pieces) | Jest + Playwright |
 | `nypd-choppers/` | NYPD helicopter daily flight paths, hours, and fuel-cost estimates from ADS-B | Node test runner |
 | `web-push-demo/` | Browser front-end for `web-push` (subscribe/unsubscribe/notify) | none (static) |
+| `spotify/` | Spotify login, catalog search, and in-browser playback (Web Playback SDK) | Node test runner |
 
 > **`nypd-choppers` has an intentionally non-standard lifecycle.** Because free
 > ADS-B APIs are blocked by CORS and only serve live (current-position) data, it

@@ -39,6 +39,8 @@ experiments don't bit-rot.
   data collected by an hourly scrape workflow.
 - **[`web-push-demo/`](web-push-demo/)** — a browser front-end for the
   `web-push` Worker: subscribe/unsubscribe and send notifications end to end.
+- **[`spotify/`](spotify/)** — log in with Spotify (PKCE), search the catalog,
+  and stream tracks in-tab with the Web Playback SDK (Premium required).
 
 ## Tools
 
