@@ -1019,7 +1019,10 @@ pub async fn collect_fetch_set(
     }
     for &c in &include_commits {
         // Direct tree/blob wants land here too; read() dispatches on type.
-        let (ty, data) = odb.read(c).await?.ok_or_else(|| format!("object {c} not found"))?;
+        let (ty, data) = odb
+            .read(c)
+            .await?
+            .ok_or_else(|| format!("object {c} not found"))?;
         if ty != ObjType::Commit {
             continue;
         }
@@ -1130,7 +1133,10 @@ pub async fn collect_shallow_set(
         }
     }
     for &c in &include_commits {
-        let (ty, data) = odb.read(c).await?.ok_or_else(|| format!("object {c} not found"))?;
+        let (ty, data) = odb
+            .read(c)
+            .await?
+            .ok_or_else(|| format!("object {c} not found"))?;
         if ty != ObjType::Commit {
             continue;
         }
@@ -1263,7 +1269,9 @@ pub fn plan_pack(odb: &Odb<'_>, set: &FetchSet, thin_ok: bool) -> Result<PackPla
     let included: HashSet<Oid> = set.include.iter().copied().collect();
     let mut entries: Vec<(String, EntryRecord, EmitMode)> = Vec::with_capacity(set.include.len());
     for &oid in &set.include {
-        let (pack_id, rec) = odb.locate(oid).ok_or_else(|| format!("object {oid} not found"))?;
+        let (pack_id, rec) = odb
+            .locate(oid)
+            .ok_or_else(|| format!("object {oid} not found"))?;
         let mode = match rec.base_oid {
             None => EmitMode::Copy,
             Some(base)
@@ -1319,7 +1327,10 @@ impl PackEmitter {
             let (pack_id, rec, mode) = &self.entries[self.idx];
             match mode {
                 EmitMode::Materialize => {
-                    let (ty, content) = odb.read(rec.oid).await?.ok_or_else(|| format!("object {} not found", rec.oid))?;
+                    let (ty, content) = odb
+                        .read(rec.oid)
+                        .await?
+                        .ok_or_else(|| format!("object {} not found", rec.oid))?;
                     w.add_full(ty, &content);
                     self.idx += 1;
                 }

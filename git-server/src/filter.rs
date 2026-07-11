@@ -62,7 +62,6 @@ impl ObjectFilter {
             ObjectFilter::TreeDepth(_) => false,
         }
     }
-
 }
 
 /// Parse a decimal size with optional `k`/`m`/`g` suffix (1024-based).

@@ -228,9 +228,10 @@ fn serve_one(
     let mut body = ReaderBody::new(request.as_reader());
     let nonce = format!("t{}", NONCE.fetch_add(1, Ordering::Relaxed));
     let mut resp = futures::executor::block_on(server.handle(&git_req, &mut body, &nonce));
-    let body_bytes =
-        futures::executor::block_on(std::mem::replace(&mut resp.body, Body::Full(Vec::new())).into_bytes())
-            .unwrap_or_else(|e| format!("stream error: {e}").into_bytes());
+    let body_bytes = futures::executor::block_on(
+        std::mem::replace(&mut resp.body, Body::Full(Vec::new())).into_bytes(),
+    )
+    .unwrap_or_else(|e| format!("stream error: {e}").into_bytes());
 
     let mut response = tiny_http::Response::from_data(body_bytes)
         .with_status_code(resp.status)

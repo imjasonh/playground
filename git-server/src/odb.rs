@@ -121,11 +121,7 @@ impl<'a> Odb<'a> {
 
     /// Read an object's compressed payload verbatim (for pack-copy reuse),
     /// through the pack's block cache.
-    async fn read_compressed(
-        &self,
-        pack_id: &str,
-        rec: &EntryRecord,
-    ) -> Result<Vec<u8>, String> {
+    async fn read_compressed(&self, pack_id: &str, rec: &EntryRecord) -> Result<Vec<u8>, String> {
         self.read_compressed_range(pack_id, rec, 0, rec.data_end - rec.data_start)
             .await
     }

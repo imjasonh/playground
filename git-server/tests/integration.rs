@@ -939,8 +939,7 @@ fn gzip_encoded_request_body() {
     seed_one_commit(&server, tmp.path(), "gz");
 
     let body = v2_body("ls-refs", &["peel", "symrefs"]);
-    let mut enc =
-        flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
     enc.write_all(&body).unwrap();
     let gzipped = enc.finish().unwrap();
 
@@ -1121,6 +1120,9 @@ fn path_flips_between_file_and_directory() {
     assert_eq!(body, b"now nested\n");
 
     // …and a fresh clone of the full history is intact.
-    git(tmp.path(), &["clone", "-q", &server.url("flip"), "flipclone"]);
+    git(
+        tmp.path(),
+        &["clone", "-q", &server.url("flip"), "flipclone"],
+    );
     git(&tmp.path().join("flipclone"), &["fsck", "--strict"]);
 }
