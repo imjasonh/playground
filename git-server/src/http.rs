@@ -209,11 +209,21 @@ impl GitHttp {
         let start = crate::metrics::now_ms();
         let mut resp = self.route(req, body, nonce).await;
         let total_ms = crate::metrics::now_ms() - start;
-        if let Some(mut m) = crate::metrics::take() {
-            if let Some(n) = resp.body.len_if_full() {
-                m.bytes_out += n as u64;
+        match &resp.body {
+            // Streamed bodies (fetch packs) keep writing after headers leave.
+            // Snapshot for the Server-Timing header, but leave the collector
+            // live so the packfile PROGRESS tail can emit a full timing line.
+            Body::Stream(_) => {
+                if let Some(m) = crate::metrics::snapshot() {
+                    resp.metrics = Some((m, total_ms));
+                }
             }
-            resp.metrics = Some((m, total_ms));
+            Body::Full(bytes) => {
+                if let Some(mut m) = crate::metrics::take() {
+                    m.bytes_out += bytes.len() as u64;
+                    resp.metrics = Some((m, total_ms));
+                }
+            }
         }
         resp
     }

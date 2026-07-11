@@ -1139,3 +1139,67 @@ fn path_flips_between_file_and_directory() {
     );
     git(&tmp.path().join("flipclone"), &["fsck", "--strict"]);
 }
+
+/// Side-band PROGRESS lines (`git-server: …`) must reach real `git` push /
+/// fetch callers on stderr. Stock git demuxes band 2 and prints it; without
+/// this, a quiet regression in the pkt writer would only show up manually.
+fn assert_progress_visible(label: &str, output: &str) {
+    assert!(
+        output.contains("git-server: packs="),
+        "{label}: missing repo debug progress: {output}"
+    );
+    assert!(
+        output.contains("git-server: last_push="),
+        "{label}: missing last_push/last_repack progress: {output}"
+    );
+    assert!(
+        output.contains("git-server: server-timing:"),
+        "{label}: missing server-timing progress: {output}"
+    );
+}
+
+#[test]
+fn progress_reaches_git_push_and_fetch() {
+    let server = TestServer::start();
+    let tmp = tempfile::tempdir().unwrap();
+    let src = tmp.path().join("src");
+    std::fs::create_dir(&src).unwrap();
+
+    git(&src, &["init", "-q", "-b", "main", "."]);
+    write_file(&src, "a.txt", "hello\n");
+    git(&src, &["add", "."]);
+    git(&src, &["commit", "-q", "-m", "first"]);
+    git(&src, &["remote", "add", "origin", &server.url("prog")]);
+
+    // Push: side-band-64k is negotiated by default; --progress keeps local
+    // chatter on even with redirected stderr (Command::output).
+    let (ok, push_out) = git_try(&src, &["push", "--progress", "origin", "main"]);
+    assert!(ok, "push failed: {push_out}");
+    assert_progress_visible("push", &push_out);
+
+    // Clone/fetch: protocol-v2 packfile section emits the same PROGRESS lines
+    // unless the client sends no-progress.
+    let clone = tmp.path().join("clone");
+    let (ok, clone_out) = git_try(
+        tmp.path(),
+        &[
+            "clone",
+            "--progress",
+            &server.url("prog"),
+            clone.to_str().unwrap(),
+        ],
+    );
+    assert!(ok, "clone failed: {clone_out}");
+    assert_progress_visible("clone", &clone_out);
+
+    // Incremental fetch via pull after another push.
+    write_file(&src, "b.txt", "world\n");
+    git(&src, &["add", "."]);
+    git(&src, &["commit", "-q", "-m", "second"]);
+    let (ok, _) = git_try(&src, &["push", "-q", "origin", "main"]);
+    assert!(ok, "second push failed");
+
+    let (ok, pull_out) = git_try(&clone, &["pull", "--progress", "origin", "main"]);
+    assert!(ok, "pull failed: {pull_out}");
+    assert_progress_visible("pull", &pull_out);
+}
