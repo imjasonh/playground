@@ -8,6 +8,24 @@ mod common;
 
 use common::{git, git_try, write_file, TestServer};
 use serde_json::Value;
+use std::path::Path;
+use std::process::Command;
+
+/// True when `oid` is not present as a real local object (promisor placeholders
+/// do not count). Partial-clone clients still answer `cat-file -e` for promised
+/// oids, so we must inspect `--batch-all-objects` instead.
+fn local_object_missing(dir: &Path, oid: &str) -> bool {
+    let out = Command::new("git")
+        .args(["cat-file", "--batch-check", "--batch-all-objects"])
+        .current_dir(dir)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("HOME", dir)
+        .output()
+        .expect("git cat-file");
+    assert!(out.status.success(), "batch-all-objects failed");
+    let text = String::from_utf8_lossy(&out.stdout);
+    !text.lines().any(|l| l.starts_with(oid))
+}
 
 /// The repo status API: EMPTY before any push, READY after, with default
 /// branch, head commit, size counters, and a last-push timestamp.
@@ -647,7 +665,11 @@ fn partial_clone_blob_none_then_fetch_blobs() {
 
     // Client recorded the filter and commits/trees arrived.
     assert_eq!(
-        git(&skel, &["config", "--get", "remote.origin.partialclonefilter"]).trim(),
+        git(
+            &skel,
+            &["config", "--get", "remote.origin.partialclonefilter"]
+        )
+        .trim(),
         "blob:none"
     );
     assert_eq!(git(&skel, &["rev-parse", "HEAD"]).trim(), tip);
@@ -656,20 +678,34 @@ fn partial_clone_blob_none_then_fetch_blobs() {
     let (ok, _) = git_try(&skel, &["cat-file", "-e", &tip]);
     assert!(ok, "commit must be present after blob:none clone");
 
-    // Blobs were filtered out of the initial pack.
-    let (ok, _) = git_try(&skel, &["cat-file", "-e", &readme_blob]);
-    assert!(!ok, "readme blob must be absent before follow-up fetch");
-    let (ok, _) = git_try(&skel, &["cat-file", "-e", &nested_blob]);
-    assert!(!ok, "nested blob must be absent before follow-up fetch");
+    // Local object store has commits/trees only — blobs are promisor-missing.
+    // (`cat-file -e` is true for promised oids, so we inspect real objects.)
+    let local_objs = git(&skel, &["cat-file", "--batch-check", "--batch-all-objects"]);
+    assert!(
+        !local_objs.lines().any(|l| l.contains(" blob ")),
+        "initial filter clone must not contain blob objects:\n{local_objs}"
+    );
+    assert!(
+        local_object_missing(&skel, &readme_blob),
+        "readme blob must be absent before follow-up fetch"
+    );
+    assert!(
+        local_object_missing(&skel, &nested_blob),
+        "nested blob must be absent before follow-up fetch"
+    );
 
     // Follow-up: checkout triggers promisor lazy-fetch of needed blobs.
     git(&skel, &["checkout", "-q", "HEAD"]);
     git(&skel, &["fsck", "--strict"]);
 
-    let (ok, _) = git_try(&skel, &["cat-file", "-e", &readme_blob]);
-    assert!(ok, "readme blob fetchable after checkout");
-    let (ok, _) = git_try(&skel, &["cat-file", "-e", &nested_blob]);
-    assert!(ok, "nested blob fetchable after checkout");
+    assert!(
+        !local_object_missing(&skel, &readme_blob),
+        "readme blob fetchable after checkout"
+    );
+    assert!(
+        !local_object_missing(&skel, &nested_blob),
+        "nested blob fetchable after checkout"
+    );
     assert_eq!(
         std::fs::read_to_string(skel.join("readme.txt")).unwrap(),
         "hello partial v2\n"
@@ -718,15 +754,21 @@ fn partial_clone_blob_limit_then_fetch_large() {
     );
     let lim = tmp.path().join("lim");
 
-    let (ok, _) = git_try(&lim, &["cat-file", "-e", &small_oid]);
-    assert!(ok, "small blob under limit should be present initially");
-    let (ok, _) = git_try(&lim, &["cat-file", "-e", &large_oid]);
-    assert!(!ok, "large blob over limit must be absent initially");
+    assert!(
+        !local_object_missing(&lim, &small_oid),
+        "small blob under limit should be present initially"
+    );
+    assert!(
+        local_object_missing(&lim, &large_oid),
+        "large blob over limit must be absent initially"
+    );
 
     // Explicit follow-up fetch of the missing blob oid.
     git(&lim, &["fetch", "-q", "origin", &large_oid]);
-    let (ok, _) = git_try(&lim, &["cat-file", "-e", &large_oid]);
-    assert!(ok, "large blob fetchable in follow-up");
+    assert!(
+        !local_object_missing(&lim, &large_oid),
+        "large blob fetchable in follow-up"
+    );
     assert_eq!(
         git(&lim, &["cat-file", "-p", &large_oid]),
         large,

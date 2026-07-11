@@ -1556,10 +1556,7 @@ mod tests {
         s.feed(&pack).unwrap();
         let scanned = s.finish().unwrap();
         let id = hex::encode(scanned.checksum);
-        store
-            .put(&pack_key(repo, &id), pack)
-            .await
-            .unwrap();
+        store.put(&pack_key(repo, &id), pack).await.unwrap();
         let recs = resolve_pack(store, &pack_key(repo, &id), &scanned, &NoExternalBases)
             .await
             .unwrap();
@@ -1612,10 +1609,9 @@ mod tests {
             let odb = Odb::open(&store, "r", &[id]).await.unwrap();
             let filter = ObjectFilter::BlobNone;
             // Skeleton + explicit want for one blob (follow-up fetch pattern).
-            let set =
-                collect_fetch_set_filtered(&odb, &[commit, large], &[], Some(&filter))
-                    .await
-                    .unwrap();
+            let set = collect_fetch_set_filtered(&odb, &[commit, large], &[], Some(&filter))
+                .await
+                .unwrap();
             let have: HashSet<Oid> = set.include.iter().copied().collect();
             assert!(have.contains(&large), "explicit want overrides filter");
             assert!(!have.contains(&small), "non-wanted blob still filtered");

@@ -28,8 +28,8 @@ impl ObjectFilter {
             return Ok(ObjectFilter::BlobNone);
         }
         if let Some(rest) = spec.strip_prefix("blob:limit=") {
-            let limit = parse_scaled_size(rest)
-                .ok_or_else(|| format!("bad blob:limit value: {rest}"))?;
+            let limit =
+                parse_scaled_size(rest).ok_or_else(|| format!("bad blob:limit value: {rest}"))?;
             return Ok(ObjectFilter::BlobLimit(limit));
         }
         if let Some(rest) = spec.strip_prefix("tree:") {
@@ -101,7 +101,10 @@ mod tests {
 
     #[test]
     fn parse_blob_none() {
-        assert_eq!(ObjectFilter::parse("blob:none").unwrap(), ObjectFilter::BlobNone);
+        assert_eq!(
+            ObjectFilter::parse("blob:none").unwrap(),
+            ObjectFilter::BlobNone
+        );
         assert_eq!(
             ObjectFilter::parse("  blob:none  ").unwrap(),
             ObjectFilter::BlobNone
