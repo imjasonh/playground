@@ -19,7 +19,7 @@ fn status_api() {
     std::fs::create_dir(&src).unwrap();
 
     // Unknown/never-pushed repo reports EMPTY.
-    let (status, body) = server.get("/api/proj/status");
+    let (status, body) = server.get("/api/proj");
     assert_eq!(status, 200);
     let s: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(s["status"], "EMPTY");
@@ -35,7 +35,7 @@ fn status_api() {
     git(&src, &["push", "-q", "origin", "main"]);
     let head = git(&src, &["rev-parse", "HEAD"]).trim().to_string();
 
-    let (status, body) = server.get("/api/proj/status");
+    let (status, body) = server.get("/api/proj");
     assert_eq!(status, 200);
     let s: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(s["status"], "READY");

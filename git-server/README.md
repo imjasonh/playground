@@ -14,8 +14,8 @@ cost model, and repacking design.
 git clone https://<worker-host>/<repo>          # protocol v2 fetch
 git push  https://<worker-host>/<repo> main     # receive-pack push
 
+GET  /api/<repo>                                # {status, default_branch, last_push_ms, objects, bytes, …}
 GET  /api/<repo>/refs                           # {head, refs}
-GET  /api/<repo>/status                         # {status, default_branch, last_push_ms, objects, bytes, …}
 GET  /api/<repo>/file/<refish>/<path>           # raw blob at branch/tag/oid
 GET  /api/<repo>/tree/<refish>/<path>           # JSON listing + last-commit per entry
 GET  /api/<repo>/blame/<refish>/<path>          # JSON per-line {commit, time}
