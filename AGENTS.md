@@ -193,7 +193,7 @@ or the root `README.md` runs no app tests.
 
 Browser apps without a `test` script (e.g. `hello/`) are never tested. Each Rust
 app's toolchain comes from its `rust-toolchain.toml` (defaulting to stable);
-`web-push` pins Rust 1.83.
+Worker apps pin Rust 1.88 (with `worker` 0.8 / wasm-bindgen 0.2.125).
 
 **The iOS app is tested by a separate workflow (`ios.yml`), not `test.yml`,**
 because it needs a macOS runner. A cheap Linux `discover` job reuses the same

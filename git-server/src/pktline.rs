@@ -187,7 +187,7 @@ pub enum PktError {
 impl std::fmt::Display for PktError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PktError::BadLength(b) => write!(f, "invalid pkt-line length prefix {:?}", b),
+            PktError::BadLength(b) => write!(f, "invalid pkt-line length prefix {b:?}"),
             PktError::ReservedLength(n) => write!(f, "reserved pkt-line length {n}"),
         }
     }

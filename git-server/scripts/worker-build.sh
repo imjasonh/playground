@@ -5,8 +5,8 @@
 # directory *before* the build runs. Any `#[wasm_bindgen]` in *this* crate
 # makes the wasm-bindgen macro embed that package.json path into the wasm; the
 # CLI then copies `dependencies` into build/package.json as a nested object.
-# worker-build 0.1.x tries to parse that whole file as HashMap<String, String>
-# and fails with: `invalid type: map, expected a string`.
+# worker-build (through 0.8.x) tries to parse that whole file as
+# HashMap<String, String> and fails with: `invalid type: map, expected a string`.
 #
 # Hide npm manifests for the compile + bindgen step so they are not embedded.
 # See: https://github.com/cloudflare/workers-rs/issues/998
@@ -34,7 +34,8 @@ trap cleanup EXIT
 # rebuilds without the path.
 touch src/lib.rs
 
+# worker-build is major-version-locked with the `worker` crate (0.8.x ↔ 0.8.x).
 # Install the tool with stable (its own deps want a recent Cargo); it then
 # compiles this crate with rust-toolchain.toml (rustup honors it per-dir).
-cargo +stable install -q worker-build@0.1.14
+cargo +stable install -q worker-build@0.8.5
 worker-build --release

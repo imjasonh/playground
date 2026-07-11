@@ -12,14 +12,12 @@ compatibility_date = "2024-11-01"
 # Build the wasm Worker from Rust. `worker-build` wraps `cargo build
 # --target wasm32-unknown-unknown` and emits the JS shim referenced by `main`.
 #
-# worker-build is pinned to the 0.1.x line: it is the release series that
-# supports `worker = "0.5"`, and it bundles the wasm-bindgen CLI 0.2.105, which
-# must match the wasm-bindgen library pinned in Cargo.toml (bump the two
-# together). Build the *tool* with the stable toolchain — its deps need a recent
-# Cargo — while worker-build then compiles this crate with the pinned toolchain
-# from rust-toolchain.toml (rustup honors it per-directory).
+# worker-build is major-version-locked with `worker` (0.8.x ↔ 0.8.x) and bundles
+# wasm-bindgen CLI 0.2.125, which must match the library pin in Cargo.toml.
+# Build the *tool* with stable — its deps need a recent Cargo — while
+# worker-build compiles this crate with rust-toolchain.toml.
 [build]
-command = "cargo +stable install -q worker-build@0.1.14 && worker-build --release"
+command = "cargo +stable install -q worker-build@0.8.5 && worker-build --release"
 
 # KV namespace that stores subscriptions. Create with:
 #   wrangler kv namespace create SUBSCRIPTIONS

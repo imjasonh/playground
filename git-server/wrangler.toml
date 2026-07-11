@@ -12,9 +12,9 @@ main = "build/worker/shim.mjs"
 compatibility_date = "2026-06-16"
 
 # Build the wasm Worker from Rust. The script wraps `worker-build --release`
-# (pinned to 0.1.x for worker 0.5 / wasm-bindgen 0.2.105 — see Cargo.toml) and
+# (pinned to 0.8.x for worker 0.8 / wasm-bindgen 0.2.125 — see Cargo.toml) and
 # stashes any package.json created by wrangler-action so wasm-bindgen does not
-# embed it (worker-build 0.1.x cannot parse the nested dependencies object).
+# embed it (worker-build still cannot parse the nested dependencies object).
 [build]
 command = "bash scripts/worker-build.sh"
 

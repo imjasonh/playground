@@ -54,7 +54,7 @@ async fn fetch(mut req: Request, env: Env, _ctx: Context) -> worker::Result<Resp
     let now_unix = (worker::js_sys::Date::now() / 1000.0) as u64;
     let response = api::handle(api_request, &store, &sender, &config, now_unix).await;
 
-    let mut headers = cors_headers();
+    let headers = cors_headers();
     headers.set("Content-Type", &response.content_type)?;
     Ok(Response::from_bytes(response.body)?
         .with_status(response.status)
@@ -85,8 +85,10 @@ fn build_config(env: &Env) -> Result<ApiConfig, String> {
 
 /// CORS headers applied to every response (the API is meant to be called from a
 /// browser front-end on a different origin).
+///
+/// worker >= 0.6: `Headers::set` takes `&self` (interior mutability).
 fn cors_headers() -> Headers {
-    let mut headers = Headers::new();
+    let headers = Headers::new();
     let _ = headers.set("Access-Control-Allow-Origin", "*");
     let _ = headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     let _ = headers.set("Access-Control-Allow-Headers", "Content-Type");
@@ -95,7 +97,7 @@ fn cors_headers() -> Headers {
 }
 
 fn json_error(status: u16, message: &str) -> worker::Result<Response> {
-    let mut headers = cors_headers();
+    let headers = cors_headers();
     headers.set("Content-Type", "application/json")?;
     let body = serde_json::json!({ "error": message })
         .to_string()
@@ -187,7 +189,7 @@ impl PushSender for WorkerSender {
         &self,
         request: &crate::push::WebPushRequest,
     ) -> Result<PushResponse, SenderError> {
-        let mut headers = Headers::new();
+        let headers = Headers::new();
         for (name, value) in &request.headers {
             headers.set(name, value).map_err(worker_err)?;
         }

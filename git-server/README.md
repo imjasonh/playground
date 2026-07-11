@@ -119,7 +119,7 @@ Cloudflare error 1102, so this is the regression test for it).
 # Local: builds the wasm Worker, runs it under `wrangler dev --local`
 # (real workerd with R2/DO/KV simulators), then runs the git lifecycle.
 # Needs: node/npx, rust wasm32 target, worker-build
-#   (cargo +stable install worker-build@0.1.14)
+#   (cargo +stable install worker-build@0.8.5)
 ./scripts/e2e.sh
 
 # Same suite against a deployed backend (creates a uniquely named repo):
