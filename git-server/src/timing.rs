@@ -25,6 +25,9 @@ impl Drop for Phase {
     fn drop(&mut self) {
         let elapsed_ms = metrics::now_ms() - self.start_ms;
         metrics::phase(self.label, elapsed_ms);
+        // Mirror the phase onto the active Cloudflare custom span when one
+        // is open (no-op natively / when unsampled).
+        crate::trace::record_phase(self.label, elapsed_ms);
         #[cfg(not(target_arch = "wasm32"))]
         if std::env::var_os("GIT_SERVER_TIMING").is_some() {
             eprintln!("[timing] {:<28} {:>9.2}ms", self.label, elapsed_ms);

@@ -80,6 +80,7 @@ pub fn now_ms() -> f64 {
 /// Start collecting for the current request (resets any previous state).
 pub fn begin() {
     ACTIVE.with(|a| *a.borrow_mut() = Some(Metrics::default()));
+    crate::trace::clear_ray();
 }
 
 /// Stop collecting and return the totals (None if `begin` was never called).
@@ -198,16 +199,23 @@ impl Metrics {
     }
 
     /// One-line JSON for structured logs (Workers Logs / `wrangler tail`).
+    ///
+    /// When a CF-Ray is recorded for the request ([`crate::trace::set_ray`]),
+    /// it is included as `"ray"` so log lines correlate with Workers Traces.
     pub fn log_json(&self, method: &str, path: &str, status: u16, total_ms: f64) -> String {
         let phases: Vec<String> = self
             .phases
             .iter()
             .map(|(l, ms)| format!("\"{l}\":{ms:.1}"))
             .collect();
+        let ray = crate::trace::ray()
+            .map(|r| format!(",\"ray\":\"{}\"", r.replace('"', "")))
+            .unwrap_or_default();
         format!(
             "{{\"evt\":\"req\",\"method\":\"{method}\",\"path\":\"{path}\",\"status\":{status},\
              \"ms\":{total_ms:.1},\"backend_ms\":{:.1},\"r2a\":{},\"r2b\":{},\"do\":{},\"kv\":{},\
-             \"bytes_in\":{},\"max_chunk_in\":{},\"bytes_out\":{},\"cost_usd\":{:.9},\"phases\":{{{}}}}}",
+             \"bytes_in\":{},\"max_chunk_in\":{},\"bytes_out\":{},\"cost_usd\":{:.9},\"phases\":{{{}}}\
+             {ray}}}",
             self.backend_ms,
             self.r2_class_a,
             self.r2_class_b,
@@ -311,6 +319,16 @@ mod tests {
         assert_eq!(parsed["do"], 1);
         // Phase durations are serialized at 0.1 ms precision.
         assert_eq!(parsed["phases"]["fetch: collect set"], 3.2);
+    }
+
+    #[test]
+    fn log_json_includes_ray_when_set() {
+        begin();
+        crate::trace::set_ray(Some("abc123-SJC".into()));
+        let m = take().unwrap();
+        let line = m.log_json("GET", "/api/r", 200, 1.0);
+        let parsed: serde_json::Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(parsed["ray"], "abc123-SJC");
     }
 
     #[test]

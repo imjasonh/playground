@@ -468,6 +468,9 @@ fn write_repo_debug(w: &mut dyn PktWriter, state: &RepoState, lease_until_ms: i6
         dash(state.last_push_ms),
         dash(state.last_repack_ms),
     ));
+    if let Some(ray) = crate::trace::ray() {
+        w.progress(&format!("git-server: ray={ray}"));
+    }
 }
 
 /// Emit a Server-Timing-style summary on the PROGRESS band (same tokens as

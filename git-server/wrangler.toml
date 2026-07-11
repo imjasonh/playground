@@ -9,7 +9,7 @@
 # Deployed at git.<account>.workers.dev.
 name = "git"
 main = "build/worker/shim.mjs"
-compatibility_date = "2024-11-01"
+compatibility_date = "2026-06-16"
 
 # Build the wasm Worker from Rust. `worker-build` wraps `cargo build
 # --target wasm32-unknown-unknown` and emits the JS shim referenced by `main`.
@@ -57,15 +57,21 @@ cpu_ms = 300000
 [triggers]
 crons = ["17 3 * * *"]
 
-# Persist per-invocation logs (opt-in!) so failures are diagnosable *after*
-# the fact, not only while `wrangler tail` happens to be attached. Each
-# invocation records its `outcome` — "ok", "exception", "exceededMemory",
-# "exceededCpu", "canceled" — plus our structured {"evt":"req"} lines.
+# Persist per-invocation logs and traces (opt-in!) so failures are
+# diagnosable *after* the fact, not only while `wrangler tail` happens to be
+# attached. Each invocation records its `outcome` — "ok", "exception",
+# "exceededMemory", "exceededCpu", "canceled" — plus our structured
+# {"evt":"req"} lines. Automatic tracing captures the fetch handler, R2/KV/DO
+# binding calls, and our custom spans (`git.handle`, pipeline phase attrs).
 # `outcome=exceededMemory` with no {"evt":"req"} line is the isolate-OOM
 # (error 1102 / client-visible 503) signature that took manual probing to
 # diagnose the first time. Head-based sampling at 100% is fine at prototype
 # traffic; dial down before serious volume.
 [observability]
+enabled = true
+head_sampling_rate = 1
+
+[observability.traces]
 enabled = true
 head_sampling_rate = 1
 

@@ -173,6 +173,7 @@ fn main() {
             query: None,
             git_protocol: None,
             content_encoding: None,
+            cf_ray: None,
         };
         let mut body = ReaderBody::new(std::io::empty());
         let resp = futures::executor::block_on(git.handle(&req, &mut body, "api"));
@@ -202,6 +203,7 @@ fn main() {
             query: None,
             git_protocol: None,
             content_encoding: None,
+            cf_ray: None,
         };
         let mut body = ReaderBody::new(std::io::empty());
         let resp = futures::executor::block_on(git.handle(&req, &mut body, "repack"));

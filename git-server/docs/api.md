@@ -54,8 +54,9 @@ objects that fail the filter are omitted unless named in an explicit `want`
 
 Unless the client sends `no-progress`, the packfile section also carries
 side-band **PROGRESS** lines with repo debug (`packs` / `objects` / `bytes` /
-`retired`, `last_push` / `last_repack` / `lease_until`) and a
-Server-Timing-style summary (same tokens as the HTTP `Server-Timing` header).
+`retired`, `last_push` / `last_repack` / `lease_until`, and `ray` when the
+edge supplied a CF-Ray) and a Server-Timing-style summary (same tokens as
+the HTTP `Server-Timing` header).
 
 ### `POST /<repo>/git-receive-pack`
 Push. Body is the ref-update commands followed by the packfile, streamed to R2

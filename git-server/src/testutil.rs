@@ -224,6 +224,7 @@ fn serve_one(
         query: query.as_deref(),
         git_protocol: git_protocol.as_deref(),
         content_encoding: content_encoding.as_deref(),
+        cf_ray: None,
     };
     let mut body = ReaderBody::new(request.as_reader());
     let nonce = format!("t{}", NONCE.fetch_add(1, Ordering::Relaxed));
