@@ -570,6 +570,7 @@ impl<'a> Repo<'a> {
         ingested: Option<(String, ScannedPack)>,
         state: RepoState,
         version: u64,
+        now_ms: i64,
     ) -> Result<PushOutcome, String> {
         let old_odb = self.odb(&state).await?;
 
@@ -699,6 +700,9 @@ impl<'a> Repo<'a> {
             }
             next.packs.push(meta.clone());
         }
+
+        // Stamp the accepted push time (surfaced by the status API).
+        next.last_push_ms = Some(now_ms);
 
         match self.states.commit(self.name, version, &next).await {
             Ok(_) => Ok(PushOutcome {

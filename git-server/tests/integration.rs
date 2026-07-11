@@ -9,6 +9,47 @@ mod common;
 use common::{git, git_try, write_file, TestServer};
 use serde_json::Value;
 
+/// The repo status API: EMPTY before any push, READY after, with default
+/// branch, head commit, size counters, and a last-push timestamp.
+#[test]
+fn status_api() {
+    let server = TestServer::start();
+    let tmp = tempfile::tempdir().unwrap();
+    let src = tmp.path().join("src");
+    std::fs::create_dir(&src).unwrap();
+
+    // Unknown/never-pushed repo reports EMPTY.
+    let (status, body) = server.get("/api/proj/status");
+    assert_eq!(status, 200);
+    let s: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(s["status"], "EMPTY");
+    assert_eq!(s["objects"], 0);
+    assert!(s["last_push_ms"].is_null());
+
+    // Push something.
+    git(&src, &["init", "-q", "-b", "main", "."]);
+    write_file(&src, "a.txt", "hello\n");
+    git(&src, &["add", "."]);
+    git(&src, &["commit", "-q", "-m", "first"]);
+    git(&src, &["remote", "add", "origin", &server.url("proj")]);
+    git(&src, &["push", "-q", "origin", "main"]);
+    let head = git(&src, &["rev-parse", "HEAD"]).trim().to_string();
+
+    let (status, body) = server.get("/api/proj/status");
+    assert_eq!(status, 200);
+    let s: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(s["status"], "READY");
+    assert_eq!(s["default_branch"], "main");
+    assert_eq!(s["head"], "refs/heads/main");
+    assert_eq!(s["head_commit"].as_str().unwrap(), head);
+    assert!(s["objects"].as_u64().unwrap() >= 3); // commit + tree + blob
+    assert!(s["bytes"].as_u64().unwrap() > 0);
+    assert!(
+        s["last_push_ms"].as_i64().is_some(),
+        "last_push recorded: {s}"
+    );
+}
+
 /// Full lifecycle: push to empty repo, clone it back, incremental push+pull,
 /// read APIs, blame vs `git blame`, repack, and re-verify everything.
 #[test]

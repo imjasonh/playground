@@ -37,6 +37,12 @@ pub struct RepoState {
     /// File-log segment ids, oldest first (parallel to pushes; merged by
     /// maintenance).
     pub filelog: Vec<String>,
+    /// Wall-clock time (epoch ms) of the last accepted push, recorded at
+    /// apply time (the caller supplies the clock, since this crate is
+    /// runtime-agnostic). `None` for a repo never pushed to. Surfaced by the
+    /// status API as `last_push`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_push_ms: Option<i64>,
 }
 
 impl RepoState {
