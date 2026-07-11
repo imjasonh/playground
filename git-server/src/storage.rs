@@ -88,9 +88,14 @@ pub trait Store {
 pub const BLOCK_SIZE: u64 = 4 * 1024 * 1024;
 
 /// Cached blocks per reader (LRU). 4 × 4 MiB = 16 MiB ceiling per instance.
-/// Bulk access patterns are offset-sorted (fetch emission, repack, delta
-/// resolution), so a small window suffices; note the ceiling is per *pack*
-/// in a multi-pack odb, which is why it stays small.
+/// Unlike the odb/resolve content caches (restored after the memory scare
+/// turned out to be a free-tier CPU limit), this one is intentionally *not*
+/// raised: the ceiling is per *pack*, so in a multi-pack odb it multiplies
+/// (N packs × 16 MiB) — a real memory concern, not a phantom one. Bulk
+/// access is offset-sorted (fetch emission, repack, delta resolution), so a
+/// small sequential window suffices anyway; a bigger cache would add memory
+/// risk without cutting reads. (A shared cross-pack budget is the right
+/// lever if this ever needs to grow.)
 const BLOCK_CACHE_SLOTS: usize = 4;
 
 /// A block-aligned, LRU-cached ranged reader over one stored object.

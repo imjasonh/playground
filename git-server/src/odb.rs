@@ -48,10 +48,13 @@ pub struct Odb<'a> {
     tree_cache: RefCell<HashMap<Oid, Rc<Vec<TreeEntry>>>>,
 }
 
-/// Cache budget: enough for tree walks over big repos while leaving the
-/// 128 MiB isolate plenty of headroom (wasm memory never shrinks, so cache
-/// budgets are effectively permanent isolate growth).
-const CONTENT_CACHE_BUDGET: usize = 24 * 1024 * 1024;
+/// Cache budget for materialized objects, sized for tree walks / blame /
+/// fetch-set collection over big repos. Was briefly halved to 24 MiB while
+/// chasing a suspected memory bug; the real large-push failure was CPU
+/// (free-tier cap), not memory, so this is restored to 48 MiB — a smaller
+/// cache just meant more R2 re-reads on the read paths for no safety gain.
+/// Bounded well under the 128 MiB isolate (see `tests/memory.rs`).
+const CONTENT_CACHE_BUDGET: usize = 48 * 1024 * 1024;
 
 impl<'a> Odb<'a> {
     /// Load the indexes for `pack_ids` (one Class B read per pack).
