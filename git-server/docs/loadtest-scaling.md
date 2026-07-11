@@ -1,16 +1,13 @@
 # Load test: per-repo write scaling
 
-Status: **round 1 measured → fix shipped → round 2 measured.** Round 1 (after
-the shallow-clone deploy, PR #91) found the per-repo write ceiling: the
-whole-document CAS capped goodput at ~0.5 pushes/s regardless of concurrency.
-The fix it recommended — **merge disjoint ref updates in the Durable Object
-instead of whole-document CAS** — shipped in **PR #95** (the merge-apply
-delta path; see [`design.md` → Storage layout](design.md)). Round 2, run
-against that deploy, confirmed the ceiling is gone (12× goodput demonstrated,
-zero conflicts, no server knee found) and exposed the **next** bound: under
-sustained writes, packs accumulate faster than whole-repo repack consolidates
-them, inflating every subsequent push and clone. Symptoms and numbers in
-[Round 2](#round-2-after-merge-apply-pr-95) below.
+Status: **four rounds, each fixing what the previous one found.**
+
+| Round | Against | Found | Fix (next round's deploy) |
+|---|---|---|---|
+| 1 | whole-document CAS (post-#91) | goodput capped at ~0.5 pushes/s regardless of concurrency; surplus → conflicts | merge-apply push deltas in the DO (**PR #95**) |
+| 2 | merge-apply | CAS ceiling gone (12×, zero conflicts) — but packs accumulate faster than whole-repo repack consolidates, inflating every push/clone | incremental budget-bounded repack + push-commuting swap (**PR #98**) |
+| 3 | incremental repack | repack now keeps up **and** exposed delete-at-swap-time as a real bug (~5% pushes 500 mid-maintenance) | deferred deletion (retire + grace sweep, **PR #98**); then self-triggering maintenance (**PR #98**) |
+| 4 | self-triggering maintenance | steady state: repo maintains itself under load, zero errors, best goodput/latency of all rounds | — (remaining levers noted at the end) |
 
 ## Round 1: the whole-document CAS ceiling
 
@@ -318,6 +315,92 @@ push must *read* (e.g. keep file-log tip data summarized or consolidated more
 eagerly), so push latency stays flat between consolidations instead of
 growing with segment count.
 
+## Round 3: incremental repack (PR #98) — and a bug it flushed out
+
+Same methodology, against the incremental-repack build, with one change:
+maintenance ran **during** the write stages (a loop POSTing `/repack` every
+~5 s), since "pack count stays bounded under sustained writes" was the claim
+under test.
+
+### The bounded swap works — repack stopped losing
+
+Every consolidation landed *while pushes were in flight*: 27 consecutive
+runs, all `Repacked … remaining: 0`, zero `LostRace`, each 2–16 s (vs 40–56 s
+and a >10-minute stall for whole-repo repack in round 2). That confirms both
+halves: bounded runs stay small, and the id-swap commutes with racing pushes
+— with round 2's whole-document CAS, a repack overlapping a multi-push-per-
+second workload would have lost essentially every race.
+
+### The bug: delete-at-swap-time corrupts in-flight readers
+
+The first round-3 run had **~5% of pushes fail with HTTP 500**: a push that
+loaded the pre-swap manifest went to resolve thin-pack bases from packs the
+just-landed swap had already deleted. The deferred-deletion race that the
+design docs had filed under "narrow, future work" is, under sustained load,
+**the common case** — a swap always lands while other requests are mid-
+flight. Fixed in the same PR: swaps *retire* consumed ids into the state
+document; a later run deletes their storage only after a grace period
+(default 15 min, longer than any plausible request) and sweeps the list.
+With that fix, the rerun had **zero failed pushes** — and better goodput at
+every concurrency level than round 2:
+
+| writers | round 2 (ok/s) | round 3 (ok/s) | round 3 errors | packs (peak → post-fold) |
+|---|---|---|---|---|
+| 8  | 1.60 | 2.97 | 0 | ~24 → ~12 |
+| 16 | 2.46 | 3.89 | 0 | ~42 → ~22 |
+| 32 | 3.29 | 4.89 | 0 | ~60 |
+| 48 | 5.87 | 5.55 | 0 | ~115 → ~17 |
+
+Pack count now oscillates in a band and resets, instead of round 2's
+monotonic growth to ~190. The residual gap: with maintenance driven by an
+*external* 5 s loop, a 48-writer burst still builds a transient ~115-pack
+backlog before folding — and every pack of backlog taxes every request.
+
+## Round 4: self-triggering maintenance (PR #98)
+
+Final piece: after an accepted push, if the repo holds ≥ 8 packs
+(`REPACK_TRIGGER_PACKS`), the Worker runs a bounded repack **in the same
+invocation's background** (`ctx.wait_until` — it never adds push latency).
+A per-repo **maintenance lease** in the DO (test-and-set with TTL) collapses
+concurrent triggers — per-push, cron, on-demand — to one runner; losers skip
+with one cheap DO call (`Busy`) instead of consolidating in parallel and
+losing the swap. Maintenance now scales with the push rate by construction.
+
+The round-4 run had **no external maintenance at all** — only a passive
+pack-count sampler. The repo maintained itself:
+
+| writers | round 3 (ok/s) | **round 4 (ok/s)** | round 4 push p50 | packs median/peak |
+|---|---|---|---|---|
+| 8  | 2.97 | **3.69** | 1.9 s | 11 / 13 |
+| 16 | 3.89 | **5.08** | 2.8 s | 19 / 28 |
+| 32 | 4.89 | **5.74** | 4.7 s | 38 / 54 |
+| 48 | 5.55 | **6.71** | 6.1 s | 53 / 88 |
+| 16w + 32r | 2.57 + 7.2 clones/s | **4.26 + 9.8 clones/s** | 3.3 s | 20 / 55 |
+
+Zero errors, zero conflicts, ~1,290 pushes + ~600 clones. Best goodput and
+latency of all rounds at every level — single-writer p50 is back to ~1.9 s
+(round 2 under backlog: up to 7.5 s), and the mixed stage sustained ~14
+requests/s of combined git traffic on a self-maintaining repo. Pack count
+tracks the write rate (roughly `writers + trigger`) instead of time, which
+is the designed steady state: the backlog a push sees is bounded by what
+accumulates during one bounded repack run.
+
+### Where the ceiling sits now
+
+Not found yet — goodput was still climbing at 48 writers with the load
+generator (one laptop) saturated, and p50 latency growth at high concurrency
+tracks the transient backlog (~50 packs), which is client-offered-rate
+dependent. The remaining known levers, in likely order of value:
+
+1. **Bound what a push reads while backlog exists** — thin-pack base
+   resolution and file-log loading still fan out across the live packs, so
+   per-push cost rises with the in-band backlog (~50 packs ⇒ ~6 s p50 at 48
+   writers). File-log tip summaries or hot-index caching would flatten it.
+2. **Distributed load generation** to find the true server-side knee.
+3. The large-repo hard cases (base rewrite, GC) from
+   [`large-repo-repacking.md`](large-repo-repacking.md) — orthogonal to
+   write throughput.
+
 ## Reproducing
 
 The harness is a self-contained script (writers/readers/stage ramp, CSV event
@@ -328,9 +411,13 @@ PR discussion. Sketch:
 # seed once
 git init …; <generate ~180 files>; git push origin main
 # stage loop: N writers × (commit-3-file-change; push HEAD:load/w$i; retry on
-# rejection), M readers × (git clone --depth 1; rm -rf), 40 s each,
-# POST /api/<repo>/repack between stages; log every attempt to CSV.
-# Round 1 ramp: w1..w24 + mixed + readers-only. Round 2: w1..w48 + mixed.
+# rejection), M readers × (git clone --depth 1; rm -rf), 40-45 s each; log
+# every attempt to CSV.
+# Round 1 ramp: w1..w24 + mixed + readers-only; repack between stages.
+# Round 2: w1..w48 + mixed; repack between stages.
+# Round 3: w8..w48 + mixed; repack POSTed every ~5 s DURING stages.
+# Round 4: w8..w48 + mixed; no client-side repack at all (server
+#          self-triggers); a sampler polls the status API for pack count.
 ```
 
 Analysis: bucket events by stage; report ok/s, conflict count, p50/p95 per
