@@ -2,3 +2,9 @@ target/
 build/
 node_modules/
 .wrangler/
+
+# Created by wrangler-action / local `npm i wrangler` — never commit.
+# (A present package.json also breaks worker-build when this crate uses
+# #[wasm_bindgen]; see scripts/worker-build.sh.)
+package.json
+package-lock.json
