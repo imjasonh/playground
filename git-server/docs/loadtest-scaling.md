@@ -1,6 +1,7 @@
-# Load test: per-repo write scaling
+# Load test: per-repo scaling
 
-Status: **four rounds, each fixing what the previous one found.**
+Status: **four write rounds, each fixing what the previous one found, plus a
+read-ceiling hunt.**
 
 | Round | Against | Found | Fix (next round's deploy) |
 |---|---|---|---|
@@ -8,6 +9,14 @@ Status: **four rounds, each fixing what the previous one found.**
 | 2 | merge-apply | CAS ceiling gone (12×, zero conflicts) — but packs accumulate faster than whole-repo repack consolidates, inflating every push/clone | incremental budget-bounded repack + push-commuting swap (**PR #98**) |
 | 3 | incremental repack | repack now keeps up **and** exposed delete-at-swap-time as a real bug (~5% pushes 500 mid-maintenance) | deferred deletion (retire + grace sweep, **PR #98**); then self-triggering maintenance (**PR #98**) |
 | 4 | self-triggering maintenance | steady state: repo maintains itself under load, zero errors, best goodput/latency of all rounds | — (remaining levers noted at the end) |
+| [Reads](#the-read-ceiling-hunting-it-from-one-machine) | round-4 build | every wall was client-side: ~46 real-git clones/s (process overhead), ~150 pack-fetches/s (client bandwidth), 7.5k+ advert req/s — server latency flat, zero errors | — (needs distributed load gen) |
+
+Headline, per repo: **~6.7 pushes/s** and **~150 shallow-clone fetches/s**
+measured simultaneously-capable on one repo, with every measured limit
+sitting on the client side. And these are **per-repo** numbers: the
+serialization point (Durable Object) and maintenance are per-repo, and packs
+live under per-repo R2 prefixes, so two repos each sustain this
+independently — total throughput scales with repo count.
 
 ## Round 1: the whole-document CAS ceiling
 
@@ -396,10 +405,83 @@ dependent. The remaining known levers, in likely order of value:
    resolution and file-log loading still fan out across the live packs, so
    per-push cost rises with the in-band backlog (~50 packs ⇒ ~6 s p50 at 48
    writers). File-log tip summaries or hot-index caching would flatten it.
-2. **Distributed load generation** to find the true server-side knee.
+2. **Distributed load generation** to find the true server-side knee (the
+   read-ceiling hunt below confirms one machine can't reach it).
 3. The large-repo hard cases (base rewrite, GC) from
    [`large-repo-repacking.md`](large-repo-repacking.md) — orthogonal to
    write throughput.
+
+## The read ceiling: hunting it from one machine
+
+Round 1 measured 29.3 shallow clones/s and blamed the client without proof.
+This run set out to find the actual pull ceiling reachable from one laptop
+(18 cores, ~230 Mbit/s uplink), against the round-4 build and a
+freshly-consolidated single-pack repo (~9,700 objects, ~900 KB packed,
+~190 KB depth-1 pack). Three experiments, three *different* walls — all
+client-side:
+
+### 1. Real `git clone --depth 1 --bare`: ~46 clones/s, git-process-bound
+
+| reader loops | clones/s | p50 | p95 | errors |
+|---|---|---|---|---|
+| 48  | **45.6** | 0.9 s | 1.6 s | 0 |
+| 96  | 40.3 | 2.0 s | 4.6 s | 0 |
+| 160 | 37.1 | 3.4 s | 8.4 s | 0 |
+| 256 | 28.1 | 6.8 s | 16.8 s | 0 |
+
+More concurrency makes it *worse* while total client CPU sits at ~55% — the
+signature of per-clone process overhead (spawn + TLS handshake + disk churn)
+congesting locally, not a server limit. Bare clones at the sweet spot
+(~48 loops) beat round 1's non-bare 29.3/s by 1.6×.
+
+### 2. Raw fetch POST (the expensive half of a clone): ~150/s, bandwidth-bound
+
+Replaying the protocol-v2 fetch request directly (persistent connections, no
+git, no disk) — each response is the server *building and streaming* the
+~190 KB depth-1 pack:
+
+| threads | fetches/s | client p50 | server p50 | throughput |
+|---|---|---|---|---|
+| 1   | 5.3   | 183 ms | 76 ms | 1.0 MB/s |
+| 16  | 74.0  | 202 ms | 76 ms | 14.4 MB/s |
+| 32  | 123.5 | 239 ms | 84 ms | 24.0 MB/s |
+| 64  | **149.8** | 396 ms | 89 ms | **29.2 MB/s** |
+| 128 | 143.9 | 827 ms | 101 ms | 28.0 MB/s |
+
+The plateau is exactly the client's ~29 MB/s (~230 Mbit/s) link. The tell
+that the server isn't the wall: **`Server-Timing` stays flat (~76–101 ms
+p50) across the entire ramp** while client-observed latency quadruples —
+requests are queueing on this side of the wire. Zero errors.
+
+### 3. Raw `info/refs` (the cheap half): 7,500+ req/s, no wall found
+
+| threads | req/s | p50 |
+|---|---|---|
+| 64  | 2,772 | 22 ms |
+| 128 | 4,970 | 25 ms |
+| 256 | **7,573** | 32 ms |
+
+Still scaling linearly with threads at the highest offered load, server time
+~0 ms, zero errors across ~230k requests. This is the request-handling path
+without bulk bytes; one machine simply cannot stress it.
+
+### Conclusion
+
+**The server-side read ceiling was not reached by any experiment.** From one
+machine: ~46 clones/s with stock git (client process overhead), ~150
+clone-equivalent fetches/s at the protocol level (client bandwidth), and
+7.5k+ req/s on the advertisement path (still climbing). Reads take no DO
+write and fan out across Workers isolates, so the expected scaling is
+horizontal until R2 or the DO's read path saturates — finding that number
+needs distributed load generation (several machines, or a Workers-based
+generator inside Cloudflare's network). At the measured 150 fetches/s the
+repo cost ~$0.0004/s in ops (~$1.40/hour of *maximum* sustained load from
+this client), so reads are cheap as well as fast.
+
+**All of these are per-repo figures** — the DO serialization point,
+maintenance lease, and R2 key prefixes are all per-repo, so N repos sustain
+N× this traffic in aggregate. Two repos could each take ~6.7 pushes/s +
+~150 fetches/s simultaneously without sharing any bottleneck.
 
 ## Reproducing
 
@@ -418,6 +500,10 @@ git init …; <generate ~180 files>; git push origin main
 # Round 3: w8..w48 + mixed; repack POSTed every ~5 s DURING stages.
 # Round 4: w8..w48 + mixed; no client-side repack at all (server
 #          self-triggers); a sampler polls the status API for pack count.
+# Read ceiling: (a) bare-clone loops ramped 48..256; (b) a small Python
+#          harness replaying raw info/refs GETs and protocol-v2 fetch POSTs
+#          (persistent connections, N threads), reporting rps, client and
+#          Server-Timing latency, and MB/s.
 ```
 
 Analysis: bucket events by stage; report ok/s, conflict count, p50/p95 per
