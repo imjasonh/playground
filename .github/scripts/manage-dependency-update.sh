@@ -22,6 +22,10 @@ case "${1:-}" in
       ':(glob)*/Cargo.toml' \
       ':(glob)*/Cargo.lock'
     git commit -m "chore(deps): update dependencies"
+    # Rebase onto current main so a concurrent merge during the long
+    # update/test window does not reject the push as non-fast-forward.
+    git fetch origin main
+    git rebase origin/main
     git push origin HEAD:main
     ;;
   failure-commit)
