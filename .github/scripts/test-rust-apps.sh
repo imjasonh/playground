@@ -51,6 +51,11 @@ for app in "${apps[@]}"; do
   fi
 
   # Cloudflare Worker apps compile to wasm; verify the deployable artifact too.
+  # Plain `cargo build --target wasm32` is not enough: deploy runs wrangler's
+  # [build] command (`worker-build`), and wrangler-action first creates a
+  # package.json in the app dir (`npm i wrangler@…`). That combination has
+  # failed when the crate uses #[wasm_bindgen] (nested deps break worker-build
+  # 0.1.x). Exercise the same path here so a green Test means deploy can build.
   if [ -f "$app/wrangler.toml" ]; then
     if (
       set -euo pipefail
@@ -58,10 +63,21 @@ for app in "${apps[@]}"; do
       rustup target add wasm32-unknown-unknown
       cargo clippy --locked --target wasm32-unknown-unknown -- -D warnings
       cargo build --locked --release --target wasm32-unknown-unknown
+
+      # Decoy like wrangler-action's install; restore nothing — package.json is
+      # gitignored in Worker apps and must not be committed.
+      printf '%s\n' '{"dependencies":{"wrangler":"4.107.0"}}' > package.json
+      build_cmd=$(
+        python3 -c "import pathlib, tomllib; print(tomllib.loads(pathlib.Path('wrangler.toml').read_text())['build']['command'])"
+      )
+      echo "${app}: running deploy build: ${build_cmd}"
+      bash -c "$build_cmd"
+      rm -f package.json package-lock.json
+      test -f build/worker/shim.mjs
     ); then
-      echo "${app}: wasm build passed"
+      echo "${app}: wasm + worker-build passed"
     else
-      echo "::error title=Rust wasm build failed::${app}: wasm32-unknown-unknown clippy/build"
+      echo "::error title=Rust Worker build failed::${app}: wasm32 clippy/build or wrangler [build] command"
       result=1
     fi
   fi
