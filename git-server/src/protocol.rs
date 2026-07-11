@@ -20,9 +20,10 @@
 //! bytes.
 
 use crate::object::Oid;
-use crate::pktline::{self, band, Pkt, PktParser};
+use crate::pktline::{self, band, Pkt, PktParser, PktWriter};
 use crate::refs::RepoState;
 use crate::repo::{PackIngest, RefUpdate, Repo};
+use crate::timefmt;
 use std::collections::BTreeMap;
 
 /// Server agent string advertised to clients.
@@ -60,14 +61,14 @@ impl BodyStream for BufferedBody {
 /// version=2` — the v2 capability advertisement.
 pub fn advertise_upload_pack_v2() -> Vec<u8> {
     let mut out = Vec::new();
-    out.extend_from_slice(&pktline::text_pkt("# service=git-upload-pack"));
-    out.extend_from_slice(pktline::flush_pkt());
-    out.extend_from_slice(&pktline::text_pkt("version 2"));
-    out.extend_from_slice(&pktline::text_pkt(&format!("agent={AGENT}")));
-    out.extend_from_slice(&pktline::text_pkt("ls-refs=unborn"));
-    out.extend_from_slice(&pktline::text_pkt("fetch=thin-pack shallow filter"));
-    out.extend_from_slice(&pktline::text_pkt("object-format=sha1"));
-    out.extend_from_slice(pktline::flush_pkt());
+    out.text("# service=git-upload-pack");
+    out.flush_pkt();
+    out.text("version 2");
+    out.text(&format!("agent={AGENT}"));
+    out.text("ls-refs=unborn");
+    out.text("fetch=thin-pack shallow filter");
+    out.text("object-format=sha1");
+    out.flush_pkt();
     out
 }
 
@@ -77,24 +78,21 @@ pub fn advertise_receive_pack(state: &RepoState) -> Vec<u8> {
     let caps =
         format!("report-status delete-refs side-band-64k quiet object-format=sha1 agent={AGENT}");
     let mut out = Vec::new();
-    out.extend_from_slice(&pktline::text_pkt("# service=git-receive-pack"));
-    out.extend_from_slice(pktline::flush_pkt());
+    out.text("# service=git-receive-pack");
+    out.flush_pkt();
     let refs: Vec<(&String, &String)> = state.refs.iter().collect();
     if refs.is_empty() {
-        out.extend_from_slice(&pktline::text_pkt(&format!(
-            "{} capabilities^{{}}\0{caps}",
-            "0".repeat(40)
-        )));
+        out.text(&format!("{} capabilities^{{}}\0{caps}", "0".repeat(40)));
     } else {
         for (i, (name, oid)) in refs.iter().enumerate() {
             if i == 0 {
-                out.extend_from_slice(&pktline::text_pkt(&format!("{oid} {name}\0{caps}")));
+                out.text(&format!("{oid} {name}\0{caps}"));
             } else {
-                out.extend_from_slice(&pktline::text_pkt(&format!("{oid} {name}")));
+                out.text(&format!("{oid} {name}"));
             }
         }
     }
-    out.extend_from_slice(pktline::flush_pkt());
+    out.flush_pkt();
     out
 }
 
@@ -162,7 +160,7 @@ pub async fn upload_pack(
 }
 
 async fn ls_refs(repo: &Repo<'_>, args: &[String]) -> Result<Vec<u8>, String> {
-    let (state, _) = repo.load_state().await?;
+    let state = repo.load_state().await?.state;
     let mut symrefs = false;
     let mut unborn = false;
     let mut peel = false;
@@ -191,14 +189,14 @@ async fn ls_refs(repo: &Repo<'_>, args: &[String]) -> Result<Vec<u8>, String> {
                 if symrefs {
                     line.push_str(&format!(" symref-target:{}", state.head));
                 }
-                out.extend_from_slice(&pktline::text_pkt(&line));
+                out.text(&line);
             }
             None if unborn => {
                 let mut line = "unborn HEAD".to_string();
                 if symrefs {
                     line.push_str(&format!(" symref-target:{}", state.head));
                 }
-                out.extend_from_slice(&pktline::text_pkt(&line));
+                out.text(&line);
             }
             None => {}
         }
@@ -221,9 +219,9 @@ async fn ls_refs(repo: &Repo<'_>, args: &[String]) -> Result<Vec<u8>, String> {
                 }
             }
         }
-        out.extend_from_slice(&pktline::text_pkt(&line));
+        out.text(&line);
     }
-    out.extend_from_slice(pktline::flush_pkt());
+    out.flush_pkt();
     Ok(out)
 }
 
@@ -297,11 +295,14 @@ async fn fetch(
         states: states.as_ref(),
         name: repo_name,
     };
-    let (state, _) = repo.load_state().await?;
+    let loaded = repo.load_state().await?;
+    let state = loaded.state.clone();
+    let lease_until_ms = loaded.lease_until_ms;
     if state.packs.is_empty() {
         return Ok(Body::Full(error_response("repository is empty")));
     }
     let odb = repo.odb(&state).await?;
+    let fetch_start = crate::metrics::now_ms();
 
     // Full-clone fast path: no haves, no filter, and the wants cover every
     // ref tip means the client needs everything we have — skip the
@@ -355,38 +356,42 @@ async fn fetch(
     // sent as the stream's first chunk.
     let mut head = Vec::new();
     if !done {
-        head.extend_from_slice(&pktline::text_pkt("acknowledgments"));
+        head.text("acknowledgments");
         if set.common.is_empty() {
-            head.extend_from_slice(&pktline::text_pkt("NAK"));
+            head.text("NAK");
         } else {
             for c in &set.common {
-                head.extend_from_slice(&pktline::text_pkt(&format!("ACK {c}")));
+                head.text(&format!("ACK {c}"));
             }
         }
-        head.extend_from_slice(&pktline::text_pkt("ready"));
-        head.extend_from_slice(pktline::delim_pkt());
+        head.text("ready");
+        head.delim_pkt();
     }
     // shallow-info (gitprotocol-v2(5)): the new shallow boundary and any
     // commits that are no longer shallow. Only emitted for a shallow fetch.
     if !shallow_boundary.is_empty() || !unshallow.is_empty() {
-        head.extend_from_slice(&pktline::text_pkt("shallow-info"));
+        head.text("shallow-info");
         for c in &shallow_boundary {
-            head.extend_from_slice(&pktline::text_pkt(&format!("shallow {c}")));
+            head.text(&format!("shallow {c}"));
         }
         for c in &unshallow {
-            head.extend_from_slice(&pktline::text_pkt(&format!("unshallow {c}")));
+            head.text(&format!("unshallow {c}"));
         }
-        head.extend_from_slice(pktline::delim_pkt());
+        head.delim_pkt();
     }
-    head.extend_from_slice(&pktline::text_pkt("packfile"));
+    head.text("packfile");
     if !no_progress {
-        let mut msg = Vec::new();
-        msg.push(band::PROGRESS);
-        msg.extend_from_slice(format!("packing {object_count} objects\r\n").as_bytes());
-        head.extend_from_slice(&pktline::data_pkt(&msg));
+        head.progress(&format!("packing {object_count} objects"));
+        write_repo_debug(
+            &mut head,
+            &state,
+            lease_until_ms,
+            crate::metrics::now_ms() as i64,
+        );
     }
 
     let repo_name = repo_name.to_string();
+    let emit_progress = !no_progress;
     let stream = async_stream::stream! {
         yield Ok(head);
         let repo = Repo {
@@ -407,7 +412,7 @@ async fn fetch(
                 // Wrap pack bytes into side-band DATA pkts as they emerge.
                 Ok(Some(pack_bytes)) => {
                     let mut out = Vec::with_capacity(pack_bytes.len() + 64);
-                    pktline::write_band_pkts(&mut out, band::DATA, &pack_bytes);
+                    out.band(band::DATA, &pack_bytes);
                     yield Ok(out);
                 }
                 Ok(None) => break,
@@ -416,12 +421,17 @@ async fn fetch(
                     // the stream (the truncated pack fails the client's
                     // checksum, so no corruption is possible).
                     let mut out = Vec::new();
-                    pktline::write_band_pkts(&mut out, band::ERROR, e.as_bytes());
+                    out.error_band(&e);
                     yield Ok(out);
                     yield Err(e);
                     return;
                 }
             }
+        }
+        if emit_progress {
+            let mut tail = Vec::new();
+            write_timing_progress(&mut tail, crate::metrics::now_ms() - fetch_start);
+            yield Ok(tail);
         }
         yield Ok(pktline::flush_pkt().to_vec());
     };
@@ -431,9 +441,44 @@ async fn fetch(
 /// A v2 error response (`ERR` pkt).
 fn error_response(message: &str) -> Vec<u8> {
     let mut out = Vec::new();
-    out.extend_from_slice(&pktline::text_pkt(&format!("ERR {message}")));
-    out.extend_from_slice(pktline::flush_pkt());
+    out.text(&format!("ERR {message}"));
+    out.flush_pkt();
     out
+}
+
+/// Emit repo debug counters on the PROGRESS band (visible in `git` stderr).
+fn write_repo_debug(w: &mut dyn PktWriter, state: &RepoState, lease_until_ms: i64, now_ms: i64) {
+    let objects: u64 = state.packs.iter().map(|p| p.objects).sum();
+    let bytes: u64 = state.packs.iter().map(|p| p.bytes).sum();
+    w.progress(&format!(
+        "git-server: packs={} objects={} bytes={} retired={}",
+        state.packs.len(),
+        objects,
+        bytes,
+        state.retired.len()
+    ));
+    let dash = |ms: Option<i64>| ms.map(timefmt::rfc3339_ms).unwrap_or_else(|| "-".into());
+    let lease = if lease_until_ms > now_ms {
+        timefmt::rfc3339_ms(lease_until_ms)
+    } else {
+        "-".into()
+    };
+    w.progress(&format!(
+        "git-server: last_push={} last_repack={} lease_until={lease}",
+        dash(state.last_push_ms),
+        dash(state.last_repack_ms),
+    ));
+}
+
+/// Emit a Server-Timing-style summary on the PROGRESS band (same tokens as
+/// the HTTP `Server-Timing` header).
+fn write_timing_progress(w: &mut dyn PktWriter, total_ms: f64) {
+    if let Some(m) = crate::metrics::snapshot() {
+        w.progress(&format!(
+            "git-server: server-timing: {}",
+            m.server_timing(total_ms)
+        ));
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -463,7 +508,10 @@ pub async fn receive_pack(
 ) -> Result<Vec<u8>, String> {
     // The snapshot drives the odb view and file-log build; ref freshness is
     // decided per-ref at apply time, so the version is not needed here.
-    let (state, _) = repo.load_state().await?;
+    let loaded = repo.load_state().await?;
+    let state = loaded.state;
+    let lease_until_ms = loaded.lease_until_ms;
+    let push_start = crate::metrics::now_ms();
     let mut body_bytes: u64 = 0;
 
     // Phase 1: pkt-line command section.
@@ -478,7 +526,14 @@ pub async fn receive_pack(
         };
         body_bytes += chunk.len() as u64;
         if body_bytes > push_limit_bytes {
-            return Ok(push_too_large(&caps, &commands, push_limit_bytes));
+            return Ok(push_too_large(
+                &caps,
+                &commands,
+                push_limit_bytes,
+                &state,
+                lease_until_ms,
+                crate::metrics::now_ms() - push_start,
+            ));
         }
         parser.feed(&chunk);
         while let Some(pkt) = parser.next_pkt().map_err(|e| e.to_string())? {
@@ -524,7 +579,14 @@ pub async fn receive_pack(
     }
     if commands.is_empty() {
         // "Everything up to date" push: reply with an empty report.
-        return Ok(report_status(&caps, "unpack ok", &[]));
+        return Ok(report_status(
+            &caps,
+            "unpack ok",
+            &[],
+            &state,
+            lease_until_ms,
+            crate::metrics::now_ms() - push_start,
+        ));
     }
 
     // Phase 2: the pack, streamed to R2 while scanned. Deletes-only pushes
@@ -549,7 +611,14 @@ pub async fn receive_pack(
                     body_bytes += chunk.len() as u64;
                     if body_bytes > push_limit_bytes {
                         let _ = ingest.abort().await;
-                        return Ok(push_too_large(&caps, &commands, push_limit_bytes));
+                        return Ok(push_too_large(
+                            &caps,
+                            &commands,
+                            push_limit_bytes,
+                            &state,
+                            lease_until_ms,
+                            crate::metrics::now_ms() - push_start,
+                        ));
                     }
                     if let Err(e) = ingest.feed(&chunk).await {
                         let _ = ingest.abort().await;
@@ -574,6 +643,9 @@ pub async fn receive_pack(
                         .iter()
                         .map(|c| (c.name.clone(), Some("unpacker error".to_string())))
                         .collect::<Vec<_>>(),
+                    &state,
+                    lease_until_ms,
+                    crate::metrics::now_ms() - push_start,
                 ))
             }
         }
@@ -583,17 +655,33 @@ pub async fn receive_pack(
 
     // Phase 3: resolve, index, build derived indexes, merge-apply the delta
     // (per-ref CAS in the state store; disjoint-ref races both land).
-    let outcome = repo.apply_push(commands, ingested, state, now_ms).await?;
+    let outcome = repo
+        .apply_push(commands, ingested, state.clone(), now_ms)
+        .await?;
     let lines: Vec<(String, Option<String>)> = outcome
         .results
         .iter()
         .map(|r| (r.name.clone(), r.error.clone()))
         .collect();
-    Ok(report_status(&caps, "unpack ok", &lines))
+    Ok(report_status(
+        &caps,
+        "unpack ok",
+        &lines,
+        &state,
+        lease_until_ms,
+        crate::metrics::now_ms() - push_start,
+    ))
 }
 
 /// The report-status for a push whose body exceeded the size limit.
-fn push_too_large(caps: &BTreeMap<String, String>, commands: &[RefUpdate], limit: u64) -> Vec<u8> {
+fn push_too_large(
+    caps: &BTreeMap<String, String>,
+    commands: &[RefUpdate],
+    limit: u64,
+    state: &RepoState,
+    lease_until_ms: i64,
+    elapsed_ms: f64,
+) -> Vec<u8> {
     let reason = format!(
         "push exceeds the {:.0} MB per-push limit; split into smaller pushes \
          (git push origin <older-sha>:<ref>, then newer commits)",
@@ -606,31 +694,45 @@ fn push_too_large(caps: &BTreeMap<String, String>, commands: &[RefUpdate], limit
             .iter()
             .map(|c| (c.name.clone(), Some(reason.clone())))
             .collect::<Vec<_>>(),
+        state,
+        lease_until_ms,
+        elapsed_ms,
     )
 }
 
 /// Format a report-status response, side-band-wrapped if negotiated.
+///
+/// When `side-band-64k` is on, also emit repo debug + Server-Timing-style
+/// lines on the PROGRESS band (git shows them on stderr).
 fn report_status(
     caps: &BTreeMap<String, String>,
     unpack: &str,
     refs: &[(String, Option<String>)],
+    state: &RepoState,
+    lease_until_ms: i64,
+    elapsed_ms: f64,
 ) -> Vec<u8> {
     let mut report = Vec::new();
-    report.extend_from_slice(&pktline::text_pkt(unpack));
+    report.text(unpack);
     for (name, err) in refs {
         match err {
-            None => report.extend_from_slice(&pktline::text_pkt(&format!("ok {name}"))),
-            Some(reason) => {
-                report.extend_from_slice(&pktline::text_pkt(&format!("ng {name} {reason}")))
-            }
+            None => report.text(&format!("ok {name}")),
+            Some(reason) => report.text(&format!("ng {name} {reason}")),
         }
     }
-    report.extend_from_slice(pktline::flush_pkt());
+    report.flush_pkt();
 
     if caps.contains_key("side-band-64k") {
         let mut out = Vec::new();
-        pktline::write_band_pkts(&mut out, band::DATA, &report);
-        out.extend_from_slice(pktline::flush_pkt());
+        out.band(band::DATA, &report);
+        write_repo_debug(
+            &mut out,
+            state,
+            lease_until_ms,
+            crate::metrics::now_ms() as i64,
+        );
+        write_timing_progress(&mut out, elapsed_ms);
+        out.flush_pkt();
         out
     } else {
         report

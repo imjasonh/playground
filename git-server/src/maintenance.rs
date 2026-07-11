@@ -182,7 +182,7 @@ async fn repack_leased(
     budget: &RepackBudget,
     now_ms: i64,
 ) -> Result<RepackOutcome, String> {
-    let (state, _) = repo.load_state().await?;
+    let state = repo.load_state().await?.state;
 
     // Deferred deletion: retired ids past their grace period can no longer
     // be referenced by any in-flight request. Delete their storage now (all

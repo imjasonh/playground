@@ -54,9 +54,14 @@ pub struct RepoState {
     /// Wall-clock time (epoch ms) of the last accepted push, recorded at
     /// apply time (the caller supplies the clock, since this crate is
     /// runtime-agnostic). `None` for a repo never pushed to. Surfaced by the
-    /// status API as `last_push`.
+    /// status API as RFC 3339 `last_push`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_push_ms: Option<i64>,
+    /// Wall-clock time (epoch ms) of the last successful pack consolidation
+    /// (a repack swap that replaced packs). `None` until the first repack.
+    /// Surfaced by the status API as RFC 3339 `last_repack`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_repack_ms: Option<i64>,
     /// Packs/segments superseded by a repack swap but not yet deleted from
     /// storage (deferred deletion): an in-flight request that loaded the
     /// pre-swap manifest may still be reading them. A later repack run
@@ -235,6 +240,7 @@ impl RepoState {
                     });
                 }
             }
+            self.last_repack_ms = Some(swap.now_ms);
         }
 
         if !swap.sweep.is_empty() {
@@ -330,12 +336,23 @@ impl std::fmt::Display for StateError {
 
 impl std::error::Error for StateError {}
 
+/// Result of [`StateStore::load`]: the versioned state document plus the
+/// maintenance-lease expiry (epoch ms; `0` when free / expired).
+#[derive(Debug, Clone)]
+pub struct LoadResult {
+    pub state: RepoState,
+    pub version: u64,
+    /// Absolute epoch ms when the maintenance lease expires; `0` if free.
+    pub lease_until_ms: i64,
+}
+
 /// The versioned state store (Durable Object in production).
 #[async_trait(?Send)]
 pub trait StateStore {
-    /// Load a repo's state and its version. A repo that has never been pushed
-    /// to returns `(RepoState::empty(), 0)`.
-    async fn load(&self, repo: &str) -> Result<(RepoState, u64), StateError>;
+    /// Load a repo's state, version, and current maintenance-lease expiry.
+    /// A repo that has never been pushed to returns an empty state at
+    /// version 0 with no lease.
+    async fn load(&self, repo: &str) -> Result<LoadResult, StateError>;
 
     /// Atomically merge one push's delta against the *current* state
     /// ([`RepoState::merge_push`]): per-ref old-value CAS plus commuting
@@ -389,16 +406,22 @@ impl MemStateStore {
 
 #[async_trait(?Send)]
 impl StateStore for MemStateStore {
-    async fn load(&self, repo: &str) -> Result<(RepoState, u64), StateError> {
+    async fn load(&self, repo: &str) -> Result<LoadResult, StateError> {
         let _t = crate::metrics::BackendTimer::start(crate::metrics::Op::DoRequest);
         *self.ops.lock().unwrap() += 1;
-        Ok(self
+        let (state, version) = self
             .inner
             .lock()
             .unwrap()
             .get(repo)
             .cloned()
-            .unwrap_or((RepoState::empty(), 0)))
+            .unwrap_or((RepoState::empty(), 0));
+        let lease_until_ms = self.leases.lock().unwrap().get(repo).copied().unwrap_or(0);
+        Ok(LoadResult {
+            state,
+            version,
+            lease_until_ms,
+        })
     }
 
     async fn apply_push(&self, repo: &str, delta: &PushDelta) -> Result<PushApplied, StateError> {
@@ -453,7 +476,9 @@ mod tests {
     fn empty_repo_loads_at_version_zero() {
         block_on(async {
             let s = MemStateStore::new();
-            let (state, v) = s.load("r").await.unwrap();
+            let LoadResult {
+                state, version: v, ..
+            } = s.load("r").await.unwrap();
             assert_eq!(v, 0);
             assert!(state.refs.is_empty());
         });
@@ -689,14 +714,44 @@ mod tests {
     fn apply_push_bumps_version() {
         block_on(async {
             let s = MemStateStore::new();
-            let (_, v0) = s.load("r").await.unwrap();
+            let LoadResult { version: v0, .. } = s.load("r").await.unwrap();
             let out = s
                 .apply_push("r", &delta(&[("refs/heads/main", ZERO, &"a".repeat(40))]))
                 .await
                 .unwrap();
             assert!(out.applied);
-            let (_, v1) = s.load("r").await.unwrap();
+            let LoadResult { version: v1, .. } = s.load("r").await.unwrap();
             assert_eq!(v1, v0 + 1);
+        });
+    }
+
+    #[test]
+    fn merge_repack_stamps_last_repack() {
+        let mut state = RepoState::empty();
+        state.packs = vec![
+            PackMeta {
+                id: "p1".into(),
+                bytes: 1,
+                objects: 1,
+            },
+            PackMeta {
+                id: "p2".into(),
+                bytes: 1,
+                objects: 1,
+            },
+        ];
+        assert!(state.last_repack_ms.is_none());
+        assert!(state.merge_repack(&swap(&["p1", "p2"], "m-1", &[], None)));
+        assert_eq!(state.last_repack_ms, Some(1000));
+    }
+
+    #[test]
+    fn load_includes_lease_until() {
+        block_on(async {
+            let s = MemStateStore::new();
+            assert!(s.repack_lease("r", 1000, 500).await.unwrap());
+            let LoadResult { lease_until_ms, .. } = s.load("r").await.unwrap();
+            assert_eq!(lease_until_ms, 1500);
         });
     }
 }

@@ -42,7 +42,9 @@ fn status_api() {
     let s: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(s["status"], "EMPTY");
     assert_eq!(s["objects"], 0);
-    assert!(s["last_push_ms"].is_null());
+    assert!(s["last_push"].is_null());
+    assert!(s["last_repack"].is_null());
+    assert!(s["repack_lease_until"].is_null());
 
     // Push something.
     git(&src, &["init", "-q", "-b", "main", "."]);
@@ -62,10 +64,14 @@ fn status_api() {
     assert_eq!(s["head_commit"].as_str().unwrap(), head);
     assert!(s["objects"].as_u64().unwrap() >= 3); // commit + tree + blob
     assert!(s["bytes"].as_u64().unwrap() > 0);
+    let last_push = s["last_push"].as_str().expect("last_push recorded");
     assert!(
-        s["last_push_ms"].as_i64().is_some(),
-        "last_push recorded: {s}"
+        last_push.ends_with('Z') && last_push.contains('T'),
+        "last_push should be RFC3339: {last_push}"
     );
+    assert!(s["last_repack"].is_null(), "no repack yet: {s}");
+    assert!(s["repack_lease_until"].is_null());
+    assert_eq!(s["retired"], 0);
 }
 
 /// Full lifecycle: push to empty repo, clone it back, incremental push+pull,
@@ -199,6 +205,13 @@ fn end_to_end() {
     // only after the grace period, so in-flight readers never lose data).
     let status_after: Value = serde_json::from_slice(&server.get("/api/test").1).unwrap();
     assert_eq!(status_after["packs"], 1, "one manifest pack after repack");
+    let last_repack = status_after["last_repack"]
+        .as_str()
+        .expect("last_repack stamped after consolidation");
+    assert!(
+        last_repack.ends_with('Z') && last_repack.contains('T'),
+        "last_repack RFC3339: {last_repack}"
+    );
     let stored_packs = server
         .store
         .keys()
@@ -378,7 +391,7 @@ fn concurrent_disjoint_pushes_both_land() {
     };
     // Both "pushes" load the same snapshot before either applies — the
     // interleaving that made the old whole-document CAS reject the loser.
-    let (snapshot, _) = block_on(repo.load_state()).unwrap();
+    let snapshot = block_on(repo.load_state()).unwrap().state;
 
     let create = |name: &str| {
         vec![RefUpdate {
@@ -495,7 +508,7 @@ fn incremental_repack_converges_within_budget() {
     assert_eq!(status["packs"], 1, "converged to a single pack");
     // The final NoOp run swept all previously-retired ids (grace 0), so
     // nothing superseded lingers in the manifest.
-    let (final_state, _) = block_on(repo.load_state()).unwrap();
+    let final_state = block_on(repo.load_state()).unwrap().state;
     assert!(
         final_state.retired.is_empty(),
         "retired not swept: {:?}",

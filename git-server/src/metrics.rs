@@ -87,6 +87,13 @@ pub fn take() -> Option<Metrics> {
     ACTIVE.with(|a| a.borrow_mut().take())
 }
 
+/// Clone the in-progress totals without ending collection. Used to emit a
+/// Server-Timing-style summary on the git side-band while the HTTP header
+/// still needs the final [`take`] at request end.
+pub fn snapshot() -> Option<Metrics> {
+    ACTIVE.with(|a| a.borrow().clone())
+}
+
 fn with_active(f: impl FnOnce(&mut Metrics)) {
     ACTIVE.with(|a| {
         if let Some(m) = a.borrow_mut().as_mut() {
@@ -278,6 +285,18 @@ mod tests {
         assert!(h.contains("push_stream_scan;dur=2.5"), "{h}");
         // Header value must be a single line of printable ASCII.
         assert!(h.bytes().all(|b| (0x20..0x7f).contains(&b)), "{h}");
+    }
+
+    #[test]
+    fn snapshot_does_not_end_collection() {
+        begin();
+        backend(Op::R2ClassB, 1.0);
+        let snap = snapshot().unwrap();
+        assert_eq!(snap.r2_class_b, 1);
+        backend(Op::R2ClassB, 2.0);
+        let m = take().unwrap();
+        assert_eq!(m.r2_class_b, 2);
+        assert!((m.backend_ms - 3.0).abs() < 1e-9);
     }
 
     #[test]

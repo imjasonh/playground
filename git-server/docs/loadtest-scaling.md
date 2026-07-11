@@ -167,7 +167,7 @@ apply_push_delta {
   ref_updates: [ { name, old, new } … ]   // per-ref CAS, git's actual contract
   new_pack:    PackMeta                   // append
   new_filelog: segment id(s)              // append
-  last_push_ms
+  last_push_ms                            // internal epoch ms; API exposes RFC 3339
 }
 ```
 
