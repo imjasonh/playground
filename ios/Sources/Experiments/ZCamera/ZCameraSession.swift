@@ -18,6 +18,7 @@ final class ZCameraSession: NSObject, ObservableObject {
     @Published private(set) var previewImage: UIImage?
     @Published private(set) var usingFrontCamera = false
     @Published private(set) var band: ZDepthBand = .open
+    @Published private(set) var showDepthOverlay = false
 
     private let session = AVCaptureSession()
     private let videoOutput = AVCaptureVideoDataOutput()
@@ -28,6 +29,7 @@ final class ZCameraSession: NSObject, ObservableObject {
 
     private let bandLock = NSLock()
     private var bandForProcessing = ZDepthBand.open
+    private var overlayForProcessing = false
 
     func start() {
         switch runState {
@@ -78,14 +80,25 @@ final class ZCameraSession: NSObject, ObservableObject {
         bandLock.unlock()
     }
 
+    func updateShowDepthOverlay(_ enabled: Bool) {
+        showDepthOverlay = enabled
+        bandLock.lock()
+        overlayForProcessing = enabled
+        bandLock.unlock()
+    }
+
     // MARK: - Configuration
 
     private func configureAndStart() {
         let initialBand = band.clamped()
+        let initialOverlay = showDepthOverlay
         sessionQueue.async { [weak self] in
             guard let self else { return }
             do {
-                let device = try self.configureSession(initialBand: initialBand)
+                let device = try self.configureSession(
+                    initialBand: initialBand,
+                    initialOverlay: initialOverlay
+                )
                 self.session.startRunning()
                 DispatchQueue.main.async {
                     self.usingFrontCamera = device.position == .front
@@ -108,7 +121,10 @@ final class ZCameraSession: NSObject, ObservableObject {
         }
     }
 
-    private func configureSession(initialBand: ZDepthBand) throws -> AVCaptureDevice {
+    private func configureSession(
+        initialBand: ZDepthBand,
+        initialOverlay: Bool
+    ) throws -> AVCaptureDevice {
         session.beginConfiguration()
         defer { session.commitConfiguration() }
 
@@ -167,6 +183,7 @@ final class ZCameraSession: NSObject, ObservableObject {
 
         bandLock.lock()
         bandForProcessing = initialBand
+        overlayForProcessing = initialOverlay
         bandLock.unlock()
 
         return device
@@ -227,16 +244,17 @@ final class ZCameraSession: NSObject, ObservableObject {
         }
     }
 
-    private func currentBand() -> ZDepthBand {
+    private func currentProcessingOptions() -> (band: ZDepthBand, overlay: Bool) {
         bandLock.lock()
         defer { bandLock.unlock() }
-        return bandForProcessing
+        return (bandForProcessing, overlayForProcessing)
     }
 
     private static func renderMaskedFrame(
         pixelBuffer: CVPixelBuffer,
         depthData: AVDepthData,
-        band: ZDepthBand
+        band: ZDepthBand,
+        overlayDepth: Bool
     ) -> UIImage? {
         let converted: AVDepthData
         if depthData.depthDataType != kCVPixelFormatType_DepthFloat32 {
@@ -282,7 +300,8 @@ final class ZCameraSession: NSObject, ObservableObject {
             depthHeight: depthHeight,
             depthBytesPerRow: depthBytesPerRow,
             band: band,
-            mirrorX: false
+            mirrorX: false,
+            overlayDepth: overlayDepth
         )
 
         guard let context = CGContext(
@@ -338,11 +357,12 @@ extension ZCameraSession: AVCaptureDataOutputSynchronizerDelegate {
             return
         }
 
-        let band = currentBand()
+        let options = currentProcessingOptions()
         guard let image = Self.renderMaskedFrame(
             pixelBuffer: pixelBuffer,
             depthData: depthData.depthData,
-            band: band
+            band: options.band,
+            overlayDepth: options.overlay
         ) else {
             return
         }

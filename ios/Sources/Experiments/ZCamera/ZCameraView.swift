@@ -5,6 +5,7 @@ struct ZCameraView: View {
     @StateObject private var session = ZCameraSession()
     @State private var nearSlider = ZDepthSliderMapping.sliderValue(for: .meters(0))
     @State private var farSlider = ZDepthSliderMapping.sliderValue(for: .infinity)
+    @State private var showDepthOverlay = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -18,11 +19,15 @@ struct ZCameraView: View {
         }
         .onAppear {
             publishBand()
+            session.updateShowDepthOverlay(showDepthOverlay)
             session.start()
         }
         .onDisappear { session.stop() }
         .onChange(of: nearSlider) { _ in publishBand() }
         .onChange(of: farSlider) { _ in publishBand() }
+        .onChange(of: showDepthOverlay) { enabled in
+            session.updateShowDepthOverlay(enabled)
+        }
     }
 
     private var preview: some View {
@@ -91,6 +96,21 @@ struct ZCameraView: View {
                 accessibilityID: "zCameraFarSlider"
             )
 
+            Button {
+                showDepthOverlay.toggle()
+            } label: {
+                Label(
+                    "Depth overlay",
+                    systemImage: showDepthOverlay ? "checkmark.square.fill" : "square"
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("zCameraDepthOverlayCheckbox")
+            .accessibilityAddTraits(showDepthOverlay ? [.isSelected] : [])
+            .accessibilityLabel("Depth overlay")
+            .accessibilityValue(showDepthOverlay ? "On" : "Off")
+
             HStack {
                 Label(session.usingFrontCamera ? "Front depth" : "Rear depth", systemImage: "camera.metering.matrix")
                 Spacer()
@@ -102,7 +122,7 @@ struct ZCameraView: View {
             .font(.caption)
             .foregroundStyle(.secondary)
 
-            Text("Pixels closer than Near or farther than Far go black. Drag either end to 0 or ∞.")
+            Text("Pixels closer than Near or farther than Far go black. Depth overlay tints nearer slices light blue and farther slices darker blue. Drag either end to 0 or ∞.")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
         }

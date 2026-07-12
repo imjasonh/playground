@@ -97,6 +97,8 @@ final class PlaygroundUITests: XCTestCase {
             || app.otherElements["zCameraNearSlider"].waitForExistence(timeout: 2))
         XCTAssertTrue(app.sliders["zCameraFarSlider"].waitForExistence(timeout: 5)
             || app.otherElements["zCameraFarSlider"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.buttons["zCameraDepthOverlayCheckbox"].waitForExistence(timeout: 5)
+            || app.otherElements["zCameraDepthOverlayCheckbox"].waitForExistence(timeout: 2))
         XCTAssertTrue(app.staticTexts["zCameraStatusMessage"].waitForExistence(timeout: 5)
             || app.otherElements["zCameraStatusMessage"].waitForExistence(timeout: 2)
             || app.staticTexts["zCameraBandSummary"].waitForExistence(timeout: 2))

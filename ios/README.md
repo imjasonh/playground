@@ -74,10 +74,11 @@ Bundle ID or signing bootstrap). Best on a real device near the bed.
 ### Z-Camera
 
 Live depth-band camera. Two sliders set a near/far interval (each from `0` to
-`∞`); pixels outside that slice go black. Needs camera permission
-(`NSCameraUsageDescription` only — no new Bundle ID or signing bootstrap) and a
-depth-capable device (TrueDepth, dual camera, or LiDAR). Simulator opens the UI
-but cannot stream depth.
+`∞`); pixels outside that slice go black. An optional depth-overlay checkbox
+tints the kept slice with translucent blue bands (lighter near, darker far).
+Needs camera permission (`NSCameraUsageDescription` only — no new Bundle ID or
+signing bootstrap) and a depth-capable device (TrueDepth, dual camera, or
+LiDAR). Simulator opens the UI but cannot stream depth.
 
 ## Adding an experiment
 
