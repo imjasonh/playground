@@ -1,8 +1,9 @@
 # Yard Crane
 
 Operate a tower crane in a circular construction yard. Slew the jib, run the
-trolley, hoist the hook, and ferry color-matched crates between platforms at
-different heights — slowly, like a real heavy lift.
+trolley, hoist the hook, and ferry three color-matched crates to their
+destinations — slowly, like a real heavy lift. The clock runs until the yard
+is clear.
 
 This is a **Godot 4** game exported to a single-threaded WebAssembly build so it
 runs on GitHub Pages without `SharedArrayBuffer` / COOP+COEP headers.
@@ -14,8 +15,9 @@ runs on GitHub Pages without `SharedArrayBuffer` / COOP+COEP headers.
 - **Hoist** — `Q` / `E` (or `R` / `F`) raise / lower the hook
 - **Grab / release** — `Space` or the **GRAB** button
 
-Match each crate’s color to a glowing drop pad. Soft landings score more; hard
-impacts and wild swings cost points. You have three minutes per shift.
+Three crates (coral, blue, amber). Each pickup sits opposite its glowing drop
+pad across the yard — never side by side. Deliver all three; crates stay put
+once placed. Beat your time.
 
 The hook swings with crane motion — accelerate gently, wait for the load to
 settle, then set it down.

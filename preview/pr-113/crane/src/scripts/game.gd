@@ -1,10 +1,17 @@
 ## Yard Crane — main game controller.
-## Builds the circular yard, drives scoring, and wires the crane + HUD.
+## Three crates, three destinations; stopwatch until the yard is clear.
 extends Node3D
 
-const PLATFORM_COUNT := 8
+const SLOT_COUNT := 6
+const CRATE_COUNT := 3
 const YARD_RADIUS := 18.0
-const ROUND_SECONDS := 180.0
+
+## Coral, steel blue, amber — no green.
+const PAD_COLORS := [
+	Color(0.85, 0.35, 0.2),
+	Color(0.2, 0.55, 0.75),
+	Color(0.85, 0.62, 0.18),
+]
 
 @onready var crane: Crane = $Crane
 @onready var yard: Node3D = $Yard
@@ -12,17 +19,16 @@ const ROUND_SECONDS := 180.0
 @onready var hud: CanvasLayer = $HUD
 @onready var camera: Camera3D = $CameraRig/Camera3D
 
-var score: int = 0
 var delivered: int = 0
-var time_left: float = ROUND_SECONDS
+var elapsed: float = 0.0
 var game_over: bool = false
 var _spawn_queue: Array[Dictionary] = []
 var _rng := RandomNumberGenerator.new()
 
-signal score_changed(score: int)
+signal progress_changed(delivered: int, total: int)
 signal time_changed(seconds: float)
 signal status_changed(text: String)
-signal game_ended(final_score: int, delivered: int)
+signal game_ended(elapsed_seconds: float, soft_count: int)
 
 
 func _ready() -> void:
@@ -33,18 +39,16 @@ func _ready() -> void:
 	crane.payload_delivered.connect(_on_payload_delivered)
 	crane.grab_changed.connect(_on_grab_changed)
 	crane.rough_landing.connect(_on_rough_landing)
-	score_changed.emit(score)
-	time_changed.emit(time_left)
-	status_changed.emit("Lift crates onto matching pads. Go gentle — slamming costs points.")
+	progress_changed.emit(delivered, CRATE_COUNT)
+	time_changed.emit(elapsed)
+	status_changed.emit("Move all three crates to their matching pads. Clock is running.")
 
 
 func _process(delta: float) -> void:
 	if game_over:
 		return
-	time_left = maxf(0.0, time_left - delta)
-	time_changed.emit(time_left)
-	if time_left <= 0.0:
-		_end_game()
+	elapsed += delta
+	time_changed.emit(elapsed)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -72,7 +76,6 @@ func _build_environment() -> void:
 	sun.shadow_enabled = true
 	add_child(sun)
 
-	# Ground disc
 	var ground := StaticBody3D.new()
 	ground.collision_layer = 1
 	ground.collision_mask = 0
@@ -96,7 +99,6 @@ func _build_environment() -> void:
 	ground.position.y = -0.2
 	yard.add_child(ground)
 
-	# Center ring marking
 	var ring := MeshInstance3D.new()
 	var torus := TorusMesh.new()
 	torus.inner_radius = 2.2
@@ -110,22 +112,36 @@ func _build_environment() -> void:
 
 
 func _build_yard() -> void:
-	# Platforms around the circle at mixed heights: pickups and drop-offs.
-	# Even indices = pickup pads, odd = drop-off pads (color-matched pairs).
-	var heights := [1.2, 3.5, 2.0, 5.0, 1.5, 4.2, 2.8, 6.0]
-	var colors := [
-		Color(0.85, 0.35, 0.2),
-		Color(0.2, 0.55, 0.75),
-		Color(0.3, 0.7, 0.35),
-		Color(0.75, 0.55, 0.15),
+	# Six pads around the circle. Each color's pickup and drop sit opposite
+	# each other (3 slots apart), never adjacent.
+	var heights := [1.4, 3.8, 2.2, 5.2, 1.8, 4.6]
+	# Slot i: pickup for color i at even phase, drop for color i opposite.
+	# color 0: pickup slot 0 → drop slot 3
+	# color 1: pickup slot 2 → drop slot 5
+	# color 2: pickup slot 4 → drop slot 1
+	var layout := [
+		{"slot": 0, "color_idx": 0, "is_drop": false},
+		{"slot": 1, "color_idx": 2, "is_drop": true},
+		{"slot": 2, "color_idx": 1, "is_drop": false},
+		{"slot": 3, "color_idx": 0, "is_drop": true},
+		{"slot": 4, "color_idx": 2, "is_drop": false},
+		{"slot": 5, "color_idx": 1, "is_drop": true},
 	]
-	for i in PLATFORM_COUNT:
-		var angle := TAU * float(i) / float(PLATFORM_COUNT)
+	# Shuffle color→pair mapping a bit by rotating which opposite pair is which,
+	# while keeping every pickup/drop pair 180° apart.
+	var rotation := _rng.randi_range(0, SLOT_COUNT - 1)
+	if rotation % 2 == 1:
+		# Keep even offset so opposites stay opposite under a slot rotate.
+		rotation -= 1
+
+	for entry in layout:
+		var slot: int = (int(entry["slot"]) + rotation) % SLOT_COUNT
+		var angle := TAU * float(slot) / float(SLOT_COUNT)
 		var pos := Vector3(cos(angle) * YARD_RADIUS, 0.0, sin(angle) * YARD_RADIUS)
-		var height: float = heights[i]
-		var color_idx := i / 2
-		var color: Color = colors[color_idx % colors.size()]
-		var is_drop := (i % 2) == 1
+		var height: float = heights[slot]
+		var color_idx: int = entry["color_idx"]
+		var is_drop: bool = entry["is_drop"]
+		var color: Color = PAD_COLORS[color_idx]
 		var platform := _make_platform(pos, height, color, is_drop, color_idx)
 		yard.add_child(platform)
 		_spawn_queue.append({
@@ -139,14 +155,13 @@ func _build_yard() -> void:
 
 func _make_platform(pos: Vector3, height: float, color: Color, is_drop: bool, color_idx: int) -> StaticBody3D:
 	var body := StaticBody3D.new()
-	body.collision_layer = 8  # platforms
+	body.collision_layer = 8
 	body.collision_mask = 0
 	body.position = pos
 	body.set_meta("is_drop", is_drop)
 	body.set_meta("color_idx", color_idx)
 	body.set_meta("pad_height", height)
 
-	# Support column
 	var column := MeshInstance3D.new()
 	var col_mesh := BoxMesh.new()
 	col_mesh.size = Vector3(1.4, height, 1.4)
@@ -157,7 +172,6 @@ func _make_platform(pos: Vector3, height: float, color: Color, is_drop: bool, co
 	column.material_override = col_mat
 	body.add_child(column)
 
-	# Deck
 	var deck := MeshInstance3D.new()
 	var deck_mesh := BoxMesh.new()
 	deck_mesh.size = Vector3(3.6, 0.35, 3.6)
@@ -169,7 +183,6 @@ func _make_platform(pos: Vector3, height: float, color: Color, is_drop: bool, co
 	deck.material_override = deck_mat
 	body.add_child(deck)
 
-	# Rim marker — brighter for drop pads
 	var rim := MeshInstance3D.new()
 	var rim_mesh := TorusMesh.new()
 	rim_mesh.inner_radius = 1.35
@@ -191,12 +204,11 @@ func _make_platform(pos: Vector3, height: float, color: Color, is_drop: bool, co
 	shape.position.y = (height + 0.35) * 0.5
 	body.add_child(shape)
 
-	# Invisible delivery trigger volume above drop pads
 	if is_drop:
 		var area := Area3D.new()
 		area.name = "DropZone"
 		area.collision_layer = 0
-		area.collision_mask = 2  # payloads
+		area.collision_mask = 2
 		area.monitoring = true
 		area.position.y = height + 1.2
 		var area_shape := CollisionShape3D.new()
@@ -212,7 +224,6 @@ func _make_platform(pos: Vector3, height: float, color: Color, is_drop: bool, co
 
 
 func _seed_payloads() -> void:
-	# Place a crate on each pickup pad.
 	for entry in _spawn_queue:
 		if entry["is_drop"]:
 			continue
@@ -229,49 +240,42 @@ func _spawn_payload_on_pad(entry: Dictionary) -> void:
 	payload.freeze = false
 
 
+var _soft_count: int = 0
+
+
 func _on_payload_delivered(payload: Payload, soft: bool) -> void:
 	if game_over:
 		return
-	var color_idx := payload.color_idx
-	var base := 100
-	var mass_bonus := int(payload.mass_kg / 10.0)
-	var soft_bonus := 50 if soft else 0
-	var time_bonus := int(clampf(time_left / ROUND_SECONDS, 0.0, 1.0) * 40.0)
-	var gained := base + mass_bonus + soft_bonus + time_bonus
-	score += gained
+	if soft:
+		_soft_count += 1
 	delivered += 1
-	score_changed.emit(score)
-	var feel := "Soft set" if soft else "Delivered"
-	status_changed.emit("%s +%d  ·  %d loads" % [feel, gained, delivered])
-	payload.queue_free()
-	# Respawn a new crate on the matching pickup pad after a beat.
-	await get_tree().create_timer(1.2).timeout
-	if game_over:
-		return
-	for entry in _spawn_queue:
-		if not entry["is_drop"] and entry["color_idx"] == color_idx:
-			_spawn_payload_on_pad(entry)
-			break
+	progress_changed.emit(delivered, CRATE_COUNT)
+	var feel := "Soft set" if soft else "Set down"
+	status_changed.emit("%s · %d / %d crates" % [feel, delivered, CRATE_COUNT])
+	# Leave the crate on the pad so the yard fills as you finish.
+	payload.settle_on_pad()
+	if delivered >= CRATE_COUNT:
+		_end_game()
 
 
 func _on_grab_changed(holding: bool) -> void:
 	if holding:
 		status_changed.emit("Hooked. Ease it over — watch the swing.")
-	else:
+	elif not game_over:
 		status_changed.emit("Hook free.")
 
 
-func _on_rough_landing(penalty: int) -> void:
-	score = maxi(0, score - penalty)
-	score_changed.emit(score)
-	status_changed.emit("Hard contact −%d" % penalty)
+func _on_rough_landing(_penalty: int) -> void:
+	if game_over:
+		return
+	status_changed.emit("Hard contact — ease off the swing.")
 
 
 func _end_game() -> void:
 	game_over = true
 	crane.set_enabled(false)
-	status_changed.emit("Shift over — Space to run another.")
-	game_ended.emit(score, delivered)
+	status_changed.emit("Yard clear — Space to run another.")
+	game_ended.emit(elapsed, _soft_count)
 
 
 func _restart() -> void:

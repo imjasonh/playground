@@ -100,14 +100,14 @@ text = "YARD CRANE"
 layout_mode = 2
 theme_override_colors/font_color = Color(0.92, 0.93, 0.9, 1)
 theme_override_font_sizes/font_size = 22
-text = "SCORE  0"
+text = "CRATES  0 / 3"
 horizontal_alignment = 2
 
 [node name="Time" type="Label" parent="HUD/Root/TopBar"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.92, 0.93, 0.9, 1)
 theme_override_font_sizes/font_size = 22
-text = "3:00"
+text = "0:00.0"
 horizontal_alignment = 2
 
 [node name="Status" type="Label" parent="HUD/Root"]
@@ -139,7 +139,7 @@ grow_horizontal = 2
 grow_vertical = 0
 theme_override_colors/font_color = Color(0.75, 0.78, 0.8, 0.85)
 theme_override_font_sizes/font_size = 14
-text = "A/D slew · W/S trolley · Q/E hoist · Space grab   ·   Match crate color to glowing pad"
+text = "A/D slew · W/S trolley · Q/E hoist · Space grab   ·   Deliver all 3 crates — clock is running"
 horizontal_alignment = 1
 
 [node name="Controls" type="Control" parent="HUD/Root"]

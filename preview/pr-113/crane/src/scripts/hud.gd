@@ -1,7 +1,7 @@
-## Score / timer HUD plus on-screen crane controls for touch.
+## Elapsed-time HUD plus on-screen crane controls for touch.
 extends CanvasLayer
 
-@onready var score_label: Label = $Root/TopBar/Score
+@onready var progress_label: Label = $Root/TopBar/Score
 @onready var time_label: Label = $Root/TopBar/Time
 @onready var status_label: Label = $Root/Status
 @onready var end_panel: PanelContainer = $Root/EndPanel
@@ -10,8 +10,6 @@ extends CanvasLayer
 
 var _game: Node3D
 var _crane: Crane
-
-# Touch button state
 var _held_actions: Dictionary = {}
 
 
@@ -19,12 +17,14 @@ func _ready() -> void:
 	_game = get_parent()
 	await get_tree().process_frame
 	_crane = _game.get_node_or_null("Crane") as Crane
-	if _game.has_signal("score_changed"):
-		_game.score_changed.connect(_on_score)
+	if _game.has_signal("progress_changed"):
+		_game.progress_changed.connect(_on_progress)
 		_game.time_changed.connect(_on_time)
 		_game.status_changed.connect(_on_status)
 		_game.game_ended.connect(_on_ended)
 	end_panel.visible = false
+	if help_label:
+		help_label.text = "A/D slew · W/S trolley · Q/E hoist · Space grab   ·   Deliver all 3 crates — clock is running"
 	_wire_touch_buttons()
 
 
@@ -49,27 +49,33 @@ func _process(_delta: float) -> void:
 	_crane.set_touch_axis(rotate, trolley, hook)
 
 
-func _on_score(score: int) -> void:
-	score_label.text = "SCORE  %d" % score
+func _on_progress(delivered: int, total: int) -> void:
+	progress_label.text = "CRATES  %d / %d" % [delivered, total]
 
 
 func _on_time(seconds: float) -> void:
-	var m := int(seconds) / 60
-	var s := int(seconds) % 60
-	time_label.text = "%d:%02d" % [m, s]
-	if seconds < 30.0:
-		time_label.add_theme_color_override("font_color", Color(0.95, 0.45, 0.3))
-	else:
-		time_label.add_theme_color_override("font_color", Color(0.92, 0.93, 0.9))
+	time_label.text = _format_time(seconds)
+	time_label.add_theme_color_override("font_color", Color(0.92, 0.93, 0.9))
 
 
 func _on_status(text: String) -> void:
 	status_label.text = text
 
 
-func _on_ended(final_score: int, delivered: int) -> void:
+func _on_ended(elapsed_seconds: float, soft_count: int) -> void:
 	end_panel.visible = true
-	end_label.text = "Shift complete\n%d points · %d loads\n\nSpace / Grab to go again" % [final_score, delivered]
+	var soft_line := ""
+	if soft_count > 0:
+		soft_line = "\n%d soft set%s" % [soft_count, "s" if soft_count != 1 else ""]
+	end_label.text = "Yard clear\n%s%s\n\nSpace / Grab to go again" % [_format_time(elapsed_seconds), soft_line]
+
+
+func _format_time(seconds: float) -> String:
+	var total := int(floor(seconds))
+	var m := total / 60
+	var s := total % 60
+	var tenths := int(floor((seconds - float(total)) * 10.0))
+	return "%d:%02d.%d" % [m, s, tenths]
 
 
 func _wire_touch_buttons() -> void:
