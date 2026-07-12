@@ -31,6 +31,7 @@ final class PlaygroundUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Follow the Hum"].exists)
         XCTAssertTrue(app.staticTexts["Snore Log"].exists)
         XCTAssertTrue(app.staticTexts["Z-Camera"].exists)
+        XCTAssertTrue(app.staticTexts["NFC Bulk Writer"].exists)
     }
 
     func testRideMonitorExperimentOpens() {
@@ -102,5 +103,23 @@ final class PlaygroundUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["zCameraStatusMessage"].waitForExistence(timeout: 5)
             || app.otherElements["zCameraStatusMessage"].waitForExistence(timeout: 2)
             || app.staticTexts["zCameraBandSummary"].waitForExistence(timeout: 2))
+    }
+
+    func testNFCBulkWriterExperimentOpens() {
+        let app = XCUIApplication()
+        app.launch()
+
+        openExperiment("nfc-bulk-writer", title: "NFC Bulk Writer", in: app)
+
+        XCTAssertTrue(app.navigationBars["NFC Bulk Writer"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["startNFCBulkWriteButton"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.textFields["nfcPayloadTextField"].waitForExistence(timeout: 5)
+            || app.textViews["nfcPayloadTextField"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["nfcBulkWriterStatusMessage"].waitForExistence(timeout: 5)
+            || app.otherElements["nfcBulkWriterStatusMessage"].waitForExistence(timeout: 2)
+            || app.staticTexts["Set a payload, then start writing."].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["nfcWrittenCount"].waitForExistence(timeout: 5)
+            || app.otherElements["nfcWrittenCount"].waitForExistence(timeout: 2)
+            || app.staticTexts["0"].waitForExistence(timeout: 2))
     }
 }

@@ -47,8 +47,12 @@ Today the only extension is **T9 Multi-tap**:
 | Second top-level iOS app | **Forbidden** |
 
 `signing_bootstrap` creates missing Bundle IDs via the App Store Connect API
-(then `match`). After the keyboard (or any new extension) is bootstrapped once,
-day-to-day experiment work does not touch signing.
+(then `match`). It also enables host App ID capabilities that experiments need
+(today: **NFC Tag Reading** for NFC Bulk Writer) and force-refreshes the App
+Store profile so the entitlement is included. After the keyboard (or any new
+extension) is bootstrapped once — and after any new capability is enabled —
+day-to-day experiment work that only needs Info.plist privacy strings does not
+touch signing.
 
 ## Adding an experiment (happy path — no signing)
 

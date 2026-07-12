@@ -42,6 +42,25 @@ def ensure_bundle_ids!(entries)
   end
 end
 
+# Enable App ID capabilities that in-app experiments need (idempotent). NFC Tag
+# Reading is required for NFC Bulk Writer; match must re-mint the profile after.
+def ensure_host_capabilities!(app_identifier)
+  require "spaceship"
+  bundle_id = Spaceship::ConnectAPI::BundleId.find(app_identifier)
+  UI.user_error!("Bundle ID '#{app_identifier}' not found") unless bundle_id
+
+  nfc_type = Spaceship::ConnectAPI::BundleIdCapability::Type::NFC_TAG_READING
+  existing = bundle_id.get_capabilities || []
+  if existing.any? { |cap| cap.respond_to?(:is_type?) ? cap.is_type?(nfc_type) : cap.capability_type == nfc_type }
+    UI.success("Capability NFC_TAG_READING already enabled on '#{app_identifier}'")
+    return
+  end
+
+  UI.message("Enabling NFC_TAG_READING on '#{app_identifier}'…")
+  bundle_id.create_capability(nfc_type)
+  UI.success("Enabled NFC_TAG_READING on '#{app_identifier}'")
+end
+
 platform :ios do
   desc "Run unit + UI tests on a simulator (no signing required)"
   lane :test do
@@ -56,9 +75,10 @@ platform :ios do
     )
   end
 
-  desc "One-time / when adding an Apple app extension: ensure Bundle IDs exist, " \
-       "create distribution cert + App Store profiles, store them in match. " \
-       "In-app experiments do NOT require re-running this."
+  desc "One-time / when adding an Apple app extension or App ID capability " \
+       "(e.g. NFC): ensure Bundle IDs + capabilities exist, create distribution " \
+       "cert + App Store profiles, store them in match. Ordinary in-app " \
+       "experiments (no new entitlement) do NOT require re-running this."
   lane :signing_bootstrap do
     setup_ci # temporary CI keychain to hold the new certificate
     api_key = asc_api_key # also sets Spaceship::ConnectAPI.token
@@ -74,11 +94,16 @@ platform :ios do
       ]
     )
 
+    # NFC Bulk Writer needs Near Field Communication Tag Reading on the host
+    # App ID. Enable it before match regenerates the profile.
+    ensure_host_capabilities!(APP_IDENTIFIER)
+
     match(
       type: "appstore",
       readonly: false, # create + push the signing assets
       app_identifier: SIGNING_IDENTIFIERS,
-      api_key: api_key
+      api_key: api_key,
+      force: true # refresh profile so new capabilities (NFC) are included
     )
     # match only *warns* (doesn't fail) if it can't push to the git repo — e.g.
     # the token lacks write access — which would leave this lane falsely green
@@ -91,9 +116,10 @@ platform :ios do
       api_key: api_key
     )
     UI.success("Signing assets created and verified in the match repo " \
-               "(host app + T9 keyboard extension). " \
+               "(host app + T9 keyboard extension, incl. NFC capability). " \
                "Future 'beta' runs will read them read-only. " \
-               "Adding in-app experiments does not require re-running bootstrap.")
+               "Re-run when adding an extension Bundle ID or App ID capability; " \
+               "plain in-app experiments do not need bootstrap.")
   end
 
   desc "Build a signed app-store IPA and upload it to TestFlight"

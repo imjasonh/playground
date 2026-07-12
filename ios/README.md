@@ -17,10 +17,13 @@ On every push to `main`, CI builds, tests, and (with signing secrets) uploads to
 |--------------------|-----------|---------------------------|
 | In-app experiment (Ride Monitor–style) | Host only | **No** |
 | Info.plist privacy / background modes | Host only | **No** |
+| New App ID **capability** (e.g. NFC Tag Reading) | Host only | **Yes** — enable capability + refresh profile |
 | Custom Keyboard / other **app extension** | Host + **extension id** (Apple requires it) | **Yes, once** for that extension |
 
-Bootstrap is **not** per experiment. It is once for the host app, and once more
-when you add a new extension Bundle ID (today: T9 keyboard).
+Bootstrap is **not** per experiment. It is once for the host app, once more when
+you add a new extension Bundle ID (today: T9 keyboard), and again when an
+experiment needs a new App ID capability (today: NFC for NFC Bulk Writer —
+`signing_bootstrap` enables `NFC_TAG_READING` and force-refreshes the profile).
 
 ## How it's structured
 
@@ -44,6 +47,7 @@ ios/
 | `follow-the-hum` | Follow the Hum | In-app; AirPods spatial hum hunt |
 | `snore-log` | Snore Log | In-app; mic buffer + snore clip logging |
 | `z-camera` | Z-Camera | In-app; depth-band live camera (near/far sliders) |
+| `nfc-bulk-writer` | NFC Bulk Writer | In-app; set one NDEF payload, write every tapped tag |
 
 ### T9 Keyboard
 
@@ -80,6 +84,19 @@ Needs camera permission (`NSCameraUsageDescription` only — no new Bundle ID or
 signing bootstrap) and a depth-capable device (TrueDepth, dual camera, or
 LiDAR). Simulator opens the UI but cannot stream depth.
 
+### NFC Bulk Writer
+
+Set a Text or URL NDEF payload once, tap **Start writing**, then hold each
+writable NFC tag to the iPhone — the same payload is written until you stop or
+leave the screen. Needs:
+
+- `NFCReaderUsageDescription` (Info.plist)
+- Near Field Communication Tag Reading entitlement / App ID capability
+- A physical iPhone with NFC (Simulator can’t run CoreNFC sessions)
+
+After this capability is first added, re-run **iOS signing bootstrap** so match
+stores a profile that includes NFC (the lane enables `NFC_TAG_READING` on the
+host App ID and force-refreshes the profile).
 ## Adding an experiment
 
 1. `Sources/Experiments/<YourExperiment>/`
