@@ -1,6 +1,6 @@
 # PENTAKIS — a real-time strategy board game on a geodesic globe
 
-**Rules version 0.3** (see §9 for the playtest changelog).
+**Rules version 0.4** (see §9 for the playtest changelog).
 
 A 2–4 player RTS played on the physical frequency-2 spherical pentakis snub
 dodecahedron in this directory: harvest energy from the globe's 12 wells,
@@ -119,13 +119,16 @@ action every ~20 seconds — your "APM budget."
 **Heavy actions (60 s timer only):**
 
 - **CONSTRUCT** — pay and place 1 building on an empty well or ridge node in
-  your **supply network**: your HQ, plus any node within 2 hops of one of
-  your Relays or buildings (Relay chains extend your reach across the globe,
-  pylon-style).
+  your **supply network**: every node within 2 hops of your HQ, plus every
+  node within 2 hops of a Relay or building that is itself in the network
+  (Relay chains extend your reach across the globe, pylon-style — but the
+  chain must be **connected back to your HQ**; cutting a link strands
+  everything beyond it).
 - **TRAIN** — pay and place any number of things you can afford at **one**
-  site (your HQ or any one Barracks): new pieces appear on that building's
-  node or adjacent to it, and/or add dial pips to squads on or adjacent to
-  it (max 4).
+  site (your HQ or any one Barracks **currently in your supply network**):
+  new pieces appear on that building's node or adjacent to it, and/or add
+  dial pips to squads on or adjacent to it (max 4). A disconnected Barracks
+  still stands and defends — it just can't train until reconnected.
 
 **Costs:** Skirmisher 1 ⚡ · Legion pip 1 ⚡ · Colossus 4 ⚡ · Extractor 2 ⚡ ·
 Barracks 3 ⚡ · Turret 2 ⚡ · Relay 1 ⚡.
@@ -203,8 +206,11 @@ Victory is checked **the instant** the condition occurs:
 
 - **Domination:** control **7 of 12 wells** (2 players) or **6 of 12**
   (3–4 players) → immediate win.
-- **Timeout:** when the 6th-pulse sand drains, most wells controlled wins;
-  tiebreak by total pips on the globe, then energy in hand.
+- **Timeout:** when the 6th-pulse sand drains, most wells controlled wins.
+- **Sudden death:** if wells are *tied* at timeout, flip the pulse timer and
+  keep playing — the game now ends the instant any well changes control
+  (count wells; whoever leads wins). If a full sudden-death pulse passes
+  with no change, most total pips on the globe wins, then energy in hand.
 
 **No elimination.** Losing your HQ costs you its 1 ⚡ base income and its
 training site — a serious wound, not a funeral. You keep playing; Barracks
@@ -261,3 +267,5 @@ Three simulated 2-player games drove v0.1 → v0.3:
 | 0.2→0.3 | Reaction/reveal ordering was ambiguous and leaked hidden info | Strict declare → react → reveal → resolve sequence |
 | 0.2→0.3 | Dial-less Colossus was a special case in every combat sentence | Colossus got a 5-pip dial; all damage is pips everywhere |
 | 0.2→0.3 | Bell-ringing at the final pulse was a tiebreak exploit | Game ends when the sand drains; prompt flipping is mandatory |
+| 0.3→0.4 | Relay blitz: a forward Barracks kept training even after its relay chain was destroyed, making 9-hop projection nearly free of risk | Supply network is now a connected chain from the HQ; a disconnected Barracks can't TRAIN until relinked |
+| 0.3→0.4 | Equally cautious players hit 6–6 timeouts decided by pip-count tiebreaks (3 of 20 sims) | Sudden-death pulse on tied wells: first well to change control ends the game |
