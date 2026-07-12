@@ -125,4 +125,72 @@ final class SnoreDetectorTests: XCTestCase {
         let event = try XCTUnwrap(detection)
         XCTAssertEqual(event.duration, 1.0, accuracy: 0.15)
     }
+
+    func testSensitivityMappingIsMonotonic() {
+        let low = SnoreDetectorConfig.parameters(forSensitivity: 0)
+        let mid = SnoreDetectorConfig.parameters(forSensitivity: 0.5)
+        let high = SnoreDetectorConfig.parameters(forSensitivity: 1)
+
+        XCTAssertGreaterThan(low.thresholdRatio, mid.thresholdRatio)
+        XCTAssertGreaterThan(mid.thresholdRatio, high.thresholdRatio)
+        XCTAssertGreaterThan(low.thresholdMargin, mid.thresholdMargin)
+        XCTAssertGreaterThan(mid.thresholdMargin, high.thresholdMargin)
+        XCTAssertGreaterThan(low.minAboveSeconds, high.minAboveSeconds)
+    }
+
+    func testSensitivityClampsOutOfRange() {
+        let below = SnoreDetectorConfig.parameters(forSensitivity: -1)
+        let above = SnoreDetectorConfig.parameters(forSensitivity: 2)
+        XCTAssertEqual(below, SnoreDetectorConfig.parameters(forSensitivity: 0))
+        XCTAssertEqual(above, SnoreDetectorConfig.parameters(forSensitivity: 1))
+    }
+
+    func testHigherSensitivityDetectsQuieterBurst() throws {
+        // Moderate burst that only high sensitivity should catch.
+        let quietFloor: Double = 0.01
+        let burst: Double = 0.028
+
+        var insensitive = SnoreDetector(config: .parameters(forSensitivity: 0.1))
+        for t in stride(from: 0.0, through: 1.0, by: 0.1) {
+            _ = insensitive.process(rms: quietFloor, at: t)
+        }
+        for t in stride(from: 1.1, through: 2.2, by: 0.1) {
+            _ = insensitive.process(rms: burst, at: t)
+        }
+        var lowDetection: SnoreDetection?
+        for t in stride(from: 2.3, through: 3.5, by: 0.1) {
+            if let event = insensitive.process(rms: quietFloor, at: t) {
+                lowDetection = event
+                break
+            }
+        }
+        XCTAssertNil(lowDetection, "low sensitivity should ignore a mild burst")
+
+        var sensitive = SnoreDetector(config: .parameters(forSensitivity: 0.95))
+        for t in stride(from: 0.0, through: 1.0, by: 0.1) {
+            _ = sensitive.process(rms: quietFloor, at: t)
+        }
+        for t in stride(from: 1.1, through: 2.2, by: 0.1) {
+            _ = sensitive.process(rms: burst, at: t)
+        }
+        var highDetection: SnoreDetection?
+        for t in stride(from: 2.3, through: 3.5, by: 0.1) {
+            if let event = sensitive.process(rms: quietFloor, at: t) {
+                highDetection = event
+                break
+            }
+        }
+        XCTAssertNotNil(highDetection, "high sensitivity should catch the mild burst")
+    }
+
+    func testApplySensitivityUpdatesThresholdLive() {
+        var detector = SnoreDetector(config: .parameters(forSensitivity: 0))
+        for t in stride(from: 0.0, through: 1.0, by: 0.1) {
+            _ = detector.process(rms: 0.01, at: t)
+        }
+        let before = detector.currentThreshold
+        detector.applySensitivity(1)
+        let after = detector.currentThreshold
+        XCTAssertLessThan(after, before)
+    }
 }

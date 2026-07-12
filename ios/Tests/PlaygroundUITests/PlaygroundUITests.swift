@@ -78,6 +78,8 @@ final class PlaygroundUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Snore Log"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["startSnoreSessionButton"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["pastSnoreSessionsButton"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.sliders["snoreSensitivitySlider"].waitForExistence(timeout: 5)
+            || app.otherElements["snoreSensitivitySlider"].waitForExistence(timeout: 2))
         XCTAssertTrue(app.staticTexts["snoreStatusMessage"].waitForExistence(timeout: 5)
             || app.otherElements["snoreStatusMessage"].waitForExistence(timeout: 2)
             || app.staticTexts["Ready"].waitForExistence(timeout: 2))
