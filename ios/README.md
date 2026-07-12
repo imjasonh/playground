@@ -75,10 +75,13 @@ Bundle ID or signing bootstrap). Best on a real device near the bed.
 
 Live depth-band camera. Two sliders set a near/far interval (each from `0` to
 `∞`); pixels outside that slice go black. An optional depth-overlay checkbox
-tints the kept slice with translucent blue bands (lighter near, darker far).
-Needs camera permission (`NSCameraUsageDescription` only — no new Bundle ID or
-signing bootstrap) and a depth-capable device (TrueDepth, dual camera, or
-LiDAR). Simulator opens the UI but cannot stream depth.
+adds a smooth blue gradient (lighter near, darker far). Capture prefers the
+highest practical depth resolution (up to about 720p) with bilinear depth
+sampling and calibration-aware alignment when the device provides it. Depth is
+measured from the camera, not fixed in the room. Needs camera permission
+(`NSCameraUsageDescription` only — no new Bundle ID or signing bootstrap) and
+a depth-capable device (TrueDepth, dual camera, or LiDAR). Simulator opens the
+UI but cannot stream depth.
 
 ## Adding an experiment
 

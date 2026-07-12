@@ -41,11 +41,11 @@ final class ZDepthBandTests: XCTestCase {
 
     func testSliderMappingInfinityAtTop() {
         XCTAssertEqual(ZDepthSliderMapping.bound(sliderValue: 0), .meters(0))
-        XCTAssertEqual(ZDepthSliderMapping.bound(sliderValue: 0.5), .meters(2.5))
+        XCTAssertEqual(ZDepthSliderMapping.bound(sliderValue: 0.5), .meters(4))
         XCTAssertEqual(ZDepthSliderMapping.bound(sliderValue: 1), .infinity)
         XCTAssertEqual(ZDepthSliderMapping.sliderValue(for: .infinity), 1, accuracy: 0.0001)
         XCTAssertEqual(
-            ZDepthSliderMapping.sliderValue(for: .meters(2.5)),
+            ZDepthSliderMapping.sliderValue(for: .meters(4)),
             0.5,
             accuracy: 0.0001
         )
@@ -56,6 +56,33 @@ final class ZDepthBandTests: XCTestCase {
         XCTAssertEqual(ZDepthBand.Bound.label(.meters(0)), "0 m")
         XCTAssertEqual(ZDepthBand.Bound.label(.meters(0.4)), "40 cm")
         XCTAssertEqual(ZDepthBand.Bound.label(.meters(2.25)), "2.25 m")
+    }
+}
+
+final class ZDepthCoordinateMapperTests: XCTestCase {
+    func testDefaultMapperScalesVideoToDepth() {
+        let mapper = ZDepthCoordinateMapper(
+            videoWidth: 640,
+            videoHeight: 480,
+            depthWidth: 320,
+            depthHeight: 240
+        )
+        let center = mapper.depthUV(videoX: 320, videoY: 240, mirrorX: false)
+        XCTAssertEqual(center.u, 0.5, accuracy: 0.001)
+        XCTAssertEqual(center.v, 0.5, accuracy: 0.001)
+    }
+
+    func testMirrorFlipsHorizontalUV() {
+        let mapper = ZDepthCoordinateMapper(
+            videoWidth: 4,
+            videoHeight: 1,
+            depthWidth: 4,
+            depthHeight: 1
+        )
+        let left = mapper.depthUV(videoX: 0, videoY: 0, mirrorX: false)
+        let mirrored = mapper.depthUV(videoX: 0, videoY: 0, mirrorX: true)
+        XCTAssertEqual(left.u, 0, accuracy: 0.001)
+        XCTAssertEqual(mirrored.u, 1, accuracy: 0.001)
     }
 }
 
@@ -151,23 +178,35 @@ final class ZDepthBandMaskerTests: XCTestCase {
         XCTAssertEqual(Array(bgra[4..<8]), [255, 255, 255, 255])
     }
 
-    func testOverlayToneQuantizesIntoBands() {
+    func testOverlayToneIsContinuous() {
         let near = 0.0
-        let far = 5.0
-        let first = ZDepthBandMasker.overlayTone(depthMeters: 0.1, near: near, far: far)
-        let mid = ZDepthBandMasker.overlayTone(depthMeters: 2.5, near: near, far: far)
-        // 4.9 m lands in the second-to-last step (tone 0.8); only `far` hits 1.0.
-        let nearFar = ZDepthBandMasker.overlayTone(depthMeters: 4.9, near: near, far: far)
-        let atFar = ZDepthBandMasker.overlayTone(depthMeters: 5.0, near: near, far: far)
-        XCTAssertEqual(first, 0, accuracy: 0.001)
-        XCTAssertGreaterThan(mid, first)
-        XCTAssertEqual(nearFar, 0.8, accuracy: 0.001)
+        let far = 8.0
+        let shallow = ZDepthBandMasker.overlayTone(depthMeters: 0.1, near: near, far: far)
+        let deeper = ZDepthBandMasker.overlayTone(depthMeters: 0.2, near: near, far: far)
+        let mid = ZDepthBandMasker.overlayTone(depthMeters: 4.0, near: near, far: far)
+        let atFar = ZDepthBandMasker.overlayTone(depthMeters: 8.0, near: near, far: far)
+        XCTAssertLessThan(shallow, deeper)
+        XCTAssertGreaterThan(mid, deeper)
         XCTAssertEqual(atFar, 1, accuracy: 0.001)
-        XCTAssertGreaterThan(atFar, nearFar)
-        // Adjacent depths in the same step share a tone.
-        let a = ZDepthBandMasker.overlayTone(depthMeters: 0.05, near: near, far: far)
-        let b = ZDepthBandMasker.overlayTone(depthMeters: 0.2, near: near, far: far)
-        XCTAssertEqual(a, b, accuracy: 0.001)
+        XCTAssertNotEqual(shallow, deeper, accuracy: 0.0001)
+    }
+
+    func testBilinearDepthInterpolatesBetweenNeighbors() {
+        let depth: [Float] = [
+            1.0, 3.0,
+            1.0, 3.0,
+        ]
+        depth.withUnsafeBufferPointer { buffer in
+            let center = ZDepthBandMasker.sampleDepthMeters(
+                depth: buffer.baseAddress!,
+                depthWidth: 2,
+                depthHeight: 2,
+                depthBytesPerRow: 2 * MemoryLayout<Float>.size,
+                u: 0.5,
+                v: 0.5
+            )
+            XCTAssertEqual(center ?? -1, 2.0, accuracy: 0.001)
+        }
     }
 
     func testOverlayBlueGetsDarkerWithTone() {
