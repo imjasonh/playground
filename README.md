@@ -29,8 +29,8 @@ experiments don't bit-rot.
 - **[`cold-climb/`](cold-climb/)** — a touch-first, two-handle arcade game:
   balance a ball up the wall while avoiding unlit pockets.
 - **[`crane/`](crane/)** — Yard Crane, a Godot 4 tower-crane game exported to
-  WebAssembly: slew, trolley, and hoist heavy color-matched crates around a
-  circular yard for points.
+  WebAssembly: slew, trolley, and hoist three color-matched crates across a
+  circular yard against the clock.
 - **[`hello/`](hello/)** — a minimal static demo.
 - **[`kanoodle/`](kanoodle/)** — the Kanoodle puzzle game (5×11 board, 12 pieces).
 - **[`webrtc/`](webrtc/)** — serverless, link-based WebRTC app: share a link to

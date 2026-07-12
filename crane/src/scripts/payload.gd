@@ -5,8 +5,7 @@ extends RigidBody3D
 const COLORS := [
 	Color(0.85, 0.35, 0.2),
 	Color(0.2, 0.55, 0.75),
-	Color(0.3, 0.7, 0.35),
-	Color(0.75, 0.55, 0.15),
+	Color(0.85, 0.62, 0.18),
 ]
 
 var color_idx: int = 0
@@ -109,3 +108,15 @@ func drop(at_pos: Vector3, velocity: Vector3) -> void:
 		randf_range(-0.4, 0.4),
 		randf_range(-0.4, 0.4)
 	)
+
+
+func settle_on_pad() -> void:
+	## Freeze in place after a successful delivery so the crate stays visible.
+	is_held = false
+	_anchor = null
+	freeze = true
+	collision_layer = 0
+	collision_mask = 0
+	linear_velocity = Vector3.ZERO
+	angular_velocity = Vector3.ZERO
+	set_meta("delivered", true)
