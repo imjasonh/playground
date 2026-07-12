@@ -50,5 +50,6 @@ enum ExperimentCatalog {
         T9KeyboardExperiment.experiment,
         FollowTheHumExperiment.experiment,
         SnoreLogExperiment.experiment,
+        ZCameraExperiment.experiment,
     ]
 }
