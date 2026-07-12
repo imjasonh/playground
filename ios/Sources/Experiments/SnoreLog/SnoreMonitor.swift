@@ -22,16 +22,31 @@ final class SnoreMonitor: ObservableObject {
     @Published private(set) var lastSavedSession: SleepSession?
     @Published private(set) var currentSessionID: UUID?
     @Published private(set) var microphoneDenied = false
+    /// 0 = least sensitive, 1 = most. Live-applied and persisted.
+    @Published var sensitivity: Double = SnoreDetectorConfig.defaultSensitivity {
+        didSet {
+            let clamped = min(1, max(0, sensitivity))
+            if clamped != sensitivity {
+                sensitivity = clamped
+                return
+            }
+            guard clamped != oldValue else { return }
+            UserDefaults.standard.set(clamped, forKey: Self.sensitivityDefaultsKey)
+            detector.applySensitivity(clamped)
+            threshold = detector.currentThreshold
+        }
+    }
 
     /// Seconds of audio kept in the ring buffer (pre-roll + event body).
     static let bufferSeconds: Double = 8
     static let sampleRate: Double = 16_000
     /// Extra samples kept after detection ends (within the ring buffer window).
     static let preRollSeconds: Double = 1.0
+    private static let sensitivityDefaultsKey = "snoreLog.sensitivity"
 
     let store: SnoreStore
     private let engine = AVAudioEngine()
-    private var detector = SnoreDetector()
+    private var detector: SnoreDetector
     private var ring = SnoreRingBuffer(capacity: Int(bufferSeconds * sampleRate))
     private var session: SleepSession?
     private var startUptime: TimeInterval = 0
@@ -48,6 +63,13 @@ final class SnoreMonitor: ObservableObject {
 
     init(store: SnoreStore = SnoreStore()) {
         self.store = store
+        let saved = UserDefaults.standard.object(forKey: Self.sensitivityDefaultsKey) as? Double
+        let initial = min(1, max(0, saved ?? SnoreDetectorConfig.defaultSensitivity))
+        // Initialize detector before assigning sensitivity so a future didSet is safe.
+        self.detector = SnoreDetector(config: .parameters(forSensitivity: initial))
+        self.sensitivity = initial
+        self.threshold = self.detector.currentThreshold
+        self.noiseFloor = self.detector.noiseFloor
     }
 
     private var now: TimeInterval { ProcessInfo.processInfo.systemUptime - startUptime }
@@ -106,6 +128,7 @@ final class SnoreMonitor: ObservableObject {
     }
 
     private func beginSession() throws {
+        detector = SnoreDetector(config: .parameters(forSensitivity: sensitivity))
         detector.reset()
         ring.reset()
         events = []
@@ -115,6 +138,8 @@ final class SnoreMonitor: ObservableObject {
         pendingPostRoll = nil
         rmsWindow = []
         lastSavedSession = nil
+        noiseFloor = detector.noiseFloor
+        threshold = detector.currentThreshold
 
         let newSession = SleepSession(startedAt: Date())
         try store.prepareSession(newSession)

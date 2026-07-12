@@ -12,6 +12,7 @@ struct SnoreLogView: View {
             VStack(spacing: 20) {
                 meter
                 stats
+                sensitivitySlider
 
                 if monitor.isRunning {
                     Button(role: .destructive) {
@@ -106,6 +107,37 @@ struct SnoreLogView: View {
         .fixedSize(horizontal: false, vertical: true)
     }
 
+    private var sensitivitySlider: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Sensitivity")
+                    .font(.subheadline.bold())
+                Spacer()
+                Text(sensitivityLabel)
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            Slider(value: $monitor.sensitivity, in: 0...1)
+                .accessibilityIdentifier("snoreSensitivitySlider")
+            HStack {
+                Text("Less")
+                Spacer()
+                Text("More")
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            Text("Drag up if quiet snores are missed; drag down if talking or room noise keeps triggering.")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var sensitivityLabel: String {
+        let percent = Int((monitor.sensitivity * 100).rounded())
+        return "\(percent)%"
+    }
+
     private func stat(_ label: String, _ value: String) -> some View {
         VStack {
             Text(value).font(.headline).monospacedDigit()
@@ -155,7 +187,7 @@ struct SnoreLogView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("How it works")
                 .font(.headline)
-            Text("A few seconds of audio stay in memory. When loudness rises above the ambient floor for a beat, that clip is saved — the rest of the night is discarded. Background audio keeps listening with the screen off.")
+            Text("A few seconds of audio stay in memory. When loudness rises above the ambient floor for a beat, that clip is saved — the rest of the night is discarded. Use the sensitivity slider to match your room and snore volume. Background audio keeps listening with the screen off.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             Text("Not a medical device. Level-based detection will also catch talking, traffic, and other noise.")

@@ -25,6 +25,25 @@ struct SnoreDetectorConfig: Equatable {
     var maxEventSeconds: TimeInterval = 12.0
     /// Seed floor so the first moments aren't hypersensitive.
     var initialNoiseFloor: Double = 0.008
+
+    /// Default slider position — a bit more sensitive than the original fixed
+    /// thresholds, since quiet snoring was easy to miss.
+    static let defaultSensitivity: Double = 0.7
+
+    /// Maps a 0…1 sensitivity slider to detector thresholds.
+    ///
+    /// Higher sensitivity → lower ratio/margin and a shorter sustain requirement,
+    /// so quieter / shorter bursts still trigger.
+    static func parameters(forSensitivity raw: Double) -> SnoreDetectorConfig {
+        let s = min(1, max(0, raw))
+        var config = SnoreDetectorConfig()
+        // Least sensitive (0): ratio 4.0, margin 0.030, minAbove 0.55s
+        // Most sensitive (1):  ratio 0.6, margin 0.003, minAbove 0.20s
+        config.thresholdRatio = 4.0 - s * 3.4
+        config.thresholdMargin = 0.030 - s * 0.027
+        config.minAboveSeconds = 0.55 - s * 0.35
+        return config
+    }
 }
 
 /// One confirmed loudness event candidate ready to be clipped from the ring buffer.
@@ -68,6 +87,15 @@ struct SnoreDetector {
         floorAtOnset = 0
         cooldownUntil = 0
         lastTime = 0
+    }
+
+    /// Swap threshold parameters without resetting noise-floor state — used when
+    /// the sensitivity slider moves mid-session.
+    mutating func applySensitivity(_ sensitivity: Double) {
+        let next = SnoreDetectorConfig.parameters(forSensitivity: sensitivity)
+        config.thresholdRatio = next.thresholdRatio
+        config.thresholdMargin = next.thresholdMargin
+        config.minAboveSeconds = next.minAboveSeconds
     }
 
     /// Process one RMS window. Returns a detection when an event completes.
