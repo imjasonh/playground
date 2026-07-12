@@ -217,7 +217,13 @@ still train.
   maneuver and fewer battles.
 - **Turn-based (no timers):** players alternate taking 2 actions each
   (any mix); Reactions work the same; run a pulse after every full round;
-  play 8 pulses. Good for teaching and solo testing.
+  play 8 pulses. **Play this for anyone's first game** — it teaches the
+  strategy layer without the execution layer.
+- **Commander's handicap (mixed experience, real-time):** the stronger
+  player uses only their 60 s timer (half the action budget, full
+  knowledge). Narrow the gap as the newer player improves: swap the 30 s
+  timer back in as a 45 s timer, then remove the handicap. Timer uptime is
+  where experience actually wins, so this handicaps exactly that.
 - **Skirmish globe:** restrict play to the 72 well+ridge nodes (movement
   hops count along ridge-to-ridge adjacency through fields). Faster, denser,
   chess-like; good for 2 players in 30 minutes.
