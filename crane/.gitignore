@@ -1,0 +1,13 @@
+# Local Godot editor cache / imports
+src/.godot/
+src/.import/
+*.translation
+
+# OS / editor noise
+.DS_Store
+*~
+*.tmp
+
+# Keep node_modules out if present
+node_modules/
+test-results/

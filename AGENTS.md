@@ -19,6 +19,7 @@ playground/
 ├── cold-climb/            # touch-first two-handle arcade game (JS + Node tests)
 ├── cors-proxy/            # Rust Cloudflare Worker: SSRF-hardened CORS proxy (not a Pages app)
 ├── cors-proxy-demo/       # static browser front-end for the cors-proxy Worker
+├── crane/                 # Godot 4 tower-crane game (web export + Node smoke tests)
 ├── git/                   # in-browser read-only git client (JS + Jest + Playwright)
 ├── git-server/            # Rust Cloudflare Worker: git smart-HTTP server on R2/DO (not a Pages app)
 ├── gitdb/                 # Go CLI (Go module + Go tests)
@@ -40,6 +41,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `artillery/` | yes | Turn-based artillery duel; JS modules, npm scripts, tests |
 | `cold-climb/` | yes | Touch-first arcade game; JS modules, npm scripts, tests |
 | `cors-proxy-demo/` | yes | Static front-end for `cors-proxy`; HTML/JS, no build or tests |
+| `crane/` | yes | Godot 4 web export (committed `.wasm`/`.pck`); Node smoke tests |
 | `git/` | yes | In-browser read-only git client; JS modules, npm scripts, tests |
 | `hello/` | yes | Static HTML; no build or tests |
 | `kanoodle/` | yes | Client-side JS modules, npm scripts, tests |
@@ -257,12 +259,38 @@ apps are discovered automatically — no workflow edits are needed.
 2. Add **`my-app/index.html`** as the entry point.
 3. Keep all assets inside that directory (CSS, JS, images).
 4. Optional but recommended for non-trivial apps:
-   - Add `my-app/package.json` with `"test"` script
-   - Add `my-app/README.md` with run/test instructions
-   - Add `my-app/.gitignore` (at minimum `node_modules/`)
+ - Add `my-app/package.json` with `"test"` script
+ - Add `my-app/README.md` with run/test instructions
+ - Add `my-app/.gitignore` (at minimum `node_modules/`)
 5. Open a PR—preview deploy and CI run automatically.
 
 No workflow edits are required when a new app follows these conventions.
+
+### Godot browser apps
+
+Godot games are still **browser apps** as far as deploy/preview/discovery are
+concerned: the app directory must contain **`index.html`** at its root. There is
+no Godot build step in CI — Pages deploy copies the directory as-is — so the
+**exported Web build is committed** next to the Godot project source.
+
+Follow `crane/` as the reference:
+
+```
+my-godot-game/
+├── index.html          # Godot web export entry (committed)
+├── index.js / .wasm / .pck
+├── package.json        # smoke tests over the export artifacts
+├── scripts/export.sh   # re-export helper (Godot 4.4+ on PATH or GODOT_BIN)
+├── src/                # Godot project (project.godot, scenes, scripts)
+│   └── export_presets.cfg
+└── README.md
+```
+
+Export with **`variant/thread_support=false`** (Godot 4.3+ single-threaded web).
+GitHub Pages cannot send the COOP/COEP headers `SharedArrayBuffer` needs, so a
+threaded export will black-screen in production and PR previews. Prefer the
+`gl_compatibility` renderer for broader browser support. Keep editor cache out
+of git (`src/.godot/` in the app `.gitignore`).
 
 ### Minimal static app
 
@@ -426,6 +454,7 @@ bundle exec fastlane test
 | `artillery/` | Turn-based artillery duel with local and AI modes | Node test runner |
 | `cold-climb/` | Two-handle ball-climbing arcade game | Node test runner |
 | `cors-proxy-demo/` | Browser playground for the `cors-proxy` Worker (send a request, inspect the CORS response) | none (static) |
+| `crane/` | Yard Crane — Godot 4 tower-crane game (single-threaded web export) | Node test runner (export smoke) |
 | `git/` | In-browser read-only git client (clone, browse, branches, history) | Jest + Playwright |
 | `hello/` | Static demo | none |
 | `kanoodle/` | Kanoodle puzzle game (5×11 board, 12 pieces) | Jest + Playwright |
