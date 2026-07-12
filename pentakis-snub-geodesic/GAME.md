@@ -8,7 +8,8 @@ train squads, push supply lines around the planet, and storm the enemy
 capital — all in real time, paced by sand timers instead of turns.
 
 - **Players:** 2–4
-- **Time:** 45–75 minutes
+- **Time:** 15–18 minutes of live play (6 pulses × 3 min, hard cap), ~25–30
+  minutes with setup; the turn-based variant runs 45–60 minutes
 - **Elevator pitch:** StarCraft's macro loop (harvest → build → army → attack)
   compressed onto a 9-inch globe you physically rotate, with sand-timer
   cooldowns instead of APM.
