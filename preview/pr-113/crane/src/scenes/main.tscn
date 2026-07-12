@@ -1,0 +1,250 @@
+[gd_scene load_steps=7 format=3 uid="uid://yardcrane_main"]
+
+[ext_resource type="Script" path="res://scripts/game.gd" id="1_game"]
+[ext_resource type="Script" path="res://scripts/crane_view.gd" id="2_crane"]
+[ext_resource type="Script" path="res://scripts/hud.gd" id="3_hud"]
+[ext_resource type="Script" path="res://scripts/camera_follow.gd" id="4_cam"]
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_magnet"]
+radius = 1.1
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_panel"]
+bg_color = Color(0.12, 0.14, 0.16, 0.92)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+content_margin_left = 20.0
+content_margin_top = 16.0
+content_margin_right = 20.0
+content_margin_bottom = 16.0
+
+[node name="Main" type="Node3D"]
+script = ExtResource("1_game")
+
+[node name="CameraRig" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
+
+[node name="Camera3D" type="Camera3D" parent="CameraRig"]
+transform = Transform3D(0.707107, -0.353553, 0.612372, 0, 0.866025, 0.5, -0.707107, -0.353553, 0.612372, 22, 22, 22)
+fov = 42.0
+current = true
+far = 200.0
+script = ExtResource("4_cam")
+
+[node name="Yard" type="Node3D" parent="."]
+
+[node name="Payloads" type="Node3D" parent="."]
+
+[node name="Crane" type="Node3D" parent="."]
+script = ExtResource("2_crane")
+
+[node name="Pivot" type="Node3D" parent="Crane"]
+
+[node name="Boom" type="Node3D" parent="Crane/Pivot"]
+
+[node name="Trolley" type="Node3D" parent="Crane/Pivot/Boom"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10, 0, 0)
+
+[node name="Cable" type="MeshInstance3D" parent="Crane/Pivot/Boom/Trolley"]
+
+[node name="Hook" type="Node3D" parent="Crane/Pivot/Boom/Trolley"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -6, 0)
+
+[node name="HookBody" type="RigidBody3D" parent="Crane/Pivot/Boom/Trolley/Hook"]
+collision_layer = 4
+collision_mask = 0
+freeze = true
+freeze_mode = 1
+
+[node name="Magnet" type="Area3D" parent="Crane/Pivot/Boom/Trolley/Hook/HookBody"]
+collision_layer = 0
+collision_mask = 2
+monitoring = true
+monitorable = false
+
+[node name="MagnetShape" type="CollisionShape3D" parent="Crane/Pivot/Boom/Trolley/Hook/HookBody/Magnet"]
+shape = SubResource("SphereShape3D_magnet")
+
+[node name="HUD" type="CanvasLayer" parent="."]
+script = ExtResource("3_hud")
+
+[node name="Root" type="Control" parent="HUD"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="TopBar" type="HBoxContainer" parent="HUD/Root"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 20.0
+offset_top = 16.0
+offset_right = -20.0
+offset_bottom = 64.0
+grow_horizontal = 2
+theme_override_constants/separation = 24
+
+[node name="Title" type="Label" parent="HUD/Root/TopBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.95, 0.9, 0.55, 1)
+theme_override_font_sizes/font_size = 28
+text = "YARD CRANE"
+
+[node name="Score" type="Label" parent="HUD/Root/TopBar"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.92, 0.93, 0.9, 1)
+theme_override_font_sizes/font_size = 22
+text = "SCORE  0"
+horizontal_alignment = 2
+
+[node name="Time" type="Label" parent="HUD/Root/TopBar"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.92, 0.93, 0.9, 1)
+theme_override_font_sizes/font_size = 22
+text = "3:00"
+horizontal_alignment = 2
+
+[node name="Status" type="Label" parent="HUD/Root"]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -320.0
+offset_top = 72.0
+offset_right = 320.0
+offset_bottom = 110.0
+grow_horizontal = 2
+theme_override_colors/font_color = Color(0.85, 0.88, 0.9, 1)
+theme_override_font_sizes/font_size = 18
+text = "Ready."
+horizontal_alignment = 1
+
+[node name="Help" type="Label" parent="HUD/Root"]
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 20.0
+offset_top = -48.0
+offset_right = -20.0
+offset_bottom = -16.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_colors/font_color = Color(0.75, 0.78, 0.8, 0.85)
+theme_override_font_sizes/font_size = 14
+text = "A/D slew · W/S trolley · Q/E hoist · Space grab   ·   Match crate color to glowing pad"
+horizontal_alignment = 1
+
+[node name="Controls" type="Control" parent="HUD/Root"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="LeftCol" type="VBoxContainer" parent="HUD/Root/Controls"]
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 16.0
+offset_top = -280.0
+offset_right = 140.0
+offset_bottom = -60.0
+grow_vertical = 0
+theme_override_constants/separation = 8
+
+[node name="RotLeft" type="Button" parent="HUD/Root/Controls/LeftCol"]
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+focus_mode = 0
+text = "◀ Slew"
+
+[node name="RotRight" type="Button" parent="HUD/Root/Controls/LeftCol"]
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+focus_mode = 0
+text = "Slew ▶"
+
+[node name="BoomIn" type="Button" parent="HUD/Root/Controls/LeftCol"]
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+focus_mode = 0
+text = "Trolley In"
+
+[node name="BoomOut" type="Button" parent="HUD/Root/Controls/LeftCol"]
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+focus_mode = 0
+text = "Trolley Out"
+
+[node name="RightCol" type="VBoxContainer" parent="HUD/Root/Controls"]
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -140.0
+offset_top = -220.0
+offset_right = -16.0
+offset_bottom = -60.0
+grow_horizontal = 0
+grow_vertical = 0
+theme_override_constants/separation = 8
+
+[node name="HookUp" type="Button" parent="HUD/Root/Controls/RightCol"]
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+focus_mode = 0
+text = "Hook ▲"
+
+[node name="HookDown" type="Button" parent="HUD/Root/Controls/RightCol"]
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+focus_mode = 0
+text = "Hook ▼"
+
+[node name="Grab" type="Button" parent="HUD/Root/Controls/RightCol"]
+custom_minimum_size = Vector2(0, 56)
+layout_mode = 2
+focus_mode = 0
+text = "GRAB"
+
+[node name="EndPanel" type="PanelContainer" parent="HUD/Root"]
+visible = false
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -200.0
+offset_top = -100.0
+offset_right = 200.0
+offset_bottom = 100.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
+
+[node name="Margin" type="MarginContainer" parent="HUD/Root/EndPanel"]
+layout_mode = 2
+
+[node name="VBox" type="VBoxContainer" parent="HUD/Root/EndPanel/Margin"]
+layout_mode = 2
+
+[node name="EndText" type="Label" parent="HUD/Root/EndPanel/Margin/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.95, 0.93, 0.88, 1)
+theme_override_font_sizes/font_size = 22
+text = "Shift complete"
+horizontal_alignment = 1
