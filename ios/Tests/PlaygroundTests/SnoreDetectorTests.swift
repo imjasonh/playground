@@ -24,7 +24,7 @@ final class SnoreDetectorTests: XCTestCase {
         }
     }
 
-    func testSustainedLoudnessProducesOneEvent() {
+    func testSustainedLoudnessProducesOneEvent() throws {
         var detector = makeDetector()
         // Establish floor.
         for t in stride(from: 0.0, through: 1.0, by: 0.1) {
@@ -60,7 +60,7 @@ final class SnoreDetectorTests: XCTestCase {
         XCTAssertNil(detector.process(rms: 0.01, at: 2.0))
     }
 
-    func testCooldownSuppressesImmediateSecondEvent() {
+    func testCooldownSuppressesImmediateSecondEvent() throws {
         var detector = makeDetector()
         for t in stride(from: 0.0, through: 1.0, by: 0.1) {
             _ = detector.process(rms: 0.01, at: t)
@@ -88,7 +88,7 @@ final class SnoreDetectorTests: XCTestCase {
         }
     }
 
-    func testFlushClosesActiveEvent() {
+    func testFlushClosesActiveEvent() throws {
         var detector = makeDetector()
         for t in stride(from: 0.0, through: 1.0, by: 0.1) {
             _ = detector.process(rms: 0.01, at: t)
@@ -101,7 +101,7 @@ final class SnoreDetectorTests: XCTestCase {
         XCTAssertNil(detector.flush(at: 2.0))
     }
 
-    func testMaxEventSecondsForceEnds() {
+    func testMaxEventSecondsForceEnds() throws {
         var config = SnoreDetectorConfig()
         config.initialNoiseFloor = 0.01
         config.thresholdRatio = 2.0
