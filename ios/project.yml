@@ -78,6 +78,7 @@ targets:
         NSLocationWhenInUseUsageDescription: Ride Monitor records where jolts happen. Follow the Hum uses your location and compass to hide a nearby spot and steer you with sound.
         NSLocationAlwaysAndWhenInUseUsageDescription: Records where jolts and crashes happen and keeps the ride recording while the screen is off.
         NSMicrophoneUsageDescription: Snore Log listens with the microphone while you sleep and saves short clips when snoring-like sounds are detected.
+        NSCameraUsageDescription: Z-Camera uses the depth camera to show only the slice of space between the near and far distance sliders.
         UIBackgroundModes:
           - location
           - audio

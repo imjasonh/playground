@@ -43,6 +43,7 @@ ios/
 | `t9-keyboard` | T9 Keyboard | In-app demo **and** system keyboard extension |
 | `follow-the-hum` | Follow the Hum | In-app; AirPods spatial hum hunt |
 | `snore-log` | Snore Log | In-app; mic buffer + snore clip logging |
+| `z-camera` | Z-Camera | In-app; depth-band live camera (near/far sliders) |
 
 ### T9 Keyboard
 
@@ -69,6 +70,14 @@ Overnight snore logger. Keeps a short rolling microphone buffer in memory and
 writes a clip only when loudness rises above an adaptive ambient floor. Needs
 microphone permission and the `audio` background mode (Info.plist only — no new
 Bundle ID or signing bootstrap). Best on a real device near the bed.
+
+### Z-Camera
+
+Live depth-band camera. Two sliders set a near/far interval (each from `0` to
+`∞`); pixels outside that slice go black. Needs camera permission
+(`NSCameraUsageDescription` only — no new Bundle ID or signing bootstrap) and a
+depth-capable device (TrueDepth, dual camera, or LiDAR). Simulator opens the UI
+but cannot stream depth.
 
 ## Adding an experiment
 

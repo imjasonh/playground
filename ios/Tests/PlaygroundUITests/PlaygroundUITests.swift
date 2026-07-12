@@ -30,6 +30,7 @@ final class PlaygroundUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["T9 Keyboard"].exists)
         XCTAssertTrue(app.staticTexts["Follow the Hum"].exists)
         XCTAssertTrue(app.staticTexts["Snore Log"].exists)
+        XCTAssertTrue(app.staticTexts["Z-Camera"].exists)
     }
 
     func testRideMonitorExperimentOpens() {
@@ -83,5 +84,21 @@ final class PlaygroundUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["snoreStatusMessage"].waitForExistence(timeout: 5)
             || app.otherElements["snoreStatusMessage"].waitForExistence(timeout: 2)
             || app.staticTexts["Ready"].waitForExistence(timeout: 2))
+    }
+
+    func testZCameraExperimentOpens() {
+        let app = XCUIApplication()
+        app.launch()
+
+        openExperiment("z-camera", title: "Z-Camera", in: app)
+
+        XCTAssertTrue(app.navigationBars["Z-Camera"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.sliders["zCameraNearSlider"].waitForExistence(timeout: 5)
+            || app.otherElements["zCameraNearSlider"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.sliders["zCameraFarSlider"].waitForExistence(timeout: 5)
+            || app.otherElements["zCameraFarSlider"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["zCameraStatusMessage"].waitForExistence(timeout: 5)
+            || app.otherElements["zCameraStatusMessage"].waitForExistence(timeout: 2)
+            || app.staticTexts["zCameraBandSummary"].waitForExistence(timeout: 2))
     }
 }
