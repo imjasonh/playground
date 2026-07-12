@@ -29,6 +29,7 @@ final class PlaygroundUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Ride Monitor"].exists)
         XCTAssertTrue(app.staticTexts["T9 Keyboard"].exists)
         XCTAssertTrue(app.staticTexts["Follow the Hum"].exists)
+        XCTAssertTrue(app.staticTexts["Snore Log"].exists)
     }
 
     func testRideMonitorExperimentOpens() {
@@ -66,5 +67,19 @@ final class PlaygroundUITests: XCTestCase {
         XCTAssertTrue(app.otherElements["humStatusMessage"].waitForExistence(timeout: 5)
             || app.staticTexts["humStatusMessage"].waitForExistence(timeout: 2)
             || app.staticTexts["Put on AirPods, then start a hunt."].waitForExistence(timeout: 2))
+    }
+
+    func testSnoreLogExperimentOpens() {
+        let app = XCUIApplication()
+        app.launch()
+
+        openExperiment("snore-log", title: "Snore Log", in: app)
+
+        XCTAssertTrue(app.navigationBars["Snore Log"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["startSnoreSessionButton"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["pastSnoreSessionsButton"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["snoreStatusMessage"].waitForExistence(timeout: 5)
+            || app.otherElements["snoreStatusMessage"].waitForExistence(timeout: 2)
+            || app.staticTexts["Ready"].waitForExistence(timeout: 2))
     }
 }

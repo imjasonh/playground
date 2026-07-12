@@ -42,6 +42,7 @@ ios/
 | `ride-monitor` | Ride Monitor | In-app; background motion + GPS |
 | `t9-keyboard` | T9 Keyboard | In-app demo **and** system keyboard extension |
 | `follow-the-hum` | Follow the Hum | In-app; AirPods spatial hum hunt |
+| `snore-log` | Snore Log | In-app; mic buffer + snore clip logging |
 
 ### T9 Keyboard
 
@@ -61,6 +62,13 @@ do not need that.
 
 Outdoor sound-hunt with AirPods head tracking. Needs a real device; see
 experiment UI for details.
+
+### Snore Log
+
+Overnight snore logger. Keeps a short rolling microphone buffer in memory and
+writes a clip only when loudness rises above an adaptive ambient floor. Needs
+microphone permission and the `audio` background mode (Info.plist only — no new
+Bundle ID or signing bootstrap). Best on a real device near the bed.
 
 ## Adding an experiment
 
