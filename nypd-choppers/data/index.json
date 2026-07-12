@@ -1,6 +1,6 @@
 {
   "generator": "nypd-choppers scraper",
-  "updated": 1783869486,
+  "updated": 1783877228,
   "days": [
     {
       "date": "2026-07-03",
@@ -32,11 +32,11 @@
     },
     {
       "date": "2026-07-11",
-      "samples": 3901
+      "samples": 3907
     },
     {
       "date": "2026-07-12",
-      "samples": 3573
+      "samples": 3582
     }
   ]
 }
