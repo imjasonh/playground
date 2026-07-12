@@ -13,6 +13,7 @@ OpenSCAD + STL for a 560-triangle geodesic built from the snub dodecahedron:
 | `geodesic.stl` | Triangle mesh (ASCII STL) — viewable in GitHub’s 3D viewer |
 | `geodesic.scad` | Same mesh as an OpenSCAD `polyhedron` |
 | `generate.py` | Regenerates the `.scad` and `.stl` from the construction above |
+| `GAME.md` | **PENTAKIS** — a real-time strategy board game designed for this globe |
 
 ## Regenerate
 
