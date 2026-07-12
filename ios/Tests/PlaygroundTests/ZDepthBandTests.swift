@@ -150,4 +150,62 @@ final class ZDepthBandMaskerTests: XCTestCase {
         XCTAssertEqual(Array(bgra[0..<4]), [0, 0, 0, 255])
         XCTAssertEqual(Array(bgra[4..<8]), [255, 255, 255, 255])
     }
+
+    func testOverlayToneQuantizesIntoBands() {
+        let near = 0.0
+        let far = 5.0
+        let first = ZDepthBandMasker.overlayTone(depthMeters: 0.1, near: near, far: far)
+        let mid = ZDepthBandMasker.overlayTone(depthMeters: 2.5, near: near, far: far)
+        // 4.9 m lands in the second-to-last step (tone 0.8); only `far` hits 1.0.
+        let nearFar = ZDepthBandMasker.overlayTone(depthMeters: 4.9, near: near, far: far)
+        let atFar = ZDepthBandMasker.overlayTone(depthMeters: 5.0, near: near, far: far)
+        XCTAssertEqual(first, 0, accuracy: 0.001)
+        XCTAssertGreaterThan(mid, first)
+        XCTAssertEqual(nearFar, 0.8, accuracy: 0.001)
+        XCTAssertEqual(atFar, 1, accuracy: 0.001)
+        XCTAssertGreaterThan(atFar, nearFar)
+        // Adjacent depths in the same step share a tone.
+        let a = ZDepthBandMasker.overlayTone(depthMeters: 0.05, near: near, far: far)
+        let b = ZDepthBandMasker.overlayTone(depthMeters: 0.2, near: near, far: far)
+        XCTAssertEqual(a, b, accuracy: 0.001)
+    }
+
+    func testOverlayBlueGetsDarkerWithTone() {
+        let near = ZDepthBandMasker.overlayBlueBGRA(tone: 0)
+        let far = ZDepthBandMasker.overlayBlueBGRA(tone: 1)
+        // Near is lighter (higher R/G); far is darker navy (lower R/G, still blue-heavy).
+        XCTAssertGreaterThan(near.r, far.r)
+        XCTAssertGreaterThan(near.g, far.g)
+        XCTAssertGreaterThan(near.b, far.r)
+        XCTAssertGreaterThan(far.b, far.r)
+    }
+
+    func testDepthOverlayTintsKeptPixels() {
+        var bgra: [UInt8] = [
+            200, 200, 200, 255, // near depth
+            200, 200, 200, 255, // far depth
+        ]
+        let depth: [Float] = [0.6, 1.4]
+        let band = ZDepthBand(near: .meters(0.5), far: .meters(1.5))
+
+        ZDepthBandMasker.applyBand(
+            bgra: &bgra,
+            width: 2,
+            height: 1,
+            depth: depth,
+            depthWidth: 2,
+            depthHeight: 1,
+            band: band,
+            overlayDepth: true
+        )
+
+        // Both stay non-black (inside band) and are tinted differently.
+        XCTAssertNotEqual(Array(bgra[0..<3]), [0, 0, 0])
+        XCTAssertNotEqual(Array(bgra[4..<7]), [0, 0, 0])
+        XCTAssertNotEqual(Array(bgra[0..<3]), Array(bgra[4..<7]))
+        // Near pixel should be lighter overall than far pixel.
+        let nearLuma = Int(bgra[0]) + Int(bgra[1]) + Int(bgra[2])
+        let farLuma = Int(bgra[4]) + Int(bgra[5]) + Int(bgra[6])
+        XCTAssertGreaterThan(nearLuma, farLuma)
+    }
 }
