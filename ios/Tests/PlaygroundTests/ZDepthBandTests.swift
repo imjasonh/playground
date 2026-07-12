@@ -156,10 +156,14 @@ final class ZDepthBandMaskerTests: XCTestCase {
         let far = 5.0
         let first = ZDepthBandMasker.overlayTone(depthMeters: 0.1, near: near, far: far)
         let mid = ZDepthBandMasker.overlayTone(depthMeters: 2.5, near: near, far: far)
-        let last = ZDepthBandMasker.overlayTone(depthMeters: 4.9, near: near, far: far)
+        // 4.9 m lands in the second-to-last step (tone 0.8); only `far` hits 1.0.
+        let nearFar = ZDepthBandMasker.overlayTone(depthMeters: 4.9, near: near, far: far)
+        let atFar = ZDepthBandMasker.overlayTone(depthMeters: 5.0, near: near, far: far)
         XCTAssertEqual(first, 0, accuracy: 0.001)
         XCTAssertGreaterThan(mid, first)
-        XCTAssertEqual(last, 1, accuracy: 0.001)
+        XCTAssertEqual(nearFar, 0.8, accuracy: 0.001)
+        XCTAssertEqual(atFar, 1, accuracy: 0.001)
+        XCTAssertGreaterThan(atFar, nearFar)
         // Adjacent depths in the same step share a tone.
         let a = ZDepthBandMasker.overlayTone(depthMeters: 0.05, near: near, far: far)
         let b = ZDepthBandMasker.overlayTone(depthMeters: 0.2, near: near, far: far)
