@@ -415,6 +415,13 @@ bundle exec fastlane test
 - **Treat merged PRs as immutable.** Once a PR is merged, don't push more
   commits to its branch, reopen it, or amend it. Make any follow-up change
   (fix, revert, addition) in a **new** PR branched off `main`.
+- **Before pushing more commits to an existing PR branch, check that the PR
+  is still open.** Humans often merge while an agent is mid-follow-up; pushing
+  onto a merged branch confuses agents and leaves commits orphaned off `main`.
+  If the PR is already merged (or closed), stop — branch fresh from `main` and
+  open a new PR for the remaining work. Check with
+  `gh pr view <number> --json state` (or the GitHub UI / PR URL) before
+  `git push`.
 - CI must pass (changed browser apps are tested; changed Go and Rust apps are built and tested).
 - Preview deploy provides a live URL for browser apps only—use it to verify browser behavior, especially mobile.
 - If the repo uses Linear integration, include `Resolves ABC-123` in the PR body when applicable.
