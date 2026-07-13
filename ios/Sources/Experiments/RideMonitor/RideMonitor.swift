@@ -53,6 +53,12 @@ final class RideMonitor: NSObject, ObservableObject {
     /// Throttle Live Activity / Watch pushes (ActivityKit has an update budget).
     private var lastCompanionPushAt: TimeInterval = 0
 
+    /// Uptime offset of the most recent motion sample (nil until the first one).
+    private var lastMotionAt: TimeInterval?
+    /// GPS fix last seen while motion samples were flowing — used so a burst
+    /// flushed after a suspend gap is not tagged with the post-gap teleport.
+    private var locationAtLastMotion: CLLocation?
+
     // Accumulated logs for the current ride.
     private var track: [LocationSample] = []
     private var motionSummaries: [MotionSummary] = []
@@ -60,6 +66,9 @@ final class RideMonitor: NSObject, ObservableObject {
 
     private let sampleHz = 50.0
     private let companionPushInterval: TimeInterval = 1.0
+    /// If sensing is silent this long, treat the ride as ended at the last sample
+    /// (app was suspended / background location not keeping us alive).
+    private let sensingGapEndThreshold: TimeInterval = 90
 
     override init() {
         super.init()
@@ -85,13 +94,18 @@ final class RideMonitor: NSObject, ObservableObject {
         switch location.authorizationStatus {
         case .notDetermined:
             statusMessage = "Waiting for location permission…"
+            // Always is required to keep Core Motion alive with the screen off.
             location.requestAlwaysAuthorization()
         case .authorizedAlways:
             beginRecording(backgroundCapable: true)
         case .authorizedWhenInUse:
-            // Offer the upgrade to Always so motion keeps sampling with the screen off.
+            // Upgrade prompt; do not start until Always is granted — otherwise
+            // the OS suspends us on lock and the ride grows a multi-minute hole.
+            statusMessage = """
+            Ride Monitor needs “Always” location so recording continues with the screen off. \
+            Choose Allow Always when prompted.
+            """
             location.requestAlwaysAuthorization()
-            beginRecording(backgroundCapable: false)
         case .denied, .restricted:
             wantsRecording = false
             statusMessage = "Location permission is required to record rides."
@@ -119,6 +133,8 @@ final class RideMonitor: NSObject, ObservableObject {
         elapsed = 0
         crashAlert = false
         lastLocation = nil
+        lastMotionAt = nil
+        locationAtLastMotion = nil
         lastCompanionPushAt = 0
         startUptime = ProcessInfo.processInfo.systemUptime
         startDate = Date()
@@ -137,6 +153,11 @@ final class RideMonitor: NSObject, ObservableObject {
         if CMAltimeter.isRelativeAltitudeAvailable() {
             altimeter.startRelativeAltitudeUpdates(to: .main) { [weak self] data, _ in
                 guard let self, let data else { return }
+                // Drop barometer samples that arrive after a long sensing gap;
+                // finalizeAfterSensingGap / stop handles ending the ride.
+                if let last = self.lastMotionAt, self.now - last > self.sensingGapEndThreshold {
+                    return
+                }
                 self.altitudeSamples.append(AltitudeSample(
                     t: self.now,
                     relativeAltitude: data.relativeAltitude.doubleValue,
@@ -173,6 +194,30 @@ final class RideMonitor: NSObject, ObservableObject {
     }
 
     func stop() {
+        stopRecording(endedAtOffset: sensingEndOffset(), statusSuffix: nil)
+    }
+
+    /// End the ride at the last motion sample after a long sensing gap (suspend).
+    private func finalizeAfterSensingGap() {
+        guard isRunning, let end = lastMotionAt else { return }
+        let flushed = classifier.flushOpenBurst(endingAt: end)
+        append(events: flushed, location: locationAtLastMotion)
+        stopRecording(
+            endedAtOffset: end,
+            statusSuffix: "Stopped after sensing paused (enable Always location for screen-off rides)."
+        )
+    }
+
+    private func sensingEndOffset() -> TimeInterval {
+        guard let last = lastMotionAt else { return elapsed }
+        // Manual stop after a long hole: don't pad duration with suspended time.
+        if elapsed - last > sensingGapEndThreshold {
+            return last
+        }
+        return elapsed
+    }
+
+    private func stopRecording(endedAtOffset: TimeInterval, statusSuffix: String?) {
         guard isRunning else { return }
         wantsRecording = false
         isRunning = false
@@ -188,15 +233,19 @@ final class RideMonitor: NSObject, ObservableObject {
             motionSummaries.append(summary)
         }
 
+        trimLogs(after: endedAtOffset)
+        elapsed = endedAtOffset
+
         let finalSnapshot = makeLiveSnapshot(isRiding: false)
         liveActivity.end(snapshot: finalSnapshot)
         watchSession.send(finalSnapshot)
 
+        let endedAt = startDate.addingTimeInterval(endedAtOffset)
         let ride = Ride(
             id: UUID(),
             startedAt: startDate,
-            endedAt: Date(),
-            durationSeconds: elapsed,
+            endedAt: endedAt,
+            durationSeconds: endedAtOffset,
             distanceMeters: distanceMeters,
             peakG: peakG,
             joltCount: joltCount,
@@ -210,9 +259,26 @@ final class RideMonitor: NSObject, ObservableObject {
         do {
             try store.save(ride)
             lastSavedRide = ride
-            statusMessage = "Ride saved — \(events.count) event(s), \(track.count) GPS fixes."
+            let base = "Ride saved — \(ride.events.count) event(s), \(ride.track.count) GPS fixes."
+            statusMessage = statusSuffix.map { "\(base) \($0)" } ?? base
         } catch {
             statusMessage = "Ride finished but couldn't be saved: \(error.localizedDescription)"
+        }
+    }
+
+    /// Drop samples that arrived after the ride's sensing end (post-gap GPS, etc.).
+    private func trimLogs(after end: TimeInterval) {
+        track.removeAll { $0.t > end + 0.01 }
+        motionSummaries.removeAll { $0.t > end + 0.01 }
+        altitudeSamples.removeAll { $0.t > end + 0.01 }
+        events.removeAll { $0.at > end + 0.01 }
+        // Recompute jolt/crash counts from the trimmed event list (UI order is newest-first).
+        joltCount = events.filter { $0.severity != .crash }.count
+        crashCount = events.filter { $0.severity == .crash }.count
+        peakG = events.map(\.peakG).max() ?? peakG
+        // Also consider motion peaks in case events were sparse.
+        if let motionPeak = motionSummaries.map(\.peakG).max() {
+            peakG = max(peakG, motionPeak)
         }
     }
 
@@ -247,6 +313,11 @@ final class RideMonitor: NSObject, ObservableObject {
         if isRunning {
             // Keep any deferred start payload current before retrying request.
             liveActivity.update(snapshot: makeLiveSnapshot())
+            // Opening the app after a long suspend should finalize, not append junk.
+            if let last = lastMotionAt, now - last > sensingGapEndThreshold {
+                finalizeAfterSensingGap()
+                return
+            }
         }
         liveActivity.handleSceneBecameActive()
         guard isRunning else { return }
@@ -254,6 +325,20 @@ final class RideMonitor: NSObject, ObservableObject {
     }
 
     private func ingest(_ data: CMDeviceMotion) {
+        guard isRunning else { return }
+
+        let t = now
+
+        if let last = lastMotionAt, t - last > sensingGapEndThreshold {
+            finalizeAfterSensingGap()
+            return
+        }
+
+        if let last = lastMotionAt, t - last > classifier.thresholds.maxSampleGap {
+            let flushed = classifier.flushOpenBurst(endingAt: last)
+            append(events: flushed, location: locationAtLastMotion)
+        }
+
         let a = data.userAcceleration // gravity already removed, in g
         let magnitude = (a.x * a.x + a.y * a.y + a.z * a.z).squareRoot()
         let r = data.rotationRate
@@ -262,15 +347,24 @@ final class RideMonitor: NSObject, ObservableObject {
         currentG = magnitude
         peakG = max(peakG, magnitude)
 
-        let t = now
-
         if let summary = aggregator.add(t: t, g: magnitude, rotation: rotation) {
             motionSummaries.append(summary)
         }
 
-        for var event in classifier.process(magnitude: magnitude, at: t) {
-            event.latitude = lastLocation?.coordinate.latitude
-            event.longitude = lastLocation?.coordinate.longitude
+        let newEvents = classifier.process(magnitude: magnitude, at: t)
+        // Prefer the fix from active sensing; fall back to the latest GPS.
+        append(events: newEvents, location: locationAtLastMotion ?? lastLocation)
+
+        lastMotionAt = t
+        if let loc = lastLocation, loc.horizontalAccuracy >= 0, loc.horizontalAccuracy <= 50 {
+            locationAtLastMotion = loc
+        }
+    }
+
+    private func append(events newEvents: [RideEvent], location: CLLocation?) {
+        for var event in newEvents {
+            event.latitude = location?.coordinate.latitude
+            event.longitude = location?.coordinate.longitude
             events.insert(event, at: 0)
             if event.severity == .crash {
                 crashCount += 1
@@ -308,8 +402,12 @@ extension RideMonitor: CLLocationManagerDelegate {
                 beginRecording(backgroundCapable: true)
             }
         case .authorizedWhenInUse:
+            // Still waiting on the Always upgrade — do not start a half-broken ride.
             if !isRunning {
-                beginRecording(backgroundCapable: false)
+                statusMessage = """
+                Ride Monitor needs “Always” location so recording continues with the screen off. \
+                Choose Allow Always when prompted (or enable it in Settings).
+                """
             }
         case .denied, .restricted:
             wantsRecording = false
@@ -320,6 +418,15 @@ extension RideMonitor: CLLocationManagerDelegate {
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard isRunning else { return }
+
+        // Post-suspend GPS can arrive before motion; end the ride instead of
+        // appending a teleport and junk fixes.
+        if let last = lastMotionAt, now - last > sensingGapEndThreshold {
+            finalizeAfterSensingGap()
+            return
+        }
+
         for loc in locations {
             if let previous = lastLocation {
                 let step = loc.distance(from: previous)
@@ -339,6 +446,10 @@ extension RideMonitor: CLLocationManagerDelegate {
                 speed: loc.speed,
                 course: loc.course
             ))
+            // Keep event geotags current while we are actively sensing.
+            if lastMotionAt != nil, loc.horizontalAccuracy >= 0, loc.horizontalAccuracy <= 50 {
+                locationAtLastMotion = loc
+            }
         }
         pushCompanionsIfNeeded(force: false)
     }

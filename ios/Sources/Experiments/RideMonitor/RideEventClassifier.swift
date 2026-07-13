@@ -14,15 +14,23 @@ import Foundation
 ///    then stays still (magnitude ≤ `stillnessMax`) for `stillnessDuration`, a
 ///    `.crash` event is emitted. Any renewed motion cancels the watch — a rider
 ///    who keeps going didn't crash.
+///  - A long gap between samples (app suspended / sensors paused) flushes any
+///    open burst via `flushOpenBurst` and clears the crash watch — stillness
+///    across a suspend is not a crash, and the caller must geolocate flushed
+///    events with the *pre-gap* location.
 struct RideEventClassifier {
     struct Thresholds {
-        var shake: Double = 0.6
+        /// Bike/scooter road buzz often sits around 0.5–0.8g; keep shake above that.
+        var shake: Double = 0.85
         var pothole: Double = 1.2
         var impact: Double = 3.0
         var crashImpact: Double = 3.5
-        var debounce: TimeInterval = 0.4
+        /// Collapse ringing from one physical bump into a single event.
+        var debounce: TimeInterval = 0.8
         var stillnessMax: Double = 0.15
         var stillnessDuration: TimeInterval = 3.0
+        /// Sample spacing above this is treated as a sensing gap (50 Hz → 0.02s).
+        var maxSampleGap: TimeInterval = 2.0
     }
 
     var thresholds = Thresholds()
@@ -33,6 +41,7 @@ struct RideEventClassifier {
     private var lastBurstEnd = -Double.infinity
     /// When a crash watch is armed, the time stillness began; nil when disarmed.
     private var crashArmedAt: TimeInterval?
+    private var lastSampleAt: TimeInterval?
 
     init(thresholds: Thresholds = Thresholds()) {
         self.thresholds = thresholds
@@ -40,8 +49,19 @@ struct RideEventClassifier {
 
     /// Feed one sample. Returns any events detected at this sample (usually none;
     /// a jolt on burst-end, a crash after a stillness window).
+    ///
+    /// Call `flushOpenBurst(endingAt:)` yourself when you observe a sensing gap
+    /// *before* feeding the first post-gap sample, so the flushed event can be
+    /// tagged with the pre-gap GPS fix.
     mutating func process(magnitude g: Double, at t: TimeInterval) -> [RideEvent] {
         var events: [RideEvent] = []
+
+        if let last = lastSampleAt, t - last > thresholds.maxSampleGap {
+            // Caller should have flushed already; belt-and-suspenders reset.
+            events += flushOpenBurst(endingAt: last)
+        }
+
+        lastSampleAt = t
 
         if g >= thresholds.shake {
             if inBurst {
@@ -69,6 +89,21 @@ struct RideEventClassifier {
         }
 
         return events
+    }
+
+    /// Close an in-progress burst after a sensing gap. Clears any crash watch
+    /// (suspend ≠ crash). Returns at most one jolt event.
+    mutating func flushOpenBurst(endingAt t: TimeInterval) -> [RideEvent] {
+        crashArmedAt = nil
+        guard inBurst else {
+            lastSampleAt = t
+            return []
+        }
+        inBurst = false
+        lastBurstEnd = t
+        lastSampleAt = t
+        let severity = classify(peak: burstPeak)
+        return [RideEvent(severity: severity, peakG: burstPeak, at: burstStart)]
     }
 
     private func classify(peak: Double) -> RideSeverity {

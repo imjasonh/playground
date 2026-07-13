@@ -28,11 +28,18 @@ final class RideEventClassifierTests: XCTestCase {
         XCTAssertTrue(events.isEmpty)
     }
 
+    func testRoadBuzzBelowShakeIsIgnored() {
+        var c = RideEventClassifier()
+        // Typical bike vibration sits under the 0.85g shake floor.
+        let (events, _) = feed(&c, magnitude: 0.75, duration: 3, startAt: 0)
+        XCTAssertTrue(events.isEmpty)
+    }
+
     func testShakeIsClassifiedAsShake() {
         var c = RideEventClassifier()
         var all: [RideEvent] = []
         all += feed(&c, magnitude: 0.05, duration: 1, startAt: 0).events
-        all += feed(&c, magnitude: 0.8, duration: 0.1, startAt: 1).events   // above shake, below pothole
+        all += feed(&c, magnitude: 0.95, duration: 0.1, startAt: 1).events   // above shake, below pothole
         all += feed(&c, magnitude: 0.05, duration: 1, startAt: 1.1).events
         XCTAssertEqual(all.count, 1)
         XCTAssertEqual(all.first?.severity, .shake)
@@ -84,7 +91,7 @@ final class RideEventClassifierTests: XCTestCase {
         var c = RideEventClassifier()
         var all: [RideEvent] = []
         all += feed(&c, magnitude: 0.05, duration: 1, startAt: 0).events
-        // Two spikes 0.1s apart — within the 0.4s debounce → one event.
+        // Two spikes 0.1s apart — within the 0.8s debounce → one event.
         all += feed(&c, magnitude: 1.5, duration: 0.06, startAt: 1.0).events
         all += feed(&c, magnitude: 0.05, duration: 0.1, startAt: 1.06).events
         all += feed(&c, magnitude: 1.5, duration: 0.06, startAt: 1.16).events
@@ -101,5 +108,41 @@ final class RideEventClassifierTests: XCTestCase {
         all += feed(&c, magnitude: 1.5, duration: 0.06, startAt: 2.1).events
         all += feed(&c, magnitude: 0.05, duration: 1, startAt: 2.16).events
         XCTAssertEqual(all.count, 2)
+    }
+
+    func testFlushOpenBurstAfterSensingGapEmitsPreGapImpact() {
+        var c = RideEventClassifier()
+        var all: [RideEvent] = []
+        all += feed(&c, magnitude: 0.05, duration: 1, startAt: 0).events
+        // Burst starts but never falls below shake — then sensing dies (suspend).
+        all += feed(&c, magnitude: 5.85, duration: 0.2, startAt: 1.0).events
+        XCTAssertTrue(all.isEmpty, "burst still open while magnitude stays high")
+
+        let flushed = c.flushOpenBurst(endingAt: 1.2)
+        XCTAssertEqual(flushed.count, 1)
+        XCTAssertEqual(flushed.first?.severity, .impact)
+        XCTAssertEqual(flushed.first?.peakG ?? 0, 5.85, accuracy: 0.0001)
+        XCTAssertEqual(flushed.first?.at ?? -1, 1.0, accuracy: 0.05)
+    }
+
+    func testFlushOpenBurstClearsCrashWatch() {
+        var c = RideEventClassifier()
+        _ = feed(&c, magnitude: 5.0, duration: 0.1, startAt: 0).events
+        // Burst ends → crash armed; then a long suspend before stillness completes.
+        _ = feed(&c, magnitude: 0.02, duration: 0.5, startAt: 0.1).events
+        _ = c.flushOpenBurst(endingAt: 0.6)
+
+        // After flush, continued stillness must not emit a crash.
+        let (after, _) = feed(&c, magnitude: 0.02, duration: 5, startAt: 100)
+        XCTAssertFalse(after.contains { $0.severity == .crash })
+    }
+
+    func testProcessAutoFlushesAcrossSampleGap() {
+        var c = RideEventClassifier()
+        _ = feed(&c, magnitude: 4.0, duration: 0.15, startAt: 10).events
+        // Jump > maxSampleGap while still in burst; process should flush first.
+        let events = c.process(magnitude: 0.05, at: 20)
+        XCTAssertEqual(events.first?.severity, .impact)
+        XCTAssertEqual(events.first?.at ?? -1, 10.0, accuracy: 0.05)
     }
 }
