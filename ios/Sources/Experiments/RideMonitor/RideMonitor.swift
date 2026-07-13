@@ -14,7 +14,10 @@ import UIKit
 ///
 /// Core Motion updates are delivered on `OperationQueue.main` and Core Location
 /// delegate callbacks arrive on the (main) thread this object is created on, so
-/// every `@Published` mutation already happens on the main thread.
+/// every `@Published` mutation already happens on the main thread. Marked
+/// `@MainActor` so Live Activity / WatchConnectivity helpers can be called
+/// directly from those same paths.
+@MainActor
 final class RideMonitor: NSObject, ObservableObject {
     @Published private(set) var isRunning = false
     @Published private(set) var currentG = 0.0
