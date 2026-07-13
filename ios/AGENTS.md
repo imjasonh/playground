@@ -20,8 +20,15 @@ So: Ride Monitor–style experiments stay on the host Bundle ID forever. A
 Bundle ID — that is unavoidable on Apple’s platform. Do that rarely; when you
 do, re-run **iOS signing bootstrap** once so match stores the new profile.
 
-Today the only extension is **T9 Multi-tap**:
-`io.github.imjasonh.playground.t9keyboard`.
+Today’s Apple extensions (each its own Bundle ID):
+
+| Extension | Bundle ID |
+|-----------|-----------|
+| **T9 Multi-tap** (Custom Keyboard) | `io.github.imjasonh.playground.t9keyboard` |
+| **Ride Monitor** Live Activity (WidgetKit) | `io.github.imjasonh.playground.ridemonitorwidget` |
+| **Ride Monitor** Watch companion | `io.github.imjasonh.playground.watch` |
+
+After adding or changing any of these targets, re-run **iOS signing bootstrap** once so match stores the new App Store profiles.
 
 ## Non-negotiables
 
@@ -92,7 +99,10 @@ ios/
 ├── project.yml              # host app + any extension targets
 ├── fastlane/                # match lists host + extension ids
 ├── Shared/T9/               # shared by in-app T9 demo + keyboard extension
+├── Shared/RideMonitor/      # live snapshot + ActivityAttributes + sparkline view
 ├── T9Keyboard/              # Custom Keyboard appex (own Bundle ID)
+├── RideMonitorWidget/       # Live Activity widget extension (own Bundle ID)
+├── RideMonitorWatch/        # watchOS companion app (own Bundle ID)
 ├── Sources/
 │   ├── Experiment.swift
 │   └── Experiments/<Name>/  # in-app experiments (host Bundle ID)

@@ -20,7 +20,8 @@ On every push to `main`, CI builds, tests, and (with signing secrets) uploads to
 | Custom Keyboard / other **app extension** | Host + **extension id** (Apple requires it) | **Yes, once** for that extension |
 
 Bootstrap is **not** per experiment. It is once for the host app, and once more
-when you add a new extension Bundle ID (today: T9 keyboard).
+when you add a new extension Bundle ID (today: T9 keyboard, Ride Monitor
+widget, Ride Monitor Watch).
 
 ## How it's structured
 
@@ -30,7 +31,10 @@ ios/
 ├── project.yml
 ├── fastlane/
 ├── Shared/T9/                 # multi-tap engine (app + keyboard extension)
+├── Shared/RideMonitor/        # live snapshot + Live Activity attributes
 ├── T9Keyboard/                # system Custom Keyboard appex
+├── RideMonitorWidget/         # Ride Monitor Live Activity (WidgetKit)
+├── RideMonitorWatch/          # Ride Monitor watchOS companion
 ├── Sources/Experiments/       # in-app experiments
 └── Tests/
 ```
@@ -39,12 +43,28 @@ ios/
 
 | Id | Title | Notes |
 |----|-------|-------|
-| `ride-monitor` | Ride Monitor | In-app; background motion + GPS |
+| `ride-monitor` | Ride Monitor | In-app; background motion + GPS; Live Activity + Watch companion |
 | `t9-keyboard` | T9 Keyboard | In-app demo **and** system keyboard extension |
 | `follow-the-hum` | Follow the Hum | In-app; AirPods spatial hum hunt |
 | `snore-log` | Snore Log | In-app; mic buffer + snore clip logging |
 | `z-camera` | Z-Camera | In-app; depth-band live camera (near/far sliders) |
 | `voxel-world` | Voxel World | In-app; ARKit rebuilds the room as Minecraft-style palette blocks |
+
+### Ride Monitor
+
+In-app jolt/crash detector with GPS track logging. While a ride is active it
+also:
+
+1. **Live Activity** (`io.github.imjasonh.playground.ridemonitorwidget`) —
+   Lock Screen / Dynamic Island shows duration, distance, current speed, and a
+   rough elevation sparkline colored by speed.
+2. **Apple Watch companion** (`io.github.imjasonh.playground.watch`) — glanceable
+   clock time, duration, distance, and current speed via WatchConnectivity
+   (phone remains the recorder).
+
+Both need a one-time **iOS signing bootstrap** after this tree lands (new Bundle
+IDs). Live Activities require a real device (and Live Activities enabled in
+Settings); the Watch app needs a paired Apple Watch.
 
 ### T9 Keyboard
 
