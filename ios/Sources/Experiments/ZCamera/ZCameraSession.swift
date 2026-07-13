@@ -128,8 +128,6 @@ final class ZCameraSession: NSObject, ObservableObject {
         session.beginConfiguration()
         defer { session.commitConfiguration() }
 
-        session.sessionPreset = .vga640x480
-
         for input in session.inputs {
             session.removeInput(input)
         }
@@ -140,6 +138,8 @@ final class ZCameraSession: NSObject, ObservableObject {
         guard let device = Self.preferredDepthDevice() else {
             throw ZCameraError.noDepthCamera
         }
+
+        try Self.selectBestCaptureFormat(for: device)
 
         let input = try AVCaptureDeviceInput(device: device)
         guard session.canAddInput(input) else {
@@ -170,9 +170,13 @@ final class ZCameraSession: NSObject, ObservableObject {
             throw ZCameraError.cannotAddOutput
         }
         session.addOutput(depthOutput)
-        if let depthConnection = depthOutput.connection(with: .depthData),
-           depthConnection.isVideoMirroringSupported {
-            depthConnection.isVideoMirrored = device.position == .front
+        if let depthConnection = depthOutput.connection(with: .depthData) {
+            if depthConnection.isVideoOrientationSupported {
+                depthConnection.videoOrientation = .portrait
+            }
+            if depthConnection.isVideoMirroringSupported {
+                depthConnection.isVideoMirrored = device.position == .front
+            }
         }
 
         try Self.selectDepthFormat(for: device)
@@ -206,13 +210,56 @@ final class ZCameraSession: NSObject, ObservableObject {
         return discovery.devices.first
     }
 
+    private static func selectBestCaptureFormat(for device: AVCaptureDevice) throws {
+        let pixelCap = 1280 * 720
+
+        var bestFormat: AVCaptureDevice.Format?
+        var bestScore = 0
+
+        for format in device.formats {
+            let dims = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+            let pixels = Int(dims.width) * Int(dims.height)
+            guard !format.supportedDepthDataFormats.isEmpty else { continue }
+            guard pixels <= pixelCap * 2 else { continue }
+
+            let bestDepthPixels = format.supportedDepthDataFormats.map {
+                let depthDims = CMVideoFormatDescriptionGetDimensions($0.formatDescription)
+                return Int(depthDims.width) * Int(depthDims.height)
+            }.max() ?? 0
+
+            // Prefer usable video resolution with the highest companion depth raster.
+            let score = min(pixels, pixelCap) + bestDepthPixels * 3
+            if score > bestScore {
+                bestScore = score
+                bestFormat = format
+            }
+        }
+
+        guard let format = bestFormat else {
+            throw ZCameraError.noDepthFormat
+        }
+
+        try device.lockForConfiguration()
+        device.activeFormat = format
+        device.unlockForConfiguration()
+    }
+
     private static func selectDepthFormat(for device: AVCaptureDevice) throws {
+        func depthPixels(_ format: AVCaptureDevice.Format) -> Int {
+            let dims = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+            return Int(dims.width) * Int(dims.height)
+        }
+
         func chooseDepthFormat(from formats: [AVCaptureDevice.Format]) -> AVCaptureDevice.Format? {
-            formats.first {
-                CMFormatDescriptionGetMediaSubType($0.formatDescription) == kCVPixelFormatType_DepthFloat32
-            } ?? formats.first {
-                CMFormatDescriptionGetMediaSubType($0.formatDescription) == kCVPixelFormatType_DepthFloat16
-            } ?? formats.first
+            formats.max { lhs, rhs in
+                let lPixels = depthPixels(lhs)
+                let rPixels = depthPixels(rhs)
+                if lPixels != rPixels { return lPixels < rPixels }
+                let lIsFloat32 = CMFormatDescriptionGetMediaSubType(lhs.formatDescription) == kCVPixelFormatType_DepthFloat32
+                let rIsFloat32 = CMFormatDescriptionGetMediaSubType(rhs.formatDescription) == kCVPixelFormatType_DepthFloat32
+                if lIsFloat32 != rIsFloat32 { return !lIsFloat32 }
+                return false
+            }
         }
 
         var depthFormats = device.activeFormat.supportedDepthDataFormats
@@ -285,11 +332,20 @@ final class ZCameraSession: NSObject, ObservableObject {
             return nil
         }
 
+        let mapper = ZDepthCoordinateMapper(
+            videoWidth: width,
+            videoHeight: height,
+            depthWidth: depthWidth,
+            depthHeight: depthHeight,
+            calibration: converted.cameraCalibrationData
+        )
+
         let dataSize = bytesPerRow * height
         let copy = UnsafeMutablePointer<UInt8>.allocate(capacity: dataSize)
         defer { copy.deallocate() }
         copy.initialize(from: base, count: dataSize)
 
+        // Mirroring is applied on the capture connections for the front camera.
         ZDepthBandMasker.applyBandInPlace(
             bgra: copy,
             width: width,
@@ -300,6 +356,7 @@ final class ZCameraSession: NSObject, ObservableObject {
             depthHeight: depthHeight,
             depthBytesPerRow: depthBytesPerRow,
             band: band,
+            mapper: mapper,
             mirrorX: false,
             overlayDepth: overlayDepth
         )

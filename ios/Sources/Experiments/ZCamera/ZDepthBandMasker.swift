@@ -3,13 +3,26 @@ import Foundation
 
 /// CPU helpers that turn synchronized color + depth frames into a z-band image.
 enum ZDepthBandMasker {
-    /// How many discrete blue shades to paint across the visible depth interval.
-    static let overlayBandCount = 6
     /// Blend strength of the blue overlay (0…1).
     static let overlayAlpha: Double = 0.48
 
-    /// Sample a Float32 depth map (row-major meters) at a normalized UV in `0...1`.
-    /// Returns `nil` when the sample is missing or non-finite.
+    private static func depthValue(
+        depth: UnsafePointer<Float>,
+        depthWidth: Int,
+        depthHeight: Int,
+        depthBytesPerRow: Int,
+        x: Int,
+        y: Int
+    ) -> Double? {
+        guard x >= 0, y >= 0, x < depthWidth, y < depthHeight else { return nil }
+        let rowFloats = depthBytesPerRow / MemoryLayout<Float>.size
+        let value = Double(depth[y * rowFloats + x])
+        guard value.isFinite, value > 0 else { return nil }
+        return value
+    }
+
+    /// Sample a Float32 depth map with bilinear interpolation at normalized UV in `0...1`.
+    /// Returns `nil` when the neighborhood is missing or non-finite.
     static func sampleDepthMeters(
         depth: UnsafePointer<Float>,
         depthWidth: Int,
@@ -19,12 +32,32 @@ enum ZDepthBandMasker {
         v: Double
     ) -> Double? {
         guard depthWidth > 0, depthHeight > 0 else { return nil }
-        let x = min(depthWidth - 1, max(0, Int((u * Double(depthWidth - 1)).rounded())))
-        let y = min(depthHeight - 1, max(0, Int((v * Double(depthHeight - 1)).rounded())))
-        let rowFloats = depthBytesPerRow / MemoryLayout<Float>.size
-        let value = Double(depth[y * rowFloats + x])
-        guard value.isFinite, value > 0 else { return nil }
-        return value
+
+        if depthWidth == 1 && depthHeight == 1 {
+            return depthValue(depth: depth, depthWidth: depthWidth, depthHeight: depthHeight, depthBytesPerRow: depthBytesPerRow, x: 0, y: 0)
+        }
+
+        let fx = u * Double(depthWidth - 1)
+        let fy = v * Double(depthHeight - 1)
+        let x0 = Int(floor(fx))
+        let y0 = Int(floor(fy))
+        let x1 = min(depthWidth - 1, x0 + 1)
+        let y1 = min(depthHeight - 1, y0 + 1)
+        let tx = fx - Double(x0)
+        let ty = fy - Double(y0)
+
+        guard
+            let d00 = depthValue(depth: depth, depthWidth: depthWidth, depthHeight: depthHeight, depthBytesPerRow: depthBytesPerRow, x: x0, y: y0),
+            let d10 = depthValue(depth: depth, depthWidth: depthWidth, depthHeight: depthHeight, depthBytesPerRow: depthBytesPerRow, x: x1, y: y0),
+            let d01 = depthValue(depth: depth, depthWidth: depthWidth, depthHeight: depthHeight, depthBytesPerRow: depthBytesPerRow, x: x0, y: y1),
+            let d11 = depthValue(depth: depth, depthWidth: depthWidth, depthHeight: depthHeight, depthBytesPerRow: depthBytesPerRow, x: x1, y: y1)
+        else {
+            return nil
+        }
+
+        let top = d00 * (1 - tx) + d10 * tx
+        let bottom = d01 * (1 - tx) + d11 * tx
+        return top * (1 - ty) + bottom * ty
     }
 
     /// Decide whether a video pixel should stay visible for the given band.
@@ -51,13 +84,9 @@ enum ZDepthBandMasker {
     }
 
     /// Map depth to a 0…1 tone inside the overlay range (0 = nearest / lightest).
-    /// Quantized into `overlayBandCount` steps so the tint reads as bands.
     static func overlayTone(depthMeters: Double, near: Double, far: Double) -> Double {
         let span = max(0.01, far - near)
-        let normalized = min(1, max(0, (depthMeters - near) / span))
-        let lastIndex = Double(overlayBandCount - 1)
-        let step = (normalized * lastIndex).rounded(.down)
-        return min(1, max(0, step / lastIndex))
+        return min(1, max(0, (depthMeters - near) / span))
     }
 
     /// Light blue (near) → darker blue (far), returned as BGRA components 0…255.
@@ -99,6 +128,7 @@ enum ZDepthBandMasker {
         depthHeight: Int,
         depthBytesPerRow: Int,
         band: ZDepthBand,
+        mapper: ZDepthCoordinateMapper,
         mirrorX: Bool,
         overlayDepth: Bool = false
     ) {
@@ -108,10 +138,8 @@ enum ZDepthBandMasker {
 
         for y in 0..<height {
             let row = bgra.advanced(by: y * bytesPerRow)
-            let v = height == 1 ? 0.0 : Double(y) / Double(height - 1)
             for x in 0..<width {
-                let srcX = mirrorX ? (width - 1 - x) : x
-                let u = width == 1 ? 0.0 : Double(srcX) / Double(width - 1)
+                let (u, v) = mapper.depthUV(videoX: x, videoY: y, mirrorX: mirrorX)
                 let depthMeters = sampleDepthMeters(
                     depth: depth,
                     depthWidth: depthWidth,
@@ -159,6 +187,12 @@ enum ZDepthBandMasker {
     ) {
         precondition(bgra.count >= width * height * 4)
         precondition(depth.count >= depthWidth * depthHeight)
+        let mapper = ZDepthCoordinateMapper(
+            videoWidth: width,
+            videoHeight: height,
+            depthWidth: depthWidth,
+            depthHeight: depthHeight
+        )
         bgra.withUnsafeMutableBufferPointer { bgraBuffer in
             depth.withUnsafeBufferPointer { depthBuffer in
                 applyBandInPlace(
@@ -171,6 +205,7 @@ enum ZDepthBandMasker {
                     depthHeight: depthHeight,
                     depthBytesPerRow: depthWidth * MemoryLayout<Float>.size,
                     band: band,
+                    mapper: mapper,
                     mirrorX: mirrorX,
                     overlayDepth: overlayDepth
                 )

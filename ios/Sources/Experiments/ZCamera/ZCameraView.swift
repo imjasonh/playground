@@ -122,7 +122,7 @@ struct ZCameraView: View {
             .font(.caption)
             .foregroundStyle(.secondary)
 
-            Text("Pixels closer than Near or farther than Far go black. Depth overlay tints nearer slices light blue and farther slices darker blue. Drag either end to 0 or ∞.")
+            Text("Pixels closer than Near or farther than Far go black. Depth overlay adds a smooth blue gradient (lighter near, darker far). Bands are measured from the camera, not fixed in the room. Drag either end to 0 or ∞.")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
         }

@@ -82,7 +82,7 @@ struct ZDepthBand: Equatable, Sendable {
 /// Maps a unit slider `0...1` onto a depth bound, with `1` meaning infinity.
 enum ZDepthSliderMapping {
     /// Finite depths on the slider span `0...finiteCapMeters`; the top stop is ∞.
-    static let finiteCapMeters: Double = 5.0
+    static let finiteCapMeters: Double = 8.0
 
     static func bound(sliderValue: Double) -> ZDepthBand.Bound {
         let clamped = min(1, max(0, sliderValue))
