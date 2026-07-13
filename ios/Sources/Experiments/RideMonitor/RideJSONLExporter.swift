@@ -80,14 +80,14 @@ enum RideJSONLExporter {
 
     /// Suggested filename for a single ride export.
     static func filename(for ride: Ride) -> String {
-        let stamp = ride.startedAt.formatted(.iso8601.year().month().day().hour().minute().second())
+        let stamp = ride.startedAt.formatted(.iso8601.year().month().day().dateTime())
             .replacingOccurrences(of: ":", with: "-")
         return "ride-\(stamp).jsonl"
     }
 
     /// Suggested filename when exporting every saved ride.
     static func filenameForAllRides() -> String {
-        let stamp = Date().formatted(.iso8601.year().month().day().hour().minute().second())
+        let stamp = Date().formatted(.iso8601.year().month().day().dateTime())
             .replacingOccurrences(of: ":", with: "-")
         return "rides-\(stamp).jsonl"
     }
