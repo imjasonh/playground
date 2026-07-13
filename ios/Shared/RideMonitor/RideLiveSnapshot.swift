@@ -1,5 +1,20 @@
 import Foundation
 
+/// Conversions from the metric values Core Location reports (meters, m/s)
+/// to the US customary units the UI displays (miles, mph).
+enum RideUnits {
+    static let metersPerMile = 1609.344
+    static let mphPerMeterPerSecond = 2.236936
+
+    static func miles(fromMeters meters: Double) -> Double {
+        meters / metersPerMile
+    }
+
+    static func milesPerHour(fromMetersPerSecond speed: Double) -> Double {
+        speed * mphPerMeterPerSecond
+    }
+}
+
 /// One downsampled point on the in-progress elevation profile shown by the
 /// Live Activity. Altitude is meters relative to ride start; speed is m/s
 /// (negative means Core Location had no fix).
@@ -42,12 +57,12 @@ struct RideLiveSnapshot: Codable, Hashable, Sendable {
         Self.formatDuration(elapsedSeconds)
     }
 
-    var formattedDistanceKilometers: String {
-        String(format: "%.2f km", distanceMeters / 1000)
+    var formattedDistanceMiles: String {
+        String(format: "%.2f mi", RideUnits.miles(fromMeters: distanceMeters))
     }
 
-    var formattedSpeedKmh: String {
-        String(format: "%.0f km/h", displaySpeed * 3.6)
+    var formattedSpeedMph: String {
+        String(format: "%.0f mph", RideUnits.milesPerHour(fromMetersPerSecond: displaySpeed))
     }
 
     static func formatDuration(_ interval: TimeInterval) -> String {

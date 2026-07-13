@@ -16,8 +16,8 @@ struct RideDetailView: View {
                 }
                 stat("Started", ride.startedAt.formatted(date: .abbreviated, time: .shortened))
                 stat("Duration", duration(ride.durationSeconds))
-                stat("Distance", String(format: "%.2f km", ride.distanceMeters / 1000))
-                stat("Max speed", String(format: "%.1f km/h", ride.maxSpeed * 3.6))
+                stat("Distance", String(format: "%.2f mi", RideUnits.miles(fromMeters: ride.distanceMeters)))
+                stat("Max speed", String(format: "%.1f mph", RideUnits.milesPerHour(fromMetersPerSecond: ride.maxSpeed)))
                 stat("Peak g", String(format: "%.1f g", ride.peakG))
                 stat("Jolts", "\(ride.joltCount)")
                 stat("Possible crashes", "\(ride.crashCount)")

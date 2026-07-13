@@ -41,12 +41,12 @@ struct RideMonitorAttributes: ActivityAttributes {
             currentSpeedMetersPerSecond >= 0 ? currentSpeedMetersPerSecond : 0
         }
 
-        var formattedDistanceKilometers: String {
-            String(format: "%.2f km", distanceMeters / 1000)
+        var formattedDistanceMiles: String {
+            String(format: "%.2f mi", RideUnits.miles(fromMeters: distanceMeters))
         }
 
-        var formattedSpeedKmh: String {
-            String(format: "%.0f km/h", displaySpeed * 3.6)
+        var formattedSpeedMph: String {
+            String(format: "%.0f mph", RideUnits.milesPerHour(fromMetersPerSecond: displaySpeed))
         }
 
         var formattedDuration: String {

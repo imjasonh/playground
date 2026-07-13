@@ -20,7 +20,7 @@ struct RideMonitorLiveActivity: Widget {
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(context.state.formattedDistanceKilometers)
+                        Text(context.state.formattedDistanceMiles)
                             .font(.headline.monospacedDigit())
                         Text("Distance")
                             .font(.caption2)
@@ -29,7 +29,7 @@ struct RideMonitorLiveActivity: Widget {
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text(context.state.formattedSpeedKmh)
+                        Text(context.state.formattedSpeedMph)
                             .font(.headline.monospacedDigit())
                         Text("Speed")
                             .font(.caption2)
@@ -48,7 +48,7 @@ struct RideMonitorLiveActivity: Widget {
             } compactLeading: {
                 Image(systemName: "bicycle")
             } compactTrailing: {
-                Text(context.state.formattedDistanceKilometers)
+                Text(context.state.formattedDistanceMiles)
                     .font(.caption2.monospacedDigit())
                     .minimumScaleFactor(0.7)
             } minimal: {
@@ -76,9 +76,9 @@ struct RideLiveActivityLockScreenView: View {
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text(state.formattedDistanceKilometers)
+                    Text(state.formattedDistanceMiles)
                         .font(.headline.monospacedDigit())
-                    Text(state.formattedSpeedKmh)
+                    Text(state.formattedSpeedMph)
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
                 }

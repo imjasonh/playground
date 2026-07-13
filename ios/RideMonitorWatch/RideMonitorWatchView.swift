@@ -22,12 +22,12 @@ struct RideMonitorWatchView: View {
                         )
                         metric(
                             label: "Distance",
-                            value: snapshot.formattedDistanceKilometers,
+                            value: snapshot.formattedDistanceMiles,
                             identifier: "watchDistance"
                         )
                         metric(
                             label: "Speed",
-                            value: snapshot.formattedSpeedKmh,
+                            value: snapshot.formattedSpeedMph,
                             identifier: "watchSpeed"
                         )
                     } else {

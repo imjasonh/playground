@@ -77,7 +77,7 @@ final class RideProfileBuilderTests: XCTestCase {
             profile: []
         )
         XCTAssertEqual(snapshot.formattedDuration, "1:30")
-        XCTAssertEqual(snapshot.formattedDistanceKilometers, "2.50 km")
-        XCTAssertEqual(snapshot.formattedSpeedKmh, "18 km/h")
+        XCTAssertEqual(snapshot.formattedDistanceMiles, "1.55 mi")
+        XCTAssertEqual(snapshot.formattedSpeedMph, "11 mph")
     }
 }
