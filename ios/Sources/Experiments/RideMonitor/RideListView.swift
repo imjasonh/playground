@@ -24,7 +24,20 @@ struct RideListView: View {
             }
         }
         .navigationTitle("Past rides")
-        .toolbar { EditButton() }
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) { EditButton() }
+            ToolbarItem(placement: .topBarTrailing) {
+                if !rides.isEmpty {
+                    ShareLink(
+                        item: AllRidesJSONLExport(rides: rides),
+                        preview: SharePreview("All rides JSONL", image: Image(systemName: "doc.text"))
+                    ) {
+                        Label("Export all", systemImage: "square.and.arrow.up")
+                    }
+                    .accessibilityIdentifier("exportAllRidesJSONLButton")
+                }
+            }
+        }
         .onAppear { rides = store.loadAll() }
     }
 
