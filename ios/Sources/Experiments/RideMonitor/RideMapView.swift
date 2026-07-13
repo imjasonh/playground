@@ -34,7 +34,7 @@ struct RideMapView: UIViewRepresentable {
         var annotations: [EventAnnotation] = []
         for event in events {
             guard let lat = event.latitude, let lon = event.longitude else { continue }
-            let annotation = EventAnnotation(severity: event.severity)
+            let annotation = EventAnnotation(severity: event.severity, peakG: event.peakG)
             annotation.coordinate = CLLocationCoordinate2D(latitude: lat, longitude: lon)
             annotation.title = event.severity.title
             annotation.subtitle = String(format: "%.1f g", event.peakG)
@@ -91,6 +91,7 @@ struct RideMapView: UIViewRepresentable {
                 view.markerTintColor = endpoint.isStart ? .systemGreen : .darkGray
                 view.glyphImage = UIImage(systemName: endpoint.isStart ? "flag" : "flag.checkered")
                 view.canShowCallout = true
+                view.displayPriority = .required
                 return view
             }
             if let event = annotation as? EventAnnotation {
@@ -101,6 +102,7 @@ struct RideMapView: UIViewRepresentable {
                 view.markerTintColor = event.markerColor
                 view.glyphImage = UIImage(systemName: event.severity.icon)
                 view.canShowCallout = true
+                view.displayPriority = event.displayPriority
                 return view
             }
             return nil
@@ -111,10 +113,27 @@ struct RideMapView: UIViewRepresentable {
 /// Map pin for a detected ride event.
 final class EventAnnotation: MKPointAnnotation {
     let severity: RideSeverity
+    let peakG: Double
 
-    init(severity: RideSeverity) {
+    init(severity: RideSeverity, peakG: Double) {
         self.severity = severity
+        self.peakG = peakG
         super.init()
+    }
+
+    /// When the map is zoomed out and pins collide, MapKit hides the
+    /// lowest-priority ones first — so harder hits must outrank lighter ones.
+    /// Crashes are always shown; everything else scales with its peak g.
+    var displayPriority: MKFeatureDisplayPriority {
+        Self.displayPriority(severity: severity, peakG: peakG)
+    }
+
+    static func displayPriority(severity: RideSeverity, peakG: Double) -> MKFeatureDisplayPriority {
+        if severity == .crash { return .required }
+        // Map 0–8g onto 500–980, keeping even the hardest non-crash hit below
+        // `.required` (1000) so crash pins can never be displaced by it.
+        let clamped = min(max(peakG, 0), 8)
+        return MKFeatureDisplayPriority(500 + clamped / 8 * 480)
     }
 
     var markerColor: UIColor {

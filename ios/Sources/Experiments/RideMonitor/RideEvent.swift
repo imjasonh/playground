@@ -2,6 +2,8 @@ import Foundation
 
 /// How hard a jolt was, in rough increasing severity.
 enum RideSeverity: String, CaseIterable, Codable {
+    /// No longer recorded — the classifier's floor starts at `pothole`.
+    /// Kept only so rides saved by older builds still decode and display.
     case shake
     case pothole
     case impact
