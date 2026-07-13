@@ -75,6 +75,17 @@ struct RideDetailView: View {
         }
         .navigationTitle("Ride")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                ShareLink(
+                    item: RideJSONLExport(ride: ride),
+                    preview: SharePreview("Ride JSONL", image: Image(systemName: "doc.text"))
+                ) {
+                    Label("Export JSONL", systemImage: "square.and.arrow.up")
+                }
+                .accessibilityIdentifier("exportRideJSONLButton")
+            }
+        }
     }
 
     private var hasCoordinates: Bool {
