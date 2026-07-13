@@ -40,6 +40,9 @@ struct Ride: Codable, Identifiable {
     let peakG: Double
     let joltCount: Int
     let crashCount: Int
+    /// Short on-device label (a few words), filled after the ride ends.
+    /// Optional so older saved JSON files still decode.
+    var summary: String? = nil
     var events: [RideEvent]
     var track: [LocationSample]
     var motion: [MotionSummary]

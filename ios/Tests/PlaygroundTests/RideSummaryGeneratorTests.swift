@@ -1,0 +1,63 @@
+import XCTest
+@testable import Playground
+
+final class RideSummaryGeneratorTests: XCTestCase {
+    private func ride(
+        durationSeconds: TimeInterval = 600,
+        distanceMeters: Double = 4200,
+        peakG: Double = 1.2,
+        joltCount: Int = 3,
+        crashCount: Int = 0,
+        elevationGain: Double? = nil,
+        events: [RideEvent] = []
+    ) -> Ride {
+        var barometer: [AltitudeSample] = []
+        if let gain = elevationGain {
+            barometer = [
+                AltitudeSample(t: 0, relativeAltitude: 0, pressureKPa: 101),
+                AltitudeSample(t: durationSeconds, relativeAltitude: gain, pressureKPa: 100.5),
+            ]
+        }
+        return Ride(
+            id: UUID(),
+            startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            endedAt: Date(timeIntervalSince1970: 1_700_000_000 + durationSeconds),
+            durationSeconds: durationSeconds,
+            distanceMeters: distanceMeters,
+            peakG: peakG,
+            joltCount: joltCount,
+            crashCount: crashCount,
+            events: events,
+            track: [],
+            motion: [],
+            barometer: barometer
+        )
+    }
+
+    func testSanitizeTrimsQuotesAndLength() {
+        let long = String(repeating: "word ", count: 20)
+        let cleaned = RideSummaryGenerator.sanitize("\"\(long)\"")
+        XCTAssertFalse(cleaned.contains("\""))
+        XCTAssertLessThanOrEqual(cleaned.count, RideSummaryGenerator.maxLength)
+    }
+
+    func testSanitizeEmptyInputStaysEmpty() {
+        XCTAssertEqual(RideSummaryGenerator.sanitize("   "), "")
+    }
+
+    func testFactsPromptIncludesCoreStats() {
+        let prompt = RideSummaryGenerator.factsPrompt(
+            for: ride(joltCount: 7, crashCount: 1, elevationGain: 12)
+        )
+        XCTAssertTrue(prompt.contains("Jolts: 7"))
+        XCTAssertTrue(prompt.contains("Possible crashes: 1"))
+        XCTAssertTrue(prompt.contains("Net elevation"))
+    }
+
+    func testSummarizeReturnsNilWhenModelUnavailable() async {
+        // Simulator / CI typically have no Apple Intelligence model; we must
+        // leave the summary empty rather than inventing a heuristic label.
+        let text = await RideSummaryGenerator.summarize(for: ride(crashCount: 2))
+        XCTAssertNil(text)
+    }
+}

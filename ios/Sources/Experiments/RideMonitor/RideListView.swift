@@ -51,6 +51,12 @@ struct RideListView: View {
                     Image(systemName: "sos").foregroundStyle(.pink)
                 }
             }
+            if let summary = ride.summary, !summary.isEmpty {
+                Text(summary)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .accessibilityIdentifier("rideSummary-\(ride.id.uuidString)")
+            }
             Text(String(
                 format: "%@ · %.2f km · %d jolts · peak %.1fg",
                 duration(ride.durationSeconds), ride.distanceMeters / 1000, ride.joltCount, ride.peakG

@@ -49,6 +49,7 @@ After adding or changing any of these targets, re-run **iOS signing bootstrap** 
 | Edit experiment / tests / docs | **No** |
 | Info.plist privacy string or `UIBackgroundModes` | **No** |
 | Normal `project.yml` settings / version bumps | **No** |
+| On-device frameworks used from the host app (e.g. Foundation Models) | **No** |
 | **First time** adding/changing an **app extension** target (keyboard, widget, Watch, …) | **Yes** — new Bundle ID + match profile |
 | New App ID **capability / entitlement** on an existing id (Push, HealthKit, NFC, …) | **Often yes** — update App ID + refresh profile |
 | Second top-level iOS app | **Forbidden** |
@@ -56,6 +57,17 @@ After adding or changing any of these targets, re-run **iOS signing bootstrap** 
 `signing_bootstrap` creates missing Bundle IDs via the App Store Connect API
 (then `match`). After the keyboard (or any new extension) is bootstrapped once,
 day-to-day experiment work does not touch signing.
+
+### PR requirement when bootstrap is needed
+
+If a change **does** require re-running **iOS signing bootstrap** (new extension
+Bundle ID, or a new App ID capability/entitlement that needs a refreshed match
+profile), the pull request **must say so clearly** — in the PR title or near
+the top of the PR body — so a human runs
+[`ios-signing-bootstrap.yml`](../.github/workflows/ios-signing-bootstrap.yml)
+before expecting TestFlight to succeed. Do not bury it in a checklist footnote.
+PRs that do **not** need bootstrap should not claim they do.
+
 
 ## Adding an experiment (happy path — no signing)
 
