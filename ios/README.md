@@ -44,6 +44,7 @@ ios/
 | `follow-the-hum` | Follow the Hum | In-app; AirPods spatial hum hunt |
 | `snore-log` | Snore Log | In-app; mic buffer + snore clip logging |
 | `z-camera` | Z-Camera | In-app; depth-band live camera (near/far sliders) |
+| `voxel-world` | Voxel World | In-app; ARKit rebuilds the room as colored voxels |
 
 ### T9 Keyboard
 
@@ -82,6 +83,23 @@ measured from the camera, not fixed in the room. Needs camera permission
 (`NSCameraUsageDescription` only — no new Bundle ID or signing bootstrap) and
 a depth-capable device (TrueDepth, dual camera, or LiDAR). Simulator opens the
 UI but cannot stream depth.
+
+### Voxel World
+
+ARKit world tracking rebuilds the space around you as colored voxels. Every few
+frames the LiDAR depth map (or, without LiDAR, ARKit's sparse tracked feature
+points) is unprojected into world space, quantized onto a world-aligned voxel
+grid, and each voxel is colored from the camera pixel that saw that point (a
+capped running average, so colors settle as a voxel is re-observed). Voxels
+persist as you move, so sweeping the phone gradually fills in the world. A
+log-scale slider dials the voxel edge from 1 cm to 40 cm (changing size clears
+and rescans), Freeze stops scanning so you can walk around what you built,
+Camera feed toggles the live passthrough behind the voxels, and Reset clears
+everything. Rendering is chunked SceneKit geometry with hidden interior faces
+culled and per-face shading baked into vertex colors. Needs camera permission
+(the existing `NSCameraUsageDescription` — no new Bundle ID, entitlement, or
+signing bootstrap) and works best on LiDAR devices (iPhone/iPad Pro). Simulator
+opens the UI but ARKit tracking is unavailable there.
 
 ## Adding an experiment
 
