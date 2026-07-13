@@ -71,6 +71,11 @@ Both need a one-time **iOS signing bootstrap** after this tree lands (new Bundle
 IDs). Live Activities require a real device (and Live Activities enabled in
 Settings); the Watch app needs a paired Apple Watch.
 
+When a ride ends, Ride Monitor asks the on-device Foundation Model (Apple
+Intelligence / `FoundationModels`, iOS 26+) for a **few-word summary** and
+stores it on the ride for the Past rides list. Devices without the model get a
+deterministic stats-based label instead.
+
 ### T9 Keyboard
 
 Old Nokia-style **multi-tap**. Same engine powers:

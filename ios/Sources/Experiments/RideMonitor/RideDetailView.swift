@@ -9,6 +9,11 @@ struct RideDetailView: View {
     var body: some View {
         List {
             Section("Summary") {
+                if let summary = ride.summary, !summary.isEmpty {
+                    Text(summary)
+                        .font(.body)
+                        .accessibilityIdentifier("rideDetailSummary")
+                }
                 stat("Started", ride.startedAt.formatted(date: .abbreviated, time: .shortened))
                 stat("Duration", duration(ride.durationSeconds))
                 stat("Distance", String(format: "%.2f km", ride.distanceMeters / 1000))

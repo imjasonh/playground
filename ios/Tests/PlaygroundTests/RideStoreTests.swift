@@ -52,6 +52,37 @@ final class RideStoreTests: XCTestCase {
         XCTAssertEqual(r.track.count, 1)
         XCTAssertEqual(r.motion.first?.samples, 50)
         XCTAssertEqual(r.barometer.first?.pressureKPa ?? 0, 101.2, accuracy: 0.001)
+        XCTAssertNil(r.summary)
+    }
+
+    func testSummaryRoundTripsAndLegacyJSONDecodesWithoutSummary() throws {
+        var ride = makeRide()
+        ride.summary = "Bumpy evening commute"
+        try store.save(ride)
+        XCTAssertEqual(store.loadAll().first?.summary, "Bumpy evening commute")
+
+        // Older files omit `summary`; optional decode must stay nil.
+        let legacy = """
+        {
+          "id": "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
+          "startedAt": "2024-01-01T12:00:00Z",
+          "endedAt": "2024-01-01T12:10:00Z",
+          "durationSeconds": 600,
+          "distanceMeters": 1000,
+          "peakG": 1.0,
+          "joltCount": 0,
+          "crashCount": 0,
+          "events": [],
+          "track": [],
+          "motion": [],
+          "barometer": []
+        }
+        """
+        let url = tempDir.appendingPathComponent("AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE.json")
+        try Data(legacy.utf8).write(to: url)
+        let loaded = store.loadAll().first { $0.id.uuidString == "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE" }
+        XCTAssertNotNil(loaded)
+        XCTAssertNil(loaded?.summary)
     }
 
     func testLoadAllSortsNewestFirst() throws {

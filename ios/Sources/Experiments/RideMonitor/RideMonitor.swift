@@ -317,8 +317,29 @@ final class RideMonitor: NSObject, ObservableObject {
             lastSavedRide = ride
             let base = "Ride saved — \(ride.events.count) event(s), \(ride.track.count) GPS fixes."
             statusMessage = statusSuffix.map { "\(base) \($0)" } ?? base
+            // On-device label is async (Foundation Models when available).
+            Task { await attachSummary(to: ride, statusSuffix: statusSuffix) }
         } catch {
             statusMessage = "Ride finished but couldn't be saved: \(error.localizedDescription)"
+        }
+    }
+
+    /// Generate a few-word summary and rewrite the saved ride JSON.
+    private func attachSummary(to ride: Ride, statusSuffix: String?) async {
+        let text = await RideSummaryGenerator.summarize(for: ride)
+        var updated = ride
+        updated.summary = text
+        do {
+            try store.save(updated)
+            if lastSavedRide?.id == updated.id {
+                lastSavedRide = updated
+            }
+            if !isRunning {
+                let base = "Ride saved — \(text)"
+                statusMessage = statusSuffix.map { "\(base) \($0)" } ?? base
+            }
+        } catch {
+            // Ride is already on disk without a summary; list still works.
         }
     }
 
