@@ -6,6 +6,14 @@ import UniformTypeIdentifiers
 /// first line is ride metadata; following lines are events, GPS fixes, motion
 /// summaries, and barometer samples (each tagged with `"type"`).
 enum RideJSONLExporter {
+    private static let filenameStampFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd'T'HH-mm-ss"
+        return formatter
+    }()
+
     private struct RideHeader: Encodable {
         let type = "ride"
         let id: UUID
@@ -80,15 +88,13 @@ enum RideJSONLExporter {
 
     /// Suggested filename for a single ride export.
     static func filename(for ride: Ride) -> String {
-        let stamp = ride.startedAt.formatted(.iso8601.year().month().day().dateTime())
-            .replacingOccurrences(of: ":", with: "-")
+        let stamp = filenameStampFormatter.string(from: ride.startedAt)
         return "ride-\(stamp).jsonl"
     }
 
     /// Suggested filename when exporting every saved ride.
     static func filenameForAllRides() -> String {
-        let stamp = Date().formatted(.iso8601.year().month().day().dateTime())
-            .replacingOccurrences(of: ":", with: "-")
+        let stamp = filenameStampFormatter.string(from: Date())
         return "rides-\(stamp).jsonl"
     }
 
