@@ -177,11 +177,17 @@ targets:
         SKIP_INSTALL: YES
         SDKROOT: watchos
         PRODUCT_NAME: RideMonitorWatch
+        # App Store / TestFlight require a Watch app icon in an asset catalog
+        # (ITMS-90713 / CFBundleIconName). Same single-1024 pattern as the iOS host.
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     info:
       path: RideMonitorWatch-Info.plist
       properties:
         CFBundleDisplayName: Ride Monitor
         CFBundleName: Ride Monitor
+        # Pair with ASSETCATALOG_COMPILER_APPICON_NAME so App Store Connect
+        # sees CFBundleIconName (ITMS-90713).
+        CFBundleIconName: AppIcon
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         # Required for single-target watchOS apps; without this the iPhone
