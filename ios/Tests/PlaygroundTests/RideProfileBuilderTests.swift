@@ -39,14 +39,16 @@ final class RideProfileBuilderTests: XCTestCase {
         XCTAssertEqual(profile[1].relativeAltitude, 10, accuracy: 0.001)
     }
 
-    func testDownsampleKeepsEndpoints() {
+    func testDownsampleKeepsEndpoints() throws {
         let points = (0..<100).map {
             RideProfilePoint(relativeAltitude: Double($0), speedMetersPerSecond: Double($0) / 10)
         }
         let down = RideLiveFormatting.downsample(points, maxPoints: 5)
         XCTAssertEqual(down.count, 5)
-        XCTAssertEqual(down.first?.relativeAltitude, 0, accuracy: 0.001)
-        XCTAssertEqual(down.last?.relativeAltitude, 99, accuracy: 0.001)
+        let first = try XCTUnwrap(down.first)
+        let last = try XCTUnwrap(down.last)
+        XCTAssertEqual(first.relativeAltitude, 0, accuracy: 0.001)
+        XCTAssertEqual(last.relativeAltitude, 99, accuracy: 0.001)
     }
 
     func testEmptyInputsYieldEmptyProfile() {
