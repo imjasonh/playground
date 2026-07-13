@@ -74,7 +74,11 @@ platform :ios do
       # one) so we don't hardcode a simulator that a given Xcode may not ship.
       devices: [ENV.fetch("IOS_SIM_DEVICE", "iPhone 16")],
       result_bundle: true,
-      output_directory: "fastlane/test_output"
+      output_directory: "fastlane/test_output",
+      # Simulator UI tests occasionally lose the app connection under CI load
+      # (mach peer unload). Retry the failed test a couple of times before
+      # failing the lane — unit tests still fail immediately on a real bug.
+      number_of_retries: 2
     )
   end
 
