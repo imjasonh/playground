@@ -7,16 +7,18 @@ name: Playground
 # via a *Experiment.swift, and append that entry to ExperimentCatalog; do NOT
 # create additional top-level iOS app directories.
 #
-# The T9Keyboard target is a Custom Keyboard app extension embedded in
-# Playground. Apple requires it to have its own Bundle ID; in-app experiments
-# still share the host id. See AGENTS.md.
+# Embedded Apple extensions (each needs its own Bundle ID; see AGENTS.md):
+#   - T9Keyboard: Custom Keyboard
+#   - RideMonitorWidget: Ride Monitor Live Activity (WidgetKit)
+#   - RideMonitorWatch: Ride Monitor companion Watch app
 #
 # `xcodegen generate` produces Playground.xcodeproj, which is git-ignored.
 
 options:
   bundleIdPrefix: io.github.imjasonh
   deploymentTarget:
-    iOS: "16.0"
+    iOS: "16.2"
+    watchOS: "9.0"
   createIntermediateGroups: true
   minimumXcodeGenVersion: "2.38.0"
 
@@ -36,8 +38,13 @@ targets:
     sources:
       - path: Sources
       - path: Shared/T9
+      - path: Shared/RideMonitor
     dependencies:
       - target: T9Keyboard
+        embed: true
+      - target: RideMonitorWidget
+        embed: true
+      - target: RideMonitorWatch
         embed: true
     settings:
       base:
@@ -70,6 +77,8 @@ targets:
         # No non-exempt encryption → TestFlight upload doesn't stall on the
         # export-compliance question.
         ITSAppUsesNonExemptEncryption: false
+        # Ride Monitor Live Activity (Lock Screen / Dynamic Island).
+        NSSupportsLiveActivities: true
         # Ride Monitor: motion + background location. Snore Log: microphone +
         # background audio. UIBackgroundModes is an Info.plist key only (no
         # entitlement / App ID capability), so these ship to TestFlight without
@@ -127,6 +136,60 @@ targets:
           NSExtensionPointIdentifier: com.apple.keyboard-service
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).KeyboardViewController
 
+  RideMonitorWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: RideMonitorWidget
+      - path: Shared/RideMonitor
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.imjasonh.playground.ridemonitorwidget
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SKIP_INSTALL: YES
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"
+        PRODUCT_NAME: RideMonitorWidget
+    info:
+      path: RideMonitorWidget-Info.plist
+      properties:
+        CFBundleDisplayName: Ride Monitor
+        CFBundleName: Ride Monitor
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundlePackageType: XPC!
+        NSSupportsLiveActivities: true
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+
+  RideMonitorWatch:
+    type: application
+    platform: watchOS
+    sources:
+      - path: RideMonitorWatch
+      - path: Shared/RideMonitor
+        excludes:
+          # ActivityKit is iOS-only; Watch only needs the snapshot DTO + profile view.
+          - RideMonitorAttributes.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.imjasonh.playground.watch
+        TARGETED_DEVICE_FAMILY: "4"
+        SKIP_INSTALL: YES
+        SDKROOT: watchos
+        PRODUCT_NAME: RideMonitorWatch
+    info:
+      path: RideMonitorWatch-Info.plist
+      properties:
+        CFBundleDisplayName: Ride Monitor
+        CFBundleName: Ride Monitor
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # Required for single-target watchOS apps; without this the iPhone
+        # simulator refuses to install the host app that embeds the Watch app.
+        WKApplication: true
+        WKCompanionAppBundleIdentifier: io.github.imjasonh.playground
+        WKWatchOnly: false
+
   PlaygroundTests:
     type: bundle.unit-test
     platform: iOS
@@ -157,6 +220,8 @@ schemes:
       targets:
         Playground: all
         T9Keyboard: all
+        RideMonitorWidget: all
+        RideMonitorWatch: all
     test:
       gatherCoverageData: true
       targets:

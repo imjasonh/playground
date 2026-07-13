@@ -5,6 +5,7 @@ import SwiftUI
 /// each happened.
 struct RideMonitorView: View {
     @StateObject private var monitor = RideMonitor()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         ScrollView {
@@ -59,6 +60,12 @@ struct RideMonitorView: View {
         } message: {
             Text("A hard impact was followed by stillness. If you're fine, dismiss this.")
         }
+        .onChange(of: scenePhase) { phase in
+            guard phase == .active else { return }
+            // Live Activity.request only works in the foreground; retry any
+            // start that was deferred while location was granted in Settings.
+            monitor.handleSceneBecameActive()
+        }
     }
 
     private var gauge: some View {
@@ -75,17 +82,36 @@ struct RideMonitorView: View {
     }
 
     private var stats: some View {
-        HStack {
-            stat("Peak", String(format: "%.1f g", monitor.peakG))
-            Divider()
-            stat("Jolts", "\(monitor.joltCount)")
-            Divider()
-            stat("Time", format(monitor.elapsed))
-            Divider()
-            stat("Dist", String(format: "%.2f km", monitor.distanceMeters / 1000))
+        VStack(spacing: 12) {
+            HStack {
+                stat("Peak", String(format: "%.1f g", monitor.peakG))
+                Divider()
+                stat("Jolts", "\(monitor.joltCount)")
+                Divider()
+                stat("Time", format(monitor.elapsed))
+                Divider()
+                stat("Dist", String(format: "%.2f km", monitor.distanceMeters / 1000))
+            }
+            .frame(maxWidth: .infinity)
+            .fixedSize(horizontal: false, vertical: true)
+
+            if monitor.isRunning {
+                HStack {
+                    stat(
+                        "Speed",
+                        monitor.currentSpeedMetersPerSecond >= 0
+                            ? String(format: "%.0f km/h", monitor.currentSpeedMetersPerSecond * 3.6)
+                            : "—"
+                    )
+                    Divider()
+                    Text("Live Activity + Watch update while you ride.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxWidth: .infinity)
+            }
         }
-        .frame(maxWidth: .infinity)
-        .fixedSize(horizontal: false, vertical: true)
     }
 
     private func stat(_ label: String, _ value: String) -> some View {
@@ -126,7 +152,7 @@ struct RideMonitorView: View {
     }
 
     private var disclaimer: some View {
-        Text("Uses motion + location and keeps recording in the background while a ride is active. Grant “Always” location when asked so accelerometer logging continues with the screen off. This is a toy detector, not a safety or emergency service — don't rely on it in a real crash.")
+        Text("Uses motion + location and keeps recording in the background while a ride is active. Grant “Always” location when asked so accelerometer logging continues with the screen off. An active ride also starts a Live Activity (Lock Screen / Dynamic Island) and updates the Ride Monitor Watch app. This is a toy detector, not a safety or emergency service — don't rely on it in a real crash.")
             .font(.caption2)
             .foregroundStyle(.secondary)
             .multilineTextAlignment(.center)

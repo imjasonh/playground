@@ -14,7 +14,10 @@ import UIKit
 ///
 /// Core Motion updates are delivered on `OperationQueue.main` and Core Location
 /// delegate callbacks arrive on the (main) thread this object is created on, so
-/// every `@Published` mutation already happens on the main thread.
+/// every `@Published` mutation already happens on the main thread. Marked
+/// `@MainActor` so Live Activity / WatchConnectivity helpers can be called
+/// directly from those same paths.
+@MainActor
 final class RideMonitor: NSObject, ObservableObject {
     @Published private(set) var isRunning = false
     @Published private(set) var currentG = 0.0
@@ -23,6 +26,8 @@ final class RideMonitor: NSObject, ObservableObject {
     @Published private(set) var events: [RideEvent] = []
     @Published private(set) var elapsed: TimeInterval = 0
     @Published private(set) var distanceMeters = 0.0
+    /// Current GPS speed in m/s (-1 when Core Location has no reading).
+    @Published private(set) var currentSpeedMetersPerSecond = -1.0
     @Published private(set) var crashAlert = false
     @Published private(set) var statusMessage = "Ready"
     /// The ride most recently saved to disk (set on stop).
@@ -32,6 +37,8 @@ final class RideMonitor: NSObject, ObservableObject {
     private let location = CLLocationManager()
     private let altimeter = CMAltimeter()
     private let store = RideStore()
+    private let liveActivity = RideLiveActivityController.shared
+    private let watchSession = RideWatchPhoneSession.shared
 
     private var classifier = RideEventClassifier()
     private var aggregator = MotionAggregator()
@@ -43,6 +50,8 @@ final class RideMonitor: NSObject, ObservableObject {
     private var crashCount = 0
     /// Set when the user taps Start until recording begins or is denied.
     private var wantsRecording = false
+    /// Throttle Live Activity / Watch pushes (ActivityKit has an update budget).
+    private var lastCompanionPushAt: TimeInterval = 0
 
     // Accumulated logs for the current ride.
     private var track: [LocationSample] = []
@@ -50,12 +59,15 @@ final class RideMonitor: NSObject, ObservableObject {
     private var altitudeSamples: [AltitudeSample] = []
 
     private let sampleHz = 50.0
+    private let companionPushInterval: TimeInterval = 1.0
 
     override init() {
         super.init()
         location.delegate = self
         location.desiredAccuracy = kCLLocationAccuracyBest
         location.activityType = .fitness
+        // Activate WatchConnectivity early so the companion is ready at start.
+        _ = watchSession
     }
 
     private var now: TimeInterval { ProcessInfo.processInfo.systemUptime - startUptime }
@@ -103,9 +115,11 @@ final class RideMonitor: NSObject, ObservableObject {
         peakG = 0
         currentG = 0
         distanceMeters = 0
+        currentSpeedMetersPerSecond = -1
         elapsed = 0
         crashAlert = false
         lastLocation = nil
+        lastCompanionPushAt = 0
         startUptime = ProcessInfo.processInfo.systemUptime
         startDate = Date()
         isRunning = true
@@ -134,7 +148,13 @@ final class RideMonitor: NSObject, ObservableObject {
         timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             guard let self, self.isRunning else { return }
             self.elapsed = self.now
+            self.pushCompanionsIfNeeded(force: false)
         }
+
+        let snapshot = makeLiveSnapshot()
+        liveActivity.start(startedAt: startDate, snapshot: snapshot)
+        watchSession.send(snapshot)
+        lastCompanionPushAt = now
     }
 
     private func configureBackgroundLocation(enabled: Bool) {
@@ -168,6 +188,10 @@ final class RideMonitor: NSObject, ObservableObject {
             motionSummaries.append(summary)
         }
 
+        let finalSnapshot = makeLiveSnapshot(isRiding: false)
+        liveActivity.end(snapshot: finalSnapshot)
+        watchSession.send(finalSnapshot)
+
         let ride = Ride(
             id: UUID(),
             startedAt: startDate,
@@ -192,8 +216,41 @@ final class RideMonitor: NSObject, ObservableObject {
         }
     }
 
+    private func makeLiveSnapshot(isRiding: Bool? = nil) -> RideLiveSnapshot {
+        RideLiveSnapshot(
+            isRiding: isRiding ?? isRunning,
+            startedAt: startDate,
+            elapsedSeconds: elapsed,
+            distanceMeters: distanceMeters,
+            currentSpeedMetersPerSecond: currentSpeedMetersPerSecond,
+            profile: RideProfileBuilder.build(altitudes: altitudeSamples, track: track)
+        )
+    }
+
+    private func pushCompanionsIfNeeded(force: Bool) {
+        guard isRunning else { return }
+        let t = now
+        guard force || t - lastCompanionPushAt >= companionPushInterval else { return }
+        lastCompanionPushAt = t
+        let snapshot = makeLiveSnapshot()
+        liveActivity.update(snapshot: snapshot)
+        watchSession.send(snapshot)
+    }
+
     func dismissCrashAlert() {
         crashAlert = false
+    }
+
+    /// Retry a Live Activity that couldn't start while backgrounded (e.g. the
+    /// user granted Always location from Settings) and refresh the Watch.
+    func handleSceneBecameActive() {
+        if isRunning {
+            // Keep any deferred start payload current before retrying request.
+            liveActivity.update(snapshot: makeLiveSnapshot())
+        }
+        liveActivity.handleSceneBecameActive()
+        guard isRunning else { return }
+        pushCompanionsIfNeeded(force: true)
     }
 
     private func ingest(_ data: CMDeviceMotion) {
@@ -271,6 +328,7 @@ extension RideMonitor: CLLocationManagerDelegate {
                 }
             }
             lastLocation = loc
+            currentSpeedMetersPerSecond = loc.speed
             track.append(LocationSample(
                 t: now,
                 latitude: loc.coordinate.latitude,
@@ -282,6 +340,7 @@ extension RideMonitor: CLLocationManagerDelegate {
                 course: loc.course
             ))
         }
+        pushCompanionsIfNeeded(force: false)
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {}
