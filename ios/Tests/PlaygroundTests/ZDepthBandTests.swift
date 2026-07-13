@@ -67,7 +67,8 @@ final class ZDepthCoordinateMapperTests: XCTestCase {
             depthWidth: 320,
             depthHeight: 240
         )
-        let center = mapper.depthUV(videoX: 320, videoY: 240, mirrorX: false)
+        // Edge-aligned UV: center is at (width - 1, height - 1) / 2 for even sizes.
+        let center = mapper.depthUV(videoX: 319, videoY: 239, mirrorX: false)
         XCTAssertEqual(center.u, 0.5, accuracy: 0.001)
         XCTAssertEqual(center.v, 0.5, accuracy: 0.001)
     }
