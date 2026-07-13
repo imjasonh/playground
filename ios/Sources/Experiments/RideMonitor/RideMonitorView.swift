@@ -5,6 +5,7 @@ import SwiftUI
 /// each happened.
 struct RideMonitorView: View {
     @StateObject private var monitor = RideMonitor()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         ScrollView {
@@ -58,6 +59,12 @@ struct RideMonitorView: View {
             Button("I'm OK", role: .cancel) { monitor.dismissCrashAlert() }
         } message: {
             Text("A hard impact was followed by stillness. If you're fine, dismiss this.")
+        }
+        .onChange(of: scenePhase) { phase in
+            guard phase == .active else { return }
+            // Live Activity.request only works in the foreground; retry any
+            // start that was deferred while location was granted in Settings.
+            monitor.handleSceneBecameActive()
         }
     }
 

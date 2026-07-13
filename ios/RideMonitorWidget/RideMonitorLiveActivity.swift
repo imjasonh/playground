@@ -38,7 +38,7 @@ struct RideMonitorLiveActivity: Widget {
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(timerInterval: context.attributes.startedAt...Date.distantFuture, countsDown: false)
+                        RideLiveDurationText(startedAt: context.attributes.startedAt, state: context.state)
                             .font(.title3.monospacedDigit())
                             .multilineTextAlignment(.leading)
                         RideElevationProfileView(points: context.state.profile, lineWidth: 2)
@@ -68,7 +68,7 @@ struct RideLiveActivityLockScreenView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
                 Label {
-                    Text(timerInterval: startedAt...Date.distantFuture, countsDown: false)
+                    RideLiveDurationText(startedAt: startedAt, state: state)
                         .font(.title2.bold().monospacedDigit())
                         .multilineTextAlignment(.leading)
                 } icon: {
@@ -103,6 +103,21 @@ struct RideLiveActivityLockScreenView: View {
         HStack(spacing: 4) {
             Circle().fill(color).frame(width: 6, height: 6)
             Text(label)
+        }
+    }
+}
+
+/// Live ticking timer while riding; frozen duration once the ride ends so the
+/// dismissed Live Activity doesn't keep counting past stop.
+struct RideLiveDurationText: View {
+    var startedAt: Date
+    var state: RideMonitorAttributes.ContentState
+
+    var body: some View {
+        if state.isRiding {
+            Text(timerInterval: startedAt...Date.distantFuture, countsDown: false)
+        } else {
+            Text(state.formattedDuration)
         }
     }
 }

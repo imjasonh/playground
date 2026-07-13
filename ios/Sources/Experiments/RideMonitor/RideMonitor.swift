@@ -238,6 +238,18 @@ final class RideMonitor: NSObject, ObservableObject {
         crashAlert = false
     }
 
+    /// Retry a Live Activity that couldn't start while backgrounded (e.g. the
+    /// user granted Always location from Settings) and refresh the Watch.
+    func handleSceneBecameActive() {
+        if isRunning {
+            // Keep any deferred start payload current before retrying request.
+            liveActivity.update(snapshot: makeLiveSnapshot())
+        }
+        liveActivity.handleSceneBecameActive()
+        guard isRunning else { return }
+        pushCompanionsIfNeeded(force: true)
+    }
+
     private func ingest(_ data: CMDeviceMotion) {
         let a = data.userAcceleration // gravity already removed, in g
         let magnitude = (a.x * a.x + a.y * a.y + a.z * a.z).squareRoot()

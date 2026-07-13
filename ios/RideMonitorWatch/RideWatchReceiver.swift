@@ -17,6 +17,8 @@ final class RideWatchReceiver: NSObject, ObservableObject {
         self.session = session
         session.delegate = self
         session.activate()
+        // Best-effort early read; the authoritative load is in
+        // `activationDidCompleteWith`, once the session is actually ready.
         apply(context: session.receivedApplicationContext)
     }
 
@@ -36,7 +38,12 @@ extension RideWatchReceiver: WCSessionDelegate {
         _ session: WCSession,
         activationDidCompleteWith activationState: WCSessionActivationState,
         error: Error?
-    ) {}
+    ) {
+        Task { @MainActor in
+            // Application context is reliable only after activation completes.
+            self.apply(context: session.receivedApplicationContext)
+        }
+    }
 
     nonisolated func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
         Task { @MainActor in
