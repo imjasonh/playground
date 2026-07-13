@@ -3,60 +3,25 @@ import Foundation
 import FoundationModels
 #endif
 
-/// Builds a short plain-language label for a finished ride.
-///
-/// Prefers Apple's on-device Foundation Models (`SystemLanguageModel`) when
-/// Apple Intelligence is available; otherwise falls back to a deterministic
-/// heuristic so every ride still gets a list caption on older devices / OS.
+/// Builds a short plain-language label for a finished ride using Apple's
+/// on-device Foundation Models (`SystemLanguageModel`) when Apple Intelligence
+/// is available. Returns `nil` when the model is unavailable or fails — no
+/// heuristic substitute.
 enum RideSummaryGenerator {
     /// Max characters kept for list rows (and after model cleanup).
     static let maxLength = 42
 
-    /// Async entry point used when a ride finishes.
-    static func summarize(for ride: Ride) async -> String {
+    /// Async entry point used when a ride finishes. `nil` means leave summary empty.
+    static func summarize(for ride: Ride) async -> String? {
         #if canImport(FoundationModels)
         if #available(iOS 26.0, *) {
             if let text = await foundationModelSummary(for: ride) {
-                return sanitize(text)
+                let cleaned = sanitize(text)
+                return cleaned.isEmpty ? nil : cleaned
             }
         }
         #endif
-        return heuristicSummary(for: ride)
-    }
-
-    /// Deterministic few-word label from ride stats (always available; unit-tested).
-    static func heuristicSummary(for ride: Ride) -> String {
-        let minutes = Int(ride.durationSeconds / 60)
-        let km = ride.distanceMeters / 1000
-        let joltsPerMin = ride.durationSeconds > 0
-            ? Double(ride.joltCount) / (ride.durationSeconds / 60)
-            : Double(ride.joltCount)
-
-        if ride.crashCount > 0 {
-            return sanitize(ride.crashCount == 1 ? "Hard stop, possible crash" : "Rough ride, crash alerts")
-        }
-        if ride.peakG >= 4.0 {
-            return sanitize("Hard impacts, peak \(formatG(ride.peakG))")
-        }
-        if joltsPerMin >= 4 || ride.joltCount >= 40 {
-            return sanitize("Very bumpy \(distancePhrase(km: km, minutes: minutes))")
-        }
-        if joltsPerMin >= 1.5 || ride.joltCount >= 12 {
-            return sanitize("Bumpy \(distancePhrase(km: km, minutes: minutes))")
-        }
-        if let gain = ride.elevationGain, abs(gain) >= 25 {
-            if gain >= 25 {
-                return sanitize("Climbing \(distancePhrase(km: km, minutes: minutes))")
-            }
-            return sanitize("Downhill \(distancePhrase(km: km, minutes: minutes))")
-        }
-        if km < 0.3 && minutes < 3 {
-            return sanitize("Short smooth hop")
-        }
-        if joltsPerMin < 0.4 && ride.joltCount < 5 {
-            return sanitize("Smooth \(distancePhrase(km: km, minutes: minutes))")
-        }
-        return sanitize("Steady \(distancePhrase(km: km, minutes: minutes))")
+        return nil
     }
 
     /// Compact stats block fed to the on-device model (no raw GPS track).
@@ -105,24 +70,7 @@ enum RideSummaryGenerator {
                 text = String(text[..<lastSpace])
             }
         }
-        return text.isEmpty ? "Ride" : text
-    }
-
-    private static func distancePhrase(km: Double, minutes: Int) -> String {
-        if km < 0.5 {
-            return minutes <= 5 ? "short ride" : "slow ride"
-        }
-        if km < 3 {
-            return "short ride"
-        }
-        if km < 10 {
-            return "ride"
-        }
-        return "long ride"
-    }
-
-    private static func formatG(_ g: Double) -> String {
-        String(format: "%.1fg", g)
+        return text
     }
 
     #if canImport(FoundationModels)

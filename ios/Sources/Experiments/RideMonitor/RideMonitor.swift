@@ -325,8 +325,9 @@ final class RideMonitor: NSObject, ObservableObject {
     }
 
     /// Generate a few-word summary and rewrite the saved ride JSON.
+    /// Leaves `summary` unset when the on-device model is unavailable or fails.
     private func attachSummary(to ride: Ride, statusSuffix: String?) async {
-        let text = await RideSummaryGenerator.summarize(for: ride)
+        guard let text = await RideSummaryGenerator.summarize(for: ride) else { return }
         var updated = ride
         updated.summary = text
         do {
