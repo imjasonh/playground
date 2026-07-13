@@ -133,7 +133,7 @@ final class EventAnnotation: MKPointAnnotation {
         // Map 0–8g onto 500–980, keeping even the hardest non-crash hit below
         // `.required` (1000) so crash pins can never be displaced by it.
         let clamped = min(max(peakG, 0), 8)
-        return MKFeatureDisplayPriority(500 + clamped / 8 * 480)
+        return MKFeatureDisplayPriority(Float(500 + clamped / 8 * 480))
     }
 
     var markerColor: UIColor {
