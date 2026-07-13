@@ -31,6 +31,7 @@ final class PlaygroundUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Follow the Hum"].exists)
         XCTAssertTrue(app.staticTexts["Snore Log"].exists)
         XCTAssertTrue(app.staticTexts["Z-Camera"].exists)
+        XCTAssertTrue(app.staticTexts["Voxel World"].exists)
     }
 
     func testRideMonitorExperimentOpens() {
@@ -102,5 +103,22 @@ final class PlaygroundUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["zCameraStatusMessage"].waitForExistence(timeout: 5)
             || app.otherElements["zCameraStatusMessage"].waitForExistence(timeout: 2)
             || app.staticTexts["zCameraBandSummary"].waitForExistence(timeout: 2))
+    }
+
+    func testVoxelWorldExperimentOpens() {
+        let app = XCUIApplication()
+        app.launch()
+
+        openExperiment("voxel-world", title: "Voxel World", in: app)
+
+        XCTAssertTrue(app.navigationBars["Voxel World"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.sliders["voxelSizeSlider"].waitForExistence(timeout: 5)
+            || app.otherElements["voxelSizeSlider"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.buttons["voxelResetButton"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["voxelFreezeCheckbox"].waitForExistence(timeout: 5)
+            || app.otherElements["voxelFreezeCheckbox"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["voxelStatusMessage"].waitForExistence(timeout: 5)
+            || app.otherElements["voxelStatusMessage"].waitForExistence(timeout: 2)
+            || app.staticTexts["voxelSizeLabel"].waitForExistence(timeout: 2))
     }
 }
