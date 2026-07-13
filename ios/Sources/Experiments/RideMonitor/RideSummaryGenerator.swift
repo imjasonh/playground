@@ -27,15 +27,15 @@ enum RideSummaryGenerator {
     /// Compact stats block fed to the on-device model (no raw GPS track).
     static func factsPrompt(for ride: Ride) -> String {
         let minutes = ride.durationSeconds / 60
-        let km = ride.distanceMeters / 1000
+        let miles = RideUnits.miles(fromMeters: ride.distanceMeters)
         let hour = Calendar.current.component(.hour, from: ride.startedAt)
         var lines: [String] = [
             "Duration: \(String(format: "%.1f", minutes)) minutes",
-            "Distance: \(String(format: "%.2f", km)) km",
+            "Distance: \(String(format: "%.2f", miles)) miles",
             "Peak g: \(String(format: "%.1f", ride.peakG))",
             "Jolts: \(ride.joltCount)",
             "Possible crashes: \(ride.crashCount)",
-            "Max speed: \(String(format: "%.1f", ride.maxSpeed * 3.6)) km/h",
+            "Max speed: \(String(format: "%.1f", RideUnits.milesPerHour(fromMetersPerSecond: ride.maxSpeed))) mph",
             "Started hour (local): \(hour)",
         ]
         if let gain = ride.elevationGain {

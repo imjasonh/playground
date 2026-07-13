@@ -97,7 +97,7 @@ struct RideMonitorView: View {
                 Divider()
                 stat("Time", format(monitor.elapsed))
                 Divider()
-                stat("Dist", String(format: "%.2f km", monitor.distanceMeters / 1000))
+                stat("Dist", String(format: "%.2f mi", RideUnits.miles(fromMeters: monitor.distanceMeters)))
             }
             .frame(maxWidth: .infinity)
             .fixedSize(horizontal: false, vertical: true)
@@ -107,7 +107,10 @@ struct RideMonitorView: View {
                     stat(
                         "Speed",
                         monitor.currentSpeedMetersPerSecond >= 0
-                            ? String(format: "%.0f km/h", monitor.currentSpeedMetersPerSecond * 3.6)
+                            ? String(
+                                format: "%.0f mph",
+                                RideUnits.milesPerHour(fromMetersPerSecond: monitor.currentSpeedMetersPerSecond)
+                            )
                             : "—"
                     )
                     Divider()
