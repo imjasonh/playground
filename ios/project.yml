@@ -184,6 +184,9 @@ targets:
         CFBundleName: Ride Monitor
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # Required for single-target watchOS apps; without this the iPhone
+        # simulator refuses to install the host app that embeds the Watch app.
+        WKApplication: true
         WKCompanionAppBundleIdentifier: io.github.imjasonh.playground
         WKWatchOnly: false
 
