@@ -28,21 +28,20 @@ final class RideEventClassifierTests: XCTestCase {
         XCTAssertTrue(events.isEmpty)
     }
 
-    func testRoadBuzzBelowShakeIsIgnored() {
+    func testRoadBuzzIsIgnored() {
         var c = RideEventClassifier()
-        // Typical bike vibration sits under the 0.85g shake floor.
+        // Typical bike vibration sits well under the 1.5g recording floor.
         let (events, _) = feed(&c, magnitude: 0.75, duration: 3, startAt: 0)
         XCTAssertTrue(events.isEmpty)
     }
 
-    func testShakeIsClassifiedAsShake() {
+    func testShakeBelowPotholeFloorIsNotRecorded() {
         var c = RideEventClassifier()
         var all: [RideEvent] = []
         all += feed(&c, magnitude: 0.05, duration: 1, startAt: 0).events
-        all += feed(&c, magnitude: 0.95, duration: 0.1, startAt: 1).events   // above shake, below pothole
+        all += feed(&c, magnitude: 1.2, duration: 0.1, startAt: 1).events   // old shake range
         all += feed(&c, magnitude: 0.05, duration: 1, startAt: 1.1).events
-        XCTAssertEqual(all.count, 1)
-        XCTAssertEqual(all.first?.severity, .shake)
+        XCTAssertTrue(all.isEmpty, "sub-pothole jolts must not produce events")
     }
 
     func testPotholeIsClassifiedAsPothole() {
@@ -52,14 +51,14 @@ final class RideEventClassifierTests: XCTestCase {
         all += feed(&c, magnitude: 1.6, duration: 0.1, startAt: 1).events
         all += feed(&c, magnitude: 0.05, duration: 1, startAt: 1.1).events
         XCTAssertEqual(all.map(\.severity), [.pothole])
-        XCTAssertGreaterThanOrEqual(all.first?.peakG ?? 0, 1.2)
+        XCTAssertGreaterThanOrEqual(all.first?.peakG ?? 0, 1.5)
     }
 
     func testHardImpactBelowCrashThresholdDoesNotBecomeCrash() {
         var c = RideEventClassifier()
         var all: [RideEvent] = []
         all += feed(&c, magnitude: 0.05, duration: 1, startAt: 0).events
-        all += feed(&c, magnitude: 3.2, duration: 0.1, startAt: 1).events   // impact but < crashImpact 3.5
+        all += feed(&c, magnitude: 3.7, duration: 0.1, startAt: 1).events   // impact but < crashImpact 4.0
         all += feed(&c, magnitude: 0.02, duration: 5, startAt: 1.1).events  // long stillness
         XCTAssertEqual(all.map(\.severity), [.impact])
         XCTAssertFalse(all.contains { $0.severity == .crash })
@@ -92,9 +91,9 @@ final class RideEventClassifierTests: XCTestCase {
         var all: [RideEvent] = []
         all += feed(&c, magnitude: 0.05, duration: 1, startAt: 0).events
         // Two spikes 0.1s apart — within the 0.8s debounce → one event.
-        all += feed(&c, magnitude: 1.5, duration: 0.06, startAt: 1.0).events
+        all += feed(&c, magnitude: 1.8, duration: 0.06, startAt: 1.0).events
         all += feed(&c, magnitude: 0.05, duration: 0.1, startAt: 1.06).events
-        all += feed(&c, magnitude: 1.5, duration: 0.06, startAt: 1.16).events
+        all += feed(&c, magnitude: 1.8, duration: 0.06, startAt: 1.16).events
         all += feed(&c, magnitude: 0.05, duration: 1, startAt: 1.22).events
         XCTAssertEqual(all.count, 1)
     }
@@ -103,9 +102,9 @@ final class RideEventClassifierTests: XCTestCase {
         var c = RideEventClassifier()
         var all: [RideEvent] = []
         all += feed(&c, magnitude: 0.05, duration: 1, startAt: 0).events
-        all += feed(&c, magnitude: 1.5, duration: 0.06, startAt: 1.0).events
+        all += feed(&c, magnitude: 1.8, duration: 0.06, startAt: 1.0).events
         all += feed(&c, magnitude: 0.05, duration: 1.0, startAt: 1.06).events   // well beyond debounce
-        all += feed(&c, magnitude: 1.5, duration: 0.06, startAt: 2.1).events
+        all += feed(&c, magnitude: 1.8, duration: 0.06, startAt: 2.1).events
         all += feed(&c, magnitude: 0.05, duration: 1, startAt: 2.16).events
         XCTAssertEqual(all.count, 2)
     }
@@ -114,7 +113,7 @@ final class RideEventClassifierTests: XCTestCase {
         var c = RideEventClassifier()
         var all: [RideEvent] = []
         all += feed(&c, magnitude: 0.05, duration: 1, startAt: 0).events
-        // Burst starts but never falls below shake — then sensing dies (suspend).
+        // Burst starts but never falls below the floor — then sensing dies (suspend).
         all += feed(&c, magnitude: 5.85, duration: 0.2, startAt: 1.0).events
         XCTAssertTrue(all.isEmpty, "burst still open while magnitude stays high")
 

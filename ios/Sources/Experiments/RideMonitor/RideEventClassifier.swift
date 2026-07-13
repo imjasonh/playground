@@ -6,10 +6,11 @@ import Foundation
 /// unit-tested exhaustively without a device.
 ///
 /// Detection model:
-///  - A "burst" begins when magnitude rises above `shake` and ends when it falls
-///    back below it; the burst is emitted as one event classified by its peak
-///    (shake / pothole / impact). A short `debounce` after a burst suppresses
-///    ringing so one bump is one event.
+///  - A "burst" begins when magnitude rises above `pothole` and ends when it
+///    falls back below it; the burst is emitted as one event classified by its
+///    peak (pothole / impact). Anything below the pothole floor — hand shakes,
+///    road buzz, pocket jostling — is not recorded at all. A short `debounce`
+///    after a burst suppresses ringing so one bump is one event.
 ///  - A strong impact (peak ≥ `crashImpact`) arms a crash watch. If the phone
 ///    then stays still (magnitude ≤ `stillnessMax`) for `stillnessDuration`, a
 ///    `.crash` event is emitted. Any renewed motion cancels the watch — a rider
@@ -20,11 +21,12 @@ import Foundation
 ///    events with the *pre-gap* location.
 struct RideEventClassifier {
     struct Thresholds {
-        /// Bike/scooter road buzz often sits around 0.5–0.8g; keep shake above that.
-        var shake: Double = 0.85
-        var pothole: Double = 1.2
-        var impact: Double = 3.0
-        var crashImpact: Double = 3.5
+        /// Recording floor. Bike/scooter road buzz and hand shakes sit around
+        /// 0.5–1.0g; anything below this is ignored entirely (shakes used to be
+        /// recorded above 0.85g and triggered far too easily).
+        var pothole: Double = 1.5
+        var impact: Double = 3.5
+        var crashImpact: Double = 4.0
         /// Collapse ringing from one physical bump into a single event.
         var debounce: TimeInterval = 0.8
         var stillnessMax: Double = 0.15
@@ -63,7 +65,7 @@ struct RideEventClassifier {
 
         lastSampleAt = t
 
-        if g >= thresholds.shake {
+        if g >= thresholds.pothole {
             if inBurst {
                 burstPeak = max(burstPeak, g)
             } else if t - lastBurstEnd >= thresholds.debounce {
@@ -107,8 +109,6 @@ struct RideEventClassifier {
     }
 
     private func classify(peak: Double) -> RideSeverity {
-        if peak >= thresholds.impact { return .impact }
-        if peak >= thresholds.pothole { return .pothole }
-        return .shake
+        peak >= thresholds.impact ? .impact : .pothole
     }
 }

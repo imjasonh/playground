@@ -8,7 +8,7 @@ enum RideMonitorExperiment {
     static let experiment = Experiment(
         id: "ride-monitor",
         title: "Ride Monitor",
-        summary: "Detect shakes, potholes & crashes while biking — Live Activity + Watch while you ride.",
+        summary: "Detect potholes, impacts & crashes while biking — Live Activity + Watch while you ride.",
         icon: "bicycle"
     ) {
         RideMonitorView()

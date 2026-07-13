@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// Background-capable ride monitor that flags shakes, potholes, hard impacts,
-/// and possible crashes from the accelerometer while you bike, logging where
-/// each happened.
+/// Background-capable ride monitor that flags potholes, hard impacts, and
+/// possible crashes from the accelerometer while you bike, logging where each
+/// happened.
 struct RideMonitorView: View {
     @StateObject private var monitor = RideMonitor()
     @Environment(\.scenePhase) private var scenePhase
