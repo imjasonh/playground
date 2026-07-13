@@ -61,10 +61,17 @@ struct RideMonitorView: View {
             Text("A hard impact was followed by stillness. If you're fine, dismiss this.")
         }
         .onChange(of: scenePhase) { phase in
-            guard phase == .active else { return }
-            // Live Activity.request only works in the foreground; retry any
-            // start that was deferred while location was granted in Settings.
-            monitor.handleSceneBecameActive()
+            switch phase {
+            case .active:
+                // Live Activity.request only works in the foreground; retry any
+                // start that was deferred while location was granted in Settings.
+                monitor.handleSceneBecameActive()
+            case .background:
+                // Re-assert background location keep-alive before we are suspended.
+                monitor.handleSceneEnteredBackground()
+            default:
+                break
+            }
         }
     }
 
