@@ -20,12 +20,21 @@ struct VoxelChunkKey: Hashable {
 /// Per-voxel color, refined as more camera samples land in the same cell.
 /// A capped running average keeps early noisy samples from dominating while
 /// still letting the color settle as the phone re-observes the voxel.
+///
+/// Also tracks free-space evidence: when the camera repeatedly sees *through*
+/// the cell (the observed surface is well behind it), the voxel is carved
+/// away, so moved objects and depth-noise floaters clean themselves up.
 struct VoxelData: Equatable {
     /// Average linear RGB in `0...1`.
     private(set) var color: SIMD3<Float>
     private(set) var sampleWeight: Float
+    /// Consecutive integrations that observed free space through this voxel.
+    private(set) var missCount = 0
 
     static let maxSampleWeight: Float = 64
+    /// Free-space observations required before a voxel is carved away.
+    /// (>1 so one noisy depth frame can't delete real geometry.)
+    static let removalMissThreshold = 3
 
     init(color: SIMD3<Float>) {
         self.color = color
@@ -36,6 +45,19 @@ struct VoxelData: Equatable {
         let newWeight = min(sampleWeight + 1, Self.maxSampleWeight)
         color += (sample - color) / newWeight
         sampleWeight = newWeight
+        missCount = 0
+    }
+
+    /// The camera saw a surface at this voxel's depth again.
+    mutating func registerConfirmation() {
+        missCount = 0
+    }
+
+    /// The camera saw free space through this voxel. Returns `true` when the
+    /// miss threshold is reached and the voxel should be removed.
+    mutating func registerMiss() -> Bool {
+        missCount += 1
+        return missCount >= Self.removalMissThreshold
     }
 }
 
@@ -119,6 +141,32 @@ struct VoxelGrid {
         return .added(key)
     }
 
+    /// Registers a free-space observation for an existing voxel. Returns
+    /// `true` when the miss threshold was reached and the voxel was removed
+    /// (freeing budget for new voxels).
+    mutating func registerMiss(at key: VoxelKey) -> Bool {
+        let chunk = chunkKey(for: key)
+        guard var data = chunks[chunk]?[key] else { return false }
+        if data.registerMiss() {
+            chunks[chunk]?.removeValue(forKey: key)
+            if chunks[chunk]?.isEmpty == true {
+                chunks.removeValue(forKey: chunk)
+            }
+            voxelCount -= 1
+            return true
+        }
+        chunks[chunk]?[key] = data
+        return false
+    }
+
+    /// Resets free-space evidence after the voxel was re-observed as surface.
+    mutating func registerConfirmation(at key: VoxelKey) {
+        let chunk = chunkKey(for: key)
+        guard var data = chunks[chunk]?[key] else { return }
+        data.registerConfirmation()
+        chunks[chunk]?[key] = data
+    }
+
     /// Chunks whose cached mesh is stale after the voxel at `key` changed:
     /// its own chunk, plus any face-adjacent chunk holding an occupied
     /// neighbor (that neighbor's face toward `key` may now be hidden).
@@ -158,12 +206,15 @@ struct VoxelGrid {
     }
 }
 
-/// Maps a unit slider `0...1` onto a voxel edge length, log-scaled so the
-/// interesting small sizes get most of the slider travel.
+/// Maps a unit slider `0...1` onto a voxel edge length, log-scaled.
+///
+/// The floor is deliberately chunky (10 cm): the LiDAR depth map is only
+/// 256×192 with centimeter-level noise, so small voxels expose the sensor
+/// (fuzzy multi-voxel-thick walls) instead of looking Minecraft-crisp.
 enum VoxelSizeMapping {
-    static let minimumSize: Float = 0.01
-    static let maximumSize: Float = 0.4
-    static let defaultSize: Float = 0.05
+    static let minimumSize: Float = 0.10
+    static let maximumSize: Float = 0.50
+    static let defaultSize: Float = 0.25
 
     static func size(sliderValue: Double) -> Float {
         let t = Float(min(max(sliderValue, 0), 1))

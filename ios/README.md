@@ -44,7 +44,7 @@ ios/
 | `follow-the-hum` | Follow the Hum | In-app; AirPods spatial hum hunt |
 | `snore-log` | Snore Log | In-app; mic buffer + snore clip logging |
 | `z-camera` | Z-Camera | In-app; depth-band live camera (near/far sliders) |
-| `voxel-world` | Voxel World | In-app; ARKit rebuilds the room as colored voxels |
+| `voxel-world` | Voxel World | In-app; ARKit rebuilds the room as Minecraft-style palette blocks |
 
 ### T9 Keyboard
 
@@ -86,20 +86,26 @@ UI but cannot stream depth.
 
 ### Voxel World
 
-ARKit world tracking rebuilds the space around you as colored voxels. Every few
-frames the LiDAR depth map (or, without LiDAR, ARKit's sparse tracked feature
-points) is unprojected into world space, quantized onto a world-aligned voxel
-grid, and each voxel is colored from the camera pixel that saw that point (a
-capped running average, so colors settle as a voxel is re-observed). Voxels
-persist as you move, so sweeping the phone gradually fills in the world. A
-log-scale slider dials the voxel edge from 1 cm to 40 cm (changing size clears
-and rescans), Freeze stops scanning so you can walk around what you built,
-Camera feed toggles the live passthrough behind the voxels, and Reset clears
-everything. Rendering is chunked SceneKit geometry with hidden interior faces
-culled and per-face shading baked into vertex colors. Needs camera permission
-(the existing `NSCameraUsageDescription` — no new Bundle ID, entitlement, or
-signing bootstrap) and works best on LiDAR devices (iPhone/iPad Pro). Simulator
-opens the UI but ARKit tracking is unavailable there.
+ARKit world tracking rebuilds the space around you as Minecraft-style blocks.
+Every few frames the LiDAR depth map (or, without LiDAR, ARKit's sparse
+tracked feature points) is unprojected into world space and quantized onto a
+world-aligned voxel grid. Each voxel keeps a capped running average of the
+camera pixels that saw it, and at mesh time that color snaps to a fixed
+Minecraft-style block palette — stylization, not fidelity, is the goal. The
+world is kept live two ways: re-observing a voxel refines its color, and a
+carve pass removes any voxel the camera can now see *through* (observed
+surface well behind it, several consecutive misses required), so moved objects
+and depth-noise floaters clean themselves up instead of leaving trails
+(LiDAR only). A log-scale slider dials the block edge from 10 cm to 50 cm —
+deliberately chunky, since the 256×192 depth map can't support crisp small
+voxels — and changing it clears and rescans. Freeze stops scanning so you can
+walk around what you built, Camera feed toggles the live passthrough, and
+Reset clears everything. Rendering is chunked SceneKit geometry with hidden
+interior faces culled and per-face shading baked into vertex colors. Needs
+camera permission (the existing `NSCameraUsageDescription` — no new Bundle ID,
+entitlement, or signing bootstrap) and works best on LiDAR devices
+(iPhone/iPad Pro). Simulator opens the UI but ARKit tracking is unavailable
+there.
 
 ## Adding an experiment
 

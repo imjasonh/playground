@@ -94,7 +94,9 @@ enum VoxelMesher {
                 if isOccupied(neighbor) { continue }
 
                 let base = UInt32(mesh.positions.count)
-                let color = SIMD4<Float>(data.color * face.shade, 1)
+                // Snap to the block palette here (not at sample time) so the
+                // stored running average can settle across palette boundaries.
+                let color = SIMD4<Float>(VoxelPalette.quantize(data.color) * face.shade, 1)
                 for corner in face.corners {
                     mesh.positions.append(origin + corner * voxelSize)
                     mesh.normals.append(face.normal)

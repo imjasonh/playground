@@ -55,6 +55,44 @@ enum VoxelProjection {
     }
 }
 
+/// Free-space carving: what does a fresh depth observation say about an
+/// existing voxel that projects onto that depth pixel?
+enum VoxelCarver {
+    enum Observation: Equatable {
+        /// The observed surface is at the voxel's depth — it still exists.
+        case confirmed
+        /// The camera saw well *past* the voxel: it floats in space the
+        /// camera can see through, so it accrues a removal miss.
+        case freeSpace
+        /// The voxel is occluded by something nearer, or the sample is
+        /// unusable — no evidence either way.
+        case unknown
+    }
+
+    /// Depth slack covering the voxel's own extent plus LiDAR noise; without
+    /// it, honest surface voxels would flicker in and out.
+    static func margin(voxelSize: Float) -> Float {
+        voxelSize + 0.05
+    }
+
+    static func classify(voxelDepth: Float, observedDepth: Float, voxelSize: Float) -> Observation {
+        guard
+            voxelDepth.isFinite, voxelDepth > 0,
+            observedDepth.isFinite, observedDepth > 0
+        else {
+            return .unknown
+        }
+        let margin = margin(voxelSize: voxelSize)
+        if observedDepth - voxelDepth > margin {
+            return .freeSpace
+        }
+        if voxelDepth - observedDepth > margin {
+            return .unknown // occluded
+        }
+        return .confirmed
+    }
+}
+
 /// Full-range BT.601 YCbCr → RGB, the encoding of ARKit's captured image
 /// (`420YpCbCr8BiPlanarFullRange`).
 enum VoxelColorConversion {

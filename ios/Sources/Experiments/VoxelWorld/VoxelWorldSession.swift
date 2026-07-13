@@ -322,6 +322,46 @@ final class VoxelWorldSession: NSObject, ObservableObject {
                     record(grid.addSample(worldPoint: world, color: color, maxVoxels: Self.maxVoxels))
                 }
             }
+
+            // Carve pass: any existing voxel the camera can now see *through*
+            // (observed surface well behind it) accrues a miss and is removed
+            // after a few consecutive misses. This is what lets moved objects
+            // and depth-noise floaters disappear instead of leaving trails.
+            let existingKeys = grid.chunks.values.flatMap { $0.keys }
+            for key in existingKeys {
+                let center = grid.center(of: key)
+                guard let projected = VoxelProjection.pixel(
+                    worldPoint: center,
+                    intrinsics: intrinsics,
+                    cameraTransform: cameraTransform
+                ) else { continue }
+
+                let depthX = Int((projected.pixel.x / scaleX).rounded(.down))
+                let depthY = Int((projected.pixel.y / scaleY).rounded(.down))
+                guard depthX >= 0, depthX < depthWidth, depthY >= 0, depthY < depthHeight else { continue }
+
+                if let confidenceBase {
+                    let confidence = confidenceBase[depthY * confidenceBytesPerRow + depthX]
+                    guard confidence >= UInt8(ARConfidenceLevel.medium.rawValue) else { continue }
+                }
+                let observed = (depthBaseRaw + depthY * depthBytesPerRow)
+                    .assumingMemoryBound(to: Float32.self)[depthX]
+
+                switch VoxelCarver.classify(
+                    voxelDepth: projected.depthMeters,
+                    observedDepth: observed,
+                    voxelSize: grid.voxelSize
+                ) {
+                case .freeSpace:
+                    if grid.registerMiss(at: key) {
+                        touchedStructural.formUnion(grid.affectedChunks(around: key))
+                    }
+                case .confirmed:
+                    grid.registerConfirmation(at: key)
+                case .unknown:
+                    break
+                }
+            }
         } else if let featurePoints {
             for point in featurePoints.prefix(2048) {
                 guard let projected = VoxelProjection.pixel(

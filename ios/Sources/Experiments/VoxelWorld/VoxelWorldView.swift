@@ -140,7 +140,7 @@ struct VoxelWorldView: View {
             }
             .font(.subheadline)
 
-            Text("Voxels are colored from the camera pixel that saw that point in space. Changing the voxel size clears the world; Freeze stops scanning so you can walk around what you built. Best with LiDAR (iPhone/iPad Pro); without it, sparse tracked feature points are voxelized instead.")
+            Text("Blocks are colored from the camera, snapped to a Minecraft-style palette. Space the camera sees through is carved away, so moved things update instead of leaving trails (LiDAR only). Changing the block size clears the world; Freeze stops scanning so you can walk around what you built. Best with LiDAR (iPhone/iPad Pro); without it, sparse tracked feature points are voxelized instead.")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
         }

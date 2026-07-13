@@ -115,6 +115,176 @@ final class VoxelGridTests: XCTestCase {
         XCTAssertEqual(grid.voxelCount, 0)
         XCTAssertFalse(grid.isOccupied(VoxelKey(x: 0, y: 0, z: 0)))
     }
+
+    func testRepeatedMissesCarveVoxelAway() {
+        var grid = VoxelGrid(voxelSize: 0.1)
+        let key = VoxelKey(x: 0, y: 0, z: 0)
+        _ = grid.addSample(worldPoint: SIMD3(0.05, 0.05, 0.05), color: SIMD3(1, 1, 1), maxVoxels: 10)
+
+        for _ in 1..<VoxelData.removalMissThreshold {
+            XCTAssertFalse(grid.registerMiss(at: key))
+            XCTAssertTrue(grid.isOccupied(key))
+        }
+        XCTAssertTrue(grid.registerMiss(at: key))
+        XCTAssertFalse(grid.isOccupied(key))
+        XCTAssertEqual(grid.voxelCount, 0)
+    }
+
+    func testConfirmationResetsMisses() {
+        var grid = VoxelGrid(voxelSize: 0.1)
+        let key = VoxelKey(x: 0, y: 0, z: 0)
+        _ = grid.addSample(worldPoint: SIMD3(0.05, 0.05, 0.05), color: SIMD3(1, 1, 1), maxVoxels: 10)
+
+        for _ in 1..<VoxelData.removalMissThreshold {
+            XCTAssertFalse(grid.registerMiss(at: key))
+        }
+        grid.registerConfirmation(at: key)
+        // The counter restarted, so the same number of misses again still
+        // shouldn't remove it until the threshold is re-reached.
+        for _ in 1..<VoxelData.removalMissThreshold {
+            XCTAssertFalse(grid.registerMiss(at: key))
+        }
+        XCTAssertTrue(grid.isOccupied(key))
+    }
+
+    func testAddSampleResetsMisses() {
+        var grid = VoxelGrid(voxelSize: 0.1)
+        let key = VoxelKey(x: 0, y: 0, z: 0)
+        let point = SIMD3<Float>(0.05, 0.05, 0.05)
+        _ = grid.addSample(worldPoint: point, color: SIMD3(1, 1, 1), maxVoxels: 10)
+
+        for _ in 1..<VoxelData.removalMissThreshold {
+            XCTAssertFalse(grid.registerMiss(at: key))
+        }
+        _ = grid.addSample(worldPoint: point, color: SIMD3(1, 1, 1), maxVoxels: 10)
+        XCTAssertEqual(grid.data(for: key)?.missCount, 0)
+    }
+
+    func testCarvingFreesBudgetForNewVoxels() {
+        var grid = VoxelGrid(voxelSize: 0.1)
+        let key = VoxelKey(x: 0, y: 0, z: 0)
+        _ = grid.addSample(worldPoint: SIMD3(0.05, 0, 0), color: SIMD3(1, 1, 1), maxVoxels: 1)
+
+        for _ in 0..<VoxelData.removalMissThreshold {
+            _ = grid.registerMiss(at: key)
+        }
+        XCTAssertEqual(grid.voxelCount, 0)
+        XCTAssertEqual(
+            grid.addSample(worldPoint: SIMD3(0.95, 0, 0), color: SIMD3(1, 1, 1), maxVoxels: 1),
+            .added(VoxelKey(x: 9, y: 0, z: 0))
+        )
+    }
+
+    func testMissOnMissingVoxelIsHarmless() {
+        var grid = VoxelGrid(voxelSize: 0.1)
+        XCTAssertFalse(grid.registerMiss(at: VoxelKey(x: 5, y: 5, z: 5)))
+        XCTAssertEqual(grid.voxelCount, 0)
+    }
+}
+
+final class VoxelCarverTests: XCTestCase {
+    private let voxelSize: Float = 0.25
+
+    func testSurfaceAtVoxelDepthConfirms() {
+        XCTAssertEqual(
+            VoxelCarver.classify(voxelDepth: 2.0, observedDepth: 2.1, voxelSize: voxelSize),
+            .confirmed
+        )
+        XCTAssertEqual(
+            VoxelCarver.classify(voxelDepth: 2.0, observedDepth: 1.9, voxelSize: voxelSize),
+            .confirmed
+        )
+    }
+
+    func testSeeingWellPastVoxelIsFreeSpace() {
+        XCTAssertEqual(
+            VoxelCarver.classify(voxelDepth: 1.0, observedDepth: 3.0, voxelSize: voxelSize),
+            .freeSpace
+        )
+    }
+
+    func testOccludedVoxelIsUnknown() {
+        // Something nearer blocks the view — no evidence about the voxel.
+        XCTAssertEqual(
+            VoxelCarver.classify(voxelDepth: 3.0, observedDepth: 1.0, voxelSize: voxelSize),
+            .unknown
+        )
+    }
+
+    func testMarginScalesWithVoxelSize() {
+        // Just inside the margin → confirmed; just past it → free space.
+        let margin = VoxelCarver.margin(voxelSize: voxelSize)
+        XCTAssertEqual(
+            VoxelCarver.classify(
+                voxelDepth: 1.0,
+                observedDepth: 1.0 + margin - 0.01,
+                voxelSize: voxelSize
+            ),
+            .confirmed
+        )
+        XCTAssertEqual(
+            VoxelCarver.classify(
+                voxelDepth: 1.0,
+                observedDepth: 1.0 + margin + 0.01,
+                voxelSize: voxelSize
+            ),
+            .freeSpace
+        )
+    }
+
+    func testInvalidDepthsAreUnknown() {
+        XCTAssertEqual(
+            VoxelCarver.classify(voxelDepth: 1.0, observedDepth: .nan, voxelSize: voxelSize),
+            .unknown
+        )
+        XCTAssertEqual(
+            VoxelCarver.classify(voxelDepth: 1.0, observedDepth: 0, voxelSize: voxelSize),
+            .unknown
+        )
+        XCTAssertEqual(
+            VoxelCarver.classify(voxelDepth: -1, observedDepth: 2, voxelSize: voxelSize),
+            .unknown
+        )
+    }
+}
+
+final class VoxelPaletteTests: XCTestCase {
+    func testPaletteColorsMapToThemselves() {
+        for color in VoxelPalette.colors {
+            XCTAssertEqual(VoxelPalette.quantize(color), color)
+        }
+    }
+
+    func testQuantizeAlwaysReturnsPaletteMember() {
+        let inputs: [SIMD3<Float>] = [
+            SIMD3(0.31, 0.42, 0.53),
+            SIMD3(0, 0, 0),
+            SIMD3(1, 1, 1),
+            SIMD3(0.99, 0.01, 0.5),
+        ]
+        for input in inputs {
+            let output = VoxelPalette.quantize(input)
+            XCTAssertTrue(VoxelPalette.colors.contains(output))
+        }
+    }
+
+    func testGreenishInputSnapsToGreenishBlock() {
+        let output = VoxelPalette.quantize(SIMD3(0.35, 0.6, 0.25))
+        XCTAssertGreaterThan(output.y, output.x)
+        XCTAssertGreaterThan(output.y, output.z)
+    }
+
+    func testNearBlackSnapsToBlack() {
+        let output = VoxelPalette.quantize(SIMD3(0.05, 0.06, 0.08))
+        XCTAssertEqual(output, SIMD3(0.11, 0.11, 0.13))
+    }
+
+    func testDistanceWeightsFavorGreenAccuracy() {
+        let base = SIMD3<Float>(0.5, 0.5, 0.5)
+        let greenOff = VoxelPalette.distanceSquared(base, SIMD3(0.5, 0.6, 0.5))
+        let blueOff = VoxelPalette.distanceSquared(base, SIMD3(0.5, 0.5, 0.6))
+        XCTAssertGreaterThan(greenOff, blueOff)
+    }
 }
 
 final class VoxelSizeMappingTests: XCTestCase {
@@ -142,10 +312,15 @@ final class VoxelSizeMappingTests: XCTestCase {
     }
 
     func testLabels() {
-        XCTAssertEqual(VoxelSizeMapping.label(for: 0.01), "1 cm")
-        XCTAssertEqual(VoxelSizeMapping.label(for: 0.05), "5 cm")
-        XCTAssertEqual(VoxelSizeMapping.label(for: 0.4), "40 cm")
+        XCTAssertEqual(VoxelSizeMapping.label(for: 0.1), "10 cm")
+        XCTAssertEqual(VoxelSizeMapping.label(for: 0.25), "25 cm")
+        XCTAssertEqual(VoxelSizeMapping.label(for: 0.5), "50 cm")
         XCTAssertEqual(VoxelSizeMapping.label(for: 0.123), "12.3 cm")
+    }
+
+    func testFloorIsChunky() {
+        // The sensor can't support crisp small voxels; keep the floor ≥ 10 cm.
+        XCTAssertGreaterThanOrEqual(VoxelSizeMapping.minimumSize, 0.10)
     }
 }
 
