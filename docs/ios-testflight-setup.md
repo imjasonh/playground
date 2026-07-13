@@ -305,8 +305,10 @@ bundle exec fastlane signing_bootstrap
 
 Either way, match creates a **distribution certificate** and **App Store
 provisioning profiles** named like
-`match AppStore io.github.imjasonh.playground` and
-`match AppStore io.github.imjasonh.playground.t9keyboard`
+`match AppStore io.github.imjasonh.playground`,
+`match AppStore io.github.imjasonh.playground.t9keyboard`,
+`match AppStore io.github.imjasonh.playground.ridemonitorwidget`, and
+`match AppStore io.github.imjasonh.playground.watch`
 (one profile per App ID in `ios/fastlane/Matchfile`) and stores them in the
 `ios-signing` repo. Future TestFlight builds read them read-only. Re-run
 bootstrap when the certificate expires or you add another **app extension**
