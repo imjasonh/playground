@@ -39,6 +39,8 @@ experiments don't bit-rot.
   data collected by an hourly scrape workflow.
 - **[`web-push-demo/`](web-push-demo/)** — a browser front-end for the
   `web-push` Worker: subscribe/unsubscribe and send notifications end to end.
+- **[`rhomcraft/`](rhomcraft/)** — a Minecraft-like sandbox whose voxels are
+  space-filling rhombic dodecahedrons on an FCC lattice.
 
 ## Tools
 

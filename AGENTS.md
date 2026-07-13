@@ -25,6 +25,8 @@ playground/
 ├── hello/                 # example static app (HTML only)
 ├── ios/                   # the single "Playground" iOS app (SwiftUI; TestFlight CD)
 ├── kanoodle/              # example app with tests (JS + Jest + Playwright)
+├── nypd-choppers/         # NYPD helicopter flight paths from ADS-B (JS + Node tests)
+├── rhomcraft/             # rhombic dodecahedron voxel sandbox (JS + Three.js + Node tests)
 ├── ocidb/                 # Go CLI (Go module + Go tests)
 ├── web-push/              # Rust Cloudflare Worker (Cargo + tests; not a Pages app)
 └── web-push-demo/         # static browser front-end for the web-push Worker
@@ -39,6 +41,7 @@ its root. This is the same rule used by deploy and preview workflows.
 |------|--------------|-------|
 | `artillery/` | yes | Turn-based artillery duel; JS modules, npm scripts, tests |
 | `cold-climb/` | yes | Touch-first arcade game; JS modules, npm scripts, tests |
+| `rhomcraft/` | yes | Rhombic dodecahedron voxel sandbox; JS modules + Three.js CDN |
 | `cors-proxy-demo/` | yes | Static front-end for `cors-proxy`; HTML/JS, no build or tests |
 | `git/` | yes | In-browser read-only git client; JS modules, npm scripts, tests |
 | `hello/` | yes | Static HTML; no build or tests |
@@ -437,6 +440,7 @@ bundle exec fastlane test
 | `hello/` | Static demo | none |
 | `kanoodle/` | Kanoodle puzzle game (5×11 board, 12 pieces) | Jest + Playwright |
 | `nypd-choppers/` | NYPD helicopter daily flight paths, hours, and fuel-cost estimates from ADS-B | Node test runner |
+| `rhomcraft/` | Minecraft-like world with rhombic dodecahedron voxels (FCC lattice) | Node test runner |
 | `web-push-demo/` | Browser front-end for `web-push` (subscribe/unsubscribe/notify) | none (static) |
 
 > **`nypd-choppers` has an intentionally non-standard lifecycle.** Because free

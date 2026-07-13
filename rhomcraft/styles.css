@@ -1,0 +1,409 @@
+:root {
+  --ink: #14262c;
+  --fog: #9fd0e8;
+  --panel: rgba(12, 28, 34, 0.72);
+  --panel-border: rgba(220, 240, 245, 0.14);
+  --accent: #e8a045;
+  --accent-deep: #c47a22;
+  --mint: #7fd4c2;
+  --text: #eef6f8;
+  --muted: #a8c0c8;
+  --font-display: "Syne", sans-serif;
+  --font-body: "IBM Plex Sans", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #1a3a44;
+  color: var(--text);
+  font-family: var(--font-body);
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+#app {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+#viewport {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+#hud {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+}
+
+.brand-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: max(0.85rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) 0
+    max(1rem, env(safe-area-inset-left));
+}
+
+.brand {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  backdrop-filter: blur(10px);
+  padding: 0.55rem 0.85rem;
+  border-radius: 4px;
+}
+
+.brand-mark {
+  width: 1.55rem;
+  height: 1.55rem;
+  background: linear-gradient(135deg, var(--mint), #2a6f78 45%, var(--accent));
+  clip-path: polygon(50% 0%, 90% 25%, 90% 75%, 50% 100%, 10% 75%, 10% 25%);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.15) inset;
+}
+
+.brand strong {
+  display: block;
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  font-size: 1.05rem;
+  line-height: 1.1;
+}
+
+.tagline {
+  display: block;
+  color: var(--muted);
+  font-size: 0.72rem;
+  margin-top: 0.15rem;
+}
+
+.meters {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.78rem;
+  color: var(--muted);
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  backdrop-filter: blur(10px);
+  padding: 0.45rem 0.65rem;
+  border-radius: 4px;
+}
+
+.crosshair {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  transform: translate(-50%, -50%);
+}
+
+.crosshair i,
+.crosshair::before,
+.crosshair::after {
+  content: "";
+  position: absolute;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+
+.crosshair::before {
+  left: 50%;
+  top: 0;
+  width: 2px;
+  height: 100%;
+  transform: translateX(-50%);
+}
+
+.crosshair::after {
+  top: 50%;
+  left: 0;
+  height: 2px;
+  width: 100%;
+  transform: translateY(-50%);
+}
+
+.crosshair i {
+  display: none;
+}
+
+.target-chip {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 1.6rem);
+  transform: translateX(-50%);
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  backdrop-filter: blur(8px);
+  padding: 0.35rem 0.7rem;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  text-align: center;
+  min-width: 10rem;
+}
+
+.target-chip .label {
+  display: block;
+  color: var(--muted);
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hint {
+  position: absolute;
+  left: 50%;
+  bottom: 6.5rem;
+  transform: translateX(-50%);
+  margin: 0;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.85rem;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.hotbar {
+  pointer-events: auto;
+  position: absolute;
+  left: 50%;
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  display: flex;
+  gap: 0.35rem;
+  padding: 0.4rem;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  backdrop-filter: blur(12px);
+  border-radius: 6px;
+}
+
+.slot {
+  position: relative;
+  width: 3rem;
+  height: 3rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 4px;
+  padding: 0;
+  cursor: pointer;
+}
+
+.slot.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.swatch {
+  display: block;
+  width: 100%;
+  height: 100%;
+  clip-path: polygon(50% 6%, 88% 28%, 88% 72%, 50% 94%, 12% 72%, 12% 28%);
+  transform: scale(0.72);
+}
+
+.slot-key {
+  position: absolute;
+  left: 0.2rem;
+  top: 0.1rem;
+  font-size: 0.65rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+#overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(ellipse at 30% 20%, rgba(127, 212, 194, 0.22), transparent 45%),
+    radial-gradient(ellipse at 80% 70%, rgba(232, 160, 69, 0.18), transparent 40%),
+    linear-gradient(160deg, rgba(10, 28, 34, 0.82), rgba(26, 58, 68, 0.88));
+  padding: 1.25rem;
+}
+
+#overlay[hidden] {
+  display: none;
+}
+
+.overlay-card {
+  width: min(34rem, 100%);
+  background: rgba(12, 28, 34, 0.9);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  padding: 1.75rem 1.6rem 1.5rem;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+}
+
+.eyebrow {
+  margin: 0 0 0.4rem;
+  color: var(--mint);
+  font-size: 0.78rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.overlay-card h1 {
+  margin: 0 0 0.75rem;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(2.4rem, 8vw, 3.4rem);
+  letter-spacing: -0.02em;
+  line-height: 0.95;
+  background: linear-gradient(120deg, #eef6f8 20%, var(--mint) 55%, var(--accent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.overlay-card p {
+  margin: 0 0 1rem;
+  color: var(--muted);
+  line-height: 1.55;
+  font-size: 0.98rem;
+}
+
+.overlay-card em {
+  color: var(--text);
+  font-style: normal;
+  font-weight: 600;
+}
+
+.controls-list {
+  margin: 0 0 1.25rem;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.45rem;
+  color: var(--text);
+  font-size: 0.88rem;
+}
+
+kbd {
+  display: inline-block;
+  padding: 0.1rem 0.35rem;
+  margin: 0 0.1rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.06);
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+}
+
+.start-btn {
+  width: 100%;
+  border: none;
+  border-radius: 4px;
+  padding: 0.85rem 1rem;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: 0.03em;
+  color: #1a1208;
+  background: linear-gradient(180deg, #f0b35a, var(--accent-deep));
+  cursor: pointer;
+}
+
+.start-btn:hover {
+  filter: brightness(1.05);
+}
+
+#touch-controls {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+}
+
+#touch-controls[hidden] {
+  display: none;
+}
+
+.stick {
+  pointer-events: auto;
+  position: absolute;
+  left: max(1rem, env(safe-area-inset-left));
+  bottom: max(5.5rem, env(safe-area-inset-bottom));
+  width: 7.2rem;
+  height: 7.2rem;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.28);
+  touch-action: none;
+}
+
+.stick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 2.4rem;
+  height: 2.4rem;
+  margin: -1.2rem 0 0 -1.2rem;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.touch-actions {
+  pointer-events: auto;
+  position: absolute;
+  right: max(1rem, env(safe-area-inset-right));
+  bottom: max(5.5rem, env(safe-area-inset-bottom));
+  display: grid;
+  gap: 0.45rem;
+}
+
+.touch-btn {
+  min-width: 5.2rem;
+  padding: 0.85rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(12, 28, 34, 0.7);
+  color: var(--text);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.touch-btn.accent {
+  background: rgba(232, 160, 69, 0.85);
+  color: #1a1208;
+  border-color: transparent;
+}
+
+@media (pointer: fine) {
+  #touch-controls {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .slot {
+    width: 2.55rem;
+    height: 2.55rem;
+  }
+
+  .tagline {
+    display: none;
+  }
+
+  .hint {
+    bottom: 5.5rem;
+    font-size: 0.75rem;
+  }
+}
