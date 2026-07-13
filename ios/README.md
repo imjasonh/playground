@@ -52,8 +52,13 @@ ios/
 
 ### Ride Monitor
 
-In-app jolt/crash detector with GPS track logging. While a ride is active it
-also:
+In-app jolt/crash detector with GPS track logging. Core Motion only runs while
+the process is awake, so recording **requires Always location** plus background
+location updates to keep the app alive with the screen off. Older builds could
+start under When-In-Use, which suspended the process on lock and produced
+multi-minute sensing holes; the app now refuses to start without Always, holds
+a background activity session on iOS 17+, and auto-ends if sensing is silent
+for ~90s. While a ride is active it also:
 
 1. **Live Activity** (`io.github.imjasonh.playground.ridemonitorwidget`) —
    Lock Screen / Dynamic Island shows duration, distance, current speed, and a

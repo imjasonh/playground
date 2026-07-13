@@ -61,10 +61,17 @@ struct RideMonitorView: View {
             Text("A hard impact was followed by stillness. If you're fine, dismiss this.")
         }
         .onChange(of: scenePhase) { phase in
-            guard phase == .active else { return }
-            // Live Activity.request only works in the foreground; retry any
-            // start that was deferred while location was granted in Settings.
-            monitor.handleSceneBecameActive()
+            switch phase {
+            case .active:
+                // Live Activity.request only works in the foreground; retry any
+                // start that was deferred while location was granted in Settings.
+                monitor.handleSceneBecameActive()
+            case .background:
+                // Re-assert background location keep-alive before we are suspended.
+                monitor.handleSceneEnteredBackground()
+            default:
+                break
+            }
         }
     }
 
@@ -152,7 +159,7 @@ struct RideMonitorView: View {
     }
 
     private var disclaimer: some View {
-        Text("Uses motion + location and keeps recording in the background while a ride is active. Grant “Always” location when asked so accelerometer logging continues with the screen off. An active ride also starts a Live Activity (Lock Screen / Dynamic Island) and updates the Ride Monitor Watch app. This is a toy detector, not a safety or emergency service — don't rely on it in a real crash.")
+        Text("Requires “Always” location so Core Motion keeps sampling with the screen off. Without it, iOS suspends the app and the ride grows a multi-minute hole. An active ride also starts a Live Activity (Lock Screen / Dynamic Island) and updates the Ride Monitor Watch app. If sensing pauses for ~90s, the ride ends at the last good sample. This is a toy detector, not a safety or emergency service — don't rely on it in a real crash.")
             .font(.caption2)
             .foregroundStyle(.secondary)
             .multilineTextAlignment(.center)
