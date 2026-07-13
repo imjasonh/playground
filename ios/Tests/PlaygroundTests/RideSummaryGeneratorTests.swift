@@ -48,7 +48,7 @@ final class RideSummaryGeneratorTests: XCTestCase {
 
     func testHeuristicFlagsSmoothRide() {
         let text = RideSummaryGenerator.heuristicSummary(
-            for: ride(durationSeconds: 900, distanceMeters: 8000, joltCount: 1, peakG: 0.8)
+            for: ride(durationSeconds: 900, distanceMeters: 8000, peakG: 0.8, joltCount: 1)
         )
         XCTAssertTrue(text.lowercased().contains("smooth"), text)
     }
