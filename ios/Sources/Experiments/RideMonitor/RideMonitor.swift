@@ -7,9 +7,10 @@ import UIKit
 #endif
 
 /// Orchestrates a ride session: high-rate motion sampling for jolt/crash
-/// detection, a background location session that keeps the app alive with the
-/// screen locked, and full logging (location track, per-second motion summaries,
-/// barometric altitude, and events) which is saved to disk on stop.
+/// detection, a background location session (requires “Always” location
+/// permission) that keeps the app alive with the screen locked, and full logging
+/// (location track, per-second motion summaries, barometric altitude, and events)
+/// which is saved to disk on stop.
 ///
 /// Core Motion updates are delivered on `OperationQueue.main` and Core Location
 /// delegate callbacks arrive on the (main) thread this object is created on, so
@@ -40,6 +41,8 @@ final class RideMonitor: NSObject, ObservableObject {
     private var timer: Timer?
     private var lastLocation: CLLocation?
     private var crashCount = 0
+    /// Set when the user taps Start until recording begins or is denied.
+    private var wantsRecording = false
 
     // Accumulated logs for the current ride.
     private var track: [LocationSample] = []
@@ -64,8 +67,30 @@ final class RideMonitor: NSObject, ObservableObject {
             return
         }
 
-        location.requestWhenInUseAuthorization()
+        wantsRecording = true
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+
+        switch location.authorizationStatus {
+        case .notDetermined:
+            statusMessage = "Waiting for location permission…"
+            location.requestAlwaysAuthorization()
+        case .authorizedAlways:
+            beginRecording(backgroundCapable: true)
+        case .authorizedWhenInUse:
+            // Offer the upgrade to Always so motion keeps sampling with the screen off.
+            location.requestAlwaysAuthorization()
+            beginRecording(backgroundCapable: false)
+        case .denied, .restricted:
+            wantsRecording = false
+            statusMessage = "Location permission is required to record rides."
+        @unknown default:
+            wantsRecording = false
+            statusMessage = "Location status unknown."
+        }
+    }
+
+    private func beginRecording(backgroundCapable: Bool) {
+        guard wantsRecording, !isRunning else { return }
 
         classifier = RideEventClassifier()
         aggregator = MotionAggregator()
@@ -84,10 +109,8 @@ final class RideMonitor: NSObject, ObservableObject {
         startUptime = ProcessInfo.processInfo.systemUptime
         startDate = Date()
         isRunning = true
-        statusMessage = "Recording ride…"
 
-        // Keep the app alive in the background via an active location session.
-        location.allowsBackgroundLocationUpdates = true
+        configureBackgroundLocation(enabled: backgroundCapable)
         location.pausesLocationUpdatesAutomatically = false
         location.startUpdatingLocation()
 
@@ -114,13 +137,30 @@ final class RideMonitor: NSObject, ObservableObject {
         }
     }
 
+    private func configureBackgroundLocation(enabled: Bool) {
+        if enabled {
+            // Keeps the process alive so Core Motion can keep sampling with the screen off.
+            location.allowsBackgroundLocationUpdates = true
+            location.showsBackgroundLocationIndicator = true
+            statusMessage = "Recording ride…"
+        } else {
+            location.allowsBackgroundLocationUpdates = false
+            location.showsBackgroundLocationIndicator = false
+            statusMessage = """
+            Recording ride… Choose “Always” for location so logging continues with the screen off.
+            """
+        }
+    }
+
     func stop() {
         guard isRunning else { return }
+        wantsRecording = false
         isRunning = false
         motion.stopDeviceMotionUpdates()
         altimeter.stopRelativeAltitudeUpdates()
         location.stopUpdatingLocation()
         location.allowsBackgroundLocationUpdates = false
+        location.showsBackgroundLocationIndicator = false
         timer?.invalidate()
         timer = nil
 
@@ -200,6 +240,28 @@ final class RideMonitor: NSObject, ObservableObject {
 }
 
 extension RideMonitor: CLLocationManagerDelegate {
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        guard wantsRecording else { return }
+
+        switch manager.authorizationStatus {
+        case .authorizedAlways:
+            if isRunning {
+                configureBackgroundLocation(enabled: true)
+            } else {
+                beginRecording(backgroundCapable: true)
+            }
+        case .authorizedWhenInUse:
+            if !isRunning {
+                beginRecording(backgroundCapable: false)
+            }
+        case .denied, .restricted:
+            wantsRecording = false
+            statusMessage = "Location permission is required to record rides."
+        default:
+            break
+        }
+    }
+
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         for loc in locations {
             if let previous = lastLocation {
