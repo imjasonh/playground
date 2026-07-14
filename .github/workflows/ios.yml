@@ -9,13 +9,19 @@ concurrency:
   group: ios-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   # Cheap Linux job: figure out whether any iOS app changed before paying for a
   # macOS runner. Mirrors the discovery used by the Linux test workflow.
+  # Also detects signing-bootstrap need and labels PRs with needs-ios-bootstrap.
   discover:
     runs-on: ubuntu-latest
     outputs:
       ios: ${{ steps.discover.outputs.ios }}
+      needs_bootstrap: ${{ steps.resolve.outputs.needed }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -29,6 +35,84 @@ jobs:
           BEFORE_SHA: ${{ github.event.before }}
           HEAD_SHA: ${{ github.sha }}
         run: bash .github/scripts/discover-changed-apps.sh
+
+      - name: Detect signing bootstrap need
+        id: bootstrap
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            git fetch --no-tags origin "$BASE_REF"
+            range="origin/${BASE_REF}...HEAD"
+          elif [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            # First push: no prior commit to diff. Skip auto-bootstrap; the
+            # one-time manual workflow still covers greenfield setup.
+            echo "No prior commit; assuming bootstrap not needed for this push."
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+            echo "false"
+            exit 0
+          else
+            range="${BEFORE_SHA}...${HEAD_SHA}"
+          fi
+          needed=$(
+            GITHUB_OUTPUT= bash .github/scripts/detect-ios-bootstrap-needed.sh --diff "$range"
+          )
+          echo "needed=${needed}" >> "$GITHUB_OUTPUT"
+          echo "needs-ios-bootstrap (from diff): ${needed}"
+
+      - name: Honor needs-ios-bootstrap label on merged PRs
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        id: label_override
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEEDED: ${{ steps.bootstrap.outputs.needed }}
+        run: |
+          set -euo pipefail
+          if [ "$NEEDED" = "true" ]; then
+            echo "Diff already requires bootstrap; label check unnecessary."
+            exit 0
+          fi
+          # Associated PRs for this commit (merge commits and squash merges).
+          labeled=$(
+            gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/pulls" \
+              -H "Accept: application/vnd.github.groot-preview+json" \
+              --jq '[.[].labels[].name] | index("needs-ios-bootstrap") != null'
+          )
+          if [ "$labeled" = "true" ]; then
+            echo "Merged PR carries needs-ios-bootstrap; forcing bootstrap."
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Resolve bootstrap flag
+        id: resolve
+        env:
+          FROM_DIFF: ${{ steps.bootstrap.outputs.needed }}
+          FROM_LABEL: ${{ steps.label_override.outputs.needed }}
+        run: |
+          set -euo pipefail
+          if [ "${FROM_DIFF}" = "true" ] || [ "${FROM_LABEL:-false}" = "true" ]; then
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Final needs_bootstrap=${FROM_DIFF}/${FROM_LABEL:-false}"
+
+      - name: Sync needs-ios-bootstrap PR label
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          NEEDED: ${{ steps.bootstrap.outputs.needed }}
+        run: |
+          bash .github/scripts/sync-ios-bootstrap-label.sh \
+            "${{ github.event.pull_request.number }}" \
+            "$NEEDED"
 
   ios:
     needs: discover
@@ -51,6 +135,7 @@ jobs:
         id: mode
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          NEEDS_BOOTSTRAP: ${{ needs.discover.outputs.needs_bootstrap }}
         run: |
           if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ] && [ -n "$ASC_KEY_ID" ]; then
             echo "deploy=true" >> "$GITHUB_OUTPUT"
@@ -60,11 +145,21 @@ jobs:
           if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ] && [ -z "$ASC_KEY_ID" ]; then
             echo "::warning title=TestFlight upload skipped::iOS signing secrets are not configured; ran tests only. See docs/ios-testflight-design.md."
           fi
+          # Re-bootstrap only when shipping to TestFlight and the change (or
+          # merged PR label) says signing assets need a refresh.
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ] \
+             && [ -n "$ASC_KEY_ID" ] && [ "$NEEDS_BOOTSTRAP" = "true" ]; then
+            echo "bootstrap=true" >> "$GITHUB_OUTPUT"
+            echo "Will re-run signing_bootstrap before TestFlight upload."
+          else
+            echo "bootstrap=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Test and (on main) ship changed iOS apps
         env:
           IOS_APPS: ${{ needs.discover.outputs.ios }}
           DEPLOY: ${{ steps.mode.outputs.deploy }}
+          BOOTSTRAP: ${{ steps.mode.outputs.bootstrap }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}

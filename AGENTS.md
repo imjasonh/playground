@@ -120,8 +120,8 @@ discovery scripts.
 | `preview.yml` | pull request opened/sync | When a browser app changed: deploys under `/preview/pr-<N>/` and comments the URL; otherwise no-ops |
 | `cleanup.yml` | pull request closed | Removes that PR's preview directory from `gh-pages` and refreshes the root index |
 | `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps in one job |
-| `ios.yml` | push to `main`, pull requests | Tests changed iOS apps on macOS; on `main`, delivers them to TestFlight |
-| `ios-signing-bootstrap.yml` | manual (`workflow_dispatch`) | One-time: creates & stores an iOS app's signing certificate/profile in the `match` repo |
+| `ios.yml` | push to `main`, pull requests | Tests changed iOS apps on macOS; on `main`, delivers them to TestFlight. Labels PRs that need signing re-bootstrap with `needs-ios-bootstrap`, and on merge re-runs bootstrap before upload |
+| `ios-signing-bootstrap.yml` | manual (`workflow_dispatch`) | One-time / recovery: creates & stores an iOS app's signing certificate/profile in the `match` repo (also auto-invoked from `ios.yml` when a merge needs it) |
 | `deps.yaml` | daily at 00:00 UTC, manual | Updates every testable browser app, Go app, and Rust app; pushes passing updates to `main`, otherwise opens a PR |
 | `nypd-choppers-scrape.yml` | hourly, manual | **App-specific:** fetches NYPD helicopter full-day ADS-B traces and merges per-day JSON to `gh-pages` under `nypd-choppers/data/`. Not generalized; shares the `gh-pages-publish` concurrency group with deploy/preview/cleanup |
 
@@ -202,7 +202,9 @@ spins up a `macos-latest` job — so browser/Go/Rust-only PRs never pay for macO
 minutes. When `ios/` changed, CI runs XcodeGen → `bundle exec fastlane test`
 (unit + UI tests on a Simulator; no signing needed). On push to `main` with
 Apple signing secrets present, it additionally runs `fastlane beta` to upload to
-TestFlight. Run discovery locally with:
+TestFlight — and if the change (or a `needs-ios-bootstrap` PR label) needs
+refreshed signing assets, it runs `fastlane signing_bootstrap` first. Run
+discovery locally with:
 
 ```bash
 bash .github/scripts/discover-ios-apps.sh --all

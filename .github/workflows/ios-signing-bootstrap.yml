@@ -5,6 +5,11 @@ name: iOS signing bootstrap
 # repo — so you don't need a Mac locally. Run it from the Actions tab once all
 # the signing secrets are set (see docs/ios-testflight-setup.md). After it
 # succeeds, pushes to main can ship to TestFlight.
+#
+# Day-to-day re-bootstrap (new extension Bundle ID / App ID capability) is
+# handled automatically: PRs get the `needs-ios-bootstrap` label, and `ios.yml`
+# on main runs `signing_bootstrap` before TestFlight when that applies. Use this
+# workflow for greenfield setup, expired certs, or a forced refresh.
 
 on:
   workflow_dispatch:

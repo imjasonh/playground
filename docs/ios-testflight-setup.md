@@ -311,8 +311,10 @@ provisioning profiles** named like
 `match AppStore io.github.imjasonh.playground.watch`
 (one profile per App ID in `ios/fastlane/Matchfile`) and stores them in the
 `ios-signing` repo. Future TestFlight builds read them read-only. Re-run
-bootstrap when the certificate expires or you add another **app extension**
-Bundle ID — not when you add in-app experiments.
+bootstrap when the certificate expires. Adding another **app extension** Bundle
+ID (or a new App ID capability) is usually automatic: CI labels the PR
+`needs-ios-bootstrap` and re-runs bootstrap on merge to `main` before
+TestFlight — not when you add in-app experiments.
 
 ---
 
@@ -343,8 +345,10 @@ So you actually receive the build.
 1. **Merge this PR to `main`** (the iOS workflow must be on `main` for
    push-to-main delivery), or push any change under `ios/` to `main`.
 2. Go to the repo's **Actions** tab → the **iOS** workflow run.
-   - The `discover` job detects the changed iOS app.
-   - The `ios` job (on macOS) generates the project, runs tests, and — because
+   - The `discover` job detects the changed iOS app (and whether signing
+     re-bootstrap is needed).
+   - The `ios` job (on macOS) generates the project, optionally re-runs
+     `signing_bootstrap` when the change needs it, runs tests, and — because
      it's a push to `main` **with** the secrets present — runs `fastlane beta`.
 3. In **App Store Connect → your app → TestFlight**, the new build appears with
    status **Processing** for a few minutes, then becomes available to your
@@ -361,7 +365,8 @@ So you actually receive the build.
   profile name must be `match AppStore <bundle-id>` for the host app,
   `…t9keyboard`, `…ridemonitorwidget`, and `…watch` (see `ios/fastlane/Matchfile`).
   Re-run the **iOS signing bootstrap** workflow (Step 9) if you added an
-  extension and the match repo does not yet contain its profile, and confirm
+  extension and the match repo does not yet contain its profile (or rely on the
+  automatic `needs-ios-bootstrap` path on merge), and confirm
   `APPLE_TEAM_ID` is correct.
 - **`Authentication credentials are missing or invalid` from Apple:** the API
   key is wrong or lacks permission. Confirm `ASC_KEY_ID` / `ASC_ISSUER_ID`, that

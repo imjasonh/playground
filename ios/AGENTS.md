@@ -62,13 +62,20 @@ day-to-day experiment work does not touch signing.
 
 ### PR requirement when bootstrap is needed
 
-If a change **does** require re-running **iOS signing bootstrap** (new extension
-Bundle ID, or a new App ID capability/entitlement that needs a refreshed match
-profile), the pull request **must say so clearly** — in the PR title or near
-the top of the PR body — so a human runs
+CI detects signing-bootstrap need automatically (new extension Bundle ID, Matchfile
+/ entitlements changes, or App ID capability hunks in `project.yml` / Fastfile).
+When it fires on a pull request, the `iOS` workflow labels the PR
+**`needs-ios-bootstrap`**. On merge to `main`, that same workflow re-runs
+`fastlane signing_bootstrap` before TestFlight upload (when signing secrets are
+present), so you usually do **not** need to run
 [`ios-signing-bootstrap.yml`](../.github/workflows/ios-signing-bootstrap.yml)
-before expecting TestFlight to succeed. Do not bury it in a checklist footnote.
-PRs that do **not** need bootstrap should not claim they do.
+by hand.
+
+Still call out the need in the PR title or near the top of the PR body so
+reviewers notice. PRs that do **not** need bootstrap should not claim they do.
+You can also add the label manually to force a post-merge re-bootstrap if the
+detector missed an edge case; remove it if a later push no longer needs one.
+The manual workflow remains for greenfield setup and certificate recovery.
 
 
 ## Adding an experiment (happy path — no signing)
