@@ -58,10 +58,21 @@ final class RideStoreTests: XCTestCase {
     func testSummaryRoundTripsAndLegacyJSONDecodesWithoutSummary() throws {
         var ride = makeRide()
         ride.summary = "Bumpy evening commute"
+        ride.weather = RideWeather(
+            condition: "Clear",
+            symbolName: "sun.max",
+            temperatureCelsius: 22.0,
+            apparentTemperatureCelsius: 21.0,
+            humidity: 0.4,
+            windSpeedMetersPerSecond: 2.0
+        )
         try store.save(ride)
-        XCTAssertEqual(store.loadAll().first?.summary, "Bumpy evening commute")
+        let loaded = try XCTUnwrap(store.loadAll().first)
+        XCTAssertEqual(loaded.summary, "Bumpy evening commute")
+        XCTAssertEqual(loaded.weather?.condition, "Clear")
+        XCTAssertEqual(loaded.weather?.temperatureCelsius ?? 0, 22.0, accuracy: 0.001)
 
-        // Older files omit `summary`; optional decode must stay nil.
+        // Older files omit `summary` and `weather`; optional decode must stay nil.
         let legacy = """
         {
           "id": "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
@@ -80,9 +91,10 @@ final class RideStoreTests: XCTestCase {
         """
         let url = tempDir.appendingPathComponent("AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE.json")
         try Data(legacy.utf8).write(to: url)
-        let loaded = store.loadAll().first { $0.id.uuidString == "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE" }
-        XCTAssertNotNil(loaded)
-        XCTAssertNil(loaded?.summary)
+        let legacyRide = store.loadAll().first { $0.id.uuidString == "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE" }
+        XCTAssertNotNil(legacyRide)
+        XCTAssertNil(legacyRide?.summary)
+        XCTAssertNil(legacyRide?.weather)
     }
 
     func testLoadAllSortsNewestFirst() throws {

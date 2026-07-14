@@ -57,6 +57,12 @@ struct RideListView: View {
                     .foregroundStyle(.primary)
                     .accessibilityIdentifier("rideSummary-\(ride.id.uuidString)")
             }
+            if let weather = ride.weather {
+                Label(weather.displayLine, systemImage: weather.symbolName)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("rideWeather-\(ride.id.uuidString)")
+            }
             Text(String(
                 format: "%@ · %.2f mi · %d jolts · peak %.1fg",
                 duration(ride.durationSeconds), RideUnits.miles(fromMeters: ride.distanceMeters),

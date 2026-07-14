@@ -317,30 +317,36 @@ final class RideMonitor: NSObject, ObservableObject {
             lastSavedRide = ride
             let base = "Ride saved — \(ride.events.count) event(s), \(ride.track.count) GPS fixes."
             statusMessage = statusSuffix.map { "\(base) \($0)" } ?? base
-            // On-device label is async (Foundation Models when available).
-            Task { await attachSummary(to: ride, statusSuffix: statusSuffix) }
+            // Weather + on-device label are async (WeatherKit / Foundation Models).
+            Task { await attachWeatherAndSummary(to: ride, statusSuffix: statusSuffix) }
         } catch {
             statusMessage = "Ride finished but couldn't be saved: \(error.localizedDescription)"
         }
     }
 
-    /// Generate a few-word summary and rewrite the saved ride JSON.
-    /// Leaves `summary` unset when the on-device model is unavailable or fails.
-    private func attachSummary(to ride: Ride, statusSuffix: String?) async {
-        guard let text = await RideSummaryGenerator.summarize(for: ride) else { return }
+    /// Fetch WeatherKit conditions (best-effort), then a few-word summary, and
+    /// rewrite the saved ride JSON. Either field may stay unset on failure.
+    private func attachWeatherAndSummary(to ride: Ride, statusSuffix: String?) async {
         var updated = ride
-        updated.summary = text
+        if let weather = await RideWeatherFetcher.fetch(for: ride) {
+            updated.weather = weather
+        }
+        if let text = await RideSummaryGenerator.summarize(for: updated) {
+            updated.summary = text
+        }
+        guard updated.weather != nil || updated.summary != nil else { return }
         do {
             try store.save(updated)
             if lastSavedRide?.id == updated.id {
                 lastSavedRide = updated
             }
             if !isRunning {
-                let base = "Ride saved — \(text)"
+                let label = updated.summary ?? updated.weather?.displayLine ?? "saved"
+                let base = "Ride saved — \(label)"
                 statusMessage = statusSuffix.map { "\(base) \($0)" } ?? base
             }
         } catch {
-            // Ride is already on disk without a summary; list still works.
+            // Ride is already on disk without weather/summary; list still works.
         }
     }
 

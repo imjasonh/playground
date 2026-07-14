@@ -17,6 +17,7 @@ On every push to `main`, CI builds, tests, and (with signing secrets) uploads to
 |--------------------|-----------|---------------------------|
 | In-app experiment (Ride Monitor–style) | Host only | **No** |
 | Info.plist privacy / background modes | Host only | **No** |
+| New App ID capability (e.g. WeatherKit) | Host (or extension) | **Yes** — enable capability + refresh profile |
 | Custom Keyboard / other **app extension** | Host + **extension id** (Apple requires it) | **Yes, once** for that extension |
 
 Bootstrap is **not** per experiment. It is once for the host app, and once more
@@ -71,10 +72,21 @@ Both need a one-time **iOS signing bootstrap** after this tree lands (new Bundle
 IDs). Live Activities require a real device (and Live Activities enabled in
 Settings); the Watch app needs a paired Apple Watch.
 
-When a ride ends, Ride Monitor asks the on-device Foundation Model (Apple
-Intelligence / `FoundationModels`, iOS 26+) for a **few-word summary** and
-stores it on the ride for the Past rides list. If the model is unavailable or
-fails, the summary stays empty — there is no heuristic substitute.
+When a ride ends, Ride Monitor asks WeatherKit for **current conditions** at the
+ride’s last GPS fix (temperature, condition, humidity, wind) and stores that
+snapshot on the ride for the Past rides list and detail Summary section. It also
+passes weather into the on-device Foundation Model (Apple Intelligence /
+`FoundationModels`, iOS 26+) facts prompt so the **few-word summary** may
+mention notable conditions. Weather and the ML label are both best-effort: if
+WeatherKit or the model is unavailable, those fields stay empty — there is no
+heuristic substitute.
+
+**Requires iOS signing bootstrap** after this lands: WeatherKit is a new App ID
+capability (`com.apple.developer.weatherkit` on the host Bundle ID). Enable
+WeatherKit for `io.github.imjasonh.playground` in Certificates, Identifiers &
+Profiles (App Services + Capabilities), then re-run
+[`ios-signing-bootstrap.yml`](../.github/workflows/ios-signing-bootstrap.yml)
+so match stores a refreshed profile.
 
 ### T9 Keyboard
 

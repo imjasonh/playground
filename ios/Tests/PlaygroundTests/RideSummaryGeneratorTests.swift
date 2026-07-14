@@ -52,6 +52,24 @@ final class RideSummaryGeneratorTests: XCTestCase {
         XCTAssertTrue(prompt.contains("Jolts: 7"))
         XCTAssertTrue(prompt.contains("Possible crashes: 1"))
         XCTAssertTrue(prompt.contains("Net elevation"))
+        XCTAssertFalse(prompt.contains("Weather:"))
+    }
+
+    func testFactsPromptIncludesWeatherWhenPresent() {
+        var r = ride()
+        r.weather = RideWeather(
+            condition: "Light Rain",
+            symbolName: "cloud.rain",
+            temperatureCelsius: 12.4,
+            apparentTemperatureCelsius: 10.0,
+            humidity: 0.82,
+            windSpeedMetersPerSecond: 4.5
+        )
+        let prompt = RideSummaryGenerator.factsPrompt(for: r)
+        XCTAssertTrue(prompt.contains("Weather: Light Rain"))
+        XCTAssertTrue(prompt.contains("12°C"))
+        XCTAssertTrue(prompt.contains("humidity 82%"))
+        XCTAssertTrue(prompt.contains("wind"))
     }
 
     func testSummarizeReturnsNilWhenModelUnavailable() async {

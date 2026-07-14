@@ -14,6 +14,18 @@ struct RideDetailView: View {
                         .font(.body)
                         .accessibilityIdentifier("rideDetailSummary")
                 }
+                if let weather = ride.weather {
+                    HStack(spacing: 8) {
+                        Image(systemName: weather.symbolName)
+                            .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
+                        Text(weather.displayLine)
+                            .foregroundStyle(.secondary)
+                        Spacer(minLength: 0)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("rideDetailWeather")
+                }
                 stat("Started", ride.startedAt.formatted(date: .abbreviated, time: .shortened))
                 stat("Duration", duration(ride.durationSeconds))
                 stat("Distance", String(format: "%.2f mi", RideUnits.miles(fromMeters: ride.distanceMeters)))
@@ -23,6 +35,13 @@ struct RideDetailView: View {
                 stat("Possible crashes", "\(ride.crashCount)")
                 if let gain = ride.elevationGain {
                     stat("Net elevation", String(format: "%+.1f m", gain))
+                }
+                if ride.weather != nil {
+                    Link("Weather data provided by Apple Weather",
+                         destination: URL(string: "https://weatherkit.apple.com/legal-attribution.html")!)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .accessibilityIdentifier("rideDetailWeatherAttribution")
                 }
             }
 

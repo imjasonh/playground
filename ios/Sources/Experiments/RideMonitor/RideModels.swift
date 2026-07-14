@@ -43,6 +43,8 @@ struct Ride: Codable, Identifiable {
     /// Short on-device label (a few words), filled after the ride ends.
     /// Optional so older saved JSON files still decode.
     var summary: String? = nil
+    /// WeatherKit conditions at ride end (best-effort). Optional for legacy JSON.
+    var weather: RideWeather? = nil
     var events: [RideEvent]
     var track: [LocationSample]
     var motion: [MotionSummary]

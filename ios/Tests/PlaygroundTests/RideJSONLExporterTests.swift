@@ -34,12 +34,21 @@ final class RideJSONLExporterTests: XCTestCase {
     func testLinesStartWithRideHeaderAndIncludeAllRecordTypes() throws {
         var ride = makeRide()
         ride.summary = "Bumpy short ride"
+        ride.weather = RideWeather(
+            condition: "Cloudy",
+            symbolName: "cloud",
+            temperatureCelsius: 18.0,
+            apparentTemperatureCelsius: nil,
+            humidity: 0.6,
+            windSpeedMetersPerSecond: 3.0
+        )
         let lines = try RideJSONLExporter.lines(for: ride)
 
         XCTAssertEqual(lines.count, 5)
         XCTAssertTrue(lines[0].contains("\"type\":\"ride\""))
         XCTAssertTrue(lines[0].contains("\"id\":\"A1B2C3D4-E5F6-7890-ABCD-EF1234567890\""))
         XCTAssertTrue(lines[0].contains("\"summary\":\"Bumpy short ride\""))
+        XCTAssertTrue(lines[0].contains("\"condition\":\"Cloudy\""))
         XCTAssertTrue(lines[1].contains("\"type\":\"event\""))
         XCTAssertTrue(lines[1].contains("\"severity\":\"pothole\""))
         XCTAssertTrue(lines[2].contains("\"type\":\"location\""))

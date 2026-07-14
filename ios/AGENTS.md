@@ -51,7 +51,7 @@ After adding or changing any of these targets, re-run **iOS signing bootstrap** 
 | Normal `project.yml` settings / version bumps | **No** |
 | On-device frameworks used from the host app (e.g. Foundation Models) | **No** |
 | **First time** adding/changing an **app extension** target (keyboard, widget, Watch, …) | **Yes** — new Bundle ID + match profile |
-| New App ID **capability / entitlement** on an existing id (Push, HealthKit, NFC, …) | **Often yes** — update App ID + refresh profile |
+| New App ID **capability / entitlement** on an existing id (Push, HealthKit, NFC, WeatherKit, …) | **Often yes** — update App ID + refresh profile |
 | Second top-level iOS app | **Forbidden** |
 
 `signing_bootstrap` creates missing Bundle IDs via the App Store Connect API

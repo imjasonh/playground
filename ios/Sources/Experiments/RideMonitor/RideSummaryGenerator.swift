@@ -25,6 +25,7 @@ enum RideSummaryGenerator {
     }
 
     /// Compact stats block fed to the on-device model (no raw GPS track).
+    /// Includes weather when captured so the model may mention conditions.
     static func factsPrompt(for ride: Ride) -> String {
         let minutes = ride.durationSeconds / 60
         let miles = RideUnits.miles(fromMeters: ride.distanceMeters)
@@ -40,6 +41,9 @@ enum RideSummaryGenerator {
         ]
         if let gain = ride.elevationGain {
             lines.append("Net elevation: \(String(format: "%+.0f", gain)) m")
+        }
+        if let weather = ride.weather {
+            lines.append("Weather: \(weather.factsLine)")
         }
         let severities = Dictionary(grouping: ride.events, by: \.severity)
             .map { "\($0.key.rawValue)=\($0.value.count)" }
@@ -84,6 +88,8 @@ enum RideSummaryGenerator {
             Reply with a plain English phrase of 3 to 6 words only.
             No quotes, no emoji, no punctuation at the end, no preamble.
             Reflect roughness, crashes, distance, or calmness from the stats.
+            When weather is provided, you may mention it if it stands out —
+            rain, heat, cold, wind — but weather is optional, not required.
             """)
         let prompt = """
             Write a 3–6 word label for this ride:
