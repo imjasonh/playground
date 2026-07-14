@@ -25,8 +25,8 @@
 use crate::source::{Entry, EntryKind, RefsSnapshot, Source};
 use crate::vlog;
 use fuser::{
-    FileAttr, FileType, Filesystem, ReplyAttr, ReplyData, ReplyDirectory, ReplyEmpty, ReplyEntry,
-    ReplyOpen, Request, FUSE_ROOT_ID,
+    FileAttr, FileType, Filesystem, KernelConfig, ReplyAttr, ReplyData, ReplyDirectory,
+    ReplyDirectoryPlus, ReplyEmpty, ReplyEntry, ReplyOpen, Request, FUSE_ROOT_ID,
 };
 use std::collections::HashMap;
 use std::ffi::OsStr;
@@ -56,7 +56,9 @@ enum Node {
     /// A path under `/refs`: `""` is `/refs` itself; otherwise a ref name
     /// with the `refs/` prefix stripped (`heads`, `heads/main`) or `HEAD`.
     /// Whether it is a file or directory depends on the current snapshot.
-    Ref { rel: String },
+    Ref {
+        rel: String,
+    },
     /// `/commits/<sha>[/<path>]`. `entry` is `None` for the commit root
     /// (always a directory).
     Commit {
@@ -121,6 +123,13 @@ enum RefShape {
     File(String), // full ref name (or "HEAD") to resolve to an oid
     Dir,
     Missing,
+}
+
+/// One directory entry as resolved by [`Inner::dir_children`]: its name and
+/// the node it would intern to.
+struct DirChild {
+    name: String,
+    node: Node,
 }
 
 impl Inner {
@@ -477,42 +486,42 @@ impl Inner {
         reply.data(&data[start..end]);
     }
 
-    fn do_readdir(&self, ino: u64, offset: i64, mut reply: ReplyDirectory) {
-        let Some(node) = self.table.lock().unwrap().get(ino) else {
-            reply.error(libc::ENOENT);
-            return;
-        };
-        // (name, type) pairs after "." and "..".
-        let children: Vec<(String, FileType)> = match node {
-            Node::Root => vec![
-                ("commits".to_string(), FileType::Directory),
-                ("refs".to_string(), FileType::Directory),
-            ],
+    /// The children of a directory node, or an errno. Shared by readdir and
+    /// readdirplus. Each child comes with everything needed to intern its
+    /// node and build its attr.
+    fn dir_children(&self, node: &Node) -> Result<Vec<DirChild>, i32> {
+        match node {
+            Node::Root => Ok(vec![
+                DirChild {
+                    name: "commits".to_string(),
+                    node: Node::Commits,
+                },
+                DirChild {
+                    name: "refs".to_string(),
+                    node: Node::Ref { rel: String::new() },
+                },
+            ]),
             // The commit namespace is every sha; list nothing.
-            Node::Commits => Vec::new(),
+            Node::Commits => Ok(Vec::new()),
             Node::Ref { rel } => {
-                let snap = match self.refs_snapshot() {
-                    Ok(s) => s,
-                    Err(errno) => {
-                        reply.error(errno);
-                        return;
-                    }
-                };
-                if !matches!(Self::ref_shape(&snap, &rel), RefShape::Dir) {
-                    reply.error(libc::ENOTDIR);
-                    return;
+                let snap = self.refs_snapshot()?;
+                if !matches!(Self::ref_shape(&snap, rel), RefShape::Dir) {
+                    return Err(libc::ENOTDIR);
                 }
-                Self::ref_children(&snap, &rel)
+                Ok(Self::ref_children(&snap, rel)
                     .into_iter()
-                    .map(|(name, is_dir)| {
-                        let ft = if is_dir {
-                            FileType::Directory
+                    .map(|(name, _is_dir)| {
+                        let child_rel = if rel.is_empty() {
+                            name.clone()
                         } else {
-                            FileType::RegularFile
+                            format!("{rel}/{name}")
                         };
-                        (name, ft)
+                        DirChild {
+                            name,
+                            node: Node::Ref { rel: child_rel },
+                        }
                     })
-                    .collect()
+                    .collect())
             }
             Node::Commit {
                 commit,
@@ -520,47 +529,152 @@ impl Inner {
                 entry,
             } => {
                 if entry.as_ref().is_some_and(|e| e.kind != EntryKind::Dir) {
-                    reply.error(libc::ENOTDIR);
-                    return;
+                    return Err(libc::ENOTDIR);
                 }
-                match self.source.readdir(&commit, &path) {
-                    Ok(Some(entries)) => entries
+                match self.source.readdir(commit, path) {
+                    Ok(Some(entries)) => Ok(entries
                         .into_iter()
                         .map(|e| {
-                            let ft = match e.kind {
-                                EntryKind::Dir => FileType::Directory,
-                                EntryKind::Symlink => FileType::Symlink,
-                                EntryKind::File { .. } => FileType::RegularFile,
+                            let child_path = if path.is_empty() {
+                                e.name.clone()
+                            } else {
+                                format!("{path}/{}", e.name)
                             };
-                            (e.name, ft)
+                            DirChild {
+                                name: e.name.clone(),
+                                node: Node::Commit {
+                                    commit: commit.clone(),
+                                    path: child_path,
+                                    entry: Some(e),
+                                },
+                            }
                         })
-                        .collect(),
-                    Ok(None) => {
-                        reply.error(libc::ENOTDIR);
-                        return;
-                    }
+                        .collect()),
+                    Ok(None) => Err(libc::ENOTDIR),
                     Err(e) => {
                         vlog!("readdir {commit}:{path}: {e}");
-                        reply.error(libc::EIO);
-                        return;
+                        Err(libc::EIO)
                     }
                 }
             }
-        };
+        }
+    }
 
+    fn file_type_of(node: &Node, snap: Option<&RefsSnapshot>) -> FileType {
+        match node {
+            Node::Root | Node::Commits => FileType::Directory,
+            Node::Ref { rel } => match snap.map(|s| Self::ref_shape(s, rel)) {
+                Some(RefShape::File(_)) => FileType::RegularFile,
+                _ => FileType::Directory,
+            },
+            Node::Commit { entry, .. } => match entry.as_ref().map(|e| e.kind) {
+                None | Some(EntryKind::Dir) => FileType::Directory,
+                Some(EntryKind::Symlink) => FileType::Symlink,
+                Some(EntryKind::File { .. }) => FileType::RegularFile,
+            },
+        }
+    }
+
+    fn do_readdir(&self, ino: u64, offset: i64, mut reply: ReplyDirectory) {
+        let Some(node) = self.table.lock().unwrap().get(ino) else {
+            reply.error(libc::ENOENT);
+            return;
+        };
+        let children = match self.dir_children(&node) {
+            Ok(c) => c,
+            Err(errno) => {
+                reply.error(errno);
+                return;
+            }
+        };
+        // Ref-file vs ref-dir classification needs the snapshot; it is
+        // already memoized from dir_children.
+        let snap = self.source.refs().ok();
         // Directory stream: ".", "..", then children. `offset` is how many
         // entries the kernel already consumed. Inode numbers here are
-        // advisory (readdirplus is not used); lookup assigns the real ones.
-        let mut stream: Vec<(u64, FileType, String)> = Vec::with_capacity(children.len() + 2);
-        stream.push((ino, FileType::Directory, ".".to_string()));
-        stream.push((INO_ROOT, FileType::Directory, "..".to_string()));
-        for (name, ft) in children {
-            stream.push((ino, ft, name));
+        // advisory (plain readdir is not followed by inode-based access
+        // without a lookup); lookup assigns the real ones.
+        let mut stream: Vec<(FileType, String)> = Vec::with_capacity(children.len() + 2);
+        stream.push((FileType::Directory, ".".to_string()));
+        stream.push((FileType::Directory, "..".to_string()));
+        for child in children {
+            let ft = Self::file_type_of(&child.node, snap.as_deref());
+            stream.push((ft, child.name));
         }
-        for (i, (entry_ino, ft, name)) in
+        for (i, (ft, name)) in stream.into_iter().enumerate().skip(offset.max(0) as usize) {
+            if reply.add(ino, (i + 1) as i64, ft, &name) {
+                break; // buffer full
+            }
+        }
+        reply.ok();
+    }
+
+    /// READDIRPLUS: one reply carries names *and* attrs, so `ls -R`-style
+    /// traversals skip a LOOKUP round trip per entry.
+    fn do_readdirplus(&self, ino: u64, offset: i64, mut reply: ReplyDirectoryPlus) {
+        let Some(node) = self.table.lock().unwrap().get(ino) else {
+            reply.error(libc::ENOENT);
+            return;
+        };
+        let children = match self.dir_children(&node) {
+            Ok(c) => c,
+            Err(errno) => {
+                reply.error(errno);
+                return;
+            }
+        };
+        let dir_attr = self.dir_attr(ino);
+        let ttl = match node {
+            Node::Ref { .. } => self.refs_ttl,
+            _ => IMMUTABLE_TTL,
+        };
+        // "." and ".." first (attrs of this dir are close enough for "..";
+        // the kernel resolves both itself and ignores their lookup counts).
+        let mut stream: Vec<(u64, FileAttr, String)> = Vec::with_capacity(children.len() + 2);
+        stream.push((ino, dir_attr, ".".to_string()));
+        stream.push((ino, dir_attr, "..".to_string()));
+        for child in children {
+            let child_ino = match &child.node {
+                Node::Root => INO_ROOT,
+                Node::Commits => INO_COMMITS,
+                Node::Ref { rel } if rel.is_empty() => INO_REFS,
+                Node::Ref { rel } => self
+                    .table
+                    .lock()
+                    .unwrap()
+                    .intern(format!("r:{rel}"), child.node.clone()),
+                Node::Commit { commit, path, .. } => self
+                    .table
+                    .lock()
+                    .unwrap()
+                    .intern(format!("c:{commit}:{path}"), child.node.clone()),
+            };
+            let attr = match &child.node {
+                Node::Root | Node::Commits => self.dir_attr(child_ino),
+                Node::Ref { rel } => {
+                    let snap = self.source.refs().ok();
+                    match snap.as_deref().map(|s| Self::ref_shape(s, rel)) {
+                        Some(RefShape::File(_)) => {
+                            self.attr(child_ino, FileType::RegularFile, REF_FILE_SIZE, 0o444)
+                        }
+                        _ => self.dir_attr(child_ino),
+                    }
+                }
+                Node::Commit {
+                    commit,
+                    path,
+                    entry,
+                } => match self.commit_attr(child_ino, commit, path, entry.as_ref()) {
+                    Ok(a) => a,
+                    Err(_) => continue, // skip unresolvable entries
+                },
+            };
+            stream.push((child_ino, attr, child.name));
+        }
+        for (i, (entry_ino, attr, name)) in
             stream.into_iter().enumerate().skip(offset.max(0) as usize)
         {
-            if reply.add(entry_ino, (i + 1) as i64, ft, &name) {
+            if reply.add(entry_ino, (i + 1) as i64, &name, &ttl, &attr, 0) {
                 break; // buffer full
             }
         }
@@ -639,6 +753,26 @@ impl GitFuse {
 }
 
 impl Filesystem for GitFuse {
+    fn init(&mut self, _req: &Request<'_>, config: &mut KernelConfig) -> Result<(), libc::c_int> {
+        // Best-effort: each capability is only added when the kernel offers
+        // it. READDIRPLUS collapses readdir+lookup into one request;
+        // PARALLEL_DIROPS lets concurrent traversals proceed in parallel;
+        // CACHE_SYMLINKS keeps readlink results (immutable here) kernel-side.
+        for cap in [
+            fuser::consts::FUSE_DO_READDIRPLUS,
+            fuser::consts::FUSE_READDIRPLUS_AUTO,
+            fuser::consts::FUSE_PARALLEL_DIROPS,
+            fuser::consts::FUSE_CACHE_SYMLINKS,
+            // Lets read/readahead requests exceed the 32-page default —
+            // fewer, larger reads for blob streaming.
+            fuser::consts::FUSE_MAX_PAGES,
+        ] {
+            let _ = config.add_capabilities(cap);
+        }
+        let _ = config.set_max_readahead(1 << 20);
+        Ok(())
+    }
+
     fn lookup(&mut self, _req: &Request<'_>, parent: u64, name: &OsStr, reply: ReplyEntry) {
         let Some(name) = name.to_str().map(str::to_string) else {
             reply.error(libc::ENOENT);
@@ -675,7 +809,8 @@ impl Filesystem for GitFuse {
         reply: ReplyData,
     ) {
         let inner = self.inner.clone();
-        self.pool.run(move || inner.do_read(ino, offset, size, reply));
+        self.pool
+            .run(move || inner.do_read(ino, offset, size, reply));
     }
 
     fn readdir(
@@ -690,11 +825,31 @@ impl Filesystem for GitFuse {
         self.pool.run(move || inner.do_readdir(ino, offset, reply));
     }
 
+    fn readdirplus(
+        &mut self,
+        _req: &Request<'_>,
+        ino: u64,
+        _fh: u64,
+        offset: i64,
+        reply: ReplyDirectoryPlus,
+    ) {
+        let inner = self.inner.clone();
+        self.pool
+            .run(move || inner.do_readdirplus(ino, offset, reply));
+    }
+
     /// Answered inline on the session thread: FLUSH arrives on *every*
     /// `close()` of an open file — including the implicit closes when a
     /// child of this very process calls `execve` — so it must never wait
     /// behind a slow remote read (see the module doc on threading).
-    fn flush(&mut self, _req: &Request<'_>, _ino: u64, _fh: u64, _lock_owner: u64, reply: ReplyEmpty) {
+    fn flush(
+        &mut self,
+        _req: &Request<'_>,
+        _ino: u64,
+        _fh: u64,
+        _lock_owner: u64,
+        reply: ReplyEmpty,
+    ) {
         reply.ok();
     }
 }

@@ -11,8 +11,10 @@ publish = false
 [dependencies]
 # FUSE session + kernel protocol. default-features = false drops the libfuse
 # linkage (and its pkg-config build dependency); mounting shells out to
-# fusermount3, which also handles unprivileged mounts.
-fuser = { version = "0.15", default-features = false }
+# fusermount3, which also handles unprivileged mounts. abi-7-31 unlocks
+# readdirplus (READDIR+LOOKUP in one request) and parallel dirops, both load-
+# bearing for `ls -R` performance.
+fuser = { version = "0.15", default-features = false, features = ["abi-7-31"] }
 # errno constants (ENOENT, EROFS, …) for FUSE replies.
 libc = "0.2"
 serde = { version = "1", features = ["derive"] }

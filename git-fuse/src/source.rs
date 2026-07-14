@@ -324,7 +324,11 @@ impl Source {
             let Some(kind) = kind_of_mode(mode) else {
                 continue;
             };
-            let kind = if e.kind == "tree" { EntryKind::Dir } else { kind };
+            let kind = if e.kind == "tree" {
+                EntryKind::Dir
+            } else {
+                kind
+            };
             if let Some(size) = e.size {
                 self.blob_sizes.lock().unwrap().put(e.oid.clone(), size);
             }
@@ -336,10 +340,7 @@ impl Source {
             });
         }
         let entries = Arc::new(entries);
-        self.remote_dirs
-            .lock()
-            .unwrap()
-            .put(key, entries.clone());
+        self.remote_dirs.lock().unwrap().put(key, entries.clone());
         Ok(Some(entries))
     }
 
@@ -358,6 +359,7 @@ impl Source {
     pub(crate) fn readdir(&self, commit: &str, path: &str) -> Result<Option<Vec<Entry>>, String> {
         if let Some(tree) = self.local_dir_tree(commit, path)? {
             if let Some(raws) = self.local_tree(&tree)? {
+                self.prefetch_blob_sizes(&raws)?;
                 let mut out = Vec::with_capacity(raws.len());
                 for raw in raws.iter() {
                     if let Some(e) = self.entry_from_raw(raw)? {
@@ -368,6 +370,29 @@ impl Source {
             }
         }
         Ok(self.remote_dir(commit, path)?.map(|l| (*l).clone()))
+    }
+
+    /// Warm the size memo for every non-tree entry of a listing in one
+    /// batched cat-file exchange (readdirplus asks for all of them anyway).
+    fn prefetch_blob_sizes(&self, raws: &[RawTreeEntry]) -> Result<(), String> {
+        let missing: Vec<&str> = {
+            let sizes = self.blob_sizes.lock().unwrap();
+            raws.iter()
+                .filter(|r| !r.is_tree() && sizes.get(&r.oid).is_none())
+                .map(|r| r.oid.as_str())
+                .collect()
+        };
+        if missing.is_empty() {
+            return Ok(());
+        }
+        let infos = self.local.infos(&missing)?;
+        let mut sizes = self.blob_sizes.lock().unwrap();
+        for (oid, info) in missing.iter().zip(infos) {
+            if let Some(info) = info {
+                sizes.put(oid.to_string(), info.size);
+            }
+        }
+        Ok(())
     }
 
     /// Resolve one child entry: `dir` is the parent directory path, `name`
@@ -409,12 +434,15 @@ impl Source {
                 if kind != "blob" {
                     return Err(format!("object {oid} is a {kind}, not a blob"));
                 }
+                vlog!("blob {oid} served from local cache");
                 data
             }
-            None => self
-                .remote
-                .file(commit, path)?
-                .ok_or_else(|| format!("object {oid} not found at {commit}:{path}"))?,
+            None => {
+                vlog!("blob {oid} not local; fetching {commit}:{path} from remote");
+                self.remote
+                    .file(commit, path)?
+                    .ok_or_else(|| format!("object {oid} not found at {commit}:{path}"))?
+            }
         };
         let data = Arc::new(data);
         self.blob_sizes
@@ -432,7 +460,10 @@ mod tests {
 
     #[test]
     fn mode_classification() {
-        assert_eq!(kind_of_mode(0o100644), Some(EntryKind::File { exec: false }));
+        assert_eq!(
+            kind_of_mode(0o100644),
+            Some(EntryKind::File { exec: false })
+        );
         assert_eq!(kind_of_mode(0o100755), Some(EntryKind::File { exec: true }));
         assert_eq!(kind_of_mode(0o040000), Some(EntryKind::Dir));
         assert_eq!(kind_of_mode(0o120000), Some(EntryKind::Symlink));

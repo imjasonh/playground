@@ -56,6 +56,10 @@ skip them:
 - **[`git-server/`](git-server/)** — a git smart-HTTP server for Cloudflare
   Workers, in Rust: repositories in R2, refs in Durable Objects, plus
   file/tree/blame APIs and streaming pack ingest.
+- **[`git-fuse/`](git-fuse/)** — a read-only FUSE adapter for `git-server`,
+  in Rust: mount a repo and read `refs/<ref>` and `commits/<sha>/<path>` as
+  plain files, with reads racing a shared local clone cache against the
+  server's read API so first byte never waits on a clone.
 
 ## iOS app
 

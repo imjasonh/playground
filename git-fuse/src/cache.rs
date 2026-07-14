@@ -219,10 +219,7 @@ impl LocalCache {
         // (Re)point origin at the remote; the refspec mirrors every ref so
         // the cache can serve any branch or tag.
         run_git(dir, &["config", "remote.origin.url", remote_url])?;
-        run_git(
-            dir,
-            &["config", "remote.origin.fetch", "+refs/*:refs/*"],
-        )?;
+        run_git(dir, &["config", "remote.origin.fetch", "+refs/*:refs/*"])?;
 
         let cache = LocalCache {
             git_dir: dir.to_path_buf(),
@@ -270,7 +267,10 @@ impl LocalCache {
                 }
                 // Stage 2: full history.
                 let full = if dir.join("shallow").exists() {
-                    run_git(dir.as_path(), &["fetch", "--quiet", "--unshallow", "origin"])
+                    run_git(
+                        dir.as_path(),
+                        &["fetch", "--quiet", "--unshallow", "origin"],
+                    )
                 } else {
                     run_git(dir.as_path(), &["fetch", "--quiet", "origin"])
                 };
@@ -335,6 +335,39 @@ impl LocalCache {
         })
     }
 
+    /// Batched `info` for many oids: all commands are written first, then
+    /// all replies read — one pipe flush instead of one round trip per oid.
+    /// Order matches the input.
+    pub(crate) fn infos(&self, oids: &[&str]) -> Result<Vec<Option<ObjInfo>>, String> {
+        if oids.is_empty() {
+            return Ok(Vec::new());
+        }
+        self.with_catfile(|cf| {
+            let mut commands = String::with_capacity(oids.len() * 46);
+            for oid in oids {
+                commands.push_str("info ");
+                commands.push_str(oid);
+                commands.push('\n');
+            }
+            cf.stdin
+                .write_all(commands.as_bytes())
+                .and_then(|_| cf.stdin.flush())
+                .map_err(|e| format!("cat-file write: {e}"))?;
+            let mut out = Vec::with_capacity(oids.len());
+            for _ in oids {
+                let mut header = String::new();
+                cf.stdout
+                    .read_line(&mut header)
+                    .map_err(|e| format!("cat-file read: {e}"))?;
+                if header.is_empty() {
+                    return Err("cat-file: eof".to_string());
+                }
+                out.push(parse_header(header.trim_end()));
+            }
+            Ok(out)
+        })
+    }
+
     /// Full object contents, or `None` when the object isn't local (yet).
     pub(crate) fn contents(&self, oid: &str) -> Result<Option<(String, Vec<u8>)>, String> {
         self.with_catfile(|cf| {
@@ -377,12 +410,9 @@ impl LocalCache {
     pub(crate) fn local_refs(
         &self,
     ) -> Result<(String, std::collections::BTreeMap<String, String>), String> {
-        let head = run_git(
-            &self.git_dir,
-            &["symbolic-ref", "--quiet", "HEAD"],
-        )
-        .map(|s| s.trim().to_string())
-        .unwrap_or_else(|_| "refs/heads/main".to_string());
+        let head = run_git(&self.git_dir, &["symbolic-ref", "--quiet", "HEAD"])
+            .map(|s| s.trim().to_string())
+            .unwrap_or_else(|_| "refs/heads/main".to_string());
         let out = run_git(
             &self.git_dir,
             &["for-each-ref", "--format=%(objectname) %(refname)"],

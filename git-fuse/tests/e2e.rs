@@ -199,10 +199,7 @@ fn read_files_at_any_commit() {
     let f = Fixture::with_repo(repo);
 
     // Tip content.
-    assert_eq!(
-        f.cat(&format!("commits/{second}/f.txt")),
-        b"version 2\n"
-    );
+    assert_eq!(f.cat(&format!("commits/{second}/f.txt")), b"version 2\n");
     // History (only reachable via remote API until the full fetch lands —
     // works either way).
     assert_eq!(f.cat(&format!("commits/{first}/f.txt")), b"version 1\n");
@@ -215,14 +212,14 @@ fn ls_recursive_composition_matches_git() {
     let mut specs: Vec<(String, Vec<u8>)> = Vec::new();
     // A wide directory (multiple readdir batches) plus nesting.
     for i in 0..300 {
-        specs.push((format!("wide/file-{i:03}.txt"), format!("contents {i}\n").into_bytes()));
+        specs.push((
+            format!("wide/file-{i:03}.txt"),
+            format!("contents {i}\n").into_bytes(),
+        ));
     }
     specs.push(("a/b/c/d/deep.txt".to_string(), b"deep\n".to_vec()));
     specs.push(("top.txt".to_string(), b"top\n".to_vec()));
-    let spec_refs: Vec<Spec> = specs
-        .iter()
-        .map(|(p, c)| Spec::File(p, c))
-        .collect();
+    let spec_refs: Vec<Spec> = specs.iter().map(|(p, c)| Spec::File(p, c)).collect();
     let sha = repo.commit("tree", &spec_refs);
     let f = Fixture::with_repo(repo);
 
@@ -246,12 +243,7 @@ fn ls_recursive_composition_matches_git() {
     assert!(listing.contains("top.txt"));
 
     // Full traversal matches `git ls-tree -r` exactly.
-    let want: Vec<String> = f
-        .repo
-        .ls_tree_recursive(&sha)
-        .into_iter()
-        .map(|(path, _oid)| path)
-        .collect();
+    let want = f.repo.ls_tree_recursive(&sha);
     let got = walk(&f.commit_dir(&sha));
     assert_eq!(got, want);
 
@@ -275,10 +267,16 @@ fn cold_reads_never_wait_for_a_clone() {
     let f = Fixture::with_server(repo, server, true);
 
     assert_eq!(f.cat_ref("refs/heads/main"), sha);
-    assert_eq!(f.cat(&format!("commits/{sha}/fast.txt")), b"first byte fast\n");
+    assert_eq!(
+        f.cat(&format!("commits/{sha}/fast.txt")),
+        b"first byte fast\n"
+    );
     let listed = walk(&f.commit_dir(&sha));
     assert_eq!(listed, ["fast.txt"]);
-    assert!(f.server.count(CAT_API_FILE) > 0, "reads must have used the API");
+    assert!(
+        f.server.count(CAT_API_FILE) > 0,
+        "reads must have used the API"
+    );
     assert!(!f.mount_ref().wait_local_usable(Duration::ZERO));
 }
 
@@ -332,9 +330,10 @@ fn new_commits_are_discovered_after_mount() {
     assert!(f.mount_ref().wait_warm(WAIT));
     let before = f.cat_ref("refs/heads/main");
 
-    let after = f
-        .repo
-        .commit("pushed after mount", &[Spec::File("later.txt", b"post-mount\n")]);
+    let after = f.repo.commit(
+        "pushed after mount",
+        &[Spec::File("later.txt", b"post-mount\n")],
+    );
     assert_ne!(before, after);
 
     // The short refs TTL picks up the new head…
@@ -342,7 +341,10 @@ fn new_commits_are_discovered_after_mount() {
         f.cat_ref("refs/heads/main") == after
     });
     // …and its content is readable immediately (remote API at worst).
-    assert_eq!(f.cat(&format!("commits/{after}/later.txt")), b"post-mount\n");
+    assert_eq!(
+        f.cat(&format!("commits/{after}/later.txt")),
+        b"post-mount\n"
+    );
 
     // The ref change also triggers an incremental fetch; eventually the new
     // commit is served with the remote entirely down.
@@ -417,13 +419,8 @@ fn missing_things_are_enoent() {
         format!("commits/{sha}/absent.txt"),
     ];
     for rel in missing {
-        let err = std::fs::metadata(f.path(&rel))
-            .expect_err(&format!("{rel} should not exist"));
-        assert_eq!(
-            err.kind(),
-            std::io::ErrorKind::NotFound,
-            "{rel}: {err:?}"
-        );
+        let err = std::fs::metadata(f.path(&rel)).expect_err(&format!("{rel} should not exist"));
+        assert_eq!(err.kind(), std::io::ErrorKind::NotFound, "{rel}: {err:?}");
     }
 
     // Descending *through* a file is ENOTDIR, not ENOENT.

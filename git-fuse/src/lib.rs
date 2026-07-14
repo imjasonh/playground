@@ -90,9 +90,10 @@ impl Options {
 
 /// A live mount. Dropping it unmounts.
 pub struct Mount {
-    // Field order matters: the session must unmount before anything else
-    // (e.g. a TempDir mountpoint in tests) is torn down.
-    session: fuser::BackgroundSession,
+    // Held only for its Drop (unmounts); field order matters: the session
+    // must unmount before anything else (e.g. a TempDir mountpoint in
+    // tests) is torn down.
+    _session: fuser::BackgroundSession,
     warm: Arc<WarmState>,
     /// The resolved cache directory (useful when it was defaulted).
     pub cache_dir: PathBuf,
@@ -108,11 +109,6 @@ impl Mount {
     pub fn wait_warm(&self, timeout: Duration) -> bool {
         self.warm.wait_at_least(STATE_WARM, timeout)
     }
-
-    /// Block until the filesystem is unmounted (e.g. by `fusermount -u`).
-    pub fn join(self) {
-        self.session.join()
-    }
 }
 
 /// Derive the default shared cache directory for a remote URL.
@@ -120,9 +116,9 @@ fn default_cache_dir(remote_url: &str) -> PathBuf {
     let base = std::env::var_os("XDG_CACHE_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| {
-            let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| {
-                std::env::temp_dir()
-            });
+            let home = std::env::var_os("HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(std::env::temp_dir);
             home.join(".cache")
         })
         .join("git-fuse");
@@ -135,7 +131,10 @@ fn default_cache_dir(remote_url: &str) -> PathBuf {
         .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
         .take(48)
         .collect();
-    base.join(format!("{stem}-{:016x}.git", fnv1a64(remote_url.as_bytes())))
+    base.join(format!(
+        "{stem}-{:016x}.git",
+        fnv1a64(remote_url.as_bytes())
+    ))
 }
 
 /// FNV-1a, used only to key cache directories by remote URL.
@@ -148,10 +147,17 @@ fn fnv1a64(bytes: &[u8]) -> u64 {
     h
 }
 
-/// Mount `opts.remote_url` at `mountpoint` and return a handle. The mount is
-/// served on a background thread; drop the handle (or call
-/// [`Mount::join`]) to control its lifetime.
-pub fn mount(mountpoint: &Path, opts: Options) -> Result<Mount, String> {
+fn build(
+    opts: &Options,
+) -> Result<
+    (
+        fs::GitFuse,
+        Arc<WarmState>,
+        PathBuf,
+        Vec<fuser::MountOption>,
+    ),
+    String,
+> {
     VERBOSE.store(opts.verbose, Ordering::Relaxed);
     let cache_dir = opts
         .cache_dir
@@ -174,13 +180,38 @@ pub fn mount(mountpoint: &Path, opts: Options) -> Result<Mount, String> {
     if opts.allow_other {
         options.push(fuser::MountOption::AllowOther);
     }
+    Ok((filesystem, warm, cache_dir, options))
+}
+
+/// Mount `opts.remote_url` at `mountpoint` and return a handle. The mount is
+/// served on background threads; dropping the handle unmounts.
+pub fn mount(mountpoint: &Path, opts: Options) -> Result<Mount, String> {
+    let (filesystem, warm, cache_dir, options) = build(&opts)?;
     let session = fuser::spawn_mount2(filesystem, mountpoint, &options)
         .map_err(|e| format!("mount at {} failed: {e}", mountpoint.display()))?;
     Ok(Mount {
-        session,
+        _session: session,
         warm,
         cache_dir,
     })
+}
+
+/// Mount in the foreground: blocks until the filesystem is unmounted
+/// (`fusermount3 -u`) or the process dies. `auto_unmount` asks fusermount to
+/// clean up the mountpoint if the process is killed. Used by the CLI.
+pub fn run(mountpoint: &Path, opts: Options, auto_unmount: bool) -> Result<(), String> {
+    let (filesystem, _warm, cache_dir, mut options) = build(&opts)?;
+    if auto_unmount {
+        options.push(fuser::MountOption::AutoUnmount);
+    }
+    eprintln!(
+        "git-fuse: mounting {} at {} (cache: {})",
+        opts.remote_url,
+        mountpoint.display(),
+        cache_dir.display()
+    );
+    fuser::mount2(filesystem, mountpoint, &options)
+        .map_err(|e| format!("mount at {} failed: {e}", mountpoint.display()))
 }
 
 #[cfg(test)]

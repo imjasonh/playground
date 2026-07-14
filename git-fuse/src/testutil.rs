@@ -92,12 +92,12 @@ pub enum Spec<'a> {
     File(&'a str, &'a [u8]),
     Exec(&'a str, &'a [u8]),
     Symlink(&'a str, &'a str),
-    Remove(&'a str),
 }
 
 /// A bare upstream repository plus a working clone to author commits in.
 pub struct TestRepo {
-    root: TempDir,
+    /// Owns the directory holding both repos; dropped last.
+    _root: TempDir,
     bare: PathBuf,
     work: PathBuf,
 }
@@ -134,11 +134,12 @@ impl TestRepo {
         std::fs::create_dir_all(&work).unwrap();
         git(&bare, &["init", "--bare", "--quiet", "-b", "main"]);
         git(&work, &["init", "--quiet", "-b", "main"]);
-        git(
-            &work,
-            &["remote", "add", "origin", bare.to_str().unwrap()],
-        );
-        TestRepo { root, bare, work }
+        git(&work, &["remote", "add", "origin", bare.to_str().unwrap()]);
+        TestRepo {
+            _root: root,
+            bare,
+            work,
+        }
     }
 
     /// The bare repo directory the server serves.
@@ -162,11 +163,8 @@ impl TestRepo {
                         #[cfg(unix)]
                         {
                             use std::os::unix::fs::PermissionsExt;
-                            std::fs::set_permissions(
-                                &full,
-                                std::fs::Permissions::from_mode(0o755),
-                            )
-                            .unwrap();
+                            std::fs::set_permissions(&full, std::fs::Permissions::from_mode(0o755))
+                                .unwrap();
                         }
                     }
                 }
@@ -178,9 +176,6 @@ impl TestRepo {
                     let _ = std::fs::remove_file(&full);
                     #[cfg(unix)]
                     std::os::unix::fs::symlink(target, &full).unwrap();
-                }
-                Spec::Remove(path) => {
-                    let _ = std::fs::remove_file(self.work.join(path));
                 }
             }
         }
@@ -236,34 +231,17 @@ impl TestRepo {
             .to_string()
     }
 
-    /// `git ls-tree -r` of a commit in the upstream, as `path` → oid — the
-    /// ground truth for traversal tests.
-    pub fn ls_tree_recursive(&self, commit: &str) -> Vec<(String, String)> {
+    /// `git ls-tree -r` paths of a commit in the upstream — the ground
+    /// truth for traversal tests.
+    pub fn ls_tree_recursive(&self, commit: &str) -> Vec<String> {
         git(&self.bare, &["ls-tree", "-r", "-z", commit])
             .split('\0')
             .filter(|l| !l.is_empty())
             .map(|line| {
-                let (meta, name) = line.split_once('\t').expect("ls-tree line");
-                let oid = meta.split(' ').nth(2).expect("ls-tree oid");
-                (name.to_string(), oid.to_string())
+                let (_meta, name) = line.split_once('\t').expect("ls-tree line");
+                name.to_string()
             })
             .collect()
-    }
-
-    /// File contents at a commit, from the upstream (ground truth).
-    pub fn show(&self, commit: &str, path: &str) -> Vec<u8> {
-        let out = Command::new("git")
-            .current_dir(&self.bare)
-            .args(["cat-file", "blob", &format!("{commit}:{path}")])
-            .output()
-            .expect("git cat-file");
-        assert!(out.status.success(), "cat-file {commit}:{path} failed");
-        out.stdout
-    }
-
-    /// Keep the root temp dir alive as long as the repo.
-    pub fn root(&self) -> &Path {
-        self.root.path()
     }
 }
 
@@ -273,10 +251,11 @@ impl Default for TestRepo {
     }
 }
 
-/// Request categories counted by the server.
+/// Request categories counted by the server (only the ones tests assert on
+/// are public).
 pub const CAT_SMART: &str = "smart";
-pub const CAT_API_REFS: &str = "api_refs";
-pub const CAT_API_TREE: &str = "api_tree";
+const CAT_API_REFS: &str = "api_refs";
+const CAT_API_TREE: &str = "api_tree";
 pub const CAT_API_FILE: &str = "api_file";
 
 struct ServerState {
@@ -298,8 +277,7 @@ pub struct TestServer {
 impl TestServer {
     /// Serve `repo`'s bare directory as `http://127.0.0.1:<port>/repo`.
     pub fn start(repo: &TestRepo) -> TestServer {
-        let server =
-            Arc::new(tiny_http::Server::http("127.0.0.1:0").expect("bind test server"));
+        let server = Arc::new(tiny_http::Server::http("127.0.0.1:0").expect("bind test server"));
         let port = server.server_addr().to_ip().unwrap().port();
         let state = Arc::new(ServerState {
             bare: repo.bare().to_path_buf(),
@@ -381,7 +359,7 @@ fn bump(state: &ServerState, category: &'static str) {
 }
 
 fn respond_error(req: tiny_http::Request, status: u16, msg: &str) {
-    let body = format!("{{\"error\": {:?}}}", msg);
+    let body = format!("{{\"error\": {msg:?}}}");
     let _ = req.respond(
         tiny_http::Response::from_string(body)
             .with_status_code(status)
@@ -477,23 +455,27 @@ fn repo_git(state: &ServerState, args: &[&str]) -> Result<Vec<u8>, String> {
 /// Resolve a refish exactly like git-server does: full oid, HEAD, branch,
 /// tag, then full ref name (`docs/api.md`).
 fn resolve_refish(state: &ServerState, refish: &str) -> Option<String> {
-    let candidates: Vec<String> = if refish.len() == 40
-        && refish.bytes().all(|b| b.is_ascii_hexdigit())
-    {
-        vec![refish.to_string()]
-    } else if refish == "HEAD" {
-        vec!["HEAD".to_string()]
-    } else {
-        vec![
-            format!("refs/heads/{refish}"),
-            format!("refs/tags/{refish}"),
-            refish.to_string(),
-        ]
-    };
+    let candidates: Vec<String> =
+        if refish.len() == 40 && refish.bytes().all(|b| b.is_ascii_hexdigit()) {
+            vec![refish.to_string()]
+        } else if refish == "HEAD" {
+            vec!["HEAD".to_string()]
+        } else {
+            vec![
+                format!("refs/heads/{refish}"),
+                format!("refs/tags/{refish}"),
+                refish.to_string(),
+            ]
+        };
     for cand in candidates {
         if let Ok(out) = repo_git(
             state,
-            &["rev-parse", "--verify", "--quiet", &format!("{cand}^{{commit}}")],
+            &[
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                &format!("{cand}^{{commit}}"),
+            ],
         ) {
             let sha = String::from_utf8_lossy(&out).trim().to_string();
             if !sha.is_empty() {
@@ -505,12 +487,9 @@ fn resolve_refish(state: &ServerState, refish: &str) -> Option<String> {
 }
 
 fn json_response(req: tiny_http::Request, body: String) {
-    let _ = req.respond(
-        tiny_http::Response::from_string(body).with_header(
-            tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..])
-                .unwrap(),
-        ),
-    );
+    let _ = req.respond(tiny_http::Response::from_string(body).with_header(
+        tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap(),
+    ));
 }
 
 fn handle_api(state: &ServerState, req: tiny_http::Request, rest: &[&str]) {
@@ -580,8 +559,7 @@ fn handle_api(state: &ServerState, req: tiny_http::Request, rest: &[&str]) {
                 }
                 entries.push(entry);
             }
-            let body =
-                serde_json::json!({ "commit": commit, "path": path, "entries": entries });
+            let body = serde_json::json!({ "commit": commit, "path": path, "entries": entries });
             json_response(req, body.to_string());
         }
         [_repo, "file", refish, path @ ..] => {
@@ -709,8 +687,8 @@ fn handle_smart(state: &ServerState, mut req: tiny_http::Request, path: &str, qu
             headers.push(h);
         }
     }
-    let mut resp = tiny_http::Response::from_data(out.stdout[body_start..].to_vec())
-        .with_status_code(status);
+    let mut resp =
+        tiny_http::Response::from_data(out.stdout[body_start..].to_vec()).with_status_code(status);
     for h in headers {
         resp = resp.with_header(h);
     }

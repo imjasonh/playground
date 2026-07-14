@@ -76,19 +76,8 @@ fn main() {
     opts.allow_other = allow_other;
 
     let mountpoint = PathBuf::from(mountpoint);
-    match git_fuse::mount(&mountpoint, opts) {
-        Ok(mount) => {
-            eprintln!(
-                "git-fuse: {} mounted at {} (cache: {})",
-                remote_url,
-                mountpoint.display(),
-                mount.cache_dir.display()
-            );
-            mount.join();
-        }
-        Err(e) => {
-            eprintln!("git-fuse: {e}");
-            exit(1);
-        }
+    if let Err(e) = git_fuse::run(&mountpoint, opts, true) {
+        eprintln!("git-fuse: {e}");
+        exit(1);
     }
 }
