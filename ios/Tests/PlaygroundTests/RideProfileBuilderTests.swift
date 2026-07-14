@@ -55,6 +55,73 @@ final class RideProfileBuilderTests: XCTestCase {
         XCTAssertTrue(RideProfileBuilder.build(altitudes: [], track: []).isEmpty)
     }
 
+    func testBuildDownsamplesBeforeSpeedLookup() {
+        // 200 barometer samples would formerly force 200 linear track scans.
+        // With maxPoints=5 we only resolve five speeds, keeping endpoints.
+        let altitudes = (0..<200).map {
+            AltitudeSample(t: Double($0), relativeAltitude: Double($0), pressureKPa: 101)
+        }
+        let track = [
+            LocationSample(t: 0, latitude: 0, longitude: 0, altitude: 0,
+                           horizontalAccuracy: 5, verticalAccuracy: 5, speed: 1.0, course: 0),
+            LocationSample(t: 100, latitude: 0, longitude: 0, altitude: 0,
+                           horizontalAccuracy: 5, verticalAccuracy: 5, speed: 5.0, course: 0),
+            LocationSample(t: 199, latitude: 0, longitude: 0, altitude: 0,
+                           horizontalAccuracy: 5, verticalAccuracy: 5, speed: 9.0, course: 0)
+        ]
+
+        let profile = RideProfileBuilder.build(altitudes: altitudes, track: track, maxPoints: 5)
+        XCTAssertEqual(profile.count, 5)
+        XCTAssertEqual(profile.first?.relativeAltitude ?? -1, 0, accuracy: 0.001)
+        XCTAssertEqual(profile.last?.relativeAltitude ?? -1, 199, accuracy: 0.001)
+        XCTAssertEqual(profile.first?.speedMetersPerSecond ?? -1, 1.0, accuracy: 0.001)
+        XCTAssertEqual(profile.last?.speedMetersPerSecond ?? -1, 9.0, accuracy: 0.001)
+    }
+
+    func testNearestSpeedUsesBinarySearchOnSortedTrack() {
+        let track = (0..<50).map {
+            LocationSample(
+                t: Double($0) * 2,
+                latitude: 0,
+                longitude: 0,
+                altitude: 0,
+                horizontalAccuracy: 5,
+                verticalAccuracy: 5,
+                speed: Double($0),
+                course: 0
+            )
+        }
+        XCTAssertEqual(RideProfileBuilder.nearestSpeed(at: 0, in: track), 0, accuracy: 0.001)
+        XCTAssertEqual(RideProfileBuilder.nearestSpeed(at: 21, in: track), 10, accuracy: 0.001)
+        XCTAssertEqual(RideProfileBuilder.nearestSpeed(at: 22, in: track), 11, accuracy: 0.001)
+        XCTAssertEqual(RideProfileBuilder.nearestSpeed(at: 200, in: track), 49, accuracy: 0.001)
+    }
+
+    func testBuildStaysBoundedForLongRideSizedInputs() {
+        // ~18 minutes at 50 Hz barometer + 1 Hz GPS — the previous algorithm
+        // was O(baro × gps) per companion push and could stall the main thread.
+        let altitudes = (0..<54_000).map {
+            AltitudeSample(t: Double($0) / 50.0, relativeAltitude: Double($0 % 100), pressureKPa: 101)
+        }
+        let track = (0..<1_080).map {
+            LocationSample(
+                t: Double($0),
+                latitude: 0,
+                longitude: 0,
+                altitude: 10,
+                horizontalAccuracy: 5,
+                verticalAccuracy: 5,
+                speed: 5,
+                course: 0
+            )
+        }
+
+        measure {
+            let profile = RideProfileBuilder.build(altitudes: altitudes, track: track, maxPoints: 48)
+            XCTAssertEqual(profile.count, 48)
+        }
+    }
+
     func testSpeedBuckets() {
         XCTAssertEqual(RideLiveFormatting.speedBucket(metersPerSecond: 0.5), 0)
         XCTAssertEqual(RideLiveFormatting.speedBucket(metersPerSecond: 3), 1)

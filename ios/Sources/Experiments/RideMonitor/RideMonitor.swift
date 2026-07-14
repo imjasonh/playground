@@ -85,6 +85,12 @@ final class RideMonitor: NSObject, ObservableObject {
     private var motionSummaries: [MotionSummary] = []
     private var altitudeSamples: [AltitudeSample] = []
 
+    // Recording diagnostics (persisted on stop + mirrored to Console).
+    private var motionRestartCount = 0
+    private var locationErrorCount = 0
+    private var maxCompanionPushMilliseconds = 0.0
+    private var lastHeartbeatMinute = -1
+
     private let sampleHz = 50.0
     private let companionPushInterval: TimeInterval = 1.0
     /// If sensing is silent this long, treat the ride as ended at the last sample
@@ -92,6 +98,8 @@ final class RideMonitor: NSObject, ObservableObject {
     private let sensingGapEndThreshold: TimeInterval = 90
     /// Location still arriving but motion quiet this long → restart Core Motion.
     private let motionStallRestartThreshold: TimeInterval = 2.5
+    /// Companion pushes slower than this are logged as warnings.
+    private let companionPushWarnMilliseconds: Double = 50
 
     override init() {
         super.init()
@@ -112,10 +120,14 @@ final class RideMonitor: NSObject, ObservableObject {
         guard !isRunning else { return }
         guard motion.isDeviceMotionAvailable else {
             statusMessage = "Motion sensors unavailable on this device."
+            RideMonitorLog.error("start refused — device motion unavailable")
             return
         }
 
         wantsRecording = true
+        RideMonitorLog.notice(
+            "start requested auth=\(Self.describeAuth(location.authorizationStatus))"
+        )
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
 
         switch location.authorizationStatus {
@@ -132,13 +144,16 @@ final class RideMonitor: NSObject, ObservableObject {
             Ride Monitor needs “Always” location so recording continues with the screen off. \
             Choose Allow Always when prompted.
             """
+            RideMonitorLog.notice("start deferred — need Always (currently WhenInUse)")
             location.requestAlwaysAuthorization()
         case .denied, .restricted:
             wantsRecording = false
             statusMessage = "Location permission is required to record rides."
+            RideMonitorLog.error("start refused — location denied/restricted")
         @unknown default:
             wantsRecording = false
             statusMessage = "Location status unknown."
+            RideMonitorLog.error("start refused — unknown authorization status")
         }
     }
 
@@ -149,6 +164,7 @@ final class RideMonitor: NSObject, ObservableObject {
             statusMessage = """
             Ride Monitor needs “Always” location so recording continues with the screen off.
             """
+            RideMonitorLog.error("beginRecording refused — not Always authorized")
             return
         }
 
@@ -175,6 +191,10 @@ final class RideMonitor: NSObject, ObservableObject {
         lastMotionAt = nil
         locationAtLastMotion = nil
         lastCompanionPushAt = 0
+        motionRestartCount = 0
+        locationErrorCount = 0
+        maxCompanionPushMilliseconds = 0
+        lastHeartbeatMinute = -1
         startUptime = ProcessInfo.processInfo.systemUptime
         startDate = Date()
         isRunning = true
@@ -189,6 +209,7 @@ final class RideMonitor: NSObject, ObservableObject {
             self.elapsed = self.now
             self.pullWatchActivity()
             self.pushCompanionsIfNeeded(force: false)
+            self.logHeartbeatIfNeeded()
         }
 
         let snapshot = makeLiveSnapshot()
@@ -196,6 +217,9 @@ final class RideMonitor: NSObject, ObservableObject {
         watchSession.send(snapshot)
         lastCompanionPushAt = now
         statusMessage = "Recording ride (screen-off OK)…"
+        RideMonitorLog.notice(
+            "recording started altimeter=\(CMAltimeter.isRelativeAltitudeAvailable()) backgroundSession=\(backgroundActivitySession != nil)"
+        )
     }
 
     /// Continuous background location is what prevents iOS from suspending us.
@@ -230,8 +254,12 @@ final class RideMonitor: NSObject, ObservableObject {
     private func startMotionUpdates() {
         motion.stopDeviceMotionUpdates()
         motion.deviceMotionUpdateInterval = 1.0 / sampleHz
-        motion.startDeviceMotionUpdates(to: .main) { [weak self] data, _ in
-            guard let self, let data else { return }
+        motion.startDeviceMotionUpdates(to: .main) { [weak self] data, error in
+            guard let self else { return }
+            if let error {
+                RideMonitorLog.error("deviceMotion error: \(error.localizedDescription)")
+            }
+            guard let data else { return }
             self.ingest(data)
         }
     }
@@ -239,8 +267,12 @@ final class RideMonitor: NSObject, ObservableObject {
     private func startAltimeterUpdates() {
         altimeter.stopRelativeAltitudeUpdates()
         guard CMAltimeter.isRelativeAltitudeAvailable() else { return }
-        altimeter.startRelativeAltitudeUpdates(to: .main) { [weak self] data, _ in
-            guard let self, let data else { return }
+        altimeter.startRelativeAltitudeUpdates(to: .main) { [weak self] data, error in
+            guard let self else { return }
+            if let error {
+                RideMonitorLog.error("altimeter error: \(error.localizedDescription)")
+            }
+            guard let data else { return }
             if let last = self.lastMotionAt, self.now - last > self.sensingGapEndThreshold {
                 return
             }
@@ -256,27 +288,55 @@ final class RideMonitor: NSObject, ObservableObject {
     private func restartMotionIfStalled() {
         guard isRunning else { return }
         guard let last = lastMotionAt else {
+            motionRestartCount += 1
+            RideMonitorLog.notice("motion restart #\(motionRestartCount) — no samples yet, GPS flowing")
             startMotionUpdates()
             return
         }
         let stall = now - last
         guard stall >= motionStallRestartThreshold, stall < sensingGapEndThreshold else { return }
+        motionRestartCount += 1
+        RideMonitorLog.notice(
+            String(
+                format: "motion restart #%d after %.1fs stall (gps=%d motion=%d baro=%d)",
+                motionRestartCount,
+                stall,
+                track.count,
+                motionSummaries.count,
+                altitudeSamples.count
+            )
+        )
         startMotionUpdates()
         startAltimeterUpdates()
     }
 
     func stop() {
-        stopRecording(endedAtOffset: sensingEndOffset(), statusSuffix: nil)
+        stopRecording(endedAtOffset: sensingEndOffset(), reason: .userStopped)
     }
 
     /// End the ride at the last motion sample after a long sensing gap (suspend).
     private func finalizeAfterSensingGap() {
         guard isRunning, let end = lastMotionAt else { return }
+        let gap = now - end
+        RideMonitorLog.fault(
+            String(
+                format: "sensing gap auto-end lastMotion=%.1fs gap=%.1fs gps=%d motion=%d baro=%d restarts=%d locErrors=%d maxPushMs=%.1f",
+                end,
+                gap,
+                track.count,
+                motionSummaries.count,
+                altitudeSamples.count,
+                motionRestartCount,
+                locationErrorCount,
+                maxCompanionPushMilliseconds
+            )
+        )
         let flushed = classifier.flushOpenBurst(endingAt: end)
         append(events: flushed, location: locationAtLastMotion)
         stopRecording(
             endedAtOffset: end,
-            statusSuffix: "Stopped after sensing paused — background keep-alive was lost."
+            reason: .sensingGap,
+            detail: "Stopped after sensing paused — background keep-alive was lost."
         )
     }
 
@@ -288,7 +348,11 @@ final class RideMonitor: NSObject, ObservableObject {
         return elapsed
     }
 
-    private func stopRecording(endedAtOffset: TimeInterval, statusSuffix: String?) {
+    private func stopRecording(
+        endedAtOffset: TimeInterval,
+        reason: RideEndReason,
+        detail: String? = nil
+    ) {
         guard isRunning else { return }
         wantsRecording = false
         isRunning = false
@@ -313,6 +377,18 @@ final class RideMonitor: NSObject, ObservableObject {
 
         let watchActivity = watchSession.latestActivity
         let endedAt = startDate.addingTimeInterval(endedAtOffset)
+        let diagnostics = RideRecordingDiagnostics(
+            endReason: reason,
+            endDetail: detail,
+            lastMotionOffset: lastMotionAt.map { min($0, endedAtOffset) },
+            lastLocationOffset: track.last.map { min($0.t, endedAtOffset) },
+            motionRestartCount: motionRestartCount,
+            locationErrorCount: locationErrorCount,
+            maxCompanionPushMilliseconds: maxCompanionPushMilliseconds > 0
+                ? maxCompanionPushMilliseconds
+                : nil,
+            authorizationStatusAtEnd: Self.describeAuth(location.authorizationStatus)
+        )
         let ride = Ride(
             id: UUID(),
             startedAt: startDate,
@@ -330,21 +406,40 @@ final class RideMonitor: NSObject, ObservableObject {
             averageCadenceRPM: watchActivity.averageCadenceRPM,
             averageCyclingPowerWatts: watchActivity.averageCyclingPowerWatts,
             maxCyclingPowerWatts: watchActivity.maxCyclingPowerWatts,
+            recordingDiagnostics: diagnostics,
             events: events.reversed(), // store chronologically
             track: track,
             motion: motionSummaries,
             barometer: altitudeSamples
         )
 
+        RideMonitorLog.notice(
+            String(
+                format: "recording stopped reason=%@ duration=%.1fs distance=%.0fm gps=%d motion=%d baro=%d events=%d restarts=%d locErrors=%d maxPushMs=%.1f auth=%@",
+                reason.rawValue,
+                endedAtOffset,
+                distanceMeters,
+                track.count,
+                motionSummaries.count,
+                altitudeSamples.count,
+                ride.events.count,
+                motionRestartCount,
+                locationErrorCount,
+                maxCompanionPushMilliseconds,
+                diagnostics.authorizationStatusAtEnd ?? "?"
+            )
+        )
+
         do {
             try store.save(ride)
             lastSavedRide = ride
             let base = "Ride saved — \(ride.events.count) event(s), \(ride.track.count) GPS fixes."
-            statusMessage = statusSuffix.map { "\(base) \($0)" } ?? base
+            statusMessage = detail.map { "\(base) \($0)" } ?? base
             // On-device label is async (Foundation Models when available).
-            Task { await attachSummary(to: ride, statusSuffix: statusSuffix) }
+            Task { await attachSummary(to: ride, statusSuffix: detail) }
         } catch {
             statusMessage = "Ride finished but couldn't be saved: \(error.localizedDescription)"
+            RideMonitorLog.error("ride save failed: \(error.localizedDescription)")
         }
     }
 
@@ -364,7 +459,7 @@ final class RideMonitor: NSObject, ObservableObject {
                 statusMessage = statusSuffix.map { "\(base) \($0)" } ?? base
             }
         } catch {
-            // Ride is already on disk without a summary; list still works.
+            RideMonitorLog.error("summary save failed: \(error.localizedDescription)")
         }
     }
 
@@ -399,9 +494,49 @@ final class RideMonitor: NSObject, ObservableObject {
         guard force || t - lastCompanionPushAt >= companionPushInterval else { return }
         lastCompanionPushAt = t
         pullWatchActivity()
+
+        let started = ProcessInfo.processInfo.systemUptime
         let snapshot = makeLiveSnapshot()
         liveActivity.update(snapshot: snapshot)
         watchSession.send(snapshot)
+        let pushMs = (ProcessInfo.processInfo.systemUptime - started) * 1000
+        if pushMs > maxCompanionPushMilliseconds {
+            maxCompanionPushMilliseconds = pushMs
+        }
+        if pushMs >= companionPushWarnMilliseconds {
+            RideMonitorLog.notice(
+                String(
+                    format: "slow companion push %.1fms at t=%.1fs baro=%d gps=%d",
+                    pushMs,
+                    t,
+                    altitudeSamples.count,
+                    track.count
+                )
+            )
+        }
+    }
+
+    private func logHeartbeatIfNeeded() {
+        let minute = Int(elapsed / 60)
+        guard minute > 0, minute != lastHeartbeatMinute else { return }
+        lastHeartbeatMinute = minute
+        let motionAge = lastMotionAt.map { elapsed - $0 } ?? -1
+        let locationAge = track.last.map { elapsed - $0.t } ?? -1
+        RideMonitorLog.info(
+            String(
+                format: "heartbeat min=%d elapsed=%.0fs gps=%d motion=%d baro=%d motionAge=%.1fs locAge=%.1fs restarts=%d locErrors=%d maxPushMs=%.1f",
+                minute,
+                elapsed,
+                track.count,
+                motionSummaries.count,
+                altitudeSamples.count,
+                motionAge,
+                locationAge,
+                motionRestartCount,
+                locationErrorCount,
+                maxCompanionPushMilliseconds
+            )
+        )
     }
 
     private func pullWatchActivity() {
@@ -418,10 +553,14 @@ final class RideMonitor: NSObject, ObservableObject {
 
     /// Called when the scene becomes active again (foreground).
     func handleSceneBecameActive() {
+        RideMonitorLog.info(
+            "scene active running=\(isRunning) auth=\(Self.describeAuth(location.authorizationStatus))"
+        )
         if isRunning {
             liveActivity.update(snapshot: makeLiveSnapshot())
             if location.authorizationStatus != .authorizedAlways {
                 endRideAfterLosingKeepAlive(
+                    reason: .alwaysRequiredOnForeground,
                     message: """
                     Ride ended — “Always” location is required to keep sensing with the screen off.
                     """
@@ -444,8 +583,12 @@ final class RideMonitor: NSObject, ObservableObject {
     /// somehow lost Always, end the ride instead of recording a silent hole.
     func handleSceneEnteredBackground() {
         guard isRunning else { return }
+        RideMonitorLog.info(
+            "scene background auth=\(Self.describeAuth(location.authorizationStatus)) elapsed=\(String(format: "%.1f", elapsed))"
+        )
         guard location.authorizationStatus == .authorizedAlways else {
             endRideAfterLosingKeepAlive(
+                reason: .backgroundWithoutAlways,
                 message: """
                 Ride ended when leaving the app — enable “Always” location for screen-off recording.
                 """
@@ -455,11 +598,17 @@ final class RideMonitor: NSObject, ObservableObject {
         enableBackgroundKeepAlive()
     }
 
-    private func endRideAfterLosingKeepAlive(message: String) {
+    private func endRideAfterLosingKeepAlive(reason: RideEndReason, message: String) {
+        RideMonitorLog.fault("keep-alive lost reason=\(reason.rawValue) — \(message)")
         if lastMotionAt != nil {
-            finalizeAfterSensingGap()
+            // Prefer truncating at last motion when we already have samples, but
+            // still persist the more specific permission/lifecycle reason.
+            let end = lastMotionAt ?? elapsed
+            let flushed = classifier.flushOpenBurst(endingAt: end)
+            append(events: flushed, location: locationAtLastMotion)
+            stopRecording(endedAtOffset: end, reason: reason, detail: message)
         } else {
-            stopRecording(endedAtOffset: elapsed, statusSuffix: nil)
+            stopRecording(endedAtOffset: elapsed, reason: reason, detail: message)
         }
         statusMessage = message
     }
@@ -517,6 +666,9 @@ final class RideMonitor: NSObject, ObservableObject {
     private func handleCrash(_ event: RideEvent) {
         crashAlert = true
         statusMessage = "Possible crash detected!"
+        RideMonitorLog.notice(
+            String(format: "crash event peakG=%.2f at=%.1fs", event.peakG, event.at)
+        )
         #if canImport(UIKit)
         UINotificationFeedbackGenerator().notificationOccurred(.error)
         #endif
@@ -527,10 +679,25 @@ final class RideMonitor: NSObject, ObservableObject {
         let request = UNNotificationRequest(identifier: event.id.uuidString, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request)
     }
+
+    private static func describeAuth(_ status: CLAuthorizationStatus) -> String {
+        switch status {
+        case .notDetermined: return "notDetermined"
+        case .restricted: return "restricted"
+        case .denied: return "denied"
+        case .authorizedAlways: return "always"
+        case .authorizedWhenInUse: return "whenInUse"
+        @unknown default: return "unknown"
+        }
+    }
 }
 
 extension RideMonitor: CLLocationManagerDelegate {
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        let auth = Self.describeAuth(manager.authorizationStatus)
+        RideMonitorLog.notice(
+            "authorization changed → \(auth) wantsRecording=\(wantsRecording) running=\(isRunning)"
+        )
         guard wantsRecording else { return }
 
         switch manager.authorizationStatus {
@@ -544,6 +711,7 @@ extension RideMonitor: CLLocationManagerDelegate {
             if isRunning {
                 // Downgraded mid-ride — cannot keep sensing with the screen off.
                 endRideAfterLosingKeepAlive(
+                    reason: .locationLimitedToWhenInUse,
                     message: """
                     Ride ended — location was limited to While Using. Enable “Always” in Settings for screen-off rides.
                     """
@@ -558,6 +726,7 @@ extension RideMonitor: CLLocationManagerDelegate {
             wantsRecording = false
             if isRunning {
                 endRideAfterLosingKeepAlive(
+                    reason: .locationDenied,
                     message: "Ride ended — location permission is required to record rides."
                 )
             } else {
@@ -606,5 +775,10 @@ extension RideMonitor: CLLocationManagerDelegate {
         pushCompanionsIfNeeded(force: false)
     }
 
-    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {}
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        locationErrorCount += 1
+        RideMonitorLog.error(
+            "location error #\(locationErrorCount): \(error.localizedDescription) elapsed=\(String(format: "%.1f", elapsed))"
+        )
+    }
 }

@@ -65,6 +65,26 @@ final class RideJSONLExporterTests: XCTestCase {
         XCTAssertEqual(rideHeaders.count, 2)
     }
 
+    func testLinesIncludeRecordingDiagnosticsWhenPresent() throws {
+        var ride = makeRide()
+        ride.recordingDiagnostics = RideRecordingDiagnostics(
+            endReason: .sensingGap,
+            endDetail: "keep-alive lost",
+            lastMotionOffset: 1080,
+            lastLocationOffset: 1081,
+            motionRestartCount: 2,
+            locationErrorCount: 1,
+            maxCompanionPushMilliseconds: 85,
+            authorizationStatusAtEnd: "always"
+        )
+        let header = try RideJSONLExporter.lines(for: ride)[0]
+        XCTAssertTrue(header.contains("\"endReason\":\"sensingGap\""))
+        XCTAssertTrue(header.contains("\"motionRestartCount\":2"))
+        XCTAssertTrue(header.contains("\"locationErrorCount\":1"))
+        XCTAssertTrue(header.contains("\"maxCompanionPushMilliseconds\":85"))
+        XCTAssertTrue(header.contains("\"authorizationStatusAtEnd\":\"always\""))
+    }
+
     func testLinesIncludeWatchActivityWhenPresent() throws {
         var ride = makeRide()
         ride.averageHeartRateBPM = 140

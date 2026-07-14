@@ -58,7 +58,11 @@ location updates to keep the app alive with the screen off. Older builds could
 start under When-In-Use, which suspended the process on lock and produced
 multi-minute sensing holes; the app now refuses to start without Always, holds
 a background activity session on iOS 17+, and auto-ends if sensing is silent
-for ~90s. While a ride is active it also:
+for ~90s. Each saved ride stores a `recordingDiagnostics` block (end reason,
+motion-restart / location-error counts, slowest companion push) and emits
+`OSLog` under subsystem `io.github.imjasonh.playground` / category
+`RideMonitor` (per-minute heartbeats + stop reasons) for Console.app debugging.
+While a ride is active it also:
 
 1. **Live Activity** (`io.github.imjasonh.playground.ridemonitorwidget`) —
    Lock Screen / Dynamic Island shows duration, distance, current speed, and a
