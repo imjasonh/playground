@@ -4,101 +4,154 @@ import SwiftUI
 /// current speed. Data is pushed from the phone via WatchConnectivity. While
 /// a ride is active an `HKWorkoutSession` keeps this app frontmost so raising
 /// the wrist returns here without hunting through the app list.
+///
+/// Layout is intentionally dense and non-scrolling — a 2-column grid of
+/// compact cells so everything fits on a single Watch face at a glance.
 struct RideMonitorWatchView: View {
     @EnvironmentObject private var receiver: RideWatchReceiver
     @EnvironmentObject private var workout: RideWatchWorkoutController
 
+    private let columns = [
+        GridItem(.flexible(), spacing: 4),
+        GridItem(.flexible(), spacing: 4),
+    ]
+
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             let snapshot = receiver.snapshot
-            ScrollView {
-                VStack(spacing: 10) {
-                    Text(context.date, style: .time)
-                        .font(.title3.weight(.semibold).monospacedDigit())
-                        .accessibilityIdentifier("watchClockTime")
-
+            GeometryReader { geo in
+                Group {
                     if snapshot.isRiding {
-                        metric(
-                            label: "Duration",
-                            value: liveDuration(snapshot: snapshot, now: context.date),
-                            identifier: "watchDuration"
-                        )
-                        metric(
-                            label: "Distance",
-                            value: snapshot.formattedDistanceMiles,
-                            identifier: "watchDistance"
-                        )
-                        metric(
-                            label: "Speed",
-                            value: snapshot.formattedSpeedMph,
-                            identifier: "watchSpeed"
-                        )
-                        if let bpm = workout.activity.heartRateBPM {
-                            metric(
-                                label: "Heart rate",
-                                value: String(format: "%.0f bpm", bpm),
-                                identifier: "watchHeartRate"
-                            )
-                        }
-                        if let kcal = workout.activity.activeEnergyKilocalories {
-                            metric(
-                                label: "Active energy",
-                                value: String(format: "%.0f kcal", kcal),
-                                identifier: "watchEnergy"
-                            )
-                        }
-                        if let rpm = workout.activity.cadenceRPM {
-                            metric(
-                                label: "Cadence",
-                                value: String(format: "%.0f rpm", rpm),
-                                identifier: "watchCadence"
-                            )
-                        }
-                        if let watts = workout.activity.cyclingPowerWatts {
-                            metric(
-                                label: "Power",
-                                value: String(format: "%.0f W", watts),
-                                identifier: "watchPower"
-                            )
-                        }
-                        if let message = workout.lastErrorMessage {
-                            Text(message)
-                                .font(.caption2)
-                                .foregroundStyle(.orange)
-                                .multilineTextAlignment(.center)
-                                .padding(.top, 4)
-                        }
+                        ridingContent(snapshot: snapshot, now: context.date, size: geo.size)
                     } else {
-                        VStack(spacing: 6) {
-                            Image(systemName: "bicycle")
-                                .font(.largeTitle)
-                            Text("No active ride")
-                                .font(.headline)
-                            Text("Start a ride on iPhone")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                                .multilineTextAlignment(.center)
-                        }
-                        .padding(.top, 8)
-                        .accessibilityIdentifier("watchIdle")
+                        idleContent
                     }
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, 4)
+                .frame(width: geo.size.width, height: geo.size.height)
             }
         }
-        .navigationTitle("Ride")
     }
 
-    private func metric(label: String, value: String, identifier: String) -> some View {
+    @ViewBuilder
+    private func ridingContent(snapshot: RideLiveSnapshot, now: Date, size: CGSize) -> some View {
+        let cells = ridingCells(snapshot: snapshot, now: now)
+        // Scale value type from available height so 3–4 grid rows still fit
+        // without scrolling on small Watch faces.
+        let rowCount = max(1, (cells.count + 1) / 2)
+        let valueSize = min(20, max(13, (size.height - 18) / CGFloat(rowCount) * 0.55))
+
         VStack(spacing: 2) {
-            Text(value)
-                .font(.title2.bold().monospacedDigit())
-                .minimumScaleFactor(0.6)
-                .accessibilityIdentifier(identifier)
-            Text(label)
-                .font(.caption2)
+            Text(now, style: .time)
+                .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                .accessibilityIdentifier("watchClockTime")
+
+            LazyVGrid(columns: columns, alignment: .center, spacing: 2) {
+                ForEach(cells) { cell in
+                    metricCell(cell, valueSize: valueSize)
+                }
+            }
+
+            if let message = workout.lastErrorMessage {
+                Text(message)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.orange)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .padding(.horizontal, 1)
+    }
+
+    private var idleContent: some View {
+        VStack(spacing: 4) {
+            Image(systemName: "bicycle")
+                .font(.title2)
+            Text("No active ride")
+                .font(.caption.weight(.semibold))
+            Text("Start a ride on iPhone")
+                .font(.system(size: 11))
                 .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .accessibilityIdentifier("watchIdle")
+    }
+
+    private func ridingCells(snapshot: RideLiveSnapshot, now: Date) -> [WatchMetricCell] {
+        var cells: [WatchMetricCell] = [
+            WatchMetricCell(
+                id: "watchDuration",
+                value: liveDuration(snapshot: snapshot, now: now),
+                label: "Time"
+            ),
+            WatchMetricCell(
+                id: "watchSpeed",
+                value: String(
+                    format: "%.0f",
+                    RideUnits.milesPerHour(fromMetersPerSecond: snapshot.displaySpeed)
+                ),
+                label: "mph"
+            ),
+            WatchMetricCell(
+                id: "watchDistance",
+                value: String(
+                    format: "%.2f",
+                    RideUnits.miles(fromMeters: snapshot.distanceMeters)
+                ),
+                label: "mi"
+            ),
+        ]
+        if let bpm = workout.activity.heartRateBPM {
+            cells.append(
+                WatchMetricCell(
+                    id: "watchHeartRate",
+                    value: String(format: "%.0f", bpm),
+                    label: "bpm"
+                )
+            )
+        }
+        if let kcal = workout.activity.activeEnergyKilocalories {
+            cells.append(
+                WatchMetricCell(
+                    id: "watchEnergy",
+                    value: String(format: "%.0f", kcal),
+                    label: "kcal"
+                )
+            )
+        }
+        if let rpm = workout.activity.cadenceRPM {
+            cells.append(
+                WatchMetricCell(
+                    id: "watchCadence",
+                    value: String(format: "%.0f", rpm),
+                    label: "rpm"
+                )
+            )
+        }
+        if let watts = workout.activity.cyclingPowerWatts {
+            cells.append(
+                WatchMetricCell(
+                    id: "watchPower",
+                    value: String(format: "%.0f", watts),
+                    label: "W"
+                )
+            )
+        }
+        return cells
+    }
+
+    private func metricCell(_ cell: WatchMetricCell, valueSize: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            Text(cell.value)
+                .font(.system(size: valueSize, weight: .bold).monospacedDigit())
+                .minimumScaleFactor(0.4)
+                .lineLimit(1)
+                .accessibilityIdentifier(cell.id)
+            Text(cell.label)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
         .frame(maxWidth: .infinity)
     }
@@ -112,6 +165,13 @@ struct RideMonitorWatchView: View {
         let elapsed = max(snapshot.elapsedSeconds, now.timeIntervalSince(snapshot.startedAt))
         return RideLiveSnapshot.formatDuration(elapsed)
     }
+}
+
+/// One compact cell in the Watch ride grid.
+private struct WatchMetricCell: Identifiable {
+    let id: String
+    let value: String
+    let label: String
 }
 
 #Preview {
