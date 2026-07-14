@@ -262,6 +262,22 @@ fn git_base(git_dir: &Path) -> Command {
     cmd
 }
 
+/// Bounded housekeeping after a successful fetch: `git maintenance run
+/// --auto` is a no-op until git's own thresholds trip, then consolidates
+/// loose objects/packs so a long-lived cache doesn't degrade (many small
+/// packs slow every object lookup) or leak disk. Serialized with fetches
+/// and killable on unmount like any other cache-repo child.
+fn run_maintenance(git_dir: &Path, fetch_lock: &Mutex<()>, fetch_pids: &Mutex<HashSet<u32>>) {
+    let _serialize = fetch_lock.lock().unwrap();
+    if let Err(e) = run_git_fetch(
+        git_dir,
+        &["maintenance", "run", "--auto", "--quiet"],
+        fetch_pids,
+    ) {
+        vlog!("maintenance failed: {e}");
+    }
+}
+
 /// The remote's default branch (full ref name, e.g. `refs/heads/main`),
 /// from the HEAD symref in `git ls-remote` — one cheap ref advertisement.
 fn default_branch(git_dir: &Path) -> Result<String, String> {
@@ -444,6 +460,7 @@ impl LocalCache {
                             warm.advance(STATE_SHALLOW);
                             warm.advance(STATE_WARM);
                             vlog!("full fetch done in {:?}", started.elapsed());
+                            run_maintenance(dir.as_path(), &fetch_lock, &fetch_pids);
                             return;
                         }
                         Err(e) => vlog!("full fetch failed (retrying in {backoff:?}): {e}"),
@@ -550,7 +567,10 @@ impl LocalCache {
                     )
                 };
                 match result {
-                    Ok(_) => vlog!("incremental fetch done in {:?}", started.elapsed()),
+                    Ok(_) => {
+                        vlog!("incremental fetch done in {:?}", started.elapsed());
+                        run_maintenance(dir.as_path(), &fetch_lock, &fetch_pids);
+                    }
                     Err(e) => vlog!("incremental fetch failed: {e}"),
                 }
                 fetching.store(false, Ordering::SeqCst);

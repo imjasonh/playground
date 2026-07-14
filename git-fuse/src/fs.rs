@@ -68,10 +68,26 @@ enum Node {
     },
 }
 
+/// One inode-table slot.
+struct NodeSlot {
+    node: Node,
+    /// Canonical key for reverse-map cleanup; `None` for the static inos
+    /// (root, `/commits`, `/refs`), which are never evicted.
+    key: Option<String>,
+    /// The kernel's lookup count for this inode: incremented once per
+    /// LOOKUP reply and per delivered READDIRPLUS entry, decremented by
+    /// FORGET. At zero the kernel holds no reference and the slot is
+    /// evicted — this is what keeps the table from growing without bound
+    /// on large traversals.
+    nlookup: u64,
+}
+
 /// Inode table: ino → node, plus a canonical-key reverse map so re-lookups
-/// reuse inodes.
+/// reuse live inodes. Inos are never reused after eviction (a fresh one is
+/// allocated from the monotonic counter), so the FUSE generation number can
+/// stay 0.
 struct NodeTable {
-    nodes: HashMap<u64, Node>,
+    nodes: HashMap<u64, NodeSlot>,
     ino_by_key: HashMap<String, u64>,
     next_ino: u64,
 }
@@ -79,9 +95,20 @@ struct NodeTable {
 impl NodeTable {
     fn new() -> NodeTable {
         let mut nodes = HashMap::new();
-        nodes.insert(INO_ROOT, Node::Root);
-        nodes.insert(INO_COMMITS, Node::Commits);
-        nodes.insert(INO_REFS, Node::Ref { rel: String::new() });
+        for (ino, node) in [
+            (INO_ROOT, Node::Root),
+            (INO_COMMITS, Node::Commits),
+            (INO_REFS, Node::Ref { rel: String::new() }),
+        ] {
+            nodes.insert(
+                ino,
+                NodeSlot {
+                    node,
+                    key: None,
+                    nlookup: 0,
+                },
+            );
+        }
         NodeTable {
             nodes,
             ino_by_key: HashMap::new(),
@@ -89,22 +116,61 @@ impl NodeTable {
         }
     }
 
+    /// Map a key to an inode without counting a kernel reference (used
+    /// while building readdirplus replies; count only what gets
+    /// delivered).
     fn intern(&mut self, key: String, node: Node) -> u64 {
         if let Some(&ino) = self.ino_by_key.get(&key) {
             // Refresh the stored node: for commit paths it's identical, for
             // ref paths the shape may have changed with the snapshot.
-            self.nodes.insert(ino, node);
+            self.nodes.get_mut(&ino).expect("slot for keyed ino").node = node;
             return ino;
         }
         let ino = self.next_ino;
         self.next_ino += 1;
-        self.ino_by_key.insert(key, ino);
-        self.nodes.insert(ino, node);
+        self.ino_by_key.insert(key.clone(), ino);
+        self.nodes.insert(
+            ino,
+            NodeSlot {
+                node,
+                key: Some(key),
+                nlookup: 0,
+            },
+        );
         ino
     }
 
+    /// Record kernel references (LOOKUP replies / delivered readdirplus
+    /// entries). Static inos are not refcounted.
+    fn bump(&mut self, ino: u64, n: u64) {
+        if let Some(slot) = self.nodes.get_mut(&ino) {
+            if slot.key.is_some() {
+                slot.nlookup += n;
+            }
+        }
+    }
+
+    /// FORGET from the kernel: drop references, evicting the slot when the
+    /// count reaches zero.
+    fn forget(&mut self, ino: u64, n: u64) {
+        let Some(slot) = self.nodes.get_mut(&ino) else {
+            return;
+        };
+        if slot.key.is_none() {
+            return; // static inos live for the mount's lifetime
+        }
+        slot.nlookup = slot.nlookup.saturating_sub(n);
+        if slot.nlookup == 0 {
+            let key = slot.key.take();
+            self.nodes.remove(&ino);
+            if let Some(key) = key {
+                self.ino_by_key.remove(&key);
+            }
+        }
+    }
+
     fn get(&self, ino: u64) -> Option<Node> {
-        self.nodes.get(&ino).cloned()
+        self.nodes.get(&ino).map(|slot| slot.node.clone())
     }
 }
 
@@ -172,7 +238,14 @@ impl Inner {
             return RefShape::Dir;
         }
         if rel == "HEAD" {
-            return RefShape::File("HEAD".to_string());
+            // An unborn HEAD (empty repo, or symref to a deleted branch)
+            // has no sha to expose; pretend it doesn't exist rather than
+            // stat-ing a file whose read would fail.
+            return if snap.refs.contains_key(&snap.head) {
+                RefShape::File("HEAD".to_string())
+            } else {
+                RefShape::Missing
+            };
         }
         let full = format!("refs/{rel}");
         if snap.refs.contains_key(&full) {
@@ -242,11 +315,13 @@ impl Inner {
         let size = data.len() as u64;
         // Remember it on the node so the next getattr is free.
         let mut table = self.table.lock().unwrap();
-        if let Some(Node::Commit {
-            entry: Some(entry), ..
-        }) = table.nodes.get_mut(&ino)
-        {
-            entry.size = Some(size);
+        if let Some(slot) = table.nodes.get_mut(&ino) {
+            if let Node::Commit {
+                entry: Some(entry), ..
+            } = &mut slot.node
+            {
+                entry.size = Some(size);
+            }
         }
         Ok(size)
     }
@@ -274,7 +349,7 @@ impl Inner {
                 }
             }
         }
-        if rel.is_empty() {
+        if rel.is_empty() && snap.refs.contains_key(&snap.head) {
             out.push(("HEAD".to_string(), false));
         }
         out.extend(seen);
@@ -300,14 +375,19 @@ impl Inner {
                 }
                 match self.source.commit_exists(&sha) {
                     Ok(true) => {
-                        let ino = self.table.lock().unwrap().intern(
-                            format!("c:{sha}:"),
-                            Node::Commit {
-                                commit: sha.clone(),
-                                path: String::new(),
-                                entry: None,
-                            },
-                        );
+                        let ino = {
+                            let mut table = self.table.lock().unwrap();
+                            let ino = table.intern(
+                                format!("c:{sha}:"),
+                                Node::Commit {
+                                    commit: sha.clone(),
+                                    path: String::new(),
+                                    entry: None,
+                                },
+                            );
+                            table.bump(ino, 1);
+                            ino
+                        };
                         reply.entry(&IMMUTABLE_TTL, &self.dir_attr(ino), 0);
                     }
                     Ok(false) => reply.error(libc::ENOENT),
@@ -333,11 +413,13 @@ impl Inner {
                 match Self::ref_shape(&snap, &child) {
                     RefShape::Missing => reply.error(libc::ENOENT),
                     shape => {
-                        let ino = self
-                            .table
-                            .lock()
-                            .unwrap()
-                            .intern(format!("r:{child}"), Node::Ref { rel: child.clone() });
+                        let ino = {
+                            let mut table = self.table.lock().unwrap();
+                            let ino = table
+                                .intern(format!("r:{child}"), Node::Ref { rel: child.clone() });
+                            table.bump(ino, 1);
+                            ino
+                        };
                         let attr = match shape {
                             RefShape::Dir => self.dir_attr(ino),
                             _ => self.attr(ino, FileType::RegularFile, REF_FILE_SIZE, 0o444),
@@ -362,14 +444,19 @@ impl Inner {
                         } else {
                             format!("{path}/{name}")
                         };
-                        let ino = self.table.lock().unwrap().intern(
-                            format!("c:{commit}:{child_path}"),
-                            Node::Commit {
-                                commit: commit.clone(),
-                                path: child_path.clone(),
-                                entry: Some(child.clone()),
-                            },
-                        );
+                        let ino = {
+                            let mut table = self.table.lock().unwrap();
+                            let ino = table.intern(
+                                format!("c:{commit}:{child_path}"),
+                                Node::Commit {
+                                    commit: commit.clone(),
+                                    path: child_path.clone(),
+                                    entry: Some(child.clone()),
+                                },
+                            );
+                            table.bump(ino, 1);
+                            ino
+                        };
                         match self.commit_attr(ino, &commit, &child_path, Some(&child)) {
                             Ok(attr) => reply.entry(&IMMUTABLE_TTL, &attr, 0),
                             Err(errno) => reply.error(errno),
@@ -709,7 +796,12 @@ impl Inner {
             stream.into_iter().enumerate().skip(offset.max(0) as usize)
         {
             if reply.add(entry_ino, (i + 1) as i64, &name, &ttl, &attr, 0) {
-                break; // buffer full
+                break; // buffer full; this entry was not delivered
+            }
+            // The kernel counts a lookup per delivered readdirplus entry —
+            // except "." and ".." (the first two of the stream).
+            if i >= 2 {
+                self.table.lock().unwrap().bump(entry_ino, 1);
             }
         }
         reply.ok();
@@ -863,6 +955,13 @@ impl Filesystem for GitFuse {
             .run(move || inner.do_read(ino, fh, offset, size, reply));
     }
 
+    /// Inline on the session thread (a counter update): the kernel dropped
+    /// references to an inode; evict it at zero so the table tracks what
+    /// the kernel actually holds instead of growing forever.
+    fn forget(&mut self, _req: &Request<'_>, ino: u64, nlookup: u64) {
+        self.inner.table.lock().unwrap().forget(ino, nlookup);
+    }
+
     /// Inline on the session thread (a map removal): drops the handle's
     /// blob pin.
     fn release(
@@ -919,5 +1018,50 @@ impl Filesystem for GitFuse {
         reply: ReplyEmpty,
     ) {
         reply.ok();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn commit_node(path: &str) -> Node {
+        Node::Commit {
+            commit: "c".repeat(40),
+            path: path.to_string(),
+            entry: None,
+        }
+    }
+
+    #[test]
+    fn node_table_evicts_at_zero_and_never_reuses_inos() {
+        let mut table = NodeTable::new();
+        let a = table.intern("c:x:a".to_string(), commit_node("a"));
+        table.bump(a, 2);
+        assert!(table.get(a).is_some());
+
+        // Same key → same ino while live.
+        assert_eq!(table.intern("c:x:a".to_string(), commit_node("a")), a);
+
+        table.forget(a, 1);
+        assert!(table.get(a).is_some(), "one reference remains");
+        table.forget(a, 1);
+        assert!(table.get(a).is_none(), "evicted at zero");
+
+        // Re-interning after eviction allocates a fresh ino (never reuse:
+        // that's what lets the generation number stay 0).
+        let a2 = table.intern("c:x:a".to_string(), commit_node("a"));
+        assert_ne!(a2, a);
+    }
+
+    #[test]
+    fn node_table_static_inos_are_immortal() {
+        let mut table = NodeTable::new();
+        table.forget(INO_ROOT, u64::MAX);
+        table.forget(INO_COMMITS, u64::MAX);
+        table.forget(INO_REFS, u64::MAX);
+        assert!(table.get(INO_ROOT).is_some());
+        assert!(table.get(INO_COMMITS).is_some());
+        assert!(table.get(INO_REFS).is_some());
     }
 }

@@ -616,6 +616,26 @@ fn submodule_pointers_are_hidden() {
 }
 
 #[test]
+fn empty_repo_mounts_sanely() {
+    require_fuse!();
+    // Never-pushed repo: no refs, unborn HEAD.
+    let repo = TestRepo::new();
+    let f = Fixture::with_repo(repo);
+
+    let refs: Vec<_> = std::fs::read_dir(f.path("refs"))
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert!(
+        refs.is_empty(),
+        "an unborn HEAD must not be listed: {refs:?}"
+    );
+    let err = std::fs::metadata(f.path("refs/HEAD")).expect_err("HEAD must not exist");
+    assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
+    assert!(!f.path(&format!("commits/{}", "0".repeat(40))).exists());
+}
+
+#[test]
 fn no_warmup_mode_serves_via_api_only() {
     require_fuse!();
     let repo = TestRepo::new();

@@ -39,7 +39,10 @@ Every query tries two sources, cheapest first:
 1. **A shared local bare-repo cache** — one per remote URL (default
    `~/.cache/git-fuse/<repo>-<hash>.git`, `--cache-dir` to override), read
    through a persistent `git cat-file --batch-command` process. A miss costs
-   microseconds, a hit serves at local-disk speed.
+   microseconds, a hit serves at local-disk speed. `git maintenance run
+   --auto` runs after fetches so a long-lived cache doesn't accumulate
+   packs; the whole directory is disposable — deleting it just means the
+   next mount warms from scratch.
 2. **git-server's JSON read API** (`/api/<repo>/refs`, `/tree/…`, `/file/…`)
    — one HTTP round trip per directory or blob, no pack transfer.
 
@@ -158,8 +161,13 @@ discovery after mount. Tests skip (loudly) when `/dev/fuse` is unavailable.
 ## Limitations
 
 * Read-only by design; writes are refused with `EROFS`.
-* SHA-1 repos, matching git-server.
+* SHA-1 repos and `http(s)://` remotes only (other git transports are
+  refused), matching git-server.
 * `<mount>/commits` requires full 40-hex shas (no abbreviations).
-* Inode table grows with distinct paths visited (no `forget` reclamation);
-  fine for tool-lifetime mounts.
+* Blobs are materialized in memory per open; the hard cap is 1 GiB per
+  blob (over-cap reads error — never truncate).
+* Tree entry names that aren't valid UTF-8 are listed lossily: reading
+  them works from the local cache (object-id addressed) but not through
+  the remote API (path addressed), and two names that lossy-decode
+  identically collide. The JSON API itself is UTF-8-bound.
 * No authentication — same as git-server.

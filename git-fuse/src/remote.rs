@@ -53,17 +53,29 @@ impl Remote {
     /// `remote_url` is the clone URL (`https://host/<repo>`); the API base is
     /// the same host with `/api` inserted before the repo segment.
     pub(crate) fn new(remote_url: &str) -> Result<Remote, String> {
+        // Only plain HTTP(S). The URL is also handed to `git fetch`, and
+        // git's other transports include `ext::` which executes commands —
+        // refuse anything that isn't unambiguously a web URL.
+        if !remote_url.starts_with("http://") && !remote_url.starts_with("https://") {
+            return Err(format!(
+                "unsupported remote url {remote_url}: must be http:// or https://"
+            ));
+        }
         let url = remote_url.trim_end_matches('/');
         let url = url.strip_suffix(".git").unwrap_or(url);
         let (base, repo) = url
             .rsplit_once('/')
             .ok_or_else(|| format!("bad remote url {remote_url}"))?;
-        if repo.is_empty() || !base.contains("://") {
+        if repo.is_empty() || base.ends_with("//") {
             return Err(format!("bad remote url {remote_url}"));
         }
+        // Idle-based timeouts rather than one whole-request deadline: a
+        // stalled server fails a read in seconds, while a legitimately
+        // large blob can stream for as long as bytes keep arriving.
         let agent = ureq::AgentBuilder::new()
             .timeout_connect(Duration::from_secs(10))
-            .timeout(Duration::from_secs(60))
+            .timeout_read(Duration::from_secs(30))
+            .timeout_write(Duration::from_secs(30))
             .build();
         Ok(Remote {
             agent,
@@ -149,6 +161,22 @@ mod tests {
             assert_eq!(r.api_base, "http://localhost:8080/api/myrepo");
         }
         assert!(Remote::new("nonsense").is_err());
+        assert!(Remote::new("http:///repo").is_err());
+    }
+
+    #[test]
+    fn non_http_schemes_are_refused() {
+        for url in [
+            "ext::sh -c id://host/repo",
+            "ssh://git@host/repo",
+            "ftp://host/repo",
+            "file:///somewhere/repo",
+        ] {
+            let Err(err) = Remote::new(url) else {
+                panic!("{url} must be refused");
+            };
+            assert!(err.contains("must be http"), "{url}: {err}");
+        }
     }
 
     #[test]

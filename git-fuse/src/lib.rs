@@ -171,7 +171,9 @@ fn build(
 
     let mut options = vec![
         fuser::MountOption::RO,
-        fuser::MountOption::FSName(opts.remote_url.clone()),
+        // The mount-option string is comma-separated; scrub the URL so it
+        // can't smuggle extra options into fusermount.
+        fuser::MountOption::FSName(opts.remote_url.replace(',', "_")),
         fuser::MountOption::Subtype("git-fuse".to_string()),
         // Kernel-side attribute/entry caching honors the per-reply TTLs the
         // filesystem sets (long for immutable commit data, short for refs).
