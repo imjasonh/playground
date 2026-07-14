@@ -1,8 +1,8 @@
 import Foundation
 
-/// Picks which ride events to pin on the map. Recording and the events list keep
-/// every detected jolt; the map only shows the biggest ones so a rough ride
-/// doesn't become a sea of pins.
+/// Picks which ride events to pin on the map. Recording still keeps every
+/// detected jolt in the ride file; the map only shows the biggest ones so a
+/// rough ride doesn't become a sea of pins.
 enum RideMapEventFilter {
     /// Default pin budget for `RideMapView`.
     static let defaultLimit = 10
