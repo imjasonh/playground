@@ -133,6 +133,9 @@ impl TestRepo {
         std::fs::create_dir_all(&bare).unwrap();
         std::fs::create_dir_all(&work).unwrap();
         git(&bare, &["init", "--bare", "--quiet", "-b", "main"]);
+        // Accept sha wants like git-server does, so on-demand commit
+        // fetches (`git fetch origin <sha>`) work against the harness.
+        git(&bare, &["config", "uploadpack.allowAnySHA1InWant", "true"]);
         git(&work, &["init", "--quiet", "-b", "main"]);
         git(&work, &["remote", "add", "origin", bare.to_str().unwrap()]);
         TestRepo {
@@ -207,6 +210,37 @@ impl TestRepo {
         );
     }
 
+    /// Create a commit that ends up in the upstream's object store but
+    /// unreachable from any ref (like a force-pushed-away PR head): commit
+    /// on a temporary branch, push it, then delete the branch upstream.
+    /// Returns the dangling sha.
+    pub fn commit_dangling(&self, message: &str, specs: &[Spec<'_>]) -> String {
+        git(&self.work, &["checkout", "--quiet", "-b", "dangling-tmp"]);
+        for spec in specs {
+            match spec {
+                Spec::File(path, contents) | Spec::Exec(path, contents) => {
+                    let full = self.work.join(path);
+                    if let Some(parent) = full.parent() {
+                        std::fs::create_dir_all(parent).unwrap();
+                    }
+                    std::fs::write(&full, contents).unwrap();
+                }
+                Spec::Symlink(..) => unimplemented!("dangling symlink specs unused"),
+            }
+        }
+        git(&self.work, &["add", "-A"]);
+        git(&self.work, &["commit", "--quiet", "-m", message]);
+        git(&self.work, &["push", "--quiet", "origin", "dangling-tmp"]);
+        let sha = git(&self.work, &["rev-parse", "HEAD"]).trim().to_string();
+        git(
+            &self.work,
+            &["push", "--quiet", "origin", ":refs/heads/dangling-tmp"],
+        );
+        git(&self.work, &["checkout", "--quiet", "main"]);
+        git(&self.work, &["branch", "--quiet", "-D", "dangling-tmp"]);
+        sha
+    }
+
     /// Commit a gitlink (submodule pointer) at `path` pointing at `sha`,
     /// push main, and return the new commit.
     pub fn commit_gitlink(&self, path: &str, sha: &str, message: &str) -> String {
@@ -275,12 +309,15 @@ pub struct TestServer {
 }
 
 impl TestServer {
-    /// Serve `repo`'s bare directory as `http://127.0.0.1:<port>/repo`.
-    pub fn start(repo: &TestRepo) -> TestServer {
+    /// Serve a bare repository directory as `http://127.0.0.1:<port>/repo`
+    /// (any bare repo works — the e2e fixtures pass [`TestRepo::bare`], the
+    /// large-repo bench a mirror of a real project).
+    pub fn start(bare: &Path) -> TestServer {
+        no_proxy_for_loopback();
         let server = Arc::new(tiny_http::Server::http("127.0.0.1:0").expect("bind test server"));
         let port = server.server_addr().to_ip().unwrap().port();
         let state = Arc::new(ServerState {
-            bare: repo.bare().to_path_buf(),
+            bare: bare.to_path_buf(),
             delay_ms: AtomicU64::new(0),
             fail_smart: AtomicBool::new(false),
             fail_api: AtomicBool::new(false),
@@ -604,11 +641,14 @@ fn handle_smart(state: &ServerState, mut req: tiny_http::Request, path: &str, qu
         return;
     }
     let method = req.method().as_str().to_string();
+    // The URL's repo segment is always "/repo"; translate the remainder to
+    // a path inside the served bare dir (PATH_TRANSLATED overrides
+    // GIT_PROJECT_ROOT-based resolution and works for any directory name).
+    let rest = path.strip_prefix("/repo").unwrap_or(path);
+    let translated = format!("{}{rest}", state.bare.display());
     let mut cmd = Command::new("git");
     cmd.arg("http-backend")
-        // The bare repo is <parent>/repo, so PATH_INFO's leading /repo
-        // resolves to it under GIT_PROJECT_ROOT=<parent>.
-        .env("GIT_PROJECT_ROOT", state.bare.parent().unwrap())
+        .env("PATH_TRANSLATED", &translated)
         .env("GIT_HTTP_EXPORT_ALL", "1")
         .env("REQUEST_METHOD", &method)
         .env("PATH_INFO", path)

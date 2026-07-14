@@ -44,12 +44,18 @@ Every query tries two sources, cheapest first:
    — one HTTP round trip per directory or blob, no pack transfer.
 
 At mount time nothing blocks on cloning: a background thread warms the cache
-with a **shallow fetch, then deepens to a full fetch**, while reads fall
-through to the API. Objects switch to local serving the moment they land.
-The mount discovers **new pushes** via the periodic refs refresh; a changed
-head triggers one incremental `git fetch`, so a repo that's already cached
-only ever transfers the new objects. A second mount of the same remote
-reuses the warmed cache and is local-speed immediately.
+in stages — a **shallow fetch of the default branch only** (the tips almost
+every read wants first; a repo like kubernetes has dozens of release
+branches that would multiply this stage), then **all refs and full
+history** — while reads fall through to the API. Objects switch to local
+serving the moment they land. Anything the staged fetches haven't covered
+yet — another branch, old history, even a dangling sha — is served from the
+API immediately *and* pulled into the cache by a targeted background
+`git fetch <sha>`, so the next read of it is local. The mount discovers
+**new pushes** via the periodic refs refresh; a changed head triggers one
+incremental `git fetch`, so a repo that's already cached only ever
+transfers the new objects. A second mount of the same remote reuses the
+warmed cache and is local-speed immediately.
 
 FUSE-side, requests are answered from a worker pool (a slow remote read
 never stalls the mount), directory listings use `READDIRPLUS` (names +
@@ -58,9 +64,25 @@ byte-budgeted in-memory LRU.
 
 ## Measured performance
 
-`cargo bench --bench fuse_vs_clone` — 201 source files plus one 24 MiB
-binary asset, 25 ms of injected server latency (`BENCH_DELAY_MS` to vary),
-against the same local test server the e2e suite uses:
+Both benchmarks run against the same local git-server lookalike the e2e
+suite uses, with 25 ms of injected per-request latency (`BENCH_DELAY_MS` to
+vary).
+
+**`cargo bench --bench large_repo`** — a real mirror of
+**kubernetes/kubernetes** (~1.3 GiB, 1.77 M objects, ~37 k tree entries at
+HEAD, 1200+ refs; one-time clone cached under `target/`, or point
+`LARGE_REPO_GIT_DIR` at an existing mirror):
+
+| scenario | git-fuse | shallow clone |
+|---|---|---|
+| time to first byte, from nothing | **~0.25 s** | ~6.0 s (24× slower) |
+| read a file at `HEAD~1000` (history on demand) | **~0.13 s** | ~2.7 s (`fetch <sha>` + read) |
+| `ls -R` the whole tree (shallow-warm cache) | ~0.8 s | ~40 ms (worktree already on disk) |
+| default branch fully local after | ~4.4 s | 6.0 s (the clone itself) |
+| all refs + full history local after | ~105 s (background) | — (single branch only) |
+
+**`cargo bench --bench fuse_vs_clone`** — synthetic: 201 source files plus
+one 24 MiB binary asset:
 
 | scenario | git-fuse | shallow clone + read |
 |---|---|---|
@@ -68,12 +90,14 @@ against the same local test server the e2e suite uses:
 | read whole tree, from nothing | ~440–550 ms | ~450 ms (≈ parity) |
 | read whole tree, cache warm | ~75 ms | — (clone already paid) |
 
-First byte never waits for the clone: it costs one tree walk plus one blob
-fetch over the API, so the gap over `git clone --depth=1` grows with repo
-size. Reading *everything* cold converges to clone speed (the same bytes
-have to move; the walk starts remote and finishes local as the background
-fetch overtakes it), and once the cache is warm reads don't touch the
-network at all.
+First byte never waits for a clone: it costs a couple of tree lookups plus
+one blob fetch over the API, so the gap over `git clone --depth=1` grows
+with repo size (2.2× on the synthetic repo, 24× on kubernetes). Historical
+commits answer at API speed and then become local via the targeted fetch.
+Reading *everything* cold converges to clone speed (the same bytes have to
+move; the walk starts remote and finishes local as the background fetch
+overtakes it), and once the cache is warm reads don't touch the network at
+all.
 
 ## Run
 

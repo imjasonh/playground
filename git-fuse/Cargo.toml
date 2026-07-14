@@ -32,3 +32,9 @@ tiny_http = "0.12"
 [[bench]]
 name = "fuse_vs_clone"
 harness = false
+
+# Same comparison against a real large repository (kubernetes/kubernetes by
+# default; one-time ~1.3 GiB mirror clone, cached under target/).
+[[bench]]
+name = "large_repo"
+harness = false

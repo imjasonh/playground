@@ -120,7 +120,7 @@ fn main() {
         .unwrap_or(25);
 
     let (repo, sha) = build_repo();
-    let server = TestServer::start(&repo);
+    let server = TestServer::start(repo.bare());
     server.set_delay(Duration::from_millis(delay_ms));
     let probe_file = "dir-00/file-00.txt";
     let mut rows = Vec::new();

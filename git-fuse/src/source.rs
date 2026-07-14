@@ -221,6 +221,21 @@ impl Source {
         Ok(snap)
     }
 
+    /// A read of `commit` had to fall through to the remote API: pull the
+    /// commit into the local cache in the background so later reads go
+    /// local. Current ref tips are skipped — the staged warmup or the
+    /// incremental ref fetch is already bringing those in; the targeted
+    /// fetch is for everything else (other history, dangling shas).
+    fn expand_cache_for(&self, commit: &str) {
+        let is_ref_tip = self
+            .refs()
+            .map(|snap| snap.refs.values().any(|oid| oid == commit))
+            .unwrap_or(false);
+        if !is_ref_tip {
+            self.local.fetch_commit_async(commit);
+        }
+    }
+
     /// Root tree oid of a commit, local-only. `Ok(None)` = not local yet.
     fn local_commit_tree(&self, commit: &str) -> Result<Option<String>, String> {
         if let Some(t) = self.commit_tree.lock().unwrap().get(commit) {
@@ -317,6 +332,7 @@ impl Source {
         let Some(resp) = self.remote.tree(commit, path)? else {
             return Ok(None);
         };
+        self.expand_cache_for(commit);
         let mut entries = Vec::with_capacity(resp.entries.len());
         for e in resp.entries {
             let mode = u32::from_str_radix(&e.mode, 8)
@@ -439,9 +455,12 @@ impl Source {
             }
             None => {
                 vlog!("blob {oid} not local; fetching {commit}:{path} from remote");
-                self.remote
+                let data = self
+                    .remote
                     .file(commit, path)?
-                    .ok_or_else(|| format!("object {oid} not found at {commit}:{path}"))?
+                    .ok_or_else(|| format!("object {oid} not found at {commit}:{path}"))?;
+                self.expand_cache_for(commit);
+                data
             }
         };
         let data = Arc::new(data);

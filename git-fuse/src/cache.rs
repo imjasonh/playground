@@ -8,14 +8,20 @@
 //!
 //! Warming is staged so a cold mount never blocks on a full clone:
 //!
-//! 1. **shallow** — `git fetch --depth=1` of all refs (tip trees + blobs);
-//! 2. **full** — `git fetch --unshallow` (complete history).
+//! 1. **shallow** — `git fetch --depth=1` of the **default branch only**
+//!    (the tip tree + blobs of the branch almost every read wants first);
+//! 2. **full** — `git fetch --unshallow` of **all refs and history**.
 //!
 //! Both run on a background thread; [`WarmState`] tracks progress so callers
-//! (and tests) can wait for a stage. When the ref refresh notices new remote
-//! heads, [`LocalCache::fetch_async`] runs one incremental fetch at a time.
+//! (and tests) can wait for a stage. Anything the staged fetches haven't
+//! covered yet — another branch, old history, a dangling commit — is served
+//! from the remote API and *also* fetched on demand
+//! ([`LocalCache::fetch_commit_async`]) so the next read of it is local.
+//! When the ref refresh notices new remote heads, [`LocalCache::fetch_async`]
+//! runs one incremental fetch at a time.
 
 use crate::vlog;
+use std::collections::HashSet;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
@@ -177,9 +183,57 @@ pub(crate) struct ObjInfo {
 pub(crate) struct LocalCache {
     git_dir: PathBuf,
     catfile: Mutex<Option<CatFile>>,
-    /// One background fetch at a time; extra triggers coalesce.
+    /// One background ref-fetch at a time; extra triggers coalesce.
     fetching: Arc<AtomicBool>,
+    /// Serializes every `git fetch` against the cache repo: concurrent
+    /// fetches contend on git's own `shallow.lock` and fail (seen when an
+    /// on-demand commit fetch raced the warmup's shallow fetch).
+    fetch_lock: Arc<Mutex<()>>,
+    /// Pids of in-flight `git fetch` children, killed on drop so an
+    /// unmount doesn't leave orphaned fetches writing into the cache.
+    fetch_pids: Arc<Mutex<HashSet<u32>>>,
+    /// Whether background fetching is enabled at all (`Options::warmup`).
+    fetch_enabled: bool,
+    /// Commits already requested via [`fetch_commit_async`], so each sha is
+    /// fetched at most once per mount.
+    requested_commits: Mutex<HashSet<String>>,
     pub(crate) warm: Arc<WarmState>,
+}
+
+impl Drop for LocalCache {
+    fn drop(&mut self) {
+        for pid in self.fetch_pids.lock().unwrap().iter() {
+            // SAFETY: plain kill(2) on a child we spawned; worst case the
+            // pid was already reaped and the signal goes nowhere valid —
+            // acceptable for teardown.
+            unsafe { libc::kill(*pid as i32, libc::SIGTERM) };
+        }
+    }
+}
+
+/// Run a git fetch whose pid is registered in `pids` while it runs, so
+/// [`LocalCache::drop`] can interrupt it.
+fn run_git_fetch(git_dir: &Path, args: &[&str], pids: &Mutex<HashSet<u32>>) -> Result<(), String> {
+    let child = git_base(git_dir)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("git {}: {e}", args.join(" ")))?;
+    let pid = child.id();
+    pids.lock().unwrap().insert(pid);
+    let out = child.wait_with_output();
+    pids.lock().unwrap().remove(&pid);
+    let out = out.map_err(|e| format!("git {}: {e}", args.join(" ")))?;
+    if !out.status.success() {
+        return Err(format!(
+            "git {}: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    Ok(())
 }
 
 /// A `git` invocation against the cache repo, isolated from user config.
@@ -191,6 +245,21 @@ fn git_base(git_dir: &Path) -> Command {
         .env_remove("GIT_DIR")
         .env_remove("GIT_WORK_TREE");
     cmd
+}
+
+/// The remote's default branch (full ref name, e.g. `refs/heads/main`),
+/// from the HEAD symref in `git ls-remote` — one cheap ref advertisement.
+fn default_branch(git_dir: &Path) -> Result<String, String> {
+    let out = run_git(git_dir, &["ls-remote", "--symref", "origin", "HEAD"])?;
+    for line in out.lines() {
+        // "ref: refs/heads/main\tHEAD"
+        if let Some(rest) = line.strip_prefix("ref: ") {
+            if let Some((target, _)) = rest.split_once('\t') {
+                return Ok(target.trim().to_string());
+            }
+        }
+    }
+    Err("ls-remote: no HEAD symref advertised".to_string())
 }
 
 fn run_git(git_dir: &Path, args: &[&str]) -> Result<String, String> {
@@ -225,6 +294,10 @@ impl LocalCache {
             git_dir: dir.to_path_buf(),
             catfile: Mutex::new(None),
             fetching: Arc::new(AtomicBool::new(false)),
+            fetch_lock: Arc::new(Mutex::new(())),
+            fetch_pids: Arc::new(Mutex::new(HashSet::new())),
+            fetch_enabled: warmup,
+            requested_commits: Mutex::new(HashSet::new()),
             warm: WarmState::new(),
         };
 
@@ -251,28 +324,54 @@ impl LocalCache {
         let dir = self.git_dir.clone();
         let warm = self.warm.clone();
         let fetching = self.fetching.clone();
+        let fetch_lock = self.fetch_lock.clone();
+        let fetch_pids = self.fetch_pids.clone();
         std::thread::Builder::new()
             .name("git-fuse-warmup".to_string())
             .spawn(move || {
                 fetching.store(true, Ordering::SeqCst);
                 let started = Instant::now();
-                // Stage 1: shallow — the cheapest fetch that makes tip trees
-                // and blobs local.
-                match run_git(dir.as_path(), &["fetch", "--quiet", "--depth=1", "origin"]) {
-                    Ok(_) => {
-                        warm.advance(STATE_SHALLOW);
-                        vlog!("shallow fetch done in {:?}", started.elapsed());
+                // Stage 1: shallow fetch of the default branch only — the
+                // cheapest fetch that makes the trees and blobs almost every
+                // read wants first local. (A repo like kubernetes has dozens
+                // of release branches; their tips would multiply this stage.)
+                match default_branch(dir.as_path()) {
+                    Ok(branch) => {
+                        let refspec = format!("+{branch}:{branch}");
+                        let stage1 = {
+                            let _serialize = fetch_lock.lock().unwrap();
+                            run_git_fetch(
+                                dir.as_path(),
+                                &["fetch", "--quiet", "--depth=1", "origin", &refspec],
+                                &fetch_pids,
+                            )
+                        };
+                        match stage1 {
+                            Ok(_) => {
+                                // Point the cache's HEAD at the same branch so
+                                // local ref resolution matches the remote.
+                                let _ = run_git(dir.as_path(), &["symbolic-ref", "HEAD", &branch]);
+                                warm.advance(STATE_SHALLOW);
+                                vlog!("shallow fetch of {branch} done in {:?}", started.elapsed());
+                            }
+                            Err(e) => vlog!("shallow fetch of {branch} failed: {e}"),
+                        }
                     }
-                    Err(e) => vlog!("shallow fetch failed: {e}"),
+                    Err(e) => vlog!("default-branch discovery failed: {e}"),
                 }
-                // Stage 2: full history.
-                let full = if dir.join("shallow").exists() {
-                    run_git(
-                        dir.as_path(),
-                        &["fetch", "--quiet", "--unshallow", "origin"],
-                    )
-                } else {
-                    run_git(dir.as_path(), &["fetch", "--quiet", "origin"])
+                // Stage 2: everything — all refs (the configured refspec
+                // mirrors refs/*) and full history.
+                let full = {
+                    let _serialize = fetch_lock.lock().unwrap();
+                    if dir.join("shallow").exists() {
+                        run_git_fetch(
+                            dir.as_path(),
+                            &["fetch", "--quiet", "--unshallow", "origin"],
+                            &fetch_pids,
+                        )
+                    } else {
+                        run_git_fetch(dir.as_path(), &["fetch", "--quiet", "origin"], &fetch_pids)
+                    }
                 };
                 match full {
                     Ok(_) => {
@@ -287,9 +386,61 @@ impl LocalCache {
             .expect("spawn warmup thread");
     }
 
+    /// Fetch one commit (and its reachable objects, shallow) in the
+    /// background, so a read that had to fall through to the remote API —
+    /// another branch, old history, a dangling sha — is local next time.
+    /// Each sha is requested at most once per mount; requires the server to
+    /// accept sha wants (git-server does; plain git needs
+    /// `uploadpack.allowAnySHA1InWant`). Failures are logged and ignored:
+    /// the remote API keeps serving the content either way.
+    pub(crate) fn fetch_commit_async(&self, commit: &str) {
+        if !self.fetch_enabled
+            || !self
+                .requested_commits
+                .lock()
+                .unwrap()
+                .insert(commit.to_string())
+        {
+            return;
+        }
+        let dir = self.git_dir.clone();
+        let commit = commit.to_string();
+        let fetch_lock = self.fetch_lock.clone();
+        let fetch_pids = self.fetch_pids.clone();
+        std::thread::Builder::new()
+            .name("git-fuse-fetch-commit".to_string())
+            .spawn(move || {
+                let started = Instant::now();
+                let result = {
+                    let _serialize = fetch_lock.lock().unwrap();
+                    // A fetch that finished while we waited (say, the
+                    // warmup's shallow stage) may have landed it already.
+                    if run_git(dir.as_path(), &["cat-file", "-e", &commit]).is_ok() {
+                        return;
+                    }
+                    run_git_fetch(
+                        dir.as_path(),
+                        &["fetch", "--quiet", "--depth=1", "origin", &commit],
+                        &fetch_pids,
+                    )
+                };
+                match result {
+                    Ok(_) => vlog!(
+                        "on-demand fetch of {commit} done in {:?}",
+                        started.elapsed()
+                    ),
+                    Err(e) => vlog!("on-demand fetch of {commit} failed: {e}"),
+                }
+            })
+            .expect("spawn commit fetch thread");
+    }
+
     /// Kick one incremental `git fetch` on a background thread (no-op when a
     /// fetch is already running). Called when the ref refresh sees new heads.
     pub(crate) fn fetch_async(&self) {
+        if !self.fetch_enabled {
+            return;
+        }
         if self
             .fetching
             .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
@@ -299,11 +450,21 @@ impl LocalCache {
         }
         let dir = self.git_dir.clone();
         let fetching = self.fetching.clone();
+        let fetch_lock = self.fetch_lock.clone();
+        let fetch_pids = self.fetch_pids.clone();
         std::thread::Builder::new()
             .name("git-fuse-fetch".to_string())
             .spawn(move || {
                 let started = Instant::now();
-                match run_git(dir.as_path(), &["fetch", "--quiet", "--prune", "origin"]) {
+                let result = {
+                    let _serialize = fetch_lock.lock().unwrap();
+                    run_git_fetch(
+                        dir.as_path(),
+                        &["fetch", "--quiet", "--prune", "origin"],
+                        &fetch_pids,
+                    )
+                };
+                match result {
                     Ok(_) => vlog!("incremental fetch done in {:?}", started.elapsed()),
                     Err(e) => vlog!("incremental fetch failed: {e}"),
                 }

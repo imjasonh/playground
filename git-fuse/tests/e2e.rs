@@ -64,7 +64,7 @@ impl Fixture {
     }
 
     fn with_repo(repo: TestRepo) -> Fixture {
-        let server = TestServer::start(&repo);
+        let server = TestServer::start(repo.bare());
         Self::with_server(repo, server, true)
     }
 
@@ -92,6 +92,11 @@ impl Fixture {
         self.path(&format!("commits/{sha}"))
     }
 
+    /// The shared bare-repo cache directory backing the mount.
+    fn cache_git_dir(&self) -> PathBuf {
+        self.cache.path().join("repo.git")
+    }
+
     fn cat(&self, rel: &str) -> Vec<u8> {
         std::fs::read(self.path(rel)).unwrap_or_else(|e| panic!("read {rel}: {e}"))
     }
@@ -111,6 +116,17 @@ impl Fixture {
     fn mount_ref(&self) -> &Mount {
         self.mount.as_ref().unwrap()
     }
+}
+
+/// Does the (cache) repo at `git_dir` have this object locally?
+fn git_has_object(git_dir: &Path, sha: &str) -> bool {
+    std::process::Command::new("git")
+        .arg("--git-dir")
+        .arg(git_dir)
+        .args(["cat-file", "-e", sha])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
 }
 
 /// Poll `cond` until true or the deadline passes.
@@ -260,7 +276,7 @@ fn cold_reads_never_wait_for_a_clone() {
     require_fuse!();
     let repo = TestRepo::new();
     let sha = repo.commit("only", &[Spec::File("fast.txt", b"first byte fast\n")]);
-    let server = TestServer::start(&repo);
+    let server = TestServer::start(repo.bare());
     // Smart-HTTP is broken: no clone or fetch can ever succeed, so every
     // successful read below was served by the JSON API alone.
     server.set_fail_smart(true);
@@ -346,18 +362,10 @@ fn new_commits_are_discovered_after_mount() {
         b"post-mount\n"
     );
 
-    // The ref change also triggers an incremental fetch; eventually the new
-    // commit is served with the remote entirely down.
+    // The ref change also triggers an incremental fetch that lands the new
+    // commit's objects in the shared cache.
     eventually("incremental fetch to land", WAIT, || {
-        f.server.set_fail_api(true);
-        f.server.set_fail_smart(true);
-        let ok = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            f.cat(&format!("commits/{after}/later.txt")) == b"post-mount\n"
-        }))
-        .unwrap_or(false);
-        f.server.set_fail_api(false);
-        f.server.set_fail_smart(false);
-        ok
+        git_has_object(&f.cache_git_dir(), &after)
     });
 }
 
@@ -434,6 +442,40 @@ fn missing_things_are_enoent() {
 }
 
 #[test]
+fn on_demand_fetch_expands_the_cache_beyond_the_staged_fetches() {
+    require_fuse!();
+    let repo = TestRepo::new();
+    repo.commit("base", &[Spec::File("f.txt", b"base\n")]);
+    // A commit the staged fetches can never bring in: it's unreachable from
+    // every ref upstream (think force-pushed-away PR head).
+    let dangling = repo.commit_dangling("dangling", &[Spec::File("orphan.txt", b"orphan\n")]);
+    let f = Fixture::with_repo(repo);
+    assert!(f.mount_ref().wait_warm(WAIT));
+
+    // The staged fetches (now finished) can't have brought it in…
+    assert!(!git_has_object(&f.cache_git_dir(), &dangling));
+    // …but it's readable immediately via the remote API…
+    assert_eq!(
+        f.cat(&format!("commits/{dangling}/orphan.txt")),
+        b"orphan\n"
+    );
+    // …and that read triggers a targeted `git fetch <sha>` into the cache.
+    eventually("on-demand fetch to land", WAIT, || {
+        git_has_object(&f.cache_git_dir(), &dangling)
+    });
+
+    // A fresh mount over the same cache serves it with the remote down.
+    let mut f = f;
+    f.server.set_fail_api(true);
+    f.server.set_fail_smart(true);
+    f.remount(true);
+    assert_eq!(
+        f.cat(&format!("commits/{dangling}/orphan.txt")),
+        b"orphan\n"
+    );
+}
+
+#[test]
 fn submodule_pointers_are_hidden() {
     require_fuse!();
     let repo = TestRepo::new();
@@ -451,7 +493,7 @@ fn no_warmup_mode_serves_via_api_only() {
     require_fuse!();
     let repo = TestRepo::new();
     let sha = repo.commit("only", &[Spec::File("f.txt", b"api-only\n")]);
-    let server = TestServer::start(&repo);
+    let server = TestServer::start(repo.bare());
     let f = Fixture::with_server(repo, server, false);
 
     assert_eq!(f.cat_ref("refs/heads/main"), sha);
