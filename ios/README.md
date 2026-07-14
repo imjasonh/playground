@@ -64,13 +64,15 @@ for ~90s. While a ride is active it also:
    Lock Screen / Dynamic Island shows duration, distance, current speed, and a
    rough elevation sparkline colored by speed.
 2. **Apple Watch companion** (`io.github.imjasonh.playground.watch`) — glanceable
-   clock time, duration, distance, current speed, heart rate, and active energy
-   via WatchConnectivity (phone remains the GPS/jolt recorder). Starting a ride
-   launches the Watch app into an `HKWorkoutSession` so it stays frontmost —
-   HealthKit is required for that long-running Watch execution (any workout
-   type works; we use cycling to match the app). The session also collects
-   heart rate / calories from the Watch sensors, mirrors them to the phone for
-   the saved ride, and finishes a cycling workout into Health on stop.
+   clock time, duration, distance, current speed, heart rate, energy, and (when
+   a Bluetooth sensor is paired) cadence/power via WatchConnectivity (phone
+   remains the GPS/jolt recorder). Starting a ride launches the Watch app into
+   an `HKWorkoutSession` so it stays frontmost — HealthKit is required for that
+   long-running Watch execution (any workout type works; we use cycling to
+   match the app). The session collects heart rate, active/basal energy, Watch
+   cycling distance, and cadence/speed/power when available, mirrors them to
+   the phone for the saved ride, and finishes a cycling workout into Health on
+   stop.
 
 Both need a one-time **iOS signing bootstrap** after this tree lands (new Bundle
 IDs, and again when HealthKit is first enabled on the host + Watch App IDs).

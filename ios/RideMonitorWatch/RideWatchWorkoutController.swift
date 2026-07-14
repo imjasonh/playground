@@ -3,8 +3,8 @@ import HealthKit
 import WatchConnectivity
 
 /// Owns the Watch-side `HKWorkoutSession` that keeps Ride Monitor frontmost
-/// during a phone-driven ride, and collects heart rate / active energy from
-/// the Watch sensors via `HKLiveWorkoutBuilder`.
+/// during a phone-driven ride, and collects HealthKit activity samples via
+/// `HKLiveWorkoutBuilder`.
 ///
 /// Why HealthKit (not "because it's a bike"):
 /// watchOS only grants long-running, frontmost execution to apps with an
@@ -13,10 +13,13 @@ import WatchConnectivity
 /// The activity type (`.cycling`) is just context for sensor fusion — any
 /// workout type would keep the app active the same way.
 ///
-/// On stop we **finish** the workout into Health (so the ride appears in the
-/// Fitness ring / Workout list) and mirror HR / calorie stats back to the
-/// phone for the saved ride JSON. Recording of GPS / jolts still happens on
-/// the phone.
+/// Collected quantities:
+/// - Heart rate, active + basal energy (Watch sensors)
+/// - Cycling distance (Watch GPS)
+/// - Cadence / cycling speed / power when a Bluetooth sensor is paired
+///
+/// On stop we **finish** the workout into Health and mirror stats back to the
+/// phone for the saved ride JSON. GPS track / jolts still record on the phone.
 @MainActor
 final class RideWatchWorkoutController: NSObject, ObservableObject {
     static let shared = RideWatchWorkoutController()
@@ -59,7 +62,7 @@ final class RideWatchWorkoutController: NSObject, ObservableObject {
         Task {
             let authorized = await ensureAuthorization()
             guard authorized else {
-                lastErrorMessage = "Health access is required to keep Ride Monitor on-wrist and collect heart rate."
+                lastErrorMessage = "Health access is required to keep Ride Monitor on-wrist and collect activity data."
                 return
             }
             if let session, session.state == .running || session.state == .prepared {
@@ -84,12 +87,8 @@ final class RideWatchWorkoutController: NSObject, ObservableObject {
             healthStore: healthStore,
             workoutConfiguration: configuration
         )
-        // Explicitly collect the quantities we surface in-app / save on the ride.
-        if let heartRate = HKQuantityType.quantityType(forIdentifier: .heartRate) {
-            dataSource.enableCollection(for: heartRate, predicate: nil)
-        }
-        if let energy = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) {
-            dataSource.enableCollection(for: energy, predicate: nil)
+        for type in Self.collectibleQuantityTypes {
+            dataSource.enableCollection(for: type, predicate: nil)
         }
         builder.dataSource = dataSource
         session.delegate = self
@@ -168,16 +167,44 @@ final class RideWatchWorkoutController: NSObject, ObservableObject {
     private func refreshActivity(from builder: HKLiveWorkoutBuilder, forcePush: Bool = false) {
         var next = RideWatchActivityMetrics.empty
         let bpmUnit = HKUnit.count().unitDivided(by: .minute())
+        let rpmUnit = HKUnit.count().unitDivided(by: .minute())
+        let speedUnit = HKUnit.meter().unitDivided(by: .second())
 
-        if let heartRateType = HKQuantityType.quantityType(forIdentifier: .heartRate),
-           let stats = builder.statistics(for: heartRateType) {
+        if let type = HKQuantityType.quantityType(forIdentifier: .heartRate),
+           let stats = builder.statistics(for: type) {
             next.heartRateBPM = stats.mostRecentQuantity()?.doubleValue(for: bpmUnit)
             next.averageHeartRateBPM = stats.averageQuantity()?.doubleValue(for: bpmUnit)
             next.maxHeartRateBPM = stats.maximumQuantity()?.doubleValue(for: bpmUnit)
         }
-        if let energyType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned),
-           let stats = builder.statistics(for: energyType) {
+        if let type = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned),
+           let stats = builder.statistics(for: type) {
             next.activeEnergyKilocalories = stats.sumQuantity()?.doubleValue(for: .kilocalorie())
+        }
+        if let type = HKQuantityType.quantityType(forIdentifier: .basalEnergyBurned),
+           let stats = builder.statistics(for: type) {
+            next.basalEnergyKilocalories = stats.sumQuantity()?.doubleValue(for: .kilocalorie())
+        }
+        if let type = HKQuantityType.quantityType(forIdentifier: .distanceCycling),
+           let stats = builder.statistics(for: type) {
+            next.watchDistanceMeters = stats.sumQuantity()?.doubleValue(for: .meter())
+        }
+
+        if #available(watchOS 10.0, *) {
+            if let type = HKQuantityType.quantityType(forIdentifier: .cyclingCadence),
+               let stats = builder.statistics(for: type) {
+                next.cadenceRPM = stats.mostRecentQuantity()?.doubleValue(for: rpmUnit)
+                next.averageCadenceRPM = stats.averageQuantity()?.doubleValue(for: rpmUnit)
+            }
+            if let type = HKQuantityType.quantityType(forIdentifier: .cyclingSpeed),
+               let stats = builder.statistics(for: type) {
+                next.cyclingSpeedMetersPerSecond = stats.mostRecentQuantity()?.doubleValue(for: speedUnit)
+            }
+            if let type = HKQuantityType.quantityType(forIdentifier: .cyclingPower),
+               let stats = builder.statistics(for: type) {
+                next.cyclingPowerWatts = stats.mostRecentQuantity()?.doubleValue(for: .watt())
+                next.averageCyclingPowerWatts = stats.averageQuantity()?.doubleValue(for: .watt())
+                next.maxCyclingPowerWatts = stats.maximumQuantity()?.doubleValue(for: .watt())
+            }
         }
 
         activity = next
@@ -195,15 +222,12 @@ final class RideWatchWorkoutController: NSObject, ObservableObject {
     private func ensureAuthorization() async -> Bool {
         guard HKHealthStore.isHealthDataAvailable() else { return false }
 
+        let types = Self.collectibleQuantityTypes
         var share: Set<HKSampleType> = [HKObjectType.workoutType()]
         var read: Set<HKObjectType> = [HKObjectType.workoutType()]
-        if let heartRate = HKQuantityType.quantityType(forIdentifier: .heartRate) {
-            share.insert(heartRate)
-            read.insert(heartRate)
-        }
-        if let energy = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) {
-            share.insert(energy)
-            read.insert(energy)
+        for type in types {
+            share.insert(type)
+            read.insert(type)
         }
 
         // If workout write was previously denied, don't bother re-prompting.
@@ -221,6 +245,24 @@ final class RideWatchWorkoutController: NSObject, ObservableObject {
             }
         }
         return healthStore.authorizationStatus(for: HKObjectType.workoutType()) != .sharingDenied
+    }
+
+    /// Quantity types we ask HealthKit to stream into the live builder.
+    private static var collectibleQuantityTypes: [HKQuantityType] {
+        var identifiers: [HKQuantityTypeIdentifier] = [
+            .heartRate,
+            .activeEnergyBurned,
+            .basalEnergyBurned,
+            .distanceCycling,
+        ]
+        if #available(watchOS 10.0, *) {
+            identifiers.append(contentsOf: [
+                .cyclingCadence,
+                .cyclingSpeed,
+                .cyclingPower,
+            ])
+        }
+        return identifiers.compactMap { HKQuantityType.quantityType(forIdentifier: $0) }
     }
 
     static func cyclingConfiguration() -> HKWorkoutConfiguration {

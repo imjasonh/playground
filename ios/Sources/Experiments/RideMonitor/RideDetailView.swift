@@ -40,6 +40,21 @@ struct RideDetailView: View {
                 if let kcal = ride.activeEnergyKilocalories {
                     stat("Active energy", String(format: "%.0f kcal", kcal))
                 }
+                if let kcal = ride.basalEnergyKilocalories {
+                    stat("Basal energy", String(format: "%.0f kcal", kcal))
+                }
+                if let meters = ride.watchDistanceMeters {
+                    stat("Watch distance", String(format: "%.2f mi", RideUnits.miles(fromMeters: meters)))
+                }
+                if let rpm = ride.averageCadenceRPM {
+                    stat("Avg cadence", String(format: "%.0f rpm", rpm))
+                }
+                if let watts = ride.averageCyclingPowerWatts {
+                    stat("Avg power", String(format: "%.0f W", watts))
+                }
+                if let watts = ride.maxCyclingPowerWatts {
+                    stat("Max power", String(format: "%.0f W", watts))
+                }
                 if let gain = ride.elevationGain {
                     stat("Net elevation", String(format: "%+.1f m", gain))
                 }

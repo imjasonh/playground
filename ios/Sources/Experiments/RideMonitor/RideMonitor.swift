@@ -46,6 +46,10 @@ final class RideMonitor: NSObject, ObservableObject {
     @Published private(set) var heartRateBPM: Double?
     /// Active energy from the Watch workout session (kilocalories).
     @Published private(set) var activeEnergyKilocalories: Double?
+    /// Cadence from a paired Bluetooth sensor (rpm), when available.
+    @Published private(set) var cadenceRPM: Double?
+    /// Cycling power from a paired power meter (watts), when available.
+    @Published private(set) var cyclingPowerWatts: Double?
 
     private let motion = CMMotionManager()
     private let location = CLLocationManager()
@@ -164,6 +168,8 @@ final class RideMonitor: NSObject, ObservableObject {
         crashAlert = false
         heartRateBPM = nil
         activeEnergyKilocalories = nil
+        cadenceRPM = nil
+        cyclingPowerWatts = nil
         watchSession.resetActivity()
         lastLocation = nil
         lastMotionAt = nil
@@ -319,6 +325,11 @@ final class RideMonitor: NSObject, ObservableObject {
             averageHeartRateBPM: watchActivity.averageHeartRateBPM,
             maxHeartRateBPM: watchActivity.maxHeartRateBPM,
             activeEnergyKilocalories: watchActivity.activeEnergyKilocalories,
+            basalEnergyKilocalories: watchActivity.basalEnergyKilocalories,
+            watchDistanceMeters: watchActivity.watchDistanceMeters,
+            averageCadenceRPM: watchActivity.averageCadenceRPM,
+            averageCyclingPowerWatts: watchActivity.averageCyclingPowerWatts,
+            maxCyclingPowerWatts: watchActivity.maxCyclingPowerWatts,
             events: events.reversed(), // store chronologically
             track: track,
             motion: motionSummaries,
@@ -397,6 +408,8 @@ final class RideMonitor: NSObject, ObservableObject {
         let activity = watchSession.latestActivity
         heartRateBPM = activity.heartRateBPM
         activeEnergyKilocalories = activity.activeEnergyKilocalories
+        cadenceRPM = activity.cadenceRPM
+        cyclingPowerWatts = activity.cyclingPowerWatts
     }
 
     func dismissCrashAlert() {

@@ -48,6 +48,12 @@ struct Ride: Codable, Identifiable {
     var averageHeartRateBPM: Double? = nil
     var maxHeartRateBPM: Double? = nil
     var activeEnergyKilocalories: Double? = nil
+    var basalEnergyKilocalories: Double? = nil
+    /// Watch GPS cycling distance (meters); phone `distanceMeters` remains primary.
+    var watchDistanceMeters: Double? = nil
+    var averageCadenceRPM: Double? = nil
+    var averageCyclingPowerWatts: Double? = nil
+    var maxCyclingPowerWatts: Double? = nil
     var events: [RideEvent]
     var track: [LocationSample]
     var motion: [MotionSummary]

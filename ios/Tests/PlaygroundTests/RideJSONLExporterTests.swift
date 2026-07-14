@@ -70,8 +70,18 @@ final class RideJSONLExporterTests: XCTestCase {
         ride.averageHeartRateBPM = 140
         ride.maxHeartRateBPM = 165
         ride.activeEnergyKilocalories = 88
+        ride.basalEnergyKilocalories = 10
+        ride.watchDistanceMeters = 1500
+        ride.averageCadenceRPM = 80
+        ride.averageCyclingPowerWatts = 200
+        ride.maxCyclingPowerWatts = 350
         let header = try RideJSONLExporter.lines(for: ride)[0]
         XCTAssertTrue(header.contains("\"averageHeartRateBPM\":140"))
         XCTAssertTrue(header.contains("\"maxHeartRateBPM\":165"))
         XCTAssertTrue(header.contains("\"activeEnergyKilocalories\":88"))
+        XCTAssertTrue(header.contains("\"basalEnergyKilocalories\":10"))
+        XCTAssertTrue(header.contains("\"watchDistanceMeters\":1500"))
+        XCTAssertTrue(header.contains("\"averageCadenceRPM\":80"))
+        XCTAssertTrue(header.contains("\"averageCyclingPowerWatts\":200"))
+        XCTAssertTrue(header.contains("\"maxCyclingPowerWatts\":350"))
     }

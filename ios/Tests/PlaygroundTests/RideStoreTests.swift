@@ -61,12 +61,22 @@ final class RideStoreTests: XCTestCase {
         ride.averageHeartRateBPM = 142
         ride.maxHeartRateBPM = 168
         ride.activeEnergyKilocalories = 215.5
+        ride.basalEnergyKilocalories = 18
+        ride.watchDistanceMeters = 4100
+        ride.averageCadenceRPM = 82
+        ride.averageCyclingPowerWatts = 190
+        ride.maxCyclingPowerWatts = 420
         try store.save(ride)
 
         let r = try XCTUnwrap(store.loadAll().first)
         XCTAssertEqual(r.averageHeartRateBPM ?? 0, 142, accuracy: 0.001)
         XCTAssertEqual(r.maxHeartRateBPM ?? 0, 168, accuracy: 0.001)
         XCTAssertEqual(r.activeEnergyKilocalories ?? 0, 215.5, accuracy: 0.001)
+        XCTAssertEqual(r.basalEnergyKilocalories ?? 0, 18, accuracy: 0.001)
+        XCTAssertEqual(r.watchDistanceMeters ?? 0, 4100, accuracy: 0.001)
+        XCTAssertEqual(r.averageCadenceRPM ?? 0, 82, accuracy: 0.001)
+        XCTAssertEqual(r.averageCyclingPowerWatts ?? 0, 190, accuracy: 0.001)
+        XCTAssertEqual(r.maxCyclingPowerWatts ?? 0, 420, accuracy: 0.001)
     }
 
     func testSummaryRoundTripsAndLegacyJSONDecodesWithoutSummary() throws {

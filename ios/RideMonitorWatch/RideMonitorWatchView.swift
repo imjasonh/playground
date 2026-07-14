@@ -47,6 +47,20 @@ struct RideMonitorWatchView: View {
                                 identifier: "watchEnergy"
                             )
                         }
+                        if let rpm = workout.activity.cadenceRPM {
+                            metric(
+                                label: "Cadence",
+                                value: String(format: "%.0f rpm", rpm),
+                                identifier: "watchCadence"
+                            )
+                        }
+                        if let watts = workout.activity.cyclingPowerWatts {
+                            metric(
+                                label: "Power",
+                                value: String(format: "%.0f W", watts),
+                                identifier: "watchPower"
+                            )
+                        }
                         if let message = workout.lastErrorMessage {
                             Text(message)
                                 .font(.caption2)
