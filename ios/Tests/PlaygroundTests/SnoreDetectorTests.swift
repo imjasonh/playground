@@ -13,7 +13,15 @@ final class SnoreDetectorTests: XCTestCase {
         config.maxEventSeconds = 5.0
         config.noiseFloorAlpha = 0.05
         config.noiseFloorRiseAlpha = 0.001
+        config.warmupSeconds = 0
         return SnoreDetector(config: config)
+    }
+
+    /// Sensitivity mapping with warmup disabled so tests stay short.
+    private func sensitivityConfig(_ raw: Double) -> SnoreDetectorConfig {
+        var config = SnoreDetectorConfig.parameters(forSensitivity: raw)
+        config.warmupSeconds = 0
+        return config
     }
 
     func testQuietAudioProducesNoEvents() {
@@ -110,6 +118,7 @@ final class SnoreDetectorTests: XCTestCase {
         config.maxEventSeconds = 1.0
         config.endBelowSeconds = 5.0
         config.noiseFloorRiseAlpha = 0.0001
+        config.warmupSeconds = 0
         var detector = SnoreDetector(config: config)
 
         for t in stride(from: 0.0, through: 0.5, by: 0.1) {
@@ -136,6 +145,8 @@ final class SnoreDetectorTests: XCTestCase {
         XCTAssertGreaterThan(low.thresholdMargin, mid.thresholdMargin)
         XCTAssertGreaterThan(mid.thresholdMargin, high.thresholdMargin)
         XCTAssertGreaterThan(low.minAboveSeconds, high.minAboveSeconds)
+        XCTAssertGreaterThan(low.noiseFloorRiseAlpha, high.noiseFloorRiseAlpha)
+        XCTAssertEqual(high.warmupSeconds, 20, accuracy: 0.01)
     }
 
     func testSensitivityClampsOutOfRange() {
@@ -150,7 +161,9 @@ final class SnoreDetectorTests: XCTestCase {
         let quietFloor: Double = 0.01
         let burst: Double = 0.028
 
-        var insensitive = SnoreDetector(config: .parameters(forSensitivity: 0.1))
+        var lowConfig = sensitivityConfig(0.1)
+        lowConfig.initialNoiseFloor = quietFloor
+        var insensitive = SnoreDetector(config: lowConfig)
         for t in stride(from: 0.0, through: 1.0, by: 0.1) {
             _ = insensitive.process(rms: quietFloor, at: t)
         }
@@ -166,7 +179,9 @@ final class SnoreDetectorTests: XCTestCase {
         }
         XCTAssertNil(lowDetection, "low sensitivity should ignore a mild burst")
 
-        var sensitive = SnoreDetector(config: .parameters(forSensitivity: 0.95))
+        var highConfig = sensitivityConfig(0.95)
+        highConfig.initialNoiseFloor = quietFloor
+        var sensitive = SnoreDetector(config: highConfig)
         for t in stride(from: 0.0, through: 1.0, by: 0.1) {
             _ = sensitive.process(rms: quietFloor, at: t)
         }
@@ -183,8 +198,81 @@ final class SnoreDetectorTests: XCTestCase {
         XCTAssertNotNil(highDetection, "high sensitivity should catch the mild burst")
     }
 
+    /// Quiet-bedroom levels under measurement mode: ambient ~0.001, soft snore
+    /// ~0.0022. The old max-sensitivity margin (0.003) could never catch this
+    /// once the floor had settled.
+    func testMaxSensitivityCatchesQuietRoomSnore() throws {
+        let ambient: Double = 0.001
+        let snore: Double = 0.0022
+
+        var detector = SnoreDetector(config: sensitivityConfig(1))
+        // Let the seeded floor fall toward true ambient (alpha is relatively fast).
+        for t in stride(from: 0.0, through: 8.0, by: 0.1) {
+            _ = detector.process(rms: ambient, at: t)
+        }
+        for t in stride(from: 8.1, through: 9.0, by: 0.1) {
+            _ = detector.process(rms: snore, at: t)
+        }
+        var detection: SnoreDetection?
+        for t in stride(from: 9.1, through: 10.5, by: 0.1) {
+            if let event = detector.process(rms: ambient, at: t) {
+                detection = event
+                break
+            }
+        }
+        XCTAssertNotNil(detection, "max sensitivity should catch a soft quiet-room snore")
+    }
+
+    /// Mid sensitivity should still miss the same quiet-room snore so the
+    /// slider remains meaningful.
+    func testMidSensitivityMissesQuietRoomSnore() {
+        let ambient: Double = 0.001
+        let snore: Double = 0.0022
+
+        var detector = SnoreDetector(config: sensitivityConfig(0.5))
+        for t in stride(from: 0.0, through: 8.0, by: 0.1) {
+            _ = detector.process(rms: ambient, at: t)
+        }
+        for t in stride(from: 8.1, through: 9.0, by: 0.1) {
+            _ = detector.process(rms: snore, at: t)
+        }
+        for t in stride(from: 9.1, through: 10.5, by: 0.1) {
+            XCTAssertNil(detector.process(rms: ambient, at: t))
+        }
+    }
+
+    func testWarmupSuppressesOnsets() {
+        var config = SnoreDetectorConfig.parameters(forSensitivity: 1)
+        XCTAssertGreaterThan(config.warmupSeconds, 1)
+        var detector = SnoreDetector(config: config)
+
+        // Loud burst entirely inside warmup must not produce an event.
+        for t in stride(from: 0.0, through: config.warmupSeconds - 0.5, by: 0.1) {
+            XCTAssertNil(detector.process(rms: 0.05, at: t), "event during warmup at \(t)")
+        }
+        XCTAssertTrue(detector.isWarmingUp)
+    }
+
+    func testWarmupAbsorbsSteadyRoomNoise() {
+        var config = SnoreDetectorConfig.parameters(forSensitivity: 1)
+        var detector = SnoreDetector(config: config)
+        let ambient = 0.01
+
+        // Through warmup + a few seconds after, steady ambient alone should
+        // raise the floor and not leave a stuck active event.
+        var events = 0
+        for t in stride(from: 0.0, through: config.warmupSeconds + 5.0, by: 0.1) {
+            if detector.process(rms: ambient, at: t) != nil {
+                events += 1
+            }
+        }
+        XCTAssertEqual(events, 0, "steady room noise should be absorbed during warmup")
+        XCTAssertGreaterThan(detector.noiseFloor, ambient * 0.9)
+        XCTAssertGreaterThan(detector.currentThreshold, ambient)
+    }
+
     func testApplySensitivityUpdatesThresholdLive() {
-        var detector = SnoreDetector(config: .parameters(forSensitivity: 0))
+        var detector = SnoreDetector(config: sensitivityConfig(0))
         for t in stride(from: 0.0, through: 1.0, by: 0.1) {
             _ = detector.process(rms: 0.01, at: t)
         }
@@ -192,5 +280,12 @@ final class SnoreDetectorTests: XCTestCase {
         detector.applySensitivity(1)
         let after = detector.currentThreshold
         XCTAssertLessThan(after, before)
+    }
+
+    func testMaxSensitivityMarginIsTiny() {
+        let high = SnoreDetectorConfig.parameters(forSensitivity: 1)
+        // Old max was 0.003 — too large for quiet-room measurement-mode RMS.
+        XCTAssertLessThan(high.thresholdMargin, 0.001)
+        XCTAssertLessThan(high.thresholdRatio, 0.3)
     }
 }

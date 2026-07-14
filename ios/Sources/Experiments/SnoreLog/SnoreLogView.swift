@@ -126,7 +126,7 @@ struct SnoreLogView: View {
             }
             .font(.caption2)
             .foregroundStyle(.secondary)
-            Text("Drag up if quiet snores are missed; drag down if talking or room noise keeps triggering.")
+            Text("Drag up for quiet snoring; drag down if talking or room noise keeps triggering. 100% uses a much lower loudness bar than earlier builds.")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
         }
@@ -187,7 +187,7 @@ struct SnoreLogView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("How it works")
                 .font(.headline)
-            Text("A few seconds of audio stay in memory. When loudness rises above the ambient floor for a beat, that clip is saved — the rest of the night is discarded. Use the sensitivity slider to match your room and snore volume. Background audio keeps listening with the screen off.")
+            Text("A few seconds of audio stay in memory. After a short ambient calibration, loudness spikes above the room floor are saved as clips — the rest of the night is discarded. Turn sensitivity up for quiet snoring (100% is much more sensitive than before); turn it down if talking or HVAC keeps triggering. Background audio keeps listening with the screen off.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             Text("Not a medical device. Level-based detection will also catch talking, traffic, and other noise.")
