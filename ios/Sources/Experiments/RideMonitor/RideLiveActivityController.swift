@@ -59,14 +59,23 @@ final class RideLiveActivityController {
     func end(snapshot: RideLiveSnapshot?) {
         pendingStart = nil
         generation += 1
-        guard let activity else { return }
         let content: ActivityContent<RideMonitorAttributes.ContentState>? = snapshot.map {
             ActivityContent(state: RideMonitorAttributes.ContentState(snapshot: $0), staleDate: nil)
         }
-        let current = activity
-        self.activity = nil
+        let tracked = activity
+        activity = nil
+
+        // End every activity of this type, not only the one we tracked — a
+        // raced `request` or force-quit leftover can otherwise linger.
         Task {
-            await current.end(content, dismissalPolicy: .default)
+            var seen = Set<String>()
+            if let tracked {
+                seen.insert(tracked.id)
+                await tracked.end(content, dismissalPolicy: .default)
+            }
+            for existing in Activity<RideMonitorAttributes>.activities where !seen.contains(existing.id) {
+                await existing.end(content, dismissalPolicy: .immediate)
+            }
         }
     }
 
@@ -84,17 +93,26 @@ final class RideLiveActivityController {
             await existing.end(nil, dismissalPolicy: .immediate)
         }
 
-        guard token == generation, let pending = pendingStart else { return }
+        // Re-check after awaiting — an interleaved `end()` or newer start must win.
+        guard token == generation, let pending = pendingStart, activity == nil else { return }
 
         let attributes = RideMonitorAttributes(startedAt: pending.startedAt)
         let state = RideMonitorAttributes.ContentState(snapshot: pending.snapshot)
         do {
             let content = ActivityContent(state: state, staleDate: nil)
-            activity = try Activity.request(attributes: attributes, content: content, pushType: nil)
+            // Final generation check immediately before request.
+            guard token == generation, pendingStart != nil, activity == nil else { return }
+            let requested = try Activity.request(attributes: attributes, content: content, pushType: nil)
+            guard token == generation else {
+                await requested.end(nil, dismissalPolicy: .immediate)
+                return
+            }
+            activity = requested
             pendingStart = nil
         } catch {
             activity = nil
             // Leave `pendingStart` so a later foreground retry can try again.
+            RideMonitorLog.error("Live Activity request failed: \(error.localizedDescription)")
         }
     }
 }

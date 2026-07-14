@@ -79,6 +79,12 @@ final class RideMonitor: NSObject, ObservableObject {
     /// GPS fix last seen while motion samples were flowing — used so a burst
     /// flushed after a suspend gap is not tagged with the post-gap teleport.
     private var locationAtLastMotion: CLLocation?
+    /// Latest magnitude for UI; published from the 0.25s timer (not at 50 Hz).
+    private var latestG = 0.0
+    /// Whole-second floor of the last persisted barometer sample.
+    private var lastAltitudeSecond: Int?
+    /// Ride-relative time of the last thinned GPS sample we kept.
+    private var lastTrackSampleAt: TimeInterval?
 
     // Accumulated logs for the current ride.
     private var track: [LocationSample] = []
@@ -100,6 +106,8 @@ final class RideMonitor: NSObject, ObservableObject {
     private let motionStallRestartThreshold: TimeInterval = 2.5
     /// Companion pushes slower than this are logged as warnings.
     private let companionPushWarnMilliseconds: Double = 50
+    /// Persist at most one barometer / GPS sample per this interval.
+    private let sensorPersistInterval: TimeInterval = 1.0
 
     override init() {
         super.init()
@@ -112,6 +120,13 @@ final class RideMonitor: NSObject, ObservableObject {
         location.pausesLocationUpdatesAutomatically = false
         // Activate WatchConnectivity early so the companion is ready at start.
         _ = watchSession
+    }
+
+    deinit {
+        // `@StateObject` teardown (navigate away) should have already called
+        // `stop()` from `onDisappear`. Invalidate the RunLoop timer here as a
+        // belt-and-suspenders so a leaked timer can't keep firing.
+        timer?.invalidate()
     }
 
     private var now: TimeInterval { ProcessInfo.processInfo.systemUptime - startUptime }
@@ -190,6 +205,9 @@ final class RideMonitor: NSObject, ObservableObject {
         lastLocation = nil
         lastMotionAt = nil
         locationAtLastMotion = nil
+        latestG = 0
+        lastAltitudeSecond = nil
+        lastTrackSampleAt = nil
         lastCompanionPushAt = 0
         motionRestartCount = 0
         locationErrorCount = 0
@@ -207,7 +225,11 @@ final class RideMonitor: NSObject, ObservableObject {
         timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             guard let self, self.isRunning else { return }
             self.elapsed = self.now
+            // Publish UI g at ~4 Hz — mutating @Published at 50 Hz on the main
+            // queue was starving Core Motion delivery on longer rides.
+            self.currentG = self.latestG
             self.pullWatchActivity()
+            self.pollSensingHealth()
             self.pushCompanionsIfNeeded(force: false)
             self.logHeartbeatIfNeeded()
         }
@@ -276,18 +298,37 @@ final class RideMonitor: NSObject, ObservableObject {
             if let last = self.lastMotionAt, self.now - last > self.sensingGapEndThreshold {
                 return
             }
+            // Match motion summaries: one barometer sample per whole second.
+            // Full-rate (~50 Hz) persistence was the dominant RAM growth on long rides.
+            let second = Int(self.now.rounded(.down))
+            if self.lastAltitudeSecond == second { return }
+            self.lastAltitudeSecond = second
             self.altitudeSamples.append(AltitudeSample(
-                t: self.now,
+                t: TimeInterval(second),
                 relativeAltitude: data.relativeAltitude.doubleValue,
                 pressureKPa: data.pressure.doubleValue
             ))
         }
     }
 
-    /// If GPS is still delivering but accelerometer callbacks stopped, kick Core Motion.
-    private func restartMotionIfStalled() {
+    /// Timer-driven stall / gap recovery — location callbacks alone can miss this
+    /// when GPS also goes quiet while the process stays awake.
+    private func pollSensingHealth() {
+        guard isRunning else { return }
+        if let last = lastMotionAt, now - last > sensingGapEndThreshold {
+            finalizeAfterSensingGap()
+            return
+        }
+        restartMotionIfStalled(requireExistingMotion: true)
+    }
+
+    /// If accelerometer callbacks stopped, kick Core Motion.
+    /// - Parameter requireExistingMotion: when true (timer path), skip the
+    ///   "no samples yet" restart so we don't spam before the first callback.
+    private func restartMotionIfStalled(requireExistingMotion: Bool = false) {
         guard isRunning else { return }
         guard let last = lastMotionAt else {
+            guard !requireExistingMotion else { return }
             motionRestartCount += 1
             RideMonitorLog.notice("motion restart #\(motionRestartCount) — no samples yet, GPS flowing")
             startMotionUpdates()
@@ -368,6 +409,9 @@ final class RideMonitor: NSObject, ObservableObject {
         }
 
         trimLogs(after: endedAtOffset)
+        // Deferred GPS fixes can arrive out of order once we stamp with
+        // `loc.timestamp` instead of wall-clock `now`.
+        track.sort { $0.t < $1.t }
         elapsed = endedAtOffset
         pullWatchActivity()
 
@@ -389,28 +433,31 @@ final class RideMonitor: NSObject, ObservableObject {
                 : nil,
             authorizationStatusAtEnd: Self.describeAuth(location.authorizationStatus)
         )
-        let ride = Ride(
-            id: UUID(),
-            startedAt: startDate,
-            endedAt: endedAt,
-            durationSeconds: endedAtOffset,
-            distanceMeters: distanceMeters,
-            peakG: peakG,
-            joltCount: joltCount,
-            crashCount: crashCount,
-            averageHeartRateBPM: watchActivity.averageHeartRateBPM,
-            maxHeartRateBPM: watchActivity.maxHeartRateBPM,
-            activeEnergyKilocalories: watchActivity.activeEnergyKilocalories,
-            basalEnergyKilocalories: watchActivity.basalEnergyKilocalories,
-            watchDistanceMeters: watchActivity.watchDistanceMeters,
-            averageCadenceRPM: watchActivity.averageCadenceRPM,
-            averageCyclingPowerWatts: watchActivity.averageCyclingPowerWatts,
-            maxCyclingPowerWatts: watchActivity.maxCyclingPowerWatts,
-            recordingDiagnostics: diagnostics,
-            events: events.reversed(), // store chronologically
-            track: track,
-            motion: motionSummaries,
-            barometer: altitudeSamples
+        // Events are appended chronologically during the ride.
+        let ride = RideSampleSanitizer.sanitize(
+            Ride(
+                id: UUID(),
+                startedAt: startDate,
+                endedAt: endedAt,
+                durationSeconds: endedAtOffset,
+                distanceMeters: distanceMeters,
+                peakG: peakG,
+                joltCount: joltCount,
+                crashCount: crashCount,
+                averageHeartRateBPM: watchActivity.averageHeartRateBPM,
+                maxHeartRateBPM: watchActivity.maxHeartRateBPM,
+                activeEnergyKilocalories: watchActivity.activeEnergyKilocalories,
+                basalEnergyKilocalories: watchActivity.basalEnergyKilocalories,
+                watchDistanceMeters: watchActivity.watchDistanceMeters,
+                averageCadenceRPM: watchActivity.averageCadenceRPM,
+                averageCyclingPowerWatts: watchActivity.averageCyclingPowerWatts,
+                maxCyclingPowerWatts: watchActivity.maxCyclingPowerWatts,
+                recordingDiagnostics: diagnostics,
+                events: events,
+                track: track,
+                motion: motionSummaries,
+                barometer: altitudeSamples
+            )
         )
 
         RideMonitorLog.notice(
@@ -438,6 +485,9 @@ final class RideMonitor: NSObject, ObservableObject {
             // On-device label is async (Foundation Models when available).
             Task { await attachSummary(to: ride, statusSuffix: detail) }
         } catch {
+            // Keep the sanitized ride in memory so Past rides / export can still
+            // reach it if the user stays in the experiment after a disk failure.
+            lastSavedRide = ride
             statusMessage = "Ride finished but couldn't be saved: \(error.localizedDescription)"
             RideMonitorLog.error("ride save failed: \(error.localizedDescription)")
         }
@@ -633,8 +683,12 @@ final class RideMonitor: NSObject, ObservableObject {
         let r = data.rotationRate
         let rotation = (r.x * r.x + r.y * r.y + r.z * r.z).squareRoot()
 
-        currentG = magnitude
-        peakG = max(peakG, magnitude)
+        // Don't publish `currentG` here — 50 Hz @Published updates rebuild SwiftUI
+        // on the same queue that delivers Core Motion. The timer mirrors `latestG`.
+        latestG = magnitude
+        if magnitude > peakG {
+            peakG = magnitude
+        }
 
         if let summary = aggregator.add(t: t, g: magnitude, rotation: rotation) {
             motionSummaries.append(summary)
@@ -653,7 +707,7 @@ final class RideMonitor: NSObject, ObservableObject {
         for var event in newEvents {
             event.latitude = location?.coordinate.latitude
             event.longitude = location?.coordinate.longitude
-            events.insert(event, at: 0)
+            events.append(event)
             if event.severity == .crash {
                 crashCount += 1
                 handleCrash(event)
@@ -747,7 +801,7 @@ extension RideMonitor: CLLocationManagerDelegate {
 
         // Location without motion usually means CMMotionManager wedged after a
         // brief suspend — restart it while we still have a background hold.
-        restartMotionIfStalled()
+        restartMotionIfStalled(requireExistingMotion: false)
 
         for loc in locations {
             if let previous = lastLocation {
@@ -758,16 +812,27 @@ extension RideMonitor: CLLocationManagerDelegate {
             }
             lastLocation = loc
             currentSpeedMetersPerSecond = loc.speed
-            track.append(LocationSample(
-                t: now,
-                latitude: loc.coordinate.latitude,
-                longitude: loc.coordinate.longitude,
-                altitude: loc.altitude,
-                horizontalAccuracy: loc.horizontalAccuracy,
-                verticalAccuracy: loc.verticalAccuracy,
-                speed: loc.speed,
-                course: loc.course
-            ))
+
+            // Prefer Core Location's timestamp so batched / deferred fixes don't
+            // all collapse onto the same `now`. Thin to ~1 Hz for persistence.
+            let sampleT = max(0, loc.timestamp.timeIntervalSince(startDate))
+            let shouldPersist: Bool = {
+                guard let last = lastTrackSampleAt else { return true }
+                return sampleT - last >= sensorPersistInterval
+            }()
+            if shouldPersist {
+                lastTrackSampleAt = sampleT
+                track.append(LocationSample(
+                    t: sampleT,
+                    latitude: loc.coordinate.latitude,
+                    longitude: loc.coordinate.longitude,
+                    altitude: loc.altitude,
+                    horizontalAccuracy: loc.horizontalAccuracy,
+                    verticalAccuracy: loc.verticalAccuracy,
+                    speed: loc.speed,
+                    course: loc.course
+                ))
+            }
             if lastMotionAt != nil, loc.horizontalAccuracy >= 0, loc.horizontalAccuracy <= 50 {
                 locationAtLastMotion = loc
             }

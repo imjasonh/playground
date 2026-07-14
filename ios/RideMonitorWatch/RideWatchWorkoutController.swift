@@ -34,6 +34,11 @@ final class RideWatchWorkoutController: NSObject, ObservableObject {
     private var didRequestAuthorization = false
     private var lastMetricsPushAt: TimeInterval = 0
     private let metricsPushInterval: TimeInterval = 1.0
+    /// Coalesces concurrent `startIfNeeded` Tasks from rapid WC updates.
+    private var isStarting = false
+    /// If the Watch launches long after the phone ride started, HealthKit can
+    /// reject an old `startActivity(with:)` date — clamp past that skew.
+    private let maxStartSkew: TimeInterval = 30
 
     private override init() {
         super.init()
@@ -58,8 +63,11 @@ final class RideWatchWorkoutController: NSObject, ObservableObject {
             isSessionActive = true
             return
         }
+        guard !isStarting else { return }
 
+        isStarting = true
         Task {
+            defer { isStarting = false }
             let authorized = await ensureAuthorization()
             guard authorized else {
                 lastErrorMessage = "Health access is required to keep Ride Monitor on-wrist and collect activity data."
@@ -98,8 +106,13 @@ final class RideWatchWorkoutController: NSObject, ObservableObject {
         self.builder = builder
         activity = .empty
 
-        session.startActivity(with: startedAt)
-        builder.beginCollection(withStart: startedAt) { [weak self] success, error in
+        // Use "now" when the phone's start date is far in the past (Watch
+        // launched late). Keep a recent phone start so elapsed stays aligned.
+        let now = Date()
+        let sessionStart = startedAt < now.addingTimeInterval(-maxStartSkew) ? now : startedAt
+
+        session.startActivity(with: sessionStart)
+        builder.beginCollection(withStart: sessionStart) { [weak self] success, error in
             Task { @MainActor in
                 guard let self, self.session === session else { return }
                 if let error {

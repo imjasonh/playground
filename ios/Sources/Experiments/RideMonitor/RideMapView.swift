@@ -26,6 +26,11 @@ struct RideMapView: UIViewRepresentable {
     }
 
     func updateUIView(_ map: MKMapView, context: Context) {
+        // SwiftUI can call this often; rebuild only when the ride geometry changes.
+        let signature = "\(track.count)|\(track.first?.t ?? -1)|\(track.last?.t ?? -1)|\(events.count)|\(maxMapEvents)"
+        guard context.coordinator.lastSignature != signature else { return }
+        context.coordinator.lastSignature = signature
+
         map.removeOverlays(map.overlays)
         map.removeAnnotations(map.annotations)
 
@@ -88,6 +93,8 @@ struct RideMapView: UIViewRepresentable {
     }
 
     final class Coordinator: NSObject, MKMapViewDelegate {
+        var lastSignature: String?
+
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
             guard let polyline = overlay as? MKPolyline else {
                 return MKOverlayRenderer(overlay: overlay)

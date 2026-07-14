@@ -19,6 +19,9 @@ final class RideWatchPhoneSession: NSObject, ObservableObject {
     private var didRequestHealthAuthorization = false
     /// Avoid spamming `startWatchApp` on every 1 Hz snapshot while riding.
     private var didLaunchWatchForCurrentRide = false
+    /// Queue at most one authoritative WC `transferUserInfo` start per ride
+    /// (ends always transfer so stop isn't lost when unreachable).
+    private var didQueueStartTransfer = false
 
     private override init() {
         super.init()
@@ -39,6 +42,7 @@ final class RideWatchPhoneSession: NSObject, ObservableObject {
             }
         } else {
             didLaunchWatchForCurrentRide = false
+            didQueueStartTransfer = false
         }
     }
 
@@ -54,8 +58,15 @@ final class RideWatchPhoneSession: NSObject, ObservableObject {
         // so we still stage application context before the Watch app launches.
         guard session.isPaired else { return }
 
-        guard let data = try? JSONEncoder().encode(snapshot),
+        // Watch UI does not render the elevation profile; omit it so we stay
+        // under the small application-context budget (~4 KB) and end-of-ride
+        // `isRiding: false` is less likely to be dropped.
+        var compact = snapshot
+        compact.profile = []
+
+        guard let data = try? JSONEncoder().encode(compact),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            RideMonitorLog.error("Watch snapshot encode failed")
             return
         }
 
@@ -63,9 +74,22 @@ final class RideWatchPhoneSession: NSObject, ObservableObject {
 
         // Application context always delivers the latest snapshot when the
         // Watch wakes; message is best-effort for an immediate UI refresh.
-        try? session.updateApplicationContext(payload)
+        // transferUserInfo queues authoritative start/stop even when unreachable.
+        do {
+            try session.updateApplicationContext(payload)
+        } catch {
+            RideMonitorLog.error("Watch applicationContext failed: \(error.localizedDescription)")
+        }
         if session.isReachable {
-            session.sendMessage(payload, replyHandler: nil, errorHandler: { _ in })
+            session.sendMessage(payload, replyHandler: nil, errorHandler: { error in
+                RideMonitorLog.error("Watch sendMessage failed: \(error.localizedDescription)")
+            })
+        }
+        if !snapshot.isRiding {
+            session.transferUserInfo(payload)
+        } else if !didQueueStartTransfer {
+            session.transferUserInfo(payload)
+            didQueueStartTransfer = true
         }
         // Keep pending while riding so a later activation / reachability
         // change can re-flush; clear only for the idle end-of-ride snapshot.

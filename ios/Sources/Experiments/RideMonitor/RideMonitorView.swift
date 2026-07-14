@@ -6,6 +6,7 @@ import SwiftUI
 struct RideMonitorView: View {
     @StateObject private var monitor = RideMonitor()
     @Environment(\.scenePhase) private var scenePhase
+    @State private var showingPastRides = false
 
     var body: some View {
         ScrollView {
@@ -37,8 +38,10 @@ struct RideMonitorView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 
-                NavigationLink {
-                    RideListView()
+                // Sheet (not NavigationLink): pushing a destination can fire
+                // `onDisappear` on this view and would stop an active ride.
+                Button {
+                    showingPastRides = true
                 } label: {
                     Label("Past rides", systemImage: "list.bullet.rectangle")
                         .frame(maxWidth: .infinity)
@@ -60,6 +63,18 @@ struct RideMonitorView: View {
         } message: {
             Text("A hard impact was followed by stillness. If you're fine, dismiss this.")
         }
+        .sheet(isPresented: $showingPastRides) {
+            NavigationStack {
+                RideListView()
+                    .navigationTitle("Past rides")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { showingPastRides = false }
+                        }
+                    }
+            }
+        }
         .onChange(of: scenePhase) { phase in
             switch phase {
             case .active:
@@ -71,6 +86,14 @@ struct RideMonitorView: View {
                 monitor.handleSceneEnteredBackground()
             default:
                 break
+            }
+        }
+        // Leaving the experiment destroys `@StateObject` RideMonitor. Stop+save
+        // first so we don't silently drop the ride or leave Live Activity / Watch
+        // workouts orphaned.
+        .onDisappear {
+            if monitor.isRunning {
+                monitor.stop()
             }
         }
     }
@@ -162,7 +185,9 @@ struct RideMonitorView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(monitor.events) { event in
+                // Newest first; cap the live list so a rough road can't grow an
+                // unbounded SwiftUI ForEach during a long ride.
+                ForEach(Array(monitor.events.suffix(40).reversed())) { event in
                     HStack {
                         Image(systemName: event.severity.icon)
                             .foregroundStyle(color(for: event.severity))
@@ -206,8 +231,7 @@ struct RideMonitorView: View {
     }
 
     private func format(_ interval: TimeInterval) -> String {
-        let total = Int(interval)
-        return String(format: "%d:%02d", total / 60, total % 60)
+        RideLiveSnapshot.formatDuration(interval)
     }
 }
 

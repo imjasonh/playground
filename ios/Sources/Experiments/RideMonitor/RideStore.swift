@@ -6,19 +6,27 @@ import Foundation
 struct RideStore {
     let directory: URL
 
+    enum StoreError: Error {
+        case documentsDirectoryUnavailable
+    }
+
     init(directory: URL? = nil) {
         if let directory {
             self.directory = directory
         } else {
-            let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            self.directory = documents.appendingPathComponent("rides", isDirectory: true)
+            let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+            // Fall back to temporaryDirectory rather than crash on `urls(...)[0]`
+            // if Documents is somehow unavailable.
+            self.directory = (documents ?? FileManager.default.temporaryDirectory)
+                .appendingPathComponent("rides", isDirectory: true)
         }
     }
 
     private static func makeEncoder() -> JSONEncoder {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        // Compact JSON: pretty-printing multi-hour rides on the main actor was
+        // a stop-path hang, and sortedKeys adds little for machine-only files.
         return encoder
     }
 

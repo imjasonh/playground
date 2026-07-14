@@ -12,6 +12,10 @@ final class RideWatchReceiver: NSObject, ObservableObject {
 
     private var session: WCSession?
     private let workout = RideWatchWorkoutController.shared
+    /// Guards against a late `isRiding: true` message restarting a workout
+    /// after the phone already sent the end-of-ride snapshot.
+    private var lastAppliedStartedAt: Date = .distantPast
+    private var lastAppliedIsRiding = false
 
     private override init() {
         super.init()
@@ -48,6 +52,22 @@ final class RideWatchReceiver: NSObject, ObservableObject {
               let decoded = try? JSONDecoder().decode(RideLiveSnapshot.self, from: data) else {
             return
         }
+
+        if decoded.isRiding {
+            // Ignore a stale start for an older ride after we've already ended.
+            if !lastAppliedIsRiding,
+               decoded.startedAt < lastAppliedStartedAt {
+                return
+            }
+            // Same ride, already riding — still refresh UI/metrics.
+        } else if lastAppliedIsRiding,
+                  decoded.startedAt < lastAppliedStartedAt {
+            // Stale end for a previous ride while a newer one is active.
+            return
+        }
+
+        lastAppliedStartedAt = max(lastAppliedStartedAt, decoded.startedAt)
+        lastAppliedIsRiding = decoded.isRiding
         snapshot = decoded
         workout.sync(isRiding: decoded.isRiding, startedAt: decoded.startedAt)
     }
@@ -74,6 +94,12 @@ extension RideWatchReceiver: WCSessionDelegate {
     nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
         Task { @MainActor in
             self.apply(context: message)
+        }
+    }
+
+    nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+        Task { @MainActor in
+            self.apply(context: userInfo)
         }
     }
 }
