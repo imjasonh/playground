@@ -1,0 +1,32 @@
+[package]
+name = "git-fuse"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Read-only FUSE adapter for git-server: browse commits and refs as a filesystem"
+repository = "https://github.com/imjasonh/playground"
+readme = "README.md"
+publish = false
+
+[dependencies]
+# FUSE session + kernel protocol. default-features = false drops the libfuse
+# linkage (and its pkg-config build dependency); mounting shells out to
+# fusermount3, which also handles unprivileged mounts.
+fuser = { version = "0.15", default-features = false }
+# errno constants (ENOENT, EROFS, …) for FUSE replies.
+libc = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Blocking HTTP client (rustls) for the git-server JSON read API.
+ureq = { version = "2", features = ["json"] }
+# Localhost harness (`testutil`): a git-server-shaped test server (smart-HTTP
+# via `git http-backend` CGI + the JSON read API via git plumbing). Lives in
+# the crate so tests *and* benches share it (benches cannot import
+# `tests/common`), same as git-server's testutil.
+tiny_http = "0.12"
+
+# Hand-rolled harness (like git-server's benches): measures time-to-first-byte
+# and warm traversal against a shallow `git clone` baseline.
+[[bench]]
+name = "fuse_vs_clone"
+harness = false
