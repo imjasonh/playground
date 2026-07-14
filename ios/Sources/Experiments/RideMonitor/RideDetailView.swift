@@ -31,6 +31,15 @@ struct RideDetailView: View {
                 stat("Peak g", String(format: "%.1f g", ride.peakG))
                 stat("Jolts", "\(ride.joltCount)")
                 stat("Possible crashes", "\(ride.crashCount)")
+                if let bpm = ride.averageHeartRateBPM {
+                    stat("Avg heart rate", String(format: "%.0f bpm", bpm))
+                }
+                if let bpm = ride.maxHeartRateBPM {
+                    stat("Max heart rate", String(format: "%.0f bpm", bpm))
+                }
+                if let kcal = ride.activeEnergyKilocalories {
+                    stat("Active energy", String(format: "%.0f kcal", kcal))
+                }
                 if let gain = ride.elevationGain {
                     stat("Net elevation", String(format: "%+.1f m", gain))
                 }

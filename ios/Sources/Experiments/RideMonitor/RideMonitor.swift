@@ -42,6 +42,10 @@ final class RideMonitor: NSObject, ObservableObject {
     @Published private(set) var statusMessage = "Ready"
     /// The ride most recently saved to disk (set on stop).
     @Published private(set) var lastSavedRide: Ride?
+    /// Live heart rate from the Watch workout session (nil until samples arrive).
+    @Published private(set) var heartRateBPM: Double?
+    /// Active energy from the Watch workout session (kilocalories).
+    @Published private(set) var activeEnergyKilocalories: Double?
 
     private let motion = CMMotionManager()
     private let location = CLLocationManager()
@@ -158,6 +162,9 @@ final class RideMonitor: NSObject, ObservableObject {
         currentSpeedMetersPerSecond = -1
         elapsed = 0
         crashAlert = false
+        heartRateBPM = nil
+        activeEnergyKilocalories = nil
+        watchSession.resetActivity()
         lastLocation = nil
         lastMotionAt = nil
         locationAtLastMotion = nil
@@ -174,6 +181,7 @@ final class RideMonitor: NSObject, ObservableObject {
         timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             guard let self, self.isRunning else { return }
             self.elapsed = self.now
+            self.pullWatchActivity()
             self.pushCompanionsIfNeeded(force: false)
         }
 
@@ -291,11 +299,13 @@ final class RideMonitor: NSObject, ObservableObject {
 
         trimLogs(after: endedAtOffset)
         elapsed = endedAtOffset
+        pullWatchActivity()
 
         let finalSnapshot = makeLiveSnapshot(isRiding: false)
         liveActivity.end(snapshot: finalSnapshot)
         watchSession.send(finalSnapshot)
 
+        let watchActivity = watchSession.latestActivity
         let endedAt = startDate.addingTimeInterval(endedAtOffset)
         let ride = Ride(
             id: UUID(),
@@ -306,6 +316,9 @@ final class RideMonitor: NSObject, ObservableObject {
             peakG: peakG,
             joltCount: joltCount,
             crashCount: crashCount,
+            averageHeartRateBPM: watchActivity.averageHeartRateBPM,
+            maxHeartRateBPM: watchActivity.maxHeartRateBPM,
+            activeEnergyKilocalories: watchActivity.activeEnergyKilocalories,
             events: events.reversed(), // store chronologically
             track: track,
             motion: motionSummaries,
@@ -374,9 +387,16 @@ final class RideMonitor: NSObject, ObservableObject {
         let t = now
         guard force || t - lastCompanionPushAt >= companionPushInterval else { return }
         lastCompanionPushAt = t
+        pullWatchActivity()
         let snapshot = makeLiveSnapshot()
         liveActivity.update(snapshot: snapshot)
         watchSession.send(snapshot)
+    }
+
+    private func pullWatchActivity() {
+        let activity = watchSession.latestActivity
+        heartRateBPM = activity.heartRateBPM
+        activeEnergyKilocalories = activity.activeEnergyKilocalories
     }
 
     func dismissCrashAlert() {

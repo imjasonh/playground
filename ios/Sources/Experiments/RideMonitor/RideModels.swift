@@ -43,6 +43,11 @@ struct Ride: Codable, Identifiable {
     /// Short on-device label (a few words), filled after the ride ends.
     /// Optional so older saved JSON files still decode.
     var summary: String? = nil
+    /// Watch HealthKit stats mirrored during the ride (nil when no Watch /
+    /// no authorization / no samples). Optional for older saved files.
+    var averageHeartRateBPM: Double? = nil
+    var maxHeartRateBPM: Double? = nil
+    var activeEnergyKilocalories: Double? = nil
     var events: [RideEvent]
     var track: [LocationSample]
     var motion: [MotionSummary]

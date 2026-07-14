@@ -113,13 +113,21 @@ struct RideMonitorView: View {
                             )
                             : "—"
                     )
-                    Divider()
-                    Text("Live Activity + Watch update while you ride.")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if let bpm = monitor.heartRateBPM {
+                        Divider()
+                        stat("HR", String(format: "%.0f", bpm))
+                    }
+                    if let kcal = monitor.activeEnergyKilocalories {
+                        Divider()
+                        stat("kcal", String(format: "%.0f", kcal))
+                    }
                 }
                 .frame(maxWidth: .infinity)
+
+                Text("Live Activity + Watch update while you ride. Heart rate comes from Apple Watch.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }

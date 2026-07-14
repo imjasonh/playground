@@ -41,6 +41,12 @@ enum RideSummaryGenerator {
         if let gain = ride.elevationGain {
             lines.append("Net elevation: \(String(format: "%+.0f", gain)) m")
         }
+        if let bpm = ride.averageHeartRateBPM {
+            lines.append("Avg heart rate: \(String(format: "%.0f", bpm)) bpm")
+        }
+        if let kcal = ride.activeEnergyKilocalories {
+            lines.append("Active energy: \(String(format: "%.0f", kcal)) kcal")
+        }
         let severities = Dictionary(grouping: ride.events, by: \.severity)
             .map { "\($0.key.rawValue)=\($0.value.count)" }
             .sorted()

@@ -98,8 +98,8 @@ targets:
         NSLocationAlwaysAndWhenInUseUsageDescription: Records where jolts and crashes happen and keeps the ride recording while the screen is off.
         NSMicrophoneUsageDescription: Snore Log listens with the microphone while you sleep and saves short clips when snoring-like sounds are detected.
         NSCameraUsageDescription: Z-Camera uses the depth camera to show only the slice of space between the near and far distance sliders. Voxel World uses the camera and ARKit to rebuild the room as colored voxels.
-        NSHealthShareUsageDescription: Ride Monitor uses HealthKit only to keep the Apple Watch companion active during a ride. Ride data is stored in the app, not written to Health.
-        NSHealthUpdateUsageDescription: Ride Monitor uses HealthKit only to keep the Apple Watch companion active during a ride. Ride data is stored in the app, not written to Health.
+        NSHealthShareUsageDescription: Ride Monitor uses HealthKit so the Apple Watch companion can stay active during a ride and record heart rate and active energy. GPS and jolt data stay in the app; the Watch workout is also saved to Health.
+        NSHealthUpdateUsageDescription: Ride Monitor uses HealthKit so the Apple Watch companion can stay active during a ride and record heart rate and active energy. GPS and jolt data stay in the app; the Watch workout is also saved to Health.
         UIBackgroundModes:
           - location
           - audio
@@ -213,8 +213,8 @@ targets:
         WKApplication: true
         WKCompanionAppBundleIdentifier: io.github.imjasonh.playground
         WKWatchOnly: false
-        NSHealthShareUsageDescription: Ride Monitor uses HealthKit to stay on-wrist during a ride. Ride data is recorded on iPhone, not saved to Health.
-        NSHealthUpdateUsageDescription: Ride Monitor uses HealthKit to stay on-wrist during a ride. Ride data is recorded on iPhone, not saved to Health.
+        NSHealthShareUsageDescription: Ride Monitor uses HealthKit so it can stay on-wrist during a ride and collect heart rate and active energy. GPS and jolts are recorded on iPhone; the workout is saved to Health when the ride ends.
+        NSHealthUpdateUsageDescription: Ride Monitor uses HealthKit so it can stay on-wrist during a ride and collect heart rate and active energy. GPS and jolts are recorded on iPhone; the workout is saved to Health when the ride ends.
         # Keeps the companion running under an HKWorkoutSession (wrist-raise
         # returns to Ride Monitor instead of the watch face).
         UIBackgroundModes:

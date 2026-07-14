@@ -53,6 +53,20 @@ final class RideStoreTests: XCTestCase {
         XCTAssertEqual(r.motion.first?.samples, 50)
         XCTAssertEqual(r.barometer.first?.pressureKPa ?? 0, 101.2, accuracy: 0.001)
         XCTAssertNil(r.summary)
+        XCTAssertNil(r.averageHeartRateBPM)
+    }
+
+    func testWatchActivityMetricsRoundTrip() throws {
+        var ride = makeRide()
+        ride.averageHeartRateBPM = 142
+        ride.maxHeartRateBPM = 168
+        ride.activeEnergyKilocalories = 215.5
+        try store.save(ride)
+
+        let r = try XCTUnwrap(store.loadAll().first)
+        XCTAssertEqual(r.averageHeartRateBPM ?? 0, 142, accuracy: 0.001)
+        XCTAssertEqual(r.maxHeartRateBPM ?? 0, 168, accuracy: 0.001)
+        XCTAssertEqual(r.activeEnergyKilocalories ?? 0, 215.5, accuracy: 0.001)
     }
 
     func testSummaryRoundTripsAndLegacyJSONDecodesWithoutSummary() throws {

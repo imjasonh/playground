@@ -33,6 +33,20 @@ struct RideMonitorWatchView: View {
                             value: snapshot.formattedSpeedMph,
                             identifier: "watchSpeed"
                         )
+                        if let bpm = workout.activity.heartRateBPM {
+                            metric(
+                                label: "Heart rate",
+                                value: String(format: "%.0f bpm", bpm),
+                                identifier: "watchHeartRate"
+                            )
+                        }
+                        if let kcal = workout.activity.activeEnergyKilocalories {
+                            metric(
+                                label: "Active energy",
+                                value: String(format: "%.0f kcal", kcal),
+                                identifier: "watchEnergy"
+                            )
+                        }
                         if let message = workout.lastErrorMessage {
                             Text(message)
                                 .font(.caption2)

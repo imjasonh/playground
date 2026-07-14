@@ -25,6 +25,9 @@ enum RideJSONLExporter {
         let joltCount: Int
         let crashCount: Int
         let summary: String?
+        let averageHeartRateBPM: Double?
+        let maxHeartRateBPM: Double?
+        let activeEnergyKilocalories: Double?
     }
 
     private struct EventLine: Encodable {
@@ -114,7 +117,10 @@ enum RideJSONLExporter {
             peakG: ride.peakG,
             joltCount: ride.joltCount,
             crashCount: ride.crashCount,
-            summary: ride.summary
+            summary: ride.summary,
+            averageHeartRateBPM: ride.averageHeartRateBPM,
+            maxHeartRateBPM: ride.maxHeartRateBPM,
+            activeEnergyKilocalories: ride.activeEnergyKilocalories
         )))
 
         for event in ride.events {

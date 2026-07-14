@@ -1,9 +1,9 @@
 import Foundation
 import WatchConnectivity
 
-/// Watch-side session that receives `RideLiveSnapshot` updates from the phone
-/// and keeps an `HKWorkoutSession` in sync so the companion stays frontmost
-/// for the whole ride (wrist-raise returns here instead of the watch face).
+/// Watch-side session that receives `RideLiveSnapshot` updates from the phone,
+/// keeps an `HKWorkoutSession` in sync so the companion stays frontmost, and
+/// sends heart-rate / calorie metrics back to the phone.
 @MainActor
 final class RideWatchReceiver: NSObject, ObservableObject {
     static let shared = RideWatchReceiver()
@@ -23,6 +23,22 @@ final class RideWatchReceiver: NSObject, ObservableObject {
         // Best-effort early read; the authoritative load is in
         // `activationDidCompleteWith`, once the session is actually ready.
         apply(context: session.receivedApplicationContext)
+    }
+
+    /// Push the latest Watch activity stats to the phone (best-effort).
+    func sendActivity(_ metrics: RideWatchActivityMetrics) {
+        guard let session, session.activationState == .activated else { return }
+        guard let data = try? JSONEncoder().encode(metrics),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return
+        }
+        let payload: [String: Any] = ["rideWatchActivity": json]
+        // Application context delivers the latest values when the phone next
+        // wakes the session; message is for an immediate UI refresh.
+        try? session.updateApplicationContext(payload)
+        if session.isReachable {
+            session.sendMessage(payload, replyHandler: nil, errorHandler: { _ in })
+        }
     }
 
     private func apply(context: [String: Any]) {
