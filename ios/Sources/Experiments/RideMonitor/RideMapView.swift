@@ -1,10 +1,11 @@
 import SwiftUI
 import MapKit
 
-/// A MapKit map showing a ride's GPS track as a polyline with a colored pin at
-/// each detected event. Implemented over UIKit's `MKMapView` (via
-/// `UIViewRepresentable`) so it behaves identically on iOS 16+ — SwiftUI's
-/// native `Map` polyline support only arrived in iOS 17.
+/// A MapKit map showing a ride's GPS track as speed-colored polylines (same
+/// slow/easy/brisk/fast buckets as the Live Activity sparkline) with a colored
+/// pin at each of the biggest detected events. Implemented over UIKit's
+/// `MKMapView` (via `UIViewRepresentable`) so it behaves identically on iOS 16+
+/// — SwiftUI's native `Map` polyline support only arrived in iOS 17.
 ///
 /// Pass the full event list; the map itself caps pins to the biggest hits via
 /// `RideMapEventFilter` so saved rides stay readable. Recording is unchanged.
@@ -28,13 +29,23 @@ struct RideMapView: UIViewRepresentable {
         map.removeOverlays(map.overlays)
         map.removeAnnotations(map.annotations)
 
-        let coords = track
-            .map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
-            .filter { CLLocationCoordinate2DIsValid($0) }
-
-        if coords.count >= 2 {
-            map.addOverlay(MKPolyline(coordinates: coords, count: coords.count))
+        let routeSegments = RideMapRouteBuilder.segments(from: track)
+        for segment in routeSegments {
+            var coords = segment.coordinates
+            let polyline = SpeedColoredPolyline(coordinates: &coords, count: coords.count)
+            polyline.speedBucket = segment.speedBucket
+            map.addOverlay(polyline)
         }
+
+        let coords = routeSegments.flatMap(\.coordinates)
+        // Fall back to raw track coords when building the visible rect if the
+        // builder produced nothing (e.g. a single fix) but we still have points.
+        let fitCoords: [CLLocationCoordinate2D] = {
+            if coords.count >= 2 { return coords }
+            return track
+                .map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+                .filter { CLLocationCoordinate2DIsValid($0) }
+        }()
 
         var annotations: [EventAnnotation] = []
         for event in RideMapEventFilter.selectForMap(events, limit: maxMapEvents) {
@@ -48,27 +59,27 @@ struct RideMapView: UIViewRepresentable {
         map.addAnnotations(annotations)
 
         // Start/finish markers for context.
-        if let start = coords.first {
+        if let start = fitCoords.first {
             let a = EndpointAnnotation(isStart: true)
             a.coordinate = start
             a.title = "Start"
             map.addAnnotation(a)
         }
-        if coords.count >= 2, let end = coords.last {
+        if fitCoords.count >= 2, let end = fitCoords.last {
             let a = EndpointAnnotation(isStart: false)
             a.coordinate = end
             a.title = "Finish"
             map.addAnnotation(a)
         }
 
-        if coords.count >= 2 {
-            let rect = MKPolyline(coordinates: coords, count: coords.count).boundingMapRect
+        if fitCoords.count >= 2 {
+            let rect = MKPolyline(coordinates: fitCoords, count: fitCoords.count).boundingMapRect
             map.setVisibleMapRect(
                 rect,
                 edgePadding: UIEdgeInsets(top: 40, left: 40, bottom: 40, right: 40),
                 animated: false
             )
-        } else if let center = coords.first ?? annotations.first?.coordinate {
+        } else if let center = fitCoords.first ?? annotations.first?.coordinate {
             map.setRegion(
                 MKCoordinateRegion(center: center, latitudinalMeters: 800, longitudinalMeters: 800),
                 animated: false
@@ -82,8 +93,14 @@ struct RideMapView: UIViewRepresentable {
                 return MKOverlayRenderer(overlay: overlay)
             }
             let renderer = MKPolylineRenderer(polyline: polyline)
-            renderer.strokeColor = .systemBlue
+            if let colored = polyline as? SpeedColoredPolyline {
+                renderer.strokeColor = SpeedColoredPolyline.strokeColor(for: colored.speedBucket)
+            } else {
+                renderer.strokeColor = .systemBlue
+            }
             renderer.lineWidth = 4
+            renderer.lineCap = .round
+            renderer.lineJoin = .round
             return renderer
         }
 
@@ -111,6 +128,22 @@ struct RideMapView: UIViewRepresentable {
                 return view
             }
             return nil
+        }
+    }
+}
+
+/// Polyline colored by `RideLiveFormatting.speedBucket` (0 slow … 3 fast).
+final class SpeedColoredPolyline: MKPolyline {
+    /// Set after init — MKPolyline's coordinate initializer is inherited as-is.
+    var speedBucket: Int = 0
+
+    /// Matches `RideElevationProfileView` / Live Activity legend colors.
+    static func strokeColor(for speedBucket: Int) -> UIColor {
+        switch speedBucket {
+        case 0: return .systemBlue
+        case 1: return .systemGreen
+        case 2: return .systemOrange
+        default: return .systemRed
         }
     }
 }

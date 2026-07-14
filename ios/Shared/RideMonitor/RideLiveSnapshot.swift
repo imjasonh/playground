@@ -79,8 +79,8 @@ struct RideLiveSnapshot: Codable, Hashable, Sendable {
 
 /// Shared formatting helpers for Live Activity + Watch chrome.
 enum RideLiveFormatting {
-    /// Rough speed buckets for coloring the elevation sparkline.
-    /// 0 = crawl, 1 = easy, 2 = brisk, 3 = fast.
+    /// Rough speed buckets for coloring the elevation sparkline and past-ride map.
+    /// 0 = crawl/slow, 1 = easy, 2 = brisk, 3 = fast.
     static func speedBucket(metersPerSecond: Double) -> Int {
         let speed = max(0, metersPerSecond)
         switch speed {

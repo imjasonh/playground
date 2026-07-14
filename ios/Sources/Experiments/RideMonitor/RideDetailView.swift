@@ -2,8 +2,9 @@ import SwiftUI
 import Charts
 
 /// Detail view for one saved ride: summary stats, the same elevation/speed
-/// sparkline used by the Live Activity, a g-force-over-time chart, the event
-/// list, and a route map (capped to the biggest event pins).
+/// sparkline used by the Live Activity, a g-force-over-time chart, and a
+/// speed-colored route map (capped to the biggest event pins). Events stay
+/// recorded in the ride file; the map's top-N pins surface the big ones.
 struct RideDetailView: View {
     let ride: Ride
 
@@ -66,15 +67,7 @@ struct RideDetailView: View {
                         RideElevationProfileView(points: elevationProfile)
                             .frame(height: 88)
                             .accessibilityIdentifier("rideDetailElevationProfile")
-                        HStack(spacing: 10) {
-                            legendDot(.blue, "slow")
-                            legendDot(.green, "easy")
-                            legendDot(.orange, "brisk")
-                            legendDot(.red, "fast")
-                            Spacer()
-                        }
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        speedLegend
                     }
                     .padding(.vertical, 4)
                 }
@@ -85,8 +78,10 @@ struct RideDetailView: View {
                     RideMapView(track: ride.track, events: ride.events)
                         .frame(height: 260)
                         .listRowInsets(EdgeInsets())
+                    speedLegend
+                        .padding(.vertical, 4)
                     if mappableEventCount > RideMapEventFilter.defaultLimit {
-                        Text("Showing the \(RideMapEventFilter.defaultLimit) biggest events on the map. All \(ride.events.count) are listed below and kept in the ride file.")
+                        Text("Showing the \(RideMapEventFilter.defaultLimit) biggest events on the map. All \(ride.events.count) remain in the ride file.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -104,24 +99,6 @@ struct RideDetailView: View {
                         }
                     }
                     .frame(height: 160)
-                }
-            }
-
-            Section("Events (\(ride.events.count))") {
-                if ride.events.isEmpty {
-                    Text("No jolts detected.").font(.footnote).foregroundStyle(.secondary)
-                } else {
-                    ForEach(ride.events) { event in
-                        HStack {
-                            Image(systemName: event.severity.icon)
-                                .foregroundStyle(color(for: event.severity))
-                                .frame(width: 26)
-                            Text(event.severity.title)
-                            Spacer()
-                            Text(String(format: "%.1f g", event.peakG)).monospacedDigit()
-                            Text(clock(event.at)).font(.caption2).foregroundStyle(.secondary)
-                        }
-                    }
                 }
             }
 
@@ -160,20 +137,23 @@ struct RideDetailView: View {
         ride.events.filter { $0.latitude != nil && $0.longitude != nil }.count
     }
 
+    private var speedLegend: some View {
+        HStack(spacing: 10) {
+            legendDot(.blue, "slow")
+            legendDot(.green, "easy")
+            legendDot(.orange, "brisk")
+            legendDot(.red, "fast")
+            Spacer()
+        }
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+    }
+
     private func stat(_ label: String, _ value: String) -> some View {
         HStack {
             Text(label)
             Spacer()
             Text(value).foregroundStyle(.secondary).monospacedDigit()
-        }
-    }
-
-    private func color(for severity: RideSeverity) -> Color {
-        switch severity {
-        case .shake: return .blue
-        case .pothole: return .orange
-        case .impact: return .red
-        case .crash: return .pink
         }
     }
 
@@ -185,11 +165,6 @@ struct RideDetailView: View {
     }
 
     private func duration(_ seconds: TimeInterval) -> String {
-        let total = Int(seconds)
-        return String(format: "%d:%02d", total / 60, total % 60)
-    }
-
-    private func clock(_ seconds: TimeInterval) -> String {
         let total = Int(seconds)
         return String(format: "%d:%02d", total / 60, total % 60)
     }
