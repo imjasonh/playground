@@ -113,13 +113,36 @@ struct RideMonitorView: View {
                             )
                             : "—"
                     )
-                    Divider()
-                    Text("Live Activity + Watch update while you ride.")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if let bpm = monitor.heartRateBPM {
+                        Divider()
+                        stat("HR", String(format: "%.0f", bpm))
+                    }
+                    if let kcal = monitor.activeEnergyKilocalories {
+                        Divider()
+                        stat("kcal", String(format: "%.0f", kcal))
+                    }
                 }
                 .frame(maxWidth: .infinity)
+
+                if monitor.cadenceRPM != nil || monitor.cyclingPowerWatts != nil {
+                    HStack {
+                        if let rpm = monitor.cadenceRPM {
+                            stat("Cadence", String(format: "%.0f rpm", rpm))
+                        }
+                        if monitor.cadenceRPM != nil, monitor.cyclingPowerWatts != nil {
+                            Divider()
+                        }
+                        if let watts = monitor.cyclingPowerWatts {
+                            stat("Power", String(format: "%.0f W", watts))
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+
+                Text("Live Activity + Watch update while you ride. HR/energy from Apple Watch; cadence/power need a paired sensor.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }

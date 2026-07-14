@@ -55,7 +55,9 @@ After adding or changing any of these targets, re-run **iOS signing bootstrap** 
 | Second top-level iOS app | **Forbidden** |
 
 `signing_bootstrap` creates missing Bundle IDs via the App Store Connect API
-(then `match`). After the keyboard (or any new extension) is bootstrapped once,
+(then `match`). It also enables **HealthKit** on the host and Ride Monitor
+Watch App IDs when missing (needed for the Watch frontmost workout session).
+After the keyboard (or any new extension) is bootstrapped once,
 day-to-day experiment work does not touch signing.
 
 ### PR requirement when bootstrap is needed
