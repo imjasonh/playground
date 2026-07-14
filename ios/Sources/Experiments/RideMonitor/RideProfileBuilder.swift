@@ -1,8 +1,8 @@
 import Foundation
 
-/// Builds a small elevation/speed sparkline from the live barometer + GPS
-/// buffers. ActivityKit content has a tight size budget, so we cap the point
-/// count and pick evenly spaced samples.
+/// Builds an elevation/speed sparkline from barometer + GPS samples.
+/// Used by the Live Activity (tight ActivityKit budget) and the past-ride
+/// detail view (larger in-app point budget).
 enum RideProfileBuilder {
     /// Default point budget for Live Activity / Watch payloads.
     static let defaultMaxPoints = 48

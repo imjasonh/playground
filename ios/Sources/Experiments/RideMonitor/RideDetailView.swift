@@ -1,10 +1,20 @@
 import SwiftUI
 import Charts
 
-/// Detail view for one saved ride: summary stats, a g-force-over-time chart from
-/// the per-second motion log, the event list, and a track/elevation summary.
+/// Detail view for one saved ride: summary stats, the same elevation/speed
+/// sparkline used by the Live Activity, a g-force-over-time chart, the event
+/// list, and a route map (capped to the biggest event pins).
 struct RideDetailView: View {
     let ride: Ride
+
+    /// In-app can afford a denser sparkline than ActivityKit's 48-point budget.
+    private var elevationProfile: [RideProfilePoint] {
+        RideProfileBuilder.build(
+            altitudes: ride.barometer,
+            track: ride.track,
+            maxPoints: 96
+        )
+    }
 
     var body: some View {
         List {
@@ -26,11 +36,36 @@ struct RideDetailView: View {
                 }
             }
 
+            if elevationProfile.count >= 2 {
+                Section("Elevation & speed") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        RideElevationProfileView(points: elevationProfile)
+                            .frame(height: 88)
+                            .accessibilityIdentifier("rideDetailElevationProfile")
+                        HStack(spacing: 10) {
+                            legendDot(.blue, "slow")
+                            legendDot(.green, "easy")
+                            legendDot(.orange, "brisk")
+                            legendDot(.red, "fast")
+                            Spacer()
+                        }
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+
             if hasCoordinates {
                 Section("Route") {
                     RideMapView(track: ride.track, events: ride.events)
                         .frame(height: 260)
                         .listRowInsets(EdgeInsets())
+                    if mappableEventCount > RideMapEventFilter.defaultLimit {
+                        Text("Showing the \(RideMapEventFilter.defaultLimit) biggest events on the map. All \(ride.events.count) are listed below and kept in the ride file.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
 
@@ -97,6 +132,10 @@ struct RideDetailView: View {
         !ride.track.isEmpty || ride.events.contains { $0.latitude != nil && $0.longitude != nil }
     }
 
+    private var mappableEventCount: Int {
+        ride.events.filter { $0.latitude != nil && $0.longitude != nil }.count
+    }
+
     private func stat(_ label: String, _ value: String) -> some View {
         HStack {
             Text(label)
@@ -111,6 +150,13 @@ struct RideDetailView: View {
         case .pothole: return .orange
         case .impact: return .red
         case .crash: return .pink
+        }
+    }
+
+    private func legendDot(_ color: Color, _ label: String) -> some View {
+        HStack(spacing: 4) {
+            Circle().fill(color).frame(width: 6, height: 6)
+            Text(label)
         }
     }
 
