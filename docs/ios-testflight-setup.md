@@ -313,8 +313,8 @@ provisioning profiles** named like
 `ios-signing` repo. Future TestFlight builds read them read-only. Re-run
 bootstrap when the certificate expires. Adding another **app extension** Bundle
 ID (or a new App ID capability) is usually automatic: CI labels the PR
-`needs-ios-bootstrap` and re-runs bootstrap on merge to `main` before
-TestFlight — not when you add in-app experiments.
+`needs-ios-bootstrap` and, on merge, re-runs bootstrap in parallel with the
+normal iOS build — not when you add in-app experiments.
 
 ---
 
@@ -345,11 +345,11 @@ So you actually receive the build.
 1. **Merge this PR to `main`** (the iOS workflow must be on `main` for
    push-to-main delivery), or push any change under `ios/` to `main`.
 2. Go to the repo's **Actions** tab → the **iOS** workflow run.
-   - The `discover` job detects the changed iOS app (and whether signing
-     re-bootstrap is needed).
-   - The `ios` job (on macOS) generates the project, optionally re-runs
-     `signing_bootstrap` when the change needs it, runs tests, and — because
+   - The `discover` job detects the changed iOS app.
+   - The `ios` job (on macOS) generates the project, runs tests, and — because
      it's a push to `main` **with** the secrets present — runs `fastlane beta`.
+   - If the merged PR had `needs-ios-bootstrap`, a separate **iOS bootstrap on
+     merge** run refreshes match profiles in parallel (usually finishes first).
 3. In **App Store Connect → your app → TestFlight**, the new build appears with
    status **Processing** for a few minutes, then becomes available to your
    internal group.

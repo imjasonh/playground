@@ -1,0 +1,20 @@
+name: iOS bootstrap on merge
+
+# When a PR labeled needs-ios-bootstrap is merged, re-run signing bootstrap
+# immediately. This races the normal ios.yml TestFlight build on purpose:
+# bootstrap is usually much faster than the macOS build, so match profiles
+# land before `fastlane beta` needs them. Keeps ios.yml unchanged.
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  bootstrap:
+    if: >
+      github.event.pull_request.merged == true &&
+      contains(github.event.pull_request.labels.*.name, 'needs-ios-bootstrap')
+    uses: ./.github/workflows/ios-signing-bootstrap.yml
+    with:
+      app: ios
+    secrets: inherit

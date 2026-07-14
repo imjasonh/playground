@@ -3,12 +3,10 @@
 # as a JSON array. Runs on macOS with Xcode available.
 #
 # For each app:
-#   1. xcodegen generate                    (build the .xcodeproj from project.yml)
-#   2. bundle install                       (fastlane, pinned by the app's Gemfile)
-#   3. bundle exec fastlane signing_bootstrap
-#      (only when BOOTSTRAP=true — refresh Bundle IDs / match profiles before ship)
-#   4. bundle exec fastlane test            (unit + UI tests on a simulator)
-#   5. bundle exec fastlane beta            (only when DEPLOY=true → TestFlight)
+#   1. xcodegen generate          (build the .xcodeproj from project.yml)
+#   2. bundle install             (fastlane, pinned by the app's Gemfile)
+#   3. bundle exec fastlane test  (unit + UI tests on a simulator)
+#   4. bundle exec fastlane beta  (only when DEPLOY=true → upload to TestFlight)
 set -uo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -45,51 +43,16 @@ fi
 echo "Using simulator device: ${IOS_SIM_DEVICE:-<none found>}"
 
 deploy="${DEPLOY:-false}"
-bootstrap="${BOOTSTRAP:-false}"
 result=0
 
 for app in "${apps[@]}"; do
-  echo "::group::Generate ${app}"
+  echo "::group::Generate + test ${app}"
 
   if (
     set -euo pipefail
     cd "$app"
     xcodegen generate
     bundle install
-  ); then
-    echo "${app}: project generated"
-  else
-    echo "::error title=iOS generate failed::${app}: xcodegen / bundle install"
-    result=1
-    echo "::endgroup::"
-    continue
-  fi
-  echo "::endgroup::"
-
-  # When a merged change (or needs-ios-bootstrap label) requires refreshed
-  # signing assets, re-bootstrap before test/ship so match has the new
-  # Bundle IDs / capabilities / profiles.
-  if [ "$bootstrap" = "true" ]; then
-    echo "::group::Re-bootstrap signing for ${app}"
-    if (
-      set -euo pipefail
-      cd "$app"
-      bundle exec fastlane signing_bootstrap
-    ); then
-      echo "${app}: signing_bootstrap completed"
-    else
-      echo "::error title=iOS signing bootstrap failed::${app}: fastlane signing_bootstrap"
-      result=1
-      echo "::endgroup::"
-      continue
-    fi
-    echo "::endgroup::"
-  fi
-
-  echo "::group::Test ${app}"
-  if (
-    set -euo pipefail
-    cd "$app"
     bundle exec fastlane test
   ); then
     echo "${app}: tests passed"

@@ -63,11 +63,11 @@ day-to-day experiment work does not touch signing.
 ### PR requirement when bootstrap is needed
 
 CI detects signing-bootstrap need automatically (new extension Bundle ID, Matchfile
-/ entitlements changes, or App ID capability hunks in `project.yml` / Fastfile).
-When it fires on a pull request, the `iOS` workflow labels the PR
-**`needs-ios-bootstrap`**. On merge to `main`, that same workflow re-runs
-`fastlane signing_bootstrap` before TestFlight upload (when signing secrets are
-present), so you usually do **not** need to run
+/ entitlements changes, or App ID capability hunks in `project.yml` / Fastfile)
+via `ios-bootstrap-label.yml` and labels the PR **`needs-ios-bootstrap`**. When
+that PR merges, `ios-bootstrap-on-merge.yml` immediately re-runs
+`fastlane signing_bootstrap` (usually finishing before the parallel `ios.yml`
+TestFlight build needs the profiles). You usually do **not** need to run
 [`ios-signing-bootstrap.yml`](../.github/workflows/ios-signing-bootstrap.yml)
 by hand.
 

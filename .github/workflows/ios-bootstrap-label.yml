@@ -1,0 +1,36 @@
+name: iOS bootstrap label
+
+# On pull requests, detect whether the iOS change needs a signing re-bootstrap
+# (new extension Bundle ID / App ID capability) and sync the
+# needs-ios-bootstrap label. Merge handling lives in ios-bootstrap-on-merge.yml.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect + sync needs-ios-bootstrap label
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$BASE_REF"
+          range="origin/${BASE_REF}...HEAD"
+          needed=$(bash .github/scripts/detect-ios-bootstrap-needed.sh --diff "$range")
+          echo "needs-ios-bootstrap: ${needed}"
+          bash .github/scripts/sync-ios-bootstrap-label.sh \
+            "${{ github.event.pull_request.number }}" \
+            "$needed"
