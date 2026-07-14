@@ -5,9 +5,14 @@ import MapKit
 /// each detected event. Implemented over UIKit's `MKMapView` (via
 /// `UIViewRepresentable`) so it behaves identically on iOS 16+ — SwiftUI's
 /// native `Map` polyline support only arrived in iOS 17.
+///
+/// Pass the full event list; the map itself caps pins to the biggest hits via
+/// `RideMapEventFilter` so saved rides stay readable. Recording is unchanged.
 struct RideMapView: UIViewRepresentable {
     let track: [LocationSample]
     let events: [RideEvent]
+    /// Max event pins to draw. Crashes always win a slot (see `RideMapEventFilter`).
+    var maxMapEvents: Int = RideMapEventFilter.defaultLimit
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -32,7 +37,7 @@ struct RideMapView: UIViewRepresentable {
         }
 
         var annotations: [EventAnnotation] = []
-        for event in events {
+        for event in RideMapEventFilter.selectForMap(events, limit: maxMapEvents) {
             guard let lat = event.latitude, let lon = event.longitude else { continue }
             let annotation = EventAnnotation(severity: event.severity, peakG: event.peakG)
             annotation.coordinate = CLLocationCoordinate2D(latitude: lat, longitude: lon)
