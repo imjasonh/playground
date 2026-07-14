@@ -102,6 +102,32 @@ struct RideDetailView: View {
                 }
             }
 
+            if let diagnostics = ride.recordingDiagnostics {
+                Section("Recording end") {
+                    stat("Reason", diagnostics.endReason.displayName)
+                    if let detail = diagnostics.endDetail, !detail.isEmpty {
+                        Text(detail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("rideDetailEndDetail")
+                    }
+                    if let offset = diagnostics.lastMotionOffset {
+                        stat("Last motion", duration(offset))
+                    }
+                    if let offset = diagnostics.lastLocationOffset {
+                        stat("Last GPS", duration(offset))
+                    }
+                    stat("Motion restarts", "\(diagnostics.motionRestartCount)")
+                    stat("Location errors", "\(diagnostics.locationErrorCount)")
+                    if let pushMs = diagnostics.maxCompanionPushMilliseconds {
+                        stat("Slowest companion push", String(format: "%.0f ms", pushMs))
+                    }
+                    if let auth = diagnostics.authorizationStatusAtEnd {
+                        stat("Location at end", auth)
+                    }
+                }
+            }
+
             Section("Sensor log") {
                 stat("GPS fixes", "\(ride.track.count)")
                 stat("Motion seconds", "\(ride.motion.count)")

@@ -79,6 +79,49 @@ final class RideStoreTests: XCTestCase {
         XCTAssertEqual(r.maxCyclingPowerWatts ?? 0, 420, accuracy: 0.001)
     }
 
+    func testRecordingDiagnosticsRoundTripAndLegacyOmitsThem() throws {
+        var ride = makeRide()
+        ride.recordingDiagnostics = RideRecordingDiagnostics(
+            endReason: .sensingGap,
+            endDetail: "Stopped after sensing paused — background keep-alive was lost.",
+            lastMotionOffset: 1080,
+            lastLocationOffset: 1082,
+            motionRestartCount: 3,
+            locationErrorCount: 1,
+            maxCompanionPushMilliseconds: 120,
+            authorizationStatusAtEnd: "always"
+        )
+        try store.save(ride)
+
+        let loaded = try XCTUnwrap(store.loadAll().first?.recordingDiagnostics)
+        XCTAssertEqual(loaded.endReason, .sensingGap)
+        XCTAssertEqual(loaded.motionRestartCount, 3)
+        XCTAssertEqual(loaded.locationErrorCount, 1)
+        XCTAssertEqual(loaded.maxCompanionPushMilliseconds ?? 0, 120, accuracy: 0.001)
+        XCTAssertEqual(loaded.authorizationStatusAtEnd, "always")
+
+        let legacy = """
+        {
+          "id": "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
+          "startedAt": "2024-01-01T12:00:00Z",
+          "endedAt": "2024-01-01T12:10:00Z",
+          "durationSeconds": 600,
+          "distanceMeters": 1000,
+          "peakG": 1.0,
+          "joltCount": 0,
+          "crashCount": 0,
+          "events": [],
+          "track": [],
+          "motion": [],
+          "barometer": []
+        }
+        """
+        let url = tempDir.appendingPathComponent("AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE.json")
+        try Data(legacy.utf8).write(to: url)
+        let legacyRide = store.loadAll().first { $0.id.uuidString == "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE" }
+        XCTAssertNil(legacyRide?.recordingDiagnostics)
+    }
+
     func testSummaryRoundTripsAndLegacyJSONDecodesWithoutSummary() throws {
         var ride = makeRide()
         ride.summary = "Bumpy evening commute"

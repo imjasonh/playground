@@ -33,6 +33,14 @@ enum RideJSONLExporter {
         let averageCadenceRPM: Double?
         let averageCyclingPowerWatts: Double?
         let maxCyclingPowerWatts: Double?
+        let endReason: String?
+        let endDetail: String?
+        let lastMotionOffset: TimeInterval?
+        let lastLocationOffset: TimeInterval?
+        let motionRestartCount: Int?
+        let locationErrorCount: Int?
+        let maxCompanionPushMilliseconds: Double?
+        let authorizationStatusAtEnd: String?
     }
 
     private struct EventLine: Encodable {
@@ -113,6 +121,7 @@ enum RideJSONLExporter {
             1 + ride.events.count + ride.track.count + ride.motion.count + ride.barometer.count
         )
 
+        let diagnostics = ride.recordingDiagnostics
         lines.append(try encode(RideHeader(
             id: ride.id,
             startedAt: ride.startedAt,
@@ -130,7 +139,15 @@ enum RideJSONLExporter {
             watchDistanceMeters: ride.watchDistanceMeters,
             averageCadenceRPM: ride.averageCadenceRPM,
             averageCyclingPowerWatts: ride.averageCyclingPowerWatts,
-            maxCyclingPowerWatts: ride.maxCyclingPowerWatts
+            maxCyclingPowerWatts: ride.maxCyclingPowerWatts,
+            endReason: diagnostics?.endReason.rawValue,
+            endDetail: diagnostics?.endDetail,
+            lastMotionOffset: diagnostics?.lastMotionOffset,
+            lastLocationOffset: diagnostics?.lastLocationOffset,
+            motionRestartCount: diagnostics?.motionRestartCount,
+            locationErrorCount: diagnostics?.locationErrorCount,
+            maxCompanionPushMilliseconds: diagnostics?.maxCompanionPushMilliseconds,
+            authorizationStatusAtEnd: diagnostics?.authorizationStatusAtEnd
         )))
 
         for event in ride.events {
