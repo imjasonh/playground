@@ -65,10 +65,14 @@ for ~90s. While a ride is active it also:
    rough elevation sparkline colored by speed.
 2. **Apple Watch companion** (`io.github.imjasonh.playground.watch`) — glanceable
    clock time, duration, distance, and current speed via WatchConnectivity
-   (phone remains the recorder).
+   (phone remains the recorder). Starting a ride launches the Watch app into an
+   `HKWorkoutSession` so it stays frontmost for the ride (wrist-raise returns
+   to Ride Monitor). The HealthKit session is discarded at stop — ride data is
+   not written to Health.
 
 Both need a one-time **iOS signing bootstrap** after this tree lands (new Bundle
-IDs). Live Activities require a real device (and Live Activities enabled in
+IDs, and again when HealthKit is first enabled on the host + Watch App IDs).
+Live Activities require a real device (and Live Activities enabled in
 Settings); the Watch app needs a paired Apple Watch.
 
 When a ride ends, Ride Monitor asks the on-device Foundation Model (Apple

@@ -1,9 +1,12 @@
 import SwiftUI
 
 /// Glanceable ride stats on Apple Watch: clock time, duration, distance, and
-/// current speed. Data is pushed from the phone via WatchConnectivity.
+/// current speed. Data is pushed from the phone via WatchConnectivity. While
+/// a ride is active an `HKWorkoutSession` keeps this app frontmost so raising
+/// the wrist returns here without hunting through the app list.
 struct RideMonitorWatchView: View {
     @EnvironmentObject private var receiver: RideWatchReceiver
+    @EnvironmentObject private var workout: RideWatchWorkoutController
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
@@ -30,6 +33,13 @@ struct RideMonitorWatchView: View {
                             value: snapshot.formattedSpeedMph,
                             identifier: "watchSpeed"
                         )
+                        if let message = workout.lastErrorMessage {
+                            Text(message)
+                                .font(.caption2)
+                                .foregroundStyle(.orange)
+                                .multilineTextAlignment(.center)
+                                .padding(.top, 4)
+                        }
                     } else {
                         VStack(spacing: 6) {
                             Image(systemName: "bicycle")
@@ -79,4 +89,5 @@ struct RideMonitorWatchView: View {
 #Preview {
     RideMonitorWatchView()
         .environmentObject(RideWatchReceiver.shared)
+        .environmentObject(RideWatchWorkoutController.shared)
 }

@@ -1,7 +1,9 @@
 import Foundation
 import WatchConnectivity
 
-/// Watch-side session that receives `RideLiveSnapshot` updates from the phone.
+/// Watch-side session that receives `RideLiveSnapshot` updates from the phone
+/// and keeps an `HKWorkoutSession` in sync so the companion stays frontmost
+/// for the whole ride (wrist-raise returns here instead of the watch face).
 @MainActor
 final class RideWatchReceiver: NSObject, ObservableObject {
     static let shared = RideWatchReceiver()
@@ -9,6 +11,7 @@ final class RideWatchReceiver: NSObject, ObservableObject {
     @Published private(set) var snapshot: RideLiveSnapshot = .idle
 
     private var session: WCSession?
+    private let workout = RideWatchWorkoutController.shared
 
     private override init() {
         super.init()
@@ -30,6 +33,7 @@ final class RideWatchReceiver: NSObject, ObservableObject {
             return
         }
         snapshot = decoded
+        workout.sync(isRiding: decoded.isRiding, startedAt: decoded.startedAt)
     }
 }
 

@@ -49,6 +49,34 @@ def ensure_bundle_ids!(entries)
   end
 end
 
+# Enable HealthKit on an existing App ID so match profiles include the
+# com.apple.developer.healthkit entitlement. Idempotent.
+def ensure_healthkit!(identifier)
+  require "spaceship"
+  bundle_id = Spaceship::ConnectAPI::BundleId.find(identifier)
+  UI.user_error!("Bundle ID '#{identifier}' not found — create it first") unless bundle_id
+
+  capabilities = bundle_id.get_capabilities
+  already = Array(capabilities).any? do |cap|
+    type = cap.respond_to?(:capability_type) ? cap.capability_type.to_s : cap.to_s
+    type.upcase.include?("HEALTHKIT") || type.upcase.include?("HEALTH_KIT")
+  end
+  if already
+    UI.success("HealthKit already enabled on '#{identifier}'")
+    return
+  end
+
+  UI.message("Enabling HealthKit on '#{identifier}'…")
+  healthkit_type =
+    if defined?(Spaceship::ConnectAPI::BundleIdCapability::Type::HEALTHKIT)
+      Spaceship::ConnectAPI::BundleIdCapability::Type::HEALTHKIT
+    else
+      "HEALTHKIT"
+    end
+  bundle_id.create_capability(healthkit_type)
+  UI.success("Enabled HealthKit on '#{identifier}'")
+end
+
 def profile_name_for(identifier)
   ENV["sigh_#{identifier}_appstore_profile-name"] || "match AppStore #{identifier}"
 end
@@ -100,6 +128,12 @@ platform :ios do
         { id: WATCH_IDENTIFIER, name: "Playground Ride Monitor Watch" }
       ]
     )
+
+    # Ride Monitor keeps the Watch companion frontmost via HKWorkoutSession /
+    # startWatchApp — both App IDs need the HealthKit capability on the portal
+    # before match can issue profiles that include the entitlement.
+    ensure_healthkit!(APP_IDENTIFIER)
+    ensure_healthkit!(WATCH_IDENTIFIER)
 
     match(
       type: "appstore",
