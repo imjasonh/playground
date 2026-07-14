@@ -216,8 +216,10 @@ targets:
         NSHealthShareUsageDescription: Ride Monitor uses HealthKit so it can stay on-wrist during a ride and collect heart rate, energy, Watch distance, and cycling cadence/speed/power when a sensor is paired. GPS and jolts are recorded on iPhone; the workout is saved to Health when the ride ends.
         NSHealthUpdateUsageDescription: Ride Monitor uses HealthKit so it can stay on-wrist during a ride and collect heart rate, energy, Watch distance, and cycling cadence/speed/power when a sensor is paired. GPS and jolts are recorded on iPhone; the workout is saved to Health when the ride ends.
         # Keeps the companion running under an HKWorkoutSession (wrist-raise
-        # returns to Ride Monitor instead of the watch face).
-        UIBackgroundModes:
+        # returns to Ride Monitor instead of the watch face). watchOS expects
+        # WKBackgroundModes here — UIBackgroundModes + workout-processing is
+        # rejected by App Store Connect (ITMS 90362).
+        WKBackgroundModes:
           - workout-processing
 
   PlaygroundTests:
