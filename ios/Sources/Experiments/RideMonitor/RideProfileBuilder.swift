@@ -7,12 +7,13 @@ import Foundation
 /// ## Complexity
 ///
 /// Live snapshots are rebuilt about once a second while riding. Older builds
-/// mapped **every** barometer sample (~50 Hz) through a linear nearest-speed
-/// scan of the GPS track before downsampling — O(barometer × track) on the
-/// main thread. By ~15–20 minutes that work could stall Core Motion delivery
+/// mapped **every** barometer sample through a linear nearest-speed scan of
+/// the GPS track before downsampling — O(barometer × track) on the main
+/// thread. By ~15–20 minutes that work could stall Core Motion delivery
 /// (also on the main queue) and trip the 90 s sensing-gap auto-end. We now
 /// pick at most `maxPoints` source indices first, then resolve speeds with a
-/// binary search over the time-sorted track.
+/// binary search over the time-sorted track. Recording itself also persists
+/// barometer/GPS at ~1 Hz so long rides no longer accumulate 50 Hz arrays.
 enum RideProfileBuilder {
     /// Default point budget for Live Activity / Watch payloads.
     static let defaultMaxPoints = 48

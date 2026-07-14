@@ -32,7 +32,7 @@ enum RideSeverity: String, CaseIterable, Codable {
 /// A detected motion event during a ride. The detection core fills `severity`,
 /// `peakG`, and `at`; the session manager attaches the location afterwards.
 struct RideEvent: Identifiable, Codable {
-    let id = UUID()
+    let id: UUID
     let severity: RideSeverity
     /// Peak acceleration magnitude (gravity removed), in g.
     let peakG: Double
@@ -40,4 +40,20 @@ struct RideEvent: Identifiable, Codable {
     let at: TimeInterval
     var latitude: Double?
     var longitude: Double?
+
+    init(
+        id: UUID = UUID(),
+        severity: RideSeverity,
+        peakG: Double,
+        at: TimeInterval,
+        latitude: Double? = nil,
+        longitude: Double? = nil
+    ) {
+        self.id = id
+        self.severity = severity
+        self.peakG = peakG
+        self.at = at
+        self.latitude = latitude
+        self.longitude = longitude
+    }
 }

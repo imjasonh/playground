@@ -62,7 +62,10 @@ for ~90s. Each saved ride stores a `recordingDiagnostics` block (end reason,
 motion-restart / location-error counts, slowest companion push) and emits
 `OSLog` under subsystem `io.github.imjasonh.playground` / category
 `RideMonitor` (per-minute heartbeats + stop reasons) for Console.app debugging.
-While a ride is active it also:
+Leaving the Ride Monitor experiment while a ride is active stops and saves it
+so `@StateObject` teardown cannot silently drop the recording or leave Live
+Activity / Watch workouts orphaned (Past rides opens in a sheet so browsing
+history mid-ride does not trigger that stop). While a ride is active it also:
 
 1. **Live Activity** (`io.github.imjasonh.playground.ridemonitorwidget`) —
    Lock Screen / Dynamic Island shows duration, distance, current speed, and a
