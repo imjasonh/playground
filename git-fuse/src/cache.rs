@@ -34,6 +34,14 @@ pub(crate) const STATE_COLD: u8 = 0;
 pub(crate) const STATE_SHALLOW: u8 = 1;
 pub(crate) const STATE_WARM: u8 = 2;
 
+/// Warmup retry backoff: first retry quickly (a transient failure at mount
+/// time shouldn't leave the cache shallow for long), then double up to the
+/// cap so a long remote outage isn't hammered.
+const WARMUP_RETRY_INITIAL: Duration = Duration::from_secs(1);
+const WARMUP_RETRY_MAX: Duration = Duration::from_secs(300);
+/// How often the backoff sleep checks for unmount.
+const WARMUP_SHUTDOWN_POLL: Duration = Duration::from_millis(100);
+
 /// Monotonic warmup progress, waitable with a timeout.
 pub struct WarmState {
     level: Mutex<u8>,
@@ -54,6 +62,10 @@ impl WarmState {
             *level = to;
             self.cond.notify_all();
         }
+    }
+
+    fn at_least(&self, want: u8) -> bool {
+        *self.level.lock().unwrap() >= want
     }
 
     pub(crate) fn wait_at_least(&self, want: u8, timeout: Duration) -> bool {
@@ -192,6 +204,8 @@ pub(crate) struct LocalCache {
     /// Pids of in-flight `git fetch` children, killed on drop so an
     /// unmount doesn't leave orphaned fetches writing into the cache.
     fetch_pids: Arc<Mutex<HashSet<u32>>>,
+    /// Set on drop; stops the warmup retry loop.
+    shutdown: Arc<AtomicBool>,
     /// Whether background fetching is enabled at all (`Options::warmup`).
     fetch_enabled: bool,
     /// Commits already requested via [`fetch_commit_async`], so each sha is
@@ -202,6 +216,7 @@ pub(crate) struct LocalCache {
 
 impl Drop for LocalCache {
     fn drop(&mut self) {
+        self.shutdown.store(true, Ordering::SeqCst);
         for pid in self.fetch_pids.lock().unwrap().iter() {
             // SAFETY: plain kill(2) on a child we spawned; worst case the
             // pid was already reaped and the signal goes nowhere valid —
@@ -296,6 +311,7 @@ impl LocalCache {
             fetching: Arc::new(AtomicBool::new(false)),
             fetch_lock: Arc::new(Mutex::new(())),
             fetch_pids: Arc::new(Mutex::new(HashSet::new())),
+            shutdown: Arc::new(AtomicBool::new(false)),
             fetch_enabled: warmup,
             requested_commits: Mutex::new(HashSet::new()),
             warm: WarmState::new(),
@@ -326,62 +342,98 @@ impl LocalCache {
         let fetching = self.fetching.clone();
         let fetch_lock = self.fetch_lock.clone();
         let fetch_pids = self.fetch_pids.clone();
+        let shutdown = self.shutdown.clone();
         std::thread::Builder::new()
             .name("git-fuse-warmup".to_string())
             .spawn(move || {
-                fetching.store(true, Ordering::SeqCst);
+                // The cache must converge to a complete mirror (all refs,
+                // full history) as long as the mount lives: retry failed
+                // stages with capped backoff until STATE_WARM is reached.
+                // Reads never wait on this loop — they are served from the
+                // remote API until the objects land.
+                let mut backoff = WARMUP_RETRY_INITIAL;
                 let started = Instant::now();
-                // Stage 1: shallow fetch of the default branch only — the
-                // cheapest fetch that makes the trees and blobs almost every
-                // read wants first local. (A repo like kubernetes has dozens
-                // of release branches; their tips would multiply this stage.)
-                match default_branch(dir.as_path()) {
-                    Ok(branch) => {
-                        let refspec = format!("+{branch}:{branch}");
-                        let stage1 = {
-                            let _serialize = fetch_lock.lock().unwrap();
-                            run_git_fetch(
-                                dir.as_path(),
-                                &["fetch", "--quiet", "--depth=1", "origin", &refspec],
-                                &fetch_pids,
-                            )
-                        };
-                        match stage1 {
-                            Ok(_) => {
-                                // Point the cache's HEAD at the same branch so
-                                // local ref resolution matches the remote.
-                                let _ = run_git(dir.as_path(), &["symbolic-ref", "HEAD", &branch]);
-                                warm.advance(STATE_SHALLOW);
-                                vlog!("shallow fetch of {branch} done in {:?}", started.elapsed());
+                loop {
+                    if shutdown.load(Ordering::SeqCst) {
+                        return;
+                    }
+                    fetching.store(true, Ordering::SeqCst);
+                    // Stage 1: shallow fetch of the default branch only — the
+                    // cheapest fetch that makes the trees and blobs almost
+                    // every read wants first local. (A repo like kubernetes
+                    // has dozens of release branches; their tips would
+                    // multiply this stage.)
+                    if !warm.at_least(STATE_SHALLOW) {
+                        match default_branch(dir.as_path()) {
+                            Ok(branch) => {
+                                let refspec = format!("+{branch}:{branch}");
+                                let stage1 = {
+                                    let _serialize = fetch_lock.lock().unwrap();
+                                    run_git_fetch(
+                                        dir.as_path(),
+                                        &["fetch", "--quiet", "--depth=1", "origin", &refspec],
+                                        &fetch_pids,
+                                    )
+                                };
+                                match stage1 {
+                                    Ok(_) => {
+                                        // Point the cache's HEAD at the same
+                                        // branch so local ref resolution
+                                        // matches the remote.
+                                        let _ = run_git(
+                                            dir.as_path(),
+                                            &["symbolic-ref", "HEAD", &branch],
+                                        );
+                                        warm.advance(STATE_SHALLOW);
+                                        vlog!(
+                                            "shallow fetch of {branch} done in {:?}",
+                                            started.elapsed()
+                                        );
+                                    }
+                                    Err(e) => vlog!("shallow fetch of {branch} failed: {e}"),
+                                }
                             }
-                            Err(e) => vlog!("shallow fetch of {branch} failed: {e}"),
+                            Err(e) => vlog!("default-branch discovery failed: {e}"),
                         }
                     }
-                    Err(e) => vlog!("default-branch discovery failed: {e}"),
-                }
-                // Stage 2: everything — all refs (the configured refspec
-                // mirrors refs/*) and full history.
-                let full = {
-                    let _serialize = fetch_lock.lock().unwrap();
-                    if dir.join("shallow").exists() {
-                        run_git_fetch(
-                            dir.as_path(),
-                            &["fetch", "--quiet", "--unshallow", "origin"],
-                            &fetch_pids,
-                        )
-                    } else {
-                        run_git_fetch(dir.as_path(), &["fetch", "--quiet", "origin"], &fetch_pids)
+                    // Stage 2: everything — all refs (the configured refspec
+                    // mirrors refs/*) and full history.
+                    let full = {
+                        let _serialize = fetch_lock.lock().unwrap();
+                        if dir.join("shallow").exists() {
+                            run_git_fetch(
+                                dir.as_path(),
+                                &["fetch", "--quiet", "--unshallow", "origin"],
+                                &fetch_pids,
+                            )
+                        } else {
+                            run_git_fetch(
+                                dir.as_path(),
+                                &["fetch", "--quiet", "origin"],
+                                &fetch_pids,
+                            )
+                        }
+                    };
+                    fetching.store(false, Ordering::SeqCst);
+                    match full {
+                        Ok(_) => {
+                            warm.advance(STATE_SHALLOW);
+                            warm.advance(STATE_WARM);
+                            vlog!("full fetch done in {:?}", started.elapsed());
+                            return;
+                        }
+                        Err(e) => vlog!("full fetch failed (retrying in {backoff:?}): {e}"),
                     }
-                };
-                match full {
-                    Ok(_) => {
-                        warm.advance(STATE_SHALLOW);
-                        warm.advance(STATE_WARM);
-                        vlog!("full fetch done in {:?}", started.elapsed());
+                    // Back off, waking early on shutdown.
+                    let wait_until = Instant::now() + backoff;
+                    while Instant::now() < wait_until {
+                        if shutdown.load(Ordering::SeqCst) {
+                            return;
+                        }
+                        std::thread::sleep(WARMUP_SHUTDOWN_POLL);
                     }
-                    Err(e) => vlog!("full fetch failed: {e}"),
+                    backoff = (backoff * 2).min(WARMUP_RETRY_MAX);
                 }
-                fetching.store(false, Ordering::SeqCst);
             })
             .expect("spawn warmup thread");
     }

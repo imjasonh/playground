@@ -442,6 +442,37 @@ fn missing_things_are_enoent() {
 }
 
 #[test]
+fn warmup_retries_until_the_cache_is_complete() {
+    require_fuse!();
+    let repo = TestRepo::new();
+    let sha = repo.commit("only", &[Spec::File("f.txt", b"eventually local\n")]);
+    let server = TestServer::start(repo.bare());
+    // Smart-HTTP is down at mount time: every warmup fetch fails, but reads
+    // still work through the API.
+    server.set_fail_smart(true);
+    let f = Fixture::with_server(repo, server, true);
+    assert_eq!(
+        f.cat(&format!("commits/{sha}/f.txt")),
+        b"eventually local\n"
+    );
+    assert!(
+        !f.mount_ref().wait_warm(Duration::from_millis(1500)),
+        "cache must not be complete while the remote is down"
+    );
+
+    // Remote recovers; the warmup retry loop must finish the job without a
+    // remount.
+    f.server.set_fail_smart(false);
+    assert!(
+        f.mount_ref().wait_warm(WAIT),
+        "warmup must retry until the cache is complete"
+    );
+    eventually("head commit to land in the cache", WAIT, || {
+        git_has_object(&f.cache_git_dir(), &sha)
+    });
+}
+
+#[test]
 fn on_demand_fetch_expands_the_cache_beyond_the_staged_fetches() {
     require_fuse!();
     let repo = TestRepo::new();

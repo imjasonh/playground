@@ -48,7 +48,10 @@ in stages — a **shallow fetch of the default branch only** (the tips almost
 every read wants first; a repo like kubernetes has dozens of release
 branches that would multiply this stage), then **all refs and full
 history** — while reads fall through to the API. Objects switch to local
-serving the moment they land. Anything the staged fetches haven't covered
+serving the moment they land. The warmup **retries with capped backoff
+until the cache is a complete mirror**, so as long as a mount lives the
+cache converges to all history of all files even across remote outages —
+without ever making a single-file read wait on it. Anything the staged fetches haven't covered
 yet — another branch, old history, even a dangling sha — is served from the
 API immediately *and* pulled into the cache by a targeted background
 `git fetch <sha>`, so the next read of it is local. The mount discovers
