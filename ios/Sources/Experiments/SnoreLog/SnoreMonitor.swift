@@ -153,16 +153,26 @@ final class SnoreMonitor: ObservableObject {
         try engine.start()
 
         isRunning = true
-        statusMessage = "Listening — only loud clips are saved."
+        statusMessage = detector.isWarmingUp
+            ? "Calibrating ambient…"
+            : "Listening — only loud clips are saved."
         #if canImport(UIKit)
         UIApplication.shared.isIdleTimerDisabled = true
         #endif
 
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                self?.elapsed = self?.now ?? 0
-                self?.noiseFloor = self?.detector.noiseFloor ?? 0
-                self?.threshold = self?.detector.currentThreshold ?? 0
+                guard let self else { return }
+                self.elapsed = self.now
+                self.noiseFloor = self.detector.noiseFloor
+                self.threshold = self.detector.currentThreshold
+                if self.isRunning {
+                    self.statusMessage = self.detector.isWarmingUp
+                        ? "Calibrating ambient…"
+                        : (self.snoreCount == 0
+                            ? "Listening — only loud clips are saved."
+                            : "Logged snore #\(self.snoreCount)")
+                }
             }
         }
     }

@@ -8,7 +8,7 @@ import Foundation
 /// monitor or store.
 struct SnoreDetectorConfig: Equatable {
     /// How quickly the ambient floor tracks quiet audio (0…1 per sample).
-    var noiseFloorAlpha: Double = 0.02
+    var noiseFloorAlpha: Double = 0.05
     /// How quickly the floor rises toward louder audio (kept slow so snores
     /// don't immediately become the new baseline).
     var noiseFloorRiseAlpha: Double = 0.002
@@ -23,26 +23,45 @@ struct SnoreDetectorConfig: Equatable {
     var cooldownSeconds: TimeInterval = 4.0
     /// Hard cap so a continuous noise source can't produce a huge clip.
     var maxEventSeconds: TimeInterval = 12.0
-    /// Seed floor so the first moments aren't hypersensitive.
+    /// Seed floor so the first moments aren't hypersensitive. Falls quickly
+    /// toward true ambient via `noiseFloorAlpha`.
     var initialNoiseFloor: Double = 0.008
+    /// Ignore onsets while the floor is still calibrating to the room.
+    /// Production sensitivity configs set this; raw configs default to 0 so
+    /// unit tests stay short.
+    var warmupSeconds: TimeInterval = 0
 
-    /// Default slider position — a bit more sensitive than the original fixed
-    /// thresholds, since quiet snoring was easy to miss.
-    static let defaultSensitivity: Double = 0.7
+    /// Default slider position — biased toward catching quiet snoring; drag
+    /// down if room noise false-triggers.
+    static let defaultSensitivity: Double = 0.85
 
     /// Maps a 0…1 sensitivity slider to detector thresholds.
     ///
     /// Higher sensitivity → lower ratio/margin and a shorter sustain requirement,
-    /// so quieter / shorter bursts still trigger.
+    /// so quieter / shorter bursts still trigger. Ratio and margin interpolate in
+    /// log space so the upper half of the slider is actually useful in quiet
+    /// rooms — a linear map left max sensitivity with margin 0.003, which needs
+    /// ~4× ambient and missed overnight snoring even at 100%.
     static func parameters(forSensitivity raw: Double) -> SnoreDetectorConfig {
         let s = min(1, max(0, raw))
         var config = SnoreDetectorConfig()
-        // Least sensitive (0): ratio 4.0, margin 0.030, minAbove 0.55s
-        // Most sensitive (1):  ratio 0.6, margin 0.003, minAbove 0.20s
-        config.thresholdRatio = 4.0 - s * 3.4
-        config.thresholdMargin = 0.030 - s * 0.027
-        config.minAboveSeconds = 0.55 - s * 0.35
+        // Least sensitive (0): ratio 3.5, margin 0.025, minAbove 0.50s
+        // Most sensitive (1):  ratio 0.18, margin 0.0003, minAbove 0.12s
+        config.thresholdRatio = Self.lerpLog(from: 3.5, to: 0.18, t: s)
+        config.thresholdMargin = Self.lerpLog(from: 0.025, to: 0.0003, t: s)
+        config.minAboveSeconds = 0.50 - s * 0.38
+        // At high sensitivity, rise the floor more slowly so soft intermittent
+        // snoring doesn't become the new baseline.
+        config.noiseFloorRiseAlpha = 0.0025 - s * 0.0018
+        // Let the seeded floor fall/rise toward true ambient before onsets count.
+        config.warmupSeconds = 20
         return config
+    }
+
+    /// Logarithmic interpolation — equal slider steps feel like equal loudness
+    /// factors rather than equal absolute RMS deltas.
+    private static func lerpLog(from a: Double, to b: Double, t: Double) -> Double {
+        a * pow(b / a, t)
     }
 }
 
@@ -96,6 +115,11 @@ struct SnoreDetector {
         config.thresholdRatio = next.thresholdRatio
         config.thresholdMargin = next.thresholdMargin
         config.minAboveSeconds = next.minAboveSeconds
+        config.noiseFloorRiseAlpha = next.noiseFloorRiseAlpha
+        // Keep the existing warmup deadline — don't restart calibration mid-session.
+        if config.warmupSeconds == 0 {
+            config.warmupSeconds = next.warmupSeconds
+        }
     }
 
     /// Process one RMS window. Returns a detection when an event completes.
@@ -123,8 +147,9 @@ struct SnoreDetector {
             return nil
         }
 
-        // Idle: look for a sustained rise above threshold (after cooldown).
-        guard time >= cooldownUntil else {
+        // Idle: look for a sustained rise above threshold (after warmup + cooldown).
+        let onsetGate = max(cooldownUntil, config.warmupSeconds)
+        guard time >= onsetGate else {
             aboveSince = nil
             return nil
         }
@@ -157,10 +182,18 @@ struct SnoreDetector {
         if level <= noiseFloor {
             noiseFloor += (level - noiseFloor) * config.noiseFloorAlpha
         } else if activeStart == nil {
-            // Rise slowly while idle so a brief snore doesn't raise the floor.
-            noiseFloor += (level - noiseFloor) * config.noiseFloorRiseAlpha
+            // During warmup, chase steady room noise quickly so HVAC / fans
+            // become the floor before onsets count. Afterward, rise slowly so
+            // real snores don't immediately become the baseline.
+            let rise: Double
+            if lastTime < config.warmupSeconds {
+                rise = max(config.noiseFloorRiseAlpha, 0.06)
+            } else {
+                rise = config.noiseFloorRiseAlpha
+            }
+            noiseFloor += (level - noiseFloor) * rise
         }
-        noiseFloor = max(0.0005, noiseFloor)
+        noiseFloor = max(0.0002, noiseFloor)
     }
 
     private mutating func finishEvent(at end: TimeInterval) -> SnoreDetection? {
@@ -183,5 +216,10 @@ struct SnoreDetector {
     /// Threshold currently in effect (for UI metering).
     var currentThreshold: Double {
         noiseFloor + max(config.thresholdMargin, noiseFloor * config.thresholdRatio)
+    }
+
+    /// True while onsets are suppressed so the ambient floor can settle.
+    var isWarmingUp: Bool {
+        lastTime < config.warmupSeconds
     }
 }
