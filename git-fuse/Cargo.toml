@@ -26,6 +26,10 @@ ureq = { version = "2", features = ["json"] }
 # the crate so tests *and* benches share it (benches cannot import
 # `tests/common`), same as git-server's testutil.
 tiny_http = "0.12"
+# SHA-1 + hex: verify blobs served by the JSON API against their object id
+# (bytes from `git fetch` are verified by git itself).
+sha1 = "0.10"
+hex = "0.4"
 
 # Hand-rolled harness (like git-server's benches): measures time-to-first-byte
 # and warm traversal against a shallow `git clone` baseline.

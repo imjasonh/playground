@@ -108,11 +108,20 @@ impl NodeTable {
     }
 }
 
+/// A blob pinned for the lifetime of one open file: filled lazily by the
+/// first read (so opens served from the kernel page cache never fetch) and
+/// released on close. This is what makes files bigger than the LRU budget
+/// read in one fetch instead of one fetch per 128 KiB read request.
+type OpenBlob = Arc<Mutex<Option<Arc<Vec<u8>>>>>;
+
 /// Everything the worker threads need, shared behind an `Arc`.
 struct Inner {
     source: Source,
     refs_ttl: Duration,
     table: Mutex<NodeTable>,
+    /// Open regular-file handles (fh → lazily-filled blob pin).
+    handles: Mutex<HashMap<u64, OpenBlob>>,
+    next_fh: std::sync::atomic::AtomicU64,
     uid: u32,
     gid: u32,
     mounted_at: SystemTime,
@@ -434,7 +443,32 @@ impl Inner {
         }
     }
 
-    fn do_read(&self, ino: u64, offset: i64, size: u32, reply: ReplyData) {
+    /// The blob for a read on `fh`: served from the handle's pin when
+    /// present, filling it on first use. `fh` 0 (or an unknown handle)
+    /// falls back to an unpinned read.
+    fn blob_for_read(
+        &self,
+        fh: u64,
+        commit: &str,
+        path: &str,
+        oid: &str,
+    ) -> Result<Arc<Vec<u8>>, String> {
+        let slot = self.handles.lock().unwrap().get(&fh).cloned();
+        match slot {
+            Some(slot) => {
+                let mut slot = slot.lock().unwrap();
+                if let Some(data) = slot.as_ref() {
+                    return Ok(data.clone());
+                }
+                let data = self.source.read_blob(commit, path, oid)?;
+                *slot = Some(data.clone());
+                Ok(data)
+            }
+            None => self.source.read_blob(commit, path, oid),
+        }
+    }
+
+    fn do_read(&self, ino: u64, fh: u64, offset: i64, size: u32, reply: ReplyData) {
         let Some(node) = self.table.lock().unwrap().get(ino) else {
             reply.error(libc::ENOENT);
             return;
@@ -467,7 +501,7 @@ impl Inner {
                 path,
                 entry: Some(entry),
             } if entry.kind != EntryKind::Dir => {
-                match self.source.read_blob(&commit, &path, &entry.oid) {
+                match self.blob_for_read(fh, &commit, &path, &entry.oid) {
                     Ok(data) => data,
                     Err(e) => {
                         vlog!("read {commit}:{path}: {e}");
@@ -691,7 +725,20 @@ impl Inner {
             // every read hit us so `cat` always sees the current sha.
             Some(Node::Ref { .. }) => reply.opened(0, fuser::consts::FOPEN_DIRECT_IO),
             // Commit data is immutable; let the page cache keep it across
-            // opens.
+            // opens. Regular files get a handle that pins the blob for the
+            // open's lifetime (filled lazily by the first read).
+            Some(Node::Commit {
+                entry: Some(entry), ..
+            }) if entry.kind != EntryKind::Dir => {
+                let fh = self
+                    .next_fh
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                self.handles
+                    .lock()
+                    .unwrap()
+                    .insert(fh, Arc::new(Mutex::new(None)));
+                reply.opened(fh, fuser::consts::FOPEN_KEEP_CACHE);
+            }
             Some(Node::Commit { .. }) => reply.opened(0, fuser::consts::FOPEN_KEEP_CACHE),
             Some(_) => reply.opened(0, 0),
             None => reply.error(libc::ENOENT),
@@ -742,6 +789,9 @@ impl GitFuse {
                 source,
                 refs_ttl,
                 table: Mutex::new(NodeTable::new()),
+                handles: Mutex::new(HashMap::new()),
+                // fh 0 is reserved: "no handle" (ref files, directories).
+                next_fh: std::sync::atomic::AtomicU64::new(1),
                 // Present everything as owned by the mounting user.
                 uid: unsafe { libc::geteuid() },
                 gid: unsafe { libc::getegid() },
@@ -801,7 +851,7 @@ impl Filesystem for GitFuse {
         &mut self,
         _req: &Request<'_>,
         ino: u64,
-        _fh: u64,
+        fh: u64,
         offset: i64,
         size: u32,
         _flags: i32,
@@ -810,7 +860,25 @@ impl Filesystem for GitFuse {
     ) {
         let inner = self.inner.clone();
         self.pool
-            .run(move || inner.do_read(ino, offset, size, reply));
+            .run(move || inner.do_read(ino, fh, offset, size, reply));
+    }
+
+    /// Inline on the session thread (a map removal): drops the handle's
+    /// blob pin.
+    fn release(
+        &mut self,
+        _req: &Request<'_>,
+        _ino: u64,
+        fh: u64,
+        _flags: i32,
+        _lock_owner: Option<u64>,
+        _flush: bool,
+        reply: ReplyEmpty,
+    ) {
+        if fh != 0 {
+            self.inner.handles.lock().unwrap().remove(&fh);
+        }
+        reply.ok();
     }
 
     fn readdir(

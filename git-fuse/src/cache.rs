@@ -300,10 +300,29 @@ impl LocalCache {
             std::fs::create_dir_all(dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
             run_git(dir, &["init", "--bare", "--quiet"])?;
         }
-        // (Re)point origin at the remote; the refspec mirrors every ref so
-        // the cache can serve any branch or tag.
+        // (Re)point origin at the remote. The refspec mirrors branches and
+        // tags — deliberately not refs/* — so the private refs/git-fuse/
+        // namespace (keep-refs pinning on-demand fetches) can never be
+        // removed by a pruning fetch.
         run_git(dir, &["config", "remote.origin.url", remote_url])?;
-        run_git(dir, &["config", "remote.origin.fetch", "+refs/*:refs/*"])?;
+        run_git(
+            dir,
+            &[
+                "config",
+                "--replace-all",
+                "remote.origin.fetch",
+                "+refs/heads/*:refs/heads/*",
+            ],
+        )?;
+        run_git(
+            dir,
+            &[
+                "config",
+                "--add",
+                "remote.origin.fetch",
+                "+refs/tags/*:refs/tags/*",
+            ],
+        )?;
 
         let cache = LocalCache {
             git_dir: dir.to_path_buf(),
@@ -317,11 +336,16 @@ impl LocalCache {
             warm: WarmState::new(),
         };
 
-        // A pre-existing non-shallow cache with refs is already warm: serve
-        // from it immediately and let the incremental fetch find new pushes.
-        let has_refs = run_git(dir, &["for-each-ref", "--count=1"])
-            .map(|s| !s.trim().is_empty())
-            .unwrap_or(false);
+        // A pre-existing non-shallow cache with mirrored refs is already
+        // warm: serve from it immediately and let the incremental fetch
+        // find new pushes. (Keep-refs don't count — they exist even when
+        // the mirror stages never ran.)
+        let has_refs = run_git(
+            dir,
+            &["for-each-ref", "--count=1", "refs/heads", "refs/tags"],
+        )
+        .map(|s| !s.trim().is_empty())
+        .unwrap_or(false);
         let is_shallow = dir.join("shallow").exists();
         if has_refs {
             cache.warm.advance(STATE_SHALLOW);
@@ -477,10 +501,19 @@ impl LocalCache {
                     )
                 };
                 match result {
-                    Ok(_) => vlog!(
-                        "on-demand fetch of {commit} done in {:?}",
-                        started.elapsed()
-                    ),
+                    Ok(_) => {
+                        // Pin the commit with a keep-ref: `fetch <sha>`
+                        // stores objects unreachable from any ref, and git's
+                        // auto-gc would prune them again after pruneExpire.
+                        let keep = format!("refs/git-fuse/keep/{commit}");
+                        if let Err(e) = run_git(dir.as_path(), &["update-ref", &keep, &commit]) {
+                            vlog!("keep-ref for {commit} failed: {e}");
+                        }
+                        vlog!(
+                            "on-demand fetch of {commit} done in {:?}",
+                            started.elapsed()
+                        );
+                    }
                     Err(e) => vlog!("on-demand fetch of {commit} failed: {e}"),
                 }
             })
@@ -600,22 +633,41 @@ impl LocalCache {
         })
     }
 
-    /// The `tree` oid of a local commit, or `None` when the commit isn't
+    /// The `tree` oid of a local commit, peeling annotated tags (so
+    /// `commits/<tag-sha>` behaves the same whether served locally or by
+    /// the remote API, which also peels). `None` when the object isn't
     /// local.
     pub(crate) fn commit_tree(&self, commit: &str) -> Result<Option<String>, String> {
-        let Some((kind, data)) = self.contents(commit)? else {
-            return Ok(None);
-        };
-        if kind != "commit" {
-            return Err(format!("object {commit} is a {kind}, not a commit"));
-        }
-        let text = String::from_utf8_lossy(&data);
-        for line in text.lines() {
-            if let Some(t) = line.strip_prefix("tree ") {
-                return Ok(Some(t.trim().to_string()));
+        /// Nested-tag chains deeper than this are corrupt in practice.
+        const MAX_TAG_CHAIN: usize = 10;
+        let mut oid = commit.to_string();
+        for _ in 0..MAX_TAG_CHAIN {
+            let Some((kind, data)) = self.contents(&oid)? else {
+                return Ok(None);
+            };
+            let text = String::from_utf8_lossy(&data);
+            match kind.as_str() {
+                "commit" => {
+                    for line in text.lines() {
+                        if let Some(t) = line.strip_prefix("tree ") {
+                            return Ok(Some(t.trim().to_string()));
+                        }
+                    }
+                    return Err(format!("corrupt commit {oid}: no tree"));
+                }
+                "tag" => {
+                    let Some(target) = text.lines().find_map(|line| line.strip_prefix("object "))
+                    else {
+                        return Err(format!("corrupt tag {oid}: no object"));
+                    };
+                    oid = target.trim().to_string();
+                }
+                other => {
+                    return Err(format!("object {oid} is a {other}, not a commit"));
+                }
             }
         }
-        Err(format!("corrupt commit {commit}: no tree"))
+        Err(format!("object {commit}: tag chain too deep"))
     }
 
     /// Local ref snapshot (`for-each-ref` + HEAD symref) for when the remote
@@ -626,9 +678,16 @@ impl LocalCache {
         let head = run_git(&self.git_dir, &["symbolic-ref", "--quiet", "HEAD"])
             .map(|s| s.trim().to_string())
             .unwrap_or_else(|_| "refs/heads/main".to_string());
+        // Scoped to the mirrored namespaces: private refs/git-fuse/ keep-refs
+        // must not leak into the /refs listing.
         let out = run_git(
             &self.git_dir,
-            &["for-each-ref", "--format=%(objectname) %(refname)"],
+            &[
+                "for-each-ref",
+                "--format=%(objectname) %(refname)",
+                "refs/heads",
+                "refs/tags",
+            ],
         )?;
         let mut refs = std::collections::BTreeMap::new();
         for line in out.lines() {

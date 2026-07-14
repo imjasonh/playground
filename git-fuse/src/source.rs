@@ -15,8 +15,9 @@
 use crate::cache::{parse_tree, LocalCache, RawTreeEntry};
 use crate::remote::Remote;
 use crate::vlog;
-use std::collections::{BTreeMap, HashMap};
-use std::sync::{Arc, Mutex};
+use sha1::{Digest, Sha1};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::{Arc, Condvar, Mutex, Weak};
 use std::time::{Duration, Instant};
 
 /// git mode bits for entry classification.
@@ -116,6 +117,69 @@ impl BlobLru {
     }
 }
 
+/// Deduplicates concurrent identical fetches: exactly one caller does the
+/// work for a key while the rest wait, then re-check the caches the winner
+/// populated. Without this, kernel readahead issuing parallel reads of one
+/// cold blob would download it once per request.
+struct SingleFlight {
+    keys: Mutex<HashSet<String>>,
+    cv: Condvar,
+}
+
+/// Removes the key and wakes waiters when the winner's work ends (even by
+/// panic).
+struct Flight<'a> {
+    sf: &'a SingleFlight,
+    key: &'a str,
+}
+
+impl Drop for Flight<'_> {
+    fn drop(&mut self) {
+        self.sf.keys.lock().unwrap().remove(self.key);
+        self.sf.cv.notify_all();
+    }
+}
+
+impl SingleFlight {
+    fn new() -> SingleFlight {
+        SingleFlight {
+            keys: Mutex::new(HashSet::new()),
+            cv: Condvar::new(),
+        }
+    }
+
+    /// Either win the flight for `key` (returning a guard the caller holds
+    /// while working) or block until the current holder finishes and return
+    /// `None` — after which the caller re-checks its caches and retries.
+    fn win_or_wait<'a>(&'a self, key: &'a str) -> Option<Flight<'a>> {
+        let mut keys = self.keys.lock().unwrap();
+        if keys.insert(key.to_string()) {
+            return Some(Flight { sf: self, key });
+        }
+        while keys.contains(key) {
+            keys = self.cv.wait(keys).unwrap();
+        }
+        None
+    }
+}
+
+/// Verify remote-served blob bytes against the object id they claim to be.
+/// Objects arriving via `git fetch` are hash-verified by git itself; bytes
+/// from the JSON API get the same guarantee here, so a corrupt or lying
+/// server can't silently serve wrong content.
+fn verify_blob(oid: &str, data: &[u8]) -> Result<(), String> {
+    let mut hasher = Sha1::new();
+    hasher.update(format!("blob {}\0", data.len()).as_bytes());
+    hasher.update(data);
+    let got = hex::encode(hasher.finalize());
+    if got != oid.to_ascii_lowercase() {
+        return Err(format!(
+            "object {oid} verification failed: remote served bytes hashing to {got}"
+        ));
+    }
+    Ok(())
+}
+
 /// Bounded memo map for immutable metadata. When full it clears wholesale —
 /// entries are cheap to recompute and hitting the cap at all is rare.
 struct MemoMap<V> {
@@ -162,7 +226,16 @@ pub(crate) struct Source {
     /// remote listing.
     blob_sizes: Mutex<MemoMap<u64>>,
     blobs: Mutex<BlobLru>,
+    /// Blobs currently alive anywhere in the process (open FUSE handles,
+    /// in-flight reads), by weak reference — shares blobs too big for the
+    /// LRU budget without pinning memory.
+    live_blobs: Mutex<HashMap<String, Weak<Vec<u8>>>>,
+    /// Dedup for concurrent identical blob fetches and remote listings.
+    flights: SingleFlight,
 }
+
+/// Purge dead weak entries once the live map exceeds this many entries.
+const LIVE_BLOBS_PURGE_AT: usize = 1024;
 
 impl Source {
     pub(crate) fn new(
@@ -181,6 +254,8 @@ impl Source {
             remote_dirs: Mutex::new(MemoMap::new(MEMO_CAP)),
             blob_sizes: Mutex::new(MemoMap::new(MEMO_CAP)),
             blobs: Mutex::new(BlobLru::new(blob_cache_bytes)),
+            live_blobs: Mutex::new(HashMap::new()),
+            flights: SingleFlight::new(),
         }
     }
 
@@ -326,9 +401,15 @@ impl Source {
     /// `Ok(None)` when the path isn't a directory at that commit.
     fn remote_dir(&self, commit: &str, path: &str) -> Result<Option<Arc<Vec<Entry>>>, String> {
         let key = format!("{commit}:{path}");
-        if let Some(list) = self.remote_dirs.lock().unwrap().get(&key) {
-            return Ok(Some(list));
-        }
+        let flight_key = format!("d:{key}");
+        let _flight = loop {
+            if let Some(list) = self.remote_dirs.lock().unwrap().get(&key) {
+                return Ok(Some(list));
+            }
+            if let Some(flight) = self.flights.win_or_wait(&flight_key) {
+                break flight;
+            }
+        };
         let Some(resp) = self.remote.tree(commit, path)? else {
             return Ok(None);
         };
@@ -433,18 +514,33 @@ impl Source {
         }
     }
 
+    /// A blob already in memory (LRU or alive behind an open handle), if
+    /// any.
+    fn cached_blob(&self, oid: &str) -> Option<Arc<Vec<u8>>> {
+        if let Some(data) = self.blobs.lock().unwrap().get(oid) {
+            return Some(data);
+        }
+        self.live_blobs.lock().unwrap().get(oid)?.upgrade()
+    }
+
     /// Read a blob's bytes. `path` locates it under `commit` for the remote
     /// fallback; `oid` is its object id (always known from the lookup that
-    /// produced the entry).
+    /// produced the entry). Concurrent reads of the same cold blob fetch it
+    /// once; remote-served bytes are hash-verified against `oid`.
     pub(crate) fn read_blob(
         &self,
         commit: &str,
         path: &str,
         oid: &str,
     ) -> Result<Arc<Vec<u8>>, String> {
-        if let Some(data) = self.blobs.lock().unwrap().get(oid) {
-            return Ok(data);
-        }
+        let _flight = loop {
+            if let Some(data) = self.cached_blob(oid) {
+                return Ok(data);
+            }
+            if let Some(flight) = self.flights.win_or_wait(oid) {
+                break flight;
+            }
+        };
         let data = match self.local.contents(oid)? {
             Some((kind, data)) => {
                 if kind != "blob" {
@@ -459,6 +555,7 @@ impl Source {
                     .remote
                     .file(commit, path)?
                     .ok_or_else(|| format!("object {oid} not found at {commit}:{path}"))?;
+                verify_blob(oid, &data)?;
                 self.expand_cache_for(commit);
                 data
             }
@@ -469,6 +566,13 @@ impl Source {
             .unwrap()
             .put(oid.to_string(), data.len() as u64);
         self.blobs.lock().unwrap().put(oid, data.clone());
+        {
+            let mut live = self.live_blobs.lock().unwrap();
+            if live.len() >= LIVE_BLOBS_PURGE_AT {
+                live.retain(|_, weak| weak.strong_count() > 0);
+            }
+            live.insert(oid.to_string(), Arc::downgrade(&data));
+        }
         Ok(data)
     }
 }
@@ -487,6 +591,16 @@ mod tests {
         assert_eq!(kind_of_mode(0o040000), Some(EntryKind::Dir));
         assert_eq!(kind_of_mode(0o120000), Some(EntryKind::Symlink));
         assert_eq!(kind_of_mode(0o160000), None); // submodule: hidden
+    }
+
+    #[test]
+    fn blob_verification() {
+        // $ printf 'hello\n' | git hash-object --stdin
+        let oid = "ce013625030ba8dba906f756967f9e9ca394464a";
+        assert!(verify_blob(oid, b"hello\n").is_ok());
+        assert!(verify_blob(&oid.to_ascii_uppercase(), b"hello\n").is_ok());
+        let err = verify_blob(oid, b"tampered\n").unwrap_err();
+        assert!(err.contains("verification failed"), "{err}");
     }
 
     #[test]

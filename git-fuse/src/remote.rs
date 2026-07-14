@@ -14,8 +14,8 @@ use std::collections::BTreeMap;
 use std::io::Read;
 use std::time::Duration;
 
-/// Remote read cap. `/api/file` streams whole blobs; a runaway response
-/// should fail rather than exhaust memory.
+/// Remote read cap. `/api/file` streams whole blobs; a blob over this cap
+/// is an error (never a silent truncation) rather than a memory exhaustion.
 const MAX_BLOB_BYTES: u64 = 1 << 30;
 
 pub(crate) struct Remote {
@@ -101,10 +101,17 @@ impl Remote {
         match self.agent.get(&url).call() {
             Ok(resp) => {
                 let mut data = Vec::new();
+                // Read one byte past the cap so over-limit blobs fail loudly
+                // instead of coming back truncated.
                 resp.into_reader()
-                    .take(MAX_BLOB_BYTES)
+                    .take(MAX_BLOB_BYTES + 1)
                     .read_to_end(&mut data)
                     .map_err(|e| format!("file {refish}/{path}: {e}"))?;
+                if data.len() as u64 > MAX_BLOB_BYTES {
+                    return Err(format!(
+                        "file {refish}/{path}: blob exceeds the {MAX_BLOB_BYTES}-byte cap"
+                    ));
+                }
                 Ok(Some(data))
             }
             Err(ureq::Error::Status(404, _)) => Ok(None),

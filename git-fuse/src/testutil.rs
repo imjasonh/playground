@@ -188,9 +188,19 @@ impl TestRepo {
         self.rev_parse("HEAD")
     }
 
-    /// Tag the current head and push the tag.
+    /// Tag the current head (lightweight) and push the tag.
     pub fn tag(&self, name: &str) {
         git(&self.work, &["tag", name]);
+        git(
+            &self.work,
+            &["push", "--quiet", "origin", &format!("refs/tags/{name}")],
+        );
+    }
+
+    /// Annotated tag on the current head (its own tag object, so the ref
+    /// resolves to a tag sha, not a commit sha), pushed.
+    pub fn tag_annotated(&self, name: &str, message: &str) {
+        git(&self.work, &["tag", "-a", "-m", message, name]);
         git(
             &self.work,
             &["push", "--quiet", "origin", &format!("refs/tags/{name}")],

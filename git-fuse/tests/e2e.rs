@@ -495,6 +495,20 @@ fn on_demand_fetch_expands_the_cache_beyond_the_staged_fetches() {
         git_has_object(&f.cache_git_dir(), &dangling)
     });
 
+    // The fetched commit is pinned by a keep-ref: even an aggressive gc
+    // must not prune it (it's unreachable from every mirrored ref).
+    let gc = std::process::Command::new("git")
+        .arg("--git-dir")
+        .arg(f.cache_git_dir())
+        .args(["gc", "--prune=now", "--quiet"])
+        .status()
+        .expect("git gc");
+    assert!(gc.success());
+    assert!(
+        git_has_object(&f.cache_git_dir(), &dangling),
+        "gc must not prune keep-ref-pinned commits"
+    );
+
     // A fresh mount over the same cache serves it with the remote down.
     let mut f = f;
     f.server.set_fail_api(true);
@@ -503,6 +517,88 @@ fn on_demand_fetch_expands_the_cache_beyond_the_staged_fetches() {
     assert_eq!(
         f.cat(&format!("commits/{dangling}/orphan.txt")),
         b"orphan\n"
+    );
+}
+
+#[test]
+fn annotated_tag_shas_peel_the_same_locally_and_remotely() {
+    require_fuse!();
+    let repo = TestRepo::new();
+    let commit = repo.commit("base", &[Spec::File("f.txt", b"tagged\n")]);
+    repo.tag_annotated("v1", "release");
+    let mut f = Fixture::with_repo(repo);
+
+    // The advertised composition: the tag ref exposes the *tag object* sha.
+    let tag_sha = f.cat_ref("refs/tags/v1");
+    assert_ne!(tag_sha, commit, "annotated tag must be its own object");
+
+    // Cold (remote API peels the tag): works.
+    assert_eq!(f.cat(&format!("commits/{tag_sha}/f.txt")), b"tagged\n");
+
+    // Warm and offline (local peeling), through a fresh mount so no
+    // in-memory cache can mask a local-path failure.
+    assert!(f.mount_ref().wait_warm(WAIT));
+    f.server.set_fail_api(true);
+    f.server.set_fail_smart(true);
+    f.remount(true);
+    assert_eq!(f.cat(&format!("commits/{tag_sha}/f.txt")), b"tagged\n");
+}
+
+#[test]
+fn blobs_over_the_memory_budget_fetch_once_per_open() {
+    require_fuse!();
+    let repo = TestRepo::new();
+    let big: Vec<u8> = (0..64 * 1024).map(|i| (i % 251) as u8).collect();
+    let sha = repo.commit("big", &[Spec::File("big.bin", &big)]);
+    let server = TestServer::start(repo.bare());
+    // No local objects, ever: every byte must come through the API.
+    server.set_fail_smart(true);
+
+    let mnt = TempDir::new("mnt");
+    let cache = TempDir::new("cache");
+    let mut opts = Options::new(server.url());
+    opts.cache_dir = Some(cache.path().join("repo.git"));
+    opts.refs_ttl = TEST_REFS_TTL;
+    // A budget far smaller than the blob: the LRU refuses it, so only the
+    // per-open handle pin can prevent one fetch per 128 KiB read request.
+    opts.blob_cache_bytes = 1024;
+    let mount = mount(mnt.path(), opts).expect("mount");
+
+    let got = std::fs::read(mnt.path().join(format!("commits/{sha}/big.bin"))).unwrap();
+    assert_eq!(got, big);
+    assert_eq!(
+        server.count(CAT_API_FILE),
+        1,
+        "one open must fetch the blob exactly once, regardless of read count"
+    );
+    drop(mount);
+}
+
+#[test]
+fn concurrent_cold_reads_of_one_blob_fetch_it_once() {
+    require_fuse!();
+    let repo = TestRepo::new();
+    let body: Vec<u8> = vec![7; 256 * 1024];
+    let sha = repo.commit("one", &[Spec::File("hot.bin", &body)]);
+    let server = TestServer::start(repo.bare());
+    server.set_fail_smart(true); // API-only, so fetch counts are exact
+    server.set_delay(Duration::from_millis(300)); // widen the race window
+    let f = Fixture::with_server(repo, server, true);
+
+    let path = f.path(&format!("commits/{sha}/hot.bin"));
+    let readers: Vec<_> = (0..4)
+        .map(|_| {
+            let path = path.clone();
+            std::thread::spawn(move || std::fs::read(path).unwrap())
+        })
+        .collect();
+    for r in readers {
+        assert_eq!(r.join().unwrap(), body);
+    }
+    assert_eq!(
+        f.server.count(CAT_API_FILE),
+        1,
+        "concurrent readers must share one fetch"
     );
 }
 

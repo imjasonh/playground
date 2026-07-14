@@ -63,7 +63,20 @@ warmed cache and is local-speed immediately.
 FUSE-side, requests are answered from a worker pool (a slow remote read
 never stalls the mount), directory listings use `READDIRPLUS` (names +
 attributes in one round trip), and blob reads are served from a
-byte-budgeted in-memory LRU.
+byte-budgeted in-memory LRU. Each `open()` additionally pins its blob for
+the handle's lifetime, so a file bigger than the LRU budget is still
+fetched once per open — never once per 128 KiB read request — and
+concurrent cold reads of one blob share a single fetch.
+
+Content integrity holds across both sources: objects arriving via
+`git fetch` are hash-verified by git itself, and bytes served by the JSON
+API are verified against the blob's object id before use. Blobs over 1 GiB
+are refused with an error, never truncated. On-demand-fetched commits are
+pinned with `refs/git-fuse/keep/*` refs in the cache so git's gc can't
+prune them (the mirror refspec covers only `refs/heads/*` and
+`refs/tags/*`, keeping that private namespace safe from pruning fetches),
+and annotated tag shas peel to their commits identically whether served
+locally or by the remote API.
 
 ## Measured performance
 
