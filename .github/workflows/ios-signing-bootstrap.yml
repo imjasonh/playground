@@ -1,10 +1,14 @@
 name: iOS signing bootstrap
 
-# One-time (manual) helper to create your iOS distribution certificate + App
-# Store provisioning profile and store them, encrypted, in your private `match`
-# repo — so you don't need a Mac locally. Run it from the Actions tab once all
-# the signing secrets are set (see docs/ios-testflight-setup.md). After it
-# succeeds, pushes to main can ship to TestFlight.
+# Creates the iOS distribution certificate + App Store provisioning profiles
+# and stores them, encrypted, in your private `match` repo. Used for:
+#   - manual greenfield setup / cert recovery (workflow_dispatch)
+#   - automatic re-bootstrap when a needs-ios-bootstrap PR merges
+#     (workflow_call from ios-bootstrap-on-merge.yml)
+#
+# Day-to-day: PRs get the needs-ios-bootstrap label from
+# ios-bootstrap-label.yml; merge triggers this lane. In-app experiments do not
+# need bootstrap.
 
 on:
   workflow_dispatch:
@@ -12,6 +16,14 @@ on:
       app:
         description: iOS app directory to bootstrap signing for
         required: true
+        type: string
+        default: ios
+  workflow_call:
+    inputs:
+      app:
+        description: iOS app directory to bootstrap signing for
+        required: false
+        type: string
         default: ios
 
 jobs:
@@ -46,7 +58,7 @@ jobs:
           exit "$missing"
 
       - name: Create + store signing assets
-        working-directory: ${{ github.event.inputs.app }}
+        working-directory: ${{ inputs.app }}
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}

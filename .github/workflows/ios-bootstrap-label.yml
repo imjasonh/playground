@@ -1,0 +1,62 @@
+name: iOS bootstrap label
+
+# Label PRs that need a signing re-bootstrap (new extension Bundle ID / App ID
+# capability). Merge handling: ios-bootstrap-on-merge.yml.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sync needs-ios-bootstrap label
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          label=needs-ios-bootstrap
+          git fetch --no-tags origin "$BASE_REF"
+          range="origin/${BASE_REF}...HEAD"
+
+          # Matchfile / entitlements always need bootstrap. project.yml and
+          # Fastfile only when the hunks touch signing (not Info.plist privacy
+          # strings or test-lane tweaks) — same rules as ios/AGENTS.md.
+          needed=false
+          while IFS= read -r path; do
+            case "$path" in
+              ios/fastlane/Matchfile|*.entitlements) needed=true; break ;;
+              ios/project.yml)
+                if git diff -U0 "$range" -- "$path" | grep -E '^[+-]' | grep -Ev '^[+-]{3} ' \
+                  | grep -Eq 'PRODUCT_BUNDLE_IDENTIFIER|CODE_SIGN_ENTITLEMENTS|[[:space:]]entitlements:|type:[[:space:]]*app-extension|com\.apple\.developer\.'; then
+                  needed=true; break
+                fi
+                ;;
+              ios/fastlane/Fastfile)
+                if git diff -U0 "$range" -- "$path" | grep -E '^[+-]' | grep -Ev '^[+-]{3} ' \
+                  | grep -Eq 'SIGNING_IDENTIFIERS|ensure_bundle_ids!|ensure_healthkit!|APP_IDENTIFIER|KEYBOARD_IDENTIFIER|RIDE_WIDGET_IDENTIFIER|WATCH_IDENTIFIER|app_identifier:|BundleId|signing_bootstrap'; then
+                  needed=true; break
+                fi
+                ;;
+            esac
+          done < <(git diff --name-only "$range")
+
+          gh label create "$label" --description "iOS change needs signing re-bootstrap before TestFlight" --color D93F0B 2>/dev/null || true
+          if [ "$needed" = true ]; then
+            gh pr edit "$PR" --add-label "$label"
+            echo "Labeled #$PR with $label"
+          else
+            gh pr edit "$PR" --remove-label "$label" 2>/dev/null || true
+            echo "No bootstrap needed for #$PR"
+          fi

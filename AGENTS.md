@@ -121,7 +121,9 @@ discovery scripts.
 | `cleanup.yml` | pull request closed | Removes that PR's preview directory from `gh-pages` and refreshes the root index |
 | `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps in one job |
 | `ios.yml` | push to `main`, pull requests | Tests changed iOS apps on macOS; on `main`, delivers them to TestFlight |
-| `ios-signing-bootstrap.yml` | manual (`workflow_dispatch`) | One-time: creates & stores an iOS app's signing certificate/profile in the `match` repo |
+| `ios-bootstrap-label.yml` | pull request | Labels PRs that need signing re-bootstrap with `needs-ios-bootstrap` |
+| `ios-bootstrap-on-merge.yml` | pull request closed (merged) | If the PR had `needs-ios-bootstrap`, immediately re-runs signing bootstrap (races `ios.yml`; usually finishes first) |
+| `ios-signing-bootstrap.yml` | manual (`workflow_dispatch`) + reusable | Creates & stores signing cert/profile in the `match` repo; also called on labeled merges |
 | `deps.yaml` | daily at 00:00 UTC, manual | Updates every testable browser app, Go app, and Rust app; pushes passing updates to `main`, otherwise opens a PR |
 | `nypd-choppers-scrape.yml` | hourly, manual | **App-specific:** fetches NYPD helicopter full-day ADS-B traces and merges per-day JSON to `gh-pages` under `nypd-choppers/data/`. Not generalized; shares the `gh-pages-publish` concurrency group with deploy/preview/cleanup |
 
@@ -202,7 +204,9 @@ spins up a `macos-latest` job — so browser/Go/Rust-only PRs never pay for macO
 minutes. When `ios/` changed, CI runs XcodeGen → `bundle exec fastlane test`
 (unit + UI tests on a Simulator; no signing needed). On push to `main` with
 Apple signing secrets present, it additionally runs `fastlane beta` to upload to
-TestFlight. Run discovery locally with:
+TestFlight. PRs that need refreshed signing assets get a `needs-ios-bootstrap`
+label; on merge, a separate workflow re-runs `signing_bootstrap` in parallel
+(usually finishing before the build). Run discovery locally with:
 
 ```bash
 bash .github/scripts/discover-ios-apps.sh --all
