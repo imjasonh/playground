@@ -85,3 +85,4 @@ final class RideJSONLExporterTests: XCTestCase {
         XCTAssertTrue(header.contains("\"averageCyclingPowerWatts\":200"))
         XCTAssertTrue(header.contains("\"maxCyclingPowerWatts\":350"))
     }
+}
