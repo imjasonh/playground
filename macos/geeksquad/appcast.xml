@@ -6,6 +6,13 @@
     <description>Sparkle updates for geeksquad</description>
     <language>en</language>
     <item>
+      <title>Geek Squad 0.1.1</title>
+      <pubDate>Wed, 15 Jul 2026 17:11:00 +0000</pubDate>
+      <sparkle:version>3</sparkle:version>
+      <sparkle:shortVersionString>0.1.1</sparkle:shortVersionString>
+      <enclosure url="https://github.com/imjasonh/playground/releases/download/geeksquad-v0.1.1/GeekSquad-0.1.1.zip" length="3258132" type="application/octet-stream" sparkle:edSignature="EKpbh5p8eq6UCUW3TnXKy2eisUz7yz/ZqG38pZdfqpJ3feISwkwvEIGq/4Wqp/LYu9U07BHgHxTzyCB5NDa/AA=="/>
+    </item>
+    <item>
       <title>Geek Squad 0.1.0</title>
       <pubDate>Wed, 15 Jul 2026 16:51:15 +0000</pubDate>
       <sparkle:version>2</sparkle:version>
