@@ -370,8 +370,8 @@ struct DiagnosticServices: Sendable {
                 proposedFixes: []
             )
         }
-        let ssid = iface.ssid ?? "(SSID unavailable — grant Location, or not associated)"
-        let bssid = iface.bssid ?? "(BSSID unavailable)"
+        let ssid = iface.ssid() ?? "(SSID unavailable — grant Location, or not associated)"
+        let bssid = iface.bssid() ?? "(BSSID unavailable)"
         let rate = iface.transmitRate
         let body = [
             "Interface: \(iface.interfaceName ?? "?")",
