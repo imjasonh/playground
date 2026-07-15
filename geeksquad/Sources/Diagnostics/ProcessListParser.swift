@@ -126,7 +126,22 @@ enum ProcessListParser {
                 )
             )
         }
+        if matches.contains(where: Self.isSpotlightRelated) {
+            fixes.append(
+                "Spotlight / metadata processes (mds, mdworker) are in this set. If they’re hot after a big copy or OS update, wait for indexing to finish, or check System Settings → Siri & Spotlight. Rebuilding the index is a last resort."
+            )
+        }
         fixes.append("Geek Squad only reports usage — it does not quit or kill processes for you.")
         return (lines.joined(separator: "\n"), fixes)
+    }
+
+    static func isSpotlightRelated(_ row: ProcessRow) -> Bool {
+        let name = row.shortName.lowercased()
+        let command = row.command.lowercased()
+        return name.contains("mds")
+            || name.contains("mdworker")
+            || name.contains("spotlight")
+            || command.contains("/mds")
+            || command.contains("mdworker")
     }
 }

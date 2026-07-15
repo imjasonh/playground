@@ -148,15 +148,17 @@ struct ManualToolboxView: View {
         case .crashReports:
             let q = hostField.trimmingCharacters(in: .whitespacesAndNewlines)
             result = await services.recentCrashReports(query: q.isEmpty ? nil : q)
+        case .loginItems:
+            result = await services.loginItems()
+        case .userStorage:
+            result = await services.userStorageHotspots()
+        case .batteryPower:
+            result = await services.batteryPower()
         }
         report = result
     }
 
     private func copyToPasteboard(_ text: String) {
-        #if os(macOS)
-        let pb = NSPasteboard.general
-        pb.clearContents()
-        pb.setString(text, forType: .string)
-        #endif
+        PasteboardCopy.string(text)
     }
 }

@@ -528,6 +528,12 @@ struct DiagnosticServices: Sendable {
                     at: 0
                 )
             }
+            if top.contains(where: ProcessListParser.isSpotlightRelated) {
+                fixes.insert(
+                    "Spotlight indexing (mds/mdworker) is among the hot processes. After large file copies or OS updates this is normal — wait it out, or check System Settings → Siri & Spotlight. Avoid force-quitting mdworker repeatedly.",
+                    at: 0
+                )
+            }
             return DiagnosticReport(title: "Top CPU", body: lines.joined(separator: "\n"), proposedFixes: fixes)
         } catch {
             return DiagnosticReport(
@@ -742,6 +748,139 @@ struct DiagnosticServices: Sendable {
             body: summary.body,
             proposedFixes: summary.proposedFixes
         )
+    }
+
+    /// Login/launch agents from standard LaunchAgents/LaunchDaemons directories.
+    func loginItems() async -> DiagnosticReport {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let dirs: [(URL, String)] = [
+            (home.appendingPathComponent("Library/LaunchAgents"), "user"),
+            (URL(fileURLWithPath: "/Library/LaunchAgents"), "local"),
+            (URL(fileURLWithPath: "/Library/LaunchDaemons"), "system"),
+        ]
+        let items = LaunchAgentsParser.scan(directories: dirs.map { (url: $0.0, scope: $0.1) })
+        let summary = LaunchAgentsParser.summarize(items)
+        return DiagnosticReport(
+            title: "Login / launch agents",
+            body: summary.body,
+            proposedFixes: summary.proposedFixes
+        )
+    }
+
+    /// Approximate sizes of common user folders that eat disk.
+    func userStorageHotspots() async -> DiagnosticReport {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let targets: [(name: String, url: URL)] = [
+            ("Downloads", home.appendingPathComponent("Downloads")),
+            ("Desktop", home.appendingPathComponent("Desktop")),
+            ("Documents", home.appendingPathComponent("Documents")),
+            ("Library/Caches", home.appendingPathComponent("Library/Caches")),
+            ("Library/Logs", home.appendingPathComponent("Library/Logs")),
+            ("Movies", home.appendingPathComponent("Movies")),
+        ]
+        var samples: [FolderSizeSample] = []
+        for target in targets {
+            guard FileManager.default.fileExists(atPath: target.url.path) else {
+                samples.append(
+                    FolderSizeSample(name: target.name, path: target.url.path, kilobytes: nil, error: "missing")
+                )
+                continue
+            }
+            do {
+                let result = try ProcessRunner.run(
+                    "/usr/bin/du",
+                    arguments: ["-sk", target.url.path],
+                    timeoutSeconds: 12,
+                    maxOutputBytes: 4_096
+                )
+                if result.timedOut {
+                    samples.append(
+                        FolderSizeSample(
+                            name: target.name,
+                            path: target.url.path,
+                            kilobytes: nil,
+                            error: "timed out (folder very large or slow disk)"
+                        )
+                    )
+                } else if let kb = FolderSizeParser.parseDuSK(result.stdout) {
+                    samples.append(
+                        FolderSizeSample(name: target.name, path: target.url.path, kilobytes: kb, error: nil)
+                    )
+                } else {
+                    samples.append(
+                        FolderSizeSample(
+                            name: target.name,
+                            path: target.url.path,
+                            kilobytes: nil,
+                            error: "unparsed du output"
+                        )
+                    )
+                }
+            } catch {
+                samples.append(
+                    FolderSizeSample(
+                        name: target.name,
+                        path: target.url.path,
+                        kilobytes: nil,
+                        error: error.localizedDescription
+                    )
+                )
+            }
+        }
+        let summary = FolderSizeParser.summarize(samples)
+        return DiagnosticReport(
+            title: "User storage hotspots",
+            body: summary.body,
+            proposedFixes: summary.proposedFixes
+        )
+    }
+
+    /// Battery / AC power snapshot (`pmset -g batt`).
+    func batteryPower() async -> DiagnosticReport {
+        do {
+            let result = try ProcessRunner.run(
+                "/usr/bin/pmset",
+                arguments: ["-g", "batt"],
+                timeoutSeconds: 5,
+                maxOutputBytes: 8_000
+            )
+            if result.timedOut {
+                return DiagnosticReport(
+                    title: "Battery / power",
+                    body: "Timed out running pmset.",
+                    proposedFixes: ["Open System Settings → Battery."]
+                )
+            }
+            let text = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else {
+                return DiagnosticReport(
+                    title: "Battery / power",
+                    body: "No battery info (desktop Mac without UPS, or pmset returned empty).",
+                    proposedFixes: []
+                )
+            }
+            var fixes: [String] = []
+            let lower = text.lowercased()
+            if lower.contains("battery power") {
+                fixes.append("You’re on battery. For heavy work (builds, video), plug in — Low Power Mode and thermal limits can make the Mac feel slower on battery.")
+            }
+            if lower.contains("charging") {
+                fixes.append("Battery is charging. Performance should be closer to AC adapter levels once charged, depending on thermal state.")
+            }
+            if let pct = BatteryPowerParser.percent(from: text), pct <= 20 {
+                fixes.append("Battery is at \(pct)%. Plug in if the Mac feels throttled or you need sustained CPU.")
+            }
+            if fixes.isEmpty {
+                fixes.append("Power source looks fine from pmset. If fans are loud on AC, check power_assertions and top_cpu next.")
+            }
+            return DiagnosticReport(title: "Battery / power", body: text, proposedFixes: fixes)
+        } catch {
+            return DiagnosticReport(
+                title: "Battery / power",
+                body: "Failed to run pmset: \(error.localizedDescription)",
+                proposedFixes: ["Open System Settings → Battery."]
+            )
+        }
     }
 
     private func physicalMemoryBytes() -> UInt64 {

@@ -16,5 +16,10 @@ struct GeekSquadApp: App {
                 }
             }
         }
+
+        MenuBarExtra("Geek Squad", systemImage: "stethoscope") {
+            MenuBarQuickPanel()
+        }
+        .menuBarExtraStyle(.window)
     }
 }
