@@ -18,3 +18,16 @@ final class ChatMessageTests: XCTestCase {
         XCTAssertNotEqual(a.id, b.id)
     }
 }
+
+final class AppleIntelligenceSettingsTests: XCTestCase {
+    func testPreferenceURLsPointAtSystemSettings() {
+        XCTAssertFalse(AppleIntelligenceSettings.preferenceURLs.isEmpty)
+        for url in AppleIntelligenceSettings.preferenceURLs {
+            XCTAssertEqual(url.scheme, "x-apple.systempreferences")
+        }
+        XCTAssertEqual(
+            AppleIntelligenceSettings.preferenceURLs.first?.absoluteString,
+            "x-apple.systempreferences:com.apple.Siri-Settings.extension"
+        )
+    }
+}

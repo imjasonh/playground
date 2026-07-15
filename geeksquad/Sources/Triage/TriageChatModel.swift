@@ -83,7 +83,7 @@ final class TriageChatModel: ObservableObject {
         }
         #endif
         availability = .unavailable(
-            "On-device Apple Intelligence (Foundation Models) needs macOS 26+ with Apple Intelligence enabled. Use the Toolbox tab for manual checks."
+            "On-device Apple Intelligence (Foundation Models) needs macOS 26+ with Apple Intelligence enabled. Open Settings to enable it if supported, or use the Toolbox tab."
         )
     }
 
@@ -178,7 +178,7 @@ final class TriageChatModel: ObservableObject {
         if model.isAvailable {
             return "Model reported unavailable."
         }
-        return "Apple Intelligence isn’t available (off, ineligible, or model not ready). Enable it in System Settings if supported, or use the Toolbox tab."
+        return "Apple Intelligence isn’t available (off, ineligible, or model not ready). Open Settings to enable it if supported, or use the Toolbox tab."
     }
     #endif
 }
