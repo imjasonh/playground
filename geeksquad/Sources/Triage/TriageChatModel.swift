@@ -89,6 +89,22 @@ final class TriageChatModel: ObservableObject {
 
     func resetSession() {
         messages.removeAll()
+        recreateLanguageSession()
+        #if canImport(FoundationModels)
+        if #available(macOS 26.0, *), sessionBox != nil {
+            messages.append(
+                ChatMessage(
+                    role: .system,
+                    text: "Describe what you’re seeing and what you want fixed. I’ll run local diagnostics and propose steps — I won’t change settings myself."
+                )
+            )
+        }
+        #endif
+    }
+
+    /// Builds a fresh `LanguageModelSession` without clearing chat history.
+    /// Used after a failed turn (tool loops often leave the session unusable).
+    private func recreateLanguageSession() {
         #if canImport(FoundationModels)
         sessionBox = nil
         if #available(macOS 26.0, *), case .available = availability {
@@ -102,12 +118,6 @@ final class TriageChatModel: ObservableObject {
             sessionBox = LanguageModelSession(
                 tools: DiagnosticToolset.make(activity: hub),
                 instructions: TriageInstructions.text
-            )
-            messages.append(
-                ChatMessage(
-                    role: .system,
-                    text: "Describe what you’re seeing and what you want fixed. I’ll run local diagnostics and propose steps — I won’t change settings myself."
-                )
             )
         }
         #endif
@@ -136,7 +146,7 @@ final class TriageChatModel: ObservableObject {
                 return
             }
             if sessionBox == nil {
-                resetSession()
+                recreateLanguageSession()
             }
             guard let session = sessionBox as? LanguageModelSession else { return }
 
@@ -152,10 +162,13 @@ final class TriageChatModel: ObservableObject {
                     )
                 )
             } catch {
+                // A failed tool-using turn often leaves the session unusable;
+                // recreate so the next send starts clean without wiping history.
+                recreateLanguageSession()
                 messages.append(
                     ChatMessage(
                         role: .system,
-                        text: "Triage failed: \(error.localizedDescription)"
+                        text: TriageFailureMessage.from(error)
                     )
                 )
             }

@@ -9,6 +9,39 @@ final class TriageInstructionsTests: XCTestCase {
         XCTAssertTrue(text.localizedCaseInsensitiveContains("propose"))
         XCTAssertTrue(text.localizedCaseInsensitiveContains("Never"))
     }
+
+    func testInstructionsStayInNetworkScope() {
+        let text = TriageInstructions.text
+        XCTAssertTrue(text.localizedCaseInsensitiveContains("network"))
+        XCTAssertTrue(text.localizedCaseInsensitiveContains("do not call diagnostic tools"))
+    }
+}
+
+final class TriageFailureMessageTests: XCTestCase {
+    func testOpaqueGenerationErrorCopyIsActionable() {
+        let error = NSError(
+            domain: "FoundationModels.LanguageModelSession.GenerationError",
+            code: -1,
+            userInfo: [
+                NSLocalizedDescriptionKey:
+                    "The operation couldn’t be completed. (FoundationModels.LanguageModelSession.GenerationError error -1.)",
+            ]
+        )
+        let message = TriageFailureMessage.from(error)
+        XCTAssertFalse(message.contains("error -1"))
+        XCTAssertFalse(message.localizedCaseInsensitiveContains("Triage failed"))
+        XCTAssertTrue(message.localizedCaseInsensitiveContains("New chat"))
+        XCTAssertTrue(message.localizedCaseInsensitiveContains("Toolbox"))
+    }
+
+    func testGenericNSErrorStillPointsAtRecovery() {
+        let error = NSError(domain: "Test", code: 42, userInfo: [
+            NSLocalizedDescriptionKey: "disk full",
+        ])
+        let message = TriageFailureMessage.from(error)
+        XCTAssertTrue(message.localizedCaseInsensitiveContains("New chat"))
+        XCTAssertTrue(message.contains("disk full"))
+    }
 }
 
 final class ChatMessageTests: XCTestCase {
