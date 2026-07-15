@@ -473,7 +473,7 @@ struct DiagnosticServices: Sendable {
                 title: "Top memory",
                 body: lines.joined(separator: "\n"),
                 proposedFixes: [
-                    "If one app dominates, quit/relaunch it. Geek Squad does not kill processes for you.",
+                    "If one app dominates, quit/relaunch it or check it in Activity Monitor.",
                     "For a named app, run Process usage with that name for a full helper breakdown.",
                 ]
             )
@@ -520,7 +520,7 @@ struct DiagnosticServices: Sendable {
             }
             let hot = top.first.map(\.cpuPercent) ?? 0
             var fixes = [
-                "If one process is pegging a core, quit/relaunch that app. Geek Squad does not kill processes for you."
+                "If one process is pegging a core, quit/relaunch that app or check it in Activity Monitor."
             ]
             if hot >= 80 {
                 fixes.insert(
@@ -682,7 +682,7 @@ struct DiagnosticServices: Sendable {
             }
             let clipped = text.count > 4_000 ? String(text.prefix(4_000)) + "\n…(truncated)" : text
             var fixes: [String] = [
-                "Assertions that prevent idle sleep often come from video, backups, or busy apps. Quit the named process if sleep/fans are the issue. Geek Squad does not clear assertions for you."
+                "Assertions that prevent idle sleep often come from video, backups, or busy apps. Quit the named process if sleep/fans are the issue."
             ]
             if text.localizedCaseInsensitiveContains("PreventUserIdleSystemSleep")
                 || text.localizedCaseInsensitiveContains("PreventSystemSleep")

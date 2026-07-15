@@ -45,8 +45,8 @@ enum TriageInstructions {
         - Never invent IPs, DNS, routes, CPU%, memory MB, disk free space, or ports.
         - Your final answer is a structured triage report: headline, likelyCause, \
         evidence[], proposedSteps[]. Evidence must cite tool findings by name. \
-        proposedSteps are Settings/UI actions for the user — never claim you applied \
-        them, and never list Terminal diagnostic commands as steps.
+        proposedSteps are Settings/UI actions for the user (your tools are \
+        read-only). Never list Terminal diagnostic commands as steps.
         - Be concise.
         """
 }

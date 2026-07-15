@@ -6,8 +6,8 @@ final class TriageInstructionsTests: XCTestCase {
         let text = TriageInstructions.text
         XCTAssertTrue(text.localizedCaseInsensitiveContains("Geek Squad"))
         XCTAssertTrue(text.localizedCaseInsensitiveContains("tool"))
-        XCTAssertTrue(text.localizedCaseInsensitiveContains("propose"))
-        XCTAssertTrue(text.localizedCaseInsensitiveContains("Never"))
+        XCTAssertTrue(text.localizedCaseInsensitiveContains("proposedSteps"))
+        XCTAssertTrue(text.localizedCaseInsensitiveContains("read-only"))
     }
 
     func testInstructionsIncludeProcessDiagnostics() {

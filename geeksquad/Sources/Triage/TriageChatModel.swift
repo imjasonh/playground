@@ -61,7 +61,7 @@ final class TriageChatModel: ObservableObject {
     static let scenarioPrompts: [(title: String, prompt: String)] = [
         (
             "Can't load websites",
-            "I can't load websites in my browser. Wi‑Fi shows connected. Please diagnose routing, DNS, proxy, and connectivity, then propose fixes I can apply myself."
+            "I can't load websites in my browser. Wi‑Fi shows connected. Please diagnose routing, DNS, proxy, and connectivity, then propose fixes."
         ),
         (
             "VPN but broken",
@@ -69,7 +69,7 @@ final class TriageChatModel: ObservableObject {
         ),
         (
             "DNS feels wrong",
-            "DNS seems broken — names won't resolve or resolve oddly. Inspect DNS config, try a lookup, and propose fixes. Don't change anything yourself."
+            "DNS seems broken — names won't resolve or resolve oddly. Inspect DNS config, try a lookup, and propose fixes."
         ),
         (
             "Only some sites fail",
@@ -77,11 +77,11 @@ final class TriageChatModel: ObservableObject {
         ),
         (
             "Captive portal / hotel Wi‑Fi",
-            "I might be behind a captive portal (hotel/cafe Wi‑Fi). Probe connectivity and propose how I should complete login — don't change settings for me."
+            "I might be behind a captive portal (hotel/cafe Wi‑Fi). Probe connectivity and propose how I should complete login."
         ),
         (
             "App using too much memory",
-            "An app feels slow — please measure its live memory and CPU on this Mac (include helper processes), tell me if usage looks high, and propose what I should try. Don’t kill anything."
+            "An app feels slow — please measure its live memory and CPU on this Mac (include helper processes), tell me if usage looks high, and propose what I should try."
         ),
         (
             "Mac feels slow",
@@ -89,15 +89,15 @@ final class TriageChatModel: ObservableObject {
         ),
         (
             "Port already in use",
-            "Something won’t start because a TCP port is already in use (e.g. 3000). Show which process is listening and propose what I should do — don’t kill anything."
+            "Something won’t start because a TCP port is already in use (e.g. 3000). Show which process is listening and propose what I should do."
         ),
         (
             "Slow after login",
-            "This Mac feels slow right after login. Check login/launch agents, memory pressure, top CPU, and propose what I should disable — don’t change anything yourself."
+            "This Mac feels slow right after login. Check login/launch agents, memory pressure, top CPU, and propose what I should disable."
         ),
         (
             "What's filling my disk?",
-            "Disk space feels tight. Check free space and estimate Downloads/Caches and other common user folders, then propose what to clean — don’t delete anything."
+            "Disk space feels tight. Check free space and estimate Downloads/Caches and other common user folders, then propose what to clean."
         ),
     ]
 
@@ -131,7 +131,7 @@ final class TriageChatModel: ObservableObject {
             messages.append(
                 ChatMessage(
                     role: .system,
-                    text: "Ask what’s going wrong — I’ll run the read-only checks myself (network, performance, disk, ports, crashes, battery), then suggest practical Settings/Activity Monitor steps. I won’t change settings, kill processes, or recommend hardware upgrades."
+                    text: "Ask what’s going wrong — I’ll run the read-only checks myself (network, performance, disk, ports, crashes, battery), then suggest practical Settings/Activity Monitor steps. I won’t recommend hardware upgrades."
                 )
             )
         }
@@ -193,9 +193,9 @@ final class TriageChatModel: ObservableObject {
         else { return [] }
         return [
             ("Recheck", "Please re-run the most relevant live checks for my last question and tell me what changed."),
-            ("Disk + folders", "Check disk free space and user storage hotspots (Downloads/Caches), then propose what to clean — don’t delete anything."),
+            ("Disk + folders", "Check disk free space and user storage hotspots (Downloads/Caches), then propose what to clean."),
             ("Login agents", "List launch agents / login-related plists and say if the count looks high for a slow Mac."),
-            ("Battery", "Check whether this Mac is on battery or AC and if that could explain slowness — don’t change settings."),
+            ("Battery", "Check whether this Mac is on battery or AC and if that could explain slowness."),
         ]
     }
 

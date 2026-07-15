@@ -118,7 +118,6 @@ enum FolderSizeParser {
         if fixes.isEmpty {
             fixes.append("No single listed folder looks huge. If disk is still tight, check System Settings → General → Storage and empty Trash.")
         }
-        fixes.append("Geek Squad does not delete files for you.")
         return (lines.joined(separator: "\n"), fixes)
     }
 }
