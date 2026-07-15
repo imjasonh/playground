@@ -1,22 +1,20 @@
 import Foundation
 
-/// First-pass gate: answer simple / off-scope asks without tool calling.
-/// Tool loops are flaky on-device; avoid them unless live network facts are needed.
+/// First-pass gate: answer without tools only when live Mac facts aren’t needed.
 enum TriageGate {
     static let diagnoseSentinel = "DIAGNOSE"
 
     static let instructions = """
-        You are Geek Squad on a Mac.
+        You are Geek Squad on a Mac with live diagnostic tools for network/config, \
+        performance (CPU/memory/disk/load/sleep assertions), listening ports, and \
+        crash reports.
 
-        If — and only if — the user needs live network, DNS, VPN, proxy, Wi‑Fi \
-        association, routing, or hosts-file diagnosis on this Mac, reply with \
-        exactly \(diagnoseSentinel) and nothing else.
+        Reply with exactly \(diagnoseSentinel) and nothing else when the user needs \
+        live facts from this Mac in those areas.
 
         Otherwise answer helpfully in 2–5 short sentences. Be practical. Do not \
-        invent live network facts (IPs, DNS results, routes, proxy settings). For \
-        slow or buggy apps, suggest Activity Monitor, quitting/relaunching, checking \
-        for updates, and that app’s own support — Geek Squad’s live tools are for \
-        network/config issues.
+        invent measurements. Do not invent what an unfamiliar app is for — if unsure, \
+        say so or reply \(diagnoseSentinel).
         """
 
     /// `nil` means run the diagnostic (tool-using) session.
@@ -32,5 +30,57 @@ enum TriageGate {
         let firstLine = trimmed.split(whereSeparator: \.isNewline).first.map(String.init) ?? trimmed
         let head = firstLine.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         return head == diagnoseSentinel || head.hasPrefix("\(diagnoseSentinel) ")
+    }
+}
+
+/// Deterministic routing + tool-set focus (keeps Foundation Models context smaller).
+enum TriageHeuristics {
+    enum Focus: String, Equatable {
+        case network
+        case performance
+        case functionality
+        case general
+    }
+
+    static func needsLiveDiagnostics(_ text: String) -> Bool {
+        focus(for: text) != nil || text.lowercased().contains("slow")
+    }
+
+    /// `nil` = no strong signal (gate may still DIAGNOSE).
+    static func focus(for text: String) -> Focus? {
+        let t = text.lowercased()
+
+        let functionality = [
+            "port ", "port:", "listening", "bind", "already in use", "eaddrinuse",
+            "crash", "crashed", "quit unexpectedly", "diagnostic report",
+        ]
+        if functionality.contains(where: { t.contains($0) })
+            || t.contains("port") && (t.contains("in use") || t.contains("busy") || t.contains("taken"))
+        {
+            return .functionality
+        }
+
+        let performance = [
+            "memory", "ram", "cpu", "process", "rss", "footprint",
+            "using too much", "how much memory", "memory usage", "cpu usage",
+            "activity monitor", "leak", "high memory", "eating",
+            "disk", "storage", "free space", "fan", "therm", "won't sleep",
+            "will not sleep", "cant sleep", "can't sleep", "beachball", "swap",
+            "load average", "uptime",
+        ]
+        if performance.contains(where: { t.contains($0) }) || t.contains("slow") {
+            return .performance
+        }
+
+        let network = [
+            "dns", "wifi", "wi-fi", "wi‑fi", "vpn", "proxy", "website",
+            "network", "captive", "hosts file", "can't load", "cannot load",
+            "routing", "default route", "offline", "connected but",
+        ]
+        if network.contains(where: { t.contains($0) }) {
+            return .network
+        }
+
+        return nil
     }
 }

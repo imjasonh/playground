@@ -12,6 +12,15 @@ enum ToolboxCheck: String, CaseIterable, Identifiable, Hashable {
     case vpnInterfaces
     case hostsFile
     case currentWifi
+    case processUsage
+    case topMemory
+    case topCPU
+    case diskSpace
+    case memoryPressure
+    case systemLoad
+    case powerAssertions
+    case listeningPorts
+    case crashReports
 
     var id: String { rawValue }
 
@@ -28,6 +37,15 @@ enum ToolboxCheck: String, CaseIterable, Identifiable, Hashable {
         case .vpnInterfaces: return "VPN interfaces"
         case .hostsFile: return "Hosts file"
         case .currentWifi: return "Current Wi‑Fi"
+        case .processUsage: return "Process usage"
+        case .topMemory: return "Top memory"
+        case .topCPU: return "Top CPU"
+        case .diskSpace: return "Disk space"
+        case .memoryPressure: return "Memory pressure"
+        case .systemLoad: return "System load"
+        case .powerAssertions: return "Power assertions"
+        case .listeningPorts: return "Listening ports"
+        case .crashReports: return "Crash reports"
         }
     }
 
@@ -44,11 +62,25 @@ enum ToolboxCheck: String, CaseIterable, Identifiable, Hashable {
         case .vpnInterfaces: return "utun/ipsec vs path"
         case .hostsFile: return "/etc/hosts overrides"
         case .currentWifi: return "SSID if Location allows"
+        case .processUsage: return "CPU/memory for a named app"
+        case .topMemory: return "Highest RSS processes"
+        case .topCPU: return "Hottest CPU processes"
+        case .diskSpace: return "Free space on volumes"
+        case .memoryPressure: return "vm_stat snapshot"
+        case .systemLoad: return "Load average + uptime"
+        case .powerAssertions: return "What blocks sleep"
+        case .listeningPorts: return "TCP listen / port conflicts"
+        case .crashReports: return "Recent DiagnosticReports"
         }
     }
 
     var needsHostField: Bool {
-        self == .dnsLookup || self == .reachability || self == .httpProbe
+        switch self {
+        case .dnsLookup, .reachability, .httpProbe, .processUsage, .listeningPorts, .crashReports:
+            return true
+        default:
+            return false
+        }
     }
 
     var hostPlaceholder: String {
@@ -56,6 +88,9 @@ enum ToolboxCheck: String, CaseIterable, Identifiable, Hashable {
         case .dnsLookup: return "example.com"
         case .reachability: return "1.1.1.1"
         case .httpProbe: return "https://example.com"
+        case .processUsage: return "Cursor"
+        case .listeningPorts: return "3000 (optional port)"
+        case .crashReports: return "App name (optional)"
         default: return ""
         }
     }
@@ -65,6 +100,9 @@ enum ToolboxCheck: String, CaseIterable, Identifiable, Hashable {
         case .dnsLookup: return "example.com"
         case .reachability: return "1.1.1.1"
         case .httpProbe: return "https://example.com"
+        case .processUsage: return "Cursor"
+        case .listeningPorts: return ""
+        case .crashReports: return ""
         default: return ""
         }
     }
