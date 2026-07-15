@@ -1,5 +1,7 @@
 import AppKit
 import SwiftUI
+
+struct ManualToolboxView: View {
     @State private var selection: ToolboxCheck? = .pathStatus
     @State private var hostField = ToolboxCheck.pathStatus.defaultHost
     @State private var portField = "443"
