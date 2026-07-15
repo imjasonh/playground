@@ -148,7 +148,7 @@ platform :mac do
     File.delete(zip_path)
     sh("ditto -c -k --keepParent #{Shellwords.escape(app_path)} #{Shellwords.escape(zip_path)}")
 
-    marketing, build = marketing_and_build_versions
+    marketing, build = marketing_and_build_versions(app_path)
     enclosure_name = "#{APP_SCHEME}-#{marketing}.zip"
     enclosure_path = File.join(RELEASE_DIR, enclosure_name)
     FileUtils.mv(zip_path, enclosure_path)
