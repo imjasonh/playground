@@ -20,6 +20,13 @@ enum AppLauncher {
         return NSWorkspace.shared.launchApplication(trimmed)
     }
 
+    /// Handles Geek Squad custom URLs and System Settings deep links.
+    static func handleOpenURL(_ url: URL) -> Bool {
+        if handleGeekSquadURL(url) { return true }
+        if SettingsDeepLinks.open(url) { return true }
+        return false
+    }
+
     /// Handles `geeksquad://open-app/Activity%20Monitor`.
     static func handleGeekSquadURL(_ url: URL) -> Bool {
         guard url.scheme == "geeksquad" else { return false }
@@ -57,5 +64,13 @@ enum ActivityMonitorLinks {
         }
         output += search
         return output
+    }
+}
+
+/// Applies all Geek Squad markdown deep-link rewrites.
+enum MarkdownDeepLinks {
+    static func linkify(_ source: String) -> String {
+        let withSettings = SettingsDeepLinks.linkify(source)
+        return ActivityMonitorLinks.linkify(withSettings)
     }
 }
