@@ -6,32 +6,32 @@ import FoundationModels
 /// Shared triage system prompt for the on-device model (tool-using path).
 enum TriageInstructions {
     static let text = """
-        You are Geek Squad, an offline Mac technician for network/config and \
-        local process resource checks.
+        You are Geek Squad, an offline Mac technician. You diagnose network/config, \
+        performance, and common local functionality issues with live tools.
         The user describes what they see and what they want fixed.
 
-        Scope:
-        - Network and configuration (connectivity, DNS, VPN, proxy, Wi‑Fi, \
-        routing, hosts file).
-        - App/process CPU and memory on this Mac (process_usage, top_memory).
-        - If the question is outside those areas, say so briefly and suggest a \
-        next step — do not invent live measurements.
+        Scope (use tools — never invent measurements):
+        - Network/config: path_status, default_route, dns_config, interfaces, \
+        dns_lookup, reachability, http_probe, proxy_config, vpn_interfaces, \
+        hosts_file, current_wifi
+        - Performance: process_usage, top_memory, top_cpu, disk_space, \
+        memory_pressure, system_load, power_assertions
+        - Functionality: listening_ports (port conflicts), recent_crash_reports
+        - Outside that, say so briefly — do not invent live facts or what an app “is”.
 
         Rules:
-        - Use diagnostic tools to gather facts before concluding. For slow apps \
-        or “is it using too much memory/CPU?”, call process_usage with the app \
-        name (e.g. Cursor). For “what’s using my memory?”, call top_memory.
-        - For network issues prefer path_status, default_route, dns_config, and \
-        interfaces early; then dig deeper as needed. Call only what you need — \
-        usually 2–4 tools.
-        - Never invent IP addresses, DNS results, routes, proxy settings, or \
-        CPU/memory numbers — only cite tool output.
-        - Do not invent what an app is (e.g. do not call Cursor a note-taking app).
-        - Propose clear, numbered steps the user can take themselves. Do not claim \
-        you changed System Settings, killed processes, ran sudo, or applied a fix.
-        - Be concise and practical. Lead with the likely cause, then evidence, then \
-        proposed fixes.
-        - If a tool fails or returns empty, say so and try another angle.
+        - Gather facts with tools before concluding. Call only what you need (usually 2–4).
+        - Slow Mac / fans / beachball: start with system_load, disk_space, \
+        memory_pressure, top_cpu (and process_usage if a named app).
+        - Slow or heavy named app: process_usage with that name.
+        - “What’s using memory/CPU?”: top_memory / top_cpu.
+        - Won’t sleep / fans always on: power_assertions.
+        - Port already in use / server won’t bind: listening_ports (pass the port).
+        - App keeps crashing: recent_crash_reports with the app name.
+        - Never invent IPs, DNS, routes, CPU%, memory MB, disk free space, or ports.
+        - Propose numbered steps the user can take. Do not change settings, kill \
+        processes, run sudo, or claim you fixed anything.
+        - Be concise: likely cause → evidence → proposed fixes.
         """
 }
 
@@ -315,13 +315,147 @@ struct TopMemoryTool: Tool {
 }
 
 @available(macOS 26.0, *)
+struct TopCPUTool: Tool {
+    let name = "top_cpu"
+    let description = "List the processes using the most CPU on this Mac right now."
+    let activity: ToolActivityHub
+
+    @Generable
+    struct Arguments {}
+
+    func call(arguments: Arguments) async throws -> String {
+        await runTool(name, activity: activity) {
+            await DiagnosticServices.shared.topCPUProcesses()
+        }
+    }
+}
+
+@available(macOS 26.0, *)
+struct DiskSpaceTool: Tool {
+    let name = "disk_space"
+    let description = "Show free disk space on the startup disk and mounted volumes."
+    let activity: ToolActivityHub
+
+    @Generable
+    struct Arguments {}
+
+    func call(arguments: Arguments) async throws -> String {
+        await runTool(name, activity: activity) {
+            await DiagnosticServices.shared.diskSpace()
+        }
+    }
+}
+
+@available(macOS 26.0, *)
+struct MemoryPressureTool: Tool {
+    let name = "memory_pressure"
+    let description = "Snapshot memory pressure indicators from vm_stat (free/wired/compressor/swap)."
+    let activity: ToolActivityHub
+
+    @Generable
+    struct Arguments {}
+
+    func call(arguments: Arguments) async throws -> String {
+        await runTool(name, activity: activity) {
+            await DiagnosticServices.shared.memoryPressure()
+        }
+    }
+}
+
+@available(macOS 26.0, *)
+struct SystemLoadTool: Tool {
+    let name = "system_load"
+    let description = "Show load average, CPU count, and host uptime."
+    let activity: ToolActivityHub
+
+    @Generable
+    struct Arguments {}
+
+    func call(arguments: Arguments) async throws -> String {
+        await runTool(name, activity: activity) {
+            await DiagnosticServices.shared.systemLoad()
+        }
+    }
+}
+
+@available(macOS 26.0, *)
+struct PowerAssertionsTool: Tool {
+    let name = "power_assertions"
+    let description = "Show power assertions that may prevent sleep or keep fans busy (pmset)."
+    let activity: ToolActivityHub
+
+    @Generable
+    struct Arguments {}
+
+    func call(arguments: Arguments) async throws -> String {
+        await runTool(name, activity: activity) {
+            await DiagnosticServices.shared.powerAssertions()
+        }
+    }
+}
+
+@available(macOS 26.0, *)
+struct ListeningPortsTool: Tool {
+    let name = "listening_ports"
+    let description = "List processes listening on TCP ports; optional filter to one port (e.g. 3000)."
+    let activity: ToolActivityHub
+
+    @Generable
+    struct Arguments {
+        @Guide(description: "TCP port to filter, or 0 for all listening ports")
+        var port: Int
+    }
+
+    func call(arguments: Arguments) async throws -> String {
+        let filter: Int? = arguments.port > 0 ? arguments.port : nil
+        return await runTool(name, activity: activity) {
+            await DiagnosticServices.shared.listeningPorts(port: filter)
+        }
+    }
+}
+
+@available(macOS 26.0, *)
+struct RecentCrashReportsTool: Tool {
+    let name = "recent_crash_reports"
+    let description = "List recent crash/diagnostic reports, optionally filtered by app name."
+    let activity: ToolActivityHub
+
+    @Generable
+    struct Arguments {
+        @Guide(description: "App name fragment to match, or empty string for any recent reports")
+        var query: String
+    }
+
+    func call(arguments: Arguments) async throws -> String {
+        let q = arguments.query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return await runTool(name, activity: activity) {
+            await DiagnosticServices.shared.recentCrashReports(query: q.isEmpty ? nil : q)
+        }
+    }
+}
+
+@available(macOS 26.0, *)
 enum DiagnosticToolset {
-    static func make(activity: ToolActivityHub) -> [any Tool] {
+    static func make(activity: ToolActivityHub, focus: TriageHeuristics.Focus?) -> [any Tool] {
+        switch focus {
+        case .performance:
+            return performanceTools(activity: activity)
+        case .network:
+            return networkTools(activity: activity)
+        case .functionality:
+            return functionalityTools(activity: activity)
+        case .general, .none:
+            // Curated mixed set — not every tool — to leave room in the 4k context.
+            return generalTools(activity: activity)
+        }
+    }
+
+    private static func networkTools(activity: ToolActivityHub) -> [any Tool] {
         [
-            InterfacesTool(activity: activity),
-            DefaultRouteTool(activity: activity),
             PathStatusTool(activity: activity),
+            DefaultRouteTool(activity: activity),
             DnsConfigTool(activity: activity),
+            InterfacesTool(activity: activity),
             DnsLookupTool(activity: activity),
             ReachabilityTool(activity: activity),
             HttpProbeTool(activity: activity),
@@ -329,8 +463,44 @@ enum DiagnosticToolset {
             VpnInterfacesTool(activity: activity),
             HostsFileTool(activity: activity),
             CurrentWifiTool(activity: activity),
+        ]
+    }
+
+    private static func performanceTools(activity: ToolActivityHub) -> [any Tool] {
+        [
             ProcessUsageTool(activity: activity),
             TopMemoryTool(activity: activity),
+            TopCPUTool(activity: activity),
+            DiskSpaceTool(activity: activity),
+            MemoryPressureTool(activity: activity),
+            SystemLoadTool(activity: activity),
+            PowerAssertionsTool(activity: activity),
+        ]
+    }
+
+    private static func functionalityTools(activity: ToolActivityHub) -> [any Tool] {
+        [
+            ListeningPortsTool(activity: activity),
+            RecentCrashReportsTool(activity: activity),
+            ProcessUsageTool(activity: activity),
+            DiskSpaceTool(activity: activity),
+            PathStatusTool(activity: activity),
+        ]
+    }
+
+    private static func generalTools(activity: ToolActivityHub) -> [any Tool] {
+        [
+            PathStatusTool(activity: activity),
+            DefaultRouteTool(activity: activity),
+            DnsConfigTool(activity: activity),
+            ProcessUsageTool(activity: activity),
+            TopCPUTool(activity: activity),
+            TopMemoryTool(activity: activity),
+            DiskSpaceTool(activity: activity),
+            MemoryPressureTool(activity: activity),
+            SystemLoadTool(activity: activity),
+            ListeningPortsTool(activity: activity),
+            RecentCrashReportsTool(activity: activity),
         ]
     }
 }

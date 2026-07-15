@@ -69,6 +69,14 @@ final class TriageChatModel: ObservableObject {
             "App using too much memory",
             "An app feels slow — please measure its live memory and CPU on this Mac (include helper processes), tell me if usage looks high, and propose what I should try. Don’t kill anything."
         ),
+        (
+            "Mac feels slow",
+            "This Mac feels slow overall. Check disk free space, memory pressure, load average, and top CPU processes, then propose what I should try."
+        ),
+        (
+            "Port already in use",
+            "Something won’t start because a TCP port is already in use (e.g. 3000). Show which process is listening and propose what I should do — don’t kill anything."
+        ),
     ]
 
     init() {
@@ -109,7 +117,7 @@ final class TriageChatModel: ObservableObject {
     }
 
     /// Builds a fresh tool-using `LanguageModelSession` without clearing chat history.
-    private func recreateLanguageSession() {
+    private func recreateLanguageSession(focus: TriageHeuristics.Focus? = nil) {
         #if canImport(FoundationModels)
         sessionBox = nil
         toolHubBox = nil
@@ -123,7 +131,7 @@ final class TriageChatModel: ObservableObject {
             }
             toolHubBox = hub
             sessionBox = LanguageModelSession(
-                tools: DiagnosticToolset.make(activity: hub),
+                tools: DiagnosticToolset.make(activity: hub, focus: focus),
                 instructions: TriageInstructions.text
             )
         }
@@ -170,7 +178,8 @@ final class TriageChatModel: ObservableObject {
             }
 
             // Fresh session per diagnostic turn (4k context; tools are expensive).
-            recreateLanguageSession()
+            let focus = TriageHeuristics.focus(for: text) ?? .general
+            recreateLanguageSession(focus: focus)
             guard let session = sessionBox as? LanguageModelSession else { return }
             let hub = toolHubBox as? ToolActivityHub
             hub?.clearReports()

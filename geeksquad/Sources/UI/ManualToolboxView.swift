@@ -131,6 +131,23 @@ struct ManualToolboxView: View {
             result = await services.processUsage(query: hostField)
         case .topMemory:
             result = await services.topMemoryProcesses()
+        case .topCPU:
+            result = await services.topCPUProcesses()
+        case .diskSpace:
+            result = await services.diskSpace()
+        case .memoryPressure:
+            result = await services.memoryPressure()
+        case .systemLoad:
+            result = await services.systemLoad()
+        case .powerAssertions:
+            result = await services.powerAssertions()
+        case .listeningPorts:
+            let trimmed = hostField.trimmingCharacters(in: .whitespacesAndNewlines)
+            let port = Int(trimmed)
+            result = await services.listeningPorts(port: port)
+        case .crashReports:
+            let q = hostField.trimmingCharacters(in: .whitespacesAndNewlines)
+            result = await services.recentCrashReports(query: q.isEmpty ? nil : q)
         }
         report = result
     }

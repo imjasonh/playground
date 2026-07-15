@@ -1,24 +1,20 @@
 import Foundation
 
 /// First-pass gate: answer without tools only when live Mac facts aren’t needed.
-/// Prefer DIAGNOSE whenever process CPU/memory or network/config can be measured.
 enum TriageGate {
     static let diagnoseSentinel = "DIAGNOSE"
 
     static let instructions = """
-        You are Geek Squad on a Mac with live diagnostic tools for network/config \
-        and process CPU/memory.
+        You are Geek Squad on a Mac with live diagnostic tools for network/config, \
+        performance (CPU/memory/disk/load/sleep assertions), listening ports, and \
+        crash reports.
 
         Reply with exactly \(diagnoseSentinel) and nothing else when the user needs \
-        live facts from this Mac, including:
-        - network, DNS, VPN, proxy, Wi‑Fi association, routing, or hosts file
-        - whether an app is using a lot of CPU or memory, what’s using RAM, or a \
-        slow/heavy app that should be measured
+        live facts from this Mac in those areas.
 
         Otherwise answer helpfully in 2–5 short sentences. Be practical. Do not \
-        invent measurements (memory MB, CPU %, IPs, DNS, routes). Do not invent \
-        what an unfamiliar app is for — if unsure, say you’re not sure, or reply \
-        \(diagnoseSentinel) so tools can measure it.
+        invent measurements. Do not invent what an unfamiliar app is for — if unsure, \
+        say so or reply \(diagnoseSentinel).
         """
 
     /// `nil` means run the diagnostic (tool-using) session.
@@ -37,29 +33,54 @@ enum TriageGate {
     }
 }
 
-/// Deterministic routing so “is Cursor using too much memory?” always hits tools
-/// even if the on-device gate model answers with Activity Monitor homework.
+/// Deterministic routing + tool-set focus (keeps Foundation Models context smaller).
 enum TriageHeuristics {
+    enum Focus: String, Equatable {
+        case network
+        case performance
+        case functionality
+        case general
+    }
+
     static func needsLiveDiagnostics(_ text: String) -> Bool {
+        focus(for: text) != nil || text.lowercased().contains("slow")
+    }
+
+    /// `nil` = no strong signal (gate may still DIAGNOSE).
+    static func focus(for text: String) -> Focus? {
         let t = text.lowercased()
-        let processSignals = [
+
+        let functionality = [
+            "port ", "port:", "listening", "bind", "already in use", "eaddrinuse",
+            "crash", "crashed", "quit unexpectedly", "diagnostic report",
+        ]
+        if functionality.contains(where: { t.contains($0) })
+            || t.contains("port") && (t.contains("in use") || t.contains("busy") || t.contains("taken"))
+        {
+            return .functionality
+        }
+
+        let performance = [
             "memory", "ram", "cpu", "process", "rss", "footprint",
             "using too much", "how much memory", "memory usage", "cpu usage",
             "activity monitor", "leak", "high memory", "eating",
+            "disk", "storage", "free space", "fan", "therm", "won't sleep",
+            "will not sleep", "cant sleep", "can't sleep", "beachball", "swap",
+            "load average", "uptime",
         ]
-        if processSignals.contains(where: { t.contains($0) }) { return true }
+        if performance.contains(where: { t.contains($0) }) || t.contains("slow") {
+            return .performance
+        }
 
-        let networkSignals = [
+        let network = [
             "dns", "wifi", "wi-fi", "wi‑fi", "vpn", "proxy", "website",
             "network", "captive", "hosts file", "can't load", "cannot load",
-            "routing", "default route",
+            "routing", "default route", "offline", "connected but",
         ]
-        if networkSignals.contains(where: { t.contains($0) }) { return true }
-
-        // “Cursor app is slow” / “Safari is slow” — measure before advising.
-        if t.contains("slow") {
-            return true
+        if network.contains(where: { t.contains($0) }) {
+            return .network
         }
-        return false
+
+        return nil
     }
 }

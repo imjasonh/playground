@@ -486,6 +486,264 @@ struct DiagnosticServices: Sendable {
         }
     }
 
+    /// Top processes by %CPU.
+    func topCPUProcesses(limit: Int = 15) async -> DiagnosticReport {
+        let cap = min(max(limit, 5), 25)
+        do {
+            let result = try ProcessRunner.run(
+                "/bin/ps",
+                arguments: ["-axo", "pid=,rss=,%cpu=,command="],
+                timeoutSeconds: 6,
+                maxOutputBytes: 512_000
+            )
+            if result.timedOut {
+                return DiagnosticReport(
+                    title: "Top CPU",
+                    body: "Timed out listing processes.",
+                    proposedFixes: ["Try again, or open Activity Monitor."]
+                )
+            }
+            let rows = ProcessListParser.parse(result.stdout)
+                .sorted { $0.cpuPercent > $1.cpuPercent }
+            let top = Array(rows.prefix(cap))
+            var lines: [String] = ["Top \(top.count) by CPU %:", ""]
+            for row in top {
+                lines.append(
+                    String(
+                        format: "  pid %-6d  %5.1f%% CPU  %7.0f MB  %@",
+                        row.pid,
+                        row.cpuPercent,
+                        row.rssMegabytes,
+                        row.shortName
+                    )
+                )
+            }
+            let hot = top.first.map(\.cpuPercent) ?? 0
+            var fixes = [
+                "If one process is pegging a core, quit/relaunch that app. Geek Squad does not kill processes for you."
+            ]
+            if hot >= 80 {
+                fixes.insert(
+                    String(format: "At least one process is very hot (%.0f%% CPU). Check whether it’s stuck or doing expected work.", hot),
+                    at: 0
+                )
+            }
+            return DiagnosticReport(title: "Top CPU", body: lines.joined(separator: "\n"), proposedFixes: fixes)
+        } catch {
+            return DiagnosticReport(
+                title: "Top CPU",
+                body: "Failed to list processes: \(error.localizedDescription)",
+                proposedFixes: ["Open Activity Monitor as a fallback."]
+            )
+        }
+    }
+
+    func diskSpace() async -> DiagnosticReport {
+        do {
+            let result = try ProcessRunner.run(
+                "/bin/df",
+                arguments: ["-kP"],
+                timeoutSeconds: 5,
+                maxOutputBytes: 64_000
+            )
+            if result.timedOut {
+                return DiagnosticReport(
+                    title: "Disk space",
+                    body: "Timed out running df.",
+                    proposedFixes: ["Open Disk Utility or Apple menu → About This Mac → Storage."]
+                )
+            }
+            let volumes = DiskSpaceParser.parse(result.stdout)
+            let summary = DiskSpaceParser.summarize(volumes)
+            return DiagnosticReport(title: "Disk space", body: summary.body, proposedFixes: summary.proposedFixes)
+        } catch {
+            return DiagnosticReport(
+                title: "Disk space",
+                body: "Failed to run df: \(error.localizedDescription)",
+                proposedFixes: ["Open System Settings → General → Storage."]
+            )
+        }
+    }
+
+    func memoryPressure() async -> DiagnosticReport {
+        do {
+            let result = try ProcessRunner.run(
+                "/usr/bin/vm_stat",
+                arguments: [],
+                timeoutSeconds: 5,
+                maxOutputBytes: 32_000
+            )
+            if result.timedOut {
+                return DiagnosticReport(
+                    title: "Memory pressure",
+                    body: "Timed out running vm_stat.",
+                    proposedFixes: ["Open Activity Monitor → Memory."]
+                )
+            }
+            guard let stats = VmStatParser.parse(result.stdout) else {
+                return DiagnosticReport(
+                    title: "Memory pressure",
+                    body: "Could not parse vm_stat output:\n\(result.stdout.prefix(500))",
+                    proposedFixes: ["Open Activity Monitor → Memory."]
+                )
+            }
+            let summary = VmStatParser.summarize(stats, physicalMemoryBytes: physicalMemoryBytes())
+            return DiagnosticReport(
+                title: "Memory pressure",
+                body: summary.body,
+                proposedFixes: summary.proposedFixes
+            )
+        } catch {
+            return DiagnosticReport(
+                title: "Memory pressure",
+                body: "Failed to run vm_stat: \(error.localizedDescription)",
+                proposedFixes: ["Open Activity Monitor → Memory."]
+            )
+        }
+    }
+
+    func systemLoad() async -> DiagnosticReport {
+        var lines: [String] = []
+        var fixes: [String] = []
+
+        var load = [Double](repeating: 0, count: 3)
+        var loadCount = 3
+        if getloadavg(&load, Int32(loadCount)) != -1 {
+            lines.append(
+                String(format: "Load average (1/5/15 min): %.2f  %.2f  %.2f", load[0], load[1], load[2])
+            )
+            let cores = Double(ProcessInfo.processInfo.processorCount)
+            lines.append("Logical CPUs: \(ProcessInfo.processInfo.processorCount)")
+            if load[0] > cores * 1.5 {
+                fixes.append(
+                    String(
+                        format: "1-minute load (%.2f) is high vs %d CPUs — check top_cpu for what’s busy.",
+                        load[0],
+                        ProcessInfo.processInfo.processorCount
+                    )
+                )
+            }
+        }
+
+        do {
+            let result = try ProcessRunner.run(
+                "/usr/bin/uptime",
+                arguments: [],
+                timeoutSeconds: 3,
+                maxOutputBytes: 4_000
+            )
+            let text = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty { lines.append("uptime: \(text)") }
+        } catch {
+            lines.append("uptime unavailable: \(error.localizedDescription)")
+        }
+
+        let uptime = ProcessInfo.processInfo.systemUptime
+        let days = Int(uptime) / 86_400
+        let hours = (Int(uptime) % 86_400) / 3600
+        lines.append("Host uptime: \(days)d \(hours)h")
+        if days >= 14 {
+            fixes.append("This Mac has been up \(days) days — a restart can clear leaked resources and stuck helpers.")
+        }
+        if fixes.isEmpty {
+            fixes.append("Load looks manageable from this snapshot. If things still feel slow, check disk_space, memory_pressure, and top_cpu.")
+        }
+        return DiagnosticReport(title: "System load", body: lines.joined(separator: "\n"), proposedFixes: fixes)
+    }
+
+    func powerAssertions() async -> DiagnosticReport {
+        do {
+            let result = try ProcessRunner.run(
+                "/usr/bin/pmset",
+                arguments: ["-g", "assertions"],
+                timeoutSeconds: 6,
+                maxOutputBytes: 96_000
+            )
+            if result.timedOut {
+                return DiagnosticReport(
+                    title: "Power assertions",
+                    body: "Timed out running pmset.",
+                    proposedFixes: ["Try `pmset -g assertions` in Terminal."]
+                )
+            }
+            let text = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else {
+                return DiagnosticReport(
+                    title: "Power assertions",
+                    body: "No pmset assertions output.",
+                    proposedFixes: []
+                )
+            }
+            let clipped = text.count > 4_000 ? String(text.prefix(4_000)) + "\n…(truncated)" : text
+            var fixes: [String] = [
+                "Assertions that prevent idle sleep often come from video, backups, or busy apps. Quit the named process if sleep/fans are the issue. Geek Squad does not clear assertions for you."
+            ]
+            if text.localizedCaseInsensitiveContains("PreventUserIdleSystemSleep")
+                || text.localizedCaseInsensitiveContains("PreventSystemSleep")
+            {
+                fixes.insert(
+                    "Something is asserting PreventUserIdleSystemSleep / PreventSystemSleep — see the process names in the report above.",
+                    at: 0
+                )
+            }
+            return DiagnosticReport(title: "Power assertions", body: clipped, proposedFixes: fixes)
+        } catch {
+            return DiagnosticReport(
+                title: "Power assertions",
+                body: "Failed to run pmset: \(error.localizedDescription)",
+                proposedFixes: []
+            )
+        }
+    }
+
+    /// Listening TCP ports; optional `port` filters to one port (e.g. 3000).
+    func listeningPorts(port: Int? = nil) async -> DiagnosticReport {
+        do {
+            let result = try ProcessRunner.run(
+                "/usr/sbin/lsof",
+                arguments: ["-nP", "-iTCP", "-sTCP:LISTEN"],
+                timeoutSeconds: 8,
+                maxOutputBytes: 256_000
+            )
+            if result.timedOut {
+                return DiagnosticReport(
+                    title: "Listening ports",
+                    body: "Timed out running lsof.",
+                    proposedFixes: ["Try again; lsof can be slow with many open files."]
+                )
+            }
+            // lsof exits 1 when no matches — still parse stdout.
+            let ports = ListeningPortsParser.parse(result.stdout + "\n" + result.stderr)
+            let summary = ListeningPortsParser.summarize(ports, filterPort: port)
+            return DiagnosticReport(
+                title: "Listening ports",
+                body: summary.body,
+                proposedFixes: summary.proposedFixes
+            )
+        } catch {
+            return DiagnosticReport(
+                title: "Listening ports",
+                body: "Failed to run lsof: \(error.localizedDescription)",
+                proposedFixes: ["Try Activity Monitor or `lsof -nP -iTCP -sTCP:LISTEN` in Terminal."]
+            )
+        }
+    }
+
+    func recentCrashReports(query: String? = nil) async -> DiagnosticReport {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let dirs = [
+            home.appendingPathComponent("Library/Logs/DiagnosticReports"),
+            URL(fileURLWithPath: "/Library/Logs/DiagnosticReports"),
+        ]
+        let files = CrashReportsScanner.scan(directories: dirs, query: query, limit: 15)
+        let summary = CrashReportsScanner.summarize(files, query: query)
+        return DiagnosticReport(
+            title: "Crash reports",
+            body: summary.body,
+            proposedFixes: summary.proposedFixes
+        )
+    }
+
     private func physicalMemoryBytes() -> UInt64 {
         var size: UInt64 = 0
         var len = MemoryLayout<UInt64>.size
