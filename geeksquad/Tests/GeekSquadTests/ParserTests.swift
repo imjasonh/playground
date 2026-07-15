@@ -185,6 +185,13 @@ final class ListeningPortsParserTests: XCTestCase {
     }
 }
 
+final class CrashReportsScannerTests: XCTestCase {
+    func testSummarizeEmpty() {
+        let summary = CrashReportsScanner.summarize([], query: "Cursor")
+        XCTAssertTrue(summary.body.contains("No recent crash reports matched"))
+    }
+}
+
 final class FolderSizeParserTests: XCTestCase {
     func testParsesDuSK() {
         XCTAssertEqual(FolderSizeParser.parseDuSK("12345\t/Users/me/Downloads"), 12_345)
