@@ -3,16 +3,25 @@ import Foundation
 import FoundationModels
 #endif
 
-/// Shared triage system prompt for the on-device model.
+/// Shared triage system prompt for the on-device model (tool-using path).
 enum TriageInstructions {
     static let text = """
         You are Geek Squad, an offline Mac network and configuration technician.
         The user describes what they see and what they want fixed.
 
+        Scope:
+        - You only triage Mac network and configuration issues (connectivity, DNS, \
+        VPN, proxy, Wi‑Fi, routing, hosts file).
+        - If the user asks about something else (for example a slow app with no \
+        network symptom), say so in one or two sentences, suggest a non-network next \
+        step (Activity Monitor, restart the app, check that app’s support), and do \
+        not call diagnostic tools unless they also describe a network problem.
+
         Rules:
-        - Use diagnostic tools to gather facts before concluding. Prefer path_status, \
-        default_route, dns_config, and interfaces early; then dig deeper (dns_lookup, \
-        reachability, http_probe, proxy_config, vpn_interfaces, hosts_file, current_wifi).
+        - For in-scope issues, use diagnostic tools to gather facts before concluding. \
+        Prefer path_status, default_route, dns_config, and interfaces early; then dig \
+        deeper (dns_lookup, reachability, http_probe, proxy_config, vpn_interfaces, \
+        hosts_file, current_wifi). Call only what you need — usually 2–4 tools.
         - Never invent IP addresses, DNS results, routes, or proxy settings — only cite \
         tool output.
         - Propose clear, numbered steps the user can take themselves. Do not claim you \
@@ -25,10 +34,13 @@ enum TriageInstructions {
 
 #if canImport(FoundationModels)
 
-/// Notifies the UI when a diagnostic tool runs (so the chat can show activity).
+/// Notifies the UI when a diagnostic tool runs and keeps compact reports for
+/// fallback if generation fails after tools succeed.
 @available(macOS 26.0, *)
 final class ToolActivityHub: @unchecked Sendable {
     private let handler: @Sendable (String) -> Void
+    private let lock = NSLock()
+    private var reports: [(name: String, markdown: String)] = []
 
     init(handler: @escaping @Sendable (String) -> Void) {
         self.handler = handler
@@ -37,6 +49,43 @@ final class ToolActivityHub: @unchecked Sendable {
     func note(_ name: String) {
         handler(name)
     }
+
+    func record(name: String, report: DiagnosticReport) {
+        let compact = report.compactMarkdown()
+        lock.lock()
+        reports.append((name, compact))
+        if reports.count > 8 {
+            reports.removeFirst(reports.count - 8)
+        }
+        lock.unlock()
+    }
+
+    func clearReports() {
+        lock.lock()
+        reports.removeAll()
+        lock.unlock()
+    }
+
+    /// Markdown the UI can show if the model stalls after tools ran.
+    func fallbackMarkdown() -> String? {
+        lock.lock()
+        let snapshot = reports
+        lock.unlock()
+        guard !snapshot.isEmpty else { return nil }
+        return snapshot.map { "### \($0.name)\n\n\($0.markdown)" }.joined(separator: "\n\n")
+    }
+}
+
+@available(macOS 26.0, *)
+private func runTool(
+    _ name: String,
+    activity: ToolActivityHub,
+    _ work: () async -> DiagnosticReport
+) async -> String {
+    activity.note(name)
+    let report = await work()
+    activity.record(name: name, report: report)
+    return report.compactMarkdown()
 }
 
 @available(macOS 26.0, *)
@@ -46,15 +95,12 @@ struct InterfacesTool: Tool {
     let activity: ToolActivityHub
 
     @Generable
-    struct Arguments {
-        @Guide(description: "Optional focus; use empty string if none")
-        var note: String
-    }
+    struct Arguments {}
 
     func call(arguments: Arguments) async throws -> String {
-        activity.note(name)
-        let report = await DiagnosticServices.shared.interfaces()
-        return report.markdown
+        await runTool(name, activity: activity) {
+            await DiagnosticServices.shared.interfaces()
+        }
     }
 }
 
@@ -65,15 +111,12 @@ struct DefaultRouteTool: Tool {
     let activity: ToolActivityHub
 
     @Generable
-    struct Arguments {
-        @Guide(description: "Optional focus; use empty string if none")
-        var note: String
-    }
+    struct Arguments {}
 
     func call(arguments: Arguments) async throws -> String {
-        activity.note(name)
-        let report = await DiagnosticServices.shared.defaultRoute()
-        return report.markdown
+        await runTool(name, activity: activity) {
+            await DiagnosticServices.shared.defaultRoute()
+        }
     }
 }
 
@@ -84,15 +127,12 @@ struct PathStatusTool: Tool {
     let activity: ToolActivityHub
 
     @Generable
-    struct Arguments {
-        @Guide(description: "Optional focus; use empty string if none")
-        var note: String
-    }
+    struct Arguments {}
 
     func call(arguments: Arguments) async throws -> String {
-        activity.note(name)
-        let report = await DiagnosticServices.shared.pathStatus()
-        return report.markdown
+        await runTool(name, activity: activity) {
+            await DiagnosticServices.shared.pathStatus()
+        }
     }
 }
 
@@ -103,15 +143,12 @@ struct DnsConfigTool: Tool {
     let activity: ToolActivityHub
 
     @Generable
-    struct Arguments {
-        @Guide(description: "Optional focus; use empty string if none")
-        var note: String
-    }
+    struct Arguments {}
 
     func call(arguments: Arguments) async throws -> String {
-        activity.note(name)
-        let report = await DiagnosticServices.shared.dnsConfig()
-        return report.markdown
+        await runTool(name, activity: activity) {
+            await DiagnosticServices.shared.dnsConfig()
+        }
     }
 }
 
@@ -128,9 +165,9 @@ struct DnsLookupTool: Tool {
     }
 
     func call(arguments: Arguments) async throws -> String {
-        activity.note(name)
-        let report = await DiagnosticServices.shared.dnsLookup(hostname: arguments.hostname)
-        return report.markdown
+        await runTool(name, activity: activity) {
+            await DiagnosticServices.shared.dnsLookup(hostname: arguments.hostname)
+        }
     }
 }
 
@@ -149,10 +186,10 @@ struct ReachabilityTool: Tool {
     }
 
     func call(arguments: Arguments) async throws -> String {
-        activity.note(name)
         let port = UInt16(clamping: arguments.port)
-        let report = await DiagnosticServices.shared.reachability(host: arguments.host, port: port)
-        return report.markdown
+        return await runTool(name, activity: activity) {
+            await DiagnosticServices.shared.reachability(host: arguments.host, port: port)
+        }
     }
 }
 
@@ -169,9 +206,9 @@ struct HttpProbeTool: Tool {
     }
 
     func call(arguments: Arguments) async throws -> String {
-        activity.note(name)
-        let report = await DiagnosticServices.shared.httpProbe(urlString: arguments.url)
-        return report.markdown
+        await runTool(name, activity: activity) {
+            await DiagnosticServices.shared.httpProbe(urlString: arguments.url)
+        }
     }
 }
 
@@ -182,15 +219,12 @@ struct ProxyConfigTool: Tool {
     let activity: ToolActivityHub
 
     @Generable
-    struct Arguments {
-        @Guide(description: "Optional focus; use empty string if none")
-        var note: String
-    }
+    struct Arguments {}
 
     func call(arguments: Arguments) async throws -> String {
-        activity.note(name)
-        let report = await DiagnosticServices.shared.proxyConfig()
-        return report.markdown
+        await runTool(name, activity: activity) {
+            await DiagnosticServices.shared.proxyConfig()
+        }
     }
 }
 
@@ -201,15 +235,12 @@ struct VpnInterfacesTool: Tool {
     let activity: ToolActivityHub
 
     @Generable
-    struct Arguments {
-        @Guide(description: "Optional focus; use empty string if none")
-        var note: String
-    }
+    struct Arguments {}
 
     func call(arguments: Arguments) async throws -> String {
-        activity.note(name)
-        let report = await DiagnosticServices.shared.vpnInterfaces()
-        return report.markdown
+        await runTool(name, activity: activity) {
+            await DiagnosticServices.shared.vpnInterfaces()
+        }
     }
 }
 
@@ -220,15 +251,12 @@ struct HostsFileTool: Tool {
     let activity: ToolActivityHub
 
     @Generable
-    struct Arguments {
-        @Guide(description: "Optional focus; use empty string if none")
-        var note: String
-    }
+    struct Arguments {}
 
     func call(arguments: Arguments) async throws -> String {
-        activity.note(name)
-        let report = await DiagnosticServices.shared.hostsFile()
-        return report.markdown
+        await runTool(name, activity: activity) {
+            await DiagnosticServices.shared.hostsFile()
+        }
     }
 }
 
@@ -239,15 +267,12 @@ struct CurrentWifiTool: Tool {
     let activity: ToolActivityHub
 
     @Generable
-    struct Arguments {
-        @Guide(description: "Optional focus; use empty string if none")
-        var note: String
-    }
+    struct Arguments {}
 
     func call(arguments: Arguments) async throws -> String {
-        activity.note(name)
-        let report = await DiagnosticServices.shared.currentWifi()
-        return report.markdown
+        await runTool(name, activity: activity) {
+            await DiagnosticServices.shared.currentWifi()
+        }
     }
 }
 

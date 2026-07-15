@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct ChatView: View {
@@ -30,23 +31,33 @@ struct ChatView: View {
     private var availabilityBanner: some View {
         switch model.availability {
         case .checking:
-            banner(text: "Checking Apple Intelligence…", color: .secondary)
+            banner(text: "Checking Apple Intelligence…", color: .secondary, showSettingsLink: false)
         case .available:
             EmptyView()
         case .unavailable(let reason):
-            banner(text: reason, color: .orange)
+            banner(text: reason, color: .orange, showSettingsLink: true)
         }
     }
 
-    private func banner(text: String, color: Color) -> some View {
-        Text(text)
-            .font(.callout)
-            .foregroundStyle(color)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(color.opacity(0.08))
-            .accessibilityIdentifier("availability-banner")
+    private func banner(text: String, color: Color, showSettingsLink: Bool) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text(text)
+                .font(.callout)
+                .foregroundStyle(color)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if showSettingsLink {
+                Button("Open Settings…") {
+                    AppleIntelligenceSettings.open()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .accessibilityIdentifier("open-apple-intelligence-settings")
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(color.opacity(0.08))
+        .accessibilityIdentifier("availability-banner")
     }
 
     private var messageList: some View {

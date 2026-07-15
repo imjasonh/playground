@@ -40,6 +40,8 @@ final class TriageChatModel: ObservableObject {
     /// Boxed so the property type isn't `LanguageModelSession` at the class
     /// level (that type is macOS 26-only; this class targets older macOS too).
     private var sessionBox: Any?
+    /// Same boxing for `ToolActivityHub` (macOS 26-only).
+    private var toolHubBox: Any?
     #endif
 
     static let scenarioPrompts: [(title: String, prompt: String)] = [
@@ -83,14 +85,30 @@ final class TriageChatModel: ObservableObject {
         }
         #endif
         availability = .unavailable(
-            "On-device Apple Intelligence (Foundation Models) needs macOS 26+ with Apple Intelligence enabled. Use the Toolbox tab for manual checks."
+            "On-device Apple Intelligence (Foundation Models) needs macOS 26+ with Apple Intelligence enabled. Open Settings to enable it if supported, or use the Toolbox tab."
         )
     }
 
     func resetSession() {
         messages.removeAll()
+        recreateLanguageSession()
+        #if canImport(FoundationModels)
+        if #available(macOS 26.0, *), sessionBox != nil {
+            messages.append(
+                ChatMessage(
+                    role: .system,
+                    text: "Ask what’s going wrong — network/config problems get live diagnostics; simpler Mac questions get a short answer. I propose steps; I won’t change settings myself."
+                )
+            )
+        }
+        #endif
+    }
+
+    /// Builds a fresh tool-using `LanguageModelSession` without clearing chat history.
+    private func recreateLanguageSession() {
         #if canImport(FoundationModels)
         sessionBox = nil
+        toolHubBox = nil
         if #available(macOS 26.0, *), case .available = availability {
             let hub = ToolActivityHub { [weak self] name in
                 Task { @MainActor in
@@ -99,15 +117,10 @@ final class TriageChatModel: ObservableObject {
                     )
                 }
             }
+            toolHubBox = hub
             sessionBox = LanguageModelSession(
                 tools: DiagnosticToolset.make(activity: hub),
                 instructions: TriageInstructions.text
-            )
-            messages.append(
-                ChatMessage(
-                    role: .system,
-                    text: "Describe what you’re seeing and what you want fixed. I’ll run local diagnostics and propose steps — I won’t change settings myself."
-                )
             )
         }
         #endif
@@ -135,13 +148,29 @@ final class TriageChatModel: ObservableObject {
                 )
                 return
             }
-            if sessionBox == nil {
-                resetSession()
-            }
-            guard let session = sessionBox as? LanguageModelSession else { return }
 
             isResponding = true
             defer { isResponding = false }
+
+            // Avoid tool calling for simple / off-scope asks — that path is what
+            // produced opaque GenerationError failures (e.g. "Cursor app is slow").
+            if !isKnownNetworkScenario(text) {
+                do {
+                    if let direct = try await answerWithoutTools(text) {
+                        messages.append(ChatMessage(role: .assistant, text: direct))
+                        return
+                    }
+                } catch {
+                    // Gate failed — fall through to diagnostics / failure mapping.
+                }
+            }
+
+            // Fresh session per diagnostic turn (4k context; tools are expensive).
+            recreateLanguageSession()
+            guard let session = sessionBox as? LanguageModelSession else { return }
+            let hub = toolHubBox as? ToolActivityHub
+            hub?.clearReports()
+
             do {
                 let response = try await session.respond(to: text)
                 let content = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -152,12 +181,27 @@ final class TriageChatModel: ObservableObject {
                     )
                 )
             } catch {
-                messages.append(
-                    ChatMessage(
-                        role: .system,
-                        text: "Triage failed: \(error.localizedDescription)"
+                let collected = hub?.fallbackMarkdown()
+                recreateLanguageSession()
+                if let collected, !collected.isEmpty {
+                    messages.append(
+                        ChatMessage(
+                            role: .assistant,
+                            text: """
+                                Apple Intelligence stalled after gathering diagnostics. Here’s what I collected — open the Toolbox tab for more, or tap New chat and try again.
+
+                                \(collected)
+                                """
+                        )
                     )
-                )
+                } else {
+                    messages.append(
+                        ChatMessage(
+                            role: .system,
+                            text: TriageFailureMessage.from(error)
+                        )
+                    )
+                }
             }
             return
         }
@@ -171,14 +215,25 @@ final class TriageChatModel: ObservableObject {
         )
     }
 
+    private func isKnownNetworkScenario(_ text: String) -> Bool {
+        Self.scenarioPrompts.contains { $0.prompt == text }
+    }
+
     #if canImport(FoundationModels)
+    @available(macOS 26.0, *)
+    private func answerWithoutTools(_ text: String) async throws -> String? {
+        let gate = LanguageModelSession(instructions: TriageGate.instructions)
+        let response = try await gate.respond(to: text)
+        return TriageGate.directAnswer(from: response.content)
+    }
+
     @available(macOS 26.0, *)
     private func unavailableReason(for model: SystemLanguageModel) -> String {
         // Keep this resilient across SDK refinements of Availability.Reason.
         if model.isAvailable {
             return "Model reported unavailable."
         }
-        return "Apple Intelligence isn’t available (off, ineligible, or model not ready). Enable it in System Settings if supported, or use the Toolbox tab."
+        return "Apple Intelligence isn’t available (off, ineligible, or model not ready). Open Settings to enable it if supported, or use the Toolbox tab."
     }
     #endif
 }
