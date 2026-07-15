@@ -287,6 +287,8 @@ final class SettingsDeepLinksTests: XCTestCase {
             ),
             linked
         )
+        // Shorter “Login Items & Extensions” must not nest inside the long-path link.
+        XCTAssertFalse(linked.contains("→ [Login Items"), linked)
         // Nested Login Items path must win over a bare “System Settings → General”.
         XCTAssertFalse(
             linked.contains("](x-apple.systempreferences:com.apple.systempreferences.GeneralSettings)"),

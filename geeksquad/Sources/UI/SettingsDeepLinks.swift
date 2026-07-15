@@ -111,7 +111,7 @@ enum SettingsDeepLinks {
         return NSWorkspace.shared.open(url)
     }
 
-    /// Replace bare phrase occurrences that are not already markdown links.
+    /// Replace bare phrase occurrences that are not already inside a markdown link.
     private static func replaceUnlinked(
         phrase: String,
         withMarkdownLinkTo urlString: String,
@@ -123,8 +123,7 @@ enum SettingsDeepLinks {
             let before = search[..<range.lowerBound]
             let after = search[range.upperBound...]
             output += before
-            let alreadyLinked = before.last == "[" && after.hasPrefix("](")
-            if alreadyLinked {
+            if isInsideMarkdownLink(before: before, after: after) {
                 output += phrase
             } else {
                 output += "[\(phrase)](\(urlString))"
@@ -133,5 +132,34 @@ enum SettingsDeepLinks {
         }
         output += search
         return output
+    }
+
+    /// True when `phrase` sits in `[link text](url)` — either the label or the URL.
+    private static func isInsideMarkdownLink(before: Substring, after: Substring) -> Bool {
+        // Exact already-linked form: [phrase](…
+        if before.last == "[", after.hasPrefix("](") {
+            return true
+        }
+
+        // Inside link label: …[…phrase…](url)
+        if let open = before.lastIndex(of: "[") {
+            let afterOpen = before[before.index(after: open)...]
+            if !afterOpen.contains("]("), after.contains("](") {
+                return true
+            }
+        }
+
+        // Inside link URL: ](…phrase…)
+        if let openParen = before.lastIndex(of: "(") {
+            let beforeParen = before[..<openParen]
+            if beforeParen.hasSuffix("]") {
+                let afterParen = before[before.index(after: openParen)...]
+                if !afterParen.contains(")"), after.contains(")") {
+                    return true
+                }
+            }
+        }
+
+        return false
     }
 }
