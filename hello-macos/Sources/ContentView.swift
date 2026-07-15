@@ -9,7 +9,7 @@ struct ContentView: View {
                 .font(.largeTitle.weight(.semibold))
                 .accessibilityIdentifier("greeting-text")
 
-            Text("A sample macOS app in the playground.")
+            Text("A sample macOS app in the playground — Sparkle CD smoke test.")
                 .foregroundStyle(.secondary)
                 .accessibilityIdentifier("greeting-subtitle")
 
