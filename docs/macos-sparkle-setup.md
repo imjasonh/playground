@@ -127,6 +127,7 @@ Pages + Releases.
 | `macOS release skipped` warning | `MACOS_DEVELOPER_ID_P12` not set |
 | `Missing release secrets: SPARKLE_EDDSA_PRIVATE_KEY` | Secret not added (required once Sparkle is embedded) |
 | Gatekeeper blocks the app | Notarization failed or ticket not stapled |
+| Notarization Invalid after adding Sparkle | Nested Sparkle XPC/Autoupdate not re-signed with your Developer ID; CI re-signs them in `fastlane beta` and prints `notarytool log` on failure |
 | Sparkle says signature invalid | Wrong / rotated EdDSA private key vs `SUPublicEDKey` |
 | Appcast 404 | Pages publish step didn't run or path mismatch |
 | `notarytool` auth error | ASC API key secrets missing or wrong team |
