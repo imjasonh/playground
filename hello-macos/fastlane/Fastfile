@@ -125,12 +125,14 @@ platform :mac do
     sh("ditto -c -k --keepParent #{Shellwords.escape(app_path)} #{Shellwords.escape(zip_path)}")
 
     # fastlane notarize cannot always read CFBundleIdentifier from a zip; pass it.
+    # Do not set verbose: true — notarytool's debug lines break fastlane's JSON
+    # parse even when Apple returns status Accepted (we hit that on 1.0.2).
+    # Staple the .app ourselves below; skip stapling the zip.
     notarize(
       package: zip_path,
       bundle_id: APP_IDENTIFIER,
       api_key: api_key,
-      verbose: true,
-      print_log: true
+      skip_stapling: true
     )
 
     # Staple the app (zip cannot be stapled). Re-zip the stapled app for Sparkle.
