@@ -16,7 +16,7 @@ enum TriageInstructions {
         hosts_file, current_wifi
         - Performance: process_usage, top_memory, top_cpu, disk_space, \
         memory_pressure, system_load, power_assertions, login_items, \
-        user_storage_hotspots
+        user_storage_hotspots, battery_power
         - Functionality: listening_ports (port conflicts), recent_crash_reports
         - Outside that, say so briefly — do not invent live facts or what an app “is”.
 
@@ -24,16 +24,20 @@ enum TriageInstructions {
         - Gather facts with tools before concluding. Call only what you need (usually 2–4).
         - Slow Mac / fans / beachball: start with system_load, disk_space, \
         memory_pressure, top_cpu (and process_usage if a named app). Add \
-        login_items or user_storage_hotspots when login slowness or full disk is suspected.
+        login_items or user_storage_hotspots when login slowness or full disk is suspected. \
+        Add battery_power when on a laptop / “slow on battery” is mentioned.
+        - If mds/mdworker dominate CPU, explain Spotlight indexing — don’t tell the user \
+        to force-quit indexing repeatedly.
         - Slow or heavy named app: process_usage with that name.
         - “What’s using memory/CPU?”: top_memory / top_cpu.
         - Won’t sleep / fans always on: power_assertions.
         - Port already in use / server won’t bind: listening_ports (pass the port).
         - App keeps crashing: recent_crash_reports with the app name.
         - Never invent IPs, DNS, routes, CPU%, memory MB, disk free space, or ports.
-        - Propose numbered steps the user can take. Do not change settings, kill \
-        processes, run sudo, or claim you fixed anything.
-        - Be concise: likely cause → evidence → proposed fixes.
+        - Your final answer is a structured triage report: headline, likelyCause, \
+        evidence[], proposedSteps[]. Evidence must cite tool findings. proposedSteps \
+        are user actions only — never claim you applied them.
+        - Be concise.
         """
 }
 
@@ -466,6 +470,22 @@ struct UserStorageHotspotsTool: Tool {
 }
 
 @available(macOS 26.0, *)
+struct BatteryPowerTool: Tool {
+    let name = "battery_power"
+    let description = "Show AC vs battery power source and charge percent (pmset)."
+    let activity: ToolActivityHub
+
+    @Generable
+    struct Arguments {}
+
+    func call(arguments: Arguments) async throws -> String {
+        await runTool(name, activity: activity) {
+            await DiagnosticServices.shared.batteryPower()
+        }
+    }
+}
+
+@available(macOS 26.0, *)
 enum DiagnosticToolset {
     static func make(activity: ToolActivityHub, focus: TriageHeuristics.Focus?) -> [any Tool] {
         switch focus {
@@ -508,6 +528,7 @@ enum DiagnosticToolset {
             PowerAssertionsTool(activity: activity),
             LoginItemsTool(activity: activity),
             UserStorageHotspotsTool(activity: activity),
+            BatteryPowerTool(activity: activity),
         ]
     }
 
@@ -537,6 +558,7 @@ enum DiagnosticToolset {
             RecentCrashReportsTool(activity: activity),
             LoginItemsTool(activity: activity),
             UserStorageHotspotsTool(activity: activity),
+            BatteryPowerTool(activity: activity),
         ]
     }
 }

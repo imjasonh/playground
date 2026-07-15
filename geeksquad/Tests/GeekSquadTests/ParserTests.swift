@@ -220,3 +220,39 @@ final class LaunchAgentsParserTests: XCTestCase {
         XCTAssertTrue(summary.body.contains("com.example.a"))
     }
 }
+
+final class BatteryPowerParserTests: XCTestCase {
+    func testParsesPercent() {
+        let text = """
+        Now drawing from 'Battery Power'
+         -InternalBattery-0 (id=123)	42%; discharging; 3:21 remaining present: true
+        """
+        XCTAssertEqual(BatteryPowerParser.percent(from: text), 42)
+    }
+}
+
+final class TriageReportViewModelTests: XCTestCase {
+    func testMarkdownIncludesSections() {
+        let report = TriageReportViewModel(
+            headline: "High load",
+            likelyCause: "CPU pegged",
+            evidence: ["load 5.9"],
+            proposedSteps: ["Quit heavy apps"]
+        )
+        XCTAssertTrue(report.markdown.contains("High load"))
+        XCTAssertTrue(report.markdown.contains("Likely cause"))
+        XCTAssertTrue(report.markdown.contains("Quit heavy apps"))
+    }
+}
+
+final class ProcessListParserSpotlightTests: XCTestCase {
+    func testDetectsSpotlightHelpers() {
+        let row = ProcessRow(
+            pid: 1,
+            rssKilobytes: 100,
+            cpuPercent: 90,
+            command: "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mds_stores"
+        )
+        XCTAssertTrue(ProcessListParser.isSpotlightRelated(row))
+    }
+}

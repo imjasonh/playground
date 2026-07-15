@@ -152,6 +152,8 @@ struct ManualToolboxView: View {
             result = await services.loginItems()
         case .userStorage:
             result = await services.userStorageHotspots()
+        case .batteryPower:
+            result = await services.batteryPower()
         }
         report = result
     }

@@ -1,10 +1,11 @@
 # geeksquad — Geek Squad
 
 Offline Mac triage for **network/config**, **performance** (CPU/memory/disk/load),
-login agents, storage hotspots, and common functionality gaps (ports, crashes).
-**Chat** shows live tool results you can expand/copy; **Toolbox** runs the same
-checks manually. Proposes fixes — never applies them or kills processes.
-Shipped via Developer ID + Sparkle CD (same path as [`hello-macos/`](../hello-macos/)).
+login agents, storage hotspots, battery/power, and common functionality gaps
+(ports, crashes). **Chat** streams answers, renders Markdown, and shows a structured
+triage card; **Toolbox** + **menu bar** run the same checks. Proposes fixes — never
+applies them or kills processes. Shipped via Developer ID + Sparkle CD
+(same path as [`hello-macos/`](../hello-macos/)).
 
 Design: [`docs/geeksquad-design.md`](../docs/geeksquad-design.md)
 

@@ -528,6 +528,12 @@ struct DiagnosticServices: Sendable {
                     at: 0
                 )
             }
+            if top.contains(where: ProcessListParser.isSpotlightRelated) {
+                fixes.insert(
+                    "Spotlight indexing (mds/mdworker) is among the hot processes. After large file copies or OS updates this is normal — wait it out, or check System Settings → Siri & Spotlight. Avoid force-quitting mdworker repeatedly.",
+                    at: 0
+                )
+            }
             return DiagnosticReport(title: "Top CPU", body: lines.joined(separator: "\n"), proposedFixes: fixes)
         } catch {
             return DiagnosticReport(
@@ -827,6 +833,54 @@ struct DiagnosticServices: Sendable {
             body: summary.body,
             proposedFixes: summary.proposedFixes
         )
+    }
+
+    /// Battery / AC power snapshot (`pmset -g batt`).
+    func batteryPower() async -> DiagnosticReport {
+        do {
+            let result = try ProcessRunner.run(
+                "/usr/bin/pmset",
+                arguments: ["-g", "batt"],
+                timeoutSeconds: 5,
+                maxOutputBytes: 8_000
+            )
+            if result.timedOut {
+                return DiagnosticReport(
+                    title: "Battery / power",
+                    body: "Timed out running pmset.",
+                    proposedFixes: ["Open System Settings → Battery."]
+                )
+            }
+            let text = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else {
+                return DiagnosticReport(
+                    title: "Battery / power",
+                    body: "No battery info (desktop Mac without UPS, or pmset returned empty).",
+                    proposedFixes: []
+                )
+            }
+            var fixes: [String] = []
+            let lower = text.lowercased()
+            if lower.contains("battery power") {
+                fixes.append("You’re on battery. For heavy work (builds, video), plug in — Low Power Mode and thermal limits can make the Mac feel slower on battery.")
+            }
+            if lower.contains("charging") {
+                fixes.append("Battery is charging. Performance should be closer to AC adapter levels once charged, depending on thermal state.")
+            }
+            if let pct = BatteryPowerParser.percent(from: text), pct <= 20 {
+                fixes.append("Battery is at \(pct)%. Plug in if the Mac feels throttled or you need sustained CPU.")
+            }
+            if fixes.isEmpty {
+                fixes.append("Power source looks fine from pmset. If fans are loud on AC, check power_assertions and top_cpu next.")
+            }
+            return DiagnosticReport(title: "Battery / power", body: text, proposedFixes: fixes)
+        } catch {
+            return DiagnosticReport(
+                title: "Battery / power",
+                body: "Failed to run pmset: \(error.localizedDescription)",
+                proposedFixes: ["Open System Settings → Battery."]
+            )
+        }
     }
 
     private func physicalMemoryBytes() -> UInt64 {

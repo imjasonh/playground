@@ -23,6 +23,7 @@ enum ToolboxCheck: String, CaseIterable, Identifiable, Hashable {
     case crashReports
     case loginItems
     case userStorage
+    case batteryPower
 
     var id: String { rawValue }
 
@@ -50,6 +51,7 @@ enum ToolboxCheck: String, CaseIterable, Identifiable, Hashable {
         case .crashReports: return "Crash reports"
         case .loginItems: return "Login / launch agents"
         case .userStorage: return "User storage hotspots"
+        case .batteryPower: return "Battery / power"
         }
     }
 
@@ -77,6 +79,7 @@ enum ToolboxCheck: String, CaseIterable, Identifiable, Hashable {
         case .crashReports: return "Recent DiagnosticReports"
         case .loginItems: return "LaunchAgents / Daemons plists"
         case .userStorage: return "Downloads, Caches, and friends"
+        case .batteryPower: return "AC vs battery (pmset)"
         }
     }
 

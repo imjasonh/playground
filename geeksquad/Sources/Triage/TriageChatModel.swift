@@ -17,12 +17,21 @@ struct ChatMessage: Identifiable, Equatable {
     let text: String
     /// Set for `.tool` messages so the UI can show a short label + expandable body.
     let toolName: String?
+    /// Structured closing card when the diagnostic path returns a TriageReport.
+    let triageReport: TriageReportViewModel?
 
-    init(id: UUID = UUID(), role: Role, text: String, toolName: String? = nil) {
+    init(
+        id: UUID = UUID(),
+        role: Role,
+        text: String,
+        toolName: String? = nil,
+        triageReport: TriageReportViewModel? = nil
+    ) {
         self.id = id
         self.role = role
         self.text = text
         self.toolName = toolName
+        self.triageReport = triageReport
     }
 }
 
@@ -120,7 +129,7 @@ final class TriageChatModel: ObservableObject {
             messages.append(
                 ChatMessage(
                     role: .system,
-                    text: "Ask what’s going wrong — I measure network, performance, login agents, disk hotspots, ports, and crashes on this Mac. I propose steps; I won’t change settings or kill processes."
+                    text: "Ask what’s going wrong — I measure network, performance, login agents, disk hotspots, ports, crashes, and battery/power on this Mac. I propose steps; I won’t change settings or kill processes."
                 )
             )
         }
@@ -158,7 +167,11 @@ final class TriageChatModel: ObservableObject {
         let body = messages.map { message -> String in
             switch message.role {
             case .user: return "**You:** \(message.text)"
-            case .assistant: return "**Geek Squad:** \(message.text)"
+            case .assistant:
+                if let report = message.triageReport {
+                    return "**Geek Squad:**\n\(report.markdown)"
+                }
+                return "**Geek Squad:** \(message.text)"
             case .tool:
                 let label = message.toolName.map { "Tool (\($0))" } ?? "Tool"
                 return "**\(label):**\n```\n\(message.text)\n```"
@@ -176,6 +189,7 @@ final class TriageChatModel: ObservableObject {
             ("Recheck", "Please re-run the most relevant live checks for my last question and tell me what changed."),
             ("Disk + folders", "Check disk free space and user storage hotspots (Downloads/Caches), then propose what to clean — don’t delete anything."),
             ("Login agents", "List launch agents / login-related plists and say if the count looks high for a slow Mac."),
+            ("Battery", "Check whether this Mac is on battery or AC and if that could explain slowness — don’t change settings."),
         ]
     }
 
@@ -205,12 +219,10 @@ final class TriageChatModel: ObservableObject {
             // can measure something live — including slow apps / memory / CPU.
             if !shouldUseDiagnosticTools(text) {
                 do {
-                    if let direct = try await answerWithoutTools(text) {
-                        messages.append(ChatMessage(role: .assistant, text: direct))
-                        return
-                    }
+                    try await streamPlainAnswer(to: text, instructions: TriageGate.instructions)
+                    return
                 } catch {
-                    // Gate failed — fall through to diagnostics / failure mapping.
+                    // Gate/stream failed — fall through to diagnostics / failure mapping.
                 }
             }
 
@@ -222,13 +234,9 @@ final class TriageChatModel: ObservableObject {
             hub?.clearReports()
 
             do {
-                let response = try await session.respond(to: diagnosticPrompt(forLatestUserText: text))
-                let content = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
-                messages.append(
-                    ChatMessage(
-                        role: .assistant,
-                        text: content.isEmpty ? "(No response text.)" : content
-                    )
+                try await streamTriageReport(
+                    session: session,
+                    prompt: diagnosticPrompt(forLatestUserText: text)
                 )
             } catch {
                 let collected = hub?.fallbackMarkdown()
@@ -279,7 +287,11 @@ final class TriageChatModel: ObservableObject {
         let recent = messages.suffix(12).compactMap { message -> String? in
             switch message.role {
             case .user: return "User: \(message.text)"
-            case .assistant: return "Geek Squad: \(message.text)"
+            case .assistant:
+                if let report = message.triageReport {
+                    return "Geek Squad: \(report.headline) — \(report.likelyCause)"
+                }
+                return "Geek Squad: \(message.text)"
             case .tool, .system: return nil
             }
         }
@@ -291,16 +303,76 @@ final class TriageChatModel: ObservableObject {
         lines.append(
             "Use tools for live facts. If the user says “it” or omits the app name, reuse the app from earlier turns (e.g. process_usage query: Cursor)."
         )
+        lines.append(
+            "Fill the triage report fields from tool evidence only. proposedSteps must be actions the user can take — never claim you applied them."
+        )
         lines.append("Latest user message: \(latest)")
         return lines.joined(separator: "\n")
     }
 
+    private func replaceMessage(id: UUID, with message: ChatMessage) {
+        guard let index = messages.firstIndex(where: { $0.id == id }) else {
+            messages.append(message)
+            return
+        }
+        messages[index] = message
+    }
+
     #if canImport(FoundationModels)
     @available(macOS 26.0, *)
-    private func answerWithoutTools(_ text: String) async throws -> String? {
-        let gate = LanguageModelSession(instructions: TriageGate.instructions)
-        let response = try await gate.respond(to: text)
-        return TriageGate.directAnswer(from: response.content)
+    private func streamPlainAnswer(to text: String, instructions: String) async throws {
+        let session = LanguageModelSession(instructions: instructions)
+        let id = UUID()
+        messages.append(ChatMessage(id: id, role: .assistant, text: ""))
+        let stream = session.streamResponse(to: text)
+        for try await snapshot in stream {
+            let textOut = snapshot.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            replaceMessage(
+                id: id,
+                with: ChatMessage(id: id, role: .assistant, text: textOut.isEmpty ? "…" : textOut)
+            )
+        }
+        if let last = messages.first(where: { $0.id == id }),
+           last.text.isEmpty || last.text == "…"
+        {
+            replaceMessage(
+                id: id,
+                with: ChatMessage(id: id, role: .assistant, text: "(No response text.)")
+            )
+        }
+    }
+
+    @available(macOS 26.0, *)
+    private func streamTriageReport(session: LanguageModelSession, prompt: String) async throws {
+        let id = UUID()
+        messages.append(ChatMessage(id: id, role: .assistant, text: "Working…"))
+        let stream = session.streamResponse(to: prompt, generating: TriageReport.self)
+        for try await snapshot in stream {
+            let partial = snapshot.content
+            let report = TriageReportViewModel(
+                headline: partial.headline ?? "Working…",
+                likelyCause: partial.likelyCause ?? "",
+                evidence: partial.evidence ?? [],
+                proposedSteps: partial.proposedSteps ?? []
+            )
+            replaceMessage(
+                id: id,
+                with: ChatMessage(
+                    id: id,
+                    role: .assistant,
+                    text: report.markdown,
+                    triageReport: report
+                )
+            )
+        }
+        if let last = messages.first(where: { $0.id == id }),
+           last.triageReport == nil || (last.triageReport?.headline.isEmpty ?? true)
+        {
+            replaceMessage(
+                id: id,
+                with: ChatMessage(id: id, role: .assistant, text: "(No triage report.)")
+            )
+        }
     }
 
     @available(macOS 26.0, *)

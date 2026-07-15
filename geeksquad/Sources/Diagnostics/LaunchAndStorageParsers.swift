@@ -122,3 +122,16 @@ enum FolderSizeParser {
         return (lines.joined(separator: "\n"), fixes)
     }
 }
+
+enum BatteryPowerParser {
+    /// Extracts `42%` from typical `pmset -g batt` output.
+    static func percent(from text: String) -> Int? {
+        for raw in text.split(whereSeparator: \.isNewline) {
+            let line = String(raw)
+            guard let range = line.range(of: #"(\d+)%"#, options: .regularExpression) else { continue }
+            let token = line[range].trimmingCharacters(in: CharacterSet(charactersIn: "%"))
+            if let value = Int(token) { return value }
+        }
+        return nil
+    }
+}

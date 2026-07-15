@@ -68,6 +68,8 @@ enum TriageHeuristics {
             "will not sleep", "cant sleep", "can't sleep", "beachball", "swap",
             "load average", "uptime", "login item", "login items", "launch agent",
             "launchagent", "caches", "downloads folder", "slow to log in", "slow login",
+            "battery", "on battery", "low power", "plugged in", "charging",
+            "spotlight", "indexing", "mdworker",
         ]
         if performance.contains(where: { t.contains($0) }) || t.contains("slow") {
             return .performance
