@@ -7,8 +7,10 @@ require "shellwords"
 APP_SCHEME = "HelloMac"
 XCODEPROJ = "HelloMac.xcodeproj"
 APP_IDENTIFIER = ENV.fetch("APP_BUNDLE_ID", "io.github.imjasonh.hello-macos")
-# Artifacts written for the publish-macos-sparkle.sh step / GH Release upload.
-RELEASE_DIR = File.expand_path("fastlane/release")
+# Fastfile lives in <app>/fastlane/; resolve release dir from there so we don't
+# depend on Fastlane's load-time cwd (which produced fastlane/fastlane/release).
+PROJECT_ROOT = File.expand_path("..", __dir__)
+RELEASE_DIR = File.join(PROJECT_ROOT, "fastlane", "release")
 
 def require_release_secrets!
   missing = %w[
