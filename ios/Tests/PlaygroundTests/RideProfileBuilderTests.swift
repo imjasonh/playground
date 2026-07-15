@@ -141,10 +141,25 @@ final class RideProfileBuilderTests: XCTestCase {
             elapsedSeconds: 90,
             distanceMeters: 2500,
             currentSpeedMetersPerSecond: 5,
+            averageSpeedMetersPerSecond: RideLiveSnapshot.averageSpeed(
+                distanceMeters: 2500,
+                elapsedSeconds: 90
+            ),
+            maxSpeedMetersPerSecond: 8,
             profile: []
         )
         XCTAssertEqual(snapshot.formattedDuration, "1:30")
         XCTAssertEqual(snapshot.formattedDistanceMiles, "1.55 mi")
         XCTAssertEqual(snapshot.formattedSpeedMph, "11 mph")
+        // 2500 m / 90 s ≈ 27.78 m/s ≈ 62 mph
+        XCTAssertEqual(snapshot.formattedAverageSpeedMph, "62 mph")
+        XCTAssertEqual(snapshot.formattedMaxSpeedMph, "18 mph")
+        XCTAssertEqual(snapshot.formattedAverageAndMaxSpeedMph, "avg 62 · max 18 mph")
+    }
+
+    func testAverageSpeedHelper() {
+        XCTAssertEqual(RideLiveSnapshot.averageSpeed(distanceMeters: 0, elapsedSeconds: 10), 0)
+        XCTAssertEqual(RideLiveSnapshot.averageSpeed(distanceMeters: 100, elapsedSeconds: 0), 0)
+        XCTAssertEqual(RideLiveSnapshot.averageSpeed(distanceMeters: 100, elapsedSeconds: 20), 5)
     }
 }

@@ -38,6 +38,8 @@ final class RideMonitor: NSObject, ObservableObject {
     @Published private(set) var distanceMeters = 0.0
     /// Current GPS speed in m/s (-1 when Core Location has no reading).
     @Published private(set) var currentSpeedMetersPerSecond = -1.0
+    /// Peak valid GPS speed seen this ride, in m/s.
+    @Published private(set) var maxSpeedMetersPerSecond = 0.0
     @Published private(set) var crashAlert = false
     @Published private(set) var statusMessage = "Ready"
     /// The ride most recently saved to disk (set on stop).
@@ -195,6 +197,7 @@ final class RideMonitor: NSObject, ObservableObject {
         currentG = 0
         distanceMeters = 0
         currentSpeedMetersPerSecond = -1
+        maxSpeedMetersPerSecond = 0
         elapsed = 0
         crashAlert = false
         heartRateBPM = nil
@@ -534,6 +537,11 @@ final class RideMonitor: NSObject, ObservableObject {
             elapsedSeconds: elapsed,
             distanceMeters: distanceMeters,
             currentSpeedMetersPerSecond: currentSpeedMetersPerSecond,
+            averageSpeedMetersPerSecond: RideLiveSnapshot.averageSpeed(
+                distanceMeters: distanceMeters,
+                elapsedSeconds: elapsed
+            ),
+            maxSpeedMetersPerSecond: maxSpeedMetersPerSecond,
             profile: RideProfileBuilder.build(altitudes: altitudeSamples, track: track)
         )
     }
@@ -812,6 +820,9 @@ extension RideMonitor: CLLocationManagerDelegate {
             }
             lastLocation = loc
             currentSpeedMetersPerSecond = loc.speed
+            if loc.speed >= 0 {
+                maxSpeedMetersPerSecond = max(maxSpeedMetersPerSecond, loc.speed)
+            }
 
             // Prefer Core Location's timestamp so batched / deferred fixes don't
             // all collapse onto the same `now`. Thin to ~1 Hz for persistence.

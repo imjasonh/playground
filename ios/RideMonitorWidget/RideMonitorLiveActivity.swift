@@ -29,9 +29,11 @@ struct RideMonitorLiveActivity: Widget {
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text(context.state.formattedSpeedMph)
+                        Text(context.state.formattedAverageOverMaxSpeedMph)
                             .font(.headline.monospacedDigit())
-                        Text("Speed")
+                            .minimumScaleFactor(0.7)
+                            .lineLimit(1)
+                        Text("Avg / Max")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
@@ -58,8 +60,8 @@ struct RideMonitorLiveActivity: Widget {
     }
 }
 
-/// Lock Screen / banner presentation: duration, distance, speed, and the
-/// elevation profile colored by speed.
+/// Lock Screen / banner presentation: duration, distance, avg/max speed, and
+/// the elevation profile colored by speed.
 struct RideLiveActivityLockScreenView: View {
     var startedAt: Date
     var state: RideMonitorAttributes.ContentState
@@ -78,9 +80,11 @@ struct RideLiveActivityLockScreenView: View {
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(state.formattedDistanceMiles)
                         .font(.headline.monospacedDigit())
-                    Text(state.formattedSpeedMph)
+                    Text(state.formattedAverageAndMaxSpeedMph)
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
+                        .minimumScaleFactor(0.7)
+                        .lineLimit(1)
                 }
             }
 

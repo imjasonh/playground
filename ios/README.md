@@ -68,8 +68,8 @@ Activity / Watch workouts orphaned (Past rides opens in a sheet so browsing
 history mid-ride does not trigger that stop). While a ride is active it also:
 
 1. **Live Activity** (`io.github.imjasonh.playground.ridemonitorwidget`) —
-   Lock Screen / Dynamic Island shows duration, distance, current speed, and a
-   rough elevation sparkline colored by speed.
+   Lock Screen / Dynamic Island shows duration, distance, average and max
+   speed, and a rough elevation sparkline colored by speed.
 2. **Apple Watch companion** (`io.github.imjasonh.playground.watch`) — glanceable
    clock time, duration, distance, current speed, heart rate, energy, and (when
    a Bluetooth sensor is paired) cadence/power via WatchConnectivity (phone

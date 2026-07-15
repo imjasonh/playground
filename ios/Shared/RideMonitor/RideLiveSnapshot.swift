@@ -36,7 +36,12 @@ struct RideLiveSnapshot: Codable, Hashable, Sendable {
     var startedAt: Date
     var elapsedSeconds: TimeInterval
     var distanceMeters: Double
+    /// Instantaneous GPS speed in m/s (-1 when Core Location has no reading).
     var currentSpeedMetersPerSecond: Double
+    /// Overall average speed for the ride so far (`distance / elapsed`), m/s.
+    var averageSpeedMetersPerSecond: Double
+    /// Peak valid GPS speed seen so far this ride, m/s.
+    var maxSpeedMetersPerSecond: Double
     var profile: [RideProfilePoint]
 
     static let idle = RideLiveSnapshot(
@@ -45,6 +50,8 @@ struct RideLiveSnapshot: Codable, Hashable, Sendable {
         elapsedSeconds: 0,
         distanceMeters: 0,
         currentSpeedMetersPerSecond: 0,
+        averageSpeedMetersPerSecond: 0,
+        maxSpeedMetersPerSecond: 0,
         profile: []
     )
 
@@ -65,6 +72,27 @@ struct RideLiveSnapshot: Codable, Hashable, Sendable {
         String(format: "%.0f mph", RideUnits.milesPerHour(fromMetersPerSecond: displaySpeed))
     }
 
+    var formattedAverageSpeedMph: String {
+        Self.formatSpeedMph(averageSpeedMetersPerSecond)
+    }
+
+    var formattedMaxSpeedMph: String {
+        Self.formatSpeedMph(maxSpeedMetersPerSecond)
+    }
+
+    /// Compact avg + max for tight Live Activity chrome (e.g. under distance).
+    var formattedAverageAndMaxSpeedMph: String {
+        String(
+            format: "avg %.0f · max %.0f mph",
+            RideUnits.milesPerHour(fromMetersPerSecond: averageSpeedMetersPerSecond),
+            RideUnits.milesPerHour(fromMetersPerSecond: maxSpeedMetersPerSecond)
+        )
+    }
+
+    static func formatSpeedMph(_ metersPerSecond: Double) -> String {
+        String(format: "%.0f mph", RideUnits.milesPerHour(fromMetersPerSecond: metersPerSecond))
+    }
+
     static func formatDuration(_ interval: TimeInterval) -> String {
         let total = max(0, Int(interval.rounded()))
         let hours = total / 3600
@@ -74,6 +102,12 @@ struct RideLiveSnapshot: Codable, Hashable, Sendable {
             return String(format: "%d:%02d:%02d", hours, minutes, seconds)
         }
         return String(format: "%d:%02d", minutes, seconds)
+    }
+
+    /// Overall average from distance and elapsed time (includes stopped time).
+    static func averageSpeed(distanceMeters: Double, elapsedSeconds: TimeInterval) -> Double {
+        guard elapsedSeconds > 0, distanceMeters.isFinite, distanceMeters >= 0 else { return 0 }
+        return distanceMeters / elapsedSeconds
     }
 }
 
