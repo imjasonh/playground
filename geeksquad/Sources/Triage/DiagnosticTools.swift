@@ -46,7 +46,9 @@ enum TriageInstructions {
         - Your final answer is a structured triage report: headline, likelyCause, \
         evidence[], proposedSteps[]. Evidence must cite tool findings by name. \
         proposedSteps are Settings/UI actions for the user (your tools are \
-        read-only). Never list Terminal diagnostic commands as steps.
+        read-only). Leave proposedSteps empty when nothing needs doing — do not \
+        invent filler such as “No action required.” Never list Terminal \
+        diagnostic commands as steps.
         - Be concise.
         """
 }

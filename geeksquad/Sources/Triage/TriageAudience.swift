@@ -16,7 +16,8 @@ enum TriageAudience {
         can gather that evidence. If evidence is thin, call more tools before finishing.
         - proposedSteps are only changes or checks the human must do in the UI \
         (System Settings, disconnect VPN, free disk space, quit an app, plug in power). \
-        They are not a to-do list of diagnostics for the user to re-run.
+        They are not a to-do list of diagnostics for the user to re-run. Leave the \
+        list empty when the Mac looks fine and there is nothing to change.
 
         Remediation limits (important):
         - Do NOT recommend adding, upgrading, or replacing RAM or other internal \
