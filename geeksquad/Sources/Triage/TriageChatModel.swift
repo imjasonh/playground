@@ -162,6 +162,12 @@ final class TriageChatModel: ObservableObject {
         draft = prompt
     }
 
+    /// Starter / follow-up chips: fill the composer and send immediately.
+    func sendScenario(_ prompt: String) async {
+        useScenario(prompt)
+        await send()
+    }
+
     /// Markdown transcript for sharing / pasting into a ticket.
     func copyTranscript() {
         let body = messages.map { message -> String in
