@@ -6,6 +6,19 @@ struct DiagnosticResultView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Spacer(minLength: 0)
+                    Button("Copy body") {
+                        PasteboardCopy.string(report.body)
+                    }
+                    .controlSize(.small)
+                    Button("Copy report") {
+                        PasteboardCopy.string(report.markdown)
+                    }
+                    .controlSize(.small)
+                    .accessibilityIdentifier("copy-report-inline")
+                }
+
                 Text(report.body)
                     .font(.body.monospaced())
                     .textSelection(.enabled)
@@ -14,11 +27,32 @@ struct DiagnosticResultView: View {
 
                 if !report.proposedFixes.isEmpty {
                     Divider()
-                    Text("Proposed fixes (not applied)")
-                        .font(.headline)
+                    HStack {
+                        Text("Proposed fixes (not applied)")
+                            .font(.headline)
+                        Spacer()
+                        Button("Copy fixes") {
+                            let text = report.proposedFixes.enumerated()
+                                .map { "\($0.offset + 1). \($0.element)" }
+                                .joined(separator: "\n")
+                            PasteboardCopy.string(text)
+                        }
+                        .controlSize(.small)
+                        .accessibilityIdentifier("copy-fixes")
+                    }
                     ForEach(Array(report.proposedFixes.enumerated()), id: \.offset) { index, fix in
-                        Text("\(index + 1). \(fix)")
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                        HStack(alignment: .top, spacing: 8) {
+                            Text("\(index + 1). \(fix)")
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            Button {
+                                PasteboardCopy.string(fix)
+                            } label: {
+                                Image(systemName: "doc.on.doc")
+                                    .font(.caption)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Copy this fix")
+                        }
                     }
                     .accessibilityIdentifier("proposed-fixes")
                 }

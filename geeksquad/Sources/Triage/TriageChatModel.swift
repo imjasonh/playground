@@ -15,11 +15,14 @@ struct ChatMessage: Identifiable, Equatable {
     let id: UUID
     let role: Role
     let text: String
+    /// Set for `.tool` messages so the UI can show a short label + expandable body.
+    let toolName: String?
 
-    init(id: UUID = UUID(), role: Role, text: String) {
+    init(id: UUID = UUID(), role: Role, text: String, toolName: String? = nil) {
         self.id = id
         self.role = role
         self.text = text
+        self.toolName = toolName
     }
 }
 
@@ -77,6 +80,14 @@ final class TriageChatModel: ObservableObject {
             "Port already in use",
             "Something won’t start because a TCP port is already in use (e.g. 3000). Show which process is listening and propose what I should do — don’t kill anything."
         ),
+        (
+            "Slow after login",
+            "This Mac feels slow right after login. Check login/launch agents, memory pressure, top CPU, and propose what I should disable — don’t change anything yourself."
+        ),
+        (
+            "What's filling my disk?",
+            "Disk space feels tight. Check free space and estimate Downloads/Caches and other common user folders, then propose what to clean — don’t delete anything."
+        ),
     ]
 
     init() {
@@ -109,7 +120,7 @@ final class TriageChatModel: ObservableObject {
             messages.append(
                 ChatMessage(
                     role: .system,
-                    text: "Ask what’s going wrong — I can measure network/config and app CPU/memory on this Mac. I propose steps; I won’t change settings or kill processes."
+                    text: "Ask what’s going wrong — I measure network, performance, login agents, disk hotspots, ports, and crashes on this Mac. I propose steps; I won’t change settings or kill processes."
                 )
             )
         }
@@ -122,10 +133,10 @@ final class TriageChatModel: ObservableObject {
         sessionBox = nil
         toolHubBox = nil
         if #available(macOS 26.0, *), case .available = availability {
-            let hub = ToolActivityHub { [weak self] name in
+            let hub = ToolActivityHub { [weak self] name, markdown in
                 Task { @MainActor in
                     self?.messages.append(
-                        ChatMessage(role: .tool, text: "Ran \(name)…")
+                        ChatMessage(role: .tool, text: markdown, toolName: name)
                     )
                 }
             }
@@ -140,6 +151,32 @@ final class TriageChatModel: ObservableObject {
 
     func useScenario(_ prompt: String) {
         draft = prompt
+    }
+
+    /// Markdown transcript for sharing / pasting into a ticket.
+    func copyTranscript() {
+        let body = messages.map { message -> String in
+            switch message.role {
+            case .user: return "**You:** \(message.text)"
+            case .assistant: return "**Geek Squad:** \(message.text)"
+            case .tool:
+                let label = message.toolName.map { "Tool (\($0))" } ?? "Tool"
+                return "**\(label):**\n```\n\(message.text)\n```"
+            case .system: return "**Note:** \(message.text)"
+            }
+        }.joined(separator: "\n\n")
+        PasteboardCopy.string(body)
+    }
+
+    var followUpPrompts: [(title: String, prompt: String)] {
+        guard !isResponding,
+              messages.contains(where: { $0.role == .assistant || $0.role == .tool })
+        else { return [] }
+        return [
+            ("Recheck", "Please re-run the most relevant live checks for my last question and tell me what changed."),
+            ("Disk + folders", "Check disk free space and user storage hotspots (Downloads/Caches), then propose what to clean — don’t delete anything."),
+            ("Login agents", "List launch agents / login-related plists and say if the count looks high for a slow Mac."),
+        ]
     }
 
     func send() async {

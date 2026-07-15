@@ -744,6 +744,91 @@ struct DiagnosticServices: Sendable {
         )
     }
 
+    /// Login/launch agents from standard LaunchAgents/LaunchDaemons directories.
+    func loginItems() async -> DiagnosticReport {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let dirs: [(URL, String)] = [
+            (home.appendingPathComponent("Library/LaunchAgents"), "user"),
+            (URL(fileURLWithPath: "/Library/LaunchAgents"), "local"),
+            (URL(fileURLWithPath: "/Library/LaunchDaemons"), "system"),
+        ]
+        let items = LaunchAgentsParser.scan(directories: dirs.map { (url: $0.0, scope: $0.1) })
+        let summary = LaunchAgentsParser.summarize(items)
+        return DiagnosticReport(
+            title: "Login / launch agents",
+            body: summary.body,
+            proposedFixes: summary.proposedFixes
+        )
+    }
+
+    /// Approximate sizes of common user folders that eat disk.
+    func userStorageHotspots() async -> DiagnosticReport {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let targets: [(name: String, url: URL)] = [
+            ("Downloads", home.appendingPathComponent("Downloads")),
+            ("Desktop", home.appendingPathComponent("Desktop")),
+            ("Documents", home.appendingPathComponent("Documents")),
+            ("Library/Caches", home.appendingPathComponent("Library/Caches")),
+            ("Library/Logs", home.appendingPathComponent("Library/Logs")),
+            ("Movies", home.appendingPathComponent("Movies")),
+        ]
+        var samples: [FolderSizeSample] = []
+        for target in targets {
+            guard FileManager.default.fileExists(atPath: target.url.path) else {
+                samples.append(
+                    FolderSizeSample(name: target.name, path: target.url.path, kilobytes: nil, error: "missing")
+                )
+                continue
+            }
+            do {
+                let result = try ProcessRunner.run(
+                    "/usr/bin/du",
+                    arguments: ["-sk", target.url.path],
+                    timeoutSeconds: 12,
+                    maxOutputBytes: 4_096
+                )
+                if result.timedOut {
+                    samples.append(
+                        FolderSizeSample(
+                            name: target.name,
+                            path: target.url.path,
+                            kilobytes: nil,
+                            error: "timed out (folder very large or slow disk)"
+                        )
+                    )
+                } else if let kb = FolderSizeParser.parseDuSK(result.stdout) {
+                    samples.append(
+                        FolderSizeSample(name: target.name, path: target.url.path, kilobytes: kb, error: nil)
+                    )
+                } else {
+                    samples.append(
+                        FolderSizeSample(
+                            name: target.name,
+                            path: target.url.path,
+                            kilobytes: nil,
+                            error: "unparsed du output"
+                        )
+                    )
+                }
+            } catch {
+                samples.append(
+                    FolderSizeSample(
+                        name: target.name,
+                        path: target.url.path,
+                        kilobytes: nil,
+                        error: error.localizedDescription
+                    )
+                )
+            }
+        }
+        let summary = FolderSizeParser.summarize(samples)
+        return DiagnosticReport(
+            title: "User storage hotspots",
+            body: summary.body,
+            proposedFixes: summary.proposedFixes
+        )
+    }
+
     private func physicalMemoryBytes() -> UInt64 {
         var size: UInt64 = 0
         var len = MemoryLayout<UInt64>.size

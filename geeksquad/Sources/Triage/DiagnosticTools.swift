@@ -15,14 +15,16 @@ enum TriageInstructions {
         dns_lookup, reachability, http_probe, proxy_config, vpn_interfaces, \
         hosts_file, current_wifi
         - Performance: process_usage, top_memory, top_cpu, disk_space, \
-        memory_pressure, system_load, power_assertions
+        memory_pressure, system_load, power_assertions, login_items, \
+        user_storage_hotspots
         - Functionality: listening_ports (port conflicts), recent_crash_reports
         - Outside that, say so briefly — do not invent live facts or what an app “is”.
 
         Rules:
         - Gather facts with tools before concluding. Call only what you need (usually 2–4).
         - Slow Mac / fans / beachball: start with system_load, disk_space, \
-        memory_pressure, top_cpu (and process_usage if a named app).
+        memory_pressure, top_cpu (and process_usage if a named app). Add \
+        login_items or user_storage_hotspots when login slowness or full disk is suspected.
         - Slow or heavy named app: process_usage with that name.
         - “What’s using memory/CPU?”: top_memory / top_cpu.
         - Won’t sleep / fans always on: power_assertions.
@@ -41,16 +43,13 @@ enum TriageInstructions {
 /// fallback if generation fails after tools succeed.
 @available(macOS 26.0, *)
 final class ToolActivityHub: @unchecked Sendable {
-    private let handler: @Sendable (String) -> Void
+    /// Called with tool name + compact markdown when a tool finishes.
+    private let handler: @Sendable (String, String) -> Void
     private let lock = NSLock()
     private var reports: [(name: String, markdown: String)] = []
 
-    init(handler: @escaping @Sendable (String) -> Void) {
+    init(handler: @escaping @Sendable (String, String) -> Void) {
         self.handler = handler
-    }
-
-    func note(_ name: String) {
-        handler(name)
     }
 
     func record(name: String, report: DiagnosticReport) {
@@ -61,6 +60,7 @@ final class ToolActivityHub: @unchecked Sendable {
             reports.removeFirst(reports.count - 8)
         }
         lock.unlock()
+        handler(name, compact)
     }
 
     func clearReports() {
@@ -85,7 +85,6 @@ private func runTool(
     activity: ToolActivityHub,
     _ work: () async -> DiagnosticReport
 ) async -> String {
-    activity.note(name)
     let report = await work()
     activity.record(name: name, report: report)
     return report.compactMarkdown()
@@ -435,6 +434,38 @@ struct RecentCrashReportsTool: Tool {
 }
 
 @available(macOS 26.0, *)
+struct LoginItemsTool: Tool {
+    let name = "login_items"
+    let description = "List LaunchAgents/LaunchDaemons plists that often slow login or background CPU."
+    let activity: ToolActivityHub
+
+    @Generable
+    struct Arguments {}
+
+    func call(arguments: Arguments) async throws -> String {
+        await runTool(name, activity: activity) {
+            await DiagnosticServices.shared.loginItems()
+        }
+    }
+}
+
+@available(macOS 26.0, *)
+struct UserStorageHotspotsTool: Tool {
+    let name = "user_storage_hotspots"
+    let description = "Estimate sizes of Downloads, Caches, and other common user folders that fill the disk."
+    let activity: ToolActivityHub
+
+    @Generable
+    struct Arguments {}
+
+    func call(arguments: Arguments) async throws -> String {
+        await runTool(name, activity: activity) {
+            await DiagnosticServices.shared.userStorageHotspots()
+        }
+    }
+}
+
+@available(macOS 26.0, *)
 enum DiagnosticToolset {
     static func make(activity: ToolActivityHub, focus: TriageHeuristics.Focus?) -> [any Tool] {
         switch focus {
@@ -475,6 +506,8 @@ enum DiagnosticToolset {
             MemoryPressureTool(activity: activity),
             SystemLoadTool(activity: activity),
             PowerAssertionsTool(activity: activity),
+            LoginItemsTool(activity: activity),
+            UserStorageHotspotsTool(activity: activity),
         ]
     }
 
@@ -484,6 +517,7 @@ enum DiagnosticToolset {
             RecentCrashReportsTool(activity: activity),
             ProcessUsageTool(activity: activity),
             DiskSpaceTool(activity: activity),
+            LoginItemsTool(activity: activity),
             PathStatusTool(activity: activity),
         ]
     }
@@ -501,6 +535,8 @@ enum DiagnosticToolset {
             SystemLoadTool(activity: activity),
             ListeningPortsTool(activity: activity),
             RecentCrashReportsTool(activity: activity),
+            LoginItemsTool(activity: activity),
+            UserStorageHotspotsTool(activity: activity),
         ]
     }
 }

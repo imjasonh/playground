@@ -21,6 +21,8 @@ enum ToolboxCheck: String, CaseIterable, Identifiable, Hashable {
     case powerAssertions
     case listeningPorts
     case crashReports
+    case loginItems
+    case userStorage
 
     var id: String { rawValue }
 
@@ -46,6 +48,8 @@ enum ToolboxCheck: String, CaseIterable, Identifiable, Hashable {
         case .powerAssertions: return "Power assertions"
         case .listeningPorts: return "Listening ports"
         case .crashReports: return "Crash reports"
+        case .loginItems: return "Login / launch agents"
+        case .userStorage: return "User storage hotspots"
         }
     }
 
@@ -71,6 +75,8 @@ enum ToolboxCheck: String, CaseIterable, Identifiable, Hashable {
         case .powerAssertions: return "What blocks sleep"
         case .listeningPorts: return "TCP listen / port conflicts"
         case .crashReports: return "Recent DiagnosticReports"
+        case .loginItems: return "LaunchAgents / Daemons plists"
+        case .userStorage: return "Downloads, Caches, and friends"
         }
     }
 

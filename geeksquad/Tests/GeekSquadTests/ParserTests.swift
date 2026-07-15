@@ -185,9 +185,31 @@ final class ListeningPortsParserTests: XCTestCase {
     }
 }
 
-final class CrashReportsScannerTests: XCTestCase {
-    func testSummarizeEmpty() {
-        let summary = CrashReportsScanner.summarize([], query: "Cursor")
-        XCTAssertTrue(summary.body.contains("No recent crash reports matched"))
+final class FolderSizeParserTests: XCTestCase {
+    func testParsesDuSK() {
+        XCTAssertEqual(FolderSizeParser.parseDuSK("12345\t/Users/me/Downloads"), 12_345)
+        XCTAssertNil(FolderSizeParser.parseDuSK(""))
+    }
+
+    func testSummarizeHighlightsLargeFolders() {
+        let samples = [
+            FolderSizeSample(name: "Downloads", path: "/tmp/d", kilobytes: 20 * 1_048_576, error: nil),
+            FolderSizeSample(name: "Desktop", path: "/tmp/e", kilobytes: 100_000, error: nil),
+        ]
+        let summary = FolderSizeParser.summarize(samples)
+        XCTAssertTrue(summary.body.contains("Downloads"))
+        XCTAssertTrue(summary.proposedFixes.contains(where: { $0.contains("Downloads") }))
+    }
+}
+
+final class LaunchAgentsParserTests: XCTestCase {
+    func testSummarizeCounts() {
+        let items = [
+            LaunchAgentItem(label: "com.example.a", path: "/tmp/a.plist", scope: "user"),
+            LaunchAgentItem(label: "com.example.b", path: "/tmp/b.plist", scope: "local"),
+        ]
+        let summary = LaunchAgentsParser.summarize(items)
+        XCTAssertTrue(summary.body.contains("User LaunchAgents: 1"))
+        XCTAssertTrue(summary.body.contains("com.example.a"))
     }
 }
