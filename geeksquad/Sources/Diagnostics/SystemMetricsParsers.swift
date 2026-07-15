@@ -20,7 +20,7 @@ enum DiskSpaceParser {
         for raw in text.split(whereSeparator: \.isNewline) {
             let line = raw.trimmingCharacters(in: .whitespaces)
             guard !line.isEmpty, !line.lowercased().hasPrefix("filesystem") else { continue }
-            let parts = line.split(whereSeparator: \.isWhitespace, omittingEmptySubsequences: true)
+            let parts = line.split(omittingEmptySubsequences: true, whereSeparator: \.isWhitespace)
             // filesystem blocks used avail capacity% mount (mount may have spaces — rare on macOS root)
             guard parts.count >= 6,
                   let total = Int(parts[1]),
@@ -183,7 +183,7 @@ enum ListeningPortsParser {
         for raw in text.split(whereSeparator: \.isNewline) {
             let line = raw.trimmingCharacters(in: .whitespaces)
             guard !line.isEmpty, !line.hasPrefix("COMMAND") else { continue }
-            let parts = line.split(whereSeparator: \.isWhitespace, omittingEmptySubsequences: true)
+            let parts = line.split(omittingEmptySubsequences: true, whereSeparator: \.isWhitespace)
             guard parts.count >= 9, let pid = Int(parts[1]) else { continue }
             let name = String(parts[parts.count - 2]) // e.g. *:3000 or 127.0.0.1:5432
             guard name.contains(":") else { continue }

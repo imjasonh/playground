@@ -26,7 +26,7 @@ enum ProcessListParser {
         for raw in text.split(whereSeparator: \.isNewline) {
             let line = raw.trimmingCharacters(in: .whitespaces)
             guard !line.isEmpty else { continue }
-            let parts = line.split(whereSeparator: \.isWhitespace, maxSplits: 3, omittingEmptySubsequences: true)
+            let parts = line.split(maxSplits: 3, omittingEmptySubsequences: true, whereSeparator: \.isWhitespace)
             guard parts.count >= 4,
                   let pid = Int(parts[0]),
                   let rss = Int(parts[1]),
