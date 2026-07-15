@@ -17,6 +17,25 @@ final class TriageInstructionsTests: XCTestCase {
     }
 }
 
+final class TriageGateTests: XCTestCase {
+    func testDiagnoseSentinelRoutesToTools() {
+        XCTAssertNil(TriageGate.directAnswer(from: "DIAGNOSE"))
+        XCTAssertNil(TriageGate.directAnswer(from: "diagnose\n"))
+        XCTAssertNil(TriageGate.directAnswer(from: "DIAGNOSE because Wi-Fi looks broken"))
+        XCTAssertTrue(TriageGate.needsDiagnostics("DIAGNOSE"))
+    }
+
+    func testSimpleAskReturnsDirectAnswer() {
+        let answer = TriageGate.directAnswer(
+            from: "That sounds like app performance, not the network. Open Activity Monitor and check CPU for Cursor."
+        )
+        XCTAssertEqual(
+            answer,
+            "That sounds like app performance, not the network. Open Activity Monitor and check CPU for Cursor."
+        )
+    }
+}
+
 final class TriageFailureMessageTests: XCTestCase {
     func testOpaqueGenerationErrorCopyIsActionable() {
         let error = NSError(

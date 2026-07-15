@@ -85,4 +85,12 @@ final class DiagnosticReportTests: XCTestCase {
         XCTAssertTrue(report.markdown.contains("Proposed fixes"))
         XCTAssertTrue(report.markdown.contains("Check DNS settings."))
     }
+
+    func testCompactMarkdownTruncates() {
+        let body = String(repeating: "x", count: 2_500)
+        let report = DiagnosticReport(title: "Big", body: body, proposedFixes: [])
+        let compact = report.compactMarkdown(maxCharacters: 100)
+        XCTAssertLessThanOrEqual(compact.count, 120)
+        XCTAssertTrue(compact.contains("…(truncated)"))
+    }
 }
