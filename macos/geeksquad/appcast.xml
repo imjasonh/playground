@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>geeksquad updates</title>
+    <link>https://imjasonh.github.io/playground/macos/geeksquad/appcast.xml</link>
+    <description>Sparkle updates for geeksquad</description>
+    <language>en</language>
+    <item>
+      <title>Geek Squad 0.1.0</title>
+      <pubDate>Wed, 15 Jul 2026 16:51:15 +0000</pubDate>
+      <sparkle:version>2</sparkle:version>
+      <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
+      <enclosure url="https://github.com/imjasonh/playground/releases/download/geeksquad-v0.1.0/GeekSquad-0.1.0.zip" length="3239358" type="application/octet-stream" sparkle:edSignature="0v6XvFnXg3miKXZHQr9hnfFD07Gnitli++dPKr/Z8OAs01lv4NvmDOAl0OtM67E1m1g7GX1Fr/lvr+xSO2b1Ag=="/>
+    </item>
+  </channel>
+</rss>
