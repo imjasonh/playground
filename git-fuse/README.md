@@ -54,7 +54,18 @@ history** — while reads fall through to the API. Objects switch to local
 serving the moment they land. The warmup **retries with capped backoff
 until the cache is a complete mirror**, so as long as a mount lives the
 cache converges to all history of all files even across remote outages —
-without ever making a single-file read wait on it. Anything the staged fetches haven't covered
+without ever making a single-file read wait on it.
+
+**`--lazy-history`** trades that convergence for disk and bandwidth: the
+warmup stops at the ref tips (every branch and tag at depth 1 — for
+kubernetes ~510 MiB instead of the ~1.3 GiB full mirror), and new commits
+keep accreting as tips move forward. Reading an *older* commit still works
+instantly via the API; it then backfills in the background — first the
+commit's snapshot (pinned with a keep-ref), then the **intervening history**
+between the shallow boundary and that commit, found by deepening the
+shallow clone with doubling depth until the commit connects to a ref tip
+(git-server supports depth-based shallow only, so "deepen down to <sha>"
+is a search). History you never read is never downloaded. Anything the staged fetches haven't covered
 yet — another branch, old history, even a dangling sha — is served from the
 API immediately *and* pulled into the cache by a targeted background
 `git fetch <sha>`, so the next read of it is local. The mount discovers
@@ -123,7 +134,7 @@ all.
 ```bash
 cargo build --release
 target/release/git-fuse [--cache-dir DIR] [--refs-ttl SECS] [--no-warmup] \
-    [--allow-other] [--verbose] <REMOTE-URL> <MOUNTPOINT>
+    [--lazy-history] [--allow-other] [--verbose] <REMOTE-URL> <MOUNTPOINT>
 ```
 
 Needs `/dev/fuse` and `fusermount3` (package `fuse3`; the default features

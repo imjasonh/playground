@@ -10,15 +10,21 @@
 //!
 //! 1. **shallow** — `git fetch --depth=1` of the **default branch only**
 //!    (the tip tree + blobs of the branch almost every read wants first);
-//! 2. **full** — `git fetch --unshallow` of **all refs and history**.
+//! 2. **full** — `git fetch --unshallow` of **all refs and history** — or,
+//!    in lazy-history mode, a `--depth=1` fetch of every ref tip (no
+//!    optimistic history download).
 //!
 //! Both run on a background thread; [`WarmState`] tracks progress so callers
 //! (and tests) can wait for a stage. Anything the staged fetches haven't
 //! covered yet — another branch, old history, a dangling commit — is served
 //! from the remote API and *also* fetched on demand
-//! ([`LocalCache::fetch_commit_async`]) so the next read of it is local.
-//! When the ref refresh notices new remote heads, [`LocalCache::fetch_async`]
-//! runs one incremental fetch at a time.
+//! ([`LocalCache::fetch_commit_async`]) so the next read of it is local; in
+//! lazy-history mode that on-demand fetch additionally deepens the shallow
+//! clone until the requested commit connects to the ref tips, backfilling
+//! the intervening history. When the ref refresh notices new remote heads,
+//! [`LocalCache::fetch_async`] runs one incremental fetch at a time (which
+//! accretes new commits without unshallowing, so tips moving forward keep
+//! extending the cache in either mode).
 
 use crate::vlog;
 use std::collections::HashSet;
@@ -206,6 +212,9 @@ pub(crate) struct LocalCache {
     fetch_pids: Arc<Mutex<HashSet<u32>>>,
     /// Set on drop; stops the warmup retry loop.
     shutdown: Arc<AtomicBool>,
+    /// Lazy-history mode: warmup stops at ref tips; history is deepened
+    /// only when older commits are actually read.
+    lazy_history: bool,
     /// Whether background fetching is enabled at all (`Options::warmup`).
     fetch_enabled: bool,
     /// Commits already requested via [`fetch_commit_async`], so each sha is
@@ -262,6 +271,64 @@ fn git_base(git_dir: &Path) -> Command {
     cmd
 }
 
+/// Deepen a shallow cache until `commit` is reachable from a mirrored ref,
+/// backfilling the history between the shallow boundary and that commit.
+/// Doubles the absolute fetch depth each round (git-server supports
+/// depth-based shallow only, so "deepen down to <sha>" must be found by
+/// search); gives up past `DEEPEN_MAX_DEPTH` — the commit's own snapshot is
+/// already pinned, so only connectivity is missing.
+fn deepen_until_connected(
+    dir: &Path,
+    commit: &str,
+    fetch_lock: &Mutex<()>,
+    fetch_pids: &Mutex<HashSet<u32>>,
+    shutdown: &AtomicBool,
+) {
+    /// First deepening step; doubles each round.
+    const DEEPEN_INITIAL_DEPTH: u32 = 64;
+    /// Past this depth (2^17 commits of history), stop searching.
+    const DEEPEN_MAX_DEPTH: u32 = 1 << 17;
+    let started = Instant::now();
+    let mut depth = DEEPEN_INITIAL_DEPTH;
+    loop {
+        if shutdown.load(Ordering::SeqCst) {
+            return;
+        }
+        if !dir.join("shallow").exists() {
+            return; // the whole clone is complete; nothing left to deepen
+        }
+        let connected = run_git(
+            dir,
+            &[
+                "for-each-ref",
+                &format!("--contains={commit}"),
+                "refs/heads",
+                "refs/tags",
+            ],
+        )
+        .map(|out| !out.trim().is_empty())
+        .unwrap_or(false);
+        if connected {
+            vlog!("history deepened to {commit} in {:?}", started.elapsed());
+            return;
+        }
+        if depth > DEEPEN_MAX_DEPTH {
+            vlog!("giving up deepening to {commit} (depth {depth} reached)");
+            return;
+        }
+        let arg = format!("--depth={depth}");
+        let result = {
+            let _serialize = fetch_lock.lock().unwrap();
+            run_git_fetch(dir, &["fetch", "--quiet", &arg, "origin"], fetch_pids)
+        };
+        if let Err(e) = result {
+            vlog!("deepening to {commit} failed at depth {depth}: {e}");
+            return;
+        }
+        depth = depth.saturating_mul(2);
+    }
+}
+
 /// Bounded housekeeping after a successful fetch: `git maintenance run
 /// --auto` is a no-op until git's own thresholds trip, then consolidates
 /// loose objects/packs so a long-lived cache doesn't degrade (many small
@@ -310,8 +377,14 @@ fn run_git(git_dir: &Path, args: &[&str]) -> Result<String, String> {
 
 impl LocalCache {
     /// Open (creating if needed) the cache repo and, when `warmup`, start the
-    /// shallow→full background fetch.
-    pub(crate) fn open(dir: &Path, remote_url: &str, warmup: bool) -> Result<LocalCache, String> {
+    /// staged background fetch (shallow default branch, then everything —
+    /// or just every tip when `lazy_history`).
+    pub(crate) fn open(
+        dir: &Path,
+        remote_url: &str,
+        warmup: bool,
+        lazy_history: bool,
+    ) -> Result<LocalCache, String> {
         if !dir.join("HEAD").exists() {
             std::fs::create_dir_all(dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
             run_git(dir, &["init", "--bare", "--quiet"])?;
@@ -347,6 +420,7 @@ impl LocalCache {
             fetch_lock: Arc::new(Mutex::new(())),
             fetch_pids: Arc::new(Mutex::new(HashSet::new())),
             shutdown: Arc::new(AtomicBool::new(false)),
+            lazy_history,
             fetch_enabled: warmup,
             requested_commits: Mutex::new(HashSet::new()),
             warm: WarmState::new(),
@@ -383,6 +457,7 @@ impl LocalCache {
         let fetch_lock = self.fetch_lock.clone();
         let fetch_pids = self.fetch_pids.clone();
         let shutdown = self.shutdown.clone();
+        let lazy_history = self.lazy_history;
         std::thread::Builder::new()
             .name("git-fuse-warmup".to_string())
             .spawn(move || {
@@ -436,23 +511,35 @@ impl LocalCache {
                             Err(e) => vlog!("default-branch discovery failed: {e}"),
                         }
                     }
-                    // Stage 2: everything — all refs (the configured refspec
-                    // mirrors refs/*) and full history.
+                    // Stage 2: all mirrored refs. Eager (default): full
+                    // history via --unshallow. Lazy: just every tip at
+                    // depth 1 — history arrives only when it's read. Either
+                    // way, an already-complete cache gets a plain
+                    // incremental fetch (a --depth fetch would re-shallow
+                    // it, throwing away completeness a previous eager mount
+                    // paid for).
                     let full = {
                         let _serialize = fetch_lock.lock().unwrap();
-                        if dir.join("shallow").exists() {
-                            run_git_fetch(
+                        let is_shallow = dir.join("shallow").exists();
+                        // Refs but no shallow file = a complete mirror from
+                        // an earlier eager mount.
+                        let is_complete = !is_shallow
+                            && run_git(
                                 dir.as_path(),
-                                &["fetch", "--quiet", "--unshallow", "origin"],
-                                &fetch_pids,
+                                &["for-each-ref", "--count=1", "refs/heads", "refs/tags"],
                             )
+                            .map(|s| !s.trim().is_empty())
+                            .unwrap_or(false);
+                        let args: &[&str] = if is_complete {
+                            &["fetch", "--quiet", "origin"]
+                        } else if lazy_history {
+                            &["fetch", "--quiet", "--depth=1", "origin"]
+                        } else if is_shallow {
+                            &["fetch", "--quiet", "--unshallow", "origin"]
                         } else {
-                            run_git_fetch(
-                                dir.as_path(),
-                                &["fetch", "--quiet", "origin"],
-                                &fetch_pids,
-                            )
-                        }
+                            &["fetch", "--quiet", "origin"]
+                        };
+                        run_git_fetch(dir.as_path(), args, &fetch_pids)
                     };
                     fetching.store(false, Ordering::SeqCst);
                     match full {
@@ -500,38 +587,62 @@ impl LocalCache {
         let commit = commit.to_string();
         let fetch_lock = self.fetch_lock.clone();
         let fetch_pids = self.fetch_pids.clone();
+        let shutdown = self.shutdown.clone();
+        let lazy_history = self.lazy_history;
         std::thread::Builder::new()
             .name("git-fuse-fetch-commit".to_string())
             .spawn(move || {
                 let started = Instant::now();
-                let result = {
+                let already_local = {
                     let _serialize = fetch_lock.lock().unwrap();
                     // A fetch that finished while we waited (say, the
                     // warmup's shallow stage) may have landed it already.
                     if run_git(dir.as_path(), &["cat-file", "-e", &commit]).is_ok() {
-                        return;
-                    }
-                    run_git_fetch(
-                        dir.as_path(),
-                        &["fetch", "--quiet", "--depth=1", "origin", &commit],
-                        &fetch_pids,
-                    )
-                };
-                match result {
-                    Ok(_) => {
-                        // Pin the commit with a keep-ref: `fetch <sha>`
-                        // stores objects unreachable from any ref, and git's
-                        // auto-gc would prune them again after pruneExpire.
-                        let keep = format!("refs/git-fuse/keep/{commit}");
-                        if let Err(e) = run_git(dir.as_path(), &["update-ref", &keep, &commit]) {
-                            vlog!("keep-ref for {commit} failed: {e}");
+                        true
+                    } else {
+                        match run_git_fetch(
+                            dir.as_path(),
+                            &["fetch", "--quiet", "--depth=1", "origin", &commit],
+                            &fetch_pids,
+                        ) {
+                            Ok(_) => {
+                                // Pin the commit with a keep-ref: `fetch
+                                // <sha>` stores objects unreachable from any
+                                // ref, and git's auto-gc would prune them
+                                // again after pruneExpire.
+                                let keep = format!("refs/git-fuse/keep/{commit}");
+                                if let Err(e) =
+                                    run_git(dir.as_path(), &["update-ref", &keep, &commit])
+                                {
+                                    vlog!("keep-ref for {commit} failed: {e}");
+                                }
+                                vlog!(
+                                    "on-demand fetch of {commit} done in {:?}",
+                                    started.elapsed()
+                                );
+                                false
+                            }
+                            Err(e) => {
+                                vlog!("on-demand fetch of {commit} failed: {e}");
+                                return;
+                            }
                         }
-                        vlog!(
-                            "on-demand fetch of {commit} done in {:?}",
-                            started.elapsed()
-                        );
                     }
-                    Err(e) => vlog!("on-demand fetch of {commit} failed: {e}"),
+                };
+                // Lazy mode backfills on access: after the snapshot lands,
+                // deepen the shallow clone until this commit connects to
+                // the ref tips, so the intervening history becomes local
+                // too. (Eager mode has, or will have, full history from the
+                // warmup; only dangling commits reach this path there, and
+                // no amount of deepening connects those.)
+                if lazy_history && !already_local {
+                    deepen_until_connected(
+                        dir.as_path(),
+                        &commit,
+                        &fetch_lock,
+                        &fetch_pids,
+                        &shutdown,
+                    );
                 }
             })
             .expect("spawn commit fetch thread");

@@ -261,7 +261,10 @@ impl Source {
 
     /// Current refs, refreshed from the remote at most every `refs_ttl`.
     /// Falls back to the local cache's refs when the remote is unreachable.
-    /// A changed snapshot triggers one incremental background fetch.
+    /// Whenever the local mirror is behind the remote's branches or tags,
+    /// one incremental background fetch is scheduled — comparing against
+    /// the *cache* (not the previous snapshot) so even a change that
+    /// happened before the first refresh is caught.
     pub(crate) fn refs(&self) -> Result<Arc<RefsSnapshot>, String> {
         let mut guard = self.refs.lock().unwrap();
         if let Some((at, snap)) = guard.as_ref() {
@@ -269,31 +272,56 @@ impl Source {
                 return Ok(snap.clone());
             }
         }
-        let fetched = match self.remote.refs() {
-            Ok(r) => RefsSnapshot {
-                head: r.head,
-                refs: r.refs,
-            },
+        let (fetched, from_remote) = match self.remote.refs() {
+            Ok(r) => (
+                RefsSnapshot {
+                    head: r.head,
+                    refs: r.refs,
+                },
+                true,
+            ),
             Err(remote_err) => match self.local.local_refs() {
                 Ok((head, refs)) => {
                     vlog!("refs: remote unreachable ({remote_err}); serving local snapshot");
-                    RefsSnapshot { head, refs }
+                    (RefsSnapshot { head, refs }, false)
                 }
                 Err(_) => return Err(remote_err),
             },
         };
-        let changed = guard
-            .as_ref()
-            .map(|(_, prev)| prev.refs != fetched.refs)
-            .unwrap_or(false);
         let snap = Arc::new(fetched);
         *guard = Some((Instant::now(), snap.clone()));
         drop(guard);
-        if changed {
-            vlog!("refs changed; scheduling incremental fetch");
+        if from_remote && self.cache_behind(&snap) {
+            vlog!("local mirror is behind the remote refs; scheduling incremental fetch");
             self.local.fetch_async();
         }
         Ok(snap)
+    }
+
+    /// Does the local mirror disagree with the remote's branches/tags?
+    /// Only the mirrored namespaces are compared (git-server may advertise
+    /// other refs we deliberately don't track).
+    fn cache_behind(&self, remote: &RefsSnapshot) -> bool {
+        let Ok((_, local)) = self.local.local_refs() else {
+            // No readable local state at all: behind iff the remote has
+            // anything worth mirroring.
+            return remote.refs.keys().any(|name| Self::is_mirrored(name));
+        };
+        let remote_mirrored = remote
+            .refs
+            .iter()
+            .filter(|(name, _)| Self::is_mirrored(name));
+        for (name, oid) in remote_mirrored {
+            if local.get(name) != Some(oid) {
+                return true;
+            }
+        }
+        // Deleted upstream but still present locally also counts.
+        local.keys().any(|name| !remote.refs.contains_key(name))
+    }
+
+    fn is_mirrored(name: &str) -> bool {
+        name.starts_with("refs/heads/") || name.starts_with("refs/tags/")
     }
 
     /// A read of `commit` had to fall through to the remote API: pull the

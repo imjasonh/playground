@@ -67,6 +67,13 @@ pub struct Options {
     /// then incremental on new pushes). Disable to serve purely from the
     /// remote API plus whatever the cache already holds.
     pub warmup: bool,
+    /// Don't optimistically download full history: warmup stops at the ref
+    /// tips (default branch first, then every branch/tag tip, all shallow),
+    /// saving disk and bandwidth. Commits keep accreting as tips move
+    /// forward; reading an *older* commit serves it from the remote API and
+    /// only then backfills — its snapshot, then the intervening history
+    /// between the shallow boundary and that commit — in the background.
+    pub lazy_history: bool,
     /// Log FUSE-level activity to stderr.
     pub verbose: bool,
     /// Pass `allow_other` to the mount (requires `user_allow_other` in
@@ -82,6 +89,7 @@ impl Options {
             refs_ttl: Duration::from_secs(2),
             blob_cache_bytes: 256 << 20,
             warmup: true,
+            lazy_history: false,
             verbose: false,
             allow_other: false,
         }
@@ -105,7 +113,8 @@ impl Mount {
         self.warm.wait_at_least(STATE_SHALLOW, timeout)
     }
 
-    /// Wait until the full fetch has landed (all history local).
+    /// Wait until the warmup finished: all refs and full history local —
+    /// or, with [`Options::lazy_history`], every ref tip local.
     pub fn wait_warm(&self, timeout: Duration) -> bool {
         self.warm.wait_at_least(STATE_WARM, timeout)
     }
@@ -164,7 +173,7 @@ fn build(
         .clone()
         .unwrap_or_else(|| default_cache_dir(&opts.remote_url));
     let remote = Remote::new(&opts.remote_url)?;
-    let cache = LocalCache::open(&cache_dir, &opts.remote_url, opts.warmup)?;
+    let cache = LocalCache::open(&cache_dir, &opts.remote_url, opts.warmup, opts.lazy_history)?;
     let warm = cache.warm.clone();
     let source = Source::new(cache, remote, opts.refs_ttl, opts.blob_cache_bytes);
     let filesystem = fs::GitFuse::new(source, opts.refs_ttl);

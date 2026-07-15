@@ -21,6 +21,11 @@ OPTIONS:
     --refs-ttl <SECS>   how long ref lookups stay cached (default: 2)
     --no-warmup         don't clone/fetch in the background; serve from the
                         remote API plus whatever the cache already holds
+    --lazy-history      don't optimistically download full history: cache
+                        only the ref tips (plus new commits as tips move);
+                        older commits are served via the API on access and
+                        backfilled — snapshot first, then the intervening
+                        history — in the background. Saves disk/bandwidth
     --allow-other       let other users read the mount (needs
                         user_allow_other in /etc/fuse.conf)
     --verbose           log activity to stderr
@@ -40,6 +45,7 @@ fn main() {
     let mut cache_dir: Option<PathBuf> = None;
     let mut refs_ttl = Duration::from_secs(2);
     let mut warmup = true;
+    let mut lazy_history = false;
     let mut verbose = false;
     let mut allow_other = false;
 
@@ -58,6 +64,7 @@ fn main() {
                 _ => fail("--refs-ttl needs a non-negative number of seconds"),
             },
             "--no-warmup" => warmup = false,
+            "--lazy-history" => lazy_history = true,
             "--allow-other" => allow_other = true,
             "--verbose" => verbose = true,
             other if other.starts_with('-') => fail(&format!("unknown option {other}")),
@@ -72,6 +79,7 @@ fn main() {
     opts.cache_dir = cache_dir;
     opts.refs_ttl = refs_ttl;
     opts.warmup = warmup;
+    opts.lazy_history = lazy_history;
     opts.verbose = verbose;
     opts.allow_other = allow_other;
 

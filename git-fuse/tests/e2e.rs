@@ -30,6 +30,7 @@ struct Fixture {
     server: TestServer,
     mnt: TempDir,
     cache: TempDir,
+    lazy_history: bool,
 }
 
 /// Short TTL so tests that push after mount see the new refs quickly.
@@ -69,10 +70,20 @@ impl Fixture {
     }
 
     fn with_server(repo: TestRepo, server: TestServer, warmup: bool) -> Fixture {
+        Self::with_server_opts(repo, server, warmup, false)
+    }
+
+    fn with_server_opts(
+        repo: TestRepo,
+        server: TestServer,
+        warmup: bool,
+        lazy_history: bool,
+    ) -> Fixture {
         let mnt = TempDir::new("mnt");
         let cache = TempDir::new("cache");
         let mut opts = Self::options(&server, &cache.path().join("repo.git"));
         opts.warmup = warmup;
+        opts.lazy_history = lazy_history;
         opts.verbose = true;
         let mount = mount(mnt.path(), opts).expect("mount");
         Fixture {
@@ -81,6 +92,7 @@ impl Fixture {
             server,
             mnt,
             cache,
+            lazy_history,
         }
     }
 
@@ -109,6 +121,7 @@ impl Fixture {
         self.mount.take(); // unmount first
         let mut opts = Self::options(&self.server, &self.cache.path().join("repo.git"));
         opts.warmup = warmup;
+        opts.lazy_history = self.lazy_history;
         opts.verbose = true;
         self.mount = Some(mount(self.mnt.path(), opts).expect("remount"));
     }
@@ -613,6 +626,54 @@ fn submodule_pointers_are_hidden() {
     let listed = walk(&f.commit_dir(&sha));
     assert_eq!(listed, ["real.txt"], "gitlink must not be listed");
     assert!(!f.path(&format!("commits/{sha}/vendored")).exists());
+}
+
+#[test]
+fn lazy_history_caches_tips_and_backfills_on_access() {
+    require_fuse!();
+    let repo = TestRepo::new();
+    let c1 = repo.commit("one", &[Spec::File("f.txt", b"v1\n")]);
+    let c2 = repo.commit("two", &[Spec::File("f.txt", b"v2\n")]);
+    let c3 = repo.commit("three", &[Spec::File("f.txt", b"v3\n")]);
+    let server = TestServer::start(repo.bare());
+    let f = Fixture::with_server_opts(repo, server, true, /* lazy_history */ true);
+    assert!(f.mount_ref().wait_warm(WAIT));
+
+    // Warm means "tips local" — and nothing deeper was downloaded.
+    assert!(git_has_object(&f.cache_git_dir(), &c3));
+    assert!(
+        !git_has_object(&f.cache_git_dir(), &c2) && !git_has_object(&f.cache_git_dir(), &c1),
+        "lazy mode must not optimistically fetch history"
+    );
+
+    // Tips moving forward still accrete: the new commit lands in the
+    // cache, history behind the old boundary still doesn't.
+    let c4 = f.repo.commit("four", &[Spec::File("f.txt", b"v4\n")]);
+    eventually("new tip to accrete", WAIT, || {
+        // Ref reads are what drive the refresh (and thereby the fetch).
+        let _ = f.cat_ref("refs/heads/main");
+        git_has_object(&f.cache_git_dir(), &c4)
+    });
+    assert!(!git_has_object(&f.cache_git_dir(), &c1));
+
+    // Reading an old commit serves it from the API at once…
+    assert_eq!(f.cat(&format!("commits/{c1}/f.txt")), b"v1\n");
+    // …then backfills its snapshot *and* the intervening history (c2 was
+    // never read, so only deepening can bring it in).
+    eventually("old snapshot to land", WAIT, || {
+        git_has_object(&f.cache_git_dir(), &c1)
+    });
+    eventually("intervening history to land", WAIT, || {
+        git_has_object(&f.cache_git_dir(), &c2)
+    });
+
+    // Everything backfilled is servable with the remote down.
+    let mut f = f;
+    f.server.set_fail_api(true);
+    f.server.set_fail_smart(true);
+    f.remount(true);
+    assert_eq!(f.cat(&format!("commits/{c1}/f.txt")), b"v1\n");
+    assert_eq!(f.cat(&format!("commits/{c2}/f.txt")), b"v2\n");
 }
 
 #[test]
