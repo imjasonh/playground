@@ -37,7 +37,9 @@ final class TriageChatModel: ObservableObject {
     @Published var isResponding = false
 
     #if canImport(FoundationModels)
-    private var session: LanguageModelSession?
+    /// Boxed so the property type isn't `LanguageModelSession` at the class
+    /// level (that type is macOS 26-only; this class targets older macOS too).
+    private var sessionBox: Any?
     #endif
 
     static let scenarioPrompts: [(title: String, prompt: String)] = [
@@ -88,7 +90,7 @@ final class TriageChatModel: ObservableObject {
     func resetSession() {
         messages.removeAll()
         #if canImport(FoundationModels)
-        session = nil
+        sessionBox = nil
         if #available(macOS 26.0, *), case .available = availability {
             let hub = ToolActivityHub { [weak self] name in
                 Task { @MainActor in
@@ -97,7 +99,7 @@ final class TriageChatModel: ObservableObject {
                     )
                 }
             }
-            session = LanguageModelSession(
+            sessionBox = LanguageModelSession(
                 tools: DiagnosticToolset.make(activity: hub),
                 instructions: TriageInstructions.text
             )
@@ -133,10 +135,10 @@ final class TriageChatModel: ObservableObject {
                 )
                 return
             }
-            if session == nil {
+            if sessionBox == nil {
                 resetSession()
             }
-            guard let session else { return }
+            guard let session = sessionBox as? LanguageModelSession else { return }
 
             isResponding = true
             defer { isResponding = false }
