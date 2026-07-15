@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Discover changed testable browser apps, Go modules, Rust apps, and iOS apps
-# for the test workflow.
+# Discover changed testable browser apps, Go modules, Rust apps, iOS apps, and
+# macOS apps for the test / platform workflows.
 set -euo pipefail
 
 : "${EVENT_NAME:?EVENT_NAME must be set}"
@@ -22,16 +22,19 @@ else
     modules=$(bash .github/scripts/discover-go-modules.sh --all)
     rust=$(bash .github/scripts/discover-rust-apps.sh --all)
     ios=$(bash .github/scripts/discover-ios-apps.sh --all)
+    macos=$(bash .github/scripts/discover-macos-apps.sh --all)
     {
       echo "apps=${apps}"
       echo "modules=${modules}"
       echo "rust=${rust}"
       echo "ios=${ios}"
+      echo "macos=${macos}"
     } >> "$GITHUB_OUTPUT"
     echo "Testable browser apps: ${apps}"
     echo "Go apps: ${modules}"
     echo "Rust apps: ${rust}"
     echo "iOS apps: ${ios}"
+    echo "macOS apps: ${macos}"
     exit 0
   else
     changed=$(git diff --name-only "$BEFORE_SHA" "$HEAD_SHA")
@@ -43,11 +46,13 @@ if [ -z "$changed" ]; then
   modules='[]'
   rust='[]'
   ios='[]'
+  macos='[]'
 else
   apps=$(printf '%s\n' "$changed" | bash .github/scripts/discover-testable-apps.sh --from-changes)
   modules=$(printf '%s\n' "$changed" | bash .github/scripts/discover-go-modules.sh --from-changes)
   rust=$(printf '%s\n' "$changed" | bash .github/scripts/discover-rust-apps.sh --from-changes)
   ios=$(printf '%s\n' "$changed" | bash .github/scripts/discover-ios-apps.sh --from-changes)
+  macos=$(printf '%s\n' "$changed" | bash .github/scripts/discover-macos-apps.sh --from-changes)
 fi
 
 {
@@ -55,6 +60,7 @@ fi
   echo "modules=${modules}"
   echo "rust=${rust}"
   echo "ios=${ios}"
+  echo "macos=${macos}"
 } >> "$GITHUB_OUTPUT"
 
 echo "Changed paths:"
@@ -63,3 +69,4 @@ echo "Testable browser apps: ${apps}"
 echo "Go apps: ${modules}"
 echo "Rust apps: ${rust}"
 echo "iOS apps: ${ios}"
+echo "macOS apps: ${macos}"

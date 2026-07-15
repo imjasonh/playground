@@ -2,8 +2,9 @@
 
 This repository is a **multi-app playground**. Each top-level directory can be a
 self-contained browser app deployed to GitHub Pages, an independent Go
-command-line app, a Rust app (e.g. a Cloudflare Worker), or an iOS app delivered
-to TestFlight. There is no shared build step at the repo root.
+command-line app, a Rust app (e.g. a Cloudflare Worker), an iOS app delivered
+to TestFlight, or a macOS app delivered via Developer ID + Sparkle. There is no
+shared build step at the repo root.
 
 ## Repository layout
 
@@ -23,6 +24,7 @@ playground/
 ├── git-server/            # Rust Cloudflare Worker: git smart-HTTP server on R2/DO (not a Pages app)
 ├── gitdb/                 # Go CLI (Go module + Go tests)
 ├── hello/                 # example static app (HTML only)
+├── hello-macos/           # example macOS SwiftUI app (XcodeGen + Sparkle CD)
 ├── ios/                   # the single "Playground" iOS app (SwiftUI; TestFlight CD)
 ├── kanoodle/              # example app with tests (JS + Jest + Playwright)
 ├── ocidb/                 # Go CLI (Go module + Go tests)
@@ -50,6 +52,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `cors-proxy/` | no | Rust Cloudflare Worker; no `index.html` |
 | `git-server/` | no | Rust Cloudflare Worker; no `index.html` |
 | `ios/` | no | The single "Playground" iOS app (XcodeGen + SwiftUI); no `index.html` |
+| `hello-macos/` | no | Example macOS app (XcodeGen + SwiftUI); no `index.html` |
 | `.github/` | no | Infrastructure only |
 | `README.md` | no | Not a directory |
 
@@ -108,6 +111,23 @@ and [`docs/ios-testflight-setup.md`](docs/ios-testflight-setup.md) for a
 click-by-click Apple-side setup guide. The iOS app is not yet covered by the
 daily dependency workflow.
 
+### macOS apps
+
+A top-level directory is a **macOS app** when it contains **`project.yml`**
+(XcodeGen) that declares at least one target with **`platform: macOS`**. iOS
+apps also use `project.yml` but declare `platform: iOS` — discovery scripts
+distinguish the two by that line. Unlike iOS (exactly one Playground host),
+**many macOS apps are allowed**, each in its own top-level directory with its
+own Bundle ID. Do **not** add macOS apps under `ios/`, and do **not** add
+`index.html` (they are not Pages browser apps).
+
+macOS apps are built and tested by `macos.yml` on a macOS runner. On push to
+`main` with Developer ID / Sparkle secrets present, CI notarizes and publishes
+a Sparkle appcast (see [`docs/macos-sparkle-design.md`](docs/macos-sparkle-design.md)
+and [`docs/macos-sparkle-setup.md`](docs/macos-sparkle-setup.md)); without those
+secrets, CI still runs tests and skips the release. Do not commit `*.xcodeproj`,
+`DerivedData/`, `*.dmg`, `*.xcarchive`, or signing material.
+
 Hidden top-level directories (names starting with `.`) are ignored by all app
 discovery scripts.
 
@@ -121,6 +141,7 @@ discovery scripts.
 | `cleanup.yml` | pull request closed | Removes that PR's preview directory from `gh-pages` and refreshes the root index |
 | `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps in one job |
 | `ios.yml` | push to `main`, pull requests | Tests changed iOS apps on macOS; on `main`, delivers them to TestFlight |
+| `macos.yml` | push to `main`, pull requests | Tests changed macOS apps on macOS; on `main`, ships notarized Sparkle updates when secrets are present |
 | `ios-bootstrap-label.yml` | pull request | Labels PRs that need signing re-bootstrap with `needs-ios-bootstrap` |
 | `ios-bootstrap-on-merge.yml` | pull request closed (merged) | If the PR had `needs-ios-bootstrap`, immediately re-runs signing bootstrap (races `ios.yml`; usually finishes first) |
 | `ios-signing-bootstrap.yml` | manual (`workflow_dispatch`) + reusable | Creates & stores signing cert/profile in the `match` repo; also called on labeled merges |
@@ -199,7 +220,7 @@ Worker apps pin Rust 1.88 (with `worker` 0.8 / wasm-bindgen 0.2.125).
 
 **The iOS app is tested by a separate workflow (`ios.yml`), not `test.yml`,**
 because it needs a macOS runner. A cheap Linux `discover` job reuses the same
-`discover-changed-apps.sh` logic (it now also emits an `ios` list) and only then
+`discover-changed-apps.sh` logic (it emits an `ios` list) and only then
 spins up a `macos-latest` job — so browser/Go/Rust-only PRs never pay for macOS
 minutes. When `ios/` changed, CI runs XcodeGen → `bundle exec fastlane test`
 (unit + UI tests on a Simulator; no signing needed). On push to `main` with
@@ -211,6 +232,18 @@ label; on merge, a separate workflow re-runs `signing_bootstrap` in parallel
 ```bash
 bash .github/scripts/discover-ios-apps.sh --all
 git diff --name-only origin/main...HEAD | bash .github/scripts/discover-ios-apps.sh --from-changes
+```
+
+**macOS apps use the same pattern via `macos.yml`:** Linux discovery emits a
+`macos` list (dirs whose `project.yml` has `platform: macOS`), then a
+`macos-latest` job runs XcodeGen → `fastlane test`. On `main` with Developer ID
+/ Sparkle secrets, it will run `fastlane beta` (notarize + appcast); without
+secrets, tests still run and ship is skipped. Discovery:
+
+```bash
+bash .github/scripts/discover-macos-apps.sh --all
+git diff --name-only origin/main...HEAD | bash .github/scripts/discover-macos-apps.sh --from-changes
+bash .github/scripts/discover-xcodegen-apps_test.sh   # ios vs macos marker tests
 ```
 
 Run the per-type discovery helpers locally to see what CI would select:
@@ -390,6 +423,31 @@ xcodegen generate
 bundle exec fastlane test
 ```
 
+## Adding a new macOS app
+
+1. Create a **top-level directory** (for example, `my-mac-app/`).
+2. Add **`my-mac-app/project.yml`** (XcodeGen) with a target that declares
+   **`platform: macOS`** — that line is what distinguishes it from the iOS app
+   type (`platform: iOS`).
+3. Keep sources, tests, `fastlane/`, and `Gemfile` inside that directory.
+4. Add `my-mac-app/README.md` and a `.gitignore` (at least `*.xcodeproj`,
+   `DerivedData/`, `*.dmg`).
+5. Do **not** add `index.html`; macOS apps are not Pages browser apps.
+6. Do **not** put the app under `ios/` — macOS apps are separate top-level apps.
+
+No workflow edits are required for the test path. `macos.yml` discovers the app
+from `platform: macOS`. Sparkle release on `main` needs Developer ID / notarization
+secrets (see [`docs/macos-sparkle-design.md`](docs/macos-sparkle-design.md)).
+
+Run locally (macOS + Xcode):
+
+```bash
+cd my-mac-app
+brew install xcodegen && bundle install
+xcodegen generate
+bundle exec fastlane test
+```
+
 ## Implementation conventions
 
 - **Browser apps are client-side**: they must be static sites suitable for GitHub Pages (no server-side runtime in production).
@@ -401,9 +459,11 @@ bundle exec fastlane test
   Custom Keyboard or other **app extension** needs a second Bundle ID (Apple
   rule) and a one-time match bootstrap — see [`ios/AGENTS.md`](ios/AGENTS.md).
   Never commit the generated `*.xcodeproj` or signing material.
+- **macOS apps are independent top-level apps**: each owns its `project.yml`
+  (`platform: macOS`), Bundle ID, and `fastlane/`. Do not nest them under `ios/`.
 - **Keep all apps isolated**: do not add repo-root `package.json`, `go.mod`, `go.work`, or Cargo workspace files unless the maintainers explicitly request a monorepo toolchain.
 - **Minimize scope**: when fixing or extending one app, avoid unrelated changes in other directories.
-- **Do not commit**: `node_modules/`, secrets, env files, browser/Go/Rust build artifacts (`target/`), or Playwright/Jest output (`test-results/`, `coverage/`).
+- **Do not commit**: `node_modules/`, secrets, env files, browser/Go/Rust build artifacts (`target/`), `*.xcodeproj`, `*.dmg`, or Playwright/Jest output (`test-results/`, `coverage/`).
 
 ## Pull requests
 
@@ -478,5 +538,11 @@ bundle exec fastlane test
 | Directory | Type | Tests |
 |-----------|------|-------|
 | `ios/` | The single "Playground" SwiftUI app — a launcher hosting experiments (e.g. Ride Monitor, T9 Keyboard); TestFlight CD on `main` | XCTest unit tests + XCUITest UI tests (`fastlane test`) |
+
+## Current macOS apps
+
+| Directory | Type | Tests |
+|-----------|------|-------|
+| `hello-macos/` | Minimal SwiftUI "Hello Mac" sample; Sparkle CD (follow-up) | XCTest via `fastlane test` |
 
 See each app's `README.md` for app-specific rules and local development.

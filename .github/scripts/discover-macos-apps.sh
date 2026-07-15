@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# Discover top-level iOS app directories and emit a JSON array.
+# Discover top-level macOS app directories and emit a JSON array.
 #
-# An iOS app is a non-hidden top-level directory containing project.yml
-# (an XcodeGen spec) that declares at least one `platform: iOS` target.
-# macOS apps also use project.yml but declare `platform: macOS` — see
-# discover-macos-apps.sh. Do not treat every project.yml as iOS.
+# A macOS app is a non-hidden top-level directory containing project.yml
+# (an XcodeGen spec) that declares at least one `platform: macOS` target.
+# iOS apps also use project.yml but declare `platform: iOS` — see
+# discover-ios-apps.sh.
 #
 # Usage:
-#   discover-ios-apps.sh --all
-#     List every iOS app in the repo.
+#   discover-macos-apps.sh --all
+#     List every macOS app in the repo.
 #
-#   discover-ios-apps.sh --from-changes [path...]
-#     List iOS apps touched by the given paths (or stdin when no args).
+#   discover-macos-apps.sh --from-changes [path...]
+#     List macOS apps touched by the given paths (or stdin when no args).
 set -euo pipefail
 
-is_ios_app() {
+is_macos_app() {
   local name="$1"
 
   if [[ "$name" == .* ]]; then
@@ -22,7 +22,7 @@ is_ios_app() {
   fi
 
   [[ -f "$name/project.yml" ]] || return 1
-  grep -qE '^[[:space:]]*platform:[[:space:]]*iOS[[:space:]]*$' "$name/project.yml"
+  grep -qE '^[[:space:]]*platform:[[:space:]]*macOS[[:space:]]*$' "$name/project.yml"
 }
 
 emit_json() {
@@ -34,18 +34,18 @@ emit_json() {
   fi
 }
 
-collect_all_ios_apps() {
+collect_all_macos_apps() {
   local apps=()
   for dir in */; do
     local name="${dir%/}"
-    if is_ios_app "$name"; then
+    if is_macos_app "$name"; then
       apps+=("$name")
     fi
   done
   emit_json apps
 }
 
-collect_ios_apps_from_changes() {
+collect_macos_apps_from_changes() {
   local paths=()
   if (("$#" > 0)); then
     paths=("$@")
@@ -66,7 +66,7 @@ collect_ios_apps_from_changes() {
       continue
     fi
     seen["$name"]=1
-    if is_ios_app "$name"; then
+    if is_macos_app "$name"; then
       apps+=("$name")
     fi
   done
@@ -77,11 +77,11 @@ mode="${1:---from-changes}"
 
 case "$mode" in
   --all)
-    collect_all_ios_apps
+    collect_all_macos_apps
     ;;
   --from-changes)
     shift
-    collect_ios_apps_from_changes "$@"
+    collect_macos_apps_from_changes "$@"
     ;;
   *)
     echo "Usage: $0 --all | --from-changes [path...]" >&2
