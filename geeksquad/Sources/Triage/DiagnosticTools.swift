@@ -51,10 +51,10 @@ struct InterfacesTool: Tool {
         var note: String
     }
 
-    func call(arguments: Arguments) async throws -> ToolOutput {
+    func call(arguments: Arguments) async throws -> String {
         activity.note(name)
         let report = await DiagnosticServices.shared.interfaces()
-        return ToolOutput(report.markdown)
+        return report.markdown
     }
 }
 
@@ -70,10 +70,10 @@ struct DefaultRouteTool: Tool {
         var note: String
     }
 
-    func call(arguments: Arguments) async throws -> ToolOutput {
+    func call(arguments: Arguments) async throws -> String {
         activity.note(name)
         let report = await DiagnosticServices.shared.defaultRoute()
-        return ToolOutput(report.markdown)
+        return report.markdown
     }
 }
 
@@ -89,10 +89,10 @@ struct PathStatusTool: Tool {
         var note: String
     }
 
-    func call(arguments: Arguments) async throws -> ToolOutput {
+    func call(arguments: Arguments) async throws -> String {
         activity.note(name)
         let report = await DiagnosticServices.shared.pathStatus()
-        return ToolOutput(report.markdown)
+        return report.markdown
     }
 }
 
@@ -108,10 +108,10 @@ struct DnsConfigTool: Tool {
         var note: String
     }
 
-    func call(arguments: Arguments) async throws -> ToolOutput {
+    func call(arguments: Arguments) async throws -> String {
         activity.note(name)
         let report = await DiagnosticServices.shared.dnsConfig()
-        return ToolOutput(report.markdown)
+        return report.markdown
     }
 }
 
@@ -127,10 +127,10 @@ struct DnsLookupTool: Tool {
         var hostname: String
     }
 
-    func call(arguments: Arguments) async throws -> ToolOutput {
+    func call(arguments: Arguments) async throws -> String {
         activity.note(name)
         let report = await DiagnosticServices.shared.dnsLookup(hostname: arguments.hostname)
-        return ToolOutput(report.markdown)
+        return report.markdown
     }
 }
 
@@ -148,11 +148,11 @@ struct ReachabilityTool: Tool {
         var port: Int
     }
 
-    func call(arguments: Arguments) async throws -> ToolOutput {
+    func call(arguments: Arguments) async throws -> String {
         activity.note(name)
         let port = UInt16(clamping: arguments.port)
         let report = await DiagnosticServices.shared.reachability(host: arguments.host, port: port)
-        return ToolOutput(report.markdown)
+        return report.markdown
     }
 }
 
@@ -168,10 +168,10 @@ struct HttpProbeTool: Tool {
         var url: String
     }
 
-    func call(arguments: Arguments) async throws -> ToolOutput {
+    func call(arguments: Arguments) async throws -> String {
         activity.note(name)
         let report = await DiagnosticServices.shared.httpProbe(urlString: arguments.url)
-        return ToolOutput(report.markdown)
+        return report.markdown
     }
 }
 
@@ -187,10 +187,10 @@ struct ProxyConfigTool: Tool {
         var note: String
     }
 
-    func call(arguments: Arguments) async throws -> ToolOutput {
+    func call(arguments: Arguments) async throws -> String {
         activity.note(name)
         let report = await DiagnosticServices.shared.proxyConfig()
-        return ToolOutput(report.markdown)
+        return report.markdown
     }
 }
 
@@ -206,10 +206,10 @@ struct VpnInterfacesTool: Tool {
         var note: String
     }
 
-    func call(arguments: Arguments) async throws -> ToolOutput {
+    func call(arguments: Arguments) async throws -> String {
         activity.note(name)
         let report = await DiagnosticServices.shared.vpnInterfaces()
-        return ToolOutput(report.markdown)
+        return report.markdown
     }
 }
 
@@ -225,10 +225,10 @@ struct HostsFileTool: Tool {
         var note: String
     }
 
-    func call(arguments: Arguments) async throws -> ToolOutput {
+    func call(arguments: Arguments) async throws -> String {
         activity.note(name)
         let report = await DiagnosticServices.shared.hostsFile()
-        return ToolOutput(report.markdown)
+        return report.markdown
     }
 }
 
@@ -244,10 +244,10 @@ struct CurrentWifiTool: Tool {
         var note: String
     }
 
-    func call(arguments: Arguments) async throws -> ToolOutput {
+    func call(arguments: Arguments) async throws -> String {
         activity.note(name)
         let report = await DiagnosticServices.shared.currentWifi()
-        return ToolOutput(report.markdown)
+        return report.markdown
     }
 }
 
