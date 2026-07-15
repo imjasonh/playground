@@ -65,6 +65,10 @@ final class TriageChatModel: ObservableObject {
             "Captive portal / hotel Wi‑Fi",
             "I might be behind a captive portal (hotel/cafe Wi‑Fi). Probe connectivity and propose how I should complete login — don't change settings for me."
         ),
+        (
+            "App using too much memory",
+            "An app feels slow — please measure its live memory and CPU on this Mac (include helper processes), tell me if usage looks high, and propose what I should try. Don’t kill anything."
+        ),
     ]
 
     init() {
@@ -97,7 +101,7 @@ final class TriageChatModel: ObservableObject {
             messages.append(
                 ChatMessage(
                     role: .system,
-                    text: "Ask what’s going wrong — network/config problems get live diagnostics; simpler Mac questions get a short answer. I propose steps; I won’t change settings myself."
+                    text: "Ask what’s going wrong — I can measure network/config and app CPU/memory on this Mac. I propose steps; I won’t change settings or kill processes."
                 )
             )
         }
@@ -152,9 +156,9 @@ final class TriageChatModel: ObservableObject {
             isResponding = true
             defer { isResponding = false }
 
-            // Avoid tool calling for simple / off-scope asks — that path is what
-            // produced opaque GenerationError failures (e.g. "Cursor app is slow").
-            if !isKnownNetworkScenario(text) {
+            // Skip the no-tools gate when heuristics (or scenario chips) say we
+            // can measure something live — including slow apps / memory / CPU.
+            if !shouldUseDiagnosticTools(text) {
                 do {
                     if let direct = try await answerWithoutTools(text) {
                         messages.append(ChatMessage(role: .assistant, text: direct))
@@ -172,7 +176,7 @@ final class TriageChatModel: ObservableObject {
             hub?.clearReports()
 
             do {
-                let response = try await session.respond(to: text)
+                let response = try await session.respond(to: diagnosticPrompt(forLatestUserText: text))
                 let content = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
                 messages.append(
                     ChatMessage(
@@ -215,8 +219,34 @@ final class TriageChatModel: ObservableObject {
         )
     }
 
-    private func isKnownNetworkScenario(_ text: String) -> Bool {
+    private func shouldUseDiagnosticTools(_ text: String) -> Bool {
+        isKnownScenario(text) || TriageHeuristics.needsLiveDiagnostics(text)
+    }
+
+    private func isKnownScenario(_ text: String) -> Bool {
         Self.scenarioPrompts.contains { $0.prompt == text }
+    }
+
+    /// Fresh FM sessions don't keep chat history — pack recent turns so follow-ups
+    /// like “is it using too much memory?” still resolve to the named app.
+    private func diagnosticPrompt(forLatestUserText latest: String) -> String {
+        let recent = messages.suffix(12).compactMap { message -> String? in
+            switch message.role {
+            case .user: return "User: \(message.text)"
+            case .assistant: return "Geek Squad: \(message.text)"
+            case .tool, .system: return nil
+            }
+        }
+        var lines: [String] = [
+            "Recent chat (for context; answer the latest user message):",
+        ]
+        lines.append(contentsOf: recent)
+        lines.append("")
+        lines.append(
+            "Use tools for live facts. If the user says “it” or omits the app name, reuse the app from earlier turns (e.g. process_usage query: Cursor)."
+        )
+        lines.append("Latest user message: \(latest)")
+        return lines.joined(separator: "\n")
     }
 
     #if canImport(FoundationModels)

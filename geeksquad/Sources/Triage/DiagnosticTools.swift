@@ -6,26 +6,29 @@ import FoundationModels
 /// Shared triage system prompt for the on-device model (tool-using path).
 enum TriageInstructions {
     static let text = """
-        You are Geek Squad, an offline Mac network and configuration technician.
+        You are Geek Squad, an offline Mac technician for network/config and \
+        local process resource checks.
         The user describes what they see and what they want fixed.
 
         Scope:
-        - You only triage Mac network and configuration issues (connectivity, DNS, \
-        VPN, proxy, Wi‑Fi, routing, hosts file).
-        - If the user asks about something else (for example a slow app with no \
-        network symptom), say so in one or two sentences, suggest a non-network next \
-        step (Activity Monitor, restart the app, check that app’s support), and do \
-        not call diagnostic tools unless they also describe a network problem.
+        - Network and configuration (connectivity, DNS, VPN, proxy, Wi‑Fi, \
+        routing, hosts file).
+        - App/process CPU and memory on this Mac (process_usage, top_memory).
+        - If the question is outside those areas, say so briefly and suggest a \
+        next step — do not invent live measurements.
 
         Rules:
-        - For in-scope issues, use diagnostic tools to gather facts before concluding. \
-        Prefer path_status, default_route, dns_config, and interfaces early; then dig \
-        deeper (dns_lookup, reachability, http_probe, proxy_config, vpn_interfaces, \
-        hosts_file, current_wifi). Call only what you need — usually 2–4 tools.
-        - Never invent IP addresses, DNS results, routes, or proxy settings — only cite \
-        tool output.
-        - Propose clear, numbered steps the user can take themselves. Do not claim you \
-        changed System Settings, ran sudo, or applied a fix.
+        - Use diagnostic tools to gather facts before concluding. For slow apps \
+        or “is it using too much memory/CPU?”, call process_usage with the app \
+        name (e.g. Cursor). For “what’s using my memory?”, call top_memory.
+        - For network issues prefer path_status, default_route, dns_config, and \
+        interfaces early; then dig deeper as needed. Call only what you need — \
+        usually 2–4 tools.
+        - Never invent IP addresses, DNS results, routes, proxy settings, or \
+        CPU/memory numbers — only cite tool output.
+        - Do not invent what an app is (e.g. do not call Cursor a note-taking app).
+        - Propose clear, numbered steps the user can take themselves. Do not claim \
+        you changed System Settings, killed processes, ran sudo, or applied a fix.
         - Be concise and practical. Lead with the likely cause, then evidence, then \
         proposed fixes.
         - If a tool fails or returns empty, say so and try another angle.
@@ -277,6 +280,41 @@ struct CurrentWifiTool: Tool {
 }
 
 @available(macOS 26.0, *)
+struct ProcessUsageTool: Tool {
+    let name = "process_usage"
+    let description = "Measure live CPU and memory (RSS) for processes matching an app or process name on this Mac."
+    let activity: ToolActivityHub
+
+    @Generable
+    struct Arguments {
+        @Guide(description: "App or process name fragment, e.g. Cursor, Safari, Chrome")
+        var query: String
+    }
+
+    func call(arguments: Arguments) async throws -> String {
+        await runTool(name, activity: activity) {
+            await DiagnosticServices.shared.processUsage(query: arguments.query)
+        }
+    }
+}
+
+@available(macOS 26.0, *)
+struct TopMemoryTool: Tool {
+    let name = "top_memory"
+    let description = "List the processes using the most memory (RSS) on this Mac right now."
+    let activity: ToolActivityHub
+
+    @Generable
+    struct Arguments {}
+
+    func call(arguments: Arguments) async throws -> String {
+        await runTool(name, activity: activity) {
+            await DiagnosticServices.shared.topMemoryProcesses()
+        }
+    }
+}
+
+@available(macOS 26.0, *)
 enum DiagnosticToolset {
     static func make(activity: ToolActivityHub) -> [any Tool] {
         [
@@ -291,6 +329,8 @@ enum DiagnosticToolset {
             VpnInterfacesTool(activity: activity),
             HostsFileTool(activity: activity),
             CurrentWifiTool(activity: activity),
+            ProcessUsageTool(activity: activity),
+            TopMemoryTool(activity: activity),
         ]
     }
 }

@@ -10,10 +10,10 @@ final class TriageInstructionsTests: XCTestCase {
         XCTAssertTrue(text.localizedCaseInsensitiveContains("Never"))
     }
 
-    func testInstructionsStayInNetworkScope() {
+    func testInstructionsIncludeProcessDiagnostics() {
         let text = TriageInstructions.text
-        XCTAssertTrue(text.localizedCaseInsensitiveContains("network"))
-        XCTAssertTrue(text.localizedCaseInsensitiveContains("do not call diagnostic tools"))
+        XCTAssertTrue(text.localizedCaseInsensitiveContains("process_usage"))
+        XCTAssertTrue(text.localizedCaseInsensitiveContains("memory"))
     }
 }
 
@@ -33,6 +33,15 @@ final class TriageGateTests: XCTestCase {
             answer,
             "That sounds like app performance, not the network. Open Activity Monitor and check CPU for Cursor."
         )
+    }
+}
+
+final class TriageHeuristicsTests: XCTestCase {
+    func testMemoryAndSlowAppNeedLiveDiagnostics() {
+        XCTAssertTrue(TriageHeuristics.needsLiveDiagnostics("Tell me whether it's using too much memory"))
+        XCTAssertTrue(TriageHeuristics.needsLiveDiagnostics("Cursor app is slow"))
+        XCTAssertTrue(TriageHeuristics.needsLiveDiagnostics("DNS feels wrong on this Mac"))
+        XCTAssertFalse(TriageHeuristics.needsLiveDiagnostics("What does Geek Squad do?"))
     }
 }
 

@@ -127,6 +127,10 @@ struct ManualToolboxView: View {
             result = await services.hostsFile()
         case .currentWifi:
             result = await services.currentWifi()
+        case .processUsage:
+            result = await services.processUsage(query: hostField)
+        case .topMemory:
+            result = await services.topMemoryProcesses()
         }
         report = result
     }

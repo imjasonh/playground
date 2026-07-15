@@ -12,6 +12,8 @@ enum ToolboxCheck: String, CaseIterable, Identifiable, Hashable {
     case vpnInterfaces
     case hostsFile
     case currentWifi
+    case processUsage
+    case topMemory
 
     var id: String { rawValue }
 
@@ -28,6 +30,8 @@ enum ToolboxCheck: String, CaseIterable, Identifiable, Hashable {
         case .vpnInterfaces: return "VPN interfaces"
         case .hostsFile: return "Hosts file"
         case .currentWifi: return "Current Wi‑Fi"
+        case .processUsage: return "Process usage"
+        case .topMemory: return "Top memory"
         }
     }
 
@@ -44,11 +48,13 @@ enum ToolboxCheck: String, CaseIterable, Identifiable, Hashable {
         case .vpnInterfaces: return "utun/ipsec vs path"
         case .hostsFile: return "/etc/hosts overrides"
         case .currentWifi: return "SSID if Location allows"
+        case .processUsage: return "CPU/memory for a named app"
+        case .topMemory: return "Highest RSS processes"
         }
     }
 
     var needsHostField: Bool {
-        self == .dnsLookup || self == .reachability || self == .httpProbe
+        self == .dnsLookup || self == .reachability || self == .httpProbe || self == .processUsage
     }
 
     var hostPlaceholder: String {
@@ -56,6 +62,7 @@ enum ToolboxCheck: String, CaseIterable, Identifiable, Hashable {
         case .dnsLookup: return "example.com"
         case .reachability: return "1.1.1.1"
         case .httpProbe: return "https://example.com"
+        case .processUsage: return "Cursor"
         default: return ""
         }
     }
@@ -65,6 +72,7 @@ enum ToolboxCheck: String, CaseIterable, Identifiable, Hashable {
         case .dnsLookup: return "example.com"
         case .reachability: return "1.1.1.1"
         case .httpProbe: return "https://example.com"
+        case .processUsage: return "Cursor"
         default: return ""
         }
     }

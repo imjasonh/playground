@@ -1,4 +1,5 @@
 import CoreWLAN
+import Darwin
 import Foundation
 import Network
 
@@ -382,6 +383,114 @@ struct DiagnosticServices: Sendable {
             "Note: Location permission may be required to reveal SSID/BSSID."
         ].joined(separator: "\n")
         return DiagnosticReport(title: "Current Wi‑Fi", body: body, proposedFixes: [])
+    }
+
+    // MARK: - Process CPU / memory
+
+    /// Live RSS/%CPU for processes matching `query` (app name fragment).
+    func processUsage(query: String) async -> DiagnosticReport {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else {
+            return DiagnosticReport(
+                title: "Process usage",
+                body: "Enter an app or process name (e.g. Cursor, Safari, Chrome).",
+                proposedFixes: []
+            )
+        }
+        do {
+            let result = try ProcessRunner.run(
+                "/bin/ps",
+                arguments: ["-axo", "pid=,rss=,%cpu=,command="],
+                timeoutSeconds: 6,
+                maxOutputBytes: 512_000
+            )
+            if result.timedOut {
+                return DiagnosticReport(
+                    title: "Process usage",
+                    body: "Timed out listing processes.",
+                    proposedFixes: ["Try again, or open Activity Monitor for a live view."]
+                )
+            }
+            let rows = ProcessListParser.parse(result.stdout)
+            let matches = ProcessListParser.matching(rows, query: q)
+            let summary = ProcessListParser.summarize(
+                matches: matches,
+                query: q,
+                physicalMemoryBytes: physicalMemoryBytes()
+            )
+            return DiagnosticReport(
+                title: "Process usage",
+                body: summary.body,
+                proposedFixes: summary.proposedFixes
+            )
+        } catch {
+            return DiagnosticReport(
+                title: "Process usage",
+                body: "Failed to list processes: \(error.localizedDescription)",
+                proposedFixes: ["Open Activity Monitor as a fallback."]
+            )
+        }
+    }
+
+    /// Top processes by RSS — for “what’s using my memory?”
+    func topMemoryProcesses(limit: Int = 15) async -> DiagnosticReport {
+        let cap = min(max(limit, 5), 25)
+        do {
+            let result = try ProcessRunner.run(
+                "/bin/ps",
+                arguments: ["-axo", "pid=,rss=,%cpu=,command="],
+                timeoutSeconds: 6,
+                maxOutputBytes: 512_000
+            )
+            if result.timedOut {
+                return DiagnosticReport(
+                    title: "Top memory",
+                    body: "Timed out listing processes.",
+                    proposedFixes: ["Try again, or open Activity Monitor."]
+                )
+            }
+            let rows = ProcessListParser.parse(result.stdout)
+                .sorted { $0.rssKilobytes > $1.rssKilobytes }
+            let top = Array(rows.prefix(cap))
+            let ramGB = Double(physicalMemoryBytes()) / 1_073_741_824.0
+            var lines: [String] = [
+                String(format: "Physical RAM: %.1f GB", ramGB),
+                "Top \(top.count) by memory (RSS):",
+                "",
+            ]
+            for row in top {
+                lines.append(
+                    String(
+                        format: "  pid %-6d  %7.0f MB  %5.1f%% CPU  %@",
+                        row.pid,
+                        row.rssMegabytes,
+                        row.cpuPercent,
+                        row.shortName
+                    )
+                )
+            }
+            return DiagnosticReport(
+                title: "Top memory",
+                body: lines.joined(separator: "\n"),
+                proposedFixes: [
+                    "If one app dominates, quit/relaunch it. Geek Squad does not kill processes for you.",
+                    "For a named app, run Process usage with that name for a full helper breakdown.",
+                ]
+            )
+        } catch {
+            return DiagnosticReport(
+                title: "Top memory",
+                body: "Failed to list processes: \(error.localizedDescription)",
+                proposedFixes: ["Open Activity Monitor as a fallback."]
+            )
+        }
+    }
+
+    private func physicalMemoryBytes() -> UInt64 {
+        var size: UInt64 = 0
+        var len = MemoryLayout<UInt64>.size
+        let result = sysctlbyname("hw.memsize", &size, &len, nil, 0)
+        return result == 0 ? size : 0
     }
 
     // MARK: - Helpers

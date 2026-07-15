@@ -94,3 +94,39 @@ final class DiagnosticReportTests: XCTestCase {
         XCTAssertTrue(compact.contains("…(truncated)"))
     }
 }
+
+final class ProcessListParserTests: XCTestCase {
+    func testParsesPsRowsAndMatchesQuery() {
+        let text = """
+          123  512000  12.5 /Applications/Cursor.app/Contents/MacOS/Cursor
+          124   10240   0.1 /Applications/Cursor.app/Contents/Frameworks/Cursor Helper.app/Contents/MacOS/Cursor Helper
+          200    4096   0.0 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+        """
+        let rows = ProcessListParser.parse(text)
+        XCTAssertEqual(rows.count, 3)
+        XCTAssertEqual(rows[0].pid, 123)
+        XCTAssertEqual(rows[0].rssKilobytes, 512_000)
+        XCTAssertEqual(rows[0].cpuPercent, 12.5, accuracy: 0.01)
+
+        let matches = ProcessListParser.matching(rows, query: "Cursor")
+        XCTAssertEqual(matches.count, 2)
+
+        let summary = ProcessListParser.summarize(
+            matches: matches,
+            query: "Cursor",
+            physicalMemoryBytes: 16 * 1_073_741_824
+        )
+        XCTAssertTrue(summary.body.contains("Matching processes: 2"))
+        XCTAssertTrue(summary.body.contains("Total memory"))
+        XCTAssertFalse(summary.proposedFixes.isEmpty)
+    }
+
+    func testNoMatches() {
+        let summary = ProcessListParser.summarize(
+            matches: [],
+            query: "NopeApp",
+            physicalMemoryBytes: 8 * 1_073_741_824
+        )
+        XCTAssertTrue(summary.body.contains("No running processes matched"))
+    }
+}
