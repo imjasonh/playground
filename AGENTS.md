@@ -122,10 +122,11 @@ own Bundle ID. Do **not** add macOS apps under `ios/`, and do **not** add
 `index.html` (they are not Pages browser apps).
 
 macOS apps are built and tested by `macos.yml` on a macOS runner. On push to
-`main` with Developer ID / Sparkle secrets present, CI will notarize and publish
-a Sparkle appcast (see [`docs/macos-sparkle-design.md`](docs/macos-sparkle-design.md));
-without those secrets, CI still runs tests and skips the release. Do not commit
-`*.xcodeproj`, `DerivedData/`, `*.dmg`, `*.xcarchive`, or signing material.
+`main` with Developer ID / Sparkle secrets present, CI notarizes and publishes
+a Sparkle appcast (see [`docs/macos-sparkle-design.md`](docs/macos-sparkle-design.md)
+and [`docs/macos-sparkle-setup.md`](docs/macos-sparkle-setup.md)); without those
+secrets, CI still runs tests and skips the release. Do not commit `*.xcodeproj`,
+`DerivedData/`, `*.dmg`, `*.xcarchive`, or signing material.
 
 Hidden top-level directories (names starting with `.`) are ignored by all app
 discovery scripts.

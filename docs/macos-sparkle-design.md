@@ -55,18 +55,18 @@ Rules:
 - Do not commit `*.xcodeproj`, `DerivedData/`, `*.dmg`, `*.xcarchive`, signing material.
 - Bundle IDs: `io.github.imjasonh.<app>` (e.g. `io.github.imjasonh.hello-macos`).
 
-## 3. Continuous delivery (follow-up)
+## 3. Continuous delivery
 
-On push to `main` when a macOS app changed **and** release secrets are present:
+On push to `main` when a macOS app changed **and** `MACOS_DEVELOPER_ID_P12` is
+present, `macos-ci.sh` runs:
 
-1. `xcodegen generate` → `fastlane test` (already landed).
-2. Archive + sign with **Developer ID Application**.
-3. Notarize with `notarytool` (reuse ASC API key secrets where possible) + `stapler`.
-4. Package a DMG (or ZIP).
-5. Sign the enclosure with Sparkle EdDSA (`sign_update`).
-6. Publish:
-   - **Binary** → GitHub Release asset (or `gh-pages/macos/<app>/` for small builds).
-   - **Feed** → `gh-pages/macos/<app>/appcast.xml` (stable HTTPS URL for Sparkle).
+1. `xcodegen generate` → `fastlane test`
+2. `fastlane beta` — Developer ID sign → notarize (`notarytool` via ASC API key)
+   → staple → ZIP enclosure + `sparkle-metadata.json`
+3. `publish-macos-sparkle.sh` — GitHub Release asset + rewrite
+   `gh-pages/macos/<app>/appcast.xml`
+
+Click-by-click secrets setup: [`macos-sparkle-setup.md`](macos-sparkle-setup.md).
 
 Suggested feed URL shape:
 
@@ -74,17 +74,16 @@ Suggested feed URL shape:
 https://imjasonh.github.io/playground/macos/hello-macos/appcast.xml
 ```
 
-### Secrets (to add when enabling ship)
+### Secrets
 
 | Secret | Purpose |
 |--------|---------|
 | `MACOS_DEVELOPER_ID_P12` | Base64 Developer ID Application certificate |
 | `MACOS_DEVELOPER_ID_PASSWORD` | Password for that `.p12` |
-| `SPARKLE_EDDSA_PRIVATE_KEY` | Sparkle Ed25519 private key (public key in Info.plist) |
+| `SPARKLE_EDDSA_PRIVATE_KEY` | Sparkle Ed25519 private key (optional until in-app Sparkle ships) |
 | Existing `ASC_*` / `APPLE_TEAM_ID` | Notarization via App Store Connect API key |
 
-Without these, `macos.yml` tests and prints the same style of skip warning as
-iOS when TestFlight secrets are missing.
+Without `MACOS_DEVELOPER_ID_P12`, `macos.yml` tests and prints the skip warning.
 
 ## 4. User updates (Sparkle)
 

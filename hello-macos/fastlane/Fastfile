@@ -1,9 +1,12 @@
 default_platform(:mac)
 
+require "json"
+require "base64"
+require "shellwords"
+
 APP_SCHEME = "HelloMac"
 XCODEPROJ = "HelloMac.xcodeproj"
 APP_IDENTIFIER = ENV.fetch("APP_BUNDLE_ID", "io.github.imjasonh.hello-macos")
-EXPORT_OPTIONS = "ExportOptions-DeveloperID.plist"
 # Artifacts written for the publish-macos-sparkle.sh step / GH Release upload.
 RELEASE_DIR = File.expand_path("fastlane/release")
 
@@ -30,26 +33,13 @@ def asc_api_key
 end
 
 def import_developer_id_certificate!
-  require "base64"
-  require "tempfile"
-
   p12_path = File.join(Dir.tmpdir, "macos-developer-id.p12")
   File.binwrite(p12_path, Base64.decode64(ENV.fetch("MACOS_DEVELOPER_ID_P12")))
   password = ENV.fetch("MACOS_DEVELOPER_ID_PASSWORD")
 
-  keychain_name = "fastlane_tmp_keychain"
-  keychain_password = ENV.fetch("MATCH_KEYCHAIN_PASSWORD") do
-    require "securerandom"
-    SecureRandom.hex(16)
-  end
-
-  create_keychain(
-    name: keychain_name,
-    password: keychain_password,
-    default_keychain: true,
-    unlock: true,
-    timeout: 3600
-  )
+  # setup_ci already created/unlocked a temporary keychain; import into it.
+  keychain_name = ENV["MATCH_KEYCHAIN_NAME"] || "fastlane_tmp_keychain"
+  keychain_password = ENV["MATCH_KEYCHAIN_PASSWORD"] || ""
 
   import_certificate(
     certificate_path: p12_path,
@@ -113,7 +103,6 @@ platform :mac do
       skip_package_pkg: true,
       export_options: {
         method: "developer-id",
-        signingStyle: "manual",
         teamID: team_id
       }
     )
@@ -123,7 +112,7 @@ platform :mac do
 
     # Zip for notarization upload; stapler works on the .app afterward.
     zip_path = File.join(RELEASE_DIR, "#{APP_SCHEME}.zip")
-    sh("ditto -c -k --keepParent #{app_path.shellescape} #{zip_path.shellescape}")
+    sh("ditto -c -k --keepParent #{Shellwords.escape(app_path)} #{Shellwords.escape(zip_path)}")
 
     notarize(
       package: zip_path,
@@ -132,9 +121,9 @@ platform :mac do
     )
 
     # Staple the app (zip cannot be stapled). Re-zip the stapled app for Sparkle.
-    sh("xcrun stapler staple #{app_path.shellescape}")
+    sh("xcrun stapler staple #{Shellwords.escape(app_path)}")
     File.delete(zip_path)
-    sh("ditto -c -k --keepParent #{app_path.shellescape} #{zip_path.shellescape}")
+    sh("ditto -c -k --keepParent #{Shellwords.escape(app_path)} #{Shellwords.escape(zip_path)}")
 
     marketing, build = marketing_and_build_versions
     enclosure_name = "#{APP_SCHEME}-#{marketing}.zip"
@@ -143,24 +132,26 @@ platform :mac do
 
     ed_signature = ""
     if ENV["SPARKLE_EDDSA_PRIVATE_KEY"].to_s.empty?
-      UI.important("SPARKLE_EDDSA_PRIVATE_KEY not set — appcast will omit edSignature. " \
-                   "Generate keys per docs/macos-sparkle-setup.md.")
+      UI.important(
+        "SPARKLE_EDDSA_PRIVATE_KEY not set — appcast will omit edSignature. " \
+        "Generate keys per docs/macos-sparkle-setup.md."
+      )
     else
       key_file = File.join(Dir.tmpdir, "sparkle_eddsa_private.pem")
       File.write(key_file, ENV.fetch("SPARKLE_EDDSA_PRIVATE_KEY"))
-      # Prefer Sparkle's sign_update when present on the runner; otherwise leave
-      # a marker for the publish script / human follow-up.
-      sign_update = [
-        "#{ENV['HOME']}/Library/Developer/Xcode/DerivedData/**/SourcePackages/artifacts/sparkle/**/sign_update",
-        "/usr/local/bin/sign_update"
-      ]
-      # Resolve via `find` so we don't depend on a fixed DerivedData hash.
-      found = sh("find \"#{ENV['HOME']}/Library/Developer/Xcode/DerivedData\" -name sign_update -type f 2>/dev/null | head -1", log: false).strip rescue ""
+      found = begin
+        sh(
+          "find \"#{ENV['HOME']}/Library/Developer/Xcode/DerivedData\" -name sign_update -type f 2>/dev/null | head -1",
+          log: false
+        ).strip
+      rescue StandardError
+        ""
+      end
       if found.empty?
         UI.important("sign_update binary not found — skipping edSignature for this build.")
       else
         ed_signature = sh(
-          "#{found.shellescape} #{enclosure_path.shellescape} --ed-key-file #{key_file.shellescape}",
+          "#{Shellwords.escape(found)} #{Shellwords.escape(enclosure_path)} --ed-key-file #{Shellwords.escape(key_file)}",
           log: false
         ).strip
       end
