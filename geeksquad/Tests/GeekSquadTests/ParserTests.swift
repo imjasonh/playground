@@ -53,6 +53,52 @@ final class HostsFileParserTests: XCTestCase {
     }
 }
 
+final class NetworkProbeParserTests: XCTestCase {
+    func testSanitizeHost() {
+        XCTAssertEqual(NetworkProbeHost.sanitize(" 1.1.1.1 "), "1.1.1.1")
+        XCTAssertEqual(NetworkProbeHost.sanitize("https://example.com/path"), "example.com")
+        XCTAssertEqual(NetworkProbeHost.sanitize("example.com/foo"), "example.com")
+        XCTAssertNil(NetworkProbeHost.sanitize(""))
+        XCTAssertNil(NetworkProbeHost.sanitize("bad;rm -rf"))
+    }
+
+    func testPingSummaryAndFixes() {
+        let text = """
+            PING example.com (93.184.216.34): 56 data bytes
+            64 bytes from 93.184.216.34: icmp_seq=0 ttl=56 time=12.1 ms
+            64 bytes from 93.184.216.34: icmp_seq=1 ttl=56 time=15.2 ms
+            --- example.com ping statistics ---
+            4 packets transmitted, 4 packets received, 0.0% packet loss
+            round-trip min/avg/max/stddev = 12.1/15.2/20.3/3.1 ms
+            """
+        let summary = PingOutputParser.summarize(text)
+        XCTAssertEqual(summary.transmitted, 4)
+        XCTAssertEqual(summary.received, 4)
+        XCTAssertEqual(summary.lossPercent, 0.0)
+        XCTAssertEqual(summary.roundTripAvgMs, 15.2)
+        XCTAssertTrue(PingOutputParser.proposedFixes(for: summary, host: "example.com").isEmpty)
+
+        let lossy = PingOutputParser.Summary(transmitted: 4, received: 1, lossPercent: 75, roundTripAvgMs: nil)
+        XCTAssertTrue(
+            PingOutputParser.proposedFixes(for: lossy, host: "1.1.1.1")
+                .joined()
+                .localizedCaseInsensitiveContains("packet loss")
+        )
+    }
+
+    func testTracerouteStarHopsSuggestCaution() {
+        let text = """
+            traceroute to example.com (93.184.216.34), 20 hops max
+             1  * * *
+             2  * * *
+             3  * * *
+             4  93.184.216.34  12.0 ms
+            """
+        let fixes = TracerouteOutputParser.proposedFixes(text: text, host: "example.com", timedOut: false)
+        XCTAssertTrue(fixes.joined().contains("ICMP filtered") || fixes.joined().contains("* * *"))
+    }
+}
+
 final class ProposedFixesTests: XCTestCase {
     func testDnsEmptyAndLoopback() {
         XCTAssertFalse(ProposedFixes.forDnsConfig(resolvers: []).isEmpty)

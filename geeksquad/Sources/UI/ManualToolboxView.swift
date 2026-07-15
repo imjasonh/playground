@@ -114,9 +114,15 @@ struct ManualToolboxView: View {
             result = await services.dnsConfig()
         case .dnsLookup:
             result = await services.dnsLookup(hostname: hostField)
+        case .dnsTrace:
+            result = await services.dnsTrace(hostname: hostField)
         case .reachability:
             let port = UInt16(portField) ?? 443
             result = await services.reachability(host: hostField, port: port)
+        case .ping:
+            result = await services.ping(host: hostField)
+        case .traceroute:
+            result = await services.traceroute(host: hostField)
         case .httpProbe:
             result = await services.httpProbe(urlString: hostField)
         case .proxyConfig:
@@ -127,6 +133,8 @@ struct ManualToolboxView: View {
             result = await services.hostsFile()
         case .currentWifi:
             result = await services.currentWifi()
+        case .arpNeighbors:
+            result = await services.arpNeighbors()
         case .processUsage:
             result = await services.processUsage(query: hostField)
         case .topMemory:

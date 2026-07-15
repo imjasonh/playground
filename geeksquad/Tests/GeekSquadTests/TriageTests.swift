@@ -16,6 +16,10 @@ final class TriageInstructionsTests: XCTestCase {
         XCTAssertTrue(text.localizedCaseInsensitiveContains("memory"))
         XCTAssertTrue(text.localizedCaseInsensitiveContains("disk_space"))
         XCTAssertTrue(text.localizedCaseInsensitiveContains("listening_ports"))
+        XCTAssertTrue(text.localizedCaseInsensitiveContains("ping"))
+        XCTAssertTrue(text.localizedCaseInsensitiveContains("traceroute"))
+        XCTAssertTrue(text.localizedCaseInsensitiveContains("dns_trace"))
+        XCTAssertTrue(text.localizedCaseInsensitiveContains("arp_neighbors"))
     }
 
     func testAudienceLimitsHardwareUpgrades() {
@@ -71,6 +75,8 @@ final class TriageHeuristicsTests: XCTestCase {
         XCTAssertEqual(TriageHeuristics.focus(for: "port 3000 already in use"), .functionality)
         XCTAssertEqual(TriageHeuristics.focus(for: "Safari crashed"), .functionality)
         XCTAssertEqual(TriageHeuristics.focus(for: "VPN DNS broken"), .network)
+        XCTAssertEqual(TriageHeuristics.focus(for: "Please traceroute example.com for packet loss"), .network)
+        XCTAssertEqual(TriageHeuristics.focus(for: "Ping 1.1.1.1 and check latency"), .network)
         // Recheck text alone has no focus keywords — chat model reuses prior turn.
         XCTAssertNil(TriageHeuristics.focus(for: "Please re-run the most relevant live checks for my last question and tell me what changed."))
     }
