@@ -6,6 +6,13 @@
     <description>Sparkle updates for hello-macos</description>
     <language>en</language>
     <item>
+      <title>Hello Mac 1.0.6</title>
+      <pubDate>Wed, 15 Jul 2026 15:01:36 +0000</pubDate>
+      <sparkle:version>7</sparkle:version>
+      <sparkle:shortVersionString>1.0.6</sparkle:shortVersionString>
+      <enclosure url="https://github.com/imjasonh/playground/releases/download/hello-macos-v1.0.6/HelloMac-1.0.6.zip" length="1040805" type="application/octet-stream" sparkle:edSignature="F1w4ukItwGx4IUIh5vonygBlhbl89EzEA1vMNW/xhLDRKVmbQDj+4Pow4sYo8ZJz/X8iX7acr2j+/5f7/6yAAg=="/>
+    </item>
+    <item>
       <title>Hello Mac 1.0.5</title>
       <pubDate>Wed, 15 Jul 2026 13:53:51 +0000</pubDate>
       <sparkle:version>6</sparkle:version>
