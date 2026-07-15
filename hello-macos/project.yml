@@ -16,8 +16,8 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.9"
-    MARKETING_VERSION: "1.0.3"
-    CURRENT_PROJECT_VERSION: "4"
+    MARKETING_VERSION: "1.0.4"
+    CURRENT_PROJECT_VERSION: "5"
     VERSIONING_SYSTEM: apple-generic
     # DEVELOPMENT_TEAM is injected by CI at signing time so the checked-in
     # spec stays account-agnostic.

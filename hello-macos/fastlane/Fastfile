@@ -53,13 +53,21 @@ ensure
   File.delete(p12_path) if p12_path && File.exist?(p12_path)
 end
 
-def marketing_and_build_versions
-  settings = sh(
-    "xcodebuild -project #{XCODEPROJ} -scheme #{APP_SCHEME} -showBuildSettings",
+# Read versions from the built app — xcodebuild -showBuildSettings can exit 66
+# after we switch the project to manual Developer ID signing.
+def marketing_and_build_versions(app_path)
+  info = File.join(app_path, "Contents", "Info.plist")
+  UI.user_error!("Missing Info.plist at #{info}") unless File.file?(info)
+  marketing = sh(
+    "/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' #{Shellwords.escape(info)}",
     log: false
-  )
-  marketing = settings[/MARKETING_VERSION = (.+)/, 1]&.strip || "0.0.0"
-  build = settings[/CURRENT_PROJECT_VERSION = (.+)/, 1]&.strip || "0"
+  ).strip
+  build = sh(
+    "/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' #{Shellwords.escape(info)}",
+    log: false
+  ).strip
+  UI.user_error!("Empty CFBundleShortVersionString in #{info}") if marketing.empty?
+  UI.user_error!("Empty CFBundleVersion in #{info}") if build.empty?
   [marketing, build]
 end
 
