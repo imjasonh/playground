@@ -16,11 +16,16 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.9"
-    MARKETING_VERSION: "1.0.5"
-    CURRENT_PROJECT_VERSION: "6"
+    MARKETING_VERSION: "1.0.6"
+    CURRENT_PROJECT_VERSION: "7"
     VERSIONING_SYSTEM: apple-generic
     # DEVELOPMENT_TEAM is injected by CI at signing time so the checked-in
     # spec stays account-agnostic.
+
+packages:
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: "2.6.0"
 
 targets:
   HelloMac:
@@ -28,6 +33,9 @@ targets:
     platform: macOS
     sources:
       - path: Sources
+    dependencies:
+      - package: Sparkle
+        product: Sparkle
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.imjasonh.hello-macos
@@ -35,6 +43,12 @@ targets:
         # Ad-hoc / local Debug builds; CI release signing overrides this.
         CODE_SIGN_STYLE: Automatic
         ENABLE_HARDENED_RUNTIME: YES
+    # Sparkle loads helper XPC services; library validation must allow them.
+    # Still notarizable with Developer ID + Hardened Runtime.
+    entitlements:
+      path: HelloMac.entitlements
+      properties:
+        com.apple.security.cs.disable-library-validation: true
     info:
       path: HelloMac-Info.plist
       properties:
@@ -53,6 +67,12 @@ targets:
         # No non-exempt encryption → notarization / distribution doesn't stall
         # on the export-compliance question.
         ITSAppUsesNonExemptEncryption: false
+        # Sparkle auto-update feed (gh-pages) + EdDSA public key (private key is
+        # repo secret SPARKLE_EDDSA_PRIVATE_KEY — never commit it).
+        SUFeedURL: https://imjasonh.github.io/playground/macos/hello-macos/appcast.xml
+        SUPublicEDKey: pFvSb5Quq/HBMc9EvhTTD5zbctf7MCuAks0mXaZiZW0=
+        SUEnableAutomaticChecks: true
+        SUScheduledCheckInterval: 86400
 
   HelloMacTests:
     type: bundle.unit-test

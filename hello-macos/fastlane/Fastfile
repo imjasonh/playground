@@ -20,6 +20,7 @@ def require_release_secrets!
     ASC_KEY_ID
     ASC_ISSUER_ID
     ASC_API_KEY_P8
+    SPARKLE_EDDSA_PRIVATE_KEY
   ].select { |k| ENV[k].to_s.empty? }
   UI.user_error!("Missing release secrets: #{missing.join(', ')}. See docs/macos-sparkle-setup.md.") unless missing.empty?
 end
@@ -53,8 +54,6 @@ ensure
   File.delete(p12_path) if p12_path && File.exist?(p12_path)
 end
 
-# Read versions from the built app — xcodebuild -showBuildSettings can exit 66
-# after we switch the project to manual Developer ID signing.
 def marketing_and_build_versions(app_path)
   info = File.join(app_path, "Contents", "Info.plist")
   UI.user_error!("Missing Info.plist at #{info}") unless File.file?(info)
@@ -69,6 +68,43 @@ def marketing_and_build_versions(app_path)
   UI.user_error!("Empty CFBundleShortVersionString in #{info}") if marketing.empty?
   UI.user_error!("Empty CFBundleVersion in #{info}") if build.empty?
   [marketing, build]
+end
+
+# Download Sparkle's sign_update CLI (macOS binary) for EdDSA enclosure signing.
+def ensure_sign_update_bin!
+  tools_dir = File.join(Dir.tmpdir, "sparkle-tools-2.7.1")
+  bin = File.join(tools_dir, "bin", "sign_update")
+  return bin if File.executable?(bin)
+
+  FileUtils.mkdir_p(tools_dir)
+  tarball = File.join(Dir.tmpdir, "Sparkle-2.7.1.tar.xz")
+  unless File.file?(tarball)
+    sh(
+      "curl -fsSL -o #{Shellwords.escape(tarball)} " \
+      "https://github.com/sparkle-project/Sparkle/releases/download/2.7.1/Sparkle-2.7.1.tar.xz"
+    )
+  end
+  sh("tar -xJf #{Shellwords.escape(tarball)} -C #{Shellwords.escape(tools_dir)}")
+  UI.user_error!("sign_update missing after extracting Sparkle tools") unless File.executable?(bin)
+  bin
+end
+
+def sparkle_ed_signature(enclosure_path)
+  # New-format Sparkle seed: base64 of 32 raw bytes (not PEM). Must match
+  # SUPublicEDKey baked into the app Info.plist.
+  private_key = ENV.fetch("SPARKLE_EDDSA_PRIVATE_KEY").to_s.strip
+  UI.user_error!("SPARKLE_EDDSA_PRIVATE_KEY is empty") if private_key.empty?
+
+  sign_update = ensure_sign_update_bin!
+  # -p prints only the signature; --ed-key-file - reads the seed from stdin.
+  signature = sh(
+    "printf '%s' #{Shellwords.escape(private_key)} | " \
+    "#{Shellwords.escape(sign_update)} -p --ed-key-file - #{Shellwords.escape(enclosure_path)}",
+    log: false
+  ).strip
+  UI.user_error!("sign_update produced an empty signature") if signature.empty?
+  UI.success("Sparkle edSignature length=#{signature.length}")
+  signature
 end
 
 platform :mac do
@@ -153,33 +189,7 @@ platform :mac do
     enclosure_path = File.join(RELEASE_DIR, enclosure_name)
     FileUtils.mv(zip_path, enclosure_path)
 
-    ed_signature = ""
-    if ENV["SPARKLE_EDDSA_PRIVATE_KEY"].to_s.empty?
-      UI.important(
-        "SPARKLE_EDDSA_PRIVATE_KEY not set — appcast will omit edSignature. " \
-        "Generate keys per docs/macos-sparkle-setup.md."
-      )
-    else
-      key_file = File.join(Dir.tmpdir, "sparkle_eddsa_private.pem")
-      File.write(key_file, ENV.fetch("SPARKLE_EDDSA_PRIVATE_KEY"))
-      found = begin
-        sh(
-          "find \"#{ENV['HOME']}/Library/Developer/Xcode/DerivedData\" -name sign_update -type f 2>/dev/null | head -1",
-          log: false
-        ).strip
-      rescue StandardError
-        ""
-      end
-      if found.empty?
-        UI.important("sign_update binary not found — skipping edSignature for this build.")
-      else
-        ed_signature = sh(
-          "#{Shellwords.escape(found)} #{Shellwords.escape(enclosure_path)} --ed-key-file #{Shellwords.escape(key_file)}",
-          log: false
-        ).strip
-      end
-      File.delete(key_file) if File.exist?(key_file)
-    end
+    ed_signature = sparkle_ed_signature(enclosure_path)
 
     metadata = {
       "app" => "hello-macos",

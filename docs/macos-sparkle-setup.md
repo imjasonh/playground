@@ -6,8 +6,10 @@ This is the click-by-click companion to
 Sparkle appcast — the closest analog to iOS TestFlight auto-updates for a
 non–Mac App Store app.
 
-Until these secrets exist, CI still **tests** macOS apps and prints
-`macOS release skipped` (same idea as TestFlight without ASC secrets).
+Until Developer ID secrets exist, CI still **tests** macOS apps and prints
+`macOS release skipped` (same idea as TestFlight without ASC secrets). Once
+Developer ID is configured, release also requires `SPARKLE_EDDSA_PRIVATE_KEY`
+(the app embeds `SUPublicEDKey` and will reject unsigned enclosures).
 
 ## What you need
 
@@ -42,37 +44,58 @@ In the GitHub repo → **Settings → Secrets and variables → Actions**:
 | `APPLE_TEAM_ID` | Already used by iOS CI — reuse it |
 | `ASC_KEY_ID` / `ASC_ISSUER_ID` / `ASC_API_KEY_P8` | Already used for TestFlight — reused for `notarytool` |
 
-## Step 3 — Generate a Sparkle EdDSA keypair
+## Step 3 — Sparkle EdDSA keypair
 
-On a Mac with a Sparkle release checkout (or the `Sparkle` binary tools):
+`hello-macos` already embeds the public key (`SUPublicEDKey` in `project.yml`)
+and wires Sparkle (`SPUStandardUpdaterController` + **Check for Updates…**).
+CI signs each ZIP enclosure with the matching private seed.
+
+### If you are continuing the existing hello-macos key
+
+Add the repo secret `SPARKLE_EDDSA_PRIVATE_KEY` to the **base64 seed** that
+matches the checked-in public key
+`pFvSb5Quq/HBMc9EvhTTD5zbctf7MCuAks0mXaZiZW0=`. That seed is Sparkle’s
+“new format”: **base64 of 32 raw bytes** (one line, no PEM headers). Never
+commit it.
+
+### If you need a fresh keypair (new app or rotation)
+
+On a Mac with Sparkle’s binary tools (from a
+[Sparkle release](https://github.com/sparkle-project/Sparkle/releases) tarball):
 
 ```bash
-# From a Sparkle 2 distribution, or after resolving the SPM package once:
 ./bin/generate_keys
-# For CI, also write the private key to a file (do not commit it):
-./bin/generate_keys -f sparkle_eddsa_private.pem
+# Prints the public key; also stores the private seed for sign_update.
+# To export the private seed string for GitHub Actions:
+./bin/generate_keys -x   # or copy from Keychain / the tool’s output
 ```
 
-`generate_keys` prints a **public** key string. Put that into each macOS app's
-`project.yml` under `info.properties`:
+Sparkle 2’s preferred CI secret is the **new-format seed** (base64), not a PEM
+file. Put that string in `SPARKLE_EDDSA_PRIVATE_KEY`. Put the matching public
+key into the app’s `project.yml` under `info.properties`:
 
 ```yaml
 SUFeedURL: "https://imjasonh.github.io/playground/macos/<app>/appcast.xml"
 SUPublicEDKey: "<paste public key here>"
+SUEnableAutomaticChecks: true
 ```
 
-Add the **private** key file contents as the repo secret
-`SPARKLE_EDDSA_PRIVATE_KEY` (the whole PEM / key file body). Never commit it.
+Never commit the private seed. Rotating the key requires shipping a new app
+build that embeds the new public key — old installs keep verifying with the
+key baked into their binary.
 
-## Step 4 — Embed Sparkle in the app (when keys exist)
+## Step 4 — Embed Sparkle in the app
 
-For `hello-macos/` (and later apps):
+For `hello-macos/` this is already done. For a new macOS app:
 
 1. Add the Sparkle Swift package + product dependency in `project.yml`.
 2. Set `SUFeedURL` / `SUPublicEDKey` as above (must live in `project.yml` —
    XcodeGen regenerates Info.plist and will strip hand-edits).
-3. Create an `SPUStandardUpdaterController` in the SwiftUI app (or AppKit
-   delegate) so check-for-updates runs.
+3. Allow Sparkle’s helpers under Hardened Runtime
+   (`com.apple.security.cs.disable-library-validation` in entitlements).
+4. Create an `SPUStandardUpdaterController` (see
+   `hello-macos/Sources/SparkleUpdater.swift`) and a **Check for Updates…**
+   menu command.
 
 The **feed URL** shape we use:
 
@@ -80,34 +103,37 @@ The **feed URL** shape we use:
 https://imjasonh.github.io/playground/macos/<app-name>/appcast.xml
 ```
 
-Binaries (DMGs) are attached to **GitHub Releases**; the appcast on Pages points
-at those asset URLs. Sparkle itself is free — hosting is existing Pages +
-Releases.
+Binaries (ZIP enclosures) are attached to **GitHub Releases**; the appcast on
+Pages points at those asset URLs. Sparkle itself is free — hosting is existing
+Pages + Releases.
 
 ## Step 5 — Verify end-to-end
 
-1. Merge a change under `hello-macos/` to `main` (or bump
-   `CURRENT_PROJECT_VERSION`).
-2. Watch the **macOS** workflow: test → `fastlane beta` → notarize → publish.
-3. Confirm:
-   - A GitHub Release (or release asset) for the new version
+1. Confirm `SPARKLE_EDDSA_PRIVATE_KEY` is set (and matches `SUPublicEDKey`).
+2. Merge a change under `hello-macos/` to `main` (or bump
+   `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION`).
+3. Watch the **macOS** workflow: test → `fastlane beta` → notarize → publish.
+4. Confirm:
+   - A GitHub Release asset for the new version (e.g. `HelloMac-1.0.6.zip`)
    - `https://imjasonh.github.io/playground/macos/hello-macos/appcast.xml`
-     lists that version with a Sparkle `edSignature`
-4. Install the DMG once, bump the version again, confirm Sparkle offers the
-   update (or use the app's **Check for Updates** menu).
+     lists that version with `sparkle:edSignature`
+5. Install an older build, open **Hello Mac → Check for Updates…**, and confirm
+   Sparkle offers the new version.
 
 ## Troubleshooting
 
 | Symptom | Likely cause |
 |---------|----------------|
 | `macOS release skipped` warning | `MACOS_DEVELOPER_ID_P12` not set |
+| `Missing release secrets: SPARKLE_EDDSA_PRIVATE_KEY` | Secret not added (required once Sparkle is embedded) |
 | Gatekeeper blocks the app | Notarization failed or ticket not stapled |
 | Sparkle says signature invalid | Wrong / rotated EdDSA private key vs `SUPublicEDKey` |
 | Appcast 404 | Pages publish step didn't run or path mismatch |
 | `notarytool` auth error | ASC API key secrets missing or wrong team |
+| App crashes / Sparkle helpers blocked | Missing `disable-library-validation` entitlement |
 
 ## Security reminders
 
-- Do **not** commit `.p12`, Sparkle private keys, or `*.pem` key files.
+- Do **not** commit `.p12`, Sparkle private seeds, or `*.pem` key files.
 - Rotate the Sparkle key only if you also ship a new app build with the matching
   public key — old installs verify with the key baked into their binary.

@@ -89,10 +89,11 @@ mkdir -p "$feed_dir"
 feed_file="$work/gh-pages/$feed_path"
 
 pub_date=$(date -u +"%a, %d %b %Y %H:%M:%S +0000")
-sig_attr=""
-if [[ -n "$ed_signature" && "$ed_signature" != "null" ]]; then
-  sig_attr=" sparkle:edSignature=\"${ed_signature}\""
+if [[ -z "$ed_signature" || "$ed_signature" == "null" ]]; then
+  echo "ed_signature missing from sparkle-metadata.json — Sparkle installs require sparkle:edSignature." >&2
+  exit 1
 fi
+sig_attr=" sparkle:edSignature=\"${ed_signature}\""
 
 item=$(cat <<EOF
     <item>
