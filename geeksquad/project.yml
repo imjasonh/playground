@@ -51,6 +51,7 @@ targets:
       properties:
         CFBundleName: Geek Squad
         CFBundleDisplayName: Geek Squad
+        CFBundleIconName: AppIcon
         CFBundleExecutable: $(EXECUTABLE_NAME)
         CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
         CFBundleInfoDictionaryVersion: "6.0"
