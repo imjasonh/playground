@@ -242,6 +242,35 @@ final class TriageReportViewModelTests: XCTestCase {
         XCTAssertTrue(report.markdown.contains("High load"))
         XCTAssertTrue(report.markdown.contains("Likely cause"))
         XCTAssertTrue(report.markdown.contains("Quit heavy apps"))
+        XCTAssertTrue(report.markdown.contains("Proposed steps"))
+    }
+
+    func testMarkdownOmitsStepsWhenNoneActionable() {
+        let report = TriageReportViewModel(
+            headline: "AC Power Check",
+            likelyCause: "Mac is on AC power, no obvious power-related issues.",
+            evidence: ["Mac is drawing from AC power (pmset)."],
+            proposedSteps: ["No specific actions required for AC power.", "  ", "none"]
+        )
+        XCTAssertTrue(report.actionableSteps.isEmpty)
+        XCTAssertFalse(report.markdown.contains("Proposed steps"))
+        XCTAssertFalse(report.markdown.contains("No specific actions"))
+    }
+}
+
+final class RemediationCopyTests: XCTestCase {
+    func testFiltersPlaceholders() {
+        XCTAssertEqual(
+            RemediationCopy.actionable([
+                "Quit Cursor",
+                "No action required",
+                "",
+                "Open System Settings → Battery",
+            ]),
+            ["Quit Cursor", "Open System Settings → Battery"]
+        )
+        XCTAssertTrue(RemediationCopy.isNoOp("No specific actions required for AC power."))
+        XCTAssertFalse(RemediationCopy.isNoOp("Quit heavy apps and re-check."))
     }
 }
 

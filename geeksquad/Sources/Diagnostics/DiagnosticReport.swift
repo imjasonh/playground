@@ -7,12 +7,15 @@ struct DiagnosticReport: Equatable, Sendable {
     var body: String
     var proposedFixes: [String]
 
+    var actionableFixes: [String] { RemediationCopy.actionable(proposedFixes) }
+
     var markdown: String {
         var lines = ["## \(title)", "", body]
-        if !proposedFixes.isEmpty {
+        let fixes = actionableFixes
+        if !fixes.isEmpty {
             lines.append("")
             lines.append("### Proposed fixes (not applied)")
-            for (i, fix) in proposedFixes.enumerated() {
+            for (i, fix) in fixes.enumerated() {
                 lines.append("\(i + 1). \(fix)")
             }
         }

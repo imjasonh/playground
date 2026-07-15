@@ -33,20 +33,20 @@ struct TriageReportCard: View {
                 }
             }
 
-            if !report.proposedSteps.isEmpty {
+            if !report.actionableSteps.isEmpty {
                 HStack {
                     Text("Proposed steps (not applied)")
                         .font(.subheadline.weight(.semibold))
                     Spacer()
                     Button("Copy steps") {
-                        let text = report.proposedSteps.enumerated()
+                        let text = report.actionableSteps.enumerated()
                             .map { "\($0.offset + 1). \($0.element)" }
                             .joined(separator: "\n")
                         PasteboardCopy.string(text)
                     }
                     .controlSize(.small)
                 }
-                ForEach(Array(report.proposedSteps.enumerated()), id: \.offset) { index, step in
+                ForEach(Array(report.actionableSteps.enumerated()), id: \.offset) { index, step in
                     HStack(alignment: .top, spacing: 8) {
                         Text("\(index + 1).")
                             .foregroundStyle(.secondary)

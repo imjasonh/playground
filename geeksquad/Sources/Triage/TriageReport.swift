@@ -17,7 +17,7 @@ struct TriageReport: Equatable {
     @Guide(description: "Short evidence bullets citing tool findings")
     var evidence: [String]
 
-    @Guide(description: "Numbered actions the user can take; do not claim you applied them")
+    @Guide(description: "Actions the user can take in Settings/UI. Leave empty when nothing needs doing — never invent filler like “no action required”.")
     var proposedSteps: [String]
 }
 #endif
@@ -28,6 +28,9 @@ struct TriageReportViewModel: Equatable {
     var likelyCause: String
     var evidence: [String]
     var proposedSteps: [String]
+
+    /// Non-empty, non-placeholder steps suitable for the card / markdown.
+    var actionableSteps: [String] { RemediationCopy.actionable(proposedSteps) }
 
     var markdown: String {
         var lines = [
@@ -40,10 +43,13 @@ struct TriageReportViewModel: Equatable {
         for item in evidence {
             lines.append("- \(item)")
         }
-        lines.append("")
-        lines.append("**Proposed steps (not applied):**")
-        for (i, step) in proposedSteps.enumerated() {
-            lines.append("\(i + 1). \(step)")
+        let steps = actionableSteps
+        if !steps.isEmpty {
+            lines.append("")
+            lines.append("**Proposed steps (not applied):**")
+            for (i, step) in steps.enumerated() {
+                lines.append("\(i + 1). \(step)")
+            }
         }
         return lines.joined(separator: "\n")
     }

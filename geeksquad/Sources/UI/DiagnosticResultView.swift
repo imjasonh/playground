@@ -25,14 +25,14 @@ struct DiagnosticResultView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityIdentifier("report-body")
 
-                if !report.proposedFixes.isEmpty {
+                if !report.actionableFixes.isEmpty {
                     Divider()
                     HStack {
                         Text("Proposed fixes (not applied)")
                             .font(.headline)
                         Spacer()
                         Button("Copy fixes") {
-                            let text = report.proposedFixes.enumerated()
+                            let text = report.actionableFixes.enumerated()
                                 .map { "\($0.offset + 1). \($0.element)" }
                                 .joined(separator: "\n")
                             PasteboardCopy.string(text)
@@ -40,7 +40,7 @@ struct DiagnosticResultView: View {
                         .controlSize(.small)
                         .accessibilityIdentifier("copy-fixes")
                     }
-                    ForEach(Array(report.proposedFixes.enumerated()), id: \.offset) { index, fix in
+                    ForEach(Array(report.actionableFixes.enumerated()), id: \.offset) { index, fix in
                         HStack(alignment: .top, spacing: 8) {
                             Text("\(index + 1).")
                                 .foregroundStyle(.secondary)
