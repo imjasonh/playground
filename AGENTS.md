@@ -543,6 +543,6 @@ bundle exec fastlane test
 
 | Directory | Type | Tests |
 |-----------|------|-------|
-| `hello-macos/` | Minimal SwiftUI "Hello Mac" sample; Sparkle CD (follow-up) | XCTest via `fastlane test` |
+| `hello-macos/` | Minimal SwiftUI "Hello Mac" sample; notarized Sparkle CD + in-app updater | XCTest via `fastlane test` |
 
 See each app's `README.md` for app-specific rules and local development.

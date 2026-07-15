@@ -25,6 +25,8 @@ fastlane/screenshots/**/*.png
 *.p8
 *.p12
 *.cer
+sparkle_eddsa*
+*.pem
 
 # Ruby / bundler
 vendor/bundle/

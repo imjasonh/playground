@@ -82,8 +82,8 @@ directories** — one app per directory, discovered by an XcodeGen `project.yml`
 that declares `platform: macOS`:
 
 - **[`hello-macos/`](hello-macos/)** — minimal SwiftUI "Hello Mac" sample (the
-  macOS counterpart of static `hello/`). Proves discovery + CI; Sparkle CD lands
-  in a follow-up.
+  macOS counterpart of static `hello/`). Discovery, CI, notarized Sparkle CD,
+  and in-app **Check for Updates…** against the gh-pages appcast.
 
 See [`docs/macos-sparkle-design.md`](docs/macos-sparkle-design.md) for the macOS
 release design (Developer ID + notarization + Sparkle appcast on GitHub Pages).
