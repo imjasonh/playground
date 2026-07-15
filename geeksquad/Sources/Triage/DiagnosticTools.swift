@@ -10,6 +10,8 @@ enum TriageInstructions {
         performance, and common local functionality issues with live tools.
         The user describes what they see and what they want fixed.
 
+        \(TriageAudience.guidance)
+
         Scope (use tools — never invent measurements):
         - Network/config: path_status, default_route, dns_config, interfaces, \
         dns_lookup, reachability, http_probe, proxy_config, vpn_interfaces, \

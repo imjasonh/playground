@@ -129,7 +129,7 @@ final class TriageChatModel: ObservableObject {
             messages.append(
                 ChatMessage(
                     role: .system,
-                    text: "Ask what’s going wrong — I measure network, performance, login agents, disk hotspots, ports, crashes, and battery/power on this Mac. I propose steps; I won’t change settings or kill processes."
+                    text: "Ask what’s going wrong — I measure network, performance, login agents, disk hotspots, ports, crashes, and battery/power on this Mac. I’ll suggest practical steps you can do in Settings or Activity Monitor; I won’t change settings, kill processes, or recommend hardware upgrades."
                 )
             )
         }

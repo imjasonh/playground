@@ -26,8 +26,10 @@ struct TriageReportCard: View {
                 Text("Evidence")
                     .font(.subheadline.weight(.semibold))
                 ForEach(Array(report.evidence.enumerated()), id: \.offset) { _, item in
-                    Text("• \(item)")
-                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(alignment: .top, spacing: 4) {
+                        Text("•")
+                        MarkdownText(source: item, font: .body)
+                    }
                 }
             }
 
@@ -48,9 +50,7 @@ struct TriageReportCard: View {
                     HStack(alignment: .top, spacing: 8) {
                         Text("\(index + 1).")
                             .foregroundStyle(.secondary)
-                        Text(step)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                        MarkdownText(source: step, font: .body)
                         Button {
                             PasteboardCopy.string(step)
                         } label: {
@@ -73,8 +73,7 @@ struct TriageReportCard: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title)
                 .font(.subheadline.weight(.semibold))
-            Text(body)
-                .fixedSize(horizontal: false, vertical: true)
+            MarkdownText(source: body, font: .body)
         }
     }
 }

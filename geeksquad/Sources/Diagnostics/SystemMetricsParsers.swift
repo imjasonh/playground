@@ -156,7 +156,7 @@ enum VmStatParser {
         var fixes: [String] = []
         if stats.swapouts > 1000 || stats.compressedMegabytes > 1024 {
             fixes.append(
-                "Memory looks pressured (compressor/swap activity). Quit heavy apps, or add RAM if this is a frequent state. Check top_memory / process_usage for the biggest consumers."
+                "Memory looks pressured (compressor/swap activity). Quit heavy apps and re-check; look at top_memory / process_usage for the biggest consumers. (Don’t suggest upgrading RAM — that’s not practical on most Macs.)"
             )
         } else if stats.freeMegabytes < 256 && stats.compressedMegabytes > 512 {
             fixes.append("Free RAM is low with notable compression — close unused apps and re-check.")

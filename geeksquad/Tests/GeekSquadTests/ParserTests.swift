@@ -256,3 +256,16 @@ final class ProcessListParserSpotlightTests: XCTestCase {
         XCTAssertTrue(ProcessListParser.isSpotlightRelated(row))
     }
 }
+
+final class ActivityMonitorLinksTests: XCTestCase {
+    func testLinkifiesBarePhrase() {
+        let linked = ActivityMonitorLinks.linkify("Open Activity Monitor and check CPU.")
+        XCTAssertTrue(linked.contains("[Activity Monitor](\(ActivityMonitorLinks.markdownURL))"))
+        XCTAssertTrue(linked.contains("and check CPU."))
+    }
+
+    func testDoesNotDoubleLink() {
+        let already = "[Activity Monitor](\(ActivityMonitorLinks.markdownURL))"
+        XCTAssertEqual(ActivityMonitorLinks.linkify(already), already)
+    }
+}

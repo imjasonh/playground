@@ -17,6 +17,13 @@ final class TriageInstructionsTests: XCTestCase {
         XCTAssertTrue(text.localizedCaseInsensitiveContains("disk_space"))
         XCTAssertTrue(text.localizedCaseInsensitiveContains("listening_ports"))
     }
+
+    func testAudienceLimitsHardwareUpgrades() {
+        XCTAssertTrue(TriageAudience.guidance.localizedCaseInsensitiveContains("RAM"))
+        XCTAssertTrue(TriageAudience.guidance.localizedCaseInsensitiveContains("Do NOT recommend"))
+        XCTAssertTrue(TriageInstructions.text.contains(TriageAudience.guidance))
+        XCTAssertTrue(TriageGate.instructions.contains(TriageAudience.guidance))
+    }
 }
 
 final class TriageGateTests: XCTestCase {
