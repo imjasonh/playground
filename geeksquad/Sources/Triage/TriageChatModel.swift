@@ -61,7 +61,7 @@ final class TriageChatModel: ObservableObject {
     static let scenarioPrompts: [(title: String, prompt: String)] = [
         (
             "Can't load websites",
-            "I can't load websites in my browser. Wi‑Fi shows connected. Please diagnose routing, DNS, proxy, and connectivity, then propose fixes I can apply myself."
+            "I can't load websites in my browser. Wi‑Fi shows connected. Please diagnose routing, DNS, proxy, and connectivity, then propose fixes."
         ),
         (
             "VPN but broken",
@@ -69,7 +69,7 @@ final class TriageChatModel: ObservableObject {
         ),
         (
             "DNS feels wrong",
-            "DNS seems broken — names won't resolve or resolve oddly. Inspect DNS config, try a lookup, and propose fixes. Don't change anything yourself."
+            "DNS seems broken — names won't resolve or resolve oddly. Inspect DNS config, try a lookup, and propose fixes."
         ),
         (
             "Only some sites fail",
@@ -77,11 +77,11 @@ final class TriageChatModel: ObservableObject {
         ),
         (
             "Captive portal / hotel Wi‑Fi",
-            "I might be behind a captive portal (hotel/cafe Wi‑Fi). Probe connectivity and propose how I should complete login — don't change settings for me."
+            "I might be behind a captive portal (hotel/cafe Wi‑Fi). Probe connectivity and propose how I should complete login."
         ),
         (
             "App using too much memory",
-            "An app feels slow — please measure its live memory and CPU on this Mac (include helper processes), tell me if usage looks high, and propose what I should try. Don’t kill anything."
+            "An app feels slow — please measure its live memory and CPU on this Mac (include helper processes), tell me if usage looks high, and propose what I should try."
         ),
         (
             "Mac feels slow",
@@ -89,15 +89,15 @@ final class TriageChatModel: ObservableObject {
         ),
         (
             "Port already in use",
-            "Something won’t start because a TCP port is already in use (e.g. 3000). Show which process is listening and propose what I should do — don’t kill anything."
+            "Something won’t start because a TCP port is already in use (e.g. 3000). Show which process is listening and propose what I should do."
         ),
         (
             "Slow after login",
-            "This Mac feels slow right after login. Check login/launch agents, memory pressure, top CPU, and propose what I should disable — don’t change anything yourself."
+            "This Mac feels slow right after login. Check login/launch agents, memory pressure, top CPU, and propose what I should disable."
         ),
         (
             "What's filling my disk?",
-            "Disk space feels tight. Check free space and estimate Downloads/Caches and other common user folders, then propose what to clean — don’t delete anything."
+            "Disk space feels tight. Check free space and estimate Downloads/Caches and other common user folders, then propose what to clean."
         ),
     ]
 
@@ -131,7 +131,7 @@ final class TriageChatModel: ObservableObject {
             messages.append(
                 ChatMessage(
                     role: .system,
-                    text: "Ask what’s going wrong — I’ll run the read-only checks myself (network, performance, disk, ports, crashes, battery), then suggest practical Settings/Activity Monitor steps. I won’t change settings, kill processes, or recommend hardware upgrades."
+                    text: "Ask what’s going wrong — I’ll run the read-only checks myself (network, performance, disk, ports, crashes, battery), then suggest practical Settings/Activity Monitor steps. I won’t recommend hardware upgrades."
                 )
             )
         }
@@ -193,9 +193,9 @@ final class TriageChatModel: ObservableObject {
         else { return [] }
         return [
             ("Recheck", "Please re-run the most relevant live checks for my last question and tell me what changed."),
-            ("Disk + folders", "Check disk free space and user storage hotspots (Downloads/Caches), then propose what to clean — don’t delete anything."),
+            ("Disk + folders", "Check disk free space and user storage hotspots (Downloads/Caches), then propose what to clean."),
             ("Login agents", "List launch agents / login-related plists and say if the count looks high for a slow Mac."),
-            ("Battery", "Check whether this Mac is on battery or AC and if that could explain slowness — don’t change settings."),
+            ("Battery", "Check whether this Mac is on battery or AC and if that could explain slowness."),
         ]
     }
 
@@ -222,18 +222,22 @@ final class TriageChatModel: ObservableObject {
             defer { isResponding = false }
 
             // Skip the no-tools gate when heuristics (or scenario chips) say we
-            // can measure something live — including slow apps / memory / CPU.
+            // can measure something live — including Recheck / “what changed”.
             if !shouldUseDiagnosticTools(text) {
                 do {
-                    try await streamPlainAnswer(to: text, instructions: TriageGate.instructions)
-                    return
+                    let answered = try await streamPlainAnswer(
+                        to: text,
+                        instructions: TriageGate.instructions
+                    )
+                    if answered { return }
+                    // Model replied DIAGNOSE (or empty) — fall through to tools.
                 } catch {
                     // Gate/stream failed — fall through to diagnostics / failure mapping.
                 }
             }
 
             // Fresh session per diagnostic turn (4k context; tools are expensive).
-            let focus = TriageHeuristics.focus(for: text) ?? .general
+            let focus = focusForTurn(text)
             recreateLanguageSession(focus: focus)
             guard let session = sessionBox as? LanguageModelSession else { return }
             let hub = toolHubBox as? ToolActivityHub
@@ -287,18 +291,46 @@ final class TriageChatModel: ObservableObject {
         Self.scenarioPrompts.contains { $0.prompt == text }
     }
 
+    /// Prefer keywords on this turn; for Recheck, reuse focus from an earlier user turn.
+    private func focusForTurn(_ text: String) -> TriageHeuristics.Focus {
+        if let focus = TriageHeuristics.focus(for: text) {
+            return focus
+        }
+        if TriageHeuristics.isRecheckFollowUp(text) {
+            for message in messages.reversed() {
+                guard message.role == .user, message.text != text else { continue }
+                if let focus = TriageHeuristics.focus(for: message.text) {
+                    return focus
+                }
+            }
+        }
+        return .general
+    }
+
     /// Fresh FM sessions don't keep chat history — pack recent turns so follow-ups
     /// like “is it using too much memory?” still resolve to the named app.
     private func diagnosticPrompt(forLatestUserText latest: String) -> String {
+        let recheck = TriageHeuristics.isRecheckFollowUp(latest)
         let recent = messages.suffix(12).compactMap { message -> String? in
             switch message.role {
             case .user: return "User: \(message.text)"
             case .assistant:
                 if let report = message.triageReport {
-                    return "Geek Squad: \(report.headline) — \(report.likelyCause)"
+                    // Full prior report so “what changed” can compare evidence.
+                    return "Geek Squad previous report:\n\(report.markdown)"
                 }
-                return "Geek Squad: \(message.text)"
-            case .tool, .system: return nil
+                let clipped = message.text.count > 600
+                    ? String(message.text.prefix(600)) + "…"
+                    : message.text
+                return "Geek Squad: \(clipped)"
+            case .tool:
+                guard recheck else { return nil }
+                let label = message.toolName.map { "Prior tool (\($0))" } ?? "Prior tool"
+                let clipped = message.text.count > 500
+                    ? String(message.text.prefix(500)) + "…"
+                    : message.text
+                return "\(label):\n\(clipped)"
+            case .system: return nil
             }
         }
         var lines: [String] = [
@@ -307,13 +339,48 @@ final class TriageChatModel: ObservableObject {
         lines.append(contentsOf: recent)
         lines.append("")
         lines.append(
+            "You have this chat history — never claim you cannot see past questions."
+        )
+        lines.append(
             "Use tools for live facts — do not ask the user to run Terminal diagnostics. If the user says “it” or omits the app name, reuse the app from earlier turns (e.g. process_usage query: Cursor)."
         )
+        if recheck {
+            lines.append(
+                "This is a recheck: call the same kinds of tools again and say what changed versus the previous report/evidence above."
+            )
+        }
         lines.append(
             "Fill the triage report from tool evidence only. proposedSteps must be Settings/UI remediations the user can do — never Terminal read-only commands Geek Squad could have run as tools."
         )
         lines.append("Latest user message: \(latest)")
         return lines.joined(separator: "\n")
+    }
+
+    /// Pack recent turns for the no-tools path so follow-ups aren't answered blind.
+    private func plainPrompt(forLatestUserText latest: String) -> String {
+        let prior = messages.dropLast().suffix(8).compactMap { message -> String? in
+            switch message.role {
+            case .user: return "User: \(message.text)"
+            case .assistant:
+                if let report = message.triageReport {
+                    return "Geek Squad: \(report.headline) — \(report.likelyCause)"
+                }
+                let clipped = message.text.count > 400
+                    ? String(message.text.prefix(400)) + "…"
+                    : message.text
+                return "Geek Squad: \(clipped)"
+            case .tool, .system: return nil
+            }
+        }
+        guard !prior.isEmpty else { return latest }
+        return """
+            Recent chat (for context; answer the latest user message):
+            \(prior.joined(separator: "\n"))
+
+            You have this chat history — never claim you cannot see past questions in this conversation. If the user needs fresh live measurements, reply \(TriageGate.diagnoseSentinel).
+
+            Latest user message: \(latest)
+            """
     }
 
     private func replaceMessage(id: UUID, with message: ChatMessage) {
@@ -337,14 +404,17 @@ final class TriageChatModel: ObservableObject {
     }
 
     #if canImport(FoundationModels)
+    /// Streams a no-tools reply. Returns `false` when the model asked for diagnostics
+    /// (`DIAGNOSE`) so the caller can fall through to the tool path.
     @available(macOS 26.0, *)
-    private func streamPlainAnswer(to text: String, instructions: String) async throws {
+    @discardableResult
+    private func streamPlainAnswer(to text: String, instructions: String) async throws -> Bool {
         let session = LanguageModelSession(instructions: instructions)
         let id = UUID()
         streamingAssistantId = id
         defer { streamingAssistantId = nil }
         messages.append(ChatMessage(id: id, role: .assistant, text: ""))
-        let stream = session.streamResponse(to: text)
+        let stream = session.streamResponse(to: plainPrompt(forLatestUserText: text))
         for try await snapshot in stream {
             let textOut = snapshot.content.trimmingCharacters(in: .whitespacesAndNewlines)
             replaceMessage(
@@ -352,14 +422,19 @@ final class TriageChatModel: ObservableObject {
                 with: ChatMessage(id: id, role: .assistant, text: textOut.isEmpty ? "…" : textOut)
             )
         }
-        if let last = messages.first(where: { $0.id == id }),
-           last.text.isEmpty || last.text == "…"
-        {
-            replaceMessage(
-                id: id,
-                with: ChatMessage(id: id, role: .assistant, text: "(No response text.)")
-            )
+        if let last = messages.first(where: { $0.id == id }) {
+            if TriageGate.needsDiagnostics(last.text) {
+                messages.removeAll { $0.id == id }
+                return false
+            }
+            if last.text.isEmpty || last.text == "…" {
+                replaceMessage(
+                    id: id,
+                    with: ChatMessage(id: id, role: .assistant, text: "(No response text.)")
+                )
+            }
         }
+        return true
     }
 
     @available(macOS 26.0, *)

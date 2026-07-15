@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Renders model output as Markdown when possible; falls back to plain text.
-/// Bare “Activity Monitor” mentions become tappable links that open the app.
+/// “Activity Monitor” and common System Settings paths become tappable deep links.
 struct MarkdownText: View {
     let source: String
     var font: Font = .body
@@ -14,7 +14,7 @@ struct MarkdownText: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
             .environment(\.openURL, OpenURLAction { url in
-                if AppLauncher.handleGeekSquadURL(url) {
+                if AppLauncher.handleOpenURL(url) {
                     return .handled
                 }
                 return .systemAction
@@ -22,7 +22,7 @@ struct MarkdownText: View {
     }
 
     private var attributed: AttributedString {
-        let linked = ActivityMonitorLinks.linkify(source)
+        let linked = MarkdownDeepLinks.linkify(source)
         // Prefer full Markdown so **bold**, lists, and headings render.
         if let parsed = try? AttributedString(markdown: linked) {
             return parsed

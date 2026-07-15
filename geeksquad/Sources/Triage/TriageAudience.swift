@@ -30,5 +30,8 @@ enum TriageAudience {
         app, check Activity Monitor to confirm CPU/memory.
         - When you mention Activity Monitor, write the plain phrase “Activity Monitor” \
         (the app turns that into a tappable link).
+        - When you mention System Settings, write the full path with arrows, e.g. \
+        “System Settings → General → Login Items & Extensions” or \
+        “System Settings → Battery” (the app turns those paths into Settings deep links).
         """
 }

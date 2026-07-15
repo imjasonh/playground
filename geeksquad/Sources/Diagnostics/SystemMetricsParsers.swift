@@ -226,7 +226,7 @@ enum ListeningPortsParser {
             lines.append("  …and \(filtered.count - 40) more")
         }
         var fixes: [String] = [
-            "If a dev server won’t start because the port is busy, quit the listed process (Activity Monitor) or choose another port. Geek Squad does not kill processes."
+            "If a dev server won’t start because the port is busy, quit the listed process (Activity Monitor) or choose another port."
         ]
         if let filterPort, !filtered.isEmpty {
             fixes.insert(

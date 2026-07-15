@@ -188,6 +188,9 @@ No TCC prompt on launch. No Full Disk Access required for v1.
 
 - Instructions: ground claims in tool results; never invent DNS/IP facts.
 - v1 tools are read-only. Proposed fixes are text for the human.
+  **Hard rule for coding agents:** see [`geeksquad/AGENTS.md`](../geeksquad/AGENTS.md) —
+  tools available to the Geek Squad agent must never take action, only read
+  and diagnose. Capability is enforced by the tool surface.
 - No telemetry of prompts/tool results in v1.
 
 ---

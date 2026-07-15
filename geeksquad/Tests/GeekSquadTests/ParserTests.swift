@@ -269,3 +269,61 @@ final class ActivityMonitorLinksTests: XCTestCase {
         XCTAssertEqual(ActivityMonitorLinks.linkify(already), already)
     }
 }
+
+final class SettingsDeepLinksTests: XCTestCase {
+    func testLinkifiesLoginItemsPath() {
+        let text =
+            "Check System Settings → General → Login Items & Extensions for App background items."
+        let linked = SettingsDeepLinks.linkify(text)
+        XCTAssertTrue(
+            linked.contains(
+                "[System Settings → General → Login Items & Extensions](x-apple.systempreferences:com.apple.LoginItems-Settings.extension)"
+            ),
+            linked
+        )
+        XCTAssertTrue(
+            linked.contains(
+                "[App background items](x-apple.systempreferences:com.apple.LoginItems-Settings.extension?BackgroundItems)"
+            ),
+            linked
+        )
+        // Shorter “Login Items & Extensions” must not nest inside the long-path link.
+        XCTAssertFalse(linked.contains("→ [Login Items"), linked)
+        // Nested Login Items path must win over a bare “System Settings → General”.
+        XCTAssertFalse(
+            linked.contains("](x-apple.systempreferences:com.apple.systempreferences.GeneralSettings)"),
+            linked
+        )
+    }
+
+    func testLinkifiesBatteryAndDoesNotDoubleLink() {
+        let once = SettingsDeepLinks.linkify("Open System Settings → Battery.")
+        XCTAssertTrue(once.contains("com.apple.Battery-Settings.extension"))
+        XCTAssertEqual(SettingsDeepLinks.linkify(once), once)
+    }
+
+    func testLinkifiesNetworkDnsVariants() {
+        let withDetails = SettingsDeepLinks.linkify(
+            "Open System Settings → Network → Details → DNS and add a resolver."
+        )
+        XCTAssertTrue(withDetails.contains("Network-Settings.extension?DNS"), withDetails)
+
+        let short = SettingsDeepLinks.linkify("Open System Settings → Network → DNS next.")
+        XCTAssertTrue(
+            short.contains(
+                "[System Settings → Network → DNS](x-apple.systempreferences:com.apple.Network-Settings.extension?DNS)"
+            ),
+            short
+        )
+        // Longer DNS path must not leave a dangling Network-only link for the same span.
+        XCTAssertFalse(short.contains("[System Settings → Network]("), short)
+    }
+
+    func testMarkdownDeepLinksCombinesSettingsAndActivityMonitor() {
+        let text =
+            "Review System Settings → General → Login Items & Extensions, then open Activity Monitor."
+        let linked = MarkdownDeepLinks.linkify(text)
+        XCTAssertTrue(linked.contains("LoginItems-Settings.extension"))
+        XCTAssertTrue(linked.contains(ActivityMonitorLinks.markdownURL))
+    }
+}

@@ -551,4 +551,11 @@ bundle exec fastlane test
 | `hello-macos/` | Minimal SwiftUI "Hello Mac" sample; notarized Sparkle CD + in-app updater | XCTest via `fastlane test` |
 | `geeksquad/` | Geek Squad — on-device chat triage + Manual Toolbox; Sparkle CD | XCTest via `fastlane test` |
 
+> **`geeksquad` has its own agent guide:** read
+> [`geeksquad/AGENTS.md`](geeksquad/AGENTS.md) before working in that
+> directory. In particular, tools available to the Geek Squad agent (and the
+> shared Manual Toolbox / menu-bar diagnostics behind them) **must never take
+> action** — only read and diagnose. Propose remediations for the human; do
+> not add mutating tools.
+
 See each app's `README.md` for app-specific rules and local development.

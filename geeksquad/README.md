@@ -15,6 +15,7 @@ Bundle ID: `io.github.imjasonh.geeksquad`
 
 ```
 geeksquad/
+├── AGENTS.md            # agent rules (read-only tools)
 ├── project.yml
 ├── GeekSquad.entitlements
 ├── Sources/
@@ -26,6 +27,8 @@ geeksquad/
 ├── fastlane/
 └── README.md
 ```
+
+Agent rules (especially **tools must never take action**): [`AGENTS.md`](AGENTS.md).
 
 ## Local development
 
