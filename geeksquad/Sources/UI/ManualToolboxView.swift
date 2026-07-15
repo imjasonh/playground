@@ -84,7 +84,7 @@ struct ManualToolboxView: View {
                 Spacer(minLength: 0)
             }
             .padding(20)
-            .onChange(of: selection) { _, newValue in
+            .onChange(of: self.selection) { _, newValue in
                 report = nil
                 errorText = nil
                 if let newValue, newValue.needsHostField {
