@@ -32,9 +32,18 @@ open HelloMac.xcodeproj
 bundle exec fastlane test
 ```
 
-## CI
+## CI / releases
 
 `.github/workflows/macos.yml` discovers changed macOS apps (top-level dirs whose
 `project.yml` declares `platform: macOS`), runs `xcodegen` + `fastlane test` on
-`macos-latest`, and (once release secrets exist) will ship notarized Sparkle
-updates from `main`. See [`docs/macos-sparkle-design.md`](../docs/macos-sparkle-design.md).
+`macos-latest`, and on `main` with Developer ID secrets runs `fastlane beta`
+(notarize) then publishes a GitHub Release + Sparkle appcast on `gh-pages`.
+
+- Design: [`docs/macos-sparkle-design.md`](../docs/macos-sparkle-design.md)
+- Setup (certs / secrets / Sparkle keys): [`docs/macos-sparkle-setup.md`](../docs/macos-sparkle-setup.md)
+
+Feed URL (once publishing has run):
+
+```text
+https://imjasonh.github.io/playground/macos/hello-macos/appcast.xml
+```

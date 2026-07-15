@@ -9,6 +9,9 @@ concurrency:
   group: macos-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: write
+
 jobs:
   # Cheap Linux job: figure out whether any macOS app changed before paying for
   # a macOS runner. Mirrors ios.yml / discover-changed-apps.sh.
@@ -45,8 +48,7 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
-      # Release (notarize + Sparkle) lands in a follow-up PR. Until those secrets
-      # and the fastlane beta lane exist, CI always tests only.
+      # Release (notarize + Sparkle) runs on main when Developer ID secrets exist.
       - name: Determine mode
         id: mode
         env:
@@ -58,13 +60,15 @@ jobs:
             echo "deploy=false" >> "$GITHUB_OUTPUT"
           fi
           if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ] && [ -z "$MACOS_DEVELOPER_ID_P12" ]; then
-            echo "::warning title=macOS release skipped::Developer ID / Sparkle secrets are not configured; ran tests only. See docs/macos-sparkle-design.md."
+            echo "::warning title=macOS release skipped::Developer ID / Sparkle secrets are not configured; ran tests only. See docs/macos-sparkle-setup.md."
           fi
 
       - name: Test and (on main) ship changed macOS apps
         env:
           MACOS_APPS: ${{ needs.discover.outputs.macos }}
           DEPLOY: ${{ steps.mode.outputs.deploy }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}

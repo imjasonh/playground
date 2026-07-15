@@ -1,10 +1,15 @@
 # Design: macOS apps with Sparkle CD
 
 > **Status:** discovery + test CI for macOS apps is implemented (`hello-macos/`,
-> `macos.yml`). **Release** (Developer ID, notarization, Sparkle appcast) is
-> sketched here and lands in a follow-up PR. Until release secrets exist, pushes
-> to `main` test only and warn that ship was skipped — same pattern as iOS
+> `macos.yml`). **Release plumbing** (`fastlane beta`, `publish-macos-sparkle.sh`,
+> setup guide) is in-repo; shipping activates once Developer ID / Sparkle secrets
+> exist (see [`macos-sparkle-setup.md`](macos-sparkle-setup.md)). Until then,
+> pushes to `main` test only and warn that ship was skipped — same pattern as iOS
 > TestFlight without ASC secrets.
+>
+> **Still follow-up:** embed the Sparkle framework + `SUPublicEDKey` in the app
+> after generating keys (setup Step 3–4), so installed builds auto-check the
+> appcast. Packaging + notarization + appcast publish do not require that yet.
 
 ## 1. Goals & how they map to what we already do
 

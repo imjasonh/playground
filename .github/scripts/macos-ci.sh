@@ -6,8 +6,8 @@
 #   1. xcodegen generate          (build the .xcodeproj from project.yml)
 #   2. bundle install             (fastlane, pinned by the app's Gemfile)
 #   3. bundle exec fastlane test  (unit tests on macOS)
-#   4. bundle exec fastlane beta  (only when DEPLOY=true → notarize + Sparkle;
-#      the beta lane lands in a follow-up; until then DEPLOY stays false)
+#   4. bundle exec fastlane beta  (only when DEPLOY=true → notarize + Sparkle zip)
+#   5. publish-macos-sparkle.sh   (GitHub Release + gh-pages appcast)
 set -uo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -55,10 +55,14 @@ for app in "${apps[@]}"; do
       set -euo pipefail
       cd "$app"
       bundle exec fastlane beta
+      RELEASE_DIR="$repo_root/$app/fastlane/release" \
+        REPO="${GITHUB_REPOSITORY:?}" \
+        GH_TOKEN="${GH_TOKEN:?}" \
+        bash "$repo_root/.github/scripts/publish-macos-sparkle.sh"
     ); then
       echo "${app}: release published"
     else
-      echo "::error title=macOS release failed::${app}: fastlane beta"
+      echo "::error title=macOS release failed::${app}: fastlane beta / publish"
       result=1
     fi
     echo "::endgroup::"
