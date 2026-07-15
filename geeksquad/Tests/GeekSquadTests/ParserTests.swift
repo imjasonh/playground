@@ -44,11 +44,12 @@ final class HostsFileParserTests: XCTestCase {
         XCTAssertTrue(summary.surprising.contains { $0.names.contains("broken.example.com") })
         XCTAssertTrue(summary.surprising.contains { $0.names.contains("intranet.corp") })
         // Default localhost-only loopback lines should not be "surprising".
-        XCTAssertFalse(
-            summary.surprising.contains {
-                $0.address == "127.0.0.1" && $0.names.map(\.lowercased) == ["localhost"]
-            }
-        )
+        let localhostOnly = summary.surprising.contains { entry in
+            guard entry.address == "127.0.0.1" else { return false }
+            let names = entry.names.map { $0.lowercased() }
+            return names == ["localhost"]
+        }
+        XCTAssertFalse(localhostOnly)
     }
 }
 
