@@ -130,3 +130,64 @@ final class ProcessListParserTests: XCTestCase {
         XCTAssertTrue(summary.body.contains("No running processes matched"))
     }
 }
+
+final class DiskSpaceParserTests: XCTestCase {
+    func testParsesDfKP() {
+        let text = """
+        Filesystem 1024-blocks Used Available Capacity Mounted on
+        /dev/disk3s1s1 488245288 400000000 50000000 89% /
+        /dev/disk3s5 488245288 100000000 300000000 25% /System/Volumes/Data
+        """
+        let volumes = DiskSpaceParser.parse(text)
+        XCTAssertEqual(volumes.count, 2)
+        XCTAssertEqual(volumes[0].mountPoint, "/")
+        XCTAssertEqual(volumes[0].capacityPercent, 89)
+        let summary = DiskSpaceParser.summarize(volumes)
+        XCTAssertTrue(summary.body.contains("/"))
+        XCTAssertFalse(summary.proposedFixes.isEmpty)
+    }
+}
+
+final class VmStatParserTests: XCTestCase {
+    func testParsesVmStat() {
+        let text = """
+        Mach Virtual Memory Statistics: (page size of 16384 bytes)
+        Pages free:                               1000.
+        Pages active:                             2000.
+        Pages inactive:                           3000.
+        Pages speculative:                         100.
+        Pages wired down:                         4000.
+        Pages occupied by compressor:             5000.
+        Swapins:                                   10.
+        Swapouts:                                  20.
+        """
+        let stats = VmStatParser.parse(text)
+        XCTAssertEqual(stats?.pageSizeBytes, 16_384)
+        XCTAssertEqual(stats?.pagesFree, 1000)
+        XCTAssertEqual(stats?.pagesWired, 4000)
+        XCTAssertEqual(stats?.swapouts, 20)
+    }
+}
+
+final class ListeningPortsParserTests: XCTestCase {
+    func testParsesLsofListen() {
+        let text = """
+        COMMAND   PID USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
+        Cursor    123 me     10u  IPv4 0xabc      0t0  TCP *:3000 (LISTEN)
+        postgres  456 me     5u   IPv6 0xdef      0t0  TCP [::1]:5432 (LISTEN)
+        """
+        let ports = ListeningPortsParser.parse(text)
+        XCTAssertEqual(ports.count, 2)
+        XCTAssertEqual(ports[0].address, "*:3000")
+        let filtered = ListeningPortsParser.summarize(ports, filterPort: 3000)
+        XCTAssertTrue(filtered.body.contains("3000"))
+        XCTAssertTrue(filtered.body.contains("Cursor"))
+    }
+}
+
+final class CrashReportsScannerTests: XCTestCase {
+    func testSummarizeEmpty() {
+        let summary = CrashReportsScanner.summarize([], query: "Cursor")
+        XCTAssertTrue(summary.body.contains("No recent crash reports matched"))
+    }
+}

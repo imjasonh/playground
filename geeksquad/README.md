@@ -1,6 +1,7 @@
 # geeksquad — Geek Squad
 
-Offline Mac triage for **network/config** and **app CPU/memory**. **Chat** with
+Offline Mac triage for **network/config**, **performance** (CPU/memory/disk/load),
+and common local functionality gaps (port conflicts, crash reports). **Chat** with
 an on-device Foundation Model that calls local diagnostic tools; **Toolbox** for
 the same checks manually. Proposes fixes — never applies them or kills processes.
 Shipped via Developer ID + Sparkle CD (same path as [`hello-macos/`](../hello-macos/)).
