@@ -7,8 +7,10 @@ require "shellwords"
 APP_SCHEME = "HelloMac"
 XCODEPROJ = "HelloMac.xcodeproj"
 APP_IDENTIFIER = ENV.fetch("APP_BUNDLE_ID", "io.github.imjasonh.hello-macos")
-# Artifacts written for the publish-macos-sparkle.sh step / GH Release upload.
-RELEASE_DIR = File.expand_path("fastlane/release")
+# Fastfile lives in <app>/fastlane/; resolve release dir from there so we don't
+# depend on Fastlane's load-time cwd (which produced fastlane/fastlane/release).
+PROJECT_ROOT = File.expand_path("..", __dir__)
+RELEASE_DIR = File.join(PROJECT_ROOT, "fastlane", "release")
 
 def require_release_secrets!
   missing = %w[
@@ -110,14 +112,25 @@ platform :mac do
     app_path = File.join(RELEASE_DIR, "#{APP_SCHEME}.app")
     UI.user_error!("Expected #{app_path} after build_mac_app") unless File.directory?(app_path)
 
+    # Confirm Developer ID signing before spending a notarization upload.
+    identity = sh(
+      "codesign -dv --verbose=2 #{Shellwords.escape(app_path)} 2>&1 | awk -F= '/^Authority=Developer ID Application/{print; exit}'",
+      log: false
+    ).strip
+    UI.user_error!("App is not signed with Developer ID Application: #{app_path}") if identity.empty?
+    UI.success("Signed as #{identity}")
+
     # Zip for notarization upload; stapler works on the .app afterward.
     zip_path = File.join(RELEASE_DIR, "#{APP_SCHEME}.zip")
     sh("ditto -c -k --keepParent #{Shellwords.escape(app_path)} #{Shellwords.escape(zip_path)}")
 
+    # fastlane notarize cannot always read CFBundleIdentifier from a zip; pass it.
     notarize(
       package: zip_path,
+      bundle_id: APP_IDENTIFIER,
       api_key: api_key,
-      verbose: true
+      verbose: true,
+      print_log: true
     )
 
     # Staple the app (zip cannot be stapled). Re-zip the stapled app for Sparkle.

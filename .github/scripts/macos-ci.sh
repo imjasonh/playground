@@ -55,6 +55,11 @@ for app in "${apps[@]}"; do
       set -euo pipefail
       cd "$app"
       bundle exec fastlane beta
+      meta="$repo_root/$app/fastlane/release/sparkle-metadata.json"
+      if [[ ! -f "$meta" ]]; then
+        echo "::error title=macOS release incomplete::${app}: fastlane beta did not write sparkle-metadata.json"
+        exit 1
+      fi
       RELEASE_DIR="$repo_root/$app/fastlane/release" \
         REPO="${GITHUB_REPOSITORY:?}" \
         GH_TOKEN="${GH_TOKEN:?}" \
