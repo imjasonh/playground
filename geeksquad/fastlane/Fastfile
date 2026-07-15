@@ -1,0 +1,300 @@
+default_platform(:mac)
+
+require "json"
+require "base64"
+require "shellwords"
+
+APP_SCHEME = "GeekSquad"
+XCODEPROJ = "GeekSquad.xcodeproj"
+APP_IDENTIFIER = ENV.fetch("APP_BUNDLE_ID", "io.github.imjasonh.geeksquad")
+# Fastfile lives in <app>/fastlane/; resolve release dir from there so we don't
+# depend on Fastlane's load-time cwd (which produced fastlane/fastlane/release).
+PROJECT_ROOT = File.expand_path("..", __dir__)
+RELEASE_DIR = File.join(PROJECT_ROOT, "fastlane", "release")
+
+def require_release_secrets!
+  missing = %w[
+    MACOS_DEVELOPER_ID_P12
+    MACOS_DEVELOPER_ID_PASSWORD
+    APPLE_TEAM_ID
+    ASC_KEY_ID
+    ASC_ISSUER_ID
+    ASC_API_KEY_P8
+    SPARKLE_EDDSA_PRIVATE_KEY
+  ].select { |k| ENV[k].to_s.empty? }
+  UI.user_error!("Missing release secrets: #{missing.join(', ')}. See docs/macos-sparkle-setup.md.") unless missing.empty?
+end
+
+def asc_api_key
+  app_store_connect_api_key(
+    key_id: ENV.fetch("ASC_KEY_ID"),
+    issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+    key_content: ENV.fetch("ASC_API_KEY_P8"),
+    is_key_content_base64: true,
+    in_house: false
+  )
+end
+
+def import_developer_id_certificate!
+  p12_path = File.join(Dir.tmpdir, "macos-developer-id.p12")
+  File.binwrite(p12_path, Base64.decode64(ENV.fetch("MACOS_DEVELOPER_ID_P12")))
+  password = ENV.fetch("MACOS_DEVELOPER_ID_PASSWORD")
+
+  # setup_ci already created/unlocked a temporary keychain; import into it.
+  keychain_name = ENV["MATCH_KEYCHAIN_NAME"] || "fastlane_tmp_keychain"
+  keychain_password = ENV["MATCH_KEYCHAIN_PASSWORD"] || ""
+
+  import_certificate(
+    certificate_path: p12_path,
+    certificate_password: password,
+    keychain_name: keychain_name,
+    keychain_password: keychain_password
+  )
+ensure
+  File.delete(p12_path) if p12_path && File.exist?(p12_path)
+end
+
+def marketing_and_build_versions(app_path)
+  info = File.join(app_path, "Contents", "Info.plist")
+  UI.user_error!("Missing Info.plist at #{info}") unless File.file?(info)
+  marketing = sh(
+    "/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' #{Shellwords.escape(info)}",
+    log: false
+  ).strip
+  build = sh(
+    "/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' #{Shellwords.escape(info)}",
+    log: false
+  ).strip
+  UI.user_error!("Empty CFBundleShortVersionString in #{info}") if marketing.empty?
+  UI.user_error!("Empty CFBundleVersion in #{info}") if build.empty?
+  [marketing, build]
+end
+
+# Download Sparkle's sign_update CLI (macOS binary) for EdDSA enclosure signing.
+def ensure_sign_update_bin!
+  tools_dir = File.join(Dir.tmpdir, "sparkle-tools-2.7.1")
+  bin = File.join(tools_dir, "bin", "sign_update")
+  return bin if File.executable?(bin)
+
+  FileUtils.mkdir_p(tools_dir)
+  tarball = File.join(Dir.tmpdir, "Sparkle-2.7.1.tar.xz")
+  unless File.file?(tarball)
+    sh(
+      "curl -fsSL -o #{Shellwords.escape(tarball)} " \
+      "https://github.com/sparkle-project/Sparkle/releases/download/2.7.1/Sparkle-2.7.1.tar.xz"
+    )
+  end
+  sh("tar -xJf #{Shellwords.escape(tarball)} -C #{Shellwords.escape(tools_dir)}")
+  UI.user_error!("sign_update missing after extracting Sparkle tools") unless File.executable?(bin)
+  bin
+end
+
+def sparkle_ed_signature(enclosure_path)
+  # New-format Sparkle seed: base64 of 32 raw bytes (not PEM). Must match
+  # SUPublicEDKey baked into the app Info.plist.
+  private_key = ENV.fetch("SPARKLE_EDDSA_PRIVATE_KEY").to_s.strip
+  UI.user_error!("SPARKLE_EDDSA_PRIVATE_KEY is empty") if private_key.empty?
+
+  sign_update = ensure_sign_update_bin!
+  # -p prints only the signature; --ed-key-file - reads the seed from stdin.
+  signature = sh(
+    "printf '%s' #{Shellwords.escape(private_key)} | " \
+    "#{Shellwords.escape(sign_update)} -p --ed-key-file - #{Shellwords.escape(enclosure_path)}",
+    log: false
+  ).strip
+  UI.user_error!("sign_update produced an empty signature") if signature.empty?
+  UI.success("Sparkle edSignature length=#{signature.length}")
+  signature
+end
+
+# Re-sign Sparkle nested helpers with our Developer ID. Xcode's archive/export
+# is *usually* enough, but nested XPC/Autoupdate/Updater can keep Sparkle's
+# signature or get-task-allow and then notarization rejects the zip. Do not use
+# codesign --deep (corrupts Downloader.xpc entitlements). See Sparkle sandboxing docs.
+def resign_sparkle_embedded!(app_path)
+  sparkle = File.join(app_path, "Contents", "Frameworks", "Sparkle.framework")
+  unless File.directory?(sparkle)
+    UI.important("No Sparkle.framework in #{app_path}; skipping nested re-sign")
+    return
+  end
+
+  versions = File.join(sparkle, "Versions")
+  # Prefer the concrete version dir (B/C/…); fall back to Current.
+  ver_dirs = Dir.children(versions).reject { |n| n == "Current" || n.start_with?(".") }
+  ver = ver_dirs.first || "Current"
+  base = File.join(versions, ver)
+  UI.message("Re-signing Sparkle nested code under #{base}")
+
+  identity = "Developer ID Application"
+  entitlements = File.join(PROJECT_ROOT, "GeekSquad.entitlements")
+
+  sign = lambda do |path, extra = ""|
+    UI.user_error!("Missing Sparkle component: #{path}") unless File.exist?(path)
+    sh(
+      "codesign --force --sign #{Shellwords.escape(identity)} --options runtime " \
+      "--timestamp #{extra} #{Shellwords.escape(path)}"
+    )
+  end
+
+  installer = File.join(base, "XPCServices", "Installer.xpc")
+  downloader = File.join(base, "XPCServices", "Downloader.xpc")
+  autoupdate = File.join(base, "Autoupdate")
+  updater = File.join(base, "Updater.app")
+
+  sign.call(installer) if File.exist?(installer)
+  if File.exist?(downloader)
+    # Preserve Downloader's sandbox/network entitlements (Sparkle ≥ 2.6).
+    sign.call(downloader, "--preserve-metadata=entitlements")
+  end
+  sign.call(autoupdate) if File.exist?(autoupdate)
+  sign.call(updater) if File.exist?(updater)
+  sign.call(sparkle)
+
+  # Outer app last, with our entitlements (disable-library-validation for Sparkle).
+  sh(
+    "codesign --force --sign #{Shellwords.escape(identity)} --options runtime " \
+    "--timestamp --entitlements #{Shellwords.escape(entitlements)} " \
+    "#{Shellwords.escape(app_path)}"
+  )
+
+  verify = sh(
+    "codesign --verify --deep --strict --verbose=2 #{Shellwords.escape(app_path)} 2>&1",
+    log: false
+  )
+  UI.message(verify)
+  UI.success("codesign --verify --deep --strict OK")
+end
+
+# Submit via notarytool and always dump Apple's log on Invalid (fastlane's
+# notarize action hides it unless print_log is set, and verbose:true breaks
+# Accepted parsing).
+def notarize_zip!(zip_path)
+  key_path = File.join(Dir.tmpdir, "asc-api-key-#{Process.pid}.p8")
+  File.binwrite(key_path, Base64.decode64(ENV.fetch("ASC_API_KEY_P8")))
+  key_id = ENV.fetch("ASC_KEY_ID")
+  issuer = ENV.fetch("ASC_ISSUER_ID")
+
+  raw = sh(
+    "xcrun notarytool submit #{Shellwords.escape(zip_path)} " \
+    "--key #{Shellwords.escape(key_path)} " \
+    "--key-id #{Shellwords.escape(key_id)} " \
+    "--issuer #{Shellwords.escape(issuer)} " \
+    "--wait --output-format json",
+    log: true
+  )
+  # notarytool may print progress lines before the final JSON object.
+  json_line = raw.lines.reverse.find { |l| l.strip.start_with?("{") }
+  UI.user_error!("notarytool returned no JSON:\n#{raw}") unless json_line
+  info = JSON.parse(json_line)
+  status = info["status"].to_s
+  submission_id = info["id"].to_s
+  UI.message("notarytool status=#{status} id=#{submission_id}")
+
+  if status.downcase != "accepted"
+    log_json = sh(
+      "xcrun notarytool log #{Shellwords.escape(submission_id)} " \
+      "--key #{Shellwords.escape(key_path)} " \
+      "--key-id #{Shellwords.escape(key_id)} " \
+      "--issuer #{Shellwords.escape(issuer)}",
+      log: false
+    )
+    UI.error("Notarization log:\n#{log_json}")
+    UI.user_error!("Notarization failed with status=#{status}")
+  end
+  UI.success("Notarization Accepted (#{submission_id})")
+ensure
+  File.delete(key_path) if key_path && File.exist?(key_path)
+end
+
+platform :mac do
+  desc "Run unit tests on macOS (no Developer ID / notarization required)"
+  lane :test do
+    run_tests(
+      project: XCODEPROJ,
+      scheme: APP_SCHEME,
+      destination: "platform=macOS",
+      result_bundle: true,
+      output_directory: "fastlane/test_output"
+    )
+  end
+
+  desc "Developer ID archive → notarize → staple → ZIP for Sparkle. " \
+       "Requires MACOS_DEVELOPER_ID_* and ASC_* secrets (see docs/macos-sparkle-setup.md)."
+  lane :beta do
+    require_release_secrets!
+    setup_ci
+    import_developer_id_certificate!
+    # api_key still constructed so Fastlane ASC helpers stay available if needed.
+    asc_api_key
+
+    FileUtils.rm_rf(RELEASE_DIR)
+    FileUtils.mkdir_p(RELEASE_DIR)
+
+    team_id = ENV.fetch("APPLE_TEAM_ID")
+    update_code_signing_settings(
+      path: XCODEPROJ,
+      use_automatic_signing: false,
+      team_id: team_id,
+      code_sign_identity: "Developer ID Application",
+      targets: [APP_SCHEME]
+    )
+
+    build_mac_app(
+      project: XCODEPROJ,
+      scheme: APP_SCHEME,
+      export_method: "developer-id",
+      export_team_id: team_id,
+      output_directory: RELEASE_DIR,
+      output_name: APP_SCHEME,
+      skip_package_pkg: true,
+      export_options: {
+        method: "developer-id",
+        teamID: team_id
+      }
+    )
+
+    app_path = File.join(RELEASE_DIR, "#{APP_SCHEME}.app")
+    UI.user_error!("Expected #{app_path} after build_mac_app") unless File.directory?(app_path)
+
+    # Confirm Developer ID signing before spending a notarization upload.
+    identity = sh(
+      "codesign -dv --verbose=2 #{Shellwords.escape(app_path)} 2>&1 | awk -F= '/^Authority=Developer ID Application/{print; exit}'",
+      log: false
+    ).strip
+    UI.user_error!("App is not signed with Developer ID Application: #{app_path}") if identity.empty?
+    UI.success("Signed as #{identity}")
+
+    resign_sparkle_embedded!(app_path)
+
+    # Zip for notarization upload; stapler works on the .app afterward.
+    zip_path = File.join(RELEASE_DIR, "#{APP_SCHEME}.zip")
+    sh("ditto -c -k --keepParent #{Shellwords.escape(app_path)} #{Shellwords.escape(zip_path)}")
+
+    notarize_zip!(zip_path)
+
+    # Staple the app (zip cannot be stapled). Re-zip the stapled app for Sparkle.
+    sh("xcrun stapler staple #{Shellwords.escape(app_path)}")
+    File.delete(zip_path)
+    sh("ditto -c -k --keepParent #{Shellwords.escape(app_path)} #{Shellwords.escape(zip_path)}")
+
+    marketing, build = marketing_and_build_versions(app_path)
+    enclosure_name = "#{APP_SCHEME}-#{marketing}.zip"
+    enclosure_path = File.join(RELEASE_DIR, enclosure_name)
+    FileUtils.mv(zip_path, enclosure_path)
+
+    ed_signature = sparkle_ed_signature(enclosure_path)
+
+    metadata = {
+      "app" => "geeksquad",
+      "title" => "Geek Squad #{marketing}",
+      "marketing_version" => marketing,
+      "build_version" => build,
+      "enclosure" => enclosure_name,
+      "enclosure_path" => enclosure_path,
+      "ed_signature" => ed_signature,
+      "feed_path" => "macos/geeksquad/appcast.xml"
+    }
+    File.write(File.join(RELEASE_DIR, "sparkle-metadata.json"), JSON.pretty_generate(metadata))
+    UI.success("Release artifacts in #{RELEASE_DIR}")
+  end
+end

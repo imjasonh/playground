@@ -26,6 +26,7 @@ playground/
 ├── gitdb/                 # Go CLI (Go module + Go tests)
 ├── hello/                 # example static app (HTML only)
 ├── hello-macos/           # example macOS SwiftUI app (XcodeGen + Sparkle CD)
+├── geeksquad/             # offline Mac network/config triage (Sparkle CD)
 ├── ios/                   # the single "Playground" iOS app (SwiftUI; TestFlight CD)
 ├── kanoodle/              # example app with tests (JS + Jest + Playwright)
 ├── ocidb/                 # Go CLI (Go module + Go tests)
@@ -55,6 +56,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `git-fuse/` | no | Rust CLI (FUSE); no `index.html` |
 | `ios/` | no | The single "Playground" iOS app (XcodeGen + SwiftUI); no `index.html` |
 | `hello-macos/` | no | Example macOS app (XcodeGen + SwiftUI); no `index.html` |
+| `geeksquad/` | no | Offline Mac network triage (XcodeGen + SwiftUI + Sparkle); no `index.html` |
 | `.github/` | no | Infrastructure only |
 | `README.md` | no | Not a directory |
 
@@ -547,5 +549,6 @@ bundle exec fastlane test
 | Directory | Type | Tests |
 |-----------|------|-------|
 | `hello-macos/` | Minimal SwiftUI "Hello Mac" sample; notarized Sparkle CD + in-app updater | XCTest via `fastlane test` |
+| `geeksquad/` | Geek Squad — on-device chat triage + Manual Toolbox; Sparkle CD | XCTest via `fastlane test` |
 
 See each app's `README.md` for app-specific rules and local development.
