@@ -222,18 +222,22 @@ final class TriageChatModel: ObservableObject {
             defer { isResponding = false }
 
             // Skip the no-tools gate when heuristics (or scenario chips) say we
-            // can measure something live — including slow apps / memory / CPU.
+            // can measure something live — including Recheck / “what changed”.
             if !shouldUseDiagnosticTools(text) {
                 do {
-                    try await streamPlainAnswer(to: text, instructions: TriageGate.instructions)
-                    return
+                    let answered = try await streamPlainAnswer(
+                        to: text,
+                        instructions: TriageGate.instructions
+                    )
+                    if answered { return }
+                    // Model replied DIAGNOSE (or empty) — fall through to tools.
                 } catch {
                     // Gate/stream failed — fall through to diagnostics / failure mapping.
                 }
             }
 
             // Fresh session per diagnostic turn (4k context; tools are expensive).
-            let focus = TriageHeuristics.focus(for: text) ?? .general
+            let focus = focusForTurn(text)
             recreateLanguageSession(focus: focus)
             guard let session = sessionBox as? LanguageModelSession else { return }
             let hub = toolHubBox as? ToolActivityHub
@@ -287,18 +291,46 @@ final class TriageChatModel: ObservableObject {
         Self.scenarioPrompts.contains { $0.prompt == text }
     }
 
+    /// Prefer keywords on this turn; for Recheck, reuse focus from an earlier user turn.
+    private func focusForTurn(_ text: String) -> TriageHeuristics.Focus {
+        if let focus = TriageHeuristics.focus(for: text) {
+            return focus
+        }
+        if TriageHeuristics.isRecheckFollowUp(text) {
+            for message in messages.reversed() {
+                guard message.role == .user, message.text != text else { continue }
+                if let focus = TriageHeuristics.focus(for: message.text) {
+                    return focus
+                }
+            }
+        }
+        return .general
+    }
+
     /// Fresh FM sessions don't keep chat history — pack recent turns so follow-ups
     /// like “is it using too much memory?” still resolve to the named app.
     private func diagnosticPrompt(forLatestUserText latest: String) -> String {
+        let recheck = TriageHeuristics.isRecheckFollowUp(latest)
         let recent = messages.suffix(12).compactMap { message -> String? in
             switch message.role {
             case .user: return "User: \(message.text)"
             case .assistant:
                 if let report = message.triageReport {
-                    return "Geek Squad: \(report.headline) — \(report.likelyCause)"
+                    // Full prior report so “what changed” can compare evidence.
+                    return "Geek Squad previous report:\n\(report.markdown)"
                 }
-                return "Geek Squad: \(message.text)"
-            case .tool, .system: return nil
+                let clipped = message.text.count > 600
+                    ? String(message.text.prefix(600)) + "…"
+                    : message.text
+                return "Geek Squad: \(clipped)"
+            case .tool:
+                guard recheck else { return nil }
+                let label = message.toolName.map { "Prior tool (\($0))" } ?? "Prior tool"
+                let clipped = message.text.count > 500
+                    ? String(message.text.prefix(500)) + "…"
+                    : message.text
+                return "\(label):\n\(clipped)"
+            case .system: return nil
             }
         }
         var lines: [String] = [
@@ -307,13 +339,48 @@ final class TriageChatModel: ObservableObject {
         lines.append(contentsOf: recent)
         lines.append("")
         lines.append(
+            "You have this chat history — never claim you cannot see past questions."
+        )
+        lines.append(
             "Use tools for live facts — do not ask the user to run Terminal diagnostics. If the user says “it” or omits the app name, reuse the app from earlier turns (e.g. process_usage query: Cursor)."
         )
+        if recheck {
+            lines.append(
+                "This is a recheck: call the same kinds of tools again and say what changed versus the previous report/evidence above."
+            )
+        }
         lines.append(
             "Fill the triage report from tool evidence only. proposedSteps must be Settings/UI remediations the user can do — never Terminal read-only commands Geek Squad could have run as tools."
         )
         lines.append("Latest user message: \(latest)")
         return lines.joined(separator: "\n")
+    }
+
+    /// Pack recent turns for the no-tools path so follow-ups aren't answered blind.
+    private func plainPrompt(forLatestUserText latest: String) -> String {
+        let prior = messages.dropLast().suffix(8).compactMap { message -> String? in
+            switch message.role {
+            case .user: return "User: \(message.text)"
+            case .assistant:
+                if let report = message.triageReport {
+                    return "Geek Squad: \(report.headline) — \(report.likelyCause)"
+                }
+                let clipped = message.text.count > 400
+                    ? String(message.text.prefix(400)) + "…"
+                    : message.text
+                return "Geek Squad: \(clipped)"
+            case .tool, .system: return nil
+            }
+        }
+        guard !prior.isEmpty else { return latest }
+        return """
+            Recent chat (for context; answer the latest user message):
+            \(prior.joined(separator: "\n"))
+
+            You have this chat history — never claim you cannot see past questions in this conversation. If the user needs fresh live measurements, reply \(TriageGate.diagnoseSentinel).
+
+            Latest user message: \(latest)
+            """
     }
 
     private func replaceMessage(id: UUID, with message: ChatMessage) {
@@ -337,14 +404,17 @@ final class TriageChatModel: ObservableObject {
     }
 
     #if canImport(FoundationModels)
+    /// Streams a no-tools reply. Returns `false` when the model asked for diagnostics
+    /// (`DIAGNOSE`) so the caller can fall through to the tool path.
     @available(macOS 26.0, *)
-    private func streamPlainAnswer(to text: String, instructions: String) async throws {
+    @discardableResult
+    private func streamPlainAnswer(to text: String, instructions: String) async throws -> Bool {
         let session = LanguageModelSession(instructions: instructions)
         let id = UUID()
         streamingAssistantId = id
         defer { streamingAssistantId = nil }
         messages.append(ChatMessage(id: id, role: .assistant, text: ""))
-        let stream = session.streamResponse(to: text)
+        let stream = session.streamResponse(to: plainPrompt(forLatestUserText: text))
         for try await snapshot in stream {
             let textOut = snapshot.content.trimmingCharacters(in: .whitespacesAndNewlines)
             replaceMessage(
@@ -352,14 +422,19 @@ final class TriageChatModel: ObservableObject {
                 with: ChatMessage(id: id, role: .assistant, text: textOut.isEmpty ? "…" : textOut)
             )
         }
-        if let last = messages.first(where: { $0.id == id }),
-           last.text.isEmpty || last.text == "…"
-        {
-            replaceMessage(
-                id: id,
-                with: ChatMessage(id: id, role: .assistant, text: "(No response text.)")
-            )
+        if let last = messages.first(where: { $0.id == id }) {
+            if TriageGate.needsDiagnostics(last.text) {
+                messages.removeAll { $0.id == id }
+                return false
+            }
+            if last.text.isEmpty || last.text == "…" {
+                replaceMessage(
+                    id: id,
+                    with: ChatMessage(id: id, role: .assistant, text: "(No response text.)")
+                )
+            }
         }
+        return true
     }
 
     @available(macOS 26.0, *)

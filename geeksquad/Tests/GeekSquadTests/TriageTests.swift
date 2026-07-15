@@ -56,12 +56,23 @@ final class TriageHeuristicsTests: XCTestCase {
         XCTAssertFalse(TriageHeuristics.needsLiveDiagnostics("What does Geek Squad do?"))
     }
 
+    func testRecheckChipNeedsLiveDiagnostics() {
+        let recheck =
+            "Please re-run the most relevant live checks for my last question and tell me what changed."
+        XCTAssertTrue(TriageHeuristics.isRecheckFollowUp(recheck))
+        XCTAssertTrue(TriageHeuristics.needsLiveDiagnostics(recheck))
+        XCTAssertTrue(TriageHeuristics.isRecheckFollowUp("Can you check again?"))
+        XCTAssertTrue(TriageHeuristics.needsLiveDiagnostics("Run the same checks and say what changed."))
+    }
+
     func testFocusRouting() {
         XCTAssertEqual(TriageHeuristics.focus(for: "Cursor is using too much memory"), .performance)
         XCTAssertEqual(TriageHeuristics.focus(for: "disk almost full"), .performance)
         XCTAssertEqual(TriageHeuristics.focus(for: "port 3000 already in use"), .functionality)
         XCTAssertEqual(TriageHeuristics.focus(for: "Safari crashed"), .functionality)
         XCTAssertEqual(TriageHeuristics.focus(for: "VPN DNS broken"), .network)
+        // Recheck text alone has no focus keywords — chat model reuses prior turn.
+        XCTAssertNil(TriageHeuristics.focus(for: "Please re-run the most relevant live checks for my last question and tell me what changed."))
     }
 }
 

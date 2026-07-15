@@ -12,7 +12,11 @@ enum TriageGate {
         \(TriageAudience.guidance)
 
         Reply with exactly \(diagnoseSentinel) and nothing else when the user needs \
-        live facts from this Mac in those areas.
+        live facts from this Mac in those areas — including re-checks, “what changed”, \
+        or anything that needs fresh measurements.
+
+        When the prompt includes recent chat, use it. Never claim you cannot see past \
+        questions in this conversation.
 
         Otherwise answer helpfully in 2–5 short sentences. Be practical. Do not \
         invent measurements. Do not invent what an unfamiliar app is for — if unsure, \
@@ -45,7 +49,20 @@ enum TriageHeuristics {
     }
 
     static func needsLiveDiagnostics(_ text: String) -> Bool {
-        focus(for: text) != nil || text.lowercased().contains("slow")
+        focus(for: text) != nil
+            || text.lowercased().contains("slow")
+            || isRecheckFollowUp(text)
+    }
+
+    /// Follow-ups that should re-run tools (e.g. the Recheck chip), not the no-tools gate.
+    static func isRecheckFollowUp(_ text: String) -> Bool {
+        let t = text.lowercased()
+        let markers = [
+            "re-run", "rerun", "recheck", "re-check",
+            "check again", "live checks", "what changed",
+            "last question", "same checks", "run again",
+        ]
+        return markers.contains { t.contains($0) }
     }
 
     /// `nil` = no strong signal (gate may still DIAGNOSE).
