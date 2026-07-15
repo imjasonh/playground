@@ -6,12 +6,16 @@ enum ToolboxCheck: String, CaseIterable, Identifiable, Hashable {
     case pathStatus
     case dnsConfig
     case dnsLookup
+    case dnsTrace
     case reachability
+    case ping
+    case traceroute
     case httpProbe
     case proxyConfig
     case vpnInterfaces
     case hostsFile
     case currentWifi
+    case arpNeighbors
     case processUsage
     case topMemory
     case topCPU
@@ -34,12 +38,16 @@ enum ToolboxCheck: String, CaseIterable, Identifiable, Hashable {
         case .pathStatus: return "Path status"
         case .dnsConfig: return "DNS config"
         case .dnsLookup: return "DNS lookup"
+        case .dnsTrace: return "DNS trace"
         case .reachability: return "Reachability"
+        case .ping: return "Ping"
+        case .traceroute: return "Traceroute"
         case .httpProbe: return "HTTP probe"
         case .proxyConfig: return "Proxy config"
         case .vpnInterfaces: return "VPN interfaces"
         case .hostsFile: return "Hosts file"
         case .currentWifi: return "Current Wi‑Fi"
+        case .arpNeighbors: return "ARP neighbors"
         case .processUsage: return "Process usage"
         case .topMemory: return "Top memory"
         case .topCPU: return "Top CPU"
@@ -62,12 +70,16 @@ enum ToolboxCheck: String, CaseIterable, Identifiable, Hashable {
         case .pathStatus: return "NWPathMonitor snapshot"
         case .dnsConfig: return "Resolvers (scutil --dns)"
         case .dnsLookup: return "A/AAAA via dig"
+        case .dnsTrace: return "dig +trace delegation"
         case .reachability: return "TCP connect"
+        case .ping: return "ICMP loss / latency"
+        case .traceroute: return "Path hops to a host"
         case .httpProbe: return "GET timing and status"
         case .proxyConfig: return "System HTTP/HTTPS/SOCKS"
         case .vpnInterfaces: return "utun/ipsec vs path"
         case .hostsFile: return "/etc/hosts overrides"
         case .currentWifi: return "SSID if Location allows"
+        case .arpNeighbors: return "Local ARP table (arp -an)"
         case .processUsage: return "CPU/memory for a named app"
         case .topMemory: return "Highest RSS processes"
         case .topCPU: return "Hottest CPU processes"
@@ -85,7 +97,8 @@ enum ToolboxCheck: String, CaseIterable, Identifiable, Hashable {
 
     var needsHostField: Bool {
         switch self {
-        case .dnsLookup, .reachability, .httpProbe, .processUsage, .listeningPorts, .crashReports:
+        case .dnsLookup, .dnsTrace, .reachability, .ping, .traceroute, .httpProbe,
+             .processUsage, .listeningPorts, .crashReports:
             return true
         default:
             return false
@@ -94,8 +107,8 @@ enum ToolboxCheck: String, CaseIterable, Identifiable, Hashable {
 
     var hostPlaceholder: String {
         switch self {
-        case .dnsLookup: return "example.com"
-        case .reachability: return "1.1.1.1"
+        case .dnsLookup, .dnsTrace: return "example.com"
+        case .reachability, .ping, .traceroute: return "1.1.1.1"
         case .httpProbe: return "https://example.com"
         case .processUsage: return "Cursor"
         case .listeningPorts: return "3000 (optional port)"
@@ -106,8 +119,8 @@ enum ToolboxCheck: String, CaseIterable, Identifiable, Hashable {
 
     var defaultHost: String {
         switch self {
-        case .dnsLookup: return "example.com"
-        case .reachability: return "1.1.1.1"
+        case .dnsLookup, .dnsTrace: return "example.com"
+        case .reachability, .ping, .traceroute: return "1.1.1.1"
         case .httpProbe: return "https://example.com"
         case .processUsage: return "Cursor"
         case .listeningPorts: return ""

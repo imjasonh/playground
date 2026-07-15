@@ -98,6 +98,8 @@ enum TriageHeuristics {
             "dns", "wifi", "wi-fi", "wi‑fi", "vpn", "proxy", "website",
             "network", "captive", "hosts file", "can't load", "cannot load",
             "routing", "default route", "offline", "connected but",
+            "ping", "traceroute", "packet loss", "latency", "hops",
+            "arp", "dig +trace", "dns trace",
         ]
         if network.contains(where: { t.contains($0) }) {
             return .network

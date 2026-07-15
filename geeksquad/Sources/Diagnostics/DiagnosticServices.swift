@@ -170,6 +170,185 @@ struct DiagnosticServices: Sendable {
         }
     }
 
+    // MARK: - Ping (ICMP)
+
+    func ping(host: String) async -> DiagnosticReport {
+        guard let target = NetworkProbeHost.sanitize(host) else {
+            return DiagnosticReport(title: "Ping", body: "Enter a hostname or IP.", proposedFixes: [])
+        }
+        // macOS: /sbin/ping — bounded count + overall timeout (read-only).
+        do {
+            let result = try ProcessRunner.run(
+                "/sbin/ping",
+                arguments: ["-c", "4", "-t", "8", target],
+                timeoutSeconds: 12,
+                maxOutputBytes: 16_000
+            )
+            let text = combinedOutput(result).trimmingCharacters(in: .whitespacesAndNewlines)
+            if result.timedOut && text.isEmpty {
+                return DiagnosticReport(
+                    title: "Ping — \(target)",
+                    body: "Timed out waiting for ping.",
+                    proposedFixes: [
+                        "Retry, or try reachability (TCP) — some networks block ICMP.",
+                    ]
+                )
+            }
+            let body = text.isEmpty
+                ? "No ping output (exit \(result.exitCode))."
+                : text
+            let summary = PingOutputParser.summarize(body)
+            var lines = [body]
+            if let loss = summary.lossPercent, let tx = summary.transmitted, let rx = summary.received {
+                lines.append("")
+                lines.append("Summary: \(tx) sent, \(rx) received, \(loss)% loss")
+                if let avg = summary.roundTripAvgMs {
+                    lines.append("Avg RTT: \(String(format: "%.1f", avg)) ms")
+                }
+            }
+            return DiagnosticReport(
+                title: "Ping — \(target)",
+                body: lines.joined(separator: "\n"),
+                proposedFixes: PingOutputParser.proposedFixes(for: summary, host: target)
+            )
+        } catch {
+            return DiagnosticReport(
+                title: "Ping — \(target)",
+                body: "ping failed: \(error.localizedDescription)",
+                proposedFixes: ["Confirm /sbin/ping is available, or try reachability instead."]
+            )
+        }
+    }
+
+    // MARK: - Traceroute
+
+    func traceroute(host: String) async -> DiagnosticReport {
+        guard let target = NetworkProbeHost.sanitize(host) else {
+            return DiagnosticReport(title: "Traceroute", body: "Enter a hostname or IP.", proposedFixes: [])
+        }
+        // Fewer probes per hop (-q 1) keeps this usable inside the chat timeout budget.
+        do {
+            let result = try ProcessRunner.run(
+                "/usr/sbin/traceroute",
+                arguments: ["-w", "2", "-m", "20", "-q", "1", target],
+                timeoutSeconds: 28,
+                maxOutputBytes: 24_000
+            )
+            let text = combinedOutput(result).trimmingCharacters(in: .whitespacesAndNewlines)
+            if result.timedOut && text.isEmpty {
+                return DiagnosticReport(
+                    title: "Traceroute — \(target)",
+                    body: "Timed out with no hop output.",
+                    proposedFixes: [
+                        "Try ping first, or reachability on TCP 443.",
+                    ]
+                )
+            }
+            let body = text.isEmpty
+                ? "No traceroute output (exit \(result.exitCode))."
+                : text
+            return DiagnosticReport(
+                title: "Traceroute — \(target)",
+                body: body,
+                proposedFixes: TracerouteOutputParser.proposedFixes(
+                    text: body,
+                    host: target,
+                    timedOut: result.timedOut
+                )
+            )
+        } catch {
+            return DiagnosticReport(
+                title: "Traceroute — \(target)",
+                body: "traceroute failed: \(error.localizedDescription)",
+                proposedFixes: ["Confirm /usr/sbin/traceroute is available."]
+            )
+        }
+    }
+
+    // MARK: - DNS delegation trace
+
+    func dnsTrace(hostname: String) async -> DiagnosticReport {
+        guard let target = NetworkProbeHost.sanitize(hostname) else {
+            return DiagnosticReport(title: "DNS trace", body: "Enter a hostname.", proposedFixes: [])
+        }
+        do {
+            let result = try ProcessRunner.run(
+                "/usr/bin/dig",
+                arguments: ["+trace", "+time=2", "+tries=1", target],
+                timeoutSeconds: 22,
+                maxOutputBytes: 32_000
+            )
+            let text = combinedOutput(result).trimmingCharacters(in: .whitespacesAndNewlines)
+            if result.timedOut && text.isEmpty {
+                return DiagnosticReport(
+                    title: "DNS trace — \(target)",
+                    body: "Timed out running dig +trace.",
+                    proposedFixes: ["Check DNS config and try a simpler dns_lookup."]
+                )
+            }
+            let body = text.isEmpty
+                ? "No dig +trace output (exit \(result.exitCode))."
+                : text
+            var fixes: [String] = []
+            if body.localizedCaseInsensitiveContains("connection timed out")
+                || body.localizedCaseInsensitiveContains("no servers could be reached")
+            {
+                fixes.append("Delegation trace could not reach a nameserver — check DNS config and VPN/proxy.")
+            }
+            return DiagnosticReport(title: "DNS trace — \(target)", body: body, proposedFixes: fixes)
+        } catch {
+            return DiagnosticReport(
+                title: "DNS trace — \(target)",
+                body: "dig +trace failed: \(error.localizedDescription)",
+                proposedFixes: ["Install or repair Command Line Tools if dig is missing."]
+            )
+        }
+    }
+
+    // MARK: - ARP / local neighbors
+
+    func arpNeighbors() async -> DiagnosticReport {
+        do {
+            let result = try ProcessRunner.run(
+                "/usr/sbin/arp",
+                arguments: ["-an"],
+                timeoutSeconds: 6,
+                maxOutputBytes: 32_000
+            )
+            let text = combinedOutput(result).trimmingCharacters(in: .whitespacesAndNewlines)
+            if result.timedOut && text.isEmpty {
+                return DiagnosticReport(
+                    title: "ARP neighbors",
+                    body: "Timed out reading the ARP table.",
+                    proposedFixes: []
+                )
+            }
+            let body = text.isEmpty
+                ? "ARP table is empty (or arp returned no lines)."
+                : text
+            let lineCount = body.split(whereSeparator: \.isNewline).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.count
+            var fixes: [String] = []
+            if lineCount == 0 {
+                fixes.append("No ARP entries — check Wi‑Fi/Ethernet under System Settings → Network.")
+            }
+            return DiagnosticReport(title: "ARP neighbors", body: body, proposedFixes: fixes)
+        } catch {
+            return DiagnosticReport(
+                title: "ARP neighbors",
+                body: "arp failed: \(error.localizedDescription)",
+                proposedFixes: []
+            )
+        }
+    }
+
+    private func combinedOutput(_ result: ProcessRunner.Result) -> String {
+        let out = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        let err = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+        if out.isEmpty { return err }
+        if err.isEmpty { return out }
+        return out + "\n" + err
+    }
+
     // MARK: - Reachability (TCP)
 
     func reachability(host: String, port: UInt16) async -> DiagnosticReport {

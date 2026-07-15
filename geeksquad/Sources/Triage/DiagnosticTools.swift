@@ -14,8 +14,8 @@ enum TriageInstructions {
 
         Scope (use tools — never invent measurements):
         - Network/config: path_status, default_route, dns_config, interfaces, \
-        dns_lookup, reachability, http_probe, proxy_config, vpn_interfaces, \
-        hosts_file, current_wifi
+        dns_lookup, dns_trace, reachability, ping, traceroute, http_probe, \
+        proxy_config, vpn_interfaces, hosts_file, current_wifi, arp_neighbors
         - Performance: process_usage, top_memory, top_cpu, disk_space, \
         memory_pressure, system_load, power_assertions, login_items, \
         user_storage_hotspots, battery_power
@@ -29,8 +29,11 @@ enum TriageInstructions {
         proxy_config, vpn_interfaces, hosts_file — plus reachability/dns_lookup/\
         http_probe as needed. Do not stop after one or two tools if the question \
         asks to separate those causes.
-        - Never tell the user to inspect resolv.conf, ifconfig, dig, or other CLI \
-        diagnostics themselves — that is what your tools are for.
+        - Packet loss / latency / “where does the path break”: ping and traceroute \
+        (plus reachability if ICMP may be blocked).
+        - Hard DNS delegation mysteries: dns_trace; everyday name→IP: dns_lookup.
+        - Never tell the user to inspect resolv.conf, ifconfig, dig, ping, traceroute, \
+        or other CLI diagnostics themselves — that is what your tools are for.
         - Slow Mac / fans / beachball: start with system_load, disk_space, \
         memory_pressure, top_cpu (and process_usage if a named app). Add \
         login_items or user_storage_hotspots when login slowness or full disk is suspected. \
@@ -226,6 +229,79 @@ struct HttpProbeTool: Tool {
     func call(arguments: Arguments) async throws -> String {
         await runTool(name, activity: activity) {
             await DiagnosticServices.shared.httpProbe(urlString: arguments.url)
+        }
+    }
+}
+
+@available(macOS 26.0, *)
+struct PingTool: Tool {
+    let name = "ping"
+    let description = "ICMP ping a host (4 packets). Reports loss and latency; some networks block ICMP."
+    let activity: ToolActivityHub
+
+    @Generable
+    struct Arguments {
+        @Guide(description: "Hostname or IP to ping, e.g. 1.1.1.1 or example.com")
+        var host: String
+    }
+
+    func call(arguments: Arguments) async throws -> String {
+        await runTool(name, activity: activity) {
+            await DiagnosticServices.shared.ping(host: arguments.host)
+        }
+    }
+}
+
+@available(macOS 26.0, *)
+struct TracerouteTool: Tool {
+    let name = "traceroute"
+    let description = "Traceroute hops toward a host to see where the path slows or stops."
+    let activity: ToolActivityHub
+
+    @Generable
+    struct Arguments {
+        @Guide(description: "Hostname or IP, e.g. example.com")
+        var host: String
+    }
+
+    func call(arguments: Arguments) async throws -> String {
+        await runTool(name, activity: activity) {
+            await DiagnosticServices.shared.traceroute(host: arguments.host)
+        }
+    }
+}
+
+@available(macOS 26.0, *)
+struct DnsTraceTool: Tool {
+    let name = "dns_trace"
+    let description = "dig +trace from the root to see DNS delegation for a hostname (advanced DNS)."
+    let activity: ToolActivityHub
+
+    @Generable
+    struct Arguments {
+        @Guide(description: "Hostname to trace, e.g. example.com")
+        var hostname: String
+    }
+
+    func call(arguments: Arguments) async throws -> String {
+        await runTool(name, activity: activity) {
+            await DiagnosticServices.shared.dnsTrace(hostname: arguments.hostname)
+        }
+    }
+}
+
+@available(macOS 26.0, *)
+struct ArpNeighborsTool: Tool {
+    let name = "arp_neighbors"
+    let description = "List local ARP/neighbor table entries (LAN peers the Mac recently talked to)."
+    let activity: ToolActivityHub
+
+    @Generable
+    struct Arguments {}
+
+    func call(arguments: Arguments) async throws -> String {
+        await runTool(name, activity: activity) {
+            await DiagnosticServices.shared.arpNeighbors()
         }
     }
 }
@@ -520,12 +596,16 @@ enum DiagnosticToolset {
             DnsConfigTool(activity: activity),
             InterfacesTool(activity: activity),
             DnsLookupTool(activity: activity),
+            DnsTraceTool(activity: activity),
             ReachabilityTool(activity: activity),
+            PingTool(activity: activity),
+            TracerouteTool(activity: activity),
             HttpProbeTool(activity: activity),
             ProxyConfigTool(activity: activity),
             VpnInterfacesTool(activity: activity),
             HostsFileTool(activity: activity),
             CurrentWifiTool(activity: activity),
+            ArpNeighborsTool(activity: activity),
         ]
     }
 
@@ -560,6 +640,7 @@ enum DiagnosticToolset {
             PathStatusTool(activity: activity),
             DefaultRouteTool(activity: activity),
             DnsConfigTool(activity: activity),
+            PingTool(activity: activity),
             ProcessUsageTool(activity: activity),
             TopCPUTool(activity: activity),
             TopMemoryTool(activity: activity),

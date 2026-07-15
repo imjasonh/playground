@@ -203,15 +203,19 @@ No TCC prompt on launch. No Full Disk Access required for v1.
 | `default_route` | Gateway, interface, VPN/utun? | SCDynamicStore | `route get default` |
 | `path_status` | Satisfied?, expensive?, ifaces | `NWPathMonitor` | — |
 | `dns_config` | Resolvers, search, scoped DNS | SCDynamicStore | `scutil --dns` |
-| `dns_lookup` | A/AAAA/CNAME | Network / DNSSD | `dig` |
+| `dns_lookup` | A/AAAA | dig | `dig +short` |
+| `dns_trace` | Delegation path from root | dig | `dig +trace` |
 | `reachability` | TCP connect host:port | `NWConnection` | — |
+| `ping` | ICMP loss / latency (4 packets) | — | `/sbin/ping -c 4` |
+| `traceroute` | Path hops | — | `/usr/sbin/traceroute` |
 | `http_probe` | Status, redirect, timing, TLS class | `URLSession` | — |
 | `proxy_config` | HTTP/HTTPS/SOCKS/PAC | SCDynamicStore | `networksetup -get*proxy` |
 | `vpn_interfaces` | utun/ipsec + default-path use | interface enum + path | — |
 | `hosts_file` | Surprising `/etc/hosts` lines | file read | — |
 | `current_wifi` | SSID/BSSID if allowed | CoreWLAN | — |
+| `arp_neighbors` | Local ARP table | — | `arp -an` |
 
-**Deferred:** `wifi_scan` / channel congestion / RSSI ranking.
+**Deferred:** `wifi_scan` / channel congestion / RSSI ranking; `networkQuality` (slow Apple CDN test).
 
 **Remediation (propose only):** the model/UI may suggest steps such as
 “forget Wi‑Fi network”, “disconnect VPN”, “disable HTTP proxy”, “flush DNS
