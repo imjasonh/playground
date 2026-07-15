@@ -5,20 +5,21 @@
 [![Cloudflare Workers](https://github.com/imjasonh/playground/actions/workflows/deploy-workers.yml/badge.svg)](https://github.com/imjasonh/playground/actions/workflows/deploy-workers.yml)
 
 A personal playground monorepo for small, self-contained side projects — browser
-toys, command-line tools, and the occasional backend service — collected in one
-place for fun and learning. There's no grand plan and no shared build at the
-root: each experiment is its own top-level directory that builds, tests, and
-ships entirely on its own, whether it's a static browser app deployed to GitHub
-Pages, a standalone Go command-line tool, or a Rust crate such as a Cloudflare
-Worker.
+toys, command-line tools, native Apple apps, and the occasional backend service —
+collected in one place for fun and learning. There's no grand plan and no shared
+build at the root: each experiment is its own top-level directory that builds,
+tests, and ships entirely on its own, whether it's a static browser app deployed
+to GitHub Pages, a standalone Go command-line tool, a Rust crate such as a
+Cloudflare Worker, or a native macOS / iOS app.
 
 The point is to keep trying things cheap and low-ceremony. Drop in a new
 directory, follow a couple of conventions, and open a PR: CI tests whatever
 changed, browser apps get a live preview link, and once merged they deploy
-themselves to GitHub Pages. iOS apps go a step further and ship to TestFlight on
-merge to `main`. A daily job keeps each project's dependencies current too,
-landing an upgrade only when it still builds and passes tests — so older
-experiments don't bit-rot.
+themselves to GitHub Pages. The iOS Playground app ships to TestFlight on merge
+to `main`; macOS apps are tested on a macOS runner and (with signing secrets)
+will ship notarized Sparkle updates. A daily job keeps each project's
+dependencies current too, landing an upgrade only when it still builds and
+passes tests — so older experiments don't bit-rot.
 
 ## Apps
 
@@ -73,5 +74,18 @@ experiments internally:
 See [`docs/ios-testflight-design.md`](docs/ios-testflight-design.md) for the iOS
 CD/preview design, and [`docs/ios-testflight-setup.md`](docs/ios-testflight-setup.md)
 for a click-by-click, beginner-friendly Apple/TestFlight setup guide.
+
+## macOS apps
+
+Unlike iOS (one Playground container), **macOS apps are ordinary top-level
+directories** — one app per directory, discovered by an XcodeGen `project.yml`
+that declares `platform: macOS`:
+
+- **[`hello-macos/`](hello-macos/)** — minimal SwiftUI "Hello Mac" sample (the
+  macOS counterpart of static `hello/`). Proves discovery + CI; Sparkle CD lands
+  in a follow-up.
+
+See [`docs/macos-sparkle-design.md`](docs/macos-sparkle-design.md) for the macOS
+release design (Developer ID + notarization + Sparkle appcast on GitHub Pages).
 
 See [`AGENTS.md`](AGENTS.md) for repository conventions, CI, and how to add a new app.

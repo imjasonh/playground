@@ -1,0 +1,81 @@
+name: HelloMac
+
+# Discovery marker for macOS apps: a top-level directory with project.yml that
+# declares platform: macOS (see discover-macos-apps.sh). Distinct from iOS apps,
+# which declare platform: iOS in their project.yml.
+#
+# `xcodegen generate` produces HelloMac.xcodeproj, which is git-ignored.
+
+options:
+  bundleIdPrefix: io.github.imjasonh
+  deploymentTarget:
+    macOS: "13.0"
+  createIntermediateGroups: true
+  minimumXcodeGenVersion: "2.38.0"
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    VERSIONING_SYSTEM: apple-generic
+    # DEVELOPMENT_TEAM is injected by CI at signing time so the checked-in
+    # spec stays account-agnostic.
+
+targets:
+  HelloMac:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.imjasonh.hello-macos
+        PRODUCT_NAME: HelloMac
+        # Ad-hoc / local Debug builds; CI release signing overrides this.
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_HARDENED_RUNTIME: YES
+    info:
+      path: HelloMac-Info.plist
+      properties:
+        CFBundleName: Hello Mac
+        CFBundleDisplayName: Hello Mac
+        CFBundleExecutable: $(EXECUTABLE_NAME)
+        CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
+        CFBundleInfoDictionaryVersion: "6.0"
+        CFBundlePackageType: $(PRODUCT_BUNDLE_PACKAGE_TYPE)
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSMinimumSystemVersion: "$(MACOSX_DEPLOYMENT_TARGET)"
+        LSApplicationCategoryType: public.app-category.utilities
+        NSHighResolutionCapable: true
+        NSPrincipalClass: NSApplication
+        # No non-exempt encryption → notarization / distribution doesn't stall
+        # on the export-compliance question.
+        ITSAppUsesNonExemptEncryption: false
+
+  HelloMacTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - Tests/HelloMacTests
+    dependencies:
+      - target: HelloMac
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.imjasonh.hello-macos.tests
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  HelloMac:
+    build:
+      targets:
+        HelloMac: all
+    test:
+      gatherCoverageData: true
+      targets:
+        - HelloMacTests
+    run:
+      config: Debug
+    archive:
+      config: Release

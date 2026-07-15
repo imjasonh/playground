@@ -1,0 +1,17 @@
+default_platform(:mac)
+
+APP_SCHEME = "HelloMac"
+XCODEPROJ = "HelloMac.xcodeproj"
+
+platform :mac do
+  desc "Run unit tests on macOS (no Developer ID / notarization required)"
+  lane :test do
+    run_tests(
+      project: XCODEPROJ,
+      scheme: APP_SCHEME,
+      destination: "platform=macOS",
+      result_bundle: true,
+      output_directory: "fastlane/test_output"
+    )
+  end
+end
