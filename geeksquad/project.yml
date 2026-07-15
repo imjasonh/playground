@@ -16,7 +16,7 @@ settings:
   base:
     SWIFT_VERSION: "5.9"
     MARKETING_VERSION: "0.1.0"
-    CURRENT_PROJECT_VERSION: "1"
+    CURRENT_PROJECT_VERSION: "2"
     VERSIONING_SYSTEM: apple-generic
 
 packages:
@@ -42,6 +42,10 @@ targets:
         PRODUCT_NAME: GeekSquad
         CODE_SIGN_STYLE: Automatic
         ENABLE_HARDENED_RUNTIME: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Weak-link so the app still launches when FoundationModels isn't present;
+        # chat gates on availability at runtime (same pattern as ios Ride Monitor).
+        OTHER_LDFLAGS: "$(inherited) -weak_framework FoundationModels"
     entitlements:
       path: GeekSquad.entitlements
       properties:

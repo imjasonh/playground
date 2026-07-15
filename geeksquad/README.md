@@ -1,8 +1,9 @@
 # geeksquad — Geek Squad
 
-Offline Mac network & config triage. Manual Toolbox for DNS, routing, proxy/VPN,
-reachability, and related checks; proposes fixes without applying them. Shipped
-via the same Developer ID + Sparkle CD as [`hello-macos/`](../hello-macos/).
+Offline Mac network & config triage. **Chat** with an on-device Foundation Model
+that calls local diagnostic tools; **Toolbox** for the same checks manually.
+Proposes fixes — never applies them. Shipped via Developer ID + Sparkle CD
+(same path as [`hello-macos/`](../hello-macos/)).
 
 Design: [`docs/geeksquad-design.md`](../docs/geeksquad-design.md)
 
@@ -16,16 +17,18 @@ geeksquad/
 ├── GeekSquad.entitlements
 ├── Sources/
 │   ├── Diagnostics/     # services + parsers (unit-tested)
-│   └── UI/              # Manual Toolbox
+│   ├── Triage/          # Foundation Models tools + chat model
+│   ├── UI/              # Chat + Manual Toolbox
+│   └── Assets.xcassets  # App icon
 ├── Tests/GeekSquadTests/
-├── fastlane/            # test + beta
-├── Gemfile
+├── fastlane/
 └── README.md
 ```
 
 ## Local development
 
-Requires macOS + Xcode.
+Requires macOS + Xcode. Chat needs **macOS 26+** with **Apple Intelligence**
+enabled; Toolbox works without it.
 
 ```bash
 cd geeksquad
@@ -39,12 +42,11 @@ bundle exec fastlane test
 
 ## What 0.1.0 includes
 
-- Manual Toolbox: interfaces, default route, path status, DNS config/lookup,
-  reachability, HTTP probe, proxy config, VPN interfaces, hosts file, current Wi‑Fi
-- Proposed fixes shown as text only (never auto-applied)
-- Sparkle **Check for Updates…** (shared playground EdDSA key)
-
-Guided on-device Foundation Models triage is Phase 2 (see design doc).
+- **Chat (primary):** describe symptoms → on-device model runs diagnostic tools →
+  proposes steps you apply yourself
+- **Toolbox:** same diagnostics as buttons (works without Apple Intelligence)
+- Sparkle **Check for Updates…**
+- 🤓 app icon
 
 ## CI / releases
 

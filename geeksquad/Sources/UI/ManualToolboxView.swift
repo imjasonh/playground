@@ -22,7 +22,7 @@ import SwiftUI
                 .accessibilityIdentifier("check-\(check.rawValue)")
             }
             .navigationSplitViewColumnWidth(min: 200, ideal: 240)
-            .navigationTitle("Geek Squad")
+            .navigationTitle("Toolbox")
         } detail: {
             detailPane
         }
