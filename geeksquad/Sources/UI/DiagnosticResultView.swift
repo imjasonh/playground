@@ -42,8 +42,9 @@ struct DiagnosticResultView: View {
                     }
                     ForEach(Array(report.proposedFixes.enumerated()), id: \.offset) { index, fix in
                         HStack(alignment: .top, spacing: 8) {
-                            Text("\(index + 1). \(fix)")
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                            Text("\(index + 1).")
+                                .foregroundStyle(.secondary)
+                            MarkdownText(source: fix, font: .body)
                             Button {
                                 PasteboardCopy.string(fix)
                             } label: {

@@ -125,11 +125,11 @@ struct ChatView: View {
             HStack(spacing: 8) {
                 ForEach(items, id: \.title) { item in
                     Button(item.title) {
-                        model.useScenario(item.prompt)
-                        composerFocused = true
+                        Task { await model.sendScenario(item.prompt) }
                     }
                     .buttonStyle(.bordered)
                     .disabled(model.isResponding)
+                    .accessibilityIdentifier("chip-\(item.title)")
                 }
             }
             .padding(.horizontal, 16)

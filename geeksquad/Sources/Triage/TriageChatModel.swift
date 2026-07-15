@@ -47,6 +47,8 @@ final class TriageChatModel: ObservableObject {
     @Published var messages: [ChatMessage] = []
     @Published var draft: String = ""
     @Published var isResponding = false
+    /// Assistant bubble currently streaming — tool cards insert above it.
+    private var streamingAssistantId: UUID?
 
     #if canImport(FoundationModels)
     /// Boxed so the property type isn't `LanguageModelSession` at the class
@@ -129,7 +131,7 @@ final class TriageChatModel: ObservableObject {
             messages.append(
                 ChatMessage(
                     role: .system,
-                    text: "Ask what’s going wrong — I measure network, performance, login agents, disk hotspots, ports, crashes, and battery/power on this Mac. I propose steps; I won’t change settings or kill processes."
+                    text: "Ask what’s going wrong — I’ll run the read-only checks myself (network, performance, disk, ports, crashes, battery), then suggest practical Settings/Activity Monitor steps. I won’t change settings, kill processes, or recommend hardware upgrades."
                 )
             )
         }
@@ -144,9 +146,7 @@ final class TriageChatModel: ObservableObject {
         if #available(macOS 26.0, *), case .available = availability {
             let hub = ToolActivityHub { [weak self] name, markdown in
                 Task { @MainActor in
-                    self?.messages.append(
-                        ChatMessage(role: .tool, text: markdown, toolName: name)
-                    )
+                    self?.insertToolMessage(name: name, markdown: markdown)
                 }
             }
             toolHubBox = hub
@@ -160,6 +160,12 @@ final class TriageChatModel: ObservableObject {
 
     func useScenario(_ prompt: String) {
         draft = prompt
+    }
+
+    /// Starter / follow-up chips: fill the composer and send immediately.
+    func sendScenario(_ prompt: String) async {
+        useScenario(prompt)
+        await send()
     }
 
     /// Markdown transcript for sharing / pasting into a ticket.
@@ -301,10 +307,10 @@ final class TriageChatModel: ObservableObject {
         lines.append(contentsOf: recent)
         lines.append("")
         lines.append(
-            "Use tools for live facts. If the user says “it” or omits the app name, reuse the app from earlier turns (e.g. process_usage query: Cursor)."
+            "Use tools for live facts — do not ask the user to run Terminal diagnostics. If the user says “it” or omits the app name, reuse the app from earlier turns (e.g. process_usage query: Cursor)."
         )
         lines.append(
-            "Fill the triage report fields from tool evidence only. proposedSteps must be actions the user can take — never claim you applied them."
+            "Fill the triage report from tool evidence only. proposedSteps must be Settings/UI remediations the user can do — never Terminal read-only commands Geek Squad could have run as tools."
         )
         lines.append("Latest user message: \(latest)")
         return lines.joined(separator: "\n")
@@ -318,11 +324,25 @@ final class TriageChatModel: ObservableObject {
         messages[index] = message
     }
 
+    /// Keep tool cards above the in-progress assistant reply.
+    private func insertToolMessage(name: String, markdown: String) {
+        let tool = ChatMessage(role: .tool, text: markdown, toolName: name)
+        if let aid = streamingAssistantId,
+           let idx = messages.firstIndex(where: { $0.id == aid })
+        {
+            messages.insert(tool, at: idx)
+        } else {
+            messages.append(tool)
+        }
+    }
+
     #if canImport(FoundationModels)
     @available(macOS 26.0, *)
     private func streamPlainAnswer(to text: String, instructions: String) async throws {
         let session = LanguageModelSession(instructions: instructions)
         let id = UUID()
+        streamingAssistantId = id
+        defer { streamingAssistantId = nil }
         messages.append(ChatMessage(id: id, role: .assistant, text: ""))
         let stream = session.streamResponse(to: text)
         for try await snapshot in stream {
@@ -345,6 +365,8 @@ final class TriageChatModel: ObservableObject {
     @available(macOS 26.0, *)
     private func streamTriageReport(session: LanguageModelSession, prompt: String) async throws {
         let id = UUID()
+        streamingAssistantId = id
+        defer { streamingAssistantId = nil }
         messages.append(ChatMessage(id: id, role: .assistant, text: "Working…"))
         let stream = session.streamResponse(to: prompt, generating: TriageReport.self)
         for try await snapshot in stream {

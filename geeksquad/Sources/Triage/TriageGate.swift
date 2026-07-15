@@ -9,6 +9,8 @@ enum TriageGate {
         performance (CPU/memory/disk/load/sleep assertions), listening ports, and \
         crash reports.
 
+        \(TriageAudience.guidance)
+
         Reply with exactly \(diagnoseSentinel) and nothing else when the user needs \
         live facts from this Mac in those areas.
 
