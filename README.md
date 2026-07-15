@@ -88,6 +88,9 @@ that declares `platform: macOS`:
 - **[`hello-macos/`](hello-macos/)** — minimal SwiftUI "Hello Mac" sample (the
   macOS counterpart of static `hello/`). Discovery, CI, notarized Sparkle CD,
   and in-app **Check for Updates…** against the gh-pages appcast.
+- **[`geeksquad/`](geeksquad/)** — Geek Squad offline Mac network/config triage
+  (Manual Toolbox + proposed fixes). Same Sparkle CD path; see
+  [`docs/geeksquad-design.md`](docs/geeksquad-design.md).
 
 See [`docs/macos-sparkle-design.md`](docs/macos-sparkle-design.md) for the macOS
 release design (Developer ID + notarization + Sparkle appcast on GitHub Pages).

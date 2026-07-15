@@ -1,0 +1,34 @@
+# XcodeGen output — regenerated from project.yml, never committed.
+*.xcodeproj
+GeekSquad-Info.plist
+
+# Xcode / build artifacts
+DerivedData/
+build/
+*.xcarchive
+*.dmg
+*.pkg
+*.zip
+*.dSYM.zip
+.swiftpm/
+
+# fastlane generated output
+fastlane/build/
+fastlane/test_output/
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/release/
+
+# Signing material — must never be committed
+*.mobileprovision
+*.provisionprofile
+*.p8
+*.p12
+*.cer
+sparkle_eddsa*
+*.pem
+
+# Ruby / bundler
+vendor/bundle/
+.bundle/

@@ -1,8 +1,11 @@
 # Design: Geek Squad — offline Mac network & config triage
 
-> **Status: design revised after review — still design-only (no app yet).**
-> Directory / Bundle: **`geeksquad/`**, `io.github.imjasonh.geeksquad`
-> Product name: **Geek Squad**
+> **Status: Phase 1 implementation includes Chat + Toolbox.** Directory
+> **`geeksquad/`**, Bundle ID `io.github.imjasonh.geeksquad`, product name
+> **Geek Squad**. **0.1.0** ships Foundation Models chat (primary) that calls
+> local diagnostic tools, plus a Manual Toolbox fallback. Deployment target is
+> **macOS 14+** so CI can build; chat requires **macOS 26+ / Apple Intelligence**
+> at runtime (`#if canImport` + availability checks, weak-linked framework).
 
 This is the product we deferred while standing up macOS CD. Foundations now
 exist and are proven end-to-end:
@@ -22,10 +25,10 @@ secrets, second appcast).
 |-------|----------|
 | Name | **Geek Squad** (`geeksquad/`) |
 | Sparkle | Reuse as much as possible — **same EdDSA keypair + Fastlane patterns**; two apps are fine (see §7) |
-| OS floor | **Modern only** — macOS 26+ (Foundation Models / Apple Intelligence) |
+| OS floor | **macOS 14+** for Manual Toolbox (0.1.0); Phase 2 chat needs **macOS 26+** / Apple Intelligence |
 | Diagnostics APIs | Prefer **frameworks**; fall back to CLIs when needed |
 | Remediation | **Propose fixes**; do **not** apply them automatically in v1 |
-| First ship | **0.1.0 must be usable** (Manual Toolbox + real diagnostics), not an empty CD canary |
+| First ship | **0.1.0 includes Chat + Manual Toolbox** (chat needs Apple Intelligence at runtime) |
 
 ---
 
@@ -239,7 +242,7 @@ geeksquad/
 | Product / app name | Geek Squad |
 | Sparkle feed | `https://imjasonh.github.io/playground/macos/geeksquad/appcast.xml` |
 | Release tag | `geeksquad-v<marketing>` |
-| Min OS | **macOS 26.0** |
+| Min OS | **macOS 14.0** for Manual Toolbox (0.1.0); **macOS 26+** when Phase 2 chat ships |
 
 `hello-macos` remains the low-deps CD canary. Geek Squad is the product app.
 
@@ -329,25 +332,18 @@ Optional later: extract shared Fastlane helpers so the two apps do not drift.
 
 Review complete once this revision matches intent.
 
-### Phase 1 — usable 0.1.0
+### Phase 1 — usable 0.1.0 (this PR)
 
 1. Scaffold `geeksquad/` from hello-macos (Sparkle + Fastlane).
-2. Implement **DiagnosticServices** + unit tests (frameworks first, CLI fallback).
-3. Ship **Manual Toolbox UI** — enough to diagnose forced bad DNS / proxy / VPN
-   default-route cases without the model.
-4. Sparkle Check for Updates wired; `SUFeedURL` → geeksquad appcast.
-5. Merge to `main` → notarized **0.1.0** that is genuinely usable.
-6. Optional quick **0.1.1** bump to prove in-app update on this app.
+2. **DiagnosticServices** + unit tests (frameworks first, CLI fallback).
+3. **Chat (primary):** Foundation Models + diagnostic tools; propose-only fixes.
+4. **Manual Toolbox** fallback when Apple Intelligence is unavailable.
+5. Sparkle Check for Updates; shared EdDSA key.
+6. Merge to `main` → notarized **0.1.0**.
 
-### Phase 2 — Foundation Models triage (still can ship as 0.2.x)
+### Phase 2 — polish (optional)
 
-1. Tools wrapping services; `TriageSession`; `@Generable TriageReport`.
-2. Availability gating + scenario chips.
-3. Proposed-fix steps in the report (copyable only).
-
-### Phase 3 — polish (optional)
-
-- Richer export, Settings deep links, shared Fastlane extract.
+- Richer streaming / transcript UI, Settings deep links, shared Fastlane extract.
 - Confirmed-apply actions only if we explicitly revisit “don’t action yet.”
 
 ---
