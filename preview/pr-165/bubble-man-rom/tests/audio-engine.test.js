@@ -63,7 +63,22 @@ test("maps the encoded infinite loop back to measure 9", () => {
   assert.equal(playbackTickForElapsed(900 * tickSeconds, 512, 128), 132);
 });
 
-test("converts pulse timer-table octaves to sounding pitch", () => {
-  assert.ok(Math.abs(frequencyForPitch("A2", 12) - 220) < 0.01);
-  assert.ok(Math.abs(frequencyForPitch("A3", 0) - 220) < 0.01);
+test("matches the opening notes to their NTSC APU timer frequencies", () => {
+  const ntscCpuHz = 1_789_773;
+  const timerFrequency = (timer, divider) =>
+    ntscCpuHz / (divider * (timer + 1));
+
+  // Opening Pulse 1: the disassembly calls timer $023B “G2,” but the
+  // pulse divider makes it sound at 195.6 Hz, concert G3.
+  assert.ok(
+    Math.abs(frequencyForPitch("G2", 12) - timerFrequency(0x023b, 16)) < 0.5,
+  );
+  // Opening Pulse 2 and triangle both sound D#3. The triangle stream starts
+  // from the next table octave because its hardware divider is twice as large.
+  assert.ok(
+    Math.abs(frequencyForPitch("D#2", 12) - timerFrequency(0x02cf, 16)) < 0.5,
+  );
+  assert.ok(
+    Math.abs(frequencyForPitch("D#3") - timerFrequency(0x0167, 32)) < 0.5,
+  );
 });

@@ -223,10 +223,12 @@
         </p>
         <p class="technical-note">
           <strong>Octave convention:</strong> the disassembly labels pulse notes
-          by their timer-table octave. An annotated G2 actually leaves the NES
-          pulse channel at about 196 Hz—concert-pitch G3. Triangle uses a divider
-          twice as large and an octave-higher table base, so its annotated octave
-          already matches concert pitch.
+          by their timer-table octave. The opening’s annotated G2 selects timer
+          $023B, which produces 195.6 Hz—concert-pitch G3—on an NTSC NES pulse
+          channel. That low opening register is intentional; raising it again
+          would make G4 and would not match the ROM or Capcom soundtrack.
+          Triangle uses a divider twice as large and an octave-higher table base,
+          so its annotated octave already matches concert pitch.
         </p>
       </section>
 
@@ -272,6 +274,7 @@
         <li><a href="https://www.romhacking.net/documents/785/">Music/SFX data guide ↗</a></li>
         <li><a href="https://vgmonline.net/megamaninterview/">Mega Man sound-team interview ↗</a></li>
         <li><a href="https://vgmpf.com/Wiki/index.php?title=Bubbleman_Stage">VGMPF track notes ↗</a></li>
+        <li><a href="https://music.apple.com/jp/album/bubbleman-stage/1086913350?i=1086913484">Official Capcom soundtrack recording ↗</a></li>
       </ul>
     </footer>
   </body>
