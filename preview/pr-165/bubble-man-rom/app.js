@@ -22,6 +22,7 @@ let currentSection = sections[0];
 let mutedChannels = new Set();
 let currentTick = 0;
 let audioSignalSeen = false;
+let activeCodeRow = null;
 
 const player = new SectionPlayer({
   onFrame: ({ elapsed, progress, tick, audioLevel }) => {
@@ -144,6 +145,8 @@ function renderSequencer() {
 }
 
 function renderCode() {
+  activeCodeRow = null;
+  codeList.scrollTop = 0;
   codeList.replaceChildren(
     ...currentSection.code.map((instruction, index) => {
       const row = document.createElement("div");
@@ -219,8 +222,20 @@ function updateActiveCode(tick) {
     active = rows[Math.min(rows.length - 1, Math.floor((tick / currentSection.durationTicks) * rows.length))];
   }
 
-  rows.forEach((row) => row.classList.toggle("is-active", row === active));
-  active?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  if (active === activeCodeRow) return;
+
+  activeCodeRow?.classList.remove("is-active");
+  active?.classList.add("is-active");
+  activeCodeRow = active;
+
+  if (!active) return;
+  const containerBounds = codeList.getBoundingClientRect();
+  const rowBounds = active.getBoundingClientRect();
+  if (rowBounds.top < containerBounds.top) {
+    codeList.scrollTop -= containerBounds.top - rowBounds.top + 8;
+  } else if (rowBounds.bottom > containerBounds.bottom) {
+    codeList.scrollTop += rowBounds.bottom - containerBounds.bottom + 8;
+  }
 }
 
 function resetTransport() {
@@ -238,6 +253,7 @@ function resetTransport() {
   updatePlayhead(0);
   updateActiveNotes(-1);
   codeList.querySelectorAll(".code-row").forEach((row) => row.classList.remove("is-active"));
+  activeCodeRow = null;
 }
 
 playButton.addEventListener("click", async () => {
