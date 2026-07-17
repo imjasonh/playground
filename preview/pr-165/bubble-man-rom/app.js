@@ -14,16 +14,28 @@ const currentTime = $(".current-time");
 const totalTime = $(".total-time");
 const progressFill = $(".progress-track i");
 const liveIndicator = $(".live-indicator");
+const audioStatus = $(".audio-status");
+const audioStatusText = $(".audio-status span");
+const audioMeter = $(".audio-status b");
 
 let currentSection = sections[0];
 let mutedChannels = new Set();
 let currentTick = 0;
+let audioSignalSeen = false;
 
 const player = new SectionPlayer({
-  onFrame: ({ elapsed, progress, tick }) => {
+  onFrame: ({ elapsed, progress, tick, audioLevel }) => {
     currentTick = tick;
     currentTime.textContent = formatPlaybackTime(elapsed);
     progressFill.style.width = `${progress * 100}%`;
+    const meterWidth = Math.min(100, audioLevel * 420);
+    audioMeter.style.width = `${meterWidth}%`;
+    if (audioLevel > 0.001 && !audioSignalSeen) {
+      audioSignalSeen = true;
+      audioStatus.classList.add("is-active");
+      audioStatusText.textContent = "Audio output active";
+      $(".player-shell").dataset.audioActive = "true";
+    }
     updatePlayhead(progress);
     updateActiveNotes(tick);
     updateActiveCode(tick);
@@ -217,6 +229,11 @@ function resetTransport() {
   playIcon.textContent = "▶";
   liveIndicator.classList.remove("is-live");
   currentTime.textContent = "0:00.0";
+  audioSignalSeen = false;
+  audioMeter.style.width = "0";
+  audioStatus.classList.remove("is-active", "is-error");
+  audioStatusText.textContent = "Tap play to enable audio";
+  $(".player-shell").dataset.audioActive = "false";
   progressFill.style.width = "0";
   updatePlayhead(0);
   updateActiveNotes(-1);
@@ -232,10 +249,15 @@ playButton.addEventListener("click", async () => {
   playLabel.textContent = "Stop";
   playIcon.textContent = "■";
   liveIndicator.classList.add("is-live");
+  audioStatus.classList.remove("is-error");
+  audioStatusText.textContent = "Starting audio…";
   try {
     await player.play(currentSection, mutedChannels);
   } catch (error) {
     resetTransport();
+    audioStatus.classList.add("is-error");
+    audioStatusText.textContent =
+      "Audio could not start. Check silent mode, volume, then tap Play again.";
     console.error("Unable to start Web Audio playback", error);
   }
 });

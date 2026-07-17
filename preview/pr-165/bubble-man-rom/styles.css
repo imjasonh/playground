@@ -474,7 +474,7 @@ h2 {
 
 .transport {
   display: grid;
-  grid-template-columns: auto auto 1fr;
+  grid-template-columns: auto auto auto 1fr;
   gap: 1.2rem;
   align-items: center;
   padding: 1rem 2rem;
@@ -511,6 +511,40 @@ h2 {
 .current-time {
   min-width: 3.4rem;
   color: var(--ink);
+}
+
+.audio-status {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.58rem;
+}
+
+.audio-status > i {
+  display: flex;
+  align-items: end;
+  width: 2.2rem;
+  height: 0.5rem;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.audio-status b {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: var(--aqua);
+  transition: width 60ms linear;
+}
+
+.audio-status.is-active {
+  color: var(--aqua);
+}
+
+.audio-status.is-error {
+  color: var(--coral);
 }
 
 .progress-track {
@@ -1093,6 +1127,11 @@ footer a:hover {
 
   .progress-track {
     grid-column: 1 / -1;
+  }
+
+  .audio-status {
+    grid-column: 1 / -1;
+    grid-row: 2;
   }
 
   .sequencer-panel,

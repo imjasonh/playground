@@ -2,6 +2,41 @@ import { BPM, TICKS_PER_BEAT, pitchToMidi } from "./music-data.js";
 
 const tickSeconds = 60 / BPM / TICKS_PER_BEAT;
 
+export function createAudioContext(scope = globalThis) {
+  const AudioContextConstructor = scope.AudioContext ?? scope.webkitAudioContext;
+  if (!AudioContextConstructor) {
+    throw new Error("Web Audio is not supported by this browser.");
+  }
+  return new AudioContextConstructor();
+}
+
+export function configureAudioSession(navigatorObject = globalThis.navigator) {
+  try {
+    if (navigatorObject?.audioSession) {
+      navigatorObject.audioSession.type = "playback";
+    }
+  } catch {
+    // Older WebKit builds may expose a read-only or partially implemented API.
+  }
+}
+
+export async function unlockAudioContext(context) {
+  // iOS requires a source to be started synchronously inside the user gesture.
+  // Starting a one-sample silent buffer before awaiting resume satisfies that
+  // requirement without producing a click.
+  const source = context.createBufferSource();
+  source.buffer = context.createBuffer(1, 1, context.sampleRate);
+  source.connect(context.destination);
+  source.start(0);
+
+  if (context.state !== "running") {
+    await context.resume();
+  }
+  if (context.state !== "running") {
+    throw new Error(`Audio output is ${context.state}; tap Play again to enable it.`);
+  }
+}
+
 function pulseWave(context, duty) {
   const harmonics = 48;
   const real = new Float32Array(harmonics);
@@ -85,17 +120,22 @@ export class SectionPlayer {
 
   async play(section, mutedChannels = new Set()) {
     this.stop(false);
-    this.context ??= new AudioContext();
-    await this.context.resume();
+    configureAudioSession();
+    this.context ??= createAudioContext();
+    await unlockAudioContext(this.context);
 
     const master = this.context.createGain();
     const compressor = this.context.createDynamicsCompressor();
+    const analyser = this.context.createAnalyser();
     const channelBuses = new Map();
+    const waveform = new Float32Array(256);
     master.gain.value = 0.72;
     compressor.threshold.value = -16;
     compressor.knee.value = 12;
     compressor.ratio.value = 5;
-    master.connect(compressor).connect(this.context.destination);
+    analyser.fftSize = 256;
+    analyser.smoothingTimeConstant = 0.35;
+    master.connect(compressor).connect(analyser).connect(this.context.destination);
 
     const sectionStart = this.context.currentTime + 0.055;
     const duration = section.durationTicks * tickSeconds;
@@ -111,6 +151,8 @@ export class SectionPlayer {
 
     this.playing = true;
     this.activeOutput = master;
+    this.analyser = analyser;
+    this.waveform = waveform;
     this.channelBuses = channelBuses;
     this.startedAt = sectionStart;
     this.duration = duration;
@@ -120,7 +162,10 @@ export class SectionPlayer {
       if (!this.playing) return;
       const elapsed = Math.max(0, this.context.currentTime - this.startedAt);
       const progress = Math.min(1, elapsed / this.duration);
-      this.onFrame?.({ elapsed, progress, tick: elapsed / tickSeconds });
+      this.analyser.getFloatTimeDomainData(this.waveform);
+      const sumOfSquares = this.waveform.reduce((sum, sample) => sum + sample * sample, 0);
+      const audioLevel = Math.sqrt(sumOfSquares / this.waveform.length);
+      this.onFrame?.({ elapsed, progress, tick: elapsed / tickSeconds, audioLevel });
       if (progress < 1) this.animationFrame = requestAnimationFrame(draw);
     };
     this.animationFrame = requestAnimationFrame(draw);
