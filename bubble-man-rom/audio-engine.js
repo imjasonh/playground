@@ -8,7 +8,12 @@ export function playbackTickForElapsed(
   durationTicks,
   loopStartTick,
 ) {
-  const elapsedTicks = elapsedSeconds / tickSeconds;
+  const rawElapsedTicks = elapsedSeconds / tickSeconds;
+  const nearestTick = Math.round(rawElapsedTicks);
+  const elapsedTicks =
+    Math.abs(rawElapsedTicks - nearestTick) < 1e-9
+      ? nearestTick
+      : rawElapsedTicks;
   if (!Number.isFinite(loopStartTick) || elapsedTicks < durationTicks) {
     return Math.min(durationTicks, elapsedTicks);
   }
