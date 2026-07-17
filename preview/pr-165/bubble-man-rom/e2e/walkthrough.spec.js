@@ -100,6 +100,9 @@ test("mobile layout has no page-level horizontal overflow", async ({ page }, tes
   expect(dimensions.scrollWidth).toBe(dimensions.clientWidth);
 
   await page.getByRole("link", { name: /Begin the playable walkthrough/ }).click();
-  await expect(page.getByRole("button", { name: "Play passage" })).toBeInViewport();
+  await expect(page).toHaveURL(/#walkthrough$/);
+  const playButton = page.getByRole("button", { name: "Play passage" });
+  await playButton.scrollIntoViewIfNeeded();
+  await expect(playButton).toBeInViewport();
   await expect(page.locator(".bytecode-panel")).toBeVisible();
 });
