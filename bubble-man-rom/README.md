@@ -3,9 +3,11 @@
 An interactive, playable explanation of how the Bubble Man Stage theme from
 *Mega Man 2* is represented in the NES ROM.
 
-The app reconstructs selected passages with the Web Audio API, displays their
-four channel streams as a piano roll, and follows the corresponding
-reverse-engineered music bytecode.
+The app reconstructs the complete 32-bar first pass from the four
+reverse-engineered channel streams. It plays each eight-bar narrative section in
+full and offers a complete-song mode whose 24-bar body loops at the same point
+encoded in the ROM. Playback uses the Web Audio API and follows the corresponding
+bytecode in a piano-roll view.
 
 ## Run locally
 

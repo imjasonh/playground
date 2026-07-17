@@ -9,14 +9,22 @@ import {
   pitchToMidi,
   sections,
 } from "../music-data.js";
+import {
+  exactTrackChannels,
+  LOOP_START_TICK,
+  TRACK_LENGTH_TICKS,
+} from "../exact-track-data.js";
 
-test("walkthrough exposes the four narrative passages", () => {
+test("walkthrough exposes the full form and four complete sections", () => {
   assert.deepEqual(
     sections.map(({ id }) => id),
-    ["intro", "ostinato", "lead", "turnaround"],
+    ["full", "intro", "ostinato", "lead", "turnaround"],
   );
   assert.equal(BPM, 180);
   assert.equal(TICKS_PER_BEAT, 4);
+  assert.equal(sections[0].durationTicks, 512);
+  assert.equal(sections[0].loopStartTick, 128);
+  assert.ok(sections.slice(1).every((section) => section.durationTicks === 128));
 });
 
 test("every playable event fits within its passage", () => {
@@ -38,6 +46,24 @@ test("every playable event fits within its passage", () => {
   }
 });
 
+test("exact channel streams cover all 32 bars without truncation", () => {
+  assert.equal(TRACK_LENGTH_TICKS, 512);
+  assert.equal(LOOP_START_TICK, 128);
+  assert.deepEqual(
+    exactTrackChannels.map((channel) => channel.events.length),
+    [177, 254, 256, 257],
+  );
+
+  for (const channel of exactTrackChannels) {
+    let cursor = 0;
+    for (const event of channel.events) {
+      assert.equal(event.start, cursor, `${channel.id} has a gap or overlap at ${cursor}`);
+      cursor += event.duration;
+    }
+    assert.equal(cursor, TRACK_LENGTH_TICKS, `${channel.id} is cut off`);
+  }
+});
+
 test("pitch parser handles flats, sharps, rests and reference pitch", () => {
   assert.equal(pitchToMidi("A4"), 69);
   assert.equal(pitchToMidi("Bb3"), 58);
@@ -48,6 +74,6 @@ test("pitch parser handles flats, sharps, rests and reference pitch", () => {
 
 test("section lookup and display helpers have safe fallbacks", () => {
   assert.equal(getSection("lead").id, "lead");
-  assert.equal(getSection("missing").id, "intro");
+  assert.equal(getSection("missing").id, "full");
   assert.equal(formatTime(42.7), "0:42");
 });

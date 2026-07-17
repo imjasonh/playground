@@ -1,3 +1,10 @@
+import {
+  exactTrackChannels,
+  LOOP_START_TICK,
+  sliceChannels,
+  TRACK_LENGTH_TICKS,
+} from "./exact-track-data.js";
+
 export const TICKS_PER_BEAT = 4;
 export const BPM = 180;
 
@@ -13,10 +20,10 @@ const note = (start, duration, pitch, byte, address, label = "") => ({
 const rest = (start, duration, byte, address) =>
   note(start, duration, null, byte, address, "rest");
 
-export const sections = [
+const excerptSections = [
   {
     id: "intro",
-    eyebrow: "Measures 1–4 · Opening phrase",
+    eyebrow: "Measures 1–8 · Complete one-time introduction",
     title: "A quiet opening, assembled one byte at a time",
     summary:
       "Long low notes leave room for a fast broken-chord texture. The foreground sounds spacious even though the accompaniment is already moving every eighth note.",
@@ -108,7 +115,7 @@ export const sections = [
   },
   {
     id: "ostinato",
-    eyebrow: "Measures 9–10 · Loop entry",
+    eyebrow: "Measures 9–16 · Complete loop-entry section",
     title: "The introduction disappears, but the machinery continues",
     summary:
       "The infinite loop begins here. Pulse 1 alternates registers so rapidly that the ear separates a low pedal from a high answering voice.",
@@ -185,7 +192,7 @@ export const sections = [
   },
   {
     id: "lead",
-    eyebrow: "Measures 17–18 · Lead entrance",
+    eyebrow: "Measures 17–24 · Complete lead section",
     title: "Three lines cooperate to imply an ensemble",
     summary:
       "Pulse 1 becomes the soloist. Pulse 2 shadows its contour while triangle preserves the harmonic current below it.",
@@ -271,7 +278,7 @@ export const sections = [
   },
   {
     id: "turnaround",
-    eyebrow: "Measures 31–32 · Loop turnaround",
+    eyebrow: "Measures 25–32 · Complete turnaround",
     title: "The missing chord appears between the channels",
     summary:
       "Rapid A-flat and G arpeggios meet a B–D–F–G ascent. Together they spell G7, a secondary dominant that pulls the music back to C at the loop point.",
@@ -349,6 +356,47 @@ export const sections = [
       { address: "$A2B9", bytes: "04 00 C8 A1", asm: "LOOP 0, $A1C8", comment: "jump back to measure 9" },
     ],
   },
+];
+
+const ranges = [
+  [0, 128],
+  [128, 256],
+  [256, 384],
+  [384, 512],
+];
+
+export const sections = [
+  {
+    id: "full",
+    eyebrow: "Complete 32-bar first pass · then measures 9–32 loop",
+    title: "Hear the complete encoded form",
+    summary:
+      "All four channel streams play their full first pass. At the end, the same infinite jumps used by the ROM return every voice to measure 9, so the eight-bar introduction is not repeated.",
+    insight:
+      "The progress line jumps back one quarter of the way through the display at the loop point. That is the actual form: 8 bars once, followed by a repeating 24-bar body.",
+    durationTicks: TRACK_LENGTH_TICKS,
+    loopStartTick: LOOP_START_TICK,
+    channels: exactTrackChannels,
+    code: [
+      { address: "$A191", bytes: "0F", asm: "TRACK_PRIORITY $0F", comment: "Bubble Man track header" },
+      { address: "$A192", bytes: "9C A1 BA A2", asm: "PULSE POINTERS", comment: "two pulse streams" },
+      { address: "$A196", bytes: "A7 A3 53 A4", asm: "TRIANGLE / NOISE", comment: "rhythm streams" },
+      { address: "$A19A", bytes: "A0 A4", asm: "VIBRATO TABLE", comment: "two modulation definitions" },
+      { address: "$A19C", bytes: "00 05", asm: "SET_SPEED $05", comment: "180 BPM" },
+      { address: "$A2B6", bytes: "04 00 C8 A1", asm: "PULSE 1 LOOP → $A1C8", comment: "return to measure 9" },
+      { address: "$A3A3", bytes: "04 00 EE A2", asm: "PULSE 2 LOOP → $A2EE", comment: "same musical loop point" },
+      { address: "$A44F", bytes: "04 00 F5 A3", asm: "TRIANGLE LOOP → $A3F5", comment: "same musical loop point" },
+      { address: "$A49C", bytes: "04 00 89 A4", asm: "NOISE LOOP → $A489", comment: "short drum cell repeats continuously" },
+    ],
+  },
+  ...excerptSections.map((section, index) => {
+    const [start, end] = ranges[index];
+    return {
+      ...section,
+      durationTicks: end - start,
+      channels: sliceChannels(start, end),
+    };
+  }),
 ];
 
 export const opcodeRows = [
