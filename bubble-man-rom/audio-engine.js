@@ -175,8 +175,13 @@ export class SectionPlayer {
   stop(notify = true) {
     if (this.animationFrame) cancelAnimationFrame(this.animationFrame);
     if (this.stopTimer) clearTimeout(this.stopTimer);
-    this.activeOutput?.gain.cancelScheduledValues(0);
-    this.activeOutput?.gain.setTargetAtTime(0.0001, this.context?.currentTime ?? 0, 0.012);
+    if (this.activeOutput && this.context) {
+      const now = this.context.currentTime;
+      const gain = this.activeOutput.gain;
+      gain.cancelScheduledValues(now);
+      gain.setValueAtTime(Math.max(0.0001, gain.value), now);
+      gain.linearRampToValueAtTime(0.0001, now + 0.025);
+    }
     const wasPlaying = this.playing;
     this.playing = false;
     this.animationFrame = null;
