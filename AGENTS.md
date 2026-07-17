@@ -24,6 +24,7 @@ playground/
 ├── git-fuse/              # Rust CLI: read-only FUSE adapter for git-server (not a Pages app)
 ├── git-server/            # Rust Cloudflare Worker: git smart-HTTP server on R2/DO (not a Pages app)
 ├── gitdb/                 # Go CLI (Go module + Go tests)
+├── litestream-tenants/    # Go CLI: multi-tenant SQLite + Litestream local benches
 ├── hello/                 # example static app (HTML only)
 ├── hello-macos/           # example macOS SwiftUI app (XcodeGen + Sparkle CD)
 ├── geeksquad/             # offline Mac network/config triage (Sparkle CD)
@@ -49,6 +50,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `kanoodle/` | yes | Client-side JS modules, npm scripts, tests |
 | `web-push-demo/` | yes | Static front-end for `web-push`; HTML/JS, no build or tests |
 | `gitdb/` | no | Go CLI; no `index.html` |
+| `litestream-tenants/` | no | Go CLI (Litestream VFS benches; CGO + `-tags vfs`); no `index.html` |
 | `ocidb/` | no | Go CLI; no `index.html` |
 | `web-push/` | no | Rust Cloudflare Worker; no `index.html` |
 | `cors-proxy/` | no | Rust Cloudflare Worker; no `index.html` |
@@ -519,6 +521,7 @@ bundle exec fastlane test
 | Directory | Type | Tests |
 |-----------|------|-------|
 | `gitdb/` | git repository explorer backed by SQLite virtual tables | `go test ./...` |
+| `litestream-tenants/` | multi-tenant SQLite + Litestream local benches (VFS vs restore, R/W, shards) | `CGO_ENABLED=1 go test -tags vfs ./...` |
 | `ocidb/` | OCI registry explorer backed by SQLite virtual tables | `go test ./...` |
 
 ## Current Rust apps

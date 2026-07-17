@@ -50,6 +50,8 @@ skip them:
 
 - **[`gitdb/`](gitdb/)** — query a git repo's history, files, blame, and file
   contents with SQL, via SQLite virtual tables over go-git (Go CLI).
+- **[`litestream-tenants/`](litestream-tenants/)** — local multi-tenant SQLite +
+  Litestream benches (VFS vs restore, readers/writers, sharding).
 - **[`ocidb/`](ocidb/)** — explore OCI container images on Docker Hub with SQL,
   via SQLite virtual tables over go-containerregistry (Go CLI).
 - **[`web-push/`](web-push/)** — a Web Push application-server backend

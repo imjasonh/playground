@@ -16,13 +16,21 @@ result=0
 for module in "${modules[@]}"; do
   echo "::group::Build and test ${module}"
 
+  # litestream-tenants needs CGO + Litestream's vfs build tag.
+  go_build=(go build ./...)
+  go_test=(go test -v ./...)
+  if [ "$module" = "litestream-tenants" ]; then
+    go_build=(env CGO_ENABLED=1 go build -tags vfs ./...)
+    go_test=(env CGO_ENABLED=1 go test -tags vfs -v -timeout 10m ./...)
+  fi
+
   if (
     cd "$module"
-    go build ./...
+    "${go_build[@]}"
   ); then
     echo "${module}: build passed"
   else
-    echo "::error title=Go build failed::${module}: go build ./..."
+    echo "::error title=Go build failed::${module}: ${go_build[*]}"
     result=1
   fi
 
@@ -44,12 +52,12 @@ for module in "${modules[@]}"; do
     if [ "$module" = "node-image" ]; then
       go test -v -timeout 30m ./...
     else
-      go test -v ./...
+      "${go_test[@]}"
     fi
   ); then
     echo "${module}: tests passed"
   else
-    echo "::error title=Go tests failed::${module}: go test -v ./..."
+    echo "::error title=Go tests failed::${module}: ${go_test[*]}"
     result=1
   fi
 

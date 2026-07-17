@@ -54,14 +54,23 @@ for module in "${modules[@]}"; do
     echo "- ❌ \`${module}\`: dependency update failed" >> "$GITHUB_STEP_SUMMARY"
   fi
 
+  go_build=(go build ./...)
+  go_test=(go test ./...)
+  if [ "$module" = "litestream-tenants" ]; then
+    go_build=(env CGO_ENABLED=1 go build -tags vfs ./...)
+    go_test=(env CGO_ENABLED=1 go test -tags vfs -timeout 10m ./...)
+  elif [ "$module" = "node-image" ]; then
+    go_test=(go test -timeout 30m ./...)
+  fi
+
   if (
     cd "$module"
-    go build ./...
+    "${go_build[@]}"
   ); then
     echo "- ✅ \`${module}\`: build passed" >> "$GITHUB_STEP_SUMMARY"
   else
     result=failure
-    echo "::error title=Build failed::${module}: go build ./..."
+    echo "::error title=Build failed::${module}: ${go_build[*]}"
     echo "- ❌ \`${module}\`: build failed" >> "$GITHUB_STEP_SUMMARY"
   fi
 
@@ -75,16 +84,12 @@ for module in "${modules[@]}"; do
 
   if (
     cd "$module"
-    if [ "$module" = "node-image" ]; then
-      go test -timeout 30m ./...
-    else
-      go test ./...
-    fi
+    "${go_test[@]}"
   ); then
     echo "- ✅ \`${module}\`: tests passed" >> "$GITHUB_STEP_SUMMARY"
   else
     result=failure
-    echo "::error title=Tests failed::${module}: go test ./..."
+    echo "::error title=Tests failed::${module}: ${go_test[*]}"
     echo "- ❌ \`${module}\`: tests failed" >> "$GITHUB_STEP_SUMMARY"
   fi
 

@@ -1,0 +1,8 @@
+/litestream-tenants
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+/tmp/
+/testdata/
+/bench-out/
