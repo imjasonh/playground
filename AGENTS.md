@@ -324,12 +324,15 @@ Follow `kanoodle/` as a reference:
 my-app/
 ├── index.html
 ├── package.json       # scripts: test, optionally test:e2e, start
-├── package-lock.json  # commit lockfile for reproducible CI
+├── package-lock.json  # required: CI runs npm ci (even with zero deps)
 ├── .gitignore
 ├── src/               # ES modules or bundled source
 ├── tests/             # unit tests (e.g. Jest)
 └── e2e/               # optional browser tests (e.g. Playwright)
 ```
+
+Always commit `package-lock.json`. For a no-dependency app, create it with
+`npm install --package-lock-only` inside the app directory.
 
 Run locally:
 
@@ -493,6 +496,15 @@ bundle exec fastlane test
   `gh pr view <number> --json state` (or the GitHub UI / PR URL) before
   `git push`.
 - CI must pass (changed browser apps are tested; changed Go and Rust apps are built and tested).
+- **After every push to a PR branch, check CI and fix failures before
+  considering the work done.** Do not stop at “pushed + opened/updated the
+  PR.” Poll the checks (`gh pr checks <number>`, the GitHub Actions UI, or
+  `ManagePullRequest` `get_ci_status`), inspect failed job logs, and push
+  fixes until required checks are green (or until a failure is clearly
+  environmental / unrelated and called out). A common browser-app footgun:
+  CI runs `npm ci`, which **requires a committed `package-lock.json`** even
+  when the app has zero dependencies — generate one with
+  `npm install --package-lock-only` (see `artillery/` / `nes-seq/`).
 - Preview deploy provides a live URL for browser apps only—use it to verify browser behavior, especially mobile.
 - If the repo uses Linear integration, include `Resolves ABC-123` in the PR body when applicable.
 
