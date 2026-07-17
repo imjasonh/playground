@@ -52,6 +52,22 @@ export const sections = [
         ],
       },
       {
+        id: "pulse2",
+        name: "Pulse 2",
+        color: "#ff7f88",
+        wave: "pulse",
+        duty: 0.5,
+        gain: 0.085,
+        events: [
+          "Eb2", "G3", "Eb3", "Eb2", "G3", "C3", "Eb3", "Ab2",
+          "G3", "Eb3", "Eb2", "Eb3", "G3", "Eb2", "Eb3", "G3",
+          "D2", "F3", "D3", "D2", "F3", "Bb2", "D3", "G2",
+          "F3", "D3", "D2", "D3", "F3", "D2", "D3", "F3",
+        ].map((pitch, index) =>
+          note(index * 2, 2, pitch, index === 0 ? "$88" : "…", `$A${(0x2bd + index).toString(16).toUpperCase()}`),
+        ),
+      },
+      {
         id: "triangle",
         name: "Triangle",
         color: "#68d7d3",
