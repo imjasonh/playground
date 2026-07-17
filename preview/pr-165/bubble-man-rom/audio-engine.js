@@ -175,12 +175,12 @@ export class SectionPlayer {
   stop(notify = true) {
     if (this.animationFrame) cancelAnimationFrame(this.animationFrame);
     if (this.stopTimer) clearTimeout(this.stopTimer);
-    if (this.activeOutput && this.context) {
-      const now = this.context.currentTime;
-      const gain = this.activeOutput.gain;
-      gain.cancelScheduledValues(now);
-      gain.setValueAtTime(Math.max(0.0001, gain.value), now);
-      gain.linearRampToValueAtTime(0.0001, now + 0.025);
+    if (this.activeOutput) {
+      // Disconnecting is more reliable than rewriting AudioParam automation
+      // while many future notes are scheduled; iOS WebKit can terminate the
+      // audio process when those timelines are mutated during playback.
+      this.activeOutput.gain.value = 0;
+      this.activeOutput.disconnect();
     }
     const wasPlaying = this.playing;
     this.playing = false;
