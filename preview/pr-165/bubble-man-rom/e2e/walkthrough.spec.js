@@ -28,7 +28,7 @@ test("renders the narrative and all interactive passages", async ({ page }) => {
   await expect(page.locator(".passage-title")).toContainText("complete encoded form");
   await expect(page.locator(".sequence-row")).toHaveCount(4);
   await expect(page.locator('.sequence-row[data-channel="pulse1"] .note-block').first())
-    .toHaveAttribute("title", /G3 sounding \\(G2 timer-table label\\)/);
+    .toHaveAttribute("title", /G3 sounding \(G2 timer-table label\)/);
   await expect(page.locator(".code-row")).toHaveCount(9);
   await expect(page.locator(".total-time")).toHaveText("0:42.7 · loop → 0:10.7");
 });
@@ -103,7 +103,8 @@ test("decoder exposes the byte split and reverse-engineering caveat", async ({ p
   await expect(page.locator(".hex-byte")).toHaveText("CC");
   await expect(page.locator(".binary-byte span")).toHaveCount(8);
   await expect(page.locator(".opcode-row")).toHaveCount(10);
-  await expect(page.locator(".technical-note")).toContainText("not Capcom’s original symbols");
+  await expect(page.locator(".technical-note").first()).toContainText("not Capcom’s original symbols");
+  await expect(page.locator(".technical-note").last()).toContainText("annotated G2");
 });
 
 test("mobile layout has no page-level horizontal overflow", async ({ page }, testInfo) => {
