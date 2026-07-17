@@ -429,3 +429,9 @@ export function pitchToMidi(pitch) {
   const accidental = match[2] === "b" ? -1 : match[2] === "#" ? 1 : 0;
   return (Number(match[3]) + 1) * 12 + semitones[match[1]] + accidental;
 }
+
+export function midiToPitch(midi) {
+  if (!Number.isFinite(midi)) return null;
+  const names = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
+  return `${names[((midi % 12) + 12) % 12]}${Math.floor(midi / 12) - 1}`;
+}

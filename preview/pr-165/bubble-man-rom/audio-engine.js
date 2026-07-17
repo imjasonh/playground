@@ -78,9 +78,9 @@ function pulseWave(context, duty) {
   return wave;
 }
 
-function frequencyForPitch(pitch) {
+export function frequencyForPitch(pitch, transpose = 0) {
   const midi = pitchToMidi(pitch);
-  return midi === null ? null : 440 * 2 ** ((midi - 69) / 12);
+  return midi === null ? null : 440 * 2 ** ((midi + transpose - 69) / 12);
 }
 
 function scheduleTone(context, output, channel, event, sectionStart) {
@@ -116,7 +116,10 @@ function scheduleTone(context, output, channel, event, sectionStart) {
 
   const oscillator = context.createOscillator();
   const gain = context.createGain();
-  oscillator.frequency.setValueAtTime(frequencyForPitch(event.pitch), startsAt);
+  oscillator.frequency.setValueAtTime(
+    frequencyForPitch(event.pitch, channel.transpose ?? 0),
+    startsAt,
+  );
 
   if (channel.wave === "pulse") {
     oscillator.setPeriodicWave(pulseWave(context, event.duty ?? channel.duty ?? 0.5));

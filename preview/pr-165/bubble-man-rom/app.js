@@ -1,5 +1,5 @@
 import { SectionPlayer, tickSeconds } from "./audio-engine.js";
-import { opcodeRows, pitchToMidi, sections } from "./music-data.js";
+import { midiToPitch, opcodeRows, pitchToMidi, sections } from "./music-data.js";
 
 const $ = (selector, root = document) => root.querySelector(selector);
 
@@ -109,8 +109,12 @@ function renderPassage() {
 
 function renderSequencer() {
   const allMidi = currentSection.channels
-    .flatMap((channel) => channel.events)
-    .map((event) => pitchToMidi(event.pitch))
+    .flatMap((channel) =>
+      channel.events.map((event) => {
+        const midi = pitchToMidi(event.pitch);
+        return midi === null ? null : midi + (channel.transpose ?? 0);
+      }),
+    )
     .filter((value) => value !== null);
   const lowest = Math.min(...allMidi);
   const highest = Math.max(...allMidi);
@@ -137,10 +141,19 @@ function renderSequencer() {
       if (channel.wave === "noise") {
         block.style.top = "58%";
       } else {
-        const midi = pitchToMidi(event.pitch);
+        const midi = pitchToMidi(event.pitch) + (channel.transpose ?? 0);
         block.style.top = `${80 - ((midi - lowest) / range) * 60}%`;
       }
-      block.title = [event.pitch, event.byte, event.address]
+      const sourceMidi = pitchToMidi(event.pitch);
+      const soundingPitch =
+        sourceMidi === null
+          ? event.pitch
+          : midiToPitch(sourceMidi + (channel.transpose ?? 0));
+      const pitchLabel =
+        soundingPitch !== event.pitch
+          ? `${soundingPitch} sounding (${event.pitch} timer-table label)`
+          : event.pitch;
+      block.title = [pitchLabel, event.byte, event.address]
         .filter(Boolean)
         .join(" · ");
       row.append(block);

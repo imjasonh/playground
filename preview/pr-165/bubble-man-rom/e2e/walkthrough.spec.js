@@ -27,6 +27,8 @@ test("renders the narrative and all interactive passages", async ({ page }) => {
   await expect(tabs.nth(0)).toHaveAttribute("aria-selected", "true");
   await expect(page.locator(".passage-title")).toContainText("complete encoded form");
   await expect(page.locator(".sequence-row")).toHaveCount(4);
+  await expect(page.locator('.sequence-row[data-channel="pulse1"] .note-block').first())
+    .toHaveAttribute("title", /G3 sounding \\(G2 timer-table label\\)/);
   await expect(page.locator(".code-row")).toHaveCount(9);
   await expect(page.locator(".total-time")).toHaveText("0:42.7 · loop → 0:10.7");
 });

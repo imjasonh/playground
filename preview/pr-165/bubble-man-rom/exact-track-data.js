@@ -971,6 +971,10 @@ export const exactTrackChannels = Array.from(
     const events = encodedChannels[index * 2 + 1];
     return {
     id, name, color, wave, gain,
+    // Bisqwit's pulse comments name timer-table octaves. The NES pulse divider
+    // sounds those entries one scientific-pitch octave higher. Triangle uses a
+    // divider twice as large and an octave-higher table base, so it needs no shift.
+    transpose: wave === "pulse" ? 12 : 0,
     events: events.map(([start, duration, pitch, byte, duty, eventGain, vibrato]) => ({
       start, duration, pitch, byte, duty, gain: eventGain, vibrato,
     })),
