@@ -19,7 +19,8 @@ for app in "${apps[@]}"; do
     npm ci
     npm test
     if node -e "const s=require('./package.json').scripts||{}; process.exit(s['test:e2e']?0:1)"; then
-      npx playwright install --with-deps chromium
+      read -r -a playwright_browsers <<< "$(node -p "(require('./package.json').playwrightBrowsers || ['chromium']).join(' ')")"
+      npx playwright install --with-deps "${playwright_browsers[@]}"
       npm run test:e2e
     else
       echo "No test:e2e script; skipping e2e."

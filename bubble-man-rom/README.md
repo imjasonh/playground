@@ -22,8 +22,9 @@ npm test
 npm run test:e2e
 ```
 
-End-to-end tests use Playwright Chromium and cover playback state, synchronized
-bytecode highlighting, channel muting, passage navigation, and mobile overflow.
+End-to-end tests use Playwright Chromium and mobile WebKit. They assert that the
+audio graph produces a non-zero signal and cover synchronized bytecode
+highlighting, channel muting, passage navigation, and mobile overflow.
 
 The playback is an educational browser reconstruction, not an emulator. Note
 sequences and addresses follow the commented sound-driver disassembly; browser

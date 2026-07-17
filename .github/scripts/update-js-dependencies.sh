@@ -77,7 +77,8 @@ for app in "${apps[@]}"; do
     if (
       set -euo pipefail
       cd "$app"
-      npx playwright install --with-deps chromium
+      read -r -a playwright_browsers <<< "$(node -p "(require('./package.json').playwrightBrowsers || ['chromium']).join(' ')")"
+      npx playwright install --with-deps "${playwright_browsers[@]}"
       npm run test:e2e
     ); then
       echo "- ✅ \`${app}\`: end-to-end tests passed" >> "$GITHUB_STEP_SUMMARY"
