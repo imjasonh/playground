@@ -13,6 +13,8 @@ available.
 - **Web MIDI** — USB/Bluetooth controllers on Chrome, Edge, and Firefox
 - **QWERTY piano** — `Z`–`/` and `Q`–`P`, with octave shift
 - **WAV export** — offline render of the same APU engine
+- **NSF export** — standard Nintendo Sound Format playable in NSF-capable
+  emulators/players (built from the same register stream as the authoring engine)
 - **Local save** — pattern + instruments persist in `localStorage`
 
 Safari can compose with the computer keyboard; it does not expose Web MIDI.
@@ -48,7 +50,21 @@ mode** — the same constraints composers used on hardware.
 3. Play notes via MIDI or the computer keyboard.
 4. Hit **Rec** while playing to overdub into the live playhead.
 5. Tweak the instrument macros; they expand while notes are held.
-6. **Export WAV** for a bounce of the current loop.
+6. **Export WAV** for a bounce, or **Export NSF** for emulator playback.
+
+## NSF export
+
+`Export NSF` compiles the current loop into a non-bankswitched NTSC NSF:
+
+1. The authoring `NesPlayer` runs once, recording APU register writes.
+2. Writes are delta-encoded into ~60 Hz PLAY frames.
+3. A tiny 6502 player (INIT / PLAY) is assembled at `$8000` and packed with a
+   standard NSF header.
+
+Open the `.nsf` in any NSF-capable player (VirtuaNSF, Nestopia NSF mode,
+Game_Music_Emu front-ends, etc.). JSNES does **not** load NSF files directly;
+CI wraps the NSF in a Mapper-0 iNES ROM (`src/export/nesRom.js`) and plays that
+through `jsnes` to verify the bytes are readable and audible.
 
 ## Architecture
 
@@ -58,15 +74,15 @@ src/instruments/   duty / volume / arp macros
 src/sequencer/     pattern, transport, NesPlayer
 src/audio/         AudioWorklet engine (+ main-thread fallback)
 src/input/         Web MIDI + QWERTY
-src/export/        offline render → 16-bit WAV
+src/export/        WAV, NSF, iNES ROM wrapper (for JSNES tests)
 ```
 
-Unit tests exercise the APU, macros, sequencer, player, song I/O, and WAV path
-with Node’s built-in test runner — no browser required.
+Unit tests exercise the APU, macros, sequencer, player, song I/O, WAV/NSF
+export, and JSNES ROM playback with Node’s built-in test runner.
 
 ## Limits / next
 
 - DMC / DPCM samples not yet exposed
-- No NSF or FamiTracker export yet (WAV is the v1 deliverable)
+- No FamiTracker `.ftm` export yet
 - Expansion audio (VRC6, N163, …) out of scope for v1
 - Browser MIDI latency is fine for sketching; not Core Audio–class
