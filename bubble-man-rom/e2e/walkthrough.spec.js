@@ -48,13 +48,17 @@ test("switches passages with mouse and keyboard", async ({ page }) => {
   await expect(page.locator(".passage-title")).toContainText("machinery continues");
 });
 
-test("plays, follows bytecode, mutes channels, and stops cleanly", async ({ page }) => {
+test("produces an audio signal, follows bytecode, mutes, and stops cleanly", async ({ page }) => {
   const play = page.getByRole("button", { name: "Play passage" });
   await play.click();
 
   await expect(page.getByRole("button", { name: "Stop" })).toBeVisible();
   await expect(page.locator(".live-indicator")).toHaveClass(/is-live/);
   await expect(page.locator(".current-time")).not.toHaveText("0:00.0", { timeout: 2_000 });
+  await expect(page.locator(".player-shell")).toHaveAttribute("data-audio-active", "true", {
+    timeout: 3_000,
+  });
+  await expect(page.locator(".audio-status")).toContainText("Audio output active");
   await expect(page.locator(".code-row.is-active")).toHaveCount(1);
   await expect(page.locator(".note-block.is-active").first()).toBeVisible();
 
