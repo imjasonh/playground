@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   configureAudioSession,
   createAudioContext,
+  frequencyForPitch,
   playbackTickForElapsed,
   unlockAudioContext,
 } from "../audio-engine.js";
@@ -60,4 +61,9 @@ test("maps the encoded infinite loop back to measure 9", () => {
   assert.equal(playbackTickForElapsed(512 * tickSeconds, 512, 128), 128);
   assert.equal(playbackTickForElapsed(896 * tickSeconds, 512, 128), 128);
   assert.equal(playbackTickForElapsed(900 * tickSeconds, 512, 128), 132);
+});
+
+test("converts pulse timer-table octaves to sounding pitch", () => {
+  assert.ok(Math.abs(frequencyForPitch("A2", 12) - 220) < 0.01);
+  assert.ok(Math.abs(frequencyForPitch("A3", 0) - 220) < 0.01);
 });

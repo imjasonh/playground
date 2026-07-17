@@ -6,6 +6,7 @@ import {
   TICKS_PER_BEAT,
   formatTime,
   getSection,
+  midiToPitch,
   pitchToMidi,
   sections,
 } from "../music-data.js";
@@ -68,8 +69,21 @@ test("pitch parser handles flats, sharps, rests and reference pitch", () => {
   assert.equal(pitchToMidi("A4"), 69);
   assert.equal(pitchToMidi("Bb3"), 58);
   assert.equal(pitchToMidi("F#4"), 66);
+  assert.equal(midiToPitch(68), "Ab4");
   assert.equal(pitchToMidi(null), null);
   assert.equal(pitchToMidi("noise"), null);
+});
+
+test("only pulse streams need the timer-table octave correction", () => {
+  assert.deepEqual(
+    exactTrackChannels.map(({ id, transpose }) => [id, transpose]),
+    [
+      ["pulse1", 12],
+      ["pulse2", 12],
+      ["triangle", 0],
+      ["noise", 0],
+    ],
+  );
 });
 
 test("section lookup and display helpers have safe fallbacks", () => {
