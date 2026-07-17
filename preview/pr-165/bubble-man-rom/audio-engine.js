@@ -1,6 +1,20 @@
 import { BPM, TICKS_PER_BEAT, pitchToMidi } from "./music-data.js";
 
 const tickSeconds = 60 / BPM / TICKS_PER_BEAT;
+const pulseWaveCache = new WeakMap();
+
+export function playbackTickForElapsed(
+  elapsedSeconds,
+  durationTicks,
+  loopStartTick,
+) {
+  const elapsedTicks = elapsedSeconds / tickSeconds;
+  if (!Number.isFinite(loopStartTick) || elapsedTicks < durationTicks) {
+    return Math.min(durationTicks, elapsedTicks);
+  }
+  const loopDurationTicks = durationTicks - loopStartTick;
+  return loopStartTick + ((elapsedTicks - durationTicks) % loopDurationTicks);
+}
 
 export function createAudioContext(scope = globalThis) {
   const AudioContextConstructor = scope.AudioContext ?? scope.webkitAudioContext;
@@ -38,6 +52,13 @@ export async function unlockAudioContext(context) {
 }
 
 function pulseWave(context, duty) {
+  let contextWaves = pulseWaveCache.get(context);
+  if (!contextWaves) {
+    contextWaves = new Map();
+    pulseWaveCache.set(context, contextWaves);
+  }
+  if (contextWaves.has(duty)) return contextWaves.get(duty);
+
   const harmonics = 48;
   const real = new Float32Array(harmonics);
   const imag = new Float32Array(harmonics);
@@ -47,7 +68,9 @@ function pulseWave(context, duty) {
     imag[n] = (2 * Math.sin(Math.PI * n * duty) * Math.sin(Math.PI * n * duty)) / (Math.PI * n);
   }
 
-  return context.createPeriodicWave(real, imag, { disableNormalization: false });
+  const wave = context.createPeriodicWave(real, imag, { disableNormalization: false });
+  contextWaves.set(duty, wave);
+  return wave;
 }
 
 function frequencyForPitch(pitch) {
@@ -77,7 +100,7 @@ function scheduleTone(context, output, channel, event, sectionStart) {
     const filter = context.createBiquadFilter();
     filter.type = "highpass";
     filter.frequency.value = 1600;
-    gain.gain.setValueAtTime(channel.gain, startsAt);
+    gain.gain.setValueAtTime(event.gain ?? channel.gain, startsAt);
     gain.gain.exponentialRampToValueAtTime(0.001, startsAt + Math.min(duration, 0.08));
     source.buffer = buffer;
     source.connect(filter).connect(gain).connect(output);
@@ -91,7 +114,7 @@ function scheduleTone(context, output, channel, event, sectionStart) {
   oscillator.frequency.setValueAtTime(frequencyForPitch(event.pitch), startsAt);
 
   if (channel.wave === "pulse") {
-    oscillator.setPeriodicWave(pulseWave(context, channel.duty ?? 0.5));
+    oscillator.setPeriodicWave(pulseWave(context, event.duty ?? channel.duty ?? 0.5));
   } else {
     oscillator.type = "triangle";
   }
@@ -99,11 +122,21 @@ function scheduleTone(context, output, channel, event, sectionStart) {
   const attack = channel.wave === "triangle" ? 0.006 : 0.003;
   const release = Math.min(0.028, duration * 0.18);
   gain.gain.setValueAtTime(0.0001, startsAt);
-  gain.gain.exponentialRampToValueAtTime(channel.gain, startsAt + attack);
-  gain.gain.setValueAtTime(channel.gain, Math.max(startsAt + attack, endsAt - release));
+  const eventGain = event.gain ?? channel.gain;
+  gain.gain.exponentialRampToValueAtTime(eventGain, startsAt + attack);
+  gain.gain.setValueAtTime(eventGain, Math.max(startsAt + attack, endsAt - release));
   gain.gain.exponentialRampToValueAtTime(0.0001, endsAt);
 
   oscillator.connect(gain).connect(output);
+  if (event.vibrato) {
+    const vibrato = context.createOscillator();
+    const vibratoDepth = context.createGain();
+    vibrato.frequency.value = 6;
+    vibratoDepth.gain.value = 12;
+    vibrato.connect(vibratoDepth).connect(oscillator.detune);
+    vibrato.start(startsAt);
+    vibrato.stop(endsAt);
+  }
   oscillator.start(startsAt);
   oscillator.stop(endsAt + 0.01);
 }
@@ -115,6 +148,7 @@ export class SectionPlayer {
     this.onStop = onStop;
     this.animationFrame = null;
     this.stopTimer = null;
+    this.schedulerTimer = null;
     this.playing = false;
   }
 
@@ -144,11 +178,11 @@ export class SectionPlayer {
       bus.gain.value = mutedChannels.has(channel.id) ? 0 : 1;
       bus.connect(master);
       channelBuses.set(channel.id, bus);
-      channel.events.forEach((event) =>
-        scheduleTone(this.context, bus, channel, event, sectionStart),
-      );
     });
 
+    const loopStartTick = section.loopStartTick;
+    const loopDurationTicks =
+      Number.isFinite(loopStartTick) ? section.durationTicks - loopStartTick : 0;
     this.playing = true;
     this.activeOutput = master;
     this.analyser = analyser;
@@ -158,23 +192,81 @@ export class SectionPlayer {
     this.duration = duration;
     this.section = section;
 
+    const scheduleStates = section.channels.map((channel) => ({
+      channel,
+      index: 0,
+      loopCount: 0,
+      baseTime: sectionStart,
+      offsetTick: 0,
+      firstLoopIndex: channel.events.findIndex(
+        (event) => event.start >= loopStartTick,
+      ),
+      done: false,
+    }));
+    const scheduleUpcoming = () => {
+      const horizon = this.context.currentTime + 1.5;
+      scheduleStates.forEach((state) => {
+        while (!state.done) {
+          if (state.index >= state.channel.events.length) {
+            if (!loopDurationTicks || state.firstLoopIndex < 0) {
+              state.done = true;
+              break;
+            }
+            state.baseTime =
+              sectionStart +
+              duration +
+              state.loopCount * loopDurationTicks * tickSeconds;
+            state.offsetTick = loopStartTick;
+            state.index = state.firstLoopIndex;
+            state.loopCount += 1;
+          }
+
+          const event = state.channel.events[state.index];
+          const eventTime =
+            state.baseTime + (event.start - state.offsetTick) * tickSeconds;
+          if (eventTime > horizon) break;
+          scheduleTone(
+            this.context,
+            channelBuses.get(state.channel.id),
+            state.channel,
+            { ...event, start: 0 },
+            eventTime,
+          );
+          state.index += 1;
+        }
+      });
+    };
+    scheduleUpcoming();
+    this.schedulerTimer = window.setInterval(scheduleUpcoming, 250);
+
     const draw = () => {
       if (!this.playing) return;
-      const elapsed = Math.max(0, this.context.currentTime - this.startedAt);
+      const absoluteElapsed = Math.max(0, this.context.currentTime - this.startedAt);
+      const playbackTick = playbackTickForElapsed(
+        absoluteElapsed,
+        section.durationTicks,
+        loopStartTick,
+      );
+      const elapsed = playbackTick * tickSeconds;
       const progress = Math.min(1, elapsed / this.duration);
       this.analyser.getFloatTimeDomainData(this.waveform);
       const sumOfSquares = this.waveform.reduce((sum, sample) => sum + sample * sample, 0);
       const audioLevel = Math.sqrt(sumOfSquares / this.waveform.length);
       this.onFrame?.({ elapsed, progress, tick: elapsed / tickSeconds, audioLevel });
-      if (progress < 1) this.animationFrame = requestAnimationFrame(draw);
+      if (loopDurationTicks || progress < 1) {
+        this.animationFrame = requestAnimationFrame(draw);
+      }
     };
     this.animationFrame = requestAnimationFrame(draw);
-    this.stopTimer = window.setTimeout(() => this.stop(), (duration + 0.12) * 1000);
+    if (!loopDurationTicks) {
+      this.stopTimer = window.setTimeout(() => this.stop(), (duration + 0.12) * 1000);
+    }
   }
 
   stop(notify = true) {
     if (this.animationFrame) cancelAnimationFrame(this.animationFrame);
     if (this.stopTimer) clearTimeout(this.stopTimer);
+    if (this.schedulerTimer) clearInterval(this.schedulerTimer);
     if (this.activeOutput) {
       // Disconnecting is more reliable than rewriting AudioParam automation
       // while many future notes are scheduled; iOS WebKit can terminate the
@@ -186,6 +278,7 @@ export class SectionPlayer {
     this.playing = false;
     this.animationFrame = null;
     this.stopTimer = null;
+    this.schedulerTimer = null;
     if (wasPlaying && notify) this.onStop?.();
   }
 

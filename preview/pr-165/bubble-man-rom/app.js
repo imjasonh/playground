@@ -96,7 +96,12 @@ function renderPassage() {
   $(".passage-title").textContent = currentSection.title;
   $(".passage-summary").textContent = currentSection.summary;
   $(".insight-copy").textContent = currentSection.insight;
-  totalTime.textContent = formatPlaybackTime(currentSection.durationTicks * tickSeconds);
+  const sectionDuration = currentSection.durationTicks * tickSeconds;
+  totalTime.textContent = Number.isFinite(currentSection.loopStartTick)
+    ? `${formatPlaybackTime(sectionDuration)} · loop → ${formatPlaybackTime(
+        currentSection.loopStartTick * tickSeconds,
+      )}`
+    : formatPlaybackTime(sectionDuration);
   renderSequencer();
   renderCode();
   renderMixer();
@@ -135,7 +140,9 @@ function renderSequencer() {
         const midi = pitchToMidi(event.pitch);
         block.style.top = `${80 - ((midi - lowest) / range) * 60}%`;
       }
-      block.title = `${event.pitch} · ${event.byte} · ${event.address}`;
+      block.title = [event.pitch, event.byte, event.address]
+        .filter(Boolean)
+        .join(" · ");
       row.append(block);
     });
     return row;

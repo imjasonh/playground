@@ -23,12 +23,12 @@ test("renders the narrative and all interactive passages", async ({ page }) => {
   await expect(page.getByRole("heading", { level: 1 })).toContainText("791");
 
   const tabs = page.getByRole("tab");
-  await expect(tabs).toHaveCount(4);
+  await expect(tabs).toHaveCount(5);
   await expect(tabs.nth(0)).toHaveAttribute("aria-selected", "true");
-  await expect(page.locator(".passage-title")).toContainText("quiet opening");
+  await expect(page.locator(".passage-title")).toContainText("complete encoded form");
   await expect(page.locator(".sequence-row")).toHaveCount(4);
-  await expect(page.locator(".code-row")).toHaveCount(10);
-  await expect(page.locator(".total-time")).toHaveText("0:05.3");
+  await expect(page.locator(".code-row")).toHaveCount(9);
+  await expect(page.locator(".total-time")).toHaveText("0:42.7 · loop → 0:10.7");
 });
 
 test("switches passages with mouse and keyboard", async ({ page }) => {
@@ -42,6 +42,7 @@ test("switches passages with mouse and keyboard", async ({ page }) => {
   await expect(page.locator(".code-list")).toContainText("NOTE_DELAY 1");
 
   await intro.click();
+  await expect(page.locator(".total-time")).toHaveText("0:10.7");
   await intro.press("ArrowRight");
   await expect(ostinato).toHaveAttribute("aria-selected", "true");
   await expect(ostinato).toBeFocused();

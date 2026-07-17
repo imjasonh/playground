@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   configureAudioSession,
   createAudioContext,
+  playbackTickForElapsed,
   unlockAudioContext,
 } from "../audio-engine.js";
 
@@ -51,4 +52,12 @@ test("reports when a browser refuses to activate audio", async () => {
   };
 
   await assert.rejects(unlockAudioContext(context), /Audio output is suspended/);
+});
+
+test("maps the encoded infinite loop back to measure 9", () => {
+  const tickSeconds = 60 / 180 / 4;
+  assert.equal(playbackTickForElapsed(511 * tickSeconds, 512, 128), 511);
+  assert.equal(playbackTickForElapsed(512 * tickSeconds, 512, 128), 128);
+  assert.equal(playbackTickForElapsed(896 * tickSeconds, 512, 128), 128);
+  assert.equal(playbackTickForElapsed(900 * tickSeconds, 512, 128), 132);
 });
