@@ -6,20 +6,38 @@ import { songToWavBlob } from "./export/wav.js";
 import { createKeyboardInput } from "./input/keyboard.js";
 import { createMidiInput, isMidiSupported } from "./input/midi.js";
 import {
+  cloneInstrument,
+  createDefaultInstruments,
+  presetsForChannel,
+} from "./instruments/macros.js";
+import {
   clearStep,
+  getStep,
   overdubNote,
   patternToJSON,
   resizePattern,
+  setCut,
+  setStep,
 } from "./sequencer/pattern.js";
+import { TICKS_PER_STEP } from "./sequencer/transport.js";
 import {
+  addPattern,
+  appendOrder,
   createDemoSong,
   createSong,
-  serializeSong,
+  deletePattern,
   deserializeSong,
+  duplicateEditPattern,
+  getEditPattern,
+  removeOrderEntry,
+  selectEditPattern,
+  serializeSong,
+  setEditPatternData,
+  setOrder,
   songToJSON,
 } from "./song.js";
 
-const STORAGE_KEY = "nes-seq-song-v1";
+const STORAGE_KEY = "nes-seq-song-v2";
 
 /** @type {import("./song.js").Song} */
 let song = loadSong();
@@ -27,7 +45,8 @@ let song = loadSong();
 let selectedChannel = "pulse1";
 let selectedStep = 0;
 let playheadStep = 0;
-let octaveBase = 48; // C3
+let playheadOrder = 0;
+let octaveBase = 48;
 let audioReady = false;
 let playing = false;
 let recording = false;
@@ -50,22 +69,40 @@ const els = {
   statusAudio: document.getElementById("status-audio"),
   statusMidi: document.getElementById("status-midi"),
   statusStep: document.getElementById("status-step"),
+  instPreset: document.getElementById("inst-preset"),
   instName: document.getElementById("inst-name"),
   instDuty: document.getElementById("inst-duty"),
   instVolume: document.getElementById("inst-volume"),
   instVolumeOut: document.getElementById("inst-volume-out"),
   instArp: document.getElementById("inst-arp"),
+  instPitch: document.getElementById("inst-pitch"),
+  instVibSpeed: document.getElementById("inst-vib-speed"),
+  instVibDepth: document.getElementById("inst-vib-depth"),
+  instDelay: document.getElementById("inst-delay"),
   instSpeed: document.getElementById("inst-speed"),
   instShortNoise: document.getElementById("inst-short-noise"),
   instNoiseWrap: document.getElementById("inst-noise-wrap"),
   octDown: document.getElementById("btn-oct-down"),
   octUp: document.getElementById("btn-oct-up"),
   octaveLabel: document.getElementById("octave-label"),
+  patternTabs: document.getElementById("pattern-tabs"),
+  orderList: document.getElementById("order-list"),
+  patAdd: document.getElementById("btn-pat-add"),
+  patDup: document.getElementById("btn-pat-dup"),
+  patDel: document.getElementById("btn-pat-del"),
+  orderAdd: document.getElementById("btn-order-add"),
+  noteInspector: document.getElementById("note-inspector"),
+  noteLength: document.getElementById("note-length"),
+  noteGate: document.getElementById("note-gate"),
+  noteSlide: document.getElementById("note-slide"),
+  noteCut: document.getElementById("btn-note-cut"),
 };
 
 function loadSong() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw =
+      localStorage.getItem(STORAGE_KEY) ||
+      localStorage.getItem("nes-seq-song-v1");
     if (raw) return deserializeSong(raw);
   } catch {
     /* ignore */
@@ -77,14 +114,21 @@ function persist() {
   try {
     localStorage.setItem(STORAGE_KEY, serializeSong(song));
   } catch {
-    /* ignore quota */
+    /* ignore */
   }
+}
+
+function editPattern() {
+  return getEditPattern(song);
 }
 
 function syncEngineSong() {
   if (!audioReady) return;
   engine.setBpm(song.bpm);
-  engine.setPattern(patternToJSON(song.pattern));
+  engine.setSong({
+    patterns: song.patterns.map(patternToJSON),
+    order: song.order,
+  });
   engine.setInstruments(song.instruments);
 }
 
@@ -95,16 +139,19 @@ async function ensureAudio() {
   }
   els.statusAudio.textContent = "Audio: starting…";
   await engine.init({
-    pattern: patternToJSON(song.pattern),
+    patterns: song.patterns.map(patternToJSON),
+    order: song.order,
     instruments: song.instruments,
     bpm: song.bpm,
   });
   engine.onTransport = (state) => {
     playheadStep = state.step;
+    playheadOrder = state.orderIndex ?? 0;
     playing = state.playing;
     recording = state.recording;
     updateTransportUi();
     highlightPlayhead();
+    renderOrder();
   };
   audioReady = true;
   els.statusAudio.textContent = `Audio: ${engine.mode === "worklet" ? "APU worklet" : "fallback"} · 44.1 kHz`;
@@ -115,7 +162,9 @@ function updateTransportUi() {
   els.play.classList.toggle("is-active", playing);
   els.play.textContent = playing ? "Playing" : "Play";
   els.record.setAttribute("aria-pressed", recording ? "true" : "false");
-  els.statusStep.innerHTML = `Step <strong>${String(playheadStep + 1).padStart(2, "0")}</strong>`;
+  const ord = song.order[playheadOrder] ?? 0;
+  const name = song.patterns[ord]?.name || String.fromCharCode(65 + ord);
+  els.statusStep.innerHTML = `Pat <strong>${name}</strong> · Step <strong>${String(playheadStep + 1).padStart(2, "0")}</strong>`;
 }
 
 function renderChannels() {
@@ -133,6 +182,7 @@ function renderChannels() {
       renderChannels();
       renderInstrument();
       renderGrid();
+      renderNoteInspector();
     });
     els.channelList.appendChild(btn);
   }
@@ -140,31 +190,45 @@ function renderChannels() {
 
 function renderInstrument() {
   const inst = song.instruments[selectedChannel];
+  const presets = presetsForChannel(selectedChannel);
+  els.instPreset.innerHTML =
+    `<option value="">Custom…</option>` +
+    presets
+      .map(
+        (p) =>
+          `<option value="${p.id}" ${p.id === inst.id ? "selected" : ""}>${p.name}</option>`,
+      )
+      .join("");
   els.instName.value = inst.name;
   els.instDuty.value = String(inst.duty);
   els.instVolume.value = String(inst.volume);
   els.instVolumeOut.textContent = String(inst.volume);
   els.instArp.value = inst.arpMacro.join(" ");
+  els.instPitch.value = (inst.pitchMacro || []).join(" ");
+  els.instVibSpeed.value = String(inst.vibratoSpeed || 0);
+  els.instVibDepth.value = String(inst.vibratoDepth || 0);
+  els.instDelay.value = String(inst.delay || 0);
   els.instSpeed.value = String(inst.macroSpeed);
   els.instShortNoise.checked = inst.shortNoise;
   const isPulse = selectedChannel === "pulse1" || selectedChannel === "pulse2";
   const isNoise = selectedChannel === "noise";
   els.instDuty.disabled = !isPulse;
   els.instNoiseWrap.hidden = !isNoise;
-  els.instDuty.title = isPulse
-    ? DUTY_LABELS[inst.duty]
-    : "Duty applies to pulse channels only";
+  els.instDuty.title = isPulse ? DUTY_LABELS[inst.duty] : "Pulse only";
 }
 
-function parseArp(text) {
+function parseIntList(text, signed = false) {
   if (!text.trim()) return [];
   return text
     .trim()
     .split(/[\s,]+/)
     .map((n) => Number(n))
     .filter((n) => Number.isFinite(n))
-    .map((n) => Math.max(-24, Math.min(24, n | 0)))
-    .slice(0, 16);
+    .map((n) => {
+      const v = n | 0;
+      return signed ? Math.max(-64, Math.min(64, v)) : Math.max(0, Math.min(15, v));
+    })
+    .slice(0, 32);
 }
 
 function applyInstrumentFromForm() {
@@ -172,7 +236,13 @@ function applyInstrumentFromForm() {
   inst.name = els.instName.value.trim() || inst.name;
   inst.duty = Number(els.instDuty.value) | 0;
   inst.volume = Number(els.instVolume.value) | 0;
-  inst.arpMacro = parseArp(els.instArp.value);
+  inst.arpMacro = parseIntList(els.instArp.value, true).map((n) =>
+    Math.max(-24, Math.min(24, n)),
+  );
+  inst.pitchMacro = parseIntList(els.instPitch.value, true);
+  inst.vibratoSpeed = Math.max(0, Number(els.instVibSpeed.value) | 0);
+  inst.vibratoDepth = Math.max(0, Number(els.instVibDepth.value) | 0);
+  inst.delay = Math.max(0, Number(els.instDelay.value) | 0);
   inst.macroSpeed = Math.max(1, Number(els.instSpeed.value) | 0);
   inst.shortNoise = els.instShortNoise.checked;
   els.instVolumeOut.textContent = String(inst.volume);
@@ -181,8 +251,52 @@ function applyInstrumentFromForm() {
   renderChannels();
 }
 
+function renderPatterns() {
+  els.patternTabs.innerHTML = "";
+  song.patterns.forEach((p, i) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn tiny";
+    btn.textContent = p.name || String.fromCharCode(65 + i);
+    btn.setAttribute(
+      "aria-pressed",
+      i === song.editPattern ? "true" : "false",
+    );
+    btn.addEventListener("click", () => {
+      song = selectEditPattern(song, i);
+      selectedStep = 0;
+      persist();
+      els.length.value = String(editPattern().length);
+      renderAll();
+    });
+    els.patternTabs.appendChild(btn);
+  });
+}
+
+function renderOrder() {
+  els.orderList.innerHTML = "";
+  song.order.forEach((patIdx, orderIdx) => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "order-chip";
+    if (playing && orderIdx === playheadOrder) chip.classList.add("is-playing");
+    const name =
+      song.patterns[patIdx]?.name || String.fromCharCode(65 + patIdx);
+    chip.textContent = name;
+    chip.title = "Click to remove from order";
+    chip.addEventListener("click", () => {
+      song = removeOrderEntry(song, orderIdx);
+      persist();
+      syncEngineSong();
+      renderOrder();
+    });
+    els.orderList.appendChild(chip);
+  });
+}
+
 function renderGrid() {
-  const len = song.pattern.length;
+  const pattern = editPattern();
+  const len = pattern.length;
   els.stepGrid.style.setProperty("--steps", String(len));
   els.stepGrid.innerHTML = "";
 
@@ -199,7 +313,6 @@ function renderGrid() {
     row.className = "step-row";
     row.dataset.channel = ch;
     row.style.setProperty("--steps", String(len));
-    row.setAttribute("role", "row");
 
     const label = document.createElement("div");
     label.className = "step-label";
@@ -212,29 +325,42 @@ function renderGrid() {
       cell.className = "step-cell";
       cell.dataset.channel = ch;
       cell.dataset.step = String(i);
-      cell.setAttribute("role", "gridcell");
-      const note = song.pattern.tracks[ch][i];
-      if (note) {
+      const note = pattern.tracks[ch][i];
+      if (note?.cut) {
+        cell.classList.add("has-note", "is-cut");
+        cell.textContent = "✕";
+        cell.title = "Cut";
+      } else if (note) {
         cell.classList.add("has-note");
         cell.textContent = formatNoteName(note.midi);
-        cell.title = `${formatNoteName(note.midi)} · vel ${note.velocity ?? "—"}`;
-      } else {
-        cell.textContent = "";
-        cell.title = `Step ${i + 1}`;
+        const bits = [formatNoteName(note.midi)];
+        if (note.slideTo != null) bits.push(`→${formatNoteName(note.slideTo)}`);
+        if (note.gate != null && note.gate !== TICKS_PER_STEP) {
+          bits.push(`g${note.gate}`);
+        }
+        cell.title = bits.join(" ");
       }
       if (i === selectedStep && ch === selectedChannel) {
         cell.classList.add("is-selected");
       }
-      if (playing && i === playheadStep) {
+      if (
+        playing &&
+        i === playheadStep &&
+        song.order[playheadOrder] === song.editPattern
+      ) {
         cell.classList.add("is-playhead");
       }
       cell.addEventListener("click", () => onCellClick(ch, i));
       cell.addEventListener("contextmenu", (event) => {
         event.preventDefault();
-        song.pattern = clearStep(song.pattern, ch, i);
+        song = setEditPatternData(
+          song,
+          clearStep(editPattern(), ch, i),
+        );
         persist();
         syncEngineSong();
         renderGrid();
+        renderNoteInspector();
       });
       row.appendChild(cell);
     }
@@ -245,9 +371,33 @@ function renderGrid() {
 function highlightPlayhead() {
   for (const cell of els.stepGrid.querySelectorAll(".step-cell")) {
     const step = Number(cell.dataset.step);
-    cell.classList.toggle("is-playhead", playing && step === playheadStep);
+    const onEdit =
+      playing &&
+      song.order[playheadOrder] === song.editPattern &&
+      step === playheadStep;
+    cell.classList.toggle("is-playhead", onEdit);
   }
-  els.statusStep.innerHTML = `Step <strong>${String(playheadStep + 1).padStart(2, "0")}</strong>`;
+  updateTransportUi();
+}
+
+function renderNoteInspector() {
+  const note = getStep(editPattern(), selectedChannel, selectedStep);
+  if (!note || note.cut) {
+    els.noteInspector.hidden = !note?.cut;
+    if (note?.cut) {
+      els.noteLength.disabled = true;
+      els.noteGate.disabled = true;
+      els.noteSlide.disabled = true;
+    }
+    return;
+  }
+  els.noteInspector.hidden = false;
+  els.noteLength.disabled = false;
+  els.noteGate.disabled = false;
+  els.noteSlide.disabled = false;
+  els.noteLength.value = String(note.length ?? 1);
+  els.noteGate.value = String(note.gate ?? TICKS_PER_STEP);
+  els.noteSlide.value = String(note.slideTo ?? -1);
 }
 
 /**
@@ -259,6 +409,30 @@ function onCellClick(channel, step) {
   selectedStep = step;
   renderChannels();
   renderInstrument();
+  renderGrid();
+  renderNoteInspector();
+}
+
+function applyNoteInspector() {
+  const note = getStep(editPattern(), selectedChannel, selectedStep);
+  if (!note || note.cut) return;
+  const length = Math.max(1, Number(els.noteLength.value) | 0);
+  const gate = Math.max(1, Math.min(TICKS_PER_STEP, Number(els.noteGate.value) | 0));
+  const slideRaw = Number(els.noteSlide.value);
+  /** @type {import("./sequencer/pattern.js").StepNote} */
+  const next = {
+    midi: note.midi,
+    length,
+    gate,
+  };
+  if (note.velocity != null) next.velocity = note.velocity;
+  if (Number.isFinite(slideRaw) && slideRaw >= 0) next.slideTo = slideRaw | 0;
+  song = setEditPatternData(
+    song,
+    setStep(editPattern(), selectedChannel, selectedStep, next),
+  );
+  persist();
+  syncEngineSong();
   renderGrid();
 }
 
@@ -272,35 +446,43 @@ function handleNoteOn(midi, velocity = 12) {
 
   if (recording && playing) {
     const step = playheadStep;
-    song.pattern = overdubNote(song.pattern, ch, step, midi, {
-      velocity,
-      length: 1,
-    });
+    // Record into the pattern currently playing in the order.
+    const patIdx = song.order[playheadOrder] ?? song.editPattern;
+    const pattern = song.patterns[patIdx];
+    song.patterns[patIdx] = overdubNote(pattern, ch, step, midi, { velocity });
+    song = { ...song, patterns: [...song.patterns] };
     persist();
     syncEngineSong();
-    renderGrid();
+    if (patIdx === song.editPattern) renderGrid();
   } else if (!playing) {
-    // Step entry mode: write into selected cell.
-    song.pattern = overdubNote(song.pattern, ch, selectedStep, midi, {
-      velocity,
-      length: 1,
-    });
-    selectedStep = (selectedStep + 1) % song.pattern.length;
+    song = setEditPatternData(
+      song,
+      overdubNote(editPattern(), ch, selectedStep, midi, { velocity }),
+    );
+    selectedStep = (selectedStep + 1) % editPattern().length;
     persist();
     syncEngineSong();
     renderGrid();
+    renderNoteInspector();
   }
 }
 
-/**
- * @param {number} _midi
- */
 function handleNoteOff(_midi) {
   engine.noteOff(selectedChannel);
 }
 
 function updateOctaveLabel() {
   els.octaveLabel.textContent = formatNoteName(octaveBase);
+}
+
+function renderAll() {
+  renderChannels();
+  renderInstrument();
+  renderPatterns();
+  renderOrder();
+  renderGrid();
+  renderNoteInspector();
+  updateTransportUi();
 }
 
 const keyboard = createKeyboardInput({
@@ -311,6 +493,22 @@ const keyboard = createKeyboardInput({
     const tag = document.activeElement?.tagName;
     return tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA";
   },
+});
+
+// Cut shortcut when a cell is selected and user presses Shift+X (avoid stealing piano X)
+window.addEventListener("keydown", (event) => {
+  if (event.key !== "X" || !event.shiftKey) return;
+  const tag = document.activeElement?.tagName;
+  if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+  event.preventDefault();
+  song = setEditPatternData(
+    song,
+    setCut(editPattern(), selectedChannel, selectedStep),
+  );
+  persist();
+  syncEngineSong();
+  renderGrid();
+  renderNoteInspector();
 });
 
 const midi = createMidiInput({
@@ -345,8 +543,10 @@ els.stop.addEventListener("click", async () => {
   playing = false;
   recording = false;
   playheadStep = 0;
+  playheadOrder = 0;
   updateTransportUi();
   highlightPlayhead();
+  renderOrder();
 });
 
 els.record.addEventListener("click", async () => {
@@ -367,8 +567,8 @@ els.bpm.addEventListener("change", () => {
 
 els.length.addEventListener("change", () => {
   const length = Number(els.length.value) || 16;
-  song.pattern = resizePattern(song.pattern, length);
-  if (selectedStep >= song.pattern.length) selectedStep = 0;
+  song = setEditPatternData(song, resizePattern(editPattern(), length));
+  if (selectedStep >= editPattern().length) selectedStep = 0;
   persist();
   syncEngineSong();
   renderGrid();
@@ -377,34 +577,29 @@ els.length.addEventListener("change", () => {
 els.demo.addEventListener("click", () => {
   song = createDemoSong();
   els.bpm.value = String(song.bpm);
-  els.length.value = String(song.pattern.length);
+  els.length.value = String(editPattern().length);
   persist();
   syncEngineSong();
-  renderChannels();
-  renderInstrument();
-  renderGrid();
+  renderAll();
 });
 
 els.clear.addEventListener("click", () => {
   song = createSong({
     title: "Untitled",
     bpm: song.bpm,
-    length: song.pattern.length,
+    length: editPattern().length,
   });
   persist();
   syncEngineSong();
-  renderChannels();
-  renderInstrument();
-  renderGrid();
+  renderAll();
 });
 
 els.exportBtn.addEventListener("click", async () => {
   els.exportBtn.disabled = true;
   els.exportBtn.textContent = "Rendering…";
   try {
-    // Yield so the label paints before the synchronous render.
     await new Promise((r) => setTimeout(r, 20));
-    const blob = songToWavBlob(song, { loops: 2, sampleRate: 44100 });
+    const blob = songToWavBlob(song, { loops: 1, sampleRate: 44100 });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -448,11 +643,57 @@ els.octUp.addEventListener("click", () => {
   updateOctaveLabel();
 });
 
+els.patAdd.addEventListener("click", () => {
+  song = addPattern(song);
+  persist();
+  syncEngineSong();
+  els.length.value = String(editPattern().length);
+  renderAll();
+});
+els.patDup.addEventListener("click", () => {
+  song = duplicateEditPattern(song);
+  persist();
+  syncEngineSong();
+  renderAll();
+});
+els.patDel.addEventListener("click", () => {
+  song = deletePattern(song, song.editPattern);
+  persist();
+  syncEngineSong();
+  els.length.value = String(editPattern().length);
+  renderAll();
+});
+els.orderAdd.addEventListener("click", () => {
+  song = appendOrder(song, song.editPattern);
+  persist();
+  syncEngineSong();
+  renderOrder();
+});
+
+els.instPreset.addEventListener("change", () => {
+  const id = els.instPreset.value;
+  if (!id) return;
+  const preset = createDefaultInstruments().find((i) => i.id === id);
+  if (!preset) return;
+  song.instruments[selectedChannel] = {
+    ...cloneInstrument(preset),
+    channel: selectedChannel,
+  };
+  persist();
+  syncEngineSong();
+  renderInstrument();
+  renderChannels();
+});
+
 for (const el of [
   els.instName,
   els.instDuty,
   els.instVolume,
   els.instArp,
+  els.instPitch,
+  els.instVibSpeed,
+  els.instVibDepth,
+  els.instDelay,
   els.instSpeed,
   els.instShortNoise,
 ]) {
@@ -464,6 +705,21 @@ for (const el of [
   });
 }
 
+for (const el of [els.noteLength, els.noteGate, els.noteSlide]) {
+  el.addEventListener("change", applyNoteInspector);
+}
+
+els.noteCut.addEventListener("click", () => {
+  song = setEditPatternData(
+    song,
+    setCut(editPattern(), selectedChannel, selectedStep),
+  );
+  persist();
+  syncEngineSong();
+  renderGrid();
+  renderNoteInspector();
+});
+
 function slugify(text) {
   return String(text)
     .toLowerCase()
@@ -473,19 +729,14 @@ function slugify(text) {
 
 function boot() {
   els.bpm.value = String(song.bpm);
-  els.length.value = String(song.pattern.length);
+  els.length.value = String(editPattern().length);
   if (!isMidiSupported()) {
     els.statusMidi.textContent = "MIDI: unsupported (use Chrome/Firefox)";
     els.midiBtn.disabled = true;
   }
-  renderChannels();
-  renderInstrument();
-  renderGrid();
+  renderAll();
   updateOctaveLabel();
-  updateTransportUi();
   keyboard.attach();
-
-  // Expose for debugging / tests in the page.
   window.__nesSeq = {
     getSong: () => songToJSON(song),
     engine,

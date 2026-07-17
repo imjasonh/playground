@@ -12,13 +12,17 @@
  * @property {string} id
  * @property {string} name
  * @property {ChannelId} channel
- * @property {number} duty          pulse duty 0–3 (ignored for others)
- * @property {number} volume        0–15 default volume
+ * @property {number} duty
+ * @property {number} volume
  * @property {number[]} volumeMacro
  * @property {number[]} dutyMacro
- * @property {number[]} arpMacro    semitone offsets relative to note
- * @property {number} macroSpeed    engine ticks per macro step (≥1)
- * @property {boolean} shortNoise   noise LFSR mode
+ * @property {number[]} arpMacro          semitone offsets
+ * @property {number[]} pitchMacro        cumulative period units per macro step
+ * @property {number} vibratoSpeed        ticks per vibrato phase step (0 = off)
+ * @property {number} vibratoDepth        period units peak deviation
+ * @property {number} delay               ticks before the note becomes audible
+ * @property {number} macroSpeed
+ * @property {boolean} shortNoise
  */
 
 /**
@@ -35,6 +39,10 @@ export function createDefaultInstruments() {
       volumeMacro: [12, 12, 11, 10, 9, 8, 8, 7],
       dutyMacro: [],
       arpMacro: [],
+      pitchMacro: [],
+      vibratoSpeed: 0,
+      vibratoDepth: 0,
+      delay: 0,
       macroSpeed: 2,
       shortNoise: false,
     },
@@ -47,6 +55,10 @@ export function createDefaultInstruments() {
       volumeMacro: [],
       dutyMacro: [2, 2, 1, 1],
       arpMacro: [],
+      pitchMacro: [],
+      vibratoSpeed: 3,
+      vibratoDepth: 2,
+      delay: 0,
       macroSpeed: 3,
       shortNoise: false,
     },
@@ -59,7 +71,43 @@ export function createDefaultInstruments() {
       volumeMacro: [11, 10, 9, 9],
       dutyMacro: [],
       arpMacro: [0, 4, 7],
+      pitchMacro: [],
+      vibratoSpeed: 0,
+      vibratoDepth: 0,
+      delay: 0,
       macroSpeed: 2,
+      shortNoise: false,
+    },
+    {
+      id: "pulse-vib",
+      name: "Vibrato Lead",
+      channel: "pulse1",
+      duty: 2,
+      volume: 11,
+      volumeMacro: [11, 11, 10, 10],
+      dutyMacro: [],
+      arpMacro: [],
+      pitchMacro: [],
+      vibratoSpeed: 2,
+      vibratoDepth: 3,
+      delay: 0,
+      macroSpeed: 1,
+      shortNoise: false,
+    },
+    {
+      id: "pulse-bend",
+      name: "Pitch Drop",
+      channel: "pulse2",
+      duty: 1,
+      volume: 12,
+      volumeMacro: [12, 11, 10, 8, 6, 4],
+      dutyMacro: [],
+      arpMacro: [],
+      pitchMacro: [0, 2, 4, 8, 12, 18, 24],
+      vibratoSpeed: 0,
+      vibratoDepth: 0,
+      delay: 0,
+      macroSpeed: 1,
       shortNoise: false,
     },
     {
@@ -71,6 +119,10 @@ export function createDefaultInstruments() {
       volumeMacro: [],
       dutyMacro: [],
       arpMacro: [],
+      pitchMacro: [],
+      vibratoSpeed: 0,
+      vibratoDepth: 0,
+      delay: 0,
       macroSpeed: 1,
       shortNoise: false,
     },
@@ -83,6 +135,10 @@ export function createDefaultInstruments() {
       volumeMacro: [10, 8, 6, 4, 2, 0],
       dutyMacro: [],
       arpMacro: [],
+      pitchMacro: [],
+      vibratoSpeed: 0,
+      vibratoDepth: 0,
+      delay: 0,
       macroSpeed: 1,
       shortNoise: true,
     },
@@ -95,6 +151,10 @@ export function createDefaultInstruments() {
       volumeMacro: [12, 11, 9, 6, 3, 0],
       dutyMacro: [],
       arpMacro: [],
+      pitchMacro: [],
+      vibratoSpeed: 0,
+      vibratoDepth: 0,
+      delay: 0,
       macroSpeed: 1,
       shortNoise: false,
     },
@@ -102,28 +162,52 @@ export function createDefaultInstruments() {
 }
 
 /**
- * Runtime voice state for macro expansion.
+ * Instruments available for a channel (preset library).
+ * @param {ChannelId} channel
+ */
+export function presetsForChannel(channel) {
+  return createDefaultInstruments().filter((i) => i.channel === channel);
+}
+
+/**
  * @typedef {object} VoiceState
  * @property {Instrument} instrument
  * @property {number} noteMidi
  * @property {number} tick
  * @property {boolean} active
- * @property {number} releaseTicks  0 = sustaining; >0 counting down after note-off
+ * @property {number} releaseTicks
+ * @property {number} delayLeft
+ * @property {number} pitchAccum
+ * @property {number} [slideFromMidi]
+ * @property {number} [slideToMidi]
+ * @property {number} [slideTotalTicks]
+ * @property {number} [slideTick]
  */
 
 /**
  * @param {Instrument} instrument
  * @param {number} noteMidi
+ * @param {{ slideTo?: number, slideTicks?: number }} [opts]
  * @returns {VoiceState}
  */
-export function startVoice(instrument, noteMidi) {
-  return {
+export function startVoice(instrument, noteMidi, opts = {}) {
+  /** @type {VoiceState} */
+  const voice = {
     instrument: cloneInstrument(instrument),
     noteMidi,
     tick: 0,
     active: true,
     releaseTicks: 0,
+    delayLeft: Math.max(0, instrument.delay | 0),
+    pitchAccum: 0,
   };
+  if (opts.slideTo != null && opts.slideTicks != null && opts.slideTicks > 0) {
+    voice.slideFromMidi = noteMidi;
+    voice.slideToMidi = opts.slideTo;
+    voice.slideTotalTicks = opts.slideTicks;
+    voice.slideTick = 0;
+  }
+  return voice;
 }
 
 /**
@@ -136,30 +220,83 @@ export function releaseVoice(voice, releaseLength = 6) {
 }
 
 /**
- * Advance macros by one engine tick and return the current sounding params.
- *
+ * @typedef {object} VoiceParams
+ * @property {number} midi
+ * @property {number} volume
+ * @property {number} duty
+ * @property {boolean} shortNoise
+ * @property {boolean} active
+ * @property {number} periodOffset   signed timer-period adjustment
+ */
+
+/**
  * @param {VoiceState} voice
- * @returns {{ midi: number, volume: number, duty: number, shortNoise: boolean, active: boolean }}
+ * @returns {VoiceParams}
  */
 export function tickVoice(voice) {
+  const inst = voice.instrument;
   if (!voice.active) {
     return {
       midi: voice.noteMidi,
       volume: 0,
-      duty: voice.instrument.duty,
-      shortNoise: voice.instrument.shortNoise,
+      duty: inst.duty,
+      shortNoise: inst.shortNoise,
       active: false,
+      periodOffset: 0,
     };
   }
 
-  const inst = voice.instrument;
+  if (voice.delayLeft > 0) {
+    voice.delayLeft -= 1;
+    voice.tick += 1;
+    return {
+      midi: voice.noteMidi,
+      volume: 0,
+      duty: inst.duty,
+      shortNoise: inst.shortNoise,
+      active: true,
+      periodOffset: 0,
+    };
+  }
+
   const speed = Math.max(1, inst.macroSpeed | 0);
   const step = Math.floor(voice.tick / speed);
 
   let volume = macroValue(inst.volumeMacro, step, inst.volume);
   const duty = macroValue(inst.dutyMacro, step, inst.duty) & 3;
   const arp = macroValue(inst.arpMacro, step, 0);
-  const midi = clampInt(voice.noteMidi + arp, 0, 127);
+
+  // Pitch macro: accumulate period units each macro step (once per speed boundary).
+  if (
+    inst.pitchMacro.length > 0 &&
+    voice.tick % speed === 0 &&
+    step < inst.pitchMacro.length
+  ) {
+    voice.pitchAccum += inst.pitchMacro[step] | 0;
+  }
+
+  let midi = voice.noteMidi + arp;
+  if (
+    voice.slideToMidi != null &&
+    voice.slideFromMidi != null &&
+    voice.slideTotalTicks
+  ) {
+    const t = Math.min(voice.slideTick ?? 0, voice.slideTotalTicks);
+    const alpha = t / voice.slideTotalTicks;
+    midi =
+      voice.slideFromMidi +
+      (voice.slideToMidi - voice.slideFromMidi) * alpha;
+    voice.slideTick = (voice.slideTick ?? 0) + 1;
+  }
+  midi = clampInt(Math.round(midi), 0, 127);
+
+  let periodOffset = voice.pitchAccum;
+  if (inst.vibratoDepth > 0 && inst.vibratoSpeed > 0) {
+    const phase = Math.floor(voice.tick / Math.max(1, inst.vibratoSpeed));
+    // 4-step triangle: 0, +d, 0, -d — cheap and NES-flavored.
+    const tri = [0, 1, 0, -1][phase & 3];
+    periodOffset += tri * (inst.vibratoDepth | 0);
+  }
 
   if (voice.releaseTicks > 0) {
     voice.releaseTicks -= 1;
@@ -173,7 +310,6 @@ export function tickVoice(voice) {
     step >= inst.volumeMacro.length - 1 &&
     volume <= 0
   ) {
-    // One-shot volume macros (drums) end the voice.
     voice.active = false;
   }
 
@@ -185,11 +321,11 @@ export function tickVoice(voice) {
     duty,
     shortNoise: inst.shortNoise,
     active: voice.active,
+    periodOffset,
   };
 }
 
 /**
- * Hold the last macro value when past the end (FamiTracker-style).
  * @param {number[]} sequence
  * @param {number} step
  * @param {number} fallback
@@ -212,16 +348,19 @@ export function cloneInstrument(instrument) {
     channel: instrument.channel,
     duty: instrument.duty,
     volume: instrument.volume,
-    volumeMacro: [...instrument.volumeMacro],
-    dutyMacro: [...instrument.dutyMacro],
-    arpMacro: [...instrument.arpMacro],
+    volumeMacro: [...(instrument.volumeMacro || [])],
+    dutyMacro: [...(instrument.dutyMacro || [])],
+    arpMacro: [...(instrument.arpMacro || [])],
+    pitchMacro: [...(instrument.pitchMacro || [])],
+    vibratoSpeed: instrument.vibratoSpeed | 0,
+    vibratoDepth: instrument.vibratoDepth | 0,
+    delay: instrument.delay | 0,
     macroSpeed: instrument.macroSpeed,
-    shortNoise: instrument.shortNoise,
+    shortNoise: Boolean(instrument.shortNoise),
   };
 }
 
 /**
- * Serialize-friendly plain object.
  * @param {Instrument} instrument
  */
 export function instrumentToJSON(instrument) {
@@ -246,17 +385,20 @@ export function instrumentFromJSON(raw) {
     volumeMacro: asIntArray(o.volumeMacro),
     dutyMacro: asIntArray(o.dutyMacro),
     arpMacro: asIntArray(o.arpMacro, true),
+    pitchMacro: asIntArray(o.pitchMacro, true, -64, 64),
+    vibratoSpeed: clampInt(o.vibratoSpeed ?? 0, 0, 16),
+    vibratoDepth: clampInt(o.vibratoDepth ?? 0, 0, 16),
+    delay: clampInt(o.delay ?? 0, 0, 48),
     macroSpeed: Math.max(1, clampInt(o.macroSpeed ?? 1, 1, 16)),
     shortNoise: Boolean(o.shortNoise),
   };
 }
 
-function asIntArray(value, signed = false) {
+function asIntArray(value, signed = false, min = 0, max = 15) {
   if (!Array.isArray(value)) return [];
-  return value.map((n) => {
-    const v = Number(n) | 0;
-    return signed ? clampInt(v, -24, 24) : clampInt(v, 0, 15);
-  });
+  const lo = signed ? (arguments.length > 2 ? min : -24) : min;
+  const hi = signed ? (arguments.length > 2 ? max : 24) : max;
+  return value.map((n) => clampInt(n, lo, hi));
 }
 
 function clampInt(value, min, max) {

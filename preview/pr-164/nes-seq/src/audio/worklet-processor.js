@@ -27,15 +27,17 @@ class NesApuProcessor extends AudioWorkletProcessor {
 
     this.apu = new NesApu();
     this.transport = createTransport({ bpm: 120, patternLength: 16 });
-    this.pattern = createEmptyPattern(16);
+    const pattern = createEmptyPattern(16);
     this.player = new NesPlayer(this.apu, {
-      pattern: this.pattern,
+      patterns: [pattern],
+      order: [0],
       transport: this.transport,
       instruments,
       sampleRate: sampleRate,
     });
     this.buffer = new Float32Array(128);
     this.lastPostedStep = -1;
+    this.lastPostedOrder = -1;
 
     this.port.onmessage = (event) => {
       this.#onMessage(event.data);
@@ -68,10 +70,14 @@ class NesApuProcessor extends AudioWorkletProcessor {
       case "bpm":
         setBpm(this.transport, msg.value);
         break;
-      case "pattern":
-        this.pattern = patternFromJSON(msg.pattern);
-        this.player.setPattern(this.pattern);
+      case "song": {
+        const patterns = (msg.patterns || []).map((p) => patternFromJSON(p));
+        const order = Array.isArray(msg.order) ? msg.order : [0];
+        if (patterns.length) {
+          this.player.setSongPatterns(patterns, order);
+        }
         break;
+      }
       case "instruments":
         this.player.setInstruments(msg.instruments);
         break;
@@ -101,16 +107,25 @@ class NesApuProcessor extends AudioWorkletProcessor {
       this.buffer = new Float32Array(output.length);
     }
 
-    const { steps } = this.player.render(this.buffer, output.length);
+    const { steps, orderIndex } = this.player.render(
+      this.buffer,
+      output.length,
+    );
     output.set(this.buffer);
 
     if (this.transport.playing) {
       const step = this.transport.step;
-      if (step !== this.lastPostedStep || steps.length) {
+      if (
+        step !== this.lastPostedStep ||
+        orderIndex !== this.lastPostedOrder ||
+        steps.length
+      ) {
         this.lastPostedStep = step;
+        this.lastPostedOrder = orderIndex;
         this.port.postMessage({
           type: "transport",
           step,
+          orderIndex,
           playing: this.transport.playing,
           recording: this.transport.recording,
         });
@@ -123,5 +138,4 @@ class NesApuProcessor extends AudioWorkletProcessor {
 
 registerProcessor("nes-apu-processor", NesApuProcessor);
 
-// Keep CHANNELS referenced so tree-shaking in odd bundlers won't drop imports.
 void CHANNELS;

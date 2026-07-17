@@ -84,6 +84,10 @@
           <div class="instrument-editor">
             <h2>Instrument</h2>
             <label class="field grow">
+              <span>Preset</span>
+              <select id="inst-preset"></select>
+            </label>
+            <label class="field grow">
               <span>Name</span>
               <input id="inst-name" type="text" maxlength="24" />
             </label>
@@ -110,6 +114,24 @@
                 spellcheck="false"
               />
             </label>
+            <label class="field grow">
+              <span>Pitch</span>
+              <input
+                id="inst-pitch"
+                type="text"
+                placeholder="0 2 4 8"
+                spellcheck="false"
+              />
+            </label>
+            <label class="field">
+              <span>Vib</span>
+              <input id="inst-vib-speed" type="number" min="0" max="16" value="0" title="Vibrato speed" />
+              <input id="inst-vib-depth" type="number" min="0" max="16" value="0" title="Vibrato depth" />
+            </label>
+            <label class="field">
+              <span>Delay</span>
+              <input id="inst-delay" type="number" min="0" max="48" value="0" />
+            </label>
             <label class="field">
               <span>Speed</span>
               <input id="inst-speed" type="number" min="1" max="16" value="2" />
@@ -119,12 +141,28 @@
               <span>Short noise</span>
             </label>
             <p class="hint" id="inst-hint">
-              Macros expand while a note is held — the NES composer’s palette.
+              Macros + vibrato/delay expand while a note is held.
             </p>
           </div>
         </aside>
 
         <section class="grid-panel" aria-label="Step sequencer">
+          <div class="pattern-bar" aria-label="Patterns and order">
+            <div class="pattern-tabs" id="pattern-tabs"></div>
+            <div class="pattern-actions">
+              <button type="button" id="btn-pat-add" class="btn tiny">+ Pat</button>
+              <button type="button" id="btn-pat-dup" class="btn tiny">Dup</button>
+              <button type="button" id="btn-pat-del" class="btn tiny">Del</button>
+            </div>
+            <div class="order-row">
+              <span class="muted">Order</span>
+              <div id="order-list" class="order-list"></div>
+              <button type="button" id="btn-order-add" class="btn tiny" title="Append current pattern to order">
+                +Ord
+              </button>
+            </div>
+          </div>
+
           <div class="grid-toolbar">
             <div class="octave-controls">
               <span>Octave</span>
@@ -137,10 +175,27 @@
               </button>
             </div>
             <p class="hint tight">
-              Click a cell to arm it · play keys / MIDI to enter ·
-              <kbd>Z</kbd>–<kbd>/</kbd> & <kbd>Q</kbd>–<kbd>P</kbd> piano
+              Click a cell · keys/MIDI enter notes · right-click clears ·
+              <kbd>X</kbd> while armed places a cut
             </p>
           </div>
+
+          <div class="note-inspector" id="note-inspector" hidden>
+            <label class="field">
+              <span>Len</span>
+              <input id="note-length" type="number" min="1" max="64" value="1" />
+            </label>
+            <label class="field">
+              <span>Gate</span>
+              <input id="note-gate" type="number" min="1" max="6" value="6" />
+            </label>
+            <label class="field">
+              <span>Slide</span>
+              <input id="note-slide" type="number" min="-1" max="127" value="-1" title="-1 = none" />
+            </label>
+            <button type="button" id="btn-note-cut" class="btn tiny">Cut</button>
+          </div>
+
           <div id="step-grid" class="step-grid" role="grid"></div>
         </section>
       </section>

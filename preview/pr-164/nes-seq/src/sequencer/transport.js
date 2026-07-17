@@ -95,18 +95,20 @@ export function setRecording(transport, recording) {
 /**
  * Advance transport by `sampleCount` samples.
  * Returns events that occurred: step boundaries and tick boundaries.
+ * `wrapped` is true when a step advance rolled from the last step back to 0.
  *
  * @param {TransportState} transport
  * @param {number} sampleCount
  * @param {number} sampleRate
- * @returns {{ ticks: number, steps: number[], crossedStep: boolean }}
+ * @returns {{ ticks: number, steps: number[], crossedStep: boolean, wrapped: boolean }}
  */
 export function advanceTransport(transport, sampleCount, sampleRate) {
   /** @type {number[]} */
   const steps = [];
   let ticks = 0;
+  let wrapped = false;
   if (!transport.playing || sampleCount <= 0) {
-    return { ticks: 0, steps, crossedStep: false };
+    return { ticks: 0, steps, crossedStep: false, wrapped: false };
   }
 
   const spt = samplesPerTick(transport.bpm, sampleRate);
@@ -126,13 +128,17 @@ export function advanceTransport(transport, sampleCount, sampleRate) {
     transport.tickInStep += 1;
     if (transport.tickInStep >= TICKS_PER_STEP) {
       transport.tickInStep = 0;
+      const prev = transport.step;
       transport.step = (transport.step + 1) % transport.patternLength;
+      if (transport.step === 0 && prev !== 0) wrapped = true;
+      // Also wrap when patternLength is 1 (prev === 0 and step stays 0).
+      if (transport.patternLength === 1) wrapped = true;
       steps.push(transport.step);
       crossedStep = true;
     }
   }
 
-  return { ticks, steps, crossedStep };
+  return { ticks, steps, crossedStep, wrapped };
 }
 
 /**

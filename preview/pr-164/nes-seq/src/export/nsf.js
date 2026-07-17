@@ -1,10 +1,7 @@
 import { NesApu } from "../apu/nesApu.js";
 import { NesPlayer } from "../sequencer/player.js";
-import {
-  createTransport,
-  secondsPerStep,
-  setPlaying,
-} from "../sequencer/transport.js";
+import { createTransport, setPlaying } from "../sequencer/transport.js";
+import { orderDurationSeconds } from "../song.js";
 
 /** NTSC NSF PLAY period in microseconds (~60.098 Hz using $411F). */
 export const NSF_NTSC_PLAY_US = 16_639;
@@ -30,8 +27,7 @@ const APU_ADDR_MAX = 0x4017;
 export function compileSongFrames(song, { loops = 1 } = {}) {
   const playHz = NSF_PLAY_HZ;
   const sampleRate = 48000;
-  const totalSeconds =
-    secondsPerStep(song.bpm) * song.pattern.length * Math.max(1, loops);
+  const totalSeconds = orderDurationSeconds(song) * Math.max(1, loops);
   const totalSamples = Math.max(1, Math.ceil(totalSeconds * sampleRate));
 
   /** @type {RegWrite[]} */
@@ -55,12 +51,14 @@ export function compileSongFrames(song, { loops = 1 } = {}) {
     frameBucket.push({ addr, value: v });
   };
 
+  const first = song.patterns[song.order[0] ?? 0] ?? song.patterns[0];
   const transport = createTransport({
     bpm: song.bpm,
-    patternLength: song.pattern.length,
+    patternLength: first.length,
   });
   const player = new NesPlayer(apu, {
-    pattern: song.pattern,
+    patterns: song.patterns,
+    order: song.order,
     transport,
     instruments: song.instruments,
     sampleRate,

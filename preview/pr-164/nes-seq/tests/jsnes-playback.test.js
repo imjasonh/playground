@@ -85,8 +85,12 @@ test("JSNES loads NSF-wrapped demo ROM without crashing", () => {
 
 test("JSNES audio energy is in the same ballpark as offline WAV render", () => {
   let song = createSong({ title: "Pulse", bpm: 140, length: 8 });
-  song.pattern = overdubNote(song.pattern, "pulse1", 0, 60, { length: 4 });
-  song.pattern = overdubNote(song.pattern, "pulse1", 4, 67, { length: 4 });
+  song.patterns[0] = overdubNote(song.patterns[0], "pulse1", 0, 60, {
+    length: 4,
+  });
+  song.patterns[0] = overdubNote(song.patterns[0], "pulse1", 4, 67, {
+    length: 4,
+  });
 
   const offline = renderSongToSamples(song, {
     sampleRate: 44100,

@@ -62,7 +62,9 @@ test("nsfToInesRom produces an iNES image", () => {
 
 test("songToNesRom matches NSF-wrapped ROM program payload size class", () => {
   let song = createSong({ title: "Beep", bpm: 120, length: 8 });
-  song.pattern = overdubNote(song.pattern, "pulse1", 0, 60, { length: 2 });
+  song.patterns[0] = overdubNote(song.patterns[0], "pulse1", 0, 60, {
+    length: 2,
+  });
   const rom = songToNesRom(song, { loops: 1 });
   assert.equal(rom[0], 0x4e);
   assert.ok(rom.length > 16);
