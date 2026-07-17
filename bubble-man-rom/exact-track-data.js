@@ -964,13 +964,18 @@ const encodedChannels = [
   ],
 ];
 
-export const exactTrackChannels = encodedChannels.map(
-  ([id, name, color, wave, gain, events]) => ({
+export const exactTrackChannels = Array.from(
+  { length: encodedChannels.length / 2 },
+  (_, index) => {
+    const [id, name, color, wave, gain] = encodedChannels[index * 2];
+    const events = encodedChannels[index * 2 + 1];
+    return {
     id, name, color, wave, gain,
     events: events.map(([start, duration, pitch, byte, duty, eventGain, vibrato]) => ({
       start, duration, pitch, byte, duty, gain: eventGain, vibrato,
     })),
-  }),
+    };
+  },
 );
 
 export function sliceChannels(start, end) {
