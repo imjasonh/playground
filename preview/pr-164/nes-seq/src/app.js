@@ -1,6 +1,7 @@
 import { CHANNELS, CHANNEL_LABELS, DUTY_LABELS } from "./apu/constants.js";
 import { formatNoteName } from "./apu/notes.js";
 import { AudioEngine } from "./audio/engine.js";
+import { songToNsfBlob } from "./export/nsf.js";
 import { songToWavBlob } from "./export/wav.js";
 import { createKeyboardInput } from "./input/keyboard.js";
 import { createMidiInput, isMidiSupported } from "./input/midi.js";
@@ -42,6 +43,7 @@ const els = {
   demo: document.getElementById("btn-demo"),
   clear: document.getElementById("btn-clear"),
   exportBtn: document.getElementById("btn-export"),
+  exportNsfBtn: document.getElementById("btn-export-nsf"),
   midiBtn: document.getElementById("btn-midi"),
   channelList: document.getElementById("channel-list"),
   stepGrid: document.getElementById("step-grid"),
@@ -412,6 +414,24 @@ els.exportBtn.addEventListener("click", async () => {
   } finally {
     els.exportBtn.disabled = false;
     els.exportBtn.textContent = "Export WAV";
+  }
+});
+
+els.exportNsfBtn.addEventListener("click", async () => {
+  els.exportNsfBtn.disabled = true;
+  els.exportNsfBtn.textContent = "Building…";
+  try {
+    await new Promise((r) => setTimeout(r, 20));
+    const blob = songToNsfBlob(song, { loops: 1 });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${slugify(song.title) || "nes-seq"}.nsf`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } finally {
+    els.exportNsfBtn.disabled = false;
+    els.exportNsfBtn.textContent = "Export NSF";
   }
 });
 
