@@ -5,17 +5,18 @@ generic “8-bit flavored” softsynth tones. Audio is produced by a cycle-drive
 RP2A03 APU emulator (pulse ×2, triangle, noise) running in an AudioWorklet when
 available.
 
-## Features (v1)
+## Features
 
 - **Four hardware channels** — Pulse 1, Pulse 2, Triangle, Noise
+- **Multi-pattern songs** — up to 16 patterns with an order list (verse/chorus)
 - **Step sequencer / looper** — 8 / 16 / 32 / 64 steps, per-channel overdub
-- **Instrument macros** — duty, volume sequences, arpeggios (FamiTracker-style)
+- **Note effects** — length, gate, slide-to, and note cuts
+- **Instrument macros** — duty, volume, arpeggio, pitch envelope, vibrato, delay
+- **Preset library** — per-channel instrument presets
 - **Web MIDI** — USB/Bluetooth controllers on Chrome, Edge, and Firefox
-- **QWERTY piano** — `Z`–`/` and `Q`–`P`, with octave shift
-- **WAV export** — offline render of the same APU engine
-- **NSF export** — standard Nintendo Sound Format playable in NSF-capable
-  emulators/players (built from the same register stream as the authoring engine)
-- **Local save** — pattern + instruments persist in `localStorage`
+- **QWERTY piano** — `Z`–`/` and `Q`–`P`, with octave shift (`Shift+X` = cut)
+- **WAV + NSF export** — full order list, same register stream as authoring
+- **Local save** — song v2 persists in `localStorage` (v1 songs migrate)
 
 Safari can compose with the computer keyboard; it does not expose Web MIDI.
 
@@ -83,6 +84,7 @@ export, and JSNES ROM playback with Node’s built-in test runner.
 ## Limits / next
 
 - DMC / DPCM samples not yet exposed
+- No hardware sweep unit UI (pitch macros approximate slides/drops)
 - No FamiTracker `.ftm` export yet
-- Expansion audio (VRC6, N163, …) out of scope for v1
+- Expansion audio (VRC6, N163, …) out of scope
 - Browser MIDI latency is fine for sketching; not Core Audio–class

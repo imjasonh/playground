@@ -7,12 +7,15 @@ import {
   countNotes,
   createEmptyPattern,
   getStep,
+  noteHoldTicks,
   overdubNote,
   patternFromJSON,
   patternToJSON,
   resizePattern,
+  setCut,
   setStep,
 } from "../src/sequencer/pattern.js";
+import { TICKS_PER_STEP } from "../src/sequencer/transport.js";
 
 test("createEmptyPattern initializes all channels", () => {
   const p = createEmptyPattern(16);
@@ -24,22 +27,45 @@ test("createEmptyPattern initializes all channels", () => {
 
 test("setStep / getStep / clearStep round-trip", () => {
   let p = createEmptyPattern(8);
-  p = setStep(p, "pulse1", 3, { midi: 60, velocity: 10, length: 2 });
+  p = setStep(p, "pulse1", 3, {
+    midi: 60,
+    velocity: 10,
+    length: 2,
+    gate: 4,
+    slideTo: 64,
+  });
   assert.deepEqual(getStep(p, "pulse1", 3), {
     midi: 60,
     velocity: 10,
     length: 2,
+    gate: 4,
+    slideTo: 64,
   });
   p = clearStep(p, "pulse1", 3);
   assert.equal(getStep(p, "pulse1", 3), null);
 });
 
+test("cut notes serialize", () => {
+  let p = createEmptyPattern(8);
+  p = setCut(p, "triangle", 2);
+  assert.deepEqual(getStep(p, "triangle", 2), { cut: true });
+  const restored = patternFromJSON(patternToJSON(p));
+  assert.deepEqual(getStep(restored, "triangle", 2), { cut: true });
+});
+
+test("noteHoldTicks respects gate", () => {
+  assert.equal(noteHoldTicks({ midi: 60 }), TICKS_PER_STEP);
+  assert.equal(noteHoldTicks({ midi: 60, length: 2, gate: 3 }), TICKS_PER_STEP + 3);
+  assert.equal(noteHoldTicks({ cut: true }), 0);
+});
+
 test("overdubNote replaces existing content", () => {
   let p = createEmptyPattern(8);
   p = overdubNote(p, "triangle", 0, 36);
-  p = overdubNote(p, "triangle", 0, 40, { velocity: 15 });
+  p = overdubNote(p, "triangle", 0, 40, { velocity: 15, gate: 2 });
   assert.equal(getStep(p, "triangle", 0).midi, 40);
   assert.equal(getStep(p, "triangle", 0).velocity, 15);
+  assert.equal(getStep(p, "triangle", 0).gate, 2);
 });
 
 test("resizePattern pads and truncates", () => {

@@ -518,7 +518,7 @@ bundle exec fastlane test
 | `git/` | In-browser read-only git client (clone, browse, branches, history) | Jest + Playwright |
 | `hello/` | Static demo | none |
 | `kanoodle/` | Kanoodle puzzle game (5×11 board, 12 pieces) | Jest + Playwright |
-| `nes-seq/` | NES/2A03 MIDI sequencer/looper with NSF export (JSNES-tested via iNES wrap) | Node test runner |
+| `nes-seq/` | NES/2A03 sequencer (multi-pattern, macros, NSF export; JSNES-tested) | Node test runner |
 | `nypd-choppers/` | NYPD helicopter daily flight paths, hours, and fuel-cost estimates from ADS-B | Node test runner |
 | `web-push-demo/` | Browser front-end for `web-push` (subscribe/unsubscribe/notify) | none (static) |
 

@@ -1,15 +1,20 @@
 import { CHANNELS } from "../apu/constants.js";
+import { TICKS_PER_STEP } from "./transport.js";
 
 /**
  * @typedef {"pulse1"|"pulse2"|"triangle"|"noise"} ChannelId
  *
  * @typedef {object} StepNote
- * @property {number} midi          0–127
- * @property {number} [velocity]    0–15 volume override; omit = instrument default
+ * @property {number} [midi]        0–127; omit when `cut` is true
+ * @property {number} [velocity]    0–15 volume override
  * @property {number} [length]      steps to hold (default 1)
+ * @property {number} [gate]        ticks held in the final step (1–TICKS_PER_STEP)
+ * @property {number} [slideTo]     glide toward this MIDI over the hold
+ * @property {boolean} [cut]        force note-off on this step
  *
  * @typedef {object} Pattern
- * @property {number} length        step count
+ * @property {string} [name]
+ * @property {number} length
  * @property {Record<ChannelId, (StepNote|null)[]>} tracks
  */
 
@@ -19,12 +24,16 @@ export const MAX_PATTERN_LENGTH = 64;
 
 /**
  * @param {number} [length=DEFAULT_PATTERN_LENGTH]
+ * @param {string} [name]
  * @returns {Pattern}
  */
-export function createEmptyPattern(length = DEFAULT_PATTERN_LENGTH) {
+export function createEmptyPattern(
+  length = DEFAULT_PATTERN_LENGTH,
+  name = "Pattern",
+) {
   const len = clampLength(length);
   /** @type {Pattern} */
-  const pattern = { length: len, tracks: {} };
+  const pattern = { name, length: len, tracks: {} };
   for (const ch of CHANNELS) {
     pattern.tracks[ch] = Array.from({ length: len }, () => null);
   }
@@ -58,7 +67,6 @@ export function getStep(pattern, channel, step) {
 }
 
 /**
- * Clear a step (note off / empty).
  * @param {Pattern} pattern
  * @param {ChannelId} channel
  * @param {number} step
@@ -68,14 +76,23 @@ export function clearStep(pattern, channel, step) {
 }
 
 /**
- * Resize pattern, preserving existing steps (truncate or pad with nulls).
+ * Place a note-cut (force release) on a step.
+ * @param {Pattern} pattern
+ * @param {ChannelId} channel
+ * @param {number} step
+ */
+export function setCut(pattern, channel, step) {
+  return setStep(pattern, channel, step, { cut: true });
+}
+
+/**
  * @param {Pattern} pattern
  * @param {number} length
  */
 export function resizePattern(pattern, length) {
   const len = clampLength(length);
   /** @type {Pattern} */
-  const next = { length: len, tracks: {} };
+  const next = { name: pattern.name, length: len, tracks: {} };
   for (const ch of CHANNELS) {
     const src = pattern.tracks[ch] || [];
     next.tracks[ch] = Array.from({ length: len }, (_, i) =>
@@ -86,18 +103,19 @@ export function resizePattern(pattern, length) {
 }
 
 /**
- * Overdub: write a note onto a step, replacing whatever was there.
  * @param {Pattern} pattern
  * @param {ChannelId} channel
  * @param {number} step
  * @param {number} midi
- * @param {{ velocity?: number, length?: number }} [opts]
+ * @param {{ velocity?: number, length?: number, gate?: number, slideTo?: number }} [opts]
  */
 export function overdubNote(pattern, channel, step, midi, opts = {}) {
-  /** @type {import("./pattern.js").StepNote} */
+  /** @type {StepNote} */
   const note = { midi };
   if (opts.velocity != null) note.velocity = opts.velocity;
   if (opts.length != null) note.length = opts.length;
+  if (opts.gate != null) note.gate = opts.gate;
+  if (opts.slideTo != null) note.slideTo = opts.slideTo;
   return setStep(pattern, channel, step, note);
 }
 
@@ -107,19 +125,16 @@ export function overdubNote(pattern, channel, step, midi, opts = {}) {
  */
 export function clonePattern(pattern) {
   /** @type {Pattern} */
-  const next = { length: pattern.length, tracks: {} };
+  const next = {
+    name: pattern?.name || "Pattern",
+    length: pattern?.length || DEFAULT_PATTERN_LENGTH,
+    tracks: {},
+  };
   for (const ch of CHANNELS) {
-    next.tracks[ch] = (pattern.tracks[ch] || []).map((n) =>
-      n ? normalizeNote(n) : null,
-    );
-  }
-  // Ensure all channels exist even if source was partial.
-  for (const ch of CHANNELS) {
-    if (!next.tracks[ch] || next.tracks[ch].length !== next.length) {
-      next.tracks[ch] = Array.from({ length: next.length }, (_, i) =>
-        next.tracks[ch]?.[i] ? normalizeNote(next.tracks[ch][i]) : null,
-      );
-    }
+    next.tracks[ch] = Array.from({ length: next.length }, (_, i) => {
+      const cell = pattern.tracks[ch]?.[i];
+      return cell ? normalizeNote(cell) : null;
+    });
   }
   return next;
 }
@@ -131,17 +146,13 @@ export function clonePattern(pattern) {
 export function patternToJSON(pattern) {
   const tracks = {};
   for (const ch of CHANNELS) {
-    tracks[ch] = pattern.tracks[ch].map((n) =>
-      n
-        ? {
-            midi: n.midi,
-            ...(n.velocity != null ? { velocity: n.velocity } : {}),
-            ...(n.length != null && n.length !== 1 ? { length: n.length } : {}),
-          }
-        : null,
-    );
+    tracks[ch] = pattern.tracks[ch].map((n) => (n ? noteToJSON(n) : null));
   }
-  return { length: pattern.length, tracks };
+  return {
+    name: pattern.name || "Pattern",
+    length: pattern.length,
+    tracks,
+  };
 }
 
 /**
@@ -151,7 +162,10 @@ export function patternToJSON(pattern) {
 export function patternFromJSON(raw) {
   const o = raw && typeof raw === "object" ? raw : {};
   const length = clampLength(o.length ?? DEFAULT_PATTERN_LENGTH);
-  const base = createEmptyPattern(length);
+  const base = createEmptyPattern(
+    length,
+    typeof o.name === "string" ? o.name : "Pattern",
+  );
   const tracks = o.tracks && typeof o.tracks === "object" ? o.tracks : {};
   for (const ch of CHANNELS) {
     const row = Array.isArray(tracks[ch]) ? tracks[ch] : [];
@@ -164,7 +178,6 @@ export function patternFromJSON(raw) {
 }
 
 /**
- * Count non-empty steps across all channels.
  * @param {Pattern} pattern
  */
 export function countNotes(pattern) {
@@ -178,15 +191,51 @@ export function countNotes(pattern) {
 }
 
 /**
+ * Total hold ticks for a note (length steps with gate on the last).
+ * @param {StepNote} note
+ */
+export function noteHoldTicks(note) {
+  if (note.cut) return 0;
+  const length = Math.max(1, note.length ?? 1);
+  const gate = clampInt(note.gate ?? TICKS_PER_STEP, 1, TICKS_PER_STEP);
+  return (length - 1) * TICKS_PER_STEP + gate;
+}
+
+/**
  * @param {unknown} note
  * @returns {StepNote}
  */
 export function normalizeNote(note) {
+  if (note?.cut) {
+    return { cut: true };
+  }
   const midi = clampInt(note?.midi ?? 60, 0, 127);
   /** @type {StepNote} */
   const out = { midi };
   if (note?.velocity != null) out.velocity = clampInt(note.velocity, 0, 15);
-  if (note?.length != null) out.length = Math.max(1, clampInt(note.length, 1, 64));
+  if (note?.length != null) {
+    out.length = Math.max(1, clampInt(note.length, 1, 64));
+  }
+  if (note?.gate != null) {
+    out.gate = clampInt(note.gate, 1, TICKS_PER_STEP);
+  }
+  if (note?.slideTo != null) {
+    out.slideTo = clampInt(note.slideTo, 0, 127);
+  }
+  return out;
+}
+
+/**
+ * @param {StepNote} note
+ */
+function noteToJSON(note) {
+  if (note.cut) return { cut: true };
+  /** @type {Record<string, number|boolean>} */
+  const out = { midi: note.midi };
+  if (note.velocity != null) out.velocity = note.velocity;
+  if (note.length != null && note.length !== 1) out.length = note.length;
+  if (note.gate != null && note.gate !== TICKS_PER_STEP) out.gate = note.gate;
+  if (note.slideTo != null) out.slideTo = note.slideTo;
   return out;
 }
 
@@ -200,7 +249,6 @@ function clampLength(length) {
   const n = Number(length) | 0;
   if (n < MIN_PATTERN_LENGTH) return MIN_PATTERN_LENGTH;
   if (n > MAX_PATTERN_LENGTH) return MAX_PATTERN_LENGTH;
-  // Snap to multiples of 4 for tracker friendliness.
   return Math.max(MIN_PATTERN_LENGTH, Math.round(n / 4) * 4);
 }
 

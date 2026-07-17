@@ -1,14 +1,14 @@
 import { NesApu } from "../apu/nesApu.js";
 import { NesPlayer } from "../sequencer/player.js";
 import { createTransport, setPlaying } from "../sequencer/transport.js";
-import { secondsPerStep } from "../sequencer/transport.js";
+import { orderDurationSeconds } from "../song.js";
 
 /**
  * @typedef {import("../song.js").Song} Song
  */
 
 /**
- * Render a song to a mono Float32Array (one full loop by default).
+ * Render a song (full order list) to a mono Float32Array.
  *
  * @param {Song} song
  * @param {{
@@ -23,19 +23,20 @@ export function renderSongToSamples(
   { sampleRate = 44100, loops = 1, tailSeconds = 0.05 } = {},
 ) {
   const apu = new NesApu();
+  const first = song.patterns[song.order[0] ?? 0] ?? song.patterns[0];
   const transport = createTransport({
     bpm: song.bpm,
-    patternLength: song.pattern.length,
+    patternLength: first.length,
   });
   const player = new NesPlayer(apu, {
-    pattern: song.pattern,
+    patterns: song.patterns,
+    order: song.order,
     transport,
     instruments: song.instruments,
     sampleRate,
   });
 
-  const loopSeconds =
-    secondsPerStep(song.bpm) * song.pattern.length * Math.max(1, loops);
+  const loopSeconds = orderDurationSeconds(song) * Math.max(1, loops);
   const totalSeconds = loopSeconds + Math.max(0, tailSeconds);
   const totalSamples = Math.max(1, Math.ceil(totalSeconds * sampleRate));
   const out = new Float32Array(totalSamples);
@@ -47,8 +48,6 @@ export function renderSongToSamples(
 }
 
 /**
- * Encode mono float samples as a 16-bit PCM WAV ArrayBuffer.
- *
  * @param {Float32Array} samples
  * @param {number} [sampleRate=44100]
  * @returns {ArrayBuffer}
@@ -56,7 +55,7 @@ export function renderSongToSamples(
 export function encodeWav(samples, sampleRate = 44100) {
   const numSamples = samples.length;
   const bytesPerSample = 2;
-  const blockAlign = bytesPerSample; // mono
+  const blockAlign = bytesPerSample;
   const dataSize = numSamples * bytesPerSample;
   const buffer = new ArrayBuffer(44 + dataSize);
   const view = new DataView(buffer);
@@ -65,13 +64,13 @@ export function encodeWav(samples, sampleRate = 44100) {
   view.setUint32(4, 36 + dataSize, true);
   writeString(view, 8, "WAVE");
   writeString(view, 12, "fmt ");
-  view.setUint32(16, 16, true); // PCM chunk size
-  view.setUint16(20, 1, true); // PCM format
-  view.setUint16(22, 1, true); // mono
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
   view.setUint32(24, sampleRate, true);
   view.setUint32(28, sampleRate * blockAlign, true);
   view.setUint16(32, blockAlign, true);
-  view.setUint16(34, 16, true); // bits
+  view.setUint16(34, 16, true);
   writeString(view, 36, "data");
   view.setUint32(40, dataSize, true);
 

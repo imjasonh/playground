@@ -65,11 +65,61 @@ test("instrumentFromJSON clamps and fills defaults", () => {
     duty: 99,
     volume: -3,
     arpMacro: [0, 100],
+    pitchMacro: [0, 99],
     macroSpeed: 0,
+    vibratoDepth: 99,
+    delay: 100,
   });
   assert.equal(inst.channel, "pulse2");
   assert.equal(inst.duty, 3);
   assert.equal(inst.volume, 0);
   assert.equal(inst.arpMacro[1], 24);
+  assert.equal(inst.pitchMacro[1], 64);
   assert.equal(inst.macroSpeed, 1);
+  assert.equal(inst.vibratoDepth, 16);
+  assert.equal(inst.delay, 48);
+});
+
+test("pitch macro accumulates period offset", () => {
+  const inst = createDefaultInstruments().find((i) => i.id === "pulse-bend");
+  const voice = startVoice(inst, 60);
+  const offsets = [];
+  for (let i = 0; i < 8; i += 1) {
+    offsets.push(tickVoice(voice).periodOffset);
+  }
+  assert.ok(offsets[offsets.length - 1] > offsets[0]);
+});
+
+test("vibrato modulates period offset", () => {
+  const inst = createDefaultInstruments().find((i) => i.id === "pulse-vib");
+  const voice = startVoice(inst, 60);
+  const offsets = new Set();
+  for (let i = 0; i < 16; i += 1) {
+    offsets.add(tickVoice(voice).periodOffset);
+  }
+  assert.ok(offsets.size > 1);
+});
+
+test("delay keeps note silent then opens", () => {
+  const base = createDefaultInstruments()[0];
+  const voice = startVoice({ ...base, delay: 2, volumeMacro: [] }, 60);
+  const a = tickVoice(voice);
+  const b = tickVoice(voice);
+  const c = tickVoice(voice);
+  assert.equal(a.volume, 0);
+  assert.equal(b.volume, 0);
+  assert.ok(c.volume > 0);
+});
+
+test("slide interpolates midi toward target", () => {
+  const inst = createDefaultInstruments()[0];
+  const voice = startVoice(
+    { ...inst, volumeMacro: [], arpMacro: [] },
+    60,
+    { slideTo: 72, slideTicks: 4 },
+  );
+  const midis = [];
+  for (let i = 0; i < 5; i += 1) midis.push(tickVoice(voice).midi);
+  assert.equal(midis[0], 60);
+  assert.ok(midis[midis.length - 1] >= 70);
 });

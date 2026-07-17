@@ -25,7 +25,8 @@ export class AudioEngine {
 
   /**
    * @param {{
-   *   pattern: object,
+   *   patterns: object[],
+   *   order: number[],
    *   instruments: object,
    *   bpm: number,
    * }} songState
@@ -56,7 +57,11 @@ export class AudioEngine {
       this.mode = "worklet";
       this.ready = true;
       this.#post({ type: "bpm", value: songState.bpm });
-      this.#post({ type: "pattern", pattern: songState.pattern });
+      this.#post({
+        type: "song",
+        patterns: songState.patterns,
+        order: songState.order,
+      });
       this.#post({ type: "instruments", instruments: songState.instruments });
     } catch (err) {
       console.warn("AudioWorklet unavailable, using fallback scheduler", err);
@@ -79,14 +84,17 @@ export class AudioEngine {
     );
     const { patternFromJSON } = await import("../sequencer/pattern.js");
 
+    const patterns = (songState.patterns || []).map((p) => patternFromJSON(p));
+    const order = songState.order?.length ? songState.order : [0];
     const apu = new NesApu();
     const transport = createTransport({
       bpm: songState.bpm,
-      patternLength: songState.pattern.length,
+      patternLength: patterns[order[0]]?.length || 16,
     });
     this._fallbackTransport = transport;
     this._fallbackPlayer = new NesPlayer(apu, {
-      pattern: patternFromJSON(songState.pattern),
+      patterns,
+      order,
       transport,
       instruments: songState.instruments,
       sampleRate: this.ctx.sampleRate,
@@ -101,14 +109,19 @@ export class AudioEngine {
   }
 
   /**
-   * @param {object} patternJson
+   * @param {{ patterns: object[], order: number[] }} songJson
    */
-  setPattern(patternJson) {
+  setSong(songJson) {
     if (this.mode === "worklet") {
-      this.#post({ type: "pattern", pattern: patternJson });
+      this.#post({
+        type: "song",
+        patterns: songJson.patterns,
+        order: songJson.order,
+      });
     } else if (this._fallbackPlayer) {
       import("../sequencer/pattern.js").then(({ patternFromJSON }) => {
-        this._fallbackPlayer.setPattern(patternFromJSON(patternJson));
+        const patterns = songJson.patterns.map((p) => patternFromJSON(p));
+        this._fallbackPlayer.setSongPatterns(patterns, songJson.order);
       });
     }
   }

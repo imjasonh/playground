@@ -17,7 +17,7 @@ import {
   startVoice,
   tickVoice,
 } from "../instruments/macros.js";
-import { getStep } from "./pattern.js";
+import { getStep, noteHoldTicks } from "./pattern.js";
 import {
   advanceTransport,
   samplesPerTick,
@@ -31,24 +31,32 @@ import {
  * @typedef {import("../instruments/macros.js").Instrument} Instrument
  * @typedef {import("../instruments/macros.js").VoiceState} VoiceState
  * @typedef {import("../instruments/macros.js").ChannelId} ChannelId
+ * @typedef {import("../instruments/macros.js").VoiceParams} VoiceParams
  */
 
 /**
  * Realtime / offline song player: drives transport, macros, and APU registers.
+ * Supports a pattern order list for multi-pattern songs.
  */
 export class NesPlayer {
   /**
    * @param {NesApu} apu
    * @param {{
-   *   pattern: Pattern,
+   *   patterns: Pattern[],
+   *   order: number[],
    *   transport: TransportState,
    *   instruments: Record<ChannelId, Instrument>,
    *   sampleRate?: number,
    * }} opts
    */
-  constructor(apu, { pattern, transport, instruments, sampleRate = 44100 }) {
+  constructor(
+    apu,
+    { patterns, order, transport, instruments, sampleRate = 44100 },
+  ) {
     this.apu = apu;
-    this.pattern = pattern;
+    this.patterns = patterns;
+    this.order = order.length ? order : [0];
+    this.orderIndex = 0;
     this.transport = transport;
     this.instruments = instruments;
     this.sampleRate = sampleRate;
@@ -58,15 +66,34 @@ export class NesPlayer {
     this.holdTicks = {};
     /** @type {Partial<Record<ChannelId, VoiceState>>} */
     this.liveVoices = {};
-    /** Sample accumulator for live-macro clocking while stopped. */
     this._liveSampleAcc = 0;
     this.initialized = false;
+    this.#syncPatternLength();
+  }
+
+  /** @returns {Pattern} */
+  get pattern() {
+    const idx = this.order[this.orderIndex] ?? 0;
+    return this.patterns[idx] ?? this.patterns[0];
+  }
+
+  /**
+   * @param {Pattern[]} patterns
+   * @param {number[]} order
+   */
+  setSongPatterns(patterns, order) {
+    this.patterns = patterns;
+    this.order = order.length ? order : [0];
+    this.orderIndex = Math.min(this.orderIndex, this.order.length - 1);
+    this.#syncPatternLength();
   }
 
   /** @param {Pattern} pattern */
   setPattern(pattern) {
-    this.pattern = pattern;
-    this.transport.patternLength = pattern.length;
+    // Compatibility: replace the currently playing pattern slot.
+    const idx = this.order[this.orderIndex] ?? 0;
+    this.patterns[idx] = pattern;
+    this.#syncPatternLength();
   }
 
   /** @param {Record<ChannelId, Instrument>} instruments */
@@ -108,17 +135,18 @@ export class NesPlayer {
     }
   }
 
-  /** Fire the current step (call when transport starts). */
   onStart() {
     this.ensureInit();
+    this.orderIndex = 0;
+    this.transport.step = 0;
+    this.#syncPatternLength();
     this.#fireStep(this.transport.step);
   }
 
   /**
-   * Render `count` samples into `out`.
    * @param {Float32Array} out
    * @param {number} [count=out.length]
-   * @returns {{ steps: number[] }}
+   * @returns {{ steps: number[], orderIndex: number }}
    */
   render(out, count = out.length) {
     this.ensureInit();
@@ -130,8 +158,17 @@ export class NesPlayer {
 
     for (let i = 0; i < count; i += 1) {
       if (this.transport.playing) {
-        const { ticks, steps } = advanceTransport(this.transport, 1, rate);
+        const { ticks, steps, wrapped } = advanceTransport(
+          this.transport,
+          1,
+          rate,
+        );
         let stepsToFire = steps.slice();
+        // When the pattern wraps, advance the order *before* firing step 0
+        // of the next pattern (the wrap produces step 0 in `steps`).
+        if (wrapped) {
+          this.#advanceOrder();
+        }
         for (let t = 0; t < ticks; t += 1) {
           if (stepsToFire.length > 0 && t === ticks - 1) {
             for (const step of stepsToFire) {
@@ -148,7 +185,6 @@ export class NesPlayer {
           this.#tickMacros();
         }
       } else if (this.#hasLiveVoices()) {
-        // Free-run macros at the current BPM tick rate so held notes evolve.
         this._liveSampleAcc += 1;
         const spt = samplesPerTick(this.transport.bpm, rate);
         while (this._liveSampleAcc >= spt) {
@@ -163,7 +199,21 @@ export class NesPlayer {
       out[i] = this.apu.clock(whole);
     }
     this.apu.sampleAccumulator = residual;
-    return { steps: allSteps };
+    return { steps: allSteps, orderIndex: this.orderIndex };
+  }
+
+  #syncPatternLength() {
+    const p = this.pattern;
+    this.transport.patternLength = p?.length || 16;
+  }
+
+  #advanceOrder() {
+    this.orderIndex = (this.orderIndex + 1) % this.order.length;
+    this.#syncPatternLength();
+    // If the new pattern is shorter, clamp step (should already be 0 on wrap).
+    if (this.transport.step >= this.transport.patternLength) {
+      this.transport.step = 0;
+    }
   }
 
   #hasLiveVoices() {
@@ -216,36 +266,54 @@ export class NesPlayer {
       if (this.liveVoices[ch]) continue;
       const cell = getStep(this.pattern, ch, step);
       if (!cell) continue;
+
+      if (cell.cut) {
+        if (this.voices[ch]) releaseVoice(this.voices[ch], 2);
+        delete this.holdTicks[ch];
+        continue;
+      }
+
+      if (cell.midi == null) continue;
+
       const inst = this.instruments[ch];
       const volume = cell.velocity != null ? cell.velocity : inst.volume;
-      this.voices[ch] = startVoice({ ...inst, volume }, cell.midi);
-      const holdSteps = cell.length ?? 1;
-      this.holdTicks[ch] = holdSteps * TICKS_PER_STEP;
+      const hold = noteHoldTicks(cell);
+      const slideTo = cell.slideTo;
+      this.voices[ch] = startVoice(
+        { ...inst, volume },
+        cell.midi,
+        slideTo != null
+          ? { slideTo, slideTicks: Math.max(1, hold) }
+          : undefined,
+      );
+      this.holdTicks[ch] = hold;
       this.#applyVoice(ch, tickVoice(this.voices[ch]));
     }
   }
 
   /**
    * @param {ChannelId} channel
-   * @param {{ midi: number, volume: number, duty: number, shortNoise: boolean, active: boolean }} params
+   * @param {VoiceParams} params
    */
   #applyVoice(channel, params) {
     if (!params.active || params.volume <= 0) {
       this.#silence(channel);
       return;
     }
+    const period = Math.max(
+      0,
+      Math.min(0x7ff, midiToTimerPeriod(params.midi) + (params.periodOffset | 0)),
+    );
     if (channel === "pulse1" || channel === "pulse2") {
       startPulseNote(this.apu, channel, {
         duty: params.duty,
         volume: params.volume,
-        period: midiToTimerPeriod(params.midi),
+        period,
       });
       return;
     }
     if (channel === "triangle") {
-      startTriangleNote(this.apu, {
-        period: midiToTimerPeriod(params.midi),
-      });
+      startTriangleNote(this.apu, { period });
       return;
     }
     startNoiseNote(this.apu, {
