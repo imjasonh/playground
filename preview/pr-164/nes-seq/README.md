@@ -26,6 +26,8 @@ npm test
 ```
 
 No build step — static ES modules, same as other playground browser apps.
+`package-lock.json` is committed so CI’s `npm ci` succeeds even though there
+are no runtime dependencies.
 
 ## Authoring model
 
