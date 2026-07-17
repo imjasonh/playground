@@ -31,6 +31,8 @@ passes tests — so older experiments don't bit-rot.
   balance a ball up the wall while avoiding unlit pockets.
 - **[`hello/`](hello/)** — a minimal static demo.
 - **[`kanoodle/`](kanoodle/)** — the Kanoodle puzzle game (5×11 board, 12 pieces).
+- **[`nes-seq/`](nes-seq/)** — NES/2A03 MIDI sequencer and looper for faithful
+  8-bit music (Web MIDI, step grid, instrument macros, WAV export).
 - **[`webrtc/`](webrtc/)** — serverless, link-based WebRTC app: share a link to
   open a direct peer-to-peer session with video, voice, text, file transfer,
   live location sharing, and live captions (with on-device translation) — all
