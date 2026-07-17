@@ -693,6 +693,8 @@ h2 {
 .code-list {
   max-height: 25.6rem;
   overflow-y: auto;
+  overflow-anchor: none;
+  overscroll-behavior: contain;
   font-family: var(--mono);
   scrollbar-color: var(--panel-light) transparent;
 }

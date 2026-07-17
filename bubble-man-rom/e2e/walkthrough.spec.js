@@ -50,6 +50,8 @@ test("switches passages with mouse and keyboard", async ({ page }) => {
 
 test("produces an audio signal, follows bytecode, mutes, and stops cleanly", async ({ page }, testInfo) => {
   const play = page.getByRole("button", { name: "Play passage" });
+  await play.scrollIntoViewIfNeeded();
+  const pageScrollBeforePlayback = await page.evaluate(() => window.scrollY);
   await play.click();
 
   await expect(page.getByRole("button", { name: "Stop" })).toBeVisible();
@@ -61,6 +63,11 @@ test("produces an audio signal, follows bytecode, mutes, and stops cleanly", asy
   await expect(page.locator(".audio-status")).toContainText("Audio output active");
   await expect(page.locator(".code-row.is-active")).toHaveCount(1);
   await expect(page.locator(".note-block.is-active").first()).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => window.scrollY), {
+      message: "playback should not move the document viewport",
+    })
+    .toBe(pageScrollBeforePlayback);
 
   // Playwright's Linux WebKit audio process is unstable when a live graph is
   // muted and immediately disconnected. The signal assertion above exercises
