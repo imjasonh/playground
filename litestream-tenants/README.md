@@ -181,6 +181,60 @@ Compared to Cloud SQL / a managed SQL at similar QPS, this scheme is usually
 **cheaper on storage + idle**, and **predictable** if you keep always-on
 shards sized for peak; egress and “VFS miss storm” are the costs to watch.
 
+### vs Cloudflare Durable Objects vs Cloud SQL
+
+Apples-to-oranges caveats: DO is **one SQLite DB per object** (fits
+per-repo naturally) with hibernation; Cloud SQL is a **shared server**
+(Postgres/MySQL) with real concurrent writers; Litestream+Cloud Run is
+**DIY single-writer shards** + GCS. Same *logical* workload: ~1 k writes/s and
+~10 k reads/s of small point ops; **no public egress** in the table below.
+
+#### Unit economics at sustained load (≈ $/million ops)
+
+| | **Litestream + Cloud Run** | **DO (SQLite-backed)** | **Cloud SQL** (Enterprise) |
+|--|----------------------------|-------------------------|----------------------------|
+| **Write** | **~$0.05–0.10** | **~$1.15** ($0.15 req + $1.00/M rows) | **~$0.08–0.35** (amortized instance) |
+| **Read** | **~$0.02–0.05** (RO fleet) | **~$0.15** (mostly DO requests) | **~$0.05–0.10** (primary + replicas) |
+
+DO’s **$1/M row writes** dominates sustained write traffic. Litestream/CR and
+Cloud SQL are both “pay for capacity”; per-query cost falls as you fill the box.
+
+#### Monthly $ at the two scenarios (order-of-magnitude)
+
+| Workload | Litestream + CR | Durable Objects | Cloud SQL |
+|----------|-----------------|-----------------|-----------|
+| **1 k writes/s** | **~$125–260** (2 vCPU writer + LTX) | **~$2.5 k–4 k+** (≈$2.6 k row writes alone + requests; duration extra if many hot DOs) | **~$220–850** (4 vCPU light → 8 vCPU HA) |
+| **10 k reads/s** (scaled out) | **~$600–650** (10×1 vCPU RO + writer) | **~$4 k+** (≈$4 k DO requests @ $0.15/M on 26 B reads/mo; rows cheap) | **~$900–1.5 k** (HA primary + ~3 read replicas @ similar vCPU) |
+
+Cloud SQL rates used: ~$0.0413/vCPU-hr, ~$0.007/GiB-hr, HA ≈ 2× compute;
+SSD ~$0.17–0.22/GB-mo; **replicas billed as full instances**. DO: Workers Paid
+list — requests $0.15/M, duration $12.50/M GB-s, rows $1/M written & $0.001/M
+read, storage $0.20/GB-mo after 5 GB.
+
+#### When each wins
+
+| Situation | Prefer |
+|-----------|--------|
+| Many **quiet** repos, spiky traffic, want per-repo isolation | **DO** (hibernate; pay when touched) |
+| Sustained **high QPS**, GCP already, cheap reads/writes | **Litestream + Cloud Run** |
+| Need **multi-writer SQL**, joins across all repos, managed HA/PITR, ORMs | **Cloud SQL** |
+| Lowest **idle** bill at tiny scale | DO free tier / micro Cloud SQL — not Litestream always-on |
+| Lowest bill at **1 k write + 10 k read sustained** | **Litestream** (then Cloud SQL; DO last) |
+
+#### Architecture fit (not just $)
+
+| | Litestream + CR | DO | Cloud SQL |
+|--|-----------------|----|-----------|
+| Isolation | 1 file/repo (manual) | 1 DO/repo (native) | DBs/schemas on one instance |
+| Write scaling | shard by `hash(repo)` | more DOs (per repo) | bigger primary / proxies |
+| Read scaling | RO Cloud Run + hydrate | more DO reads (or caches) | read replicas ($$ each) |
+| Ops burden | You run Litestream/CR | Cloudflare operates | Google operates |
+| Consistency | single-writer / replica lag | single-threaded DO | full RDBMS |
+
+**Rule of thumb:** DO shines for **sparse multi-tenant** SQLite; Litestream shines
+for **dense sustained** SQLite on GCP; Cloud SQL when you need a **real shared
+SQL server** and will pay for HA/replicas.
+
 ### VFS mode
 
 `api -mode vfs-write` uses VFS only for **repo** DBs; control stays local/hot.
