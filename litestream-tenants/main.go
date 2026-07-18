@@ -1,9 +1,9 @@
 //go:build vfs
 
-// Command litestream-tenants runs local experiments for multi-tenant SQLite
-// with Litestream (file replica standing in for GCS): cold open (VFS vs
-// restore), single-writer + many readers, multi-writer conflicts, on-demand
-// tenant fan-out, and sharded writers.
+// Command litestream-tenants benchmarks a GitHub-like split:
+//   control.db  — tenants/users/orgs/repos/ACL (rarely written)
+//   repo-*.db   — PRs/comments/checks per repo
+// Every repo API op performs a control-plane AuthorizeRepo lookup first.
 package main
 
 import (
@@ -26,16 +26,10 @@ func main() {
 	ctx := context.Background()
 
 	switch cmd {
+	case "api":
+		os.Exit(runAPI(ctx, args))
 	case "cold-open":
 		os.Exit(runColdOpen(ctx, args))
-	case "rw":
-		os.Exit(runRW(ctx, args))
-	case "conflict":
-		os.Exit(runConflict(ctx, args))
-	case "fanout":
-		os.Exit(runFanout(ctx, args))
-	case "shard":
-		os.Exit(runShard(ctx, args))
 	case "all":
 		os.Exit(runAll(ctx, args))
 	case "help", "-h", "--help":
@@ -48,199 +42,146 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, `litestream-tenants — local Litestream multi-tenant benches
+	fmt.Fprintf(os.Stderr, `litestream-tenants — control.db + per-repo SQLite / Litestream benches
 
-Requires CGO and: go run -tags vfs .
+Requires CGO: go run -tags vfs .
 
 Commands:
-  cold-open   Compare full restore vs VFS open for seeded tenant sizes
-  rw          Single writer + N readers RPS/latency on one tenant
-  conflict    Two VFS writers on one tenant (expect conflicts)
-  fanout      Many tenants via LRU pool (on-demand open, no boot restore)
-  shard       Hash tenants onto K exclusive writer shards
-  all         Run a small default suite into a temp dir
+  api         QPS for control R/W and repo R/W (each repo op does ACL lookup)
+  cold-open   Restore vs VFS open for a seeded repo DB
+  all         Small default suite
 
-Common flags (per command):
-  -dir DIR          Workspace (default: temp dir)
-  -rows N           Rows per tenant when seeding (default varies)
-  -payload N        Blob bytes per row (default 256)
-  -tenants N        Number of tenants (default varies)
-  -duration D       Load duration (default 3s)
+Flags (api / shared):
+  -dir DIR           Workspace (default: temp)
+  -mode MODE         local|vfs-write|vfs-read (default local)
+  -duration D        Load duration (default 3s)
+  -tenants N         Tenants / orgs (default 2)
+  -users N           Users (default 20)
+  -repos-per-tenant N
+  -prs N             PRs per repo
+  -comments N        Comments per PR
+  -checks N          Check runs per PR
+  -body N            Body bytes for PR/comment text
+  -readers N         Repo-read+ACL goroutines
+  -writers N         Repo-write+ACL goroutines
+  -control-readers N ACL-only goroutines
+  -control-writers N Control-write goroutines
+  -repo-lru N        Hot repo DB LRU capacity
 `)
 }
 
-type commonFlags struct {
-	dir      string
-	rows     int
-	payload  int
-	tenants  int
-	duration time.Duration
-	readers  int
-	capacity int
-	shards   int
-	mode     string
-	rounds   int
+type flags struct {
+	dir            string
+	mode           string
+	duration       time.Duration
+	tenants        int
+	users          int
+	reposPerTenant int
+	prs            int
+	comments       int
+	checks         int
+	body           int
+	readers        int
+	writers        int
+	controlReaders int
+	controlWriters int
+	repoLRU        int
 }
 
-func parseCommon(args []string, defaults commonFlags) *commonFlags {
+func parseFlags(args []string, def flags) *flags {
 	fs := flag.NewFlagSet(os.Args[1], flag.ExitOnError)
-	cfg := defaults
-	fs.StringVar(&cfg.dir, "dir", cfg.dir, "workspace directory")
-	fs.IntVar(&cfg.rows, "rows", cfg.rows, "rows per tenant")
-	fs.IntVar(&cfg.payload, "payload", cfg.payload, "payload bytes per row")
-	fs.IntVar(&cfg.tenants, "tenants", cfg.tenants, "tenant count")
-	fs.DurationVar(&cfg.duration, "duration", cfg.duration, "load duration")
-	fs.IntVar(&cfg.readers, "readers", cfg.readers, "reader goroutines")
-	fs.IntVar(&cfg.capacity, "capacity", cfg.capacity, "LRU pool capacity")
-	fs.IntVar(&cfg.shards, "shards", cfg.shards, "writer shard count")
-	fs.StringVar(&cfg.mode, "mode", cfg.mode, "open mode: local|vfs-write|vfs-read|restore")
-	fs.IntVar(&cfg.rounds, "rounds", cfg.rounds, "fanout rounds")
+	cfg := def
+	fs.StringVar(&cfg.dir, "dir", cfg.dir, "workspace")
+	fs.StringVar(&cfg.mode, "mode", cfg.mode, "open mode")
+	fs.DurationVar(&cfg.duration, "duration", cfg.duration, "duration")
+	fs.IntVar(&cfg.tenants, "tenants", cfg.tenants, "tenants")
+	fs.IntVar(&cfg.users, "users", cfg.users, "users")
+	fs.IntVar(&cfg.reposPerTenant, "repos-per-tenant", cfg.reposPerTenant, "repos per tenant")
+	fs.IntVar(&cfg.prs, "prs", cfg.prs, "PRs per repo")
+	fs.IntVar(&cfg.comments, "comments", cfg.comments, "comments per PR")
+	fs.IntVar(&cfg.checks, "checks", cfg.checks, "checks per PR")
+	fs.IntVar(&cfg.body, "body", cfg.body, "body bytes")
+	fs.IntVar(&cfg.readers, "readers", cfg.readers, "repo readers")
+	fs.IntVar(&cfg.writers, "writers", cfg.writers, "repo writers")
+	fs.IntVar(&cfg.controlReaders, "control-readers", cfg.controlReaders, "control readers")
+	fs.IntVar(&cfg.controlWriters, "control-writers", cfg.controlWriters, "control writers")
+	fs.IntVar(&cfg.repoLRU, "repo-lru", cfg.repoLRU, "repo LRU")
 	_ = fs.Parse(args)
 	return &cfg
 }
 
-func prepareHarness(cfg *commonFlags) (*Harness, []string, error) {
-	dir := cfg.dir
-	var err error
+func workspace(dir string) (string, error) {
 	if dir == "" {
-		dir, err = os.MkdirTemp("", "litestream-tenants-*")
-		if err != nil {
-			return nil, nil, err
-		}
-		fmt.Println("workspace:", dir)
-	} else {
-		dir, err = filepath.Abs(dir)
-		if err != nil {
-			return nil, nil, err
-		}
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return nil, nil, err
-		}
+		return os.MkdirTemp("", "litestream-tenants-*")
 	}
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return "", err
+	}
+	return abs, os.MkdirAll(abs, 0o755)
+}
+
+func worldFromFlags(ctx context.Context, cfg *flags) (*World, error) {
+	dir, err := workspace(cfg.dir)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Println("workspace:", dir)
 	h, err := NewHarness(dir)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	tenants := make([]string, cfg.tenants)
-	ctx := context.Background()
-	for i := 0; i < cfg.tenants; i++ {
-		name := fmt.Sprintf("t%02d", i)
-		tenants[i] = name
-		size, err := h.SeedTenant(ctx, name, cfg.rows, cfg.payload)
-		if err != nil {
-			return nil, nil, fmt.Errorf("seed %s: %w", name, err)
-		}
-		fmt.Printf("seeded %s rows=%d size=%s\n", name, cfg.rows, humanBytes(size))
+	return SeedWorld(ctx, h, WorldConfig{
+		Tenants:       cfg.tenants,
+		Users:         cfg.users,
+		ReposPerTenant: cfg.reposPerTenant,
+		PRsPerRepo:    cfg.prs,
+		CommentsPerPR: cfg.comments,
+		ChecksPerPR:   cfg.checks,
+		BodyBytes:     cfg.body,
+	})
+}
+
+func runAPI(ctx context.Context, args []string) int {
+	cfg := parseFlags(args, flags{
+		mode: string(ModeLocal), duration: 3 * time.Second,
+		tenants: 2, users: 20, reposPerTenant: 3,
+		prs: 100, comments: 8, checks: 15, body: 256,
+		readers: 16, writers: 4, controlReaders: 8, controlWriters: 1,
+		repoLRU: 8,
+	})
+	w, err := worldFromFlags(ctx, cfg)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
 	}
-	return h, tenants, nil
+	_, err = BenchAPI(ctx, w, APIBenchConfig{
+		Mode:     OpenMode(cfg.mode),
+		Duration: cfg.duration,
+		Readers:  cfg.readers,
+		Writers:  cfg.writers,
+		ControlR: cfg.controlReaders,
+		ControlW: cfg.controlWriters,
+		RepoLRU:  cfg.repoLRU,
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return 0
 }
 
 func runColdOpen(ctx context.Context, args []string) int {
-	cfg := parseCommon(args, commonFlags{tenants: 3, rows: 2000, payload: 1024})
-	dir := cfg.dir
-	if dir == "" {
-		var err error
-		dir, err = os.MkdirTemp("", "litestream-tenants-*")
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
-		}
-		fmt.Println("workspace:", dir)
-	}
-	h, err := NewHarness(dir)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	sizes := []struct {
-		name string
-		rows int
-		pay  int
-	}{
-		{"tiny", 100, 64},
-		{"medium", cfg.rows, cfg.payload},
-		{"large", cfg.rows * 10, cfg.payload},
-	}
-	var tenants []string
-	for _, s := range sizes {
-		sz, err := h.SeedTenant(ctx, s.name, s.rows, s.pay)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
-		}
-		fmt.Printf("seeded %s rows=%d size=%s\n", s.name, s.rows, humanBytes(sz))
-		tenants = append(tenants, s.name)
-	}
-	if _, err := BenchColdOpen(ctx, h, tenants); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	return 0
-}
-
-func runRW(ctx context.Context, args []string) int {
-	cfg := parseCommon(args, commonFlags{
-		tenants: 1, rows: 1000, payload: 256,
-		readers: 32, duration: 3 * time.Second, mode: string(ModeLocal),
+	cfg := parseFlags(args, flags{
+		tenants: 1, users: 5, reposPerTenant: 1,
+		prs: 500, comments: 10, checks: 20, body: 512,
 	})
-	h, tenants, err := prepareHarness(cfg)
+	w, err := worldFromFlags(ctx, cfg)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	mode := OpenMode(cfg.mode)
-	if _, _, err := BenchRW(ctx, h, tenants[0], mode, cfg.readers, cfg.duration); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	return 0
-}
-
-func runConflict(ctx context.Context, args []string) int {
-	cfg := parseCommon(args, commonFlags{
-		tenants: 1, rows: 500, payload: 128, duration: 2 * time.Second,
-	})
-	h, tenants, err := prepareHarness(cfg)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	if _, err := BenchConflict(ctx, h, tenants[0], cfg.duration); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	fmt.Fprintln(os.Stderr, "note: dual-writer races often appear in Litestream logs (conflict detected / LTX rename), not as SQL errors")
-	return 0
-}
-
-func runFanout(ctx context.Context, args []string) int {
-	cfg := parseCommon(args, commonFlags{
-		tenants: 20, rows: 200, payload: 256,
-		capacity: 4, rounds: 3, mode: string(ModeVFSWrite),
-	})
-	h, tenants, err := prepareHarness(cfg)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	if _, err := BenchFanout(ctx, h, tenants, OpenMode(cfg.mode), cfg.capacity, cfg.rounds); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	return 0
-}
-
-func runShard(ctx context.Context, args []string) int {
-	cfg := parseCommon(args, commonFlags{
-		tenants: 12, rows: 200, payload: 128,
-		shards: 3, duration: 3 * time.Second, mode: string(ModeLocal),
-	})
-	h, tenants, err := prepareHarness(cfg)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	if _, err := BenchShard(ctx, h, tenants, cfg.shards, OpenMode(cfg.mode), cfg.duration); err != nil {
+	if err := BenchRepoColdOpen(ctx, w); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
@@ -248,41 +189,37 @@ func runShard(ctx context.Context, args []string) int {
 }
 
 func runAll(ctx context.Context, args []string) int {
-	cfg := parseCommon(args, commonFlags{})
-	dir := cfg.dir
-	if dir == "" {
-		var err error
-		dir, err = os.MkdirTemp("", "litestream-tenants-all-*")
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
-		}
+	cfg := parseFlags(args, flags{})
+	base, err := workspace(cfg.dir)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	fmt.Println("=== api local ===")
+	if code := runAPI(ctx, []string{
+		"-dir", filepath.Join(base, "api-local"),
+		"-mode", "local", "-duration", "2s",
+		"-tenants", "2", "-repos-per-tenant", "2", "-users", "10",
+		"-prs", "50", "-readers", "12", "-writers", "3",
+		"-control-readers", "6", "-control-writers", "1", "-repo-lru", "4",
+	}); code != 0 {
+		return code
+	}
+	fmt.Println("=== api vfs-write ===")
+	if code := runAPI(ctx, []string{
+		"-dir", filepath.Join(base, "api-vfs"),
+		"-mode", "vfs-write", "-duration", "2s",
+		"-tenants", "1", "-repos-per-tenant", "2", "-users", "8",
+		"-prs", "30", "-readers", "4", "-writers", "1",
+		"-control-readers", "2", "-control-writers", "0", "-repo-lru", "2",
+	}); code != 0 {
+		return code
 	}
 	fmt.Println("=== cold-open ===")
-	if code := runColdOpen(ctx, []string{"-dir", filepath.Join(dir, "cold")}); code != 0 {
+	if code := runColdOpen(ctx, []string{"-dir", filepath.Join(base, "cold"), "-prs", "200"}); code != 0 {
 		return code
 	}
-	fmt.Println("=== rw local ===")
-	if code := runRW(ctx, []string{"-dir", filepath.Join(dir, "rw-local"), "-mode", "local", "-duration", "2s", "-readers", "16"}); code != 0 {
-		return code
-	}
-	fmt.Println("=== rw vfs-write ===")
-	if code := runRW(ctx, []string{"-dir", filepath.Join(dir, "rw-vfs"), "-mode", "vfs-write", "-duration", "2s", "-readers", "8"}); code != 0 {
-		return code
-	}
-	fmt.Println("=== conflict ===")
-	if code := runConflict(ctx, []string{"-dir", filepath.Join(dir, "conflict"), "-duration", "2s"}); code != 0 {
-		return code
-	}
-	fmt.Println("=== fanout ===")
-	if code := runFanout(ctx, []string{"-dir", filepath.Join(dir, "fanout"), "-tenants", "10", "-capacity", "3", "-rounds", "2"}); code != 0 {
-		return code
-	}
-	fmt.Println("=== shard ===")
-	if code := runShard(ctx, []string{"-dir", filepath.Join(dir, "shard"), "-tenants", "9", "-shards", "3", "-duration", "2s"}); code != 0 {
-		return code
-	}
-	fmt.Println("all benches complete in", dir)
+	fmt.Println("all benches complete in", base)
 	return 0
 }
 

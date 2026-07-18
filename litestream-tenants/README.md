@@ -1,151 +1,121 @@
 # litestream-tenants
 
-Local experiments for **multi-tenant SQLite + Litestream**, aimed at a Cloud Run
-shape: write locally (or via VFS), replicate to object storage (GCS in prod;
-a `file://` replica tree here).
+Local benches for a **GitHub-like** Litestream layout:
 
-This continues the ideas in
-[`terraform-playground/litestream`](https://github.com/imjasonh/terraform-playground/tree/main/litestream)
-with newer Litestream (v0.5.x LTX + writable/read VFS).
+| DB | Contents | Write rate |
+|----|----------|------------|
+| `control.db` | tenants, users, orgs, members, repo registry, ACL | rare |
+| `repo-{id}.db` | PRs, comments, check runs for one repo | request path |
 
-## Requirements
+**Every repo API operation** runs `AuthorizeRepo` on `control.db` first (explicit
+`repo_access` or org membership), then reads/writes the repo DB.
 
-- Go 1.24+ (`GOTOOLCHAIN=auto` is fine)
-- CGO + a C compiler (`gcc`)
-- Build tag `vfs` (Litestream’s VFS is behind that tag)
+File replicas under `replicas/` stand in for GCS. Modes: `local` (hot SQLite),
+`vfs-write` / `vfs-read`, `restore`.
+
+## Run
 
 ```bash
 cd litestream-tenants
 CGO_ENABLED=1 go test -tags vfs -v ./...
+CGO_ENABLED=1 go run -tags vfs . api -duration 5s
 CGO_ENABLED=1 go run -tags vfs . all
 ```
 
-## What it measures
-
-| Command | Question |
-|---------|----------|
-| `cold-open` | Full `restore` vs VFS open+query for tiny/medium/large tenants |
-| `rw` | Single writer + N readers RPS/latency (`-mode local\|vfs-write`) |
-| `conflict` | Two VFS writers on one tenant → conflicts (unsafe) |
-| `fanout` | Many tenants via LRU pool — open on demand, no boot restore |
-| `shard` | Hash tenants onto K exclusive writer shards |
-
-Examples:
+### `api` — QPS with ACL on every repo op
 
 ```bash
-CGO_ENABLED=1 go run -tags vfs . cold-open -rows 5000 -payload 1024
-CGO_ENABLED=1 go run -tags vfs . rw -mode local -readers 64 -duration 5s
-CGO_ENABLED=1 go run -tags vfs . rw -mode vfs-write -readers 16 -duration 5s
-CGO_ENABLED=1 go run -tags vfs . fanout -tenants 50 -capacity 8 -rounds 3
-CGO_ENABLED=1 go run -tags vfs . shard -tenants 30 -shards 5 -duration 5s
+CGO_ENABLED=1 go run -tags vfs . api \
+  -mode local -duration 5s \
+  -tenants 3 -repos-per-tenant 4 -users 50 \
+  -prs 200 -comments 8 -checks 15 \
+  -readers 32 -writers 8 \
+  -control-readers 16 -control-writers 1 \
+  -repo-lru 12
 ```
 
-## Findings these benches are meant to show
+Reports:
 
-### Single writer is still the rule
+- `control-read` — ACL lookup only  
+- `control-write` — grant/replace `repo_access` (throttled)  
+- `repo-read+acl` — ACL + `SELECT` PR by number  
+- `repo-write+acl` — ACL + `INSERT` comment  
+- **effective QPS per repo** = aggregate repo QPS ÷ repo count (uniform mix)
 
-- **One writer per database** (SQLite + Litestream). Scaling Cloud Run writers
-  against the *same* tenant replica will conflict or diverge.
-- Within one process, WAL allows many concurrent readers beside that writer.
-- The `conflict` command shows the sharp edge: local `INSERT`s often succeed
-  (VFS write buffer) while sync-on-close races (`conflict detected`, LTX rename
-  failures) show up in Litestream logs — so dual writers are unsafe even when
-  the SQL API looks fine.
+### `cold-open`
 
-### Does VFS help cold start for many/large tenants?
+Restore vs VFS open + first PR point-read for one seeded repo.
 
-**Yes — this is the main reason to prefer VFS for multi-tenant on-demand writers.**
+## Schema (abridged)
 
-| Approach | Cold path | Cost scales with |
-|----------|-----------|------------------|
-| Classic restore then write | Download full DB (+ LTX chain) to disk, then open | **DB size** |
-| VFS write mode | Register VFS, fetch pages on demand, buffer writes, sync LTX | **Working set** (pages touched) |
+Control: `tenants` → `orgs` / `repos`; `users`; `org_members`; `repo_access`.  
+Repo: `pull_requests`, `issue_comments`, `check_runs` (slim check output).
 
-So you do **not** need to restore every tenant DB at process start. Keep an LRU
-of open tenant VFSes (`fanout` command); cold tenants pay page-fault latency into
-the replica, not a full hydrate.
+See `schema.go` for full DDL.
 
-Tradeoffs of VFS write mode:
+## What real-world traffic can we support per repo?
 
-- Eventual durability (sync interval; default-ish 250ms–1s in these benches)
-- Conflict detection if a second writer appears — not prevention
-- Heavier per-page latency than a warm local file until cached/hydrated
+Numbers below are from **local** `api -mode local` on this harness (single
+process, WAL SQLite, ACL join each time). Treat them as **upper bounds**;
+Cloud Run + GCS/VFS will be lower (often ~5–20× for VFS, less for local disk
+on Gen2 with always-on CPU).
 
-Background hydration (`LITESTREAM_HYDRATION_*`) can optionally fill a local file
-while serving; useful once a tenant is hot.
+### Measured on this machine (`api -mode local`)
 
-### Multi-tenant writer topologies on Cloud Run
+ACL on every repo op; control DB always local/hot; ~150–200 PRs/repo.
 
-**A. One service, many tenant DBs (recommended starting point)**  
-`max-instances=1`, Gen2, CPU always allocated. Lazy-open tenants with VFS write
-(or restore-on-first-use if you need local-disk latency). Litestream/VFS syncs
-each tenant to `gs://bucket/tenants/<id>/`. Scale-to-zero loses in-memory/LRU
-state; next cold start reopens via VFS without full restore.
+| Scenario | Control read QPS | Repo read+ACL | Repo write+ACL | Per-repo read / write |
+|----------|------------------|---------------|----------------|------------------------|
+| **1 hot repo** | ~88k | ~67k | ~8k | **~67k / ~8k** |
+| **12 active repos** (uniform) | ~61k | ~109k agg | ~24k agg | **~9k / ~2k** each |
 
-**B. Sharded writer services**  
-`tenant → shard = hash(tenant) % K`. Deploy `writer-0` … `writer-(K-1)`, each
-`max-instances=1`, each owning a disjoint tenant set. The `shard` bench models
-this locally with `-mode local` (local SQLite per tenant, as each Cloud Run
-shard would run). Write RPS scales ~linearly with K **if** load is balanced
-across tenants.
+Control writes are paced (~180/s here) to mimic rare ACL grants.
 
-Avoid keeping many hot **VFS write** handles for different tenants under heavy
-concurrent write churn in one process — this harness can hit `database disk
-image is malformed` in that shape. Prefer VFS for **on-demand** open (fanout /
-LRU) or one local DB per tenant inside a shard process.
+**Per repo** when traffic is spread evenly across \(R\) hot repos on one process:
 
-**C. Sticky routing / GCLB**  
+\[
+QPS_{repo} \approx QPS_{aggregate} / R
+\]
 
-| Mechanism | Tenant affinity? |
-|-----------|------------------|
-| Cloud Run session affinity | **No** — per client cookie, best-effort, not tenant-aware |
-| GCLB session affinity on serverless NEG | **Not supported** meaningfully for this |
-| GCLB path/host → different Cloud Run services | **Yes** — e.g. `/shard/3/*` or `s3.example.com` → `writer-3` |
-| GCLB URL mask / path to service name | **Yes** — map URL piece to `writer-N` |
-| Thin router service | **Yes** — router hashes tenant → `writer-N` URL |
+Ceiling is the **shard**, not a magic per-repo quota: one hot repo can consume nearly all of the aggregate.
 
-GCLB cannot hash an arbitrary tenant header onto backends by itself without a
-URL/host scheme or a router. Practical patterns:
+### Product translation (one Cloud Run writer shard)
 
-1. **Path prefix from the edge/API gateway:** client or BFF calls
-   `/s/{shard}/...` where `shard = hash(tenant) % K`.
-2. **One Cloud Run service per shard** behind a URL map.
-3. **Single max-instances=1 writer** until you outgrow it; simplest.
+Assume **local SQLite + Litestream → GCS** for control + open repo files (API
+primary). Derate local benches for Cloud Run CPU/concurrency (~2–5× conservative).
 
-Read replicas (optional): separate Cloud Run services using VFS **read-only** or
-`litestream restore -f`, scaled out freely. They lag the primary by poll/sync
-interval.
+| Repo popularity | Comfortable | Spike / dedicated |
+|-----------------|-------------|-------------------|
+| Quiet repo among many | **1–10 req/s** | 50/s |
+| Normal active repo | **20–100 req/s** mixed | ~200/s |
+| Hot repo alone on shard | **~1k–10k read/s**, **~0.5k–2k write/s** | bigger CPU / own shard |
+| Webhooks (checks, sync) | **tens–low hundreds write/s** aggregate / shard | shard when sustained higher |
 
-### Rough RPS expectations (prod, single writer instance)
+Most real GitHub-metadata traffic is **well below** these ceilings: a shard with
+**hundreds of repos**, **tens of aggregate write QPS**, and **hundreds–thousands
+of read QPS** is the intended zone. Use `hash(repo_id) % K` when the hot set or
+SQLite write lock saturates.
 
-Local `rw -mode local` on a laptop/CI VM is an upper bound; Cloud Run adds CPU
-limits and concurrency caps.
+### VFS mode
 
-| Mode | Ballpark on one Gen2 instance |
-|------|-------------------------------|
-| Local SQLite + Litestream replicate | Thousands of small reads/s; ~1k–5k small writes/s typical |
-| VFS write (remote-first) | Lower — hundreds to low thousands depending on cache / GCS RTT |
-| Comfortable mixed workload | Hundreds–low thousands RPS before you shard |
+`api -mode vfs-write` uses VFS only for **repo** DBs; control stays local/hot.
+Expect lower and noisier write QPS than `local` (and real GCS RTT in prod). Prefer
+**local + Litestream replicate** for steady API primaries; VFS for cold open /
+scale-to-zero / read replicas.
 
-Use `rw` and `shard` here to calibrate for your row sizes and query shapes before
-deploying.
+### Cold start (repo DB)
+
+With compacted replicas, first **point** PR read after VFS open stays sub-linear
+in DB size; full restore and table scans scale with size. Prefer one DB per repo
+so a huge monorepo doesn’t cold-start everyone else.
 
 ## Layout
 
 ```
 litestream-tenants/
-├── main.go          # CLI
-├── tenant.go        # seed, replicate, VFS/restore open, LRU pool
-├── bench.go         # cold-open / rw / conflict / fanout / shard
-├── stats.go         # latency + RPS helpers
-└── bench_test.go    # smaller CI-friendly runs (-tags vfs)
-```
-
-Replica directory layout (local stand-in for GCS):
-
-```
-$DIR/replicas/<tenant>/   # LTX tree
-$DIR/source/<tenant>.db   # seed source
-$DIR/buffers/             # VFS write buffers
-$DIR/restored/            # full restore outputs
+├── schema.go      # control + repo DDL, SeedWorld, AuthorizeRepo
+├── harness.go     # Litestream open/replicate, DB LRU pool
+├── bench_api.go   # api + cold-open benches
+├── main.go        # CLI
+└── bench_test.go
 ```

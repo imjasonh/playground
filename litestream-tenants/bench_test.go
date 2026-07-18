@@ -4,164 +4,118 @@ package main
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 	"time"
 )
 
-func TestSeedAndVFSRead(t *testing.T) {
+func TestSeedWorldAndAuthorize(t *testing.T) {
 	ctx := context.Background()
 	h, err := NewHarness(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	size, err := h.SeedTenant(ctx, "alpha", 50, 128)
+	w, err := SeedWorld(ctx, h, WorldConfig{
+		Tenants: 1, Users: 5, ReposPerTenant: 2,
+		PRsPerRepo: 10, CommentsPerPR: 3, ChecksPerPR: 4, BodyBytes: 64,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if size <= 0 {
-		t.Fatalf("expected positive db size, got %d", size)
+	ctrl, _, err := h.OpenDB(ctx, controlDBName, ModeLocal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ctrl.Close()
+
+	perm, ok, err := AuthorizeRepo(ctx, ctrl.DB, 1, w.RepoIDs[0])
+	if err != nil || !ok {
+		t.Fatalf("user1 should have access: ok=%v err=%v", ok, err)
+	}
+	if perm == "" {
+		t.Fatal("expected permission")
 	}
 
-	tdb, openDur, err := h.OpenTenant(ctx, "alpha", ModeVFSRead)
+	repo, _, err := h.OpenDB(ctx, repoDBName(w.RepoIDs[0]), ModeLocal)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tdb.Close()
-	n, err := countRows(ctx, tdb.DB)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if n != 50 {
-		t.Fatalf("got %d rows, want 50", n)
-	}
-	t.Logf("vfs-read open+count ok in %s", openDur)
-}
-
-func TestColdOpenVFSvsRestore(t *testing.T) {
-	ctx := context.Background()
-	h, err := NewHarness(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := h.SeedTenant(ctx, "tiny", 200, 256); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := h.SeedTenant(ctx, "big", 5000, 512); err != nil {
-		t.Fatal(err)
-	}
-
-	reports, err := BenchColdOpen(ctx, h, []string{"tiny", "big"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(reports) != 4 {
-		t.Fatalf("expected 4 reports, got %d", len(reports))
-	}
-	for _, r := range reports {
-		if r.OK == 0 {
-			t.Fatalf("%s: expected success, got %#v", r.Label, r)
-		}
-	}
-
-	// For the larger DB, VFS open+query should not be much slower than restore
-	// in this local file-backed setup; more importantly restore copies bytes
-	// while VFS does not grow RestoreDir.
-	entries, _ := filepath.Glob(filepath.Join(h.RestoreDir, "*"))
-	t.Logf("restore dir entries after bench: %d", len(entries))
-}
-
-func TestRWLocal(t *testing.T) {
-	ctx := context.Background()
-	h, err := NewHarness(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := h.SeedTenant(ctx, "t0", 100, 64); err != nil {
-		t.Fatal(err)
-	}
-	w, r, err := BenchRW(ctx, h, "t0", ModeLocal, 8, 500*time.Millisecond)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if w.OK == 0 {
-		t.Fatalf("expected writes: %#v", w)
-	}
-	if r.OK == 0 {
-		t.Fatalf("expected reads: %#v", r)
-	}
-	t.Log(w)
-	t.Log(r)
-}
-
-func TestConflictDualWriters(t *testing.T) {
-	ctx := context.Background()
-	h, err := NewHarness(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := h.SeedTenant(ctx, "t0", 50, 64); err != nil {
-		t.Fatal(err)
-	}
-	r, err := BenchConflict(ctx, h, "t0", 1500*time.Millisecond)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Log(r)
-	// Timing-dependent: at least one of conflict/error/busy should show up, or
-	// some writes succeeded on both — we only assert the bench ran.
-	if r.OK+r.Errors == 0 {
-		t.Fatal("expected some write attempts")
+	defer repo.Close()
+	title, err := readPR(ctx, repo.DB, 1)
+	if err != nil || title == "" {
+		t.Fatalf("readPR: %q %v", title, err)
 	}
 }
 
-func TestFanoutOnDemand(t *testing.T) {
+func TestAPIBenchLocal(t *testing.T) {
 	ctx := context.Background()
 	h, err := NewHarness(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	tenants := []string{"a", "b", "c"}
-	for _, name := range tenants {
-		if _, err := h.SeedTenant(ctx, name, 40, 64); err != nil {
-			t.Fatal(err)
-		}
-	}
-	// capacity >= tenants so round 2+ should hit the LRU cache.
-	r, err := BenchFanout(ctx, h, tenants, ModeVFSWrite, 3, 3)
+	w, err := SeedWorld(ctx, h, WorldConfig{
+		Tenants: 1, Users: 8, ReposPerTenant: 2,
+		PRsPerRepo: 20, CommentsPerPR: 4, ChecksPerPR: 6, BodyBytes: 64,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.OK == 0 {
-		t.Fatalf("expected fanout successes: %#v", r)
+	rep, err := BenchAPI(ctx, w, APIBenchConfig{
+		Mode: ModeLocal, Duration: 500 * time.Millisecond,
+		Readers: 8, Writers: 2, ControlR: 4, ControlW: 1, RepoLRU: 2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.RepoRead.OK == 0 {
+		t.Fatalf("expected repo reads: %#v", rep.RepoRead)
+	}
+	if rep.ControlRead.OK == 0 {
+		t.Fatalf("expected control reads: %#v", rep.ControlRead)
+	}
+	t.Logf("per-repo read QPS≈%.1f write QPS≈%.1f",
+		rep.RepoRead.RPS()/float64(len(w.RepoIDs)),
+		rep.RepoWrite.RPS()/float64(len(w.RepoIDs)))
+}
+
+func TestAPIBenchVFS(t *testing.T) {
+	ctx := context.Background()
+	h, err := NewHarness(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, err := SeedWorld(ctx, h, WorldConfig{
+		Tenants: 1, Users: 4, ReposPerTenant: 1,
+		PRsPerRepo: 15, CommentsPerPR: 3, ChecksPerPR: 4, BodyBytes: 32,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rep, err := BenchAPI(ctx, w, APIBenchConfig{
+		Mode: ModeVFSWrite, Duration: 500 * time.Millisecond,
+		Readers: 2, Writers: 1, ControlR: 1, ControlW: 0, RepoLRU: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.RepoRead.OK == 0 && rep.RepoWrite.OK == 0 {
+		t.Fatalf("expected some repo traffic: %#v", rep)
 	}
 }
 
-func TestShardWriters(t *testing.T) {
+func TestRepoColdOpen(t *testing.T) {
 	ctx := context.Background()
 	h, err := NewHarness(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	tenants := []string{"t0", "t1", "t2", "t3", "t4", "t5"}
-	for _, name := range tenants {
-		if _, err := h.SeedTenant(ctx, name, 30, 32); err != nil {
-			t.Fatal(err)
-		}
-	}
-	reports, err := BenchShard(ctx, h, tenants, 3, ModeLocal, 500*time.Millisecond)
+	w, err := SeedWorld(ctx, h, WorldConfig{
+		Tenants: 1, Users: 3, ReposPerTenant: 1,
+		PRsPerRepo: 40, CommentsPerPR: 5, ChecksPerPR: 8, BodyBytes: 128,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(reports) != 3 {
-		t.Fatalf("expected 3 shard reports, got %d", len(reports))
-	}
-	for _, r := range reports {
-		if r.OK == 0 {
-			t.Fatalf("expected shard writes: %#v", r)
-		}
-		if r.Errors > r.OK {
-			t.Fatalf("too many shard errors: %#v", r)
-		}
+	if err := BenchRepoColdOpen(ctx, w); err != nil {
+		t.Fatal(err)
 	}
 }
