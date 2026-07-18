@@ -96,6 +96,91 @@ Most real GitHub-metadata traffic is **well below** these ceilings: a shard with
 of read QPS** is the intended zone. Use `hash(repo_id) % K` when the hot set or
 SQLite write lock saturates.
 
+### Cloud Run concurrency 1000 vs SQLite limits
+
+Cloud Run’s **max concurrent requests / instance = 1000** caps *in-flight*
+requests, not QPS:
+
+\[
+QPS \approx concurrency / latency
+\]
+
+| Avg handler latency | Max QPS at concurrency 1000 |
+|---------------------|-----------------------------|
+| 1 ms | ~1 000 000 |
+| 5 ms | ~200 000 |
+| 20 ms | ~50 000 |
+| 100 ms | ~10 000 |
+
+For our point ACL+PR ops (often **~1–20 ms** in-process), concurrency 1000
+allows **far more QPS than SQLite writes can absorb**. Binding limits:
+
+| Path | Practical per writer shard | Hits first |
+|------|----------------------------|------------|
+| **Writes** | **~1 k/s** comfortable (~few k/s lab ceiling) | SQLite single-writer lock — **not** CR concurrency |
+| **Reads on writer** | tens of k/s possible | CPU / lock contention with writes; CR concurrency rarely first |
+| **Reads on RO replicas** | scale out horizontally | Add reader shards **well before** ~8 k read QPS on one box if you want headroom |
+
+So: **yes — for reads, add reader replicas (or more RO Cloud Run services)
+before a single shard is near ~8 k read QPS.** Keep the writer focused on
+writes + light reads; **~1 k writes/s per writer shard** is a solid planning
+max (and is already a lot of GitHub-metadata traffic).
+
+Use **instance-based billing / always-on CPU** for writer (+ Litestream). Avoid
+request-based `$0.40 / M` at these QPS levels.
+
+### Cost sketch (us-central1, order-of-magnitude)
+
+Assumptions: instance-based Cloud Run; Litestream batches writes (~1 s sync);
+reader replicas use **hydrated local RO** (`restore -f`) or warm VFS cache so
+steady-state reads are **not** 1 GCS GET per request; Standard GCS regional;
+**egress excluded unless noted** (often dominates if responses leave GCP).
+
+#### Sustained **1 k writes/s** (one writer shard)
+
+| Component | Assumption | ≈ $/month |
+|-----------|------------|-----------|
+| Cloud Run writer | 2 vCPU / 2 GiB always on | **~$105** |
+| GCS Class A (LTX uploads) | ~1–10 objects/s after batching (1 DB vs many hot repos) | **~$13–130** |
+| GCS storage | ~50–200 GiB retained LTX/snapshots | **~$1–4** |
+| GCS Class B | compaction/readers polling light | **~$5–20** |
+| Egress (optional) | 500 B ack × 1 k/s → ~1.2 TB/mo @ $0.12/GB | **~$150** if public internet |
+| **Total (in-GCP, no egress)** | | **~$125–260** |
+| **+ internet egress** | | **~$275–410** |
+
+CPU/RAM: one mid-size always-on instance. Litestream does **not** charge per
+app write — only per synced LTX object.
+
+#### Sustained **10 k reads/s** across **10 reader shards** (1 k/s each)
+
+| Component | Assumption | ≈ $/month |
+|-----------|------------|-----------|
+| Cloud Run readers | 10 × (1 vCPU / 1 GiB) always on | **~$530** |
+| Writer (still needed for freshness) | 1 × (1–2 vCPU) | **~$50–105** |
+| GCS ops (hydrated RO) | poll/follow LTX ~1/s/replica → ~10 Class B/s | **~$10** |
+| GCS ops (cold VFS, miss-heavy) | avoid for this QPS — could be $100s–$1000s | n/a if hydrated |
+| GCS storage | shared replica data (not ×10) | **~$1–4** |
+| Egress (optional) | 2 KB × 10 k/s → ~50 TB/mo | **~$6 000** if public internet |
+| **Total (in-GCP, no egress)** | | **~$600–650** |
+| **+ internet egress** | | **~$6.5 k** |
+
+CPU/RAM scales ~linear with reader count; **GCS storage does not** (one
+replica tree). GCS ops stay cheap if replicas are local-hydrated; VFS
+page-fault reads at 10 k/s would multiply Class B and are the wrong shape.
+
+#### Relative takeaway
+
+| | 1 k write/s | 10 k read/s (10 RO) |
+|--|-------------|---------------------|
+| Dominant cost (in-GCP) | Writer CPU + LTX Class A | Reader CPU × N |
+| GCS storage | small | small (shared) |
+| GCS ops | modest if batched | modest if hydrated |
+| Egress | optional, can exceed compute | often **the** bill if clients are on the public internet |
+
+Compared to Cloud SQL / a managed SQL at similar QPS, this scheme is usually
+**cheaper on storage + idle**, and **predictable** if you keep always-on
+shards sized for peak; egress and “VFS miss storm” are the costs to watch.
+
 ### VFS mode
 
 `api -mode vfs-write` uses VFS only for **repo** DBs; control stays local/hot.
