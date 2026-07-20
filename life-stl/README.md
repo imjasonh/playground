@@ -97,16 +97,11 @@ A1 Mini stock nozzle is **0.4 mm**. Build volume is **180³ mm** — keep `--dep
 
 See [`examples/`](examples/) and [`examples/REPORT.md`](examples/REPORT.md). Regenerate with `./generate-examples.sh`.
 
-### Which to print first?
+Only STLs that pass the **support removability** gate (`cleanup OK`) are shipped — currently ten easy-to-clean soups:
 
-| Pick | File | Why |
-|------|------|-----|
-| **Best first print** | [`glider-tree.stl`](examples/glider-tree.stl) | Small (48×48×100 mm), clear Life shape, only 46 tips, high structural SF (~43). Fits the A1 Mini with lots of margin. |
-| **Full-bed** | [`a1-mini-max-soup-tree.stl`](examples/a1-mini-max-soup-tree.stl) | Fills the A1 Mini **180×180×180 mm** cube with soup + tree supports. |
+`soup-easy-{60,98,262,299,415,552,51,178,920,944}.stl`
 
-Still-life gardens (`--pattern random`) are not shipped as examples — they need no supports and look static through Z. Soups/gliders leave orphans after support removal (multiple pieces).
-
-> A1 Mini volume is **180³ mm**. (700 mm³ would be a ~9 mm cube — almost certainly not what you want.)
+Hard-to-remove shapes (dense soups, glider cages, full-bed chaos) are omitted on purpose. Still-life gardens are not shipped (static through Z). Soups may still leave Life orphans after cleanup (multiple pieces).
 
 ## Develop
 
