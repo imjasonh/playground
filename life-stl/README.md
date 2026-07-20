@@ -115,7 +115,7 @@ A1 Mini stock nozzle is **0.4 mm**. Build volume is **180³ mm** — keep `--dep
 | `-x/-y/-z` | `24/24/48` | Size in cells |
 | `--width-mm` / `--height-mm` / `--depth-mm` | — | Size in mm (with `--cell`) |
 | `--cell` | `4.0` | Voxel edge (mm) |
-| `--pattern` | `random` | `random` (still-life garden), `soup`, `glider`, `acorn`, … |
+| `--pattern` | `random` | `random` (still-life garden), `soup`, `glider`, or a methuselah (`acorn`, `rpento`, `pi`, `bheptomino`, `thunderbird`, `bunnies`, `rabbits`, `diehard`) |
 | `--mode` | `gusset` | `gusset` (self-supporting), `breakaway`, or `raw` |
 | `--full-base` | off | Base plate covers the whole board (always on in breakaway) |
 | `--base-margin` | `2` | Margin (cells) around the model footprint for the shrink-wrapped base |
@@ -138,10 +138,29 @@ Every shipped STL is self-supporting (gusset) and stays **active for its entire 
 | `gusset-glider-tower.stl` | Glider climbing 44 generations — 64×64×180 mm |
 | `gusset-acorn.stl` | Acorn methuselah blooming from 7 cells — 140×76 mm base, 180 mm tall |
 | `gusset-acorn-a1mini.3mf` | The acorn as a ready-to-slice Bambu Studio project (A1 Mini + generic PLA; see [`docs/printing-a1mini.md`](docs/printing-a1mini.md)) |
+| `gusset-rpento.stl` | R-pentomino, the original methuselah (5 cells) — 108×68 mm base, 180 mm tall |
+| `gusset-pi.stl` | Pi-heptomino, the biggest bloom of the gallery — 132×104 mm base, 180 mm tall |
+| `gusset-rabbits.stl` | Rabbits (9 cells, ~17k generations unbounded) — 84×68 mm base, 180 mm tall |
 | `gusset-soup-mid.stl` | Chaotic soup, never settles — 96×96×148 mm |
 | `gusset-soup-a1max.stl` | Chaotic soup at A1 Mini max, never settles — 176×176×180 mm |
 
-Patterns that settle partway up (e.g. R-pentomino on bounded boards at gen ~19) fail the default full-height activity gate and are not shipped.
+### Methuselah gallery
+
+Every catalogued methuselah pattern stays active for a full 44-generation
+(180 mm) print when centered on a 44×44 board — all pass both gates:
+
+| `--pattern` | Seed cells | Life voxels | Character |
+|-------------|-----------:|------------:|-----------|
+| `rpento` | 5 | 1093 | The classic; asymmetric bloom |
+| `acorn` | 7 | 1834 | Wide, oak-like spread |
+| `pi` | 7 | 2325 | Densest, symmetric early bloom |
+| `bheptomino` | 7 | 801 | Compact, off-axis |
+| `thunderbird` | 6 | 1004 | Symmetric, forked |
+| `bunnies` | 9 | 967 | Sparse, slow build |
+| `rabbits` | 9 | 998 | Sparse, delicate |
+| `diehard` | 7 | 790 | Destined to vanish (at gen ~130, past the top) |
+
+Generate any of them with e.g. `--pattern thunderbird -x 44 -y 44 -z 44`.
 
 ## Design notes
 

@@ -77,9 +77,11 @@ an explicit seed still writes the STL but exits non-zero.
   generation deep before requiring births; long predecessor chains need
   SAT-style search, and gusset mode removed the motivation.
 - **Classic methuselahs at print scale.** R-pentomino (~1103 gens) and acorn
-  (~5206 gens) outlive any printable Z, which is exactly what makes truncated
-  acorn a good gusset print: it never settles inside the stack. R-pentomino on
-  small bounded boards settles around gen 19 and fails the full-height gate.
+  (~5206 gens) outlive any printable Z, which is exactly what makes them good
+  gusset prints: they never settle inside the stack. **Placement matters**:
+  stamped near a corner, wall collisions can kill a methuselah within ~20
+  generations; centered on a 44×44 board, every catalogued methuselah stays
+  active for the full 44-generation height.
 - **Weakening the complexity gate to ship more examples.** Print review
   consistently rejected anything that goes quiescent partway up; the gate
   default (`min_active_fraction = 1.0`) encodes that judgment.

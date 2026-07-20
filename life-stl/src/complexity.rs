@@ -186,17 +186,30 @@ mod tests {
     }
 
     #[test]
-    fn acorn_outlasts_the_stack() {
-        let config = Config {
-            width: 44,
-            height: 44,
-            depth: 44,
-            pattern: Pattern::Acorn,
-            ..Config::default()
-        };
-        let report = analyze_complexity(&config);
-        assert!(report.ok, "{report:?}");
-        assert_eq!(report.period, 0, "acorn must not settle within 44 gens");
+    fn methuselahs_outlast_a_44_gen_stack() {
+        // Centered on a 44×44 board, all catalogued methuselahs stay active
+        // for a full 180 mm print (44 generations at 4 mm cells).
+        for pattern in [
+            Pattern::Acorn,
+            Pattern::Rpento,
+            Pattern::Pi,
+            Pattern::Bheptomino,
+            Pattern::Thunderbird,
+            Pattern::Bunnies,
+            Pattern::Rabbits,
+            Pattern::Diehard,
+        ] {
+            let config = Config {
+                width: 44,
+                height: 44,
+                depth: 44,
+                pattern,
+                ..Config::default()
+            };
+            let report = analyze_complexity(&config);
+            assert!(report.ok, "{pattern:?}: {report:?}");
+            assert_eq!(report.period, 0, "{pattern:?} must not settle in 44 gens");
+        }
     }
 
     #[test]

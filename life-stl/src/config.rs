@@ -217,16 +217,26 @@ pub enum Pattern {
     Soup,
     /// Classic glider (needs at least 5×5). Climbs the stack diagonally.
     Glider,
-    /// R-pentomino methuselah. On small bounded boards it settles in ~19
-    /// generations, so it fails the default full-height activity gate.
+    /// R-pentomino methuselah (5 cells, centered; ~1103 generations unbounded).
     Rpento,
     /// Blinker oscillator (period 2 — always fails the complexity gate).
     Blinker,
     /// Lightweight spaceship.
     Lwss,
-    /// Acorn methuselah (7 cells, centered). Chaotic growth that easily
-    /// outlasts any printable Z height.
+    /// Acorn methuselah (7 cells, centered; ~5206 generations unbounded).
     Acorn,
+    /// Pi-heptomino methuselah (7 cells, centered; symmetric bloom).
+    Pi,
+    /// B-heptomino methuselah (7 cells, centered).
+    Bheptomino,
+    /// Thunderbird methuselah (6 cells, centered; symmetric).
+    Thunderbird,
+    /// Bunnies methuselah (9 cells, centered; ~17332 generations unbounded).
+    Bunnies,
+    /// Rabbits methuselah (9 cells, centered; ~17331 generations unbounded).
+    Rabbits,
+    /// Diehard (7 cells, centered; vanishes at ~130 generations unbounded).
+    Diehard,
 }
 
 /// Generation parameters.

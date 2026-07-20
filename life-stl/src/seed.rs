@@ -15,11 +15,19 @@ pub fn initial_grid(config: &Config) -> Grid {
         }
         // Classic Bernoulli soup — chaotic, often leaves orphans after support removal.
         Pattern::Soup => soup_grid(config.width, config.height, config.seed, config.density),
+        // Travelers start near a corner so they can cross the board.
         Pattern::Glider => place_pattern(config.width, config.height, &GLIDER, 1, 1),
-        Pattern::Rpento => place_pattern(config.width, config.height, &R_PENTOMINO, 2, 2),
-        Pattern::Blinker => place_pattern(config.width, config.height, &BLINKER, 1, 1),
         Pattern::Lwss => place_pattern(config.width, config.height, &LWSS, 1, 2),
+        // Methuselahs bloom outward — center them to delay wall interactions.
+        Pattern::Rpento => place_centered(config.width, config.height, &R_PENTOMINO),
+        Pattern::Blinker => place_centered(config.width, config.height, &BLINKER),
         Pattern::Acorn => place_centered(config.width, config.height, &ACORN),
+        Pattern::Pi => place_centered(config.width, config.height, &PI_HEPTOMINO),
+        Pattern::Bheptomino => place_centered(config.width, config.height, &B_HEPTOMINO),
+        Pattern::Thunderbird => place_centered(config.width, config.height, &THUNDERBIRD),
+        Pattern::Bunnies => place_centered(config.width, config.height, &BUNNIES),
+        Pattern::Rabbits => place_centered(config.width, config.height, &RABBITS),
+        Pattern::Diehard => place_centered(config.width, config.height, &DIEHARD),
     }
 }
 
@@ -159,7 +167,14 @@ const GLIDER: [&str; 3] = ["010", "001", "111"];
 const R_PENTOMINO: [&str; 3] = [".OO", "OO.", ".O."];
 const BLINKER: [&str; 1] = ["OOO"];
 const LWSS: [&str; 4] = [".O..O", "O....", "O...O", "OOOO."];
+// Methuselah seeds, as catalogued on LifeWiki.
 const ACORN: [&str; 3] = [".O.....", "...O...", "OO..OOO"];
+const PI_HEPTOMINO: [&str; 3] = ["OOO", "O.O", "O.O"];
+const B_HEPTOMINO: [&str; 3] = ["O.OO", "OOO.", ".O.."];
+const THUNDERBIRD: [&str; 5] = ["OOO", "...", ".O.", ".O.", ".O."];
+const BUNNIES: [&str; 4] = ["O.....O.", "..O...O.", "..O..O.O", ".O.O...."];
+const RABBITS: [&str; 3] = ["O...OOO", "OOO..O.", ".O....."];
+const DIEHARD: [&str; 3] = ["......O.", "OO......", ".O...OOO"];
 
 #[cfg(test)]
 mod tests {
@@ -201,5 +216,30 @@ mod tests {
         assert_eq!(g.live_count(), 7);
         // Bounding box of the 7×3 acorn sits centered-ish on the board.
         assert!(g.is_alive(18, 22), "expected acorn near board center");
+    }
+
+    #[test]
+    fn methuselah_seeds_have_catalogued_cell_counts() {
+        // Guards against typos in the pattern stamps (LifeWiki cell counts).
+        let expected = [
+            (Pattern::Rpento, 5),
+            (Pattern::Acorn, 7),
+            (Pattern::Pi, 7),
+            (Pattern::Bheptomino, 7),
+            (Pattern::Thunderbird, 6),
+            (Pattern::Bunnies, 9),
+            (Pattern::Rabbits, 9),
+            (Pattern::Diehard, 7),
+        ];
+        for (pattern, cells) in expected {
+            let config = Config {
+                width: 44,
+                height: 44,
+                pattern,
+                ..Config::default()
+            };
+            let g = initial_grid(&config);
+            assert_eq!(g.live_count(), cells, "{pattern:?} cell count");
+        }
     }
 }

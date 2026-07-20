@@ -76,6 +76,15 @@ section() {
   section "Acorn methuselah — 176×176×180 mm" examples/gusset-acorn.stl \
     --pattern acorn -x 44 -y 44 -z 44 --mode gusset
 
+  section "R-pentomino methuselah — 176×176×180 mm" examples/gusset-rpento.stl \
+    --pattern rpento -x 44 -y 44 -z 44 --mode gusset
+
+  section "Pi-heptomino methuselah — 176×176×180 mm" examples/gusset-pi.stl \
+    --pattern pi -x 44 -y 44 -z 44 --mode gusset
+
+  section "Rabbits methuselah — 176×176×180 mm" examples/gusset-rabbits.stl \
+    --pattern rabbits -x 44 -y 44 -z 44 --mode gusset
+
   section "Soup — 96×96×148 mm" examples/gusset-soup-mid.stl \
     --pattern soup --seed 0 --density 0.18 -x 24 -y 24 -z 36 --mode gusset
 

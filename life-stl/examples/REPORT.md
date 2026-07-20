@@ -36,6 +36,45 @@ Life orphans (causal connectivity): 0 (0.0% of life)
 Life self-supporting: yes — causality braces make one standing piece
 ```
 
+### R-pentomino methuselah — 176×176×180 mm
+```
+life-stl  44×44×45 cells  (176.0×176.0×180.0 mm)  seed=0  mode=Gusset  cell=4mm
+self-supporting gussets: braces=1380  width=1.8mm — every birth leans on its 3 parents (45° rule); no supports to remove
+complexity: quiescent_gen=44  period=none  unique_states=44  need≥44  interesting OK
+generations (above 1-cell base): 44
+base plate: 27×17 cells (108×68 mm) — shrink-wrapped to model footprint
+voxels: life=1093  base=459  total_solid=1552
+Life print overhang (empty cell directly below): 460 voxels, 7360.0 mm² (29.6% of solid)
+Life orphans (causal connectivity): 0 (0.0% of life)
+Life self-supporting: yes — causality braces make one standing piece
+```
+
+### Pi-heptomino methuselah — 176×176×180 mm
+```
+life-stl  44×44×45 cells  (176.0×176.0×180.0 mm)  seed=0  mode=Gusset  cell=4mm
+self-supporting gussets: braces=3042  width=1.8mm — every birth leans on its 3 parents (45° rule); no supports to remove
+complexity: quiescent_gen=44  period=none  unique_states=44  need≥44  interesting OK
+generations (above 1-cell base): 44
+base plate: 33×26 cells (132×104 mm) — shrink-wrapped to model footprint
+voxels: life=2325  base=858  total_solid=3183
+Life print overhang (empty cell directly below): 1014 voxels, 16224.0 mm² (31.9% of solid)
+Life orphans (causal connectivity): 0 (0.0% of life)
+Life self-supporting: yes — causality braces make one standing piece
+```
+
+### Rabbits methuselah — 176×176×180 mm
+```
+life-stl  44×44×45 cells  (176.0×176.0×180.0 mm)  seed=0  mode=Gusset  cell=4mm
+self-supporting gussets: braces=1287  width=1.8mm — every birth leans on its 3 parents (45° rule); no supports to remove
+complexity: quiescent_gen=44  period=none  unique_states=44  need≥44  interesting OK
+generations (above 1-cell base): 44
+base plate: 21×17 cells (84×68 mm) — shrink-wrapped to model footprint
+voxels: life=998  base=357  total_solid=1355
+Life print overhang (empty cell directly below): 429 voxels, 6864.0 mm² (31.7% of solid)
+Life orphans (causal connectivity): 0 (0.0% of life)
+Life self-supporting: yes — causality braces make one standing piece
+```
+
 ### Soup — 96×96×148 mm
 ```
 life-stl  24×24×37 cells  (96.0×96.0×148.0 mm)  seed=0  mode=Gusset  cell=4mm
