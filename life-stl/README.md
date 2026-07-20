@@ -5,24 +5,40 @@ Generate a **3D-printable STL** of [Conway's Game of Life](https://en.wikipedia.
 ```bash
 cargo run --release -- -x 24 -y 24 -z 48 --seed 42 -o life.stl
 
-# Or give physical size in mm + cell size (voxel edge length):
+# Physical size in mm + cell size (voxel edge length):
 cargo run --release -- \
   --width-mm 100 --height-mm 100 --depth-mm 600 \
-  --cell 2 --seed 42 -o tower.stl
+  --cell 4 --seed 42 -o tower.stl
 ```
 
-## Printability (the hard part)
+## Cell size (FDM / Bambu A1 Mini)
 
-Stacking Life generations on Z looks straightforward, and for the usual **~45° Moore rule** it already works: every birth has live neighbors in the previous generation, so no voxel is truly “floating in air” relative to the 3×3 below.
+| | |
+|--|--|
+| **Default `--cell`** | **4.0 mm** (~10× a 0.4 mm nozzle) |
+| **Minimum `--cell`** | **2.0 mm** (~5× a 0.4 mm nozzle) |
 
-The practical FDM problem is weaker. Births often sit on only an **edge or corner** of cubes below — empty cell directly underneath. Those bottom faces are the overhangs that droop or need supports. Prior art on CA→print pipelines (Reiss & Price, *Complex Processes and 3D Printing*, 2013) fights overhangs with cube overlap + mesh smoothing; printable “Conway towers” on Printables (Fernando Jerez, yury.dz, JoergLatte’s OpenSCAD generator) use the same Z=time stacking and are typically tuned for support-free printing.
+Assuming you meant a **0.4 mm** nozzle (A1 Mini stock) rather than 0.04 mm: **yes, 4 mm cells are comfortably printable** — each voxel is many line widths wide. At the 2 mm floor, prints are still plausible but fiddlier (thin towers, more stringing risk).
 
-`life-stl` keeps **exact** Life cells, then in default `--mode scaffold` inserts **vertical scaffold columns** under every solid that lacks face-on-face support from `(x,y,z-1)`. That drives the primary overhang metric to **zero**. Scaffold is extra plastic under births; Life geometry is unchanged.
+**Build volume caveat:** an A1 Mini is **180×180×180 mm**. A 100×100×600 mm tower will not fit in one piece; split the Z range, scale down, or use a taller machine.
 
-| Mode | Behavior |
-|------|----------|
-| `scaffold` (default) | Exact Life + vertical support columns → overhang area = 0 |
-| `raw` | Exact Life + base plate only → reports overhang area to expect in the slicer |
+## Scaffold: not breakaway
+
+Scaffold voxels are **the same fused filament** as Life cells — they are **not** dissolvable or snappable supports. They exist so the nozzle has something to land on while printing overhanging births.
+
+A model is **Life-self-supporting** when every Life voxel is **face-connected to the bed through Life|Base only** (scaffold ignored). Then fused scaffold is not load-bearing for the sculpture; if you could remove it, the object would still hold together.
+
+| Situation | Behavior |
+|-----------|----------|
+| `--seed` omitted (`random` / `soup`) | Try seeds until Life is self-supporting (`--max-seed-attempts`, default 200) |
+| `--seed` given (or named pattern like `glider`) | Always write the STL; **exit non-zero** if Life is not self-supporting, with an explanation |
+
+Default `--pattern random` is a **still-life garden** (blocks, tubs, beehives, boats) keyed by seed — stable, so stacks are columns and pass the check. Use `--pattern soup` for classic chaotic Bernoulli Life (usually fails the removable-scaffold check).
+
+## Print overhang vs orphans
+
+- **Print overhang** — empty cell directly below a solid. `--mode scaffold` drives this to 0 for the printed mesh.
+- **Life orphans** — Life voxels disconnected from the bed if scaffold is ignored. This is the “impossible object if scaffold is removed” test.
 
 ## Inputs
 
@@ -31,43 +47,31 @@ The practical FDM problem is weaker. Births often sit on only an **edge or corne
 | `-x` / `--width` | `24` | Grid width (cells); ignored if `--width-mm` is set |
 | `-y` / `--height` | `24` | Grid height (cells); ignored if `--height-mm` is set |
 | `-z` / `--depth` | `48` | Generations above the base; ignored if `--depth-mm` is set |
-| `--width-mm` | — | Physical X size (mm); rounded to a whole number of `--cell` voxels |
+| `--width-mm` | — | Physical X size (mm) |
 | `--height-mm` | — | Physical Y size (mm) |
-| `--depth-mm` | — | Physical total Z size including base (mm) |
-| `--cell` | `2.0` | Voxel edge length (mm) — pairs with either cell counts or `*-mm` |
-| `-s` / `--seed` | random* | RNG seed for `--pattern random` (*printed if omitted) |
-| `--density` | `0.35` | Initial fill probability for random patterns |
-| `--pattern` | `random` | `random`, `glider`, `rpento`, `blinker`, `lwss` |
+| `--depth-mm` | — | Physical total Z including base (mm) |
+| `--cell` | `4.0` | Voxel edge length (mm); minimum `2.0` |
+| `-s` / `--seed` | search | RNG seed; omit to search for a self-supporting seed |
+| `--max-seed-attempts` | `200` | Seed search budget when `--seed` is omitted |
+| `--density` | `0.25` | Still-life coverage (`random`) or soup fill (`soup`) |
+| `--pattern` | `random` | `random` (still-life garden), `soup`, `glider`, `rpento`, `blinker`, `lwss` |
 | `--base-layers` | `1` | Solid bed plate thickness (cells) |
 | `--mode` | `scaffold` | `scaffold` or `raw` |
 | `-o` / `--output` | `life.stl` | Output path |
 
-Physical size ≈ `cells × cell` mm on each axis. Defaults: **48 × 48 × 98 mm**.  
-Example tower: `--width-mm 100 --height-mm 100 --depth-mm 600 --cell 2` → **50×50×300** cells = **100×100×600 mm**.
-
-## Unsupported-space estimate
-
-After each run:
-
-- **Unsupported overhang** — solids with an empty cell directly below. Area ≈ `count × cell²` mm². This is what `--mode scaffold` eliminates.
-- **Moore-unsupported** — no solid in the 3×3 below. Always **0** for pure Life stacks (births require neighbors). Kept as a sanity check.
-
-Slicer tip from printable Conway-tower authors: ~0.2–0.3 mm **horizontal expansion** can fuse adjacent cubes into fewer extrusion islands.
+Example tower: `--width-mm 100 --height-mm 100 --depth-mm 600 --cell 4` → **25×25×150** cells = **100×100×600 mm**.
 
 ## Examples
 
-Committed under [`examples/`](examples/) (regenerate with `./generate-examples.sh`):
+Under [`examples/`](examples/) (regenerate with `./generate-examples.sh`):
 
 | File | Description |
 |------|-------------|
-| `glider-scaffold.stl` | Glider, scaffold mode |
-| `glider-raw.stl` | Same glider, raw (for comparison) |
-| `random-42-scaffold.stl` | 24×24×48 random seed 42, scaffold |
-| `random-42-raw.stl` | Same, raw |
-| `rpento-scaffold.stl` | R-pentomino methuselah, scaffold |
-| `tower-10x10x60-scaffold.stl` | **100×100×600 mm** tower (seed 42, cell=2mm, scaffold) |
+| `glider-scaffold.stl` | Glider + scaffold (Life not self-supporting — CLI exits 1) |
+| `random-42-scaffold.stl` | Still-life garden seed 42 |
+| `tower-10x10x60-scaffold.stl` | **100×100×600 mm** garden tower, cell=4 mm |
 
-Measured overhang areas: [`examples/REPORT.md`](examples/REPORT.md).
+See [`examples/REPORT.md`](examples/REPORT.md).
 
 ## Develop
 
@@ -75,17 +79,5 @@ Measured overhang areas: [`examples/REPORT.md`](examples/REPORT.md).
 cargo test
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
-cargo run --release -- --pattern glider -x 12 -y 12 -z 24 -o /tmp/glider.stl
 ./generate-examples.sh
 ```
-
-## Layout
-
-| Path | Role |
-|------|------|
-| `src/life.rs` | B3/S23 on a finite (non-wrapping) grid |
-| `src/seed.rs` | Random + named patterns |
-| `src/volume.rs` | Voxel grid (`Base` / `Life` / `Scaffold`) |
-| `src/scaffold.rs` | Vertical support-column insertion |
-| `src/metrics.rs` | Overhang / unsupported-area estimates |
-| `src/mesh.rs` | Face-culled cubes → STL triangles |

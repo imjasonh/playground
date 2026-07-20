@@ -1,5 +1,13 @@
 use clap::ValueEnum;
 
+/// Default voxel edge length (mm). Sized for reliable FDM with a 0.4 mm
+/// nozzle (~10× nozzle width) — e.g. Bambu A1 / A1 Mini stock nozzles.
+pub const DEFAULT_CELL_MM: f32 = 4.0;
+
+/// Minimum allowed voxel edge length (mm). Below this, single-voxel walls are
+/// thinner than ~5× a 0.4 mm nozzle and tend to under-extrude or snap.
+pub const MIN_CELL_MM: f32 = 2.0;
+
 /// How aggressively to make the stack FDM-printable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum SupportMode {
@@ -7,7 +15,8 @@ pub enum SupportMode {
     /// edge/corner contacts only — printable with care, but support-prone.
     Raw,
     /// Add vertical scaffold columns so every solid has face-on-face support
-    /// from the cell directly below. Default; drives overhang area to zero.
+    /// from the cell directly below. Scaffold is fused filament (not
+    /// breakaway); see [`crate::metrics`] for removable-scaffold checks.
     Scaffold,
 }
 
@@ -23,9 +32,13 @@ impl std::fmt::Display for SupportMode {
 /// Named starting patterns (or random).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum Pattern {
-    /// Bernoulli random field at `--density`, keyed by `--seed`.
+    /// Seeded still-life garden (blocks, tubs, beehives, boats). Stable, so the
+    /// Z-stack is self-supporting without load-bearing scaffold. Default.
     Random,
-    /// Classic glider (needs at least 5×5).
+    /// Classic Bernoulli soup at `--density`. Chaotic — usually leaves Life
+    /// orphans that need permanent fused scaffold.
+    Soup,
+    /// Classic glider (needs at least 5×5). Moves each step → Life orphans.
     Glider,
     /// R-pentomino methuselah.
     Rpento,
@@ -57,9 +70,9 @@ impl Default for Config {
             height: 24,
             depth: 48,
             seed: 1,
-            density: 0.35,
+            density: 0.25,
             pattern: Pattern::Random,
-            cell_mm: 2.0,
+            cell_mm: DEFAULT_CELL_MM,
             base_layers: 1,
             mode: SupportMode::Scaffold,
         }
