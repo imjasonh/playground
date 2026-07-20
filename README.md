@@ -40,6 +40,10 @@ passes tests — so older experiments don't bit-rot.
   data collected by an hourly scrape workflow.
 - **[`web-push-demo/`](web-push-demo/)** — a browser front-end for the
   `web-push` Worker: subscribe/unsubscribe and send notifications end to end.
+- **[`life-lab/`](life-lab/)** — draw a Game of Life starting row, watch it
+  grow into a 3D-printable tower (time as the Z axis), and export STL or a
+  ready-to-slice Bambu 3MF — powered by the `life-stl` Rust crate compiled to
+  WebAssembly.
 
 ## Tools
 
@@ -61,6 +65,10 @@ skip them:
   in Rust: mount a repo and read `refs/<ref>` and `commits/<sha>/<path>` as
   plain files, with reads racing a shared local clone cache against the
   server's read API so first byte never waits on a clone.
+- **[`life-stl/`](life-stl/)** — generate a 3D-printable STL of Conway's Game of
+  Life with time as the Z axis (Rust CLI). Self-supporting by construction:
+  every birth leans on its three B3 parents via small diagonal braces, so even
+  gliders print as one piece with no supports to remove.
 
 ## iOS app
 
