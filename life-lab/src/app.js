@@ -283,7 +283,12 @@ $('dl-3mf').addEventListener('click', () => {
 });
 
 // ---------- boot ----------
-await init();
+try {
+  await init();
+} catch (err) {
+  $('loading').textContent = `Failed to load wasm: ${err}`;
+  throw err;
+}
 $('loading').remove();
 resizeViewport();
 // Start with something alive: an acorn.
