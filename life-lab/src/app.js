@@ -47,7 +47,8 @@ scene.add(modelGroup);
 function resizeViewport() {
   const w = viewport.clientWidth;
   const h = viewport.clientHeight;
-  renderer.setSize(w, h, false);
+  if (w === 0 || h === 0) return;
+  renderer.setSize(w, h);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
 }
@@ -273,14 +274,18 @@ function download(bytes, filename, type) {
   URL.revokeObjectURL(url);
 }
 const exportName = () => patternSel.value || 'life-lab';
-$('dl-stl').addEventListener('click', () => {
+function downloadStl() {
   const bytes = export_stl(state.cells, state.width, state.height, state.depth, state.cellMm);
   download(bytes, `${exportName()}.stl`, 'model/stl');
-});
-$('dl-3mf').addEventListener('click', () => {
+}
+function download3mf() {
   const bytes = export_3mf(state.cells, state.width, state.height, state.depth, state.cellMm, exportName());
   download(bytes, `${exportName()}-a1mini.3mf`, 'model/3mf');
-});
+}
+$('dl-stl').addEventListener('click', downloadStl);
+$('dl-3mf').addEventListener('click', download3mf);
+$('m-stl').addEventListener('click', downloadStl);
+$('m-3mf').addEventListener('click', download3mf);
 
 // ---------- boot ----------
 try {
