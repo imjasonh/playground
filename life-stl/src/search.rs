@@ -44,7 +44,10 @@ fn complexity_ok(model: &Model) -> bool {
 }
 
 fn outcome_from(config: &Config, model: Model, attempts: u32) -> SearchOutcome {
-    let life_ok = evaluate_life_only(config).life_self_supporting();
+    // Gusset mode reports causal (braced) connectivity in the model report;
+    // other modes report face-only connectivity — both mean "one piece after
+    // any cleanup" for their mode.
+    let life_ok = model.report.life_self_supporting();
     SearchOutcome {
         interesting: complexity_ok(&model),
         supports_removable: removability_ok(&model),
@@ -60,6 +63,8 @@ fn outcome_from(config: &Config, model: Model, attempts: u32) -> SearchOutcome {
 ///
 /// - **Raw**: Life must be one piece (no supports to clean up); still require
 ///   interesting evolution for non-garden patterns.
+/// - **Gusset**: self-supporting by construction — Life must be one causal
+///   piece (always true for real Life) and evolution must stay interesting.
 /// - **Breakaway + Random**: Life one piece **and** supports easy to remove
 ///   (gardens are exempt from the complexity gate).
 /// - **Breakaway + Soup / Reverse** (and other chaotic patterns): supports must
@@ -73,7 +78,7 @@ fn candidate_succeeds(
     interesting: bool,
 ) -> bool {
     match mode {
-        SupportMode::Raw => match pattern {
+        SupportMode::Raw | SupportMode::Gusset => match pattern {
             Pattern::Random => life_ok,
             _ => life_ok && interesting,
         },

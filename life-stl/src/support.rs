@@ -767,6 +767,9 @@ fn emit_paths(paths: &[RoutedPath], base_z: f32, params: &SupportParams) -> Vec<
         }
 
         // Branch: needle tip → shaft → bed / trunk join / rest-on-model.
+        // Rest-on-model branches get a needle taper at the landing too, so
+        // both contacts snap off cleanly (double-sided breakaway).
+        let taper_foot = route.landing == Landing::RestOnModel;
         for i in 0..path.len() - 1 {
             let a = path[i];
             let b = path[i + 1];
@@ -775,8 +778,8 @@ fn emit_paths(paths: &[RoutedPath], base_z: f32, params: &SupportParams) -> Vec<
             }
             let at_tip = i == 0;
             let at_foot = i + 1 == path.len() - 1;
+            let taper_h = params.tip_height_mm.max(0.2);
             if at_tip {
-                let taper_h = params.tip_height_mm.max(0.2);
                 let ab = dist3(a, b);
                 if ab > taper_h + 1e-3 {
                     let t = taper_h / ab;
@@ -787,7 +790,9 @@ fn emit_paths(paths: &[RoutedPath], base_z: f32, params: &SupportParams) -> Vec<
                     ];
                     // Cone from needle point → full shaft radius.
                     append_cylinder(&mut tris, a, mid, tip_r_mesh, shaft_r, segs);
-                    if at_foot && lands_on_bed {
+                    if at_foot && taper_foot {
+                        append_foot_tapered(&mut tris, mid, b, shaft_r, tip_r_mesh, taper_h, segs);
+                    } else if at_foot && lands_on_bed {
                         append_capped_cylinder(&mut tris, mid, b, shaft_r, shaft_r, segs);
                     } else {
                         append_cylinder(&mut tris, mid, b, shaft_r, shaft_r, segs);
@@ -797,6 +802,8 @@ fn emit_paths(paths: &[RoutedPath], base_z: f32, params: &SupportParams) -> Vec<
                 } else {
                     append_cylinder(&mut tris, a, b, tip_r_mesh, shaft_r, segs);
                 }
+            } else if at_foot && taper_foot {
+                append_foot_tapered(&mut tris, a, b, shaft_r, tip_r_mesh, taper_h, segs);
             } else if at_foot && lands_on_bed {
                 append_capped_cylinder(&mut tris, a, b, shaft_r, shaft_r, segs);
             } else {
@@ -805,6 +812,31 @@ fn emit_paths(paths: &[RoutedPath], base_z: f32, params: &SupportParams) -> Vec<
         }
     }
     tris
+}
+
+/// Shaft that necks down to a needle contact at its far end (rest-on-model).
+fn append_foot_tapered(
+    tris: &mut Vec<Triangle>,
+    a: [f32; 3],
+    b: [f32; 3],
+    shaft_r: f32,
+    tip_r: f32,
+    taper_h: f32,
+    segs: u32,
+) {
+    let ab = dist3(a, b);
+    if ab > taper_h + 1e-3 {
+        let t = (ab - taper_h) / ab;
+        let mid = [
+            a[0] + (b[0] - a[0]) * t,
+            a[1] + (b[1] - a[1]) * t,
+            a[2] + (b[2] - a[2]) * t,
+        ];
+        append_cylinder(tris, a, mid, shaft_r, shaft_r, segs);
+        append_cylinder(tris, mid, b, shaft_r, tip_r, segs);
+    } else {
+        append_cylinder(tris, a, b, shaft_r, tip_r, segs);
+    }
 }
 
 fn effective_clearance(params: &SupportParams) -> f32 {

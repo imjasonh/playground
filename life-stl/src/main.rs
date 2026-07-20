@@ -71,8 +71,9 @@ struct Cli {
     #[arg(long, default_value_t = 1)]
     base_layers: usize,
 
-    /// Support strategy: breakaway (default) or raw (no supports).
-    #[arg(long, value_enum, default_value_t = SupportMode::Breakaway)]
+    /// Support strategy: gusset (default; self-supporting causality braces),
+    /// breakaway (removable trees/pillars), or raw (no supports).
+    #[arg(long, value_enum, default_value_t = SupportMode::Gusset)]
     mode: SupportMode,
 
     /// Breakaway support style (`pillar` or `tree`).
@@ -156,9 +157,18 @@ struct Cli {
     #[arg(long, default_value_t = RemovalParams::default().min_score)]
     min_removal_score: f32,
 
-    /// Allow supports that rest on the model (usually hard to remove).
+    /// Allow unlimited supports that rest on the model.
     #[arg(long, default_value_t = false)]
     allow_rest_on_model: bool,
+
+    /// Max rest-on-model landings before the cleanup gate fails
+    /// (double-tapered contacts make a few practical to snap off).
+    #[arg(long, default_value_t = RemovalParams::default().max_rest_on_model)]
+    max_rest_on_model: usize,
+
+    /// Gusset strut width (mm) for `--mode gusset`.
+    #[arg(long, default_value_t = SupportParams::default().gusset_width_mm)]
+    gusset_width: f32,
 
     /// Max fraction of tip contacts allowed in enclosed pockets (0–1).
     #[arg(long, default_value_t = RemovalParams::default().max_inaccessible_tip_fraction)]
@@ -289,6 +299,10 @@ fn main() -> ExitCode {
         eprintln!("error: --max-tip-density must be > 0");
         return ExitCode::FAILURE;
     }
+    if cli.gusset_width <= 0.0 {
+        eprintln!("error: --gusset-width must be > 0");
+        return ExitCode::FAILURE;
+    }
     if !(0.0..=1.0).contains(&cli.min_active_fraction) {
         eprintln!("error: --min-active-fraction must be between 0 and 1");
         return ExitCode::FAILURE;
@@ -363,6 +377,7 @@ fn main() -> ExitCode {
             RemovalParams {
                 min_score: 0.0,
                 allow_rest_on_model: true,
+                max_rest_on_model: usize::MAX,
                 max_inaccessible_tip_fraction: 1.0,
                 max_tip_density: f32::MAX,
             }
@@ -370,10 +385,12 @@ fn main() -> ExitCode {
             RemovalParams {
                 min_score: cli.min_removal_score,
                 allow_rest_on_model: cli.allow_rest_on_model,
+                max_rest_on_model: cli.max_rest_on_model,
                 max_inaccessible_tip_fraction: cli.max_inaccessible_tip_fraction,
                 max_tip_density: cli.max_tip_density,
             }
         },
+        gusset_width_mm: cli.gusset_width,
     };
 
     let complexity = if cli.allow_boring {
@@ -406,12 +423,12 @@ fn main() -> ExitCode {
 
     let outcome = if seed_was_explicit || !searchable {
         let config = base_config;
-        let life_report = evaluate_life_only(&config);
         let model = life_stl::search::evaluate(&config);
         let removable = model.support_removability.ok || cli.allow_hard_supports;
         let interesting = model.complexity.ok || cli.allow_boring;
+        // Gusset reports causal connectivity; other modes face-only.
         life_stl::search::SearchOutcome {
-            life_self_supporting: life_report.life_self_supporting(),
+            life_self_supporting: model.report.life_self_supporting(),
             supports_removable: removable,
             interesting,
             report: model.report.clone(),
@@ -472,13 +489,21 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
-    // Gate 3: Life is one standing piece after supports snap off.
+    // Gate 3: Life is one standing piece (after supports snap off, or through
+    // causality braces in gusset mode).
     if outcome.life_self_supporting {
         if !cli.quiet {
-            eprintln!(
-                "ok: interesting + Life is one piece after support removal ({} breakaway tip(s))",
-                outcome.model.support_tips
-            );
+            if cli.mode == SupportMode::Gusset {
+                eprintln!(
+                    "ok: interesting + one self-supporting piece ({} causality brace(s), no supports)",
+                    outcome.model.gusset_braces
+                );
+            } else {
+                eprintln!(
+                    "ok: interesting + Life is one piece after support removal ({} breakaway tip(s))",
+                    outcome.model.support_tips
+                );
+            }
         }
         return ExitCode::SUCCESS;
     }
@@ -505,10 +530,9 @@ fn main() -> ExitCode {
     }
 
     if seed_was_explicit || !searchable {
-        let life_report = evaluate_life_only(&outcome.config);
         eprintln!(
             "error: {}",
-            format_unprintable_reason(&outcome.config, &life_report)
+            format_unprintable_reason(&outcome.config, &outcome.report)
         );
         ExitCode::FAILURE
     } else {

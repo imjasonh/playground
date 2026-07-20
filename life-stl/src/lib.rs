@@ -7,6 +7,7 @@
 
 pub mod complexity;
 pub mod config;
+pub mod gusset;
 pub mod life;
 pub mod mesh;
 pub mod metrics;
@@ -47,6 +48,8 @@ pub struct Model {
     pub triangles: Vec<Triangle>,
     pub report: PrintabilityReport,
     pub support_tips: usize,
+    /// Causality braces emitted in gusset mode (0 otherwise).
+    pub gusset_braces: usize,
     pub support_physics: SupportPhysicsReport,
     pub support_removability: SupportRemovabilityReport,
     pub complexity: ComplexityReport,
@@ -108,6 +111,35 @@ pub fn build_model(config: &Config) -> Model {
                 volume,
                 report,
                 support_tips: 0,
+                gusset_braces: 0,
+                support_physics: SupportPhysicsReport::default(),
+                support_removability: SupportRemovabilityReport::default(),
+                complexity,
+            }
+        }
+        SupportMode::Gusset => {
+            let braces = gusset::collect_braces(&volume);
+            let mut triangles = triangles_from_volume(&volume, config.cell_mm);
+            triangles.extend(gusset::brace_triangles(
+                &braces,
+                config.cell_mm,
+                config.support.gusset_width_mm,
+            ));
+            let mut report = analyze(&volume, config.cell_mm);
+            // Braces physically connect births to parents: orphan connectivity
+            // follows Life causality, not just face adjacency.
+            let causal_orphans = gusset::count_orphan_life_causal(&volume);
+            report.orphan_life_voxels = causal_orphans;
+            report.orphan_life_pct =
+                100.0 * causal_orphans as f64 / report.life_voxels.max(1) as f64;
+            report.gusset_braces = braces.len();
+            report.complexity = Some(complexity.clone());
+            Model {
+                volume,
+                triangles,
+                report,
+                support_tips: 0,
+                gusset_braces: braces.len(),
                 support_physics: SupportPhysicsReport::default(),
                 support_removability: SupportRemovabilityReport::default(),
                 complexity,
@@ -130,6 +162,7 @@ pub fn build_model(config: &Config) -> Model {
                 triangles,
                 report,
                 support_tips,
+                gusset_braces: 0,
                 support_physics,
                 support_removability,
                 complexity,
@@ -170,6 +203,13 @@ pub fn format_report(config: &Config, report: &PrintabilityReport) -> String {
         config.mode,
         config.cell_mm
     ));
+    if config.mode == SupportMode::Gusset {
+        out.push_str(&format!(
+            "self-supporting gussets: braces={}  width={}mm — every birth leans on its 3 \
+             parents (45° rule); no supports to remove\n",
+            report.gusset_braces, config.support.gusset_width_mm
+        ));
+    }
     if config.mode == SupportMode::Breakaway {
         out.push_str(&format!(
             "breakaway supports: style={:?}  shaft={}mm  tip={}mm  cluster={}mm  tips={}\n",
@@ -255,14 +295,24 @@ pub fn format_report(config: &Config, report: &PrintabilityReport) -> String {
         "Life print overhang (empty cell directly below): {} voxels, {:.1} mm² ({:.1}% of solid)\n",
         report.strict_floating_voxels, report.strict_floating_area_mm2, report.strict_floating_pct
     ));
-    out.push_str(&format!(
-        "Life orphans after support removal: {} ({:.1}% of life)\n",
-        report.orphan_life_voxels, report.orphan_life_pct
-    ));
+    if config.mode == SupportMode::Gusset {
+        out.push_str(&format!(
+            "Life orphans (causal connectivity): {} ({:.1}% of life)\n",
+            report.orphan_life_voxels, report.orphan_life_pct
+        ));
+    } else {
+        out.push_str(&format!(
+            "Life orphans after support removal: {} ({:.1}% of life)\n",
+            report.orphan_life_voxels, report.orphan_life_pct
+        ));
+    }
     if report.life_self_supporting() {
-        out.push_str(
-            "Life self-supporting: yes — snap off breakaway supports → one standing piece\n",
-        );
+        out.push_str(match config.mode {
+            SupportMode::Gusset => {
+                "Life self-supporting: yes — causality braces make one standing piece\n"
+            }
+            _ => "Life self-supporting: yes — snap off breakaway supports → one standing piece\n",
+        });
     } else if report.life_voxels == 0 {
         out.push_str("Life self-supporting: n/a (no live cells)\n");
     } else {

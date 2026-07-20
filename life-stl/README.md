@@ -3,25 +3,43 @@
 Generate a **3D-printable STL** of [Conway's Game of Life](https://en.wikipedia.org/wiki/Conway%27s_Game_of_Life), with **time as the Z axis**: each generation is a layer of voxels stacked upward.
 
 ```bash
-cargo run --release -- -x 24 -y 24 -z 48 --seed 42 -o life.stl
+# Self-supporting glider tower (default gusset mode; 180 mm tall at --cell 4):
+cargo run --release -- --pattern glider -x 16 -y 16 -z 44 -o glider-tower.stl
 
-# Soup with Cura-style tree supports (shared trunks + physics sizing):
-cargo run --release -- --pattern soup --seed 99 \
-  --support-style tree --support-tip-radius 0.12 --support-tip-height 2 \
-  -o soup-tree.stl
+# Chaotic soup, A1 Mini max size, self-supporting:
+cargo run --release -- --pattern soup --density 0.16 -x 44 -y 44 -z 44 -o soup.stl
 
-# Same soup with one pillar per tip (for contrast):
-cargo run --release -- --pattern soup --seed 99 \
-  --support-style pillar -o soup-pillars.stl
+# Soup with Cura-style breakaway tree supports instead:
+cargo run --release -- --pattern soup --seed 99 --mode breakaway \
+  --support-style tree -o soup-tree.stl
 ```
 
-## Breakaway supports (default)
+## Gusset mode (default): self-supporting by construction
 
-Default `--mode breakaway` adds **slim geometric supports** that **route around Life cells** instead of punching through them (Cura / Bambu ideas: collision clearance, layer-wise descent, shared trunks, rest-on-model).
+The key observation: **stacked Life is never more than one diagonal step from
+material below**. B3/S23 guarantees that every *birth* has exactly three live
+parents in its Moore neighborhood one generation earlier, and every *survivor*
+sits directly on itself. That is precisely the FDM 45° rule.
+
+`--mode gusset` therefore adds a small leaning strut (**causality brace**) from
+each birth down to each of its parents instead of any external supports:
+
+- **Nothing to remove** — no supports, no cleanup, removability is trivially perfect.
+- **One piece** — every voxel traces its ancestry to generation 0 on the base plate.
+- **Readable causality** — the braces show which cells caused each birth.
+- **Gliders and spaceships print** — motion is just births, and births are braced.
+
+| Flag | Default | Meaning |
+|------|---------|---------|
+| `--gusset-width` | `1.8` | Brace strut width (mm) |
+
+## Breakaway supports (`--mode breakaway`)
+
+Adds **slim geometric supports** that **route around Life cells** instead of punching through them (Cura / Bambu ideas: collision clearance, layer-wise descent, shared trunks, rest-on-model). Rest-on-model landings are **double-tapered** (needle contact at both ends) so a few of them are practical to snap off; `--max-rest-on-model` (default 2) caps how many are allowed.
 
 | Style | Behavior |
 |-------|----------|
-| `tree` (default) | Cluster nearby tips onto **shared trunks**; physics splits overloaded trunks |
+| `tree` (breakaway default) | Cluster nearby tips onto **shared trunks**; physics splits overloaded trunks |
 | `pillar` | One shaft per tip; prefer a vertical drop, lean only when blocked |
 
 Contacts taper to a **needle tip** (`--support-tip-radius`, default `0.12` mm; `0` = true point) over `--support-tip-height` so they snap off cleanly.
@@ -56,7 +74,8 @@ Supports are sized with a beam/column model:
 | `--support-min-shaft-radius` | `0.55` | Auto-size floor (mm) |
 | `--support-max-trunk-radius` | `2.4` | Auto-size cap (mm) |
 | `--min-removal-score` | `70` | Min post-print cleanup score (0–100) |
-| `--allow-rest-on-model` | off | Allow supports that land on Life roofs |
+| `--allow-rest-on-model` | off | Allow unlimited supports that land on Life roofs |
+| `--max-rest-on-model` | `2` | Max rest-on-model landings (double-tapered) before the gate fails |
 | `--max-inaccessible-tip-fraction` | `0.08` | Max tip contacts in enclosed pockets |
 | `--max-tip-density` | `1.25` | Max tips per XY cell footprint |
 | `--allow-hard-supports` | off | Skip the removability gate |
@@ -67,7 +86,7 @@ Supports are sized with a beam/column model:
 
 After generating supports, life-stl scores **how hard they are to remove** (rest-on-model landings, trunks trapped in cavities, tip contacts in pockets, tip density). It also scores **evolution complexity**: soups that become a still life (or blinker-like oscillator) after only a few turns are rejected as boring extruded towers. With `--seed` omitted it **retries** until both cleanup and interestingness look good; with an explicit seed it still writes the STL but **exits non-zero** if either gate fails.
 
-Supports are meant to **snap off** after printing. The remaining Life|Base mesh is a **single standing piece** only when every Life voxel is face-connected to the bed (no “orphans”). Still-life gardens (`--pattern random`) are exempt from the complexity gate (stability is the point) and usually need **zero** supports. Chaotic `--pattern soup` often has orphans → STL is written but the CLI exits non-zero if you passed an explicit seed.
+Breakaway supports are meant to **snap off** after printing. The remaining Life|Base mesh is a **single standing piece** only when every Life voxel is face-connected to the bed (no “orphans”). In gusset mode connectivity follows **causality** instead — births are braced to their parents, so the whole stack is always one piece. Still-life gardens (`--pattern random`) are exempt from the complexity gate (stability is the point) and usually need **zero** supports. Chaotic `--pattern soup` under breakaway often has orphans → STL is written but the CLI exits non-zero if you passed an explicit seed.
 
 `--mode raw` emits Life only (no supports).
 
@@ -84,8 +103,9 @@ A1 Mini stock nozzle is **0.4 mm**. Build volume is **180³ mm** — keep `--dep
 
 | Situation | Behavior |
 |-----------|----------|
-| `--seed` omitted (`random`) | Search until Life is one piece + supports removable |
-| `--seed` omitted (`soup`) | Search until supports removable **and** evolution stays interesting |
+| `--seed` omitted (`random`) | Search until Life is one piece (+ supports removable in breakaway) |
+| `--seed` omitted (`soup`), gusset | Search until evolution stays interesting (always one piece) |
+| `--seed` omitted (`soup`), breakaway | Search until supports removable **and** interesting |
 | `--seed` given or named pattern | Always write STL; **exit non-zero** if a gate fails (boring / hard supports / orphans) |
 
 ## Inputs (dimensions)
@@ -96,7 +116,7 @@ A1 Mini stock nozzle is **0.4 mm**. Build volume is **180³ mm** — keep `--dep
 | `--width-mm` / `--height-mm` / `--depth-mm` | — | Size in mm (with `--cell`) |
 | `--cell` | `4.0` | Voxel edge (mm) |
 | `--pattern` | `random` | `random` (still-life garden), `soup`, `reverse`, `glider`, … |
-| `--mode` | `breakaway` | `breakaway` or `raw` |
+| `--mode` | `gusset` | `gusset` (self-supporting), `breakaway`, or `raw` |
 
 ## Reverse evolution (`--pattern reverse`)
 
@@ -104,15 +124,22 @@ Builds the stack **backward** from a still-life ash at the top, preferring
 **zero-birth** predecessors (sparks that die in one step → no support tips for
 that layer). In practice those histories are only ~1 generation deep, so the
 complexity gate still fails; see [`docs/reverse-and-methuselahs.md`](docs/reverse-and-methuselahs.md).
-
-Classic methuselahs (R-pentomino, acorn, diehard) either need far more Z than
-an FDM cell size allows, or fail removability while they are active.
+Gusset mode makes this moot for printing — kept for experimentation.
 
 ## Examples
 
 See [`examples/`](examples/) and [`examples/REPORT.md`](examples/REPORT.md). Regenerate with `./generate-examples.sh`.
 
-Only STLs that pass **both** the support-removability gate (`cleanup OK`) and the complexity gate (`interesting OK`) are shipped. Under current defaults that intersection is empty: long-lived soups need rest-on-model support landings, and easy-to-clean soups settle into still lifes by generation ~4. Still-life gardens are not shipped.
+Every shipped STL is `interesting OK` **and** either self-supporting (gusset) or `cleanup OK` (breakaway):
+
+| File | What it is |
+|------|------------|
+| `gusset-glider-tower.stl` | Glider climbing 44 generations — 64×64×180 mm |
+| `gusset-lwss.stl` | Lightweight spaceship — 120×64×180 mm |
+| `gusset-rpento.stl` | R-pentomino evolution — 128×128×180 mm |
+| `gusset-soup-mid.stl` | Chaotic soup — 96×96×148 mm |
+| `gusset-soup-a1max.stl` | Chaotic soup at A1 Mini max — 176×176×180 mm |
+| `tree-soup-29636.stl` / `tree-soup-40485.stl` | Breakaway-tree soups, active ≥ gen 8, one double-tapered rest-on-model each |
 
 ## Develop
 

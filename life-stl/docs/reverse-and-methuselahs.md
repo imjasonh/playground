@@ -3,6 +3,14 @@
 Research notes for making Life stacks that are both **interesting** (complexity
 gate) and **supportable** (removability gate).
 
+> **Resolution:** the tension documented below was ultimately resolved by
+> questioning the assumption that overhangs need external supports at all.
+> B3/S23 births always have three Moore parents one layer below — the FDM 45°
+> rule — so `--mode gusset` braces each birth to its parents and the whole
+> stack becomes self-supporting, one piece, with nothing to remove. Gliders,
+> spaceships, R-pentomino, and chaotic soups all pass both gates in gusset
+> mode. The analysis below still applies to `--mode breakaway`.
+
 ## The tip identity
 
 A breakaway tip is created for every Life cell at generation `z` whose cell

@@ -13,10 +13,15 @@ pub const MIN_CELL_MM: f32 = 2.0;
 pub enum SupportMode {
     /// Exact Life voxels only (plus base plate). No generated supports.
     Raw,
-    /// Slim breakaway pillars/trees (default). Removable after printing; the
+    /// Slim breakaway pillars/trees. Removable after printing; the
     /// remaining Life|Base mesh must be one piece (see orphan check).
     #[value(alias = "supports")]
     Breakaway,
+    /// Self-supporting by construction (default): every birth leans on its
+    /// three B3 parents via small diagonal gussets. Nothing to remove; the
+    /// whole stack is one piece through Life causality.
+    #[value(alias = "brace")]
+    Gusset,
 }
 
 impl std::fmt::Display for SupportMode {
@@ -24,6 +29,7 @@ impl std::fmt::Display for SupportMode {
         match self {
             SupportMode::Raw => write!(f, "raw"),
             SupportMode::Breakaway => write!(f, "breakaway"),
+            SupportMode::Gusset => write!(f, "gusset"),
         }
     }
 }
@@ -87,8 +93,12 @@ impl Default for PhysicsParams {
 pub struct RemovalParams {
     /// Minimum removability score (0–100) to accept.
     pub min_score: f32,
-    /// When false (default), any rest-on-model landing fails the gate.
+    /// When true, unlimited rest-on-model landings are allowed.
     pub allow_rest_on_model: bool,
+    /// Max rest-on-model landings before the gate hard-fails. Rest-on-model
+    /// branches get a needle taper at **both** ends, so a few are practical
+    /// to snap off; many still make miserable cleanup.
+    pub max_rest_on_model: usize,
     /// Max fraction of tip contacts that may sit in enclosed pockets.
     pub max_inaccessible_tip_fraction: f32,
     /// Max tip contacts per XY cell footprint before density penalty / fail.
@@ -100,6 +110,7 @@ impl Default for RemovalParams {
         Self {
             min_score: 70.0,
             allow_rest_on_model: false,
+            max_rest_on_model: 2,
             max_inaccessible_tip_fraction: 0.08,
             // Tips are stacked in Z; a 16×16 soup with ~200 tips ≈ 0.8 / cell.
             max_tip_density: 1.25,
@@ -162,6 +173,8 @@ pub struct SupportParams {
     pub physics: PhysicsParams,
     /// Post-print support removal feasibility gates.
     pub removal: RemovalParams,
+    /// Gusset strut width (mm) for [`SupportMode::Gusset`].
+    pub gusset_width_mm: f32,
 }
 
 impl Default for SupportParams {
@@ -183,6 +196,8 @@ impl Default for SupportParams {
             max_branch_angle_deg: 40.0,
             physics: PhysicsParams::default(),
             removal: RemovalParams::default(),
+            // ~4.5 perimeters of a 0.4 mm nozzle; sturdy but unobtrusive.
+            gusset_width_mm: 1.8,
         }
     }
 }
@@ -239,7 +254,7 @@ impl Default for Config {
             pattern: Pattern::Random,
             cell_mm: DEFAULT_CELL_MM,
             base_layers: 1,
-            mode: SupportMode::Breakaway,
+            mode: SupportMode::Gusset,
             support: SupportParams::default(),
             complexity: ComplexityParams::default(),
         }

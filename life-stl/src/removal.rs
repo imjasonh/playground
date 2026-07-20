@@ -84,11 +84,13 @@ pub fn analyze_removability(
     let mut reasons = Vec::new();
 
     if rest_on_model > 0 {
-        let pen = (25.0 * rest_on_model as f32).min(55.0);
+        // Rest-on-model branches are double-tapered (needle contact at both
+        // ends), so a few are practical to snap off; many still hurt.
+        let pen = (12.0 * rest_on_model as f32).min(45.0);
         score -= pen;
         reasons.push(format!(
             "{rest_on_model} support(s) rest on the model instead of the bed \
-             (often fused into overhangs)"
+             (double-tapered, but still extra cleanup)"
         ));
     }
     if free_stop > 0 {
@@ -130,7 +132,7 @@ pub fn analyze_removability(
 
     score = score.clamp(0.0, 100.0);
 
-    let hard_fail = (!params.allow_rest_on_model && rest_on_model > 0)
+    let hard_fail = (!params.allow_rest_on_model && rest_on_model > params.max_rest_on_model)
         || trapped > 0
         || (inaccessible as f32 / tips.len().max(1) as f32) > params.max_inaccessible_tip_fraction;
 
@@ -268,23 +270,48 @@ mod tests {
     }
 
     #[test]
-    fn rest_on_model_fails_by_default() {
+    fn few_rest_on_model_pass_many_fail() {
         let v = Volume::new(4, 4, 4);
-        let tip = SupportTip {
-            cell_x: 1,
-            cell_y: 1,
-            cell_z: 2,
-            tip: [6.0, 6.0, 8.0],
+        let make = |x: f32| {
+            (
+                SupportTip {
+                    cell_x: 1,
+                    cell_y: 1,
+                    cell_z: 2,
+                    tip: [x, 6.0, 8.0],
+                },
+                RoutedPath {
+                    points: vec![[x, 6.0, 8.0], [x, 6.0, 4.2]],
+                    kind: PathKind::Branch,
+                    shaft_radius_mm: 0.6,
+                    landing: Landing::RestOnModel,
+                },
+            )
         };
-        let path = RoutedPath {
-            points: vec![[6.0, 6.0, 8.0], [6.0, 6.0, 4.2]],
-            kind: PathKind::Branch,
-            shaft_radius_mm: 0.6,
-            landing: Landing::RestOnModel,
+
+        // Default allows up to 2 rest-on-model landings (double-tapered).
+        let (t1, p1) = make(6.0);
+        let r = analyze_removability(&v, &[t1], &[p1], 4.0, &RemovalParams::default());
+        assert!(r.ok, "{:?}", r.reasons);
+        assert_eq!(r.rest_on_model_count, 1);
+        assert!(r.score < 100.0, "still penalized");
+
+        // Three exceeds max_rest_on_model = 2 → hard fail.
+        let pairs: Vec<_> = [2.0f32, 6.0, 10.0].iter().map(|&x| make(x)).collect();
+        let tips: Vec<_> = pairs.iter().map(|(t, _)| *t).collect();
+        let paths: Vec<_> = pairs.iter().map(|(_, p)| p.clone()).collect();
+        let r3 = analyze_removability(&v, &tips, &paths, 4.0, &RemovalParams::default());
+        assert!(!r3.ok);
+        assert_eq!(r3.rest_on_model_count, 3);
+
+        // Strict setting restores the old behavior.
+        let strict = RemovalParams {
+            max_rest_on_model: 0,
+            ..RemovalParams::default()
         };
-        let r = analyze_removability(&v, &[tip], &[path], 4.0, &RemovalParams::default());
-        assert!(!r.ok);
-        assert!(r.rest_on_model_count >= 1);
+        let (t1, p1) = make(6.0);
+        let r_strict = analyze_removability(&v, &[t1], &[p1], 4.0, &strict);
+        assert!(!r_strict.ok);
     }
 
     #[test]

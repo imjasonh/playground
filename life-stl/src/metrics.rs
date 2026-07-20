@@ -25,8 +25,10 @@ pub struct PrintabilityReport {
     /// pieces — not a single standing sculpture. See [`life_self_supporting`].
     pub orphan_life_voxels: usize,
     pub orphan_life_pct: f64,
-    /// Number of breakaway support tips generated (0 for raw).
+    /// Number of breakaway support tips generated (0 for raw/gusset).
     pub breakaway_support_tips: usize,
+    /// Causality braces generated in gusset mode (0 otherwise).
+    pub gusset_braces: usize,
     /// Simplified structural analysis of breakaway supports (if generated).
     pub support_physics: Option<SupportPhysicsReport>,
     /// Post-print support removal feasibility (if generated).
@@ -101,6 +103,7 @@ pub fn analyze_with_supports(
         orphan_life_voxels: orphan_life,
         orphan_life_pct: 100.0 * orphan_life as f64 / life_f,
         breakaway_support_tips,
+        gusset_braces: 0,
         support_physics: None,
         support_removability: None,
         complexity: None,
