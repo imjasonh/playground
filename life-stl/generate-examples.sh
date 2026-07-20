@@ -11,7 +11,8 @@ rm -f \
   examples/random-42-breakaway.stl \
   examples/tower-10x10x60-breakaway.stl \
   examples/soup-99-breakaway.stl \
-  examples/glider-breakaway.stl
+  examples/glider-breakaway.stl \
+  examples/a1-mini-max-garden.stl
 
 run() {
   cargo run --release --quiet -- "$@" 2>/dev/null || true
@@ -94,17 +95,9 @@ TREE_FLAGS=(
   echo "## Bambu A1 Mini max build volume (180×180×180 mm)"
   echo
   echo "A1 Mini build volume is **180³ mm** (not 700 mm³ — that would be ~9 mm on a side)."
-  echo "These fill the cube at \`--cell 4\` (45×45×45 cells)."
+  echo "Fills the cube at \`--cell 4\` (45×45×45 cells) with soup + tree supports."
+  echo "Still-life gardens are intentionally not shipped as examples."
   echo
-  # Deterministic still-life garden: one standing piece, zero supports — best full-bed keepable print.
-  run --quiet --pattern random --seed 17612214185882340107 \
-    --width-mm 180 --height-mm 180 --depth-mm 180 --cell "$CELL" \
-    "${TREE_FLAGS[@]}" -o examples/a1-mini-max-garden.stl
-  capture_report "A1 Mini max / still-life garden" --pattern random --seed 17612214185882340107 \
-    --width-mm 180 --height-mm 180 --depth-mm 180 --cell "$CELL" \
-    "${TREE_FLAGS[@]}" -o /tmp/life-stl-discard.stl
-
-  # Chaotic soup at full bed — interesting, but orphans (multi-piece after support removal).
   run --quiet --pattern soup --seed 42 --density 0.22 \
     --width-mm 180 --height-mm 180 --depth-mm 180 --cell "$CELL" \
     "${TREE_FLAGS[@]}" -o examples/a1-mini-max-soup-tree.stl
