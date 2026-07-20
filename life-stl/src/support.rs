@@ -82,6 +82,20 @@ pub fn base_top_mm(volume: &Volume, cell_mm: f32) -> f32 {
     }
 }
 
+/// A routed support polyline ready for meshing.
+#[derive(Debug, Clone)]
+struct RoutedPath {
+    points: Vec<[f32; 3]>,
+    /// Tip contact (tapered) vs shared trunk (thicker, no tip taper).
+    kind: PathKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PathKind {
+    Branch,
+    Trunk,
+}
+
 /// Build breakaway support triangles that avoid intersecting Life voxels.
 pub fn triangles_for_tips(
     volume: &Volume,
@@ -106,11 +120,11 @@ fn route_pillars(
     cell_mm: f32,
     base_z: f32,
     params: &SupportParams,
-) -> Vec<Vec<[f32; 3]>> {
+) -> Vec<RoutedPath> {
     tips.iter()
-        .map(|tip| {
+        .map(|tip| RoutedPath {
             // Prefer staying under the tip (true pillar); dodge only when blocked.
-            route_tip(
+            points: route_tip(
                 volume,
                 tip,
                 cell_mm,
@@ -118,33 +132,101 @@ fn route_pillars(
                 params,
                 (tip.tip[0], tip.tip[1]),
                 true,
-            )
+                None,
+            ),
+            kind: PathKind::Branch,
         })
         .collect()
 }
 
+/// Cura/Bambu-style trees: cluster tips, drop branches to a shared trunk top,
+/// then one thicker trunk to the bed.
 fn route_trees(
     volume: &Volume,
     tips: &[SupportTip],
     cell_mm: f32,
     base_z: f32,
     params: &SupportParams,
-) -> Vec<Vec<[f32; 3]>> {
+) -> Vec<RoutedPath> {
     let clusters = cluster_tips(tips, params.cluster_mm);
+    let clearance = effective_clearance(params);
     let mut paths = Vec::new();
     for cluster in &clusters {
-        let attractor = cluster_centroid(cluster);
+        if cluster.len() == 1 {
+            // Lone tip: still a single shaft (no merge partner).
+            let tip = &cluster[0];
+            paths.push(RoutedPath {
+                points: route_tip(
+                    volume,
+                    tip,
+                    cell_mm,
+                    base_z,
+                    params,
+                    (tip.tip[0], tip.tip[1]),
+                    true,
+                    None,
+                ),
+                kind: PathKind::Branch,
+            });
+            continue;
+        }
+
+        let centroid = cluster_centroid(cluster);
+        let trunk_xy = find_clear_trunk_xy(volume, cell_mm, centroid, clearance, base_z);
+        let min_tip_z = cluster
+            .iter()
+            .map(|t| t.tip[2])
+            .fold(f32::INFINITY, f32::min);
+        // Trunk top sits a cell below the lowest tip so branches have room to lean in.
+        let join_z = (min_tip_z - cell_mm)
+            .max(base_z + cell_mm * 0.5)
+            .min(min_tip_z - params.tip_height_mm.max(0.5));
+
+        if join_z <= base_z + 1e-3 {
+            // Degenerate: fall back to independent routes toward the trunk XY.
+            for tip in cluster {
+                paths.push(RoutedPath {
+                    points: route_tip(volume, tip, cell_mm, base_z, params, trunk_xy, false, None),
+                    kind: PathKind::Branch,
+                });
+            }
+            continue;
+        }
+
+        // Shared trunk: join_z → bed.
+        paths.push(RoutedPath {
+            points: vec![
+                [trunk_xy.0, trunk_xy.1, join_z],
+                [trunk_xy.0, trunk_xy.1, base_z],
+            ],
+            kind: PathKind::Trunk,
+        });
+
         for tip in cluster {
-            paths.push(route_tip(
-                volume, tip, cell_mm, base_z, params, attractor, false,
-            ));
+            paths.push(RoutedPath {
+                points: route_tip(
+                    volume,
+                    tip,
+                    cell_mm,
+                    base_z,
+                    params,
+                    trunk_xy,
+                    false,
+                    Some((trunk_xy, join_z)),
+                ),
+                kind: PathKind::Branch,
+            });
         }
     }
     paths
 }
 
-/// Drop a tip toward the bed one cell-layer at a time, staying outside the
-/// collision margin of Life voxels (Cura/Bambu-style avoidance).
+/// Drop a tip toward the bed (or a trunk join) one cell-layer at a time,
+/// staying outside the collision margin of Life voxels.
+///
+/// When `join` is `Some((trunk_xy, join_z))`, the path ends at the trunk top
+/// instead of continuing to the bed (shared-trunk tree branches).
+#[allow(clippy::too_many_arguments)]
 fn route_tip(
     volume: &Volume,
     tip: &SupportTip,
@@ -153,6 +235,7 @@ fn route_tip(
     params: &SupportParams,
     attractor: (f32, f32),
     prefer_column: bool,
+    join: Option<((f32, f32), f32)>,
 ) -> Vec<[f32; 3]> {
     let clearance = effective_clearance(params);
     let max_move = max_move_per_layer(cell_mm, params.max_branch_angle_deg);
@@ -168,9 +251,24 @@ fn route_tip(
             break;
         }
 
+        // Tree branch: once we reach the join height, snap onto the trunk top.
+        if let Some(((tx, ty), join_z)) = join {
+            if z_mm <= join_z + 1e-3 {
+                path.push([tx, ty, join_z]);
+                return path;
+            }
+            // Also join early if we are already next to the trunk in XY.
+            if dist2(x, y, tx, ty) <= cell_mm * 0.35 && z_mm <= tip.tip[2] {
+                path.push([tx, ty, z_mm.max(join_z)]);
+                if z_mm > join_z + 1e-3 {
+                    path.push([tx, ty, join_z]);
+                }
+                return path;
+            }
+        }
+
         // Landing on the bed: snap XY if the straight drop is clear at bed.
-        if z_mm - base_z <= cell_mm + 1e-3 {
-            // Final approach to base_z — keep current XY if clear above bed.
+        if join.is_none() && z_mm - base_z <= cell_mm + 1e-3 {
             path.push([x, y, base_z]);
             return path;
         }
@@ -229,8 +327,49 @@ fn route_tip(
         return path;
     }
 
-    path.push([x, y, base_z]);
+    if let Some(((tx, ty), join_z)) = join {
+        path.push([tx, ty, join_z.max(base_z)]);
+    } else {
+        path.push([x, y, base_z]);
+    }
     path
+}
+
+/// Pick a trunk XY near `centroid` that stays clear of Life just above the bed.
+fn find_clear_trunk_xy(
+    volume: &Volume,
+    cell_mm: f32,
+    centroid: (f32, f32),
+    clearance: f32,
+    base_z: f32,
+) -> (f32, f32) {
+    let mid = cell_mm * 0.5;
+    let z_check = ((base_z / cell_mm).floor() as usize).saturating_add(1);
+    let z_check = z_check.min(volume.depth.saturating_sub(1));
+    let cx0 = (centroid.0 / cell_mm).floor() as isize;
+    let cy0 = (centroid.1 / cell_mm).floor() as isize;
+
+    // Spiral outward from the centroid cell.
+    for radius in 0isize..=8 {
+        for dy in -radius..=radius {
+            for dx in -radius..=radius {
+                if radius > 0 && dx.abs() != radius && dy.abs() != radius {
+                    continue;
+                }
+                let cx = cx0 + dx;
+                let cy = cy0 + dy;
+                if cx < 0 || cy < 0 || cx >= volume.width as isize || cy >= volume.height as isize {
+                    continue;
+                }
+                let px = cx as f32 * cell_mm + mid;
+                let py = cy as f32 * cell_mm + mid;
+                if !collides_life(volume, px, py, z_check, clearance, cell_mm) {
+                    return (px, py);
+                }
+            }
+        }
+    }
+    centroid
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -413,15 +552,35 @@ fn find_rest_point(
     None
 }
 
-fn emit_paths(paths: &[Vec<[f32; 3]>], base_z: f32, params: &SupportParams) -> Vec<Triangle> {
+fn emit_paths(paths: &[RoutedPath], base_z: f32, params: &SupportParams) -> Vec<Triangle> {
     let mut tris = Vec::new();
     let segs = params.segments.max(3);
-    for path in paths {
+    let trunk_r = params.trunk_radius_mm.max(params.radius_mm);
+    for route in paths {
+        let path = &route.points;
         if path.len() < 2 {
             continue;
         }
         let lands_on_bed = path.last().is_some_and(|p| (p[2] - base_z).abs() < 1e-2);
-        // Path is tip → … → base (or rest-on-model). Emit shaft segments; taper tip.
+
+        if route.kind == PathKind::Trunk {
+            for i in 0..path.len() - 1 {
+                let a = path[i];
+                let b = path[i + 1];
+                if dist3(a, b) < 1e-4 {
+                    continue;
+                }
+                let at_foot = i + 1 == path.len() - 1;
+                if at_foot && lands_on_bed {
+                    append_capped_cylinder(&mut tris, a, b, trunk_r, trunk_r, segs);
+                } else {
+                    append_cylinder(&mut tris, a, b, trunk_r, trunk_r, segs);
+                }
+            }
+            continue;
+        }
+
+        // Branch: tip → … → bed / trunk join / rest-on-model. Taper the tip end.
         for i in 0..path.len() - 1 {
             let a = path[i];
             let b = path[i + 1];
@@ -440,7 +599,6 @@ fn emit_paths(paths: &[Vec<[f32; 3]>], base_z: f32, params: &SupportParams) -> V
                         a[1] + (b[1] - a[1]) * t,
                         a[2] + (b[2] - a[2]) * t,
                     ];
-                    // Tip is `a` (model contact); taper from tip radius → shaft.
                     append_cylinder(
                         &mut tris,
                         a,
@@ -450,14 +608,7 @@ fn emit_paths(paths: &[Vec<[f32; 3]>], base_z: f32, params: &SupportParams) -> V
                         segs,
                     );
                     if at_foot && lands_on_bed {
-                        append_capped_cylinder(
-                            &mut tris,
-                            mid,
-                            b,
-                            params.radius_mm,
-                            params.trunk_radius_mm.max(params.radius_mm),
-                            segs,
-                        );
+                        append_capped_cylinder(&mut tris, mid, b, params.radius_mm, trunk_r, segs);
                     } else {
                         append_cylinder(
                             &mut tris,
@@ -469,14 +620,7 @@ fn emit_paths(paths: &[Vec<[f32; 3]>], base_z: f32, params: &SupportParams) -> V
                         );
                     }
                 } else if at_foot && lands_on_bed {
-                    append_capped_cylinder(
-                        &mut tris,
-                        a,
-                        b,
-                        params.tip_radius_mm,
-                        params.trunk_radius_mm.max(params.radius_mm),
-                        segs,
-                    );
+                    append_capped_cylinder(&mut tris, a, b, params.tip_radius_mm, trunk_r, segs);
                 } else {
                     append_cylinder(
                         &mut tris,
@@ -488,15 +632,7 @@ fn emit_paths(paths: &[Vec<[f32; 3]>], base_z: f32, params: &SupportParams) -> V
                     );
                 }
             } else if at_foot && lands_on_bed {
-                // Last segment down to bed: capped foot.
-                append_capped_cylinder(
-                    &mut tris,
-                    a,
-                    b,
-                    params.radius_mm,
-                    params.trunk_radius_mm.max(params.radius_mm),
-                    segs,
-                );
+                append_capped_cylinder(&mut tris, a, b, params.radius_mm, trunk_r, segs);
             } else {
                 append_cylinder(&mut tris, a, b, params.radius_mm, params.radius_mm, segs);
             }
@@ -620,10 +756,25 @@ pub fn route_tips_for_test(
     base_z: f32,
     params: &SupportParams,
 ) -> Vec<Vec<[f32; 3]>> {
-    match params.style {
+    let paths = match params.style {
         SupportStyle::Pillar => route_pillars(volume, tips, cell_mm, base_z, params),
         SupportStyle::Tree => route_trees(volume, tips, cell_mm, base_z, params),
-    }
+    };
+    paths.into_iter().map(|p| p.points).collect()
+}
+
+/// Number of shared trunks produced for a tip set (tree style).
+pub fn count_trunks_for_test(
+    volume: &Volume,
+    tips: &[SupportTip],
+    cell_mm: f32,
+    base_z: f32,
+    params: &SupportParams,
+) -> usize {
+    route_trees(volume, tips, cell_mm, base_z, params)
+        .into_iter()
+        .filter(|p| p.kind == PathKind::Trunk)
+        .count()
 }
 
 #[cfg(test)]
@@ -708,6 +859,49 @@ mod tests {
             assert!(
                 !path_intersects_life(&v, path, cell, clearance),
                 "tree path intersected Life: {path:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn tree_merges_nearby_tips_onto_shared_trunk() {
+        let mut v = Volume::new(8, 8, 6);
+        for y in 0..8 {
+            for x in 0..8 {
+                v.set(x, y, 0, CellKind::Base);
+            }
+        }
+        // Two nearby overhang tips with empty space under them (and clear bed).
+        v.set(2, 2, 4, CellKind::Life);
+        v.set(3, 2, 4, CellKind::Life);
+        // Anchor columns off to the side so Life isn't orphaned for other tests.
+        v.set(0, 0, 1, CellKind::Life);
+        v.set(0, 0, 2, CellKind::Life);
+        v.set(0, 0, 3, CellKind::Life);
+        v.set(0, 0, 4, CellKind::Life);
+
+        let cell = 4.0;
+        let tips = collect_tips(&v, cell, 0.0);
+        assert!(tips.len() >= 2, "expected overhang tips, got {tips:?}");
+        let base_z = base_top_mm(&v, cell);
+        let params = SupportParams {
+            style: SupportStyle::Tree,
+            cluster_mm: 20.0,
+            clearance_mm: 0.8,
+            max_branch_angle_deg: 50.0,
+            ..SupportParams::default()
+        };
+        let trunks = count_trunks_for_test(&v, &tips, cell, base_z, &params);
+        assert!(
+            trunks >= 1,
+            "expected at least one shared trunk for clustered tips"
+        );
+        let paths = route_tips_for_test(&v, &tips, cell, base_z, &params);
+        let clearance = effective_clearance(&params);
+        for path in &paths {
+            assert!(
+                !path_intersects_life(&v, path, cell, clearance),
+                "merged tree path intersected Life: {path:?}"
             );
         }
     }

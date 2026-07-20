@@ -5,36 +5,35 @@ Generate a **3D-printable STL** of [Conway's Game of Life](https://en.wikipedia.
 ```bash
 cargo run --release -- -x 24 -y 24 -z 48 --seed 42 -o life.stl
 
-# Physical size + cell size:
-cargo run --release -- \
-  --width-mm 100 --height-mm 100 --depth-mm 600 \
-  --cell 4 --seed 42 -o tower.stl
+# Soup with Cura-style tree supports (shared trunks):
+cargo run --release -- --pattern soup --seed 99 \
+  --support-style tree --support-cluster 24 --support-trunk-radius 1.2 \
+  -o soup-tree.stl
 
-# Slimmer tree supports with a tinier snap tip:
-cargo run --release -- --pattern soup --seed 7 \
-  --support-style tree --support-radius 0.5 --support-tip-radius 0.3 \
-  -o soup.stl
+# Same soup with one pillar per tip (for contrast):
+cargo run --release -- --pattern soup --seed 99 \
+  --support-style pillar -o soup-pillars.stl
 ```
 
 ## Breakaway supports (default)
 
-Default `--mode breakaway` adds **slim geometric supports** that **route around Life cells** instead of punching through them (same idea as Cura / Bambu tree supports: collision clearance, layer-wise descent with a max branch angle, and rest-on-model when a path is blocked).
+Default `--mode breakaway` adds **slim geometric supports** that **route around Life cells** instead of punching through them (same idea as Cura / Bambu tree supports: collision clearance, layer-wise descent with a max branch angle, shared trunks, and rest-on-model when a path is blocked).
 
 | Style | Behavior |
 |-------|----------|
-| `tree` (default) | Cluster nearby overhang tips; steer toward a shared centroid while dodging Life |
-| `pillar` | Prefer a vertical drop under each tip; lean only when the column is blocked |
+| `tree` (default) | Cluster nearby tips onto a **shared trunk**; diagonal branches join the trunk top |
+| `pillar` | One shaft per tip; prefer a vertical drop, lean only when the column is blocked |
 
 Tunable (mm / degrees):
 
 | Flag | Default | Meaning |
 |------|---------|---------|
 | `--support-style` | `tree` | `tree` or `pillar` |
-| `--support-radius` | `0.6` | Shaft / branch radius |
+| `--support-radius` | `0.6` | Branch / pillar shaft radius |
 | `--support-tip-radius` | `0.35` | Contact tip (smaller = easier snap) |
 | `--support-tip-height` | `1.2` | Tip taper length |
-| `--support-trunk-radius` | `0.9` | Tree trunk radius |
-| `--support-cluster` | `12` | XY cluster radius for shared trunks |
+| `--support-trunk-radius` | `1.1` | Shared tree trunk radius |
+| `--support-cluster` | `18` | XY cluster radius for merging onto one trunk |
 | `--support-tip-offset` | `0` | Shift tip toward +X/+Y from cell center |
 | `--support-segments` | `8` | Cylinder tessellation |
 | `--support-clearance` | `1.0` | XY keep-out from Life footprints (`0` → radius+0.4) |

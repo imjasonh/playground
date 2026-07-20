@@ -33,7 +33,7 @@ impl std::fmt::Display for SupportMode {
 pub enum SupportStyle {
     /// One vertical tapered pillar per overhang tip.
     Pillar,
-    /// Cluster tips into trunks on the bed with diagonal branches (tree-like).
+    /// Cluster nearby tips onto a shared trunk with diagonal branches (Cura-style).
     Tree,
 }
 
@@ -81,8 +81,8 @@ impl Default for SupportParams {
             radius_mm: 0.6,
             tip_radius_mm: 0.35,
             tip_height_mm: 1.2,
-            trunk_radius_mm: 0.9,
-            cluster_mm: 12.0,
+            trunk_radius_mm: 1.1,
+            cluster_mm: 18.0,
             tip_offset_mm: 0.0,
             segments: 8,
             // Prefer an explicit margin so thin shafts still clear Life faces.
