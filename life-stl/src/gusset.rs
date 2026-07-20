@@ -29,7 +29,9 @@ pub struct Brace {
 
 /// Collect braces: for every Life voxel whose directly-below cell is empty
 /// (a birth), link it to each Life voxel in its Moore neighborhood one layer
-/// below (its Life parents).
+/// below — for real Life these are exactly its three B3 parents (voxels near
+/// the window edge may have fewer after cropping, but never zero once the
+/// volume is pruned to buildable voxels).
 pub fn collect_braces(volume: &Volume) -> Vec<Brace> {
     let mut braces = Vec::new();
     for z in 1..volume.depth {
@@ -165,8 +167,9 @@ fn push_quad(
 /// Orphan count with causal (brace) connectivity: Life voxels unreachable from
 /// the base through face adjacency **plus** birth→parent diagonal links.
 ///
-/// For a real Life stack this is always zero — every birth has 3 parents, every
-/// survivor has itself below, so ancestry chains reach generation 0 on the base.
+/// After [`crate::volume::Volume::prune_unbuildable_life`] this is zero for
+/// any real Life stack — every birth has parents below, every survivor has
+/// itself below, so ancestry chains reach generation 0 on the base.
 pub fn count_orphan_life_causal(volume: &Volume) -> usize {
     let w = volume.width;
     let h = volume.height;

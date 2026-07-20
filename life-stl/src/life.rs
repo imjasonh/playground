@@ -1,8 +1,9 @@
-/// A single generation of Conway's Game of Life on a toroidal or finite grid.
+/// A single generation of Conway's Game of Life on a finite grid.
 ///
-/// Edges are **dead** (finite board, not toroidal): cells off the board do not
-/// contribute neighbors. That keeps printed towers from wrapping through the
-/// sides of the bounding box.
+/// Edges are **dead** (not toroidal): cells off the grid contribute no
+/// neighbors. Callers that need edge-free evolution simulate on a grid padded
+/// by the light cone (one cell per generation) and crop afterwards — see
+/// `generation_windows` in the crate root.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Grid {
     width: usize,

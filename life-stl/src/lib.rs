@@ -67,6 +67,45 @@ pub struct Model {
     pub complexity: ComplexityReport,
 }
 
+/// The printed generations: one window-sized grid per Z layer.
+///
+/// Evolution is simulated on a grid padded by `depth` cells on every side —
+/// Life influence spreads at most one cell per generation (its light cone),
+/// so the printable window's edges can never affect what happens inside it.
+/// Cells that wander outside the window simply aren't printed; each returned
+/// grid is the window crop of that generation.
+pub fn generation_windows(config: &Config) -> Vec<crate::life::Grid> {
+    let pad = config.depth;
+    let (w, h) = (config.width, config.height);
+    let seed_grid = initial_grid(config);
+
+    let mut sim = crate::life::Grid::new(w + 2 * pad, h + 2 * pad);
+    for y in 0..h {
+        for x in 0..w {
+            if seed_grid.is_alive(x, y) {
+                sim.set(x + pad, y + pad, true);
+            }
+        }
+    }
+
+    let mut windows = Vec::with_capacity(config.depth);
+    for z in 0..config.depth {
+        let mut window = crate::life::Grid::new(w, h);
+        for y in 0..h {
+            for x in 0..w {
+                if sim.is_alive(x + pad, y + pad) {
+                    window.set(x, y, true);
+                }
+            }
+        }
+        windows.push(window);
+        if z + 1 < config.depth {
+            sim = sim.step();
+        }
+    }
+    windows
+}
+
 /// Simulate Life onto a volume with a base plate (no supports).
 ///
 /// By default the base plate shrink-wraps to the bounding box of the model's
@@ -76,14 +115,7 @@ pub struct Model {
 /// restores the full-board plate (always used in breakaway mode, whose
 /// supports may land on the bed anywhere).
 pub fn build_life_volume(config: &Config) -> Volume {
-    let mut grids: Vec<crate::life::Grid> = Vec::with_capacity(config.depth);
-    let mut grid = initial_grid(config);
-    for z in 0..config.depth {
-        grids.push(grid.clone());
-        if z + 1 < config.depth {
-            grid = grid.step();
-        }
-    }
+    let grids = generation_windows(config);
 
     let (bx0, by0, bx1, by1) = base_footprint(config, &grids);
     let mut volume = Volume::new(config.width, config.height, config.total_z());
@@ -106,6 +138,10 @@ pub fn build_life_volume(config: &Config) -> Volume {
             }
         }
     }
+
+    // Window cropping can strand voxels whose ancestry evolved outside the
+    // printable area; drop anything the printer could not build.
+    volume.prune_unbuildable_life();
 
     volume
 }

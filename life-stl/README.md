@@ -2,6 +2,8 @@
 
 Generate a **3D-printable STL** of [Conway's Game of Life](https://en.wikipedia.org/wiki/Conway%27s_Game_of_Life), with **time as the Z axis**: each generation is a layer of voxels stacked upward.
 
+Evolution is simulated **edge-free** (the grid is padded by the light cone of the printed depth), then cropped to the printable window — the board size sets what you *see*, never how the pattern *evolves*.
+
 ```bash
 # Self-supporting glider tower (default gusset mode; 180 mm tall at --cell 4):
 cargo run --release -- --pattern glider -x 16 -y 16 -z 44 -o glider-tower.stl
@@ -138,29 +140,18 @@ Every shipped STL is self-supporting (gusset) and stays **active for its entire 
 | `gusset-glider-tower.stl` | Glider climbing 44 generations — 64×64×180 mm |
 | `gusset-acorn.stl` | Acorn methuselah blooming from 7 cells — 140×76 mm base, 180 mm tall |
 | `gusset-acorn-a1mini.3mf` | The acorn as a ready-to-slice Bambu Studio project (A1 Mini + generic PLA; see [`docs/printing-a1mini.md`](docs/printing-a1mini.md)) |
-| `gusset-rpento.stl` | R-pentomino, the original methuselah (5 cells) — 108×68 mm base, 180 mm tall |
-| `gusset-pi.stl` | Pi-heptomino, the biggest bloom of the gallery — 132×104 mm base, 180 mm tall |
-| `gusset-rabbits.stl` | Rabbits (9 cells, ~17k generations unbounded) — 84×68 mm base, 180 mm tall |
+| `gusset-rpento.stl` | R-pentomino, the original methuselah (5 cells) — 108×68 mm base |
+| `gusset-pi.stl` | Pi-heptomino, the biggest bloom of the gallery — 132×104 mm base |
+| `gusset-bheptomino.stl` | B-heptomino, compact and off-axis — 56×96 mm base |
+| `gusset-thunderbird.stl` | Thunderbird, symmetric fork — 60×84 mm base |
+| `gusset-bunnies.stl` | Bunnies (9 cells, ~17k generations unbounded) — 84×68 mm base |
+| `gusset-rabbits.stl` | Rabbits, bunnies' sibling — 84×68 mm base |
+| `gusset-diehard.stl` | Diehard, destined to vanish at gen ~130 (past the top) — 76×56 mm base |
 | `gusset-soup-mid.stl` | Chaotic soup, never settles — 96×96×148 mm |
 | `gusset-soup-a1max.stl` | Chaotic soup at A1 Mini max, never settles — 176×176×180 mm |
 
-### Methuselah gallery
-
-Every catalogued methuselah pattern stays active for a full 44-generation
-(180 mm) print when centered on a 44×44 board — all pass both gates:
-
-| `--pattern` | Seed cells | Life voxels | Character |
-|-------------|-----------:|------------:|-----------|
-| `rpento` | 5 | 1093 | The classic; asymmetric bloom |
-| `acorn` | 7 | 1834 | Wide, oak-like spread |
-| `pi` | 7 | 2325 | Densest, symmetric early bloom |
-| `bheptomino` | 7 | 801 | Compact, off-axis |
-| `thunderbird` | 6 | 1004 | Symmetric, forked |
-| `bunnies` | 9 | 967 | Sparse, slow build |
-| `rabbits` | 9 | 998 | Sparse, delicate |
-| `diehard` | 7 | 790 | Destined to vanish (at gen ~130, past the top) |
-
-Generate any of them with e.g. `--pattern thunderbird -x 44 -y 44 -z 44`.
+All methuselahs are 180 mm tall (44 generations), centered, and pass both
+gates. Life voxel counts range from ~790 (`diehard`) to ~2325 (`pi`).
 
 ## Design notes
 

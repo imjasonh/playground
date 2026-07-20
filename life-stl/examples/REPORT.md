@@ -62,6 +62,45 @@ Life orphans (causal connectivity): 0 (0.0% of life)
 Life self-supporting: yes — causality braces make one standing piece
 ```
 
+### B-heptomino methuselah — 176×176×180 mm
+```
+life-stl  44×44×45 cells  (176.0×176.0×180.0 mm)  seed=0  mode=Gusset  cell=4mm
+self-supporting gussets: braces=873  width=1.8mm — every birth leans on its 3 parents (45° rule); no supports to remove
+complexity: quiescent_gen=44  period=none  unique_states=44  need≥44  interesting OK
+generations (above 1-cell base): 44
+base plate: 14×24 cells (56×96 mm) — shrink-wrapped to model footprint
+voxels: life=801  base=336  total_solid=1137
+Life print overhang (empty cell directly below): 291 voxels, 4656.0 mm² (25.6% of solid)
+Life orphans (causal connectivity): 0 (0.0% of life)
+Life self-supporting: yes — causality braces make one standing piece
+```
+
+### Thunderbird methuselah — 176×176×180 mm
+```
+life-stl  44×44×45 cells  (176.0×176.0×180.0 mm)  seed=0  mode=Gusset  cell=4mm
+self-supporting gussets: braces=1488  width=1.8mm — every birth leans on its 3 parents (45° rule); no supports to remove
+complexity: quiescent_gen=44  period=none  unique_states=44  need≥44  interesting OK
+generations (above 1-cell base): 44
+base plate: 15×21 cells (60×84 mm) — shrink-wrapped to model footprint
+voxels: life=1004  base=315  total_solid=1319
+Life print overhang (empty cell directly below): 496 voxels, 7936.0 mm² (37.6% of solid)
+Life orphans (causal connectivity): 0 (0.0% of life)
+Life self-supporting: yes — causality braces make one standing piece
+```
+
+### Bunnies methuselah — 176×176×180 mm
+```
+life-stl  44×44×45 cells  (176.0×176.0×180.0 mm)  seed=0  mode=Gusset  cell=4mm
+self-supporting gussets: braces=1257  width=1.8mm — every birth leans on its 3 parents (45° rule); no supports to remove
+complexity: quiescent_gen=44  period=none  unique_states=44  need≥44  interesting OK
+generations (above 1-cell base): 44
+base plate: 21×17 cells (84×68 mm) — shrink-wrapped to model footprint
+voxels: life=967  base=357  total_solid=1324
+Life print overhang (empty cell directly below): 419 voxels, 6704.0 mm² (31.6% of solid)
+Life orphans (causal connectivity): 0 (0.0% of life)
+Life self-supporting: yes — causality braces make one standing piece
+```
+
 ### Rabbits methuselah — 176×176×180 mm
 ```
 life-stl  44×44×45 cells  (176.0×176.0×180.0 mm)  seed=0  mode=Gusset  cell=4mm
@@ -75,15 +114,28 @@ Life orphans (causal connectivity): 0 (0.0% of life)
 Life self-supporting: yes — causality braces make one standing piece
 ```
 
+### Diehard — 176×176×180 mm
+```
+life-stl  44×44×45 cells  (176.0×176.0×180.0 mm)  seed=0  mode=Gusset  cell=4mm
+self-supporting gussets: braces=1137  width=1.8mm — every birth leans on its 3 parents (45° rule); no supports to remove
+complexity: quiescent_gen=44  period=none  unique_states=44  need≥44  interesting OK
+generations (above 1-cell base): 44
+base plate: 19×14 cells (76×56 mm) — shrink-wrapped to model footprint
+voxels: life=790  base=266  total_solid=1056
+Life print overhang (empty cell directly below): 379 voxels, 6064.0 mm² (35.9% of solid)
+Life orphans (causal connectivity): 0 (0.0% of life)
+Life self-supporting: yes — causality braces make one standing piece
+```
+
 ### Soup — 96×96×148 mm
 ```
 life-stl  24×24×37 cells  (96.0×96.0×148.0 mm)  seed=0  mode=Gusset  cell=4mm
-self-supporting gussets: braces=3042  width=1.8mm — every birth leans on its 3 parents (45° rule); no supports to remove
+self-supporting gussets: braces=3831  width=1.8mm — every birth leans on its 3 parents (45° rule); no supports to remove
 complexity: quiescent_gen=36  period=none  unique_states=36  need≥36  interesting OK
 generations (above 1-cell base): 36
 base plate: 24×24 cells (96×96 mm) — shrink-wrapped to model footprint
-voxels: life=2516  base=576  total_solid=3092
-Life print overhang (empty cell directly below): 1014 voxels, 16224.0 mm² (32.8% of solid)
+voxels: life=3140  base=576  total_solid=3716
+Life print overhang (empty cell directly below): 1308 voxels, 20928.0 mm² (35.2% of solid)
 Life orphans (causal connectivity): 0 (0.0% of life)
 Life self-supporting: yes — causality braces make one standing piece
 ```
@@ -91,12 +143,12 @@ Life self-supporting: yes — causality braces make one standing piece
 ### Soup, A1 Mini max — 176×176×180 mm
 ```
 life-stl  44×44×45 cells  (176.0×176.0×180.0 mm)  seed=0  mode=Gusset  cell=4mm
-self-supporting gussets: braces=8541  width=1.8mm — every birth leans on its 3 parents (45° rule); no supports to remove
+self-supporting gussets: braces=8731  width=1.8mm — every birth leans on its 3 parents (45° rule); no supports to remove
 complexity: quiescent_gen=44  period=none  unique_states=44  need≥44  interesting OK
 generations (above 1-cell base): 44
 base plate: 44×44 cells (176×176 mm) — shrink-wrapped to model footprint
-voxels: life=7940  base=1936  total_solid=9876
-Life print overhang (empty cell directly below): 2847 voxels, 45552.0 mm² (28.8% of solid)
+voxels: life=8142  base=1936  total_solid=10078
+Life print overhang (empty cell directly below): 2944 voxels, 47104.0 mm² (29.2% of solid)
 Life orphans (causal connectivity): 0 (0.0% of life)
 Life self-supporting: yes — causality braces make one standing piece
 ```

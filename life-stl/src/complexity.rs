@@ -8,7 +8,6 @@
 
 use crate::config::{ComplexityParams, Pattern};
 use crate::life::Grid;
-use crate::seed::initial_grid;
 use crate::Config;
 
 /// Verdict for how long a Life run stays non-quiescent.
@@ -94,17 +93,21 @@ pub fn analyze_complexity(config: &Config) -> ComplexityReport {
     }
 }
 
-/// Walk generations until a repeat; return `(quiescent_gen, period, unique)`.
+/// Walk the printed generation windows until a repeat; return
+/// `(quiescent_gen, period, unique)`.
+///
+/// Judged on the **window** content (what actually gets printed): a pattern
+/// that leaves the printable area, or settles inside it, extrudes a static
+/// tower either way.
 fn simulate_quiescence(config: &Config) -> (usize, usize, usize) {
-    let mut grid = initial_grid(config);
-    let mut seen: Vec<Grid> = vec![grid.clone()];
-    for t in 1..config.depth {
-        grid = grid.step();
-        if let Some(prev) = seen.iter().position(|s| s == &grid) {
+    let windows = crate::generation_windows(config);
+    let mut seen: Vec<&Grid> = Vec::with_capacity(windows.len());
+    for (t, grid) in windows.iter().enumerate() {
+        if let Some(prev) = seen.iter().position(|s| *s == grid) {
             let period = t - prev;
             return (prev, period, seen.len());
         }
-        seen.push(grid.clone());
+        seen.push(grid);
     }
     (config.depth, 0, seen.len())
 }
@@ -151,7 +154,7 @@ mod tests {
                 "seed {seed} dens={density} should fail complexity (quiescent@{})",
                 report.quiescent_generation
             );
-            assert!(report.quiescent_generation <= 4);
+            assert!(report.quiescent_generation <= 5);
             assert_eq!(report.period, 1);
         }
     }

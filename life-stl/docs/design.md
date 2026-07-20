@@ -5,7 +5,13 @@ what the gates protect, and approaches that were evaluated and rejected.
 
 ## Geometry model
 
-- Life runs on a finite board (dead edges, no wrap-around) — `life.rs`.
+- Life is simulated **edge-free**: the grid is padded by `depth` cells on
+  every side — influence spreads at most one cell per generation (the light
+  cone), so the printable window's edges can never affect what happens inside
+  it (`generation_windows` in `lib.rs`). Each generation is then cropped to
+  the window for rendering; cells that wander outside simply aren't printed,
+  and `Volume::prune_unbuildable_life` drops any cropped voxel the printer
+  couldn't build (no Moore support below).
 - Generation `g` becomes a layer of cube voxels at `z = base_layers + g`
   (`build_life_volume` in `lib.rs`); a solid base plate anchors the bottom.
 - The base plate **shrink-wraps** to the bounding box of the model's XY

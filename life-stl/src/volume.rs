@@ -87,4 +87,26 @@ impl Volume {
     pub fn solid_count(&self) -> usize {
         self.cells.iter().filter(|c| c.is_solid()).count()
     }
+
+    /// Remove Life voxels that cannot be built while printing: every Life
+    /// voxel needs solid material somewhere in its Moore neighborhood one
+    /// layer below (the FDM 45° rule). Real Life guarantees this (births have
+    /// parents, survivors have themselves), but cropping the simulation to
+    /// the printable window can strand voxels whose ancestry evolved outside
+    /// it. One bottom-up sweep suffices — removals only cascade upward.
+    /// Returns the number of voxels removed.
+    pub fn prune_unbuildable_life(&mut self) -> usize {
+        let mut removed = 0usize;
+        for z in 1..self.depth {
+            for y in 0..self.height {
+                for x in 0..self.width {
+                    if self.get(x, y, z) == CellKind::Life && !self.has_moore_support(x, y, z) {
+                        self.set(x, y, z, CellKind::Empty);
+                        removed += 1;
+                    }
+                }
+            }
+        }
+        removed
+    }
 }
