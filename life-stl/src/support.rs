@@ -20,7 +20,21 @@ use crate::mesh::{append_capped_cylinder, append_cylinder};
 use crate::physics::{
     size_branch, size_trunk, split_cluster_for_physics, tip_snap_force_n, SupportPhysicsReport,
 };
+use crate::removal::{analyze_removability, SupportRemovabilityReport};
 use crate::volume::{CellKind, Volume};
+
+/// Where a branch path ends after routing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Landing {
+    /// Reached the build plate.
+    Bed,
+    /// Joined a shared tree trunk.
+    TrunkJoin,
+    /// Stopped on a Life roof (support-on-model) — hard to remove.
+    RestOnModel,
+    /// Gave up above a blockage in free space.
+    FreeStop,
+}
 
 /// A point under a Life cell that needs print support.
 #[derive(Debug, Clone, Copy)]
@@ -87,38 +101,49 @@ pub fn base_top_mm(volume: &Volume, cell_mm: f32) -> f32 {
     }
 }
 
-/// A routed support polyline ready for meshing.
+/// A routed support polyline ready for meshing / removability analysis.
 #[derive(Debug, Clone)]
-struct RoutedPath {
-    points: Vec<[f32; 3]>,
+pub struct RoutedPath {
+    pub points: Vec<[f32; 3]>,
     /// Tip contact (tapered) vs shared trunk (thicker, no tip taper).
-    kind: PathKind,
+    pub kind: PathKind,
     /// Shaft / trunk radius for this path (may be physics-sized).
-    shaft_radius_mm: f32,
+    pub shaft_radius_mm: f32,
+    /// How the path ends (branches only; trunks use [`Landing::Bed`]).
+    pub landing: Landing,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PathKind {
+pub enum PathKind {
     Branch,
     Trunk,
 }
 
-/// Build breakaway supports + a simplified structural report.
+/// Build breakaway supports + structural + removability reports.
 pub fn build_supports(
     volume: &Volume,
     tips: &[SupportTip],
     cell_mm: f32,
     base_z: f32,
     params: &SupportParams,
-) -> (Vec<Triangle>, SupportPhysicsReport) {
+) -> (
+    Vec<Triangle>,
+    SupportPhysicsReport,
+    SupportRemovabilityReport,
+) {
     if tips.is_empty() {
-        return (Vec::new(), SupportPhysicsReport::default());
+        return (
+            Vec::new(),
+            SupportPhysicsReport::default(),
+            SupportRemovabilityReport::default(),
+        );
     }
     let (paths, physics) = match params.style {
         SupportStyle::Pillar => route_pillars(volume, tips, cell_mm, base_z, params),
         SupportStyle::Tree => route_trees(volume, tips, cell_mm, base_z, params),
     };
-    (emit_paths(&paths, base_z, params), physics)
+    let removal = analyze_removability(volume, tips, &paths, cell_mm, &params.removal);
+    (emit_paths(&paths, base_z, params), physics, removal)
 }
 
 /// Build breakaway support triangles that avoid intersecting Life voxels.
@@ -144,7 +169,7 @@ fn route_pillars(
     let mut total_load = 0.0f32;
     let mut max_r = 0.0f32;
     for tip in tips {
-        let points = route_tip(
+        let (points, landing) = route_tip(
             volume,
             tip,
             cell_mm,
@@ -174,6 +199,7 @@ fn route_pillars(
             points,
             kind: PathKind::Branch,
             shaft_radius_mm: r,
+            landing,
         });
     }
     let report = SupportPhysicsReport {
@@ -230,7 +256,7 @@ fn route_trees(
         for sub in subclusters {
             if sub.len() == 1 || join_z <= base_z + 1e-3 {
                 for tip in &sub {
-                    let points = route_tip(
+                    let (points, landing) = route_tip(
                         volume,
                         tip,
                         cell_mm,
@@ -265,6 +291,7 @@ fn route_trees(
                         points,
                         kind: PathKind::Branch,
                         shaft_radius_mm: r,
+                        landing,
                     });
                 }
                 continue;
@@ -298,10 +325,11 @@ fn route_trees(
                 ],
                 kind: PathKind::Trunk,
                 shaft_radius_mm: trunk_r,
+                landing: Landing::Bed,
             });
 
             for tip in &sub {
-                let points = route_tip(
+                let (points, landing) = route_tip(
                     volume,
                     tip,
                     cell_mm,
@@ -337,6 +365,7 @@ fn route_trees(
                     points,
                     kind: PathKind::Branch,
                     shaft_radius_mm: r,
+                    landing,
                 });
             }
         }
@@ -388,7 +417,7 @@ fn route_tip(
     attractor: (f32, f32),
     prefer_column: bool,
     join: Option<((f32, f32), f32)>,
-) -> Vec<[f32; 3]> {
+) -> (Vec<[f32; 3]>, Landing) {
     let clearance = effective_clearance(params);
     let max_move = max_move_per_layer(cell_mm, params.max_branch_angle_deg);
     let mut path = vec![tip.tip];
@@ -407,7 +436,7 @@ fn route_tip(
         if let Some(((tx, ty), join_z)) = join {
             if z_mm <= join_z + 1e-3 {
                 path.push([tx, ty, join_z]);
-                return path;
+                return (path, Landing::TrunkJoin);
             }
             // Also join early if we are already next to the trunk in XY.
             if dist2(x, y, tx, ty) <= cell_mm * 0.35 && z_mm <= tip.tip[2] {
@@ -415,14 +444,14 @@ fn route_tip(
                 if z_mm > join_z + 1e-3 {
                     path.push([tx, ty, join_z]);
                 }
-                return path;
+                return (path, Landing::TrunkJoin);
             }
         }
 
         // Landing on the bed: snap XY if the straight drop is clear at bed.
         if join.is_none() && z_mm - base_z <= cell_mm + 1e-3 {
             path.push([x, y, base_z]);
-            return path;
+            return (path, Landing::Bed);
         }
 
         let z_cell = z_layer as usize;
@@ -451,7 +480,7 @@ fn route_tip(
             if rest_z + 1e-3 < tip.tip[2] {
                 path.push([rx, ry, rest_z]);
             }
-            return path;
+            return (path, Landing::RestOnModel);
         }
 
         // Last resort: widen search ignoring max_move for this layer.
@@ -476,15 +505,16 @@ fn route_tip(
 
         // Give up further descent; stop in free space above the blockage.
         path.push([x, y, z_mm]);
-        return path;
+        return (path, Landing::FreeStop);
     }
 
     if let Some(((tx, ty), join_z)) = join {
         path.push([tx, ty, join_z.max(base_z)]);
+        (path, Landing::TrunkJoin)
     } else {
         path.push([x, y, base_z]);
+        (path, Landing::Bed)
     }
-    path
 }
 
 /// Pick a trunk XY near `centroid` that stays clear of Life just above the bed.

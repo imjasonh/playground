@@ -5,11 +5,13 @@ use clap::Parser;
 use rand::Rng;
 
 use life_stl::config::{
-    Config, Pattern, PhysicsParams, SupportMode, SupportParams, SupportStyle, DEFAULT_CELL_MM,
-    MIN_CELL_MM,
+    Config, Pattern, PhysicsParams, RemovalParams, SupportMode, SupportParams, SupportStyle,
+    DEFAULT_CELL_MM, MIN_CELL_MM,
 };
 use life_stl::search::{evaluate_life_only, find_self_supporting};
-use life_stl::{format_report, format_unprintable_reason, write_stl_model};
+use life_stl::{
+    format_hard_removal_reason, format_report, format_unprintable_reason, write_stl_model,
+};
 
 /// Generate a 3D-printable STL of Conway's Game of Life (Z = time).
 ///
@@ -149,6 +151,26 @@ struct Cli {
     #[arg(long, default_value_t = PhysicsParams::default().max_trunk_radius_mm)]
     support_max_trunk_radius: f32,
 
+    /// Minimum support-removability score (0–100) to accept.
+    #[arg(long, default_value_t = RemovalParams::default().min_score)]
+    min_removal_score: f32,
+
+    /// Allow supports that rest on the model (usually hard to remove).
+    #[arg(long, default_value_t = false)]
+    allow_rest_on_model: bool,
+
+    /// Max fraction of tip contacts allowed in enclosed pockets (0–1).
+    #[arg(long, default_value_t = RemovalParams::default().max_inaccessible_tip_fraction)]
+    max_inaccessible_tip_fraction: f32,
+
+    /// Max tip contacts per XY cell before density is considered too high.
+    #[arg(long, default_value_t = RemovalParams::default().max_tip_density)]
+    max_tip_density: f32,
+
+    /// Skip the support-removability gate (still reports the score).
+    #[arg(long, default_value_t = false)]
+    allow_hard_supports: bool,
+
     /// Output STL path.
     #[arg(short = 'o', long, default_value = "life.stl")]
     output: PathBuf,
@@ -238,6 +260,18 @@ fn main() -> ExitCode {
         eprintln!("error: shaft radius bounds invalid");
         return ExitCode::FAILURE;
     }
+    if !(0.0..=100.0).contains(&cli.min_removal_score) {
+        eprintln!("error: --min-removal-score must be between 0 and 100");
+        return ExitCode::FAILURE;
+    }
+    if !(0.0..=1.0).contains(&cli.max_inaccessible_tip_fraction) {
+        eprintln!("error: --max-inaccessible-tip-fraction must be between 0 and 1");
+        return ExitCode::FAILURE;
+    }
+    if cli.max_tip_density <= 0.0 {
+        eprintln!("error: --max-tip-density must be > 0");
+        return ExitCode::FAILURE;
+    }
 
     let (width, height, depth) = match resolve_grid(&cli) {
         Ok(g) => g,
@@ -254,7 +288,7 @@ fn main() -> ExitCode {
         None if searchable => {
             let s = rand::thread_rng().gen::<u64>();
             eprintln!(
-                "searching for a self-supporting seed (start={s}, max {})…",
+                "searching for a printable seed (start={s}, max {})…",
                 cli.max_seed_attempts
             );
             s
@@ -297,6 +331,21 @@ fn main() -> ExitCode {
             min_shaft_radius_mm: cli.support_min_shaft_radius,
             max_trunk_radius_mm: cli.support_max_trunk_radius,
         },
+        removal: if cli.allow_hard_supports {
+            RemovalParams {
+                min_score: 0.0,
+                allow_rest_on_model: true,
+                max_inaccessible_tip_fraction: 1.0,
+                max_tip_density: f32::MAX,
+            }
+        } else {
+            RemovalParams {
+                min_score: cli.min_removal_score,
+                allow_rest_on_model: cli.allow_rest_on_model,
+                max_inaccessible_tip_fraction: cli.max_inaccessible_tip_fraction,
+                max_tip_density: cli.max_tip_density,
+            }
+        },
     };
 
     let base_config = Config {
@@ -316,8 +365,10 @@ fn main() -> ExitCode {
         let config = base_config;
         let life_report = evaluate_life_only(&config);
         let model = life_stl::search::evaluate(&config);
+        let removable = model.support_removability.ok || cli.allow_hard_supports;
         life_stl::search::SearchOutcome {
             life_self_supporting: life_report.life_self_supporting(),
+            supports_removable: removable,
             report: model.report.clone(),
             config,
             model,
@@ -342,6 +393,24 @@ fn main() -> ExitCode {
         }
     }
 
+    // Gate 1: practical support cleanup (breakaway only).
+    if cli.mode == SupportMode::Breakaway && !outcome.supports_removable {
+        eprintln!(
+            "error: {}",
+            format_hard_removal_reason(&outcome.config, &outcome.report)
+        );
+        if !seed_was_explicit && searchable {
+            eprintln!(
+                "no seed with easy-to-remove supports in {} attempt(s); \
+                 wrote best-effort STL — try lower --density, larger \
+                 --max-seed-attempts, or relax --min-removal-score",
+                outcome.attempts
+            );
+        }
+        return ExitCode::FAILURE;
+    }
+
+    // Gate 2: Life is one standing piece after supports snap off.
     if outcome.life_self_supporting {
         if !cli.quiet {
             eprintln!(
@@ -349,8 +418,28 @@ fn main() -> ExitCode {
                 outcome.model.support_tips
             );
         }
-        ExitCode::SUCCESS
-    } else if seed_was_explicit || !searchable {
+        return ExitCode::SUCCESS;
+    }
+
+    // Soup search (no explicit seed): removable supports are enough to succeed,
+    // even when Life orphans remain (multi-piece after cleanup).
+    if !seed_was_explicit
+        && searchable
+        && matches!(cli.pattern, Pattern::Soup)
+        && cli.mode == SupportMode::Breakaway
+        && outcome.supports_removable
+    {
+        if !cli.quiet {
+            eprintln!(
+                "ok: supports look removable (score {:.0}); Life has orphans \
+                 (multi-piece after cleanup) — {} tip(s)",
+                outcome.model.support_removability.score, outcome.model.support_tips
+            );
+        }
+        return ExitCode::SUCCESS;
+    }
+
+    if seed_was_explicit || !searchable {
         let life_report = evaluate_life_only(&outcome.config);
         eprintln!(
             "error: {}",
@@ -359,14 +448,13 @@ fn main() -> ExitCode {
         ExitCode::FAILURE
     } else {
         eprintln!(
-            "error: no self-supporting seed in {} attempt(s) starting at {}. {}",
+            "error: no acceptable seed in {} attempt(s) starting at {}. {}",
             outcome.attempts,
             start_seed,
             format_unprintable_reason(&outcome.config, &evaluate_life_only(&outcome.config))
         );
         eprintln!(
-            "wrote best-effort STL anyway; try --pattern random (still-life garden), \
-             lower --density, or a larger --max-seed-attempts"
+            "wrote best-effort STL anyway; try lower --density or a larger --max-seed-attempts"
         );
         ExitCode::FAILURE
     }

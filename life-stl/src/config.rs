@@ -82,6 +82,31 @@ impl Default for PhysicsParams {
     }
 }
 
+/// Post-print support cleanup gates (used by seed search / CLI exit codes).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RemovalParams {
+    /// Minimum removability score (0–100) to accept.
+    pub min_score: f32,
+    /// When false (default), any rest-on-model landing fails the gate.
+    pub allow_rest_on_model: bool,
+    /// Max fraction of tip contacts that may sit in enclosed pockets.
+    pub max_inaccessible_tip_fraction: f32,
+    /// Max tip contacts per XY cell footprint before density penalty / fail.
+    pub max_tip_density: f32,
+}
+
+impl Default for RemovalParams {
+    fn default() -> Self {
+        Self {
+            min_score: 70.0,
+            allow_rest_on_model: false,
+            max_inaccessible_tip_fraction: 0.08,
+            // Tips are stacked in Z; a 16×16 soup with ~200 tips ≈ 0.8 / cell.
+            max_tip_density: 1.25,
+        }
+    }
+}
+
 /// Tunable breakaway-support geometry (millimeters).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SupportParams {
@@ -109,6 +134,8 @@ pub struct SupportParams {
     pub max_branch_angle_deg: f32,
     /// Structural model inputs (density, strength, auto-sizing).
     pub physics: PhysicsParams,
+    /// Post-print support removal feasibility gates.
+    pub removal: RemovalParams,
 }
 
 impl Default for SupportParams {
@@ -129,6 +156,7 @@ impl Default for SupportParams {
             clearance_mm: 1.0,
             max_branch_angle_deg: 40.0,
             physics: PhysicsParams::default(),
+            removal: RemovalParams::default(),
         }
     }
 }

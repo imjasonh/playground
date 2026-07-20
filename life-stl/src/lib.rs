@@ -10,16 +10,19 @@ pub mod life;
 pub mod mesh;
 pub mod metrics;
 pub mod physics;
+pub mod removal;
 pub mod search;
 pub mod seed;
 pub mod support;
 pub mod volume;
 
 pub use config::{
-    Config, PhysicsParams, SupportMode, SupportParams, SupportStyle, DEFAULT_CELL_MM, MIN_CELL_MM,
+    Config, PhysicsParams, RemovalParams, SupportMode, SupportParams, SupportStyle,
+    DEFAULT_CELL_MM, MIN_CELL_MM,
 };
 pub use metrics::PrintabilityReport;
 pub use physics::SupportPhysicsReport;
+pub use removal::SupportRemovabilityReport;
 pub use volume::{CellKind, Volume};
 
 use std::fs::File;
@@ -41,6 +44,7 @@ pub struct Model {
     pub report: PrintabilityReport,
     pub support_tips: usize,
     pub support_physics: SupportPhysicsReport,
+    pub support_removability: SupportRemovabilityReport,
 }
 
 /// Simulate Life onto a volume with a base plate (no supports).
@@ -91,6 +95,7 @@ pub fn build_model(config: &Config) -> Model {
                 report,
                 support_tips: 0,
                 support_physics: SupportPhysicsReport::default(),
+                support_removability: SupportRemovabilityReport::default(),
             }
         }
         SupportMode::Breakaway => {
@@ -98,17 +103,19 @@ pub fn build_model(config: &Config) -> Model {
             let support_tips = tips.len();
             let mut triangles = triangles_from_volume(&volume, config.cell_mm);
             let base_z = base_top_mm(&volume, config.cell_mm);
-            let (support_tris, support_physics) =
+            let (support_tris, support_physics, support_removability) =
                 build_supports(&volume, &tips, config.cell_mm, base_z, &config.support);
             triangles.extend(support_tris);
             let mut report = analyze_with_supports(&volume, config.cell_mm, support_tips);
             report.support_physics = Some(support_physics.clone());
+            report.support_removability = Some(support_removability.clone());
             Model {
                 volume,
                 triangles,
                 report,
                 support_tips,
                 support_physics,
+                support_removability,
             }
         }
     }
@@ -178,6 +185,24 @@ pub fn format_report(config: &Config, report: &PrintabilityReport) -> String {
                 }
             ));
         }
+        if let Some(rem) = &report.support_removability {
+            out.push_str(&format!(
+                "support removal: score={:.0}/100  rest_on_model={}  trapped_trunks={}  \
+                 inaccessible_tips={}  {}\n",
+                rem.score,
+                rem.rest_on_model_count,
+                rem.trapped_trunk_count,
+                rem.inaccessible_tip_count,
+                if rem.ok {
+                    "cleanup OK"
+                } else {
+                    "HARD TO REMOVE"
+                }
+            ));
+            for reason in &rem.reasons {
+                out.push_str(&format!("  - {reason}\n"));
+            }
+        }
     }
     out.push_str(&format!(
         "generations (above {}-cell base): {}\n",
@@ -223,4 +248,23 @@ pub fn format_unprintable_reason(config: &Config, report: &PrintabilityReport) -
          can hold them while printing, but removing supports would leave multiple pieces.",
         config.seed, report.orphan_life_voxels, report.orphan_life_pct
     )
+}
+
+/// Explain why supports fail the practical-cleanup gate.
+pub fn format_hard_removal_reason(config: &Config, report: &PrintabilityReport) -> String {
+    let Some(rem) = &report.support_removability else {
+        return format!(
+            "seed {}: support removability was not analyzed",
+            config.seed
+        );
+    };
+    let mut msg = format!(
+        "supports are not reasonably removable (score {:.0}/100, need ≥ {:.0}): seed {}",
+        rem.score, config.support.removal.min_score, config.seed
+    );
+    for reason in &rem.reasons {
+        msg.push_str("\n  - ");
+        msg.push_str(reason);
+    }
+    msg
 }

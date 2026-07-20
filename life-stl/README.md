@@ -55,6 +55,13 @@ Supports are sized with a beam/column model:
 | `--support-max-tips-per-trunk` | `6` | Split after this many tips |
 | `--support-min-shaft-radius` | `0.55` | Auto-size floor (mm) |
 | `--support-max-trunk-radius` | `2.4` | Auto-size cap (mm) |
+| `--min-removal-score` | `70` | Min post-print cleanup score (0–100) |
+| `--allow-rest-on-model` | off | Allow supports that land on Life roofs |
+| `--max-inaccessible-tip-fraction` | `0.08` | Max tip contacts in enclosed pockets |
+| `--max-tip-density` | `1.25` | Max tips per XY cell footprint |
+| `--allow-hard-supports` | off | Skip the removability gate |
+
+After generating supports, life-stl scores **how hard they are to remove** (rest-on-model landings, trunks trapped in cavities, tip contacts in pockets, tip density). With `--seed` omitted it **retries** until cleanup looks practical; with an explicit seed it still writes the STL but **exits non-zero** if supports would be miserable to remove.
 
 Supports are meant to **snap off** after printing. The remaining Life|Base mesh is a **single standing piece** only when every Life voxel is face-connected to the bed (no “orphans”). Still-life gardens (`--pattern random`) usually need **zero** supports. Chaotic `--pattern soup` often has orphans → STL is written but the CLI exits non-zero if you passed an explicit seed.
 
