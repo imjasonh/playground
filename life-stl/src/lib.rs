@@ -31,6 +31,8 @@ pub mod search;
 pub mod seed;
 pub mod support;
 pub mod volume;
+#[cfg(feature = "wasm")]
+pub mod wasm;
 
 pub use complexity::ComplexityReport;
 pub use config::{
@@ -48,7 +50,6 @@ use std::path::Path;
 
 use stl_io::Triangle;
 
-use crate::complexity::analyze_complexity;
 use crate::mesh::triangles_from_volume;
 use crate::metrics::{analyze, analyze_with_supports};
 use crate::seed::initial_grid;
@@ -76,9 +77,14 @@ pub struct Model {
 /// Cells that wander outside the window simply aren't printed; each returned
 /// grid is the window crop of that generation.
 pub fn generation_windows(config: &Config) -> Vec<crate::life::Grid> {
-    let pad = config.depth;
-    let (w, h) = (config.width, config.height);
-    let seed_grid = initial_grid(config);
+    windows_from_seed(&initial_grid(config), config.depth)
+}
+
+/// Like [`generation_windows`], but starting from an arbitrary generation-0
+/// grid (e.g. one drawn by a user) instead of a named pattern.
+pub fn windows_from_seed(seed_grid: &crate::life::Grid, depth: usize) -> Vec<crate::life::Grid> {
+    let pad = depth;
+    let (w, h) = (seed_grid.width(), seed_grid.height());
 
     let mut sim = crate::life::Grid::new(w + 2 * pad, h + 2 * pad);
     for y in 0..h {
@@ -89,8 +95,8 @@ pub fn generation_windows(config: &Config) -> Vec<crate::life::Grid> {
         }
     }
 
-    let mut windows = Vec::with_capacity(config.depth);
-    for z in 0..config.depth {
+    let mut windows = Vec::with_capacity(depth);
+    for z in 0..depth {
         let mut window = crate::life::Grid::new(w, h);
         for y in 0..h {
             for x in 0..w {
@@ -100,7 +106,7 @@ pub fn generation_windows(config: &Config) -> Vec<crate::life::Grid> {
             }
         }
         windows.push(window);
-        if z + 1 < config.depth {
+        if z + 1 < depth {
             sim = sim.step();
         }
     }
@@ -116,9 +122,13 @@ pub fn generation_windows(config: &Config) -> Vec<crate::life::Grid> {
 /// restores the full-board plate (always used in breakaway mode, whose
 /// supports may land on the bed anywhere).
 pub fn build_life_volume(config: &Config) -> Volume {
-    let grids = generation_windows(config);
+    volume_from_windows(&generation_windows(config), config)
+}
 
-    let (bx0, by0, bx1, by1) = base_footprint(config, &grids);
+/// Paint precomputed generation windows into a Life|Base volume.
+pub fn volume_from_windows(grids: &[crate::life::Grid], config: &Config) -> Volume {
+    assert_eq!(grids.len(), config.depth, "one window per generation");
+    let (bx0, by0, bx1, by1) = base_footprint(config, grids);
     let mut volume = Volume::new(config.width, config.height, config.total_z());
 
     for z in 0..config.base_layers {
@@ -191,8 +201,18 @@ pub fn build_volume(config: &Config) -> Volume {
 
 /// Build the full printable model (Life mesh + optional breakaway supports).
 pub fn build_model(config: &Config) -> Model {
-    let volume = build_life_volume(config);
-    let complexity = analyze_complexity(config);
+    build_model_from_windows(&generation_windows(config), config)
+}
+
+/// Like [`build_model`], but from precomputed generation windows (e.g. from a
+/// user-drawn generation 0 via [`windows_from_seed`]).
+pub fn build_model_from_windows(windows: &[crate::life::Grid], config: &Config) -> Model {
+    let volume = volume_from_windows(windows, config);
+    let complexity = complexity::analyze_windows(
+        windows,
+        &config.complexity,
+        config.pattern == crate::config::Pattern::Random,
+    );
 
     match config.mode {
         SupportMode::Raw => {
@@ -261,6 +281,14 @@ pub fn build_model(config: &Config) -> Model {
             }
         }
     }
+}
+
+/// Binary STL bytes for an already-built model (in-memory; wasm-friendly).
+pub fn stl_bytes(model: &Model) -> Vec<u8> {
+    let mut cursor = std::io::Cursor::new(Vec::new());
+    stl_io::write_stl(&mut cursor, model.triangles.iter())
+        .expect("in-memory STL write cannot fail");
+    cursor.into_inner()
 }
 
 /// Write a binary STL for an already-built model.

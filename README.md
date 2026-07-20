@@ -40,6 +40,10 @@ passes tests — so older experiments don't bit-rot.
   data collected by an hourly scrape workflow.
 - **[`web-push-demo/`](web-push-demo/)** — a browser front-end for the
   `web-push` Worker: subscribe/unsubscribe and send notifications end to end.
+- **[`life-lab/`](life-lab/)** — draw a Game of Life starting row, watch it
+  grow into a 3D-printable tower (time as the Z axis), and export STL or a
+  ready-to-slice Bambu 3MF — powered by the `life-stl` Rust crate compiled to
+  WebAssembly.
 
 ## Tools
 

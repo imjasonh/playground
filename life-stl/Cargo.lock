@@ -332,6 +332,7 @@ dependencies = [
  "serde_json",
  "stl_io",
  "tempfile",
+ "wasm-bindgen",
  "zip",
 ]
 

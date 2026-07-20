@@ -1,5 +1,3 @@
-use clap::ValueEnum;
-
 /// Default voxel edge length (mm). Sized for reliable FDM with a 0.4 mm
 /// nozzle (~10× nozzle width) — e.g. Bambu A1 / A1 Mini stock nozzles.
 pub const DEFAULT_CELL_MM: f32 = 4.0;
@@ -9,18 +7,19 @@ pub const DEFAULT_CELL_MM: f32 = 4.0;
 pub const MIN_CELL_MM: f32 = 2.0;
 
 /// How supports are generated for FDM printability.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "cli", derive(clap::ValueEnum))]
 pub enum SupportMode {
     /// Exact Life voxels only (plus base plate). No generated supports.
     Raw,
     /// Slim breakaway pillars/trees. Removable after printing; the
     /// remaining Life|Base mesh must be one piece (see orphan check).
-    #[value(alias = "supports")]
+    #[cfg_attr(feature = "cli", value(alias = "supports"))]
     Breakaway,
     /// Self-supporting by construction (default): every birth leans on its
     /// three B3 parents via small diagonal gussets. Nothing to remove; the
     /// whole stack is one piece through Life causality.
-    #[value(alias = "brace")]
+    #[cfg_attr(feature = "cli", value(alias = "brace"))]
     Gusset,
 }
 
@@ -35,7 +34,8 @@ impl std::fmt::Display for SupportMode {
 }
 
 /// Geometry style for [`SupportMode::Breakaway`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "cli", derive(clap::ValueEnum))]
 pub enum SupportStyle {
     /// One vertical tapered pillar per overhang tip.
     Pillar,
@@ -207,7 +207,8 @@ impl Default for SupportParams {
 ///
 /// In gusset mode any pattern prints as one piece; the notes below about Life
 /// orphans apply to breakaway/raw modes, where connectivity is face-only.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "cli", derive(clap::ValueEnum))]
 pub enum Pattern {
     /// Seeded still-life garden (blocks, tubs, beehives, boats). Stable
     /// forever, so it is exempt from the complexity gate. Default.
@@ -237,6 +238,28 @@ pub enum Pattern {
     Rabbits,
     /// Diehard (7 cells, centered; vanishes at ~130 generations unbounded).
     Diehard,
+}
+
+impl Pattern {
+    /// Parse a pattern by its CLI name (clap-independent, for wasm callers).
+    pub fn parse_name(name: &str) -> Option<Self> {
+        Some(match name.to_ascii_lowercase().as_str() {
+            "random" | "garden" => Pattern::Random,
+            "soup" => Pattern::Soup,
+            "glider" => Pattern::Glider,
+            "rpento" | "r-pentomino" => Pattern::Rpento,
+            "blinker" => Pattern::Blinker,
+            "lwss" => Pattern::Lwss,
+            "acorn" => Pattern::Acorn,
+            "pi" => Pattern::Pi,
+            "bheptomino" | "b-heptomino" => Pattern::Bheptomino,
+            "thunderbird" => Pattern::Thunderbird,
+            "bunnies" => Pattern::Bunnies,
+            "rabbits" => Pattern::Rabbits,
+            "diehard" => Pattern::Diehard,
+            _ => return None,
+        })
+    }
 }
 
 /// Generation parameters.

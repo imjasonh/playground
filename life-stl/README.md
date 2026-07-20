@@ -167,13 +167,18 @@ cargo run --release -- bambu-3mf --stl examples/gusset-acorn.stl -o acorn.3mf
 See [`docs/printing-a1mini.md`](docs/printing-a1mini.md) for the settings
 rationale and how to target other presets via `--profiles`.
 
+## Browser app
+
+[`../life-lab`](../life-lab) is a browser front-end for this crate: draw
+generation 0 on a grid, watch the tower grow in three.js, and export STL /
+Bambu 3MF — all client-side via this library compiled to WebAssembly
+(`--no-default-features --features wasm`; see `life-lab/build-wasm.sh`).
+
 ## Design notes
 
 See [`docs/design.md`](docs/design.md) for the geometry model, the birth ≡
 overhang theorem behind gusset mode, gate rationale, and approaches that were
 evaluated and rejected (useful context before changing support strategies).
-For the planned browser front-end (wasm + three.js), see
-[`docs/browser-app-feasibility.md`](docs/browser-app-feasibility.md).
 
 ## Develop
 

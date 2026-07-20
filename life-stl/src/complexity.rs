@@ -50,11 +50,25 @@ pub fn required_active_generations(depth: usize, params: &ComplexityParams) -> u
 
 /// Simulate the configured pattern and score whether it stays interesting.
 pub fn analyze_complexity(config: &Config) -> ComplexityReport {
-    let required = required_active_generations(config.depth, &config.complexity);
-    let (quiescent, period, unique) = simulate_quiescence(config);
+    analyze_windows(
+        &crate::generation_windows(config),
+        &config.complexity,
+        config.pattern == Pattern::Random,
+    )
+}
 
-    // Still-life gardens are intentionally static through Z.
-    if config.pattern == Pattern::Random {
+/// Score precomputed generation windows. `exempt` skips the gate (still-life
+/// gardens are intentionally static through Z).
+pub fn analyze_windows(
+    windows: &[Grid],
+    params: &ComplexityParams,
+    exempt: bool,
+) -> ComplexityReport {
+    let depth = windows.len();
+    let required = required_active_generations(depth, params);
+    let (quiescent, period, unique) = simulate_quiescence(windows);
+
+    if exempt {
         return ComplexityReport {
             ok: true,
             quiescent_generation: quiescent,
@@ -65,7 +79,7 @@ pub fn analyze_complexity(config: &Config) -> ComplexityReport {
         };
     }
 
-    let boring_period = period > 0 && period <= config.complexity.max_boring_period;
+    let boring_period = period > 0 && period <= params.max_boring_period;
     let too_early = boring_period && quiescent < required;
     let mut reasons = Vec::new();
     if too_early {
@@ -77,9 +91,8 @@ pub fn analyze_complexity(config: &Config) -> ComplexityReport {
             "pattern becomes a {kind} (period {period}) at generation {quiescent}, \
              need activity until generation ≥ {required} \
              ({:.0}% of {depth} generations, min {})",
-            config.complexity.min_active_fraction * 100.0,
-            config.complexity.min_active_generations,
-            depth = config.depth
+            params.min_active_fraction * 100.0,
+            params.min_active_generations,
         ));
     }
 
@@ -99,8 +112,7 @@ pub fn analyze_complexity(config: &Config) -> ComplexityReport {
 /// Judged on the **window** content (what actually gets printed): a pattern
 /// that leaves the printable area, or settles inside it, extrudes a static
 /// tower either way.
-fn simulate_quiescence(config: &Config) -> (usize, usize, usize) {
-    let windows = crate::generation_windows(config);
+fn simulate_quiescence(windows: &[Grid]) -> (usize, usize, usize) {
     let mut seen: Vec<&Grid> = Vec::with_capacity(windows.len());
     for (t, grid) in windows.iter().enumerate() {
         if let Some(prev) = seen.iter().position(|s| *s == grid) {
@@ -109,7 +121,7 @@ fn simulate_quiescence(config: &Config) -> (usize, usize, usize) {
         }
         seen.push(grid);
     }
-    (config.depth, 0, seen.len())
+    (windows.len(), 0, seen.len())
 }
 
 #[cfg(test)]
