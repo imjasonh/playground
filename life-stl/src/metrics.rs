@@ -1,3 +1,4 @@
+use crate::physics::SupportPhysicsReport;
 use crate::volume::{CellKind, Volume};
 
 /// Printability / overhang statistics for a voxel volume.
@@ -24,6 +25,8 @@ pub struct PrintabilityReport {
     pub orphan_life_pct: f64,
     /// Number of breakaway support tips generated (0 for raw).
     pub breakaway_support_tips: usize,
+    /// Simplified structural analysis of breakaway supports (if generated).
+    pub support_physics: Option<SupportPhysicsReport>,
 }
 
 impl PrintabilityReport {
@@ -92,6 +95,7 @@ pub fn analyze_with_supports(
         orphan_life_voxels: orphan_life,
         orphan_life_pct: 100.0 * orphan_life as f64 / life_f,
         breakaway_support_tips,
+        support_physics: None,
     }
 }
 

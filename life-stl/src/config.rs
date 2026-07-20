@@ -46,17 +46,53 @@ impl std::fmt::Display for SupportStyle {
     }
 }
 
+/// Material / structural knobs for the simplified support physics model.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PhysicsParams {
+    /// Filament density (g/cm³). PLA ≈ 1.24.
+    pub filament_density_g_cm3: f32,
+    /// Working allowable stress (MPa / N/mm²). Conservative PLA ≈ 15–20.
+    pub allow_stress_mpa: f32,
+    /// Young's modulus (MPa) for buckling. PLA ≈ 3000.
+    pub youngs_modulus_mpa: f32,
+    /// Multiplier on dead weight for print dynamics (nozzle / cooling).
+    pub safety_factor: f32,
+    /// When true, split overloaded trunks and thicken shafts from the model.
+    pub auto_size: bool,
+    /// Max tips merged onto one trunk before forcing a split.
+    pub max_tips_per_trunk: u32,
+    /// Floor for auto-sized branch/trunk radius (mm).
+    pub min_shaft_radius_mm: f32,
+    /// Cap for auto-sized trunk radius (mm).
+    pub max_trunk_radius_mm: f32,
+}
+
+impl Default for PhysicsParams {
+    fn default() -> Self {
+        Self {
+            filament_density_g_cm3: 1.24,
+            allow_stress_mpa: 18.0,
+            youngs_modulus_mpa: 3000.0,
+            safety_factor: 3.0,
+            auto_size: true,
+            max_tips_per_trunk: 6,
+            min_shaft_radius_mm: 0.55,
+            max_trunk_radius_mm: 2.4,
+        }
+    }
+}
+
 /// Tunable breakaway-support geometry (millimeters).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SupportParams {
     pub style: SupportStyle,
-    /// Shaft / branch radius (mm).
+    /// Nominal shaft / branch radius (mm). Auto-size may thicken above this.
     pub radius_mm: f32,
-    /// Tip radius where the support meets the model (mm) — smaller = easier snap.
+    /// Tip radius at model contact (mm). `0` = true needle point for breakaway.
     pub tip_radius_mm: f32,
     /// Length of the tip taper (mm).
     pub tip_height_mm: f32,
-    /// Trunk radius for tree style (mm).
+    /// Nominal trunk radius for tree style (mm). Auto-size may thicken.
     pub trunk_radius_mm: f32,
     /// Cluster tips whose XY distance is ≤ this into one trunk (mm).
     pub cluster_mm: f32,
@@ -71,6 +107,8 @@ pub struct SupportParams {
     /// Max branch lean from vertical (degrees). Limits how far a route may
     /// move in XY per cell-layer while descending around obstacles.
     pub max_branch_angle_deg: f32,
+    /// Structural model inputs (density, strength, auto-sizing).
+    pub physics: PhysicsParams,
 }
 
 impl Default for SupportParams {
@@ -79,15 +117,18 @@ impl Default for SupportParams {
             style: SupportStyle::Tree,
             // ~1.5× a 0.4 mm nozzle — printable tube, still snappable.
             radius_mm: 0.6,
-            tip_radius_mm: 0.35,
-            tip_height_mm: 1.2,
+            // Needle contact for easy snap-off (0 = true point).
+            tip_radius_mm: 0.12,
+            tip_height_mm: 2.0,
             trunk_radius_mm: 1.1,
-            cluster_mm: 18.0,
+            // Smaller clusters + physics splits keep trunks from overloading.
+            cluster_mm: 14.0,
             tip_offset_mm: 0.0,
             segments: 8,
             // Prefer an explicit margin so thin shafts still clear Life faces.
             clearance_mm: 1.0,
             max_branch_angle_deg: 40.0,
+            physics: PhysicsParams::default(),
         }
     }
 }

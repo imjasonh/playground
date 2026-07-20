@@ -5,9 +5,9 @@ Generate a **3D-printable STL** of [Conway's Game of Life](https://en.wikipedia.
 ```bash
 cargo run --release -- -x 24 -y 24 -z 48 --seed 42 -o life.stl
 
-# Soup with Cura-style tree supports (shared trunks):
+# Soup with Cura-style tree supports (shared trunks + physics sizing):
 cargo run --release -- --pattern soup --seed 99 \
-  --support-style tree --support-cluster 24 --support-trunk-radius 1.2 \
+  --support-style tree --support-tip-radius 0.12 --support-tip-height 2 \
   -o soup-tree.stl
 
 # Same soup with one pillar per tip (for contrast):
@@ -17,27 +17,44 @@ cargo run --release -- --pattern soup --seed 99 \
 
 ## Breakaway supports (default)
 
-Default `--mode breakaway` adds **slim geometric supports** that **route around Life cells** instead of punching through them (same idea as Cura / Bambu tree supports: collision clearance, layer-wise descent with a max branch angle, shared trunks, and rest-on-model when a path is blocked).
+Default `--mode breakaway` adds **slim geometric supports** that **route around Life cells** instead of punching through them (Cura / Bambu ideas: collision clearance, layer-wise descent, shared trunks, rest-on-model).
 
 | Style | Behavior |
 |-------|----------|
-| `tree` (default) | Cluster nearby tips onto a **shared trunk**; diagonal branches join the trunk top |
-| `pillar` | One shaft per tip; prefer a vertical drop, lean only when the column is blocked |
+| `tree` (default) | Cluster nearby tips onto **shared trunks**; physics splits overloaded trunks |
+| `pillar` | One shaft per tip; prefer a vertical drop, lean only when blocked |
 
-Tunable (mm / degrees):
+Contacts taper to a **needle tip** (`--support-tip-radius`, default `0.12` mm; `0` = true point) over `--support-tip-height` so they snap off cleanly.
+
+### Structural model (simplified, not full FEA)
+
+Supports are sized with a beam/column model:
+
+- Load ≈ PLA density × Life voxel volume × g × `--support-safety-factor`
+- Shafts checked for compression, Euler buckling, and bending from lean
+- Overloaded tree clusters **split** into more trunks (`--support-max-tips-per-trunk`)
+- Trunk/branch radii auto-thicken up to `--support-max-trunk-radius`
+- Tips stay thin on purpose (easy breakaway); strength lives in branches/trunks
 
 | Flag | Default | Meaning |
 |------|---------|---------|
 | `--support-style` | `tree` | `tree` or `pillar` |
-| `--support-radius` | `0.6` | Branch / pillar shaft radius |
-| `--support-tip-radius` | `0.35` | Contact tip (smaller = easier snap) |
-| `--support-tip-height` | `1.2` | Tip taper length |
-| `--support-trunk-radius` | `1.1` | Shared tree trunk radius |
-| `--support-cluster` | `18` | XY cluster radius for merging onto one trunk |
-| `--support-tip-offset` | `0` | Shift tip toward +X/+Y from cell center |
-| `--support-segments` | `8` | Cylinder tessellation |
-| `--support-clearance` | `1.0` | XY keep-out from Life footprints (`0` → radius+0.4) |
-| `--support-branch-angle` | `40` | Max lean from vertical while dodging (5–60°) |
+| `--support-radius` | `0.6` | Nominal branch / pillar shaft (mm) |
+| `--support-tip-radius` | `0.12` | Needle contact radius (`0` = point) |
+| `--support-tip-height` | `2.0` | Tip taper length (mm) |
+| `--support-trunk-radius` | `1.1` | Nominal shared trunk (mm) |
+| `--support-cluster` | `14` | XY merge radius (mm) |
+| `--support-clearance` | `1.0` | XY keep-out from Life |
+| `--support-branch-angle` | `40` | Max lean while dodging (5–60°) |
+| `--support-auto-size` | on | Physics sizing + trunk splits |
+| `--no-support-auto-size` | — | Freeze radii; no splits from load |
+| `--filament-density` | `1.24` | g/cm³ (PLA) |
+| `--allow-stress-mpa` | `18` | Working stress (MPa) |
+| `--youngs-modulus-mpa` | `3000` | For buckling (PLA≈3 GPa) |
+| `--support-safety-factor` | `3` | Multiplier on dead weight |
+| `--support-max-tips-per-trunk` | `6` | Split after this many tips |
+| `--support-min-shaft-radius` | `0.55` | Auto-size floor (mm) |
+| `--support-max-trunk-radius` | `2.4` | Auto-size cap (mm) |
 
 Supports are meant to **snap off** after printing. The remaining Life|Base mesh is a **single standing piece** only when every Life voxel is face-connected to the bed (no “orphans”). Still-life gardens (`--pattern random`) usually need **zero** supports. Chaotic `--pattern soup` often has orphans → STL is written but the CLI exits non-zero if you passed an explicit seed.
 
@@ -71,7 +88,7 @@ A1 Mini stock nozzle is **0.4 mm**. Build volume is **180³ mm** — keep `--dep
 
 ## Examples
 
-See [`examples/`](examples/) and [`examples/REPORT.md`](examples/REPORT.md). Regenerate with `./generate-examples.sh`.
+See [`examples/`](examples/) and [`examples/REPORT.md`](examples/REPORT.md) — includes `soup-99-tree`, `soup-99-pillars`, `glider-tree`, and twenty `soup-tree-{100..119}` STLs. Regenerate with `./generate-examples.sh`.
 
 ## Develop
 

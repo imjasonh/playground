@@ -9,13 +9,17 @@ pub mod config;
 pub mod life;
 pub mod mesh;
 pub mod metrics;
+pub mod physics;
 pub mod search;
 pub mod seed;
 pub mod support;
 pub mod volume;
 
-pub use config::{Config, SupportMode, SupportParams, SupportStyle, DEFAULT_CELL_MM, MIN_CELL_MM};
+pub use config::{
+    Config, PhysicsParams, SupportMode, SupportParams, SupportStyle, DEFAULT_CELL_MM, MIN_CELL_MM,
+};
 pub use metrics::PrintabilityReport;
+pub use physics::SupportPhysicsReport;
 pub use volume::{CellKind, Volume};
 
 use std::fs::File;
@@ -27,7 +31,7 @@ use stl_io::Triangle;
 use crate::mesh::triangles_from_volume;
 use crate::metrics::{analyze, analyze_with_supports};
 use crate::seed::initial_grid;
-use crate::support::{base_top_mm, collect_tips, triangles_for_tips};
+use crate::support::{base_top_mm, build_supports, collect_tips};
 
 /// Built model ready to write as STL.
 #[derive(Debug, Clone)]
@@ -36,6 +40,7 @@ pub struct Model {
     pub triangles: Vec<Triangle>,
     pub report: PrintabilityReport,
     pub support_tips: usize,
+    pub support_physics: SupportPhysicsReport,
 }
 
 /// Simulate Life onto a volume with a base plate (no supports).
@@ -85,6 +90,7 @@ pub fn build_model(config: &Config) -> Model {
                 volume,
                 report,
                 support_tips: 0,
+                support_physics: SupportPhysicsReport::default(),
             }
         }
         SupportMode::Breakaway => {
@@ -92,19 +98,17 @@ pub fn build_model(config: &Config) -> Model {
             let support_tips = tips.len();
             let mut triangles = triangles_from_volume(&volume, config.cell_mm);
             let base_z = base_top_mm(&volume, config.cell_mm);
-            triangles.extend(triangles_for_tips(
-                &volume,
-                &tips,
-                config.cell_mm,
-                base_z,
-                &config.support,
-            ));
-            let report = analyze_with_supports(&volume, config.cell_mm, support_tips);
+            let (support_tris, support_physics) =
+                build_supports(&volume, &tips, config.cell_mm, base_z, &config.support);
+            triangles.extend(support_tris);
+            let mut report = analyze_with_supports(&volume, config.cell_mm, support_tips);
+            report.support_physics = Some(support_physics.clone());
             Model {
                 volume,
                 triangles,
                 report,
                 support_tips,
+                support_physics,
             }
         }
     }
@@ -151,6 +155,29 @@ pub fn format_report(config: &Config, report: &PrintabilityReport) -> String {
             config.support.cluster_mm,
             report.breakaway_support_tips
         ));
+        if let Some(phys) = &report.support_physics {
+            let sf = if phys.worst_member_sf.is_finite() {
+                format!("{:.2}", phys.worst_member_sf)
+            } else {
+                "n/a".into()
+            };
+            out.push_str(&format!(
+                "support physics: auto={}  trunks={}  splits={}  load={:.3}N  \
+                 worst_SF={}  max_trunk_r={:.2}mm  tip_snap≈{:.3}N  {}\n",
+                config.support.physics.auto_size,
+                phys.trunk_count,
+                phys.clusters_split,
+                phys.total_support_load_n,
+                sf,
+                phys.max_trunk_radius_mm,
+                phys.tip_snap_force_n,
+                if phys.ok {
+                    "structurally OK"
+                } else {
+                    "OVERLOADED"
+                }
+            ));
+        }
     }
     out.push_str(&format!(
         "generations (above {}-cell base): {}\n",

@@ -5,7 +5,8 @@ use clap::Parser;
 use rand::Rng;
 
 use life_stl::config::{
-    Config, Pattern, SupportMode, SupportParams, SupportStyle, DEFAULT_CELL_MM, MIN_CELL_MM,
+    Config, Pattern, PhysicsParams, SupportMode, SupportParams, SupportStyle, DEFAULT_CELL_MM,
+    MIN_CELL_MM,
 };
 use life_stl::search::{evaluate_life_only, find_self_supporting};
 use life_stl::{format_report, format_unprintable_reason, write_stl_model};
@@ -79,11 +80,11 @@ struct Cli {
     #[arg(long, default_value_t = SupportParams::default().radius_mm)]
     support_radius: f32,
 
-    /// Breakaway tip radius at the model contact (mm) — smaller snaps easier.
+    /// Tip radius at model contact (mm). Smaller snaps easier; `0` = needle point.
     #[arg(long, default_value_t = SupportParams::default().tip_radius_mm)]
     support_tip_radius: f32,
 
-    /// Tip taper length (mm).
+    /// Tip taper length (mm) — longer cone = cleaner breakaway.
     #[arg(long, default_value_t = SupportParams::default().tip_height_mm)]
     support_tip_height: f32,
 
@@ -111,6 +112,42 @@ struct Cli {
     /// Max branch lean from vertical (degrees) while dodging Life cells.
     #[arg(long, default_value_t = SupportParams::default().max_branch_angle_deg)]
     support_branch_angle: f32,
+
+    /// Auto-size / split trunks from the structural model (default on).
+    #[arg(long, default_value_t = PhysicsParams::default().auto_size)]
+    support_auto_size: bool,
+
+    /// Disable structural auto-sizing (use fixed shaft/trunk radii only).
+    #[arg(long, default_value_t = false)]
+    no_support_auto_size: bool,
+
+    /// Filament density (g/cm³) for support load estimates. PLA ≈ 1.24.
+    #[arg(long, default_value_t = PhysicsParams::default().filament_density_g_cm3)]
+    filament_density: f32,
+
+    /// Working allowable stress (MPa) for support shafts.
+    #[arg(long, default_value_t = PhysicsParams::default().allow_stress_mpa)]
+    allow_stress_mpa: f32,
+
+    /// Young's modulus (MPa) for buckling checks. PLA ≈ 3000.
+    #[arg(long, default_value_t = PhysicsParams::default().youngs_modulus_mpa)]
+    youngs_modulus_mpa: f32,
+
+    /// Safety factor on dead weight for print dynamics.
+    #[arg(long, default_value_t = PhysicsParams::default().safety_factor)]
+    support_safety_factor: f32,
+
+    /// Max tips merged onto one trunk before splitting.
+    #[arg(long, default_value_t = PhysicsParams::default().max_tips_per_trunk)]
+    support_max_tips_per_trunk: u32,
+
+    /// Minimum auto-sized shaft radius (mm).
+    #[arg(long, default_value_t = PhysicsParams::default().min_shaft_radius_mm)]
+    support_min_shaft_radius: f32,
+
+    /// Maximum auto-sized trunk radius (mm).
+    #[arg(long, default_value_t = PhysicsParams::default().max_trunk_radius_mm)]
+    support_max_trunk_radius: f32,
 
     /// Output STL path.
     #[arg(short = 'o', long, default_value = "life.stl")]
@@ -168,13 +205,37 @@ fn main() -> ExitCode {
         );
         return ExitCode::FAILURE;
     }
-    if cli.support_radius <= 0.0 || cli.support_tip_radius <= 0.0 || cli.support_trunk_radius <= 0.0
-    {
-        eprintln!("error: support radii must be > 0");
+    if cli.support_radius <= 0.0 || cli.support_trunk_radius <= 0.0 {
+        eprintln!("error: --support-radius and --support-trunk-radius must be > 0");
+        return ExitCode::FAILURE;
+    }
+    if cli.support_tip_radius < 0.0 {
+        eprintln!("error: --support-tip-radius must be >= 0 (0 = needle point)");
         return ExitCode::FAILURE;
     }
     if cli.support_segments < 3 {
         eprintln!("error: --support-segments must be >= 3");
+        return ExitCode::FAILURE;
+    }
+    if cli.filament_density <= 0.0
+        || cli.allow_stress_mpa <= 0.0
+        || cli.youngs_modulus_mpa <= 0.0
+        || cli.support_safety_factor < 1.0
+    {
+        eprintln!(
+            "error: filament/physics params invalid \
+             (density, allow-stress, youngs > 0; safety-factor >= 1)"
+        );
+        return ExitCode::FAILURE;
+    }
+    if cli.support_max_tips_per_trunk == 0 {
+        eprintln!("error: --support-max-tips-per-trunk must be >= 1");
+        return ExitCode::FAILURE;
+    }
+    if cli.support_min_shaft_radius <= 0.0
+        || cli.support_max_trunk_radius < cli.support_min_shaft_radius
+    {
+        eprintln!("error: shaft radius bounds invalid");
         return ExitCode::FAILURE;
     }
 
@@ -210,6 +271,11 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
+    let auto_size = if cli.no_support_auto_size {
+        false
+    } else {
+        cli.support_auto_size
+    };
     let support = SupportParams {
         style: cli.support_style,
         radius_mm: cli.support_radius,
@@ -221,6 +287,16 @@ fn main() -> ExitCode {
         segments: cli.support_segments,
         clearance_mm: cli.support_clearance,
         max_branch_angle_deg: cli.support_branch_angle,
+        physics: PhysicsParams {
+            filament_density_g_cm3: cli.filament_density,
+            allow_stress_mpa: cli.allow_stress_mpa,
+            youngs_modulus_mpa: cli.youngs_modulus_mpa,
+            safety_factor: cli.support_safety_factor,
+            auto_size,
+            max_tips_per_trunk: cli.support_max_tips_per_trunk,
+            min_shaft_radius_mm: cli.support_min_shaft_radius,
+            max_trunk_radius_mm: cli.support_max_trunk_radius,
+        },
     };
 
     let base_config = Config {

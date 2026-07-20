@@ -1,20 +1,25 @@
-//! Breakaway support geometry with collision avoidance.
+//! Breakaway support geometry with collision avoidance + structural sizing.
 //!
 //! Inspired by Cura / Bambu Studio tree supports:
 //! - **Collision**: support centers stay ≥ `clearance` from Life voxel footprints
 //! - **Layer descent**: tips drop one cell-layer at a time with a max XY move
 //!   from the branch angle (so branches lean around obstacles instead of
 //!   punching through them)
-//! - **Tree attractors**: clustered tips steer toward a shared centroid so
-//!   branches merge in free space above the bed
+//! - **Shared trunks**: nearby tips merge onto a trunk; overloaded trunks split
+//! - **Physics sizing**: branch/trunk radii from a simplified beam/column model
+//!   (compression, buckling, bending) so trees stay printable; needle tips stay
+//!   thin for breakaway
 //!
-//! Tips are Life cells with no Life|Base directly underneath. Contacts use a
-//! small tip radius so they snap off.
+//! Tips are Life cells with no Life|Base directly underneath. Contacts taper
+//! to a needle point so they snap off.
 
 use stl_io::Triangle;
 
 use crate::config::{SupportParams, SupportStyle};
 use crate::mesh::{append_capped_cylinder, append_cylinder};
+use crate::physics::{
+    size_branch, size_trunk, split_cluster_for_physics, tip_snap_force_n, SupportPhysicsReport,
+};
 use crate::volume::{CellKind, Volume};
 
 /// A point under a Life cell that needs print support.
@@ -88,12 +93,32 @@ struct RoutedPath {
     points: Vec<[f32; 3]>,
     /// Tip contact (tapered) vs shared trunk (thicker, no tip taper).
     kind: PathKind,
+    /// Shaft / trunk radius for this path (may be physics-sized).
+    shaft_radius_mm: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PathKind {
     Branch,
     Trunk,
+}
+
+/// Build breakaway supports + a simplified structural report.
+pub fn build_supports(
+    volume: &Volume,
+    tips: &[SupportTip],
+    cell_mm: f32,
+    base_z: f32,
+    params: &SupportParams,
+) -> (Vec<Triangle>, SupportPhysicsReport) {
+    if tips.is_empty() {
+        return (Vec::new(), SupportPhysicsReport::default());
+    }
+    let (paths, physics) = match params.style {
+        SupportStyle::Pillar => route_pillars(volume, tips, cell_mm, base_z, params),
+        SupportStyle::Tree => route_trees(volume, tips, cell_mm, base_z, params),
+    };
+    (emit_paths(&paths, base_z, params), physics)
 }
 
 /// Build breakaway support triangles that avoid intersecting Life voxels.
@@ -104,14 +129,7 @@ pub fn triangles_for_tips(
     base_z: f32,
     params: &SupportParams,
 ) -> Vec<Triangle> {
-    if tips.is_empty() {
-        return Vec::new();
-    }
-    let paths = match params.style {
-        SupportStyle::Pillar => route_pillars(volume, tips, cell_mm, base_z, params),
-        SupportStyle::Tree => route_trees(volume, tips, cell_mm, base_z, params),
-    };
-    emit_paths(&paths, base_z, params)
+    build_supports(volume, tips, cell_mm, base_z, params).0
 }
 
 fn route_pillars(
@@ -120,91 +138,170 @@ fn route_pillars(
     cell_mm: f32,
     base_z: f32,
     params: &SupportParams,
-) -> Vec<RoutedPath> {
-    tips.iter()
-        .map(|tip| RoutedPath {
-            // Prefer staying under the tip (true pillar); dodge only when blocked.
-            points: route_tip(
-                volume,
-                tip,
-                cell_mm,
-                base_z,
-                params,
-                (tip.tip[0], tip.tip[1]),
-                true,
-                None,
-            ),
+) -> (Vec<RoutedPath>, SupportPhysicsReport) {
+    let mut paths = Vec::new();
+    let mut worst_sf = f32::INFINITY;
+    let mut total_load = 0.0f32;
+    let mut max_r = 0.0f32;
+    for tip in tips {
+        let points = route_tip(
+            volume,
+            tip,
+            cell_mm,
+            base_z,
+            params,
+            (tip.tip[0], tip.tip[1]),
+            true,
+            None,
+        );
+        let len = path_length(&points);
+        let horiz = horiz_span(&points);
+        let sizing = if params.physics.auto_size {
+            size_branch(volume, tip, cell_mm, len, horiz, &params.physics)
+        } else {
+            crate::physics::MemberSizing {
+                radius_mm: params.radius_mm,
+                load_n: 0.0,
+                stress_mpa: 0.0,
+                safety_factor: f32::INFINITY,
+            }
+        };
+        let r = sizing.radius_mm.max(params.radius_mm);
+        total_load += sizing.load_n;
+        worst_sf = worst_sf.min(sizing.safety_factor);
+        max_r = max_r.max(r);
+        paths.push(RoutedPath {
+            points,
             kind: PathKind::Branch,
-        })
-        .collect()
+            shaft_radius_mm: r,
+        });
+    }
+    let report = SupportPhysicsReport {
+        tip_count: tips.len(),
+        trunk_count: 0,
+        total_support_load_n: total_load,
+        worst_member_sf: if worst_sf.is_finite() {
+            worst_sf
+        } else {
+            f32::INFINITY
+        },
+        max_trunk_radius_mm: 0.0,
+        max_branch_radius_mm: max_r,
+        clusters_split: 0,
+        tip_snap_force_n: tip_snap_force_n(params.tip_radius_mm, &params.physics),
+        ok: worst_sf >= 1.0 || !params.physics.auto_size,
+    };
+    (paths, report)
 }
 
-/// Cura/Bambu-style trees: cluster tips, drop branches to a shared trunk top,
-/// then one thicker trunk to the bed.
+/// Cura/Bambu-style trees: cluster tips, physics-split overloaded groups,
+/// drop branches to a shared trunk top, then a sized trunk to the bed.
 fn route_trees(
     volume: &Volume,
     tips: &[SupportTip],
     cell_mm: f32,
     base_z: f32,
     params: &SupportParams,
-) -> Vec<RoutedPath> {
-    let clusters = cluster_tips(tips, params.cluster_mm);
+) -> (Vec<RoutedPath>, SupportPhysicsReport) {
+    let spatial = cluster_tips(tips, params.cluster_mm);
     let clearance = effective_clearance(params);
     let mut paths = Vec::new();
-    for cluster in &clusters {
-        if cluster.len() == 1 {
-            // Lone tip: still a single shaft (no merge partner).
-            let tip = &cluster[0];
-            paths.push(RoutedPath {
-                points: route_tip(
-                    volume,
-                    tip,
-                    cell_mm,
-                    base_z,
-                    params,
-                    (tip.tip[0], tip.tip[1]),
-                    true,
-                    None,
-                ),
-                kind: PathKind::Branch,
-            });
-            continue;
-        }
+    let mut worst_sf = f32::INFINITY;
+    let mut total_load = 0.0f32;
+    let mut max_trunk_r = 0.0f32;
+    let mut max_branch_r = 0.0f32;
+    let mut trunk_count = 0usize;
+    let mut clusters_split = 0usize;
 
-        let centroid = cluster_centroid(cluster);
-        let trunk_xy = find_clear_trunk_xy(volume, cell_mm, centroid, clearance, base_z);
+    for cluster in &spatial {
         let min_tip_z = cluster
             .iter()
             .map(|t| t.tip[2])
             .fold(f32::INFINITY, f32::min);
-        // Trunk top sits a cell below the lowest tip so branches have room to lean in.
         let join_z = (min_tip_z - cell_mm)
             .max(base_z + cell_mm * 0.5)
             .min(min_tip_z - params.tip_height_mm.max(0.5));
+        let trunk_len = (join_z - base_z).max(cell_mm);
 
-        if join_z <= base_z + 1e-3 {
-            // Degenerate: fall back to independent routes toward the trunk XY.
-            for tip in cluster {
-                paths.push(RoutedPath {
-                    points: route_tip(volume, tip, cell_mm, base_z, params, trunk_xy, false, None),
-                    kind: PathKind::Branch,
-                });
+        let (subclusters, splits) =
+            split_cluster_for_physics(volume, cluster, cell_mm, trunk_len, &params.physics);
+        clusters_split += splits;
+
+        for sub in subclusters {
+            if sub.len() == 1 || join_z <= base_z + 1e-3 {
+                for tip in &sub {
+                    let points = route_tip(
+                        volume,
+                        tip,
+                        cell_mm,
+                        base_z,
+                        params,
+                        (tip.tip[0], tip.tip[1]),
+                        true,
+                        None,
+                    );
+                    let sizing = if params.physics.auto_size {
+                        size_branch(
+                            volume,
+                            tip,
+                            cell_mm,
+                            path_length(&points),
+                            horiz_span(&points),
+                            &params.physics,
+                        )
+                    } else {
+                        crate::physics::MemberSizing {
+                            radius_mm: params.radius_mm,
+                            load_n: 0.0,
+                            stress_mpa: 0.0,
+                            safety_factor: f32::INFINITY,
+                        }
+                    };
+                    let r = sizing.radius_mm.max(params.radius_mm);
+                    total_load += sizing.load_n;
+                    worst_sf = worst_sf.min(sizing.safety_factor);
+                    max_branch_r = max_branch_r.max(r);
+                    paths.push(RoutedPath {
+                        points,
+                        kind: PathKind::Branch,
+                        shaft_radius_mm: r,
+                    });
+                }
+                continue;
             }
-            continue;
-        }
 
-        // Shared trunk: join_z → bed.
-        paths.push(RoutedPath {
-            points: vec![
-                [trunk_xy.0, trunk_xy.1, join_z],
-                [trunk_xy.0, trunk_xy.1, base_z],
-            ],
-            kind: PathKind::Trunk,
-        });
+            let centroid = cluster_centroid(&sub);
+            let trunk_xy = find_clear_trunk_xy(volume, cell_mm, centroid, clearance, base_z);
+            let trunk_sizing = if params.physics.auto_size {
+                size_trunk(volume, &sub, cell_mm, trunk_len, &params.physics)
+            } else {
+                crate::physics::MemberSizing {
+                    radius_mm: params.trunk_radius_mm,
+                    load_n: 0.0,
+                    stress_mpa: 0.0,
+                    safety_factor: f32::INFINITY,
+                }
+            };
+            let trunk_r = trunk_sizing
+                .radius_mm
+                .max(params.trunk_radius_mm)
+                .max(params.radius_mm);
+            total_load += trunk_sizing.load_n;
+            worst_sf = worst_sf.min(trunk_sizing.safety_factor);
+            max_trunk_r = max_trunk_r.max(trunk_r);
+            trunk_count += 1;
 
-        for tip in cluster {
             paths.push(RoutedPath {
-                points: route_tip(
+                points: vec![
+                    [trunk_xy.0, trunk_xy.1, join_z],
+                    [trunk_xy.0, trunk_xy.1, base_z],
+                ],
+                kind: PathKind::Trunk,
+                shaft_radius_mm: trunk_r,
+            });
+
+            for tip in &sub {
+                let points = route_tip(
                     volume,
                     tip,
                     cell_mm,
@@ -213,12 +310,67 @@ fn route_trees(
                     trunk_xy,
                     false,
                     Some((trunk_xy, join_z)),
-                ),
-                kind: PathKind::Branch,
-            });
+                );
+                let horiz = dist2(tip.tip[0], tip.tip[1], trunk_xy.0, trunk_xy.1);
+                let sizing = if params.physics.auto_size {
+                    size_branch(
+                        volume,
+                        tip,
+                        cell_mm,
+                        path_length(&points),
+                        horiz,
+                        &params.physics,
+                    )
+                } else {
+                    crate::physics::MemberSizing {
+                        radius_mm: params.radius_mm,
+                        load_n: 0.0,
+                        stress_mpa: 0.0,
+                        safety_factor: f32::INFINITY,
+                    }
+                };
+                // Branch stays ≤ trunk; never thinner than the nominal shaft.
+                let r = sizing.radius_mm.max(params.radius_mm).min(trunk_r);
+                worst_sf = worst_sf.min(sizing.safety_factor);
+                max_branch_r = max_branch_r.max(r);
+                paths.push(RoutedPath {
+                    points,
+                    kind: PathKind::Branch,
+                    shaft_radius_mm: r,
+                });
+            }
         }
     }
-    paths
+
+    let report = SupportPhysicsReport {
+        tip_count: tips.len(),
+        trunk_count,
+        total_support_load_n: total_load,
+        worst_member_sf: if worst_sf.is_finite() {
+            worst_sf
+        } else {
+            f32::INFINITY
+        },
+        max_trunk_radius_mm: max_trunk_r,
+        max_branch_radius_mm: max_branch_r,
+        clusters_split,
+        tip_snap_force_n: tip_snap_force_n(params.tip_radius_mm, &params.physics),
+        ok: worst_sf >= 1.0 || !params.physics.auto_size,
+    };
+    (paths, report)
+}
+
+fn path_length(path: &[[f32; 3]]) -> f32 {
+    path.windows(2).map(|w| dist3(w[0], w[1])).sum()
+}
+
+fn horiz_span(path: &[[f32; 3]]) -> f32 {
+    if path.is_empty() {
+        return 0.0;
+    }
+    let a = path[0];
+    let b = *path.last().unwrap();
+    dist2(a[0], a[1], b[0], b[1])
 }
 
 /// Drop a tip toward the bed (or a trunk join) one cell-layer at a time,
@@ -555,12 +707,16 @@ fn find_rest_point(
 fn emit_paths(paths: &[RoutedPath], base_z: f32, params: &SupportParams) -> Vec<Triangle> {
     let mut tris = Vec::new();
     let segs = params.segments.max(3);
-    let trunk_r = params.trunk_radius_mm.max(params.radius_mm);
+    // Needle tip: allow 0 for a true point; keep a tiny epsilon for mesh sanity.
+    let tip_r = params.tip_radius_mm.max(0.0);
+    let tip_r_mesh = if tip_r < 1e-4 { 0.0 } else { tip_r };
+
     for route in paths {
         let path = &route.points;
         if path.len() < 2 {
             continue;
         }
+        let shaft_r = route.shaft_radius_mm.max(params.radius_mm * 0.5);
         let lands_on_bed = path.last().is_some_and(|p| (p[2] - base_z).abs() < 1e-2);
 
         if route.kind == PathKind::Trunk {
@@ -572,15 +728,15 @@ fn emit_paths(paths: &[RoutedPath], base_z: f32, params: &SupportParams) -> Vec<
                 }
                 let at_foot = i + 1 == path.len() - 1;
                 if at_foot && lands_on_bed {
-                    append_capped_cylinder(&mut tris, a, b, trunk_r, trunk_r, segs);
+                    append_capped_cylinder(&mut tris, a, b, shaft_r, shaft_r, segs);
                 } else {
-                    append_cylinder(&mut tris, a, b, trunk_r, trunk_r, segs);
+                    append_cylinder(&mut tris, a, b, shaft_r, shaft_r, segs);
                 }
             }
             continue;
         }
 
-        // Branch: tip → … → bed / trunk join / rest-on-model. Taper the tip end.
+        // Branch: needle tip → shaft → bed / trunk join / rest-on-model.
         for i in 0..path.len() - 1 {
             let a = path[i];
             let b = path[i + 1];
@@ -590,7 +746,7 @@ fn emit_paths(paths: &[RoutedPath], base_z: f32, params: &SupportParams) -> Vec<
             let at_tip = i == 0;
             let at_foot = i + 1 == path.len() - 1;
             if at_tip {
-                let taper_h = params.tip_height_mm;
+                let taper_h = params.tip_height_mm.max(0.2);
                 let ab = dist3(a, b);
                 if ab > taper_h + 1e-3 {
                     let t = taper_h / ab;
@@ -599,42 +755,22 @@ fn emit_paths(paths: &[RoutedPath], base_z: f32, params: &SupportParams) -> Vec<
                         a[1] + (b[1] - a[1]) * t,
                         a[2] + (b[2] - a[2]) * t,
                     ];
-                    append_cylinder(
-                        &mut tris,
-                        a,
-                        mid,
-                        params.tip_radius_mm,
-                        params.radius_mm,
-                        segs,
-                    );
+                    // Cone from needle point → full shaft radius.
+                    append_cylinder(&mut tris, a, mid, tip_r_mesh, shaft_r, segs);
                     if at_foot && lands_on_bed {
-                        append_capped_cylinder(&mut tris, mid, b, params.radius_mm, trunk_r, segs);
+                        append_capped_cylinder(&mut tris, mid, b, shaft_r, shaft_r, segs);
                     } else {
-                        append_cylinder(
-                            &mut tris,
-                            mid,
-                            b,
-                            params.radius_mm,
-                            params.radius_mm,
-                            segs,
-                        );
+                        append_cylinder(&mut tris, mid, b, shaft_r, shaft_r, segs);
                     }
                 } else if at_foot && lands_on_bed {
-                    append_capped_cylinder(&mut tris, a, b, params.tip_radius_mm, trunk_r, segs);
+                    append_capped_cylinder(&mut tris, a, b, tip_r_mesh, shaft_r, segs);
                 } else {
-                    append_cylinder(
-                        &mut tris,
-                        a,
-                        b,
-                        params.tip_radius_mm,
-                        params.radius_mm,
-                        segs,
-                    );
+                    append_cylinder(&mut tris, a, b, tip_r_mesh, shaft_r, segs);
                 }
             } else if at_foot && lands_on_bed {
-                append_capped_cylinder(&mut tris, a, b, params.radius_mm, trunk_r, segs);
+                append_capped_cylinder(&mut tris, a, b, shaft_r, shaft_r, segs);
             } else {
-                append_cylinder(&mut tris, a, b, params.radius_mm, params.radius_mm, segs);
+                append_cylinder(&mut tris, a, b, shaft_r, shaft_r, segs);
             }
         }
     }
@@ -756,7 +892,7 @@ pub fn route_tips_for_test(
     base_z: f32,
     params: &SupportParams,
 ) -> Vec<Vec<[f32; 3]>> {
-    let paths = match params.style {
+    let (paths, _) = match params.style {
         SupportStyle::Pillar => route_pillars(volume, tips, cell_mm, base_z, params),
         SupportStyle::Tree => route_trees(volume, tips, cell_mm, base_z, params),
     };
@@ -771,10 +907,22 @@ pub fn count_trunks_for_test(
     base_z: f32,
     params: &SupportParams,
 ) -> usize {
-    route_trees(volume, tips, cell_mm, base_z, params)
+    let (paths, _) = route_trees(volume, tips, cell_mm, base_z, params);
+    paths
         .into_iter()
         .filter(|p| p.kind == PathKind::Trunk)
         .count()
+}
+
+/// Physics report for testing.
+pub fn physics_report_for_test(
+    volume: &Volume,
+    tips: &[SupportTip],
+    cell_mm: f32,
+    base_z: f32,
+    params: &SupportParams,
+) -> SupportPhysicsReport {
+    build_supports(volume, tips, cell_mm, base_z, params).1
 }
 
 #[cfg(test)]
@@ -861,6 +1009,49 @@ mod tests {
                 "tree path intersected Life: {path:?}"
             );
         }
+    }
+
+    #[test]
+    fn physics_splits_overloaded_tip_clusters() {
+        let mut v = Volume::new(12, 12, 8);
+        for y in 0..12 {
+            for x in 0..12 {
+                v.set(x, y, 0, CellKind::Base);
+            }
+        }
+        // Many nearby overhang tips — without splitting, one skinny trunk would
+        // carry all of them (the glider-style failure mode).
+        for x in 2..10 {
+            v.set(x, 5, 6, CellKind::Life);
+        }
+        let cell = 4.0;
+        let tips = collect_tips(&v, cell, 0.0);
+        assert!(tips.len() >= 6);
+        let base_z = base_top_mm(&v, cell);
+        let params = SupportParams {
+            style: SupportStyle::Tree,
+            cluster_mm: 40.0,
+            physics: crate::config::PhysicsParams {
+                max_tips_per_trunk: 3,
+                auto_size: true,
+                ..crate::config::PhysicsParams::default()
+            },
+            ..SupportParams::default()
+        };
+        let trunks = count_trunks_for_test(&v, &tips, cell, base_z, &params);
+        let report = physics_report_for_test(&v, &tips, cell, base_z, &params);
+        assert!(
+            trunks >= 2,
+            "expected physics to split into multiple trunks, got {trunks}"
+        );
+        assert!(
+            report.ok,
+            "physics report should be OK after sizing: {report:?}"
+        );
+        assert!(
+            report.tip_snap_force_n < 1.0,
+            "needle tip should snap easily"
+        );
     }
 
     #[test]
