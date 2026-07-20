@@ -5,73 +5,72 @@ Generate a **3D-printable STL** of [Conway's Game of Life](https://en.wikipedia.
 ```bash
 cargo run --release -- -x 24 -y 24 -z 48 --seed 42 -o life.stl
 
-# Physical size in mm + cell size (voxel edge length):
+# Physical size + cell size:
 cargo run --release -- \
   --width-mm 100 --height-mm 100 --depth-mm 600 \
   --cell 4 --seed 42 -o tower.stl
+
+# Slimmer tree supports with a tinier snap tip:
+cargo run --release -- --pattern soup --seed 7 \
+  --support-style tree --support-radius 0.5 --support-tip-radius 0.3 \
+  -o soup.stl
 ```
+
+## Breakaway supports (default)
+
+Default `--mode breakaway` adds **slim geometric supports** (not fused voxel columns):
+
+| Style | Behavior |
+|-------|----------|
+| `tree` (default) | Cluster nearby overhang tips onto bed trunks with diagonal branches |
+| `pillar` | One vertical tapered pillar per overhang tip |
+
+Tunable (mm):
+
+| Flag | Default | Meaning |
+|------|---------|---------|
+| `--support-style` | `tree` | `tree` or `pillar` |
+| `--support-radius` | `0.6` | Shaft / branch radius |
+| `--support-tip-radius` | `0.35` | Contact tip (smaller = easier snap) |
+| `--support-tip-height` | `1.2` | Tip taper length |
+| `--support-trunk-radius` | `0.9` | Tree trunk radius |
+| `--support-cluster` | `12` | XY cluster radius for shared trunks |
+| `--support-tip-offset` | `0` | Shift tip toward +X/+Y from cell center |
+| `--support-segments` | `8` | Cylinder tessellation |
+
+Supports are meant to **snap off** after printing. The remaining Life|Base mesh is a **single standing piece** only when every Life voxel is face-connected to the bed (no “orphans”). Still-life gardens (`--pattern random`) usually need **zero** supports. Chaotic `--pattern soup` often has orphans → STL is written but the CLI exits non-zero if you passed an explicit seed.
+
+Legacy `--mode fused` (alias `scaffold`) keeps the old solid voxel columns (not breakaway). `--mode raw` emits Life only.
 
 ## Cell size (FDM / Bambu A1 Mini)
 
 | | |
 |--|--|
 | **Default `--cell`** | **4.0 mm** (~10× a 0.4 mm nozzle) |
-| **Minimum `--cell`** | **2.0 mm** (~5× a 0.4 mm nozzle) |
+| **Minimum `--cell`** | **2.0 mm** |
 
-Assuming you meant a **0.4 mm** nozzle (A1 Mini stock) rather than 0.04 mm: **yes, 4 mm cells are comfortably printable** — each voxel is many line widths wide. At the 2 mm floor, prints are still plausible but fiddlier (thin towers, more stringing risk).
+A1 Mini stock nozzle is **0.4 mm**. Build volume is **180³ mm** — a 600 mm-tall tower will not fit in one piece.
 
-**Build volume caveat:** an A1 Mini is **180×180×180 mm**. A 100×100×600 mm tower will not fit in one piece; split the Z range, scale down, or use a taller machine.
-
-## Scaffold: not breakaway
-
-Scaffold voxels are **the same fused filament** as Life cells — they are **not** dissolvable or snappable supports. They exist so the nozzle has something to land on while printing overhanging births.
-
-A model is **Life-self-supporting** when every Life voxel is **face-connected to the bed through Life|Base only** (scaffold ignored). Then fused scaffold is not load-bearing for the sculpture; if you could remove it, the object would still hold together.
+## Seed policy
 
 | Situation | Behavior |
 |-----------|----------|
-| `--seed` omitted (`random` / `soup`) | Try seeds until Life is self-supporting (`--max-seed-attempts`, default 200) |
-| `--seed` given (or named pattern like `glider`) | Always write the STL; **exit non-zero** if Life is not self-supporting, with an explanation |
+| `--seed` omitted (`random` / `soup`) | Search until Life is one piece after support removal |
+| `--seed` given or named pattern | Always write STL; **exit non-zero** if orphans remain |
 
-Default `--pattern random` is a **still-life garden** (blocks, tubs, beehives, boats) keyed by seed — stable, so stacks are columns and pass the check. Use `--pattern soup` for classic chaotic Bernoulli Life (usually fails the removable-scaffold check).
-
-## Print overhang vs orphans
-
-- **Print overhang** — empty cell directly below a solid. `--mode scaffold` drives this to 0 for the printed mesh.
-- **Life orphans** — Life voxels disconnected from the bed if scaffold is ignored. This is the “impossible object if scaffold is removed” test.
-
-## Inputs
+## Inputs (dimensions)
 
 | Flag | Default | Meaning |
 |------|---------|---------|
-| `-x` / `--width` | `24` | Grid width (cells); ignored if `--width-mm` is set |
-| `-y` / `--height` | `24` | Grid height (cells); ignored if `--height-mm` is set |
-| `-z` / `--depth` | `48` | Generations above the base; ignored if `--depth-mm` is set |
-| `--width-mm` | — | Physical X size (mm) |
-| `--height-mm` | — | Physical Y size (mm) |
-| `--depth-mm` | — | Physical total Z including base (mm) |
-| `--cell` | `4.0` | Voxel edge length (mm); minimum `2.0` |
-| `-s` / `--seed` | search | RNG seed; omit to search for a self-supporting seed |
-| `--max-seed-attempts` | `200` | Seed search budget when `--seed` is omitted |
-| `--density` | `0.25` | Still-life coverage (`random`) or soup fill (`soup`) |
-| `--pattern` | `random` | `random` (still-life garden), `soup`, `glider`, `rpento`, `blinker`, `lwss` |
-| `--base-layers` | `1` | Solid bed plate thickness (cells) |
-| `--mode` | `scaffold` | `scaffold` or `raw` |
-| `-o` / `--output` | `life.stl` | Output path |
-
-Example tower: `--width-mm 100 --height-mm 100 --depth-mm 600 --cell 4` → **25×25×150** cells = **100×100×600 mm**.
+| `-x/-y/-z` | `24/24/48` | Size in cells |
+| `--width-mm` / `--height-mm` / `--depth-mm` | — | Size in mm (with `--cell`) |
+| `--cell` | `4.0` | Voxel edge (mm) |
+| `--pattern` | `random` | `random` (still-life garden), `soup`, `glider`, … |
+| `--mode` | `breakaway` | `breakaway`, `fused`, `raw` |
 
 ## Examples
 
-Under [`examples/`](examples/) (regenerate with `./generate-examples.sh`):
-
-| File | Description |
-|------|-------------|
-| `glider-scaffold.stl` | Glider + scaffold (Life not self-supporting — CLI exits 1) |
-| `random-42-scaffold.stl` | Still-life garden seed 42 |
-| `tower-10x10x60-scaffold.stl` | **100×100×600 mm** garden tower, cell=4 mm |
-
-See [`examples/REPORT.md`](examples/REPORT.md).
+See [`examples/`](examples/) and [`examples/REPORT.md`](examples/REPORT.md). Regenerate with `./generate-examples.sh`.
 
 ## Develop
 

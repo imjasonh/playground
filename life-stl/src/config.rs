@@ -8,23 +8,81 @@ pub const DEFAULT_CELL_MM: f32 = 4.0;
 /// thinner than ~5× a 0.4 mm nozzle and tend to under-extrude or snap.
 pub const MIN_CELL_MM: f32 = 2.0;
 
-/// How aggressively to make the stack FDM-printable.
+/// How supports are generated for FDM printability.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum SupportMode {
-    /// Exact Life voxels only (plus base plate). Births often overhang on
-    /// edge/corner contacts only — printable with care, but support-prone.
+    /// Exact Life voxels only (plus base plate). No generated supports.
     Raw,
-    /// Add vertical scaffold columns so every solid has face-on-face support
-    /// from the cell directly below. Scaffold is fused filament (not
-    /// breakaway); see [`crate::metrics`] for removable-scaffold checks.
-    Scaffold,
+    /// Slim breakaway pillars/trees (default). Removable after printing; the
+    /// remaining Life|Base mesh must be one piece (see orphan check).
+    #[value(alias = "supports")]
+    Breakaway,
+    /// Legacy fused voxel columns under overhangs (not breakaway).
+    #[value(alias = "scaffold")]
+    Fused,
 }
 
 impl std::fmt::Display for SupportMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SupportMode::Raw => write!(f, "raw"),
-            SupportMode::Scaffold => write!(f, "scaffold"),
+            SupportMode::Breakaway => write!(f, "breakaway"),
+            SupportMode::Fused => write!(f, "fused"),
+        }
+    }
+}
+
+/// Geometry style for [`SupportMode::Breakaway`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SupportStyle {
+    /// One vertical tapered pillar per overhang tip.
+    Pillar,
+    /// Cluster tips into trunks on the bed with diagonal branches (tree-like).
+    Tree,
+}
+
+impl std::fmt::Display for SupportStyle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SupportStyle::Pillar => write!(f, "pillar"),
+            SupportStyle::Tree => write!(f, "tree"),
+        }
+    }
+}
+
+/// Tunable breakaway-support geometry (millimeters).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SupportParams {
+    pub style: SupportStyle,
+    /// Shaft / branch radius (mm).
+    pub radius_mm: f32,
+    /// Tip radius where the support meets the model (mm) — smaller = easier snap.
+    pub tip_radius_mm: f32,
+    /// Length of the tip taper (mm).
+    pub tip_height_mm: f32,
+    /// Trunk radius for tree style (mm).
+    pub trunk_radius_mm: f32,
+    /// Cluster tips whose XY distance is ≤ this into one trunk (mm).
+    pub cluster_mm: f32,
+    /// Horizontal offset of the tip from the cell center toward +X/+Y (mm),
+    /// so the contact sits near a cell edge for cleaner breakaway.
+    pub tip_offset_mm: f32,
+    /// Cylinder tessellation segments (≥ 3).
+    pub segments: u32,
+}
+
+impl Default for SupportParams {
+    fn default() -> Self {
+        Self {
+            style: SupportStyle::Tree,
+            // ~1.5× a 0.4 mm nozzle — printable tube, still snappable.
+            radius_mm: 0.6,
+            tip_radius_mm: 0.35,
+            tip_height_mm: 1.2,
+            trunk_radius_mm: 0.9,
+            cluster_mm: 12.0,
+            tip_offset_mm: 0.0,
+            segments: 8,
         }
     }
 }
@@ -33,10 +91,10 @@ impl std::fmt::Display for SupportMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum Pattern {
     /// Seeded still-life garden (blocks, tubs, beehives, boats). Stable, so the
-    /// Z-stack is self-supporting without load-bearing scaffold. Default.
+    /// Z-stack is self-supporting without load-bearing supports. Default.
     Random,
     /// Classic Bernoulli soup at `--density`. Chaotic — usually leaves Life
-    /// orphans that need permanent fused scaffold.
+    /// orphans that cannot form one piece after support removal.
     Soup,
     /// Classic glider (needs at least 5×5). Moves each step → Life orphans.
     Glider,
@@ -61,6 +119,7 @@ pub struct Config {
     pub cell_mm: f32,
     pub base_layers: usize,
     pub mode: SupportMode,
+    pub support: SupportParams,
 }
 
 impl Default for Config {
@@ -74,7 +133,8 @@ impl Default for Config {
             pattern: Pattern::Random,
             cell_mm: DEFAULT_CELL_MM,
             base_layers: 1,
-            mode: SupportMode::Scaffold,
+            mode: SupportMode::Breakaway,
+            support: SupportParams::default(),
         }
     }
 }
@@ -109,7 +169,6 @@ impl Config {
                 "size {mm} mm with cell {cell_mm} mm rounds to 0 cells; use a larger size or smaller --cell"
             ));
         }
-        // Guard absurd grids (e.g. --cell 0.001).
         if n > 10_000.0 {
             return Err(format!(
                 "size {mm} mm with cell {cell_mm} mm is {n} cells; refusing > 10000"

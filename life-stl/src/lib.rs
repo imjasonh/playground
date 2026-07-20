@@ -1,13 +1,9 @@
 //! Conway's Game of Life → printable STL (Z = time).
 //!
 //! Live cells at generation `g` become voxels at height `z = base_layers + g`.
-//! Life births are always Moore-adjacent to the previous generation, but often
-//! rest only on an edge/corner. Default [`SupportMode::Scaffold`] drops
-//! vertical columns so every solid has face-on-face support from below.
-//!
-//! Scaffold is **fused filament**, not breakaway. A model is only considered
-//! Life-self-supporting when every Life voxel is face-connected to the bed
-//! through Life|Base alone (see [`metrics::PrintabilityReport::life_self_supporting`]).
+//! Default [`SupportMode::Breakaway`] adds slim pillar/tree supports under
+//! overhanging Life cells. Supports are meant to snap off, leaving a single
+//! standing Life|Base piece when there are no Life orphans.
 
 pub mod config;
 pub mod life;
@@ -16,9 +12,10 @@ pub mod metrics;
 pub mod scaffold;
 pub mod search;
 pub mod seed;
+pub mod support;
 pub mod volume;
 
-pub use config::{Config, SupportMode, DEFAULT_CELL_MM, MIN_CELL_MM};
+pub use config::{Config, SupportMode, SupportParams, SupportStyle, DEFAULT_CELL_MM, MIN_CELL_MM};
 pub use metrics::PrintabilityReport;
 pub use volume::{CellKind, Volume};
 
@@ -26,12 +23,24 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
-use crate::mesh::triangles_from_volume;
-use crate::metrics::analyze;
+use stl_io::Triangle;
+
+use crate::mesh::{triangles_from_life_base, triangles_from_volume};
+use crate::metrics::{analyze, analyze_with_supports};
 use crate::scaffold::apply_scaffolding;
 use crate::seed::initial_grid;
+use crate::support::{base_top_mm, collect_tips, triangles_for_tips};
 
-/// Simulate Life onto a volume with a base plate (no scaffold).
+/// Built model ready to write as STL.
+#[derive(Debug, Clone)]
+pub struct Model {
+    pub volume: Volume,
+    pub triangles: Vec<Triangle>,
+    pub report: PrintabilityReport,
+    pub support_tips: usize,
+}
+
+/// Simulate Life onto a volume with a base plate (no supports).
 pub fn build_life_volume(config: &Config) -> Volume {
     let mut grid = initial_grid(config);
     let mut volume = Volume::new(config.width, config.height, config.total_z());
@@ -61,35 +70,70 @@ pub fn build_life_volume(config: &Config) -> Volume {
     volume
 }
 
-/// Build the voxel volume for `config` (simulate Life, then optionally scaffold).
+/// Build Life volume and optionally apply **fused** voxel scaffolding.
 pub fn build_volume(config: &Config) -> Volume {
     let mut volume = build_life_volume(config);
-    match config.mode {
-        SupportMode::Raw => {}
-        SupportMode::Scaffold => apply_scaffolding(&mut volume, config.base_layers),
+    if config.mode == SupportMode::Fused {
+        apply_scaffolding(&mut volume, config.base_layers);
     }
     volume
 }
 
-/// Write a binary STL for an already-built volume.
-pub fn write_stl_volume(
-    volume: &Volume,
-    cell_mm: f32,
-    path: &Path,
-) -> std::io::Result<PrintabilityReport> {
-    let report = analyze(volume, cell_mm);
-    let triangles = triangles_from_volume(volume, cell_mm);
+/// Build the full printable model (Life mesh + optional breakaway supports).
+pub fn build_model(config: &Config) -> Model {
+    let mut volume = build_life_volume(config);
+
+    match config.mode {
+        SupportMode::Raw => {
+            let report = analyze(&volume, config.cell_mm);
+            Model {
+                triangles: triangles_from_life_base(&volume, config.cell_mm),
+                volume,
+                report,
+                support_tips: 0,
+            }
+        }
+        SupportMode::Fused => {
+            apply_scaffolding(&mut volume, config.base_layers);
+            let report = analyze(&volume, config.cell_mm);
+            Model {
+                triangles: triangles_from_volume(&volume, config.cell_mm),
+                volume,
+                report,
+                support_tips: 0,
+            }
+        }
+        SupportMode::Breakaway => {
+            let tips = collect_tips(&volume, config.cell_mm, config.support.tip_offset_mm);
+            let support_tips = tips.len();
+            let mut triangles = triangles_from_life_base(&volume, config.cell_mm);
+            let base_z = base_top_mm(&volume, config.cell_mm);
+            triangles.extend(triangles_for_tips(&tips, base_z, &config.support));
+            let report = analyze_with_supports(&volume, config.cell_mm, support_tips);
+            Model {
+                volume,
+                triangles,
+                report,
+                support_tips,
+            }
+        }
+    }
+}
+
+/// Write a binary STL for an already-built model.
+pub fn write_stl_model(model: &Model, path: &Path) -> std::io::Result<()> {
     let file = File::create(path)?;
     let mut writer = BufWriter::new(file);
-    stl_io::write_stl(&mut writer, triangles.iter())?;
+    stl_io::write_stl(&mut writer, model.triangles.iter())?;
     writer.flush()?;
-    Ok(report)
+    Ok(())
 }
 
 /// Generate the model and write a binary STL to `path`.
 pub fn generate_stl(config: &Config, path: &Path) -> std::io::Result<PrintabilityReport> {
-    let volume = build_volume(config);
-    write_stl_volume(&volume, config.cell_mm, path)
+    let model = build_model(config);
+    write_stl_model(&model, path)?;
+    Ok(model.report)
 }
 
 /// Format a human-readable printability report.
@@ -108,39 +152,47 @@ pub fn format_report(config: &Config, report: &PrintabilityReport) -> String {
         config.mode,
         config.cell_mm
     ));
+    if config.mode == SupportMode::Breakaway {
+        out.push_str(&format!(
+            "breakaway supports: style={:?}  shaft={}mm  tip={}mm  cluster={}mm  tips={}\n",
+            config.support.style,
+            config.support.radius_mm,
+            config.support.tip_radius_mm,
+            config.support.cluster_mm,
+            report.breakaway_support_tips
+        ));
+    }
     out.push_str(&format!(
         "generations (above {}-cell base): {}\n",
         config.base_layers, config.depth
     ));
     out.push_str(&format!(
-        "voxels: life={}  scaffold={}  base={}  total_solid={}\n",
+        "voxels: life={}  fused_scaffold={}  base={}  total_solid={}\n",
         report.life_voxels, report.scaffold_voxels, report.base_voxels, report.solid_voxels
     ));
     out.push_str(&format!(
-        "print overhang (empty cell directly below): {} voxels, {:.1} mm² ({:.1}% of solid)\n",
+        "Life print overhang (empty cell directly below): {} voxels, {:.1} mm² ({:.1}% of solid)\n",
         report.strict_floating_voxels, report.strict_floating_area_mm2, report.strict_floating_pct
     ));
     out.push_str(&format!(
-        "Life orphans if scaffold removed (face-disconnected from bed): {} ({:.1}% of life)\n",
+        "Life orphans after support removal: {} ({:.1}% of life)\n",
         report.orphan_life_voxels, report.orphan_life_pct
     ));
     if report.life_self_supporting() {
-        out.push_str("Life self-supporting: yes (fused scaffold is not load-bearing for Life)\n");
+        out.push_str(
+            "Life self-supporting: yes — snap off breakaway supports → one standing piece\n",
+        );
     } else if report.life_voxels == 0 {
         out.push_str("Life self-supporting: n/a (no live cells)\n");
     } else {
         out.push_str(
-            "Life self-supporting: NO — removing scaffold would leave disconnected Life pieces\n",
+            "Life self-supporting: NO — support removal would leave disconnected Life pieces\n",
         );
     }
-    out.push_str(&format!(
-        "Moore-unsupported (no 3×3 support below): {} voxels, {:.1} mm²\n",
-        report.moore_unsupported_voxels, report.moore_unsupported_area_mm2
-    ));
     out
 }
 
-/// Explain why a model fails the removable-scaffold / self-support check.
+/// Explain why a model fails the single-piece-after-removal check.
 pub fn format_unprintable_reason(config: &Config, report: &PrintabilityReport) -> String {
     if report.life_voxels == 0 {
         return format!(
@@ -149,14 +201,9 @@ pub fn format_unprintable_reason(config: &Config, report: &PrintabilityReport) -
         );
     }
     format!(
-        "unprintable without permanent scaffold: seed {} leaves {} Life voxel(s) \
-         ({:.1}% of Life, ≈ {:.1} mm² footprint) face-disconnected from the bed \
-         through Life|Base only. Scaffold columns can hold them while printing, \
-         but they are fused filament — not breakaway — so removing scaffold would \
-         leave floating/disconnected pieces.",
-        config.seed,
-        report.orphan_life_voxels,
-        report.orphan_life_pct,
-        report.orphan_life_voxels as f64 * f64::from(config.cell_mm) * f64::from(config.cell_mm)
+        "cannot produce a single standing piece after support removal: seed {} leaves {} Life voxel(s) \
+         ({:.1}% of Life) face-disconnected from the bed through Life|Base only. Breakaway supports \
+         can hold them while printing, but removing supports would leave multiple pieces.",
+        config.seed, report.orphan_life_voxels, report.orphan_life_pct
     )
 }

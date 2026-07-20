@@ -1,12 +1,12 @@
 use std::path::PathBuf;
 
-use life_stl::config::{Config, Pattern, SupportMode, DEFAULT_CELL_MM};
+use life_stl::config::{Config, Pattern, SupportMode, SupportStyle, DEFAULT_CELL_MM};
 use life_stl::metrics::analyze;
 use life_stl::search::evaluate_life_only;
-use life_stl::{build_volume, generate_stl};
+use life_stl::{build_model, build_volume, generate_stl};
 
 #[test]
-fn still_garden_is_self_supporting_without_scaffold() {
+fn still_garden_is_self_supporting_without_supports() {
     let config = Config {
         width: 24,
         height: 24,
@@ -17,6 +17,7 @@ fn still_garden_is_self_supporting_without_scaffold() {
         cell_mm: DEFAULT_CELL_MM,
         base_layers: 1,
         mode: SupportMode::Raw,
+        ..Config::default()
     };
     let report = evaluate_life_only(&config);
     assert!(report.life_voxels > 0);
@@ -25,7 +26,7 @@ fn still_garden_is_self_supporting_without_scaffold() {
 }
 
 #[test]
-fn scaffold_mode_clears_print_overhang_for_soup() {
+fn breakaway_adds_tips_for_soup_overhangs() {
     let config = Config {
         width: 16,
         height: 16,
@@ -35,16 +36,34 @@ fn scaffold_mode_clears_print_overhang_for_soup() {
         pattern: Pattern::Soup,
         cell_mm: DEFAULT_CELL_MM,
         base_layers: 1,
-        mode: SupportMode::Scaffold,
+        mode: SupportMode::Breakaway,
+        ..Config::default()
+    };
+    let model = build_model(&config);
+    assert!(model.support_tips > 0);
+    assert_eq!(model.report.breakaway_support_tips, model.support_tips);
+    assert!(model.triangles.len() > 12);
+    // Soup Life is not one piece after support removal.
+    let life = evaluate_life_only(&config);
+    assert!(!life.life_self_supporting());
+}
+
+#[test]
+fn fused_mode_still_fills_voxel_columns() {
+    let config = Config {
+        width: 16,
+        height: 16,
+        depth: 32,
+        seed: 7,
+        density: 0.35,
+        pattern: Pattern::Soup,
+        mode: SupportMode::Fused,
+        ..Config::default()
     };
     let volume = build_volume(&config);
     let report = analyze(&volume, config.cell_mm);
     assert_eq!(report.strict_floating_voxels, 0);
-    assert!(report.life_voxels > 0);
     assert!(report.scaffold_voxels > 0);
-    // Soup Life is not removable-scaffold-safe.
-    let life = evaluate_life_only(&config);
-    assert!(!life.life_self_supporting());
 }
 
 #[test]
@@ -56,28 +75,23 @@ fn soup_raw_has_overhanging_births() {
         seed: 99,
         density: 0.35,
         pattern: Pattern::Soup,
-        cell_mm: DEFAULT_CELL_MM,
-        base_layers: 1,
         mode: SupportMode::Raw,
+        ..Config::default()
     };
     let volume = build_volume(&config);
     let report = analyze(&volume, config.cell_mm);
     assert_eq!(report.moore_unsupported_voxels, 0);
-    assert!(
-        report.strict_floating_voxels > 0,
-        "expected overhanging births in raw soup, got 0"
-    );
+    assert!(report.strict_floating_voxels > 0);
 }
 
 #[test]
 fn cells_from_mm_respects_default_cell() {
-    // 10 cm × 10 cm × 60 cm at 4 mm cells → 25 × 25 × 150
     assert_eq!(Config::cells_from_mm(100.0, DEFAULT_CELL_MM).unwrap(), 25);
     assert_eq!(Config::cells_from_mm(600.0, DEFAULT_CELL_MM).unwrap(), 150);
 }
 
 #[test]
-fn writes_nonempty_stl() {
+fn writes_nonempty_stl_with_tree_supports() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("out.stl");
     let config = Config {
@@ -86,12 +100,16 @@ fn writes_nonempty_stl() {
         depth: 16,
         seed: 1,
         pattern: Pattern::Random,
-        mode: SupportMode::Scaffold,
+        mode: SupportMode::Breakaway,
+        support: life_stl::SupportParams {
+            style: SupportStyle::Tree,
+            ..life_stl::SupportParams::default()
+        },
         ..Config::default()
     };
     generate_stl(&config, &path).unwrap();
     let meta = std::fs::metadata(&path).unwrap();
-    assert!(meta.len() > 84, "STL should be larger than an empty header");
+    assert!(meta.len() > 84);
     let _: PathBuf = path;
 }
 
@@ -102,7 +120,7 @@ fn glider_is_not_self_supporting() {
         height: 12,
         depth: 24,
         pattern: Pattern::Glider,
-        mode: SupportMode::Scaffold,
+        mode: SupportMode::Breakaway,
         ..Config::default()
     };
     let report = evaluate_life_only(&config);

@@ -20,16 +20,17 @@ pub struct PrintabilityReport {
     pub unsupported_life_voxels: usize,
     pub unsupported_life_pct: f64,
     /// Life voxels that are **not** face-connected to the base through
-    /// Life|Base only (scaffold ignored). If this is > 0, removing fused
-    /// scaffold would leave disconnected / floating Life pieces — an
-    /// impossible solid. See [`life_self_supporting`].
+    /// Life|Base only. If this is > 0, removing supports leaves multiple
+    /// pieces — not a single standing sculpture. See [`life_self_supporting`].
     pub orphan_life_voxels: usize,
     pub orphan_life_pct: f64,
+    /// Number of breakaway support tips generated (0 for raw / fused-only paths).
+    pub breakaway_support_tips: usize,
 }
 
 impl PrintabilityReport {
     /// True when every Life voxel is face-connected to the bed via Life|Base
-    /// only — i.e. fused scaffold is not load-bearing for the Life geometry.
+    /// only — supports can be removed and one standing piece remains.
     pub fn life_self_supporting(&self) -> bool {
         self.orphan_life_voxels == 0 && self.life_voxels > 0
     }
@@ -39,10 +40,18 @@ impl PrintabilityReport {
 ///
 /// Primary print overhang estimate is **strict floating** (empty cell
 /// directly below). Separately, [`PrintabilityReport::orphan_life_voxels`]
-/// asks whether the Life sculpture stays one piece if scaffold is ignored —
-/// our scaffolds are fused filament, not breakaway, so orphans mean the
-/// printable mesh depends on non-removable scaffold.
+/// asks whether the Life sculpture stays one piece after breakaway supports
+/// are removed.
 pub fn analyze(volume: &Volume, cell_mm: f32) -> PrintabilityReport {
+    analyze_with_supports(volume, cell_mm, 0)
+}
+
+/// Like [`analyze`], but records how many breakaway tips were generated.
+pub fn analyze_with_supports(
+    volume: &Volume,
+    cell_mm: f32,
+    breakaway_support_tips: usize,
+) -> PrintabilityReport {
     let cell_area = f64::from(cell_mm) * f64::from(cell_mm);
     let mut moore_unsupported = 0usize;
     let mut strict_floating = 0usize;
@@ -91,6 +100,7 @@ pub fn analyze(volume: &Volume, cell_mm: f32) -> PrintabilityReport {
         unsupported_life_pct: 100.0 * unsupported_life as f64 / life_f,
         orphan_life_voxels: orphan_life,
         orphan_life_pct: 100.0 * orphan_life as f64 / life_f,
+        breakaway_support_tips,
     }
 }
 

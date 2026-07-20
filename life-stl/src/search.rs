@@ -1,40 +1,33 @@
-//! Search for seeds whose Life geometry does not depend on fused scaffold.
+//! Search for seeds whose Life geometry is one piece after support removal.
 
 use crate::config::Config;
 use crate::metrics::{analyze, PrintabilityReport};
-use crate::volume::Volume;
-use crate::{build_life_volume, build_volume};
+use crate::{build_life_volume, build_model, Model};
 
 /// Outcome of trying to produce a printable model for a config/seed policy.
 #[derive(Debug)]
 pub struct SearchOutcome {
     pub config: Config,
-    pub volume: Volume,
+    pub model: Model,
     pub report: PrintabilityReport,
     /// Seeds tried (including the successful one, if any).
     pub attempts: u32,
-    /// True when every Life voxel is face-connected to the base without scaffold.
+    /// True when every Life voxel is face-connected to the base without supports.
     pub life_self_supporting: bool,
 }
 
-/// Build + analyze one seed (applies scaffold according to `config.mode`).
-pub fn evaluate(config: &Config) -> (Volume, PrintabilityReport) {
-    let volume = build_volume(config);
-    let report = analyze(&volume, config.cell_mm);
-    (volume, report)
+/// Build + analyze one seed (includes breakaway/fused supports per config).
+pub fn evaluate(config: &Config) -> Model {
+    build_model(config)
 }
 
-/// Check Life self-support on the Life|Base volume only (no scaffold applied).
+/// Check Life self-support on the Life|Base volume only (no supports).
 pub fn evaluate_life_only(config: &Config) -> PrintabilityReport {
     let volume = build_life_volume(config);
     analyze(&volume, config.cell_mm)
 }
 
 /// Find a seed whose Life sculpture is self-supporting (no orphan Life cells).
-///
-/// Tries `start_seed`, `start_seed+1`, … up to `max_attempts` times. Still-life
-/// gardens (`Pattern::Random`) usually succeed on the first try; Bernoulli
-/// `Pattern::Soup` often needs many attempts on large grids.
 pub fn find_self_supporting(
     mut config: Config,
     max_attempts: u32,
@@ -50,12 +43,11 @@ pub fn find_self_supporting(
         config.seed = seed;
         let life_report = evaluate_life_only(&config);
         let supporting = life_report.life_self_supporting();
-
-        let (volume, report) = evaluate(&config);
+        let model = evaluate(&config);
         let outcome = SearchOutcome {
+            report: model.report.clone(),
             config: config.clone(),
-            volume,
-            report,
+            model,
             attempts,
             life_self_supporting: supporting,
         };
@@ -69,7 +61,8 @@ pub fn find_self_supporting(
             Some(b) => {
                 outcome.report.orphan_life_voxels < b.report.orphan_life_voxels
                     || (outcome.report.orphan_life_voxels == b.report.orphan_life_voxels
-                        && outcome.report.scaffold_voxels < b.report.scaffold_voxels)
+                        && outcome.report.breakaway_support_tips + outcome.report.scaffold_voxels
+                            < b.report.breakaway_support_tips + b.report.scaffold_voxels)
             }
         };
         if replace {
@@ -77,7 +70,6 @@ pub fn find_self_supporting(
         }
     }
 
-    // Return the best (fewest orphans) attempt; caller decides whether to accept.
     let mut best = best.expect("max_attempts >= 1");
     best.attempts = attempts;
     best
@@ -97,7 +89,7 @@ mod tests {
             seed: 0,
             density: 0.25,
             pattern: Pattern::Random,
-            mode: SupportMode::Scaffold,
+            mode: SupportMode::Breakaway,
             cell_mm: 4.0,
             ..Config::default()
         };
