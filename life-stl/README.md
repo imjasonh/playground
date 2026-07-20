@@ -16,6 +16,21 @@ cargo run --release -- --pattern soup --seed 99 --mode breakaway \
   --support-style tree -o soup-tree.stl
 ```
 
+## CLI
+
+This is first and foremost a command-line tool (the same library also powers
+the [`life-lab`](../life-lab) browser app via WebAssembly). Two subcommands:
+
+| Command | Purpose |
+|---------|---------|
+| `life-stl [generate] [flags]` | Simulate Life and write an STL. `generate` is the default — plain `life-stl [flags]` works, as in the examples above. |
+| `life-stl bambu-3mf --stl in.stl -o out.3mf` | Package an STL as a Bambu Studio project with print settings embedded. |
+
+Install a standalone binary with `cargo install --path .` (from this
+directory), then `life-stl --help` / `life-stl bambu-3mf --help` list every
+flag. The CLI is behind the default `cli` cargo feature; the `wasm` feature is
+only used by the browser build and doesn't affect it.
+
 ## Gusset mode (default): self-supporting by construction
 
 The key observation: **stacked Life is never more than one diagonal step from
