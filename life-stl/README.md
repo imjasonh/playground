@@ -80,11 +80,11 @@ Supports are sized with a beam/column model:
 | `--max-tip-density` | `1.25` | Max tips per XY cell footprint |
 | `--allow-hard-supports` | off | Skip the removability gate |
 | `--min-active-generations` | `8` | Reject still life / short oscillators before this generation |
-| `--min-active-fraction` | `0.333` | Also require activity for this fraction of `--depth` |
+| `--min-active-fraction` | `1.0` | Require activity for this fraction of `--depth` (default: the whole stack) |
 | `--max-boring-period` | `2` | Periods ≤ this count as boring once settled |
 | `--allow-boring` | off | Skip the interestingness gate |
 
-After generating supports, life-stl scores **how hard they are to remove** (rest-on-model landings, trunks trapped in cavities, tip contacts in pockets, tip density). It also scores **evolution complexity**: soups that become a still life (or blinker-like oscillator) after only a few turns are rejected as boring extruded towers. With `--seed` omitted it **retries** until both cleanup and interestingness look good; with an explicit seed it still writes the STL but **exits non-zero** if either gate fails.
+After generating supports, life-stl scores **how hard they are to remove** (rest-on-model landings, trunks trapped in cavities, tip contacts in pockets, tip density). It also scores **evolution complexity**: by default a pattern must stay active for its **entire printed height** — anything that settles into a still life or short oscillator partway up extrudes a boring static tower above the interesting part (lower `--min-active-fraction` to relax this). With `--seed` omitted it **retries** until both cleanup and interestingness look good; with an explicit seed it still writes the STL but **exits non-zero** if either gate fails.
 
 Breakaway supports are meant to **snap off** after printing. The remaining Life|Base mesh is a **single standing piece** only when every Life voxel is face-connected to the bed (no “orphans”). In gusset mode connectivity follows **causality** instead — births are braced to their parents, so the whole stack is always one piece. Still-life gardens (`--pattern random`) are exempt from the complexity gate (stability is the point) and usually need **zero** supports. Chaotic `--pattern soup` under breakaway often has orphans → STL is written but the CLI exits non-zero if you passed an explicit seed.
 
@@ -130,16 +130,15 @@ Gusset mode makes this moot for printing — kept for experimentation.
 
 See [`examples/`](examples/) and [`examples/REPORT.md`](examples/REPORT.md). Regenerate with `./generate-examples.sh`.
 
-Every shipped STL is `interesting OK` **and** either self-supporting (gusset) or `cleanup OK` (breakaway):
+Every shipped STL is self-supporting (gusset) and stays **active for its entire printed height** — no still life or short oscillator before the top layer:
 
 | File | What it is |
 |------|------------|
 | `gusset-glider-tower.stl` | Glider climbing 44 generations — 64×64×180 mm |
-| `gusset-lwss.stl` | Lightweight spaceship — 120×64×180 mm |
-| `gusset-rpento.stl` | R-pentomino evolution — 128×128×180 mm |
-| `gusset-soup-mid.stl` | Chaotic soup — 96×96×148 mm |
-| `gusset-soup-a1max.stl` | Chaotic soup at A1 Mini max — 176×176×180 mm |
-| `tree-soup-29636.stl` / `tree-soup-40485.stl` | Breakaway-tree soups, active ≥ gen 8, one double-tapered rest-on-model each |
+| `gusset-soup-mid.stl` | Chaotic soup, never settles — 96×96×148 mm |
+| `gusset-soup-a1max.stl` | Chaotic soup at A1 Mini max, never settles — 176×176×180 mm |
+
+Patterns that settle partway up (R-pentomino at gen 19 of 44, low-density soups at gen 8 of 24) and redundant spaceships (LWSS decays into a glider) were culled — they fail the default full-height activity gate.
 
 ## Develop
 

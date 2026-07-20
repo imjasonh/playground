@@ -136,9 +136,10 @@ pub struct ComplexityParams {
 impl Default for ComplexityParams {
     fn default() -> Self {
         Self {
-            // Reject “stable after only a few turns” on typical 24-gen stacks.
             min_active_generations: 8,
-            min_active_fraction: 1.0 / 3.0,
+            // Print-worthy shapes stay active the whole way up: anything that
+            // settles partway leaves a boring extruded tower above it.
+            min_active_fraction: 1.0,
             max_boring_period: 2,
         }
     }
