@@ -137,6 +137,7 @@ Every shipped STL is self-supporting (gusset) and stays **active for its entire 
 |------|------------|
 | `gusset-glider-tower.stl` | Glider climbing 44 generations — 64×64×180 mm |
 | `gusset-acorn.stl` | Acorn methuselah blooming from 7 cells — 140×76 mm base, 180 mm tall |
+| `gusset-acorn-a1mini.3mf` | The acorn as a ready-to-slice Bambu Studio project (A1 Mini + generic PLA; see [`docs/printing-a1mini.md`](docs/printing-a1mini.md)) |
 | `gusset-soup-mid.stl` | Chaotic soup, never settles — 96×96×148 mm |
 | `gusset-soup-a1max.stl` | Chaotic soup at A1 Mini max, never settles — 176×176×180 mm |
 
