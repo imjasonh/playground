@@ -153,11 +153,27 @@ Every shipped STL is self-supporting (gusset) and stays **active for its entire 
 All methuselahs are 180 mm tall (44 generations), centered, and pass both
 gates. Life voxel counts range from ~790 (`diehard`) to ~2325 (`pi`).
 
+## Bambu Studio project export (`bambu-3mf`)
+
+Package any STL as a ready-to-slice Bambu Studio project with print settings
+embedded (defaults: A1 Mini 0.4 nozzle + 0.20mm Standard + Generic PLA, with
+the gusset-print overrides — supports off, 3 walls, 15% infill, slow bridges,
+no brim):
+
+```bash
+cargo run --release -- bambu-3mf --stl examples/gusset-acorn.stl -o acorn.3mf
+```
+
+See [`docs/printing-a1mini.md`](docs/printing-a1mini.md) for the settings
+rationale and how to target other presets via `--profiles`.
+
 ## Design notes
 
 See [`docs/design.md`](docs/design.md) for the geometry model, the birth ≡
 overhang theorem behind gusset mode, gate rationale, and approaches that were
 evaluated and rejected (useful context before changing support strategies).
+For the planned browser front-end (wasm + three.js), see
+[`docs/browser-app-feasibility.md`](docs/browser-app-feasibility.md).
 
 ## Develop
 

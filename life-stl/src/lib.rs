@@ -18,6 +18,7 @@
 //! evolutions that go quiescent before the top layer — a pattern that settles
 //! partway up extrudes a boring static tower above the interesting part.
 
+pub mod bambu;
 pub mod complexity;
 pub mod config;
 pub mod gusset;

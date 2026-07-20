@@ -48,29 +48,39 @@ an A1 Mini: slow-down for overhangs and full part-cooling fan on bridges.
 
 ## Regenerating the .3mf
 
-The project file is built by [`tools/make_bambu_3mf.py`](../tools/make_bambu_3mf.py)
-(stdlib-only Python) from the STL plus the official Bambu profile library:
+The project file is built by the `bambu-3mf` subcommand. The A1 Mini +
+Generic PLA presets (and the override table above) are **embedded**, so no
+network or profile checkout is needed:
+
+```bash
+cargo run --release -- bambu-3mf \
+  --stl examples/gusset-acorn.stl \
+  --name gusset-acorn \
+  -o examples/gusset-acorn-a1mini.3mf
+```
+
+To target other printers/filaments, point `--profiles` at a Bambu Studio
+`resources/profiles/BBL` checkout and pick presets by name; `--override
+KEY=VALUE` (repeatable) replaces the default gusset-print overrides:
 
 ```bash
 git clone --depth 1 --filter=blob:none --sparse https://github.com/bambulab/BambuStudio /tmp/bambu
 git -C /tmp/bambu sparse-checkout set resources/profiles
 
-python3 tools/make_bambu_3mf.py \
-  --stl examples/gusset-acorn.stl \
+cargo run --release -- bambu-3mf \
+  --stl examples/gusset-pi.stl \
   --profiles /tmp/bambu/resources/profiles/BBL \
   --printer "Bambu Lab A1 mini 0.4 nozzle" \
-  --process "0.20mm Standard @BBL A1M" \
+  --process "0.16mm Optimal @BBL A1M" \
   --filament "Generic PLA @BBL A1M" \
-  --override enable_support=0 \
-  --override wall_loops=3 \
-  --override sparse_infill_density=15% \
-  --override bridge_speed=30 \
-  --override brim_type=no_brim \
-  --name gusset-acorn \
-  -o examples/gusset-acorn-a1mini.3mf
+  --override enable_support=0 --override wall_loops=3 \
+  -o pi-fine.3mf
 ```
 
-The script flattens the printer/process/filament inheritance chains into the
-full settings dump Bambu Studio expects in a project file, applies the
-overrides, and records them in `different_settings_to_system` so Studio shows
-them as modifications of the system presets.
+The exporter (`src/bambu.rs`) flattens the printer/process/filament
+inheritance chains into the full settings dump Bambu Studio expects in a
+project file, applies the overrides, and records them in
+`different_settings_to_system` so Studio shows them as modifications of the
+system presets. The embedded preset dump lives in
+`src/bambu_profile_a1mini_pla.json` (regenerate it from a profile checkout if
+Bambu ships materially new profiles).

@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use rand::Rng;
 
 use life_stl::config::{
@@ -21,6 +21,75 @@ use life_stl::{
 #[derive(Debug, Parser)]
 #[command(name = "life-stl", version, about)]
 struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
+
+    #[command(flatten)]
+    generate: GenerateArgs,
+}
+
+#[derive(Debug, Subcommand)]
+enum Command {
+    /// Simulate Life and write an STL (default when no subcommand is given).
+    Generate(GenerateArgs),
+    /// Package an STL as a Bambu Studio project .3mf with print settings.
+    #[command(name = "bambu-3mf")]
+    Bambu3mf(BambuArgs),
+}
+
+/// Package an STL as a Bambu Studio project .3mf.
+///
+/// Settings default to the embedded A1 Mini 0.4 nozzle + 0.20mm Standard +
+/// Generic PLA presets with the gusset-print overrides from
+/// docs/printing-a1mini.md. Point `--profiles` at a Bambu Studio
+/// `resources/profiles/BBL` directory to use other presets.
+#[derive(Debug, clap::Args)]
+struct BambuArgs {
+    /// Input binary STL.
+    #[arg(long)]
+    stl: PathBuf,
+
+    /// Output .3mf path.
+    #[arg(short = 'o', long)]
+    output: PathBuf,
+
+    /// Bambu Studio resources/profiles/BBL directory (default: embedded
+    /// A1 Mini + Generic PLA presets).
+    #[arg(long)]
+    profiles: Option<PathBuf>,
+
+    /// Printer preset name (with --profiles).
+    #[arg(long, default_value = "Bambu Lab A1 mini 0.4 nozzle")]
+    printer: String,
+
+    /// Process preset name (with --profiles).
+    #[arg(long, default_value = "0.20mm Standard @BBL A1M")]
+    process: String,
+
+    /// Filament preset name (with --profiles).
+    #[arg(long, default_value = "Generic PLA @BBL A1M")]
+    filament: String,
+
+    /// Process-level override KEY=VALUE (repeatable; replaces the default
+    /// gusset-print overrides when given).
+    #[arg(long = "override", value_name = "KEY=VALUE")]
+    overrides: Vec<String>,
+
+    /// Plate type recorded in the project.
+    #[arg(long, default_value = "Textured PEI Plate")]
+    bed_type: String,
+
+    /// Bed edge length (mm); the model is centered on it.
+    #[arg(long, default_value_t = 180.0)]
+    bed_size: f32,
+
+    /// Object name shown in the slicer (default: STL file stem).
+    #[arg(long)]
+    name: Option<String>,
+}
+
+#[derive(Debug, clap::Args)]
+struct GenerateArgs {
     /// Grid width (X), in cells. Ignored when `--width-mm` is set.
     #[arg(short = 'x', long, default_value_t = 24)]
     width: usize,
@@ -220,7 +289,7 @@ struct Cli {
     quiet: bool,
 }
 
-fn resolve_grid(cli: &Cli) -> Result<(usize, usize, usize), String> {
+fn resolve_grid(cli: &GenerateArgs) -> Result<(usize, usize, usize), String> {
     let width = match cli.width_mm {
         Some(mm) => Config::cells_from_mm(mm, cli.cell)?,
         None => cli.width,
@@ -250,7 +319,96 @@ fn resolve_grid(cli: &Cli) -> Result<(usize, usize, usize), String> {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    match cli.command {
+        Some(Command::Bambu3mf(args)) => run_bambu(&args),
+        Some(Command::Generate(args)) => run_generate(&args),
+        None => run_generate(&cli.generate),
+    }
+}
 
+fn run_bambu(args: &BambuArgs) -> ExitCode {
+    let presets = match &args.profiles {
+        None => life_stl::bambu::BambuPresets::embedded_a1mini_pla(),
+        Some(dir) => {
+            match life_stl::bambu::BambuPresets::from_profiles_dir(
+                dir,
+                &args.printer,
+                &args.process,
+                &args.filament,
+            ) {
+                Ok(p) => p,
+                Err(err) => {
+                    eprintln!("error: {err}");
+                    return ExitCode::FAILURE;
+                }
+            }
+        }
+    };
+
+    let mut overrides = life_stl::bambu::gusset_print_overrides();
+    if !args.overrides.is_empty() {
+        overrides.clear();
+        for item in &args.overrides {
+            let Some((key, value)) = item.split_once('=') else {
+                eprintln!("error: --override needs KEY=VALUE, got {item:?}");
+                return ExitCode::FAILURE;
+            };
+            overrides.insert(key.to_string(), value.to_string());
+        }
+    }
+
+    let stl_bytes = match std::fs::read(&args.stl) {
+        Ok(b) => b,
+        Err(err) => {
+            eprintln!("error reading {}: {err}", args.stl.display());
+            return ExitCode::FAILURE;
+        }
+    };
+    let triangles = match life_stl::bambu::read_binary_stl(&stl_bytes) {
+        Ok(t) => t,
+        Err(err) => {
+            eprintln!("error: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let object_name = args.name.clone().unwrap_or_else(|| {
+        args.stl
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "life-stl".into())
+    });
+    let opts = life_stl::bambu::ExportOptions {
+        overrides,
+        bed_type: args.bed_type.clone(),
+        bed_size_mm: args.bed_size,
+        object_name,
+    };
+
+    match life_stl::bambu::project_3mf_bytes(&triangles, &presets, &opts) {
+        Ok(bytes) => match std::fs::write(&args.output, &bytes) {
+            Ok(()) => {
+                eprintln!(
+                    "wrote {} ({} triangles, {:.1} KB)",
+                    args.output.display(),
+                    triangles.len(),
+                    bytes.len() as f64 / 1024.0
+                );
+                ExitCode::SUCCESS
+            }
+            Err(err) => {
+                eprintln!("error writing {}: {err}", args.output.display());
+                ExitCode::FAILURE
+            }
+        },
+        Err(err) => {
+            eprintln!("error: {err}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn run_generate(cli: &GenerateArgs) -> ExitCode {
     if !(0.0..=1.0).contains(&cli.density) {
         eprintln!("error: density must be between 0 and 1");
         return ExitCode::FAILURE;
@@ -321,7 +479,7 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
-    let (width, height, depth) = match resolve_grid(&cli) {
+    let (width, height, depth) = match resolve_grid(cli) {
         Ok(g) => g,
         Err(err) => {
             eprintln!("error: {err}");

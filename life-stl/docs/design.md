@@ -102,5 +102,6 @@ an explicit seed still writes the STL but exits non-zero.
 - Gusset width default 1.8 mm ≈ 4–5 perimeters; braces are decorative-strength,
   fine for a static sculpture.
 - Concrete A1 Mini + generic PLA settings: `docs/printing-a1mini.md`.
-  `tools/make_bambu_3mf.py` packages an STL plus those settings as a Bambu
-  Studio project .3mf (flattens official profiles, applies overrides).
+  The `bambu-3mf` subcommand (`src/bambu.rs`) packages an STL plus those
+  settings as a Bambu Studio project .3mf — embedded flattened presets by
+  default, or flatten any preset trio from a profile checkout.

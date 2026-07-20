@@ -105,6 +105,11 @@ section() {
 
 } | tee examples/REPORT.md
 
+# Ready-to-slice Bambu Studio project for the acorn (embedded A1 Mini presets).
+cargo run --release --quiet -- bambu-3mf \
+  --stl examples/gusset-acorn.stl --name gusset-acorn \
+  -o examples/gusset-acorn-a1mini.3mf
+
 shopt -s nullglob
 stls=(examples/*.stl)
 ls -lh "${stls[@]}"
