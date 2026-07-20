@@ -290,3 +290,32 @@ Life orphans after support removal: 73 (5.6% of life)
 Life self-supporting: NO — support removal would leave disconnected Life pieces
 ```
 
+
+## Bambu A1 Mini max build volume (180×180×180 mm)
+
+A1 Mini build volume is **180³ mm** (not 700 mm³ — that would be ~9 mm on a side).
+These fill the cube at `--cell 4` (45×45×45 cells).
+
+### A1 Mini max / still-life garden
+```
+life-stl  45×45×45 cells  (180.0×180.0×180.0 mm)  seed=17612214185882340107  mode=Breakaway  cell=4mm
+breakaway supports: style=Tree  shaft=0.6mm  tip=0.12mm  cluster=14mm  tips=0
+support physics: auto=true  trunks=0  splits=0  load=0.000N  worst_SF=n/a  max_trunk_r=0.00mm  tip_snap≈0.000N  structurally OK
+generations (above 1-cell base): 44
+voxels: life=13508  base=2025  total_solid=15533
+Life print overhang (empty cell directly below): 0 voxels, 0.0 mm² (0.0% of solid)
+Life orphans after support removal: 0 (0.0% of life)
+Life self-supporting: yes — snap off breakaway supports → one standing piece
+```
+
+### A1 Mini max / soup tree
+```
+life-stl  45×45×45 cells  (180.0×180.0×180.0 mm)  seed=42  mode=Breakaway  cell=4mm
+breakaway supports: style=Tree  shaft=0.6mm  tip=0.12mm  cluster=14mm  tips=4769
+support physics: auto=true  trunks=801  splits=780  load=26.387N  worst_SF=1.65  max_trunk_r=1.10mm  tip_snap≈0.407N  structurally OK
+generations (above 1-cell base): 44
+voxels: life=12306  base=2025  total_solid=14331
+Life print overhang (empty cell directly below): 4769 voxels, 76304.0 mm² (33.3% of solid)
+Life orphans after support removal: 829 (6.7% of life)
+Life self-supporting: NO — support removal would leave disconnected Life pieces
+```
