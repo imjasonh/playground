@@ -1,4 +1,4 @@
-//! Breakaway support geometry (not cell-aligned fused voxels).
+//! Breakaway support geometry (slim cylinders / trees, not voxel-aligned).
 //!
 //! Tips are the bottoms of Life cells with no Life|Base directly underneath.
 //! Pillars go straight up from the bed; tree style clusters tips into trunks

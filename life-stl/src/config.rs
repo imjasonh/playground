@@ -17,9 +17,6 @@ pub enum SupportMode {
     /// remaining Life|Base mesh must be one piece (see orphan check).
     #[value(alias = "supports")]
     Breakaway,
-    /// Legacy fused voxel columns under overhangs (not breakaway).
-    #[value(alias = "scaffold")]
-    Fused,
 }
 
 impl std::fmt::Display for SupportMode {
@@ -27,7 +24,6 @@ impl std::fmt::Display for SupportMode {
         match self {
             SupportMode::Raw => write!(f, "raw"),
             SupportMode::Breakaway => write!(f, "breakaway"),
-            SupportMode::Fused => write!(f, "fused"),
         }
     }
 }
@@ -93,7 +89,7 @@ pub enum Pattern {
     /// Seeded still-life garden (blocks, tubs, beehives, boats). Stable, so the
     /// Z-stack is self-supporting without load-bearing supports. Default.
     Random,
-    /// Classic Bernoulli soup at `--density`. Chaotic — usually leaves Life
+    /// Classic Bernoulli soup at `--density`. Chaotic — often leaves Life
     /// orphans that cannot form one piece after support removal.
     Soup,
     /// Classic glider (needs at least 5×5). Moves each step → Life orphans.

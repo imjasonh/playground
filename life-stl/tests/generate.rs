@@ -43,27 +43,8 @@ fn breakaway_adds_tips_for_soup_overhangs() {
     assert!(model.support_tips > 0);
     assert_eq!(model.report.breakaway_support_tips, model.support_tips);
     assert!(model.triangles.len() > 12);
-    // Soup Life is not one piece after support removal.
     let life = evaluate_life_only(&config);
     assert!(!life.life_self_supporting());
-}
-
-#[test]
-fn fused_mode_still_fills_voxel_columns() {
-    let config = Config {
-        width: 16,
-        height: 16,
-        depth: 32,
-        seed: 7,
-        density: 0.35,
-        pattern: Pattern::Soup,
-        mode: SupportMode::Fused,
-        ..Config::default()
-    };
-    let volume = build_volume(&config);
-    let report = analyze(&volume, config.cell_mm);
-    assert_eq!(report.strict_floating_voxels, 0);
-    assert!(report.scaffold_voxels > 0);
 }
 
 #[test]

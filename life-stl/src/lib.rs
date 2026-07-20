@@ -9,7 +9,6 @@ pub mod config;
 pub mod life;
 pub mod mesh;
 pub mod metrics;
-pub mod scaffold;
 pub mod search;
 pub mod seed;
 pub mod support;
@@ -25,9 +24,8 @@ use std::path::Path;
 
 use stl_io::Triangle;
 
-use crate::mesh::{triangles_from_life_base, triangles_from_volume};
+use crate::mesh::triangles_from_volume;
 use crate::metrics::{analyze, analyze_with_supports};
-use crate::scaffold::apply_scaffolding;
 use crate::seed::initial_grid;
 use crate::support::{base_top_mm, collect_tips, triangles_for_tips};
 
@@ -70,31 +68,17 @@ pub fn build_life_volume(config: &Config) -> Volume {
     volume
 }
 
-/// Build Life volume and optionally apply **fused** voxel scaffolding.
+/// Build the Life|Base voxel volume (no support geometry).
 pub fn build_volume(config: &Config) -> Volume {
-    let mut volume = build_life_volume(config);
-    if config.mode == SupportMode::Fused {
-        apply_scaffolding(&mut volume, config.base_layers);
-    }
-    volume
+    build_life_volume(config)
 }
 
 /// Build the full printable model (Life mesh + optional breakaway supports).
 pub fn build_model(config: &Config) -> Model {
-    let mut volume = build_life_volume(config);
+    let volume = build_life_volume(config);
 
     match config.mode {
         SupportMode::Raw => {
-            let report = analyze(&volume, config.cell_mm);
-            Model {
-                triangles: triangles_from_life_base(&volume, config.cell_mm),
-                volume,
-                report,
-                support_tips: 0,
-            }
-        }
-        SupportMode::Fused => {
-            apply_scaffolding(&mut volume, config.base_layers);
             let report = analyze(&volume, config.cell_mm);
             Model {
                 triangles: triangles_from_volume(&volume, config.cell_mm),
@@ -106,7 +90,7 @@ pub fn build_model(config: &Config) -> Model {
         SupportMode::Breakaway => {
             let tips = collect_tips(&volume, config.cell_mm, config.support.tip_offset_mm);
             let support_tips = tips.len();
-            let mut triangles = triangles_from_life_base(&volume, config.cell_mm);
+            let mut triangles = triangles_from_volume(&volume, config.cell_mm);
             let base_z = base_top_mm(&volume, config.cell_mm);
             triangles.extend(triangles_for_tips(&tips, base_z, &config.support));
             let report = analyze_with_supports(&volume, config.cell_mm, support_tips);
@@ -167,8 +151,8 @@ pub fn format_report(config: &Config, report: &PrintabilityReport) -> String {
         config.base_layers, config.depth
     ));
     out.push_str(&format!(
-        "voxels: life={}  fused_scaffold={}  base={}  total_solid={}\n",
-        report.life_voxels, report.scaffold_voxels, report.base_voxels, report.solid_voxels
+        "voxels: life={}  base={}  total_solid={}\n",
+        report.life_voxels, report.base_voxels, report.solid_voxels
     ));
     out.push_str(&format!(
         "Life print overhang (empty cell directly below): {} voxels, {:.1} mm² ({:.1}% of solid)\n",

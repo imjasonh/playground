@@ -1,33 +1,16 @@
 use stl_io::{Normal, Triangle, Vertex};
 
-use crate::volume::{CellKind, Volume};
+use crate::volume::Volume;
 
 /// Build an oriented triangle mesh from solid voxels (face-culled cubes).
 pub fn triangles_from_volume(volume: &Volume, cell_mm: f32) -> Vec<Triangle> {
-    triangles_from_volume_filtered(volume, cell_mm, |_| true)
-}
-
-/// Mesh only Life + Base voxels (ignore fused scaffold cells).
-pub fn triangles_from_life_base(volume: &Volume, cell_mm: f32) -> Vec<Triangle> {
-    triangles_from_volume_filtered(volume, cell_mm, |k| {
-        matches!(k, CellKind::Life | CellKind::Base)
-    })
-}
-
-fn triangles_from_volume_filtered(
-    volume: &Volume,
-    cell_mm: f32,
-    keep: impl Fn(CellKind) -> bool,
-) -> Vec<Triangle> {
     let mut tris = Vec::new();
     let s = cell_mm;
-
-    let solid = |x: usize, y: usize, z: usize| keep(volume.get(x, y, z));
 
     for z in 0..volume.depth {
         for y in 0..volume.height {
             for x in 0..volume.width {
-                if !solid(x, y, z) {
+                if !volume.is_solid(x, y, z) {
                     continue;
                 }
                 let fx = x as f32 * s;
@@ -35,7 +18,7 @@ fn triangles_from_volume_filtered(
                 let fz = z as f32 * s;
 
                 // -X
-                if x == 0 || !solid(x - 1, y, z) {
+                if x == 0 || !volume.is_solid(x - 1, y, z) {
                     push_quad(
                         &mut tris,
                         [fx, fy, fz],
@@ -46,7 +29,7 @@ fn triangles_from_volume_filtered(
                     );
                 }
                 // +X
-                if x + 1 >= volume.width || !solid(x + 1, y, z) {
+                if x + 1 >= volume.width || !volume.is_solid(x + 1, y, z) {
                     push_quad(
                         &mut tris,
                         [fx + s, fy, fz],
@@ -57,7 +40,7 @@ fn triangles_from_volume_filtered(
                     );
                 }
                 // -Y
-                if y == 0 || !solid(x, y - 1, z) {
+                if y == 0 || !volume.is_solid(x, y - 1, z) {
                     push_quad(
                         &mut tris,
                         [fx, fy, fz],
@@ -68,7 +51,7 @@ fn triangles_from_volume_filtered(
                     );
                 }
                 // +Y
-                if y + 1 >= volume.height || !solid(x, y + 1, z) {
+                if y + 1 >= volume.height || !volume.is_solid(x, y + 1, z) {
                     push_quad(
                         &mut tris,
                         [fx, fy + s, fz],
@@ -79,7 +62,7 @@ fn triangles_from_volume_filtered(
                     );
                 }
                 // -Z
-                if z == 0 || !solid(x, y, z - 1) {
+                if z == 0 || !volume.is_solid(x, y, z - 1) {
                     push_quad(
                         &mut tris,
                         [fx, fy, fz],
@@ -90,7 +73,7 @@ fn triangles_from_volume_filtered(
                     );
                 }
                 // +Z
-                if z + 1 >= volume.depth || !solid(x, y, z + 1) {
+                if z + 1 >= volume.depth || !volume.is_solid(x, y, z + 1) {
                     push_quad(
                         &mut tris,
                         [fx, fy, fz + s],

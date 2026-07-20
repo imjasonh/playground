@@ -6,8 +6,6 @@ pub enum CellKind {
     Base,
     /// A live Game of Life cell at this generation.
     Life,
-    /// Added so the model is self-supporting under FDM 45° rules.
-    Scaffold,
 }
 
 impl CellKind {
@@ -48,17 +46,6 @@ impl Volume {
     pub fn set(&mut self, x: usize, y: usize, z: usize, kind: CellKind) {
         let i = self.idx(x, y, z);
         self.cells[i] = kind;
-    }
-
-    /// Set to `kind` only when currently empty (never overwrite Life/Base).
-    pub fn fill_empty(&mut self, x: usize, y: usize, z: usize, kind: CellKind) -> bool {
-        let i = self.idx(x, y, z);
-        if self.cells[i] == CellKind::Empty {
-            self.cells[i] = kind;
-            true
-        } else {
-            false
-        }
     }
 
     pub fn is_solid(&self, x: usize, y: usize, z: usize) -> bool {

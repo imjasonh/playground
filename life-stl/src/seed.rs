@@ -9,11 +9,11 @@ use crate::life::Grid;
 pub fn initial_grid(config: &Config) -> Grid {
     match config.pattern {
         // Default: sparse still-life garden — stable forever, so the Z-stack is
-        // vertical columns face-connected to the bed (no load-bearing scaffold).
+        // vertical columns face-connected to the bed (usually no supports needed).
         Pattern::Random => {
             still_life_garden(config.width, config.height, config.seed, config.density)
         }
-        // Classic Bernoulli soup — chaotic, usually needs permanent fused scaffold.
+        // Classic Bernoulli soup — chaotic, often leaves orphans after support removal.
         Pattern::Soup => soup_grid(config.width, config.height, config.seed, config.density),
         Pattern::Glider => place_pattern(config.width, config.height, &GLIDER, 1, 1),
         Pattern::Rpento => place_pattern(config.width, config.height, &R_PENTOMINO, 2, 2),

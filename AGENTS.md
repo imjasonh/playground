@@ -531,7 +531,7 @@ bundle exec fastlane test
 | `cors-proxy/` | SSRF-hardened CORS proxy — Cloudflare Worker | `cargo test` + clippy + wasm build |
 | `git-server/` | git smart-HTTP server on R2 + Durable Objects — Cloudflare Worker | `cargo test` (incl. real-git integration) + clippy + wasm build |
 | `git-fuse/` | read-only FUSE adapter for git-server (mount commits/refs as files) — CLI, not a Worker | `cargo test` (incl. e2e over real FUSE mounts; skips without `/dev/fuse`) + clippy |
-| `life-stl/` | Conway's Game of Life → 3D-printable STL (Z = time), with scaffold columns for support-free FDM | `cargo test` + clippy |
+| `life-stl/` | Conway's Game of Life → 3D-printable STL (Z = time), with tunable breakaway supports | `cargo test` + clippy |
 
 > **`git-server` has its own agent guide:** read
 > [`git-server/AGENTS.md`](git-server/AGENTS.md) before working in that

@@ -67,7 +67,7 @@ struct Cli {
     #[arg(long, default_value_t = 1)]
     base_layers: usize,
 
-    /// Support strategy: breakaway (default), fused voxel columns, or raw.
+    /// Support strategy: breakaway (default) or raw (no supports).
     #[arg(long, value_enum, default_value_t = SupportMode::Breakaway)]
     mode: SupportMode,
 

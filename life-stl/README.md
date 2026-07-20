@@ -18,7 +18,7 @@ cargo run --release -- --pattern soup --seed 7 \
 
 ## Breakaway supports (default)
 
-Default `--mode breakaway` adds **slim geometric supports** (not fused voxel columns):
+Default `--mode breakaway` adds **slim geometric supports**:
 
 | Style | Behavior |
 |-------|----------|
@@ -40,7 +40,7 @@ Tunable (mm):
 
 Supports are meant to **snap off** after printing. The remaining Life|Base mesh is a **single standing piece** only when every Life voxel is face-connected to the bed (no “orphans”). Still-life gardens (`--pattern random`) usually need **zero** supports. Chaotic `--pattern soup` often has orphans → STL is written but the CLI exits non-zero if you passed an explicit seed.
 
-Legacy `--mode fused` (alias `scaffold`) keeps the old solid voxel columns (not breakaway). `--mode raw` emits Life only.
+`--mode raw` emits Life only (no supports).
 
 ## Cell size (FDM / Bambu A1 Mini)
 
@@ -66,7 +66,7 @@ A1 Mini stock nozzle is **0.4 mm**. Build volume is **180³ mm** — a 600 mm-ta
 | `--width-mm` / `--height-mm` / `--depth-mm` | — | Size in mm (with `--cell`) |
 | `--cell` | `4.0` | Voxel edge (mm) |
 | `--pattern` | `random` | `random` (still-life garden), `soup`, `glider`, … |
-| `--mode` | `breakaway` | `breakaway`, `fused`, `raw` |
+| `--mode` | `breakaway` | `breakaway` or `raw` |
 
 ## Examples
 

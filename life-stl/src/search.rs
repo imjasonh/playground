@@ -16,7 +16,7 @@ pub struct SearchOutcome {
     pub life_self_supporting: bool,
 }
 
-/// Build + analyze one seed (includes breakaway/fused supports per config).
+/// Build + analyze one seed (includes breakaway supports per config).
 pub fn evaluate(config: &Config) -> Model {
     build_model(config)
 }
@@ -61,8 +61,7 @@ pub fn find_self_supporting(
             Some(b) => {
                 outcome.report.orphan_life_voxels < b.report.orphan_life_voxels
                     || (outcome.report.orphan_life_voxels == b.report.orphan_life_voxels
-                        && outcome.report.breakaway_support_tips + outcome.report.scaffold_voxels
-                            < b.report.breakaway_support_tips + b.report.scaffold_voxels)
+                        && outcome.report.breakaway_support_tips < b.report.breakaway_support_tips)
             }
         };
         if replace {

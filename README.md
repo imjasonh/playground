@@ -62,8 +62,8 @@ skip them:
   plain files, with reads racing a shared local clone cache against the
   server's read API so first byte never waits on a clone.
 - **[`life-stl/`](life-stl/)** — generate a 3D-printable STL of Conway's Game of
-  Life with time as the Z axis (Rust CLI); optional scaffold columns keep the
-  model FDM-friendly without supports.
+  Life with time as the Z axis (Rust CLI); optional breakaway pillar/tree
+  supports for FDM.
 
 ## iOS app
 

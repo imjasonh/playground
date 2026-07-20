@@ -4,7 +4,6 @@ use crate::volume::{CellKind, Volume};
 #[derive(Debug, Clone, PartialEq)]
 pub struct PrintabilityReport {
     pub life_voxels: usize,
-    pub scaffold_voxels: usize,
     pub base_voxels: usize,
     pub solid_voxels: usize,
     /// Solids with no Moore (3×3) support from the layer below.
@@ -15,8 +14,7 @@ pub struct PrintabilityReport {
     pub strict_floating_voxels: usize,
     pub strict_floating_area_mm2: f64,
     pub strict_floating_pct: f64,
-    /// Life voxels whose directly-below cell is empty of *any* solid
-    /// (counts scaffold as support — use after scaffolding).
+    /// Life voxels whose directly-below cell is empty.
     pub unsupported_life_voxels: usize,
     pub unsupported_life_pct: f64,
     /// Life voxels that are **not** face-connected to the base through
@@ -24,7 +22,7 @@ pub struct PrintabilityReport {
     /// pieces — not a single standing sculpture. See [`life_self_supporting`].
     pub orphan_life_voxels: usize,
     pub orphan_life_pct: f64,
-    /// Number of breakaway support tips generated (0 for raw / fused-only paths).
+    /// Number of breakaway support tips generated (0 for raw).
     pub breakaway_support_tips: usize,
 }
 
@@ -37,11 +35,6 @@ impl PrintabilityReport {
 }
 
 /// Analyze unsupported / floating regions.
-///
-/// Primary print overhang estimate is **strict floating** (empty cell
-/// directly below). Separately, [`PrintabilityReport::orphan_life_voxels`]
-/// asks whether the Life sculpture stays one piece after breakaway supports
-/// are removed.
 pub fn analyze(volume: &Volume, cell_mm: f32) -> PrintabilityReport {
     analyze_with_supports(volume, cell_mm, 0)
 }
@@ -79,7 +72,6 @@ pub fn analyze_with_supports(
 
     let orphan_life = count_orphan_life(volume);
     let life = volume.count_kind(CellKind::Life);
-    let scaffold = volume.count_kind(CellKind::Scaffold);
     let base = volume.count_kind(CellKind::Base);
     let solid = volume.solid_count();
     let solid_f = solid.max(1) as f64;
@@ -87,7 +79,6 @@ pub fn analyze_with_supports(
 
     PrintabilityReport {
         life_voxels: life,
-        scaffold_voxels: scaffold,
         base_voxels: base,
         solid_voxels: solid,
         moore_unsupported_voxels: moore_unsupported,
@@ -105,7 +96,7 @@ pub fn analyze_with_supports(
 }
 
 /// Count Life voxels not reachable from the base plate by face adjacency
-/// through Life|Base only (scaffold and empty are barriers).
+/// through Life|Base only.
 pub fn count_orphan_life(volume: &Volume) -> usize {
     let life = volume.count_kind(CellKind::Life);
     if life == 0 {
@@ -196,7 +187,6 @@ fn face_neighbors(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scaffold::apply_scaffolding;
 
     #[test]
     fn raw_floating_is_detected() {
@@ -215,39 +205,16 @@ mod tests {
     }
 
     #[test]
-    fn scaffold_clears_strict_floating() {
+    fn floating_life_island_is_orphan() {
         let mut v = Volume::new(3, 3, 3);
         for y in 0..3 {
             for x in 0..3 {
                 v.set(x, y, 0, CellKind::Base);
             }
         }
-        v.set(0, 0, 1, CellKind::Life);
-        v.set(2, 2, 2, CellKind::Life);
-        let before = analyze(&v, 2.0);
-        assert!(before.strict_floating_voxels > 0);
-        apply_scaffolding(&mut v, 1);
-        let r = analyze(&v, 2.0);
-        assert_eq!(r.strict_floating_voxels, 0);
-        assert!(r.scaffold_voxels > 0);
-    }
-
-    #[test]
-    fn floating_life_island_is_orphan_even_with_scaffold() {
-        let mut v = Volume::new(3, 3, 3);
-        for y in 0..3 {
-            for x in 0..3 {
-                v.set(x, y, 0, CellKind::Base);
-            }
-        }
-        // Life only at z=2, not face-connected down through Life.
         v.set(1, 1, 2, CellKind::Life);
         assert_eq!(count_orphan_life(&v), 1);
-        apply_scaffolding(&mut v, 1);
-        // Scaffold fills (1,1,1) but orphans ignore scaffold.
-        assert_eq!(count_orphan_life(&v), 1);
-        let r = analyze(&v, 4.0);
-        assert!(!r.life_self_supporting());
+        assert!(!analyze(&v, 4.0).life_self_supporting());
     }
 
     #[test]
@@ -270,10 +237,8 @@ mod tests {
         for x in 0..3 {
             v.set(x, 0, 0, CellKind::Base);
         }
-        // Persistent column at x=0.
         v.set(0, 0, 1, CellKind::Life);
         v.set(0, 0, 2, CellKind::Life);
-        // Birth at x=1,z=2 face-adjacent to the column — anchored.
         v.set(1, 0, 2, CellKind::Life);
         assert_eq!(count_orphan_life(&v), 0);
     }
