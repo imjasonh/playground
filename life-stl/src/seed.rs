@@ -19,6 +19,8 @@ pub fn initial_grid(config: &Config) -> Grid {
         Pattern::Rpento => place_pattern(config.width, config.height, &R_PENTOMINO, 2, 2),
         Pattern::Blinker => place_pattern(config.width, config.height, &BLINKER, 1, 1),
         Pattern::Lwss => place_pattern(config.width, config.height, &LWSS, 1, 2),
+        // Bottom layer of a reverse-built chain (see `reverse::build_reverse_chain`).
+        Pattern::Reverse => crate::reverse::reverse_initial_grid(config),
     }
 }
 
@@ -36,7 +38,7 @@ fn soup_grid(width: usize, height: usize, seed: u64, density: f64) -> Grid {
 
 /// Pack still lifes with Chebyshev gap ≥ 2 between any live cells of different
 /// objects (no neighbor interaction → pattern stays stable).
-fn still_life_garden(width: usize, height: usize, seed: u64, density: f64) -> Grid {
+pub fn still_life_garden(width: usize, height: usize, seed: u64, density: f64) -> Grid {
     let density = density.clamp(0.0, 1.0);
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
     let mut grid = Grid::new(width, height);

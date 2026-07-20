@@ -307,7 +307,10 @@ fn main() -> ExitCode {
     };
 
     let seed_was_explicit = cli.seed.is_some();
-    let searchable = matches!(cli.pattern, Pattern::Random | Pattern::Soup);
+    let searchable = matches!(
+        cli.pattern,
+        Pattern::Random | Pattern::Soup | Pattern::Reverse
+    );
     let start_seed = match cli.seed {
         Some(s) => s,
         None if searchable => {
@@ -480,11 +483,11 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    // Soup search (no explicit seed): interesting + removable supports succeed,
-    // even when Life orphans remain (multi-piece after cleanup).
+    // Soup / reverse search (no explicit seed): interesting + removable supports
+    // succeed even when Life orphans remain (multi-piece after cleanup).
     if !seed_was_explicit
         && searchable
-        && matches!(cli.pattern, Pattern::Soup)
+        && matches!(cli.pattern, Pattern::Soup | Pattern::Reverse)
         && cli.mode == SupportMode::Breakaway
         && outcome.supports_removable
         && outcome.interesting

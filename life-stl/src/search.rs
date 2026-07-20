@@ -62,9 +62,9 @@ fn outcome_from(config: &Config, model: Model, attempts: u32) -> SearchOutcome {
 ///   interesting evolution for non-garden patterns.
 /// - **Breakaway + Random**: Life one piece **and** supports easy to remove
 ///   (gardens are exempt from the complexity gate).
-/// - **Breakaway + Soup** (and other chaotic patterns): supports must be easy
-///   to remove **and** evolution must stay interesting; Life orphans are
-///   allowed (soups rarely stay one piece).
+/// - **Breakaway + Soup / Reverse** (and other chaotic patterns): supports must
+///   be easy to remove **and** evolution must stay interesting; Life orphans
+///   are allowed (these patterns rarely stay one piece).
 fn candidate_succeeds(
     mode: SupportMode,
     pattern: Pattern,
@@ -155,7 +155,7 @@ pub fn find_self_supporting(
         attempts += 1;
         config.seed = seed;
 
-        // Cheap reject: skip support routing for soups that die into a
+        // Cheap reject: skip support routing for patterns that die into a
         // still-life tower after a few turns.
         if pattern != Pattern::Random && !analyze_complexity(&config).ok {
             if first_boring_seed.is_none() {

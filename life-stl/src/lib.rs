@@ -12,6 +12,7 @@ pub mod mesh;
 pub mod metrics;
 pub mod physics;
 pub mod removal;
+pub mod reverse;
 pub mod search;
 pub mod seed;
 pub mod support;
@@ -53,6 +54,13 @@ pub struct Model {
 
 /// Simulate Life onto a volume with a base plate (no supports).
 pub fn build_life_volume(config: &Config) -> Volume {
+    // Reverse mode paints a precomputed predecessor chain (not forward stepping
+    // from gen-0 alone — though the chain is forward-consistent by construction).
+    if config.pattern == crate::config::Pattern::Reverse {
+        let chain = reverse::reverse_generation_chain(config);
+        return reverse::volume_from_chain(&chain, config.base_layers);
+    }
+
     let mut grid = initial_grid(config);
     let mut volume = Volume::new(config.width, config.height, config.total_z());
 

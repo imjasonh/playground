@@ -204,6 +204,10 @@ pub enum Pattern {
     Blinker,
     /// Lightweight spaceship.
     Lwss,
+    /// Build the stack **backward** from a still-life ash at the top: search
+    /// zero-birth predecessors so early Z stays active while the top stays
+    /// sparse and tip-light. Seed selects the ash garden.
+    Reverse,
 }
 
 /// Generation parameters.

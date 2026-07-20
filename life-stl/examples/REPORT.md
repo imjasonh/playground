@@ -7,16 +7,21 @@ Only examples that pass **both** gates are shipped:
 - **support removability** (`cleanup OK`: no rest-on-model, no trapped trunks, score ≥ 70)
 - **evolution complexity** (`interesting OK`: not a still life / short oscillator before generation ≥ 8, i.e. ~⅓ of a 24-gen stack)
 
-Survey note (16×16×24 tree supports, default gates): among 50k seeds at
-densities 0.08–0.12, **zero** soups pass both gates. Seeds that stay
-active until generation ≥ 8 always pick up at least one rest-on-model
-landing under the current support router (typical near-miss score 75).
-Glider / LWSS / R-pentomino are interesting but fail removability hard
-(many rest-on-model branches). Formerly shipped `soup-easy-*` examples
-all settle by generation 4 and are rejected by the complexity gate.
+## Why the example set is empty
 
-No STL examples are shipped until removability is relaxed or the
-support router improves for long-lived soups.
+**Forward soups:** among 50k seeds (16×16×24, dens 0.08–0.12), zero pass both
+gates. Settle≥8 always picks up ≥1 rest-on-model landing (near-miss score ~75).
+Formerly shipped `soup-easy-*` settle by gen 4 → `TOO BORING`.
+
+**Reverse (`--pattern reverse`):** zero-birth predecessors into still-life ash
+are tip-free but only ~1 generation deep, then pad with ash — fails complexity.
+See `docs/reverse-and-methuselahs.md`.
+
+**Named seeds:** R-pentomino / glider / LWSS stay interesting but fail
+removability (many rest-on-model tips). Classic methuselahs need hundreds of
+generations (too tall at 4 mm/cell). B-heptomino settles immediately (boring).
+
+Likely unlock: allow ≤1 rest-on-model in the removability gate.
 
 ## Shipped examples
 

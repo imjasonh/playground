@@ -81,16 +81,21 @@ generate_one() {
   echo "- **support removability** (\`cleanup OK\`: no rest-on-model, no trapped trunks, score ≥ 70)"
   echo "- **evolution complexity** (\`interesting OK\`: not a still life / short oscillator before generation ≥ 8, i.e. ~⅓ of a 24-gen stack)"
   echo
-  echo "Survey note (16×16×24 tree supports, default gates): among 50k seeds at"
-  echo "densities 0.08–0.12, **zero** soups pass both gates. Seeds that stay"
-  echo "active until generation ≥ 8 always pick up at least one rest-on-model"
-  echo "landing under the current support router (typical near-miss score 75)."
-  echo "Glider / LWSS / R-pentomino are interesting but fail removability hard"
-  echo "(many rest-on-model branches). Formerly shipped \`soup-easy-*\` examples"
-  echo "all settle by generation 4 and are rejected by the complexity gate."
+  echo "## Why the example set is empty"
   echo
-  echo "No STL examples are shipped until removability is relaxed or the"
-  echo "support router improves for long-lived soups."
+  echo "**Forward soups:** among 50k seeds (16×16×24, dens 0.08–0.12), zero pass both"
+  echo "gates. Settle≥8 always picks up ≥1 rest-on-model landing (near-miss score ~75)."
+  echo "Formerly shipped \`soup-easy-*\` settle by gen 4 → \`TOO BORING\`."
+  echo
+  echo "**Reverse (\`--pattern reverse\`):** zero-birth predecessors into still-life ash"
+  echo "are tip-free but only ~1 generation deep, then pad with ash — fails complexity."
+  echo "See \`docs/reverse-and-methuselahs.md\`."
+  echo
+  echo "**Named seeds:** R-pentomino / glider / LWSS stay interesting but fail"
+  echo "removability (many rest-on-model tips). Classic methuselahs need hundreds of"
+  echo "generations (too tall at 4 mm/cell). B-heptomino settles immediately (boring)."
+  echo
+  echo "Likely unlock: allow ≤1 rest-on-model in the removability gate."
   echo
 
   shipped=0

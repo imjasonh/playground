@@ -95,8 +95,18 @@ A1 Mini stock nozzle is **0.4 mm**. Build volume is **180³ mm** — keep `--dep
 | `-x/-y/-z` | `24/24/48` | Size in cells |
 | `--width-mm` / `--height-mm` / `--depth-mm` | — | Size in mm (with `--cell`) |
 | `--cell` | `4.0` | Voxel edge (mm) |
-| `--pattern` | `random` | `random` (still-life garden), `soup`, `glider`, … |
+| `--pattern` | `random` | `random` (still-life garden), `soup`, `reverse`, `glider`, … |
 | `--mode` | `breakaway` | `breakaway` or `raw` |
+
+## Reverse evolution (`--pattern reverse`)
+
+Builds the stack **backward** from a still-life ash at the top, preferring
+**zero-birth** predecessors (sparks that die in one step → no support tips for
+that layer). In practice those histories are only ~1 generation deep, so the
+complexity gate still fails; see [`docs/reverse-and-methuselahs.md`](docs/reverse-and-methuselahs.md).
+
+Classic methuselahs (R-pentomino, acorn, diehard) either need far more Z than
+an FDM cell size allows, or fail removability while they are active.
 
 ## Examples
 
