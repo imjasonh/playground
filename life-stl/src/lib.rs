@@ -92,7 +92,13 @@ pub fn build_model(config: &Config) -> Model {
             let support_tips = tips.len();
             let mut triangles = triangles_from_volume(&volume, config.cell_mm);
             let base_z = base_top_mm(&volume, config.cell_mm);
-            triangles.extend(triangles_for_tips(&tips, base_z, &config.support));
+            triangles.extend(triangles_for_tips(
+                &volume,
+                &tips,
+                config.cell_mm,
+                base_z,
+                &config.support,
+            ));
             let report = analyze_with_supports(&volume, config.cell_mm, support_tips);
             Model {
                 volume,

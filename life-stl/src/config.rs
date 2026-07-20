@@ -65,6 +65,12 @@ pub struct SupportParams {
     pub tip_offset_mm: f32,
     /// Cylinder tessellation segments (≥ 3).
     pub segments: u32,
+    /// XY clearance from Life voxel footprints (mm). `0` → radius + 0.4 mm.
+    /// Inspired by Cura/Bambu tree-support collision areas.
+    pub clearance_mm: f32,
+    /// Max branch lean from vertical (degrees). Limits how far a route may
+    /// move in XY per cell-layer while descending around obstacles.
+    pub max_branch_angle_deg: f32,
 }
 
 impl Default for SupportParams {
@@ -79,6 +85,9 @@ impl Default for SupportParams {
             cluster_mm: 12.0,
             tip_offset_mm: 0.0,
             segments: 8,
+            // Prefer an explicit margin so thin shafts still clear Life faces.
+            clearance_mm: 1.0,
+            max_branch_angle_deg: 40.0,
         }
     }
 }

@@ -103,6 +103,15 @@ struct Cli {
     #[arg(long, default_value_t = SupportParams::default().segments)]
     support_segments: u32,
 
+    /// XY clearance from Life cells (mm). Supports route around obstacles
+    /// instead of punching through. `0` uses radius + 0.4 mm.
+    #[arg(long, default_value_t = SupportParams::default().clearance_mm)]
+    support_clearance: f32,
+
+    /// Max branch lean from vertical (degrees) while dodging Life cells.
+    #[arg(long, default_value_t = SupportParams::default().max_branch_angle_deg)]
+    support_branch_angle: f32,
+
     /// Output STL path.
     #[arg(short = 'o', long, default_value = "life.stl")]
     output: PathBuf,
@@ -192,6 +201,15 @@ fn main() -> ExitCode {
         None => 0,
     };
 
+    if cli.support_clearance < 0.0 {
+        eprintln!("error: --support-clearance must be >= 0");
+        return ExitCode::FAILURE;
+    }
+    if !(5.0..=60.0).contains(&cli.support_branch_angle) {
+        eprintln!("error: --support-branch-angle must be between 5 and 60 degrees");
+        return ExitCode::FAILURE;
+    }
+
     let support = SupportParams {
         style: cli.support_style,
         radius_mm: cli.support_radius,
@@ -201,6 +219,8 @@ fn main() -> ExitCode {
         cluster_mm: cli.support_cluster,
         tip_offset_mm: cli.support_tip_offset,
         segments: cli.support_segments,
+        clearance_mm: cli.support_clearance,
+        max_branch_angle_deg: cli.support_branch_angle,
     };
 
     let base_config = Config {

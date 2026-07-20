@@ -18,14 +18,14 @@ cargo run --release -- --pattern soup --seed 7 \
 
 ## Breakaway supports (default)
 
-Default `--mode breakaway` adds **slim geometric supports**:
+Default `--mode breakaway` adds **slim geometric supports** that **route around Life cells** instead of punching through them (same idea as Cura / Bambu tree supports: collision clearance, layer-wise descent with a max branch angle, and rest-on-model when a path is blocked).
 
 | Style | Behavior |
 |-------|----------|
-| `tree` (default) | Cluster nearby overhang tips onto bed trunks with diagonal branches |
-| `pillar` | One vertical tapered pillar per overhang tip |
+| `tree` (default) | Cluster nearby overhang tips; steer toward a shared centroid while dodging Life |
+| `pillar` | Prefer a vertical drop under each tip; lean only when the column is blocked |
 
-Tunable (mm):
+Tunable (mm / degrees):
 
 | Flag | Default | Meaning |
 |------|---------|---------|
@@ -37,6 +37,8 @@ Tunable (mm):
 | `--support-cluster` | `12` | XY cluster radius for shared trunks |
 | `--support-tip-offset` | `0` | Shift tip toward +X/+Y from cell center |
 | `--support-segments` | `8` | Cylinder tessellation |
+| `--support-clearance` | `1.0` | XY keep-out from Life footprints (`0` → radius+0.4) |
+| `--support-branch-angle` | `40` | Max lean from vertical while dodging (5–60°) |
 
 Supports are meant to **snap off** after printing. The remaining Life|Base mesh is a **single standing piece** only when every Life voxel is face-connected to the bed (no “orphans”). Still-life gardens (`--pattern random`) usually need **zero** supports. Chaotic `--pattern soup` often has orphans → STL is written but the CLI exits non-zero if you passed an explicit seed.
 
