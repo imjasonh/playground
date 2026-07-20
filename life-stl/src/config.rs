@@ -204,26 +204,29 @@ impl Default for SupportParams {
 }
 
 /// Named starting patterns (or random).
+///
+/// In gusset mode any pattern prints as one piece; the notes below about Life
+/// orphans apply to breakaway/raw modes, where connectivity is face-only.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum Pattern {
-    /// Seeded still-life garden (blocks, tubs, beehives, boats). Stable, so the
-    /// Z-stack is self-supporting without load-bearing supports. Default.
+    /// Seeded still-life garden (blocks, tubs, beehives, boats). Stable
+    /// forever, so it is exempt from the complexity gate. Default.
     Random,
-    /// Classic Bernoulli soup at `--density`. Chaotic — often leaves Life
-    /// orphans that cannot form one piece after support removal.
+    /// Classic Bernoulli soup at `--density`. Chaotic; in breakaway mode it
+    /// often leaves orphans that cannot form one piece after support removal.
     Soup,
-    /// Classic glider (needs at least 5×5). Moves each step → Life orphans.
+    /// Classic glider (needs at least 5×5). Climbs the stack diagonally.
     Glider,
-    /// R-pentomino methuselah.
+    /// R-pentomino methuselah. On small bounded boards it settles in ~19
+    /// generations, so it fails the default full-height activity gate.
     Rpento,
-    /// Blinker oscillator.
+    /// Blinker oscillator (period 2 — always fails the complexity gate).
     Blinker,
     /// Lightweight spaceship.
     Lwss,
-    /// Build the stack **backward** from a still-life ash at the top: search
-    /// zero-birth predecessors so early Z stays active while the top stays
-    /// sparse and tip-light. Seed selects the ash garden.
-    Reverse,
+    /// Acorn methuselah (7 cells, centered). Chaotic growth that easily
+    /// outlasts any printable Z height.
+    Acorn,
 }
 
 /// Generation parameters.

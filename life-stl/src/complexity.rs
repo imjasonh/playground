@@ -129,8 +129,9 @@ mod tests {
     }
 
     #[test]
-    fn former_easy_soups_are_too_boring() {
-        // All previously shipped "soup-easy-*" examples settle by generation 4.
+    fn early_stable_soups_fail_complexity() {
+        // Low-density soups that settle into still lifes within ~4 generations
+        // must be rejected — most of the printed height would be a static tower.
         let seeds = [
             (60u64, 0.12),
             (98, 0.12),
@@ -182,6 +183,20 @@ mod tests {
         assert!(report.ok, "{report:?}");
         assert_eq!(report.period, 0);
         assert_eq!(report.quiescent_generation, 24);
+    }
+
+    #[test]
+    fn acorn_outlasts_the_stack() {
+        let config = Config {
+            width: 44,
+            height: 44,
+            depth: 44,
+            pattern: Pattern::Acorn,
+            ..Config::default()
+        };
+        let report = analyze_complexity(&config);
+        assert!(report.ok, "{report:?}");
+        assert_eq!(report.period, 0, "acorn must not settle within 44 gens");
     }
 
     #[test]

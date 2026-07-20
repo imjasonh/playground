@@ -95,7 +95,8 @@ fn writes_nonempty_stl_with_tree_supports() {
 }
 
 #[test]
-fn glider_is_not_self_supporting() {
+fn glider_is_not_self_supporting_without_braces() {
+    // Face-only connectivity (raw/breakaway): a moving glider leaves orphans.
     let config = Config {
         width: 12,
         height: 12,
@@ -108,4 +109,23 @@ fn glider_is_not_self_supporting() {
     assert!(report.life_voxels > 0);
     assert!(report.orphan_life_voxels > 0);
     assert!(!report.life_self_supporting());
+}
+
+#[test]
+fn gusset_glider_writes_one_piece_stl() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("glider.stl");
+    let config = Config {
+        width: 12,
+        height: 12,
+        depth: 24,
+        pattern: Pattern::Glider,
+        mode: SupportMode::Gusset,
+        ..Config::default()
+    };
+    let report = generate_stl(&config, &path).unwrap();
+    assert!(report.life_self_supporting());
+    assert!(report.gusset_braces > 0);
+    assert_eq!(report.breakaway_support_tips, 0);
+    assert!(std::fs::metadata(&path).unwrap().len() > 84);
 }

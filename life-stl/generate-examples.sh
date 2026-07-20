@@ -73,6 +73,9 @@ section() {
   section "Glider tower — 64×64×180 mm" examples/gusset-glider-tower.stl \
     --pattern glider -x 16 -y 16 -z 44 --mode gusset
 
+  section "Acorn methuselah — 176×176×180 mm" examples/gusset-acorn.stl \
+    --pattern acorn -x 44 -y 44 -z 44 --mode gusset
+
   section "Soup — 96×96×148 mm" examples/gusset-soup-mid.stl \
     --pattern soup --seed 0 --density 0.18 -x 24 -y 24 -z 36 --mode gusset
 

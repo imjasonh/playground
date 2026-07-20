@@ -1,7 +1,8 @@
-//! Search for seeds whose supports are practically removable and whose Life
-//! evolution stays interesting long enough (not a still-life tower after a
-//! few turns). When possible, also prefer Life geometry that is one piece
-//! after support removal.
+//! Seed search: try seeds until one passes the gates for the configured
+//! mode/pattern (see `candidate_succeeds`) — evolution stays interesting for
+//! the printed height, supports (if any) are practically removable, and the
+//! final piece stands on its own. Keeps the best-scoring failure as a
+//! best-effort fallback when the budget is exhausted.
 
 use crate::complexity::analyze_complexity;
 use crate::config::{Config, Pattern, SupportMode};
@@ -67,9 +68,9 @@ fn outcome_from(config: &Config, model: Model, attempts: u32) -> SearchOutcome {
 ///   piece (always true for real Life) and evolution must stay interesting.
 /// - **Breakaway + Random**: Life one piece **and** supports easy to remove
 ///   (gardens are exempt from the complexity gate).
-/// - **Breakaway + Soup / Reverse** (and other chaotic patterns): supports must
-///   be easy to remove **and** evolution must stay interesting; Life orphans
-///   are allowed (these patterns rarely stay one piece).
+/// - **Breakaway + Soup** (and other chaotic patterns): supports must be easy
+///   to remove **and** evolution must stay interesting; Life orphans are
+///   allowed (these patterns rarely stay one piece).
 fn candidate_succeeds(
     mode: SupportMode,
     pattern: Pattern,

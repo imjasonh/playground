@@ -22,6 +22,18 @@ Life orphans (causal connectivity): 0 (0.0% of life)
 Life self-supporting: yes — causality braces make one standing piece
 ```
 
+### Acorn methuselah — 176×176×180 mm
+```
+life-stl  44×44×45 cells  (176.0×176.0×180.0 mm)  seed=0  mode=Gusset  cell=4mm
+self-supporting gussets: braces=2247  width=1.8mm — every birth leans on its 3 parents (45° rule); no supports to remove
+complexity: quiescent_gen=44  period=none  unique_states=44  need≥44  interesting OK
+generations (above 1-cell base): 44
+voxels: life=1834  base=1936  total_solid=3770
+Life print overhang (empty cell directly below): 749 voxels, 11984.0 mm² (19.9% of solid)
+Life orphans (causal connectivity): 0 (0.0% of life)
+Life self-supporting: yes — causality braces make one standing piece
+```
+
 ### Soup — 96×96×148 mm
 ```
 life-stl  24×24×37 cells  (96.0×96.0×148.0 mm)  seed=0  mode=Gusset  cell=4mm

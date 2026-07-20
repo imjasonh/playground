@@ -115,16 +115,8 @@ A1 Mini stock nozzle is **0.4 mm**. Build volume is **180³ mm** — keep `--dep
 | `-x/-y/-z` | `24/24/48` | Size in cells |
 | `--width-mm` / `--height-mm` / `--depth-mm` | — | Size in mm (with `--cell`) |
 | `--cell` | `4.0` | Voxel edge (mm) |
-| `--pattern` | `random` | `random` (still-life garden), `soup`, `reverse`, `glider`, … |
+| `--pattern` | `random` | `random` (still-life garden), `soup`, `glider`, `acorn`, … |
 | `--mode` | `gusset` | `gusset` (self-supporting), `breakaway`, or `raw` |
-
-## Reverse evolution (`--pattern reverse`)
-
-Builds the stack **backward** from a still-life ash at the top, preferring
-**zero-birth** predecessors (sparks that die in one step → no support tips for
-that layer). In practice those histories are only ~1 generation deep, so the
-complexity gate still fails; see [`docs/reverse-and-methuselahs.md`](docs/reverse-and-methuselahs.md).
-Gusset mode makes this moot for printing — kept for experimentation.
 
 ## Examples
 
@@ -135,10 +127,17 @@ Every shipped STL is self-supporting (gusset) and stays **active for its entire 
 | File | What it is |
 |------|------------|
 | `gusset-glider-tower.stl` | Glider climbing 44 generations — 64×64×180 mm |
+| `gusset-acorn.stl` | Acorn methuselah blooming from 7 cells — 176×176×180 mm |
 | `gusset-soup-mid.stl` | Chaotic soup, never settles — 96×96×148 mm |
 | `gusset-soup-a1max.stl` | Chaotic soup at A1 Mini max, never settles — 176×176×180 mm |
 
-Patterns that settle partway up (R-pentomino at gen 19 of 44, low-density soups at gen 8 of 24) and redundant spaceships (LWSS decays into a glider) were culled — they fail the default full-height activity gate.
+Patterns that settle partway up (e.g. R-pentomino on bounded boards at gen ~19) fail the default full-height activity gate and are not shipped.
+
+## Design notes
+
+See [`docs/design.md`](docs/design.md) for the geometry model, the birth ≡
+overhang theorem behind gusset mode, gate rationale, and approaches that were
+evaluated and rejected (useful context before changing support strategies).
 
 ## Develop
 

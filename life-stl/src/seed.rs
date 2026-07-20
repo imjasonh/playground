@@ -19,8 +19,7 @@ pub fn initial_grid(config: &Config) -> Grid {
         Pattern::Rpento => place_pattern(config.width, config.height, &R_PENTOMINO, 2, 2),
         Pattern::Blinker => place_pattern(config.width, config.height, &BLINKER, 1, 1),
         Pattern::Lwss => place_pattern(config.width, config.height, &LWSS, 1, 2),
-        // Bottom layer of a reverse-built chain (see `reverse::build_reverse_chain`).
-        Pattern::Reverse => crate::reverse::reverse_initial_grid(config),
+        Pattern::Acorn => place_centered(config.width, config.height, &ACORN),
     }
 }
 
@@ -38,7 +37,7 @@ fn soup_grid(width: usize, height: usize, seed: u64, density: f64) -> Grid {
 
 /// Pack still lifes with Chebyshev gap ≥ 2 between any live cells of different
 /// objects (no neighbor interaction → pattern stays stable).
-pub fn still_life_garden(width: usize, height: usize, seed: u64, density: f64) -> Grid {
+fn still_life_garden(width: usize, height: usize, seed: u64, density: f64) -> Grid {
     let density = density.clamp(0.0, 1.0);
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
     let mut grid = Grid::new(width, height);
@@ -142,6 +141,15 @@ fn place_pattern(width: usize, height: usize, rows: &[&str], ox: usize, oy: usiz
     grid
 }
 
+/// Place a pattern centered on the board (for patterns that expand outward).
+fn place_centered(width: usize, height: usize, rows: &[&str]) -> Grid {
+    let rw = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+    let rh = rows.len();
+    let ox = width.saturating_sub(rw) / 2;
+    let oy = height.saturating_sub(rh) / 2;
+    place_pattern(width, height, rows, ox, oy)
+}
+
 const BLOCK: [&str; 2] = ["OO", "OO"];
 const TUB: [&str; 3] = [".O.", "O.O", ".O."];
 const BEEHIVE: [&str; 3] = [".OO.", "O..O", ".OO."];
@@ -151,6 +159,7 @@ const GLIDER: [&str; 3] = ["010", "001", "111"];
 const R_PENTOMINO: [&str; 3] = [".OO", "OO.", ".O."];
 const BLINKER: [&str; 1] = ["OOO"];
 const LWSS: [&str; 4] = [".O..O", "O....", "O...O", "OOOO."];
+const ACORN: [&str; 3] = [".O.....", "...O...", "OO..OOO"];
 
 #[cfg(test)]
 mod tests {
@@ -178,5 +187,19 @@ mod tests {
     fn glider_has_five_cells() {
         let g = place_pattern(10, 10, &GLIDER, 1, 1);
         assert_eq!(g.live_count(), 5);
+    }
+
+    #[test]
+    fn acorn_is_centered_with_seven_cells() {
+        let config = Config {
+            width: 44,
+            height: 44,
+            pattern: Pattern::Acorn,
+            ..Config::default()
+        };
+        let g = initial_grid(&config);
+        assert_eq!(g.live_count(), 7);
+        // Bounding box of the 7×3 acorn sits centered-ish on the board.
+        assert!(g.is_alive(18, 22), "expected acorn near board center");
     }
 }

@@ -47,11 +47,6 @@ impl Grid {
         self.cells.iter().filter(|&&c| c).count()
     }
 
-    /// Row-major cell bitmap (for hashing / ordering helpers).
-    pub fn cells(&self) -> &[bool] {
-        &self.cells
-    }
-
     fn alive_neighbor_count(&self, x: usize, y: usize) -> u8 {
         let mut n = 0u8;
         for dy in [-1_isize, 0, 1] {

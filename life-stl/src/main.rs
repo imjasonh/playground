@@ -47,7 +47,7 @@ struct Cli {
     depth_mm: Option<f32>,
 
     /// RNG seed for random patterns. When omitted, seeds are tried until the
-    /// Life geometry is one piece after support removal.
+    /// model passes the interestingness and printability gates.
     #[arg(short = 's', long)]
     seed: Option<u64>,
 
@@ -321,10 +321,7 @@ fn main() -> ExitCode {
     };
 
     let seed_was_explicit = cli.seed.is_some();
-    let searchable = matches!(
-        cli.pattern,
-        Pattern::Random | Pattern::Soup | Pattern::Reverse
-    );
+    let searchable = matches!(cli.pattern, Pattern::Random | Pattern::Soup);
     let start_seed = match cli.seed {
         Some(s) => s,
         None if searchable => {
@@ -508,11 +505,11 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    // Soup / reverse search (no explicit seed): interesting + removable supports
-    // succeed even when Life orphans remain (multi-piece after cleanup).
+    // Breakaway soup search (no explicit seed): interesting + removable
+    // supports succeed even when Life orphans remain (multi-piece after cleanup).
     if !seed_was_explicit
         && searchable
-        && matches!(cli.pattern, Pattern::Soup | Pattern::Reverse)
+        && cli.pattern == Pattern::Soup
         && cli.mode == SupportMode::Breakaway
         && outcome.supports_removable
         && outcome.interesting

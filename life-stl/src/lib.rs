@@ -1,9 +1,22 @@
 //! Conway's Game of Life → printable STL (Z = time).
 //!
 //! Live cells at generation `g` become voxels at height `z = base_layers + g`.
-//! Default [`SupportMode::Breakaway`] adds slim pillar/tree supports under
-//! overhanging Life cells. Supports are meant to snap off, leaving a single
-//! standing Life|Base piece when there are no Life orphans.
+//!
+//! Three support strategies ([`SupportMode`]):
+//!
+//! - **Gusset** (default): self-supporting by construction. B3/S23 guarantees
+//!   every birth has three live Moore parents one layer below (the FDM 45°
+//!   rule), so small diagonal braces from each birth to its parents make the
+//!   whole stack one printable piece with nothing to remove. See [`gusset`].
+//! - **Breakaway**: slim removable pillar/tree supports under overhanging
+//!   cells; gated on post-print cleanup feasibility. See [`support`] and
+//!   [`removal`].
+//! - **Raw**: Life voxels only; printable only for stacks with no overhangs
+//!   (e.g. still-life gardens).
+//!
+//! Independent of supports, the **complexity gate** ([`complexity`]) rejects
+//! evolutions that go quiescent before the top layer — a pattern that settles
+//! partway up extrudes a boring static tower above the interesting part.
 
 pub mod complexity;
 pub mod config;
@@ -13,7 +26,6 @@ pub mod mesh;
 pub mod metrics;
 pub mod physics;
 pub mod removal;
-pub mod reverse;
 pub mod search;
 pub mod seed;
 pub mod support;
@@ -57,13 +69,6 @@ pub struct Model {
 
 /// Simulate Life onto a volume with a base plate (no supports).
 pub fn build_life_volume(config: &Config) -> Volume {
-    // Reverse mode paints a precomputed predecessor chain (not forward stepping
-    // from gen-0 alone — though the chain is forward-consistent by construction).
-    if config.pattern == crate::config::Pattern::Reverse {
-        let chain = reverse::reverse_generation_chain(config);
-        return reverse::volume_from_chain(&chain, config.base_layers);
-    }
-
     let mut grid = initial_grid(config);
     let mut volume = Volume::new(config.width, config.height, config.total_z());
 

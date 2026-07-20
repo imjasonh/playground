@@ -20,9 +20,11 @@ pub struct PrintabilityReport {
     /// Life voxels whose directly-below cell is empty.
     pub unsupported_life_voxels: usize,
     pub unsupported_life_pct: f64,
-    /// Life voxels that are **not** face-connected to the base through
-    /// Life|Base only. If this is > 0, removing supports leaves multiple
-    /// pieces — not a single standing sculpture. See [`life_self_supporting`].
+    /// Life voxels not connected to the base. Face-only connectivity in
+    /// raw/breakaway modes (orphans = pieces that fall off after support
+    /// removal); causal connectivity in gusset mode (births count as
+    /// connected to their braced parents). See
+    /// [`PrintabilityReport::life_self_supporting`].
     pub orphan_life_voxels: usize,
     pub orphan_life_pct: f64,
     /// Number of breakaway support tips generated (0 for raw/gusset).

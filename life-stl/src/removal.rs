@@ -1,8 +1,10 @@
 //! Post-generate analysis: can a human practically remove the breakaway supports?
 //!
 //! Heuristics (not a full reachability sim):
-//! - **Rest-on-model**: branch ends on a Life roof instead of the bed → often
-//!   welded into overhangs and hard/impossible to extract.
+//! - **Rest-on-model**: branch ends on a Life roof instead of the bed. These
+//!   are double-tapered (needle contact at both ends) so a few snap off fine,
+//!   but each one is extra cleanup and too many fail the gate
+//!   (`max_rest_on_model`).
 //! - **Trapped trunks**: vertical trunk has no clear lateral escape to the
 //!   model perimeter through empty cells → support cage inside the sculpture.
 //! - **Inaccessible tips**: the empty cell under a tip cannot reach the
