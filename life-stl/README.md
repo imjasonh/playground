@@ -117,6 +117,15 @@ A1 Mini stock nozzle is **0.4 mm**. Build volume is **180³ mm** — keep `--dep
 | `--cell` | `4.0` | Voxel edge (mm) |
 | `--pattern` | `random` | `random` (still-life garden), `soup`, `glider`, `acorn`, … |
 | `--mode` | `gusset` | `gusset` (self-supporting), `breakaway`, or `raw` |
+| `--full-base` | off | Base plate covers the whole board (always on in breakaway) |
+| `--base-margin` | `2` | Margin (cells) around the model footprint for the shrink-wrapped base |
+| `--base-layers` | `1` | Base-plate thickness (cell layers) |
+
+The base plate **shrink-wraps** by default: it covers the bounding box of the
+model's XY projection plus `--base-margin` cells — under every column of the
+model (and its center of mass), so the piece stands stably on a table without
+paying for a full-board slab. Patterns that roam the whole board (chaotic
+soups, board-crossing gliders) naturally still get a full-size base.
 
 ## Examples
 
@@ -127,7 +136,7 @@ Every shipped STL is self-supporting (gusset) and stays **active for its entire 
 | File | What it is |
 |------|------------|
 | `gusset-glider-tower.stl` | Glider climbing 44 generations — 64×64×180 mm |
-| `gusset-acorn.stl` | Acorn methuselah blooming from 7 cells — 176×176×180 mm |
+| `gusset-acorn.stl` | Acorn methuselah blooming from 7 cells — 140×76 mm base, 180 mm tall |
 | `gusset-soup-mid.stl` | Chaotic soup, never settles — 96×96×148 mm |
 | `gusset-soup-a1max.stl` | Chaotic soup at A1 Mini max, never settles — 176×176×180 mm |
 

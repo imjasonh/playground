@@ -324,6 +324,39 @@ mod tests {
     }
 
     #[test]
+    fn shrink_wrapped_base_still_anchors_everything() {
+        // Acorn on a large board: the base shrinks well below the board size
+        // but must still anchor the whole stack as one piece.
+        let config = Config {
+            width: 44,
+            height: 44,
+            depth: 44,
+            pattern: Pattern::Acorn,
+            mode: SupportMode::Gusset,
+            cell_mm: 4.0,
+            ..Config::default()
+        };
+        assert!(!config.full_base);
+        let volume = build_life_volume(&config);
+        let report = crate::metrics::analyze(&volume, config.cell_mm);
+        let (bw, bh) = report.base_extent_cells;
+        assert!(
+            bw < 44 || bh < 44,
+            "expected shrink-wrapped base, got {bw}×{bh}"
+        );
+        assert_eq!(count_orphan_life_causal(&volume), 0);
+
+        // Full-base override restores the whole board.
+        let full = Config {
+            full_base: true,
+            ..config
+        };
+        let full_volume = build_life_volume(&full);
+        let full_report = crate::metrics::analyze(&full_volume, full.cell_mm);
+        assert_eq!(full_report.base_extent_cells, (44, 44));
+    }
+
+    #[test]
     fn floating_island_is_still_orphan_under_causal_check() {
         let mut v = Volume::new(5, 5, 4);
         for y in 0..5 {

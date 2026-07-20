@@ -8,6 +8,10 @@ what the gates protect, and approaches that were evaluated and rejected.
 - Life runs on a finite board (dead edges, no wrap-around) — `life.rs`.
 - Generation `g` becomes a layer of cube voxels at `z = base_layers + g`
   (`build_life_volume` in `lib.rs`); a solid base plate anchors the bottom.
+- The base plate **shrink-wraps** to the bounding box of the model's XY
+  projection plus `base_margin` cells (a rectangle: connected, and under the
+  center of mass → table-stable). `full_base` restores the whole board;
+  breakaway mode forces it because supports may land on the bed anywhere.
 - Meshing emits face-culled cubes (`mesh.rs`); support/brace geometry is
   appended as extra closed shells. Overlapping shells are fine — slicers
   union them.

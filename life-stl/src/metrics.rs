@@ -8,6 +8,9 @@ use crate::volume::{CellKind, Volume};
 pub struct PrintabilityReport {
     pub life_voxels: usize,
     pub base_voxels: usize,
+    /// Base-plate extent in cells (w, h) — smaller than the board when the
+    /// base is shrink-wrapped to the model footprint. `(0, 0)` if no base.
+    pub base_extent_cells: (usize, usize),
     pub solid_voxels: usize,
     /// Solids with no Moore (3×3) support from the layer below.
     pub moore_unsupported_voxels: usize,
@@ -86,6 +89,7 @@ pub fn analyze_with_supports(
     let orphan_life = count_orphan_life(volume);
     let life = volume.count_kind(CellKind::Life);
     let base = volume.count_kind(CellKind::Base);
+    let base_extent = base_extent_cells(volume);
     let solid = volume.solid_count();
     let solid_f = solid.max(1) as f64;
     let life_f = life.max(1) as f64;
@@ -93,6 +97,7 @@ pub fn analyze_with_supports(
     PrintabilityReport {
         life_voxels: life,
         base_voxels: base,
+        base_extent_cells: base_extent,
         solid_voxels: solid,
         moore_unsupported_voxels: moore_unsupported,
         moore_unsupported_area_mm2: moore_unsupported as f64 * cell_area,
@@ -109,6 +114,33 @@ pub fn analyze_with_supports(
         support_physics: None,
         support_removability: None,
         complexity: None,
+    }
+}
+
+/// XY bounding-box extent (w, h) in cells of all Base voxels.
+fn base_extent_cells(volume: &Volume) -> (usize, usize) {
+    let mut min_x = usize::MAX;
+    let mut min_y = usize::MAX;
+    let mut max_x = 0usize;
+    let mut max_y = 0usize;
+    let mut any = false;
+    for z in 0..volume.depth {
+        for y in 0..volume.height {
+            for x in 0..volume.width {
+                if volume.get(x, y, z) == CellKind::Base {
+                    any = true;
+                    min_x = min_x.min(x);
+                    min_y = min_y.min(y);
+                    max_x = max_x.max(x);
+                    max_y = max_y.max(y);
+                }
+            }
+        }
+    }
+    if any {
+        (max_x - min_x + 1, max_y - min_y + 1)
+    } else {
+        (0, 0)
     }
 }
 

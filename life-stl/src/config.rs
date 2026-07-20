@@ -241,6 +241,13 @@ pub struct Config {
     pub pattern: Pattern,
     pub cell_mm: f32,
     pub base_layers: usize,
+    /// Base plate covers the whole board instead of shrink-wrapping to the
+    /// model's XY projection. Breakaway mode requires this (supports may land
+    /// on the bed anywhere).
+    pub full_base: bool,
+    /// Margin (cells) around the model's XY projection for a shrink-wrapped
+    /// base plate. Ignored when `full_base` is set.
+    pub base_margin: usize,
     pub mode: SupportMode,
     pub support: SupportParams,
     /// Evolution interestingness gates (soups / named patterns).
@@ -258,6 +265,8 @@ impl Default for Config {
             pattern: Pattern::Random,
             cell_mm: DEFAULT_CELL_MM,
             base_layers: 1,
+            full_base: false,
+            base_margin: 2,
             mode: SupportMode::Gusset,
             support: SupportParams::default(),
             complexity: ComplexityParams::default(),

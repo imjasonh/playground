@@ -68,33 +68,83 @@ pub struct Model {
 }
 
 /// Simulate Life onto a volume with a base plate (no supports).
+///
+/// By default the base plate shrink-wraps to the bounding box of the model's
+/// XY projection plus [`Config::base_margin`] cells: connected (a rectangle),
+/// under every column of the model, and therefore under its center of mass —
+/// stable on a table without paying for a full-board slab. `Config::full_base`
+/// restores the full-board plate (always used in breakaway mode, whose
+/// supports may land on the bed anywhere).
 pub fn build_life_volume(config: &Config) -> Volume {
+    let mut grids: Vec<crate::life::Grid> = Vec::with_capacity(config.depth);
     let mut grid = initial_grid(config);
+    for z in 0..config.depth {
+        grids.push(grid.clone());
+        if z + 1 < config.depth {
+            grid = grid.step();
+        }
+    }
+
+    let (bx0, by0, bx1, by1) = base_footprint(config, &grids);
     let mut volume = Volume::new(config.width, config.height, config.total_z());
 
     for z in 0..config.base_layers {
-        for y in 0..config.height {
-            for x in 0..config.width {
+        for y in by0..=by1 {
+            for x in bx0..=bx1 {
                 volume.set(x, y, z, CellKind::Base);
             }
         }
     }
 
     let life_z0 = config.base_layers;
-    for z in 0..config.depth {
+    for (z, g) in grids.iter().enumerate() {
         for y in 0..config.height {
             for x in 0..config.width {
-                if grid.is_alive(x, y) {
+                if g.is_alive(x, y) {
                     volume.set(x, y, life_z0 + z, CellKind::Life);
                 }
             }
         }
-        if z + 1 < config.depth {
-            grid = grid.step();
-        }
     }
 
     volume
+}
+
+/// Inclusive base-plate cell bounds: full board, or the model's XY-projection
+/// bounding box expanded by `base_margin` (full board when there is no life).
+fn base_footprint(config: &Config, grids: &[crate::life::Grid]) -> (usize, usize, usize, usize) {
+    let full = (0, 0, config.width - 1, config.height - 1);
+    if config.full_base {
+        return full;
+    }
+    let mut min_x = usize::MAX;
+    let mut min_y = usize::MAX;
+    let mut max_x = 0usize;
+    let mut max_y = 0usize;
+    let mut any = false;
+    for g in grids {
+        for y in 0..config.height {
+            for x in 0..config.width {
+                if g.is_alive(x, y) {
+                    any = true;
+                    min_x = min_x.min(x);
+                    min_y = min_y.min(y);
+                    max_x = max_x.max(x);
+                    max_y = max_y.max(y);
+                }
+            }
+        }
+    }
+    if !any {
+        return full;
+    }
+    let m = config.base_margin;
+    (
+        min_x.saturating_sub(m),
+        min_y.saturating_sub(m),
+        (max_x + m).min(config.width - 1),
+        (max_y + m).min(config.height - 1),
+    )
 }
 
 /// Build the Life|Base voxel volume (no support geometry).
@@ -291,6 +341,19 @@ pub fn format_report(config: &Config, report: &PrintabilityReport) -> String {
     out.push_str(&format!(
         "generations (above {}-cell base): {}\n",
         config.base_layers, config.depth
+    ));
+    let (bw, bh) = report.base_extent_cells;
+    out.push_str(&format!(
+        "base plate: {}×{} cells ({:.0}×{:.0} mm) — {}\n",
+        bw,
+        bh,
+        bw as f32 * config.cell_mm,
+        bh as f32 * config.cell_mm,
+        if config.full_base {
+            "full board"
+        } else {
+            "shrink-wrapped to model footprint"
+        }
     ));
     out.push_str(&format!(
         "voxels: life={}  base={}  total_solid={}\n",

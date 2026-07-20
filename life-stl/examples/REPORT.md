@@ -16,6 +16,7 @@ life-stl  16×16×45 cells  (64.0×64.0×180.0 mm)  seed=0  mode=Gusset  cell=4m
 self-supporting gussets: braces=258  width=1.8mm — every birth leans on its 3 parents (45° rule); no supports to remove
 complexity: quiescent_gen=44  period=none  unique_states=44  need≥44  interesting OK
 generations (above 1-cell base): 44
+base plate: 16×16 cells (64×64 mm) — shrink-wrapped to model footprint
 voxels: life=220  base=256  total_solid=476
 Life print overhang (empty cell directly below): 86 voxels, 1376.0 mm² (18.1% of solid)
 Life orphans (causal connectivity): 0 (0.0% of life)
@@ -28,8 +29,9 @@ life-stl  44×44×45 cells  (176.0×176.0×180.0 mm)  seed=0  mode=Gusset  cell=
 self-supporting gussets: braces=2247  width=1.8mm — every birth leans on its 3 parents (45° rule); no supports to remove
 complexity: quiescent_gen=44  period=none  unique_states=44  need≥44  interesting OK
 generations (above 1-cell base): 44
-voxels: life=1834  base=1936  total_solid=3770
-Life print overhang (empty cell directly below): 749 voxels, 11984.0 mm² (19.9% of solid)
+base plate: 35×19 cells (140×76 mm) — shrink-wrapped to model footprint
+voxels: life=1834  base=665  total_solid=2499
+Life print overhang (empty cell directly below): 749 voxels, 11984.0 mm² (30.0% of solid)
 Life orphans (causal connectivity): 0 (0.0% of life)
 Life self-supporting: yes — causality braces make one standing piece
 ```
@@ -40,6 +42,7 @@ life-stl  24×24×37 cells  (96.0×96.0×148.0 mm)  seed=0  mode=Gusset  cell=4m
 self-supporting gussets: braces=3042  width=1.8mm — every birth leans on its 3 parents (45° rule); no supports to remove
 complexity: quiescent_gen=36  period=none  unique_states=36  need≥36  interesting OK
 generations (above 1-cell base): 36
+base plate: 24×24 cells (96×96 mm) — shrink-wrapped to model footprint
 voxels: life=2516  base=576  total_solid=3092
 Life print overhang (empty cell directly below): 1014 voxels, 16224.0 mm² (32.8% of solid)
 Life orphans (causal connectivity): 0 (0.0% of life)
@@ -52,6 +55,7 @@ life-stl  44×44×45 cells  (176.0×176.0×180.0 mm)  seed=0  mode=Gusset  cell=
 self-supporting gussets: braces=8541  width=1.8mm — every birth leans on its 3 parents (45° rule); no supports to remove
 complexity: quiescent_gen=44  period=none  unique_states=44  need≥44  interesting OK
 generations (above 1-cell base): 44
+base plate: 44×44 cells (176×176 mm) — shrink-wrapped to model footprint
 voxels: life=7940  base=1936  total_solid=9876
 Life print overhang (empty cell directly below): 2847 voxels, 45552.0 mm² (28.8% of solid)
 Life orphans (causal connectivity): 0 (0.0% of life)

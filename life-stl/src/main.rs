@@ -71,6 +71,15 @@ struct Cli {
     #[arg(long, default_value_t = 1)]
     base_layers: usize,
 
+    /// Base plate covers the whole board instead of shrink-wrapping to the
+    /// model footprint (always on in breakaway mode).
+    #[arg(long, default_value_t = false)]
+    full_base: bool,
+
+    /// Margin (cells) around the model footprint for the shrink-wrapped base.
+    #[arg(long, default_value_t = 2)]
+    base_margin: usize,
+
     /// Support strategy: gusset (default; self-supporting causality braces),
     /// breakaway (removable trees/pillars), or raw (no supports).
     #[arg(long, value_enum, default_value_t = SupportMode::Gusset)]
@@ -413,6 +422,9 @@ fn main() -> ExitCode {
         pattern: cli.pattern,
         cell_mm: cli.cell,
         base_layers: cli.base_layers,
+        // Breakaway supports may land on the bed anywhere → full plate.
+        full_base: cli.full_base || cli.mode == SupportMode::Breakaway,
+        base_margin: cli.base_margin,
         mode: cli.mode,
         support,
         complexity,
