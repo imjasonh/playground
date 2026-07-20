@@ -31,10 +31,9 @@ import zipfile
 from pathlib import Path
 from xml.sax.saxutils import escape
 
-# Version stamp Bambu Studio checks for compatibility. Matches the profile
-# library version this tool was validated against; older Studio releases warn
-# but still open the file.
-APP_VERSION = "01.10.02.76"
+# Version stamp Bambu Studio checks for compatibility. Keep this at 02.x so
+# BambuStudio 2.x loads the file on its current (non-legacy) code path.
+APP_VERSION = "02.05.00.00"
 
 
 def load_profile_tree(profiles_dir: Path):
@@ -106,7 +105,13 @@ def read_binary_stl(path: Path):
 
 
 def model_xml(verts, tris, bed_size_mm: float):
-    """Standard 3MF model part with the mesh centered on the bed."""
+    """Standard 3MF model part with the mesh centered on the bed.
+
+    BambuStudio 2.x expects a two-level object structure:
+      - Object 1 (parent): build item, holds a <components> reference.
+      - Object 2 (child):  the actual mesh geometry.
+    model_settings.config then uses <part id="2"> to reference the mesh.
+    """
     min_x = min(v[0] for v in verts)
     max_x = max(v[0] for v in verts)
     min_y = min(v[1] for v in verts)
@@ -125,9 +130,16 @@ def model_xml(verts, tris, bed_size_mm: float):
         'xmlns:BambuStudio="http://schemas.bambulab.com/package/2021">'
     )
     out.append(f'<metadata name="Application">BambuStudio-{APP_VERSION}</metadata>')
-    out.append('<metadata name="BambuStudio:3mfVersion">1</metadata>')
+    out.append('<metadata name="BambuStudio:3mfVersion">2</metadata>')
     out.append("<resources>")
+    # Parent object: no mesh, just a component reference to the child.
     out.append('<object id="1" type="model">')
+    out.append("<components>")
+    out.append('<component objectid="2" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>')
+    out.append("</components>")
+    out.append("</object>")
+    # Child object: the actual mesh geometry.
+    out.append('<object id="2" type="model">')
     out.append("<mesh>")
     out.append("<vertices>")
     for x, y, z in verts:
@@ -148,13 +160,14 @@ def model_xml(verts, tris, bed_size_mm: float):
 
 
 def model_settings_xml(name: str):
+    # part id="2" references the child mesh object (id=2 in 3dmodel.model).
     name = escape(name, {'"': "&quot;"})
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <config>
   <object id="1">
     <metadata key="name" value="{name}"/>
     <metadata key="extruder" value="1"/>
-    <part id="1" subtype="normal_part">
+    <part id="2" subtype="normal_part">
       <metadata key="name" value="{name}"/>
     </part>
   </object>
@@ -176,7 +189,14 @@ CONTENT_TYPES = """<?xml version="1.0" encoding="UTF-8"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
  <Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>
+ <Override PartName="/Metadata/project_settings.config" ContentType="application/json"/>
+ <Override PartName="/Metadata/model_settings.config" ContentType="text/xml"/>
+ <Override PartName="/Metadata/slice_info.config" ContentType="text/xml"/>
 </Types>
+"""
+
+SLICE_INFO = """<?xml version="1.0" encoding="UTF-8"?>
+<config/>
 """
 
 RELS = """<?xml version="1.0" encoding="UTF-8"?>
@@ -230,11 +250,17 @@ def main():
         "print_settings_id": args.process,
         "printer_settings_id": args.printer,
         "filament_settings_id": [args.filament],
-        "inherits_group": [args.process, args.filament, args.printer],
         "different_settings_to_system": [
             ";".join(sorted(overrides)), "", "",
         ],
     })
+
+    # BambuStudio 2.x crashes with a null-pointer dereference if
+    # nozzle_volume_type is absent from the project config.  Older profile
+    # libraries (pre-2.x) do not include it, so add a safe default here.
+    if "nozzle_volume_type" not in config:
+        nozzle_count = len(config.get("nozzle_diameter", [None]))
+        config["nozzle_volume_type"] = ["Standard"] * nozzle_count
 
     verts, tris = read_binary_stl(args.stl)
     name = args.name or args.stl.stem
@@ -245,6 +271,7 @@ def main():
         zf.writestr("_rels/.rels", RELS)
         zf.writestr("3D/3dmodel.model", model_xml(verts, tris, args.bed_size))
         zf.writestr("Metadata/model_settings.config", model_settings_xml(name))
+        zf.writestr("Metadata/slice_info.config", SLICE_INFO)
         zf.writestr("Metadata/project_settings.config",
                      json.dumps(config, indent=4, sort_keys=True))
     size = args.output.stat().st_size
