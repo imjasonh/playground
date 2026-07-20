@@ -51,8 +51,8 @@
     flex-direction: column;
     gap: 14px;
   }
-  #viewport { position: relative; min-width: 0; min-height: 0; }
-  #viewport canvas { display: block; }
+  #viewport { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+  #viewport canvas { display: block; width: 100%; height: 100%; }
   section h2 {
     font-size: 11px;
     letter-spacing: 0.08em;
@@ -119,6 +119,52 @@
   }
   a { color: var(--accent); }
   footer { padding: 6px 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; background: var(--panel); }
+
+  /* Floating export bar (mobile only). */
+  #mobile-actions {
+    display: none;
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    gap: 10px;
+    z-index: 10;
+  }
+  #mobile-actions button {
+    flex: 1;
+    padding: 12px;
+    font-size: 15px;
+    font-weight: 650;
+    border-radius: 10px;
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #08233f;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  }
+
+  /* Mobile: 3D view on top, controls scroll below, big touch targets. */
+  @media (max-width: 900px) {
+    body { height: auto; min-height: 100%; }
+    main { grid-template-columns: 1fr; }
+    #viewport {
+      grid-row: 1;
+      height: 48vh;
+      border-bottom: 1px solid var(--line);
+    }
+    #panel {
+      grid-row: 2;
+      border-right: none;
+      overflow: visible;
+      padding-bottom: 84px; /* keep content clear of the export bar */
+    }
+    #mobile-actions { display: flex; }
+    header p { display: none; }
+    select, input[type="number"], button { padding: 9px 12px; font-size: 15px; }
+    input[type="range"] { height: 28px; }
+    .row label { min-width: 96px; }
+    #editor { cursor: pointer; }
+    footer { padding-bottom: 84px; }
+  }
 </style>
 <script type="importmap">
   { "imports": { "three": "./vendor/three.module.min.js" } }
@@ -157,7 +203,7 @@
     <section>
       <h2>Generation 0</h2>
       <canvas id="editor"></canvas>
-      <p class="hint">Draw: click / drag &nbsp;·&nbsp; Erase: right-drag</p>
+      <p class="hint">Tap or drag to draw &nbsp;·&nbsp; start on a live cell (or right-drag) to erase</p>
       <div class="row" style="margin-top:8px">
         <label for="pattern">Stamp</label>
         <select id="pattern">
@@ -202,6 +248,10 @@
   </div>
   <div id="viewport"><div id="loading">Loading wasm…</div></div>
 </main>
+<div id="mobile-actions">
+  <button id="m-stl">⬇ Download STL</button>
+  <button id="m-3mf">⬇ Download 3MF</button>
+</div>
 <footer>
   Every Life birth has three parents diagonally below it (B3 → the FDM 45° rule), so the whole tower prints
   as one piece with zero supports. Built from the
