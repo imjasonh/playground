@@ -19,9 +19,9 @@ use std::path::Path;
 use serde_json::{json, Map, Value};
 use stl_io::Triangle;
 
-/// Version stamp Bambu Studio checks for compatibility. Older Studio releases
-/// warn but still open the file.
-pub const APP_VERSION: &str = "01.10.02.76";
+/// Version stamp Bambu Studio checks for compatibility. Keep this at 02.x so
+/// BambuStudio 2.x loads the file on its current (non-legacy) code path.
+pub const APP_VERSION: &str = "02.05.00.00";
 
 /// Flattened printer/process/filament presets ready for a project dump.
 #[derive(Debug, Clone)]
@@ -236,6 +236,13 @@ fn index_mesh(tris: &[Triangle]) -> IndexedMesh {
     }
 }
 
+/// Standard 3MF model part with the mesh centered on the bed.
+///
+/// BambuStudio 2.x expects a two-level object structure:
+/// - Object 1 (parent): build item, holds a `<components>` reference.
+/// - Object 2 (child): the actual mesh geometry.
+///
+/// `model_settings.config` then uses `<part id="2">` to reference the mesh.
 fn model_xml(mesh: &IndexedMesh, bed_size_mm: f32) -> String {
     let (mut min, mut max) = ([f32::MAX; 3], [f32::MIN; 3]);
     for v in &mesh.vertices {
@@ -260,8 +267,14 @@ fn model_xml(mesh: &IndexedMesh, bed_size_mm: f32) -> String {
     out.push_str(&format!(
         "<metadata name=\"Application\">BambuStudio-{APP_VERSION}</metadata>\n"
     ));
-    out.push_str("<metadata name=\"BambuStudio:3mfVersion\">1</metadata>\n");
-    out.push_str("<resources>\n<object id=\"1\" type=\"model\">\n<mesh>\n<vertices>\n");
+    out.push_str("<metadata name=\"BambuStudio:3mfVersion\">2</metadata>\n");
+    out.push_str("<resources>\n");
+    // Parent object: no mesh, just a component reference to the child.
+    out.push_str("<object id=\"1\" type=\"model\">\n<components>\n");
+    out.push_str("<component objectid=\"2\" transform=\"1 0 0 0 1 0 0 0 1 0 0 0\"/>\n");
+    out.push_str("</components>\n</object>\n");
+    // Child object: the actual mesh geometry.
+    out.push_str("<object id=\"2\" type=\"model\">\n<mesh>\n<vertices>\n");
     for v in &mesh.vertices {
         out.push_str(&format!(
             "<vertex x=\"{}\" y=\"{}\" z=\"{}\"/>\n",
@@ -289,13 +302,14 @@ fn model_settings_xml(name: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;");
+    // part id="2" references the child mesh object (id=2 in 3dmodel.model).
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <config>
   <object id="1">
     <metadata key="name" value="{name}"/>
     <metadata key="extruder" value="1"/>
-    <part id="1" subtype="normal_part">
+    <part id="2" subtype="normal_part">
       <metadata key="name" value="{name}"/>
     </part>
   </object>
@@ -318,7 +332,14 @@ const CONTENT_TYPES: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
  <Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>
+ <Override PartName="/Metadata/project_settings.config" ContentType="application/json"/>
+ <Override PartName="/Metadata/model_settings.config" ContentType="text/xml"/>
+ <Override PartName="/Metadata/slice_info.config" ContentType="text/xml"/>
 </Types>
+"#;
+
+const SLICE_INFO: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<config/>
 "#;
 
 const RELS: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -341,14 +362,28 @@ fn project_settings_json(presets: &BambuPresets, opts: &ExportOptions) -> String
     config.insert("print_settings_id".into(), json!(presets.process));
     config.insert("printer_settings_id".into(), json!(presets.printer));
     config.insert("filament_settings_id".into(), json!([presets.filament]));
-    config.insert(
-        "inherits_group".into(),
-        json!([presets.process, presets.filament, presets.printer]),
-    );
+    // Three slots: process overrides, filament overrides, printer overrides.
+    // Semicolon-separated key names; empty string means "no overrides".
     config.insert(
         "different_settings_to_system".into(),
         json!([override_list, "", ""]),
     );
+
+    // BambuStudio 2.x crashes with a null-pointer dereference if
+    // nozzle_volume_type is absent from the project config. Older profile
+    // libraries (pre-2.x) do not include it, so add a safe default here.
+    if !config.contains_key("nozzle_volume_type") {
+        let nozzle_count = config
+            .get("nozzle_diameter")
+            .and_then(Value::as_array)
+            .map(|a| a.len())
+            .unwrap_or(1);
+        config.insert(
+            "nozzle_volume_type".into(),
+            Value::Array(vec![json!("Standard"); nozzle_count]),
+        );
+    }
+
     serde_json::to_string_pretty(&Value::Object(config)).expect("settings serialize")
 }
 
@@ -379,6 +414,7 @@ pub fn project_3mf_bytes(
         "Metadata/model_settings.config",
         &model_settings_xml(&opts.object_name),
     )?;
+    put("Metadata/slice_info.config", SLICE_INFO)?;
     put(
         "Metadata/project_settings.config",
         &project_settings_json(presets, opts),
@@ -481,6 +517,7 @@ mod tests {
             "_rels/.rels",
             "3D/3dmodel.model",
             "Metadata/model_settings.config",
+            "Metadata/slice_info.config",
             "Metadata/project_settings.config",
         ] {
             assert!(names.iter().any(|n| n == expected), "missing {expected}");
@@ -502,17 +539,30 @@ mod tests {
             cfg["different_settings_to_system"][0],
             json!("bridge_speed;brim_type;enable_support;sparse_infill_density;wall_loops")
         );
+        // BambuStudio 2.x null-derefs without this key.
+        assert_eq!(cfg["nozzle_volume_type"], json!(["Standard"]));
 
         let mut xml = String::new();
         zip.by_name("3D/3dmodel.model")
             .unwrap()
             .read_to_string(&mut xml)
             .unwrap();
-        assert!(xml.contains("BambuStudio-01.10.02.76"));
+        assert!(xml.contains(&format!("BambuStudio-{APP_VERSION}")));
+        assert!(xml.contains("BambuStudio:3mfVersion\">2<"));
+        // Two-level object structure: parent components → child mesh.
+        assert!(xml.contains("<component objectid=\"2\""));
+        assert!(xml.contains("<object id=\"2\" type=\"model\">"));
         assert!(xml.contains("<vertex "));
         assert!(xml.contains("printable=\"1\""));
         // The glider model spans 40 mm; centered on 180 the transform is +70-ish.
         assert!(xml.contains("transform=\"1 0 0 0 1 0 0 0 1 "));
+
+        let mut model_settings = String::new();
+        zip.by_name("Metadata/model_settings.config")
+            .unwrap()
+            .read_to_string(&mut model_settings)
+            .unwrap();
+        assert!(model_settings.contains("<part id=\"2\""));
     }
 
     #[test]
