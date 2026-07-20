@@ -1,3 +1,4 @@
 /target
 *.stl
 !examples/**/*.stl
+__pycache__/
