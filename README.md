@@ -61,6 +61,9 @@ skip them:
   in Rust: mount a repo and read `refs/<ref>` and `commits/<sha>/<path>` as
   plain files, with reads racing a shared local clone cache against the
   server's read API so first byte never waits on a clone.
+- **[`life-stl/`](life-stl/)** — generate a 3D-printable STL of Conway's Game of
+  Life with time as the Z axis (Rust CLI); optional scaffold columns keep the
+  model FDM-friendly without supports.
 
 ## iOS app
 

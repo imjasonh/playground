@@ -1,0 +1,22 @@
+[package]
+name = "life-stl"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Generate 3D-printable STL models of Conway's Game of Life with time as the Z axis"
+repository = "https://github.com/imjasonh/playground"
+readme = "README.md"
+publish = false
+
+[[bin]]
+name = "life-stl"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+rand = "0.8"
+rand_chacha = "0.3"
+stl_io = "0.8"
+
+[dev-dependencies]
+tempfile = "3"
