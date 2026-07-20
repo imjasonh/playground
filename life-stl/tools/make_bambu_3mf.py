@@ -251,6 +251,8 @@ def main():
         "printer_settings_id": args.printer,
         "filament_settings_id": [args.filament],
         "different_settings_to_system": [
+            # Three slots: process overrides, filament overrides, printer overrides.
+            # Semicolon-separated key names; empty string means "no overrides".
             ";".join(sorted(overrides)), "", "",
         ],
     })
@@ -259,7 +261,9 @@ def main():
     # nozzle_volume_type is absent from the project config.  Older profile
     # libraries (pre-2.x) do not include it, so add a safe default here.
     if "nozzle_volume_type" not in config:
-        nozzle_count = len(config.get("nozzle_diameter", [None]))
+        # nozzle_diameter is a per-extruder array; fall back to 1 entry for
+        # the common single-nozzle case when the key is also absent.
+        nozzle_count = len(config.get("nozzle_diameter", ["0.4"]))
         config["nozzle_volume_type"] = ["Standard"] * nozzle_count
 
     verts, tris = read_binary_stl(args.stl)
