@@ -107,6 +107,32 @@ impl Default for RemovalParams {
     }
 }
 
+/// Evolution interestingness gates (used by seed search / CLI exit codes).
+///
+/// Rejects runs that become a still life or short-period oscillator before
+/// enough generations have elapsed — otherwise most of the Z stack is a
+/// boring extruded tower. `Pattern::Random` (still-life gardens) is exempt.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ComplexityParams {
+    /// Absolute floor: quiescence must not begin before this generation.
+    pub min_active_generations: usize,
+    /// Also require quiescence ≥ ceil(depth × fraction).
+    pub min_active_fraction: f32,
+    /// Periods ≤ this count as “boring quiescent” (1 = still life, 2 = blinker).
+    pub max_boring_period: usize,
+}
+
+impl Default for ComplexityParams {
+    fn default() -> Self {
+        Self {
+            // Reject “stable after only a few turns” on typical 24-gen stacks.
+            min_active_generations: 8,
+            min_active_fraction: 1.0 / 3.0,
+            max_boring_period: 2,
+        }
+    }
+}
+
 /// Tunable breakaway-support geometry (millimeters).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SupportParams {
@@ -194,6 +220,8 @@ pub struct Config {
     pub base_layers: usize,
     pub mode: SupportMode,
     pub support: SupportParams,
+    /// Evolution interestingness gates (soups / named patterns).
+    pub complexity: ComplexityParams,
 }
 
 impl Default for Config {
@@ -209,6 +237,7 @@ impl Default for Config {
             base_layers: 1,
             mode: SupportMode::Breakaway,
             support: SupportParams::default(),
+            complexity: ComplexityParams::default(),
         }
     }
 }

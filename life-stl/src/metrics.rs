@@ -1,3 +1,4 @@
+use crate::complexity::ComplexityReport;
 use crate::physics::SupportPhysicsReport;
 use crate::removal::SupportRemovabilityReport;
 use crate::volume::{CellKind, Volume};
@@ -30,6 +31,8 @@ pub struct PrintabilityReport {
     pub support_physics: Option<SupportPhysicsReport>,
     /// Post-print support removal feasibility (if generated).
     pub support_removability: Option<SupportRemovabilityReport>,
+    /// Evolution interestingness (filled when building a model from a config).
+    pub complexity: Option<ComplexityReport>,
 }
 
 impl PrintabilityReport {
@@ -100,6 +103,7 @@ pub fn analyze_with_supports(
         breakaway_support_tips,
         support_physics: None,
         support_removability: None,
+        complexity: None,
     }
 }
 

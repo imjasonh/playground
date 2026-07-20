@@ -5,12 +5,13 @@ use clap::Parser;
 use rand::Rng;
 
 use life_stl::config::{
-    Config, Pattern, PhysicsParams, RemovalParams, SupportMode, SupportParams, SupportStyle,
-    DEFAULT_CELL_MM, MIN_CELL_MM,
+    ComplexityParams, Config, Pattern, PhysicsParams, RemovalParams, SupportMode, SupportParams,
+    SupportStyle, DEFAULT_CELL_MM, MIN_CELL_MM,
 };
 use life_stl::search::{evaluate_life_only, find_self_supporting};
 use life_stl::{
-    format_hard_removal_reason, format_report, format_unprintable_reason, write_stl_model,
+    format_boring_reason, format_hard_removal_reason, format_report, format_unprintable_reason,
+    write_stl_model,
 };
 
 /// Generate a 3D-printable STL of Conway's Game of Life (Z = time).
@@ -171,6 +172,22 @@ struct Cli {
     #[arg(long, default_value_t = false)]
     allow_hard_supports: bool,
 
+    /// Minimum generations before a still life / short oscillator is allowed.
+    #[arg(long, default_value_t = ComplexityParams::default().min_active_generations)]
+    min_active_generations: usize,
+
+    /// Also require activity for at least this fraction of `--depth` (0–1).
+    #[arg(long, default_value_t = ComplexityParams::default().min_active_fraction)]
+    min_active_fraction: f32,
+
+    /// Periods ≤ this count as boring once settled (1 = still life, 2 = blinker).
+    #[arg(long, default_value_t = ComplexityParams::default().max_boring_period)]
+    max_boring_period: usize,
+
+    /// Skip the evolution interestingness gate (still reports quiescence).
+    #[arg(long, default_value_t = false)]
+    allow_boring: bool,
+
     /// Output STL path.
     #[arg(short = 'o', long, default_value = "life.stl")]
     output: PathBuf,
@@ -272,6 +289,14 @@ fn main() -> ExitCode {
         eprintln!("error: --max-tip-density must be > 0");
         return ExitCode::FAILURE;
     }
+    if !(0.0..=1.0).contains(&cli.min_active_fraction) {
+        eprintln!("error: --min-active-fraction must be between 0 and 1");
+        return ExitCode::FAILURE;
+    }
+    if cli.max_boring_period == 0 {
+        eprintln!("error: --max-boring-period must be >= 1");
+        return ExitCode::FAILURE;
+    }
 
     let (width, height, depth) = match resolve_grid(&cli) {
         Ok(g) => g,
@@ -288,7 +313,7 @@ fn main() -> ExitCode {
         None if searchable => {
             let s = rand::thread_rng().gen::<u64>();
             eprintln!(
-                "searching for a printable seed (start={s}, max {})…",
+                "searching for an interesting, printable seed (start={s}, max {})…",
                 cli.max_seed_attempts
             );
             s
@@ -348,6 +373,20 @@ fn main() -> ExitCode {
         },
     };
 
+    let complexity = if cli.allow_boring {
+        ComplexityParams {
+            min_active_generations: 0,
+            min_active_fraction: 0.0,
+            max_boring_period: cli.max_boring_period,
+        }
+    } else {
+        ComplexityParams {
+            min_active_generations: cli.min_active_generations,
+            min_active_fraction: cli.min_active_fraction,
+            max_boring_period: cli.max_boring_period,
+        }
+    };
+
     let base_config = Config {
         width,
         height,
@@ -359,6 +398,7 @@ fn main() -> ExitCode {
         base_layers: cli.base_layers,
         mode: cli.mode,
         support,
+        complexity,
     };
 
     let outcome = if seed_was_explicit || !searchable {
@@ -366,9 +406,11 @@ fn main() -> ExitCode {
         let life_report = evaluate_life_only(&config);
         let model = life_stl::search::evaluate(&config);
         let removable = model.support_removability.ok || cli.allow_hard_supports;
+        let interesting = model.complexity.ok || cli.allow_boring;
         life_stl::search::SearchOutcome {
             life_self_supporting: life_report.life_self_supporting(),
             supports_removable: removable,
+            interesting,
             report: model.report.clone(),
             config,
             model,
@@ -393,7 +435,24 @@ fn main() -> ExitCode {
         }
     }
 
-    // Gate 1: practical support cleanup (breakaway only).
+    // Gate 1: evolution stays interesting (soups / named patterns; gardens exempt).
+    if !outcome.interesting {
+        eprintln!(
+            "error: {}",
+            format_boring_reason(&outcome.config, &outcome.report)
+        );
+        if !seed_was_explicit && searchable {
+            eprintln!(
+                "no sufficiently interesting seed in {} attempt(s); \
+                 wrote best-effort STL — try higher --density, larger \
+                 --max-seed-attempts, lower --min-active-generations, or --allow-boring",
+                outcome.attempts
+            );
+        }
+        return ExitCode::FAILURE;
+    }
+
+    // Gate 2: practical support cleanup (breakaway only).
     if cli.mode == SupportMode::Breakaway && !outcome.supports_removable {
         eprintln!(
             "error: {}",
@@ -410,30 +469,33 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
-    // Gate 2: Life is one standing piece after supports snap off.
+    // Gate 3: Life is one standing piece after supports snap off.
     if outcome.life_self_supporting {
         if !cli.quiet {
             eprintln!(
-                "ok: Life is one piece after support removal ({} breakaway tip(s))",
+                "ok: interesting + Life is one piece after support removal ({} breakaway tip(s))",
                 outcome.model.support_tips
             );
         }
         return ExitCode::SUCCESS;
     }
 
-    // Soup search (no explicit seed): removable supports are enough to succeed,
+    // Soup search (no explicit seed): interesting + removable supports succeed,
     // even when Life orphans remain (multi-piece after cleanup).
     if !seed_was_explicit
         && searchable
         && matches!(cli.pattern, Pattern::Soup)
         && cli.mode == SupportMode::Breakaway
         && outcome.supports_removable
+        && outcome.interesting
     {
         if !cli.quiet {
             eprintln!(
-                "ok: supports look removable (score {:.0}); Life has orphans \
-                 (multi-piece after cleanup) — {} tip(s)",
-                outcome.model.support_removability.score, outcome.model.support_tips
+                "ok: interesting (quiescent≥{}) + removable supports (score {:.0}); \
+                 Life has orphans (multi-piece after cleanup) — {} tip(s)",
+                outcome.model.complexity.required_active_generations,
+                outcome.model.support_removability.score,
+                outcome.model.support_tips
             );
         }
         return ExitCode::SUCCESS;

@@ -60,10 +60,14 @@ Supports are sized with a beam/column model:
 | `--max-inaccessible-tip-fraction` | `0.08` | Max tip contacts in enclosed pockets |
 | `--max-tip-density` | `1.25` | Max tips per XY cell footprint |
 | `--allow-hard-supports` | off | Skip the removability gate |
+| `--min-active-generations` | `8` | Reject still life / short oscillators before this generation |
+| `--min-active-fraction` | `0.333` | Also require activity for this fraction of `--depth` |
+| `--max-boring-period` | `2` | Periods ≤ this count as boring once settled |
+| `--allow-boring` | off | Skip the interestingness gate |
 
-After generating supports, life-stl scores **how hard they are to remove** (rest-on-model landings, trunks trapped in cavities, tip contacts in pockets, tip density). With `--seed` omitted it **retries** until cleanup looks practical; with an explicit seed it still writes the STL but **exits non-zero** if supports would be miserable to remove.
+After generating supports, life-stl scores **how hard they are to remove** (rest-on-model landings, trunks trapped in cavities, tip contacts in pockets, tip density). It also scores **evolution complexity**: soups that become a still life (or blinker-like oscillator) after only a few turns are rejected as boring extruded towers. With `--seed` omitted it **retries** until both cleanup and interestingness look good; with an explicit seed it still writes the STL but **exits non-zero** if either gate fails.
 
-Supports are meant to **snap off** after printing. The remaining Life|Base mesh is a **single standing piece** only when every Life voxel is face-connected to the bed (no “orphans”). Still-life gardens (`--pattern random`) usually need **zero** supports. Chaotic `--pattern soup` often has orphans → STL is written but the CLI exits non-zero if you passed an explicit seed.
+Supports are meant to **snap off** after printing. The remaining Life|Base mesh is a **single standing piece** only when every Life voxel is face-connected to the bed (no “orphans”). Still-life gardens (`--pattern random`) are exempt from the complexity gate (stability is the point) and usually need **zero** supports. Chaotic `--pattern soup` often has orphans → STL is written but the CLI exits non-zero if you passed an explicit seed.
 
 `--mode raw` emits Life only (no supports).
 
@@ -80,8 +84,9 @@ A1 Mini stock nozzle is **0.4 mm**. Build volume is **180³ mm** — keep `--dep
 
 | Situation | Behavior |
 |-----------|----------|
-| `--seed` omitted (`random` / `soup`) | Search until Life is one piece after support removal |
-| `--seed` given or named pattern | Always write STL; **exit non-zero** if orphans remain |
+| `--seed` omitted (`random`) | Search until Life is one piece + supports removable |
+| `--seed` omitted (`soup`) | Search until supports removable **and** evolution stays interesting |
+| `--seed` given or named pattern | Always write STL; **exit non-zero** if a gate fails (boring / hard supports / orphans) |
 
 ## Inputs (dimensions)
 
@@ -97,11 +102,7 @@ A1 Mini stock nozzle is **0.4 mm**. Build volume is **180³ mm** — keep `--dep
 
 See [`examples/`](examples/) and [`examples/REPORT.md`](examples/REPORT.md). Regenerate with `./generate-examples.sh`.
 
-Only STLs that pass the **support removability** gate (`cleanup OK`) are shipped — currently ten easy-to-clean soups:
-
-`soup-easy-{60,98,262,299,415,552,51,178,920,944}.stl`
-
-Hard-to-remove shapes (dense soups, glider cages, full-bed chaos) are omitted on purpose. Still-life gardens are not shipped (static through Z). Soups may still leave Life orphans after cleanup (multiple pieces).
+Only STLs that pass **both** the support-removability gate (`cleanup OK`) and the complexity gate (`interesting OK`) are shipped. Under current defaults that intersection is empty: long-lived soups need rest-on-model support landings, and easy-to-clean soups settle into still lifes by generation ~4. Still-life gardens are not shipped.
 
 ## Develop
 

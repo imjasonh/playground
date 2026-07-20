@@ -5,6 +5,7 @@
 //! overhanging Life cells. Supports are meant to snap off, leaving a single
 //! standing Life|Base piece when there are no Life orphans.
 
+pub mod complexity;
 pub mod config;
 pub mod life;
 pub mod mesh;
@@ -16,9 +17,10 @@ pub mod seed;
 pub mod support;
 pub mod volume;
 
+pub use complexity::ComplexityReport;
 pub use config::{
-    Config, PhysicsParams, RemovalParams, SupportMode, SupportParams, SupportStyle,
-    DEFAULT_CELL_MM, MIN_CELL_MM,
+    ComplexityParams, Config, PhysicsParams, RemovalParams, SupportMode, SupportParams,
+    SupportStyle, DEFAULT_CELL_MM, MIN_CELL_MM,
 };
 pub use metrics::PrintabilityReport;
 pub use physics::SupportPhysicsReport;
@@ -31,6 +33,7 @@ use std::path::Path;
 
 use stl_io::Triangle;
 
+use crate::complexity::analyze_complexity;
 use crate::mesh::triangles_from_volume;
 use crate::metrics::{analyze, analyze_with_supports};
 use crate::seed::initial_grid;
@@ -45,6 +48,7 @@ pub struct Model {
     pub support_tips: usize,
     pub support_physics: SupportPhysicsReport,
     pub support_removability: SupportRemovabilityReport,
+    pub complexity: ComplexityReport,
 }
 
 /// Simulate Life onto a volume with a base plate (no supports).
@@ -85,10 +89,12 @@ pub fn build_volume(config: &Config) -> Volume {
 /// Build the full printable model (Life mesh + optional breakaway supports).
 pub fn build_model(config: &Config) -> Model {
     let volume = build_life_volume(config);
+    let complexity = analyze_complexity(config);
 
     match config.mode {
         SupportMode::Raw => {
-            let report = analyze(&volume, config.cell_mm);
+            let mut report = analyze(&volume, config.cell_mm);
+            report.complexity = Some(complexity.clone());
             Model {
                 triangles: triangles_from_volume(&volume, config.cell_mm),
                 volume,
@@ -96,6 +102,7 @@ pub fn build_model(config: &Config) -> Model {
                 support_tips: 0,
                 support_physics: SupportPhysicsReport::default(),
                 support_removability: SupportRemovabilityReport::default(),
+                complexity,
             }
         }
         SupportMode::Breakaway => {
@@ -109,6 +116,7 @@ pub fn build_model(config: &Config) -> Model {
             let mut report = analyze_with_supports(&volume, config.cell_mm, support_tips);
             report.support_physics = Some(support_physics.clone());
             report.support_removability = Some(support_removability.clone());
+            report.complexity = Some(complexity.clone());
             Model {
                 volume,
                 triangles,
@@ -116,6 +124,7 @@ pub fn build_model(config: &Config) -> Model {
                 support_tips,
                 support_physics,
                 support_removability,
+                complexity,
             }
         }
     }
@@ -204,6 +213,28 @@ pub fn format_report(config: &Config, report: &PrintabilityReport) -> String {
             }
         }
     }
+    if let Some(cx) = &report.complexity {
+        let period = if cx.period == 0 {
+            "none".into()
+        } else {
+            format!("{}", cx.period)
+        };
+        out.push_str(&format!(
+            "complexity: quiescent_gen={}  period={}  unique_states={}  need≥{}  {}\n",
+            cx.quiescent_generation,
+            period,
+            cx.unique_states,
+            cx.required_active_generations,
+            if cx.ok {
+                "interesting OK"
+            } else {
+                "TOO BORING"
+            }
+        ));
+        for reason in &cx.reasons {
+            out.push_str(&format!("  - {reason}\n"));
+        }
+    }
     out.push_str(&format!(
         "generations (above {}-cell base): {}\n",
         config.base_layers, config.depth
@@ -263,6 +294,22 @@ pub fn format_hard_removal_reason(config: &Config, report: &PrintabilityReport) 
         rem.score, config.support.removal.min_score, config.seed
     );
     for reason in &rem.reasons {
+        msg.push_str("\n  - ");
+        msg.push_str(reason);
+    }
+    msg
+}
+
+/// Explain why a Life run fails the interestingness gate.
+pub fn format_boring_reason(config: &Config, report: &PrintabilityReport) -> String {
+    let Some(cx) = &report.complexity else {
+        return format!("seed {}: complexity was not analyzed", config.seed);
+    };
+    let mut msg = format!(
+        "evolution is too boring (quiescent at generation {}, need ≥ {}): seed {}",
+        cx.quiescent_generation, cx.required_active_generations, config.seed
+    );
+    for reason in &cx.reasons {
         msg.push_str("\n  - ");
         msg.push_str(reason);
     }

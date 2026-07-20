@@ -1,6 +1,9 @@
-//! Search for seeds whose supports are practically removable (and, when
-//! possible, whose Life geometry is one piece after support removal).
+//! Search for seeds whose supports are practically removable and whose Life
+//! evolution stays interesting long enough (not a still-life tower after a
+//! few turns). When possible, also prefer Life geometry that is one piece
+//! after support removal.
 
+use crate::complexity::analyze_complexity;
 use crate::config::{Config, Pattern, SupportMode};
 use crate::metrics::{analyze, PrintabilityReport};
 use crate::{build_life_volume, build_model, Model};
@@ -17,6 +20,8 @@ pub struct SearchOutcome {
     pub life_self_supporting: bool,
     /// True when breakaway supports pass the removability gate (or raw mode).
     pub supports_removable: bool,
+    /// True when evolution stays active long enough (or pattern is exempt).
+    pub interesting: bool,
 }
 
 /// Build + analyze one seed (includes breakaway supports per config).
@@ -34,34 +39,65 @@ fn removability_ok(model: &Model) -> bool {
     model.support_removability.ok
 }
 
+fn complexity_ok(model: &Model) -> bool {
+    model.complexity.ok
+}
+
+fn outcome_from(config: &Config, model: Model, attempts: u32) -> SearchOutcome {
+    let life_ok = evaluate_life_only(config).life_self_supporting();
+    SearchOutcome {
+        interesting: complexity_ok(&model),
+        supports_removable: removability_ok(&model),
+        life_self_supporting: life_ok,
+        report: model.report.clone(),
+        config: config.clone(),
+        model,
+        attempts,
+    }
+}
+
 /// Find an acceptable seed for this mode/pattern.
 ///
-/// - **Raw**: Life must be one piece (no supports to clean up).
-/// - **Breakaway + Random**: Life one piece **and** supports easy to remove.
+/// - **Raw**: Life must be one piece (no supports to clean up); still require
+///   interesting evolution for non-garden patterns.
+/// - **Breakaway + Random**: Life one piece **and** supports easy to remove
+///   (gardens are exempt from the complexity gate).
 /// - **Breakaway + Soup** (and other chaotic patterns): supports must be easy
-///   to remove; Life orphans are allowed (soups rarely stay one piece).
+///   to remove **and** evolution must stay interesting; Life orphans are
+///   allowed (soups rarely stay one piece).
 fn candidate_succeeds(
     mode: SupportMode,
     pattern: Pattern,
     life_ok: bool,
     removal_ok: bool,
+    interesting: bool,
 ) -> bool {
     match mode {
-        SupportMode::Raw => life_ok,
+        SupportMode::Raw => match pattern {
+            Pattern::Random => life_ok,
+            _ => life_ok && interesting,
+        },
         SupportMode::Breakaway => match pattern {
             Pattern::Random => life_ok && removal_ok,
-            _ => removal_ok,
+            _ => removal_ok && interesting,
         },
     }
 }
 
-/// Rank failed candidates: prefer removable supports, then fewer orphans, then
-/// higher removal score, then fewer tips.
+/// Rank failed candidates: prefer interesting+removable, then interesting, then
+/// removable, then fewer orphans, then higher removal score, then later
+/// quiescence, then fewer tips.
 fn better_fallback(a: &SearchOutcome, b: &SearchOutcome) -> bool {
-    let a_rem = a.supports_removable;
-    let b_rem = b.supports_removable;
-    if a_rem != b_rem {
-        return a_rem;
+    let a_both = a.supports_removable && a.interesting;
+    let b_both = b.supports_removable && b.interesting;
+    if a_both != b_both {
+        return a_both;
+    }
+    if a.interesting != b.interesting {
+        return a.interesting;
+    }
+    if a.supports_removable != b.supports_removable {
+        return a.supports_removable;
     }
     let a_orph = a.report.orphan_life_voxels;
     let b_orph = b.report.orphan_life_voxels;
@@ -83,6 +119,21 @@ fn better_fallback(a: &SearchOutcome, b: &SearchOutcome) -> bool {
     if (a_score - b_score).abs() > 0.5 {
         return a_score > b_score;
     }
+    let a_q = a
+        .report
+        .complexity
+        .as_ref()
+        .map(|c| c.quiescent_generation)
+        .unwrap_or(0);
+    let b_q = b
+        .report
+        .complexity
+        .as_ref()
+        .map(|c| c.quiescent_generation)
+        .unwrap_or(0);
+    if a_q != b_q {
+        return a_q > b_q;
+    }
     a.report.breakaway_support_tips < b.report.breakaway_support_tips
 }
 
@@ -95,26 +146,34 @@ pub fn find_self_supporting(
     let attempts_budget = max_attempts.max(1);
     let mut attempts = 0u32;
     let mut best: Option<SearchOutcome> = None;
+    let mut first_boring_seed: Option<u64> = None;
     let pattern = config.pattern;
+    let mode = config.mode;
 
     let last = start_seed.saturating_add(u64::from(attempts_budget));
     for seed in start_seed..last {
         attempts += 1;
         config.seed = seed;
-        let life_report = evaluate_life_only(&config);
-        let supporting = life_report.life_self_supporting();
-        let model = evaluate(&config);
-        let removable = removability_ok(&model);
-        let outcome = SearchOutcome {
-            report: model.report.clone(),
-            config: config.clone(),
-            model,
-            attempts,
-            life_self_supporting: supporting,
-            supports_removable: removable,
-        };
 
-        if candidate_succeeds(config.mode, pattern, supporting, removable) {
+        // Cheap reject: skip support routing for soups that die into a
+        // still-life tower after a few turns.
+        if pattern != Pattern::Random && !analyze_complexity(&config).ok {
+            if first_boring_seed.is_none() {
+                first_boring_seed = Some(seed);
+            }
+            continue;
+        }
+
+        let model = evaluate(&config);
+        let outcome = outcome_from(&config, model, attempts);
+
+        if candidate_succeeds(
+            mode,
+            pattern,
+            outcome.life_self_supporting,
+            outcome.supports_removable,
+            outcome.interesting,
+        ) {
             return outcome;
         }
 
@@ -127,9 +186,17 @@ pub fn find_self_supporting(
         }
     }
 
-    let mut best = best.expect("max_attempts >= 1");
-    best.attempts = attempts;
-    best
+    if let Some(mut best) = best {
+        best.attempts = attempts;
+        return best;
+    }
+
+    // Every candidate failed the complexity gate — still emit a best-effort STL.
+    config.seed = first_boring_seed.unwrap_or(start_seed);
+    let model = evaluate(&config);
+    let mut outcome = outcome_from(&config, model, attempts);
+    outcome.attempts = attempts;
+    outcome
 }
 
 #[cfg(test)]
@@ -153,6 +220,7 @@ mod tests {
         let out = find_self_supporting(config, 5, 11);
         assert!(out.life_self_supporting);
         assert!(out.supports_removable);
+        assert!(out.interesting);
         assert_eq!(out.attempts, 1);
         assert_eq!(out.config.seed, 11);
     }
@@ -175,5 +243,25 @@ mod tests {
         // Raw mode: no supports → removability trivially OK, but Life orphans remain.
         assert!(out.supports_removable);
         assert!(!out.life_self_supporting);
+    }
+
+    #[test]
+    fn soup_search_skips_early_stable_seeds() {
+        // Seed 60 dens=0.12 settles at gen 3 — must not be accepted under defaults.
+        let config = Config {
+            width: 16,
+            height: 16,
+            depth: 24,
+            seed: 0,
+            density: 0.12,
+            pattern: Pattern::Soup,
+            mode: SupportMode::Breakaway,
+            cell_mm: 4.0,
+            ..Config::default()
+        };
+        let out = find_self_supporting(config, 1, 60);
+        assert!(!out.interesting);
+        assert!(!out.model.complexity.ok);
+        assert_eq!(out.config.seed, 60);
     }
 }
