@@ -56,6 +56,22 @@ capture_report() {
   capture_report "rpento / scaffold" --pattern rpento -x 20 -y 20 -z 60 --cell 2 --mode scaffold -o /tmp/life-stl-discard.stl
   capture_report "rpento / raw" --pattern rpento -x 20 -y 20 -z 60 --cell 2 --mode raw -o /tmp/life-stl-discard.stl
 
+  echo "## Tower 10×10×60 cm (cell=2mm, scaffold)"
+  echo
+  echo "Physical size via \`--width-mm/--height-mm/--depth-mm\` + \`--cell\`:"
+  echo "100×100×600 mm → 50×50×300 cells. Scaffold mode so printer supports = 0."
+  echo
+  run --quiet --pattern random --seed 42 \
+    --width-mm 100 --height-mm 100 --depth-mm 600 --cell 2 --mode scaffold \
+    -o examples/tower-10x10x60-scaffold.stl
+  capture_report "tower 10×10×60 cm / scaffold" --pattern random --seed 42 \
+    --width-mm 100 --height-mm 100 --depth-mm 600 --cell 2 --mode scaffold \
+    -o /tmp/life-stl-discard.stl
+  # Raw report only (STL omitted — large and not print-oriented).
+  capture_report "tower 10×10×60 cm / raw (report only)" --pattern random --seed 42 \
+    --width-mm 100 --height-mm 100 --depth-mm 600 --cell 2 --mode raw \
+    -o /tmp/life-stl-discard.stl
+
 } | tee examples/REPORT.md
 
 rm -f /tmp/life-stl-discard.stl

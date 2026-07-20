@@ -71,4 +71,37 @@ impl Config {
     pub fn total_z(&self) -> usize {
         self.base_layers + self.depth
     }
+
+    /// Physical size in millimeters: (x, y, z).
+    pub fn size_mm(&self) -> (f32, f32, f32) {
+        (
+            self.width as f32 * self.cell_mm,
+            self.height as f32 * self.cell_mm,
+            self.total_z() as f32 * self.cell_mm,
+        )
+    }
+
+    /// Convert a physical length in mm to a cell count for the given cell size.
+    /// Rounds to the nearest whole cell; errors if the result would be zero.
+    pub fn cells_from_mm(mm: f32, cell_mm: f32) -> Result<usize, String> {
+        if !(mm.is_finite() && mm > 0.0) {
+            return Err(format!("physical size must be > 0 mm, got {mm}"));
+        }
+        if !(cell_mm.is_finite() && cell_mm > 0.0) {
+            return Err(format!("cell size must be > 0 mm, got {cell_mm}"));
+        }
+        let n = (mm / cell_mm).round();
+        if n < 1.0 {
+            return Err(format!(
+                "size {mm} mm with cell {cell_mm} mm rounds to 0 cells; use a larger size or smaller --cell"
+            ));
+        }
+        // Guard absurd grids (e.g. --cell 0.001).
+        if n > 10_000.0 {
+            return Err(format!(
+                "size {mm} mm with cell {cell_mm} mm is {n} cells; refusing > 10000"
+            ));
+        }
+        Ok(n as usize)
+    }
 }

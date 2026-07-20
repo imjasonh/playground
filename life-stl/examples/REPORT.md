@@ -10,7 +10,8 @@ need supports or bridging on an FDM printer. Scaffold mode targets 0.
 
 ### glider / scaffold
 ```
-life-stl  12×12×24  seed=0  mode=Scaffold  cell=2mm
+life-stl  12×12×25 cells  (24.0×24.0×50.0 mm)  seed=0  mode=Scaffold  cell=2mm
+generations (above 1-cell base): 24
 voxels: life=120  scaffold=321  base=144  total_solid=585
 unsupported overhang (empty cell directly below): 0 voxels, 0.0 mm² (0.0% of solid)
 Moore-unsupported (no 3×3 support below): 0 voxels, 0.0 mm² — always 0 for pure Life stacks
@@ -19,7 +20,8 @@ life cells with overhang: 0 (0.0% of life)
 
 ### glider / raw
 ```
-life-stl  12×12×24  seed=0  mode=Raw  cell=2mm
+life-stl  12×12×25 cells  (24.0×24.0×50.0 mm)  seed=0  mode=Raw  cell=2mm
+generations (above 1-cell base): 24
 voxels: life=120  scaffold=0  base=144  total_solid=264
 unsupported overhang (empty cell directly below): 46 voxels, 184.0 mm² (17.4% of solid)
 Moore-unsupported (no 3×3 support below): 0 voxels, 0.0 mm² — always 0 for pure Life stacks
@@ -30,7 +32,8 @@ life cells with overhang: 46 (38.3% of life)
 
 ### random seed=42 / scaffold
 ```
-life-stl  24×24×48  seed=42  mode=Scaffold  cell=2mm
+life-stl  24×24×49 cells  (48.0×48.0×98.0 mm)  seed=42  mode=Scaffold  cell=2mm
+generations (above 1-cell base): 48
 voxels: life=3713  scaffold=5011  base=576  total_solid=9300
 unsupported overhang (empty cell directly below): 0 voxels, 0.0 mm² (0.0% of solid)
 Moore-unsupported (no 3×3 support below): 0 voxels, 0.0 mm² — always 0 for pure Life stacks
@@ -39,7 +42,8 @@ life cells with overhang: 0 (0.0% of life)
 
 ### random seed=42 / raw
 ```
-life-stl  24×24×48  seed=42  mode=Raw  cell=2mm
+life-stl  24×24×49 cells  (48.0×48.0×98.0 mm)  seed=42  mode=Raw  cell=2mm
+generations (above 1-cell base): 48
 voxels: life=3713  scaffold=0  base=576  total_solid=4289
 unsupported overhang (empty cell directly below): 1210 voxels, 4840.0 mm² (28.2% of solid)
 Moore-unsupported (no 3×3 support below): 0 voxels, 0.0 mm² — always 0 for pure Life stacks
@@ -50,7 +54,8 @@ life cells with overhang: 1210 (32.6% of life)
 
 ### rpento / scaffold
 ```
-life-stl  20×20×60  seed=0  mode=Scaffold  cell=2mm
+life-stl  20×20×61 cells  (40.0×40.0×122.0 mm)  seed=0  mode=Scaffold  cell=2mm
+generations (above 1-cell base): 60
 voxels: life=153  scaffold=216  base=400  total_solid=769
 unsupported overhang (empty cell directly below): 0 voxels, 0.0 mm² (0.0% of solid)
 Moore-unsupported (no 3×3 support below): 0 voxels, 0.0 mm² — always 0 for pure Life stacks
@@ -59,10 +64,36 @@ life cells with overhang: 0 (0.0% of life)
 
 ### rpento / raw
 ```
-life-stl  20×20×60  seed=0  mode=Raw  cell=2mm
+life-stl  20×20×61 cells  (40.0×40.0×122.0 mm)  seed=0  mode=Raw  cell=2mm
+generations (above 1-cell base): 60
 voxels: life=153  scaffold=0  base=400  total_solid=553
 unsupported overhang (empty cell directly below): 56 voxels, 224.0 mm² (10.1% of solid)
 Moore-unsupported (no 3×3 support below): 0 voxels, 0.0 mm² — always 0 for pure Life stacks
 life cells with overhang: 56 (36.6% of life)
+```
+
+## Tower 10×10×60 cm (cell=2mm, scaffold)
+
+Physical size via `--width-mm/--height-mm/--depth-mm` + `--cell`:
+100×100×600 mm → 50×50×300 cells. Scaffold mode so printer supports = 0.
+
+### tower 10×10×60 cm / scaffold
+```
+life-stl  50×50×300 cells  (100.0×100.0×600.0 mm)  seed=42  mode=Scaffold  cell=2mm
+generations (above 1-cell base): 299
+voxels: life=81376  scaffold=439143  base=2500  total_solid=523019
+unsupported overhang (empty cell directly below): 0 voxels, 0.0 mm² (0.0% of solid)
+Moore-unsupported (no 3×3 support below): 0 voxels, 0.0 mm² — always 0 for pure Life stacks
+life cells with overhang: 0 (0.0% of life)
+```
+
+### tower 10×10×60 cm / raw (report only)
+```
+life-stl  50×50×300 cells  (100.0×100.0×600.0 mm)  seed=42  mode=Raw  cell=2mm
+generations (above 1-cell base): 299
+voxels: life=81376  scaffold=0  base=2500  total_solid=83876
+unsupported overhang (empty cell directly below): 30626 voxels, 122504.0 mm² (36.5% of solid)
+Moore-unsupported (no 3×3 support below): 0 voxels, 0.0 mm² — always 0 for pure Life stacks
+life cells with overhang: 30626 (37.6% of life)
 ```
 

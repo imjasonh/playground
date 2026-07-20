@@ -77,9 +77,22 @@ pub fn generate_stl(config: &Config, path: &Path) -> std::io::Result<Printabilit
 /// Format a human-readable printability report.
 pub fn format_report(config: &Config, report: &PrintabilityReport) -> String {
     let mut out = String::new();
+    let (sx, sy, sz) = config.size_mm();
     out.push_str(&format!(
-        "life-stl  {}×{}×{}  seed={}  mode={:?}  cell={}mm\n",
-        config.width, config.height, config.depth, config.seed, config.mode, config.cell_mm
+        "life-stl  {}×{}×{} cells  ({:.1}×{:.1}×{:.1} mm)  seed={}  mode={:?}  cell={}mm\n",
+        config.width,
+        config.height,
+        config.total_z(),
+        sx,
+        sy,
+        sz,
+        config.seed,
+        config.mode,
+        config.cell_mm
+    ));
+    out.push_str(&format!(
+        "generations (above {}-cell base): {}\n",
+        config.base_layers, config.depth
     ));
     out.push_str(&format!(
         "voxels: life={}  scaffold={}  base={}  total_solid={}\n",

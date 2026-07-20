@@ -50,6 +50,13 @@ fn raw_random_has_overhanging_births() {
 }
 
 #[test]
+fn cells_from_mm_rounds_to_tower_grid() {
+    // 10 cm × 10 cm × 60 cm at 2 mm cells → 50 × 50 × 300
+    assert_eq!(Config::cells_from_mm(100.0, 2.0).unwrap(), 50);
+    assert_eq!(Config::cells_from_mm(600.0, 2.0).unwrap(), 300);
+}
+
+#[test]
 fn writes_nonempty_stl() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("out.stl");
