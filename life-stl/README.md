@@ -50,7 +50,7 @@ Supports are meant to **snap off** after printing. The remaining Life|Base mesh 
 | **Default `--cell`** | **4.0 mm** (~10× a 0.4 mm nozzle) |
 | **Minimum `--cell`** | **2.0 mm** |
 
-A1 Mini stock nozzle is **0.4 mm**. Build volume is **180³ mm** — a 600 mm-tall tower will not fit in one piece.
+A1 Mini stock nozzle is **0.4 mm**. Build volume is **180³ mm** — keep `--depth-mm` (or `-z`) within that if you want a one-piece print.
 
 ## Seed policy
 
