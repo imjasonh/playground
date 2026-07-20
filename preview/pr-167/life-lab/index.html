@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Life Lab — 3D-printable Game of Life</title>
+<style>
+  :root {
+    --bg: #0e1116;
+    --panel: #161b23;
+    --panel-2: #1c232e;
+    --line: #29323f;
+    --text: #e6edf3;
+    --muted: #8b98a9;
+    --accent: #4ea1ff;
+    --good: #3fb950;
+    --warn: #d29922;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--line);
+    background: var(--panel);
+  }
+  header h1 { font-size: 16px; margin: 0; font-weight: 650; }
+  header p { margin: 0; color: var(--muted); font-size: 12.5px; }
+  main {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    min-height: 0;
+  }
+  #panel {
+    padding: 14px;
+    border-right: 1px solid var(--line);
+    background: var(--panel);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  #viewport { position: relative; min-width: 0; min-height: 0; }
+  #viewport canvas { display: block; }
+  section h2 {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 8px;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+  }
+  .row label { color: var(--muted); min-width: 84px; }
+  select, input[type="number"], button {
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 5px 8px;
+    font: inherit;
+  }
+  input[type="range"] { flex: 1; accent-color: var(--accent); }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #08233f;
+    font-weight: 650;
+  }
+  #editor {
+    width: 100%;
+    image-rendering: pixelated;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: #0a0d12;
+    cursor: crosshair;
+    touch-action: none;
+  }
+  .hint { color: var(--muted); font-size: 12px; margin: 6px 0 0; }
+  #stats {
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 10px;
+    font-size: 13px;
+    display: grid;
+    gap: 4px;
+  }
+  #verdict.good { color: var(--good); }
+  #verdict.warn { color: var(--warn); }
+  .exports { display: flex; gap: 8px; }
+  .exports button { flex: 1; padding: 8px; }
+  #loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted);
+    background: var(--bg);
+  }
+  a { color: var(--accent); }
+  footer { padding: 6px 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; background: var(--panel); }
+</style>
+<script type="importmap">
+  { "imports": { "three": "./vendor/three.module.min.js" } }
+</script>
+</head>
+<body>
+<header>
+  <h1>Life Lab</h1>
+  <p>Draw generation 0 → watch it grow through Z → print it. Self-supporting by construction.</p>
+</header>
+<main>
+  <div id="panel">
+    <section>
+      <h2>Board</h2>
+      <div class="row">
+        <label for="board">Size</label>
+        <select id="board">
+          <option value="16">16 × 16 (64 mm)</option>
+          <option value="24" selected>24 × 24 (96 mm)</option>
+          <option value="32">32 × 32 (128 mm)</option>
+          <option value="44">44 × 44 (176 mm, A1 Mini max)</option>
+        </select>
+      </div>
+      <div class="row">
+        <label for="depth">Generations</label>
+        <input type="range" id="depth" min="8" max="44" value="24" />
+        <span id="depth-label">24</span>
+      </div>
+      <div class="row">
+        <label for="cellmm">Cell (mm)</label>
+        <input type="number" id="cellmm" min="2" max="8" step="0.5" value="4" />
+        <span id="size-label" class="hint"></span>
+      </div>
+    </section>
+
+    <section>
+      <h2>Generation 0</h2>
+      <canvas id="editor"></canvas>
+      <p class="hint">Draw: click / drag &nbsp;·&nbsp; Erase: right-drag</p>
+      <div class="row" style="margin-top:8px">
+        <label for="pattern">Stamp</label>
+        <select id="pattern">
+          <option value="">— pick a pattern —</option>
+          <option value="soup">Random soup</option>
+          <option value="acorn">Acorn</option>
+          <option value="rpento">R-pentomino</option>
+          <option value="pi">Pi-heptomino</option>
+          <option value="bheptomino">B-heptomino</option>
+          <option value="thunderbird">Thunderbird</option>
+          <option value="bunnies">Bunnies</option>
+          <option value="rabbits">Rabbits</option>
+          <option value="diehard">Diehard</option>
+          <option value="glider">Glider</option>
+        </select>
+        <button id="reroll" title="New random seed">⟳</button>
+        <button id="clear">Clear</button>
+      </div>
+      <div class="row" id="density-row" hidden>
+        <label for="density">Density</label>
+        <input type="range" id="density" min="0.05" max="0.4" step="0.01" value="0.18" />
+        <span id="density-label">0.18</span>
+      </div>
+    </section>
+
+    <section>
+      <h2>Result</h2>
+      <div id="stats">
+        <span id="verdict">—</span>
+        <span id="counts">—</span>
+      </div>
+    </section>
+
+    <section>
+      <h2>Export</h2>
+      <div class="exports">
+        <button id="dl-stl" class="primary">STL</button>
+        <button id="dl-3mf" class="primary" title="Bambu Studio project — A1 Mini + generic PLA, supports off">Bambu 3MF</button>
+      </div>
+      <p class="hint">3MF ships A1&nbsp;Mini + generic PLA settings: slicer supports <strong>off</strong> (the braces are the supports), 3 walls, 15% infill, slow bridges.</p>
+    </section>
+  </div>
+  <div id="viewport"><div id="loading">Loading wasm…</div></div>
+</main>
+<footer>
+  Every Life birth has three parents diagonally below it (B3 → the FDM 45° rule), so the whole tower prints
+  as one piece with zero supports. Built from the
+  <a href="https://github.com/imjasonh/playground/tree/main/life-stl">life-stl</a> Rust crate compiled to WebAssembly.
+</footer>
+<script type="module" src="./src/app.js"></script>
+</body>
+</html>
