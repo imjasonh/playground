@@ -1,0 +1,43 @@
+[package]
+name = "life-print-worker"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Cloudflare Worker backend that quotes life-lab STLs via the Slant 3D print API"
+repository = "https://github.com/imjasonh/playground"
+readme = "README.md"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+# Dependencies that build on every target (native + wasm). Business logic
+# (STL validation, routing, quote orchestration) lives here so native
+# `cargo test` exercises the same code the Worker runs.
+[dependencies]
+async-trait = "0.1"
+getrandom = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# The Cloudflare Workers runtime bindings are wasm-only. Gating them to the
+# wasm32 target keeps native `cargo test` free of the JS/wasm-bindgen glue.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+worker = "0.8"
+getrandom = { version = "0.2", features = ["js"] }
+# Deploy pin: worker-build 0.8.x is version-locked with worker 0.8.x and
+# bundles wasm-bindgen CLI 0.2.125. The library schema must match that CLI
+# exactly — bump this in lock-step with worker-build in wrangler.toml.
+wasm-bindgen = "=0.2.125"
+
+[dev-dependencies]
+futures = "0.3"
+
+[profile.release]
+opt-level = "s"
+lto = true
+# worker-build 0.8.5 + wasm-bindgen 0.2.125 need the wasm `target_features`
+# custom section (for `reference-types` / externref catch wrappers).
+# `strip = true` (= "symbols") drops that section and fails bindgen with
+# "externref table required for catch wrappers" (workers-rs#1014).
+strip = "debuginfo"

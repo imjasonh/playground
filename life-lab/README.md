@@ -17,6 +17,11 @@ and download buttons.
 - **Exports**: binary STL, or a Bambu Studio project 3MF with A1 Mini +
   generic PLA settings baked in (slicer supports **off** — the braces are the
   supports).
+- **Print quote**: optional “Get quote” button talks to the
+  [`life-print`](../life-print) Cloudflare Worker, which parks the STL briefly
+  and asks [Slant 3D](https://www.slant3d.com/api) for a farm print price.
+  Set the Worker URL in the panel (or `?printApi=https://…workers.dev`). Quote
+  only — ordering/checkout is not wired; see `life-print/README.md`.
 
 ## Run locally
 

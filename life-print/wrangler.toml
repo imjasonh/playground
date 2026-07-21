@@ -1,0 +1,44 @@
+# Cloudflare Workers configuration for the life-lab → Slant 3D quote backend.
+#
+# This project has no index.html, so the GitHub Pages workflows skip it; it is
+# deployed to Cloudflare by `deploy-workers.yml` on pushes to `main` (using the
+# CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID repo secrets). The deploy
+# creates the R2 bucket below if it doesn't exist yet.
+#
+# After the first deploy, set the Slant API key (not auto-provisioned):
+#   wrangler secret put SLANT_API_KEY
+# Get a key from https://www.slant3dapi.com/ (or the developer portal linked
+# from https://www.slant3d.com/api).
+
+name = "life-print"
+main = "build/worker/shim.mjs"
+compatibility_date = "2024-11-01"
+
+# Build the wasm Worker from Rust. `worker-build` wraps `cargo build
+# --target wasm32-unknown-unknown` and emits the JS shim referenced by `main`.
+#
+# worker-build is major-version-locked with `worker` (0.8.x ↔ 0.8.x) and bundles
+# wasm-bindgen CLI 0.2.125, which must match the library pin in Cargo.toml.
+# Build the *tool* with stable — its deps need a recent Cargo — while
+# worker-build compiles this crate with rust-toolchain.toml.
+[build]
+command = "cargo +stable install -q worker-build@0.8.5 && worker-build --release"
+
+# Temporary STL blobs so Slant can fetch a public fileURL during /quote.
+# Created automatically by provision-worker-r2.py on deploy.
+[[r2_buckets]]
+binding = "STL_BUCKET"
+bucket_name = "life-print-stls"
+
+# Public, non-secret configuration.
+#
+# SLANT_API_BASE: Slant REST root (no trailing slash).
+# MAX_STL_BYTES: reject inbound STL bodies larger than this (default 15 MiB).
+# ALLOWED_ORIGINS: comma-separated Origins allowed to call the Worker, or "*".
+[vars]
+SLANT_API_BASE = "https://www.slant3dapi.com"
+MAX_STL_BYTES = "15728640"
+ALLOWED_ORIGINS = "*"
+
+# SLANT_API_KEY is a secret, NOT a var. Set it out of band with:
+#   wrangler secret put SLANT_API_KEY

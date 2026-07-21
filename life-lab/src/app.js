@@ -3,6 +3,15 @@ import * as THREE from 'three';
 import { OrbitControls } from '../vendor/OrbitControls.js';
 import init, { simulate, export_stl, export_3mf, pattern_cells } from '../vendor/life_stl/life_stl.js';
 import { makeCells, resizeCells, setCell, getCell, pointToCell, liveCount } from './grid.js';
+import {
+  resolvePrintApiBase,
+  savePrintApiBase,
+  sculptureSizeMm,
+  fitsSlantBed,
+  requestQuote,
+  formatPrice,
+  SLANT_BED_MM,
+} from './quote.js';
 
 // ---------- state ----------
 const state = {
@@ -286,6 +295,67 @@ $('dl-stl').addEventListener('click', downloadStl);
 $('dl-3mf').addEventListener('click', download3mf);
 $('m-stl').addEventListener('click', downloadStl);
 $('m-3mf').addEventListener('click', download3mf);
+
+// ---------- Slant quote (via life-print Worker) ----------
+const printApiInput = $('print-api');
+const quoteBtn = $('quote-btn');
+const quoteStatus = $('quote-status');
+
+printApiInput.value = resolvePrintApiBase({
+  search: typeof location !== 'undefined' ? location.search : '',
+  storage: typeof localStorage !== 'undefined' ? localStorage : null,
+});
+printApiInput.addEventListener('change', () => {
+  printApiInput.value = savePrintApiBase(
+    printApiInput.value,
+    typeof localStorage !== 'undefined' ? localStorage : null,
+  );
+});
+
+function setQuoteStatus(text, kind) {
+  quoteStatus.textContent = text;
+  quoteStatus.classList.remove('ok', 'err');
+  if (kind) quoteStatus.classList.add(kind);
+}
+
+async function getQuote() {
+  const base = savePrintApiBase(
+    printApiInput.value,
+    typeof localStorage !== 'undefined' ? localStorage : null,
+  );
+  printApiInput.value = base;
+
+  const size = sculptureSizeMm(state);
+  if (!fitsSlantBed(size)) {
+    setQuoteStatus(
+      `Too big for Slant's ${SLANT_BED_MM}³ mm bed ` +
+        `(${size.x.toFixed(0)}×${size.y.toFixed(0)}×${size.z.toFixed(0)} mm). ` +
+        `Shrink the board, generations, or cell size.`,
+      'err',
+    );
+    return;
+  }
+
+  quoteBtn.disabled = true;
+  setQuoteStatus('Uploading STL and asking Slant…', null);
+  try {
+    const bytes = export_stl(state.cells, state.width, state.height, state.depth, state.cellMm);
+    const quote = await requestQuote(base, bytes);
+    const price = formatPrice(quote.price, quote.currency || 'USD');
+    setQuoteStatus(
+      `${price} print price (PLA, Slant farm) · ${quote.triangles ?? '—'} triangles · shipping not included`,
+      'ok',
+    );
+  } catch (err) {
+    setQuoteStatus(err?.message || String(err), 'err');
+  } finally {
+    quoteBtn.disabled = false;
+  }
+}
+
+quoteBtn.addEventListener('click', () => {
+  getQuote();
+});
 
 // ---------- boot ----------
 try {

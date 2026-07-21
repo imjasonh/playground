@@ -108,6 +108,9 @@
   #verdict.warn { color: var(--warn); }
   .exports { display: flex; gap: 8px; }
   .exports button { flex: 1; padding: 8px; }
+  #quote-status.ok { color: var(--good); }
+  #quote-status.err { color: #f85149; }
+  #print-api { flex: 1; min-width: 0; }
   #loading {
     position: absolute;
     inset: 0;
@@ -244,6 +247,24 @@
         <button id="dl-3mf" class="primary" title="Bambu Studio project — A1 Mini + generic PLA, supports off">Bambu 3MF</button>
       </div>
       <p class="hint">3MF ships A1&nbsp;Mini + generic PLA settings: slicer supports <strong>off</strong> (the braces are the supports), 3 walls, 15% infill, slow bridges.</p>
+    </section>
+
+    <section>
+      <h2>Print quote (Slant 3D)</h2>
+      <p class="hint">
+        Get a farm print price via the
+        <a href="https://github.com/imjasonh/playground/tree/main/life-print">life-print</a>
+        Worker. Quote only — checkout is not wired (Slant's Order API bills the API-key owner).
+      </p>
+      <div class="row">
+        <label for="print-api">Worker</label>
+        <input id="print-api" type="url" inputmode="url" autocomplete="off" spellcheck="false"
+               placeholder="https://life-print.example.workers.dev" style="flex:1;min-width:0" />
+      </div>
+      <div class="exports" style="margin-top:8px">
+        <button id="quote-btn" class="primary" type="button">Get quote</button>
+      </div>
+      <p id="quote-status" class="hint" role="status">Set the Worker URL (or pass <code>?printApi=</code>), then quote.</p>
     </section>
   </div>
   <div id="viewport"><div id="loading">Loading wasm…</div></div>
