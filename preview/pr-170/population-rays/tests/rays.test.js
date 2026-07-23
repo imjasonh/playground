@@ -2,14 +2,16 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createGrid, pickGrid } from "../src/grid.js";
 import {
-  centerlineCellWeights,
+  bearingBetween,
+  cellsInSector,
   computeRose,
+  deltaBearingDeg,
   distanceToPeople,
-  peopleInCorridor,
+  peopleInSlice,
   probeRay,
   rosePolygon,
 } from "../src/rays.js";
-import { feetToMeters, milesToMeters } from "../src/geo.js";
+import { milesToMeters } from "../src/geo.js";
 
 function makeAsymmetricGrid() {
   const width = 60;
@@ -31,45 +33,30 @@ function makeAsymmetricGrid() {
 }
 
 const ORIGIN = { lat: 40.7, lon: -74.2 };
-const WIDTH = feetToMeters(500);
+const SLICE = 5;
 
-test("peopleInCorridor finds more people toward the dense side", () => {
+test("peopleInSlice finds more people toward the dense side", () => {
   const grid = makeAsymmetricGrid();
   const lengthM = milesToMeters(25);
-  const east = peopleInCorridor(grid, ORIGIN, 90, lengthM, WIDTH);
-  const west = peopleInCorridor(grid, ORIGIN, 270, lengthM, WIDTH);
+  const east = peopleInSlice(grid, ORIGIN, 90, lengthM, SLICE);
+  const west = peopleInSlice(grid, ORIGIN, 270, lengthM, SLICE);
   assert.ok(east > west * 3, `east ${east} should dwarf west ${west}`);
 });
 
-test("wider corridor collects at least as many people", () => {
+test("wider slice collects at least as many people", () => {
   const grid = makeAsymmetricGrid();
   const lengthM = milesToMeters(20);
-  // Width only pulls neighboring cells once it approaches cell size (~0.7 mi here).
-  const narrow = peopleInCorridor(grid, ORIGIN, 90, lengthM, feetToMeters(200));
-  const wide = peopleInCorridor(grid, ORIGIN, 90, lengthM, milesToMeters(3));
+  const narrow = peopleInSlice(grid, ORIGIN, 90, lengthM, 2);
+  const wide = peopleInSlice(grid, ORIGIN, 90, lengthM, 15);
   assert.ok(wide > narrow, `wide ${wide} should beat narrow ${narrow}`);
 });
 
-test("wider corridor reaches a target sooner", () => {
+test("wider slice reaches a target sooner", () => {
   const grid = makeAsymmetricGrid();
   const maxLengthM = milesToMeters(40);
   const target = 100_000;
-  const thin = distanceToPeople(
-    grid,
-    ORIGIN,
-    90,
-    target,
-    feetToMeters(200),
-    maxLengthM,
-  );
-  const fat = distanceToPeople(
-    grid,
-    ORIGIN,
-    90,
-    target,
-    milesToMeters(3),
-    maxLengthM,
-  );
+  const thin = distanceToPeople(grid, ORIGIN, 90, target, 2, maxLengthM);
+  const fat = distanceToPeople(grid, ORIGIN, 90, target, 15, maxLengthM);
   assert.ok(Number.isFinite(thin) && Number.isFinite(fat));
   assert.ok(fat < thin, `fat ${fat} should be shorter than thin ${thin}`);
 });
@@ -78,8 +65,8 @@ test("distanceToPeople is shorter toward dense cells", () => {
   const grid = makeAsymmetricGrid();
   const maxLengthM = milesToMeters(40);
   const target = 100_000;
-  const east = distanceToPeople(grid, ORIGIN, 90, target, WIDTH, maxLengthM);
-  const west = distanceToPeople(grid, ORIGIN, 270, target, WIDTH, maxLengthM);
+  const east = distanceToPeople(grid, ORIGIN, 90, target, SLICE, maxLengthM);
+  const west = distanceToPeople(grid, ORIGIN, 270, target, SLICE, maxLengthM);
   assert.ok(Number.isFinite(east), `east distance ${east}`);
   assert.ok(east < west, `east ${east} should be < west ${west}`);
 });
@@ -87,7 +74,7 @@ test("distanceToPeople is shorter toward dense cells", () => {
 test("computeRose marks east reached sooner than west", () => {
   const grid = makeAsymmetricGrid();
   const rays = computeRose(grid, ORIGIN, {
-    widthM: WIDTH,
+    sliceDeg: SLICE,
     targetPeople: 80_000,
     maxLengthM: milesToMeters(40),
     rayCount: 36,
@@ -99,18 +86,18 @@ test("computeRose marks east reached sooner than west", () => {
   assert.ok(east.lengthM < west.lengthM);
 });
 
-test("probeRay reports people without a second full walk when unreached", () => {
+test("probeRay reports people when unreached", () => {
   const grid = makeAsymmetricGrid();
   const ray = probeRay(
     grid,
     ORIGIN,
     270,
     50_000_000,
-    WIDTH,
-    milesToMeters(5),
+    SLICE,
+    milesToMeters(25),
   );
   assert.equal(ray.reached, false);
-  assert.ok(ray.people > 0, "should count people along the short corridor");
+  assert.ok(ray.people > 0, "should count people in the short slice");
   assert.ok(ray.people < 50_000_000);
 });
 
@@ -126,38 +113,6 @@ test("rosePolygon closes the ring", () => {
   assert.deepEqual(ring[0], ring[3]);
 });
 
-test("centerlineCellWeights averages the two cells on a grid edge", () => {
-  const vert = centerlineCellWeights(10, 5.4, 100, 100);
-  assert.equal(vert.length, 2);
-  assert.deepEqual(
-    vert.map((c) => [c.col, c.weight]).sort((a, b) => a[0] - b[0]),
-    [
-      [9, 0.5],
-      [10, 0.5],
-    ],
-  );
-
-  const horiz = centerlineCellWeights(5.4, 10, 100, 100);
-  assert.equal(horiz.length, 2);
-  assert.deepEqual(
-    horiz.map((c) => [c.row, c.weight]).sort((a, b) => a[0] - b[0]),
-    [
-      [9, 0.5],
-      [10, 0.5],
-    ],
-  );
-
-  // Cell interior → full credit for that cell only.
-  const interior = centerlineCellWeights(5.4, 7.4, 100, 100);
-  assert.deepEqual(interior, [{ row: 7, col: 5, weight: 1 }]);
-
-  // Slightly off a vertical line still splits left/right (geodesic drift).
-  const drifted = centerlineCellWeights(10.0003, 5.4, 100, 100);
-  assert.equal(drifted.length, 2);
-  const total = drifted.reduce((s, c) => s + c.weight, 0);
-  assert.ok(Math.abs(total - 1) < 1e-9);
-});
-
 test("rosePolygon collapses unreached tips to the origin", () => {
   const origin = { lat: 40, lon: -74 };
   const rays = [
@@ -169,10 +124,31 @@ test("rosePolygon collapses unreached tips to the origin", () => {
   const ring = rosePolygon(origin, rays, (ray) =>
     ray.reached ? ray.lengthM : 0,
   );
-  // Unreached bearings sit on the pin — no floating tip-only polygon.
   assert.deepEqual(ring[1], [origin.lat, origin.lon]);
   assert.deepEqual(ring[3], [origin.lat, origin.lon]);
   assert.notDeepEqual(ring[0], [origin.lat, origin.lon]);
+});
+
+test("deltaBearingDeg wraps across 0°", () => {
+  assert.ok(Math.abs(deltaBearingDeg(10, 350) - 20) < 1e-9);
+  assert.ok(Math.abs(deltaBearingDeg(350, 10) - -20) < 1e-9);
+});
+
+test("bearingBetween NYC toward Chicago is ~281°", () => {
+  const o = { lat: 40.758, lon: -73.9855 };
+  const br = bearingBetween(o, 41.8781, -87.6298);
+  assert.ok(br > 275 && br < 285, `got ${br}`);
+});
+
+test("cellsInSector includes a cell on the bearing and skips off-slice", () => {
+  const grid = makeAsymmetricGrid();
+  const on = cellsInSector(grid, ORIGIN, 90, 5, milesToMeters(10));
+  const off = cellsInSector(grid, ORIGIN, 0, 5, milesToMeters(10));
+  assert.ok(on.length > 0);
+  // Due-north slice from this origin stays over sparse western cells.
+  const onPop = on.reduce((s, h) => s + h.pop, 0);
+  const offPop = off.reduce((s, h) => s + h.pop, 0);
+  assert.ok(onPop > offPop);
 });
 
 test("pickGrid prefers finer cell size", () => {

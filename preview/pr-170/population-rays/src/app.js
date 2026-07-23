@@ -3,14 +3,13 @@
 import {
   bearingLabel,
   destination,
-  feetToMeters,
   formatDistance,
   formatPeople,
   milesToMeters,
 } from "./geo.js";
 import { searchUsPlaces } from "./geocode.js";
 import { loadGridFromGzip, gridsForRose } from "./grid.js";
-import { computeRoseAsync, rosePolygon } from "./rays.js";
+import { computeRoseAsync, DEFAULT_SLICE_DEG, rosePolygon } from "./rays.js";
 
 const PLACES = {
   manhattan: {
@@ -33,10 +32,9 @@ const PLACES = {
   },
 };
 
-const RAY_COUNT = 72; // 5°
+const RAY_COUNT = 72; // every 5°
+const SLICE_DEG = DEFAULT_SLICE_DEG; // filled pie slice; tiles the rose
 const MAX_SEARCH_MI = 3000;
-const CORRIDOR_WIDTH_FT = 100;
-const CORRIDOR_WIDTH_M = feetToMeters(CORRIDOR_WIDTH_FT);
 
 const el = {
   status: document.getElementById("status"),
@@ -91,7 +89,7 @@ function setMapHint(text) {
 function readControls() {
   const targetPeople = Number(el.targetPop.value) || 100_000;
   return {
-    widthM: CORRIDOR_WIDTH_M,
+    sliceDeg: SLICE_DEG,
     targetPeople,
     maxLengthM: milesToMeters(MAX_SEARCH_MI),
     rayCount: RAY_COUNT,
@@ -277,6 +275,23 @@ function drawOpenSlices(group, rays) {
   }
 }
 
+function drawReachedSlices(group, rays) {
+  const half = SLICE_DEG / 2;
+  for (const ray of rays) {
+    if (!ray.reached || !(ray.lengthM > 0)) continue;
+    const left = ray.bearingDeg - half;
+    const right = ray.bearingDeg + half;
+    L.polygon(sectorRing(left, right, 0, ray.lengthM), {
+      color: "#d97706",
+      weight: 1,
+      opacity: 0.9,
+      fillColor: "#f59e0b",
+      fillOpacity: 0.34,
+      interactive: false,
+    }).addTo(group);
+  }
+}
+
 function drawRose() {
   if (roseLayer) map.removeLayer(roseLayer);
   if (openLayer) map.removeLayer(openLayer);
@@ -286,26 +301,15 @@ function drawRose() {
   const reachedRays = state.rays.filter((r) => r.reached);
   const hasOpen = reachedRays.length < state.rays.length;
 
-  // Unreached fans first (under the amber rose). Gaps in the rose — tips
-  // collapsed to the pin — let these slate slices show through.
+  // Unreached fans under the amber slices (slate → transparent at 3000 mi).
   if (hasOpen) {
     openLayer = L.layerGroup().addTo(map);
     drawOpenSlices(openLayer, state.rays);
   }
 
   if (reachedRays.length) {
-    roseLayer = L.polygon(
-      rosePolygon(state.origin, state.rays, (ray) =>
-        ray.reached ? ray.lengthM : 0,
-      ),
-      {
-        color: "#d97706",
-        weight: 1.5,
-        opacity: 0.95,
-        fillColor: "#f59e0b",
-        fillOpacity: 0.32,
-      },
-    ).addTo(map);
+    roseLayer = L.layerGroup().addTo(map);
+    drawReachedSlices(roseLayer, state.rays);
   }
 
   invalidateMap();
