@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Population Rays</title>
+    <meta
+      name="description"
+      content="How far must a 100 ft corridor go in each direction before it hits N people?"
+    />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="panel" aria-label="Controls">
+        <header class="brand">
+          <h1>Population Rays</h1>
+          <p class="lede">
+            From the pin, a 100&nbsp;ft corridor in every direction.
+            Petal length = distance to
+            <strong id="lede-n">100k</strong> people.
+          </p>
+        </header>
+
+        <section class="search" aria-label="Location search">
+          <form id="place-search-form" class="search-form" autocomplete="off">
+            <label class="sr-only" for="place-search">Search US place</label>
+            <input
+              id="place-search"
+              type="search"
+              name="q"
+              placeholder="City or address (US)"
+              enterkeyhint="search"
+              spellcheck="false"
+            />
+            <button type="submit" class="search-go">Go</button>
+          </form>
+          <ul
+            id="place-results"
+            class="place-results"
+            role="listbox"
+            aria-label="Search results"
+            hidden
+          ></ul>
+        </section>
+
+        <section class="presets" aria-label="Places">
+          <button type="button" class="preset" data-place="manhattan">
+            Manhattan
+          </button>
+          <button type="button" class="preset" data-place="manhattan-ks">
+            Manhattan, KS
+          </button>
+          <button type="button" class="preset" data-place="manhattan-il">
+            Manhattan, IL
+          </button>
+          <button type="button" class="preset primary" id="my-location">
+            My location
+          </button>
+        </section>
+
+        <section class="controls" aria-label="Target">
+          <label class="field slider-field">
+            <span class="slider-label">
+              <span>People to hit</span>
+              <strong id="target-pop-readout">100k</strong>
+            </span>
+            <input
+              id="target-pop"
+              type="range"
+              min="10000"
+              max="500000"
+              step="10000"
+              value="100000"
+            />
+          </label>
+        </section>
+
+        <section class="readouts" aria-live="polite">
+          <div class="readout hero-metric">
+            <span>Shortest</span>
+            <strong id="hero-value">—</strong>
+            <small id="hero-detail">Pick a place or click the map.</small>
+          </div>
+          <p id="hover-readout" class="hover-line"></p>
+        </section>
+
+        <footer class="meta">
+          <p id="status" data-kind="">Loading…</p>
+          <p class="credit">Meta/CIESIN HRSL · geocode © OSM Nominatim · © CARTO</p>
+        </footer>
+      </aside>
+
+      <main class="map-pane">
+        <div id="map" role="img" aria-label="Map with population ray overlay"></div>
+        <div id="map-status" class="map-hint" role="status" aria-live="polite">
+          Loading map data…
+        </div>
+      </main>
+    </div>
+
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+    <script type="module" src="src/app.js"></script>
+  </body>
+</html>
