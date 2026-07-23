@@ -359,11 +359,9 @@ function probeRayOnGrid(
 /**
  * One bearing: shortest corridor to N people, plus people counted if unreached.
  *
- * Tries each covering grid on its own, finest first. Full-cell credit makes a
- * fine tile an effectively narrower strip than CONUS; stitching them in one
- * walk (fine in-metro, CONUS beyond) undercounts the city then can stretch the
- * remainder to the opposite coast. If the fine tile can hit N, use it; otherwise
- * fall back to a coarser grid for that whole ray.
+ * Tries each covering grid on its own, finest first (for single-bearing
+ * queries). The rose ({@link computeRose}) uses only the finest grid so petals
+ * stay on one resolution — see {@link selectRoseGrid}.
  */
 export function probeRay(
   gridOrGrids,
