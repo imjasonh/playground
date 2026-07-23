@@ -94,6 +94,23 @@ export function pickGrid(grids, lat, lon, prefer = "finest") {
 }
 
 /**
+ * Choose a grid for a distance-to-N query.
+ * Smaller targets use the finest local tile (better metro shape).
+ * Large targets need the continental grid so rays aren't clipped.
+ */
+export function pickGridForTarget(grids, lat, lon, targetPeople) {
+  const fine = pickGrid(grids, lat, lon, "finest");
+  const broad = pickGrid(grids, lat, lon, "broadest");
+  if (!fine) return broad;
+  if (!broad) return fine;
+  // ~250k fits in the Northeast tile for dense urban walks; 1M often needs CONUS.
+  if (targetPeople <= 250_000 && fine.meta.cellDeg < broad.meta.cellDeg) {
+    return fine;
+  }
+  return broad;
+}
+
+/**
  * Decode a little-endian float32 gzip payload into a PopulationGrid.
  * Uses DecompressionStream in browsers; Node can pass pre-decompressed bytes.
  */

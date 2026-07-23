@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { loadGridFromGzip } from "../src/grid.js";
+import { loadGridFromGzip, pickGridForTarget } from "../src/grid.js";
 import { distanceToPeople, peopleAlongLine } from "../src/rays.js";
 import { formatDistance, milesToMeters } from "../src/geo.js";
 
@@ -38,6 +38,39 @@ test("Times Square SE crosses more people than due west", async () => {
   assert.ok(
     southeast > west,
     `expected SE (${southeast}) > W (${west}) from Times Square`,
+  );
+});
+
+test("100k target uses fine Northeast grid in NYC", async () => {
+  const conus = await loadGridFromGzip(
+    JSON.parse(readFileSync(join(root, "data/conus-0p02.json"), "utf8")),
+    readFileSync(join(root, "data/conus-0p02.f32.gz")),
+  );
+  const ne = await loadGridFromGzip(
+    JSON.parse(readFileSync(join(root, "data/northeast-0p005.json"), "utf8")),
+    readFileSync(join(root, "data/northeast-0p005.f32.gz")),
+  );
+  const o = { lat: 40.706, lon: -74.012 };
+  const for100k = pickGridForTarget([conus, ne], o.lat, o.lon, 100_000);
+  const for1M = pickGridForTarget([conus, ne], o.lat, o.lon, 1_000_000);
+  assert.equal(for100k.meta.key, "northeast-0p005");
+  assert.equal(for1M.meta.key, "conus-0p02");
+
+  // With the fine grid, due-north from the Battery is NOT a ~1 mi stub:
+  // the line has to gather 100k ahead of the pin (origin cell excluded).
+  const north = distanceToPeople(
+    for100k,
+    o,
+    30,
+    100_000,
+    0,
+    milesToMeters(40),
+    { stepM: 150 },
+  );
+  assert.ok(Number.isFinite(north));
+  assert.ok(
+    north > milesToMeters(2),
+    `expected >2 mi to 100k NNE, got ${formatDistance(north)}`,
   );
 });
 

@@ -8,7 +8,7 @@ import {
   metersToMiles,
   milesToMeters,
 } from "./geo.js";
-import { loadGridFromGzip, pickGrid } from "./grid.js";
+import { loadGridFromGzip, pickGrid, pickGridForTarget } from "./grid.js";
 import {
   computeRose,
   distanceToPeople,
@@ -345,14 +345,18 @@ function fitToRose(opts) {
 
 async function recompute({ fit = false } = {}) {
   if (state.busy || !state.grids.length) return;
-  // Distance-to-N needs continental extent so rays aren't clipped by a metro tile.
   const opts = readControls();
-  const grid = pickGrid(
-    state.grids,
-    state.origin.lat,
-    state.origin.lon,
-    opts.mode === "fixedPeople" ? "broadest" : "finest",
-  );
+  // Small targets (e.g. 100k) use the fine metro tile so petals aren't quantized
+  // to ~2 km national cells. Large targets (1M) use CONUS for long rays.
+  const grid =
+    opts.mode === "fixedPeople"
+      ? pickGridForTarget(
+          state.grids,
+          state.origin.lat,
+          state.origin.lon,
+          opts.targetPeople,
+        )
+      : pickGrid(state.grids, state.origin.lat, state.origin.lon, "finest");
   if (!grid) {
     setStatus("Origin is outside the loaded US grid.", "warn");
     state.rays = [];
