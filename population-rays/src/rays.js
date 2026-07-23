@@ -138,11 +138,23 @@ function cellsInCorridor(grid, origin, bearingDeg, lengthM, widthM) {
 
   const nSteps = Math.max(1, Math.ceil(lengthM / step));
   const neighbor = Math.max(1, Math.ceil(catchM / Math.max(cellM, 1)) + 1);
+  // Rectangular tiles: once a ray leaves after having been inside, it won't
+  // re-enter. Stop instead of stepping empty ocean/Canada for thousands of miles
+  // (that freeze was the main "nothing on mobile" failure mode).
+  let outsideStreak = 0;
+  let everInside = false;
 
   for (let i = 0; i <= nSteps; i++) {
     const along = Math.min(lengthM, i * step);
     const p = destination(origin.lat, origin.lon, bearingDeg, along);
-    if (!grid.contains(p.lat, p.lon)) continue;
+    if (!grid.contains(p.lat, p.lon)) {
+      outsideStreak++;
+      if (everInside && outsideStreak >= 3) break;
+      if (!everInside && outsideStreak >= 8) break;
+      continue;
+    }
+    outsideStreak = 0;
+    everInside = true;
 
     const colF = (p.lon - grid.meta.west) / cellDeg;
     const rowF = (grid.meta.north - p.lat) / cellDeg;
@@ -277,6 +289,83 @@ export function peopleAlongLine(grid, origin, bearingDeg, lengthM, opts = {}) {
   return peopleInCorridor(grid, origin, bearingDeg, lengthM, widthM);
 }
 
+/** Growing length caps so nearby targets don't force a full maxLength walk. */
+function searchCaps(maxLengthM) {
+  /** @type {number[]} */
+  const caps = [];
+  let cap = Math.min(maxLengthM, 40_000); // ~25 mi
+  while (cap < maxLengthM - 1) {
+    caps.push(cap);
+    cap = Math.min(maxLengthM, cap * 2.5);
+  }
+  caps.push(maxLengthM);
+  return caps;
+}
+
+/**
+ * One bearing: shortest corridor to N people, plus people counted if unreached.
+ * Uses expanding length caps (cheap when N is nearby) and never re-walks for
+ * the unreached population total.
+ */
+export function probeRay(
+  gridOrGrids,
+  origin,
+  bearingDeg,
+  targetPeople,
+  widthM,
+  maxLengthM,
+) {
+  if (targetPeople <= 0) {
+    return {
+      bearingDeg,
+      people: 0,
+      lengthM: 0,
+      widthM,
+      reached: true,
+    };
+  }
+  if (maxLengthM <= 0) {
+    return {
+      bearingDeg,
+      people: 0,
+      lengthM: 0,
+      widthM,
+      reached: false,
+    };
+  }
+
+  let people = 0;
+  for (const cap of searchCaps(maxLengthM)) {
+    const hits = corridorHitsOnGrids(
+      gridOrGrids,
+      origin,
+      bearingDeg,
+      cap,
+      widthM || 0,
+    );
+    people = 0;
+    for (const h of hits) {
+      people += h.pop;
+      if (people >= targetPeople) {
+        return {
+          bearingDeg,
+          people: targetPeople,
+          lengthM: h.along,
+          widthM,
+          reached: true,
+        };
+      }
+    }
+  }
+  return {
+    bearingDeg,
+    people,
+    lengthM: maxLengthM,
+    widthM,
+    reached: false,
+  };
+}
+
 /**
  * Shortest corridor length to accumulate targetPeople (meters), or Infinity.
  * Accepts one grid or several (finest-first cascade).
@@ -289,23 +378,15 @@ export function distanceToPeople(
   widthM,
   maxLengthM,
 ) {
-  if (targetPeople <= 0) return 0;
-  if (maxLengthM <= 0) return Infinity;
-
-  const hits = corridorHitsOnGrids(
+  const ray = probeRay(
     gridOrGrids,
     origin,
     bearingDeg,
+    targetPeople,
+    widthM,
     maxLengthM,
-    widthM || 0,
   );
-
-  let people = 0;
-  for (const h of hits) {
-    people += h.pop;
-    if (people >= targetPeople) return h.along;
-  }
-  return Infinity;
+  return ray.reached ? ray.lengthM : Infinity;
 }
 
 /**
@@ -332,24 +413,44 @@ export function computeRose(gridOrGrids, origin, options) {
   const rays = [];
   for (let i = 0; i < rayCount; i++) {
     const bearingDeg = (360 * i) / rayCount;
-    const dist = distanceToPeople(
-      grids,
-      origin,
-      bearingDeg,
-      targetPeople,
-      widthM,
-      maxLengthM,
+    rays.push(
+      probeRay(grids, origin, bearingDeg, targetPeople, widthM, maxLengthM),
     );
-    const reached = Number.isFinite(dist);
-    rays.push({
-      bearingDeg,
-      people: reached
-        ? targetPeople
-        : peopleInCorridor(grids, origin, bearingDeg, maxLengthM, widthM),
-      lengthM: reached ? dist : maxLengthM,
-      widthM,
-      reached,
-    });
+  }
+  return rays;
+}
+
+/**
+ * Same as computeRose, but yields to the event loop so mobile Safari can paint
+ * the map (and status) instead of freezing on a multi-second sync walk.
+ * @param {(done:number, total:number) => void} [onProgress]
+ */
+export async function computeRoseAsync(
+  gridOrGrids,
+  origin,
+  options,
+  onProgress,
+) {
+  const {
+    widthM,
+    targetPeople,
+    maxLengthM,
+    rayCount = 72,
+  } = options;
+  const grids = orderedGrids(gridOrGrids, origin);
+  if (!grids.length) {
+    throw new Error("origin is outside the population grid");
+  }
+  const rays = [];
+  for (let i = 0; i < rayCount; i++) {
+    const bearingDeg = (360 * i) / rayCount;
+    rays.push(
+      probeRay(grids, origin, bearingDeg, targetPeople, widthM, maxLengthM),
+    );
+    if (i % 6 === 5 || i === rayCount - 1) {
+      onProgress?.(i + 1, rayCount);
+      await new Promise((r) => setTimeout(r, 0));
+    }
   }
   return rays;
 }

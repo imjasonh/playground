@@ -9,7 +9,7 @@ import {
 } from "./geo.js";
 import { searchUsPlaces } from "./geocode.js";
 import { loadGridFromGzip, gridsForRose } from "./grid.js";
-import { computeRose, rosePolygon } from "./rays.js";
+import { computeRoseAsync, rosePolygon } from "./rays.js";
 
 const PLACES = {
   manhattan: {
@@ -33,6 +33,7 @@ const CORRIDOR_WIDTH_M = feetToMeters(CORRIDOR_WIDTH_FT);
 
 const el = {
   status: document.getElementById("status"),
+  mapStatus: document.getElementById("map-status"),
   targetPop: document.getElementById("target-pop"),
   targetReadout: document.getElementById("target-pop-readout"),
   ledeN: document.getElementById("lede-n"),
@@ -52,6 +53,7 @@ const state = {
   rays: [],
   busy: false,
   hoverBearing: null,
+  computeGen: 0,
 };
 
 let map;
@@ -63,6 +65,21 @@ let hoverLine;
 function setStatus(text, kind = "") {
   el.status.textContent = text;
   el.status.dataset.kind = kind;
+  if (el.mapStatus) {
+    el.mapStatus.textContent = text;
+    el.mapStatus.dataset.kind = kind;
+    el.mapStatus.hidden = !text;
+  }
+}
+
+function setMapHint(text) {
+  if (!el.mapStatus) return;
+  // Prefer live status; fall back to legend when idle.
+  if (el.status.dataset.kind === "ok" || !el.status.textContent) {
+    el.mapStatus.textContent = text;
+    el.mapStatus.dataset.kind = "";
+    el.mapStatus.hidden = !text;
+  }
 }
 
 function readControls() {
@@ -119,7 +136,6 @@ function updateHoverReadout() {
     el.hoverReadout.textContent = "";
     return;
   }
-  const opts = readControls();
   const step = 360 / state.rays.length;
   const { ray, diff } = nearestRay(state.hoverBearing);
   if (diff > step) {
@@ -186,6 +202,8 @@ function drawRose() {
       },
     ).addTo(map);
   }
+
+  invalidateMap();
 }
 
 function fitToRose() {
@@ -206,8 +224,13 @@ function fitToRose() {
   );
 }
 
+function invalidateMap() {
+  if (!map) return;
+  map.invalidateSize({ animate: false });
+}
+
 async function recompute({ fit = false } = {}) {
-  if (state.busy || !state.grids.length) return;
+  if (!state.grids.length) return;
   const opts = readControls();
   const grids = gridsForRose(
     state.grids,
@@ -221,21 +244,30 @@ async function recompute({ fit = false } = {}) {
     updateHero();
     return;
   }
+
+  const gen = ++state.computeGen;
   state.busy = true;
-  setStatus("Computing…");
-  await new Promise((r) => setTimeout(r, 0));
+  setStatus("Computing petals…");
   try {
-    state.rays = computeRose(grids, state.origin, opts);
+    const rays = await computeRoseAsync(grids, state.origin, opts, (done, total) => {
+      if (gen !== state.computeGen) return;
+      setStatus(`Computing… ${done}/${total}`);
+    });
+    if (gen !== state.computeGen) return;
+    state.rays = rays;
     drawRose();
     updateHero();
     updateHoverReadout();
     if (fit) fitToRose();
+    const n = formatPeople(opts.targetPeople);
     setStatus("Ready", "ok");
+    setMapHint(`Solid petals hit ${n} · dashed = not reached`);
   } catch (err) {
+    if (gen !== state.computeGen) return;
     console.error(err);
     setStatus(String(err.message || err), "warn");
   } finally {
-    state.busy = false;
+    if (gen === state.computeGen) state.busy = false;
   }
 }
 
@@ -371,10 +403,11 @@ function requestMyLocation() {
 
 function initMap() {
   const start = PLACES.manhattan;
-  map = L.map("map", { zoomControl: true, scrollWheelZoom: true }).setView(
-    [start.lat, start.lon],
-    start.zoom,
-  );
+  map = L.map("map", {
+    zoomControl: true,
+    scrollWheelZoom: true,
+    preferCanvas: false,
+  }).setView([start.lat, start.lon], start.zoom);
 
   L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
     attribution:
@@ -430,18 +463,63 @@ function initMap() {
       },
     ).addTo(map);
   });
+
+  // Mobile Safari often initializes the map before the stacked layout has a
+  // real height; without this the SVG overlay never shows even when tiles do.
+  const onResize = () => invalidateMap();
+  window.addEventListener("resize", onResize);
+  window.addEventListener("orientationchange", onResize);
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", onResize);
+  }
+  requestAnimationFrame(() => {
+    invalidateMap();
+    requestAnimationFrame(invalidateMap);
+  });
 }
 
-async function loadDatasets() {
-  setStatus("Loading…");
+async function loadOneDataset(key) {
+  const meta = await (await fetch(`data/${key}.json`)).json();
+  const buf = new Uint8Array(
+    await (await fetch(`data/${meta.file}`)).arrayBuffer(),
+  );
+  return loadGridFromGzip(meta, buf);
+}
+
+/**
+ * Load small/local tiles first so Manhattan can paint petals before the 6MB
+ * CONUS gzip finishes on cellular.
+ */
+async function loadDatasetsProgressive() {
   const index = await (await fetch("data/index.json")).json();
-  const grids = [];
-  for (const key of index.datasets) {
-    const meta = await (await fetch(`data/${key}.json`)).json();
-    const buf = new Uint8Array(await (await fetch(`data/${meta.file}`)).arrayBuffer());
-    grids.push(await loadGridFromGzip(meta, buf));
+  const keys = [...index.datasets].sort((a, b) => {
+    // Prefer smaller / finer northeast before bulky CONUS.
+    const rank = (k) => (k.includes("northeast") ? 0 : 1);
+    return rank(a) - rank(b);
+  });
+
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    setStatus(
+      keys.length > 1
+        ? `Loading map data… ${i + 1}/${keys.length}`
+        : "Loading map data…",
+    );
+    const grid = await loadOneDataset(key);
+    // Replace or append by key so progressive recompute sees the new tile.
+    const idx = state.grids.findIndex((g) => g.meta.key === grid.meta.key);
+    if (idx >= 0) state.grids[idx] = grid;
+    else state.grids.push(grid);
+
+    const covering = gridsForRose(
+      state.grids,
+      state.origin.lat,
+      state.origin.lon,
+    );
+    if (covering.length) {
+      await recompute({ fit: i === 0 });
+    }
   }
-  state.grids = grids;
 }
 
 function bindControls() {
@@ -467,9 +545,17 @@ function bindControls() {
 async function main() {
   initMap();
   bindControls();
+  setStatus("Loading map data…");
   try {
-    await loadDatasets();
-    await recompute({ fit: true });
+    await loadDatasetsProgressive();
+    if (!state.rays.length) {
+      await recompute({ fit: true });
+    } else {
+      setStatus("Ready", "ok");
+      setMapHint(
+        `Solid petals hit ${formatPeople(readControls().targetPeople)} · dashed = not reached`,
+      );
+    }
   } catch (err) {
     console.error(err);
     setStatus(`Failed: ${err.message || err}`, "warn");
