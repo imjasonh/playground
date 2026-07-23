@@ -404,9 +404,12 @@ a {
 .map-pane {
   position: relative;
   min-height: 50vh;
+  min-height: 50dvh;
 }
 
 #map {
+  position: absolute;
+  inset: 0;
   height: 100%;
   width: 100%;
   background: #d9e2e0;
@@ -417,16 +420,31 @@ a {
   left: 50%;
   bottom: 1.1rem;
   transform: translateX(-50%);
-  z-index: 500;
+  z-index: 1000;
+  max-width: min(92vw, 28rem);
   padding: 0.45rem 0.85rem;
   border-radius: 999px;
   background: rgba(20, 33, 43, 0.82);
   color: var(--paper);
   font-size: 0.82rem;
   letter-spacing: 0.02em;
+  text-align: center;
   pointer-events: none;
   box-shadow: var(--shadow);
   animation: hint-in 700ms ease both;
+}
+
+.map-hint[hidden] {
+  display: none;
+}
+
+.map-hint[data-kind="warn"] {
+  background: rgba(90, 40, 28, 0.9);
+  color: #ffe0d4;
+}
+
+.map-hint[data-kind="ok"] {
+  background: rgba(20, 33, 43, 0.82);
 }
 
 @keyframes hint-in {
@@ -448,12 +466,19 @@ a {
   .shell {
     grid-template-columns: 1fr;
     grid-template-rows: auto minmax(55vh, 1fr);
+    grid-template-rows: auto minmax(55dvh, 1fr);
+    height: 100dvh;
   }
 
   .panel {
     border-right: 0;
     border-bottom: 1px solid var(--line);
-    max-height: none;
+    max-height: 42dvh;
+  }
+
+  .map-pane {
+    min-height: 55dvh;
+    height: 100%;
   }
 
   .brand h1 {

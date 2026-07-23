@@ -6,6 +6,7 @@ import {
   computeRose,
   distanceToPeople,
   peopleInCorridor,
+  probeRay,
   rosePolygon,
 } from "../src/rays.js";
 import { feetToMeters, milesToMeters } from "../src/geo.js";
@@ -96,6 +97,21 @@ test("computeRose marks east reached sooner than west", () => {
   const west = rays.find((r) => r.bearingDeg === 270);
   assert.ok(east.reached, "east should reach target");
   assert.ok(east.lengthM < west.lengthM);
+});
+
+test("probeRay reports people without a second full walk when unreached", () => {
+  const grid = makeAsymmetricGrid();
+  const ray = probeRay(
+    grid,
+    ORIGIN,
+    270,
+    50_000_000,
+    WIDTH,
+    milesToMeters(5),
+  );
+  assert.equal(ray.reached, false);
+  assert.ok(ray.people > 0, "should count people along the short corridor");
+  assert.ok(ray.people < 50_000_000);
 });
 
 test("rosePolygon closes the ring", () => {
