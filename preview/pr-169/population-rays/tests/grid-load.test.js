@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { loadGridFromGzip, gridsForRose, pickGridForTarget } from "../src/grid.js";
-import { distanceToPeople, peopleInCorridor } from "../src/rays.js";
+import { computeRose, distanceToPeople, peopleInCorridor } from "../src/rays.js";
 import { feetToMeters, formatDistance, milesToMeters } from "../src/geo.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -111,6 +111,39 @@ test("Manhattan reaches 1M much sooner than Wyoming", async () => {
   if (Number.isFinite(wyDist)) {
     assert.ok(wyDist > nycDist * 20);
   }
+});
+
+test("Hudson east ray is not a sharp cardinal notch vs neighbors", async () => {
+  const ne = await loadGridFromGzip(
+    JSON.parse(readFileSync(join(root, "data/northeast-0p005.json"), "utf8")),
+    readFileSync(join(root, "data/northeast-0p005.f32.gz")),
+  );
+  const conus = await loadGridFromGzip(
+    JSON.parse(readFileSync(join(root, "data/conus-0p02.json"), "utf8")),
+    readFileSync(join(root, "data/conus-0p02.f32.gz")),
+  );
+  const hudson = { lat: 40.72, lon: -74.03 };
+  const grids = [ne, conus];
+  const W = feetToMeters(100);
+  const maxM = milesToMeters(3000);
+  const target = 100_000;
+  // Smoothed rose — single-bearing grid notches at E/W should not dominate.
+  const rays = computeRose(grids, hudson, {
+    widthM: W,
+    targetPeople: target,
+    maxLengthM: maxM,
+    rayCount: 72,
+  });
+  const at = (b) => rays.find((r) => r.bearingDeg === b);
+  const e = at(90);
+  const eLo = at(85);
+  const eHi = at(95);
+  assert.ok(e.reached && eLo.reached && eHi.reached);
+  const neigh = (eLo.lengthM + eHi.lengthM) / 2;
+  assert.ok(
+    e.lengthM > neigh * 0.55,
+    `east ${formatDistance(e.lengthM)} should be near neighbors ${formatDistance(neigh)}`,
+  );
 });
 
 test("Wyoming southwest ray through LA reaches 500k", async () => {

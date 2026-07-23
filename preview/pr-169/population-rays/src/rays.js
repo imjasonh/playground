@@ -9,6 +9,9 @@
  * cell. We treat that as ~one cell wide: cells the centerline crosses, plus
  * cells whose centers lie within one cell of the line. Wider W expands the
  * catch radius further.
+ *
+ * Axis-aligned grid walks can notch N/S/E/W; computeRose applies a light
+ * angular median so the drawn rose stays closer to the oval you’d expect.
  */
 
 import { destination, metersPerDegree } from "./geo.js";
@@ -32,8 +35,6 @@ function catchRadiusM(grid, origin, widthM) {
 
 /**
  * Walk the geodesic centerline; collect cells near the strip.
- * Uses a fine step and a ±1 cell neighborhood with a local perpendicular test
- * so long diagonals don’t skip metro cores.
  *
  * @param {import('./grid.js').PopulationGrid} grid
  * @param {{lat:number, lon:number}} origin
@@ -212,6 +213,30 @@ export function distanceToPeople(
 }
 
 /**
+ * Angular median on reached lengths. Lat/lon grids over-count on exact
+ * N/S/E/W walks; this lifts single-bearing inward notches for the rose.
+ * @param {RayResult[]} rays
+ * @param {number} [halfWindow=2]  neighbors on each side (2 ⇒ 5-tap)
+ */
+export function smoothRoseLengths(rays, halfWindow = 2) {
+  const n = rays.length;
+  if (n < 3) return rays;
+  const raw = rays.map((r) => (r.reached ? r.lengthM : null));
+  return rays.map((ray, i) => {
+    if (!ray.reached) return ray;
+    const samples = [];
+    for (let d = -halfWindow; d <= halfWindow; d++) {
+      const v = raw[(i + d + n) % n];
+      if (v != null) samples.push(v);
+    }
+    if (samples.length < 2) return ray;
+    samples.sort((a, b) => a - b);
+    const mid = samples[Math.floor(samples.length / 2)];
+    return { ...ray, lengthM: mid };
+  });
+}
+
+/**
  * Directional rose: distance to N people in each direction.
  * @param {import('./grid.js').PopulationGrid | import('./grid.js').PopulationGrid[]} gridOrGrids
  * @param {{lat:number, lon:number}} origin
@@ -220,6 +245,7 @@ export function distanceToPeople(
  * @param {number} options.targetPeople
  * @param {number} options.maxLengthM
  * @param {number} [options.rayCount=72]
+ * @param {boolean} [options.smooth=true]
  */
 export function computeRose(gridOrGrids, origin, options) {
   const {
@@ -227,6 +253,7 @@ export function computeRose(gridOrGrids, origin, options) {
     targetPeople,
     maxLengthM,
     rayCount = 72,
+    smooth = true,
   } = options;
   const grids = orderedGrids(gridOrGrids, origin);
   if (!grids.length) {
@@ -254,7 +281,7 @@ export function computeRose(gridOrGrids, origin, options) {
       reached,
     });
   }
-  return rays;
+  return smooth ? smoothRoseLengths(rays) : rays;
 }
 
 /** Build a closed ring of [lat, lon] tips for drawing a rose polygon. */

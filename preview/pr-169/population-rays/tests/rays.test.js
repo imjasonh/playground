@@ -6,6 +6,7 @@ import {
   distanceToPeople,
   peopleInCorridor,
   rosePolygon,
+  smoothRoseLengths,
 } from "../src/rays.js";
 import { feetToMeters, milesToMeters } from "../src/geo.js";
 
@@ -107,6 +108,18 @@ test("rosePolygon closes the ring", () => {
   const ring = rosePolygon(origin, rays, () => 1000);
   assert.equal(ring.length, 4);
   assert.deepEqual(ring[0], ring[3]);
+});
+
+test("smoothRoseLengths lifts a single short notch", () => {
+  const rays = [0, 5, 10, 15, 20].map((bearingDeg, i) => ({
+    bearingDeg,
+    lengthM: i === 2 ? 1000 : 5000,
+    reached: true,
+    people: 1,
+    widthM: 1,
+  }));
+  const smoothed = smoothRoseLengths(rays, 2);
+  assert.equal(smoothed[2].lengthM, 5000);
 });
 
 test("rosePolygon collapses unreached tips to the origin", () => {
