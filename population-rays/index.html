@@ -6,7 +6,7 @@
     <title>Population Rays</title>
     <meta
       name="description"
-      content="From any point in the US, see how many people live along a thin corridor in every direction — or how far you must go to reach a million homes."
+      content="How far must a thin line go from here before it crosses 1 million people’s homes? Short in Manhattan, often thousands of miles in Wyoming."
     />
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -27,70 +27,84 @@
     <div class="shell">
       <aside class="panel" aria-label="Controls">
         <header class="brand">
-          <p class="eyebrow">Directional density</p>
+          <p class="eyebrow">How far to a million people?</p>
           <h1>Population Rays</h1>
           <p class="lede">
-            Draw a thin corridor from a point. How many homes does it cross —
-            and in which direction do the people live? A 100′ strip is narrow:
-            tens of thousands of people is common; a million usually needs more
-            width or a very long path.
+            From this pin, each petal is a thin line in that direction. Its
+            length is how far the line must go before it has crossed
+            <strong>1&nbsp;million</strong> people’s homes. In Manhattan that can
+            be tens of miles; in Wyoming it can be thousands.
           </p>
         </header>
 
-        <section class="controls" aria-label="Corridor settings">
+        <section class="presets" aria-label="Places">
+          <button type="button" class="preset" data-place="manhattan">
+            Manhattan
+          </button>
+          <button type="button" class="preset" data-place="wyoming">
+            Wyoming
+          </button>
+          <button type="button" class="preset primary" id="my-location">
+            My location
+          </button>
+        </section>
+
+        <section class="controls" aria-label="Line settings">
           <label class="field">
-            <span>Mode</span>
+            <span>What to show</span>
             <select id="mode">
-              <option value="fixedLength" selected>
-                People within a distance
+              <option value="fixedPeople" selected>
+                Distance to reach N people (petal = miles)
               </option>
-              <option value="fixedPeople">Distance to reach N people</option>
+              <option value="fixedLength">
+                People along a fixed length (petal ∝ count)
+              </option>
             </select>
           </label>
 
-          <label class="field">
-            <span>Corridor width (feet)</span>
-            <input id="width-ft" type="number" min="10" step="10" value="100" />
-          </label>
-
-          <label class="field" id="length-control">
-            <span>Corridor length (miles)</span>
-            <input id="length-mi" type="number" min="1" step="1" value="30" />
-          </label>
-
-          <label class="field" id="target-control" hidden>
+          <label class="field" id="target-control">
             <span>Target people</span>
             <input
               id="target-pop"
               type="number"
-              min="100"
+              min="1000"
               step="1000"
-              value="25000"
+              value="1000000"
             />
+          </label>
+
+          <label class="field" id="length-control" hidden>
+            <span>Line length (miles)</span>
+            <input id="length-mi" type="number" min="1" step="1" value="50" />
           </label>
 
           <label class="field">
             <span>Directions</span>
             <select id="ray-count">
-              <option value="90">90 (4°)</option>
-              <option value="180" selected>180 (2°)</option>
-              <option value="360">360 (1°)</option>
+              <option value="72">72 (5°)</option>
+              <option value="120" selected>120 (3°)</option>
+              <option value="180">180 (2°)</option>
             </select>
           </label>
 
-          <button id="reset-origin" type="button" class="ghost">
-            Reset to Times Square
-          </button>
+          <!-- Width is conceptually 100′; at ~km cells it doesn’t change which
+               cells a centerline crosses, so it’s hidden from the main UI. -->
+          <input id="width-ft" type="hidden" value="100" />
         </section>
 
         <section class="readouts" aria-live="polite">
+          <div class="readout hero-metric">
+            <span id="hero-label">Shortest line to 1M people</span>
+            <strong id="hero-value">—</strong>
+            <small id="hero-detail">Place a pin to measure.</small>
+          </div>
           <div class="readout">
             <span>Origin</span>
             <strong id="origin-readout">—</strong>
           </div>
           <div class="readout">
-            <span>Bearing</span>
-            <strong id="hover-readout">Hover a petal for a bearing.</strong>
+            <span>This direction</span>
+            <strong id="hover-readout">Hover the map around the pin.</strong>
           </div>
           <div id="summary" class="summary"></div>
         </section>
@@ -99,20 +113,17 @@
           <p id="status" data-kind="">Loading…</p>
           <p id="dataset" class="dataset"></p>
           <p class="credit">
-            Population from
-            <a
-              href="https://registry.opendata.aws/dataforgood-fb-hrsl/"
-              rel="noopener"
-              >Meta / CIESIN HRSL</a
-            >
-            (~30&nbsp;m counts, sum-aggregated). Basemap © OpenStreetMap, CARTO.
+            A line “hits” people by crossing the population cells their homes
+            sit in (Meta / CIESIN HRSL grids). Basemap © OpenStreetMap, CARTO.
           </p>
         </footer>
       </aside>
 
       <main class="map-pane">
         <div id="map" role="img" aria-label="Map with population ray overlay"></div>
-        <div class="map-hint">Click or drag the pin to set the origin</div>
+        <div class="map-hint" id="map-hint">
+          Petal length = miles to reach the target · click to move the pin
+        </div>
       </main>
     </div>
 

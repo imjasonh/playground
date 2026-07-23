@@ -74,18 +74,23 @@ export function createGrid(meta, data) {
   };
 }
 
-/** Choose the finest loaded grid that contains the point. */
-export function pickGrid(grids, lat, lon) {
-  let best = null;
-  let bestCell = Infinity;
-  for (const g of grids) {
-    if (!g.contains(lat, lon)) continue;
-    if (g.meta.cellDeg < bestCell) {
-      best = g;
-      bestCell = g.meta.cellDeg;
-    }
+/**
+ * Choose a loaded grid that contains the point.
+ * @param {'finest'|'broadest'} [prefer='finest']
+ *   finest — smallest cell size (local detail)
+ *   broadest — largest geographic extent (long rays / distance-to-N)
+ */
+export function pickGrid(grids, lat, lon, prefer = "finest") {
+  const hits = grids.filter((g) => g.contains(lat, lon));
+  if (!hits.length) return null;
+  if (prefer === "broadest") {
+    return hits.reduce((a, b) => {
+      const ea = (a.meta.east - a.meta.west) * (a.meta.north - a.meta.south);
+      const eb = (b.meta.east - b.meta.west) * (b.meta.north - b.meta.south);
+      return eb > ea ? b : a;
+    });
   }
-  return best;
+  return hits.reduce((a, b) => (a.meta.cellDeg <= b.meta.cellDeg ? a : b));
 }
 
 /**

@@ -11,12 +11,26 @@ import {
 import { loadGridFromGzip, pickGrid } from "./grid.js";
 import {
   computeRose,
-  peopleInCorridor,
+  distanceToPeople,
+  peopleAlongLine,
   rosePolygon,
   scaledLengths,
 } from "./rays.js";
 
-const TIMES_SQUARE = { lat: 40.758, lon: -73.9855 };
+const PLACES = {
+  manhattan: {
+    lat: 40.758,
+    lon: -73.9855,
+    zoom: 9,
+    label: "Times Square, Manhattan",
+  },
+  wyoming: {
+    lat: 43.076,
+    lon: -107.2903,
+    zoom: 6,
+    label: "Central Wyoming",
+  },
+};
 
 const el = {
   status: document.getElementById("status"),
@@ -31,20 +45,26 @@ const el = {
   hoverReadout: document.getElementById("hover-readout"),
   summary: document.getElementById("summary"),
   dataset: document.getElementById("dataset"),
-  reset: document.getElementById("reset-origin"),
+  myLocation: document.getElementById("my-location"),
+  heroLabel: document.getElementById("hero-label"),
+  heroValue: document.getElementById("hero-value"),
+  heroDetail: document.getElementById("hero-detail"),
+  mapHint: document.getElementById("map-hint"),
 };
 
 const state = {
   grids: [],
-  origin: { ...TIMES_SQUARE },
+  origin: { ...PLACES.manhattan },
   rays: [],
   busy: false,
   hoverBearing: null,
+  placeLabel: PLACES.manhattan.label,
 };
 
 let map;
 let originMarker;
 let roseLayer;
+let openLayer;
 let spokesLayer;
 let hoverLine;
 
@@ -57,14 +77,16 @@ function readControls() {
   const mode = el.mode.value;
   const widthM = feetToMeters(Number(el.widthFt.value) || 100);
   const lengthM = milesToMeters(Number(el.lengthMi.value) || 50);
-  const targetPeople = Number(el.targetPop.value) || 25_000;
-  const rayCount = Number(el.rayCount.value) || 180;
+  const targetPeople = Number(el.targetPop.value) || 1_000_000;
+  const rayCount = Number(el.rayCount.value) || 120;
+  // Long enough that rural West can show multi-thousand-mile answers.
+  const maxLengthM = milesToMeters(mode === "fixedPeople" ? 3000 : 250);
   return {
     mode,
     widthM,
     lengthM,
     targetPeople,
-    maxLengthM: milesToMeters(250),
+    maxLengthM,
     rayCount,
   };
 }
@@ -73,10 +95,47 @@ function syncModeControls() {
   const mode = el.mode.value;
   el.lengthControl.hidden = mode !== "fixedLength";
   el.targetControl.hidden = mode !== "fixedPeople";
+  if (mode === "fixedPeople") {
+    el.mapHint.textContent =
+      "Petal length = miles to reach the target · dashed = not reached yet · click to move";
+  } else {
+    el.mapHint.textContent =
+      "Petal length ∝ people along a fixed line · click to move the pin";
+  }
 }
 
 function updateOriginReadout() {
-  el.originReadout.textContent = `${state.origin.lat.toFixed(4)}°, ${state.origin.lon.toFixed(4)}°`;
+  const place = state.placeLabel ? `${state.placeLabel} · ` : "";
+  el.originReadout.textContent = `${place}${state.origin.lat.toFixed(4)}°, ${state.origin.lon.toFixed(4)}°`;
+}
+
+function updateHero() {
+  const opts = readControls();
+  if (!state.rays.length) {
+    el.heroLabel.textContent = `Shortest line to ${formatPeople(opts.targetPeople)}`;
+    el.heroValue.textContent = "—";
+    el.heroDetail.textContent = "Place a pin to measure.";
+    return;
+  }
+  if (opts.mode === "fixedPeople") {
+    const reached = state.rays.filter((r) => r.reached);
+    el.heroLabel.textContent = `Shortest line to ${formatPeople(opts.targetPeople)}`;
+    if (!reached.length) {
+      el.heroValue.textContent = `>${metersToMiles(opts.maxLengthM).toFixed(0)} mi`;
+      el.heroDetail.textContent = `No direction hits ${formatPeople(opts.targetPeople)} within ${metersToMiles(opts.maxLengthM).toFixed(0)} miles — try a denser place.`;
+      return;
+    }
+    let nearest = reached[0];
+    for (const r of reached) if (r.lengthM < nearest.lengthM) nearest = r;
+    el.heroValue.textContent = formatDistance(nearest.lengthM);
+    el.heroDetail.textContent = `${bearingLabel(nearest.bearingDeg)} · ${nearest.bearingDeg.toFixed(0)}° — compare Manhattan (short) vs Wyoming (long).`;
+  } else {
+    let peak = state.rays[0];
+    for (const r of state.rays) if (r.people > peak.people) peak = r;
+    el.heroLabel.textContent = `Most people along ${metersToMiles(opts.lengthM).toFixed(0)} mi`;
+    el.heroValue.textContent = formatPeople(peak.people);
+    el.heroDetail.textContent = `${bearingLabel(peak.bearingDeg)} · ${peak.bearingDeg.toFixed(0)}°`;
+  }
 }
 
 function updateSummary() {
@@ -88,44 +147,43 @@ function updateSummary() {
   if (opts.mode === "fixedLength") {
     let max = state.rays[0];
     let min = state.rays[0];
-    let sum = 0;
     for (const r of state.rays) {
-      sum += r.people;
       if (r.people > max.people) max = r;
       if (r.people < min.people) min = r;
     }
     el.summary.innerHTML = `
-      <div><span>Peak</span><strong>${formatPeople(max.people)}</strong>
+      <div><span>Peak direction</span><strong>${formatPeople(max.people)}</strong>
       <small>${bearingLabel(max.bearingDeg)} · ${max.bearingDeg.toFixed(0)}°</small></div>
       <div><span>Quietest</span><strong>${formatPeople(min.people)}</strong>
-      <small>${bearingLabel(min.bearingDeg)} · ${min.bearingDeg.toFixed(0)}°</small></div>
-      <div><span>Mean / ray</span><strong>${formatPeople(sum / state.rays.length)}</strong>
-      <small>within ${metersToMiles(opts.lengthM).toFixed(0)} mi</small></div>`;
+      <small>${bearingLabel(min.bearingDeg)} · ${min.bearingDeg.toFixed(0)}°</small></div>`;
   } else {
-    const finite = state.rays.filter((r) => Number.isFinite(r.lengthM));
-    if (!finite.length) {
-      el.summary.textContent = `No direction reaches ${formatPeople(opts.targetPeople)} within ${metersToMiles(opts.maxLengthM).toFixed(0)} mi.`;
+    const reached = state.rays.filter((r) => r.reached);
+    const missed = state.rays.length - reached.length;
+    if (!reached.length) {
+      el.summary.innerHTML = `
+        <div><span>Story</span><strong>Sparse country</strong>
+        <small>Every direction needs more than ${metersToMiles(opts.maxLengthM).toFixed(0)} mi to gather ${formatPeople(opts.targetPeople)}.</small></div>`;
       return;
     }
-    let nearest = finite[0];
-    let farthest = finite[0];
-    for (const r of finite) {
+    let nearest = reached[0];
+    let farthest = reached[0];
+    for (const r of reached) {
       if (r.lengthM < nearest.lengthM) nearest = r;
       if (r.lengthM > farthest.lengthM) farthest = r;
     }
     el.summary.innerHTML = `
-      <div><span>Nearest ${formatPeople(opts.targetPeople)}</span><strong>${formatDistance(nearest.lengthM)}</strong>
-      <small>${bearingLabel(nearest.bearingDeg)} · ${nearest.bearingDeg.toFixed(0)}°</small></div>
+      <div><span>Nearest</span><strong>${formatDistance(nearest.lengthM)}</strong>
+      <small>${bearingLabel(nearest.bearingDeg)}</small></div>
       <div><span>Farthest (reached)</span><strong>${formatDistance(farthest.lengthM)}</strong>
-      <small>${bearingLabel(farthest.bearingDeg)} · ${farthest.bearingDeg.toFixed(0)}°</small></div>
-      <div><span>Directions reached</span><strong>${finite.length}/${state.rays.length}</strong>
-      <small>within ${metersToMiles(opts.maxLengthM).toFixed(0)} mi</small></div>`;
+      <small>${bearingLabel(farthest.bearingDeg)}</small></div>
+      <div><span>Not reached</span><strong>${missed}/${state.rays.length}</strong>
+      <small>dashed petals stop at ${metersToMiles(opts.maxLengthM).toFixed(0)} mi</small></div>`;
   }
 }
 
 function updateHoverReadout() {
   if (state.hoverBearing == null || !state.rays.length) {
-    el.hoverReadout.textContent = "Hover a petal for a bearing.";
+    el.hoverReadout.textContent = "Hover the map around the pin.";
     return;
   }
   const opts = readControls();
@@ -141,38 +199,37 @@ function updateHoverReadout() {
     }
   }
   if (bestDiff > step) {
-    el.hoverReadout.textContent = "Hover a petal for a bearing.";
+    el.hoverReadout.textContent = "Hover the map around the pin.";
     return;
   }
   if (opts.mode === "fixedLength") {
-    el.hoverReadout.textContent = `${bearingLabel(best.bearingDeg)} ${best.bearingDeg.toFixed(0)}° — ${formatPeople(best.people)} within ${metersToMiles(opts.lengthM).toFixed(0)} mi`;
-  } else if (Number.isFinite(best.lengthM)) {
+    el.hoverReadout.textContent = `${bearingLabel(best.bearingDeg)} ${best.bearingDeg.toFixed(0)}° — ${formatPeople(best.people)} along ${metersToMiles(opts.lengthM).toFixed(0)} mi`;
+  } else if (best.reached) {
     el.hoverReadout.textContent = `${bearingLabel(best.bearingDeg)} ${best.bearingDeg.toFixed(0)}° — ${formatPeople(opts.targetPeople)} in ${formatDistance(best.lengthM)}`;
   } else {
-    el.hoverReadout.textContent = `${bearingLabel(best.bearingDeg)} ${best.bearingDeg.toFixed(0)}° — ${formatPeople(opts.targetPeople)} not reached`;
+    el.hoverReadout.textContent = `${bearingLabel(best.bearingDeg)} ${best.bearingDeg.toFixed(0)}° — still under ${formatPeople(opts.targetPeople)} after ${formatDistance(best.lengthM)} (${formatPeople(best.people)} so far)`;
   }
 }
 
 function rayLengths(opts) {
   if (opts.mode === "fixedPeople") {
-    return state.rays.map((r) => (Number.isFinite(r.lengthM) ? r.lengthM : 0));
+    return state.rays.map((r) => r.lengthM || 0);
   }
   return scaledLengths(state.rays, opts.lengthM);
 }
 
 function tipLatLng(bearingDeg, lengthM) {
-  const ring = rosePolygon(
-    state.origin,
-    [{ bearingDeg }],
-    () => lengthM,
-  );
-  return ring[0];
+  return rosePolygon(state.origin, [{ bearingDeg }], () => lengthM)[0];
 }
 
 function drawRose() {
   if (roseLayer) {
     map.removeLayer(roseLayer);
     roseLayer = null;
+  }
+  if (openLayer) {
+    map.removeLayer(openLayer);
+    openLayer = null;
   }
   if (spokesLayer) {
     map.removeLayer(spokesLayer);
@@ -185,31 +242,63 @@ function drawRose() {
   const lengthByBearing = new Map(
     state.rays.map((r, i) => [r.bearingDeg, lengths[i] || 0]),
   );
-  const poly = rosePolygon(
-    state.origin,
-    state.rays,
-    (ray) => lengthByBearing.get(ray.bearingDeg) || 0,
-  );
 
-  roseLayer = L.polygon(poly, {
-    color: "#d97706",
-    weight: 1.5,
-    opacity: 0.95,
-    fillColor: "#f59e0b",
-    fillOpacity: 0.28,
-    interactive: true,
-  }).addTo(map);
+  if (opts.mode === "fixedPeople") {
+    const reachedRays = state.rays.filter((r) => r.reached);
+    const openRays = state.rays.filter((r) => !r.reached);
+    if (reachedRays.length) {
+      const poly = rosePolygon(
+        state.origin,
+        reachedRays,
+        (ray) => lengthByBearing.get(ray.bearingDeg) || 0,
+      );
+      roseLayer = L.polygon(poly, {
+        color: "#d97706",
+        weight: 1.5,
+        opacity: 0.95,
+        fillColor: "#f59e0b",
+        fillOpacity: 0.32,
+        interactive: true,
+      }).addTo(map);
+    }
+    // Unreached directions: individual dashed spokes out to the search cap.
+    if (openRays.length) {
+      const lines = openRays.map((r) => [
+        [state.origin.lat, state.origin.lon],
+        tipLatLng(r.bearingDeg, lengthByBearing.get(r.bearingDeg) || opts.maxLengthM),
+      ]);
+      openLayer = L.polyline(lines, {
+        color: "#64748b",
+        weight: 1.25,
+        opacity: 0.55,
+        dashArray: "5 7",
+        interactive: false,
+      }).addTo(map);
+    }
+  } else {
+    const poly = rosePolygon(
+      state.origin,
+      state.rays,
+      (ray) => lengthByBearing.get(ray.bearingDeg) || 0,
+    );
+    roseLayer = L.polygon(poly, {
+      color: "#d97706",
+      weight: 1.5,
+      opacity: 0.95,
+      fillColor: "#f59e0b",
+      fillOpacity: 0.28,
+      interactive: true,
+    }).addTo(map);
+  }
 
   const spokes = [];
   for (const bearing of [0, 90, 180, 270]) {
-    const len =
-      lengthByBearing.get(bearing) ??
-      lengths[
-        state.rays.findIndex(
-          (r) => Math.abs(r.bearingDeg - bearing) < 360 / state.rays.length / 2,
-        )
-      ] ??
-      0;
+    const ray = state.rays.reduce((best, r) => {
+      const d = Math.abs(r.bearingDeg - bearing);
+      const bd = best ? Math.abs(best.bearingDeg - bearing) : 999;
+      return d < bd ? r : best;
+    }, null);
+    const len = ray ? lengthByBearing.get(ray.bearingDeg) || 0 : 0;
     if (!(len > 0)) continue;
     spokes.push([
       [state.origin.lat, state.origin.lon],
@@ -219,34 +308,72 @@ function drawRose() {
   spokesLayer = L.polyline(spokes, {
     color: "#92400e",
     weight: 1,
-    opacity: 0.55,
+    opacity: 0.5,
     dashArray: "4 6",
     interactive: false,
   }).addTo(map);
 }
 
-async function recompute() {
+function fitToRose(opts) {
+  if (opts.mode === "fixedPeople") {
+    const reached = state.rays.filter((r) => r.reached);
+    if (!reached.length) {
+      map.setView([state.origin.lat, state.origin.lon], 5, { animate: true });
+      return;
+    }
+    const nearest = Math.min(...reached.map((r) => r.lengthM));
+    // Frame the short Manhattan answers tightly; pull back for continental Wyoming ones.
+    const fitM =
+      nearest < milesToMeters(80)
+        ? Math.max(nearest * 3.2, milesToMeters(25))
+        : Math.min(Math.max(nearest * 1.1, milesToMeters(200)), milesToMeters(900));
+    const tips = [0, 90, 180, 270].map((b) => tipLatLng(b, fitM));
+    map.fitBounds(
+      L.latLngBounds([[state.origin.lat, state.origin.lon], ...tips]).pad(0.3),
+      { animate: true, maxZoom: 11 },
+    );
+    return;
+  }
+  const lengths = rayLengths(opts).filter((n) => n > 0);
+  if (!lengths.length) return;
+  const fitM = Math.max(...lengths);
+  const tips = [0, 90, 180, 270].map((b) => tipLatLng(b, fitM));
+  map.fitBounds(
+    L.latLngBounds([[state.origin.lat, state.origin.lon], ...tips]).pad(0.35),
+    { animate: true, maxZoom: 10 },
+  );
+}
+
+async function recompute({ fit = false } = {}) {
   if (state.busy || !state.grids.length) return;
-  const grid = pickGrid(state.grids, state.origin.lat, state.origin.lon);
+  // Distance-to-N needs continental extent so rays aren't clipped by a metro tile.
+  const opts = readControls();
+  const grid = pickGrid(
+    state.grids,
+    state.origin.lat,
+    state.origin.lon,
+    opts.mode === "fixedPeople" ? "broadest" : "finest",
+  );
   if (!grid) {
     setStatus("Origin is outside the loaded US grid.", "warn");
     state.rays = [];
     drawRose();
+    updateHero();
     updateSummary();
     return;
   }
   el.dataset.textContent = `${grid.meta.key || "grid"} · ${grid.meta.note || ""}`;
   state.busy = true;
-  setStatus("Computing corridors…");
-  const opts = readControls();
-  // Yield so the status can paint.
+  setStatus("Tracing lines…");
   await new Promise((r) => setTimeout(r, 0));
   try {
     state.rays = computeRose(grid, state.origin, opts);
     drawRose();
+    updateHero();
     updateSummary();
     updateHoverReadout();
-    setStatus("Ready — drag the pin or click the map.", "ok");
+    if (fit) fitToRose(opts);
+    setStatus("Ready — try Manhattan vs Wyoming, or use My location.", "ok");
   } catch (err) {
     console.error(err);
     setStatus(String(err.message || err), "warn");
@@ -255,19 +382,57 @@ async function recompute() {
   }
 }
 
-function setOrigin(lat, lon, pan = false) {
+function setOrigin(lat, lon, { pan = false, fit = false, placeLabel = "" } = {}) {
   state.origin = { lat, lon };
+  state.placeLabel = placeLabel;
   originMarker.setLatLng([lat, lon]);
   updateOriginReadout();
   if (pan) map.panTo([lat, lon]);
-  recompute();
+  recompute({ fit });
+}
+
+function goToPlace(key) {
+  const place = PLACES[key];
+  if (!place) return;
+  map.setView([place.lat, place.lon], place.zoom);
+  setOrigin(place.lat, place.lon, {
+    fit: true,
+    placeLabel: place.label,
+  });
+}
+
+function requestMyLocation() {
+  if (!navigator.geolocation) {
+    setStatus("Geolocation is not available in this browser.", "warn");
+    return;
+  }
+  el.myLocation.disabled = true;
+  setStatus("Requesting your location…");
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      el.myLocation.disabled = false;
+      const { latitude: lat, longitude: lon } = pos.coords;
+      map.setView([lat, lon], 8);
+      setOrigin(lat, lon, { fit: true, placeLabel: "My location" });
+    },
+    (err) => {
+      el.myLocation.disabled = false;
+      const msg =
+        err.code === err.PERMISSION_DENIED
+          ? "Location permission denied."
+          : "Could not get your location.";
+      setStatus(msg, "warn");
+    },
+    { enableHighAccuracy: false, timeout: 15_000, maximumAge: 60_000 },
+  );
 }
 
 function initMap() {
+  const start = PLACES.manhattan;
   map = L.map("map", {
     zoomControl: true,
     scrollWheelZoom: true,
-  }).setView([TIMES_SQUARE.lat, TIMES_SQUARE.lon], 9);
+  }).setView([start.lat, start.lon], start.zoom);
 
   L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
     attribution:
@@ -276,35 +441,28 @@ function initMap() {
     maxZoom: 18,
   }).addTo(map);
 
-  originMarker = L.marker([TIMES_SQUARE.lat, TIMES_SQUARE.lon], {
+  originMarker = L.marker([start.lat, start.lon], {
     draggable: true,
     title: "Origin",
   }).addTo(map);
 
   originMarker.on("dragend", () => {
     const ll = originMarker.getLatLng();
-    setOrigin(ll.lat, ll.lng);
+    setOrigin(ll.lat, ll.lng, { fit: true, placeLabel: "" });
   });
 
   map.on("click", (e) => {
-    setOrigin(e.latlng.lat, e.latlng.lng);
+    setOrigin(e.latlng.lat, e.latlng.lng, { fit: true, placeLabel: "" });
   });
 
   map.on("mousemove", (e) => {
     if (!state.rays.length) return;
     const dLat = e.latlng.lat - state.origin.lat;
     const dLon = e.latlng.lng - state.origin.lon;
-    // rough local bearing
-    const { lat: mLat, lon: mLon } = (() => {
-      const φ = (state.origin.lat * Math.PI) / 180;
-      return {
-        lat: 111132.92 - 559.82 * Math.cos(2 * φ),
-        lon: Math.max(111412.84 * Math.cos(φ), 1),
-      };
-    })();
-    const x = dLon * mLon;
-    const y = dLat * mLat;
-    const bearing = ((Math.atan2(x, y) * 180) / Math.PI + 360) % 360;
+    const φ = (state.origin.lat * Math.PI) / 180;
+    const mLat = 111132.92 - 559.82 * Math.cos(2 * φ);
+    const mLon = Math.max(111412.84 * Math.cos(φ), 1);
+    const bearing = ((Math.atan2(dLon * mLon, dLat * mLat) * 180) / Math.PI + 360) % 360;
     state.hoverBearing = bearing;
     updateHoverReadout();
 
@@ -329,7 +487,12 @@ function initMap() {
           [state.origin.lat, state.origin.lon],
           tipLatLng(best.bearingDeg, len),
         ],
-        { color: "#0f766e", weight: 3, opacity: 0.9 },
+        {
+          color: best.reached === false ? "#64748b" : "#0f766e",
+          weight: 3,
+          opacity: 0.9,
+          dashArray: best.reached === false ? "6 6" : null,
+        },
       ).addTo(map);
     }
   });
@@ -350,8 +513,7 @@ async function loadDatasets() {
     const res = await fetch(`data/${meta.file}`);
     if (!res.ok) throw new Error(`HTTP ${res.status} for ${meta.file}`);
     const buf = new Uint8Array(await res.arrayBuffer());
-    const grid = await loadGridFromGzip(meta, buf);
-    grids.push(grid);
+    grids.push(await loadGridFromGzip(meta, buf));
     setStatus(`Loaded ${key}…`);
   }
   state.grids = grids;
@@ -359,22 +521,16 @@ async function loadDatasets() {
 }
 
 function bindControls() {
-  for (const node of [
-    el.mode,
-    el.widthFt,
-    el.lengthMi,
-    el.targetPop,
-    el.rayCount,
-  ]) {
+  for (const node of [el.mode, el.lengthMi, el.targetPop, el.rayCount]) {
     node.addEventListener("change", () => {
       syncModeControls();
-      recompute();
+      recompute({ fit: true });
     });
   }
-  el.reset.addEventListener("click", () => {
-    setOrigin(TIMES_SQUARE.lat, TIMES_SQUARE.lon, true);
-    map.setZoom(9);
-  });
+  for (const btn of document.querySelectorAll("[data-place]")) {
+    btn.addEventListener("click", () => goToPlace(btn.dataset.place));
+  }
+  el.myLocation.addEventListener("click", requestMyLocation);
   syncModeControls();
   updateOriginReadout();
 }
@@ -384,16 +540,36 @@ async function main() {
   bindControls();
   try {
     await loadDatasets();
-    await recompute();
-    // Sanity probe for the Manhattan story in the console.
-    const grid = pickGrid(state.grids, TIMES_SQUARE.lat, TIMES_SQUARE.lon);
-    if (grid) {
-      const w = feetToMeters(100);
-      const Lmi = milesToMeters(30);
-      const west = peopleInCorridor(grid, TIMES_SQUARE, 270, Lmi, w);
-      const se = peopleInCorridor(grid, TIMES_SQUARE, 135, Lmi, w);
+    await recompute({ fit: true });
+    const conus = pickGrid(
+      state.grids,
+      PLACES.manhattan.lat,
+      PLACES.manhattan.lon,
+      "broadest",
+    );
+    if (conus) {
+      const target = 1_000_000;
+      const maxM = milesToMeters(3000);
+      const nycDist = distanceToPeople(
+        conus,
+        PLACES.manhattan,
+        28,
+        target,
+        0,
+        maxM,
+        { stepM: 1000 },
+      );
+      const wyDist = distanceToPeople(
+        conus,
+        PLACES.wyoming,
+        84,
+        target,
+        0,
+        maxM,
+        { stepM: 1000 },
+      );
       console.info(
-        `Probe 100′ × 30 mi from Times Square — W: ${formatPeople(west)}, SE: ${formatPeople(se)}`,
+        `1M people — Manhattan ~NNE: ${formatDistance(nycDist)}, Wyoming ~E: ${formatDistance(wyDist)}`,
       );
     }
   } catch (err) {

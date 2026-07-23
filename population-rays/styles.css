@@ -81,12 +81,77 @@ a {
   line-height: 1.45;
 }
 
+.presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.preset {
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 550;
+  color: var(--text);
+  background: rgba(243, 239, 230, 0.06);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.45rem 0.85rem;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+.preset:hover,
+.preset.primary:hover {
+  background: rgba(240, 162, 2, 0.14);
+  border-color: rgba(240, 162, 2, 0.5);
+  transform: translateY(-1px);
+}
+
+.preset.primary {
+  background: rgba(240, 162, 2, 0.16);
+  border-color: rgba(240, 162, 2, 0.45);
+  color: #ffe3a1;
+}
+
+.preset:disabled {
+  opacity: 0.55;
+  cursor: wait;
+  transform: none;
+}
+
 .controls {
   display: grid;
   gap: 0.85rem;
   padding: 1rem 0;
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
+}
+
+.hero-metric {
+  padding: 0.9rem 1rem;
+  border-radius: 16px;
+  background:
+    linear-gradient(145deg, rgba(240, 162, 2, 0.18), rgba(31, 122, 108, 0.14));
+  border: 1px solid rgba(240, 162, 2, 0.28);
+}
+
+.hero-metric strong {
+  font-family: var(--font-display);
+  font-size: clamp(1.8rem, 3vw, 2.3rem);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: #ffe3a1;
+}
+
+.hero-metric small {
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+
+.lede strong {
+  color: #ffe3a1;
+  font-weight: 600;
 }
 
 .field {

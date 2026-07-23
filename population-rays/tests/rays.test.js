@@ -4,13 +4,13 @@ import { createGrid, pickGrid } from "../src/grid.js";
 import {
   computeRose,
   distanceToPeople,
-  peopleInCorridor,
+  peopleAlongLine,
   rosePolygon,
   scaledLengths,
 } from "../src/rays.js";
-import { feetToMeters, milesToMeters } from "../src/geo.js";
+import { milesToMeters } from "../src/geo.js";
 
-/** Build a tiny synthetic grid: dense east band, sparse west. */
+/** Dense east band, sparse west. */
 function makeAsymmetricGrid() {
   const width = 60;
   const height = 40;
@@ -21,7 +21,6 @@ function makeAsymmetricGrid() {
   const data = new Float32Array(width * height);
   for (let r = 0; r < height; r++) {
     for (let c = 0; c < width; c++) {
-      // Dense only well into the eastern third.
       data[r * width + c] = c >= 40 ? 20_000 : 20;
     }
   }
@@ -31,68 +30,61 @@ function makeAsymmetricGrid() {
   );
 }
 
-/** Origin in the sparse west, clearly left of the dense band. */
 const ORIGIN = { lat: 40.7, lon: -74.2 };
 
-test("peopleInCorridor finds more people toward the dense side", () => {
+test("peopleAlongLine finds more people toward the dense side", () => {
   const grid = makeAsymmetricGrid();
   assert.ok(grid.contains(ORIGIN.lat, ORIGIN.lon));
-  const widthM = feetToMeters(100);
   const lengthM = milesToMeters(25);
-  const east = peopleInCorridor(grid, ORIGIN, 90, lengthM, widthM, { stepM: 100 });
-  const west = peopleInCorridor(grid, ORIGIN, 270, lengthM, widthM, { stepM: 100 });
+  const east = peopleAlongLine(grid, ORIGIN, 90, lengthM, { stepM: 100 });
+  const west = peopleAlongLine(grid, ORIGIN, 270, lengthM, { stepM: 100 });
   assert.ok(east > west * 3, `east ${east} should dwarf west ${west}`);
 });
 
-test("peopleInCorridor is roughly linear in width", () => {
+test("peopleAlongLine grows as the line crosses more cells", () => {
   const grid = makeAsymmetricGrid();
-  const lengthM = milesToMeters(12);
-  const a = peopleInCorridor(grid, ORIGIN, 90, lengthM, 30, { stepM: 100 });
-  const b = peopleInCorridor(grid, ORIGIN, 90, lengthM, 60, { stepM: 100 });
-  assert.ok(Math.abs(b / a - 2) < 0.08, `ratio ${b / a}`);
+  const short = peopleAlongLine(grid, ORIGIN, 90, milesToMeters(5), {
+    stepM: 100,
+  });
+  const longer = peopleAlongLine(grid, ORIGIN, 90, milesToMeters(25), {
+    stepM: 100,
+  });
+  assert.ok(longer > short);
 });
 
 test("distanceToPeople is shorter toward dense cells", () => {
   const grid = makeAsymmetricGrid();
-  const widthM = feetToMeters(100);
   const maxLengthM = milesToMeters(40);
-  const target = 2_000;
-  const east = distanceToPeople(grid, ORIGIN, 90, target, widthM, maxLengthM, {
+  const target = 100_000;
+  const east = distanceToPeople(grid, ORIGIN, 90, target, 0, maxLengthM, {
     stepM: 100,
   });
-  const west = distanceToPeople(grid, ORIGIN, 270, target, widthM, maxLengthM, {
+  const west = distanceToPeople(grid, ORIGIN, 270, target, 0, maxLengthM, {
     stepM: 100,
   });
   assert.ok(Number.isFinite(east), `east distance ${east}`);
   assert.ok(east < west, `east ${east} should be < west ${west}`);
 });
 
-test("computeRose fixedLength marks east stronger than west", () => {
+test("computeRose fixedPeople marks east reached sooner than west", () => {
   const grid = makeAsymmetricGrid();
   const rays = computeRose(grid, ORIGIN, {
-    mode: "fixedLength",
-    widthM: feetToMeters(100),
-    lengthM: milesToMeters(25),
+    mode: "fixedPeople",
+    targetPeople: 80_000,
+    maxLengthM: milesToMeters(40),
     rayCount: 36,
     stepM: 150,
   });
   assert.equal(rays.length, 36);
   const east = rays.find((r) => r.bearingDeg === 90);
   const west = rays.find((r) => r.bearingDeg === 270);
-  assert.ok(east && west);
-  assert.ok(
-    east.people > west.people * 3,
-    `east ${east.people} vs west ${west.people}`,
-  );
+  assert.ok(east.reached, "east should reach target");
+  assert.ok(east.lengthM < west.lengthM);
 });
 
 test("scaledLengths normalizes peak to maxLength", () => {
   const lengths = scaledLengths(
-    [
-      { people: 10 },
-      { people: 50 },
-      { people: 0 },
-    ],
+    [{ people: 10 }, { people: 50 }, { people: 0 }],
     1000,
   );
   assert.equal(lengths[1], 1000);
