@@ -1,13 +1,14 @@
 /**
- * Directional corridor population.
+ * Directional population along a thin line.
  *
- * Model: a corridor is a thin strip of width W and length L from an origin in
- * bearing D. Homes are represented by a gridded population density field ρ.
- * People intersecting the corridor ≈ ∫ ρ(s) · W ds along the centerline.
+ * From an origin, walk a bearing and sum the population of each distinct grid
+ * cell the line first enters. That answers: “how many people’s home cells does
+ * this line cross?” — and, conversely, how far until it has crossed N people.
  *
- * This is the right continuous limit when W is much smaller than a cell
- * (e.g. a 100′ strip over ~0.5–2 km cells): we count the share of each cell’s
- * population that the strip covers, not whether a cell centroid falls inside.
+ * At the packaged resolutions (~0.5–2 km cells), a 100′ corridor is thinner
+ * than a cell, so “cells the centerline crosses” is the right discrete model
+ * for “homes along a thin line.” In Midtown that reaches 1M in tens of miles;
+ * in rural Wyoming it can take thousands.
  */
 
 import { destination } from "./geo.js";
@@ -18,57 +19,79 @@ import { destination } from "./geo.js";
  * @property {number} people
  * @property {number} lengthM
  * @property {number} widthM
+ * @property {boolean} reached
  */
 
 /**
- * Integrate population along one corridor.
+ * Sum unique cell populations crossed by a line of length `lengthM`.
  * @param {import('./grid.js').PopulationGrid} grid
  * @param {{lat:number, lon:number}} origin
  * @param {number} bearingDeg
  * @param {number} lengthM
- * @param {number} widthM
  * @param {{ stepM?: number }} [opts]
  */
-export function peopleInCorridor(grid, origin, bearingDeg, lengthM, widthM, opts = {}) {
-  if (lengthM <= 0 || widthM <= 0) return 0;
+export function peopleAlongLine(grid, origin, bearingDeg, lengthM, opts = {}) {
+  if (lengthM <= 0) return 0;
   const cellM = grid.cellSizeM(origin.lat);
-  const stepM = opts.stepM ?? Math.min(Math.max(cellM * 0.5, 50), 400);
+  const stepM = opts.stepM ?? Math.min(Math.max(cellM * 0.45, 50), 500);
+  const seen = new Set();
   let people = 0;
-  for (let s = stepM * 0.5; s <= lengthM; s += stepM) {
+
+  // Include the origin cell.
+  const originIdx = grid.indexAt(origin.lat, origin.lon);
+  if (originIdx >= 0) {
+    seen.add(originIdx);
+    people += grid.data[originIdx];
+  }
+
+  for (let s = stepM; s <= lengthM; s += stepM) {
     const pt = destination(origin.lat, origin.lon, bearingDeg, s);
-    const pop = grid.sample(pt.lat, pt.lon);
-    if (pop <= 0) continue;
-    const area = grid.cellAreaM2At(pt.lat);
-    if (area <= 0) continue;
-    people += (pop / area) * widthM * stepM;
+    const idx = grid.indexAt(pt.lat, pt.lon);
+    if (idx < 0 || seen.has(idx)) continue;
+    seen.add(idx);
+    people += grid.data[idx];
   }
   return people;
 }
 
+/** @deprecated alias — older tests/docs referred to a corridor integral */
+export function peopleInCorridor(grid, origin, bearingDeg, lengthM, _widthM, opts) {
+  return peopleAlongLine(grid, origin, bearingDeg, lengthM, opts);
+}
+
 /**
- * Walk outward until cumulative people reach `targetPeople` (or maxLengthM).
- * Returns the distance in meters; Infinity if never reached within max.
+ * Walk outward until unique crossed-cell population reaches `targetPeople`.
+ * Returns distance in meters, or Infinity if not reached within maxLengthM.
  */
 export function distanceToPeople(
   grid,
   origin,
   bearingDeg,
   targetPeople,
-  widthM,
+  _widthM,
   maxLengthM,
   opts = {},
 ) {
   if (targetPeople <= 0) return 0;
-  if (widthM <= 0 || maxLengthM <= 0) return Infinity;
+  if (maxLengthM <= 0) return Infinity;
   const cellM = grid.cellSizeM(origin.lat);
-  const stepM = opts.stepM ?? Math.min(Math.max(cellM * 0.5, 50), 400);
+  const stepM = opts.stepM ?? Math.min(Math.max(cellM * 0.45, 50), 500);
+  const seen = new Set();
   let people = 0;
-  for (let s = stepM * 0.5; s <= maxLengthM; s += stepM) {
+
+  const originIdx = grid.indexAt(origin.lat, origin.lon);
+  if (originIdx >= 0) {
+    seen.add(originIdx);
+    people += grid.data[originIdx];
+    if (people >= targetPeople) return 0;
+  }
+
+  for (let s = stepM; s <= maxLengthM; s += stepM) {
     const pt = destination(origin.lat, origin.lon, bearingDeg, s);
-    const pop = grid.sample(pt.lat, pt.lon);
-    if (pop > 0) {
-      const area = grid.cellAreaM2At(pt.lat);
-      if (area > 0) people += (pop / area) * widthM * stepM;
+    const idx = grid.indexAt(pt.lat, pt.lon);
+    if (idx >= 0 && !seen.has(idx)) {
+      seen.add(idx);
+      people += grid.data[idx];
     }
     if (people >= targetPeople) return s;
   }
@@ -82,7 +105,7 @@ export function distanceToPeople(
  * @param {{lat:number, lon:number}} origin
  * @param {object} options
  * @param {'fixedLength'|'fixedPeople'} options.mode
- * @param {number} options.widthM corridor width
+ * @param {number} [options.widthM] kept for API compat / future strip tests
  * @param {number} [options.lengthM] used in fixedLength mode
  * @param {number} [options.targetPeople] used in fixedPeople mode
  * @param {number} [options.maxLengthM] cap for fixedPeople search
@@ -93,7 +116,7 @@ export function distanceToPeople(
 export function computeRose(grid, origin, options) {
   const {
     mode,
-    widthM,
+    widthM = 0,
     lengthM = 0,
     targetPeople = 0,
     maxLengthM = lengthM || 0,
@@ -116,29 +139,27 @@ export function computeRose(grid, origin, options) {
         maxLengthM,
         { stepM },
       );
+      const reached = Number.isFinite(dist);
       rays.push({
         bearingDeg,
-        people: Number.isFinite(dist) ? targetPeople : peopleInCorridor(
-          grid,
-          origin,
-          bearingDeg,
-          maxLengthM,
-          widthM,
-          { stepM },
-        ),
-        lengthM: dist,
+        people: reached
+          ? targetPeople
+          : peopleAlongLine(grid, origin, bearingDeg, maxLengthM, { stepM }),
+        lengthM: reached ? dist : maxLengthM,
         widthM,
+        reached,
       });
     } else {
-      const people = peopleInCorridor(
-        grid,
-        origin,
+      const people = peopleAlongLine(grid, origin, bearingDeg, lengthM, {
+        stepM,
+      });
+      rays.push({
         bearingDeg,
+        people,
         lengthM,
         widthM,
-        { stepM },
-      );
-      rays.push({ bearingDeg, people, lengthM, widthM });
+        reached: true,
+      });
     }
   }
   return rays;

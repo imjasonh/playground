@@ -1,31 +1,22 @@
 # Population Rays
 
-From any point in the contiguous US, visualize **how many people’s homes
-intersect a thin corridor** in every direction — or **how far the corridor must
-reach to hit N people**.
+From any point in the contiguous US: **how far must a thin line go before it
+has crossed 1 million people’s homes?**
 
-The classic Manhattan intuition: from Midtown, a 100′ strip running west crosses
-far fewer homes than the same strip pointed southeast into Brooklyn.
+That’s short in Manhattan (tens of miles) and can be thousands of miles — or
+unreachable within the search radius — in places like rural Wyoming. Petal
+length on the map is that distance.
 
 ## Idea
 
-Treat “homes along a line” as a corridor of width **W** and length **L** in
-bearing **D**. With gridded population density ρ, the count is the line integral
+Walk a bearing from the pin and sum the population of each distinct grid cell
+the line first enters. That answers “whose home-cells does this line cross?”
+At the packaged resolutions (~0.5–2 km cells), a conceptual 100′ corridor is
+thinner than a cell, so centerline cell-crossing is the right discrete model.
 
-\[
-\int_0^L \rho(s)\,W\,ds
-\]
-
-That formulation stays meaningful when **W** (e.g. 100 feet) is much thinner
-than a grid cell: we count the *share* of each cell the strip covers, not whether
-a cell centroid happens to fall inside the strip.
-
-Two complementary modes:
-
-1. **People within a distance** — fix L, plot people vs direction (rose petals
-   scaled by count).
-2. **Distance to reach N people** — fix a target (default 1M), plot how far each
-   bearing must go.
+Default mode: **distance to 1M people** (petal = miles). Alternate mode: people
+along a fixed length (petal ∝ count). Presets for Manhattan / Wyoming, plus
+**My location**.
 
 ## Data
 
