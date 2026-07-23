@@ -6,7 +6,7 @@
     <title>Population Rays</title>
     <meta
       name="description"
-      content="How far must a 100 ft corridor go in each direction before it hits N people?"
+      content="How far must a 5° slice go in each direction before it hits N people?"
     />
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -29,7 +29,7 @@
         <header class="brand">
           <h1>Population Rays</h1>
           <p class="lede">
-            From the pin, a 100&nbsp;ft corridor in every direction.
+            From the pin, a filled 5° slice in every direction.
             Petal length = distance to
             <strong id="lede-n">100k</strong> people.
           </p>
@@ -91,11 +91,11 @@
 
         <section class="readouts" aria-live="polite">
           <div class="readout hero-metric">
-            <span>Shortest</span>
+            <span>This slice</span>
             <strong id="hero-value">—</strong>
-            <small id="hero-detail">Pick a place or click the map.</small>
+            <small id="hero-detail">Hover the map to inspect a direction.</small>
           </div>
-          <p id="hover-readout" class="hover-line"></p>
+          <p id="shortest-readout" class="hover-line"></p>
         </section>
 
         <footer class="meta">
