@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Population Rays</title>
+    <meta
+      name="description"
+      content="From any point in the US, see how many people live along a thin corridor in every direction — or how far you must go to reach a million homes."
+    />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="panel" aria-label="Controls">
+        <header class="brand">
+          <p class="eyebrow">Directional density</p>
+          <h1>Population Rays</h1>
+          <p class="lede">
+            Draw a thin corridor from a point. How many homes does it cross —
+            and in which direction do the people live? A 100′ strip is narrow:
+            tens of thousands of people is common; a million usually needs more
+            width or a very long path.
+          </p>
+        </header>
+
+        <section class="controls" aria-label="Corridor settings">
+          <label class="field">
+            <span>Mode</span>
+            <select id="mode">
+              <option value="fixedLength" selected>
+                People within a distance
+              </option>
+              <option value="fixedPeople">Distance to reach N people</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Corridor width (feet)</span>
+            <input id="width-ft" type="number" min="10" step="10" value="100" />
+          </label>
+
+          <label class="field" id="length-control">
+            <span>Corridor length (miles)</span>
+            <input id="length-mi" type="number" min="1" step="1" value="30" />
+          </label>
+
+          <label class="field" id="target-control" hidden>
+            <span>Target people</span>
+            <input
+              id="target-pop"
+              type="number"
+              min="100"
+              step="1000"
+              value="25000"
+            />
+          </label>
+
+          <label class="field">
+            <span>Directions</span>
+            <select id="ray-count">
+              <option value="90">90 (4°)</option>
+              <option value="180" selected>180 (2°)</option>
+              <option value="360">360 (1°)</option>
+            </select>
+          </label>
+
+          <button id="reset-origin" type="button" class="ghost">
+            Reset to Times Square
+          </button>
+        </section>
+
+        <section class="readouts" aria-live="polite">
+          <div class="readout">
+            <span>Origin</span>
+            <strong id="origin-readout">—</strong>
+          </div>
+          <div class="readout">
+            <span>Bearing</span>
+            <strong id="hover-readout">Hover a petal for a bearing.</strong>
+          </div>
+          <div id="summary" class="summary"></div>
+        </section>
+
+        <footer class="meta">
+          <p id="status" data-kind="">Loading…</p>
+          <p id="dataset" class="dataset"></p>
+          <p class="credit">
+            Population from
+            <a
+              href="https://registry.opendata.aws/dataforgood-fb-hrsl/"
+              rel="noopener"
+              >Meta / CIESIN HRSL</a
+            >
+            (~30&nbsp;m counts, sum-aggregated). Basemap © OpenStreetMap, CARTO.
+          </p>
+        </footer>
+      </aside>
+
+      <main class="map-pane">
+        <div id="map" role="img" aria-label="Map with population ray overlay"></div>
+        <div class="map-hint">Click or drag the pin to set the origin</div>
+      </main>
+    </div>
+
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+    <script type="module" src="src/app.js"></script>
+  </body>
+</html>

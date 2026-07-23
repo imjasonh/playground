@@ -1,0 +1,261 @@
+:root {
+  --ink: #14212b;
+  --ink-soft: #243542;
+  --paper: #f3efe6;
+  --panel: rgba(19, 32, 41, 0.92);
+  --line: rgba(243, 239, 230, 0.14);
+  --muted: #9aafb8;
+  --text: #f3efe6;
+  --amber: #f0a202;
+  --amber-deep: #c47a00;
+  --teal: #1f7a6c;
+  --warn: #f0b7a4;
+  --ok: #8fd0b0;
+  --shadow: 0 24px 60px rgba(8, 14, 18, 0.45);
+  --font-sans: "Instrument Sans", "Segoe UI", sans-serif;
+  --font-display: "Newsreader", Georgia, serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  color: var(--text);
+  font-family: var(--font-sans);
+  background:
+    radial-gradient(1200px 700px at 10% -10%, #2a4a52 0%, transparent 55%),
+    radial-gradient(900px 600px at 100% 0%, #3a2a12 0%, transparent 50%),
+    linear-gradient(160deg, #0d171d 0%, #15262f 45%, #1a3038 100%);
+}
+
+a {
+  color: var(--amber);
+}
+
+.shell {
+  display: grid;
+  grid-template-columns: minmax(300px, 380px) 1fr;
+  height: 100%;
+  min-height: 100dvh;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 1.4rem 1.35rem 1.1rem;
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  backdrop-filter: blur(10px);
+  overflow: auto;
+}
+
+.brand .eyebrow {
+  margin: 0 0 0.35rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.72rem;
+  color: var(--amber);
+}
+
+.brand h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(2rem, 3vw, 2.55rem);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+}
+
+.lede {
+  margin: 0.7rem 0 0;
+  color: var(--muted);
+  font-size: 0.98rem;
+  line-height: 1.45;
+}
+
+.controls {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.field {
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.field input,
+.field select,
+.ghost {
+  font: inherit;
+  color: var(--text);
+  background: rgba(243, 239, 230, 0.06);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.55rem 0.7rem;
+}
+
+.field input:focus,
+.field select:focus,
+.ghost:focus {
+  outline: 2px solid rgba(240, 162, 2, 0.55);
+  outline-offset: 1px;
+}
+
+.ghost {
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+.ghost:hover {
+  background: rgba(240, 162, 2, 0.12);
+  border-color: rgba(240, 162, 2, 0.45);
+  transform: translateY(-1px);
+}
+
+.readouts {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.readout {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.readout span,
+.summary span {
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.readout strong {
+  font-weight: 550;
+  font-size: 0.98rem;
+  line-height: 1.35;
+}
+
+.summary {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.85rem;
+  border-radius: 14px;
+  background:
+    linear-gradient(145deg, rgba(240, 162, 2, 0.12), rgba(31, 122, 108, 0.12));
+  border: 1px solid var(--line);
+}
+
+.summary div {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.summary strong {
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 600;
+}
+
+.summary small {
+  color: var(--muted);
+}
+
+.meta {
+  margin-top: auto;
+  display: grid;
+  gap: 0.4rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+#status[data-kind="ok"] {
+  color: var(--ok);
+}
+
+#status[data-kind="warn"] {
+  color: var(--warn);
+}
+
+.dataset {
+  margin: 0;
+  color: #7f96a0;
+}
+
+.credit {
+  margin: 0;
+  line-height: 1.4;
+}
+
+.map-pane {
+  position: relative;
+  min-height: 50vh;
+}
+
+#map {
+  height: 100%;
+  width: 100%;
+  background: #d9e2e0;
+}
+
+.map-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 1.1rem;
+  transform: translateX(-50%);
+  z-index: 500;
+  padding: 0.45rem 0.85rem;
+  border-radius: 999px;
+  background: rgba(20, 33, 43, 0.82);
+  color: var(--paper);
+  font-size: 0.82rem;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+  box-shadow: var(--shadow);
+  animation: hint-in 700ms ease both;
+}
+
+@keyframes hint-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.leaflet-container {
+  font: inherit;
+}
+
+@media (max-width: 860px) {
+  .shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(55vh, 1fr);
+  }
+
+  .panel {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    max-height: none;
+  }
+
+  .brand h1 {
+    font-size: 1.9rem;
+  }
+}
