@@ -31,13 +31,17 @@ const PLACES = {
   },
 };
 
+/** Fixed 5° segments around the compass. */
+const RAY_COUNT = 72;
+
 const el = {
   status: document.getElementById("status"),
   mode: document.getElementById("mode"),
   widthFt: document.getElementById("width-ft"),
   lengthMi: document.getElementById("length-mi"),
+  lengthReadout: document.getElementById("length-mi-readout"),
   targetPop: document.getElementById("target-pop"),
-  rayCount: document.getElementById("ray-count"),
+  targetReadout: document.getElementById("target-pop-readout"),
   lengthControl: document.getElementById("length-control"),
   targetControl: document.getElementById("target-control"),
   originReadout: document.getElementById("origin-readout"),
@@ -77,7 +81,6 @@ function readControls() {
   const widthM = feetToMeters(Number(el.widthFt.value) || 100);
   const lengthM = milesToMeters(Number(el.lengthMi.value) || 50);
   const targetPeople = Number(el.targetPop.value) || 1_000_000;
-  const rayCount = Number(el.rayCount.value) || 120;
   // Long enough that rural West can show multi-thousand-mile answers.
   const maxLengthM = milesToMeters(mode === "fixedPeople" ? 3000 : 250);
   return {
@@ -86,14 +89,20 @@ function readControls() {
     lengthM,
     targetPeople,
     maxLengthM,
-    rayCount,
+    rayCount: RAY_COUNT,
   };
+}
+
+function syncSliderReadouts() {
+  el.lengthReadout.textContent = `${Number(el.lengthMi.value)} mi`;
+  el.targetReadout.textContent = formatPeople(Number(el.targetPop.value));
 }
 
 function syncModeControls() {
   const mode = el.mode.value;
   el.lengthControl.hidden = mode !== "fixedLength";
   el.targetControl.hidden = mode !== "fixedPeople";
+  syncSliderReadouts();
   if (mode === "fixedPeople") {
     el.mapHint.textContent =
       "Petal length = miles to reach the target · dashed = not reached yet · click to move";
@@ -524,12 +533,26 @@ async function loadDatasets() {
 }
 
 function bindControls() {
-  for (const node of [el.mode, el.lengthMi, el.targetPop, el.rayCount]) {
-    node.addEventListener("change", () => {
-      syncModeControls();
+  el.mode.addEventListener("change", () => {
+    syncModeControls();
+    recompute({ fit: true });
+  });
+
+  // Sliders: live readout; debounced recompute while dragging.
+  let sliderTimer = 0;
+  for (const slider of [el.lengthMi, el.targetPop]) {
+    slider.addEventListener("input", () => {
+      syncSliderReadouts();
+      clearTimeout(sliderTimer);
+      sliderTimer = setTimeout(() => recompute({ fit: false }), 120);
+    });
+    slider.addEventListener("change", () => {
+      clearTimeout(sliderTimer);
+      syncSliderReadouts();
       recompute({ fit: true });
     });
   }
+
   for (const btn of document.querySelectorAll("[data-place]")) {
     btn.addEventListener("click", () => goToPlace(btn.dataset.place));
   }
