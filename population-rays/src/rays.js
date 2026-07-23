@@ -37,12 +37,10 @@ export function peopleAlongLine(grid, origin, bearingDeg, lengthM, opts = {}) {
   const seen = new Set();
   let people = 0;
 
-  // Include the origin cell.
+  // Skip the origin cell: the line starts at the pin and counts homes ahead,
+  // not everyone already underfoot (which made short petals look near-zero).
   const originIdx = grid.indexAt(origin.lat, origin.lon);
-  if (originIdx >= 0) {
-    seen.add(originIdx);
-    people += grid.data[originIdx];
-  }
+  if (originIdx >= 0) seen.add(originIdx);
 
   for (let s = stepM; s <= lengthM; s += stepM) {
     const pt = destination(origin.lat, origin.lon, bearingDeg, s);
@@ -79,12 +77,10 @@ export function distanceToPeople(
   const seen = new Set();
   let people = 0;
 
+  // Do not credit the pin's own cell — otherwise a ~40–100k Lower Manhattan
+  // cell makes “distance to 100k” look like nearly zero to the north.
   const originIdx = grid.indexAt(origin.lat, origin.lon);
-  if (originIdx >= 0) {
-    seen.add(originIdx);
-    people += grid.data[originIdx];
-    if (people >= targetPeople) return 0;
-  }
+  if (originIdx >= 0) seen.add(originIdx);
 
   for (let s = stepM; s <= maxLengthM; s += stepM) {
     const pt = destination(origin.lat, origin.lon, bearingDeg, s);
