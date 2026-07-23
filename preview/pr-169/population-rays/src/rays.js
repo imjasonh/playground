@@ -105,7 +105,7 @@ export function distanceToPeople(
  * @param {number} [options.lengthM] used in fixedLength mode
  * @param {number} [options.targetPeople] used in fixedPeople mode
  * @param {number} [options.maxLengthM] cap for fixedPeople search
- * @param {number} [options.rayCount=180]
+ * @param {number} [options.rayCount=72] 5° segments by default
  * @param {number} [options.stepM]
  * @returns {RayResult[]}
  */
@@ -116,7 +116,7 @@ export function computeRose(grid, origin, options) {
     lengthM = 0,
     targetPeople = 0,
     maxLengthM = lengthM || 0,
-    rayCount = 180,
+    rayCount = 72,
     stepM,
   } = options;
   if (!grid?.contains(origin.lat, origin.lon)) {
