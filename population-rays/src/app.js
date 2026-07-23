@@ -7,7 +7,7 @@ import {
   formatPeople,
   milesToMeters,
 } from "./geo.js";
-import { searchUsPlaces } from "./geocode.js";
+import { inConusBounds, searchUsPlaces } from "./geocode.js";
 import { loadGridFromGzip, gridsForRose } from "./grid.js";
 import { computeRoseAsync, DEFAULT_SLICE_DEG, rosePolygon } from "./rays.js";
 
@@ -289,7 +289,7 @@ function drawOpenSlices(group, rays) {
   const maxM = milesToMeters(MAX_SEARCH_MI);
   const BANDS = 10;
   const FADE_START = 0.5; // outer half fades
-  const BASE_FILL = 0.26;
+  const BASE_FILL = 0.18;
 
   for (const [startIdx, endIdx] of unreachedRuns(rays)) {
     const { left, right } = runBearingEdges(rays, startIdx, endIdx);
@@ -304,14 +304,14 @@ function drawOpenSlices(group, rays) {
           ? 1
           : Math.max(0, 1 - (tMid - FADE_START) / (1 - FADE_START));
       const fillOpacity = BASE_FILL * fade * fade;
-      if (fillOpacity < 0.01) continue;
+      if (fillOpacity < 0.008) continue;
 
       L.polygon(sectorRing(left, right, r0, r1), {
         stroke: b === 0,
-        color: "#3d5a6c",
+        color: "#9aacb8",
         weight: b === 0 ? 1 : 0,
-        opacity: 0.35,
-        fillColor: "#5b7c99",
+        opacity: 0.4,
+        fillColor: "#c5d2dc",
         fillOpacity,
         interactive: false,
       }).addTo(group);
@@ -391,7 +391,8 @@ async function recompute({ fit = false } = {}) {
     state.origin.lon,
   );
   if (!grids.length) {
-    setStatus("Outside the US grid.", "warn");
+    // Should be rare — setOrigin blocks out-of-coverage drops first.
+    rejectOutsideConus();
     state.rays = [];
     drawRose();
     updateShortestReadout();
@@ -430,10 +431,40 @@ async function recompute({ fit = false } = {}) {
   }
 }
 
+/** True when (lat,lon) is inside a loaded population grid, else CONUS bbox. */
+function originIsCovered(lat, lon) {
+  if (state.grids.length) {
+    return state.grids.some((g) => g.contains(lat, lon));
+  }
+  return inConusBounds(lat, lon);
+}
+
+function rejectOutsideConus() {
+  const msg =
+    "Pin stays in the contiguous US — Alaska, Hawaii, and abroad aren’t covered.";
+  setStatus(msg, "warn");
+  if (el.mapStatus) {
+    el.mapStatus.textContent = msg;
+    el.mapStatus.dataset.kind = "warn";
+    el.mapStatus.hidden = false;
+  }
+}
+
+/**
+ * Move the pin and recompute. Rejects locations outside the contiguous-US
+ * grid without moving the marker.
+ * @returns {boolean} whether the origin was accepted
+ */
 function setOrigin(lat, lon, { fit = false } = {}) {
+  if (!originIsCovered(lat, lon)) {
+    rejectOutsideConus();
+    originMarker.setLatLng([state.origin.lat, state.origin.lon]);
+    return false;
+  }
   state.origin = { lat, lon };
   originMarker.setLatLng([lat, lon]);
   recompute({ fit });
+  return true;
 }
 
 function goToPlace(key) {
@@ -546,8 +577,13 @@ function requestMyLocation() {
   navigator.geolocation.getCurrentPosition(
     (pos) => {
       el.myLocation.disabled = false;
-      map.setView([pos.coords.latitude, pos.coords.longitude], 8);
-      setOrigin(pos.coords.latitude, pos.coords.longitude, { fit: true });
+      const { latitude: lat, longitude: lon } = pos.coords;
+      if (!originIsCovered(lat, lon)) {
+        rejectOutsideConus();
+        return;
+      }
+      map.setView([lat, lon], 8);
+      setOrigin(lat, lon, { fit: true });
     },
     (err) => {
       el.myLocation.disabled = false;
