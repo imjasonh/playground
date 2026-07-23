@@ -12,7 +12,6 @@ import { loadGridFromGzip, pickGrid } from "./grid.js";
 import {
   computeRose,
   distanceToPeople,
-  peopleAlongLine,
   rosePolygon,
   scaledLengths,
 } from "./rays.js";
