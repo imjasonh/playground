@@ -7,7 +7,7 @@ Petal length = that distance. Short in Manhattan; often unreachable in Wyoming.
 
 ## Controls
 
-- **Corridor width** — strip width (ft → mi)
+- **Corridor width** — strip width (100 ft → 10 mi; below ~1 cell, same as a thin line)
 - **People to hit** — target N
 - Presets: Manhattan / Wyoming / My location
 - 72 directions (every 5°)

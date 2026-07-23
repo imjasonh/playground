@@ -42,9 +42,34 @@ test("peopleInCorridor finds more people toward the dense side", () => {
 test("wider corridor collects at least as many people", () => {
   const grid = makeAsymmetricGrid();
   const lengthM = milesToMeters(20);
+  // Width only pulls neighboring cells once it approaches cell size (~0.7 mi here).
   const narrow = peopleInCorridor(grid, ORIGIN, 90, lengthM, feetToMeters(200));
-  const wide = peopleInCorridor(grid, ORIGIN, 90, lengthM, feetToMeters(2000));
-  assert.ok(wide >= narrow);
+  const wide = peopleInCorridor(grid, ORIGIN, 90, lengthM, milesToMeters(3));
+  assert.ok(wide > narrow, `wide ${wide} should beat narrow ${narrow}`);
+});
+
+test("wider corridor reaches a target sooner", () => {
+  const grid = makeAsymmetricGrid();
+  const maxLengthM = milesToMeters(40);
+  const target = 100_000;
+  const thin = distanceToPeople(
+    grid,
+    ORIGIN,
+    90,
+    target,
+    feetToMeters(200),
+    maxLengthM,
+  );
+  const fat = distanceToPeople(
+    grid,
+    ORIGIN,
+    90,
+    target,
+    milesToMeters(3),
+    maxLengthM,
+  );
+  assert.ok(Number.isFinite(thin) && Number.isFinite(fat));
+  assert.ok(fat < thin, `fat ${fat} should be shorter than thin ${thin}`);
 });
 
 test("distanceToPeople is shorter toward dense cells", () => {

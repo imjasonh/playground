@@ -88,3 +88,33 @@ test("Manhattan reaches 1M much sooner than Wyoming", async () => {
     assert.ok(wyDist > nycDist * 20);
   }
 });
+
+test("wider corridor shortens Manhattan distance to 1M", async () => {
+  const conus = await loadGridFromGzip(
+    JSON.parse(readFileSync(join(root, "data/conus-0p02.json"), "utf8")),
+    readFileSync(join(root, "data/conus-0p02.f32.gz")),
+  );
+  const origin = { lat: 40.758, lon: -73.9855 };
+  const maxM = milesToMeters(3000);
+  const thin = distanceToPeople(
+    conus,
+    origin,
+    28,
+    1_000_000,
+    feetToMeters(500),
+    maxM,
+  );
+  const fat = distanceToPeople(
+    conus,
+    origin,
+    28,
+    1_000_000,
+    milesToMeters(5),
+    maxM,
+  );
+  assert.ok(Number.isFinite(thin) && Number.isFinite(fat));
+  assert.ok(
+    fat < thin * 0.6,
+    `5 mi wide (${formatDistance(fat)}) should beat 500 ft (${formatDistance(thin)})`,
+  );
+});

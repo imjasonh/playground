@@ -29,6 +29,17 @@ const PLACES = {
 
 const RAY_COUNT = 72; // 5°
 const MAX_SEARCH_MI = 3000;
+const WIDTH_MIN_FT = 100;
+const WIDTH_MAX_FT = 52_800; // 10 mi
+const WIDTH_SLIDER_MAX = 1000;
+
+/** Log-scaled slider → feet (grid resolution needs multi-mile widths). */
+function widthFtFromSlider(pos) {
+  const t = Math.min(1, Math.max(0, Number(pos) / WIDTH_SLIDER_MAX));
+  const raw = WIDTH_MIN_FT * (WIDTH_MAX_FT / WIDTH_MIN_FT) ** t;
+  if (raw >= 5280) return Math.round(raw / 528) * 528; // 0.1 mi steps
+  return Math.max(WIDTH_MIN_FT, Math.round(raw / 100) * 100);
+}
 
 const el = {
   status: document.getElementById("status"),
@@ -65,7 +76,7 @@ function setStatus(text, kind = "") {
 }
 
 function readControls() {
-  const widthFt = Number(el.widthFt.value) || 500;
+  const widthFt = widthFtFromSlider(el.widthFt.value);
   const targetPeople = Number(el.targetPop.value) || 1_000_000;
   return {
     widthM: feetToMeters(widthFt),
@@ -84,6 +95,7 @@ function syncSliderReadouts() {
   el.targetReadout.textContent = n;
   el.ledeW.textContent = w;
   el.ledeN.textContent = n;
+  el.widthFt.setAttribute("aria-valuetext", w);
 }
 
 function updateHero() {
