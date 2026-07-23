@@ -44,11 +44,9 @@ export function destination(lat, lon, bearingDeg, distanceM) {
 /** Approximate meters per degree of latitude / longitude at a latitude. */
 export function metersPerDegree(lat) {
   const φ = lat * DEG;
-  // WGS84 meridional / prime-vertical radii approximations (good to ~0.3%).
   const mPerDegLat =
     111132.92 - 559.82 * Math.cos(2 * φ) + 1.175 * Math.cos(4 * φ);
-  const mPerDegLon =
-    111412.84 * Math.cos(φ) - 93.5 * Math.cos(3 * φ);
+  const mPerDegLon = 111412.84 * Math.cos(φ) - 93.5 * Math.cos(3 * φ);
   return { lat: mPerDegLat, lon: Math.max(mPerDegLon, 1e-6) };
 }
 
@@ -60,8 +58,14 @@ export function cellAreaM2(lat, cellDeg) {
 export function formatPeople(n) {
   if (!Number.isFinite(n)) return "—";
   const abs = Math.abs(n);
-  if (abs >= 1e6) return `${(n / 1e6).toFixed(2)}M`;
-  if (abs >= 1e3) return `${(n / 1e3).toFixed(1)}k`;
+  if (abs >= 1e6) {
+    const s = (n / 1e6).toFixed(2);
+    return `${s.replace(/\.?0+$/, "")}M`;
+  }
+  if (abs >= 1e3) {
+    const s = (n / 1e3).toFixed(abs >= 1e5 ? 0 : 1);
+    return `${s.replace(/\.0$/, "")}k`;
+  }
   return Math.round(n).toLocaleString("en-US");
 }
 
@@ -72,6 +76,17 @@ export function formatDistance(m) {
   if (miles >= 10) return `${miles.toFixed(1)} mi`;
   if (miles >= 1) return `${miles.toFixed(2)} mi`;
   return `${Math.round(metersToFeet(m))} ft`;
+}
+
+/** Format a corridor width given in feet. */
+export function formatWidth(ft) {
+  if (!Number.isFinite(ft)) return "—";
+  if (ft >= 5280) {
+    const mi = ft / 5280;
+    return `${mi % 1 === 0 ? mi.toFixed(0) : mi.toFixed(2)} mi`;
+  }
+  if (ft >= 1000) return `${(ft / 5280).toFixed(2)} mi`;
+  return `${Math.round(ft)} ft`;
 }
 
 export function bearingLabel(bearingDeg) {

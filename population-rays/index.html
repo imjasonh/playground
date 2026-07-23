@@ -6,7 +6,7 @@
     <title>Population Rays</title>
     <meta
       name="description"
-      content="How far must a thin line go from here before it crosses 1 million people’s homes? Short in Manhattan, often thousands of miles in Wyoming."
+      content="How far must a corridor go in each direction before it hits N people?"
     />
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -27,13 +27,12 @@
     <div class="shell">
       <aside class="panel" aria-label="Controls">
         <header class="brand">
-          <p class="eyebrow">How far to a million people?</p>
           <h1>Population Rays</h1>
           <p class="lede">
-            From this pin, each petal is a thin line in that direction. Its
-            length is how far the line must go before it has crossed
-            <strong>1&nbsp;million</strong> people’s homes. In Manhattan that can
-            be tens of miles; in Wyoming it can be thousands.
+            From the pin, simulate a corridor
+            <strong id="lede-w">500&nbsp;ft</strong> wide in every direction.
+            Petal length = how far until it hits
+            <strong id="lede-n">1M</strong> people.
           </p>
         </header>
 
@@ -49,20 +48,25 @@
           </button>
         </section>
 
-        <section class="controls" aria-label="Line settings">
-          <label class="field">
-            <span>What to show</span>
-            <select id="mode">
-              <option value="fixedPeople" selected>
-                Distance to reach N people
-              </option>
-              <option value="fixedLength">People along a fixed length</option>
-            </select>
+        <section class="controls" aria-label="Corridor settings">
+          <label class="field slider-field">
+            <span class="slider-label">
+              <span>Corridor width</span>
+              <strong id="width-readout">500 ft</strong>
+            </span>
+            <input
+              id="width-ft"
+              type="range"
+              min="100"
+              max="5280"
+              step="100"
+              value="500"
+            />
           </label>
 
-          <label class="field slider-field" id="target-control">
+          <label class="field slider-field">
             <span class="slider-label">
-              <span>Target people</span>
+              <span>People to hit</span>
               <strong id="target-pop-readout">1M</strong>
             </span>
             <input
@@ -74,60 +78,27 @@
               value="1000000"
             />
           </label>
-
-          <label class="field slider-field" id="length-control" hidden>
-            <span class="slider-label">
-              <span>Line length</span>
-              <strong id="length-mi-readout">50 mi</strong>
-            </span>
-            <input
-              id="length-mi"
-              type="range"
-              min="5"
-              max="200"
-              step="5"
-              value="50"
-            />
-          </label>
-
-          <!-- Width is conceptually 100′; at ~km cells it doesn’t change which
-               cells a centerline crosses, so it’s hidden from the main UI. -->
-          <input id="width-ft" type="hidden" value="100" />
         </section>
 
         <section class="readouts" aria-live="polite">
           <div class="readout hero-metric">
-            <span id="hero-label">Shortest line to 1M people</span>
+            <span>Shortest</span>
             <strong id="hero-value">—</strong>
-            <small id="hero-detail">Place a pin to measure.</small>
+            <small id="hero-detail">Pick a place or click the map.</small>
           </div>
-          <div class="readout">
-            <span>Origin</span>
-            <strong id="origin-readout">—</strong>
-          </div>
-          <div class="readout">
-            <span>This direction</span>
-            <strong id="hover-readout">Hover the map around the pin.</strong>
-          </div>
-          <div id="summary" class="summary"></div>
+          <p id="hover-readout" class="hover-line"></p>
         </section>
 
         <footer class="meta">
           <p id="status" data-kind="">Loading…</p>
-          <p id="dataset" class="dataset"></p>
-          <p class="credit">
-            A line counts people in each ~0.5–2&nbsp;km population cell it
-            enters (Meta / CIESIN HRSL) — not a literal 100′ doorway survey. Short
-            petals mean the next dense cell finished the tally. Basemap ©
-            OpenStreetMap, CARTO.
-          </p>
+          <p class="credit">Meta/CIESIN HRSL · © OSM, CARTO</p>
         </footer>
       </aside>
 
       <main class="map-pane">
         <div id="map" role="img" aria-label="Map with population ray overlay"></div>
-        <div class="map-hint" id="map-hint">
-          Petal length = miles to reach the target · click to move the pin
+        <div class="map-hint">
+          Solid petals hit N · dashed = not reached within 3000&nbsp;mi
         </div>
       </main>
     </div>

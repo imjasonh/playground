@@ -1,17 +1,16 @@
 /**
- * Directional population along a thin line.
+ * Directional corridor population.
  *
- * From an origin, walk a bearing and sum the population of each distinct grid
- * cell the line first enters. That answers: “how many people’s home cells does
- * this line cross?” — and, conversely, how far until it has crossed N people.
+ * From an origin, extend a corridor of width W along bearing D. Count people
+ * in population cells whose centers fall inside that corridor. Ask: how long
+ * must the corridor be before it has hit N people?
  *
- * At the packaged resolutions (~0.5–2 km cells), a 100′ corridor is thinner
- * than a cell, so “cells the centerline crosses” is the right discrete model
- * for “homes along a thin line.” In Midtown that reaches 1M in tens of miles;
- * in rural Wyoming it can take thousands.
+ * At packaged resolutions (~0.5–2 km), a corridor thinner than a cell behaves
+ * like “cells the centerline crosses.” Wider corridors pull in neighboring
+ * cells.
  */
 
-import { destination } from "./geo.js";
+import { destination, metersPerDegree } from "./geo.js";
 
 /**
  * @typedef {object} RayResult
@@ -23,101 +22,126 @@ import { destination } from "./geo.js";
  */
 
 /**
- * Sum unique cell populations crossed by a line of length `lengthM`.
- * @param {import('./grid.js').PopulationGrid} grid
- * @param {{lat:number, lon:number}} origin
- * @param {number} bearingDeg
- * @param {number} lengthM
- * @param {{ stepM?: number }} [opts]
+ * Corridor width used for queries. Never thinner than two cell widths so a
+ * cell center up to ~1 cell off the centerline (pin near a cell corner) still
+ * counts — otherwise thin corridors miss the grid entirely.
  */
-export function peopleAlongLine(grid, origin, bearingDeg, lengthM, opts = {}) {
-  if (lengthM <= 0) return 0;
+export function effectiveCorridorWidthM(grid, origin, widthM) {
   const cellM = grid.cellSizeM(origin.lat);
-  const stepM = opts.stepM ?? Math.min(Math.max(cellM * 0.45, 50), 500);
-  const seen = new Set();
-  let people = 0;
-
-  // Skip the origin cell: the line starts at the pin and counts homes ahead,
-  // not everyone already underfoot (which made short petals look near-zero).
-  const originIdx = grid.indexAt(origin.lat, origin.lon);
-  if (originIdx >= 0) seen.add(originIdx);
-
-  for (let s = stepM; s <= lengthM; s += stepM) {
-    const pt = destination(origin.lat, origin.lon, bearingDeg, s);
-    const idx = grid.indexAt(pt.lat, pt.lon);
-    if (idx < 0 || seen.has(idx)) continue;
-    seen.add(idx);
-    people += grid.data[idx];
-  }
-  return people;
-}
-
-/** @deprecated alias — older tests/docs referred to a corridor integral */
-export function peopleInCorridor(grid, origin, bearingDeg, lengthM, _widthM, opts) {
-  return peopleAlongLine(grid, origin, bearingDeg, lengthM, opts);
+  return Math.max(widthM || 0, cellM * 2);
 }
 
 /**
- * Walk outward until unique crossed-cell population reaches `targetPeople`.
- * Returns distance in meters, or Infinity if not reached within maxLengthM.
+ * Collect unique cell indices whose centers lie in the corridor
+ * [0, lengthM] × widthM centered on the ray.
+ */
+function cellsInCorridor(grid, origin, bearingDeg, lengthM, widthM) {
+  if (lengthM <= 0 || widthM <= 0) return [];
+  const halfW = widthM / 2;
+  const { lat: mLat, lon: mLon } = metersPerDegree(origin.lat);
+  const rad = (bearingDeg * Math.PI) / 180;
+  const dirX = Math.sin(rad); // east
+  const dirY = Math.cos(rad); // north
+
+  const pad = halfW + grid.cellSizeM(origin.lat);
+  const reach = lengthM + pad;
+  const west = origin.lon - reach / mLon;
+  const east = origin.lon + reach / mLon;
+  const south = origin.lat - reach / mLat;
+  const north = origin.lat + reach / mLat;
+
+  const c0 = Math.max(0, Math.floor((west - grid.meta.west) / grid.meta.cellDeg));
+  const c1 = Math.min(
+    grid.meta.width - 1,
+    Math.floor((east - grid.meta.west) / grid.meta.cellDeg),
+  );
+  const r0 = Math.max(
+    0,
+    Math.floor((grid.meta.north - north) / grid.meta.cellDeg),
+  );
+  const r1 = Math.min(
+    grid.meta.height - 1,
+    Math.floor((grid.meta.north - south) / grid.meta.cellDeg),
+  );
+
+  const hits = [];
+  for (let r = r0; r <= r1; r++) {
+    for (let c = c0; c <= c1; c++) {
+      const idx = r * grid.meta.width + c;
+      const pop = grid.data[idx];
+      if (!(pop > 0)) continue;
+      const clat = grid.meta.north - (r + 0.5) * grid.meta.cellDeg;
+      const clon = grid.meta.west + (c + 0.5) * grid.meta.cellDeg;
+      const dx = (clon - origin.lon) * mLon;
+      const dy = (clat - origin.lat) * mLat;
+      const along = dx * dirX + dy * dirY;
+      // Include the origin cell (along ≈ 0); only drop cells behind the pin.
+      if (along < -halfW || along > lengthM) continue;
+      const cross = Math.abs(dx * dirY - dy * dirX);
+      if (cross > halfW) continue;
+      hits.push({ idx, pop, along: Math.max(0, along) });
+    }
+  }
+  return hits;
+}
+
+/** People inside a corridor of length lengthM and width widthM. */
+export function peopleInCorridor(grid, origin, bearingDeg, lengthM, widthM) {
+  const w = effectiveCorridorWidthM(grid, origin, widthM);
+  const hits = cellsInCorridor(grid, origin, bearingDeg, lengthM, w);
+  let people = 0;
+  for (const h of hits) people += h.pop;
+  return people;
+}
+
+/** @deprecated alias */
+export function peopleAlongLine(grid, origin, bearingDeg, lengthM, opts = {}) {
+  const widthM = opts.widthM ?? 0;
+  return peopleInCorridor(grid, origin, bearingDeg, lengthM, widthM);
+}
+
+/**
+ * Shortest corridor length to accumulate targetPeople (meters), or Infinity.
  */
 export function distanceToPeople(
   grid,
   origin,
   bearingDeg,
   targetPeople,
-  _widthM,
+  widthM,
   maxLengthM,
-  opts = {},
 ) {
   if (targetPeople <= 0) return 0;
   if (maxLengthM <= 0) return Infinity;
-  const cellM = grid.cellSizeM(origin.lat);
-  const stepM = opts.stepM ?? Math.min(Math.max(cellM * 0.45, 50), 500);
-  const seen = new Set();
+
+  const w = effectiveCorridorWidthM(grid, origin, widthM);
+  const hits = cellsInCorridor(grid, origin, bearingDeg, maxLengthM, w);
+  hits.sort((a, b) => a.along - b.along);
+
   let people = 0;
-
-  // Do not credit the pin's own cell — otherwise a ~40–100k Lower Manhattan
-  // cell makes “distance to 100k” look like nearly zero to the north.
-  const originIdx = grid.indexAt(origin.lat, origin.lon);
-  if (originIdx >= 0) seen.add(originIdx);
-
-  for (let s = stepM; s <= maxLengthM; s += stepM) {
-    const pt = destination(origin.lat, origin.lon, bearingDeg, s);
-    const idx = grid.indexAt(pt.lat, pt.lon);
-    if (idx >= 0 && !seen.has(idx)) {
-      seen.add(idx);
-      people += grid.data[idx];
-    }
-    if (people >= targetPeople) return s;
+  for (const h of hits) {
+    people += h.pop;
+    if (people >= targetPeople) return h.along;
   }
   return Infinity;
 }
 
 /**
- * Compute a directional rose around an origin.
- *
+ * Directional rose: distance to N people in each direction.
  * @param {import('./grid.js').PopulationGrid} grid
  * @param {{lat:number, lon:number}} origin
  * @param {object} options
- * @param {'fixedLength'|'fixedPeople'} options.mode
- * @param {number} [options.widthM] kept for API compat / future strip tests
- * @param {number} [options.lengthM] used in fixedLength mode
- * @param {number} [options.targetPeople] used in fixedPeople mode
- * @param {number} [options.maxLengthM] cap for fixedPeople search
- * @param {number} [options.rayCount=72] 5° segments by default
- * @param {number} [options.stepM]
- * @returns {RayResult[]}
+ * @param {number} options.widthM
+ * @param {number} options.targetPeople
+ * @param {number} options.maxLengthM
+ * @param {number} [options.rayCount=72]
  */
 export function computeRose(grid, origin, options) {
   const {
-    mode,
-    widthM = 0,
-    lengthM = 0,
-    targetPeople = 0,
-    maxLengthM = lengthM || 0,
+    widthM,
+    targetPeople,
+    maxLengthM,
     rayCount = 72,
-    stepM,
   } = options;
   if (!grid?.contains(origin.lat, origin.lon)) {
     throw new Error("origin is outside the population grid");
@@ -125,38 +149,24 @@ export function computeRose(grid, origin, options) {
   const rays = [];
   for (let i = 0; i < rayCount; i++) {
     const bearingDeg = (360 * i) / rayCount;
-    if (mode === "fixedPeople") {
-      const dist = distanceToPeople(
-        grid,
-        origin,
-        bearingDeg,
-        targetPeople,
-        widthM,
-        maxLengthM,
-        { stepM },
-      );
-      const reached = Number.isFinite(dist);
-      rays.push({
-        bearingDeg,
-        people: reached
-          ? targetPeople
-          : peopleAlongLine(grid, origin, bearingDeg, maxLengthM, { stepM }),
-        lengthM: reached ? dist : maxLengthM,
-        widthM,
-        reached,
-      });
-    } else {
-      const people = peopleAlongLine(grid, origin, bearingDeg, lengthM, {
-        stepM,
-      });
-      rays.push({
-        bearingDeg,
-        people,
-        lengthM,
-        widthM,
-        reached: true,
-      });
-    }
+    const dist = distanceToPeople(
+      grid,
+      origin,
+      bearingDeg,
+      targetPeople,
+      widthM,
+      maxLengthM,
+    );
+    const reached = Number.isFinite(dist);
+    rays.push({
+      bearingDeg,
+      people: reached
+        ? targetPeople
+        : peopleInCorridor(grid, origin, bearingDeg, maxLengthM, widthM),
+      lengthM: reached ? dist : maxLengthM,
+      widthM,
+      reached,
+    });
   }
   return rays;
 }
@@ -175,12 +185,4 @@ export function rosePolygon(origin, rays, lengthForRay) {
   }
   if (ring.length) ring.push(ring[0]);
   return ring;
-}
-
-/** Scale lengths for fixedLength mode so the longest petal reaches maxLengthM. */
-export function scaledLengths(rays, maxLengthM) {
-  let maxPeople = 0;
-  for (const r of rays) maxPeople = Math.max(maxPeople, r.people);
-  if (maxPeople <= 0) return rays.map(() => 0);
-  return rays.map((r) => (r.people / maxPeople) * maxLengthM);
 }

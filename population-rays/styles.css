@@ -49,36 +49,28 @@ a {
 .panel {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
-  padding: 1.4rem 1.35rem 1.1rem;
+  gap: 1.05rem;
+  padding: 1.25rem 1.25rem 1rem;
   background: var(--panel);
   border-right: 1px solid var(--line);
   backdrop-filter: blur(10px);
   overflow: auto;
 }
 
-.brand .eyebrow {
-  margin: 0 0 0.35rem;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  font-size: 0.72rem;
-  color: var(--amber);
-}
-
 .brand h1 {
   margin: 0;
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: clamp(2rem, 3vw, 2.55rem);
+  font-size: clamp(1.75rem, 2.8vw, 2.2rem);
   line-height: 1.05;
   letter-spacing: -0.02em;
 }
 
 .lede {
-  margin: 0.7rem 0 0;
+  margin: 0.55rem 0 0;
   color: var(--muted);
-  font-size: 0.98rem;
-  line-height: 1.45;
+  font-size: 0.95rem;
+  line-height: 1.4;
 }
 
 .presets {
@@ -152,6 +144,17 @@ a {
 .lede strong {
   color: #ffe3a1;
   font-weight: 600;
+}
+
+.hover-line:empty {
+  display: none;
+}
+
+.hover-line {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text);
+  line-height: 1.35;
 }
 
 .field {
@@ -251,7 +254,7 @@ a {
 
 .readouts {
   display: grid;
-  gap: 0.85rem;
+  gap: 0.75rem;
 }
 
 .readout {
@@ -259,51 +262,19 @@ a {
   gap: 0.2rem;
 }
 
-.readout span,
-.summary span {
+.readout span {
   font-size: 0.72rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
 }
 
-.readout strong {
-  font-weight: 550;
-  font-size: 0.98rem;
-  line-height: 1.35;
-}
-
-.summary {
-  display: grid;
-  gap: 0.65rem;
-  padding: 0.85rem;
-  border-radius: 14px;
-  background:
-    linear-gradient(145deg, rgba(240, 162, 2, 0.12), rgba(31, 122, 108, 0.12));
-  border: 1px solid var(--line);
-}
-
-.summary div {
-  display: grid;
-  gap: 0.15rem;
-}
-
-.summary strong {
-  font-family: var(--font-display);
-  font-size: 1.35rem;
-  font-weight: 600;
-}
-
-.summary small {
-  color: var(--muted);
-}
-
 .meta {
   margin-top: auto;
   display: grid;
-  gap: 0.4rem;
+  gap: 0.35rem;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.75rem;
 }
 
 #status[data-kind="ok"] {
