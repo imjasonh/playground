@@ -11,6 +11,7 @@ cross.
 ## Controls
 
 - **People to hit** — target N (10k–500k)
+- **Search** — US city or address (Nominatim; contiguous US only)
 - Presets: Manhattan / Wyoming / My location
 - 72 directions (every 5°); corridor width fixed at 100 ft
 

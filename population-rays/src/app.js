@@ -7,6 +7,7 @@ import {
   formatPeople,
   milesToMeters,
 } from "./geo.js";
+import { searchUsPlaces } from "./geocode.js";
 import { loadGridFromGzip, gridsForRose } from "./grid.js";
 import { computeRose, rosePolygon } from "./rays.js";
 
@@ -39,6 +40,10 @@ const el = {
   myLocation: document.getElementById("my-location"),
   heroValue: document.getElementById("hero-value"),
   heroDetail: document.getElementById("hero-detail"),
+  placeForm: document.getElementById("place-search-form"),
+  placeSearch: document.getElementById("place-search"),
+  placeResults: document.getElementById("place-results"),
+  searchGo: document.querySelector(".search-go"),
 };
 
 const state = {
@@ -268,6 +273,97 @@ function goToPlace(key) {
   setOrigin(place.lat, place.lon, { fit: true });
 }
 
+function goToSearchHit(hit) {
+  clearPlaceResults();
+  el.placeSearch.value = hit.label.split(",")[0] || hit.label;
+  map.setView([hit.lat, hit.lon], hit.zoom);
+  setOrigin(hit.lat, hit.lon, { fit: true });
+}
+
+function clearPlaceResults() {
+  el.placeResults.hidden = true;
+  el.placeResults.innerHTML = "";
+}
+
+function showPlaceResults(hits, { emptyMessage } = {}) {
+  el.placeResults.innerHTML = "";
+  if (!hits.length) {
+    const li = document.createElement("li");
+    li.className = "place-empty";
+    li.textContent = emptyMessage || "No US places found.";
+    el.placeResults.appendChild(li);
+    el.placeResults.hidden = false;
+    return;
+  }
+  for (const hit of hits) {
+    const li = document.createElement("li");
+    li.setAttribute("role", "option");
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = hit.label;
+    btn.addEventListener("click", () => goToSearchHit(hit));
+    li.appendChild(btn);
+    el.placeResults.appendChild(li);
+  }
+  el.placeResults.hidden = false;
+}
+
+let searchAbort = null;
+let searchTimer = 0;
+
+async function runPlaceSearch(query, { autoSelectSingle = false } = {}) {
+  const q = String(query || "").trim();
+  if (q.length < 2) {
+    clearPlaceResults();
+    return;
+  }
+  if (searchAbort) searchAbort.abort();
+  searchAbort = new AbortController();
+  const { signal } = searchAbort;
+  el.searchGo.disabled = true;
+  setStatus("Searching…");
+  try {
+    const hits = await searchUsPlaces(q, { signal, limit: 5 });
+    if (signal.aborted) return;
+    if (autoSelectSingle && hits.length === 1) {
+      goToSearchHit(hits[0]);
+      setStatus("Ready", "ok");
+      return;
+    }
+    showPlaceResults(hits, {
+      emptyMessage: "No contiguous-US places found.",
+    });
+    setStatus(hits.length ? "Ready" : "No places found.", hits.length ? "ok" : "warn");
+  } catch (err) {
+    if (err?.name === "AbortError") return;
+    console.error(err);
+    showPlaceResults([], { emptyMessage: "Search failed. Try again." });
+    setStatus("Search failed.", "warn");
+  } finally {
+    el.searchGo.disabled = false;
+  }
+}
+
+function bindPlaceSearch() {
+  el.placeForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    clearTimeout(searchTimer);
+    runPlaceSearch(el.placeSearch.value, { autoSelectSingle: true });
+  });
+  el.placeSearch.addEventListener("input", () => {
+    clearTimeout(searchTimer);
+    const q = el.placeSearch.value;
+    if (String(q).trim().length < 2) {
+      clearPlaceResults();
+      return;
+    }
+    searchTimer = setTimeout(() => runPlaceSearch(q), 350);
+  });
+  el.placeSearch.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") clearPlaceResults();
+  });
+}
+
 function requestMyLocation() {
   if (!navigator.geolocation) {
     setStatus("Location unavailable.", "warn");
@@ -385,6 +481,7 @@ function bindControls() {
     btn.addEventListener("click", () => goToPlace(btn.dataset.place));
   }
   el.myLocation.addEventListener("click", requestMyLocation);
+  bindPlaceSearch();
   syncSliderReadouts();
 }
 
