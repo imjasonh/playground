@@ -3,16 +3,17 @@
 From a pin on the map: how far must a **100 ft** corridor go in each direction
 before it hits **N** people?
 
-Petal length = that distance. Short in Manhattan; long (or unreachable) in
-Wyoming. At the packaged ~2 km grid, that thin corridor is treated as about
-one cell wide. Samples on a grid line (common for exact N/S/E/W) split credit
-across the two adjacent cells instead of picking one side.
+Petal length = that distance. Short in Manhattan (NY); longer from
+Manhattan, KS or Manhattan, IL. At the packaged ~2 km grid, that thin
+corridor is treated as about one cell wide. Samples on a grid line (common
+for exact N/S/E/W) split credit across the two adjacent cells instead of
+picking one side.
 
 ## Controls
 
 - **People to hit** — target N (10k–500k)
 - **Search** — US city or address (Nominatim; contiguous US only)
-- Presets: Manhattan / Wyoming / My location
+- Presets: Manhattan / Manhattan, KS / Manhattan, IL / My location
 - 72 directions (every 5°); corridor width fixed at 100 ft
 
 ## Run

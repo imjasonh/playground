@@ -18,11 +18,17 @@ const PLACES = {
     zoom: 9,
     label: "Manhattan",
   },
-  wyoming: {
-    lat: 43.076,
-    lon: -107.2903,
-    zoom: 6,
-    label: "Wyoming",
+  "manhattan-ks": {
+    lat: 39.1836,
+    lon: -96.5717,
+    zoom: 7,
+    label: "Manhattan, KS",
+  },
+  "manhattan-il": {
+    lat: 41.4223,
+    lon: -87.9859,
+    zoom: 8,
+    label: "Manhattan, IL",
   },
 };
 
