@@ -5,7 +5,6 @@ import {
   feetToMeters,
   formatDistance,
   formatPeople,
-  metersToMiles,
   milesToMeters,
 } from "./geo.js";
 import { loadGridFromGzip, pickGridForTarget } from "./grid.js";
