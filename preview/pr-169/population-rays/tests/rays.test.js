@@ -4,13 +4,11 @@ import { createGrid, pickGrid } from "../src/grid.js";
 import {
   computeRose,
   distanceToPeople,
-  peopleAlongLine,
+  peopleInCorridor,
   rosePolygon,
-  scaledLengths,
 } from "../src/rays.js";
-import { milesToMeters } from "../src/geo.js";
+import { feetToMeters, milesToMeters } from "../src/geo.js";
 
-/** Dense east band, sparse west. */
 function makeAsymmetricGrid() {
   const width = 60;
   const height = 40;
@@ -31,65 +29,47 @@ function makeAsymmetricGrid() {
 }
 
 const ORIGIN = { lat: 40.7, lon: -74.2 };
+const WIDTH = feetToMeters(500);
 
-test("peopleAlongLine finds more people toward the dense side", () => {
+test("peopleInCorridor finds more people toward the dense side", () => {
   const grid = makeAsymmetricGrid();
-  assert.ok(grid.contains(ORIGIN.lat, ORIGIN.lon));
   const lengthM = milesToMeters(25);
-  const east = peopleAlongLine(grid, ORIGIN, 90, lengthM, { stepM: 100 });
-  const west = peopleAlongLine(grid, ORIGIN, 270, lengthM, { stepM: 100 });
+  const east = peopleInCorridor(grid, ORIGIN, 90, lengthM, WIDTH);
+  const west = peopleInCorridor(grid, ORIGIN, 270, lengthM, WIDTH);
   assert.ok(east > west * 3, `east ${east} should dwarf west ${west}`);
 });
 
-test("peopleAlongLine grows as the line crosses more cells", () => {
+test("wider corridor collects at least as many people", () => {
   const grid = makeAsymmetricGrid();
-  const short = peopleAlongLine(grid, ORIGIN, 90, milesToMeters(5), {
-    stepM: 100,
-  });
-  const longer = peopleAlongLine(grid, ORIGIN, 90, milesToMeters(25), {
-    stepM: 100,
-  });
-  assert.ok(longer > short);
+  const lengthM = milesToMeters(20);
+  const narrow = peopleInCorridor(grid, ORIGIN, 90, lengthM, feetToMeters(200));
+  const wide = peopleInCorridor(grid, ORIGIN, 90, lengthM, feetToMeters(2000));
+  assert.ok(wide >= narrow);
 });
 
 test("distanceToPeople is shorter toward dense cells", () => {
   const grid = makeAsymmetricGrid();
   const maxLengthM = milesToMeters(40);
   const target = 100_000;
-  const east = distanceToPeople(grid, ORIGIN, 90, target, 0, maxLengthM, {
-    stepM: 100,
-  });
-  const west = distanceToPeople(grid, ORIGIN, 270, target, 0, maxLengthM, {
-    stepM: 100,
-  });
+  const east = distanceToPeople(grid, ORIGIN, 90, target, WIDTH, maxLengthM);
+  const west = distanceToPeople(grid, ORIGIN, 270, target, WIDTH, maxLengthM);
   assert.ok(Number.isFinite(east), `east distance ${east}`);
   assert.ok(east < west, `east ${east} should be < west ${west}`);
 });
 
-test("computeRose fixedPeople marks east reached sooner than west", () => {
+test("computeRose marks east reached sooner than west", () => {
   const grid = makeAsymmetricGrid();
   const rays = computeRose(grid, ORIGIN, {
-    mode: "fixedPeople",
+    widthM: WIDTH,
     targetPeople: 80_000,
     maxLengthM: milesToMeters(40),
     rayCount: 36,
-    stepM: 150,
   });
   assert.equal(rays.length, 36);
   const east = rays.find((r) => r.bearingDeg === 90);
   const west = rays.find((r) => r.bearingDeg === 270);
   assert.ok(east.reached, "east should reach target");
   assert.ok(east.lengthM < west.lengthM);
-});
-
-test("scaledLengths normalizes peak to maxLength", () => {
-  const lengths = scaledLengths(
-    [{ people: 10 }, { people: 50 }, { people: 0 }],
-    1000,
-  );
-  assert.equal(lengths[1], 1000);
-  assert.equal(lengths[0], 200);
-  assert.equal(lengths[2], 0);
 });
 
 test("rosePolygon closes the ring", () => {

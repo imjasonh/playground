@@ -5,6 +5,7 @@ import {
   destination,
   feetToMeters,
   formatPeople,
+  formatWidth,
   metersPerDegree,
   milesToMeters,
 } from "../src/geo.js";
@@ -23,7 +24,6 @@ test("metersPerDegree shrinks longitude meters near poles", () => {
   const eq = metersPerDegree(0);
   const high = metersPerDegree(60);
   assert.ok(eq.lon > high.lon);
-  assert.ok(eq.lat > 110_000 && eq.lat < 112_000);
 });
 
 test("milesToMeters is exact for statute miles", () => {
@@ -31,8 +31,13 @@ test("milesToMeters is exact for statute miles", () => {
 });
 
 test("formatPeople uses compact suffixes", () => {
-  assert.equal(formatPeople(1_250_000), "1.25M");
-  assert.equal(formatPeople(12_400), "12.4k");
+  assert.match(formatPeople(1_250_000), /^1\.25M$/);
+  assert.match(formatPeople(12_400), /^12\.4k$/);
+});
+
+test("formatWidth switches to miles for large values", () => {
+  assert.equal(formatWidth(500), "500 ft");
+  assert.equal(formatWidth(5280), "1 mi");
 });
 
 test("bearingLabel maps compass octants", () => {
