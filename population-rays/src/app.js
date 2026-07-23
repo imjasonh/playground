@@ -65,21 +65,20 @@ let hoverLine;
 function setStatus(text, kind = "") {
   el.status.textContent = text;
   el.status.dataset.kind = kind;
-  if (el.mapStatus) {
-    el.mapStatus.textContent = text;
-    el.mapStatus.dataset.kind = kind;
-    el.mapStatus.hidden = !text;
-  }
+  if (!el.mapStatus) return;
+  // Keep the on-map chip for progress/errors (sidebar status is easy to miss
+  // on phones). Idle "Ready" stays in the sidebar; the map shows the legend.
+  if (kind === "ok") return;
+  el.mapStatus.textContent = text;
+  el.mapStatus.dataset.kind = kind;
+  el.mapStatus.hidden = !text;
 }
 
 function setMapHint(text) {
   if (!el.mapStatus) return;
-  // Prefer live status; fall back to legend when idle.
-  if (el.status.dataset.kind === "ok" || !el.status.textContent) {
-    el.mapStatus.textContent = text;
-    el.mapStatus.dataset.kind = "";
-    el.mapStatus.hidden = !text;
-  }
+  el.mapStatus.textContent = text;
+  el.mapStatus.dataset.kind = "";
+  el.mapStatus.hidden = !text;
 }
 
 function readControls() {
