@@ -94,9 +94,8 @@ export function pickGrid(grids, lat, lon, prefer = "finest") {
 }
 
 /**
- * Grids to use for a distance-to-N rose: every tile containing the origin,
- * finest first. computeRose cascades so rays can leave a metro tile and keep
- * counting on CONUS (avoids “94k then forever” at the NE tile edge).
+ * Grids covering the origin, finest first. Slices cascade fine→CONUS so a
+ * metro tile can hand off for long bearings (e.g. NYC → Chicago).
  */
 export function gridsForRose(grids, lat, lon) {
   return grids

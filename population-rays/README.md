@@ -1,20 +1,20 @@
 # Population Rays
 
-From a pin on the map: how far must a **100 ft** corridor go in each direction
-before it hits **N** people?
+From a pin on the map: how far must a filled **5°** pie slice go in each
+direction before it hits **N** people?
 
 Petal length = that distance. Short in Manhattan (NY); longer from
-Manhattan, KS or Manhattan, IL. At the packaged ~2 km grid, that thin
-corridor is treated as about one cell wide. Samples on a grid line (common
-for exact N/S/E/W) split credit across the two adjacent cells instead of
-picking one side.
+Manhattan, KS or Manhattan, IL. Each slice counts population cells whose
+centers fall inside it (finest covering grid first, then CONUS beyond a
+metro tile). Directions that still cannot hit N show as slate fans out to
+the search limit, fading to transparent.
 
 ## Controls
 
 - **People to hit** — target N (10k–500k)
 - **Search** — US city or address (Nominatim; contiguous US only)
 - Presets: Manhattan / Manhattan, KS / Manhattan, IL / My location
-- 72 directions (every 5°); corridor width fixed at 100 ft
+- 72 slices (every 5°); angular width matches the spacing so they tile 360°
 
 ## Run
 
