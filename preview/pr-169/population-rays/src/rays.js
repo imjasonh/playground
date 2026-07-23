@@ -109,9 +109,66 @@ function cellsInCorridor(grid, origin, bearingDeg, lengthM, widthM) {
   return [...seen.values()];
 }
 
+function asGridList(gridOrGrids) {
+  const list = Array.isArray(gridOrGrids) ? gridOrGrids : [gridOrGrids];
+  return list.filter(Boolean);
+}
+
+/** Grids containing origin, finest cell size first. */
+function orderedGrids(gridOrGrids, origin) {
+  return asGridList(gridOrGrids)
+    .filter((g) => g.contains(origin.lat, origin.lon))
+    .sort((a, b) => a.meta.cellDeg - b.meta.cellDeg);
+}
+
+function cellCenter(grid, idx) {
+  const col = idx % grid.meta.width;
+  const row = (idx / grid.meta.width) | 0;
+  return {
+    lat: grid.meta.north - (row + 0.5) * grid.meta.cellDeg,
+    lon: grid.meta.west + (col + 0.5) * grid.meta.cellDeg,
+  };
+}
+
+/**
+ * Corridor hits across one or more grids. Finer tiles win where they overlap
+ * so long rays can leave a metro tile and keep counting on CONUS.
+ */
+function corridorHitsOnGrids(gridOrGrids, origin, bearingDeg, lengthM, widthM) {
+  const grids = orderedGrids(gridOrGrids, origin);
+  /** @type {{along:number, pop:number}[]} */
+  const merged = [];
+  for (let gi = 0; gi < grids.length; gi++) {
+    const grid = grids[gi];
+    const finer = grids.slice(0, gi);
+    const hits = cellsInCorridor(grid, origin, bearingDeg, lengthM, widthM || 0);
+    for (const h of hits) {
+      if (finer.length) {
+        const { lat, lon } = cellCenter(grid, h.idx);
+        if (finer.some((f) => f.contains(lat, lon))) continue;
+      }
+      merged.push({ along: h.along, pop: h.pop });
+    }
+  }
+  merged.sort((a, b) => a.along - b.along);
+  return merged;
+}
+
 /** People inside a corridor of length lengthM and width widthM. */
-export function peopleInCorridor(grid, origin, bearingDeg, lengthM, widthM) {
-  const hits = cellsInCorridor(grid, origin, bearingDeg, lengthM, widthM || 0);
+export function peopleInCorridor(
+  gridOrGrids,
+  origin,
+  bearingDeg,
+  lengthM,
+  widthM,
+) {
+  const hits = corridorHitsOnGrids(
+    gridOrGrids,
+    origin,
+    bearingDeg,
+    lengthM,
+    widthM || 0,
+  );
   let people = 0;
   for (const h of hits) people += h.pop;
   return people;
@@ -125,9 +182,10 @@ export function peopleAlongLine(grid, origin, bearingDeg, lengthM, opts = {}) {
 
 /**
  * Shortest corridor length to accumulate targetPeople (meters), or Infinity.
+ * Accepts one grid or several (finest-first cascade).
  */
 export function distanceToPeople(
-  grid,
+  gridOrGrids,
   origin,
   bearingDeg,
   targetPeople,
@@ -137,14 +195,13 @@ export function distanceToPeople(
   if (targetPeople <= 0) return 0;
   if (maxLengthM <= 0) return Infinity;
 
-  const hits = cellsInCorridor(
-    grid,
+  const hits = corridorHitsOnGrids(
+    gridOrGrids,
     origin,
     bearingDeg,
     maxLengthM,
     widthM || 0,
   );
-  hits.sort((a, b) => a.along - b.along);
 
   let people = 0;
   for (const h of hits) {
@@ -156,7 +213,7 @@ export function distanceToPeople(
 
 /**
  * Directional rose: distance to N people in each direction.
- * @param {import('./grid.js').PopulationGrid} grid
+ * @param {import('./grid.js').PopulationGrid | import('./grid.js').PopulationGrid[]} gridOrGrids
  * @param {{lat:number, lon:number}} origin
  * @param {object} options
  * @param {number} options.widthM
@@ -164,21 +221,22 @@ export function distanceToPeople(
  * @param {number} options.maxLengthM
  * @param {number} [options.rayCount=72]
  */
-export function computeRose(grid, origin, options) {
+export function computeRose(gridOrGrids, origin, options) {
   const {
     widthM,
     targetPeople,
     maxLengthM,
     rayCount = 72,
   } = options;
-  if (!grid?.contains(origin.lat, origin.lon)) {
+  const grids = orderedGrids(gridOrGrids, origin);
+  if (!grids.length) {
     throw new Error("origin is outside the population grid");
   }
   const rays = [];
   for (let i = 0; i < rayCount; i++) {
     const bearingDeg = (360 * i) / rayCount;
     const dist = distanceToPeople(
-      grid,
+      grids,
       origin,
       bearingDeg,
       targetPeople,
@@ -190,7 +248,7 @@ export function computeRose(grid, origin, options) {
       bearingDeg,
       people: reached
         ? targetPeople
-        : peopleInCorridor(grid, origin, bearingDeg, maxLengthM, widthM),
+        : peopleInCorridor(grids, origin, bearingDeg, maxLengthM, widthM),
       lengthM: reached ? dist : maxLengthM,
       widthM,
       reached,
