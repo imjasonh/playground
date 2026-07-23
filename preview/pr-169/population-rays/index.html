@@ -54,37 +54,40 @@
             <span>What to show</span>
             <select id="mode">
               <option value="fixedPeople" selected>
-                Distance to reach N people (petal = miles)
+                Distance to reach N people
               </option>
-              <option value="fixedLength">
-                People along a fixed length (petal ∝ count)
-              </option>
+              <option value="fixedLength">People along a fixed length</option>
             </select>
           </label>
 
-          <label class="field" id="target-control">
-            <span>Target people</span>
+          <label class="field slider-field" id="target-control">
+            <span class="slider-label">
+              <span>Target people</span>
+              <strong id="target-pop-readout">1M</strong>
+            </span>
             <input
               id="target-pop"
-              type="number"
-              min="1000"
-              step="1000"
+              type="range"
+              min="10000"
+              max="2000000"
+              step="10000"
               value="1000000"
             />
           </label>
 
-          <label class="field" id="length-control" hidden>
-            <span>Line length (miles)</span>
-            <input id="length-mi" type="number" min="1" step="1" value="50" />
-          </label>
-
-          <label class="field">
-            <span>Directions</span>
-            <select id="ray-count">
-              <option value="72">72 (5°)</option>
-              <option value="120" selected>120 (3°)</option>
-              <option value="180">180 (2°)</option>
-            </select>
+          <label class="field slider-field" id="length-control" hidden>
+            <span class="slider-label">
+              <span>Line length</span>
+              <strong id="length-mi-readout">50 mi</strong>
+            </span>
+            <input
+              id="length-mi"
+              type="range"
+              min="5"
+              max="200"
+              step="5"
+              value="50"
+            />
           </label>
 
           <!-- Width is conceptually 100′; at ~km cells it doesn’t change which
