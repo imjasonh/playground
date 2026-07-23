@@ -5,7 +5,6 @@ import {
   feetToMeters,
   formatDistance,
   formatPeople,
-  formatWidth,
   metersToMiles,
   milesToMeters,
 } from "./geo.js";
@@ -29,25 +28,13 @@ const PLACES = {
 
 const RAY_COUNT = 72; // 5°
 const MAX_SEARCH_MI = 3000;
-const WIDTH_MIN_FT = 100;
-const WIDTH_MAX_FT = 52_800; // 10 mi
-const WIDTH_SLIDER_MAX = 1000;
-
-/** Log-scaled slider → feet (grid resolution needs multi-mile widths). */
-function widthFtFromSlider(pos) {
-  const t = Math.min(1, Math.max(0, Number(pos) / WIDTH_SLIDER_MAX));
-  const raw = WIDTH_MIN_FT * (WIDTH_MAX_FT / WIDTH_MIN_FT) ** t;
-  if (raw >= 5280) return Math.round(raw / 528) * 528; // 0.1 mi steps
-  return Math.max(WIDTH_MIN_FT, Math.round(raw / 100) * 100);
-}
+const CORRIDOR_WIDTH_FT = 100;
+const CORRIDOR_WIDTH_M = feetToMeters(CORRIDOR_WIDTH_FT);
 
 const el = {
   status: document.getElementById("status"),
-  widthFt: document.getElementById("width-ft"),
-  widthReadout: document.getElementById("width-readout"),
   targetPop: document.getElementById("target-pop"),
   targetReadout: document.getElementById("target-pop-readout"),
-  ledeW: document.getElementById("lede-w"),
   ledeN: document.getElementById("lede-n"),
   hoverReadout: document.getElementById("hover-readout"),
   myLocation: document.getElementById("my-location"),
@@ -76,11 +63,9 @@ function setStatus(text, kind = "") {
 }
 
 function readControls() {
-  const widthFt = widthFtFromSlider(el.widthFt.value);
   const targetPeople = Number(el.targetPop.value) || 1_000_000;
   return {
-    widthM: feetToMeters(widthFt),
-    widthFt,
+    widthM: CORRIDOR_WIDTH_M,
     targetPeople,
     maxLengthM: milesToMeters(MAX_SEARCH_MI),
     rayCount: RAY_COUNT,
@@ -88,14 +73,9 @@ function readControls() {
 }
 
 function syncSliderReadouts() {
-  const opts = readControls();
-  const w = formatWidth(opts.widthFt);
-  const n = formatPeople(opts.targetPeople);
-  el.widthReadout.textContent = w;
+  const n = formatPeople(readControls().targetPeople);
   el.targetReadout.textContent = n;
-  el.ledeW.textContent = w;
   el.ledeN.textContent = n;
-  el.widthFt.setAttribute("aria-valuetext", w);
 }
 
 function updateHero() {
@@ -114,7 +94,7 @@ function updateHero() {
   let nearest = reached[0];
   for (const r of reached) if (r.lengthM < nearest.lengthM) nearest = r;
   el.heroValue.textContent = formatDistance(nearest.lengthM);
-  el.heroDetail.textContent = `${bearingLabel(nearest.bearingDeg)} · ${formatWidth(opts.widthFt)} wide → ${formatPeople(opts.targetPeople)}`;
+  el.heroDetail.textContent = `${bearingLabel(nearest.bearingDeg)} → ${formatPeople(opts.targetPeople)}`;
 }
 
 function nearestRay(bearing) {
@@ -374,18 +354,16 @@ async function loadDatasets() {
 
 function bindControls() {
   let timer = 0;
-  for (const slider of [el.widthFt, el.targetPop]) {
-    slider.addEventListener("input", () => {
-      syncSliderReadouts();
-      clearTimeout(timer);
-      timer = setTimeout(() => recompute({ fit: false }), 120);
-    });
-    slider.addEventListener("change", () => {
-      clearTimeout(timer);
-      syncSliderReadouts();
-      recompute({ fit: true });
-    });
-  }
+  el.targetPop.addEventListener("input", () => {
+    syncSliderReadouts();
+    clearTimeout(timer);
+    timer = setTimeout(() => recompute({ fit: false }), 120);
+  });
+  el.targetPop.addEventListener("change", () => {
+    clearTimeout(timer);
+    syncSliderReadouts();
+    recompute({ fit: true });
+  });
   for (const btn of document.querySelectorAll("[data-place]")) {
     btn.addEventListener("click", () => goToPlace(btn.dataset.place));
   }

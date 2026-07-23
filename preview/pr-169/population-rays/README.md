@@ -1,16 +1,15 @@
 # Population Rays
 
-From a pin on the map: simulate a corridor **M feet/miles wide** in every
-direction. How far until that corridor hits **N** people?
+From a pin on the map: how far must a **100 ft** corridor go in each direction
+before it hits **N** people?
 
 Petal length = that distance. Short in Manhattan; often unreachable in Wyoming.
 
 ## Controls
 
-- **Corridor width** — strip width (100 ft → 10 mi; below ~1 cell, same as a thin line)
 - **People to hit** — target N
 - Presets: Manhattan / Wyoming / My location
-- 72 directions (every 5°)
+- 72 directions (every 5°); corridor width fixed at 100 ft
 
 ## Run
 

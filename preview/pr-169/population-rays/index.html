@@ -6,7 +6,7 @@
     <title>Population Rays</title>
     <meta
       name="description"
-      content="How far must a corridor go in each direction before it hits N people?"
+      content="How far must a 100 ft corridor go in each direction before it hits N people?"
     />
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -29,8 +29,7 @@
         <header class="brand">
           <h1>Population Rays</h1>
           <p class="lede">
-            From the pin, a corridor
-            <strong id="lede-w">0.50&nbsp;mi</strong> wide in every direction.
+            From the pin, a 100&nbsp;ft corridor in every direction.
             Petal length = distance to
             <strong id="lede-n">1M</strong> people.
           </p>
@@ -48,23 +47,7 @@
           </button>
         </section>
 
-        <section class="controls" aria-label="Corridor settings">
-          <label class="field slider-field">
-            <span class="slider-label">
-              <span>Corridor width</span>
-              <strong id="width-readout">0.50 mi</strong>
-            </span>
-            <input
-              id="width-ft"
-              type="range"
-              min="0"
-              max="1000"
-              step="1"
-              value="522"
-              aria-valuetext="0.50 mi"
-            />
-          </label>
-
+        <section class="controls" aria-label="Target">
           <label class="field slider-field">
             <span class="slider-label">
               <span>People to hit</span>
