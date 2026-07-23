@@ -31,7 +31,9 @@ playground/
 ├── geeksquad/             # offline Mac network/config triage (Sparkle CD)
 ├── ios/                   # the single "Playground" iOS app (SwiftUI; TestFlight CD)
 ├── kanoodle/              # example app with tests (JS + Jest + Playwright)
+├── nypd-choppers/         # NYPD helicopter ADS-B tracker (JS + Node tests)
 ├── ocidb/                 # Go CLI (Go module + Go tests)
+├── population-rays/       # directional corridor population map (JS + Node tests)
 ├── web-push/              # Rust Cloudflare Worker (Cargo + tests; not a Pages app)
 └── web-push-demo/         # static browser front-end for the web-push Worker
 ```
@@ -50,6 +52,8 @@ its root. This is the same rule used by deploy and preview workflows.
 | `hello/` | yes | Static HTML; no build or tests |
 | `kanoodle/` | yes | Client-side JS modules, npm scripts, tests |
 | `life-lab/` | yes | Game of Life sculpture lab; vendored wasm built from `life-stl/` |
+| `nypd-choppers/` | yes | NYPD helicopter tracker; JS modules, npm scripts, tests |
+| `population-rays/` | yes | Directional population corridors; JS modules, npm scripts, tests |
 | `web-push-demo/` | yes | Static front-end for `web-push`; HTML/JS, no build or tests |
 | `gitdb/` | no | Go CLI; no `index.html` |
 | `ocidb/` | no | Go CLI; no `index.html` |
@@ -510,6 +514,7 @@ bundle exec fastlane test
 | `kanoodle/` | Kanoodle puzzle game (5×11 board, 12 pieces) | Jest + Playwright |
 | `life-lab/` | Draw Life gen 0, preview the printable Z-stack in 3D, export STL / Bambu 3MF (wasm from `life-stl/`; rebuild via `life-lab/build-wasm.sh`) | Node test runner |
 | `nypd-choppers/` | NYPD helicopter daily flight paths, hours, and fuel-cost estimates from ADS-B | Node test runner |
+| `population-rays/` | Directional corridor population (“people along a line”) over Meta/CIESIN HRSL grids | Node test runner |
 | `web-push-demo/` | Browser front-end for `web-push` (subscribe/unsubscribe/notify) | none (static) |
 
 > **`nypd-choppers` has an intentionally non-standard lifecycle.** Because free
