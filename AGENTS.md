@@ -53,7 +53,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `kanoodle/` | yes | Client-side JS modules, npm scripts, tests |
 | `life-lab/` | yes | Game of Life sculpture lab; vendored wasm built from `life-stl/` |
 | `nypd-choppers/` | yes | NYPD helicopter tracker; JS modules, npm scripts, tests |
-| `population-rays/` | yes | Directional population corridors; JS modules, npm scripts, tests |
+| `population-rays/` | yes | Directional 5° population slices; JS modules, npm scripts, tests |
 | `web-push-demo/` | yes | Static front-end for `web-push`; HTML/JS, no build or tests |
 | `gitdb/` | no | Go CLI; no `index.html` |
 | `ocidb/` | no | Go CLI; no `index.html` |
