@@ -35,6 +35,28 @@
           </p>
         </header>
 
+        <section class="search" aria-label="Location search">
+          <form id="place-search-form" class="search-form" autocomplete="off">
+            <label class="sr-only" for="place-search">Search US place</label>
+            <input
+              id="place-search"
+              type="search"
+              name="q"
+              placeholder="City or address (US)"
+              enterkeyhint="search"
+              spellcheck="false"
+            />
+            <button type="submit" class="search-go">Go</button>
+          </form>
+          <ul
+            id="place-results"
+            class="place-results"
+            role="listbox"
+            aria-label="Search results"
+            hidden
+          ></ul>
+        </section>
+
         <section class="presets" aria-label="Places">
           <button type="button" class="preset" data-place="manhattan">
             Manhattan
@@ -75,7 +97,7 @@
 
         <footer class="meta">
           <p id="status" data-kind="">Loading…</p>
-          <p class="credit">Meta/CIESIN HRSL · © OSM, CARTO</p>
+          <p class="credit">Meta/CIESIN HRSL · geocode © OSM Nominatim · © CARTO</p>
         </footer>
       </aside>
 
