@@ -443,6 +443,45 @@ export function distanceToPeople(
 }
 
 /**
+ * Walk every bearing on one grid.
+ * @returns {RayResult[]}
+ */
+function computeRoseOnGrid(grid, origin, options) {
+  const {
+    widthM,
+    targetPeople,
+    maxLengthM,
+    rayCount = 72,
+  } = options;
+  const rays = [];
+  for (let i = 0; i < rayCount; i++) {
+    const bearingDeg = (360 * i) / rayCount;
+    rays.push(
+      probeRayOnGrid(
+        grid,
+        origin,
+        bearingDeg,
+        targetPeople,
+        widthM,
+        maxLengthM,
+      ),
+    );
+  }
+  return rays;
+}
+
+/**
+ * Grid for the whole rose: always the finest tile covering the origin.
+ * Mixing fine vs CONUS per-bearing (or switching the whole rose to CONUS past
+ * a target threshold) made needle spikes and slider shapes that jumped or
+ * disagreed across refreshes. Sparse bearings simply stay unreached.
+ */
+export function selectRoseGrid(gridOrGrids, origin, _options) {
+  const grids = orderedGrids(gridOrGrids, origin);
+  return grids[0] || null;
+}
+
+/**
  * Directional rose: distance to N people in each direction.
  * @param {import('./grid.js').PopulationGrid | import('./grid.js').PopulationGrid[]} gridOrGrids
  * @param {{lat:number, lon:number}} origin
@@ -453,24 +492,11 @@ export function distanceToPeople(
  * @param {number} [options.rayCount=72]
  */
 export function computeRose(gridOrGrids, origin, options) {
-  const {
-    widthM,
-    targetPeople,
-    maxLengthM,
-    rayCount = 72,
-  } = options;
-  const grids = orderedGrids(gridOrGrids, origin);
-  if (!grids.length) {
+  const grid = selectRoseGrid(gridOrGrids, origin, options);
+  if (!grid) {
     throw new Error("origin is outside the population grid");
   }
-  const rays = [];
-  for (let i = 0; i < rayCount; i++) {
-    const bearingDeg = (360 * i) / rayCount;
-    rays.push(
-      probeRay(grids, origin, bearingDeg, targetPeople, widthM, maxLengthM),
-    );
-  }
-  return rays;
+  return computeRoseOnGrid(grid, origin, options);
 }
 
 /**
@@ -490,15 +516,22 @@ export async function computeRoseAsync(
     maxLengthM,
     rayCount = 72,
   } = options;
-  const grids = orderedGrids(gridOrGrids, origin);
-  if (!grids.length) {
+  const grid = selectRoseGrid(gridOrGrids, origin, options);
+  if (!grid) {
     throw new Error("origin is outside the population grid");
   }
   const rays = [];
   for (let i = 0; i < rayCount; i++) {
     const bearingDeg = (360 * i) / rayCount;
     rays.push(
-      probeRay(grids, origin, bearingDeg, targetPeople, widthM, maxLengthM),
+      probeRayOnGrid(
+        grid,
+        origin,
+        bearingDeg,
+        targetPeople,
+        widthM,
+        maxLengthM,
+      ),
     );
     if (i % 6 === 5 || i === rayCount - 1) {
       onProgress?.(i + 1, rayCount);

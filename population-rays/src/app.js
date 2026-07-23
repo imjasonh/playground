@@ -494,36 +494,32 @@ async function loadOneDataset(key) {
 }
 
 /**
- * Load small/local tiles first so Manhattan can paint petals before the 6MB
- * CONUS gzip finishes on cellular.
+ * Load grids (Northeast before bulky CONUS). Recompute after each new covering
+ * tile; the rose always picks the finest covering grid, so NYC petals do not
+ * change shape when CONUS arrives — only places outside the metro tile gain a
+ * rose once CONUS lands.
  */
-async function loadDatasetsProgressive() {
+async function loadDatasets() {
   const index = await (await fetch("data/index.json")).json();
   const keys = [...index.datasets].sort((a, b) => {
-    // Prefer smaller / finer northeast before bulky CONUS.
     const rank = (k) => (k.includes("northeast") ? 0 : 1);
     return rank(a) - rank(b);
   });
 
   for (let i = 0; i < keys.length; i++) {
-    const key = keys[i];
     setStatus(
       keys.length > 1
         ? `Loading map data… ${i + 1}/${keys.length}`
         : "Loading map data…",
     );
-    const grid = await loadOneDataset(key);
-    // Replace or append by key so progressive recompute sees the new tile.
+    const grid = await loadOneDataset(keys[i]);
     const idx = state.grids.findIndex((g) => g.meta.key === grid.meta.key);
     if (idx >= 0) state.grids[idx] = grid;
     else state.grids.push(grid);
 
-    const covering = gridsForRose(
-      state.grids,
-      state.origin.lat,
-      state.origin.lon,
-    );
-    if (covering.length) {
+    if (
+      gridsForRose(state.grids, state.origin.lat, state.origin.lon).length
+    ) {
       await recompute({ fit: i === 0 });
     }
   }
@@ -534,7 +530,9 @@ function bindControls() {
   el.targetPop.addEventListener("input", () => {
     syncSliderReadouts();
     clearTimeout(timer);
-    timer = setTimeout(() => recompute({ fit: false }), 120);
+    // Debounce heavily while dragging — each rose can take hundreds of ms and
+    // overlapping gens still paint intermediate N values that look "erratic".
+    timer = setTimeout(() => recompute({ fit: false }), 200);
   });
   el.targetPop.addEventListener("change", () => {
     clearTimeout(timer);
@@ -554,15 +552,8 @@ async function main() {
   bindControls();
   setStatus("Loading map data…");
   try {
-    await loadDatasetsProgressive();
-    if (!state.rays.length) {
-      await recompute({ fit: true });
-    } else {
-      setStatus("Ready", "ok");
-      setMapHint(
-        `Solid petals hit ${formatPeople(readControls().targetPeople)} · dashed = not reached`,
-      );
-    }
+    await loadDatasets();
+    await recompute({ fit: true });
   } catch (err) {
     console.error(err);
     setStatus(`Failed: ${err.message || err}`, "warn");
