@@ -241,17 +241,151 @@ export function peopleInCorridor(
   return peopleInSlice(gridOrGrids, origin, bearingDeg, lengthM, sliceDeg);
 }
 
-/** Growing length caps so nearby targets don't force a full maxLength walk. */
-function searchCaps(maxLengthM) {
-  /** @type {number[]} */
-  const caps = [];
-  let cap = Math.min(maxLengthM, 40_000); // ~25 mi
-  while (cap < maxLengthM - 1) {
-    caps.push(cap);
-    cap = Math.min(maxLengthM, cap * 2.5);
+/**
+ * Resolve grid row/col for a lat/lon, or null if outside.
+ * @returns {{row:number, col:number, idx:number}|null}
+ */
+function cellIndexAt(grid, lat, lon) {
+  if (!grid.contains(lat, lon)) return null;
+  const { west, north, cellDeg, width, height } = grid.meta;
+  const col = Math.floor((lon - west) / cellDeg);
+  const row = Math.floor((north - lat) / cellDeg);
+  if (col < 0 || col >= width || row < 0 || row >= height) return null;
+  return { row, col, idx: row * width + col };
+}
+
+/**
+ * Fast distance-to-N for one slice.
+ * 1) Exact near-field AABB (cheap while the wedge is small)
+ * 2) Coarse radial march beyond that (avoids 10k+ fine rings out to 3000 mi)
+ * @returns {RayResult}
+ */
+function probeRayRadial(
+  grids,
+  origin,
+  bearingDeg,
+  targetPeople,
+  sliceDeg,
+  maxLengthM,
+) {
+  const half = sliceDeg / 2;
+  const fineM = Math.min(...grids.map((g) => g.cellSizeM(origin.lat)));
+  const coarseM = Math.max(...grids.map((g) => g.cellSizeM(origin.lat)));
+  const cellRM = coarseM * 0.65;
+  const nearM = Math.min(maxLengthM, Math.max(60_000, fineM * 40));
+
+  /** @type {Set<string>} */
+  const seen = new Set();
+  let people = 0;
+
+  /**
+   * @param {number} gi
+   * @param {number} idx
+   * @param {number} pop
+   * @param {number} along
+   */
+  function credit(gi, idx, pop, along) {
+    const key = `${gi}:${idx}`;
+    if (seen.has(key)) return null;
+    const grid = grids[gi];
+    const { lat, lon } = cellCenter(grid, idx);
+    for (let fj = 0; fj < gi; fj++) {
+      if (grids[fj].contains(lat, lon)) return null;
+    }
+    seen.add(key);
+    if (!(pop > 0)) return null;
+    return { along, pop };
   }
-  caps.push(maxLengthM);
-  return caps;
+
+  // Near field: full cell enumeration in a small sector (accurate + cheap).
+  {
+    const nearHits = sectorHitsOnGrids(
+      grids,
+      origin,
+      bearingDeg,
+      sliceDeg,
+      nearM,
+    );
+    for (const h of nearHits) {
+      people += h.pop;
+      if (people >= targetPeople) {
+        return {
+          bearingDeg,
+          people: targetPeople,
+          lengthM: h.along,
+          sliceDeg,
+          reached: true,
+        };
+      }
+    }
+  }
+
+  if (nearM >= maxLengthM) {
+    return {
+      bearingDeg,
+      people,
+      lengthM: maxLengthM,
+      sliceDeg,
+      reached: false,
+    };
+  }
+
+  // Far field: radial samples stepped by the coarsest cell size.
+  const dRad = Math.max(coarseM * 0.55, 400);
+  for (let r = nearM + dRad; r < maxLengthM + dRad; r += dRad) {
+    const rUse = Math.min(r, maxLengthM);
+    const angleStep = Math.min(
+      half * 0.5,
+      Math.max(0.1, ((dRad * 0.95) / Math.max(rUse, dRad)) * (180 / Math.PI)),
+    );
+    /** @type {{along:number, pop:number}[]} */
+    const batch = [];
+    for (
+      let a = bearingDeg - half;
+      a <= bearingDeg + half + 1e-9;
+      a += angleStep
+    ) {
+      const p = destination(origin.lat, origin.lon, a, rUse);
+      for (let gi = 0; gi < grids.length; gi++) {
+        const grid = grids[gi];
+        const at = cellIndexAt(grid, p.lat, p.lon);
+        if (!at) continue;
+        const { lat, lon } = cellCenter(grid, at.idx);
+        const along = distanceM(origin, lat, lon);
+        if (along <= nearM || along > maxLengthM + cellRM) continue;
+        const br = bearingBetween(origin, lat, lon);
+        const inflate =
+          (Math.atan2(cellRM, Math.max(along, cellRM * 0.25)) * 180) / Math.PI;
+        if (Math.abs(deltaBearingDeg(br, bearingDeg)) > half + inflate) {
+          continue;
+        }
+        const hit = credit(gi, at.idx, grid.data[at.idx], along);
+        if (hit) batch.push(hit);
+      }
+    }
+    batch.sort((a, b) => a.along - b.along);
+    for (const h of batch) {
+      people += h.pop;
+      if (people >= targetPeople) {
+        return {
+          bearingDeg,
+          people: targetPeople,
+          lengthM: h.along,
+          sliceDeg,
+          reached: true,
+        };
+      }
+    }
+    if (rUse >= maxLengthM) break;
+  }
+
+  return {
+    bearingDeg,
+    people,
+    lengthM: maxLengthM,
+    sliceDeg,
+    reached: false,
+  };
 }
 
 /**
@@ -297,36 +431,14 @@ export function probeRay(
     };
   }
 
-  let people = 0;
-  for (const cap of searchCaps(maxLengthM)) {
-    const hits = sectorHitsOnGrids(
-      grids,
-      origin,
-      bearingDeg,
-      slice,
-      cap,
-    );
-    people = 0;
-    for (const h of hits) {
-      people += h.pop;
-      if (people >= targetPeople) {
-        return {
-          bearingDeg,
-          people: targetPeople,
-          lengthM: h.along,
-          sliceDeg: slice,
-          reached: true,
-        };
-      }
-    }
-  }
-  return {
+  return probeRayRadial(
+    grids,
+    origin,
     bearingDeg,
-    people,
-    lengthM: maxLengthM,
-    sliceDeg: slice,
-    reached: false,
-  };
+    targetPeople,
+    slice,
+    maxLengthM,
+  );
 }
 
 /**

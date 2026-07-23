@@ -42,7 +42,7 @@ const el = {
   targetPop: document.getElementById("target-pop"),
   targetReadout: document.getElementById("target-pop-readout"),
   ledeN: document.getElementById("lede-n"),
-  hoverReadout: document.getElementById("hover-readout"),
+  shortestReadout: document.getElementById("shortest-readout"),
   myLocation: document.getElementById("my-location"),
   heroValue: document.getElementById("hero-value"),
   heroDetail: document.getElementById("hero-detail"),
@@ -102,23 +102,26 @@ function syncSliderReadouts() {
   el.ledeN.textContent = n;
 }
 
-function updateHero() {
-  const opts = readControls();
-  if (!state.rays.length) {
-    el.heroValue.textContent = "—";
-    el.heroDetail.textContent = "Pick a place or click the map.";
-    return;
-  }
+function shortestRay() {
   const reached = state.rays.filter((r) => r.reached);
-  if (!reached.length) {
-    el.heroValue.textContent = `>${MAX_SEARCH_MI} mi`;
-    el.heroDetail.textContent = `No direction hits ${formatPeople(opts.targetPeople)} within ${MAX_SEARCH_MI} mi.`;
-    return;
-  }
+  if (!reached.length) return null;
   let nearest = reached[0];
   for (const r of reached) if (r.lengthM < nearest.lengthM) nearest = r;
-  el.heroValue.textContent = formatDistance(nearest.lengthM);
-  el.heroDetail.textContent = `${bearingLabel(nearest.bearingDeg)} → ${formatPeople(opts.targetPeople)}`;
+  return nearest;
+}
+
+function updateShortestReadout() {
+  const opts = readControls();
+  if (!state.rays.length) {
+    el.shortestReadout.textContent = "";
+    return;
+  }
+  const nearest = shortestRay();
+  if (!nearest) {
+    el.shortestReadout.textContent = `Shortest: none hit ${formatPeople(opts.targetPeople)} within ${MAX_SEARCH_MI} mi`;
+    return;
+  }
+  el.shortestReadout.textContent = `Shortest: ${bearingLabel(nearest.bearingDeg)} ${formatDistance(nearest.lengthM)} → ${formatPeople(opts.targetPeople)}`;
 }
 
 function nearestRay(bearing) {
@@ -135,21 +138,32 @@ function nearestRay(bearing) {
   return { ray: best, diff: bestDiff };
 }
 
-function updateHoverReadout() {
-  if (state.hoverBearing == null || !state.rays.length) {
-    el.hoverReadout.textContent = "";
+/** Hero metric = the slice under the pointer (or last highlighted). */
+function updateHero() {
+  const opts = readControls();
+  if (!state.rays.length) {
+    el.heroValue.textContent = "—";
+    el.heroDetail.textContent = "Pick a place or click the map.";
+    return;
+  }
+  if (state.hoverBearing == null) {
+    el.heroValue.textContent = "—";
+    el.heroDetail.textContent = "Hover the map to inspect a direction.";
     return;
   }
   const step = 360 / state.rays.length;
   const { ray, diff } = nearestRay(state.hoverBearing);
   if (diff > step) {
-    el.hoverReadout.textContent = "";
+    el.heroValue.textContent = "—";
+    el.heroDetail.textContent = "Hover the map to inspect a direction.";
     return;
   }
   if (ray.reached) {
-    el.hoverReadout.textContent = `${bearingLabel(ray.bearingDeg)} ${ray.bearingDeg.toFixed(0)}° · ${formatDistance(ray.lengthM)}`;
+    el.heroValue.textContent = formatDistance(ray.lengthM);
+    el.heroDetail.textContent = `${bearingLabel(ray.bearingDeg)} ${ray.bearingDeg.toFixed(0)}° → ${formatPeople(opts.targetPeople)}`;
   } else {
-    el.hoverReadout.textContent = `${bearingLabel(ray.bearingDeg)} ${ray.bearingDeg.toFixed(0)}° · not reached (${formatPeople(ray.people)} in ${MAX_SEARCH_MI} mi)`;
+    el.heroValue.textContent = `>${MAX_SEARCH_MI} mi`;
+    el.heroDetail.textContent = `${bearingLabel(ray.bearingDeg)} ${ray.bearingDeg.toFixed(0)}° · ${formatPeople(ray.people)} counted`;
   }
 }
 
@@ -218,23 +232,53 @@ function runBearingEdges(rays, startIdx, endIdx) {
   };
 }
 
-/** Closed ring for an annular sector from bearing left→right (right may be >360). */
+/**
+ * Closed ring for a sector with geodesic-sampled edges + outer arc.
+ * Straight chord tips look fine when zoomed in; when zoomed out (long
+ * petals / slate fans) Mercator needs intermediate points or sides look
+ * like rulers while the far arc bows.
+ */
 function sectorRing(leftDeg, rightDeg, rInner, rOuter) {
   const span = rightDeg - leftDeg;
-  const samples = Math.max(2, Math.ceil(Math.abs(span) / 4));
+  const edgeN = Math.max(2, Math.ceil(rOuter / 75_000));
+  const arcN = Math.max(
+    4,
+    Math.ceil(Math.abs(span)),
+    Math.ceil((Math.abs(span) * Math.PI) / 180 * rOuter / 45_000),
+  );
+
   /** @type {[number, number][]} */
-  const outer = [];
-  /** @type {[number, number][]} */
-  const inner = [];
-  for (let s = 0; s <= samples; s++) {
-    const b = leftDeg + (span * s) / samples;
-    outer.push(atBearing(b, rOuter));
-    if (rInner > 0) inner.push(atBearing(b, rInner));
+  const pts = [];
+  if (rInner <= 0) {
+    pts.push([state.origin.lat, state.origin.lon]);
+    for (let i = 1; i <= edgeN; i++) {
+      pts.push(atBearing(leftDeg, (rOuter * i) / edgeN));
+    }
+  } else {
+    for (let i = 0; i <= edgeN; i++) {
+      pts.push(
+        atBearing(leftDeg, rInner + ((rOuter - rInner) * i) / edgeN),
+      );
+    }
+  }
+  for (let i = 1; i <= arcN; i++) {
+    pts.push(atBearing(leftDeg + (span * i) / arcN, rOuter));
   }
   if (rInner <= 0) {
-    return [[state.origin.lat, state.origin.lon], ...outer];
+    for (let i = edgeN - 1; i >= 1; i--) {
+      pts.push(atBearing(rightDeg, (rOuter * i) / edgeN));
+    }
+  } else {
+    for (let i = edgeN - 1; i >= 0; i--) {
+      pts.push(
+        atBearing(rightDeg, rInner + ((rOuter - rInner) * i) / edgeN),
+      );
+    }
+    for (let i = arcN - 1; i >= 1; i--) {
+      pts.push(atBearing(leftDeg + (span * i) / arcN, rInner));
+    }
   }
-  return [...inner, ...outer.reverse()];
+  return pts;
 }
 
 /**
@@ -243,7 +287,7 @@ function sectorRing(leftDeg, rightDeg, rInner, rOuter) {
  */
 function drawOpenSlices(group, rays) {
   const maxM = milesToMeters(MAX_SEARCH_MI);
-  const BANDS = 14;
+  const BANDS = 10;
   const FADE_START = 0.5; // outer half fades
   const BASE_FILL = 0.26;
 
@@ -350,6 +394,7 @@ async function recompute({ fit = false } = {}) {
     setStatus("Outside the US grid.", "warn");
     state.rays = [];
     drawRose();
+    updateShortestReadout();
     updateHero();
     return;
   }
@@ -365,8 +410,8 @@ async function recompute({ fit = false } = {}) {
     if (gen !== state.computeGen) return;
     state.rays = rays;
     drawRose();
+    updateShortestReadout();
     updateHero();
-    updateHoverReadout();
     if (fit) fitToRose();
     const n = formatPeople(opts.targetPeople);
     setStatus("Ready", "ok");
@@ -522,7 +567,8 @@ function initMap() {
   map = L.map("map", {
     zoomControl: true,
     scrollWheelZoom: true,
-    preferCanvas: false,
+    // Canvas is much cheaper for dozens of geodesic wedges + fade bands.
+    preferCanvas: true,
   }).setView([start.lat, start.lon], start.zoom);
 
   L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
@@ -553,31 +599,29 @@ function initMap() {
     const bearing =
       ((Math.atan2(dLon * mLon, dLat * mLat) * 180) / Math.PI + 360) % 360;
     state.hoverBearing = bearing;
-    updateHoverReadout();
+    updateHero();
 
     const step = 360 / state.rays.length;
     const { ray, diff } = nearestRay(bearing);
     if (hoverLine) map.removeLayer(hoverLine);
     if (diff > step * 1.5) return;
-    const reached = state.rays.filter((r) => r.reached);
     const hoverLen = ray.reached
       ? ray.lengthM
-      : reached.length
-        ? Math.max(...reached.map((r) => r.lengthM)) * 1.08
-        : milesToMeters(100);
+      : milesToMeters(MAX_SEARCH_MI);
     if (!(hoverLen > 0)) return;
-    hoverLine = L.polyline(
-      [
-        [state.origin.lat, state.origin.lon],
-        tipLatLng(ray.bearingDeg, hoverLen),
-      ],
-      {
-        color: ray.reached ? "#0f766e" : "#64748b",
-        weight: 3,
-        opacity: 0.9,
-        dashArray: ray.reached ? null : "6 6",
-      },
-    ).addTo(map);
+    // Sample the highlight along the geodesic so it bows like the petals.
+    const edgeN = Math.max(2, Math.ceil(hoverLen / 75_000));
+    /** @type {[number, number][]} */
+    const line = [[state.origin.lat, state.origin.lon]];
+    for (let i = 1; i <= edgeN; i++) {
+      line.push(tipLatLng(ray.bearingDeg, (hoverLen * i) / edgeN));
+    }
+    hoverLine = L.polyline(line, {
+      color: ray.reached ? "#0f766e" : "#64748b",
+      weight: 3,
+      opacity: 0.9,
+      dashArray: ray.reached ? null : "6 6",
+    }).addTo(map);
   });
 
   // Mobile Safari often initializes the map before the stacked layout has a
