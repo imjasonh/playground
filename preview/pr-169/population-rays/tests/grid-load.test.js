@@ -89,6 +89,28 @@ test("Manhattan reaches 1M much sooner than Wyoming", async () => {
   }
 });
 
+test("Wyoming southwest ray through LA reaches 500k", async () => {
+  const conus = await loadGridFromGzip(
+    JSON.parse(readFileSync(join(root, "data/conus-0p02.json"), "utf8")),
+    readFileSync(join(root, "data/conus-0p02.f32.gz")),
+  );
+  const wyoming = { lat: 43.076, lon: -107.2903 };
+  // 225° is the 5° rose ray that threads the LA basin.
+  const dist = distanceToPeople(
+    conus,
+    wyoming,
+    225,
+    500_000,
+    feetToMeters(100),
+    milesToMeters(3000),
+  );
+  assert.ok(Number.isFinite(dist), "expected to reach 500k toward LA");
+  assert.ok(
+    dist < milesToMeters(1000),
+    `LA-ward distance should be under 1000 mi, got ${formatDistance(dist)}`,
+  );
+});
+
 test("wider corridor shortens Manhattan distance to 1M", async () => {
   const conus = await loadGridFromGzip(
     JSON.parse(readFileSync(join(root, "data/conus-0p02.json"), "utf8")),
