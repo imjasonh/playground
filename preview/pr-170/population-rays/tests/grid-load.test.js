@@ -4,7 +4,12 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { loadGridFromGzip, gridsForRose, pickGridForTarget } from "../src/grid.js";
-import { distanceToPeople, peopleInCorridor } from "../src/rays.js";
+import {
+  computeRose,
+  distanceToPeople,
+  peopleInCorridor,
+  selectRoseGrid,
+} from "../src/rays.js";
 import { feetToMeters, formatDistance, milesToMeters } from "../src/geo.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -103,6 +108,37 @@ test("Manhattan NW at 350k does not stretch to the Pacific", async () => {
     dist < milesToMeters(50),
     `expected under 50 mi (not a coast-to-coast spike), got ${formatDistance(dist)}`,
   );
+});
+
+test("Manhattan rose stays on the fine tile at high N (no CONUS jump)", async () => {
+  const conus = await loadGridFromGzip(
+    JSON.parse(readFileSync(join(root, "data/conus-0p02.json"), "utf8")),
+    readFileSync(join(root, "data/conus-0p02.f32.gz")),
+  );
+  const ne = await loadGridFromGzip(
+    JSON.parse(readFileSync(join(root, "data/northeast-0p005.json"), "utf8")),
+    readFileSync(join(root, "data/northeast-0p005.f32.gz")),
+  );
+  const o = { lat: 40.758, lon: -73.9855 };
+  const opts = {
+    widthM: feetToMeters(100),
+    targetPeople: 350_000,
+    maxLengthM: milesToMeters(3000),
+    rayCount: 72,
+  };
+  // Whole rose uses NE even when some bearings cannot hit N — never a mix of
+  // fine long petals and CONUS stubs (slider/refresh spikes).
+  assert.equal(selectRoseGrid([ne, conus], o, opts).meta.key, "northeast-0p005");
+  const rose = computeRose([ne, conus], o, opts);
+  assert.equal(rose.length, 72);
+  const reached = rose.filter((r) => r.reached);
+  assert.ok(reached.length > 0 && reached.length < 72, "some unreached on fine");
+  for (const r of reached) {
+    assert.ok(
+      r.lengthM < milesToMeters(200),
+      `reached petal should stay regional, got ${r.bearingDeg}° ${formatDistance(r.lengthM)}`,
+    );
+  }
 });
 
 test("Manhattan reaches 1M much sooner than Wyoming", async () => {
