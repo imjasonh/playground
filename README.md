@@ -38,9 +38,9 @@ passes tests — so older experiments don't bit-rot.
 - **[`nypd-choppers/`](nypd-choppers/)** — daily flight paths, airborne hours,
   and estimated fuel cost for NYPD Aviation Unit helicopters, from public ADS-B
   data collected by an hourly scrape workflow.
-- **[`population-rays/`](population-rays/)** — from any US point, visualize how
-  many homes a thin corridor crosses in every direction (or how far to reach
-  N people), using Meta/CIESIN high-resolution population grids.
+- **[`population-rays/`](population-rays/)** — from any US point, how far a
+  filled 5° slice must go in each direction to hit N people, using Meta/CIESIN
+  high-resolution population grids.
 - **[`web-push-demo/`](web-push-demo/)** — a browser front-end for the
   `web-push` Worker: subscribe/unsubscribe and send notifications end to end.
 - **[`life-lab/`](life-lab/)** — draw a Game of Life starting row, watch it

@@ -1,15 +1,13 @@
 /**
- * Directional corridor population.
+ * Directional population slices.
  *
- * From an origin, extend a corridor of width W along bearing D. Count people
- * in population cells the corridor covers. Ask: how long must the corridor be
- * before it has hit N people?
+ * From an origin, take a filled pie slice of angular width S (default 5°,
+ * matching a 72-ray rose). Count people in population cells whose centers
+ * fall in the slice. Petal length = how far the slice must extend to hit N
+ * people.
  *
- * At packaged resolutions (~0.5–2 km), a 100 ft corridor is thinner than a
- * cell. Centerline samples get full credit for the cell they’re in. When a
- * sample lies on a grid line (common for exact N/S/E/W walks), credit is the
- * average of the two adjacent cells instead of picking one side. A catch band
- * still pulls in nearby cells so thin rose rays don’t miss metro cores like LA.
+ * When several grids cover the origin, finer tiles win where they overlap so
+ * a metro tile can hand off to CONUS for long slices (e.g. NYC → Chicago).
  */
 
 import { destination, metersPerDegree } from "./geo.js";
@@ -19,204 +17,11 @@ import { destination, metersPerDegree } from "./geo.js";
  * @property {number} bearingDeg
  * @property {number} people
  * @property {number} lengthM
- * @property {number} widthM
+ * @property {number} sliceDeg
  * @property {boolean} reached
  */
 
-/** Catch radius so a thin corridor still grazes nearby cells. */
-function catchRadiusM(grid, origin, widthM) {
-  const halfW = Math.max(0, widthM) / 2;
-  // Use the larger cell side so both row- and col-neighbors stay in range
-  // (cellSizeM is the min side and can exclude the other axis).
-  const { lat: mLat, lon: mLon } = metersPerDegree(origin.lat);
-  const cellM = Math.max(
-    Math.abs(mLat * grid.meta.cellDeg),
-    Math.abs(mLon * grid.meta.cellDeg),
-  );
-  // Slightly more than one cell so 5° rose rays still clip metro cores (LA).
-  return Math.max(halfW, cellM * 1.25);
-}
-
-/**
- * 1D sample along a grid axis. Interior of a cell → that cell at weight 1.
- * On (or within a few % of) a grid line → 50/50 average of the two adjacent
- * cells. A narrow band covers geodesic drift off exact N/S/E/W without
- * turning every sample into a bilinear under-count.
- *
- * @returns {{index:number, weight:number}[]}
- */
-export function edgeBlend1D(f) {
-  const i0 = Math.floor(f);
-  const t = f - i0; // 0..1 inside cell i0
-  // ~5% of a cell ≈ geodesic drift over a few miles on cardinal walks.
-  const EDGE = 0.05;
-
-  if (t <= EDGE) {
-    // Lower edge shared with i0-1: 50/50 on the line → full i0 by EDGE.
-    const u = t / EDGE;
-    const wOther = 0.5 * (1 - u);
-    return [
-      { index: i0 - 1, weight: wOther },
-      { index: i0, weight: 1 - wOther },
-    ];
-  }
-  if (t >= 1 - EDGE) {
-    const u = (1 - t) / EDGE;
-    const wOther = 0.5 * (1 - u);
-    return [
-      { index: i0, weight: 1 - wOther },
-      { index: i0 + 1, weight: wOther },
-    ];
-  }
-  return [{ index: i0, weight: 1 }];
-}
-
-/**
- * Cells under a sample point. Near a grid line, split weight across both
- * adjacent cells (their average on the line). Near a corner, the two 1D
- * blends multiply (bilinear).
- *
- * @returns {{row:number, col:number, weight:number}[]}
- */
-export function centerlineCellWeights(colF, rowF, width, height) {
-  const cols = edgeBlend1D(colF);
-  const rows = edgeBlend1D(rowF);
-  /** @type {{row:number, col:number, weight:number}[]} */
-  const out = [];
-  for (const r of rows) {
-    for (const c of cols) {
-      const weight = r.weight * c.weight;
-      if (!(weight > 0)) continue;
-      if (r.index < 0 || r.index >= height || c.index < 0 || c.index >= width) {
-        continue;
-      }
-      out.push({ row: r.index, col: c.index, weight });
-    }
-  }
-  return out;
-}
-
-/**
- * Walk the geodesic centerline; collect cells near the strip.
- *
- * @param {import('./grid.js').PopulationGrid} grid
- * @param {{lat:number, lon:number}} origin
- * @param {number} bearingDeg
- * @param {number} lengthM
- * @param {number} widthM
- * @returns {{idx:number, pop:number, along:number}[]}
- */
-function cellsInCorridor(grid, origin, bearingDeg, lengthM, widthM) {
-  if (lengthM <= 0) return [];
-
-  const cellDeg = grid.meta.cellDeg;
-  const catchM = catchRadiusM(grid, origin, widthM);
-  const cellM = grid.cellSizeM(origin.lat);
-  const step = Math.max(Math.min(cellM * 0.2, 150), 25);
-  const rad = (bearingDeg * Math.PI) / 180;
-  const dirX = Math.sin(rad);
-  const dirY = Math.cos(rad);
-
-  /** @type {Map<number, {idx:number, pop:number, along:number}>} */
-  const seen = new Map();
-
-  function add(idx, along, weight) {
-    if (!(weight > 0)) return;
-    const raw = grid.data[idx];
-    if (!(raw > 0)) return;
-    const credit = raw * weight;
-    const prev = seen.get(idx);
-    const a = Math.max(0, along);
-    if (
-      prev == null ||
-      a < prev.along - 1e-6 ||
-      (Math.abs(a - prev.along) <= 1e-6 && credit > prev.pop)
-    ) {
-      seen.set(idx, { idx, pop: credit, along: a });
-    }
-  }
-
-  const nSteps = Math.max(1, Math.ceil(lengthM / step));
-  const neighbor = Math.max(1, Math.ceil(catchM / Math.max(cellM, 1)) + 1);
-  // Rectangular tiles: once a ray leaves after having been inside, it won't
-  // re-enter. Stop instead of stepping empty ocean/Canada for thousands of miles
-  // (that freeze was the main "nothing on mobile" failure mode).
-  let outsideStreak = 0;
-  let everInside = false;
-
-  for (let i = 0; i <= nSteps; i++) {
-    const along = Math.min(lengthM, i * step);
-    const p = destination(origin.lat, origin.lon, bearingDeg, along);
-    if (!grid.contains(p.lat, p.lon)) {
-      outsideStreak++;
-      if (everInside && outsideStreak >= 3) break;
-      if (!everInside && outsideStreak >= 8) break;
-      continue;
-    }
-    outsideStreak = 0;
-    everInside = true;
-
-    const colF = (p.lon - grid.meta.west) / cellDeg;
-    const rowF = (grid.meta.north - p.lat) / cellDeg;
-    if (
-      colF < 0 ||
-      colF >= grid.meta.width ||
-      rowF < 0 ||
-      rowF >= grid.meta.height
-    ) {
-      continue;
-    }
-
-    const primary = centerlineCellWeights(
-      colF,
-      rowF,
-      grid.meta.width,
-      grid.meta.height,
-    );
-    /** @type {Set<number>} */
-    const primaryIdx = new Set();
-    for (const cell of primary) {
-      const idx = cell.row * grid.meta.width + cell.col;
-      primaryIdx.add(idx);
-      add(idx, along, cell.weight);
-    }
-
-    // Catch band for cells beside the strip. Skip primary cells so a boundary
-    // average (0.5+0.5) is not overwritten by a full-credit catch hit.
-    const anchorRow = Math.min(
-      grid.meta.height - 1,
-      Math.max(0, Math.floor(rowF)),
-    );
-    const anchorCol = Math.min(
-      grid.meta.width - 1,
-      Math.max(0, Math.floor(colF)),
-    );
-    const { lat: mLat, lon: mLon } = metersPerDegree(p.lat);
-    for (let dr = -neighbor; dr <= neighbor; dr++) {
-      for (let dc = -neighbor; dc <= neighbor; dc++) {
-        const r = anchorRow + dr;
-        const c = anchorCol + dc;
-        if (r < 0 || r >= grid.meta.height || c < 0 || c >= grid.meta.width) {
-          continue;
-        }
-        const idx = r * grid.meta.width + c;
-        if (primaryIdx.has(idx)) continue;
-        const clat = grid.meta.north - (r + 0.5) * cellDeg;
-        const clon = grid.meta.west + (c + 0.5) * cellDeg;
-        const dx = (clon - p.lon) * mLon;
-        const dy = (clat - p.lat) * mLat;
-        const cross = Math.abs(dx * dirY - dy * dirX);
-        if (cross > catchM) continue;
-        const alongOffset = dx * dirX + dy * dirY;
-        const cellAlong = along + alongOffset;
-        if (cellAlong < -catchM || cellAlong > lengthM) continue;
-        add(idx, cellAlong, 1);
-      }
-    }
-  }
-
-  return [...seen.values()];
-}
+export const DEFAULT_SLICE_DEG = 5;
 
 function asGridList(gridOrGrids) {
   const list = Array.isArray(gridOrGrids) ? gridOrGrids : [gridOrGrids];
@@ -239,21 +44,159 @@ function cellCenter(grid, idx) {
   };
 }
 
+/** Smallest signed degree difference in (-180, 180]. */
+export function deltaBearingDeg(a, b) {
+  let d = ((((a - b) % 360) + 360) % 360);
+  if (d > 180) d -= 360;
+  return d;
+}
+
+/** Forward azimuth from origin to a point (degrees, 0 = north). */
+export function bearingBetween(origin, lat, lon) {
+  const φ1 = (origin.lat * Math.PI) / 180;
+  const φ2 = (lat * Math.PI) / 180;
+  const Δλ = ((lon - origin.lon) * Math.PI) / 180;
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x =
+    Math.cos(φ1) * Math.sin(φ2) -
+    Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+
+/** Great-circle distance in meters. */
+export function distanceM(origin, lat, lon) {
+  const R = 6_371_000;
+  const φ1 = (origin.lat * Math.PI) / 180;
+  const φ2 = (lat * Math.PI) / 180;
+  const Δφ = ((lat - origin.lat) * Math.PI) / 180;
+  const Δλ = ((lon - origin.lon) * Math.PI) / 180;
+  const s =
+    Math.sin(Δφ / 2) ** 2 +
+    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
+}
+
 /**
- * Corridor hits on a single grid (or several with fine-over-coarse masking).
- *
- * Prefer {@link probeRay} for distance-to-N: mixing fine+coarse in one walk
- * undercounts inside a metro tile (narrower effective strip) then can walk
- * thousands of miles on CONUS for the remainder.
+ * Axis-aligned bbox covering a circular sector (origin + arc tips).
+ * @returns {{south:number, north:number, west:number, east:number}}
  */
-function corridorHitsOnGrids(gridOrGrids, origin, bearingDeg, lengthM, widthM) {
+function sectorBBox(origin, bearingDeg, sliceDeg, lengthM) {
+  const half = sliceDeg / 2;
+  const bearings = [
+    bearingDeg - half,
+    bearingDeg,
+    bearingDeg + half,
+    bearingDeg - half / 2,
+    bearingDeg + half / 2,
+  ];
+  let south = origin.lat;
+  let north = origin.lat;
+  let west = origin.lon;
+  let east = origin.lon;
+  for (const b of bearings) {
+    const p = destination(origin.lat, origin.lon, b, lengthM);
+    if (p.lat < south) south = p.lat;
+    if (p.lat > north) north = p.lat;
+    if (p.lon < west) west = p.lon;
+    if (p.lon > east) east = p.lon;
+  }
+  // Pad by ~one cell so edge cells aren’t clipped by geodesic vs bbox.
+  const pad = 0.05;
+  return {
+    south: south - pad,
+    north: north + pad,
+    west: west - pad,
+    east: east + pad,
+  };
+}
+
+/**
+ * Population cells that intersect the filled slice out to lengthM.
+ * A cell counts when its center is within the slice, or close enough that the
+ * cell’s footprint overlaps the wedge (important near the pin, where a 5°
+ * slice is narrower than a coarse grid cell).
+ * @returns {{idx:number, pop:number, along:number}[]}
+ */
+export function cellsInSector(grid, origin, bearingDeg, sliceDeg, lengthM) {
+  if (!(lengthM > 0) || !(sliceDeg > 0)) return [];
+
+  const half = sliceDeg / 2;
+  const bbox = sectorBBox(origin, bearingDeg, sliceDeg, lengthM);
+  const { west, south, north, cellDeg, width, height } = grid.meta;
+  const { lat: mLat0, lon: mLon0 } = metersPerDegree(origin.lat);
+  const cellRM = 0.5 * Math.hypot(Math.abs(mLat0 * cellDeg), Math.abs(mLon0 * cellDeg));
+
+  const col0 = Math.max(0, Math.floor((bbox.west - west) / cellDeg) - 1);
+  const col1 = Math.min(width - 1, Math.floor((bbox.east - west) / cellDeg) + 1);
+  const row0 = Math.max(0, Math.floor((north - bbox.north) / cellDeg) - 1);
+  const row1 = Math.min(height - 1, Math.floor((north - bbox.south) / cellDeg) + 1);
+  if (col0 > col1 || row0 > row1) return [];
+
+  // Also include every cell that contains the origin (bearing is unstable).
+  const originCol = Math.floor((origin.lon - west) / cellDeg);
+  const originRow = Math.floor((north - origin.lat) / cellDeg);
+
+  /** @type {Map<number, {idx:number, pop:number, along:number}>} */
+  const seen = new Map();
+
+  function consider(row, col) {
+    if (row < 0 || row >= height || col < 0 || col >= width) return;
+    const idx = row * width + col;
+    if (seen.has(idx)) return;
+    const pop = grid.data[idx];
+    if (!(pop > 0)) return;
+    const lat = north - (row + 0.5) * cellDeg;
+    const lon = west + (col + 0.5) * cellDeg;
+    const along = distanceM(origin, lat, lon);
+    // Allow the origin cell even when the pin sits near a corner (along ≈ cellR).
+    const isOriginCell = row === originRow && col === originCol;
+    if (!isOriginCell && along > lengthM + cellRM) return;
+    if (isOriginCell) {
+      seen.set(idx, { idx, pop, along: 0 });
+      return;
+    }
+    if (along > lengthM) return;
+    const br = bearingBetween(origin, lat, lon);
+    // Inflate the half-angle by the cell’s angular radius so coarse cells that
+    // straddle the wedge still count.
+    const inflateDeg =
+      (Math.atan2(cellRM, Math.max(along, cellRM * 0.25)) * 180) / Math.PI;
+    if (Math.abs(deltaBearingDeg(br, bearingDeg)) > half + inflateDeg) return;
+    seen.set(idx, { idx, pop, along });
+  }
+
+  consider(originRow, originCol);
+  for (let row = row0; row <= row1; row++) {
+    for (let col = col0; col <= col1; col++) {
+      consider(row, col);
+    }
+  }
+  return [...seen.values()];
+}
+
+/**
+ * Slice hits across one or more grids. Finer tiles win where they overlap.
+ */
+function sectorHitsOnGrids(
+  gridOrGrids,
+  origin,
+  bearingDeg,
+  sliceDeg,
+  lengthM,
+) {
   const grids = orderedGrids(gridOrGrids, origin);
   /** @type {{along:number, pop:number}[]} */
   const merged = [];
   for (let gi = 0; gi < grids.length; gi++) {
     const grid = grids[gi];
     const finer = grids.slice(0, gi);
-    const hits = cellsInCorridor(grid, origin, bearingDeg, lengthM, widthM || 0);
+    const hits = cellsInSector(
+      grid,
+      origin,
+      bearingDeg,
+      sliceDeg,
+      lengthM,
+    );
     for (const h of hits) {
       if (finer.length) {
         const { lat, lon } = cellCenter(grid, h.idx);
@@ -266,37 +209,36 @@ function corridorHitsOnGrids(gridOrGrids, origin, bearingDeg, lengthM, widthM) {
   return merged;
 }
 
-/** Hits along one grid only. */
-function corridorHitsOnGrid(grid, origin, bearingDeg, lengthM, widthM) {
-  return cellsInCorridor(grid, origin, bearingDeg, lengthM, widthM || 0)
-    .map((h) => ({ along: h.along, pop: h.pop }))
-    .sort((a, b) => a.along - b.along);
-}
-
-/** People inside a corridor of length lengthM and width widthM. */
-export function peopleInCorridor(
+/** People inside a filled slice of length lengthM and angular width sliceDeg. */
+export function peopleInSlice(
   gridOrGrids,
   origin,
   bearingDeg,
   lengthM,
-  widthM,
+  sliceDeg = DEFAULT_SLICE_DEG,
 ) {
-  const hits = corridorHitsOnGrids(
+  const hits = sectorHitsOnGrids(
     gridOrGrids,
     origin,
     bearingDeg,
+    sliceDeg,
     lengthM,
-    widthM || 0,
   );
   let people = 0;
   for (const h of hits) people += h.pop;
   return people;
 }
 
-/** @deprecated alias */
-export function peopleAlongLine(grid, origin, bearingDeg, lengthM, opts = {}) {
-  const widthM = opts.widthM ?? 0;
-  return peopleInCorridor(grid, origin, bearingDeg, lengthM, widthM);
+/** @deprecated Use peopleInSlice. */
+export function peopleInCorridor(
+  gridOrGrids,
+  origin,
+  bearingDeg,
+  lengthM,
+  _widthM,
+  sliceDeg = DEFAULT_SLICE_DEG,
+) {
+  return peopleInSlice(gridOrGrids, origin, bearingDeg, lengthM, sliceDeg);
 }
 
 /** Growing length caps so nearby targets don't force a full maxLength walk. */
@@ -313,70 +255,24 @@ function searchCaps(maxLengthM) {
 }
 
 /**
- * Distance-to-N on one grid with expanding length caps.
+ * One bearing: shortest slice length to N people.
  * @returns {RayResult}
- */
-function probeRayOnGrid(
-  grid,
-  origin,
-  bearingDeg,
-  targetPeople,
-  widthM,
-  maxLengthM,
-) {
-  let people = 0;
-  for (const cap of searchCaps(maxLengthM)) {
-    const hits = corridorHitsOnGrid(
-      grid,
-      origin,
-      bearingDeg,
-      cap,
-      widthM || 0,
-    );
-    people = 0;
-    for (const h of hits) {
-      people += h.pop;
-      if (people >= targetPeople) {
-        return {
-          bearingDeg,
-          people: targetPeople,
-          lengthM: h.along,
-          widthM,
-          reached: true,
-        };
-      }
-    }
-  }
-  return {
-    bearingDeg,
-    people,
-    lengthM: maxLengthM,
-    widthM,
-    reached: false,
-  };
-}
-
-/**
- * One bearing: shortest corridor to N people, plus people counted if unreached.
- *
- * Tries each covering grid on its own, finest first (for single-bearing
- * queries). The rose ({@link computeRose}) uses only the finest grid so petals
- * stay on one resolution — see {@link selectRoseGrid}.
  */
 export function probeRay(
   gridOrGrids,
   origin,
   bearingDeg,
   targetPeople,
-  widthM,
+  sliceDeg,
   maxLengthM,
 ) {
+  const slice = sliceDeg > 0 ? sliceDeg : DEFAULT_SLICE_DEG;
   if (targetPeople <= 0) {
     return {
       bearingDeg,
       people: 0,
       lengthM: 0,
-      widthM,
+      sliceDeg: slice,
       reached: true,
     };
   }
@@ -385,7 +281,7 @@ export function probeRay(
       bearingDeg,
       people: 0,
       lengthM: 0,
-      widthM,
+      sliceDeg: slice,
       reached: false,
     };
   }
@@ -396,37 +292,54 @@ export function probeRay(
       bearingDeg,
       people: 0,
       lengthM: maxLengthM,
-      widthM,
+      sliceDeg: slice,
       reached: false,
     };
   }
 
-  let fallback = null;
-  for (const grid of grids) {
-    const ray = probeRayOnGrid(
-      grid,
+  let people = 0;
+  for (const cap of searchCaps(maxLengthM)) {
+    const hits = sectorHitsOnGrids(
+      grids,
       origin,
       bearingDeg,
-      targetPeople,
-      widthM,
-      maxLengthM,
+      slice,
+      cap,
     );
-    if (ray.reached) return ray;
-    fallback = ray;
+    people = 0;
+    for (const h of hits) {
+      people += h.pop;
+      if (people >= targetPeople) {
+        return {
+          bearingDeg,
+          people: targetPeople,
+          lengthM: h.along,
+          sliceDeg: slice,
+          reached: true,
+        };
+      }
+    }
   }
-  return fallback;
+  return {
+    bearingDeg,
+    people,
+    lengthM: maxLengthM,
+    sliceDeg: slice,
+    reached: false,
+  };
 }
 
 /**
- * Shortest corridor length to accumulate targetPeople (meters), or Infinity.
- * Accepts one grid or several (finest-first cascade).
+ * Shortest slice length to accumulate targetPeople (meters), or Infinity.
+ * `sliceOrWidth` accepts slice degrees (preferred) or a legacy width_m ignored
+ * when `sliceDeg` is passed via options — kept as positional sliceDeg.
  */
 export function distanceToPeople(
   gridOrGrids,
   origin,
   bearingDeg,
   targetPeople,
-  widthM,
+  sliceDeg,
   maxLengthM,
 ) {
   const ray = probeRay(
@@ -434,72 +347,45 @@ export function distanceToPeople(
     origin,
     bearingDeg,
     targetPeople,
-    widthM,
+    sliceDeg,
     maxLengthM,
   );
   return ray.reached ? ray.lengthM : Infinity;
 }
 
 /**
- * Walk every bearing on one grid.
- * @returns {RayResult[]}
+ * Directional rose: distance to N people in each slice.
+ * @param {import('./grid.js').PopulationGrid | import('./grid.js').PopulationGrid[]} gridOrGrids
+ * @param {{lat:number, lon:number}} origin
+ * @param {object} options
+ * @param {number} options.targetPeople
+ * @param {number} options.maxLengthM
+ * @param {number} [options.rayCount=72]
+ * @param {number} [options.sliceDeg=5] — angular width; defaults to 360/rayCount
  */
-function computeRoseOnGrid(grid, origin, options) {
+export function computeRose(gridOrGrids, origin, options) {
   const {
-    widthM,
     targetPeople,
     maxLengthM,
     rayCount = 72,
+    sliceDeg = 360 / rayCount,
   } = options;
+  const grids = orderedGrids(gridOrGrids, origin);
+  if (!grids.length) {
+    throw new Error("origin is outside the population grid");
+  }
   const rays = [];
   for (let i = 0; i < rayCount; i++) {
     const bearingDeg = (360 * i) / rayCount;
     rays.push(
-      probeRayOnGrid(
-        grid,
-        origin,
-        bearingDeg,
-        targetPeople,
-        widthM,
-        maxLengthM,
-      ),
+      probeRay(grids, origin, bearingDeg, targetPeople, sliceDeg, maxLengthM),
     );
   }
   return rays;
 }
 
 /**
- * Grid for the whole rose: always the finest tile covering the origin.
- * Mixing fine vs CONUS per-bearing (or switching the whole rose to CONUS past
- * a target threshold) made needle spikes and slider shapes that jumped or
- * disagreed across refreshes. Sparse bearings simply stay unreached.
- */
-export function selectRoseGrid(gridOrGrids, origin, _options) {
-  const grids = orderedGrids(gridOrGrids, origin);
-  return grids[0] || null;
-}
-
-/**
- * Directional rose: distance to N people in each direction.
- * @param {import('./grid.js').PopulationGrid | import('./grid.js').PopulationGrid[]} gridOrGrids
- * @param {{lat:number, lon:number}} origin
- * @param {object} options
- * @param {number} options.widthM
- * @param {number} options.targetPeople
- * @param {number} options.maxLengthM
- * @param {number} [options.rayCount=72]
- */
-export function computeRose(gridOrGrids, origin, options) {
-  const grid = selectRoseGrid(gridOrGrids, origin, options);
-  if (!grid) {
-    throw new Error("origin is outside the population grid");
-  }
-  return computeRoseOnGrid(grid, origin, options);
-}
-
-/**
- * Same as computeRose, but yields to the event loop so mobile Safari can paint
- * the map (and status) instead of freezing on a multi-second sync walk.
+ * Same as computeRose, but yields to the event loop so mobile Safari can paint.
  * @param {(done:number, total:number) => void} [onProgress]
  */
 export async function computeRoseAsync(
@@ -509,27 +395,20 @@ export async function computeRoseAsync(
   onProgress,
 ) {
   const {
-    widthM,
     targetPeople,
     maxLengthM,
     rayCount = 72,
+    sliceDeg = 360 / rayCount,
   } = options;
-  const grid = selectRoseGrid(gridOrGrids, origin, options);
-  if (!grid) {
+  const grids = orderedGrids(gridOrGrids, origin);
+  if (!grids.length) {
     throw new Error("origin is outside the population grid");
   }
   const rays = [];
   for (let i = 0; i < rayCount; i++) {
     const bearingDeg = (360 * i) / rayCount;
     rays.push(
-      probeRayOnGrid(
-        grid,
-        origin,
-        bearingDeg,
-        targetPeople,
-        widthM,
-        maxLengthM,
-      ),
+      probeRay(grids, origin, bearingDeg, targetPeople, sliceDeg, maxLengthM),
     );
     if (i % 6 === 5 || i === rayCount - 1) {
       onProgress?.(i + 1, rayCount);
@@ -537,6 +416,11 @@ export async function computeRoseAsync(
     }
   }
   return rays;
+}
+
+/** @deprecated Rose always uses every covering grid (finest-first cascade). */
+export function selectRoseGrid(gridOrGrids, origin, _options) {
+  return orderedGrids(gridOrGrids, origin)[0] || null;
 }
 
 /** Build a closed ring of [lat, lon] tips for drawing a rose polygon. */
@@ -553,4 +437,49 @@ export function rosePolygon(origin, rays, lengthForRay) {
   }
   if (ring.length) ring.push(ring[0]);
   return ring;
+}
+
+// --- legacy exports kept for older tests (thin-corridor helpers removed) ---
+
+/** @deprecated Thin-corridor helper; unused by the slice model. */
+export function edgeBlend1D(f) {
+  const i0 = Math.floor(f);
+  const t = f - i0;
+  const EDGE = 0.05;
+  if (t <= EDGE) {
+    const u = t / EDGE;
+    const wOther = 0.5 * (1 - u);
+    return [
+      { index: i0 - 1, weight: wOther },
+      { index: i0, weight: 1 - wOther },
+    ];
+  }
+  if (t >= 1 - EDGE) {
+    const u = (1 - t) / EDGE;
+    const wOther = 0.5 * (1 - u);
+    return [
+      { index: i0, weight: 1 - wOther },
+      { index: i0 + 1, weight: wOther },
+    ];
+  }
+  return [{ index: i0, weight: 1 }];
+}
+
+/** @deprecated Thin-corridor helper; unused by the slice model. */
+export function centerlineCellWeights(colF, rowF, width, height) {
+  const cols = edgeBlend1D(colF);
+  const rows = edgeBlend1D(rowF);
+  /** @type {{row:number, col:number, weight:number}[]} */
+  const out = [];
+  for (const r of rows) {
+    for (const c of cols) {
+      const weight = r.weight * c.weight;
+      if (!(weight > 0)) continue;
+      if (r.index < 0 || r.index >= height || c.index < 0 || c.index >= width) {
+        continue;
+      }
+      out.push({ row: r.index, col: c.index, weight });
+    }
+  }
+  return out;
 }

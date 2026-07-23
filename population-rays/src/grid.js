@@ -94,7 +94,8 @@ export function pickGrid(grids, lat, lon, prefer = "finest") {
 }
 
 /**
- * Grids covering the origin, finest first. computeRose uses only the finest.
+ * Grids covering the origin, finest first. Slices cascade fine→CONUS so a
+ * metro tile can hand off for long bearings (e.g. NYC → Chicago).
  */
 export function gridsForRose(grids, lat, lon) {
   return grids
