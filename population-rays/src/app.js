@@ -62,7 +62,7 @@ function setStatus(text, kind = "") {
 }
 
 function readControls() {
-  const targetPeople = Number(el.targetPop.value) || 1_000_000;
+  const targetPeople = Number(el.targetPop.value) || 100_000;
   return {
     widthM: CORRIDOR_WIDTH_M,
     targetPeople,
@@ -140,13 +140,17 @@ function drawRose() {
   roseLayer = openLayer = spokesLayer = null;
   if (!state.rays.length) return;
 
-  const opts = readControls();
   const reachedRays = state.rays.filter((r) => r.reached);
-  const openRays = state.rays.filter((r) => !r.reached);
 
+  // Build the rose from every bearing. Unreached tips collapse to the origin
+  // so we get real petals — never a polygon that only connects far tip points
+  // (which floated as a giant blob over the SE when sparse origins only hit
+  // N in a few directions).
   if (reachedRays.length) {
     roseLayer = L.polygon(
-      rosePolygon(state.origin, reachedRays, (ray) => ray.lengthM),
+      rosePolygon(state.origin, state.rays, (ray) =>
+        ray.reached ? ray.lengthM : 0,
+      ),
       {
         color: "#d97706",
         weight: 1.5,
@@ -157,16 +161,23 @@ function drawRose() {
     ).addTo(map);
   }
 
-  if (openRays.length) {
+  // Unreached bearings: short dashed ticks at the rose scale (not 3000 mi spokes).
+  if (reachedRays.length && reachedRays.length < state.rays.length) {
+    const tickM = Math.max(
+      ...reachedRays.map((r) => r.lengthM),
+      milesToMeters(50),
+    );
     openLayer = L.polyline(
-      openRays.map((r) => [
-        [state.origin.lat, state.origin.lon],
-        tipLatLng(r.bearingDeg, opts.maxLengthM),
-      ]),
+      state.rays
+        .filter((r) => !r.reached)
+        .map((r) => [
+          [state.origin.lat, state.origin.lon],
+          tipLatLng(r.bearingDeg, tickM * 1.08),
+        ]),
       {
         color: "#64748b",
         weight: 1.25,
-        opacity: 0.5,
+        opacity: 0.45,
         dashArray: "5 7",
         interactive: false,
       },
@@ -176,19 +187,21 @@ function drawRose() {
   const spokes = [];
   for (const bearing of [0, 90, 180, 270]) {
     const { ray } = nearestRay(bearing);
-    if (!(ray.lengthM > 0)) continue;
+    if (!ray.reached || !(ray.lengthM > 0)) continue;
     spokes.push([
       [state.origin.lat, state.origin.lon],
       tipLatLng(bearing, ray.lengthM),
     ]);
   }
-  spokesLayer = L.polyline(spokes, {
-    color: "#92400e",
-    weight: 1,
-    opacity: 0.45,
-    dashArray: "4 6",
-    interactive: false,
-  }).addTo(map);
+  if (spokes.length) {
+    spokesLayer = L.polyline(spokes, {
+      color: "#92400e",
+      weight: 1,
+      opacity: 0.45,
+      dashArray: "4 6",
+      interactive: false,
+    }).addTo(map);
+  }
 }
 
 function fitToRose() {
@@ -322,20 +335,26 @@ function initMap() {
     const step = 360 / state.rays.length;
     const { ray, diff } = nearestRay(bearing);
     if (hoverLine) map.removeLayer(hoverLine);
-    if (ray.lengthM > 0 && diff <= step * 1.5) {
-      hoverLine = L.polyline(
-        [
-          [state.origin.lat, state.origin.lon],
-          tipLatLng(ray.bearingDeg, ray.lengthM),
-        ],
-        {
-          color: ray.reached ? "#0f766e" : "#64748b",
-          weight: 3,
-          opacity: 0.9,
-          dashArray: ray.reached ? null : "6 6",
-        },
-      ).addTo(map);
-    }
+    if (diff > step * 1.5) return;
+    const reached = state.rays.filter((r) => r.reached);
+    const hoverLen = ray.reached
+      ? ray.lengthM
+      : reached.length
+        ? Math.max(...reached.map((r) => r.lengthM)) * 1.08
+        : milesToMeters(100);
+    if (!(hoverLen > 0)) return;
+    hoverLine = L.polyline(
+      [
+        [state.origin.lat, state.origin.lon],
+        tipLatLng(ray.bearingDeg, hoverLen),
+      ],
+      {
+        color: ray.reached ? "#0f766e" : "#64748b",
+        weight: 3,
+        opacity: 0.9,
+        dashArray: ray.reached ? null : "6 6",
+      },
+    ).addTo(map);
   });
 }
 

@@ -109,6 +109,23 @@ test("rosePolygon closes the ring", () => {
   assert.deepEqual(ring[0], ring[3]);
 });
 
+test("rosePolygon collapses unreached tips to the origin", () => {
+  const origin = { lat: 40, lon: -74 };
+  const rays = [
+    { bearingDeg: 0, reached: true, lengthM: 1000 },
+    { bearingDeg: 90, reached: false, lengthM: 1e7 },
+    { bearingDeg: 180, reached: true, lengthM: 1000 },
+    { bearingDeg: 270, reached: false, lengthM: 1e7 },
+  ];
+  const ring = rosePolygon(origin, rays, (ray) =>
+    ray.reached ? ray.lengthM : 0,
+  );
+  // Unreached bearings sit on the pin — no floating tip-only polygon.
+  assert.deepEqual(ring[1], [origin.lat, origin.lon]);
+  assert.deepEqual(ring[3], [origin.lat, origin.lon]);
+  assert.notDeepEqual(ring[0], [origin.lat, origin.lon]);
+});
+
 test("pickGrid prefers finer cell size", () => {
   const coarse = createGrid(
     {

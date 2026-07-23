@@ -7,7 +7,7 @@ Petal length = that distance. Short in Manhattan; often unreachable in Wyoming.
 
 ## Controls
 
-- **People to hit** — target N
+- **People to hit** — target N (10k–500k)
 - Presets: Manhattan / Wyoming / My location
 - 72 directions (every 5°); corridor width fixed at 100 ft
 
