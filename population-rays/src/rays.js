@@ -1,8 +1,8 @@
 /**
  * Directional population slices.
  *
- * From an origin, take a filled pie slice of angular width S (default 5°,
- * matching a 72-ray rose). Count people in population cells whose centers
+ * From an origin, take a filled pie slice of angular width S (default 2°,
+ * matching a 180-ray rose). Count people in population cells whose centers
  * fall in the slice. Petal length = how far the slice must extend to hit N
  * people.
  *
@@ -21,7 +21,7 @@ import { destination, metersPerDegree } from "./geo.js";
  * @property {boolean} reached
  */
 
-export const DEFAULT_SLICE_DEG = 5;
+export const DEFAULT_SLICE_DEG = 2;
 
 function asGridList(gridOrGrids) {
   const list = Array.isArray(gridOrGrids) ? gridOrGrids : [gridOrGrids];
@@ -113,7 +113,7 @@ function sectorBBox(origin, bearingDeg, sliceDeg, lengthM) {
 /**
  * Population cells that intersect the filled slice out to lengthM.
  * A cell counts when its center is within the slice, or close enough that the
- * cell’s footprint overlaps the wedge (important near the pin, where a 5°
+ * cell’s footprint overlaps the wedge (important near the pin, where a 2°
  * slice is narrower than a coarse grid cell).
  * @returns {{idx:number, pop:number, along:number}[]}
  */
@@ -472,14 +472,14 @@ export function distanceToPeople(
  * @param {object} options
  * @param {number} options.targetPeople
  * @param {number} options.maxLengthM
- * @param {number} [options.rayCount=72]
- * @param {number} [options.sliceDeg=5] — angular width; defaults to 360/rayCount
+ * @param {number} [options.rayCount=180]
+ * @param {number} [options.sliceDeg=2] — angular width; defaults to 360/rayCount
  */
 export function computeRose(gridOrGrids, origin, options) {
   const {
     targetPeople,
     maxLengthM,
-    rayCount = 72,
+    rayCount = 180,
     sliceDeg = 360 / rayCount,
   } = options;
   const grids = orderedGrids(gridOrGrids, origin);
@@ -509,7 +509,7 @@ export async function computeRoseAsync(
   const {
     targetPeople,
     maxLengthM,
-    rayCount = 72,
+    rayCount = 180,
     sliceDeg = 360 / rayCount,
   } = options;
   const grids = orderedGrids(gridOrGrids, origin);
@@ -522,7 +522,7 @@ export async function computeRoseAsync(
     rays.push(
       probeRay(grids, origin, bearingDeg, targetPeople, sliceDeg, maxLengthM),
     );
-    if (i % 6 === 5 || i === rayCount - 1) {
+    if (i % 12 === 11 || i === rayCount - 1) {
       onProgress?.(i + 1, rayCount);
       await new Promise((r) => setTimeout(r, 0));
     }

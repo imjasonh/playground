@@ -39,7 +39,7 @@ passes tests — so older experiments don't bit-rot.
   and estimated fuel cost for NYPD Aviation Unit helicopters, from public ADS-B
   data collected by an hourly scrape workflow.
 - **[`population-rays/`](population-rays/)** — from any US point, how far a
-  filled 5° slice must go in each direction to hit N people, using Meta/CIESIN
+  filled 2° slice must go in each direction to hit N people, using Meta/CIESIN
   high-resolution population grids.
 - **[`web-push-demo/`](web-push-demo/)** — a browser front-end for the
   `web-push` Worker: subscribe/unsubscribe and send notifications end to end.

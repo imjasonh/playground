@@ -1,6 +1,6 @@
 # Population Rays
 
-From a pin on the map: how far must a filled **5°** pie slice go in each
+From a pin on the map: how far must a filled **2°** pie slice go in each
 direction before it hits **N** people?
 
 Petal length = that distance. Short in Manhattan (NY); longer from
@@ -14,7 +14,7 @@ the search limit, fading to transparent.
 - **People to hit** — target N (10k–500k)
 - **Search** — US city or address (Nominatim; contiguous US only)
 - Presets: Manhattan / Manhattan, KS / Manhattan, IL / My location
-- 72 slices (every 5°); angular width matches the spacing so they tile 360°
+- 180 slices (every 2°); angular width matches the spacing so they tile 360°
 
 ## Run
 

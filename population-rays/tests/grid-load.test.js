@@ -13,7 +13,7 @@ import {
 import { formatDistance, milesToMeters } from "../src/geo.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const SLICE = 5;
+const SLICE = 2;
 
 test("loads packaged CONUS grid and samples Times Square", async () => {
   const meta = JSON.parse(
@@ -65,7 +65,7 @@ test("rose grids list fine Northeast then CONUS in NYC", async () => {
   );
 });
 
-test("Manhattan 5° slice toward Chicago reaches 350k before the Pacific", async () => {
+test("Manhattan 2° slice toward Chicago reaches 350k before the Pacific", async () => {
   const conus = await loadGridFromGzip(
     JSON.parse(readFileSync(join(root, "data/conus-0p02.json"), "utf8")),
     readFileSync(join(root, "data/conus-0p02.f32.gz")),
@@ -76,7 +76,7 @@ test("Manhattan 5° slice toward Chicago reaches 350k before the Pacific", async
   );
   const o = { lat: 40.758, lon: -73.9855 };
   const chicagoBearing = bearingBetween(o, 41.8781, -87.6298);
-  const rayBearing = Math.round(chicagoBearing / 5) * 5;
+  const rayBearing = Math.round(chicagoBearing / 2) * 2;
   const dist = distanceToPeople(
     [ne, conus],
     o,
@@ -86,14 +86,14 @@ test("Manhattan 5° slice toward Chicago reaches 350k before the Pacific", async
     milesToMeters(3000),
   );
   assert.ok(Number.isFinite(dist), `should reach 350k toward Chicago, got ${dist}`);
-  // Chicago is ~711 mi away; a 5° slice should hit 350k well before that.
+  // Chicago is ~711 mi away; a 2° slice should still hit 350k before that.
   assert.ok(
     dist < milesToMeters(711),
     `expected under Chicago distance, got ${formatDistance(dist)}`,
   );
 });
 
-test("Manhattan rose with 5° slices reaches most bearings at 100k", async () => {
+test("Manhattan rose with 2° slices reaches most bearings at 100k", async () => {
   const conus = await loadGridFromGzip(
     JSON.parse(readFileSync(join(root, "data/conus-0p02.json"), "utf8")),
     readFileSync(join(root, "data/conus-0p02.f32.gz")),
@@ -107,12 +107,12 @@ test("Manhattan rose with 5° slices reaches most bearings at 100k", async () =>
     sliceDeg: SLICE,
     targetPeople: 100_000,
     maxLengthM: milesToMeters(3000),
-    rayCount: 72,
+    rayCount: 180,
   });
   const reached = rose.filter((r) => r.reached);
   assert.ok(
-    reached.length >= 60,
-    `expected most slices to hit 100k, got ${reached.length}/72`,
+    reached.length >= 140,
+    `expected most slices to hit 100k, got ${reached.length}/180`,
   );
 });
 

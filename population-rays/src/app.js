@@ -32,7 +32,7 @@ const PLACES = {
   },
 };
 
-const RAY_COUNT = 72; // every 5°
+const RAY_COUNT = 180; // every 2°
 const SLICE_DEG = DEFAULT_SLICE_DEG; // filled pie slice; tiles the rose
 const MAX_SEARCH_MI = 3000;
 
@@ -289,7 +289,7 @@ function drawOpenSlices(group, rays) {
   const maxM = milesToMeters(MAX_SEARCH_MI);
   const BANDS = 10;
   const FADE_START = 0.5; // outer half fades
-  const BASE_FILL = 0.18;
+  const BASE_FILL = 0.22;
 
   for (const [startIdx, endIdx] of unreachedRuns(rays)) {
     const { left, right } = runBearingEdges(rays, startIdx, endIdx);
@@ -308,10 +308,10 @@ function drawOpenSlices(group, rays) {
 
       L.polygon(sectorRing(left, right, r0, r1), {
         stroke: b === 0,
-        color: "#9aacb8",
+        color: "#7a92a3",
         weight: b === 0 ? 1 : 0,
         opacity: 0.4,
-        fillColor: "#c5d2dc",
+        fillColor: "#9eb3c2",
         fillOpacity,
         interactive: false,
       }).addTo(group);

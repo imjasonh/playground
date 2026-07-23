@@ -33,7 +33,7 @@ function makeAsymmetricGrid() {
 }
 
 const ORIGIN = { lat: 40.7, lon: -74.2 };
-const SLICE = 5;
+const SLICE = 2;
 
 test("peopleInSlice finds more people toward the dense side", () => {
   const grid = makeAsymmetricGrid();
