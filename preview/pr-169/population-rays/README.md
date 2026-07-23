@@ -5,8 +5,8 @@ before it hits **N** people?
 
 Petal length = that distance. Short in Manhattan; long (or unreachable) in
 Wyoming. At the packaged ~2 km grid, that thin corridor is treated as about
-one cell wide so rays through cities like LA still count the people they
-cross.
+one cell wide. Samples on a grid line (common for exact N/S/E/W) split credit
+across the two adjacent cells instead of picking one side.
 
 ## Controls
 
