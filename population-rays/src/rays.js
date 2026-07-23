@@ -6,12 +6,10 @@
  * before it has hit N people?
  *
  * At packaged resolutions (~0.5–2 km), a 100 ft corridor is thinner than a
- * cell. We treat that as ~one cell wide: cells the centerline crosses, plus
- * cells whose centers lie within one cell of the line. Wider W expands the
- * catch radius further.
- *
- * Axis-aligned grid walks can notch N/S/E/W; computeRose applies a light
- * angular median so the drawn rose stays closer to the oval you’d expect.
+ * cell. Centerline samples get full credit for the cell they’re in. When a
+ * sample lies on a grid line (common for exact N/S/E/W walks), credit is the
+ * average of the two adjacent cells instead of picking one side. A catch band
+ * still pulls in nearby cells so thin rose rays don’t miss metro cores like LA.
  */
 
 import { destination, metersPerDegree } from "./geo.js";
@@ -25,12 +23,77 @@ import { destination, metersPerDegree } from "./geo.js";
  * @property {boolean} reached
  */
 
-/** Catch radius so a thin corridor still hits cells it grazes. */
+/** Catch radius so a thin corridor still grazes nearby cells. */
 function catchRadiusM(grid, origin, widthM) {
   const halfW = Math.max(0, widthM) / 2;
-  // One cell: otherwise a 5° rose ray can thread past LA and miss 500k.
-  const cellM = grid.cellSizeM(origin.lat);
-  return Math.max(halfW, cellM);
+  // Use the larger cell side so both row- and col-neighbors stay in range
+  // (cellSizeM is the min side and can exclude the other axis).
+  const { lat: mLat, lon: mLon } = metersPerDegree(origin.lat);
+  const cellM = Math.max(
+    Math.abs(mLat * grid.meta.cellDeg),
+    Math.abs(mLon * grid.meta.cellDeg),
+  );
+  // Slightly more than one cell so 5° rose rays still clip metro cores (LA).
+  return Math.max(halfW, cellM * 1.25);
+}
+
+/**
+ * 1D sample along a grid axis. Interior of a cell → that cell at weight 1.
+ * On (or within a few % of) a grid line → 50/50 average of the two adjacent
+ * cells. A narrow band covers geodesic drift off exact N/S/E/W without
+ * turning every sample into a bilinear under-count.
+ *
+ * @returns {{index:number, weight:number}[]}
+ */
+export function edgeBlend1D(f) {
+  const i0 = Math.floor(f);
+  const t = f - i0; // 0..1 inside cell i0
+  // ~5% of a cell ≈ geodesic drift over a few miles on cardinal walks.
+  const EDGE = 0.05;
+
+  if (t <= EDGE) {
+    // Lower edge shared with i0-1: 50/50 on the line → full i0 by EDGE.
+    const u = t / EDGE;
+    const wOther = 0.5 * (1 - u);
+    return [
+      { index: i0 - 1, weight: wOther },
+      { index: i0, weight: 1 - wOther },
+    ];
+  }
+  if (t >= 1 - EDGE) {
+    const u = (1 - t) / EDGE;
+    const wOther = 0.5 * (1 - u);
+    return [
+      { index: i0, weight: 1 - wOther },
+      { index: i0 + 1, weight: wOther },
+    ];
+  }
+  return [{ index: i0, weight: 1 }];
+}
+
+/**
+ * Cells under a sample point. Near a grid line, split weight across both
+ * adjacent cells (their average on the line). Near a corner, the two 1D
+ * blends multiply (bilinear).
+ *
+ * @returns {{row:number, col:number, weight:number}[]}
+ */
+export function centerlineCellWeights(colF, rowF, width, height) {
+  const cols = edgeBlend1D(colF);
+  const rows = edgeBlend1D(rowF);
+  /** @type {{row:number, col:number, weight:number}[]} */
+  const out = [];
+  for (const r of rows) {
+    for (const c of cols) {
+      const weight = r.weight * c.weight;
+      if (!(weight > 0)) continue;
+      if (r.index < 0 || r.index >= height || c.index < 0 || c.index >= width) {
+        continue;
+      }
+      out.push({ row: r.index, col: c.index, weight });
+    }
+  }
+  return out;
 }
 
 /**
@@ -49,7 +112,6 @@ function cellsInCorridor(grid, origin, bearingDeg, lengthM, widthM) {
   const cellDeg = grid.meta.cellDeg;
   const catchM = catchRadiusM(grid, origin, widthM);
   const cellM = grid.cellSizeM(origin.lat);
-  // Fine enough to not skip a cell on diagonal geodesics.
   const step = Math.max(Math.min(cellM * 0.2, 150), 25);
   const rad = (bearingDeg * Math.PI) / 180;
   const dirX = Math.sin(rad);
@@ -58,41 +120,75 @@ function cellsInCorridor(grid, origin, bearingDeg, lengthM, widthM) {
   /** @type {Map<number, {idx:number, pop:number, along:number}>} */
   const seen = new Map();
 
-  function add(idx, along) {
-    const pop = grid.data[idx];
-    if (!(pop > 0)) return;
+  function add(idx, along, weight) {
+    if (!(weight > 0)) return;
+    const raw = grid.data[idx];
+    if (!(raw > 0)) return;
+    const credit = raw * weight;
     const prev = seen.get(idx);
     const a = Math.max(0, along);
-    if (prev == null || a < prev.along) seen.set(idx, { idx, pop, along: a });
+    if (
+      prev == null ||
+      a < prev.along - 1e-6 ||
+      (Math.abs(a - prev.along) <= 1e-6 && credit > prev.pop)
+    ) {
+      seen.set(idx, { idx, pop: credit, along: a });
+    }
   }
 
   const nSteps = Math.max(1, Math.ceil(lengthM / step));
+  const neighbor = Math.max(1, Math.ceil(catchM / Math.max(cellM, 1)) + 1);
+
   for (let i = 0; i <= nSteps; i++) {
     const along = Math.min(lengthM, i * step);
     const p = destination(origin.lat, origin.lon, bearingDeg, along);
     if (!grid.contains(p.lat, p.lon)) continue;
 
-    const col = Math.floor((p.lon - grid.meta.west) / cellDeg);
-    const row = Math.floor((grid.meta.north - p.lat) / cellDeg);
-    if (col < 0 || col >= grid.meta.width || row < 0 || row >= grid.meta.height) {
+    const colF = (p.lon - grid.meta.west) / cellDeg;
+    const rowF = (grid.meta.north - p.lat) / cellDeg;
+    if (
+      colF < 0 ||
+      colF >= grid.meta.width ||
+      rowF < 0 ||
+      rowF >= grid.meta.height
+    ) {
       continue;
     }
 
-    // Always count the cell the centerline is in (don’t require the sample
-    // to sit near the cell center — corner samples would fail that test).
-    add(row * grid.meta.width + col, along);
+    const primary = centerlineCellWeights(
+      colF,
+      rowF,
+      grid.meta.width,
+      grid.meta.height,
+    );
+    /** @type {Set<number>} */
+    const primaryIdx = new Set();
+    for (const cell of primary) {
+      const idx = cell.row * grid.meta.width + cell.col;
+      primaryIdx.add(idx);
+      add(idx, along, cell.weight);
+    }
 
+    // Catch band for cells beside the strip. Skip primary cells so a boundary
+    // average (0.5+0.5) is not overwritten by a full-credit catch hit.
+    const anchorRow = Math.min(
+      grid.meta.height - 1,
+      Math.max(0, Math.floor(rowF)),
+    );
+    const anchorCol = Math.min(
+      grid.meta.width - 1,
+      Math.max(0, Math.floor(colF)),
+    );
     const { lat: mLat, lon: mLon } = metersPerDegree(p.lat);
-    const neighbor = Math.max(1, Math.ceil(catchM / Math.max(cellM, 1)) + 1);
     for (let dr = -neighbor; dr <= neighbor; dr++) {
       for (let dc = -neighbor; dc <= neighbor; dc++) {
-        if (dr === 0 && dc === 0) continue;
-        const r = row + dr;
-        const c = col + dc;
+        const r = anchorRow + dr;
+        const c = anchorCol + dc;
         if (r < 0 || r >= grid.meta.height || c < 0 || c >= grid.meta.width) {
           continue;
         }
         const idx = r * grid.meta.width + c;
+        if (primaryIdx.has(idx)) continue;
         const clat = grid.meta.north - (r + 0.5) * cellDeg;
         const clon = grid.meta.west + (c + 0.5) * cellDeg;
         const dx = (clon - p.lon) * mLon;
@@ -102,7 +198,7 @@ function cellsInCorridor(grid, origin, bearingDeg, lengthM, widthM) {
         const alongOffset = dx * dirX + dy * dirY;
         const cellAlong = along + alongOffset;
         if (cellAlong < -catchM || cellAlong > lengthM) continue;
-        add(idx, cellAlong);
+        add(idx, cellAlong, 1);
       }
     }
   }
@@ -213,30 +309,6 @@ export function distanceToPeople(
 }
 
 /**
- * Angular median on reached lengths. Lat/lon grids over-count on exact
- * N/S/E/W walks; this lifts single-bearing inward notches for the rose.
- * @param {RayResult[]} rays
- * @param {number} [halfWindow=2]  neighbors on each side (2 ⇒ 5-tap)
- */
-export function smoothRoseLengths(rays, halfWindow = 2) {
-  const n = rays.length;
-  if (n < 3) return rays;
-  const raw = rays.map((r) => (r.reached ? r.lengthM : null));
-  return rays.map((ray, i) => {
-    if (!ray.reached) return ray;
-    const samples = [];
-    for (let d = -halfWindow; d <= halfWindow; d++) {
-      const v = raw[(i + d + n) % n];
-      if (v != null) samples.push(v);
-    }
-    if (samples.length < 2) return ray;
-    samples.sort((a, b) => a - b);
-    const mid = samples[Math.floor(samples.length / 2)];
-    return { ...ray, lengthM: mid };
-  });
-}
-
-/**
  * Directional rose: distance to N people in each direction.
  * @param {import('./grid.js').PopulationGrid | import('./grid.js').PopulationGrid[]} gridOrGrids
  * @param {{lat:number, lon:number}} origin
@@ -245,7 +317,6 @@ export function smoothRoseLengths(rays, halfWindow = 2) {
  * @param {number} options.targetPeople
  * @param {number} options.maxLengthM
  * @param {number} [options.rayCount=72]
- * @param {boolean} [options.smooth=true]
  */
 export function computeRose(gridOrGrids, origin, options) {
   const {
@@ -253,7 +324,6 @@ export function computeRose(gridOrGrids, origin, options) {
     targetPeople,
     maxLengthM,
     rayCount = 72,
-    smooth = true,
   } = options;
   const grids = orderedGrids(gridOrGrids, origin);
   if (!grids.length) {
@@ -281,7 +351,7 @@ export function computeRose(gridOrGrids, origin, options) {
       reached,
     });
   }
-  return smooth ? smoothRoseLengths(rays) : rays;
+  return rays;
 }
 
 /** Build a closed ring of [lat, lon] tips for drawing a rose polygon. */

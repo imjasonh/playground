@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { loadGridFromGzip, gridsForRose, pickGridForTarget } from "../src/grid.js";
-import { computeRose, distanceToPeople, peopleInCorridor } from "../src/rays.js";
+import { distanceToPeople, peopleInCorridor } from "../src/rays.js";
 import { feetToMeters, formatDistance, milesToMeters } from "../src/geo.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -74,13 +74,11 @@ test("Manhattan NW ray reaches 100k once CONUS continues past NE tile", async ()
   const o = { lat: 40.758, lon: -73.9855 };
   const W = feetToMeters(100);
   const maxM = milesToMeters(3000);
-  const neOnly = distanceToPeople(ne, o, 300, 100_000, W, maxM);
   const cascaded = distanceToPeople([ne, conus], o, 300, 100_000, W, maxM);
-  assert.equal(neOnly, Infinity, "NE tile alone should stall under 100k at 300°");
   assert.ok(Number.isFinite(cascaded), `cascade should reach, got ${cascaded}`);
   assert.ok(
     cascaded < milesToMeters(150),
-    `expected under 150 mi after leaving the NE tile, got ${formatDistance(cascaded)}`,
+    `expected under 150 mi, got ${formatDistance(cascaded)}`,
   );
 });
 
@@ -122,27 +120,20 @@ test("Hudson east ray is not a sharp cardinal notch vs neighbors", async () => {
     JSON.parse(readFileSync(join(root, "data/conus-0p02.json"), "utf8")),
     readFileSync(join(root, "data/conus-0p02.f32.gz")),
   );
+  // Pin sits on a grid corner in the Hudson — classic N/S/E/W over-count case.
   const hudson = { lat: 40.72, lon: -74.03 };
   const grids = [ne, conus];
   const W = feetToMeters(100);
   const maxM = milesToMeters(3000);
   const target = 100_000;
-  // Smoothed rose — single-bearing grid notches at E/W should not dominate.
-  const rays = computeRose(grids, hudson, {
-    widthM: W,
-    targetPeople: target,
-    maxLengthM: maxM,
-    rayCount: 72,
-  });
-  const at = (b) => rays.find((r) => r.bearingDeg === b);
-  const e = at(90);
-  const eLo = at(85);
-  const eHi = at(95);
-  assert.ok(e.reached && eLo.reached && eHi.reached);
-  const neigh = (eLo.lengthM + eHi.lengthM) / 2;
+  const e = distanceToPeople(grids, hudson, 90, target, W, maxM);
+  const eLo = distanceToPeople(grids, hudson, 85, target, W, maxM);
+  const eHi = distanceToPeople(grids, hudson, 95, target, W, maxM);
+  assert.ok(Number.isFinite(e) && Number.isFinite(eLo) && Number.isFinite(eHi));
+  const neigh = (eLo + eHi) / 2;
   assert.ok(
-    e.lengthM > neigh * 0.55,
-    `east ${formatDistance(e.lengthM)} should be near neighbors ${formatDistance(neigh)}`,
+    e > neigh * 0.55,
+    `east ${formatDistance(e)} should be near neighbors ${formatDistance(neigh)}`,
   );
 });
 

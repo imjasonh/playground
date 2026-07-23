@@ -2,11 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createGrid, pickGrid } from "../src/grid.js";
 import {
+  centerlineCellWeights,
   computeRose,
   distanceToPeople,
   peopleInCorridor,
   rosePolygon,
-  smoothRoseLengths,
 } from "../src/rays.js";
 import { feetToMeters, milesToMeters } from "../src/geo.js";
 
@@ -110,16 +110,36 @@ test("rosePolygon closes the ring", () => {
   assert.deepEqual(ring[0], ring[3]);
 });
 
-test("smoothRoseLengths lifts a single short notch", () => {
-  const rays = [0, 5, 10, 15, 20].map((bearingDeg, i) => ({
-    bearingDeg,
-    lengthM: i === 2 ? 1000 : 5000,
-    reached: true,
-    people: 1,
-    widthM: 1,
-  }));
-  const smoothed = smoothRoseLengths(rays, 2);
-  assert.equal(smoothed[2].lengthM, 5000);
+test("centerlineCellWeights averages the two cells on a grid edge", () => {
+  const vert = centerlineCellWeights(10, 5.4, 100, 100);
+  assert.equal(vert.length, 2);
+  assert.deepEqual(
+    vert.map((c) => [c.col, c.weight]).sort((a, b) => a[0] - b[0]),
+    [
+      [9, 0.5],
+      [10, 0.5],
+    ],
+  );
+
+  const horiz = centerlineCellWeights(5.4, 10, 100, 100);
+  assert.equal(horiz.length, 2);
+  assert.deepEqual(
+    horiz.map((c) => [c.row, c.weight]).sort((a, b) => a[0] - b[0]),
+    [
+      [9, 0.5],
+      [10, 0.5],
+    ],
+  );
+
+  // Cell interior → full credit for that cell only.
+  const interior = centerlineCellWeights(5.4, 7.4, 100, 100);
+  assert.deepEqual(interior, [{ row: 7, col: 5, weight: 1 }]);
+
+  // Slightly off a vertical line still splits left/right (geodesic drift).
+  const drifted = centerlineCellWeights(10.0003, 5.4, 100, 100);
+  assert.equal(drifted.length, 2);
+  const total = drifted.reduce((s, c) => s + c.weight, 0);
+  assert.ok(Math.abs(total - 1) < 1e-9);
 });
 
 test("rosePolygon collapses unreached tips to the origin", () => {
