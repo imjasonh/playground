@@ -58,7 +58,6 @@ let map;
 let originMarker;
 let roseLayer;
 let openLayer;
-let spokesLayer;
 let hoverLine;
 
 function setStatus(text, kind = "") {
@@ -141,8 +140,7 @@ function tipLatLng(bearingDeg, lengthM) {
 function drawRose() {
   if (roseLayer) map.removeLayer(roseLayer);
   if (openLayer) map.removeLayer(openLayer);
-  if (spokesLayer) map.removeLayer(spokesLayer);
-  roseLayer = openLayer = spokesLayer = null;
+  roseLayer = openLayer = null;
   if (!state.rays.length) return;
 
   const reachedRays = state.rays.filter((r) => r.reached);
@@ -187,25 +185,6 @@ function drawRose() {
         interactive: false,
       },
     ).addTo(map);
-  }
-
-  const spokes = [];
-  for (const bearing of [0, 90, 180, 270]) {
-    const { ray } = nearestRay(bearing);
-    if (!ray.reached || !(ray.lengthM > 0)) continue;
-    spokes.push([
-      [state.origin.lat, state.origin.lon],
-      tipLatLng(bearing, ray.lengthM),
-    ]);
-  }
-  if (spokes.length) {
-    spokesLayer = L.polyline(spokes, {
-      color: "#92400e",
-      weight: 1,
-      opacity: 0.45,
-      dashArray: "4 6",
-      interactive: false,
-    }).addTo(map);
   }
 }
 
