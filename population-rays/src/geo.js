@@ -83,9 +83,13 @@ export function formatWidth(ft) {
   if (!Number.isFinite(ft)) return "—";
   if (ft >= 5280) {
     const mi = ft / 5280;
-    return `${mi % 1 === 0 ? mi.toFixed(0) : mi.toFixed(2)} mi`;
+    const rounded = Math.round(mi * 10) / 10;
+    return `${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(1)} mi`;
   }
-  if (ft >= 1000) return `${(ft / 5280).toFixed(2)} mi`;
+  if (ft >= 1000) {
+    const mi = ft / 5280;
+    return `${mi.toFixed(2)} mi`;
+  }
   return `${Math.round(ft)} ft`;
 }
 

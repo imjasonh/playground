@@ -29,9 +29,9 @@
         <header class="brand">
           <h1>Population Rays</h1>
           <p class="lede">
-            From the pin, simulate a corridor
-            <strong id="lede-w">500&nbsp;ft</strong> wide in every direction.
-            Petal length = how far until it hits
+            From the pin, a corridor
+            <strong id="lede-w">0.50&nbsp;mi</strong> wide in every direction.
+            Petal length = distance to
             <strong id="lede-n">1M</strong> people.
           </p>
         </header>
@@ -52,15 +52,16 @@
           <label class="field slider-field">
             <span class="slider-label">
               <span>Corridor width</span>
-              <strong id="width-readout">500 ft</strong>
+              <strong id="width-readout">0.50 mi</strong>
             </span>
             <input
               id="width-ft"
               type="range"
-              min="100"
-              max="5280"
-              step="100"
-              value="500"
+              min="0"
+              max="1000"
+              step="1"
+              value="522"
+              aria-valuetext="0.50 mi"
             />
           </label>
 
