@@ -285,6 +285,8 @@ function setOrigin(lat, lon, { fit = false } = {}) {
 function goToPlace(key) {
   const place = PLACES[key];
   if (!place) return;
+  clearPlaceResults();
+  el.placeSearch.value = place.label;
   map.setView([place.lat, place.lon], place.zoom);
   setOrigin(place.lat, place.lon, { fit: true });
 }

@@ -95,8 +95,9 @@ export function pickGrid(grids, lat, lon, prefer = "finest") {
 
 /**
  * Grids to use for a distance-to-N rose: every tile containing the origin,
- * finest first. computeRose cascades so rays can leave a metro tile and keep
- * counting on CONUS (avoids “94k then forever” at the NE tile edge).
+ * finest first. probeRay tries each grid on its own (fine, then CONUS) so a
+ * metro tile that cannot hit N falls back cleanly instead of stitching strips
+ * of different effective widths mid-ray.
  */
 export function gridsForRose(grids, lat, lon) {
   return grids

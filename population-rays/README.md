@@ -33,4 +33,8 @@ Meta / CIESIN HRSL population counts:
 | `data/conus-0p02.*` | ~2.2 km | Contiguous US |
 | `data/northeast-0p005.*` | ~550 m | NYC metro |
 
+Each ray uses the finest covering grid that can hit N on its own; if the
+metro tile cannot, it falls back to CONUS for that whole bearing (avoids
+stitching a narrow fine strip to a wide coarse strip mid-ray).
+
 Rebuild: `python3 scripts/build-population-grid.py`

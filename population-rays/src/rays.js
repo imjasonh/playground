@@ -240,8 +240,11 @@ function cellCenter(grid, idx) {
 }
 
 /**
- * Corridor hits across one or more grids. Finer tiles win where they overlap
- * so long rays can leave a metro tile and keep counting on CONUS.
+ * Corridor hits on a single grid (or several with fine-over-coarse masking).
+ *
+ * Prefer {@link probeRay} for distance-to-N: mixing fine+coarse in one walk
+ * undercounts inside a metro tile (narrower effective strip) then can walk
+ * thousands of miles on CONUS for the remainder.
  */
 function corridorHitsOnGrids(gridOrGrids, origin, bearingDeg, lengthM, widthM) {
   const grids = orderedGrids(gridOrGrids, origin);
@@ -261,6 +264,13 @@ function corridorHitsOnGrids(gridOrGrids, origin, bearingDeg, lengthM, widthM) {
   }
   merged.sort((a, b) => a.along - b.along);
   return merged;
+}
+
+/** Hits along one grid only. */
+function corridorHitsOnGrid(grid, origin, bearingDeg, lengthM, widthM) {
+  return cellsInCorridor(grid, origin, bearingDeg, lengthM, widthM || 0)
+    .map((h) => ({ along: h.along, pop: h.pop }))
+    .sort((a, b) => a.along - b.along);
 }
 
 /** People inside a corridor of length lengthM and width widthM. */
@@ -303,9 +313,57 @@ function searchCaps(maxLengthM) {
 }
 
 /**
+ * Distance-to-N on one grid with expanding length caps.
+ * @returns {RayResult}
+ */
+function probeRayOnGrid(
+  grid,
+  origin,
+  bearingDeg,
+  targetPeople,
+  widthM,
+  maxLengthM,
+) {
+  let people = 0;
+  for (const cap of searchCaps(maxLengthM)) {
+    const hits = corridorHitsOnGrid(
+      grid,
+      origin,
+      bearingDeg,
+      cap,
+      widthM || 0,
+    );
+    people = 0;
+    for (const h of hits) {
+      people += h.pop;
+      if (people >= targetPeople) {
+        return {
+          bearingDeg,
+          people: targetPeople,
+          lengthM: h.along,
+          widthM,
+          reached: true,
+        };
+      }
+    }
+  }
+  return {
+    bearingDeg,
+    people,
+    lengthM: maxLengthM,
+    widthM,
+    reached: false,
+  };
+}
+
+/**
  * One bearing: shortest corridor to N people, plus people counted if unreached.
- * Uses expanding length caps (cheap when N is nearby) and never re-walks for
- * the unreached population total.
+ *
+ * Tries each covering grid on its own, finest first. Full-cell credit makes a
+ * fine tile an effectively narrower strip than CONUS; stitching them in one
+ * walk (fine in-metro, CONUS beyond) undercounts the city then can stretch the
+ * remainder to the opposite coast. If the fine tile can hit N, use it; otherwise
+ * fall back to a coarser grid for that whole ray.
  */
 export function probeRay(
   gridOrGrids,
@@ -334,36 +392,31 @@ export function probeRay(
     };
   }
 
-  let people = 0;
-  for (const cap of searchCaps(maxLengthM)) {
-    const hits = corridorHitsOnGrids(
-      gridOrGrids,
+  const grids = orderedGrids(gridOrGrids, origin);
+  if (!grids.length) {
+    return {
+      bearingDeg,
+      people: 0,
+      lengthM: maxLengthM,
+      widthM,
+      reached: false,
+    };
+  }
+
+  let fallback = null;
+  for (const grid of grids) {
+    const ray = probeRayOnGrid(
+      grid,
       origin,
       bearingDeg,
-      cap,
-      widthM || 0,
+      targetPeople,
+      widthM,
+      maxLengthM,
     );
-    people = 0;
-    for (const h of hits) {
-      people += h.pop;
-      if (people >= targetPeople) {
-        return {
-          bearingDeg,
-          people: targetPeople,
-          lengthM: h.along,
-          widthM,
-          reached: true,
-        };
-      }
-    }
+    if (ray.reached) return ray;
+    fallback = ray;
   }
-  return {
-    bearingDeg,
-    people,
-    lengthM: maxLengthM,
-    widthM,
-    reached: false,
-  };
+  return fallback;
 }
 
 /**

@@ -62,7 +62,7 @@ test("rose grids cascade fine Northeast then CONUS in NYC", async () => {
   );
 });
 
-test("Manhattan NW ray reaches 100k once CONUS continues past NE tile", async () => {
+test("Manhattan NW ray reaches 100k on the fine tile alone", async () => {
   const conus = await loadGridFromGzip(
     JSON.parse(readFileSync(join(root, "data/conus-0p02.json"), "utf8")),
     readFileSync(join(root, "data/conus-0p02.f32.gz")),
@@ -74,11 +74,34 @@ test("Manhattan NW ray reaches 100k once CONUS continues past NE tile", async ()
   const o = { lat: 40.758, lon: -73.9855 };
   const W = feetToMeters(100);
   const maxM = milesToMeters(3000);
-  const cascaded = distanceToPeople([ne, conus], o, 300, 100_000, W, maxM);
-  assert.ok(Number.isFinite(cascaded), `cascade should reach, got ${cascaded}`);
+  const dist = distanceToPeople([ne, conus], o, 300, 100_000, W, maxM);
+  assert.ok(Number.isFinite(dist), `should reach, got ${dist}`);
   assert.ok(
-    cascaded < milesToMeters(150),
-    `expected under 150 mi, got ${formatDistance(cascaded)}`,
+    dist < milesToMeters(150),
+    `expected under 150 mi, got ${formatDistance(dist)}`,
+  );
+});
+
+test("Manhattan NW at 350k does not stretch to the Pacific", async () => {
+  // Regression: fine-then-CONUS stitching undercounted the metro strip and
+  // finished the remainder near Seattle (~2400 mi). Fall back to CONUS for
+  // the whole ray when the fine tile cannot hit N.
+  const conus = await loadGridFromGzip(
+    JSON.parse(readFileSync(join(root, "data/conus-0p02.json"), "utf8")),
+    readFileSync(join(root, "data/conus-0p02.f32.gz")),
+  );
+  const ne = await loadGridFromGzip(
+    JSON.parse(readFileSync(join(root, "data/northeast-0p005.json"), "utf8")),
+    readFileSync(join(root, "data/northeast-0p005.f32.gz")),
+  );
+  const o = { lat: 40.758, lon: -73.9855 };
+  const W = feetToMeters(100);
+  const maxM = milesToMeters(3000);
+  const dist = distanceToPeople([ne, conus], o, 300, 350_000, W, maxM);
+  assert.ok(Number.isFinite(dist), `should reach 350k, got ${dist}`);
+  assert.ok(
+    dist < milesToMeters(50),
+    `expected under 50 mi (not a coast-to-coast spike), got ${formatDistance(dist)}`,
   );
 });
 
