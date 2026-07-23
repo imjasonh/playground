@@ -94,16 +94,25 @@ export function pickGrid(grids, lat, lon, prefer = "finest") {
 }
 
 /**
- * Choose a grid for a distance-to-N query.
- * Smaller targets use the finest local tile (better metro shape).
- * Large targets need the continental grid so rays aren't clipped.
+ * Grids to use for a distance-to-N rose: every tile containing the origin,
+ * finest first. computeRose cascades so rays can leave a metro tile and keep
+ * counting on CONUS (avoids “94k then forever” at the NE tile edge).
+ */
+export function gridsForRose(grids, lat, lon) {
+  return grids
+    .filter((g) => g.contains(lat, lon))
+    .sort((a, b) => a.meta.cellDeg - b.meta.cellDeg);
+}
+
+/**
+ * @deprecated Prefer gridsForRose + cascaded computeRose.
+ * Choose a single grid for a distance-to-N query.
  */
 export function pickGridForTarget(grids, lat, lon, targetPeople) {
   const fine = pickGrid(grids, lat, lon, "finest");
   const broad = pickGrid(grids, lat, lon, "broadest");
   if (!fine) return broad;
   if (!broad) return fine;
-  // ~250k fits in the Northeast tile for dense urban walks; 1M often needs CONUS.
   if (targetPeople <= 250_000 && fine.meta.cellDeg < broad.meta.cellDeg) {
     return fine;
   }

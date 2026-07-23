@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { loadGridFromGzip, pickGridForTarget } from "../src/grid.js";
+import { loadGridFromGzip, gridsForRose, pickGridForTarget } from "../src/grid.js";
 import { distanceToPeople, peopleInCorridor } from "../src/rays.js";
 import { feetToMeters, formatDistance, milesToMeters } from "../src/geo.js";
 
@@ -40,7 +40,7 @@ test("Times Square landward corridor beats due west over water", async () => {
   );
 });
 
-test("100k target uses fine Northeast grid in NYC", async () => {
+test("rose grids cascade fine Northeast then CONUS in NYC", async () => {
   const conus = await loadGridFromGzip(
     JSON.parse(readFileSync(join(root, "data/conus-0p02.json"), "utf8")),
     readFileSync(join(root, "data/conus-0p02.f32.gz")),
@@ -50,13 +50,37 @@ test("100k target uses fine Northeast grid in NYC", async () => {
     readFileSync(join(root, "data/northeast-0p005.f32.gz")),
   );
   const o = { lat: 40.706, lon: -74.012 };
+  const grids = gridsForRose([conus, ne], o.lat, o.lon);
+  assert.deepEqual(
+    grids.map((g) => g.meta.key),
+    ["northeast-0p005", "conus-0p02"],
+  );
+  // Single-grid helper still prefers the fine tile for small targets.
   assert.equal(
     pickGridForTarget([conus, ne], o.lat, o.lon, 100_000).meta.key,
     "northeast-0p005",
   );
-  assert.equal(
-    pickGridForTarget([conus, ne], o.lat, o.lon, 1_000_000).meta.key,
-    "conus-0p02",
+});
+
+test("Manhattan NW ray reaches 100k once CONUS continues past NE tile", async () => {
+  const conus = await loadGridFromGzip(
+    JSON.parse(readFileSync(join(root, "data/conus-0p02.json"), "utf8")),
+    readFileSync(join(root, "data/conus-0p02.f32.gz")),
+  );
+  const ne = await loadGridFromGzip(
+    JSON.parse(readFileSync(join(root, "data/northeast-0p005.json"), "utf8")),
+    readFileSync(join(root, "data/northeast-0p005.f32.gz")),
+  );
+  const o = { lat: 40.758, lon: -73.9855 };
+  const W = feetToMeters(100);
+  const maxM = milesToMeters(3000);
+  const neOnly = distanceToPeople(ne, o, 300, 100_000, W, maxM);
+  const cascaded = distanceToPeople([ne, conus], o, 300, 100_000, W, maxM);
+  assert.equal(neOnly, Infinity, "NE tile alone should stall under 100k at 300°");
+  assert.ok(Number.isFinite(cascaded), `cascade should reach, got ${cascaded}`);
+  assert.ok(
+    cascaded < milesToMeters(150),
+    `expected under 150 mi after leaving the NE tile, got ${formatDistance(cascaded)}`,
   );
 });
 

@@ -7,7 +7,7 @@ import {
   formatPeople,
   milesToMeters,
 } from "./geo.js";
-import { loadGridFromGzip, pickGridForTarget } from "./grid.js";
+import { loadGridFromGzip, gridsForRose } from "./grid.js";
 import { computeRose, rosePolygon } from "./rays.js";
 
 const PLACES = {
@@ -225,13 +225,12 @@ function fitToRose() {
 async function recompute({ fit = false } = {}) {
   if (state.busy || !state.grids.length) return;
   const opts = readControls();
-  const grid = pickGridForTarget(
+  const grids = gridsForRose(
     state.grids,
     state.origin.lat,
     state.origin.lon,
-    opts.targetPeople,
   );
-  if (!grid) {
+  if (!grids.length) {
     setStatus("Outside the US grid.", "warn");
     state.rays = [];
     drawRose();
@@ -242,7 +241,7 @@ async function recompute({ fit = false } = {}) {
   setStatus("Computing…");
   await new Promise((r) => setTimeout(r, 0));
   try {
-    state.rays = computeRose(grid, state.origin, opts);
+    state.rays = computeRose(grids, state.origin, opts);
     drawRose();
     updateHero();
     updateHoverReadout();
