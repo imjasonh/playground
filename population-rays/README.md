@@ -34,8 +34,7 @@ Meta / CIESIN HRSL population counts:
 | `data/northeast-0p005.*` | ~550 m | NYC metro |
 
 The rose always uses the finest grid covering the pin (Northeast in NYC,
-CONUS elsewhere). Directions that cannot hit N on that tile stay unreached
-(dashed) instead of mixing in a coarser grid mid-rose — that mix caused
-needle spikes and slider shapes that jumped between refreshes.
+CONUS elsewhere). Directions that cannot hit N on that tile show as slate
+slices out to the search limit (fading to transparent), not ragged gaps.
 
 Rebuild: `python3 scripts/build-population-grid.py`

@@ -2,6 +2,7 @@
 
 import {
   bearingLabel,
+  destination,
   feetToMeters,
   formatDistance,
   formatPeople,
@@ -158,6 +159,124 @@ function tipLatLng(bearingDeg, lengthM) {
   return rosePolygon(state.origin, [{ bearingDeg }], () => lengthM)[0];
 }
 
+/** LatLng at bearing/distance from the current origin. */
+function atBearing(bearingDeg, lengthM) {
+  const p = destination(
+    state.origin.lat,
+    state.origin.lon,
+    bearingDeg,
+    lengthM,
+  );
+  return [p.lat, p.lon];
+}
+
+/**
+ * Contiguous runs of unreached bearings, as [startIdx, endIdx] inclusive.
+ * Handles wrap-around (e.g. last + first both open).
+ */
+function unreachedRuns(rays) {
+  const n = rays.length;
+  if (!n) return [];
+  const open = rays.map((r) => !r.reached);
+  if (!open.some(Boolean)) return [];
+  if (open.every(Boolean)) return [[0, n - 1]];
+
+  /** @type {[number, number][]} */
+  const runs = [];
+  let i = 0;
+  while (i < n) {
+    if (!open[i]) {
+      i += 1;
+      continue;
+    }
+    let j = i;
+    while (j + 1 < n && open[j + 1]) j += 1;
+    runs.push([i, j]);
+    i = j + 1;
+  }
+  // Merge a trailing run with a leading run across 0°.
+  if (runs.length >= 2 && runs[0][0] === 0 && runs[runs.length - 1][1] === n - 1) {
+    const head = runs.shift();
+    const tail = runs.pop();
+    runs.push([tail[0], head[1]]);
+  }
+  return runs;
+}
+
+/** Angular edges of an inclusive ray-index run (wrap-aware). */
+function runBearingEdges(rays, startIdx, endIdx) {
+  const n = rays.length;
+  const step = 360 / n;
+  if (startIdx <= endIdx) {
+    return {
+      left: rays[startIdx].bearingDeg - step / 2,
+      right: rays[endIdx].bearingDeg + step / 2,
+    };
+  }
+  // Wrapped: startIdx..n-1 and 0..endIdx
+  return {
+    left: rays[startIdx].bearingDeg - step / 2,
+    right: rays[endIdx].bearingDeg + step / 2 + 360,
+  };
+}
+
+/** Closed ring for an annular sector from bearing left→right (right may be >360). */
+function sectorRing(leftDeg, rightDeg, rInner, rOuter) {
+  const span = rightDeg - leftDeg;
+  const samples = Math.max(2, Math.ceil(Math.abs(span) / 4));
+  /** @type {[number, number][]} */
+  const outer = [];
+  /** @type {[number, number][]} */
+  const inner = [];
+  for (let s = 0; s <= samples; s++) {
+    const b = leftDeg + (span * s) / samples;
+    outer.push(atBearing(b, rOuter));
+    if (rInner > 0) inner.push(atBearing(b, rInner));
+  }
+  if (rInner <= 0) {
+    return [[state.origin.lat, state.origin.lon], ...outer];
+  }
+  return [...inner, ...outer.reverse()];
+}
+
+/**
+ * Soft “beyond max search” fan: solid near the pin, fading to transparent at
+ * MAX_SEARCH_MI so the cutoff reads as “farther than this,” not a hard rim.
+ */
+function drawOpenSlices(group, rays) {
+  const maxM = milesToMeters(MAX_SEARCH_MI);
+  const BANDS = 14;
+  const FADE_START = 0.5; // outer half fades
+  const BASE_FILL = 0.26;
+
+  for (const [startIdx, endIdx] of unreachedRuns(rays)) {
+    const { left, right } = runBearingEdges(rays, startIdx, endIdx);
+    for (let b = 0; b < BANDS; b++) {
+      const t0 = b / BANDS;
+      const t1 = (b + 1) / BANDS;
+      const r0 = t0 * maxM;
+      const r1 = t1 * maxM;
+      const tMid = (t0 + t1) / 2;
+      const fade =
+        tMid <= FADE_START
+          ? 1
+          : Math.max(0, 1 - (tMid - FADE_START) / (1 - FADE_START));
+      const fillOpacity = BASE_FILL * fade * fade;
+      if (fillOpacity < 0.01) continue;
+
+      L.polygon(sectorRing(left, right, r0, r1), {
+        stroke: b === 0,
+        color: "#3d5a6c",
+        weight: b === 0 ? 1 : 0,
+        opacity: 0.35,
+        fillColor: "#5b7c99",
+        fillOpacity,
+        interactive: false,
+      }).addTo(group);
+    }
+  }
+}
+
 function drawRose() {
   if (roseLayer) map.removeLayer(roseLayer);
   if (openLayer) map.removeLayer(openLayer);
@@ -165,11 +284,15 @@ function drawRose() {
   if (!state.rays.length) return;
 
   const reachedRays = state.rays.filter((r) => r.reached);
+  const hasOpen = reachedRays.length < state.rays.length;
 
-  // Build the rose from every bearing. Unreached tips collapse to the origin
-  // so we get real petals — never a polygon that only connects far tip points
-  // (which floated as a giant blob over the SE when sparse origins only hit
-  // N in a few directions).
+  // Unreached fans first (under the amber rose). Gaps in the rose — tips
+  // collapsed to the pin — let these slate slices show through.
+  if (hasOpen) {
+    openLayer = L.layerGroup().addTo(map);
+    drawOpenSlices(openLayer, state.rays);
+  }
+
   if (reachedRays.length) {
     roseLayer = L.polygon(
       rosePolygon(state.origin, state.rays, (ray) =>
@@ -181,29 +304,6 @@ function drawRose() {
         opacity: 0.95,
         fillColor: "#f59e0b",
         fillOpacity: 0.32,
-      },
-    ).addTo(map);
-  }
-
-  // Unreached bearings: short dashed ticks at the rose scale (not 3000 mi spokes).
-  if (reachedRays.length && reachedRays.length < state.rays.length) {
-    const tickM = Math.max(
-      ...reachedRays.map((r) => r.lengthM),
-      milesToMeters(50),
-    );
-    openLayer = L.polyline(
-      state.rays
-        .filter((r) => !r.reached)
-        .map((r) => [
-          [state.origin.lat, state.origin.lon],
-          tipLatLng(r.bearingDeg, tickM * 1.08),
-        ]),
-      {
-        color: "#64748b",
-        weight: 1.25,
-        opacity: 0.45,
-        dashArray: "5 7",
-        interactive: false,
       },
     ).addTo(map);
   }
@@ -266,7 +366,12 @@ async function recompute({ fit = false } = {}) {
     if (fit) fitToRose();
     const n = formatPeople(opts.targetPeople);
     setStatus("Ready", "ok");
-    setMapHint(`Solid petals hit ${n} · dashed = not reached`);
+    const anyOpen = state.rays.some((r) => !r.reached);
+    setMapHint(
+      anyOpen
+        ? `Amber hits ${n} · slate fades past ${MAX_SEARCH_MI} mi`
+        : `Petals hit ${n}`,
+    );
   } catch (err) {
     if (gen !== state.computeGen) return;
     console.error(err);
