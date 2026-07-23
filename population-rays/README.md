@@ -3,7 +3,10 @@
 From a pin on the map: how far must a **100 ft** corridor go in each direction
 before it hits **N** people?
 
-Petal length = that distance. Short in Manhattan; often unreachable in Wyoming.
+Petal length = that distance. Short in Manhattan; long (or unreachable) in
+Wyoming. At the packaged ~2 km grid, that thin corridor is treated as about
+one cell wide so rays through cities like LA still count the people they
+cross.
 
 ## Controls
 

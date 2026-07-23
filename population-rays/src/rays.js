@@ -5,12 +5,10 @@
  * in population cells the corridor covers. Ask: how long must the corridor be
  * before it has hit N people?
  *
- * Model:
- *  1. Cells the centerline crosses (so a thin corridor still works), plus
- *  2. Cells whose centers lie within W/2 of the centerline (wider → more).
- *
- * Below roughly one grid cell of width, (2) adds little — the map resolution
- * is the limit. Widen into miles and petals shrink.
+ * At packaged resolutions (~0.5–2 km), a 100 ft corridor is thinner than a
+ * cell. We treat that as ~one cell wide: cells the centerline crosses, plus
+ * cells whose centers lie within one cell of the line. Wider W expands the
+ * catch radius further.
  */
 
 import { destination, metersPerDegree } from "./geo.js";
@@ -24,7 +22,19 @@ import { destination, metersPerDegree } from "./geo.js";
  * @property {boolean} reached
  */
 
+/** Catch radius so a thin corridor still hits cells it grazes. */
+function catchRadiusM(grid, origin, widthM) {
+  const halfW = Math.max(0, widthM) / 2;
+  // One cell: otherwise a 5° rose ray can thread past LA and miss 500k.
+  const cellM = grid.cellSizeM(origin.lat);
+  return Math.max(halfW, cellM);
+}
+
 /**
+ * Walk the geodesic centerline; collect cells near the strip.
+ * Uses a fine step and a ±1 cell neighborhood with a local perpendicular test
+ * so long diagonals don’t skip metro cores.
+ *
  * @param {import('./grid.js').PopulationGrid} grid
  * @param {{lat:number, lon:number}} origin
  * @param {number} bearingDeg
@@ -34,10 +44,12 @@ import { destination, metersPerDegree } from "./geo.js";
  */
 function cellsInCorridor(grid, origin, bearingDeg, lengthM, widthM) {
   if (lengthM <= 0) return [];
+
   const cellDeg = grid.meta.cellDeg;
+  const catchM = catchRadiusM(grid, origin, widthM);
   const cellM = grid.cellSizeM(origin.lat);
-  const halfW = Math.max(0, widthM) / 2;
-  const { lat: mLat, lon: mLon } = metersPerDegree(origin.lat);
+  // Fine enough to not skip a cell on diagonal geodesics.
+  const step = Math.max(Math.min(cellM * 0.2, 150), 25);
   const rad = (bearingDeg * Math.PI) / 180;
   const dirX = Math.sin(rad);
   const dirY = Math.cos(rad);
@@ -53,58 +65,43 @@ function cellsInCorridor(grid, origin, bearingDeg, lengthM, widthM) {
     if (prev == null || a < prev.along) seen.set(idx, { idx, pop, along: a });
   }
 
-  // 1) Centerline walk — thin corridors still hit cells they cross.
-  const step = Math.max(cellM * 0.35, 1);
   const nSteps = Math.max(1, Math.ceil(lengthM / step));
   for (let i = 0; i <= nSteps; i++) {
     const along = Math.min(lengthM, i * step);
     const p = destination(origin.lat, origin.lon, bearingDeg, along);
     if (!grid.contains(p.lat, p.lon)) continue;
+
     const col = Math.floor((p.lon - grid.meta.west) / cellDeg);
     const row = Math.floor((grid.meta.north - p.lat) / cellDeg);
     if (col < 0 || col >= grid.meta.width || row < 0 || row >= grid.meta.height) {
       continue;
     }
+
+    // Always count the cell the centerline is in (don’t require the sample
+    // to sit near the cell center — corner samples would fail that test).
     add(row * grid.meta.width + col, along);
-  }
 
-  // 2) Width band — pull in neighbors as W grows past ~one cell.
-  if (halfW > 0) {
-    const pad = halfW + cellM;
-    const reach = lengthM + pad;
-    const west = origin.lon - reach / mLon;
-    const east = origin.lon + reach / mLon;
-    const south = origin.lat - reach / mLat;
-    const north = origin.lat + reach / mLat;
-
-    const c0 = Math.max(0, Math.floor((west - grid.meta.west) / cellDeg));
-    const c1 = Math.min(
-      grid.meta.width - 1,
-      Math.floor((east - grid.meta.west) / cellDeg),
-    );
-    const r0 = Math.max(
-      0,
-      Math.floor((grid.meta.north - north) / cellDeg),
-    );
-    const r1 = Math.min(
-      grid.meta.height - 1,
-      Math.floor((grid.meta.north - south) / cellDeg),
-    );
-
-    for (let r = r0; r <= r1; r++) {
-      for (let c = c0; c <= c1; c++) {
+    const { lat: mLat, lon: mLon } = metersPerDegree(p.lat);
+    const neighbor = Math.max(1, Math.ceil(catchM / Math.max(cellM, 1)) + 1);
+    for (let dr = -neighbor; dr <= neighbor; dr++) {
+      for (let dc = -neighbor; dc <= neighbor; dc++) {
+        if (dr === 0 && dc === 0) continue;
+        const r = row + dr;
+        const c = col + dc;
+        if (r < 0 || r >= grid.meta.height || c < 0 || c >= grid.meta.width) {
+          continue;
+        }
         const idx = r * grid.meta.width + c;
-        const pop = grid.data[idx];
-        if (!(pop > 0)) continue;
         const clat = grid.meta.north - (r + 0.5) * cellDeg;
         const clon = grid.meta.west + (c + 0.5) * cellDeg;
-        const dx = (clon - origin.lon) * mLon;
-        const dy = (clat - origin.lat) * mLat;
-        const along = dx * dirX + dy * dirY;
-        if (along < -halfW || along > lengthM) continue;
+        const dx = (clon - p.lon) * mLon;
+        const dy = (clat - p.lat) * mLat;
         const cross = Math.abs(dx * dirY - dy * dirX);
-        if (cross > halfW) continue;
-        add(idx, along);
+        if (cross > catchM) continue;
+        const alongOffset = dx * dirX + dy * dirY;
+        const cellAlong = along + alongOffset;
+        if (cellAlong < -catchM || cellAlong > lengthM) continue;
+        add(idx, cellAlong);
       }
     }
   }
