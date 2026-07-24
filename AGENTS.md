@@ -150,7 +150,7 @@ discovery scripts.
 | `deploy.yml` | push to `main` | Publishes all browser apps to GitHub Pages production |
 | `deploy-workers.yml` | push to `main`, manual | Deploys changed Cloudflare Worker apps (those with `wrangler.toml`) with `wrangler`, using the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets; a manual *Run workflow* (`workflow_dispatch`) redeploys all of them. Before deploy it create-or-gets each Worker's KV namespaces (substituting the placeholder ids in `wrangler.toml`) and creates any declared R2 buckets that don't exist; after deploy it get-or-generates a `VAPID_PRIVATE_KEY` secret for any Worker shipping an `examples/genvapid.rs` |
 | `preview.yml` | pull request opened/sync | When a browser app changed: deploys under `/preview/pr-<N>/` and comments the URL; otherwise no-ops |
-| `cleanup.yml` | pull request closed | Removes that PR's preview directory from `gh-pages` and refreshes the root index |
+| `cleanup.yml` | pull request closed, manual | Removes closed-PR preview dirs from `gh-pages` (reconciles all open PRs) and refreshes the root index |
 | `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps in one job |
 | `ios.yml` | push to `main`, pull requests | Tests changed iOS apps on macOS; on `main`, delivers them to TestFlight |
 | `macos.yml` | push to `main`, pull requests | Tests changed macOS apps on macOS; on `main`, ships notarized Sparkle updates when secrets are present |
