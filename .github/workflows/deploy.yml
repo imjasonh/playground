@@ -11,6 +11,7 @@ concurrency:
 
 permissions:
   contents: write
+  pull-requests: read
 
 jobs:
   deploy:
@@ -52,6 +53,15 @@ jobs:
       # regenerated index below — matches the current source apps.
       - name: Prune orphaned apps
         run: bash .github/scripts/prune-orphaned-apps.sh gh-pages "$GITHUB_WORKSPACE"
+
+      # Same keep_files: true side effect for closed-PR previews: if cleanup.yml
+      # missed a pull_request closed webhook (common when bulk-closing), the
+      # preview stays on gh-pages and the home page keeps listing it. Reconcile
+      # against currently open PRs before regenerating the index.
+      - name: Prune orphaned previews
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/prune-orphaned-previews.sh gh-pages --from-github
 
       - name: Refresh site index
         env:

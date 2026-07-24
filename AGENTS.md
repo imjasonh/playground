@@ -150,7 +150,7 @@ discovery scripts.
 | `deploy.yml` | push to `main` | Publishes all browser apps to GitHub Pages production |
 | `deploy-workers.yml` | push to `main`, manual | Deploys changed Cloudflare Worker apps (those with `wrangler.toml`) with `wrangler`, using the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets; a manual *Run workflow* (`workflow_dispatch`) redeploys all of them. Before deploy it create-or-gets each Worker's KV namespaces (substituting the placeholder ids in `wrangler.toml`) and creates any declared R2 buckets that don't exist; after deploy it get-or-generates a `VAPID_PRIVATE_KEY` secret for any Worker shipping an `examples/genvapid.rs` |
 | `preview.yml` | pull request opened/sync | When a browser app changed: deploys under `/preview/pr-<N>/` and comments the URL; otherwise no-ops |
-| `cleanup.yml` | pull request closed | Removes that PR's preview directory from `gh-pages` and refreshes the root index |
+| `cleanup.yml` | pull request closed, manual | Removes closed-PR preview dirs from `gh-pages` (reconciles all open PRs) and refreshes the root index |
 | `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps in one job |
 | `ios.yml` | push to `main`, pull requests | Tests changed iOS apps on macOS; on `main`, delivers them to TestFlight |
 | `macos.yml` | push to `main`, pull requests | Tests changed macOS apps on macOS; on `main`, ships notarized Sparkle updates when secrets are present |
@@ -183,11 +183,19 @@ removed in the source tree would otherwise linger on `gh-pages` and keep showing
 up on the home page. `deploy.yml` therefore runs
 `.github/scripts/prune-orphaned-apps.sh` before regenerating the index to delete
 published app directories (those with `index.html`, excluding `preview/`) that
-no longer exist as source browser apps. `discover-browser-apps.sh` reports which
-browser apps a change set touched; `render-index_test.py` covers the renderer
-(run `python3 .github/scripts/render-index_test.py`), and
-`prune-orphaned-apps_test.sh` covers the pruner (run
-`bash .github/scripts/prune-orphaned-apps_test.sh`).
+no longer exist as source browser apps. The same `keep_files: true` setting also
+preserves `preview/pr-<N>/` directories; `cleanup.yml` removes one on close, but
+bulk-closing PRs can drop some `pull_request` closed webhooks, leaving closed
+previews listed on the home page. Both `cleanup.yml` and `deploy.yml` therefore
+also run `.github/scripts/prune-orphaned-previews.sh`, which deletes every
+`preview/pr-<N>/` whose PR is not currently open (and `cleanup.yml` supports
+`workflow_dispatch` for a manual reconcile). `discover-browser-apps.sh` reports
+which browser apps a change set touched; `render-index_test.py` covers the
+renderer (run `python3 .github/scripts/render-index_test.py`),
+`prune-orphaned-apps_test.sh` covers the app pruner (run
+`bash .github/scripts/prune-orphaned-apps_test.sh`), and
+`prune-orphaned-previews_test.sh` covers the preview pruner (run
+`bash .github/scripts/prune-orphaned-previews_test.sh`).
 
 ### Production URLs
 
