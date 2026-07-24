@@ -11,8 +11,8 @@
     "start": "npx --yes serve . -p 3000"
   },
   "dependencies": {
-    "@isomorphic-git/lightning-fs": "4.6.2",
-    "isomorphic-git": "1.38.7"
+    "@isomorphic-git/lightning-fs": "4.6.3",
+    "isomorphic-git": "1.40.0"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",
