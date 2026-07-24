@@ -183,11 +183,19 @@ removed in the source tree would otherwise linger on `gh-pages` and keep showing
 up on the home page. `deploy.yml` therefore runs
 `.github/scripts/prune-orphaned-apps.sh` before regenerating the index to delete
 published app directories (those with `index.html`, excluding `preview/`) that
-no longer exist as source browser apps. `discover-browser-apps.sh` reports which
-browser apps a change set touched; `render-index_test.py` covers the renderer
-(run `python3 .github/scripts/render-index_test.py`), and
-`prune-orphaned-apps_test.sh` covers the pruner (run
-`bash .github/scripts/prune-orphaned-apps_test.sh`).
+no longer exist as source browser apps. The same `keep_files: true` setting also
+preserves `preview/pr-<N>/` directories; `cleanup.yml` removes one on close, but
+bulk-closing PRs can drop some `pull_request` closed webhooks, leaving closed
+previews listed on the home page. Both `cleanup.yml` and `deploy.yml` therefore
+also run `.github/scripts/prune-orphaned-previews.sh`, which deletes every
+`preview/pr-<N>/` whose PR is not currently open (and `cleanup.yml` supports
+`workflow_dispatch` for a manual reconcile). `discover-browser-apps.sh` reports
+which browser apps a change set touched; `render-index_test.py` covers the
+renderer (run `python3 .github/scripts/render-index_test.py`),
+`prune-orphaned-apps_test.sh` covers the app pruner (run
+`bash .github/scripts/prune-orphaned-apps_test.sh`), and
+`prune-orphaned-previews_test.sh` covers the preview pruner (run
+`bash .github/scripts/prune-orphaned-previews_test.sh`).
 
 ### Production URLs
 
