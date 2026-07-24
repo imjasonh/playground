@@ -1,0 +1,21 @@
+{
+  "name": "bubble-man-rom-walkthrough",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "playwrightBrowsers": [
+    "chromium",
+    "webkit"
+  ],
+  "scripts": {
+    "start": "npx --yes serve . -p 3000",
+    "test": "node --test",
+    "test:e2e": "playwright test --project=chromium --project=mobile-chromium && playwright test --project=mobile-webkit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1"
+  }
+}
