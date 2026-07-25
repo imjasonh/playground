@@ -120,6 +120,7 @@ enum StereoPairAligner {
         ultraWide: UIImage,
         ultraWideZoomFactor: CGFloat = defaultUltraWideZoomFactor,
         refineScale: Bool = true,
+        matchBrightness: Bool = true,
         swapEyes: Bool
     ) -> Pair? {
         let target = wide.size
@@ -144,15 +145,59 @@ enum StereoPairAligner {
             return nil
         }
 
-        let left = swapEyes ? wide : matchedUW
-        let right = swapEyes ? matchedUW : wide
+        let rawLeft = swapEyes ? wide : matchedUW
+        let rawRight = swapEyes ? matchedUW : wide
+        let matched = matchBrightness
+            ? matchLuminance(left: rawLeft, right: rawRight)
+            : (left: rawLeft, right: rawRight)
         return Pair(
-            left: left,
-            right: right,
+            left: matched.left,
+            right: matched.right,
             wide: wide,
             ultraWideMatched: matchedUW,
             appliedZoomFactor: factor
         )
+    }
+
+    /// Scale each eye so mean luminance meets at the geometric mean — UW and
+    /// wide often expose differently, which reads as flicker in a wigglegram.
+    static func matchLuminance(left: UIImage, right: UIImage) -> (left: UIImage, right: UIImage) {
+        let meanL = meanLuminance(left) ?? 0.5
+        let meanR = meanLuminance(right) ?? 0.5
+        let target = max(0.05, sqrt(max(meanL, 0.01) * max(meanR, 0.01)))
+        let leftScale = target / max(meanL, 0.01)
+        let rightScale = target / max(meanR, 0.01)
+        // Skip tiny adjustments that only add processing noise.
+        let adjustedLeft = abs(leftScale - 1) < 0.03
+            ? left
+            : (applyLuminanceScale(left, scale: leftScale) ?? left)
+        let adjustedRight = abs(rightScale - 1) < 0.03
+            ? right
+            : (applyLuminanceScale(right, scale: rightScale) ?? right)
+        return (adjustedLeft, adjustedRight)
+    }
+
+    static func meanLuminance(_ image: UIImage, sampleSide: Int = 48) -> Double? {
+        guard let samples = grayscaleSamples(image, side: sampleSide), !samples.isEmpty else {
+            return nil
+        }
+        let sum = samples.reduce(0 as Float) { $0 + $1 }
+        return Double(sum / Float(samples.count))
+    }
+
+    static func applyLuminanceScale(_ image: UIImage, scale: CGFloat) -> UIImage? {
+        guard let cgImage = image.cgImage else { return nil }
+        let clamped = min(max(scale, 0.35), 2.8)
+        // EV stops: exposure *= 2^EV → EV = log2(scale)
+        let ev = log2(Double(clamped))
+        let ciImage = CIImage(cgImage: cgImage)
+        guard let filter = CIFilter(name: "CIExposureAdjust") else { return nil }
+        filter.setValue(ciImage, forKey: kCIInputImageKey)
+        filter.setValue(ev, forKey: kCIInputEVKey)
+        guard let output = filter.outputImage else { return nil }
+        let context = CIContext(options: [.useSoftwareRenderer: false])
+        guard let rendered = context.createCGImage(output, from: output.extent) else { return nil }
+        return UIImage(cgImage: rendered, scale: image.scale, orientation: image.imageOrientation)
     }
 
     // MARK: - Sampling

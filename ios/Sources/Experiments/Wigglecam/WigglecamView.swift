@@ -1,11 +1,11 @@
 import SwiftUI
 
-/// View-Master stereo camera — dual-wide capture with level gate + wigglegram.
-struct ViewMasterStereoView: View {
-    @StateObject private var session = ViewMasterStereoSession()
-    @State private var isExportingGIF = false
-    @State private var shareItem: ShareItem?
-    @State private var exportError: String?
+/// Wigglecam — dual-wide wigglegram capture with a full-bleed shutter.
+struct WigglecamView: View {
+    @StateObject private var session = WigglecamSession()
+    @State private var isSavingGIF = false
+    @State private var saveFlash: String?
+    @State private var saveError: String?
 
     var body: some View {
         GeometryReader { geo in
@@ -14,7 +14,12 @@ struct ViewMasterStereoView: View {
                 Color.black
 
                 if let pair = session.capturedPair {
-                    capturedStage(pair)
+                    StereoFillImage(reference: pair.left) {
+                        WigglegramView(left: pair.left, right: pair.right)
+                    }
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .accessibilityIdentifier("wigglecamPreview")
+
                     reviewChrome
                 } else {
                     liveStage(size: geo.size)
@@ -30,12 +35,9 @@ struct ViewMasterStereoView: View {
         .toolbarColorScheme(.dark, for: .navigationBar)
         .onAppear { session.start() }
         .onDisappear { session.stop() }
-        .sheet(item: $shareItem, onDismiss: clearShareItem) { item in
-            ShareSheet(items: [item.url], onComplete: clearShareItem)
-        }
     }
 
-    // MARK: - Live (full-bleed)
+    // MARK: - Live
 
     private func liveStage(size: CGSize) -> some View {
         Group {
@@ -45,7 +47,7 @@ struct ViewMasterStereoView: View {
                     .scaledToFill()
                     .frame(width: size.width, height: size.height)
                     .clipped()
-                    .accessibilityIdentifier("viewMasterLivePreview")
+                    .accessibilityIdentifier("wigglecamLivePreview")
             } else {
                 placeholder
                     .frame(width: size.width, height: size.height)
@@ -68,7 +70,7 @@ struct ViewMasterStereoView: View {
                         .padding(.vertical, 10)
                         .background(.black.opacity(0.45), in: Capsule())
                         .padding(.bottom, 28)
-                        .accessibilityIdentifier("viewMasterStatusMessage")
+                        .accessibilityIdentifier("wigglecamStatusMessage")
                 }
             }
 
@@ -79,8 +81,6 @@ struct ViewMasterStereoView: View {
                         .padding(.trailing, 18)
                 }
             } else {
-                // Portrait: keep a small shutter so UI tests / accessibility still
-                // find it, but capture stays gated on landscape+level.
                 VStack {
                     Spacer()
                     shutterButton
@@ -109,121 +109,90 @@ struct ViewMasterStereoView: View {
         }
         .buttonStyle(.plain)
         .disabled(!session.canCapture)
-        .accessibilityLabel("Capture stereo pair")
-        .accessibilityIdentifier("viewMasterCaptureButton")
+        .accessibilityLabel("Capture wigglegram")
+        .accessibilityIdentifier("wigglecamCaptureButton")
     }
 
-    // MARK: - Review
-
-    private func capturedStage(_ pair: StereoPairAligner.Pair) -> some View {
-        GeometryReader { geo in
-            switch session.previewMode {
-            case .sideBySide:
-                sideBySide(pair, in: geo.size)
-            case .wigglegram:
-                StereoFillImage(reference: pair.left) {
-                    WigglegramView(left: pair.left, right: pair.right)
-                }
-                .frame(width: geo.size.width, height: geo.size.height)
-            }
-        }
-    }
+    // MARK: - Review (compact floating actions)
 
     private var reviewChrome: some View {
-        VStack(spacing: 0) {
+        VStack {
             Spacer()
-            VStack(alignment: .leading, spacing: 10) {
-                Picker("Preview", selection: $session.previewMode) {
-                    ForEach(ViewMasterStereoSession.PreviewMode.allCases) { mode in
-                        Text(mode.title).tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .accessibilityIdentifier("viewMasterPreviewMode")
-
-                Text(session.statusMessage)
-                    .font(.footnote)
-                    .foregroundStyle(.white.opacity(0.9))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .accessibilityIdentifier("viewMasterStatusMessage")
-
-                HStack(spacing: 10) {
-                    Button("Retake") {
-                        session.clearCapture()
-                        exportError = nil
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(.white)
-                    .controlSize(.large)
-                    .frame(maxWidth: .infinity)
-                    .accessibilityIdentifier("viewMasterRetakeButton")
-
-                    Button {
-                        exportWiggleGIF()
-                    } label: {
-                        if isExportingGIF {
-                            ProgressView()
-                                .tint(.white)
-                                .frame(maxWidth: .infinity)
-                        } else {
-                            Label("Save GIF", systemImage: "square.and.arrow.down")
-                                .frame(maxWidth: .infinity)
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .disabled(isExportingGIF)
-                    .accessibilityIdentifier("viewMasterSaveGIFButton")
-                }
-
-                if let exportError {
-                    Text(exportError)
+            HStack(spacing: 12) {
+                if let saveFlash {
+                    Text(saveFlash)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(.black.opacity(0.55), in: Capsule())
+                        .accessibilityIdentifier("wigglecamSaveFlash")
+                    Spacer()
+                } else if let saveError {
+                    Text(saveError)
                         .font(.caption)
-                        .foregroundStyle(.red)
-                        .accessibilityIdentifier("viewMasterGIFExportError")
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(.red.opacity(0.85), in: Capsule())
+                        .accessibilityIdentifier("wigglecamSaveError")
+                    Spacer()
+                } else {
+                    Spacer()
+                }
+
+                compactIconButton(
+                    systemName: "arrow.counterclockwise",
+                    label: "Retake",
+                    id: "wigglecamRetakeButton"
+                ) {
+                    session.clearCapture()
+                    saveFlash = nil
+                    saveError = nil
+                }
+
+                compactIconButton(
+                    systemName: isSavingGIF ? nil : "square.and.arrow.down",
+                    label: "Save GIF to Photos",
+                    id: "wigglecamSaveGIFButton",
+                    busy: isSavingGIF
+                ) {
+                    saveGIFToPhotos()
                 }
             }
-            .padding(14)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 16)
             .padding(.bottom, 20)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func sideBySide(_ pair: StereoPairAligner.Pair, in size: CGSize) -> some View {
-        let portrait = size.height > size.width
-        return Group {
-            if portrait {
-                VStack(spacing: 10) {
-                    eyeCard(title: "Left", image: pair.left, id: "viewMasterLeftEye")
-                    eyeCard(title: "Right", image: pair.right, id: "viewMasterRightEye")
+    private func compactIconButton(
+        systemName: String?,
+        label: String,
+        id: String,
+        busy: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            ZStack {
+                Circle()
+                    .fill(.ultraThinMaterial)
+                    .frame(width: 48, height: 48)
+                    .overlay(Circle().strokeBorder(.white.opacity(0.35), lineWidth: 1))
+                if busy {
+                    ProgressView()
+                        .tint(.white)
+                } else if let systemName {
+                    Image(systemName: systemName)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.white)
                 }
-                .padding(12)
-            } else {
-                HStack(spacing: 10) {
-                    eyeCard(title: "Left", image: pair.left, id: "viewMasterLeftEye")
-                    eyeCard(title: "Right", image: pair.right, id: "viewMasterRightEye")
-                }
-                .padding(12)
             }
         }
-        .frame(width: size.width, height: size.height)
-    }
-
-    private func eyeCard(title: String, image: UIImage, id: String) -> some View {
-        VStack(spacing: 6) {
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.9))
-            Image(uiImage: image)
-                .resizable()
-                .scaledToFill()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .clipped()
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .accessibilityIdentifier(id)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .buttonStyle(.plain)
+        .disabled(busy)
+        .accessibilityLabel(label)
+        .accessibilityIdentifier(id)
     }
 
     private var readinessBanner: some View {
@@ -234,7 +203,7 @@ struct ViewMasterStereoView: View {
             .padding(.vertical, 8)
             .background(ready ? Color.green.opacity(0.85) : Color.orange.opacity(0.9), in: Capsule())
             .foregroundStyle(.white)
-            .accessibilityIdentifier("viewMasterReadinessBanner")
+            .accessibilityIdentifier("wigglecamReadinessBanner")
     }
 
     private var placeholder: some View {
@@ -265,36 +234,39 @@ struct ViewMasterStereoView: View {
         )
     }
 
-    // MARK: - Export
+    // MARK: - Save
 
-    private func exportWiggleGIF() {
-        guard let pair = session.capturedPair, !isExportingGIF else { return }
-        isExportingGIF = true
-        exportError = nil
+    private func saveGIFToPhotos() {
+        guard let pair = session.capturedPair, !isSavingGIF else { return }
+        isSavingGIF = true
+        saveFlash = nil
+        saveError = nil
         let left = pair.left
         let right = pair.right
-        DispatchQueue.global(qos: .userInitiated).async {
+        Task {
             do {
-                let url = try WiggleGIFEncoder.writeTemporaryWiggleGIF(left: left, right: right)
-                DispatchQueue.main.async {
-                    self.isExportingGIF = false
-                    self.shareItem = ShareItem(url: url)
-                    self.session.setStatusMessage("Wiggle GIF ready — save or share it.")
+                guard let data = WiggleGIFEncoder.makeWiggleGIF(left: left, right: right) else {
+                    throw WiggleGIFEncoder.EncoderError.encodingFailed
+                }
+                try await WiggleGIFPhotoSaver.saveGIF(data)
+                await MainActor.run {
+                    isSavingGIF = false
+                    saveFlash = "Saved to Photos"
+                    session.setStatusMessage("GIF saved to Photos.")
+                }
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                await MainActor.run {
+                    if saveFlash == "Saved to Photos" {
+                        saveFlash = nil
+                    }
                 }
             } catch {
-                DispatchQueue.main.async {
-                    self.isExportingGIF = false
-                    self.exportError = error.localizedDescription
+                await MainActor.run {
+                    isSavingGIF = false
+                    saveError = error.localizedDescription
                 }
             }
         }
-    }
-
-    private func clearShareItem() {
-        if let shareItem {
-            try? FileManager.default.removeItem(at: shareItem.url)
-        }
-        shareItem = nil
     }
 
     private var placeholderSymbol: String {
@@ -312,14 +284,9 @@ struct ViewMasterStereoView: View {
         case .unsupported: return "Dual-wide stereo unavailable"
         case .failed: return "Camera error"
         case .requestingPermission: return "Requesting access…"
-        default: return "View-Master Stereo"
+        default: return "Wigglecam"
         }
     }
-}
-
-private struct ShareItem: Identifiable {
-    let id = UUID()
-    let url: URL
 }
 
 /// Fills the container with a landscape stereo frame; rotates 90° when the
