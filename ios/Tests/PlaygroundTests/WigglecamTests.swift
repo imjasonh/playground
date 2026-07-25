@@ -177,6 +177,26 @@ final class WigglecamTests: XCTestCase {
         }
     }
 
+    /// Top band = highlight (sky), bottom = subject — mimics a backlit window.
+    private func splitToneImage(
+        size: CGFloat,
+        subjectFraction: CGFloat,
+        subject: CGFloat,
+        highlight: CGFloat
+    ) -> UIImage? {
+        let canvas = CGSize(width: size, height: size)
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        format.opaque = true
+        let subjectHeight = size * min(max(subjectFraction, 0.1), 0.95)
+        return UIGraphicsImageRenderer(size: canvas, format: format).image { _ in
+            UIColor(white: highlight, alpha: 1).setFill()
+            UIRectFill(CGRect(x: 0, y: 0, width: size, height: size - subjectHeight))
+            UIColor(white: subject, alpha: 1).setFill()
+            UIRectFill(CGRect(x: 0, y: size - subjectHeight, width: size, height: subjectHeight))
+        }
+    }
+
     private func averageRed(_ image: UIImage) -> CGFloat {
         guard let cgImage = image.cgImage else { return -1 }
         let width = cgImage.width
