@@ -77,6 +77,35 @@ final class ViewMasterStereoTests: XCTestCase {
         XCTAssertEqual(averageRed(swapped.right), 0, accuracy: 0.05)
     }
 
+    func testWiggleGIFEncoderProducesGIFData() throws {
+        let left = solidImage(color: .red, size: CGSize(width: 64, height: 48))
+        let right = solidImage(color: .blue, size: CGSize(width: 64, height: 48))
+        let data = try XCTUnwrap(
+            WiggleGIFEncoder.makeWiggleGIF(left: left, right: right, maxDimension: 64)
+        )
+        XCTAssertGreaterThan(data.count, 20)
+        // ImageIO may emit GIF87a or GIF89a.
+        XCTAssertEqual(Array(data.prefix(4)), Array("GIF8".utf8))
+        let version = Array(data.dropFirst(4).prefix(2))
+        XCTAssertTrue(version == Array("7a".utf8) || version == Array("9a".utf8))
+
+        let url = try WiggleGIFEncoder.writeTemporaryWiggleGIF(
+            left: left,
+            right: right,
+            maxDimension: 64
+        )
+        defer { try? FileManager.default.removeItem(at: url) }
+        XCTAssertEqual(url.pathExtension.lowercased(), "gif")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+    }
+
+    func testScaledCGImageCapsLongEdge() throws {
+        let image = solidImage(color: .green, size: CGSize(width: 400, height: 200))
+        let scaled = try XCTUnwrap(WiggleGIFEncoder.scaledCGImage(from: image, maxDimension: 100))
+        XCTAssertEqual(scaled.width, 100)
+        XCTAssertEqual(scaled.height, 50)
+    }
+
     func testCropFactorUsesFOVTangents() {
         let factor = StereoPairAligner.cropFactor(wideFOVDegrees: 70, ultraWideFOVDegrees: 120)
         // tan(35°)/tan(60°) ≈ 0.7003/1.7321 ≈ 0.404

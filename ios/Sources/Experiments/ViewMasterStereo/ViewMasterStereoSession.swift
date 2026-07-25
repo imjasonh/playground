@@ -118,6 +118,10 @@ final class ViewMasterStereoSession: NSObject, ObservableObject {
             : readiness.blockingReason
     }
 
+    func setStatusMessage(_ message: String) {
+        statusMessage = message
+    }
+
     // MARK: - Configuration
 
     private func configureAndStart() {
