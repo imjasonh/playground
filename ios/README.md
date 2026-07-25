@@ -49,6 +49,7 @@ ios/
 | `snore-log` | Snore Log | In-app; mic buffer + snore clip logging |
 | `z-camera` | Z-Camera | In-app; depth-band live camera (near/far sliders) |
 | `voxel-world` | Voxel World | In-app; ARKit rebuilds the room as Minecraft-style palette blocks |
+| `view-master-stereo` | View-Master Stereo | In-app; dual-wide stereo stills (landscape+level) with L/R + wigglegram |
 
 ### Ride Monitor
 
@@ -151,6 +152,17 @@ camera permission (the existing `NSCameraUsageDescription` — no new Bundle ID,
 entitlement, or signing bootstrap) and works best on LiDAR devices
 (iPhone/iPad Pro). Simulator opens the UI but ARKit tracking is unavailable
 there.
+
+### View-Master Stereo
+
+Simulates a View-Master / spatial-style still capture: streams the rear
+**ultra-wide + wide** cameras together (`AVCaptureMultiCamSession` on the dual
+wide virtual device), requires a **landscape and relatively level** hold
+(Core Motion gravity gate), and on shutter freezes a synchronized pair. The
+ultra-wide frame is center-cropped to roughly match the wide FOV, then shown as
+**left/right** previews and a **wigglegram**. Needs camera + motion permission
+strings already in the host Info.plist (no new Bundle ID or signing bootstrap)
+and a dual-wide MultiCam device. Simulator opens the UI but cannot capture pairs.
 
 ## Adding an experiment
 

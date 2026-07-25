@@ -43,4 +43,8 @@ final class ExperimentCatalogTests: XCTestCase {
     func testIncludesVoxelWorld() {
         XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "voxel-world" })
     }
+
+    func testIncludesViewMasterStereo() {
+        XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "view-master-stereo" })
+    }
 }

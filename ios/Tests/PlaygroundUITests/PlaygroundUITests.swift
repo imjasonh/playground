@@ -44,6 +44,7 @@ final class PlaygroundUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Snore Log"].exists)
         XCTAssertTrue(app.staticTexts["Z-Camera"].exists)
         XCTAssertTrue(app.staticTexts["Voxel World"].exists)
+        XCTAssertTrue(app.staticTexts["View-Master Stereo"].exists)
     }
 
     func testRideMonitorExperimentOpens() {
@@ -132,5 +133,18 @@ final class PlaygroundUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["voxelStatusMessage"].waitForExistence(timeout: 8)
             || app.otherElements["voxelStatusMessage"].waitForExistence(timeout: 3)
             || app.staticTexts["voxelSizeLabel"].waitForExistence(timeout: 3))
+    }
+
+    func testViewMasterStereoExperimentOpens() {
+        let app = launchApp()
+
+        openExperiment("view-master-stereo", title: "View-Master Stereo", in: app)
+
+        XCTAssertTrue(app.navigationBars["View-Master Stereo"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["viewMasterCaptureButton"].waitForExistence(timeout: 8)
+            || app.otherElements["viewMasterCaptureButton"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["viewMasterStatusMessage"].waitForExistence(timeout: 8)
+            || app.otherElements["viewMasterStatusMessage"].waitForExistence(timeout: 3)
+            || app.staticTexts["viewMasterReadinessBanner"].waitForExistence(timeout: 3))
     }
 }
