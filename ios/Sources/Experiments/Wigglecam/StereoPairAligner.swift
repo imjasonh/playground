@@ -159,24 +159,47 @@ enum StereoPairAligner {
         )
     }
 
-    /// Scale each eye so mean luminance meets at the geometric mean — UW and
-    /// wide often expose differently, which reads as flicker in a wigglegram.
+    /// Match brightness (and mild white balance) so wiggle flicker is reduced.
+    ///
+    /// Uses **midtone** statistics and **ignores clipped** near-black / near-white
+    /// pixels. Whole-frame mean matching fails on backlit scenes where one eye
+    /// blows the sky — the average looks fine while plants still flicker.
     static func matchLuminance(left: UIImage, right: UIImage) -> (left: UIImage, right: UIImage) {
-        let meanL = meanLuminance(left) ?? 0.5
-        let meanR = meanLuminance(right) ?? 0.5
-        let target = max(0.05, sqrt(max(meanL, 0.01) * max(meanR, 0.01)))
-        let leftScale = target / max(meanL, 0.01)
-        let rightScale = target / max(meanR, 0.01)
-        // Skip tiny adjustments that only add processing noise.
-        let adjustedLeft = abs(leftScale - 1) < 0.03
+        let sampleSide = 96
+        guard
+            let leftMids = robustChannelMidtones(left, sampleSide: sampleSide),
+            let rightMids = robustChannelMidtones(right, sampleSide: sampleSide)
+        else {
+            return fallbackMeanMatch(left: left, right: right)
+        }
+
+        let target = ChannelMidtones(
+            r: sharedTarget(leftMids.r, rightMids.r),
+            g: sharedTarget(leftMids.g, rightMids.g),
+            b: sharedTarget(leftMids.b, rightMids.b)
+        )
+
+        let leftScales = ChannelScales(
+            r: scale(toward: target.r, from: leftMids.r),
+            g: scale(toward: target.g, from: leftMids.g),
+            b: scale(toward: target.b, from: leftMids.b)
+        )
+        let rightScales = ChannelScales(
+            r: scale(toward: target.r, from: rightMids.r),
+            g: scale(toward: target.g, from: rightMids.g),
+            b: scale(toward: target.b, from: rightMids.b)
+        )
+
+        let adjustedLeft = leftScales.isNearlyIdentity
             ? left
-            : (applyLuminanceScale(left, scale: leftScale) ?? left)
-        let adjustedRight = abs(rightScale - 1) < 0.03
+            : (applyChannelScales(left, scales: leftScales) ?? left)
+        let adjustedRight = rightScales.isNearlyIdentity
             ? right
-            : (applyLuminanceScale(right, scale: rightScale) ?? right)
+            : (applyChannelScales(right, scales: rightScales) ?? right)
         return (adjustedLeft, adjustedRight)
     }
 
+    /// Whole-frame mean luminance (tests / fallback). Prefer midtones for matching.
     static func meanLuminance(_ image: UIImage, sampleSide: Int = 48) -> Double? {
         guard let samples = grayscaleSamples(image, side: sampleSide), !samples.isEmpty else {
             return nil
@@ -185,15 +208,75 @@ enum StereoPairAligner {
         return Double(sum / Float(samples.count))
     }
 
+    /// Median R/G/B among pixels whose luma sits between the clip rails.
+    static func robustChannelMidtones(
+        _ image: UIImage,
+        sampleSide: Int = 96,
+        clipLow: Float = 0.05,
+        clipHigh: Float = 0.95
+    ) -> ChannelMidtones? {
+        guard let pixels = rgbaSamples(image, side: sampleSide), !pixels.isEmpty else {
+            return nil
+        }
+
+        var rs: [Float] = []
+        var gs: [Float] = []
+        var bs: [Float] = []
+        rs.reserveCapacity(pixels.count / 4)
+        gs.reserveCapacity(pixels.count / 4)
+        bs.reserveCapacity(pixels.count / 4)
+
+        let count = pixels.count / 4
+        for i in 0..<count {
+            let o = i * 4
+            let r = Float(pixels[o]) / 255
+            let g = Float(pixels[o + 1]) / 255
+            let b = Float(pixels[o + 2]) / 255
+            // Rec. 709-ish luma — good enough for exposure matching.
+            let y = 0.2126 * r + 0.7152 * g + 0.0722 * b
+            guard y > clipLow, y < clipHigh else { continue }
+            rs.append(r)
+            gs.append(g)
+            bs.append(b)
+        }
+
+        // Too much clipping → fall back to all-pixel medians so we still adjust.
+        if rs.count < max(16, count / 20) {
+            rs.removeAll(keepingCapacity: true)
+            gs.removeAll(keepingCapacity: true)
+            bs.removeAll(keepingCapacity: true)
+            for i in 0..<count {
+                let o = i * 4
+                rs.append(Float(pixels[o]) / 255)
+                gs.append(Float(pixels[o + 1]) / 255)
+                bs.append(Float(pixels[o + 2]) / 255)
+            }
+        }
+
+        guard
+            let mr = median(rs),
+            let mg = median(gs),
+            let mb = median(bs)
+        else {
+            return nil
+        }
+        return ChannelMidtones(r: Double(mr), g: Double(mg), b: Double(mb))
+    }
+
     static func applyLuminanceScale(_ image: UIImage, scale: CGFloat) -> UIImage? {
+        applyChannelScales(image, scales: ChannelScales(r: scale, g: scale, b: scale))
+    }
+
+    static func applyChannelScales(_ image: UIImage, scales: ChannelScales) -> UIImage? {
         guard let cgImage = image.cgImage else { return nil }
-        let clamped = min(max(scale, 0.35), 2.8)
         let width = cgImage.width
         let height = cgImage.height
         guard width > 0, height > 0 else { return nil }
 
-        // Multiply RGB in the same device space we sample for meanLuminance.
-        // Core Image filters go through a working color space and undershoot.
+        let rScale = min(max(scales.r, 0.35), 2.8)
+        let gScale = min(max(scales.g, 0.35), 2.8)
+        let bScale = min(max(scales.b, 0.35), 2.8)
+
         var pixels = [UInt8](repeating: 0, count: width * height * 4)
         let colorSpace = CGColorSpaceCreateDeviceRGB()
         let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue
@@ -213,16 +296,87 @@ enum StereoPairAligner {
         let count = width * height
         for i in 0..<count {
             let o = i * 4
-            pixels[o] = UInt8(min(255, Int((CGFloat(pixels[o]) * clamped).rounded())))
-            pixels[o + 1] = UInt8(min(255, Int((CGFloat(pixels[o + 1]) * clamped).rounded())))
-            pixels[o + 2] = UInt8(min(255, Int((CGFloat(pixels[o + 2]) * clamped).rounded())))
+            pixels[o] = UInt8(min(255, Int((CGFloat(pixels[o]) * rScale).rounded())))
+            pixels[o + 1] = UInt8(min(255, Int((CGFloat(pixels[o + 1]) * gScale).rounded())))
+            pixels[o + 2] = UInt8(min(255, Int((CGFloat(pixels[o + 2]) * bScale).rounded())))
         }
 
         guard let out = context.makeImage() else { return nil }
         return UIImage(cgImage: out, scale: image.scale, orientation: image.imageOrientation)
     }
 
+    struct ChannelMidtones: Equatable {
+        var r: Double
+        var g: Double
+        var b: Double
+    }
+
+    struct ChannelScales: Equatable {
+        var r: CGFloat
+        var g: CGFloat
+        var b: CGFloat
+
+        var isNearlyIdentity: Bool {
+            abs(r - 1) < 0.03 && abs(g - 1) < 0.03 && abs(b - 1) < 0.03
+        }
+    }
+
+    // MARK: - Matching helpers
+
+    private static func sharedTarget(_ a: Double, _ b: Double) -> Double {
+        max(0.05, sqrt(max(a, 0.01) * max(b, 0.01)))
+    }
+
+    private static func scale(toward target: Double, from value: Double) -> CGFloat {
+        CGFloat(target / max(value, 0.01))
+    }
+
+    private static func fallbackMeanMatch(left: UIImage, right: UIImage) -> (left: UIImage, right: UIImage) {
+        let meanL = meanLuminance(left) ?? 0.5
+        let meanR = meanLuminance(right) ?? 0.5
+        let target = sharedTarget(meanL, meanR)
+        let leftScale = scale(toward: target, from: meanL)
+        let rightScale = scale(toward: target, from: meanR)
+        let adjustedLeft = abs(leftScale - 1) < 0.03
+            ? left
+            : (applyLuminanceScale(left, scale: leftScale) ?? left)
+        let adjustedRight = abs(rightScale - 1) < 0.03
+            ? right
+            : (applyLuminanceScale(right, scale: rightScale) ?? right)
+        return (adjustedLeft, adjustedRight)
+    }
+
+    private static func median(_ values: [Float]) -> Float? {
+        guard !values.isEmpty else { return nil }
+        let sorted = values.sorted()
+        let mid = sorted.count / 2
+        if sorted.count % 2 == 0 {
+            return (sorted[mid - 1] + sorted[mid]) * 0.5
+        }
+        return sorted[mid]
+    }
+
     // MARK: - Sampling
+
+    private static func rgbaSamples(_ image: UIImage, side: Int) -> [UInt8]? {
+        guard side > 0, let cgImage = image.cgImage else { return nil }
+        var pixels = [UInt8](repeating: 0, count: side * side * 4)
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(
+            data: &pixels,
+            width: side,
+            height: side,
+            bitsPerComponent: 8,
+            bytesPerRow: side * 4,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            return nil
+        }
+        context.interpolationQuality = .medium
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: side, height: side))
+        return pixels
+    }
 
     private static func grayscaleSamples(_ image: UIImage, side: Int) -> [Float]? {
         guard side > 0, let cgImage = image.cgImage else { return nil }

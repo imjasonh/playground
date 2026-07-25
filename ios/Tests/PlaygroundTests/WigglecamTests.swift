@@ -121,6 +121,47 @@ final class WigglecamTests: XCTestCase {
         XCTAssertEqual(afterLeft, afterRight, accuracy: 0.08)
     }
 
+    func testMatchLuminanceIgnoresClippedHighlights() throws {
+        // Backlit window: subject midtones differ a lot, but blown sky pulls the
+        // whole-frame means closer together — mean matching would under-correct.
+        let left = try XCTUnwrap(
+            splitToneImage(
+                size: 80,
+                subjectFraction: 0.75,
+                subject: 0.28,
+                highlight: 1.0
+            )
+        )
+        let right = try XCTUnwrap(
+            splitToneImage(
+                size: 80,
+                subjectFraction: 0.75,
+                subject: 0.52,
+                highlight: 0.92
+            )
+        )
+
+        let beforeLeft = try XCTUnwrap(StereoPairAligner.robustChannelMidtones(left))
+        let beforeRight = try XCTUnwrap(StereoPairAligner.robustChannelMidtones(right))
+        let beforeGap = abs(beforeLeft.g - beforeRight.g)
+        XCTAssertGreaterThan(beforeGap, 0.15)
+
+        let matched = StereoPairAligner.matchLuminance(left: left, right: right)
+        let afterLeft = try XCTUnwrap(StereoPairAligner.robustChannelMidtones(matched.left))
+        let afterRight = try XCTUnwrap(StereoPairAligner.robustChannelMidtones(matched.right))
+        XCTAssertEqual(afterLeft.g, afterRight.g, accuracy: 0.06)
+        XCTAssertLessThan(abs(afterLeft.g - afterRight.g), beforeGap * 0.5)
+    }
+
+    func testRobustChannelMidtonesSkipsClippedSky() throws {
+        let image = try XCTUnwrap(
+            splitToneImage(size: 64, subjectFraction: 0.7, subject: 0.3, highlight: 1.0)
+        )
+        let mids = try XCTUnwrap(StereoPairAligner.robustChannelMidtones(image))
+        // Should sit near the subject tone, not halfway to the blown sky.
+        XCTAssertEqual(mids.g, 0.3, accuracy: 0.08)
+    }
+
     func testCropFactorUsesFOVTangents() {
         let factor = StereoPairAligner.cropFactor(wideFOVDegrees: 70, ultraWideFOVDegrees: 120)
         // tan(35°)/tan(60°) ≈ 0.7003/1.7321 ≈ 0.404
@@ -174,6 +215,26 @@ final class WigglecamTests: XCTestCase {
             let inset = size * squareInset
             UIColor.black.setFill()
             UIRectFill(CGRect(x: inset, y: inset, width: size - inset * 2, height: size - inset * 2))
+        }
+    }
+
+    /// Top band = highlight (sky), bottom = subject — mimics a backlit window.
+    private func splitToneImage(
+        size: CGFloat,
+        subjectFraction: CGFloat,
+        subject: CGFloat,
+        highlight: CGFloat
+    ) -> UIImage? {
+        let canvas = CGSize(width: size, height: size)
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        format.opaque = true
+        let subjectHeight = size * min(max(subjectFraction, 0.1), 0.95)
+        return UIGraphicsImageRenderer(size: canvas, format: format).image { _ in
+            UIColor(white: highlight, alpha: 1).setFill()
+            UIRectFill(CGRect(x: 0, y: 0, width: size, height: size - subjectHeight))
+            UIColor(white: subject, alpha: 1).setFill()
+            UIRectFill(CGRect(x: 0, y: size - subjectHeight, width: size, height: subjectHeight))
         }
     }
 
