@@ -54,6 +54,8 @@ final class ViewMasterStereoSession: NSObject, ObservableObject {
     private var currentOrientation: StereoCaptureGate.Orientation = .flatOrUnknown
     private weak var wideConnection: AVCaptureConnection?
     private weak var ultraConnection: AVCaptureConnection?
+    /// Center-crop fraction for UW→wide FOV match (updated when the session configures).
+    private var ultraWideZoomFactor: CGFloat = StereoPairAligner.defaultUltraWideZoomFactor
 
     var canCapture: Bool {
         runState == .running && readiness.canCapture && capturedPair == nil
@@ -112,7 +114,7 @@ final class ViewMasterStereoSession: NSObject, ObservableObject {
     func clearCapture() {
         capturedPair = nil
         statusMessage = readiness.canCapture
-            ? "Ready — tap Capture for a stereo pair."
+            ? "Ready — stand ~1–2.5 m from the subject, then Capture."
             : readiness.blockingReason
     }
 
@@ -163,6 +165,7 @@ final class ViewMasterStereoSession: NSObject, ObservableObject {
         }
 
         try Self.selectMultiCamFormat(for: device)
+        ultraWideZoomFactor = Self.zoomFactor(for: device)
 
         let input = try AVCaptureDeviceInput(device: device)
         guard multiSession.canAddInput(input) else {
@@ -254,6 +257,38 @@ final class ViewMasterStereoSession: NSObject, ObservableObject {
         return -abs(pixels - target)
     }
 
+    /// Prefer live FOV from constituent wide / ultra-wide devices.
+    private static func zoomFactor(for dualWide: AVCaptureDevice) -> CGFloat {
+        let wideFOV = Double(dualWide.activeFormat.videoFieldOfView)
+        guard let ultra = dualWide.constituentDevices.first(where: {
+            $0.deviceType == .builtInUltraWideCamera
+        }) else {
+            return StereoPairAligner.defaultUltraWideZoomFactor
+        }
+
+        let ultraFOV = Double(
+            ultra.formats
+                .filter(\.isMultiCamSupported)
+                .max { a, b in
+                    // Prefer the UW format whose pixel count is closest to the dual-wide active format.
+                    let target = CMVideoFormatDescriptionGetDimensions(dualWide.activeFormat.formatDescription)
+                    let targetPixels = Int(target.width) * Int(target.height)
+                    let da = CMVideoFormatDescriptionGetDimensions(a.formatDescription)
+                    let db = CMVideoFormatDescriptionGetDimensions(b.formatDescription)
+                    let sa = abs(Int(da.width) * Int(da.height) - targetPixels)
+                    let sb = abs(Int(db.width) * Int(db.height) - targetPixels)
+                    return sa > sb
+                }?
+                .videoFieldOfView
+                ?? ultra.activeFormat.videoFieldOfView
+        )
+
+        return StereoPairAligner.cropFactor(
+            wideFOVDegrees: wideFOV,
+            ultraWideFOVDegrees: ultraFOV
+        )
+    }
+
     // MARK: - Motion
 
     private func startMotion() {
@@ -285,7 +320,7 @@ final class ViewMasterStereoSession: NSObject, ObservableObject {
                 }
                 if self.capturedPair == nil {
                     self.statusMessage = next.canCapture
-                        ? "Ready — tap Capture for a stereo pair."
+                        ? "Ready — stand ~1–2.5 m from the subject, then Capture."
                         : next.blockingReason
                 }
             }
@@ -401,9 +436,12 @@ extension ViewMasterStereoSession: AVCaptureDataOutputSynchronizerDelegate {
         }
 
         let swap = StereoCaptureGate.shouldSwapEyes(for: currentOrientation)
+        let zoom = ultraWideZoomFactor
         guard let pair = StereoPairAligner.makePair(
             wide: wideImage,
             ultraWide: ultraImage,
+            ultraWideZoomFactor: zoom,
+            refineScale: true,
             swapEyes: swap
         ) else {
             DispatchQueue.main.async { [weak self] in
@@ -415,8 +453,8 @@ extension ViewMasterStereoSession: AVCaptureDataOutputSynchronizerDelegate {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.capturedPair = pair
-            self.previewMode = .sideBySide
-            self.statusMessage = "Stereo pair captured — preview left/right or wigglegram."
+            self.previewMode = .wigglegram
+            self.statusMessage = "Wigglegram · strongest left/right depth around 1–2.5 m."
         }
     }
 
