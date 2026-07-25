@@ -3,6 +3,9 @@ import SwiftUI
 /// View-Master stereo camera — dual-wide capture with level gate + wigglegram.
 struct ViewMasterStereoView: View {
     @StateObject private var session = ViewMasterStereoSession()
+    @State private var isExportingGIF = false
+    @State private var shareItem: ShareItem?
+    @State private var exportError: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -16,6 +19,9 @@ struct ViewMasterStereoView: View {
         }
         .onAppear { session.start() }
         .onDisappear { session.stop() }
+        .sheet(item: $shareItem, onDismiss: clearShareItem) { item in
+            ShareSheet(items: [item.url], onComplete: clearShareItem)
+        }
     }
 
     @ViewBuilder
@@ -146,12 +152,39 @@ struct ViewMasterStereoView: View {
                 .accessibilityIdentifier("viewMasterStatusMessage")
 
             if session.capturedPair != nil {
-                Button("Retake") {
-                    session.clearCapture()
+                HStack(spacing: 10) {
+                    Button("Retake") {
+                        session.clearCapture()
+                        exportError = nil
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .frame(maxWidth: .infinity)
+                    .accessibilityIdentifier("viewMasterRetakeButton")
+
+                    Button {
+                        exportWiggleGIF()
+                    } label: {
+                        if isExportingGIF {
+                            ProgressView()
+                                .frame(maxWidth: .infinity)
+                        } else {
+                            Label("Save GIF", systemImage: "square.and.arrow.down")
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(isExportingGIF)
+                    .accessibilityIdentifier("viewMasterSaveGIFButton")
                 }
-                .buttonStyle(.borderedProminent)
-                .frame(maxWidth: .infinity)
-                .accessibilityIdentifier("viewMasterRetakeButton")
+
+                if let exportError {
+                    Text(exportError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .accessibilityIdentifier("viewMasterGIFExportError")
+                }
             } else {
                 Button {
                     session.capture()
@@ -164,6 +197,36 @@ struct ViewMasterStereoView: View {
                 .accessibilityIdentifier("viewMasterCaptureButton")
             }
         }
+    }
+
+    private func exportWiggleGIF() {
+        guard let pair = session.capturedPair, !isExportingGIF else { return }
+        isExportingGIF = true
+        exportError = nil
+        let left = pair.left
+        let right = pair.right
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let url = try WiggleGIFEncoder.writeTemporaryWiggleGIF(left: left, right: right)
+                DispatchQueue.main.async {
+                    self.isExportingGIF = false
+                    self.shareItem = ShareItem(url: url)
+                    self.session.setStatusMessage("Wiggle GIF ready — save or share it.")
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.isExportingGIF = false
+                    self.exportError = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    private func clearShareItem() {
+        if let shareItem {
+            try? FileManager.default.removeItem(at: shareItem.url)
+        }
+        shareItem = nil
     }
 
     private var placeholderSymbol: String {
@@ -185,3 +248,9 @@ struct ViewMasterStereoView: View {
         }
     }
 }
+
+private struct ShareItem: Identifiable {
+    let id = UUID()
+    let url: URL
+}
+

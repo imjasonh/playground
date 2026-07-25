@@ -67,6 +67,33 @@ final class ViewMasterStereoTests: XCTestCase {
         XCTAssertEqual(averageRed(swapped.right), 0, accuracy: 0.05)
     }
 
+    func testWiggleGIFEncoderProducesGIFData() throws {
+        let left = solidImage(color: .red, size: CGSize(width: 64, height: 48))
+        let right = solidImage(color: .blue, size: CGSize(width: 64, height: 48))
+        let data = try XCTUnwrap(
+            WiggleGIFEncoder.makeWiggleGIF(left: left, right: right, maxDimension: 64)
+        )
+        XCTAssertGreaterThan(data.count, 20)
+        // GIF89a header
+        XCTAssertEqual(Array(data.prefix(6)), Array("GIF89a".utf8))
+
+        let url = try WiggleGIFEncoder.writeTemporaryWiggleGIF(
+            left: left,
+            right: right,
+            maxDimension: 64
+        )
+        defer { try? FileManager.default.removeItem(at: url) }
+        XCTAssertEqual(url.pathExtension.lowercased(), "gif")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+    }
+
+    func testScaledCGImageCapsLongEdge() throws {
+        let image = solidImage(color: .green, size: CGSize(width: 400, height: 200))
+        let scaled = try XCTUnwrap(WiggleGIFEncoder.scaledCGImage(from: image, maxDimension: 100))
+        XCTAssertEqual(scaled.width, 100)
+        XCTAssertEqual(scaled.height, 50)
+    }
+
     // MARK: - Helpers
 
     private func solidImage(color: UIColor, size: CGSize) -> UIImage {

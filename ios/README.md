@@ -49,7 +49,7 @@ ios/
 | `snore-log` | Snore Log | In-app; mic buffer + snore clip logging |
 | `z-camera` | Z-Camera | In-app; depth-band live camera (near/far sliders) |
 | `voxel-world` | Voxel World | In-app; ARKit rebuilds the room as Minecraft-style palette blocks |
-| `view-master-stereo` | View-Master Stereo | In-app; dual-wide stereo stills (landscape+level) with L/R + wigglegram |
+| `view-master-stereo` | View-Master Stereo | In-app; dual-wide stereo stills + wigglegram GIF export |
 
 ### Ride Monitor
 
@@ -160,9 +160,11 @@ Simulates a View-Master / spatial-style still capture: streams the rear
 wide virtual device), requires a **landscape and relatively level** hold
 (Core Motion gravity gate), and on shutter freezes a synchronized pair. The
 ultra-wide frame is center-cropped to roughly match the wide FOV, then shown as
-**left/right** previews and a **wigglegram**. Needs camera + motion permission
-strings already in the host Info.plist (no new Bundle ID or signing bootstrap)
-and a dual-wide MultiCam device. Simulator opens the UI but cannot capture pairs.
+**left/right** previews and a **wigglegram**. After capture, **Save GIF** encodes
+a looping two-frame wigglegram and opens the system share sheet (Files / Photos /
+AirDrop). Needs camera + motion permission strings already in the host Info.plist
+(no new Bundle ID or signing bootstrap) and a dual-wide MultiCam device.
+Simulator opens the UI but cannot capture pairs.
 
 ## Adding an experiment
 
