@@ -8,16 +8,26 @@ struct ViewMasterStereoView: View {
     @State private var exportError: String?
 
     var body: some View {
-        VStack(spacing: 0) {
-            stage
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.black)
+        GeometryReader { geo in
+            let landscape = geo.size.width > geo.size.height
+            ZStack {
+                Color.black
 
-            controls
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .background(.ultraThinMaterial)
+                if let pair = session.capturedPair {
+                    capturedStage(pair)
+                    reviewChrome
+                } else {
+                    liveStage(size: geo.size)
+                    liveChrome(landscape: landscape)
+                }
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
         }
+        .background(Color.black)
+        .ignoresSafeArea()
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar)
         .onAppear { session.start() }
         .onDisappear { session.stop() }
         .sheet(item: $shareItem, onDismiss: clearShareItem) { item in
@@ -25,38 +35,85 @@ struct ViewMasterStereoView: View {
         }
     }
 
-    @ViewBuilder
-    private var stage: some View {
-        if let pair = session.capturedPair {
-            capturedStage(pair)
-        } else {
-            liveStage
-        }
-    }
+    // MARK: - Live (full-bleed)
 
-    private var liveStage: some View {
-        GeometryReader { geo in
-            ZStack {
-                if let image = session.previewImage {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: geo.size.width, height: geo.size.height)
-                        .clipped()
-                        .accessibilityIdentifier("viewMasterLivePreview")
-                } else {
-                    placeholder
-                        .frame(width: geo.size.width, height: geo.size.height)
-                }
-
-                VStack {
-                    Spacer()
-                    readinessBanner
-                        .padding(.bottom, 20)
-                }
+    private func liveStage(size: CGSize) -> some View {
+        Group {
+            if let image = session.previewImage {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: size.width, height: size.height)
+                    .clipped()
+                    .accessibilityIdentifier("viewMasterLivePreview")
+            } else {
+                placeholder
+                    .frame(width: size.width, height: size.height)
             }
         }
     }
+
+    private func liveChrome(landscape: Bool) -> some View {
+        ZStack {
+            VStack {
+                readinessBanner
+                    .padding(.top, 56)
+                Spacer()
+                if !landscape {
+                    Text(session.statusMessage)
+                        .font(.footnote.weight(.medium))
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 10)
+                        .background(.black.opacity(0.45), in: Capsule())
+                        .padding(.bottom, 28)
+                        .accessibilityIdentifier("viewMasterStatusMessage")
+                }
+            }
+
+            if landscape {
+                HStack {
+                    Spacer()
+                    shutterButton
+                        .padding(.trailing, 18)
+                }
+            } else {
+                // Portrait: keep a small shutter so UI tests / accessibility still
+                // find it, but capture stays gated on landscape+level.
+                VStack {
+                    Spacer()
+                    shutterButton
+                        .padding(.bottom, 88)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var shutterButton: some View {
+        Button {
+            session.capture()
+        } label: {
+            ZStack {
+                Circle()
+                    .fill(.white.opacity(session.canCapture ? 0.95 : 0.35))
+                    .frame(width: 64, height: 64)
+                    .shadow(color: .black.opacity(0.35), radius: 8, y: 2)
+                Circle()
+                    .strokeBorder(.white.opacity(0.9), lineWidth: 3)
+                    .frame(width: 74, height: 74)
+            }
+            .frame(width: 74, height: 74)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!session.canCapture)
+        .accessibilityLabel("Capture stereo pair")
+        .accessibilityIdentifier("viewMasterCaptureButton")
+    }
+
+    // MARK: - Review
 
     private func capturedStage(_ pair: StereoPairAligner.Pair) -> some View {
         GeometryReader { geo in
@@ -69,6 +126,67 @@ struct ViewMasterStereoView: View {
                 }
                 .frame(width: geo.size.width, height: geo.size.height)
             }
+        }
+    }
+
+    private var reviewChrome: some View {
+        VStack(spacing: 0) {
+            Spacer()
+            VStack(alignment: .leading, spacing: 10) {
+                Picker("Preview", selection: $session.previewMode) {
+                    ForEach(ViewMasterStereoSession.PreviewMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("viewMasterPreviewMode")
+
+                Text(session.statusMessage)
+                    .font(.footnote)
+                    .foregroundStyle(.white.opacity(0.9))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityIdentifier("viewMasterStatusMessage")
+
+                HStack(spacing: 10) {
+                    Button("Retake") {
+                        session.clearCapture()
+                        exportError = nil
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.white)
+                    .controlSize(.large)
+                    .frame(maxWidth: .infinity)
+                    .accessibilityIdentifier("viewMasterRetakeButton")
+
+                    Button {
+                        exportWiggleGIF()
+                    } label: {
+                        if isExportingGIF {
+                            ProgressView()
+                                .tint(.white)
+                                .frame(maxWidth: .infinity)
+                        } else {
+                            Label("Save GIF", systemImage: "square.and.arrow.down")
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(isExportingGIF)
+                    .accessibilityIdentifier("viewMasterSaveGIFButton")
+                }
+
+                if let exportError {
+                    Text(exportError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .accessibilityIdentifier("viewMasterGIFExportError")
+                }
+            }
+            .padding(14)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .padding(.horizontal, 12)
+            .padding(.bottom, 20)
         }
     }
 
@@ -147,72 +265,7 @@ struct ViewMasterStereoView: View {
         )
     }
 
-    private var controls: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if session.capturedPair != nil {
-                Picker("Preview", selection: $session.previewMode) {
-                    ForEach(ViewMasterStereoSession.PreviewMode.allCases) { mode in
-                        Text(mode.title).tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .accessibilityIdentifier("viewMasterPreviewMode")
-            }
-
-            Text(session.statusMessage)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityIdentifier("viewMasterStatusMessage")
-
-            if session.capturedPair != nil {
-                HStack(spacing: 10) {
-                    Button("Retake") {
-                        session.clearCapture()
-                        exportError = nil
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
-                    .frame(maxWidth: .infinity)
-                    .accessibilityIdentifier("viewMasterRetakeButton")
-
-                    Button {
-                        exportWiggleGIF()
-                    } label: {
-                        if isExportingGIF {
-                            ProgressView()
-                                .frame(maxWidth: .infinity)
-                        } else {
-                            Label("Save GIF", systemImage: "square.and.arrow.down")
-                                .frame(maxWidth: .infinity)
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .disabled(isExportingGIF)
-                    .accessibilityIdentifier("viewMasterSaveGIFButton")
-                }
-
-                if let exportError {
-                    Text(exportError)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                        .accessibilityIdentifier("viewMasterGIFExportError")
-                }
-            } else {
-                Button {
-                    session.capture()
-                } label: {
-                    Label("Capture stereo pair", systemImage: "camera.aperture")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .disabled(!session.canCapture)
-                .accessibilityIdentifier("viewMasterCaptureButton")
-            }
-        }
-    }
+    // MARK: - Export
 
     private func exportWiggleGIF() {
         guard let pair = session.capturedPair, !isExportingGIF else { return }
