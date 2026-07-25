@@ -2,7 +2,7 @@ import UIKit
 import XCTest
 @testable import Playground
 
-final class ViewMasterStereoTests: XCTestCase {
+final class WigglecamTests: XCTestCase {
     func testPortraitGravityBlocksCapture() {
         let readiness = StereoCaptureGate.evaluate(gravityX: 0, gravityY: -1, gravityZ: 0)
         XCTAssertEqual(readiness.orientation, .portrait)
@@ -57,6 +57,7 @@ final class ViewMasterStereoTests: XCTestCase {
                 wide: wide,
                 ultraWide: ultra,
                 refineScale: false,
+                matchBrightness: false,
                 swapEyes: false
             )
         )
@@ -70,6 +71,7 @@ final class ViewMasterStereoTests: XCTestCase {
                 wide: wide,
                 ultraWide: ultra,
                 refineScale: false,
+                matchBrightness: false,
                 swapEyes: true
             )
         )
@@ -104,6 +106,19 @@ final class ViewMasterStereoTests: XCTestCase {
         let scaled = try XCTUnwrap(WiggleGIFEncoder.scaledCGImage(from: image, maxDimension: 100))
         XCTAssertEqual(scaled.width, 100)
         XCTAssertEqual(scaled.height, 50)
+    }
+
+    func testMatchLuminancePullsMeansTogether() throws {
+        let dark = solidImage(color: UIColor(white: 0.25, alpha: 1), size: CGSize(width: 64, height: 64))
+        let bright = solidImage(color: UIColor(white: 0.75, alpha: 1), size: CGSize(width: 64, height: 64))
+        let beforeDark = try XCTUnwrap(StereoPairAligner.meanLuminance(dark))
+        let beforeBright = try XCTUnwrap(StereoPairAligner.meanLuminance(bright))
+        XCTAssertGreaterThan(abs(beforeBright - beforeDark), 0.3)
+
+        let matched = StereoPairAligner.matchLuminance(left: dark, right: bright)
+        let afterLeft = try XCTUnwrap(StereoPairAligner.meanLuminance(matched.left))
+        let afterRight = try XCTUnwrap(StereoPairAligner.meanLuminance(matched.right))
+        XCTAssertEqual(afterLeft, afterRight, accuracy: 0.08)
     }
 
     func testCropFactorUsesFOVTangents() {

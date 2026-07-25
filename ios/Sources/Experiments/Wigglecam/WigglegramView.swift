@@ -15,7 +15,7 @@ struct WigglegramView: View {
             .scaledToFill()
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipped()
-            .accessibilityIdentifier("viewMasterWigglegram")
+            .accessibilityIdentifier("wigglecamWigglegram")
             .accessibilityLabel(showLeft ? "Wigglegram left eye" : "Wigglegram right eye")
             .task(id: halfPeriod) {
                 showLeft = true

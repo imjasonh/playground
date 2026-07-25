@@ -44,7 +44,7 @@ final class PlaygroundUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Snore Log"].exists)
         XCTAssertTrue(app.staticTexts["Z-Camera"].exists)
         XCTAssertTrue(app.staticTexts["Voxel World"].exists)
-        XCTAssertTrue(app.staticTexts["View-Master Stereo"].exists)
+        XCTAssertTrue(app.staticTexts["Wigglecam"].exists)
     }
 
     func testRideMonitorExperimentOpens() {
@@ -135,16 +135,17 @@ final class PlaygroundUITests: XCTestCase {
             || app.staticTexts["voxelSizeLabel"].waitForExistence(timeout: 3))
     }
 
-    func testViewMasterStereoExperimentOpens() {
+    func testWigglecamExperimentOpens() {
         let app = launchApp()
 
-        openExperiment("view-master-stereo", title: "View-Master Stereo", in: app)
+        openExperiment("wigglecam", title: "Wigglecam", in: app)
 
-        XCTAssertTrue(app.navigationBars["View-Master Stereo"].waitForExistence(timeout: 8))
-        XCTAssertTrue(app.buttons["viewMasterCaptureButton"].waitForExistence(timeout: 8)
-            || app.otherElements["viewMasterCaptureButton"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["viewMasterStatusMessage"].waitForExistence(timeout: 8)
-            || app.otherElements["viewMasterStatusMessage"].waitForExistence(timeout: 3)
-            || app.staticTexts["viewMasterReadinessBanner"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.navigationBars["Wigglecam"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["wigglecamCaptureButton"].waitForExistence(timeout: 8)
+            || app.otherElements["wigglecamCaptureButton"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["wigglecamStatusMessage"].waitForExistence(timeout: 8)
+            || app.otherElements["wigglecamStatusMessage"].waitForExistence(timeout: 3)
+            || app.staticTexts["wigglecamReadinessBanner"].waitForExistence(timeout: 3)
+            || app.otherElements["wigglecamReadinessBanner"].waitForExistence(timeout: 3))
     }
 }

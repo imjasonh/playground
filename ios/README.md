@@ -49,7 +49,7 @@ ios/
 | `snore-log` | Snore Log | In-app; mic buffer + snore clip logging |
 | `z-camera` | Z-Camera | In-app; depth-band live camera (near/far sliders) |
 | `voxel-world` | Voxel World | In-app; ARKit rebuilds the room as Minecraft-style palette blocks |
-| `view-master-stereo` | View-Master Stereo | In-app; dual-wide stereo stills + wigglegram GIF export |
+| `wigglecam` | Wigglecam | In-app; dual-wide wigglegrams saved as GIF to Photos |
 
 ### Ride Monitor
 
@@ -153,23 +153,18 @@ entitlement, or signing bootstrap) and works best on LiDAR devices
 (iPhone/iPad Pro). Simulator opens the UI but ARKit tracking is unavailable
 there.
 
-### View-Master Stereo
+### Wigglecam
 
-Simulates a View-Master / spatial-style still capture: streams the rear
-**ultra-wide + wide** cameras together (`AVCaptureMultiCamSession` on the dual
-wide virtual device), requires a **landscape and relatively level** hold
-(Core Motion gravity gate), and on shutter freezes a synchronized pair. The
-ultra-wide frame is FOV-matched to the wide (device FOV + a content scale
-refine) so the wigglegram reads as left/right parallax instead of
-forward/back zoom, then shown as **left/right** previews and a **wigglegram**.
-Preview fills the stage (and rotates when you flip back to portrait after a
-landscape capture). Live capture is full-bleed with a floating thumb shutter on
-the landscape trailing edge. Strongest depth cue around **1–2.5 m** from the
-subject — closer than a room-across shot, but not inches-away. After capture,
-**Save GIF** encodes a looping two-frame wigglegram and opens the system share
-sheet (Files / Photos / AirDrop). Needs camera + motion permission strings
-already in the host Info.plist (no new Bundle ID or signing bootstrap) and a
-dual-wide MultiCam device. Simulator opens the UI but cannot capture pairs.
+Dual-wide **wigglegram** camera: streams rear **ultra-wide + wide** together
+(`AVCaptureMultiCamSession`), requires a **landscape and relatively level** hold,
+and freezes a synchronized pair on shutter. The ultra-wide frame is FOV-matched
+to the wide (plus a content scale refine) and both eyes are **brightness-matched**
+so the wiggle doesn’t flicker. Live capture is full-bleed with a floating thumb
+shutter on the landscape trailing edge; after capture you only see the wigglegram
+with tiny Retake / Save buttons. **Save** writes a looping GIF straight to
+**Photos** (`NSPhotoLibraryAddUsageDescription` — no new Bundle ID or signing
+bootstrap). Strongest depth around **1–2.5 m**. Simulator opens the UI but cannot
+capture pairs.
 
 ## Adding an experiment
 

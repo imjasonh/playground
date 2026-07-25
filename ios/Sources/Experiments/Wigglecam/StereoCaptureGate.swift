@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-/// Pure readiness checks for View-Master–style stereo capture.
+/// Pure readiness checks for Wigglecam-style stereo capture.
 ///
 /// Capture is allowed only when the phone is in landscape and held relatively
 /// level (face roughly vertical, not pitched toward the floor/sky). Thresholds

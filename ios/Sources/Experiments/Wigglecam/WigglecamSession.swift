@@ -4,7 +4,7 @@ import CoreVideo
 import UIKit
 
 /// Dual-wide MultiCam session: live preview + one-shot stereo stills when level.
-final class ViewMasterStereoSession: NSObject, ObservableObject {
+final class WigglecamSession: NSObject, ObservableObject {
     enum RunState: Equatable {
         case idle
         case requestingPermission
@@ -14,22 +14,8 @@ final class ViewMasterStereoSession: NSObject, ObservableObject {
         case failed(String)
     }
 
-    enum PreviewMode: String, CaseIterable, Identifiable {
-        case sideBySide
-        case wigglegram
-
-        var id: String { rawValue }
-
-        var title: String {
-            switch self {
-            case .sideBySide: return "Left / Right"
-            case .wigglegram: return "Wigglegram"
-            }
-        }
-    }
-
     @Published private(set) var runState: RunState = .idle
-    @Published private(set) var statusMessage = "Hold landscape and level, then capture a stereo pair."
+    @Published private(set) var statusMessage = "Hold landscape and level, then capture."
     @Published private(set) var readiness = StereoCaptureGate.Readiness(
         isLandscape: false,
         isLevel: false,
@@ -38,14 +24,13 @@ final class ViewMasterStereoSession: NSObject, ObservableObject {
     )
     @Published private(set) var previewImage: UIImage?
     @Published private(set) var capturedPair: StereoPairAligner.Pair?
-    @Published var previewMode: PreviewMode = .sideBySide
 
     private let multiSession = AVCaptureMultiCamSession()
     private let wideOutput = AVCaptureVideoDataOutput()
     private let ultraWideOutput = AVCaptureVideoDataOutput()
     private var synchronizer: AVCaptureDataOutputSynchronizer?
-    private let sessionQueue = DispatchQueue(label: "viewmaster-stereo.session")
-    private let outputQueue = DispatchQueue(label: "viewmaster-stereo.output", qos: .userInitiated)
+    private let sessionQueue = DispatchQueue(label: "wigglecam.session")
+    private let outputQueue = DispatchQueue(label: "wigglecam.output", qos: .userInitiated)
     private let motion = CMMotionManager()
     private let motionQueue = OperationQueue()
 
@@ -306,7 +291,7 @@ final class ViewMasterStereoSession: NSObject, ObservableObject {
             return
         }
         motion.deviceMotionUpdateInterval = 1.0 / 30.0
-        motionQueue.name = "viewmaster-stereo.motion"
+        motionQueue.name = "wigglecam.motion"
         motionQueue.maxConcurrentOperationCount = 1
         motion.startDeviceMotionUpdates(to: motionQueue) { [weak self] data, _ in
             guard let self, let gravity = data?.gravity else { return }
@@ -391,7 +376,7 @@ final class ViewMasterStereoSession: NSObject, ObservableObject {
 
 // MARK: - Synchronizer
 
-extension ViewMasterStereoSession: AVCaptureDataOutputSynchronizerDelegate {
+extension WigglecamSession: AVCaptureDataOutputSynchronizerDelegate {
     func dataOutputSynchronizer(
         _ synchronizer: AVCaptureDataOutputSynchronizer,
         didOutput synchronizedDataCollection: AVCaptureSynchronizedDataCollection
@@ -457,8 +442,7 @@ extension ViewMasterStereoSession: AVCaptureDataOutputSynchronizerDelegate {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.capturedPair = pair
-            self.previewMode = .wigglegram
-            self.statusMessage = "Wigglegram · strongest left/right depth around 1–2.5 m."
+            self.statusMessage = "Saved wiggle · retake or save GIF to Photos."
         }
     }
 
