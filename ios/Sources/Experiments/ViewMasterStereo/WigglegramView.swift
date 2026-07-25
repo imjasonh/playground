@@ -13,6 +13,8 @@ struct WigglegramView: View {
         Image(uiImage: showLeft ? left : right)
             .resizable()
             .scaledToFill()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
             .accessibilityIdentifier("viewMasterWigglegram")
             .accessibilityLabel(showLeft ? "Wigglegram left eye" : "Wigglegram right eye")
             .task(id: halfPeriod) {

@@ -58,8 +58,7 @@ struct ViewMasterStereoView: View {
             case .sideBySide:
                 sideBySide(pair, in: geo.size)
             case .wigglegram:
-                StereoFillImage(image: pair.left) {
-                    // Wigglegram swaps the UIImage; keep fill behavior identical.
+                StereoFillImage(reference: pair.left) {
                     WigglegramView(left: pair.left, right: pair.right)
                 }
                 .frame(width: geo.size.width, height: geo.size.height)
