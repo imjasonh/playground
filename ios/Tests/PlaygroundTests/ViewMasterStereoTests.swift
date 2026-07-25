@@ -53,7 +53,12 @@ final class ViewMasterStereoTests: XCTestCase {
         let ultra = solidImage(color: .blue, size: CGSize(width: 240, height: 180))
 
         let normal = try XCTUnwrap(
-            StereoPairAligner.makePair(wide: wide, ultraWide: ultra, swapEyes: false)
+            StereoPairAligner.makePair(
+                wide: wide,
+                ultraWide: ultra,
+                refineScale: false,
+                swapEyes: false
+            )
         )
         XCTAssertEqual(normal.left.size, wide.size)
         XCTAssertEqual(normal.right.size, wide.size)
@@ -61,10 +66,43 @@ final class ViewMasterStereoTests: XCTestCase {
         XCTAssertEqual(averageRed(normal.left), 0, accuracy: 0.05)
 
         let swapped = try XCTUnwrap(
-            StereoPairAligner.makePair(wide: wide, ultraWide: ultra, swapEyes: true)
+            StereoPairAligner.makePair(
+                wide: wide,
+                ultraWide: ultra,
+                refineScale: false,
+                swapEyes: true
+            )
         )
         XCTAssertEqual(averageRed(swapped.left), 1, accuracy: 0.05)
         XCTAssertEqual(averageRed(swapped.right), 0, accuracy: 0.05)
+    }
+
+    func testCropFactorUsesFOVTangents() {
+        let factor = StereoPairAligner.cropFactor(wideFOVDegrees: 70, ultraWideFOVDegrees: 120)
+        // tan(35°)/tan(60°) ≈ 0.7003/1.7321 ≈ 0.404
+        XCTAssertEqual(factor, 0.404, accuracy: 0.02)
+        XCTAssertEqual(
+            StereoPairAligner.cropFactor(wideFOVDegrees: 80, ultraWideFOVDegrees: 80),
+            StereoPairAligner.defaultUltraWideZoomFactor,
+            accuracy: 0.001
+        )
+    }
+
+    func testRefinedCropFactorMovesTowardTrueScale() throws {
+        // Wide: red square on gray. Ultra: same square drawn at 0.5 scale in the center
+        // of a 2× canvas (simulating UW), so the correct crop factor is 0.5.
+        let wide = try XCTUnwrap(patternImage(size: 80, squareInset: 0.25))
+        let ultra = try XCTUnwrap(patternImage(size: 160, squareInset: 0.375))
+
+        let refined = StereoPairAligner.refinedCropFactor(
+            wide: wide,
+            ultraWide: ultra,
+            estimatedFactor: 0.62,
+            sampleSize: 48,
+            searchFraction: 0.35,
+            steps: 11
+        )
+        XCTAssertEqual(refined, 0.5, accuracy: 0.08)
     }
 
     // MARK: - Helpers
@@ -76,6 +114,22 @@ final class ViewMasterStereoTests: XCTestCase {
         return UIGraphicsImageRenderer(size: size, format: format).image { context in
             color.setFill()
             context.fill(CGRect(origin: .zero, size: size))
+        }
+    }
+
+    /// Gray canvas with a centered black square. `squareInset` is the margin on
+    /// each side as a fraction of the canvas (0.25 → square is half the width).
+    private func patternImage(size: CGFloat, squareInset: CGFloat) -> UIImage? {
+        let canvas = CGSize(width: size, height: size)
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: canvas, format: format).image { _ in
+            UIColor.lightGray.setFill()
+            UIRectFill(CGRect(origin: .zero, size: canvas))
+            let inset = size * squareInset
+            UIColor.black.setFill()
+            UIRectFill(CGRect(x: inset, y: inset, width: size - inset * 2, height: size - inset * 2))
         }
     }
 
