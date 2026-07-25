@@ -162,6 +162,18 @@ final class WigglecamTests: XCTestCase {
         XCTAssertEqual(mids.g, 0.3, accuracy: 0.08)
     }
 
+    func testStereoJPEGEncodingProducesTwoPayloads() throws {
+        let left = solidImage(color: .red, size: CGSize(width: 32, height: 24))
+        let right = solidImage(color: .blue, size: CGSize(width: 32, height: 24))
+        let leftData = try XCTUnwrap(left.jpegData(compressionQuality: 0.92))
+        let rightData = try XCTUnwrap(right.jpegData(compressionQuality: 0.92))
+        XCTAssertGreaterThan(leftData.count, 20)
+        XCTAssertGreaterThan(rightData.count, 20)
+        // JPEG SOI marker
+        XCTAssertEqual(Array(leftData.prefix(2)), [0xFF, 0xD8])
+        XCTAssertEqual(Array(rightData.prefix(2)), [0xFF, 0xD8])
+    }
+
     func testCropFactorUsesFOVTangents() {
         let factor = StereoPairAligner.cropFactor(wideFOVDegrees: 70, ultraWideFOVDegrees: 120)
         // tan(35°)/tan(60°) ≈ 0.7003/1.7321 ≈ 0.404

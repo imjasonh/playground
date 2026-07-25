@@ -3,7 +3,7 @@ import SwiftUI
 /// Wigglecam — dual-wide wigglegram capture with a full-bleed shutter.
 struct WigglecamView: View {
     @StateObject private var session = WigglecamSession()
-    @State private var isSavingGIF = false
+    @State private var isSaving = false
     @State private var saveFlash: String?
     @State private var saveError: String?
 
@@ -152,13 +152,13 @@ struct WigglecamView: View {
                 }
 
                 compactIconButton(
-                    systemName: isSavingGIF ? nil : "square.and.arrow.down",
-                    label: "Save GIF to Photos",
+                    systemName: isSaving ? nil : "square.and.arrow.down",
+                    label: "Save GIF to Photos. Long press to save left and right JPEGs.",
                     id: "wigglecamSaveGIFButton",
-                    busy: isSavingGIF
-                ) {
-                    saveGIFToPhotos()
-                }
+                    busy: isSaving,
+                    action: saveGIFToPhotos,
+                    longPress: saveJPEGsToPhotos
+                )
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 20)
@@ -171,28 +171,51 @@ struct WigglecamView: View {
         label: String,
         id: String,
         busy: Bool = false,
-        action: @escaping () -> Void
+        action: @escaping () -> Void,
+        longPress: (() -> Void)? = nil
     ) -> some View {
-        Button(action: action) {
-            ZStack {
-                Circle()
-                    .fill(.ultraThinMaterial)
-                    .frame(width: 48, height: 48)
-                    .overlay(Circle().strokeBorder(.white.opacity(0.35), lineWidth: 1))
-                if busy {
-                    ProgressView()
-                        .tint(.white)
-                } else if let systemName {
-                    Image(systemName: systemName)
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(.white)
-                }
+        let content = ZStack {
+            Circle()
+                .fill(.ultraThinMaterial)
+                .frame(width: 48, height: 48)
+                .overlay(Circle().strokeBorder(.white.opacity(0.35), lineWidth: 1))
+            if busy {
+                ProgressView()
+                    .tint(.white)
+            } else if let systemName {
+                Image(systemName: systemName)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.white)
             }
         }
-        .buttonStyle(.plain)
-        .disabled(busy)
+        .frame(width: 48, height: 48)
+        .contentShape(Circle())
+
+        return Group {
+            if let longPress {
+                content
+                    .onTapGesture {
+                        guard !busy else { return }
+                        action()
+                    }
+                    .onLongPressGesture(minimumDuration: 0.45) {
+                        guard !busy else { return }
+                        longPress()
+                    }
+                    .accessibilityAction(named: "Save left and right JPEGs") {
+                        longPress()
+                    }
+            } else {
+                Button(action: action) {
+                    content
+                }
+                .buttonStyle(.plain)
+                .disabled(busy)
+            }
+        }
         .accessibilityLabel(label)
         .accessibilityIdentifier(id)
+        .accessibilityHint(longPress == nil ? "" : "Long press to save left and right JPEGs")
     }
 
     private var readinessBanner: some View {
@@ -237,8 +260,8 @@ struct WigglecamView: View {
     // MARK: - Save
 
     private func saveGIFToPhotos() {
-        guard let pair = session.capturedPair, !isSavingGIF else { return }
-        isSavingGIF = true
+        guard let pair = session.capturedPair, !isSaving else { return }
+        isSaving = true
         saveFlash = nil
         saveError = nil
         let left = pair.left
@@ -250,21 +273,50 @@ struct WigglecamView: View {
                 }
                 try await WiggleGIFPhotoSaver.saveGIF(data)
                 await MainActor.run {
-                    isSavingGIF = false
-                    saveFlash = "Saved to Photos"
+                    isSaving = false
+                    saveFlash = "Saved GIF"
                     session.setStatusMessage("GIF saved to Photos.")
                 }
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
-                await MainActor.run {
-                    if saveFlash == "Saved to Photos" {
-                        saveFlash = nil
-                    }
-                }
+                await clearFlash(matching: "Saved GIF")
             } catch {
                 await MainActor.run {
-                    isSavingGIF = false
+                    isSaving = false
                     saveError = error.localizedDescription
                 }
+            }
+        }
+    }
+
+    private func saveJPEGsToPhotos() {
+        guard let pair = session.capturedPair, !isSaving else { return }
+        isSaving = true
+        saveFlash = nil
+        saveError = nil
+        let left = pair.left
+        let right = pair.right
+        Task {
+            do {
+                try await WiggleGIFPhotoSaver.saveStereoJPEGs(left: left, right: right)
+                await MainActor.run {
+                    isSaving = false
+                    saveFlash = "Saved left & right JPEGs"
+                    session.setStatusMessage("Left and right JPEGs saved to Photos.")
+                }
+                await clearFlash(matching: "Saved left & right JPEGs")
+            } catch {
+                await MainActor.run {
+                    isSaving = false
+                    saveError = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    private func clearFlash(matching message: String) async {
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        await MainActor.run {
+            if saveFlash == message {
+                saveFlash = nil
             }
         }
     }

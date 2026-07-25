@@ -162,8 +162,9 @@ to the wide (plus a content scale refine) and both eyes are **brightness-matched
 (clip-aware midtone + mild per-channel balance, so blown skies don’t dominate)
 so the wiggle doesn’t flicker. Live capture is full-bleed with a floating thumb
 shutter on the landscape trailing edge; after capture you only see the wigglegram
-with tiny Retake / Save buttons. **Save** writes a looping GIF straight to
-**Photos** (`NSPhotoLibraryAddUsageDescription` — no new Bundle ID or signing
+with tiny Retake / Save buttons. **Tap Save** writes a looping GIF to **Photos**;
+**long-press Save** writes left and right **JPEGs** instead
+(`NSPhotoLibraryAddUsageDescription` — no new Bundle ID or signing
 bootstrap). Strongest depth around **1–2.5 m**. Simulator opens the UI but cannot
 capture pairs.
 
