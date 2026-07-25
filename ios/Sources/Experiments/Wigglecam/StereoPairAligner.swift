@@ -161,8 +161,12 @@ enum StereoPairAligner {
 
     /// Match brightness (and mild white balance) so wiggle flicker is reduced.
     ///
-    /// Uses **midtone** statistics and **ignores clipped** near-black / near-white
-    /// pixels. Whole-frame mean matching fails on backlit scenes where one eye
+    /// Pipeline:
+    /// 1. **Midtone** R/G/B gains (ignores clipped near-black / near-white)
+    /// 2. Residual **shadow / mid / highlight** luma curve so contrast still matches
+    ///    when one eye’s ISP curve differs after a global gain
+    ///
+    /// Whole-frame mean matching alone fails on backlit scenes where one eye
     /// blows the sky — the average looks fine while plants still flicker.
     static func matchLuminance(left: UIImage, right: UIImage) -> (left: UIImage, right: UIImage) {
         let sampleSide = 96
@@ -190,13 +194,68 @@ enum StereoPairAligner {
             b: scale(toward: target.b, from: rightMids.b)
         )
 
-        let adjustedLeft = leftScales.isNearlyIdentity
+        let channelLeft = leftScales.isNearlyIdentity
             ? left
             : (applyChannelScales(left, scales: leftScales) ?? left)
-        let adjustedRight = rightScales.isNearlyIdentity
+        let channelRight = rightScales.isNearlyIdentity
             ? right
             : (applyChannelScales(right, scales: rightScales) ?? right)
+
+        return matchLumaAnchors(left: channelLeft, right: channelRight, sampleSide: sampleSide)
+    }
+
+    /// Match shadow / mid / highlight luma percentiles with a piecewise curve.
+    static func matchLumaAnchors(
+        left: UIImage,
+        right: UIImage,
+        sampleSide: Int = 96
+    ) -> (left: UIImage, right: UIImage) {
+        guard
+            let leftAnchors = lumaAnchors(left, sampleSide: sampleSide),
+            let rightAnchors = lumaAnchors(right, sampleSide: sampleSide)
+        else {
+            return (left, right)
+        }
+
+        let targets = LumaAnchors(
+            shadow: sharedTarget(leftAnchors.shadow, rightAnchors.shadow),
+            mid: sharedTarget(leftAnchors.mid, rightAnchors.mid),
+            highlight: sharedTarget(leftAnchors.highlight, rightAnchors.highlight)
+        )
+
+        let adjustedLeft = leftAnchors.isNearlyEqual(to: targets)
+            ? left
+            : (applyLumaAnchorCurve(left, from: leftAnchors, to: targets) ?? left)
+        let adjustedRight = rightAnchors.isNearlyEqual(to: targets)
+            ? right
+            : (applyLumaAnchorCurve(right, from: rightAnchors, to: targets) ?? right)
         return (adjustedLeft, adjustedRight)
+    }
+
+    /// Luma percentiles used as tone-curve anchors (p25 / p50 / p75).
+    static func lumaAnchors(
+        _ image: UIImage,
+        sampleSide: Int = 96,
+        clipLow: Float = 0.02,
+        clipHigh: Float = 0.98
+    ) -> LumaAnchors? {
+        guard let samples = grayscaleSamples(image, side: sampleSide), !samples.isEmpty else {
+            return nil
+        }
+        let usable = samples.filter { $0 > clipLow && $0 < clipHigh }
+        let pool = usable.count >= max(16, samples.count / 20) ? usable : samples
+        guard
+            let shadow = percentile(pool, p: 0.25),
+            let mid = percentile(pool, p: 0.50),
+            let highlight = percentile(pool, p: 0.75)
+        else {
+            return nil
+        }
+        return LumaAnchors(
+            shadow: Double(shadow),
+            mid: Double(mid),
+            highlight: Double(highlight)
+        )
     }
 
     /// Whole-frame mean luminance (tests / fallback). Prefer midtones for matching.
@@ -321,6 +380,18 @@ enum StereoPairAligner {
         }
     }
 
+    struct LumaAnchors: Equatable {
+        var shadow: Double
+        var mid: Double
+        var highlight: Double
+
+        func isNearlyEqual(to other: LumaAnchors, tolerance: Double = 0.02) -> Bool {
+            abs(shadow - other.shadow) < tolerance
+                && abs(mid - other.mid) < tolerance
+                && abs(highlight - other.highlight) < tolerance
+        }
+    }
+
     // MARK: - Matching helpers
 
     private static func sharedTarget(_ a: Double, _ b: Double) -> Double {
@@ -343,17 +414,121 @@ enum StereoPairAligner {
         let adjustedRight = abs(rightScale - 1) < 0.03
             ? right
             : (applyLuminanceScale(right, scale: rightScale) ?? right)
-        return (adjustedLeft, adjustedRight)
+        return matchLumaAnchors(left: adjustedLeft, right: adjustedRight)
+    }
+
+    /// Remap pixel luma toward shared shadow/mid/highlight anchors; preserve chroma.
+    static func applyLumaAnchorCurve(
+        _ image: UIImage,
+        from source: LumaAnchors,
+        to target: LumaAnchors
+    ) -> UIImage? {
+        guard let cgImage = image.cgImage else { return nil }
+        let width = cgImage.width
+        let height = cgImage.height
+        guard width > 0, height > 0 else { return nil }
+
+        let lut = makeLumaLUT(from: source, to: target)
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue
+        guard let context = CGContext(
+            data: &pixels,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo
+        ) else {
+            return nil
+        }
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        let count = width * height
+        for i in 0..<count {
+            let o = i * 4
+            let r = Float(pixels[o]) / 255
+            let g = Float(pixels[o + 1]) / 255
+            let b = Float(pixels[o + 2]) / 255
+            let y = 0.2126 * r + 0.7152 * g + 0.0722 * b
+            let idx = min(255, max(0, Int((y * 255).rounded())))
+            let yOut = lut[idx]
+            let gain = y > 0.001 ? min(max(yOut / y, 0.35), 2.8) : 1
+            pixels[o] = UInt8(min(255, Int((r * gain * 255).rounded())))
+            pixels[o + 1] = UInt8(min(255, Int((g * gain * 255).rounded())))
+            pixels[o + 2] = UInt8(min(255, Int((b * gain * 255).rounded())))
+        }
+
+        guard let out = context.makeImage() else { return nil }
+        return UIImage(cgImage: out, scale: image.scale, orientation: image.imageOrientation)
+    }
+
+    /// Piecewise-linear LUT from source anchors → target anchors (0…1 luma domain).
+    static func makeLumaLUT(from source: LumaAnchors, to target: LumaAnchors) -> [Float] {
+        let src = [
+            0.0,
+            min(max(source.shadow, 0.001), 0.999),
+            min(max(source.mid, 0.001), 0.999),
+            min(max(source.highlight, 0.001), 0.999),
+            1.0,
+        ]
+        // Keep anchor order strictly increasing for stable interpolation.
+        var orderedSrc = src
+        for i in 1..<orderedSrc.count {
+            orderedSrc[i] = max(orderedSrc[i], orderedSrc[i - 1] + 0.001)
+        }
+        orderedSrc[orderedSrc.count - 1] = 1.0
+
+        let dst = [
+            0.0,
+            min(max(target.shadow, 0.0), 1.0),
+            min(max(target.mid, 0.0), 1.0),
+            min(max(target.highlight, 0.0), 1.0),
+            1.0,
+        ]
+        var orderedDst = dst
+        for i in 1..<orderedDst.count {
+            orderedDst[i] = max(orderedDst[i], orderedDst[i - 1])
+        }
+        orderedDst[orderedDst.count - 1] = 1.0
+
+        var lut = [Float](repeating: 0, count: 256)
+        for i in 0..<256 {
+            let x = Double(i) / 255.0
+            lut[i] = Float(piecewiseMap(x, source: orderedSrc, destination: orderedDst))
+        }
+        return lut
+    }
+
+    static func piecewiseMap(_ x: Double, source: [Double], destination: [Double]) -> Double {
+        guard source.count == destination.count, source.count >= 2 else { return x }
+        if x <= source[0] { return destination[0] }
+        if x >= source[source.count - 1] { return destination[destination.count - 1] }
+        for i in 0..<(source.count - 1) {
+            let x0 = source[i]
+            let x1 = source[i + 1]
+            if x >= x0 && x <= x1 {
+                let t = (x - x0) / max(x1 - x0, 1e-6)
+                return destination[i] + t * (destination[i + 1] - destination[i])
+            }
+        }
+        return destination[destination.count - 1]
     }
 
     private static func median(_ values: [Float]) -> Float? {
+        percentile(values, p: 0.5)
+    }
+
+    private static func percentile(_ values: [Float], p: Double) -> Float? {
         guard !values.isEmpty else { return nil }
         let sorted = values.sorted()
-        let mid = sorted.count / 2
-        if sorted.count % 2 == 0 {
-            return (sorted[mid - 1] + sorted[mid]) * 0.5
-        }
-        return sorted[mid]
+        let clamped = min(max(p, 0), 1)
+        let idx = clamped * Double(sorted.count - 1)
+        let lo = Int(idx.rounded(.down))
+        let hi = min(sorted.count - 1, lo + 1)
+        let t = Float(idx - Double(lo))
+        return sorted[lo] * (1 - t) + sorted[hi] * t
     }
 
     // MARK: - Sampling

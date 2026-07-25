@@ -39,8 +39,12 @@ final class WigglecamSession: NSObject, ObservableObject {
     private var currentOrientation: StereoCaptureGate.Orientation = .flatOrUnknown
     private weak var wideConnection: AVCaptureConnection?
     private weak var ultraConnection: AVCaptureConnection?
+    /// DualWide virtual device — AE/AWB/AF are configured here (not on constituents).
+    private weak var captureDevice: AVCaptureDevice?
     /// Center-crop fraction for UW→wide FOV match (updated when the session configures).
     private var ultraWideZoomFactor: CGFloat = StereoPairAligner.defaultUltraWideZoomFactor
+    /// True while AE/AWB/AF are frozen for an in-flight still.
+    private var exposureLockedForCapture = false
 
     var canCapture: Bool {
         runState == .running && readiness.canCapture && capturedPair == nil
@@ -72,8 +76,12 @@ final class WigglecamSession: NSObject, ObservableObject {
         stopMotion()
         let sync = synchronizer
         synchronizer = nil
-        sessionQueue.async { [multiSession] in
+        sessionQueue.async { [weak self, multiSession] in
             _ = sync
+            if let self, let device = self.captureDevice, self.exposureLockedForCapture {
+                StereoCameraSync.unlockContinuousAuto(device)
+                self.exposureLockedForCapture = false
+            }
             if multiSession.isRunning {
                 multiSession.stopRunning()
             }
@@ -90,10 +98,22 @@ final class WigglecamSession: NSObject, ObservableObject {
 
     func capture() {
         guard canCapture else { return }
-        frameLock.lock()
-        captureRequested = true
-        frameLock.unlock()
         statusMessage = "Capturing stereo pair…"
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            if let device = self.captureDevice {
+                do {
+                    try StereoCameraSync.lockForStereoStill(device)
+                    self.exposureLockedForCapture = true
+                } catch {
+                    // Still capture without a freeze — midtone match remains as fallback.
+                    self.exposureLockedForCapture = false
+                }
+            }
+            self.frameLock.lock()
+            self.captureRequested = true
+            self.frameLock.unlock()
+        }
     }
 
     func clearCapture() {
@@ -155,6 +175,8 @@ final class WigglecamSession: NSObject, ObservableObject {
 
         try Self.selectMultiCamFormat(for: device)
         ultraWideZoomFactor = Self.zoomFactor(for: device)
+        try StereoCameraSync.applySharedMeteringAndContinuousAuto(to: device)
+        captureDevice = device
 
         let input = try AVCaptureDeviceInput(device: device)
         guard multiSession.canAddInput(input) else {
@@ -418,6 +440,7 @@ extension WigglecamSession: AVCaptureDataOutputSynchronizerDelegate {
             let wideImage = Self.image(from: wideCopy),
             let ultraImage = Self.image(from: ultraCopy)
         else {
+            restoreContinuousAutoAfterCapture()
             DispatchQueue.main.async { [weak self] in
                 self?.statusMessage = "Capture failed — try again."
             }
@@ -433,16 +456,30 @@ extension WigglecamSession: AVCaptureDataOutputSynchronizerDelegate {
             refineScale: true,
             swapEyes: swap
         ) else {
+            restoreContinuousAutoAfterCapture()
             DispatchQueue.main.async { [weak self] in
                 self?.statusMessage = "Could not align stereo pair."
             }
             return
         }
 
+        restoreContinuousAutoAfterCapture()
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.capturedPair = pair
             self.statusMessage = "Saved wiggle · retake or save GIF to Photos."
+        }
+    }
+
+    private func restoreContinuousAutoAfterCapture() {
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            guard self.exposureLockedForCapture, let device = self.captureDevice else {
+                self.exposureLockedForCapture = false
+                return
+            }
+            self.exposureLockedForCapture = false
+            StereoCameraSync.unlockContinuousAuto(device)
         }
     }
 

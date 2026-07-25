@@ -157,13 +157,16 @@ there.
 
 Dual-wide **wigglegram** camera: streams rear **ultra-wide + wide** together
 (`AVCaptureMultiCamSession`), requires a **landscape and relatively level** hold,
-and freezes a synchronized pair on shutter. The ultra-wide frame is FOV-matched
-to the wide (plus a content scale refine) and both eyes are **brightness-matched**
-(clip-aware midtone + mild per-channel balance, so blown skies don’t dominate)
-so the wiggle doesn’t flicker. Live capture is full-bleed with a floating thumb
-shutter on the landscape trailing edge; after capture you only see the wigglegram
-with tiny Retake / Save buttons. **Tap Save** writes a looping GIF to **Photos**;
-**long-press Save** writes left and right **JPEGs** instead
+and freezes a synchronized pair on shutter. Capture uses the DualWide virtual
+device with **shared center metering** and **locks AE/AWB/AF** at shutter (Apple
+drives the two eyes in tandem on that virtual device; DualWide can’t take custom
+ISO/WB gains). After FOV match (plus a content scale refine), both eyes are
+**brightness-matched** in software — clip-aware midtone + per-channel balance,
+then a residual shadow/mid/highlight luma curve — so blown skies and mild ISP
+curve differences don’t dominate the wiggle. Live capture is full-bleed with a
+floating thumb shutter on the landscape trailing edge; after capture you only
+see the wigglegram with tiny Retake / Save buttons. **Tap Save** writes a looping
+GIF to **Photos**; **long-press Save** writes left and right **JPEGs** instead
 (`NSPhotoLibraryAddUsageDescription` — no new Bundle ID or signing
 bootstrap). Strongest depth around **1–2.5 m**. Simulator opens the UI but cannot
 capture pairs.

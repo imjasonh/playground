@@ -1,3 +1,5 @@
+import AVFoundation
+import CoreMedia
 import UIKit
 import XCTest
 @testable import Playground
@@ -172,6 +174,68 @@ final class WigglecamTests: XCTestCase {
         // JPEG SOI marker
         XCTAssertEqual(Array(leftData.prefix(2)), [0xFF, 0xD8])
         XCTAssertEqual(Array(rightData.prefix(2)), [0xFF, 0xD8])
+    }
+
+    func testLumaAnchorMatchPullsContrastTogether() throws {
+        // Same mid-gray band, different shadow/highlight stretch — global gain alone
+        // can't fix this; the residual tone curve should.
+        let flat = try XCTUnwrap(
+            splitToneImage(size: 80, subjectFraction: 0.5, subject: 0.45, highlight: 0.55)
+        )
+        let contrasty = try XCTUnwrap(
+            splitToneImage(size: 80, subjectFraction: 0.5, subject: 0.2, highlight: 0.85)
+        )
+        let beforeFlat = try XCTUnwrap(StereoPairAligner.lumaAnchors(flat))
+        let beforeContrast = try XCTUnwrap(StereoPairAligner.lumaAnchors(contrasty))
+        XCTAssertGreaterThan(abs(beforeFlat.shadow - beforeContrast.shadow), 0.1)
+        XCTAssertGreaterThan(abs(beforeFlat.highlight - beforeContrast.highlight), 0.1)
+
+        let matched = StereoPairAligner.matchLumaAnchors(left: flat, right: contrasty)
+        let afterLeft = try XCTUnwrap(StereoPairAligner.lumaAnchors(matched.left))
+        let afterRight = try XCTUnwrap(StereoPairAligner.lumaAnchors(matched.right))
+        XCTAssertEqual(afterLeft.shadow, afterRight.shadow, accuracy: 0.06)
+        XCTAssertEqual(afterLeft.mid, afterRight.mid, accuracy: 0.06)
+        XCTAssertEqual(afterLeft.highlight, afterRight.highlight, accuracy: 0.06)
+    }
+
+    func testPiecewiseLumaMapHitsAnchors() {
+        let source = [0.0, 0.25, 0.5, 0.75, 1.0]
+        let destination = [0.0, 0.3, 0.55, 0.8, 1.0]
+        XCTAssertEqual(StereoPairAligner.piecewiseMap(0.25, source: source, destination: destination), 0.3, accuracy: 0.001)
+        XCTAssertEqual(StereoPairAligner.piecewiseMap(0.5, source: source, destination: destination), 0.55, accuracy: 0.001)
+        XCTAssertEqual(StereoPairAligner.piecewiseMap(0.0, source: source, destination: destination), 0.0, accuracy: 0.001)
+        XCTAssertEqual(StereoPairAligner.piecewiseMap(1.0, source: source, destination: destination), 1.0, accuracy: 0.001)
+    }
+
+    func testExposureSyncHelpersClampRanges() {
+        XCTAssertEqual(StereoCameraSync.clampISO(50, minISO: 100, maxISO: 800), 100)
+        XCTAssertEqual(StereoCameraSync.clampISO(1600, minISO: 100, maxISO: 800), 800)
+        XCTAssertEqual(StereoCameraSync.clampISO(400, minISO: 100, maxISO: 800), 400)
+
+        let minD = CMTime(value: 1, timescale: 1000)
+        let maxD = CMTime(value: 1, timescale: 30)
+        let tooShort = CMTime(value: 1, timescale: 5000)
+        let tooLong = CMTime(value: 1, timescale: 10)
+        XCTAssertEqual(
+            CMTimeCompare(
+                StereoCameraSync.clampExposureDuration(tooShort, minDuration: minD, maxDuration: maxD),
+                minD
+            ),
+            0
+        )
+        XCTAssertEqual(
+            CMTimeCompare(
+                StereoCameraSync.clampExposureDuration(tooLong, minDuration: minD, maxDuration: maxD),
+                maxD
+            ),
+            0
+        )
+
+        let gains = AVCaptureDevice.WhiteBalanceGains(redGain: 0.5, greenGain: 4, blueGain: 2)
+        let clamped = StereoCameraSync.clampWhiteBalanceGains(gains, maxGain: 3)
+        XCTAssertEqual(clamped.redGain, 1, accuracy: 0.001)
+        XCTAssertEqual(clamped.greenGain, 3, accuracy: 0.001)
+        XCTAssertEqual(clamped.blueGain, 2, accuracy: 0.001)
     }
 
     func testCropFactorUsesFOVTangents() {
