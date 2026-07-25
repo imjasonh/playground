@@ -187,20 +187,39 @@ enum StereoPairAligner {
 
     static func applyLuminanceScale(_ image: UIImage, scale: CGFloat) -> UIImage? {
         guard let cgImage = image.cgImage else { return nil }
-        let clamped = min(max(Double(scale), 0.35), 2.8)
-        // Linear RGB multiply so measured mean luminance scales predictably
-        // (CIExposureAdjust is gamma-aware and undershoots our grayscale mean).
-        let ciImage = CIImage(cgImage: cgImage)
-        guard let filter = CIFilter(name: "CIColorMatrix") else { return nil }
-        filter.setValue(ciImage, forKey: kCIInputImageKey)
-        filter.setValue(CIVector(x: clamped, y: 0, z: 0, w: 0), forKey: "inputRVector")
-        filter.setValue(CIVector(x: 0, y: clamped, z: 0, w: 0), forKey: "inputGVector")
-        filter.setValue(CIVector(x: 0, y: 0, z: clamped, w: 0), forKey: "inputBVector")
-        filter.setValue(CIVector(x: 0, y: 0, z: 0, w: 1), forKey: "inputAVector")
-        guard let output = filter.outputImage else { return nil }
-        let context = CIContext(options: [.useSoftwareRenderer: false])
-        guard let rendered = context.createCGImage(output, from: output.extent) else { return nil }
-        return UIImage(cgImage: rendered, scale: image.scale, orientation: image.imageOrientation)
+        let clamped = min(max(scale, 0.35), 2.8)
+        let width = cgImage.width
+        let height = cgImage.height
+        guard width > 0, height > 0 else { return nil }
+
+        // Multiply RGB in the same device space we sample for meanLuminance.
+        // Core Image filters go through a working color space and undershoot.
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue
+        guard let context = CGContext(
+            data: &pixels,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo
+        ) else {
+            return nil
+        }
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        let count = width * height
+        for i in 0..<count {
+            let o = i * 4
+            pixels[o] = UInt8(min(255, Int((CGFloat(pixels[o]) * clamped).rounded())))
+            pixels[o + 1] = UInt8(min(255, Int((CGFloat(pixels[o + 1]) * clamped).rounded())))
+            pixels[o + 2] = UInt8(min(255, Int((CGFloat(pixels[o + 2]) * clamped).rounded())))
+        }
+
+        guard let out = context.makeImage() else { return nil }
+        return UIImage(cgImage: out, scale: image.scale, orientation: image.imageOrientation)
     }
 
     // MARK: - Sampling
