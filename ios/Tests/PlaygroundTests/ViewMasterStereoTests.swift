@@ -74,8 +74,10 @@ final class ViewMasterStereoTests: XCTestCase {
             WiggleGIFEncoder.makeWiggleGIF(left: left, right: right, maxDimension: 64)
         )
         XCTAssertGreaterThan(data.count, 20)
-        // GIF89a header
-        XCTAssertEqual(Array(data.prefix(6)), Array("GIF89a".utf8))
+        // ImageIO may emit GIF87a or GIF89a.
+        XCTAssertEqual(Array(data.prefix(4)), Array("GIF8".utf8))
+        let version = Array(data.dropFirst(4).prefix(2))
+        XCTAssertTrue(version == Array("7a".utf8) || version == Array("9a".utf8))
 
         let url = try WiggleGIFEncoder.writeTemporaryWiggleGIF(
             left: left,
