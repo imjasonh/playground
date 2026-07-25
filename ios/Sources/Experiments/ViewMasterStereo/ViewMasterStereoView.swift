@@ -14,7 +14,8 @@ struct ViewMasterStereoView: View {
                 .background(Color.black)
 
             controls
-                .padding()
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
                 .background(.ultraThinMaterial)
         }
         .onAppear { session.start() }
@@ -51,43 +52,44 @@ struct ViewMasterStereoView: View {
                 VStack {
                     Spacer()
                     readinessBanner
-                        .padding(.bottom, 16)
+                        .padding(.bottom, 20)
                 }
             }
         }
     }
 
     private func capturedStage(_ pair: StereoPairAligner.Pair) -> some View {
-        VStack(spacing: 12) {
-            Picker("Preview", selection: $session.previewMode) {
-                ForEach(ViewMasterStereoSession.PreviewMode.allCases) { mode in
-                    Text(mode.title).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal)
-            .padding(.top, 12)
-            .accessibilityIdentifier("viewMasterPreviewMode")
-
-            Group {
-                switch session.previewMode {
-                case .sideBySide:
-                    sideBySide(pair)
-                case .wigglegram:
+        GeometryReader { geo in
+            switch session.previewMode {
+            case .sideBySide:
+                sideBySide(pair, in: geo.size)
+            case .wigglegram:
+                StereoFillImage(reference: pair.left) {
                     WigglegramView(left: pair.left, right: pair.right)
-                        .padding(.horizontal)
                 }
+                .frame(width: geo.size.width, height: geo.size.height)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
-    private func sideBySide(_ pair: StereoPairAligner.Pair) -> some View {
-        HStack(spacing: 8) {
-            eyeCard(title: "Left", image: pair.left, id: "viewMasterLeftEye")
-            eyeCard(title: "Right", image: pair.right, id: "viewMasterRightEye")
+    private func sideBySide(_ pair: StereoPairAligner.Pair, in size: CGSize) -> some View {
+        let portrait = size.height > size.width
+        return Group {
+            if portrait {
+                VStack(spacing: 10) {
+                    eyeCard(title: "Left", image: pair.left, id: "viewMasterLeftEye")
+                    eyeCard(title: "Right", image: pair.right, id: "viewMasterRightEye")
+                }
+                .padding(12)
+            } else {
+                HStack(spacing: 10) {
+                    eyeCard(title: "Left", image: pair.left, id: "viewMasterLeftEye")
+                    eyeCard(title: "Right", image: pair.right, id: "viewMasterRightEye")
+                }
+                .padding(12)
+            }
         }
-        .padding(.horizontal)
+        .frame(width: size.width, height: size.height)
     }
 
     private func eyeCard(title: String, image: UIImage, id: String) -> some View {
@@ -97,11 +99,13 @@ struct ViewMasterStereoView: View {
                 .foregroundStyle(.white.opacity(0.9))
             Image(uiImage: image)
                 .resizable()
-                .scaledToFit()
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .scaledToFill()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipped()
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .accessibilityIdentifier(id)
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var readinessBanner: some View {
@@ -144,7 +148,17 @@ struct ViewMasterStereoView: View {
     }
 
     private var controls: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
+            if session.capturedPair != nil {
+                Picker("Preview", selection: $session.previewMode) {
+                    ForEach(ViewMasterStereoSession.PreviewMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("viewMasterPreviewMode")
+            }
+
             Text(session.statusMessage)
                 .font(.footnote)
                 .foregroundStyle(.secondary)
@@ -193,6 +207,7 @@ struct ViewMasterStereoView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .controlSize(.large)
                 .disabled(!session.canCapture)
                 .accessibilityIdentifier("viewMasterCaptureButton")
             }
@@ -254,3 +269,28 @@ private struct ShareItem: Identifiable {
     let url: URL
 }
 
+/// Fills the container with a landscape stereo frame; rotates 90° when the
+/// phone is portrait so capture previews aren't a tiny letterboxed strip.
+private struct StereoFillImage<Content: View>: View {
+    let reference: UIImage
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        GeometryReader { geo in
+            let landscapeImage = reference.size.width >= reference.size.height
+            let portraitBox = geo.size.height > geo.size.width * 1.05
+
+            if landscapeImage && portraitBox {
+                content()
+                    .frame(width: geo.size.height, height: geo.size.width)
+                    .rotationEffect(.degrees(90))
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .clipped()
+            } else {
+                content()
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .clipped()
+            }
+        }
+    }
+}

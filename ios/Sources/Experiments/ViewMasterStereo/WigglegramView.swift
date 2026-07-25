@@ -5,14 +5,16 @@ struct WigglegramView: View {
     let left: UIImage
     let right: UIImage
     /// Full left→right→left cycle uses `2 * halfPeriod`.
-    var halfPeriod: TimeInterval = 0.22
+    var halfPeriod: TimeInterval = 0.18
 
     @State private var showLeft = true
 
     var body: some View {
         Image(uiImage: showLeft ? left : right)
             .resizable()
-            .scaledToFit()
+            .scaledToFill()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
             .accessibilityIdentifier("viewMasterWigglegram")
             .accessibilityLabel(showLeft ? "Wigglegram left eye" : "Wigglegram right eye")
             .task(id: halfPeriod) {

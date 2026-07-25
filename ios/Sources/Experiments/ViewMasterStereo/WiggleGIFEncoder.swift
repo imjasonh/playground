@@ -4,8 +4,8 @@ import UIKit
 
 /// Builds an animated GIF that alternates stereo eye frames (a wigglegram).
 enum WiggleGIFEncoder {
-    /// Default per-frame delay — matches `WigglegramView.halfPeriod` on main.
-    static let defaultFrameDelay: Double = 0.22
+    /// Default per-frame delay — matches `WigglegramView.halfPeriod`.
+    static let defaultFrameDelay: Double = 0.18
     /// Cap the long edge so shareable GIFs stay reasonably small.
     static let defaultMaxDimension: CGFloat = 720
 

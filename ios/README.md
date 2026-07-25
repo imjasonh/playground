@@ -159,12 +159,16 @@ Simulates a View-Master / spatial-style still capture: streams the rear
 **ultra-wide + wide** cameras together (`AVCaptureMultiCamSession` on the dual
 wide virtual device), requires a **landscape and relatively level** hold
 (Core Motion gravity gate), and on shutter freezes a synchronized pair. The
-ultra-wide frame is center-cropped to roughly match the wide FOV, then shown as
-**left/right** previews and a **wigglegram**. After capture, **Save GIF** encodes
-a looping two-frame wigglegram and opens the system share sheet (Files / Photos /
-AirDrop). Needs camera + motion permission strings already in the host Info.plist
-(no new Bundle ID or signing bootstrap) and a dual-wide MultiCam device.
-Simulator opens the UI but cannot capture pairs.
+ultra-wide frame is FOV-matched to the wide (device FOV + a content scale
+refine) so the wigglegram reads as left/right parallax instead of
+forward/back zoom, then shown as **left/right** previews and a **wigglegram**.
+Preview fills the stage (and rotates when you flip back to portrait after a
+landscape capture). Strongest depth cue around **1–2.5 m** from the subject —
+closer than a room-across shot, but not inches-away. After capture, **Save GIF**
+encodes a looping two-frame wigglegram and opens the system share sheet (Files /
+Photos / AirDrop). Needs camera + motion permission strings already in the host
+Info.plist (no new Bundle ID or signing bootstrap) and a dual-wide MultiCam
+device. Simulator opens the UI but cannot capture pairs.
 
 ## Adding an experiment
 
