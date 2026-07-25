@@ -187,13 +187,16 @@ enum StereoPairAligner {
 
     static func applyLuminanceScale(_ image: UIImage, scale: CGFloat) -> UIImage? {
         guard let cgImage = image.cgImage else { return nil }
-        let clamped = min(max(scale, 0.35), 2.8)
-        // EV stops: exposure *= 2^EV → EV = log2(scale)
-        let ev = log2(Double(clamped))
+        let clamped = min(max(Double(scale), 0.35), 2.8)
+        // Linear RGB multiply so measured mean luminance scales predictably
+        // (CIExposureAdjust is gamma-aware and undershoots our grayscale mean).
         let ciImage = CIImage(cgImage: cgImage)
-        guard let filter = CIFilter(name: "CIExposureAdjust") else { return nil }
+        guard let filter = CIFilter(name: "CIColorMatrix") else { return nil }
         filter.setValue(ciImage, forKey: kCIInputImageKey)
-        filter.setValue(ev, forKey: kCIInputEVKey)
+        filter.setValue(CIVector(x: clamped, y: 0, z: 0, w: 0), forKey: "inputRVector")
+        filter.setValue(CIVector(x: 0, y: clamped, z: 0, w: 0), forKey: "inputGVector")
+        filter.setValue(CIVector(x: 0, y: 0, z: clamped, w: 0), forKey: "inputBVector")
+        filter.setValue(CIVector(x: 0, y: 0, z: 0, w: 1), forKey: "inputAVector")
         guard let output = filter.outputImage else { return nil }
         let context = CIContext(options: [.useSoftwareRenderer: false])
         guard let rendered = context.createCGImage(output, from: output.extent) else { return nil }
