@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -83,7 +84,9 @@ func ProxySSHStreams(ctx context.Context, input io.Reader, output io.Writer, ca 
 	if err != nil {
 		return err
 	}
-	defer stdin.Close()
+	var closeStdinOnce sync.Once
+	closeStdin := func() { closeStdinOnce.Do(func() { _ = stdin.Close() }) }
+	defer closeStdin()
 
 	modes := ssh.TerminalModes{ssh.ECHO: 0}
 	_ = sess.RequestPty("xterm", 40, 80, modes)
@@ -92,7 +95,7 @@ func ProxySSHStreams(ctx context.Context, input io.Reader, output io.Writer, ca 
 	}
 	go func() {
 		_, _ = io.Copy(stdin, input)
-		_ = stdin.Close()
+		closeStdin()
 	}()
 
 	wait := make(chan error, 1)
