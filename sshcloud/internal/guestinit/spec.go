@@ -17,6 +17,17 @@ const (
 	GuestSpec = "/platform-boot.json"
 )
 
+// SpecBeside is the conventional sidecar next to an ext4 rootfs
+// (`foo.ext4` → `foo.boot.json`).
+func SpecBeside(rootfsPath string) string {
+	ext := filepath.Ext(rootfsPath)
+	base := strings.TrimSuffix(rootfsPath, ext)
+	if base == "" {
+		base = rootfsPath
+	}
+	return base + ".boot.json"
+}
+
 // Spec is the subset of OCI image config used to start PID 1.
 type Spec struct {
 	Entrypoint []string `json:"entrypoint"`
@@ -36,10 +47,10 @@ func Argv(s Spec) []string {
 // Validate reports whether the spec can be exec'd.
 func (s Spec) Validate() error {
 	if len(Argv(s)) == 0 {
-		return fmt.Errorf("image has empty Entrypoint and Cmd")
+		return fmt.Errorf("boot spec has empty Entrypoint and Cmd")
 	}
 	if strings.TrimSpace(Argv(s)[0]) == "" {
-		return fmt.Errorf("image executable is empty")
+		return fmt.Errorf("boot spec executable is empty")
 	}
 	return nil
 }

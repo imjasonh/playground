@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	"github.com/imjasonh/playground/sshcloud/internal/guestinit"
 )
 
 // FortuneSpec describes a fortune rootfs.
@@ -37,12 +39,22 @@ func BuildFromDir(dir, outPath string, sizeMB int) error {
 	return formatExt4(outPath, sizeMB, dir)
 }
 
+// FortuneBootSpec is PID 1 for a rootfs built by BuildFortune.
+// The platform agent does not hardcode this — it ships as
+// `<outPath without .ext4>.boot.json` beside the ext4.
+func FortuneBootSpec() guestinit.Spec {
+	return guestinit.Spec{
+		Entrypoint: []string{"/fortune"},
+		Cmd:        []string{"-listen", "0.0.0.0:22", "-ca", "/ca.pub"},
+	}
+}
+
 // BuildFortune creates an ext4 rootfs at outPath with:
 //
-//	/fortune — app binary (PID 1 via kernel init=)
+//	/fortune — app binary
 //	/ca.pub  — platform user CA
 //
-// Boot with: init=/fortune -- -listen 0.0.0.0:22 -ca /ca.pub
+// and writes FortuneBootSpec beside the image for guestinit.
 func BuildFortune(outPath string, spec FortuneSpec) error {
 	if spec.FortuneBin == "" {
 		return fmt.Errorf("FortuneBin required")
@@ -71,7 +83,10 @@ func BuildFortune(outPath string, spec FortuneSpec) error {
 	}
 	_ = caTmp.Close()
 	defer os.Remove(caPath)
-	return debugfsWrite(outPath, caPath, "ca.pub", "0644")
+	if err := debugfsWrite(outPath, caPath, "ca.pub", "0644"); err != nil {
+		return err
+	}
+	return guestinit.WriteFile(guestinit.SpecBeside(outPath), FortuneBootSpec())
 }
 
 func formatExt4(outPath string, sizeMB int, srcDir string) error {

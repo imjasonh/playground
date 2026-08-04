@@ -128,14 +128,19 @@ func TestResolveBaseRootfs(t *testing.T) {
 	dir := t.TempDir()
 	digest := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	ref := "ghcr.io/me/app@sha256:" + digest
+	baseSpec := guestinit.Spec{Entrypoint: []string{"/fortune"}, Cmd: []string{"-listen", "0.0.0.0:22"}}
 	var got string
 	mgr, err := NewManager(Config{
-		WorkDir:    dir,
-		KernelPath: dir + "/vmlinux",
-		BaseRootfs: dir + "/rootfs.ext4",
+		WorkDir:      dir,
+		KernelPath:   dir + "/vmlinux",
+		BaseRootfs:   dir + "/rootfs.ext4",
+		BaseBootSpec: baseSpec,
 		RootfsResolver: func(_ context.Context, imageRef string) (ResolvedRootfs, error) {
 			got = imageRef
-			return ResolvedRootfs{Path: dir + "/cached.ext4"}, nil
+			return ResolvedRootfs{
+				Path: dir + "/cached.ext4",
+				Spec: guestinit.Spec{Entrypoint: []string{"/app"}},
+			}, nil
 		},
 	})
 	if err != nil {
@@ -146,6 +151,9 @@ func TestResolveBaseRootfs(t *testing.T) {
 	res, err := mgr.resolveBaseRootfs(context.Background(), "")
 	if err != nil || res.Path != dir+"/rootfs.ext4" {
 		t.Fatalf("empty image: path=%q err=%v", res.Path, err)
+	}
+	if strings.Join(guestinit.Argv(res.Spec), " ") != "/fortune -listen 0.0.0.0:22" {
+		t.Fatalf("base spec %+v", res.Spec)
 	}
 
 	res, err = mgr.resolveBaseRootfs(context.Background(), ref)
@@ -159,6 +167,33 @@ func TestResolveBaseRootfs(t *testing.T) {
 	_, err = mgr.resolveBaseRootfs(context.Background(), "alpine:latest")
 	if err == nil || !strings.Contains(err.Error(), "digest-pinned") {
 		t.Fatalf("expected digest error, got %v", err)
+	}
+}
+
+func TestResolveBaseRootfsRequiresSpec(t *testing.T) {
+	dir := t.TempDir()
+	mgr, err := NewManager(Config{
+		WorkDir:    dir,
+		KernelPath: dir + "/vmlinux",
+		BaseRootfs: dir + "/rootfs.ext4",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+	_, err = mgr.resolveBaseRootfs(context.Background(), "")
+	if err == nil || !strings.Contains(err.Error(), "no boot spec") {
+		t.Fatalf("got %v", err)
+	}
+
+	if err := guestinit.WriteFile(guestinit.SpecBeside(dir+"/rootfs.ext4"), guestinit.Spec{
+		Entrypoint: []string{"/app"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	res, err := mgr.resolveBaseRootfs(context.Background(), "")
+	if err != nil || strings.Join(guestinit.Argv(res.Spec), " ") != "/app" {
+		t.Fatalf("sidecar: %+v err=%v", res.Spec, err)
 	}
 }
 
@@ -212,18 +247,17 @@ func TestSetNoIdleSkipsSleep(t *testing.T) {
 	}
 }
 
-func TestPrepareGuestInitFortune(t *testing.T) {
-	mgr := &Manager{}
-	args, err := mgr.prepareGuestInit("unused.ext4", "", guestinit.Spec{})
-	if err != nil || args != fortuneInitArgs {
-		t.Fatalf("args=%q err=%v", args, err)
+func TestPrepareGuestInitEmptySpecFails(t *testing.T) {
+	mgr := &Manager{cfg: Config{GuestInitPath: "/bin/true"}}
+	_, err := mgr.prepareGuestInit("unused.ext4", guestinit.Spec{})
+	if err == nil || !strings.Contains(err.Error(), "empty Entrypoint and Cmd") {
+		t.Fatalf("got %v", err)
 	}
 }
 
 func TestPrepareGuestInitRequiresBinary(t *testing.T) {
 	mgr := &Manager{}
-	digest := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-	_, err := mgr.prepareGuestInit("unused.ext4", "ghcr.io/me/app@sha256:"+digest, guestinit.Spec{Entrypoint: []string{"/app"}})
+	_, err := mgr.prepareGuestInit("unused.ext4", guestinit.Spec{Entrypoint: []string{"/app"}})
 	if err == nil || !strings.Contains(err.Error(), "GuestInitPath") {
 		t.Fatalf("got %v", err)
 	}

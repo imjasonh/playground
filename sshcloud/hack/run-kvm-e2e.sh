@@ -44,8 +44,9 @@ echo "::group::Fetch Firecracker + kernel"
 OUT="$ASSETS" bash "$ROOT/hack/fetch-firecracker-assets.sh"
 echo "::endgroup::"
 
-echo "::group::Build fortune guest + rootfs"
+echo "::group::Build fortune guest + rootfs + guestinit"
 CGO_ENABLED=0 go build -o "$ASSETS/fortune" ./cmd/fortune
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "$ASSETS/guestinit" ./cmd/guestinit
 CA_KEY="$ASSETS/ssh_user_ca"
 CA_PUB="$ASSETS/ssh_user_ca.pub"
 if [[ ! -f "$CA_PUB" ]]; then
@@ -61,6 +62,8 @@ echo "::endgroup::"
 export SSHCLOUD_FIRECRACKER="$ASSETS/firecracker"
 export SSHCLOUD_KERNEL="$ASSETS/vmlinux"
 export SSHCLOUD_ROOTFS="$ASSETS/fortune-rootfs.ext4"
+export SSHCLOUD_BOOT_SPEC="$ASSETS/fortune-rootfs.boot.json"
+export SSHCLOUD_GUESTINIT="$ASSETS/guestinit"
 export SSHCLOUD_CA_PUB="$CA_PUB"
 
 echo "::group::KVM e2e tests"

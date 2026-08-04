@@ -24,7 +24,7 @@ Design: [`docs/ssh-app-cloud-design.md`](../docs/ssh-app-cloud-design.md).
 | `internal/migrate` | Cross-host Sleep→Evict→Adopt |
 | `internal/rootfs` | ext4 build via mkfs.ext4 + debugfs (`BuildFromDir`) |
 | `internal/ocirootfs` | OCI pull (go-containerregistry) → unpack → ext4 cache + boot spec |
-| `internal/guestinit` | Exec OCI Entrypoint/Cmd with Env + WorkingDir as PID 1 |
+| `internal/guestinit` | Exec boot-spec Entrypoint/Cmd with Env + WorkingDir as PID 1 |
 | `internal/cutover` | Deploy drain/kick dual-instance cutover |
 | `internal/genid` | Generation ids (`g…`) + `app.gen` agent names |
 | `internal/agent` | Instance manager (boot, idle sleep, wake, adopt/evict) |
@@ -84,6 +84,7 @@ sudo ./bin/agent \
   -firecracker "$PWD/_assets/firecracker" \
   -kernel "$PWD/_assets/vmlinux" \
   -rootfs "$PWD/_assets/fortune-rootfs.ext4" \
+  -boot-spec "$PWD/_assets/fortune-rootfs.boot.json" \
   -ca-pub "$PWD/ssh_user_ca.pub" \
   -guestinit "$PWD/bin/guestinit" \
   -idle 5m \
@@ -100,11 +101,13 @@ go run ./cmd/orchestrator \
 go run ./cmd/gateway -listen 127.0.0.1:2222 -orchestrator-url http://127.0.0.1:8090
 ```
 
-Guest boot: fortune demo uses `init=/fortune -- -listen 0.0.0.0:22 -ca /ca.pub`.
-OCI apps use `init=/platform-init`, which reads `/platform-boot.json`
-(Entrypoint, Cmd, Env, WorkingDir from the image config) and execs.
-TAP subnet is static; gateway shows a wake loading line (`Starting fortune…`),
-mints a user cert, and dials `guestIP:22`.
+Guest boot always uses `init=/platform-init` (`cmd/guestinit`), which reads
+`/platform-boot.json` (Entrypoint, Cmd, Env, WorkingDir) and execs. There is
+no platform-default PID 1: OCI apps take the spec from image config; the
+fortune demo ships `fortune-rootfs.boot.json` beside its ext4 (`mkrootfs`).
+Missing/empty boot spec fails the cold boot. TAP subnet is static; gateway
+shows a wake loading line (`Starting fortune…`), mints a user cert, and dials
+`guestIP:22`.
 
 ### OCI image → ext4 rootfs
 
@@ -118,8 +121,10 @@ not taken from the image.
 (`remote.Image`, linux/amd64, anonymous public registries), applies layers with
 OCI whiteouts, builds ext4 via `rootfs.BuildFromDir`, and caches by digest hex
 under `-work-dir/oci-rootfs` (plus `<hex>.boot.json` for PID 1 spec).
-Uncompressed unpack is capped at 1 GiB. The agent injects `cmd/guestinit` as
-`/platform-init` (`-guestinit`) and the boot spec as `/platform-boot.json`.
+Uncompressed unpack is capped at 1 GiB. Every cold boot injects `cmd/guestinit`
+as `/platform-init` (`-guestinit`) and the resolved boot spec as
+`/platform-boot.json`. Base rootfs boots use `-boot-spec` (default
+`<rootfs>.boot.json`).
 
 ```bash
 go run ./cmd/ocirootfs -cache-dir /tmp/oci-rootfs \

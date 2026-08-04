@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/imjasonh/playground/sshcloud/internal/agent"
+	"github.com/imjasonh/playground/sshcloud/internal/guestinit"
 	"github.com/imjasonh/playground/sshcloud/internal/ocirootfs"
 	"github.com/imjasonh/playground/sshcloud/internal/snapshot"
 )
@@ -27,8 +28,9 @@ func main() {
 	fcBin := flag.String("firecracker", "firecracker", "firecracker binary")
 	kernel := flag.String("kernel", "", "path to vmlinux")
 	rootfsPath := flag.String("rootfs", "", "path to base ext4 rootfs (fortune)")
+	bootSpec := flag.String("boot-spec", "", "PID 1 spec JSON for -rootfs (default: sibling .boot.json)")
 	caPub := flag.String("ca-pub", "", "platform user CA public key to inject")
-	guestInit := flag.String("guestinit", "", "linux guest PID1 trampoline for OCI boots (default: guestinit beside this binary)")
+	guestInit := flag.String("guestinit", "", "linux guest PID1 trampoline (default: guestinit beside this binary)")
 	snapDir := flag.String("snap-dir", "", "local snapshot directory (default: <work-dir>/snapshots)")
 	gcsBucket := flag.String("gcs-bucket", "", "GCS bucket for snapshots (overrides -snap-dir)")
 	gcsPrefix := flag.String("gcs-prefix", "sshcloud/snaps", "GCS object key prefix")
@@ -72,6 +74,25 @@ func main() {
 			}
 		}
 	}
+	if guestInitPath == "" {
+		log.Fatal("-guestinit is required (linux guest PID 1 trampoline)")
+	}
+	if st, err := os.Stat(guestInitPath); err != nil || !st.Mode().IsRegular() {
+		log.Fatalf("guestinit %s: %v", guestInitPath, err)
+	}
+
+	bootSpecPath := strings.TrimSpace(*bootSpec)
+	if bootSpecPath == "" {
+		bootSpecPath = guestinit.SpecBeside(*rootfsPath)
+	}
+	baseSpec, err := guestinit.LoadFile(bootSpecPath)
+	if err != nil {
+		log.Fatalf("boot spec %s: %v", bootSpecPath, err)
+	}
+	if err := baseSpec.Validate(); err != nil {
+		log.Fatalf("boot spec %s: %v", bootSpecPath, err)
+	}
+
 	mgr, err := agent.NewManager(agent.Config{
 		WorkDir:        *workDir,
 		FirecrackerBin: *fcBin,
@@ -79,6 +100,7 @@ func main() {
 		BaseRootfs:     *rootfsPath,
 		CAPubPath:      *caPub,
 		GuestInitPath:  guestInitPath,
+		BaseBootSpec:   baseSpec,
 		SnapStore:      store,
 		IdleTimeout:    *idle,
 		RootfsResolver: func(ctx context.Context, imageRef string) (agent.ResolvedRootfs, error) {
@@ -99,7 +121,7 @@ func main() {
 
 	srv := &http.Server{Addr: *listen, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	go func() {
-		log.Printf("sshcloud agent on %s (idle=%s guestinit=%s)", *listen, idle.String(), guestInitPath)
+		log.Printf("sshcloud agent on %s (idle=%s guestinit=%s boot-spec=%s)", *listen, idle.String(), guestInitPath, bootSpecPath)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatal(err)
 		}

@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/imjasonh/playground/sshcloud/internal/guestinit"
 )
 
 func TestBuildFortune(t *testing.T) {
@@ -43,6 +45,16 @@ func TestBuildFortune(t *testing.T) {
 	}
 	if !strings.Contains(string(b), "fortune") || !strings.Contains(string(b), "ca.pub") {
 		t.Fatalf("expected fortune and ca.pub in listing:\n%s", b)
+	}
+	sidecar, err := guestinit.LoadFile(guestinit.SpecBeside(out))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sidecar.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(guestinit.Argv(sidecar), " ") != strings.Join(guestinit.Argv(FortuneBootSpec()), " ") {
+		t.Fatalf("sidecar %+v", sidecar)
 	}
 }
 

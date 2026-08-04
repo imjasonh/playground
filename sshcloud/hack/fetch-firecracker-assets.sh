@@ -53,3 +53,4 @@ fi
 echo "done. build rootfs next:"
 echo "  go build -o $OUT/fortune ./cmd/fortune"
 echo "  go run ./cmd/mkrootfs -fortune $OUT/fortune -ca-pub ssh_user_ca.pub -out $OUT/fortune-rootfs.ext4"
+echo "  # also writes $OUT/fortune-rootfs.boot.json"

@@ -27,6 +27,7 @@ download_asset() {
 download_asset firecracker /var/lib/sshcloud/assets/firecracker || true
 download_asset vmlinux /var/lib/sshcloud/assets/vmlinux || true
 download_asset fortune-rootfs.ext4 /var/lib/sshcloud/assets/fortune-rootfs.ext4 || true
+download_asset fortune-rootfs.boot.json /var/lib/sshcloud/assets/fortune-rootfs.boot.json || true
 chmod +x /var/lib/sshcloud/assets/firecracker 2>/dev/null || true
 
 IMAGE="${agent_image}"
@@ -48,6 +49,7 @@ docker run -d --name sshcloud-agent --restart unless-stopped --net host --privil
   -firecracker /var/lib/sshcloud/assets/firecracker \
   -kernel /var/lib/sshcloud/assets/vmlinux \
   -rootfs /var/lib/sshcloud/assets/fortune-rootfs.ext4 \
+  -boot-spec /var/lib/sshcloud/assets/fortune-rootfs.boot.json \
   -ca-pub /var/lib/sshcloud/ssh_user_ca.pub \
   -guestinit /var/lib/sshcloud/assets/guestinit \
   -gcs-bucket ${snapshots_bucket} \

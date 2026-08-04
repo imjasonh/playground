@@ -67,9 +67,12 @@ type Config struct {
 	// RootfsResolver materializes a digest-pinned OCI image to an ext4 path
 	// plus the image's PID 1 spec. Used by bootCold when Ensure has an image ref.
 	RootfsResolver func(ctx context.Context, imageRef string) (ResolvedRootfs, error)
-	// GuestInitPath is a linux/amd64 guestinit binary injected as /platform-init
-	// for OCI-backed boots. Required when booting an image ref.
+	// GuestInitPath is a linux/amd64 guestinit binary injected as /platform-init.
+	// Required for every cold boot.
 	GuestInitPath string
+	// BaseBootSpec is PID 1 for BaseRootfs (no image ref). If zero, the
+	// manager loads the sibling `<rootfs>.boot.json` when booting the base image.
+	BaseBootSpec guestinit.Spec
 }
 
 // ResolvedRootfs is a materialized ext4 and the OCI PID 1 spec to boot it with.
@@ -158,17 +161,12 @@ func (m *Manager) EnsureWith(ctx context.Context, user, app string, opt EnsureOp
 	return in, nil
 }
 
-const fortuneInitArgs = "init=/fortune -- -listen 0.0.0.0:22 -ca /ca.pub"
-
-func (m *Manager) prepareGuestInit(rootfsPath, imageRef string, spec guestinit.Spec) (string, error) {
-	if strings.TrimSpace(imageRef) == "" {
-		return fortuneInitArgs, nil
-	}
+func (m *Manager) prepareGuestInit(rootfsPath string, spec guestinit.Spec) (string, error) {
 	if err := spec.Validate(); err != nil {
 		return "", err
 	}
 	if m.cfg.GuestInitPath == "" {
-		return "", fmt.Errorf("GuestInitPath required to boot OCI images")
+		return "", fmt.Errorf("GuestInitPath required to boot a microVM")
 	}
 	if err := rootfs.InjectFile(rootfsPath, m.cfg.GuestInitPath, "platform-init", "0755"); err != nil {
 		return "", fmt.Errorf("inject guestinit: %w", err)
@@ -192,7 +190,11 @@ func (m *Manager) prepareGuestInit(rootfsPath, imageRef string, spec guestinit.S
 func (m *Manager) resolveBaseRootfs(ctx context.Context, imageRef string) (ResolvedRootfs, error) {
 	imageRef = strings.TrimSpace(imageRef)
 	if imageRef == "" {
-		return ResolvedRootfs{Path: m.cfg.BaseRootfs}, nil
+		spec, err := m.baseBootSpec()
+		if err != nil {
+			return ResolvedRootfs{}, err
+		}
+		return ResolvedRootfs{Path: m.cfg.BaseRootfs, Spec: spec}, nil
 	}
 	if m.cfg.RootfsResolver == nil {
 		return ResolvedRootfs{}, fmt.Errorf("image %q supplied but RootfsResolver is not configured", imageRef)
@@ -207,7 +209,25 @@ func (m *Manager) resolveBaseRootfs(ctx context.Context, imageRef string) (Resol
 	if res.Path == "" {
 		return ResolvedRootfs{}, fmt.Errorf("RootfsResolver returned empty path")
 	}
+	if err := res.Spec.Validate(); err != nil {
+		return ResolvedRootfs{}, fmt.Errorf("image %q has no boot spec: %w", imageRef, err)
+	}
 	return res, nil
+}
+
+func (m *Manager) baseBootSpec() (guestinit.Spec, error) {
+	if err := m.cfg.BaseBootSpec.Validate(); err == nil {
+		return m.cfg.BaseBootSpec, nil
+	}
+	path := guestinit.SpecBeside(m.cfg.BaseRootfs)
+	spec, err := guestinit.LoadFile(path)
+	if err != nil {
+		return guestinit.Spec{}, fmt.Errorf("no boot spec for base rootfs: %w (set Config.BaseBootSpec or %s)", err, path)
+	}
+	if err := spec.Validate(); err != nil {
+		return guestinit.Spec{}, fmt.Errorf("boot spec %s: %w", path, err)
+	}
+	return spec, nil
 }
 
 func (m *Manager) bootCold(ctx context.Context, k InstanceKey, n int, imageRef string) (*Instance, error) {
@@ -240,7 +260,7 @@ func (m *Manager) bootCold(ctx context.Context, k InstanceKey, n int, imageRef s
 			return nil, fmt.Errorf("inject CA: %w", err)
 		}
 	}
-	initArgs, err := m.prepareGuestInit(rootfsPath, imageRef, resolved.Spec)
+	initArgs, err := m.prepareGuestInit(rootfsPath, resolved.Spec)
 	if err != nil {
 		return nil, err
 	}

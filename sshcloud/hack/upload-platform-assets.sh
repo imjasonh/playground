@@ -12,14 +12,15 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BUCKET="${1:?usage: upload-platform-assets.sh gs://bucket}"
 ASSETS="${ASSETS:-$ROOT/_assets}"
 
-for f in firecracker vmlinux fortune-rootfs.ext4; do
+for f in firecracker vmlinux fortune-rootfs.ext4 fortune-rootfs.boot.json; do
   if [[ ! -f "$ASSETS/$f" ]]; then
     echo "missing $ASSETS/$f" >&2
     exit 1
   fi
 done
 
-gsutil cp "$ASSETS/firecracker" "$ASSETS/vmlinux" "$ASSETS/fortune-rootfs.ext4" "$BUCKET/"
+gsutil cp "$ASSETS/firecracker" "$ASSETS/vmlinux" \
+  "$ASSETS/fortune-rootfs.ext4" "$ASSETS/fortune-rootfs.boot.json" "$BUCKET/"
 echo "uploaded assets to $BUCKET"
 echo "restart agent MIG VMs (or wait for next recreate) to pick them up:"
 echo "  gcloud compute instance-groups managed rolling-action restart sshcloud-agents --zone=ZONE"

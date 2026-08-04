@@ -379,7 +379,9 @@ Responsibilities (v1 sketch):
 - Dual-instance cutover: `internal/cutover` (drain + kick-on-timeout default,
   kick-now); gateway pins sessions to `ActiveGen`; agent instances are
   `app` or `app.gen`; draining gens set `no_idle`.
-- Guest PID 1 for OCI apps: image Entrypoint+Cmd+Env+WorkingDir via `guestinit`.
+- Guest PID 1: always `guestinit` (`init=/platform-init` + `/platform-boot.json`).
+  Spec from OCI image config, or an explicit sidecar / `-boot-spec` for the
+  base rootfs — never a hardcoded platform default.
 - Still open: volumes
 
 No separate HTTP API or API tokens in v1.
@@ -574,7 +576,9 @@ hits, wake/deploy denials — still **no session bytes**.
    builds cached ext4 (`internal/rootfs.BuildFromDir`), and records Entrypoint /
    Cmd / Env / WorkingDir. Agent Ensure accepts `"image"` and resolves via
    `Config.RootfsResolver`, then boots `init=/platform-init` (`cmd/guestinit`)
-   with `/platform-boot.json`. Still open: first warm snapshot per digest. 
+   with `/platform-boot.json` from the image config (or an explicit base
+   `.boot.json` / `-boot-spec`). No hardcoded fortune/platform default PID 1.
+   Still open: first warm snapshot per digest. 
 3. ~~**Idle timeout numbers**~~ — agent default **5 minutes** (`-idle`); refine
    when to count “zero sessions” vs last Ensure touch.  
 4. **Freeze buffer cap** — max migrate hold before forced reconnect.  

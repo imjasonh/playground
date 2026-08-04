@@ -24,6 +24,16 @@ func TestArgvAndValidate(t *testing.T) {
 	}
 }
 
+func TestSpecBeside(t *testing.T) {
+	t.Parallel()
+	if got := SpecBeside("/var/lib/sshcloud/fortune-rootfs.ext4"); got != "/var/lib/sshcloud/fortune-rootfs.boot.json" {
+		t.Fatalf("got %q", got)
+	}
+	if got := SpecBeside("cached"); got != "cached.boot.json" {
+		t.Fatalf("got %q", got)
+	}
+}
+
 func TestWriteLoadRoundTrip(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

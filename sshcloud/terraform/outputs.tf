@@ -31,7 +31,7 @@ output "snapshots_bucket" {
 }
 
 output "assets_bucket" {
-  description = "Upload firecracker, vmlinux, and fortune-rootfs.ext4 here (see README)"
+  description = "Upload firecracker, vmlinux, fortune-rootfs.ext4, and fortune-rootfs.boot.json here (see README)"
   value       = google_storage_bucket.assets.name
 }
 

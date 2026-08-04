@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/imjasonh/playground/sshcloud/internal/guestinit"
 	"github.com/imjasonh/playground/sshcloud/internal/rootfs"
 )
 
@@ -29,5 +30,5 @@ func main() {
 	}); err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("wrote %s", *out)
+	log.Printf("wrote %s and %s", *out, guestinit.SpecBeside(*out))
 }

@@ -13,6 +13,7 @@ import (
 
 	"github.com/imjasonh/playground/sshcloud/internal/agent"
 	"github.com/imjasonh/playground/sshcloud/internal/firecracker"
+	"github.com/imjasonh/playground/sshcloud/internal/guestinit"
 	"github.com/imjasonh/playground/sshcloud/internal/snapshot"
 )
 
@@ -25,16 +26,7 @@ func TestKVMSleepWake(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mgr, err := agent.NewManager(agent.Config{
-		WorkDir:        filepath.Join(work, "w"),
-		FirecrackerBin: cfg.fc,
-		KernelPath:     cfg.kernel,
-		BaseRootfs:     cfg.rootfs,
-		CAPubPath:      cfg.caPub,
-		SnapStore:      store,
-		IdleTimeout:    0,
-		SubnetBase:     "172.30",
-	})
+	mgr, err := agent.NewManager(kvmManagerConfig(cfg, filepath.Join(work, "w"), store, "172.30"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,31 +72,13 @@ func TestKVMCrossHostMigrate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mgrA, err := agent.NewManager(agent.Config{
-		WorkDir:        filepath.Join(work, "a"),
-		FirecrackerBin: cfg.fc,
-		KernelPath:     cfg.kernel,
-		BaseRootfs:     cfg.rootfs,
-		CAPubPath:      cfg.caPub,
-		SnapStore:      store,
-		IdleTimeout:    0,
-		SubnetBase:     "172.31",
-	})
+	mgrA, err := agent.NewManager(kvmManagerConfig(cfg, filepath.Join(work, "a"), store, "172.31"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = mgrA.Close() })
 
-	mgrB, err := agent.NewManager(agent.Config{
-		WorkDir:        filepath.Join(work, "b"),
-		FirecrackerBin: cfg.fc,
-		KernelPath:     cfg.kernel,
-		BaseRootfs:     cfg.rootfs,
-		CAPubPath:      cfg.caPub,
-		SnapStore:      store,
-		IdleTimeout:    0,
-		SubnetBase:     "172.32",
-	})
+	mgrB, err := agent.NewManager(kvmManagerConfig(cfg, filepath.Join(work, "b"), store, "172.32"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +119,23 @@ func TestKVMCrossHostMigrate(t *testing.T) {
 }
 
 type kvmAssets struct {
-	fc, kernel, rootfs, caPub string
+	fc, kernel, rootfs, caPub, guestInit string
+	bootSpec                             guestinit.Spec
+}
+
+func kvmManagerConfig(cfg kvmAssets, workDir string, store snapshot.Store, subnet string) agent.Config {
+	return agent.Config{
+		WorkDir:        workDir,
+		FirecrackerBin: cfg.fc,
+		KernelPath:     cfg.kernel,
+		BaseRootfs:     cfg.rootfs,
+		CAPubPath:      cfg.caPub,
+		GuestInitPath:  cfg.guestInit,
+		BaseBootSpec:   cfg.bootSpec,
+		SnapStore:      store,
+		IdleTimeout:    0,
+		SubnetBase:     subnet,
+	}
 }
 
 func kvmConfig(t *testing.T) kvmAssets {
@@ -155,12 +145,25 @@ func kvmConfig(t *testing.T) kvmAssets {
 		t.Fatal("/dev/kvm not available — enable nested virt (see hack/run-kvm-e2e.sh)")
 	}
 	a := kvmAssets{
-		fc:     envOr(t, "SSHCLOUD_FIRECRACKER", "firecracker"),
-		kernel: mustEnv(t, "SSHCLOUD_KERNEL"),
-		rootfs: mustEnv(t, "SSHCLOUD_ROOTFS"),
-		caPub:  mustEnv(t, "SSHCLOUD_CA_PUB"),
+		fc:        envOr(t, "SSHCLOUD_FIRECRACKER", "firecracker"),
+		kernel:    mustEnv(t, "SSHCLOUD_KERNEL"),
+		rootfs:    mustEnv(t, "SSHCLOUD_ROOTFS"),
+		caPub:     mustEnv(t, "SSHCLOUD_CA_PUB"),
+		guestInit: mustEnv(t, "SSHCLOUD_GUESTINIT"),
 	}
-	for _, p := range []string{a.kernel, a.rootfs, a.caPub} {
+	bootPath := os.Getenv("SSHCLOUD_BOOT_SPEC")
+	if bootPath == "" {
+		bootPath = guestinit.SpecBeside(a.rootfs)
+	}
+	spec, err := guestinit.LoadFile(bootPath)
+	if err != nil {
+		t.Fatalf("boot spec %s: %v", bootPath, err)
+	}
+	if err := spec.Validate(); err != nil {
+		t.Fatalf("boot spec %s: %v", bootPath, err)
+	}
+	a.bootSpec = spec
+	for _, p := range []string{a.kernel, a.rootfs, a.caPub, a.guestInit, bootPath} {
 		if _, err := os.Stat(p); err != nil {
 			t.Fatalf("missing asset %s: %v", p, err)
 		}

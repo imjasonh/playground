@@ -45,6 +45,7 @@ go build -o _assets/fortune ./cmd/fortune
 gcloud secrets versions access latest --secret=sshcloud-user-ca-pub > ssh_user_ca.pub
 go run ./cmd/mkrootfs -fortune _assets/fortune -ca-pub ssh_user_ca.pub \
   -out _assets/fortune-rootfs.ext4
+# also writes _assets/fortune-rootfs.boot.json (required PID 1 spec)
 bash hack/upload-platform-assets.sh gs://$(terraform -chdir=terraform output -raw assets_bucket)
 
 # 2) Restart agents so they download assets
