@@ -72,6 +72,10 @@ skip them:
   Life with time as the Z axis (Rust CLI). Self-supporting by construction:
   every birth leans on its three B3 parents via small diagonal braces, so even
   gliders print as one piece with no supports to remove.
+- **[`life-scad/`](life-scad/)** — OpenSCAD Game of Life sculpture (Z = time)
+  plus an offline reverse-history searcher for shallow roof targets.
+- **[`life-qr/`](life-qr/)** — parametric OpenSCAD Life sculpture whose roof is
+  a scannable QR code for any text and height (time runs toward the bed).
 
 ## iOS app
 
