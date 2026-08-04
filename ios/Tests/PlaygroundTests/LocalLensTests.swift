@@ -143,6 +143,71 @@ final class LocalLensTests: XCTestCase {
         XCTAssertEqual(front, .leftMirrored)
     }
 
+    func testCaptureOrientationSwapsLandscapeAxes() {
+        XCTAssertEqual(LocalLensCoordinateMapper.captureOrientation(for: .portrait), .portrait)
+        XCTAssertEqual(LocalLensCoordinateMapper.captureOrientation(for: .portraitUpsideDown), .portraitUpsideDown)
+        XCTAssertEqual(LocalLensCoordinateMapper.captureOrientation(for: .landscapeLeft), .landscapeRight)
+        XCTAssertEqual(LocalLensCoordinateMapper.captureOrientation(for: .landscapeRight), .landscapeLeft)
+        XCTAssertEqual(LocalLensCoordinateMapper.captureOrientation(for: .faceUp), .portrait)
+    }
+
+    func testVisionNormalizedPointMapsToImageTopLeft() {
+        let imageSize = CGSize(width: 100, height: 200)
+        let bottomLeft = LocalLensCoordinateMapper.imagePoint(
+            fromVisionNormalized: CGPoint(x: 0, y: 0),
+            imageSize: imageSize
+        )
+        let topRight = LocalLensCoordinateMapper.imagePoint(
+            fromVisionNormalized: CGPoint(x: 1, y: 1),
+            imageSize: imageSize
+        )
+        XCTAssertEqual(bottomLeft.x, 0, accuracy: 0.001)
+        XCTAssertEqual(bottomLeft.y, 200, accuracy: 0.001)
+        XCTAssertEqual(topRight.x, 100, accuracy: 0.001)
+        XCTAssertEqual(topRight.y, 0, accuracy: 0.001)
+    }
+
+    func testAspectFillCentersWiderImageInTallView() {
+        // 200×100 image into 100×100 view → scale 1, x offset -50.
+        let transform = LocalLensCoordinateMapper.ContentTransform.aspectFill(
+            imageSize: CGSize(width: 200, height: 100),
+            viewSize: CGSize(width: 100, height: 100)
+        )
+        XCTAssertEqual(transform.scale, 1, accuracy: 0.001)
+        XCTAssertEqual(transform.offsetX, -50, accuracy: 0.001)
+        XCTAssertEqual(transform.offsetY, 0, accuracy: 0.001)
+
+        let center = LocalLensCoordinateMapper.viewPoint(
+            fromVisionNormalized: CGPoint(x: 0.5, y: 0.5),
+            imageSize: CGSize(width: 200, height: 100),
+            viewSize: CGSize(width: 100, height: 100)
+        )
+        XCTAssertEqual(center.x, 50, accuracy: 0.001)
+        XCTAssertEqual(center.y, 50, accuracy: 0.001)
+    }
+
+    func testAspectFillMapsVisionBoxIntoCroppedView() {
+        // Portrait buffer 1080×1920 into landscape-ish wide view 1920×1080.
+        let imageSize = CGSize(width: 1080, height: 1920)
+        let viewSize = CGSize(width: 1920, height: 1080)
+        let box = CGRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5)
+        let rect = LocalLensCoordinateMapper.viewRect(
+            fromVisionNormalized: box,
+            imageSize: imageSize,
+            viewSize: viewSize
+        )
+        // Scale = max(1920/1080, 1080/1920) = 1920/1080 ≈ 1.777…
+        let scale = 1920.0 / 1080.0
+        let offsetY = (1080.0 - 1920.0 * scale) / 2.0
+        XCTAssertEqual(rect.origin.x, 0.25 * 1080 * scale, accuracy: 0.5)
+        XCTAssertEqual(rect.size.width, 0.5 * 1080 * scale, accuracy: 0.5)
+        XCTAssertEqual(
+            rect.origin.y,
+            (1 - 0.25 - 0.5) * 1920 * scale + offsetY,
+            accuracy: 0.5
+        )
+    }
+
     func testAnalyzerClassifiesSyntheticImageWithoutCrashing() throws {
         let image = try XCTUnwrap(Self.makeSolidImage(color: .systemTeal, size: CGSize(width: 256, height: 256)))
         let analyzer = LocalLensAnalyzer()

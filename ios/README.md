@@ -187,10 +187,15 @@ bundled Core ML file, no cloud API. Modes:
 7. **Hands** — 21-point hand skeletons (`VNDetectHumanHandPoseRequest`)
 8. **Codes** — QR / barcodes (`VNDetectBarcodesRequest`)
 
-Needs camera permission (extends the existing `NSCameraUsageDescription` — no
-new Bundle ID or signing bootstrap). Simulator opens the UI but has no camera;
-use a physical device to see live labels. True gaze / attention tracking would
-need ARKit face tracking on a TrueDepth front camera — not wired here yet.
+Full-bleed live preview with compact floating controls (mode icons + flip
+camera); landscape keeps a thin trailing rail so the bottom panel never eats
+half the frame. Detections with bounding boxes draw green overlays plus a
+label chip; capture `videoOrientation` stays locked to the device so Vision
+coordinates track portrait and landscape through aspect-fill. Needs camera
+permission (extends the existing `NSCameraUsageDescription` — no new Bundle ID
+or signing bootstrap). Simulator opens the UI but has no camera; use a
+physical device to see live labels. True gaze / attention tracking would need
+ARKit face tracking on a TrueDepth front camera — not wired here yet.
 
 ## Adding an experiment
 
