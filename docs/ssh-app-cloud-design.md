@@ -54,6 +54,7 @@
 | Sessions / user / app | **Max 1** — second connect is **rejected** (not replaced) |
 | Join spam | **Rate limits in v1**; invite codes later if needed |
 | Account recovery | **None in v1** (lost all keys → new username / support-only) |
+| Repo layout | **`sshcloud/`** — one Go module; `cmd/{gateway,orchestrator,agent,api}` |
 
 ### Starter quotas & rate limits
 
@@ -509,7 +510,7 @@ hits, wake/deploy denials — still **no session bytes**.
 6. **Tier numbers** — concrete vCPU/RAM/disk for `tiny` / `small`.  
 7. **Global allowlist contents** — what destinations ship by default.  
 8. **Internal API auth** — mTLS between gateway/orchestrator/agent.  
-9. **Repo layout** in this monorepo when implementation starts.  
+9. ~~**Repo layout**~~ — **`sshcloud/`** single Go module (`cmd/{gateway,orchestrator,agent,api}`, `internal/…`, `images/fortune`, `terraform/`).  
 10. **Threat model** — tenant breakout, snapshot confidentiality in GCS, CA theft.  
 11. **Hub footgun UX** — deploy-time warnings / `~/.ssh/config` docs when local
     username collides with an app name (see §3).  
@@ -539,6 +540,10 @@ ssh foo.com
 
 # Deep link skips menu
 ssh fortune@foo.com
+
+# Second concurrent connect while first still up — rejected
+ssh fortune@foo.com
+# → busy: already connected; disconnect the other session first
 
 # Explicit menu if local username collides with an app
 ssh menu@foo.com
