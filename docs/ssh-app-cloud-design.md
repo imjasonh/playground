@@ -456,7 +456,8 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
   orchestrator `-firestore-project`.
 - Emulator tests: `hack/run-firestore-tests.sh` (skips in plain `go test`
   without `FIRESTORE_EMULATOR_HOST`).
-- Still open: quota counters, Terraform-provisioned database.
+- Terraform provisions the Native `(default)` database (`sshcloud/terraform`).
+- Still open: quota counters.
 
 ### Infra
 
@@ -466,6 +467,15 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
 - One region.  
 - Shared platform kernel artifact for all microVMs.  
 - Global egress allowlist enforced on the host data path.
+
+**Implemented in `sshcloud/terraform/` (first environment):**
+- `ko_build` images: gateway, orchestrator, agent, api (api image only; no VM yet)
+- Firestore Native `(default)`, snapshot + asset GCS buckets, Artifact Registry
+- Secret Manager: gateway host key + user CA (`tls_private_key` → secret versions)
+- Gateway GCE VM (public `:22`), orchestrator VM (VPC), nested-virt agent MIG
+- Orchestrator `-hosts-file` refresh from MIG membership (`GET /v1/hosts`)
+- Still open: egress allowlist on the data path, IAP-only hardening, key rotation
+  out of Terraform state, general OCI→rootfs pipeline on agents.
 
 ---
 
@@ -531,7 +541,8 @@ hits, wake/deploy denials — still **no session bytes**.
 
 ## 12. MVP vertical slice
 
-1. Terraform + ko: Firestore, GCS, Secrets, host MIG, single gateway, orchestrator, agent.  
+1. ~~Terraform + ko: Firestore, GCS, Secrets, host MIG, single gateway, orchestrator, agent.~~
+   (`sshcloud/terraform/`; upload Firecracker assets after apply).  
 2. Platform user CA + inject path; shared kernel.  
 3. Platform fortune image (SSH server verifying CA).  
 4. `ssh foo.com` (unknown key) → join → menu (join rate-limited).  

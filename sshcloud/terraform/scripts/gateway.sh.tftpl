@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+${helpers}
+
+install_docker
+registry_login
+
+# Public :22 is the platform gateway; keep host sshd on 2222 for IAP.
+if grep -qE '^#?Port ' /etc/ssh/sshd_config; then
+  sed -i 's/^#\?Port .*/Port 2222/' /etc/ssh/sshd_config
+else
+  echo 'Port 2222' >> /etc/ssh/sshd_config
+fi
+systemctl restart ssh || systemctl restart sshd || true
+
+mkdir -p /var/lib/sshcloud
+pull_secret "${host_key_secret}" /var/lib/sshcloud/ssh_host_ed25519_key
+pull_secret "${user_ca_secret}" /var/lib/sshcloud/ssh_user_ca
+
+IMAGE="${gateway_image}"
+docker pull "$IMAGE"
+docker rm -f sshcloud-gateway 2>/dev/null || true
+docker run -d --name sshcloud-gateway --restart unless-stopped --net host \
+  -v /var/lib/sshcloud:/var/lib/sshcloud \
+  "$IMAGE" \
+  -listen ${gateway_listen} \
+  -host-key /var/lib/sshcloud/ssh_host_ed25519_key \
+  -user-ca /var/lib/sshcloud/ssh_user_ca \
+  -firestore-project ${project_id} \
+  -orchestrator-url http://${orchestrator_ip}:8090

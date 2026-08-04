@@ -1,0 +1,9 @@
+project_id = "my-gcp-project"
+region     = "us-central1"
+zone       = "us-central1-a"
+
+# Optional overrides:
+# name_prefix         = "sshcloud"
+# firestore_location  = "nam5"
+# agent_count         = 2
+# ssh_client_cidrs    = ["0.0.0.0/0"]

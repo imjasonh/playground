@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+set -euo pipefail
+${helpers}
+
+install_docker
+registry_login
+mkdir -p /var/lib/sshcloud /usr/local/lib/sshcloud
+
+cat >/usr/local/lib/sshcloud/refresh-hosts.py <<'PY'
+import json, os, urllib.request
+
+PROJECT = os.environ["PROJECT_ID"]
+ZONE = os.environ["ZONE"]
+MIG = os.environ["MIG"]
+OUT = os.environ.get("HOSTS_PATH", "/var/lib/sshcloud/hosts")
+META = "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token"
+
+def token():
+    req = urllib.request.Request(META, headers={"Metadata-Flavor": "Google"})
+    with urllib.request.urlopen(req) as r:
+        return json.load(r)["access_token"]
+
+def api(path):
+    req = urllib.request.Request(
+        "https://compute.googleapis.com/compute/v1/" + path,
+        headers={"Authorization": "Bearer " + token()},
+    )
+    with urllib.request.urlopen(req) as r:
+        return json.load(r)
+
+mig = api(f"projects/{PROJECT}/zones/{ZONE}/instanceGroupManagers/{MIG}/listManagedInstances")
+lines = []
+for inst in mig.get("managedInstances", []):
+    url = inst.get("instance", "")
+    name = url.rsplit("/", 1)[-1]
+    if not name:
+        continue
+    desc = api(f"projects/{PROJECT}/zones/{ZONE}/instances/{name}")
+    ip = desc["networkInterfaces"][0]["networkIP"]
+    lines.append(f"{name}=http://{ip}:8080")
+os.makedirs(os.path.dirname(OUT), exist_ok=True)
+tmp = OUT + ".tmp"
+with open(tmp, "w", encoding="utf-8") as f:
+    f.write("\n".join(lines) + ("\n" if lines else ""))
+os.replace(tmp, OUT)
+print(f"wrote {len(lines)} hosts to {OUT}")
+PY
+
+cat >/etc/systemd/system/sshcloud-refresh-hosts.service <<EOF
+[Unit]
+Description=Refresh sshcloud agent host list from MIG
+[Service]
+Type=oneshot
+Environment=PROJECT_ID=${project_id}
+Environment=ZONE=${zone}
+Environment=MIG=${mig_name}
+Environment=HOSTS_PATH=${hosts_path}
+ExecStart=/usr/bin/python3 /usr/local/lib/sshcloud/refresh-hosts.py
+EOF
+
+cat >/etc/systemd/system/sshcloud-refresh-hosts.timer <<'EOF'
+[Unit]
+Description=Refresh sshcloud agent host list every minute
+[Timer]
+OnBootSec=15s
+OnUnitActiveSec=60s
+[Install]
+WantedBy=timers.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now sshcloud-refresh-hosts.timer
+/usr/bin/python3 /usr/local/lib/sshcloud/refresh-hosts.py || true
+
+IMAGE="${orchestrator_image}"
+docker pull "$IMAGE"
+docker rm -f sshcloud-orchestrator 2>/dev/null || true
+docker run -d --name sshcloud-orchestrator --restart unless-stopped --net host \
+  -v /var/lib/sshcloud:/var/lib/sshcloud \
+  "$IMAGE" \
+  -listen ${orch_listen} \
+  -hosts-file ${hosts_path} \
+  -firestore-project ${project_id}

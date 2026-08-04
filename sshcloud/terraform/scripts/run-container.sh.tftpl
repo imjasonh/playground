@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Shared helpers sourced by role startup scripts (Debian 12 + docker.io).
+set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
+
+install_docker() {
+  if command -v docker >/dev/null 2>&1; then
+    return
+  fi
+  apt-get update -y
+  apt-get install -y docker.io jq curl ca-certificates python3
+  systemctl enable --now docker
+}
+
+registry_login() {
+  local token
+  token="$(curl -fsS -H 'Metadata-Flavor: Google' \
+    http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')"
+  echo "$token" | docker login -u oauth2accesstoken --password-stdin "https://${registry_host}"
+}
+
+pull_secret() {
+  local name="$1" dest="$2"
+  mkdir -p "$(dirname "$dest")"
+  curl -fsS -H "Metadata-Flavor: Google" -H "Authorization: Bearer $(
+      curl -fsS -H 'Metadata-Flavor: Google' \
+        http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token \
+        | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])'
+    )" \
+    "https://secretmanager.googleapis.com/v1/projects/${project_id}/secrets/$${name}/versions/latest:access" \
+    | python3 -c 'import json,sys,base64; print(base64.b64decode(json.load(sys.stdin)["payload"]["data"]).decode())' \
+    > "$dest"
+  chmod 600 "$dest"
+}
+
+registry_host="${registry_host}"
+project_id="${project_id}"

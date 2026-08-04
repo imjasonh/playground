@@ -24,6 +24,7 @@ Design: [`docs/ssh-app-cloud-design.md`](../docs/ssh-app-cloud-design.md).
 | `internal/agent` | Instance manager (boot, idle sleep, wake, adopt/evict) |
 | `hack/fetch-firecracker-assets.sh` | Download firecracker + kernel |
 | `hack/run-firestore-tests.sh` | Store/placement tests vs Firestore emulator |
+| `terraform/` | GCP env: Firestore, GCS, secrets, gateway, orchestrator, agent MIG + ko images |
 
 ## Build & test
 
@@ -153,5 +154,6 @@ bash hack/run-kvm-e2e.sh   # not as root
 - [x] Gateway wake loading TUI + placement-aware dial (`-orchestrator-url`)
 - [x] Deploy TUI (digest-pinned register; OCI pull/cutover still open)
 - [x] Firestore store (users/keys/apps) + placement (`-firestore-project`)
+- [x] Terraform + ko (Firestore, GCS, secrets, gateway VM, orchestrator, agent MIG)
 - [ ] Gateway freeze-buffer during migrate
-- [ ] Terraform
+- [ ] General OCI → rootfs / deploy cutover

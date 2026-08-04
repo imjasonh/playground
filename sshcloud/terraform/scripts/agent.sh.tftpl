@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -euo pipefail
+${helpers}
+
+install_docker
+registry_login
+mkdir -p /var/lib/sshcloud/assets /var/lib/sshcloud/agent
+
+# KVM access for Firecracker (nested virt).
+if [[ -e /dev/kvm ]]; then
+  chmod 666 /dev/kvm || true
+fi
+
+pull_secret "${user_ca_pub_secret}" /var/lib/sshcloud/ssh_user_ca.pub
+chmod 644 /var/lib/sshcloud/ssh_user_ca.pub
+
+# Platform assets (firecracker + kernel + fortune rootfs) from GCS.
+TOKEN="$(curl -fsS -H 'Metadata-Flavor: Google' \
+  http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')"
+download_asset() {
+  local object="$1" dest="$2"
+  curl -fsS -H "Authorization: Bearer $TOKEN" \
+    "https://storage.googleapis.com/storage/v1/b/${assets_bucket}/o/$${object}?alt=media" \
+    -o "$dest" || echo "asset missing: gs://${assets_bucket}/$object (upload with hack/upload-platform-assets.sh)"
+}
+download_asset firecracker /var/lib/sshcloud/assets/firecracker || true
+download_asset vmlinux /var/lib/sshcloud/assets/vmlinux || true
+download_asset fortune-rootfs.ext4 /var/lib/sshcloud/assets/fortune-rootfs.ext4 || true
+chmod +x /var/lib/sshcloud/assets/firecracker 2>/dev/null || true
+
+IMAGE="${agent_image}"
+docker pull "$IMAGE"
+docker rm -f sshcloud-agent 2>/dev/null || true
+docker run -d --name sshcloud-agent --restart unless-stopped --net host --privileged \
+  --device /dev/kvm \
+  -v /var/lib/sshcloud:/var/lib/sshcloud \
+  -v /dev/net/tun:/dev/net/tun \
+  "$IMAGE" \
+  -listen ${agent_listen} \
+  -work-dir /var/lib/sshcloud/agent \
+  -firecracker /var/lib/sshcloud/assets/firecracker \
+  -kernel /var/lib/sshcloud/assets/vmlinux \
+  -rootfs /var/lib/sshcloud/assets/fortune-rootfs.ext4 \
+  -ca-pub /var/lib/sshcloud/ssh_user_ca.pub \
+  -gcs-bucket ${snapshots_bucket} \
+  -gcs-prefix ${snapshot_prefix} \
+  -idle 5m
