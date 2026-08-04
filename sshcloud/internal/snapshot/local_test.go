@@ -70,3 +70,26 @@ func TestLocalStoreRejectsTraversalKey(t *testing.T) {
 		t.Fatal("expected traversal key to be rejected")
 	}
 }
+
+func TestLocalStoreHasRejectsIncompletePackage(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	store, err := NewLocalStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := KeyFor("alice", "fortune")
+	dir, err := store.keyDir(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "meta.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := store.Has(context.Background(), key); err != nil || ok {
+		t.Fatalf("incomplete package reported present: ok=%v err=%v", ok, err)
+	}
+}

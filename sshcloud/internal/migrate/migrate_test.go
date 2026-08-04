@@ -65,14 +65,57 @@ func TestMigrateOrchestration(t *testing.T) {
 	}
 }
 
+func TestMigrateReconcilesAdoptAppliedBeforeCanceledResponse(t *testing.T) {
+	t.Parallel()
+	src := newStubAgent(t, "host-a")
+	dst := newStubAgent(t, "host-b")
+	src.ensure("alice", "fortune", "10.0.0.2:22")
+	ctx, cancel := context.WithCancel(context.Background())
+	dst.mu.Lock()
+	dst.adoptResponseErr = true
+	dst.cancelOnAdopt = cancel
+	dst.mu.Unlock()
+
+	place := placement.NewMemory()
+	if err := place.Set(ctx, "alice", "fortune", "host-a"); err != nil {
+		t.Fatal(err)
+	}
+	mig := &migrate.Migrator{
+		Placement: place,
+		Hosts: backend.NewHostSet(map[string]*backend.AgentClient{
+			"host-a": {BaseURL: src.URL},
+			"host-b": {BaseURL: dst.URL},
+		}, "host-a"),
+	}
+	res, err := mig.Migrate(ctx, "alice", "fortune", "host-b")
+	if err != nil {
+		t.Fatalf("ambiguous adopt was not reconciled: %v", err)
+	}
+	if res.ToHost != "host-b" || res.Addr != "10.0.1.2:22" {
+		t.Fatalf("result %+v", res)
+	}
+	host, ok, err := place.Get(context.Background(), "alice", "fortune")
+	if err != nil || !ok || host != "host-b" {
+		t.Fatalf("placement host=%q ok=%v err=%v", host, ok, err)
+	}
+	src.mu.Lock()
+	_, sourceRunning := src.inst["alice/fortune"]
+	src.mu.Unlock()
+	if sourceRunning {
+		t.Fatal("ambiguous target success created a second source copy")
+	}
+}
+
 type stubAgent struct {
-	URL      string
-	mu       sync.Mutex
-	inst     map[string]string // key → addr (running)
-	sleeping map[string]bool
-	slept    bool
-	evicted  bool
-	adopted  bool
+	URL              string
+	mu               sync.Mutex
+	inst             map[string]string // key → addr (running)
+	sleeping         map[string]bool
+	slept            bool
+	evicted          bool
+	adopted          bool
+	adoptResponseErr bool
+	cancelOnAdopt    context.CancelFunc
 }
 
 func newStubAgent(t *testing.T, _ string) *stubAgent {
@@ -167,6 +210,13 @@ func (s *stubAgent) handleAdopt(w http.ResponseWriter, r *http.Request) {
 	s.inst[k] = addr
 	delete(s.sleeping, k)
 	s.adopted = true
+	if s.cancelOnAdopt != nil {
+		s.cancelOnAdopt()
+	}
+	if s.adoptResponseErr {
+		http.Error(w, "injected response loss", http.StatusInternalServerError)
+		return
+	}
 	_ = json.NewEncoder(w).Encode(backend.InstanceView{Addr: addr, State: "running"})
 }
 

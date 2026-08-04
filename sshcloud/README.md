@@ -45,6 +45,7 @@ Requires Go 1.25+ (`GOTOOLCHAIN=auto` downloads if needed):
 ```bash
 cd sshcloud
 go test ./...
+go test -race ./...
 go build -o bin/gateway ./cmd/gateway
 go build -o bin/agent ./cmd/agent
 go build -o bin/guestinit ./cmd/guestinit
@@ -207,6 +208,23 @@ sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
 
 bash hack/run-kvm-e2e.sh   # not as root
 ```
+
+### Chaos coverage in CI
+
+Normal Go CI runs deterministic fault injection (also under the race detector):
+
+- real SSH client → gateway → cert hop → app sessions across live drain and kick
+- snapshot pause/create/publish/resume failure matrix and incomplete packages
+- unexpected Firecracker process death, lifecycle fencing, and resource reservations
+- deploy persistence/hold failures plus admission-vs-deploy linearization
+- stale placement repair and ambiguous migrate response reconciliation
+- cancellation of a backend that stalls during its SSH handshake
+
+The KVM job adds substrate-dependent chaos: a canceled/failed snapshot publish
+must resume a dialable guest, and a fresh manager must recover a sleeping guest
+from the durable snapshot through ordinary `Ensure`. Cloud IAM, firewall/NAT,
+and Terraform replacement behavior still require a disposable GCP project;
+local fakes deliberately do not claim to validate those provider semantics.
 
 ## Status
 

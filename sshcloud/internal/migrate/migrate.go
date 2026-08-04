@@ -4,6 +4,8 @@ package migrate
 import (
 	"context"
 	"fmt"
+	"sync"
+	"time"
 
 	"github.com/imjasonh/playground/sshcloud/internal/backend"
 	"github.com/imjasonh/playground/sshcloud/internal/placement"
@@ -13,6 +15,9 @@ import (
 type Migrator struct {
 	Placement placement.Store
 	Hosts     *backend.HostSet
+
+	mu  sync.Mutex
+	ops map[string]*sync.Mutex
 }
 
 // Result is the outcome of a successful migrate.
@@ -40,6 +45,9 @@ func (m *Migrator) MigrateGeneration(ctx context.Context, user, app, gen, toHost
 	if user == "" || app == "" || toHost == "" {
 		return Result{}, fmt.Errorf("user, app, and toHost required")
 	}
+	op := m.appLock(user, app)
+	op.Lock()
+	defer op.Unlock()
 	target, ok := m.Hosts.Get(toHost)
 	if !ok {
 		return Result{}, fmt.Errorf("unknown target host %q", toHost)
@@ -74,27 +82,55 @@ func (m *Migrator) MigrateGeneration(ctx context.Context, user, app, gen, toHost
 		return Result{}, fmt.Errorf("source evict: %w", err)
 	}
 
+	commitCtx := ctx
 	adopted, err := target.AdoptContext(ctx, user, app, gen)
 	if err != nil {
-		// Best-effort rollback onto source.
-		if _, rollErr := source.AdoptContext(ctx, user, app, gen); rollErr == nil {
-			_ = m.Placement.Set(ctx, user, app, fromHost)
+		// The target may have applied Adopt before its response was lost. Resolve
+		// that ambiguity before restoring a second copy on the source.
+		recoveryCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if status, found, statusErr := target.StatusContext(recoveryCtx, user, app, gen); statusErr == nil && found && status.State == "running" {
+			adopted = status
+			commitCtx = recoveryCtx
+		} else {
+			_, rollbackErr := source.AdoptContext(recoveryCtx, user, app, gen)
+			if rollbackErr == nil {
+				_ = m.Placement.Set(recoveryCtx, user, app, fromHost)
+				return Result{}, fmt.Errorf("target adopt: %w (instance restored on %s)", err, fromHost)
+			}
+			return Result{}, fmt.Errorf("target adopt: %w (source rollback failed: %v)", err, rollbackErr)
 		}
-		return Result{}, fmt.Errorf("target adopt: %w", err)
 	}
-	if err := m.Placement.Set(ctx, user, app, toHost); err != nil {
-		rollbackErr := target.SleepContext(ctx, user, app, gen)
+	if err := m.Placement.Set(commitCtx, user, app, toHost); err != nil {
+		recoveryCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		rollbackErr := target.SleepContext(recoveryCtx, user, app, gen)
 		if rollbackErr == nil {
-			rollbackErr = target.EvictContext(ctx, user, app, gen)
+			rollbackErr = target.EvictContext(recoveryCtx, user, app, gen)
 		}
 		if rollbackErr == nil {
-			_, rollbackErr = source.AdoptContext(ctx, user, app, gen)
+			_, rollbackErr = source.AdoptContext(recoveryCtx, user, app, gen)
 		}
 		if rollbackErr == nil {
-			_ = m.Placement.Set(ctx, user, app, fromHost)
+			_ = m.Placement.Set(recoveryCtx, user, app, fromHost)
 			return Result{}, fmt.Errorf("placement update: %w (instance restored on %s)", err, fromHost)
 		}
 		return Result{}, fmt.Errorf("placement update: %w (rollback failed: %v)", err, rollbackErr)
 	}
 	return Result{FromHost: fromHost, ToHost: toHost, Gen: gen, Addr: adopted.Addr}, nil
+}
+
+func (m *Migrator) appLock(user, app string) *sync.Mutex {
+	key := user + "/" + app
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.ops == nil {
+		m.ops = make(map[string]*sync.Mutex)
+	}
+	op := m.ops[key]
+	if op == nil {
+		op = &sync.Mutex{}
+		m.ops[key] = op
+	}
+	return op
 }

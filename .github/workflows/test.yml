@@ -65,6 +65,11 @@ jobs:
         working-directory: sshcloud
         run: go test -tags=kvm ./internal/agent -run '^$'
 
+      - name: Race-test sshcloud chaos paths
+        if: ${{ contains(steps.discover.outputs.modules, '"sshcloud"') }}
+        working-directory: sshcloud
+        run: go test -race ./...
+
       # Baseline stable toolchain; an app's rust-toolchain.toml (e.g. web-push
       # pins 1.83) overrides it per directory when cargo runs.
       - uses: dtolnay/rust-toolchain@stable

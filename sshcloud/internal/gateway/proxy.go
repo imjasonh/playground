@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -40,10 +41,27 @@ func ProxySSH(ctx context.Context, client io.ReadWriter, ca *userca.CA, principa
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // app host keys are ephemeral pre-Firecracker
 		Timeout:         10 * time.Second,
 	}
-	conn, err := ssh.Dial("tcp", addr, cfg)
+	raw, err := (&net.Dialer{Timeout: 10 * time.Second}).DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return fmt.Errorf("dial app: %w", err)
 	}
+	_ = raw.SetDeadline(time.Now().Add(10 * time.Second))
+	handshakeDone := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = raw.Close()
+		case <-handshakeDone:
+		}
+	}()
+	sshConn, chans, reqs, err := ssh.NewClientConn(raw, addr, cfg)
+	close(handshakeDone)
+	if err != nil {
+		_ = raw.Close()
+		return fmt.Errorf("handshake app: %w", err)
+	}
+	_ = raw.SetDeadline(time.Time{})
+	conn := ssh.NewClient(sshConn, chans, reqs)
 	defer conn.Close()
 
 	sess, err := conn.NewSession()

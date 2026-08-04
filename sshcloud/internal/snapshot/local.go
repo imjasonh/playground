@@ -102,18 +102,26 @@ func (s *LocalStore) Delete(ctx context.Context, key string) error {
 	return os.RemoveAll(dir)
 }
 
-// Has reports whether the package's commit marker (meta.json) exists.
+// Has reports whether every file in a complete local package exists.
 func (s *LocalStore) Has(ctx context.Context, key string) (bool, error) {
 	_ = ctx
 	dir, err := s.keyDir(key)
 	if err != nil {
 		return false, err
 	}
-	_, err = os.Stat(filepath.Join(dir, "meta.json"))
-	if os.IsNotExist(err) {
-		return false, nil
+	for _, name := range objectNames() {
+		info, statErr := os.Stat(filepath.Join(dir, name))
+		if os.IsNotExist(statErr) {
+			return false, nil
+		}
+		if statErr != nil {
+			return false, statErr
+		}
+		if !info.Mode().IsRegular() || info.Size() == 0 {
+			return false, nil
+		}
 	}
-	return err == nil, err
+	return true, nil
 }
 
 // Exists reports whether a package is present.

@@ -145,6 +145,7 @@ func TestPlacedDialRepairsStalePlacementAfterEnsure(t *testing.T) {
 		Agents: backend.NewHostSet(map[string]*backend.AgentClient{
 			"host-b": {BaseURL: agent.URL},
 		}, "host-b"),
+		DefaultHost: "removed-host",
 	}
 	if _, err := dial.EnsureAddr(t.Context(), "alice", "fortune", "gabc", "", false); err != nil {
 		t.Fatal(err)

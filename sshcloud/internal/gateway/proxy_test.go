@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/imjasonh/playground/sshcloud/internal/backend"
 	"github.com/imjasonh/playground/sshcloud/internal/gateway"
@@ -50,6 +52,51 @@ func TestProxyFortuneWithCert(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "hello alice") {
 		t.Fatalf("output: %q", out.String())
+	}
+}
+
+func TestProxyCancelInterruptsStalledSSHHandshake(t *testing.T) {
+	t.Parallel()
+	ca, err := userca.LoadOrGenerate("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err == nil {
+			accepted <- conn // Intentionally never write an SSH version.
+		}
+	}()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	result := make(chan error, 1)
+	go func() {
+		result <- gateway.ProxySSH(ctx, struct {
+			io.Reader
+			io.Writer
+		}{Reader: eofReader{}, Writer: io.Discard}, ca, "alice", listener.Addr().String())
+	}()
+	var stalled net.Conn
+	select {
+	case stalled = <-accepted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("proxy did not connect to stalled backend")
+	}
+	defer stalled.Close()
+	cancel()
+	select {
+	case err := <-result:
+		if err == nil {
+			t.Fatal("canceled handshake unexpectedly succeeded")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("cancellation did not interrupt backend SSH handshake")
 	}
 }
 

@@ -35,7 +35,7 @@ func (p *PlacedDial) agent(ctx context.Context, user, app string) (*AgentClient,
 	c, ok := p.Agents.Get(host)
 	if !ok {
 		replacement := p.DefaultHost
-		if replacement == "" {
+		if replacement == "" || replacement == host {
 			replacement = p.Agents.DefaultHost()
 		}
 		if replacement == "" || replacement == host {

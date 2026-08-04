@@ -13,6 +13,7 @@ import (
 
 // machine is the running VMM handle.
 type machine interface {
+	Alive() bool
 	Pause(ctx context.Context) error
 	Resume(ctx context.Context) error
 	CreateSnapshot(ctx context.Context, files firecracker.SnapshotFiles) error
@@ -92,6 +93,12 @@ func (FirecrackerRuntime) Restore(ctx context.Context, spec RestoreSpec) (machin
 	if err := firecracker.CreateTap(spec.TapName, spec.HostIP, 24); err != nil {
 		return nil, "", fmt.Errorf("recreate tap: %w", err)
 	}
+	keepTap := false
+	defer func() {
+		if !keepTap {
+			_ = firecracker.DeleteTap(spec.TapName)
+		}
+	}()
 	sock := filepath.Join(spec.WorkDir, "firecracker.sock")
 	logPath := filepath.Join(spec.WorkDir, "firecracker-wake.log")
 	m, err := firecracker.Restore(ctx, firecracker.RestoreConfig{
@@ -113,5 +120,6 @@ func (FirecrackerRuntime) Restore(ctx context.Context, spec RestoreSpec) (machin
 		_ = m.Kill()
 		return nil, "", fmt.Errorf("guest SSH not ready after wake: %w (see %s)", err, logPath)
 	}
+	keepTap = true
 	return m, addr, nil
 }

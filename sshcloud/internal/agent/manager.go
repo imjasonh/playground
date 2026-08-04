@@ -120,6 +120,7 @@ type Manager struct {
 	reserved map[string]InstanceKey
 	seq      int
 	stop     chan struct{}
+	closed   bool
 }
 
 // NewManager validates config essentials.
@@ -194,7 +195,12 @@ func (m *Manager) EnsureWith(ctx context.Context, user, app string, opt EnsureOp
 	op.Lock()
 	defer op.Unlock()
 
+	var stale *Instance
 	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		return nil, fmt.Errorf("agent manager is closed")
+	}
 	if in, ok := m.inst[k]; ok {
 		if err := compatibleInstance(in, opt); err != nil {
 			m.mu.Unlock()
@@ -202,21 +208,40 @@ func (m *Manager) EnsureWith(ctx context.Context, user, app string, opt EnsureOp
 		}
 		switch in.State {
 		case StateRunning:
-			in.LastUsed = time.Now()
-			in.noIdle = opt.NoIdle
-			m.mu.Unlock()
-			return instanceCopy(in), nil
+			if in.machine != nil && in.machine.Alive() {
+				in.LastUsed = time.Now()
+				in.noIdle = opt.NoIdle
+				m.mu.Unlock()
+				return instanceCopy(in), nil
+			}
+			stale = in
+			if opt.Image == "" {
+				opt.Image = in.Image
+			}
+			if opt.Tier == "" {
+				opt.Tier = in.Tier
+			}
+			delete(m.inst, k)
 		case StateSleeping:
 			in.noIdle = opt.NoIdle
 			m.mu.Unlock()
 			return m.wake(ctx, k)
 		case StateFailed:
+			stale = in
 			delete(m.inst, k)
 		}
 	}
 	m.seq++
 	n := m.seq
 	m.mu.Unlock()
+	if stale != nil {
+		_ = stale.relay.Close()
+		if stale.machine != nil {
+			_ = stale.machine.Kill()
+		}
+		_ = firecracker.DeleteTap(stale.TapName)
+		_ = os.RemoveAll(stale.WorkDir)
+	}
 
 	if m.cfg.SnapStore != nil {
 		has, err := m.cfg.SnapStore.Has(ctx, snapshot.KeyFor(user, app))
@@ -709,6 +734,10 @@ func (m *Manager) Adopt(ctx context.Context, user, app string) (*Instance, error
 	defer op.Unlock()
 
 	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		return nil, fmt.Errorf("agent manager is closed")
+	}
 	if in, ok := m.inst[k]; ok {
 		switch in.State {
 		case StateRunning:
@@ -1093,11 +1122,26 @@ func (m *Manager) sleepIdle() {
 // configured, running instances are snapshotted and evicted without deleting
 // their durable package so a replacement agent can recover them on Ensure.
 func (m *Manager) Close() error {
-	select {
-	case <-m.stop:
-	default:
-		close(m.stop)
+	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		return nil
 	}
+	m.closed = true
+	close(m.stop)
+	ops := make([]*sync.Mutex, 0, len(m.ops))
+	for _, op := range m.ops {
+		ops = append(ops, op)
+	}
+	m.mu.Unlock()
+
+	// An in-flight boot/restore may not be visible in inst yet. Fence every
+	// operation that existed when closing began before collecting instances.
+	for _, op := range ops {
+		op.Lock()
+		op.Unlock()
+	}
+
 	m.mu.Lock()
 	keys := make([]InstanceKey, 0, len(m.inst))
 	for k := range m.inst {

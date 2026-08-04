@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"syscall"
 	"time"
 )
 
@@ -243,6 +244,31 @@ func (m *Machine) PID() int {
 		return 0
 	}
 	return m.cmd.Process.Pid
+}
+
+// Alive reports whether the VMM process still exists and is not a zombie.
+// Firecracker is Linux-only, so /proc provides the missing exited-but-unreaped
+// distinction that signal 0 cannot detect.
+func (m *Machine) Alive() bool {
+	if m == nil || m.cmd == nil || m.cmd.Process == nil {
+		return false
+	}
+	if m.cmd.ProcessState != nil && m.cmd.ProcessState.Exited() {
+		return false
+	}
+	if err := m.cmd.Process.Signal(syscall.Signal(0)); err != nil {
+		return false
+	}
+	stat, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", m.cmd.Process.Pid))
+	if err == nil {
+		if end := bytes.LastIndexByte(stat, ')'); end >= 0 && end+2 < len(stat) {
+			switch stat[end+2] {
+			case 'Z', 'X':
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // WaitTCP waits until addr accepts TCP connections (guest SSH ready).

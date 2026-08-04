@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -37,7 +38,8 @@ func TestKVMSleepWake(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mgr, err := agent.NewManager(kvmManagerConfig(cfg, filepath.Join(work, "w"), store, "172.30"))
+	faultStore := &cancelFirstPutStore{Store: store}
+	mgr, err := agent.NewManager(kvmManagerConfig(cfg, filepath.Join(work, "w"), faultStore, "172.30"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,6 +69,17 @@ func TestKVMSleepWake(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	if err := dialTCP(in.Addr, 5*time.Second); err != nil {
 		t.Fatalf("dial after HTTP request ended %s: %v", in.Addr, err)
+	}
+
+	// Chaos: persistence fails after canceling the request context. The manager
+	// must use its recovery context to resume the paused VMM.
+	failedSleepCtx, cancelFailedSleep := context.WithCancel(ctx)
+	faultStore.CancelNextPut(cancelFailedSleep)
+	if err := mgr.Sleep(failedSleepCtx, "alice", "fortune"); err == nil {
+		t.Fatal("expected injected snapshot Put failure")
+	}
+	if err := dialTCP(in.Addr, 5*time.Second); err != nil {
+		t.Fatalf("guest was not resumed after snapshot Put failure: %v", err)
 	}
 
 	if err := mgr.Sleep(ctx, "alice", "fortune"); err != nil {
@@ -133,7 +146,9 @@ func TestKVMCrossHostMigrate(t *testing.T) {
 		t.Fatal("A still has instance after evict")
 	}
 
-	adopted, err := mgrB.Adopt(ctx, "bob", "fortune")
+	// Simulate host replacement: the fresh manager has no in-memory instance,
+	// so ordinary Ensure must discover and adopt the durable snapshot.
+	adopted, err := mgrB.EnsureWith(ctx, "bob", "fortune", agent.EnsureOpts{Image: cfg.image})
 	if err != nil {
 		t.Fatalf("adopt on B: %v", err)
 	}
@@ -143,6 +158,30 @@ func TestKVMCrossHostMigrate(t *testing.T) {
 	if adopted.GuestIP != in.GuestIP {
 		t.Fatalf("guest IP changed: %s → %s", in.GuestIP, adopted.GuestIP)
 	}
+}
+
+type cancelFirstPutStore struct {
+	snapshot.Store
+	mu     sync.Mutex
+	cancel context.CancelFunc
+}
+
+func (s *cancelFirstPutStore) CancelNextPut(cancel context.CancelFunc) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cancel = cancel
+}
+
+func (s *cancelFirstPutStore) Put(ctx context.Context, key string, pkg snapshot.Package) error {
+	s.mu.Lock()
+	cancel := s.cancel
+	s.cancel = nil
+	s.mu.Unlock()
+	if cancel != nil {
+		cancel()
+		return context.Canceled
+	}
+	return s.Store.Put(ctx, key, pkg)
 }
 
 type kvmAssets struct {

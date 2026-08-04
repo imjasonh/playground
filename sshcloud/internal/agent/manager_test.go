@@ -2,8 +2,10 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -306,19 +308,26 @@ func TestResourceReservationFencesConcurrentRestore(t *testing.T) {
 }
 
 type orderedSnapshotMachine struct {
-	events *[]string
+	events      *[]string
+	pauseErr    error
+	resumeErr   error
+	snapshotErr error
 }
 
+func (m orderedSnapshotMachine) Alive() bool { return true }
 func (m orderedSnapshotMachine) Pause(context.Context) error {
 	*m.events = append(*m.events, "pause")
-	return nil
+	return m.pauseErr
 }
 func (m orderedSnapshotMachine) Resume(context.Context) error {
 	*m.events = append(*m.events, "resume")
-	return nil
+	return m.resumeErr
 }
 func (m orderedSnapshotMachine) CreateSnapshot(_ context.Context, files firecracker.SnapshotFiles) error {
 	*m.events = append(*m.events, "snapshot")
+	if m.snapshotErr != nil {
+		return m.snapshotErr
+	}
 	if err := os.WriteFile(files.StatePath, []byte("state"), 0o644); err != nil {
 		return err
 	}
@@ -332,11 +341,12 @@ func (m orderedSnapshotMachine) Kill() error {
 
 type orderedSnapshotStore struct {
 	events *[]string
+	putErr error
 }
 
 func (s orderedSnapshotStore) Put(context.Context, string, snapshot.Package) error {
 	*s.events = append(*s.events, "put")
-	return nil
+	return s.putErr
 }
 func (orderedSnapshotStore) Get(context.Context, string, string) (snapshot.Package, error) {
 	return snapshot.Package{}, os.ErrNotExist
@@ -378,6 +388,65 @@ func TestSleepPublishesBeforeKillingVMM(t *testing.T) {
 	}
 }
 
+func TestSleepFailureChaosMatrix(t *testing.T) {
+	t.Parallel()
+	injected := errors.New("injected failure")
+	tests := []struct {
+		name       string
+		machine    orderedSnapshotMachine
+		putErr     error
+		wantEvents string
+		wantState  State
+	}{
+		{name: "pause", machine: orderedSnapshotMachine{pauseErr: injected}, wantEvents: "pause", wantState: StateRunning},
+		{name: "snapshot", machine: orderedSnapshotMachine{snapshotErr: injected}, wantEvents: "pause,snapshot,resume", wantState: StateRunning},
+		{name: "publish", putErr: injected, wantEvents: "pause,snapshot,put,resume", wantState: StateRunning},
+		{
+			name: "publish_and_resume", putErr: injected,
+			machine:    orderedSnapshotMachine{resumeErr: injected},
+			wantEvents: "pause,snapshot,put,resume,kill", wantState: StateFailed,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			rootfsPath := dir + "/vm/rootfs.ext4"
+			if err := os.MkdirAll(dir+"/vm", 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(rootfsPath, []byte("rootfs"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			var events []string
+			tc.machine.events = &events
+			store := orderedSnapshotStore{events: &events, putErr: tc.putErr}
+			mgr, err := NewManager(Config{
+				WorkDir: dir, KernelPath: dir + "/kernel", BaseRootfs: rootfsPath, SnapStore: store,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			key := InstanceKey{User: "alice", App: "fortune"}
+			mgr.inst[key] = &Instance{
+				Key: key, State: StateRunning, Rootfs: rootfsPath, WorkDir: dir + "/vm",
+				GuestIP: "172.16.2.2", HostIP: "172.16.2.1", TapName: "fc-test",
+				GuestMAC: "AA:FC:00:00:00:01", Tier: "tiny", machine: tc.machine,
+			}
+			if err := mgr.Sleep(context.Background(), key.User, key.App); err == nil {
+				t.Fatal("expected injected failure")
+			}
+			if got := strings.Join(events, ","); got != tc.wantEvents {
+				t.Fatalf("events %q, want %q", got, tc.wantEvents)
+			}
+			status, ok := mgr.Status(key.User, key.App)
+			if !ok || status.State != tc.wantState {
+				t.Fatalf("state ok=%v got=%s want=%s", ok, status.State, tc.wantState)
+			}
+		})
+	}
+}
+
 func TestStopDeletesSnapshotAfterManagerRestart(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -414,5 +483,71 @@ func TestStopDeletesSnapshotAfterManagerRestart(t *testing.T) {
 	}
 	if exists, err := store.Has(context.Background(), key); err != nil || exists {
 		t.Fatalf("snapshot remains after stop: exists=%v err=%v", exists, err)
+	}
+}
+
+type deadMachine struct {
+	killed atomic.Bool
+}
+
+func (*deadMachine) Alive() bool                  { return false }
+func (*deadMachine) Pause(context.Context) error  { return nil }
+func (*deadMachine) Resume(context.Context) error { return nil }
+func (*deadMachine) CreateSnapshot(context.Context, firecracker.SnapshotFiles) error {
+	return nil
+}
+func (*deadMachine) Stop() error { return nil }
+func (m *deadMachine) Kill() error {
+	m.killed.Store(true)
+	return nil
+}
+
+func TestEnsureNeverReturnsUnexpectedlyExitedVMM(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mgr, err := NewManager(Config{
+		WorkDir: dir, KernelPath: dir + "/kernel", BaseRootfs: dir + "/rootfs",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dead := &deadMachine{}
+	key := InstanceKey{User: "alice", App: "fortune"}
+	workDir := dir + "/vm-dead"
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mgr.inst[key] = &Instance{
+		Key: key, State: StateRunning, Addr: "172.16.2.2:22",
+		WorkDir: workDir, TapName: "fc-dead", Image: "ghcr.io/example/app@sha256:" + strings.Repeat("a", 64),
+		Tier: "tiny", machine: dead,
+	}
+	_, err = mgr.Ensure(context.Background(), key.User, key.App)
+	if err == nil || !strings.Contains(err.Error(), "/dev/kvm") {
+		t.Fatalf("expected recovery boot attempt, got %v", err)
+	}
+	if !dead.killed.Load() {
+		t.Fatal("exited VMM resources were not cleaned")
+	}
+	if _, ok := mgr.Status(key.User, key.App); ok {
+		t.Fatal("exited VMM remained published as running")
+	}
+}
+
+func TestClosedManagerRejectsNewEnsure(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mgr, err := NewManager(Config{
+		WorkDir: dir, KernelPath: dir + "/kernel", BaseRootfs: dir + "/rootfs",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mgr.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mgr.Ensure(context.Background(), "alice", "fortune"); err == nil ||
+		!strings.Contains(err.Error(), "closed") {
+		t.Fatalf("closed manager Ensure error = %v", err)
 	}
 }
