@@ -1449,39 +1449,46 @@ module ramp(g, r, c, rr, cc) {
 module life_cells() {
     roof_g = len(final_stack) - 1;
     ink = qr_ink_thickness;
-    ov = cell_overlap;
+    // Inset black modules slightly so edges stay crisp against empty neighbors.
+    ink_inset = min(0.05, cell_x * 0.04, cell_y * 0.04);
+    white_h = max(0.01, total_z - ink);
 
-    // Body + pillars + ramps: white. Roof live cells stop short so the
-    // black ink slab owns the top face (better for MakerWorld multi-color
-    // and for scanning from above).
+    // White body + ramps, clipped *below* the ink band. Diagonal ramps hull
+    // full-height roof cells; without this clip their slopes enter the ink
+    // band and smear black into neighboring (white) QR modules.
     color("#FFFFFF") {
-        for (g = [0 : roof_g], r = [0 : rows - 1], c = [0 : cols - 1])
-            if (final_stack[g][r][c] != 0) {
-                if (g == roof_g && final_stack[g][r][c] == 1) {
-                    h = cell_z - ink;
-                    if (h > 0)
-                        translate([c * cell_x - ov, r * cell_y - ov, g * cell_z - ov])
-                            cube([cell_x + 2 * ov, cell_y + 2 * ov, h + ov]);
-                } else {
-                    life_cell(g, r, c);
-                }
+        intersection() {
+            union() {
+                for (g = [0 : roof_g], r = [0 : rows - 1], c = [0 : cols - 1])
+                    if (final_stack[g][r][c] != 0)
+                        life_cell(g, r, c);
+                for (p = ramp_pairs)
+                    ramp(p[0], p[1], p[2], p[3], p[4]);
             }
-        for (p = ramp_pairs)
-            ramp(p[0], p[1], p[2], p[3], p[4]);
+            cube([total_x, total_y, white_h]);
+        }
     }
 
-    // QR modules: black top faces only
+    // Flat black QR ink — axis-aligned pads only, never part of a ramp hull.
     color("#000000") {
         for (r = [0 : rows - 1], c = [0 : cols - 1])
             if (final_stack[roof_g][r][c] == 1)
-                translate([c * cell_x - ov, r * cell_y - ov, total_z - ink])
-                    cube([cell_x + 2 * ov, cell_y + 2 * ov, ink]);
+                translate([
+                    c * cell_x + ink_inset,
+                    r * cell_y + ink_inset,
+                    total_z - ink
+                ])
+                    cube([
+                        max(0.01, cell_x - 2 * ink_inset),
+                        max(0.01, cell_y - 2 * ink_inset),
+                        ink
+                    ]);
     }
 }
 
 module life_qr() {
     // Just the Life voxels — no roof/base plates. Slicers add brim/raft as needed.
-    // Colors: white body, black QR ink on roof top faces (MakerWorld 3MF paint).
+    // Colors: white body, black QR ink pads on roof modules (MakerWorld 3MF paint).
     intersection() {
         life_cells();
         cube([total_x, total_y, total_z]);
