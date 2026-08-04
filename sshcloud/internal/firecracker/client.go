@@ -177,11 +177,19 @@ func (m *Machine) configure(ctx context.Context) error {
 }
 
 func (m *Machine) put(ctx context.Context, path string, body any) error {
+	return m.doJSON(ctx, http.MethodPut, path, body)
+}
+
+func (m *Machine) patch(ctx context.Context, path string, body any) error {
+	return m.doJSON(ctx, http.MethodPatch, path, body)
+}
+
+func (m *Machine) doJSON(ctx context.Context, method, path string, body any) error {
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(body); err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, "http://localhost"+path, &buf)
+	req, err := http.NewRequestWithContext(ctx, method, "http://localhost"+path, &buf)
 	if err != nil {
 		return err
 	}
@@ -193,7 +201,7 @@ func (m *Machine) put(ctx context.Context, path string, body any) error {
 	defer res.Body.Close()
 	if res.StatusCode >= 300 {
 		b, _ := io.ReadAll(res.Body)
-		return fmt.Errorf("PUT %s: %s: %s", path, res.Status, bytes.TrimSpace(b))
+		return fmt.Errorf("%s %s: %s: %s", method, path, res.Status, bytes.TrimSpace(b))
 	}
 	return nil
 }

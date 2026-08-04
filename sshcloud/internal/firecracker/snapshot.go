@@ -23,13 +23,14 @@ func SnapshotFilesIn(dir string) SnapshotFiles {
 }
 
 // Pause freezes the running microVM (required before CreateSnapshot).
+// Firecracker ≥1.0 uses PATCH /vm {"state":"Paused"} (not /actions).
 func (m *Machine) Pause(ctx context.Context) error {
-	return m.put(ctx, "/actions", map[string]string{"action_type": "Pause"})
+	return m.patch(ctx, "/vm", map[string]string{"state": "Paused"})
 }
 
 // Resume continues a paused microVM.
 func (m *Machine) Resume(ctx context.Context) error {
-	return m.put(ctx, "/actions", map[string]string{"action_type": "Resume"})
+	return m.patch(ctx, "/vm", map[string]string{"state": "Resumed"})
 }
 
 // CreateSnapshot writes a full snapshot. The VM must already be Paused.
