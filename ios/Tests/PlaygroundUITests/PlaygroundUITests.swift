@@ -16,16 +16,49 @@ final class PlaygroundUITests: XCTestCase {
     }
 
     /// Tap an experiment's launcher row, tolerating whether SwiftUI exposes the
-    /// row as a button/cell (by identifier) or only its title text.
+    /// row as a button/cell (by identifier) or only its title text. Scrolls the
+    /// list when later experiments sit below the fold on small simulators.
     private func openExperiment(_ id: String, title: String, in app: XCUIApplication) {
         let byId = app.buttons["experiment-\(id)"]
-        if byId.waitForExistence(timeout: 8) {
+        if scrollLauncherUntilExists(byId, in: app) {
             byId.tap()
             return
         }
         let byTitle = app.staticTexts[title]
-        XCTAssertTrue(byTitle.waitForExistence(timeout: 8), "Could not find launcher row for \(id)")
+        XCTAssertTrue(
+            scrollLauncherUntilExists(byTitle, in: app),
+            "Could not find launcher row for \(id)"
+        )
         byTitle.tap()
+    }
+
+    /// Swipe the launcher list until `element` appears (or attempts are exhausted).
+    @discardableResult
+    private func scrollLauncherUntilExists(
+        _ element: XCUIElement,
+        in app: XCUIApplication,
+        maxSwipes: Int = 8
+    ) -> Bool {
+        if element.waitForExistence(timeout: 2) {
+            return true
+        }
+        for _ in 0..<maxSwipes {
+            if element.exists {
+                return true
+            }
+            swipeLauncherUp(in: app)
+        }
+        return element.waitForExistence(timeout: 2)
+    }
+
+    private func swipeLauncherUp(in app: XCUIApplication) {
+        if app.collectionViews.firstMatch.exists {
+            app.collectionViews.firstMatch.swipeUp()
+        } else if app.tables.firstMatch.exists {
+            app.tables.firstMatch.swipeUp()
+        } else {
+            app.swipeUp()
+        }
     }
 
     private func launchApp() -> XCUIApplication {
@@ -38,13 +71,25 @@ final class PlaygroundUITests: XCTestCase {
     func testLauncherListsExperiments() {
         let app = launchApp()
 
+        // Early rows stay on-screen; later ones may sit below the fold once the
+        // catalog grows (SwiftUI List also virtualizes off-screen cells).
         XCTAssertTrue(app.staticTexts["Ride Monitor"].exists)
         XCTAssertTrue(app.staticTexts["T9 Keyboard"].exists)
         XCTAssertTrue(app.staticTexts["Follow the Hum"].exists)
         XCTAssertTrue(app.staticTexts["Snore Log"].exists)
         XCTAssertTrue(app.staticTexts["Z-Camera"].exists)
-        XCTAssertTrue(app.staticTexts["Voxel World"].exists)
-        XCTAssertTrue(app.staticTexts["Wigglecam"].exists)
+        XCTAssertTrue(
+            scrollLauncherUntilExists(app.staticTexts["Local Lens"], in: app),
+            "Local Lens should appear after scrolling the launcher"
+        )
+        XCTAssertTrue(
+            scrollLauncherUntilExists(app.staticTexts["Voxel World"], in: app),
+            "Voxel World should appear after scrolling the launcher"
+        )
+        XCTAssertTrue(
+            scrollLauncherUntilExists(app.staticTexts["Wigglecam"], in: app),
+            "Wigglecam should appear after scrolling the launcher"
+        )
     }
 
     func testRideMonitorExperimentOpens() {
@@ -147,5 +192,25 @@ final class PlaygroundUITests: XCTestCase {
             || app.otherElements["wigglecamStatusMessage"].waitForExistence(timeout: 3)
             || app.staticTexts["wigglecamReadinessBanner"].waitForExistence(timeout: 3)
             || app.otherElements["wigglecamReadinessBanner"].waitForExistence(timeout: 3))
+    }
+
+    func testLocalLensExperimentOpens() {
+        let app = launchApp()
+
+        openExperiment("local-lens", title: "Local Lens", in: app)
+
+        XCTAssertTrue(app.navigationBars["Local Lens"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["localLensMode-classify"].waitForExistence(timeout: 8)
+            || app.otherElements["localLensMode-classify"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["localLensMode-text"].waitForExistence(timeout: 8)
+            || app.otherElements["localLensMode-text"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["localLensMode-body"].waitForExistence(timeout: 8)
+            || app.otherElements["localLensMode-body"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["localLensMode-hands"].waitForExistence(timeout: 8)
+            || app.otherElements["localLensMode-hands"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["localLensStatusMessage"].waitForExistence(timeout: 8)
+            || app.otherElements["localLensStatusMessage"].waitForExistence(timeout: 3)
+            || app.staticTexts["localLensPrivacyBadge"].waitForExistence(timeout: 3)
+            || app.otherElements["localLensPrivacyBadge"].waitForExistence(timeout: 3))
     }
 }
