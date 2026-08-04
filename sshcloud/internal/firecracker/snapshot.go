@@ -103,7 +103,12 @@ func Restore(ctx context.Context, cfg RestoreConfig) (*Machine, error) {
 		hc:  newUnixHTTPClient(cfg.SocketPath),
 	}
 	if err := m.waitSocket(ctx); err != nil {
+		logTail := readLogTail(cfg.LogPath, 4<<10)
+		exit := processExitErr(cmd)
 		_ = m.Kill()
+		if logTail != "" || exit != "" {
+			return nil, fmt.Errorf("%w%s%s", err, exit, logTail)
+		}
 		return nil, err
 	}
 	body := map[string]any{

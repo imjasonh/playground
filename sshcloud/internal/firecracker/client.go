@@ -84,7 +84,12 @@ func Start(ctx context.Context, cfg Config) (*Machine, error) {
 		hc:  newUnixHTTPClient(cfg.SocketPath),
 	}
 	if err := m.waitSocket(ctx); err != nil {
-		_ = m.Stop()
+		logTail := readLogTail(cfg.LogPath, 4<<10)
+		exit := processExitErr(cmd)
+		_ = m.Kill()
+		if logTail != "" || exit != "" {
+			return nil, fmt.Errorf("%w%s%s", err, exit, logTail)
+		}
 		return nil, err
 	}
 	if err := m.configure(ctx); err != nil {
@@ -258,4 +263,39 @@ func newUnixHTTPClient(socketPath string) *http.Client {
 		},
 		Timeout: 30 * time.Second,
 	}
+}
+
+func readLogTail(path string, max int) string {
+	if path == "" {
+		return ""
+	}
+	b, err := os.ReadFile(path)
+	if err != nil || len(b) == 0 {
+		return ""
+	}
+	if len(b) > max {
+		b = b[len(b)-max:]
+	}
+	return "\n--- firecracker log ---\n" + string(b)
+}
+
+func processExitErr(cmd *exec.Cmd) string {
+	if cmd == nil || cmd.ProcessState == nil {
+		// Non-blocking check: if already exited, Wait returns quickly.
+		if cmd != nil && cmd.Process != nil {
+			ch := make(chan error, 1)
+			go func() { ch <- cmd.Wait() }()
+			select {
+			case err := <-ch:
+				if err != nil {
+					return fmt.Sprintf("\n--- firecracker exit ---\n%v", err)
+				}
+				return "\n--- firecracker exit ---\nexited 0"
+			case <-time.After(50 * time.Millisecond):
+				return ""
+			}
+		}
+		return ""
+	}
+	return fmt.Sprintf("\n--- firecracker exit ---\n%s", cmd.ProcessState.String())
 }

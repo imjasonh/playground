@@ -129,6 +129,5 @@ jobs:
       - name: Run Firecracker KVM e2e
         if: steps.gate.outputs.run == 'true'
         working-directory: sshcloud
-        run: |
-          sudo --preserve-env=PATH,HOME,GOROOT,GOPATH,GOCACHE,GOMODCACHE,GOTOOLCHAIN \
-            bash hack/run-kvm-e2e.sh
+        # Firecracker runs as the runner user; `ip` for TAP uses passwordless sudo.
+        run: bash hack/run-kvm-e2e.sh

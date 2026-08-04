@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Prepare Firecracker assets and run real KVM e2e tests (sleep/wake + migrate).
 #
-# Requires: /dev/kvm, root (or CAP_NET_ADMIN) for TAP, curl, e2fsprogs, iproute2, Go.
-# On GitHub Actions ubuntu-latest, enable KVM first:
-#   echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-#     | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-#   sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
-#   sudo bash hack/run-kvm-e2e.sh
+# Requires: /dev/kvm (rw), passwordless sudo for `ip` (TAP), curl, e2fsprogs, Go.
+# Firecracker itself runs as the invoking user (not root).
+#
+# On GitHub Actions ubuntu-latest:
+#   # udev rule for /dev/kvm (see test.yml)
+#   bash hack/run-kvm-e2e.sh
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -17,29 +17,38 @@ if [[ ! -e /dev/kvm ]]; then
   exit 1
 fi
 if [[ ! -r /dev/kvm || ! -w /dev/kvm ]]; then
-  echo "ERROR: /dev/kvm not read/writable by $(id -u) (fix udev MODE=0666 or run as root)" >&2
+  echo "ERROR: /dev/kvm not read/writable by $(id -un) (fix udev MODE=0666)" >&2
   ls -l /dev/kvm >&2 || true
   exit 1
 fi
-if [[ "$(id -u)" -ne 0 ]]; then
-  echo "ERROR: must run as root for TAP (CAP_NET_ADMIN). Example: sudo -E bash $0" >&2
+if [[ "$(id -u)" -eq 0 ]]; then
+  echo "ERROR: do not run this script as root — Firecracker should run unprivileged." >&2
+  echo "Use sudo only for the udev/apt setup; then: bash $0" >&2
+  exit 1
+fi
+if ! sudo -n ip link show >/dev/null 2>&1; then
+  echo "ERROR: need passwordless sudo for \`ip\` (TAP setup). On GHA runners this is available." >&2
   exit 1
 fi
 
 ASSETS="${SSHCLOUD_ASSETS:-$ROOT/_assets}"
 mkdir -p "$ASSETS"
 
+# Short work root — Firecracker unix socket paths are capped (~108 bytes).
+export TMPDIR="${TMPDIR:-/tmp}"
+export SSHCLOUD_WORK_ROOT="${SSHCLOUD_WORK_ROOT:-/tmp/sshcloud-kvm}"
+mkdir -p "$SSHCLOUD_WORK_ROOT"
+chmod 755 "$SSHCLOUD_WORK_ROOT"
+
 echo "::group::Fetch Firecracker + kernel"
 OUT="$ASSETS" bash "$ROOT/hack/fetch-firecracker-assets.sh"
 echo "::endgroup::"
 
 echo "::group::Build fortune guest + rootfs"
-# Guest binary must be linux; CGO off for a portable static-ish binary.
 CGO_ENABLED=0 go build -o "$ASSETS/fortune" ./cmd/fortune
 CA_KEY="$ASSETS/ssh_user_ca"
 CA_PUB="$ASSETS/ssh_user_ca.pub"
 if [[ ! -f "$CA_PUB" ]]; then
-  # Mint a CA via a tiny Go helper (userca.LoadOrGenerate).
   go run ./hack/genuca -out "$CA_KEY"
 fi
 go run ./cmd/mkrootfs \
@@ -49,13 +58,15 @@ go run ./cmd/mkrootfs \
   -size-mb 64
 echo "::endgroup::"
 
+# Sanity: firecracker binary can print version.
+"$ASSETS/firecracker" --version || true
+
 export SSHCLOUD_FIRECRACKER="$ASSETS/firecracker"
 export SSHCLOUD_KERNEL="$ASSETS/vmlinux"
 export SSHCLOUD_ROOTFS="$ASSETS/fortune-rootfs.ext4"
 export SSHCLOUD_CA_PUB="$CA_PUB"
 
 echo "::group::KVM e2e tests"
-# Preserve GOPATH/GOCACHE when invoked via sudo -E from CI.
 go test -tags=kvm -count=1 -timeout 10m -v ./internal/agent/ -run 'TestKVM'
 echo "::endgroup::"
 

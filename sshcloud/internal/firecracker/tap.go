@@ -2,6 +2,7 @@ package firecracker
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -14,22 +15,35 @@ type Tap struct {
 	Prefix  int    // e.g. 24
 }
 
+// ipCommand runs `ip` as root via sudo when the current process is unprivileged.
+func ipCommand(args ...string) *exec.Cmd {
+	if os.Geteuid() == 0 {
+		return exec.Command("ip", args...)
+	}
+	return exec.Command("sudo", append([]string{"-n", "ip"}, args...)...)
+}
+
 // CreateTap creates and configures a TAP device (requires CAP_NET_ADMIN).
+// When not root, the TAP is owned by the current uid so Firecracker can open it.
 func CreateTap(name, hostIP string, prefix int) error {
-	if out, err := exec.Command("ip", "tuntap", "add", "dev", name, "mode", "tap").CombinedOutput(); err != nil {
+	args := []string{"tuntap", "add", "dev", name, "mode", "tap"}
+	if os.Geteuid() != 0 {
+		args = append(args, "user", fmt.Sprintf("%d", os.Getuid()))
+	}
+	if out, err := ipCommand(args...).CombinedOutput(); err != nil {
 		// already exists?
 		if !strings.Contains(string(out), "File exists") && !strings.Contains(string(out), "exists") {
 			return fmt.Errorf("tuntap add: %v\n%s", err, out)
 		}
 	}
 	cidr := fmt.Sprintf("%s/%d", hostIP, prefix)
-	_ = exec.Command("ip", "addr", "flush", "dev", name).Run()
-	if out, err := exec.Command("ip", "addr", "add", cidr, "dev", name).CombinedOutput(); err != nil {
+	_ = ipCommand("addr", "flush", "dev", name).Run()
+	if out, err := ipCommand("addr", "add", cidr, "dev", name).CombinedOutput(); err != nil {
 		if !strings.Contains(string(out), "File exists") {
 			return fmt.Errorf("addr add: %v\n%s", err, out)
 		}
 	}
-	if out, err := exec.Command("ip", "link", "set", "dev", name, "up").CombinedOutput(); err != nil {
+	if out, err := ipCommand("link", "set", "dev", name, "up").CombinedOutput(); err != nil {
 		return fmt.Errorf("link up: %v\n%s", err, out)
 	}
 	return nil
@@ -37,7 +51,7 @@ func CreateTap(name, hostIP string, prefix int) error {
 
 // DeleteTap removes a TAP device.
 func DeleteTap(name string) error {
-	if out, err := exec.Command("ip", "link", "del", "dev", name).CombinedOutput(); err != nil {
+	if out, err := ipCommand("link", "del", "dev", name).CombinedOutput(); err != nil {
 		return fmt.Errorf("link del: %v\n%s", err, out)
 	}
 	return nil

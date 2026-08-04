@@ -4,6 +4,7 @@ package agent_test
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -19,12 +20,13 @@ import (
 // prepared by hack/run-kvm-e2e.sh (env SSHCLOUD_*).
 func TestKVMSleepWake(t *testing.T) {
 	cfg := kvmConfig(t)
-	store, err := snapshot.NewLocalStore(filepath.Join(t.TempDir(), "snaps"))
+	work := shortWorkDir(t, "sw")
+	store, err := snapshot.NewLocalStore(filepath.Join(work, "snaps"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	mgr, err := agent.NewManager(agent.Config{
-		WorkDir:        filepath.Join(t.TempDir(), "w"),
+		WorkDir:        filepath.Join(work, "w"),
 		FirecrackerBin: cfg.fc,
 		KernelPath:     cfg.kernel,
 		BaseRootfs:     cfg.rootfs,
@@ -72,14 +74,14 @@ func TestKVMSleepWake(t *testing.T) {
 
 func TestKVMCrossHostMigrate(t *testing.T) {
 	cfg := kvmConfig(t)
-	shared := filepath.Join(t.TempDir(), "snaps")
-	store, err := snapshot.NewLocalStore(shared)
+	work := shortWorkDir(t, "mig")
+	store, err := snapshot.NewLocalStore(filepath.Join(work, "snaps"))
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	mgrA, err := agent.NewManager(agent.Config{
-		WorkDir:        filepath.Join(t.TempDir(), "a"),
+		WorkDir:        filepath.Join(work, "a"),
 		FirecrackerBin: cfg.fc,
 		KernelPath:     cfg.kernel,
 		BaseRootfs:     cfg.rootfs,
@@ -94,7 +96,7 @@ func TestKVMCrossHostMigrate(t *testing.T) {
 	t.Cleanup(func() { _ = mgrA.Close() })
 
 	mgrB, err := agent.NewManager(agent.Config{
-		WorkDir:        filepath.Join(t.TempDir(), "b"),
+		WorkDir:        filepath.Join(work, "b"),
 		FirecrackerBin: cfg.fc,
 		KernelPath:     cfg.kernel,
 		BaseRootfs:     cfg.rootfs,
@@ -194,4 +196,19 @@ func dialTCP(addr string, timeout time.Duration) error {
 		return err
 	}
 	return c.Close()
+}
+
+// shortWorkDir keeps Firecracker API socket paths under the unix sun_path limit.
+func shortWorkDir(t *testing.T, name string) string {
+	t.Helper()
+	root := os.Getenv("SSHCLOUD_WORK_ROOT")
+	if root == "" {
+		root = "/tmp/sshcloud-kvm"
+	}
+	dir := filepath.Join(root, fmt.Sprintf("%s-%d", name, os.Getpid()))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
 }
