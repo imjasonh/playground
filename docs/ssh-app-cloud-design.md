@@ -50,17 +50,25 @@
 | Region | One region until bin-pack/migration is solid |
 | Observability | Logs, metrics, **metadata-only** connection traces (no session bytes) |
 | Quotas | Enforced in v1 (starter defaults below); billing later |
+| Abuse prevention | **Platform-enforced** at gateway/orchestrator; apps assume admission already happened |
+| Sessions / user / app | **Max 1** — second connect is **rejected** (not replaced) |
+| Join spam | **Rate limits in v1**; invite codes later if needed |
 | Account recovery | **None in v1** (lost all keys → new username / support-only) |
 
-### Starter quotas
+### Starter quotas & rate limits
 
-| Quota | Default |
+| Limit | Default |
 |-------|---------|
 | Apps / user | 5 |
-| Concurrent SSH sessions / user | 10 |
-| Concurrent sessions / app | 10 |
+| Concurrent sessions / user / app | **1** (reject if busy) |
+| Concurrent sessions / user (all apps) | 5 |
 | Awake microVMs / user | 2 |
 | Wakes / user / hour | 30 |
+| Deploys / user / hour | 10 |
+| In-flight deploy / app | 1 |
+| Joins / source IP / 24h | 3 |
+| Joins / source /24 / 24h | 20 |
+| SSH handshakes / source IP / minute | modest gateway cap (tune in ops) |
 | Snapshot + volume storage / user | 5 GB |
 
 ---
@@ -95,9 +103,10 @@ showing a short loading UI before handoff.
 3. Strong isolation: one microVM per app instance.
 4. Snapshot-on-sleep; warm GCE hosts; gateway-held wake with loading TUI.
 5. Gateway-minted SSH user certs into apps (keys rotate without touching VMs).
-6. SSH-based `deploy` (menu or `deploy@`) for custom digest-pinned images.
+6. SSH-based `deploy` (menu or `deploy@`) for custom digest-pinned images,
+   with drain/kick controls for active sessions.
 7. Snapshot migrate with best-effort session hold for host drain/bin-pack.
-8. Quotas; no billing yet.
+8. Quotas + platform abuse controls; no billing yet.
 
 ### Non-goals (v1)
 
@@ -108,10 +117,12 @@ showing a short loading UI before handoff.
 - Per-app egress rules
 - User-facing snapshot save/restore
 - Account recovery / email identity
+- Invite-only join (rate limits first; invites if abuse appears)
 - Multi-region / HA gateway
 - Platform-provided OpenSSH wrapper (apps bring any cert-verifying SSH server)
 - Orgs/teams; cross-user app access
 - Full SSH channel proxy beyond session/PTY/exec/subsystem
+- App-implemented connection governors for the same platform user (platform’s job)
 
 ---
 
@@ -239,6 +250,20 @@ platform guarantee.
 - Unknown key → join (never silent reject on deep links).
 - Known key → that user’s apps only (no cross-user).
 - `ssh fortune@foo.com` always means **the connecting user’s** `fortune`.
+- At most **one** concurrent session per user per app; extras rejected at the gateway.
+
+### What apps may assume (abuse)
+
+Apps should **not** implement their own “is this user connecting too often?” logic for
+platform identity. The gateway guarantees:
+
+1. The cert principal is a registered user who passed join abuse checks.  
+2. This session was admitted under concurrency and rate-limit policy.  
+3. A second concurrent session for the same user×app will not be proxied
+   (app will not see it).  
+
+Apps may still enforce **app-domain** rules later (e.g. multi-tenant git authz)
+when cross-user access exists; that is separate from platform anti-abuse.
 
 ---
 
@@ -378,9 +403,9 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
 
 | Component | Role |
 |-----------|------|
-| **SSH gateway** | Client SSH; join / menu / deploy; routing fallthrough; in-session handoff; session→instance pin; cordon/drain/kick; authz; loading UI; cert mint; proxy; migrate buffer |
+| **SSH gateway** | Client SSH; join / menu / deploy; routing; handoff; session admit/reject; rate limits; session→instance pin; cordon/drain/kick; cert mint; proxy |
 | **API** | Internal control API for gateway/orchestrator/agent (not public deploy API) |
-| **Orchestrator** | Placement, wake/sleep, host migrate/drain, **deploy cutover**, quotas, lazy fortune create |
+| **Orchestrator** | Placement, wake/sleep, host migrate/drain, deploy cutover, quotas / abuse counters, lazy fortune create |
 | **Host agent** | Image→rootfs, inject CA, Firecracker lifecycle, volumes, probes, snapshots |
 | **Firestore** | Users, keys, apps, placement pointers, quota counters, metadata |
 | **GCS** | Idle/migrate snapshots + volume bytes |
@@ -397,7 +422,53 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
 
 ---
 
-## 10. Networking & security
+## 10. Abuse prevention
+
+Abuse controls live in the **gateway + orchestrator**. App images must assume
+admission already happened and must not be the primary rate limiter (they often
+won’t see real client IPs—only the gateway hop).
+
+### Join / account creation
+
+- Rate-limit successful joins and username-allocation attempts by **source IP**
+  and **IP /24** (defaults in the table above).  
+- Slow down repeated failures in the join TUI.  
+- Reserved usernames cannot be claimed.  
+- **Invites:** not required in v1; add invite codes if rate limits are bypassed
+  in the wild.  
+- Creating many keypairs is expected; limits must be on **join completion** and
+  **allocation**, not on TCP alone.
+
+### Sessions
+
+- **Max one concurrent session per (user, app).**  
+- If a session is already active, a new `ssh app@foo.com` (or menu handoff) is
+  **rejected** with a clear message (e.g. already connected — disconnect the
+  other session first). **No replace/kick of the existing session** on connect.  
+- Deploy **kick** / drain-timeout kick remains a separate, explicit deploy path.  
+- Cap total concurrent sessions per user across apps.  
+- Gateway connection rate limits per IP to blunt handshake storms against menu/join.
+
+Note: v1 apps are owner-only, so this is effectively one interactive session per
+app. Multi-player / multi-user apps later will need a deliberate raise of this
+cap (or per-guest principals)—not silent app-side accept of duplicates.
+
+### Wake, deploy, storage
+
+- Wakes/hour and deploys/hour quotas.  
+- One in-flight deploy per app.  
+- Snapshot/volume storage cap; retain policy for idle snapshots (ops detail).  
+- Max image size at deploy (open number — §12).  
+- Dual-instance drain burst is a controlled quota exception, not unlimited.
+
+### Signals
+
+Metadata traces/metrics: join accepts/rejects, session rejects (busy), rate-limit
+hits, wake/deploy denials — still **no session bytes**.
+
+---
+
+## 11. Networking & security
 
 - Public ingress: SSH to gateway only.  
 - MicroVMs private (tap/CNI); not Internet-reachable.  
@@ -406,18 +477,19 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
 - Connection traces: metadata only (user, app, timings, byte counts, errors) —
   never session payload.  
 - No account recovery in v1.  
-- Gateway host key: single stable key (published fingerprint in docs); host CA later.
+- Gateway host key: single stable key (published fingerprint in docs); host CA later.  
+- Abuse controls: §10.
 
 ---
 
-## 11. MVP vertical slice
+## 12. MVP vertical slice
 
 1. Terraform + ko: Firestore, GCS, Secrets, host MIG, single gateway, orchestrator, agent.  
 2. Platform user CA + inject path; shared kernel.  
 3. Platform fortune image (SSH server verifying CA).  
-4. `ssh foo.com` (unknown key) → join → menu.  
+4. `ssh foo.com` (unknown key) → join → menu (join rate-limited).  
 5. Menu → fortune (lazy create) → wake (loading UI) → cert hop → session.  
-6. `ssh fortune@foo.com` deep link works too.  
+6. Second concurrent `ssh fortune@foo.com` → **rejected** (session busy).  
 7. Idle → snapshot-on-sleep; reconnect restores.  
 8. Menu → deploy (or `deploy@`) → second digest-pinned app `myapp`.  
 9. Deploy with active sessions: default drain + kick-on-timeout; `--kick` path.  
@@ -425,7 +497,7 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
 
 ---
 
-## 12. Still open / next forks
+## 13. Still open / next forks
 
 1. **Adding a second key** — exact `join` UX when already registered (must present
    an existing key to authorize a new one?).  
@@ -442,11 +514,14 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
 11. **Hub footgun UX** — deploy-time warnings / `~/.ssh/config` docs when local
     username collides with an app name (see §3).  
 12. **Deploy promote/rollback UX** — when to add explicit blue/green beyond
-    default drain cutover (see §8).
+    default drain cutover (see §8).  
+13. **Invite codes** — trigger criteria / UX when join rate limits aren’t enough.  
+14. **Stuck session UX** — user guidance when reject-because-busy and the other
+    client is a dead laptop (idle timeout interaction).
 
 ---
 
-## 13. Example session
+## 14. Example session
 
 ```bash
 # Brand new user — bare connect
