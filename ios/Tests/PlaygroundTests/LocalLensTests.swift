@@ -66,7 +66,68 @@ final class LocalLensTests: XCTestCase {
             XCTAssertFalse(mode.symbolName.isEmpty)
             XCTAssertFalse(mode.blurb.isEmpty)
         }
-        XCTAssertEqual(LocalLensMode.allCases.count, 6)
+        XCTAssertEqual(LocalLensMode.allCases.count, 8)
+        XCTAssertTrue(LocalLensMode.body.drawsJoints)
+        XCTAssertTrue(LocalLensMode.hands.drawsJoints)
+        XCTAssertTrue(LocalLensMode.faces.drawsJoints)
+        XCTAssertFalse(LocalLensMode.classify.drawsJoints)
+    }
+
+    func testAverageConfidence() {
+        XCTAssertEqual(LocalLensResultBuilder.averageConfidence(of: []), 0)
+        XCTAssertEqual(LocalLensResultBuilder.averageConfidence(of: [0.2, 0.4, 0.6]), 0.4, accuracy: 0.0001)
+    }
+
+    func testPolylineBonesCloseLoopWhenRequested() {
+        let points = [
+            CGPoint(x: 0, y: 0),
+            CGPoint(x: 1, y: 0),
+            CGPoint(x: 1, y: 1),
+        ]
+        let open = LocalLensAnalyzer.polylineBones(points, closed: false)
+        let closed = LocalLensAnalyzer.polylineBones(points, closed: true)
+        XCTAssertEqual(open.count, 2)
+        XCTAssertEqual(closed.count, 3)
+        XCTAssertEqual(closed.last?.from, CGPoint(x: 1, y: 1))
+        XCTAssertEqual(closed.last?.to, CGPoint(x: 0, y: 0))
+    }
+
+    func testBoundingBoxContainingPoints() {
+        let box = LocalLensAnalyzer.boundingBox(containing: [
+            CGPoint(x: 0.2, y: 0.3),
+            CGPoint(x: 0.5, y: 0.7),
+        ])
+        XCTAssertEqual(box?.origin.x ?? -1, 0.2, accuracy: 0.0001)
+        XCTAssertEqual(box?.origin.y ?? -1, 0.3, accuracy: 0.0001)
+        XCTAssertEqual(box?.width ?? -1, 0.3, accuracy: 0.0001)
+        XCTAssertEqual(box?.height ?? -1, 0.4, accuracy: 0.0001)
+    }
+
+    func testBodyBonesSkipMissingJoints() {
+        let bones = LocalLensAnalyzer.bodyBones(from: [
+            .nose: CGPoint(x: 0.5, y: 0.9),
+            .neck: CGPoint(x: 0.5, y: 0.8),
+            // left shoulder missing — that bone should be omitted
+            .rightShoulder: CGPoint(x: 0.6, y: 0.75),
+        ])
+        XCTAssertTrue(bones.contains { $0.from == CGPoint(x: 0.5, y: 0.9) && $0.to == CGPoint(x: 0.5, y: 0.8) })
+        XCTAssertTrue(bones.contains { $0.from == CGPoint(x: 0.5, y: 0.8) && $0.to == CGPoint(x: 0.6, y: 0.75) })
+        XCTAssertFalse(bones.contains { bone in
+            bone.from == CGPoint(x: 0.5, y: 0.8) && bone.to.x < 0.5
+        })
+    }
+
+    func testResultBuilderPreservesPoseGeometry() {
+        let joints = [CGPoint(x: 0.1, y: 0.2), CGPoint(x: 0.3, y: 0.4)]
+        let bones = [LocalLensBone(from: joints[0], to: joints[1])]
+        let result = LocalLensResultBuilder.build(
+            mode: .body,
+            findings: [LocalLensFinding(label: "Body 1 · 2 joints", confidence: 0.8)],
+            joints: joints,
+            bones: bones
+        )
+        XCTAssertEqual(result.joints, joints)
+        XCTAssertEqual(result.bones, bones)
     }
 
     func testVisionOrientationDefaultsToPortraitMapping() {
@@ -107,19 +168,27 @@ final class LocalLensTests: XCTestCase {
         )
     }
 
-    func testAnalyzerBarcodeAndFaceModesAcceptEmptyFrames() throws {
+    func testAnalyzerBarcodeFaceAndPoseModesAcceptEmptyFrames() throws {
         let image = try XCTUnwrap(Self.makeSolidImage(color: .white, size: CGSize(width: 200, height: 200)))
         let analyzer = LocalLensAnalyzer()
         let barcodes = try analyzer.analyze(cgImage: image, mode: .barcodes)
         let faces = try analyzer.analyze(cgImage: image, mode: .faces)
         let people = try analyzer.analyze(cgImage: image, mode: .people)
         let animals = try analyzer.analyze(cgImage: image, mode: .animals)
+        let body = try analyzer.analyze(cgImage: image, mode: .body)
+        let hands = try analyzer.analyze(cgImage: image, mode: .hands)
         XCTAssertEqual(barcodes.mode, .barcodes)
         XCTAssertEqual(faces.mode, .faces)
         XCTAssertEqual(people.mode, .people)
         XCTAssertEqual(animals.mode, .animals)
+        XCTAssertEqual(body.mode, .body)
+        XCTAssertEqual(hands.mode, .hands)
         XCTAssertTrue(barcodes.findings.isEmpty)
         XCTAssertTrue(faces.findings.isEmpty)
+        XCTAssertTrue(faces.joints.isEmpty)
+        XCTAssertTrue(body.findings.isEmpty)
+        XCTAssertTrue(body.joints.isEmpty)
+        XCTAssertTrue(hands.findings.isEmpty)
     }
 
     // MARK: - Image fixtures

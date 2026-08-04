@@ -29,7 +29,7 @@ struct LocalLensView: View {
                         .clipped()
                         .accessibilityIdentifier("localLensPreview")
 
-                    boxesOverlay(size: geo.size)
+                    geometryOverlay(size: geo.size)
                     chipsOverlay
                 } else {
                     placeholder
@@ -61,23 +61,46 @@ struct LocalLensView: View {
         }
     }
 
-    private func boxesOverlay(size: CGSize) -> some View {
+    private func geometryOverlay(size: CGSize) -> some View {
         Canvas { context, _ in
-            for finding in session.result.findings {
+            let result = session.result
+
+            for finding in result.findings {
                 guard let box = finding.boundingBox else { continue }
-                // Vision: origin bottom-left → SwiftUI: origin top-left.
-                let rect = CGRect(
-                    x: box.origin.x * size.width,
-                    y: (1 - box.origin.y - box.height) * size.height,
-                    width: box.width * size.width,
-                    height: box.height * size.height
-                )
+                let rect = Self.viewRect(for: box, in: size)
                 let path = Path(roundedRect: rect, cornerRadius: 6)
-                context.stroke(path, with: .color(.green.opacity(0.9)), lineWidth: 2)
+                context.stroke(path, with: .color(.green.opacity(0.85)), lineWidth: 2)
+            }
+
+            for bone in result.bones {
+                var path = Path()
+                path.move(to: Self.viewPoint(for: bone.from, in: size))
+                path.addLine(to: Self.viewPoint(for: bone.to, in: size))
+                context.stroke(path, with: .color(.cyan.opacity(0.95)), lineWidth: 2.5)
+            }
+
+            for joint in result.joints {
+                let center = Self.viewPoint(for: joint, in: size)
+                let dot = Path(ellipseIn: CGRect(x: center.x - 3.5, y: center.y - 3.5, width: 7, height: 7))
+                context.fill(dot, with: .color(.yellow.opacity(0.95)))
             }
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+
+    /// Vision-normalized point (origin bottom-left) → view point (origin top-left).
+    private static func viewPoint(for normalized: CGPoint, in size: CGSize) -> CGPoint {
+        CGPoint(x: normalized.x * size.width, y: (1 - normalized.y) * size.height)
+    }
+
+    private static func viewRect(for box: CGRect, in size: CGSize) -> CGRect {
+        CGRect(
+            x: box.origin.x * size.width,
+            y: (1 - box.origin.y - box.height) * size.height,
+            width: box.width * size.width,
+            height: box.height * size.height
+        )
     }
 
     private var placeholder: some View {
@@ -146,7 +169,7 @@ struct LocalLensView: View {
                     .accessibilityIdentifier("localLensPrivacyBadge")
             }
 
-            Text("Uses Apple’s Vision framework entirely on-device — classify scenes, read text, find animals/faces/people, and scan barcodes. Frames are never uploaded.")
+            Text("Uses Apple’s Vision framework entirely on-device — classify, OCR, animals, face landmarks (eyes/pupils), people, body/hand pose, and barcodes. Face mode is 2D landmarks, not TrueDepth gaze. Frames are never uploaded.")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
         }

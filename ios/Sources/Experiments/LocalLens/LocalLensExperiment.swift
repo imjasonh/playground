@@ -5,7 +5,7 @@ enum LocalLensExperiment {
     static let experiment = Experiment(
         id: "local-lens",
         title: "Local Lens",
-        summary: "Live camera labels from on-device Vision — classify, OCR, animals, faces, codes. No network.",
+        summary: "Live on-device Vision — classify, OCR, face/eye landmarks, body & hand pose, codes. No network.",
         icon: "camera.viewfinder"
     ) {
         LocalLensView()

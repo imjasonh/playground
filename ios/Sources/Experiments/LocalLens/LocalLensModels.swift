@@ -8,6 +8,8 @@ enum LocalLensMode: String, CaseIterable, Identifiable, Equatable {
     case animals
     case faces
     case people
+    case body
+    case hands
     case barcodes
 
     var id: String { rawValue }
@@ -19,6 +21,8 @@ enum LocalLensMode: String, CaseIterable, Identifiable, Equatable {
         case .animals: return "Animals"
         case .faces: return "Faces"
         case .people: return "People"
+        case .body: return "Body"
+        case .hands: return "Hands"
         case .barcodes: return "Codes"
         }
     }
@@ -28,8 +32,10 @@ enum LocalLensMode: String, CaseIterable, Identifiable, Equatable {
         case .classify: return "sparkles"
         case .text: return "text.viewfinder"
         case .animals: return "pawprint"
-        case .faces: return "face.smiling"
+        case .faces: return "eye"
         case .people: return "figure.stand"
+        case .body: return "figure.arms.open"
+        case .hands: return "hand.raised"
         case .barcodes: return "barcode.viewfinder"
         }
     }
@@ -43,13 +49,33 @@ enum LocalLensMode: String, CaseIterable, Identifiable, Equatable {
         case .animals:
             return "Recognize cats and dogs with Vision’s animal request."
         case .faces:
-            return "Find faces and draw their boxes."
+            return "Face mesh: contour, eyes, and pupils (2D landmarks — not TrueDepth gaze)."
         case .people:
             return "Detect human body rectangles in the frame."
+        case .body:
+            return "Full-body joint skeleton from Vision pose estimation."
+        case .hands:
+            return "21-point hand skeletons, left/right when known."
         case .barcodes:
             return "Scan QR codes and barcodes on-device."
         }
     }
+
+    /// Modes that typically draw joints / landmark dots.
+    var drawsJoints: Bool {
+        switch self {
+        case .faces, .body, .hands:
+            return true
+        default:
+            return false
+        }
+    }
+}
+
+/// Line segment in Vision-normalized image space (origin bottom-left, 0…1).
+struct LocalLensBone: Equatable {
+    let from: CGPoint
+    let to: CGPoint
 }
 
 /// One label / detection produced by a Vision pass.
@@ -68,14 +94,17 @@ struct LocalLensFinding: Equatable, Identifiable {
     }
 }
 
-/// Ranked findings for one analyzed frame.
+/// Ranked findings plus optional skeleton / landmark geometry for one analyzed frame.
 struct LocalLensFrameResult: Equatable {
     let mode: LocalLensMode
     let findings: [LocalLensFinding]
+    /// Vision-normalized joint / landmark points (origin bottom-left).
+    let joints: [CGPoint]
+    let bones: [LocalLensBone]
     let analyzedAt: Date
 
     static func empty(mode: LocalLensMode, at date: Date = Date()) -> LocalLensFrameResult {
-        LocalLensFrameResult(mode: mode, findings: [], analyzedAt: date)
+        LocalLensFrameResult(mode: mode, findings: [], joints: [], bones: [], analyzedAt: date)
     }
 }
 
@@ -89,6 +118,8 @@ enum LocalLensResultBuilder {
     static func build(
         mode: LocalLensMode,
         findings: [LocalLensFinding],
+        joints: [CGPoint] = [],
+        bones: [LocalLensBone] = [],
         minimumConfidence: Double = defaultMinimumConfidence,
         maxFindings: Int = defaultMaxFindings,
         at date: Date = Date()
@@ -104,6 +135,8 @@ enum LocalLensResultBuilder {
         return LocalLensFrameResult(
             mode: mode,
             findings: Array(ranked.prefix(max(0, maxFindings))),
+            joints: joints,
+            bones: bones,
             analyzedAt: date
         )
     }
@@ -131,11 +164,21 @@ enum LocalLensResultBuilder {
         case .animals:
             return "Looking for cats and dogs…"
         case .faces:
-            return "No faces in frame."
+            return "No face landmarks — try the front camera up close."
         case .people:
             return "No people detected."
+        case .body:
+            return "Step back so more of the body is in frame."
+        case .hands:
+            return "Show a hand to the camera."
         case .barcodes:
             return "Point at a QR code or barcode."
         }
+    }
+
+    /// Average confidence across recognized pose points (ignores missing joints).
+    static func averageConfidence(of confidences: [Double]) -> Double {
+        guard !confidences.isEmpty else { return 0 }
+        return confidences.reduce(0, +) / Double(confidences.count)
     }
 }
