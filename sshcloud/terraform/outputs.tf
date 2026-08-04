@@ -28,8 +28,19 @@ output "images" {
 }
 
 output "fortune_image" {
-  description = "Digest-pinned sample app — deploy via ssh deploy@… like any other image"
+  description = "Digest-pinned sample app — also auto-deployed to the demo user via local-exec"
   value       = ko_build.fortune.image_ref
+}
+
+output "demo_ssh" {
+  description = "Demo user (auto-joined + fortune deployed). Private key is in Terraform state."
+  value       = "ssh -p 22 -i <demo-key> fortune@${google_compute_instance.gateway.network_interface[0].access_config[0].nat_ip}"
+}
+
+output "demo_private_key_openssh" {
+  description = "OpenSSH private key for the bootstrap demo user (sensitive)"
+  value       = tls_private_key.demo.private_key_openssh
+  sensitive   = true
 }
 
 output "snapshots_bucket" {

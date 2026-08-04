@@ -36,7 +36,7 @@ func TestRunDeployCreatesApp(t *testing.T) {
 		io.Writer
 	}{Reader: strings.NewReader(script), Writer: &out}
 
-	gateway.RunDeploy(ctx, rw, hub, "alice")
+	gateway.RunDeploy(ctx, rw, hub, "alice", "")
 
 	got := out.String()
 	if !strings.Contains(got, "Created myapp") {
@@ -90,7 +90,7 @@ func TestRunDeployRejectsUnpinned(t *testing.T) {
 		io.Writer
 	}{Reader: strings.NewReader(script), Writer: &out}
 
-	gateway.RunDeploy(ctx, rw, hub, "alice")
+	gateway.RunDeploy(ctx, rw, hub, "alice", "")
 	if !strings.Contains(out.String(), "digest-pinned") {
 		t.Fatalf("expected digest error; got %q", out.String())
 	}
@@ -135,7 +135,7 @@ func TestRunDeployUpdateConfirm(t *testing.T) {
 		io.Writer
 	}{Reader: strings.NewReader(script), Writer: &out}
 
-	gateway.RunDeploy(ctx, rw, hub, "alice")
+	gateway.RunDeploy(ctx, rw, hub, "alice", "")
 	if !strings.Contains(out.String(), "Updated myapp") {
 		t.Fatalf("output: %q", out.String())
 	}
@@ -175,7 +175,7 @@ func TestRunDeployCutoverSetsGen(t *testing.T) {
 		io.Writer
 	}{Reader: strings.NewReader(script), Writer: &out}
 
-	gateway.RunDeploy(ctx, rw, hub, "alice")
+	gateway.RunDeploy(ctx, rw, hub, "alice", "")
 	if !strings.Contains(out.String(), "generation:") {
 		t.Fatalf("output: %q", out.String())
 	}

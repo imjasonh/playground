@@ -69,7 +69,7 @@ func runMenu(ctx context.Context, t *term, hub *Hub, keyFP, userID string) {
 		it := items[n-1]
 		switch it.kind {
 		case "deploy":
-			runDeploy(ctx, t, hub, userID)
+			_ = runDeploy(ctx, t, hub, userID, "")
 			t.Printf("\n")
 		case "app":
 			res, err := hub.OpenApp(ctx, userID, it.app)

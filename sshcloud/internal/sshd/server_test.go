@@ -10,6 +10,7 @@ import (
 	"log"
 	"net"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -51,11 +52,11 @@ func TestJoinDeployFortuneBusy(t *testing.T) {
 		"1", // deploy
 		"fortune",
 		"ghcr.io/example/fortune@sha256:" + digest,
-		"", // tiny
+		"",  // tiny
 		"2", // kick
-		"", // enter after deploy
+		"",  // enter after deploy
 		"1", // fortune
-		"", // enter after stub
+		"",  // enter after stub
 		"q",
 	}, "\n") + "\n"
 	out := sshRun(t, addr, signer.PublicKey(), clientKey, "join", script)
@@ -91,6 +92,53 @@ func TestJoinDeployFortuneBusy(t *testing.T) {
 	}
 }
 
+func TestJoinDeployExecArgs(t *testing.T) {
+	_, signer, err := hostkey.Generate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	hub := &gateway.Hub{Store: store.NewMemory(), Sessions: session.NewRegistry()}
+	var logBuf bytes.Buffer
+	srv := &Server{Hub: hub, HostKey: signer, Addr: "127.0.0.1:0", Logger: log.New(&logBuf, "", 0)}
+	if err := srv.Listen(); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = srv.Serve(ctx) }()
+	defer func() {
+		cancel()
+		_ = srv.Close()
+	}()
+	time.Sleep(50 * time.Millisecond)
+
+	clientKey := mustKey(t)
+	addr := srv.Addr
+	digest := "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+	img := "ghcr.io/example/fortune@sha256:" + digest
+
+	out, code := sshExec(t, addr, signer.PublicKey(), clientKey, "join", "demo")
+	if code != 0 || !strings.Contains(out, "Joined as demo") {
+		t.Fatalf("join: code=%d out=%q log=%s", code, out, logBuf.String())
+	}
+
+	out, code = sshExec(t, addr, signer.PublicKey(), clientKey, "deploy",
+		"fortune --image="+img+" --tier=tiny --strategy=kick --yes")
+	if code != 0 || !strings.Contains(out, "fortune") {
+		t.Fatalf("deploy: code=%d out=%q log=%s", code, out, logBuf.String())
+	}
+	app, err := hub.Store.GetApp(ctx, "demo", "fortune")
+	if err != nil || app == nil || app.Image != img {
+		t.Fatalf("app %+v %v", app, err)
+	}
+
+	out, code = sshExec(t, addr, signer.PublicKey(), clientKey, "deploy",
+		"fortune --image="+img+" --strategy=kick")
+	if code == 0 || !strings.Contains(out, "--yes") {
+		t.Fatalf("expected update requires --yes: code=%d out=%q", code, out)
+	}
+}
+
 func mustKey(t *testing.T) ssh.Signer {
 	t.Helper()
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
@@ -104,7 +152,7 @@ func mustKey(t *testing.T) ssh.Signer {
 	return s
 }
 
-func sshRun(t *testing.T, addr string, hostPub ssh.PublicKey, client ssh.Signer, user, stdin string) string {
+func sshClient(t *testing.T, addr string, hostPub ssh.PublicKey, client ssh.Signer, user string) *ssh.Client {
 	t.Helper()
 	cfg := &ssh.ClientConfig{
 		User: user,
@@ -121,6 +169,12 @@ func sshRun(t *testing.T, addr string, hostPub ssh.PublicKey, client ssh.Signer,
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
+	return conn
+}
+
+func sshRun(t *testing.T, addr string, hostPub ssh.PublicKey, client ssh.Signer, user, stdin string) string {
+	t.Helper()
+	conn := sshClient(t, addr, hostPub, client, user)
 	defer conn.Close()
 	sess, err := conn.NewSession()
 	if err != nil {
@@ -163,4 +217,51 @@ func sshRun(t *testing.T, addr string, hostPub ssh.PublicKey, client ssh.Signer,
 	_ = sess.Wait()
 	<-done
 	return out.String()
+}
+
+func sshExec(t *testing.T, addr string, hostPub ssh.PublicKey, client ssh.Signer, user, cmd string) (string, int) {
+	t.Helper()
+	conn := sshClient(t, addr, hostPub, client, user)
+	defer conn.Close()
+	sess, err := conn.NewSession()
+	if err != nil {
+		t.Fatalf("session: %v", err)
+	}
+	defer sess.Close()
+	stdout, err := sess.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stderr, err := sess.StderrPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	wg.Add(2)
+	copyPipe := func(r io.Reader) {
+		defer wg.Done()
+		b, _ := io.ReadAll(r)
+		mu.Lock()
+		out.Write(b)
+		mu.Unlock()
+	}
+	go copyPipe(stdout)
+	go copyPipe(stderr)
+	err = sess.Start(cmd)
+	if err != nil {
+		t.Fatalf("start %q: %v", cmd, err)
+	}
+	waitErr := sess.Wait()
+	wg.Wait()
+	code := 0
+	if waitErr != nil {
+		if ee, ok := waitErr.(*ssh.ExitError); ok {
+			code = ee.ExitStatus()
+		} else {
+			t.Fatalf("wait %q: %v\n%s", cmd, waitErr, out.String())
+		}
+	}
+	return out.String(), code
 }

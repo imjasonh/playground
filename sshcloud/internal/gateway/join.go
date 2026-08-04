@@ -3,28 +3,48 @@ package gateway
 import (
 	"context"
 	"io"
+	"strings"
 
 	"github.com/imjasonh/playground/sshcloud/internal/names"
 )
 
 // RunJoin handles onboarding (unknown key) or key management (known user).
-func RunJoin(ctx context.Context, ch io.ReadWriter, hub *Hub, keyFP, userID string) {
+// When execCmd is set for a new user (`ssh join@host demo`), joins
+// non-interactively and returns an exit code (0 ok, 1 failure).
+func RunJoin(ctx context.Context, ch io.ReadWriter, hub *Hub, keyFP, userID, execCmd string) int {
 	t := newTerm(ch)
 	if userID == "" {
-		runJoinNew(ctx, t, hub, keyFP)
-		return
+		return runJoinNew(ctx, t, hub, keyFP, execCmd)
 	}
 	runJoinManage(t, userID, keyFP)
+	return 0
 }
 
-func runJoinNew(ctx context.Context, t *term, hub *Hub, keyFP string) {
+func runJoinNew(ctx context.Context, t *term, hub *Hub, keyFP, execCmd string) int {
+	execCmd = strings.TrimSpace(execCmd)
+	if execCmd != "" {
+		fields := strings.Fields(execCmd)
+		name := fields[0]
+		if err := names.ValidateIdent(name); err != nil {
+			t.Printf("Invalid username: %v\n", err)
+			return 1
+		}
+		if err := hub.Store.CreateUser(ctx, name, keyFP); err != nil {
+			t.Printf("Could not create user: %v\n", err)
+			return 1
+		}
+		t.Printf("Joined as %s\n", name)
+		t.Printf("Key %s\n", keyFP)
+		return 0
+	}
+
 	t.Printf("Welcome to SSH App Cloud\n")
 	t.Printf("Found key %s\n\n", keyFP)
 	for {
 		t.Printf("Pick a username: ")
 		name, err := t.ReadLine()
 		if err != nil {
-			return
+			return 1
 		}
 		if err := names.ValidateIdent(name); err != nil {
 			t.Printf("Invalid: %v\n", err)
@@ -38,7 +58,7 @@ func runJoinNew(ctx context.Context, t *term, hub *Hub, keyFP string) {
 		// Reuse the same term so a buffered stdin (e.g. scripted tests)
 		// is not lost when opening the menu.
 		runMenu(ctx, t, hub, keyFP, name)
-		return
+		return 0
 	}
 }
 

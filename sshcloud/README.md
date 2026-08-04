@@ -92,8 +92,13 @@ sudo ./bin/agent \
 go run ./cmd/gateway -listen 127.0.0.1:2222 -agent-url http://127.0.0.1:8080
 
 # 3) join, then deploy fortune (digest-pinned image)
-#    terraform output -raw fortune_image   # or any repo@sha256:…
+#    Interactive TUI:
+ssh -p 2222 join@127.0.0.1
 ssh -p 2222 deploy@127.0.0.1
+#    Or non-interactive (SSH exec args; used by terraform local-exec):
+ssh -p 2222 join@127.0.0.1 demo
+ssh -p 2222 deploy@127.0.0.1 \
+  fortune --image='repo@sha256:…' --tier=tiny --strategy=kick --yes
 ssh -p 2222 fortune@127.0.0.1
 ```
 

@@ -80,7 +80,7 @@ func TestDeployFortuneE2E(t *testing.T) {
 		io.Writer
 	}{Reader: strings.NewReader(script), Writer: &out}
 
-	gateway.RunDeploy(ctx, rw, hub, "alice")
+	gateway.RunDeploy(ctx, rw, hub, "alice", "")
 
 	got := out.String()
 	if !strings.Contains(got, "Created fortune") {

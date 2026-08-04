@@ -3,6 +3,7 @@ package sshd
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"log"
 	"net"
@@ -123,10 +124,17 @@ func (s *Server) handleConn(ctx context.Context, nc net.Conn) {
 	}
 }
 
+type execMsg struct {
+	Command string
+}
+
 func (s *Server) handleSession(ctx context.Context, sc *ssh.ServerConn, ch ssh.Channel, reqs <-chan *ssh.Request, fp string) {
 	defer ch.Close()
 
-	start := make(chan struct{}, 1)
+	type startInfo struct {
+		execCmd string
+	}
+	start := make(chan startInfo, 1)
 	go func() {
 		for req := range reqs {
 			switch req.Type {
@@ -134,12 +142,22 @@ func (s *Server) handleSession(ctx context.Context, sc *ssh.ServerConn, ch ssh.C
 				if req.WantReply {
 					_ = req.Reply(true, nil)
 				}
-			case "shell", "exec":
+			case "shell":
 				if req.WantReply {
 					_ = req.Reply(true, nil)
 				}
 				select {
-				case start <- struct{}{}:
+				case start <- startInfo{}:
+				default:
+				}
+			case "exec":
+				var msg execMsg
+				_ = ssh.Unmarshal(req.Payload, &msg)
+				if req.WantReply {
+					_ = req.Reply(true, nil)
+				}
+				select {
+				case start <- startInfo{execCmd: msg.Command}:
 				default:
 				}
 			default:
@@ -153,16 +171,20 @@ func (s *Server) handleSession(ctx context.Context, sc *ssh.ServerConn, ch ssh.C
 	select {
 	case <-ctx.Done():
 		return
-	case <-start:
+	case info := <-start:
+		s.runSession(ctx, sc, ch, fp, info.execCmd)
 	}
+}
 
-	s.logf("session start user=%q fp=%q", sc.User(), fp)
+func (s *Server) runSession(ctx context.Context, sc *ssh.ServerConn, ch ssh.Channel, fp, execCmd string) {
+	s.logf("session start user=%q fp=%q exec=%q", sc.User(), fp, execCmd)
 	res, err := s.Hub.HandleConnect(ctx, gateway.Connect{
 		SSHUser:        sc.User(),
 		KeyFingerprint: fp,
 	})
 	if err != nil {
 		fmt.Fprintf(ch, "error: %v\r\n", err)
+		sendExit(ch, 1)
 		return
 	}
 	defer s.Hub.ReleaseSession(res.Session)
@@ -174,18 +196,28 @@ func (s *Server) handleSession(ctx context.Context, sc *ssh.ServerConn, ch ssh.C
 		defer cancel()
 	}
 
+	code := 0
 	switch res.Action {
 	case gateway.ActionJoin:
-		gateway.RunJoin(ctx, ch, s.Hub, fp, res.User)
+		code = gateway.RunJoin(ctx, ch, s.Hub, fp, res.User, execCmd)
 	case gateway.ActionMenu:
 		gateway.RunMenu(ctx, ch, s.Hub, fp, res.User)
 	case gateway.ActionDeploy:
-		gateway.RunDeploy(ctx, ch, s.Hub, res.User)
+		code = gateway.RunDeploy(ctx, ch, s.Hub, res.User, execCmd)
 	case gateway.ActionRejectBusy:
 		fmt.Fprintf(ch, "%s\r\n", res.Message)
+		code = 1
 	case gateway.ActionProxyApp:
 		gateway.RunAppStub(sessCtx, ch, s.Hub, res)
 	default:
 		fmt.Fprintf(ch, "unhandled action %v\r\n", res.Action)
+		code = 1
 	}
+	sendExit(ch, code)
+}
+
+func sendExit(ch ssh.Channel, code int) {
+	var buf [4]byte
+	binary.BigEndian.PutUint32(buf[:], uint32(code))
+	_, _ = ch.SendRequest("exit-status", false, buf[:])
 }

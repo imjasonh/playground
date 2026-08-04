@@ -9,6 +9,7 @@ a nested-virt **host MIG** running the Firecracker agent.
 | File | What |
 |------|------|
 | `images.tf` | `ko_build` for `gateway`, `orchestrator`, `agent`, `guestinit`, `fortune`, `api` |
+| `demo.tf` | Bootstrap `demo` user + `local-exec` `ssh deploy@… fortune --image=…` |
 | `firestore.tf` | Native-mode `(default)` database |
 | `storage.tf` | Snapshot + platform-asset buckets, Artifact Registry |
 | `secrets.tf` | Gateway host key + user CA (tls_private_key → Secret Manager) |
@@ -49,15 +50,28 @@ bash hack/upload-platform-assets.sh gs://$(terraform -chdir=terraform output -ra
 gcloud compute instance-groups managed rolling-action restart sshcloud-agents \
   --zone=us-central1-a
 
-# 3) Join, then deploy the sample app
-terraform -chdir=terraform output gateway_ssh
-terraform -chdir=terraform output -raw fortune_image
-# ssh -p 22 join@GATEWAY_IP
-# ssh -p 22 deploy@GATEWAY_IP   # name: fortune, image: <fortune_image>
-# ssh -p 22 fortune@GATEWAY_IP
+# 3) Sample fortune is auto-deployed for the bootstrap "demo" user
+#    (terraform_data.deploy_fortune → ssh join@ / ssh deploy@ with exec args).
+#    Upload Firecracker assets before/while agents warm, or re-apply after upload.
+terraform -chdir=terraform output -raw demo_private_key_openssh > /tmp/sshcloud-demo
+chmod 600 /tmp/sshcloud-demo
+terraform -chdir=terraform output demo_ssh
+# ssh -p 22 -i /tmp/sshcloud-demo fortune@GATEWAY_IP
+
+# Manual deploy (any joined user) also works non-interactively:
+# ssh -p 22 deploy@GATEWAY_IP \
+#   fortune --image="$(terraform -chdir=terraform output -raw fortune_image)" \
+#   --tier=tiny --strategy=kick --yes
 ```
 
 Host sshd on the gateway is moved to **:2222** (IAP) so platform SSH can own `:22`.
+
+**Non-interactive deploy / join** (SSH exec args, exit status set):
+
+```bash
+ssh join@HOST demo
+ssh deploy@HOST fortune --image=repo@sha256:… [--tier=tiny] [--strategy=kick|drain] --yes
+```
 
 ## Notes
 

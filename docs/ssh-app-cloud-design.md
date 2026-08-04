@@ -372,6 +372,10 @@ Responsibilities (v1 sketch):
 
 **Implemented in `sshcloud/` (registration path):**
 - `gateway.RunDeploy` TUI (menu row + `ActionDeploy` / `ssh deploy@…`)
+- Non-interactive deploy via SSH exec args:
+  `ssh deploy@host fortune --image=repo@sha256:… [--tier=tiny] [--strategy=kick|drain] --yes`
+  (exit status set for automation). Join: `ssh join@host demo`.
+- Terraform `demo.tf` hack: `ko_build.fortune` digest → `local-exec` SSH join+deploy for the bootstrap `demo` user
 - Digest-pinned image validation (`internal/image.ValidateDigestPinned`)
 - `store.UpsertApp` / `GetApp` (tier + session strategy)
 - Hub-footgun warning for common local usernames

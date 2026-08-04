@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"strings"
 
@@ -19,119 +20,136 @@ var commonLocalUsernames = map[string]struct{}{
 }
 
 // RunDeploy is the deploy TUI (`ssh deploy@…` or menu → deploy).
-// It registers a digest-pinned app and runs drain/kick cutover when a Controller is set.
-func RunDeploy(ctx context.Context, ch io.ReadWriter, hub *Hub, userID string) {
-	runDeploy(ctx, newTerm(ch), hub, userID)
+// When execCmd is non-empty (SSH exec args), runs non-interactively and
+// returns a process exit code (0 ok, 1 failure).
+func RunDeploy(ctx context.Context, ch io.ReadWriter, hub *Hub, userID, execCmd string) int {
+	t := newTerm(ch)
+	return runDeploy(ctx, t, hub, userID, execCmd)
 }
 
-func runDeploy(ctx context.Context, t *term, hub *Hub, userID string) {
+func runDeploy(ctx context.Context, t *term, hub *Hub, userID, execCmd string) int {
 	if userID == "" {
 		t.Printf("Not logged in. Complete join first.\n")
-		return
+		return 1
+	}
+
+	execCmd = strings.TrimSpace(execCmd)
+	if execCmd != "" {
+		args, err := ParseDeployArgs(splitArgs(execCmd))
+		if err != nil {
+			t.Printf("deploy: %v\n", err)
+			return 1
+		}
+		updated, err := applyDeploy(ctx, hub, userID, args, true)
+		if err != nil {
+			t.Printf("deploy failed: %v\n", err)
+			return 1
+		}
+		printDeployOK(t, args, hub, ctx, userID, updated, false)
+		return 0
 	}
 
 	t.Printf("Deploy\n")
 	t.Printf("──────\n")
 	t.Printf("Create or update an app from a digest-pinned OCI image.\n")
 	t.Printf("PID 1 must speak SSH on :22 and trust the platform user CA.\n\n")
+	t.Printf("Non-interactive: ssh deploy@host fortune --image=repo@sha256:… [--tier=tiny] [--strategy=kick] --yes\n\n")
 
 	appName, ok := promptAppName(ctx, t, hub, userID)
 	if !ok {
-		return
+		return 1
 	}
 	img, ok := promptImage(t)
 	if !ok {
-		return
+		return 1
 	}
 	tier, ok := promptTier(t)
 	if !ok {
-		return
+		return 1
 	}
 	strategy, ok := promptStrategy(t)
 	if !ok {
-		return
+		return 1
 	}
-
-	existing, err := hub.Store.GetApp(ctx, userID, appName)
+	args := DeployArgs{Name: appName, Image: img, Tier: tier, Strategy: strategy, Yes: true}
+	updated, err := applyDeploy(ctx, hub, userID, args, false)
 	if err != nil {
-		t.Printf("error: %v\n", err)
-		return
+		t.Printf("deploy failed: %v\n", err)
+		return 1
 	}
-	updated := existing != nil
+	printDeployOK(t, args, hub, ctx, userID, updated, true)
+	return 0
+}
+
+func applyDeploy(ctx context.Context, hub *Hub, userID string, args DeployArgs, requireYes bool) (updated bool, err error) {
+	existing, err := hub.Store.GetApp(ctx, userID, args.Name)
+	if err != nil {
+		return false, err
+	}
+	updated = existing != nil
+	if existing != nil && requireYes && !args.Yes {
+		return false, fmt.Errorf("app %q exists; pass --yes to update", args.Name)
+	}
 
 	if hub.Cutover != nil {
 		if existing == nil {
 			if err := hub.Store.UpsertApp(ctx, store.App{
 				Owner:           userID,
-				Name:            appName,
-				Tier:            tier,
-				SessionStrategy: strategy,
+				Name:            args.Name,
+				Tier:            args.Tier,
+				SessionStrategy: args.Strategy,
 			}); err != nil {
-				t.Printf("deploy failed: %v\n", err)
-				return
+				return updated, err
 			}
 		} else {
-			existing.Tier = tier
-			existing.SessionStrategy = strategy
+			existing.Tier = args.Tier
+			existing.SessionStrategy = args.Strategy
 			if err := hub.Store.UpsertApp(ctx, *existing); err != nil {
-				t.Printf("deploy failed: %v\n", err)
-				return
+				return updated, err
 			}
 		}
-		res, err := hub.Cutover.Deploy(ctx, cutover.Request{
+		_, err := hub.Cutover.Deploy(ctx, cutover.Request{
 			User:     userID,
-			App:      appName,
-			Image:    img,
-			Strategy: strategy,
+			App:      args.Name,
+			Image:    args.Image,
+			Strategy: args.Strategy,
 		})
-		if err != nil {
-			t.Printf("cutover failed: %v\n", err)
-			return
-		}
-		verb := "Created"
-		if updated {
-			verb = "Updated"
-		}
-		t.Printf("\n✓ %s %s (%s)\n", verb, appName, tier)
-		t.Printf("  image:    %s\n", img)
-		t.Printf("  strategy: %s\n", strategyLabel(strategy))
-		t.Printf("  generation: %s\n", res.ActiveGen)
-		if res.DrainingGen != "" {
-			until := res.DrainUntil.UTC().Format("15:04:05 UTC")
-			t.Printf("  draining:   %s until %s\n", displayGen(res.DrainingGen), until)
-		}
-		t.Printf("\nConnect with:\n")
-		t.Printf("  ssh %s@<host>\n", appName)
-		t.Printf("\nPress enter to return.\n")
-		_, _ = t.ReadLine()
-		return
+		return updated, err
 	}
 
-	app := store.App{
+	return updated, hub.Store.UpsertApp(ctx, store.App{
 		Owner:           userID,
-		Name:            appName,
-		Image:           img,
-		Tier:            tier,
-		SessionStrategy: strategy,
-	}
-	if err := hub.Store.UpsertApp(ctx, app); err != nil {
-		t.Printf("deploy failed: %v\n", err)
-		return
-	}
+		Name:            args.Name,
+		Image:           args.Image,
+		Tier:            args.Tier,
+		SessionStrategy: args.Strategy,
+	})
+}
 
+func printDeployOK(t *term, args DeployArgs, hub *Hub, ctx context.Context, userID string, updated, waitEnter bool) {
 	verb := "Created"
 	if updated {
 		verb = "Updated"
 	}
-	t.Printf("\n✓ %s %s (%s)\n", verb, appName, tier)
-	t.Printf("  image:    %s\n", img)
-	t.Printf("  strategy: %s\n", strategyLabel(strategy))
-	t.Printf("\n")
-	t.Printf("Note: instance cutover is not attached in this gateway process.\n")
-	t.Printf("The app is registered. Connect with:\n")
-	t.Printf("  ssh %s@<host>\n", appName)
-	t.Printf("\nPress enter to return.\n")
-	_, _ = t.ReadLine()
+	app, _ := hub.Store.GetApp(ctx, userID, args.Name)
+	t.Printf("\n✓ %s %s (%s)\n", verb, args.Name, args.Tier)
+	t.Printf("  image:    %s\n", args.Image)
+	t.Printf("  strategy: %s\n", strategyLabel(args.Strategy))
+	if app != nil && app.ActiveGen != "" {
+		t.Printf("  generation: %s\n", app.ActiveGen)
+		if app.DrainingGen != "" {
+			t.Printf("  draining:   %s\n", displayGen(app.DrainingGen))
+		}
+	}
+	if hub.Cutover == nil {
+		t.Printf("\nNote: instance cutover is not attached in this gateway process.\n")
+	}
+	t.Printf("\nConnect with:\n")
+	t.Printf("  ssh %s@<host>\n", args.Name)
+	if waitEnter {
+		t.Printf("\nPress enter to return.\n")
+		_, _ = t.ReadLine()
+	}
 }
 
 func displayGen(gen string) string {
@@ -139,6 +157,10 @@ func displayGen(gen string) string {
 		return "(legacy)"
 	}
 	return gen
+}
+
+func splitArgs(cmd string) []string {
+	return strings.Fields(cmd)
 }
 
 func promptAppName(ctx context.Context, t *term, hub *Hub, userID string) (string, bool) {
