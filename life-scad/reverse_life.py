@@ -302,12 +302,11 @@ def _score_predecessor(pred: Grid, target: Grid) -> tuple[int, int, int]:
     return (ham, pred.live_count(), births)
 
 
-def _sat_best_predecessor(target: Grid, samples: int = 12) -> Optional[Grid]:
-    """Enumerate a few SAT predecessors and keep the sparsest / closest."""
+def _sat_predecessors(target: Grid, samples: int = 12) -> list[Grid]:
+    """Enumerate up to ``samples`` distinct SAT predecessors, best-first."""
     cnf, cell, _vg = _life_cnf(target)
     w, h = target.width, target.height
-    best: Optional[Grid] = None
-    best_score: Optional[tuple[int, int, int]] = None
+    found: list[Grid] = []
     with Glucose3(bootstrap_with=cnf.clauses) as solver:
         for y in range(h):
             for x in range(w):
@@ -323,17 +322,20 @@ def _sat_best_predecessor(target: Grid, samples: int = 12) -> Optional[Grid]:
             pred = _grid_from_model(cell, {v for v in model if v > 0})
             if pred.step() != target:
                 raise ReverseError("internal error: SAT predecessor failed forward check")
-            score = _score_predecessor(pred, target)
-            if best_score is None or score < best_score:
-                best, best_score = pred, score
-            # Block this solution and look for another.
+            found.append(pred)
             solver.add_clause(
                 [
                     (-cell[i // w][i % w] if pred.cells[i] else cell[i // w][i % w])
                     for i in range(w * h)
                 ]
             )
-    return best
+    found.sort(key=lambda g: _score_predecessor(g, target))
+    return found
+
+
+def _sat_best_predecessor(target: Grid, samples: int = 12) -> Optional[Grid]:
+    preds = _sat_predecessors(target, samples=samples)
+    return preds[0] if preds else None
 
 
 def _maxsat_predecessor(target: Grid, hamming_weight: int = 3, sparse_weight: int = 1) -> Optional[Grid]:
@@ -364,6 +366,26 @@ def _maxsat_predecessor(target: Grid, hamming_weight: int = 3, sparse_weight: in
     if pred.step() != target:
         raise ReverseError("internal error: MaxSAT predecessor failed forward check")
     return pred
+
+
+def _candidate_predecessors(target: Grid, limit: int = 8) -> list[Grid]:
+    """Predecessors to try at a reverse step (beam width ``limit``)."""
+    if not HAS_PYSAT:
+        return []
+    if target.width * target.height > 200:
+        return _sat_predecessors(target, samples=max(limit, 8))[:limit]
+    # MaxSAT gives one high-quality pred; also gather a few SAT alternatives
+    # so the beam can dodge Gardens of Eden.
+    out: list[Grid] = []
+    best = _maxsat_predecessor(target)
+    if best is not None:
+        out.append(best)
+    for pred in _sat_predecessors(target, samples=limit):
+        if pred not in out:
+            out.append(pred)
+        if len(out) >= limit:
+            break
+    return out[:limit]
 
 
 def _multigen_sat(target: Grid, generations: int) -> Optional[list[Grid]]:
@@ -516,29 +538,44 @@ def reverse_history(
         return hist
 
     if method == "maxsat":
-        chain = [target]
-        cur = target
+        # Beam of chains (late→early). Prefer preds that stay chainable.
+        beams: list[list[Grid]] = [[target]]
         t0 = time.monotonic()
+        beam_width = 6
         for g in range(generations):
-            pred = _maxsat_predecessor(cur)
-            if pred is None:
+            nxt_beams: list[list[Grid]] = []
+            seen: set[tuple[int, ...]] = set()
+            for chain in beams:
+                for pred in _candidate_predecessors(chain[-1], limit=beam_width):
+                    key = pred.cells
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    nxt_beams.append(chain + [pred])
+            if not nxt_beams:
                 raise ReverseError(
-                    f"MaxSAT found no predecessor at reverse step {g + 1} "
-                    f"({cur.live_count()} live cells). Try fewer --generations, "
-                    f"--method multigen on a smaller board, or a larger --margin.",
+                    f"no predecessor at reverse step {g + 1} "
+                    f"(beam exhausted; last layer had "
+                    f"{beams[0][-1].live_count()} live cells). Try fewer "
+                    f"--generations, --method multigen on a smaller board, "
+                    f"or a larger --margin.",
                     achieved=g,
                 )
+            nxt_beams.sort(
+                key=lambda ch: _score_predecessor(ch[-1], ch[-2])
+            )
+            beams = nxt_beams[:beam_width]
             if verbose:
+                tip = beams[0][-1]
                 print(
-                    f"  reverse {g + 1}/{generations}: live {pred.live_count()} "
-                    f"-> {cur.live_count()} ({time.monotonic() - t0:.2f}s)",
+                    f"  reverse {g + 1}/{generations}: live {tip.live_count()} "
+                    f"-> {beams[0][-2].live_count()} "
+                    f"(beam={len(beams)}, {time.monotonic() - t0:.2f}s)",
                     file=sys.stderr,
                 )
-            chain.append(pred)
-            cur = pred
-        chain.reverse()
-        _assert_history(chain, target)
-        return chain
+        best = list(reversed(beams[0]))
+        _assert_history(best, target)
+        return best
 
     if method == "walksat":
         chain = [target]

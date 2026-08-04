@@ -67,21 +67,24 @@ Yes in principle, with caveats:
 
 - **Margin matters.** A version-1 QR for `"HI"` has **no predecessor** on a
   bare 21×21 board (`--margin 0` / `1` is UNSAT). With `--margin 2` or more,
-  Glucose finds predecessors in tens of seconds. Always leave room around a
-  dense roof.
-- **Any finite pattern may still be a Garden of Eden** after a step or two.
-  Dense drawings reverse a few generations and then die out as an orphan.
-  QR error correction is why the idea is attractive (a few module flips would
-  still scan), but this tool searches for an *exact* match.
-- **Sequential MaxSAT** (default on boards ≤ 200 cells) walks one generation
-  at a time, preferring predecessors close to the current pattern. Still
-  lifes and period-2 oscillators reverse arbitrarily far. Letters typically
-  manage a handful of generations. Larger boards (QR) automatically fall
-  back to multi-sample SAT with the same scoring.
+  Glucose finds predecessors in ~10–20s. Always leave room around a dense roof.
+- **Exact QR towers are shallow.** Empirically, `"HI"` reverses **one**
+  generation with margin ≥ 2, then every sampled predecessor is itself a
+  Garden of Eden (20/20 checked). So `--generations 1` works; `--generations 2`
+  fails under sequential search. A joint multi-gen SAT for 25×25×3 did not
+  finish in four minutes. QR error correction is why the *idea* is still
+  attractive (a few module flips would still scan) — an approximate / ECC-aware
+  target would be the next step, but this tool searches for an *exact* match.
+- **Sequential MaxSAT + beam** (default on boards ≤ 200 cells) walks one
+  generation at a time, preferring predecessors close to the current pattern,
+  and keeps a small beam so it can dodge orphan preds. Still lifes and
+  period-2 oscillators reverse arbitrarily far. Letters typically manage a
+  handful of generations. Larger boards (QR) automatically fall back to
+  multi-sample SAT with the same scoring.
 - **`--method multigen`** encodes the whole stack as one SAT instance. If a
   history of that exact height exists on the board, it will find one — but
   runtime grows with board × height (a letter a few gens up is minutes; a
-  21×21 QR at height 16 is not interactive).
+  QR stack is not interactive).
 - life-stl once had a *different* reverse mode: zero-birth predecessors of
   still-life **ash**, hoping to avoid overhangs. Those chains were only ~1
   generation deep, and gusset braces removed the motivation. This tool is the
