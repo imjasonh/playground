@@ -14,21 +14,35 @@ var fortunes = []string{
 	"Fortune favors the joined.",
 }
 
-// RunAppStub is an in-process stand-in until Firecracker proxying exists.
+// RunAppStub connects to the app backend (cert hop) or falls back to in-process fortune.
 func RunAppStub(ctx context.Context, ch io.ReadWriter, hub *Hub, res Result) {
 	_ = ctx
-	_ = hub
+	if hub.UserCA != nil && hub.Dial != nil {
+		addr, err := hub.Dial(res.User, res.App)
+		if err != nil {
+			t := newTerm(ch)
+			t.Printf("backend error: %v\n", err)
+			return
+		}
+		if err := ProxySSH(ch, hub.UserCA, res.User, addr); err != nil {
+			t := newTerm(ch)
+			t.Printf("proxy error: %v\n", err)
+		}
+		return
+	}
+
+	// Fallback when CA/backend not configured (unit tests).
 	t := newTerm(ch)
 	switch res.App {
 	case "fortune":
 		t.Printf("── fortune ──\n")
 		t.Printf("%s\n", fortunes[rand.Intn(len(fortunes))])
 		t.Printf("─────────────\n")
-		t.Printf("(in-process stub — Firecracker proxy coming next)\n")
+		t.Printf("(in-process stub)\n")
 		t.Printf("Press enter to return.\n")
 		_, _ = t.ReadLine()
 	default:
-		t.Printf("app %q: no stub handler (Firecracker proxy not wired)\n", res.App)
+		t.Printf("app %q: no backend\n", res.App)
 		t.Printf("Press enter to return.\n")
 		_, _ = t.ReadLine()
 	}

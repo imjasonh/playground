@@ -36,18 +36,26 @@ go build -o bin/api ./cmd/api
 ## Run the gateway (local)
 
 ```bash
-go run ./cmd/gateway -listen 127.0.0.1:2222
+go build -o bin/fortune ./cmd/fortune
+go run ./cmd/gateway -listen 127.0.0.1:2222 -fortune-bin ./bin/fortune
+
 # in another terminal:
 ssh -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null join@127.0.0.1
-# pick a username → app menu → select fortune (in-process stub)
+# pick a username → app menu → select fortune
 ssh -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null fortune@127.0.0.1
 ```
 
-State is in-memory (lost on restart). Host key defaults to `./ssh_host_ed25519_key`.
+With `-fortune-bin`, the gateway mints a short-lived user cert and proxies SSH
+into the fortune process (stand-in for a Firecracker microVM). Without it,
+fortune runs as an in-process stub.
+
+State is in-memory (lost on restart). Keys default to `./ssh_host_ed25519_key`
+and `./ssh_user_ca` (+ `.pub`).
 
 ## Status
 
 - [x] Routing, session admission (max 1 / user×app), memory store
-- [x] SSH gateway: join, menu, fortune stub, busy reject
-- [ ] Deploy TUI, Firestore, SSH user certs → Firecracker proxy
-- [ ] Host agent / orchestrator / Terraform
+- [x] SSH gateway: join, menu, busy reject
+- [x] User CA + cert hop into local `cmd/fortune` backend
+- [ ] Deploy TUI, Firestore, Firecracker host agent
+- [ ] Orchestrator / Terraform

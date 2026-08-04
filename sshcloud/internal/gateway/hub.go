@@ -10,6 +10,7 @@ import (
 	"github.com/imjasonh/playground/sshcloud/internal/route"
 	"github.com/imjasonh/playground/sshcloud/internal/session"
 	"github.com/imjasonh/playground/sshcloud/internal/store"
+	"github.com/imjasonh/playground/sshcloud/internal/userca"
 )
 
 // Action is what the SSH layer should present after routing + admission.
@@ -53,6 +54,8 @@ type Result struct {
 type Hub struct {
 	Store    store.Store
 	Sessions *session.Registry
+	UserCA   *userca.CA // optional; when set with Dial, apps are proxied over SSH
+	Dial     DialFunc   // optional backend address resolver
 }
 
 // Connect is the inbound connection facts after SSH key auth attempt.
