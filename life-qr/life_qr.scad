@@ -56,10 +56,6 @@ cell_size = 3;
 layer_height = 3;
 // Tiny inflation of every cube so the mesh stays manifold at edge/corner touches
 cell_overlap = 0.02;
-// Solid plate under the bottom layer, in mm (0 = none)
-base_thickness = 2;
-// Thin solid plate under the QR roof so white modules have a floor for scanning (0 = none)
-roof_plate_thickness = 0.6;
 
 /* [Supports] */
 
@@ -1473,29 +1469,11 @@ module life_cells() {
     }
 }
 
-module roof_plate() {
-    if (roof_plate_thickness > 0) {
-        z0 = total_z - roof_plate_thickness;
-        if (rainbow_preview)
-            color([0.92, 0.92, 0.9])
-                translate([0, 0, z0])
-                    cube([total_x, total_y, roof_plate_thickness]);
-        else
-            translate([0, 0, z0])
-                cube([total_x, total_y, roof_plate_thickness]);
-    }
-}
-
 module life_qr() {
-    // Base plate first so the CSG tree always has volume.
-    if (base_thickness > 0)
-        translate([0, 0, -base_thickness])
-            cube([total_x, total_y, base_thickness]);
+    // Just the Life voxels — no roof/base plates. Slicers add brim/raft as needed;
+    // a solid roof plate hid the QR and looked like an empty lid on MakerWorld.
     intersection() {
-        union() {
-            life_cells();
-            roof_plate();
-        }
+        life_cells();
         cube([total_x, total_y, total_z]);
     }
 }

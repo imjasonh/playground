@@ -24,14 +24,12 @@ openscad -o life-qr.stl \
   -D 'error_correction="M"' \
   life_qr.scad
 
-# Compact print: smaller cells, roof plate for scanning
+# Compact print: smaller cells
 openscad -o life-qr.stl \
   -D 'qr_text="HI"' \
   -D 'generations=12' \
   -D 'cell_size=2.5' \
   -D 'layer_height=2.5' \
-  -D 'roof_plate_thickness=0.8' \
-  -D 'base_thickness=2' \
   life_qr.scad
 ```
 
@@ -74,8 +72,6 @@ on (the default) so pillars carry every overhang to the bed.
 | `overall_width` / `overall_depth` / `overall_height` | Total model size in mm; `0` = derive from `cell_size` / `layer_height`. |
 | `cell_size`, `layer_height` | Per-module footprint and per-generation height. |
 | `cell_overlap` | Tiny inflation so edge/corner touches stay manifold. |
-| `base_thickness` | Solid plate under the bottom layer. |
-| `roof_plate_thickness` | Thin plate under the QR so white modules have a floor (black modules read as raised). `0` = none. |
 | `strict_supports` | Pillars under unsupported cells (default on — needed for downward time). |
 | `diagonal_ramps` | Optional ramps to neighbors below; not a substitute for pillars here. |
 | `rainbow_preview` | Color layers in the preview (blue = roof/QR). Ignored in STL export. Off by default for faster MakerWorld renders. |
@@ -91,13 +87,15 @@ on (the default) so pillars carry every overhang to the bed.
 3. **Stack** — Generation `g` of the QR history is placed at
    `z = (generations - g) · layer_height`, so the QR is on top.
 4. **Supports** — A top-down pillar pass fills empty cells under occupied ones
-   down to the bed. Optional roof and base plates help scanning and adhesion.
+   down to the bed. There is no built-in roof or base plate — use your
+   slicer’s brim/raft/skirt if you need bed adhesion.
 
 ## Printing tips
 
 - Prefer `cell_size` ≥ 2.5 mm so QR modules survive FDM.
-- Keep `roof_plate_thickness` > 0 (and less than `layer_height`) if you want
-  phones to see white modules as a flat floor.
+- The roof is open voxels (black QR modules only). White modules are air; for
+  a scannable print, add a contrasting solid under-layer in the slicer or
+  paint the top after printing if needed.
 - Leave `quiet_zone` at 4 unless you know your scanner is forgiving.
 - Disable slicer supports when `strict_supports` is on — the pillars are
   already in the mesh.
