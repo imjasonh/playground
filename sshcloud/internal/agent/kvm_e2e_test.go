@@ -1,0 +1,197 @@
+//go:build kvm
+
+package agent_test
+
+import (
+	"context"
+	"net"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/imjasonh/playground/sshcloud/internal/agent"
+	"github.com/imjasonh/playground/sshcloud/internal/firecracker"
+	"github.com/imjasonh/playground/sshcloud/internal/snapshot"
+)
+
+// Real Firecracker e2e. Requires /dev/kvm, CAP_NET_ADMIN (TAP), and assets
+// prepared by hack/run-kvm-e2e.sh (env SSHCLOUD_*).
+func TestKVMSleepWake(t *testing.T) {
+	cfg := kvmConfig(t)
+	store, err := snapshot.NewLocalStore(filepath.Join(t.TempDir(), "snaps"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mgr, err := agent.NewManager(agent.Config{
+		WorkDir:        filepath.Join(t.TempDir(), "w"),
+		FirecrackerBin: cfg.fc,
+		KernelPath:     cfg.kernel,
+		BaseRootfs:     cfg.rootfs,
+		CAPubPath:      cfg.caPub,
+		SnapStore:      store,
+		IdleTimeout:    0,
+		SubnetBase:     "172.30",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	in, err := mgr.Ensure(ctx, "alice", "fortune")
+	if err != nil {
+		t.Fatalf("boot: %v", err)
+	}
+	if err := dialTCP(in.Addr, 5*time.Second); err != nil {
+		t.Fatalf("dial after boot %s: %v", in.Addr, err)
+	}
+
+	if err := mgr.Sleep(ctx, "alice", "fortune"); err != nil {
+		t.Fatalf("sleep: %v", err)
+	}
+	st, ok := mgr.Status("alice", "fortune")
+	if !ok || st.State != agent.StateSleeping {
+		t.Fatalf("expected sleeping, got ok=%v %+v", ok, st)
+	}
+	// Guest should be down while sleeping.
+	if err := dialTCP(in.Addr, 500*time.Millisecond); err == nil {
+		t.Fatal("guest still accepting connections while sleeping")
+	}
+
+	woken, err := mgr.Ensure(ctx, "alice", "fortune")
+	if err != nil {
+		t.Fatalf("wake: %v", err)
+	}
+	if err := dialTCP(woken.Addr, 10*time.Second); err != nil {
+		t.Fatalf("dial after wake %s: %v", woken.Addr, err)
+	}
+}
+
+func TestKVMCrossHostMigrate(t *testing.T) {
+	cfg := kvmConfig(t)
+	shared := filepath.Join(t.TempDir(), "snaps")
+	store, err := snapshot.NewLocalStore(shared)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mgrA, err := agent.NewManager(agent.Config{
+		WorkDir:        filepath.Join(t.TempDir(), "a"),
+		FirecrackerBin: cfg.fc,
+		KernelPath:     cfg.kernel,
+		BaseRootfs:     cfg.rootfs,
+		CAPubPath:      cfg.caPub,
+		SnapStore:      store,
+		IdleTimeout:    0,
+		SubnetBase:     "172.31",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = mgrA.Close() })
+
+	mgrB, err := agent.NewManager(agent.Config{
+		WorkDir:        filepath.Join(t.TempDir(), "b"),
+		FirecrackerBin: cfg.fc,
+		KernelPath:     cfg.kernel,
+		BaseRootfs:     cfg.rootfs,
+		CAPubPath:      cfg.caPub,
+		SnapStore:      store,
+		IdleTimeout:    0,
+		SubnetBase:     "172.32",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = mgrB.Close() })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	defer cancel()
+
+	in, err := mgrA.Ensure(ctx, "bob", "fortune")
+	if err != nil {
+		t.Fatalf("boot on A: %v", err)
+	}
+	if err := dialTCP(in.Addr, 5*time.Second); err != nil {
+		t.Fatalf("dial A: %v", err)
+	}
+
+	if err := mgrA.Sleep(ctx, "bob", "fortune"); err != nil {
+		t.Fatalf("sleep A: %v", err)
+	}
+	if err := mgrA.Evict("bob", "fortune"); err != nil {
+		t.Fatalf("evict A: %v", err)
+	}
+	if _, ok := mgrA.Status("bob", "fortune"); ok {
+		t.Fatal("A still has instance after evict")
+	}
+
+	adopted, err := mgrB.Adopt(ctx, "bob", "fortune")
+	if err != nil {
+		t.Fatalf("adopt on B: %v", err)
+	}
+	if err := dialTCP(adopted.Addr, 15*time.Second); err != nil {
+		t.Fatalf("dial B after adopt %s: %v", adopted.Addr, err)
+	}
+	// Guest IP preserved across migrate (Firecracker memory).
+	if adopted.GuestIP != in.GuestIP {
+		t.Fatalf("guest IP changed: %s → %s", in.GuestIP, adopted.GuestIP)
+	}
+}
+
+type kvmAssets struct {
+	fc, kernel, rootfs, caPub string
+}
+
+func kvmConfig(t *testing.T) kvmAssets {
+	t.Helper()
+	if !firecracker.Available() {
+		t.Fatal("/dev/kvm not available — enable nested virt (see hack/run-kvm-e2e.sh)")
+	}
+	a := kvmAssets{
+		fc:     envOr(t, "SSHCLOUD_FIRECRACKER", "firecracker"),
+		kernel: mustEnv(t, "SSHCLOUD_KERNEL"),
+		rootfs: mustEnv(t, "SSHCLOUD_ROOTFS"),
+		caPub:  mustEnv(t, "SSHCLOUD_CA_PUB"),
+	}
+	for _, p := range []string{a.kernel, a.rootfs, a.caPub} {
+		if _, err := os.Stat(p); err != nil {
+			t.Fatalf("missing asset %s: %v", p, err)
+		}
+	}
+	if _, err := os.Stat(a.fc); err != nil {
+		// allow PATH lookup
+		if a.fc != "firecracker" {
+			t.Fatalf("missing firecracker %s: %v", a.fc, err)
+		}
+	}
+	return a
+}
+
+func mustEnv(t *testing.T, k string) string {
+	t.Helper()
+	v := os.Getenv(k)
+	if v == "" {
+		t.Fatalf("%s not set (run via hack/run-kvm-e2e.sh)", k)
+	}
+	return v
+}
+
+func envOr(t *testing.T, k, def string) string {
+	t.Helper()
+	if v := os.Getenv(k); v != "" {
+		return v
+	}
+	return def
+}
+
+func dialTCP(addr string, timeout time.Duration) error {
+	c, err := net.DialTimeout("tcp", addr, timeout)
+	if err != nil {
+		return err
+	}
+	return c.Close()
+}
