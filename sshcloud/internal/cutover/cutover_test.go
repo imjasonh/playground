@@ -2,6 +2,7 @@ package cutover_test
 
 import (
 	"context"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -18,6 +19,7 @@ type fakeInst struct {
 	images  []string
 	noIdle  []bool
 	stopped []string
+	holds   []string
 }
 
 func (f *fakeInst) Ensure(_ context.Context, user, app, gen, image, tier string, noIdle bool) error {
@@ -29,7 +31,10 @@ func (f *fakeInst) Ensure(_ context.Context, user, app, gen, image, tier string,
 	return nil
 }
 
-func (f *fakeInst) SetNoIdle(context.Context, string, string, string, bool) error {
+func (f *fakeInst) SetNoIdle(_ context.Context, user, app, gen string, noIdle bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.holds = append(f.holds, user+"/"+app+"@"+gen+"="+strconv.FormatBool(noIdle))
 	return nil
 }
 
@@ -125,9 +130,19 @@ func TestDrainWaitsForRelease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	_ = fi.SetNoIdle(ctx, "alice", "myapp", res.ActiveGen, true)
+	fi.mu.Lock()
+	holdsBeforeRelease := len(fi.holds)
+	fi.mu.Unlock()
 
 	sess.Release(sid)
 	c.OnRelease(ctx, "alice", "myapp", "gold")
+	fi.mu.Lock()
+	holdsAfterRelease := len(fi.holds)
+	fi.mu.Unlock()
+	if holdsAfterRelease != holdsBeforeRelease {
+		t.Fatalf("finishing old drain cleared active generation hold: %v", fi.holds)
+	}
 
 	app, _ = st.GetApp(ctx, "alice", "myapp")
 	if app.DrainingGen != "" || app.DrainUntilUnix != 0 {

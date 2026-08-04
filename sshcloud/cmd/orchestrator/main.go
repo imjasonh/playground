@@ -231,7 +231,7 @@ func main() {
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      3 * time.Minute,
+		WriteTimeout:      7 * time.Minute,
 		IdleTimeout:       60 * time.Second,
 	}
 	go func() {

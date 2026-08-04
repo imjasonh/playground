@@ -24,7 +24,9 @@ func (c *AgentClient) client() *http.Client {
 	if c.HTTPClient != nil {
 		return c.HTTPClient
 	}
-	return &http.Client{Timeout: 60 * time.Second}
+	// Pulling, unpacking, building ext4, and booting a cold image can be slow.
+	// Callers still provide cancellable request contexts.
+	return &http.Client{Timeout: 5 * time.Minute}
 }
 
 type instanceBody struct {

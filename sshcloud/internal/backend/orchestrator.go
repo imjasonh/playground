@@ -24,7 +24,7 @@ func (c *OrchestratorClient) client() *http.Client {
 		return c.HTTPClient
 	}
 	// Ensure may cold-boot or wake a snapshot; allow a long wait.
-	return &http.Client{Timeout: 120 * time.Second}
+	return &http.Client{Timeout: 6 * time.Minute}
 }
 
 type orchEnsureBody struct {
