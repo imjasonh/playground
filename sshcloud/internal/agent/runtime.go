@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -12,7 +11,7 @@ import (
 	"github.com/imjasonh/playground/sshcloud/internal/rootfs"
 )
 
-// machine is the running VMM handle (Firecracker or fake).
+// machine is the running VMM handle.
 type machine interface {
 	SnapshotThenKill(ctx context.Context, files firecracker.SnapshotFiles) error
 	Stop() error
@@ -113,14 +112,4 @@ func (FirecrackerRuntime) Restore(ctx context.Context, spec RestoreSpec) (machin
 		return nil, "", fmt.Errorf("guest SSH not ready after wake: %w (see %s)", err, logPath)
 	}
 	return m, addr, nil
-}
-
-func ensureRootfsFile(path string) error {
-	if _, err := os.Stat(path); err == nil {
-		return nil
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(path, []byte("fake-rootfs\n"), 0o644)
 }

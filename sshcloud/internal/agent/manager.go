@@ -60,8 +60,6 @@ type Config struct {
 	SnapStore snapshot.Store
 	// Runtime boots VMs; nil selects FirecrackerRuntime.
 	Runtime Runtime
-	// SkipTap skips host TAP setup (used with FakeRuntime).
-	SkipTap bool
 }
 
 // Manager boots, sleeps, wakes, and migrates Firecracker instances.
@@ -88,9 +86,6 @@ func NewManager(cfg Config) (*Manager, error) {
 	rt := cfg.Runtime
 	if rt == nil {
 		rt = FirecrackerRuntime{}
-	}
-	if _, ok := rt.(*FakeRuntime); ok {
-		cfg.SkipTap = true
 	}
 	if err := os.MkdirAll(cfg.WorkDir, 0o755); err != nil {
 		return nil, err
@@ -145,21 +140,12 @@ func (m *Manager) bootCold(ctx context.Context, k InstanceKey, n int) (*Instance
 		return nil, err
 	}
 	rootfsPath := filepath.Join(dir, "rootfs.ext4")
-	if m.cfg.SkipTap {
-		if err := rootfs.Clone(m.cfg.BaseRootfs, rootfsPath); err != nil {
-			// Base may be missing in fake tests — synthesize.
-			if err := ensureRootfsFile(rootfsPath); err != nil {
-				return nil, err
-			}
-		}
-	} else {
-		if err := rootfs.Clone(m.cfg.BaseRootfs, rootfsPath); err != nil {
-			return nil, err
-		}
-		if m.cfg.CAPubPath != "" {
-			if err := rootfs.InjectFile(rootfsPath, m.cfg.CAPubPath, "ca.pub", "0644"); err != nil {
-				return nil, fmt.Errorf("inject CA: %w", err)
-			}
+	if err := rootfs.Clone(m.cfg.BaseRootfs, rootfsPath); err != nil {
+		return nil, err
+	}
+	if m.cfg.CAPubPath != "" {
+		if err := rootfs.InjectFile(rootfsPath, m.cfg.CAPubPath, "ca.pub", "0644"); err != nil {
+			return nil, fmt.Errorf("inject CA: %w", err)
 		}
 	}
 
@@ -167,10 +153,8 @@ func (m *Manager) bootCold(ctx context.Context, k InstanceKey, n int) (*Instance
 	octet := n%200 + 1
 	hostIP := fmt.Sprintf("%s.%d.1", m.cfg.SubnetBase, octet)
 	guestIP := fmt.Sprintf("%s.%d.2", m.cfg.SubnetBase, octet)
-	if !m.cfg.SkipTap {
-		if err := firecracker.CreateTap(tapName, hostIP, 24); err != nil {
-			return nil, fmt.Errorf("create tap: %w (agent needs CAP_NET_ADMIN)", err)
-		}
+	if err := firecracker.CreateTap(tapName, hostIP, 24); err != nil {
+		return nil, fmt.Errorf("create tap: %w (agent needs CAP_NET_ADMIN)", err)
 	}
 
 	mac := fmt.Sprintf("AA:FC:00:00:%02x:%02x", (n>>8)&0xff, n&0xff)
@@ -190,9 +174,7 @@ func (m *Manager) bootCold(ctx context.Context, k InstanceKey, n int) (*Instance
 		MemMiB:         128,
 	})
 	if err != nil {
-		if !m.cfg.SkipTap {
-			_ = firecracker.DeleteTap(tapName)
-		}
+		_ = firecracker.DeleteTap(tapName)
 		return nil, err
 	}
 
@@ -337,7 +319,7 @@ func (m *Manager) Evict(user, app string) error {
 	if in.machine != nil {
 		_ = in.machine.Kill()
 	}
-	if !m.cfg.SkipTap && in.TapName != "" {
+	if in.TapName != "" {
 		_ = firecracker.DeleteTap(in.TapName)
 	}
 	// Remove workdir but keep parent; Adopt will recreate rootfs at Meta.RootfsPath.
@@ -501,9 +483,7 @@ func (m *Manager) Stop(user, app string) error {
 	if in.machine != nil {
 		err = in.machine.Stop()
 	}
-	if !m.cfg.SkipTap {
-		_ = firecracker.DeleteTap(in.TapName)
-	}
+	_ = firecracker.DeleteTap(in.TapName)
 	if m.cfg.SnapStore != nil {
 		_ = m.cfg.SnapStore.Delete(context.Background(), snapshot.KeyFor(user, app))
 	}

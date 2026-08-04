@@ -81,7 +81,6 @@ TAP subnet; gateway mints a user cert and dials `guestIP:22`.
   `ensure`, which wakes if sleeping), `GET /v1/instances/status?user=&app=`.
 - Default store is local under `-snap-dir`; production uses `-gcs-bucket`.
 - TAP is kept across sleep; wake restores into the same network identity.
-- Full Firecracker e2e needs `/dev/kvm` (not exercised in CI on this host).
 
 ### Cross-host migrate
 
@@ -100,14 +99,14 @@ curl -X POST http://127.0.0.1:8090/v1/migrate \
 
 Agent APIs: `POST /v1/instances/evict`, `POST /v1/instances/adopt`.
 
-Working e2e (no KVM): `go test ./internal/migrate/ -run TestCrossHostMigrateE2E`
-uses two fake-runtime agents + shared `LocalStore`.
+Orchestration unit test (httptest agent stubs, no VMs):
+`go test ./internal/migrate -run TestMigrateOrchestration`.
 
 ### Real KVM e2e (CI + local)
 
 Free GitHub `ubuntu-latest` x86_64 runners expose nested virt (`/dev/kvm`).
 When `sshcloud/` changes, the `sshcloud-kvm` job in `.github/workflows/test.yml`
-enables KVM access, builds a fortune rootfs, and runs:
+enables KVM access, builds a fortune rootfs, and runs (fails if any test skips):
 
 - `TestKVMSleepWake` — boot → snapshot sleep → wake → dial guest `:22`
 - `TestKVMCrossHostMigrate` — sleep/evict on A → adopt on B (shared store)
@@ -130,7 +129,7 @@ bash hack/run-kvm-e2e.sh   # not as root
 - [x] User CA + cert hop (process or Firecracker)
 - [x] Host agent + Firecracker client + rootfs builder
 - [x] Snapshot-on-sleep (local + GCS store; idle loop; wake on ensure)
-- [x] Cross-host migrate (Sleep→Evict→Adopt + placement; fake-runtime e2e)
+- [x] Cross-host migrate (Sleep→Evict→Adopt + placement)
 - [x] Real Firecracker KVM e2e in GitHub Actions (`sshcloud-kvm` job)
 - [ ] Gateway freeze-buffer during migrate, deploy TUI, Firestore
 - [ ] Terraform

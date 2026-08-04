@@ -150,6 +150,7 @@ type kvmAssets struct {
 
 func kvmConfig(t *testing.T) kvmAssets {
 	t.Helper()
+	// Never Skip: CI and local runners must fail hard if KVM/assets are missing.
 	if !firecracker.Available() {
 		t.Fatal("/dev/kvm not available — enable nested virt (see hack/run-kvm-e2e.sh)")
 	}

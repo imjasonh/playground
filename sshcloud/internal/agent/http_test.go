@@ -5,48 +5,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
-	"github.com/imjasonh/playground/sshcloud/internal/firecracker"
 	"github.com/imjasonh/playground/sshcloud/internal/snapshot"
 )
-
-func TestHTTPEnsureNoKVM(t *testing.T) {
-	if firecracker.Available() {
-		t.Skip("KVM available")
-	}
-	dir := t.TempDir()
-	store, err := snapshot.NewLocalStore(dir + "/snaps")
-	if err != nil {
-		t.Fatal(err)
-	}
-	mgr, err := NewManager(Config{
-		WorkDir:     dir,
-		KernelPath:  dir + "/vmlinux",
-		BaseRootfs:  dir + "/rootfs.ext4",
-		SnapStore:   store,
-		IdleTimeout: 0,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = mgr.Close() })
-
-	mux := http.NewServeMux()
-	(&Handler{Manager: mgr}).Mount(mux)
-
-	body, _ := json.Marshal(map[string]string{"user": "alice", "app": "fortune"})
-	req := httptest.NewRequest(http.MethodPost, "/v1/instances/ensure", bytes.NewReader(body))
-	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
-	}
-	if !strings.Contains(rec.Body.String(), "/dev/kvm") {
-		t.Fatalf("body: %s", rec.Body.String())
-	}
-}
 
 func TestHTTPSleepNotFound(t *testing.T) {
 	dir := t.TempDir()
@@ -99,6 +61,44 @@ func TestHTTPStatusNotFound(t *testing.T) {
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status %d", rec.Code)
+	}
+}
+
+func TestHTTPEvictAdoptRoutes(t *testing.T) {
+	dir := t.TempDir()
+	store, err := snapshot.NewLocalStore(dir + "/snaps")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mgr, err := NewManager(Config{
+		WorkDir:     dir,
+		KernelPath:  dir + "/vmlinux",
+		BaseRootfs:  dir + "/rootfs.ext4",
+		SnapStore:   store,
+		IdleTimeout: 0,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	mux := http.NewServeMux()
+	(&Handler{Manager: mgr}).Mount(mux)
+
+	body, _ := json.Marshal(map[string]string{"user": "alice", "app": "fortune"})
+	req := httptest.NewRequest(http.MethodPost, "/v1/instances/evict", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("evict empty: %d %s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/v1/instances/adopt", bytes.NewReader(body))
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	// No snapshot in store → 500, but route must exist (not 404).
+	if rec.Code == http.StatusNotFound {
+		t.Fatalf("adopt route missing")
 	}
 }
 

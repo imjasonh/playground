@@ -337,12 +337,12 @@ GCE host MIG ── host agent ── Firecracker ── app :22
 - `internal/placement` maps `user/app` → host ID; `internal/migrate.Migrator`
   orchestrates the cutover with best-effort rollback Adopt on the source.
 - `cmd/orchestrator` exposes `POST /v1/migrate` and placement-aware `POST /v1/ensure`.
-- E2E without KVM: `FakeRuntime` (localhost TCP) + shared `LocalStore` —
-  `go test ./internal/migrate -run TestCrossHostMigrateE2E`.
+- Migrate orchestration unit test: httptest agent stubs
+  (`TestMigrateOrchestration`) — not a KVM stand-in.
 - **Real KVM e2e in CI:** GitHub `ubuntu-latest` exposes `/dev/kvm` (nested
   virt on free Linux runners). Job `sshcloud-kvm` in `test.yml` runs
   `hack/run-kvm-e2e.sh` → `go test -tags=kvm` sleep/wake + migrate when
-  `sshcloud/` changes.
+  `sshcloud/` changes; the script fails if any test is skipped.
 - Still open: gateway I/O freeze buffer during migrate, force-reconnect on
   timeout, session pin invalidation, Firestore-backed placement.
 

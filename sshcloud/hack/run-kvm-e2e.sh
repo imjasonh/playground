@@ -64,7 +64,24 @@ export SSHCLOUD_ROOTFS="$ASSETS/fortune-rootfs.ext4"
 export SSHCLOUD_CA_PUB="$CA_PUB"
 
 echo "::group::KVM e2e tests"
-go test -tags=kvm -count=1 -timeout 10m -v ./internal/agent/ -run 'TestKVM'
+LOG="$(mktemp)"
+set +e
+go test -tags=kvm -count=1 -timeout 10m -v ./internal/agent/ -run 'TestKVM' 2>&1 | tee "$LOG"
+rc=${PIPESTATUS[0]}
+set -e
+if grep -E '^--- SKIP:' "$LOG"; then
+  echo "ERROR: KVM tests must not be skipped" >&2
+  exit 1
+fi
+for name in TestKVMSleepWake TestKVMCrossHostMigrate; do
+  if ! grep -q "^--- PASS: ${name}" "$LOG"; then
+    echo "ERROR: ${name} did not PASS" >&2
+    exit 1
+  fi
+done
+if [[ "$rc" -ne 0 ]]; then
+  exit "$rc"
+fi
 echo "::endgroup::"
 
-echo "KVM e2e passed."
+echo "KVM e2e passed (no skips)."
