@@ -22,8 +22,14 @@ output "images" {
     orchestrator = ko_build.orchestrator.image_ref
     agent        = ko_build.agent.image_ref
     guestinit    = ko_build.guestinit.image_ref
+    fortune      = ko_build.fortune.image_ref
     api          = ko_build.api.image_ref
   }
+}
+
+output "fortune_image" {
+  description = "Digest-pinned sample app — deploy via ssh deploy@… like any other image"
+  value       = ko_build.fortune.image_ref
 }
 
 output "snapshots_bucket" {
@@ -31,7 +37,7 @@ output "snapshots_bucket" {
 }
 
 output "assets_bucket" {
-  description = "Upload firecracker, vmlinux, fortune-rootfs.ext4, and fortune-rootfs.boot.json here (see README)"
+  description = "Upload firecracker and vmlinux here (see README); apps are OCI digests"
   value       = google_storage_bucket.assets.name
 }
 

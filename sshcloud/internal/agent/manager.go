@@ -83,7 +83,8 @@ type ResolvedRootfs struct {
 
 // EnsureOpts configures a cold boot.
 type EnsureOpts struct {
-	// Image is a digest-pinned OCI ref (repo@sha256:…). Empty uses BaseRootfs.
+	// Image is a digest-pinned OCI ref (repo@sha256:…). Empty uses BaseRootfs
+	// when configured (test/dev only); production apps always set Image.
 	Image string
 }
 
@@ -102,8 +103,11 @@ func NewManager(cfg Config) (*Manager, error) {
 	if cfg.WorkDir == "" {
 		return nil, fmt.Errorf("WorkDir required")
 	}
-	if cfg.KernelPath == "" || cfg.BaseRootfs == "" {
-		return nil, fmt.Errorf("KernelPath and BaseRootfs required")
+	if cfg.KernelPath == "" {
+		return nil, fmt.Errorf("KernelPath required")
+	}
+	if cfg.BaseRootfs == "" && cfg.RootfsResolver == nil {
+		return nil, fmt.Errorf("BaseRootfs or RootfsResolver required")
 	}
 	if cfg.SubnetBase == "" {
 		cfg.SubnetBase = "172.16"
@@ -190,6 +194,9 @@ func (m *Manager) prepareGuestInit(rootfsPath string, spec guestinit.Spec) (stri
 func (m *Manager) resolveBaseRootfs(ctx context.Context, imageRef string) (ResolvedRootfs, error) {
 	imageRef = strings.TrimSpace(imageRef)
 	if imageRef == "" {
+		if m.cfg.BaseRootfs == "" {
+			return ResolvedRootfs{}, fmt.Errorf("image required (no base rootfs configured)")
+		}
 		spec, err := m.baseBootSpec()
 		if err != nil {
 			return ResolvedRootfs{}, err

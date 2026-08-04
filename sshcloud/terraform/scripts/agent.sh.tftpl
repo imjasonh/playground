@@ -14,7 +14,7 @@ fi
 pull_secret "${user_ca_pub_secret}" /var/lib/sshcloud/ssh_user_ca.pub
 chmod 644 /var/lib/sshcloud/ssh_user_ca.pub
 
-# Platform assets (firecracker + kernel + fortune rootfs) from GCS.
+# Platform assets (firecracker + kernel) from GCS. Apps arrive as OCI digests.
 TOKEN="$(curl -fsS -H 'Metadata-Flavor: Google' \
   http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')"
@@ -26,8 +26,6 @@ download_asset() {
 }
 download_asset firecracker /var/lib/sshcloud/assets/firecracker || true
 download_asset vmlinux /var/lib/sshcloud/assets/vmlinux || true
-download_asset fortune-rootfs.ext4 /var/lib/sshcloud/assets/fortune-rootfs.ext4 || true
-download_asset fortune-rootfs.boot.json /var/lib/sshcloud/assets/fortune-rootfs.boot.json || true
 chmod +x /var/lib/sshcloud/assets/firecracker 2>/dev/null || true
 
 IMAGE="${agent_image}"
@@ -48,8 +46,6 @@ docker run -d --name sshcloud-agent --restart unless-stopped --net host --privil
   -work-dir /var/lib/sshcloud/agent \
   -firecracker /var/lib/sshcloud/assets/firecracker \
   -kernel /var/lib/sshcloud/assets/vmlinux \
-  -rootfs /var/lib/sshcloud/assets/fortune-rootfs.ext4 \
-  -boot-spec /var/lib/sshcloud/assets/fortune-rootfs.boot.json \
   -ca-pub /var/lib/sshcloud/ssh_user_ca.pub \
   -guestinit /var/lib/sshcloud/assets/guestinit \
   -gcs-bucket ${snapshots_bucket} \

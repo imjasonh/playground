@@ -27,7 +27,7 @@ func main() {
 	workDir := flag.String("work-dir", "/var/lib/sshcloud/agent", "instance work directory")
 	fcBin := flag.String("firecracker", "firecracker", "firecracker binary")
 	kernel := flag.String("kernel", "", "path to vmlinux")
-	rootfsPath := flag.String("rootfs", "", "path to base ext4 rootfs (fortune)")
+	rootfsPath := flag.String("rootfs", "", "optional base ext4 for Ensure without image (test/dev only)")
 	bootSpec := flag.String("boot-spec", "", "PID 1 spec JSON for -rootfs (default: sibling .boot.json)")
 	caPub := flag.String("ca-pub", "", "platform user CA public key to inject")
 	guestInit := flag.String("guestinit", "", "linux guest PID1 trampoline (default: guestinit beside this binary)")
@@ -37,8 +37,8 @@ func main() {
 	idle := flag.Duration("idle", 5*time.Minute, "idle time before snapshot-sleep (0=disable)")
 	flag.Parse()
 
-	if *kernel == "" || *rootfsPath == "" {
-		log.Fatal("-kernel and -rootfs are required")
+	if *kernel == "" {
+		log.Fatal("-kernel is required")
 	}
 
 	var store snapshot.Store
@@ -81,23 +81,28 @@ func main() {
 		log.Fatalf("guestinit %s: %v", guestInitPath, err)
 	}
 
+	var baseSpec guestinit.Spec
 	bootSpecPath := strings.TrimSpace(*bootSpec)
-	if bootSpecPath == "" {
-		bootSpecPath = guestinit.SpecBeside(*rootfsPath)
-	}
-	baseSpec, err := guestinit.LoadFile(bootSpecPath)
-	if err != nil {
-		log.Fatalf("boot spec %s: %v", bootSpecPath, err)
-	}
-	if err := baseSpec.Validate(); err != nil {
-		log.Fatalf("boot spec %s: %v", bootSpecPath, err)
+	baseRootfs := strings.TrimSpace(*rootfsPath)
+	if baseRootfs != "" {
+		if bootSpecPath == "" {
+			bootSpecPath = guestinit.SpecBeside(baseRootfs)
+		}
+		spec, err := guestinit.LoadFile(bootSpecPath)
+		if err != nil {
+			log.Fatalf("boot spec %s: %v", bootSpecPath, err)
+		}
+		if err := spec.Validate(); err != nil {
+			log.Fatalf("boot spec %s: %v", bootSpecPath, err)
+		}
+		baseSpec = spec
 	}
 
 	mgr, err := agent.NewManager(agent.Config{
 		WorkDir:        *workDir,
 		FirecrackerBin: *fcBin,
 		KernelPath:     *kernel,
-		BaseRootfs:     *rootfsPath,
+		BaseRootfs:     baseRootfs,
 		CAPubPath:      *caPub,
 		GuestInitPath:  guestInitPath,
 		BaseBootSpec:   baseSpec,
@@ -121,7 +126,7 @@ func main() {
 
 	srv := &http.Server{Addr: *listen, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	go func() {
-		log.Printf("sshcloud agent on %s (idle=%s guestinit=%s boot-spec=%s)", *listen, idle.String(), guestInitPath, bootSpecPath)
+		log.Printf("sshcloud agent on %s (idle=%s guestinit=%s base-rootfs=%q)", *listen, idle.String(), guestInitPath, baseRootfs)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatal(err)
 		}

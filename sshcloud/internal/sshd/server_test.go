@@ -21,7 +21,7 @@ import (
 	"github.com/imjasonh/playground/sshcloud/internal/store"
 )
 
-func TestJoinMenuFortuneBusy(t *testing.T) {
+func TestJoinDeployFortuneBusy(t *testing.T) {
 	_, signer, err := hostkey.Generate()
 	if err != nil {
 		t.Fatal(err)
@@ -43,14 +43,35 @@ func TestJoinMenuFortuneBusy(t *testing.T) {
 
 	clientKey := mustKey(t)
 	addr := srv.Addr
+	digest := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-	// Join, select fortune (1), enter to leave stub, quit menu
-	out := sshRun(t, addr, signer.PublicKey(), clientKey, "join", "alice\n1\n\nq\n")
+	// Join → deploy fortune → open fortune from menu → quit
+	script := strings.Join([]string{
+		"alice",
+		"1", // deploy
+		"fortune",
+		"ghcr.io/example/fortune@sha256:" + digest,
+		"", // tiny
+		"2", // kick
+		"", // enter after deploy
+		"1", // fortune
+		"", // enter after stub
+		"q",
+	}, "\n") + "\n"
+	out := sshRun(t, addr, signer.PublicKey(), clientKey, "join", script)
 	if !strings.Contains(out, "You're alice") {
 		t.Fatalf("join output: %q\nserver log:\n%s", out, logBuf.String())
 	}
+	if !strings.Contains(out, "Created fortune") {
+		t.Fatalf("expected deploy create: %q\nserver log:\n%s", out, logBuf.String())
+	}
 	if !strings.Contains(strings.ToLower(out), "fortune") {
 		t.Fatalf("expected fortune in session: %q\nserver log:\n%s", out, logBuf.String())
+	}
+
+	app, err := hub.Store.GetApp(ctx, "alice", "fortune")
+	if err != nil || app == nil || !strings.Contains(app.Image, digest) {
+		t.Fatalf("stored app: %+v %v", app, err)
 	}
 
 	// Hold a session via hub, then SSH should be busy

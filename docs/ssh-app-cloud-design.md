@@ -24,7 +24,7 @@
 | Deploy vs sessions (v1) | Default: **route new → new, drain old, kick after timeout**; opt-in **kick now** |
 | Deploy vs sessions (later) | Maintenance mode; explicit blue/green promote + rollback |
 | Platform users (MVP) | `join`, `deploy`, `menu` (+ fallthrough-to-menu); `help` / `whoami` / `status` later |
-| First demo | `fortune` — **requires joining first**; **lazy-created on first connect** |
+| First sample app | `fortune` — **requires joining first**; **deployed** like any other digest-pinned app |
 | “No shell” | No host/login shell; apps may offer PTY, exec/subsystem, long-lived multi-client sessions |
 | Proxy fidelity | Session + PTY + exec/subsystem (not full arbitrary channel proxy) |
 | Deploy unit | OCI image@**digest**; PID 1 speaks SSH on `:22` |
@@ -99,7 +99,7 @@ showing a short loading UI before handoff.
 
 ### Goals (v1)
 
-1. **`ssh foo.com` → join → menu → fortune** vertical slice (lazy fortune).
+1. **`ssh foo.com` → join → deploy fortune → menu → fortune** vertical slice.
 2. Deep links: `ssh <app>@foo.com` skips the menu.
 3. Strong isolation: one microVM per app instance.
 4. Snapshot-on-sleep; warm GCE hosts; gateway-held wake with loading TUI.
@@ -145,7 +145,7 @@ showing a short loading UI before handoff.
 join     → key management (no username re-prompt)
 deploy   → deploy UX
 menu     → app menu (explicit)
-<app>    → if user has this app (or platform demo like fortune) → straight to app
+<app>    → if user has this app (deployed) → straight to app
 <other>  → fall through to app menu
 ```
 
@@ -200,7 +200,7 @@ ssh join@foo.com     # known key — no username prompt
 ssh foo.com          # known key, local user ≠ an app name
 ssh menu@foo.com     # explicit
   │
-  ├─ List: user's apps + deploy + fortune (demo; lazy-create if needed)
+  ├─ List: user's deployed apps + deploy
   ├─ Select deploy → deploy TUI (same session)
   └─ Select app    → wake/loading if needed → cert hop → app session
 ```
@@ -212,11 +212,13 @@ ssh menu@foo.com     # explicit
 - Adding a machine: from an already-authenticated `join` session (interim).
   Exact UX for authorizing a *new* key still open (§12).
 
-### Fortune requires joining first
+### Fortune is a normal deployed app
 
 Unknown keys always get the join TUI (never a raw reject on deep links).
-Fortune is **not** created at join. First connect to fortune (menu select or
-`ssh fortune@foo.com`) lazy-creates the app (platform image, `tiny`) and wakes it.
+`fortune` is **not** a platform builtin and is **not** lazy-created. Deploy it
+with `ssh deploy@…` (or the menu) using a digest-pinned OCI image — Terraform
+builds one via `ko_build.fortune`. Until then, `ssh fortune@foo.com` falls
+through to the hub (unknown app).
 
 ---
 
@@ -293,7 +295,7 @@ SSH Gateway (single VM in v1; shared host key)
   │  1) auth key → user (else join TUI)
   │  2) route: menu | deploy | deep-link app | fallthrough→menu
   │  3) on app select / deep link:
-  │       resolve app (lazy-create fortune if needed)
+  │       resolve app (must already be deployed)
   │       if sleeping: loading TUI; restore snapshot (retry in-place)
   │       mint user cert; dial microVM :22
   │       proxy session/PTY/exec/subsystem (in-session handoff from menu)
@@ -371,7 +373,7 @@ Responsibilities (v1 sketch):
 **Implemented in `sshcloud/` (registration path):**
 - `gateway.RunDeploy` TUI (menu row + `ActionDeploy` / `ssh deploy@…`)
 - Digest-pinned image validation (`internal/image.ValidateDigestPinned`)
-- `store.UpsertApp` / `GetApp` (tier + session strategy); rejects platform demos
+- `store.UpsertApp` / `GetApp` (tier + session strategy)
 - Hub-footgun warning for common local usernames
 - OCI pull/extract → ext4: `sshcloud/internal/ocirootfs` (go-containerregistry;
   digest cache; whiteouts; 1 GiB unpack cap; boot spec sidecar); agent Ensure
@@ -380,8 +382,9 @@ Responsibilities (v1 sketch):
   kick-now); gateway pins sessions to `ActiveGen`; agent instances are
   `app` or `app.gen`; draining gens set `no_idle`.
 - Guest PID 1: always `guestinit` (`init=/platform-init` + `/platform-boot.json`).
-  Spec from OCI image config, or an explicit sidecar / `-boot-spec` for the
-  base rootfs — never a hardcoded platform default.
+  Spec from OCI image config — never a hardcoded platform default.
+- Sample app `fortune` is a normal deploy target (`ko_build.fortune` +
+  `TestDeployFortuneE2E`); no lazy platform demos.
 - Still open: volumes
 
 No separate HTTP API or API tokens in v1.
@@ -452,7 +455,7 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
 |-----------|------|
 | **SSH gateway** | Client SSH; join / menu / deploy; routing; handoff; session admit/reject; rate limits; session→instance pin; cordon/drain/kick; cert mint; proxy |
 | **API** | Internal control API for gateway/orchestrator/agent (not public deploy API) |
-| **Orchestrator** | Placement, wake/sleep, host migrate/drain, deploy cutover, quotas / abuse counters, lazy fortune create |
+| **Orchestrator** | Placement, wake/sleep, host migrate/drain, deploy cutover, quotas / abuse counters |
 | **Host agent** | Image→rootfs, inject CA, Firecracker lifecycle, volumes, probes, snapshots |
 | **Firestore** | Users, keys, apps, placement pointers, quota counters, metadata |
 | **GCS** | Idle/migrate snapshots + volume bytes |
@@ -478,7 +481,7 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
 - Global egress allowlist enforced on the host data path.
 
 **Implemented in `sshcloud/terraform/` (first environment):**
-- `ko_build` images: gateway, orchestrator, agent, guestinit, api (api image only; no VM yet)
+- `ko_build` images: gateway, orchestrator, agent, guestinit, fortune (sample app), api (api image only; no VM yet)
 - Firestore Native `(default)`, snapshot + asset GCS buckets, Artifact Registry
 - Secret Manager: gateway host key + user CA (`tls_private_key` → secret versions)
 - Gateway GCE VM (public `:22`), orchestrator VM (VPC), nested-virt agent MIG
@@ -556,9 +559,9 @@ hits, wake/deploy denials — still **no session bytes**.
 1. ~~Terraform + ko: Firestore, GCS, Secrets, host MIG, single gateway, orchestrator, agent.~~
    (`sshcloud/terraform/`; upload Firecracker assets after apply).  
 2. Platform user CA + inject path; shared kernel.  
-3. Platform fortune image (SSH server verifying CA).  
+3. Sample fortune OCI image (SSH server verifying CA) — `ko_build.fortune`.  
 4. `ssh foo.com` (unknown key) → join → menu (join rate-limited).  
-5. Menu → fortune (lazy create) → wake (loading UI) → cert hop → session.  
+5. Deploy fortune → menu → fortune → wake (loading UI) → cert hop → session.  
 6. Second concurrent `ssh fortune@foo.com` → **rejected** (session busy).  
 7. Idle → snapshot-on-sleep; reconnect restores.  
 8. Menu → deploy (or `deploy@`) → second digest-pinned app `myapp`.  
@@ -605,15 +608,16 @@ hits, wake/deploy denials — still **no session bytes**.
 # Brand new user — bare connect
 ssh foo.com
 # join TUI: found SHA256:…, pick username "alice"
-# → app menu: fortune, deploy, …
+# → app menu: deploy (empty until you deploy)
 
-# Select fortune (lazy create + wake)
+# Deploy the sample app (same path as any user app)
+ssh deploy@foo.com
+# → create fortune from <ko_build.fortune digest>
+
+ssh foo.com
+# Select fortune → wake
 # Starting fortune…
 # <session>
-
-# Later — hub again
-ssh foo.com
-# → app menu (known key)
 
 # Deep link skips menu
 ssh fortune@foo.com
@@ -628,7 +632,7 @@ ssh menu@foo.com
 # Key management
 ssh join@foo.com
 
-# Custom app
+# Another custom app
 ssh deploy@foo.com
 # → create myapp from ghcr.io/me/myapp@sha256:…
 ssh myapp@foo.com

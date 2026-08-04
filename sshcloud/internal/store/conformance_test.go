@@ -64,24 +64,22 @@ func runStoreConformance(t *testing.T, s Store) {
 
 	has, err := s.HasApp(ctx, user, "fortune")
 	if err != nil || has {
-		t.Fatalf("fortune should be absent: %v %v", has, err)
-	}
-	if err := s.EnsureDemoApp(ctx, user, "fortune"); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.EnsureDemoApp(ctx, user, "fortune"); err != nil {
-		t.Fatal(err) // idempotent
-	}
-	has, err = s.HasApp(ctx, user, "fortune")
-	if err != nil || !has {
-		t.Fatalf("fortune missing: %v %v", has, err)
-	}
-	demo, err := s.GetApp(ctx, user, "fortune")
-	if err != nil || demo == nil || !demo.Demo {
-		t.Fatalf("demo app: %+v %v", demo, err)
+		t.Fatalf("fortune should be absent until deployed: %v %v", has, err)
 	}
 
 	digest := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	if err := s.UpsertApp(ctx, App{
+		Owner: user, Name: "fortune",
+		Image: "ghcr.io/me/fortune@sha256:" + digest,
+		Tier:  "tiny", SessionStrategy: StrategyDrain,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fortune, err := s.GetApp(ctx, user, "fortune")
+	if err != nil || fortune == nil || fortune.Image == "" {
+		t.Fatalf("deployed fortune: %+v %v", fortune, err)
+	}
+
 	if err := s.UpsertApp(ctx, App{
 		Owner: user, Name: "myapp",
 		Image: "ghcr.io/me/app@sha256:" + digest,
@@ -90,7 +88,7 @@ func runStoreConformance(t *testing.T, s Store) {
 		t.Fatal(err)
 	}
 	app, err := s.GetApp(ctx, user, "myapp")
-	if err != nil || app == nil || app.Tier != "small" || app.SessionStrategy != StrategyKick || app.Demo {
+	if err != nil || app == nil || app.Tier != "small" || app.SessionStrategy != StrategyKick {
 		t.Fatalf("upserted app: %+v %v", app, err)
 	}
 	app.ActiveGen = "gnew"
@@ -103,9 +101,6 @@ func runStoreConformance(t *testing.T, s Store) {
 	app, err = s.GetApp(ctx, user, "myapp")
 	if err != nil || app == nil || app.ActiveGen != "gnew" || app.DrainingGen != "gold" || app.DrainUntilUnix != 1700000000 {
 		t.Fatalf("gen fields: %+v %v", app, err)
-	}
-	if err := s.UpsertApp(ctx, App{Owner: user, Name: "fortune", Image: "x@sha256:" + digest}); err == nil {
-		t.Fatal("expected reject overwrite of demo")
 	}
 
 	apps, err := s.ListApps(ctx, user)

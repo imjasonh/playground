@@ -8,7 +8,7 @@ import (
 	"github.com/imjasonh/playground/sshcloud/internal/store"
 )
 
-func TestHubJoinMenuFortuneBusy(t *testing.T) {
+func TestHubJoinMenuDeployedAppBusy(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	h := &Hub{Store: store.NewMemory(), Sessions: session.NewRegistry()}
@@ -29,7 +29,22 @@ func TestHubJoinMenuFortuneBusy(t *testing.T) {
 		t.Fatalf("got %+v %v", r, err)
 	}
 
-	// Deep link fortune → proxy + lazy create
+	// Undeployed fortune → menu (not a platform snowflake)
+	r, err = h.HandleConnect(ctx, Connect{SSHUser: "fortune", KeyFingerprint: "SHA256:alice"})
+	if err != nil || r.Action != ActionMenu {
+		t.Fatalf("undeployed fortune: %+v %v", r, err)
+	}
+
+	digest := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	if err := h.Store.UpsertApp(ctx, store.App{
+		Owner: "alice", Name: "fortune",
+		Image: "ghcr.io/example/fortune@sha256:" + digest,
+		Tier:  "tiny",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Deep link fortune after deploy → proxy
 	r, err = h.HandleConnect(ctx, Connect{SSHUser: "fortune", KeyFingerprint: "SHA256:alice"})
 	if err != nil || r.Action != ActionProxyApp || r.App != "fortune" || r.Session == "" {
 		t.Fatalf("got %+v %v", r, err)

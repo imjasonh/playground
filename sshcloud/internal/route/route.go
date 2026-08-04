@@ -47,8 +47,8 @@ type Input struct {
 	SSHUser string
 	// KeyKnown is true when the presenting key maps to a registered user.
 	KeyKnown bool
-	// HasApp reports whether the registered user already has this app
-	// (or it is a lazy platform demo like fortune). Ignored if KeyKnown is false.
+	// HasApp reports whether the registered user already has this app.
+	// Ignored if KeyKnown is false.
 	HasApp func(app string) bool
 }
 

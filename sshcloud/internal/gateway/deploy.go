@@ -21,7 +21,10 @@ var commonLocalUsernames = map[string]struct{}{
 // RunDeploy is the deploy TUI (`ssh deploy@…` or menu → deploy).
 // It registers a digest-pinned app and runs drain/kick cutover when a Controller is set.
 func RunDeploy(ctx context.Context, ch io.ReadWriter, hub *Hub, userID string) {
-	t := newTerm(ch)
+	runDeploy(ctx, newTerm(ch), hub, userID)
+}
+
+func runDeploy(ctx context.Context, t *term, hub *Hub, userID string) {
 	if userID == "" {
 		t.Printf("Not logged in. Complete join first.\n")
 		return
@@ -147,10 +150,6 @@ func promptAppName(ctx context.Context, t *term, hub *Hub, userID string) (strin
 		}
 		if err := names.ValidateIdent(name); err != nil {
 			t.Printf("Invalid: %v\n", err)
-			continue
-		}
-		if store.IsPlatformDemo(name) {
-			t.Printf("Invalid: %q is a platform demo; pick another name\n", name)
 			continue
 		}
 		if _, common := commonLocalUsernames[name]; common {

@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Prepare Firecracker assets and run real KVM e2e tests (sleep/wake + migrate).
 #
+# Fortune is exercised as a normal digest-pinned OCI image (apppack → local
+# registry inside the test), not as a built-in base rootfs.
+#
 # Requires: /dev/kvm (rw), passwordless sudo for `ip` (TAP), curl, e2fsprogs, Go.
 # Firecracker itself runs as the invoking user (not root).
 #
@@ -44,27 +47,21 @@ echo "::group::Fetch Firecracker + kernel"
 OUT="$ASSETS" bash "$ROOT/hack/fetch-firecracker-assets.sh"
 echo "::endgroup::"
 
-echo "::group::Build fortune guest + rootfs + guestinit"
-CGO_ENABLED=0 go build -o "$ASSETS/fortune" ./cmd/fortune
+echo "::group::Build fortune guest binary + guestinit"
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "$ASSETS/fortune" ./cmd/fortune
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "$ASSETS/guestinit" ./cmd/guestinit
 CA_KEY="$ASSETS/ssh_user_ca"
 CA_PUB="$ASSETS/ssh_user_ca.pub"
 if [[ ! -f "$CA_PUB" ]]; then
   go run ./hack/genuca -out "$CA_KEY"
 fi
-go run ./cmd/mkrootfs \
-  -fortune "$ASSETS/fortune" \
-  -ca-pub "$CA_PUB" \
-  -out "$ASSETS/fortune-rootfs.ext4" \
-  -size-mb 64
 echo "::endgroup::"
 
 export SSHCLOUD_FIRECRACKER="$ASSETS/firecracker"
 export SSHCLOUD_KERNEL="$ASSETS/vmlinux"
-export SSHCLOUD_ROOTFS="$ASSETS/fortune-rootfs.ext4"
-export SSHCLOUD_BOOT_SPEC="$ASSETS/fortune-rootfs.boot.json"
-export SSHCLOUD_GUESTINIT="$ASSETS/guestinit"
 export SSHCLOUD_CA_PUB="$CA_PUB"
+export SSHCLOUD_GUESTINIT="$ASSETS/guestinit"
+export SSHCLOUD_FORTUNE_BIN="$ASSETS/fortune"
 
 echo "::group::KVM e2e tests"
 LOG="$(mktemp)"

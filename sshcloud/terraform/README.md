@@ -8,7 +8,7 @@ a nested-virt **host MIG** running the Firecracker agent.
 
 | File | What |
 |------|------|
-| `images.tf` | `ko_build` for `gateway`, `orchestrator`, `agent`, `guestinit`, `api` |
+| `images.tf` | `ko_build` for `gateway`, `orchestrator`, `agent`, `guestinit`, `fortune`, `api` |
 | `firestore.tf` | Native-mode `(default)` database |
 | `storage.tf` | Snapshot + platform-asset buckets, Artifact Registry |
 | `secrets.tf` | Gateway host key + user CA (tls_private_key → Secret Manager) |
@@ -18,6 +18,8 @@ a nested-virt **host MIG** running the Firecracker agent.
 | `network.tf` | VPC, public `:22`, IAP, internal `8080`/`8090` |
 
 The `api` image is built (scaffold stub) but not deployed as a VM.
+`fortune` is a **sample user app image** (digest-pinned); deploy it through the
+gateway — it is not a platform builtin.
 
 ## Apply
 
@@ -38,23 +40,21 @@ terraform apply
 After apply:
 
 ```bash
-# 1) Build + upload Firecracker assets into the assets bucket
+# 1) Upload Firecracker + kernel (apps are OCI digests, not GCS rootfs blobs)
 cd ..
 bash hack/fetch-firecracker-assets.sh
-go build -o _assets/fortune ./cmd/fortune
-gcloud secrets versions access latest --secret=sshcloud-user-ca-pub > ssh_user_ca.pub
-go run ./cmd/mkrootfs -fortune _assets/fortune -ca-pub ssh_user_ca.pub \
-  -out _assets/fortune-rootfs.ext4
-# also writes _assets/fortune-rootfs.boot.json (required PID 1 spec)
 bash hack/upload-platform-assets.sh gs://$(terraform -chdir=terraform output -raw assets_bucket)
 
 # 2) Restart agents so they download assets
 gcloud compute instance-groups managed rolling-action restart sshcloud-agents \
   --zone=us-central1-a
 
-# 3) Connect
+# 3) Join, then deploy the sample app
 terraform -chdir=terraform output gateway_ssh
-# ssh -p 22 -o StrictHostKeyChecking=no join@GATEWAY_IP
+terraform -chdir=terraform output -raw fortune_image
+# ssh -p 22 join@GATEWAY_IP
+# ssh -p 22 deploy@GATEWAY_IP   # name: fortune, image: <fortune_image>
+# ssh -p 22 fortune@GATEWAY_IP
 ```
 
 Host sshd on the gateway is moved to **:2222** (IAP) so platform SSH can own `:22`.

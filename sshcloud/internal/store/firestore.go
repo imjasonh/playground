@@ -62,7 +62,6 @@ type appDoc struct {
 	Image           string `firestore:"image"`
 	PreviousImage   string `firestore:"previous_image"`
 	Tier            string `firestore:"tier"`
-	Demo            bool   `firestore:"demo"`
 	SessionStrategy string `firestore:"session_strategy"`
 	ActiveGen       string `firestore:"active_gen"`
 	DrainingGen     string `firestore:"draining_gen"`
@@ -171,16 +170,12 @@ func (f *Firestore) UpsertApp(ctx context.Context, app App) error {
 	if app.Owner == "" || app.Name == "" {
 		return fmt.Errorf("app owner and name required")
 	}
-	if IsPlatformDemo(app.Name) {
-		return fmt.Errorf("%q is a platform demo; deploy a different name", app.Name)
-	}
 	if app.Tier == "" {
 		app.Tier = "tiny"
 	}
 	if app.SessionStrategy == "" {
 		app.SessionStrategy = StrategyDrain
 	}
-	app.Demo = false
 
 	userRef := f.userRef(app.Owner)
 	appRef := f.appRef(app.Owner, app.Name)
@@ -188,46 +183,7 @@ func (f *Firestore) UpsertApp(ctx context.Context, app App) error {
 		if err := requireExists(tx, userRef, fmt.Sprintf("unknown user %q", app.Owner)); err != nil {
 			return err
 		}
-		snap, err := tx.Get(appRef)
-		if err != nil && status.Code(err) != codes.NotFound {
-			return err
-		}
-		if err == nil && snap.Exists() {
-			var existing appDoc
-			if err := snap.DataTo(&existing); err != nil {
-				return err
-			}
-			if existing.Demo {
-				return fmt.Errorf("%q is a platform demo; deploy a different name", app.Name)
-			}
-		}
 		return tx.Set(appRef, appToDoc(app))
-	})
-}
-
-func (f *Firestore) EnsureDemoApp(ctx context.Context, userID, app string) error {
-	if userID == "" || app == "" {
-		return fmt.Errorf("user and app required")
-	}
-	userRef := f.userRef(userID)
-	appRef := f.appRef(userID, app)
-	return f.client.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
-		if err := requireExists(tx, userRef, fmt.Sprintf("unknown user %q", userID)); err != nil {
-			return err
-		}
-		snap, err := tx.Get(appRef)
-		if err != nil && status.Code(err) != codes.NotFound {
-			return err
-		}
-		if err == nil && snap.Exists() {
-			return nil
-		}
-		return tx.Set(appRef, appToDoc(App{
-			Owner: userID,
-			Name:  app,
-			Tier:  "tiny",
-			Demo:  true,
-		}))
 	})
 }
 
@@ -259,7 +215,6 @@ func appToDoc(a App) appDoc {
 		Image:           a.Image,
 		PreviousImage:   a.PreviousImage,
 		Tier:            a.Tier,
-		Demo:            a.Demo,
 		SessionStrategy: a.SessionStrategy,
 		ActiveGen:       a.ActiveGen,
 		DrainingGen:     a.DrainingGen,
@@ -286,7 +241,6 @@ func appFromSnap(snap *firestore.DocumentSnapshot) (App, error) {
 		Image:           d.Image,
 		PreviousImage:   d.PreviousImage,
 		Tier:            d.Tier,
-		Demo:            d.Demo,
 		SessionStrategy: d.SessionStrategy,
 		ActiveGen:       d.ActiveGen,
 		DrainingGen:     d.DrainingGen,

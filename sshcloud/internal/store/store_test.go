@@ -2,9 +2,8 @@ package store
 
 import "testing"
 
-func TestIsPlatformDemo(t *testing.T) {
-	t.Parallel()
-	if !IsPlatformDemo("fortune") || IsPlatformDemo("myapp") {
-		t.Fatal("demo map unexpected")
+func TestStrategyConstants(t *testing.T) {
+	if StrategyDrain != "drain" || StrategyKick != "kick" {
+		t.Fatalf("unexpected strategies %q %q", StrategyDrain, StrategyKick)
 	}
 }

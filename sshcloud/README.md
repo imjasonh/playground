@@ -12,8 +12,8 @@ Design: [`docs/ssh-app-cloud-design.md`](../docs/ssh-app-cloud-design.md).
 | `cmd/gateway` | Public SSH entry (join, menu, deploy, proxy) |
 | `cmd/agent` | Host agent: Firecracker lifecycle + HTTP API |
 | `cmd/guestinit` | Tiny guest PID 1 trampoline (OCI entrypoint/cmd/env/workdir) |
-| `cmd/fortune` | Sample SSH app (verifies platform user certs) |
-| `cmd/mkrootfs` | Build fortune ext4 rootfs for Firecracker |
+| `cmd/fortune` | Sample SSH app — deploy as a normal digest-pinned OCI image |
+| `cmd/mkrootfs` | Optional offline ext4 builder (test/dev; not the deploy path) |
 | `cmd/ocirootfs` | Materialize digest-pinned OCI image → cached ext4 |
 | `cmd/orchestrator` | Placement + cross-host migrate HTTP API |
 | `cmd/api` | Internal control API stub |
@@ -25,6 +25,7 @@ Design: [`docs/ssh-app-cloud-design.md`](../docs/ssh-app-cloud-design.md).
 | `internal/rootfs` | ext4 build via mkfs.ext4 + debugfs (`BuildFromDir`) |
 | `internal/ocirootfs` | OCI pull (go-containerregistry) → unpack → ext4 cache + boot spec |
 | `internal/guestinit` | Exec boot-spec Entrypoint/Cmd with Env + WorkingDir as PID 1 |
+| `internal/apppack` | Pack a linux binary into a minimal OCI image (tests / demos) |
 | `internal/cutover` | Deploy drain/kick dual-instance cutover |
 | `internal/genid` | Generation ids (`g…`) + `app.gen` agent names |
 | `internal/agent` | Instance manager (boot, idle sleep, wake, adopt/evict) |
@@ -57,57 +58,49 @@ bash hack/run-firestore-tests.sh
 
 ## Run — process backend (no KVM)
 
+`-fortune-bin` is a **local cert-hop shortcut** only (not the deploy path). It
+runs `cmd/fortune` as a subprocess so you can exercise join → proxy without
+Firecracker. Menu will be empty until you deploy an app against a real agent.
+
 ```bash
 go build -o bin/fortune ./cmd/fortune
 go run ./cmd/gateway -listen 127.0.0.1:2222 -fortune-bin ./bin/fortune
-# optional durable store (emulator or real project):
-#   FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 \
-#   go run ./cmd/gateway -firestore-project sshcloud-test …
 ssh -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null join@127.0.0.1
 ```
 
-## Run — Firecracker backend
+## Run — Firecracker backend (normal deploy)
+
+Fortune is a normal app: build/push an OCI image, then `ssh deploy@…`.
 
 ```bash
-# 1) assets
+# 1) platform assets + agent
 bash hack/fetch-firecracker-assets.sh
-go build -o _assets/fortune ./cmd/fortune
 go build -o bin/guestinit ./cmd/guestinit
 go run ./cmd/gateway -user-ca ./ssh_user_ca &  # once, to create CA; Ctrl-C after
-go run ./cmd/mkrootfs -fortune _assets/fortune -ca-pub ssh_user_ca.pub -out _assets/fortune-rootfs.ext4
-
-# 2) agent (needs root/KVM for TAP + microVMs)
-# Idle VMs snapshot to <work-dir>/snapshots (or -gcs-bucket) after -idle.
+go build -o bin/agent ./cmd/agent
 sudo ./bin/agent \
   -listen 127.0.0.1:8080 \
   -work-dir /tmp/sshcloud-agent \
   -firecracker "$PWD/_assets/firecracker" \
   -kernel "$PWD/_assets/vmlinux" \
-  -rootfs "$PWD/_assets/fortune-rootfs.ext4" \
-  -boot-spec "$PWD/_assets/fortune-rootfs.boot.json" \
   -ca-pub "$PWD/ssh_user_ca.pub" \
   -guestinit "$PWD/bin/guestinit" \
   -idle 5m \
   -snap-dir /tmp/sshcloud-agent/snapshots
 
-# 3) gateway → agent (single host)
+# 2) gateway → agent
 go run ./cmd/gateway -listen 127.0.0.1:2222 -agent-url http://127.0.0.1:8080
 
-# or gateway → orchestrator (placement-aware Ensure across hosts)
-go run ./cmd/orchestrator \
-  -listen 127.0.0.1:8090 \
-  -hosts host-a=http://127.0.0.1:8080 \
-  -default-host host-a
-go run ./cmd/gateway -listen 127.0.0.1:2222 -orchestrator-url http://127.0.0.1:8090
+# 3) join, then deploy fortune (digest-pinned image)
+#    terraform output -raw fortune_image   # or any repo@sha256:…
+ssh -p 2222 deploy@127.0.0.1
+ssh -p 2222 fortune@127.0.0.1
 ```
 
 Guest boot always uses `init=/platform-init` (`cmd/guestinit`), which reads
-`/platform-boot.json` (Entrypoint, Cmd, Env, WorkingDir) and execs. There is
-no platform-default PID 1: OCI apps take the spec from image config; the
-fortune demo ships `fortune-rootfs.boot.json` beside its ext4 (`mkrootfs`).
-Missing/empty boot spec fails the cold boot. TAP subnet is static; gateway
-shows a wake loading line (`Starting fortune…`), mints a user cert, and dials
-`guestIP:22`.
+`/platform-boot.json` from the image config (Entrypoint, Cmd, Env, WorkingDir).
+Missing/empty boot spec fails the cold boot. Optional `-rootfs` / `-boot-spec`
+exist only for test/dev Ensures without an image.
 
 ### OCI image → ext4 rootfs
 
@@ -131,10 +124,13 @@ go run ./cmd/ocirootfs -cache-dir /tmp/oci-rootfs \
   ghcr.io/me/app@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 ```
 
-Agent `POST /v1/instances/ensure` accepts optional `"image": "repo@sha256:…"`,
-`"gen"`, and `"no_idle"`. When `image` is set, `Config.RootfsResolver` (wired
-in `cmd/agent`) materializes that digest instead of cloning `-rootfs`. `gen`
-names a parallel microVM as `app.gen` so drain cutover can run two revisions.
+Agent `POST /v1/instances/ensure` accepts `"image": "repo@sha256:…"` (required
+for real apps), `"gen"`, and `"no_idle"`. `Config.RootfsResolver` (wired in
+`cmd/agent`) materializes that digest. `gen` names a parallel microVM as
+`app.gen` so drain cutover can run two revisions.
+
+`TestDeployFortuneE2E` packs `cmd/fortune` with `internal/apppack`, runs
+`RunDeploy`, and checks cutover Ensure + OCI materialize.
 
 ### Deploy cutover
 
@@ -147,7 +143,7 @@ A new digest is a new rootfs/generation. The gateway (`-drain-timeout`, default
 | **kick** | Cancel old sessions, stop old VM, cut over immediately |
 
 `internal/cutover.Controller` is wired in `cmd/gateway` (agent or orchestrator
-`POST /v1/ensure` + `/v1/stop`). Local fortune ignores gens (routing-only).
+`POST /v1/ensure` + `/v1/stop`).
 
 ### Snapshot sleep / wake
 

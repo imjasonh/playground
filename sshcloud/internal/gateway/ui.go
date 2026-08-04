@@ -9,12 +9,13 @@ import (
 
 // term is a minimal line-oriented SSH UI (CRLF-friendly).
 type term struct {
+	rw  io.ReadWriter
 	in  *bufio.Reader
 	out io.Writer
 }
 
 func newTerm(rw io.ReadWriter) *term {
-	return &term{in: bufio.NewReader(rw), out: rw}
+	return &term{rw: rw, in: bufio.NewReader(rw), out: rw}
 }
 
 func (t *term) Printf(format string, args ...any) {

@@ -47,3 +47,14 @@ resource "ko_build" "api" {
 
   depends_on = [google_artifact_registry_repository.sshcloud]
 }
+
+# Sample SSH app — deploy this digest like any other user app (not a gateway builtin).
+resource "ko_build" "fortune" {
+  importpath  = "github.com/imjasonh/playground/sshcloud/cmd/fortune"
+  working_dir = "${path.module}/.."
+  repo        = "${local.registry}/fortune"
+  platforms   = ["linux/amd64"]
+  sbom        = "none"
+
+  depends_on = [google_artifact_registry_repository.sshcloud]
+}

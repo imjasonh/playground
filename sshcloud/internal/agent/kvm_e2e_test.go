@@ -5,20 +5,29 @@ package agent_test
 import (
 	"context"
 	"fmt"
+	"io"
+	"log"
 	"net"
+	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/go-containerregistry/pkg/registry"
+
 	"github.com/imjasonh/playground/sshcloud/internal/agent"
+	"github.com/imjasonh/playground/sshcloud/internal/apppack"
 	"github.com/imjasonh/playground/sshcloud/internal/firecracker"
-	"github.com/imjasonh/playground/sshcloud/internal/guestinit"
+	"github.com/imjasonh/playground/sshcloud/internal/ocirootfs"
 	"github.com/imjasonh/playground/sshcloud/internal/snapshot"
 )
 
-// Real Firecracker e2e. Requires /dev/kvm, CAP_NET_ADMIN (TAP), and assets
-// prepared by hack/run-kvm-e2e.sh (env SSHCLOUD_*).
+// Real Firecracker e2e via the normal deploy path: fortune as a digest-pinned
+// OCI image (not a built-in base rootfs). Requires /dev/kvm, CAP_NET_ADMIN,
+// and assets from hack/run-kvm-e2e.sh (SSHCLOUD_*).
 func TestKVMSleepWake(t *testing.T) {
 	cfg := kvmConfig(t)
 	work := shortWorkDir(t, "sw")
@@ -35,7 +44,7 @@ func TestKVMSleepWake(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
-	in, err := mgr.Ensure(ctx, "alice", "fortune")
+	in, err := mgr.EnsureWith(ctx, "alice", "fortune", agent.EnsureOpts{Image: cfg.image})
 	if err != nil {
 		t.Fatalf("boot: %v", err)
 	}
@@ -50,12 +59,11 @@ func TestKVMSleepWake(t *testing.T) {
 	if !ok || st.State != agent.StateSleeping {
 		t.Fatalf("expected sleeping, got ok=%v %+v", ok, st)
 	}
-	// Guest should be down while sleeping.
 	if err := dialTCP(in.Addr, 500*time.Millisecond); err == nil {
 		t.Fatal("guest still accepting connections while sleeping")
 	}
 
-	woken, err := mgr.Ensure(ctx, "alice", "fortune")
+	woken, err := mgr.EnsureWith(ctx, "alice", "fortune", agent.EnsureOpts{Image: cfg.image})
 	if err != nil {
 		t.Fatalf("wake: %v", err)
 	}
@@ -87,7 +95,7 @@ func TestKVMCrossHostMigrate(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
 
-	in, err := mgrA.Ensure(ctx, "bob", "fortune")
+	in, err := mgrA.EnsureWith(ctx, "bob", "fortune", agent.EnsureOpts{Image: cfg.image})
 	if err != nil {
 		t.Fatalf("boot on A: %v", err)
 	}
@@ -112,69 +120,90 @@ func TestKVMCrossHostMigrate(t *testing.T) {
 	if err := dialTCP(adopted.Addr, 15*time.Second); err != nil {
 		t.Fatalf("dial B after adopt %s: %v", adopted.Addr, err)
 	}
-	// Guest IP preserved across migrate (Firecracker memory).
 	if adopted.GuestIP != in.GuestIP {
 		t.Fatalf("guest IP changed: %s → %s", in.GuestIP, adopted.GuestIP)
 	}
 }
 
 type kvmAssets struct {
-	fc, kernel, rootfs, caPub, guestInit string
-	bootSpec                             guestinit.Spec
+	fc, kernel, caPub, guestInit, image string
+	ociCache                            string
 }
 
 func kvmManagerConfig(cfg kvmAssets, workDir string, store snapshot.Store, subnet string) agent.Config {
+	cache := cfg.ociCache
 	return agent.Config{
 		WorkDir:        workDir,
 		FirecrackerBin: cfg.fc,
 		KernelPath:     cfg.kernel,
-		BaseRootfs:     cfg.rootfs,
 		CAPubPath:      cfg.caPub,
 		GuestInitPath:  cfg.guestInit,
-		BaseBootSpec:   cfg.bootSpec,
 		SnapStore:      store,
 		IdleTimeout:    0,
 		SubnetBase:     subnet,
+		RootfsResolver: func(ctx context.Context, imageRef string) (agent.ResolvedRootfs, error) {
+			res, err := ocirootfs.Materialize(ctx, imageRef, ocirootfs.Options{CacheDir: cache, SizeMB: 64})
+			if err != nil {
+				return agent.ResolvedRootfs{}, err
+			}
+			return agent.ResolvedRootfs{Path: res.Rootfs, Spec: res.Spec}, nil
+		},
 	}
 }
 
 func kvmConfig(t *testing.T) kvmAssets {
 	t.Helper()
-	// Never Skip: CI and local runners must fail hard if KVM/assets are missing.
 	if !firecracker.Available() {
 		t.Fatal("/dev/kvm not available — enable nested virt (see hack/run-kvm-e2e.sh)")
 	}
+	workRoot := os.Getenv("SSHCLOUD_WORK_ROOT")
+	if workRoot == "" {
+		workRoot = "/tmp/sshcloud-kvm"
+	}
+	ociCache := filepath.Join(workRoot, fmt.Sprintf("oci-cache-%d", os.Getpid()))
+	if err := os.MkdirAll(ociCache, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(ociCache) })
 	a := kvmAssets{
 		fc:        envOr(t, "SSHCLOUD_FIRECRACKER", "firecracker"),
 		kernel:    mustEnv(t, "SSHCLOUD_KERNEL"),
-		rootfs:    mustEnv(t, "SSHCLOUD_ROOTFS"),
 		caPub:     mustEnv(t, "SSHCLOUD_CA_PUB"),
 		guestInit: mustEnv(t, "SSHCLOUD_GUESTINIT"),
+		ociCache:  ociCache,
 	}
-	bootPath := os.Getenv("SSHCLOUD_BOOT_SPEC")
-	if bootPath == "" {
-		bootPath = guestinit.SpecBeside(a.rootfs)
-	}
-	spec, err := guestinit.LoadFile(bootPath)
-	if err != nil {
-		t.Fatalf("boot spec %s: %v", bootPath, err)
-	}
-	if err := spec.Validate(); err != nil {
-		t.Fatalf("boot spec %s: %v", bootPath, err)
-	}
-	a.bootSpec = spec
-	for _, p := range []string{a.kernel, a.rootfs, a.caPub, a.guestInit, bootPath} {
+	for _, p := range []string{a.kernel, a.caPub, a.guestInit} {
 		if _, err := os.Stat(p); err != nil {
 			t.Fatalf("missing asset %s: %v", p, err)
 		}
 	}
 	if _, err := os.Stat(a.fc); err != nil {
-		// allow PATH lookup
 		if a.fc != "firecracker" {
 			t.Fatalf("missing firecracker %s: %v", a.fc, err)
 		}
 	}
+	a.image = publishFortuneImage(t)
 	return a
+}
+
+func publishFortuneImage(t *testing.T) string {
+	t.Helper()
+	if ref := os.Getenv("SSHCLOUD_FORTUNE_IMAGE"); ref != "" {
+		return ref
+	}
+	bin := mustEnv(t, "SSHCLOUD_FORTUNE_BIN")
+	img, err := apppack.Build(apppack.Spec{Binary: bin, GuestPath: "/fortune"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(registry.New(registry.Logger(log.New(io.Discard, "", 0))))
+	t.Cleanup(srv.Close)
+	host := strings.TrimPrefix(srv.URL, "http://")
+	ref, err := apppack.Push(img, host+"/sshcloud/fortune:kvm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ref
 }
 
 func mustEnv(t *testing.T, k string) string {
@@ -202,7 +231,6 @@ func dialTCP(addr string, timeout time.Duration) error {
 	return c.Close()
 }
 
-// shortWorkDir keeps Firecracker API socket paths under the unix sun_path limit.
 func shortWorkDir(t *testing.T, name string) string {
 	t.Helper()
 	root := os.Getenv("SSHCLOUD_WORK_ROOT")

@@ -81,9 +81,6 @@ func (h *Hub) HandleConnect(ctx context.Context, c Connect) (Result, error) {
 	}
 
 	hasApp := func(app string) bool {
-		if store.IsPlatformDemo(app) {
-			return true // deep link / menu may lazy-create
-		}
 		ok, err := h.Store.HasApp(ctx, userID, app)
 		return err == nil && ok
 	}
@@ -102,20 +99,10 @@ func (h *Hub) HandleConnect(ctx context.Context, c Connect) (Result, error) {
 	case route.Deploy:
 		return Result{Action: ActionDeploy, User: userID}, nil
 	case route.App:
-		if err := h.maybeEnsureDemo(ctx, userID, d.App); err != nil {
-			return Result{}, err
-		}
 		return h.admitApp(ctx, userID, d.App)
 	default:
 		return Result{}, fmt.Errorf("unhandled route kind %v", d.Kind)
 	}
-}
-
-func (h *Hub) maybeEnsureDemo(ctx context.Context, userID, app string) error {
-	if !store.IsPlatformDemo(app) {
-		return nil
-	}
-	return h.Store.EnsureDemoApp(ctx, userID, app)
 }
 
 func (h *Hub) pinGen(ctx context.Context, userID, app string) (string, error) {
@@ -181,24 +168,18 @@ func (h *Hub) BindSession(parent context.Context, id session.ID) (context.Contex
 	return ctx, cancel
 }
 
-// OpenApp ensures a demo app exists and admits a session for an already-authenticated user.
+// OpenApp admits a session for an already-authenticated user and existing app.
 // Used by the in-session menu handoff (key auth already happened on the SSH conn).
 func (h *Hub) OpenApp(ctx context.Context, userID, app string) (Result, error) {
 	if userID == "" || app == "" {
 		return Result{}, fmt.Errorf("user and app required")
 	}
-	if err := h.maybeEnsureDemo(ctx, userID, app); err != nil {
+	ok, err := h.Store.HasApp(ctx, userID, app)
+	if err != nil {
 		return Result{}, err
 	}
-	// Non-demo apps must already exist.
-	if !store.IsPlatformDemo(app) {
-		ok, err := h.Store.HasApp(ctx, userID, app)
-		if err != nil {
-			return Result{}, err
-		}
-		if !ok {
-			return Result{}, fmt.Errorf("unknown app %q", app)
-		}
+	if !ok {
+		return Result{}, fmt.Errorf("unknown app %q — deploy it first", app)
 	}
 	return h.admitApp(ctx, userID, app)
 }

@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"strings"
 
 	"golang.org/x/crypto/ssh"
 
@@ -24,14 +25,20 @@ var fortunes = []string{
 }
 
 func main() {
-	addr := flag.String("listen", "127.0.0.1:0", "listen address")
-	caPath := flag.String("ca", "/run/platform/ssh_user_ca.pub", "platform user CA public key")
+	// Defaults match the Firecracker/OCI app contract (PID 1 on :22, CA at /ca.pub).
+	// Local process backends pass -listen/-ca explicitly.
+	addr := flag.String("listen", "0.0.0.0:22", "listen address")
+	caPath := flag.String("ca", "", "platform user CA public key (default: /ca.pub then /run/platform/ssh_user_ca.pub)")
 	hostKeyPath := flag.String("host-key", "", "host key path (ephemeral if empty)")
 	flag.Parse()
 
-	caBytes, err := os.ReadFile(*caPath)
+	caFile := strings.TrimSpace(*caPath)
+	if caFile == "" {
+		caFile = firstExisting("/ca.pub", "/run/platform/ssh_user_ca.pub")
+	}
+	caBytes, err := os.ReadFile(caFile)
 	if err != nil {
-		log.Fatalf("read CA: %v", err)
+		log.Fatalf("read CA %s: %v", caFile, err)
 	}
 	caPub, _, _, _, err := ssh.ParseAuthorizedKey(caBytes)
 	if err != nil {
@@ -68,6 +75,18 @@ func main() {
 		}
 		go handleConn(nc, cfg)
 	}
+}
+
+func firstExisting(paths ...string) string {
+	for _, p := range paths {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	if len(paths) > 0 {
+		return paths[0]
+	}
+	return ""
 }
 
 func handleConn(nc net.Conn, cfg *ssh.ServerConfig) {

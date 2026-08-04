@@ -5,14 +5,15 @@ import (
 	"io"
 	"sort"
 	"strconv"
-
-	"github.com/imjasonh/playground/sshcloud/internal/store"
 )
 
-// RunMenu shows the hub app picker and hands off to an app or deploy stub.
+// RunMenu shows the hub app picker and hands off to an app or deploy.
 func RunMenu(ctx context.Context, ch io.ReadWriter, hub *Hub, keyFP, userID string) {
+	runMenu(ctx, newTerm(ch), hub, keyFP, userID)
+}
+
+func runMenu(ctx context.Context, t *term, hub *Hub, keyFP, userID string) {
 	_ = keyFP
-	t := newTerm(ch)
 	if userID == "" {
 		t.Printf("Not logged in. Complete join first.\n")
 		return
@@ -27,33 +28,25 @@ func RunMenu(ctx context.Context, ch io.ReadWriter, hub *Hub, keyFP, userID stri
 
 		type item struct {
 			label string
-			kind  string // "app" | "demo" | "deploy"
+			kind  string // "app" | "deploy"
 			app   string
 		}
 		var items []item
-		seen := map[string]bool{}
+		sort.Slice(apps, func(i, j int) bool { return apps[i].Name < apps[j].Name })
 		for _, a := range apps {
 			label := a.Name
 			if a.DrainingGen != "" || a.DrainUntilUnix > 0 {
 				label += " — draining"
 			}
 			items = append(items, item{label: label, kind: "app", app: a.Name})
-			seen[a.Name] = true
-		}
-		var demos []string
-		for demo := range store.PlatformDemos {
-			if !seen[demo] {
-				demos = append(demos, demo)
-			}
-		}
-		sort.Strings(demos)
-		for _, demo := range demos {
-			items = append(items, item{label: demo + " (demo)", kind: "demo", app: demo})
 		}
 		items = append(items, item{label: "deploy", kind: "deploy"})
 
 		t.Printf("Apps for %s\n", userID)
 		t.Printf("────────────\n")
+		if len(apps) == 0 {
+			t.Printf("(no apps yet — deploy one)\n")
+		}
 		for i, it := range items {
 			t.Printf("  %d) %s\n", i+1, it.label)
 		}
@@ -76,9 +69,9 @@ func RunMenu(ctx context.Context, ch io.ReadWriter, hub *Hub, keyFP, userID stri
 		it := items[n-1]
 		switch it.kind {
 		case "deploy":
-			RunDeploy(ctx, ch, hub, userID)
+			runDeploy(ctx, t, hub, userID)
 			t.Printf("\n")
-		case "app", "demo":
+		case "app":
 			res, err := hub.OpenApp(ctx, userID, it.app)
 			if err != nil {
 				t.Printf("%v\n\n", err)
@@ -89,7 +82,7 @@ func RunMenu(ctx context.Context, ch io.ReadWriter, hub *Hub, keyFP, userID stri
 				continue
 			}
 			sessCtx, cancel := hub.BindSession(ctx, res.Session)
-			RunAppStub(sessCtx, ch, hub, res)
+			runAppStub(sessCtx, t, hub, res)
 			cancel()
 			hub.ReleaseSession(res.Session)
 			t.Printf("\n")

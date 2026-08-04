@@ -80,7 +80,7 @@ func (m *Memory) GetApp(_ context.Context, userID, app string) (*App, error) {
 	return &cp, nil
 }
 
-// UpsertApp creates or updates a non-demo app record.
+// UpsertApp creates or updates an app record.
 func (m *Memory) UpsertApp(_ context.Context, app App) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -90,17 +90,10 @@ func (m *Memory) UpsertApp(_ context.Context, app App) error {
 	if app.Name == "" {
 		return fmt.Errorf("app name required")
 	}
-	if IsPlatformDemo(app.Name) {
-		return fmt.Errorf("%q is a platform demo; deploy a different name", app.Name)
-	}
 	if m.apps[app.Owner] == nil {
 		m.apps[app.Owner] = make(map[string]*App)
 	}
-	if existing, ok := m.apps[app.Owner][app.Name]; ok && existing.Demo {
-		return fmt.Errorf("%q is a platform demo; deploy a different name", app.Name)
-	}
 	cp := app
-	cp.Demo = false
 	if cp.Tier == "" {
 		cp.Tier = "tiny"
 	}
@@ -108,28 +101,6 @@ func (m *Memory) UpsertApp(_ context.Context, app App) error {
 		cp.SessionStrategy = StrategyDrain
 	}
 	m.apps[app.Owner][app.Name] = &cp
-	return nil
-}
-
-// EnsureDemoApp creates a lazy platform demo app record if missing.
-func (m *Memory) EnsureDemoApp(_ context.Context, userID, app string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if _, ok := m.users[userID]; !ok {
-		return fmt.Errorf("unknown user %q", userID)
-	}
-	if m.apps[userID] == nil {
-		m.apps[userID] = make(map[string]*App)
-	}
-	if _, ok := m.apps[userID][app]; ok {
-		return nil
-	}
-	m.apps[userID][app] = &App{
-		Owner: userID,
-		Name:  app,
-		Tier:  "tiny",
-		Demo:  true,
-	}
 	return nil
 }
 

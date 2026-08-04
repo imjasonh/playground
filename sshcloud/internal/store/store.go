@@ -19,10 +19,9 @@ const (
 type App struct {
 	Owner           string
 	Name            string
-	Image           string // digest-pinned reference; empty for lazy platform demos until first wake
+	Image           string // digest-pinned reference (required for a bootable app)
 	PreviousImage   string // image before last deploy (rollback later)
 	Tier            string // "tiny" | "small"
-	Demo            bool   // platform demo (e.g. fortune) — may lazy-create
 	SessionStrategy string // StrategyDrain | StrategyKick; empty means drain
 	ActiveGen       string // generation receiving new sessions
 	DrainingGen     string // cordoned generation (drain cutover); "" is legacy singleton
@@ -37,17 +36,5 @@ type Store interface {
 	HasApp(ctx context.Context, userID, app string) (bool, error)
 	GetApp(ctx context.Context, userID, app string) (*App, error)
 	UpsertApp(ctx context.Context, app App) error
-	EnsureDemoApp(ctx context.Context, userID, app string) error
 	ListApps(ctx context.Context, userID string) ([]App, error)
-}
-
-// PlatformDemos are app names the menu always offers (lazy-created on connect).
-var PlatformDemos = map[string]struct{}{
-	"fortune": {},
-}
-
-// IsPlatformDemo reports whether name is a lazy platform demo.
-func IsPlatformDemo(name string) bool {
-	_, ok := PlatformDemos[name]
-	return ok
 }
