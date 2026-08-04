@@ -54,9 +54,9 @@ So time points toward the build plate. The roof stays a scannable QR; the
 body is the code dissolving into Life. Consecutive layers still satisfy
 `below = step(above)`.
 
-Because parents sit *above* their children in this stacking, the 45°
-birth-parent ramps from `life-scad` are not enough — keep `strict_supports`
-on (the default) so pillars carry every overhang to the bed.
+Defaults match `life-scad`: `diagonal_ramps` on, `strict_supports` off. With
+time running downward, parents sit above their children, so ramps may leave
+some overhangs; turn on `strict_supports` if you want pillars to the bed.
 
 ## Parameters
 
@@ -72,8 +72,8 @@ on (the default) so pillars carry every overhang to the bed.
 | `overall_width` / `overall_depth` / `overall_height` | Total model size in mm; `0` = derive from `cell_size` / `layer_height`. |
 | `cell_size`, `layer_height` | Per-module footprint and per-generation height. |
 | `cell_overlap` | Tiny inflation so edge/corner touches stay manifold. |
-| `strict_supports` | Pillars under unsupported cells (default on — needed for downward time). |
-| `diagonal_ramps` | Optional ramps to neighbors below; not a substitute for pillars here. |
+| `diagonal_ramps` | Sloped ramps to supporting neighbors below (default on, like `life-scad`). |
+| `strict_supports` | Pillars under unsupported cells (default off). |
 
 ## How it works
 
@@ -96,8 +96,8 @@ on (the default) so pillars carry every overhang to the bed.
   of roof (QR) modules are black so the code reads from above. White QR
   modules are air (no voxel).
 - Leave `quiet_zone` at 4 unless you know your scanner is forgiving.
-- Disable slicer supports when `strict_supports` is on — the pillars are
-  already in the mesh.
+- With default ramps, disable or minimize slicer supports if the mesh already
+  bridges well; enable `strict_supports` for guaranteed pillars to the bed.
 - Long payloads grow the QR version (module count). A version-1 QR is 21×21;
   with quiet zone 4 and margin 2 the footprint is 33×33 modules.
 

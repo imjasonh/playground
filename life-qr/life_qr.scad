@@ -59,10 +59,10 @@ cell_overlap = 0.02;
 
 /* [Supports] */
 
-// Vertical pillars beneath any cell with nothing directly underneath, cascading to the base. Recommended: with time running downward, Life parents sit above their children, so diagonal ramps alone are not enough.
-strict_supports = true;
-// Also add sloped ramps to occupied neighbors in the layer below when a cell has no direct support. Harmless with pillars; alone it is usually insufficient for this stacking direction.
-diagonal_ramps = false;
+// Add sloped ramps to occupied neighbors in the layer below when a cell has no direct support (same default as life-scad).
+diagonal_ramps = true;
+// Instead of (or in addition to) ramps: vertical pillars beneath unsupported cells, cascading to the base. Heavier; useful when layer_height ≫ cell_size.
+strict_supports = false;
 
 /* [Hidden] */
 
