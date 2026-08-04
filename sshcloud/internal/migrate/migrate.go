@@ -9,13 +9,10 @@ import (
 	"github.com/imjasonh/playground/sshcloud/internal/placement"
 )
 
-// Hosts is the set of agent clients keyed by host ID.
-type Hosts map[string]*backend.AgentClient
-
 // Migrator performs cross-host snapshot migrate.
 type Migrator struct {
 	Placement placement.Store
-	Hosts     Hosts
+	Hosts     *backend.HostSet
 }
 
 // Result is the outcome of a successful migrate.
@@ -37,7 +34,7 @@ func (m *Migrator) Migrate(ctx context.Context, user, app, toHost string) (Resul
 	if user == "" || app == "" || toHost == "" {
 		return Result{}, fmt.Errorf("user, app, and toHost required")
 	}
-	target, ok := m.Hosts[toHost]
+	target, ok := m.Hosts.Get(toHost)
 	if !ok {
 		return Result{}, fmt.Errorf("unknown target host %q", toHost)
 	}
@@ -59,7 +56,7 @@ func (m *Migrator) Migrate(ctx context.Context, user, app, toHost string) (Resul
 		}
 		return Result{}, fmt.Errorf("already placed on %s but not running", toHost)
 	}
-	source, ok := m.Hosts[fromHost]
+	source, ok := m.Hosts.Get(fromHost)
 	if !ok {
 		return Result{}, fmt.Errorf("unknown source host %q", fromHost)
 	}

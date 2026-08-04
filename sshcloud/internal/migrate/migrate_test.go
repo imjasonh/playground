@@ -28,10 +28,10 @@ func TestMigrateOrchestration(t *testing.T) {
 	}
 	mig := &migrate.Migrator{
 		Placement: place,
-		Hosts: migrate.Hosts{
+		Hosts: backend.NewHostSet(map[string]*backend.AgentClient{
 			"host-a": {BaseURL: src.URL},
 			"host-b": {BaseURL: dst.URL},
-		},
+		}, "host-a"),
 	}
 
 	res, err := mig.Migrate(ctx, "alice", "fortune", "host-b")

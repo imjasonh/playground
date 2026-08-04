@@ -3,18 +3,19 @@
 //	go run ./cmd/orchestrator \
 //	  -listen 127.0.0.1:8090 \
 //	  -hosts host-a=http://127.0.0.1:8080,host-b=http://127.0.0.1:8081
+//
+//	# GCE MIG: a timer rewrites -hosts-file; orchestrator reloads it.
+//	go run ./cmd/orchestrator -hosts-file /var/lib/sshcloud/hosts
 package main
 
 import (
 	"context"
 	"encoding/json"
 	"flag"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -26,22 +27,28 @@ import (
 func main() {
 	listen := flag.String("listen", "127.0.0.1:8090", "HTTP listen address")
 	hostsFlag := flag.String("hosts", "", "comma-separated hostID=baseURL pairs")
+	hostsFile := flag.String("hosts-file", "", "hosts file (id=url per line); reloaded every 30s")
 	defaultHost := flag.String("default-host", "", "default placement host ID")
 	firestoreProject := flag.String("firestore-project", "", "GCP project for Firestore placement (default: in-memory)")
 	flag.Parse()
 
-	hosts, err := parseHosts(*hostsFlag)
+	initial, err := backend.ParseHostsSpec(*hostsFlag)
 	if err != nil {
 		log.Fatal(err)
 	}
-	if len(hosts) == 0 {
-		log.Fatal("-hosts is required (e.g. a=http://127.0.0.1:8080,b=http://127.0.0.1:8081)")
-	}
-	if *defaultHost == "" {
-		for id := range hosts {
-			*defaultHost = id
-			break
+	if *hostsFile != "" {
+		fromFile, err := backend.LoadHostsFile(*hostsFile)
+		if err != nil {
+			if len(initial) == 0 && !os.IsNotExist(err) {
+				log.Fatalf("hosts-file: %v", err)
+			}
+			log.Printf("hosts-file: %v (starting with -hosts / empty)", err)
+		} else {
+			initial = fromFile
 		}
+	}
+	if len(initial) == 0 && *hostsFile == "" {
+		log.Fatal("-hosts or -hosts-file is required")
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -59,13 +66,26 @@ func main() {
 	} else {
 		log.Printf("placement: in-memory")
 	}
+
+	hosts := backend.NewHostSet(initial, *defaultHost)
 	mig := &migrate.Migrator{Placement: place, Hosts: hosts}
 	dial := &backend.PlacedDial{Placement: place, Agents: hosts, DefaultHost: *defaultHost}
+
+	if *hostsFile != "" {
+		go watchHostsFile(ctx, *hostsFile, hosts)
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
+	})
+	mux.HandleFunc("GET /v1/hosts", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"hosts":   hosts.IDs(),
+			"default": hosts.DefaultHost(),
+		})
 	})
 	mux.HandleFunc("POST /v1/migrate", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -120,7 +140,7 @@ func main() {
 
 	srv := &http.Server{Addr: *listen, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	go func() {
-		log.Printf("sshcloud orchestrator on %s (hosts=%v default=%s)", *listen, hostIDs(hosts), *defaultHost)
+		log.Printf("sshcloud orchestrator on %s (hosts=%v default=%s)", *listen, hosts.IDs(), hosts.DefaultHost())
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatal(err)
 		}
@@ -130,30 +150,25 @@ func main() {
 	_ = srv.Close()
 }
 
-func parseHosts(s string) (migrate.Hosts, error) {
-	out := make(migrate.Hosts)
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return out, nil
-	}
-	for _, part := range strings.Split(s, ",") {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
+func watchHostsFile(ctx context.Context, path string, hosts *backend.HostSet) {
+	tick := time.NewTicker(30 * time.Second)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+			m, err := backend.LoadHostsFile(path)
+			if err != nil {
+				log.Printf("hosts-file reload: %v", err)
+				continue
+			}
+			if len(m) == 0 {
+				log.Printf("hosts-file reload: empty, keeping previous")
+				continue
+			}
+			hosts.Replace(m)
+			log.Printf("hosts-file reload: %v", hosts.IDs())
 		}
-		id, url, ok := strings.Cut(part, "=")
-		if !ok || id == "" || url == "" {
-			return nil, fmt.Errorf("invalid -hosts entry %q (want id=url)", part)
-		}
-		out[id] = &backend.AgentClient{BaseURL: strings.TrimRight(url, "/")}
 	}
-	return out, nil
-}
-
-func hostIDs(h migrate.Hosts) []string {
-	ids := make([]string, 0, len(h))
-	for id := range h {
-		ids = append(ids, id)
-	}
-	return ids
 }

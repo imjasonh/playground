@@ -30,7 +30,7 @@ func TestOrchestratorClientAddr(t *testing.T) {
 
 	dial := &backend.PlacedDial{
 		Placement:   place,
-		Agents:      agents,
+		Agents:      backend.NewHostSet(agents, "host-a"),
 		DefaultHost: "host-a",
 	}
 	orch := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -74,7 +74,7 @@ func TestPlacedDialUnknownHost(t *testing.T) {
 	_ = place.Set(t.Context(), "alice", "fortune", "missing")
 	dial := &backend.PlacedDial{
 		Placement: place,
-		Agents:    map[string]*backend.AgentClient{},
+		Agents:    backend.NewHostSet(map[string]*backend.AgentClient{}, ""),
 	}
 	if _, err := dial.Addr("alice", "fortune"); err == nil {
 		t.Fatal("expected error for unknown host")

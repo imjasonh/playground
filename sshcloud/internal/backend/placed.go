@@ -10,8 +10,8 @@ import (
 // PlacedDial resolves (user, app) → host agent via placement, then Ensures.
 type PlacedDial struct {
 	Placement   placement.Store
-	Agents      map[string]*AgentClient // hostID → client
-	DefaultHost string                  // used when no placement yet
+	Agents      *HostSet
+	DefaultHost string // used when no placement yet; empty falls back to Agents.DefaultHost
 }
 
 // Addr implements gateway.DialFunc.
@@ -23,6 +23,9 @@ func (p *PlacedDial) Addr(user, app string) (string, error) {
 	}
 	if !ok {
 		host = p.DefaultHost
+		if host == "" && p.Agents != nil {
+			host = p.Agents.DefaultHost()
+		}
 		if host == "" {
 			return "", fmt.Errorf("no placement for %s/%s and no DefaultHost", user, app)
 		}
@@ -30,7 +33,10 @@ func (p *PlacedDial) Addr(user, app string) (string, error) {
 			return "", err
 		}
 	}
-	c, ok := p.Agents[host]
+	if p.Agents == nil {
+		return "", fmt.Errorf("unknown host %q for %s/%s", host, user, app)
+	}
+	c, ok := p.Agents.Get(host)
 	if !ok {
 		return "", fmt.Errorf("unknown host %q for %s/%s", host, user, app)
 	}
