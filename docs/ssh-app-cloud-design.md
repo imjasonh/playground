@@ -313,6 +313,15 @@ GCE host MIG ── host agent ── Firecracker ── app :22
 - Wake = restore snapshot (memory + ephemeral disk).
 - Optional **GCS-backed volumes** remount/reattach across sleep/migrate.
 
+**Implemented in `sshcloud/` (host-local path first):**
+- Firecracker `Pause` → `CreateSnapshot` → kill VMM; wake via `snapshot/load` + `Resume`.
+- Package: `vm.state` + `vm.mem` + `rootfs.ext4` + `meta.json` (network identity).
+- Stores: `internal/snapshot.LocalStore` and `GCSStore`; agent `-snap-dir` /
+  `-gcs-bucket`, idle via `-idle` (default 5m, `0` disables).
+- TAP kept across sleep; `Ensure` / `POST /v1/instances/wake` restores.
+- Still open: cross-host migrate, gateway loading TUI while waking, session-aware
+  idle (today: agent `LastUsed` on Ensure, not live SSH connection count).
+
 ### Migration (host drain / bin-pack)
 
 1. Freeze microVM (gateway **buffers** client I/O, time-capped)  
@@ -505,7 +514,8 @@ hits, wake/deploy denials — still **no session bytes**.
 2. **OCI → rootfs pipeline** — fortune ext4 builder + Firecracker agent exist
    (`sshcloud/internal/rootfs`, `internal/agent`); still need general OCI unpack,
    size limits, caching, and first warm snapshot per digest.  
-3. **Idle timeout numbers** — e.g. sleep after N minutes with zero sessions.  
+3. ~~**Idle timeout numbers**~~ — agent default **5 minutes** (`-idle`); refine
+   when to count “zero sessions” vs last Ensure touch.  
 4. **Freeze buffer cap** — max migrate hold before forced reconnect.  
 5. **Deploy drain-timeout default** — e.g. 5 minutes; per-deploy override.  
 6. **Tier numbers** — concrete vCPU/RAM/disk for `tiny` / `small`.  

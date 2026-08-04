@@ -15,9 +15,10 @@ Design: [`docs/ssh-app-cloud-design.md`](../docs/ssh-app-cloud-design.md).
 | `cmd/mkrootfs` | Build fortune ext4 rootfs for Firecracker |
 | `cmd/orchestrator` | Placement / wake / deploy cutover (stub) |
 | `cmd/api` | Internal control API stub |
-| `internal/firecracker` | Firecracker API client, TAP helpers |
+| `internal/firecracker` | Firecracker API client, TAP, pause/snapshot/restore |
+| `internal/snapshot` | Snapshot package format + local/GCS blob stores |
 | `internal/rootfs` | ext4 build via mkfs.ext4 + debugfs |
-| `internal/agent` | Instance manager |
+| `internal/agent` | Instance manager (boot, idle sleep, wake) |
 | `hack/fetch-firecracker-assets.sh` | Download firecracker + kernel |
 
 ## Build & test
@@ -53,13 +54,16 @@ go run ./cmd/gateway -user-ca ./ssh_user_ca &  # once, to create CA; Ctrl-C afte
 go run ./cmd/mkrootfs -fortune _assets/fortune -ca-pub ssh_user_ca.pub -out _assets/fortune-rootfs.ext4
 
 # 2) agent (needs root/KVM for TAP + microVMs)
+# Idle VMs snapshot to <work-dir>/snapshots (or -gcs-bucket) after -idle.
 sudo ./bin/agent \
   -listen 127.0.0.1:8080 \
   -work-dir /tmp/sshcloud-agent \
   -firecracker "$PWD/_assets/firecracker" \
   -kernel "$PWD/_assets/vmlinux" \
   -rootfs "$PWD/_assets/fortune-rootfs.ext4" \
-  -ca-pub "$PWD/ssh_user_ca.pub"
+  -ca-pub "$PWD/ssh_user_ca.pub" \
+  -idle 5m \
+  -snap-dir /tmp/sshcloud-agent/snapshots
 
 # 3) gateway → agent
 go run ./cmd/gateway -listen 127.0.0.1:2222 -agent-url http://127.0.0.1:8080
@@ -68,11 +72,21 @@ go run ./cmd/gateway -listen 127.0.0.1:2222 -agent-url http://127.0.0.1:8080
 Guest boot: `init=/fortune -- -listen 0.0.0.0:22 -ca /ca.pub` on a static
 TAP subnet; gateway mints a user cert and dials `guestIP:22`.
 
+### Snapshot sleep / wake
+
+- Package: `vm.state` + `vm.mem` + `rootfs.ext4` + `meta.json` (tap/IP/MAC).
+- Agent API: `POST /v1/instances/sleep`, `POST /v1/instances/wake` (or
+  `ensure`, which wakes if sleeping), `GET /v1/instances/status?user=&app=`.
+- Default store is local under `-snap-dir`; production uses `-gcs-bucket`.
+- TAP is kept across sleep; wake restores into the same network identity.
+- Full e2e needs `/dev/kvm` (not exercised in CI on this host).
+
 ## Status
 
 - [x] Routing, session admission, memory store
 - [x] SSH gateway: join, menu, busy reject
 - [x] User CA + cert hop (process or Firecracker)
 - [x] Host agent + Firecracker client + rootfs builder
-- [ ] Snapshot-on-sleep / migrate, deploy TUI, Firestore
+- [x] Snapshot-on-sleep (local + GCS store; idle loop; wake on ensure)
+- [ ] Host migrate via snapshot, deploy TUI, Firestore
 - [ ] Orchestrator / Terraform

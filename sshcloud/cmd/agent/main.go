@@ -1,4 +1,7 @@
 // Command agent runs on each GCE host and manages Firecracker microVMs.
+//
+// Idle instances are snapshotted to -snap-dir (or -gcs-bucket) and restored on
+// the next Ensure / POST /v1/instances/wake.
 package main
 
 import (
@@ -8,9 +11,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/imjasonh/playground/sshcloud/internal/agent"
+	"github.com/imjasonh/playground/sshcloud/internal/snapshot"
 )
 
 func main() {
@@ -20,10 +26,37 @@ func main() {
 	kernel := flag.String("kernel", "", "path to vmlinux")
 	rootfsPath := flag.String("rootfs", "", "path to base ext4 rootfs (fortune)")
 	caPub := flag.String("ca-pub", "", "platform user CA public key to inject")
+	snapDir := flag.String("snap-dir", "", "local snapshot directory (default: <work-dir>/snapshots)")
+	gcsBucket := flag.String("gcs-bucket", "", "GCS bucket for snapshots (overrides -snap-dir)")
+	gcsPrefix := flag.String("gcs-prefix", "sshcloud/snaps", "GCS object key prefix")
+	idle := flag.Duration("idle", 5*time.Minute, "idle time before snapshot-sleep (0=disable)")
 	flag.Parse()
 
 	if *kernel == "" || *rootfsPath == "" {
 		log.Fatal("-kernel and -rootfs are required")
+	}
+
+	var store snapshot.Store
+	switch {
+	case *gcsBucket != "":
+		s, err := snapshot.NewGCSStore(context.Background(), *gcsBucket, *gcsPrefix)
+		if err != nil {
+			log.Fatalf("gcs store: %v", err)
+		}
+		defer s.Close()
+		store = s
+		log.Printf("snapshot store: gs://%s/%s", *gcsBucket, *gcsPrefix)
+	default:
+		dir := *snapDir
+		if dir == "" {
+			dir = filepath.Join(*workDir, "snapshots")
+		}
+		s, err := snapshot.NewLocalStore(dir)
+		if err != nil {
+			log.Fatal(err)
+		}
+		store = s
+		log.Printf("snapshot store: %s", dir)
 	}
 
 	mgr, err := agent.NewManager(agent.Config{
@@ -32,6 +65,8 @@ func main() {
 		KernelPath:     *kernel,
 		BaseRootfs:     *rootfsPath,
 		CAPubPath:      *caPub,
+		SnapStore:      store,
+		IdleTimeout:    *idle,
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -41,9 +76,9 @@ func main() {
 	mux := http.NewServeMux()
 	(&agent.Handler{Manager: mgr}).Mount(mux)
 
-	srv := &http.Server{Addr: *listen, Handler: mux}
+	srv := &http.Server{Addr: *listen, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	go func() {
-		log.Printf("sshcloud agent on %s", *listen)
+		log.Printf("sshcloud agent on %s (idle=%s)", *listen, idle.String())
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatal(err)
 		}

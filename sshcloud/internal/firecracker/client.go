@@ -81,15 +81,7 @@ func Start(ctx context.Context, cfg Config) (*Machine, error) {
 	m := &Machine{
 		cfg: cfg,
 		cmd: cmd,
-		hc: &http.Client{
-			Transport: &http.Transport{
-				DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-					var d net.Dialer
-					return d.DialContext(ctx, "unix", cfg.SocketPath)
-				},
-			},
-			Timeout: 10 * time.Second,
-		},
+		hc:  newUnixHTTPClient(cfg.SocketPath),
 	}
 	if err := m.waitSocket(ctx); err != nil {
 		_ = m.Stop()
@@ -162,7 +154,7 @@ func (m *Machine) configure(ctx context.Context) error {
 	if err := m.put(ctx, "/drives/1", map[string]any{
 		"drive_id":       "1",
 		"path_on_host":   m.cfg.RootfsPath,
-		"is_root_device":  true,
+		"is_root_device": true,
 		"is_read_only":   false,
 	}); err != nil {
 		return fmt.Errorf("drives: %w", err)
@@ -254,4 +246,16 @@ func WaitTCP(ctx context.Context, addr string, timeout time.Duration) error {
 func Available() bool {
 	_, err := os.Stat("/dev/kvm")
 	return err == nil
+}
+
+func newUnixHTTPClient(socketPath string) *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				var d net.Dialer
+				return d.DialContext(ctx, "unix", socketPath)
+			},
+		},
+		Timeout: 30 * time.Second,
+	}
 }
