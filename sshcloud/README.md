@@ -13,12 +13,14 @@ Design: [`docs/ssh-app-cloud-design.md`](../docs/ssh-app-cloud-design.md).
 | `cmd/agent` | Host agent: Firecracker lifecycle + HTTP API |
 | `cmd/fortune` | Sample SSH app (verifies platform user certs) |
 | `cmd/mkrootfs` | Build fortune ext4 rootfs for Firecracker |
-| `cmd/orchestrator` | Placement / wake / deploy cutover (stub) |
+| `cmd/orchestrator` | Placement + cross-host migrate HTTP API |
 | `cmd/api` | Internal control API stub |
 | `internal/firecracker` | Firecracker API client, TAP, pause/snapshot/restore |
 | `internal/snapshot` | Snapshot package format + local/GCS blob stores |
+| `internal/placement` | user/app → host ID map |
+| `internal/migrate` | Cross-host Sleep→Evict→Adopt |
 | `internal/rootfs` | ext4 build via mkfs.ext4 + debugfs |
-| `internal/agent` | Instance manager (boot, idle sleep, wake) |
+| `internal/agent` | Instance manager (boot, idle sleep, wake, adopt/evict) |
 | `hack/fetch-firecracker-assets.sh` | Download firecracker + kernel |
 
 ## Build & test
@@ -79,7 +81,27 @@ TAP subnet; gateway mints a user cert and dials `guestIP:22`.
   `ensure`, which wakes if sleeping), `GET /v1/instances/status?user=&app=`.
 - Default store is local under `-snap-dir`; production uses `-gcs-bucket`.
 - TAP is kept across sleep; wake restores into the same network identity.
-- Full e2e needs `/dev/kvm` (not exercised in CI on this host).
+- Full Firecracker e2e needs `/dev/kvm` (not exercised in CI on this host).
+
+### Cross-host migrate
+
+Flow: source `Sleep` → `Evict` (keep shared snapshot) → target `Adopt` →
+update placement. Orchestrator:
+
+```bash
+go run ./cmd/orchestrator \
+  -listen 127.0.0.1:8090 \
+  -hosts host-a=http://127.0.0.1:8080,host-b=http://127.0.0.1:8081 \
+  -default-host host-a
+
+curl -X POST http://127.0.0.1:8090/v1/migrate \
+  -d '{"user":"alice","app":"fortune","to":"host-b"}'
+```
+
+Agent APIs: `POST /v1/instances/evict`, `POST /v1/instances/adopt`.
+
+Working e2e (no KVM): `go test ./internal/migrate/ -run TestCrossHostMigrateE2E`
+uses two fake-runtime agents + shared `LocalStore`.
 
 ## Status
 
@@ -88,5 +110,6 @@ TAP subnet; gateway mints a user cert and dials `guestIP:22`.
 - [x] User CA + cert hop (process or Firecracker)
 - [x] Host agent + Firecracker client + rootfs builder
 - [x] Snapshot-on-sleep (local + GCS store; idle loop; wake on ensure)
-- [ ] Host migrate via snapshot, deploy TUI, Firestore
-- [ ] Orchestrator / Terraform
+- [x] Cross-host migrate (Sleep→Evict→Adopt + placement; fake-runtime e2e)
+- [ ] Gateway freeze-buffer during migrate, deploy TUI, Firestore
+- [ ] Terraform

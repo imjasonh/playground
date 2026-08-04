@@ -319,8 +319,9 @@ GCE host MIG ── host agent ── Firecracker ── app :22
 - Stores: `internal/snapshot.LocalStore` and `GCSStore`; agent `-snap-dir` /
   `-gcs-bucket`, idle via `-idle` (default 5m, `0` disables).
 - TAP kept across sleep; `Ensure` / `POST /v1/instances/wake` restores.
-- Still open: cross-host migrate, gateway loading TUI while waking, session-aware
-  idle (today: agent `LastUsed` on Ensure, not live SSH connection count).
+- Still open: gateway loading TUI while waking, session-aware idle (today:
+  agent `LastUsed` on Ensure, not live SSH connection count). Cross-host
+  migrate: see below.
 
 ### Migration (host drain / bin-pack)
 
@@ -329,6 +330,17 @@ GCE host MIG ── host agent ── Firecracker ── app :22
 3. Restore on target host  
 4. Re-point gateway routing  
 5. Thaw; if over cap → force reconnect  
+
+**Implemented in `sshcloud/` (control-plane path; no live SSH buffer yet):**
+- Agent: `Sleep` → `Evict` (drop local TAP/workdir, **keep** shared snapshot) →
+  target `Adopt` (restore from store with new local TAP name, same guest IP/MAC).
+- `internal/placement` maps `user/app` → host ID; `internal/migrate.Migrator`
+  orchestrates the cutover with best-effort rollback Adopt on the source.
+- `cmd/orchestrator` exposes `POST /v1/migrate` and placement-aware `POST /v1/ensure`.
+- E2E without KVM: `FakeRuntime` (localhost TCP) + shared `LocalStore` —
+  `go test ./internal/migrate -run TestCrossHostMigrateE2E`.
+- Still open: gateway I/O freeze buffer during migrate, force-reconnect on
+  timeout, session pin invalidation, Firestore-backed placement.
 
 ---
 

@@ -4,7 +4,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"net"
 	"os"
 	"path/filepath"
 	"sync"
@@ -43,8 +42,8 @@ type Instance struct {
 	Rootfs   string
 	WorkDir  string
 	LastUsed time.Time
-	machine  *firecracker.Machine
-	snapKey  string // blob store key when sleeping
+	machine  machine
+	snapKey  string
 }
 
 // Config for the Manager.
@@ -57,13 +56,18 @@ type Config struct {
 	SubnetBase     string // default 172.16
 	// IdleTimeout after LastUsed with no Ensure; 0 disables auto-sleep.
 	IdleTimeout time.Duration
-	// SnapStore persists sleep snapshots (required for sleep). Local or GCS.
+	// SnapStore persists sleep snapshots (required for sleep/migrate).
 	SnapStore snapshot.Store
+	// Runtime boots VMs; nil selects FirecrackerRuntime.
+	Runtime Runtime
+	// SkipTap skips host TAP setup (used with FakeRuntime).
+	SkipTap bool
 }
 
-// Manager boots, sleeps, and wakes Firecracker instances.
+// Manager boots, sleeps, wakes, and migrates Firecracker instances.
 type Manager struct {
 	cfg  Config
+	rt   Runtime
 	mu   sync.Mutex
 	inst map[InstanceKey]*Instance
 	seq  int
@@ -81,12 +85,19 @@ func NewManager(cfg Config) (*Manager, error) {
 	if cfg.SubnetBase == "" {
 		cfg.SubnetBase = "172.16"
 	}
-	// IdleTimeout 0 disables auto-sleep (callers set a positive default, e.g. 5m).
+	rt := cfg.Runtime
+	if rt == nil {
+		rt = FirecrackerRuntime{}
+	}
+	if _, ok := rt.(*FakeRuntime); ok {
+		cfg.SkipTap = true
+	}
 	if err := os.MkdirAll(cfg.WorkDir, 0o755); err != nil {
 		return nil, err
 	}
 	m := &Manager{
 		cfg:  cfg,
+		rt:   rt,
 		inst: make(map[InstanceKey]*Instance),
 		stop: make(chan struct{}),
 	}
@@ -126,7 +137,7 @@ func (m *Manager) Ensure(ctx context.Context, user, app string) (*Instance, erro
 }
 
 func (m *Manager) bootCold(ctx context.Context, k InstanceKey, n int) (*Instance, error) {
-	if !firecracker.Available() {
+	if !m.rt.Available() {
 		return nil, fmt.Errorf("firecracker requires /dev/kvm (not available on this host)")
 	}
 	dir := filepath.Join(m.cfg.WorkDir, fmt.Sprintf("vm-%d", n))
@@ -134,12 +145,21 @@ func (m *Manager) bootCold(ctx context.Context, k InstanceKey, n int) (*Instance
 		return nil, err
 	}
 	rootfsPath := filepath.Join(dir, "rootfs.ext4")
-	if err := rootfs.Clone(m.cfg.BaseRootfs, rootfsPath); err != nil {
-		return nil, err
-	}
-	if m.cfg.CAPubPath != "" {
-		if err := rootfs.InjectFile(rootfsPath, m.cfg.CAPubPath, "ca.pub", "0644"); err != nil {
-			return nil, fmt.Errorf("inject CA: %w", err)
+	if m.cfg.SkipTap {
+		if err := rootfs.Clone(m.cfg.BaseRootfs, rootfsPath); err != nil {
+			// Base may be missing in fake tests — synthesize.
+			if err := ensureRootfsFile(rootfsPath); err != nil {
+				return nil, err
+			}
+		}
+	} else {
+		if err := rootfs.Clone(m.cfg.BaseRootfs, rootfsPath); err != nil {
+			return nil, err
+		}
+		if m.cfg.CAPubPath != "" {
+			if err := rootfs.InjectFile(rootfsPath, m.cfg.CAPubPath, "ca.pub", "0644"); err != nil {
+				return nil, fmt.Errorf("inject CA: %w", err)
+			}
 		}
 	}
 
@@ -147,38 +167,33 @@ func (m *Manager) bootCold(ctx context.Context, k InstanceKey, n int) (*Instance
 	octet := n%200 + 1
 	hostIP := fmt.Sprintf("%s.%d.1", m.cfg.SubnetBase, octet)
 	guestIP := fmt.Sprintf("%s.%d.2", m.cfg.SubnetBase, octet)
-	if err := firecracker.CreateTap(tapName, hostIP, 24); err != nil {
-		return nil, fmt.Errorf("create tap: %w (agent needs CAP_NET_ADMIN)", err)
+	if !m.cfg.SkipTap {
+		if err := firecracker.CreateTap(tapName, hostIP, 24); err != nil {
+			return nil, fmt.Errorf("create tap: %w (agent needs CAP_NET_ADMIN)", err)
+		}
 	}
 
 	mac := fmt.Sprintf("AA:FC:00:00:%02x:%02x", (n>>8)&0xff, n&0xff)
 	bootArgs := firecracker.GuestBootArgs(guestIP, hostIP, "255.255.255.0", k.App)
 	bootArgs += " init=/fortune -- -listen 0.0.0.0:22 -ca /ca.pub"
 
-	sock := filepath.Join(dir, "firecracker.sock")
-	logPath := filepath.Join(dir, "firecracker.log")
-	machine, err := firecracker.Start(ctx, firecracker.Config{
+	mach, addr, err := m.rt.Boot(ctx, BootSpec{
 		FirecrackerBin: m.cfg.FirecrackerBin,
-		SocketPath:     sock,
+		WorkDir:        dir,
 		KernelPath:     m.cfg.KernelPath,
 		RootfsPath:     rootfsPath,
 		BootArgs:       bootArgs,
+		TapName:        tapName,
+		GuestMAC:       mac,
+		GuestIP:        guestIP,
 		VCPUs:          1,
 		MemMiB:         128,
-		TapDevice:      tapName,
-		GuestMAC:       mac,
-		LogPath:        logPath,
 	})
 	if err != nil {
-		_ = firecracker.DeleteTap(tapName)
+		if !m.cfg.SkipTap {
+			_ = firecracker.DeleteTap(tapName)
+		}
 		return nil, err
-	}
-
-	addr := net.JoinHostPort(guestIP, "22")
-	if err := firecracker.WaitTCP(ctx, addr, 30*time.Second); err != nil {
-		_ = machine.Stop()
-		_ = firecracker.DeleteTap(tapName)
-		return nil, fmt.Errorf("guest SSH not ready: %w (see %s)", err, logPath)
 	}
 
 	return &Instance{
@@ -192,7 +207,7 @@ func (m *Manager) bootCold(ctx context.Context, k InstanceKey, n int) (*Instance
 		Rootfs:   rootfsPath,
 		WorkDir:  dir,
 		LastUsed: time.Now(),
-		machine:  machine,
+		machine:  mach,
 	}, nil
 }
 
@@ -244,7 +259,7 @@ func (m *Manager) Sleep(ctx context.Context, user, app string) error {
 		m.mu.Unlock()
 		return fmt.Errorf("instance %s not running", k)
 	}
-	machine := in.machine
+	mach := in.machine
 	m.mu.Unlock()
 
 	snapDir := filepath.Join(in.WorkDir, "snap")
@@ -253,12 +268,11 @@ func (m *Manager) Sleep(ctx context.Context, user, app string) error {
 	if err := os.MkdirAll(snapDir, 0o755); err != nil {
 		return err
 	}
-	// Copy live rootfs into package (mutable disk state).
 	if err := rootfs.Clone(in.Rootfs, pkg.RootfsPath); err != nil {
 		return fmt.Errorf("clone rootfs for snap: %w", err)
 	}
 	files := firecracker.SnapshotFiles{StatePath: pkg.StatePath, MemPath: pkg.MemPath}
-	if err := machine.SnapshotThenKill(ctx, files); err != nil {
+	if err := mach.SnapshotThenKill(ctx, files); err != nil {
 		return err
 	}
 
@@ -276,10 +290,10 @@ func (m *Manager) Sleep(ctx context.Context, user, app string) error {
 	}
 	key := snapshot.KeyFor(user, app)
 	if err := m.cfg.SnapStore.Put(ctx, key, pkg); err != nil {
-		// Best-effort wake from the local package so the instance isn't lost.
-		if restored, wakeErr := m.restoreFromPackage(ctx, in, pkg); wakeErr == nil {
+		if restored, addr, wakeErr := m.restoreFromPackage(ctx, in, pkg); wakeErr == nil {
 			m.mu.Lock()
 			in.machine = restored
+			in.Addr = addr
 			in.State = StateRunning
 			m.mu.Unlock()
 		} else {
@@ -299,8 +313,112 @@ func (m *Manager) Sleep(ctx context.Context, user, app string) error {
 	return nil
 }
 
+// Evict drops a sleeping instance from this host without deleting the snapshot.
+// Used after Sleep as the source side of cross-host migrate. Deletes TAP and workdir.
+func (m *Manager) Evict(user, app string) error {
+	k := InstanceKey{User: user, App: app}
+	m.mu.Lock()
+	in, ok := m.inst[k]
+	if !ok {
+		m.mu.Unlock()
+		return nil
+	}
+	if in.State == StateRunning && in.machine != nil {
+		m.mu.Unlock()
+		return fmt.Errorf("instance %s still running; sleep before evict", k)
+	}
+	delete(m.inst, k)
+	m.mu.Unlock()
+
+	if in.machine != nil {
+		_ = in.machine.Kill()
+	}
+	if !m.cfg.SkipTap && in.TapName != "" {
+		_ = firecracker.DeleteTap(in.TapName)
+	}
+	_ = os.RemoveAll(in.WorkDir)
+	return nil
+}
+
+// Adopt restores an instance onto this host from the shared snapshot store.
+// Used as the target side of cross-host migrate.
+func (m *Manager) Adopt(ctx context.Context, user, app string) (*Instance, error) {
+	k := InstanceKey{User: user, App: app}
+	if m.cfg.SnapStore == nil {
+		return nil, fmt.Errorf("snapshot store not configured")
+	}
+	if !m.rt.Available() {
+		return nil, fmt.Errorf("firecracker requires /dev/kvm (not available on this host)")
+	}
+
+	m.mu.Lock()
+	if in, ok := m.inst[k]; ok {
+		switch in.State {
+		case StateRunning:
+			in.LastUsed = time.Now()
+			m.mu.Unlock()
+			return in, nil
+		case StateSleeping:
+			m.mu.Unlock()
+			return m.wake(ctx, k)
+		}
+	}
+	m.seq++
+	n := m.seq
+	m.mu.Unlock()
+
+	snapDir := filepath.Join(m.cfg.WorkDir, fmt.Sprintf("adopt-%d", n))
+	_ = os.RemoveAll(snapDir)
+	pkg, err := m.cfg.SnapStore.Get(ctx, snapshot.KeyFor(user, app), snapDir)
+	if err != nil {
+		return nil, fmt.Errorf("download snapshot: %w", err)
+	}
+	meta := pkg.Meta
+	if meta.GuestIP == "" {
+		meta, err = pkg.ReadMeta()
+		if err != nil {
+			return nil, err
+		}
+		pkg.Meta = meta
+	}
+
+	dir := filepath.Join(m.cfg.WorkDir, fmt.Sprintf("vm-%d", n))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, err
+	}
+	rootfsPath := filepath.Join(dir, "rootfs.ext4")
+	// New TAP name on this host; keep guest/host IP + MAC from snapshot for FC continuity.
+	tapName := fmt.Sprintf("fc-%d", n)
+	in := &Instance{
+		Key:      k,
+		State:    StateSleeping,
+		GuestIP:  meta.GuestIP,
+		HostIP:   meta.HostIP,
+		TapName:  tapName,
+		GuestMAC: meta.GuestMAC,
+		Rootfs:   rootfsPath,
+		WorkDir:  dir,
+		snapKey:  snapshot.KeyFor(user, app),
+		LastUsed: time.Now(),
+	}
+
+	mach, addr, err := m.restoreFromPackage(ctx, in, pkg)
+	if err != nil {
+		_ = os.RemoveAll(dir)
+		return nil, err
+	}
+	in.machine = mach
+	in.Addr = addr
+	in.State = StateRunning
+
+	m.mu.Lock()
+	m.inst[k] = in
+	m.mu.Unlock()
+	return in, nil
+}
+
 func (m *Manager) wake(ctx context.Context, k InstanceKey) (*Instance, error) {
-	if !firecracker.Available() {
+	if !m.rt.Available() {
 		return nil, fmt.Errorf("firecracker requires /dev/kvm (not available on this host)")
 	}
 	if m.cfg.SnapStore == nil {
@@ -327,51 +445,32 @@ func (m *Manager) wake(ctx context.Context, k InstanceKey) (*Instance, error) {
 		return nil, fmt.Errorf("download snapshot: %w", err)
 	}
 
-	machine, err := m.restoreFromPackage(ctx, in, pkg)
+	mach, addr, err := m.restoreFromPackage(ctx, in, pkg)
 	if err != nil {
 		return nil, err
 	}
 
 	m.mu.Lock()
 	in.State = StateRunning
-	in.machine = machine
-	in.Addr = net.JoinHostPort(in.GuestIP, "22")
+	in.machine = mach
+	in.Addr = addr
 	in.LastUsed = time.Now()
 	m.mu.Unlock()
 	return in, nil
 }
 
-func (m *Manager) restoreFromPackage(ctx context.Context, in *Instance, pkg snapshot.Package) (*firecracker.Machine, error) {
-	if err := rootfs.Clone(pkg.RootfsPath, in.Rootfs); err != nil {
-		return nil, err
-	}
-	// Ensure TAP still exists (recreate if host restarted; CreateTap is idempotent).
-	if err := firecracker.CreateTap(in.TapName, in.HostIP, 24); err != nil {
-		return nil, fmt.Errorf("recreate tap: %w", err)
-	}
-
-	sock := filepath.Join(in.WorkDir, "firecracker.sock")
-	logPath := filepath.Join(in.WorkDir, "firecracker-wake.log")
-	machine, err := firecracker.Restore(ctx, firecracker.RestoreConfig{
-		FirecrackerBin:    m.cfg.FirecrackerBin,
-		SocketPath:        sock,
-		Snapshot:          firecracker.SnapshotFiles{StatePath: pkg.StatePath, MemPath: pkg.MemPath},
-		LogPath:           logPath,
-		ResumeImmediately: false,
+func (m *Manager) restoreFromPackage(ctx context.Context, in *Instance, pkg snapshot.Package) (machine, string, error) {
+	return m.rt.Restore(ctx, RestoreSpec{
+		FirecrackerBin: m.cfg.FirecrackerBin,
+		WorkDir:        in.WorkDir,
+		StatePath:      pkg.StatePath,
+		MemPath:        pkg.MemPath,
+		RootfsSrc:      pkg.RootfsPath,
+		RootfsDst:      in.Rootfs,
+		TapName:        in.TapName,
+		HostIP:         in.HostIP,
+		GuestIP:        in.GuestIP,
 	})
-	if err != nil {
-		return nil, err
-	}
-	if err := machine.Resume(ctx); err != nil {
-		_ = machine.Kill()
-		return nil, fmt.Errorf("resume: %w", err)
-	}
-	addr := net.JoinHostPort(in.GuestIP, "22")
-	if err := firecracker.WaitTCP(ctx, addr, 30*time.Second); err != nil {
-		_ = machine.Kill()
-		return nil, fmt.Errorf("guest SSH not ready after wake: %w (see %s)", err, logPath)
-	}
-	return machine, nil
 }
 
 // Stop tears down an instance (running or sleeping) and deletes its snapshot.
@@ -390,10 +489,13 @@ func (m *Manager) Stop(user, app string) error {
 	if in.machine != nil {
 		err = in.machine.Stop()
 	}
-	_ = firecracker.DeleteTap(in.TapName)
+	if !m.cfg.SkipTap {
+		_ = firecracker.DeleteTap(in.TapName)
+	}
 	if m.cfg.SnapStore != nil {
 		_ = m.cfg.SnapStore.Delete(context.Background(), snapshot.KeyFor(user, app))
 	}
+	_ = os.RemoveAll(in.WorkDir)
 	return err
 }
 
@@ -449,7 +551,11 @@ func (m *Manager) sleepIdle() {
 
 // Close stops the idle loop and all instances.
 func (m *Manager) Close() error {
-	close(m.stop)
+	select {
+	case <-m.stop:
+	default:
+		close(m.stop)
+	}
 	m.mu.Lock()
 	keys := make([]InstanceKey, 0, len(m.inst))
 	for k := range m.inst {

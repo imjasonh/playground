@@ -17,6 +17,8 @@ func (h *Handler) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/instances/stop", h.stop)
 	mux.HandleFunc("POST /v1/instances/sleep", h.sleep)
 	mux.HandleFunc("POST /v1/instances/wake", h.wake)
+	mux.HandleFunc("POST /v1/instances/evict", h.evict)
+	mux.HandleFunc("POST /v1/instances/adopt", h.adopt)
 	mux.HandleFunc("GET /v1/instances/status", h.status)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -92,6 +94,33 @@ func (h *Handler) wake(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	in, err := h.Manager.Ensure(r.Context(), req.User, req.App)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, ensureResponse{Addr: in.Addr, GuestIP: in.GuestIP, State: string(in.State)})
+}
+
+func (h *Handler) evict(w http.ResponseWriter, r *http.Request) {
+	var req instanceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := h.Manager.Evict(req.User, req.App); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) adopt(w http.ResponseWriter, r *http.Request) {
+	var req instanceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	in, err := h.Manager.Adopt(r.Context(), req.User, req.App)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

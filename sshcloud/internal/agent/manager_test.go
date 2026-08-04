@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -67,6 +68,63 @@ func TestSleepRequiresStoreAndRunning(t *testing.T) {
 	err = mgr2.Sleep(context.Background(), "alice", "fortune")
 	if err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Fatalf("expected not found, got %v", err)
+	}
+}
+
+func TestFakeSleepWakeEvictAdopt(t *testing.T) {
+	dir := t.TempDir()
+	store, err := snapshot.NewLocalStore(dir + "/snaps")
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := dir + "/base.ext4"
+	if err := os.WriteFile(base, []byte("base\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mgr, err := NewManager(Config{
+		WorkDir:     dir + "/w",
+		KernelPath:  dir + "/vmlinux",
+		BaseRootfs:  base,
+		SnapStore:   store,
+		Runtime:     &FakeRuntime{},
+		IdleTimeout: 0,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	ctx := context.Background()
+	in, err := mgr.Ensure(ctx, "alice", "fortune")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr1 := in.Addr
+	if err := mgr.Sleep(ctx, "alice", "fortune"); err != nil {
+		t.Fatal(err)
+	}
+	st, ok := mgr.Status("alice", "fortune")
+	if !ok || st.State != StateSleeping {
+		t.Fatalf("status after sleep: ok=%v %+v", ok, st)
+	}
+	if err := mgr.Evict("alice", "fortune"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := mgr.Status("alice", "fortune"); ok {
+		t.Fatal("expected gone after evict")
+	}
+	in2, err := mgr.Adopt(ctx, "alice", "fortune")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if in2.Addr == "" || in2.Addr == addr1 {
+		// New listener after restore.
+		if in2.Addr == "" {
+			t.Fatal("empty addr after adopt")
+		}
+	}
+	if in2.State != StateRunning {
+		t.Fatalf("state %s", in2.State)
 	}
 }
 
