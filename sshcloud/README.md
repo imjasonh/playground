@@ -11,6 +11,7 @@ Design: [`docs/ssh-app-cloud-design.md`](../docs/ssh-app-cloud-design.md).
 |------|------|
 | `cmd/gateway` | Public SSH entry (join, menu, deploy, proxy) |
 | `cmd/agent` | Host agent: Firecracker lifecycle + HTTP API |
+| `cmd/guestinit` | Tiny guest PID 1 trampoline (OCI entrypoint/cmd/env/workdir) |
 | `cmd/fortune` | Sample SSH app (verifies platform user certs) |
 | `cmd/mkrootfs` | Build fortune ext4 rootfs for Firecracker |
 | `cmd/ocirootfs` | Materialize digest-pinned OCI image → cached ext4 |
@@ -22,7 +23,8 @@ Design: [`docs/ssh-app-cloud-design.md`](../docs/ssh-app-cloud-design.md).
 | `internal/store` | users / keys / apps (memory or Firestore) |
 | `internal/migrate` | Cross-host Sleep→Evict→Adopt |
 | `internal/rootfs` | ext4 build via mkfs.ext4 + debugfs (`BuildFromDir`) |
-| `internal/ocirootfs` | OCI pull (go-containerregistry) → unpack → ext4 cache |
+| `internal/ocirootfs` | OCI pull (go-containerregistry) → unpack → ext4 cache + boot spec |
+| `internal/guestinit` | Exec OCI Entrypoint/Cmd with Env + WorkingDir as PID 1 |
 | `internal/cutover` | Deploy drain/kick dual-instance cutover |
 | `internal/genid` | Generation ids (`g…`) + `app.gen` agent names |
 | `internal/agent` | Instance manager (boot, idle sleep, wake, adopt/evict) |
@@ -39,6 +41,7 @@ cd sshcloud
 go test ./...
 go build -o bin/gateway ./cmd/gateway
 go build -o bin/agent ./cmd/agent
+go build -o bin/guestinit ./cmd/guestinit
 go build -o bin/fortune ./cmd/fortune
 go build -o bin/ocirootfs ./cmd/ocirootfs
 ```
@@ -69,6 +72,7 @@ ssh -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null join@127
 # 1) assets
 bash hack/fetch-firecracker-assets.sh
 go build -o _assets/fortune ./cmd/fortune
+go build -o bin/guestinit ./cmd/guestinit
 go run ./cmd/gateway -user-ca ./ssh_user_ca &  # once, to create CA; Ctrl-C after
 go run ./cmd/mkrootfs -fortune _assets/fortune -ca-pub ssh_user_ca.pub -out _assets/fortune-rootfs.ext4
 
@@ -81,6 +85,7 @@ sudo ./bin/agent \
   -kernel "$PWD/_assets/vmlinux" \
   -rootfs "$PWD/_assets/fortune-rootfs.ext4" \
   -ca-pub "$PWD/ssh_user_ca.pub" \
+  -guestinit "$PWD/bin/guestinit" \
   -idle 5m \
   -snap-dir /tmp/sshcloud-agent/snapshots
 
@@ -95,9 +100,11 @@ go run ./cmd/orchestrator \
 go run ./cmd/gateway -listen 127.0.0.1:2222 -orchestrator-url http://127.0.0.1:8090
 ```
 
-Guest boot: `init=/fortune -- -listen 0.0.0.0:22 -ca /ca.pub` on a static
-TAP subnet; gateway shows a wake loading line (`Starting fortune…`), mints a
-user cert, and dials `guestIP:22`.
+Guest boot: fortune demo uses `init=/fortune -- -listen 0.0.0.0:22 -ca /ca.pub`.
+OCI apps use `init=/platform-init`, which reads `/platform-boot.json`
+(Entrypoint, Cmd, Env, WorkingDir from the image config) and execs.
+TAP subnet is static; gateway shows a wake loading line (`Starting fortune…`),
+mints a user cert, and dials `guestIP:22`.
 
 ### OCI image → ext4 rootfs
 
@@ -110,7 +117,9 @@ not taken from the image.
 [go-containerregistry](https://github.com/google/go-containerregistry)
 (`remote.Image`, linux/amd64, anonymous public registries), applies layers with
 OCI whiteouts, builds ext4 via `rootfs.BuildFromDir`, and caches by digest hex
-under `-work-dir/oci-rootfs`. Uncompressed unpack is capped at 1 GiB.
+under `-work-dir/oci-rootfs` (plus `<hex>.boot.json` for PID 1 spec).
+Uncompressed unpack is capped at 1 GiB. The agent injects `cmd/guestinit` as
+`/platform-init` (`-guestinit`) and the boot spec as `/platform-boot.json`.
 
 ```bash
 go run ./cmd/ocirootfs -cache-dir /tmp/oci-rootfs \

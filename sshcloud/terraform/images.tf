@@ -28,6 +28,16 @@ resource "ko_build" "agent" {
   depends_on = [google_artifact_registry_repository.sshcloud]
 }
 
+resource "ko_build" "guestinit" {
+  importpath  = "github.com/imjasonh/playground/sshcloud/cmd/guestinit"
+  working_dir = "${path.module}/.."
+  repo        = "${local.registry}/guestinit"
+  platforms   = ["linux/amd64"]
+  sbom        = "none"
+
+  depends_on = [google_artifact_registry_repository.sshcloud]
+}
+
 resource "ko_build" "api" {
   importpath  = "github.com/imjasonh/playground/sshcloud/cmd/api"
   working_dir = "${path.module}/.."

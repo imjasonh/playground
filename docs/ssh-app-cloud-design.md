@@ -374,11 +374,12 @@ Responsibilities (v1 sketch):
 - `store.UpsertApp` / `GetApp` (tier + session strategy); rejects platform demos
 - Hub-footgun warning for common local usernames
 - OCI pull/extract → ext4: `sshcloud/internal/ocirootfs` (go-containerregistry;
-  digest cache; whiteouts; 1 GiB unpack cap); agent Ensure `"image"` +
-  `RootfsResolver`
+  digest cache; whiteouts; 1 GiB unpack cap; boot spec sidecar); agent Ensure
+  `"image"` + `RootfsResolver`; PID 1 from image config via `cmd/guestinit`
 - Dual-instance cutover: `internal/cutover` (drain + kick-on-timeout default,
   kick-now); gateway pins sessions to `ActiveGen`; agent instances are
   `app` or `app.gen`; draining gens set `no_idle`.
+- Guest PID 1 for OCI apps: image Entrypoint+Cmd+Env+WorkingDir via `guestinit`.
 - Still open: volumes
 
 No separate HTTP API or API tokens in v1.
@@ -475,14 +476,15 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
 - Global egress allowlist enforced on the host data path.
 
 **Implemented in `sshcloud/terraform/` (first environment):**
-- `ko_build` images: gateway, orchestrator, agent, api (api image only; no VM yet)
+- `ko_build` images: gateway, orchestrator, agent, guestinit, api (api image only; no VM yet)
 - Firestore Native `(default)`, snapshot + asset GCS buckets, Artifact Registry
 - Secret Manager: gateway host key + user CA (`tls_private_key` → secret versions)
 - Gateway GCE VM (public `:22`), orchestrator VM (VPC), nested-virt agent MIG
 - Orchestrator `-hosts-file` refresh from MIG membership (`GET /v1/hosts`)
 - Still open: egress allowlist on the data path, IAP-only hardening, key rotation
   out of Terraform state. OCI→rootfs on agents: `internal/ocirootfs` + Ensure
-  `"image"` hook; deploy cutover pre-boots the new gen with that image.
+  `"image"` hook + `guestinit` PID 1 from image config; deploy cutover pre-boots
+  the new gen with that image.
 
 ---
 
@@ -569,9 +571,10 @@ hits, wake/deploy denials — still **no session bytes**.
    an existing key to authorize a new one?).  
 2. ~~**OCI → rootfs pipeline**~~ — `sshcloud/internal/ocirootfs.Materialize`
    pulls digest-pinned public images (linux/amd64), unpacks with OCI whiteouts,
-   builds cached ext4 (`internal/rootfs.BuildFromDir`). Agent Ensure accepts
-   `"image"` and resolves via `Config.RootfsResolver`. Still open: first warm
-   snapshot per digest, guest `init=` from image config. 
+   builds cached ext4 (`internal/rootfs.BuildFromDir`), and records Entrypoint /
+   Cmd / Env / WorkingDir. Agent Ensure accepts `"image"` and resolves via
+   `Config.RootfsResolver`, then boots `init=/platform-init` (`cmd/guestinit`)
+   with `/platform-boot.json`. Still open: first warm snapshot per digest. 
 3. ~~**Idle timeout numbers**~~ — agent default **5 minutes** (`-idle`); refine
    when to count “zero sessions” vs last Ensure touch.  
 4. **Freeze buffer cap** — max migrate hold before forced reconnect.  

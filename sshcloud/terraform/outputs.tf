@@ -21,6 +21,7 @@ output "images" {
     gateway      = ko_build.gateway.image_ref
     orchestrator = ko_build.orchestrator.image_ref
     agent        = ko_build.agent.image_ref
+    guestinit    = ko_build.guestinit.image_ref
     api          = ko_build.api.image_ref
   }
 }

@@ -8,7 +8,7 @@ a nested-virt **host MIG** running the Firecracker agent.
 
 | File | What |
 |------|------|
-| `images.tf` | `ko_build` for `gateway`, `orchestrator`, `agent`, `api` |
+| `images.tf` | `ko_build` for `gateway`, `orchestrator`, `agent`, `guestinit`, `api` |
 | `firestore.tf` | Native-mode `(default)` database |
 | `storage.tf` | Snapshot + platform-asset buckets, Artifact Registry |
 | `secrets.tf` | Gateway host key + user CA (tls_private_key → Secret Manager) |

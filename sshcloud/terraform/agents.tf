@@ -35,6 +35,7 @@ resource "google_compute_instance_template" "agent" {
     snapshots_bucket   = local.snapshot_bucket
     snapshot_prefix    = local.snapshot_prefix
     agent_image        = ko_build.agent.image_ref
+    guestinit_image    = ko_build.guestinit.image_ref
     agent_listen       = local.agent_listen
   })
 

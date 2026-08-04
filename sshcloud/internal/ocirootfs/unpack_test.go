@@ -79,6 +79,23 @@ func imageFromLayers(t *testing.T, layers ...v1.Layer) v1.Image {
 	return img
 }
 
+func withConfig(t *testing.T, img v1.Image, entrypoint, cmd, env []string, wd string) v1.Image {
+	t.Helper()
+	cfg, err := img.ConfigFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Config.Entrypoint = entrypoint
+	cfg.Config.Cmd = cmd
+	cfg.Config.Env = env
+	cfg.Config.WorkingDir = wd
+	out, err := mutate.ConfigFile(img, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
 func TestUnpackWhiteouts(t *testing.T) {
 	t.Parallel()
 	base := layerFromEntries(t, []tarEnt{

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/imjasonh/playground/sshcloud/internal/guestinit"
 	"github.com/imjasonh/playground/sshcloud/internal/snapshot"
 )
 
@@ -132,9 +133,9 @@ func TestResolveBaseRootfs(t *testing.T) {
 		WorkDir:    dir,
 		KernelPath: dir + "/vmlinux",
 		BaseRootfs: dir + "/rootfs.ext4",
-		RootfsResolver: func(_ context.Context, imageRef string) (string, error) {
+		RootfsResolver: func(_ context.Context, imageRef string) (ResolvedRootfs, error) {
 			got = imageRef
-			return dir + "/cached.ext4", nil
+			return ResolvedRootfs{Path: dir + "/cached.ext4"}, nil
 		},
 	})
 	if err != nil {
@@ -142,17 +143,17 @@ func TestResolveBaseRootfs(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = mgr.Close() })
 
-	path, err := mgr.resolveBaseRootfs(context.Background(), "")
-	if err != nil || path != dir+"/rootfs.ext4" {
-		t.Fatalf("empty image: path=%q err=%v", path, err)
+	res, err := mgr.resolveBaseRootfs(context.Background(), "")
+	if err != nil || res.Path != dir+"/rootfs.ext4" {
+		t.Fatalf("empty image: path=%q err=%v", res.Path, err)
 	}
 
-	path, err = mgr.resolveBaseRootfs(context.Background(), ref)
+	res, err = mgr.resolveBaseRootfs(context.Background(), ref)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != ref || path != dir+"/cached.ext4" {
-		t.Fatalf("got ref=%q path=%q", got, path)
+	if got != ref || res.Path != dir+"/cached.ext4" {
+		t.Fatalf("got ref=%q path=%q", got, res.Path)
 	}
 
 	_, err = mgr.resolveBaseRootfs(context.Background(), "alpine:latest")
@@ -208,6 +209,23 @@ func TestSetNoIdleSkipsSleep(t *testing.T) {
 	st, ok := mgr.Status("a", "b")
 	if !ok || st.State != StateRunning {
 		t.Fatalf("expected still running, got ok=%v %+v", ok, st)
+	}
+}
+
+func TestPrepareGuestInitFortune(t *testing.T) {
+	mgr := &Manager{}
+	args, err := mgr.prepareGuestInit("unused.ext4", "", guestinit.Spec{})
+	if err != nil || args != fortuneInitArgs {
+		t.Fatalf("args=%q err=%v", args, err)
+	}
+}
+
+func TestPrepareGuestInitRequiresBinary(t *testing.T) {
+	mgr := &Manager{}
+	digest := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	_, err := mgr.prepareGuestInit("unused.ext4", "ghcr.io/me/app@sha256:"+digest, guestinit.Spec{Entrypoint: []string{"/app"}})
+	if err == nil || !strings.Contains(err.Error(), "GuestInitPath") {
+		t.Fatalf("got %v", err)
 	}
 }
 

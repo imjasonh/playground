@@ -16,6 +16,8 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/registry"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+
+	"github.com/imjasonh/playground/sshcloud/internal/guestinit"
 )
 
 func TestMaterializeRejectsUnpinned(t *testing.T) {
@@ -35,15 +37,22 @@ func TestMaterializeCacheHitSkipsPull(t *testing.T) {
 	if err := os.WriteFile(cached, []byte("cached-ext4"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	spec := guestinit.Spec{Entrypoint: []string{"/app"}, Cmd: []string{"--ssh"}, WorkingDir: "/app", Env: []string{"FOO=1"}}
+	if err := guestinit.WriteFile(filepath.Join(dir, hex+".boot.json"), spec); err != nil {
+		t.Fatal(err)
+	}
 	ref := "example.invalid/me/app@sha256:" + hex
-	path, err := Materialize(context.Background(), ref, Options{CacheDir: dir})
+	res, err := Materialize(context.Background(), ref, Options{CacheDir: dir})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if path != cached {
-		t.Fatalf("path %s want %s", path, cached)
+	if res.Rootfs != cached {
+		t.Fatalf("path %s want %s", res.Rootfs, cached)
 	}
-	b, err := os.ReadFile(path)
+	if strings.Join(guestinit.Argv(res.Spec), " ") != "/app --ssh" || res.Spec.WorkingDir != "/app" {
+		t.Fatalf("spec %+v", res.Spec)
+	}
+	b, err := os.ReadFile(res.Rootfs)
 	if err != nil || string(b) != "cached-ext4" {
 		t.Fatalf("cache contents: %q %v", b, err)
 	}
@@ -68,6 +77,7 @@ func TestMaterializeFromLocalRegistry(t *testing.T) {
 			{name: "hello.txt", body: "world\n"},
 		}),
 	)
+	img = withConfig(t, img, []string{"/app/bin"}, []string{"--ssh"}, []string{"PATH=/bin", "FOO=bar"}, "/app")
 
 	srv := httptest.NewServer(registry.New(registry.Logger(log.New(io.Discard, "", 0))))
 	t.Cleanup(srv.Close)
@@ -86,15 +96,21 @@ func TestMaterializeFromLocalRegistry(t *testing.T) {
 	ref := fmt.Sprintf("%s/sshcloud/demo@%s", host, digest.String())
 
 	cache := t.TempDir()
-	path, err := Materialize(context.Background(), ref, Options{CacheDir: cache, SizeMB: 8})
+	res, err := Materialize(context.Background(), ref, Options{CacheDir: cache, SizeMB: 8})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(path); err != nil {
+	if _, err := os.Stat(res.Rootfs); err != nil {
 		t.Fatal(err)
 	}
+	if strings.Join(guestinit.Argv(res.Spec), " ") != "/app/bin --ssh" {
+		t.Fatalf("spec argv %+v", res.Spec)
+	}
+	if res.Spec.WorkingDir != "/app" || strings.Join(res.Spec.Env, ",") != "PATH=/bin,FOO=bar" {
+		t.Fatalf("spec %+v", res.Spec)
+	}
 
-	out, err := exec.Command("debugfs", "-R", "ls -l", path).CombinedOutput()
+	out, err := exec.Command("debugfs", "-R", "ls -l", res.Rootfs).CombinedOutput()
 	if err != nil {
 		t.Fatal(err, string(out))
 	}
@@ -110,7 +126,10 @@ func TestMaterializeFromLocalRegistry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if again != path {
-		t.Fatalf("cache miss: %s vs %s", again, path)
+	if again.Rootfs != res.Rootfs {
+		t.Fatalf("cache miss: %s vs %s", again.Rootfs, res.Rootfs)
+	}
+	if strings.Join(guestinit.Argv(again.Spec), " ") != "/app/bin --ssh" {
+		t.Fatalf("cached spec %+v", again.Spec)
 	}
 }

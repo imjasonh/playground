@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/imjasonh/playground/sshcloud/internal/firecracker"
+	"github.com/imjasonh/playground/sshcloud/internal/guestinit"
 	"github.com/imjasonh/playground/sshcloud/internal/image"
 	"github.com/imjasonh/playground/sshcloud/internal/rootfs"
 	"github.com/imjasonh/playground/sshcloud/internal/snapshot"
@@ -63,9 +64,18 @@ type Config struct {
 	SnapStore snapshot.Store
 	// Runtime boots VMs; nil selects FirecrackerRuntime.
 	Runtime Runtime
-	// RootfsResolver materializes a digest-pinned OCI image to an ext4 path.
-	// Used by bootCold when Ensure is called with an image ref.
-	RootfsResolver func(ctx context.Context, imageRef string) (string, error)
+	// RootfsResolver materializes a digest-pinned OCI image to an ext4 path
+	// plus the image's PID 1 spec. Used by bootCold when Ensure has an image ref.
+	RootfsResolver func(ctx context.Context, imageRef string) (ResolvedRootfs, error)
+	// GuestInitPath is a linux/amd64 guestinit binary injected as /platform-init
+	// for OCI-backed boots. Required when booting an image ref.
+	GuestInitPath string
+}
+
+// ResolvedRootfs is a materialized ext4 and the OCI PID 1 spec to boot it with.
+type ResolvedRootfs struct {
+	Path string
+	Spec guestinit.Spec
 }
 
 // EnsureOpts configures a cold boot.
@@ -148,25 +158,56 @@ func (m *Manager) EnsureWith(ctx context.Context, user, app string, opt EnsureOp
 	return in, nil
 }
 
-func (m *Manager) resolveBaseRootfs(ctx context.Context, imageRef string) (string, error) {
-	imageRef = strings.TrimSpace(imageRef)
-	if imageRef == "" {
-		return m.cfg.BaseRootfs, nil
+const fortuneInitArgs = "init=/fortune -- -listen 0.0.0.0:22 -ca /ca.pub"
+
+func (m *Manager) prepareGuestInit(rootfsPath, imageRef string, spec guestinit.Spec) (string, error) {
+	if strings.TrimSpace(imageRef) == "" {
+		return fortuneInitArgs, nil
 	}
-	if m.cfg.RootfsResolver == nil {
-		return "", fmt.Errorf("image %q supplied but RootfsResolver is not configured", imageRef)
-	}
-	if err := image.ValidateDigestPinned(imageRef); err != nil {
+	if err := spec.Validate(); err != nil {
 		return "", err
 	}
-	path, err := m.cfg.RootfsResolver(ctx, imageRef)
+	if m.cfg.GuestInitPath == "" {
+		return "", fmt.Errorf("GuestInitPath required to boot OCI images")
+	}
+	if err := rootfs.InjectFile(rootfsPath, m.cfg.GuestInitPath, "platform-init", "0755"); err != nil {
+		return "", fmt.Errorf("inject guestinit: %w", err)
+	}
+	specFile, err := os.CreateTemp("", "platform-boot-*.json")
 	if err != nil {
-		return "", fmt.Errorf("resolve rootfs: %w", err)
+		return "", err
 	}
-	if path == "" {
-		return "", fmt.Errorf("RootfsResolver returned empty path")
+	specPath := specFile.Name()
+	_ = specFile.Close()
+	defer os.Remove(specPath)
+	if err := guestinit.WriteFile(specPath, spec); err != nil {
+		return "", err
 	}
-	return path, nil
+	if err := rootfs.InjectFile(rootfsPath, specPath, "platform-boot.json", "0644"); err != nil {
+		return "", fmt.Errorf("inject boot spec: %w", err)
+	}
+	return "init=" + guestinit.GuestBinary, nil
+}
+
+func (m *Manager) resolveBaseRootfs(ctx context.Context, imageRef string) (ResolvedRootfs, error) {
+	imageRef = strings.TrimSpace(imageRef)
+	if imageRef == "" {
+		return ResolvedRootfs{Path: m.cfg.BaseRootfs}, nil
+	}
+	if m.cfg.RootfsResolver == nil {
+		return ResolvedRootfs{}, fmt.Errorf("image %q supplied but RootfsResolver is not configured", imageRef)
+	}
+	if err := image.ValidateDigestPinned(imageRef); err != nil {
+		return ResolvedRootfs{}, err
+	}
+	res, err := m.cfg.RootfsResolver(ctx, imageRef)
+	if err != nil {
+		return ResolvedRootfs{}, fmt.Errorf("resolve rootfs: %w", err)
+	}
+	if res.Path == "" {
+		return ResolvedRootfs{}, fmt.Errorf("RootfsResolver returned empty path")
+	}
+	return res, nil
 }
 
 func (m *Manager) bootCold(ctx context.Context, k InstanceKey, n int, imageRef string) (*Instance, error) {
@@ -186,18 +227,22 @@ func (m *Manager) bootCold(ctx context.Context, k InstanceKey, n int, imageRef s
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
-	base, err := m.resolveBaseRootfs(ctx, imageRef)
+	resolved, err := m.resolveBaseRootfs(ctx, imageRef)
 	if err != nil {
 		return nil, err
 	}
 	rootfsPath := filepath.Join(dir, "rootfs.ext4")
-	if err := rootfs.Clone(base, rootfsPath); err != nil {
+	if err := rootfs.Clone(resolved.Path, rootfsPath); err != nil {
 		return nil, err
 	}
 	if m.cfg.CAPubPath != "" {
 		if err := rootfs.InjectFile(rootfsPath, m.cfg.CAPubPath, "ca.pub", "0644"); err != nil {
 			return nil, fmt.Errorf("inject CA: %w", err)
 		}
+	}
+	initArgs, err := m.prepareGuestInit(rootfsPath, imageRef, resolved.Spec)
+	if err != nil {
+		return nil, err
 	}
 
 	tapName := fmt.Sprintf("fc-%d", n)
@@ -210,7 +255,7 @@ func (m *Manager) bootCold(ctx context.Context, k InstanceKey, n int, imageRef s
 
 	mac := fmt.Sprintf("AA:FC:00:00:%02x:%02x", (n>>8)&0xff, n&0xff)
 	bootArgs := firecracker.GuestBootArgs(guestIP, hostIP, "255.255.255.0", k.App)
-	bootArgs += " init=/fortune -- -listen 0.0.0.0:22 -ca /ca.pub"
+	bootArgs += " " + initArgs
 
 	mach, addr, err := m.rt.Boot(ctx, BootSpec{
 		FirecrackerBin: m.cfg.FirecrackerBin,

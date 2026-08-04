@@ -31,6 +31,12 @@ chmod +x /var/lib/sshcloud/assets/firecracker 2>/dev/null || true
 
 IMAGE="${agent_image}"
 docker pull "$IMAGE"
+docker pull "${guestinit_image}"
+docker rm -f sshcloud-guestinit-extract 2>/dev/null || true
+docker create --name sshcloud-guestinit-extract "${guestinit_image}"
+docker cp sshcloud-guestinit-extract:/ko-app/guestinit /var/lib/sshcloud/assets/guestinit
+docker rm sshcloud-guestinit-extract
+chmod +x /var/lib/sshcloud/assets/guestinit
 docker rm -f sshcloud-agent 2>/dev/null || true
 docker run -d --name sshcloud-agent --restart unless-stopped --net host --privileged \
   --device /dev/kvm \
@@ -43,6 +49,7 @@ docker run -d --name sshcloud-agent --restart unless-stopped --net host --privil
   -kernel /var/lib/sshcloud/assets/vmlinux \
   -rootfs /var/lib/sshcloud/assets/fortune-rootfs.ext4 \
   -ca-pub /var/lib/sshcloud/ssh_user_ca.pub \
+  -guestinit /var/lib/sshcloud/assets/guestinit \
   -gcs-bucket ${snapshots_bucket} \
   -gcs-prefix ${snapshot_prefix} \
   -idle 5m

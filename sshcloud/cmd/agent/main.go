@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -27,6 +28,7 @@ func main() {
 	kernel := flag.String("kernel", "", "path to vmlinux")
 	rootfsPath := flag.String("rootfs", "", "path to base ext4 rootfs (fortune)")
 	caPub := flag.String("ca-pub", "", "platform user CA public key to inject")
+	guestInit := flag.String("guestinit", "", "linux guest PID1 trampoline for OCI boots (default: guestinit beside this binary)")
 	snapDir := flag.String("snap-dir", "", "local snapshot directory (default: <work-dir>/snapshots)")
 	gcsBucket := flag.String("gcs-bucket", "", "GCS bucket for snapshots (overrides -snap-dir)")
 	gcsPrefix := flag.String("gcs-prefix", "sshcloud/snaps", "GCS object key prefix")
@@ -61,16 +63,30 @@ func main() {
 	}
 
 	ociCache := filepath.Join(*workDir, "oci-rootfs")
+	guestInitPath := strings.TrimSpace(*guestInit)
+	if guestInitPath == "" {
+		if exe, err := os.Executable(); err == nil {
+			cand := filepath.Join(filepath.Dir(exe), "guestinit")
+			if st, err := os.Stat(cand); err == nil && st.Mode().IsRegular() {
+				guestInitPath = cand
+			}
+		}
+	}
 	mgr, err := agent.NewManager(agent.Config{
 		WorkDir:        *workDir,
 		FirecrackerBin: *fcBin,
 		KernelPath:     *kernel,
 		BaseRootfs:     *rootfsPath,
 		CAPubPath:      *caPub,
+		GuestInitPath:  guestInitPath,
 		SnapStore:      store,
 		IdleTimeout:    *idle,
-		RootfsResolver: func(ctx context.Context, imageRef string) (string, error) {
-			return ocirootfs.Materialize(ctx, imageRef, ocirootfs.Options{CacheDir: ociCache})
+		RootfsResolver: func(ctx context.Context, imageRef string) (agent.ResolvedRootfs, error) {
+			res, err := ocirootfs.Materialize(ctx, imageRef, ocirootfs.Options{CacheDir: ociCache})
+			if err != nil {
+				return agent.ResolvedRootfs{}, err
+			}
+			return agent.ResolvedRootfs{Path: res.Rootfs, Spec: res.Spec}, nil
 		},
 	})
 	if err != nil {
@@ -83,7 +99,7 @@ func main() {
 
 	srv := &http.Server{Addr: *listen, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	go func() {
-		log.Printf("sshcloud agent on %s (idle=%s)", *listen, idle.String())
+		log.Printf("sshcloud agent on %s (idle=%s guestinit=%s)", *listen, idle.String(), guestInitPath)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatal(err)
 		}
