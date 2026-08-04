@@ -63,11 +63,12 @@ func newGuard(ctx context.Context, store Store, lease Lease, ttl time.Duration) 
 	}
 	if remaining < ttl/2 {
 		renewCtx, renewCancel := context.WithTimeout(ctx, remaining)
-		lease, err = store.Renew(renewCtx, lease, ttl, time.Now())
+		renewed, err := store.Renew(renewCtx, lease, ttl, time.Now())
 		renewCancel()
 		if err != nil {
 			return nil, err
 		}
+		lease = renewed
 	}
 	guardCtx, cancel := context.WithCancel(ctx)
 	g := &Guard{
