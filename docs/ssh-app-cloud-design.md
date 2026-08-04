@@ -365,7 +365,14 @@ Responsibilities (v1 sketch):
 - Optional: attach/size GCS-backed volume  
 - Choose **session strategy** (below)  
 - Trigger pull/extract on a host + cut over per strategy  
-- Later: warn when app name collides with common local usernames (hub footgun)
+- Warn when app name collides with common local usernames (hub footgun)
+
+**Implemented in `sshcloud/` (registration path):**
+- `gateway.RunDeploy` TUI (menu row + `ActionDeploy` / `ssh deploy@…`)
+- Digest-pinned image validation (`internal/image.ValidateDigestPinned`)
+- `store.UpsertApp` / `GetApp` (tier + session strategy); rejects platform demos
+- Hub-footgun warning for common local usernames
+- Still open: OCI pull/extract, dual-instance cutover (drain/kick), volumes
 
 No separate HTTP API or API tokens in v1.
 

@@ -140,5 +140,6 @@ bash hack/run-kvm-e2e.sh   # not as root
 - [x] Cross-host migrate (Sleep→Evict→Adopt + placement)
 - [x] Real Firecracker KVM e2e in GitHub Actions (`sshcloud-kvm` job)
 - [x] Gateway wake loading TUI + placement-aware dial (`-orchestrator-url`)
-- [ ] Gateway freeze-buffer during migrate, deploy TUI, Firestore
+- [x] Deploy TUI (digest-pinned register; OCI pull/cutover still open)
+- [ ] Gateway freeze-buffer during migrate, Firestore
 - [ ] Terraform

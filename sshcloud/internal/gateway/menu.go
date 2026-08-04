@@ -72,7 +72,8 @@ func RunMenu(ctx context.Context, ch io.ReadWriter, hub *Hub, keyFP, userID stri
 		it := items[n-1]
 		switch it.kind {
 		case "deploy":
-			t.Printf("deploy: not implemented yet\n\n")
+			RunDeploy(ctx, ch, hub, userID)
+			t.Printf("\n")
 		case "app", "demo":
 			res, err := hub.OpenApp(ctx, userID, it.app)
 			if err != nil {

@@ -37,3 +37,26 @@ func TestMemoryJoinAndDemo(t *testing.T) {
 		t.Fatal("demo map unexpected")
 	}
 }
+
+func TestMemoryUpsertApp(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	m := NewMemory()
+	if err := m.CreateUser(ctx, "alice", "SHA256:abc"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.UpsertApp(ctx, App{
+		Owner: "alice", Name: "myapp",
+		Image: "ghcr.io/me/app@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		Tier:  "small", SessionStrategy: StrategyKick,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	app, err := m.GetApp(ctx, "alice", "myapp")
+	if err != nil || app == nil || app.Tier != "small" || app.SessionStrategy != StrategyKick {
+		t.Fatalf("got %+v %v", app, err)
+	}
+	if err := m.UpsertApp(ctx, App{Owner: "alice", Name: "fortune", Image: "x@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}); err == nil {
+		t.Fatal("expected reject platform demo name")
+	}
+}

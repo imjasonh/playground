@@ -173,7 +173,7 @@ func (s *Server) handleSession(ctx context.Context, sc *ssh.ServerConn, ch ssh.C
 	case gateway.ActionMenu:
 		gateway.RunMenu(ctx, ch, s.Hub, fp, res.User)
 	case gateway.ActionDeploy:
-		fmt.Fprintf(ch, "deploy: not implemented yet\r\n")
+		gateway.RunDeploy(ctx, ch, s.Hub, res.User)
 	case gateway.ActionRejectBusy:
 		fmt.Fprintf(ch, "%s\r\n", res.Message)
 	case gateway.ActionProxyApp:

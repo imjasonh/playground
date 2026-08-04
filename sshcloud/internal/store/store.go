@@ -13,13 +13,20 @@ type User struct {
 	ID string // e.g. "alice"
 }
 
+// Session cutover strategies for deploy (see design §8).
+const (
+	StrategyDrain = "drain" // default: route new→new, drain old, kick after timeout
+	StrategyKick  = "kick"  // kick now, cut over immediately
+)
+
 // App is an app in a user's namespace.
 type App struct {
-	Owner  string
-	Name   string
-	Image  string // digest-pinned reference; empty for lazy platform demos until first wake
-	Tier   string // "tiny" | "small"
-	Demo   bool   // platform demo (e.g. fortune) — may lazy-create
+	Owner           string
+	Name            string
+	Image           string // digest-pinned reference; empty for lazy platform demos until first wake
+	Tier            string // "tiny" | "small"
+	Demo            bool   // platform demo (e.g. fortune) — may lazy-create
+	SessionStrategy string // StrategyDrain | StrategyKick; empty means drain
 }
 
 // Store is the control-plane persistence surface used by the gateway.
@@ -28,6 +35,8 @@ type Store interface {
 	CreateUser(ctx context.Context, id, keyFingerprint string) error
 	AddKey(ctx context.Context, userID, keyFingerprint string) error
 	HasApp(ctx context.Context, userID, app string) (bool, error)
+	GetApp(ctx context.Context, userID, app string) (*App, error)
+	UpsertApp(ctx context.Context, app App) error
 	EnsureDemoApp(ctx context.Context, userID, app string) error
 	ListApps(ctx context.Context, userID string) ([]App, error)
 }
@@ -93,6 +102,48 @@ func (m *Memory) HasApp(_ context.Context, userID, app string) (bool, error) {
 	defer m.mu.Unlock()
 	_, ok := m.apps[userID][app]
 	return ok, nil
+}
+
+func (m *Memory) GetApp(_ context.Context, userID, app string) (*App, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	a, ok := m.apps[userID][app]
+	if !ok {
+		return nil, nil
+	}
+	cp := *a
+	return &cp, nil
+}
+
+// UpsertApp creates or updates a non-demo app record.
+func (m *Memory) UpsertApp(_ context.Context, app App) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.users[app.Owner]; !ok {
+		return fmt.Errorf("unknown user %q", app.Owner)
+	}
+	if app.Name == "" {
+		return fmt.Errorf("app name required")
+	}
+	if IsPlatformDemo(app.Name) {
+		return fmt.Errorf("%q is a platform demo; deploy a different name", app.Name)
+	}
+	if m.apps[app.Owner] == nil {
+		m.apps[app.Owner] = make(map[string]*App)
+	}
+	if existing, ok := m.apps[app.Owner][app.Name]; ok && existing.Demo {
+		return fmt.Errorf("%q is a platform demo; deploy a different name", app.Name)
+	}
+	cp := app
+	cp.Demo = false
+	if cp.Tier == "" {
+		cp.Tier = "tiny"
+	}
+	if cp.SessionStrategy == "" {
+		cp.SessionStrategy = StrategyDrain
+	}
+	m.apps[app.Owner][app.Name] = &cp
+	return nil
 }
 
 // EnsureDemoApp creates a lazy platform demo app record if missing.
