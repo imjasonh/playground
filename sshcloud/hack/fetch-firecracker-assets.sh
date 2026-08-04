@@ -19,17 +19,28 @@ FC_URL="https://github.com/firecracker-microvm/firecracker/releases/download/${F
 echo "fetching $FC_URL"
 curl -fsSL "$FC_URL" -o "$OUT/$FC_TGZ"
 tar -xzf "$OUT/$FC_TGZ" -C "$OUT"
-# release tarball layout: release-${VERSION}-${ARCH}/firecracker-${VERSION}-${ARCH}
-FC_BIN="$(find "$OUT" -type f -name "firecracker-${FC_VERSION#v}-${ARCH}" -o -name "firecracker" | head -n1)"
-if [[ -z "${FC_BIN}" ]]; then
-  FC_BIN="$(find "$OUT" -type f -name 'firecracker*' ! -name '*.tgz' | head -n1)"
+
+# Release layout: release-<ver>-<arch>/firecracker-<ver>-<arch>
+# Do NOT pick *.debug (dynamically linked; segfaults if executed).
+FC_BIN="$OUT/release-${FC_VERSION}-${ARCH}/firecracker-${FC_VERSION}-${ARCH}"
+if [[ ! -x "$FC_BIN" ]]; then
+  FC_BIN="$(find "$OUT" -type f -name "firecracker-${FC_VERSION}-${ARCH}" ! -name '*.debug' | head -n1 || true)"
+fi
+if [[ -z "${FC_BIN}" || ! -f "${FC_BIN}" ]]; then
+  echo "could not find firecracker binary in tarball" >&2
+  find "$OUT" -type f -name 'firecracker*' -print >&2 || true
+  exit 1
 fi
 cp -f "$FC_BIN" "$OUT/firecracker"
 chmod +x "$OUT/firecracker"
-echo "firecracker -> $OUT/firecracker"
+echo "firecracker -> $OUT/firecracker (from $FC_BIN)"
+if ! "$OUT/firecracker" --version; then
+  echo "ERROR: firecracker --version failed (wrong binary?)" >&2
+  file "$OUT/firecracker" >&2 || true
+  exit 1
+fi
 
-# Kernel: use Firecracker's CI artifact naming from the same release when present,
-# otherwise document manual placement.
+# Kernel: Firecracker CI artifact for this release line.
 KERNEL_URL="${KERNEL_URL:-https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/v1.10/x86_64/vmlinux-5.10.223}"
 if [[ "$ARCH" != "x86_64" ]]; then
   echo "set KERNEL_URL for $ARCH and re-run" >&2

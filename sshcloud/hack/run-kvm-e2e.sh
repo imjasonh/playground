@@ -58,9 +58,6 @@ go run ./cmd/mkrootfs \
   -size-mb 64
 echo "::endgroup::"
 
-# Sanity: firecracker binary can print version.
-"$ASSETS/firecracker" --version || true
-
 export SSHCLOUD_FIRECRACKER="$ASSETS/firecracker"
 export SSHCLOUD_KERNEL="$ASSETS/vmlinux"
 export SSHCLOUD_ROOTFS="$ASSETS/fortune-rootfs.ext4"
