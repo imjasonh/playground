@@ -1,0 +1,6 @@
+*.stl
+*.amf
+*.3mf
+__pycache__/
+*.py[cod]
+.venv/
