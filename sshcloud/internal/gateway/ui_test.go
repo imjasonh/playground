@@ -8,7 +8,7 @@ import (
 
 func TestTermReadLineHandlesCRAndEditing(t *testing.T) {
 	t.Parallel()
-	rw := &bufferReadWriter{Reader: strings.NewReader("fortx\x7fune\rnext\r\nthird\n")}
+	rw := &bufferReadWriter{reader: strings.NewReader("fortx\x7fune\rnext\r\nthird\n")}
 	term := newTerm(rw)
 	for i, want := range []string{"fortune", "next", "third"} {
 		got, err := term.ReadLine()
@@ -23,7 +23,7 @@ func TestTermReadLineHandlesCRAndEditing(t *testing.T) {
 
 func TestTermReadLineIsBounded(t *testing.T) {
 	t.Parallel()
-	rw := &bufferReadWriter{Reader: strings.NewReader(strings.Repeat("x", maxLineBytes+1) + "\nok\n")}
+	rw := &bufferReadWriter{reader: strings.NewReader(strings.Repeat("x", maxLineBytes+1) + "\nok\n")}
 	term := newTerm(rw)
 	if _, err := term.ReadLine(); err == nil {
 		t.Fatal("expected oversized line error")
@@ -35,6 +35,9 @@ func TestTermReadLineIsBounded(t *testing.T) {
 }
 
 type bufferReadWriter struct {
-	*strings.Reader
-	bytes.Buffer
+	reader *strings.Reader
+	writer bytes.Buffer
 }
+
+func (rw *bufferReadWriter) Read(p []byte) (int, error)  { return rw.reader.Read(p) }
+func (rw *bufferReadWriter) Write(p []byte) (int, error) { return rw.writer.Write(p) }

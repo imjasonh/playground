@@ -47,7 +47,7 @@ func setup(t *testing.T) (context.Context, *store.Memory, *session.Registry, *fa
 	if err := st.CreateUser(ctx, "alice", "SHA256:a"); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.UpsertApp(ctx, store.App{Owner: "alice", Name: "myapp", Image: "old@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Tier: "tiny"}); err != nil {
+	if err := st.UpsertApp(ctx, store.App{Owner: "alice", Name: "myapp", Image: "ghcr.io/example/old@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Tier: "tiny"}); err != nil {
 		t.Fatal(err)
 	}
 	sess := session.NewRegistry()
@@ -67,7 +67,7 @@ func TestKickCutover(t *testing.T) {
 	_, cancel := contextWithCancelFlag(&cancelled)
 	sess.BindCancel(old, cancel)
 
-	newImg := "new@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	newImg := "ghcr.io/example/new@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 	res, err := c.Deploy(ctx, cutover.Request{
 		User: "alice", App: "myapp",
 		Image:    newImg,
@@ -111,7 +111,7 @@ func TestDrainWaitsForRelease(t *testing.T) {
 
 	res, err := c.Deploy(ctx, cutover.Request{
 		User: "alice", App: "myapp",
-		Image:    "new@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		Image:    "ghcr.io/example/new@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 		Strategy: store.StrategyDrain,
 		Timeout:  time.Hour,
 	})
@@ -161,7 +161,7 @@ func TestDrainTimeoutKicks(t *testing.T) {
 
 	_, err = c.Deploy(ctx, cutover.Request{
 		User: "alice", App: "myapp", Strategy: store.StrategyDrain, Timeout: 20 * time.Millisecond,
-		Image: "new@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		Image: "ghcr.io/example/new@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -182,7 +182,7 @@ func TestDrainNoSessionIsImmediate(t *testing.T) {
 	ctx, st, _, fi, c := setup(t)
 	res, err := c.Deploy(ctx, cutover.Request{
 		User: "alice", App: "myapp", Strategy: store.StrategyDrain,
-		Image: "new@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		Image: "ghcr.io/example/new@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -201,7 +201,7 @@ func TestDrainNoSessionIsImmediate(t *testing.T) {
 
 func TestSameImageAndTierDeployIsIdempotent(t *testing.T) {
 	ctx, st, _, fi, c := setup(t)
-	img := "new@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	img := "ghcr.io/example/new@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 	first, err := c.Deploy(ctx, cutover.Request{
 		User: "alice", App: "myapp", Image: img, Tier: "tiny", Strategy: store.StrategyKick,
 	})
