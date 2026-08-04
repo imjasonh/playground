@@ -519,8 +519,7 @@ func TestEnsureNeverReturnsUnexpectedlyExitedVMM(t *testing.T) {
 	}
 	mgr.inst[key] = &Instance{
 		Key: key, State: StateRunning, Addr: "172.16.2.2:22",
-		WorkDir: workDir, TapName: "fc-dead", Image: "ghcr.io/example/app@sha256:" + strings.Repeat("a", 64),
-		Tier: "tiny", machine: dead,
+		WorkDir: workDir, TapName: "fc-dead", Tier: "tiny", machine: dead,
 	}
 	_, err = mgr.Ensure(context.Background(), key.User, key.App)
 	if err == nil || !strings.Contains(err.Error(), "/dev/kvm") {

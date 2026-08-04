@@ -178,9 +178,10 @@ func TestHTTPEnsureAcceptsGenNoIdle(t *testing.T) {
 	t.Cleanup(func() { _ = mgr.Close() })
 	mgr.mu.Lock()
 	mgr.inst[InstanceKey{User: "alice", App: "myapp.gabc"}] = &Instance{
-		Key:   InstanceKey{User: "alice", App: "myapp.gabc"},
-		State: StateRunning,
-		Addr:  "10.0.0.2:22",
+		Key:     InstanceKey{User: "alice", App: "myapp.gabc"},
+		State:   StateRunning,
+		Addr:    "10.0.0.2:22",
+		machine: &stubMachine{},
 	}
 	mgr.mu.Unlock()
 
