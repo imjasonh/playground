@@ -98,9 +98,6 @@ final class LocalLensSession: NSObject, ObservableObject {
             self.deviceOrientation = next
             self.stateLock.unlock()
             guard changed else { return }
-            self.sessionQueue.async {
-                self.applyCaptureOrientation(next)
-            }
             // Drop stale boxes until the next upright frame arrives.
             self.result = .empty(mode: self.mode)
         }
@@ -206,35 +203,20 @@ final class LocalLensSession: NSObject, ObservableObject {
         videoOutput.setSampleBufferDelegate(self, queue: outputQueue)
 
         cameraPosition = position
-        stateLock.lock()
-        let orientation = deviceOrientation
-        stateLock.unlock()
-        applyCaptureOrientation(orientation, position: position)
+        // Keep buffers sensor-native. Vision + preview share one CGImagePropertyOrientation
+        // so OCR is not fed a double-rotated / backwards frame (rear-camera text bug).
+        disableBufferMirroring()
     }
 
     private func reconfigure(for position: AVCaptureDevice.Position) throws {
         try configureSession(position: position)
     }
 
-    private func applyCaptureOrientation(
-        _ deviceOrientation: UIDeviceOrientation,
-        position: AVCaptureDevice.Position? = nil
-    ) {
+    private func disableBufferMirroring() {
         guard let connection = videoOutput.connection(with: .video) else { return }
-        let cam = position ?? cameraPosition
-        if connection.isVideoOrientationSupported {
-            connection.videoOrientation = LocalLensCoordinateMapper.captureOrientation(
-                for: deviceOrientation
-            )
-        }
         if connection.isVideoMirroringSupported {
-            connection.isVideoMirrored = cam == .front
-            // Prefer mirroring after orientation so front preview matches what Vision sees.
-            if connection.isVideoOrientationSupported {
-                connection.videoOrientation = LocalLensCoordinateMapper.captureOrientation(
-                    for: deviceOrientation
-                )
-            }
+            connection.automaticallyAdjustsVideoMirroring = false
+            connection.isVideoMirrored = false
         }
     }
 
@@ -281,6 +263,12 @@ final class LocalLensSession: NSObject, ObservableObject {
         defer { stateLock.unlock() }
         return modeForProcessing
     }
+
+    private func currentOrientationAndCamera() -> (UIDeviceOrientation, AVCaptureDevice.Position) {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return (deviceOrientation, cameraPosition)
+    }
 }
 
 enum LocalLensError: Error, Equatable, LocalizedError {
@@ -308,16 +296,23 @@ extension LocalLensSession: AVCaptureVideoDataOutputSampleBufferDelegate {
     ) {
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
 
-        let width = CVPixelBufferGetWidth(pixelBuffer)
-        let height = CVPixelBufferGetHeight(pixelBuffer)
-        let imageSize = CGSize(width: width, height: height)
+        let (deviceOrientation, position) = currentOrientationAndCamera()
+        let orientation = LocalLensCoordinateMapper.visionOrientation(
+            deviceOrientation: deviceOrientation,
+            cameraPosition: position
+        )
 
-        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
-        if let cgImage = previewContext.createCGImage(ciImage, from: ciImage.extent) {
+        // Upright (and front-mirrored) preview matching Vision’s oriented space.
+        let upright = LocalLensCoordinateMapper.uprightCIImage(
+            from: pixelBuffer,
+            orientation: orientation
+        )
+        let uprightSize = upright.extent.size
+        if let cgImage = previewContext.createCGImage(upright, from: upright.extent) {
             let image = UIImage(cgImage: cgImage)
             DispatchQueue.main.async { [weak self] in
                 self?.previewImage = image
-                self?.previewImageSize = imageSize
+                self?.previewImageSize = uprightSize
             }
         }
 
@@ -333,13 +328,13 @@ extension LocalLensSession: AVCaptureVideoDataOutputSampleBufferDelegate {
         guard shouldAnalyze else { return }
 
         let mode = currentMode()
-        // Buffer is already upright via `connection.videoOrientation`, so Vision uses `.up`.
-        // Front mirroring is applied on the connection, matching the published preview.
+        // Sensor-native buffer + explicit orientation (rear portrait → `.right`) so OCR
+        // reads forward, not backwards from a double-rotated frame.
         do {
             let frameResult = try analyzer.analyze(
                 pixelBuffer: pixelBuffer,
                 mode: mode,
-                orientation: .up
+                orientation: orientation
             )
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }

@@ -109,4 +109,42 @@ enum LocalLensCoordinateMapper {
             return .portrait
         }
     }
+
+    /// Sensor-native camera buffer → upright (and front-mirrored) image orientation.
+    ///
+    /// Local Lens keeps `AVCaptureVideoDataOutput` buffers in sensor space and
+    /// passes this value to Vision / `CIImage.oriented(_:)` so OCR is not fed a
+    /// double-rotated or backwards frame.
+    static func visionOrientation(
+        deviceOrientation: UIDeviceOrientation,
+        cameraPosition: AVCaptureDevice.Position
+    ) -> CGImagePropertyOrientation {
+        let isFront = cameraPosition == .front
+        switch deviceOrientation {
+        case .portrait:
+            return isFront ? .leftMirrored : .right
+        case .portraitUpsideDown:
+            return isFront ? .rightMirrored : .left
+        case .landscapeLeft:
+            // Device landscapeLeft → home/island on the right.
+            return isFront ? .downMirrored : .up
+        case .landscapeRight:
+            return isFront ? .upMirrored : .down
+        default:
+            return isFront ? .leftMirrored : .right
+        }
+    }
+
+    /// Applies EXIF orientation and rebases extent to `(0,0)` for preview rendering.
+    static func uprightCIImage(
+        from pixelBuffer: CVPixelBuffer,
+        orientation: CGImagePropertyOrientation
+    ) -> CIImage {
+        let oriented = CIImage(cvPixelBuffer: pixelBuffer).oriented(orientation)
+        let extent = oriented.extent
+        guard extent.origin != .zero else { return oriented }
+        return oriented.transformed(
+            by: CGAffineTransform(translationX: -extent.origin.x, y: -extent.origin.y)
+        )
+    }
 }
