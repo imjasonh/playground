@@ -71,16 +71,24 @@ final class PlaygroundUITests: XCTestCase {
     func testLauncherListsExperiments() {
         let app = launchApp()
 
+        // Early rows stay on-screen; later ones may sit below the fold once the
+        // catalog grows (SwiftUI List also virtualizes off-screen cells).
         XCTAssertTrue(app.staticTexts["Ride Monitor"].exists)
         XCTAssertTrue(app.staticTexts["T9 Keyboard"].exists)
         XCTAssertTrue(app.staticTexts["Follow the Hum"].exists)
         XCTAssertTrue(app.staticTexts["Snore Log"].exists)
         XCTAssertTrue(app.staticTexts["Z-Camera"].exists)
-        XCTAssertTrue(app.staticTexts["Voxel World"].exists)
-        XCTAssertTrue(app.staticTexts["Wigglecam"].exists)
         XCTAssertTrue(
             scrollLauncherUntilExists(app.staticTexts["Local Lens"], in: app),
             "Local Lens should appear after scrolling the launcher"
+        )
+        XCTAssertTrue(
+            scrollLauncherUntilExists(app.staticTexts["Voxel World"], in: app),
+            "Voxel World should appear after scrolling the launcher"
+        )
+        XCTAssertTrue(
+            scrollLauncherUntilExists(app.staticTexts["Wigglecam"], in: app),
+            "Wigglecam should appear after scrolling the launcher"
         )
     }
 
