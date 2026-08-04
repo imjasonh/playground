@@ -446,18 +446,9 @@ final class LocalLensAnalyzer {
         deviceOrientation: UIDeviceOrientation,
         cameraPosition: AVCaptureDevice.Position
     ) -> CGImagePropertyOrientation {
-        let isFront = cameraPosition == .front
-        switch deviceOrientation {
-        case .portrait:
-            return isFront ? .leftMirrored : .right
-        case .portraitUpsideDown:
-            return isFront ? .rightMirrored : .left
-        case .landscapeLeft:
-            return isFront ? .downMirrored : .up
-        case .landscapeRight:
-            return isFront ? .upMirrored : .down
-        default:
-            return isFront ? .leftMirrored : .right
-        }
+        LocalLensCoordinateMapper.visionOrientation(
+            deviceOrientation: deviceOrientation,
+            cameraPosition: cameraPosition
+        )
     }
 }

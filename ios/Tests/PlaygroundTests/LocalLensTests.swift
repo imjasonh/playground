@@ -143,6 +143,54 @@ final class LocalLensTests: XCTestCase {
         XCTAssertEqual(front, .leftMirrored)
     }
 
+    func testRearPortraitOrientationIsRightSoOCRIsNotBackwards() {
+        // Sensor-native rear buffers need `.right` in portrait. Feeding `.up`
+        // (as if videoOrientation had already rotated the frame) makes OCR read
+        // text backwards / rotated.
+        let orientation = LocalLensCoordinateMapper.visionOrientation(
+            deviceOrientation: .portrait,
+            cameraPosition: .back
+        )
+        XCTAssertEqual(orientation, .right)
+        XCTAssertEqual(
+            LocalLensCoordinateMapper.visionOrientation(
+                deviceOrientation: .landscapeRight,
+                cameraPosition: .back
+            ),
+            .down
+        )
+        XCTAssertEqual(
+            LocalLensCoordinateMapper.visionOrientation(
+                deviceOrientation: .portrait,
+                cameraPosition: .front
+            ),
+            .leftMirrored
+        )
+    }
+
+    func testUprightCIImageRebasesExtentToOrigin() throws {
+        var buffer: CVPixelBuffer?
+        let status = CVPixelBufferCreate(
+            kCFAllocatorDefault,
+            64,
+            32,
+            kCVPixelFormatType_32BGRA,
+            nil,
+            &buffer
+        )
+        XCTAssertEqual(status, kCVReturnSuccess)
+        let pixelBuffer = try XCTUnwrap(buffer)
+
+        // `.right` swaps width/height for a landscape sensor buffer.
+        let upright = LocalLensCoordinateMapper.uprightCIImage(
+            from: pixelBuffer,
+            orientation: .right
+        )
+        XCTAssertEqual(upright.extent.origin, .zero)
+        XCTAssertEqual(upright.extent.width, 32, accuracy: 0.001)
+        XCTAssertEqual(upright.extent.height, 64, accuracy: 0.001)
+    }
+
     func testCaptureOrientationSwapsLandscapeAxes() {
         XCTAssertEqual(LocalLensCoordinateMapper.captureOrientation(for: .portrait), .portrait)
         XCTAssertEqual(LocalLensCoordinateMapper.captureOrientation(for: .portraitUpsideDown), .portraitUpsideDown)
