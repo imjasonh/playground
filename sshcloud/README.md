@@ -33,7 +33,21 @@ go build -o bin/agent ./cmd/agent
 go build -o bin/api ./cmd/api
 ```
 
+## Run the gateway (local)
+
+```bash
+go run ./cmd/gateway -listen 127.0.0.1:2222
+# in another terminal:
+ssh -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null join@127.0.0.1
+# pick a username → app menu → select fortune (in-process stub)
+ssh -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null fortune@127.0.0.1
+```
+
+State is in-memory (lost on restart). Host key defaults to `./ssh_host_ed25519_key`.
+
 ## Status
 
-Scaffold + pure-Go routing/session admission. Gateway does not yet speak SSH;
-Firecracker, certs, and Terraform come next.
+- [x] Routing, session admission (max 1 / user×app), memory store
+- [x] SSH gateway: join, menu, fortune stub, busy reject
+- [ ] Deploy TUI, Firestore, SSH user certs → Firecracker proxy
+- [ ] Host agent / orchestrator / Terraform

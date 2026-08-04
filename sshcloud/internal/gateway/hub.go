@@ -136,3 +136,43 @@ func (h *Hub) ReleaseSession(id session.ID) {
 		h.Sessions.Release(id)
 	}
 }
+
+// OpenApp ensures a demo app exists and admits a session for an already-authenticated user.
+// Used by the in-session menu handoff (key auth already happened on the SSH conn).
+func (h *Hub) OpenApp(ctx context.Context, userID, app string) (Result, error) {
+	if userID == "" || app == "" {
+		return Result{}, fmt.Errorf("user and app required")
+	}
+	if err := h.maybeEnsureDemo(ctx, userID, app); err != nil {
+		return Result{}, err
+	}
+	// Non-demo apps must already exist.
+	if !store.IsPlatformDemo(app) {
+		ok, err := h.Store.HasApp(ctx, userID, app)
+		if err != nil {
+			return Result{}, err
+		}
+		if !ok {
+			return Result{}, fmt.Errorf("unknown app %q", app)
+		}
+	}
+	id, err := h.Sessions.Admit(userID, app)
+	if err != nil {
+		var busy session.ErrBusy
+		if errors.As(err, &busy) {
+			return Result{
+				Action:  ActionRejectBusy,
+				User:    userID,
+				App:     app,
+				Message: busy.Error(),
+			}, nil
+		}
+		return Result{}, err
+	}
+	return Result{
+		Action:  ActionProxyApp,
+		User:    userID,
+		App:     app,
+		Session: id,
+	}, nil
+}
