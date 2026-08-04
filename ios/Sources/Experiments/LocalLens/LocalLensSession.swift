@@ -17,6 +17,8 @@ final class LocalLensSession: NSObject, ObservableObject {
     @Published private(set) var runState: RunState = .idle
     @Published private(set) var statusMessage = "Everything stays on this device — no network."
     @Published private(set) var previewImage: UIImage?
+    /// Pixel size of the upright preview / Vision image (matches published `previewImage`).
+    @Published private(set) var previewImageSize: CGSize = .zero
     @Published private(set) var result = LocalLensFrameResult.empty(mode: .classify)
     @Published private(set) var mode: LocalLensMode = .classify
     @Published private(set) var usingFrontCamera = false
@@ -70,6 +72,7 @@ final class LocalLensSession: NSObject, ObservableObject {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.previewImage = nil
+            self.previewImageSize = .zero
             if self.runState == .running {
                 self.runState = .idle
                 self.statusMessage = "Stopped. Frames never left this device."
@@ -79,22 +82,27 @@ final class LocalLensSession: NSObject, ObservableObject {
 
     private func beginOrientationUpdates() {
         UIDevice.current.beginGeneratingDeviceOrientationNotifications()
-        deviceOrientation = UIDevice.current.orientation
+        let initial = Self.resolvedDeviceOrientation(UIDevice.current.orientation)
+        stateLock.lock()
+        deviceOrientation = initial
+        stateLock.unlock()
         orientationObserver = NotificationCenter.default.addObserver(
             forName: UIDevice.orientationDidChangeNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
             guard let self else { return }
-            let next = UIDevice.current.orientation
-            switch next {
-            case .portrait, .portraitUpsideDown, .landscapeLeft, .landscapeRight:
-                self.stateLock.lock()
-                self.deviceOrientation = next
-                self.stateLock.unlock()
-            default:
-                break
+            let next = Self.resolvedDeviceOrientation(UIDevice.current.orientation)
+            self.stateLock.lock()
+            let changed = self.deviceOrientation != next
+            self.deviceOrientation = next
+            self.stateLock.unlock()
+            guard changed else { return }
+            self.sessionQueue.async {
+                self.applyCaptureOrientation(next)
             }
+            // Drop stale boxes until the next upright frame arrives.
+            self.result = .empty(mode: self.mode)
         }
     }
 
@@ -125,6 +133,7 @@ final class LocalLensSession: NSObject, ObservableObject {
                 try self.reconfigure(for: next)
                 DispatchQueue.main.async {
                     self.usingFrontCamera = next == .front
+                    self.result = .empty(mode: self.mode)
                     self.statusMessage = next == .front
                         ? "Front camera — \(self.mode.blurb)"
                         : "Rear camera — \(self.mode.blurb)"
@@ -196,17 +205,37 @@ final class LocalLensSession: NSObject, ObservableObject {
         session.addOutput(videoOutput)
         videoOutput.setSampleBufferDelegate(self, queue: outputQueue)
 
-        if let connection = videoOutput.connection(with: .video) {
-            if connection.isVideoMirroringSupported {
-                connection.isVideoMirrored = position == .front
-            }
-        }
-
         cameraPosition = position
+        stateLock.lock()
+        let orientation = deviceOrientation
+        stateLock.unlock()
+        applyCaptureOrientation(orientation, position: position)
     }
 
     private func reconfigure(for position: AVCaptureDevice.Position) throws {
         try configureSession(position: position)
+    }
+
+    private func applyCaptureOrientation(
+        _ deviceOrientation: UIDeviceOrientation,
+        position: AVCaptureDevice.Position? = nil
+    ) {
+        guard let connection = videoOutput.connection(with: .video) else { return }
+        let cam = position ?? cameraPosition
+        if connection.isVideoOrientationSupported {
+            connection.videoOrientation = LocalLensCoordinateMapper.captureOrientation(
+                for: deviceOrientation
+            )
+        }
+        if connection.isVideoMirroringSupported {
+            connection.isVideoMirrored = cam == .front
+            // Prefer mirroring after orientation so front preview matches what Vision sees.
+            if connection.isVideoOrientationSupported {
+                connection.videoOrientation = LocalLensCoordinateMapper.captureOrientation(
+                    for: deviceOrientation
+                )
+            }
+        }
     }
 
     private static func camera(for position: AVCaptureDevice.Position) -> AVCaptureDevice? {
@@ -222,6 +251,28 @@ final class LocalLensSession: NSObject, ObservableObject {
             return await AVCaptureDevice.requestAccess(for: .video)
         default:
             return false
+        }
+    }
+
+    private static func resolvedDeviceOrientation(_ raw: UIDeviceOrientation) -> UIDeviceOrientation {
+        switch raw {
+        case .portrait, .portraitUpsideDown, .landscapeLeft, .landscapeRight:
+            return raw
+        default:
+            // Flat / unknown — keep the interface orientation if we can.
+            if let scene = UIApplication.shared.connectedScenes
+                .compactMap({ $0 as? UIWindowScene })
+                .first
+            {
+                switch scene.interfaceOrientation {
+                case .portrait: return .portrait
+                case .portraitUpsideDown: return .portraitUpsideDown
+                case .landscapeLeft: return .landscapeLeft
+                case .landscapeRight: return .landscapeRight
+                default: break
+                }
+            }
+            return .portrait
         }
     }
 
@@ -257,11 +308,16 @@ extension LocalLensSession: AVCaptureVideoDataOutputSampleBufferDelegate {
     ) {
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
 
+        let width = CVPixelBufferGetWidth(pixelBuffer)
+        let height = CVPixelBufferGetHeight(pixelBuffer)
+        let imageSize = CGSize(width: width, height: height)
+
         let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
         if let cgImage = previewContext.createCGImage(ciImage, from: ciImage.extent) {
             let image = UIImage(cgImage: cgImage)
             DispatchQueue.main.async { [weak self] in
                 self?.previewImage = image
+                self?.previewImageSize = imageSize
             }
         }
 
@@ -272,36 +328,35 @@ extension LocalLensSession: AVCaptureVideoDataOutputSampleBufferDelegate {
             isAnalyzing = true
             lastAnalyzeTime = now
         }
-        let position = cameraPosition
-        let deviceOrientation = self.deviceOrientation
         stateLock.unlock()
 
         guard shouldAnalyze else { return }
 
         let mode = currentMode()
-        let orientation = LocalLensAnalyzer.visionOrientation(
-            deviceOrientation: deviceOrientation,
-            cameraPosition: position
-        )
-
+        // Buffer is already upright via `connection.videoOrientation`, so Vision uses `.up`.
+        // Front mirroring is applied on the connection, matching the published preview.
         do {
             let frameResult = try analyzer.analyze(
                 pixelBuffer: pixelBuffer,
                 mode: mode,
-                orientation: orientation
+                orientation: .up
             )
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                // Drop stale results if the user switched modes mid-flight.
                 guard self.mode == mode else { return }
                 self.result = frameResult
                 if frameResult.findings.isEmpty {
                     self.statusMessage = LocalLensResultBuilder.emptyStatus(for: mode)
                 } else {
-                    let top = frameResult.findings.prefix(3)
-                        .map { LocalLensResultBuilder.chipText(for: $0) }
-                        .joined(separator: " · ")
-                    self.statusMessage = top
+                    let boxed = frameResult.findings.filter { $0.boundingBox != nil }.count
+                    if boxed > 0 {
+                        self.statusMessage = "\(boxed) in view · \(mode.title)"
+                    } else {
+                        let top = frameResult.findings.prefix(3)
+                            .map { LocalLensResultBuilder.chipText(for: $0) }
+                            .joined(separator: " · ")
+                        self.statusMessage = top
+                    }
                 }
             }
         } catch {
