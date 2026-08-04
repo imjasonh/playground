@@ -277,13 +277,14 @@ func (m *Manager) Sleep(ctx context.Context, user, app string) error {
 	}
 
 	meta := snapshot.Meta{
-		User:      user,
-		App:       app,
-		GuestIP:   in.GuestIP,
-		TapName:   in.TapName,
-		GuestMAC:  in.GuestMAC,
-		HostIP:    in.HostIP,
-		CreatedAt: time.Now().UTC(),
+		User:       user,
+		App:        app,
+		GuestIP:    in.GuestIP,
+		TapName:    in.TapName,
+		GuestMAC:   in.GuestMAC,
+		HostIP:     in.HostIP,
+		RootfsPath: in.Rootfs,
+		CreatedAt:  time.Now().UTC(),
 	}
 	if err := pkg.WriteMeta(meta); err != nil {
 		return err
@@ -314,7 +315,10 @@ func (m *Manager) Sleep(ctx context.Context, user, app string) error {
 }
 
 // Evict drops a sleeping instance from this host without deleting the snapshot.
-// Used after Sleep as the source side of cross-host migrate. Deletes TAP and workdir.
+// Used after Sleep as the source side of cross-host migrate. Deletes TAP and
+// frees the VMM bookkeeping; the shared snapshot package retains rootfs bytes.
+// The on-disk rootfs path may be removed — Adopt recreates it from the package
+// at the same absolute path before snapshot/load.
 func (m *Manager) Evict(user, app string) error {
 	k := InstanceKey{User: user, App: app}
 	m.mu.Lock()
@@ -336,6 +340,7 @@ func (m *Manager) Evict(user, app string) error {
 	if !m.cfg.SkipTap && in.TapName != "" {
 		_ = firecracker.DeleteTap(in.TapName)
 	}
+	// Remove workdir but keep parent; Adopt will recreate rootfs at Meta.RootfsPath.
 	_ = os.RemoveAll(in.WorkDir)
 	return nil
 }
@@ -382,13 +387,20 @@ func (m *Manager) Adopt(ctx context.Context, user, app string) (*Instance, error
 		pkg.Meta = meta
 	}
 
-	dir := filepath.Join(m.cfg.WorkDir, fmt.Sprintf("vm-%d", n))
+	// Firecracker snapshots embed absolute rootfs + TAP names. Recreate those
+	// exact paths before snapshot/load (cross-host migrate and same-host wake).
+	rootfsPath := meta.RootfsPath
+	if rootfsPath == "" {
+		rootfsPath = filepath.Join(m.cfg.WorkDir, fmt.Sprintf("vm-%d", n), "rootfs.ext4")
+	}
+	dir := filepath.Dir(rootfsPath)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
-	rootfsPath := filepath.Join(dir, "rootfs.ext4")
-	// New TAP name on this host; keep guest/host IP + MAC from snapshot for FC continuity.
-	tapName := fmt.Sprintf("fc-%d", n)
+	tapName := meta.TapName
+	if tapName == "" {
+		tapName = fmt.Sprintf("fc-%d", n)
+	}
 	in := &Instance{
 		Key:      k,
 		State:    StateSleeping,

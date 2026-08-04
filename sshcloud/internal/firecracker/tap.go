@@ -25,15 +25,17 @@ func ipCommand(args ...string) *exec.Cmd {
 
 // CreateTap creates and configures a TAP device (requires CAP_NET_ADMIN).
 // When not root, the TAP is owned by the current uid so Firecracker can open it.
+// Idempotent if the device already exists.
 func CreateTap(name, hostIP string, prefix int) error {
-	args := []string{"tuntap", "add", "dev", name, "mode", "tap"}
-	if os.Geteuid() != 0 {
-		args = append(args, "user", fmt.Sprintf("%d", os.Getuid()))
-	}
-	if out, err := ipCommand(args...).CombinedOutput(); err != nil {
-		// already exists?
-		if !strings.Contains(string(out), "File exists") && !strings.Contains(string(out), "exists") {
-			return fmt.Errorf("tuntap add: %v\n%s", err, out)
+	if !tapExists(name) {
+		args := []string{"tuntap", "add", "dev", name, "mode", "tap"}
+		if os.Geteuid() != 0 {
+			args = append(args, "user", fmt.Sprintf("%d", os.Getuid()))
+		}
+		if out, err := ipCommand(args...).CombinedOutput(); err != nil {
+			if !tapExists(name) && !strings.Contains(string(out), "exists") {
+				return fmt.Errorf("tuntap add: %v\n%s", err, out)
+			}
 		}
 	}
 	cidr := fmt.Sprintf("%s/%d", hostIP, prefix)
@@ -51,10 +53,17 @@ func CreateTap(name, hostIP string, prefix int) error {
 
 // DeleteTap removes a TAP device.
 func DeleteTap(name string) error {
+	if !tapExists(name) {
+		return nil
+	}
 	if out, err := ipCommand("link", "del", "dev", name).CombinedOutput(); err != nil {
 		return fmt.Errorf("link del: %v\n%s", err, out)
 	}
 	return nil
+}
+
+func tapExists(name string) bool {
+	return ipCommand("link", "show", "dev", name).Run() == nil
 }
 
 // GuestBootArgs returns kernel IP config for a static virtio-net address.

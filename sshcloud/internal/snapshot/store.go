@@ -11,15 +11,18 @@ import (
 	"time"
 )
 
-// Meta is persisted beside snapshot artifacts (tap/IP/MAC for wake).
+// Meta is persisted beside snapshot artifacts (tap/IP/MAC/rootfs for wake).
+// RootfsPath and TapName must be recreated at the same absolute paths before
+// snapshot/load — Firecracker embeds them in the snapshot state.
 type Meta struct {
-	User      string    `json:"user"`
-	App       string    `json:"app"`
-	GuestIP   string    `json:"guest_ip"`
-	TapName   string    `json:"tap_name"`
-	GuestMAC  string    `json:"guest_mac"`
-	HostIP    string    `json:"host_ip"`
-	CreatedAt time.Time `json:"created_at"`
+	User       string    `json:"user"`
+	App        string    `json:"app"`
+	GuestIP    string    `json:"guest_ip"`
+	TapName    string    `json:"tap_name"`
+	GuestMAC   string    `json:"guest_mac"`
+	HostIP     string    `json:"host_ip"`
+	RootfsPath string    `json:"rootfs_path"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 // Package is a complete sleep artifact set on local disk before/after blob sync.
