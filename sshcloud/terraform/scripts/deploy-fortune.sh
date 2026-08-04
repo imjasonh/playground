@@ -62,8 +62,35 @@ ssh_base=(
   -o BatchMode=yes
 )
 
+TIMEOUT_BIN="$(command -v timeout || command -v gtimeout || true)"
+run_with_timeout() {
+  local seconds="$1"
+  shift
+  if [[ -n "$TIMEOUT_BIN" ]]; then
+    "$TIMEOUT_BIN" --signal=TERM --kill-after=5 "$seconds" "$@"
+    return
+  fi
+
+  "$@" &
+  local command_pid=$!
+  (
+    sleep "$seconds"
+    if kill -0 "$command_pid" 2>/dev/null; then
+      kill "$command_pid" 2>/dev/null || true
+      sleep 5
+      kill -9 "$command_pid" 2>/dev/null || true
+    fi
+  ) &
+  local watchdog_pid=$!
+  local rc=0
+  wait "$command_pid" || rc=$?
+  kill "$watchdog_pid" 2>/dev/null || true
+  wait "$watchdog_pid" 2>/dev/null || true
+  return "$rc"
+}
+
 run_ssh() {
-  timeout --signal=TERM --kill-after=5 "$REQUEST_TIMEOUT" "${ssh_base[@]}" "$@"
+  run_with_timeout "$REQUEST_TIMEOUT" "${ssh_base[@]}" "$@"
 }
 
 pause_retry() {
@@ -77,13 +104,14 @@ port_open() {
   if command -v nc >/dev/null 2>&1; then
     nc -z -w 2 "$IP" 22
   else
-    timeout 2 bash -c "echo >/dev/tcp/${IP}/22"
+    run_with_timeout 2 bash -c "echo >/dev/tcp/${IP}/22"
   fi
 }
 
 echo "waiting for gateway SSH on ${IP}:22 …"
 ok=0
-for i in $(seq 1 "$RETRIES"); do
+i=1
+while (( i <= RETRIES )); do
   if (( SECONDS >= deadline )); then
     break
   fi
@@ -93,6 +121,7 @@ for i in $(seq 1 "$RETRIES"); do
   fi
   echo "  attempt ${i}/${RETRIES}: port closed, sleep ${SLEEP_SECS}s"
   pause_retry || break
+  ((i += 1))
 done
 if [[ "$ok" -ne 1 ]]; then
   echo "gateway SSH never became ready" >&2
@@ -101,7 +130,8 @@ fi
 
 echo "joining as ${USER_NAME}…"
 joined=0
-for i in $(seq 1 "$RETRIES"); do
+i=1
+while (( i <= RETRIES )); do
   if (( SECONDS >= deadline )); then
     break
   fi
@@ -116,6 +146,7 @@ for i in $(seq 1 "$RETRIES"); do
   fi
   echo "  join attempt ${i}/${RETRIES} failed (rc=${join_rc}); sleep ${SLEEP_SECS}s"
   pause_retry || break
+  ((i += 1))
 done
 if [[ "$joined" -ne 1 ]]; then
   echo "join failed" >&2
@@ -130,7 +161,8 @@ deploy_args=(
   "--strategy=$STRATEGY"
   "--yes"
 )
-for i in $(seq 1 "$RETRIES"); do
+i=1
+while (( i <= RETRIES )); do
   if (( SECONDS >= deadline )); then
     break
   fi
@@ -145,6 +177,7 @@ for i in $(seq 1 "$RETRIES"); do
   fi
   echo "  deploy attempt ${i}/${RETRIES} failed (rc=${rc}); sleep ${SLEEP_SECS}s"
   pause_retry || break
+  ((i += 1))
 done
 echo "deploy failed before the ${TOTAL_TIMEOUT}s overall deadline" >&2
 exit 1

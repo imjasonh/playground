@@ -23,12 +23,19 @@ func RunAppStub(ctx context.Context, ch io.ReadWriter, hub *Hub, res Result) int
 
 func runAppStub(ctx context.Context, t *term, hub *Hub, res Result) int {
 	if hub.UserCA != nil && hub.Dial != nil {
-		img, tier := "", "tiny"
-		if a, err := hub.Store.GetApp(ctx, res.User, res.App); err == nil && a != nil {
-			img = a.Image
-			if a.Tier != "" {
-				tier = a.Tier
+		img, tier := res.Image, res.Tier
+		if img == "" || tier == "" {
+			if a, err := hub.Store.GetApp(ctx, res.User, res.App); err == nil && a != nil {
+				if img == "" {
+					img = a.Image
+				}
+				if tier == "" {
+					tier = a.Tier
+				}
 			}
+		}
+		if tier == "" {
+			tier = "tiny"
 		}
 		addr, err := DialWithLoading(ctx, t.out, res.App, hub.Dial, DialRequest{
 			User:   res.User,

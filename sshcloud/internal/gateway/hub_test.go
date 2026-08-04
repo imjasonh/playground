@@ -2,8 +2,10 @@ package gateway
 
 import (
 	"context"
+	"strings"
 	"testing"
 
+	"github.com/imjasonh/playground/sshcloud/internal/cutover"
 	"github.com/imjasonh/playground/sshcloud/internal/session"
 	"github.com/imjasonh/playground/sshcloud/internal/store"
 )
@@ -96,4 +98,37 @@ func TestHubPinsActiveGenAndAllowsDrainPeer(t *testing.T) {
 	}
 	h.ReleaseSession(r.Session)
 	h.Sessions.Release(old)
+}
+
+func TestAdmissionPinsGenerationImageAndTier(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	st := store.NewMemory()
+	if err := st.CreateUser(ctx, "alice", "SHA256:alice"); err != nil {
+		t.Fatal(err)
+	}
+	oldImage := "ghcr.io/example/app@sha256:" + strings.Repeat("a", 64)
+	if err := st.UpsertApp(ctx, store.App{
+		Owner: "alice", Name: "myapp", Image: oldImage, Tier: "tiny", ActiveGen: "gold",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sessions := session.NewRegistry()
+	h := &Hub{Store: st, Sessions: sessions, Cutover: cutover.New(st, sessions, nil)}
+	res, err := h.HandleConnect(ctx, Connect{SSHUser: "myapp", KeyFingerprint: "SHA256:alice"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	app, _ := st.GetApp(ctx, "alice", "myapp")
+	app.Image = "ghcr.io/example/app@sha256:" + strings.Repeat("b", 64)
+	app.Tier = "small"
+	app.ActiveGen = "gnew"
+	if err := st.UpsertApp(ctx, *app); err != nil {
+		t.Fatal(err)
+	}
+	if res.Gen != "gold" || res.Image != oldImage || res.Tier != "tiny" {
+		t.Fatalf("admission spec changed after deploy: %+v", res)
+	}
+	h.ReleaseSession(res.Session)
 }

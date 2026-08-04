@@ -93,22 +93,23 @@ func (c *Controller) ActiveGen(ctx context.Context, user, app string) (string, e
 	return a.ActiveGen, nil
 }
 
-// Admit atomically pins and registers a session against the active generation.
+// Admit atomically pins and registers a session against the active generation,
+// returning that generation's immutable image and tier.
 // It shares the per-app operation lock with Deploy so no connection can be
 // admitted to a generation while cutover is publishing another.
-func (c *Controller) Admit(ctx context.Context, user, app string) (session.ID, string, error) {
+func (c *Controller) Admit(ctx context.Context, user, app string) (session.ID, string, string, string, error) {
 	if c == nil || c.Store == nil || c.Sessions == nil {
-		return "", "", fmt.Errorf("cutover admission is not configured")
+		return "", "", "", "", fmt.Errorf("cutover admission is not configured")
 	}
 	op := c.appLock(user, app)
 	op.Lock()
 	defer op.Unlock()
 	a, err := c.Store.GetApp(ctx, user, app)
 	if err != nil {
-		return "", "", err
+		return "", "", "", "", err
 	}
 	if a == nil {
-		return "", "", fmt.Errorf("unknown app %q", app)
+		return "", "", "", "", fmt.Errorf("unknown app %q", app)
 	}
 	if a.DrainingGen != "" && a.DrainUntilUnix > 0 {
 		if c.now().Unix() >= a.DrainUntilUnix {
@@ -116,17 +117,17 @@ func (c *Controller) Admit(ctx context.Context, user, app string) (session.ID, s
 			c.finishDrainLocked(ctx, user, app, a.DrainingGen)
 			a, err = c.Store.GetApp(ctx, user, app)
 			if err != nil {
-				return "", "", err
+				return "", "", "", "", err
 			}
 			if a == nil {
-				return "", "", fmt.Errorf("app %q disappeared during drain cleanup", app)
+				return "", "", "", "", fmt.Errorf("app %q disappeared during drain cleanup", app)
 			}
 		} else {
 			c.armDrainTimer(user, app, a.DrainingGen, time.Unix(a.DrainUntilUnix, 0))
 		}
 	}
 	id, err := c.Sessions.Admit(user, app, a.ActiveGen)
-	return id, a.ActiveGen, err
+	return id, a.ActiveGen, a.Image, a.Tier, err
 }
 
 func (c *Controller) appLock(user, app string) *sync.Mutex {

@@ -48,6 +48,8 @@ type Result struct {
 	User    string // set when key is known (or after join — caller updates)
 	App     string // set for ActionProxyApp / ActionRejectBusy
 	Gen     string // microVM generation this session is pinned to
+	Image   string // immutable deploy spec pinned with Gen
+	Tier    string
 	Session session.ID
 	Message string
 }
@@ -116,28 +118,24 @@ func (h *Hub) HandleConnect(ctx context.Context, c Connect) (Result, error) {
 	}
 }
 
-func (h *Hub) pinGen(ctx context.Context, userID, app string) (string, error) {
-	if h.Cutover != nil {
-		return h.Cutover.ActiveGen(ctx, userID, app)
-	}
-	a, err := h.Store.GetApp(ctx, userID, app)
-	if err != nil || a == nil {
-		return "", err
-	}
-	return a.ActiveGen, nil
-}
-
 func (h *Hub) admitApp(ctx context.Context, userID, app string) (Result, error) {
 	var (
-		id  session.ID
-		gen string
-		err error
+		id          session.ID
+		gen         string
+		pinnedImage string
+		pinnedTier  string
+		err         error
 	)
 	if h.Cutover != nil {
-		id, gen, err = h.Cutover.Admit(ctx, userID, app)
+		id, gen, pinnedImage, pinnedTier, err = h.Cutover.Admit(ctx, userID, app)
 	} else {
-		gen, err = h.pinGen(ctx, userID, app)
+		var pinned *store.App
+		pinned, err = h.Store.GetApp(ctx, userID, app)
+		if err == nil && pinned == nil {
+			err = fmt.Errorf("unknown app %q", app)
+		}
 		if err == nil {
+			gen, pinnedImage, pinnedTier = pinned.ActiveGen, pinned.Image, pinned.Tier
 			id, err = h.Sessions.Admit(userID, app, gen)
 		}
 	}
@@ -159,6 +157,8 @@ func (h *Hub) admitApp(ctx context.Context, userID, app string) (Result, error) 
 		User:    userID,
 		App:     app,
 		Gen:     gen,
+		Image:   pinnedImage,
+		Tier:    pinnedTier,
 		Session: id,
 	}, nil
 }

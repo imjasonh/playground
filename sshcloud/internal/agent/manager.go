@@ -115,8 +115,11 @@ type Manager struct {
 	mu   sync.Mutex
 	inst map[InstanceKey]*Instance
 	ops  map[InstanceKey]*sync.Mutex
-	seq  int
-	stop chan struct{}
+	// reserved fences resources during slow boot/restore before inst is
+	// published, so concurrent instances cannot claim the same IP or TAP.
+	reserved map[string]InstanceKey
+	seq      int
+	stop     chan struct{}
 }
 
 // NewManager validates config essentials.
@@ -152,11 +155,12 @@ func NewManager(cfg Config) (*Manager, error) {
 		return nil, err
 	}
 	m := &Manager{
-		cfg:  cfg,
-		rt:   rt,
-		inst: make(map[InstanceKey]*Instance),
-		ops:  make(map[InstanceKey]*sync.Mutex),
-		stop: make(chan struct{}),
+		cfg:      cfg,
+		rt:       rt,
+		inst:     make(map[InstanceKey]*Instance),
+		ops:      make(map[InstanceKey]*sync.Mutex),
+		reserved: make(map[string]InstanceKey),
+		stop:     make(chan struct{}),
 	}
 	if cfg.IdleTimeout > 0 && cfg.SnapStore != nil {
 		go m.idleLoop()
@@ -236,11 +240,10 @@ func (m *Manager) EnsureWith(ctx context.Context, user, app string, opt EnsureOp
 		_ = in.machine.Stop()
 		_ = firecracker.DeleteTap(in.TapName)
 		_ = os.RemoveAll(in.WorkDir)
+		m.releaseResources(k)
 		return nil, err
 	}
-	m.mu.Lock()
-	m.inst[k] = in
-	m.mu.Unlock()
+	m.publishInstance(in)
 	return instanceCopy(in), nil
 }
 
@@ -415,7 +418,7 @@ func (m *Manager) bootCold(ctx context.Context, k InstanceKey, n int, opt Ensure
 		octet := (n+i)%200 + 1
 		candidateHost := fmt.Sprintf("%s.%d.1", m.cfg.SubnetBase, octet)
 		candidateGuest := fmt.Sprintf("%s.%d.2", m.cfg.SubnetBase, octet)
-		if err := m.checkResourceConflict(k, rootfsPath, tapName, candidateGuest, candidateHost); err == nil {
+		if err := m.reserveResources(k, rootfsPath, tapName, candidateGuest, candidateHost); err == nil {
 			hostIP, guestIP = candidateHost, candidateGuest
 			break
 		}
@@ -423,6 +426,11 @@ func (m *Manager) bootCold(ctx context.Context, k InstanceKey, n int, opt Ensure
 	if hostIP == "" {
 		return nil, fmt.Errorf("no guest subnet available for %s", k)
 	}
+	defer func() {
+		if retErr != nil {
+			m.releaseResources(k)
+		}
+	}()
 	if err := firecracker.CreateTap(tapName, hostIP, 24); err != nil {
 		return nil, fmt.Errorf("create tap: %w (agent needs CAP_NET_ADMIN)", err)
 	}
@@ -605,38 +613,41 @@ func (m *Manager) Sleep(ctx context.Context, user, app string) error {
 	if err := mach.Pause(ctx); err != nil {
 		return fmt.Errorf("pause: %w", err)
 	}
-	if err := rootfs.Clone(in.Rootfs, pkg.RootfsPath); err != nil {
-		_ = mach.Resume(ctx)
-		return fmt.Errorf("clone rootfs for snap: %w", err)
-	}
-	files := firecracker.SnapshotFiles{StatePath: pkg.StatePath, MemPath: pkg.MemPath}
-	if err := mach.CreateSnapshot(ctx, files); err != nil {
-		_ = mach.Resume(ctx)
-		return fmt.Errorf("create snapshot: %w", err)
-	}
-	if err := mach.Kill(); err != nil {
-		return fmt.Errorf("kill after snapshot: %w", err)
-	}
-
-	key := snapshot.KeyFor(user, app)
-	if err := m.cfg.SnapStore.Put(ctx, key, pkg); err != nil {
-		if restored, addr, wakeErr := m.restoreFromPackage(ctx, in, pkg); wakeErr == nil {
-			if in.relay != nil {
-				addr = in.relay.Addr()
-			}
-			m.mu.Lock()
-			in.machine = restored
-			in.Addr = addr
-			in.State = StateRunning
-			m.mu.Unlock()
-		} else {
+	resumeAfterFailure := func(cause error) error {
+		recoveryCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if resumeErr := mach.Resume(recoveryCtx); resumeErr != nil {
+			_ = mach.Kill()
 			m.mu.Lock()
 			in.machine = nil
 			in.State = StateFailed
 			m.mu.Unlock()
-			return fmt.Errorf("upload snapshot: %w (restore also failed: %v)", err, wakeErr)
+			return fmt.Errorf("%w (resume also failed: %v)", cause, resumeErr)
 		}
-		return fmt.Errorf("upload snapshot: %w", err)
+		return cause
+	}
+	if err := rootfs.Clone(in.Rootfs, pkg.RootfsPath); err != nil {
+		return resumeAfterFailure(fmt.Errorf("clone rootfs for snap: %w", err))
+	}
+	files := firecracker.SnapshotFiles{StatePath: pkg.StatePath, MemPath: pkg.MemPath}
+	if err := mach.CreateSnapshot(ctx, files); err != nil {
+		return resumeAfterFailure(fmt.Errorf("create snapshot: %w", err))
+	}
+	key := snapshot.KeyFor(user, app)
+	if err := m.cfg.SnapStore.Put(ctx, key, pkg); err != nil {
+		return resumeAfterFailure(fmt.Errorf("upload snapshot: %w", err))
+	}
+	if err := mach.Kill(); err != nil {
+		// The durable snapshot is already committed. Keep state recoverable even
+		// if process teardown reports an error.
+		_ = mach.Kill()
+		m.mu.Lock()
+		in.machine = nil
+		in.State = StateSleeping
+		in.snapKey = key
+		in.LastUsed = time.Now()
+		m.mu.Unlock()
+		return fmt.Errorf("kill after durable snapshot: %w", err)
 	}
 
 	m.mu.Lock()
@@ -768,9 +779,15 @@ func (m *Manager) adopt(ctx context.Context, k InstanceKey, n int, opt EnsureOpt
 	if err := m.validateSnapshotNetwork(k, meta); err != nil {
 		return nil, err
 	}
-	if err := m.checkResourceConflict(k, rootfsPath, tapName, meta.GuestIP, meta.HostIP); err != nil {
+	if err := m.reserveResources(k, rootfsPath, tapName, meta.GuestIP, meta.HostIP); err != nil {
 		return nil, err
 	}
+	published := false
+	defer func() {
+		if !published {
+			m.releaseResources(k)
+		}
+	}()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
@@ -818,13 +835,21 @@ func (m *Manager) adopt(ctx context.Context, k InstanceKey, n int, opt EnsureOpt
 		return nil, err
 	}
 
-	m.mu.Lock()
-	m.inst[k] = in
-	m.mu.Unlock()
+	m.publishInstance(in)
+	published = true
 	return instanceCopy(in), nil
 }
 
-func (m *Manager) checkResourceConflict(k InstanceKey, rootfsPath, tapName, guestIP, hostIP string) error {
+func resourceKeys(rootfsPath, tapName, guestIP, hostIP string) []string {
+	return []string{
+		"rootfs:" + rootfsPath,
+		"tap:" + tapName,
+		"guest-ip:" + guestIP,
+		"host-ip:" + hostIP,
+	}
+}
+
+func (m *Manager) reserveResources(k InstanceKey, rootfsPath, tapName, guestIP, hostIP string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for otherKey, in := range m.inst {
@@ -835,7 +860,36 @@ func (m *Manager) checkResourceConflict(k InstanceKey, rootfsPath, tapName, gues
 			return fmt.Errorf("snapshot resources for %s collide with instance %s", k, otherKey)
 		}
 	}
+	for _, resource := range resourceKeys(rootfsPath, tapName, guestIP, hostIP) {
+		if other, ok := m.reserved[resource]; ok && other != k {
+			return fmt.Errorf("resource %s for %s is being prepared by instance %s", resource, k, other)
+		}
+	}
+	for _, resource := range resourceKeys(rootfsPath, tapName, guestIP, hostIP) {
+		m.reserved[resource] = k
+	}
 	return nil
+}
+
+func (m *Manager) releaseResources(k InstanceKey) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.releaseResourcesLocked(k)
+}
+
+func (m *Manager) releaseResourcesLocked(k InstanceKey) {
+	for resource, owner := range m.reserved {
+		if owner == k {
+			delete(m.reserved, resource)
+		}
+	}
+}
+
+func (m *Manager) publishInstance(in *Instance) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.releaseResourcesLocked(in.Key)
+	m.inst[in.Key] = in
 }
 
 func (m *Manager) validateSnapshotNetwork(k InstanceKey, meta snapshot.Meta) error {
@@ -947,13 +1001,13 @@ func (m *Manager) StopContext(ctx context.Context, user, app string) error {
 	m.mu.Lock()
 	in, ok := m.inst[k]
 	m.mu.Unlock()
-	if !ok {
-		return nil
-	}
 	if m.cfg.SnapStore != nil {
 		if err := m.cfg.SnapStore.Delete(ctx, snapshot.KeyFor(user, app)); err != nil {
 			return fmt.Errorf("delete snapshot: %w", err)
 		}
+	}
+	if !ok {
+		return nil
 	}
 	m.mu.Lock()
 	delete(m.inst, k)

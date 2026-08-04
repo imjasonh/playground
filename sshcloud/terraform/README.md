@@ -65,7 +65,9 @@ Host sshd on the gateway is moved to **:2222** (IAP) so platform SSH can own `:2
 Terraform uploads the exact local Firecracker/kernel files as content-addressed
 GCS objects before creating the agent template. Agents expose gateway-reachable
 SSH relays on `20000-29999`; TAP-local guest addresses are not returned across
-the VPC.
+the VPC. The fetch helper always targets the agents' `linux/x86_64`
+architecture and verifies pinned upstream Firecracker and kernel SHA-256 values;
+it can therefore run from an ARM/macOS Terraform workstation.
 
 **Non-interactive deploy / join** (SSH exec args, exit status set):
 

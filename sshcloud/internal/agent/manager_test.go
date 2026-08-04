@@ -2,10 +2,12 @@ package agent
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/imjasonh/playground/sshcloud/internal/firecracker"
 	"github.com/imjasonh/playground/sshcloud/internal/guestinit"
 	"github.com/imjasonh/playground/sshcloud/internal/snapshot"
 )
@@ -280,5 +282,137 @@ func TestEnsureWithImageNoResolver(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "RootfsResolver") {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestResourceReservationFencesConcurrentRestore(t *testing.T) {
+	t.Parallel()
+	mgr := &Manager{
+		inst:     make(map[InstanceKey]*Instance),
+		reserved: make(map[string]InstanceKey),
+	}
+	first := InstanceKey{User: "alice", App: "first"}
+	second := InstanceKey{User: "alice", App: "second"}
+	if err := mgr.reserveResources(first, "/work/first", "fc-first", "172.16.2.2", "172.16.2.1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := mgr.reserveResources(second, "/work/second", "fc-second", "172.16.2.2", "172.16.2.1"); err == nil {
+		t.Fatal("expected overlapping restore network to be reserved")
+	}
+	mgr.releaseResources(first)
+	if err := mgr.reserveResources(second, "/work/second", "fc-second", "172.16.2.2", "172.16.2.1"); err != nil {
+		t.Fatalf("reservation was not released: %v", err)
+	}
+}
+
+type orderedSnapshotMachine struct {
+	events *[]string
+}
+
+func (m orderedSnapshotMachine) Pause(context.Context) error {
+	*m.events = append(*m.events, "pause")
+	return nil
+}
+func (m orderedSnapshotMachine) Resume(context.Context) error {
+	*m.events = append(*m.events, "resume")
+	return nil
+}
+func (m orderedSnapshotMachine) CreateSnapshot(_ context.Context, files firecracker.SnapshotFiles) error {
+	*m.events = append(*m.events, "snapshot")
+	if err := os.WriteFile(files.StatePath, []byte("state"), 0o644); err != nil {
+		return err
+	}
+	return os.WriteFile(files.MemPath, []byte("memory"), 0o644)
+}
+func (m orderedSnapshotMachine) Stop() error { return nil }
+func (m orderedSnapshotMachine) Kill() error {
+	*m.events = append(*m.events, "kill")
+	return nil
+}
+
+type orderedSnapshotStore struct {
+	events *[]string
+}
+
+func (s orderedSnapshotStore) Put(context.Context, string, snapshot.Package) error {
+	*s.events = append(*s.events, "put")
+	return nil
+}
+func (orderedSnapshotStore) Get(context.Context, string, string) (snapshot.Package, error) {
+	return snapshot.Package{}, os.ErrNotExist
+}
+func (orderedSnapshotStore) Has(context.Context, string) (bool, error) { return false, nil }
+func (orderedSnapshotStore) Delete(context.Context, string) error      { return nil }
+
+func TestSleepPublishesBeforeKillingVMM(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	rootfsPath := dir + "/vm/rootfs.ext4"
+	if err := os.MkdirAll(dir+"/vm", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(rootfsPath, []byte("rootfs"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var events []string
+	store := orderedSnapshotStore{events: &events}
+	mgr, err := NewManager(Config{
+		WorkDir: dir, KernelPath: dir + "/kernel", BaseRootfs: rootfsPath, SnapStore: store,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+	key := InstanceKey{User: "alice", App: "fortune"}
+	mgr.inst[key] = &Instance{
+		Key: key, State: StateRunning, Rootfs: rootfsPath, WorkDir: dir + "/vm",
+		GuestIP: "172.16.2.2", HostIP: "172.16.2.1", TapName: "fc-test",
+		GuestMAC: "AA:FC:00:00:00:01", Tier: "tiny",
+		machine: orderedSnapshotMachine{events: &events},
+	}
+	if err := mgr.Sleep(context.Background(), key.User, key.App); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(events, ","); got != "pause,snapshot,put,kill" {
+		t.Fatalf("snapshot order %q", got)
+	}
+}
+
+func TestStopDeletesSnapshotAfterManagerRestart(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	store, err := snapshot.NewLocalStore(dir + "/snapshots")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkg := snapshot.NewPackageDir(dir + "/package")
+	if err := os.MkdirAll(pkg.Dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range []string{pkg.StatePath, pkg.MemPath, pkg.RootfsPath} {
+		if err := os.WriteFile(file, []byte("snapshot"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := pkg.WriteMeta(snapshot.Meta{User: "alice", App: "fortune"}); err != nil {
+		t.Fatal(err)
+	}
+	key := snapshot.KeyFor("alice", "fortune")
+	if err := store.Put(context.Background(), key, pkg); err != nil {
+		t.Fatal(err)
+	}
+	mgr, err := NewManager(Config{
+		WorkDir: dir + "/work", KernelPath: dir + "/kernel",
+		BaseRootfs: dir + "/rootfs", SnapStore: store,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+	if err := mgr.StopContext(context.Background(), "alice", "fortune"); err != nil {
+		t.Fatal(err)
+	}
+	if exists, err := store.Has(context.Background(), key); err != nil || exists {
+		t.Fatalf("snapshot remains after stop: exists=%v err=%v", exists, err)
 	}
 }
