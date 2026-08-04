@@ -1,65 +1,217 @@
 import SwiftUI
 
-/// Local Lens — live camera labels from on-device Vision (no network).
+/// Local Lens — full-bleed camera with compact floating Vision controls.
 struct LocalLensView: View {
     @StateObject private var session = LocalLensSession()
 
     var body: some View {
-        VStack(spacing: 0) {
-            preview
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.black)
-
-            controls
-                .padding()
-                .background(.ultraThinMaterial)
+        GeometryReader { geo in
+            let landscape = geo.size.width > geo.size.height
+            ZStack {
+                Color.black
+                stage(size: geo.size)
+                floatingChrome(landscape: landscape, size: geo.size)
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
         }
+        .background(Color.black)
+        .ignoresSafeArea()
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar)
         .onAppear { session.start() }
         .onDisappear { session.stop() }
     }
 
-    private var preview: some View {
-        GeometryReader { geo in
-            ZStack {
-                if let image = session.previewImage {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: geo.size.width, height: geo.size.height)
-                        .clipped()
-                        .accessibilityIdentifier("localLensPreview")
+    // MARK: - Stage
 
-                    geometryOverlay(size: geo.size)
-                    chipsOverlay
-                } else {
-                    placeholder
-                        .frame(width: geo.size.width, height: geo.size.height)
-                }
+    private func stage(size: CGSize) -> some View {
+        ZStack {
+            if let image = session.previewImage {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: size.width, height: size.height)
+                    .clipped()
+                    .accessibilityIdentifier("localLensPreview")
+
+                geometryOverlay(size: size)
+            } else {
+                placeholder
+                    .frame(width: size.width, height: size.height)
             }
         }
         .accessibilityElement(children: .contain)
     }
 
-    private var chipsOverlay: some View {
-        VStack {
-            Spacer()
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(session.result.findings) { finding in
-                        Text(LocalLensResultBuilder.chipText(for: finding))
-                            .font(.caption.weight(.semibold))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(.black.opacity(0.55), in: Capsule())
-                            .foregroundStyle(.white)
-                    }
+    private func floatingChrome(landscape: Bool, size: CGSize) -> some View {
+        ZStack {
+            VStack(spacing: 0) {
+                topBar
+                    .padding(.top, 52)
+                    .padding(.horizontal, 12)
+
+                Spacer(minLength: 0)
+
+                if !landscape {
+                    findingsChips
+                        .padding(.bottom, 8)
+                    bottomBar
+                        .padding(.horizontal, 10)
+                        .padding(.bottom, 18)
                 }
-                .padding(.horizontal, 12)
-                .padding(.bottom, 12)
             }
-            .accessibilityIdentifier("localLensFindingsChips")
+
+            if landscape {
+                HStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    VStack(spacing: 10) {
+                        Spacer(minLength: 0)
+                        findingsChips
+                            .frame(maxWidth: min(size.width * 0.42, 280), alignment: .trailing)
+                        trailingRail
+                    }
+                    .padding(.trailing, 10)
+                    .padding(.bottom, 14)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var topBar: some View {
+        HStack(spacing: 8) {
+            Text(session.statusMessage)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.white)
+                .lineLimit(2)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(.black.opacity(0.45), in: Capsule())
+                .accessibilityIdentifier("localLensStatusMessage")
+
+            Spacer(minLength: 8)
+
+            Label("On-device", systemImage: "lock.iphone")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.9))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(.black.opacity(0.4), in: Capsule())
+                .labelStyle(.titleAndIcon)
+                .accessibilityIdentifier("localLensPrivacyBadge")
         }
     }
+
+    private var bottomBar: some View {
+        HStack(spacing: 8) {
+            modePicker(axis: .horizontal)
+            flipCameraButton
+        }
+        .padding(8)
+        .background(.black.opacity(0.4), in: Capsule())
+    }
+
+    private var trailingRail: some View {
+        VStack(spacing: 8) {
+            modePicker(axis: .vertical)
+            flipCameraButton
+        }
+        .padding(8)
+        .background(.black.opacity(0.4), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+
+    private enum PickerAxis {
+        case horizontal
+        case vertical
+    }
+
+    private func modePicker(axis: PickerAxis) -> some View {
+        let modes = LocalLensMode.allCases
+        return Group {
+            switch axis {
+            case .horizontal:
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(modes) { mode in
+                            modeButton(mode)
+                        }
+                    }
+                }
+            case .vertical:
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(spacing: 6) {
+                        ForEach(modes) { mode in
+                            modeButton(mode)
+                        }
+                    }
+                }
+                .frame(maxHeight: 280)
+            }
+        }
+        .accessibilityIdentifier("localLensModePicker")
+    }
+
+    private var findingsChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(session.result.findings.prefix(4)) { finding in
+                    Text(LocalLensResultBuilder.chipText(for: finding))
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(.black.opacity(0.5), in: Capsule())
+                        .foregroundStyle(.white)
+                }
+            }
+            .padding(.horizontal, 10)
+        }
+        .accessibilityIdentifier("localLensFindingsChips")
+    }
+
+    private var flipCameraButton: some View {
+        Button {
+            session.flipCamera()
+        } label: {
+            Image(systemName: "arrow.triangle.2.circlepath.camera")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.white)
+                .frame(width: 36, height: 36)
+                .background(
+                    session.runState == .running
+                        ? Color.white.opacity(0.18)
+                        : Color.white.opacity(0.08),
+                    in: Circle()
+                )
+        }
+        .buttonStyle(.plain)
+        .disabled(session.runState != .running)
+        .accessibilityIdentifier("localLensFlipCameraButton")
+        .accessibilityLabel(session.usingFrontCamera ? "Front camera" : "Rear camera")
+        .accessibilityHint("Flip camera")
+    }
+
+    private func modeButton(_ mode: LocalLensMode) -> some View {
+        let selected = session.mode == mode
+        return Button {
+            session.setMode(mode)
+        } label: {
+            Image(systemName: mode.symbolName)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(selected ? .black : .white)
+                .frame(width: 34, height: 34)
+                .background(
+                    selected ? Color.white.opacity(0.95) : Color.white.opacity(0.14),
+                    in: Circle()
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("localLensMode-\(mode.rawValue)")
+        .accessibilityAddTraits(selected ? [.isSelected] : [])
+        .accessibilityLabel(mode.title)
+    }
+
+    // MARK: - Overlays
 
     private func geometryOverlay(size: CGSize) -> some View {
         Canvas { context, _ in
@@ -106,7 +258,7 @@ struct LocalLensView: View {
     private var placeholder: some View {
         VStack(spacing: 12) {
             Image(systemName: placeholderSymbol)
-                .font(.system(size: 48))
+                .font(.system(size: 44))
                 .foregroundStyle(.white.opacity(0.85))
             Text(placeholderTitle)
                 .font(.headline)
@@ -129,68 +281,6 @@ struct LocalLensView: View {
                 endPoint: .bottomTrailing
             )
         )
-    }
-
-    private var controls: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(session.statusMessage)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityIdentifier("localLensStatusMessage")
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(LocalLensMode.allCases) { mode in
-                        modeButton(mode)
-                    }
-                }
-            }
-            .accessibilityIdentifier("localLensModePicker")
-
-            HStack {
-                Button {
-                    session.flipCamera()
-                } label: {
-                    Label(
-                        session.usingFrontCamera ? "Front" : "Rear",
-                        systemImage: "arrow.triangle.2.circlepath.camera"
-                    )
-                }
-                .buttonStyle(.bordered)
-                .disabled(session.runState != .running)
-                .accessibilityIdentifier("localLensFlipCameraButton")
-
-                Spacer()
-
-                Label("On-device only", systemImage: "lock.iphone")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .accessibilityIdentifier("localLensPrivacyBadge")
-            }
-
-            Text("Uses Apple’s Vision framework entirely on-device — classify, OCR, animals, face landmarks (eyes/pupils), people, body/hand pose, and barcodes. Face mode is 2D landmarks, not TrueDepth gaze. Frames are never uploaded.")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-        }
-    }
-
-    private func modeButton(_ mode: LocalLensMode) -> some View {
-        let selected = session.mode == mode
-        return Button {
-            session.setMode(mode)
-        } label: {
-            Label(mode.title, systemImage: mode.symbolName)
-                .font(.subheadline.weight(.semibold))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(selected ? Color.accentColor.opacity(0.2) : Color.secondary.opacity(0.12), in: Capsule())
-                .foregroundStyle(selected ? Color.accentColor : Color.primary)
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("localLensMode-\(mode.rawValue)")
-        .accessibilityAddTraits(selected ? [.isSelected] : [])
-        .accessibilityLabel(mode.title)
     }
 
     private var placeholderSymbol: String {
