@@ -92,9 +92,10 @@ some overhangs; turn on `strict_supports` if you want pillars to the bed.
 ## Printing tips
 
 - Prefer `cell_size` ≥ 2.5 mm so QR modules survive FDM.
-- Preview / MakerWorld multi-color: the Life body is white; only the top faces
-  of roof (QR) modules are black so the code reads from above. White QR
-  modules are air (no voxel).
+- Preview / MakerWorld multi-color: the Life body is white; roof QR modules get
+  flat black ink pads. White geometry (including ramp slopes) is clipped below
+  that ink band so diagonal supports cannot smear black into neighboring
+  modules. White QR modules are air (no voxel).
 - Leave `quiet_zone` at 4 unless you know your scanner is forgiving.
 - With default ramps, disable or minimize slicer supports if the mesh already
   bridges well; enable `strict_supports` for guaranteed pillars to the bed.
