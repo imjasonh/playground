@@ -352,7 +352,10 @@ func (orderedSnapshotStore) Get(context.Context, string, string) (snapshot.Packa
 	return snapshot.Package{}, os.ErrNotExist
 }
 func (orderedSnapshotStore) Has(context.Context, string) (bool, error) { return false, nil }
-func (orderedSnapshotStore) Delete(context.Context, string) error      { return nil }
+func (orderedSnapshotStore) Meta(context.Context, string) (snapshot.Meta, error) {
+	return snapshot.Meta{}, os.ErrNotExist
+}
+func (orderedSnapshotStore) Delete(context.Context, string) error { return nil }
 
 func TestSleepPublishesBeforeKillingVMM(t *testing.T) {
 	t.Parallel()

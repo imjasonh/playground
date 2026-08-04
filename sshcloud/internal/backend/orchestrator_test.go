@@ -135,7 +135,7 @@ func TestPlacedDialUnknownHost(t *testing.T) {
 	}
 }
 
-func TestPlacedDialRepairsStalePlacementAfterEnsure(t *testing.T) {
+func TestPlacedDialRefusesImplicitCrossHostRecovery(t *testing.T) {
 	place := placement.NewMemory()
 	_ = place.Set(t.Context(), "alice", "fortune", "removed-host")
 	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -163,11 +163,11 @@ func TestPlacedDialRepairsStalePlacementAfterEnsure(t *testing.T) {
 		}, "host-b"),
 		DefaultHost: "removed-host",
 	}
-	if _, err := dial.EnsureAddr(t.Context(), "alice", "fortune", "gabc", "", false); err != nil {
-		t.Fatal(err)
+	if _, err := dial.EnsureAddr(t.Context(), "alice", "fortune", "gabc", "", false); err == nil {
+		t.Fatal("stale placement implicitly booted on another host")
 	}
 	host, ok, err := place.Get(t.Context(), "alice", "fortune")
-	if err != nil || !ok || host != "host-b" {
+	if err != nil || !ok || host != "removed-host" {
 		t.Fatalf("placement host=%q ok=%v err=%v", host, ok, err)
 	}
 }

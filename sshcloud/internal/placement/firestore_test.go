@@ -40,12 +40,19 @@ func TestFirestoreRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := fs.Mark(ctx, lease, Operation{Kind: "migrate", SourceHost: "host-a", TargetHost: "host-b"}); err != nil {
+		t.Fatal(err)
+	}
 	if err := fs.Commit(ctx, lease, "host-b", now.Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	h, ok, err = fs.Get(ctx, user, app)
 	if err != nil || !ok || h != "host-b" {
 		t.Fatalf("leased placement: got %q ok=%v err=%v", h, ok, err)
+	}
+	record, _, err := fs.GetRecord(ctx, user, app)
+	if err != nil || record.Operation.Kind != "" {
+		t.Fatalf("operation not cleared: %+v err=%v", record, err)
 	}
 	if err := fs.Delete(ctx, user, app); err != nil {
 		t.Fatal(err)

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"sync"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -84,19 +83,28 @@ func ProxySSHStreams(ctx context.Context, input io.Reader, output io.Writer, ca 
 	if err != nil {
 		return err
 	}
-	var closeStdinOnce sync.Once
-	closeStdin := func() { closeStdinOnce.Do(func() { _ = stdin.Close() }) }
-	defer closeStdin()
 
 	modes := ssh.TerminalModes{ssh.ECHO: 0}
 	_ = sess.RequestPty("xterm", 40, 80, modes)
 	if err := sess.Shell(); err != nil {
 		return err
 	}
+	inputDone := make(chan struct{})
 	go func() {
-		_, _ = io.Copy(stdin, input)
-		closeStdin()
+		defer close(inputDone)
+		if buffered, ok := input.(*migrationAttachment); ok {
+			_ = buffered.pumpTo(stdin)
+		} else {
+			_, _ = io.Copy(stdin, input)
+		}
+		_ = stdin.Close()
 	}()
+	stopBufferedInput := func() {
+		if buffered, ok := input.(*migrationAttachment); ok {
+			_ = buffered.Close()
+			<-inputDone
+		}
+	}
 
 	wait := make(chan error, 1)
 	go func() { wait <- sess.Wait() }()
@@ -106,9 +114,11 @@ func ProxySSHStreams(ctx context.Context, input io.Reader, output io.Writer, ca 
 			_, _ = io.WriteString(output, "\r\n[sshcloud] session ended (deploy cutover)\r\n")
 		}
 		_ = conn.Close()
+		stopBufferedInput()
 		<-wait
 		return context.Cause(ctx)
 	case err := <-wait:
+		stopBufferedInput()
 		return err
 	}
 }

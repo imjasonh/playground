@@ -150,6 +150,20 @@ func (h *drainHost) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		h.instances[key] = info
 		h.mu.Unlock()
 		_ = json.NewEncoder(w).Encode(backend.InstanceView{Addr: "127.0.0.1:2222", State: "running"})
+	case "/v1/instances/preflight":
+		_, key, ok := decodeDrainInstance(r)
+		if !ok {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		h.snapshots.mu.Lock()
+		info, exists := h.snapshots.items[key]
+		h.snapshots.mu.Unlock()
+		if !exists {
+			http.Error(w, "snapshot missing", http.StatusInternalServerError)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(info)
 	default:
 		http.NotFound(w, r)
 	}
@@ -233,7 +247,7 @@ func TestDrainHostMovesRunningAndSleepingGenerations(t *testing.T) {
 		Hosts: backend.NewHostSet(map[string]*backend.AgentClient{
 			"host-a": source.client(), "host-b": target.client(),
 		}, "host-a"),
-		Gateway: &backend.GatewayClient{BaseURL: gateway.server.URL},
+		Gateway:      &backend.GatewayClient{BaseURL: gateway.server.URL},
 		FreezeWindow: time.Second,
 	}
 	result, err := controller.DrainHost(ctx, "host-a")

@@ -210,6 +210,22 @@ func (h *Hub) KickApp(user, app, gen string) int {
 	return h.Sessions.Kick(user, app, gen)
 }
 
+func (h *Hub) SessionIDs(user, app, gen string) []session.ID {
+	return h.Sessions.MatchingIDs(user, app, gen)
+}
+
+func (h *Hub) FreezeSessions(ctx context.Context, ids []session.ID) error {
+	return h.Sessions.FreezeIDs(ctx, ids)
+}
+
+func (h *Hub) ThawSessions(ctx context.Context, ids []session.ID) error {
+	return h.Sessions.ThawIDs(ctx, ids)
+}
+
+func (h *Hub) KickSessions(ids []session.ID) int {
+	return h.Sessions.KickIDs(ids)
+}
+
 // OpenApp admits a session for an already-authenticated user and existing app.
 // Used by the in-session menu handoff (key auth already happened on the SSH conn).
 func (h *Hub) OpenApp(ctx context.Context, userID, app string) (Result, error) {

@@ -197,7 +197,8 @@ GET  /v1/hosts         # capacity, reservations, cordon state
 Host drain groups active and draining generations per app, reserves their
 aggregate target capacity, moves them under one placement lease, and commits
 the app's host pointer once. Snapshot metadata includes a platform compatibility
-ID so a rollout cannot restore into a mismatched Firecracker/kernel pair.
+ID and production uses Firecracker's portable `T2` CPU template, so a rollout
+cannot restore into a mismatched VMM/kernel/CPU baseline.
 
 Orchestration unit test (httptest agent stubs, no VMs):
 `go test ./internal/migrate -run TestMigrateOrchestration`.
@@ -230,7 +231,7 @@ Normal Go CI runs deterministic fault injection (also under the race detector):
 - snapshot pause/create/publish/resume failure matrix and incomplete packages
 - unexpected Firecracker process death, lifecycle fencing, and resource reservations
 - deploy persistence/hold failures plus admission-vs-deploy linearization
-- stale placement repair and ambiguous migrate response reconciliation
+- stale-placement refusal, expiring lease takeover, and operation-journal reconciliation
 - placement-lease fencing, best-fit capacity scheduling, and multi-generation host drain
 - bounded live-session freeze/reconnect with timeout kick fallback
 - cancellation of a backend that stalls during its SSH handshake

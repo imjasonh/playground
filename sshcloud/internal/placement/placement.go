@@ -19,6 +19,7 @@ type Store interface {
 	ListRecords(ctx context.Context) ([]Record, error)
 	Acquire(ctx context.Context, user, app, owner string, ttl time.Duration, now time.Time) (Lease, error)
 	Renew(ctx context.Context, lease Lease, ttl time.Duration, now time.Time) (Lease, error)
+	Mark(ctx context.Context, lease Lease, operation Operation) error
 	Commit(ctx context.Context, lease Lease, hostID string, now time.Time) error
 	Release(ctx context.Context, lease Lease) error
 }
@@ -31,6 +32,16 @@ type Record struct {
 	Revision       int64
 	LeaseOwner     string
 	LeaseUntilUnix int64
+	Operation      Operation
+}
+
+// Operation is durable recovery context for an in-flight host mutation.
+type Operation struct {
+	Kind        string   `json:"kind,omitempty" firestore:"kind,omitempty"`
+	Phase       string   `json:"phase,omitempty" firestore:"phase,omitempty"`
+	SourceHost  string   `json:"source_host,omitempty" firestore:"source_host,omitempty"`
+	TargetHost  string   `json:"target_host,omitempty" firestore:"target_host,omitempty"`
+	Generations []string `json:"generations,omitempty" firestore:"generations,omitempty"`
 }
 
 // Lease is an exclusive, expiring mutation right for one placement record.
@@ -107,6 +118,7 @@ func (m *Memory) Set(_ context.Context, user, app, hostID string) error {
 	r.User, r.App, r.HostID = user, app, hostID
 	r.Revision++
 	r.LeaseOwner, r.LeaseUntilUnix = "", 0
+	r.Operation = Operation{}
 	m.records[k] = r
 	return nil
 }
@@ -174,6 +186,19 @@ func (m *Memory) Renew(_ context.Context, lease Lease, ttl time.Duration, now ti
 	return leaseFromRecord(r), nil
 }
 
+func (m *Memory) Mark(_ context.Context, lease Lease, operation Operation) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	k := key(lease.User, lease.App)
+	r, ok := m.records[k]
+	if !ok || !leaseMatches(r, lease) {
+		return ErrLeaseLost{User: lease.User, App: lease.App}
+	}
+	r.Operation = operation
+	m.records[k] = r
+	return nil
+}
+
 func (m *Memory) Commit(_ context.Context, lease Lease, hostID string, now time.Time) error {
 	if hostID == "" {
 		return fmt.Errorf("hostID required")
@@ -188,6 +213,7 @@ func (m *Memory) Commit(_ context.Context, lease Lease, hostID string, now time.
 	r.HostID = hostID
 	r.Revision++
 	r.LeaseOwner, r.LeaseUntilUnix = "", 0
+	r.Operation = Operation{}
 	m.records[k] = r
 	return nil
 }
@@ -205,6 +231,7 @@ func (m *Memory) Release(_ context.Context, lease Lease) error {
 	}
 	r.Revision++
 	r.LeaseOwner, r.LeaseUntilUnix = "", 0
+	r.Operation = Operation{}
 	m.records[k] = r
 	return nil
 }

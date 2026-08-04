@@ -124,6 +124,21 @@ func (s *LocalStore) Has(ctx context.Context, key string) (bool, error) {
 	return true, nil
 }
 
+func (s *LocalStore) Meta(ctx context.Context, key string) (Meta, error) {
+	ok, err := s.Has(ctx, key)
+	if err != nil {
+		return Meta{}, err
+	}
+	if !ok {
+		return Meta{}, os.ErrNotExist
+	}
+	dir, err := s.keyDir(key)
+	if err != nil {
+		return Meta{}, err
+	}
+	return NewPackageDir(dir).ReadMeta()
+}
+
 // Exists reports whether a package is present.
 func (s *LocalStore) Exists(key string) bool {
 	ok, _ := s.Has(context.Background(), key)

@@ -23,7 +23,7 @@ output "gateway_known_hosts" {
 
 output "orchestrator_ip" {
   description = "Internal orchestrator IP (VPC only)"
-  value       = google_compute_instance.orchestrator.network_interface[0].network_ip
+  value       = google_compute_address.orchestrator_internal.address
 }
 
 output "artifact_registry" {

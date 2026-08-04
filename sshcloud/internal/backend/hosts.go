@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/imjasonh/playground/sshcloud/internal/agent"
 )
@@ -140,7 +141,9 @@ func (h *HostSet) CandidatesFor(ctx context.Context, need agent.Resources, exclu
 	results := make(chan result, len(clients))
 	for id, client := range clients {
 		go func(id string, client *AgentClient) {
-			capacity, err := client.Capacity(ctx)
+			probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+			defer cancel()
+			capacity, err := client.Capacity(probeCtx)
 			results <- result{id: id, client: client, capacity: capacity, err: err}
 		}(id, client)
 	}

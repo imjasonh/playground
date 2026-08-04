@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -14,6 +16,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	"github.com/imjasonh/playground/sshcloud/internal/backend"
 	"github.com/imjasonh/playground/sshcloud/internal/cutover"
 	"github.com/imjasonh/playground/sshcloud/internal/gateway"
 	"github.com/imjasonh/playground/sshcloud/internal/hostkey"
@@ -33,6 +36,7 @@ type cutoverE2E struct {
 	fleet     *chaosFleet
 	hostKey   ssh.Signer
 	clientKey ssh.Signer
+	control   *backend.GatewayClient
 }
 
 func newCutoverE2E(t *testing.T) *cutoverE2E {
@@ -63,6 +67,10 @@ func newCutoverE2E(t *testing.T) *cutoverE2E {
 		Cutover:           controller,
 		AllowedRegistries: []string{"ghcr.io"},
 	}
+	controlToken := "0123456789abcdef0123456789abcdef"
+	controlMux := http.NewServeMux()
+	(&gateway.ControlHandler{Hub: hub, Token: controlToken, MaxFreeze: 5 * time.Second}).Mount(controlMux)
+	controlServer := httptest.NewServer(controlMux)
 	srv := &Server{
 		Hub: hub, HostKey: gatewayHost, Addr: "127.0.0.1:0",
 		HandshakeTimeout: 2 * time.Second,
@@ -75,11 +83,13 @@ func newCutoverE2E(t *testing.T) *cutoverE2E {
 	fx := &cutoverE2E{
 		ctx: ctx, cancel: cancel, server: srv, hub: hub, store: st,
 		fleet: fleet, hostKey: gatewayHost, clientKey: clientKey,
+		control: &backend.GatewayClient{BaseURL: controlServer.URL, Token: controlToken},
 	}
 	t.Cleanup(func() {
 		cancel()
 		_ = srv.Close()
 		fleet.Close()
+		controlServer.Close()
 	})
 	return fx
 }
@@ -99,8 +109,12 @@ func (f *cutoverE2E) deploy(t *testing.T, image, strategy string) *store.App {
 }
 
 func (f *cutoverE2E) openApp(t *testing.T) *liveSSHSession {
+	return f.openSSH(t, chaosAppName)
+}
+
+func (f *cutoverE2E) openSSH(t *testing.T, user string) *liveSSHSession {
 	t.Helper()
-	client := sshClient(t, f.server.Addr, f.hostKey.PublicKey(), f.clientKey, chaosAppName)
+	client := sshClient(t, f.server.Addr, f.hostKey.PublicKey(), f.clientKey, user)
 	sess, err := client.NewSession()
 	if err != nil {
 		client.Close()
@@ -137,6 +151,23 @@ func (f *cutoverE2E) openApp(t *testing.T) *liveSSHSession {
 	go live.scan(stderr)
 	go func() { live.wait <- sess.Wait() }()
 	return live
+}
+
+func TestMenuInputBrokerSurvivesAppHandoff(t *testing.T) {
+	fx := newCutoverE2E(t)
+	image := "ghcr.io/example/app@sha256:" + strings.Repeat("f", 64)
+	app := fx.deploy(t, image, store.StrategyKick)
+	live := fx.openSSH(t, "menu")
+	defer live.close()
+	live.awaitLine(t, "Apps for alice")
+	live.send(t, "1")
+	live.awaitLine(t, "READY", app.ActiveGen)
+	live.send(t, "quit")
+	live.awaitLine(t, "Apps for alice")
+	live.send(t, "q")
+	if err := live.awaitExit(t); err != nil {
+		t.Fatalf("menu exit: %v", err)
+	}
 }
 
 type liveSSHSession struct {
@@ -295,7 +326,7 @@ func TestLiveSessionHostMigrationFreezeThawE2E(t *testing.T) {
 	live.awaitLine(t, "READY", app.ActiveGen, image, "alice")
 
 	freezeCtx, cancelFreeze := context.WithTimeout(fx.ctx, 2*time.Second)
-	count, err := fx.hub.FreezeApp(freezeCtx, "alice", chaosAppName, app.ActiveGen)
+	token, count, err := fx.control.Freeze(freezeCtx, "alice", chaosAppName, app.ActiveGen, 5*time.Second)
 	cancelFreeze()
 	if err != nil || count != 1 {
 		t.Fatalf("freeze count=%d err=%v", count, err)
@@ -309,10 +340,10 @@ func TestLiveSessionHostMigrationFreezeThawE2E(t *testing.T) {
 	}
 
 	thawCtx, cancelThaw := context.WithTimeout(fx.ctx, 2*time.Second)
-	count, err = fx.hub.ThawApp(thawCtx, "alice", chaosAppName, app.ActiveGen)
+	err = fx.control.Thaw(thawCtx, token)
 	cancelThaw()
-	if err != nil || count != 1 {
-		t.Fatalf("thaw count=%d err=%v", count, err)
+	if err != nil {
+		t.Fatalf("thaw: %v", err)
 	}
 	live.awaitLine(t, "migration complete")
 	live.awaitLine(t, "READY", app.ActiveGen, image, "alice")

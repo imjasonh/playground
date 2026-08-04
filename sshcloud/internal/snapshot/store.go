@@ -83,6 +83,8 @@ type Store interface {
 	Get(ctx context.Context, key, destDir string) (Package, error)
 	// Has reports whether a complete package exists.
 	Has(ctx context.Context, key string) (bool, error)
+	// Meta reads compatibility/identity metadata without downloading memory or disk.
+	Meta(ctx context.Context, key string) (Meta, error)
 	// Delete removes a stored package.
 	Delete(ctx context.Context, key string) error
 }

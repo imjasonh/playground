@@ -385,6 +385,9 @@ GCE host MIG ── host agent ── Firecracker ── app :22
 - Placement: memory (default) or Firestore (`placement.Firestore`).
 - Firestore placement records carry revisioned, expiring operation leases.
   Wake/deploy/migrate cannot concurrently claim two hosts for one app.
+- Drain/migrate phases, source/target, and generations are journaled under the
+  lease. An orchestrator restart reconciles expired ambiguous operations back
+  to the authoritative source (or commits the prepared target if source died).
 - Agents report allocatable/used/reserved CPU+memory and cordon state;
   unplaced apps and host drain use deterministic best-fit bin packing.
 - Gateway freeze/thaw keeps the outer client channel open for a bounded window,
@@ -392,6 +395,8 @@ GCE host MIG ── host agent ── Firecracker ── app :22
   Buffered input is bounded by SSH flow control; timeout kicks the client.
 - `POST /v1/hosts/drain` cordons a host and moves all active/draining
   generations of each app under one placement lease.
+- Production VMMs use Firecracker's portable `T2` CPU template; snapshot
+  compatibility fencing covers VMM, kernel, and CPU baseline.
 - **Semantic limit:** the host-side TCP relay is not snapshot state. The outer
   client connection survives, but the app sees a fresh SSH session after thaw;
   transparent preservation would require a migratable/routed dataplane.

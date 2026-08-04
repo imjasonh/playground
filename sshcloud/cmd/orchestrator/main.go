@@ -32,6 +32,7 @@ import (
 	"github.com/imjasonh/playground/sshcloud/internal/migrate"
 	"github.com/imjasonh/playground/sshcloud/internal/names"
 	"github.com/imjasonh/playground/sshcloud/internal/placement"
+	hostreconcile "github.com/imjasonh/playground/sshcloud/internal/reconcile"
 )
 
 func main() {
@@ -349,14 +350,18 @@ func watchHostsFile(ctx context.Context, path string, hosts *backend.HostSet, ag
 func reconcilePlacementLeases(ctx context.Context, store placement.Store, hosts *backend.HostSet) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
+	reconciler := &hostreconcile.Controller{Placement: store, Hosts: hosts}
 	for {
+		if err := reconciler.RunOnce(ctx); err != nil && ctx.Err() == nil {
+			log.Printf("placement operation reconcile: %v", err)
+		}
 		records, err := store.ListRecords(ctx)
 		if err != nil {
 			log.Printf("placement reconcile: %v", err)
 		} else {
 			now := time.Now()
 			for _, record := range records {
-				if record.LeaseOwner != "" && record.LeaseUntilUnix <= now.UnixNano() {
+				if record.Operation.Kind == "" && record.LeaseOwner != "" && record.LeaseUntilUnix <= now.UnixNano() {
 					lease, err := store.Acquire(ctx, record.User, record.App, placement.NewLeaseOwner("reconcile"), placement.DefaultLeaseTTL, now)
 					if err == nil {
 						_ = store.Release(ctx, lease)

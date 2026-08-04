@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/imjasonh/playground/sshcloud/internal/agent"
 	"github.com/imjasonh/playground/sshcloud/internal/backend"
 	"github.com/imjasonh/playground/sshcloud/internal/placement"
 )
@@ -24,10 +25,12 @@ type Migrator struct {
 
 // Result is the outcome of a successful migrate.
 type Result struct {
-	FromHost string
-	ToHost   string
-	Gen      string
-	Addr     string
+	FromHost          string `json:"from_host"`
+	ToHost            string `json:"to_host"`
+	Gen               string `json:"gen,omitempty"`
+	Addr              string `json:"addr"`
+	ReconnectRequired bool   `json:"reconnect_required,omitempty"`
+	Warning           string `json:"warning,omitempty"`
 }
 
 // Migrate sleeps+evicts on the source host, adopts on toHost, and updates placement.
@@ -55,8 +58,9 @@ func (m *Migrator) MigrateGeneration(ctx context.Context, user, app, gen, toHost
 		return Result{}, err
 	}
 	committed := false
+	abandoned := false
 	defer func() {
-		if !committed {
+		if !committed && !abandoned {
 			releaseGuard(guard)
 		}
 	}()
@@ -85,6 +89,29 @@ func (m *Migrator) MigrateGeneration(ctx context.Context, user, app, gen, toHost
 	if !ok {
 		return Result{}, fmt.Errorf("unknown source host %q", fromHost)
 	}
+	inventory, err := source.Instances(guard.Context())
+	if err != nil {
+		return Result{}, fmt.Errorf("source inventory: %w", err)
+	}
+	var matching []agent.InstanceInfo
+	for _, instance := range inventory {
+		if instance.User == user && instance.App == app {
+			matching = append(matching, instance)
+		}
+	}
+	if len(matching) > 1 {
+		return Result{}, fmt.Errorf("app has %d generations; use host drain to migrate them under one placement commit", len(matching))
+	}
+	if len(matching) == 1 && matching[0].Gen != gen {
+		return Result{}, fmt.Errorf("requested generation %q does not match source generation %q", gen, matching[0].Gen)
+	}
+	operation := placement.Operation{
+		Kind: "migrate", Phase: "freezing", SourceHost: fromHost,
+		TargetHost: toHost, Generations: []string{gen},
+	}
+	if err := guard.Mark(guard.Context(), operation); err != nil {
+		return Result{}, fmt.Errorf("persist migration operation: %w", err)
+	}
 	freezeToken := ""
 	thawed := false
 	if m.Gateway != nil {
@@ -109,13 +136,47 @@ func (m *Migrator) MigrateGeneration(ctx context.Context, user, app, gen, toHost
 		}()
 	}
 
+	operation.Phase = "sleeping"
+	if err := guard.Mark(guard.Context(), operation); err != nil {
+		return Result{}, err
+	}
 	if err := source.SleepContext(guard.Context(), user, app, gen); err != nil {
-		return Result{}, fmt.Errorf("source sleep: %w", err)
+		statusCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		status, found, statusErr := source.StatusContext(statusCtx, user, app, gen)
+		cancel()
+		if statusErr != nil {
+			operation.Phase = "unknown-sleep"
+			_ = markOperation(guard, operation)
+			guard.Abandon()
+			abandoned = true
+			thawed = true // leave the freeze token to its forced-reconnect timeout
+			return Result{}, fmt.Errorf("source sleep outcome unknown: %w (status: %v)", err, statusErr)
+		}
+		if !found || status.State != "sleeping" {
+			return Result{}, fmt.Errorf("source sleep: %w", err)
+		}
 	}
 	if err := source.EvictContext(guard.Context(), user, app, gen); err != nil {
-		return Result{}, fmt.Errorf("source evict: %w", err)
+		statusCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		_, found, statusErr := source.StatusContext(statusCtx, user, app, gen)
+		cancel()
+		if statusErr != nil {
+			operation.Phase = "unknown-evict"
+			_ = markOperation(guard, operation)
+			guard.Abandon()
+			abandoned = true
+			thawed = true
+			return Result{}, fmt.Errorf("source evict outcome unknown: %w (status: %v)", err, statusErr)
+		}
+		if found {
+			return Result{}, fmt.Errorf("source evict: %w", err)
+		}
 	}
 
+	operation.Phase = "adopting"
+	if err := guard.Mark(guard.Context(), operation); err != nil {
+		return Result{}, err
+	}
 	adopted, err := target.AdoptContext(guard.Context(), user, app, gen)
 	if err != nil {
 		// The target may have applied Adopt before its response was lost. Resolve
@@ -125,7 +186,15 @@ func (m *Migrator) MigrateGeneration(ctx context.Context, user, app, gen, toHost
 		if status, found, statusErr := target.StatusContext(recoveryCtx, user, app, gen); statusErr == nil && found && status.State == "running" {
 			adopted = status
 		} else {
-			_, rollbackErr := source.AdoptContext(recoveryCtx, user, app, gen)
+			if statusErr != nil {
+				operation.Phase = "unknown-adopt"
+				_ = markOperation(guard, operation)
+				guard.Abandon()
+				abandoned = true
+				thawed = true
+				return Result{}, fmt.Errorf("target adopt outcome unknown: %w (status: %v)", err, statusErr)
+			}
+			_, rollbackErr := source.AdoptForcedContext(recoveryCtx, user, app, gen)
 			if rollbackErr == nil {
 				return Result{}, fmt.Errorf("target adopt: %w (instance restored on %s)", err, fromHost)
 			}
@@ -133,6 +202,11 @@ func (m *Migrator) MigrateGeneration(ctx context.Context, user, app, gen, toHost
 		}
 	}
 	commitCtx, cancelCommit := context.WithTimeout(context.Background(), 10*time.Second)
+	operation.Phase = "ready"
+	if err := guard.Mark(commitCtx, operation); err != nil {
+		cancelCommit()
+		return Result{}, err
+	}
 	err = guard.Commit(commitCtx, toHost)
 	cancelCommit()
 	if err != nil {
@@ -142,6 +216,13 @@ func (m *Migrator) MigrateGeneration(ctx context.Context, user, app, gen, toHost
 		if checkErr == nil && ok && record.HostID == toHost && record.LeaseOwner == "" {
 			committed = true
 			err = nil
+		} else if checkErr != nil {
+			operation.Phase = "unknown-commit"
+			_ = markOperation(guard, operation)
+			guard.Abandon()
+			abandoned = true
+			thawed = true
+			return Result{}, fmt.Errorf("placement commit outcome unknown: %w (read: %v)", err, checkErr)
 		}
 	}
 	if err != nil {
@@ -152,7 +233,7 @@ func (m *Migrator) MigrateGeneration(ctx context.Context, user, app, gen, toHost
 			rollbackErr = target.EvictContext(recoveryCtx, user, app, gen)
 		}
 		if rollbackErr == nil {
-			_, rollbackErr = source.AdoptContext(recoveryCtx, user, app, gen)
+			_, rollbackErr = source.AdoptForcedContext(recoveryCtx, user, app, gen)
 		}
 		if rollbackErr == nil {
 			return Result{}, fmt.Errorf("placement update: %w (instance restored on %s)", err, fromHost)
@@ -164,7 +245,12 @@ func (m *Migrator) MigrateGeneration(ctx context.Context, user, app, gen, toHost
 		thawCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		if err := m.Gateway.Thaw(thawCtx, freezeToken); err != nil {
 			cancel()
-			return Result{}, fmt.Errorf("migration committed but thaw failed: %w", err)
+			thawed = true
+			return Result{
+				FromHost: fromHost, ToHost: toHost, Gen: gen, Addr: adopted.Addr,
+				ReconnectRequired: true,
+				Warning:           fmt.Sprintf("placement committed; outer session must reconnect: %v", err),
+			}, nil
 		}
 		cancel()
 		thawed = true
@@ -191,4 +277,10 @@ func releaseGuard(guard *placement.Guard) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = guard.Release(ctx)
+}
+
+func markOperation(guard *placement.Guard, operation placement.Operation) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return guard.Mark(ctx, operation)
 }

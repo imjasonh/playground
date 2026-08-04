@@ -31,6 +31,8 @@ type Config struct {
 	// VCPUs and MemMiB size the VM (defaults: 1, 128).
 	VCPUs  int64
 	MemMiB int64
+	// CPUTemplate selects a portable Firecracker CPU feature baseline (e.g. T2).
+	CPUTemplate string
 	// TapDevice is an existing TAP device name on the host (e.g. "fc-tap0").
 	// Empty skips network configuration (vsock-only / no SSH over TCP).
 	TapDevice string
@@ -152,10 +154,14 @@ func (m *Machine) waitSocket(ctx context.Context) error {
 }
 
 func (m *Machine) configure(ctx context.Context) error {
-	if err := m.put(ctx, "/machine-config", map[string]any{
+	machineConfig := map[string]any{
 		"vcpu_count":   m.cfg.VCPUs,
 		"mem_size_mib": m.cfg.MemMiB,
-	}); err != nil {
+	}
+	if m.cfg.CPUTemplate != "" {
+		machineConfig["cpu_template"] = m.cfg.CPUTemplate
+	}
+	if err := m.put(ctx, "/machine-config", machineConfig); err != nil {
 		return fmt.Errorf("machine-config: %w", err)
 	}
 	bootArgs := "console=ttyS0 reboot=k panic=1 pci=off"

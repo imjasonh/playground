@@ -54,14 +54,30 @@ func (g *Guard) heartbeat() {
 	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
+	expiry := time.NewTimer(time.Until(g.current().Until()))
+	defer expiry.Stop()
 	for {
 		select {
 		case <-g.ctx.Done():
 			return
 		case <-g.stop:
 			return
+		case <-expiry.C:
+			g.mu.Lock()
+			g.err = ErrLeaseLost{User: g.lease.User, App: g.lease.App}
+			g.mu.Unlock()
+			g.cancel()
+			return
 		case <-ticker.C:
-			renewed, err := g.store.Renew(g.ctx, g.current(), g.ttl, time.Now())
+			current := g.current()
+			margin := g.ttl / 5
+			if margin < 100*time.Millisecond {
+				margin = 100 * time.Millisecond
+			}
+			renewDeadline := current.Until().Add(-margin)
+			renewCtx, cancel := context.WithDeadline(g.ctx, renewDeadline)
+			renewed, err := g.store.Renew(renewCtx, current, g.ttl, time.Now())
+			cancel()
 			if err != nil {
 				g.mu.Lock()
 				g.err = err
@@ -72,6 +88,13 @@ func (g *Guard) heartbeat() {
 			g.mu.Lock()
 			g.lease = renewed
 			g.mu.Unlock()
+			if !expiry.Stop() {
+				select {
+				case <-expiry.C:
+				default:
+				}
+			}
+			expiry.Reset(time.Until(renewed.Until()))
 		}
 	}
 }
@@ -87,6 +110,14 @@ func (g *Guard) Err() error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return g.err
+}
+
+// Mark persists recovery context under the current fencing lease.
+func (g *Guard) Mark(ctx context.Context, operation Operation) error {
+	if err := g.Err(); err != nil {
+		return err
+	}
+	return g.store.Mark(ctx, g.current(), operation)
 }
 
 // Commit atomically updates placement and releases the lease.
@@ -108,6 +139,12 @@ func (g *Guard) Release(ctx context.Context) error {
 	err := g.store.Release(ctx, g.current())
 	g.cancel()
 	return err
+}
+
+// Abandon leaves operation metadata and the expiring lease for reconciliation.
+func (g *Guard) Abandon() {
+	g.stopHeartbeat()
+	g.cancel()
 }
 
 func (g *Guard) current() Lease {

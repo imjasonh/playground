@@ -18,6 +18,7 @@ type migrationInput struct {
 	cond     *sync.Cond
 	data     []byte
 	activeID uint64
+	attached bool
 	closed   bool
 	overflow chan struct{}
 	once     sync.Once
@@ -39,8 +40,13 @@ func (b *migrationInput) readSource() {
 		n, err := b.source.Read(buf)
 		b.mu.Lock()
 		if n > 0 {
+			for b.attached && !b.closed && len(b.data)+n > b.max {
+				b.cond.Wait()
+			}
 			if len(b.data)+n > b.max {
 				b.once.Do(func() { close(b.overflow) })
+				b.closed = true
+				b.cond.Broadcast()
 			} else {
 				b.data = append(b.data, buf[:n]...)
 				b.cond.Broadcast()
@@ -60,6 +66,7 @@ func (b *migrationInput) Attach() *migrationAttachment {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.activeID++
+	b.attached = true
 	id := b.activeID
 	b.cond.Broadcast()
 	return &migrationAttachment{buffer: b, id: id}
@@ -71,6 +78,7 @@ func (b *migrationInput) Close() {
 	b.mu.Lock()
 	b.closed = true
 	b.activeID++
+	b.attached = false
 	b.cond.Broadcast()
 	b.mu.Unlock()
 }
@@ -79,6 +87,32 @@ type migrationAttachment struct {
 	buffer *migrationInput
 	id     uint64
 	once   sync.Once
+}
+
+func (a *migrationAttachment) pumpTo(dst io.Writer) error {
+	b := a.buffer
+	for {
+		b.mu.Lock()
+		for a.id == b.activeID && len(b.data) == 0 && !b.closed {
+			b.cond.Wait()
+		}
+		if a.id != b.activeID || (len(b.data) == 0 && b.closed) {
+			b.mu.Unlock()
+			return nil
+		}
+		n, err := dst.Write(b.data)
+		if n > 0 {
+			b.data = b.data[n:]
+			b.cond.Broadcast()
+		}
+		b.mu.Unlock()
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return io.ErrNoProgress
+		}
+	}
 }
 
 func (a *migrationAttachment) Read(p []byte) (int, error) {
@@ -92,6 +126,7 @@ func (a *migrationAttachment) Read(p []byte) (int, error) {
 		if len(b.data) > 0 {
 			n := copy(p, b.data)
 			b.data = b.data[n:]
+			b.cond.Broadcast()
 			return n, nil
 		}
 		if b.closed {
@@ -107,6 +142,7 @@ func (a *migrationAttachment) Close() error {
 		b.mu.Lock()
 		if b.activeID == a.id {
 			b.activeID++
+			b.attached = false
 			b.cond.Broadcast()
 		}
 		b.mu.Unlock()

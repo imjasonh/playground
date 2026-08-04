@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -11,7 +10,8 @@ import (
 // term is a minimal line-oriented SSH UI (CRLF-friendly).
 type term struct {
 	rw     io.ReadWriter
-	in     *bufio.Reader
+	input  *migrationInput
+	reader *migrationAttachment
 	out    io.Writer
 	skipLF bool
 }
@@ -19,7 +19,8 @@ type term struct {
 const maxLineBytes = 1024
 
 func newTerm(rw io.ReadWriter) *term {
-	return &term{rw: rw, in: bufio.NewReader(rw), out: rw}
+	input := newMigrationInput(rw, defaultMigrationBufferBytes)
+	return &term{rw: rw, input: input, reader: input.Attach(), out: rw}
 }
 
 func (t *term) Printf(format string, args ...any) {
@@ -29,7 +30,7 @@ func (t *term) Printf(format string, args ...any) {
 func (t *term) ReadLine() (string, error) {
 	line := make([]byte, 0, 64)
 	for {
-		b, err := t.in.ReadByte()
+		b, err := t.readByte()
 		if err != nil {
 			return "", err
 		}
@@ -63,12 +64,32 @@ func (t *term) ReadLine() (string, error) {
 
 func (t *term) discardLine() {
 	for {
-		b, err := t.in.ReadByte()
+		b, err := t.readByte()
 		if err != nil {
 			return
 		}
 		if b == '\n' || b == '\r' {
 			return
 		}
+	}
+}
+
+func (t *term) readByte() (byte, error) {
+	var one [1]byte
+	_, err := io.ReadFull(t.reader, one[:])
+	return one[0], err
+}
+
+func (t *term) beginProxy() *migrationInput {
+	if t.reader != nil {
+		_ = t.reader.Close()
+		t.reader = nil
+	}
+	return t.input
+}
+
+func (t *term) endProxy() {
+	if t.reader == nil {
+		t.reader = t.input.Attach()
 	}
 }

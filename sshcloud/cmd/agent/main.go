@@ -45,6 +45,7 @@ func main() {
 	capacityVCPUs := flag.Int64("capacity-vcpus", 0, "allocatable guest vCPUs (0 detects host CPUs)")
 	capacityMemMiB := flag.Int64("capacity-mem-mib", 0, "allocatable guest memory MiB (0 detects host memory minus 1 GiB)")
 	platformVersion := flag.String("platform-version", "", "kernel/Firecracker compatibility ID stored in snapshots")
+	cpuTemplate := flag.String("cpu-template", "", "portable Firecracker CPU template (production: T2)")
 	flag.Parse()
 
 	if *kernel == "" {
@@ -130,6 +131,7 @@ func main() {
 		CapacityVCPUs:     *capacityVCPUs,
 		CapacityMemMiB:    *capacityMemMiB,
 		PlatformVersion:   strings.TrimSpace(*platformVersion),
+		CPUTemplate:       strings.TrimSpace(*cpuTemplate),
 		SnapStore:         store,
 		IdleTimeout:       *idle,
 		RootfsResolver: func(ctx context.Context, imageRef string) (agent.ResolvedRootfs, error) {

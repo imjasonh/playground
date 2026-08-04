@@ -45,12 +45,17 @@ func runAppStub(ctx context.Context, t *term, hub *Hub, res Result) int {
 		}
 		commands := make(chan session.MigrationCommand, 2)
 		frozen := hub.BindMigration(res.Session, commands)
-		input := newMigrationInput(t.rw, defaultMigrationBufferBytes)
-		defer input.Close()
+		input := t.beginProxy()
+		defer t.endProxy()
 		for {
 			if frozen {
 				t.Printf("\n[sshcloud] host migration in progress; input is temporarily buffered\n")
-				if !waitForThaw(ctx, commands) {
+				thawed, overflow := waitForThaw(ctx, commands, input.Overflow())
+				if overflow {
+					t.Printf("[sshcloud] session closed: migration input buffer exceeded %d bytes\n", defaultMigrationBufferBytes)
+					return 1
+				}
+				if !thawed {
 					return 1
 				}
 				t.Printf("[sshcloud] migration complete; reconnecting app session\n")
@@ -122,21 +127,23 @@ func runAppStub(ctx context.Context, t *term, hub *Hub, res Result) int {
 	return 0
 }
 
-func waitForThaw(ctx context.Context, commands <-chan session.MigrationCommand) bool {
+func waitForThaw(ctx context.Context, commands <-chan session.MigrationCommand, overflow <-chan struct{}) (bool, bool) {
 	for {
 		select {
 		case command := <-commands:
 			switch command.Kind {
 			case session.MigrationThaw:
 				command.Ack <- nil
-				return true
+				return true, false
 			case session.MigrationFreeze:
 				command.Ack <- nil
 			default:
 				command.Ack <- fmt.Errorf("unknown migration command %q", command.Kind)
 			}
 		case <-ctx.Done():
-			return false
+			return false, false
+		case <-overflow:
+			return false, true
 		}
 	}
 }

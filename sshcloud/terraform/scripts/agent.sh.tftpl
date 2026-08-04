@@ -76,6 +76,7 @@ ExecStart=/usr/local/lib/sshcloud/agent \
   -relay-port-min 20000 \
   -relay-port-max 29999 \
   -platform-version ${platform_version} \
+  -cpu-template T2 \
   -gcs-bucket ${snapshots_bucket} \
   -gcs-prefix ${snapshot_prefix} \
   -idle 5m

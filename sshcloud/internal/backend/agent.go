@@ -236,6 +236,23 @@ func (c *AgentClient) AdoptForcedContext(ctx context.Context, user, app, gen str
 	return c.adoptContext(ctx, user, app, gen, true)
 }
 
+// PreflightSnapshot validates sleeping-snapshot compatibility without waking it.
+func (c *AgentClient) PreflightSnapshot(ctx context.Context, user, app, gen string) (agent.InstanceInfo, error) {
+	res, err := c.postInstance(ctx, "/v1/instances/preflight", user, app, gen)
+	if err != nil {
+		return agent.InstanceInfo{}, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode >= 300 {
+		return agent.InstanceInfo{}, fmt.Errorf("agent preflight: %s: %s", res.Status, readErr(res.Body))
+	}
+	var info agent.InstanceInfo
+	if err := json.NewDecoder(res.Body).Decode(&info); err != nil {
+		return agent.InstanceInfo{}, err
+	}
+	return info, nil
+}
+
 func (c *AgentClient) adoptContext(ctx context.Context, user, app, gen string, force bool) (InstanceView, error) {
 	res, err := c.postJSON(ctx, "/v1/instances/adopt", instanceBody{User: user, App: app, Gen: gen, Force: force})
 	if err != nil {

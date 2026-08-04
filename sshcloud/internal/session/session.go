@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 )
 
 // ID uniquely identifies an admitted session.
@@ -144,51 +145,141 @@ func (r *Registry) BindMigration(id ID, commands chan MigrationCommand) (frozen 
 // Freeze asks matching proxies to disconnect from their backend while keeping
 // the outer client SSH channel open. A not-yet-bound proxy remembers the state.
 func (r *Registry) Freeze(ctx context.Context, user, app, gen string) (int, error) {
-	return r.migrateCommand(ctx, user, app, gen, MigrationFreeze, true)
+	ids := r.MatchingIDs(user, app, gen)
+	if err := r.FreezeIDs(ctx, ids); err != nil {
+		return len(ids), err
+	}
+	return len(ids), nil
 }
 
 // Thaw lets matching proxies reconnect to the newly placed backend.
 func (r *Registry) Thaw(ctx context.Context, user, app, gen string) (int, error) {
-	return r.migrateCommand(ctx, user, app, gen, MigrationThaw, false)
+	ids := r.MatchingIDs(user, app, gen)
+	if err := r.ThawIDs(ctx, ids); err != nil {
+		return len(ids), err
+	}
+	return len(ids), nil
 }
 
-func (r *Registry) migrateCommand(ctx context.Context, user, app, gen, kind string, frozen bool) (int, error) {
+// MatchingIDs snapshots exact sessions so migration tokens cannot affect a
+// later reconnect that happens to share user/app/gen.
+func (r *Registry) MatchingIDs(user, app, gen string) []ID {
 	k := Key{User: user, App: app}
 	r.mu.Lock()
-	var channels []chan MigrationCommand
-	slots := r.slots[k]
-	n := 0
-	for i := range slots {
-		if slots[i].Gen != gen {
-			continue
+	defer r.mu.Unlock()
+	var ids []ID
+	for _, slot := range r.slots[k] {
+		if slot.Gen == gen {
+			ids = append(ids, slot.ID)
 		}
-		slots[i].frozen = frozen
-		if slots[i].migration != nil {
-			channels = append(channels, slots[i].migration)
-		}
-		n++
 	}
-	r.slots[k] = slots
+	return ids
+}
+
+// FreezeIDs freezes exact sessions transactionally. Successfully frozen
+// sessions are thawed if a later session fails.
+func (r *Registry) FreezeIDs(ctx context.Context, ids []ID) error {
+	var frozen []ID
+	for _, id := range ids {
+		if err := r.migrateSession(ctx, id, MigrationFreeze, true); err != nil {
+			rollbackCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			_ = r.ThawIDs(rollbackCtx, frozen)
+			cancel()
+			return err
+		}
+		frozen = append(frozen, id)
+	}
+	return nil
+}
+
+// ThawIDs thaws exact sessions; it is safe when a session has disconnected.
+func (r *Registry) ThawIDs(ctx context.Context, ids []ID) error {
+	for _, id := range ids {
+		if err := r.migrateSession(ctx, id, MigrationThaw, false); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *Registry) migrateSession(ctx context.Context, id ID, kind string, frozen bool) error {
+	r.mu.Lock()
+	k, ok := r.byID[id]
+	if !ok {
+		r.mu.Unlock()
+		return nil
+	}
+	var commands chan MigrationCommand
+	for _, slot := range r.slots[k] {
+		if slot.ID == id {
+			commands = slot.migration
+			break
+		}
+	}
 	r.mu.Unlock()
 
-	for _, commands := range channels {
+	if commands != nil {
 		ack := make(chan error, 1)
-		command := MigrationCommand{Kind: kind, Ack: ack}
 		select {
-		case commands <- command:
+		case commands <- MigrationCommand{Kind: kind, Ack: ack}:
 		case <-ctx.Done():
-			return n, ctx.Err()
+			return ctx.Err()
 		}
 		select {
 		case err := <-ack:
 			if err != nil {
-				return n, err
+				return err
 			}
 		case <-ctx.Done():
-			return n, ctx.Err()
+			return ctx.Err()
 		}
 	}
-	return n, nil
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	k, ok = r.byID[id]
+	if !ok {
+		return nil
+	}
+	slots := r.slots[k]
+	for i := range slots {
+		if slots[i].ID == id {
+			slots[i].frozen = frozen
+			r.slots[k] = slots
+			return nil
+		}
+	}
+	return nil
+}
+
+// KickIDs cancels exact sessions and never a later reconnect.
+func (r *Registry) KickIDs(ids []ID) int {
+	r.mu.Lock()
+	var cancels []context.CancelFunc
+	n := 0
+	for _, id := range ids {
+		k, ok := r.byID[id]
+		if !ok {
+			continue
+		}
+		slots := r.slots[k]
+		for i := range slots {
+			if slots[i].ID == id {
+				slots[i].kicked = true
+				if slots[i].cancel != nil {
+					cancels = append(cancels, slots[i].cancel)
+				}
+				n++
+				break
+			}
+		}
+		r.slots[k] = slots
+	}
+	r.mu.Unlock()
+	for _, cancel := range cancels {
+		cancel()
+	}
+	return n
 }
 
 // Kick cancels sessions for user/app/gen (empty gen matches only empty-gen slots).

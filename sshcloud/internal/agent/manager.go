@@ -130,6 +130,7 @@ type Config struct {
 	// PlatformVersion fences Firecracker snapshots to compatible kernel/VMM
 	// assets during host rollout.
 	PlatformVersion string
+	CPUTemplate     string
 }
 
 // ResolvedRootfs is a materialized ext4 and the OCI PID 1 spec to boot it with.
@@ -403,6 +404,20 @@ func resourcesForTier(tier string) (Resources, error) {
 	return Resources{VCPUs: vcpus, MemMiB: memMiB}, err
 }
 
+func (m *Manager) platformVersion() string {
+	switch {
+	case m.cfg.PlatformVersion == "":
+		if m.cfg.CPUTemplate == "" {
+			return ""
+		}
+		return "cpu=" + m.cfg.CPUTemplate
+	case m.cfg.CPUTemplate == "":
+		return m.cfg.PlatformVersion
+	default:
+		return m.cfg.PlatformVersion + ";cpu=" + m.cfg.CPUTemplate
+	}
+}
+
 // ResourcesForTier returns the host capacity consumed by a tier.
 func ResourcesForTier(tier string) (Resources, error) { return resourcesForTier(tier) }
 
@@ -481,6 +496,29 @@ func (m *Manager) SetCordoned(cordoned bool) error {
 	}
 	m.cordoned = cordoned
 	return nil
+}
+
+// Cordon rejects new reservations and waits for pre-existing boots/restores to
+// either publish into inventory or fail.
+func (m *Manager) Cordon(ctx context.Context) error {
+	if err := m.SetCordoned(true); err != nil {
+		return err
+	}
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		m.mu.Lock()
+		pending := len(m.capacityReserved)
+		m.mu.Unlock()
+		if pending == 0 {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
 }
 
 // InstanceInfo is host-drain inventory.
@@ -691,6 +729,7 @@ func (m *Manager) bootCold(ctx context.Context, k InstanceKey, n int, opt Ensure
 		GuestIP:        guestIP,
 		VCPUs:          vcpus,
 		MemMiB:         memMiB,
+		CPUTemplate:    m.cfg.CPUTemplate,
 	})
 	if err != nil {
 		return nil, err
@@ -841,7 +880,7 @@ func (m *Manager) Sleep(ctx context.Context, user, app string) error {
 		RootfsPath:      in.Rootfs,
 		Image:           in.Image,
 		Tier:            in.Tier,
-		PlatformVersion: m.cfg.PlatformVersion,
+		PlatformVersion: m.platformVersion(),
 		CreatedAt:       time.Now().UTC(),
 	}
 	if err := pkg.WriteMeta(meta); err != nil {
@@ -937,6 +976,45 @@ func (m *Manager) Adopt(ctx context.Context, user, app string) (*Instance, error
 	return m.adoptWith(ctx, user, app, false)
 }
 
+// PreflightSnapshot validates that this host can eventually restore a sleeping
+// instance without allocating guest capacity or starting a VMM.
+func (m *Manager) PreflightSnapshot(ctx context.Context, user, app string) (InstanceInfo, error) {
+	k := InstanceKey{User: user, App: app}
+	if m.cfg.SnapStore == nil {
+		return InstanceInfo{}, fmt.Errorf("snapshot store not configured")
+	}
+	if !m.rt.Available() {
+		return InstanceInfo{}, fmt.Errorf("firecracker requires /dev/kvm (not available on this host)")
+	}
+	meta, err := m.cfg.SnapStore.Meta(ctx, snapshot.KeyFor(user, app))
+	if err != nil {
+		return InstanceInfo{}, err
+	}
+	if meta.User != user || meta.App != app {
+		return InstanceInfo{}, fmt.Errorf("snapshot identity mismatch: got %s/%s, want %s", meta.User, meta.App, k)
+	}
+	tier, _, _, err := tierResources(meta.Tier)
+	if err != nil {
+		return InstanceInfo{}, err
+	}
+	if platformVersion := m.platformVersion(); platformVersion != "" && meta.PlatformVersion != platformVersion {
+		return InstanceInfo{}, fmt.Errorf("snapshot platform version %q is incompatible with host %q", meta.PlatformVersion, platformVersion)
+	}
+	resourceID := instanceResourceID(k)
+	if meta.RootfsPath != filepath.Join(m.cfg.WorkDir, "vm-"+resourceID, "rootfs.ext4") ||
+		meta.TapName != "fc-"+resourceID {
+		return InstanceInfo{}, fmt.Errorf("snapshot host resource metadata is incompatible")
+	}
+	if err := m.validateSnapshotNetwork(k, meta); err != nil {
+		return InstanceInfo{}, err
+	}
+	baseApp, gen := genid.SplitAgentApp(app)
+	return InstanceInfo{
+		User: user, App: baseApp, Gen: gen, AgentApp: app,
+		Image: meta.Image, Tier: tier, State: StateSleeping,
+	}, nil
+}
+
 // AdoptForced permits rollback onto a cordoned source host.
 func (m *Manager) AdoptForced(ctx context.Context, user, app string) (*Instance, error) {
 	return m.adoptWith(ctx, user, app, true)
@@ -998,8 +1076,8 @@ func (m *Manager) adopt(ctx context.Context, k InstanceKey, n int, opt EnsureOpt
 	if meta.User != k.User || meta.App != k.App {
 		return nil, fmt.Errorf("snapshot identity mismatch: got %s/%s, want %s", meta.User, meta.App, k)
 	}
-	if m.cfg.PlatformVersion != "" && meta.PlatformVersion != m.cfg.PlatformVersion {
-		return nil, fmt.Errorf("snapshot platform version %q is incompatible with host %q", meta.PlatformVersion, m.cfg.PlatformVersion)
+	if platformVersion := m.platformVersion(); platformVersion != "" && meta.PlatformVersion != platformVersion {
+		return nil, fmt.Errorf("snapshot platform version %q is incompatible with host %q", meta.PlatformVersion, platformVersion)
 	}
 	tier, _, _, err := tierResources(meta.Tier)
 	if err != nil {

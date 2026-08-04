@@ -20,12 +20,13 @@ type Firestore struct {
 }
 
 type placementDoc struct {
-	User           string `firestore:"user"`
-	App            string `firestore:"app"`
-	HostID         string `firestore:"host_id"`
-	Revision       int64  `firestore:"revision"`
-	LeaseOwner     string `firestore:"lease_owner"`
-	LeaseUntilUnix int64  `firestore:"lease_until_unix"`
+	User           string    `firestore:"user"`
+	App            string    `firestore:"app"`
+	HostID         string    `firestore:"host_id"`
+	Revision       int64     `firestore:"revision"`
+	LeaseOwner     string    `firestore:"lease_owner"`
+	LeaseUntilUnix int64     `firestore:"lease_until_unix"`
+	Operation      Operation `firestore:"operation"`
 }
 
 // NewFirestore connects to the given GCP project.
@@ -92,6 +93,7 @@ func (f *Firestore) Set(ctx context.Context, user, app, hostID string) error {
 		d.User, d.App, d.HostID = user, app, hostID
 		d.Revision++
 		d.LeaseOwner, d.LeaseUntilUnix = "", 0
+		d.Operation = Operation{}
 		return tx.Set(ref, d)
 	})
 }
@@ -146,25 +148,26 @@ func (f *Firestore) ListRecords(ctx context.Context) ([]Record, error) {
 	}
 }
 
-func (f *Firestore) Acquire(ctx context.Context, user, app, owner string, ttl time.Duration, now time.Time) (Lease, error) {
+func (f *Firestore) Acquire(ctx context.Context, user, app, owner string, ttl time.Duration, _ time.Time) (Lease, error) {
 	if user == "" || app == "" || owner == "" || ttl <= 0 {
 		return Lease{}, fmt.Errorf("user, app, owner, and positive ttl required")
 	}
 	ref := f.ref(user, app)
 	var lease Lease
 	err := f.client.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		attemptNow := time.Now()
 		d, _, err := readPlacementTx(tx, ref)
 		if err != nil {
 			return err
 		}
 		r := recordFromDoc(d)
-		if leaseActive(r, now) && r.LeaseOwner != owner {
+		if leaseActive(r, attemptNow) && r.LeaseOwner != owner {
 			return ErrLeaseHeld{User: user, App: app, Owner: r.LeaseOwner, Until: time.Unix(0, r.LeaseUntilUnix)}
 		}
 		d.User, d.App = user, app
 		d.Revision++
 		d.LeaseOwner = owner
-		d.LeaseUntilUnix = now.Add(ttl).UnixNano()
+		d.LeaseUntilUnix = attemptNow.Add(ttl).UnixNano()
 		if err := tx.Set(ref, d); err != nil {
 			return err
 		}
@@ -174,22 +177,23 @@ func (f *Firestore) Acquire(ctx context.Context, user, app, owner string, ttl ti
 	return lease, err
 }
 
-func (f *Firestore) Renew(ctx context.Context, lease Lease, ttl time.Duration, now time.Time) (Lease, error) {
+func (f *Firestore) Renew(ctx context.Context, lease Lease, ttl time.Duration, _ time.Time) (Lease, error) {
 	if ttl <= 0 {
 		return Lease{}, fmt.Errorf("positive ttl required")
 	}
 	ref := f.ref(lease.User, lease.App)
 	var renewed Lease
 	err := f.client.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		attemptNow := time.Now()
 		d, ok, err := readPlacementTx(tx, ref)
 		if err != nil {
 			return err
 		}
 		r := recordFromDoc(d)
-		if !ok || !leaseMatches(r, lease) || !leaseActive(r, now) {
+		if !ok || !leaseMatches(r, lease) || !leaseActive(r, attemptNow) {
 			return ErrLeaseLost{User: lease.User, App: lease.App}
 		}
-		d.LeaseUntilUnix = now.Add(ttl).UnixNano()
+		d.LeaseUntilUnix = attemptNow.Add(ttl).UnixNano()
 		if err := tx.Set(ref, d); err != nil {
 			return err
 		}
@@ -199,7 +203,24 @@ func (f *Firestore) Renew(ctx context.Context, lease Lease, ttl time.Duration, n
 	return renewed, err
 }
 
-func (f *Firestore) Commit(ctx context.Context, lease Lease, hostID string, now time.Time) error {
+func (f *Firestore) Mark(ctx context.Context, lease Lease, operation Operation) error {
+	ref := f.ref(lease.User, lease.App)
+	return f.client.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		attemptNow := time.Now()
+		d, ok, err := readPlacementTx(tx, ref)
+		if err != nil {
+			return err
+		}
+		r := recordFromDoc(d)
+		if !ok || !leaseMatches(r, lease) {
+			return ErrLeaseLost{User: lease.User, App: lease.App}
+		}
+		d.Operation = operation
+		return tx.Set(ref, d)
+	})
+}
+
+func (f *Firestore) Commit(ctx context.Context, lease Lease, hostID string, _ time.Time) error {
 	if hostID == "" {
 		return fmt.Errorf("hostID required")
 	}
@@ -210,12 +231,13 @@ func (f *Firestore) Commit(ctx context.Context, lease Lease, hostID string, now 
 			return err
 		}
 		r := recordFromDoc(d)
-		if !ok || !leaseMatches(r, lease) || !leaseActive(r, now) {
+		if !ok || !leaseMatches(r, lease) || !leaseActive(r, attemptNow) {
 			return ErrLeaseLost{User: lease.User, App: lease.App}
 		}
 		d.HostID = hostID
 		d.Revision++
 		d.LeaseOwner, d.LeaseUntilUnix = "", 0
+		d.Operation = Operation{}
 		return tx.Set(ref, d)
 	})
 }
@@ -233,6 +255,7 @@ func (f *Firestore) Release(ctx context.Context, lease Lease) error {
 		}
 		d.Revision++
 		d.LeaseOwner, d.LeaseUntilUnix = "", 0
+		d.Operation = Operation{}
 		return tx.Set(ref, d)
 	})
 }
@@ -256,5 +279,6 @@ func recordFromDoc(d placementDoc) Record {
 	return Record{
 		User: d.User, App: d.App, HostID: d.HostID, Revision: d.Revision,
 		LeaseOwner: d.LeaseOwner, LeaseUntilUnix: d.LeaseUntilUnix,
+		Operation: d.Operation,
 	}
 }

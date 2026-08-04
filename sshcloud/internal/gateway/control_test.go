@@ -42,3 +42,40 @@ func TestControlFreezeTimeoutKicksSession(t *testing.T) {
 	}
 	registry.Release(id)
 }
+
+func TestExpiredFreezeTokenNeverKicksLaterReconnect(t *testing.T) {
+	t.Parallel()
+	registry := session.NewRegistry()
+	oldID, err := registry.Admit("alice", "myapp", "gabc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	hub := &Hub{Sessions: registry}
+	mux := http.NewServeMux()
+	token := "0123456789abcdef0123456789abcdef"
+	(&ControlHandler{Hub: hub, Token: token, MaxFreeze: 40 * time.Millisecond}).Mount(mux)
+	body, _ := json.Marshal(freezeRequest{User: "alice", App: "myapp", Gen: "gabc", TimeoutMS: 30})
+	req := httptest.NewRequest(http.MethodPost, "/v1/sessions/freeze", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("freeze: %d %s", rec.Code, rec.Body.String())
+	}
+	registry.Release(oldID)
+
+	newID, err := registry.Admit("alice", "myapp", "gabc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	newCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	registry.BindCancel(newID, cancel)
+	time.Sleep(75 * time.Millisecond)
+	select {
+	case <-newCtx.Done():
+		t.Fatal("old freeze token kicked a later reconnect")
+	default:
+	}
+	registry.Release(newID)
+}

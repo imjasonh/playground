@@ -77,30 +77,44 @@ func (p *PlacedDial) EnsureAddrTier(ctx context.Context, user, app, gen, image, 
 		}
 	}()
 	excluded := make(map[string]bool)
+	originalHost := guard.HostID()
 	var choices []HostCandidate
 	if host := guard.HostID(); host != "" {
-		if client, ok := p.Agents.Get(host); ok {
-			choices = append(choices, HostCandidate{ID: host, Client: client})
-			excluded[host] = true
+		client, ok := p.Agents.Get(host)
+		if !ok {
+			return "", fmt.Errorf("placed host %q is unavailable for %s/%s; explicit host recovery is required", host, user, app)
 		}
+		choices = append(choices, HostCandidate{ID: host, Client: client})
+		excluded[host] = true
 	}
-	candidates, candidateErr := p.Agents.Candidates(guard.Context(), tier, excluded)
-	if candidateErr != nil && len(choices) == 0 {
-		return "", candidateErr
+	if len(choices) == 0 {
+		candidates, candidateErr := p.Agents.Candidates(guard.Context(), tier, excluded)
+		if candidateErr != nil {
+			return "", candidateErr
+		}
+		choices = append(choices, candidates...)
 	}
-	choices = append(choices, candidates...)
 	if len(choices) == 0 {
 		return "", fmt.Errorf("no host has capacity for %s/%s tier %s", user, app, tier)
 	}
 	var (
-		in      InstanceView
-		host    string
-		lastErr error
+		in           InstanceView
+		host         string
+		chosenClient *AgentClient
+		lastErr      error
 	)
 	for _, choice := range choices {
+		if originalHost == "" {
+			if err := guard.Mark(guard.Context(), placement.Operation{
+				Kind: "ensure", Phase: "ensuring", TargetHost: choice.ID, Generations: []string{gen},
+			}); err != nil {
+				return "", err
+			}
+		}
 		in, err = choice.Client.EnsureTierContext(guard.Context(), user, app, gen, image, tier, noIdle)
 		if err == nil {
 			host = choice.ID
+			chosenClient = choice.Client
 			break
 		}
 		var capacity ErrAgentCapacity
@@ -115,6 +129,16 @@ func (p *PlacedDial) EnsureAddrTier(ctx context.Context, user, app, gen, image, 
 		}
 		return "", fmt.Errorf("no host accepted %s/%s tier %s", user, app, tier)
 	}
+	if originalHost != "" {
+		releaseCtx, releaseCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		err := guard.Release(releaseCtx)
+		releaseCancel()
+		if err != nil {
+			return "", fmt.Errorf("release placement lease: %w", err)
+		}
+		committed = true
+		return in.Addr, nil
+	}
 	commitCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	commitErr := guard.Commit(commitCtx, host)
 	cancel()
@@ -122,7 +146,15 @@ func (p *PlacedDial) EnsureAddrTier(ctx context.Context, user, app, gen, image, 
 		checkCtx, checkCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		record, ok, checkErr := p.Placement.GetRecord(checkCtx, user, app)
 		checkCancel()
-		if checkErr != nil || !ok || record.HostID != host || record.LeaseOwner != "" {
+		if checkErr != nil {
+			guard.Abandon()
+			committed = true
+			return "", fmt.Errorf("placement commit outcome unknown: %w (read: %v)", commitErr, checkErr)
+		}
+		if !ok || record.HostID != host || record.LeaseOwner != "" {
+			cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			_ = chosenClient.StopContext(cleanupCtx, user, app, gen)
+			cleanupCancel()
 			return "", fmt.Errorf("commit placement: %w", commitErr)
 		}
 	}

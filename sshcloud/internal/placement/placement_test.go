@@ -48,12 +48,19 @@ func TestMemoryLeaseFencesPlacement(t *testing.T) {
 	if err := m.Set(ctx, "alice", "fortune", "host-b"); err == nil {
 		t.Fatal("unfenced Set changed a leased placement")
 	}
+	if err := m.Mark(ctx, first, Operation{Kind: "migrate", SourceHost: "host-a", TargetHost: "host-b"}); err != nil {
+		t.Fatal(err)
+	}
 	if err := m.Commit(ctx, first, "host-a", now.Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	host, ok, err := m.Get(ctx, "alice", "fortune")
 	if err != nil || !ok || host != "host-a" {
 		t.Fatalf("host=%q ok=%v err=%v", host, ok, err)
+	}
+	record, _, _ := m.GetRecord(ctx, "alice", "fortune")
+	if record.Operation.Kind != "" {
+		t.Fatalf("commit did not clear operation: %+v", record)
 	}
 	if err := m.Commit(ctx, first, "host-b", now.Add(2*time.Second)); err == nil {
 		t.Fatal("stale lease committed twice")
@@ -72,5 +79,22 @@ func TestMemoryLeaseFencesPlacement(t *testing.T) {
 	}
 	if err := m.Commit(ctx, expired, "wrong-host", now.Add(5*time.Second)); err == nil {
 		t.Fatal("expired owner committed after takeover")
+	}
+}
+
+func TestGuardCancelsAtLocalLeaseExpiry(t *testing.T) {
+	t.Parallel()
+	guard, err := AcquireGuard(context.Background(), NewMemory(), "alice", "fortune", "test", 30*time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-guard.Context().Done():
+	case <-time.After(time.Second):
+		t.Fatal("guard continued after local lease expiry")
+	}
+	var lost ErrLeaseLost
+	if !errors.As(guard.Err(), &lost) {
+		t.Fatalf("guard error %v, want ErrLeaseLost", guard.Err())
 	}
 }

@@ -23,9 +23,9 @@ type Controller struct {
 }
 
 type Result struct {
-	Host     string      `json:"host"`
-	Cordoned bool        `json:"cordoned"`
-	Moved    []MovedApp  `json:"moved"`
+	Host     string     `json:"host"`
+	Cordoned bool       `json:"cordoned"`
+	Moved    []MovedApp `json:"moved"`
 }
 
 type MovedApp struct {
@@ -34,6 +34,7 @@ type MovedApp struct {
 	Target   string   `json:"target"`
 	Gens     []string `json:"gens"`
 	Sessions int      `json:"sessions"`
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 type appGroup struct {
@@ -75,6 +76,13 @@ func (c *Controller) DrainHost(ctx context.Context, hostID string) (Result, erro
 		}
 		result.Moved = append(result.Moved, moved)
 	}
+	remaining, err := source.Instances(ctx)
+	if err != nil {
+		return result, fmt.Errorf("final inventory %s: %w", hostID, err)
+	}
+	if len(remaining) != 0 {
+		return result, fmt.Errorf("host %s still has %d instances after drain", hostID, len(remaining))
+	}
 	return result, nil
 }
 
@@ -111,8 +119,9 @@ func (c *Controller) moveGroup(ctx context.Context, sourceID string, source *bac
 		return MovedApp{}, err
 	}
 	committed := false
+	abandoned := false
 	defer func() {
-		if !committed {
+		if !committed && !abandoned {
 			releaseGuard(guard)
 		}
 	}()
@@ -140,6 +149,24 @@ func (c *Controller) moveGroup(ctx context.Context, sourceID string, source *bac
 		return MovedApp{}, fmt.Errorf("no target has capacity for %d vCPU/%d MiB", need.VCPUs, need.MemMiB)
 	}
 	target := candidates[0]
+	var generations []string
+	for _, instance := range group.instances {
+		generations = append(generations, instance.Gen)
+	}
+	operation := placement.Operation{
+		Kind: "drain", Phase: "freezing", SourceHost: sourceID,
+		TargetHost: target.ID, Generations: generations,
+	}
+	if err := guard.Mark(guard.Context(), operation); err != nil {
+		return MovedApp{}, fmt.Errorf("persist drain operation: %w", err)
+	}
+	for _, instance := range group.instances {
+		if instance.State == agent.StateSleeping {
+			if _, err := target.Client.PreflightSnapshot(guard.Context(), group.user, group.app, instance.Gen); err != nil {
+				return MovedApp{}, fmt.Errorf("preflight sleeping generation %q on %s: %w", instance.Gen, target.ID, err)
+			}
+		}
+	}
 
 	var frozen []frozenGeneration
 	for _, instance := range group.instances {
@@ -177,20 +204,66 @@ func (c *Controller) moveGroup(ctx context.Context, sourceID string, source *bac
 	}
 
 	for _, instance := range group.instances {
+		if instance.State == agent.StateSleeping {
+			moved = append(moved, instance)
+			continue
+		}
+		operation.Phase = "moving:" + instance.Gen
+		if err := guard.Mark(guard.Context(), operation); err != nil {
+			return rollback(fmt.Errorf("persist generation phase %q: %w", instance.Gen, err))
+		}
 		if instance.State == agent.StateRunning {
 			if err := source.SetNoIdleContext(guard.Context(), group.user, group.app, instance.Gen, false); err != nil {
 				return rollback(fmt.Errorf("release generation %q hold: %w", instance.Gen, err))
 			}
 			if err := source.SleepContext(guard.Context(), group.user, group.app, instance.Gen); err != nil {
-				return rollback(fmt.Errorf("sleep generation %q: %w", instance.Gen, err))
+				statusCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				status, found, statusErr := source.StatusContext(statusCtx, group.user, group.app, instance.Gen)
+				cancel()
+				if statusErr != nil {
+					operation.Phase = "unknown-sleep:" + instance.Gen
+					_ = markOperation(guard, operation)
+					guard.Abandon()
+					abandoned = true
+					return MovedApp{}, fmt.Errorf("sleep generation %q outcome unknown: %w (status: %v)", instance.Gen, err, statusErr)
+				}
+				if !found || status.State != "sleeping" {
+					return rollback(fmt.Errorf("sleep generation %q: %w", instance.Gen, err))
+				}
 			}
 		}
 		if err := source.EvictContext(guard.Context(), group.user, group.app, instance.Gen); err != nil {
-			return rollback(fmt.Errorf("evict generation %q: %w", instance.Gen, err))
+			statusCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			_, found, statusErr := source.StatusContext(statusCtx, group.user, group.app, instance.Gen)
+			cancel()
+			if statusErr != nil {
+				operation.Phase = "unknown-evict:" + instance.Gen
+				_ = markOperation(guard, operation)
+				guard.Abandon()
+				abandoned = true
+				return MovedApp{}, fmt.Errorf("evict generation %q outcome unknown: %w (status: %v)", instance.Gen, err, statusErr)
+			}
+			if found {
+				return rollback(fmt.Errorf("evict generation %q: %w", instance.Gen, err))
+			}
 		}
 		if instance.State == agent.StateRunning {
 			if _, err := target.Client.AdoptContext(guard.Context(), group.user, group.app, instance.Gen); err != nil {
 				recoveryCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+				status, found, statusErr := target.Client.StatusContext(recoveryCtx, group.user, group.app, instance.Gen)
+				if statusErr != nil {
+					cancel()
+					operation.Phase = "unknown-adopt:" + instance.Gen
+					_ = markOperation(guard, operation)
+					guard.Abandon()
+					abandoned = true
+					return MovedApp{}, fmt.Errorf("adopt generation %q outcome unknown: %w (status: %v)", instance.Gen, err, statusErr)
+				}
+				if found && status.State == "running" {
+					cancel()
+					moved = append(moved, instance)
+					continue
+				}
 				_, sourceErr := source.AdoptForcedContext(recoveryCtx, group.user, group.app, instance.Gen)
 				cancel()
 				if sourceErr != nil {
@@ -203,13 +276,25 @@ func (c *Controller) moveGroup(ctx context.Context, sourceID string, source *bac
 	}
 
 	commitCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	operation.Phase = "ready"
+	if err := guard.Mark(commitCtx, operation); err != nil {
+		cancel()
+		return rollback(fmt.Errorf("persist ready phase: %w", err))
+	}
 	err = guard.Commit(commitCtx, target.ID)
 	cancel()
 	if err != nil {
 		checkCtx, checkCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		record, ok, checkErr := c.Placement.GetRecord(checkCtx, group.user, group.app)
 		checkCancel()
-		if checkErr != nil || !ok || record.HostID != target.ID || record.LeaseOwner != "" {
+		if checkErr != nil {
+			operation.Phase = "unknown-commit"
+			_ = markOperation(guard, operation)
+			guard.Abandon()
+			abandoned = true
+			return MovedApp{}, fmt.Errorf("placement commit outcome unknown: %w (read: %v)", err, checkErr)
+		}
+		if !ok || record.HostID != target.ID || record.LeaseOwner != "" {
 			return rollback(fmt.Errorf("commit placement to %s: %w", target.ID, err))
 		}
 	}
@@ -222,7 +307,15 @@ func (c *Controller) moveGroup(ctx context.Context, sourceID string, source *bac
 	for _, freeze := range frozen {
 		movedResult.Sessions += freeze.sessions
 	}
-	c.thawAll(frozen)
+	for _, instance := range group.instances {
+		if instance.State == agent.StateSleeping {
+			if err := source.EvictContext(context.Background(), group.user, group.app, instance.Gen); err != nil {
+				movedResult.Warnings = append(movedResult.Warnings,
+					fmt.Sprintf("source sleeping generation %s cleanup: %v", instance.Gen, err))
+			}
+		}
+	}
+	movedResult.Warnings = append(movedResult.Warnings, c.thawAll(frozen)...)
 	return movedResult, nil
 }
 
@@ -230,15 +323,6 @@ func (c *Controller) rollback(ctx context.Context, source, target *backend.Agent
 	for i := len(moved) - 1; i >= 0; i-- {
 		instance := moved[i]
 		if instance.State != agent.StateRunning {
-			if _, err := source.AdoptForcedContext(ctx, group.user, group.app, instance.Gen); err != nil {
-				return err
-			}
-			if err := source.SetNoIdleContext(ctx, group.user, group.app, instance.Gen, false); err != nil {
-				return err
-			}
-			if err := source.SleepContext(ctx, group.user, group.app, instance.Gen); err != nil {
-				return err
-			}
 			continue
 		}
 		if err := target.SetNoIdleContext(ctx, group.user, group.app, instance.Gen, false); err != nil {
@@ -257,19 +341,30 @@ func (c *Controller) rollback(ctx context.Context, source, target *backend.Agent
 	return nil
 }
 
-func (c *Controller) thawAll(frozen []frozenGeneration) {
+func (c *Controller) thawAll(frozen []frozenGeneration) []string {
 	if c.Gateway == nil {
-		return
+		return nil
 	}
+	var warnings []string
 	for _, freeze := range frozen {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		_ = c.Gateway.Thaw(ctx, freeze.token)
+		if err := c.Gateway.Thaw(ctx, freeze.token); err != nil {
+			warnings = append(warnings, fmt.Sprintf(
+				"generation %s placement committed; outer session must reconnect: %v", freeze.gen, err))
+		}
 		cancel()
 	}
+	return warnings
 }
 
 func releaseGuard(guard *placement.Guard) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = guard.Release(ctx)
+}
+
+func markOperation(guard *placement.Guard, operation placement.Operation) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return guard.Mark(ctx, operation)
 }

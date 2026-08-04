@@ -159,6 +159,42 @@ func (s *GCSStore) Has(ctx context.Context, key string) (bool, error) {
 	return err == nil, err
 }
 
+func (s *GCSStore) Meta(ctx context.Context, key string) (Meta, error) {
+	if err := validateKey(key); err != nil {
+		return Meta{}, err
+	}
+	bkt := s.client.Bucket(s.Bucket)
+	r, err := bkt.Object(s.objectKey(key, "current.json")).NewReader(ctx)
+	if err != nil {
+		return Meta{}, err
+	}
+	var manifest struct {
+		Version string `json:"version"`
+	}
+	decodeErr := json.NewDecoder(io.LimitReader(r, 4<<10)).Decode(&manifest)
+	closeErr := r.Close()
+	if decodeErr != nil {
+		return Meta{}, decodeErr
+	}
+	if closeErr != nil {
+		return Meta{}, closeErr
+	}
+	if len(manifest.Version) != 32 || strings.Trim(manifest.Version, "0123456789abcdef") != "" {
+		return Meta{}, fmt.Errorf("invalid snapshot version %q", manifest.Version)
+	}
+	metaReader, err := bkt.Object(s.objectKey(key, path.Join("versions", manifest.Version, "meta.json"))).NewReader(ctx)
+	if err != nil {
+		return Meta{}, err
+	}
+	var meta Meta
+	decodeErr = json.NewDecoder(io.LimitReader(metaReader, 64<<10)).Decode(&meta)
+	closeErr = metaReader.Close()
+	if decodeErr != nil {
+		return Meta{}, decodeErr
+	}
+	return meta, closeErr
+}
+
 func (s *GCSStore) Delete(ctx context.Context, key string) error {
 	if err := validateKey(key); err != nil {
 		return err

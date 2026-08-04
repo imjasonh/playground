@@ -53,7 +53,7 @@ resource "google_compute_instance" "gateway" {
     gateway_image       = ko_build.gateway.image_ref
     gateway_listen      = local.gateway_listen
     control_listen      = "${google_compute_address.gateway_internal.address}:8079"
-    orchestrator_ip     = google_compute_instance.orchestrator.network_interface[0].network_ip
+    orchestrator_ip     = google_compute_address.orchestrator_internal.address
   })
 
   lifecycle {

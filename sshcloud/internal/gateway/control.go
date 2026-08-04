@@ -14,6 +14,7 @@ import (
 	"github.com/imjasonh/playground/sshcloud/internal/controlauth"
 	"github.com/imjasonh/playground/sshcloud/internal/genid"
 	"github.com/imjasonh/playground/sshcloud/internal/names"
+	"github.com/imjasonh/playground/sshcloud/internal/session"
 )
 
 // ControlHandler serves the orchestrator→gateway migration API.
@@ -22,14 +23,17 @@ type ControlHandler struct {
 	Token     string
 	MaxFreeze time.Duration
 
-	mu     sync.Mutex
-	frozen map[string]frozenSession
+	mu        sync.Mutex
+	frozen    map[string]frozenSession
+	bySession map[session.ID]string
+	finished  map[string]time.Time
 }
 
 type frozenSession struct {
 	User  string
 	App   string
 	Gen   string
+	IDs   []session.ID
 	timer *time.Timer
 }
 
@@ -52,6 +56,12 @@ func (h *ControlHandler) Mount(mux *http.ServeMux) {
 	if h.frozen == nil {
 		h.frozen = make(map[string]frozenSession)
 	}
+	if h.bySession == nil {
+		h.bySession = make(map[session.ID]string)
+	}
+	if h.finished == nil {
+		h.finished = make(map[string]time.Time)
+	}
 	api := http.NewServeMux()
 	api.HandleFunc("POST /v1/sessions/freeze", h.freeze)
 	api.HandleFunc("POST /v1/sessions/thaw", h.thaw)
@@ -72,31 +82,47 @@ func (h *ControlHandler) freeze(w http.ResponseWriter, r *http.Request) {
 	if timeout <= 0 || timeout > h.MaxFreeze {
 		timeout = h.MaxFreeze
 	}
+	ids := h.Hub.SessionIDs(req.User, req.App, req.Gen)
+	token := migrationToken()
+	op := frozenSession{User: req.User, App: req.App, Gen: req.Gen, IDs: ids}
+	h.mu.Lock()
+	for _, id := range ids {
+		if existing := h.bySession[id]; existing != "" {
+			h.mu.Unlock()
+			http.Error(w, "session already has active freeze token "+existing, http.StatusConflict)
+			return
+		}
+	}
+	h.frozen[token] = op
+	for _, id := range ids {
+		h.bySession[id] = token
+	}
+	h.mu.Unlock()
+
 	freezeCtx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
-	count, err := h.Hub.FreezeApp(freezeCtx, req.User, req.App, req.Gen)
+	err := h.Hub.FreezeSessions(freezeCtx, ids)
+	cancel()
 	if err != nil {
+		h.remove(token)
+		rollbackCtx, rollbackCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = h.Hub.ThawSessions(rollbackCtx, ids)
+		rollbackCancel()
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
-	token := migrationToken()
-	op := frozenSession{User: req.User, App: req.App, Gen: req.Gen}
 	op.timer = time.AfterFunc(timeout, func() {
-		h.mu.Lock()
-		current, ok := h.frozen[token]
+		current, ok := h.remove(token)
 		if ok {
-			delete(h.frozen, token)
-		}
-		h.mu.Unlock()
-		if ok {
-			h.Hub.KickApp(current.User, current.App, current.Gen)
+			h.Hub.KickSessions(current.IDs)
 		}
 	})
 	h.mu.Lock()
-	h.frozen[token] = op
+	if _, ok := h.frozen[token]; ok {
+		h.frozen[token] = op
+	}
 	h.mu.Unlock()
 	writeControlJSON(w, map[string]any{
-		"token": token, "sessions": count, "deadline": time.Now().Add(timeout).UTC(),
+		"token": token, "sessions": len(ids), "deadline": time.Now().Add(timeout).UTC(),
 	})
 }
 
@@ -105,19 +131,25 @@ func (h *ControlHandler) thaw(w http.ResponseWriter, r *http.Request) {
 	if !decodeControlJSON(w, r, &req) {
 		return
 	}
-	op, ok := h.take(req.Token)
+	op, ok := h.get(req.Token)
 	if !ok {
+		if h.wasFinished(req.Token) {
+			writeControlJSON(w, map[string]any{"sessions": 0, "already_thawed": true})
+			return
+		}
 		http.Error(w, "unknown or expired freeze token", http.StatusNotFound)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
-	count, err := h.Hub.ThawApp(ctx, op.User, op.App, op.Gen)
+	err := h.Hub.ThawSessions(ctx, op.IDs)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
-	writeControlJSON(w, map[string]any{"sessions": count})
+	h.remove(req.Token)
+	h.markFinished(req.Token)
+	writeControlJSON(w, map[string]any{"sessions": len(op.IDs)})
 }
 
 func (h *ControlHandler) abort(w http.ResponseWriter, r *http.Request) {
@@ -125,24 +157,61 @@ func (h *ControlHandler) abort(w http.ResponseWriter, r *http.Request) {
 	if !decodeControlJSON(w, r, &req) {
 		return
 	}
-	op, ok := h.take(req.Token)
+	op, ok := h.remove(req.Token)
 	if !ok {
 		http.Error(w, "unknown or expired freeze token", http.StatusNotFound)
 		return
 	}
-	count := h.Hub.KickApp(op.User, op.App, op.Gen)
+	count := h.Hub.KickSessions(op.IDs)
 	writeControlJSON(w, map[string]any{"sessions": count})
 }
 
-func (h *ControlHandler) take(token string) (frozenSession, bool) {
+func (h *ControlHandler) get(token string) (frozenSession, bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	op, ok := h.frozen[token]
+	return op, ok
+}
+
+func (h *ControlHandler) remove(token string) (frozenSession, bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	op, ok := h.frozen[token]
 	if ok {
 		delete(h.frozen, token)
-		op.timer.Stop()
+		for _, id := range op.IDs {
+			if h.bySession[id] == token {
+				delete(h.bySession, id)
+			}
+		}
+		if op.timer != nil {
+			op.timer.Stop()
+		}
 	}
 	return op, ok
+}
+
+func (h *ControlHandler) markFinished(token string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	now := time.Now()
+	for existing, until := range h.finished {
+		if !until.After(now) {
+			delete(h.finished, existing)
+		}
+	}
+	h.finished[token] = now.Add(time.Minute)
+}
+
+func (h *ControlHandler) wasFinished(token string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	until, ok := h.finished[token]
+	if ok && !until.After(time.Now()) {
+		delete(h.finished, token)
+		return false
+	}
+	return ok
 }
 
 func migrationToken() string {

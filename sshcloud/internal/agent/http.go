@@ -31,6 +31,7 @@ func (h *Handler) Mount(mux *http.ServeMux) {
 	api.HandleFunc("POST /v1/instances/wake", h.wake)
 	api.HandleFunc("POST /v1/instances/evict", h.evict)
 	api.HandleFunc("POST /v1/instances/adopt", h.adopt)
+	api.HandleFunc("POST /v1/instances/preflight", h.preflight)
 	api.HandleFunc("POST /v1/instances/no-idle", h.setNoIdle)
 	api.HandleFunc("GET /v1/instances/status", h.status)
 	api.HandleFunc("GET /v1/host/capacity", h.capacity)
@@ -218,6 +219,19 @@ func (h *Handler) setNoIdle(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (h *Handler) preflight(w http.ResponseWriter, r *http.Request) {
+	req, ok := decodeInstanceRequest(w, r)
+	if !ok {
+		return
+	}
+	info, err := h.Manager.PreflightSnapshot(r.Context(), req.User, agentApp(req))
+	if err != nil {
+		writeManagerError(w, err)
+		return
+	}
+	writeJSON(w, info)
+}
+
 func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 	user := r.URL.Query().Get("user")
 	app := r.URL.Query().Get("app")
@@ -257,8 +271,8 @@ func (h *Handler) instances(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, map[string]any{"instances": h.Manager.ListInstances()})
 }
 
-func (h *Handler) cordon(w http.ResponseWriter, _ *http.Request) {
-	if err := h.Manager.SetCordoned(true); err != nil {
+func (h *Handler) cordon(w http.ResponseWriter, r *http.Request) {
+	if err := h.Manager.Cordon(r.Context()); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

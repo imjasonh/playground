@@ -1,3 +1,10 @@
+resource "google_compute_address" "orchestrator_internal" {
+  name         = "${local.prefix}-orchestrator-internal"
+  region       = var.region
+  address_type = "INTERNAL"
+  subnetwork   = google_compute_subnetwork.sshcloud.id
+}
+
 resource "google_compute_instance" "orchestrator" {
   name         = "${local.prefix}-orchestrator"
   machine_type = var.orchestrator_machine_type
@@ -15,6 +22,7 @@ resource "google_compute_instance" "orchestrator" {
 
   network_interface {
     subnetwork = google_compute_subnetwork.sshcloud.id
+    network_ip = google_compute_address.orchestrator_internal.address
   }
 
   service_account {

@@ -40,6 +40,7 @@ type BootSpec struct {
 	GuestIP        string
 	VCPUs          int64
 	MemMiB         int64
+	CPUTemplate    string
 }
 
 // RestoreSpec loads a snapshot and resumes.
@@ -71,6 +72,7 @@ func (FirecrackerRuntime) Boot(ctx context.Context, spec BootSpec) (machine, str
 		BootArgs:       spec.BootArgs,
 		VCPUs:          spec.VCPUs,
 		MemMiB:         spec.MemMiB,
+		CPUTemplate:    spec.CPUTemplate,
 		TapDevice:      spec.TapName,
 		GuestMAC:       spec.GuestMAC,
 		LogPath:        logPath,

@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
+	"github.com/imjasonh/playground/sshcloud/internal/agent"
 	"github.com/imjasonh/playground/sshcloud/internal/backend"
 	"github.com/imjasonh/playground/sshcloud/internal/migrate"
 	"github.com/imjasonh/playground/sshcloud/internal/placement"
@@ -127,6 +129,7 @@ func newStubAgent(t *testing.T, _ string) *stubAgent {
 	mux.HandleFunc("POST /v1/instances/evict", s.handleEvict)
 	mux.HandleFunc("POST /v1/instances/adopt", s.handleAdopt)
 	mux.HandleFunc("GET /v1/instances/status", s.handleStatus)
+	mux.HandleFunc("GET /v1/host/instances", s.handleInstances)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	s.URL = srv.URL
@@ -235,4 +238,23 @@ func (s *stubAgent) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Error(w, "not found", http.StatusNotFound)
+}
+
+func (s *stubAgent) handleInstances(w http.ResponseWriter, _ *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var inventory []agent.InstanceInfo
+	for key := range s.inst {
+		parts := strings.SplitN(key, "/", 2)
+		user, app := parts[0], parts[1]
+		inventory = append(inventory, agent.InstanceInfo{User: user, App: app, State: agent.StateRunning, Tier: "tiny"})
+	}
+	for key := range s.sleeping {
+		if _, running := s.inst[key]; running {
+			continue
+		}
+		parts := strings.SplitN(key, "/", 2)
+		inventory = append(inventory, agent.InstanceInfo{User: parts[0], App: parts[1], State: agent.StateSleeping, Tier: "tiny"})
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"instances": inventory})
 }
