@@ -167,7 +167,16 @@ final class LocalLensAnalyzer {
 
     private func detectBodyPose(handler: VNImageRequestHandler) throws -> LocalLensFrameResult {
         let request = VNDetectHumanBodyPoseRequest()
-        try handler.perform([request])
+        // Some simulators cannot load the body-pose model (Vision Code=9).
+        // Treat that as “nothing found” so Local Lens still runs elsewhere.
+        do {
+            try handler.perform([request])
+        } catch {
+            if Self.isUnavailableVisionRequest(error) {
+                return .empty(mode: .body)
+            }
+            throw error
+        }
 
         var findings: [LocalLensFinding] = []
         var joints: [CGPoint] = []
@@ -206,7 +215,14 @@ final class LocalLensAnalyzer {
     private func detectHandPose(handler: VNImageRequestHandler) throws -> LocalLensFrameResult {
         let request = VNDetectHumanHandPoseRequest()
         request.maximumHandCount = 2
-        try handler.perform([request])
+        do {
+            try handler.perform([request])
+        } catch {
+            if Self.isUnavailableVisionRequest(error) {
+                return .empty(mode: .hands)
+            }
+            throw error
+        }
 
         var findings: [LocalLensFinding] = []
         var joints: [CGPoint] = []
@@ -247,6 +263,17 @@ final class LocalLensAnalyzer {
             bones: bones,
             minimumConfidence: 0.15
         )
+    }
+
+    /// Vision Code=9 ("Unable to setup request") shows up on some simulator
+    /// runtimes that lack the pose model / Neural Engine path.
+    static func isUnavailableVisionRequest(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        if nsError.domain == "com.apple.Vision", nsError.code == 9 {
+            return true
+        }
+        let text = nsError.localizedDescription.lowercased()
+        return text.contains("unable to setup request")
     }
 
     private func detectBarcodes(handler: VNImageRequestHandler) throws -> LocalLensFrameResult {

@@ -16,16 +16,49 @@ final class PlaygroundUITests: XCTestCase {
     }
 
     /// Tap an experiment's launcher row, tolerating whether SwiftUI exposes the
-    /// row as a button/cell (by identifier) or only its title text.
+    /// row as a button/cell (by identifier) or only its title text. Scrolls the
+    /// list when later experiments sit below the fold on small simulators.
     private func openExperiment(_ id: String, title: String, in app: XCUIApplication) {
         let byId = app.buttons["experiment-\(id)"]
-        if byId.waitForExistence(timeout: 8) {
+        if scrollLauncherUntilExists(byId, in: app) {
             byId.tap()
             return
         }
         let byTitle = app.staticTexts[title]
-        XCTAssertTrue(byTitle.waitForExistence(timeout: 8), "Could not find launcher row for \(id)")
+        XCTAssertTrue(
+            scrollLauncherUntilExists(byTitle, in: app),
+            "Could not find launcher row for \(id)"
+        )
         byTitle.tap()
+    }
+
+    /// Swipe the launcher list until `element` appears (or attempts are exhausted).
+    @discardableResult
+    private func scrollLauncherUntilExists(
+        _ element: XCUIElement,
+        in app: XCUIApplication,
+        maxSwipes: Int = 8
+    ) -> Bool {
+        if element.waitForExistence(timeout: 2) {
+            return true
+        }
+        for _ in 0..<maxSwipes {
+            if element.exists {
+                return true
+            }
+            swipeLauncherUp(in: app)
+        }
+        return element.waitForExistence(timeout: 2)
+    }
+
+    private func swipeLauncherUp(in app: XCUIApplication) {
+        if app.collectionViews.firstMatch.exists {
+            app.collectionViews.firstMatch.swipeUp()
+        } else if app.tables.firstMatch.exists {
+            app.tables.firstMatch.swipeUp()
+        } else {
+            app.swipeUp()
+        }
     }
 
     private func launchApp() -> XCUIApplication {
@@ -45,7 +78,10 @@ final class PlaygroundUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Z-Camera"].exists)
         XCTAssertTrue(app.staticTexts["Voxel World"].exists)
         XCTAssertTrue(app.staticTexts["Wigglecam"].exists)
-        XCTAssertTrue(app.staticTexts["Local Lens"].exists)
+        XCTAssertTrue(
+            scrollLauncherUntilExists(app.staticTexts["Local Lens"], in: app),
+            "Local Lens should appear after scrolling the launcher"
+        )
     }
 
     func testRideMonitorExperimentOpens() {

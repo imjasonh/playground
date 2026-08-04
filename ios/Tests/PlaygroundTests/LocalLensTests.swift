@@ -175,6 +175,8 @@ final class LocalLensTests: XCTestCase {
         let faces = try analyzer.analyze(cgImage: image, mode: .faces)
         let people = try analyzer.analyze(cgImage: image, mode: .people)
         let animals = try analyzer.analyze(cgImage: image, mode: .animals)
+        // Body/hand pose may be unavailable on some simulators (Vision Code=9);
+        // the analyzer returns an empty result instead of throwing.
         let body = try analyzer.analyze(cgImage: image, mode: .body)
         let hands = try analyzer.analyze(cgImage: image, mode: .hands)
         XCTAssertEqual(barcodes.mode, .barcodes)
@@ -189,6 +191,25 @@ final class LocalLensTests: XCTestCase {
         XCTAssertTrue(body.findings.isEmpty)
         XCTAssertTrue(body.joints.isEmpty)
         XCTAssertTrue(hands.findings.isEmpty)
+    }
+
+    func testUnavailableVisionRequestDetection() {
+        let setupError = NSError(
+            domain: "com.apple.Vision",
+            code: 9,
+            userInfo: [NSLocalizedDescriptionKey: "Unable to setup request in VNDetectHumanBodyPoseRequest"]
+        )
+        XCTAssertTrue(LocalLensAnalyzer.isUnavailableVisionRequest(setupError))
+        XCTAssertFalse(
+            LocalLensAnalyzer.isUnavailableVisionRequest(
+                NSError(domain: "com.apple.Vision", code: 1, userInfo: nil)
+            )
+        )
+        XCTAssertFalse(
+            LocalLensAnalyzer.isUnavailableVisionRequest(
+                NSError(domain: NSPOSIXErrorDomain, code: 1, userInfo: nil)
+            )
+        )
     }
 
     // MARK: - Image fixtures
