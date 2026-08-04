@@ -206,7 +206,6 @@ func (f *Firestore) Renew(ctx context.Context, lease Lease, ttl time.Duration, _
 func (f *Firestore) Mark(ctx context.Context, lease Lease, operation Operation) error {
 	ref := f.ref(lease.User, lease.App)
 	return f.client.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
-		attemptNow := time.Now()
 		d, ok, err := readPlacementTx(tx, ref)
 		if err != nil {
 			return err
@@ -226,6 +225,7 @@ func (f *Firestore) Commit(ctx context.Context, lease Lease, hostID string, _ ti
 	}
 	ref := f.ref(lease.User, lease.App)
 	return f.client.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		attemptNow := time.Now()
 		d, ok, err := readPlacementTx(tx, ref)
 		if err != nil {
 			return err
