@@ -346,6 +346,7 @@ func (c *Controller) moveGroup(ctx context.Context, sourceID, sourceEpoch string
 					continue
 				}
 				if leaseErr := guard.Err(); leaseErr != nil {
+					cancel()
 					guard.Abandon()
 					abandoned = true
 					return MovedApp{}, fmt.Errorf("target adopt failed after lease loss: %w", leaseErr)
