@@ -32,7 +32,7 @@ func TestMemoryLeaseFencesPlacement(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	m := NewMemory()
-	now := time.Unix(100, 0)
+	now := time.Now()
 	first, err := m.Acquire(ctx, "alice", "fortune", "wake-1", time.Minute, now)
 	if err != nil {
 		t.Fatal(err)

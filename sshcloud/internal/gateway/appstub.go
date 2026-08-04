@@ -45,6 +45,8 @@ func runAppStub(ctx context.Context, t *term, hub *Hub, res Result) int {
 		}
 		commands := make(chan session.MigrationCommand, 2)
 		frozen := hub.BindMigration(res.Session, commands)
+		input := newMigrationInput(t.rw, defaultMigrationBufferBytes)
+		defer input.Close()
 		for {
 			if frozen {
 				t.Printf("\n[sshcloud] host migration in progress; input is temporarily buffered\n")
@@ -69,13 +71,15 @@ func runAppStub(ctx context.Context, t *term, hub *Hub, res Result) int {
 			}
 			proxyCtx, cancelProxy := context.WithCancelCause(ctx)
 			proxyDone := make(chan error, 1)
+			attachment := input.Attach()
 			go func() {
-				proxyDone <- ProxySSH(proxyCtx, t.rw, hub.UserCA, res.User, addr)
+				proxyDone <- ProxySSHStreams(proxyCtx, attachment, t.rw, hub.UserCA, res.User, addr)
 			}()
 		waitProxy:
 			for {
 				select {
 				case err := <-proxyDone:
+					_ = attachment.Close()
 					cancelProxy(nil)
 					return proxyExitCode(ctx, t, err)
 				case command := <-commands:
@@ -84,13 +88,21 @@ func runAppStub(ctx context.Context, t *term, hub *Hub, res Result) int {
 						continue
 					}
 					cancelProxy(errBackendMigration)
+					_ = attachment.Close()
 					<-proxyDone
 					command.Ack <- nil
 					frozen = true
 					break waitProxy
 				case <-ctx.Done():
 					cancelProxy(context.Cause(ctx))
+					_ = attachment.Close()
 					<-proxyDone
+					return 1
+				case <-input.Overflow():
+					cancelProxy(fmt.Errorf("migration input buffer exceeded %d bytes", defaultMigrationBufferBytes))
+					_ = attachment.Close()
+					<-proxyDone
+					t.Printf("\n[sshcloud] session closed: migration input buffer exceeded %d bytes\n", defaultMigrationBufferBytes)
 					return 1
 				}
 			}

@@ -29,6 +29,12 @@ type DialFunc func(ctx context.Context, req DialRequest) (addr string, err error
 // ProxySSH dials the app SSH server with a minted user cert and pipes the session.
 // ctx cancel (deploy kick) closes the hop and ends the proxy.
 func ProxySSH(ctx context.Context, client io.ReadWriter, ca *userca.CA, principal, addr string) error {
+	return ProxySSHStreams(ctx, client, client, ca, principal, addr)
+}
+
+// ProxySSHStreams is ProxySSH with independently managed client input/output.
+// Host migration uses this to keep one bounded input buffer across backend hops.
+func ProxySSHStreams(ctx context.Context, input io.Reader, output io.Writer, ca *userca.CA, principal, addr string) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -71,22 +77,30 @@ func ProxySSH(ctx context.Context, client io.ReadWriter, ca *userca.CA, principa
 	}
 	defer sess.Close()
 
-	sess.Stdout = client
-	sess.Stderr = client
-	sess.Stdin = client
+	sess.Stdout = output
+	sess.Stderr = output
+	stdin, err := sess.StdinPipe()
+	if err != nil {
+		return err
+	}
+	defer stdin.Close()
 
 	modes := ssh.TerminalModes{ssh.ECHO: 0}
 	_ = sess.RequestPty("xterm", 40, 80, modes)
 	if err := sess.Shell(); err != nil {
 		return err
 	}
+	go func() {
+		_, _ = io.Copy(stdin, input)
+		_ = stdin.Close()
+	}()
 
 	wait := make(chan error, 1)
 	go func() { wait <- sess.Wait() }()
 	select {
 	case <-ctx.Done():
 		if !errors.Is(context.Cause(ctx), errBackendMigration) {
-			_, _ = io.WriteString(client, "\r\n[sshcloud] session ended (deploy cutover)\r\n")
+			_, _ = io.WriteString(output, "\r\n[sshcloud] session ended (deploy cutover)\r\n")
 		}
 		_ = conn.Close()
 		<-wait
