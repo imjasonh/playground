@@ -112,7 +112,7 @@ enables KVM access, builds a fortune rootfs, and runs:
 - `TestKVMSleepWake` — boot → snapshot sleep → wake → dial guest `:22`
 - `TestKVMCrossHostMigrate` — sleep/evict on A → adopt on B (shared store)
 
-Locally (Linux + KVM + root for TAP):
+Locally (Linux + KVM; Firecracker runs as your user, `sudo ip` for TAP):
 
 ```bash
 # one-time: ensure /dev/kvm is usable
@@ -120,7 +120,7 @@ echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
   | sudo tee /etc/udev/rules.d/99-kvm4all.rules
 sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
 
-sudo -E bash hack/run-kvm-e2e.sh
+bash hack/run-kvm-e2e.sh   # not as root
 ```
 
 ## Status
