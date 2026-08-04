@@ -502,8 +502,9 @@ hits, wake/deploy denials — still **no session bytes**.
 
 1. **Adding a second key** — exact `join` UX when already registered (must present
    an existing key to authorize a new one?).  
-2. **OCI → rootfs pipeline** — unpack, size limits, caching, when to build the
-   first “base” snapshot for an image digest.  
+2. **OCI → rootfs pipeline** — fortune ext4 builder + Firecracker agent exist
+   (`sshcloud/internal/rootfs`, `internal/agent`); still need general OCI unpack,
+   size limits, caching, and first warm snapshot per digest.  
 3. **Idle timeout numbers** — e.g. sleep after N minutes with zero sessions.  
 4. **Freeze buffer cap** — max migrate hold before forced reconnect.  
 5. **Deploy drain-timeout default** — e.g. 5 minutes; per-deploy override.  

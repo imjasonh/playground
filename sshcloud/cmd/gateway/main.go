@@ -25,7 +25,8 @@ func main() {
 	addr := flag.String("listen", "127.0.0.1:2222", "SSH listen address")
 	hostKeyPath := flag.String("host-key", "ssh_host_ed25519_key", "path to host private key (created if missing)")
 	caKeyPath := flag.String("user-ca", "ssh_user_ca", "path to user CA private key (created if missing)")
-	fortuneBin := flag.String("fortune-bin", "", "path to fortune app binary (optional; enables cert proxy)")
+	fortuneBin := flag.String("fortune-bin", "", "path to local fortune binary (process backend)")
+	agentURL := flag.String("agent-url", "", "host agent base URL (Firecracker backend), e.g. http://127.0.0.1:8080")
 	flag.Parse()
 
 	signer, err := hostkey.LoadOrGenerate(*hostKeyPath)
@@ -46,7 +47,11 @@ func main() {
 		Sessions: session.NewRegistry(),
 		UserCA:   ca,
 	}
-	if *fortuneBin != "" {
+	switch {
+	case *agentURL != "":
+		hub.Dial = (&backend.AgentClient{BaseURL: *agentURL}).Addr
+		log.Printf("backend: firecracker agent at %s", *agentURL)
+	case *fortuneBin != "":
 		abs, err := filepath.Abs(*fortuneBin)
 		if err != nil {
 			log.Fatal(err)
@@ -54,9 +59,9 @@ func main() {
 		lf := backend.NewLocalFortune(abs, caPubPath)
 		defer lf.Stop()
 		hub.Dial = lf.Addr
-		log.Printf("fortune backend: %s", abs)
-	} else {
-		log.Printf("fortune-bin not set; using in-process fortune stub")
+		log.Printf("backend: local fortune process %s", abs)
+	default:
+		log.Printf("backend: in-process fortune stub")
 	}
 
 	srv := &sshd.Server{

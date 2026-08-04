@@ -1,0 +1,257 @@
+// Package firecracker boots microVMs via the Firecracker HTTP API socket.
+package firecracker
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"time"
+)
+
+// Config is the host-side description of a microVM.
+type Config struct {
+	// FirecrackerBin is the path to the firecracker binary (default: "firecracker" on PATH).
+	FirecrackerBin string
+	// SocketPath is the API unix socket path.
+	SocketPath string
+	// KernelPath is a Firecracker-compatible vmlinux.
+	KernelPath string
+	// RootfsPath is an ext4 image used as the root drive.
+	RootfsPath string
+	// BootArgs are appended to the default console/reboot args.
+	BootArgs string
+	// VCPUs and MemMiB size the VM (defaults: 1, 128).
+	VCPUs  int64
+	MemMiB int64
+	// TapDevice is an existing TAP device name on the host (e.g. "fc-tap0").
+	// Empty skips network configuration (vsock-only / no SSH over TCP).
+	TapDevice string
+	// GuestMAC is the virtio-net MAC (required when TapDevice is set).
+	GuestMAC string
+	// LogPath optional firecracker log file.
+	LogPath string
+}
+
+// Machine is a running Firecracker process.
+type Machine struct {
+	cfg Config
+	cmd *exec.Cmd
+	hc  *http.Client
+}
+
+// Start launches firecracker, configures the VM, and issues InstanceStart.
+func Start(ctx context.Context, cfg Config) (*Machine, error) {
+	if err := cfg.validate(); err != nil {
+		return nil, err
+	}
+	if cfg.FirecrackerBin == "" {
+		cfg.FirecrackerBin = "firecracker"
+	}
+	if cfg.VCPUs == 0 {
+		cfg.VCPUs = 1
+	}
+	if cfg.MemMiB == 0 {
+		cfg.MemMiB = 128
+	}
+	if err := os.MkdirAll(filepath.Dir(cfg.SocketPath), 0o755); err != nil {
+		return nil, err
+	}
+	_ = os.Remove(cfg.SocketPath)
+
+	args := []string{"--api-sock", cfg.SocketPath}
+	cmd := exec.CommandContext(ctx, cfg.FirecrackerBin, args...)
+	if cfg.LogPath != "" {
+		f, err := os.Create(cfg.LogPath)
+		if err != nil {
+			return nil, err
+		}
+		cmd.Stdout = f
+		cmd.Stderr = f
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("start firecracker: %w", err)
+	}
+	m := &Machine{
+		cfg: cfg,
+		cmd: cmd,
+		hc: &http.Client{
+			Transport: &http.Transport{
+				DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+					var d net.Dialer
+					return d.DialContext(ctx, "unix", cfg.SocketPath)
+				},
+			},
+			Timeout: 10 * time.Second,
+		},
+	}
+	if err := m.waitSocket(ctx); err != nil {
+		_ = m.Stop()
+		return nil, err
+	}
+	if err := m.configure(ctx); err != nil {
+		_ = m.Stop()
+		return nil, err
+	}
+	if err := m.put(ctx, "/actions", map[string]string{"action_type": "InstanceStart"}); err != nil {
+		_ = m.Stop()
+		return nil, fmt.Errorf("InstanceStart: %w", err)
+	}
+	return m, nil
+}
+
+func (c Config) validate() error {
+	if c.SocketPath == "" {
+		return fmt.Errorf("SocketPath required")
+	}
+	if c.KernelPath == "" {
+		return fmt.Errorf("KernelPath required")
+	}
+	if c.RootfsPath == "" {
+		return fmt.Errorf("RootfsPath required")
+	}
+	if c.TapDevice != "" && c.GuestMAC == "" {
+		return fmt.Errorf("GuestMAC required when TapDevice is set")
+	}
+	return nil
+}
+
+func (m *Machine) waitSocket(ctx context.Context) error {
+	deadline := time.Now().Add(5 * time.Second)
+	var d net.Dialer
+	for {
+		c, err := d.DialContext(ctx, "unix", m.cfg.SocketPath)
+		if err == nil {
+			_ = c.Close()
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timeout waiting for firecracker API socket %s: %w", m.cfg.SocketPath, err)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+}
+
+func (m *Machine) configure(ctx context.Context) error {
+	if err := m.put(ctx, "/machine-config", map[string]any{
+		"vcpu_count":   m.cfg.VCPUs,
+		"mem_size_mib": m.cfg.MemMiB,
+	}); err != nil {
+		return fmt.Errorf("machine-config: %w", err)
+	}
+	bootArgs := "console=ttyS0 reboot=k panic=1 pci=off"
+	if m.cfg.BootArgs != "" {
+		bootArgs = bootArgs + " " + m.cfg.BootArgs
+	}
+	if err := m.put(ctx, "/boot-source", map[string]any{
+		"kernel_image_path": m.cfg.KernelPath,
+		"boot_args":         bootArgs,
+	}); err != nil {
+		return fmt.Errorf("boot-source: %w", err)
+	}
+	if err := m.put(ctx, "/drives/1", map[string]any{
+		"drive_id":       "1",
+		"path_on_host":   m.cfg.RootfsPath,
+		"is_root_device":  true,
+		"is_read_only":   false,
+	}); err != nil {
+		return fmt.Errorf("drives: %w", err)
+	}
+	if m.cfg.TapDevice != "" {
+		if err := m.put(ctx, "/network-interfaces/eth0", map[string]any{
+			"iface_id":      "eth0",
+			"guest_mac":     m.cfg.GuestMAC,
+			"host_dev_name": m.cfg.TapDevice,
+		}); err != nil {
+			return fmt.Errorf("network-interfaces: %w", err)
+		}
+	}
+	return nil
+}
+
+func (m *Machine) put(ctx context.Context, path string, body any) error {
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(body); err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, "http://localhost"+path, &buf)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	res, err := m.hc.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode >= 300 {
+		b, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("PUT %s: %s: %s", path, res.Status, bytes.TrimSpace(b))
+	}
+	return nil
+}
+
+// Stop sends a shutdown and kills the Firecracker process if needed.
+func (m *Machine) Stop() error {
+	if m == nil || m.cmd == nil || m.cmd.Process == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_ = m.put(ctx, "/actions", map[string]string{"action_type": "SendCtrlAltDel"})
+	done := make(chan error, 1)
+	go func() { done <- m.cmd.Wait() }()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		_ = m.cmd.Process.Kill()
+		<-done
+	}
+	_ = os.Remove(m.cfg.SocketPath)
+	return nil
+}
+
+// PID returns the Firecracker VMM pid.
+func (m *Machine) PID() int {
+	if m.cmd == nil || m.cmd.Process == nil {
+		return 0
+	}
+	return m.cmd.Process.Pid
+}
+
+// WaitTCP waits until addr accepts TCP connections (guest SSH ready).
+func WaitTCP(ctx context.Context, addr string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	var d net.Dialer
+	for {
+		c, err := d.DialContext(ctx, "tcp", addr)
+		if err == nil {
+			_ = c.Close()
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timeout waiting for %s: %w", addr, err)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+}
+
+// Available reports whether /dev/kvm exists (required to boot).
+func Available() bool {
+	_, err := os.Stat("/dev/kvm")
+	return err == nil
+}

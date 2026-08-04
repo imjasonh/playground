@@ -1,7 +1,7 @@
 # sshcloud — SSH App Cloud
 
 Platform services for an SSH-only PaaS: users `ssh foo.com` to join or pick an
-app; apps are OCI images that speak SSH on `:22`, run in Firecracker microVMs.
+app; apps speak SSH on `:22` and run in Firecracker microVMs.
 
 Design: [`docs/ssh-app-cloud-design.md`](../docs/ssh-app-cloud-design.md).
 
@@ -10,15 +10,15 @@ Design: [`docs/ssh-app-cloud-design.md`](../docs/ssh-app-cloud-design.md).
 | Path | Role |
 |------|------|
 | `cmd/gateway` | Public SSH entry (join, menu, deploy, proxy) |
-| `cmd/orchestrator` | Placement, wake/sleep, deploy cutover, quotas |
-| `cmd/agent` | Host agent: Firecracker lifecycle on GCE VMs |
-| `cmd/api` | Internal control API (not a public deploy API) |
-| `internal/route` | SSH username → hub/app routing |
-| `internal/session` | Per user×app session admission (max 1) |
-| `internal/names` | Username/app name validation + reserved set |
-| `internal/store` | Persistence interface (memory stub; Firestore later) |
-| `images/fortune` | Sample app image (SSH server + fortune) |
-| `terraform/` | GCP + ko wiring (stub) |
+| `cmd/agent` | Host agent: Firecracker lifecycle + HTTP API |
+| `cmd/fortune` | Sample SSH app (verifies platform user certs) |
+| `cmd/mkrootfs` | Build fortune ext4 rootfs for Firecracker |
+| `cmd/orchestrator` | Placement / wake / deploy cutover (stub) |
+| `cmd/api` | Internal control API stub |
+| `internal/firecracker` | Firecracker API client, TAP helpers |
+| `internal/rootfs` | ext4 build via mkfs.ext4 + debugfs |
+| `internal/agent` | Instance manager |
+| `hack/fetch-firecracker-assets.sh` | Download firecracker + kernel |
 
 ## Build & test
 
@@ -28,34 +28,51 @@ Requires Go 1.25+ (`GOTOOLCHAIN=auto` downloads if needed):
 cd sshcloud
 go test ./...
 go build -o bin/gateway ./cmd/gateway
-go build -o bin/orchestrator ./cmd/orchestrator
 go build -o bin/agent ./cmd/agent
-go build -o bin/api ./cmd/api
+go build -o bin/fortune ./cmd/fortune
 ```
 
-## Run the gateway (local)
+Firecracker e2e needs `/dev/kvm` + `CAP_NET_ADMIN` (TAP). Without KVM, unit
+tests still pass; `Manager.Ensure` returns a clear error.
+
+## Run — process backend (no KVM)
 
 ```bash
 go build -o bin/fortune ./cmd/fortune
 go run ./cmd/gateway -listen 127.0.0.1:2222 -fortune-bin ./bin/fortune
-
-# in another terminal:
 ssh -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null join@127.0.0.1
-# pick a username → app menu → select fortune
-ssh -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null fortune@127.0.0.1
 ```
 
-With `-fortune-bin`, the gateway mints a short-lived user cert and proxies SSH
-into the fortune process (stand-in for a Firecracker microVM). Without it,
-fortune runs as an in-process stub.
+## Run — Firecracker backend
 
-State is in-memory (lost on restart). Keys default to `./ssh_host_ed25519_key`
-and `./ssh_user_ca` (+ `.pub`).
+```bash
+# 1) assets
+bash hack/fetch-firecracker-assets.sh
+go build -o _assets/fortune ./cmd/fortune
+go run ./cmd/gateway -user-ca ./ssh_user_ca &  # once, to create CA; Ctrl-C after
+go run ./cmd/mkrootfs -fortune _assets/fortune -ca-pub ssh_user_ca.pub -out _assets/fortune-rootfs.ext4
+
+# 2) agent (needs root/KVM for TAP + microVMs)
+sudo ./bin/agent \
+  -listen 127.0.0.1:8080 \
+  -work-dir /tmp/sshcloud-agent \
+  -firecracker "$PWD/_assets/firecracker" \
+  -kernel "$PWD/_assets/vmlinux" \
+  -rootfs "$PWD/_assets/fortune-rootfs.ext4" \
+  -ca-pub "$PWD/ssh_user_ca.pub"
+
+# 3) gateway → agent
+go run ./cmd/gateway -listen 127.0.0.1:2222 -agent-url http://127.0.0.1:8080
+```
+
+Guest boot: `init=/fortune -- -listen 0.0.0.0:22 -ca /ca.pub` on a static
+TAP subnet; gateway mints a user cert and dials `guestIP:22`.
 
 ## Status
 
-- [x] Routing, session admission (max 1 / user×app), memory store
+- [x] Routing, session admission, memory store
 - [x] SSH gateway: join, menu, busy reject
-- [x] User CA + cert hop into local `cmd/fortune` backend
-- [ ] Deploy TUI, Firestore, Firecracker host agent
+- [x] User CA + cert hop (process or Firecracker)
+- [x] Host agent + Firecracker client + rootfs builder
+- [ ] Snapshot-on-sleep / migrate, deploy TUI, Firestore
 - [ ] Orchestrator / Terraform
