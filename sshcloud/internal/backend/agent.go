@@ -174,8 +174,12 @@ func (c *AgentClient) SetCordoned(ctx context.Context, cordoned bool) error {
 		_, err := c.Cordon(ctx)
 		return err
 	}
-	path := "/v1/host/uncordon"
-	res, err := c.postJSON(ctx, path, struct{}{})
+	return fmt.Errorf("cordon epoch required; use Uncordon")
+}
+
+// Uncordon clears the exact epoch returned by Cordon.
+func (c *AgentClient) Uncordon(ctx context.Context, epoch string) error {
+	res, err := c.postJSON(ctx, "/v1/host/uncordon", map[string]string{"cordon_epoch": epoch})
 	if err != nil {
 		return err
 	}
@@ -216,7 +220,13 @@ func (c *AgentClient) Sleep(user, app string) error {
 
 // SleepContext snapshots one generation. Empty gen selects the legacy instance.
 func (c *AgentClient) SleepContext(ctx context.Context, user, app, gen string) error {
-	res, err := c.postInstance(ctx, "/v1/instances/sleep", user, app, gen)
+	return c.SleepWithEpoch(ctx, user, app, gen, "")
+}
+
+func (c *AgentClient) SleepWithEpoch(ctx context.Context, user, app, gen, cordonEpoch string) error {
+	res, err := c.postJSON(ctx, "/v1/instances/sleep", instanceBody{
+		User: user, App: app, Gen: gen, CordonEpoch: cordonEpoch,
+	})
 	if err != nil {
 		return err
 	}
@@ -234,7 +244,13 @@ func (c *AgentClient) Evict(user, app string) error {
 
 // EvictContext evicts one sleeping generation.
 func (c *AgentClient) EvictContext(ctx context.Context, user, app, gen string) error {
-	res, err := c.postInstance(ctx, "/v1/instances/evict", user, app, gen)
+	return c.EvictWithEpoch(ctx, user, app, gen, "")
+}
+
+func (c *AgentClient) EvictWithEpoch(ctx context.Context, user, app, gen, cordonEpoch string) error {
+	res, err := c.postJSON(ctx, "/v1/instances/evict", instanceBody{
+		User: user, App: app, Gen: gen, CordonEpoch: cordonEpoch,
+	})
 	if err != nil {
 		return err
 	}
@@ -269,6 +285,23 @@ func (c *AgentClient) PreflightSnapshot(ctx context.Context, user, app, gen stri
 	defer res.Body.Close()
 	if res.StatusCode >= 300 {
 		return agent.InstanceInfo{}, fmt.Errorf("agent preflight: %s: %s", res.Status, readErr(res.Body))
+	}
+	var info agent.InstanceInfo
+	if err := json.NewDecoder(res.Body).Decode(&info); err != nil {
+		return agent.InstanceInfo{}, err
+	}
+	return info, nil
+}
+
+// RegisterSleeping creates a durable host inventory claim without waking.
+func (c *AgentClient) RegisterSleeping(ctx context.Context, user, app, gen string) (agent.InstanceInfo, error) {
+	res, err := c.postInstance(ctx, "/v1/instances/register-sleeping", user, app, gen)
+	if err != nil {
+		return agent.InstanceInfo{}, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode >= 300 {
+		return agent.InstanceInfo{}, fmt.Errorf("agent register sleeping: %s: %s", res.Status, readErr(res.Body))
 	}
 	var info agent.InstanceInfo
 	if err := json.NewDecoder(res.Body).Decode(&info); err != nil {
@@ -361,8 +394,12 @@ func (c *AgentClient) StopContext(ctx context.Context, user, app, gen string) er
 
 // SetNoIdleContext changes the active-operation hold without booting or waking.
 func (c *AgentClient) SetNoIdleContext(ctx context.Context, user, app, gen string, noIdle bool) error {
+	return c.SetNoIdleWithEpoch(ctx, user, app, gen, noIdle, "")
+}
+
+func (c *AgentClient) SetNoIdleWithEpoch(ctx context.Context, user, app, gen string, noIdle bool, cordonEpoch string) error {
 	res, err := c.postJSON(ctx, "/v1/instances/no-idle", instanceBody{
-		User: user, App: app, Gen: gen, NoIdle: noIdle,
+		User: user, App: app, Gen: gen, NoIdle: noIdle, CordonEpoch: cordonEpoch,
 	})
 	if err != nil {
 		return err

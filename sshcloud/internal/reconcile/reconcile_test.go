@@ -18,8 +18,8 @@ type reconcileHost struct {
 	server *httptest.Server
 	shared *sync.Map
 
-	mu      sync.Mutex
-	running map[string]bool
+	mu       sync.Mutex
+	running  map[string]bool
 	sleeping map[string]bool
 	cordoned bool
 }
@@ -138,6 +138,42 @@ func TestExpiredOperationRollsTargetBackToAuthoritativeSource(t *testing.T) {
 	}
 	record, ok, err := store.GetRecord(ctx, "alice", "myapp")
 	if err != nil || !ok || record.Operation.Kind != "" || record.LeaseOwner != "" || record.HostID != "host-a" {
+		t.Fatalf("record %+v ok=%v err=%v", record, ok, err)
+	}
+}
+
+func TestExpiredInitialEnsureCommitsPreparedTarget(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	var snapshots sync.Map
+	target := newReconcileHost(t, &snapshots)
+	key := "alice/myapp.gabc"
+	target.running[key] = true
+	store := placement.NewMemory()
+	past := time.Now().Add(-time.Minute)
+	lease, err := store.Acquire(ctx, "alice", "myapp", "crashed-ensure", time.Second, past)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Mark(ctx, lease, placement.Operation{
+		ID: "ensure-op", Kind: "ensure", Phase: "ensuring", TargetHost: "host-b",
+		Generations: []string{"gabc"},
+		Desired:     []placement.Generation{{Gen: "gabc", Image: "image", Tier: "tiny", State: "running"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	controller := &reconcile.Controller{
+		Placement: store,
+		Hosts: backend.NewHostSet(map[string]*backend.AgentClient{
+			"host-b": target.client(),
+		}, "host-b"),
+	}
+	if err := controller.RunOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	record, ok, err := store.GetRecord(ctx, "alice", "myapp")
+	if err != nil || !ok || record.HostID != "host-b" || record.Operation.Kind != "" ||
+		len(record.Generations) != 1 {
 		t.Fatalf("record %+v ok=%v err=%v", record, ok, err)
 	}
 }

@@ -195,7 +195,7 @@ func (f *Firestore) AcquireRecovery(ctx context.Context, expected Record, owner 
 		}
 		r := recordFromDoc(d)
 		if !ok || r.Revision != expected.Revision || r.Operation.ID != expected.Operation.ID ||
-			r.Operation.Kind != expected.Operation.Kind {
+			r.Operation.Kind != expected.Operation.Kind || r.Operation.Sequence != expected.Operation.Sequence {
 			return ErrLeaseLost{User: expected.User, App: expected.App}
 		}
 		if leaseActive(r, attemptNow) {
@@ -250,6 +250,7 @@ func (f *Firestore) Mark(ctx context.Context, lease Lease, operation Operation) 
 		if !ok || !leaseMatches(r, lease) {
 			return ErrLeaseLost{User: lease.User, App: lease.App}
 		}
+		operation.Sequence = r.Operation.Sequence + 1
 		d.Operation = operation
 		return tx.Set(ref, d)
 	})

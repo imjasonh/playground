@@ -143,8 +143,9 @@ func main() {
 	})
 	api.HandleFunc("POST /v1/hosts/cordon", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
-			Host     string `json:"host"`
-			Cordoned *bool  `json:"cordoned"`
+			Host        string `json:"host"`
+			Cordoned    *bool  `json:"cordoned"`
+			CordonEpoch string `json:"cordon_epoch"`
 		}
 		if !decodeJSON(w, r, &req) {
 			return
@@ -158,7 +159,19 @@ func main() {
 		if req.Cordoned != nil {
 			cordoned = *req.Cordoned
 		}
-		if err := client.SetCordoned(r.Context(), cordoned); err != nil {
+		var err error
+		if cordoned {
+			var epoch string
+			epoch, err = client.Cordon(r.Context())
+			if err == nil {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]string{"cordon_epoch": epoch})
+				return
+			}
+		} else {
+			err = client.Uncordon(r.Context(), req.CordonEpoch)
+		}
+		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadGateway)
 			return
 		}

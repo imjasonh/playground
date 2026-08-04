@@ -48,6 +48,9 @@ func (c *Controller) reconcile(ctx context.Context, record placement.Record) err
 		}
 	}()
 	op := record.Operation
+	if op.Kind == "ensure" {
+		return c.reconcileEnsure(guard, record, &finished)
+	}
 	source, sourceOK := c.Hosts.Get(op.SourceHost)
 	target, targetOK := c.Hosts.Get(op.TargetHost)
 	if !sourceOK || !targetOK {
@@ -76,7 +79,7 @@ func (c *Controller) reconcile(ctx context.Context, record placement.Record) err
 				return err
 			}
 		}
-		if !sourceFound && targetFound {
+		if !sourceFound {
 			var adoptErr error
 			if op.SourceEpoch != "" {
 				_, adoptErr = source.AdoptForcedContext(guard.Context(), record.User, record.App, gen, op.SourceEpoch)
@@ -91,6 +94,44 @@ func (c *Controller) reconcile(ctx context.Context, record placement.Record) err
 		}
 	}
 	return release(guard, &finished)
+}
+
+func (c *Controller) reconcileEnsure(guard *placement.Guard, record placement.Record, finished *bool) error {
+	target, ok := c.Hosts.Get(record.Operation.TargetHost)
+	if !ok {
+		return fmt.Errorf("ensure operation %s/%s awaits target inventory", record.User, record.App)
+	}
+	found := 0
+	for _, gen := range record.Operation.Generations {
+		status, ok, err := target.StatusContext(guard.Context(), record.User, record.App, gen)
+		if err != nil {
+			return err
+		}
+		if ok && status.State == "running" {
+			found++
+		}
+	}
+	switch {
+	case found == len(record.Operation.Generations):
+		desired := record.Operation.Desired
+		if len(desired) == 0 {
+			for _, gen := range record.Operation.Generations {
+				desired = append(desired, placement.Generation{Gen: gen, Tier: "tiny", State: "running"})
+			}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		err := guard.CommitState(ctx, record.Operation.TargetHost, desired)
+		cancel()
+		if err != nil {
+			return err
+		}
+		*finished = true
+		return nil
+	case found == 0:
+		return release(guard, finished)
+	default:
+		return fmt.Errorf("ensure operation %s/%s has partial target state", record.User, record.App)
+	}
 }
 
 func release(guard *placement.Guard, finished *bool) error {

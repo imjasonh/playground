@@ -113,7 +113,8 @@ func (p *PlacedDial) EnsureAddrTier(ctx context.Context, user, app, gen, image, 
 	for _, choice := range choices {
 		if originalHost == "" {
 			if err := guard.Mark(guard.Context(), placement.Operation{
-				Kind: "ensure", Phase: "ensuring", TargetHost: choice.ID, Generations: []string{gen},
+				Kind: "ensure", Phase: "ensuring", TargetHost: choice.ID,
+				Generations: []string{gen}, Desired: generations,
 			}); err != nil {
 				return "", err
 			}
@@ -162,6 +163,12 @@ func (p *PlacedDial) EnsureAddrTier(ctx context.Context, user, app, gen, image, 
 	commitErr := guard.CommitState(commitCtx, host, generations)
 	cancel()
 	if commitErr != nil {
+		var lost placement.ErrLeaseLost
+		if errors.As(commitErr, &lost) {
+			guard.Abandon()
+			committed = true
+			return "", commitErr
+		}
 		checkCtx, checkCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		record, ok, checkErr := p.Placement.GetRecord(checkCtx, user, app)
 		checkCancel()

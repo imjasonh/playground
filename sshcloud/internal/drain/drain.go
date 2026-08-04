@@ -3,6 +3,7 @@ package drain
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -75,12 +76,21 @@ func (c *Controller) DrainHost(ctx context.Context, hostID string) (Result, erro
 		return result, fmt.Errorf("placement inventory: %w", err)
 	}
 	seen := make(map[string]bool)
+	appSeen := make(map[string]bool)
+	recordByApp := make(map[string]placement.Record)
+	for _, record := range records {
+		recordByApp[record.User+"\x00"+record.App] = record
+	}
 	for _, instance := range inventory {
 		seen[instance.User+"\x00"+instance.App+"\x00"+instance.Gen] = true
+		appSeen[instance.User+"\x00"+instance.App] = true
 	}
 	for _, record := range records {
 		if record.HostID != hostID {
 			continue
+		}
+		if len(record.Generations) == 0 && !appSeen[record.User+"\x00"+record.App] {
+			return result, fmt.Errorf("placement %s/%s has unknown generation inventory; host cannot be certified empty", record.User, record.App)
 		}
 		for _, generation := range record.Generations {
 			k := record.User + "\x00" + record.App + "\x00" + generation.Gen
@@ -94,6 +104,21 @@ func (c *Controller) DrainHost(ctx context.Context, hostID string) (Result, erro
 			})
 		}
 	}
+	filtered := inventory[:0]
+	for _, instance := range inventory {
+		record, ok := recordByApp[instance.User+"\x00"+instance.App]
+		if ok && record.HostID != "" && record.HostID != hostID {
+			if instance.State != agent.StateSleeping {
+				return result, fmt.Errorf("running orphan %s/%s@%s belongs to placement %s", instance.User, instance.App, instance.Gen, record.HostID)
+			}
+			if err := source.EvictWithEpoch(ctx, instance.User, instance.App, instance.Gen, sourceEpoch); err != nil {
+				return result, fmt.Errorf("reap sleeping orphan %s/%s@%s: %w", instance.User, instance.App, instance.Gen, err)
+			}
+			continue
+		}
+		filtered = append(filtered, instance)
+	}
+	inventory = filtered
 	groups := groupInstances(inventory)
 	for _, group := range groups {
 		moved, err := c.moveGroup(ctx, hostID, sourceEpoch, source, group)
@@ -108,6 +133,19 @@ func (c *Controller) DrainHost(ctx context.Context, hostID string) (Result, erro
 	}
 	if len(remaining) != 0 {
 		return result, fmt.Errorf("host %s still has %d instances after drain", hostID, len(remaining))
+	}
+	finalRecords, err := c.Placement.ListRecords(ctx)
+	if err != nil {
+		return result, fmt.Errorf("final placement inventory: %w", err)
+	}
+	for _, record := range finalRecords {
+		if record.HostID == hostID {
+			return result, fmt.Errorf("host %s still owns placement %s/%s", hostID, record.User, record.App)
+		}
+		if record.Operation.Kind != "" &&
+			(record.Operation.SourceHost == hostID || record.Operation.TargetHost == hostID) {
+			return result, fmt.Errorf("host %s still participates in operation %s for %s/%s", hostID, record.Operation.Kind, record.User, record.App)
+		}
 	}
 	return result, nil
 }
@@ -176,21 +214,31 @@ func (c *Controller) moveGroup(ctx context.Context, sourceID, sourceEpoch string
 	}
 	target := candidates[0]
 	var generations []string
+	var generationState []placement.Generation
 	for _, instance := range group.instances {
 		generations = append(generations, instance.Gen)
+		generationState = append(generationState, placement.Generation{
+			Gen: instance.Gen, Image: instance.Image, Tier: instance.Tier, State: string(instance.State),
+		})
 	}
 	operation := placement.Operation{
 		ID: guard.Owner(), Kind: "drain", Phase: "freezing", SourceHost: sourceID,
 		SourceEpoch: sourceEpoch, TargetHost: target.ID, Generations: generations,
+		Desired: generationState,
 	}
 	if err := guard.Mark(guard.Context(), operation); err != nil {
 		return MovedApp{}, fmt.Errorf("persist drain operation: %w", err)
 	}
+	var moved []agent.InstanceInfo
 	for _, instance := range group.instances {
 		if instance.State == agent.StateSleeping {
-			if _, err := target.Client.PreflightSnapshot(guard.Context(), group.user, group.app, instance.Gen); err != nil {
-				return MovedApp{}, fmt.Errorf("preflight sleeping generation %q on %s: %w", instance.Gen, target.ID, err)
+			if _, err := target.Client.RegisterSleeping(guard.Context(), group.user, group.app, instance.Gen); err != nil {
+				for _, registered := range moved {
+					_ = target.Client.EvictContext(context.Background(), group.user, group.app, registered.Gen)
+				}
+				return MovedApp{}, fmt.Errorf("register sleeping generation %q on %s: %w", instance.Gen, target.ID, err)
 			}
+			moved = append(moved, instance)
 		}
 	}
 
@@ -217,8 +265,12 @@ func (c *Controller) moveGroup(ctx context.Context, sourceID, sourceEpoch string
 		frozen = append(frozen, frozenGeneration{gen: instance.Gen, token: token, sessions: sessions})
 	}
 
-	var moved []agent.InstanceInfo
 	rollback := func(cause error) (MovedApp, error) {
+		if leaseErr := guard.Err(); leaseErr != nil {
+			guard.Abandon()
+			abandoned = true
+			return MovedApp{}, fmt.Errorf("%w (placement lease lost: %v)", cause, leaseErr)
+		}
 		recoveryCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
 		rollbackErr := c.rollback(recoveryCtx, source, sourceEpoch, target.Client, group, moved)
@@ -235,7 +287,6 @@ func (c *Controller) moveGroup(ctx context.Context, sourceID, sourceEpoch string
 
 	for _, instance := range group.instances {
 		if instance.State == agent.StateSleeping {
-			moved = append(moved, instance)
 			continue
 		}
 		operation.Phase = "moving:" + instance.Gen
@@ -243,10 +294,10 @@ func (c *Controller) moveGroup(ctx context.Context, sourceID, sourceEpoch string
 			return rollback(fmt.Errorf("persist generation phase %q: %w", instance.Gen, err))
 		}
 		if instance.State == agent.StateRunning {
-			if err := source.SetNoIdleContext(guard.Context(), group.user, group.app, instance.Gen, false); err != nil {
+			if err := source.SetNoIdleWithEpoch(guard.Context(), group.user, group.app, instance.Gen, false, sourceEpoch); err != nil {
 				return rollback(fmt.Errorf("release generation %q hold: %w", instance.Gen, err))
 			}
-			if err := source.SleepContext(guard.Context(), group.user, group.app, instance.Gen); err != nil {
+			if err := source.SleepWithEpoch(guard.Context(), group.user, group.app, instance.Gen, sourceEpoch); err != nil {
 				statusCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 				status, found, statusErr := source.StatusContext(statusCtx, group.user, group.app, instance.Gen)
 				cancel()
@@ -262,7 +313,7 @@ func (c *Controller) moveGroup(ctx context.Context, sourceID, sourceEpoch string
 				}
 			}
 		}
-		if err := source.EvictContext(guard.Context(), group.user, group.app, instance.Gen); err != nil {
+		if err := source.EvictWithEpoch(guard.Context(), group.user, group.app, instance.Gen, sourceEpoch); err != nil {
 			statusCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			_, found, statusErr := source.StatusContext(statusCtx, group.user, group.app, instance.Gen)
 			cancel()
@@ -294,6 +345,11 @@ func (c *Controller) moveGroup(ctx context.Context, sourceID, sourceEpoch string
 					moved = append(moved, instance)
 					continue
 				}
+				if leaseErr := guard.Err(); leaseErr != nil {
+					guard.Abandon()
+					abandoned = true
+					return MovedApp{}, fmt.Errorf("target adopt failed after lease loss: %w", leaseErr)
+				}
 				_, sourceErr := source.AdoptForcedContext(recoveryCtx, group.user, group.app, instance.Gen, sourceEpoch)
 				cancel()
 				if sourceErr != nil {
@@ -315,15 +371,15 @@ func (c *Controller) moveGroup(ctx context.Context, sourceID, sourceEpoch string
 		cancel()
 		return rollback(fmt.Errorf("persist ready phase: %w", err))
 	}
-	var generationState []placement.Generation
-	for _, instance := range group.instances {
-		generationState = append(generationState, placement.Generation{
-			Gen: instance.Gen, Image: instance.Image, Tier: instance.Tier, State: string(instance.State),
-		})
-	}
 	err = guard.CommitState(commitCtx, target.ID, generationState)
 	cancel()
 	if err != nil {
+		var lost placement.ErrLeaseLost
+		if errors.As(err, &lost) {
+			guard.Abandon()
+			abandoned = true
+			return MovedApp{}, err
+		}
 		checkCtx, checkCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		record, ok, checkErr := c.Placement.GetRecord(checkCtx, group.user, group.app)
 		checkCancel()
@@ -355,7 +411,10 @@ func (c *Controller) moveGroup(ctx context.Context, sourceID, sourceEpoch string
 	}
 	for _, instance := range group.instances {
 		if instance.State == agent.StateSleeping {
-			if err := source.EvictContext(context.Background(), group.user, group.app, instance.Gen); err != nil {
+			cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			err := source.EvictWithEpoch(cleanupCtx, group.user, group.app, instance.Gen, sourceEpoch)
+			cleanupCancel()
+			if err != nil {
 				movedResult.Warnings = append(movedResult.Warnings,
 					fmt.Sprintf("source sleeping generation %s cleanup: %v", instance.Gen, err))
 			}
@@ -369,6 +428,9 @@ func (c *Controller) rollback(ctx context.Context, source *backend.AgentClient, 
 	for i := len(moved) - 1; i >= 0; i-- {
 		instance := moved[i]
 		if instance.State != agent.StateRunning {
+			if err := target.EvictContext(ctx, group.user, group.app, instance.Gen); err != nil {
+				return err
+			}
 			continue
 		}
 		if err := target.SetNoIdleContext(ctx, group.user, group.app, instance.Gen, false); err != nil {

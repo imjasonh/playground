@@ -164,6 +164,29 @@ func (h *drainHost) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		_ = json.NewEncoder(w).Encode(info)
+	case "/v1/instances/register-sleeping":
+		_, key, ok := decodeDrainInstance(r)
+		if !ok {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		h.snapshots.mu.Lock()
+		info, exists := h.snapshots.items[key]
+		h.snapshots.mu.Unlock()
+		if !exists {
+			http.Error(w, "snapshot missing", http.StatusInternalServerError)
+			return
+		}
+		info.State = agent.StateSleeping
+		h.mu.Lock()
+		if h.cordoned {
+			h.mu.Unlock()
+			http.Error(w, "host cordoned", http.StatusServiceUnavailable)
+			return
+		}
+		h.instances[key] = info
+		h.mu.Unlock()
+		_ = json.NewEncoder(w).Encode(info)
 	default:
 		http.NotFound(w, r)
 	}

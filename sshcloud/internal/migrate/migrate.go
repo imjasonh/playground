@@ -3,6 +3,7 @@ package migrate
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -113,9 +114,15 @@ func (m *Migrator) MigrateGeneration(ctx context.Context, user, app, gen, toHost
 	if len(matching) == 1 && matching[0].Gen != gen {
 		return Result{}, fmt.Errorf("requested generation %q does not match source generation %q", gen, matching[0].Gen)
 	}
+	desiredGenerations := placementRecord.Generations
+	if len(matching) == 1 {
+		desiredGenerations = placement.UpsertGeneration(desiredGenerations, placement.Generation{
+			Gen: matching[0].Gen, Image: matching[0].Image, Tier: matching[0].Tier, State: "running",
+		})
+	}
 	operation := placement.Operation{
 		ID: guard.Owner(), Kind: "migrate", Phase: "freezing", SourceHost: fromHost,
-		TargetHost: toHost, Generations: []string{gen},
+		TargetHost: toHost, Generations: []string{gen}, Desired: desiredGenerations,
 	}
 	if err := guard.Mark(guard.Context(), operation); err != nil {
 		return Result{}, fmt.Errorf("persist migration operation: %w", err)
@@ -202,6 +209,12 @@ func (m *Migrator) MigrateGeneration(ctx context.Context, user, app, gen, toHost
 				thawed = true
 				return Result{}, fmt.Errorf("target adopt outcome unknown: %w (status: %v)", err, statusErr)
 			}
+			if leaseErr := guard.Err(); leaseErr != nil {
+				guard.Abandon()
+				abandoned = true
+				thawed = true
+				return Result{}, fmt.Errorf("target adopt failed after lease loss: %w", leaseErr)
+			}
 			_, rollbackErr := source.AdoptContext(recoveryCtx, user, app, gen)
 			if rollbackErr == nil {
 				return Result{}, fmt.Errorf("target adopt: %w (instance restored on %s)", err, fromHost)
@@ -220,15 +233,16 @@ func (m *Migrator) MigrateGeneration(ctx context.Context, user, app, gen, toHost
 		cancelCommit()
 		return Result{}, err
 	}
-	generations := placementRecord.Generations
-	if len(matching) == 1 {
-		generations = placement.UpsertGeneration(generations, placement.Generation{
-			Gen: matching[0].Gen, Image: matching[0].Image, Tier: matching[0].Tier, State: "running",
-		})
-	}
-	err = guard.CommitState(commitCtx, toHost, generations)
+	err = guard.CommitState(commitCtx, toHost, desiredGenerations)
 	cancelCommit()
 	if err != nil {
+		var lost placement.ErrLeaseLost
+		if errors.As(err, &lost) {
+			guard.Abandon()
+			abandoned = true
+			thawed = true
+			return Result{}, err
+		}
 		checkCtx, checkCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		record, ok, checkErr := m.Placement.GetRecord(checkCtx, user, app)
 		checkCancel()
@@ -251,6 +265,12 @@ func (m *Migrator) MigrateGeneration(ctx context.Context, user, app, gen, toHost
 		}
 	}
 	if err != nil {
+		if leaseErr := guard.Err(); leaseErr != nil {
+			guard.Abandon()
+			abandoned = true
+			thawed = true
+			return Result{}, fmt.Errorf("placement update failed after lease loss: %w", err)
+		}
 		recoveryCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		rollbackErr := target.SleepContext(recoveryCtx, user, app, gen)

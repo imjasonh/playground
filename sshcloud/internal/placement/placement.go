@@ -48,13 +48,15 @@ type Generation struct {
 
 // Operation is durable recovery context for an in-flight host mutation.
 type Operation struct {
-	ID          string   `json:"id,omitempty" firestore:"id,omitempty"`
-	Kind        string   `json:"kind,omitempty" firestore:"kind,omitempty"`
-	Phase       string   `json:"phase,omitempty" firestore:"phase,omitempty"`
-	SourceHost  string   `json:"source_host,omitempty" firestore:"source_host,omitempty"`
-	SourceEpoch string   `json:"source_epoch,omitempty" firestore:"source_epoch,omitempty"`
-	TargetHost  string   `json:"target_host,omitempty" firestore:"target_host,omitempty"`
-	Generations []string `json:"generations,omitempty" firestore:"generations,omitempty"`
+	ID          string       `json:"id,omitempty" firestore:"id,omitempty"`
+	Sequence    int64        `json:"sequence,omitempty" firestore:"sequence,omitempty"`
+	Kind        string       `json:"kind,omitempty" firestore:"kind,omitempty"`
+	Phase       string       `json:"phase,omitempty" firestore:"phase,omitempty"`
+	SourceHost  string       `json:"source_host,omitempty" firestore:"source_host,omitempty"`
+	SourceEpoch string       `json:"source_epoch,omitempty" firestore:"source_epoch,omitempty"`
+	TargetHost  string       `json:"target_host,omitempty" firestore:"target_host,omitempty"`
+	Generations []string     `json:"generations,omitempty" firestore:"generations,omitempty"`
+	Desired     []Generation `json:"desired,omitempty" firestore:"desired,omitempty"`
 }
 
 // Lease is an exclusive, expiring mutation right for one placement record.
@@ -205,7 +207,7 @@ func (m *Memory) AcquireRecovery(_ context.Context, expected Record, owner strin
 	k := key(expected.User, expected.App)
 	r, ok := m.records[k]
 	if !ok || r.Revision != expected.Revision || r.Operation.ID != expected.Operation.ID ||
-		r.Operation.Kind != expected.Operation.Kind {
+		r.Operation.Kind != expected.Operation.Kind || r.Operation.Sequence != expected.Operation.Sequence {
 		return Lease{}, ErrLeaseLost{User: expected.User, App: expected.App}
 	}
 	if leaseActive(r, now) {
@@ -242,6 +244,7 @@ func (m *Memory) Mark(_ context.Context, lease Lease, operation Operation) error
 	if !ok || !leaseMatches(r, lease) {
 		return ErrLeaseLost{User: lease.User, App: lease.App}
 	}
+	operation.Sequence = r.Operation.Sequence + 1
 	r.Operation = operation
 	m.records[k] = r
 	return nil

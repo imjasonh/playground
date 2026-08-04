@@ -164,6 +164,7 @@ type Manager struct {
 	// published, so concurrent instances cannot claim the same IP or TAP.
 	reserved         map[string]InstanceKey
 	capacityReserved map[InstanceKey]Resources
+	lifecyclePending map[InstanceKey]bool
 	capacity         Resources
 	cordoned         bool
 	cordonEpoch      string
@@ -217,6 +218,7 @@ func NewManager(cfg Config) (*Manager, error) {
 		ops:              make(map[InstanceKey]*sync.Mutex),
 		reserved:         make(map[string]InstanceKey),
 		capacityReserved: make(map[InstanceKey]Resources),
+		lifecyclePending: make(map[InstanceKey]bool),
 		capacity:         Resources{VCPUs: cfg.CapacityVCPUs, MemMiB: cfg.CapacityMemMiB},
 		stop:             make(chan struct{}),
 	}
@@ -459,6 +461,22 @@ func (m *Manager) releaseCapacity(k InstanceKey) {
 	delete(m.capacityReserved, k)
 }
 
+func (m *Manager) beginLifecycle(k InstanceKey, cordonEpoch string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.cordoned && (cordonEpoch == "" || cordonEpoch != m.cordonEpoch) {
+		return ErrCordoned{}
+	}
+	m.lifecyclePending[k] = true
+	return nil
+}
+
+func (m *Manager) endLifecycle(k InstanceKey) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.lifecyclePending, k)
+}
+
 func (m *Manager) capacityLocked() Capacity {
 	view := Capacity{Total: m.capacity, Cordoned: m.cordoned}
 	for _, in := range m.inst {
@@ -506,6 +524,21 @@ func (m *Manager) SetCordoned(cordoned bool) error {
 	return nil
 }
 
+// Uncordon clears only the cordon epoch owned by the requesting operation.
+func (m *Manager) Uncordon(epoch string) error {
+	m.mu.Lock()
+	if !m.cordoned {
+		m.mu.Unlock()
+		return nil
+	}
+	if epoch == "" || epoch != m.cordonEpoch {
+		m.mu.Unlock()
+		return fmt.Errorf("cordon epoch mismatch")
+	}
+	m.mu.Unlock()
+	return m.SetCordoned(false)
+}
+
 // Cordon rejects new reservations and waits for pre-existing boots/restores to
 // either publish into inventory or fail.
 func (m *Manager) Cordon(ctx context.Context) (string, error) {
@@ -519,7 +552,7 @@ func (m *Manager) Cordon(ctx context.Context) (string, error) {
 	defer ticker.Stop()
 	for {
 		m.mu.Lock()
-		pending := len(m.capacityReserved)
+		pending := len(m.capacityReserved) + len(m.lifecyclePending)
 		m.mu.Unlock()
 		if pending == 0 {
 			m.mu.Lock()
@@ -799,6 +832,30 @@ type InstanceStatus struct {
 // Status returns the current state of an instance, if known.
 func (m *Manager) Status(user, app string) (InstanceStatus, bool) {
 	k := InstanceKey{User: user, App: app}
+	op := m.instanceLock(k)
+	op.Lock()
+	defer op.Unlock()
+	return m.statusLocked(k)
+}
+
+// StatusContext waits for an in-flight lifecycle mutation, making a missing
+// result authoritative for RPC reconciliation.
+func (m *Manager) StatusContext(ctx context.Context, user, app string) (InstanceStatus, bool, error) {
+	k := InstanceKey{User: user, App: app}
+	op := m.instanceLock(k)
+	for !op.TryLock() {
+		select {
+		case <-ctx.Done():
+			return InstanceStatus{}, false, ctx.Err()
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+	defer op.Unlock()
+	status, ok := m.statusLocked(k)
+	return status, ok, nil
+}
+
+func (m *Manager) statusLocked(k InstanceKey) (InstanceStatus, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	in, ok := m.inst[k]
@@ -849,6 +906,10 @@ func (m *Manager) Ready() error {
 
 // Sleep snapshots a running instance, uploads it, and frees the VMM (keeps TAP).
 func (m *Manager) Sleep(ctx context.Context, user, app string) error {
+	return m.SleepWithEpoch(ctx, user, app, "")
+}
+
+func (m *Manager) SleepWithEpoch(ctx context.Context, user, app, cordonEpoch string) error {
 	k := InstanceKey{User: user, App: app}
 	if m.cfg.SnapStore == nil {
 		return fmt.Errorf("snapshot store not configured")
@@ -856,6 +917,10 @@ func (m *Manager) Sleep(ctx context.Context, user, app string) error {
 	op := m.instanceLock(k)
 	op.Lock()
 	defer op.Unlock()
+	if err := m.beginLifecycle(k, cordonEpoch); err != nil {
+		return err
+	}
+	defer m.endLifecycle(k)
 
 	m.mu.Lock()
 	in, ok := m.inst[k]
@@ -959,6 +1024,10 @@ func (m *Manager) Evict(user, app string) error {
 }
 
 func (m *Manager) EvictContext(ctx context.Context, user, app string) error {
+	return m.EvictWithEpoch(ctx, user, app, "")
+}
+
+func (m *Manager) EvictWithEpoch(ctx context.Context, user, app, cordonEpoch string) error {
 	k := InstanceKey{User: user, App: app}
 	op := m.instanceLock(k)
 	op.Lock()
@@ -966,6 +1035,10 @@ func (m *Manager) EvictContext(ctx context.Context, user, app string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	if err := m.beginLifecycle(k, cordonEpoch); err != nil {
+		return err
+	}
+	defer m.endLifecycle(k)
 	m.mu.Lock()
 	in, ok := m.inst[k]
 	if !ok {
@@ -1034,6 +1107,56 @@ func (m *Manager) PreflightSnapshot(ctx context.Context, user, app string) (Inst
 		User: user, App: baseApp, Gen: gen, AgentApp: app,
 		Image: meta.Image, Tier: tier, State: StateSleeping,
 	}, nil
+}
+
+// RegisterSleeping validates and records snapshot ownership on a target without
+// waking the VM. It is a cordon-visible host claim for sleeping generations.
+func (m *Manager) RegisterSleeping(ctx context.Context, user, app string) (InstanceInfo, error) {
+	k := InstanceKey{User: user, App: app}
+	op := m.instanceLock(k)
+	op.Lock()
+	defer op.Unlock()
+	m.mu.Lock()
+	if existing := m.inst[k]; existing != nil {
+		baseApp, gen := genid.SplitAgentApp(app)
+		info := InstanceInfo{
+			User: user, App: baseApp, Gen: gen, AgentApp: app,
+			Image: existing.Image, Tier: existing.Tier, State: existing.State,
+		}
+		m.mu.Unlock()
+		return info, nil
+	}
+	m.mu.Unlock()
+	if err := m.beginLifecycle(k, ""); err != nil {
+		return InstanceInfo{}, err
+	}
+	defer m.endLifecycle(k)
+	if err := ctx.Err(); err != nil {
+		return InstanceInfo{}, err
+	}
+	info, err := m.PreflightSnapshot(ctx, user, app)
+	if err != nil {
+		return InstanceInfo{}, err
+	}
+	meta, err := m.cfg.SnapStore.Meta(ctx, snapshot.KeyFor(user, app))
+	if err != nil {
+		return InstanceInfo{}, err
+	}
+	resourceID := instanceResourceID(k)
+	in := &Instance{
+		Key: k, State: StateSleeping,
+		GuestIP: meta.GuestIP, HostIP: meta.HostIP, TapName: meta.TapName,
+		GuestMAC: meta.GuestMAC,
+		Rootfs:   filepath.Join(m.cfg.WorkDir, "vm-"+resourceID, "rootfs.ext4"),
+		WorkDir:  filepath.Join(m.cfg.WorkDir, "vm-"+resourceID),
+		Image:    meta.Image, Tier: info.Tier, snapKey: snapshot.KeyFor(user, app),
+		LastUsed: time.Now(),
+	}
+	_, in.VCPUs, in.MemMiB, _ = tierResources(info.Tier)
+	m.mu.Lock()
+	m.inst[k] = in
+	m.mu.Unlock()
+	return info, nil
 }
 
 // AdoptForced permits rollback onto a cordoned source host.
@@ -1411,6 +1534,10 @@ func (m *Manager) SetNoIdle(user, app string, noIdle bool) error {
 }
 
 func (m *Manager) SetNoIdleContext(ctx context.Context, user, app string, noIdle bool) error {
+	return m.SetNoIdleWithEpoch(ctx, user, app, noIdle, "")
+}
+
+func (m *Manager) SetNoIdleWithEpoch(ctx context.Context, user, app string, noIdle bool, cordonEpoch string) error {
 	k := InstanceKey{User: user, App: app}
 	op := m.instanceLock(k)
 	op.Lock()
@@ -1418,6 +1545,10 @@ func (m *Manager) SetNoIdleContext(ctx context.Context, user, app string, noIdle
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	if err := m.beginLifecycle(k, cordonEpoch); err != nil {
+		return err
+	}
+	defer m.endLifecycle(k)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if in, ok := m.inst[k]; ok {
@@ -1502,11 +1633,14 @@ func (m *Manager) Close() error {
 	var first error
 	for _, k := range keys {
 		if m.cfg.SnapStore != nil {
-			_ = m.SetNoIdle(k.User, k.App, false)
+			m.mu.Lock()
+			epoch := m.cordonEpoch
+			m.mu.Unlock()
+			_ = m.SetNoIdleWithEpoch(context.Background(), k.User, k.App, false, epoch)
 			st, ok := m.Status(k.User, k.App)
 			if ok && st.State == StateRunning {
 				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-				err := m.Sleep(ctx, k.User, k.App)
+				err := m.SleepWithEpoch(ctx, k.User, k.App, epoch)
 				cancel()
 				if err != nil {
 					if first == nil {

@@ -32,6 +32,7 @@ func (h *Handler) Mount(mux *http.ServeMux) {
 	api.HandleFunc("POST /v1/instances/evict", h.evict)
 	api.HandleFunc("POST /v1/instances/adopt", h.adopt)
 	api.HandleFunc("POST /v1/instances/preflight", h.preflight)
+	api.HandleFunc("POST /v1/instances/register-sleeping", h.registerSleeping)
 	api.HandleFunc("POST /v1/instances/no-idle", h.setNoIdle)
 	api.HandleFunc("GET /v1/instances/status", h.status)
 	api.HandleFunc("GET /v1/host/capacity", h.capacity)
@@ -156,7 +157,7 @@ func (h *Handler) sleep(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := h.Manager.Sleep(r.Context(), req.User, agentApp(req)); err != nil {
+	if err := h.Manager.SleepWithEpoch(r.Context(), req.User, agentApp(req), req.CordonEpoch); err != nil {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
@@ -181,7 +182,7 @@ func (h *Handler) evict(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := h.Manager.EvictContext(r.Context(), req.User, agentApp(req)); err != nil {
+	if err := h.Manager.EvictWithEpoch(r.Context(), req.User, agentApp(req), req.CordonEpoch); err != nil {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
@@ -212,7 +213,7 @@ func (h *Handler) setNoIdle(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := h.Manager.SetNoIdleContext(r.Context(), req.User, agentApp(req), req.NoIdle); err != nil {
+	if err := h.Manager.SetNoIdleWithEpoch(r.Context(), req.User, agentApp(req), req.NoIdle, req.CordonEpoch); err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
@@ -232,6 +233,19 @@ func (h *Handler) preflight(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, info)
 }
 
+func (h *Handler) registerSleeping(w http.ResponseWriter, r *http.Request) {
+	req, ok := decodeInstanceRequest(w, r)
+	if !ok {
+		return
+	}
+	info, err := h.Manager.RegisterSleeping(r.Context(), req.User, agentApp(req))
+	if err != nil {
+		writeManagerError(w, err)
+		return
+	}
+	writeJSON(w, info)
+}
+
 func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 	user := r.URL.Query().Get("user")
 	app := r.URL.Query().Get("app")
@@ -244,7 +258,11 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 	if gen != "" {
 		app = genid.AgentApp(app, gen)
 	}
-	st, ok := h.Manager.Status(user, app)
+	st, ok, err := h.Manager.StatusContext(r.Context(), user, app)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusRequestTimeout)
+		return
+	}
 	if !ok {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
@@ -285,7 +303,17 @@ func (h *Handler) uncordon(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusRequestTimeout)
 		return
 	}
-	if err := h.Manager.SetCordoned(false); err != nil {
+	var req struct {
+		CordonEpoch string `json:"cordon_epoch"`
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 4<<10)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := h.Manager.Uncordon(req.CordonEpoch); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

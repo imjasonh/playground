@@ -210,9 +210,14 @@ func (r *Registry) migrateSession(ctx context.Context, id ID, kind string, froze
 		return nil
 	}
 	var commands chan MigrationCommand
-	for _, slot := range r.slots[k] {
-		if slot.ID == id {
-			commands = slot.migration
+	previous := false
+	slots := r.slots[k]
+	for i := range slots {
+		if slots[i].ID == id {
+			commands = slots[i].migration
+			previous = slots[i].frozen
+			slots[i].frozen = frozen
+			r.slots[k] = slots
 			break
 		}
 	}
@@ -223,33 +228,38 @@ func (r *Registry) migrateSession(ctx context.Context, id ID, kind string, froze
 		select {
 		case commands <- MigrationCommand{Kind: kind, Ack: ack}:
 		case <-ctx.Done():
+			r.restoreFrozen(id, frozen, previous)
 			return ctx.Err()
 		}
 		select {
 		case err := <-ack:
 			if err != nil {
+				r.restoreFrozen(id, frozen, previous)
 				return err
 			}
 		case <-ctx.Done():
+			r.restoreFrozen(id, frozen, previous)
 			return ctx.Err()
 		}
 	}
+	return nil
+}
 
+func (r *Registry) restoreFrozen(id ID, attempted, previous bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	k, ok = r.byID[id]
+	k, ok := r.byID[id]
 	if !ok {
-		return nil
+		return
 	}
 	slots := r.slots[k]
 	for i := range slots {
-		if slots[i].ID == id {
-			slots[i].frozen = frozen
+		if slots[i].ID == id && slots[i].frozen == attempted {
+			slots[i].frozen = previous
 			r.slots[k] = slots
-			return nil
+			return
 		}
 	}
-	return nil
 }
 
 // KickIDs cancels exact sessions and never a later reconnect.

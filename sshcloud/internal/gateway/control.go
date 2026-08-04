@@ -103,10 +103,13 @@ func (h *ControlHandler) freeze(w http.ResponseWriter, r *http.Request) {
 	err := h.Hub.FreezeSessions(freezeCtx, ids)
 	cancel()
 	if err != nil {
-		h.remove(token)
 		rollbackCtx, rollbackCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		_ = h.Hub.ThawSessions(rollbackCtx, ids)
+		rollbackErr := h.Hub.ThawSessions(rollbackCtx, ids)
 		rollbackCancel()
+		if rollbackErr != nil {
+			h.Hub.KickSessions(ids)
+		}
+		h.remove(token)
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
