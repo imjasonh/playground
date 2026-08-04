@@ -27,6 +27,7 @@ func main() {
 	listen := flag.String("listen", "127.0.0.1:8090", "HTTP listen address")
 	hostsFlag := flag.String("hosts", "", "comma-separated hostID=baseURL pairs")
 	defaultHost := flag.String("default-host", "", "default placement host ID")
+	firestoreProject := flag.String("firestore-project", "", "GCP project for Firestore placement (default: in-memory)")
 	flag.Parse()
 
 	hosts, err := parseHosts(*hostsFlag)
@@ -43,7 +44,21 @@ func main() {
 		}
 	}
 
-	place := placement.NewMemory()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	var place placement.Store = placement.NewMemory()
+	if *firestoreProject != "" {
+		fs, err := placement.NewFirestore(ctx, *firestoreProject)
+		if err != nil {
+			log.Fatalf("firestore: %v", err)
+		}
+		defer fs.Close()
+		place = fs
+		log.Printf("placement: firestore project %s", *firestoreProject)
+	} else {
+		log.Printf("placement: in-memory")
+	}
 	mig := &migrate.Migrator{Placement: place, Hosts: hosts}
 	dial := &backend.PlacedDial{Placement: place, Agents: hosts, DefaultHost: *defaultHost}
 
@@ -111,8 +126,6 @@ func main() {
 		}
 	}()
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	<-ctx.Done()
 	_ = srv.Close()
 }

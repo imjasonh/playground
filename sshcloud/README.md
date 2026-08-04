@@ -17,11 +17,13 @@ Design: [`docs/ssh-app-cloud-design.md`](../docs/ssh-app-cloud-design.md).
 | `cmd/api` | Internal control API stub |
 | `internal/firecracker` | Firecracker API client, TAP, pause/snapshot/restore |
 | `internal/snapshot` | Snapshot package format + local/GCS blob stores |
-| `internal/placement` | user/app → host ID map |
+| `internal/placement` | user/app → host ID map (memory or Firestore) |
+| `internal/store` | users / keys / apps (memory or Firestore) |
 | `internal/migrate` | Cross-host Sleep→Evict→Adopt |
 | `internal/rootfs` | ext4 build via mkfs.ext4 + debugfs |
 | `internal/agent` | Instance manager (boot, idle sleep, wake, adopt/evict) |
 | `hack/fetch-firecracker-assets.sh` | Download firecracker + kernel |
+| `hack/run-firestore-tests.sh` | Store/placement tests vs Firestore emulator |
 
 ## Build & test
 
@@ -38,11 +40,20 @@ go build -o bin/fortune ./cmd/fortune
 Firecracker e2e needs `/dev/kvm` + `CAP_NET_ADMIN` (TAP). Without KVM, unit
 tests still pass; `Manager.Ensure` returns a clear error.
 
+Firestore tests skip unless `FIRESTORE_EMULATOR_HOST` is set (or use the helper):
+
+```bash
+bash hack/run-firestore-tests.sh
+```
+
 ## Run — process backend (no KVM)
 
 ```bash
 go build -o bin/fortune ./cmd/fortune
 go run ./cmd/gateway -listen 127.0.0.1:2222 -fortune-bin ./bin/fortune
+# optional durable store (emulator or real project):
+#   FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 \
+#   go run ./cmd/gateway -firestore-project sshcloud-test …
 ssh -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null join@127.0.0.1
 ```
 
@@ -141,5 +152,6 @@ bash hack/run-kvm-e2e.sh   # not as root
 - [x] Real Firecracker KVM e2e in GitHub Actions (`sshcloud-kvm` job)
 - [x] Gateway wake loading TUI + placement-aware dial (`-orchestrator-url`)
 - [x] Deploy TUI (digest-pinned register; OCI pull/cutover still open)
-- [ ] Gateway freeze-buffer during migrate, Firestore
+- [x] Firestore store (users/keys/apps) + placement (`-firestore-project`)
+- [ ] Gateway freeze-buffer during migrate
 - [ ] Terraform

@@ -347,8 +347,9 @@ GCE host MIG ── host agent ── Firecracker ── app :22
   virt on free Linux runners). Job `sshcloud-kvm` in `test.yml` runs
   `hack/run-kvm-e2e.sh` → `go test -tags=kvm` sleep/wake + migrate when
   `sshcloud/` changes; the script fails if any test is skipped.
+- Placement: memory (default) or Firestore (`placement.Firestore`).
 - Still open: gateway I/O freeze buffer during migrate, force-reconnect on
-  timeout, session pin invalidation, Firestore-backed placement.
+  timeout, session pin invalidation.
 
 ---
 
@@ -447,6 +448,15 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
 | **Firestore** | Users, keys, apps, placement pointers, quota counters, metadata |
 | **GCS** | Idle/migrate snapshots + volume bytes |
 | **Secret Manager** | Gateway host key; user CA signing key |
+
+**Implemented in `sshcloud/`:**
+- `store.Firestore` — `keys/{fp}`, `users/{id}`, `users/{id}/apps/{name}`;
+  gateway `-firestore-project` (default remains in-memory).
+- `placement.Firestore` — `placement/{user__app}` → host ID;
+  orchestrator `-firestore-project`.
+- Emulator tests: `hack/run-firestore-tests.sh` (skips in plain `go test`
+  without `FIRESTORE_EMULATOR_HOST`).
+- Still open: quota counters, Terraform-provisioned database.
 
 ### Infra
 

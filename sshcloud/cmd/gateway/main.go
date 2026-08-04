@@ -28,7 +28,11 @@ func main() {
 	fortuneBin := flag.String("fortune-bin", "", "path to local fortune binary (process backend)")
 	agentURL := flag.String("agent-url", "", "host agent base URL (Firecracker backend), e.g. http://127.0.0.1:8080")
 	orchURL := flag.String("orchestrator-url", "", "orchestrator base URL (placement-aware Ensure), e.g. http://127.0.0.1:8090")
+	firestoreProject := flag.String("firestore-project", "", "GCP project for Firestore user/app store (default: in-memory)")
 	flag.Parse()
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	signer, err := hostkey.LoadOrGenerate(*hostKeyPath)
 	if err != nil {
@@ -43,8 +47,21 @@ func main() {
 		log.Fatalf("write CA pub: %v", err)
 	}
 
+	var st store.Store = store.NewMemory()
+	if *firestoreProject != "" {
+		fs, err := store.NewFirestore(ctx, *firestoreProject)
+		if err != nil {
+			log.Fatalf("firestore: %v", err)
+		}
+		defer fs.Close()
+		st = fs
+		log.Printf("store: firestore project %s", *firestoreProject)
+	} else {
+		log.Printf("store: in-memory")
+	}
+
 	hub := &gateway.Hub{
-		Store:    store.NewMemory(),
+		Store:    st,
 		Sessions: session.NewRegistry(),
 		UserCA:   ca,
 	}
@@ -74,9 +91,6 @@ func main() {
 		Addr:    *addr,
 		Logger:  log.Default(),
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	log.Printf("sshcloud gateway on %s — host key %s", *addr, ssh.FingerprintSHA256(signer.PublicKey()))
 	log.Printf("user CA %s", ssh.FingerprintSHA256(ca.PublicKey()))
