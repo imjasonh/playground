@@ -2,13 +2,19 @@
  * Life QR — Conway's Game of Life sculpture with a scannable QR roof.
  *
  * Z is time. The roof (top layer) is generation 0: a QR code encoding the
- * Customizer `text`. Each step down the stack is one Game of Life generation
- * forward, so the finished solid is a valid B3/S23 history with the QR on top
- * at any target height. (Time runs toward the build plate; see README.)
+ * Customizer `qr_text`. Each step down the stack is one Game of Life
+ * generation forward, so the finished solid is a valid B3/S23 history with
+ * the QR on top at any target height. (Time runs toward the build plate.)
  *
  * QR encoding is the MIT-licensed scadqr library by Darwin Schuppan / xypwn,
- * vendored at the bottom of this file for MakerWorld / Customizer single-file
- * use: https://github.com/xypwn/scadqr
+ * vendored below for MakerWorld / Customizer single-file use:
+ * https://github.com/xypwn/scadqr
+ *
+ * MakerWorld / Customizer note: the vendored helpers are defined *before* any
+ * top-level QR/Life evaluation, and `life_qr();` is the last line of the file.
+ * Desktop OpenSCAD allows out-of-order definitions; MakerWorld's evaluator
+ * often does not — calling QR helpers before they exist yields
+ * "Current top level object is empty."
  *
  * All parameters below work with the OpenSCAD Customizer
  * (Window > Customizer).
@@ -17,7 +23,8 @@
 /* [QR — the roof (generation 0)] */
 
 // Payload encoded into the QR code on the top layer
-text = "HELLO";
+// (named qr_text so it does not shadow OpenSCAD's built-in text() module)
+qr_text = "HELLO";
 // Error correction: L ~7%, M ~15%, Q ~25%, H ~30%
 error_correction = "M"; // [L, M, Q, H]
 // Mask pattern 0–7 (QR spec); change if a mask scans better for your text
@@ -31,8 +38,9 @@ life_margin = 2; // [0:16]
 
 /* [Simulation] */
 
-// Number of Life steps from the QR roof down to the build plate
-generations = 16; // [0:80]
+// Number of Life steps from the QR roof down to the build plate.
+// Keep modest on MakerWorld — large grids × many generations can time out.
+generations = 8; // [0:80]
 
 /* [Dimensions] */
 
@@ -62,330 +70,22 @@ diagonal_ramps = false;
 
 /* [Preview] */
 
-// Color layers by generation in the preview (blue = roof/QR, yellow = base). Ignored in STL export.
-rainbow_preview = true;
+// Color layers by generation in the preview (blue = roof/QR, yellow = base). Ignored in STL export. Prefer false on MakerWorld for faster generation.
+rainbow_preview = false;
 
 /* [Hidden] */
 
-assert(len(text) > 0, "text must not be empty");
+assert(len(qr_text) > 0, "qr_text must not be empty");
 assert(generations >= 0, "generations must be >= 0");
 assert(quiet_zone >= 0 && life_margin >= 0, "margins must be >= 0");
-
-// --- QR module grid (uses vendored scadqr helpers below) ---------------------
-
-function _life_qr_ec_lvl(ec) =
-    ec == "L" ? _qr_EC_L :
-    ec == "M" ? _qr_EC_M :
-    ec == "Q" ? _qr_EC_Q :
-    ec == "H" ? _qr_EC_H :
-    undef;
-
-function _life_qr_enc(enc) =
-    enc == "Shift_JIS" ? _qr_ENC_SJIS :
-    enc == "UTF-8" ? _qr_ENC_UTF8 :
-    undef;
-
-function _life_qr_finder_modules(size) =
-    let (origins = [[0, 0], [size - 7, 0], [0, size - 7]])
-    [
-        for (o = origins, dy = [0 : 6], dx = [0 : 6])
-            let (
-                border = dx == 0 || dx == 6 || dy == 0 || dy == 6,
-                core = dx >= 2 && dx <= 4 && dy >= 2 && dy <= 4
-            )
-            if (border || core) [o[0] + dx, o[1] + dy]
-    ];
-
-function _life_qr_timing_modules(size) =
-    concat(
-        [for (x = [8 : size - 1 - 8]) if (x % 2 == 0) [x, 6]],
-        [for (y = [8 : size - 1 - 8]) if (y % 2 == 0) [6, y]]
-    );
-
-function _life_qr_alignment_modules(size, ver) =
-    ver < 2 ? [] :
-    let (
-        n_pats = _qr_n_alignment_patterns(ver),
-        pat_step = _qr_alignment_pattern_step(ver),
-        pat_last = size - 1 - 6,
-        pat_coords = concat([6], [for (i = [0 : max(0, n_pats - 2)]) pat_last - i * pat_step])
-    )
-    [
-        for (cy = pat_coords, cx = pat_coords)
-            if (!(
-                (cx == 6 && cy == 6) ||
-                (cx == 6 && cy == pat_last) ||
-                (cx == pat_last && cy == 6)
-            ))
-                for (dy = [0 : 4], dx = [0 : 4])
-                    let (
-                        border = dx == 0 || dx == 4 || dy == 0 || dy == 4,
-                        core = dx == 2 && dy == 2
-                    )
-                    if (border || core) [cx - 2 + dx, cy - 2 + dy]
-    ];
-
-function _life_qr_format_modules(size, ec_lvl, mask_pat) =
-    let (fmtinf = _qr_fmtinf_bits(ec_lvl, mask_pat))
-    concat(
-        [for (i = [0 : 7]) if (fmtinf[14 - i]) [8, i <= 5 ? i : i + 1]],
-        [for (i = [8 : 14]) if (fmtinf[14 - i]) [15 - (i <= 8 ? i : i + 1), 8]],
-        [for (i = [0 : 7]) if (fmtinf[14 - i]) [size - 1 - i, 8]],
-        [for (i = [8 : 14]) if (fmtinf[14 - i]) [8, size - 1 - 6 + i - 8]],
-        [[8, size - 8]] // dark module
-    );
-
-function _life_qr_version_modules(size, ver) =
-    ver < 7 ? [] :
-    let (verinf = _qr_verinf_bits(ver))
-    concat(
-        [for (i = [0 : 17]) if (verinf[17 - i]) [floor(i / 3), size - 11 + i % 3]],
-        [for (i = [0 : 17]) if (verinf[17 - i]) [size - 11 + i % 3, floor(i / 3)]]
-    );
-
-function _life_qr_data_modules(size, bits, positions, mask_pat) =
-    [
-        for (p = positions)
-            if (_qr_apply_mask_pattern(bits[p[2]], p[0], p[1], mask_pat))
-                [p[0], p[1]]
-    ];
-
-function _life_qr_has(coords, x, y) =
-    len([for (c = coords) if (c[0] == x && c[1] == y) 1]) > 0;
-
-// size×size grid of 0/1 in QR coordinates (y=0 is the top of the symbol).
-function qr_module_grid(message, error_correction = "M", mask_pattern = 0, encoding = "UTF-8") =
-    let (
-        ec_lvl = assert(_life_qr_ec_lvl(error_correction) != undef,
-            "error_correction must be L, M, Q, or H")
-            _life_qr_ec_lvl(error_correction),
-        enc = assert(_life_qr_enc(encoding) != undef,
-            "encoding must be UTF-8 or Shift_JIS")
-            _life_qr_enc(encoding),
-        message_bytes = _qr_str2bytes(message),
-        ver = assert(_qr_get_version(len(message_bytes), ec_lvl, enc) != undef,
-            "text is too long for a QR code at this ECC level")
-            _qr_get_version(len(message_bytes), ec_lvl, enc),
-        size = _qr_version2size(ver),
-        bits = _qr_encode_message(message_bytes, ec_lvl, mask_pattern, ver, enc),
-        positions = _qr_data_bit_positions(size),
-        black = concat(
-            _life_qr_data_modules(size, bits, positions, mask_pattern),
-            _life_qr_finder_modules(size),
-            _life_qr_timing_modules(size),
-            _life_qr_alignment_modules(size, ver),
-            _life_qr_format_modules(size, ec_lvl, mask_pattern),
-            _life_qr_version_modules(size, ver)
-        )
-    )
-    [
-        for (y = [0 : size - 1])
-            [for (x = [0 : size - 1]) _life_qr_has(black, x, y) ? 1 : 0]
-    ];
-
-function pad_grid(g, margin) =
-    margin <= 0 ? g :
-    let (
-        h = len(g),
-        w = len(g[0]),
-        nh = h + 2 * margin,
-        nw = w + 2 * margin
-    )
-    [
-        for (r = [0 : nh - 1])
-            [
-                for (c = [0 : nw - 1])
-                    let (pr = r - margin, pc = c - margin)
-                    pr >= 0 && pr < h && pc >= 0 && pc < w ? g[pr][pc] : 0
-            ]
-    ];
-
-// Flip QR y so row 0 is at OpenSCAD y=0 (bottom of footprint) while the
-// symbol's top (finders) faces +Y — natural when viewing the print from above
-// with Y away from you... Actually for top-down scan, XY orientation on the
-// roof is what matters. Keep library y=0 at high Y (away from origin).
-function flip_rows(g) =
-    [for (r = [len(g) - 1 : -1 : 0]) g[r]];
-
-qr_raw = qr_module_grid(text, error_correction, mask_pattern, encoding);
-qr_size_mods = len(qr_raw);
-qr_version_used = _qr_size2version(qr_size_mods);
-
-// Margin = quiet zone + optional evolution room. Row 0 at y=0.
-grid0 = pad_grid(flip_rows(qr_raw), quiet_zone + life_margin);
-
-rows = len(grid0);
-cols = len(grid0[0]);
-
-assert(rows >= 1 && cols >= 1, "QR grid must not be empty");
-
-// --- Game of Life -----------------------------------------------------------
-
-function cell(g, r, c) =
-    (r < 0 || r >= rows || c < 0 || c >= cols) ? 0 : g[r][c];
-
-function live_neighbors(g, r, c) =
-    cell(g, r - 1, c - 1) + cell(g, r - 1, c) + cell(g, r - 1, c + 1) +
-    cell(g, r,     c - 1) +                     cell(g, r,     c + 1) +
-    cell(g, r + 1, c - 1) + cell(g, r + 1, c) + cell(g, r + 1, c + 1);
-
-function next_generation(g) =
-    [
-        for (r = [0 : rows - 1])
-            [
-                for (c = [0 : cols - 1])
-                    let (n = live_neighbors(g, r, c))
-                    g[r][c] == 1
-                        ? (n == 2 || n == 3 ? 1 : 0)
-                        : (n == 3 ? 1 : 0)
-            ]
-    ];
-
-function evolve(g, n, acc = []) =
-    n < 0 ? acc : evolve(next_generation(g), n - 1, concat(acc, [g]));
-
-// history[0] = QR (roof), history[generations] = base layer
-history = evolve(grid0, generations);
-
-// Stack index 0 is the build-plate layer; the QR sits at the top.
-// stack[z] = history[generations - z], so step(stack[z+1]) == stack[z].
-life_stack = [for (i = [0 : generations]) history[generations - i]];
-
-// --- Supports (pillars) -----------------------------------------------------
-// Time runs toward the bed, so Life parents sit *above* their children. The
-// 45° birth-parent ramp theorem from life-scad does not apply; pillars do.
-
-function augment_below(below, above) =
-    [
-        for (r = [0 : rows - 1])
-            [
-                for (c = [0 : cols - 1])
-                    below[r][c] != 0 ? below[r][c]
-                    : above[r][c] != 0 ? 2 : 0
-            ]
-    ];
-
-function support_pass(stack, g) =
-    g <= 0 ? stack
-    : support_pass(
-        [
-            for (i = [0 : len(stack) - 1])
-                i == g - 1 ? augment_below(stack[g - 1], stack[g]) : stack[i]
-        ],
-        g - 1
-    );
-
-final_stack = strict_supports ? support_pass(life_stack, len(life_stack) - 1) : life_stack;
-
-support_count = len([
-    for (g = [0 : len(final_stack) - 1], r = [0 : rows - 1], c = [0 : cols - 1])
-        if (final_stack[g][r][c] == 2) 1
-]);
-
-ramp_pairs = diagonal_ramps
-    ? [
-        for (g = [1 : len(final_stack) - 1], r = [0 : rows - 1], c = [0 : cols - 1])
-            if (final_stack[g][r][c] != 0 && final_stack[g - 1][r][c] == 0)
-                for (dr = [-1 : 1], dc = [-1 : 1])
-                    let (rr = r + dr, cc = c + dc)
-                    if (!(dr == 0 && dc == 0)
-                        && rr >= 0 && rr < rows && cc >= 0 && cc < cols
-                        && final_stack[g - 1][rr][cc] != 0)
-                        [g, r, c, rr, cc]
-      ]
-    : [];
-
-// --- Geometry ---------------------------------------------------------------
-
-cell_x = overall_width  > 0 ? overall_width  / cols : cell_size;
-cell_y = overall_depth  > 0 ? overall_depth  / rows : cell_size;
-cell_z = overall_height > 0 ? overall_height / (generations + 1) : layer_height;
-
-total_x = cell_x * cols;
-total_y = cell_y * rows;
-total_z = cell_z * (generations + 1);
-
-roof_live = len([for (r = [0 : rows - 1], c = [0 : cols - 1]) if (history[0][r][c]) 1]);
-
-echo(str("Life QR: \"", text, "\" v", qr_version_used,
-         " (", qr_size_mods, "×", qr_size_mods, " modules, ECC ",
-         error_correction, ", mask ", mask_pattern, ")"));
-echo(str("Grid: ", cols, "×", rows, " (quiet ", quiet_zone,
-         " + margin ", life_margin, "), generations: ", generations + 1,
-         ", roof live: ", roof_live));
-echo(str("Model size: ", total_x, " × ", total_y, " × ", total_z, " mm"));
-echo(str("Support pillars: ", support_count, ", ramps: ", len(ramp_pairs)));
-echo("Time runs toward the build plate: roof = QR (gen 0), base = gen ",
-     generations, ".");
-
-function layer_color(g) =
-    let (t = generations == 0 ? 0 : g / generations)
-    [0.2 + 0.8 * t, 0.4, 1.0 - 0.8 * t];
-
-module life_cell(g, r, c) {
-    ov = cell_overlap;
-    translate([c * cell_x - ov, r * cell_y - ov, g * cell_z - ov])
-        cube([cell_x + 2 * ov, cell_y + 2 * ov, cell_z + 2 * ov]);
-}
-
-module ramp(g, r, c, rr, cc) {
-    hull() {
-        life_cell(g, r, c);
-        life_cell(g - 1, rr, cc);
-    }
-}
-
-module life_cells() {
-    for (g = [0 : len(final_stack) - 1], r = [0 : rows - 1], c = [0 : cols - 1])
-        if (final_stack[g][r][c] != 0) {
-            if (final_stack[g][r][c] == 2)
-                color("Gray") life_cell(g, r, c);
-            else if (rainbow_preview)
-                color(layer_color(g)) life_cell(g, r, c);
-            else
-                life_cell(g, r, c);
-        }
-    for (p = ramp_pairs) {
-        if (rainbow_preview)
-            color(layer_color(p[0] - 0.5)) ramp(p[0], p[1], p[2], p[3], p[4]);
-        else
-            ramp(p[0], p[1], p[2], p[3], p[4]);
-    }
-}
-
-module roof_plate() {
-    if (roof_plate_thickness > 0) {
-        // Sit just under the top Life layer so black modules read as raised.
-        z0 = total_z - roof_plate_thickness;
-        if (rainbow_preview)
-            color([0.92, 0.92, 0.9])
-                translate([0, 0, z0])
-                    cube([total_x, total_y, roof_plate_thickness]);
-        else
-            translate([0, 0, z0])
-                cube([total_x, total_y, roof_plate_thickness]);
-    }
-}
-
-module life_qr() {
-    intersection() {
-        union() {
-            life_cells();
-            roof_plate();
-        }
-        cube([total_x, total_y, total_z]);
-    }
-    if (base_thickness > 0)
-        translate([0, 0, -base_thickness])
-            cube([total_x, total_y, base_thickness]);
-}
-
-life_qr();
 
 // =============================================================================
 // Vendored QR library (scadqr) — MIT License
 // Copyright (c) 2024 Darwin Schuppan and contributors
 // https://github.com/xypwn/scadqr
+//
+// Placed *before* Life-QR evaluation so MakerWorld / Customizer-style
+// evaluators that resolve names in source order can find these helpers.
 // =============================================================================
 //
 // Automatically generated by generate.py.
@@ -394,21 +94,21 @@ life_qr();
 //
 
 //
-//   ########                        ##   #######    #######  
-//  ##//////                        /##  ##/////##  /##////## 
-// /##         #####   ######       /## ##     //## /##   /## 
-// /######### ##///## //////##   ######/##      /## /#######  
-// ////////##/##  //   #######  ##///##/##    ##/## /##///##  
-//        /##/##   ## ##////## /##  /##//##  // ##  /##  //## 
+//   ########                        ##   #######    #######
+//  ##//////                        /##  ##/////##  /##////##
+// /##         #####   ######       /## ##     //## /##   /##
+// /######### ##///## //////##   ######/##      /## /#######
+// ////////##/##  //   #######  ##///##/##    ##/## /##///##
+//        /##/##   ## ##////## /##  /##//##  // ##  /##  //##
 //  ######## //##### //########//###### //####### ##/##   //##
-// ////////   /////   ////////  //////   /////// // //     // 
+// ////////   /////   ////////  //////   /////// // //     //
 //
 // Effortlessly generate QR codes directly in OpenSCAD
 // https://github.com/xypwn/scadqr
 //
 // Copyright (c) 2024 Darwin Schuppan and contributors. All rights reserved.
 //
-// This work is licensed under the terms of the MIT license.  
+// This work is licensed under the terms of the MIT license.
 // For a copy, see <https://opensource.org/licenses/MIT>.
 
 // BEGIN src/qr.scad
@@ -1503,3 +1203,301 @@ _qr_ectab = [
 ];
 
 // END src/data.scad
+
+// =============================================================================
+// Life QR — grid helpers, simulation, geometry (uses scadqr above)
+// =============================================================================
+
+function _life_qr_ec_lvl(ec) =
+    ec == "L" ? _qr_EC_L :
+    ec == "M" ? _qr_EC_M :
+    ec == "Q" ? _qr_EC_Q :
+    ec == "H" ? _qr_EC_H :
+    undef;
+
+function _life_qr_enc(enc) =
+    enc == "Shift_JIS" ? _qr_ENC_SJIS :
+    enc == "UTF-8" ? _qr_ENC_UTF8 :
+    undef;
+
+function _life_qr_finder_modules(size) =
+    let (origins = [[0, 0], [size - 7, 0], [0, size - 7]])
+    [
+        for (o = origins, dy = [0 : 6], dx = [0 : 6])
+            let (
+                border = dx == 0 || dx == 6 || dy == 0 || dy == 6,
+                core = dx >= 2 && dx <= 4 && dy >= 2 && dy <= 4
+            )
+            if (border || core) [o[0] + dx, o[1] + dy]
+    ];
+
+function _life_qr_timing_modules(size) =
+    concat(
+        [for (x = [8 : size - 1 - 8]) if (x % 2 == 0) [x, 6]],
+        [for (y = [8 : size - 1 - 8]) if (y % 2 == 0) [6, y]]
+    );
+
+function _life_qr_alignment_modules(size, ver) =
+    ver < 2 ? [] :
+    let (
+        n_pats = _qr_n_alignment_patterns(ver),
+        pat_step = _qr_alignment_pattern_step(ver),
+        pat_last = size - 1 - 6,
+        pat_coords = concat([6], [for (i = [0 : max(0, n_pats - 2)]) pat_last - i * pat_step])
+    )
+    [
+        for (cy = pat_coords, cx = pat_coords)
+            if (!(
+                (cx == 6 && cy == 6) ||
+                (cx == 6 && cy == pat_last) ||
+                (cx == pat_last && cy == 6)
+            ))
+                for (dy = [0 : 4], dx = [0 : 4])
+                    let (
+                        border = dx == 0 || dx == 4 || dy == 0 || dy == 4,
+                        core = dx == 2 && dy == 2
+                    )
+                    if (border || core) [cx - 2 + dx, cy - 2 + dy]
+    ];
+
+function _life_qr_format_modules(size, ec_lvl, mask_pat) =
+    let (fmtinf = _qr_fmtinf_bits(ec_lvl, mask_pat))
+    concat(
+        [for (i = [0 : 7]) if (fmtinf[14 - i]) [8, i <= 5 ? i : i + 1]],
+        [for (i = [8 : 14]) if (fmtinf[14 - i]) [15 - (i <= 8 ? i : i + 1), 8]],
+        [for (i = [0 : 7]) if (fmtinf[14 - i]) [size - 1 - i, 8]],
+        [for (i = [8 : 14]) if (fmtinf[14 - i]) [8, size - 1 - 6 + i - 8]],
+        [[8, size - 8]] // dark module
+    );
+
+function _life_qr_version_modules(size, ver) =
+    ver < 7 ? [] :
+    let (verinf = _qr_verinf_bits(ver))
+    concat(
+        [for (i = [0 : 17]) if (verinf[17 - i]) [floor(i / 3), size - 11 + i % 3]],
+        [for (i = [0 : 17]) if (verinf[17 - i]) [size - 11 + i % 3, floor(i / 3)]]
+    );
+
+function _life_qr_data_modules(size, bits, positions, mask_pat) =
+    [
+        for (p = positions)
+            if (_qr_apply_mask_pattern(bits[p[2]], p[0], p[1], mask_pat))
+                [p[0], p[1]]
+    ];
+
+// size×size grid of 0/1 in QR coordinates (y=0 is the top of the symbol).
+// Callers must pass a valid ECC/encoding; see asserts before qr_raw below.
+function qr_module_grid(message, error_correction_ = "M", mask_pattern_ = 0, encoding_ = "UTF-8") =
+    let (
+        ec_lvl = _life_qr_ec_lvl(error_correction_),
+        enc = _life_qr_enc(encoding_),
+        message_bytes = _qr_str2bytes(message),
+        ver = _qr_get_version(len(message_bytes), ec_lvl, enc),
+        size = _qr_version2size(ver),
+        bits = _qr_encode_message(message_bytes, ec_lvl, mask_pattern_, ver, enc),
+        positions = _qr_data_bit_positions(size),
+        black = concat(
+            _life_qr_data_modules(size, bits, positions, mask_pattern_),
+            _life_qr_finder_modules(size),
+            _life_qr_timing_modules(size),
+            _life_qr_alignment_modules(size, ver),
+            _life_qr_format_modules(size, ec_lvl, mask_pattern_),
+            _life_qr_version_modules(size, ver)
+        )
+    )
+    [
+        for (y = [0 : size - 1])
+            [
+                for (x = [0 : size - 1])
+                    len([for (c = black) if (c[0] == x && c[1] == y) 1]) > 0 ? 1 : 0
+            ]
+    ];
+
+function pad_grid(g, margin) =
+    margin <= 0 ? g :
+    let (
+        h = len(g),
+        w = len(g[0]),
+        nh = h + 2 * margin,
+        nw = w + 2 * margin
+    )
+    [
+        for (r = [0 : nh - 1])
+            [
+                for (c = [0 : nw - 1])
+                    let (pr = r - margin, pc = c - margin)
+                    pr >= 0 && pr < h && pc >= 0 && pc < w ? g[pr][pc] : 0
+            ]
+    ];
+
+// Flip QR y so row 0 is at OpenSCAD y=0 (bottom of footprint).
+function flip_rows(g) =
+    [for (r = [len(g) - 1 : -1 : 0]) g[r]];
+
+// --- Evaluate QR + Life *after* scadqr helpers are defined ------------------
+
+assert(_life_qr_ec_lvl(error_correction) != undef,
+    "error_correction must be L, M, Q, or H");
+assert(_life_qr_enc(encoding) != undef,
+    "encoding must be UTF-8 or Shift_JIS");
+assert(_qr_get_version(len(_qr_str2bytes(qr_text)),
+        _life_qr_ec_lvl(error_correction), _life_qr_enc(encoding)) != undef,
+    "qr_text is too long for a QR code at this ECC level");
+
+qr_raw = qr_module_grid(qr_text, error_correction, mask_pattern, encoding);
+qr_size_mods = len(qr_raw);
+qr_version_used = _qr_size2version(qr_size_mods);
+
+// Margin = quiet zone + optional evolution room. Row 0 at y=0.
+grid0 = pad_grid(flip_rows(qr_raw), quiet_zone + life_margin);
+
+rows = len(grid0);
+cols = len(grid0[0]);
+
+assert(rows >= 1 && cols >= 1, "QR grid must not be empty");
+
+function cell(g, r, c) =
+    (r < 0 || r >= rows || c < 0 || c >= cols) ? 0 : g[r][c];
+
+function live_neighbors(g, r, c) =
+    cell(g, r - 1, c - 1) + cell(g, r - 1, c) + cell(g, r - 1, c + 1) +
+    cell(g, r,     c - 1) +                     cell(g, r,     c + 1) +
+    cell(g, r + 1, c - 1) + cell(g, r + 1, c) + cell(g, r + 1, c + 1);
+
+function next_generation(g) =
+    [
+        for (r = [0 : rows - 1])
+            [
+                for (c = [0 : cols - 1])
+                    let (n = live_neighbors(g, r, c))
+                    g[r][c] == 1
+                        ? (n == 2 || n == 3 ? 1 : 0)
+                        : (n == 3 ? 1 : 0)
+            ]
+    ];
+
+function evolve(g, n, acc = []) =
+    n < 0 ? acc : evolve(next_generation(g), n - 1, concat(acc, [g]));
+
+// history[0] = QR (roof), history[generations] = base layer
+history = evolve(grid0, generations);
+
+// Stack index 0 is the build-plate layer; the QR sits at the top.
+life_stack = [for (i = [0 : generations]) history[generations - i]];
+
+function augment_below(below, above) =
+    [
+        for (r = [0 : rows - 1])
+            [
+                for (c = [0 : cols - 1])
+                    below[r][c] != 0 ? below[r][c]
+                    : above[r][c] != 0 ? 2 : 0
+            ]
+    ];
+
+function support_pass(stack, g) =
+    g <= 0 ? stack
+    : support_pass(
+        [
+            for (i = [0 : len(stack) - 1])
+                i == g - 1 ? augment_below(stack[g - 1], stack[g]) : stack[i]
+        ],
+        g - 1
+    );
+
+final_stack = strict_supports ? support_pass(life_stack, len(life_stack) - 1) : life_stack;
+
+ramp_pairs = diagonal_ramps
+    ? [
+        for (g = [1 : len(final_stack) - 1], r = [0 : rows - 1], c = [0 : cols - 1])
+            if (final_stack[g][r][c] != 0 && final_stack[g - 1][r][c] == 0)
+                for (dr = [-1 : 1], dc = [-1 : 1])
+                    let (rr = r + dr, cc = c + dc)
+                    if (!(dr == 0 && dc == 0)
+                        && rr >= 0 && rr < rows && cc >= 0 && cc < cols
+                        && final_stack[g - 1][rr][cc] != 0)
+                        [g, r, c, rr, cc]
+      ]
+    : [];
+
+cell_x = overall_width  > 0 ? overall_width  / cols : cell_size;
+cell_y = overall_depth  > 0 ? overall_depth  / rows : cell_size;
+cell_z = overall_height > 0 ? overall_height / (generations + 1) : layer_height;
+
+total_x = cell_x * cols;
+total_y = cell_y * rows;
+total_z = cell_z * (generations + 1);
+
+echo(str("Life QR: \"", qr_text, "\" v", qr_version_used,
+         " (", qr_size_mods, "×", qr_size_mods, " modules, ECC ",
+         error_correction, ", mask ", mask_pattern, ")"));
+echo(str("Grid: ", cols, "×", rows, " (quiet ", quiet_zone,
+         " + margin ", life_margin, "), generations: ", generations + 1));
+echo(str("Model size: ", total_x, " × ", total_y, " × ", total_z, " mm"));
+echo(str("Ramps: ", len(ramp_pairs)));
+echo("Time runs toward the build plate: roof = QR (gen 0), base = gen ",
+     generations, ".");
+
+function layer_color(g) =
+    let (t = generations == 0 ? 0 : g / generations)
+    [0.2 + 0.8 * t, 0.4, 1.0 - 0.8 * t];
+
+module life_cell(g, r, c) {
+    ov = cell_overlap;
+    translate([c * cell_x - ov, r * cell_y - ov, g * cell_z - ov])
+        cube([cell_x + 2 * ov, cell_y + 2 * ov, cell_z + 2 * ov]);
+}
+
+module ramp(g, r, c, rr, cc) {
+    hull() {
+        life_cell(g, r, c);
+        life_cell(g - 1, rr, cc);
+    }
+}
+
+module life_cells() {
+    for (g = [0 : len(final_stack) - 1], r = [0 : rows - 1], c = [0 : cols - 1])
+        if (final_stack[g][r][c] != 0) {
+            if (final_stack[g][r][c] == 2)
+                color("Gray") life_cell(g, r, c);
+            else if (rainbow_preview)
+                color(layer_color(g)) life_cell(g, r, c);
+            else
+                life_cell(g, r, c);
+        }
+    for (p = ramp_pairs) {
+        if (rainbow_preview)
+            color(layer_color(p[0] - 0.5)) ramp(p[0], p[1], p[2], p[3], p[4]);
+        else
+            ramp(p[0], p[1], p[2], p[3], p[4]);
+    }
+}
+
+module roof_plate() {
+    if (roof_plate_thickness > 0) {
+        z0 = total_z - roof_plate_thickness;
+        if (rainbow_preview)
+            color([0.92, 0.92, 0.9])
+                translate([0, 0, z0])
+                    cube([total_x, total_y, roof_plate_thickness]);
+        else
+            translate([0, 0, z0])
+                cube([total_x, total_y, roof_plate_thickness]);
+    }
+}
+
+module life_qr() {
+    // Base plate first so the CSG tree always has volume.
+    if (base_thickness > 0)
+        translate([0, 0, -base_thickness])
+            cube([total_x, total_y, base_thickness]);
+    intersection() {
+        union() {
+            life_cells();
+            roof_plate();
+        }
+        cube([total_x, total_y, total_z]);
+    }
+}
+
+life_qr();

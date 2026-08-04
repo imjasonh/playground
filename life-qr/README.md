@@ -4,7 +4,8 @@
 whose **top layer is a QR code**. Z is time: the roof is generation 0, and
 each step down the stack is one B3/S23 generation forward, so the history is
 a valid Life run at any target height. All parameters work with the OpenSCAD
-Customizer (Window > Customizer) or `-D` overrides on the command line.
+Customizer (Window > Customizer), MakerWorld Parametric Model Maker, or `-D`
+overrides on the command line.
 
 ## Requirements
 
@@ -13,19 +14,19 @@ Customizer (Window > Customizer) or `-D` overrides on the command line.
 ## Usage
 
 ```bash
-# Default: QR for "HELLO", 16 generations down to the build plate
+# Default: QR for "HELLO", 8 generations down to the build plate
 openscad -o life-qr.stl life_qr.scad
 
 # Custom payload and height
 openscad -o life-qr.stl \
-  -D 'text="https://example.com"' \
+  -D 'qr_text="https://example.com"' \
   -D 'generations=24' \
   -D 'error_correction="M"' \
   life_qr.scad
 
-# Compact print: smaller cells, fixed overall size, roof plate for scanning
+# Compact print: smaller cells, roof plate for scanning
 openscad -o life-qr.stl \
-  -D 'text="HI"' \
+  -D 'qr_text="HI"' \
   -D 'generations=12' \
   -D 'cell_size=2.5' \
   -D 'layer_height=2.5' \
@@ -34,7 +35,7 @@ openscad -o life-qr.stl \
   life_qr.scad
 ```
 
-Open `life_qr.scad` in OpenSCAD and use the Customizer to edit `text` and
+Open `life_qr.scad` in OpenSCAD and use the Customizer to edit `qr_text` and
 `generations` live.
 
 ## Why time runs downward
@@ -47,7 +48,7 @@ generation deep (see [`../life-scad/reverse_life.py`](../life-scad/reverse_life.
 This file takes the approach that **works for any text and any height in pure
 OpenSCAD**:
 
-1. Encode `text` as a QR (generation 0) and put it on the **roof**.
+1. Encode `qr_text` as a QR (generation 0) and put it on the **roof**.
 2. Evolve it forward with Conway's rules.
 3. Stack each next generation **below** the previous one.
 
@@ -63,7 +64,7 @@ on (the default) so pillars carry every overhang to the bed.
 
 | Parameter | Meaning |
 |---|---|
-| `text` | Payload encoded into the roof QR. |
+| `qr_text` | Payload encoded into the roof QR (not named `text`, so it does not shadow OpenSCAD's `text()`). |
 | `error_correction` | QR ECC level: `L` / `M` / `Q` / `H`. |
 | `mask_pattern` | QR mask 0–7. |
 | `encoding` | `UTF-8` or `Shift_JIS`. |
@@ -77,14 +78,14 @@ on (the default) so pillars carry every overhang to the bed.
 | `roof_plate_thickness` | Thin plate under the QR so white modules have a floor (black modules read as raised). `0` = none. |
 | `strict_supports` | Pillars under unsupported cells (default on — needed for downward time). |
 | `diagonal_ramps` | Optional ramps to neighbors below; not a substitute for pillars here. |
-| `rainbow_preview` | Color layers in the preview (blue = roof/QR). Ignored in STL export. |
+| `rainbow_preview` | Color layers in the preview (blue = roof/QR). Ignored in STL export. Off by default for faster MakerWorld renders. |
 
 ## How it works
 
 1. **QR** — The MIT-licensed [scadqr](https://github.com/xypwn/scadqr) library
-   (vendored at the bottom of `life_qr.scad` for single-file Customizer /
-   MakerWorld use) encodes `text` into modules. A small helper turns that into
-   a 0/1 grid, padded by `quiet_zone + life_margin`.
+   (vendored in `life_qr.scad` for single-file Customizer / MakerWorld use)
+   encodes `qr_text` into modules. A small helper turns that into a 0/1 grid,
+   padded by `quiet_zone + life_margin`.
 2. **Life** — `next_generation` / `evolve` apply B3/S23 with a dead border
    (same rules as `life-scad`).
 3. **Stack** — Generation `g` of the QR history is placed at
@@ -124,7 +125,14 @@ python3 life_qr_test.py
 
 ## MakerWorld
 
-The file is a single self-contained OpenSCAD script (QR library appended) with
-plain Customizer types. Keep `generations` and payload length moderate so
-server-side renders finish; a short URL or a few characters at 12–24
-generations is the sweet spot.
+Upload `life_qr.scad` as a parametric model. The script is self-contained
+(Customizer parameters, then the vendored QR library, then Life evaluation,
+then `life_qr();` as the last line).
+
+If you previously saw **Current top level object is empty**, that was from
+evaluating QR helpers before they were defined in the file — MakerWorld's
+evaluator resolves names in source order. The current file order fixes that.
+
+Keep `generations` and payload length moderate so server-side renders finish
+(defaults are tuned for that). Turn `rainbow_preview` on only for local
+preview if you want layer colors.
