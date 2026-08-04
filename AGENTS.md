@@ -24,6 +24,7 @@ playground/
 ├── git-fuse/              # Rust CLI: read-only FUSE adapter for git-server (not a Pages app)
 ├── git-server/            # Rust Cloudflare Worker: git smart-HTTP server on R2/DO (not a Pages app)
 ├── life-lab/              # browser front-end for life-stl (wasm + three.js + Node tests)
+├── life-scad/             # OpenSCAD Life sculpture + reverse-history Python tool
 ├── life-stl/              # Rust CLI: Game of Life → printable STL (Z = time)
 ├── gitdb/                 # Go CLI (Go module + Go tests)
 ├── hello/                 # example static app (HTML only)
@@ -62,6 +63,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `git-server/` | no | Rust Cloudflare Worker; no `index.html` |
 | `git-fuse/` | no | Rust CLI (FUSE); no `index.html` |
 | `life-stl/` | no | Rust CLI (STL generator); no `index.html` |
+| `life-scad/` | no | OpenSCAD + Python reverse-history tool; no `index.html` |
 | `ios/` | no | The single "Playground" iOS app (XcodeGen + SwiftUI); no `index.html` |
 | `hello-macos/` | no | Example macOS app (XcodeGen + SwiftUI); no `index.html` |
 | `geeksquad/` | no | Offline Mac network triage (XcodeGen + SwiftUI + Sparkle); no `index.html` |
@@ -556,6 +558,15 @@ bundle exec fastlane test
 > API method — a git smart-HTTP route or a `/api/…` endpoint — **must update
 > `git-server/docs/api.md` in the same change**, keeping it an accurate list
 > of everything the router handles.
+
+## Other tools
+
+These are not browser / Go / Rust / Apple apps, so shared CI does not
+auto-discover them. Run their local tests when you change them.
+
+| Directory | Type | Tests |
+|-----------|------|-------|
+| `life-scad/` | OpenSCAD Life sculpture (Z = time) plus a Python reverse-history searcher (`reverse_life.py`) that finds a seed evolving into a target roof pattern | `pip install -r life-scad/requirements.txt && python3 life-scad/reverse_life_test.py` |
 
 ## The iOS app
 

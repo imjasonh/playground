@@ -32,6 +32,66 @@ openscad -o gol.stl -D 'preset="r-pentomino"' -D 'preset_margin=8' \
   -D 'generations=40' game_of_life.scad
 ```
 
+## Reverse history (target on the roof)
+
+Forward simulation starts from a seed on the build plate. Sometimes you want
+the opposite: pick what the **top** layer should be — a letter, icon, or QR
+code — at a given height, and search **backwards** for a valid Life history
+down to the ground.
+
+`reverse_life.py` does that search and prints a `seed_pattern` string that
+`game_of_life.scad` can simulate forward (which is also the correctness check:
+evolve the seed `generations` steps and you must recover the target).
+
+```bash
+pip install -r requirements.txt   # python-sat (Glucose / RC2 MaxSAT) + segno (QR)
+
+# Still life or blinker: reverses to any height instantly
+python3 reverse_life.py --preset blinker --generations 24 --margin 2 --openscad-args
+
+# A letter on the roof, a few generations of real history beneath
+python3 reverse_life.py --text L --generations 4 --margin 3 --verbose
+
+# QR roof (needs segno). Use --margin >= 2 — dense QR modules are often
+# Gardens of Eden on a tight board. One or two generations is the realistic ask.
+python3 reverse_life.py --qr 'HI' --generations 2 --margin 3 --verbose --openscad-args
+
+# Pipe the flags straight into OpenSCAD
+python3 reverse_life.py --text HI --generations 4 --margin 3 --openscad-args \
+  | xargs -I{} sh -c 'openscad -o gol.stl {} game_of_life.scad'
+```
+
+### Will a QR code work?
+
+Yes in principle, with caveats:
+
+- **Margin matters.** A version-1 QR for `"HI"` has **no predecessor** on a
+  bare 21×21 board (`--margin 0` / `1` is UNSAT). With `--margin 2` or more,
+  Glucose finds predecessors in tens of seconds. Always leave room around a
+  dense roof.
+- **Any finite pattern may still be a Garden of Eden** after a step or two.
+  Dense drawings reverse a few generations and then die out as an orphan.
+  QR error correction is why the idea is attractive (a few module flips would
+  still scan), but this tool searches for an *exact* match.
+- **Sequential MaxSAT** (default on boards ≤ 200 cells) walks one generation
+  at a time, preferring predecessors close to the current pattern. Still
+  lifes and period-2 oscillators reverse arbitrarily far. Letters typically
+  manage a handful of generations. Larger boards (QR) automatically fall
+  back to multi-sample SAT with the same scoring.
+- **`--method multigen`** encodes the whole stack as one SAT instance. If a
+  history of that exact height exists on the board, it will find one — but
+  runtime grows with board × height (a letter a few gens up is minutes; a
+  21×21 QR at height 16 is not interactive).
+- life-stl once had a *different* reverse mode: zero-birth predecessors of
+  still-life **ash**, hoping to avoid overhangs. Those chains were only ~1
+  generation deep, and gusset braces removed the motivation. This tool is the
+  complementary problem — **arbitrary roof, births allowed** (ramps/gussets
+  already make births printable).
+
+```bash
+python3 reverse_life_test.py
+```
+
 ## Parameters
 
 | Parameter | Meaning |
@@ -70,4 +130,6 @@ parameter uses plain Customizer types (numbers, booleans, and one string).
 The seed is deliberately a string rather than a 2D array because neither the
 OpenSCAD Customizer nor MakerWorld can present nested arrays as an editable
 control. Keep `generations` and the grid size moderate so renders stay within
-MakerWorld's server-side time limit.
+MakerWorld's server-side time limit. Reverse search is a local pre-step — paste
+the resulting `seed_pattern` into the Customizer; do not try to run SAT inside
+OpenSCAD.

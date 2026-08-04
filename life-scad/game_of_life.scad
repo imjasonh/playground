@@ -15,7 +15,7 @@
 preset = "glider-and-block"; // [glider-and-block, glider, lwss, r-pentomino, b-heptomino, pi-heptomino, acorn, diehard, toad, beacon, pulsar, pentadecathlon, custom]
 // Empty cells added around a named preset so the pattern has room to evolve
 preset_margin = 5; // [0:30]
-// Custom initial grid, used when preset is "custom": rows separated by "/", live cells are 1 # O o X or x, dead cells anything else (use .). Row 0 is at y=0, column 0 at x=0. Short rows are padded with dead cells.
+// Custom initial grid, used when preset is "custom": rows separated by "/", live cells are 1 # O o X or x, dead cells anything else (use .). Row 0 is at y=0, column 0 at x=0. Short rows are padded with dead cells. To put a letter/QR on the *roof*, generate this string with reverse_life.py so the seed evolves into that target.
 seed_pattern = "........../..1......./...1....../.111....../........../.......11./.......11./........../........../..........";
 
 // Ignore the seed above and start from a random grid instead
