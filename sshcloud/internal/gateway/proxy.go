@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"time"
@@ -10,11 +11,23 @@ import (
 	"github.com/imjasonh/playground/sshcloud/internal/userca"
 )
 
+// DialRequest is a backend wake/dial for one app generation.
+type DialRequest struct {
+	User  string
+	App   string
+	Gen   string
+	Image string
+}
+
 // DialFunc resolves a running app instance address.
-type DialFunc func(user, app string) (addr string, err error)
+type DialFunc func(req DialRequest) (addr string, err error)
 
 // ProxySSH dials the app SSH server with a minted user cert and pipes the session.
-func ProxySSH(client io.ReadWriter, ca *userca.CA, principal, addr string) error {
+// ctx cancel (deploy kick) closes the hop and ends the proxy.
+func ProxySSH(ctx context.Context, client io.ReadWriter, ca *userca.CA, principal, addr string) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	cert, err := ca.Mint(principal, 5*time.Minute)
 	if err != nil {
 		return fmt.Errorf("mint cert: %w", err)
@@ -46,5 +59,16 @@ func ProxySSH(client io.ReadWriter, ca *userca.CA, principal, addr string) error
 	if err := sess.Shell(); err != nil {
 		return err
 	}
-	return sess.Wait()
+
+	wait := make(chan error, 1)
+	go func() { wait <- sess.Wait() }()
+	select {
+	case <-ctx.Done():
+		_, _ = io.WriteString(client, "\r\n[sshcloud] session ended (deploy cutover)\r\n")
+		_ = conn.Close()
+		<-wait
+		return ctx.Err()
+	case err := <-wait:
+		return err
+	}
 }

@@ -107,20 +107,39 @@ func main() {
 	})
 	mux.HandleFunc("POST /v1/ensure", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
-			User string `json:"user"`
-			App  string `json:"app"`
+			User   string `json:"user"`
+			App    string `json:"app"`
+			Gen    string `json:"gen"`
+			Image  string `json:"image"`
+			NoIdle bool   `json:"no_idle"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		addr, err := dial.Addr(req.User, req.App)
+		addr, err := dial.EnsureAddr(r.Context(), req.User, req.App, req.Gen, req.Image, req.NoIdle)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{"addr": addr})
+	})
+	mux.HandleFunc("POST /v1/stop", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			User string `json:"user"`
+			App  string `json:"app"`
+			Gen  string `json:"gen"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := dial.Stop(r.Context(), req.User, req.App, req.Gen); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("GET /v1/placement", func(w http.ResponseWriter, r *http.Request) {
 		user := r.URL.Query().Get("user")

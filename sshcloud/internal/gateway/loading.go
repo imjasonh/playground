@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"strings"
@@ -10,14 +11,17 @@ import (
 // DialWithLoading writes a wake/loading line ("Starting fortune…") while dial
 // runs, then returns the resolved address. Matches the design cold-start UX:
 // hold the SSH session and show status until the microVM is ready.
-func DialWithLoading(out io.Writer, app string, dial DialFunc, user string) (string, error) {
+func DialWithLoading(ctx context.Context, out io.Writer, app string, dial DialFunc, req DialRequest) (string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	type result struct {
 		addr string
 		err  error
 	}
 	done := make(chan result, 1)
 	go func() {
-		addr, err := dial(user, app)
+		addr, err := dial(req)
 		done <- result{addr, err}
 	}()
 
@@ -27,6 +31,9 @@ func DialWithLoading(out io.Writer, app string, dial DialFunc, user string) (str
 	n := 0
 	for {
 		select {
+		case <-ctx.Done():
+			_, _ = fmt.Fprintf(out, "\r\n")
+			return "", ctx.Err()
 		case r := <-done:
 			_, _ = fmt.Fprintf(out, "\r\n")
 			if r.err != nil {

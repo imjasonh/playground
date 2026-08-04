@@ -60,9 +60,13 @@ type appDoc struct {
 	Owner           string `firestore:"owner"`
 	Name            string `firestore:"name"`
 	Image           string `firestore:"image"`
+	PreviousImage   string `firestore:"previous_image"`
 	Tier            string `firestore:"tier"`
 	Demo            bool   `firestore:"demo"`
 	SessionStrategy string `firestore:"session_strategy"`
+	ActiveGen       string `firestore:"active_gen"`
+	DrainingGen     string `firestore:"draining_gen"`
+	DrainUntilUnix  int64  `firestore:"drain_until_unix"`
 }
 
 func keyDocID(fingerprint string) string {
@@ -253,9 +257,13 @@ func appToDoc(a App) appDoc {
 		Owner:           a.Owner,
 		Name:            a.Name,
 		Image:           a.Image,
+		PreviousImage:   a.PreviousImage,
 		Tier:            a.Tier,
 		Demo:            a.Demo,
 		SessionStrategy: a.SessionStrategy,
+		ActiveGen:       a.ActiveGen,
+		DrainingGen:     a.DrainingGen,
+		DrainUntilUnix:  a.DrainUntilUnix,
 	}
 }
 
@@ -276,9 +284,13 @@ func appFromSnap(snap *firestore.DocumentSnapshot) (App, error) {
 		Owner:           owner,
 		Name:            name,
 		Image:           d.Image,
+		PreviousImage:   d.PreviousImage,
 		Tier:            d.Tier,
 		Demo:            d.Demo,
 		SessionStrategy: d.SessionStrategy,
+		ActiveGen:       d.ActiveGen,
+		DrainingGen:     d.DrainingGen,
+		DrainUntilUnix:  d.DrainUntilUnix,
 	}, nil
 }
 

@@ -373,7 +373,13 @@ Responsibilities (v1 sketch):
 - Digest-pinned image validation (`internal/image.ValidateDigestPinned`)
 - `store.UpsertApp` / `GetApp` (tier + session strategy); rejects platform demos
 - Hub-footgun warning for common local usernames
-- Still open: OCI pull/extract, dual-instance cutover (drain/kick), volumes
+- OCI pull/extract → ext4: `sshcloud/internal/ocirootfs` (go-containerregistry;
+  digest cache; whiteouts; 1 GiB unpack cap); agent Ensure `"image"` +
+  `RootfsResolver`
+- Dual-instance cutover: `internal/cutover` (drain + kick-on-timeout default,
+  kick-now); gateway pins sessions to `ActiveGen`; agent instances are
+  `app` or `app.gen`; draining gens set `no_idle`.
+- Still open: volumes
 
 No separate HTTP API or API tokens in v1.
 
@@ -475,7 +481,8 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
 - Gateway GCE VM (public `:22`), orchestrator VM (VPC), nested-virt agent MIG
 - Orchestrator `-hosts-file` refresh from MIG membership (`GET /v1/hosts`)
 - Still open: egress allowlist on the data path, IAP-only hardening, key rotation
-  out of Terraform state, general OCI→rootfs pipeline on agents.
+  out of Terraform state. OCI→rootfs on agents: `internal/ocirootfs` + Ensure
+  `"image"` hook; deploy cutover pre-boots the new gen with that image.
 
 ---
 
@@ -498,8 +505,9 @@ won’t see real client IPs—only the gateway hop).
 
 ### Sessions
 
-- **Max one concurrent session per (user, app).**  
-- If a session is already active, a new `ssh app@foo.com` (or menu handoff) is
+- **Max one concurrent session per (user, app)** normally; during drain cutover,
+  **one session per generation** (at most two: old + new).  
+- If a session is already active on that generation, a new `ssh app@foo.com` (or menu handoff) is
   **rejected** with a clear message (e.g. already connected — disconnect the
   other session first). **No replace/kick of the existing session** on connect.  
 - Deploy **kick** / drain-timeout kick remains a separate, explicit deploy path.  
@@ -559,13 +567,16 @@ hits, wake/deploy denials — still **no session bytes**.
 
 1. **Adding a second key** — exact `join` UX when already registered (must present
    an existing key to authorize a new one?).  
-2. **OCI → rootfs pipeline** — fortune ext4 builder + Firecracker agent exist
-   (`sshcloud/internal/rootfs`, `internal/agent`); still need general OCI unpack,
-   size limits, caching, and first warm snapshot per digest.  
+2. ~~**OCI → rootfs pipeline**~~ — `sshcloud/internal/ocirootfs.Materialize`
+   pulls digest-pinned public images (linux/amd64), unpacks with OCI whiteouts,
+   builds cached ext4 (`internal/rootfs.BuildFromDir`). Agent Ensure accepts
+   `"image"` and resolves via `Config.RootfsResolver`. Still open: first warm
+   snapshot per digest, guest `init=` from image config. 
 3. ~~**Idle timeout numbers**~~ — agent default **5 minutes** (`-idle`); refine
    when to count “zero sessions” vs last Ensure touch.  
 4. **Freeze buffer cap** — max migrate hold before forced reconnect.  
-5. **Deploy drain-timeout default** — e.g. 5 minutes; per-deploy override.  
+5. ~~**Deploy drain-timeout default**~~ — gateway `-drain-timeout` default **5m**;
+   per-deploy TUI override not in v1 (strategy only).  
 6. **Tier numbers** — concrete vCPU/RAM/disk for `tiny` / `small`.  
 7. **Global allowlist contents** — what destinations ship by default.  
 8. **Internal API auth** — mTLS between gateway/orchestrator/agent.  

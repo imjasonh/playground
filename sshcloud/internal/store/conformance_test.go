@@ -93,6 +93,17 @@ func runStoreConformance(t *testing.T, s Store) {
 	if err != nil || app == nil || app.Tier != "small" || app.SessionStrategy != StrategyKick || app.Demo {
 		t.Fatalf("upserted app: %+v %v", app, err)
 	}
+	app.ActiveGen = "gnew"
+	app.DrainingGen = "gold"
+	app.DrainUntilUnix = 1700000000
+	app.PreviousImage = "old@sha256:" + digest
+	if err := s.UpsertApp(ctx, *app); err != nil {
+		t.Fatal(err)
+	}
+	app, err = s.GetApp(ctx, user, "myapp")
+	if err != nil || app == nil || app.ActiveGen != "gnew" || app.DrainingGen != "gold" || app.DrainUntilUnix != 1700000000 {
+		t.Fatalf("gen fields: %+v %v", app, err)
+	}
 	if err := s.UpsertApp(ctx, App{Owner: user, Name: "fortune", Image: "x@sha256:" + digest}); err == nil {
 		t.Fatal("expected reject overwrite of demo")
 	}

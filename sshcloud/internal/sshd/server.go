@@ -167,6 +167,13 @@ func (s *Server) handleSession(ctx context.Context, sc *ssh.ServerConn, ch ssh.C
 	}
 	defer s.Hub.ReleaseSession(res.Session)
 
+	sessCtx := ctx
+	if res.Session != "" {
+		var cancel context.CancelFunc
+		sessCtx, cancel = s.Hub.BindSession(ctx, res.Session)
+		defer cancel()
+	}
+
 	switch res.Action {
 	case gateway.ActionJoin:
 		gateway.RunJoin(ctx, ch, s.Hub, fp, res.User)
@@ -177,7 +184,7 @@ func (s *Server) handleSession(ctx context.Context, sc *ssh.ServerConn, ch ssh.C
 	case gateway.ActionRejectBusy:
 		fmt.Fprintf(ch, "%s\r\n", res.Message)
 	case gateway.ActionProxyApp:
-		gateway.RunAppStub(ctx, ch, s.Hub, res)
+		gateway.RunAppStub(sessCtx, ch, s.Hub, res)
 	default:
 		fmt.Fprintf(ch, "unhandled action %v\r\n", res.Action)
 	}

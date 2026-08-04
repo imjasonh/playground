@@ -5,6 +5,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/imjasonh/playground/sshcloud/internal/cutover"
 	"github.com/imjasonh/playground/sshcloud/internal/image"
 	"github.com/imjasonh/playground/sshcloud/internal/names"
 	"github.com/imjasonh/playground/sshcloud/internal/store"
@@ -18,7 +19,7 @@ var commonLocalUsernames = map[string]struct{}{
 }
 
 // RunDeploy is the deploy TUI (`ssh deploy@…` or menu → deploy).
-// It registers a digest-pinned app; OCI pull / instance cutover is still open.
+// It registers a digest-pinned app and runs drain/kick cutover when a Controller is set.
 func RunDeploy(ctx context.Context, ch io.ReadWriter, hub *Hub, userID string) {
 	t := newTerm(ch)
 	if userID == "" {
@@ -55,6 +56,54 @@ func RunDeploy(ctx context.Context, ch io.ReadWriter, hub *Hub, userID string) {
 	}
 	updated := existing != nil
 
+	if hub.Cutover != nil {
+		if existing == nil {
+			if err := hub.Store.UpsertApp(ctx, store.App{
+				Owner:           userID,
+				Name:            appName,
+				Tier:            tier,
+				SessionStrategy: strategy,
+			}); err != nil {
+				t.Printf("deploy failed: %v\n", err)
+				return
+			}
+		} else {
+			existing.Tier = tier
+			existing.SessionStrategy = strategy
+			if err := hub.Store.UpsertApp(ctx, *existing); err != nil {
+				t.Printf("deploy failed: %v\n", err)
+				return
+			}
+		}
+		res, err := hub.Cutover.Deploy(ctx, cutover.Request{
+			User:     userID,
+			App:      appName,
+			Image:    img,
+			Strategy: strategy,
+		})
+		if err != nil {
+			t.Printf("cutover failed: %v\n", err)
+			return
+		}
+		verb := "Created"
+		if updated {
+			verb = "Updated"
+		}
+		t.Printf("\n✓ %s %s (%s)\n", verb, appName, tier)
+		t.Printf("  image:    %s\n", img)
+		t.Printf("  strategy: %s\n", strategyLabel(strategy))
+		t.Printf("  generation: %s\n", res.ActiveGen)
+		if res.DrainingGen != "" {
+			until := res.DrainUntil.UTC().Format("15:04:05 UTC")
+			t.Printf("  draining:   %s until %s\n", displayGen(res.DrainingGen), until)
+		}
+		t.Printf("\nConnect with:\n")
+		t.Printf("  ssh %s@<host>\n", appName)
+		t.Printf("\nPress enter to return.\n")
+		_, _ = t.ReadLine()
+		return
+	}
+
 	app := store.App{
 		Owner:           userID,
 		Name:            appName,
@@ -75,11 +124,18 @@ func RunDeploy(ctx context.Context, ch io.ReadWriter, hub *Hub, userID string) {
 	t.Printf("  image:    %s\n", img)
 	t.Printf("  strategy: %s\n", strategyLabel(strategy))
 	t.Printf("\n")
-	t.Printf("Note: OCI pull + instance cutover is not wired yet; the app is\n")
-	t.Printf("registered and appears in your menu. Connect with:\n")
+	t.Printf("Note: instance cutover is not attached in this gateway process.\n")
+	t.Printf("The app is registered. Connect with:\n")
 	t.Printf("  ssh %s@<host>\n", appName)
 	t.Printf("\nPress enter to return.\n")
 	_, _ = t.ReadLine()
+}
+
+func displayGen(gen string) string {
+	if gen == "" {
+		return "(legacy)"
+	}
+	return gen
 }
 
 func promptAppName(ctx context.Context, t *term, hub *Hub, userID string) (string, bool) {

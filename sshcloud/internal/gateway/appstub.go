@@ -16,15 +16,26 @@ var fortunes = []string{
 
 // RunAppStub connects to the app backend (cert hop) or falls back to in-process fortune.
 func RunAppStub(ctx context.Context, ch io.ReadWriter, hub *Hub, res Result) {
-	_ = ctx
 	if hub.UserCA != nil && hub.Dial != nil {
-		addr, err := DialWithLoading(ch, res.App, hub.Dial, res.User)
+		img := ""
+		if a, err := hub.Store.GetApp(ctx, res.User, res.App); err == nil && a != nil {
+			img = a.Image
+		}
+		addr, err := DialWithLoading(ctx, ch, res.App, hub.Dial, DialRequest{
+			User:  res.User,
+			App:   res.App,
+			Gen:   res.Gen,
+			Image: img,
+		})
 		if err != nil {
 			t := newTerm(ch)
 			t.Printf("backend error: %v\n", err)
 			return
 		}
-		if err := ProxySSH(ch, hub.UserCA, res.User, addr); err != nil {
+		if err := ProxySSH(ctx, ch, hub.UserCA, res.User, addr); err != nil {
+			if ctx.Err() != nil {
+				return
+			}
 			t := newTerm(ch)
 			t.Printf("proxy error: %v\n", err)
 		}

@@ -2,6 +2,7 @@ package backend
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -23,14 +24,33 @@ func (c *OrchestratorClient) client() *http.Client {
 	return &http.Client{Timeout: 120 * time.Second}
 }
 
-// Addr implements gateway.DialFunc via POST /v1/ensure.
-func (c *OrchestratorClient) Addr(user, app string) (string, error) {
+type orchEnsureBody struct {
+	User   string `json:"user"`
+	App    string `json:"app"`
+	Gen    string `json:"gen,omitempty"`
+	Image  string `json:"image,omitempty"`
+	NoIdle bool   `json:"no_idle,omitempty"`
+}
+
+// Addr implements gateway dial via POST /v1/ensure.
+func (c *OrchestratorClient) Addr(user, app, gen, image string) (string, error) {
+	return c.ensure(context.Background(), orchEnsureBody{
+		User: user, App: app, Gen: gen, Image: image,
+	})
+}
+
+func (c *OrchestratorClient) ensure(ctx context.Context, body orchEnsureBody) (string, error) {
 	base := strings.TrimRight(c.BaseURL, "/")
-	body, err := json.Marshal(map[string]string{"user": user, "app": app})
+	b, err := json.Marshal(body)
 	if err != nil {
 		return "", err
 	}
-	res, err := c.client().Post(base+"/v1/ensure", "application/json", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/v1/ensure", bytes.NewReader(b))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	res, err := c.client().Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -48,4 +68,35 @@ func (c *OrchestratorClient) Addr(user, app string) (string, error) {
 		return "", fmt.Errorf("orchestrator returned empty addr")
 	}
 	return out.Addr, nil
+}
+
+// Ensure implements cutover.Instances via POST /v1/ensure.
+func (c *OrchestratorClient) Ensure(ctx context.Context, user, app, gen, image string, noIdle bool) error {
+	_, err := c.ensure(ctx, orchEnsureBody{
+		User: user, App: app, Gen: gen, Image: image, NoIdle: noIdle,
+	})
+	return err
+}
+
+// Stop implements cutover.Instances via POST /v1/stop.
+func (c *OrchestratorClient) Stop(ctx context.Context, user, app, gen string) error {
+	base := strings.TrimRight(c.BaseURL, "/")
+	b, err := json.Marshal(instanceBody{User: user, App: app, Gen: gen})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/v1/stop", bytes.NewReader(b))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	res, err := c.client().Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode >= 300 {
+		return fmt.Errorf("orchestrator stop: %s: %s", res.Status, readErr(res.Body))
+	}
+	return nil
 }

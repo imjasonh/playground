@@ -33,7 +33,11 @@ func RunMenu(ctx context.Context, ch io.ReadWriter, hub *Hub, keyFP, userID stri
 		var items []item
 		seen := map[string]bool{}
 		for _, a := range apps {
-			items = append(items, item{label: a.Name, kind: "app", app: a.Name})
+			label := a.Name
+			if a.DrainingGen != "" || a.DrainUntilUnix > 0 {
+				label += " — draining"
+			}
+			items = append(items, item{label: label, kind: "app", app: a.Name})
 			seen[a.Name] = true
 		}
 		var demos []string
@@ -84,7 +88,9 @@ func RunMenu(ctx context.Context, ch io.ReadWriter, hub *Hub, keyFP, userID stri
 				t.Printf("%s\n\n", res.Message)
 				continue
 			}
-			RunAppStub(ctx, ch, hub, res)
+			sessCtx, cancel := hub.BindSession(ctx, res.Session)
+			RunAppStub(sessCtx, ch, hub, res)
+			cancel()
 			hub.ReleaseSession(res.Session)
 			t.Printf("\n")
 		}

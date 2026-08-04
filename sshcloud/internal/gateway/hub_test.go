@@ -49,3 +49,36 @@ func TestHubJoinMenuFortuneBusy(t *testing.T) {
 	}
 	h.ReleaseSession(r.Session)
 }
+
+func TestHubPinsActiveGenAndAllowsDrainPeer(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	st := store.NewMemory()
+	if err := st.CreateUser(ctx, "alice", "SHA256:alice"); err != nil {
+		t.Fatal(err)
+	}
+	digest := "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+	if err := st.UpsertApp(ctx, store.App{
+		Owner: "alice", Name: "myapp",
+		Image: "ghcr.io/example/app@sha256:" + digest,
+		Tier:  "tiny", ActiveGen: "gnew", DrainingGen: "gold",
+		DrainUntilUnix: 9999999999,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	h := &Hub{Store: st, Sessions: session.NewRegistry()}
+	old, err := h.Sessions.Admit("alice", "myapp", "gold")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := h.HandleConnect(ctx, Connect{SSHUser: "myapp", KeyFingerprint: "SHA256:alice"})
+	if err != nil || r.Action != ActionProxyApp || r.Gen != "gnew" {
+		t.Fatalf("got %+v %v", r, err)
+	}
+	r2, err := h.HandleConnect(ctx, Connect{SSHUser: "myapp", KeyFingerprint: "SHA256:alice"})
+	if err != nil || r2.Action != ActionRejectBusy {
+		t.Fatalf("third connect: %+v %v", r2, err)
+	}
+	h.ReleaseSession(r.Session)
+	h.Sessions.Release(old)
+}

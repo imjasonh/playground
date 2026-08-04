@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/imjasonh/playground/sshcloud/internal/cutover"
 	"github.com/imjasonh/playground/sshcloud/internal/route"
 	"github.com/imjasonh/playground/sshcloud/internal/session"
 	"github.com/imjasonh/playground/sshcloud/internal/store"
@@ -46,6 +47,7 @@ type Result struct {
 	Action  Action
 	User    string // set when key is known (or after join — caller updates)
 	App     string // set for ActionProxyApp / ActionRejectBusy
+	Gen     string // microVM generation this session is pinned to
 	Session session.ID
 	Message string
 }
@@ -56,12 +58,13 @@ type Hub struct {
 	Sessions *session.Registry
 	UserCA   *userca.CA // optional; when set with Dial, apps are proxied over SSH
 	Dial     DialFunc   // optional backend address resolver
+	Cutover  *cutover.Controller
 }
 
 // Connect is the inbound connection facts after SSH key auth attempt.
 type Connect struct {
-	SSHUser         string
-	KeyFingerprint  string
+	SSHUser        string
+	KeyFingerprint string
 }
 
 // HandleConnect routes and (for apps) admits a session.
@@ -102,25 +105,7 @@ func (h *Hub) HandleConnect(ctx context.Context, c Connect) (Result, error) {
 		if err := h.maybeEnsureDemo(ctx, userID, d.App); err != nil {
 			return Result{}, err
 		}
-		id, err := h.Sessions.Admit(userID, d.App)
-		if err != nil {
-			var busy session.ErrBusy
-			if errors.As(err, &busy) {
-				return Result{
-					Action:  ActionRejectBusy,
-					User:    userID,
-					App:     d.App,
-					Message: busy.Error(),
-				}, nil
-			}
-			return Result{}, err
-		}
-		return Result{
-			Action:  ActionProxyApp,
-			User:    userID,
-			App:     d.App,
-			Session: id,
-		}, nil
+		return h.admitApp(ctx, userID, d.App)
 	default:
 		return Result{}, fmt.Errorf("unhandled route kind %v", d.Kind)
 	}
@@ -133,11 +118,67 @@ func (h *Hub) maybeEnsureDemo(ctx context.Context, userID, app string) error {
 	return h.Store.EnsureDemoApp(ctx, userID, app)
 }
 
-// ReleaseSession ends an admitted app session.
-func (h *Hub) ReleaseSession(id session.ID) {
-	if id != "" {
-		h.Sessions.Release(id)
+func (h *Hub) pinGen(ctx context.Context, userID, app string) (string, error) {
+	if h.Cutover != nil {
+		return h.Cutover.ActiveGen(ctx, userID, app)
 	}
+	a, err := h.Store.GetApp(ctx, userID, app)
+	if err != nil || a == nil {
+		return "", err
+	}
+	return a.ActiveGen, nil
+}
+
+func (h *Hub) admitApp(ctx context.Context, userID, app string) (Result, error) {
+	gen, err := h.pinGen(ctx, userID, app)
+	if err != nil {
+		return Result{}, err
+	}
+	id, err := h.Sessions.Admit(userID, app, gen)
+	if err != nil {
+		var busy session.ErrBusy
+		if errors.As(err, &busy) {
+			return Result{
+				Action:  ActionRejectBusy,
+				User:    userID,
+				App:     app,
+				Gen:     gen,
+				Message: busy.Error(),
+			}, nil
+		}
+		return Result{}, err
+	}
+	return Result{
+		Action:  ActionProxyApp,
+		User:    userID,
+		App:     app,
+		Gen:     gen,
+		Session: id,
+	}, nil
+}
+
+// ReleaseSession ends an admitted app session and may complete a drain.
+func (h *Hub) ReleaseSession(id session.ID) {
+	if id == "" {
+		return
+	}
+	user, app, gen, ok := h.Sessions.Info(id)
+	h.Sessions.Release(id)
+	if ok && h.Cutover != nil {
+		h.Cutover.OnRelease(context.Background(), user, app, gen)
+	}
+}
+
+// BindSession returns a cancelable context for a proxied session (deploy kick).
+func (h *Hub) BindSession(parent context.Context, id session.ID) (context.Context, context.CancelFunc) {
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithCancel(parent)
+	if id != "" && h.Sessions != nil {
+		h.Sessions.BindCancel(id, cancel)
+	}
+	return ctx, cancel
 }
 
 // OpenApp ensures a demo app exists and admits a session for an already-authenticated user.
@@ -159,23 +200,5 @@ func (h *Hub) OpenApp(ctx context.Context, userID, app string) (Result, error) {
 			return Result{}, fmt.Errorf("unknown app %q", app)
 		}
 	}
-	id, err := h.Sessions.Admit(userID, app)
-	if err != nil {
-		var busy session.ErrBusy
-		if errors.As(err, &busy) {
-			return Result{
-				Action:  ActionRejectBusy,
-				User:    userID,
-				App:     app,
-				Message: busy.Error(),
-			}, nil
-		}
-		return Result{}, err
-	}
-	return Result{
-		Action:  ActionProxyApp,
-		User:    userID,
-		App:     app,
-		Session: id,
-	}, nil
+	return h.admitApp(ctx, userID, app)
 }

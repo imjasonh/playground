@@ -20,9 +20,13 @@ type App struct {
 	Owner           string
 	Name            string
 	Image           string // digest-pinned reference; empty for lazy platform demos until first wake
+	PreviousImage   string // image before last deploy (rollback later)
 	Tier            string // "tiny" | "small"
 	Demo            bool   // platform demo (e.g. fortune) — may lazy-create
 	SessionStrategy string // StrategyDrain | StrategyKick; empty means drain
+	ActiveGen       string // generation receiving new sessions
+	DrainingGen     string // cordoned generation (drain cutover); "" is legacy singleton
+	DrainUntilUnix  int64  // unix seconds; 0 if not draining
 }
 
 // Store is the control-plane persistence surface used by the gateway.

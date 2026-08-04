@@ -2,6 +2,7 @@ package gateway_test
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"os"
 	"os/exec"
@@ -44,7 +45,7 @@ func TestProxyFortuneWithCert(t *testing.T) {
 		io.Writer
 	}{Reader: eofReader{}, Writer: &out}
 
-	if err := gateway.ProxySSH(rw, ca, "alice", addr); err != nil {
+	if err := gateway.ProxySSH(context.Background(), rw, ca, "alice", addr); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "hello alice") {

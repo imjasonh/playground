@@ -2,6 +2,7 @@ package gateway_test
 
 import (
 	"bytes"
+	"context"
 	"strings"
 	"sync"
 	"testing"
@@ -16,9 +17,9 @@ func TestDialWithLoadingShowsStarting(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 
-	dial := func(user, app string) (string, error) {
-		if user != "alice" || app != "fortune" {
-			t.Fatalf("dial args: %s/%s", user, app)
+	dial := func(req gateway.DialRequest) (string, error) {
+		if req.User != "alice" || req.App != "fortune" || req.Gen != "g1" {
+			t.Fatalf("dial args: %+v", req)
 		}
 		close(started)
 		<-release
@@ -30,7 +31,9 @@ func TestDialWithLoadingShowsStarting(t *testing.T) {
 	var err error
 	go func() {
 		defer close(done)
-		addr, err = gateway.DialWithLoading(&lockedWriter{mu: &mu, buf: &buf}, "fortune", dial, "alice")
+		addr, err = gateway.DialWithLoading(context.Background(), &lockedWriter{mu: &mu, buf: &buf}, "fortune", dial, gateway.DialRequest{
+			User: "alice", App: "fortune", Gen: "g1",
+		})
 	}()
 
 	select {
@@ -75,17 +78,41 @@ func TestDialWithLoadingShowsStarting(t *testing.T) {
 }
 
 func TestDialWithLoadingError(t *testing.T) {
-	dial := func(string, string) (string, error) {
+	dial := func(gateway.DialRequest) (string, error) {
 		return "", errBackend
 	}
 	var buf bytes.Buffer
-	_, err := gateway.DialWithLoading(&buf, "fortune", dial, "alice")
+	_, err := gateway.DialWithLoading(context.Background(), &buf, "fortune", dial, gateway.DialRequest{User: "alice", App: "fortune"})
 	if err != errBackend {
 		t.Fatalf("err = %v", err)
 	}
 	if !strings.Contains(buf.String(), "Starting fortune") {
 		t.Fatalf("output: %q", buf.String())
 	}
+}
+
+func TestDialWithLoadingCancel(t *testing.T) {
+	block := make(chan struct{})
+	dial := func(gateway.DialRequest) (string, error) {
+		<-block
+		return "10.0.0.2:22", nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := gateway.DialWithLoading(ctx, ioDiscard{}, "fortune", dial, gateway.DialRequest{User: "alice", App: "fortune"})
+		errCh <- err
+	}()
+	cancel()
+	select {
+	case err := <-errCh:
+		if err == nil {
+			t.Fatal("expected cancel error")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("DialWithLoading did not return on cancel")
+	}
+	close(block)
 }
 
 type lockedWriter struct {
@@ -98,6 +125,10 @@ func (w *lockedWriter) Write(p []byte) (int, error) {
 	defer w.mu.Unlock()
 	return w.buf.Write(p)
 }
+
+type ioDiscard struct{}
+
+func (ioDiscard) Write(p []byte) (int, error) { return len(p), nil }
 
 type staticError string
 

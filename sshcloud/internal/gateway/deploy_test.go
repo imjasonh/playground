@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/imjasonh/playground/sshcloud/internal/cutover"
 	"github.com/imjasonh/playground/sshcloud/internal/gateway"
 	"github.com/imjasonh/playground/sshcloud/internal/session"
 	"github.com/imjasonh/playground/sshcloud/internal/store"
@@ -24,9 +25,9 @@ func TestRunDeployCreatesApp(t *testing.T) {
 	script := strings.Join([]string{
 		"myapp",
 		"ghcr.io/example/app@sha256:" + digest,
-		"",       // default tiny
-		"",       // default drain
-		"",       // press enter
+		"", // default tiny
+		"", // default drain
+		"", // press enter
 	}, "\n") + "\n"
 
 	var out bytes.Buffer
@@ -142,4 +143,53 @@ func TestRunDeployUpdateConfirm(t *testing.T) {
 	if app == nil || !strings.Contains(app.Image, digest2) {
 		t.Fatalf("app = %+v", app)
 	}
+}
+
+type nopInst struct{}
+
+func (nopInst) Ensure(context.Context, string, string, string, string, bool) error { return nil }
+func (nopInst) Stop(context.Context, string, string, string) error                 { return nil }
+
+func TestRunDeployCutoverSetsGen(t *testing.T) {
+	ctx := context.Background()
+	st := store.NewMemory()
+	if err := st.CreateUser(ctx, "alice", "SHA256:alice"); err != nil {
+		t.Fatal(err)
+	}
+	sess := session.NewRegistry()
+	ctrl := cutover.New(st, sess, nopInst{})
+	hub := &gateway.Hub{Store: st, Sessions: sess, Cutover: ctrl}
+
+	digest := "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+	script := strings.Join([]string{
+		"myapp",
+		"ghcr.io/example/app@sha256:" + digest,
+		"",
+		"2",
+		"",
+	}, "\n") + "\n"
+
+	var out bytes.Buffer
+	rw := struct {
+		io.Reader
+		io.Writer
+	}{Reader: strings.NewReader(script), Writer: &out}
+
+	gateway.RunDeploy(ctx, rw, hub, "alice")
+	if !strings.Contains(out.String(), "generation:") {
+		t.Fatalf("output: %q", out.String())
+	}
+	app, err := st.GetApp(ctx, "alice", "myapp")
+	if err != nil || app == nil || app.ActiveGen == "" {
+		t.Fatalf("app %+v err=%v", app, err)
+	}
+	if app.Image != "ghcr.io/example/app@sha256:"+digest {
+		t.Fatalf("image %q", app.Image)
+	}
+
+	r, err := hub.HandleConnect(ctx, gateway.Connect{SSHUser: "myapp", KeyFingerprint: "SHA256:alice"})
+	if err != nil || r.Action != gateway.ActionProxyApp || r.Gen != app.ActiveGen {
+		t.Fatalf("connect: %+v %v", r, err)
+	}
+	hub.ReleaseSession(r.Session)
 }

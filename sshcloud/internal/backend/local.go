@@ -74,9 +74,11 @@ func (l *LocalFortune) Stop() {
 	l.addr = ""
 }
 
-// Addr returns the dial address for fortune (stub registry).
-func (l *LocalFortune) Addr(user, app string) (string, error) {
+// Addr returns the dial address for fortune (stub registry). gen/image ignored.
+func (l *LocalFortune) Addr(user, app, gen, image string) (string, error) {
 	_ = user
+	_ = gen
+	_ = image
 	if app != "fortune" {
 		return "", fmt.Errorf("local backend only supports fortune, got %q", app)
 	}

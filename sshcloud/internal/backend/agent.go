@@ -2,6 +2,7 @@ package backend
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -23,14 +24,29 @@ func (c *AgentClient) client() *http.Client {
 	return &http.Client{Timeout: 60 * time.Second}
 }
 
-func (c *AgentClient) post(path string, user, app string) (*http.Response, error) {
-	body, _ := json.Marshal(map[string]string{"user": user, "app": app})
-	return c.client().Post(c.BaseURL+path, "application/json", bytes.NewReader(body))
+type instanceBody struct {
+	User   string `json:"user"`
+	App    string `json:"app"`
+	Gen    string `json:"gen,omitempty"`
+	NoIdle bool   `json:"no_idle,omitempty"`
+	Image  string `json:"image,omitempty"`
 }
 
-// Addr implements gateway.DialFunc via Ensure.
-func (c *AgentClient) Addr(user, app string) (string, error) {
-	in, err := c.Ensure(user, app)
+func (c *AgentClient) postJSON(path string, body any) (*http.Response, error) {
+	b, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	return c.client().Post(c.BaseURL+path, "application/json", bytes.NewReader(b))
+}
+
+func (c *AgentClient) postInstance(path, user, app, gen string) (*http.Response, error) {
+	return c.postJSON(path, instanceBody{User: user, App: app, Gen: gen})
+}
+
+// Addr dials via Ensure (generation + optional digest-pinned image).
+func (c *AgentClient) Addr(user, app, gen, image string) (string, error) {
+	in, err := c.Ensure(user, app, gen, image, false)
 	if err != nil {
 		return "", err
 	}
@@ -45,8 +61,14 @@ type InstanceView struct {
 }
 
 // Ensure boots or wakes the instance on this host.
-func (c *AgentClient) Ensure(user, app string) (InstanceView, error) {
-	res, err := c.post("/v1/instances/ensure", user, app)
+func (c *AgentClient) Ensure(user, app, gen, image string, noIdle bool) (InstanceView, error) {
+	res, err := c.postJSON("/v1/instances/ensure", instanceBody{
+		User:   user,
+		App:    app,
+		Gen:    gen,
+		Image:  image,
+		NoIdle: noIdle,
+	})
 	if err != nil {
 		return InstanceView{}, err
 	}
@@ -66,7 +88,7 @@ func (c *AgentClient) Ensure(user, app string) (InstanceView, error) {
 
 // Sleep snapshots and frees the VMM on this host.
 func (c *AgentClient) Sleep(user, app string) error {
-	res, err := c.post("/v1/instances/sleep", user, app)
+	res, err := c.postInstance("/v1/instances/sleep", user, app, "")
 	if err != nil {
 		return err
 	}
@@ -79,7 +101,7 @@ func (c *AgentClient) Sleep(user, app string) error {
 
 // Evict drops a sleeping instance without deleting the shared snapshot.
 func (c *AgentClient) Evict(user, app string) error {
-	res, err := c.post("/v1/instances/evict", user, app)
+	res, err := c.postInstance("/v1/instances/evict", user, app, "")
 	if err != nil {
 		return err
 	}
@@ -92,7 +114,7 @@ func (c *AgentClient) Evict(user, app string) error {
 
 // Adopt restores an instance from the shared snapshot store onto this host.
 func (c *AgentClient) Adopt(user, app string) (InstanceView, error) {
-	res, err := c.post("/v1/instances/adopt", user, app)
+	res, err := c.postInstance("/v1/instances/adopt", user, app, "")
 	if err != nil {
 		return InstanceView{}, err
 	}
@@ -109,6 +131,11 @@ func (c *AgentClient) Adopt(user, app string) (InstanceView, error) {
 
 // Status returns instance state, or ok=false when not found.
 func (c *AgentClient) Status(user, app string) (InstanceView, bool, error) {
+	return c.StatusGen(user, app, "")
+}
+
+// StatusGen is Status with an optional generation.
+func (c *AgentClient) StatusGen(user, app, gen string) (InstanceView, bool, error) {
 	u, err := url.Parse(c.BaseURL + "/v1/instances/status")
 	if err != nil {
 		return InstanceView{}, false, err
@@ -116,6 +143,9 @@ func (c *AgentClient) Status(user, app string) (InstanceView, bool, error) {
 	q := u.Query()
 	q.Set("user", user)
 	q.Set("app", app)
+	if gen != "" {
+		q.Set("gen", gen)
+	}
 	u.RawQuery = q.Encode()
 	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
 	if err != nil {
@@ -140,8 +170,8 @@ func (c *AgentClient) Status(user, app string) (InstanceView, bool, error) {
 }
 
 // Stop destroys the instance and deletes its snapshot.
-func (c *AgentClient) Stop(user, app string) error {
-	res, err := c.post("/v1/instances/stop", user, app)
+func (c *AgentClient) Stop(user, app, gen string) error {
+	res, err := c.postInstance("/v1/instances/stop", user, app, gen)
 	if err != nil {
 		return err
 	}
@@ -150,6 +180,28 @@ func (c *AgentClient) Stop(user, app string) error {
 		return fmt.Errorf("agent stop: %s: %s", res.Status, readErr(res.Body))
 	}
 	return nil
+}
+
+// AgentControl adapts AgentClient to cutover.Instances.
+type AgentControl struct {
+	Client *AgentClient
+}
+
+// Ensure implements cutover.Instances.
+func (a AgentControl) Ensure(_ context.Context, user, app, gen, image string, noIdle bool) error {
+	if a.Client == nil {
+		return fmt.Errorf("nil agent client")
+	}
+	_, err := a.Client.Ensure(user, app, gen, image, noIdle)
+	return err
+}
+
+// Stop implements cutover.Instances.
+func (a AgentControl) Stop(_ context.Context, user, app, gen string) error {
+	if a.Client == nil {
+		return fmt.Errorf("nil agent client")
+	}
+	return a.Client.Stop(user, app, gen)
 }
 
 func readErr(r io.Reader) string {
