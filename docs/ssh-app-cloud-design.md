@@ -21,6 +21,8 @@
 | App SSH server | Any SSH server that can verify platform user certs — **not** OpenSSH-specific |
 | Onboarding | Join TUI via unknown key on any user, or `ssh join@foo.com` |
 | Deploy | `ssh deploy@foo.com` or select **deploy** from the menu |
+| Deploy vs sessions (v1) | Default: **route new → new, drain old, kick after timeout**; opt-in **kick now** |
+| Deploy vs sessions (later) | Maintenance mode; explicit blue/green promote + rollback |
 | Platform users (MVP) | `join`, `deploy`, `menu` (+ fallthrough-to-menu); `help` / `whoami` / `status` later |
 | First demo | `fortune` — **requires joining first**; **lazy-created on first connect** |
 | “No shell” | No host/login shell; apps may offer PTY, exec/subsystem, long-lived multi-client sessions |
@@ -234,8 +236,9 @@ platform guarantee.
 
 ### Access (v1)
 
-- Key must map to a registered user.
-- `ssh fortune@foo.com` always means **that user’s** `fortune` (no cross-user).
+- Unknown key → join (never silent reject on deep links).
+- Known key → that user’s apps only (no cross-user).
+- `ssh fortune@foo.com` always means **the connecting user’s** `fortune`.
 
 ---
 
@@ -305,10 +308,69 @@ Responsibilities (v1 sketch):
 - Set image **digest** (reject unpinned tags)  
 - Choose tier: `tiny` \| `small`  
 - Optional: attach/size GCS-backed volume  
-- Trigger pull/extract on a host + replace/wake instance  
+- Choose **session strategy** (below)  
+- Trigger pull/extract on a host + cut over per strategy  
 - Later: warn when app name collides with common local usernames (hub footgun)
 
 No separate HTTP API or API tokens in v1.
+
+### Active sessions during deploy
+
+A **new image digest** is a new rootfs. Unlike host migration (same microVM
+state), deploy cannot transparently keep process memory across cutover. The
+gateway **pins** each proxied session to an **instance** (microVM). Deploy
+controls where **new** sessions go and when **old** instances die.
+
+Building blocks:
+
+| Action | Meaning |
+|--------|---------|
+| **Cordon** | Stop sending new sessions to an instance |
+| **Drain** | Wait for that instance’s active sessions → 0 |
+| **Kick** | Close proxied sessions (short PTY notice when possible) |
+| **Route** | New sessions go to the chosen instance |
+
+#### v1 strategies (deployer options)
+
+| Strategy | Behavior | When |
+|----------|----------|------|
+| **Drain + kick-on-timeout** *(default)* | Boot new instance alongside old; cordon old; **new sessions → new**; existing stay on old until disconnect or `drain-timeout`, then kick stragglers and destroy old | Normal deploys |
+| **Kick now** | Notice + kick all on old; cut over immediately (or recreate) | Fortune/demos, broken apps, deployer impatience |
+
+Deploy UX sketch:
+
+```text
+On deploy, active sessions:
+  (•) route new to new, drain old; kick after timeout
+  ( ) kick now
+```
+
+(CLI-shaped later: default drain; `--kick` for immediate.)
+
+#### Later strategies (designed for, not v1)
+
+| Strategy | Behavior |
+|----------|----------|
+| **Maintenance** | Cordon all (new sessions see “deploying…”); kick or drain old; boot new; uncordon — no two-version overlap |
+| **Explicit promote / rollback** | Deploy boots **green** without shifting traffic; promote flips route; keep previous digest briefly for rollback |
+| **Instant flip, lazy destroy** | New→new immediately; old dies on idle or TTL (split-brain revisions — avoid for singleton worlds) |
+
+#### Constraints
+
+- **Dual-instance burst:** drain strategies need a temporary extra awake microVM
+  (quota exemption or awake+1 during deploy).
+- **R/W volumes:** two instances cannot mount the same volume R/W → volume apps
+  fall back to **kick** or **maintenance** (no side-by-side drain) until
+  volume fork/clone exists.
+- **No live session morph** onto a new image; clients reconnect after kick.
+- **Don’t snapshot-sleep** a draining instance until drain/kick completes.
+- Menu/status should show draining state (e.g. `myapp — draining, 3 sessions`).
+- Traces (metadata): `deploy_id`, `instance_id`, cordon/drain/kick events.
+
+#### Out of scope
+
+Live-upgrading a PTY/git session onto a new digest without reconnect — not
+supported; drain only delays the reconnect until the client leaves (or timeout).
 
 ---
 
@@ -316,9 +378,9 @@ No separate HTTP API or API tokens in v1.
 
 | Component | Role |
 |-----------|------|
-| **SSH gateway** | Client SSH; join / menu / deploy; routing fallthrough; in-session handoff; authz; loading UI; cert mint; proxy; migrate buffer |
+| **SSH gateway** | Client SSH; join / menu / deploy; routing fallthrough; in-session handoff; session→instance pin; cordon/drain/kick; authz; loading UI; cert mint; proxy; migrate buffer |
 | **API** | Internal control API for gateway/orchestrator/agent (not public deploy API) |
-| **Orchestrator** | Placement, wake/sleep, migrate/drain, quotas, lazy fortune create |
+| **Orchestrator** | Placement, wake/sleep, host migrate/drain, **deploy cutover**, quotas, lazy fortune create |
 | **Host agent** | Image→rootfs, inject CA, Firecracker lifecycle, volumes, probes, snapshots |
 | **Firestore** | Users, keys, apps, placement pointers, quota counters, metadata |
 | **GCS** | Idle/migrate snapshots + volume bytes |
@@ -358,7 +420,8 @@ No separate HTTP API or API tokens in v1.
 6. `ssh fortune@foo.com` deep link works too.  
 7. Idle → snapshot-on-sleep; reconnect restores.  
 8. Menu → deploy (or `deploy@`) → second digest-pinned app `myapp`.  
-9. Drain a host with freeze-buffered migrate.
+9. Deploy with active sessions: default drain + kick-on-timeout; `--kick` path.  
+10. Drain a host with freeze-buffered migrate.
 
 ---
 
@@ -370,13 +433,16 @@ No separate HTTP API or API tokens in v1.
    first “base” snapshot for an image digest.  
 3. **Idle timeout numbers** — e.g. sleep after N minutes with zero sessions.  
 4. **Freeze buffer cap** — max migrate hold before forced reconnect.  
-5. **Tier numbers** — concrete vCPU/RAM/disk for `tiny` / `small`.  
-6. **Global allowlist contents** — what destinations ship by default.  
-7. **Internal API auth** — mTLS between gateway/orchestrator/agent.  
-8. **Repo layout** in this monorepo when implementation starts.  
-9. **Threat model** — tenant breakout, snapshot confidentiality in GCS, CA theft.  
-10. **Hub footgun UX** — deploy-time warnings / `~/.ssh/config` docs when local
-    username collides with an app name (see §3).
+5. **Deploy drain-timeout default** — e.g. 5 minutes; per-deploy override.  
+6. **Tier numbers** — concrete vCPU/RAM/disk for `tiny` / `small`.  
+7. **Global allowlist contents** — what destinations ship by default.  
+8. **Internal API auth** — mTLS between gateway/orchestrator/agent.  
+9. **Repo layout** in this monorepo when implementation starts.  
+10. **Threat model** — tenant breakout, snapshot confidentiality in GCS, CA theft.  
+11. **Hub footgun UX** — deploy-time warnings / `~/.ssh/config` docs when local
+    username collides with an app name (see §3).  
+12. **Deploy promote/rollback UX** — when to add explicit blue/green beyond
+    default drain cutover (see §8).
 
 ---
 
