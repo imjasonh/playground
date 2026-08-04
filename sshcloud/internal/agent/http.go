@@ -3,7 +3,11 @@ package agent
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
+
+	"github.com/imjasonh/playground/sshcloud/internal/genid"
+	"github.com/imjasonh/playground/sshcloud/internal/image"
 )
 
 // Handler serves the host agent HTTP API.
@@ -27,8 +31,15 @@ func (h *Handler) Mount(mux *http.ServeMux) {
 }
 
 type instanceRequest struct {
-	User string `json:"user"`
-	App  string `json:"app"`
+	User   string `json:"user"`
+	App    string `json:"app"`
+	Gen    string `json:"gen,omitempty"`
+	NoIdle bool   `json:"no_idle,omitempty"`
+	Image  string `json:"image,omitempty"`
+}
+
+func agentApp(req instanceRequest) string {
+	return genid.AgentApp(req.App, req.Gen)
 }
 
 type ensureResponse struct {
@@ -53,11 +64,20 @@ func (h *Handler) ensure(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	in, err := h.Manager.Ensure(r.Context(), req.User, req.App)
+	app := agentApp(req)
+	if img := strings.TrimSpace(req.Image); img != "" {
+		if err := image.ValidateDigestPinned(img); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		req.Image = img
+	}
+	in, err := h.Manager.EnsureWith(r.Context(), req.User, app, EnsureOpts{Image: req.Image})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	h.Manager.SetNoIdle(req.User, app, req.NoIdle)
 	writeJSON(w, ensureResponse{Addr: in.Addr, GuestIP: in.GuestIP, State: string(in.State)})
 }
 
@@ -67,7 +87,7 @@ func (h *Handler) stop(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := h.Manager.Stop(req.User, req.App); err != nil {
+	if err := h.Manager.Stop(req.User, agentApp(req)); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -80,7 +100,7 @@ func (h *Handler) sleep(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := h.Manager.Sleep(r.Context(), req.User, req.App); err != nil {
+	if err := h.Manager.Sleep(r.Context(), req.User, agentApp(req)); err != nil {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
@@ -93,7 +113,7 @@ func (h *Handler) wake(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	in, err := h.Manager.Ensure(r.Context(), req.User, req.App)
+	in, err := h.Manager.Ensure(r.Context(), req.User, agentApp(req))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -107,7 +127,7 @@ func (h *Handler) evict(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := h.Manager.Evict(req.User, req.App); err != nil {
+	if err := h.Manager.Evict(req.User, agentApp(req)); err != nil {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
@@ -120,7 +140,7 @@ func (h *Handler) adopt(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	in, err := h.Manager.Adopt(r.Context(), req.User, req.App)
+	in, err := h.Manager.Adopt(r.Context(), req.User, agentApp(req))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -131,9 +151,13 @@ func (h *Handler) adopt(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 	user := r.URL.Query().Get("user")
 	app := r.URL.Query().Get("app")
+	gen := r.URL.Query().Get("gen")
 	if user == "" || app == "" {
 		http.Error(w, "user and app query params required", http.StatusBadRequest)
 		return
+	}
+	if gen != "" {
+		app = genid.AgentApp(app, gen)
 	}
 	st, ok := h.Manager.Status(user, app)
 	if !ok {

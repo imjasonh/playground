@@ -18,6 +18,25 @@ type FortuneSpec struct {
 	SizeMB int
 }
 
+// BuildFromDir creates an ext4 image at outPath and copies dir into its root
+// via mkfs.ext4 -d. sizeMB defaults to 512.
+func BuildFromDir(dir, outPath string, sizeMB int) error {
+	if dir == "" {
+		return fmt.Errorf("dir required")
+	}
+	st, err := os.Stat(dir)
+	if err != nil {
+		return err
+	}
+	if !st.IsDir() {
+		return fmt.Errorf("dir %q is not a directory", dir)
+	}
+	if sizeMB <= 0 {
+		sizeMB = 512
+	}
+	return formatExt4(outPath, sizeMB, dir)
+}
+
 // BuildFortune creates an ext4 rootfs at outPath with:
 //
 //	/fortune — app binary (PID 1 via kernel init=)
@@ -34,23 +53,8 @@ func BuildFortune(outPath string, spec FortuneSpec) error {
 	if spec.SizeMB == 0 {
 		spec.SizeMB = 64
 	}
-	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
+	if err := formatExt4(outPath, spec.SizeMB, ""); err != nil {
 		return err
-	}
-	_ = os.Remove(outPath)
-
-	f, err := os.Create(outPath)
-	if err != nil {
-		return err
-	}
-	if err := f.Truncate(int64(spec.SizeMB) << 20); err != nil {
-		_ = f.Close()
-		return err
-	}
-	_ = f.Close()
-
-	if out, err := exec.Command("mkfs.ext4", "-F", "-b", "4096", outPath).CombinedOutput(); err != nil {
-		return fmt.Errorf("mkfs.ext4: %v\n%s", err, out)
 	}
 
 	if err := debugfsWrite(outPath, spec.FortuneBin, "fortune", "0755"); err != nil {
@@ -68,6 +72,33 @@ func BuildFortune(outPath string, spec FortuneSpec) error {
 	_ = caTmp.Close()
 	defer os.Remove(caPath)
 	return debugfsWrite(outPath, caPath, "ca.pub", "0644")
+}
+
+func formatExt4(outPath string, sizeMB int, srcDir string) error {
+	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
+		return err
+	}
+	_ = os.Remove(outPath)
+
+	f, err := os.Create(outPath)
+	if err != nil {
+		return err
+	}
+	if err := f.Truncate(int64(sizeMB) << 20); err != nil {
+		_ = f.Close()
+		return err
+	}
+	_ = f.Close()
+
+	args := []string{"-F", "-b", "4096"}
+	if srcDir != "" {
+		args = append(args, "-d", srcDir)
+	}
+	args = append(args, outPath)
+	if out, err := exec.Command("mkfs.ext4", args...).CombinedOutput(); err != nil {
+		return fmt.Errorf("mkfs.ext4: %v\n%s", err, out)
+	}
+	return nil
 }
 
 func debugfsWrite(image, hostFile, guestPath, mode string) error {

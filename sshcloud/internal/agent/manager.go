@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/imjasonh/playground/sshcloud/internal/firecracker"
+	"github.com/imjasonh/playground/sshcloud/internal/image"
 	"github.com/imjasonh/playground/sshcloud/internal/rootfs"
 	"github.com/imjasonh/playground/sshcloud/internal/snapshot"
 )
@@ -44,6 +46,7 @@ type Instance struct {
 	LastUsed time.Time
 	machine  machine
 	snapKey  string
+	noIdle   bool
 }
 
 // Config for the Manager.
@@ -60,6 +63,15 @@ type Config struct {
 	SnapStore snapshot.Store
 	// Runtime boots VMs; nil selects FirecrackerRuntime.
 	Runtime Runtime
+	// RootfsResolver materializes a digest-pinned OCI image to an ext4 path.
+	// Used by bootCold when Ensure is called with an image ref.
+	RootfsResolver func(ctx context.Context, imageRef string) (string, error)
+}
+
+// EnsureOpts configures a cold boot.
+type EnsureOpts struct {
+	// Image is a digest-pinned OCI ref (repo@sha256:…). Empty uses BaseRootfs.
+	Image string
 }
 
 // Manager boots, sleeps, wakes, and migrates Firecracker instances.
@@ -104,6 +116,11 @@ func NewManager(cfg Config) (*Manager, error) {
 
 // Ensure starts or wakes the instance and returns a dialable SSH address.
 func (m *Manager) Ensure(ctx context.Context, user, app string) (*Instance, error) {
+	return m.EnsureWith(ctx, user, app, EnsureOpts{})
+}
+
+// EnsureWith is Ensure with optional cold-boot options (digest-pinned image).
+func (m *Manager) EnsureWith(ctx context.Context, user, app string, opt EnsureOpts) (*Instance, error) {
 	k := InstanceKey{User: user, App: app}
 	m.mu.Lock()
 	if in, ok := m.inst[k]; ok {
@@ -121,7 +138,7 @@ func (m *Manager) Ensure(ctx context.Context, user, app string) (*Instance, erro
 	n := m.seq
 	m.mu.Unlock()
 
-	in, err := m.bootCold(ctx, k, n)
+	in, err := m.bootCold(ctx, k, n, opt.Image)
 	if err != nil {
 		return nil, err
 	}
@@ -131,7 +148,37 @@ func (m *Manager) Ensure(ctx context.Context, user, app string) (*Instance, erro
 	return in, nil
 }
 
-func (m *Manager) bootCold(ctx context.Context, k InstanceKey, n int) (*Instance, error) {
+func (m *Manager) resolveBaseRootfs(ctx context.Context, imageRef string) (string, error) {
+	imageRef = strings.TrimSpace(imageRef)
+	if imageRef == "" {
+		return m.cfg.BaseRootfs, nil
+	}
+	if m.cfg.RootfsResolver == nil {
+		return "", fmt.Errorf("image %q supplied but RootfsResolver is not configured", imageRef)
+	}
+	if err := image.ValidateDigestPinned(imageRef); err != nil {
+		return "", err
+	}
+	path, err := m.cfg.RootfsResolver(ctx, imageRef)
+	if err != nil {
+		return "", fmt.Errorf("resolve rootfs: %w", err)
+	}
+	if path == "" {
+		return "", fmt.Errorf("RootfsResolver returned empty path")
+	}
+	return path, nil
+}
+
+func (m *Manager) bootCold(ctx context.Context, k InstanceKey, n int, imageRef string) (*Instance, error) {
+	imageRef = strings.TrimSpace(imageRef)
+	if imageRef != "" {
+		if err := image.ValidateDigestPinned(imageRef); err != nil {
+			return nil, err
+		}
+		if m.cfg.RootfsResolver == nil {
+			return nil, fmt.Errorf("image %q supplied but RootfsResolver is not configured", imageRef)
+		}
+	}
 	if !m.rt.Available() {
 		return nil, fmt.Errorf("firecracker requires /dev/kvm (not available on this host)")
 	}
@@ -139,8 +186,12 @@ func (m *Manager) bootCold(ctx context.Context, k InstanceKey, n int) (*Instance
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
+	base, err := m.resolveBaseRootfs(ctx, imageRef)
+	if err != nil {
+		return nil, err
+	}
 	rootfsPath := filepath.Join(dir, "rootfs.ext4")
-	if err := rootfs.Clone(m.cfg.BaseRootfs, rootfsPath); err != nil {
+	if err := rootfs.Clone(base, rootfsPath); err != nil {
 		return nil, err
 	}
 	if m.cfg.CAPubPath != "" {
@@ -491,13 +542,25 @@ func (m *Manager) Stop(user, app string) error {
 	return err
 }
 
-// Addr implements gateway DialFunc shape (Ensure + return addr).
+// Addr ensures the instance (app may be genid.AgentApp form) and returns its SSH address.
 func (m *Manager) Addr(user, app string) (string, error) {
 	in, err := m.Ensure(context.Background(), user, app)
 	if err != nil {
 		return "", err
 	}
 	return in.Addr, nil
+}
+
+// SetNoIdle prevents idle snapshot-sleep (used while a generation is draining
+// or freshly booted during cutover).
+func (m *Manager) SetNoIdle(user, app string, noIdle bool) {
+	k := InstanceKey{User: user, App: app}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if in, ok := m.inst[k]; ok {
+		in.noIdle = noIdle
+		in.LastUsed = time.Now()
+	}
 }
 
 // Touch updates LastUsed so idle sleep is deferred.
@@ -531,7 +594,7 @@ func (m *Manager) sleepIdle() {
 	m.mu.Lock()
 	var due []InstanceKey
 	for k, in := range m.inst {
-		if in.State == StateRunning && in.LastUsed.Before(cutoff) {
+		if in.State == StateRunning && !in.noIdle && in.LastUsed.Before(cutoff) {
 			due = append(due, k)
 		}
 	}

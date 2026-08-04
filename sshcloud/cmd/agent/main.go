@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/imjasonh/playground/sshcloud/internal/agent"
+	"github.com/imjasonh/playground/sshcloud/internal/ocirootfs"
 	"github.com/imjasonh/playground/sshcloud/internal/snapshot"
 )
 
@@ -59,6 +60,7 @@ func main() {
 		log.Printf("snapshot store: %s", dir)
 	}
 
+	ociCache := filepath.Join(*workDir, "oci-rootfs")
 	mgr, err := agent.NewManager(agent.Config{
 		WorkDir:        *workDir,
 		FirecrackerBin: *fcBin,
@@ -67,6 +69,9 @@ func main() {
 		CAPubPath:      *caPub,
 		SnapStore:      store,
 		IdleTimeout:    *idle,
+		RootfsResolver: func(ctx context.Context, imageRef string) (string, error) {
+			return ocirootfs.Materialize(ctx, imageRef, ocirootfs.Options{CacheDir: ociCache})
+		},
 	})
 	if err != nil {
 		log.Fatal(err)

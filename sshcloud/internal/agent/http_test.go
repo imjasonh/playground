@@ -102,6 +102,106 @@ func TestHTTPEvictAdoptRoutes(t *testing.T) {
 	}
 }
 
+func TestHTTPEnsureRejectsUnpinnedImage(t *testing.T) {
+	dir := t.TempDir()
+	mgr, err := NewManager(Config{
+		WorkDir:     dir,
+		KernelPath:  dir + "/vmlinux",
+		BaseRootfs:  dir + "/rootfs.ext4",
+		IdleTimeout: 0,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	mux := http.NewServeMux()
+	(&Handler{Manager: mgr}).Mount(mux)
+
+	body, _ := json.Marshal(map[string]string{
+		"user":  "alice",
+		"app":   "myapp",
+		"image": "ghcr.io/me/app:latest",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/instances/ensure", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHTTPEnsureImageRequiresResolver(t *testing.T) {
+	dir := t.TempDir()
+	mgr, err := NewManager(Config{
+		WorkDir:     dir,
+		KernelPath:  dir + "/vmlinux",
+		BaseRootfs:  dir + "/rootfs.ext4",
+		IdleTimeout: 0,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	mux := http.NewServeMux()
+	(&Handler{Manager: mgr}).Mount(mux)
+
+	digest := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	body, _ := json.Marshal(map[string]string{
+		"user":  "alice",
+		"app":   "myapp",
+		"image": "ghcr.io/me/app@sha256:" + digest,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/instances/ensure", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte("RootfsResolver")) {
+		t.Fatalf("body %s", rec.Body.String())
+	}
+}
+
+func TestHTTPEnsureAcceptsGenNoIdle(t *testing.T) {
+	dir := t.TempDir()
+	mgr, err := NewManager(Config{
+		WorkDir:     dir,
+		KernelPath:  dir + "/vmlinux",
+		BaseRootfs:  dir + "/rootfs.ext4",
+		IdleTimeout: 0,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+	mgr.mu.Lock()
+	mgr.inst[InstanceKey{User: "alice", App: "myapp.gabc"}] = &Instance{
+		Key:   InstanceKey{User: "alice", App: "myapp.gabc"},
+		State: StateRunning,
+		Addr:  "10.0.0.2:22",
+	}
+	mgr.mu.Unlock()
+
+	mux := http.NewServeMux()
+	(&Handler{Manager: mgr}).Mount(mux)
+
+	body, _ := json.Marshal(map[string]any{
+		"user": "alice", "app": "myapp", "gen": "gabc", "no_idle": true,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/instances/ensure", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+	}
+	st, ok := mgr.Status("alice", "myapp.gabc")
+	if !ok || st.State != StateRunning {
+		t.Fatalf("status ok=%v %+v", ok, st)
+	}
+}
+
 func TestHealthz(t *testing.T) {
 	mux := http.NewServeMux()
 	(&Handler{}).Mount(mux)
