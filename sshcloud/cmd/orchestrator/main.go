@@ -421,9 +421,10 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
 func writeControlError(w http.ResponseWriter, err error) {
 	var held placement.ErrLeaseHeld
 	var lost placement.ErrLeaseLost
+	var recovery placement.ErrRecoveryRequired
 	var capacity backend.ErrAgentCapacity
 	switch {
-	case errors.As(err, &held), errors.As(err, &lost):
+	case errors.As(err, &held), errors.As(err, &lost), errors.As(err, &recovery):
 		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.As(err, &capacity):
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)

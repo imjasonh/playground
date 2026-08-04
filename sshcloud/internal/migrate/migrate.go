@@ -73,6 +73,10 @@ func (m *Migrator) MigrateGeneration(ctx context.Context, user, app, gen, toHost
 	if fromHost == "" {
 		return Result{}, fmt.Errorf("no placement for %s/%s", user, app)
 	}
+	placementRecord, _, err := m.Placement.GetRecord(guard.Context(), user, app)
+	if err != nil {
+		return Result{}, err
+	}
 	if fromHost == toHost {
 		st, found, err := target.StatusContext(guard.Context(), user, app, gen)
 		if err != nil {
@@ -99,14 +103,18 @@ func (m *Migrator) MigrateGeneration(ctx context.Context, user, app, gen, toHost
 			matching = append(matching, instance)
 		}
 	}
-	if len(matching) > 1 {
-		return Result{}, fmt.Errorf("app has %d generations; use host drain to migrate them under one placement commit", len(matching))
+	generationCount := len(matching)
+	if len(placementRecord.Generations) > generationCount {
+		generationCount = len(placementRecord.Generations)
+	}
+	if generationCount > 1 {
+		return Result{}, fmt.Errorf("app has %d generations; use host drain to migrate them under one placement commit", generationCount)
 	}
 	if len(matching) == 1 && matching[0].Gen != gen {
 		return Result{}, fmt.Errorf("requested generation %q does not match source generation %q", gen, matching[0].Gen)
 	}
 	operation := placement.Operation{
-		Kind: "migrate", Phase: "freezing", SourceHost: fromHost,
+		ID: guard.Owner(), Kind: "migrate", Phase: "freezing", SourceHost: fromHost,
 		TargetHost: toHost, Generations: []string{gen},
 	}
 	if err := guard.Mark(guard.Context(), operation); err != nil {
@@ -194,10 +202,15 @@ func (m *Migrator) MigrateGeneration(ctx context.Context, user, app, gen, toHost
 				thawed = true
 				return Result{}, fmt.Errorf("target adopt outcome unknown: %w (status: %v)", err, statusErr)
 			}
-			_, rollbackErr := source.AdoptForcedContext(recoveryCtx, user, app, gen)
+			_, rollbackErr := source.AdoptContext(recoveryCtx, user, app, gen)
 			if rollbackErr == nil {
 				return Result{}, fmt.Errorf("target adopt: %w (instance restored on %s)", err, fromHost)
 			}
+			operation.Phase = "source-restore-failed"
+			_ = markOperation(guard, operation)
+			guard.Abandon()
+			abandoned = true
+			thawed = true
 			return Result{}, fmt.Errorf("target adopt: %w (source rollback failed: %v)", err, rollbackErr)
 		}
 	}
@@ -207,7 +220,13 @@ func (m *Migrator) MigrateGeneration(ctx context.Context, user, app, gen, toHost
 		cancelCommit()
 		return Result{}, err
 	}
-	err = guard.Commit(commitCtx, toHost)
+	generations := placementRecord.Generations
+	if len(matching) == 1 {
+		generations = placement.UpsertGeneration(generations, placement.Generation{
+			Gen: matching[0].Gen, Image: matching[0].Image, Tier: matching[0].Tier, State: "running",
+		})
+	}
+	err = guard.CommitState(commitCtx, toHost, generations)
 	cancelCommit()
 	if err != nil {
 		checkCtx, checkCancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -223,6 +242,12 @@ func (m *Migrator) MigrateGeneration(ctx context.Context, user, app, gen, toHost
 			abandoned = true
 			thawed = true
 			return Result{}, fmt.Errorf("placement commit outcome unknown: %w (read: %v)", err, checkErr)
+		} else if !ok || (record.LeaseOwner != guard.Owner() && record.LeaseOwner != "") ||
+			(record.Operation.ID != "" && record.Operation.ID != operation.ID) {
+			guard.Abandon()
+			abandoned = true
+			thawed = true
+			return Result{}, fmt.Errorf("placement lease lost during commit: %w", err)
 		}
 	}
 	if err != nil {
@@ -233,11 +258,16 @@ func (m *Migrator) MigrateGeneration(ctx context.Context, user, app, gen, toHost
 			rollbackErr = target.EvictContext(recoveryCtx, user, app, gen)
 		}
 		if rollbackErr == nil {
-			_, rollbackErr = source.AdoptForcedContext(recoveryCtx, user, app, gen)
+			_, rollbackErr = source.AdoptContext(recoveryCtx, user, app, gen)
 		}
 		if rollbackErr == nil {
 			return Result{}, fmt.Errorf("placement update: %w (instance restored on %s)", err, fromHost)
 		}
+		operation.Phase = "rollback-failed"
+		_ = markOperation(guard, operation)
+		guard.Abandon()
+		abandoned = true
+		thawed = true
 		return Result{}, fmt.Errorf("placement update: %w (rollback failed: %v)", err, rollbackErr)
 	}
 	committed = true

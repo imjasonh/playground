@@ -31,13 +31,13 @@ func (c *AgentClient) client() *http.Client {
 }
 
 type instanceBody struct {
-	User   string `json:"user"`
-	App    string `json:"app"`
-	Gen    string `json:"gen,omitempty"`
-	NoIdle bool   `json:"no_idle,omitempty"`
-	Image  string `json:"image,omitempty"`
-	Tier   string `json:"tier,omitempty"`
-	Force  bool   `json:"force,omitempty"`
+	User        string `json:"user"`
+	App         string `json:"app"`
+	Gen         string `json:"gen,omitempty"`
+	NoIdle      bool   `json:"no_idle,omitempty"`
+	Image       string `json:"image,omitempty"`
+	Tier        string `json:"tier,omitempty"`
+	CordonEpoch string `json:"cordon_epoch,omitempty"`
 }
 
 func (c *AgentClient) postJSON(ctx context.Context, path string, body any) (*http.Response, error) {
@@ -170,10 +170,11 @@ func (c *AgentClient) Instances(ctx context.Context) ([]agent.InstanceInfo, erro
 
 // SetCordoned toggles admission of new boots/restores on the host.
 func (c *AgentClient) SetCordoned(ctx context.Context, cordoned bool) error {
-	path := "/v1/host/uncordon"
 	if cordoned {
-		path = "/v1/host/cordon"
+		_, err := c.Cordon(ctx)
+		return err
 	}
+	path := "/v1/host/uncordon"
 	res, err := c.postJSON(ctx, path, struct{}{})
 	if err != nil {
 		return err
@@ -183,6 +184,29 @@ func (c *AgentClient) SetCordoned(ctx context.Context, cordoned bool) error {
 		return fmt.Errorf("agent cordon: %s: %s", res.Status, readErr(res.Body))
 	}
 	return nil
+}
+
+// Cordon rejects new lifecycle operations, waits for in-flight reservations,
+// and returns the epoch required for rollback onto this host.
+func (c *AgentClient) Cordon(ctx context.Context) (string, error) {
+	res, err := c.postJSON(ctx, "/v1/host/cordon", struct{}{})
+	if err != nil {
+		return "", err
+	}
+	defer res.Body.Close()
+	if res.StatusCode >= 300 {
+		return "", fmt.Errorf("agent cordon: %s: %s", res.Status, readErr(res.Body))
+	}
+	var out struct {
+		Epoch string `json:"cordon_epoch"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
+		return "", err
+	}
+	if out.Epoch == "" {
+		return "", fmt.Errorf("agent returned empty cordon epoch")
+	}
+	return out.Epoch, nil
 }
 
 // Sleep snapshots and frees the VMM on this host.
@@ -228,12 +252,12 @@ func (c *AgentClient) Adopt(user, app string) (InstanceView, error) {
 
 // AdoptContext adopts one generation from the shared snapshot store.
 func (c *AgentClient) AdoptContext(ctx context.Context, user, app, gen string) (InstanceView, error) {
-	return c.adoptContext(ctx, user, app, gen, false)
+	return c.adoptContext(ctx, user, app, gen, "")
 }
 
 // AdoptForcedContext permits rollback onto a cordoned source host.
-func (c *AgentClient) AdoptForcedContext(ctx context.Context, user, app, gen string) (InstanceView, error) {
-	return c.adoptContext(ctx, user, app, gen, true)
+func (c *AgentClient) AdoptForcedContext(ctx context.Context, user, app, gen, cordonEpoch string) (InstanceView, error) {
+	return c.adoptContext(ctx, user, app, gen, cordonEpoch)
 }
 
 // PreflightSnapshot validates sleeping-snapshot compatibility without waking it.
@@ -253,8 +277,10 @@ func (c *AgentClient) PreflightSnapshot(ctx context.Context, user, app, gen stri
 	return info, nil
 }
 
-func (c *AgentClient) adoptContext(ctx context.Context, user, app, gen string, force bool) (InstanceView, error) {
-	res, err := c.postJSON(ctx, "/v1/instances/adopt", instanceBody{User: user, App: app, Gen: gen, Force: force})
+func (c *AgentClient) adoptContext(ctx context.Context, user, app, gen, cordonEpoch string) (InstanceView, error) {
+	res, err := c.postJSON(ctx, "/v1/instances/adopt", instanceBody{
+		User: user, App: app, Gen: gen, CordonEpoch: cordonEpoch,
+	})
 	if err != nil {
 		return InstanceView{}, err
 	}

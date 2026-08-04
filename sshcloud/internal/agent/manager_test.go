@@ -565,14 +565,14 @@ func TestCapacityReservationAndCordon(t *testing.T) {
 		t.Fatal(err)
 	}
 	first := InstanceKey{User: "alice", App: "first"}
-	if err := mgr.reserveCapacity(first, "tiny", false); err != nil {
+	if err := mgr.reserveCapacity(first, "tiny", ""); err != nil {
 		t.Fatal(err)
 	}
 	view := mgr.Capacity()
 	if view.Reserved.VCPUs != 1 || view.Reserved.MemMiB != 128 {
 		t.Fatalf("reserved %+v", view)
 	}
-	if err := mgr.reserveCapacity(InstanceKey{User: "alice", App: "second"}, "small", false); err == nil {
+	if err := mgr.reserveCapacity(InstanceKey{User: "alice", App: "second"}, "small", ""); err == nil {
 		t.Fatal("over-capacity reservation succeeded")
 	} else {
 		var capacity ErrCapacity
@@ -582,13 +582,16 @@ func TestCapacityReservationAndCordon(t *testing.T) {
 	}
 	mgr.releaseCapacity(first)
 	mgr.SetCordoned(true)
-	if err := mgr.reserveCapacity(first, "tiny", false); err == nil {
+	if err := mgr.reserveCapacity(first, "tiny", ""); err == nil {
 		t.Fatal("cordoned host accepted reservation")
 	} else {
 		var cordoned ErrCordoned
 		if !errors.As(err, &cordoned) {
 			t.Fatalf("error %T, want ErrCordoned", err)
 		}
+	}
+	if err := mgr.reserveCapacity(first, "tiny", mgr.cordonEpoch); err != nil {
+		t.Fatalf("matching cordon epoch could not reserve rollback capacity: %v", err)
 	}
 }
 

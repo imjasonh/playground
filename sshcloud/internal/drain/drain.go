@@ -9,6 +9,7 @@ import (
 
 	"github.com/imjasonh/playground/sshcloud/internal/agent"
 	"github.com/imjasonh/playground/sshcloud/internal/backend"
+	"github.com/imjasonh/playground/sshcloud/internal/genid"
 	"github.com/imjasonh/playground/sshcloud/internal/placement"
 )
 
@@ -60,7 +61,8 @@ func (c *Controller) DrainHost(ctx context.Context, hostID string) (Result, erro
 	if !ok {
 		return Result{}, fmt.Errorf("unknown host %q", hostID)
 	}
-	if err := source.SetCordoned(ctx, true); err != nil {
+	sourceEpoch, err := source.Cordon(ctx)
+	if err != nil {
 		return Result{}, fmt.Errorf("cordon %s: %w", hostID, err)
 	}
 	result := Result{Host: hostID, Cordoned: true}
@@ -68,9 +70,33 @@ func (c *Controller) DrainHost(ctx context.Context, hostID string) (Result, erro
 	if err != nil {
 		return result, fmt.Errorf("inventory %s: %w", hostID, err)
 	}
+	records, err := c.Placement.ListRecords(ctx)
+	if err != nil {
+		return result, fmt.Errorf("placement inventory: %w", err)
+	}
+	seen := make(map[string]bool)
+	for _, instance := range inventory {
+		seen[instance.User+"\x00"+instance.App+"\x00"+instance.Gen] = true
+	}
+	for _, record := range records {
+		if record.HostID != hostID {
+			continue
+		}
+		for _, generation := range record.Generations {
+			k := record.User + "\x00" + record.App + "\x00" + generation.Gen
+			if seen[k] {
+				continue
+			}
+			inventory = append(inventory, agent.InstanceInfo{
+				User: record.User, App: record.App, Gen: generation.Gen,
+				AgentApp: genid.AgentApp(record.App, generation.Gen),
+				Image:    generation.Image, Tier: generation.Tier, State: agent.StateSleeping,
+			})
+		}
+	}
 	groups := groupInstances(inventory)
 	for _, group := range groups {
-		moved, err := c.moveGroup(ctx, hostID, source, group)
+		moved, err := c.moveGroup(ctx, hostID, sourceEpoch, source, group)
 		if err != nil {
 			return result, fmt.Errorf("drain %s/%s: %w", group.user, group.app, err)
 		}
@@ -113,7 +139,7 @@ func groupInstances(inventory []agent.InstanceInfo) []appGroup {
 	return out
 }
 
-func (c *Controller) moveGroup(ctx context.Context, sourceID string, source *backend.AgentClient, group appGroup) (MovedApp, error) {
+func (c *Controller) moveGroup(ctx context.Context, sourceID, sourceEpoch string, source *backend.AgentClient, group appGroup) (MovedApp, error) {
 	guard, err := placement.AcquireGuard(ctx, c.Placement, group.user, group.app, "drain", c.LeaseTTL)
 	if err != nil {
 		return MovedApp{}, err
@@ -154,8 +180,8 @@ func (c *Controller) moveGroup(ctx context.Context, sourceID string, source *bac
 		generations = append(generations, instance.Gen)
 	}
 	operation := placement.Operation{
-		Kind: "drain", Phase: "freezing", SourceHost: sourceID,
-		TargetHost: target.ID, Generations: generations,
+		ID: guard.Owner(), Kind: "drain", Phase: "freezing", SourceHost: sourceID,
+		SourceEpoch: sourceEpoch, TargetHost: target.ID, Generations: generations,
 	}
 	if err := guard.Mark(guard.Context(), operation); err != nil {
 		return MovedApp{}, fmt.Errorf("persist drain operation: %w", err)
@@ -195,11 +221,15 @@ func (c *Controller) moveGroup(ctx context.Context, sourceID string, source *bac
 	rollback := func(cause error) (MovedApp, error) {
 		recoveryCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
-		rollbackErr := c.rollback(recoveryCtx, source, target.Client, group, moved)
-		c.thawAll(frozen)
+		rollbackErr := c.rollback(recoveryCtx, source, sourceEpoch, target.Client, group, moved)
 		if rollbackErr != nil {
+			operation.Phase = "rollback-failed"
+			_ = markOperation(guard, operation)
+			guard.Abandon()
+			abandoned = true
 			return MovedApp{}, fmt.Errorf("%w (rollback failed: %v)", cause, rollbackErr)
 		}
+		c.thawAll(frozen)
 		return MovedApp{}, cause
 	}
 
@@ -264,10 +294,14 @@ func (c *Controller) moveGroup(ctx context.Context, sourceID string, source *bac
 					moved = append(moved, instance)
 					continue
 				}
-				_, sourceErr := source.AdoptForcedContext(recoveryCtx, group.user, group.app, instance.Gen)
+				_, sourceErr := source.AdoptForcedContext(recoveryCtx, group.user, group.app, instance.Gen, sourceEpoch)
 				cancel()
 				if sourceErr != nil {
-					return rollback(fmt.Errorf("adopt generation %q on %s: %w (source restore failed: %v)", instance.Gen, target.ID, err, sourceErr))
+					operation.Phase = "source-restore-failed:" + instance.Gen
+					_ = markOperation(guard, operation)
+					guard.Abandon()
+					abandoned = true
+					return MovedApp{}, fmt.Errorf("adopt generation %q on %s: %w (source restore failed: %v)", instance.Gen, target.ID, err, sourceErr)
 				}
 				return rollback(fmt.Errorf("adopt generation %q on %s: %w", instance.Gen, target.ID, err))
 			}
@@ -281,7 +315,13 @@ func (c *Controller) moveGroup(ctx context.Context, sourceID string, source *bac
 		cancel()
 		return rollback(fmt.Errorf("persist ready phase: %w", err))
 	}
-	err = guard.Commit(commitCtx, target.ID)
+	var generationState []placement.Generation
+	for _, instance := range group.instances {
+		generationState = append(generationState, placement.Generation{
+			Gen: instance.Gen, Image: instance.Image, Tier: instance.Tier, State: string(instance.State),
+		})
+	}
+	err = guard.CommitState(commitCtx, target.ID, generationState)
 	cancel()
 	if err != nil {
 		checkCtx, checkCancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -294,7 +334,13 @@ func (c *Controller) moveGroup(ctx context.Context, sourceID string, source *bac
 			abandoned = true
 			return MovedApp{}, fmt.Errorf("placement commit outcome unknown: %w (read: %v)", err, checkErr)
 		}
-		if !ok || record.HostID != target.ID || record.LeaseOwner != "" {
+		if !ok || (record.LeaseOwner != guard.Owner() && record.LeaseOwner != "") ||
+			(record.Operation.ID != "" && record.Operation.ID != operation.ID) {
+			guard.Abandon()
+			abandoned = true
+			return MovedApp{}, fmt.Errorf("placement lease lost during commit: %w", err)
+		}
+		if record.HostID != target.ID || record.LeaseOwner != "" {
 			return rollback(fmt.Errorf("commit placement to %s: %w", target.ID, err))
 		}
 	}
@@ -319,7 +365,7 @@ func (c *Controller) moveGroup(ctx context.Context, sourceID string, source *bac
 	return movedResult, nil
 }
 
-func (c *Controller) rollback(ctx context.Context, source, target *backend.AgentClient, group appGroup, moved []agent.InstanceInfo) error {
+func (c *Controller) rollback(ctx context.Context, source *backend.AgentClient, sourceEpoch string, target *backend.AgentClient, group appGroup, moved []agent.InstanceInfo) error {
 	for i := len(moved) - 1; i >= 0; i-- {
 		instance := moved[i]
 		if instance.State != agent.StateRunning {
@@ -334,7 +380,7 @@ func (c *Controller) rollback(ctx context.Context, source, target *backend.Agent
 		if err := target.EvictContext(ctx, group.user, group.app, instance.Gen); err != nil {
 			return err
 		}
-		if _, err := source.AdoptForcedContext(ctx, group.user, group.app, instance.Gen); err != nil {
+		if _, err := source.AdoptForcedContext(ctx, group.user, group.app, instance.Gen, sourceEpoch); err != nil {
 			return err
 		}
 	}

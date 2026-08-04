@@ -78,6 +78,13 @@ func (p *PlacedDial) EnsureAddrTier(ctx context.Context, user, app, gen, image, 
 	}()
 	excluded := make(map[string]bool)
 	originalHost := guard.HostID()
+	record, _, err := p.Placement.GetRecord(guard.Context(), user, app)
+	if err != nil {
+		return "", err
+	}
+	generations := placement.UpsertGeneration(record.Generations, placement.Generation{
+		Gen: gen, Image: image, Tier: tier, State: "running",
+	})
 	var choices []HostCandidate
 	if host := guard.HostID(); host != "" {
 		client, ok := p.Agents.Get(host)
@@ -119,6 +126,18 @@ func (p *PlacedDial) EnsureAddrTier(ctx context.Context, user, app, gen, image, 
 		}
 		var capacity ErrAgentCapacity
 		if !errors.As(err, &capacity) {
+			statusCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			status, found, statusErr := choice.Client.StatusContext(statusCtx, user, app, gen)
+			cancel()
+			if statusErr == nil && found && status.State == "running" {
+				in, host, chosenClient = status, choice.ID, choice.Client
+				break
+			}
+			if statusErr != nil && originalHost == "" {
+				guard.Abandon()
+				committed = true
+				return "", fmt.Errorf("ensure outcome unknown on %s: %w (status: %v)", choice.ID, err, statusErr)
+			}
 			return "", err
 		}
 		lastErr = err
@@ -130,9 +149,9 @@ func (p *PlacedDial) EnsureAddrTier(ctx context.Context, user, app, gen, image, 
 		return "", fmt.Errorf("no host accepted %s/%s tier %s", user, app, tier)
 	}
 	if originalHost != "" {
-		releaseCtx, releaseCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		err := guard.Release(releaseCtx)
-		releaseCancel()
+		commitCtx, commitCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		err := guard.CommitState(commitCtx, originalHost, generations)
+		commitCancel()
 		if err != nil {
 			return "", fmt.Errorf("release placement lease: %w", err)
 		}
@@ -140,7 +159,7 @@ func (p *PlacedDial) EnsureAddrTier(ctx context.Context, user, app, gen, image, 
 		return in.Addr, nil
 	}
 	commitCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	commitErr := guard.Commit(commitCtx, host)
+	commitErr := guard.CommitState(commitCtx, host, generations)
 	cancel()
 	if commitErr != nil {
 		checkCtx, checkCancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -151,10 +170,21 @@ func (p *PlacedDial) EnsureAddrTier(ctx context.Context, user, app, gen, image, 
 			committed = true
 			return "", fmt.Errorf("placement commit outcome unknown: %w (read: %v)", commitErr, checkErr)
 		}
-		if !ok || record.HostID != host || record.LeaseOwner != "" {
+		if !ok || (record.LeaseOwner != "" && record.LeaseOwner != guard.Owner()) ||
+			(record.Operation.ID != "" && record.Operation.ID != guard.Owner()) {
+			guard.Abandon()
+			committed = true
+			return "", fmt.Errorf("placement lease lost during ensure commit: %w", commitErr)
+		}
+		if record.HostID != host || record.LeaseOwner != "" {
 			cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
-			_ = chosenClient.StopContext(cleanupCtx, user, app, gen)
+			cleanupErr := chosenClient.StopContext(cleanupCtx, user, app, gen)
 			cleanupCancel()
+			if cleanupErr != nil {
+				guard.Abandon()
+				committed = true
+				return "", fmt.Errorf("commit placement: %w (cleanup outcome unknown: %v)", commitErr, cleanupErr)
+			}
 			return "", fmt.Errorf("commit placement: %w", commitErr)
 		}
 	}
@@ -174,7 +204,12 @@ func (p *PlacedDial) Stop(ctx context.Context, user, app, gen string) error {
 	if err != nil {
 		return err
 	}
-	defer releasePlacementGuard(guard)
+	committed := false
+	defer func() {
+		if !committed {
+			releasePlacementGuard(guard)
+		}
+	}()
 	if guard.HostID() == "" {
 		return fmt.Errorf("no placement for %s/%s", user, app)
 	}
@@ -182,7 +217,21 @@ func (p *PlacedDial) Stop(ctx context.Context, user, app, gen string) error {
 	if err != nil {
 		return err
 	}
-	return c.StopContext(guard.Context(), user, app, gen)
+	if err := c.StopContext(guard.Context(), user, app, gen); err != nil {
+		return err
+	}
+	record, _, err := p.Placement.GetRecord(guard.Context(), user, app)
+	if err != nil {
+		return err
+	}
+	commitCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	err = guard.CommitState(commitCtx, guard.HostID(), placement.RemoveGeneration(record.Generations, gen))
+	cancel()
+	if err != nil {
+		return err
+	}
+	committed = true
+	return nil
 }
 
 // SetNoIdle changes the active-operation hold on the placed generation.

@@ -149,8 +149,8 @@ type EnsureOpts struct {
 	Tier string
 	// NoIdle holds the instance awake for an active or draining SSH session.
 	NoIdle bool
-	// AllowCordoned is reserved for rollback onto a draining source host.
-	AllowCordoned bool
+	// CordonEpoch permits rollback only for the operation that cordoned host.
+	CordonEpoch string
 }
 
 // Manager boots, sleeps, wakes, and migrates Firecracker instances.
@@ -166,6 +166,7 @@ type Manager struct {
 	capacityReserved map[InstanceKey]Resources
 	capacity         Resources
 	cordoned         bool
+	cordonEpoch      string
 	seq              int
 	stop             chan struct{}
 	closed           bool
@@ -219,8 +220,9 @@ func NewManager(cfg Config) (*Manager, error) {
 		capacity:         Resources{VCPUs: cfg.CapacityVCPUs, MemMiB: cfg.CapacityMemMiB},
 		stop:             make(chan struct{}),
 	}
-	if _, err := os.Stat(filepath.Join(cfg.WorkDir, ".cordoned")); err == nil {
+	if cordonBytes, err := os.ReadFile(filepath.Join(cfg.WorkDir, ".cordoned")); err == nil {
 		m.cordoned = true
+		m.cordonEpoch = strings.TrimSpace(string(cordonBytes))
 	} else if !os.IsNotExist(err) {
 		return nil, fmt.Errorf("read cordon state: %w", err)
 	}
@@ -429,14 +431,14 @@ func subResources(a, b Resources) Resources {
 	return Resources{VCPUs: a.VCPUs - b.VCPUs, MemMiB: a.MemMiB - b.MemMiB}
 }
 
-func (m *Manager) reserveCapacity(k InstanceKey, tier string, allowCordoned bool) error {
+func (m *Manager) reserveCapacity(k InstanceKey, tier, cordonEpoch string) error {
 	need, err := resourcesForTier(tier)
 	if err != nil {
 		return err
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.cordoned && !allowCordoned {
+	if m.cordoned && (cordonEpoch == "" || cordonEpoch != m.cordonEpoch) {
 		return ErrCordoned{}
 	}
 	if _, ok := m.capacityReserved[k]; ok {
@@ -483,8 +485,11 @@ func (m *Manager) SetCordoned(cordoned bool) error {
 	defer m.mu.Unlock()
 	path := filepath.Join(m.cfg.WorkDir, ".cordoned")
 	if cordoned {
+		if m.cordonEpoch == "" {
+			m.cordonEpoch = genid.New()
+		}
 		tmp := path + ".tmp"
-		if err := os.WriteFile(tmp, []byte("cordoned\n"), 0o644); err != nil {
+		if err := os.WriteFile(tmp, []byte(m.cordonEpoch+"\n"), 0o600); err != nil {
 			return err
 		}
 		if err := os.Rename(tmp, path); err != nil {
@@ -495,14 +500,20 @@ func (m *Manager) SetCordoned(cordoned bool) error {
 		return err
 	}
 	m.cordoned = cordoned
+	if !cordoned {
+		m.cordonEpoch = ""
+	}
 	return nil
 }
 
 // Cordon rejects new reservations and waits for pre-existing boots/restores to
 // either publish into inventory or fail.
-func (m *Manager) Cordon(ctx context.Context) error {
+func (m *Manager) Cordon(ctx context.Context) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	if err := m.SetCordoned(true); err != nil {
-		return err
+		return "", err
 	}
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
@@ -511,11 +522,14 @@ func (m *Manager) Cordon(ctx context.Context) error {
 		pending := len(m.capacityReserved)
 		m.mu.Unlock()
 		if pending == 0 {
-			return nil
+			m.mu.Lock()
+			epoch := m.cordonEpoch
+			m.mu.Unlock()
+			return epoch, nil
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return "", ctx.Err()
 		case <-ticker.C:
 		}
 	}
@@ -642,7 +656,7 @@ func (m *Manager) bootCold(ctx context.Context, k InstanceKey, n int, opt Ensure
 	if !m.rt.Available() {
 		return nil, fmt.Errorf("firecracker requires /dev/kvm (not available on this host)")
 	}
-	if err := m.reserveCapacity(k, opt.Tier, opt.AllowCordoned); err != nil {
+	if err := m.reserveCapacity(k, opt.Tier, opt.CordonEpoch); err != nil {
 		return nil, err
 	}
 	defer func() {
@@ -941,10 +955,17 @@ func (m *Manager) Sleep(ctx context.Context, user, app string) error {
 // The on-disk rootfs path may be removed — Adopt recreates it from the package
 // at the same absolute path before snapshot/load.
 func (m *Manager) Evict(user, app string) error {
+	return m.EvictContext(context.Background(), user, app)
+}
+
+func (m *Manager) EvictContext(ctx context.Context, user, app string) error {
 	k := InstanceKey{User: user, App: app}
 	op := m.instanceLock(k)
 	op.Lock()
 	defer op.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	m.mu.Lock()
 	in, ok := m.inst[k]
 	if !ok {
@@ -973,7 +994,7 @@ func (m *Manager) Evict(user, app string) error {
 // Adopt restores an instance onto this host from the shared snapshot store.
 // Used as the target side of cross-host migrate.
 func (m *Manager) Adopt(ctx context.Context, user, app string) (*Instance, error) {
-	return m.adoptWith(ctx, user, app, false)
+	return m.adoptWith(ctx, user, app, "")
 }
 
 // PreflightSnapshot validates that this host can eventually restore a sleeping
@@ -1016,11 +1037,14 @@ func (m *Manager) PreflightSnapshot(ctx context.Context, user, app string) (Inst
 }
 
 // AdoptForced permits rollback onto a cordoned source host.
-func (m *Manager) AdoptForced(ctx context.Context, user, app string) (*Instance, error) {
-	return m.adoptWith(ctx, user, app, true)
+func (m *Manager) AdoptForced(ctx context.Context, user, app, cordonEpoch string) (*Instance, error) {
+	if cordonEpoch == "" {
+		return nil, fmt.Errorf("cordon epoch required for forced adopt")
+	}
+	return m.adoptWith(ctx, user, app, cordonEpoch)
 }
 
-func (m *Manager) adoptWith(ctx context.Context, user, app string, allowCordoned bool) (*Instance, error) {
+func (m *Manager) adoptWith(ctx context.Context, user, app, cordonEpoch string) (*Instance, error) {
 	k := InstanceKey{User: user, App: app}
 	if m.cfg.SnapStore == nil {
 		return nil, fmt.Errorf("snapshot store not configured")
@@ -1054,7 +1078,7 @@ func (m *Manager) adoptWith(ctx context.Context, user, app string, allowCordoned
 	n := m.seq
 	m.mu.Unlock()
 
-	return m.adopt(ctx, k, n, EnsureOpts{AllowCordoned: allowCordoned})
+	return m.adopt(ctx, k, n, EnsureOpts{CordonEpoch: cordonEpoch})
 }
 
 func (m *Manager) adopt(ctx context.Context, k InstanceKey, n int, opt EnsureOpts) (*Instance, error) {
@@ -1110,7 +1134,7 @@ func (m *Manager) adopt(ctx context.Context, k InstanceKey, n int, opt EnsureOpt
 	if err := m.validateSnapshotNetwork(k, meta); err != nil {
 		return nil, err
 	}
-	if err := m.reserveCapacity(k, meta.Tier, opt.AllowCordoned); err != nil {
+	if err := m.reserveCapacity(k, meta.Tier, opt.CordonEpoch); err != nil {
 		return nil, err
 	}
 	if err := m.reserveResources(k, rootfsPath, tapName, meta.GuestIP, meta.HostIP); err != nil {
@@ -1270,7 +1294,7 @@ func (m *Manager) wake(ctx context.Context, k InstanceKey) (*Instance, error) {
 		return instanceCopy(in), nil
 	}
 	m.mu.Unlock()
-	if err := m.reserveCapacity(k, in.Tier, false); err != nil {
+	if err := m.reserveCapacity(k, in.Tier, ""); err != nil {
 		return nil, err
 	}
 	reserved := true
@@ -1383,10 +1407,17 @@ func (m *Manager) Addr(user, app string) (string, error) {
 // SetNoIdle prevents idle snapshot-sleep (used while a generation is draining
 // or freshly booted during cutover).
 func (m *Manager) SetNoIdle(user, app string, noIdle bool) error {
+	return m.SetNoIdleContext(context.Background(), user, app, noIdle)
+}
+
+func (m *Manager) SetNoIdleContext(ctx context.Context, user, app string, noIdle bool) error {
 	k := InstanceKey{User: user, App: app}
 	op := m.instanceLock(k)
 	op.Lock()
 	defer op.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if in, ok := m.inst[k]; ok {

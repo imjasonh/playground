@@ -52,13 +52,13 @@ func (h *Handler) Mount(mux *http.ServeMux) {
 }
 
 type instanceRequest struct {
-	User   string `json:"user"`
-	App    string `json:"app"`
-	Gen    string `json:"gen,omitempty"`
-	NoIdle bool   `json:"no_idle,omitempty"`
-	Image  string `json:"image,omitempty"`
-	Tier   string `json:"tier,omitempty"`
-	Force  bool   `json:"force,omitempty"`
+	User        string `json:"user"`
+	App         string `json:"app"`
+	Gen         string `json:"gen,omitempty"`
+	NoIdle      bool   `json:"no_idle,omitempty"`
+	Image       string `json:"image,omitempty"`
+	Tier        string `json:"tier,omitempty"`
+	CordonEpoch string `json:"cordon_epoch,omitempty"`
 }
 
 func agentApp(req instanceRequest) string {
@@ -181,7 +181,7 @@ func (h *Handler) evict(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := h.Manager.Evict(req.User, agentApp(req)); err != nil {
+	if err := h.Manager.EvictContext(r.Context(), req.User, agentApp(req)); err != nil {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
@@ -195,8 +195,8 @@ func (h *Handler) adopt(w http.ResponseWriter, r *http.Request) {
 	}
 	var in *Instance
 	var err error
-	if req.Force {
-		in, err = h.Manager.AdoptForced(r.Context(), req.User, agentApp(req))
+	if req.CordonEpoch != "" {
+		in, err = h.Manager.AdoptForced(r.Context(), req.User, agentApp(req), req.CordonEpoch)
 	} else {
 		in, err = h.Manager.Adopt(r.Context(), req.User, agentApp(req))
 	}
@@ -212,7 +212,7 @@ func (h *Handler) setNoIdle(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := h.Manager.SetNoIdle(req.User, agentApp(req), req.NoIdle); err != nil {
+	if err := h.Manager.SetNoIdleContext(r.Context(), req.User, agentApp(req), req.NoIdle); err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
@@ -272,14 +272,19 @@ func (h *Handler) instances(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (h *Handler) cordon(w http.ResponseWriter, r *http.Request) {
-	if err := h.Manager.Cordon(r.Context()); err != nil {
+	epoch, err := h.Manager.Cordon(r.Context())
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	writeJSON(w, map[string]string{"cordon_epoch": epoch})
 }
 
-func (h *Handler) uncordon(w http.ResponseWriter, _ *http.Request) {
+func (h *Handler) uncordon(w http.ResponseWriter, r *http.Request) {
+	if err := r.Context().Err(); err != nil {
+		http.Error(w, err.Error(), http.StatusRequestTimeout)
+		return
+	}
 	if err := h.Manager.SetCordoned(false); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

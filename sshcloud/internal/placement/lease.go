@@ -37,6 +37,38 @@ func AcquireGuard(ctx context.Context, store Store, user, app, prefix string, tt
 	if err != nil {
 		return nil, err
 	}
+	return newGuard(ctx, store, lease, ttl)
+}
+
+// AcquireRecoveryGuard exclusively claims one exact abandoned operation.
+func AcquireRecoveryGuard(ctx context.Context, store Store, expected Record, prefix string, ttl time.Duration) (*Guard, error) {
+	if store == nil {
+		return nil, fmt.Errorf("placement store required")
+	}
+	if ttl <= 0 {
+		ttl = DefaultLeaseTTL
+	}
+	lease, err := store.AcquireRecovery(ctx, expected, NewLeaseOwner(prefix), ttl, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	return newGuard(ctx, store, lease, ttl)
+}
+
+func newGuard(ctx context.Context, store Store, lease Lease, ttl time.Duration) (*Guard, error) {
+	remaining := time.Until(lease.Until())
+	if remaining <= 0 {
+		_ = store.Release(context.Background(), lease)
+		return nil, ErrLeaseLost{User: lease.User, App: lease.App}
+	}
+	if remaining < ttl/2 {
+		renewCtx, renewCancel := context.WithTimeout(ctx, remaining)
+		lease, err = store.Renew(renewCtx, lease, ttl, time.Now())
+		renewCancel()
+		if err != nil {
+			return nil, err
+		}
+	}
 	guardCtx, cancel := context.WithCancel(ctx)
 	g := &Guard{
 		store: store, lease: lease, ttl: ttl, ctx: guardCtx, cancel: cancel,
@@ -105,6 +137,9 @@ func (g *Guard) Context() context.Context { return g.ctx }
 // HostID is the placement observed when the lease was acquired.
 func (g *Guard) HostID() string { return g.current().HostID }
 
+// Owner is the operation's globally unique fencing identity.
+func (g *Guard) Owner() string { return g.current().Owner }
+
 // Err reports a renewal failure, if any.
 func (g *Guard) Err() error {
 	g.mu.Lock()
@@ -117,6 +152,9 @@ func (g *Guard) Mark(ctx context.Context, operation Operation) error {
 	if err := g.Err(); err != nil {
 		return err
 	}
+	if operation.ID == "" {
+		operation.ID = g.Owner()
+	}
 	return g.store.Mark(ctx, g.current(), operation)
 }
 
@@ -127,6 +165,19 @@ func (g *Guard) Commit(ctx context.Context, hostID string) error {
 		return err
 	}
 	if err := g.store.Commit(ctx, g.current(), hostID, time.Now()); err != nil {
+		return err
+	}
+	g.cancel()
+	return nil
+}
+
+// CommitState atomically updates host and durable generation inventory.
+func (g *Guard) CommitState(ctx context.Context, hostID string, generations []Generation) error {
+	g.stopHeartbeat()
+	if err := g.Err(); err != nil {
+		return err
+	}
+	if err := g.store.CommitState(ctx, g.current(), hostID, generations, time.Now()); err != nil {
 		return err
 	}
 	g.cancel()

@@ -37,7 +37,7 @@ func (c *Controller) RunOnce(ctx context.Context) error {
 }
 
 func (c *Controller) reconcile(ctx context.Context, record placement.Record) error {
-	guard, err := placement.AcquireGuard(ctx, c.Placement, record.User, record.App, "reconcile", placement.DefaultLeaseTTL)
+	guard, err := placement.AcquireRecoveryGuard(ctx, c.Placement, record, "reconcile", placement.DefaultLeaseTTL)
 	if err != nil {
 		return err
 	}
@@ -50,23 +50,8 @@ func (c *Controller) reconcile(ctx context.Context, record placement.Record) err
 	op := record.Operation
 	source, sourceOK := c.Hosts.Get(op.SourceHost)
 	target, targetOK := c.Hosts.Get(op.TargetHost)
-	switch {
-	case !sourceOK && !targetOK:
-		return fmt.Errorf("operation %s/%s has no reachable source or target", record.User, record.App)
-	case !sourceOK && targetOK:
-		commitCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		err := guard.Commit(commitCtx, op.TargetHost)
-		cancel()
-		if err != nil {
-			return err
-		}
-		finished = true
-		return nil
-	case sourceOK && !targetOK:
-		if err := source.SetCordoned(ctx, false); err != nil {
-			return err
-		}
-		return release(guard, &finished)
+	if !sourceOK || !targetOK {
+		return fmt.Errorf("operation %s/%s awaits authoritative source and target inventory", record.User, record.App)
 	}
 
 	for _, gen := range op.Generations {
@@ -92,15 +77,18 @@ func (c *Controller) reconcile(ctx context.Context, record placement.Record) err
 			}
 		}
 		if !sourceFound && targetFound {
-			if _, err := source.AdoptForcedContext(guard.Context(), record.User, record.App, gen); err != nil {
-				return err
+			var adoptErr error
+			if op.SourceEpoch != "" {
+				_, adoptErr = source.AdoptForcedContext(guard.Context(), record.User, record.App, gen, op.SourceEpoch)
+			} else {
+				_, adoptErr = source.AdoptContext(guard.Context(), record.User, record.App, gen)
+			}
+			if adoptErr != nil {
+				return adoptErr
 			}
 		} else if sourceFound && sourceStatus.State == "running" {
 			// Source already owns the live copy.
 		}
-	}
-	if err := source.SetCordoned(guard.Context(), false); err != nil {
-		return err
 	}
 	return release(guard, &finished)
 }

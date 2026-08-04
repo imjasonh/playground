@@ -76,7 +76,7 @@ func (h *drainHost) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		h.mu.Lock()
 		h.cordoned = true
 		h.mu.Unlock()
-		w.WriteHeader(http.StatusNoContent)
+		_ = json.NewEncoder(w).Encode(map[string]string{"cordon_epoch": "gcordon"})
 	case "/v1/host/uncordon":
 		h.mu.Lock()
 		h.cordoned = false

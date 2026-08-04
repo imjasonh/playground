@@ -297,7 +297,8 @@ func TestHTTPHostCapacityInventoryAndCordon(t *testing.T) {
 	req = httptest.NewRequest(http.MethodPost, "/v1/host/cordon", bytes.NewReader([]byte(`{}`)))
 	rec = httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
-	if rec.Code != http.StatusNoContent || !mgr.Capacity().Cordoned {
-		t.Fatalf("cordon: %d %+v", rec.Code, mgr.Capacity())
+	if rec.Code != http.StatusOK || !mgr.Capacity().Cordoned ||
+		!bytes.Contains(rec.Body.Bytes(), []byte("cordon_epoch")) {
+		t.Fatalf("cordon: %d %s %+v", rec.Code, rec.Body.String(), mgr.Capacity())
 	}
 }

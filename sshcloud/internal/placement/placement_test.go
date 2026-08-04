@@ -98,3 +98,33 @@ func TestGuardCancelsAtLocalLeaseExpiry(t *testing.T) {
 		t.Fatalf("guard error %v, want ErrLeaseLost", guard.Err())
 	}
 }
+
+func TestOperationJournalRequiresExactRecoveryClaim(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store := NewMemory()
+	now := time.Now().Add(-time.Minute)
+	lease, err := store.Acquire(ctx, "alice", "fortune", "crashed", time.Second, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Mark(ctx, lease, Operation{ID: "op-1", Kind: "drain"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Acquire(ctx, "alice", "fortune", "normal", time.Minute, time.Now()); err == nil {
+		t.Fatal("normal operation erased abandoned journal")
+	} else {
+		var recovery ErrRecoveryRequired
+		if !errors.As(err, &recovery) {
+			t.Fatalf("error %T, want ErrRecoveryRequired", err)
+		}
+	}
+	record, _, _ := store.GetRecord(ctx, "alice", "fortune")
+	recoveryLease, err := store.AcquireRecovery(ctx, record, "reconciler", time.Minute, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Release(ctx, recoveryLease); err != nil {
+		t.Fatal(err)
+	}
+}
