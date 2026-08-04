@@ -74,7 +74,6 @@ on (the default) so pillars carry every overhang to the bed.
 | `cell_overlap` | Tiny inflation so edge/corner touches stay manifold. |
 | `strict_supports` | Pillars under unsupported cells (default on — needed for downward time). |
 | `diagonal_ramps` | Optional ramps to neighbors below; not a substitute for pillars here. |
-| `rainbow_preview` | Color layers in the preview (blue = roof/QR). Ignored in STL export. Off by default for faster MakerWorld renders. |
 
 ## How it works
 
@@ -93,9 +92,9 @@ on (the default) so pillars carry every overhang to the bed.
 ## Printing tips
 
 - Prefer `cell_size` ≥ 2.5 mm so QR modules survive FDM.
-- The roof is open voxels (black QR modules only). White modules are air; for
-  a scannable print, add a contrasting solid under-layer in the slicer or
-  paint the top after printing if needed.
+- Preview / MakerWorld multi-color: the Life body is white; only the top faces
+  of roof (QR) modules are black so the code reads from above. White QR
+  modules are air (no voxel).
 - Leave `quiet_zone` at 4 unless you know your scanner is forgiving.
 - Disable slicer supports when `strict_supports` is on — the pillars are
   already in the mesh.
@@ -132,5 +131,5 @@ evaluating QR helpers before they were defined in the file — MakerWorld's
 evaluator resolves names in source order. The current file order fixes that.
 
 Keep `generations` and payload length moderate so server-side renders finish
-(defaults are tuned for that). Turn `rainbow_preview` on only for local
-preview if you want layer colors.
+(defaults are tuned for that). The model uses white + black `color()` so
+MakerWorld can treat the QR ink as a separate paint/filament region.

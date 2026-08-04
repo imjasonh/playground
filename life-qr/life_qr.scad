@@ -64,11 +64,6 @@ strict_supports = true;
 // Also add sloped ramps to occupied neighbors in the layer below when a cell has no direct support. Harmless with pillars; alone it is usually insufficient for this stacking direction.
 diagonal_ramps = false;
 
-/* [Preview] */
-
-// Color layers by generation in the preview (blue = roof/QR, yellow = base). Ignored in STL export. Prefer false on MakerWorld for faster generation.
-rainbow_preview = false;
-
 /* [Hidden] */
 
 assert(len(qr_text) > 0, "qr_text must not be empty");
@@ -1434,9 +1429,9 @@ echo(str("Ramps: ", len(ramp_pairs)));
 echo("Time runs toward the build plate: roof = QR (gen 0), base = gen ",
      generations, ".");
 
-function layer_color(g) =
-    let (t = generations == 0 ? 0 : g / generations)
-    [0.2 + 0.8 * t, 0.4, 1.0 - 0.8 * t];
+// Black "ink" thickness on the top faces of roof (QR) modules, in mm.
+// Kept thin so sides stay white and the code reads from above.
+qr_ink_thickness = min(0.5, cell_z / 2);
 
 module life_cell(g, r, c) {
     ov = cell_overlap;
@@ -1452,26 +1447,41 @@ module ramp(g, r, c, rr, cc) {
 }
 
 module life_cells() {
-    for (g = [0 : len(final_stack) - 1], r = [0 : rows - 1], c = [0 : cols - 1])
-        if (final_stack[g][r][c] != 0) {
-            if (final_stack[g][r][c] == 2)
-                color("Gray") life_cell(g, r, c);
-            else if (rainbow_preview)
-                color(layer_color(g)) life_cell(g, r, c);
-            else
-                life_cell(g, r, c);
-        }
-    for (p = ramp_pairs) {
-        if (rainbow_preview)
-            color(layer_color(p[0] - 0.5)) ramp(p[0], p[1], p[2], p[3], p[4]);
-        else
+    roof_g = len(final_stack) - 1;
+    ink = qr_ink_thickness;
+    ov = cell_overlap;
+
+    // Body + pillars + ramps: white. Roof live cells stop short so the
+    // black ink slab owns the top face (better for MakerWorld multi-color
+    // and for scanning from above).
+    color("#FFFFFF") {
+        for (g = [0 : roof_g], r = [0 : rows - 1], c = [0 : cols - 1])
+            if (final_stack[g][r][c] != 0) {
+                if (g == roof_g && final_stack[g][r][c] == 1) {
+                    h = cell_z - ink;
+                    if (h > 0)
+                        translate([c * cell_x - ov, r * cell_y - ov, g * cell_z - ov])
+                            cube([cell_x + 2 * ov, cell_y + 2 * ov, h + ov]);
+                } else {
+                    life_cell(g, r, c);
+                }
+            }
+        for (p = ramp_pairs)
             ramp(p[0], p[1], p[2], p[3], p[4]);
+    }
+
+    // QR modules: black top faces only
+    color("#000000") {
+        for (r = [0 : rows - 1], c = [0 : cols - 1])
+            if (final_stack[roof_g][r][c] == 1)
+                translate([c * cell_x - ov, r * cell_y - ov, total_z - ink])
+                    cube([cell_x + 2 * ov, cell_y + 2 * ov, ink]);
     }
 }
 
 module life_qr() {
-    // Just the Life voxels — no roof/base plates. Slicers add brim/raft as needed;
-    // a solid roof plate hid the QR and looked like an empty lid on MakerWorld.
+    // Just the Life voxels — no roof/base plates. Slicers add brim/raft as needed.
+    // Colors: white body, black QR ink on roof top faces (MakerWorld 3MF paint).
     intersection() {
         life_cells();
         cube([total_x, total_y, total_z]);
