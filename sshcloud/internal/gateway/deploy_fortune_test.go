@@ -118,7 +118,7 @@ type recordingInstances struct {
 	onEnsure func(user, app, gen, image string, noIdle bool)
 }
 
-func (r *recordingInstances) Ensure(_ context.Context, user, app, gen, image string, noIdle bool) error {
+func (r *recordingInstances) Ensure(_ context.Context, user, app, gen, image, _ string, noIdle bool) error {
 	if r.onEnsure != nil {
 		r.onEnsure(user, app, gen, image, noIdle)
 	}
@@ -126,3 +126,6 @@ func (r *recordingInstances) Ensure(_ context.Context, user, app, gen, image str
 }
 
 func (r *recordingInstances) Stop(context.Context, string, string, string) error { return nil }
+func (r *recordingInstances) SetNoIdle(context.Context, string, string, string, bool) error {
+	return nil
+}

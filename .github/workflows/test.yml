@@ -52,6 +52,19 @@ jobs:
           MODULES: ${{ steps.discover.outputs.modules }}
         run: bash .github/scripts/test-go-modules.sh
 
+      - uses: hashicorp/setup-terraform@v3
+        if: ${{ contains(steps.discover.outputs.modules, '"sshcloud"') }}
+
+      - name: Validate sshcloud Terraform
+        if: ${{ contains(steps.discover.outputs.modules, '"sshcloud"') }}
+        working-directory: sshcloud
+        run: bash hack/validate-terraform.sh
+
+      - name: Compile sshcloud KVM-tagged tests
+        if: ${{ contains(steps.discover.outputs.modules, '"sshcloud"') }}
+        working-directory: sshcloud
+        run: go test -tags=kvm ./internal/agent -run '^$'
+
       # Baseline stable toolchain; an app's rust-toolchain.toml (e.g. web-push
       # pins 1.83) overrides it per directory when cargo runs.
       - uses: dtolnay/rust-toolchain@stable

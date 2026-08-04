@@ -16,6 +16,15 @@ func RunJoin(ctx context.Context, ch io.ReadWriter, hub *Hub, keyFP, userID, exe
 	if userID == "" {
 		return runJoinNew(ctx, t, hub, keyFP, execCmd)
 	}
+	if strings.TrimSpace(execCmd) != "" {
+		fields := strings.Fields(execCmd)
+		if len(fields) != 1 || fields[0] != userID {
+			t.Printf("This key is already registered as %s; requested username must match.\n", userID)
+			return 2
+		}
+		t.Printf("Already joined as %s\n", userID)
+		return 0
+	}
 	runJoinManage(t, userID, keyFP)
 	return 0
 }
@@ -24,6 +33,10 @@ func runJoinNew(ctx context.Context, t *term, hub *Hub, keyFP, execCmd string) i
 	execCmd = strings.TrimSpace(execCmd)
 	if execCmd != "" {
 		fields := strings.Fields(execCmd)
+		if len(fields) != 1 {
+			t.Printf("Usage: ssh join@host <username>\n")
+			return 2
+		}
 		name := fields[0]
 		if err := names.ValidateIdent(name); err != nil {
 			t.Printf("Invalid username: %v\n", err)

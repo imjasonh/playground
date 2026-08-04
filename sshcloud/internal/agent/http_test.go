@@ -212,3 +212,55 @@ func TestHealthz(t *testing.T) {
 		t.Fatalf("%d %q", rec.Code, rec.Body.String())
 	}
 }
+
+func TestHTTPRejectsUnsafeIdentityAndUnknownFields(t *testing.T) {
+	dir := t.TempDir()
+	mgr, err := NewManager(Config{
+		WorkDir:    dir,
+		KernelPath: dir + "/vmlinux",
+		BaseRootfs: dir + "/rootfs.ext4",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	mux := http.NewServeMux()
+	(&Handler{Manager: mgr}).Mount(mux)
+
+	for name, body := range map[string]string{
+		"path_traversal:": `{"user":"alice","app":"../bob/fortune"}`,
+		"bad_generation":  `{"user":"alice","app":"fortune","gen":"../../g1"}`,
+		"unknown_field":   `{"user":"alice","app":"fortune","owner":"bob"}`,
+		"multiple_values": `{"user":"alice","app":"fortune"} {}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/v1/instances/stop", bytes.NewBufferString(body))
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, req)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestHTTPControlAuthentication(t *testing.T) {
+	token := "0123456789abcdef0123456789abcdef"
+	mux := http.NewServeMux()
+	(&Handler{Token: token}).Mount(mux)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/instances/status?user=alice&app=fortune", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated status %d", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("health should remain public, got %d", rec.Code)
+	}
+}

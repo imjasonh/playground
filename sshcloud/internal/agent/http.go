@@ -2,29 +2,44 @@ package agent
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/imjasonh/playground/sshcloud/internal/controlauth"
 	"github.com/imjasonh/playground/sshcloud/internal/genid"
 	"github.com/imjasonh/playground/sshcloud/internal/image"
+	"github.com/imjasonh/playground/sshcloud/internal/names"
 )
 
 // Handler serves the host agent HTTP API.
 type Handler struct {
-	Manager *Manager
+	Manager   *Manager
+	Token     string
+	Readiness func() error
 }
 
 // Mount registers routes on mux (Go 1.22+ method patterns).
 func (h *Handler) Mount(mux *http.ServeMux) {
-	mux.HandleFunc("POST /v1/instances/ensure", h.ensure)
-	mux.HandleFunc("POST /v1/instances/stop", h.stop)
-	mux.HandleFunc("POST /v1/instances/sleep", h.sleep)
-	mux.HandleFunc("POST /v1/instances/wake", h.wake)
-	mux.HandleFunc("POST /v1/instances/evict", h.evict)
-	mux.HandleFunc("POST /v1/instances/adopt", h.adopt)
-	mux.HandleFunc("GET /v1/instances/status", h.status)
+	api := http.NewServeMux()
+	api.HandleFunc("POST /v1/instances/ensure", h.ensure)
+	api.HandleFunc("POST /v1/instances/stop", h.stop)
+	api.HandleFunc("POST /v1/instances/sleep", h.sleep)
+	api.HandleFunc("POST /v1/instances/wake", h.wake)
+	api.HandleFunc("POST /v1/instances/evict", h.evict)
+	api.HandleFunc("POST /v1/instances/adopt", h.adopt)
+	api.HandleFunc("POST /v1/instances/no-idle", h.setNoIdle)
+	api.HandleFunc("GET /v1/instances/status", h.status)
+	mux.Handle("/v1/", controlauth.Require(h.Token, api))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+		if h.Readiness != nil {
+			if err := h.Readiness(); err != nil {
+				http.Error(w, "not ready: "+err.Error(), http.StatusServiceUnavailable)
+				return
+			}
+		}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
@@ -36,10 +51,46 @@ type instanceRequest struct {
 	Gen    string `json:"gen,omitempty"`
 	NoIdle bool   `json:"no_idle,omitempty"`
 	Image  string `json:"image,omitempty"`
+	Tier   string `json:"tier,omitempty"`
 }
 
 func agentApp(req instanceRequest) string {
 	return genid.AgentApp(req.App, req.Gen)
+}
+
+func validateInstanceRequest(req instanceRequest) error {
+	if err := names.ValidateIdent(req.User); err != nil {
+		return fmt.Errorf("invalid user: %w", err)
+	}
+	if err := names.ValidateIdent(req.App); err != nil {
+		return fmt.Errorf("invalid app: %w", err)
+	}
+	if req.Gen != "" {
+		if err := genid.Validate(req.Gen); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func decodeInstanceRequest(w http.ResponseWriter, r *http.Request) (instanceRequest, bool) {
+	var req instanceRequest
+	r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return instanceRequest{}, false
+	}
+	if err := dec.Decode(&struct{}{}); err != io.EOF {
+		http.Error(w, "request body must contain one JSON object", http.StatusBadRequest)
+		return instanceRequest{}, false
+	}
+	if err := validateInstanceRequest(req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return instanceRequest{}, false
+	}
+	return req, true
 }
 
 type ensureResponse struct {
@@ -59,9 +110,8 @@ type statusResponse struct {
 }
 
 func (h *Handler) ensure(w http.ResponseWriter, r *http.Request) {
-	var req instanceRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	req, ok := decodeInstanceRequest(w, r)
+	if !ok {
 		return
 	}
 	app := agentApp(req)
@@ -72,22 +122,22 @@ func (h *Handler) ensure(w http.ResponseWriter, r *http.Request) {
 		}
 		req.Image = img
 	}
-	in, err := h.Manager.EnsureWith(r.Context(), req.User, app, EnsureOpts{Image: req.Image})
+	in, err := h.Manager.EnsureWith(r.Context(), req.User, app, EnsureOpts{
+		Image: req.Image, Tier: req.Tier, NoIdle: req.NoIdle,
+	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	h.Manager.SetNoIdle(req.User, app, req.NoIdle)
 	writeJSON(w, ensureResponse{Addr: in.Addr, GuestIP: in.GuestIP, State: string(in.State)})
 }
 
 func (h *Handler) stop(w http.ResponseWriter, r *http.Request) {
-	var req instanceRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	req, ok := decodeInstanceRequest(w, r)
+	if !ok {
 		return
 	}
-	if err := h.Manager.Stop(req.User, agentApp(req)); err != nil {
+	if err := h.Manager.StopContext(r.Context(), req.User, agentApp(req)); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -95,9 +145,8 @@ func (h *Handler) stop(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) sleep(w http.ResponseWriter, r *http.Request) {
-	var req instanceRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	req, ok := decodeInstanceRequest(w, r)
+	if !ok {
 		return
 	}
 	if err := h.Manager.Sleep(r.Context(), req.User, agentApp(req)); err != nil {
@@ -108,9 +157,8 @@ func (h *Handler) sleep(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) wake(w http.ResponseWriter, r *http.Request) {
-	var req instanceRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	req, ok := decodeInstanceRequest(w, r)
+	if !ok {
 		return
 	}
 	in, err := h.Manager.Ensure(r.Context(), req.User, agentApp(req))
@@ -122,9 +170,8 @@ func (h *Handler) wake(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) evict(w http.ResponseWriter, r *http.Request) {
-	var req instanceRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	req, ok := decodeInstanceRequest(w, r)
+	if !ok {
 		return
 	}
 	if err := h.Manager.Evict(req.User, agentApp(req)); err != nil {
@@ -135,9 +182,8 @@ func (h *Handler) evict(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) adopt(w http.ResponseWriter, r *http.Request) {
-	var req instanceRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	req, ok := decodeInstanceRequest(w, r)
+	if !ok {
 		return
 	}
 	in, err := h.Manager.Adopt(r.Context(), req.User, agentApp(req))
@@ -148,12 +194,25 @@ func (h *Handler) adopt(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, ensureResponse{Addr: in.Addr, GuestIP: in.GuestIP, State: string(in.State)})
 }
 
+func (h *Handler) setNoIdle(w http.ResponseWriter, r *http.Request) {
+	req, ok := decodeInstanceRequest(w, r)
+	if !ok {
+		return
+	}
+	if err := h.Manager.SetNoIdle(req.User, agentApp(req), req.NoIdle); err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 	user := r.URL.Query().Get("user")
 	app := r.URL.Query().Get("app")
 	gen := r.URL.Query().Get("gen")
-	if user == "" || app == "" {
-		http.Error(w, "user and app query params required", http.StatusBadRequest)
+	req := instanceRequest{User: user, App: app, Gen: gen}
+	if err := validateInstanceRequest(req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	if gen != "" {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/imjasonh/playground/sshcloud/internal/genid"
+	"github.com/imjasonh/playground/sshcloud/internal/image"
 	"github.com/imjasonh/playground/sshcloud/internal/session"
 	"github.com/imjasonh/playground/sshcloud/internal/store"
 )
@@ -17,8 +18,9 @@ const DefaultDrainTimeout = 5 * time.Minute
 
 // Instances boots/stops host-agent generations.
 type Instances interface {
-	Ensure(ctx context.Context, user, app, gen, image string, noIdle bool) error
+	Ensure(ctx context.Context, user, app, gen, image, tier string, noIdle bool) error
 	Stop(ctx context.Context, user, app, gen string) error
+	SetNoIdle(ctx context.Context, user, app, gen string, noIdle bool) error
 }
 
 // Controller coordinates routing + instance lifetime across a deploy.
@@ -31,6 +33,8 @@ type Controller struct {
 
 	mu     sync.Mutex
 	timers map[string]*time.Timer // user/app → drain deadline timer
+	opMu   sync.Mutex
+	ops    map[string]*sync.Mutex
 }
 
 // New returns a controller. instances may be nil (routing-only / tests).
@@ -42,6 +46,7 @@ func New(st store.Store, sess *session.Registry, instances Instances) *Controlle
 		Timeout:   DefaultDrainTimeout,
 		now:       time.Now,
 		timers:    make(map[string]*time.Timer),
+		ops:       make(map[string]*sync.Mutex),
 	}
 }
 
@@ -50,6 +55,7 @@ type Request struct {
 	User     string
 	App      string
 	Image    string
+	Tier     string
 	Strategy string
 	Timeout  time.Duration
 }
@@ -67,17 +73,87 @@ func (c *Controller) ActiveGen(ctx context.Context, user, app string) (string, e
 	if c == nil || c.Store == nil {
 		return "", nil
 	}
+	op := c.appLock(user, app)
+	op.Lock()
+	defer op.Unlock()
 	a, err := c.Store.GetApp(ctx, user, app)
 	if err != nil || a == nil {
 		return "", err
 	}
+	if a.DrainingGen != "" && a.DrainUntilUnix > 0 && c.now().Unix() >= a.DrainUntilUnix {
+		c.kickGen(user, app, a.DrainingGen)
+		c.finishDrainLocked(ctx, user, app, a.DrainingGen)
+		a, err = c.Store.GetApp(ctx, user, app)
+		if err != nil || a == nil {
+			return "", err
+		}
+	} else if a.DrainingGen != "" && a.DrainUntilUnix > 0 {
+		c.armDrainTimer(user, app, a.DrainingGen, time.Unix(a.DrainUntilUnix, 0))
+	}
 	return a.ActiveGen, nil
+}
+
+// Admit atomically pins and registers a session against the active generation.
+// It shares the per-app operation lock with Deploy so no connection can be
+// admitted to a generation while cutover is publishing another.
+func (c *Controller) Admit(ctx context.Context, user, app string) (session.ID, string, error) {
+	if c == nil || c.Store == nil || c.Sessions == nil {
+		return "", "", fmt.Errorf("cutover admission is not configured")
+	}
+	op := c.appLock(user, app)
+	op.Lock()
+	defer op.Unlock()
+	a, err := c.Store.GetApp(ctx, user, app)
+	if err != nil {
+		return "", "", err
+	}
+	if a == nil {
+		return "", "", fmt.Errorf("unknown app %q", app)
+	}
+	if a.DrainingGen != "" && a.DrainUntilUnix > 0 {
+		if c.now().Unix() >= a.DrainUntilUnix {
+			c.kickGen(user, app, a.DrainingGen)
+			c.finishDrainLocked(ctx, user, app, a.DrainingGen)
+			a, err = c.Store.GetApp(ctx, user, app)
+			if err != nil {
+				return "", "", err
+			}
+			if a == nil {
+				return "", "", fmt.Errorf("app %q disappeared during drain cleanup", app)
+			}
+		} else {
+			c.armDrainTimer(user, app, a.DrainingGen, time.Unix(a.DrainUntilUnix, 0))
+		}
+	}
+	id, err := c.Sessions.Admit(user, app, a.ActiveGen)
+	return id, a.ActiveGen, err
+}
+
+func (c *Controller) appLock(user, app string) *sync.Mutex {
+	key := user + "/" + app
+	c.opMu.Lock()
+	defer c.opMu.Unlock()
+	op := c.ops[key]
+	if op == nil {
+		op = &sync.Mutex{}
+		c.ops[key] = op
+	}
+	return op
 }
 
 // Deploy boots a new generation and applies kick or drain.
 func (c *Controller) Deploy(ctx context.Context, req Request) (Result, error) {
 	if req.User == "" || req.App == "" {
 		return Result{}, fmt.Errorf("user and app required")
+	}
+	if err := image.ValidateDigestPinned(req.Image); err != nil {
+		return Result{}, err
+	}
+	if req.Tier == "" {
+		req.Tier = "tiny"
+	}
+	if req.Tier != "tiny" && req.Tier != "small" {
+		return Result{}, fmt.Errorf("unknown tier %q", req.Tier)
 	}
 	strategy := req.Strategy
 	if strategy == "" {
@@ -94,87 +170,115 @@ func (c *Controller) Deploy(ctx context.Context, req Request) (Result, error) {
 		}
 	}
 
+	op := c.appLock(req.User, req.App)
+	op.Lock()
+	defer op.Unlock()
+
 	app, err := c.Store.GetApp(ctx, req.User, req.App)
 	if err != nil {
 		return Result{}, err
 	}
 	if app == nil {
-		return Result{}, fmt.Errorf("unknown app %q", req.App)
+		app = &store.App{Owner: req.User, Name: req.App}
 	}
-
-	oldGen := app.ActiveGen
-	prevDraining := app.DrainingGen
-	newGen := genid.New()
-
-	if c.Instances != nil {
-		if err := c.Instances.Ensure(ctx, req.User, req.App, newGen, req.Image, true); err != nil {
-			return Result{}, fmt.Errorf("boot new generation: %w", err)
+	if app.DrainingGen != "" && app.DrainUntilUnix > 0 && c.now().Unix() >= app.DrainUntilUnix {
+		c.kickGen(req.User, req.App, app.DrainingGen)
+		c.finishDrainLocked(ctx, req.User, req.App, app.DrainingGen)
+		app, err = c.Store.GetApp(ctx, req.User, req.App)
+		if err != nil {
+			return Result{}, err
+		}
+		if app == nil {
+			return Result{}, fmt.Errorf("app %q disappeared during drain cleanup", req.App)
 		}
 	}
-
-	switch strategy {
-	case store.StrategyKick:
-		c.kickGen(req.User, req.App, oldGen)
-		if prevDraining != "" && prevDraining != oldGen {
-			c.kickGen(req.User, req.App, prevDraining)
-			if c.Instances != nil {
-				_ = c.Instances.Stop(ctx, req.User, req.App, prevDraining)
-			}
-		}
+	if app.DrainingGen != "" {
+		return Result{}, fmt.Errorf("app %q is still draining generation %s; wait for it to finish before deploying again", req.App, app.DrainingGen)
+	}
+	if app.ActiveGen != "" && app.Image == req.Image && app.Tier == req.Tier {
 		if c.Instances != nil {
-			_ = c.Instances.Stop(ctx, req.User, req.App, oldGen)
-		}
-		return c.persistActive(ctx, app, req, newGen, strategy)
-
-	default: // drain
-		oldHasSession := c.Sessions != nil && c.Sessions.ActiveGen(req.User, req.App, oldGen)
-		if !oldHasSession {
-			if c.Instances != nil {
-				_ = c.Instances.Stop(ctx, req.User, req.App, oldGen)
+			hold := c.Sessions != nil && c.Sessions.ActiveGen(req.User, req.App, app.ActiveGen)
+			if err := c.Instances.Ensure(ctx, req.User, req.App, app.ActiveGen, app.Image, app.Tier, hold); err != nil {
+				return Result{}, fmt.Errorf("verify active generation: %w", err)
 			}
-			if prevDraining != "" && prevDraining != oldGen && c.Instances != nil {
-				_ = c.Instances.Stop(ctx, req.User, req.App, prevDraining)
-			}
-			return c.persistActive(ctx, app, req, newGen, strategy)
 		}
-
-		app.PreviousImage = app.Image
-		if req.Image != "" {
-			app.Image = req.Image
-		}
-		app.ActiveGen = newGen
-		app.DrainingGen = oldGen
-		drainUntil := c.now().Add(timeout)
-		app.DrainUntilUnix = drainUntil.Unix()
 		app.SessionStrategy = strategy
 		if err := c.Store.UpsertApp(ctx, *app); err != nil {
 			return Result{}, err
 		}
-		if c.Instances != nil {
-			_ = c.Instances.Ensure(ctx, req.User, req.App, oldGen, "", true)
+		return Result{ActiveGen: app.ActiveGen, Strategy: strategy}, nil
+	}
+
+	oldGen := app.ActiveGen
+	newGen := genid.New()
+
+	if c.Instances != nil {
+		if err := c.Instances.Ensure(ctx, req.User, req.App, newGen, req.Image, req.Tier, true); err != nil {
+			return Result{}, fmt.Errorf("boot new generation: %w", err)
 		}
-		c.armDrainTimer(req.User, req.App, drainUntil)
+	}
+
+	persist := func(draining string, until time.Time) error {
+		app.PreviousImage = app.Image
+		app.Image = req.Image
+		app.Tier = req.Tier
+		app.ActiveGen = newGen
+		app.DrainingGen = draining
+		app.DrainUntilUnix = 0
+		if !until.IsZero() {
+			app.DrainUntilUnix = until.Unix()
+		}
+		app.SessionStrategy = strategy
+		if err := c.Store.UpsertApp(ctx, *app); err != nil {
+			if c.Instances != nil {
+				_ = c.Instances.Stop(context.Background(), req.User, req.App, newGen)
+			}
+			return err
+		}
+		if c.Instances != nil {
+			_ = c.Instances.SetNoIdle(ctx, req.User, req.App, newGen, false)
+		}
+		return nil
+	}
+
+	switch strategy {
+	case store.StrategyKick:
+		if err := persist("", time.Time{}); err != nil {
+			return Result{}, err
+		}
+		c.kickGen(req.User, req.App, oldGen)
+		if c.Instances != nil {
+			_ = c.Instances.Stop(ctx, req.User, req.App, oldGen)
+		}
+		c.clearTimer(req.User, req.App)
+		return Result{ActiveGen: newGen, Strategy: strategy}, nil
+
+	default: // drain
+		oldHasSession := c.Sessions != nil && c.Sessions.ActiveGen(req.User, req.App, oldGen)
+		if !oldHasSession {
+			if err := persist("", time.Time{}); err != nil {
+				return Result{}, err
+			}
+			if c.Instances != nil {
+				_ = c.Instances.Stop(ctx, req.User, req.App, oldGen)
+			}
+			c.clearTimer(req.User, req.App)
+			return Result{ActiveGen: newGen, Strategy: strategy}, nil
+		}
+
+		drainUntil := c.now().Add(timeout)
+		if c.Instances != nil {
+			if err := c.Instances.SetNoIdle(ctx, req.User, req.App, oldGen, true); err != nil {
+				_ = c.Instances.Stop(context.Background(), req.User, req.App, newGen)
+				return Result{}, fmt.Errorf("hold draining generation awake: %w", err)
+			}
+		}
+		if err := persist(oldGen, drainUntil); err != nil {
+			return Result{}, err
+		}
+		c.armDrainTimer(req.User, req.App, oldGen, drainUntil)
 		return Result{ActiveGen: newGen, DrainingGen: oldGen, Strategy: strategy, DrainUntil: drainUntil}, nil
 	}
-}
-
-func (c *Controller) persistActive(ctx context.Context, app *store.App, req Request, newGen, strategy string) (Result, error) {
-	app.PreviousImage = app.Image
-	if req.Image != "" {
-		app.Image = req.Image
-	}
-	app.ActiveGen = newGen
-	app.DrainingGen = ""
-	app.DrainUntilUnix = 0
-	app.SessionStrategy = strategy
-	if err := c.Store.UpsertApp(ctx, *app); err != nil {
-		return Result{}, err
-	}
-	if c.Instances != nil {
-		_ = c.Instances.Ensure(ctx, req.User, req.App, newGen, req.Image, false)
-	}
-	c.clearTimer(req.User, req.App)
-	return Result{ActiveGen: newGen, Strategy: strategy}, nil
 }
 
 // OnRelease is called after a session ends. Finishes drain if that gen is empty.
@@ -182,35 +286,43 @@ func (c *Controller) OnRelease(ctx context.Context, user, app, gen string) {
 	if c == nil || c.Store == nil {
 		return
 	}
+	op := c.appLock(user, app)
+	op.Lock()
+	defer op.Unlock()
 	a, err := c.Store.GetApp(ctx, user, app)
 	if err != nil || a == nil {
 		return
 	}
-	if a.DrainingGen == "" && a.DrainUntilUnix == 0 {
-		return
+	if gen == a.ActiveGen && (c.Sessions == nil || !c.Sessions.ActiveGen(user, app, gen)) && c.Instances != nil {
+		_ = c.Instances.SetNoIdle(ctx, user, app, gen, false)
 	}
-	if gen != a.DrainingGen {
+	if a.DrainingGen == "" || gen != a.DrainingGen {
 		return
 	}
 	if c.Sessions != nil && c.Sessions.ActiveGen(user, app, gen) {
 		return
 	}
-	c.finishDrain(ctx, user, app, gen)
+	c.finishDrainLocked(ctx, user, app, gen)
 }
 
-func (c *Controller) finishDrain(ctx context.Context, user, app, gen string) {
+func (c *Controller) finishDrainLocked(ctx context.Context, user, app, gen string) {
 	a, err := c.Store.GetApp(ctx, user, app)
 	if err != nil || a == nil {
 		return
 	}
-	if c.Instances != nil {
-		_ = c.Instances.Stop(ctx, user, app, gen)
+	if a.DrainingGen != gen {
+		return
 	}
 	a.DrainingGen = ""
 	a.DrainUntilUnix = 0
-	_ = c.Store.UpsertApp(ctx, *a)
-	if c.Instances != nil && a.ActiveGen != "" {
-		_ = c.Instances.Ensure(ctx, user, app, a.ActiveGen, a.Image, false)
+	if err := c.Store.UpsertApp(ctx, *a); err != nil {
+		return
+	}
+	if c.Instances != nil {
+		_ = c.Instances.Stop(ctx, user, app, gen)
+		if a.ActiveGen != "" && (c.Sessions == nil || !c.Sessions.ActiveGen(user, app, a.ActiveGen)) {
+			_ = c.Instances.SetNoIdle(ctx, user, app, a.ActiveGen, false)
+		}
 	}
 	c.clearTimer(user, app)
 }
@@ -222,7 +334,7 @@ func (c *Controller) kickGen(user, app, gen string) {
 	c.Sessions.Kick(user, app, gen)
 }
 
-func (c *Controller) armDrainTimer(user, app string, until time.Time) {
+func (c *Controller) armDrainTimer(user, app, gen string, until time.Time) {
 	if until.IsZero() {
 		return
 	}
@@ -236,14 +348,15 @@ func (c *Controller) armDrainTimer(user, app string, until time.Time) {
 	c.timers[key] = time.AfterFunc(delay, func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
+		op := c.appLock(user, app)
+		op.Lock()
+		defer op.Unlock()
 		a, err := c.Store.GetApp(ctx, user, app)
-		if err != nil || a == nil {
+		if err != nil || a == nil || a.DrainingGen != gen || a.DrainUntilUnix != until.Unix() {
 			return
 		}
-		gen := a.DrainingGen
 		c.kickGen(user, app, gen)
-		time.Sleep(50 * time.Millisecond)
-		c.finishDrain(ctx, user, app, gen)
+		c.finishDrainLocked(ctx, user, app, gen)
 	})
 	c.mu.Unlock()
 }

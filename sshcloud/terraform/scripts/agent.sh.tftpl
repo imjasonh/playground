@@ -3,16 +3,22 @@ set -euo pipefail
 ${helpers}
 
 install_docker
-registry_login
-mkdir -p /var/lib/sshcloud/assets /var/lib/sshcloud/agent
+retry 10 apt-get update -y
+retry 10 apt-get install -y e2fsprogs iproute2
+install -d -m 0755 /var/lib/sshcloud/assets /var/lib/sshcloud/agent /usr/local/lib/sshcloud
+id sshcloud >/dev/null 2>&1 || useradd --system --home-dir /var/lib/sshcloud --shell /usr/sbin/nologin sshcloud
 
 # KVM access for Firecracker (nested virt).
 if [[ -e /dev/kvm ]]; then
   chmod 666 /dev/kvm || true
 fi
 
-pull_secret "${user_ca_pub_secret}" /var/lib/sshcloud/ssh_user_ca.pub
+retry 30 registry_login
+retry 30 pull_secret "${user_ca_pub_secret}" /var/lib/sshcloud/ssh_user_ca.pub
 chmod 644 /var/lib/sshcloud/ssh_user_ca.pub
+retry 30 pull_secret "${agent_auth_secret}" /var/lib/sshcloud/agent_auth
+chown sshcloud:sshcloud /var/lib/sshcloud/agent_auth
+chmod 600 /var/lib/sshcloud/agent_auth
 
 # Platform assets (firecracker + kernel) from GCS. Apps arrive as OCI digests.
 TOKEN="$(curl -fsS -H 'Metadata-Flavor: Google' \
@@ -20,34 +26,70 @@ TOKEN="$(curl -fsS -H 'Metadata-Flavor: Google' \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')"
 download_asset() {
   local object="$1" dest="$2"
-  curl -fsS -H "Authorization: Bearer $TOKEN" \
+  curl --retry 10 --retry-all-errors -fsS -H "Authorization: Bearer $TOKEN" \
     "https://storage.googleapis.com/storage/v1/b/${assets_bucket}/o/$${object}?alt=media" \
-    -o "$dest" || echo "asset missing: gs://${assets_bucket}/$object (upload with hack/upload-platform-assets.sh)"
+    -o "$dest"
 }
-download_asset firecracker /var/lib/sshcloud/assets/firecracker || true
-download_asset vmlinux /var/lib/sshcloud/assets/vmlinux || true
-chmod +x /var/lib/sshcloud/assets/firecracker 2>/dev/null || true
+retry 30 download_asset "${firecracker_object}" /var/lib/sshcloud/assets/firecracker
+retry 30 download_asset "${kernel_object}" /var/lib/sshcloud/assets/vmlinux
+chmod 0755 /var/lib/sshcloud/assets/firecracker
+test -s /var/lib/sshcloud/assets/vmlinux
+/var/lib/sshcloud/assets/firecracker --version
 
-IMAGE="${agent_image}"
-docker pull "$IMAGE"
-docker pull "${guestinit_image}"
-docker rm -f sshcloud-guestinit-extract 2>/dev/null || true
-docker create --name sshcloud-guestinit-extract "${guestinit_image}"
-docker cp sshcloud-guestinit-extract:/ko-app/guestinit /var/lib/sshcloud/assets/guestinit
-docker rm sshcloud-guestinit-extract
-chmod +x /var/lib/sshcloud/assets/guestinit
-docker rm -f sshcloud-agent 2>/dev/null || true
-docker run -d --name sshcloud-agent --restart unless-stopped --net host --privileged \
-  --device /dev/kvm \
-  -v /var/lib/sshcloud:/var/lib/sshcloud \
-  -v /dev/net/tun:/dev/net/tun \
-  "$IMAGE" \
-  -listen ${agent_listen} \
+extract_ko_binary() {
+  local image="$1" binary="$2" dest="$3" container="sshcloud-extract-$2"
+  retry 30 docker pull "$image"
+  docker rm -f "$container" 2>/dev/null || true
+  docker create --name "$container" "$image" >/dev/null
+  docker cp "$container:/ko-app/$binary" "$dest"
+  docker rm "$container" >/dev/null
+  chmod 0755 "$dest"
+}
+extract_ko_binary "${agent_image}" agent /usr/local/lib/sshcloud/agent
+extract_ko_binary "${guestinit_image}" guestinit /var/lib/sshcloud/assets/guestinit
+chown -R sshcloud:sshcloud /var/lib/sshcloud/agent
+
+INTERNAL_IP="$(curl -fsS -H 'Metadata-Flavor: Google' \
+  http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/ip)"
+
+cat >/etc/systemd/system/sshcloud-agent.service <<EOF
+[Unit]
+Description=sshcloud Firecracker host agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sshcloud
+Group=sshcloud
+Environment=HOME=/var/lib/sshcloud
+Environment=SSHCLOUD_IP_DIRECT=1
+ExecStart=/usr/local/lib/sshcloud/agent \
+  -listen $${INTERNAL_IP}:8080 \
   -work-dir /var/lib/sshcloud/agent \
   -firecracker /var/lib/sshcloud/assets/firecracker \
   -kernel /var/lib/sshcloud/assets/vmlinux \
   -ca-pub /var/lib/sshcloud/ssh_user_ca.pub \
   -guestinit /var/lib/sshcloud/assets/guestinit \
+  -control-token-file /var/lib/sshcloud/agent_auth \
+  -relay-host $${INTERNAL_IP} \
+  -relay-port-min 20000 \
+  -relay-port-max 29999 \
   -gcs-bucket ${snapshots_bucket} \
   -gcs-prefix ${snapshot_prefix} \
   -idle 5m
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+AmbientCapabilities=CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_ADMIN
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now sshcloud-agent

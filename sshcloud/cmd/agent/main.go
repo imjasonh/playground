@@ -17,7 +17,9 @@ import (
 	"time"
 
 	"github.com/imjasonh/playground/sshcloud/internal/agent"
+	"github.com/imjasonh/playground/sshcloud/internal/controlauth"
 	"github.com/imjasonh/playground/sshcloud/internal/guestinit"
+	"github.com/imjasonh/playground/sshcloud/internal/image"
 	"github.com/imjasonh/playground/sshcloud/internal/ocirootfs"
 	"github.com/imjasonh/playground/sshcloud/internal/snapshot"
 )
@@ -35,10 +37,22 @@ func main() {
 	gcsBucket := flag.String("gcs-bucket", "", "GCS bucket for snapshots (overrides -snap-dir)")
 	gcsPrefix := flag.String("gcs-prefix", "sshcloud/snaps", "GCS object key prefix")
 	idle := flag.Duration("idle", 5*time.Minute, "idle time before snapshot-sleep (0=disable)")
+	controlTokenFile := flag.String("control-token-file", "", "bearer token file required by agent control APIs (empty is local-dev only)")
+	relayHost := flag.String("relay-host", "", "agent VPC IP for gateway-reachable guest SSH relays (empty returns TAP-local addresses)")
+	relayPortMin := flag.Int("relay-port-min", 20000, "first TCP port available for guest SSH relays")
+	relayPortMax := flag.Int("relay-port-max", 29999, "last TCP port available for guest SSH relays")
+	allowedRegistries := flag.String("allowed-registries", "index.docker.io,docker.io,ghcr.io,*.pkg.dev", "comma-separated OCI registry hosts; supports *.suffix")
 	flag.Parse()
 
 	if *kernel == "" {
 		log.Fatal("-kernel is required")
+	}
+	controlToken, err := controlauth.LoadFile(*controlTokenFile)
+	if err != nil {
+		log.Fatalf("control token: %v", err)
+	}
+	if controlToken == "" {
+		log.Printf("WARNING: agent control API authentication is disabled")
 	}
 
 	var store snapshot.Store
@@ -99,15 +113,19 @@ func main() {
 	}
 
 	mgr, err := agent.NewManager(agent.Config{
-		WorkDir:        *workDir,
-		FirecrackerBin: *fcBin,
-		KernelPath:     *kernel,
-		BaseRootfs:     baseRootfs,
-		CAPubPath:      *caPub,
-		GuestInitPath:  guestInitPath,
-		BaseBootSpec:   baseSpec,
-		SnapStore:      store,
-		IdleTimeout:    *idle,
+		WorkDir:           *workDir,
+		FirecrackerBin:    *fcBin,
+		KernelPath:        *kernel,
+		BaseRootfs:        baseRootfs,
+		CAPubPath:         *caPub,
+		GuestInitPath:     guestInitPath,
+		BaseBootSpec:      baseSpec,
+		RelayHost:         strings.TrimSpace(*relayHost),
+		RelayPortMin:      *relayPortMin,
+		RelayPortMax:      *relayPortMax,
+		AllowedRegistries: image.ParseRegistryAllowlist(*allowedRegistries),
+		SnapStore:         store,
+		IdleTimeout:       *idle,
 		RootfsResolver: func(ctx context.Context, imageRef string) (agent.ResolvedRootfs, error) {
 			res, err := ocirootfs.Materialize(ctx, imageRef, ocirootfs.Options{CacheDir: ociCache})
 			if err != nil {
@@ -122,9 +140,16 @@ func main() {
 	defer mgr.Close()
 
 	mux := http.NewServeMux()
-	(&agent.Handler{Manager: mgr}).Mount(mux)
+	(&agent.Handler{Manager: mgr, Token: controlToken, Readiness: mgr.Ready}).Mount(mux)
 
-	srv := &http.Server{Addr: *listen, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	srv := &http.Server{
+		Addr:              *listen,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      3 * time.Minute,
+		IdleTimeout:       60 * time.Second,
+	}
 	go func() {
 		log.Printf("sshcloud agent on %s (idle=%s guestinit=%s base-rootfs=%q)", *listen, idle.String(), guestInitPath, baseRootfs)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

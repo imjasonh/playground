@@ -59,6 +59,9 @@ type Hub struct {
 	UserCA   *userca.CA // optional; when set with Dial, apps are proxied over SSH
 	Dial     DialFunc   // optional backend address resolver
 	Cutover  *cutover.Controller
+	// AllowedRegistries mirrors the agent-side SSRF boundary for immediate
+	// deploy feedback. Empty is local-dev only.
+	AllowedRegistries []string
 }
 
 // Connect is the inbound connection facts after SSH key auth attempt.
@@ -80,9 +83,14 @@ func (h *Hub) HandleConnect(ctx context.Context, c Connect) (Result, error) {
 		userID = user.ID
 	}
 
+	var routeErr error
 	hasApp := func(app string) bool {
 		ok, err := h.Store.HasApp(ctx, userID, app)
-		return err == nil && ok
+		if err != nil {
+			routeErr = err
+			return false
+		}
+		return ok
 	}
 
 	d := route.Resolve(route.Input{
@@ -90,6 +98,9 @@ func (h *Hub) HandleConnect(ctx context.Context, c Connect) (Result, error) {
 		KeyKnown: keyKnown,
 		HasApp:   hasApp,
 	})
+	if routeErr != nil {
+		return Result{}, fmt.Errorf("resolve app route: %w", routeErr)
+	}
 
 	switch d.Kind {
 	case route.Join:
@@ -117,11 +128,19 @@ func (h *Hub) pinGen(ctx context.Context, userID, app string) (string, error) {
 }
 
 func (h *Hub) admitApp(ctx context.Context, userID, app string) (Result, error) {
-	gen, err := h.pinGen(ctx, userID, app)
-	if err != nil {
-		return Result{}, err
+	var (
+		id  session.ID
+		gen string
+		err error
+	)
+	if h.Cutover != nil {
+		id, gen, err = h.Cutover.Admit(ctx, userID, app)
+	} else {
+		gen, err = h.pinGen(ctx, userID, app)
+		if err == nil {
+			id, err = h.Sessions.Admit(userID, app, gen)
+		}
 	}
-	id, err := h.Sessions.Admit(userID, app, gen)
 	if err != nil {
 		var busy session.ErrBusy
 		if errors.As(err, &busy) {

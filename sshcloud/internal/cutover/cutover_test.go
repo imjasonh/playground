@@ -3,6 +3,7 @@ package cutover_test
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -19,12 +20,16 @@ type fakeInst struct {
 	stopped []string
 }
 
-func (f *fakeInst) Ensure(_ context.Context, user, app, gen, image string, noIdle bool) error {
+func (f *fakeInst) Ensure(_ context.Context, user, app, gen, image, tier string, noIdle bool) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.ensured = append(f.ensured, user+"/"+app+"@"+gen)
 	f.images = append(f.images, image)
 	f.noIdle = append(f.noIdle, noIdle)
+	return nil
+}
+
+func (f *fakeInst) SetNoIdle(context.Context, string, string, string, bool) error {
 	return nil
 }
 
@@ -58,7 +63,7 @@ func TestKickCutover(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cancelled := false
+	var cancelled atomic.Bool
 	_, cancel := contextWithCancelFlag(&cancelled)
 	sess.BindCancel(old, cancel)
 
@@ -74,7 +79,7 @@ func TestKickCutover(t *testing.T) {
 	if res.ActiveGen == "" || res.DrainingGen != "" {
 		t.Fatalf("result %+v", res)
 	}
-	if !cancelled {
+	if !cancelled.Load() {
 		t.Fatal("expected kick cancel")
 	}
 	app, _ := st.GetApp(ctx, "alice", "myapp")
@@ -150,24 +155,25 @@ func TestDrainTimeoutKicks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cancelled := false
+	var cancelled atomic.Bool
 	_, cancel := contextWithCancelFlag(&cancelled)
 	sess.BindCancel(sid, cancel)
 
 	_, err = c.Deploy(ctx, cutover.Request{
 		User: "alice", App: "myapp", Strategy: store.StrategyDrain, Timeout: 20 * time.Millisecond,
+		Image: "new@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		if cancelled {
+		if cancelled.Load() {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if !cancelled {
+	if !cancelled.Load() {
 		t.Fatal("expected timeout kick")
 	}
 }
@@ -193,10 +199,50 @@ func TestDrainNoSessionIsImmediate(t *testing.T) {
 	}
 }
 
-func contextWithCancelFlag(flag *bool) (context.Context, context.CancelFunc) {
+func TestSameImageAndTierDeployIsIdempotent(t *testing.T) {
+	ctx, st, _, fi, c := setup(t)
+	img := "new@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	first, err := c.Deploy(ctx, cutover.Request{
+		User: "alice", App: "myapp", Image: img, Tier: "tiny", Strategy: store.StrategyKick,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fi.mu.Lock()
+	boots := len(fi.ensured)
+	fi.mu.Unlock()
+
+	second, err := c.Deploy(ctx, cutover.Request{
+		User: "alice", App: "myapp", Image: img, Tier: "tiny", Strategy: store.StrategyDrain,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fi.mu.Lock()
+	gotBoots := len(fi.ensured)
+	fi.mu.Unlock()
+	if gotBoots != boots+1 {
+		t.Fatalf("same artifact should verify once: %d → %d", boots, gotBoots)
+	}
+	if second.ActiveGen != first.ActiveGen {
+		t.Fatalf("generation changed: %s → %s", first.ActiveGen, second.ActiveGen)
+	}
+	fi.mu.Lock()
+	lastEnsure := fi.ensured[len(fi.ensured)-1]
+	fi.mu.Unlock()
+	if lastEnsure != "alice/myapp@"+first.ActiveGen {
+		t.Fatalf("verified wrong generation: %s", lastEnsure)
+	}
+	app, _ := st.GetApp(ctx, "alice", "myapp")
+	if app.SessionStrategy != store.StrategyDrain {
+		t.Fatalf("strategy was not updated: %+v", app)
+	}
+}
+
+func contextWithCancelFlag(flag *atomic.Bool) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(context.Background())
 	return ctx, func() {
-		*flag = true
+		flag.Store(true)
 		cancel()
 	}
 }

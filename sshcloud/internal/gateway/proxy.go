@@ -13,14 +13,16 @@ import (
 
 // DialRequest is a backend wake/dial for one app generation.
 type DialRequest struct {
-	User  string
-	App   string
-	Gen   string
-	Image string
+	User   string
+	App    string
+	Gen    string
+	Image  string
+	Tier   string
+	NoIdle bool
 }
 
 // DialFunc resolves a running app instance address.
-type DialFunc func(req DialRequest) (addr string, err error)
+type DialFunc func(ctx context.Context, req DialRequest) (addr string, err error)
 
 // ProxySSH dials the app SSH server with a minted user cert and pipes the session.
 // ctx cancel (deploy kick) closes the hop and ends the proxy.

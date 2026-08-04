@@ -3,6 +3,7 @@ package gateway_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -147,8 +148,13 @@ func TestRunDeployUpdateConfirm(t *testing.T) {
 
 type nopInst struct{}
 
-func (nopInst) Ensure(context.Context, string, string, string, string, bool) error { return nil }
-func (nopInst) Stop(context.Context, string, string, string) error                 { return nil }
+func (nopInst) Ensure(context.Context, string, string, string, string, string, bool) error {
+	return nil
+}
+func (nopInst) Stop(context.Context, string, string, string) error { return nil }
+func (nopInst) SetNoIdle(context.Context, string, string, string, bool) error {
+	return nil
+}
 
 func TestRunDeployCutoverSetsGen(t *testing.T) {
 	ctx := context.Background()
@@ -192,4 +198,40 @@ func TestRunDeployCutoverSetsGen(t *testing.T) {
 		t.Fatalf("connect: %+v %v", r, err)
 	}
 	hub.ReleaseSession(r.Session)
+}
+
+type failInst struct{}
+
+func (failInst) Ensure(context.Context, string, string, string, string, string, bool) error {
+	return errors.New("boot failed")
+}
+func (failInst) Stop(context.Context, string, string, string) error { return nil }
+func (failInst) SetNoIdle(context.Context, string, string, string, bool) error {
+	return nil
+}
+
+func TestFailedInitialDeployLeavesNoPhantomApp(t *testing.T) {
+	ctx := context.Background()
+	st := store.NewMemory()
+	if err := st.CreateUser(ctx, "alice", "SHA256:alice"); err != nil {
+		t.Fatal(err)
+	}
+	sess := session.NewRegistry()
+	hub := &gateway.Hub{Store: st, Sessions: sess, Cutover: cutover.New(st, sess, failInst{})}
+	digest := strings.Repeat("d", 64)
+	var out bytes.Buffer
+	rw := struct {
+		io.Reader
+		io.Writer
+	}{Reader: strings.NewReader(""), Writer: &out}
+
+	code := gateway.RunDeploy(ctx, rw, hub, "alice",
+		"myapp --image=ghcr.io/example/app@sha256:"+digest+" --tier=tiny --strategy=kick --yes")
+	if code == 0 || !strings.Contains(out.String(), "boot failed") {
+		t.Fatalf("code=%d output=%q", code, out.String())
+	}
+	app, err := st.GetApp(ctx, "alice", "myapp")
+	if err != nil || app != nil {
+		t.Fatalf("failed deploy persisted app: %+v, %v", app, err)
+	}
 }

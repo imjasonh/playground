@@ -68,7 +68,63 @@ variable "agent_disk_gb" {
 }
 
 variable "ssh_client_cidrs" {
-  description = "CIDRs allowed to reach gateway TCP/22. Empty = 0.0.0.0/0."
+  description = "CIDRs allowed to reach public gateway TCP/22. Empty keeps public SSH closed."
   type        = list(string)
-  default     = ["0.0.0.0/0"]
+  default     = []
+}
+
+variable "firecracker_asset_path" {
+  description = "Local path to the pinned Firecracker binary uploaded into the platform-assets bucket"
+  type        = string
+}
+
+variable "kernel_asset_path" {
+  description = "Local path to the pinned Firecracker-compatible vmlinux uploaded into the platform-assets bucket"
+  type        = string
+}
+
+variable "enable_demo_bootstrap" {
+  description = "Opt in to local-exec SSH join+deploy for the fortune smoke-test app"
+  type        = bool
+  default     = false
+}
+
+variable "demo_user" {
+  description = "Username created by the optional fortune bootstrap"
+  type        = string
+  default     = "demo"
+  validation {
+    condition     = can(regex("^[a-z][a-z0-9-]{2,31}$", var.demo_user))
+    error_message = "demo_user must match [a-z][a-z0-9-]{2,31}."
+  }
+}
+
+variable "demo_app" {
+  description = "App name used by the optional fortune bootstrap"
+  type        = string
+  default     = "fortune"
+  validation {
+    condition     = can(regex("^[a-z][a-z0-9-]{2,31}$", var.demo_app))
+    error_message = "demo_app must match [a-z][a-z0-9-]{2,31}."
+  }
+}
+
+variable "demo_tier" {
+  description = "Resource tier for the optional fortune bootstrap"
+  type        = string
+  default     = "tiny"
+  validation {
+    condition     = contains(["tiny", "small"], var.demo_tier)
+    error_message = "demo_tier must be tiny or small."
+  }
+}
+
+variable "demo_strategy" {
+  description = "Session cutover strategy for the optional fortune bootstrap"
+  type        = string
+  default     = "kick"
+  validation {
+    condition     = contains(["kick", "drain"], var.demo_strategy)
+    error_message = "demo_strategy must be kick or drain."
+  }
 }

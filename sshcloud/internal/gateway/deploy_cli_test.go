@@ -70,10 +70,13 @@ type cliInst struct {
 	onEnsure func(user, app, gen, image string, noIdle bool)
 }
 
-func (c *cliInst) Ensure(_ context.Context, user, app, gen, image string, noIdle bool) error {
+func (c *cliInst) Ensure(_ context.Context, user, app, gen, image, _ string, noIdle bool) error {
 	if c.onEnsure != nil {
 		c.onEnsure(user, app, gen, image, noIdle)
 	}
 	return nil
 }
 func (c *cliInst) Stop(context.Context, string, string, string) error { return nil }
+func (c *cliInst) SetNoIdle(context.Context, string, string, string, bool) error {
+	return nil
+}

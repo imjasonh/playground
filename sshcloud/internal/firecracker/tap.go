@@ -15,9 +15,10 @@ type Tap struct {
 	Prefix  int    // e.g. 24
 }
 
-// ipCommand runs `ip` as root via sudo when the current process is unprivileged.
+// ipCommand runs `ip` directly as root or when systemd supplied CAP_NET_ADMIN.
+// Local unprivileged development/CI retains the passwordless-sudo fallback.
 func ipCommand(args ...string) *exec.Cmd {
-	if os.Geteuid() == 0 {
+	if os.Geteuid() == 0 || os.Getenv("SSHCLOUD_IP_DIRECT") == "1" {
 		return exec.Command("ip", args...)
 	}
 	return exec.Command("sudo", append([]string{"-n", "ip"}, args...)...)

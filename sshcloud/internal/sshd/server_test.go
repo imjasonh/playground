@@ -137,6 +137,26 @@ func TestJoinDeployExecArgs(t *testing.T) {
 	if code == 0 || !strings.Contains(out, "--yes") {
 		t.Fatalf("expected update requires --yes: code=%d out=%q", code, out)
 	}
+
+	out, code = sshExec(t, addr, signer.PublicKey(), clientKey, "fortune", "true")
+	if code != 2 || !strings.Contains(out, "not implemented") {
+		t.Fatalf("app exec must fail explicitly: code=%d out=%q", code, out)
+	}
+
+	unknownKey := mustKey(t)
+	out, code = sshExec(t, addr, signer.PublicKey(), unknownKey, "fortune", "git-upload-pack owner/repo")
+	if code != 2 || !strings.Contains(out, "join@host") {
+		t.Fatalf("unknown-key app exec: code=%d out=%q", code, out)
+	}
+	unknown, err := hub.Store.LookupUserByKey(ctx, ssh.FingerprintSHA256(unknownKey.PublicKey()))
+	if err != nil || unknown != nil {
+		t.Fatalf("exec attempt created user: %+v, %v", unknown, err)
+	}
+
+	out, code = sshExec(t, addr, signer.PublicKey(), unknownKey, "join", "bob extra")
+	if code != 2 || !strings.Contains(out, "Usage:") {
+		t.Fatalf("join extra args: code=%d out=%q", code, out)
+	}
 }
 
 func mustKey(t *testing.T) ssh.Signer {

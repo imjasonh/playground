@@ -15,9 +15,15 @@ esac
 
 FC_TGZ="firecracker-${FC_VERSION}-${ARCH}.tgz"
 FC_URL="https://github.com/firecracker-microvm/firecracker/releases/download/${FC_VERSION}/${FC_TGZ}"
+FC_SHA_URL="${FC_URL}.sha256.txt"
 
 echo "fetching $FC_URL"
 curl -fsSL "$FC_URL" -o "$OUT/$FC_TGZ"
+curl -fsSL "$FC_SHA_URL" -o "$OUT/$FC_TGZ.sha256"
+(
+  cd "$OUT"
+  sha256sum -c "$FC_TGZ.sha256"
+)
 tar -xzf "$OUT/$FC_TGZ" -C "$OUT"
 
 # Release layout: release-<ver>-<arch>/firecracker-<ver>-<arch>
@@ -47,6 +53,7 @@ if [[ "$ARCH" != "x86_64" ]]; then
 else
   echo "fetching kernel $KERNEL_URL"
   curl -fsSL "$KERNEL_URL" -o "$OUT/vmlinux"
+  sha256sum "$OUT/vmlinux" | tee "$OUT/vmlinux.sha256"
   echo "kernel -> $OUT/vmlinux"
 fi
 

@@ -19,6 +19,7 @@ type Migrator struct {
 type Result struct {
 	FromHost string
 	ToHost   string
+	Gen      string
 	Addr     string
 }
 
@@ -30,7 +31,12 @@ type Result struct {
 //
 // On adopt failure, attempts rollback Adopt on the source host.
 func (m *Migrator) Migrate(ctx context.Context, user, app, toHost string) (Result, error) {
-	_ = ctx
+	return m.MigrateGeneration(ctx, user, app, "", toHost)
+}
+
+// MigrateGeneration migrates one deployed generation. Empty gen selects the
+// legacy singleton. Callers must coordinate draining generations separately.
+func (m *Migrator) MigrateGeneration(ctx context.Context, user, app, gen, toHost string) (Result, error) {
 	if user == "" || app == "" || toHost == "" {
 		return Result{}, fmt.Errorf("user, app, and toHost required")
 	}
@@ -47,12 +53,12 @@ func (m *Migrator) Migrate(ctx context.Context, user, app, toHost string) (Resul
 		return Result{}, fmt.Errorf("no placement for %s/%s", user, app)
 	}
 	if fromHost == toHost {
-		st, found, err := target.Status(user, app)
+		st, found, err := target.StatusContext(ctx, user, app, gen)
 		if err != nil {
 			return Result{}, err
 		}
 		if found && st.State == "running" {
-			return Result{FromHost: fromHost, ToHost: toHost, Addr: st.Addr}, nil
+			return Result{FromHost: fromHost, ToHost: toHost, Gen: gen, Addr: st.Addr}, nil
 		}
 		return Result{}, fmt.Errorf("already placed on %s but not running", toHost)
 	}
@@ -61,23 +67,34 @@ func (m *Migrator) Migrate(ctx context.Context, user, app, toHost string) (Resul
 		return Result{}, fmt.Errorf("unknown source host %q", fromHost)
 	}
 
-	if err := source.Sleep(user, app); err != nil {
+	if err := source.SleepContext(ctx, user, app, gen); err != nil {
 		return Result{}, fmt.Errorf("source sleep: %w", err)
 	}
-	if err := source.Evict(user, app); err != nil {
+	if err := source.EvictContext(ctx, user, app, gen); err != nil {
 		return Result{}, fmt.Errorf("source evict: %w", err)
 	}
 
-	adopted, err := target.Adopt(user, app)
+	adopted, err := target.AdoptContext(ctx, user, app, gen)
 	if err != nil {
 		// Best-effort rollback onto source.
-		if _, rollErr := source.Adopt(user, app); rollErr == nil {
+		if _, rollErr := source.AdoptContext(ctx, user, app, gen); rollErr == nil {
 			_ = m.Placement.Set(ctx, user, app, fromHost)
 		}
 		return Result{}, fmt.Errorf("target adopt: %w", err)
 	}
 	if err := m.Placement.Set(ctx, user, app, toHost); err != nil {
-		return Result{}, fmt.Errorf("placement update: %w", err)
+		rollbackErr := target.SleepContext(ctx, user, app, gen)
+		if rollbackErr == nil {
+			rollbackErr = target.EvictContext(ctx, user, app, gen)
+		}
+		if rollbackErr == nil {
+			_, rollbackErr = source.AdoptContext(ctx, user, app, gen)
+		}
+		if rollbackErr == nil {
+			_ = m.Placement.Set(ctx, user, app, fromHost)
+			return Result{}, fmt.Errorf("placement update: %w (instance restored on %s)", err, fromHost)
+		}
+		return Result{}, fmt.Errorf("placement update: %w (rollback failed: %v)", err, rollbackErr)
 	}
-	return Result{FromHost: fromHost, ToHost: toHost, Addr: adopted.Addr}, nil
+	return Result{FromHost: fromHost, ToHost: toHost, Gen: gen, Addr: adopted.Addr}, nil
 }

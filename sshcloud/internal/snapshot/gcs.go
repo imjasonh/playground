@@ -2,13 +2,19 @@ package snapshot
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 
 	"cloud.google.com/go/storage"
+	"google.golang.org/api/iterator"
 )
 
 // GCSStore persists snapshot packages in a GCS bucket.
@@ -35,14 +41,22 @@ func (s *GCSStore) objectKey(key, name string) string {
 }
 
 func (s *GCSStore) Put(ctx context.Context, key string, pkg Package) error {
+	if err := validateKey(key); err != nil {
+		return err
+	}
 	bkt := s.client.Bucket(s.Bucket)
+	var random [16]byte
+	if _, err := rand.Read(random[:]); err != nil {
+		return fmt.Errorf("snapshot version: %w", err)
+	}
+	version := hex.EncodeToString(random[:])
 	for _, name := range objectNames() {
 		src := filepath.Join(pkg.Dir, name)
 		f, err := os.Open(src)
 		if err != nil {
 			return err
 		}
-		w := bkt.Object(s.objectKey(key, name)).NewWriter(ctx)
+		w := bkt.Object(s.objectKey(key, path.Join("versions", version, name))).NewWriter(ctx)
 		_, copyErr := io.Copy(w, f)
 		closeErr := w.Close()
 		_ = f.Close()
@@ -53,17 +67,56 @@ func (s *GCSStore) Put(ctx context.Context, key string, pkg Package) error {
 			return closeErr
 		}
 	}
+	// Publish one small pointer only after every immutable version object is
+	// durable, so readers never observe a mixed/partial four-file package.
+	manifest, err := json.Marshal(map[string]string{"version": version})
+	if err != nil {
+		return err
+	}
+	writeCtx, cancelWrite := context.WithCancel(ctx)
+	w := bkt.Object(s.objectKey(key, "current.json")).NewWriter(writeCtx)
+	if _, err := w.Write(append(manifest, '\n')); err != nil {
+		cancelWrite()
+		_ = w.Close()
+		return err
+	}
+	if err := w.Close(); err != nil {
+		cancelWrite()
+		return err
+	}
+	cancelWrite()
 	return nil
 }
 
 func (s *GCSStore) Get(ctx context.Context, key, destDir string) (Package, error) {
 	pkg := NewPackageDir(destDir)
+	if err := validateKey(key); err != nil {
+		return pkg, err
+	}
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
 		return pkg, err
 	}
 	bkt := s.client.Bucket(s.Bucket)
+	r, err := bkt.Object(s.objectKey(key, "current.json")).NewReader(ctx)
+	if err != nil {
+		return pkg, fmt.Errorf("get snapshot manifest: %w", err)
+	}
+	var manifest struct {
+		Version string `json:"version"`
+	}
+	decodeErr := json.NewDecoder(io.LimitReader(r, 4<<10)).Decode(&manifest)
+	closeErr := r.Close()
+	if decodeErr != nil {
+		return pkg, fmt.Errorf("decode snapshot manifest: %w", decodeErr)
+	}
+	if closeErr != nil {
+		return pkg, closeErr
+	}
+	if len(manifest.Version) != 32 || strings.Trim(manifest.Version, "0123456789abcdef") != "" {
+		return pkg, fmt.Errorf("invalid snapshot version %q", manifest.Version)
+	}
 	for _, name := range objectNames() {
-		r, err := bkt.Object(s.objectKey(key, name)).NewReader(ctx)
+		r, err := bkt.Object(s.objectKey(key, path.Join("versions", manifest.Version, name))).NewReader(ctx)
 		if err != nil {
 			return pkg, fmt.Errorf("get %s: %w", name, err)
 		}
@@ -94,11 +147,38 @@ func (s *GCSStore) Get(ctx context.Context, key, destDir string) (Package, error
 	return pkg, nil
 }
 
+// Has checks the atomic current-version manifest.
+func (s *GCSStore) Has(ctx context.Context, key string) (bool, error) {
+	if err := validateKey(key); err != nil {
+		return false, err
+	}
+	_, err := s.client.Bucket(s.Bucket).Object(s.objectKey(key, "current.json")).Attrs(ctx)
+	if errors.Is(err, storage.ErrObjectNotExist) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
 func (s *GCSStore) Delete(ctx context.Context, key string) error {
+	if err := validateKey(key); err != nil {
+		return err
+	}
 	bkt := s.client.Bucket(s.Bucket)
 	var first error
-	for _, name := range objectNames() {
-		if err := bkt.Object(s.objectKey(key, name)).Delete(ctx); err != nil && first == nil {
+	prefix := s.objectKey(key, "") + "/"
+	it := bkt.Objects(ctx, &storage.Query{Prefix: prefix})
+	for {
+		attrs, err := it.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			if first == nil {
+				first = err
+			}
+			break
+		}
+		if err := bkt.Object(attrs.Name).Delete(ctx); err != nil && !errors.Is(err, storage.ErrObjectNotExist) && first == nil {
 			first = err
 		}
 	}

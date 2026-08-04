@@ -66,17 +66,28 @@ func Start(ctx context.Context, cfg Config) (*Machine, error) {
 	_ = os.Remove(cfg.SocketPath)
 
 	args := []string{"--api-sock", cfg.SocketPath}
-	cmd := exec.CommandContext(ctx, cfg.FirecrackerBin, args...)
+	// The caller's context bounds startup only. A Firecracker VMM must outlive
+	// the HTTP Ensure request that started it, so never tie the process lifetime
+	// to that request with exec.CommandContext.
+	cmd := exec.Command(cfg.FirecrackerBin, args...)
+	var logFile *os.File
 	if cfg.LogPath != "" {
 		f, err := os.Create(cfg.LogPath)
 		if err != nil {
 			return nil, err
 		}
+		logFile = f
 		cmd.Stdout = f
 		cmd.Stderr = f
 	}
 	if err := cmd.Start(); err != nil {
+		if logFile != nil {
+			_ = logFile.Close()
+		}
 		return nil, fmt.Errorf("start firecracker: %w", err)
+	}
+	if logFile != nil {
+		_ = logFile.Close()
 	}
 	m := &Machine{
 		cfg: cfg,

@@ -22,6 +22,7 @@ type slot struct {
 	ID     ID
 	Gen    string
 	cancel context.CancelFunc
+	kicked bool
 }
 
 // Registry is an in-memory session table for the gateway.
@@ -82,19 +83,25 @@ func (r *Registry) BindCancel(id ID, cancel context.CancelFunc) {
 		return
 	}
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	k, ok := r.byID[id]
 	if !ok {
+		r.mu.Unlock()
 		return
 	}
 	slots := r.slots[k]
 	for i := range slots {
 		if slots[i].ID == id {
 			slots[i].cancel = cancel
+			kicked := slots[i].kicked
 			r.slots[k] = slots
+			r.mu.Unlock()
+			if kicked {
+				cancel()
+			}
 			return
 		}
 	}
+	r.mu.Unlock()
 }
 
 // Kick cancels sessions for user/app/gen (empty gen matches only empty-gen slots).
@@ -102,13 +109,22 @@ func (r *Registry) BindCancel(id ID, cancel context.CancelFunc) {
 func (r *Registry) Kick(user, app, gen string) int {
 	k := Key{User: user, App: app}
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	n := 0
-	for _, s := range r.slots[k] {
-		if s.Gen == gen && s.cancel != nil {
-			s.cancel()
+	var cancels []context.CancelFunc
+	slots := r.slots[k]
+	for i := range slots {
+		if slots[i].Gen == gen {
+			slots[i].kicked = true
+			if slots[i].cancel != nil {
+				cancels = append(cancels, slots[i].cancel)
+			}
 			n++
 		}
+	}
+	r.slots[k] = slots
+	r.mu.Unlock()
+	for _, cancel := range cancels {
+		cancel()
 	}
 	return n
 }

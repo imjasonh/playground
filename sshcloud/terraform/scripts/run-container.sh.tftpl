@@ -3,18 +3,32 @@
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 
+retry() {
+  local attempts="$1"
+  shift
+  local i
+  for i in $(seq 1 "$attempts"); do
+    if "$@"; then
+      return 0
+    fi
+    echo "attempt $i/$attempts failed: $*" >&2
+    sleep "$((i < 10 ? i : 10))"
+  done
+  return 1
+}
+
 install_docker() {
-  if command -v docker >/dev/null 2>&1; then
+  if command -v docker >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
     return
   fi
-  apt-get update -y
-  apt-get install -y docker.io jq curl ca-certificates python3
+  retry 10 apt-get update -y
+  retry 10 apt-get install -y docker.io jq curl ca-certificates python3
   systemctl enable --now docker
 }
 
 registry_login() {
   local token
-  token="$(curl -fsS -H 'Metadata-Flavor: Google' \
+  token="$(curl --retry 10 --retry-all-errors -fsS -H 'Metadata-Flavor: Google' \
     http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token \
     | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')"
   echo "$token" | docker login -u oauth2accesstoken --password-stdin "https://${registry_host}"
@@ -23,8 +37,8 @@ registry_login() {
 pull_secret() {
   local name="$1" dest="$2"
   mkdir -p "$(dirname "$dest")"
-  curl -fsS -H "Metadata-Flavor: Google" -H "Authorization: Bearer $(
-      curl -fsS -H 'Metadata-Flavor: Google' \
+  curl --retry 10 --retry-all-errors -fsS -H "Metadata-Flavor: Google" -H "Authorization: Bearer $(
+      curl --retry 10 --retry-all-errors -fsS -H 'Metadata-Flavor: Google' \
         http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token \
         | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])'
     )" \

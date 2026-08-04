@@ -27,8 +27,6 @@ locals {
   snapshot_bucket = google_storage_bucket.snapshots.name
   snapshot_prefix = "sshcloud/snaps"
   hosts_path      = "/var/lib/sshcloud/hosts"
-  agent_listen    = "0.0.0.0:8080"
-  orch_listen     = "0.0.0.0:8090"
   gateway_listen  = "0.0.0.0:22"
   registry        = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.sshcloud.repository_id}"
 }

@@ -6,9 +6,9 @@ TF="$ROOT/terraform"
 
 need=(
   versions.tf variables.tf outputs.tf main.tf iam.tf firestore.tf storage.tf
-  secrets.tf images.tf network.tf gateway.tf orchestrator.tf agents.tf
+  secrets.tf images.tf network.tf gateway.tf orchestrator.tf agents.tf demo.tf
   scripts/gateway.sh.tftpl scripts/orchestrator.sh.tftpl scripts/agent.sh.tftpl
-  scripts/run-container.sh.tftpl terraform.tfvars.example README.md
+  scripts/run-container.sh.tftpl scripts/deploy-fortune.sh terraform.tfvars.example README.md
 )
 for f in "${need[@]}"; do
   if [[ ! -f "$TF/$f" ]]; then
@@ -33,6 +33,11 @@ if ! grep -q 'google_firestore_database' "$TF/firestore.tf"; then
   echo "firestore.tf must declare google_firestore_database" >&2
   exit 1
 fi
+if ! grep -q 'triggers_replace' "$TF/demo.tf"; then
+  echo "demo.tf must rerun bootstrap when its deployment inputs change" >&2
+  exit 1
+fi
+bash -n "$TF/scripts/deploy-fortune.sh"
 
 if command -v terraform >/dev/null 2>&1; then
   terraform -chdir="$TF" fmt -check -recursive

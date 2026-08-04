@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 	"math/rand"
+
+	"golang.org/x/crypto/ssh"
 )
 
 var fortunes = []string{
@@ -15,33 +17,42 @@ var fortunes = []string{
 }
 
 // RunAppStub connects to the app backend (cert hop) or falls back to a stub UI.
-func RunAppStub(ctx context.Context, ch io.ReadWriter, hub *Hub, res Result) {
-	runAppStub(ctx, newTerm(ch), hub, res)
+func RunAppStub(ctx context.Context, ch io.ReadWriter, hub *Hub, res Result) int {
+	return runAppStub(ctx, newTerm(ch), hub, res)
 }
 
-func runAppStub(ctx context.Context, t *term, hub *Hub, res Result) {
+func runAppStub(ctx context.Context, t *term, hub *Hub, res Result) int {
 	if hub.UserCA != nil && hub.Dial != nil {
-		img := ""
+		img, tier := "", "tiny"
 		if a, err := hub.Store.GetApp(ctx, res.User, res.App); err == nil && a != nil {
 			img = a.Image
+			if a.Tier != "" {
+				tier = a.Tier
+			}
 		}
 		addr, err := DialWithLoading(ctx, t.out, res.App, hub.Dial, DialRequest{
-			User:  res.User,
-			App:   res.App,
-			Gen:   res.Gen,
-			Image: img,
+			User:   res.User,
+			App:    res.App,
+			Gen:    res.Gen,
+			Image:  img,
+			Tier:   tier,
+			NoIdle: true,
 		})
 		if err != nil {
 			t.Printf("backend error: %v\n", err)
-			return
+			return 1
 		}
 		if err := ProxySSH(ctx, t.rw, hub.UserCA, res.User, addr); err != nil {
 			if ctx.Err() != nil {
-				return
+				return 1
 			}
 			t.Printf("proxy error: %v\n", err)
+			if exitErr, ok := err.(*ssh.ExitError); ok {
+				return exitErr.ExitStatus()
+			}
+			return 1
 		}
-		return
+		return 0
 	}
 
 	// Fallback when CA/backend not configured (unit tests / misconfig).
@@ -54,4 +65,5 @@ func runAppStub(ctx context.Context, t *term, hub *Hub, res Result) {
 	}
 	t.Printf("Press enter to return.\n")
 	_, _ = t.ReadLine()
+	return 0
 }

@@ -13,11 +13,32 @@ TIER="${DEPLOY_TIER:-tiny}"
 STRATEGY="${DEPLOY_STRATEGY:-kick}"
 RETRIES="${DEPLOY_RETRIES:-36}"
 SLEEP_SECS="${DEPLOY_SLEEP:-10}"
+REQUEST_TIMEOUT="${DEPLOY_REQUEST_TIMEOUT:-150}"
+TOTAL_TIMEOUT="${DEPLOY_TOTAL_TIMEOUT:-900}"
 
 if [[ -z "${DEMO_KEY_PEM:-}" || -z "${HOST_PUB:-}" ]]; then
   echo "DEMO_KEY_PEM and HOST_PUB env vars are required" >&2
   exit 1
 fi
+if [[ ! "$USER_NAME" =~ ^[a-z][a-z0-9-]{2,31}$ ]] || [[ ! "$APP_NAME" =~ ^[a-z][a-z0-9-]{2,31}$ ]]; then
+  echo "DEPLOY_USER and DEPLOY_APP must match [a-z][a-z0-9-]{2,31}" >&2
+  exit 2
+fi
+if [[ "$TIER" != "tiny" && "$TIER" != "small" ]]; then
+  echo "DEPLOY_TIER must be tiny or small" >&2
+  exit 2
+fi
+if [[ "$STRATEGY" != "kick" && "$STRATEGY" != "drain" ]]; then
+  echo "DEPLOY_STRATEGY must be kick or drain" >&2
+  exit 2
+fi
+for value in "$RETRIES" "$SLEEP_SECS" "$REQUEST_TIMEOUT" "$TOTAL_TIMEOUT"; do
+  if [[ ! "$value" =~ ^[0-9]+$ ]] || [[ "$value" -eq 0 ]]; then
+    echo "retry and timeout settings must be positive integers" >&2
+    exit 2
+  fi
+done
+deadline=$((SECONDS + TOTAL_TIMEOUT))
 
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
@@ -41,6 +62,17 @@ ssh_base=(
   -o BatchMode=yes
 )
 
+run_ssh() {
+  timeout --signal=TERM --kill-after=5 "$REQUEST_TIMEOUT" "${ssh_base[@]}" "$@"
+}
+
+pause_retry() {
+  if (( SECONDS + SLEEP_SECS >= deadline )); then
+    return 1
+  fi
+  sleep "$SLEEP_SECS"
+}
+
 port_open() {
   if command -v nc >/dev/null 2>&1; then
     nc -z -w 2 "$IP" 22
@@ -52,12 +84,15 @@ port_open() {
 echo "waiting for gateway SSH on ${IP}:22 …"
 ok=0
 for i in $(seq 1 "$RETRIES"); do
+  if (( SECONDS >= deadline )); then
+    break
+  fi
   if port_open 2>/dev/null; then
     ok=1
     break
   fi
   echo "  attempt ${i}/${RETRIES}: port closed, sleep ${SLEEP_SECS}s"
-  sleep "$SLEEP_SECS"
+  pause_retry || break
 done
 if [[ "$ok" -ne 1 ]]; then
   echo "gateway SSH never became ready" >&2
@@ -65,39 +100,42 @@ if [[ "$ok" -ne 1 ]]; then
 fi
 
 echo "joining as ${USER_NAME}…"
-# First apply: creates user. Later applies: key already known → "Logged in as …".
-set +e
-join_out="$("${ssh_base[@]}" "join@${IP}" "${USER_NAME}" 2>&1)"
-join_rc=$?
-set -e
-echo "$join_out"
-if [[ "$join_rc" -ne 0 ]] && ! echo "$join_out" | grep -qE "Joined as ${USER_NAME}|Logged in as ${USER_NAME}"; then
-  # Gateway may still be starting (handshake fails). Retry join a few times.
-  joined=0
-  for i in $(seq 1 "$RETRIES"); do
-    set +e
-    join_out="$("${ssh_base[@]}" "join@${IP}" "${USER_NAME}" 2>&1)"
-    join_rc=$?
-    set -e
-    echo "$join_out"
-    if [[ "$join_rc" -eq 0 ]] || echo "$join_out" | grep -qE "Joined as ${USER_NAME}|Logged in as ${USER_NAME}"; then
-      joined=1
-      break
-    fi
-    echo "  join attempt ${i}/${RETRIES} failed; sleep ${SLEEP_SECS}s"
-    sleep "$SLEEP_SECS"
-  done
-  if [[ "$joined" -ne 1 ]]; then
-    echo "join failed" >&2
-    exit 1
+joined=0
+for i in $(seq 1 "$RETRIES"); do
+  if (( SECONDS >= deadline )); then
+    break
   fi
+  set +e
+  join_out="$(run_ssh "join@${IP}" "${USER_NAME}" 2>&1)"
+  join_rc=$?
+  set -e
+  echo "$join_out"
+  if [[ "$join_rc" -eq 0 ]]; then
+    joined=1
+    break
+  fi
+  echo "  join attempt ${i}/${RETRIES} failed (rc=${join_rc}); sleep ${SLEEP_SECS}s"
+  pause_retry || break
+done
+if [[ "$joined" -ne 1 ]]; then
+  echo "join failed" >&2
+  exit 1
 fi
 
 echo "deploying ${APP_NAME} ← ${IMAGE}"
-deploy_cmd="${APP_NAME} --image=${IMAGE} --tier=${TIER} --strategy=${STRATEGY} --yes"
+deploy_args=(
+  "$APP_NAME"
+  "--image=$IMAGE"
+  "--tier=$TIER"
+  "--strategy=$STRATEGY"
+  "--yes"
+)
 for i in $(seq 1 "$RETRIES"); do
+  if (( SECONDS >= deadline )); then
+    break
+  fi
   set +e
-  last="$("${ssh_base[@]}" "deploy@${IP}" ${deploy_cmd} 2>&1)"
+  last="$(run_ssh "deploy@${IP}" "${deploy_args[@]}" 2>&1)"
   rc=$?
   set -e
   echo "$last"
@@ -106,7 +144,7 @@ for i in $(seq 1 "$RETRIES"); do
     exit 0
   fi
   echo "  deploy attempt ${i}/${RETRIES} failed (rc=${rc}); sleep ${SLEEP_SECS}s"
-  sleep "$SLEEP_SECS"
+  pause_retry || break
 done
-echo "deploy failed after ${RETRIES} attempts (agents/assets may still be warming)" >&2
+echo "deploy failed before the ${TOTAL_TIMEOUT}s overall deadline" >&2
 exit 1

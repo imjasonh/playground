@@ -3,29 +3,49 @@
 # first `ssh fortune@GATEWAY` without a human TUI session.
 
 resource "tls_private_key" "demo" {
+  count     = var.enable_demo_bootstrap ? 1 : 0
   algorithm = "ED25519"
 }
 
 resource "terraform_data" "deploy_fortune" {
-  input = {
-    fortune_image = ko_build.fortune.image_ref
-    gateway_id    = google_compute_instance.gateway.instance_id
-    gateway_ip    = google_compute_instance.gateway.network_interface[0].access_config[0].nat_ip
-    agents        = google_compute_instance_group_manager.agents.id
+  count = var.enable_demo_bootstrap ? 1 : 0
+
+  triggers_replace = [
+    ko_build.fortune.image_ref,
+    google_compute_instance.gateway.instance_id,
+    google_compute_instance.orchestrator.instance_id,
+    google_compute_instance_template.agent.id,
+    filesha256("${path.module}/scripts/deploy-fortune.sh"),
+    var.demo_user,
+    var.demo_app,
+    var.demo_tier,
+    var.demo_strategy,
+  ]
+
+  lifecycle {
+    precondition {
+      condition     = length(var.ssh_client_cidrs) > 0
+      error_message = "enable_demo_bootstrap requires ssh_client_cidrs to allow the Terraform runner."
+    }
   }
 
   depends_on = [
     google_compute_instance.gateway,
     google_compute_instance_group_manager.agents,
     google_compute_instance.orchestrator,
+    google_compute_health_check.agent,
     ko_build.fortune,
   ]
 
   provisioner "local-exec" {
     interpreter = ["bash", "-c"]
     environment = {
-      DEMO_KEY_PEM = tls_private_key.demo.private_key_openssh
-      HOST_PUB     = tls_private_key.gateway_host.public_key_openssh
+      DEMO_KEY_PEM    = tls_private_key.demo[0].private_key_openssh
+      HOST_PUB        = tls_private_key.gateway_host.public_key_openssh
+      DEPLOY_USER     = var.demo_user
+      DEPLOY_APP      = var.demo_app
+      DEPLOY_TIER     = var.demo_tier
+      DEPLOY_STRATEGY = var.demo_strategy
     }
     command = <<-EOT
       bash "${path.module}/scripts/deploy-fortune.sh" \

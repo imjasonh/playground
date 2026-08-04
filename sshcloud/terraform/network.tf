@@ -5,13 +5,34 @@ resource "google_compute_network" "sshcloud" {
 }
 
 resource "google_compute_subnetwork" "sshcloud" {
-  name          = local.prefix
-  ip_cidr_range = "10.20.0.0/20"
-  region        = var.region
-  network       = google_compute_network.sshcloud.id
+  name                     = local.prefix
+  ip_cidr_range            = "10.20.0.0/20"
+  region                   = var.region
+  network                  = google_compute_network.sshcloud.id
+  private_ip_google_access = true
+}
+
+resource "google_compute_router" "sshcloud" {
+  name    = local.prefix
+  region  = var.region
+  network = google_compute_network.sshcloud.id
+}
+
+resource "google_compute_router_nat" "sshcloud" {
+  name                               = local.prefix
+  router                             = google_compute_router.sshcloud.name
+  region                             = var.region
+  nat_ip_allocate_option             = "AUTO_ONLY"
+  source_subnetwork_ip_ranges_to_nat = "LIST_OF_SUBNETWORKS"
+
+  subnetwork {
+    name                    = google_compute_subnetwork.sshcloud.id
+    source_ip_ranges_to_nat = ["ALL_IP_RANGES"]
+  }
 }
 
 resource "google_compute_firewall" "gateway_ssh" {
+  count   = length(var.ssh_client_cidrs) > 0 ? 1 : 0
   name    = "${local.prefix}-gateway-ssh"
   network = google_compute_network.sshcloud.name
 
@@ -39,15 +60,54 @@ resource "google_compute_firewall" "iap_ssh" {
 
 # Host sshd is moved to 2222 on the gateway (app SSH takes :22).
 
-resource "google_compute_firewall" "internal" {
-  name    = "${local.prefix}-internal"
+resource "google_compute_firewall" "gateway_to_orchestrator" {
+  name    = "${local.prefix}-gateway-to-orchestrator"
   network = google_compute_network.sshcloud.name
 
   allow {
     protocol = "tcp"
-    ports    = ["8080", "8090"]
+    ports    = ["8090"]
   }
 
-  source_ranges = [google_compute_subnetwork.sshcloud.ip_cidr_range]
-  target_tags   = ["${local.prefix}-orchestrator", "${local.prefix}-agent"]
+  source_tags = ["${local.prefix}-gateway"]
+  target_tags = ["${local.prefix}-orchestrator"]
+}
+
+resource "google_compute_firewall" "orchestrator_to_agents" {
+  name    = "${local.prefix}-orchestrator-to-agents"
+  network = google_compute_network.sshcloud.name
+
+  allow {
+    protocol = "tcp"
+    ports    = ["8080"]
+  }
+
+  source_tags = ["${local.prefix}-orchestrator"]
+  target_tags = ["${local.prefix}-agent"]
+}
+
+resource "google_compute_firewall" "gateway_to_agent_relays" {
+  name    = "${local.prefix}-gateway-to-agent-relays"
+  network = google_compute_network.sshcloud.name
+
+  allow {
+    protocol = "tcp"
+    ports    = ["20000-29999"]
+  }
+
+  source_tags = ["${local.prefix}-gateway"]
+  target_tags = ["${local.prefix}-agent"]
+}
+
+resource "google_compute_firewall" "agent_health_checks" {
+  name    = "${local.prefix}-agent-health-checks"
+  network = google_compute_network.sshcloud.name
+
+  allow {
+    protocol = "tcp"
+    ports    = ["8080"]
+  }
+
+  source_ranges = ["35.191.0.0/16", "130.211.0.0/22"]
+  target_tags   = ["${local.prefix}-agent"]
 }

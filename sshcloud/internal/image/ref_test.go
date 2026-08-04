@@ -1,6 +1,9 @@
 package image
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestValidateDigestPinned(t *testing.T) {
 	t.Parallel()
@@ -27,5 +30,22 @@ func TestValidateDigestPinned(t *testing.T) {
 		if err := ValidateDigestPinned(ref); err == nil {
 			t.Fatalf("expected error for %q", ref)
 		}
+	}
+}
+
+func TestValidateAllowedRegistry(t *testing.T) {
+	t.Parallel()
+	digest := strings.Repeat("a", 64)
+	for _, ref := range []string{
+		"ghcr.io/me/app@sha256:" + digest,
+		"us-central1-docker.pkg.dev/project/repo/app@sha256:" + digest,
+	} {
+		if err := ValidateAllowedRegistry(ref, []string{"ghcr.io", "*.pkg.dev"}); err != nil {
+			t.Fatalf("%s: %v", ref, err)
+		}
+	}
+	err := ValidateAllowedRegistry("10.20.0.4:5000/app@sha256:"+digest, []string{"ghcr.io", "*.pkg.dev"})
+	if err == nil || !strings.Contains(err.Error(), "not allowed") {
+		t.Fatalf("expected registry rejection, got %v", err)
 	}
 }

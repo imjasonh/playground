@@ -1,11 +1,35 @@
 # Design: SSH App Cloud
 
-> **Status: design / pre-implementation.** Working name **SSH App Cloud** — a
+> **Status: implementation prototype / private smoke tests only.** Working name
+> **SSH App Cloud** — a
 > public PaaS where apps deploy an OCI image that speaks SSH on port 22.
 > Default entry is `ssh foo.com` (hub: join or app menu); deep links use
 > `ssh <app>@foo.com` (owner inferred from the presenting key). No HTTP.
 > Runtime is Firecracker microVMs on a warm GCE host MIG, with platform
 > services in Go + Terraform (`terraform-provider-ko`).
+>
+> A review checkpoint found that the package-level vertical slice is ahead of
+> its production safety boundary. Public ingress remains closed by default.
+> Quotas/rate limits, full SSH request fidelity, app host identity,
+> jailer-based isolation, egress controls, distributed reconciliation, and
+> production migration are launch blockers—not optional polish.
+
+### Review constraints
+
+- Terraform `local-exec` SSH deployment is retained only as an opt-in fortune
+  smoke test. Terraform cannot be the durable app reconciler: remote success
+  can be lost, SSH is imperative, and app state can drift independently.
+- Registry support is constrained to an operator allowlist. A syntactically
+  valid digest is not sufficient; arbitrary registry hosts turn deploy into
+  control-plane SSRF.
+- One in-process gateway can serialize deploy/admission for this prototype.
+  Multiple gateways require Firestore CAS/leases before they are safe.
+- Snapshot migrate is generation-aware infrastructure machinery, not yet a
+  transparent live-session feature. Do not promise freeze-buffer migration
+  until gateway I/O fencing and host-drain reconciliation exist.
+- `tiny`/`small`, exec/subsystem, quotas, and “strong isolation” are product
+  claims only when their corresponding enforcement paths are deployed and
+  tested end to end.
 
 ### Locked decisions
 
@@ -226,7 +250,7 @@ through to the hub (unknown app).
 
 | Concern | Rule |
 |--------|------|
-| Artifact | Public OCI image, **digest-pinned** (`repo@sha256:…`) |
+| Artifact | Allowlisted OCI registry, **digest-pinned** (`repo@sha256:…`) |
 | Process | PID 1 listens on TCP `:22` (SSH) |
 | Server | Any SSH implementation that verifies **platform user certs** |
 | CA | Read platform user CA from `/run/platform/ssh_user_ca.pub` (injected) |
@@ -248,6 +272,10 @@ Client↔gateway↔app supports:
 Not in v1: arbitrary multiplexing / port forwarding / agent forwarding as a
 platform guarantee.
 
+This is the target contract. The prototype currently proxies interactive shell
+sessions only and explicitly rejects app exec requests instead of silently
+misrouting them; PTY resize/env/signal/subsystem/stderr fidelity is still open.
+
 ### Access (v1)
 
 - Unknown key → join (never silent reject on deep links).
@@ -264,6 +292,9 @@ platform identity. The gateway guarantees:
 2. This session was admitted under concurrency and rate-limit policy.  
 3. A second concurrent session for the same user×app will not be proxied
    (app will not see it).  
+
+Items 1–2 describe the launch contract, not current prototype behavior:
+concurrency is enforced today, but join/session/wake/deploy quotas are not.
 
 Apps may still enforce **app-domain** rules later (e.g. multi-tenant git authz)
 when cross-user access exists; that is separate from platform anti-abuse.
@@ -324,8 +355,9 @@ GCE host MIG ── host agent ── Firecracker ── app :22
 - Gateway wake loading TUI: `DialWithLoading` prints `Starting <app>…` while
   Ensure/Adopt runs; dial via `-agent-url` or placement-aware
   `-orchestrator-url` (`POST /v1/ensure`).
-- Still open: session-aware idle (today: agent `LastUsed` on Ensure, not live
-  SSH connection count). Cross-host migrate: see below.
+- Active sessions and drains now hold an agent `no_idle` lease; release clears
+  it. Still open: heartbeat/expiry so a crashed gateway cannot leave the hold
+  set forever. Cross-host migrate: see below.
 
 ### Migration (host drain / bin-pack)
 
@@ -337,7 +369,7 @@ GCE host MIG ── host agent ── Firecracker ── app :22
 
 **Implemented in `sshcloud/` (control-plane path; no live SSH buffer yet):**
 - Agent: `Sleep` → `Evict` (drop local TAP/workdir, **keep** shared snapshot) →
-  target `Adopt` (restore from store with new local TAP name, same guest IP/MAC).
+  target `Adopt` (restore deterministic paths/TAP, same guest IP/MAC).
 - `internal/placement` maps `user/app` → host ID; `internal/migrate.Migrator`
   orchestrates the cutover with best-effort rollback Adopt on the source.
 - `cmd/orchestrator` exposes `POST /v1/migrate` and placement-aware `POST /v1/ensure`.
@@ -375,14 +407,15 @@ Responsibilities (v1 sketch):
 - Non-interactive deploy via SSH exec args:
   `ssh deploy@host fortune --image=repo@sha256:… [--tier=tiny] [--strategy=kick|drain] --yes`
   (exit status set for automation). Join: `ssh join@host demo`.
-- Terraform `demo.tf` hack: `ko_build.fortune` digest → `local-exec` SSH join+deploy for the bootstrap `demo` user
-- Digest-pinned image validation (`internal/image.ValidateDigestPinned`)
+- Opt-in Terraform `demo.tf` smoke-test hack: `ko_build.fortune` digest →
+  `local-exec` SSH join+deploy; input/script/infra changes replace the action
+- Digest-pinned image validation plus registry allowlist (`internal/image`)
 - `store.UpsertApp` / `GetApp` (tier + session strategy)
 - Hub-footgun warning for common local usernames
 - OCI pull/extract → ext4: `sshcloud/internal/ocirootfs` (go-containerregistry;
   digest cache; whiteouts; 1 GiB unpack cap; boot spec sidecar); agent Ensure
   `"image"` + `RootfsResolver`; PID 1 from image config via `cmd/guestinit`
-- Dual-instance cutover: `internal/cutover` (drain + kick-on-timeout default,
+- Serialized/idempotent dual-instance cutover: `internal/cutover` (drain + kick-on-timeout default,
   kick-now); gateway pins sessions to `ActiveGen`; agent instances are
   `app` or `app.gen`; draining gens set `no_idle`.
 - Guest PID 1: always `guestinit` (`init=/platform-init` + `/platform-boot.json`).
@@ -473,7 +506,9 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
 - Emulator tests: `hack/run-firestore-tests.sh` (skips in plain `go test`
   without `FIRESTORE_EMULATOR_HOST`).
 - Terraform provisions the Native `(default)` database (`sshcloud/terraform`).
-- Still open: quota counters.
+- Interim bearer authentication protects each internal API hop; VPC firewalls
+  allow only gateway→orchestrator and orchestrator→agent control traffic.
+- Still open: quota counters and workload identity + mTLS.
 
 ### Infra
 
@@ -487,9 +522,13 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
 **Implemented in `sshcloud/terraform/` (first environment):**
 - `ko_build` images: gateway, orchestrator, agent, guestinit, fortune (sample app), api (api image only; no VM yet)
 - Firestore Native `(default)`, snapshot + asset GCS buckets, Artifact Registry
-- Secret Manager: gateway host key + user CA (`tls_private_key` → secret versions)
-- Gateway GCE VM (public `:22`), orchestrator VM (VPC), nested-virt agent MIG
+- Secret Manager: gateway host key, user CA, and separate per-hop control tokens
+- Gateway static IP (`:22` only when CIDRs are explicitly supplied),
+  orchestrator VM (VPC), nested-virt agent MIG
 - Orchestrator `-hosts-file` refresh from MIG membership (`GET /v1/hosts`)
+- Cloud NAT/Private Google Access for private hosts; content-addressed
+  Firecracker/kernel GCS objects are in the Terraform DAG; agent-host SSH
+  relays provide the separate-VM gateway→guest data path
 - Still open: egress allowlist on the data path, IAP-only hardening, key rotation
   out of Terraform state. OCI→rootfs on agents: `internal/ocirootfs` + Ensure
   `"image"` hook + `guestinit` PID 1 from image config; deploy cutover pre-boots
@@ -561,10 +600,10 @@ hits, wake/deploy denials — still **no session bytes**.
 ## 12. MVP vertical slice
 
 1. ~~Terraform + ko: Firestore, GCS, Secrets, host MIG, single gateway, orchestrator, agent.~~
-   (`sshcloud/terraform/`; upload Firecracker assets after apply).  
+   (`sshcloud/terraform/`; local pinned assets are uploaded before the MIG).
 2. Platform user CA + inject path; shared kernel.  
 3. Sample fortune OCI image (SSH server verifying CA) — `ko_build.fortune`.  
-4. `ssh foo.com` (unknown key) → join → menu (join rate-limited).  
+4. `ssh foo.com` (unknown key) → join → menu (**rate limits still block public ingress**).
 5. Deploy fortune → menu → fortune → wake (loading UI) → cert hop → session.  
 6. Second concurrent `ssh fortune@foo.com` → **rejected** (session busy).  
 7. Idle → snapshot-on-sleep; reconnect restores.  
@@ -591,9 +630,11 @@ hits, wake/deploy denials — still **no session bytes**.
 4. **Freeze buffer cap** — max migrate hold before forced reconnect.  
 5. ~~**Deploy drain-timeout default**~~ — gateway `-drain-timeout` default **5m**;
    per-deploy TUI override not in v1 (strategy only).  
-6. **Tier numbers** — concrete vCPU/RAM/disk for `tiny` / `small`.  
+6. ~~**Tier numbers**~~ — `tiny` = 1 vCPU / 128 MiB; `small` = 2 vCPU /
+   512 MiB. Rootfs is currently 512 MiB for both; volume/disk tiers remain open.
 7. **Global allowlist contents** — what destinations ship by default.  
-8. **Internal API auth** — mTLS between gateway/orchestrator/agent.  
+8. **Internal API auth** — interim per-hop bearer tokens are implemented; replace
+   them with workload identity + mTLS between gateway/orchestrator/agent.
 9. ~~**Repo layout**~~ — **`sshcloud/`** single Go module (`cmd/{gateway,orchestrator,agent,api}`, `internal/…`, `images/fortune`, `terraform/`).  
 10. **Threat model** — tenant breakout, snapshot confidentiality in GCS, CA theft.  
 11. **Hub footgun UX** — deploy-time warnings / `~/.ssh/config` docs when local

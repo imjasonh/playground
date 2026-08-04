@@ -5,6 +5,11 @@ app; apps speak SSH on `:22` and run in Firecracker microVMs.
 
 Design: [`docs/ssh-app-cloud-design.md`](../docs/ssh-app-cloud-design.md).
 
+> **Prototype safety boundary:** this branch is suitable for local/KVM and
+> CIDR-restricted GCP smoke tests. It is not ready for public self-service.
+> Quotas/rate limits, app host identity, full SSH request proxying, jailer-based
+> isolation, egress policy, and production recovery/reconciliation remain open.
+
 ## Layout
 
 | Path | Role |
@@ -109,17 +114,20 @@ exist only for test/dev Ensures without an image.
 
 ### OCI image → ext4 rootfs
 
-Public apps are digest-pinned (`repo@sha256:…`). PID 1 must listen on `:22`
-and trust the platform user CA at `/ca.pub` or `/run/platform/ssh_user_ca.pub`
-(the agent still injects `/ca.pub` via debugfs). The kernel is platform-supplied,
+Allowed apps are digest-pinned (`repo@sha256:…`). PID 1 must listen on `:22`
+and trust the platform user CA at `/run/platform/ssh_user_ca.pub`
+(`/ca.pub` remains as a compatibility alias). The kernel is platform-supplied,
 not taken from the image.
 
 `internal/ocirootfs.Materialize` pulls with
 [go-containerregistry](https://github.com/google/go-containerregistry)
-(`remote.Image`, linux/amd64, anonymous public registries), applies layers with
-OCI whiteouts, builds ext4 via `rootfs.BuildFromDir`, and caches by digest hex
+(`remote.Image`, linux/amd64, Google ADC + standard credential keychains), applies layers with
+OCI whiteouts through Go's traversal-resistant `os.Root`, builds ext4 via
+`rootfs.BuildFromDir`, and caches by digest hex
 under `-work-dir/oci-rootfs` (plus `<hex>.boot.json` for PID 1 spec).
-Uncompressed unpack is capped at 1 GiB. Every cold boot injects `cmd/guestinit`
+Uncompressed unpack is capped at 1 GiB and 100,000 entries. Registry hosts are
+allowlisted in deployed gateway/agent processes to prevent image-ref SSRF.
+Every cold boot injects `cmd/guestinit`
 as `/platform-init` (`-guestinit`) and the resolved boot spec as
 `/platform-boot.json`. Base rootfs boots use `-boot-spec` (default
 `<rootfs>.boot.json`).
@@ -170,10 +178,12 @@ go run ./cmd/orchestrator \
   -default-host host-a
 
 curl -X POST http://127.0.0.1:8090/v1/migrate \
-  -d '{"user":"alice","app":"fortune","to":"host-b"}'
+  -d '{"user":"alice","app":"fortune","gen":"g…","to":"host-b"}'
 ```
 
-Agent APIs: `POST /v1/instances/evict`, `POST /v1/instances/adopt`.
+Agent APIs: `POST /v1/instances/evict`, `POST /v1/instances/adopt`. Migration
+is generation-aware; coordinating active plus draining generations and buffering
+live gateway I/O remains future work.
 
 Orchestration unit test (httptest agent stubs, no VMs):
 `go test ./internal/migrate -run TestMigrateOrchestration`.
@@ -200,17 +210,34 @@ bash hack/run-kvm-e2e.sh   # not as root
 
 ## Status
 
-- [x] Routing, session admission, memory store
-- [x] SSH gateway: join, menu, busy reject
-- [x] User CA + cert hop (process or Firecracker)
-- [x] Host agent + Firecracker client + rootfs builder
-- [x] Snapshot-on-sleep (local + GCS store; idle loop; wake on ensure)
-- [x] Cross-host migrate (Sleep→Evict→Adopt + placement)
-- [x] Real Firecracker KVM e2e in GitHub Actions (`sshcloud-kvm` job)
-- [x] Gateway wake loading TUI + placement-aware dial (`-orchestrator-url`)
-- [x] Deploy TUI (digest-pinned register + drain/kick cutover)
-- [x] Firestore store (users/keys/apps) + placement (`-firestore-project`)
-- [x] Terraform + ko (Firestore, GCS, secrets, gateway VM, orchestrator, agent MIG)
-- [x] OCI image → ext4 rootfs (`internal/ocirootfs`; agent Ensure `"image"` hook)
-- [x] Deploy cutover (drain/kick dual-instance; session pin per generation)
-- [ ] Gateway freeze-buffer during migrate
+Implemented and covered at package/integration level:
+
+- [x] Owner-scoped routing, join/menu/deploy UX, busy admission
+- [x] Gateway-minted user certificates and normal digest-pinned fortune app
+- [x] Hardened OCI unpack, authenticated pulls, boot-spec PID 1, ext4 cache
+- [x] Firecracker boot plus consistent pause→disk→memory snapshots
+- [x] Atomic snapshot package publication and restart-on-Ensure recovery
+- [x] Serialized deploy cutover, same-artifact idempotency, drain/kick fencing
+- [x] Real `tiny` (1 vCPU/128 MiB) and `small` (2 vCPU/512 MiB) resources
+- [x] Generation-aware migrate primitives and placement-after-readiness
+- [x] Agent-host SSH relay for the separate-VM GCP gateway data path
+- [x] Authenticated internal APIs, narrow VPC firewall edges, private-host NAT
+- [x] Content-addressed platform assets and opt-in Terraform fortune bootstrap
+- [x] Unit/Firestore/KVM suites plus Terraform and tagged-test CI validation
+
+Required before public/self-service use:
+
+- [ ] Gateway handshake/join/deploy/wake quotas and durable per-user limits
+- [ ] Full SSH PTY/exec/subsystem/env/signal/resize/stderr forwarding
+- [ ] Per-instance app SSH host identity (remove `InsecureIgnoreHostKey`)
+- [ ] Workload identity + mTLS in place of interim bearer tokens
+- [ ] Firecracker jailer/seccomp and a privileged TAP helper (agent VMM is not
+      yet a production-strength host boundary)
+- [ ] Guest internet egress allowlist plus metadata/VPC isolation
+- [ ] Distributed deploy CAS/leases and startup cleanup reconciliation
+- [ ] Session leases/heartbeats (current no-idle hold is not crash-expiring)
+- [ ] MIG termination drain, stale-placement repair, and multi-generation migrate
+- [ ] Snapshot retention/garbage collection, corruption/failure-injection tests
+- [ ] Gateway freeze buffer during migrate and forced-reconnect fallback
+- [ ] External key management, encrypted remote Terraform state, rotation drills
+- [ ] Disposable-project first-apply/reapply/rollout end-to-end test

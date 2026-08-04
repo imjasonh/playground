@@ -34,6 +34,13 @@ resource "google_secret_manager_secret_iam_member" "gateway_user_ca" {
   member    = "serviceAccount:${google_service_account.gateway.email}"
 }
 
+resource "google_secret_manager_secret_iam_member" "gateway_orchestrator_auth" {
+  project   = var.project_id
+  secret_id = google_secret_manager_secret.orchestrator_auth.secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.gateway.email}"
+}
+
 # Orchestrator: Firestore placement + list MIG members + agent subnet.
 resource "google_project_iam_member" "orchestrator_datastore" {
   project = var.project_id
@@ -45,6 +52,20 @@ resource "google_project_iam_member" "orchestrator_compute_viewer" {
   project = var.project_id
   role    = "roles/compute.viewer"
   member  = "serviceAccount:${google_service_account.orchestrator.email}"
+}
+
+resource "google_secret_manager_secret_iam_member" "orchestrator_inbound_auth" {
+  project   = var.project_id
+  secret_id = google_secret_manager_secret.orchestrator_auth.secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.orchestrator.email}"
+}
+
+resource "google_secret_manager_secret_iam_member" "orchestrator_agent_auth" {
+  project   = var.project_id
+  secret_id = google_secret_manager_secret.agent_auth.secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.orchestrator.email}"
 }
 
 # Agent: snapshot + asset buckets, user CA pub.
@@ -63,6 +84,13 @@ resource "google_storage_bucket_iam_member" "agent_assets" {
 resource "google_secret_manager_secret_iam_member" "agent_user_ca_pub" {
   project   = var.project_id
   secret_id = google_secret_manager_secret.user_ca_pub.secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.agent.email}"
+}
+
+resource "google_secret_manager_secret_iam_member" "agent_control_auth" {
+  project   = var.project_id
+  secret_id = google_secret_manager_secret.agent_auth.secret_id
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_service_account.agent.email}"
 }

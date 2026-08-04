@@ -13,9 +13,11 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/imjasonh/playground/sshcloud/internal/backend"
+	"github.com/imjasonh/playground/sshcloud/internal/controlauth"
 	"github.com/imjasonh/playground/sshcloud/internal/cutover"
 	"github.com/imjasonh/playground/sshcloud/internal/gateway"
 	"github.com/imjasonh/playground/sshcloud/internal/hostkey"
+	"github.com/imjasonh/playground/sshcloud/internal/image"
 	"github.com/imjasonh/playground/sshcloud/internal/session"
 	"github.com/imjasonh/playground/sshcloud/internal/sshd"
 	"github.com/imjasonh/playground/sshcloud/internal/store"
@@ -31,6 +33,8 @@ func main() {
 	orchURL := flag.String("orchestrator-url", "", "orchestrator base URL (placement-aware Ensure), e.g. http://127.0.0.1:8090")
 	firestoreProject := flag.String("firestore-project", "", "GCP project for Firestore user/app store (default: in-memory)")
 	drainTimeout := flag.Duration("drain-timeout", cutover.DefaultDrainTimeout, "deploy drain kick timeout")
+	controlTokenFile := flag.String("control-token-file", "", "bearer token file sent to orchestrator/agent APIs")
+	allowedRegistries := flag.String("allowed-registries", "index.docker.io,docker.io,ghcr.io,*.pkg.dev", "comma-separated OCI registry hosts; supports *.suffix")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -44,9 +48,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("user CA: %v", err)
 	}
-	caPubPath := *caKeyPath + ".pub"
-	if err := os.WriteFile(caPubPath, ca.PublicAuthorizedKey(), 0o644); err != nil {
-		log.Fatalf("write CA pub: %v", err)
+	controlToken, err := controlauth.LoadFile(*controlTokenFile)
+	if err != nil {
+		log.Fatalf("control token: %v", err)
+	}
+	if (*orchURL != "" || *agentURL != "") && controlToken == "" {
+		log.Printf("WARNING: internal API authentication is disabled")
 	}
 
 	var st store.Store = store.NewMemory()
@@ -64,35 +71,41 @@ func main() {
 
 	sess := session.NewRegistry()
 	hub := &gateway.Hub{
-		Store:    st,
-		Sessions: sess,
-		UserCA:   ca,
+		Store:             st,
+		Sessions:          sess,
+		UserCA:            ca,
+		AllowedRegistries: image.ParseRegistryAllowlist(*allowedRegistries),
 	}
 
 	var instances cutover.Instances
 	switch {
 	case *orchURL != "":
-		oc := &backend.OrchestratorClient{BaseURL: *orchURL}
-		hub.Dial = func(req gateway.DialRequest) (string, error) {
-			return oc.Addr(req.User, req.App, req.Gen, req.Image)
+		oc := &backend.OrchestratorClient{BaseURL: *orchURL, Token: controlToken}
+		hub.Dial = func(ctx context.Context, req gateway.DialRequest) (string, error) {
+			return oc.AddrTierContext(ctx, req.User, req.App, req.Gen, req.Image, req.Tier, req.NoIdle)
 		}
 		instances = oc
 		log.Printf("backend: orchestrator at %s (placement-aware)", *orchURL)
 	case *agentURL != "":
-		ac := &backend.AgentClient{BaseURL: *agentURL}
-		hub.Dial = func(req gateway.DialRequest) (string, error) {
-			return ac.Addr(req.User, req.App, req.Gen, req.Image)
+		ac := &backend.AgentClient{BaseURL: *agentURL, Token: controlToken}
+		hub.Dial = func(ctx context.Context, req gateway.DialRequest) (string, error) {
+			in, err := ac.EnsureTierContext(ctx, req.User, req.App, req.Gen, req.Image, req.Tier, req.NoIdle)
+			return in.Addr, err
 		}
 		instances = backend.AgentControl{Client: ac}
 		log.Printf("backend: firecracker agent at %s", *agentURL)
 	case *fortuneBin != "":
+		caPubPath := *caKeyPath + ".pub"
+		if err := os.WriteFile(caPubPath, ca.PublicAuthorizedKey(), 0o644); err != nil {
+			log.Fatalf("write CA pub: %v", err)
+		}
 		abs, err := filepath.Abs(*fortuneBin)
 		if err != nil {
 			log.Fatal(err)
 		}
 		lf := backend.NewLocalFortune(abs, caPubPath)
 		defer lf.Stop()
-		hub.Dial = func(req gateway.DialRequest) (string, error) {
+		hub.Dial = func(_ context.Context, req gateway.DialRequest) (string, error) {
 			return lf.Addr(req.User, req.App, req.Gen, req.Image)
 		}
 		log.Printf("backend: local fortune process %s", abs)
@@ -100,10 +113,14 @@ func main() {
 		log.Printf("backend: in-process fortune stub")
 	}
 
-	ctrl := cutover.New(st, sess, instances)
-	ctrl.Timeout = *drainTimeout
-	hub.Cutover = ctrl
-	log.Printf("cutover: drain-timeout=%s", drainTimeout.String())
+	if instances != nil {
+		ctrl := cutover.New(st, sess, instances)
+		ctrl.Timeout = *drainTimeout
+		hub.Cutover = ctrl
+		log.Printf("cutover: drain-timeout=%s", drainTimeout.String())
+	} else {
+		log.Printf("cutover: disabled (no instance backend)")
+	}
 
 	srv := &sshd.Server{
 		Hub:     hub,

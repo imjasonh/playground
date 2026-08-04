@@ -2,8 +2,15 @@ project_id = "my-gcp-project"
 region     = "us-central1"
 zone       = "us-central1-a"
 
+# Run `bash ../hack/fetch-firecracker-assets.sh` first.
+firecracker_asset_path = "../_assets/firecracker"
+kernel_asset_path      = "../_assets/vmlinux"
+
 # Optional overrides:
 # name_prefix         = "sshcloud"
 # firestore_location  = "nam5"
 # agent_count         = 2
-# ssh_client_cidrs    = ["0.0.0.0/0"]
+# Keep empty until quotas/rate limits are implemented. For a private smoke test,
+# use only the Terraform runner/operator's public /32.
+# ssh_client_cidrs      = ["203.0.113.10/32"]
+# enable_demo_bootstrap = true

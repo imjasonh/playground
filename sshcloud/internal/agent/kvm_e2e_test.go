@@ -3,14 +3,16 @@
 package agent_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net"
+	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -44,12 +46,27 @@ func TestKVMSleepWake(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
-	in, err := mgr.EnsureWith(ctx, "alice", "fortune", agent.EnsureOpts{Image: cfg.image})
-	if err != nil {
-		t.Fatalf("boot: %v", err)
+	mux := http.NewServeMux()
+	(&agent.Handler{Manager: mgr}).Mount(mux)
+	body, _ := json.Marshal(map[string]string{"user": "alice", "app": "fortune", "image": cfg.image})
+	requestCtx, cancelRequest := context.WithCancel(ctx)
+	req := httptest.NewRequest(http.MethodPost, "/v1/instances/ensure", bytes.NewReader(body)).WithContext(requestCtx)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	cancelRequest() // A completed HTTP request must not own the VMM lifetime.
+	if rec.Code != http.StatusOK {
+		t.Fatalf("boot via HTTP: %d %s", rec.Code, rec.Body.String())
 	}
+	var in struct {
+		Addr    string `json:"addr"`
+		GuestIP string `json:"guest_ip"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&in); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(100 * time.Millisecond)
 	if err := dialTCP(in.Addr, 5*time.Second); err != nil {
-		t.Fatalf("dial after boot %s: %v", in.Addr, err)
+		t.Fatalf("dial after HTTP request ended %s: %v", in.Addr, err)
 	}
 
 	if err := mgr.Sleep(ctx, "alice", "fortune"); err != nil {
@@ -80,13 +97,16 @@ func TestKVMCrossHostMigrate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mgrA, err := agent.NewManager(kvmManagerConfig(cfg, filepath.Join(work, "a"), store, "172.31"))
+	// Production hosts use the same absolute WorkDir; Firecracker snapshot state
+	// embeds that path. Reuse it here after source eviction to model two hosts.
+	hostWork := filepath.Join(work, "host")
+	mgrA, err := agent.NewManager(kvmManagerConfig(cfg, hostWork, store, "172.31"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = mgrA.Close() })
 
-	mgrB, err := agent.NewManager(kvmManagerConfig(cfg, filepath.Join(work, "b"), store, "172.32"))
+	mgrB, err := agent.NewManager(kvmManagerConfig(cfg, hostWork, store, "172.31"))
 	if err != nil {
 		t.Fatal(err)
 	}

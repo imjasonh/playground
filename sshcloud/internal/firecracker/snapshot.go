@@ -86,17 +86,27 @@ func Restore(ctx context.Context, cfg RestoreConfig) (*Machine, error) {
 	}
 	_ = os.Remove(cfg.SocketPath)
 
-	cmd := exec.CommandContext(ctx, cfg.FirecrackerBin, "--api-sock", cfg.SocketPath)
+	// The restore context bounds startup/load only; the restored VMM is owned
+	// by the agent manager and must survive after the request returns.
+	cmd := exec.Command(cfg.FirecrackerBin, "--api-sock", cfg.SocketPath)
+	var logFile *os.File
 	if cfg.LogPath != "" {
 		f, err := os.Create(cfg.LogPath)
 		if err != nil {
 			return nil, err
 		}
+		logFile = f
 		cmd.Stdout = f
 		cmd.Stderr = f
 	}
 	if err := cmd.Start(); err != nil {
+		if logFile != nil {
+			_ = logFile.Close()
+		}
 		return nil, fmt.Errorf("start firecracker: %w", err)
+	}
+	if logFile != nil {
+		_ = logFile.Close()
 	}
 	m := &Machine{
 		cfg: Config{FirecrackerBin: cfg.FirecrackerBin, SocketPath: cfg.SocketPath, LogPath: cfg.LogPath},

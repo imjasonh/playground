@@ -55,3 +55,18 @@ func TestLocalStoreRoundTrip(t *testing.T) {
 		t.Fatal("expected deleted")
 	}
 }
+
+func TestLocalStoreRejectsTraversalKey(t *testing.T) {
+	t.Parallel()
+	s, err := NewLocalStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkg := NewPackageDir(t.TempDir())
+	if err := s.Put(context.Background(), "../outside", pkg); err == nil {
+		t.Fatal("expected traversal key to be rejected")
+	}
+	if err := s.Delete(context.Background(), "alice/../../outside"); err == nil {
+		t.Fatal("expected traversal key to be rejected")
+	}
+}

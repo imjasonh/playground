@@ -3,13 +3,24 @@ package genid
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 )
 
+var generationRE = regexp.MustCompile(`^g[0-9a-f]{1,32}$`)
+
 // New returns a fresh generation id (g + hex timestamp).
 func New() string {
 	return fmt.Sprintf("g%x", time.Now().UnixNano())
+}
+
+// Validate checks a non-empty deploy generation ID.
+func Validate(gen string) error {
+	if !generationRE.MatchString(gen) {
+		return fmt.Errorf("invalid generation %q", gen)
+	}
+	return nil
 }
 
 // AgentApp is the host-agent instance name: plain app, or app.gen.

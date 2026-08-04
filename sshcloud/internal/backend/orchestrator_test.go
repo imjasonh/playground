@@ -107,7 +107,7 @@ func TestOrchestratorClientAddr(t *testing.T) {
 		t.Fatalf("placement: host=%q ok=%v err=%v", host, ok, err)
 	}
 
-	if err := c.Ensure(t.Context(), "alice", "fortune", "gdef", "", true); err != nil {
+	if err := c.Ensure(t.Context(), "alice", "fortune", "gdef", "", "tiny", true); err != nil {
 		t.Fatal(err)
 	}
 	if !got.NoIdle || got.Gen != "gdef" {
@@ -124,5 +124,33 @@ func TestPlacedDialUnknownHost(t *testing.T) {
 	}
 	if _, err := dial.Addr("alice", "fortune", "", ""); err == nil {
 		t.Fatal("expected error for unknown host")
+	}
+}
+
+func TestPlacedDialRepairsStalePlacementAfterEnsure(t *testing.T) {
+	place := placement.NewMemory()
+	_ = place.Set(t.Context(), "alice", "fortune", "removed-host")
+	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/instances/ensure" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"addr": "10.20.0.8:24000", "guest_ip": "172.16.2.2", "state": "running",
+		})
+	}))
+	t.Cleanup(agent.Close)
+	dial := &backend.PlacedDial{
+		Placement: place,
+		Agents: backend.NewHostSet(map[string]*backend.AgentClient{
+			"host-b": {BaseURL: agent.URL},
+		}, "host-b"),
+	}
+	if _, err := dial.EnsureAddr(t.Context(), "alice", "fortune", "gabc", "", false); err != nil {
+		t.Fatal(err)
+	}
+	host, ok, err := place.Get(t.Context(), "alice", "fortune")
+	if err != nil || !ok || host != "host-b" {
+		t.Fatalf("placement host=%q ok=%v err=%v", host, ok, err)
 	}
 }

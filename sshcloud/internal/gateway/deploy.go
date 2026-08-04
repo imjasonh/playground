@@ -82,6 +82,9 @@ func runDeploy(ctx context.Context, t *term, hub *Hub, userID, execCmd string) i
 }
 
 func applyDeploy(ctx context.Context, hub *Hub, userID string, args DeployArgs, requireYes bool) (updated bool, err error) {
+	if err := image.ValidateAllowedRegistry(args.Image, hub.AllowedRegistries); err != nil {
+		return false, err
+	}
 	existing, err := hub.Store.GetApp(ctx, userID, args.Name)
 	if err != nil {
 		return false, err
@@ -92,26 +95,11 @@ func applyDeploy(ctx context.Context, hub *Hub, userID string, args DeployArgs, 
 	}
 
 	if hub.Cutover != nil {
-		if existing == nil {
-			if err := hub.Store.UpsertApp(ctx, store.App{
-				Owner:           userID,
-				Name:            args.Name,
-				Tier:            args.Tier,
-				SessionStrategy: args.Strategy,
-			}); err != nil {
-				return updated, err
-			}
-		} else {
-			existing.Tier = args.Tier
-			existing.SessionStrategy = args.Strategy
-			if err := hub.Store.UpsertApp(ctx, *existing); err != nil {
-				return updated, err
-			}
-		}
 		_, err := hub.Cutover.Deploy(ctx, cutover.Request{
 			User:     userID,
 			App:      args.Name,
 			Image:    args.Image,
+			Tier:     args.Tier,
 			Strategy: args.Strategy,
 		})
 		return updated, err

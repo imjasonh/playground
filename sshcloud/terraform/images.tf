@@ -3,7 +3,7 @@ resource "ko_build" "gateway" {
   working_dir = "${path.module}/.."
   repo        = "${local.registry}/gateway"
   platforms   = ["linux/amd64"]
-  sbom        = "none"
+  sbom        = "spdx"
 
   depends_on = [google_artifact_registry_repository.sshcloud]
 }
@@ -13,7 +13,7 @@ resource "ko_build" "orchestrator" {
   working_dir = "${path.module}/.."
   repo        = "${local.registry}/orchestrator"
   platforms   = ["linux/amd64"]
-  sbom        = "none"
+  sbom        = "spdx"
 
   depends_on = [google_artifact_registry_repository.sshcloud]
 }
@@ -23,7 +23,7 @@ resource "ko_build" "agent" {
   working_dir = "${path.module}/.."
   repo        = "${local.registry}/agent"
   platforms   = ["linux/amd64"]
-  sbom        = "none"
+  sbom        = "spdx"
 
   depends_on = [google_artifact_registry_repository.sshcloud]
 }
@@ -33,7 +33,7 @@ resource "ko_build" "guestinit" {
   working_dir = "${path.module}/.."
   repo        = "${local.registry}/guestinit"
   platforms   = ["linux/amd64"]
-  sbom        = "none"
+  sbom        = "spdx"
 
   depends_on = [google_artifact_registry_repository.sshcloud]
 }
@@ -43,7 +43,7 @@ resource "ko_build" "api" {
   working_dir = "${path.module}/.."
   repo        = "${local.registry}/api"
   platforms   = ["linux/amd64"]
-  sbom        = "none"
+  sbom        = "spdx"
 
   depends_on = [google_artifact_registry_repository.sshcloud]
 }
@@ -54,7 +54,7 @@ resource "ko_build" "fortune" {
   working_dir = "${path.module}/.."
   repo        = "${local.registry}/fortune"
   platforms   = ["linux/amd64"]
-  sbom        = "none"
+  sbom        = "spdx"
 
   depends_on = [google_artifact_registry_repository.sshcloud]
 }

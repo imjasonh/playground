@@ -1,10 +1,19 @@
 output "gateway_ssh" {
-  description = "Public SSH endpoint (user CA / host key live in Secret Manager)"
+  description = "SSH endpoint (reachable only from ssh_client_cidrs)"
   value       = "ssh -p 22 join@${google_compute_instance.gateway.network_interface[0].access_config[0].nat_ip}"
 }
 
 output "gateway_ip" {
   value = google_compute_instance.gateway.network_interface[0].access_config[0].nat_ip
+}
+
+output "gateway_known_hosts" {
+  description = "Pinned known_hosts entry for the public gateway"
+  value = join(" ", [
+    google_compute_instance.gateway.network_interface[0].access_config[0].nat_ip,
+    split(" ", tls_private_key.gateway_host.public_key_openssh)[0],
+    split(" ", tls_private_key.gateway_host.public_key_openssh)[1],
+  ])
 }
 
 output "orchestrator_ip" {
@@ -28,18 +37,18 @@ output "images" {
 }
 
 output "fortune_image" {
-  description = "Digest-pinned sample app — also auto-deployed to the demo user via local-exec"
+  description = "Digest-pinned sample app; optionally deployed when enable_demo_bootstrap=true"
   value       = ko_build.fortune.image_ref
 }
 
 output "demo_ssh" {
-  description = "Demo user (auto-joined + fortune deployed). Private key is in Terraform state."
-  value       = "ssh -p 22 -i <demo-key> fortune@${google_compute_instance.gateway.network_interface[0].access_config[0].nat_ip}"
+  description = "Optional demo command; null unless enable_demo_bootstrap=true"
+  value       = var.enable_demo_bootstrap ? "ssh -p 22 -i <demo-key> ${var.demo_app}@${google_compute_instance.gateway.network_interface[0].access_config[0].nat_ip}" : null
 }
 
 output "demo_private_key_openssh" {
-  description = "OpenSSH private key for the bootstrap demo user (sensitive)"
-  value       = tls_private_key.demo.private_key_openssh
+  description = "Optional bootstrap user's OpenSSH private key (sensitive, stored in Terraform state)"
+  value       = var.enable_demo_bootstrap ? tls_private_key.demo[0].private_key_openssh : null
   sensitive   = true
 }
 
@@ -48,15 +57,17 @@ output "snapshots_bucket" {
 }
 
 output "assets_bucket" {
-  description = "Upload firecracker and vmlinux here (see README); apps are OCI digests"
+  description = "Terraform-managed Firecracker and kernel artifacts"
   value       = google_storage_bucket.assets.name
 }
 
 output "secrets" {
   value = {
-    gateway_host_key = google_secret_manager_secret.gateway_host_key.secret_id
-    user_ca          = google_secret_manager_secret.user_ca.secret_id
-    user_ca_pub      = google_secret_manager_secret.user_ca_pub.secret_id
+    gateway_host_key  = google_secret_manager_secret.gateway_host_key.secret_id
+    user_ca           = google_secret_manager_secret.user_ca.secret_id
+    user_ca_pub       = google_secret_manager_secret.user_ca_pub.secret_id
+    orchestrator_auth = google_secret_manager_secret.orchestrator_auth.secret_id
+    agent_auth        = google_secret_manager_secret.agent_auth.secret_id
   }
 }
 

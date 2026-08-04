@@ -79,6 +79,26 @@ func TestKickCancels(t *testing.T) {
 	r.Release(id)
 }
 
+func TestKickBeforeBindCancelsWhenBound(t *testing.T) {
+	t.Parallel()
+	r := NewRegistry()
+	id, err := r.Admit("alice", "myapp", "g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := r.Kick("alice", "myapp", "g1"); n != 1 {
+		t.Fatalf("kick count %d", n)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	r.BindCancel(id, cancel)
+	select {
+	case <-ctx.Done():
+	default:
+		t.Fatal("late-bound session did not observe pending kick")
+	}
+	r.Release(id)
+}
+
 func TestReleaseUnknownID(t *testing.T) {
 	t.Parallel()
 	r := NewRegistry()

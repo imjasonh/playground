@@ -23,29 +23,60 @@ func NewLocalStore(root string) (*LocalStore, error) {
 	return &LocalStore{Root: root}, nil
 }
 
-func (s *LocalStore) keyDir(key string) string {
-	return filepath.Join(s.Root, filepath.FromSlash(key))
+func (s *LocalStore) keyDir(key string) (string, error) {
+	if err := validateKey(key); err != nil {
+		return "", err
+	}
+	return filepath.Join(s.Root, filepath.FromSlash(key)), nil
 }
 
 func (s *LocalStore) Put(ctx context.Context, key string, pkg Package) error {
-	_ = ctx
-	dst := s.keyDir(key)
-	if err := os.MkdirAll(dst, 0o755); err != nil {
+	dst, err := s.keyDir(key)
+	if err != nil {
 		return err
 	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	tmp, err := os.MkdirTemp(filepath.Dir(dst), "."+filepath.Base(dst)+".tmp-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmp)
 	for _, name := range objectNames() {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		src := filepath.Join(pkg.Dir, name)
-		if err := copyFile(src, filepath.Join(dst, name)); err != nil {
+		if err := copyFile(src, filepath.Join(tmp, name)); err != nil {
 			return fmt.Errorf("put %s: %w", name, err)
 		}
 	}
+	backup := dst + ".old"
+	_ = os.RemoveAll(backup)
+	hadOld := false
+	if err := os.Rename(dst, backup); err == nil {
+		hadOld = true
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if err := os.Rename(tmp, dst); err != nil {
+		if hadOld {
+			_ = os.Rename(backup, dst)
+		}
+		return err
+	}
+	_ = os.RemoveAll(backup)
 	return nil
 }
 
 func (s *LocalStore) Get(ctx context.Context, key, destDir string) (Package, error) {
 	_ = ctx
-	src := s.keyDir(key)
 	pkg := NewPackageDir(destDir)
+	src, err := s.keyDir(key)
+	if err != nil {
+		return pkg, err
+	}
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
 		return pkg, err
 	}
@@ -64,11 +95,29 @@ func (s *LocalStore) Get(ctx context.Context, key, destDir string) (Package, err
 
 func (s *LocalStore) Delete(ctx context.Context, key string) error {
 	_ = ctx
-	return os.RemoveAll(s.keyDir(key))
+	dir, err := s.keyDir(key)
+	if err != nil {
+		return err
+	}
+	return os.RemoveAll(dir)
+}
+
+// Has reports whether the package's commit marker (meta.json) exists.
+func (s *LocalStore) Has(ctx context.Context, key string) (bool, error) {
+	_ = ctx
+	dir, err := s.keyDir(key)
+	if err != nil {
+		return false, err
+	}
+	_, err = os.Stat(filepath.Join(dir, "meta.json"))
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 // Exists reports whether a package is present.
 func (s *LocalStore) Exists(key string) bool {
-	_, err := os.Stat(filepath.Join(s.keyDir(key), "meta.json"))
-	return err == nil
+	ok, _ := s.Has(context.Background(), key)
+	return ok
 }

@@ -221,3 +221,67 @@ func TestUnpackSymlink(t *testing.T) {
 		t.Fatalf("symlink: %q %v", b, err)
 	}
 }
+
+func TestUnpackRejectsWriteThroughEscapingSymlink(t *testing.T) {
+	t.Parallel()
+	parent := t.TempDir()
+	dest := filepath.Join(parent, "root")
+	outside := filepath.Join(parent, "outside")
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	base := layerFromEntries(t, []tarEnt{
+		{name: "escape", typ: tar.TypeSymlink, link: outside},
+	})
+	upper := layerFromEntries(t, []tarEnt{
+		{name: "escape/owned", body: "host write"},
+	})
+	err := Unpack(imageFromLayers(t, base, upper), dest, 1<<20)
+	if err == nil {
+		t.Fatal("expected write through absolute symlink to fail")
+	}
+	if _, statErr := os.Stat(filepath.Join(outside, "owned")); !os.IsNotExist(statErr) {
+		t.Fatalf("unpack escaped root: %v", statErr)
+	}
+}
+
+func TestUnpackRejectsHardLinkEscape(t *testing.T) {
+	t.Parallel()
+	layer := layerFromEntries(t, []tarEnt{
+		{name: "link", typ: tar.TypeLink, link: "../outside"},
+	})
+	err := Unpack(imageFromLayers(t, layer), t.TempDir(), 1<<20)
+	if err == nil || !strings.Contains(err.Error(), "unsafe") {
+		t.Fatalf("expected unsafe hard-link error, got %v", err)
+	}
+}
+
+func TestUnpackWhiteoutCannotTraverseSymlink(t *testing.T) {
+	t.Parallel()
+	parent := t.TempDir()
+	dest := filepath.Join(parent, "root")
+	outside := filepath.Join(parent, "outside")
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sentinel := filepath.Join(outside, "keep")
+	if err := os.WriteFile(sentinel, []byte("safe"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	base := layerFromEntries(t, []tarEnt{
+		{name: "escape", typ: tar.TypeSymlink, link: outside},
+	})
+	upper := layerFromEntries(t, []tarEnt{
+		{name: "escape/.wh.keep"},
+	})
+	err := Unpack(imageFromLayers(t, base, upper), dest, 1<<20)
+	if err == nil {
+		t.Fatal("expected whiteout through absolute symlink to fail")
+	}
+	got, readErr := os.ReadFile(sentinel)
+	if readErr != nil || string(got) != "safe" {
+		t.Fatalf("outside file changed: %q, %v", got, readErr)
+	}
+}

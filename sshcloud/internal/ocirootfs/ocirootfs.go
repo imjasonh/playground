@@ -7,15 +7,20 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
+	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	gcrgoogle "github.com/google/go-containerregistry/pkg/v1/google"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 
 	"github.com/imjasonh/playground/sshcloud/internal/guestinit"
 	"github.com/imjasonh/playground/sshcloud/internal/image"
 	"github.com/imjasonh/playground/sshcloud/internal/rootfs"
 )
+
+var materializeLocks sync.Map
 
 const (
 	defaultSizeMB               = 512
@@ -70,6 +75,10 @@ func Materialize(ctx context.Context, ref string, opt Options) (Result, error) {
 
 	cachePath := filepath.Join(opt.CacheDir, hex+".ext4")
 	specPath := filepath.Join(opt.CacheDir, hex+".boot.json")
+	lockValue, _ := materializeLocks.LoadOrStore(cachePath, &sync.Mutex{})
+	lock := lockValue.(*sync.Mutex)
+	lock.Lock()
+	defer lock.Unlock()
 	if st, err := os.Stat(cachePath); err == nil && st.Size() > 0 && st.Mode().IsRegular() {
 		spec, err := loadOrFetchSpec(ctx, digest, specPath)
 		if err != nil {
@@ -136,10 +145,15 @@ func loadOrFetchSpec(ctx context.Context, digest name.Digest, specPath string) (
 }
 
 func pullLinuxAmd64(ctx context.Context, digest name.Digest) (v1.Image, error) {
-	img, err := remote.Image(digest, remote.WithContext(ctx), remote.WithPlatform(v1.Platform{
-		Architecture: "amd64",
-		OS:           "linux",
-	}))
+	img, err := remote.Image(
+		digest,
+		remote.WithContext(ctx),
+		remote.WithAuthFromKeychain(authn.NewMultiKeychain(gcrgoogle.Keychain, authn.DefaultKeychain)),
+		remote.WithPlatform(v1.Platform{
+			Architecture: "amd64",
+			OS:           "linux",
+		}),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("pull %s: %w", digest.String(), err)
 	}

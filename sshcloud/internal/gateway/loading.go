@@ -21,7 +21,7 @@ func DialWithLoading(ctx context.Context, out io.Writer, app string, dial DialFu
 	}
 	done := make(chan result, 1)
 	go func() {
-		addr, err := dial(req)
+		addr, err := dial(ctx, req)
 		done <- result{addr, err}
 	}()
 

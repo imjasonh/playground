@@ -23,13 +23,14 @@ resource "google_compute_instance" "orchestrator" {
   }
 
   metadata_startup_script = templatefile("${path.module}/scripts/orchestrator.sh.tftpl", {
-    helpers            = templatefile("${path.module}/scripts/run-container.sh.tftpl", { registry_host = split("/", local.registry)[0], project_id = var.project_id })
-    project_id         = var.project_id
-    zone               = var.zone
-    mig_name           = "${local.prefix}-agents"
-    hosts_path         = local.hosts_path
-    orchestrator_image = ko_build.orchestrator.image_ref
-    orch_listen        = local.orch_listen
+    helpers             = templatefile("${path.module}/scripts/run-container.sh.tftpl", { registry_host = split("/", local.registry)[0], project_id = var.project_id })
+    project_id          = var.project_id
+    zone                = var.zone
+    mig_name            = "${local.prefix}-agents"
+    hosts_path          = local.hosts_path
+    orchestrator_image  = ko_build.orchestrator.image_ref
+    inbound_auth_secret = google_secret_manager_secret.orchestrator_auth.secret_id
+    agent_auth_secret   = google_secret_manager_secret.agent_auth.secret_id
   })
 
   lifecycle {
@@ -39,5 +40,13 @@ resource "google_compute_instance" "orchestrator" {
   depends_on = [
     google_firestore_database.default,
     google_compute_instance_group_manager.agents,
+    google_secret_manager_secret_version.orchestrator_auth,
+    google_secret_manager_secret_version.agent_auth,
+    google_secret_manager_secret_iam_member.orchestrator_inbound_auth,
+    google_secret_manager_secret_iam_member.orchestrator_agent_auth,
+    google_artifact_registry_repository_iam_member.pullers["orchestrator"],
+    google_project_iam_member.orchestrator_compute_viewer,
+    google_project_iam_member.orchestrator_datastore,
+    google_compute_router_nat.sshcloud,
   ]
 }

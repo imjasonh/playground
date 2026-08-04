@@ -13,7 +13,9 @@ import (
 
 // machine is the running VMM handle.
 type machine interface {
-	SnapshotThenKill(ctx context.Context, files firecracker.SnapshotFiles) error
+	Pause(ctx context.Context) error
+	Resume(ctx context.Context) error
+	CreateSnapshot(ctx context.Context, files firecracker.SnapshotFiles) error
 	Stop() error
 	Kill() error
 }

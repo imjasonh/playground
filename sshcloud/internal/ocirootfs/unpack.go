@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path"
-	"path/filepath"
 	"strings"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -14,8 +13,9 @@ import (
 )
 
 const (
-	whiteoutPrefix = ".wh."
-	opaqueWhiteout = ".wh..wh..opq"
+	whiteoutPrefix   = ".wh."
+	opaqueWhiteout   = ".wh..wh..opq"
+	maxUnpackEntries = 100_000
 )
 
 // Unpack applies img layers in order into destDir, honoring OCI whiteouts.
@@ -30,6 +30,11 @@ func Unpack(img v1.Image, destDir string, maxBytes int64) error {
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
 		return err
 	}
+	root, err := os.OpenRoot(destDir)
+	if err != nil {
+		return fmt.Errorf("open unpack root: %w", err)
+	}
+	defer root.Close()
 
 	cfg, err := img.ConfigFile()
 	if err != nil {
@@ -44,13 +49,13 @@ func Unpack(img v1.Image, destDir string, maxBytes int64) error {
 		return fmt.Errorf("image layers: %w", err)
 	}
 
-	var written int64
+	var written, entries int64
 	for i, layer := range layers {
 		mt, err := layer.MediaType()
 		if err == nil && skipLayerMediaType(mt) {
 			continue
 		}
-		if err := applyLayer(layer, destDir, maxBytes, &written); err != nil {
+		if err := applyLayer(layer, root, maxBytes, &written, &entries); err != nil {
 			return fmt.Errorf("layer %d: %w", i, err)
 		}
 	}
@@ -65,26 +70,18 @@ func skipLayerMediaType(mt types.MediaType) bool {
 	return strings.Contains(s, "windows")
 }
 
-func applyLayer(layer v1.Layer, destDir string, maxBytes int64, written *int64) error {
-	opaque, whiteouts, err := scanWhiteouts(layer)
+func applyLayer(layer v1.Layer, root *os.Root, maxBytes int64, written, entries *int64) error {
+	opaque, whiteouts, err := scanWhiteouts(layer, maxBytes-*written, entries)
 	if err != nil {
 		return err
 	}
 	for _, dir := range opaque {
-		full, err := safeJoin(destDir, dir)
-		if err != nil {
-			return err
-		}
-		if err := clearDir(full); err != nil {
+		if err := clearDir(root, dir); err != nil {
 			return err
 		}
 	}
 	for _, target := range whiteouts {
-		full, err := safeJoin(destDir, target)
-		if err != nil {
-			return err
-		}
-		if err := os.RemoveAll(full); err != nil {
+		if err := root.RemoveAll(target); err != nil {
 			return err
 		}
 	}
@@ -115,7 +112,7 @@ func applyLayer(layer v1.Layer, destDir string, maxBytes int64, written *int64) 
 		if base == opaqueWhiteout || strings.HasPrefix(base, whiteoutPrefix) {
 			continue
 		}
-		if err := extractEntry(destDir, hdr, name, tr, maxBytes, written); err != nil {
+		if err := extractEntry(root, hdr, name, tr, maxBytes, written); err != nil {
 			return err
 		}
 	}
@@ -125,7 +122,7 @@ func applyLayer(layer v1.Layer, destDir string, maxBytes int64, written *int64) 
 	return nil
 }
 
-func scanWhiteouts(layer v1.Layer) (opaque, whiteouts []string, err error) {
+func scanWhiteouts(layer v1.Layer, remainingBytes int64, entries *int64) (opaque, whiteouts []string, err error) {
 	rc, err := layer.Uncompressed()
 	if err != nil {
 		return nil, nil, fmt.Errorf("uncompress: %w", err)
@@ -141,6 +138,19 @@ func scanWhiteouts(layer v1.Layer) (opaque, whiteouts []string, err error) {
 		if err != nil {
 			return nil, nil, fmt.Errorf("read tar: %w", err)
 		}
+		*entries++
+		if *entries > maxUnpackEntries {
+			return nil, nil, fmt.Errorf("unpack exceeds %d entry limit", maxUnpackEntries)
+		}
+		if hdr.Size < 0 {
+			return nil, nil, fmt.Errorf("negative file size for %q", hdr.Name)
+		}
+		if hdr.Typeflag == tar.TypeReg || hdr.Typeflag == tar.TypeRegA {
+			remainingBytes -= hdr.Size
+			if remainingBytes < 0 {
+				return nil, nil, fmt.Errorf("uncompressed unpack exceeds byte limit")
+			}
+		}
 		name, err := sanitizeTarName(hdr.Name)
 		if err != nil {
 			return nil, nil, err
@@ -154,23 +164,34 @@ func scanWhiteouts(layer v1.Layer) (opaque, whiteouts []string, err error) {
 		case base == opaqueWhiteout:
 			opaque = append(opaque, dir)
 		case strings.HasPrefix(base, whiteoutPrefix):
-			target := path.Join(dir, strings.TrimPrefix(base, whiteoutPrefix))
+			leaf := strings.TrimPrefix(base, whiteoutPrefix)
+			if leaf == "" || leaf == "." || leaf == ".." {
+				return nil, nil, fmt.Errorf("invalid whiteout %q", name)
+			}
+			target, err := sanitizeTarName(path.Join(dir, leaf))
+			if err != nil {
+				return nil, nil, err
+			}
 			whiteouts = append(whiteouts, target)
 		}
 	}
 	return opaque, whiteouts, nil
 }
 
-func extractEntry(destDir string, hdr *tar.Header, name string, r io.Reader, maxBytes int64, written *int64) error {
-	full, err := safeJoin(destDir, name)
-	if err != nil {
-		return err
-	}
+func extractEntry(root *os.Root, hdr *tar.Header, name string, r io.Reader, maxBytes int64, written *int64) error {
 	mode := hdr.FileInfo().Mode()
 
 	switch hdr.Typeflag {
 	case tar.TypeDir:
-		return os.MkdirAll(full, dirPerm(mode))
+		if st, err := root.Lstat(name); err == nil && !st.IsDir() {
+			if err := root.RemoveAll(name); err != nil {
+				return err
+			}
+		}
+		if err := root.MkdirAll(name, dirPerm(mode)); err != nil {
+			return err
+		}
+		return root.Chmod(name, dirPerm(mode))
 	case tar.TypeReg, tar.TypeRegA:
 		if hdr.Size < 0 {
 			return fmt.Errorf("negative file size for %q", name)
@@ -178,37 +199,47 @@ func extractEntry(destDir string, hdr *tar.Header, name string, r io.Reader, max
 		if *written+hdr.Size > maxBytes {
 			return fmt.Errorf("uncompressed unpack exceeds %d byte limit", maxBytes)
 		}
-		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		if err := root.MkdirAll(path.Dir(name), 0o755); err != nil {
 			return err
 		}
-		if err := writeFile(full, r, hdr.Size, mode.Perm()); err != nil {
+		if err := root.RemoveAll(name); err != nil {
+			return err
+		}
+		if err := writeFile(root, name, r, hdr.Size, mode.Perm()); err != nil {
 			return err
 		}
 		*written += hdr.Size
 		return nil
 	case tar.TypeSymlink:
-		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		if err := root.MkdirAll(path.Dir(name), 0o755); err != nil {
 			return err
 		}
-		_ = os.RemoveAll(full)
-		return os.Symlink(hdr.Linkname, full)
+		if err := root.RemoveAll(name); err != nil {
+			return err
+		}
+		return root.Symlink(hdr.Linkname, name)
 	case tar.TypeLink:
-		target, err := safeJoin(destDir, path.Clean(hdr.Linkname))
+		target, err := sanitizeTarName(hdr.Linkname)
 		if err != nil {
 			return err
 		}
-		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		if target == "." {
+			return fmt.Errorf("invalid hard-link target %q", hdr.Linkname)
+		}
+		if err := root.MkdirAll(path.Dir(name), 0o755); err != nil {
 			return err
 		}
-		_ = os.RemoveAll(full)
-		return os.Link(target, full)
+		if err := root.RemoveAll(name); err != nil {
+			return err
+		}
+		return root.Link(target, name)
 	default:
 		return nil
 	}
 }
 
-func writeFile(path string, r io.Reader, size int64, perm os.FileMode) error {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, perm)
+func writeFile(root *os.Root, name string, r io.Reader, size int64, perm os.FileMode) error {
+	f, err := root.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, perm)
 	if err != nil {
 		return err
 	}
@@ -219,7 +250,7 @@ func writeFile(path string, r io.Reader, size int64, perm os.FileMode) error {
 	if err := f.Close(); err != nil {
 		return err
 	}
-	return os.Chmod(path, perm)
+	return root.Chmod(name, perm)
 }
 
 func dirPerm(mode os.FileMode) os.FileMode {
@@ -230,19 +261,27 @@ func dirPerm(mode os.FileMode) os.FileMode {
 	return p
 }
 
-func clearDir(dir string) error {
+func clearDir(root *os.Root, dir string) error {
 	if dir == "" {
-		return fmt.Errorf("clearDir: empty path")
+		dir = "."
 	}
-	entries, err := os.ReadDir(dir)
+	f, err := root.Open(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return os.MkdirAll(dir, 0o755)
+			return root.MkdirAll(dir, 0o755)
 		}
 		return err
 	}
+	entries, readErr := f.ReadDir(-1)
+	closeErr := f.Close()
+	if readErr != nil {
+		return readErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
 	for _, e := range entries {
-		if err := os.RemoveAll(filepath.Join(dir, e.Name())); err != nil {
+		if err := root.RemoveAll(path.Join(dir, e.Name())); err != nil {
 			return err
 		}
 	}
@@ -259,21 +298,4 @@ func sanitizeTarName(raw string) (string, error) {
 		return ".", nil
 	}
 	return name, nil
-}
-
-func safeJoin(root, rel string) (string, error) {
-	rel = path.Clean(strings.TrimPrefix(rel, "/"))
-	if rel == ".." || strings.HasPrefix(rel, "../") {
-		return "", fmt.Errorf("unsafe path %q", rel)
-	}
-	root = filepath.Clean(root)
-	if rel == "." || rel == "" {
-		return root, nil
-	}
-	full := filepath.Join(root, filepath.FromSlash(rel))
-	prefix := root + string(os.PathSeparator)
-	if full != root && !strings.HasPrefix(full, prefix) {
-		return "", fmt.Errorf("unsafe path %q", rel)
-	}
-	return full, nil
 }

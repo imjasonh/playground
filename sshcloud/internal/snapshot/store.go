@@ -3,11 +3,14 @@ package snapshot
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -22,6 +25,8 @@ type Meta struct {
 	GuestMAC   string    `json:"guest_mac"`
 	HostIP     string    `json:"host_ip"`
 	RootfsPath string    `json:"rootfs_path"`
+	Image      string    `json:"image,omitempty"`
+	Tier       string    `json:"tier,omitempty"`
 	CreatedAt  time.Time `json:"created_at"`
 }
 
@@ -69,12 +74,14 @@ func (p Package) ReadMeta() (Meta, error) {
 	return m, err
 }
 
-// Store persists snapshot packages under a key (e.g. "alice/fortune").
+// Store persists snapshot packages under an opaque, slash-separated key.
 type Store interface {
 	// Put uploads all files from a local Package directory.
 	Put(ctx context.Context, key string, pkg Package) error
 	// Get downloads into destDir and returns a Package pointing there.
 	Get(ctx context.Context, key, destDir string) (Package, error)
+	// Has reports whether a complete package exists.
+	Has(ctx context.Context, key string) (bool, error)
 	// Delete removes a stored package.
 	Delete(ctx context.Context, key string) error
 }
@@ -103,7 +110,17 @@ func copyFile(src, dst string) error {
 	return out.Close()
 }
 
-// KeyFor builds the blob key prefix for a user/app.
+// KeyFor builds an opaque blob key for a user/app. Encoding each component
+// prevents caller-controlled identifiers from becoming filesystem or GCS path
+// traversal, even if validation is accidentally skipped at an API boundary.
 func KeyFor(user, app string) string {
-	return fmt.Sprintf("%s/%s", user, app)
+	enc := base64.RawURLEncoding
+	return enc.EncodeToString([]byte(user)) + "/" + enc.EncodeToString([]byte(app))
+}
+
+func validateKey(key string) error {
+	if key == "" || !fs.ValidPath(key) || strings.HasPrefix(key, "/") {
+		return fmt.Errorf("invalid snapshot key %q", key)
+	}
+	return nil
 }

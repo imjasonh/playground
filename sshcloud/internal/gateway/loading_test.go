@@ -17,7 +17,7 @@ func TestDialWithLoadingShowsStarting(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 
-	dial := func(req gateway.DialRequest) (string, error) {
+	dial := func(_ context.Context, req gateway.DialRequest) (string, error) {
 		if req.User != "alice" || req.App != "fortune" || req.Gen != "g1" {
 			t.Fatalf("dial args: %+v", req)
 		}
@@ -78,7 +78,7 @@ func TestDialWithLoadingShowsStarting(t *testing.T) {
 }
 
 func TestDialWithLoadingError(t *testing.T) {
-	dial := func(gateway.DialRequest) (string, error) {
+	dial := func(context.Context, gateway.DialRequest) (string, error) {
 		return "", errBackend
 	}
 	var buf bytes.Buffer
@@ -93,7 +93,7 @@ func TestDialWithLoadingError(t *testing.T) {
 
 func TestDialWithLoadingCancel(t *testing.T) {
 	block := make(chan struct{})
-	dial := func(gateway.DialRequest) (string, error) {
+	dial := func(context.Context, gateway.DialRequest) (string, error) {
 		<-block
 		return "10.0.0.2:22", nil
 	}

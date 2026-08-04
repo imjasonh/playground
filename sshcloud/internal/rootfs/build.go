@@ -3,12 +3,18 @@ package rootfs
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
+	"regexp"
+	"strings"
 
 	"github.com/imjasonh/playground/sshcloud/internal/guestinit"
 )
+
+var guestPathRE = regexp.MustCompile(`^/[A-Za-z0-9._/-]+$`)
 
 // FortuneSpec describes a fortune rootfs.
 type FortuneSpec struct {
@@ -130,6 +136,21 @@ func debugfsWrite(image, hostFile, guestPath, mode string) error {
 
 // InjectFile writes or replaces a file in an existing ext4 image via debugfs.
 func InjectFile(image, hostFile, guestPath, mode string) error {
+	raw := "/" + strings.TrimPrefix(guestPath, "/")
+	clean := path.Clean(raw)
+	if clean == "/" || clean != raw || !guestPathRE.MatchString(clean) {
+		return fmt.Errorf("invalid guest path %q", guestPath)
+	}
+	parent := path.Dir(clean)
+	if parent != "/" {
+		cur := ""
+		for _, part := range strings.Split(strings.TrimPrefix(parent, "/"), "/") {
+			cur += "/" + part
+			// debugfs reports an error when a directory already exists.
+			_ = exec.Command("debugfs", "-w", "-R", "mkdir "+cur, image).Run()
+		}
+	}
+	guestPath = clean
 	_ = exec.Command("debugfs", "-w", "-R", fmt.Sprintf("rm %s", guestPath), image).Run()
 	return debugfsWrite(image, hostFile, guestPath, mode)
 }
@@ -139,9 +160,18 @@ func Clone(base, dst string) error {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}
-	in, err := os.ReadFile(base)
+	in, err := os.Open(base)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(dst, in, 0o644)
+	defer in.Close()
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+		return err
+	}
+	return out.Close()
 }

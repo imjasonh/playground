@@ -31,12 +31,14 @@ resource "google_compute_instance_template" "agent" {
     helpers            = templatefile("${path.module}/scripts/run-container.sh.tftpl", { registry_host = split("/", local.registry)[0], project_id = var.project_id })
     project_id         = var.project_id
     user_ca_pub_secret = google_secret_manager_secret.user_ca_pub.secret_id
+    agent_auth_secret  = google_secret_manager_secret.agent_auth.secret_id
     assets_bucket      = local.asset_bucket
+    firecracker_object = google_storage_bucket_object.firecracker.name
+    kernel_object      = google_storage_bucket_object.kernel.name
     snapshots_bucket   = local.snapshot_bucket
     snapshot_prefix    = local.snapshot_prefix
     agent_image        = ko_build.agent.image_ref
     guestinit_image    = ko_build.guestinit.image_ref
-    agent_listen       = local.agent_listen
   })
 
   lifecycle {
@@ -45,9 +47,30 @@ resource "google_compute_instance_template" "agent" {
 
   depends_on = [
     google_secret_manager_secret_version.user_ca_pub,
-    google_storage_bucket.assets,
+    google_secret_manager_secret_version.agent_auth,
+    google_secret_manager_secret_iam_member.agent_user_ca_pub,
+    google_secret_manager_secret_iam_member.agent_control_auth,
+    google_storage_bucket_object.firecracker,
+    google_storage_bucket_object.kernel,
     google_storage_bucket.snapshots,
+    google_storage_bucket_iam_member.agent_assets,
+    google_storage_bucket_iam_member.agent_snapshots,
+    google_artifact_registry_repository_iam_member.pullers["agent"],
+    google_compute_router_nat.sshcloud,
   ]
+}
+
+resource "google_compute_health_check" "agent" {
+  name                = "${local.prefix}-agent"
+  timeout_sec         = 5
+  check_interval_sec  = 10
+  healthy_threshold   = 2
+  unhealthy_threshold = 3
+
+  http_health_check {
+    port         = 8080
+    request_path = "/healthz"
+  }
 }
 
 resource "google_compute_instance_group_manager" "agents" {
@@ -66,9 +89,14 @@ resource "google_compute_instance_group_manager" "agents" {
   }
 
   update_policy {
-    type                  = "PROACTIVE"
-    minimal_action        = "REPLACE"
-    max_unavailable_fixed = 1
-    max_surge_fixed       = 1
+    # Do not destroy stateful hosts just because the template changed. A
+    # termination-aware drain controller must exist before proactive rollouts.
+    type           = "OPPORTUNISTIC"
+    minimal_action = "REPLACE"
+  }
+
+  auto_healing_policies {
+    health_check      = google_compute_health_check.agent.id
+    initial_delay_sec = 300
   }
 }

@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"sync"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 
@@ -17,11 +19,19 @@ const fingerprintExt = "sshcloud-key-fp"
 
 // Server is a gateway SSH listener.
 type Server struct {
-	Hub      *gateway.Hub
-	HostKey  ssh.Signer
-	Addr     string // e.g. "127.0.0.1:2222" or "127.0.0.1:0"
-	Logger   *log.Logger
-	listener net.Listener
+	Hub     *gateway.Hub
+	HostKey ssh.Signer
+	Addr    string // e.g. "127.0.0.1:2222" or "127.0.0.1:0"
+	Logger  *log.Logger
+	// HandshakeTimeout bounds clients that connect but never finish SSH setup.
+	// Zero defaults to 15 seconds.
+	HandshakeTimeout time.Duration
+	// MaxConnections bounds process-wide accepted TCP connections. Zero
+	// defaults to 256.
+	MaxConnections int
+	listener       net.Listener
+	limitOnce      sync.Once
+	limit          chan struct{}
 }
 
 func (s *Server) logf(format string, args ...any) {
@@ -88,6 +98,25 @@ func (s *Server) Close() error {
 
 func (s *Server) handleConn(ctx context.Context, nc net.Conn) {
 	defer nc.Close()
+	s.limitOnce.Do(func() {
+		max := s.MaxConnections
+		if max <= 0 {
+			max = 256
+		}
+		s.limit = make(chan struct{}, max)
+	})
+	select {
+	case s.limit <- struct{}{}:
+		defer func() { <-s.limit }()
+	default:
+		s.logf("connection rejected: global limit reached")
+		return
+	}
+	handshakeTimeout := s.HandshakeTimeout
+	if handshakeTimeout <= 0 {
+		handshakeTimeout = 15 * time.Second
+	}
+	_ = nc.SetDeadline(time.Now().Add(handshakeTimeout))
 	cfg := &ssh.ServerConfig{
 		PublicKeyCallback: func(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
 			fp := ssh.FingerprintSHA256(key)
@@ -103,7 +132,10 @@ func (s *Server) handleConn(ctx context.Context, nc net.Conn) {
 		s.logf("handshake failed: %v", err)
 		return
 	}
+	_ = nc.SetDeadline(time.Time{})
 	defer sc.Close()
+	connCtx, cancelConn := context.WithCancel(ctx)
+	defer cancelConn()
 	go ssh.DiscardRequests(reqs)
 
 	fp := ""
@@ -120,7 +152,7 @@ func (s *Server) handleConn(ctx context.Context, nc net.Conn) {
 		if err != nil {
 			continue
 		}
-		go s.handleSession(ctx, sc, ch, creqs, fp)
+		go s.handleSession(connCtx, sc, ch, creqs, fp)
 	}
 }
 
@@ -133,9 +165,12 @@ func (s *Server) handleSession(ctx context.Context, sc *ssh.ServerConn, ch ssh.C
 
 	type startInfo struct {
 		execCmd string
+		kind    string
 	}
 	start := make(chan startInfo, 1)
+	reqDone := make(chan struct{})
 	go func() {
+		defer close(reqDone)
 		for req := range reqs {
 			switch req.Type {
 			case "pty-req", "env", "window-change":
@@ -147,17 +182,22 @@ func (s *Server) handleSession(ctx context.Context, sc *ssh.ServerConn, ch ssh.C
 					_ = req.Reply(true, nil)
 				}
 				select {
-				case start <- startInfo{}:
+				case start <- startInfo{kind: "shell"}:
 				default:
 				}
 			case "exec":
 				var msg execMsg
-				_ = ssh.Unmarshal(req.Payload, &msg)
+				if err := ssh.Unmarshal(req.Payload, &msg); err != nil {
+					if req.WantReply {
+						_ = req.Reply(false, nil)
+					}
+					continue
+				}
 				if req.WantReply {
 					_ = req.Reply(true, nil)
 				}
 				select {
-				case start <- startInfo{execCmd: msg.Command}:
+				case start <- startInfo{execCmd: msg.Command, kind: "exec"}:
 				default:
 				}
 			default:
@@ -171,13 +211,15 @@ func (s *Server) handleSession(ctx context.Context, sc *ssh.ServerConn, ch ssh.C
 	select {
 	case <-ctx.Done():
 		return
+	case <-reqDone:
+		return
 	case info := <-start:
-		s.runSession(ctx, sc, ch, fp, info.execCmd)
+		s.runSession(ctx, sc, ch, fp, info.kind, info.execCmd)
 	}
 }
 
-func (s *Server) runSession(ctx context.Context, sc *ssh.ServerConn, ch ssh.Channel, fp, execCmd string) {
-	s.logf("session start user=%q fp=%q exec=%q", sc.User(), fp, execCmd)
+func (s *Server) runSession(ctx context.Context, sc *ssh.ServerConn, ch ssh.Channel, fp, startKind, execCmd string) {
+	s.logf("session start user=%q fp=%q request=%s", sc.User(), fp, startKind)
 	res, err := s.Hub.HandleConnect(ctx, gateway.Connect{
 		SSHUser:        sc.User(),
 		KeyFingerprint: fp,
@@ -188,6 +230,21 @@ func (s *Server) runSession(ctx context.Context, sc *ssh.ServerConn, ch ssh.Chan
 		return
 	}
 	defer s.Hub.ReleaseSession(res.Session)
+	if res.Action == gateway.ActionJoin && res.User == "" && startKind == "exec" && sc.User() != "join" {
+		fmt.Fprint(ch, "Unknown keys may run non-interactive onboarding only as join@host.\r\n")
+		sendExit(ch, 2)
+		return
+	}
+	if res.Action == gateway.ActionProxyApp && startKind == "exec" {
+		fmt.Fprint(ch, "App exec forwarding is not implemented yet; open an interactive shell session instead.\r\n")
+		sendExit(ch, 2)
+		return
+	}
+	if res.Action == gateway.ActionMenu && startKind == "exec" {
+		fmt.Fprint(ch, "That SSH username is not a deployed app, and menu@host accepts interactive sessions only.\r\n")
+		sendExit(ch, 2)
+		return
+	}
 
 	sessCtx := ctx
 	if res.Session != "" {
@@ -208,7 +265,7 @@ func (s *Server) runSession(ctx context.Context, sc *ssh.ServerConn, ch ssh.Chan
 		fmt.Fprintf(ch, "%s\r\n", res.Message)
 		code = 1
 	case gateway.ActionProxyApp:
-		gateway.RunAppStub(sessCtx, ch, s.Hub, res)
+		code = gateway.RunAppStub(sessCtx, ch, s.Hub, res)
 	default:
 		fmt.Fprintf(ch, "unhandled action %v\r\n", res.Action)
 		code = 1
