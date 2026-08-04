@@ -18,7 +18,7 @@ var fortunes = []string{
 func RunAppStub(ctx context.Context, ch io.ReadWriter, hub *Hub, res Result) {
 	_ = ctx
 	if hub.UserCA != nil && hub.Dial != nil {
-		addr, err := hub.Dial(res.User, res.App)
+		addr, err := DialWithLoading(ch, res.App, hub.Dial, res.User)
 		if err != nil {
 			t := newTerm(ch)
 			t.Printf("backend error: %v\n", err)

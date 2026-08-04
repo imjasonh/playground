@@ -67,12 +67,20 @@ sudo ./bin/agent \
   -idle 5m \
   -snap-dir /tmp/sshcloud-agent/snapshots
 
-# 3) gateway → agent
+# 3) gateway → agent (single host)
 go run ./cmd/gateway -listen 127.0.0.1:2222 -agent-url http://127.0.0.1:8080
+
+# or gateway → orchestrator (placement-aware Ensure across hosts)
+go run ./cmd/orchestrator \
+  -listen 127.0.0.1:8090 \
+  -hosts host-a=http://127.0.0.1:8080 \
+  -default-host host-a
+go run ./cmd/gateway -listen 127.0.0.1:2222 -orchestrator-url http://127.0.0.1:8090
 ```
 
 Guest boot: `init=/fortune -- -listen 0.0.0.0:22 -ca /ca.pub` on a static
-TAP subnet; gateway mints a user cert and dials `guestIP:22`.
+TAP subnet; gateway shows a wake loading line (`Starting fortune…`), mints a
+user cert, and dials `guestIP:22`.
 
 ### Snapshot sleep / wake
 
@@ -131,5 +139,6 @@ bash hack/run-kvm-e2e.sh   # not as root
 - [x] Snapshot-on-sleep (local + GCS store; idle loop; wake on ensure)
 - [x] Cross-host migrate (Sleep→Evict→Adopt + placement)
 - [x] Real Firecracker KVM e2e in GitHub Actions (`sshcloud-kvm` job)
+- [x] Gateway wake loading TUI + placement-aware dial (`-orchestrator-url`)
 - [ ] Gateway freeze-buffer during migrate, deploy TUI, Firestore
 - [ ] Terraform

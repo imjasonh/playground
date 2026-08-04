@@ -27,6 +27,7 @@ func main() {
 	caKeyPath := flag.String("user-ca", "ssh_user_ca", "path to user CA private key (created if missing)")
 	fortuneBin := flag.String("fortune-bin", "", "path to local fortune binary (process backend)")
 	agentURL := flag.String("agent-url", "", "host agent base URL (Firecracker backend), e.g. http://127.0.0.1:8080")
+	orchURL := flag.String("orchestrator-url", "", "orchestrator base URL (placement-aware Ensure), e.g. http://127.0.0.1:8090")
 	flag.Parse()
 
 	signer, err := hostkey.LoadOrGenerate(*hostKeyPath)
@@ -48,6 +49,9 @@ func main() {
 		UserCA:   ca,
 	}
 	switch {
+	case *orchURL != "":
+		hub.Dial = (&backend.OrchestratorClient{BaseURL: *orchURL}).Addr
+		log.Printf("backend: orchestrator at %s (placement-aware)", *orchURL)
 	case *agentURL != "":
 		hub.Dial = (&backend.AgentClient{BaseURL: *agentURL}).Addr
 		log.Printf("backend: firecracker agent at %s", *agentURL)

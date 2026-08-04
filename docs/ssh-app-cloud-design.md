@@ -319,9 +319,11 @@ GCE host MIG ── host agent ── Firecracker ── app :22
 - Stores: `internal/snapshot.LocalStore` and `GCSStore`; agent `-snap-dir` /
   `-gcs-bucket`, idle via `-idle` (default 5m, `0` disables).
 - TAP kept across sleep; `Ensure` / `POST /v1/instances/wake` restores.
-- Still open: gateway loading TUI while waking, session-aware idle (today:
-  agent `LastUsed` on Ensure, not live SSH connection count). Cross-host
-  migrate: see below.
+- Gateway wake loading TUI: `DialWithLoading` prints `Starting <app>…` while
+  Ensure/Adopt runs; dial via `-agent-url` or placement-aware
+  `-orchestrator-url` (`POST /v1/ensure`).
+- Still open: session-aware idle (today: agent `LastUsed` on Ensure, not live
+  SSH connection count). Cross-host migrate: see below.
 
 ### Migration (host drain / bin-pack)
 
@@ -337,6 +339,8 @@ GCE host MIG ── host agent ── Firecracker ── app :22
 - `internal/placement` maps `user/app` → host ID; `internal/migrate.Migrator`
   orchestrates the cutover with best-effort rollback Adopt on the source.
 - `cmd/orchestrator` exposes `POST /v1/migrate` and placement-aware `POST /v1/ensure`.
+- Gateway `-orchestrator-url` dials via orchestrator Ensure (vs single-host
+  `-agent-url`).
 - Migrate orchestration unit test: httptest agent stubs
   (`TestMigrateOrchestration`) — not a KVM stand-in.
 - **Real KVM e2e in CI:** GitHub `ubuntu-latest` exposes `/dev/kvm` (nested
