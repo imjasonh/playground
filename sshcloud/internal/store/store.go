@@ -37,4 +37,5 @@ type Store interface {
 	GetApp(ctx context.Context, userID, app string) (*App, error)
 	UpsertApp(ctx context.Context, app App) error
 	ListApps(ctx context.Context, userID string) ([]App, error)
+	ListAllApps(ctx context.Context) ([]App, error)
 }

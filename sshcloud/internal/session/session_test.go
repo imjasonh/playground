@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 )
 
 func TestAdmitRejectsSecondSameGen(t *testing.T) {
@@ -118,6 +119,55 @@ func TestInfo(t *testing.T) {
 	}
 	if _, _, _, ok := r.Info("missing"); ok {
 		t.Fatal("expected missing")
+	}
+	r.Release(id)
+}
+
+func TestFreezeThawMigrationCommands(t *testing.T) {
+	t.Parallel()
+	r := NewRegistry()
+	id, err := r.Admit("alice", "myapp", "g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	commands := make(chan MigrationCommand)
+	if frozen := r.BindMigration(id, commands); frozen {
+		t.Fatal("new session unexpectedly frozen")
+	}
+	seen := make(chan string, 2)
+	go func() {
+		for command := range commands {
+			seen <- command.Kind
+			command.Ack <- nil
+		}
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if count, err := r.Freeze(ctx, "alice", "myapp", "g1"); err != nil || count != 1 {
+		t.Fatalf("freeze count=%d err=%v", count, err)
+	}
+	if count, err := r.Thaw(ctx, "alice", "myapp", "g1"); err != nil || count != 1 {
+		t.Fatalf("thaw count=%d err=%v", count, err)
+	}
+	if first, second := <-seen, <-seen; first != MigrationFreeze || second != MigrationThaw {
+		t.Fatalf("commands %q %q", first, second)
+	}
+	r.Release(id)
+	close(commands)
+}
+
+func TestFreezeBeforeProxyBind(t *testing.T) {
+	t.Parallel()
+	r := NewRegistry()
+	id, err := r.Admit("alice", "myapp", "g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count, err := r.Freeze(context.Background(), "alice", "myapp", "g1"); err != nil || count != 1 {
+		t.Fatalf("freeze count=%d err=%v", count, err)
+	}
+	if frozen := r.BindMigration(id, make(chan MigrationCommand)); !frozen {
+		t.Fatal("late-bound proxy did not inherit freeze")
 	}
 	r.Release(id)
 }

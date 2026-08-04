@@ -30,6 +30,7 @@ docker run -d --name sshcloud-gateway --restart unless-stopped --net host \
   -v /var/lib/sshcloud:/var/lib/sshcloud:ro \
   "$IMAGE" \
   -listen ${gateway_listen} \
+  -control-listen ${control_listen} \
   -host-key /var/lib/sshcloud/ssh_host_ed25519_key \
   -user-ca /var/lib/sshcloud/ssh_user_ca \
   -control-token-file /var/lib/sshcloud/orchestrator_auth \

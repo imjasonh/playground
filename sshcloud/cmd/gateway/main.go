@@ -5,10 +5,12 @@ import (
 	"context"
 	"flag"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 
@@ -34,6 +36,7 @@ func main() {
 	firestoreProject := flag.String("firestore-project", "", "GCP project for Firestore user/app store (default: in-memory)")
 	drainTimeout := flag.Duration("drain-timeout", cutover.DefaultDrainTimeout, "deploy drain kick timeout")
 	controlTokenFile := flag.String("control-token-file", "", "bearer token file sent to orchestrator/agent APIs")
+	controlListen := flag.String("control-listen", "", "internal migration control HTTP address (empty disables)")
 	allowedRegistries := flag.String("allowed-registries", "index.docker.io,docker.io,ghcr.io,*.pkg.dev", "comma-separated OCI registry hosts; supports *.suffix")
 	flag.Parse()
 
@@ -118,6 +121,26 @@ func main() {
 		ctrl.Timeout = *drainTimeout
 		hub.Cutover = ctrl
 		log.Printf("cutover: drain-timeout=%s", drainTimeout.String())
+		go func() {
+			reconcile := func() {
+				reconcileCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+				defer cancel()
+				if err := ctrl.Reconcile(reconcileCtx); err != nil && reconcileCtx.Err() == nil {
+					log.Printf("cutover reconcile: %v", err)
+				}
+			}
+			reconcile()
+			ticker := time.NewTicker(30 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					reconcile()
+				}
+			}
+		}()
 	} else {
 		log.Printf("cutover: disabled (no instance backend)")
 	}
@@ -129,10 +152,33 @@ func main() {
 		Logger:  log.Default(),
 	}
 
+	var controlServer *http.Server
+	if *controlListen != "" {
+		controlMux := http.NewServeMux()
+		(&gateway.ControlHandler{Hub: hub, Token: controlToken}).Mount(controlMux)
+		controlServer = &http.Server{
+			Addr: *controlListen, Handler: controlMux,
+			ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second,
+			WriteTimeout: 45 * time.Second, IdleTimeout: 60 * time.Second,
+		}
+		go func() {
+			log.Printf("gateway migration control on %s", *controlListen)
+			if err := controlServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Printf("migration control server: %v", err)
+				stop()
+			}
+		}()
+	}
+
 	log.Printf("sshcloud gateway on %s — host key %s", *addr, ssh.FingerprintSHA256(signer.PublicKey()))
 	log.Printf("user CA %s", ssh.FingerprintSHA256(ca.PublicKey()))
 	log.Printf("try: ssh -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null join@127.0.0.1")
 	if err := srv.ListenAndServe(ctx); err != nil {
 		log.Fatalf("serve: %v", err)
+	}
+	if controlServer != nil {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = controlServer.Shutdown(shutdownCtx)
 	}
 }

@@ -42,6 +42,9 @@ func main() {
 	relayPortMin := flag.Int("relay-port-min", 20000, "first TCP port available for guest SSH relays")
 	relayPortMax := flag.Int("relay-port-max", 29999, "last TCP port available for guest SSH relays")
 	allowedRegistries := flag.String("allowed-registries", "index.docker.io,docker.io,ghcr.io,*.pkg.dev", "comma-separated OCI registry hosts; supports *.suffix")
+	capacityVCPUs := flag.Int64("capacity-vcpus", 0, "allocatable guest vCPUs (0 detects host CPUs)")
+	capacityMemMiB := flag.Int64("capacity-mem-mib", 0, "allocatable guest memory MiB (0 detects host memory minus 1 GiB)")
+	platformVersion := flag.String("platform-version", "", "kernel/Firecracker compatibility ID stored in snapshots")
 	flag.Parse()
 
 	if *kernel == "" {
@@ -124,6 +127,9 @@ func main() {
 		RelayPortMin:      *relayPortMin,
 		RelayPortMax:      *relayPortMax,
 		AllowedRegistries: image.ParseRegistryAllowlist(*allowedRegistries),
+		CapacityVCPUs:     *capacityVCPUs,
+		CapacityMemMiB:    *capacityMemMiB,
+		PlatformVersion:   strings.TrimSpace(*platformVersion),
 		SnapStore:         store,
 		IdleTimeout:       *idle,
 		RootfsResolver: func(ctx context.Context, imageRef string) (agent.ResolvedRootfs, error) {

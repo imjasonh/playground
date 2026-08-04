@@ -2,6 +2,7 @@ package agent
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -32,6 +33,10 @@ func (h *Handler) Mount(mux *http.ServeMux) {
 	api.HandleFunc("POST /v1/instances/adopt", h.adopt)
 	api.HandleFunc("POST /v1/instances/no-idle", h.setNoIdle)
 	api.HandleFunc("GET /v1/instances/status", h.status)
+	api.HandleFunc("GET /v1/host/capacity", h.capacity)
+	api.HandleFunc("GET /v1/host/instances", h.instances)
+	api.HandleFunc("POST /v1/host/cordon", h.cordon)
+	api.HandleFunc("POST /v1/host/uncordon", h.uncordon)
 	mux.Handle("/v1/", controlauth.Require(h.Token, api))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		if h.Readiness != nil {
@@ -52,6 +57,7 @@ type instanceRequest struct {
 	NoIdle bool   `json:"no_idle,omitempty"`
 	Image  string `json:"image,omitempty"`
 	Tier   string `json:"tier,omitempty"`
+	Force  bool   `json:"force,omitempty"`
 }
 
 func agentApp(req instanceRequest) string {
@@ -126,7 +132,7 @@ func (h *Handler) ensure(w http.ResponseWriter, r *http.Request) {
 		Image: req.Image, Tier: req.Tier, NoIdle: req.NoIdle,
 	})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeManagerError(w, err)
 		return
 	}
 	writeJSON(w, ensureResponse{Addr: in.Addr, GuestIP: in.GuestIP, State: string(in.State)})
@@ -163,7 +169,7 @@ func (h *Handler) wake(w http.ResponseWriter, r *http.Request) {
 	}
 	in, err := h.Manager.Ensure(r.Context(), req.User, agentApp(req))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeManagerError(w, err)
 		return
 	}
 	writeJSON(w, ensureResponse{Addr: in.Addr, GuestIP: in.GuestIP, State: string(in.State)})
@@ -186,9 +192,15 @@ func (h *Handler) adopt(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	in, err := h.Manager.Adopt(r.Context(), req.User, agentApp(req))
+	var in *Instance
+	var err error
+	if req.Force {
+		in, err = h.Manager.AdoptForced(r.Context(), req.User, agentApp(req))
+	} else {
+		in, err = h.Manager.Adopt(r.Context(), req.User, agentApp(req))
+	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeManagerError(w, err)
 		return
 	}
 	writeJSON(w, ensureResponse{Addr: in.Addr, GuestIP: in.GuestIP, State: string(in.State)})
@@ -235,6 +247,43 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 		resp.LastUsed = st.LastUsed.UTC().Format(time.RFC3339)
 	}
 	writeJSON(w, resp)
+}
+
+func (h *Handler) capacity(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, h.Manager.Capacity())
+}
+
+func (h *Handler) instances(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, map[string]any{"instances": h.Manager.ListInstances()})
+}
+
+func (h *Handler) cordon(w http.ResponseWriter, _ *http.Request) {
+	if err := h.Manager.SetCordoned(true); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) uncordon(w http.ResponseWriter, _ *http.Request) {
+	if err := h.Manager.SetCordoned(false); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func writeManagerError(w http.ResponseWriter, err error) {
+	var capacity ErrCapacity
+	var cordoned ErrCordoned
+	switch {
+	case errors.As(err, &capacity):
+		http.Error(w, err.Error(), http.StatusConflict)
+	case errors.As(err, &cordoned):
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+	default:
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

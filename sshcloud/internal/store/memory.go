@@ -113,3 +113,15 @@ func (m *Memory) ListApps(_ context.Context, userID string) ([]App, error) {
 	}
 	return out, nil
 }
+
+func (m *Memory) ListAllApps(context.Context) ([]App, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []App
+	for _, apps := range m.apps {
+		for _, app := range apps {
+			out = append(out, *app)
+		}
+	}
+	return out, nil
+}

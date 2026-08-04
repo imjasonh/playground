@@ -208,6 +208,26 @@ func (f *Firestore) ListApps(ctx context.Context, userID string) ([]App, error) 
 	return out, nil
 }
 
+func (f *Firestore) ListAllApps(ctx context.Context) ([]App, error) {
+	iter := f.client.CollectionGroup(colApps).Documents(ctx)
+	defer iter.Stop()
+	var out []App
+	for {
+		snap, err := iter.Next()
+		if err == iterator.Done {
+			return out, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		app, err := appFromSnap(snap)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, app)
+	}
+}
+
 func appToDoc(a App) appDoc {
 	return appDoc{
 		Owner:           a.Owner,

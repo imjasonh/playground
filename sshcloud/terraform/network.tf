@@ -73,6 +73,19 @@ resource "google_compute_firewall" "gateway_to_orchestrator" {
   target_tags = ["${local.prefix}-orchestrator"]
 }
 
+resource "google_compute_firewall" "orchestrator_to_gateway" {
+  name    = "${local.prefix}-orchestrator-to-gateway"
+  network = google_compute_network.sshcloud.name
+
+  allow {
+    protocol = "tcp"
+    ports    = ["8079"]
+  }
+
+  source_tags = ["${local.prefix}-orchestrator"]
+  target_tags = ["${local.prefix}-gateway"]
+}
+
 resource "google_compute_firewall" "orchestrator_to_agents" {
   name    = "${local.prefix}-orchestrator-to-agents"
   network = google_compute_network.sshcloud.name

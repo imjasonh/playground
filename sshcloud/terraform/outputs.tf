@@ -7,6 +7,11 @@ output "gateway_ip" {
   value = google_compute_instance.gateway.network_interface[0].access_config[0].nat_ip
 }
 
+output "gateway_internal_ip" {
+  description = "Internal gateway migration-control address"
+  value       = google_compute_address.gateway_internal.address
+}
+
 output "gateway_known_hosts" {
   description = "Pinned known_hosts entry for the public gateway"
   value = join(" ", [

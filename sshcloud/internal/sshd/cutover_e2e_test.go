@@ -286,6 +286,43 @@ func TestLiveSessionDeployKickE2E(t *testing.T) {
 	}
 }
 
+func TestLiveSessionHostMigrationFreezeThawE2E(t *testing.T) {
+	fx := newCutoverE2E(t)
+	image := "ghcr.io/example/app@sha256:" + strings.Repeat("e", 64)
+	app := fx.deploy(t, image, store.StrategyKick)
+	live := fx.openApp(t)
+	defer live.close()
+	live.awaitLine(t, "READY", app.ActiveGen, image, "alice")
+
+	freezeCtx, cancelFreeze := context.WithTimeout(fx.ctx, 2*time.Second)
+	count, err := fx.hub.FreezeApp(freezeCtx, "alice", chaosAppName, app.ActiveGen)
+	cancelFreeze()
+	if err != nil || count != 1 {
+		t.Fatalf("freeze count=%d err=%v", count, err)
+	}
+	live.awaitLine(t, "migration in progress")
+	// No backend reads the outer channel while frozen. This input remains
+	// bounded by the SSH channel window and is replayed after reconnect.
+	live.send(t, "ping")
+	if err := fx.fleet.replace(app.ActiveGen); err != nil {
+		t.Fatal(err)
+	}
+
+	thawCtx, cancelThaw := context.WithTimeout(fx.ctx, 2*time.Second)
+	count, err = fx.hub.ThawApp(thawCtx, "alice", chaosAppName, app.ActiveGen)
+	cancelThaw()
+	if err != nil || count != 1 {
+		t.Fatalf("thaw count=%d err=%v", count, err)
+	}
+	live.awaitLine(t, "migration complete")
+	live.awaitLine(t, "READY", app.ActiveGen, image, "alice")
+	live.awaitLine(t, "PONG", app.ActiveGen)
+	live.send(t, "quit")
+	if err := live.awaitExit(t); err != nil {
+		t.Fatalf("migrated session exit: %v", err)
+	}
+}
+
 type chaosFleet struct {
 	t     *testing.T
 	caPub ssh.PublicKey
@@ -371,6 +408,26 @@ func (f *chaosFleet) awaitStop(t *testing.T, gen string) {
 			t.Fatalf("timeout waiting for stop of %s", gen)
 		}
 	}
+}
+
+func (f *chaosFleet) replace(gen string) error {
+	f.mu.Lock()
+	old := f.apps[gen]
+	image, tier := f.images[gen], f.tiers[gen]
+	delete(f.apps, gen)
+	f.mu.Unlock()
+	if old == nil {
+		return fmt.Errorf("unknown generation %s", gen)
+	}
+	old.Close()
+	replacement, err := newChaosApp(f.caPub, gen, image)
+	if err != nil {
+		return err
+	}
+	f.mu.Lock()
+	f.apps[gen], f.images[gen], f.tiers[gen] = replacement, image, tier
+	f.mu.Unlock()
+	return nil
 }
 
 func (f *chaosFleet) Close() {

@@ -35,6 +35,18 @@ func TestFirestoreRoundTrip(t *testing.T) {
 	if err != nil || !ok || h != "host-a" {
 		t.Fatalf("got %q ok=%v err=%v", h, ok, err)
 	}
+	now := time.Now()
+	lease, err := fs.Acquire(ctx, user, app, "migration-test", time.Minute, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fs.Commit(ctx, lease, "host-b", now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	h, ok, err = fs.Get(ctx, user, app)
+	if err != nil || !ok || h != "host-b" {
+		t.Fatalf("leased placement: got %q ok=%v err=%v", h, ok, err)
+	}
 	if err := fs.Delete(ctx, user, app); err != nil {
 		t.Fatal(err)
 	}

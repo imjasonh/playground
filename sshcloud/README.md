@@ -169,8 +169,11 @@ A new digest is a new rootfs/generation. The gateway (`-drain-timeout`, default
 
 ### Cross-host migrate
 
-Flow: source `Sleep` → `Evict` (keep shared snapshot) → target `Adopt` →
-update placement. Orchestrator:
+Flow: acquire a durable placement lease → freeze the outer gateway session →
+source `Sleep`/`Evict` → target `Adopt` → CAS placement commit → thaw. The
+outer client SSH connection remains open and its bounded channel window holds
+input during the move; the app receives a fresh backend SSH session after thaw.
+Generic app-session state is therefore reset rather than transparently morphed.
 
 ```bash
 go run ./cmd/orchestrator \
@@ -183,8 +186,18 @@ curl -X POST http://127.0.0.1:8090/v1/migrate \
 ```
 
 Agent APIs: `POST /v1/instances/evict`, `POST /v1/instances/adopt`. Migration
-is generation-aware; coordinating active plus draining generations and buffering
-live gateway I/O remains future work.
+is generation-aware. The orchestrator also exposes:
+
+```text
+POST /v1/hosts/cordon  {"host":"host-a","cordoned":true}
+POST /v1/hosts/drain   {"host":"host-a"}
+GET  /v1/hosts         # capacity, reservations, cordon state
+```
+
+Host drain groups active and draining generations per app, reserves their
+aggregate target capacity, moves them under one placement lease, and commits
+the app's host pointer once. Snapshot metadata includes a platform compatibility
+ID so a rollout cannot restore into a mismatched Firecracker/kernel pair.
 
 Orchestration unit test (httptest agent stubs, no VMs):
 `go test ./internal/migrate -run TestMigrateOrchestration`.
@@ -218,6 +231,8 @@ Normal Go CI runs deterministic fault injection (also under the race detector):
 - unexpected Firecracker process death, lifecycle fencing, and resource reservations
 - deploy persistence/hold failures plus admission-vs-deploy linearization
 - stale placement repair and ambiguous migrate response reconciliation
+- placement-lease fencing, best-fit capacity scheduling, and multi-generation host drain
+- bounded live-session freeze/reconnect with timeout kick fallback
 - cancellation of a backend that stalls during its SSH handshake
 
 The KVM job adds substrate-dependent chaos: a canceled/failed snapshot publish
@@ -238,6 +253,9 @@ Implemented and covered at package/integration level:
 - [x] Serialized deploy cutover, same-artifact idempotency, drain/kick fencing
 - [x] Real `tiny` (1 vCPU/128 MiB) and `small` (2 vCPU/512 MiB) resources
 - [x] Generation-aware migrate primitives and placement-after-readiness
+- [x] Durable placement leases/CAS, capacity-aware bin packing, cordon + host drain
+- [x] Bounded gateway freeze/thaw with backend-session reconnect
+- [x] Gateway drain/no-idle reconciliation and snapshot platform-version fencing
 - [x] Agent-host SSH relay for the separate-VM GCP gateway data path
 - [x] Authenticated internal APIs, narrow VPC firewall edges, private-host NAT
 - [x] Content-addressed platform assets and opt-in Terraform fortune bootstrap
@@ -252,10 +270,10 @@ Required before public/self-service use:
 - [ ] Firecracker jailer/seccomp and a privileged TAP helper (agent VMM is not
       yet a production-strength host boundary)
 - [ ] Guest internet egress allowlist plus metadata/VPC isolation
-- [ ] Distributed deploy CAS/leases and startup cleanup reconciliation
+- [ ] Distributed deploy-state CAS (placement operations are now leased)
 - [ ] Session leases/heartbeats (current no-idle hold is not crash-expiring)
-- [ ] MIG termination drain, stale-placement repair, and multi-generation migrate
+- [ ] Automatic pre-termination MIG hooks (manual drain-before-replace is available;
+      auto-healing after a hard failure remains abrupt)
 - [ ] Snapshot retention/garbage collection, corruption/failure-injection tests
-- [ ] Gateway freeze buffer during migrate and forced-reconnect fallback
 - [ ] External key management, encrypted remote Terraform state, rotation drills
 - [ ] Disposable-project first-apply/reapply/rollout end-to-end test

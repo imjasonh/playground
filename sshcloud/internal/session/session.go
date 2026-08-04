@@ -19,11 +19,24 @@ type Key struct {
 func (k Key) String() string { return k.User + "/" + k.App }
 
 type slot struct {
-	ID     ID
-	Gen    string
-	cancel context.CancelFunc
-	kicked bool
+	ID        ID
+	Gen       string
+	cancel    context.CancelFunc
+	kicked    bool
+	migration chan MigrationCommand
+	frozen    bool
 }
+
+// MigrationCommand coordinates the outer SSH session while its VM moves.
+type MigrationCommand struct {
+	Kind string
+	Ack  chan error
+}
+
+const (
+	MigrationFreeze = "freeze"
+	MigrationThaw   = "thaw"
+)
 
 // Registry is an in-memory session table for the gateway.
 type Registry struct {
@@ -102,6 +115,80 @@ func (r *Registry) BindCancel(id ID, cancel context.CancelFunc) {
 		}
 	}
 	r.mu.Unlock()
+}
+
+// BindMigration attaches the live proxy's migration command channel and
+// reports whether a freeze arrived before the proxy bound.
+func (r *Registry) BindMigration(id ID, commands chan MigrationCommand) (frozen bool) {
+	if id == "" || commands == nil {
+		return false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	k, ok := r.byID[id]
+	if !ok {
+		return false
+	}
+	slots := r.slots[k]
+	for i := range slots {
+		if slots[i].ID == id {
+			slots[i].migration = commands
+			frozen = slots[i].frozen
+			r.slots[k] = slots
+			return frozen
+		}
+	}
+	return false
+}
+
+// Freeze asks matching proxies to disconnect from their backend while keeping
+// the outer client SSH channel open. A not-yet-bound proxy remembers the state.
+func (r *Registry) Freeze(ctx context.Context, user, app, gen string) (int, error) {
+	return r.migrateCommand(ctx, user, app, gen, MigrationFreeze, true)
+}
+
+// Thaw lets matching proxies reconnect to the newly placed backend.
+func (r *Registry) Thaw(ctx context.Context, user, app, gen string) (int, error) {
+	return r.migrateCommand(ctx, user, app, gen, MigrationThaw, false)
+}
+
+func (r *Registry) migrateCommand(ctx context.Context, user, app, gen, kind string, frozen bool) (int, error) {
+	k := Key{User: user, App: app}
+	r.mu.Lock()
+	var channels []chan MigrationCommand
+	slots := r.slots[k]
+	n := 0
+	for i := range slots {
+		if slots[i].Gen != gen {
+			continue
+		}
+		slots[i].frozen = frozen
+		if slots[i].migration != nil {
+			channels = append(channels, slots[i].migration)
+		}
+		n++
+	}
+	r.slots[k] = slots
+	r.mu.Unlock()
+
+	for _, commands := range channels {
+		ack := make(chan error, 1)
+		command := MigrationCommand{Kind: kind, Ack: ack}
+		select {
+		case commands <- command:
+		case <-ctx.Done():
+			return n, ctx.Err()
+		}
+		select {
+		case err := <-ack:
+			if err != nil {
+				return n, err
+			}
+		case <-ctx.Done():
+			return n, ctx.Err()
+		}
+	}
+	return n, nil
 }
 
 // Kick cancels sessions for user/app/gen (empty gen matches only empty-gen slots).

@@ -1,6 +1,10 @@
 package backend
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -57,5 +61,39 @@ func TestLoadHostsFile(t *testing.T) {
 	m, err := LoadHostsFile(p)
 	if err != nil || m["z"].BaseURL != "http://127.0.0.1:9" {
 		t.Fatalf("got %#v err=%v", m, err)
+	}
+}
+
+func TestCandidatesBestFitAndSkipCordoned(t *testing.T) {
+	t.Parallel()
+	host := func(usedMem int, cordoned bool) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/v1/host/capacity" {
+				http.NotFound(w, r)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"total":    map[string]int{"vcpus": 4, "mem_mib": 4096},
+				"used":     map[string]int{"vcpus": 1, "mem_mib": usedMem},
+				"reserved": map[string]int{"vcpus": 0, "mem_mib": 0},
+				"cordoned": cordoned,
+			})
+		}))
+	}
+	a := host(3000, false)
+	b := host(1000, false)
+	c := host(3500, true)
+	defer a.Close()
+	defer b.Close()
+	defer c.Close()
+	hosts := NewHostSet(map[string]*AgentClient{
+		"a": {BaseURL: a.URL}, "b": {BaseURL: b.URL}, "c": {BaseURL: c.URL},
+	}, "")
+	candidates, err := hosts.Candidates(context.Background(), "tiny", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 2 || candidates[0].ID != "a" || candidates[1].ID != "b" {
+		t.Fatalf("candidates %+v", candidates)
 	}
 }

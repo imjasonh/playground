@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/imjasonh/playground/sshcloud/internal/agent"
 	"github.com/imjasonh/playground/sshcloud/internal/controlauth"
 )
 
@@ -36,6 +37,7 @@ type instanceBody struct {
 	NoIdle bool   `json:"no_idle,omitempty"`
 	Image  string `json:"image,omitempty"`
 	Tier   string `json:"tier,omitempty"`
+	Force  bool   `json:"force,omitempty"`
 }
 
 func (c *AgentClient) postJSON(ctx context.Context, path string, body any) (*http.Response, error) {
@@ -72,6 +74,14 @@ type InstanceView struct {
 	State   string `json:"state"`
 }
 
+// ErrAgentCapacity is returned when a host is full or cordoned.
+type ErrAgentCapacity struct {
+	HostStatus int
+	Message    string
+}
+
+func (e ErrAgentCapacity) Error() string { return e.Message }
+
 // Ensure boots or wakes the instance on this host.
 func (c *AgentClient) Ensure(user, app, gen, image string, noIdle bool) (InstanceView, error) {
 	return c.EnsureContext(context.Background(), user, app, gen, image, noIdle)
@@ -96,6 +106,9 @@ func (c *AgentClient) EnsureTierContext(ctx context.Context, user, app, gen, ima
 		return InstanceView{}, err
 	}
 	defer res.Body.Close()
+	if res.StatusCode == http.StatusConflict || res.StatusCode == http.StatusServiceUnavailable {
+		return InstanceView{}, ErrAgentCapacity{HostStatus: res.StatusCode, Message: readErr(res.Body)}
+	}
 	if res.StatusCode >= 300 {
 		return InstanceView{}, fmt.Errorf("agent ensure: %s: %s", res.Status, readErr(res.Body))
 	}
@@ -107,6 +120,69 @@ func (c *AgentClient) EnsureTierContext(ctx context.Context, user, app, gen, ima
 		return InstanceView{}, fmt.Errorf("agent returned empty addr")
 	}
 	return out, nil
+}
+
+// Capacity returns one host's allocatable resource view.
+func (c *AgentClient) Capacity(ctx context.Context) (agent.Capacity, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+"/v1/host/capacity", nil)
+	if err != nil {
+		return agent.Capacity{}, err
+	}
+	controlauth.Add(req, c.Token)
+	res, err := c.client().Do(req)
+	if err != nil {
+		return agent.Capacity{}, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode >= 300 {
+		return agent.Capacity{}, fmt.Errorf("agent capacity: %s: %s", res.Status, readErr(res.Body))
+	}
+	var capacity agent.Capacity
+	if err := json.NewDecoder(res.Body).Decode(&capacity); err != nil {
+		return agent.Capacity{}, err
+	}
+	return capacity, nil
+}
+
+// Instances returns host inventory for drain/reconciliation.
+func (c *AgentClient) Instances(ctx context.Context) ([]agent.InstanceInfo, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+"/v1/host/instances", nil)
+	if err != nil {
+		return nil, err
+	}
+	controlauth.Add(req, c.Token)
+	res, err := c.client().Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode >= 300 {
+		return nil, fmt.Errorf("agent instances: %s: %s", res.Status, readErr(res.Body))
+	}
+	var out struct {
+		Instances []agent.InstanceInfo `json:"instances"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out.Instances, nil
+}
+
+// SetCordoned toggles admission of new boots/restores on the host.
+func (c *AgentClient) SetCordoned(ctx context.Context, cordoned bool) error {
+	path := "/v1/host/uncordon"
+	if cordoned {
+		path = "/v1/host/cordon"
+	}
+	res, err := c.postJSON(ctx, path, struct{}{})
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode >= 300 {
+		return fmt.Errorf("agent cordon: %s: %s", res.Status, readErr(res.Body))
+	}
+	return nil
 }
 
 // Sleep snapshots and frees the VMM on this host.
@@ -152,7 +228,16 @@ func (c *AgentClient) Adopt(user, app string) (InstanceView, error) {
 
 // AdoptContext adopts one generation from the shared snapshot store.
 func (c *AgentClient) AdoptContext(ctx context.Context, user, app, gen string) (InstanceView, error) {
-	res, err := c.postInstance(ctx, "/v1/instances/adopt", user, app, gen)
+	return c.adoptContext(ctx, user, app, gen, false)
+}
+
+// AdoptForcedContext permits rollback onto a cordoned source host.
+func (c *AgentClient) AdoptForcedContext(ctx context.Context, user, app, gen string) (InstanceView, error) {
+	return c.adoptContext(ctx, user, app, gen, true)
+}
+
+func (c *AgentClient) adoptContext(ctx context.Context, user, app, gen string, force bool) (InstanceView, error) {
+	res, err := c.postJSON(ctx, "/v1/instances/adopt", instanceBody{User: user, App: app, Gen: gen, Force: force})
 	if err != nil {
 		return InstanceView{}, err
 	}

@@ -90,4 +90,5 @@ docker run -d --name sshcloud-orchestrator --restart unless-stopped --net host \
   -hosts-file ${hosts_path} \
   -control-token-file /var/lib/sshcloud/orchestrator_auth \
   -agent-token-file /var/lib/sshcloud/agent_auth \
+  -gateway-url ${gateway_url} \
   -firestore-project ${project_id}

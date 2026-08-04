@@ -11,8 +11,8 @@
 > A review checkpoint found that the package-level vertical slice is ahead of
 > its production safety boundary. Public ingress remains closed by default.
 > Quotas/rate limits, full SSH request fidelity, app host identity,
-> jailer-based isolation, egress controls, distributed reconciliation, and
-> production migration are launch blockers—not optional polish.
+> jailer-based isolation, egress controls, and distributed deploy-state
+> reconciliation are launch blockers—not optional polish.
 
 ### Review constraints
 
@@ -24,9 +24,10 @@
   control-plane SSRF.
 - One in-process gateway can serialize deploy/admission for this prototype.
   Multiple gateways require Firestore CAS/leases before they are safe.
-- Snapshot migrate is generation-aware infrastructure machinery, not yet a
-  transparent live-session feature. Do not promise freeze-buffer migration
-  until gateway I/O fencing and host-drain reconciliation exist.
+- Snapshot migrate can preserve the outer client channel with bounded
+  freeze/thaw and host-drain reconciliation. It intentionally reconnects a new
+  backend SSH session; transparent app-session preservation is not promised
+  without a migratable/routed dataplane.
 - `tiny`/`small`, exec/subsystem, quotas, and “strong isolation” are product
   claims only when their corresponding enforcement paths are deployed and
   tested end to end.
@@ -367,7 +368,7 @@ GCE host MIG ── host agent ── Firecracker ── app :22
 4. Re-point gateway routing  
 5. Thaw; if over cap → force reconnect  
 
-**Implemented in `sshcloud/` (control-plane path; no live SSH buffer yet):**
+**Implemented in `sshcloud/`:**
 - Agent: `Sleep` → `Evict` (drop local TAP/workdir, **keep** shared snapshot) →
   target `Adopt` (restore deterministic paths/TAP, same guest IP/MAC).
 - `internal/placement` maps `user/app` → host ID; `internal/migrate.Migrator`
@@ -382,8 +383,18 @@ GCE host MIG ── host agent ── Firecracker ── app :22
   `hack/run-kvm-e2e.sh` → `go test -tags=kvm` sleep/wake + migrate when
   `sshcloud/` changes; the script fails if any test is skipped.
 - Placement: memory (default) or Firestore (`placement.Firestore`).
-- Still open: gateway I/O freeze buffer during migrate, force-reconnect on
-  timeout, session pin invalidation.
+- Firestore placement records carry revisioned, expiring operation leases.
+  Wake/deploy/migrate cannot concurrently claim two hosts for one app.
+- Agents report allocatable/used/reserved CPU+memory and cordon state;
+  unplaced apps and host drain use deterministic best-fit bin packing.
+- Gateway freeze/thaw keeps the outer client channel open for a bounded window,
+  disconnects the old backend hop, and reconnects after placement commits.
+  Buffered input is bounded by SSH flow control; timeout kicks the client.
+- `POST /v1/hosts/drain` cordons a host and moves all active/draining
+  generations of each app under one placement lease.
+- **Semantic limit:** the host-side TCP relay is not snapshot state. The outer
+  client connection survives, but the app sees a fresh SSH session after thaw;
+  transparent preservation would require a migratable/routed dataplane.
 
 ---
 
@@ -508,6 +519,8 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
 - Terraform provisions the Native `(default)` database (`sshcloud/terraform`).
 - Interim bearer authentication protects each internal API hop; VPC firewalls
   allow only gateway→orchestrator and orchestrator→agent control traffic.
+- Placement changes use Firestore transactions with revisioned leases,
+  renewal heartbeats, expiry takeover, and a reconciler for abandoned leases.
 - Still open: quota counters and workload identity + mTLS.
 
 ### Infra
@@ -529,6 +542,10 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
 - Cloud NAT/Private Google Access for private hosts; content-addressed
   Firecracker/kernel GCS objects are in the Terraform DAG; agent-host SSH
   relays provide the separate-VM gateway→guest data path
+- Gateway has a fixed internal migration-control address; orchestrator can
+  freeze/thaw sessions while draining an agent. Agent templates remain
+  opportunistic and operators call drain-before-replace; hard auto-healing
+  remains an uncoordinated failure path.
 - Still open: egress allowlist on the data path, IAP-only hardening, key rotation
   out of Terraform state. OCI→rootfs on agents: `internal/ocirootfs` + Ensure
   `"image"` hook + `guestinit` PID 1 from image config; deploy cutover pre-boots

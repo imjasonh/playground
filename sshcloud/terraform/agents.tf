@@ -35,6 +35,7 @@ resource "google_compute_instance_template" "agent" {
     assets_bucket      = local.asset_bucket
     firecracker_object = google_storage_bucket_object.firecracker.name
     kernel_object      = google_storage_bucket_object.kernel.name
+    platform_version   = "${google_storage_bucket_object.firecracker.name}:${google_storage_bucket_object.kernel.name}"
     snapshots_bucket   = local.snapshot_bucket
     snapshot_prefix    = local.snapshot_prefix
     agent_image        = ko_build.agent.image_ref

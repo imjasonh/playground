@@ -265,3 +265,39 @@ func TestHTTPControlAuthentication(t *testing.T) {
 		t.Fatalf("health should remain public, got %d", rec.Code)
 	}
 }
+
+func TestHTTPHostCapacityInventoryAndCordon(t *testing.T) {
+	dir := t.TempDir()
+	mgr, err := NewManager(Config{
+		WorkDir: dir, KernelPath: dir + "/kernel", BaseRootfs: dir + "/rootfs",
+		CapacityVCPUs: 4, CapacityMemMiB: 4096,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+	mgr.inst[InstanceKey{User: "alice", App: "myapp.gabc"}] = &Instance{
+		Key: InstanceKey{User: "alice", App: "myapp.gabc"}, State: StateSleeping, Tier: "tiny",
+	}
+	mux := http.NewServeMux()
+	(&Handler{Manager: mgr}).Mount(mux)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/host/capacity", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !bytes.Contains(rec.Body.Bytes(), []byte(`"vcpus":4`)) {
+		t.Fatalf("capacity: %d %s", rec.Code, rec.Body.String())
+	}
+	req = httptest.NewRequest(http.MethodGet, "/v1/host/instances", nil)
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !bytes.Contains(rec.Body.Bytes(), []byte(`"gen":"gabc"`)) {
+		t.Fatalf("inventory: %d %s", rec.Code, rec.Body.String())
+	}
+	req = httptest.NewRequest(http.MethodPost, "/v1/host/cordon", bytes.NewReader([]byte(`{}`)))
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent || !mgr.Capacity().Cordoned {
+		t.Fatalf("cordon: %d %+v", rec.Code, mgr.Capacity())
+	}
+}

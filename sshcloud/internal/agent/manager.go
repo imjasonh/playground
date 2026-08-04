@@ -9,11 +9,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/imjasonh/playground/sshcloud/internal/firecracker"
+	"github.com/imjasonh/playground/sshcloud/internal/genid"
 	"github.com/imjasonh/playground/sshcloud/internal/guestinit"
 	"github.com/imjasonh/playground/sshcloud/internal/image"
 	"github.com/imjasonh/playground/sshcloud/internal/rootfs"
@@ -37,6 +41,35 @@ const (
 	StateFailed   State = "failed"
 )
 
+// Resources are Firecracker capacity units.
+type Resources struct {
+	VCPUs  int64 `json:"vcpus"`
+	MemMiB int64 `json:"mem_mib"`
+}
+
+// Capacity is one host's current allocatable resource view.
+type Capacity struct {
+	Total    Resources `json:"total"`
+	Used     Resources `json:"used"`
+	Reserved Resources `json:"reserved"`
+	Cordoned bool      `json:"cordoned"`
+}
+
+// ErrCapacity means the host cannot fit another running generation.
+type ErrCapacity struct {
+	Need, Available Resources
+}
+
+func (e ErrCapacity) Error() string {
+	return fmt.Sprintf("insufficient host capacity: need %d vCPU/%d MiB, available %d vCPU/%d MiB",
+		e.Need.VCPUs, e.Need.MemMiB, e.Available.VCPUs, e.Available.MemMiB)
+}
+
+// ErrCordoned means the host is draining and rejects new boots/restores.
+type ErrCordoned struct{}
+
+func (ErrCordoned) Error() string { return "host is cordoned" }
+
 // Instance is a live or sleeping microVM endpoint.
 type Instance struct {
 	Key      InstanceKey
@@ -51,6 +84,8 @@ type Instance struct {
 	LastUsed time.Time
 	Image    string
 	Tier     string
+	VCPUs    int64
+	MemMiB   int64
 	machine  machine
 	snapKey  string
 	noIdle   bool
@@ -88,6 +123,13 @@ type Config struct {
 	// AllowedRegistries constrains OCI pull hosts to prevent control-plane
 	// requests from becoming arbitrary SSRF. Empty is local-dev only.
 	AllowedRegistries []string
+	// CapacityVCPUs/CapacityMemMiB are allocatable guest resources. Zero
+	// detects the host and reserves 1 GiB of memory for the host agent.
+	CapacityVCPUs  int64
+	CapacityMemMiB int64
+	// PlatformVersion fences Firecracker snapshots to compatible kernel/VMM
+	// assets during host rollout.
+	PlatformVersion string
 }
 
 // ResolvedRootfs is a materialized ext4 and the OCI PID 1 spec to boot it with.
@@ -106,6 +148,8 @@ type EnsureOpts struct {
 	Tier string
 	// NoIdle holds the instance awake for an active or draining SSH session.
 	NoIdle bool
+	// AllowCordoned is reserved for rollback onto a draining source host.
+	AllowCordoned bool
 }
 
 // Manager boots, sleeps, wakes, and migrates Firecracker instances.
@@ -117,10 +161,13 @@ type Manager struct {
 	ops  map[InstanceKey]*sync.Mutex
 	// reserved fences resources during slow boot/restore before inst is
 	// published, so concurrent instances cannot claim the same IP or TAP.
-	reserved map[string]InstanceKey
-	seq      int
-	stop     chan struct{}
-	closed   bool
+	reserved         map[string]InstanceKey
+	capacityReserved map[InstanceKey]Resources
+	capacity         Resources
+	cordoned         bool
+	seq              int
+	stop             chan struct{}
+	closed           bool
 }
 
 // NewManager validates config essentials.
@@ -155,18 +202,50 @@ func NewManager(cfg Config) (*Manager, error) {
 	if err := os.MkdirAll(cfg.WorkDir, 0o755); err != nil {
 		return nil, err
 	}
+	if cfg.CapacityVCPUs <= 0 {
+		cfg.CapacityVCPUs = int64(runtime.NumCPU())
+	}
+	if cfg.CapacityMemMiB <= 0 {
+		cfg.CapacityMemMiB = detectedGuestMemoryMiB()
+	}
 	m := &Manager{
-		cfg:      cfg,
-		rt:       rt,
-		inst:     make(map[InstanceKey]*Instance),
-		ops:      make(map[InstanceKey]*sync.Mutex),
-		reserved: make(map[string]InstanceKey),
-		stop:     make(chan struct{}),
+		cfg:              cfg,
+		rt:               rt,
+		inst:             make(map[InstanceKey]*Instance),
+		ops:              make(map[InstanceKey]*sync.Mutex),
+		reserved:         make(map[string]InstanceKey),
+		capacityReserved: make(map[InstanceKey]Resources),
+		capacity:         Resources{VCPUs: cfg.CapacityVCPUs, MemMiB: cfg.CapacityMemMiB},
+		stop:             make(chan struct{}),
+	}
+	if _, err := os.Stat(filepath.Join(cfg.WorkDir, ".cordoned")); err == nil {
+		m.cordoned = true
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("read cordon state: %w", err)
 	}
 	if cfg.IdleTimeout > 0 && cfg.SnapStore != nil {
 		go m.idleLoop()
 	}
 	return m, nil
+}
+
+func detectedGuestMemoryMiB() int64 {
+	b, err := os.ReadFile("/proc/meminfo")
+	if err == nil {
+		for _, line := range strings.Split(string(b), "\n") {
+			fields := strings.Fields(line)
+			if len(fields) >= 2 && fields[0] == "MemTotal:" {
+				kib, parseErr := strconv.ParseInt(fields[1], 10, 64)
+				if parseErr == nil {
+					mib := kib/1024 - 1024
+					if mib >= 512 {
+						return mib
+					}
+				}
+			}
+		}
+	}
+	return 512
 }
 
 // Ensure starts or wakes the instance and returns a dialable SSH address.
@@ -266,6 +345,7 @@ func (m *Manager) EnsureWith(ctx context.Context, user, app string, opt EnsureOp
 		_ = firecracker.DeleteTap(in.TapName)
 		_ = os.RemoveAll(in.WorkDir)
 		m.releaseResources(k)
+		m.releaseCapacity(k)
 		return nil, err
 	}
 	m.publishInstance(in)
@@ -316,6 +396,127 @@ func tierResources(tier string) (normalized string, vcpus, memMiB int64, err err
 	default:
 		return "", 0, 0, fmt.Errorf("unknown tier %q (want tiny or small)", tier)
 	}
+}
+
+func resourcesForTier(tier string) (Resources, error) {
+	_, vcpus, memMiB, err := tierResources(tier)
+	return Resources{VCPUs: vcpus, MemMiB: memMiB}, err
+}
+
+// ResourcesForTier returns the host capacity consumed by a tier.
+func ResourcesForTier(tier string) (Resources, error) { return resourcesForTier(tier) }
+
+func addResources(a, b Resources) Resources {
+	return Resources{VCPUs: a.VCPUs + b.VCPUs, MemMiB: a.MemMiB + b.MemMiB}
+}
+
+func subResources(a, b Resources) Resources {
+	return Resources{VCPUs: a.VCPUs - b.VCPUs, MemMiB: a.MemMiB - b.MemMiB}
+}
+
+func (m *Manager) reserveCapacity(k InstanceKey, tier string, allowCordoned bool) error {
+	need, err := resourcesForTier(tier)
+	if err != nil {
+		return err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.cordoned && !allowCordoned {
+		return ErrCordoned{}
+	}
+	if _, ok := m.capacityReserved[k]; ok {
+		return nil
+	}
+	view := m.capacityLocked()
+	available := subResources(view.Total, addResources(view.Used, view.Reserved))
+	if need.VCPUs > available.VCPUs || need.MemMiB > available.MemMiB {
+		return ErrCapacity{Need: need, Available: available}
+	}
+	m.capacityReserved[k] = need
+	return nil
+}
+
+func (m *Manager) releaseCapacity(k InstanceKey) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.capacityReserved, k)
+}
+
+func (m *Manager) capacityLocked() Capacity {
+	view := Capacity{Total: m.capacity, Cordoned: m.cordoned}
+	for _, in := range m.inst {
+		if in.State == StateRunning && in.machine != nil {
+			view.Used = addResources(view.Used, Resources{VCPUs: in.VCPUs, MemMiB: in.MemMiB})
+		}
+	}
+	for _, reserved := range m.capacityReserved {
+		view.Reserved = addResources(view.Reserved, reserved)
+	}
+	return view
+}
+
+// Capacity reports resources currently used and reserved.
+func (m *Manager) Capacity() Capacity {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.capacityLocked()
+}
+
+// SetCordoned durably controls whether new boots/restores are admitted.
+func (m *Manager) SetCordoned(cordoned bool) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	path := filepath.Join(m.cfg.WorkDir, ".cordoned")
+	if cordoned {
+		tmp := path + ".tmp"
+		if err := os.WriteFile(tmp, []byte("cordoned\n"), 0o644); err != nil {
+			return err
+		}
+		if err := os.Rename(tmp, path); err != nil {
+			_ = os.Remove(tmp)
+			return err
+		}
+	} else if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	m.cordoned = cordoned
+	return nil
+}
+
+// InstanceInfo is host-drain inventory.
+type InstanceInfo struct {
+	User     string `json:"user"`
+	App      string `json:"app"`
+	Gen      string `json:"gen,omitempty"`
+	AgentApp string `json:"agent_app"`
+	Image    string `json:"image,omitempty"`
+	Tier     string `json:"tier"`
+	State    State  `json:"state"`
+	NoIdle   bool   `json:"no_idle"`
+}
+
+// ListInstances returns a stable snapshot of this host's inventory.
+func (m *Manager) ListInstances() []InstanceInfo {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]InstanceInfo, 0, len(m.inst))
+	for _, in := range m.inst {
+		app, gen := genid.SplitAgentApp(in.Key.App)
+		out = append(out, InstanceInfo{
+			User: in.Key.User, App: app, Gen: gen, AgentApp: in.Key.App,
+			Image: in.Image, Tier: in.Tier, State: in.State, NoIdle: in.noIdle,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].User != out[j].User {
+			return out[i].User < out[j].User
+		}
+		if out[i].App != out[j].App {
+			return out[i].App < out[j].App
+		}
+		return out[i].Gen < out[j].Gen
+	})
+	return out
 }
 
 func (m *Manager) prepareGuestInit(rootfsPath string, spec guestinit.Spec) (string, error) {
@@ -403,6 +604,14 @@ func (m *Manager) bootCold(ctx context.Context, k InstanceKey, n int, opt Ensure
 	if !m.rt.Available() {
 		return nil, fmt.Errorf("firecracker requires /dev/kvm (not available on this host)")
 	}
+	if err := m.reserveCapacity(k, opt.Tier, opt.AllowCordoned); err != nil {
+		return nil, err
+	}
+	defer func() {
+		if retErr != nil {
+			m.releaseCapacity(k)
+		}
+	}()
 	resourceID := instanceResourceID(k)
 	dir := filepath.Join(m.cfg.WorkDir, "vm-"+resourceID)
 	if err := os.RemoveAll(dir); err != nil {
@@ -511,6 +720,8 @@ func (m *Manager) bootCold(ctx context.Context, k InstanceKey, n int, opt Ensure
 		LastUsed: time.Now(),
 		Image:    imageRef,
 		Tier:     opt.Tier,
+		VCPUs:    vcpus,
+		MemMiB:   memMiB,
 		machine:  mach,
 		noIdle:   opt.NoIdle,
 		relay:    relay,
@@ -621,16 +832,17 @@ func (m *Manager) Sleep(ctx context.Context, user, app string) error {
 		return err
 	}
 	meta := snapshot.Meta{
-		User:       user,
-		App:        app,
-		GuestIP:    in.GuestIP,
-		TapName:    in.TapName,
-		GuestMAC:   in.GuestMAC,
-		HostIP:     in.HostIP,
-		RootfsPath: in.Rootfs,
-		Image:      in.Image,
-		Tier:       in.Tier,
-		CreatedAt:  time.Now().UTC(),
+		User:            user,
+		App:             app,
+		GuestIP:         in.GuestIP,
+		TapName:         in.TapName,
+		GuestMAC:        in.GuestMAC,
+		HostIP:          in.HostIP,
+		RootfsPath:      in.Rootfs,
+		Image:           in.Image,
+		Tier:            in.Tier,
+		PlatformVersion: m.cfg.PlatformVersion,
+		CreatedAt:       time.Now().UTC(),
 	}
 	if err := pkg.WriteMeta(meta); err != nil {
 		return err
@@ -722,6 +934,15 @@ func (m *Manager) Evict(user, app string) error {
 // Adopt restores an instance onto this host from the shared snapshot store.
 // Used as the target side of cross-host migrate.
 func (m *Manager) Adopt(ctx context.Context, user, app string) (*Instance, error) {
+	return m.adoptWith(ctx, user, app, false)
+}
+
+// AdoptForced permits rollback onto a cordoned source host.
+func (m *Manager) AdoptForced(ctx context.Context, user, app string) (*Instance, error) {
+	return m.adoptWith(ctx, user, app, true)
+}
+
+func (m *Manager) adoptWith(ctx context.Context, user, app string, allowCordoned bool) (*Instance, error) {
 	k := InstanceKey{User: user, App: app}
 	if m.cfg.SnapStore == nil {
 		return nil, fmt.Errorf("snapshot store not configured")
@@ -755,7 +976,7 @@ func (m *Manager) Adopt(ctx context.Context, user, app string) (*Instance, error
 	n := m.seq
 	m.mu.Unlock()
 
-	return m.adopt(ctx, k, n, EnsureOpts{})
+	return m.adopt(ctx, k, n, EnsureOpts{AllowCordoned: allowCordoned})
 }
 
 func (m *Manager) adopt(ctx context.Context, k InstanceKey, n int, opt EnsureOpts) (*Instance, error) {
@@ -776,6 +997,9 @@ func (m *Manager) adopt(ctx context.Context, k InstanceKey, n int, opt EnsureOpt
 	}
 	if meta.User != k.User || meta.App != k.App {
 		return nil, fmt.Errorf("snapshot identity mismatch: got %s/%s, want %s", meta.User, meta.App, k)
+	}
+	if m.cfg.PlatformVersion != "" && meta.PlatformVersion != m.cfg.PlatformVersion {
+		return nil, fmt.Errorf("snapshot platform version %q is incompatible with host %q", meta.PlatformVersion, m.cfg.PlatformVersion)
 	}
 	tier, _, _, err := tierResources(meta.Tier)
 	if err != nil {
@@ -808,13 +1032,18 @@ func (m *Manager) adopt(ctx context.Context, k InstanceKey, n int, opt EnsureOpt
 	if err := m.validateSnapshotNetwork(k, meta); err != nil {
 		return nil, err
 	}
+	if err := m.reserveCapacity(k, meta.Tier, opt.AllowCordoned); err != nil {
+		return nil, err
+	}
 	if err := m.reserveResources(k, rootfsPath, tapName, meta.GuestIP, meta.HostIP); err != nil {
+		m.releaseCapacity(k)
 		return nil, err
 	}
 	published := false
 	defer func() {
 		if !published {
 			m.releaseResources(k)
+			m.releaseCapacity(k)
 		}
 	}()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -835,6 +1064,7 @@ func (m *Manager) adopt(ctx context.Context, k InstanceKey, n int, opt EnsureOpt
 		Tier:     meta.Tier,
 		noIdle:   opt.NoIdle,
 	}
+	_, in.VCPUs, in.MemMiB, _ = tierResources(meta.Tier)
 
 	mach, addr, err := m.restoreFromPackage(ctx, in, pkg)
 	if err != nil {
@@ -918,6 +1148,7 @@ func (m *Manager) publishInstance(in *Instance) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.releaseResourcesLocked(in.Key)
+	delete(m.capacityReserved, in.Key)
 	m.inst[in.Key] = in
 }
 
@@ -961,6 +1192,15 @@ func (m *Manager) wake(ctx context.Context, k InstanceKey) (*Instance, error) {
 		return instanceCopy(in), nil
 	}
 	m.mu.Unlock()
+	if err := m.reserveCapacity(k, in.Tier, false); err != nil {
+		return nil, err
+	}
+	reserved := true
+	defer func() {
+		if reserved {
+			m.releaseCapacity(k)
+		}
+	}()
 
 	snapDir := filepath.Join(in.WorkDir, "snap-wake")
 	_ = os.RemoveAll(snapDir)
@@ -992,11 +1232,13 @@ func (m *Manager) wake(ctx context.Context, k InstanceKey) (*Instance, error) {
 	}
 
 	m.mu.Lock()
+	delete(m.capacityReserved, k)
 	in.State = StateRunning
 	in.machine = mach
 	in.Addr = addr
 	in.LastUsed = time.Now()
 	m.mu.Unlock()
+	reserved = false
 	return instanceCopy(in), nil
 }
 
@@ -1074,7 +1316,7 @@ func (m *Manager) SetNoIdle(user, app string, noIdle bool) error {
 		in.LastUsed = time.Now()
 		return nil
 	}
-	return fmt.Errorf("instance %s not found", k)
+	return nil
 }
 
 // Touch updates LastUsed so idle sleep is deferred.

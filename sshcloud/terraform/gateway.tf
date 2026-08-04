@@ -8,6 +8,13 @@ resource "google_compute_address" "gateway" {
   region = var.region
 }
 
+resource "google_compute_address" "gateway_internal" {
+  name         = "${local.prefix}-gateway-internal"
+  region       = var.region
+  address_type = "INTERNAL"
+  subnetwork   = google_compute_subnetwork.sshcloud.id
+}
+
 resource "google_compute_instance" "gateway" {
   name         = "${local.prefix}-gateway"
   machine_type = var.gateway_machine_type
@@ -25,6 +32,7 @@ resource "google_compute_instance" "gateway" {
 
   network_interface {
     subnetwork = google_compute_subnetwork.sshcloud.id
+    network_ip = google_compute_address.gateway_internal.address
     access_config {
       nat_ip = google_compute_address.gateway.address
     }
@@ -44,6 +52,7 @@ resource "google_compute_instance" "gateway" {
     control_auth_secret = google_secret_manager_secret.orchestrator_auth.secret_id
     gateway_image       = ko_build.gateway.image_ref
     gateway_listen      = local.gateway_listen
+    control_listen      = "${google_compute_address.gateway_internal.address}:8079"
     orchestrator_ip     = google_compute_instance.orchestrator.network_interface[0].network_ip
   })
 

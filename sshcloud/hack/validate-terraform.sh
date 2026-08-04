@@ -9,6 +9,7 @@ need=(
   secrets.tf images.tf network.tf gateway.tf orchestrator.tf agents.tf demo.tf
   scripts/gateway.sh.tftpl scripts/orchestrator.sh.tftpl scripts/agent.sh.tftpl
   scripts/run-container.sh.tftpl scripts/deploy-fortune.sh terraform.tfvars.example README.md
+  ../hack/drain-agent-host.sh
 )
 for f in "${need[@]}"; do
   if [[ ! -f "$TF/$f" ]]; then
@@ -38,6 +39,7 @@ if ! grep -q 'triggers_replace' "$TF/demo.tf"; then
   exit 1
 fi
 bash -n "$TF/scripts/deploy-fortune.sh"
+bash -n "$ROOT/hack/drain-agent-host.sh"
 
 if command -v terraform >/dev/null 2>&1; then
   terraform -chdir="$TF" fmt -check -recursive

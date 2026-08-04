@@ -2,11 +2,17 @@ package gateway
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"math/rand"
 
 	"golang.org/x/crypto/ssh"
+
+	"github.com/imjasonh/playground/sshcloud/internal/session"
 )
+
+var errBackendMigration = errors.New("backend migration freeze")
 
 var fortunes = []string{
 	"The only way to do great work is to love what you do.",
@@ -37,29 +43,58 @@ func runAppStub(ctx context.Context, t *term, hub *Hub, res Result) int {
 		if tier == "" {
 			tier = "tiny"
 		}
-		addr, err := DialWithLoading(ctx, t.out, res.App, hub.Dial, DialRequest{
-			User:   res.User,
-			App:    res.App,
-			Gen:    res.Gen,
-			Image:  img,
-			Tier:   tier,
-			NoIdle: true,
-		})
-		if err != nil {
-			t.Printf("backend error: %v\n", err)
-			return 1
-		}
-		if err := ProxySSH(ctx, t.rw, hub.UserCA, res.User, addr); err != nil {
-			if ctx.Err() != nil {
+		commands := make(chan session.MigrationCommand, 2)
+		frozen := hub.BindMigration(res.Session, commands)
+		for {
+			if frozen {
+				t.Printf("\n[sshcloud] host migration in progress; input is temporarily buffered\n")
+				if !waitForThaw(ctx, commands) {
+					return 1
+				}
+				t.Printf("[sshcloud] migration complete; reconnecting app session\n")
+				frozen = false
+			}
+
+			addr, err := DialWithLoading(ctx, t.out, res.App, hub.Dial, DialRequest{
+				User:   res.User,
+				App:    res.App,
+				Gen:    res.Gen,
+				Image:  img,
+				Tier:   tier,
+				NoIdle: true,
+			})
+			if err != nil {
+				t.Printf("backend error: %v\n", err)
 				return 1
 			}
-			t.Printf("proxy error: %v\n", err)
-			if exitErr, ok := err.(*ssh.ExitError); ok {
-				return exitErr.ExitStatus()
+			proxyCtx, cancelProxy := context.WithCancelCause(ctx)
+			proxyDone := make(chan error, 1)
+			go func() {
+				proxyDone <- ProxySSH(proxyCtx, t.rw, hub.UserCA, res.User, addr)
+			}()
+		waitProxy:
+			for {
+				select {
+				case err := <-proxyDone:
+					cancelProxy(nil)
+					return proxyExitCode(ctx, t, err)
+				case command := <-commands:
+					if command.Kind != session.MigrationFreeze {
+						command.Ack <- fmt.Errorf("cannot %s an active backend session", command.Kind)
+						continue
+					}
+					cancelProxy(errBackendMigration)
+					<-proxyDone
+					command.Ack <- nil
+					frozen = true
+					break waitProxy
+				case <-ctx.Done():
+					cancelProxy(context.Cause(ctx))
+					<-proxyDone
+					return 1
+				}
 			}
-			return 1
 		}
-		return 0
 	}
 
 	// Fallback when CA/backend not configured (unit tests / misconfig).
@@ -73,4 +108,37 @@ func runAppStub(ctx context.Context, t *term, hub *Hub, res Result) int {
 	t.Printf("Press enter to return.\n")
 	_, _ = t.ReadLine()
 	return 0
+}
+
+func waitForThaw(ctx context.Context, commands <-chan session.MigrationCommand) bool {
+	for {
+		select {
+		case command := <-commands:
+			switch command.Kind {
+			case session.MigrationThaw:
+				command.Ack <- nil
+				return true
+			case session.MigrationFreeze:
+				command.Ack <- nil
+			default:
+				command.Ack <- fmt.Errorf("unknown migration command %q", command.Kind)
+			}
+		case <-ctx.Done():
+			return false
+		}
+	}
+}
+
+func proxyExitCode(ctx context.Context, t *term, err error) int {
+	if err == nil {
+		return 0
+	}
+	if ctx.Err() != nil {
+		return 1
+	}
+	t.Printf("proxy error: %v\n", err)
+	if exitErr, ok := err.(*ssh.ExitError); ok {
+		return exitErr.ExitStatus()
+	}
+	return 1
 }

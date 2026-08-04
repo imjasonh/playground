@@ -31,6 +31,7 @@ resource "google_compute_instance" "orchestrator" {
     orchestrator_image  = ko_build.orchestrator.image_ref
     inbound_auth_secret = google_secret_manager_secret.orchestrator_auth.secret_id
     agent_auth_secret   = google_secret_manager_secret.agent_auth.secret_id
+    gateway_url         = "http://${google_compute_address.gateway_internal.address}:8079"
   })
 
   lifecycle {

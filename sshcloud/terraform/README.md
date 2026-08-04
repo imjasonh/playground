@@ -90,8 +90,21 @@ ssh deploy@HOST fortune --image=repo@sha256:… [--tier=tiny] [--strategy=kick|d
 - **No public default:** `ssh_client_cidrs = []` creates no public `:22` rule.
 - **MIG discovery:** orchestrator `-hosts-file` is rewritten every minute from
   MIG membership (`GET /v1/hosts`).
-- **No automatic host rollout:** the MIG update policy is opportunistic until
-  termination-aware host drain exists. Template changes do not justify killing
-  live app VMs; apply a controlled replacement only during private smoke tests.
+- **Drain before host rollout:** the MIG update policy remains opportunistic so
+  Terraform never kills live app VMs implicitly. From a VPC/IAP control shell,
+  drain each instance before replacing it:
+
+  ```bash
+  bash ../hack/drain-agent-host.sh \
+    http://ORCHESTRATOR_IP:8090 sshcloud-agent-INSTANCE \
+    /secure/path/orchestrator-auth-token
+  gcloud compute instance-groups managed recreate-instances sshcloud-agents \
+    --instances=sshcloud-agent-INSTANCE --zone=us-central1-a
+  ```
+
+  Drain cordons the host, freezes live outer SSH sessions for a bounded window,
+  bin-packs all generations onto a compatible host, commits placement, and
+  reconnects the app hop. Hard auto-healing failures cannot run a pre-hook and
+  still rely on durable snapshots plus lazy placement recovery.
 - **One region** in v1 (`var.region` / `var.zone`).
 - Validate locally (no GCP apply): `bash hack/validate-terraform.sh`

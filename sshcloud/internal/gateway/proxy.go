@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -84,10 +85,12 @@ func ProxySSH(ctx context.Context, client io.ReadWriter, ca *userca.CA, principa
 	go func() { wait <- sess.Wait() }()
 	select {
 	case <-ctx.Done():
-		_, _ = io.WriteString(client, "\r\n[sshcloud] session ended (deploy cutover)\r\n")
+		if !errors.Is(context.Cause(ctx), errBackendMigration) {
+			_, _ = io.WriteString(client, "\r\n[sshcloud] session ended (deploy cutover)\r\n")
+		}
 		_ = conn.Close()
 		<-wait
-		return ctx.Err()
+		return context.Cause(ctx)
 	case err := <-wait:
 		return err
 	}

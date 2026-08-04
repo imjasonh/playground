@@ -306,26 +306,31 @@ func (c *Controller) OnRelease(ctx context.Context, user, app, gen string) {
 	c.finishDrainLocked(ctx, user, app, gen)
 }
 
-func (c *Controller) finishDrainLocked(ctx context.Context, user, app, gen string) {
+func (c *Controller) finishDrainLocked(ctx context.Context, user, app, gen string) error {
 	a, err := c.Store.GetApp(ctx, user, app)
 	if err != nil || a == nil {
-		return
+		return err
 	}
 	if a.DrainingGen != gen {
-		return
+		return nil
+	}
+	if c.Instances != nil {
+		if err := c.Instances.Stop(ctx, user, app, gen); err != nil {
+			return fmt.Errorf("stop draining generation %s: %w", gen, err)
+		}
 	}
 	a.DrainingGen = ""
 	a.DrainUntilUnix = 0
 	if err := c.Store.UpsertApp(ctx, *a); err != nil {
-		return
+		return err
 	}
 	if c.Instances != nil {
-		_ = c.Instances.Stop(ctx, user, app, gen)
 		if a.ActiveGen != "" && (c.Sessions == nil || !c.Sessions.ActiveGen(user, app, a.ActiveGen)) {
 			_ = c.Instances.SetNoIdle(ctx, user, app, a.ActiveGen, false)
 		}
 	}
 	c.clearTimer(user, app)
+	return nil
 }
 
 func (c *Controller) kickGen(user, app, gen string) {
@@ -340,7 +345,7 @@ func (c *Controller) armDrainTimer(user, app, gen string, until time.Time) {
 		return
 	}
 	c.clearTimer(user, app)
-	delay := time.Until(until)
+	delay := until.Sub(c.now())
 	if delay < 0 {
 		delay = 0
 	}
@@ -360,6 +365,53 @@ func (c *Controller) armDrainTimer(user, app, gen string, until time.Time) {
 		c.finishDrainLocked(ctx, user, app, gen)
 	})
 	c.mu.Unlock()
+}
+
+// Reconcile restores process-local timers and retries durable cleanup after a
+// gateway restart or transient agent failure.
+func (c *Controller) Reconcile(ctx context.Context) error {
+	if c == nil || c.Store == nil {
+		return nil
+	}
+	apps, err := c.Store.ListAllApps(ctx)
+	if err != nil {
+		return err
+	}
+	var first error
+	for _, app := range apps {
+		op := c.appLock(app.Owner, app.Name)
+		op.Lock()
+		current, getErr := c.Store.GetApp(ctx, app.Owner, app.Name)
+		if getErr != nil || current == nil {
+			op.Unlock()
+			if getErr != nil && first == nil {
+				first = getErr
+			}
+			continue
+		}
+		if current.DrainingGen != "" {
+			active := c.Sessions != nil && c.Sessions.ActiveGen(current.Owner, current.Name, current.DrainingGen)
+			expired := current.DrainUntilUnix > 0 && c.now().Unix() >= current.DrainUntilUnix
+			if expired {
+				c.kickGen(current.Owner, current.Name, current.DrainingGen)
+				active = false
+			}
+			if !active {
+				if finishErr := c.finishDrainLocked(ctx, current.Owner, current.Name, current.DrainingGen); finishErr != nil && first == nil {
+					first = finishErr
+				}
+			} else if current.DrainUntilUnix > 0 {
+				c.armDrainTimer(current.Owner, current.Name, current.DrainingGen, time.Unix(current.DrainUntilUnix, 0))
+			}
+		} else if c.Instances != nil && current.ActiveGen != "" &&
+			(c.Sessions == nil || !c.Sessions.ActiveGen(current.Owner, current.Name, current.ActiveGen)) {
+			if holdErr := c.Instances.SetNoIdle(ctx, current.Owner, current.Name, current.ActiveGen, false); holdErr != nil && first == nil {
+				first = holdErr
+			}
+		}
+		op.Unlock()
+	}
+	return first
 }
 
 func (c *Controller) clearTimer(user, app string) {

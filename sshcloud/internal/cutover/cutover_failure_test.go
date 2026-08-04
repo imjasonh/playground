@@ -30,6 +30,7 @@ type faultInstances struct {
 
 	ensureErr  error
 	holdErrGen string
+	stopErr    error
 	ensured    []string
 	stopped    []string
 
@@ -59,7 +60,7 @@ func (f *faultInstances) Stop(_ context.Context, user, app, gen string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.stopped = append(f.stopped, user+"/"+app+"@"+gen)
-	return nil
+	return f.stopErr
 }
 
 func (f *faultInstances) SetNoIdle(_ context.Context, _, _, gen string, noIdle bool) error {
@@ -228,5 +229,35 @@ func TestDeployAndAdmissionLinearizeAtCommit(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("admission did not resume")
+	}
+}
+
+func TestReconcileRetainsDrainUntilStopSucceeds(t *testing.T) {
+	t.Parallel()
+	ctx, mem, sessions := faultSetup(t)
+	if err := mem.UpsertApp(ctx, store.App{
+		Owner: "alice", Name: "myapp", Image: chaosImage("a"), Tier: "tiny",
+		ActiveGen: "gnew", DrainingGen: "gold", DrainUntilUnix: time.Now().Add(time.Minute).Unix(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	instances := &faultInstances{stopErr: errors.New("injected stop failure")}
+	controller := cutover.New(mem, sessions, instances)
+	if err := controller.Reconcile(ctx); err == nil {
+		t.Fatal("expected cleanup failure")
+	}
+	app, _ := mem.GetApp(ctx, "alice", "myapp")
+	if app.DrainingGen != "gold" {
+		t.Fatalf("cleanup reference was lost: %+v", app)
+	}
+	instances.mu.Lock()
+	instances.stopErr = nil
+	instances.mu.Unlock()
+	if err := controller.Reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	app, _ = mem.GetApp(ctx, "alice", "myapp")
+	if app.DrainingGen != "" {
+		t.Fatalf("drain was not reconciled: %+v", app)
 	}
 }

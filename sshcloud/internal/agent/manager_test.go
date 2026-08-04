@@ -550,3 +550,79 @@ func TestClosedManagerRejectsNewEnsure(t *testing.T) {
 		t.Fatalf("closed manager Ensure error = %v", err)
 	}
 }
+
+func TestCapacityReservationAndCordon(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mgr, err := NewManager(Config{
+		WorkDir: dir, KernelPath: dir + "/kernel", BaseRootfs: dir + "/rootfs",
+		CapacityVCPUs: 2, CapacityMemMiB: 512,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := InstanceKey{User: "alice", App: "first"}
+	if err := mgr.reserveCapacity(first, "tiny", false); err != nil {
+		t.Fatal(err)
+	}
+	view := mgr.Capacity()
+	if view.Reserved.VCPUs != 1 || view.Reserved.MemMiB != 128 {
+		t.Fatalf("reserved %+v", view)
+	}
+	if err := mgr.reserveCapacity(InstanceKey{User: "alice", App: "second"}, "small", false); err == nil {
+		t.Fatal("over-capacity reservation succeeded")
+	} else {
+		var capacity ErrCapacity
+		if !errors.As(err, &capacity) {
+			t.Fatalf("error %T, want ErrCapacity", err)
+		}
+	}
+	mgr.releaseCapacity(first)
+	mgr.SetCordoned(true)
+	if err := mgr.reserveCapacity(first, "tiny", false); err == nil {
+		t.Fatal("cordoned host accepted reservation")
+	} else {
+		var cordoned ErrCordoned
+		if !errors.As(err, &cordoned) {
+			t.Fatalf("error %T, want ErrCordoned", err)
+		}
+	}
+}
+
+func TestListInstancesSplitsGeneration(t *testing.T) {
+	t.Parallel()
+	mgr := &Manager{inst: map[InstanceKey]*Instance{
+		{User: "alice", App: "myapp.gabc"}: {
+			Key:   InstanceKey{User: "alice", App: "myapp.gabc"},
+			State: StateRunning, Image: "example", Tier: "small", noIdle: true,
+		},
+	}}
+	inventory := mgr.ListInstances()
+	if len(inventory) != 1 || inventory[0].App != "myapp" || inventory[0].Gen != "gabc" || !inventory[0].NoIdle {
+		t.Fatalf("inventory %+v", inventory)
+	}
+}
+
+func TestCordonStateSurvivesManagerRestart(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	config := Config{WorkDir: dir, KernelPath: dir + "/kernel", BaseRootfs: dir + "/rootfs"}
+	first, err := NewManager(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := first.SetCordoned(true); err != nil {
+		t.Fatal(err)
+	}
+	if err := first.Close(); err != nil {
+		t.Fatal(err)
+	}
+	second, err := NewManager(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Close()
+	if !second.Capacity().Cordoned {
+		t.Fatal("cordon state was lost across restart")
+	}
+}

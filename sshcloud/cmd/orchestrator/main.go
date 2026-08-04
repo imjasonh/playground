@@ -11,6 +11,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -22,8 +23,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/imjasonh/playground/sshcloud/internal/agent"
 	"github.com/imjasonh/playground/sshcloud/internal/backend"
 	"github.com/imjasonh/playground/sshcloud/internal/controlauth"
+	"github.com/imjasonh/playground/sshcloud/internal/drain"
 	"github.com/imjasonh/playground/sshcloud/internal/genid"
 	"github.com/imjasonh/playground/sshcloud/internal/image"
 	"github.com/imjasonh/playground/sshcloud/internal/migrate"
@@ -39,6 +42,8 @@ func main() {
 	firestoreProject := flag.String("firestore-project", "", "GCP project for Firestore placement (default: in-memory)")
 	controlTokenFile := flag.String("control-token-file", "", "bearer token file required by orchestrator APIs (empty is local-dev only)")
 	agentTokenFile := flag.String("agent-token-file", "", "bearer token file sent to host agents")
+	gatewayURL := flag.String("gateway-url", "", "gateway migration control base URL")
+	freezeTimeout := flag.Duration("freeze-timeout", 30*time.Second, "maximum outer-session freeze before forced reconnect")
 	flag.Parse()
 
 	controlToken, err := controlauth.LoadFile(*controlTokenFile)
@@ -92,10 +97,20 @@ func main() {
 	hosts := backend.NewHostSet(initial, *defaultHost)
 	mig := &migrate.Migrator{Placement: place, Hosts: hosts}
 	dial := &backend.PlacedDial{Placement: place, Agents: hosts, DefaultHost: *defaultHost}
+	var gatewayClient *backend.GatewayClient
+	if *gatewayURL != "" {
+		gatewayClient = &backend.GatewayClient{BaseURL: *gatewayURL, Token: controlToken}
+	}
+	mig.Gateway = gatewayClient
+	mig.FreezeWindow = *freezeTimeout
+	drainer := &drain.Controller{
+		Placement: place, Hosts: hosts, Gateway: gatewayClient, FreezeWindow: *freezeTimeout,
+	}
 
 	if *hostsFile != "" {
 		go watchHostsFile(ctx, *hostsFile, hosts, agentToken)
 	}
+	go reconcilePlacementLeases(ctx, place, hosts)
 
 	mux := http.NewServeMux()
 	api := http.NewServeMux()
@@ -103,12 +118,65 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
-	api.HandleFunc("GET /v1/hosts", func(w http.ResponseWriter, _ *http.Request) {
+	api.HandleFunc("GET /v1/hosts", func(w http.ResponseWriter, r *http.Request) {
+		type hostView struct {
+			ID       string         `json:"id"`
+			Capacity agent.Capacity `json:"capacity"`
+			Error    string         `json:"error,omitempty"`
+		}
+		var views []hostView
+		for _, id := range hosts.IDs() {
+			client, _ := hosts.Get(id)
+			capacity, err := client.Capacity(r.Context())
+			view := hostView{ID: id, Capacity: capacity}
+			if err != nil {
+				view.Error = err.Error()
+			}
+			views = append(views, view)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"hosts":   hosts.IDs(),
+			"hosts":   views,
 			"default": hosts.DefaultHost(),
 		})
+	})
+	api.HandleFunc("POST /v1/hosts/cordon", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Host     string `json:"host"`
+			Cordoned *bool  `json:"cordoned"`
+		}
+		if !decodeJSON(w, r, &req) {
+			return
+		}
+		client, ok := hosts.Get(req.Host)
+		if !ok {
+			http.Error(w, "unknown host", http.StatusNotFound)
+			return
+		}
+		cordoned := true
+		if req.Cordoned != nil {
+			cordoned = *req.Cordoned
+		}
+		if err := client.SetCordoned(r.Context(), cordoned); err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	api.HandleFunc("POST /v1/hosts/drain", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Host string `json:"host"`
+		}
+		if !decodeJSON(w, r, &req) {
+			return
+		}
+		result, err := drainer.DrainHost(r.Context(), req.Host)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(result)
 	})
 	api.HandleFunc("POST /v1/migrate", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -160,7 +228,7 @@ func main() {
 		}
 		addr, err := dial.EnsureAddrTier(r.Context(), req.User, req.App, req.Gen, req.Image, req.Tier, req.NoIdle)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			writeControlError(w, err)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -180,7 +248,7 @@ func main() {
 			return
 		}
 		if err := dial.Stop(r.Context(), req.User, req.App, req.Gen); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			writeControlError(w, err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -200,7 +268,7 @@ func main() {
 			return
 		}
 		if err := dial.SetNoIdle(r.Context(), req.User, req.App, req.Gen, req.NoIdle); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			writeControlError(w, err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -212,7 +280,7 @@ func main() {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		host, ok, err := place.Get(r.Context(), user, app)
+		record, ok, err := place.GetRecord(r.Context(), user, app)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -222,7 +290,16 @@ func main() {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]string{"user": user, "app": app, "host": host})
+		_ = json.NewEncoder(w).Encode(record)
+	})
+	api.HandleFunc("GET /v1/placements", func(w http.ResponseWriter, r *http.Request) {
+		records, err := place.ListRecords(r.Context())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"placements": records})
 	})
 	mux.Handle("/v1/", controlauth.Require(controlToken, api))
 
@@ -269,6 +346,37 @@ func watchHostsFile(ctx context.Context, path string, hosts *backend.HostSet, ag
 	}
 }
 
+func reconcilePlacementLeases(ctx context.Context, store placement.Store, hosts *backend.HostSet) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		records, err := store.ListRecords(ctx)
+		if err != nil {
+			log.Printf("placement reconcile: %v", err)
+		} else {
+			now := time.Now()
+			for _, record := range records {
+				if record.LeaseOwner != "" && record.LeaseUntilUnix <= now.UnixNano() {
+					lease, err := store.Acquire(ctx, record.User, record.App, placement.NewLeaseOwner("reconcile"), placement.DefaultLeaseTTL, now)
+					if err == nil {
+						_ = store.Release(ctx, lease)
+					}
+				}
+				if record.HostID != "" {
+					if _, ok := hosts.Get(record.HostID); !ok {
+						log.Printf("placement reconcile: %s/%s waits for lazy recovery from missing host %s", record.User, record.App, record.HostID)
+					}
+				}
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
 func setAgentToken(hosts map[string]*backend.AgentClient, token string) {
 	for _, client := range hosts {
 		client.Token = token
@@ -303,4 +411,18 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
 		return false
 	}
 	return true
+}
+
+func writeControlError(w http.ResponseWriter, err error) {
+	var held placement.ErrLeaseHeld
+	var lost placement.ErrLeaseLost
+	var capacity backend.ErrAgentCapacity
+	switch {
+	case errors.As(err, &held), errors.As(err, &lost):
+		http.Error(w, err.Error(), http.StatusConflict)
+	case errors.As(err, &capacity):
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+	default:
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }

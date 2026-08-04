@@ -22,6 +22,14 @@ func TestOrchestratorClientAddr(t *testing.T) {
 		NoIdle bool
 	}
 	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/host/capacity" {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"total":    map[string]int{"vcpus": 4, "mem_mib": 4096},
+				"used":     map[string]int{"vcpus": 0, "mem_mib": 0},
+				"reserved": map[string]int{"vcpus": 0, "mem_mib": 0},
+			})
+			return
+		}
 		if r.URL.Path != "/v1/instances/ensure" {
 			http.NotFound(w, r)
 			return
@@ -131,6 +139,14 @@ func TestPlacedDialRepairsStalePlacementAfterEnsure(t *testing.T) {
 	place := placement.NewMemory()
 	_ = place.Set(t.Context(), "alice", "fortune", "removed-host")
 	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/host/capacity" {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"total":    map[string]int{"vcpus": 4, "mem_mib": 4096},
+				"used":     map[string]int{"vcpus": 0, "mem_mib": 0},
+				"reserved": map[string]int{"vcpus": 0, "mem_mib": 0},
+			})
+			return
+		}
 		if r.URL.Path != "/v1/instances/ensure" {
 			http.NotFound(w, r)
 			return

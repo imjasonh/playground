@@ -75,6 +75,7 @@ ExecStart=/usr/local/lib/sshcloud/agent \
   -relay-host $${INTERNAL_IP} \
   -relay-port-min 20000 \
   -relay-port-max 29999 \
+  -platform-version ${platform_version} \
   -gcs-bucket ${snapshots_bucket} \
   -gcs-prefix ${snapshot_prefix} \
   -idle 5m
