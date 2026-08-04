@@ -10,8 +10,3 @@ ssh_user_ca
 ssh_user_ca.pub
 /_assets/
 *.ext4
-/terraform/.terraform/
-/terraform/*.tfstate
-/terraform/*.tfstate.*
-/terraform/*.tfvars
-!/terraform/terraform.tfvars.example
