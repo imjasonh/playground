@@ -45,6 +45,7 @@ final class PlaygroundUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Z-Camera"].exists)
         XCTAssertTrue(app.staticTexts["Voxel World"].exists)
         XCTAssertTrue(app.staticTexts["Wigglecam"].exists)
+        XCTAssertTrue(app.staticTexts["Local Lens"].exists)
     }
 
     func testRideMonitorExperimentOpens() {
@@ -147,5 +148,21 @@ final class PlaygroundUITests: XCTestCase {
             || app.otherElements["wigglecamStatusMessage"].waitForExistence(timeout: 3)
             || app.staticTexts["wigglecamReadinessBanner"].waitForExistence(timeout: 3)
             || app.otherElements["wigglecamReadinessBanner"].waitForExistence(timeout: 3))
+    }
+
+    func testLocalLensExperimentOpens() {
+        let app = launchApp()
+
+        openExperiment("local-lens", title: "Local Lens", in: app)
+
+        XCTAssertTrue(app.navigationBars["Local Lens"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["localLensMode-classify"].waitForExistence(timeout: 8)
+            || app.otherElements["localLensMode-classify"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["localLensMode-text"].waitForExistence(timeout: 8)
+            || app.otherElements["localLensMode-text"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["localLensStatusMessage"].waitForExistence(timeout: 8)
+            || app.otherElements["localLensStatusMessage"].waitForExistence(timeout: 3)
+            || app.staticTexts["localLensPrivacyBadge"].waitForExistence(timeout: 3)
+            || app.otherElements["localLensPrivacyBadge"].waitForExistence(timeout: 3))
     }
 }

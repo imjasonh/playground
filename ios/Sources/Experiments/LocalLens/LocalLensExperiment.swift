@@ -1,0 +1,13 @@
+import SwiftUI
+
+/// Registration entry for the Local Lens experiment.
+enum LocalLensExperiment {
+    static let experiment = Experiment(
+        id: "local-lens",
+        title: "Local Lens",
+        summary: "Live camera labels from on-device Vision — classify, OCR, animals, faces, codes. No network.",
+        icon: "camera.viewfinder"
+    ) {
+        LocalLensView()
+    }
+}

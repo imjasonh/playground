@@ -53,5 +53,6 @@ enum ExperimentCatalog {
         ZCameraExperiment.experiment,
         VoxelWorldExperiment.experiment,
         WigglecamExperiment.experiment,
+        LocalLensExperiment.experiment,
     ]
 }

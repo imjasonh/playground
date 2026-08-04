@@ -50,6 +50,7 @@ ios/
 | `z-camera` | Z-Camera | In-app; depth-band live camera (near/far sliders) |
 | `voxel-world` | Voxel World | In-app; ARKit rebuilds the room as Minecraft-style palette blocks |
 | `wigglecam` | Wigglecam | In-app; dual-wide wigglegrams saved as GIF to Photos |
+| `local-lens` | Local Lens | In-app; live on-device Vision labels (classify / OCR / animals / faces / people / barcodes) |
 
 ### Ride Monitor
 
@@ -170,6 +171,21 @@ GIF to **Photos**; **long-press Save** writes left and right **JPEGs** instead
 (`NSPhotoLibraryAddUsageDescription` — no new Bundle ID or signing
 bootstrap). Strongest depth around **1–2.5 m**. Simulator opens the UI but cannot
 capture pairs.
+
+### Local Lens
+
+Live camera that runs **Apple Vision entirely on-device** — no network, no
+bundled Core ML file, no cloud API. Modes:
+
+1. **Classify** — scene / object labels (`VNClassifyImageRequest`)
+2. **Text** — live OCR (`VNRecognizeTextRequest`)
+3. **Animals** — cats and dogs (`VNRecognizeAnimalsRequest`)
+4. **Faces** / **People** — rectangles for faces and human bodies
+5. **Codes** — QR / barcodes (`VNDetectBarcodesRequest`)
+
+Needs camera permission (extends the existing `NSCameraUsageDescription` — no
+new Bundle ID or signing bootstrap). Simulator opens the UI but has no camera;
+use a physical device to see live labels.
 
 ## Adding an experiment
 

@@ -47,4 +47,8 @@ final class ExperimentCatalogTests: XCTestCase {
     func testIncludesWigglecam() {
         XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "wigglecam" })
     }
+
+    func testIncludesLocalLens() {
+        XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "local-lens" })
+    }
 }
