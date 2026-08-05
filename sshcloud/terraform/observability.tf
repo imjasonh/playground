@@ -109,17 +109,11 @@ resource "google_monitoring_alert_policy" "ops_agent_absent" {
 
   conditions {
     display_name = "No sshcloud scrape heartbeat for 10 minutes"
-    condition_threshold {
-      filter                    = "resource.type = \"prometheus_target\" AND metric.type = \"prometheus.googleapis.com/sshcloud_up/gauge\""
-      comparison                = "COMPARISON_LT"
-      threshold_value           = 0.5
-      duration                  = "600s"
-      evaluation_missing_data   = "EVALUATION_MISSING_DATA_ACTIVE"
+    condition_prometheus_query_language {
+      query                     = "absent_over_time(sshcloud_up[10m]) == 1"
+      duration                  = "0s"
+      evaluation_interval       = "60s"
       disable_metric_validation = true
-      aggregations {
-        alignment_period   = "60s"
-        per_series_aligner = "ALIGN_MEAN"
-      }
     }
   }
 
@@ -165,17 +159,11 @@ resource "google_monitoring_alert_policy" "app_log_drops" {
 
   conditions {
     display_name = "Nonblocking host console guard dropped bytes"
-    condition_threshold {
-      filter                    = "resource.type = \"prometheus_target\" AND metric.type = \"prometheus.googleapis.com/sshcloud_app_log_bytes_total/counter\" AND metric.label.\"result\" = \"dropped\""
-      comparison                = "COMPARISON_GT"
-      threshold_value           = 0
+    condition_prometheus_query_language {
+      query                     = "increase(sshcloud_app_log_bytes_total{result=\"dropped\"}[5m]) > 0"
       duration                  = "0s"
+      evaluation_interval       = "60s"
       disable_metric_validation = true
-      aggregations {
-        alignment_period     = "300s"
-        per_series_aligner   = "ALIGN_DELTA"
-        cross_series_reducer = "REDUCE_SUM"
-      }
     }
   }
 
