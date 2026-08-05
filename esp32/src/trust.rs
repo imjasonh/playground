@@ -97,8 +97,8 @@ impl TrustConfig {
                         "trust/identities is provisioned but contains no entries"
                     ));
                 }
-                let (label, rekor_public_key_der) =
-                    pem::decode_vec(&rekor_pem).context("decode trust/rekor_key PEM")?;
+                let (label, rekor_public_key_der) = pem::decode_vec(&rekor_pem)
+                    .map_err(|error| anyhow!("decode trust/rekor_key PEM: {}", error))?;
                 if label != "PUBLIC KEY" {
                     return Err(anyhow!("trust/rekor_key PEM label is {}", label));
                 }
