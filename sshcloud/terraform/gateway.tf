@@ -4,8 +4,9 @@ data "google_compute_image" "debian" {
 }
 
 resource "google_compute_address" "gateway" {
-  name   = "${local.prefix}-gateway"
-  region = var.region
+  name       = "${local.prefix}-gateway"
+  region     = var.region
+  depends_on = [google_project_service.services]
 }
 
 resource "google_compute_address" "gateway_internal" {
@@ -47,6 +48,7 @@ resource "google_compute_instance" "gateway" {
     helpers             = templatefile("${path.module}/scripts/run-container.sh.tftpl", { registry_host = split("/", local.registry)[0], project_id = var.project_id })
     registry_host       = split("/", local.registry)[0]
     project_id          = var.project_id
+    firestore_prefix    = var.firestore_prefix
     host_key_secret     = google_secret_manager_secret.gateway_host_key.secret_id
     user_ca_secret      = google_secret_manager_secret.user_ca.secret_id
     control_auth_secret = google_secret_manager_secret.orchestrator_auth.secret_id

@@ -4,7 +4,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"math/rand"
 	"net"
@@ -133,7 +132,6 @@ func handleSession(sc *ssh.ServerConn, ch ssh.Channel, reqs <-chan *ssh.Request)
 			fmt.Fprintf(ch, "hello %s\r\n", sc.User())
 			fmt.Fprintf(ch, "%s\r\n", fortunes[rand.Intn(len(fortunes))])
 			fmt.Fprintf(ch, "─────────────\r\n")
-			_, _ = io.Copy(io.Discard, ch)
 			_, _ = ch.SendRequest("exit-status", false, []byte{0, 0, 0, 0})
 			return
 		default:

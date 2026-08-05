@@ -38,6 +38,10 @@ if ! grep -q 'triggers_replace' "$TF/demo.tf"; then
   echo "demo.tf must rerun bootstrap when its deployment inputs change" >&2
   exit 1
 fi
+if ! grep -q 'method="POST"' "$TF/scripts/orchestrator.sh.tftpl"; then
+  echo "MIG listManagedInstances discovery must use POST" >&2
+  exit 1
+fi
 bash -n "$TF/scripts/deploy-fortune.sh"
 bash -n "$ROOT/hack/drain-agent-host.sh"
 

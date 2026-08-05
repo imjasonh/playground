@@ -145,7 +145,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer mgr.Close()
+	defer func() {
+		if err := mgr.Close(); err != nil {
+			log.Printf("agent shutdown snapshot failures: %v", err)
+		}
+	}()
 
 	mux := http.NewServeMux()
 	(&agent.Handler{Manager: mgr, Token: controlToken, Readiness: mgr.Ready}).Mount(mux)
@@ -168,5 +172,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	<-ctx.Done()
-	_ = srv.Close()
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelShutdown()
+	_ = srv.Shutdown(shutdownCtx)
 }

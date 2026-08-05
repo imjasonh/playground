@@ -41,6 +41,7 @@ func main() {
 	hostsFile := flag.String("hosts-file", "", "hosts file (id=url per line); reloaded every 30s")
 	defaultHost := flag.String("default-host", "", "default placement host ID")
 	firestoreProject := flag.String("firestore-project", "", "GCP project for Firestore placement (default: in-memory)")
+	firestorePrefix := flag.String("firestore-prefix", "sshcloud", "Firestore collection prefix")
 	controlTokenFile := flag.String("control-token-file", "", "bearer token file required by orchestrator APIs (empty is local-dev only)")
 	agentTokenFile := flag.String("agent-token-file", "", "bearer token file sent to host agents")
 	gatewayURL := flag.String("gateway-url", "", "gateway migration control base URL")
@@ -84,7 +85,7 @@ func main() {
 
 	var place placement.Store = placement.NewMemory()
 	if *firestoreProject != "" {
-		fs, err := placement.NewFirestore(ctx, *firestoreProject)
+		fs, err := placement.NewFirestoreWithPrefix(ctx, *firestoreProject, *firestorePrefix)
 		if err != nil {
 			log.Fatalf("firestore: %v", err)
 		}
@@ -332,7 +333,7 @@ func main() {
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      7 * time.Minute,
+		WriteTimeout:      35 * time.Minute,
 		IdleTimeout:       60 * time.Second,
 	}
 	go func() {

@@ -12,11 +12,10 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-const colPlacement = "placement"
-
 // Firestore maps user/app → host ID in Cloud Firestore (or the emulator).
 type Firestore struct {
-	client *firestore.Client
+	client       *firestore.Client
+	colPlacement string
 }
 
 type placementDoc struct {
@@ -32,14 +31,22 @@ type placementDoc struct {
 
 // NewFirestore connects to the given GCP project.
 func NewFirestore(ctx context.Context, projectID string) (*Firestore, error) {
+	return NewFirestoreWithPrefix(ctx, projectID, "sshcloud")
+}
+
+func NewFirestoreWithPrefix(ctx context.Context, projectID, prefix string) (*Firestore, error) {
 	if projectID == "" {
 		return nil, fmt.Errorf("firestore project ID required")
+	}
+	prefix = strings.TrimSpace(prefix)
+	if prefix == "" {
+		return nil, fmt.Errorf("firestore collection prefix required")
 	}
 	client, err := firestore.NewClient(ctx, projectID)
 	if err != nil {
 		return nil, err
 	}
-	return &Firestore{client: client}, nil
+	return &Firestore{client: client, colPlacement: prefix + "_placement"}, nil
 }
 
 // Close releases the Firestore client.
@@ -56,7 +63,7 @@ func placementDocID(user, app string) string {
 }
 
 func (f *Firestore) ref(user, app string) *firestore.DocumentRef {
-	return f.client.Collection(colPlacement).Doc(placementDocID(user, app))
+	return f.client.Collection(f.colPlacement).Doc(placementDocID(user, app))
 }
 
 func (f *Firestore) Get(ctx context.Context, user, app string) (string, bool, error) {
@@ -130,7 +137,7 @@ func (f *Firestore) GetRecord(ctx context.Context, user, app string) (Record, bo
 }
 
 func (f *Firestore) ListRecords(ctx context.Context) ([]Record, error) {
-	iter := f.client.Collection(colPlacement).Documents(ctx)
+	iter := f.client.Collection(f.colPlacement).Documents(ctx)
 	defer iter.Stop()
 	var out []Record
 	for {

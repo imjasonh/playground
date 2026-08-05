@@ -48,7 +48,14 @@ output "fortune_image" {
 
 output "demo_ssh" {
   description = "Optional demo command; null unless enable_demo_bootstrap=true"
-  value       = var.enable_demo_bootstrap ? "ssh -p 22 -i <demo-key> ${var.demo_app}@${google_compute_instance.gateway.network_interface[0].access_config[0].nat_ip}" : null
+  value = var.enable_demo_bootstrap ? join(" ", [
+    "ssh -T -p 22 -i <demo-key>",
+    "-o IdentitiesOnly=yes",
+    "-o UserKnownHostsFile=<known-hosts>",
+    "-o GlobalKnownHostsFile=/dev/null",
+    "-o StrictHostKeyChecking=yes",
+    "${var.demo_app}@${google_compute_instance.gateway.network_interface[0].access_config[0].nat_ip} </dev/null",
+  ]) : null
 }
 
 output "demo_private_key_openssh" {

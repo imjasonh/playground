@@ -9,6 +9,8 @@ kernel_asset_path      = "../_assets/vmlinux"
 # Optional overrides:
 # name_prefix         = "sshcloud"
 # firestore_location  = "nam5"
+# manage_firestore_database = false # existing Native-mode default DB
+# firestore_prefix          = "sshcloud"
 # agent_count         = 2
 # Keep empty until quotas/rate limits are implemented. For a private smoke test,
 # use only the Terraform runner/operator's public /32.

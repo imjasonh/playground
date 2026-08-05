@@ -28,10 +28,26 @@ gateway — it is not a platform builtin.
 
 ## Apply
 
-Needs: Terraform ≥ 1.6, `ko` provider auth to Artifact Registry (Application
-Default Credentials with `artifactregistry.writer` is enough for apply from a
-dev machine), Go 1.25+ on the machine running Terraform (`ko_build` compiles
-locally and pushes).
+Needs: Terraform ≥ 1.6 and Go 1.25+. The applying identity must be able to
+enable project services; create Compute/network, service-account, Firestore,
+Storage, Secret Manager, and Artifact Registry resources; modify project IAM;
+act as the created service accounts; and push Artifact Registry images.
+Application Default Credentials are used by both Google and ko providers.
+
+The module does **not** assume an empty/disposable project. By default
+`manage_firestore_database=false`: the project must already have a Native-mode
+`(default)` Firestore database. Collections are isolated under
+`firestore_prefix` (default `sshcloud`). Set database management true only when
+you intentionally want Terraform to create the default database in a project
+that does not already have one.
+
+If you choose to manage an existing default database, set the variable true,
+match its immutable location, and import it before planning:
+
+```bash
+terraform import 'google_firestore_database.default[0]' \
+  'projects/PROJECT/databases/(default)'
+```
 
 ```bash
 cd sshcloud
@@ -40,6 +56,13 @@ cd terraform
 cp terraform.tfvars.example terraform.tfvars
 # edit project_id, asset paths, and a narrow ssh_client_cidrs allowlist
 # optionally set enable_demo_bootstrap=true
+
+# Avoid first-apply service-enablement races.
+gcloud services enable \
+  compute.googleapis.com firestore.googleapis.com secretmanager.googleapis.com \
+  artifactregistry.googleapis.com iam.googleapis.com iamcredentials.googleapis.com \
+  storage.googleapis.com serviceusage.googleapis.com cloudresourcemanager.googleapis.com \
+  --project=YOUR_PROJECT
 
 terraform init
 terraform apply
@@ -50,14 +73,22 @@ After apply:
 ```bash
 # With enable_demo_bootstrap=true, Terraform waits/retries through:
 # terraform_data.deploy_fortune → ssh join@ / ssh deploy@ with exec args.
-terraform -chdir=terraform output -raw demo_private_key_openssh > /tmp/sshcloud-demo
+umask 077
+terraform output -raw demo_private_key_openssh > /tmp/sshcloud-demo
+terraform output -raw gateway_known_hosts > /tmp/sshcloud-known
 chmod 600 /tmp/sshcloud-demo
-terraform -chdir=terraform output demo_ssh
-# ssh -p 22 -i /tmp/sshcloud-demo fortune@GATEWAY_IP
+terraform output demo_ssh
+ip="$(terraform output -raw gateway_ip)"
+ssh -T -p 22 -i /tmp/sshcloud-demo \
+  -o IdentitiesOnly=yes \
+  -o UserKnownHostsFile=/tmp/sshcloud-known \
+  -o GlobalKnownHostsFile=/dev/null \
+  -o StrictHostKeyChecking=yes \
+  fortune@"$ip" </dev/null
 
 # Manual deploy (any joined user) also works non-interactively:
 # ssh -p 22 deploy@GATEWAY_IP \
-#   fortune --image="$(terraform -chdir=terraform output -raw fortune_image)" \
+#   fortune --image="$(terraform output -raw fortune_image)" \
 #   --tier=tiny --strategy=kick --yes
 ```
 

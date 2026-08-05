@@ -16,28 +16,37 @@ import (
 //	keys/{fingerprint}              → { user_id }
 //	users/{userID}                  → { id }
 //	users/{userID}/apps/{appName}   → app fields
-const (
-	colKeys  = "keys"
-	colUsers = "users"
-	colApps  = "apps"
-)
-
+//
 // Firestore is a Store backed by Cloud Firestore (or the emulator).
 type Firestore struct {
-	client *firestore.Client
+	client   *firestore.Client
+	colKeys  string
+	colUsers string
+	colApps  string
 }
 
 // NewFirestore connects to the given GCP project. When FIRESTORE_EMULATOR_HOST
 // is set, the client talks to the emulator instead of production.
 func NewFirestore(ctx context.Context, projectID string) (*Firestore, error) {
+	return NewFirestoreWithPrefix(ctx, projectID, "sshcloud")
+}
+
+func NewFirestoreWithPrefix(ctx context.Context, projectID, prefix string) (*Firestore, error) {
 	if projectID == "" {
 		return nil, fmt.Errorf("firestore project ID required")
+	}
+	prefix = strings.TrimSpace(prefix)
+	if prefix == "" {
+		return nil, fmt.Errorf("firestore collection prefix required")
 	}
 	client, err := firestore.NewClient(ctx, projectID)
 	if err != nil {
 		return nil, err
 	}
-	return &Firestore{client: client}, nil
+	return &Firestore{
+		client: client, colKeys: prefix + "_keys",
+		colUsers: prefix + "_users", colApps: prefix + "_apps",
+	}, nil
 }
 
 // Close releases the Firestore client.
@@ -74,15 +83,15 @@ func keyDocID(fingerprint string) string {
 }
 
 func (f *Firestore) keyRef(fingerprint string) *firestore.DocumentRef {
-	return f.client.Collection(colKeys).Doc(keyDocID(fingerprint))
+	return f.client.Collection(f.colKeys).Doc(keyDocID(fingerprint))
 }
 
 func (f *Firestore) userRef(userID string) *firestore.DocumentRef {
-	return f.client.Collection(colUsers).Doc(userID)
+	return f.client.Collection(f.colUsers).Doc(userID)
 }
 
 func (f *Firestore) appRef(userID, app string) *firestore.DocumentRef {
-	return f.userRef(userID).Collection(colApps).Doc(app)
+	return f.userRef(userID).Collection(f.colApps).Doc(app)
 }
 
 func (f *Firestore) LookupUserByKey(ctx context.Context, keyFingerprint string) (*User, error) {
@@ -188,7 +197,7 @@ func (f *Firestore) UpsertApp(ctx context.Context, app App) error {
 }
 
 func (f *Firestore) ListApps(ctx context.Context, userID string) ([]App, error) {
-	iter := f.userRef(userID).Collection(colApps).Documents(ctx)
+	iter := f.userRef(userID).Collection(f.colApps).Documents(ctx)
 	defer iter.Stop()
 	out := []App{}
 	for {
@@ -209,7 +218,7 @@ func (f *Firestore) ListApps(ctx context.Context, userID string) ([]App, error) 
 }
 
 func (f *Firestore) ListAllApps(ctx context.Context) ([]App, error) {
-	iter := f.client.CollectionGroup(colApps).Documents(ctx)
+	iter := f.client.CollectionGroup(f.colApps).Documents(ctx)
 	defer iter.Stop()
 	var out []App
 	for {

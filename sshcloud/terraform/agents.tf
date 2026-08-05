@@ -72,6 +72,7 @@ resource "google_compute_health_check" "agent" {
     port         = 8080
     request_path = "/healthz"
   }
+  depends_on = [google_project_service.services]
 }
 
 resource "google_compute_instance_group_manager" "agents" {
@@ -96,8 +97,4 @@ resource "google_compute_instance_group_manager" "agents" {
     minimal_action = "REPLACE"
   }
 
-  auto_healing_policies {
-    health_check      = google_compute_health_check.agent.id
-    initial_delay_sec = 300
-  }
 }

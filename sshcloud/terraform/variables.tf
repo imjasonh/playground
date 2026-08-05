@@ -27,6 +27,22 @@ variable "firestore_location" {
   default     = "nam5"
 }
 
+variable "manage_firestore_database" {
+  description = "Create the project's (default) Firestore database. Leave false for an existing project/database."
+  type        = bool
+  default     = false
+}
+
+variable "firestore_prefix" {
+  description = "Collection prefix used to isolate sshcloud data in a shared Firestore database"
+  type        = string
+  default     = "sshcloud"
+  validation {
+    condition     = can(regex("^[a-z][a-z0-9_-]{2,31}$", var.firestore_prefix))
+    error_message = "firestore_prefix must match [a-z][a-z0-9_-]{2,31}."
+  }
+}
+
 variable "agent_count" {
   description = "Host MIG target size"
   type        = number

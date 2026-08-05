@@ -34,6 +34,7 @@ func main() {
 	agentURL := flag.String("agent-url", "", "host agent base URL (Firecracker backend), e.g. http://127.0.0.1:8080")
 	orchURL := flag.String("orchestrator-url", "", "orchestrator base URL (placement-aware Ensure), e.g. http://127.0.0.1:8090")
 	firestoreProject := flag.String("firestore-project", "", "GCP project for Firestore user/app store (default: in-memory)")
+	firestorePrefix := flag.String("firestore-prefix", "sshcloud", "Firestore collection prefix")
 	drainTimeout := flag.Duration("drain-timeout", cutover.DefaultDrainTimeout, "deploy drain kick timeout")
 	controlTokenFile := flag.String("control-token-file", "", "bearer token file sent to orchestrator/agent APIs")
 	controlListen := flag.String("control-listen", "", "internal migration control HTTP address (empty disables)")
@@ -61,7 +62,7 @@ func main() {
 
 	var st store.Store = store.NewMemory()
 	if *firestoreProject != "" {
-		fs, err := store.NewFirestore(ctx, *firestoreProject)
+		fs, err := store.NewFirestoreWithPrefix(ctx, *firestoreProject, *firestorePrefix)
 		if err != nil {
 			log.Fatalf("firestore: %v", err)
 		}
