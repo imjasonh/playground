@@ -46,6 +46,9 @@ func (h *drainHost) add(info agent.InstanceInfo) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	info.AgentApp = genid.AgentApp(info.App, info.Gen)
+	if info.SSHHostPublicKey == "" {
+		info.SSHHostPublicKey = "test-host-key-" + info.Gen
+	}
 	h.instances[info.User+"/"+info.AgentApp] = info
 }
 
@@ -149,7 +152,9 @@ func (h *drainHost) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		h.mu.Lock()
 		h.instances[key] = info
 		h.mu.Unlock()
-		_ = json.NewEncoder(w).Encode(backend.InstanceView{Addr: "127.0.0.1:2222", State: "running"})
+		_ = json.NewEncoder(w).Encode(backend.InstanceView{
+			Addr: "127.0.0.1:2222", State: "running", SSHHostPublicKey: info.SSHHostPublicKey,
+		})
 	case "/v1/instances/preflight":
 		_, key, ok := decodeDrainInstance(r)
 		if !ok {
@@ -255,7 +260,7 @@ func TestDrainHostMovesRunningAndSleepingGenerations(t *testing.T) {
 	})
 	sleeping := agent.InstanceInfo{
 		User: "alice", App: "myapp", Gen: "gold", Image: "image", Tier: "tiny",
-		State: agent.StateSleeping,
+		State: agent.StateSleeping, SSHHostPublicKey: "test-host-key-gold",
 	}
 	source.add(sleeping)
 	snapshots.items["alice/"+genid.AgentApp("myapp", "gold")] = sleeping

@@ -54,7 +54,9 @@ func (h *reconcileHost) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		h.mu.Unlock()
 		switch {
 		case running:
-			_ = json.NewEncoder(w).Encode(backend.InstanceView{Addr: "127.0.0.1:22", State: "running"})
+			_ = json.NewEncoder(w).Encode(backend.InstanceView{
+				Addr: "127.0.0.1:22", State: "running", SSHHostPublicKey: "test-host-key",
+			})
 		case sleeping:
 			_ = json.NewEncoder(w).Encode(backend.InstanceView{State: "sleeping"})
 		default:
@@ -158,7 +160,9 @@ func TestExpiredInitialEnsureCommitsPreparedTarget(t *testing.T) {
 	if err := store.Mark(ctx, lease, placement.Operation{
 		ID: "ensure-op", Kind: "ensure", Phase: "ensuring", TargetHost: "host-b",
 		Generations: []string{"gabc"},
-		Desired:     []placement.Generation{{Gen: "gabc", Image: "image", Tier: "tiny", State: "running"}},
+		Desired: []placement.Generation{{
+			Gen: "gabc", Image: "image", Tier: "tiny", State: "running", SSHHostPublicKey: "test-host-key",
+		}},
 	}); err != nil {
 		t.Fatal(err)
 	}

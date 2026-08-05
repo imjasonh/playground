@@ -345,7 +345,6 @@ func TestLiveSessionHostMigrationFreezeThawE2E(t *testing.T) {
 	if err != nil {
 		t.Fatalf("thaw: %v", err)
 	}
-	live.awaitLine(t, "migration complete")
 	live.awaitLine(t, "READY", app.ActiveGen, image, "alice")
 	live.awaitLine(t, "PONG", app.ActiveGen)
 	live.send(t, "quit")

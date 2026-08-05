@@ -166,7 +166,7 @@ func (s *stubAgent) handleEnsure(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not found", http.StatusInternalServerError)
 		return
 	}
-	_ = json.NewEncoder(w).Encode(backend.InstanceView{Addr: addr, State: "running"})
+	_ = json.NewEncoder(w).Encode(backend.InstanceView{Addr: addr, State: "running", SSHHostPublicKey: "test-host-key"})
 }
 
 func (s *stubAgent) handleSleep(w http.ResponseWriter, r *http.Request) {
@@ -220,7 +220,7 @@ func (s *stubAgent) handleAdopt(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "injected response loss", http.StatusInternalServerError)
 		return
 	}
-	_ = json.NewEncoder(w).Encode(backend.InstanceView{Addr: addr, State: "running"})
+	_ = json.NewEncoder(w).Encode(backend.InstanceView{Addr: addr, State: "running", SSHHostPublicKey: "test-host-key"})
 }
 
 func (s *stubAgent) handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -230,7 +230,7 @@ func (s *stubAgent) handleStatus(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if addr, ok := s.inst[k]; ok {
-		_ = json.NewEncoder(w).Encode(backend.InstanceView{Addr: addr, State: "running"})
+		_ = json.NewEncoder(w).Encode(backend.InstanceView{Addr: addr, State: "running", SSHHostPublicKey: "test-host-key"})
 		return
 	}
 	if s.sleeping[k] {
@@ -247,7 +247,9 @@ func (s *stubAgent) handleInstances(w http.ResponseWriter, _ *http.Request) {
 	for key := range s.inst {
 		parts := strings.SplitN(key, "/", 2)
 		user, app := parts[0], parts[1]
-		inventory = append(inventory, agent.InstanceInfo{User: user, App: app, State: agent.StateRunning, Tier: "tiny"})
+		inventory = append(inventory, agent.InstanceInfo{
+			User: user, App: app, State: agent.StateRunning, Tier: "tiny", SSHHostPublicKey: "test-host-key",
+		})
 	}
 	for key := range s.sleeping {
 		if _, running := s.inst[key]; running {
