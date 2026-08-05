@@ -43,7 +43,6 @@ func (execRunner) Run(ctx context.Context, path string, args ...string) ([]byte,
 // Config contains only operator-fixed values.
 type Config struct {
 	SubnetBase      string
-	SandboxIDBase   uint32
 	ExpectedPeerUID uint32
 	IPPath          string
 	IPTablesPath    string
@@ -52,9 +51,6 @@ type Config struct {
 }
 
 func (c *Config) defaults() {
-	if c.SandboxIDBase == 0 {
-		c.SandboxIDBase = hostisolation.DefaultSandboxIDBase
-	}
 	if c.IPPath == "" {
 		c.IPPath = defaultIPPath
 	}
@@ -75,9 +71,6 @@ func (c Config) validate() error {
 	}
 	if err := hostisolation.ValidateHostIP(c.SubnetBase+".1.1", c.SubnetBase); err != nil {
 		return fmt.Errorf("subnet base: %w", err)
-	}
-	if _, err := hostisolation.SandboxID("000000000000", c.SandboxIDBase); err != nil {
-		return err
 	}
 	for label, command := range map[string]struct {
 		path string
@@ -102,23 +95,57 @@ type Rule struct {
 	Match          []string
 }
 
+// RuleSet is the complete family-specific per-TAP policy. IPv6 is drop-only;
+// only IPv4 has a narrowly addressed return-traffic exception.
+type RuleSet struct {
+	IPv4 []Rule
+	IPv6 []Rule
+}
+
 // IsolationRules returns the complete per-TAP deny-by-default ruleset.
-func IsolationRules(tapName string) ([]Rule, error) {
+func IsolationRules(tapName, hostIP string) (RuleSet, error) {
 	if _, err := hostisolation.VMIDFromTapName(tapName); err != nil {
-		return nil, err
+		return RuleSet{}, err
 	}
-	return []Rule{
-		{
-			Chain: "INPUT", InsertPosition: 1,
-			Match: []string{"-i", tapName, "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT"},
+	host := net.ParseIP(hostIP)
+	if host == nil || host.To4() == nil || host.String() != hostIP {
+		return RuleSet{}, fmt.Errorf("invalid canonical IPv4 host address %q", hostIP)
+	}
+	host4 := host.To4()
+	if host4[3] != 1 {
+		return RuleSet{}, fmt.Errorf("host address %q must end in .1", hostIP)
+	}
+	guestIP := net.IPv4(host4[0], host4[1], host4[2], 2).String()
+	return RuleSet{
+		IPv4: []Rule{
+			{
+				Chain: "INPUT", InsertPosition: 1,
+				Match: []string{
+					"-i", tapName,
+					"-s", guestIP + "/32",
+					"-d", hostIP + "/32",
+					"-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED",
+					"-j", "ACCEPT",
+				},
+			},
+			{
+				Chain: "INPUT", InsertPosition: 2,
+				Match: []string{"-i", tapName, "-j", "DROP"},
+			},
+			{
+				Chain: "FORWARD", InsertPosition: 1,
+				Match: []string{"-i", tapName, "-j", "DROP"},
+			},
 		},
-		{
-			Chain: "INPUT", InsertPosition: 2,
-			Match: []string{"-i", tapName, "-j", "DROP"},
-		},
-		{
-			Chain: "FORWARD", InsertPosition: 1,
-			Match: []string{"-i", tapName, "-j", "DROP"},
+		IPv6: []Rule{
+			{
+				Chain: "INPUT", InsertPosition: 1,
+				Match: []string{"-i", tapName, "-j", "DROP"},
+			},
+			{
+				Chain: "FORWARD", InsertPosition: 1,
+				Match: []string{"-i", tapName, "-j", "DROP"},
+			},
 		},
 	}, nil
 }
@@ -221,11 +248,11 @@ func (s *Server) handle(ctx context.Context, operation string, payload json.RawM
 		}
 		return nil, s.Create(ctx, request)
 	case operationDelete:
-		var request vmRequest
+		var request CreateRequest
 		if err := decodePayload(payload, &request); err != nil {
 			return nil, err
 		}
-		return nil, s.Delete(ctx, request.VMID)
+		return nil, s.Delete(ctx, request)
 	default:
 		return nil, fmt.Errorf("unsupported operation %q", operation)
 	}
@@ -274,21 +301,21 @@ func (s *Server) Create(ctx context.Context, request CreateRequest) (retErr erro
 		return err
 	}
 	tapName, _ := hostisolation.TapName(request.VMID)
-	owner, err := hostisolation.SandboxID(request.VMID, s.config.SandboxIDBase)
+	owner, err := hostisolation.SandboxID(request.VMID)
 	if err != nil {
 		return err
 	}
 	prepared := false
 	defer func() {
 		if retErr != nil && prepared {
-			_ = s.Delete(context.Background(), request.VMID)
+			_ = s.Delete(context.Background(), request)
 		}
 	}()
 	if s.succeeds(ctx, s.config.IPPath, "link", "show", "dev", tapName) {
 		// Never trust a stale fixed-name interface's type or owner. No VMM is
 		// running when the manager asks Create during boot/restore, so replace
 		// it with the helper-derived TAP instead of adopting it.
-		if err := s.Delete(ctx, request.VMID); err != nil {
+		if err := s.Delete(ctx, request); err != nil {
 			return err
 		}
 	}
@@ -306,18 +333,21 @@ func (s *Server) Create(ctx context.Context, request CreateRequest) (retErr erro
 	if err := s.run(ctx, s.config.IPPath, "link", "set", "dev", tapName, "up"); err != nil {
 		return err
 	}
-	if err := s.installRules(ctx, tapName); err != nil {
+	if err := s.installRules(ctx, tapName, request.HostIP); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (s *Server) installRules(ctx context.Context, tapName string) error {
-	rules, err := IsolationRules(tapName)
+func (s *Server) installRules(ctx context.Context, tapName, hostIP string) error {
+	ruleSet, err := IsolationRules(tapName, hostIP)
 	if err != nil {
 		return err
 	}
-	for _, binary := range []string{s.config.IPTablesPath, s.config.IP6TablesPath} {
+	for binary, rules := range map[string][]Rule{
+		s.config.IPTablesPath:  ruleSet.IPv4,
+		s.config.IP6TablesPath: ruleSet.IPv6,
+	} {
 		for _, rule := range rules {
 			check := append([]string{"-w", "2", "-C", rule.Chain}, rule.Match...)
 			if s.succeeds(ctx, binary, check...) {
@@ -333,14 +363,20 @@ func (s *Server) installRules(ctx context.Context, tapName string) error {
 }
 
 // Delete removes only the derived TAP and exact fixed rules.
-func (s *Server) Delete(ctx context.Context, vmID string) error {
-	if err := hostisolation.ValidateVMID(vmID); err != nil {
+func (s *Server) Delete(ctx context.Context, request CreateRequest) error {
+	if err := hostisolation.ValidateVMID(request.VMID); err != nil {
 		return err
 	}
-	tapName, _ := hostisolation.TapName(vmID)
-	rules, _ := IsolationRules(tapName)
+	if err := hostisolation.ValidateHostIP(request.HostIP, s.config.SubnetBase); err != nil {
+		return err
+	}
+	tapName, _ := hostisolation.TapName(request.VMID)
+	ruleSet, _ := IsolationRules(tapName, request.HostIP)
 	var errs []error
-	for _, binary := range []string{s.config.IPTablesPath, s.config.IP6TablesPath} {
+	for binary, rules := range map[string][]Rule{
+		s.config.IPTablesPath:  ruleSet.IPv4,
+		s.config.IP6TablesPath: ruleSet.IPv6,
+	} {
 		for _, rule := range rules {
 			del := append([]string{"-w", "2", "-D", rule.Chain}, rule.Match...)
 			for attempt := 0; attempt < maxDeleteAttempts && s.succeeds(ctx, binary, del...); attempt++ {

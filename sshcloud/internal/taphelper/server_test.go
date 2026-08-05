@@ -12,28 +12,51 @@ import (
 
 func TestIsolationRuleConstruction(t *testing.T) {
 	t.Parallel()
-	rules, err := IsolationRules("fc-0123abcdef89")
+	rules, err := IsolationRules("fc-0123abcdef89", "172.16.2.1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []Rule{
-		{
-			Chain: "INPUT", InsertPosition: 1,
-			Match: []string{"-i", "fc-0123abcdef89", "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT"},
+	want := RuleSet{
+		IPv4: []Rule{
+			{
+				Chain: "INPUT", InsertPosition: 1,
+				Match: []string{
+					"-i", "fc-0123abcdef89",
+					"-s", "172.16.2.2/32",
+					"-d", "172.16.2.1/32",
+					"-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED",
+					"-j", "ACCEPT",
+				},
+			},
+			{
+				Chain: "INPUT", InsertPosition: 2,
+				Match: []string{"-i", "fc-0123abcdef89", "-j", "DROP"},
+			},
+			{
+				Chain: "FORWARD", InsertPosition: 1,
+				Match: []string{"-i", "fc-0123abcdef89", "-j", "DROP"},
+			},
 		},
-		{
-			Chain: "INPUT", InsertPosition: 2,
-			Match: []string{"-i", "fc-0123abcdef89", "-j", "DROP"},
-		},
-		{
-			Chain: "FORWARD", InsertPosition: 1,
-			Match: []string{"-i", "fc-0123abcdef89", "-j", "DROP"},
+		IPv6: []Rule{
+			{
+				Chain: "INPUT", InsertPosition: 1,
+				Match: []string{"-i", "fc-0123abcdef89", "-j", "DROP"},
+			},
+			{
+				Chain: "FORWARD", InsertPosition: 1,
+				Match: []string{"-i", "fc-0123abcdef89", "-j", "DROP"},
+			},
 		},
 	}
 	if !reflect.DeepEqual(rules, want) {
 		t.Fatalf("rules = %#v, want %#v", rules, want)
 	}
-	if _, err := IsolationRules("../../tap0"); err == nil {
+	for _, rule := range rules.IPv6 {
+		if strings.Contains(strings.Join(rule.Match, " "), "ACCEPT") {
+			t.Fatalf("IPv6 rule permits traffic: %#v", rule)
+		}
+	}
+	if _, err := IsolationRules("../../tap0", "172.16.2.1"); err == nil {
 		t.Fatal("arbitrary TAP name was accepted")
 	}
 }
@@ -121,7 +144,7 @@ func TestCreateFailureDeletesPartiallyPreparedTap(t *testing.T) {
 	if runner.exists {
 		t.Fatal("partially configured TAP survived helper failure")
 	}
-	owner, _ := hostisolation.SandboxID("0123abcdef89", hostisolation.DefaultSandboxIDBase)
+	owner, _ := hostisolation.SandboxID("0123abcdef89")
 	var sawOwnedAdd, sawDelete bool
 	for _, call := range runner.calls {
 		sawOwnedAdd = sawOwnedAdd || strings.Contains(call, "tuntap add dev fc-0123abcdef89 mode tap user "+uintString(owner))

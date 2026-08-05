@@ -12,7 +12,9 @@ Design: [`docs/ssh-app-cloud-design.md`](../docs/ssh-app-cloud-design.md).
 > mTLS, but Terraform still holds every SSH/control private key, optional audited
 > egress, hard-host-loss policy, and broader OCI runtime compatibility remain
 > open. The helper units and the snapshotd/KMS/IAM boundary still need an
-> operator-owned GCP substrate smoke test.
+> operator-owned GCP substrate smoke test. In particular, the systemd
+> lifecycle coupling and the jailed Firecracker path on GCP nested KVM are
+> structurally checked but have not been exercised on a deployed GCP host.
 
 ## Layout
 
@@ -236,6 +238,11 @@ A new digest is a new rootfs/generation. The gateway (`-drain-timeout`, default
 - Production Firecracker always sees `/rootfs.ext4` and
   `/snapshot/{vm.state,vm.mem}` inside its chroot. Snapshot schema 2 records a
   layout ID, never an absolute host rootfs path; schema 1 is rejected.
+- After publishing a snapshot, the manager reports `sleeping` only after the
+  helper has killed the VM's complete derived cgroup and observed
+  `cgroup.events` report it unpopulated. A later jail/rootfs cleanup error is
+  reported separately; an unproved termination leaves the instance failed and
+  blocks eviction/migration.
 
 ### Cross-host migrate
 
@@ -354,7 +361,8 @@ Implemented and covered at package/integration level:
 - [x] Durable pending/retiring deploy reconciliation
 - [x] TAP firewall isolation: guest-initiated host/VPC/metadata/egress traffic denied
 - [x] Pinned Firecracker+jailer host boundary with per-VM UID/GID, chroot,
-      cgroup-v2 limits, authenticated API proxy, and separate TAP helper
+      cgroup-v2 limits/whole-cgroup termination proof, openat2-anchored jail
+      files, a derived-UID-authenticated API proxy, and separate TAP helper
 - [x] Liveness/readiness and correlated placement/host diagnostics
 - [x] Privacy-bounded structured platform/app logging, strict app telemetry,
       aggregate metrics, GCP routing/retention/dashboard/alerts, and rootfs/journal bounds
@@ -377,7 +385,7 @@ Required before public/self-service use:
 - [ ] Execute and record operator-owned CA/leaf/host/user-CA/KMS/state rotation
       and recovery drills; the checked-in procedures are not proof
 - [ ] Manual first apply/drain/rollout validation in an operator-owned environment
-      (including jailer mount/cgroup-v2 behavior, systemd capability bounding,
+      (including jailer mount/cgroup-v2 behavior, systemd lifecycle/capability bounding,
       TAP ownership, snapshotd mTLS/token claims, Firestore fences, KMS/CMEK,
       GCS generation preconditions, agent IAM denial, and snapshot wake; there is no disposable GCP project
       available to CI)

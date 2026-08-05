@@ -4,6 +4,7 @@ package vmmhelper
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/imjasonh/playground/sshcloud/internal/genid"
@@ -84,6 +85,39 @@ type aliveResponse struct {
 	Alive bool `json:"alive"`
 }
 
+type killResponse struct {
+	Terminated   bool   `json:"terminated"`
+	CleanupError string `json:"cleanup_error,omitempty"`
+}
+
+// TerminationError distinguishes failure to prove cgroup termination from a
+// later jail/rootfs cleanup error after termination was already proved.
+type TerminationError struct {
+	VMID         string
+	WasConfirmed bool
+	Underlying   error
+}
+
+func (e *TerminationError) Error() string {
+	if e.WasConfirmed {
+		return fmt.Sprintf("VM %s termination confirmed but cleanup failed: %v", e.VMID, e.Underlying)
+	}
+	return fmt.Sprintf("VM %s termination was not confirmed: %v", e.VMID, e.Underlying)
+}
+
+func (e *TerminationError) Unwrap() error              { return e.Underlying }
+func (e *TerminationError) TerminationConfirmed() bool { return e.WasConfirmed }
+
+// TerminationConfirmed reports whether err proves that the complete derived
+// cgroup was empty, even when later non-lifecycle cleanup failed.
+func TerminationConfirmed(err error) bool {
+	if err == nil {
+		return true
+	}
+	var terminationErr *TerminationError
+	return errors.As(err, &terminationErr) && terminationErr.TerminationConfirmed()
+}
+
 // Client talks to the root VMM helper.
 type Client struct {
 	SocketPath string
@@ -124,13 +158,26 @@ func (c Client) Alive(ctx context.Context, vmID string) (bool, error) {
 	return response.Alive, nil
 }
 
-// Kill terminates the complete jailer process group and removes its jail/API
-// proxy. It is idempotent.
+// Kill terminates the complete derived cgroup and then removes its jail/API
+// proxy. It is idempotent. A TerminationError says whether cgroup emptiness was
+// proved before a later cleanup failure.
 func (c Client) Kill(ctx context.Context, vmID string) error {
 	if err := hostisolation.ValidateVMID(vmID); err != nil {
 		return err
 	}
-	return c.call(ctx, operationKill, vmRequest{VMID: vmID}, nil)
+	var response killResponse
+	if err := c.call(ctx, operationKill, vmRequest{VMID: vmID}, &response); err != nil {
+		return &TerminationError{VMID: vmID, Underlying: err}
+	}
+	if !response.Terminated {
+		return &TerminationError{VMID: vmID, Underlying: fmt.Errorf("helper returned no termination proof")}
+	}
+	if response.CleanupError != "" {
+		return &TerminationError{
+			VMID: vmID, WasConfirmed: true, Underlying: errors.New(response.CleanupError),
+		}
+	}
+	return nil
 }
 
 // ExportSnapshot copies only the fixed jailed state, memory, and rootfs files

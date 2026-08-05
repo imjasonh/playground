@@ -2,6 +2,7 @@ package firecracker
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -57,7 +58,7 @@ func CreateTap(name, hostIP string, prefix int) error {
 	if out, err := ipCommand("link", "set", "dev", name, "up").CombinedOutput(); err != nil {
 		return fmt.Errorf("link up: %v\n%s", err, out)
 	}
-	if err := isolateTap(name); err != nil {
+	if err := isolateTap(name, hostIP); err != nil {
 		_ = ipCommand("link", "del", "dev", name).Run()
 		return err
 	}
@@ -65,8 +66,8 @@ func CreateTap(name, hostIP string, prefix int) error {
 }
 
 // DeleteTap removes a TAP device.
-func DeleteTap(name string) error {
-	deleteIsolationRules(name)
+func DeleteTap(name, hostIP string) error {
+	deleteIsolationRules(name, hostIP)
 	if !tapExists(name) {
 		return nil
 	}
@@ -76,22 +77,45 @@ func DeleteTap(name string) error {
 	return nil
 }
 
-func isolateTap(name string) error {
+func isolateTap(name, hostIP string) error {
 	_ = os.WriteFile(filepath.Join("/proc/sys/net/ipv6/conf", name, "disable_ipv6"), []byte("1\n"), 0o644)
 	for _, binary := range []string{"iptables", "ip6tables"} {
-		if err := installIsolationRules(binary, name); err != nil {
-			deleteIsolationRules(name)
+		if err := installIsolationRules(binary, name, hostIP); err != nil {
+			deleteIsolationRules(name, hostIP)
 			return err
 		}
 	}
 	return nil
 }
 
-func installIsolationRules(binary, name string) error {
+func isolationRules(binary, name, hostIP string) ([][]string, error) {
 	rules := [][]string{
 		{"INPUT", "-i", name, "-j", "DROP"},
-		{"INPUT", "-i", name, "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT"},
 		{"FORWARD", "-i", name, "-j", "DROP"},
+	}
+	if binary == "ip6tables" {
+		return rules, nil
+	}
+	host := net.ParseIP(hostIP)
+	if host == nil || host.To4() == nil || host.String() != hostIP || host.To4()[3] != 1 {
+		return nil, fmt.Errorf("invalid TAP host IPv4 address %q", hostIP)
+	}
+	host4 := host.To4()
+	guestIP := net.IPv4(host4[0], host4[1], host4[2], 2).String()
+	rules = append(rules, []string{
+		"INPUT", "-i", name,
+		"-s", guestIP + "/32",
+		"-d", hostIP + "/32",
+		"-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED",
+		"-j", "ACCEPT",
+	})
+	return rules, nil
+}
+
+func installIsolationRules(binary, name, hostIP string) error {
+	rules, err := isolationRules(binary, name, hostIP)
+	if err != nil {
+		return err
 	}
 	for _, rule := range rules {
 		check := append([]string{"-C"}, rule...)
@@ -106,13 +130,12 @@ func installIsolationRules(binary, name string) error {
 	return nil
 }
 
-func deleteIsolationRules(name string) {
-	rules := [][]string{
-		{"INPUT", "-i", name, "-j", "DROP"},
-		{"INPUT", "-i", name, "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT"},
-		{"FORWARD", "-i", name, "-j", "DROP"},
-	}
+func deleteIsolationRules(name, hostIP string) {
 	for _, binary := range []string{"iptables", "ip6tables"} {
+		rules, err := isolationRules(binary, name, hostIP)
+		if err != nil {
+			continue
+		}
 		for _, rule := range rules {
 			del := append([]string{"-D"}, rule...)
 			for netfilterCommand(binary, del...).Run() == nil {

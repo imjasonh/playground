@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"path/filepath"
@@ -23,13 +24,25 @@ type machine interface {
 	Kill() error
 }
 
+type terminationProof interface {
+	TerminationConfirmed() bool
+}
+
+func terminationConfirmed(err error) bool {
+	if err == nil {
+		return true
+	}
+	var proof terminationProof
+	return errors.As(err, &proof) && proof.TerminationConfirmed()
+}
+
 // Runtime boots and restores microVMs. dialAddr is what the gateway should dial.
 type Runtime interface {
 	Available() bool
 	Ready(ctx context.Context) error
 	SnapshotLayout() string
 	CreateTap(ctx context.Context, name, hostIP string) error
-	DeleteTap(ctx context.Context, name string) error
+	DeleteTap(ctx context.Context, name, hostIP string) error
 	Boot(ctx context.Context, spec BootSpec) (m machine, dialAddr string, err error)
 	Restore(ctx context.Context, spec RestoreSpec) (m machine, dialAddr string, err error)
 }
@@ -87,8 +100,8 @@ func (DirectRuntime) CreateTap(_ context.Context, name, hostIP string) error {
 	return firecracker.CreateTap(name, hostIP, 24)
 }
 
-func (DirectRuntime) DeleteTap(_ context.Context, name string) error {
-	return firecracker.DeleteTap(name)
+func (DirectRuntime) DeleteTap(_ context.Context, name, hostIP string) error {
+	return firecracker.DeleteTap(name, hostIP)
 }
 
 func (DirectRuntime) Boot(ctx context.Context, spec BootSpec) (machine, string, error) {
@@ -128,7 +141,7 @@ func (r DirectRuntime) Restore(ctx context.Context, spec RestoreSpec) (machine, 
 	keepTap := false
 	defer func() {
 		if !keepTap {
-			_ = r.DeleteTap(context.Background(), spec.TapName)
+			_ = r.DeleteTap(context.Background(), spec.TapName, spec.HostIP)
 		}
 	}()
 	sock := filepath.Join(spec.WorkDir, "firecracker.sock")
@@ -166,7 +179,7 @@ func (unavailableRuntime) SnapshotLayout() string { return "" }
 func (unavailableRuntime) CreateTap(context.Context, string, string) error {
 	return fmt.Errorf("runtime is not configured")
 }
-func (unavailableRuntime) DeleteTap(context.Context, string) error { return nil }
+func (unavailableRuntime) DeleteTap(context.Context, string, string) error { return nil }
 func (unavailableRuntime) Boot(context.Context, BootSpec) (machine, string, error) {
 	return nil, "", fmt.Errorf("runtime is not configured")
 }

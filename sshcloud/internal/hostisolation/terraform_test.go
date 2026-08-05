@@ -33,6 +33,7 @@ func TestTerraformProductionIsolationStructure(t *testing.T) {
 		"chmod 666 /dev/kvm",
 		"chmod 0666 /dev/kvm",
 		"Environment=SSHCLOUD_IP_DIRECT=1",
+		"sandbox-id-base",
 	} {
 		if strings.Contains(startup, forbidden) {
 			t.Errorf("agent startup contains forbidden %q", forbidden)
@@ -99,6 +100,40 @@ func TestTerraformProductionIsolationStructure(t *testing.T) {
 	for _, required := range []string{"jailer_object", "vmmhelper_image", "taphelper_image"} {
 		if !strings.Contains(agents, required) {
 			t.Errorf("agents.tf is missing %q", required)
+		}
+	}
+}
+
+func TestTerraformBindsHelpersToAgentLifecycle(t *testing.T) {
+	t.Parallel()
+	startup := readTestFile(t, filepath.Join("..", "..", "terraform", "scripts", "agent.sh.tftpl"))
+	for _, helper := range []string{"vmmhelper", "taphelper"} {
+		service := between(startup,
+			"cat >/etc/systemd/system/sshcloud-"+helper+".service <<EOF",
+			"\nEOF")
+		for _, required := range []string{
+			"BindsTo=sshcloud-agent.service",
+			"PartOf=sshcloud-agent.service",
+			"Before=sshcloud-agent.service",
+		} {
+			if !strings.Contains(service, required) {
+				t.Errorf("%s helper is not coupled to agent lifecycle by %q:\n%s", helper, required, service)
+			}
+		}
+		if strings.Contains(service, "Restart=") {
+			t.Errorf("%s helper can restart independently of agent:\n%s", helper, service)
+		}
+	}
+	agentService := between(startup,
+		"cat >/etc/systemd/system/sshcloud-agent.service <<EOF",
+		"\nEOF")
+	for _, required := range []string{
+		"Requires=sshcloud-vmmhelper.service sshcloud-taphelper.service",
+		"BindsTo=sshcloud-vmmhelper.service sshcloud-taphelper.service",
+		"After=sshcloud-vmmhelper.service sshcloud-taphelper.service",
+	} {
+		if !strings.Contains(agentService, required) {
+			t.Errorf("agent does not require lifecycle-bound helpers via %q:\n%s", required, agentService)
 		}
 	}
 }

@@ -316,6 +316,7 @@ type orderedSnapshotMachine struct {
 	pauseErr    error
 	resumeErr   error
 	snapshotErr error
+	killErr     error
 }
 
 func (m orderedSnapshotMachine) Alive() bool { return true }
@@ -340,7 +341,7 @@ func (m orderedSnapshotMachine) CreateSnapshot(_ context.Context, files firecrac
 func (m orderedSnapshotMachine) Stop() error { return nil }
 func (m orderedSnapshotMachine) Kill() error {
 	*m.events = append(*m.events, "kill")
-	return nil
+	return m.killErr
 }
 
 type orderedSnapshotStore struct {
@@ -452,6 +453,82 @@ func TestSleepFailureChaosMatrix(t *testing.T) {
 				t.Fatalf("state ok=%v got=%s want=%s", ok, status.State, tc.wantState)
 			}
 		})
+	}
+}
+
+func TestSleepDoesNotPublishSleepingWhenTerminationIsUnconfirmed(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	rootfsPath := dir + "/vm/rootfs.ext4"
+	if err := os.MkdirAll(dir+"/vm", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(rootfsPath, []byte("rootfs"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var events []string
+	store := orderedSnapshotStore{events: &events}
+	mgr, err := NewManager(Config{
+		WorkDir: dir, KernelPath: dir + "/kernel", BaseRootfs: rootfsPath, SnapStore: store,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := InstanceKey{User: "alice", App: "fortune"}
+	mgr.inst[key] = &Instance{
+		Key: key, State: StateRunning, Rootfs: rootfsPath, WorkDir: dir + "/vm",
+		GuestIP: "172.16.2.2", HostIP: "172.16.2.1", TapName: "fc-test",
+		GuestMAC: "AA:FC:00:00:00:01", Tier: "tiny",
+		machine: orderedSnapshotMachine{events: &events, killErr: errors.New("cgroup still populated")},
+	}
+	if err := mgr.Sleep(context.Background(), key.User, key.App); err == nil {
+		t.Fatal("sleep succeeded without cgroup termination proof")
+	}
+	status, ok := mgr.Status(key.User, key.App)
+	if !ok || status.State == StateSleeping {
+		t.Fatalf("unconfirmed termination published sleeping state: ok=%v state=%s", ok, status.State)
+	}
+	if got := strings.Join(events, ","); got != "pause,snapshot,put,kill" {
+		t.Fatalf("events %q", got)
+	}
+}
+
+type confirmedCleanupError struct{}
+
+func (confirmedCleanupError) Error() string              { return "jail cleanup failed" }
+func (confirmedCleanupError) TerminationConfirmed() bool { return true }
+
+func TestSleepDistinguishesCleanupAfterConfirmedTermination(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	rootfsPath := dir + "/vm/rootfs.ext4"
+	if err := os.MkdirAll(dir+"/vm", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(rootfsPath, []byte("rootfs"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var events []string
+	mgr, err := NewManager(Config{
+		WorkDir: dir, KernelPath: dir + "/kernel", BaseRootfs: rootfsPath,
+		SnapStore: orderedSnapshotStore{events: &events},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := InstanceKey{User: "alice", App: "fortune"}
+	mgr.inst[key] = &Instance{
+		Key: key, State: StateRunning, Rootfs: rootfsPath, WorkDir: dir + "/vm",
+		GuestIP: "172.16.2.2", HostIP: "172.16.2.1", TapName: "fc-test",
+		GuestMAC: "AA:FC:00:00:00:01", Tier: "tiny",
+		machine: orderedSnapshotMachine{events: &events, killErr: confirmedCleanupError{}},
+	}
+	if err := mgr.Sleep(context.Background(), key.User, key.App); err == nil {
+		t.Fatal("later cleanup failure was not reported")
+	}
+	status, ok := mgr.Status(key.User, key.App)
+	if !ok || status.State != StateSleeping {
+		t.Fatalf("confirmed termination did not publish durable sleeping state: ok=%v state=%s", ok, status.State)
 	}
 }
 

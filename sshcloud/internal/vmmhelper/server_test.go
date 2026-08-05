@@ -1,11 +1,18 @@
 package vmmhelper
 
 import (
+	"context"
+	"errors"
+	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/imjasonh/playground/sshcloud/internal/hostisolation"
 	"github.com/imjasonh/playground/sshcloud/internal/observability"
+	"golang.org/x/sys/unix"
 )
 
 func testConfig() Config {
@@ -19,7 +26,6 @@ func testConfig() Config {
 		CgroupParent:   "sshcloud",
 		AgentUID:       991,
 		AgentGID:       991,
-		SandboxIDBase:  hostisolation.DefaultSandboxIDBase,
 		ExpectedPeerID: 991,
 	}
 }
@@ -38,7 +44,7 @@ func TestJailerArgvIsFixed(t *testing.T) {
 	t.Parallel()
 	config := testConfig()
 	request := testLaunchRequest(LaunchCold, 1, 128)
-	uid, err := hostisolation.SandboxID(request.VMID, config.SandboxIDBase)
+	uid, err := hostisolation.SandboxID(request.VMID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,6 +125,96 @@ func TestPinnedVersionTokenIsExact(t *testing.T) {
 		if containsWord([]byte(output), hostisolation.FirecrackerVersion) {
 			t.Fatalf("non-pinned version output %q was accepted", output)
 		}
+	}
+}
+
+func TestOpenAtBeneathRejectsIntermediateSymlink(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "vm.state"), []byte("state"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "snapshot")); err != nil {
+		t.Fatal(err)
+	}
+	rootFD, err := unix.Open(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Close(rootFD)
+	fd, err := openAtBeneath(rootFD, "snapshot/vm.state", unix.O_RDONLY, 0)
+	if err == nil {
+		_ = unix.Close(fd)
+		t.Fatal("intermediate symlink escaped fixed jail root")
+	}
+}
+
+func TestWaitUnixSocketRejectsWrongPeerUID(t *testing.T) {
+	t.Parallel()
+	socket := filepath.Join(t.TempDir(), "firecracker.socket")
+	listener, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		conn, acceptErr := listener.Accept()
+		if acceptErr == nil {
+			accepted <- conn
+		}
+	}()
+	wrongUID := uint32(os.Getuid()) + 1
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	err = waitUnixSocket(ctx, socket, make(chan struct{}), wrongUID)
+	if err == nil || !strings.Contains(err.Error(), "unauthorized peer uid") {
+		t.Fatalf("wrong API socket peer UID error = %v", err)
+	}
+	select {
+	case conn := <-accepted:
+		_ = conn.Close()
+	case <-time.After(time.Second):
+		t.Fatal("test API listener did not accept readiness probe")
+	}
+}
+
+func TestKillFailsWithoutCgroupTerminationProof(t *testing.T) {
+	t.Parallel()
+	cgroup := t.TempDir()
+	if err := os.WriteFile(filepath.Join(cgroup, "cgroup.kill"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cgroup, "cgroup.events"), []byte("populated 1\nfrozen 0\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := killCgroupWithin(cgroup, 0); err == nil || !strings.Contains(err.Error(), "remains populated") {
+		t.Fatalf("populated cgroup termination error = %v", err)
+	}
+}
+
+func TestServerRetainsVMWhenCgroupTerminationFails(t *testing.T) {
+	t.Parallel()
+	injected := errors.New("cgroup remains populated")
+	done := make(chan struct{})
+	close(done)
+	vmID := "0123abcdef89"
+	vm := &managedVM{id: vmID, done: done}
+	server := &Server{
+		config:          Config{CgroupParent: "sshcloud"},
+		vms:             map[string]*managedVM{vmID: vm},
+		terminateCgroup: func(string) error { return injected },
+	}
+	response, err := server.killLocked(vmID)
+	if err == nil || !errors.Is(err, injected) {
+		t.Fatalf("kill error = %v", err)
+	}
+	if response.Terminated {
+		t.Fatal("failed cgroup termination returned a termination proof")
+	}
+	if server.vms[vmID] == nil {
+		t.Fatal("VM tracking was removed after unconfirmed termination")
 	}
 }
 

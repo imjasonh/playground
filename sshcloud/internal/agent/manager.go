@@ -335,9 +335,19 @@ func (m *Manager) EnsureWith(ctx context.Context, user, app string, opt EnsureOp
 	if stale != nil {
 		_ = stale.relay.Close()
 		if stale.machine != nil {
-			_ = stale.machine.Kill()
+			if err := stale.machine.Kill(); err != nil {
+				stale.State = StateFailed
+				m.mu.Lock()
+				m.inst[k] = stale
+				m.mu.Unlock()
+				if !terminationConfirmed(err) {
+					return nil, fmt.Errorf("previous VM termination is unconfirmed: %w", err)
+				}
+				return nil, fmt.Errorf("previous VM terminated but cleanup is incomplete: %w", err)
+			}
+			stale.machine = nil
 		}
-		_ = m.rt.DeleteTap(context.Background(), stale.TapName)
+		_ = m.rt.DeleteTap(context.Background(), stale.TapName, stale.HostIP)
 	}
 
 	if m.cfg.SnapStore != nil {
@@ -366,8 +376,15 @@ func (m *Manager) EnsureWith(ctx context.Context, user, app string, opt EnsureOp
 	}
 	if err := ctx.Err(); err != nil {
 		_ = in.relay.Close()
-		_ = in.machine.Stop()
-		_ = m.rt.DeleteTap(context.Background(), in.TapName)
+		if terminateErr := in.machine.Stop(); terminateErr != nil {
+			in.State = StateFailed
+			m.publishInstance(in)
+			if !terminationConfirmed(terminateErr) {
+				return nil, fmt.Errorf("%w (boot cancellation termination unconfirmed: %v)", err, terminateErr)
+			}
+			return nil, fmt.Errorf("%w (boot canceled after termination; helper cleanup incomplete: %v)", err, terminateErr)
+		}
+		_ = m.rt.DeleteTap(context.Background(), in.TapName, in.HostIP)
 		_ = os.RemoveAll(in.WorkDir)
 		m.releaseResources(k)
 		m.releaseCapacity(k)
@@ -507,7 +524,7 @@ func (m *Manager) endLifecycle(k InstanceKey) {
 func (m *Manager) capacityLocked() Capacity {
 	view := Capacity{Total: m.capacity, Cordoned: m.cordoned}
 	for _, in := range m.inst {
-		if in.State == StateRunning && in.machine != nil {
+		if in.machine != nil {
 			view.Used = addResources(view.Used, Resources{VCPUs: in.VCPUs, MemMiB: in.MemMiB})
 		}
 	}
@@ -818,7 +835,7 @@ func (m *Manager) bootCold(ctx context.Context, k InstanceKey, n int, opt Ensure
 	}
 	defer func() {
 		if retErr != nil {
-			_ = m.rt.DeleteTap(context.Background(), tapName)
+			_ = m.rt.DeleteTap(context.Background(), tapName, hostIP)
 		}
 	}()
 
@@ -1167,11 +1184,16 @@ func (m *Manager) SleepWithEpoch(ctx context.Context, user, app, cordonEpoch str
 		recoveryCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		if resumeErr := mach.Resume(recoveryCtx); resumeErr != nil {
-			_ = mach.Kill()
+			killErr := mach.Kill()
 			m.mu.Lock()
-			in.machine = nil
+			if terminationConfirmed(killErr) {
+				in.machine = nil
+			}
 			in.State = StateFailed
 			m.mu.Unlock()
+			if killErr != nil {
+				return fmt.Errorf("%w (resume also failed: %v; termination: %v)", cause, resumeErr, killErr)
+			}
 			return fmt.Errorf("%w (resume also failed: %v)", cause, resumeErr)
 		}
 		return cause
@@ -1186,17 +1208,12 @@ func (m *Manager) SleepWithEpoch(ctx context.Context, user, app, cordonEpoch str
 	if err := m.cfg.SnapStore.Put(ctx, ref, pkg); err != nil {
 		return resumeAfterFailure(fmt.Errorf("upload snapshot: %w", err))
 	}
-	if err := mach.Kill(); err != nil {
-		// The durable snapshot is already committed. Keep state recoverable even
-		// if process teardown reports an error.
-		_ = mach.Kill()
+	killErr := mach.Kill()
+	if !terminationConfirmed(killErr) {
 		m.mu.Lock()
-		in.machine = nil
-		in.State = StateSleeping
-		in.snapKey = ref.Key()
-		in.LastUsed = time.Now()
+		in.State = StateFailed
 		m.mu.Unlock()
-		return fmt.Errorf("kill after durable snapshot: %w", err)
+		return fmt.Errorf("terminate after durable snapshot: %w", killErr)
 	}
 
 	m.mu.Lock()
@@ -1205,6 +1222,9 @@ func (m *Manager) SleepWithEpoch(ctx context.Context, user, app, cordonEpoch str
 	in.snapKey = ref.Key()
 	in.LastUsed = time.Now()
 	m.mu.Unlock()
+	if killErr != nil {
+		return fmt.Errorf("VM terminated after durable snapshot but cleanup failed: %w", killErr)
+	}
 	return nil
 }
 
@@ -1253,19 +1273,16 @@ func (m *Manager) EvictWithEpoch(ctx context.Context, user, app, cordonEpoch str
 		return nil
 	}
 	identity.RunID = in.runID
-	if in.State == StateRunning && in.machine != nil {
+	if in.machine != nil {
 		m.mu.Unlock()
-		return fmt.Errorf("instance %s still running; sleep before evict", k)
+		return fmt.Errorf("instance %s is still running or termination is unconfirmed; sleep before evict", k)
 	}
 	delete(m.inst, k)
 	m.mu.Unlock()
 
 	_ = in.relay.Close()
-	if in.machine != nil {
-		_ = in.machine.Kill()
-	}
 	if in.TapName != "" {
-		_ = m.rt.DeleteTap(context.Background(), in.TapName)
+		_ = m.rt.DeleteTap(context.Background(), in.TapName, in.HostIP)
 	}
 	// Remove workdir; Adopt recreates the fixed runtime layout from the package.
 	_ = os.RemoveAll(in.WorkDir)
@@ -1539,7 +1556,7 @@ func (m *Manager) adopt(ctx context.Context, k InstanceKey, _ int, opt EnsureOpt
 		relay, relayErr := startTCPRelay(m.cfg.RelayHost, addr, m.cfg.RelayPortMin, m.cfg.RelayPortMax, offset)
 		if relayErr != nil {
 			_ = mach.Stop()
-			_ = m.rt.DeleteTap(context.Background(), tapName)
+			_ = m.rt.DeleteTap(context.Background(), tapName, meta.HostIP)
 			_ = os.RemoveAll(dir)
 			return nil, fmt.Errorf("start SSH relay: %w", relayErr)
 		}
@@ -1552,7 +1569,7 @@ func (m *Manager) adopt(ctx context.Context, k InstanceKey, _ int, opt EnsureOpt
 	if err := ctx.Err(); err != nil {
 		_ = in.relay.Close()
 		_ = mach.Stop()
-		_ = m.rt.DeleteTap(context.Background(), tapName)
+		_ = m.rt.DeleteTap(context.Background(), tapName, meta.HostIP)
 		_ = os.RemoveAll(dir)
 		return nil, err
 	}
@@ -1811,6 +1828,20 @@ func (m *Manager) StopContext(ctx context.Context, user, app string) (retErr err
 	if ok {
 		identity.RunID = in.runID
 	}
+	if ok && in.machine != nil {
+		if err := in.machine.Stop(); err != nil {
+			m.mu.Lock()
+			in.State = StateFailed
+			m.mu.Unlock()
+			if !terminationConfirmed(err) {
+				return fmt.Errorf("instance termination is unconfirmed: %w", err)
+			}
+			return fmt.Errorf("instance terminated but helper cleanup is incomplete: %w", err)
+		}
+		m.mu.Lock()
+		in.machine = nil
+		m.mu.Unlock()
+	}
 	if m.cfg.SnapStore != nil {
 		if err := m.cfg.SnapStore.Delete(ctx, snapshot.RefForAgentApp(user, app)); err != nil {
 			return fmt.Errorf("delete snapshot: %w", err)
@@ -1822,14 +1853,10 @@ func (m *Manager) StopContext(ctx context.Context, user, app string) (retErr err
 	m.mu.Lock()
 	delete(m.inst, k)
 	m.mu.Unlock()
-	var err error
 	_ = in.relay.Close()
-	if in.machine != nil {
-		err = in.machine.Stop()
-	}
-	_ = m.rt.DeleteTap(context.Background(), in.TapName)
+	_ = m.rt.DeleteTap(context.Background(), in.TapName, in.HostIP)
 	_ = os.RemoveAll(in.WorkDir)
-	return err
+	return nil
 }
 
 // SetNoIdle prevents idle snapshot-sleep (used while a generation is draining
@@ -1963,20 +1990,28 @@ func (m *Manager) shutdownLocal(k InstanceKey) error {
 	defer op.Unlock()
 	m.mu.Lock()
 	in, ok := m.inst[k]
-	if ok {
-		delete(m.inst, k)
-	}
 	m.mu.Unlock()
 	if !ok {
 		return nil
 	}
-	var err error
 	_ = in.relay.Close()
 	if in.machine != nil {
-		err = in.machine.Stop()
+		if err := in.machine.Stop(); err != nil {
+			m.mu.Lock()
+			in.State = StateFailed
+			m.mu.Unlock()
+			if !terminationConfirmed(err) {
+				return fmt.Errorf("local VM termination is unconfirmed: %w", err)
+			}
+			return fmt.Errorf("local VM terminated but helper cleanup is incomplete: %w", err)
+		}
+		in.machine = nil
 	}
-	_ = m.rt.DeleteTap(context.Background(), in.TapName)
+	m.mu.Lock()
+	delete(m.inst, k)
+	m.mu.Unlock()
+	_ = m.rt.DeleteTap(context.Background(), in.TapName, in.HostIP)
 	// Preserve the latest writable rootfs for operator recovery. A later cold
 	// boot refuses to overwrite an orphaned workdir.
-	return err
+	return nil
 }

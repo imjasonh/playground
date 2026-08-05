@@ -32,7 +32,7 @@ const (
 	FirecrackerAPISocket   = "/run/firecracker.socket"
 	HostRestoreDir         = "restore"
 	HostSnapshotDir        = "snap"
-	DefaultSandboxIDBase   = uint32(100_000)
+	sandboxIDBase          = uint32(100_000)
 	defaultSandboxIDSpan   = uint64(2_000_000_000)
 	maxSupportedThirdOctet = 200
 )
@@ -92,22 +92,17 @@ func VMIDFromTapName(name string) (string, error) {
 	return id, nil
 }
 
-// SandboxID deterministically assigns a high UID/GID to a VM. The VMM helper
-// also rejects an active collision, so every concurrently running jail has a
-// distinct identity. The TAP helper independently derives the same owner.
-func SandboxID(vmID string, base uint32) (uint32, error) {
+// SandboxID deterministically assigns a high UID/GID to a VM from the one
+// platform-wide identity range. The VMM helper also rejects an active
+// collision, so every concurrently running jail has a distinct identity. The
+// TAP helper independently derives the same owner.
+func SandboxID(vmID string) (uint32, error) {
 	if err := ValidateVMID(vmID); err != nil {
 		return 0, err
 	}
-	if base == 0 {
-		base = DefaultSandboxIDBase
-	}
-	if uint64(base)+defaultSandboxIDSpan > uint64(^uint32(0)) {
-		return 0, fmt.Errorf("sandbox UID/GID base %d is too high", base)
-	}
 	sum := sha256.Sum256([]byte(vmID))
 	offset := uint64(binary.BigEndian.Uint32(sum[:4])) % defaultSandboxIDSpan
-	return base + uint32(offset), nil
+	return sandboxIDBase + uint32(offset), nil
 }
 
 // ValidateHostIP constrains TAP addressing to <subnet-base>.<1..200>.1/24.

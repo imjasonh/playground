@@ -191,9 +191,16 @@ The `sshcloud` agent has an empty systemd capability bounding set and cannot
 open `root:kvm 0660` `/dev/kvm`. A mode-0600, SO_PEERCRED-authenticated socket
 fronts the root VMM helper; its fixed capability set excludes `CAP_NET_ADMIN`,
 and it launches Firecracker v1.10.1 only through the matching jailer with
-per-VM UID/GID, chroot, and fixed cgroup-v2 limits. A different system user
-runs the TAP helper with only `CAP_NET_ADMIN`; its RPC surface derives TAP
-names/owners and constructs a fixed deny-by-default iptables/ip6tables ruleset.
+per-VM UID/GID, chroot, fixed cgroup-v2 limits, openat2-anchored jail files,
+and whole-cgroup termination proof. The jailed API proxy verifies the
+Firecracker peer's derived UID and seals the jail's `/run` directory after the
+socket appears. A different system user runs the TAP helper with only
+`CAP_NET_ADMIN`; its RPC surface derives TAP names/owners and constructs an
+IPv4 ruleset whose return-traffic exception is restricted to the exact
+guest-to-host pair, plus drop-only IPv6 rules. The helper services are tied
+bidirectionally to the agent unit so an agent stop/crash tears down the VMM
+helper and a helper failure stops the agent; the next VMM-helper startup must
+complete orphan cgroup cleanup before serving.
 
 **Non-interactive deploy / join** (SSH exec args, exit status set):
 
@@ -297,7 +304,9 @@ membership-list removal ineffective.
 - **Host-isolation verification still required:** CI structurally checks the
   Terraform/systemd boundary and unit-tests request/rule/argv validation, but
   cannot prove the GCE image's cgroup delegation, jailer mount/device syscalls,
-  systemd ambient capability behavior, or a real cross-host jailed restore.
+  systemd lifecycle/ambient capability behavior, or a real cross-host jailed
+  restore. The lifecycle coupling and jailed Firecracker path on GCP nested
+  KVM both remain unexercised by this repository.
 - **GCP snapshot verification still required:** local fakes exercise
   generation conflicts and envelope tamper/swap/truncation/AAD rejection, but
   do not prove Cloud KMS AAD behavior, GCS generation/CMEK semantics, Firestore

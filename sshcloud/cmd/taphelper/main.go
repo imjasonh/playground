@@ -12,7 +12,6 @@ import (
 	"syscall"
 
 	"github.com/imjasonh/playground/sshcloud/internal/helperrpc"
-	"github.com/imjasonh/playground/sshcloud/internal/hostisolation"
 	"github.com/imjasonh/playground/sshcloud/internal/observability"
 	"github.com/imjasonh/playground/sshcloud/internal/taphelper"
 )
@@ -24,13 +23,11 @@ func main() {
 	agentUID := flag.Uint("agent-uid", 0, "authorized unprivileged agent UID")
 	agentGID := flag.Uint("agent-gid", 0, "agent GID owning a direct-mode socket")
 	subnetBase := flag.String("subnet-base", "172.16", "fixed first two IPv4 octets")
-	sandboxIDBase := flag.Uint("sandbox-id-base", uint(hostisolation.DefaultSandboxIDBase), "first sandbox UID/GID")
 	flag.Parse()
 
 	for label, value := range map[string]uint{
-		"agent UID":       *agentUID,
-		"agent GID":       *agentGID,
-		"sandbox ID base": *sandboxIDBase,
+		"agent UID": *agentUID,
+		"agent GID": *agentGID,
 	} {
 		if value == 0 || value > math.MaxUint32 {
 			log.Fatalf("%s must be a nonzero uint32", label)
@@ -38,7 +35,6 @@ func main() {
 	}
 	server, err := taphelper.NewServer(taphelper.Config{
 		SubnetBase:      *subnetBase,
-		SandboxIDBase:   uint32(*sandboxIDBase),
 		ExpectedPeerUID: uint32(*agentUID),
 	})
 	if err != nil {

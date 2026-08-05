@@ -448,8 +448,14 @@ GCE host MIG ── host agent ── Firecracker ── app :22
   `CAP_NET_ADMIN`. A mode-0600 Unix socket authenticated with `SO_PEERCRED`
   reaches a root helper that stages a fixed jail layout and invokes pinned
   Firecracker v1.10.1 only through its matching jailer. Each live VM gets a
-  distinct derived UID/GID plus cgroup-v2 CPU/memory/pid limits. A separate
-  user/process with only `CAP_NET_ADMIN` owns fixed TAP/ruleset operations.
+  distinct derived UID/GID plus cgroup-v2 CPU/memory/pid limits. Jail
+  snapshot/rootfs opens are anchored to a jail-root fd with openat2, `/run`
+  becomes sandbox-non-writable after API socket creation, API connections must
+  present the derived UID, and successful termination requires the complete
+  derived cgroup to report unpopulated. A separate user/process with only
+  `CAP_NET_ADMIN` owns fixed TAP/ruleset operations; IPv4 return acceptance is
+  restricted to the exact derived guest-to-host address pair and IPv6 is
+  drop-only.
 - Snapshot schema 2 fences the runtime layout. Jailed state embeds
   `/rootfs.ext4` and `/snapshot/{vm.state,vm.mem}`, not an absolute host work
   path; old schema-1 packages are rejected.
@@ -673,8 +679,10 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
   tamper/swap/truncation/AAD, generation preconditions, and failure propagation.
   A disposable GCP project is
   still required to verify the Debian image's cgroup delegation, jailer
-  mount/device syscalls, systemd capabilities, jailed snapshot migration, Cloud
-  KMS/GCS/CMEK behavior, Firestore/IAM conditions, and direct agent-bucket denial.
+  mount/device syscalls, systemd lifecycle/capabilities, jailed snapshot
+  migration, Cloud KMS/GCS/CMEK behavior, Firestore/IAM conditions, and direct
+  agent-bucket denial. The systemd coupling and jailed Firecracker path remain
+  unexercised on GCP nested KVM.
 
 ---
 

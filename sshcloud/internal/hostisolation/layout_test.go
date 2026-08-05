@@ -32,19 +32,19 @@ func TestFixedIdentifierValidation(t *testing.T) {
 
 func TestSandboxIDIsStableAndSeparated(t *testing.T) {
 	t.Parallel()
-	first, err := SandboxID("0123abcdef89", DefaultSandboxIDBase)
+	first, err := SandboxID("0123abcdef89")
 	if err != nil {
 		t.Fatal(err)
 	}
-	again, _ := SandboxID("0123abcdef89", DefaultSandboxIDBase)
-	second, _ := SandboxID("1123abcdef89", DefaultSandboxIDBase)
+	again, _ := SandboxID("0123abcdef89")
+	second, _ := SandboxID("1123abcdef89")
 	if first != again {
 		t.Fatalf("sandbox ID changed: %d != %d", first, again)
 	}
 	if first == second {
 		t.Fatalf("test VM IDs collided at sandbox ID %d", first)
 	}
-	if first < DefaultSandboxIDBase {
+	if first < sandboxIDBase {
 		t.Fatalf("sandbox ID %d is below base", first)
 	}
 }

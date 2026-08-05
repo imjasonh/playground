@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/imjasonh/playground/sshcloud/internal/helperrpc"
-	"github.com/imjasonh/playground/sshcloud/internal/hostisolation"
 	"github.com/imjasonh/playground/sshcloud/internal/observability"
 	"github.com/imjasonh/playground/sshcloud/internal/vmmhelper"
 )
@@ -34,13 +33,11 @@ func main() {
 	cgroupParent := flag.String("cgroup-parent", "sshcloud", "fixed cgroup v2 parent")
 	agentUID := flag.Uint("agent-uid", 0, "authorized unprivileged agent UID")
 	agentGID := flag.Uint("agent-gid", 0, "agent GID owning exported files and API sockets")
-	sandboxIDBase := flag.Uint("sandbox-id-base", uint(hostisolation.DefaultSandboxIDBase), "first sandbox UID/GID")
 	flag.Parse()
 
 	for label, value := range map[string]uint{
-		"agent UID":       *agentUID,
-		"agent GID":       *agentGID,
-		"sandbox ID base": *sandboxIDBase,
+		"agent UID": *agentUID,
+		"agent GID": *agentGID,
 	} {
 		if value == 0 || value > math.MaxUint32 {
 			log.Fatalf("%s must be a nonzero uint32", label)
@@ -56,7 +53,6 @@ func main() {
 		CgroupParent:   *cgroupParent,
 		AgentUID:       uint32(*agentUID),
 		AgentGID:       uint32(*agentGID),
-		SandboxIDBase:  uint32(*sandboxIDBase),
 		ExpectedPeerID: uint32(*agentUID),
 		HostID:         *hostID,
 	})

@@ -117,6 +117,8 @@ cat >/etc/systemd/system/sshcloud-vmmhelper.service <<EOF
 [Unit]
 Description=sshcloud root Firecracker jailer helper
 Requires=sshcloud-vmmhelper.socket
+BindsTo=sshcloud-agent.service
+PartOf=sshcloud-agent.service
 After=local-fs.target
 Before=sshcloud-agent.service
 
@@ -137,10 +139,8 @@ ExecStart=/usr/local/lib/sshcloud/vmmhelper \
   -cgroup-parent sshcloud \
   -host-id %H \
   -metrics-listen 127.0.0.1:9080
-Restart=on-failure
-RestartSec=2
 KillMode=control-group
-TimeoutStopSec=30
+TimeoutStopSec=10min
 UMask=0077
 CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER CAP_KILL CAP_MKNOD CAP_SETGID CAP_SETUID CAP_SYS_ADMIN CAP_SYS_CHROOT CAP_SYS_RESOURCE
 DevicePolicy=closed
@@ -180,6 +180,8 @@ cat >/etc/systemd/system/sshcloud-taphelper.service <<EOF
 [Unit]
 Description=sshcloud CAP_NET_ADMIN-only TAP helper
 Requires=sshcloud-taphelper.socket
+BindsTo=sshcloud-agent.service
+PartOf=sshcloud-agent.service
 After=local-fs.target
 Before=sshcloud-agent.service
 
@@ -193,8 +195,6 @@ ExecStart=/usr/local/lib/sshcloud/taphelper \
   -agent-uid $${AGENT_UID} \
   -agent-gid $${AGENT_GID} \
   -subnet-base 172.16
-Restart=on-failure
-RestartSec=2
 UMask=0077
 AmbientCapabilities=CAP_NET_ADMIN
 CapabilityBoundingSet=CAP_NET_ADMIN
@@ -219,8 +219,9 @@ cat >/etc/systemd/system/sshcloud-agent.service <<EOF
 Description=sshcloud Firecracker host agent
 After=network-online.target
 Wants=network-online.target
-Requires=sshcloud-vmmhelper.socket sshcloud-taphelper.socket
-After=sshcloud-vmmhelper.socket sshcloud-taphelper.socket
+Requires=sshcloud-vmmhelper.service sshcloud-taphelper.service
+BindsTo=sshcloud-vmmhelper.service sshcloud-taphelper.service
+After=sshcloud-vmmhelper.service sshcloud-taphelper.service
 
 [Service]
 Type=simple

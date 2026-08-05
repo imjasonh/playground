@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"path/filepath"
@@ -59,7 +58,7 @@ func (r HelperRuntime) CreateTap(ctx context.Context, name, hostIP string) error
 	return r.TAP.Create(ctx, vmID, hostIP)
 }
 
-func (r HelperRuntime) DeleteTap(ctx context.Context, name string) error {
+func (r HelperRuntime) DeleteTap(ctx context.Context, name, hostIP string) error {
 	if name == "" {
 		return nil
 	}
@@ -67,7 +66,7 @@ func (r HelperRuntime) DeleteTap(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
-	return r.TAP.Delete(ctx, vmID)
+	return r.TAP.Delete(ctx, vmID, hostIP)
 }
 
 func (r HelperRuntime) Boot(ctx context.Context, spec BootSpec) (machine, string, error) {
@@ -136,7 +135,7 @@ func (r HelperRuntime) Restore(ctx context.Context, spec RestoreSpec) (machine, 
 		if !keepTap {
 			cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
-			_ = r.DeleteTap(cleanupCtx, spec.TapName)
+			_ = r.DeleteTap(cleanupCtx, spec.TapName, spec.HostIP)
 		}
 	}()
 	response, err := r.VMM.Launch(ctx, vmmhelper.LaunchRequest{
@@ -203,7 +202,7 @@ func validateRestoreLayout(spec RestoreSpec) error {
 }
 
 func validateLaunchIdentity(vmID string, response vmmhelper.LaunchResponse) error {
-	want, err := hostisolation.SandboxID(vmID, hostisolation.DefaultSandboxIDBase)
+	want, err := hostisolation.SandboxID(vmID)
 	if err != nil {
 		return err
 	}
@@ -265,7 +264,10 @@ func (m *helperMachine) Stop() error {
 	killCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	killErr := m.vmm.Kill(killCtx, m.vmID)
-	return errors.Join(requestErr, killErr)
+	if killErr != nil && requestErr != nil {
+		return fmt.Errorf("graceful shutdown request failed (%v); forced termination: %w", requestErr, killErr)
+	}
+	return killErr
 }
 
 func (m *helperMachine) Kill() error {

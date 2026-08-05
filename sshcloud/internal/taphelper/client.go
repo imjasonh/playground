@@ -23,10 +23,6 @@ type CreateRequest struct {
 	HostIP string `json:"host_ip"`
 }
 
-type vmRequest struct {
-	VMID string `json:"vm_id"`
-}
-
 // Client talks to the CAP_NET_ADMIN-only TAP helper.
 type Client struct {
 	SocketPath string
@@ -53,9 +49,9 @@ func (c Client) Create(ctx context.Context, vmID, hostIP string) error {
 }
 
 // Delete removes the fixed TAP/ruleset for a VM. It is idempotent.
-func (c Client) Delete(ctx context.Context, vmID string) error {
+func (c Client) Delete(ctx context.Context, vmID, hostIP string) error {
 	if err := hostisolation.ValidateVMID(vmID); err != nil {
 		return err
 	}
-	return c.call(ctx, operationDelete, vmRequest{VMID: vmID})
+	return c.call(ctx, operationDelete, CreateRequest{VMID: vmID, HostIP: hostIP})
 }
