@@ -379,6 +379,9 @@ func TestSessionRequestFidelityE2E(t *testing.T) {
 	if !strings.Contains(stdout.String(), "EXEC "+command) {
 		t.Fatalf("stdout %q", stdout.String())
 	}
+	if !strings.Contains(stdout.String(), "EXEC-ENV TEST_ENV=exact-value") {
+		t.Fatalf("env was not forwarded: %q", stdout.String())
+	}
 	if !strings.Contains(stderr.String(), "EXEC-ERR "+command) {
 		t.Fatalf("stderr %q", stderr.String())
 	}
@@ -403,6 +406,17 @@ func TestSessionRequestFidelityE2E(t *testing.T) {
 		t.Fatalf("subsystem output %q", subsystemBytes)
 	}
 	_ = subsystem.Close()
+	awaitSessionCount(t, fx.hub.Sessions, 0)
+
+	signalSession, err := client.NewSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = signalSession.Run("exit-signal")
+	signalExit, ok := err.(*ssh.ExitError)
+	if !ok || signalExit.Signal() != "TERM" || signalExit.Msg() != "terminated" {
+		t.Fatalf("exit-signal error=%v", err)
+	}
 	awaitSessionCount(t, fx.hub.Sessions, 0)
 
 	live := fx.openApp(t)
@@ -701,6 +715,9 @@ func (a *chaosApp) handleSession(user string, channel ssh.Channel, requests <-ch
 				_ = req.Reply(true, nil)
 			}
 			_, _ = fmt.Fprintf(channel, "EXEC %s\r\n", msg.Command)
+			for _, env := range envs {
+				_, _ = fmt.Fprintf(channel, "EXEC-ENV %s=%s\r\n", env.Name, env.Value)
+			}
 			_, _ = fmt.Fprintf(channel.Stderr(), "EXEC-ERR %s\r\n", msg.Command)
 			if msg.Command == "exit-signal" {
 				payload := ssh.Marshal(struct {
