@@ -8,15 +8,15 @@
 //! Finally verify signer identity, the Fulcio chain, DSSE signature and
 //! payload type, and the in-toto manifest-digest binding.
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{anyhow, bail, Context, Result};
 use base64::Engine;
 use p256::ecdsa::signature::Verifier as _;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use x509_cert::Certificate;
-use x509_cert::der::{Decode, Encode, oid::ObjectIdentifier};
-use x509_cert::ext::pkix::SubjectAltName;
+use x509_cert::der::{oid::ObjectIdentifier, Decode, Encode};
 use x509_cert::ext::pkix::name::GeneralName;
+use x509_cert::ext::pkix::SubjectAltName;
+use x509_cert::Certificate;
 
 use crate::trust::TrustConfig;
 
@@ -659,7 +659,7 @@ fn pem_to_cert(pem: &[u8]) -> Result<Certificate> {
 /// Verify `child.signature` is a valid P-384 ECDSA-SHA384 signature
 /// over `child.tbs_certificate` made with `parent`'s public key.
 fn verify_signed_by_p384(child: &Certificate, parent: &Certificate) -> Result<()> {
-    use p384::ecdsa::{Signature, VerifyingKey, signature::Verifier};
+    use p384::ecdsa::{signature::Verifier, Signature, VerifyingKey};
 
     let parent_pubkey_bytes = parent
         .tbs_certificate
