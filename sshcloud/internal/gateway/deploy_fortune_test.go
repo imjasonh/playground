@@ -102,7 +102,7 @@ func TestDeployFortuneE2E(t *testing.T) {
 	hub.ReleaseSession(r.Session)
 
 	// Same digest materializes to a bootable rootfs (agent path).
-	res, err := ocirootfs.Materialize(ctx, ref, ocirootfs.Options{CacheDir: t.TempDir(), SizeMB: 32})
+	res, err := ocirootfs.Materialize(ctx, ref, ocirootfs.Options{CacheDir: t.TempDir(), SizeMB: 64})
 	if err != nil {
 		t.Fatal(err)
 	}

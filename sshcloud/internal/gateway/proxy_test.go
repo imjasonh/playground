@@ -44,14 +44,14 @@ func TestProxyFortuneWithCert(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var out bytes.Buffer
+	var out, errOut bytes.Buffer
 	rw := struct {
 		io.Reader
 		io.Writer
 	}{Reader: eofReader{}, Writer: &out}
 
 	_, err = gateway.ProxySSHStreams(
-		context.Background(), rw, &out, &out, ca, "alice",
+		context.Background(), rw, &out, &errOut, ca, "alice",
 		gateway.DialTarget{Addr: addr, SSHHostPublicKey: hostPublicKey}, shellSpec(),
 	)
 	if err != nil {

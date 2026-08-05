@@ -91,9 +91,11 @@ func Run(specPath string) {
 		fmt.Fprintf(os.Stderr, "guestinit: %v\n", err)
 		os.Exit(127)
 	}
-	if err := mountRuntimeFilesystems(); err != nil {
-		fmt.Fprintf(os.Stderr, "guestinit: %v\n", err)
-		os.Exit(127)
+	if os.Getpid() == 1 || os.Getenv("SSHCLOUD_GUESTINIT_MOUNT") == "1" {
+		if err := mountRuntimeFilesystems(); err != nil {
+			fmt.Fprintf(os.Stderr, "guestinit: %v\n", err)
+			os.Exit(127)
+		}
 	}
 	if err := Exec(spec); err != nil {
 		fmt.Fprintf(os.Stderr, "guestinit: %v\n", err)

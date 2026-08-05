@@ -50,7 +50,7 @@ func TestBuildPushFortuneMaterialize(t *testing.T) {
 
 	res, err := ocirootfs.Materialize(t.Context(), ref, ocirootfs.Options{
 		CacheDir: t.TempDir(),
-		SizeMB:   32,
+		SizeMB:   64,
 	})
 	if err != nil {
 		t.Fatal(err)
