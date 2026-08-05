@@ -16,9 +16,10 @@ import (
 
 // AgentClient talks to a host agent's HTTP API.
 type AgentClient struct {
-	BaseURL    string
-	Token      string
-	HTTPClient *http.Client
+	BaseURL          string
+	ControlClient    *controlauth.Client
+	HTTPClient       *http.Client
+	InsecureLoopback bool
 }
 
 func (c *AgentClient) client() *http.Client {
@@ -50,7 +51,16 @@ func (c *AgentClient) postJSON(ctx context.Context, path string, body any) (*htt
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	controlauth.Add(req, c.Token)
+	return c.do(req)
+}
+
+func (c *AgentClient) do(req *http.Request) (*http.Response, error) {
+	if c.ControlClient != nil {
+		return c.ControlClient.Do(req)
+	}
+	if err := controlauth.PrepareRequest(req, nil, c.InsecureLoopback); err != nil {
+		return nil, err
+	}
 	return c.client().Do(req)
 }
 
@@ -133,8 +143,7 @@ func (c *AgentClient) Capacity(ctx context.Context) (agent.Capacity, error) {
 	if err != nil {
 		return agent.Capacity{}, err
 	}
-	controlauth.Add(req, c.Token)
-	res, err := c.client().Do(req)
+	res, err := c.do(req)
 	if err != nil {
 		return agent.Capacity{}, err
 	}
@@ -155,8 +164,7 @@ func (c *AgentClient) Instances(ctx context.Context) ([]agent.InstanceInfo, erro
 	if err != nil {
 		return nil, err
 	}
-	controlauth.Add(req, c.Token)
-	res, err := c.client().Do(req)
+	res, err := c.do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -360,8 +368,7 @@ func (c *AgentClient) StatusContext(ctx context.Context, user, app, gen string) 
 	if err != nil {
 		return InstanceView{}, false, err
 	}
-	controlauth.Add(req, c.Token)
-	res, err := c.client().Do(req)
+	res, err := c.do(req)
 	if err != nil {
 		return InstanceView{}, false, err
 	}

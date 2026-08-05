@@ -205,7 +205,7 @@ func TestHTTPEnsureAcceptsGenNoIdle(t *testing.T) {
 
 func TestHealthz(t *testing.T) {
 	mux := http.NewServeMux()
-	(&Handler{}).Mount(mux)
+	(&Handler{}).MountHealth(mux)
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -246,23 +246,25 @@ func TestHTTPRejectsUnsafeIdentityAndUnknownFields(t *testing.T) {
 	}
 }
 
-func TestHTTPControlAuthentication(t *testing.T) {
-	token := "0123456789abcdef0123456789abcdef"
-	mux := http.NewServeMux()
-	(&Handler{Token: token}).Mount(mux)
+func TestHTTPHealthAndControlRoutesAreSeparate(t *testing.T) {
+	controlMux := http.NewServeMux()
+	healthMux := http.NewServeMux()
+	handler := &Handler{}
+	handler.Mount(controlMux)
+	handler.MountHealth(healthMux)
 
-	req := httptest.NewRequest(http.MethodGet, "/v1/instances/status?user=alice&app=fortune", nil)
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("unauthenticated status %d", rec.Code)
+	controlMux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("health route exposed on control listener: %d", rec.Code)
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	req = httptest.NewRequest(http.MethodGet, "/v1/instances/status?user=alice&app=fortune", nil)
 	rec = httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("health should remain public, got %d", rec.Code)
+	healthMux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("control route exposed on health listener: %d", rec.Code)
 	}
 }
 

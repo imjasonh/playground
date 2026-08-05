@@ -31,17 +31,22 @@ resource "google_compute_instance" "orchestrator" {
   }
 
   metadata_startup_script = templatefile("${path.module}/scripts/orchestrator.sh.tftpl", {
-    helpers             = templatefile("${path.module}/scripts/run-container.sh.tftpl", { registry_host = split("/", local.registry)[0], project_id = var.project_id })
-    project_id          = var.project_id
-    firestore_prefix    = var.firestore_prefix
-    firestore_database  = var.firestore_database
-    zone                = var.zone
-    mig_name            = "${local.prefix}-agents"
-    hosts_path          = local.hosts_path
-    orchestrator_image  = ko_build.orchestrator.image_ref
-    inbound_auth_secret = google_secret_manager_secret.orchestrator_auth.secret_id
-    agent_auth_secret   = google_secret_manager_secret.agent_auth.secret_id
-    gateway_url         = "http://${google_compute_address.gateway_internal.address}:8079"
+    helpers                      = templatefile("${path.module}/scripts/run-container.sh.tftpl", { registry_host = split("/", local.registry)[0], project_id = var.project_id })
+    project_id                   = var.project_id
+    firestore_prefix             = var.firestore_prefix
+    firestore_database           = var.firestore_database
+    zone                         = var.zone
+    mig_name                     = "${local.prefix}-agents"
+    hosts_path                   = local.hosts_path
+    orchestrator_image           = ko_build.orchestrator.image_ref
+    control_identity_secret      = google_secret_manager_secret.control_identity["orchestrator"].secret_id
+    control_ca_current_secret    = google_secret_manager_secret.control_ca[var.control_ca_active_slot].secret_id
+    control_ca_previous_secret   = google_secret_manager_secret.control_ca[local.control_standby_slot].secret_id
+    gateway_url                  = "https://${google_compute_address.gateway_internal.address}:8079"
+    project_number               = data.google_project.current.number
+    gateway_service_account      = google_service_account.gateway.email
+    orchestrator_service_account = google_service_account.orchestrator.email
+    drain_script_b64             = filebase64("${path.module}/../hack/drain-agent-host.sh")
   })
 
   lifecycle {
@@ -51,10 +56,12 @@ resource "google_compute_instance" "orchestrator" {
   depends_on = [
     google_firestore_database.sshcloud,
     google_compute_instance_group_manager.agents,
-    google_secret_manager_secret_version.orchestrator_auth,
-    google_secret_manager_secret_version.agent_auth,
-    google_secret_manager_secret_iam_member.orchestrator_inbound_auth,
-    google_secret_manager_secret_iam_member.orchestrator_agent_auth,
+    google_secret_manager_secret_version.control_identity["orchestrator"],
+    google_secret_manager_secret_version.control_ca["a"],
+    google_secret_manager_secret_version.control_ca["b"],
+    google_secret_manager_secret_iam_member.control_identity["orchestrator"],
+    google_secret_manager_secret_iam_member.control_ca["orchestrator-a"],
+    google_secret_manager_secret_iam_member.control_ca["orchestrator-b"],
     google_artifact_registry_repository_iam_member.pullers["orchestrator"],
     google_project_iam_member.orchestrator_compute_viewer,
     google_project_iam_member.orchestrator_datastore,

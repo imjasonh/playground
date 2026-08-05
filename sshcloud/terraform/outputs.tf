@@ -76,12 +76,15 @@ output "assets_bucket" {
 
 output "secrets" {
   value = {
-    gateway_host_key  = google_secret_manager_secret.gateway_host_key.secret_id
-    access_policy     = google_secret_manager_secret.access_policy.secret_id
-    user_ca           = google_secret_manager_secret.user_ca.secret_id
-    user_ca_pub       = google_secret_manager_secret.user_ca_pub.secret_id
-    orchestrator_auth = google_secret_manager_secret.orchestrator_auth.secret_id
-    agent_auth        = google_secret_manager_secret.agent_auth.secret_id
+    gateway_host_key = google_secret_manager_secret.gateway_host_key.secret_id
+    access_policy    = google_secret_manager_secret.access_policy.secret_id
+    user_ca          = google_secret_manager_secret.user_ca.secret_id
+    user_ca_pub      = google_secret_manager_secret.user_ca_pub.secret_id
+    control_ca_a     = google_secret_manager_secret.control_ca["a"].secret_id
+    control_ca_b     = google_secret_manager_secret.control_ca["b"].secret_id
+    control_identities = {
+      for role, secret in google_secret_manager_secret.control_identity : role => secret.secret_id
+    }
   }
 }
 

@@ -6,8 +6,10 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"flag"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -25,7 +27,8 @@ import (
 )
 
 func main() {
-	listen := flag.String("listen", "127.0.0.1:8080", "agent HTTP listen address")
+	listen := flag.String("listen", "127.0.0.1:8080", "agent control HTTPS listen address")
+	healthListen := flag.String("health-listen", "127.0.0.1:8081", "unauthenticated health-only HTTP listen address")
 	workDir := flag.String("work-dir", "/var/lib/sshcloud/agent", "instance work directory")
 	fcBin := flag.String("firecracker", "firecracker", "Firecracker binary (explicit direct-runtime test mode only)")
 	kernel := flag.String("kernel", "", "path to vmlinux")
@@ -40,7 +43,14 @@ func main() {
 	gcsBucket := flag.String("gcs-bucket", "", "GCS bucket for snapshots (overrides -snap-dir)")
 	gcsPrefix := flag.String("gcs-prefix", "sshcloud/snaps", "GCS object key prefix")
 	idle := flag.Duration("idle", 5*time.Minute, "idle time before snapshot-sleep (0=disable)")
-	controlTokenFile := flag.String("control-token-file", "", "bearer token file required by agent control APIs (empty is local-dev only)")
+	controlCert := flag.String("control-cert", "", "reloadable agent control certificate PEM")
+	controlKey := flag.String("control-key", "", "reloadable agent control private-key PEM")
+	controlCACurrent := flag.String("control-ca-current", "", "reloadable current control CA PEM")
+	controlCAPrevious := flag.String("control-ca-previous", "", "reloadable previous control CA PEM")
+	controlProjectID := flag.String("control-project-id", "", "expected GCE identity-token project ID")
+	controlProjectNumber := flag.String("control-project-number", "", "expected GCE identity-token project number")
+	orchestratorServiceAccount := flag.String("orchestrator-service-account", "", "exact orchestrator service-account email")
+	insecureControl := flag.Bool("control-insecure-loopback", false, "explicitly allow unauthenticated plaintext control traffic on loopback only")
 	relayHost := flag.String("relay-host", "", "agent VPC IP for gateway-reachable guest SSH relays (empty returns TAP-local addresses)")
 	relayPortMin := flag.Int("relay-port-min", 20000, "first TCP port available for guest SSH relays")
 	relayPortMax := flag.Int("relay-port-max", 29999, "last TCP port available for guest SSH relays")
@@ -61,12 +71,17 @@ func main() {
 	} else {
 		vmRuntime = agent.NewHelperRuntime(*vmmHelperSocket, *tapHelperSocket)
 	}
-	controlToken, err := controlauth.LoadFile(*controlTokenFile)
-	if err != nil {
-		log.Fatalf("control token: %v", err)
+	controlFiles := controlauth.TLSFiles{
+		CertFile: *controlCert, KeyFile: *controlKey,
+		CurrentCAFile: *controlCACurrent, PreviousCAFile: *controlCAPrevious,
 	}
-	if controlToken == "" {
-		log.Printf("WARNING: agent control API authentication is disabled")
+	if *insecureControl {
+		if err := controlauth.ValidateLoopbackListen(*listen); err != nil {
+			log.Fatal(err)
+		}
+		log.Printf("WARNING: agent control uses explicit loopback-only insecure mode")
+	} else if *controlProjectID == "" || *controlProjectNumber == "" || *orchestratorServiceAccount == "" {
+		log.Fatal("production control requires -control-project-id, -control-project-number, and -orchestrator-service-account")
 	}
 
 	var store snapshot.Store
@@ -156,23 +171,62 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	mux := http.NewServeMux()
-	(&agent.Handler{Manager: mgr, Token: controlToken, Readiness: mgr.Ready}).Mount(mux)
+	controlMux := http.NewServeMux()
+	handler := &agent.Handler{Manager: mgr, Readiness: mgr.Ready}
+	handler.Mount(controlMux)
+	var controlHandler http.Handler = controlMux
+	var tlsConfig *tls.Config
+	if !*insecureControl {
+		verifier := &controlauth.GCEVerifier{
+			ProjectID: *controlProjectID, ProjectNumber: *controlProjectNumber,
+		}
+		controlHandler = controlauth.Require(verifier, controlauth.VerificationPolicy{
+			CallerRole: controlauth.RoleOrchestrator, ServiceAccount: *orchestratorServiceAccount,
+			Audience: controlauth.AudienceAgent,
+		}, controlMux)
+		tlsConfig, err = controlauth.ServerTLSConfig(controlFiles, controlauth.RoleAgent)
+		if err != nil {
+			log.Fatalf("agent control TLS: %v", err)
+		}
+	}
 
 	srv := &http.Server{
 		Addr:              *listen,
-		Handler:           mux,
+		Handler:           controlHandler,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      6 * time.Minute,
 		IdleTimeout:       60 * time.Second,
 	}
+	listener, err := net.Listen("tcp", *listen)
+	if err != nil {
+		log.Fatalf("agent control listen: %v", err)
+	}
+	if tlsConfig != nil {
+		listener = tls.NewListener(listener, tlsConfig)
+	}
 	go func() {
 		log.Printf("sshcloud agent on %s (idle=%s guestinit=%s base-rootfs=%q)", *listen, idle.String(), guestInitPath, baseRootfs)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := srv.Serve(listener); err != nil && err != http.ErrServerClosed {
 			log.Fatal(err)
 		}
 	}()
+	var healthServer *http.Server
+	if *healthListen != "" {
+		healthMux := http.NewServeMux()
+		handler.MountHealth(healthMux)
+		healthServer = &http.Server{
+			Addr: *healthListen, Handler: healthMux,
+			ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 5 * time.Second,
+			WriteTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second,
+		}
+		go func() {
+			log.Printf("sshcloud agent health HTTP on %s", *healthListen)
+			if err := healthServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Fatal(err)
+			}
+		}()
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -180,6 +234,9 @@ func main() {
 	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancelShutdown()
 	_ = srv.Shutdown(shutdownCtx)
+	if healthServer != nil {
+		_ = healthServer.Shutdown(shutdownCtx)
+	}
 	if err := mgr.Close(); err != nil {
 		log.Fatalf("agent shutdown could not durably snapshot all instances: %v", err)
 	}

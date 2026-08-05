@@ -28,21 +28,25 @@ resource "google_compute_instance_template" "agent" {
   }
 
   metadata_startup_script = templatefile("${path.module}/scripts/agent.sh.tftpl", {
-    helpers            = templatefile("${path.module}/scripts/run-container.sh.tftpl", { registry_host = split("/", local.registry)[0], project_id = var.project_id })
-    project_id         = var.project_id
-    user_ca_pub_secret = google_secret_manager_secret.user_ca_pub.secret_id
-    agent_auth_secret  = google_secret_manager_secret.agent_auth.secret_id
-    assets_bucket      = local.asset_bucket
-    firecracker_object = google_storage_bucket_object.firecracker.name
-    jailer_object      = google_storage_bucket_object.jailer.name
-    kernel_object      = google_storage_bucket_object.kernel.name
-    platform_version   = "${google_storage_bucket_object.firecracker.name}:${google_storage_bucket_object.jailer.name}:${google_storage_bucket_object.kernel.name}"
-    snapshots_bucket   = local.snapshot_bucket
-    snapshot_prefix    = local.snapshot_prefix
-    agent_image        = ko_build.agent.image_ref
-    vmmhelper_image    = ko_build.vmmhelper.image_ref
-    taphelper_image    = ko_build.taphelper.image_ref
-    guestinit_image    = ko_build.guestinit.image_ref
+    helpers                      = templatefile("${path.module}/scripts/run-container.sh.tftpl", { registry_host = split("/", local.registry)[0], project_id = var.project_id })
+    project_id                   = var.project_id
+    user_ca_pub_secret           = google_secret_manager_secret.user_ca_pub.secret_id
+    control_identity_secret      = google_secret_manager_secret.control_identity["agent"].secret_id
+    control_ca_current_secret    = google_secret_manager_secret.control_ca[var.control_ca_active_slot].secret_id
+    control_ca_previous_secret   = google_secret_manager_secret.control_ca[local.control_standby_slot].secret_id
+    project_number               = data.google_project.current.number
+    orchestrator_service_account = google_service_account.orchestrator.email
+    assets_bucket                = local.asset_bucket
+    firecracker_object           = google_storage_bucket_object.firecracker.name
+    jailer_object                = google_storage_bucket_object.jailer.name
+    kernel_object                = google_storage_bucket_object.kernel.name
+    platform_version             = "${google_storage_bucket_object.firecracker.name}:${google_storage_bucket_object.jailer.name}:${google_storage_bucket_object.kernel.name}"
+    snapshots_bucket             = local.snapshot_bucket
+    snapshot_prefix              = local.snapshot_prefix
+    agent_image                  = ko_build.agent.image_ref
+    vmmhelper_image              = ko_build.vmmhelper.image_ref
+    taphelper_image              = ko_build.taphelper.image_ref
+    guestinit_image              = ko_build.guestinit.image_ref
   })
 
   lifecycle {
@@ -51,9 +55,13 @@ resource "google_compute_instance_template" "agent" {
 
   depends_on = [
     google_secret_manager_secret_version.user_ca_pub,
-    google_secret_manager_secret_version.agent_auth,
+    google_secret_manager_secret_version.control_identity["agent"],
+    google_secret_manager_secret_version.control_ca["a"],
+    google_secret_manager_secret_version.control_ca["b"],
     google_secret_manager_secret_iam_member.agent_user_ca_pub,
-    google_secret_manager_secret_iam_member.agent_control_auth,
+    google_secret_manager_secret_iam_member.control_identity["agent"],
+    google_secret_manager_secret_iam_member.control_ca["agent-a"],
+    google_secret_manager_secret_iam_member.control_ca["agent-b"],
     google_storage_bucket_object.firecracker,
     google_storage_bucket_object.jailer,
     google_storage_bucket_object.kernel,

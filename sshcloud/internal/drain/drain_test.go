@@ -40,7 +40,9 @@ func newDrainHost(t *testing.T, snapshots *drainSnapshotSet, total agent.Resourc
 	return h
 }
 
-func (h *drainHost) client() *backend.AgentClient { return &backend.AgentClient{BaseURL: h.server.URL} }
+func (h *drainHost) client() *backend.AgentClient {
+	return &backend.AgentClient{BaseURL: h.server.URL, InsecureLoopback: true}
+}
 
 func (h *drainHost) add(info agent.InstanceInfo) {
 	h.mu.Lock()
@@ -275,7 +277,7 @@ func TestDrainHostMovesRunningAndSleepingGenerations(t *testing.T) {
 		Hosts: backend.NewHostSet(map[string]*backend.AgentClient{
 			"host-a": source.client(), "host-b": target.client(),
 		}, "host-a"),
-		Gateway:      &backend.GatewayClient{BaseURL: gateway.server.URL},
+		Gateway:      &backend.GatewayClient{BaseURL: gateway.server.URL, InsecureLoopback: true},
 		FreezeWindow: time.Second,
 	}
 	result, err := controller.DrainHost(ctx, "host-a")

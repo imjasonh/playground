@@ -14,9 +14,10 @@ import (
 
 // OrchestratorClient talks to cmd/orchestrator for placement-aware Ensure.
 type OrchestratorClient struct {
-	BaseURL    string
-	Token      string
-	HTTPClient *http.Client
+	BaseURL          string
+	ControlClient    *controlauth.Client
+	HTTPClient       *http.Client
+	InsecureLoopback bool
 }
 
 func (c *OrchestratorClient) client() *http.Client {
@@ -25,6 +26,16 @@ func (c *OrchestratorClient) client() *http.Client {
 	}
 	// Ensure may cold-boot or wake a snapshot; allow a long wait.
 	return &http.Client{Timeout: 6 * time.Minute}
+}
+
+func (c *OrchestratorClient) do(req *http.Request) (*http.Response, error) {
+	if c.ControlClient != nil {
+		return c.ControlClient.Do(req)
+	}
+	if err := controlauth.PrepareRequest(req, nil, c.InsecureLoopback); err != nil {
+		return nil, err
+	}
+	return c.client().Do(req)
 }
 
 type orchEnsureBody struct {
@@ -87,8 +98,7 @@ func (c *OrchestratorClient) ensure(ctx context.Context, body orchEnsureBody) (O
 		return OrchestratorTarget{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	controlauth.Add(req, c.Token)
-	res, err := c.client().Do(req)
+	res, err := c.do(req)
 	if err != nil {
 		return OrchestratorTarget{}, err
 	}
@@ -142,8 +152,7 @@ func (c *OrchestratorClient) Stop(ctx context.Context, user, app, gen string) er
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	controlauth.Add(req, c.Token)
-	res, err := c.client().Do(req)
+	res, err := c.do(req)
 	if err != nil {
 		return err
 	}
@@ -166,8 +175,7 @@ func (c *OrchestratorClient) SetNoIdle(ctx context.Context, user, app, gen strin
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	controlauth.Add(req, c.Token)
-	res, err := c.client().Do(req)
+	res, err := c.do(req)
 	if err != nil {
 		return err
 	}

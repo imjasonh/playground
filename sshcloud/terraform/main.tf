@@ -8,6 +8,11 @@ provider "ko" {
   repo = "${var.region}-docker.pkg.dev/${var.project_id}/${var.name_prefix}"
 }
 
+data "google_project" "current" {
+  project_id = var.project_id
+  depends_on = [module.project_services]
+}
+
 locals {
   prefix = var.name_prefix
   labels = {

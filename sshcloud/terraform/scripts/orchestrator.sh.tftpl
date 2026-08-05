@@ -5,8 +5,16 @@ ${helpers}
 install_docker
 retry 30 registry_login
 mkdir -p /var/lib/sshcloud /usr/local/lib/sshcloud
-retry 30 pull_secret "${inbound_auth_secret}" /var/lib/sshcloud/orchestrator_auth
-retry 30 pull_secret "${agent_auth_secret}" /var/lib/sshcloud/agent_auth
+# Remove files left by the retired static bearer-token deployment.
+rm -f /var/lib/sshcloud/*_auth
+install -d -o root -g root -m 0755 /run/sshcloud
+install_control_identity_refresher \
+  "${control_identity_secret}" \
+  "${control_ca_current_secret}" \
+  "${control_ca_previous_secret}" \
+  /var/lib/sshcloud/control root root
+echo "${drain_script_b64}" | base64 -d >/usr/local/sbin/sshcloud-drain-agent-host
+chmod 0755 /usr/local/sbin/sshcloud-drain-agent-host
 
 cat >/usr/local/lib/sshcloud/refresh-hosts.py <<'PY'
 import json, os, urllib.request
@@ -41,13 +49,13 @@ for inst in mig.get("managedInstances", []):
     desc = api(f"projects/{PROJECT}/zones/{ZONE}/instances/{name}")
     ip = desc["networkInterfaces"][0]["networkIP"]
     try:
-        with urllib.request.urlopen(f"http://{ip}:8080/readyz", timeout=3) as ready:
+        with urllib.request.urlopen(f"http://{ip}:8081/readyz", timeout=3) as ready:
             if ready.status != 200:
                 continue
     except Exception as exc:
         print(f"skip unready host {name}: {exc}")
         continue
-    lines.append(f"{name}=http://{ip}:8080")
+    lines.append(f"{name}=https://{ip}:8080")
 os.makedirs(os.path.dirname(OUT), exist_ok=True)
 tmp = OUT + ".tmp"
 with open(tmp, "w", encoding="utf-8") as f:
@@ -93,11 +101,20 @@ docker run -d --name sshcloud-orchestrator --restart unless-stopped --net host \
   --read-only \
   --tmpfs /tmp:rw,noexec,nosuid,size=16m \
   -v /var/lib/sshcloud:/var/lib/sshcloud:ro \
+  -v /run/sshcloud:/run/sshcloud:rw \
   "$IMAGE" \
   -listen "$${INTERNAL_IP}:8090" \
+  -health-listen "$${INTERNAL_IP}:8091" \
+  -admin-socket /run/sshcloud/orchestrator-admin.sock \
   -hosts-file ${hosts_path} \
-  -control-token-file /var/lib/sshcloud/orchestrator_auth \
-  -agent-token-file /var/lib/sshcloud/agent_auth \
+  -control-cert /var/lib/sshcloud/control/tls.crt \
+  -control-key /var/lib/sshcloud/control/tls.key \
+  -control-ca-current /var/lib/sshcloud/control/ca-current.pem \
+  -control-ca-previous /var/lib/sshcloud/control/ca-previous.pem \
+  -control-project-id ${project_id} \
+  -control-project-number ${project_number} \
+  -gateway-service-account ${gateway_service_account} \
+  -orchestrator-service-account ${orchestrator_service_account} \
   -gateway-url ${gateway_url} \
   -firestore-project ${project_id} \
   -firestore-prefix ${firestore_prefix} \

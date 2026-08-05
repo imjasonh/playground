@@ -31,8 +31,8 @@ func TestMigrateOrchestration(t *testing.T) {
 	mig := &migrate.Migrator{
 		Placement: place,
 		Hosts: backend.NewHostSet(map[string]*backend.AgentClient{
-			"host-a": {BaseURL: src.URL},
-			"host-b": {BaseURL: dst.URL},
+			"host-a": {BaseURL: src.URL, InsecureLoopback: true},
+			"host-b": {BaseURL: dst.URL, InsecureLoopback: true},
 		}, "host-a"),
 	}
 
@@ -85,8 +85,8 @@ func TestMigrateReconcilesAdoptAppliedBeforeCanceledResponse(t *testing.T) {
 	mig := &migrate.Migrator{
 		Placement: place,
 		Hosts: backend.NewHostSet(map[string]*backend.AgentClient{
-			"host-a": {BaseURL: src.URL},
-			"host-b": {BaseURL: dst.URL},
+			"host-a": {BaseURL: src.URL, InsecureLoopback: true},
+			"host-b": {BaseURL: dst.URL, InsecureLoopback: true},
 		}, "host-a"),
 	}
 	res, err := mig.Migrate(ctx, "alice", "fortune", "host-b")

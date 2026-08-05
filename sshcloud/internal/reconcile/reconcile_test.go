@@ -33,7 +33,7 @@ func newReconcileHost(t *testing.T, shared *sync.Map) *reconcileHost {
 }
 
 func (h *reconcileHost) client() *backend.AgentClient {
-	return &backend.AgentClient{BaseURL: h.server.URL}
+	return &backend.AgentClient{BaseURL: h.server.URL, InsecureLoopback: true}
 }
 
 func (h *reconcileHost) serveHTTP(w http.ResponseWriter, r *http.Request) {

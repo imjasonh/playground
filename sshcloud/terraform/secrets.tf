@@ -1,6 +1,11 @@
-# Host key + user CA are generated in Terraform for the first environment.
-# Private material lands in Terraform state — acceptable for playground / v1;
-# rotate via taint + Secret Manager before any serious public deploy.
+# Initial private-environment keys are generated in Terraform and published to
+# Secret Manager. The SSH host/user CA below is intentionally separate from the
+# HTTPS control PKI.
+#
+# TODO(secret-rotation): Terraform-held control leaf private keys remain a
+# rotation and state-compromise risk. Move leaf issuance/renewal out of
+# Terraform, use an encrypted/locked remote state backend in the interim, and
+# drill the A/B CA overlap before treating this environment as public.
 
 resource "tls_private_key" "gateway_host" {
   algorithm = "ED25519"
@@ -10,15 +15,111 @@ resource "tls_private_key" "user_ca" {
   algorithm = "ED25519"
 }
 
-# Interim service-to-service bearer tokens. These are separate trust domains:
-# gateway → orchestrator and orchestrator → agents. Replace with workload
-# identity + mTLS before a public launch.
-resource "tls_private_key" "orchestrator_auth" {
-  algorithm = "ED25519"
+locals {
+  control_roles = toset(["gateway", "orchestrator", "agent"])
+  control_role_uris = {
+    gateway      = "spiffe://sshcloud.internal/control/gateway"
+    orchestrator = "spiffe://sshcloud.internal/control/orchestrator"
+    agent        = "spiffe://sshcloud.internal/control/agent"
+  }
+  control_role_dns = {
+    gateway      = "gateway.control.sshcloud.internal"
+    orchestrator = "orchestrator.control.sshcloud.internal"
+    agent        = "agent.control.sshcloud.internal"
+  }
 }
 
-resource "tls_private_key" "agent_auth" {
-  algorithm = "ED25519"
+resource "tls_private_key" "control_ca" {
+  for_each    = toset(["a", "b"])
+  algorithm   = "ECDSA"
+  ecdsa_curve = "P256"
+}
+
+resource "tls_self_signed_cert" "control_ca" {
+  for_each = toset(["a", "b"])
+
+  private_key_pem       = tls_private_key.control_ca[each.key].private_key_pem
+  is_ca_certificate     = true
+  validity_period_hours = 43800
+  early_renewal_hours   = 720
+  allowed_uses          = ["cert_signing", "crl_signing", "digital_signature"]
+
+  subject {
+    common_name  = "${local.prefix}-control-ca-${each.key}"
+    organization = "sshcloud private control plane"
+  }
+}
+
+locals {
+  control_active_ca_key  = tls_private_key.control_ca[var.control_ca_active_slot].private_key_pem
+  control_active_ca_cert = tls_self_signed_cert.control_ca[var.control_ca_active_slot].cert_pem
+  control_standby_slot   = var.control_ca_active_slot == "a" ? "b" : "a"
+}
+
+resource "tls_private_key" "control_role" {
+  for_each    = local.control_roles
+  algorithm   = "ECDSA"
+  ecdsa_curve = "P256"
+}
+
+resource "tls_cert_request" "control_role" {
+  for_each = local.control_roles
+
+  private_key_pem = tls_private_key.control_role[each.key].private_key_pem
+  uris            = [local.control_role_uris[each.key]]
+  dns_names       = [local.control_role_dns[each.key]]
+
+  subject {
+    common_name  = "sshcloud-control-${each.key}"
+    organization = "sshcloud private control plane"
+  }
+}
+
+resource "tls_locally_signed_cert" "control_role" {
+  for_each = local.control_roles
+
+  cert_request_pem      = tls_cert_request.control_role[each.key].cert_request_pem
+  ca_private_key_pem    = local.control_active_ca_key
+  ca_cert_pem           = local.control_active_ca_cert
+  validity_period_hours = 2160
+  early_renewal_hours   = 168
+  allowed_uses          = ["digital_signature", "client_auth", "server_auth"]
+}
+
+resource "google_secret_manager_secret" "control_ca" {
+  for_each  = toset(["a", "b"])
+  secret_id = "${local.prefix}-control-ca-${each.key}"
+  labels    = local.labels
+  replication {
+    auto {}
+  }
+  depends_on = [module.project_services]
+}
+
+resource "google_secret_manager_secret_version" "control_ca" {
+  for_each    = toset(["a", "b"])
+  secret      = google_secret_manager_secret.control_ca[each.key].id
+  secret_data = tls_self_signed_cert.control_ca[each.key].cert_pem
+}
+
+resource "google_secret_manager_secret" "control_identity" {
+  for_each  = local.control_roles
+  secret_id = "${local.prefix}-control-identity-${each.key}"
+  labels    = local.labels
+  replication {
+    auto {}
+  }
+  depends_on = [module.project_services]
+}
+
+resource "google_secret_manager_secret_version" "control_identity" {
+  for_each = local.control_roles
+  secret   = google_secret_manager_secret.control_identity[each.key].id
+  secret_data = jsonencode({
+    certificate_pem = tls_locally_signed_cert.control_role[each.key].cert_pem
+    private_key_pem = tls_private_key.control_role[each.key].private_key_pem
+    uri_identity    = local.control_role_uris[each.key]
+  })
 }
 
 locals {
@@ -98,32 +199,4 @@ resource "google_secret_manager_secret" "user_ca_pub" {
 resource "google_secret_manager_secret_version" "user_ca_pub" {
   secret      = google_secret_manager_secret.user_ca_pub.id
   secret_data = tls_private_key.user_ca.public_key_openssh
-}
-
-resource "google_secret_manager_secret" "orchestrator_auth" {
-  secret_id = "${local.prefix}-orchestrator-auth"
-  labels    = local.labels
-  replication {
-    auto {}
-  }
-  depends_on = [module.project_services]
-}
-
-resource "google_secret_manager_secret_version" "orchestrator_auth" {
-  secret      = google_secret_manager_secret.orchestrator_auth.id
-  secret_data = sha256(tls_private_key.orchestrator_auth.private_key_openssh)
-}
-
-resource "google_secret_manager_secret" "agent_auth" {
-  secret_id = "${local.prefix}-agent-auth"
-  labels    = local.labels
-  replication {
-    auto {}
-  }
-  depends_on = [module.project_services]
-}
-
-resource "google_secret_manager_secret_version" "agent_auth" {
-  secret      = google_secret_manager_secret.agent_auth.id
-  secret_data = sha256(tls_private_key.agent_auth.private_key_openssh)
 }

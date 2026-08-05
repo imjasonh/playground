@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/imjasonh/playground/sshcloud/internal/controlauth"
 	"github.com/imjasonh/playground/sshcloud/internal/genid"
 	"github.com/imjasonh/playground/sshcloud/internal/image"
 	"github.com/imjasonh/playground/sshcloud/internal/names"
@@ -18,11 +17,11 @@ import (
 // Handler serves the host agent HTTP API.
 type Handler struct {
 	Manager   *Manager
-	Token     string
 	Readiness func() error
 }
 
-// Mount registers routes on mux (Go 1.22+ method patterns).
+// Mount registers control routes on mux (Go 1.22+ method patterns). The
+// production command wraps this mux in controlauth.Require before serving it.
 func (h *Handler) Mount(mux *http.ServeMux) {
 	api := http.NewServeMux()
 	api.HandleFunc("POST /v1/instances/ensure", h.ensure)
@@ -40,11 +39,16 @@ func (h *Handler) Mount(mux *http.ServeMux) {
 	api.HandleFunc("GET /v1/host/orphans", h.orphans)
 	api.HandleFunc("POST /v1/host/cordon", h.cordon)
 	api.HandleFunc("POST /v1/host/uncordon", h.uncordon)
-	mux.Handle("/v1/", controlauth.Require(h.Token, api))
+	mux.Handle("/v1/", api)
+}
+
+// MountHealth registers only body-free liveness/readiness endpoints. It is
+// intentionally separate from the authenticated control listener.
+func (h *Handler) MountHealth(mux *http.ServeMux) {
 	ready := func(w http.ResponseWriter, _ *http.Request) {
 		if h.Readiness != nil {
 			if err := h.Readiness(); err != nil {
-				http.Error(w, "not ready: "+err.Error(), http.StatusServiceUnavailable)
+				http.Error(w, "unavailable", http.StatusServiceUnavailable)
 				return
 			}
 		}

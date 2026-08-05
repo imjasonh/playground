@@ -59,7 +59,7 @@ func TestOrchestratorClientAddr(t *testing.T) {
 		})
 	}))
 	t.Cleanup(agent.Close)
-	agents["host-a"] = &backend.AgentClient{BaseURL: agent.URL}
+	agents["host-a"] = &backend.AgentClient{BaseURL: agent.URL, InsecureLoopback: true}
 
 	dial := &backend.PlacedDial{
 		Placement: place,
@@ -105,7 +105,7 @@ func TestOrchestratorClientAddr(t *testing.T) {
 	}))
 	t.Cleanup(orch.Close)
 
-	c := &backend.OrchestratorClient{BaseURL: orch.URL}
+	c := &backend.OrchestratorClient{BaseURL: orch.URL, InsecureLoopback: true}
 	digest := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	addr, err := c.Addr("alice", "fortune", "gabc", "ghcr.io/me/app@sha256:"+digest)
 	if err != nil {
@@ -167,7 +167,7 @@ func TestPlacedDialRefusesImplicitCrossHostRecovery(t *testing.T) {
 	dial := &backend.PlacedDial{
 		Placement: place,
 		Agents: backend.NewHostSet(map[string]*backend.AgentClient{
-			"host-b": {BaseURL: agent.URL},
+			"host-b": {BaseURL: agent.URL, InsecureLoopback: true},
 		}, "host-b"),
 	}
 	if _, err := dial.EnsureAddr(t.Context(), "alice", "fortune", "gabc", "", false); err == nil {
@@ -208,7 +208,7 @@ func TestPlacedDialEnforcesAwakeUserQuotaBeforeEnsure(t *testing.T) {
 	dial := &backend.PlacedDial{
 		Placement: place,
 		Agents: backend.NewHostSet(map[string]*backend.AgentClient{
-			"host-a": {BaseURL: host.URL},
+			"host-a": {BaseURL: host.URL, InsecureLoopback: true},
 		}, "host-a"),
 		Quotas: quota.NewMemory(), MaxAwakePerUser: 2,
 	}

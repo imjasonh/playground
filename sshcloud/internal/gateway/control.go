@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/imjasonh/playground/sshcloud/internal/controlauth"
 	"github.com/imjasonh/playground/sshcloud/internal/genid"
 	"github.com/imjasonh/playground/sshcloud/internal/names"
 	"github.com/imjasonh/playground/sshcloud/internal/session"
@@ -20,7 +19,6 @@ import (
 // ControlHandler serves the orchestrator→gateway migration API.
 type ControlHandler struct {
 	Hub       *Hub
-	Token     string
 	MaxFreeze time.Duration
 
 	mu        sync.Mutex
@@ -48,7 +46,8 @@ type thawRequest struct {
 	Token string `json:"token"`
 }
 
-// Mount registers authenticated migration control routes.
+// Mount registers migration control routes. The production command wraps this
+// mux in orchestrator-only mTLS and GCE identity-token authentication.
 func (h *ControlHandler) Mount(mux *http.ServeMux) {
 	if h.MaxFreeze <= 0 {
 		h.MaxFreeze = 30 * time.Second
@@ -66,7 +65,12 @@ func (h *ControlHandler) Mount(mux *http.ServeMux) {
 	api.HandleFunc("POST /v1/sessions/freeze", h.freeze)
 	api.HandleFunc("POST /v1/sessions/thaw", h.thaw)
 	api.HandleFunc("POST /v1/sessions/abort", h.abort)
-	mux.Handle("/v1/", controlauth.Require(h.Token, api))
+	mux.Handle("/v1/", api)
+}
+
+// MountHealth registers only body-free health endpoints on a separate HTTP
+// listener.
+func (h *ControlHandler) MountHealth(mux *http.ServeMux) {
 	mux.HandleFunc("GET /livez", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
@@ -77,7 +81,7 @@ func (h *ControlHandler) Mount(mux *http.ServeMux) {
 			return
 		}
 		if _, err := h.Hub.Store.ListAllApps(r.Context()); err != nil {
-			http.Error(w, "gateway store: "+err.Error(), http.StatusServiceUnavailable)
+			http.Error(w, "unavailable", http.StatusServiceUnavailable)
 			return
 		}
 		w.WriteHeader(http.StatusOK)

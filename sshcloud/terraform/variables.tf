@@ -47,6 +47,16 @@ variable "firestore_prefix" {
   }
 }
 
+variable "control_ca_active_slot" {
+  description = "Control PKI signing slot. Rotate leaves A→B, replace idle A, then reverse on the next rotation."
+  type        = string
+  default     = "a"
+  validation {
+    condition     = contains(["a", "b"], var.control_ca_active_slot)
+    error_message = "control_ca_active_slot must be a or b."
+  }
+}
+
 variable "agent_count" {
   description = "Host MIG target size"
   type        = number

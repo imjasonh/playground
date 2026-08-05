@@ -67,9 +67,8 @@ func newCutoverE2E(t *testing.T) *cutoverE2E {
 		Cutover:           controller,
 		AllowedRegistries: []string{"ghcr.io"},
 	}
-	controlToken := "0123456789abcdef0123456789abcdef"
 	controlMux := http.NewServeMux()
-	(&gateway.ControlHandler{Hub: hub, Token: controlToken, MaxFreeze: 5 * time.Second}).Mount(controlMux)
+	(&gateway.ControlHandler{Hub: hub, MaxFreeze: 5 * time.Second}).Mount(controlMux)
 	controlServer := httptest.NewServer(controlMux)
 	srv := &Server{
 		Hub: hub, HostKey: gatewayHost, Addr: "127.0.0.1:0",
@@ -83,7 +82,7 @@ func newCutoverE2E(t *testing.T) *cutoverE2E {
 	fx := &cutoverE2E{
 		ctx: ctx, cancel: cancel, server: srv, hub: hub, store: st,
 		fleet: fleet, hostKey: gatewayHost, clientKey: clientKey,
-		control: &backend.GatewayClient{BaseURL: controlServer.URL, Token: controlToken},
+		control: &backend.GatewayClient{BaseURL: controlServer.URL, InsecureLoopback: true},
 	}
 	t.Cleanup(func() {
 		cancel()

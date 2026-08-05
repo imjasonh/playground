@@ -3,8 +3,10 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"flag"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -33,14 +35,22 @@ func main() {
 	hostKeyPath := flag.String("host-key", "ssh_host_ed25519_key", "path to host private key (created if missing)")
 	caKeyPath := flag.String("user-ca", "ssh_user_ca", "path to user CA private key (created if missing)")
 	fortuneBin := flag.String("fortune-bin", "", "path to local fortune binary (process backend)")
-	agentURL := flag.String("agent-url", "", "host agent base URL (Firecracker backend), e.g. http://127.0.0.1:8080")
-	orchURL := flag.String("orchestrator-url", "", "orchestrator base URL (placement-aware Ensure), e.g. http://127.0.0.1:8090")
+	agentURL := flag.String("agent-url", "", "local-only direct host-agent URL; requires -control-insecure-loopback")
+	orchURL := flag.String("orchestrator-url", "", "orchestrator gateway-service HTTPS URL")
 	firestoreProject := flag.String("firestore-project", "", "GCP project for Firestore user/app store (default: in-memory)")
 	firestorePrefix := flag.String("firestore-prefix", "sshcloud", "Firestore collection prefix")
 	firestoreDatabase := flag.String("firestore-database", "sshcloud", "Firestore database ID")
 	drainTimeout := flag.Duration("drain-timeout", cutover.DefaultDrainTimeout, "deploy drain kick timeout")
-	controlTokenFile := flag.String("control-token-file", "", "bearer token file sent to orchestrator/agent APIs")
-	controlListen := flag.String("control-listen", "", "internal migration control HTTP address (empty disables)")
+	controlListen := flag.String("control-listen", "", "internal migration-control HTTPS address (empty disables)")
+	healthListen := flag.String("health-listen", "", "unauthenticated health-only HTTP address (empty disables)")
+	controlCert := flag.String("control-cert", "", "reloadable gateway control certificate PEM")
+	controlKey := flag.String("control-key", "", "reloadable gateway control private-key PEM")
+	controlCACurrent := flag.String("control-ca-current", "", "reloadable current control CA PEM")
+	controlCAPrevious := flag.String("control-ca-previous", "", "reloadable previous control CA PEM")
+	controlProjectID := flag.String("control-project-id", "", "expected GCE identity-token project ID")
+	controlProjectNumber := flag.String("control-project-number", "", "expected GCE identity-token project number")
+	orchestratorServiceAccount := flag.String("orchestrator-service-account", "", "exact orchestrator service-account email")
+	insecureControl := flag.Bool("control-insecure-loopback", false, "explicitly allow unauthenticated plaintext control traffic on loopback only")
 	accessPolicyFile := flag.String("access-policy-file", "", "path to reloadable JSON SSH-key access policy (empty is local open/all-users)")
 	allowedRegistries := flag.String("allowed-registries", "index.docker.io,docker.io,ghcr.io,*.pkg.dev", "comma-separated OCI registry hosts; supports *.suffix")
 	maxSessionsPerUser := flag.Int("max-sessions-per-user", 5, "concurrent sessions across all apps")
@@ -60,12 +70,29 @@ func main() {
 	if err != nil {
 		log.Fatalf("user CA: %v", err)
 	}
-	controlToken, err := controlauth.LoadFile(*controlTokenFile)
-	if err != nil {
-		log.Fatalf("control token: %v", err)
+	controlFiles := controlauth.TLSFiles{
+		CertFile: *controlCert, KeyFile: *controlKey,
+		CurrentCAFile: *controlCACurrent, PreviousCAFile: *controlCAPrevious,
 	}
-	if (*orchURL != "" || *agentURL != "") && controlToken == "" {
-		log.Printf("WARNING: internal API authentication is disabled")
+	controlEnabled := *orchURL != "" || *agentURL != "" || *controlListen != ""
+	if *insecureControl {
+		if *controlListen != "" {
+			if err := controlauth.ValidateLoopbackListen(*controlListen); err != nil {
+				log.Fatal(err)
+			}
+		}
+		if *agentURL == "" && *orchURL == "" && *controlListen == "" {
+			log.Printf("control: explicit loopback-insecure mode has no configured control endpoint")
+		} else {
+			log.Printf("WARNING: control plane uses explicit loopback-only insecure mode")
+		}
+	} else if controlEnabled {
+		if *controlProjectID == "" || *controlProjectNumber == "" || *orchestratorServiceAccount == "" {
+			log.Fatal("production control requires -control-project-id, -control-project-number, and -orchestrator-service-account")
+		}
+		if *agentURL != "" {
+			log.Fatal("-agent-url is local-only: production agents authorize the orchestrator role, never gateway")
+		}
 	}
 
 	var st store.Store = store.NewMemory()
@@ -116,7 +143,17 @@ func main() {
 	var instances cutover.Instances
 	switch {
 	case *orchURL != "":
-		oc := &backend.OrchestratorClient{BaseURL: *orchURL, Token: controlToken}
+		oc := &backend.OrchestratorClient{BaseURL: *orchURL, InsecureLoopback: *insecureControl}
+		if !*insecureControl {
+			client, err := controlauth.NewClient(
+				controlFiles, controlauth.RoleGateway, controlauth.RoleOrchestrator,
+				controlauth.MetadataTokenSource{}, controlauth.AudienceOrchestratorGateway, 6*time.Minute,
+			)
+			if err != nil {
+				log.Fatalf("orchestrator control client: %v", err)
+			}
+			oc.ControlClient = client
+		}
 		hub.Dial = func(ctx context.Context, req gateway.DialRequest) (gateway.DialTarget, error) {
 			target, err := oc.TargetTierRequest(ctx, req.User, req.App, req.Gen, req.Image, req.Tier, req.NoIdle, req.Purpose, req.RequestID)
 			return gateway.DialTarget{Addr: target.Addr, SSHHostPublicKey: target.SSHHostPublicKey}, err
@@ -124,7 +161,7 @@ func main() {
 		instances = oc
 		log.Printf("backend: orchestrator at %s (placement-aware)", *orchURL)
 	case *agentURL != "":
-		ac := &backend.AgentClient{BaseURL: *agentURL, Token: controlToken}
+		ac := &backend.AgentClient{BaseURL: *agentURL, InsecureLoopback: true}
 		hub.Dial = func(ctx context.Context, req gateway.DialRequest) (gateway.DialTarget, error) {
 			in, err := ac.EnsureTierContext(ctx, req.User, req.App, req.Gen, req.Image, req.Tier, req.NoIdle)
 			return gateway.DialTarget{Addr: in.Addr, SSHHostPublicKey: in.SSHHostPublicKey}, err
@@ -188,19 +225,59 @@ func main() {
 		HandshakeLimiter: quota.NewIPRateLimiter(*handshakesPerMinute, time.Minute),
 	}
 
-	var controlServer *http.Server
+	controlHandler := &gateway.ControlHandler{Hub: hub}
+	var controlServer, healthServer *http.Server
 	if *controlListen != "" {
 		controlMux := http.NewServeMux()
-		(&gateway.ControlHandler{Hub: hub, Token: controlToken}).Mount(controlMux)
+		controlHandler.Mount(controlMux)
+		var handler http.Handler = controlMux
+		var tlsConfig *tls.Config
+		if !*insecureControl {
+			verifier := &controlauth.GCEVerifier{
+				ProjectID: *controlProjectID, ProjectNumber: *controlProjectNumber,
+			}
+			handler = controlauth.Require(verifier, controlauth.VerificationPolicy{
+				CallerRole: controlauth.RoleOrchestrator, ServiceAccount: *orchestratorServiceAccount,
+				Audience: controlauth.AudienceGatewayMigration,
+			}, controlMux)
+			var err error
+			tlsConfig, err = controlauth.ServerTLSConfig(controlFiles, controlauth.RoleGateway)
+			if err != nil {
+				log.Fatalf("gateway control TLS: %v", err)
+			}
+		}
 		controlServer = &http.Server{
-			Addr: *controlListen, Handler: controlMux,
+			Addr: *controlListen, Handler: handler,
 			ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second,
 			WriteTimeout: 45 * time.Second, IdleTimeout: 60 * time.Second,
 		}
+		listener, err := net.Listen("tcp", *controlListen)
+		if err != nil {
+			log.Fatalf("gateway control listen: %v", err)
+		}
+		if tlsConfig != nil {
+			listener = tls.NewListener(listener, tlsConfig)
+		}
 		go func() {
 			log.Printf("gateway migration control on %s", *controlListen)
-			if err := controlServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			if err := controlServer.Serve(listener); err != nil && err != http.ErrServerClosed {
 				log.Printf("migration control server: %v", err)
+				stop()
+			}
+		}()
+	}
+	if *healthListen != "" {
+		healthMux := http.NewServeMux()
+		controlHandler.MountHealth(healthMux)
+		healthServer = &http.Server{
+			Addr: *healthListen, Handler: healthMux,
+			ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 5 * time.Second,
+			WriteTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second,
+		}
+		go func() {
+			log.Printf("gateway health HTTP on %s", *healthListen)
+			if err := healthServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Printf("gateway health server: %v", err)
 				stop()
 			}
 		}()
@@ -216,5 +293,10 @@ func main() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		_ = controlServer.Shutdown(shutdownCtx)
+	}
+	if healthServer != nil {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = healthServer.Shutdown(shutdownCtx)
 	}
 }

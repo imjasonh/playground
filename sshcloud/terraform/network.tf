@@ -73,6 +73,8 @@ resource "google_compute_firewall" "gateway_to_orchestrator" {
   target_tags = ["${local.prefix}-orchestrator"]
 }
 
+# These ports carry TLS 1.3 mTLS. Source tags are defense in depth; the API
+# still requires exact role URI and GCE workload-token claims.
 resource "google_compute_firewall" "orchestrator_to_gateway" {
   name    = "${local.prefix}-orchestrator-to-gateway"
   network = google_compute_network.sshcloud.name
@@ -92,7 +94,7 @@ resource "google_compute_firewall" "orchestrator_to_agents" {
 
   allow {
     protocol = "tcp"
-    ports    = ["8080"]
+    ports    = ["8080", "8081"]
   }
 
   source_tags = ["${local.prefix}-orchestrator"]

@@ -48,5 +48,86 @@ pull_secret() {
   chmod 600 "$dest"
 }
 
+install_control_identity_refresher() {
+  local identity_secret="$1" current_ca_secret="$2" previous_ca_secret="$3"
+  local dest="$4" owner="$5" group="$6"
+  install -d -o "$owner" -g "$group" -m 0700 "$dest"
+  cat >/etc/sshcloud-control-identity.env <<EOF
+CONTROL_IDENTITY_SECRET=$identity_secret
+CONTROL_CURRENT_CA_SECRET=$current_ca_secret
+CONTROL_PREVIOUS_CA_SECRET=$previous_ca_secret
+CONTROL_DEST=$dest
+CONTROL_OWNER=$owner
+CONTROL_GROUP=$group
+EOF
+  chmod 0600 /etc/sshcloud-control-identity.env
+
+  cat >/usr/local/sbin/sshcloud-refresh-control-identity <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+source /etc/sshcloud-control-identity.env
+PROJECT_ID="${project_id}"
+tmp="$(mktemp -d "$${CONTROL_DEST}/.refresh.XXXXXX")"
+trap 'rm -rf "$tmp"' EXIT
+
+access_token() {
+  curl --retry 10 --retry-all-errors -fsS -H 'Metadata-Flavor: Google' \
+    http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token \
+    | jq -er .access_token
+}
+
+fetch_secret() {
+  local secret="$1" out="$2" token
+  token="$(access_token)"
+  curl --retry 10 --retry-all-errors -fsS \
+    -H "Authorization: Bearer $token" \
+    "https://secretmanager.googleapis.com/v1/projects/$PROJECT_ID/secrets/$secret/versions/latest:access" \
+    | jq -er .payload.data | base64 -d >"$out"
+}
+
+fetch_secret "$CONTROL_IDENTITY_SECRET" "$tmp/identity.json"
+fetch_secret "$CONTROL_CURRENT_CA_SECRET" "$tmp/ca-current.pem"
+fetch_secret "$CONTROL_PREVIOUS_CA_SECRET" "$tmp/ca-previous.pem"
+jq -er .certificate_pem "$tmp/identity.json" >"$tmp/tls.crt"
+jq -er .private_key_pem "$tmp/identity.json" >"$tmp/tls.key"
+test -s "$tmp/tls.crt" -a -s "$tmp/tls.key" -a -s "$tmp/ca-current.pem" -a -s "$tmp/ca-previous.pem"
+chown "$CONTROL_OWNER:$CONTROL_GROUP" "$tmp/tls.crt" "$tmp/tls.key" "$tmp/ca-current.pem" "$tmp/ca-previous.pem"
+chmod 0600 "$tmp/tls.crt" "$tmp/tls.key" "$tmp/ca-current.pem" "$tmp/ca-previous.pem"
+mv -f "$tmp/ca-current.pem" "$CONTROL_DEST/ca-current.pem"
+mv -f "$tmp/ca-previous.pem" "$CONTROL_DEST/ca-previous.pem"
+mv -f "$tmp/tls.crt" "$CONTROL_DEST/tls.crt"
+mv -f "$tmp/tls.key" "$CONTROL_DEST/tls.key"
+EOF
+  chmod 0700 /usr/local/sbin/sshcloud-refresh-control-identity
+
+  cat >/etc/systemd/system/sshcloud-control-identity-refresh.service <<'EOF'
+[Unit]
+Description=Refresh sshcloud mTLS identity and overlapping CA files
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/sshcloud-refresh-control-identity
+EOF
+
+  cat >/etc/systemd/system/sshcloud-control-identity-refresh.timer <<'EOF'
+[Unit]
+Description=Refresh sshcloud mTLS files every minute
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+RandomizedDelaySec=10s
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+  systemctl daemon-reload
+  retry 30 /usr/local/sbin/sshcloud-refresh-control-identity
+  systemctl enable --now sshcloud-control-identity-refresh.timer
+}
+
 registry_host="${registry_host}"
 project_id="${project_id}"

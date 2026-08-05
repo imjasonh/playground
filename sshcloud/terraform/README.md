@@ -6,8 +6,8 @@ a nested-virt **host MIG** running the Firecracker agent.
 
 This is a private smoke-test environment, not a production/public module.
 Public SSH is closed by default; explicitly allow only an operator/Terraform
-runner `/32` while workload identity and the first operator-owned validation of
-the new jailer/helper boundary remain unfinished.
+runner `/32` while the first operator-owned validation of the new jailer/helper
+and control-PKI boundaries remains unfinished.
 
 ## Layout
 
@@ -18,7 +18,7 @@ the new jailer/helper boundary remain unfinished.
 | `demo.tf` | Optional `local-exec` join/deploy followed by strict SSH release smoke test |
 | `firestore.tf` | Dedicated named Native-mode database |
 | `storage.tf` | Snapshot + platform-asset buckets, Artifact Registry |
-| `secrets.tf` | Gateway host key, user CA, and versioned SSH access policy |
+| `secrets.tf` | Separate SSH keys/CA, versioned access policy, and A/B control PKI |
 | `gateway.tf` | Public SSH gateway (`:22`) |
 | `orchestrator.tf` | Internal placement/migrate API; reloads MIG hosts file |
 | `agents.tf` | Instance template + zonal MIG (`enable_nested_virtualization`) |
@@ -95,13 +95,45 @@ Before testing SSH, verify the control plane:
 ```bash
 gcloud compute instance-groups managed list-instances sshcloud-agents \
   --zone=us-central1-a
-# Through an IAP/local tunnel into the VPC:
-curl --fail http://ORCHESTRATOR_IP:8090/readyz
-# Authenticated GET /v1/diagnostics correlates placements, capacity and inventory.
+# From the orchestrator VM, health is intentionally non-diagnostic:
+curl --fail http://ORCHESTRATOR_INTERNAL_IP:8091/readyz
+# Admin routes, including /v1/diagnostics, exist only on the root-owned local
+# Unix socket and still require orchestrator mTLS + a fresh metadata token.
 ```
 
 The operator opening an IAP tunnel needs `roles/iap.tunnelResourceAccessor`
 plus OS Login/instance SSH access (for example `roles/compute.osLogin`).
+
+## Control-plane identity and authorization
+
+Production control traffic is HTTPS with TLS 1.3 mutual authentication. Every
+request also fetches a full-format identity token directly from the caller VM's
+GCE metadata service. The target verifies Google signing/expiry, a maximum
+five-minute issuance age, the exact audience and service-account email, and the
+full Compute Engine claim set with this project's exact ID and number. Static
+bearer secrets are not provisioned and an arbitrary bearer header grants no
+authority.
+
+The only certificate URI identities are:
+
+- `spiffe://sshcloud.internal/control/gateway`
+- `spiffe://sshcloud.internal/control/orchestrator`
+- `spiffe://sshcloud.internal/control/agent`
+
+Authorization is fixed: gateway may call only orchestrator
+`ensure`/`stop`/`no-idle`; orchestrator may call all agent routes and gateway
+migration routes. Host/migrate/placement/diagnostic orchestrator routes are
+absent from the gateway-facing TCP listener. They are served only as HTTPS over
+`/run/sshcloud/orchestrator-admin.sock`, mode `0600` and root-owned. Operators
+enter through IAP + OS Login and use `sudo`; the local call still presents the
+orchestrator role certificate and a metadata identity token with the separate
+admin audience.
+
+Control cert/key and two CA files are refreshed from Secret Manager each minute
+and reloaded on every new TLS handshake. Both A and B CAs remain trusted during
+rotation. Set `control_ca_active_slot = "b"` to reissue leaves under B while A
+remains trusted; only then replace idle A. Reverse the sequence on the next
+rotation.
 
 Host sshd on the gateway is moved to **:2222** (IAP) so platform SSH can own `:22`.
 Terraform uploads the exact local Firecracker/jailer/kernel files as
@@ -171,27 +203,30 @@ membership-list removal ineffective.
 ## Notes
 
 - **Keys in state:** `tls_private_key` material is in Terraform state. Fine for
-  an isolated playground only. Use encrypted/locked remote state and external
-  key management before any public launch.
+  an isolated playground only. This includes the initially provisioned control
+  leaf keys. **TODO(secret-rotation):** move leaf issuance/private keys out of
+  Terraform, use encrypted/locked remote state in the interim, and drill A/B
+  rotation before any public launch. A leaf certificate alone is not workload
+  identity; production requests independently require the GCE identity token.
 - **Demo is opt-in:** `local-exec` is intentionally a smoke-test hack, not a
   durable application reconciler. `triggers_replace` covers its image, infra,
   scripts, deploy inputs, and access-policy version; deploy itself is same-image
   idempotent. A separate post-deploy resource verifies the released app through
   the public SSH path.
-- **Internal auth:** separate interim bearer tokens protect gateway→orchestrator
-  and orchestrator→agent. Source-tag firewalls and binding to each VM's VPC IP
-  add defense in depth. Workload identity + mTLS remains required for launch.
+- **Internal auth:** role-bound mTLS plus GCE identity tokens protect every
+  production API. Source-tag firewalls and binding to each VM's VPC IP remain
+  defense in depth. Plain HTTP is limited to health-only listeners.
 - **No public default:** `ssh_client_cidrs = []` creates no public `:22` rule.
 - **MIG discovery:** orchestrator `-hosts-file` is rewritten every minute from
-  MIG membership (`GET /v1/hosts`).
+  the Compute API's MIG membership; root-only admin `GET /v1/hosts` reports the
+  resulting authenticated agent view.
 - **Drain before host rollout:** the MIG update policy remains opportunistic so
-  Terraform never kills live app VMs implicitly. From a VPC/IAP control shell,
-  drain each instance before replacing it:
+  Terraform never kills live app VMs implicitly. From an IAP + OS Login shell
+  on the orchestrator VM, drain each instance through the root-only Unix socket
+  before replacing it:
 
   ```bash
-  bash ../hack/drain-agent-host.sh \
-    http://ORCHESTRATOR_IP:8090 sshcloud-agent-INSTANCE \
-    /secure/path/orchestrator-auth-token
+  sudo sshcloud-drain-agent-host sshcloud-agent-INSTANCE
   gcloud compute instance-groups managed recreate-instances sshcloud-agents \
     --instances=sshcloud-agent-INSTANCE --zone=us-central1-a
   ```

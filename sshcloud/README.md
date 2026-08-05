@@ -8,9 +8,10 @@ Design: [`docs/ssh-app-cloud-design.md`](../docs/ssh-app-cloud-design.md).
 > **Prototype safety boundary:** this branch is suitable for local/KVM and
 > CIDR-restricted GCP smoke tests. It is not ready for public self-service.
 > The production host path now uses a root jailer helper plus a separate
-> CAP_NET_ADMIN-only TAP helper; workload identity/mTLS, optional audited
-> egress, hard-host-loss policy, and broader OCI runtime compatibility remain
-> open. The helper units still need an operator-owned GCP substrate smoke test.
+> CAP_NET_ADMIN-only TAP helper. Control APIs now require workload identity plus
+> mTLS, but Terraform-held initial control leaf keys, optional audited egress,
+> hard-host-loss policy, and broader OCI runtime compatibility remain open. The
+> helper units still need an operator-owned GCP substrate smoke test.
 
 ## Layout
 
@@ -112,6 +113,7 @@ go run ./cmd/gateway -user-ca ./ssh_user_ca &  # once, to create CA; Ctrl-C afte
 go build -o bin/agent ./cmd/agent
 sudo ./bin/agent \
   -direct-runtime \
+  -control-insecure-loopback \
   -listen 127.0.0.1:8080 \
   -work-dir /tmp/sshcloud-agent \
   -firecracker "$PWD/_assets/firecracker" \
@@ -122,7 +124,8 @@ sudo ./bin/agent \
   -snap-dir /tmp/sshcloud-agent/snapshots
 
 # 2) gateway → agent
-go run ./cmd/gateway -listen 127.0.0.1:2222 -agent-url http://127.0.0.1:8080
+go run ./cmd/gateway -control-insecure-loopback \
+  -listen 127.0.0.1:2222 -agent-url http://127.0.0.1:8080
 
 # 3) join, then deploy fortune (digest-pinned image)
 #    Interactive TUI:
@@ -214,16 +217,21 @@ Generic app-session state is therefore reset rather than transparently morphed.
 
 ```bash
 go run ./cmd/orchestrator \
+  -control-insecure-loopback \
   -listen 127.0.0.1:8090 \
+  -admin-socket /tmp/sshcloud-orchestrator-admin.sock \
   -hosts host-a=http://127.0.0.1:8080,host-b=http://127.0.0.1:8081 \
   -default-host host-a
 
-curl -X POST http://127.0.0.1:8090/v1/migrate \
+curl --unix-socket /tmp/sshcloud-orchestrator-admin.sock \
+  -X POST http://localhost/v1/migrate \
   -d '{"user":"alice","app":"fortune","gen":"g…","to":"host-b"}'
 ```
 
 Agent APIs: `POST /v1/instances/evict`, `POST /v1/instances/adopt`. Migration
-is generation-aware. The orchestrator also exposes:
+is generation-aware. In production, the gateway-facing orchestrator listener
+contains only `ensure`/`stop`/`no-idle`; the following admin routes are HTTPS
+over the root-owned orchestrator Unix socket only:
 
 ```text
 POST /v1/hosts/cordon  {"host":"host-a","cordoned":true}
@@ -304,7 +312,7 @@ Implemented and covered at package/integration level:
 - [x] Bounded gateway freeze/thaw with backend-session reconnect
 - [x] Gateway drain/no-idle reconciliation and snapshot platform-version fencing
 - [x] Agent-host SSH relay for the separate-VM GCP gateway data path
-- [x] Authenticated internal APIs, narrow VPC firewall edges, private-host NAT
+- [x] TLS 1.3 mTLS + GCE workload identity on internal APIs, narrow VPC firewall edges, private-host NAT
 - [x] Staged member/deployer SSH-key admission with fail-closed live policy reload
 - [x] Content-addressed platform assets and opt-in Terraform fortune bootstrap
 - [x] Unit/Firestore/KVM suites plus Terraform and tagged-test CI validation
@@ -317,7 +325,6 @@ Implemented and covered at package/integration level:
 
 Required before public/self-service use:
 
-- [ ] Workload identity + mTLS in place of interim bearer tokens
 - [ ] Optional audited guest internet egress allowlist (current policy is deny-all)
 - [ ] Distributed deploy-state CAS (placement operations are now leased)
 - [ ] Session leases/heartbeats (current no-idle hold is not crash-expiring)
@@ -325,6 +332,7 @@ Required before public/self-service use:
       auto-healing after a hard failure remains abrupt)
 - [ ] Long-term snapshot quota/accounting (current versions retain current+previous with grace)
 - [ ] External key management, encrypted remote Terraform state, rotation drills
+- [ ] Move Terraform-held control leaf keys to an external issuer/rotation path
 - [ ] Manual first apply/drain/rollout validation in an operator-owned environment
       (including jailer mount/cgroup-v2 behavior, systemd capability bounding,
       TAP ownership, and snapshot wake; there is no disposable GCP project

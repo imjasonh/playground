@@ -10,8 +10,8 @@
 >
 > A review checkpoint found that the package-level vertical slice is ahead of
 > its production safety boundary. Public ingress remains closed by default.
-> The jailer/helper host boundary is now implemented, but workload identity,
-> egress policy, distributed deploy-state CAS, and operator-owned GCP
+> The jailer/helper host boundary and workload-authenticated control plane are
+> now implemented, but egress policy, distributed deploy-state CAS, and operator-owned GCP
 > verification remain launch blockers—not optional polish.
 
 ### Review constraints
@@ -476,7 +476,7 @@ Responsibilities (v1 sketch):
   `TestDeployFortuneE2E`); no lazy platform demos.
 - Still open: volumes
 
-No separate HTTP API or API tokens in v1.
+No separate public deploy HTTP API or user API tokens in v1.
 
 ### Active sessions during deploy
 
@@ -561,13 +561,39 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
 - Terraform publishes the staged SSH access policy to Secret Manager; the
   gateway host refreshes `latest` every minute and the process reloads the JSON
   file per decision. Missing/corrupt configured policy fails closed.
-- Interim bearer authentication protects each internal API hop; VPC firewalls
-  allow only gateway→orchestrator and orchestrator→agent control traffic.
+- Every production control request uses TLS 1.3 mutual authentication and a
+  freshly fetched, audience-bound GCE metadata identity token. Servers verify
+  the Google signature and standard claims, a five-minute maximum token age,
+  exact service-account email, and all full-format Compute Engine claims
+  (including exact project ID/number). A static `Authorization: Bearer …`
+  value has no authority.
+- Control certificate URI identities are exact:
+  `spiffe://sshcloud.internal/control/gateway`,
+  `spiffe://sshcloud.internal/control/orchestrator`, and
+  `spiffe://sshcloud.internal/control/agent`. A role leaf proves the TLS role;
+  it is not, by itself, workload identity—the GCE token is independently
+  required.
+- Authorization is deliberately narrow:
+
+  | Listener/API | Exact caller | Token audience |
+  |---|---|---|
+  | Orchestrator `POST /v1/ensure`, `/v1/stop`, `/v1/no-idle` | gateway URI + exact gateway service account | `https://control.sshcloud.internal/orchestrator/gateway` |
+  | Agent `/v1/*` | orchestrator URI + exact orchestrator service account | `https://control.sshcloud.internal/agent` |
+  | Gateway migration `/v1/sessions/{freeze,thaw,abort}` | orchestrator URI + exact orchestrator service account | `https://control.sshcloud.internal/gateway/migration` |
+  | Orchestrator admin routes (hosts, drain, migrate, placement, diagnostics) | orchestrator URI + exact orchestrator service account, over the root-owned local Unix socket only | `https://control.sshcloud.internal/orchestrator/admin` |
+
+  The gateway listener has no host/admin routes. The admin API has no TCP
+  listener; operators reach the VM with IAP + OS Login and invoke the local
+  root-only helper path. Separate unauthenticated HTTP listeners expose only
+  `livez`/`readyz`/`healthz`, with no diagnostics.
+- mTLS files reload on every new handshake. Two CA files are trusted
+  concurrently so leaves can move between A/B signing slots before retiring
+  the old CA.
 - Placement changes use Firestore transactions with revisioned leases,
   renewal heartbeats, expiry takeover, and a reconciler for abandoned leases.
 - Rolling Firestore counters enforce join IP/prefix, deploy, and wake limits;
   gateway/orchestrator memory gates enforce handshakes, sessions, and awake VMs.
-  Still open: storage-byte accounting and workload identity + mTLS.
+  Still open: storage-byte accounting.
 
 ### Infra
 
@@ -582,7 +608,8 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
 - `ko_build` images: gateway, orchestrator, agent, guestinit, fortune (sample app)
 - Dedicated named Firestore Native database, snapshot + asset GCS buckets,
   Artifact Registry
-- Secret Manager: gateway host key, user CA, and separate per-hop control tokens
+- Secret Manager: gateway host key, user CA, two control CA slots, and
+  role-specific control certificate/key bundles
 - Versioned access policy from operator OpenSSH public-key lines; default
   allowlist/allowlist, with the opt-in demo key automatically admitted to both
   lists
@@ -596,8 +623,10 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
   freeze/thaw sessions while draining an agent. Agent templates remain
   opportunistic and operators call drain-before-replace; hard auto-healing
   remains an uncoordinated failure path.
-- Still open: optional egress allowlist, IAP-only hardening, key rotation
-  out of Terraform state. OCI→rootfs on agents: `internal/ocirootfs` + Ensure
+- Still open: optional egress allowlist and key rotation out of Terraform
+  state. The initial role leaf keys are still Terraform-generated and therefore
+  remain in state; this is a rotation/state-compromise risk, not a final
+  workload-identity design. OCI→rootfs on agents: `internal/ocirootfs` + Ensure
   `"image"` hook + `guestinit` PID 1 from image config; deploy cutover pre-boots
   the new gen with that image.
 - CI unit/structural checks cover helper peer credentials, validation, fixed
@@ -704,8 +733,11 @@ hits, wake/deploy denials — still **no session bytes**.
 6. ~~**Tier numbers**~~ — `tiny` = 1 vCPU / 128 MiB; `small` = 2 vCPU /
    512 MiB. Rootfs is currently 512 MiB for both; volume/disk tiers remain open.
 7. **Global allowlist contents** — what destinations ship by default.  
-8. **Internal API auth** — interim per-hop bearer tokens are implemented; replace
-   them with workload identity + mTLS between gateway/orchestrator/agent.
+8. ~~**Internal API auth**~~ — TLS 1.3 mTLS role URIs plus audience-bound,
+   full-claim GCE service-account identity tokens are enforced on every
+   production control route. Terraform initializes two CA slots and role
+   leaves; moving leaf issuance/private keys out of Terraform remains a
+   separate secret-rotation task.
 9. ~~**Repo layout**~~ — **`sshcloud/`** single Go module (`cmd/{gateway,orchestrator,agent}`, `internal/…`, `images/fortune`, `terraform/`).
 10. **Threat model** — tenant breakout, snapshot confidentiality in GCS, CA theft.  
 11. **Hub footgun UX** — deploy-time warnings / `~/.ssh/config` docs when local

@@ -87,7 +87,9 @@ func TestCandidatesBestFitAndSkipCordoned(t *testing.T) {
 	defer b.Close()
 	defer c.Close()
 	hosts := NewHostSet(map[string]*AgentClient{
-		"a": {BaseURL: a.URL}, "b": {BaseURL: b.URL}, "c": {BaseURL: c.URL},
+		"a": {BaseURL: a.URL, InsecureLoopback: true},
+		"b": {BaseURL: b.URL, InsecureLoopback: true},
+		"c": {BaseURL: c.URL, InsecureLoopback: true},
 	}, "")
 	candidates, err := hosts.Candidates(context.Background(), "tiny", nil)
 	if err != nil {

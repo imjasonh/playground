@@ -14,6 +14,8 @@ install -d -o sshcloud -g sshcloud -m 0700 /var/lib/sshcloud/agent
 install -d -o root -g root -m 0700 /var/lib/sshcloud/jailer
 install -d -o root -g root -m 0755 /run/sshcloud /run/sshcloud/vmm-api
 install -o sshcloud-tap -g sshcloud-tap -m 0600 /dev/null /run/sshcloud/xtables.lock
+# Remove files left by the retired static bearer-token deployment.
+rm -f /var/lib/sshcloud/*_auth
 
 # Only the root VMM helper/jailer may open KVM. The agent is not in this group.
 if [[ -e /dev/kvm ]]; then
@@ -27,9 +29,11 @@ fi
 retry 30 registry_login
 retry 30 pull_secret "${user_ca_pub_secret}" /var/lib/sshcloud/ssh_user_ca.pub
 chmod 644 /var/lib/sshcloud/ssh_user_ca.pub
-retry 30 pull_secret "${agent_auth_secret}" /var/lib/sshcloud/agent_auth
-chown sshcloud:sshcloud /var/lib/sshcloud/agent_auth
-chmod 600 /var/lib/sshcloud/agent_auth
+install_control_identity_refresher \
+  "${control_identity_secret}" \
+  "${control_ca_current_secret}" \
+  "${control_ca_previous_secret}" \
+  /var/lib/sshcloud/control sshcloud sshcloud
 
 # Platform assets (Firecracker + jailer + kernel) from GCS. Apps arrive as OCI digests.
 TOKEN="$(curl -fsS -H 'Metadata-Flavor: Google' \
@@ -222,12 +226,19 @@ Group=sshcloud
 Environment=HOME=/var/lib/sshcloud
 ExecStart=/usr/local/lib/sshcloud/agent \
   -listen $${INTERNAL_IP}:8080 \
+  -health-listen $${INTERNAL_IP}:8081 \
   -work-dir /var/lib/sshcloud/agent \
   -ca-pub /var/lib/sshcloud/ssh_user_ca.pub \
   -guestinit /var/lib/sshcloud/assets/guestinit \
   -vmm-helper-socket /run/sshcloud/vmmhelper.sock \
   -tap-helper-socket /run/sshcloud/taphelper.sock \
-  -control-token-file /var/lib/sshcloud/agent_auth \
+  -control-cert /var/lib/sshcloud/control/tls.crt \
+  -control-key /var/lib/sshcloud/control/tls.key \
+  -control-ca-current /var/lib/sshcloud/control/ca-current.pem \
+  -control-ca-previous /var/lib/sshcloud/control/ca-previous.pem \
+  -control-project-id ${project_id} \
+  -control-project-number ${project_number} \
+  -orchestrator-service-account ${orchestrator_service_account} \
   -relay-host $${INTERNAL_IP} \
   -relay-port-min 20000 \
   -relay-port-max 29999 \

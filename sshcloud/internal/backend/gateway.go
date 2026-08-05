@@ -14,9 +14,10 @@ import (
 
 // GatewayClient controls outer sessions during host migration.
 type GatewayClient struct {
-	BaseURL    string
-	Token      string
-	HTTPClient *http.Client
+	BaseURL          string
+	ControlClient    *controlauth.Client
+	HTTPClient       *http.Client
+	InsecureLoopback bool
 }
 
 func (c *GatewayClient) client() *http.Client {
@@ -24,6 +25,16 @@ func (c *GatewayClient) client() *http.Client {
 		return c.HTTPClient
 	}
 	return &http.Client{Timeout: 45 * time.Second}
+}
+
+func (c *GatewayClient) do(req *http.Request) (*http.Response, error) {
+	if c.ControlClient != nil {
+		return c.ControlClient.Do(req)
+	}
+	if err := controlauth.PrepareRequest(req, nil, c.InsecureLoopback); err != nil {
+		return nil, err
+	}
+	return c.client().Do(req)
 }
 
 // Freeze disconnects backend hops while preserving matching outer sessions.
@@ -58,8 +69,7 @@ func (c *GatewayClient) post(ctx context.Context, path string, body, out any) er
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	controlauth.Add(req, c.Token)
-	res, err := c.client().Do(req)
+	res, err := c.do(req)
 	if err != nil {
 		return err
 	}

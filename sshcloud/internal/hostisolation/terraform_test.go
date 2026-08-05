@@ -103,6 +103,51 @@ func TestTerraformProductionIsolationStructure(t *testing.T) {
 	}
 }
 
+func TestTerraformControlPlaneUsesWorkloadIdentityMTLSWithoutBearerSecrets(t *testing.T) {
+	t.Parallel()
+	root := filepath.Join("..", "..", "terraform")
+	files := []string{
+		"secrets.tf", "iam.tf", "gateway.tf", "orchestrator.tf", "agents.tf", "network.tf",
+		filepath.Join("scripts", "gateway.sh.tftpl"),
+		filepath.Join("scripts", "orchestrator.sh.tftpl"),
+		filepath.Join("scripts", "agent.sh.tftpl"),
+		filepath.Join("scripts", "run-container.sh.tftpl"),
+	}
+	var all strings.Builder
+	for _, file := range files {
+		all.WriteString(readTestFile(t, filepath.Join(root, file)))
+	}
+	content := all.String()
+	for _, forbidden := range []string{
+		"control-token-file",
+		"agent-token-file",
+		"orchestrator_auth",
+		"agent_auth",
+		"interim bearer",
+	} {
+		if strings.Contains(content, forbidden) {
+			t.Errorf("production Terraform still contains bearer-token artifact %q", forbidden)
+		}
+	}
+	for _, required := range []string{
+		"spiffe://sshcloud.internal/control/gateway",
+		"spiffe://sshcloud.internal/control/orchestrator",
+		"spiffe://sshcloud.internal/control/agent",
+		`control_ca["a"]`,
+		`control_ca["b"]`,
+		"sshcloud-control-identity-refresh.timer",
+		"-control-ca-current",
+		"-control-ca-previous",
+		"-admin-socket /run/sshcloud/orchestrator-admin.sock",
+		"https://${orchestrator_ip}:8090",
+		"lines.append(f\"{name}=https://{ip}:8080\")",
+	} {
+		if !strings.Contains(content, required) {
+			t.Errorf("production control-plane configuration is missing %q", required)
+		}
+	}
+}
+
 func readTestFile(t *testing.T, path string) string {
 	t.Helper()
 	content, err := os.ReadFile(path)

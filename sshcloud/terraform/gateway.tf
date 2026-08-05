@@ -47,19 +47,24 @@ resource "google_compute_instance" "gateway" {
   }
 
   metadata_startup_script = templatefile("${path.module}/scripts/gateway.sh.tftpl", {
-    helpers              = templatefile("${path.module}/scripts/run-container.sh.tftpl", { registry_host = split("/", local.registry)[0], project_id = var.project_id })
-    registry_host        = split("/", local.registry)[0]
-    project_id           = var.project_id
-    firestore_prefix     = var.firestore_prefix
-    firestore_database   = var.firestore_database
-    host_key_secret      = google_secret_manager_secret.gateway_host_key.secret_id
-    user_ca_secret       = google_secret_manager_secret.user_ca.secret_id
-    control_auth_secret  = google_secret_manager_secret.orchestrator_auth.secret_id
-    access_policy_secret = google_secret_manager_secret.access_policy.secret_id
-    gateway_image        = ko_build.gateway.image_ref
-    gateway_listen       = local.gateway_listen
-    control_listen       = "${google_compute_address.gateway_internal.address}:8079"
-    orchestrator_ip      = google_compute_address.orchestrator_internal.address
+    helpers                      = templatefile("${path.module}/scripts/run-container.sh.tftpl", { registry_host = split("/", local.registry)[0], project_id = var.project_id })
+    registry_host                = split("/", local.registry)[0]
+    project_id                   = var.project_id
+    firestore_prefix             = var.firestore_prefix
+    firestore_database           = var.firestore_database
+    host_key_secret              = google_secret_manager_secret.gateway_host_key.secret_id
+    user_ca_secret               = google_secret_manager_secret.user_ca.secret_id
+    control_identity_secret      = google_secret_manager_secret.control_identity["gateway"].secret_id
+    control_ca_current_secret    = google_secret_manager_secret.control_ca[var.control_ca_active_slot].secret_id
+    control_ca_previous_secret   = google_secret_manager_secret.control_ca[local.control_standby_slot].secret_id
+    access_policy_secret         = google_secret_manager_secret.access_policy.secret_id
+    gateway_image                = ko_build.gateway.image_ref
+    gateway_listen               = local.gateway_listen
+    control_listen               = "${google_compute_address.gateway_internal.address}:8079"
+    health_listen                = "${google_compute_address.gateway_internal.address}:8078"
+    orchestrator_ip              = google_compute_address.orchestrator_internal.address
+    project_number               = data.google_project.current.number
+    orchestrator_service_account = google_service_account.orchestrator.email
   })
 
   lifecycle {
@@ -69,11 +74,15 @@ resource "google_compute_instance" "gateway" {
   depends_on = [
     google_secret_manager_secret_version.gateway_host_key,
     google_secret_manager_secret_version.user_ca,
-    google_secret_manager_secret_version.orchestrator_auth,
+    google_secret_manager_secret_version.control_identity["gateway"],
+    google_secret_manager_secret_version.control_ca["a"],
+    google_secret_manager_secret_version.control_ca["b"],
     google_secret_manager_secret_version.access_policy,
     google_secret_manager_secret_iam_member.gateway_host_key,
     google_secret_manager_secret_iam_member.gateway_user_ca,
-    google_secret_manager_secret_iam_member.gateway_orchestrator_auth,
+    google_secret_manager_secret_iam_member.control_identity["gateway"],
+    google_secret_manager_secret_iam_member.control_ca["gateway-a"],
+    google_secret_manager_secret_iam_member.control_ca["gateway-b"],
     google_secret_manager_secret_iam_member.gateway_access_policy,
     google_firestore_database.sshcloud,
     google_project_iam_member.gateway_datastore,
