@@ -8,18 +8,12 @@ pub mod trust {
     }
 
     #[derive(Clone)]
-    pub enum RekorPublicKey {
-        EcdsaP256(Vec<u8>),
-        Ed25519([u8; 32]),
-    }
-
-    #[derive(Clone)]
     pub struct TrustedRekorLog {
         pub log_id: [u8; 32],
         pub valid_from: u64,
         pub valid_until: Option<u64>,
         pub checkpoint_origin: &'static str,
-        pub public_key: RekorPublicKey,
+        pub public_key: [u8; 32],
     }
 
     #[derive(Clone)]
@@ -49,13 +43,8 @@ mod tests {
     use base64::{Engine as _, engine::general_purpose};
     use sha2::{Digest, Sha256};
 
-    use super::trust::{
-        RekorPublicKey, TrustConfig, TrustedIdentity, TrustedRekorLog, TrustedTimestampAuthority,
-    };
+    use super::trust::{TrustConfig, TrustedIdentity, TrustedRekorLog, TrustedTimestampAuthority};
 
-    const V1_MANIFEST_DIGEST: &str =
-        "db49840533ab409d875dd0007c99448f71ba61cce3cecdeb2b7f7176850cf190";
-    const V1_BUNDLE: &[u8] = include_bytes!("../tests/fixtures/cosign-v03-rekor-bundle.json");
     const V2_SUBJECT_DIGEST: &str =
         "a0cfc71271d6e278e57cd332ff957c3f7043fdda354c4cbb190a30d56efa01bf";
     const V2_BUNDLE: &[u8] = include_bytes!("../tests/fixtures/rekor-v2-bundle.json");
@@ -64,37 +53,6 @@ mod tests {
         let (label, der) = x509_cert::der::pem::decode_vec(pem).unwrap();
         assert_eq!(label, expected_label);
         der
-    }
-
-    fn production_tsa() -> TrustedTimestampAuthority {
-        TrustedTimestampAuthority {
-            leaf_der: pem_der(include_bytes!("../../../trust/tsa-leaf.pem"), "CERTIFICATE"),
-            root_der: pem_der(include_bytes!("../../../trust/tsa-root.pem"), "CERTIFICATE"),
-            valid_from: 1_751_587_200,
-            valid_until: None,
-            policy_oid: "1.3.6.1.4.1.57264.2",
-        }
-    }
-
-    fn v1_trust() -> TrustConfig {
-        let key_der = pem_der(include_bytes!("../../../trust/rekor.pub"), "PUBLIC KEY");
-        TrustConfig {
-            identities: vec![TrustedIdentity {
-                identity: "https://github.com/imjasonh/esp32/.github/workflows/publish.yml@refs/heads/main".into(),
-                issuer: "https://token.actions.githubusercontent.com".into(),
-            }],
-            fulcio_root_pem: include_bytes!("../../../trust/fulcio_root.pem").to_vec(),
-            fulcio_intermediate_pem: include_bytes!("../../../trust/fulcio_intermediate.pem")
-                .to_vec(),
-            rekor_logs: vec![TrustedRekorLog {
-                log_id: Sha256::digest(&key_der).into(),
-                valid_from: 1_610_452_407,
-                valid_until: None,
-                checkpoint_origin: "rekor.sigstore.dev",
-                public_key: RekorPublicKey::EcdsaP256(key_der),
-            }],
-            timestamp_authority: production_tsa(),
-        }
     }
 
     fn v2_trust() -> TrustConfig {
@@ -125,7 +83,7 @@ mod tests {
                 valid_from: 1_758_499_200,
                 valid_until: None,
                 checkpoint_origin: ORIGIN,
-                public_key: RekorPublicKey::Ed25519(key.to_bytes()),
+                public_key: key.to_bytes(),
             }],
             timestamp_authority: TrustedTimestampAuthority {
                 leaf_der: pem_der(
@@ -141,11 +99,6 @@ mod tests {
                 policy_oid: "1.3.6.1.4.1.57264.2",
             },
         }
-    }
-
-    #[test]
-    fn verifies_expired_fulcio_certificate_at_offline_rekor_time() {
-        super::sig::verify_bundle(V1_BUNDLE, V1_MANIFEST_DIGEST, &v1_trust()).unwrap();
     }
 
     #[test]

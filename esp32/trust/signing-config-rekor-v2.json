@@ -28,14 +28,6 @@
         "start": "2026-01-01T00:00:00Z"
       },
       "operator": "sigstore.dev"
-    },
-    {
-      "url": "https://rekor.sigstore.dev",
-      "majorApiVersion": 1,
-      "validFor": {
-        "start": "2021-01-12T11:53:27.000Z"
-      },
-      "operator": "sigstore.dev"
     }
   ],
   "tsaUrls": [

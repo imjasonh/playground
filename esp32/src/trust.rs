@@ -30,7 +30,6 @@ const NVS_TRUST_NS: &str = "trust";
 const NVS_IDENTITIES: &str = "identities";
 const NVS_FULCIO_ROOT: &str = "fulcio_root";
 const NVS_FULCIO_INTER: &str = "fulcio_inter";
-const REKOR_V1_ORIGIN: &str = "rekor.sigstore.dev";
 const REKOR_V2_ORIGIN: &str = "log2025-1.rekor.sigstore.dev";
 const SIGSTORE_TSA_POLICY_OID: &str = "1.3.6.1.4.1.57264.2";
 
@@ -45,18 +44,12 @@ pub struct TrustedIdentity {
 
 /// The full set of trust roots needed to verify a Sigstore bundle.
 #[derive(Clone)]
-pub enum RekorPublicKey {
-    EcdsaP256(Vec<u8>),
-    Ed25519([u8; 32]),
-}
-
-#[derive(Clone)]
 pub struct TrustedRekorLog {
     pub log_id: [u8; 32],
     pub valid_from: u64,
     pub valid_until: Option<u64>,
     pub checkpoint_origin: &'static str,
-    pub public_key: RekorPublicKey,
+    pub public_key: [u8; 32],
 }
 
 #[derive(Clone)]
@@ -113,13 +106,6 @@ impl TrustConfig {
 }
 
 fn trusted_rekor_logs() -> Result<Vec<TrustedRekorLog>> {
-    use p256::pkcs8::DecodePublicKey as _;
-
-    let v1_der = decode_pem(include_bytes!("../trust/rekor.pub"), "PUBLIC KEY")?;
-    p256::ecdsa::VerifyingKey::from_public_key_der(&v1_der)
-        .context("parse built-in Rekor v1 P-256 key")?;
-    let v1_log_id = Sha256::digest(&v1_der).into();
-
     let v2_der = decode_pem(include_bytes!("../trust/rekor-v2.pub"), "PUBLIC KEY")?;
     let v2_key_bytes = decode_ed25519_spki(&v2_der)?;
     ed25519_dalek::VerifyingKey::from_bytes(&v2_key_bytes)
@@ -130,22 +116,13 @@ fn trusted_rekor_logs() -> Result<Vec<TrustedRekorLog>> {
     id_hasher.update(v2_key_bytes);
     let v2_log_id = id_hasher.finalize().into();
 
-    Ok(vec![
-        TrustedRekorLog {
-            log_id: v1_log_id,
-            valid_from: 1_610_452_407,
-            valid_until: None,
-            checkpoint_origin: REKOR_V1_ORIGIN,
-            public_key: RekorPublicKey::EcdsaP256(v1_der),
-        },
-        TrustedRekorLog {
-            log_id: v2_log_id,
-            valid_from: 1_767_225_600,
-            valid_until: None,
-            checkpoint_origin: REKOR_V2_ORIGIN,
-            public_key: RekorPublicKey::Ed25519(v2_key_bytes),
-        },
-    ])
+    Ok(vec![TrustedRekorLog {
+        log_id: v2_log_id,
+        valid_from: 1_767_225_600,
+        valid_until: None,
+        checkpoint_origin: REKOR_V2_ORIGIN,
+        public_key: v2_key_bytes,
+    }])
 }
 
 fn trusted_timestamp_authority() -> Result<TrustedTimestampAuthority> {

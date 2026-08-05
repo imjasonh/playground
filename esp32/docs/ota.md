@@ -352,17 +352,16 @@ For each candidate update, before downloading the firmware blob:
    URI). Read OIDC issuer from extension OID
    `1.3.6.1.4.1.57264.1.1`. Reject if `(identity, issuer)` isn't in
    `trust/identities` (loaded from NVS at boot).
-4. **Offline transparency verification.** Select a versioned Rekor shard key by
-   full log ID. For v1, verify the SET, P-256 checkpoint, integrated time, and
-   inclusion proof. For v2, verify the hashedrekord DSSE binding, Ed25519
-   checkpoint, inclusion proof, and RFC3161 TSA timestamp. No Rekor network
-   request is made.
+4. **Offline Rekor v2 verification.** Select a versioned shard key by full log
+   ID, then verify the hashedrekord DSSE binding, Ed25519 checkpoint, RFC 6962
+   inclusion proof, and RFC3161 TSA timestamp. No Rekor network request is
+   made.
 5. **Cert chain and signing time.** Verify leaf was signed by the provisioned
    Sigstore intermediate (P-384 ECDSA-SHA384). Verify intermediate was signed
    by the provisioned Sigstore root (also P-384 ECDSA-SHA384). Both are loaded
    from NVS (`trust/fulcio_inter`, `trust/fulcio_root`). Require every
-   certificate to be valid at Rekor v1's integrated time or the v2 TSA time,
-   not at the device's current time.
+   certificate to be valid at the authenticated TSA time, not at the device's
+   current time.
 6. **DSSE signature.** Decode `dsseEnvelope.payload` (base64) and
    `signatures[0].sig` (base64). Compute the DSSE PAE
    (`"DSSEv1 <len> <payloadType> <len> <payload>"`). Verify the

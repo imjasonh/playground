@@ -34,10 +34,10 @@ cargo test --manifest-path tools/provision/Cargo.toml --target "$(rustc -vV | se
   client keys, or signer policy. Per-device values live in NVS.
 - Never weaken Sigstore verification or server host-key pinning to make a demo
   connect.
-- OTA verification must remain offline and bind Rekor's SET, checkpoint,
-  inclusion proof, canonicalized body, DSSE signature, and Fulcio certificate.
-  Rekor v2 additionally requires an RFC3161 timestamp. Keep overlapping shard
-  keys in the versioned firmware trust set so rotation does not require USB.
+- OTA verification must remain offline and bind Rekor v2's checkpoint,
+  inclusion proof, canonicalized body, RFC3161 timestamp, DSSE signature, and
+  Fulcio certificate. Keep overlapping shard keys in the versioned firmware
+  trust set so rotation does not require USB.
 - The e-ink client supports Ed25519 server and client keys only. Adding another
   algorithm requires equivalent host-key verification and resource testing.
 - The client key is generated on-device after WiFi starts and stored in plain
