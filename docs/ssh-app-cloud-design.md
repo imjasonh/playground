@@ -533,7 +533,9 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
   allow only gateway→orchestrator and orchestrator→agent control traffic.
 - Placement changes use Firestore transactions with revisioned leases,
   renewal heartbeats, expiry takeover, and a reconciler for abandoned leases.
-- Still open: quota counters and workload identity + mTLS.
+- Rolling Firestore counters enforce join IP/prefix, deploy, and wake limits;
+  gateway/orchestrator memory gates enforce handshakes, sessions, and awake VMs.
+  Still open: storage-byte accounting and workload identity + mTLS.
 
 ### Infra
 
@@ -542,7 +544,7 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
 - Terraform + **terraform-provider-ko** for platform Go services only.  
 - One region.  
 - Shared platform kernel artifact for all microVMs.  
-- Global egress allowlist enforced on the host data path.
+- Guest egress is deny-all for the private trial; an audited global allowlist is later.
 
 **Implemented in `sshcloud/terraform/` (first environment):**
 - `ko_build` images: gateway, orchestrator, agent, guestinit, fortune (sample app), api (api image only; no VM yet)
@@ -558,7 +560,7 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
   freeze/thaw sessions while draining an agent. Agent templates remain
   opportunistic and operators call drain-before-replace; hard auto-healing
   remains an uncoordinated failure path.
-- Still open: egress allowlist on the data path, IAP-only hardening, key rotation
+- Still open: optional egress allowlist, IAP-only hardening, key rotation
   out of Terraform state. OCI→rootfs on agents: `internal/ocirootfs` + Ensure
   `"image"` hook + `guestinit` PID 1 from image config; deploy cutover pre-boots
   the new gen with that image.

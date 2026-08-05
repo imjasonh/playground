@@ -271,19 +271,22 @@ Implemented and covered at package/integration level:
 - [x] Authenticated internal APIs, narrow VPC firewall edges, private-host NAT
 - [x] Content-addressed platform assets and opt-in Terraform fortune bootstrap
 - [x] Unit/Firestore/KVM suites plus Terraform and tagged-test CI validation
+- [x] Handshake/join/app/session/deploy/wake/awake-VM admission limits
+- [x] Durable pending/retiring deploy reconciliation and bounded snapshot retention
+- [x] TAP firewall isolation: guest-initiated host/VPC/metadata/egress traffic denied
+- [x] Liveness/readiness and correlated placement/host diagnostics
 
 Required before public/self-service use:
 
-- [ ] Gateway handshake/join/deploy/wake quotas and durable per-user limits
 - [ ] Workload identity + mTLS in place of interim bearer tokens
 - [ ] Firecracker jailer/seccomp and a privileged TAP helper (agent VMM is not
       yet a production-strength host boundary)
-- [ ] Guest internet egress allowlist plus metadata/VPC isolation
+- [ ] Optional audited guest internet egress allowlist (current policy is deny-all)
 - [ ] Distributed deploy-state CAS (placement operations are now leased)
 - [ ] Session leases/heartbeats (current no-idle hold is not crash-expiring)
 - [ ] Automatic pre-termination MIG hooks (manual drain-before-replace is available;
       auto-healing after a hard failure remains abrupt)
-- [ ] Snapshot retention/garbage collection, corruption/failure-injection tests
+- [ ] Long-term snapshot quota/accounting (current versions retain current+previous with grace)
 - [ ] External key management, encrypted remote Terraform state, rotation drills
 - [ ] Manual first apply/drain/rollout validation in an operator-owned environment
       (there is no disposable GCP project available to CI)

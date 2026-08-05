@@ -10,6 +10,7 @@ need=(
   scripts/gateway.sh.tftpl scripts/orchestrator.sh.tftpl scripts/agent.sh.tftpl
   scripts/run-container.sh.tftpl scripts/deploy-fortune.sh terraform.tfvars.example README.md
   ../hack/drain-agent-host.sh
+  ../hack/preflight-gcp.sh
 )
 for f in "${need[@]}"; do
   if [[ ! -f "$TF/$f" ]]; then
@@ -44,6 +45,7 @@ if ! grep -q 'method="POST"' "$TF/scripts/orchestrator.sh.tftpl"; then
 fi
 bash -n "$TF/scripts/deploy-fortune.sh"
 bash -n "$ROOT/hack/drain-agent-host.sh"
+bash -n "$ROOT/hack/preflight-gcp.sh"
 
 if command -v terraform >/dev/null 2>&1; then
   terraform -chdir="$TF" fmt -check -recursive

@@ -264,3 +264,28 @@ func TestReconcileRetainsDrainUntilStopSucceeds(t *testing.T) {
 		t.Fatalf("drain was not reconciled: %+v", app)
 	}
 }
+
+func TestReconcileCleansPendingAndRetiringGenerations(t *testing.T) {
+	t.Parallel()
+	ctx, mem, sessions := faultSetup(t)
+	if err := mem.UpsertApp(ctx, store.App{
+		Owner: "alice", Name: "myapp", Image: chaosImage("a"), Tier: "tiny",
+		ActiveGen: "gold", PendingGen: "gpending", PendingImage: chaosImage("b"),
+		RetiringGens: []string{"gretiring"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	instances := &faultInstances{}
+	controller := cutover.New(mem, sessions, instances)
+	if err := controller.Reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	app, _ := mem.GetApp(ctx, "alice", "myapp")
+	if app.PendingGen != "" || len(app.RetiringGens) != 0 {
+		t.Fatalf("unreconciled app %+v", app)
+	}
+	_, stopped := instances.calls()
+	if len(stopped) != 2 {
+		t.Fatalf("stopped=%v", stopped)
+	}
+}

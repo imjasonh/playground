@@ -64,6 +64,8 @@ gcloud services enable \
   storage.googleapis.com serviceusage.googleapis.com cloudresourcemanager.googleapis.com \
   --project=YOUR_PROJECT
 
+bash ../hack/preflight-gcp.sh YOUR_PROJECT us-central1 us-central1-a
+
 terraform init
 terraform apply
 ```
@@ -90,6 +92,16 @@ ssh -T -p 22 -i /tmp/sshcloud-demo \
 # ssh -p 22 deploy@GATEWAY_IP \
 #   fortune --image="$(terraform output -raw fortune_image)" \
 #   --tier=tiny --strategy=kick --yes
+```
+
+Before testing SSH, verify the control plane:
+
+```bash
+gcloud compute instance-groups managed list-instances sshcloud-agents \
+  --zone=us-central1-a
+# Through an IAP/local tunnel into the VPC:
+curl --fail http://ORCHESTRATOR_IP:8090/readyz
+# Authenticated GET /v1/diagnostics correlates placements, capacity and inventory.
 ```
 
 Host sshd on the gateway is moved to **:2222** (IAP) so platform SSH can own `:22`.
