@@ -113,7 +113,6 @@ impl TrustConfig {
 }
 
 fn trusted_rekor_logs() -> Result<Vec<TrustedRekorLog>> {
-    use ed25519_dalek::pkcs8::DecodePublicKey as _;
     use p256::pkcs8::DecodePublicKey as _;
 
     let v1_der = decode_pem(include_bytes!("../trust/rekor.pub"), "PUBLIC KEY")?;
@@ -122,12 +121,13 @@ fn trusted_rekor_logs() -> Result<Vec<TrustedRekorLog>> {
     let v1_log_id = Sha256::digest(&v1_der).into();
 
     let v2_der = decode_pem(include_bytes!("../trust/rekor-v2.pub"), "PUBLIC KEY")?;
-    let v2_key = ed25519_dalek::VerifyingKey::from_public_key_der(&v2_der)
-        .context("parse built-in Rekor v2 Ed25519 key")?;
+    let v2_key_bytes = decode_ed25519_spki(&v2_der)?;
+    ed25519_dalek::VerifyingKey::from_bytes(&v2_key_bytes)
+        .map_err(|_| anyhow!("parse built-in Rekor v2 Ed25519 key"))?;
     let mut id_hasher = Sha256::new();
     id_hasher.update(REKOR_V2_ORIGIN.as_bytes());
     id_hasher.update(b"\n\x01");
-    id_hasher.update(v2_key.to_bytes());
+    id_hasher.update(v2_key_bytes);
     let v2_log_id = id_hasher.finalize().into();
 
     Ok(vec![
@@ -143,7 +143,7 @@ fn trusted_rekor_logs() -> Result<Vec<TrustedRekorLog>> {
             valid_from: 1_767_225_600,
             valid_until: None,
             checkpoint_origin: REKOR_V2_ORIGIN,
-            public_key: RekorPublicKey::Ed25519(v2_key.to_bytes()),
+            public_key: RekorPublicKey::Ed25519(v2_key_bytes),
         },
     ])
 }
@@ -165,4 +165,16 @@ fn decode_pem(bytes: &[u8], expected_label: &str) -> Result<Vec<u8>> {
         bail!("expected {} PEM, got {}", expected_label, label);
     }
     Ok(der)
+}
+
+fn decode_ed25519_spki(der: &[u8]) -> Result<[u8; 32]> {
+    // SubjectPublicKeyInfo for Ed25519 with absent parameters:
+    // SEQUENCE { SEQUENCE { OID 1.3.101.112 }, BIT STRING <32 bytes> }.
+    const PREFIX: &[u8] = &[
+        0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00,
+    ];
+    if der.len() != PREFIX.len() + 32 || !der.starts_with(PREFIX) {
+        bail!("Rekor v2 key is not canonical Ed25519 SubjectPublicKeyInfo");
+    }
+    Ok(der[PREFIX.len()..].try_into().unwrap())
 }

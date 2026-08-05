@@ -98,14 +98,13 @@ mod tests {
     }
 
     fn v2_trust() -> TrustConfig {
-        use ed25519_dalek::pkcs8::DecodePublicKey as _;
-
         const ORIGIN: &str = "log2025-alpha3.rekor.sigstage.dev";
         let key_der = pem_der(
             include_bytes!("../tests/fixtures/staging-rekor-v2.pub"),
             "PUBLIC KEY",
         );
-        let key = ed25519_dalek::VerifyingKey::from_public_key_der(&key_der).unwrap();
+        let key_bytes: [u8; 32] = key_der[12..].try_into().unwrap();
+        let key = ed25519_dalek::VerifyingKey::from_bytes(&key_bytes).unwrap();
         let mut id_hasher = Sha256::new();
         id_hasher.update(ORIGIN.as_bytes());
         id_hasher.update(b"\n\x01");
