@@ -16,6 +16,7 @@ mod ssh_client;
 mod ssh_config;
 
 const FW_VERSION: &str = env!("GIT_SHA");
+const TRUST_MAINTENANCE_EPOCH: &str = include_str!("../../trust/maintenance-epoch.txt");
 const EINK_OTA_REPO: &str = "ghcr.io/imjasonh/esp32-eink";
 const WIFI_NAMESPACE: &str = "wifi";
 const SSH_THREAD_STACK_SIZE: usize = 32 * 1024;
@@ -24,7 +25,11 @@ fn main() -> Result<()> {
     esp_idf_svc::sys::link_patches();
     esp_idf_svc::log::EspLogger::initialize_default();
     install_panic_restart_hook();
-    tracing::info!(version = FW_VERSION, "eink: booting");
+    tracing::info!(
+        version = FW_VERSION,
+        trust_epoch = TRUST_MAINTENANCE_EPOCH.trim(),
+        "eink: booting"
+    );
 
     let nvs = EspDefaultNvsPartition::take()?;
     let (ssid, pass) = read_wifi_creds(nvs.clone())?

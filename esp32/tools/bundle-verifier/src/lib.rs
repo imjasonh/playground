@@ -116,6 +116,20 @@ mod tests {
     }
 
     #[test]
+    fn accepts_one_trusted_entry_during_shard_overlap() {
+        let mut bundle: serde_json::Value = serde_json::from_slice(V2_BUNDLE).unwrap();
+        let mut unknown = bundle["verificationMaterial"]["tlogEntries"][0].clone();
+        unknown["logId"]["keyId"] =
+            serde_json::Value::String(general_purpose::STANDARD.encode([0_u8; 32]));
+        bundle["verificationMaterial"]["tlogEntries"]
+            .as_array_mut()
+            .unwrap()
+            .insert(0, unknown);
+        let overlap = serde_json::to_vec(&bundle).unwrap();
+        super::sig::verify_bundle(&overlap, V2_SUBJECT_DIGEST, &v2_trust()).unwrap();
+    }
+
+    #[test]
     fn production_signing_config_matches_embedded_v2_key() {
         let config: serde_json::Value = serde_json::from_slice(include_bytes!(
             "../../../trust/signing-config-rekor-v2.json"

@@ -23,6 +23,10 @@ Apache-2.0 license.
 Both applications share the same OTA verifier and trust implementation from
 `src/lib.rs`.
 
+Monthly maintenance updates the ESP32 lockfiles and a compiled trust epoch,
+cross-builds both applications, and triggers a signed Rekor-v2 OTA only after
+all checks pass.
+
 ## Secure OTA
 
 - Polls its application-specific GHCR repository every ~60 s for new firmware.

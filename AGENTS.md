@@ -166,6 +166,7 @@ discovery scripts.
 | `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps in one job |
 | `esp32.yml` | push to `main`, pull requests, manual | Runs ESP32 host tests and cross-builds the original + e-ink Xtensa firmware |
 | `esp32-publish.yml` | push to `main`, manual | Publishes and keylessly signs the e-ink firmware OTA artifact in GHCR |
+| `esp32-maintenance.yml` | monthly, manual | Updates ESP32 dependencies/trust epoch, verifies both firmware images, and pushes a passing maintenance release |
 | `ios.yml` | push to `main`, pull requests | Tests changed iOS apps on macOS; on `main`, delivers them to TestFlight |
 | `macos.yml` | push to `main`, pull requests | Tests changed macOS apps on macOS; on `main`, ships notarized Sparkle updates when secrets are present |
 | `ios-bootstrap-label.yml` | pull request | Labels PRs that need signing re-bootstrap with `needs-ios-bootstrap` |

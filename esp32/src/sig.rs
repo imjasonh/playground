@@ -271,28 +271,46 @@ pub fn verify_bundle(
         .decode(&bundle.dsse_envelope.payload)
         .context("base64-decode DSSE payload")?;
 
-    if bundle.verification_material.tlog_entries.len() != 1 {
+    if bundle.verification_material.tlog_entries.is_empty()
+        || bundle.verification_material.tlog_entries.len() > 4
+    {
         bail!(
-            "bundle has {} transparency-log entries, expected exactly 1",
+            "bundle has {} transparency-log entries, expected 1..=4",
             bundle.verification_material.tlog_entries.len()
         );
     }
-    let signed_time = verify_transparency_entry(
-        bundle.verification_material.tlog_entries.first().unwrap(),
-        bundle
-            .verification_material
-            .timestamp_verification_data
-            .as_ref(),
-        &cert_der,
-        &sig_bytes,
-        &payload_bytes,
-        &bundle.dsse_envelope.payload_type,
-        trust,
-    )
-    .context("offline Rekor verification")?;
+    let mut signed_time = None;
+    for entry in &bundle.verification_material.tlog_entries {
+        match verify_transparency_entry(
+            entry,
+            bundle
+                .verification_material
+                .timestamp_verification_data
+                .as_ref(),
+            &cert_der,
+            &sig_bytes,
+            &payload_bytes,
+            &bundle.dsse_envelope.payload_type,
+            trust,
+        ) {
+            Ok(candidate_time) => match verify_chain_at(&leaf, trust, candidate_time) {
+                Ok(()) => {
+                    signed_time = Some(candidate_time);
+                    break;
+                }
+                Err(error) => {
+                    tracing::debug!(error = %format!("{error:#}"), "tlog entry time rejected");
+                }
+            },
+            Err(error) => {
+                tracing::debug!(error = %format!("{error:#}"), "tlog entry rejected");
+            }
+        }
+    }
+    let signed_time =
+        signed_time.ok_or_else(|| anyhow!("bundle has no trusted valid Rekor v2 entry"))?;
     tracing::info!(signed_time, "ota: transparency evidence verified offline");
 
-    verify_chain_at(&leaf, trust, signed_time).context("cert chain verification")?;
     tracing::info!("ota: cert chain valid at authenticated signing time");
 
     let pae = pae_dsse_v1(&bundle.dsse_envelope.payload_type, &payload_bytes);

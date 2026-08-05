@@ -382,9 +382,17 @@ Sigstore v2 shards approximately every six months. Before signing switches,
 update the committed `trust/rekor-v2.pub` and
 `trust/signing-config-rekor-v2.json` in a normal reviewed release while the
 previous shard still accepts entries. Keep previous verification keys in the
-firmware keyring so old bundles remain verifiable. A device that misses the
-entire overlap may still require USB recovery; rotation therefore depends on
-Sigstore's announced overlap window, not an online Rekor lookup at OTA time.
+firmware keyring and log the transition artifact to both shards. The verifier
+accepts one trusted entry from a bounded multi-entry bundle, so old firmware
+can validate the old-shard entry while installing firmware that knows the new
+key.
+
+`esp32-maintenance.yml` runs monthly, updates ESP32 lockfiles and a compiled-in
+maintenance epoch, executes host tests and both Xtensa builds, then pushes only
+passing changes to `main`. That push triggers a signed OTA even in a month with
+no dependency delta. With an approximately six-month shard cadence this gives
+multiple overlap opportunities for normally online devices. A device that
+misses the entire announced overlap may still require USB recovery.
 
 ## Trust separation: soft vs hard
 
