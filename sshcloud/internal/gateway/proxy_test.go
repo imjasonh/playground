@@ -52,7 +52,7 @@ func TestProxyFortuneWithCert(t *testing.T) {
 
 	_, err = gateway.ProxySSHStreams(
 		context.Background(), rw, &out, &errOut, ca, "alice",
-		gateway.DialTarget{Addr: addr, SSHHostPublicKey: hostPublicKey}, shellSpec(),
+		gateway.DialTarget{Addr: addr, SSHHostPublicKey: hostPublicKey}, shellSpec(), nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -68,7 +68,7 @@ func TestProxyFortuneWithCert(t *testing.T) {
 		context.Background(), eofReader{}, io.Discard, io.Discard, ca, "alice",
 		gateway.DialTarget{
 			Addr: addr, SSHHostPublicKey: string(ssh.MarshalAuthorizedKey(wrongSigner.PublicKey())),
-		}, shellSpec(),
+		}, shellSpec(), nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "handshake") {
 		t.Fatalf("wrong host key error = %v", err)
@@ -108,7 +108,7 @@ func TestProxyCancelInterruptsStalledSSHHandshake(t *testing.T) {
 			gateway.DialTarget{
 				Addr:             listener.Addr().String(),
 				SSHHostPublicKey: string(ssh.MarshalAuthorizedKey(signer.PublicKey())),
-			}, shellSpec())
+			}, shellSpec(), nil)
 		result <- err
 	}()
 	var stalled net.Conn

@@ -35,12 +35,13 @@ func TestMaterializeCacheHitSkipsPull(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	hex := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-	cached := filepath.Join(dir, hex+".ext4")
+	cacheBase := fmt.Sprintf("%s-v%d-%dm", hex, materializerSchema, defaultSizeMB)
+	cached := filepath.Join(dir, cacheBase+".ext4")
 	if err := os.WriteFile(cached, []byte("cached-ext4"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	spec := guestinit.Spec{Entrypoint: []string{"/app"}, Cmd: []string{"--ssh"}, WorkingDir: "/app", Env: []string{"FOO=1"}}
-	if err := guestinit.WriteFile(filepath.Join(dir, hex+".boot.json"), spec); err != nil {
+	if err := guestinit.WriteFile(filepath.Join(dir, cacheBase+".boot.json"), spec); err != nil {
 		t.Fatal(err)
 	}
 	ref := "example.invalid/me/app@sha256:" + hex

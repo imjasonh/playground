@@ -419,6 +419,17 @@ func TestSessionRequestFidelityE2E(t *testing.T) {
 	}
 	awaitSessionCount(t, fx.hub.Sessions, 0)
 
+	missingExit, err := client.NewSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = missingExit.Run("no-exit")
+	missingExitErr, ok := err.(*ssh.ExitError)
+	if !ok || missingExitErr.ExitStatus() != 255 {
+		t.Fatalf("missing exit status error=%v", err)
+	}
+	awaitSessionCount(t, fx.hub.Sessions, 0)
+
 	live := fx.openApp(t)
 	defer live.close()
 	live.awaitLine(t, "PTY xterm 80 40")
@@ -719,7 +730,9 @@ func (a *chaosApp) handleSession(user string, channel ssh.Channel, requests <-ch
 				_, _ = fmt.Fprintf(channel, "EXEC-ENV %s=%s\r\n", env.Name, env.Value)
 			}
 			_, _ = fmt.Fprintf(channel.Stderr(), "EXEC-ERR %s\r\n", msg.Command)
-			if msg.Command == "exit-signal" {
+			if msg.Command == "no-exit" {
+				return
+			} else if msg.Command == "exit-signal" {
 				payload := ssh.Marshal(struct {
 					Signal     string
 					CoreDumped bool

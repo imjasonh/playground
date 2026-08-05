@@ -107,16 +107,28 @@ func (c *Controller) reconcileEnsure(guard *placement.Guard, record placement.Re
 		if err != nil {
 			return err
 		}
-		if ok && status.State == "running" {
+		expectedKey := ""
+		for _, desired := range record.Operation.Desired {
+			if desired.Gen == gen {
+				expectedKey = desired.SSHHostPublicKey
+				break
+			}
+		}
+		if ok && status.State == "running" && expectedKey != "" && status.SSHHostPublicKey == expectedKey {
 			found++
+		} else if ok && status.State == "running" {
+			return fmt.Errorf("ensure operation %s/%s generation %s has SSH host key mismatch", record.User, record.App, gen)
 		}
 	}
 	switch {
 	case found == len(record.Operation.Generations):
 		desired := record.Operation.Desired
 		if len(desired) == 0 {
-			for _, gen := range record.Operation.Generations {
-				desired = append(desired, placement.Generation{Gen: gen, Tier: "tiny", State: "running"})
+			return fmt.Errorf("ensure operation %s/%s lacks durable generation identity", record.User, record.App)
+		}
+		for _, generation := range desired {
+			if generation.SSHHostPublicKey == "" {
+				return fmt.Errorf("ensure operation %s/%s generation %s lacks SSH host key", record.User, record.App, generation.Gen)
 			}
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

@@ -194,12 +194,20 @@ func (m *Migrator) MigrateGeneration(ctx context.Context, user, app, gen, toHost
 		return Result{}, err
 	}
 	adopted, err := target.AdoptContext(guard.Context(), user, app, gen)
+	expectedHostKey := ""
+	if len(matching) == 1 {
+		expectedHostKey = matching[0].SSHHostPublicKey
+	}
+	if err == nil && (expectedHostKey == "" || adopted.SSHHostPublicKey != expectedHostKey) {
+		err = fmt.Errorf("SSH host key changed for generation %q", gen)
+	}
 	if err != nil {
 		// The target may have applied Adopt before its response was lost. Resolve
 		// that ambiguity before restoring a second copy on the source.
 		recoveryCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		if status, found, statusErr := target.StatusContext(recoveryCtx, user, app, gen); statusErr == nil && found && status.State == "running" {
+		if status, found, statusErr := target.StatusContext(recoveryCtx, user, app, gen); statusErr == nil && found &&
+			status.State == "running" && expectedHostKey != "" && status.SSHHostPublicKey == expectedHostKey {
 			adopted = status
 		} else {
 			if statusErr != nil {
@@ -209,6 +217,14 @@ func (m *Migrator) MigrateGeneration(ctx context.Context, user, app, gen, toHost
 				abandoned = true
 				thawed = true
 				return Result{}, fmt.Errorf("target adopt outcome unknown: %w (status: %v)", err, statusErr)
+			}
+			if found && status.State == "running" {
+				operation.Phase = "host-key-mismatch"
+				_ = markOperation(guard, operation)
+				guard.Abandon()
+				abandoned = true
+				thawed = true
+				return Result{}, fmt.Errorf("target SSH host key mismatch for generation %q", gen)
 			}
 			if leaseErr := guard.Err(); leaseErr != nil {
 				guard.Abandon()

@@ -17,7 +17,10 @@ func NewLocalStore(root string) (*LocalStore, error) {
 	if root == "" {
 		return nil, fmt.Errorf("root required")
 	}
-	if err := os.MkdirAll(root, 0o755); err != nil {
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return nil, err
+	}
+	if err := os.Chmod(root, 0o700); err != nil {
 		return nil, err
 	}
 	return &LocalStore{Root: root}, nil
@@ -35,7 +38,7 @@ func (s *LocalStore) Put(ctx context.Context, key string, pkg Package) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
 		return err
 	}
 	tmp, err := os.MkdirTemp(filepath.Dir(dst), "."+filepath.Base(dst)+".tmp-")
@@ -77,7 +80,7 @@ func (s *LocalStore) Get(ctx context.Context, key, destDir string) (Package, err
 	if err != nil {
 		return pkg, err
 	}
-	if err := os.MkdirAll(destDir, 0o755); err != nil {
+	if err := os.MkdirAll(destDir, 0o700); err != nil {
 		return pkg, err
 	}
 	for _, name := range objectNames() {

@@ -35,7 +35,16 @@ type DialTarget struct {
 type DialFunc func(ctx context.Context, req DialRequest) (DialTarget, error)
 
 // ProxySSHStreams forwards one exact outer session contract to an app.
-func ProxySSHStreams(ctx context.Context, input io.Reader, output, stderr io.Writer, ca *userca.CA, principal string, target DialTarget, spec *SessionSpec) (AppExit, error) {
+func ProxySSHStreams(ctx context.Context, input io.Reader, output, stderr io.Writer, ca *userca.CA, principal string, target DialTarget, spec *SessionSpec, ready chan<- error) (exit AppExit, retErr error) {
+	started := false
+	defer func() {
+		if !started && ready != nil {
+			select {
+			case ready <- retErr:
+			default:
+			}
+		}
+	}()
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -98,6 +107,13 @@ func ProxySSHStreams(ctx context.Context, input io.Reader, output, stderr io.Wri
 		return AppExit{}, fmt.Errorf("backend rejected %s: %w", spec.StartType, err)
 	}
 	spec.ReplyStart(true)
+	started = true
+	if ready != nil {
+		select {
+		case ready <- nil:
+		default:
+		}
+	}
 
 	inputDone := make(chan struct{})
 	go func() {
@@ -128,7 +144,7 @@ func ProxySSHStreams(ctx context.Context, input io.Reader, output, stderr io.Wri
 	}()
 	requestsDone := make(chan AppExit, 1)
 	go func() {
-		exit := AppExit{}
+		exit := AppExit{Code: 255}
 		for req := range backendReqs {
 			switch req.Type {
 			case "exit-status":

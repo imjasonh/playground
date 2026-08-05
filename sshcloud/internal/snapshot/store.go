@@ -65,7 +65,7 @@ func (p Package) WriteMeta(m Meta) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(p.MetaPath, b, 0o644)
+	return os.WriteFile(p.MetaPath, b, 0o600)
 }
 
 // ReadMeta loads meta.json.
@@ -106,7 +106,7 @@ func copyFile(src, dst string) error {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}
-	out, err := os.Create(dst)
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}

@@ -331,7 +331,11 @@ func (c *Controller) moveGroup(ctx context.Context, sourceID, sourceEpoch string
 			}
 		}
 		if instance.State == agent.StateRunning {
-			if _, err := target.Client.AdoptContext(guard.Context(), group.user, group.app, instance.Gen); err != nil {
+			adopted, err := target.Client.AdoptContext(guard.Context(), group.user, group.app, instance.Gen)
+			if err == nil && (instance.SSHHostPublicKey == "" || adopted.SSHHostPublicKey != instance.SSHHostPublicKey) {
+				err = fmt.Errorf("SSH host key changed for generation %q", instance.Gen)
+			}
+			if err != nil {
 				recoveryCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 				status, found, statusErr := target.Client.StatusContext(recoveryCtx, group.user, group.app, instance.Gen)
 				if statusErr != nil {
@@ -344,8 +348,15 @@ func (c *Controller) moveGroup(ctx context.Context, sourceID, sourceEpoch string
 				}
 				if found && status.State == "running" {
 					cancel()
-					moved = append(moved, instance)
-					continue
+					if instance.SSHHostPublicKey != "" && status.SSHHostPublicKey == instance.SSHHostPublicKey {
+						moved = append(moved, instance)
+						continue
+					}
+					operation.Phase = "host-key-mismatch:" + instance.Gen
+					_ = markOperation(guard, operation)
+					guard.Abandon()
+					abandoned = true
+					return MovedApp{}, fmt.Errorf("target SSH host key mismatch for generation %q", instance.Gen)
 				}
 				if leaseErr := guard.Err(); leaseErr != nil {
 					cancel()

@@ -25,6 +25,7 @@ var materializeLocks sync.Map
 const (
 	defaultSizeMB               = 512
 	defaultMaxUncompressedBytes = 1 << 30 // 1 GiB
+	materializerSchema          = 2
 )
 
 // Options control Materialize.
@@ -73,8 +74,9 @@ func Materialize(ctx context.Context, ref string, opt Options) (Result, error) {
 		return Result{}, err
 	}
 
-	cachePath := filepath.Join(opt.CacheDir, hex+".ext4")
-	specPath := filepath.Join(opt.CacheDir, hex+".boot.json")
+	cacheBase := fmt.Sprintf("%s-v%d-%dm", hex, materializerSchema, opt.SizeMB)
+	cachePath := filepath.Join(opt.CacheDir, cacheBase+".ext4")
+	specPath := filepath.Join(opt.CacheDir, cacheBase+".boot.json")
 	lockValue, _ := materializeLocks.LoadOrStore(cachePath, &sync.Mutex{})
 	lock := lockValue.(*sync.Mutex)
 	lock.Lock()

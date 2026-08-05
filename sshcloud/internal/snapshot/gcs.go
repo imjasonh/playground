@@ -93,7 +93,7 @@ func (s *GCSStore) Get(ctx context.Context, key, destDir string) (Package, error
 	if err := validateKey(key); err != nil {
 		return pkg, err
 	}
-	if err := os.MkdirAll(destDir, 0o755); err != nil {
+	if err := os.MkdirAll(destDir, 0o700); err != nil {
 		return pkg, err
 	}
 	bkt := s.client.Bucket(s.Bucket)
@@ -121,7 +121,7 @@ func (s *GCSStore) Get(ctx context.Context, key, destDir string) (Package, error
 			return pkg, fmt.Errorf("get %s: %w", name, err)
 		}
 		dst := filepath.Join(destDir, name)
-		f, err := os.Create(dst)
+		f, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 		if err != nil {
 			_ = r.Close()
 			return pkg, err

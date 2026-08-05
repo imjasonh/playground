@@ -56,9 +56,11 @@ func runAppStub(ctx context.Context, t *term, hub *Hub, res Result) AppExit {
 		defer t.endProxy()
 		expectedHostKey := ""
 		for {
+			var thawAck chan error
 			if frozen {
 				t.Printf("\n[sshcloud] host migration in progress; input is temporarily buffered\n")
-				thawed, overflow, changeErr := waitForThaw(ctx, commands, input.Overflow(), t.client.Spec)
+				thawed, overflow, changeErr, ack := waitForThaw(ctx, commands, input.Overflow(), t.client.Spec)
+				thawAck = ack
 				if changeErr != nil {
 					fmt.Fprintf(t.client.Stderr, "%v\r\n", changeErr)
 					return AppExit{Code: 255}
@@ -70,7 +72,6 @@ func runAppStub(ctx context.Context, t *term, hub *Hub, res Result) AppExit {
 				if !thawed {
 					return AppExit{Code: 1}
 				}
-				t.Printf("[sshcloud] migration complete; reconnecting app session\n")
 				frozen = false
 			}
 
@@ -90,6 +91,9 @@ func runAppStub(ctx context.Context, t *term, hub *Hub, res Result) AppExit {
 				target, err = hub.Dial(ctx, request)
 			}
 			if err != nil {
+				if thawAck != nil {
+					thawAck <- err
+				}
 				t.client.Spec.ReplyStart(false)
 				fmt.Fprintf(t.client.Stderr, "backend error: %v\r\n", err)
 				return AppExit{Code: 1}
@@ -97,19 +101,45 @@ func runAppStub(ctx context.Context, t *term, hub *Hub, res Result) AppExit {
 			if expectedHostKey == "" {
 				expectedHostKey = target.SSHHostPublicKey
 			} else if target.SSHHostPublicKey != expectedHostKey {
+				if thawAck != nil {
+					thawAck <- fmt.Errorf("backend host key changed during migration")
+				}
 				fmt.Fprint(t.client.Stderr, "backend host key changed during migration\r\n")
 				return AppExit{Code: 1}
 			}
 			proxyCtx, cancelProxy := context.WithCancelCause(ctx)
 			proxyDone := make(chan proxyResult, 1)
+			var ready chan error
+			if thawAck != nil {
+				ready = make(chan error, 1)
+			}
 			attachment := input.Attach()
 			go func() {
 				exit, err := ProxySSHStreams(
 					proxyCtx, attachment, t.rw, t.client.Stderr,
-					hub.UserCA, res.User, target, t.client.Spec,
+					hub.UserCA, res.User, target, t.client.Spec, ready,
 				)
 				proxyDone <- proxyResult{exit: exit, err: err}
 			}()
+			if thawAck != nil {
+				select {
+				case readyErr := <-ready:
+					thawAck <- readyErr
+					if readyErr != nil {
+						_ = attachment.Close()
+						result := <-proxyDone
+						cancelProxy(nil)
+						return proxyExit(ctx, t, result)
+					}
+					t.Printf("[sshcloud] migration complete; app session reconnected\n")
+				case <-ctx.Done():
+					thawAck <- ctx.Err()
+					cancelProxy(context.Cause(ctx))
+					_ = attachment.Close()
+					<-proxyDone
+					return AppExit{Code: 1}
+				}
+			}
 		waitProxy:
 			for {
 				select {
@@ -170,28 +200,27 @@ func runAppStub(ctx context.Context, t *term, hub *Hub, res Result) AppExit {
 	return AppExit{Code: 0}
 }
 
-func waitForThaw(ctx context.Context, commands <-chan session.MigrationCommand, overflow <-chan struct{}, spec *SessionSpec) (bool, bool, error) {
+func waitForThaw(ctx context.Context, commands <-chan session.MigrationCommand, overflow <-chan struct{}, spec *SessionSpec) (bool, bool, error, chan error) {
 	changes := spec.Changes
 	for {
 		select {
 		case command := <-commands:
 			switch command.Kind {
 			case session.MigrationThaw:
-				command.Ack <- nil
-				return true, false, nil
+				return true, false, nil, command.Ack
 			case session.MigrationFreeze:
 				command.Ack <- nil
 			default:
 				command.Ack <- fmt.Errorf("unknown migration command %q", command.Kind)
 			}
 		case <-ctx.Done():
-			return false, false, nil
+			return false, false, nil, nil
 		case <-overflow:
-			return false, true, nil
+			return false, true, nil, nil
 		case change, ok := <-changes:
 			if ok {
 				if err := spec.RecordDetachedChange(change); err != nil {
-					return false, false, err
+					return false, false, err, nil
 				}
 			} else {
 				changes = nil

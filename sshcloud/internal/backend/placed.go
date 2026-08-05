@@ -149,10 +149,26 @@ func (p *PlacedDial) EnsureAddrTier(ctx context.Context, user, app, gen, image, 
 		}
 		return "", fmt.Errorf("no host accepted %s/%s tier %s", user, app, tier)
 	}
+	for _, generation := range generations {
+		if generation.Gen == gen && generation.SSHHostPublicKey != "" &&
+			generation.SSHHostPublicKey != in.SSHHostPublicKey {
+			return "", fmt.Errorf("SSH host key changed for immutable generation %q", gen)
+		}
+	}
 	generations = placement.UpsertGeneration(generations, placement.Generation{
 		Gen: gen, Image: image, Tier: tier, State: "running",
 		SSHHostPublicKey: in.SSHHostPublicKey,
 	})
+	if originalHost == "" {
+		if err := guard.Mark(guard.Context(), placement.Operation{
+			Kind: "ensure", Phase: "ready", TargetHost: host,
+			Generations: []string{gen}, Desired: generations,
+		}); err != nil {
+			guard.Abandon()
+			committed = true
+			return "", fmt.Errorf("persist ensured generation identity: %w", err)
+		}
+	}
 	if originalHost != "" {
 		commitCtx, commitCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		err := guard.CommitState(commitCtx, originalHost, generations)

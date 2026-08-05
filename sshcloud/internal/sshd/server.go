@@ -196,6 +196,7 @@ func (s *Server) handleSession(ctx context.Context, sc *ssh.ServerConn, ch ssh.C
 		var setup []gateway.ForwardRequest
 		started := false
 		hasPTY := false
+		var currentSpec *gateway.SessionSpec
 		for req := range reqs {
 			switch req.Type {
 			case "pty-req":
@@ -235,10 +236,12 @@ func (s *Server) handleSession(ctx context.Context, sc *ssh.ServerConn, ch ssh.C
 				if !started {
 					setup = append(setup, forward)
 				} else {
+					if currentSpec != nil {
+						_ = currentSpec.RecordDetachedChange(forward)
+					}
 					select {
 					case changes <- forward:
-					case <-ctx.Done():
-						return
+					default:
 					}
 				}
 				if req.WantReply {
@@ -254,8 +257,7 @@ func (s *Server) handleSession(ctx context.Context, sc *ssh.ServerConn, ch ssh.C
 				}
 				select {
 				case changes <- gateway.ForwardRequest{Type: req.Type, Payload: append([]byte(nil), req.Payload...)}:
-				case <-ctx.Done():
-					return
+				default:
 				}
 				if req.WantReply {
 					_ = req.Reply(true, nil)
@@ -305,6 +307,7 @@ func (s *Server) handleSession(ctx context.Context, sc *ssh.ServerConn, ch ssh.C
 						}
 					},
 				)
+				currentSpec = spec
 				select {
 				case start <- spec:
 				case <-ctx.Done():
