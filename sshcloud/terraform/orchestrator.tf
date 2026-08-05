@@ -48,6 +48,7 @@ resource "google_compute_instance" "orchestrator" {
     project_number               = data.google_project.current.number
     gateway_service_account      = google_service_account.gateway.email
     orchestrator_service_account = google_service_account.orchestrator.email
+    agent_service_account        = google_service_account.agent.email
     drain_script_b64             = filebase64("${path.module}/../hack/drain-agent-host.sh")
   })
 

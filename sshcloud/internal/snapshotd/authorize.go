@@ -73,6 +73,27 @@ func (a *Authorizer) Authorize(ctx context.Context, caller controlauth.Identity,
 		return ErrForbidden
 	}
 	switch record.Operation.Kind {
+	case "stop":
+		if record.Operation.SourceHost != record.HostID ||
+			(record.HostInstanceID != "" &&
+				record.Operation.SourceInstanceID != record.HostInstanceID) ||
+			!generationInOperation(record.Operation.Generations, ref.Gen) ||
+			!sameHost(
+				caller,
+				record.Operation.SourceHost,
+				record.Operation.SourceInstanceID,
+			) {
+			return ErrForbidden
+		}
+		// Stop is the only journaled lifecycle operation permitted to remove a
+		// current package. Its source name and immutable incarnation are pinned
+		// before the agent crosses the termination/deletion boundary.
+		switch action {
+		case ActionHas, ActionMeta, ActionDelete:
+			return nil
+		default:
+			return ErrForbidden
+		}
 	case "ensure":
 		if record.HostID != "" && record.Operation.TargetHost != record.HostID {
 			return ErrForbidden

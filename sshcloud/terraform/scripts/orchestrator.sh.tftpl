@@ -119,8 +119,10 @@ docker run -d --name sshcloud-orchestrator --restart unless-stopped --net host \
   -control-ca-previous /var/lib/sshcloud/control/ca-previous.pem \
   -control-project-id ${project_id} \
   -control-project-number ${project_number} \
+  -gce-zone ${zone} \
   -gateway-service-account ${gateway_service_account} \
   -orchestrator-service-account ${orchestrator_service_account} \
+  -agent-service-account ${agent_service_account} \
   -gateway-url ${gateway_url} \
   -firestore-project ${project_id} \
   -firestore-prefix ${firestore_prefix} \

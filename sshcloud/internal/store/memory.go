@@ -76,7 +76,7 @@ func (m *Memory) GetApp(_ context.Context, userID, app string) (*App, error) {
 	if !ok {
 		return nil, nil
 	}
-	cp := *a
+	cp := cloneApp(*a)
 	return &cp, nil
 }
 
@@ -93,7 +93,7 @@ func (m *Memory) UpsertApp(_ context.Context, app App) error {
 	if m.apps[app.Owner] == nil {
 		m.apps[app.Owner] = make(map[string]*App)
 	}
-	cp := app
+	cp := cloneApp(app)
 	if cp.Tier == "" {
 		cp.Tier = "tiny"
 	}
@@ -116,7 +116,7 @@ func (m *Memory) ListApps(_ context.Context, userID string) ([]App, error) {
 	defer m.mu.Unlock()
 	out := make([]App, 0, len(m.apps[userID]))
 	for _, a := range m.apps[userID] {
-		out = append(out, *a)
+		out = append(out, cloneApp(*a))
 	}
 	return out, nil
 }
@@ -127,8 +127,13 @@ func (m *Memory) ListAllApps(context.Context) ([]App, error) {
 	var out []App
 	for _, apps := range m.apps {
 		for _, app := range apps {
-			out = append(out, *app)
+			out = append(out, cloneApp(*app))
 		}
 	}
 	return out, nil
+}
+
+func cloneApp(app App) App {
+	app.RetiringGens = append([]string(nil), app.RetiringGens...)
+	return app
 }

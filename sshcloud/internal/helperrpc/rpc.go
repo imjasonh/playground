@@ -3,6 +3,7 @@
 package helperrpc
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -114,9 +115,7 @@ func serveConn(conn net.Conn, expectedUID uint32, handler Handler) {
 	}
 
 	var req Request
-	decoder := json.NewDecoder(io.LimitReader(conn, maxMessageBytes))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&req); err != nil {
+	if err := Decode(conn, &req); err != nil {
 		_ = writeResponse(conn, Response{Error: fmt.Sprintf("decode request: %v", err)})
 		return
 	}
@@ -144,7 +143,76 @@ func serveConn(conn net.Conn, expectedUID uint32, handler Handler) {
 }
 
 func writeResponse(w io.Writer, response Response) error {
-	return json.NewEncoder(w).Encode(response)
+	if err := Encode(w, response); err != nil {
+		return err
+	}
+	return closeWrite(w)
+}
+
+// Encode writes one size-bounded JSON value. The peer must close its write
+// side after the value so Decode can prove there is no trailing data.
+func Encode(w io.Writer, value any) error {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Errorf("encode JSON: %w", err)
+	}
+	if len(data)+1 > maxMessageBytes {
+		return fmt.Errorf("encode JSON: message exceeds %d bytes", maxMessageBytes)
+	}
+	data = append(data, '\n')
+	for len(data) > 0 {
+		n, writeErr := w.Write(data)
+		if writeErr != nil {
+			return fmt.Errorf("encode JSON: %w", writeErr)
+		}
+		if n == 0 {
+			return fmt.Errorf("encode JSON: %w", io.ErrShortWrite)
+		}
+		data = data[n:]
+	}
+	return nil
+}
+
+// Decode reads exactly one size-bounded JSON value, rejects unknown fields,
+// and requires EOF after optional JSON whitespace.
+func Decode(r io.Reader, dst any) error {
+	data, err := io.ReadAll(io.LimitReader(r, maxMessageBytes+1))
+	if err != nil {
+		return fmt.Errorf("read JSON: %w", err)
+	}
+	if len(data) > maxMessageBytes {
+		return fmt.Errorf("read JSON: message exceeds %d bytes", maxMessageBytes)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(dst); err != nil {
+		return fmt.Errorf("decode JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("decode JSON: trailing value")
+		}
+		return fmt.Errorf("decode JSON: trailing data: %w", err)
+	}
+	return nil
+}
+
+// DecodePayload applies the same strict codec to an operation payload.
+func DecodePayload(payload json.RawMessage, dst any) error {
+	if err := Decode(bytes.NewReader(payload), dst); err != nil {
+		return fmt.Errorf("decode payload: %w", err)
+	}
+	return nil
+}
+
+func closeWrite(w io.Writer) error {
+	type closeWriter interface {
+		CloseWrite() error
+	}
+	if closer, ok := w.(closeWriter); ok {
+		return closer.CloseWrite()
+	}
+	return nil
 }
 
 // Call performs one request over a new authenticated-by-the-server connection.
@@ -164,13 +232,14 @@ func Call(ctx context.Context, socketPath, operation string, request, response a
 	} else {
 		_ = conn.SetDeadline(time.Now().Add(operationTimeout))
 	}
-	if err := json.NewEncoder(conn).Encode(Request{Operation: operation, Payload: payload}); err != nil {
+	if err := Encode(conn, Request{Operation: operation, Payload: payload}); err != nil {
 		return fmt.Errorf("send %s helper request: %w", operation, err)
 	}
+	if err := closeWrite(conn); err != nil {
+		return fmt.Errorf("finish %s helper request: %w", operation, err)
+	}
 	var result Response
-	decoder := json.NewDecoder(io.LimitReader(conn, maxMessageBytes))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&result); err != nil {
+	if err := Decode(conn, &result); err != nil {
 		return fmt.Errorf("decode %s helper response: %w", operation, err)
 	}
 	if !result.OK {
@@ -182,7 +251,7 @@ func Call(ctx context.Context, socketPath, operation string, request, response a
 	if response == nil || len(result.Payload) == 0 {
 		return nil
 	}
-	if err := json.Unmarshal(result.Payload, response); err != nil {
+	if err := DecodePayload(result.Payload, response); err != nil {
 		return fmt.Errorf("decode %s helper payload: %w", operation, err)
 	}
 	return nil

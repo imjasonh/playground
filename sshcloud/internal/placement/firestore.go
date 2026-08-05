@@ -92,11 +92,10 @@ func (f *Firestore) Get(ctx context.Context, user, app string) (string, bool, er
 	return d.HostID, true, nil
 }
 
-func (f *Firestore) Set(ctx context.Context, user, app, hostID string) error {
-	return f.setIdentity(ctx, user, app, hostID, "")
-}
-
 func (f *Firestore) SetIdentity(ctx context.Context, user, app, hostID, hostInstanceID string) error {
+	if hostInstanceID == "" {
+		return fmt.Errorf("host instance ID required")
+	}
 	return f.setIdentity(ctx, user, app, hostID, hostInstanceID)
 }
 
@@ -274,30 +273,18 @@ func (f *Firestore) Mark(ctx context.Context, lease Lease, operation Operation) 
 			return ErrLeaseLost{User: lease.User, App: lease.App}
 		}
 		operation.Sequence = r.Operation.Sequence + 1
-		d.Operation = operation
+		d.Operation = cloneOperation(operation)
 		return tx.Set(ref, d)
 	})
 }
 
-func (f *Firestore) Commit(ctx context.Context, lease Lease, hostID string, _ time.Time) error {
-	return f.commit(ctx, lease, hostID, "", nil, false)
-}
-
-func (f *Firestore) CommitState(ctx context.Context, lease Lease, hostID string, generations []Generation, _ time.Time) error {
-	return f.commit(ctx, lease, hostID, "", generations, true)
-}
-
-func (f *Firestore) CommitIdentity(ctx context.Context, lease Lease, hostID, hostInstanceID string, _ time.Time) error {
-	return f.commit(ctx, lease, hostID, hostInstanceID, nil, false)
-}
-
 func (f *Firestore) CommitStateIdentity(ctx context.Context, lease Lease, hostID, hostInstanceID string, generations []Generation, _ time.Time) error {
-	return f.commit(ctx, lease, hostID, hostInstanceID, generations, true)
+	return f.commitStateIdentity(ctx, lease, hostID, hostInstanceID, generations)
 }
 
-func (f *Firestore) commit(ctx context.Context, lease Lease, hostID, hostInstanceID string, generations []Generation, replaceGenerations bool) error {
-	if hostID == "" {
-		return fmt.Errorf("hostID required")
+func (f *Firestore) commitStateIdentity(ctx context.Context, lease Lease, hostID, hostInstanceID string, generations []Generation) error {
+	if hostID == "" || hostInstanceID == "" {
+		return fmt.Errorf("host ID and host instance ID required")
 	}
 	ref := f.ref(lease.User, lease.App)
 	return f.client.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
@@ -312,9 +299,7 @@ func (f *Firestore) commit(ctx context.Context, lease Lease, hostID, hostInstanc
 		}
 		d.HostID = hostID
 		d.HostInstanceID = hostInstanceID
-		if replaceGenerations {
-			d.Generations = append([]Generation(nil), generations...)
-		}
+		d.Generations = append([]Generation(nil), generations...)
 		d.Revision++
 		d.LeaseOwner, d.LeaseUntilUnix = "", 0
 		d.Operation = Operation{}
@@ -356,10 +341,10 @@ func readPlacementTx(tx *firestore.Transaction, ref *firestore.DocumentRef) (pla
 }
 
 func recordFromDoc(d placementDoc) Record {
-	return Record{
+	return cloneRecord(Record{
 		User: d.User, App: d.App, HostID: d.HostID, HostInstanceID: d.HostInstanceID, Revision: d.Revision,
 		LeaseOwner: d.LeaseOwner, LeaseUntilUnix: d.LeaseUntilUnix,
 		Operation:   d.Operation,
-		Generations: append([]Generation(nil), d.Generations...),
-	}
+		Generations: d.Generations,
+	})
 }

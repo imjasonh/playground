@@ -20,7 +20,8 @@ func TestParseHostsSpec(t *testing.T) {
 		t.Fatalf("a = %q", m["a"].BaseURL)
 	}
 	m, err = ParseHostsSpec("agent-a@987654321=https://10.0.0.1:8080")
-	if err != nil || m["agent-a"].InstanceID != "987654321" {
+	if err != nil || m["agent-a"].InstanceName != "agent-a" ||
+		m["agent-a"].InstanceID != "987654321" {
 		t.Fatalf("GCE host identity: %#v err=%v", m, err)
 	}
 	if _, err := ParseHostsSpec("agent-a@001=https://10.0.0.1:8080"); err == nil {

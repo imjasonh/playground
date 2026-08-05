@@ -384,6 +384,14 @@ func (c *Controller) moveGroup(ctx context.Context, sourceID, sourceEpoch string
 	}
 
 	commitCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	if err := target.Client.VerifyServerIdentity(commitCtx); err != nil {
+		cancel()
+		operation.Phase = "ready-unverified-target"
+		_ = markOperation(guard, operation)
+		guard.Abandon()
+		abandoned = true
+		return MovedApp{}, fmt.Errorf("verify prepared target before placement commit: %w", err)
+	}
 	operation.Phase = "ready"
 	if err := guard.Mark(commitCtx, operation); err != nil {
 		cancel()

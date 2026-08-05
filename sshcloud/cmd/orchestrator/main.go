@@ -50,6 +50,7 @@ func main() {
 	hostsFlag := flag.String("hosts", "", "comma-separated hostID[@instance-id]=baseURL pairs")
 	hostsFile := flag.String("hosts-file", "", "hosts file (name@instance-id=url per line in production); reloaded every 30s")
 	defaultHost := flag.String("default-host", "", "default placement host ID")
+	gceZone := flag.String("gce-zone", "", "GCE zone used for immutable instance tombstone checks")
 	firestoreProject := flag.String("firestore-project", "", "GCP project for Firestore placement (default: in-memory)")
 	firestorePrefix := flag.String("firestore-prefix", "sshcloud", "Firestore collection prefix")
 	firestoreDatabase := flag.String("firestore-database", "sshcloud", "Firestore database ID")
@@ -61,6 +62,7 @@ func main() {
 	controlProjectNumber := flag.String("control-project-number", "", "expected GCE identity-token project number")
 	gatewayServiceAccount := flag.String("gateway-service-account", "", "exact gateway service-account email")
 	orchestratorServiceAccount := flag.String("orchestrator-service-account", "", "exact orchestrator service-account email")
+	agentServiceAccount := flag.String("agent-service-account", "", "exact agent service-account email for server proofs")
 	insecureControl := flag.Bool("control-insecure-loopback", false, "explicitly allow unauthenticated plaintext control traffic on loopback only")
 	gatewayURL := flag.String("gateway-url", "", "gateway migration control base URL")
 	freezeTimeout := flag.Duration("freeze-timeout", 30*time.Second, "maximum outer-session freeze before forced reconnect")
@@ -79,8 +81,9 @@ func main() {
 		log.Printf("WARNING: orchestrator control uses explicit loopback-only insecure mode")
 	} else {
 		if *controlProjectID == "" || *controlProjectNumber == "" ||
-			*gatewayServiceAccount == "" || *orchestratorServiceAccount == "" {
-			log.Fatal("production control requires project identity and exact gateway/orchestrator service accounts")
+			*gatewayServiceAccount == "" || *orchestratorServiceAccount == "" ||
+			*agentServiceAccount == "" || *gceZone == "" {
+			log.Fatal("production control requires project identity, GCE zone, and exact gateway/orchestrator/agent service accounts")
 		}
 		if *adminSocket == "" {
 			log.Fatal("production control requires -admin-socket")
@@ -103,6 +106,7 @@ func main() {
 		}
 	}
 	var agentControlClient *controlauth.Client
+	var agentServerVerifier controlauth.IdentityTokenVerifier
 	if !*insecureControl {
 		agentControlClient, err = controlauth.NewClient(
 			controlFiles, controlauth.RoleOrchestrator, controlauth.RoleAgent,
@@ -111,8 +115,14 @@ func main() {
 		if err != nil {
 			log.Fatalf("agent control client: %v", err)
 		}
+		agentServerVerifier = &controlauth.GCEVerifier{
+			ProjectID: *controlProjectID, ProjectNumber: *controlProjectNumber,
+		}
 	}
-	configureAgentClients(initial, agentControlClient, *insecureControl)
+	configureAgentClients(
+		initial, agentControlClient, *insecureControl,
+		agentServerVerifier, *agentServiceAccount,
+	)
 	if !*insecureControl {
 		if err := requireHostInstanceIDs(initial); err != nil {
 			log.Fatal(err)
@@ -124,6 +134,14 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	var tombstones backend.InstanceTombstones
+	if !*insecureControl {
+		gceTombstones, err := backend.NewGCEInstanceTombstones(ctx, *controlProjectID, *gceZone)
+		if err != nil {
+			log.Fatalf("GCE instance tombstone verifier: %v", err)
+		}
+		tombstones = gceTombstones
+	}
 
 	var place placement.Store = placement.NewMemory()
 	var quotaStore quota.Store = quota.NewMemory()
@@ -173,9 +191,12 @@ func main() {
 	}
 
 	if *hostsFile != "" {
-		go watchHostsFile(ctx, *hostsFile, hosts, agentControlClient, *insecureControl)
+		go watchHostsFile(
+			ctx, *hostsFile, hosts, agentControlClient, *insecureControl,
+			agentServerVerifier, *agentServiceAccount,
+		)
 	}
-	go reconcilePlacementLeases(ctx, place, hosts)
+	go reconcilePlacementLeases(ctx, place, hosts, tombstones)
 
 	healthMux := http.NewServeMux()
 	api := http.NewServeMux()
@@ -559,7 +580,15 @@ func boundedDiagnosticText(value string) string {
 	return value[:maxDiagnosticErrorBytes]
 }
 
-func watchHostsFile(ctx context.Context, path string, hosts *backend.HostSet, controlClient *controlauth.Client, insecureLoopback bool) {
+func watchHostsFile(
+	ctx context.Context,
+	path string,
+	hosts *backend.HostSet,
+	controlClient *controlauth.Client,
+	insecureLoopback bool,
+	serverVerifier controlauth.IdentityTokenVerifier,
+	agentServiceAccount string,
+) {
 	tick := time.NewTicker(30 * time.Second)
 	defer tick.Stop()
 	for {
@@ -572,7 +601,7 @@ func watchHostsFile(ctx context.Context, path string, hosts *backend.HostSet, co
 				log.Printf("hosts-file reload: %v", err)
 				continue
 			}
-			configureAgentClients(m, controlClient, insecureLoopback)
+			configureAgentClients(m, controlClient, insecureLoopback, serverVerifier, agentServiceAccount)
 			if !insecureLoopback {
 				if err := requireHostInstanceIDs(m); err != nil {
 					log.Printf("hosts-file reload: %v", err)
@@ -585,10 +614,17 @@ func watchHostsFile(ctx context.Context, path string, hosts *backend.HostSet, co
 	}
 }
 
-func reconcilePlacementLeases(ctx context.Context, store placement.Store, hosts *backend.HostSet) {
+func reconcilePlacementLeases(
+	ctx context.Context,
+	store placement.Store,
+	hosts *backend.HostSet,
+	tombstones backend.InstanceTombstones,
+) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
-	reconciler := &hostreconcile.Controller{Placement: store, Hosts: hosts}
+	reconciler := &hostreconcile.Controller{
+		Placement: store, Hosts: hosts, Tombstones: tombstones,
+	}
 	for {
 		if err := reconciler.RunOnce(ctx); err != nil && ctx.Err() == nil {
 			log.Printf("placement operation reconcile: %v", err)
@@ -620,10 +656,21 @@ func reconcilePlacementLeases(ctx context.Context, store placement.Store, hosts 
 	}
 }
 
-func configureAgentClients(hosts map[string]*backend.AgentClient, controlClient *controlauth.Client, insecureLoopback bool) {
+func configureAgentClients(
+	hosts map[string]*backend.AgentClient,
+	controlClient *controlauth.Client,
+	insecureLoopback bool,
+	serverVerifier controlauth.IdentityTokenVerifier,
+	agentServiceAccount string,
+) {
 	for _, client := range hosts {
 		client.ControlClient = controlClient
 		client.InsecureLoopback = insecureLoopback
+		client.ServerVerifier = serverVerifier
+		client.ServerPolicy = controlauth.VerificationPolicy{
+			ServiceAccount: agentServiceAccount,
+			Audience:       controlauth.AudienceAgentServer,
+		}
 	}
 }
 

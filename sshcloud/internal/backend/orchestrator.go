@@ -1,12 +1,9 @@
 package backend
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/imjasonh/playground/sshcloud/internal/controlauth"
@@ -20,22 +17,11 @@ type OrchestratorClient struct {
 	InsecureLoopback bool
 }
 
-func (c *OrchestratorClient) client() *http.Client {
-	if c.HTTPClient != nil {
-		return c.HTTPClient
+func (c *OrchestratorClient) kernel() controlHTTPKernel {
+	return controlHTTPKernel{
+		baseURL: c.BaseURL, controlClient: c.ControlClient, httpClient: c.HTTPClient,
+		insecureLoopback: c.InsecureLoopback, timeout: 6 * time.Minute,
 	}
-	// Ensure may cold-boot or wake a snapshot; allow a long wait.
-	return &http.Client{Timeout: 6 * time.Minute}
-}
-
-func (c *OrchestratorClient) do(req *http.Request) (*http.Response, error) {
-	if c.ControlClient != nil {
-		return c.ControlClient.Do(req)
-	}
-	if err := controlauth.PrepareRequest(req, nil, c.InsecureLoopback); err != nil {
-		return nil, err
-	}
-	return c.client().Do(req)
 }
 
 type orchEnsureBody struct {
@@ -88,33 +74,19 @@ func (c *OrchestratorClient) TargetTierRequest(ctx context.Context, user, app, g
 }
 
 func (c *OrchestratorClient) ensure(ctx context.Context, body orchEnsureBody) (OrchestratorTarget, error) {
-	base := strings.TrimRight(c.BaseURL, "/")
-	b, err := json.Marshal(body)
-	if err != nil {
-		return OrchestratorTarget{}, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/v1/ensure", bytes.NewReader(b))
-	if err != nil {
-		return OrchestratorTarget{}, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	res, err := c.do(req)
-	if err != nil {
-		return OrchestratorTarget{}, err
-	}
-	defer res.Body.Close()
-	if res.StatusCode >= 300 {
-		err := fmt.Errorf("orchestrator ensure: %s: %s", res.Status, readErr(res.Body))
-		if res.StatusCode == http.StatusConflict || res.StatusCode == http.StatusServiceUnavailable {
-			return OrchestratorTarget{}, TemporaryError{Err: err}
-		}
-		return OrchestratorTarget{}, err
-	}
 	var out struct {
 		Addr             string `json:"addr"`
 		SSHHostPublicKey string `json:"ssh_host_public_key"`
 	}
-	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
+	err := c.kernel().json(
+		ctx, http.MethodPost, "/v1/ensure", "orchestrator ensure", body, &out, nil,
+	)
+	if err != nil {
+		if statusErr, ok := statusError(err); ok &&
+			(statusErr.StatusCode == http.StatusConflict ||
+				statusErr.StatusCode == http.StatusServiceUnavailable) {
+			return OrchestratorTarget{}, TemporaryError{Err: err}
+		}
 		return OrchestratorTarget{}, err
 	}
 	if out.Addr == "" {
@@ -142,46 +114,16 @@ func (c *OrchestratorClient) EnsureTier(ctx context.Context, user, app, gen, ima
 
 // Stop implements cutover.Instances via POST /v1/stop.
 func (c *OrchestratorClient) Stop(ctx context.Context, user, app, gen string) error {
-	base := strings.TrimRight(c.BaseURL, "/")
-	b, err := json.Marshal(instanceBody{User: user, App: app, Gen: gen})
-	if err != nil {
-		return err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/v1/stop", bytes.NewReader(b))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	res, err := c.do(req)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-	if res.StatusCode >= 300 {
-		return fmt.Errorf("orchestrator stop: %s: %s", res.Status, readErr(res.Body))
-	}
-	return nil
+	return c.kernel().json(
+		ctx, http.MethodPost, "/v1/stop", "orchestrator stop",
+		instanceBody{User: user, App: app, Gen: gen}, nil, nil,
+	)
 }
 
 // SetNoIdle changes an instance's active-operation hold through placement.
 func (c *OrchestratorClient) SetNoIdle(ctx context.Context, user, app, gen string, noIdle bool) error {
-	base := strings.TrimRight(c.BaseURL, "/")
-	b, err := json.Marshal(instanceBody{User: user, App: app, Gen: gen, NoIdle: noIdle})
-	if err != nil {
-		return err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/v1/no-idle", bytes.NewReader(b))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	res, err := c.do(req)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-	if res.StatusCode >= 300 {
-		return fmt.Errorf("orchestrator no-idle: %s: %s", res.Status, readErr(res.Body))
-	}
-	return nil
+	return c.kernel().json(
+		ctx, http.MethodPost, "/v1/no-idle", "orchestrator no-idle",
+		instanceBody{User: user, App: app, Gen: gen, NoIdle: noIdle}, nil, nil,
+	)
 }

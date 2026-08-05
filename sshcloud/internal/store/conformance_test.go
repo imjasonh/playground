@@ -13,6 +13,41 @@ func TestMemoryConformance(t *testing.T) {
 	runStoreConformance(t, NewMemory())
 }
 
+func TestMemoryDeepCopiesAppSlices(t *testing.T) {
+	t.Parallel()
+	store := NewMemory()
+	if err := store.CreateUser(t.Context(), "alice", "key"); err != nil {
+		t.Fatal(err)
+	}
+	retiring := []string{"g-old"}
+	if err := store.UpsertApp(t.Context(), App{
+		Owner: "alice", Name: "app", RetiringGens: retiring,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	retiring[0] = "mutated-ingress"
+	app, err := store.GetApp(t.Context(), "alice", "app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if app.RetiringGens[0] != "g-old" {
+		t.Fatalf("ingress alias changed stored app: %+v", app.RetiringGens)
+	}
+	app.RetiringGens[0] = "mutated-get"
+	app, _ = store.GetApp(t.Context(), "alice", "app")
+	if app.RetiringGens[0] != "g-old" {
+		t.Fatalf("GetApp exposed stored slice: %+v", app.RetiringGens)
+	}
+	apps, _ := store.ListApps(t.Context(), "alice")
+	apps[0].RetiringGens[0] = "mutated-list"
+	all, _ := store.ListAllApps(t.Context())
+	all[0].RetiringGens[0] = "mutated-all"
+	app, _ = store.GetApp(t.Context(), "alice", "app")
+	if app.RetiringGens[0] != "g-old" {
+		t.Fatalf("list exposed stored slice: %+v", app.RetiringGens)
+	}
+}
+
 func TestFirestoreConformance(t *testing.T) {
 	if os.Getenv("FIRESTORE_EMULATOR_HOST") == "" {
 		t.Skip("FIRESTORE_EMULATOR_HOST not set; start the emulator to run this test")

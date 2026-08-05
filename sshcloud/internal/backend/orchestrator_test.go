@@ -132,7 +132,7 @@ func TestOrchestratorClientAddr(t *testing.T) {
 
 func TestPlacedDialUnknownHost(t *testing.T) {
 	place := placement.NewMemory()
-	_ = place.Set(t.Context(), "alice", "fortune", "missing")
+	_ = place.SetIdentity(t.Context(), "alice", "fortune", "missing", "local:missing")
 	dial := &backend.PlacedDial{
 		Placement: place,
 		Agents:    backend.NewHostSet(map[string]*backend.AgentClient{}, ""),
@@ -144,7 +144,7 @@ func TestPlacedDialUnknownHost(t *testing.T) {
 
 func TestPlacedDialRefusesImplicitCrossHostRecovery(t *testing.T) {
 	place := placement.NewMemory()
-	_ = place.Set(t.Context(), "alice", "fortune", "removed-host")
+	_ = place.SetIdentity(t.Context(), "alice", "fortune", "removed-host", "local:removed-host")
 	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/host/capacity" {
 			_ = json.NewEncoder(w).Encode(map[string]any{
@@ -202,7 +202,7 @@ func TestPlacedDialEnforcesAwakeUserQuotaBeforeEnsure(t *testing.T) {
 	}))
 	defer host.Close()
 	place := placement.NewMemory()
-	if err := place.Set(t.Context(), "alice", "fortune", "host-a"); err != nil {
+	if err := place.SetIdentity(t.Context(), "alice", "fortune", "host-a", "local:host-a"); err != nil {
 		t.Fatal(err)
 	}
 	dial := &backend.PlacedDial{

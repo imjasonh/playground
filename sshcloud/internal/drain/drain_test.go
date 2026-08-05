@@ -268,7 +268,7 @@ func TestDrainHostMovesRunningAndSleepingGenerations(t *testing.T) {
 	snapshots.items["alice/"+genid.AgentApp("myapp", "gold")] = sleeping
 
 	place := placement.NewMemory()
-	if err := place.Set(ctx, "alice", "myapp", "host-a"); err != nil {
+	if err := place.SetIdentity(ctx, "alice", "myapp", "host-a", "local:host-a"); err != nil {
 		t.Fatal(err)
 	}
 	gateway := newDrainGateway(t)

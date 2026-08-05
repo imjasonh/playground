@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/pem"
 	"fmt"
 	"math/big"
@@ -18,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -178,6 +180,78 @@ func TestGCEVerifierRejectsWrongAudienceServiceAccountAndReplay(t *testing.T) {
 	}
 }
 
+func TestGCEVerifierPreservesLargeIntegerClaims(t *testing.T) {
+	t.Parallel()
+	now := time.Unix(1_800_000_000, 0)
+	payload := validPayload(now)
+	compute := payload.Claims["google"].(map[string]any)["compute_engine"].(map[string]any)
+	compute["instance_id"] = float64(9_007_199_254_740_993)
+	rawClaims := `{
+		"google":{"compute_engine":{
+			"instance_id":9007199254740993,
+			"instance_name":"sshcloud-gateway",
+			"zone":"us-central1-a",
+			"project_id":"test-project",
+			"project_number":"123456789",
+			"instance_creation_timestamp":"1700000000"
+		}}
+	}`
+	raw := "e30." + base64.RawURLEncoding.EncodeToString([]byte(rawClaims)) + ".c2ln"
+	verifier := &GCEVerifier{
+		ProjectID: "test-project", ProjectNumber: "123456789",
+		Now: func() time.Time { return now },
+		validate: func(context.Context, string, string) (*idtoken.Payload, error) {
+			return payload, nil
+		},
+	}
+	identity, err := verifier.VerifyIdentity(t.Context(), raw, VerificationPolicy{
+		CallerRole: RoleGateway, ServiceAccount: "gateway@test-project.iam.gserviceaccount.com",
+		Audience: AudienceOrchestratorGateway,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if identity.InstanceID != "9007199254740993" {
+		t.Fatalf("instance ID = %q", identity.InstanceID)
+	}
+	if _, ok := claimIntegerString(float64(9_007_199_254_740_993)); ok {
+		t.Fatal("rounded float64 integer claim was accepted directly")
+	}
+}
+
+func TestMetadataTokenSourceRejectsInvalidBodies(t *testing.T) {
+	t.Parallel()
+	for name, writeResponse := range map[string]func(http.ResponseWriter){
+		"empty": func(w http.ResponseWriter) {},
+		"oversized": func(w http.ResponseWriter) {
+			_, _ = w.Write([]byte(strings.Repeat("x", maxIdentityTokenBytes+1)))
+		},
+		"truncated": func(w http.ResponseWriter) {
+			w.Header().Set("Content-Length", "100")
+			_, _ = w.Write([]byte("short"))
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Metadata-Flavor", "Google")
+				writeResponse(w)
+			}))
+			defer server.Close()
+			source := MetadataTokenSource{BaseURL: server.URL}
+			if _, err := source.Token(t.Context(), AudienceAgent); err == nil {
+				t.Fatal("invalid metadata token body was accepted")
+			}
+		})
+	}
+}
+
+func TestBearerTokenRejectsOversizedValue(t *testing.T) {
+	t.Parallel()
+	if _, ok := bearerToken([]string{"Bearer " + strings.Repeat("x", maxIdentityTokenBytes+1)}); ok {
+		t.Fatal("oversized bearer token was accepted")
+	}
+}
+
 func TestPrepareRequestRequiresProductionAuthOrExplicitLoopback(t *testing.T) {
 	loopback, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1:8080/v1/test", nil)
 	if err := PrepareRequest(loopback, nil, true); err != nil {
@@ -296,6 +370,12 @@ func TestTLSReloadsLeafCertificatesAcrossTwoCAs(t *testing.T) {
 	client := &http.Client{Transport: transport, Timeout: time.Second}
 	if body, peer := getBodyAndPeerSerial(t, client, serverURL); body != "21" || peer != "20" {
 		t.Fatalf("initial client/server serials %q/%q", body, peer)
+	}
+
+	pki.writeRole(t, clientFiles.CertFile, clientFiles.KeyFile, RoleAgent, pki.caB, 22)
+	pki.writeRole(t, serverFiles.CertFile, serverFiles.KeyFile, RoleAgent, pki.caB, 23)
+	if body, peer := getBodyAndPeerSerial(t, client, serverURL); body != "21" || peer != "20" {
+		t.Fatalf("wrong-role reload replaced valid leaves: %q/%q", body, peer)
 	}
 
 	pki.writeRole(t, clientFiles.CertFile, clientFiles.KeyFile, RoleGateway, pki.caB, 22)

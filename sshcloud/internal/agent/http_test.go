@@ -268,6 +268,53 @@ func TestHTTPHealthAndControlRoutesAreSeparate(t *testing.T) {
 	}
 }
 
+func TestMutationTargetBindingRejectsWrongIncarnationBeforeDispatch(t *testing.T) {
+	t.Parallel()
+	handler := &Handler{InstanceName: "agent-a", InstanceID: "123456789"}
+	dispatched := 0
+	bound := handler.bindMutationTarget(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		dispatched++
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	for name, headers := range map[string]http.Header{
+		"missing": nil,
+		"wrong name": {
+			TargetInstanceNameHeader: {"agent-b"},
+			TargetInstanceIDHeader:   {"123456789"},
+		},
+		"wrong ID": {
+			TargetInstanceNameHeader: {"agent-a"},
+			TargetInstanceIDHeader:   {"987654321"},
+		},
+		"duplicate": {
+			TargetInstanceNameHeader: {"agent-a", "agent-a"},
+			TargetInstanceIDHeader:   {"123456789"},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/v1/instances/stop", bytes.NewBufferString(`not JSON`))
+			req.Header = headers.Clone()
+			rec := httptest.NewRecorder()
+			bound.ServeHTTP(rec, req)
+			if rec.Code != http.StatusMisdirectedRequest {
+				t.Fatalf("status %d", rec.Code)
+			}
+		})
+	}
+	if dispatched != 0 {
+		t.Fatalf("mismatched requests dispatched %d times", dispatched)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/instances/stop", nil)
+	req.Header.Set(TargetInstanceNameHeader, "agent-a")
+	req.Header.Set(TargetInstanceIDHeader, "123456789")
+	rec := httptest.NewRecorder()
+	bound.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent || dispatched != 1 {
+		t.Fatalf("valid target status=%d dispatched=%d", rec.Code, dispatched)
+	}
+}
+
 func TestHTTPHostCapacityInventoryAndCordon(t *testing.T) {
 	dir := t.TempDir()
 	mgr, err := NewManager(Config{

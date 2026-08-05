@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/imjasonh/playground/sshcloud/internal/controlauth"
 	"github.com/imjasonh/playground/sshcloud/internal/genid"
 	"github.com/imjasonh/playground/sshcloud/internal/image"
 	"github.com/imjasonh/playground/sshcloud/internal/names"
@@ -16,9 +18,17 @@ import (
 
 // Handler serves the host agent HTTP API.
 type Handler struct {
-	Manager   *Manager
-	Readiness func() error
+	Manager        *Manager
+	Readiness      func() error
+	IdentityTokens controlauth.TokenSource
+	InstanceName   string
+	InstanceID     string
 }
+
+const (
+	TargetInstanceNameHeader = "X-SSHCloud-Target-Instance-Name"
+	TargetInstanceIDHeader   = "X-SSHCloud-Target-Instance-ID"
+)
 
 // Mount registers control routes on mux (Go 1.22+ method patterns). The
 // production command wraps this mux in controlauth.Require before serving it.
@@ -37,9 +47,31 @@ func (h *Handler) Mount(mux *http.ServeMux) {
 	api.HandleFunc("GET /v1/host/capacity", h.capacity)
 	api.HandleFunc("GET /v1/host/instances", h.instances)
 	api.HandleFunc("GET /v1/host/orphans", h.orphans)
+	api.HandleFunc("GET /v1/host/identity", h.identity)
 	api.HandleFunc("POST /v1/host/cordon", h.cordon)
 	api.HandleFunc("POST /v1/host/uncordon", h.uncordon)
-	mux.Handle("/v1/", api)
+	mux.Handle("/v1/", h.bindMutationTarget(api))
+}
+
+func (h *Handler) bindMutationTarget(next http.Handler) http.Handler {
+	if h.InstanceName == "" && h.InstanceID == "" {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			next.ServeHTTP(w, r)
+			return
+		}
+		names := r.Header.Values(TargetInstanceNameHeader)
+		ids := r.Header.Values(TargetInstanceIDHeader)
+		if h.InstanceName == "" || h.InstanceID == "" ||
+			len(names) != 1 || names[0] != h.InstanceName ||
+			len(ids) != 1 || ids[0] != h.InstanceID {
+			http.Error(w, "request targets a different agent incarnation", http.StatusMisdirectedRequest)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // MountHealth registers only body-free liveness/readiness endpoints. It is
@@ -310,6 +342,21 @@ func (h *Handler) orphans(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]any{"orphans": orphans})
+}
+
+func (h *Handler) identity(w http.ResponseWriter, r *http.Request) {
+	if h.IdentityTokens == nil {
+		http.Error(w, "server identity proof unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	token, err := h.IdentityTokens.Token(ctx, controlauth.AudienceAgentServer)
+	if err != nil {
+		http.Error(w, "server identity proof unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	writeJSON(w, map[string]string{"token": token})
 }
 
 func (h *Handler) cordon(w http.ResponseWriter, r *http.Request) {

@@ -25,7 +25,7 @@ func TestMigrateOrchestration(t *testing.T) {
 
 	place := placement.NewMemory()
 	ctx := context.Background()
-	if err := place.Set(ctx, "alice", "fortune", "host-a"); err != nil {
+	if err := place.SetIdentity(ctx, "alice", "fortune", "host-a", "local:host-a"); err != nil {
 		t.Fatal(err)
 	}
 	mig := &migrate.Migrator{
@@ -79,7 +79,7 @@ func TestMigrateReconcilesAdoptAppliedBeforeCanceledResponse(t *testing.T) {
 	dst.mu.Unlock()
 
 	place := placement.NewMemory()
-	if err := place.Set(ctx, "alice", "fortune", "host-a"); err != nil {
+	if err := place.SetIdentity(ctx, "alice", "fortune", "host-a", "local:host-a"); err != nil {
 		t.Fatal(err)
 	}
 	mig := &migrate.Migrator{

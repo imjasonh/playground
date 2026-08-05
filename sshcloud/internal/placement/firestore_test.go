@@ -28,7 +28,7 @@ func TestFirestoreRoundTrip(t *testing.T) {
 	if _, ok, err := fs.Get(ctx, user, app); err != nil || ok {
 		t.Fatalf("empty get: ok=%v err=%v", ok, err)
 	}
-	if err := fs.Set(ctx, user, app, "host-a"); err != nil {
+	if err := fs.SetIdentity(ctx, user, app, "host-a", "instance-a"); err != nil {
 		t.Fatal(err)
 	}
 	h, ok, err := fs.Get(ctx, user, app)
@@ -43,7 +43,9 @@ func TestFirestoreRoundTrip(t *testing.T) {
 	if err := fs.Mark(ctx, lease, Operation{Kind: "migrate", SourceHost: "host-a", TargetHost: "host-b"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := fs.Commit(ctx, lease, "host-b", now.Add(time.Second)); err != nil {
+	if err := fs.CommitStateIdentity(
+		ctx, lease, "host-b", "instance-b", nil, now.Add(time.Second),
+	); err != nil {
 		t.Fatal(err)
 	}
 	h, ok, err = fs.Get(ctx, user, app)

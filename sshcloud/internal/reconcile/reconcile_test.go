@@ -106,7 +106,7 @@ func TestExpiredOperationRollsTargetBackToAuthoritativeSource(t *testing.T) {
 	target.running[key] = true
 
 	store := placement.NewMemory()
-	if err := store.Set(ctx, "alice", "myapp", "host-a"); err != nil {
+	if err := store.SetIdentity(ctx, "alice", "myapp", "host-a", "local:host-a"); err != nil {
 		t.Fatal(err)
 	}
 	past := time.Now().Add(-time.Minute)
@@ -116,7 +116,8 @@ func TestExpiredOperationRollsTargetBackToAuthoritativeSource(t *testing.T) {
 	}
 	if err := store.Mark(ctx, lease, placement.Operation{
 		Kind: "drain", Phase: "unknown-adopt", SourceHost: "host-a",
-		TargetHost: "host-b", Generations: []string{"gabc"},
+		SourceInstanceID: "local:host-a", TargetHost: "host-b",
+		TargetInstanceID: "local:host-b", Generations: []string{"gabc"},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +160,7 @@ func TestExpiredInitialEnsureCommitsPreparedTarget(t *testing.T) {
 	}
 	if err := store.Mark(ctx, lease, placement.Operation{
 		ID: "ensure-op", Kind: "ensure", Phase: "ensuring", TargetHost: "host-b",
-		Generations: []string{"gabc"},
+		TargetInstanceID: "local:host-b", Generations: []string{"gabc"},
 		Desired: []placement.Generation{{
 			Gen: "gabc", Image: "image", Tier: "tiny", State: "running", SSHHostPublicKey: "test-host-key",
 		}},

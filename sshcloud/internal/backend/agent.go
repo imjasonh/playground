@@ -1,11 +1,8 @@
 package backend
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"time"
@@ -17,19 +14,20 @@ import (
 // AgentClient talks to a host agent's HTTP API.
 type AgentClient struct {
 	BaseURL          string
+	InstanceName     string
 	InstanceID       string
 	ControlClient    *controlauth.Client
 	HTTPClient       *http.Client
 	InsecureLoopback bool
+	ServerVerifier   controlauth.IdentityTokenVerifier
+	ServerPolicy     controlauth.VerificationPolicy
 }
 
-func (c *AgentClient) client() *http.Client {
-	if c.HTTPClient != nil {
-		return c.HTTPClient
+func (c *AgentClient) kernel() controlHTTPKernel {
+	return controlHTTPKernel{
+		baseURL: c.BaseURL, controlClient: c.ControlClient, httpClient: c.HTTPClient,
+		insecureLoopback: c.InsecureLoopback, timeout: 5 * time.Minute,
 	}
-	// Pulling, unpacking, building ext4, and booting a cold image can be slow.
-	// Callers still provide cancellable request contexts.
-	return &http.Client{Timeout: 5 * time.Minute}
 }
 
 type instanceBody struct {
@@ -42,31 +40,61 @@ type instanceBody struct {
 	CordonEpoch string `json:"cordon_epoch,omitempty"`
 }
 
-func (c *AgentClient) postJSON(ctx context.Context, path string, body any) (*http.Response, error) {
-	b, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
+func (c *AgentClient) postJSON(ctx context.Context, path, operation string, body, out any) error {
+	headers := make(http.Header)
+	if c.InstanceName == "" || c.InstanceID == "" {
+		if !c.InsecureLoopback {
+			return fmt.Errorf("expected agent instance name and ID are required")
+		}
+	} else {
+		headers.Set(agent.TargetInstanceNameHeader, c.InstanceName)
+		headers.Set(agent.TargetInstanceIDHeader, c.InstanceID)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+path, bytes.NewReader(b))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	return c.do(req)
+	return c.kernel().json(ctx, http.MethodPost, path, operation, body, out, headers)
 }
 
-func (c *AgentClient) do(req *http.Request) (*http.Response, error) {
-	if c.ControlClient != nil {
-		return c.ControlClient.Do(req)
+// VerifyServerIdentity obtains a fresh audience-bound GCE identity document
+// from the agent over the role-authenticated mTLS channel and binds the
+// endpoint to the exact instance name and immutable numeric instance ID from
+// host discovery. Mutations are bound to that identity in their own request;
+// callers retain this independent server proof before committing placement.
+func (c *AgentClient) VerifyServerIdentity(ctx context.Context) error {
+	if c == nil {
+		return fmt.Errorf("agent client is nil")
 	}
-	if err := controlauth.PrepareRequest(req, nil, c.InsecureLoopback); err != nil {
-		return nil, err
+	if c.InsecureLoopback && c.ServerVerifier == nil {
+		return nil
 	}
-	return c.client().Do(req)
+	if c.ServerVerifier == nil || c.ServerPolicy.ServiceAccount == "" ||
+		c.ServerPolicy.Audience != controlauth.AudienceAgentServer {
+		return fmt.Errorf("agent server identity verifier is not configured")
+	}
+	if c.InstanceName == "" || c.InstanceID == "" {
+		return fmt.Errorf("expected agent instance name and ID are required")
+	}
+	var proof struct {
+		Token string `json:"token"`
+	}
+	if err := c.kernel().json(
+		ctx, http.MethodGet, "/v1/host/identity", "agent server identity", nil, &proof, nil,
+	); err != nil {
+		return err
+	}
+	identity, err := c.ServerVerifier.VerifyIdentity(ctx, proof.Token, c.ServerPolicy)
+	if err != nil {
+		return fmt.Errorf("verify agent server identity: %w", err)
+	}
+	if identity.InstanceName != c.InstanceName || identity.InstanceID != c.InstanceID {
+		return fmt.Errorf(
+			"agent endpoint identity is %s@%s, want %s@%s",
+			identity.InstanceName, identity.InstanceID, c.InstanceName, c.InstanceID,
+		)
+	}
+	return nil
 }
 
-func (c *AgentClient) postInstance(ctx context.Context, path, user, app, gen string) (*http.Response, error) {
-	return c.postJSON(ctx, path, instanceBody{User: user, App: app, Gen: gen})
+func (c *AgentClient) postInstance(ctx context.Context, path, operation, user, app, gen string, out any) error {
+	return c.postJSON(ctx, path, operation, instanceBody{User: user, App: app, Gen: gen}, out)
 }
 
 // Addr dials via Ensure (generation + optional digest-pinned image).
@@ -80,9 +108,13 @@ func (c *AgentClient) Addr(user, app, gen, image string) (string, error) {
 
 // InstanceView is a subset of agent instance state.
 type InstanceView struct {
+	User             string `json:"user,omitempty"`
+	App              string `json:"app,omitempty"`
 	Addr             string `json:"addr"`
 	GuestIP          string `json:"guest_ip"`
 	State            string `json:"state"`
+	LastUsed         string `json:"last_used,omitempty"`
+	SnapKey          string `json:"snap_key,omitempty"`
 	SSHHostPublicKey string `json:"ssh_host_public_key"`
 }
 
@@ -107,26 +139,23 @@ func (c *AgentClient) EnsureContext(ctx context.Context, user, app, gen, image s
 
 // EnsureTierContext is EnsureContext with an explicit resource tier.
 func (c *AgentClient) EnsureTierContext(ctx context.Context, user, app, gen, image, tier string, noIdle bool) (InstanceView, error) {
-	res, err := c.postJSON(ctx, "/v1/instances/ensure", instanceBody{
+	var out InstanceView
+	err := c.postJSON(ctx, "/v1/instances/ensure", "agent ensure", instanceBody{
 		User:   user,
 		App:    app,
 		Gen:    gen,
 		Image:  image,
 		Tier:   tier,
 		NoIdle: noIdle,
-	})
+	}, &out)
 	if err != nil {
-		return InstanceView{}, err
-	}
-	defer res.Body.Close()
-	if res.StatusCode == http.StatusConflict || res.StatusCode == http.StatusServiceUnavailable {
-		return InstanceView{}, ErrAgentCapacity{HostStatus: res.StatusCode, Message: readErr(res.Body)}
-	}
-	if res.StatusCode >= 300 {
-		return InstanceView{}, fmt.Errorf("agent ensure: %s: %s", res.Status, readErr(res.Body))
-	}
-	var out InstanceView
-	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
+		if statusErr, ok := statusError(err); ok &&
+			(statusErr.StatusCode == http.StatusConflict ||
+				statusErr.StatusCode == http.StatusServiceUnavailable) {
+			return InstanceView{}, ErrAgentCapacity{
+				HostStatus: statusErr.StatusCode, Message: statusErr.Body,
+			}
+		}
 		return InstanceView{}, err
 	}
 	if out.Addr == "" {
@@ -140,20 +169,10 @@ func (c *AgentClient) EnsureTierContext(ctx context.Context, user, app, gen, ima
 
 // Capacity returns one host's allocatable resource view.
 func (c *AgentClient) Capacity(ctx context.Context) (agent.Capacity, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+"/v1/host/capacity", nil)
-	if err != nil {
-		return agent.Capacity{}, err
-	}
-	res, err := c.do(req)
-	if err != nil {
-		return agent.Capacity{}, err
-	}
-	defer res.Body.Close()
-	if res.StatusCode >= 300 {
-		return agent.Capacity{}, fmt.Errorf("agent capacity: %s: %s", res.Status, readErr(res.Body))
-	}
 	var capacity agent.Capacity
-	if err := json.NewDecoder(res.Body).Decode(&capacity); err != nil {
+	if err := c.kernel().json(
+		ctx, http.MethodGet, "/v1/host/capacity", "agent capacity", nil, &capacity, nil,
+	); err != nil {
 		return agent.Capacity{}, err
 	}
 	return capacity, nil
@@ -161,22 +180,12 @@ func (c *AgentClient) Capacity(ctx context.Context) (agent.Capacity, error) {
 
 // Instances returns host inventory for drain/reconciliation.
 func (c *AgentClient) Instances(ctx context.Context) ([]agent.InstanceInfo, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+"/v1/host/instances", nil)
-	if err != nil {
-		return nil, err
-	}
-	res, err := c.do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer res.Body.Close()
-	if res.StatusCode >= 300 {
-		return nil, fmt.Errorf("agent instances: %s: %s", res.Status, readErr(res.Body))
-	}
 	var out struct {
 		Instances []agent.InstanceInfo `json:"instances"`
 	}
-	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
+	if err := c.kernel().json(
+		ctx, http.MethodGet, "/v1/host/instances", "agent instances", nil, &out, nil,
+	); err != nil {
 		return nil, err
 	}
 	return out.Instances, nil
@@ -193,32 +202,21 @@ func (c *AgentClient) SetCordoned(ctx context.Context, cordoned bool) error {
 
 // Uncordon clears the exact epoch returned by Cordon.
 func (c *AgentClient) Uncordon(ctx context.Context, epoch string) error {
-	res, err := c.postJSON(ctx, "/v1/host/uncordon", map[string]string{"cordon_epoch": epoch})
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-	if res.StatusCode >= 300 {
-		return fmt.Errorf("agent cordon: %s: %s", res.Status, readErr(res.Body))
-	}
-	return nil
+	return c.postJSON(
+		ctx, "/v1/host/uncordon", "agent uncordon",
+		map[string]string{"cordon_epoch": epoch}, nil,
+	)
 }
 
 // Cordon rejects new lifecycle operations, waits for in-flight reservations,
 // and returns the epoch required for rollback onto this host.
 func (c *AgentClient) Cordon(ctx context.Context) (string, error) {
-	res, err := c.postJSON(ctx, "/v1/host/cordon", struct{}{})
-	if err != nil {
-		return "", err
-	}
-	defer res.Body.Close()
-	if res.StatusCode >= 300 {
-		return "", fmt.Errorf("agent cordon: %s: %s", res.Status, readErr(res.Body))
-	}
 	var out struct {
 		Epoch string `json:"cordon_epoch"`
 	}
-	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
+	if err := c.postJSON(
+		ctx, "/v1/host/cordon", "agent cordon", struct{}{}, &out,
+	); err != nil {
 		return "", err
 	}
 	if out.Epoch == "" {
@@ -238,17 +236,9 @@ func (c *AgentClient) SleepContext(ctx context.Context, user, app, gen string) e
 }
 
 func (c *AgentClient) SleepWithEpoch(ctx context.Context, user, app, gen, cordonEpoch string) error {
-	res, err := c.postJSON(ctx, "/v1/instances/sleep", instanceBody{
+	return c.postJSON(ctx, "/v1/instances/sleep", "agent sleep", instanceBody{
 		User: user, App: app, Gen: gen, CordonEpoch: cordonEpoch,
-	})
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-	if res.StatusCode >= 300 {
-		return fmt.Errorf("agent sleep: %s: %s", res.Status, readErr(res.Body))
-	}
-	return nil
+	}, nil)
 }
 
 // Evict drops a sleeping instance without deleting the shared snapshot.
@@ -262,17 +252,9 @@ func (c *AgentClient) EvictContext(ctx context.Context, user, app, gen string) e
 }
 
 func (c *AgentClient) EvictWithEpoch(ctx context.Context, user, app, gen, cordonEpoch string) error {
-	res, err := c.postJSON(ctx, "/v1/instances/evict", instanceBody{
+	return c.postJSON(ctx, "/v1/instances/evict", "agent evict", instanceBody{
 		User: user, App: app, Gen: gen, CordonEpoch: cordonEpoch,
-	})
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-	if res.StatusCode >= 300 {
-		return fmt.Errorf("agent evict: %s: %s", res.Status, readErr(res.Body))
-	}
-	return nil
+	}, nil)
 }
 
 // Adopt restores an instance from the shared snapshot store onto this host.
@@ -292,16 +274,10 @@ func (c *AgentClient) AdoptForcedContext(ctx context.Context, user, app, gen, co
 
 // PreflightSnapshot validates sleeping-snapshot compatibility without waking it.
 func (c *AgentClient) PreflightSnapshot(ctx context.Context, user, app, gen string) (agent.InstanceInfo, error) {
-	res, err := c.postInstance(ctx, "/v1/instances/preflight", user, app, gen)
-	if err != nil {
-		return agent.InstanceInfo{}, err
-	}
-	defer res.Body.Close()
-	if res.StatusCode >= 300 {
-		return agent.InstanceInfo{}, fmt.Errorf("agent preflight: %s: %s", res.Status, readErr(res.Body))
-	}
 	var info agent.InstanceInfo
-	if err := json.NewDecoder(res.Body).Decode(&info); err != nil {
+	if err := c.postInstance(
+		ctx, "/v1/instances/preflight", "agent preflight", user, app, gen, &info,
+	); err != nil {
 		return agent.InstanceInfo{}, err
 	}
 	return info, nil
@@ -309,34 +285,22 @@ func (c *AgentClient) PreflightSnapshot(ctx context.Context, user, app, gen stri
 
 // RegisterSleeping creates a durable host inventory claim without waking.
 func (c *AgentClient) RegisterSleeping(ctx context.Context, user, app, gen string) (agent.InstanceInfo, error) {
-	res, err := c.postInstance(ctx, "/v1/instances/register-sleeping", user, app, gen)
-	if err != nil {
-		return agent.InstanceInfo{}, err
-	}
-	defer res.Body.Close()
-	if res.StatusCode >= 300 {
-		return agent.InstanceInfo{}, fmt.Errorf("agent register sleeping: %s: %s", res.Status, readErr(res.Body))
-	}
 	var info agent.InstanceInfo
-	if err := json.NewDecoder(res.Body).Decode(&info); err != nil {
+	if err := c.postInstance(
+		ctx, "/v1/instances/register-sleeping", "agent register sleeping",
+		user, app, gen, &info,
+	); err != nil {
 		return agent.InstanceInfo{}, err
 	}
 	return info, nil
 }
 
 func (c *AgentClient) adoptContext(ctx context.Context, user, app, gen, cordonEpoch string) (InstanceView, error) {
-	res, err := c.postJSON(ctx, "/v1/instances/adopt", instanceBody{
-		User: user, App: app, Gen: gen, CordonEpoch: cordonEpoch,
-	})
-	if err != nil {
-		return InstanceView{}, err
-	}
-	defer res.Body.Close()
-	if res.StatusCode >= 300 {
-		return InstanceView{}, fmt.Errorf("agent adopt: %s: %s", res.Status, readErr(res.Body))
-	}
 	var out InstanceView
-	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
+	err := c.postJSON(ctx, "/v1/instances/adopt", "agent adopt", instanceBody{
+		User: user, App: app, Gen: gen, CordonEpoch: cordonEpoch,
+	}, &out)
+	if err != nil {
 		return InstanceView{}, err
 	}
 	return out, nil
@@ -354,34 +318,21 @@ func (c *AgentClient) StatusGen(user, app, gen string) (InstanceView, bool, erro
 
 // StatusContext is StatusGen with cancellation.
 func (c *AgentClient) StatusContext(ctx context.Context, user, app, gen string) (InstanceView, bool, error) {
-	u, err := url.Parse(c.BaseURL + "/v1/instances/status")
-	if err != nil {
-		return InstanceView{}, false, err
-	}
-	q := u.Query()
+	q := make(url.Values)
 	q.Set("user", user)
 	q.Set("app", app)
 	if gen != "" {
 		q.Set("gen", gen)
 	}
-	u.RawQuery = q.Encode()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
-	if err != nil {
-		return InstanceView{}, false, err
-	}
-	res, err := c.do(req)
-	if err != nil {
-		return InstanceView{}, false, err
-	}
-	defer res.Body.Close()
-	if res.StatusCode == http.StatusNotFound {
+	var out InstanceView
+	err := c.kernel().json(
+		ctx, http.MethodGet, "/v1/instances/status?"+q.Encode(),
+		"agent status", nil, &out, nil,
+	)
+	if statusErr, ok := statusError(err); ok && statusErr.StatusCode == http.StatusNotFound {
 		return InstanceView{}, false, nil
 	}
-	if res.StatusCode >= 300 {
-		return InstanceView{}, false, fmt.Errorf("agent status: %s: %s", res.Status, readErr(res.Body))
-	}
-	var out InstanceView
-	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
+	if err != nil {
 		return InstanceView{}, false, err
 	}
 	return out, true, nil
@@ -394,15 +345,7 @@ func (c *AgentClient) Stop(user, app, gen string) error {
 
 // StopContext destroys one generation with cancellation.
 func (c *AgentClient) StopContext(ctx context.Context, user, app, gen string) error {
-	res, err := c.postInstance(ctx, "/v1/instances/stop", user, app, gen)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-	if res.StatusCode >= 300 {
-		return fmt.Errorf("agent stop: %s: %s", res.Status, readErr(res.Body))
-	}
-	return nil
+	return c.postInstance(ctx, "/v1/instances/stop", "agent stop", user, app, gen, nil)
 }
 
 // SetNoIdleContext changes the active-operation hold without booting or waking.
@@ -411,17 +354,9 @@ func (c *AgentClient) SetNoIdleContext(ctx context.Context, user, app, gen strin
 }
 
 func (c *AgentClient) SetNoIdleWithEpoch(ctx context.Context, user, app, gen string, noIdle bool, cordonEpoch string) error {
-	res, err := c.postJSON(ctx, "/v1/instances/no-idle", instanceBody{
+	return c.postJSON(ctx, "/v1/instances/no-idle", "agent no-idle", instanceBody{
 		User: user, App: app, Gen: gen, NoIdle: noIdle, CordonEpoch: cordonEpoch,
-	})
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-	if res.StatusCode >= 300 {
-		return fmt.Errorf("agent no-idle: %s: %s", res.Status, readErr(res.Body))
-	}
-	return nil
+	}, nil)
 }
 
 // AgentControl adapts AgentClient to cutover.Instances.
@@ -452,9 +387,4 @@ func (a AgentControl) SetNoIdle(ctx context.Context, user, app, gen string, noId
 		return fmt.Errorf("nil agent client")
 	}
 	return a.Client.SetNoIdleContext(ctx, user, app, gen, noIdle)
-}
-
-func readErr(r io.Reader) string {
-	b, _ := io.ReadAll(io.LimitReader(r, 512))
-	return string(bytes.TrimSpace(b))
 }

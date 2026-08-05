@@ -13,7 +13,7 @@ import (
 // Store maps (user, app) → host ID.
 type Store interface {
 	Get(ctx context.Context, user, app string) (hostID string, ok bool, err error)
-	Set(ctx context.Context, user, app, hostID string) error
+	SetIdentity(ctx context.Context, user, app, hostID, hostInstanceID string) error
 	Delete(ctx context.Context, user, app string) error
 	GetRecord(ctx context.Context, user, app string) (Record, bool, error)
 	ListRecords(ctx context.Context) ([]Record, error)
@@ -21,17 +21,8 @@ type Store interface {
 	AcquireRecovery(ctx context.Context, expected Record, owner string, ttl time.Duration, now time.Time) (Lease, error)
 	Renew(ctx context.Context, lease Lease, ttl time.Duration, now time.Time) (Lease, error)
 	Mark(ctx context.Context, lease Lease, operation Operation) error
-	Commit(ctx context.Context, lease Lease, hostID string, now time.Time) error
-	CommitState(ctx context.Context, lease Lease, hostID string, generations []Generation, now time.Time) error
-	Release(ctx context.Context, lease Lease) error
-}
-
-// HostIdentityStore atomically persists the immutable GCE instance ID beside
-// the human-readable instance name. Production placement always uses it.
-type HostIdentityStore interface {
-	SetIdentity(ctx context.Context, user, app, hostID, hostInstanceID string) error
-	CommitIdentity(ctx context.Context, lease Lease, hostID, hostInstanceID string, now time.Time) error
 	CommitStateIdentity(ctx context.Context, lease Lease, hostID, hostInstanceID string, generations []Generation, now time.Time) error
+	Release(ctx context.Context, lease Lease) error
 }
 
 // Record is the durable owner and operation fence for one app.
@@ -142,11 +133,10 @@ func (m *Memory) Get(_ context.Context, user, app string) (string, bool, error) 
 	return r.HostID, ok && r.HostID != "", nil
 }
 
-func (m *Memory) Set(_ context.Context, user, app, hostID string) error {
-	return m.setIdentity(user, app, hostID, "")
-}
-
 func (m *Memory) SetIdentity(_ context.Context, user, app, hostID, hostInstanceID string) error {
+	if hostInstanceID == "" {
+		return fmt.Errorf("host instance ID required")
+	}
 	return m.setIdentity(user, app, hostID, hostInstanceID)
 }
 
@@ -154,8 +144,6 @@ func (m *Memory) setIdentity(user, app, hostID, hostInstanceID string) error {
 	if user == "" || app == "" || hostID == "" {
 		return fmt.Errorf("user, app, and hostID required")
 	}
-	// Empty IDs remain supported for local/legacy tests; snapshotd fails closed
-	// on any durable placement without the immutable production instance ID.
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	k := key(user, app)
@@ -186,7 +174,7 @@ func (m *Memory) GetRecord(_ context.Context, user, app string) (Record, bool, e
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	r, ok := m.records[key(user, app)]
-	return r, ok, nil
+	return cloneRecord(r), ok, nil
 }
 
 func (m *Memory) ListRecords(context.Context) ([]Record, error) {
@@ -194,7 +182,7 @@ func (m *Memory) ListRecords(context.Context) ([]Record, error) {
 	defer m.mu.Unlock()
 	out := make([]Record, 0, len(m.records))
 	for _, r := range m.records {
-		out = append(out, r)
+		out = append(out, cloneRecord(r))
 	}
 	return out, nil
 }
@@ -268,30 +256,18 @@ func (m *Memory) Mark(_ context.Context, lease Lease, operation Operation) error
 		return ErrLeaseLost{User: lease.User, App: lease.App}
 	}
 	operation.Sequence = r.Operation.Sequence + 1
-	r.Operation = operation
+	r.Operation = cloneOperation(operation)
 	m.records[k] = r
 	return nil
 }
 
-func (m *Memory) Commit(_ context.Context, lease Lease, hostID string, now time.Time) error {
-	return m.commit(lease, hostID, "", nil, false, now)
-}
-
-func (m *Memory) CommitState(_ context.Context, lease Lease, hostID string, generations []Generation, now time.Time) error {
-	return m.commit(lease, hostID, "", generations, true, now)
-}
-
-func (m *Memory) CommitIdentity(_ context.Context, lease Lease, hostID, hostInstanceID string, now time.Time) error {
-	return m.commit(lease, hostID, hostInstanceID, nil, false, now)
-}
-
 func (m *Memory) CommitStateIdentity(_ context.Context, lease Lease, hostID, hostInstanceID string, generations []Generation, now time.Time) error {
-	return m.commit(lease, hostID, hostInstanceID, generations, true, now)
+	return m.commitStateIdentity(lease, hostID, hostInstanceID, generations, now)
 }
 
-func (m *Memory) commit(lease Lease, hostID, hostInstanceID string, generations []Generation, replaceGenerations bool, now time.Time) error {
-	if hostID == "" {
-		return fmt.Errorf("hostID required")
+func (m *Memory) commitStateIdentity(lease Lease, hostID, hostInstanceID string, generations []Generation, now time.Time) error {
+	if hostID == "" || hostInstanceID == "" {
+		return fmt.Errorf("host ID and host instance ID required")
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -302,9 +278,7 @@ func (m *Memory) commit(lease Lease, hostID, hostInstanceID string, generations 
 	}
 	r.HostID = hostID
 	r.HostInstanceID = hostInstanceID
-	if replaceGenerations {
-		r.Generations = append([]Generation(nil), generations...)
-	}
+	r.Generations = append([]Generation(nil), generations...)
 	r.Revision++
 	r.LeaseOwner, r.LeaseUntilUnix = "", 0
 	r.Operation = Operation{}
@@ -343,6 +317,18 @@ func leaseFromRecord(r Record) Lease {
 		User: r.User, App: r.App, HostID: r.HostID, HostInstanceID: r.HostInstanceID, Owner: r.LeaseOwner,
 		Revision: r.Revision, UntilUnix: r.LeaseUntilUnix,
 	}
+}
+
+func cloneOperation(operation Operation) Operation {
+	operation.Generations = append([]string(nil), operation.Generations...)
+	operation.Desired = append([]Generation(nil), operation.Desired...)
+	return operation
+}
+
+func cloneRecord(record Record) Record {
+	record.Operation = cloneOperation(record.Operation)
+	record.Generations = append([]Generation(nil), record.Generations...)
+	return record
 }
 
 // UpsertGeneration returns inventory with generation inserted/replaced.

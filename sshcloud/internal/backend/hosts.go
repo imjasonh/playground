@@ -25,6 +25,7 @@ type HostSet struct {
 func NewHostSet(agents map[string]*AgentClient, defaultHost string) *HostSet {
 	cp := make(map[string]*AgentClient, len(agents))
 	for k, v := range agents {
+		bindHostClientIdentity(k, v)
 		cp[k] = v
 	}
 	hs := &HostSet{agents: cp, defaultHost: defaultHost}
@@ -70,11 +71,22 @@ func (h *HostSet) DefaultHost() string {
 func (h *HostSet) Replace(agents map[string]*AgentClient) {
 	cp := make(map[string]*AgentClient, len(agents))
 	for k, v := range agents {
+		bindHostClientIdentity(k, v)
 		cp[k] = v
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.agents = cp
+}
+
+func bindHostClientIdentity(name string, client *AgentClient) {
+	if client == nil {
+		return
+	}
+	client.InstanceName = name
+	if client.InsecureLoopback && client.InstanceID == "" {
+		client.InstanceID = "local:" + name
+	}
 }
 
 // Len returns the number of known hosts.
@@ -309,7 +321,9 @@ func ParseHostsSpec(s string) (map[string]*AgentClient, error) {
 				return nil, fmt.Errorf("invalid GCE instance ID in hosts entry %q", part)
 			}
 		}
-		out[id] = &AgentClient{BaseURL: strings.TrimRight(url, "/"), InstanceID: instanceID}
+		out[id] = &AgentClient{
+			BaseURL: strings.TrimRight(url, "/"), InstanceName: id, InstanceID: instanceID,
+		}
 	}
 	return out, nil
 }

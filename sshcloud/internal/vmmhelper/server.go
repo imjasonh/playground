@@ -571,47 +571,39 @@ func (s *Server) handle(ctx context.Context, operation string, payload json.RawM
 
 	switch operation {
 	case operationReady:
+		var request struct{}
+		if err := helperrpc.DecodePayload(payload, &request); err != nil {
+			return nil, err
+		}
 		return nil, s.Ready(ctx)
 	case operationLaunch:
 		var request LaunchRequest
-		if err := decodePayload(payload, &request); err != nil {
+		if err := helperrpc.DecodePayload(payload, &request); err != nil {
 			return nil, err
 		}
 		return s.launch(ctx, request)
 	case operationAlive:
 		var request vmRequest
-		if err := decodePayload(payload, &request); err != nil {
+		if err := helperrpc.DecodePayload(payload, &request); err != nil {
 			return nil, err
 		}
 		alive, err := s.alive(request.VMID)
 		return aliveResponse{Alive: alive}, err
 	case operationKill:
 		var request vmRequest
-		if err := decodePayload(payload, &request); err != nil {
+		if err := helperrpc.DecodePayload(payload, &request); err != nil {
 			return nil, err
 		}
 		return s.kill(request.VMID)
 	case operationExportSnapshot:
 		var request vmRequest
-		if err := decodePayload(payload, &request); err != nil {
+		if err := helperrpc.DecodePayload(payload, &request); err != nil {
 			return nil, err
 		}
 		return nil, s.exportSnapshot(request.VMID)
 	default:
 		return nil, fmt.Errorf("unsupported operation %q", operation)
 	}
-}
-
-func decodePayload(payload json.RawMessage, dst any) error {
-	decoder := json.NewDecoder(bytes.NewReader(payload))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(dst); err != nil {
-		return fmt.Errorf("decode payload: %w", err)
-	}
-	if decoder.Decode(&struct{}{}) != io.EOF {
-		return fmt.Errorf("decode payload: trailing JSON")
-	}
-	return nil
 }
 
 func (s *Server) launch(ctx context.Context, request LaunchRequest) (response LaunchResponse, retErr error) {

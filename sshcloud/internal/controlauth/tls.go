@@ -36,17 +36,21 @@ func (f TLSFiles) validate() error {
 }
 
 type certificateReloader struct {
-	files TLSFiles
+	files        TLSFiles
+	expectedRole Role
 
 	mu   sync.RWMutex
 	last *tls.Certificate
 }
 
-func newCertificateReloader(files TLSFiles) (*certificateReloader, error) {
+func newCertificateReloader(files TLSFiles, expectedRole Role) (*certificateReloader, error) {
 	if err := files.validate(); err != nil {
 		return nil, err
 	}
-	reloader := &certificateReloader{files: files}
+	if !validRole(expectedRole) {
+		return nil, fmt.Errorf("invalid control certificate role %q", expectedRole)
+	}
+	reloader := &certificateReloader{files: files, expectedRole: expectedRole}
 	if _, err := reloader.reload(); err != nil {
 		return nil, err
 	}
@@ -59,11 +63,15 @@ func (r *certificateReloader) reload() (*tls.Certificate, error) {
 		if len(cert.Certificate) == 0 {
 			err = fmt.Errorf("control TLS certificate chain is empty")
 		} else if cert.Leaf, err = x509.ParseCertificate(cert.Certificate[0]); err == nil {
-			copy := cert
-			r.mu.Lock()
-			r.last = &copy
-			r.mu.Unlock()
-			return &copy, nil
+			if roleErr := certificateRole(cert.Leaf, r.expectedRole); roleErr != nil {
+				err = roleErr
+			} else {
+				copy := cert
+				r.mu.Lock()
+				r.last = &copy
+				r.mu.Unlock()
+				return &copy, nil
+			}
 		}
 	}
 	r.mu.RLock()
@@ -154,18 +162,13 @@ func ServerTLSConfig(files TLSFiles, serverRole Role) (*tls.Config, error) {
 	if !validRole(serverRole) {
 		return nil, fmt.Errorf("invalid server role %q", serverRole)
 	}
-	certs, err := newCertificateReloader(files)
+	certs, err := newCertificateReloader(files, serverRole)
 	if err != nil {
 		return nil, err
 	}
 	roots, err := newRootsReloader(files)
 	if err != nil {
 		return nil, err
-	}
-	if cert, err := certs.reload(); err != nil {
-		return nil, err
-	} else if err := certificateRole(cert.Leaf, serverRole); err != nil {
-		return nil, fmt.Errorf("server certificate: %w", err)
 	}
 	return &tls.Config{
 		MinVersion:             tls.VersionTLS13,
@@ -199,7 +202,7 @@ func ClientTLSConfig(files TLSFiles, clientRole, serverRole Role) (*tls.Config, 
 	if !validRole(clientRole) || !validRole(serverRole) {
 		return nil, fmt.Errorf("invalid control TLS roles client=%q server=%q", clientRole, serverRole)
 	}
-	certs, err := newCertificateReloader(files)
+	certs, err := newCertificateReloader(files, clientRole)
 	if err != nil {
 		return nil, err
 	}
@@ -207,16 +210,11 @@ func ClientTLSConfig(files TLSFiles, clientRole, serverRole Role) (*tls.Config, 
 	if err != nil {
 		return nil, err
 	}
-	if cert, err := certs.reload(); err != nil {
-		return nil, err
-	} else if err := certificateRole(cert.Leaf, clientRole); err != nil {
-		return nil, fmt.Errorf("client certificate: %w", err)
-	}
 	return &tls.Config{
 		MinVersion:             tls.VersionTLS13,
 		SessionTicketsDisabled: true,
 		InsecureSkipVerify:     true, // Verification below uses dynamic roots and an exact URI SAN.
-		GetClientCertificate: certs.clientCertificate,
+		GetClientCertificate:   certs.clientCertificate,
 		VerifyConnection: func(state tls.ConnectionState) error {
 			if len(state.PeerCertificates) == 0 {
 				return fmt.Errorf("control server did not present a certificate")

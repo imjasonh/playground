@@ -52,6 +52,8 @@ func main() {
 	controlProjectID := flag.String("control-project-id", "", "expected GCE identity-token project ID")
 	controlProjectNumber := flag.String("control-project-number", "", "expected GCE identity-token project number")
 	orchestratorServiceAccount := flag.String("orchestrator-service-account", "", "exact orchestrator service-account email")
+	instanceName := flag.String("instance-name", "", "local GCE instance name required for production mutation binding")
+	instanceID := flag.String("instance-id", "", "local immutable GCE instance ID required for production mutation binding")
 	insecureControl := flag.Bool("control-insecure-loopback", false, "explicitly allow unauthenticated plaintext control traffic on loopback only")
 	relayHost := flag.String("relay-host", "", "agent VPC IP for gateway-reachable guest SSH relays (empty returns TAP-local addresses)")
 	relayPortMin := flag.Int("relay-port-min", 20000, "first TCP port available for guest SSH relays")
@@ -85,8 +87,11 @@ func main() {
 			log.Fatal(err)
 		}
 		log.Printf("WARNING: agent control uses explicit loopback-only insecure mode")
-	} else if *controlProjectID == "" || *controlProjectNumber == "" || *orchestratorServiceAccount == "" {
-		log.Fatal("production control requires -control-project-id, -control-project-number, and -orchestrator-service-account")
+	} else if strings.TrimSpace(*controlProjectID) == "" ||
+		strings.TrimSpace(*controlProjectNumber) == "" ||
+		strings.TrimSpace(*orchestratorServiceAccount) == "" ||
+		strings.TrimSpace(*instanceName) == "" || strings.TrimSpace(*instanceID) == "" {
+		log.Fatal("production control requires project identity, orchestrator service account, and local instance name/ID")
 	}
 
 	var store snapshot.Store
@@ -208,7 +213,13 @@ func main() {
 		observability.DefaultMetrics().SetHostInstances(running, sleeping, failed)
 	})
 	controlMux := http.NewServeMux()
-	handler := &agent.Handler{Manager: mgr, Readiness: mgr.Ready}
+	handler := &agent.Handler{
+		Manager: mgr, Readiness: mgr.Ready,
+		InstanceName: strings.TrimSpace(*instanceName), InstanceID: strings.TrimSpace(*instanceID),
+	}
+	if !*insecureControl {
+		handler.IdentityTokens = controlauth.MetadataTokenSource{}
+	}
 	handler.Mount(controlMux)
 	var controlHandler http.Handler = controlMux
 	var tlsConfig *tls.Config

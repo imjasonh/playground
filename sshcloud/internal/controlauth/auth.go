@@ -5,7 +5,9 @@
 package controlauth
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,11 +22,13 @@ import (
 )
 
 const (
-	authorizationHeader = "Authorization"
+	authorizationHeader   = "Authorization"
+	maxIdentityTokenBytes = 64 << 10
 
 	AudienceOrchestratorGateway = "https://control.sshcloud.internal/orchestrator/gateway"
 	AudienceOrchestratorAdmin   = "https://control.sshcloud.internal/orchestrator/admin"
 	AudienceAgent               = "https://control.sshcloud.internal/agent"
+	AudienceAgentServer         = "https://control.sshcloud.internal/agent/server-identity"
 	AudienceSnapshot            = "https://control.sshcloud.internal/snapshot"
 	AudienceGatewayMigration    = "https://control.sshcloud.internal/gateway/migration"
 )
@@ -99,12 +103,30 @@ func (s MetadataTokenSource) Token(ctx context.Context, audience string) (string
 	if res.Header.Get("Metadata-Flavor") != "Google" {
 		return "", fmt.Errorf("identity-token response did not come from the GCE metadata service")
 	}
-	body, err := io.ReadAll(io.LimitReader(res.Body, 64<<10))
+	if res.ContentLength == 0 {
+		return "", fmt.Errorf("metadata server returned an empty identity token")
+	}
+	if res.ContentLength > maxIdentityTokenBytes {
+		return "", fmt.Errorf("metadata identity token exceeds %d bytes", maxIdentityTokenBytes)
+	}
+	body, err := io.ReadAll(io.LimitReader(res.Body, maxIdentityTokenBytes+1))
 	if err != nil {
 		return "", fmt.Errorf("read GCE identity token: %w", err)
 	}
+	if len(body) > maxIdentityTokenBytes {
+		return "", fmt.Errorf("metadata identity token exceeds %d bytes", maxIdentityTokenBytes)
+	}
+	if res.ContentLength >= 0 && int64(len(body)) != res.ContentLength {
+		return "", fmt.Errorf(
+			"metadata identity token was truncated: read %d of %d bytes",
+			len(body), res.ContentLength,
+		)
+	}
 	token := strings.TrimSpace(string(body))
-	if token == "" {
+	if !validIdentityToken(token) {
+		if token != "" {
+			return "", fmt.Errorf("metadata server returned an invalid identity token")
+		}
 		return "", fmt.Errorf("metadata server returned an empty identity token")
 	}
 	return token, nil
@@ -126,6 +148,9 @@ func (a *RequestAuthorizer) Authorize(req *http.Request) error {
 	token, err := a.Source.Token(req.Context(), a.Audience)
 	if err != nil {
 		return err
+	}
+	if !validIdentityToken(token) {
+		return fmt.Errorf("identity-token source returned an invalid token")
 	}
 	req.Header.Set(authorizationHeader, "Bearer "+token)
 	return nil
@@ -179,6 +204,9 @@ func (v *GCEVerifier) VerifyIdentity(ctx context.Context, raw string, policy Ver
 	if v == nil {
 		return Identity{}, fmt.Errorf("GCE token verifier is required")
 	}
+	if !validIdentityToken(raw) {
+		return Identity{}, fmt.Errorf("identity token is empty, malformed, or oversized")
+	}
 	if strings.TrimSpace(policy.Audience) == "" || strings.TrimSpace(policy.ServiceAccount) == "" {
 		return Identity{}, fmt.Errorf("token verification policy is incomplete")
 	}
@@ -190,15 +218,18 @@ func (v *GCEVerifier) VerifyIdentity(ctx context.Context, raw string, policy Ver
 	if err != nil {
 		return Identity{}, fmt.Errorf("validate Google identity token: %w", err)
 	}
-	return v.verifyPayloadIdentity(payload, policy)
+	compute, err := losslessComputeClaims(raw, payload)
+	if err != nil {
+		return Identity{}, err
+	}
+	return v.verifyPayloadIdentity(payload, policy, compute)
 }
 
-func (v *GCEVerifier) verifyPayload(payload *idtoken.Payload, policy VerificationPolicy) error {
-	_, err := v.verifyPayloadIdentity(payload, policy)
-	return err
-}
-
-func (v *GCEVerifier) verifyPayloadIdentity(payload *idtoken.Payload, policy VerificationPolicy) (Identity, error) {
+func (v *GCEVerifier) verifyPayloadIdentity(
+	payload *idtoken.Payload,
+	policy VerificationPolicy,
+	exactCompute map[string]any,
+) (Identity, error) {
 	if payload == nil {
 		return Identity{}, fmt.Errorf("Google identity token has no payload")
 	}
@@ -248,6 +279,9 @@ func (v *GCEVerifier) verifyPayloadIdentity(payload *idtoken.Payload, policy Ver
 	compute, ok := google["compute_engine"].(map[string]any)
 	if !ok {
 		return Identity{}, fmt.Errorf("identity token is missing full Compute Engine claims")
+	}
+	if exactCompute != nil {
+		compute = exactCompute
 	}
 	for _, key := range []string{"instance_id", "instance_name", "zone", "project_id", "project_number", "instance_creation_timestamp"} {
 		if _, ok := compute[key]; !ok {
@@ -301,41 +335,78 @@ func claimIntegerString(value any) (string, bool) {
 	case json.Number:
 		n, err := strconv.ParseUint(value.String(), 10, 64)
 		return strconv.FormatUint(n, 10), err == nil
-	case float64:
-		if value <= 0 || value != float64(uint64(value)) {
-			return "", false
-		}
-		return strconv.FormatUint(uint64(value), 10), true
 	default:
 		return "", false
 	}
 }
 
+func losslessComputeClaims(raw string, payload *idtoken.Payload) (map[string]any, error) {
+	if payload == nil {
+		return nil, nil
+	}
+	google, _ := payload.Claims["google"].(map[string]any)
+	compute, _ := google["compute_engine"].(map[string]any)
+	needsExact := false
+	for _, key := range []string{"instance_id", "project_number", "instance_creation_timestamp"} {
+		if _, rounded := compute[key].(float64); rounded {
+			needsExact = true
+			break
+		}
+	}
+	if !needsExact {
+		return nil, nil
+	}
+	segments := strings.Split(raw, ".")
+	if len(segments) != 3 {
+		return nil, fmt.Errorf("identity token numeric claims cannot be parsed losslessly")
+	}
+	claimsJSON, err := base64.RawURLEncoding.DecodeString(segments[1])
+	if err != nil {
+		return nil, fmt.Errorf("decode identity token claims: %w", err)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(claimsJSON))
+	decoder.UseNumber()
+	var claims map[string]any
+	if err := decoder.Decode(&claims); err != nil {
+		return nil, fmt.Errorf("decode identity token claims: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return nil, fmt.Errorf("decode identity token claims: trailing JSON")
+	}
+	exactGoogle, ok := claims["google"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("identity token is missing full google claims")
+	}
+	exactCompute, ok := exactGoogle["compute_engine"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("identity token is missing full Compute Engine claims")
+	}
+	out := make(map[string]any, len(compute))
+	for key, value := range compute {
+		out[key] = value
+	}
+	for _, key := range []string{"instance_id", "project_number", "instance_creation_timestamp"} {
+		if _, rounded := compute[key].(float64); !rounded {
+			continue
+		}
+		value, ok := exactCompute[key]
+		if !ok {
+			return nil, fmt.Errorf("identity token is missing Compute Engine claim %q", key)
+		}
+		out[key] = value
+	}
+	return out, nil
+}
+
 // Require enforces both the caller's mTLS role and its GCE identity token.
 func Require(verifier TokenVerifier, policy VerificationPolicy, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		role, err := PeerRole(r)
-		if err != nil {
-			http.Error(w, "mutual TLS authentication required", http.StatusUnauthorized)
-			return
+	var verify middlewareVerifier
+	if verifier != nil {
+		verify = func(ctx context.Context, raw string, policy VerificationPolicy) (Identity, error) {
+			return Identity{}, verifier.Verify(ctx, raw, policy)
 		}
-		if role != policy.CallerRole {
-			http.Error(w, "caller role is not authorized", http.StatusForbidden)
-			return
-		}
-		raw, ok := bearerToken(r.Header.Values(authorizationHeader))
-		if !ok || verifier == nil {
-			w.Header().Set("WWW-Authenticate", `Bearer realm="sshcloud-control"`)
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		if err := verifier.Verify(r.Context(), raw, policy); err != nil {
-			w.Header().Set("WWW-Authenticate", `Bearer realm="sshcloud-control"`)
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
+	}
+	return require(verify, policy, false, next)
 }
 
 type identityContextKey struct{}
@@ -350,6 +421,21 @@ func IdentityFromContext(ctx context.Context) (Identity, bool) {
 // RequireIdentity is Require plus verified Compute Engine identity propagation.
 // It is used by APIs whose authorization depends on one exact VM incarnation.
 func RequireIdentity(verifier IdentityTokenVerifier, policy VerificationPolicy, next http.Handler) http.Handler {
+	var verify middlewareVerifier
+	if verifier != nil {
+		verify = verifier.VerifyIdentity
+	}
+	return require(verify, policy, true, next)
+}
+
+type middlewareVerifier func(context.Context, string, VerificationPolicy) (Identity, error)
+
+func require(
+	verifier middlewareVerifier,
+	policy VerificationPolicy,
+	propagateIdentity bool,
+	next http.Handler,
+) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		role, err := PeerRole(r)
 		if err != nil {
@@ -366,14 +452,17 @@ func RequireIdentity(verifier IdentityTokenVerifier, policy VerificationPolicy, 
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		identity, err := verifier.VerifyIdentity(r.Context(), raw, policy)
+		identity, err := verifier(r.Context(), raw, policy)
 		if err != nil {
 			w.Header().Set("WWW-Authenticate", `Bearer realm="sshcloud-control"`)
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		ctx := context.WithValue(r.Context(), identityContextKey{}, identity)
-		next.ServeHTTP(w, r.WithContext(ctx))
+		if propagateIdentity {
+			ctx := context.WithValue(r.Context(), identityContextKey{}, identity)
+			r = r.WithContext(ctx)
+		}
+		next.ServeHTTP(w, r)
 	})
 }
 
@@ -382,10 +471,15 @@ func bearerToken(values []string) (string, bool) {
 		return "", false
 	}
 	token := strings.TrimPrefix(values[0], "Bearer ")
-	if token == "" || strings.TrimSpace(token) != token || strings.ContainsAny(token, " \t\r\n") {
+	if !validIdentityToken(token) {
 		return "", false
 	}
 	return token, true
+}
+
+func validIdentityToken(token string) bool {
+	return token != "" && len(token) <= maxIdentityTokenBytes &&
+		strings.TrimSpace(token) == token && !strings.ContainsAny(token, " \t\r\n")
 }
 
 // PrepareRequest enforces the production HTTPS+token client path. Tests and

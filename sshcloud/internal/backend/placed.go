@@ -177,6 +177,11 @@ func (p *PlacedDial) EnsureAddrTierWithOptions(ctx context.Context, user, app, g
 		Gen: gen, Image: image, Tier: tier, State: "running",
 		SSHHostPublicKey: in.SSHHostPublicKey,
 	})
+	if err := chosenClient.VerifyServerIdentity(guard.Context()); err != nil {
+		guard.Abandon()
+		committed = true
+		return "", fmt.Errorf("verify ensured host before placement commit: %w", err)
+	}
 	if err := guard.Mark(guard.Context(), placement.Operation{
 		Kind: "ensure", Phase: "ready", TargetHost: host,
 		TargetInstanceID: chosenClient.InstanceID,
@@ -250,9 +255,17 @@ func (p *PlacedDial) Stop(ctx context.Context, user, app, gen string) error {
 	if err != nil {
 		return err
 	}
-	committed := false
+	finished := false
+	journaled := false
 	defer func() {
-		if !committed {
+		if finished {
+			return
+		}
+		if journaled {
+			// Once Stop may have crossed an irreversible boundary, only the
+			// reconciler may clear its durable operation record.
+			guard.Abandon()
+		} else {
 			releasePlacementGuard(guard)
 		}
 	}()
@@ -263,20 +276,60 @@ func (p *PlacedDial) Stop(ctx context.Context, user, app, gen string) error {
 	if err != nil {
 		return err
 	}
-	if err := c.StopContext(guard.Context(), user, app, gen); err != nil {
-		return err
-	}
 	record, _, err := p.Placement.GetRecord(guard.Context(), user, app)
 	if err != nil {
 		return err
 	}
+	desired := placement.RemoveGeneration(record.Generations, gen)
+	operation := placement.Operation{
+		ID: guard.Owner(), Kind: "stop", Phase: "prepared",
+		SourceHost: guard.HostID(), SourceInstanceID: c.InstanceID,
+		Generations: []string{gen}, Desired: desired,
+	}
+	// Treat an error from Mark as ambiguous: Firestore may have committed the
+	// journal even when the response was lost. Abandoning preserves either the
+	// journal or the lease for conservative recovery.
+	journaled = true
+	if err := guard.Mark(guard.Context(), operation); err != nil {
+		return fmt.Errorf("persist stop operation: %w", err)
+	}
+	operation.Phase = "stopping"
+	if err := guard.Mark(guard.Context(), operation); err != nil {
+		return fmt.Errorf("persist stop boundary: %w", err)
+	}
+	if err := c.StopContext(guard.Context(), user, app, gen); err != nil {
+		operation.Phase = "unknown-stop"
+		_ = markPlacementOperation(guard, operation)
+		return fmt.Errorf("stop outcome unknown on %s@%s: %w", guard.HostID(), c.InstanceID, err)
+	}
+	if err := c.VerifyServerIdentity(guard.Context()); err != nil {
+		operation.Phase = "stopped-unverified-host"
+		_ = markPlacementOperation(guard, operation)
+		return fmt.Errorf("verify stopped host identity: %w", err)
+	}
+	operation.Phase = "stopped"
+	if err := guard.Mark(guard.Context(), operation); err != nil {
+		return fmt.Errorf("persist completed stop: %w", err)
+	}
 	commitCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	err = guard.CommitStateIdentity(commitCtx, guard.HostID(), c.InstanceID, placement.RemoveGeneration(record.Generations, gen))
+	err = guard.CommitStateIdentity(commitCtx, guard.HostID(), c.InstanceID, desired)
 	cancel()
 	if err != nil {
-		return err
+		checkCtx, checkCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		current, ok, checkErr := p.Placement.GetRecord(checkCtx, user, app)
+		checkCancel()
+		if checkErr == nil && ok && current.HostID == guard.HostID() &&
+			current.HostInstanceID == c.InstanceID && current.LeaseOwner == "" &&
+			current.Operation.Kind == "" && sameGenerations(current.Generations, desired) {
+			finished = true
+			return nil
+		}
+		if checkErr != nil {
+			return fmt.Errorf("stop placement commit outcome unknown: %w (read: %v)", err, checkErr)
+		}
+		return fmt.Errorf("stop placement commit unresolved: %w", err)
 	}
-	committed = true
+	finished = true
 	return nil
 }
 
@@ -379,4 +432,22 @@ func releasePlacementGuard(guard *placement.Guard) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = guard.Release(ctx)
+}
+
+func markPlacementOperation(guard *placement.Guard, operation placement.Operation) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return guard.Mark(ctx, operation)
+}
+
+func sameGenerations(a, b []placement.Generation) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }

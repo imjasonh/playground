@@ -90,6 +90,10 @@ fi
 
 INTERNAL_IP="$(curl -fsS -H 'Metadata-Flavor: Google' \
   http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/ip)"
+INSTANCE_NAME="$(curl -fsS -H 'Metadata-Flavor: Google' \
+  http://metadata.google.internal/computeMetadata/v1/instance/name)"
+INSTANCE_ID="$(curl -fsS -H 'Metadata-Flavor: Google' \
+  http://metadata.google.internal/computeMetadata/v1/instance/id)"
 install_ops_agent agent "$INTERNAL_IP:8081" "127.0.0.1:9080"
 
 cat >/etc/tmpfiles.d/sshcloud.conf <<EOF
@@ -244,6 +248,8 @@ ExecStart=/usr/local/lib/sshcloud/agent \
   -control-project-id ${project_id} \
   -control-project-number ${project_number} \
   -orchestrator-service-account ${orchestrator_service_account} \
+  -instance-name $${INSTANCE_NAME} \
+  -instance-id $${INSTANCE_ID} \
   -relay-host $${INTERNAL_IP} \
   -relay-port-min 20000 \
   -relay-port-max 29999 \

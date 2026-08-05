@@ -6,13 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -153,6 +153,7 @@ func IsolationRules(tapName, hostIP string) (RuleSet, error) {
 // Server validates and constructs fixed TAP/network operations.
 type Server struct {
 	config Config
+	mu     sync.Mutex
 }
 
 // NewServer applies fixed command paths and validates configuration.
@@ -240,34 +241,26 @@ func (s *Server) Serve(listener net.Listener) error {
 func (s *Server) handle(ctx context.Context, operation string, payload json.RawMessage) (any, error) {
 	switch operation {
 	case operationReady:
+		var request struct{}
+		if err := helperrpc.DecodePayload(payload, &request); err != nil {
+			return nil, err
+		}
 		return nil, s.Ready(ctx)
 	case operationCreate:
 		var request CreateRequest
-		if err := decodePayload(payload, &request); err != nil {
+		if err := helperrpc.DecodePayload(payload, &request); err != nil {
 			return nil, err
 		}
 		return nil, s.Create(ctx, request)
 	case operationDelete:
 		var request CreateRequest
-		if err := decodePayload(payload, &request); err != nil {
+		if err := helperrpc.DecodePayload(payload, &request); err != nil {
 			return nil, err
 		}
 		return nil, s.Delete(ctx, request)
 	default:
 		return nil, fmt.Errorf("unsupported operation %q", operation)
 	}
-}
-
-func decodePayload(payload json.RawMessage, dst any) error {
-	decoder := json.NewDecoder(bytes.NewReader(payload))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(dst); err != nil {
-		return fmt.Errorf("decode payload: %w", err)
-	}
-	if decoder.Decode(&struct{}{}) != io.EOF {
-		return fmt.Errorf("decode payload: trailing JSON")
-	}
-	return nil
 }
 
 func (s *Server) commandContext(parent context.Context) (context.Context, context.CancelFunc) {
@@ -293,7 +286,13 @@ func (s *Server) succeeds(ctx context.Context, path string, args ...string) bool
 
 // Create creates one fixed-name /24 TAP owned by the VM's derived jail UID,
 // then installs the fixed IPv4 and IPv6 isolation rules.
-func (s *Server) Create(ctx context.Context, request CreateRequest) (retErr error) {
+func (s *Server) Create(ctx context.Context, request CreateRequest) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.create(ctx, request)
+}
+
+func (s *Server) create(ctx context.Context, request CreateRequest) (retErr error) {
 	if err := hostisolation.ValidateVMID(request.VMID); err != nil {
 		return err
 	}
@@ -308,14 +307,18 @@ func (s *Server) Create(ctx context.Context, request CreateRequest) (retErr erro
 	prepared := false
 	defer func() {
 		if retErr != nil && prepared {
-			_ = s.Delete(context.Background(), request)
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if cleanupErr := s.delete(cleanupCtx, request); cleanupErr != nil {
+				retErr = errors.Join(retErr, fmt.Errorf("rollback partial TAP: %w", cleanupErr))
+			}
 		}
 	}()
 	if s.succeeds(ctx, s.config.IPPath, "link", "show", "dev", tapName) {
 		// Never trust a stale fixed-name interface's type or owner. No VMM is
 		// running when the manager asks Create during boot/restore, so replace
 		// it with the helper-derived TAP instead of adopting it.
-		if err := s.Delete(ctx, request); err != nil {
+		if err := s.delete(ctx, request); err != nil {
 			return err
 		}
 	}
@@ -364,6 +367,12 @@ func (s *Server) installRules(ctx context.Context, tapName, hostIP string) error
 
 // Delete removes only the derived TAP and exact fixed rules.
 func (s *Server) Delete(ctx context.Context, request CreateRequest) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.delete(ctx, request)
+}
+
+func (s *Server) delete(ctx context.Context, request CreateRequest) error {
 	if err := hostisolation.ValidateVMID(request.VMID); err != nil {
 		return err
 	}
@@ -378,8 +387,23 @@ func (s *Server) Delete(ctx context.Context, request CreateRequest) error {
 		s.config.IP6TablesPath: ruleSet.IPv6,
 	} {
 		for _, rule := range rules {
+			check := append([]string{"-w", "2", "-C", rule.Chain}, rule.Match...)
 			del := append([]string{"-w", "2", "-D", rule.Chain}, rule.Match...)
-			for attempt := 0; attempt < maxDeleteAttempts && s.succeeds(ctx, binary, del...); attempt++ {
+			removedAll := false
+			for attempt := 0; attempt < maxDeleteAttempts; attempt++ {
+				if !s.succeeds(ctx, binary, check...) {
+					removedAll = true
+					break
+				}
+				if err := s.run(ctx, binary, del...); err != nil {
+					errs = append(errs, fmt.Errorf("remove fixed %s rule: %w", rule.Chain, err))
+					break
+				}
+			}
+			if !removedAll && s.succeeds(ctx, binary, check...) {
+				errs = append(errs, fmt.Errorf(
+					"fixed %s rule remains after %d removals", rule.Chain, maxDeleteAttempts,
+				))
 			}
 		}
 	}

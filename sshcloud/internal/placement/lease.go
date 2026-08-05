@@ -162,47 +162,19 @@ func (g *Guard) Mark(ctx context.Context, operation Operation) error {
 	return g.store.Mark(ctx, g.current(), operation)
 }
 
-// Commit atomically updates placement and releases the lease.
-func (g *Guard) Commit(ctx context.Context, hostID string) error {
-	g.stopHeartbeat()
-	if err := g.Err(); err != nil {
-		return err
-	}
-	if err := g.store.Commit(ctx, g.current(), hostID, time.Now()); err != nil {
-		return err
-	}
-	g.cancel()
-	return nil
-}
-
-// CommitState atomically updates host and durable generation inventory.
-func (g *Guard) CommitState(ctx context.Context, hostID string, generations []Generation) error {
-	g.stopHeartbeat()
-	if err := g.Err(); err != nil {
-		return err
-	}
-	if err := g.store.CommitState(ctx, g.current(), hostID, generations, time.Now()); err != nil {
-		return err
-	}
-	g.cancel()
-	return nil
-}
-
 // CommitStateIdentity atomically updates host name, immutable GCE instance ID,
 // durable generation inventory, and releases the lease.
 func (g *Guard) CommitStateIdentity(ctx context.Context, hostID, hostInstanceID string, generations []Generation) error {
+	if hostID == "" || hostInstanceID == "" {
+		return fmt.Errorf("host ID and host instance ID are required")
+	}
 	g.stopHeartbeat()
 	if err := g.Err(); err != nil {
 		return err
 	}
-	if hostID == "" {
-		return fmt.Errorf("host ID is required")
-	}
-	store, ok := g.store.(HostIdentityStore)
-	if !ok {
-		return fmt.Errorf("placement store does not support host instance identities")
-	}
-	if err := store.CommitStateIdentity(ctx, g.current(), hostID, hostInstanceID, generations, time.Now()); err != nil {
+	if err := g.store.CommitStateIdentity(
+		ctx, g.current(), hostID, hostInstanceID, generations, time.Now(),
+	); err != nil {
 		return err
 	}
 	g.cancel()

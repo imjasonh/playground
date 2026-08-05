@@ -266,6 +266,15 @@ func (m *Migrator) MigrateGeneration(ctx context.Context, user, app, gen, toHost
 		}
 	}
 	commitCtx, cancelCommit := context.WithTimeout(context.Background(), 10*time.Second)
+	if err := target.VerifyServerIdentity(commitCtx); err != nil {
+		cancelCommit()
+		operation.Phase = "ready-unverified-target"
+		_ = markOperation(guard, operation)
+		guard.Abandon()
+		abandoned = true
+		thawed = true
+		return Result{}, fmt.Errorf("verify prepared target before placement commit: %w", err)
+	}
 	operation.Phase = "ready"
 	if err := guard.Mark(commitCtx, operation); err != nil {
 		cancelCommit()

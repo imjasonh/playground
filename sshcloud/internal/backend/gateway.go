@@ -1,12 +1,8 @@
 package backend
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/imjasonh/playground/sshcloud/internal/controlauth"
@@ -20,28 +16,19 @@ type GatewayClient struct {
 	InsecureLoopback bool
 }
 
-func (c *GatewayClient) client() *http.Client {
-	if c.HTTPClient != nil {
-		return c.HTTPClient
+func (c *GatewayClient) kernel() controlHTTPKernel {
+	return controlHTTPKernel{
+		baseURL: c.BaseURL, controlClient: c.ControlClient, httpClient: c.HTTPClient,
+		insecureLoopback: c.InsecureLoopback, timeout: 45 * time.Second,
 	}
-	return &http.Client{Timeout: 45 * time.Second}
-}
-
-func (c *GatewayClient) do(req *http.Request) (*http.Response, error) {
-	if c.ControlClient != nil {
-		return c.ControlClient.Do(req)
-	}
-	if err := controlauth.PrepareRequest(req, nil, c.InsecureLoopback); err != nil {
-		return nil, err
-	}
-	return c.client().Do(req)
 }
 
 // Freeze disconnects backend hops while preserving matching outer sessions.
 func (c *GatewayClient) Freeze(ctx context.Context, user, app, gen string, timeout time.Duration) (string, int, error) {
 	var out struct {
-		Token    string `json:"token"`
-		Sessions int    `json:"sessions"`
+		Token    string    `json:"token"`
+		Sessions int       `json:"sessions"`
+		Deadline time.Time `json:"deadline"`
 	}
 	err := c.post(ctx, "/v1/sessions/freeze", map[string]any{
 		"user": user, "app": app, "gen": gen, "timeout_ms": timeout.Milliseconds(),
@@ -60,25 +47,7 @@ func (c *GatewayClient) Abort(ctx context.Context, token string) error {
 }
 
 func (c *GatewayClient) post(ctx context.Context, path string, body, out any) error {
-	payload, err := json.Marshal(body)
-	if err != nil {
-		return err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(c.BaseURL, "/")+path, bytes.NewReader(payload))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	res, err := c.do(req)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-	if res.StatusCode >= 300 {
-		return fmt.Errorf("gateway control %s: %s: %s", path, res.Status, readErr(res.Body))
-	}
-	if out != nil {
-		return json.NewDecoder(res.Body).Decode(out)
-	}
-	return nil
+	return c.kernel().json(
+		ctx, http.MethodPost, path, "gateway control "+path, body, out, nil,
+	)
 }

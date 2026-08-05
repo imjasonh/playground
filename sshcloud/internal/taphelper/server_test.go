@@ -5,7 +5,9 @@ import (
 	"errors"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/imjasonh/playground/sshcloud/internal/hostisolation"
 )
@@ -96,9 +98,10 @@ func TestConfigRejectsNonFixedCommandPaths(t *testing.T) {
 }
 
 type recordingRunner struct {
-	calls  []string
-	exists bool
-	failAt string
+	calls      []string
+	exists     bool
+	ruleExists bool
+	failAt     string
 }
 
 func (r *recordingRunner) Run(_ context.Context, path string, args ...string) ([]byte, error) {
@@ -119,8 +122,14 @@ func (r *recordingRunner) Run(_ context.Context, path string, args ...string) ([
 	if r.failAt != "" && strings.Contains(call, r.failAt) {
 		return nil, errors.New("injected")
 	}
-	if strings.Contains(call, " -D ") || strings.Contains(call, " -C ") {
+	if strings.Contains(call, " -C ") {
+		if r.ruleExists {
+			return nil, nil
+		}
 		return nil, errors.New("rule absent")
+	}
+	if strings.Contains(call, " -D ") {
+		r.ruleExists = false
 	}
 	return nil, nil
 }
@@ -152,6 +161,92 @@ func TestCreateFailureDeletesPartiallyPreparedTap(t *testing.T) {
 	}
 	if !sawOwnedAdd || !sawDelete {
 		t.Fatalf("calls did not use derived owner and rollback: %v", runner.calls)
+	}
+}
+
+func TestDeletePropagatesRuleRemovalFailure(t *testing.T) {
+	t.Parallel()
+	runner := &recordingRunner{ruleExists: true, failAt: " -D "}
+	server, err := NewServer(Config{
+		SubnetBase: "172.16", ExpectedPeerUID: 991, Runner: runner,
+		IPPath: "/fixed/ip", IPTablesPath: "/fixed/iptables", IP6TablesPath: "/fixed/ip6tables",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = server.Delete(context.Background(), CreateRequest{
+		VMID: "0123abcdef89", HostIP: "172.16.2.1",
+	})
+	if err == nil || !strings.Contains(err.Error(), "remove fixed") {
+		t.Fatalf("Delete error = %v", err)
+	}
+}
+
+type concurrentRunner struct {
+	mu        sync.Mutex
+	active    int
+	maxActive int
+	exists    bool
+}
+
+func (r *concurrentRunner) Run(_ context.Context, _ string, args ...string) ([]byte, error) {
+	r.mu.Lock()
+	r.active++
+	if r.active > r.maxActive {
+		r.maxActive = r.active
+	}
+	r.mu.Unlock()
+	time.Sleep(time.Millisecond)
+	call := strings.Join(args, " ")
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	defer func() { r.active-- }()
+	switch {
+	case strings.Contains(call, "link show dev"):
+		if !r.exists {
+			return nil, errors.New("missing")
+		}
+	case strings.Contains(call, "tuntap add"):
+		r.exists = true
+	case strings.Contains(call, "link del dev"):
+		r.exists = false
+	case strings.Contains(call, " -C "):
+		return nil, errors.New("rule absent")
+	}
+	return nil, nil
+}
+
+func TestCreateDeleteAreSerialized(t *testing.T) {
+	t.Parallel()
+	runner := &concurrentRunner{}
+	server, err := NewServer(Config{
+		SubnetBase: "172.16", ExpectedPeerUID: 991, Runner: runner,
+		IPPath: "/fixed/ip", IPTablesPath: "/fixed/iptables", IP6TablesPath: "/fixed/ip6tables",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := CreateRequest{VMID: "0123abcdef89", HostIP: "172.16.2.1"}
+	start := make(chan struct{})
+	results := make(chan error, 2)
+	go func() {
+		<-start
+		results <- server.Create(context.Background(), request)
+	}()
+	go func() {
+		<-start
+		results <- server.Delete(context.Background(), request)
+	}()
+	close(start)
+	for range 2 {
+		if err := <-results; err != nil {
+			t.Fatal(err)
+		}
+	}
+	runner.mu.Lock()
+	defer runner.mu.Unlock()
+	if runner.maxActive != 1 {
+		t.Fatalf("maximum concurrent helper commands = %d, want 1", runner.maxActive)
 	}
 }
 
