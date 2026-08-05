@@ -75,6 +75,7 @@ output "assets_bucket" {
 output "secrets" {
   value = {
     gateway_host_key  = google_secret_manager_secret.gateway_host_key.secret_id
+    access_policy     = google_secret_manager_secret.access_policy.secret_id
     user_ca           = google_secret_manager_secret.user_ca.secret_id
     user_ca_pub       = google_secret_manager_secret.user_ca_pub.secret_id
     orchestrator_auth = google_secret_manager_secret.orchestrator_auth.secret_id

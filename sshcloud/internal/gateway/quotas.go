@@ -40,6 +40,9 @@ func (h *Hub) limits() Limits {
 }
 
 func (h *Hub) allowJoin(ctx context.Context, sourceIP, username, keyFingerprint string) error {
+	if err := h.authorizeUse(keyFingerprint); err != nil {
+		return err
+	}
 	if h.Quotas == nil {
 		return nil
 	}

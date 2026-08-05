@@ -93,6 +93,56 @@ variable "ssh_client_cidrs" {
   default     = []
 }
 
+variable "member_ssh_public_keys" {
+  description = "Operator-configured OpenSSH public key lines allowed to join and use sshcloud when access_join_mode is allowlist"
+  type        = list(string)
+  default     = []
+  validation {
+    condition = alltrue([
+      for key in var.member_ssh_public_keys :
+      trimspace(key) != "" &&
+      !strcontains(trimspace(key), "\n") &&
+      !strcontains(trimspace(key), "\r")
+    ])
+    error_message = "member_ssh_public_keys entries must each contain one non-empty OpenSSH public key line."
+  }
+}
+
+variable "deployer_ssh_public_keys" {
+  description = "Operator-configured OpenSSH public key lines allowed to deploy; deployer keys also imply membership"
+  type        = list(string)
+  default     = []
+  validation {
+    condition = alltrue([
+      for key in var.deployer_ssh_public_keys :
+      trimspace(key) != "" &&
+      !strcontains(trimspace(key), "\n") &&
+      !strcontains(trimspace(key), "\r")
+    ])
+    error_message = "deployer_ssh_public_keys entries must each contain one non-empty OpenSSH public key line."
+  }
+}
+
+variable "access_join_mode" {
+  description = "SSH-key admission mode: allowlist or open"
+  type        = string
+  default     = "allowlist"
+  validation {
+    condition     = contains(["allowlist", "open"], var.access_join_mode)
+    error_message = "access_join_mode must be allowlist or open."
+  }
+}
+
+variable "access_deploy_mode" {
+  description = "Deploy admission mode: allowlist or all-users"
+  type        = string
+  default     = "allowlist"
+  validation {
+    condition     = contains(["allowlist", "all-users"], var.access_deploy_mode)
+    error_message = "access_deploy_mode must be allowlist or all-users."
+  }
+}
+
 variable "firecracker_asset_path" {
   description = "Local path to the pinned Firecracker binary uploaded into the platform-assets bucket"
   type        = string

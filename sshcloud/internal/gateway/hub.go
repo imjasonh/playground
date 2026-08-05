@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/imjasonh/playground/sshcloud/internal/access"
 	"github.com/imjasonh/playground/sshcloud/internal/cutover"
 	"github.com/imjasonh/playground/sshcloud/internal/quota"
 	"github.com/imjasonh/playground/sshcloud/internal/route"
@@ -25,6 +26,7 @@ const (
 	ActionDeploy
 	ActionProxyApp
 	ActionRejectBusy
+	ActionForbidden
 )
 
 func (a Action) String() string {
@@ -39,6 +41,8 @@ func (a Action) String() string {
 		return "proxy_app"
 	case ActionRejectBusy:
 		return "reject_busy"
+	case ActionForbidden:
+		return "forbidden"
 	default:
 		return "unknown"
 	}
@@ -61,9 +65,12 @@ type Result struct {
 type Hub struct {
 	Store    store.Store
 	Sessions *session.Registry
-	UserCA   *userca.CA // optional; when set with Dial, apps are proxied over SSH
-	Dial     DialFunc   // optional backend address resolver
-	Cutover  *cutover.Controller
+	// Access is reloaded for every admission decision. Nil is deliberately
+	// permissive for local development; production configures a file source.
+	Access  access.Source
+	UserCA  *userca.CA // optional; when set with Dial, apps are proxied over SSH
+	Dial    DialFunc   // optional backend address resolver
+	Cutover *cutover.Controller
 	// AllowedRegistries mirrors the agent-side SSRF boundary for immediate
 	// deploy feedback. Empty is local-dev only.
 	AllowedRegistries []string
@@ -92,6 +99,9 @@ func (h *Hub) HandleConnect(ctx context.Context, c Connect) (Result, error) {
 	if keyKnown {
 		userID = user.ID
 	}
+	if err := h.authorizeUse(c.KeyFingerprint); err != nil {
+		return Result{Action: ActionForbidden, User: userID, Message: forbiddenMessage(err)}, nil
+	}
 
 	var routeErr error
 	hasApp := func(app string) bool {
@@ -118,6 +128,9 @@ func (h *Hub) HandleConnect(ctx context.Context, c Connect) (Result, error) {
 	case route.Menu:
 		return Result{Action: ActionMenu, User: userID}, nil
 	case route.Deploy:
+		if err := h.authorizeDeploy(c.KeyFingerprint, userID); err != nil {
+			return Result{Action: ActionForbidden, User: userID, Message: forbiddenMessage(err)}, nil
+		}
 		return Result{Action: ActionDeploy, User: userID}, nil
 	case route.App:
 		return h.admitApp(ctx, userID, d.App)
@@ -242,10 +255,14 @@ func (h *Hub) KickSessions(ids []session.ID) int {
 }
 
 // OpenApp admits a session for an already-authenticated user and existing app.
-// Used by the in-session menu handoff (key auth already happened on the SSH conn).
-func (h *Hub) OpenApp(ctx context.Context, userID, app string) (Result, error) {
+// Used by the in-session menu handoff; it rechecks the presenting key so a
+// refreshed policy applies without requiring a new SSH connection.
+func (h *Hub) OpenApp(ctx context.Context, keyFingerprint, userID, app string) (Result, error) {
 	if userID == "" || app == "" {
 		return Result{}, fmt.Errorf("user and app required")
+	}
+	if err := h.authorizeUse(keyFingerprint); err != nil {
+		return Result{}, err
 	}
 	ok, err := h.Store.HasApp(ctx, userID, app)
 	if err != nil {

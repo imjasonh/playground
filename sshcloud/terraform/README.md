@@ -17,7 +17,7 @@ runner `/32` while the VMM jailer and workload identity remain unfinished.
 | `demo.tf` | Optional `local-exec` join/deploy followed by strict SSH release smoke test |
 | `firestore.tf` | Dedicated named Native-mode database |
 | `storage.tf` | Snapshot + platform-asset buckets, Artifact Registry |
-| `secrets.tf` | Gateway host key + user CA (tls_private_key → Secret Manager) |
+| `secrets.tf` | Gateway host key, user CA, and versioned SSH access policy |
 | `gateway.tf` | Public SSH gateway (`:22`) |
 | `orchestrator.tf` | Internal placement/migrate API; reloads MIG hosts file |
 | `agents.tf` | Instance template + zonal MIG (`enable_nested_virtualization`) |
@@ -46,7 +46,8 @@ cd sshcloud
 bash hack/fetch-firecracker-assets.sh
 cd terraform
 cp terraform.tfvars.example terraform.tfvars
-# edit project_id, asset paths, and a narrow ssh_client_cidrs allowlist
+# edit project_id, asset paths, a narrow ssh_client_cidrs allowlist, and
+# member_ssh_public_keys / deployer_ssh_public_keys (full OpenSSH public lines)
 # optionally set enable_demo_bootstrap=true
 
 bash ../hack/preflight-gcp.sh YOUR_PROJECT us-central1 us-central1-a
@@ -82,7 +83,7 @@ ssh -T -p 22 -i /tmp/sshcloud-demo \
   -o StrictHostKeyChecking=yes \
   fortune@"$ip" </dev/null
 
-# Manual deploy (any joined user) also works non-interactively:
+# Manual deploy (when the presenting key passes deploy policy) also works:
 # ssh -p 22 deploy@GATEWAY_IP \
 #   fortune --image="$(terraform output -raw fortune_image)" \
 #   --tier=tiny --strategy=kick --yes
@@ -116,6 +117,47 @@ ssh join@HOST demo
 ssh deploy@HOST fortune --image=repo@sha256:… [--tier=tiny] [--strategy=kick|drain] --yes
 ```
 
+## Staged SSH-key access
+
+Terraform always configures the gateway with a file-backed policy. Production
+defaults are fail-closed: `access_join_mode = "allowlist"` and
+`access_deploy_mode = "allowlist"`, with empty key lists admitting nobody.
+Configure `member_ssh_public_keys` and `deployer_ssh_public_keys` with complete
+OpenSSH public key lines such as `ssh-ed25519 AAAA… operator@example`, not
+fingerprints or key digests. The gateway parses those lines and compares their
+SHA256 fingerprints to the key presented during SSH authentication.
+`authorized_keys` options are rejected rather than silently ignored.
+
+Use the modes as three rollout stages:
+
+1. **Private:** `allowlist` / `allowlist`. Member keys can join and use apps;
+   deployer keys imply membership and can also deploy.
+2. **Open membership:** `open` / `allowlist`. Any key can join and use apps,
+   while only deployer keys can deploy.
+3. **Self-service:** `open` / `all-users`. Any key can join, and every
+   registered user can deploy.
+
+`enable_demo_bootstrap = true` automatically adds its generated demo public key
+to both policy lists. The bootstrap action depends on the policy Secret Manager
+version and retries join/deploy while the gateway fetches that version.
+
+Every policy change creates a Secret Manager version. The gateway host refreshes
+`versions/latest` every minute (with up to 10 seconds of jitter), atomically
+replaces the mounted JSON file, and reloads it for every admission or deploy
+decision; no image rebuild or VM replacement is required. A missing, unreadable,
+or corrupt configured file denies all new joins, app/menu use, and deploys.
+
+Revocation takes effect for new admissions after the next successful refresh.
+Open SSH connections are rechecked every 30 seconds and closed when their key
+no longer has platform access. It does not delete the Firestore user/key record
+or cancel a deploy that already passed its final authorization check. Removing
+a key only from
+`member_ssh_public_keys` does not revoke it while it remains a deployer,
+because deployer keys imply membership. Remove it from
+`deployer_ssh_public_keys` to revoke deploy, and from both lists to revoke use
+in `allowlist` join mode. `join_mode = "open"` intentionally makes
+membership-list removal ineffective.
+
 ## Notes
 
 - **Keys in state:** `tls_private_key` material is in Terraform state. Fine for
@@ -123,8 +165,9 @@ ssh deploy@HOST fortune --image=repo@sha256:… [--tier=tiny] [--strategy=kick|d
   key management before any public launch.
 - **Demo is opt-in:** `local-exec` is intentionally a smoke-test hack, not a
   durable application reconciler. `triggers_replace` covers its image, infra,
-  scripts, and deploy inputs; deploy itself is same-image idempotent. A separate
-  post-deploy resource verifies the released app through the public SSH path.
+  scripts, deploy inputs, and access-policy version; deploy itself is same-image
+  idempotent. A separate post-deploy resource verifies the released app through
+  the public SSH path.
 - **Internal auth:** separate interim bearer tokens protect gateway→orchestrator
   and orchestrator→agent. Source-tag firewalls and binding to each VM's VPC IP
   add defense in depth. Workload identity + mTLS remains required for launch.

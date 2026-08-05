@@ -73,6 +73,22 @@ go run ./cmd/gateway -listen 127.0.0.1:2222 -fortune-bin ./bin/fortune
 ssh -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null join@127.0.0.1
 ```
 
+With no `-access-policy-file`, the local gateway deliberately defaults to
+`join_mode=open` and `deploy_mode=all-users`. Deployed Terraform always supplies
+a reloadable JSON policy and defaults to fail-closed allowlists; see
+[`terraform/README.md`](terraform/README.md#staged-ssh-key-access).
+The file schema is:
+
+```json
+{
+  "version": 1,
+  "join_mode": "allowlist",
+  "deploy_mode": "allowlist",
+  "member_ssh_public_keys": ["ssh-ed25519 AAAA… member@example"],
+  "deployer_ssh_public_keys": ["ssh-ed25519 AAAA… operator@example"]
+}
+```
+
 ## Run — Firecracker backend (normal deploy)
 
 Fortune is a normal app: build/push an OCI image, then `ssh deploy@…`.
@@ -268,6 +284,7 @@ Implemented and covered at package/integration level:
 - [x] Gateway drain/no-idle reconciliation and snapshot platform-version fencing
 - [x] Agent-host SSH relay for the separate-VM GCP gateway data path
 - [x] Authenticated internal APIs, narrow VPC firewall edges, private-host NAT
+- [x] Staged member/deployer SSH-key admission with fail-closed live policy reload
 - [x] Content-addressed platform assets and opt-in Terraform fortune bootstrap
 - [x] Unit/Firestore/KVM suites plus Terraform and tagged-test CI validation
 - [x] Handshake/join/app/session/deploy/wake/awake-VM admission limits

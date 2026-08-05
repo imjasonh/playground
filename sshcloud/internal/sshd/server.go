@@ -40,11 +40,14 @@ type Server struct {
 	MaxChannels              int
 	MaxChannelsPerConnection int
 	StartTimeout             time.Duration
-	HandshakeLimiter         *quota.IPRateLimiter
-	listener                 net.Listener
-	limitOnce                sync.Once
-	limit                    chan struct{}
-	channelLimit             chan struct{}
+	// AccessRecheckInterval bounds allowlist-revocation latency for open SSH
+	// connections. Zero defaults to 30 seconds.
+	AccessRecheckInterval time.Duration
+	HandshakeLimiter      *quota.IPRateLimiter
+	listener              net.Listener
+	limitOnce             sync.Once
+	limit                 chan struct{}
+	channelLimit          chan struct{}
 }
 
 func (s *Server) logf(format string, args ...any) {
@@ -167,6 +170,27 @@ func (s *Server) handleConn(ctx context.Context, nc net.Conn) {
 	if sc.Permissions != nil {
 		fp = sc.Permissions.Extensions[fingerprintExt]
 	}
+	recheckInterval := s.AccessRecheckInterval
+	if recheckInterval <= 0 {
+		recheckInterval = 30 * time.Second
+	}
+	go func() {
+		ticker := time.NewTicker(recheckInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-connCtx.Done():
+				return
+			case <-ticker.C:
+				if s.Hub != nil && !s.Hub.AllowsKey(fp) {
+					s.logf("connection revoked by access policy")
+					cancelConn()
+					_ = sc.Close()
+					return
+				}
+			}
+		}
+	}()
 
 	maxPerConnection := s.MaxChannelsPerConnection
 	if maxPerConnection <= 0 {
@@ -461,13 +485,17 @@ func (s *Server) runSession(ctx context.Context, sc *ssh.ServerConn, ch ssh.Chan
 		exit.Code = gateway.RunJoinSession(ctx, client, s.Hub, fp, res.User, res.SourceIP, execCmd)
 	case gateway.ActionMenu:
 		spec.ReplyStart(true)
-		gateway.RunMenuSession(ctx, client, s.Hub, fp, res.User)
+		exit.Code = gateway.RunMenuSession(ctx, client, s.Hub, fp, res.User)
 	case gateway.ActionDeploy:
 		spec.ReplyStart(true)
-		exit.Code = gateway.RunDeploySession(ctx, client, s.Hub, res.User, execCmd)
+		exit.Code = gateway.RunDeploySession(ctx, client, s.Hub, fp, res.User, execCmd)
 	case gateway.ActionRejectBusy:
 		spec.ReplyStart(true)
 		fmt.Fprintf(ch, "%s\r\n", res.Message)
+		exit.Code = 1
+	case gateway.ActionForbidden:
+		spec.ReplyStart(true)
+		fmt.Fprintf(client.Stderr, "%s\r\n", res.Message)
 		exit.Code = 1
 	case gateway.ActionProxyApp:
 		exit = gateway.RunAppSession(sessCtx, client, s.Hub, res)

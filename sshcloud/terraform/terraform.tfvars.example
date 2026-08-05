@@ -16,3 +16,15 @@ kernel_asset_path      = "../_assets/vmlinux"
 # quotas, use only the Terraform runner/operator's public /32.
 # ssh_client_cidrs      = ["203.0.113.10/32"]
 # enable_demo_bootstrap = true
+
+# Production defaults are private: both modes are "allowlist", and empty key
+# lists admit nobody. Configure complete OpenSSH public key lines, not SHA256
+# fingerprints. Deployer keys automatically imply membership.
+# member_ssh_public_keys = [
+#   "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... member@example",
+# ]
+# deployer_ssh_public_keys = [
+#   "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... operator@example",
+# ]
+# access_join_mode   = "allowlist" # allowlist | open
+# access_deploy_mode = "allowlist" # allowlist | all-users

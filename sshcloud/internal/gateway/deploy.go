@@ -23,18 +23,22 @@ var commonLocalUsernames = map[string]struct{}{
 // RunDeploy is the deploy TUI (`ssh deploy@…` or menu → deploy).
 // When execCmd is non-empty (SSH exec args), runs non-interactively and
 // returns a process exit code (0 ok, 1 failure).
-func RunDeploy(ctx context.Context, ch io.ReadWriter, hub *Hub, userID, execCmd string) int {
-	return RunDeploySession(ctx, ClientSession{IO: ch, Stderr: ch, Spec: &SessionSpec{StartType: SessionShell, PTY: true}}, hub, userID, execCmd)
+func RunDeploy(ctx context.Context, ch io.ReadWriter, hub *Hub, keyFP, userID, execCmd string) int {
+	return RunDeploySession(ctx, ClientSession{IO: ch, Stderr: ch, Spec: &SessionSpec{StartType: SessionShell, PTY: true}}, hub, keyFP, userID, execCmd)
 }
 
-func RunDeploySession(ctx context.Context, client ClientSession, hub *Hub, userID, execCmd string) int {
+func RunDeploySession(ctx context.Context, client ClientSession, hub *Hub, keyFP, userID, execCmd string) int {
 	t := newSessionTerm(client)
-	return runDeploy(ctx, t, hub, userID, execCmd)
+	return runDeploy(ctx, t, hub, keyFP, userID, execCmd)
 }
 
-func runDeploy(ctx context.Context, t *term, hub *Hub, userID, execCmd string) int {
+func runDeploy(ctx context.Context, t *term, hub *Hub, keyFP, userID, execCmd string) int {
 	if userID == "" {
 		t.Printf("Not logged in. Complete join first.\n")
+		return 1
+	}
+	if err := hub.authorizeDeploy(keyFP, userID); err != nil {
+		t.Printf("%s\n", forbiddenMessage(err))
 		return 1
 	}
 
@@ -45,8 +49,12 @@ func runDeploy(ctx context.Context, t *term, hub *Hub, userID, execCmd string) i
 			t.Printf("deploy: %v\n", err)
 			return 1
 		}
-		updated, err := applyDeploy(ctx, hub, userID, args, true)
+		updated, err := applyDeploy(ctx, hub, keyFP, userID, args, true)
 		if err != nil {
+			if isForbidden(err) {
+				t.Printf("%s\n", forbiddenMessage(err))
+				return 1
+			}
 			t.Printf("deploy failed: %v\n", err)
 			return 1
 		}
@@ -77,8 +85,12 @@ func runDeploy(ctx context.Context, t *term, hub *Hub, userID, execCmd string) i
 		return 1
 	}
 	args := DeployArgs{Name: appName, Image: img, Tier: tier, Strategy: strategy, Yes: true}
-	updated, err := applyDeploy(ctx, hub, userID, args, false)
+	updated, err := applyDeploy(ctx, hub, keyFP, userID, args, false)
 	if err != nil {
+		if isForbidden(err) {
+			t.Printf("%s\n", forbiddenMessage(err))
+			return 1
+		}
 		t.Printf("deploy failed: %v\n", err)
 		return 1
 	}
@@ -86,7 +98,10 @@ func runDeploy(ctx context.Context, t *term, hub *Hub, userID, execCmd string) i
 	return 0
 }
 
-func applyDeploy(ctx context.Context, hub *Hub, userID string, args DeployArgs, requireYes bool) (updated bool, err error) {
+func applyDeploy(ctx context.Context, hub *Hub, keyFP, userID string, args DeployArgs, requireYes bool) (updated bool, err error) {
+	if err := hub.authorizeDeploy(keyFP, userID); err != nil {
+		return false, err
+	}
 	if err := image.ValidateAllowedRegistry(args.Image, hub.AllowedRegistries); err != nil {
 		return false, err
 	}
@@ -108,6 +123,11 @@ func applyDeploy(ctx context.Context, hub *Hub, userID string, args DeployArgs, 
 		if len(apps) >= hub.limits().AppsPerUser {
 			return false, quota.ErrExceeded{Kind: "apps", Limit: hub.limits().AppsPerUser}
 		}
+	}
+	// Recheck after waiting on the per-user deploy lock and immediately before
+	// quota/control-plane mutation so a refreshed revocation wins the race.
+	if err := hub.authorizeDeploy(keyFP, userID); err != nil {
+		return false, err
 	}
 	if err := hub.allowDeploy(ctx, userID, args.Name, args.Image); err != nil {
 		return false, err

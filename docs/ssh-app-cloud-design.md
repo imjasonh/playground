@@ -39,12 +39,12 @@
 | Default entry | `ssh foo.com` → **join** if key unknown, else **app menu** (select → in-session handoff) |
 | Deep link | `ssh <app>@foo.com` — straight to that app; owner inferred from key |
 | Naming | App names are per-user namespace (each user can have their own `fortune`) |
-| Auth (client→gateway) | SSH public keys registered **cloud-wide** per user |
+| Auth (client→gateway) | SSH public keys registered **cloud-wide** per user, gated by the operator access policy |
 | Auth (gateway→app) | Gateway mints **short-lived SSH user certs** asserting the user; apps verify via platform CA |
 | CA delivery | Platform **injects** user CA at boot (`/run/platform/ssh_user_ca.pub`); images need not bake it in |
 | App SSH server | Any SSH server that can verify platform user certs — **not** OpenSSH-specific |
-| Onboarding | Join TUI via unknown key on any user, or `ssh join@foo.com` |
-| Deploy | `ssh deploy@foo.com` or select **deploy** from the menu |
+| Onboarding | Policy-admitted unknown key gets the join TUI on any user, or `ssh join@foo.com` |
+| Deploy | Policy-authorized registered user uses `ssh deploy@foo.com` or **deploy** in the menu |
 | Deploy vs sessions (v1) | Default: **route new → new, drain old, kick after timeout**; opt-in **kick now** |
 | Deploy vs sessions (later) | Maintenance mode; explicit blue/green promote + rollback |
 | Platform users (MVP) | `join`, `deploy`, `menu` (+ fallthrough-to-menu); `help` / `whoami` / `status` later |
@@ -162,7 +162,9 @@ showing a short loading UI before handoff.
 ### SSH username routing
 
 ```text
-# Key unknown (any username, including bare `ssh foo.com`)
+# First: reject the connection clearly unless its key passes join/use policy.
+
+# Admitted key unknown (any username, including bare `ssh foo.com`)
 *        → join TUI
 
 # Key known
@@ -205,7 +207,7 @@ loading UI → proxy to the app), same path as a deep link after wake.
 ```text
 ssh foo.com          # or ssh join@foo.com — unknown key
   │
-  ├─ Gateway accepts the offered public key (special auth mode)
+  ├─ Gateway checks the operator join/use policy for the offered public key
   ├─ Lookup key fingerprint → unknown
   ├─ Bubble Tea TUI: pick username once → create user + bind key
   └─ Continue into app menu (same session)
@@ -232,13 +234,25 @@ ssh menu@foo.com     # explicit
 ### Key model
 
 - Keys are owned by the **user**, cloud-wide, reusable across all their apps.
+- Terraform takes full OpenSSH public key lines and the gateway derives SHA256
+  fingerprints; operators do not configure fingerprint/digest strings.
+- `join_mode=allowlist` admits member and deployer keys (deployer implies
+  member); `join_mode=open` admits every key for join/use.
+- `deploy_mode=allowlist` admits deployer keys only;
+  `deploy_mode=all-users` admits every registered user.
+- Policy versions refresh without an image rebuild. Revocation blocks new
+  routes after refresh and closes open SSH connections on the next 30-second
+  policy check, but does not erase registration or cancel a deploy after its
+  final authorization check; remove a deployer from both lists to revoke its
+  implied membership in allowlist mode.
 - Re-join with the same key never asks for a username again.
 - Adding a machine: from an already-authenticated `join` session (interim).
   Exact UX for authorizing a *new* key still open (§12).
 
 ### Fortune is a normal deployed app
 
-Unknown keys always get the join TUI (never a raw reject on deep links).
+Policy-admitted unknown keys get the join TUI; unadmitted keys receive a clear
+forbidden exit before routing.
 `fortune` is **not** a platform builtin and is **not** lazy-created. Deploy it
 with `ssh deploy@…` (or the menu) using a digest-pinned OCI image — Terraform
 builds one via `ko_build.fortune`. Until then, `ssh fortune@foo.com` falls
@@ -286,8 +300,13 @@ unsupported and are rejected or documented rather than silently promised.
 
 ### Access (v1)
 
-- Unknown key → join (never silent reject on deep links).
-- Known key → that user’s apps only (no cross-user).
+- Production starts private (`allowlist` join + `allowlist` deploy). Operators
+  can stage through open join + allowlisted deploy, then open join +
+  all-registered-user deploy.
+- Admitted unknown key → join; denied key → explicit forbidden exit.
+- Admitted known key → that user’s apps only (no cross-user).
+- The same policy is rechecked on direct routes, menu handoffs, and immediately
+  before deploy mutation.
 - `ssh fortune@foo.com` always means **the connecting user’s** `fortune`.
 - At most **one** concurrent session per user per app; extras rejected at the gateway.
 
@@ -313,7 +332,7 @@ when cross-user access exists; that is separate from platform anti-abuse.
 
 ```text
 Client key
-  → Gateway: public-key auth against Firestore-registered keys
+  → Gateway: operator policy + Firestore-registered key lookup
   → Gateway mints short-lived SSH user cert (principal=alice, TTL=minutes)
   → App SSH: verifies cert with injected platform CA
 ```
@@ -331,7 +350,7 @@ Client
   │  ssh foo.com  /  ssh fortune@foo.com
   ▼
 SSH Gateway (single VM in v1; shared host key)
-  │  1) auth key → user (else join TUI)
+  │  1) policy-admit key → user (else join TUI if unregistered)
   │  2) route: menu | deploy | deep-link app | fallthrough→menu
   │  3) on app select / deep link:
   │       resolve app (must already be deployed)
@@ -519,7 +538,7 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
 | **Host agent** | Image→rootfs, inject CA, Firecracker lifecycle, volumes, probes, snapshots |
 | **Firestore** | Users, keys, apps, placement pointers, quota counters, metadata |
 | **GCS** | Idle/migrate snapshots + volume bytes |
-| **Secret Manager** | Gateway host key; user CA signing key |
+| **Secret Manager** | Gateway host key; user CA signing key; versioned public-key access policy |
 
 **Implemented in `sshcloud/`:**
 - `store.Firestore` — `keys/{fp}`, `users/{id}`, `users/{id}/apps/{name}`;
@@ -529,6 +548,9 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
 - Emulator tests: `hack/run-firestore-tests.sh` (skips in plain `go test`
   without `FIRESTORE_EMULATOR_HOST`).
 - Terraform provisions the Native `(default)` database (`sshcloud/terraform`).
+- Terraform publishes the staged SSH access policy to Secret Manager; the
+  gateway host refreshes `latest` every minute and the process reloads the JSON
+  file per decision. Missing/corrupt configured policy fails closed.
 - Interim bearer authentication protects each internal API hop; VPC firewalls
   allow only gateway→orchestrator and orchestrator→agent control traffic.
 - Placement changes use Firestore transactions with revisioned leases,
@@ -551,6 +573,9 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
 - Dedicated named Firestore Native database, snapshot + asset GCS buckets,
   Artifact Registry
 - Secret Manager: gateway host key, user CA, and separate per-hop control tokens
+- Versioned access policy from operator OpenSSH public-key lines; default
+  allowlist/allowlist, with the opt-in demo key automatically admitted to both
+  lists
 - Gateway static IP (`:22` only when CIDRs are explicitly supplied),
   orchestrator VM (VPC), nested-virt agent MIG
 - Orchestrator `-hosts-file` refresh from MIG membership (`GET /v1/hosts`)
@@ -635,7 +660,7 @@ hits, wake/deploy denials — still **no session bytes**.
    (`sshcloud/terraform/`; local pinned assets are uploaded before the MIG).
 2. Platform user CA + inject path; shared kernel.  
 3. Sample fortune OCI image (SSH server verifying CA) — `ko_build.fortune`.  
-4. `ssh foo.com` (unknown key) → join → menu (**rate limits still block public ingress**).
+4. `ssh foo.com` (policy-admitted unknown key) → join → menu.
 5. Deploy fortune → menu → fortune → wake (loading UI) → cert hop → session.  
 6. Second concurrent `ssh fortune@foo.com` → **rejected** (session busy).  
 7. Idle → snapshot-on-sleep; reconnect restores.  

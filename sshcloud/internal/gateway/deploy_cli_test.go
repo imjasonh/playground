@@ -36,7 +36,7 @@ func TestRunDeployExecArgs(t *testing.T) {
 		io.Writer
 	}{Reader: strings.NewReader(""), Writer: &out}
 
-	code := gateway.RunDeploy(ctx, rw, hub, "demo",
+	code := gateway.RunDeploy(ctx, rw, hub, "SHA256:demo", "demo",
 		"fortune --image="+img+" --tier=tiny --strategy=kick --yes")
 	if code != 0 {
 		t.Fatalf("exit %d out=%q", code, out.String())
@@ -54,13 +54,13 @@ func TestRunDeployExecArgs(t *testing.T) {
 
 	// Update without --yes fails.
 	out.Reset()
-	code = gateway.RunDeploy(ctx, rw, hub, "demo", "fortune --image="+img+" --strategy=kick")
+	code = gateway.RunDeploy(ctx, rw, hub, "SHA256:demo", "demo", "fortune --image="+img+" --strategy=kick")
 	if code == 0 || !strings.Contains(out.String(), "--yes") {
 		t.Fatalf("expected --yes required, code=%d out=%q", code, out.String())
 	}
 
 	out.Reset()
-	code = gateway.RunDeploy(ctx, rw, hub, "demo", "fortune --image="+img+" --strategy=kick --yes")
+	code = gateway.RunDeploy(ctx, rw, hub, "SHA256:demo", "demo", "fortune --image="+img+" --strategy=kick --yes")
 	if code != 0 || !strings.Contains(out.String(), "Updated fortune") {
 		t.Fatalf("update: code=%d out=%q", code, out.String())
 	}

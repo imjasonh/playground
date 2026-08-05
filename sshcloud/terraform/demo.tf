@@ -15,6 +15,7 @@ resource "terraform_data" "deploy_fortune" {
     google_compute_instance.gateway.instance_id,
     google_compute_instance.orchestrator.instance_id,
     google_compute_instance_template.agent.id,
+    google_secret_manager_secret_version.access_policy.id,
     filesha256("${path.module}/scripts/deploy-fortune.sh"),
     filesha256("${path.module}/scripts/ssh-client.sh"),
     var.demo_user,
@@ -34,6 +35,7 @@ resource "terraform_data" "deploy_fortune" {
     google_compute_instance.gateway,
     google_compute_instance_group_manager.agents,
     google_compute_instance.orchestrator,
+    google_secret_manager_secret_version.access_policy,
     ko_build.fortune,
   ]
 

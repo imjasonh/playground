@@ -47,18 +47,19 @@ resource "google_compute_instance" "gateway" {
   }
 
   metadata_startup_script = templatefile("${path.module}/scripts/gateway.sh.tftpl", {
-    helpers             = templatefile("${path.module}/scripts/run-container.sh.tftpl", { registry_host = split("/", local.registry)[0], project_id = var.project_id })
-    registry_host       = split("/", local.registry)[0]
-    project_id          = var.project_id
-    firestore_prefix    = var.firestore_prefix
-    firestore_database  = var.firestore_database
-    host_key_secret     = google_secret_manager_secret.gateway_host_key.secret_id
-    user_ca_secret      = google_secret_manager_secret.user_ca.secret_id
-    control_auth_secret = google_secret_manager_secret.orchestrator_auth.secret_id
-    gateway_image       = ko_build.gateway.image_ref
-    gateway_listen      = local.gateway_listen
-    control_listen      = "${google_compute_address.gateway_internal.address}:8079"
-    orchestrator_ip     = google_compute_address.orchestrator_internal.address
+    helpers              = templatefile("${path.module}/scripts/run-container.sh.tftpl", { registry_host = split("/", local.registry)[0], project_id = var.project_id })
+    registry_host        = split("/", local.registry)[0]
+    project_id           = var.project_id
+    firestore_prefix     = var.firestore_prefix
+    firestore_database   = var.firestore_database
+    host_key_secret      = google_secret_manager_secret.gateway_host_key.secret_id
+    user_ca_secret       = google_secret_manager_secret.user_ca.secret_id
+    control_auth_secret  = google_secret_manager_secret.orchestrator_auth.secret_id
+    access_policy_secret = google_secret_manager_secret.access_policy.secret_id
+    gateway_image        = ko_build.gateway.image_ref
+    gateway_listen       = local.gateway_listen
+    control_listen       = "${google_compute_address.gateway_internal.address}:8079"
+    orchestrator_ip      = google_compute_address.orchestrator_internal.address
   })
 
   lifecycle {
@@ -69,9 +70,11 @@ resource "google_compute_instance" "gateway" {
     google_secret_manager_secret_version.gateway_host_key,
     google_secret_manager_secret_version.user_ca,
     google_secret_manager_secret_version.orchestrator_auth,
+    google_secret_manager_secret_version.access_policy,
     google_secret_manager_secret_iam_member.gateway_host_key,
     google_secret_manager_secret_iam_member.gateway_user_ca,
     google_secret_manager_secret_iam_member.gateway_orchestrator_auth,
+    google_secret_manager_secret_iam_member.gateway_access_policy,
     google_firestore_database.sshcloud,
     google_project_iam_member.gateway_datastore,
     google_artifact_registry_repository_iam_member.pullers["gateway"],

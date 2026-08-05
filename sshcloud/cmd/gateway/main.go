@@ -14,6 +14,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	"github.com/imjasonh/playground/sshcloud/internal/access"
 	"github.com/imjasonh/playground/sshcloud/internal/backend"
 	"github.com/imjasonh/playground/sshcloud/internal/controlauth"
 	"github.com/imjasonh/playground/sshcloud/internal/cutover"
@@ -40,6 +41,7 @@ func main() {
 	drainTimeout := flag.Duration("drain-timeout", cutover.DefaultDrainTimeout, "deploy drain kick timeout")
 	controlTokenFile := flag.String("control-token-file", "", "bearer token file sent to orchestrator/agent APIs")
 	controlListen := flag.String("control-listen", "", "internal migration control HTTP address (empty disables)")
+	accessPolicyFile := flag.String("access-policy-file", "", "path to reloadable JSON SSH-key access policy (empty is local open/all-users)")
 	allowedRegistries := flag.String("allowed-registries", "index.docker.io,docker.io,ghcr.io,*.pkg.dev", "comma-separated OCI registry hosts; supports *.suffix")
 	maxSessionsPerUser := flag.Int("max-sessions-per-user", 5, "concurrent sessions across all apps")
 	handshakesPerMinute := flag.Int("handshakes-per-minute", 60, "accepted SSH handshakes per source IP per minute")
@@ -81,6 +83,18 @@ func main() {
 
 	sess := session.NewRegistry()
 	sess.MaxPerUser = *maxSessionsPerUser
+	var accessPolicy access.Source = access.StaticSource{Policy: access.LocalDevelopmentPolicy()}
+	if *accessPolicyFile != "" {
+		filePolicy := access.FileSource{Path: *accessPolicyFile}
+		accessPolicy = filePolicy
+		if _, err := filePolicy.Load(); err != nil {
+			log.Printf("WARNING: access policy is unavailable; gateway admissions will fail closed: %v", err)
+		} else {
+			log.Printf("access policy: reload %s on each admission", *accessPolicyFile)
+		}
+	} else {
+		log.Printf("access policy: local development open/all-users (no policy file configured)")
+	}
 	var quotaStore quota.Store = quota.NewMemory()
 	if *firestoreProject != "" {
 		quotaStore, err = quota.NewFirestoreDatabase(ctx, *firestoreProject, *firestoreDatabase, *firestorePrefix)
@@ -92,6 +106,7 @@ func main() {
 	hub := &gateway.Hub{
 		Store:             st,
 		Sessions:          sess,
+		Access:            accessPolicy,
 		UserCA:            ca,
 		AllowedRegistries: image.ParseRegistryAllowlist(*allowedRegistries),
 		Quotas:            quotaStore,

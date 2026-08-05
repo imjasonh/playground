@@ -21,6 +21,43 @@ resource "tls_private_key" "agent_auth" {
   algorithm = "ED25519"
 }
 
+locals {
+  demo_ssh_public_keys = [
+    for key in tls_private_key.demo : trimspace(key.public_key_openssh)
+  ]
+  access_member_ssh_public_keys = distinct(concat(
+    [for key in var.member_ssh_public_keys : trimspace(key)],
+    local.demo_ssh_public_keys,
+  ))
+  access_deployer_ssh_public_keys = distinct(concat(
+    [for key in var.deployer_ssh_public_keys : trimspace(key)],
+    local.demo_ssh_public_keys,
+  ))
+  access_policy_json = jsonencode({
+    version                  = 1
+    join_mode                = var.access_join_mode
+    deploy_mode              = var.access_deploy_mode
+    member_ssh_public_keys   = local.access_member_ssh_public_keys
+    deployer_ssh_public_keys = local.access_deployer_ssh_public_keys
+  })
+}
+
+resource "google_secret_manager_secret" "access_policy" {
+  secret_id = "${local.prefix}-access-policy"
+  labels    = local.labels
+  replication {
+    auto {}
+  }
+  depends_on = [module.project_services]
+}
+
+# This policy contains public keys only. Secret Manager provides versioned,
+# atomic distribution and the same narrow gateway IAM path as private config.
+resource "google_secret_manager_secret_version" "access_policy" {
+  secret      = google_secret_manager_secret.access_policy.id
+  secret_data = local.access_policy_json
+}
+
 resource "google_secret_manager_secret" "gateway_host_key" {
   secret_id = "${local.prefix}-gateway-host-key"
   labels    = local.labels

@@ -49,6 +49,13 @@ resource "google_secret_manager_secret_iam_member" "gateway_orchestrator_auth" {
   member    = "serviceAccount:${google_service_account.gateway.email}"
 }
 
+resource "google_secret_manager_secret_iam_member" "gateway_access_policy" {
+  project   = var.project_id
+  secret_id = google_secret_manager_secret.access_policy.secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.gateway.email}"
+}
+
 # Orchestrator: Firestore placement + list MIG members + agent subnet.
 resource "google_project_iam_member" "orchestrator_datastore" {
   project = var.project_id

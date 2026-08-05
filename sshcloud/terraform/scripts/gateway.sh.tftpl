@@ -18,6 +18,76 @@ retry 30 pull_secret "${host_key_secret}" /var/lib/sshcloud/ssh_host_ed25519_key
 retry 30 pull_secret "${user_ca_secret}" /var/lib/sshcloud/ssh_user_ca
 retry 30 pull_secret "${control_auth_secret}" /var/lib/sshcloud/orchestrator_auth
 
+# Refresh the versioned public-key policy independently of the gateway image.
+# Replacement is atomic; a fetch/decode failure removes the configured file so
+# the gateway's file-backed policy fails closed instead of serving stale data.
+cat >/usr/local/sbin/sshcloud-refresh-access-policy <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+PROJECT_ID="${project_id}"
+SECRET_ID="${access_policy_secret}"
+DEST="/var/lib/sshcloud/access-policy.json"
+tmp=""
+
+fail_closed() {
+  if [[ -n "$tmp" ]]; then
+    rm -f "$tmp"
+  fi
+  rm -f "$DEST"
+  echo "access-policy refresh failed; removed policy file to fail closed" >&2
+  exit 1
+}
+
+if ! tmp="$(mktemp "$DEST.tmp.XXXXXX")"; then
+  fail_closed
+fi
+if ! token="$(curl --retry 10 --retry-all-errors -fsS -H 'Metadata-Flavor: Google' \
+  http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')"; then
+  fail_closed
+fi
+if ! curl --retry 10 --retry-all-errors -fsS \
+  -H "Metadata-Flavor: Google" \
+  -H "Authorization: Bearer $token" \
+  "https://secretmanager.googleapis.com/v1/projects/$PROJECT_ID/secrets/$SECRET_ID/versions/latest:access" \
+  | python3 -c 'import base64,json,sys; sys.stdout.buffer.write(base64.b64decode(json.load(sys.stdin)["payload"]["data"]))' \
+  >"$tmp"; then
+  fail_closed
+fi
+if ! chmod 600 "$tmp" || ! mv -f "$tmp" "$DEST"; then
+  fail_closed
+fi
+EOF
+chmod 700 /usr/local/sbin/sshcloud-refresh-access-policy
+retry 30 /usr/local/sbin/sshcloud-refresh-access-policy
+
+cat >/etc/systemd/system/sshcloud-access-policy-refresh.service <<'EOF'
+[Unit]
+Description=Refresh sshcloud SSH access policy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/sshcloud-refresh-access-policy
+EOF
+
+cat >/etc/systemd/system/sshcloud-access-policy-refresh.timer <<'EOF'
+[Unit]
+Description=Refresh sshcloud SSH access policy every minute
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+RandomizedDelaySec=10s
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+systemctl daemon-reload
+systemctl enable --now sshcloud-access-policy-refresh.timer
+
 IMAGE="${gateway_image}"
 retry 30 docker pull "$IMAGE"
 docker rm -f sshcloud-gateway 2>/dev/null || true
@@ -34,6 +104,7 @@ docker run -d --name sshcloud-gateway --restart unless-stopped --net host \
   -host-key /var/lib/sshcloud/ssh_host_ed25519_key \
   -user-ca /var/lib/sshcloud/ssh_user_ca \
   -control-token-file /var/lib/sshcloud/orchestrator_auth \
+  -access-policy-file /var/lib/sshcloud/access-policy.json \
   -firestore-project ${project_id} \
   -firestore-prefix ${firestore_prefix} \
   -firestore-database ${firestore_database} \

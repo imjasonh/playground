@@ -53,6 +53,34 @@ if ! grep -q 'terraform_data" "smoke_test_fortune' "$TF/demo.tf"; then
   echo "demo.tf must verify fortune after deployment" >&2
   exit 1
 fi
+for variable in member_ssh_public_keys deployer_ssh_public_keys access_join_mode access_deploy_mode; do
+  if ! grep -q "variable \"$variable\"" "$TF/variables.tf"; then
+    echo "variables.tf must declare $variable" >&2
+    exit 1
+  fi
+done
+if [[ "$(grep -c 'default     = "allowlist"' "$TF/variables.tf")" -lt 2 ]]; then
+  echo "join and deploy access modes must default to allowlist" >&2
+  exit 1
+fi
+if ! grep -q 'google_secret_manager_secret_version" "access_policy' "$TF/secrets.tf" ||
+  ! grep -q 'member_ssh_public_keys.*local.access_member_ssh_public_keys' "$TF/secrets.tf" ||
+  ! grep -q 'deployer_ssh_public_keys.*local.access_deployer_ssh_public_keys' "$TF/secrets.tf" ||
+  ! grep -q 'demo_ssh_public_keys' "$TF/secrets.tf" ||
+  ! grep -q 'gateway_access_policy' "$TF/iam.tf"; then
+  echo "Terraform must version, grant, and populate the access policy (including the opt-in demo key)" >&2
+  exit 1
+fi
+if ! grep -q 'versions/latest:access' "$TF/scripts/gateway.sh.tftpl" ||
+  ! grep -q 'sshcloud-access-policy-refresh.timer' "$TF/scripts/gateway.sh.tftpl" ||
+  ! grep -q -- '-access-policy-file' "$TF/scripts/gateway.sh.tftpl"; then
+  echo "gateway startup must refresh and enforce the latest access policy" >&2
+  exit 1
+fi
+if ! grep -q 'google_secret_manager_secret_version.access_policy.id' "$TF/demo.tf"; then
+  echo "demo bootstrap must rerun when the access policy changes" >&2
+  exit 1
+fi
 if ! grep -q 'method="POST"' "$TF/scripts/orchestrator.sh.tftpl"; then
   echo "MIG listManagedInstances discovery must use POST" >&2
   exit 1

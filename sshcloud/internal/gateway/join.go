@@ -47,6 +47,10 @@ func runJoinNew(ctx context.Context, t *term, hub *Hub, keyFP, sourceIP, execCmd
 			return 1
 		}
 		if err := hub.allowJoin(ctx, sourceIP, name, keyFP); err != nil {
+			if isForbidden(err) {
+				t.Printf("%s\n", forbiddenMessage(err))
+				return 1
+			}
 			t.Printf("Join denied: %v\n", err)
 			return 1
 		}
@@ -72,6 +76,10 @@ func runJoinNew(ctx context.Context, t *term, hub *Hub, keyFP, sourceIP, execCmd
 			continue
 		}
 		if err := hub.allowJoin(ctx, sourceIP, name, keyFP); err != nil {
+			if isForbidden(err) {
+				t.Printf("%s\n", forbiddenMessage(err))
+				return 1
+			}
 			t.Printf("Join denied: %v\n", err)
 			return 1
 		}
@@ -82,8 +90,7 @@ func runJoinNew(ctx context.Context, t *term, hub *Hub, keyFP, sourceIP, execCmd
 		t.Printf("\nYou're %s. Opening app menu…\n\n", name)
 		// Reuse the same term so a buffered stdin (e.g. scripted tests)
 		// is not lost when opening the menu.
-		runMenu(ctx, t, hub, keyFP, name)
-		return 0
+		return runMenu(ctx, t, hub, keyFP, name)
 	}
 }
 

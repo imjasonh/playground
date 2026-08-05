@@ -26,17 +26,17 @@ func TestJoinAndDeployQuotaDefaults(t *testing.T) {
 	}
 	imageA := "ghcr.io/example/a@sha256:" + strings.Repeat("a", 64)
 	imageB := "ghcr.io/example/b@sha256:" + strings.Repeat("b", 64)
-	if _, err := applyDeploy(ctx, hub, "alice", DeployArgs{
+	if _, err := applyDeploy(ctx, hub, "key-a", "alice", DeployArgs{
 		Name: "appone", Image: imageA, Tier: "tiny", Strategy: store.StrategyKick, Yes: true,
 	}, true); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := applyDeploy(ctx, hub, "alice", DeployArgs{
+	if _, err := applyDeploy(ctx, hub, "key-a", "alice", DeployArgs{
 		Name: "apptwo", Image: imageB, Tier: "tiny", Strategy: store.StrategyKick, Yes: true,
 	}, true); err == nil {
 		t.Fatal("second app was admitted above app quota")
 	}
-	if _, err := applyDeploy(ctx, hub, "alice", DeployArgs{
+	if _, err := applyDeploy(ctx, hub, "key-a", "alice", DeployArgs{
 		Name: "appone", Image: imageB, Tier: "tiny", Strategy: store.StrategyKick, Yes: true,
 	}, true); err == nil {
 		t.Fatal("second distinct deploy event was admitted above hourly quota")

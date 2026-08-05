@@ -8,26 +8,29 @@ import (
 )
 
 // RunMenu shows the hub app picker and hands off to an app or deploy.
-func RunMenu(ctx context.Context, ch io.ReadWriter, hub *Hub, keyFP, userID string) {
-	RunMenuSession(ctx, ClientSession{IO: ch, Stderr: ch, Spec: &SessionSpec{StartType: SessionShell, PTY: true}}, hub, keyFP, userID)
+func RunMenu(ctx context.Context, ch io.ReadWriter, hub *Hub, keyFP, userID string) int {
+	return RunMenuSession(ctx, ClientSession{IO: ch, Stderr: ch, Spec: &SessionSpec{StartType: SessionShell, PTY: true}}, hub, keyFP, userID)
 }
 
-func RunMenuSession(ctx context.Context, client ClientSession, hub *Hub, keyFP, userID string) {
-	runMenu(ctx, newSessionTerm(client), hub, keyFP, userID)
+func RunMenuSession(ctx context.Context, client ClientSession, hub *Hub, keyFP, userID string) int {
+	return runMenu(ctx, newSessionTerm(client), hub, keyFP, userID)
 }
 
-func runMenu(ctx context.Context, t *term, hub *Hub, keyFP, userID string) {
-	_ = keyFP
+func runMenu(ctx context.Context, t *term, hub *Hub, keyFP, userID string) int {
 	if userID == "" {
 		t.Printf("Not logged in. Complete join first.\n")
-		return
+		return 0
 	}
 
 	for {
+		if err := hub.authorizeUse(keyFP); err != nil {
+			t.Printf("%s\n", forbiddenMessage(err))
+			return 1
+		}
 		apps, err := hub.Store.ListApps(ctx, userID)
 		if err != nil {
 			t.Printf("error listing apps: %v\n", err)
-			return
+			return 0
 		}
 
 		type item struct {
@@ -59,11 +62,11 @@ func runMenu(ctx context.Context, t *term, hub *Hub, keyFP, userID string) {
 
 		line, err := t.ReadLine()
 		if err != nil {
-			return
+			return 0
 		}
 		if line == "q" || line == "quit" {
 			t.Printf("Bye.\n")
-			return
+			return 0
 		}
 		n, err := strconv.Atoi(line)
 		if err != nil || n < 1 || n > len(items) {
@@ -73,11 +76,19 @@ func runMenu(ctx context.Context, t *term, hub *Hub, keyFP, userID string) {
 		it := items[n-1]
 		switch it.kind {
 		case "deploy":
-			_ = runDeploy(ctx, t, hub, userID, "")
+			if err := hub.authorizeDeploy(keyFP, userID); err != nil {
+				t.Printf("%s\n", forbiddenMessage(err))
+				return 1
+			}
+			_ = runDeploy(ctx, t, hub, keyFP, userID, "")
 			t.Printf("\n")
 		case "app":
-			res, err := hub.OpenApp(ctx, userID, it.app)
+			res, err := hub.OpenApp(ctx, keyFP, userID, it.app)
 			if err != nil {
+				if isForbidden(err) {
+					t.Printf("%s\n", forbiddenMessage(err))
+					return 1
+				}
 				t.Printf("%v\n\n", err)
 				continue
 			}

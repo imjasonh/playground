@@ -37,7 +37,7 @@ func TestRunDeployCreatesApp(t *testing.T) {
 		io.Writer
 	}{Reader: strings.NewReader(script), Writer: &out}
 
-	gateway.RunDeploy(ctx, rw, hub, "alice", "")
+	gateway.RunDeploy(ctx, rw, hub, "SHA256:alice", "alice", "")
 
 	got := out.String()
 	if !strings.Contains(got, "Created myapp") {
@@ -91,7 +91,7 @@ func TestRunDeployRejectsUnpinned(t *testing.T) {
 		io.Writer
 	}{Reader: strings.NewReader(script), Writer: &out}
 
-	gateway.RunDeploy(ctx, rw, hub, "alice", "")
+	gateway.RunDeploy(ctx, rw, hub, "SHA256:alice", "alice", "")
 	if !strings.Contains(out.String(), "digest-pinned") {
 		t.Fatalf("expected digest error; got %q", out.String())
 	}
@@ -136,7 +136,7 @@ func TestRunDeployUpdateConfirm(t *testing.T) {
 		io.Writer
 	}{Reader: strings.NewReader(script), Writer: &out}
 
-	gateway.RunDeploy(ctx, rw, hub, "alice", "")
+	gateway.RunDeploy(ctx, rw, hub, "SHA256:alice", "alice", "")
 	if !strings.Contains(out.String(), "Updated myapp") {
 		t.Fatalf("output: %q", out.String())
 	}
@@ -181,7 +181,7 @@ func TestRunDeployCutoverSetsGen(t *testing.T) {
 		io.Writer
 	}{Reader: strings.NewReader(script), Writer: &out}
 
-	gateway.RunDeploy(ctx, rw, hub, "alice", "")
+	gateway.RunDeploy(ctx, rw, hub, "SHA256:alice", "alice", "")
 	if !strings.Contains(out.String(), "generation:") {
 		t.Fatalf("output: %q", out.String())
 	}
@@ -225,7 +225,7 @@ func TestFailedInitialDeployLeavesNoPhantomApp(t *testing.T) {
 		io.Writer
 	}{Reader: strings.NewReader(""), Writer: &out}
 
-	code := gateway.RunDeploy(ctx, rw, hub, "alice",
+	code := gateway.RunDeploy(ctx, rw, hub, "SHA256:alice", "alice",
 		"myapp --image=ghcr.io/example/app@sha256:"+digest+" --tier=tiny --strategy=kick --yes")
 	if code == 0 || !strings.Contains(out.String(), "boot failed") {
 		t.Fatalf("code=%d output=%q", code, out.String())
