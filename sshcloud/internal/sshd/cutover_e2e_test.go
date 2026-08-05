@@ -388,17 +388,21 @@ func TestSessionRequestFidelityE2E(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var subsystemOut bytes.Buffer
-	subsystem.Stdout = &subsystemOut
+	subsystemOut, err := subsystem.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := subsystem.RequestSubsystem("test-subsystem"); err != nil {
 		t.Fatal(err)
 	}
-	if err := subsystem.Wait(); err != nil {
+	subsystemBytes, err := io.ReadAll(subsystemOut)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(subsystemOut.String(), "SUBSYSTEM test-subsystem") {
-		t.Fatalf("subsystem output %q", subsystemOut.String())
+	if !strings.Contains(string(subsystemBytes), "SUBSYSTEM test-subsystem") {
+		t.Fatalf("subsystem output %q", subsystemBytes)
 	}
+	_ = subsystem.Close()
 	awaitSessionCount(t, fx.hub.Sessions, 0)
 
 	live := fx.openApp(t)
