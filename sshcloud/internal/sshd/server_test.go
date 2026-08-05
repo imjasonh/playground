@@ -297,6 +297,11 @@ func TestSSHAccessPolicyRevokesOpenConnection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	stdin, err := appSession.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stdin.Close()
 	if err := appSession.RequestPty("xterm", 40, 80, ssh.TerminalModes{}); err != nil {
 		t.Fatal(err)
 	}
