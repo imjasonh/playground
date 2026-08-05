@@ -65,6 +65,7 @@ resource "google_compute_instance" "orchestrator" {
     google_artifact_registry_repository_iam_member.pullers["orchestrator"],
     google_project_iam_member.orchestrator_compute_viewer,
     google_project_iam_member.orchestrator_datastore,
+    google_project_iam_member.observability_writers,
     google_compute_router_nat.sshcloud,
   ]
 }

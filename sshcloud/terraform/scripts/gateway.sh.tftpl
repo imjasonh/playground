@@ -3,6 +3,7 @@ set -euo pipefail
 ${helpers}
 
 install_docker
+install_ops_agent gateway "${health_listen}"
 retry 30 registry_login
 
 # Public :22 is the platform gateway; keep host sshd on 2222 for IAP.
@@ -98,6 +99,8 @@ IMAGE="${gateway_image}"
 retry 30 docker pull "$IMAGE"
 docker rm -f sshcloud-gateway 2>/dev/null || true
 docker run -d --name sshcloud-gateway --restart unless-stopped --net host \
+  --log-driver=journald \
+  --log-opt tag=sshcloud-platform-gateway \
   --user 0:0 \
   --cap-drop ALL \
   --cap-add NET_BIND_SERVICE \

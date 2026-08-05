@@ -19,6 +19,7 @@ import (
 
 	"github.com/imjasonh/playground/sshcloud/internal/helperrpc"
 	"github.com/imjasonh/playground/sshcloud/internal/hostisolation"
+	"github.com/imjasonh/playground/sshcloud/internal/observability"
 	"golang.org/x/sys/unix"
 )
 
@@ -45,6 +46,34 @@ type Config struct {
 	AgentGID       uint32
 	SandboxIDBase  uint32
 	ExpectedPeerID uint32
+	HostID         string
+}
+
+func normalizeHostID(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		value, _ = os.Hostname()
+	}
+	if dot := strings.IndexByte(value, '.'); dot > 0 {
+		value = value[:dot]
+	}
+	var clean strings.Builder
+	for _, char := range value {
+		if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') ||
+			(char >= '0' && char <= '9') || char == '-' || char == '_' || char == '.' {
+			clean.WriteRune(char)
+		} else {
+			clean.WriteByte('-')
+		}
+		if clean.Len() == 63 {
+			break
+		}
+	}
+	value = strings.TrimLeft(clean.String(), "._-")
+	if value == "" {
+		return "unknown"
+	}
+	return value
 }
 
 func (c Config) validate() error {
@@ -149,6 +178,7 @@ type managedVM struct {
 	jailDir   string
 	apiSocket string
 	proxyPath string
+	output    *observability.ConsoleSink
 
 	mu       sync.Mutex
 	proxy    net.Listener
@@ -191,6 +221,7 @@ func NewServer(config Config) (*Server, error) {
 	if config.SandboxIDBase == 0 {
 		config.SandboxIDBase = hostisolation.DefaultSandboxIDBase
 	}
+	config.HostID = normalizeHostID(config.HostID)
 	if err := config.validate(); err != nil {
 		return nil, err
 	}
@@ -531,10 +562,29 @@ func decodePayload(payload json.RawMessage, dst any) error {
 	return nil
 }
 
-func (s *Server) launch(ctx context.Context, request LaunchRequest) (LaunchResponse, error) {
+func (s *Server) launch(ctx context.Context, request LaunchRequest) (response LaunchResponse, retErr error) {
 	if err := request.validate(); err != nil {
 		return LaunchResponse{}, err
 	}
+	startedAt := time.Now()
+	identity := request.Identity
+	identity.Host = s.config.HostID
+	operation := "boot"
+	if request.Mode == LaunchRestore {
+		operation = "restore"
+	}
+	defer func() {
+		outcome := observability.OutcomeSuccess
+		state := "running"
+		if retErr != nil {
+			outcome = observability.OutcomeFailure
+			state = "failed"
+		}
+		observability.Emit(observability.LifecycleEvent{
+			Identity: identity, Operation: operation, State: state,
+			Outcome: outcome, Duration: time.Since(startedAt),
+		})
+	}()
 	uid, err := hostisolation.SandboxID(request.VMID, s.config.SandboxIDBase)
 	if err != nil {
 		return LaunchResponse{}, err
@@ -581,21 +631,22 @@ func (s *Server) launch(ctx context.Context, request LaunchRequest) (LaunchRespo
 	if err != nil {
 		return LaunchResponse{}, err
 	}
-	logFile, err := s.openWorkOutput(request.VMID, "firecracker.log")
+	output, err := observability.NewConsoleSink(observability.ConsoleConfig{
+		Identity: identity,
+	})
 	if err != nil {
 		_ = os.RemoveAll(filepath.Dir(jailDir))
 		return LaunchResponse{}, err
 	}
 	cmd := exec.Command(s.config.Jailer, args...)
-	cmd.Stdout = logFile
-	cmd.Stderr = logFile
+	cmd.Stdout = output.AppWriter()
+	cmd.Stderr = output.DiagnosticsWriter()
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGKILL}
 	if err := cmd.Start(); err != nil {
-		_ = logFile.Close()
+		output.Close()
 		_ = os.RemoveAll(filepath.Dir(jailDir))
 		return LaunchResponse{}, fmt.Errorf("start pinned jailer: %w", err)
 	}
-	_ = logFile.Close()
 
 	vm := &managedVM{
 		id:        request.VMID,
@@ -605,6 +656,7 @@ func (s *Server) launch(ctx context.Context, request LaunchRequest) (LaunchRespo
 		jailDir:   jailDir,
 		apiSocket: filepath.Join(jailDir, strings.TrimPrefix(hostisolation.FirecrackerAPISocket, "/")),
 		proxyPath: filepath.Join(s.config.ProxyDir, request.VMID+".sock"),
+		output:    output,
 	}
 	s.mu.Lock()
 	delete(s.uidReservations, uid)
@@ -614,6 +666,7 @@ func (s *Server) launch(ctx context.Context, request LaunchRequest) (LaunchRespo
 
 	go func() {
 		_ = cmd.Wait()
+		output.Close()
 		close(vm.done)
 		vm.closeProxy()
 	}()
@@ -796,24 +849,6 @@ func openBeneath(root, relativePath string, flags int) (int, error) {
 		return -1, fmt.Errorf("fixed work path %q is not regular", relativePath)
 	}
 	return fd, nil
-}
-
-func (s *Server) openWorkOutput(vmID, name string) (*os.File, error) {
-	relativeDir, _ := hostisolation.WorkRelativePath(vmID)
-	dirFD, err := openBeneath(s.config.WorkRoot, relativeDir, unix.O_RDONLY|unix.O_DIRECTORY)
-	if err != nil {
-		return nil, err
-	}
-	defer unix.Close(dirFD)
-	fd, err := unix.Openat(dirFD, name, unix.O_WRONLY|unix.O_CREAT|unix.O_TRUNC|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0o600)
-	if err != nil {
-		return nil, err
-	}
-	if err := unix.Fchown(fd, int(s.config.AgentUID), int(s.config.AgentGID)); err != nil {
-		_ = unix.Close(fd)
-		return nil, err
-	}
-	return os.NewFile(uintptr(fd), name), nil
 }
 
 func waitUnixSocket(ctx context.Context, path string, processDone <-chan struct{}) error {

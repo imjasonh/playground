@@ -3,6 +3,7 @@ package ocirootfs
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -32,6 +33,9 @@ const (
 type Options struct {
 	// CacheDir is a digest-addressed ext4 cache. Empty uses os.TempDir.
 	CacheDir string
+	// MaxCacheBytes is the hard ext4-cache budget. Zero defaults to 8 GiB;
+	// least-recently-used digest pairs are removed before a new build.
+	MaxCacheBytes int64
 	// SizeMB is the ext4 image size. Zero defaults to 512.
 	SizeMB int
 	// MaxUncompressedBytes caps unpacked layer bytes. Zero defaults to 1 GiB.
@@ -42,6 +46,9 @@ type Options struct {
 type Result struct {
 	Rootfs string
 	Spec   guestinit.Spec
+	// Release ends the cache-entry lease after the caller has cloned Rootfs.
+	// Callers must invoke it; otherwise eviction remains conservatively blocked.
+	Release func()
 }
 
 // Materialize pulls ref (must be repo@sha256:64hex), unpacks layers with OCI
@@ -67,6 +74,9 @@ func Materialize(ctx context.Context, ref string, opt Options) (Result, error) {
 	if opt.SizeMB <= 0 {
 		opt.SizeMB = defaultSizeMB
 	}
+	if opt.MaxCacheBytes <= 0 {
+		opt.MaxCacheBytes = DefaultCacheBytes
+	}
 	if opt.MaxUncompressedBytes <= 0 {
 		opt.MaxUncompressedBytes = defaultMaxUncompressedBytes
 	}
@@ -77,6 +87,24 @@ func Materialize(ctx context.Context, ref string, opt Options) (Result, error) {
 	cacheBase := fmt.Sprintf("%s-v%d-%dm", hex, materializerSchema, opt.SizeMB)
 	cachePath := filepath.Join(opt.CacheDir, cacheBase+".ext4")
 	specPath := filepath.Join(opt.CacheDir, cacheBase+".boot.json")
+	markCacheEntryActive(cacheBase)
+	releaseOnReturn := true
+	defer func() {
+		if releaseOnReturn {
+			unmarkCacheEntryActive(cacheBase)
+		}
+	}()
+	leasedResult := func(spec guestinit.Spec) Result {
+		releaseOnReturn = false
+		var once sync.Once
+		return Result{
+			Rootfs: cachePath,
+			Spec:   spec,
+			Release: func() {
+				once.Do(func() { unmarkCacheEntryActive(cacheBase) })
+			},
+		}
+	}
 	lockValue, _ := materializeLocks.LoadOrStore(cachePath, &sync.Mutex{})
 	lock := lockValue.(*sync.Mutex)
 	lock.Lock()
@@ -86,8 +114,29 @@ func Materialize(ctx context.Context, ref string, opt Options) (Result, error) {
 		if err != nil {
 			return Result{}, err
 		}
-		return Result{Rootfs: cachePath, Spec: spec}, nil
+		if err := enforceRootfsCacheLimit(opt.CacheDir, opt.MaxCacheBytes, cacheBase); err != nil {
+			return Result{}, err
+		}
+		touchCacheEntry(cachePath, specPath)
+		return leasedResult(spec), nil
 	}
+	maxSizeMB := (opt.MaxCacheBytes - maxBootSpecBytes) >> 20
+	if maxSizeMB <= 0 || int64(opt.SizeMB) > maxSizeMB {
+		return Result{}, fmt.Errorf(
+			"configured %d MiB rootfs cannot fit within %d-byte cache limit",
+			opt.SizeMB, opt.MaxCacheBytes,
+		)
+	}
+	expectedCacheBytes := int64(opt.SizeMB)<<20 + maxBootSpecBytes
+	if err := reserveRootfsCacheSpace(opt.CacheDir, opt.MaxCacheBytes, expectedCacheBytes, cacheBase); err != nil {
+		return Result{}, err
+	}
+	reservationHeld := true
+	defer func() {
+		if reservationHeld {
+			releaseRootfsCacheSpace(cacheBase)
+		}
+	}()
 
 	img, err := pullLinuxAmd64(ctx, digest)
 	if err != nil {
@@ -135,7 +184,13 @@ func Materialize(ctx context.Context, ref string, opt Options) (Result, error) {
 	if err := guestinit.WriteFile(specPath, spec); err != nil {
 		return Result{}, err
 	}
-	return Result{Rootfs: cachePath, Spec: spec}, nil
+	releaseRootfsCacheSpace(cacheBase)
+	reservationHeld = false
+	touchCacheEntry(cachePath, specPath)
+	if err := enforceRootfsCacheLimit(opt.CacheDir, opt.MaxCacheBytes, cacheBase); err != nil {
+		return Result{}, err
+	}
+	return leasedResult(spec), nil
 }
 
 func directoryBytes(root string) (int64, error) {
@@ -158,6 +213,9 @@ func directoryBytes(root string) (int64, error) {
 
 func loadOrFetchSpec(ctx context.Context, digest name.Digest, specPath string) (guestinit.Spec, error) {
 	if st, err := os.Stat(specPath); err == nil && st.Size() > 0 {
+		if st.Size() > maxBootSpecBytes {
+			return guestinit.Spec{}, fmt.Errorf("cached boot spec exceeds %d-byte limit", maxBootSpecBytes)
+		}
 		return guestinit.LoadFile(specPath)
 	}
 	img, err := pullLinuxAmd64(ctx, digest)
@@ -220,6 +278,13 @@ func specFromImage(img v1.Image) (guestinit.Spec, error) {
 	}
 	if err := spec.Validate(); err != nil {
 		return guestinit.Spec{}, err
+	}
+	encoded, err := json.Marshal(spec)
+	if err != nil {
+		return guestinit.Spec{}, err
+	}
+	if len(encoded)+1 > maxBootSpecBytes {
+		return guestinit.Spec{}, fmt.Errorf("OCI boot spec exceeds %d-byte limit", maxBootSpecBytes)
 	}
 	return spec, nil
 }

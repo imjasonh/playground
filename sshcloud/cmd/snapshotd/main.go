@@ -19,12 +19,14 @@ import (
 
 	"github.com/imjasonh/playground/sshcloud/internal/controlauth"
 	"github.com/imjasonh/playground/sshcloud/internal/hostisolation"
+	"github.com/imjasonh/playground/sshcloud/internal/observability"
 	"github.com/imjasonh/playground/sshcloud/internal/placement"
 	"github.com/imjasonh/playground/sshcloud/internal/snapshot"
 	"github.com/imjasonh/playground/sshcloud/internal/snapshotd"
 )
 
 func main() {
+	observability.Configure("snapshotd")
 	listen := flag.String("listen", "", "snapshot API HTTPS listen address")
 	healthListen := flag.String("health-listen", "", "health-only HTTP listen address")
 	tempDir := flag.String("temp-dir", "/var/lib/sshcloud/snapshotd", "package staging directory")
@@ -111,6 +113,7 @@ func main() {
 
 	healthMux := http.NewServeMux()
 	handler.MountHealth(healthMux)
+	healthMux.Handle("GET /metrics", observability.MetricsHandler())
 	healthServer := &http.Server{
 		Addr: *healthListen, Handler: healthMux,
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 5 * time.Second,

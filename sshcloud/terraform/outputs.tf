@@ -105,3 +105,13 @@ output "secrets" {
 output "agent_mig" {
   value = google_compute_instance_group_manager.agents.name
 }
+
+output "observability" {
+  description = "Dedicated log buckets and Monitoring dashboard"
+  value = {
+    platform_log_bucket = google_logging_project_bucket_config.platform.bucket_id
+    app_log_bucket      = google_logging_project_bucket_config.app.bucket_id
+    dashboard_id        = google_monitoring_dashboard.sshcloud.id
+    billing_budget_id   = try(google_billing_budget.monthly[0].id, null)
+  }
+}

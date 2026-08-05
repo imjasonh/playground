@@ -23,6 +23,7 @@ import (
 	"github.com/imjasonh/playground/sshcloud/internal/gateway"
 	"github.com/imjasonh/playground/sshcloud/internal/hostkey"
 	"github.com/imjasonh/playground/sshcloud/internal/image"
+	"github.com/imjasonh/playground/sshcloud/internal/observability"
 	"github.com/imjasonh/playground/sshcloud/internal/quota"
 	"github.com/imjasonh/playground/sshcloud/internal/session"
 	"github.com/imjasonh/playground/sshcloud/internal/sshd"
@@ -31,6 +32,7 @@ import (
 )
 
 func main() {
+	observability.Configure("gateway")
 	addr := flag.String("listen", "127.0.0.1:2222", "SSH listen address")
 	hostKeyPath := flag.String("host-key", "ssh_host_ed25519_key", "path to host private key (created if missing)")
 	caKeyPath := flag.String("user-ca", "ssh_user_ca", "path to user CA private key (created if missing)")
@@ -269,6 +271,7 @@ func main() {
 	if *healthListen != "" {
 		healthMux := http.NewServeMux()
 		controlHandler.MountHealth(healthMux)
+		healthMux.Handle("GET /metrics", observability.MetricsHandler())
 		healthServer = &http.Server{
 			Addr: *healthListen, Handler: healthMux,
 			ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 5 * time.Second,

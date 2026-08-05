@@ -15,6 +15,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/imjasonh/playground/sshcloud/internal/gateway"
+	"github.com/imjasonh/playground/sshcloud/internal/observability"
 	"github.com/imjasonh/playground/sshcloud/internal/quota"
 )
 
@@ -31,6 +32,9 @@ type Server struct {
 	HostKey ssh.Signer
 	Addr    string // e.g. "127.0.0.1:2222" or "127.0.0.1:0"
 	Logger  *log.Logger
+	// EventSink is optional and exists for privacy regression tests. Its API is
+	// sealed to observability's metadata-only event schemas.
+	EventSink *observability.JSONSink
 	// HandshakeTimeout bounds clients that connect but never finish SSH setup.
 	// Zero defaults to 15 seconds.
 	HandshakeTimeout time.Duration
@@ -54,6 +58,14 @@ func (s *Server) logf(format string, args ...any) {
 	if s.Logger != nil {
 		s.Logger.Printf(format, args...)
 	}
+}
+
+func (s *Server) emit(event observability.Event) {
+	if s.EventSink != nil {
+		_ = s.EventSink.Emit(event)
+		return
+	}
+	observability.Emit(event)
 }
 
 // Listen starts the TCP listener without accepting (for tests that need the bound addr).
@@ -439,18 +451,44 @@ func (s *Server) handleSession(ctx context.Context, sc *ssh.ServerConn, ch ssh.C
 func (s *Server) runSession(ctx context.Context, sc *ssh.ServerConn, ch ssh.Channel, fp string, client gateway.ClientSession) {
 	spec := client.Spec
 	startKind, execCmd := spec.StartType, spec.Argument
-	s.logf("session start user=%q fp=%q request=%s", sc.User(), fp, startKind)
+	startedAt := time.Now()
 	res, err := s.Hub.HandleConnect(ctx, gateway.Connect{
 		SSHUser:        sc.User(),
 		KeyFingerprint: fp,
 		SourceIP:       sourceIP(sc.RemoteAddr()),
 	})
 	if err != nil {
+		s.emit(observability.SessionEvent{
+			Action: "admit", Mode: startKind, Outcome: observability.OutcomeFailure,
+			Duration: time.Since(startedAt),
+		})
 		spec.ReplyStart(false)
 		fmt.Fprintf(client.Stderr, "error: %v\r\n", err)
 		sendExit(ch, 1)
 		return
 	}
+	admitOutcome := observability.OutcomeSuccess
+	if res.Action == gateway.ActionRejectBusy || res.Action == gateway.ActionForbidden {
+		admitOutcome = observability.OutcomeRejected
+	}
+	identity := observability.RuntimeIdentity{
+		User: res.User, App: res.App, Generation: res.Gen,
+	}
+	route := observability.SessionRoute(res.Action.String())
+	s.emit(observability.SessionEvent{
+		Identity: identity, Action: "admit", Route: route, Mode: startKind,
+		Outcome: admitOutcome, Duration: time.Since(startedAt),
+	})
+	endOutcome := observability.OutcomeFailure
+	if admitOutcome == observability.OutcomeRejected {
+		endOutcome = observability.OutcomeRejected
+	}
+	defer func() {
+		s.emit(observability.SessionEvent{
+			Identity: identity, Action: "end", Route: route, Mode: startKind,
+			Outcome: endOutcome, Duration: time.Since(startedAt),
+		})
+	}()
 	defer s.Hub.ReleaseSession(res.Session)
 	if res.Action == gateway.ActionJoin && res.User == "" && startKind == gateway.SessionExec && sc.User() != "join" {
 		spec.ReplyStart(false)
@@ -503,6 +541,11 @@ func (s *Server) runSession(ctx context.Context, sc *ssh.ServerConn, ch ssh.Chan
 		spec.ReplyStart(false)
 		fmt.Fprintf(client.Stderr, "unhandled action %v\r\n", res.Action)
 		exit.Code = 1
+	}
+	if exit.Code == 0 {
+		endOutcome = observability.OutcomeSuccess
+	} else if admitOutcome != observability.OutcomeRejected {
+		endOutcome = observability.OutcomeFailure
 	}
 	sendAppExit(ch, exit)
 }

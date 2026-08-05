@@ -8,8 +8,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/imjasonh/playground/sshcloud/internal/controlauth"
+	"github.com/imjasonh/playground/sshcloud/internal/observability"
 	"github.com/imjasonh/playground/sshcloud/internal/snapshot"
 )
 
@@ -65,7 +67,11 @@ func (h *Handler) put(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid snapshot reference", http.StatusBadRequest)
 		return
 	}
+	startedAt := time.Now()
+	outcome := observability.OutcomeFailure
+	defer func() { emitSnapshotEvent(ref, "put", outcome, startedAt) }()
 	if !h.authorize(w, r, ref, ActionPut) {
+		outcome = observability.OutcomeRejected
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, snapshot.MaxRequestBytes)
@@ -94,11 +100,19 @@ func (h *Handler) put(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+	outcome = observability.OutcomeSuccess
 }
 
 func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 	ref, ok := decodeRef(w, r)
-	if !ok || !h.authorize(w, r, ref, ActionGet) {
+	if !ok {
+		return
+	}
+	startedAt := time.Now()
+	outcome := observability.OutcomeFailure
+	defer func() { emitSnapshotEvent(ref, "get", outcome, startedAt) }()
+	if !h.authorize(w, r, ref, ActionGet) {
+		outcome = observability.OutcomeRejected
 		return
 	}
 	temp, err := h.tempPackage("get")
@@ -117,11 +131,19 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 	if err := snapshot.WriteArchive(r.Context(), w, ref, pkg, h.ExpectedLayout); err != nil {
 		return
 	}
+	outcome = observability.OutcomeSuccess
 }
 
 func (h *Handler) has(w http.ResponseWriter, r *http.Request) {
 	ref, ok := decodeRef(w, r)
-	if !ok || !h.authorize(w, r, ref, ActionHas) {
+	if !ok {
+		return
+	}
+	startedAt := time.Now()
+	outcome := observability.OutcomeFailure
+	defer func() { emitSnapshotEvent(ref, "has", outcome, startedAt) }()
+	if !h.authorize(w, r, ref, ActionHas) {
+		outcome = observability.OutcomeRejected
 		return
 	}
 	exists, err := h.Store.Has(r.Context(), ref)
@@ -130,11 +152,19 @@ func (h *Handler) has(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]bool{"exists": exists})
+	outcome = observability.OutcomeSuccess
 }
 
 func (h *Handler) meta(w http.ResponseWriter, r *http.Request) {
 	ref, ok := decodeRef(w, r)
-	if !ok || !h.authorize(w, r, ref, ActionMeta) {
+	if !ok {
+		return
+	}
+	startedAt := time.Now()
+	outcome := observability.OutcomeFailure
+	defer func() { emitSnapshotEvent(ref, "meta", outcome, startedAt) }()
+	if !h.authorize(w, r, ref, ActionMeta) {
+		outcome = observability.OutcomeRejected
 		return
 	}
 	meta, err := h.Store.Meta(r.Context(), ref)
@@ -143,11 +173,19 @@ func (h *Handler) meta(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, meta)
+	outcome = observability.OutcomeSuccess
 }
 
 func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 	ref, ok := decodeRef(w, r)
-	if !ok || !h.authorize(w, r, ref, ActionDelete) {
+	if !ok {
+		return
+	}
+	startedAt := time.Now()
+	outcome := observability.OutcomeFailure
+	defer func() { emitSnapshotEvent(ref, "delete", outcome, startedAt) }()
+	if !h.authorize(w, r, ref, ActionDelete) {
+		outcome = observability.OutcomeRejected
 		return
 	}
 	if err := h.Store.Delete(r.Context(), ref); err != nil {
@@ -155,6 +193,14 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+	outcome = observability.OutcomeSuccess
+}
+
+func emitSnapshotEvent(ref snapshot.Ref, action string, outcome observability.Outcome, startedAt time.Time) {
+	observability.Emit(observability.SnapshotEvent{
+		Identity: observability.RuntimeIdentity{User: ref.User, App: ref.App, Generation: ref.Gen},
+		Action:   action, Outcome: outcome, Duration: time.Since(startedAt),
+	})
 }
 
 func (h *Handler) authorize(w http.ResponseWriter, r *http.Request, ref snapshot.Ref, action Action) bool {

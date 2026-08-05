@@ -10,6 +10,7 @@ import (
 
 	"github.com/imjasonh/playground/sshcloud/internal/agent"
 	"github.com/imjasonh/playground/sshcloud/internal/backend"
+	"github.com/imjasonh/playground/sshcloud/internal/observability"
 	"github.com/imjasonh/playground/sshcloud/internal/placement"
 )
 
@@ -47,10 +48,23 @@ func (m *Migrator) Migrate(ctx context.Context, user, app, toHost string) (Resul
 
 // MigrateGeneration migrates one deployed generation. Empty gen selects the
 // legacy singleton. Callers must coordinate draining generations separately.
-func (m *Migrator) MigrateGeneration(ctx context.Context, user, app, gen, toHost string) (Result, error) {
+func (m *Migrator) MigrateGeneration(ctx context.Context, user, app, gen, toHost string) (result Result, retErr error) {
 	if user == "" || app == "" || toHost == "" {
 		return Result{}, fmt.Errorf("user, app, and toHost required")
 	}
+	startedAt := time.Now()
+	fromHost := ""
+	defer func() {
+		outcome := observability.OutcomeSuccess
+		if retErr != nil {
+			outcome = observability.OutcomeFailure
+		}
+		observability.Emit(observability.MigrationEvent{
+			Identity: observability.RuntimeIdentity{User: user, App: app, Generation: gen},
+			Action:   "migrate", FromHost: fromHost, ToHost: toHost,
+			Outcome: outcome, Duration: time.Since(startedAt),
+		})
+	}()
 	op := m.appLock(user, app)
 	op.Lock()
 	defer op.Unlock()
@@ -70,7 +84,7 @@ func (m *Migrator) MigrateGeneration(ctx context.Context, user, app, gen, toHost
 		return Result{}, fmt.Errorf("unknown target host %q", toHost)
 	}
 
-	fromHost := guard.HostID()
+	fromHost = guard.HostID()
 	if fromHost == "" {
 		return Result{}, fmt.Errorf("no placement for %s/%s", user, app)
 	}

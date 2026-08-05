@@ -46,6 +46,7 @@ resource "google_compute_instance_template" "agent" {
     vmmhelper_image              = ko_build.vmmhelper.image_ref
     taphelper_image              = ko_build.taphelper.image_ref
     guestinit_image              = ko_build.guestinit.image_ref
+    rootfs_cache_bytes           = var.agent_rootfs_cache_bytes
   })
 
   lifecycle {
@@ -65,6 +66,7 @@ resource "google_compute_instance_template" "agent" {
     google_storage_bucket_object.jailer,
     google_storage_bucket_object.kernel,
     google_storage_bucket_iam_member.agent_assets,
+    google_project_iam_member.observability_writers,
     ko_build.vmmhelper,
     ko_build.taphelper,
     google_artifact_registry_repository_iam_member.pullers["agent"],

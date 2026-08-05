@@ -90,6 +90,7 @@ fi
 
 INTERNAL_IP="$(curl -fsS -H 'Metadata-Flavor: Google' \
   http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/ip)"
+install_ops_agent agent "$INTERNAL_IP:8081" "127.0.0.1:9080"
 
 cat >/etc/tmpfiles.d/sshcloud.conf <<EOF
 d /run/sshcloud 0755 root root -
@@ -133,7 +134,9 @@ ExecStart=/usr/local/lib/sshcloud/vmmhelper \
   -jailer /var/lib/sshcloud/assets/jailer \
   -kernel /var/lib/sshcloud/assets/vmlinux \
   -proxy-dir /run/sshcloud/vmm-api \
-  -cgroup-parent sshcloud
+  -cgroup-parent sshcloud \
+  -host-id %H \
+  -metrics-listen 127.0.0.1:9080
 Restart=on-failure
 RestartSec=2
 KillMode=control-group
@@ -228,6 +231,7 @@ ExecStart=/usr/local/lib/sshcloud/agent \
   -listen $${INTERNAL_IP}:8080 \
   -health-listen $${INTERNAL_IP}:8081 \
   -work-dir /var/lib/sshcloud/agent \
+  -rootfs-cache-bytes ${rootfs_cache_bytes} \
   -ca-pub /var/lib/sshcloud/ssh_user_ca.pub \
   -guestinit /var/lib/sshcloud/assets/guestinit \
   -vmm-helper-socket /run/sshcloud/vmmhelper.sock \

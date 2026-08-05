@@ -7,18 +7,24 @@ import (
 	"log"
 	"math"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/imjasonh/playground/sshcloud/internal/helperrpc"
 	"github.com/imjasonh/playground/sshcloud/internal/hostisolation"
+	"github.com/imjasonh/playground/sshcloud/internal/observability"
 	"github.com/imjasonh/playground/sshcloud/internal/vmmhelper"
 )
 
 func main() {
+	observability.Configure("vmmhelper")
 	socketActivation := flag.Bool("socket-activation", false, "accept the single systemd-provided socket")
 	socketPath := flag.String("socket", "/run/sshcloud/vmmhelper.sock", "local helper socket (without socket activation)")
+	metricsListen := flag.String("metrics-listen", "127.0.0.1:9080", "loopback-only aggregate metrics listen address")
+	hostID := flag.String("host-id", "", "fixed host attribution (default: local hostname)")
 	workRoot := flag.String("work-root", "/var/lib/sshcloud/agent", "fixed agent VM work root")
 	chrootBase := flag.String("chroot-base", "/var/lib/sshcloud/jailer", "fixed jailer chroot base")
 	firecracker := flag.String("firecracker", "/var/lib/sshcloud/assets/firecracker", "pinned Firecracker v1.10.1")
@@ -52,6 +58,7 @@ func main() {
 		AgentGID:       uint32(*agentGID),
 		SandboxIDBase:  uint32(*sandboxIDBase),
 		ExpectedPeerID: uint32(*agentUID),
+		HostID:         *hostID,
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -61,6 +68,24 @@ func main() {
 	}
 	if err := server.CleanupOrphans(); err != nil {
 		log.Fatalf("VMM helper orphan cleanup: %v", err)
+	}
+
+	var metricsServer *http.Server
+	if *metricsListen != "" {
+		host, _, err := net.SplitHostPort(*metricsListen)
+		if err != nil || net.ParseIP(host) == nil || !net.ParseIP(host).IsLoopback() {
+			log.Fatal("-metrics-listen must use a literal loopback address")
+		}
+		metricsServer = &http.Server{
+			Addr: *metricsListen, Handler: observability.MetricsHandler(),
+			ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 5 * time.Second,
+			WriteTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second,
+		}
+		go func() {
+			if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Printf("VMM helper metrics: %v", err)
+			}
+		}()
 	}
 
 	var listener net.Listener
@@ -88,5 +113,10 @@ func main() {
 	}
 	if err := server.Close(); err != nil {
 		log.Printf("VMM helper cleanup: %v", err)
+	}
+	if metricsServer != nil {
+		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = metricsServer.Shutdown(shutdown)
+		cancel()
 	}
 }

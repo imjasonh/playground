@@ -3,6 +3,9 @@ set -euo pipefail
 ${helpers}
 
 install_docker
+INTERNAL_IP="$(curl -fsS -H 'Metadata-Flavor: Google' \
+  http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/ip)"
+install_ops_agent snapshotd "$INTERNAL_IP:8083"
 retry 30 registry_login
 install -d -o 65532 -g 65532 -m 0700 /var/lib/sshcloud/snapshotd
 install_control_identity_refresher \
@@ -14,9 +17,9 @@ install_control_identity_refresher \
 IMAGE="${snapshot_image}"
 retry 30 docker pull "$IMAGE"
 docker rm -f sshcloud-snapshotd 2>/dev/null || true
-INTERNAL_IP="$(curl -fsS -H 'Metadata-Flavor: Google' \
-  http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/ip)"
 docker run -d --name sshcloud-snapshotd --restart unless-stopped --net host \
+  --log-driver=journald \
+  --log-opt tag=sshcloud-platform-snapshotd \
   --user 65532:65532 \
   --cap-drop ALL \
   --read-only \

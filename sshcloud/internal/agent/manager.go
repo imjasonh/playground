@@ -23,6 +23,7 @@ import (
 	"github.com/imjasonh/playground/sshcloud/internal/hostisolation"
 	"github.com/imjasonh/playground/sshcloud/internal/hostkey"
 	"github.com/imjasonh/playground/sshcloud/internal/image"
+	"github.com/imjasonh/playground/sshcloud/internal/observability"
 	"github.com/imjasonh/playground/sshcloud/internal/rootfs"
 	"github.com/imjasonh/playground/sshcloud/internal/snapshot"
 	"golang.org/x/crypto/ssh"
@@ -93,6 +94,7 @@ type Instance struct {
 	SSHHostPublicKey string
 	machine          machine
 	snapKey          string
+	runID            string
 	noIdle           bool
 	relay            *tcpRelay
 }
@@ -140,8 +142,9 @@ type Config struct {
 
 // ResolvedRootfs is a materialized ext4 and the OCI PID 1 spec to boot it with.
 type ResolvedRootfs struct {
-	Path string
-	Spec guestinit.Spec
+	Path    string
+	Spec    guestinit.Spec
+	Release func()
 }
 
 // EnsureOpts configures a cold boot.
@@ -409,6 +412,13 @@ func instanceCopy(in *Instance) *Instance {
 	return &cp
 }
 
+func instanceObservabilityIdentity(key InstanceKey, runID string) observability.RuntimeIdentity {
+	app, generation := genid.SplitAgentApp(key.App)
+	return observability.RuntimeIdentity{
+		User: key.User, App: app, Generation: generation, RunID: runID,
+	}
+}
+
 func tierResources(tier string) (normalized string, vcpus, memMiB int64, err error) {
 	switch strings.ToLower(strings.TrimSpace(tier)) {
 	case "", "tiny":
@@ -515,7 +525,26 @@ func (m *Manager) Capacity() Capacity {
 }
 
 // SetCordoned durably controls whether new boots/restores are admitted.
-func (m *Manager) SetCordoned(cordoned bool) error {
+func (m *Manager) SetCordoned(cordoned bool) (retErr error) {
+	startedAt := time.Now()
+	operation := "uncordon"
+	if cordoned {
+		operation = "cordon"
+	}
+	defer func() {
+		outcome := observability.OutcomeSuccess
+		state := "uncordoned"
+		if retErr != nil {
+			outcome = observability.OutcomeFailure
+			state = "failed"
+		} else if cordoned {
+			state = "cordoned"
+		}
+		observability.Emit(observability.LifecycleEvent{
+			Operation: operation, State: state,
+			Outcome: outcome, Duration: time.Since(startedAt),
+		})
+	}()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	path := filepath.Join(m.cfg.WorkDir, ".cordoned")
@@ -672,9 +701,15 @@ func (m *Manager) resolveBaseRootfs(ctx context.Context, imageRef string) (Resol
 		return ResolvedRootfs{}, fmt.Errorf("resolve rootfs: %w", err)
 	}
 	if res.Path == "" {
+		if res.Release != nil {
+			res.Release()
+		}
 		return ResolvedRootfs{}, fmt.Errorf("RootfsResolver returned empty path")
 	}
 	if err := res.Spec.Validate(); err != nil {
+		if res.Release != nil {
+			res.Release()
+		}
 		return ResolvedRootfs{}, fmt.Errorf("image %q has no boot spec: %w", imageRef, err)
 	}
 	return res, nil
@@ -735,6 +770,9 @@ func (m *Manager) bootCold(ctx context.Context, k InstanceKey, n int, opt Ensure
 	if err != nil {
 		return nil, err
 	}
+	if resolved.Release != nil {
+		defer resolved.Release()
+	}
 	rootfsPath := filepath.Join(dir, "rootfs.ext4")
 	if err := rootfs.Clone(resolved.Path, rootfsPath); err != nil {
 		return nil, err
@@ -790,7 +828,12 @@ func (m *Manager) bootCold(ctx context.Context, k InstanceKey, n int, opt Ensure
 	bootArgs += " " + initArgs
 
 	_, vcpus, memMiB, _ := tierResources(opt.Tier)
+	app, generation := genid.SplitAgentApp(k.App)
+	runID := observability.NewRunID()
 	mach, addr, err := m.rt.Boot(ctx, BootSpec{
+		Identity: observability.RuntimeIdentity{
+			User: k.User, App: app, Generation: generation, RunID: runID,
+		},
 		FirecrackerBin: m.cfg.FirecrackerBin,
 		WorkDir:        dir,
 		KernelPath:     m.cfg.KernelPath,
@@ -835,6 +878,7 @@ func (m *Manager) bootCold(ctx context.Context, k InstanceKey, n int, opt Ensure
 		MemMiB:           memMiB,
 		SSHHostPublicKey: sshHostPublicKey,
 		machine:          mach,
+		runID:            runID,
 		noIdle:           opt.NoIdle,
 		relay:            relay,
 	}, nil
@@ -886,9 +930,8 @@ func injectSSHHostKey(rootfsPath string) (string, error) {
 }
 
 func instanceResourceID(k InstanceKey) string {
-	sum := sha256.Sum256([]byte(k.User + "\x00" + k.App))
 	// 12 hex characters keeps TAP names at Linux's 15-byte IFNAMSIZ limit.
-	return fmt.Sprintf("%x", sum[:6])
+	return hostisolation.VMIDForInstance(k.User, k.App)
 }
 
 // InstanceStatus is a read-only view for the HTTP API.
@@ -1042,8 +1085,22 @@ func (m *Manager) Sleep(ctx context.Context, user, app string) error {
 	return m.SleepWithEpoch(ctx, user, app, "")
 }
 
-func (m *Manager) SleepWithEpoch(ctx context.Context, user, app, cordonEpoch string) error {
+func (m *Manager) SleepWithEpoch(ctx context.Context, user, app, cordonEpoch string) (retErr error) {
 	k := InstanceKey{User: user, App: app}
+	startedAt := time.Now()
+	identity := instanceObservabilityIdentity(k, "")
+	defer func() {
+		outcome := observability.OutcomeSuccess
+		state := "sleeping"
+		if retErr != nil {
+			outcome = observability.OutcomeFailure
+			state = "failed"
+		}
+		observability.Emit(observability.LifecycleEvent{
+			Identity: identity, Operation: "sleep", State: state,
+			Outcome: outcome, Duration: time.Since(startedAt),
+		})
+	}()
 	if m.cfg.SnapStore == nil {
 		return fmt.Errorf("snapshot store not configured")
 	}
@@ -1069,6 +1126,7 @@ func (m *Manager) SleepWithEpoch(ctx context.Context, user, app, cordonEpoch str
 		m.mu.Unlock()
 		return fmt.Errorf("instance %s not running", k)
 	}
+	identity.RunID = in.runID
 	if in.noIdle {
 		m.mu.Unlock()
 		return fmt.Errorf("instance %s is held awake by an active operation", k)
@@ -1162,8 +1220,22 @@ func (m *Manager) EvictContext(ctx context.Context, user, app string) error {
 	return m.EvictWithEpoch(ctx, user, app, "")
 }
 
-func (m *Manager) EvictWithEpoch(ctx context.Context, user, app, cordonEpoch string) error {
+func (m *Manager) EvictWithEpoch(ctx context.Context, user, app, cordonEpoch string) (retErr error) {
 	k := InstanceKey{User: user, App: app}
+	startedAt := time.Now()
+	identity := instanceObservabilityIdentity(k, "")
+	defer func() {
+		outcome := observability.OutcomeSuccess
+		state := "stopped"
+		if retErr != nil {
+			outcome = observability.OutcomeFailure
+			state = "failed"
+		}
+		observability.Emit(observability.LifecycleEvent{
+			Identity: identity, Operation: "evict", State: state,
+			Outcome: outcome, Duration: time.Since(startedAt),
+		})
+	}()
 	op := m.instanceLock(k)
 	op.Lock()
 	defer op.Unlock()
@@ -1180,6 +1252,7 @@ func (m *Manager) EvictWithEpoch(ctx context.Context, user, app, cordonEpoch str
 		m.mu.Unlock()
 		return nil
 	}
+	identity.RunID = in.runID
 	if in.State == StateRunning && in.machine != nil {
 		m.mu.Unlock()
 		return fmt.Errorf("instance %s still running; sleep before evict", k)
@@ -1576,7 +1649,22 @@ func validateSSHHostPublicKey(raw string) error {
 	return nil
 }
 
-func (m *Manager) wake(ctx context.Context, k InstanceKey) (*Instance, error) {
+func (m *Manager) wake(ctx context.Context, k InstanceKey) (result *Instance, retErr error) {
+	startedAt := time.Now()
+	runID := ""
+	defer func() {
+		outcome := observability.OutcomeSuccess
+		state := "running"
+		if retErr != nil {
+			outcome = observability.OutcomeFailure
+			state = "failed"
+		}
+		observability.Emit(observability.LifecycleEvent{
+			Identity:  instanceObservabilityIdentity(k, runID),
+			Operation: "wake", State: state,
+			Outcome: outcome, Duration: time.Since(startedAt),
+		})
+	}()
 	if !m.rt.Available() {
 		return nil, fmt.Errorf("VM runtime is unavailable on this host")
 	}
@@ -1590,6 +1678,7 @@ func (m *Manager) wake(ctx context.Context, k InstanceKey) (*Instance, error) {
 		m.mu.Unlock()
 		return nil, fmt.Errorf("unknown instance %s", k)
 	}
+	runID = in.runID
 	if in.State == StateRunning && in.machine != nil {
 		in.LastUsed = time.Now()
 		m.mu.Unlock()
@@ -1635,6 +1724,7 @@ func (m *Manager) wake(ctx context.Context, k InstanceKey) (*Instance, error) {
 	}
 
 	mach, addr, err := m.restoreFromPackage(ctx, in, pkg)
+	runID = in.runID
 	if err != nil {
 		return nil, err
 	}
@@ -1668,7 +1758,12 @@ func (m *Manager) wake(ctx context.Context, k InstanceKey) (*Instance, error) {
 }
 
 func (m *Manager) restoreFromPackage(ctx context.Context, in *Instance, pkg snapshot.Package) (machine, string, error) {
+	app, generation := genid.SplitAgentApp(in.Key.App)
+	in.runID = observability.NewRunID()
 	return m.rt.Restore(ctx, RestoreSpec{
+		Identity: observability.RuntimeIdentity{
+			User: in.Key.User, App: app, Generation: generation, RunID: in.runID,
+		},
 		FirecrackerBin: m.cfg.FirecrackerBin,
 		WorkDir:        in.WorkDir,
 		StatePath:      pkg.StatePath,
@@ -1691,14 +1786,31 @@ func (m *Manager) Stop(user, app string) error {
 }
 
 // StopContext is Stop with cancellation for durable snapshot deletion.
-func (m *Manager) StopContext(ctx context.Context, user, app string) error {
+func (m *Manager) StopContext(ctx context.Context, user, app string) (retErr error) {
 	k := InstanceKey{User: user, App: app}
+	startedAt := time.Now()
+	identity := instanceObservabilityIdentity(k, "")
+	defer func() {
+		outcome := observability.OutcomeSuccess
+		state := "stopped"
+		if retErr != nil {
+			outcome = observability.OutcomeFailure
+			state = "failed"
+		}
+		observability.Emit(observability.LifecycleEvent{
+			Identity: identity, Operation: "stop", State: state,
+			Outcome: outcome, Duration: time.Since(startedAt),
+		})
+	}()
 	op := m.instanceLock(k)
 	op.Lock()
 	defer op.Unlock()
 	m.mu.Lock()
 	in, ok := m.inst[k]
 	m.mu.Unlock()
+	if ok {
+		identity.RunID = in.runID
+	}
 	if m.cfg.SnapStore != nil {
 		if err := m.cfg.SnapStore.Delete(ctx, snapshot.RefForAgentApp(user, app)); err != nil {
 			return fmt.Errorf("delete snapshot: %w", err)

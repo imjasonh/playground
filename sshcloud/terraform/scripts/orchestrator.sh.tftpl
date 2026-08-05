@@ -3,6 +3,9 @@ set -euo pipefail
 ${helpers}
 
 install_docker
+INTERNAL_IP="$(curl -fsS -H 'Metadata-Flavor: Google' \
+  http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/ip)"
+install_ops_agent orchestrator "$INTERNAL_IP:8091"
 retry 30 registry_login
 mkdir -p /var/lib/sshcloud /usr/local/lib/sshcloud
 # Remove files left by the retired static bearer-token deployment.
@@ -96,9 +99,9 @@ systemctl enable --now sshcloud-refresh-hosts.timer
 IMAGE="${orchestrator_image}"
 retry 30 docker pull "$IMAGE"
 docker rm -f sshcloud-orchestrator 2>/dev/null || true
-INTERNAL_IP="$(curl -fsS -H 'Metadata-Flavor: Google' \
-  http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/ip)"
 docker run -d --name sshcloud-orchestrator --restart unless-stopped --net host \
+  --log-driver=journald \
+  --log-opt tag=sshcloud-platform-orchestrator \
   --user 0:0 \
   --cap-drop ALL \
   --read-only \

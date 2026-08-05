@@ -129,5 +129,91 @@ EOF
   systemctl enable --now sshcloud-control-identity-refresh.timer
 }
 
+install_ops_agent() {
+  local role="$1"
+  shift
+
+  # The app console has no independent disk spool. Both platform and app
+  # records flow through a size/rate/age-bounded journal whose files rotate.
+  install -d -m 0755 /var/log/journal /etc/systemd/journald.conf.d
+  cat >/etc/systemd/journald.conf.d/sshcloud-bounds.conf <<'EOF'
+[Journal]
+Storage=persistent
+SystemMaxUse=512M
+SystemKeepFree=2G
+SystemMaxFileSize=64M
+RuntimeMaxUse=128M
+MaxRetentionSec=7day
+MaxFileSec=1day
+RateLimitIntervalSec=30s
+RateLimitBurst=10000
+EOF
+  systemctl restart systemd-journald
+
+  if ! dpkg-query -W -f='$${Status}' google-cloud-ops-agent 2>/dev/null | grep -q 'install ok installed'; then
+    local installer
+    installer="$(mktemp)"
+    retry 10 curl --retry 10 --retry-all-errors -fsSL \
+      https://dl.google.com/cloudagents/add-google-cloud-ops-agent-repo.sh \
+      -o "$installer"
+    retry 5 bash "$installer" --also-install
+    rm -f "$installer"
+  fi
+
+  install -d -m 0755 /etc/google-cloud-ops-agent
+  {
+    cat <<EOF
+logging:
+  receivers:
+    sshcloud_journal:
+      type: systemd_journald
+  processors:
+    sshcloud_json:
+      type: parse_json
+      field: MESSAGE
+  service:
+    pipelines:
+      # Disable the built-in syslog tailer. Journald is the single bounded
+      # source, which avoids duplicate ingestion of the same platform record.
+      default_pipeline:
+        receivers: []
+      sshcloud:
+        receivers: [sshcloud_journal]
+        processors: [sshcloud_json]
+metrics:
+  receivers:
+    sshcloud:
+      type: prometheus
+      config:
+        scrape_configs:
+          - job_name: sshcloud-$role
+            scrape_interval: 60s
+            scrape_timeout: 10s
+            sample_limit: 256
+            label_limit: 8
+            label_name_length_limit: 64
+            label_value_length_limit: 128
+            body_size_limit: 256KB
+            static_configs:
+              - targets:
+EOF
+    local target
+    for target in "$@"; do
+      printf '                  - "%s"\n' "$target"
+    done
+    cat <<'EOF'
+            metric_relabel_configs:
+              - action: labeldrop
+                regex: "^(user|user_id|app|app_id|session|session_id|generation|gen|run|run_id)$"
+  service:
+    pipelines:
+      sshcloud:
+        receivers: [sshcloud]
+EOF
+  } >/etc/google-cloud-ops-agent/config.yaml
+  systemctl enable google-cloud-ops-agent
+  systemctl restart google-cloud-ops-agent
+}
+
 registry_host="${registry_host}"
 project_id="${project_id}"

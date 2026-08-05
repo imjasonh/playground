@@ -33,6 +33,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	if res.Release != nil {
+		defer res.Release()
+	}
 	fmt.Println(res.Rootfs)
 	if *printSpec {
 		enc := json.NewEncoder(os.Stdout)

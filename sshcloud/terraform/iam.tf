@@ -22,6 +22,36 @@ resource "google_service_account" "snapshot" {
   depends_on   = [module.project_services]
 }
 
+locals {
+  observability_service_accounts = {
+    gateway      = google_service_account.gateway.email
+    orchestrator = google_service_account.orchestrator.email
+    agent        = google_service_account.agent.email
+    snapshot     = google_service_account.snapshot.email
+  }
+  observability_roles = toset([
+    "roles/logging.logWriter",
+    "roles/monitoring.metricWriter",
+    "roles/cloudtrace.agent",
+  ])
+  observability_grants = {
+    for grant in setproduct(keys(local.observability_service_accounts), local.observability_roles) :
+    "${grant[0]}-${replace(grant[1], "/", "-")}" => {
+      service = grant[0]
+      role    = grant[1]
+    }
+  }
+}
+
+# Ops Agent workloads receive only the three standard observability writer
+# roles. No guest receives a service-account token or these credentials.
+resource "google_project_iam_member" "observability_writers" {
+  for_each = local.observability_grants
+  project  = var.project_id
+  role     = each.value.role
+  member   = "serviceAccount:${local.observability_service_accounts[each.value.service]}"
+}
+
 # Gateway: Firestore users/apps + secrets + talk to orchestrator (network only).
 resource "google_project_iam_member" "gateway_datastore" {
   project = var.project_id

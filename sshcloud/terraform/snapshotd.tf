@@ -62,6 +62,7 @@ resource "google_compute_instance" "snapshot" {
     google_project_iam_member.snapshot_datastore,
     google_storage_bucket_iam_member.snapshot_objects,
     google_kms_crypto_key_iam_member.snapshot_kek,
+    google_project_iam_member.observability_writers,
     google_compute_router_nat.sshcloud,
   ]
 }

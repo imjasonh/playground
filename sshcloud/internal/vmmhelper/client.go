@@ -6,8 +6,10 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/imjasonh/playground/sshcloud/internal/genid"
 	"github.com/imjasonh/playground/sshcloud/internal/helperrpc"
 	"github.com/imjasonh/playground/sshcloud/internal/hostisolation"
+	"github.com/imjasonh/playground/sshcloud/internal/observability"
 )
 
 const (
@@ -29,10 +31,11 @@ const (
 // LaunchRequest deliberately contains no executable, host path, API argument,
 // cgroup knob, UID, or GID. Those are fixed or derived by the root helper.
 type LaunchRequest struct {
-	VMID   string     `json:"vm_id"`
-	Mode   LaunchMode `json:"mode"`
-	VCPUs  int64      `json:"vcpus"`
-	MemMiB int64      `json:"mem_mib"`
+	VMID     string                        `json:"vm_id"`
+	Mode     LaunchMode                    `json:"mode"`
+	VCPUs    int64                         `json:"vcpus"`
+	MemMiB   int64                         `json:"mem_mib"`
+	Identity observability.RuntimeIdentity `json:"identity"`
 }
 
 func (r LaunchRequest) validate() error {
@@ -49,6 +52,19 @@ func (r LaunchRequest) validate() error {
 	case r.VCPUs == 2 && r.MemMiB == 512:
 	default:
 		return fmt.Errorf("unsupported VM resources %d vCPU/%d MiB", r.VCPUs, r.MemMiB)
+	}
+	if err := r.Identity.Validate(false); err != nil {
+		return fmt.Errorf("log identity: %w", err)
+	}
+	if r.Identity.RunID == "" {
+		return fmt.Errorf("log identity run id is required")
+	}
+	if r.Identity.Host != "" {
+		return fmt.Errorf("launch request cannot select host attribution")
+	}
+	agentApp := genid.AgentApp(r.Identity.App, r.Identity.Generation)
+	if expected := hostisolation.VMIDForInstance(r.Identity.User, agentApp); r.VMID != expected {
+		return fmt.Errorf("VM id does not match authoritative log identity")
 	}
 	return nil
 }

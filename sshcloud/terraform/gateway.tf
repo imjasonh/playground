@@ -86,6 +86,7 @@ resource "google_compute_instance" "gateway" {
     google_secret_manager_secret_iam_member.gateway_access_policy,
     google_firestore_database.sshcloud,
     google_project_iam_member.gateway_datastore,
+    google_project_iam_member.observability_writers,
     google_artifact_registry_repository_iam_member.pullers["gateway"],
   ]
 }

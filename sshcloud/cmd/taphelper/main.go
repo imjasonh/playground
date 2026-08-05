@@ -13,10 +13,12 @@ import (
 
 	"github.com/imjasonh/playground/sshcloud/internal/helperrpc"
 	"github.com/imjasonh/playground/sshcloud/internal/hostisolation"
+	"github.com/imjasonh/playground/sshcloud/internal/observability"
 	"github.com/imjasonh/playground/sshcloud/internal/taphelper"
 )
 
 func main() {
+	observability.Configure("taphelper")
 	socketActivation := flag.Bool("socket-activation", false, "accept the single systemd-provided socket")
 	socketPath := flag.String("socket", "/run/sshcloud/taphelper.sock", "local helper socket (without socket activation)")
 	agentUID := flag.Uint("agent-uid", 0, "authorized unprivileged agent UID")

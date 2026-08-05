@@ -25,16 +25,26 @@ and control-PKI boundaries remains unfinished.
 | `snapshotd.tf` | Internal snapshot proxy; only workload with snapshot GCS/KMS data access |
 | `agents.tf` | Instance template + zonal MIG (`enable_nested_virtualization`) |
 | `network.tf` | VPC/NAT, opt-in public `:22`, tagged internal APIs, agent SSH relay range |
+| `observability.tf` | Separate log buckets, Ops dashboard/alerts, optional email and billing budget |
 
 `fortune` is a **sample user app image** (digest-pinned); deploy it through the
 gateway — it is not a platform builtin.
+
+Every role installs the GCP Ops Agent. Platform logs are retained for 30 days
+and bounded app-owned console/telemetry logs for seven days in separate buckets.
+See [`../docs/observability-runbook.md`](../docs/observability-runbook.md) for
+the no-SSH-channel-data contract, telemetry syntax, queries, bounds, and drills.
+Set `notification_email` for alert email. Set `billing_account_id` and
+`monthly_budget_usd` together to opt into a project budget.
 
 ## Apply
 
 Needs: Terraform ≥ 1.6 and Go 1.25+. The applying identity must be able to
 enable project services; create Compute/network, service-account, Firestore,
-Storage, Secret Manager, and Artifact Registry resources; modify project IAM;
-act as the created service accounts; and push Artifact Registry images.
+Storage, Secret Manager, Artifact Registry, Logging, and Monitoring resources;
+modify project IAM; act as the created service accounts; and push Artifact
+Registry images. Creating an optional budget also requires access to the
+configured billing account.
 Application Default Credentials are used by both Google and ko providers.
 
 The module creates a dedicated Native-mode database named `sshcloud`, and
@@ -237,6 +247,9 @@ membership-list removal ineffective.
   production API. Source-tag firewalls and binding to each VM's VPC IP remain
   defense in depth. Plain HTTP is limited to health-only listeners.
 - **No public default:** `ssh_client_cidrs = []` creates no public `:22` rule.
+- **No guest observability credentials or port:** app logs/telemetry use the
+  host-drained serial console. Terraform adds no guest telemetry firewall
+  exception, and Ops Agent credentials remain on the host.
 - **MIG discovery:** orchestrator `-hosts-file` is rewritten every minute from
   the Compute API's MIG membership; root-only admin `GET /v1/hosts` reports the
   resulting authenticated agent view.
@@ -266,4 +279,8 @@ membership-list removal ineffective.
   IAM conditions, source-tag firewall enforcement, or that the deployed agent
   service account is denied direct bucket access. Verify those in an
   operator-owned disposable project before production use.
+- **GCP observability verification still required:** structural tests cannot
+  prove actual Ops Agent ingestion, log-bucket routing/exclusion, retention,
+  Prometheus descriptor creation, alert/email delivery, or budget delivery.
+  Run the ingestion and alert drills in the observability runbook after apply.
 - Validate locally (no GCP apply): `bash hack/validate-terraform.sh`

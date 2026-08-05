@@ -22,9 +22,141 @@ import (
 	"github.com/imjasonh/playground/sshcloud/internal/access"
 	"github.com/imjasonh/playground/sshcloud/internal/gateway"
 	"github.com/imjasonh/playground/sshcloud/internal/hostkey"
+	"github.com/imjasonh/playground/sshcloud/internal/observability"
 	"github.com/imjasonh/playground/sshcloud/internal/session"
 	"github.com/imjasonh/playground/sshcloud/internal/store"
+	"github.com/imjasonh/playground/sshcloud/internal/userca"
 )
+
+type synchronizedBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (b *synchronizedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.b.Write(p)
+}
+
+func (b *synchronizedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.b.String()
+}
+
+func TestSSHChannelPayloadSentinelsStayOutOfObservability(t *testing.T) {
+	_, hostSigner, err := hostkey.Generate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	hub := &gateway.Hub{Store: store.NewMemory(), Sessions: session.NewRegistry()}
+	var eventOutput, platformOutput synchronizedBuffer
+	srv := &Server{
+		Hub: hub, HostKey: hostSigner, Addr: "127.0.0.1:0",
+		Logger:    log.New(&platformOutput, "", 0),
+		EventSink: observability.NewJSONSink(&eventOutput, "gateway"),
+	}
+	if err := srv.Listen(); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() { _ = srv.Serve(ctx) }()
+	defer func() {
+		cancel()
+		_ = srv.Close()
+	}()
+
+	const (
+		stdinSentinel   = "SSH_STDIN_SENTINEL_7c94"
+		stdoutSentinel  = "SSH_STDOUT_SENTINEL_31ab"
+		stderrSentinel  = "SSH_STDERR_SENTINEL_ca82"
+		commandSentinel = "SSH_COMMAND_SENTINEL_908e"
+		envSentinel     = "SSH_ENV_SENTINEL_f247"
+		signalSentinel  = "SSH_SIGNAL_SENTINEL_b611"
+	)
+	clientKey := mustKey(t)
+	client := sshClient(t, srv.Addr, hostSigner.PublicKey(), clientKey, "join")
+	session, err := client.NewSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	session.Stdout = &stdout
+	session.Stderr = &stderr
+	stdin, err := session.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.Setenv("SSHCLOUD_PRIVACY_SENTINEL", envSentinel); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.RequestPty("xterm", 40, 80, ssh.TerminalModes{ssh.ECHO: 0}); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.Shell(); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.Signal(ssh.Signal(signalSentinel)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.WriteString(stdin, stdinSentinel+"\n"+stdoutSentinel+"\nalice\nq\n"); err != nil {
+		t.Fatal(err)
+	}
+	_ = stdin.Close()
+	if err := session.Wait(); err != nil {
+		t.Fatalf("interactive sentinel session: %v", err)
+	}
+	_ = session.Close()
+	_ = client.Close()
+	if output := stdout.String() + stderr.String(); !strings.Contains(output, stdoutSentinel) {
+		t.Fatalf("test did not exercise outgoing SSH bytes: %q", output)
+	}
+
+	commandOutput, _ := sshExec(
+		t, srv.Addr, hostSigner.PublicKey(), mustKey(t), "join", commandSentinel,
+	)
+	if !strings.Contains(commandOutput, commandSentinel) {
+		t.Fatalf("test did not exercise an SSH exec payload: %q", commandOutput)
+	}
+
+	hub.UserCA, err = userca.LoadOrGenerate("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := hub.Store.UpsertApp(ctx, store.App{
+		Owner: "alice", Name: "privacy-app", ActiveGen: "g123",
+		Image: "ghcr.io/example/privacy@sha256:" + strings.Repeat("a", 64),
+		Tier:  "tiny",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	hub.Dial = func(context.Context, gateway.DialRequest) (gateway.DialTarget, error) {
+		return gateway.DialTarget{}, fmt.Errorf("backend privacy sentinel: %s", stderrSentinel)
+	}
+	stderrOutput := sshExecRejected(
+		t, srv.Addr, hostSigner.PublicKey(), clientKey, "privacy-app", commandSentinel,
+	)
+	if !strings.Contains(stderrOutput, stderrSentinel) {
+		t.Fatalf("test did not exercise outgoing SSH stderr bytes: %q", stderrOutput)
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for strings.Count(eventOutput.String(), "\n") < 4 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if count := strings.Count(eventOutput.String(), "\n"); count < 4 {
+		t.Fatalf("metadata events = %d, want at least 4", count)
+	}
+	observed := eventOutput.String() + platformOutput.String()
+	for _, sentinel := range []string{
+		stdinSentinel, stdoutSentinel, stderrSentinel, commandSentinel, envSentinel, signalSentinel,
+	} {
+		if strings.Contains(observed, sentinel) {
+			t.Fatalf("SSH channel payload %q entered observability: %s", sentinel, observed)
+		}
+	}
+}
 
 func TestJoinDeployFortuneBusy(t *testing.T) {
 	_, signer, err := hostkey.Generate()

@@ -9,6 +9,7 @@ import (
 
 	"github.com/imjasonh/playground/sshcloud/internal/firecracker"
 	"github.com/imjasonh/playground/sshcloud/internal/hostisolation"
+	"github.com/imjasonh/playground/sshcloud/internal/observability"
 	"github.com/imjasonh/playground/sshcloud/internal/rootfs"
 )
 
@@ -35,6 +36,7 @@ type Runtime interface {
 
 // BootSpec is a cold-start request.
 type BootSpec struct {
+	Identity       observability.RuntimeIdentity
 	FirecrackerBin string
 	WorkDir        string
 	KernelPath     string
@@ -50,6 +52,7 @@ type BootSpec struct {
 
 // RestoreSpec loads a snapshot and resumes.
 type RestoreSpec struct {
+	Identity       observability.RuntimeIdentity
 	FirecrackerBin string
 	WorkDir        string
 	StatePath      string

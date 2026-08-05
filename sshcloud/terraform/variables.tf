@@ -109,6 +109,16 @@ variable "agent_disk_gb" {
   default     = 50
 }
 
+variable "agent_rootfs_cache_bytes" {
+  description = "Hard per-host OCI rootfs cache budget; LRU eviction runs before materialization"
+  type        = number
+  default     = 8589934592
+  validation {
+    condition     = var.agent_rootfs_cache_bytes >= 1073741824 && var.agent_rootfs_cache_bytes <= 34359738368
+    error_message = "agent_rootfs_cache_bytes must be between 1 GiB and 32 GiB."
+  }
+}
+
 variable "ssh_client_cidrs" {
   description = "CIDRs allowed to reach public gateway TCP/22. Empty keeps public SSH closed."
   type        = list(string)
@@ -223,5 +233,47 @@ variable "demo_strategy" {
   validation {
     condition     = contains(["kick", "drain"], var.demo_strategy)
     error_message = "demo_strategy must be kick or drain."
+  }
+}
+
+variable "notification_email" {
+  description = "Optional email address for core Monitoring alerts and budget notifications"
+  type        = string
+  default     = null
+  nullable    = true
+  validation {
+    condition     = var.notification_email == null ? true : can(regex("^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$", var.notification_email))
+    error_message = "notification_email must be null or a valid email address."
+  }
+}
+
+variable "billing_account_id" {
+  description = "Optional billing account ID used with monthly_budget_usd"
+  type        = string
+  default     = null
+  nullable    = true
+  validation {
+    condition     = var.billing_account_id == null ? true : can(regex("^[0-9A-F]{6}-[0-9A-F]{6}-[0-9A-F]{6}$", var.billing_account_id))
+    error_message = "billing_account_id must look like 000000-000000-000000."
+  }
+}
+
+variable "monthly_budget_usd" {
+  description = "Optional whole-dollar monthly project budget; requires billing_account_id"
+  type        = number
+  default     = null
+  nullable    = true
+  validation {
+    condition = var.monthly_budget_usd == null ? true : (
+      var.monthly_budget_usd >= 1 && var.monthly_budget_usd == floor(var.monthly_budget_usd)
+    )
+    error_message = "monthly_budget_usd must be null or a positive whole-dollar amount."
+  }
+}
+
+check "billing_budget_inputs" {
+  assert {
+    condition     = (var.billing_account_id == null) == (var.monthly_budget_usd == null)
+    error_message = "billing_account_id and monthly_budget_usd must be set together."
   }
 }

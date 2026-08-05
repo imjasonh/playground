@@ -37,6 +37,7 @@ Design: [`docs/ssh-app-cloud-design.md`](../docs/ssh-app-cloud-design.md).
 | `internal/rootfs` | ext4 build via mkfs.ext4 + debugfs (`BuildFromDir`) |
 | `internal/ocirootfs` | OCI pull (go-containerregistry) → unpack → ext4 cache + boot spec |
 | `internal/guestinit` | Exec boot-spec Entrypoint/Cmd with Env + WorkingDir as PID 1 |
+| `internal/observability` | Structured platform JSON, metadata-only events, bounded app console/telemetry, aggregate metrics |
 | `internal/apppack` | Pack a linux binary into a minimal OCI image (tests / demos) |
 | `internal/cutover` | Deploy drain/kick dual-instance cutover |
 | `internal/genid` | Generation ids (`g…`) + `app.gen` agent names |
@@ -44,6 +45,13 @@ Design: [`docs/ssh-app-cloud-design.md`](../docs/ssh-app-cloud-design.md).
 | `hack/fetch-firecracker-assets.sh` | Download pinned Firecracker+jailer + kernel |
 | `hack/run-firestore-tests.sh` | Store/placement tests vs Firestore emulator |
 | `terraform/` | GCP env: Firestore, CMEK GCS/KMS, gateway, orchestrator, snapshotd, agent MIG + ko images |
+
+Operations and privacy contract:
+[`docs/observability-runbook.md`](docs/observability-runbook.md). In
+particular, observability never reads or records SSH channel stdin/stdout/stderr,
+commands, environment, signals, or replay bytes. The bounded migration input
+queue remains an in-memory transport-continuity primitive and is explicitly
+outside observability.
 
 ## Build & test
 
@@ -167,6 +175,8 @@ OCI whiteouts through Go's traversal-resistant `os.Root`, builds ext4 via
 under `-work-dir/oci-rootfs` (plus `<hex>.boot.json` for PID 1 spec).
 Uncompressed unpack is capped at 1 GiB and 100,000 entries. Registry hosts are
 allowlisted in deployed gateway/agent processes to prevent image-ref SSRF.
+The production cache has an 8 GiB default hard budget and evicts inactive
+digest pairs least-recently-used.
 Every cold boot injects `cmd/guestinit`
 as `/platform-init` (`-guestinit`) and the resolved boot spec as
 `/platform-boot.json`. Base rootfs boots use `-boot-spec` (default
@@ -341,6 +351,8 @@ Implemented and covered at package/integration level:
 - [x] Pinned Firecracker+jailer host boundary with per-VM UID/GID, chroot,
       cgroup-v2 limits, authenticated API proxy, and separate TAP helper
 - [x] Liveness/readiness and correlated placement/host diagnostics
+- [x] Privacy-bounded structured platform/app logging, strict app telemetry,
+      aggregate metrics, GCP routing/retention/dashboard/alerts, and rootfs/journal bounds
 
 Required before public/self-service use:
 

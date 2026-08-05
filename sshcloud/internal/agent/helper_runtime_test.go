@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/imjasonh/playground/sshcloud/internal/helperrpc"
+	"github.com/imjasonh/playground/sshcloud/internal/hostisolation"
+	"github.com/imjasonh/playground/sshcloud/internal/observability"
 	"github.com/imjasonh/playground/sshcloud/internal/vmmhelper"
 )
 
@@ -35,9 +37,14 @@ func TestHelperRuntimePropagatesLaunchFailure(t *testing.T) {
 	if err := runtime.Ready(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	vmID := hostisolation.VMIDForInstance("alice", "fortune.g123")
 	_, _, err := runtime.Boot(context.Background(), BootSpec{
-		WorkDir:     filepath.Join(dir, "vm-0123abcdef89"),
-		TapName:     "fc-0123abcdef89",
+		Identity: observability.RuntimeIdentity{
+			User: "alice", App: "fortune", Generation: "g123",
+			RunID: "r0123456789abcdef0123456789abcdef",
+		},
+		WorkDir:     filepath.Join(dir, "vm-"+vmID),
+		TapName:     "fc-" + vmID,
 		GuestIP:     "172.16.2.2",
 		GuestMAC:    "AA:FC:00:00:00:01",
 		BootArgs:    "init=/platform-init",

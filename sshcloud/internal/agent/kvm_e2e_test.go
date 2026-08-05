@@ -221,7 +221,7 @@ func kvmManagerConfig(cfg kvmAssets, workDir string, store snapshot.Store, subne
 			if err != nil {
 				return agent.ResolvedRootfs{}, err
 			}
-			return agent.ResolvedRootfs{Path: res.Rootfs, Spec: res.Spec}, nil
+			return agent.ResolvedRootfs{Path: res.Rootfs, Spec: res.Spec, Release: res.Release}, nil
 		},
 	}
 }

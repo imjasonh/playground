@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/imjasonh/playground/sshcloud/internal/hostisolation"
+	"github.com/imjasonh/playground/sshcloud/internal/observability"
 )
 
 func testConfig() Config {
@@ -23,12 +24,20 @@ func testConfig() Config {
 	}
 }
 
+func testLaunchRequest(mode LaunchMode, vcpus, memMiB int64) LaunchRequest {
+	identity := observability.RuntimeIdentity{
+		User: "alice", App: "fortune", Generation: "g123", RunID: "r0123456789abcdef0123456789abcdef",
+	}
+	return LaunchRequest{
+		VMID: hostisolation.VMIDForInstance("alice", "fortune.g123"),
+		Mode: mode, VCPUs: vcpus, MemMiB: memMiB, Identity: identity,
+	}
+}
+
 func TestJailerArgvIsFixed(t *testing.T) {
 	t.Parallel()
 	config := testConfig()
-	request := LaunchRequest{
-		VMID: "0123abcdef89", Mode: LaunchCold, VCPUs: 1, MemMiB: 128,
-	}
+	request := testLaunchRequest(LaunchCold, 1, 128)
 	uid, err := hostisolation.SandboxID(request.VMID, config.SandboxIDBase)
 	if err != nil {
 		t.Fatal(err)
@@ -39,7 +48,7 @@ func TestJailerArgvIsFixed(t *testing.T) {
 	}
 	got := strings.Join(args, "\n")
 	want := strings.Join([]string{
-		"--id", "0123abcdef89",
+		"--id", request.VMID,
 		"--exec-file", "/var/lib/sshcloud/assets/firecracker",
 		"--uid", uintString(uid),
 		"--gid", uintString(uid),
@@ -80,12 +89,22 @@ func TestLaunchValidationRejectsArbitraryInputs(t *testing.T) {
 	}
 }
 
+func TestLaunchValidationBindsHostAttributionToVMID(t *testing.T) {
+	t.Parallel()
+	request := testLaunchRequest(LaunchCold, 1, 128)
+	if err := request.validate(); err != nil {
+		t.Fatal(err)
+	}
+	request.Identity.User = "mallory"
+	if err := request.validate(); err == nil {
+		t.Fatal("mismatched host-side user/app attribution was accepted")
+	}
+}
+
 func TestJailerArgvRejectsCallerSelectedIdentity(t *testing.T) {
 	t.Parallel()
 	config := testConfig()
-	request := LaunchRequest{
-		VMID: "0123abcdef89", Mode: LaunchRestore, VCPUs: 2, MemMiB: 512,
-	}
+	request := testLaunchRequest(LaunchRestore, 2, 512)
 	if _, err := JailerArgv(config, request, 1234, 1234); err == nil {
 		t.Fatal("caller-selected UID/GID was accepted")
 	}

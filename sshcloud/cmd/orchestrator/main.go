@@ -36,12 +36,14 @@ import (
 	"github.com/imjasonh/playground/sshcloud/internal/image"
 	"github.com/imjasonh/playground/sshcloud/internal/migrate"
 	"github.com/imjasonh/playground/sshcloud/internal/names"
+	"github.com/imjasonh/playground/sshcloud/internal/observability"
 	"github.com/imjasonh/playground/sshcloud/internal/placement"
 	"github.com/imjasonh/playground/sshcloud/internal/quota"
 	hostreconcile "github.com/imjasonh/playground/sshcloud/internal/reconcile"
 )
 
 func main() {
+	observability.Configure("orchestrator")
 	listen := flag.String("listen", "127.0.0.1:8090", "gateway-service HTTPS listen address")
 	healthListen := flag.String("health-listen", "127.0.0.1:8091", "unauthenticated health-only HTTP listen address")
 	adminSocket := flag.String("admin-socket", "", "root-owned Unix socket for the admin HTTPS API")
@@ -199,6 +201,7 @@ func main() {
 	}
 	healthMux.HandleFunc("GET /readyz", ready)
 	healthMux.HandleFunc("GET /healthz", ready)
+	healthMux.Handle("GET /metrics", observability.MetricsHandler())
 	api.HandleFunc("GET /v1/hosts", func(w http.ResponseWriter, r *http.Request) {
 		type hostView struct {
 			ID       string         `json:"id"`
@@ -420,9 +423,34 @@ func main() {
 			return
 		}
 		hostDiagnostics := hosts.Diagnostics(r.Context())
+		placementTotal := len(records)
+		if len(records) > maxDiagnosticPlacements {
+			records = records[:maxDiagnosticPlacements]
+		}
+		hostTotal := len(hostDiagnostics)
+		instanceTotal := 0
+		for _, diagnostic := range hostDiagnostics {
+			instanceTotal += len(diagnostic.Instances)
+		}
+		if len(hostDiagnostics) > maxDiagnosticHosts {
+			hostDiagnostics = hostDiagnostics[:maxDiagnosticHosts]
+		}
+		instanceReturned := 0
+		for index := range hostDiagnostics {
+			if len(hostDiagnostics[index].Instances) > maxDiagnosticInstancesPerHost {
+				hostDiagnostics[index].Instances = hostDiagnostics[index].Instances[:maxDiagnosticInstancesPerHost]
+			}
+			instanceReturned += len(hostDiagnostics[index].Instances)
+			hostDiagnostics[index].Error = boundedDiagnosticText(hostDiagnostics[index].Error)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"placements": records, "hosts": hostDiagnostics,
+			"bounds": map[string]int{
+				"placements_total": placementTotal, "placements_returned": len(records),
+				"hosts_total": hostTotal, "hosts_returned": len(hostDiagnostics),
+				"instances_total": instanceTotal, "instances_returned": instanceReturned,
+			},
 		})
 	})
 
@@ -515,6 +543,20 @@ func main() {
 	if healthServer != nil {
 		_ = healthServer.Close()
 	}
+}
+
+const (
+	maxDiagnosticPlacements       = 200
+	maxDiagnosticHosts            = 100
+	maxDiagnosticInstancesPerHost = 100
+	maxDiagnosticErrorBytes       = 512
+)
+
+func boundedDiagnosticText(value string) string {
+	if len(value) <= maxDiagnosticErrorBytes {
+		return value
+	}
+	return value[:maxDiagnosticErrorBytes]
 }
 
 func watchHostsFile(ctx context.Context, path string, hosts *backend.HostSet, controlClient *controlauth.Client, insecureLoopback bool) {

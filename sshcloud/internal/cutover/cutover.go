@@ -9,6 +9,7 @@ import (
 
 	"github.com/imjasonh/playground/sshcloud/internal/genid"
 	"github.com/imjasonh/playground/sshcloud/internal/image"
+	"github.com/imjasonh/playground/sshcloud/internal/observability"
 	"github.com/imjasonh/playground/sshcloud/internal/session"
 	"github.com/imjasonh/playground/sshcloud/internal/store"
 )
@@ -118,10 +119,25 @@ func (c *Controller) appLock(user, app string) *sync.Mutex {
 }
 
 // Deploy boots a new generation and applies kick or drain.
-func (c *Controller) Deploy(ctx context.Context, req Request) (Result, error) {
+func (c *Controller) Deploy(ctx context.Context, req Request) (result Result, retErr error) {
 	if req.User == "" || req.App == "" {
 		return Result{}, fmt.Errorf("user and app required")
 	}
+	startedAt := time.Now()
+	eventStrategy, eventTier := "", ""
+	defer func() {
+		outcome := observability.OutcomeSuccess
+		if retErr != nil {
+			outcome = observability.OutcomeFailure
+		}
+		observability.Emit(observability.DeployEvent{
+			Identity: observability.RuntimeIdentity{
+				User: req.User, App: req.App, Generation: result.ActiveGen,
+			},
+			Action: "deploy", Strategy: eventStrategy, Tier: eventTier,
+			Outcome: outcome, Duration: time.Since(startedAt),
+		})
+	}()
 	if err := image.ValidateDigestPinned(req.Image); err != nil {
 		return Result{}, err
 	}
@@ -131,6 +147,7 @@ func (c *Controller) Deploy(ctx context.Context, req Request) (Result, error) {
 	if req.Tier != "tiny" && req.Tier != "small" {
 		return Result{}, fmt.Errorf("unknown tier %q", req.Tier)
 	}
+	eventTier = req.Tier
 	strategy := req.Strategy
 	if strategy == "" {
 		strategy = store.StrategyDrain
@@ -138,6 +155,8 @@ func (c *Controller) Deploy(ctx context.Context, req Request) (Result, error) {
 	if strategy != store.StrategyDrain && strategy != store.StrategyKick {
 		return Result{}, fmt.Errorf("unknown strategy %q", strategy)
 	}
+	req.Strategy = strategy
+	eventStrategy = strategy
 	timeout := req.Timeout
 	if timeout <= 0 {
 		timeout = c.Timeout

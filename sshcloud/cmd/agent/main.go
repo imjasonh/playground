@@ -22,11 +22,13 @@ import (
 	"github.com/imjasonh/playground/sshcloud/internal/controlauth"
 	"github.com/imjasonh/playground/sshcloud/internal/guestinit"
 	"github.com/imjasonh/playground/sshcloud/internal/image"
+	"github.com/imjasonh/playground/sshcloud/internal/observability"
 	"github.com/imjasonh/playground/sshcloud/internal/ocirootfs"
 	"github.com/imjasonh/playground/sshcloud/internal/snapshot"
 )
 
 func main() {
+	observability.Configure("agent")
 	listen := flag.String("listen", "127.0.0.1:8080", "agent control HTTPS listen address")
 	healthListen := flag.String("health-listen", "127.0.0.1:8081", "unauthenticated health-only HTTP listen address")
 	workDir := flag.String("work-dir", "/var/lib/sshcloud/agent", "instance work directory")
@@ -36,6 +38,7 @@ func main() {
 	vmmHelperSocket := flag.String("vmm-helper-socket", "/run/sshcloud/vmmhelper.sock", "production VMM helper socket")
 	tapHelperSocket := flag.String("tap-helper-socket", "/run/sshcloud/taphelper.sock", "production TAP helper socket")
 	rootfsPath := flag.String("rootfs", "", "optional base ext4 for Ensure without image (test/dev only)")
+	rootfsCacheBytes := flag.Int64("rootfs-cache-bytes", ocirootfs.DefaultCacheBytes, "hard OCI rootfs cache budget in bytes")
 	bootSpec := flag.String("boot-spec", "", "PID 1 spec JSON for -rootfs (default: sibling .boot.json)")
 	caPub := flag.String("ca-pub", "", "platform user CA public key to inject")
 	guestInit := flag.String("guestinit", "", "linux guest PID1 trampoline (default: guestinit beside this binary)")
@@ -59,6 +62,9 @@ func main() {
 	platformVersion := flag.String("platform-version", "", "kernel/Firecracker compatibility ID stored in snapshots")
 	cpuTemplate := flag.String("cpu-template", "", "portable Firecracker CPU template (production: T2)")
 	flag.Parse()
+	if *rootfsCacheBytes <= 0 {
+		log.Fatal("-rootfs-cache-bytes must be positive")
+	}
 
 	var vmRuntime agent.Runtime
 	if *directRuntime {
@@ -169,16 +175,38 @@ func main() {
 		SnapStore:         store,
 		IdleTimeout:       *idle,
 		RootfsResolver: func(ctx context.Context, imageRef string) (agent.ResolvedRootfs, error) {
-			res, err := ocirootfs.Materialize(ctx, imageRef, ocirootfs.Options{CacheDir: ociCache})
+			res, err := ocirootfs.Materialize(ctx, imageRef, ocirootfs.Options{
+				CacheDir: ociCache, MaxCacheBytes: *rootfsCacheBytes,
+			})
 			if err != nil {
 				return agent.ResolvedRootfs{}, err
 			}
-			return agent.ResolvedRootfs{Path: res.Rootfs, Spec: res.Spec}, nil
+			return agent.ResolvedRootfs{Path: res.Rootfs, Spec: res.Spec, Release: res.Release}, nil
 		},
 	})
 	if err != nil {
 		log.Fatal(err)
 	}
+	observability.DefaultMetrics().RegisterCollector(func() {
+		capacity := mgr.Capacity()
+		observability.DefaultMetrics().SetHostCapacity(
+			capacity.Total.VCPUs, capacity.Used.VCPUs, capacity.Reserved.VCPUs,
+			capacity.Total.MemMiB, capacity.Used.MemMiB, capacity.Reserved.MemMiB,
+			capacity.Cordoned,
+		)
+		var running, sleeping, failed int
+		for _, instance := range mgr.ListInstances() {
+			switch instance.State {
+			case agent.StateRunning:
+				running++
+			case agent.StateSleeping:
+				sleeping++
+			case agent.StateFailed:
+				failed++
+			}
+		}
+		observability.DefaultMetrics().SetHostInstances(running, sleeping, failed)
+	})
 	controlMux := http.NewServeMux()
 	handler := &agent.Handler{Manager: mgr, Readiness: mgr.Ready}
 	handler.Mount(controlMux)
@@ -223,6 +251,7 @@ func main() {
 	if *healthListen != "" {
 		healthMux := http.NewServeMux()
 		handler.MountHealth(healthMux)
+		healthMux.Handle("GET /metrics", observability.MetricsHandler())
 		healthServer = &http.Server{
 			Addr: *healthListen, Handler: healthMux,
 			ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 5 * time.Second,

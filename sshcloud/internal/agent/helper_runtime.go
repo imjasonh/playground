@@ -77,6 +77,7 @@ func (r HelperRuntime) Boot(ctx context.Context, spec BootSpec) (machine, string
 	}
 	response, err := r.VMM.Launch(ctx, vmmhelper.LaunchRequest{
 		VMID: vmID, Mode: vmmhelper.LaunchCold, VCPUs: spec.VCPUs, MemMiB: spec.MemMiB,
+		Identity: spec.Identity,
 	})
 	if err != nil {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -111,7 +112,7 @@ func (r HelperRuntime) Boot(ctx context.Context, spec BootSpec) (machine, string
 	addr := net.JoinHostPort(spec.GuestIP, "22")
 	if err := firecracker.WaitTCP(ctx, addr, 30*time.Second); err != nil {
 		_ = m.Stop()
-		return nil, "", fmt.Errorf("guest SSH not ready: %w (see %s)", err, filepath.Join(spec.WorkDir, "firecracker.log"))
+		return nil, "", fmt.Errorf("guest SSH not ready: %w (see bounded host Firecracker diagnostics)", err)
 	}
 	return m, addr, nil
 }
@@ -140,6 +141,7 @@ func (r HelperRuntime) Restore(ctx context.Context, spec RestoreSpec) (machine, 
 	}()
 	response, err := r.VMM.Launch(ctx, vmmhelper.LaunchRequest{
 		VMID: vmID, Mode: vmmhelper.LaunchRestore, VCPUs: spec.VCPUs, MemMiB: spec.MemMiB,
+		Identity: spec.Identity,
 	})
 	if err != nil {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -167,7 +169,7 @@ func (r HelperRuntime) Restore(ctx context.Context, spec RestoreSpec) (machine, 
 	}
 	addr := net.JoinHostPort(spec.GuestIP, "22")
 	if err := firecracker.WaitTCP(ctx, addr, 30*time.Second); err != nil {
-		return fail(fmt.Errorf("guest SSH not ready after wake: %w (see %s)", err, filepath.Join(spec.WorkDir, "firecracker.log")))
+		return fail(fmt.Errorf("guest SSH not ready after wake: %w (see bounded host Firecracker diagnostics)", err))
 	}
 	keepTap = true
 	return m, addr, nil

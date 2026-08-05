@@ -73,7 +73,7 @@
 | Datastore | **Firestore** for now |
 | Infra | Host MIG + agent; Terraform + ko for **platform** services only |
 | Region | One region until bin-pack/migration is solid |
-| Observability | Logs, metrics, **metadata-only** connection traces (no session bytes) |
+| Observability | Structured platform/app logs, aggregate metrics, **metadata-only** events; never SSH channel bytes/commands/env/signals/replays |
 | Quotas | Enforced in v1 (starter defaults below); billing later |
 | Abuse prevention | **Platform-enforced** at gateway/orchestrator; apps assume admission already happened |
 | Sessions / user / app | **Max 1** — second connect is **rejected** (not replaced) |
@@ -652,6 +652,11 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
   workload-identity design. OCI→rootfs on agents: `internal/ocirootfs` + Ensure
   `"image"` hook + `guestinit` PID 1 from image config; deploy cutover pre-boots
   the new gen with that image.
+- GCP Ops Agent on every role, 30-day platform and seven-day app log buckets,
+  `_Default` duplicate exclusion, Prometheus/OpenTelemetry-compatible host and
+  lifecycle metrics, dashboard/core alerts, and optional email/budget. Real
+  ingestion, routing, retention, and alert delivery still require a manual
+  operator-owned GCP drill.
 - CI unit/structural checks cover helper peer credentials, validation, fixed
   jailer argv, TAP rules, snapshot authorization fences, envelope
   tamper/swap/truncation/AAD, generation preconditions, and failure propagation.
@@ -707,6 +712,16 @@ cap (or per-guest principals)—not silent app-side accept of duplicates.
 Metadata traces/metrics: join accepts/rejects, session rejects (busy), rate-limit
 hits, wake/deploy denials — still **no session bytes**.
 
+The implemented privacy boundary is documented in
+[`sshcloud/docs/observability-runbook.md`](../sshcloud/docs/observability-runbook.md).
+The bounded migration input queue is transport continuity, not recording, and
+is explicitly excluded from every log/metric/event path. Production drains
+guest serial-console output separately from Firecracker diagnostics through a
+nonblocking bounded queue; guest JSON stays opaque. App telemetry has one
+label-free counter/gauge line convention with hard rate, name, value, and
+per-run cardinality limits. Aggregate platform metrics carry no
+user/app/generation/run/session labels.
+
 ---
 
 ## 11. Networking & security
@@ -715,8 +730,9 @@ hits, wake/deploy denials — still **no session bytes**.
 - MicroVMs private (tap/CNI); not Internet-reachable.  
 - Egress: global allowlist.  
 - No app-to-app net; no port forwarding.  
-- Connection traces: metadata only (user, app, timings, byte counts, errors) —
-  never session payload.  
+- Connection traces: metadata only (user, app, lifecycle phase, outcome, and
+  timings) — never channel bytes, commands, environment, signals, or replay
+  data.
 - No account recovery in v1.  
 - Gateway host key: single stable key (published fingerprint in docs); host CA later.  
 - Abuse controls: §10.
