@@ -40,7 +40,7 @@ pub mod sig;
 
 #[cfg(test)]
 mod tests {
-    use base64::{Engine as _, engine::general_purpose};
+    use base64::{engine::general_purpose, Engine as _};
     use sha2::{Digest, Sha256};
 
     use super::trust::{TrustConfig, TrustedIdentity, TrustedRekorLog, TrustedTimestampAuthority};
@@ -113,5 +113,32 @@ mod tests {
             serde_json::Value::String(general_purpose::STANDARD.encode([0_u8; 32]));
         let tampered = serde_json::to_vec(&bundle).unwrap();
         assert!(super::sig::verify_bundle(&tampered, V2_SUBJECT_DIGEST, &v2_trust()).is_err());
+    }
+
+    #[test]
+    fn production_signing_config_matches_embedded_v2_key() {
+        let config: serde_json::Value = serde_json::from_slice(include_bytes!(
+            "../../../trust/signing-config-rekor-v2.json"
+        ))
+        .unwrap();
+        let logs = config["rekorTlogUrls"].as_array().unwrap();
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0]["majorApiVersion"], 2);
+        let origin = logs[0]["url"]
+            .as_str()
+            .unwrap()
+            .strip_prefix("https://")
+            .unwrap();
+
+        let key_der = pem_der(include_bytes!("../../../trust/rekor-v2.pub"), "PUBLIC KEY");
+        let key_bytes: [u8; 32] = key_der[12..].try_into().unwrap();
+        let mut id_hasher = Sha256::new();
+        id_hasher.update(origin.as_bytes());
+        id_hasher.update(b"\n\x01");
+        id_hasher.update(key_bytes);
+        assert_eq!(
+            hex::encode(id_hasher.finalize()),
+            "cf1199155bddd051268d1f16ac5c0c75c009f6fb5a63f4177f8e18d7051e3fa0"
+        );
     }
 }
