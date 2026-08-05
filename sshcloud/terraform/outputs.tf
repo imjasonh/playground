@@ -16,8 +16,8 @@ output "gateway_known_hosts" {
   description = "Pinned known_hosts entry for the public gateway"
   value = join(" ", [
     google_compute_instance.gateway.network_interface[0].access_config[0].nat_ip,
-    split(" ", tls_private_key.gateway_host.public_key_openssh)[0],
-    split(" ", tls_private_key.gateway_host.public_key_openssh)[1],
+    split(" ", tls_private_key.gateway_host[tostring(var.gateway_host_key_rotation_epoch)].public_key_openssh)[0],
+    split(" ", tls_private_key.gateway_host[tostring(var.gateway_host_key_rotation_epoch)].public_key_openssh)[1],
   ])
 }
 
@@ -80,6 +80,25 @@ output "snapshot_kms_keys" {
   value = {
     bucket   = google_kms_crypto_key.snapshot_bucket.id
     envelope = google_kms_crypto_key.snapshot_envelope.id
+  }
+}
+
+output "rotation_status" {
+  description = "Non-secret rotation epochs, active control signer, role URIs, and public-key fingerprints"
+  value = {
+    control_ca_active_slot = var.control_ca_active_slot
+    control_ca_epochs      = var.control_ca_rotation_epochs
+    control_leaf_epochs    = var.control_leaf_rotation_epochs
+    gateway_host_key_epoch = var.gateway_host_key_rotation_epoch
+    control_role_uris      = local.control_role_uris
+    control_ca_key_fingerprints = {
+      for slot, key in local.control_ca_keys : slot => key.public_key_fingerprint_sha256
+    }
+    control_leaf_key_fingerprints = {
+      for role, key in local.control_role_keys : role => key.public_key_fingerprint_sha256
+    }
+    gateway_host_key_fingerprint = tls_private_key.gateway_host[tostring(var.gateway_host_key_rotation_epoch)].public_key_fingerprint_sha256
+    user_ca_key_fingerprint      = tls_private_key.user_ca.public_key_fingerprint_sha256
   }
 }
 

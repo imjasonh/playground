@@ -31,17 +31,19 @@ resource "google_compute_instance" "orchestrator" {
   }
 
   metadata_startup_script = templatefile("${path.module}/scripts/orchestrator.sh.tftpl", {
-    helpers                      = templatefile("${path.module}/scripts/run-container.sh.tftpl", { registry_host = split("/", local.registry)[0], project_id = var.project_id })
-    project_id                   = var.project_id
-    firestore_prefix             = var.firestore_prefix
-    firestore_database           = var.firestore_database
-    zone                         = var.zone
-    mig_name                     = "${local.prefix}-agents"
-    hosts_path                   = local.hosts_path
-    orchestrator_image           = ko_build.orchestrator.image_ref
-    control_identity_secret      = google_secret_manager_secret.control_identity["orchestrator"].secret_id
-    control_ca_current_secret    = google_secret_manager_secret.control_ca[var.control_ca_active_slot].secret_id
-    control_ca_previous_secret   = google_secret_manager_secret.control_ca[local.control_standby_slot].secret_id
+    helpers                 = templatefile("${path.module}/scripts/run-container.sh.tftpl", { registry_host = split("/", local.registry)[0], project_id = var.project_id })
+    project_id              = var.project_id
+    firestore_prefix        = var.firestore_prefix
+    firestore_database      = var.firestore_database
+    zone                    = var.zone
+    mig_name                = "${local.prefix}-agents"
+    hosts_path              = local.hosts_path
+    orchestrator_image      = ko_build.orchestrator.image_ref
+    control_identity_secret = google_secret_manager_secret.control_identity["orchestrator"].secret_id
+    # The runtime trusts both fixed slots. Signing-slot changes reissue leaves
+    # without changing this startup script or replacing the instance.
+    control_ca_current_secret    = google_secret_manager_secret.control_ca["a"].secret_id
+    control_ca_previous_secret   = google_secret_manager_secret.control_ca["b"].secret_id
     gateway_url                  = "https://${google_compute_address.gateway_internal.address}:8079"
     project_number               = data.google_project.current.number
     gateway_service_account      = google_service_account.gateway.email

@@ -10,6 +10,11 @@ Public SSH is closed by default; explicitly allow only an operator/Terraform
 runner `/32` while the first operator-owned validation of the new jailer/helper
 and control-PKI boundaries remains unfinished.
 
+Operator procedures for A/B control CAs, role leaves, GCE identities, access
+keys, pinned gateway host keys, the platform SSH user CA, snapshot KMS keys,
+Secret Manager versions, and Terraform state are in
+[`../docs/key-rotation-runbook.md`](../docs/key-rotation-runbook.md).
+
 ## Layout
 
 | File | What |
@@ -19,7 +24,7 @@ and control-PKI boundaries remains unfinished.
 | `demo.tf` | Optional `local-exec` join/deploy followed by strict SSH release smoke test |
 | `firestore.tf` | Dedicated named Native-mode database |
 | `storage.tf`, `kms.tf` | CMEK snapshot bucket, envelope KEK, platform assets, Artifact Registry |
-| `secrets.tf` | Separate SSH keys/CA, versioned access policy, and A/B control PKI |
+| `secrets.tf` | Separate SSH keys/CA, versioned access policy, A/B control PKI, and explicit rotation epochs |
 | `gateway.tf` | Public SSH gateway (`:22`) |
 | `orchestrator.tf` | Internal placement/migrate API; reloads MIG hosts file |
 | `snapshotd.tf` | Internal snapshot proxy; only workload with snapshot GCS/KMS data access |
@@ -59,16 +64,27 @@ cd sshcloud
 bash hack/fetch-firecracker-assets.sh
 cd terraform
 cp terraform.tfvars.example terraform.tfvars
+cp backend.gcs.hcl.example backend.gcs.hcl
 # edit project_id, asset paths, a narrow ssh_client_cidrs allowlist, and
 # member_ssh_public_keys / deployer_ssh_public_keys (full OpenSSH public lines)
-# optionally set enable_demo_bootstrap=true
+# configure a separately administered, protected state bucket; optionally set
+# enable_demo_bootstrap=true. Do not put credentials/key bytes in backend HCL.
 
 bash ../hack/preflight-gcp.sh YOUR_PROJECT us-central1 us-central1-a
 
-terraform init
+terraform init -backend-config=backend.gcs.hcl
 terraform plan -out=tfplan
 terraform apply tfplan
 ```
+
+Existing local state must use `terraform init -migrate-state`, with a private
+backup and frozen applies. State and saved plans contain generated private
+keys. Follow the state migration/recovery section of the rotation runbook;
+checking in the backend block is not evidence that an environment was migrated.
+Keep every new rotation epoch at zero on first adoption: the checked-in `moved`
+blocks preserve pre-epoch key addresses, and that first plan must not replace a
+key or certificate. It may update the former early-renewal metadata to zero in
+place.
 
 `module.project_services` enables every required API first. API-backed
 foundations and the Debian image lookup depend on that module, so a first apply
@@ -123,7 +139,8 @@ plus OS Login/instance SSH access (for example `roles/compute.osLogin`).
 Production control traffic is HTTPS with TLS 1.3 mutual authentication. Every
 request also fetches a full-format identity token directly from the caller VM's
 GCE metadata service. The target verifies Google signing/expiry, a maximum
-five-minute issuance age, the exact audience and service-account email, and the
+65-minute issuance age plus clock skew (the metadata service may return a
+cached still-valid token), the exact audience and service-account email, and the
 full Compute Engine claim set with this project's exact ID and number. Static
 bearer secrets are not provisioned and an arbitrary bearer header grants no
 authority.
@@ -154,8 +171,12 @@ Package bytes are proxied rather than exposed through signed URLs.
 Control cert/key and two CA files are refreshed from Secret Manager each minute
 and reloaded on every new TLS handshake. Both A and B CAs remain trusted during
 rotation. Set `control_ca_active_slot = "b"` to reissue leaves under B while A
-remains trusted; only then replace idle A. Reverse the sequence on the next
-rotation.
+remains trusted; only then replace idle A. Fixed A/B trust-file positions avoid
+Compute churn when the signing slot changes. Increment
+`control_ca_rotation_epochs` only for the inactive slot and
+`control_leaf_rotation_epochs` one role at a time—never use taint. Superseded
+Secret Manager versions are retained for explicit cleanup. Follow and verify
+every stage in the rotation runbook.
 
 Host sshd on the gateway is moved to **:2222** (IAP) so platform SSH can own `:22`.
 Terraform uploads the exact local Firecracker/jailer/kernel files as
@@ -228,15 +249,19 @@ membership-list removal ineffective.
   encrypts each immutable package with a fresh Tink Streaming AEAD keyset, and
   wraps that keyset with the regional Cloud KMS KEK using
   tenant/app/generation/snapshot AAD. `current.json` is published with a GCS
-  generation precondition, and the bucket has a separate default CMEK. A future KMS
-  rotation would affect new wraps/CMEK writes; old key versions must remain
-  enabled until every package and GCS object encrypted under them has expired.
-  This change does not configure rotation, drills, or version retirement.
-- **Keys in state:** `tls_private_key` material is in Terraform state. Fine for
-  an isolated playground only. This includes the initially provisioned control
-  leaf keys. **TODO(secret-rotation):** move leaf issuance/private keys out of
-  Terraform, use encrypted/locked remote state in the interim, and drill A/B
-  rotation before any public launch. A leaf certificate alone is not workload
+  generation precondition, and the bucket has a separate default CMEK. A KMS
+  primary-version rotation affects new wraps/CMEK writes; old key versions must
+  remain enabled until every package and GCS object encrypted under them has
+  expired.
+  The runbook documents manual version ordering; it does not add rewrap/rewrite
+  data paths, automatic schedules, or prove a drill.
+- **Keys in state:** `tls_private_key` material is in Terraform state. This
+  includes the gateway host key, platform SSH user CA, both control CAs, all
+  control leaves, and optional demo key. Secret Manager distribution is not
+  external key management. The required GCS backend reduces local-state
+  exposure only after each environment is actually migrated and access-reviewed;
+  it does not make these keys non-exportable. Move issuance/private keys out of
+  Terraform before public launch. A leaf certificate alone is not workload
   identity; production requests independently require the GCE identity token.
 - **Demo is opt-in:** `local-exec` is intentionally a smoke-test hack, not a
   durable application reconciler. `triggers_replace` covers its image, infra,
@@ -283,4 +308,7 @@ membership-list removal ineffective.
   prove actual Ops Agent ingestion, log-bucket routing/exclusion, retention,
   Prometheus descriptor creation, alert/email delivery, or budget delivery.
   Run the ingestion and alert drills in the observability runbook after apply.
-- Validate locally (no GCP apply): `bash hack/validate-terraform.sh`
+- Inspect rotation state without payload output:
+  `bash hack/inspect-rotation-state.sh --help`
+- Validate locally (no GCP apply): `bash hack/validate-terraform.sh` (includes
+  the offline rotation-tooling and documented-order checks)

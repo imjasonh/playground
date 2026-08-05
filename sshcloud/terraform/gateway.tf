@@ -47,16 +47,18 @@ resource "google_compute_instance" "gateway" {
   }
 
   metadata_startup_script = templatefile("${path.module}/scripts/gateway.sh.tftpl", {
-    helpers                      = templatefile("${path.module}/scripts/run-container.sh.tftpl", { registry_host = split("/", local.registry)[0], project_id = var.project_id })
-    registry_host                = split("/", local.registry)[0]
-    project_id                   = var.project_id
-    firestore_prefix             = var.firestore_prefix
-    firestore_database           = var.firestore_database
-    host_key_secret              = google_secret_manager_secret.gateway_host_key.secret_id
-    user_ca_secret               = google_secret_manager_secret.user_ca.secret_id
-    control_identity_secret      = google_secret_manager_secret.control_identity["gateway"].secret_id
-    control_ca_current_secret    = google_secret_manager_secret.control_ca[var.control_ca_active_slot].secret_id
-    control_ca_previous_secret   = google_secret_manager_secret.control_ca[local.control_standby_slot].secret_id
+    helpers                 = templatefile("${path.module}/scripts/run-container.sh.tftpl", { registry_host = split("/", local.registry)[0], project_id = var.project_id })
+    registry_host           = split("/", local.registry)[0]
+    project_id              = var.project_id
+    firestore_prefix        = var.firestore_prefix
+    firestore_database      = var.firestore_database
+    host_key_secret         = google_secret_manager_secret.gateway_host_key.secret_id
+    user_ca_secret          = google_secret_manager_secret.user_ca.secret_id
+    control_identity_secret = google_secret_manager_secret.control_identity["gateway"].secret_id
+    # Keep trust-file positions fixed to slots A/B. The active slot controls
+    # only leaf issuance; changing it must not replace or reboot this VM.
+    control_ca_current_secret    = google_secret_manager_secret.control_ca["a"].secret_id
+    control_ca_previous_secret   = google_secret_manager_secret.control_ca["b"].secret_id
     access_policy_secret         = google_secret_manager_secret.access_policy.secret_id
     gateway_image                = ko_build.gateway.image_ref
     gateway_listen               = local.gateway_listen

@@ -1,6 +1,11 @@
 terraform {
   required_version = ">= 1.6.0"
 
+  # State contains private SSH and control-plane keys. Keep backend settings
+  # out of source and initialize with backend.gcs.hcl; see the key-rotation
+  # runbook for the one-time local-to-GCS migration and recovery procedure.
+  backend "gcs" {}
+
   required_providers {
     google = {
       source  = "hashicorp/google"

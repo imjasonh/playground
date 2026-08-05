@@ -1,0 +1,12 @@
+# Copy to backend.gcs.hcl (git-ignored) and use:
+# terraform init -migrate-state -backend-config=backend.gcs.hcl
+#
+# Create this bucket outside the sshcloud state. Require uniform bucket-level
+# access, public-access prevention, object versioning, soft delete/retention,
+# and a narrowly scoped Terraform runner identity before migrating.
+bucket = "replace-with-dedicated-terraform-state-bucket"
+prefix = "sshcloud/private-smoke-test"
+
+# Optional: use a separately administered state-backend CMEK. Do not use a
+# customer-supplied encryption_key value in this file.
+# kms_encryption_key = "projects/PROJECT/locations/REGION/keyRings/terraform-state/cryptoKeys/state"

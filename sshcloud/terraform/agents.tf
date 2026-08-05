@@ -28,12 +28,14 @@ resource "google_compute_instance_template" "agent" {
   }
 
   metadata_startup_script = templatefile("${path.module}/scripts/agent.sh.tftpl", {
-    helpers                      = templatefile("${path.module}/scripts/run-container.sh.tftpl", { registry_host = split("/", local.registry)[0], project_id = var.project_id })
-    project_id                   = var.project_id
-    user_ca_pub_secret           = google_secret_manager_secret.user_ca_pub.secret_id
-    control_identity_secret      = google_secret_manager_secret.control_identity["agent"].secret_id
-    control_ca_current_secret    = google_secret_manager_secret.control_ca[var.control_ca_active_slot].secret_id
-    control_ca_previous_secret   = google_secret_manager_secret.control_ca[local.control_standby_slot].secret_id
+    helpers                 = templatefile("${path.module}/scripts/run-container.sh.tftpl", { registry_host = split("/", local.registry)[0], project_id = var.project_id })
+    project_id              = var.project_id
+    user_ca_pub_secret      = google_secret_manager_secret.user_ca_pub.secret_id
+    control_identity_secret = google_secret_manager_secret.control_identity["agent"].secret_id
+    # Slots stay fixed in host metadata so selecting a leaf issuer does not
+    # create a new instance template or trigger an agent-host rollout.
+    control_ca_current_secret    = google_secret_manager_secret.control_ca["a"].secret_id
+    control_ca_previous_secret   = google_secret_manager_secret.control_ca["b"].secret_id
     project_number               = data.google_project.current.number
     orchestrator_service_account = google_service_account.orchestrator.email
     assets_bucket                = local.asset_bucket

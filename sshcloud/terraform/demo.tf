@@ -43,7 +43,7 @@ resource "terraform_data" "deploy_fortune" {
     interpreter = ["bash", "-c"]
     environment = {
       DEMO_KEY_PEM    = tls_private_key.demo[0].private_key_openssh
-      HOST_PUB        = tls_private_key.gateway_host.public_key_openssh
+      HOST_PUB        = tls_private_key.gateway_host[tostring(var.gateway_host_key_rotation_epoch)].public_key_openssh
       DEPLOY_USER     = var.demo_user
       DEPLOY_APP      = var.demo_app
       DEPLOY_TIER     = var.demo_tier
@@ -77,7 +77,7 @@ resource "terraform_data" "smoke_test_fortune" {
     interpreter = ["bash", "-c"]
     environment = {
       DEMO_KEY_PEM = tls_private_key.demo[0].private_key_openssh
-      HOST_PUB     = tls_private_key.gateway_host.public_key_openssh
+      HOST_PUB     = tls_private_key.gateway_host[tostring(var.gateway_host_key_rotation_epoch)].public_key_openssh
       VERIFY_USER  = var.demo_user
     }
     command = <<-EOT

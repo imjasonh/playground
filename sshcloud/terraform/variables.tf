@@ -48,12 +48,73 @@ variable "firestore_prefix" {
 }
 
 variable "control_ca_active_slot" {
-  description = "Control PKI signing slot. Rotate leaves A→B, replace idle A, then reverse on the next rotation."
+  description = "Control PKI signing slot. This selects the leaf issuer only; both fixed A/B trust slots remain distributed."
   type        = string
   default     = "a"
   validation {
     condition     = contains(["a", "b"], var.control_ca_active_slot)
     error_message = "control_ca_active_slot must be a or b."
+  }
+}
+
+variable "control_ca_rotation_epochs" {
+  description = "Explicit non-negative epochs for deterministic A/B CA key replacement. Increment only the inactive slot after following the rotation runbook."
+  type        = map(number)
+  default = {
+    a = 0
+    b = 0
+  }
+  validation {
+    condition = (
+      length(var.control_ca_rotation_epochs) == 2 &&
+      alltrue([
+        for slot in ["a", "b"] :
+        try(
+          var.control_ca_rotation_epochs[slot] >= 0 &&
+          var.control_ca_rotation_epochs[slot] == floor(var.control_ca_rotation_epochs[slot]),
+          false,
+        )
+      ])
+    )
+    error_message = "control_ca_rotation_epochs must contain exactly a and b with non-negative integer values."
+  }
+}
+
+variable "control_leaf_rotation_epochs" {
+  description = "Explicit non-negative epochs for role leaf key/certificate replacement. Increment one role at a time and verify dynamic reload."
+  type        = map(number)
+  default = {
+    gateway      = 0
+    orchestrator = 0
+    agent        = 0
+    snapshot     = 0
+  }
+  validation {
+    condition = (
+      length(var.control_leaf_rotation_epochs) == 4 &&
+      alltrue([
+        for role in ["gateway", "orchestrator", "agent", "snapshot"] :
+        try(
+          var.control_leaf_rotation_epochs[role] >= 0 &&
+          var.control_leaf_rotation_epochs[role] == floor(var.control_leaf_rotation_epochs[role]),
+          false,
+        )
+      ])
+    )
+    error_message = "control_leaf_rotation_epochs must contain exactly gateway, orchestrator, agent, and snapshot with non-negative integer values."
+  }
+}
+
+variable "gateway_host_key_rotation_epoch" {
+  description = "Explicit non-negative epoch for planned gateway SSH host-key replacement. Follow the pinned known_hosts maintenance procedure before incrementing."
+  type        = number
+  default     = 0
+  validation {
+    condition = (
+      var.gateway_host_key_rotation_epoch >= 0 &&
+      var.gateway_host_key_rotation_epoch == floor(var.gateway_host_key_rotation_epoch)
+    )
+    error_message = "gateway_host_key_rotation_epoch must be a non-negative integer."
   }
 }
 

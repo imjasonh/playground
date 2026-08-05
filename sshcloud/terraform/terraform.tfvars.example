@@ -12,7 +12,13 @@ kernel_asset_path      = "../_assets/vmlinux"
 # firestore_location = "nam5"
 # firestore_database = "sshcloud"
 # firestore_prefix   = "sshcloud"
-# control_ca_active_slot = "a" # A/B overlap; follow terraform/README.md to rotate
+# Follow ../docs/key-rotation-runbook.md. Never increment the active CA slot:
+# control_ca_active_slot = "a"
+# control_ca_rotation_epochs = { a = 0, b = 0 }
+# control_leaf_rotation_epochs = {
+#   gateway = 0, orchestrator = 0, agent = 0, snapshot = 0
+# }
+# gateway_host_key_rotation_epoch = 0
 # agent_count         = 2
 # agent_rootfs_cache_bytes = 8589934592 # 8 GiB hard LRU budget
 # notification_email  = "operator@example.com"

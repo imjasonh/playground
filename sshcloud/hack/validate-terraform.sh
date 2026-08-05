@@ -10,9 +10,14 @@ need=(
   modules/project-services/main.tf
   scripts/gateway.sh.tftpl scripts/orchestrator.sh.tftpl scripts/snapshotd.sh.tftpl scripts/agent.sh.tftpl
   scripts/run-container.sh.tftpl scripts/ssh-client.sh scripts/deploy-fortune.sh
-  scripts/verify-fortune.sh terraform.tfvars.example README.md
+  scripts/verify-fortune.sh terraform.tfvars.example backend.gcs.hcl.example README.md
   ../hack/drain-agent-host.sh
+  ../hack/inspect-control-pki.sh
+  ../hack/inspect-rotation-state.sh
+  ../hack/inspect-terraform-backend.sh
+  ../hack/validate-key-rotation.sh
   ../hack/preflight-gcp.sh
+  ../docs/key-rotation-runbook.md
 )
 for f in "${need[@]}"; do
   if [[ ! -f "$TF/$f" ]]; then
@@ -168,6 +173,7 @@ bash -n "$TF/scripts/deploy-fortune.sh"
 bash -n "$TF/scripts/verify-fortune.sh"
 bash -n "$ROOT/hack/drain-agent-host.sh"
 bash -n "$ROOT/hack/preflight-gcp.sh"
+bash "$ROOT/hack/validate-key-rotation.sh"
 
 smoke_bin="$(mktemp -d)"
 trap 'rm -rf "$smoke_bin"' EXIT

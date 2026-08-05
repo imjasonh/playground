@@ -9,10 +9,10 @@ Design: [`docs/ssh-app-cloud-design.md`](../docs/ssh-app-cloud-design.md).
 > CIDR-restricted GCP smoke tests. It is not ready for public self-service.
 > The production host path now uses a root jailer helper plus a separate
 > CAP_NET_ADMIN-only TAP helper. Control APIs now require workload identity plus
-> mTLS, but Terraform-held initial control leaf keys, optional audited egress,
-> hard-host-loss policy, and broader OCI runtime compatibility remain open. The
-> helper units and the snapshotd/KMS/IAM boundary still need an operator-owned
-> GCP substrate smoke test.
+> mTLS, but Terraform still holds every SSH/control private key, optional audited
+> egress, hard-host-loss policy, and broader OCI runtime compatibility remain
+> open. The helper units and the snapshotd/KMS/IAM boundary still need an
+> operator-owned GCP substrate smoke test.
 
 ## Layout
 
@@ -52,6 +52,11 @@ particular, observability never reads or records SSH channel stdin/stdout/stderr
 commands, environment, signals, or replay bytes. The bounded migration input
 queue remains an in-memory transport-continuity primitive and is explicitly
 outside observability.
+
+Key/certificate/identity rotation and Terraform-state handling:
+[`docs/key-rotation-runbook.md`](docs/key-rotation-runbook.md). The runbook and
+inspectors do not constitute a completed production drill or external key
+management; Terraform state still contains the generated private keys.
 
 ## Build & test
 
@@ -353,6 +358,9 @@ Implemented and covered at package/integration level:
 - [x] Liveness/readiness and correlated placement/host diagnostics
 - [x] Privacy-bounded structured platform/app logging, strict app telemetry,
       aggregate metrics, GCP routing/retention/dashboard/alerts, and rootfs/journal bounds
+- [x] Manual key/identity/state rotation runbook, non-secret inspection
+      tooling, retained Secret Manager rollback versions, and explicit
+      control-CA/leaf rotation epochs
 
 Required before public/self-service use:
 
@@ -363,8 +371,11 @@ Required before public/self-service use:
       auto-healing after a hard failure remains abrupt)
 - [ ] Long-term snapshot quota/accounting and lifecycle cleanup of superseded
       immutable encrypted versions
-- [ ] External key management, encrypted remote Terraform state, rotation drills
-- [ ] Move Terraform-held control leaf keys to an external issuer/rotation path
+- [ ] External key management for every Terraform-held SSH/control private key
+- [ ] Per-environment migration to and access review of the required protected
+      GCS Terraform backend (configuration alone is not a completed migration)
+- [ ] Execute and record operator-owned CA/leaf/host/user-CA/KMS/state rotation
+      and recovery drills; the checked-in procedures are not proof
 - [ ] Manual first apply/drain/rollout validation in an operator-owned environment
       (including jailer mount/cgroup-v2 behavior, systemd capability bounding,
       TAP ownership, snapshotd mTLS/token claims, Firestore fences, KMS/CMEK,

@@ -12,7 +12,12 @@
 > its production safety boundary. Public ingress remains closed by default.
 > The jailer/helper host boundary and workload-authenticated control plane are
 > now implemented, but egress policy, distributed deploy-state CAS, and operator-owned GCP
-> verification remain launch blockers—not optional polish.
+> verification remain launch blockers—not optional polish. Manual rotation
+> procedures and non-secret inspectors now exist, but Terraform still contains
+> the SSH/control private keys and no production rotation drill has run.
+
+Key/certificate/identity/KMS rotation and Terraform-state operations:
+[`sshcloud/docs/key-rotation-runbook.md`](../sshcloud/docs/key-rotation-runbook.md).
 
 ### Review constraints
 
@@ -581,14 +586,16 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
   file per decision. Missing/corrupt configured policy fails closed.
 - Every production control request uses TLS 1.3 mutual authentication and a
   freshly fetched, audience-bound GCE metadata identity token. Servers verify
-  the Google signature and standard claims, a five-minute maximum token age,
-  exact service-account email, and all full-format Compute Engine claims
+  the Google signature and standard claims, a 65-minute maximum token age plus
+  clock skew (metadata may return a cached still-valid token), exact
+  service-account email, and all full-format Compute Engine claims
   (including exact project ID/number). A static `Authorization: Bearer …`
   value has no authority.
 - Control certificate URI identities are exact:
   `spiffe://sshcloud.internal/control/gateway`,
-  `spiffe://sshcloud.internal/control/orchestrator`, and
-  `spiffe://sshcloud.internal/control/agent`. A role leaf proves the TLS role;
+  `spiffe://sshcloud.internal/control/orchestrator`,
+  `spiffe://sshcloud.internal/control/agent`, and
+  `spiffe://sshcloud.internal/control/snapshot`. A role leaf proves the TLS role;
   it is not, by itself, workload identity—the GCE token is independently
   required.
 - Authorization is deliberately narrow:
@@ -597,6 +604,7 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
   |---|---|---|
   | Orchestrator `POST /v1/ensure`, `/v1/stop`, `/v1/no-idle` | gateway URI + exact gateway service account | `https://control.sshcloud.internal/orchestrator/gateway` |
   | Agent `/v1/*` | orchestrator URI + exact orchestrator service account | `https://control.sshcloud.internal/agent` |
+  | Snapshotd `/v1/snapshots/*` | agent URI + exact agent service account and instance claims | `https://control.sshcloud.internal/snapshot` |
   | Gateway migration `/v1/sessions/{freeze,thaw,abort}` | orchestrator URI + exact orchestrator service account | `https://control.sshcloud.internal/gateway/migration` |
   | Orchestrator admin routes (hosts, drain, migrate, placement, diagnostics) | orchestrator URI + exact orchestrator service account, over the root-owned local Unix socket only | `https://control.sshcloud.internal/orchestrator/admin` |
 
@@ -606,7 +614,9 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
   `livez`/`readyz`/`healthz`, with no diagnostics.
 - mTLS files reload on every new handshake. Two CA files are trusted
   concurrently so leaves can move between A/B signing slots before retiring
-  the old CA.
+  the old CA. Fixed A/B trust positions plus explicit per-slot/per-role epochs
+  make manual replacement deterministic without taint; superseded Secret
+  Manager versions are retained for operator cleanup.
 - Placement changes use Firestore transactions with revisioned leases,
   renewal heartbeats, expiry takeover, and a reconciler for abandoned leases.
 - Rolling Firestore counters enforce join IP/prefix, deploy, and wake limits;
@@ -646,10 +656,11 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
   orchestrator reaches its separate health port. The snapshot bucket uses a
   Cloud KMS CMEK, while per-package streaming keysets are independently wrapped
   by the KEK.
-- Still open: optional egress allowlist and key rotation out of Terraform
-  state. The initial role leaf keys are still Terraform-generated and therefore
-  remain in state; this is a rotation/state-compromise risk, not a final
-  workload-identity design. OCI→rootfs on agents: `internal/ocirootfs` + Ensure
+- Still open: optional egress allowlist and key issuance outside Terraform
+  state. The gateway host key, platform user CA, both control CAs, every role
+  leaf, and optional demo key are Terraform-generated and remain in state;
+  Secret Manager distribution plus a manual runbook is not external key
+  management. OCI→rootfs on agents: `internal/ocirootfs` + Ensure
   `"image"` hook + `guestinit` PID 1 from image config; deploy cutover pre-boots
   the new gen with that image.
 - GCP Ops Agent on every role, 30-day platform and seven-day app log buckets,
@@ -778,15 +789,17 @@ user/app/generation/run/session labels.
 8. ~~**Internal API auth**~~ — TLS 1.3 mTLS role URIs plus audience-bound,
    full-claim GCE service-account identity tokens are enforced on every
    production control route. Terraform initializes two CA slots and role
-   leaves; moving leaf issuance/private keys out of Terraform remains a
-   separate secret-rotation task.
+   leaves; deterministic manual epochs and a staged runbook now exist, but
+   moving CA/leaf issuance and private keys out of Terraform remains open.
 9. ~~**Repo layout**~~ — **`sshcloud/`** single Go module (`cmd/{gateway,orchestrator,agent}`, `internal/…`, `images/fortune`, `terraform/`).
 10. **Threat model** — snapshot confidentiality/isolation now uses snapshotd,
     exact-instance operation fences, Tink envelope encryption, KMS AAD, and
     bucket CMEK. Tenant breakout, CA theft, superseded-version lifecycle, and
     operational KMS rotation remain open. A future KEK/CMEK rotation affects
     new writes; old key versions must remain enabled until their packages and
-    objects have expired. No rotation schedule or drill is configured here.
+    objects have expired. The operator runbook documents safe ordering, but no
+    automatic schedule, envelope rewrap/object-rewrite path, or completed GCP
+    drill is configured here.
 11. **Hub footgun UX** — deploy-time warnings / `~/.ssh/config` docs when local
     username collides with an app name (see §3).  
 12. **Deploy promote/rollback UX** — when to add explicit blue/green beyond
