@@ -245,7 +245,7 @@ func (c *Controller) Deploy(ctx context.Context, req Request) (Result, error) {
 		app.SessionStrategy = strategy
 		app.PendingGen, app.PendingImage, app.PendingTier, app.PendingStrategy = "", "", "", ""
 		app.PendingSinceUnix = 0
-		if retiring != "" {
+		if retiring != "" || !isNewApp {
 			app.RetiringGens = appendUnique(app.RetiringGens, retiring)
 		}
 		if err := c.Store.UpsertApp(ctx, *app); err != nil {
