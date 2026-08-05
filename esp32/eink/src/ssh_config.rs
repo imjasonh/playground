@@ -26,8 +26,15 @@ pub struct SshConfig {
 
 impl SshConfig {
     pub fn load(partition: EspDefaultNvsPartition) -> Result<Option<Self>> {
-        let nvs = EspNvs::new(partition, NAMESPACE, false)
-            .map_err(|e| anyhow!("open NVS namespace {NAMESPACE}: {e:?}"))?;
+        let nvs = match EspNvs::new(partition, NAMESPACE, false) {
+            Ok(nvs) => nvs,
+            Err(error) if error.code() == esp_idf_svc::sys::ESP_ERR_NVS_NOT_FOUND as i32 => {
+                return Ok(None);
+            }
+            Err(error) => {
+                return Err(anyhow!("open NVS namespace {NAMESPACE}: {error:?}"));
+            }
+        };
         let host = read_str(&nvs, NAMESPACE, HOST, 256)?;
         let username = read_str(&nvs, NAMESPACE, USERNAME, 96)?;
         let command = read_str(&nvs, NAMESPACE, COMMAND, 512)?;
