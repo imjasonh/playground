@@ -98,7 +98,7 @@ build: ensure-python-shim $(SDKCONFIG_DEFAULTS)
 	# Dependabot's runner doesn't have the esp toolchain installed and
 	# `cargo update` chokes on the override file. Host-side tools have
 	# their own `rust-toolchain.toml` pinning stable.
-	ESP_IDF_SDKCONFIG_DEFAULTS=$(SDKCONFIG_DEFAULTS) \
+	ESP_IDF_SDKCONFIG_DEFAULTS=$(CURDIR)/$(SDKCONFIG_DEFAULTS) \
 	    cargo +esp build --release --package $(PACKAGE) --target-dir $(TARGET_DIR)
 
 # sdkconfig.defaults is generated from the .in template so we can substitute
