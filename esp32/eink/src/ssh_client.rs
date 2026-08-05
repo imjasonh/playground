@@ -18,6 +18,7 @@ const SESSION_TIMEOUT: Duration = Duration::from_secs(30);
 const PACKET_BUFFER: usize = 4096;
 const NETWORK_BUFFER: usize = 1024;
 const CHANNEL_BUFFER: usize = 1024;
+const MAX_OUTPUT_BYTES: usize = 64 * 1024;
 
 enum ProgressAction {
     None,
@@ -48,6 +49,7 @@ pub fn connect_display_disconnect(
     let mut channel: Option<ChanHandle> = None;
     let mut authenticated = false;
     let mut exit_status = None;
+    let mut output_bytes = 0_usize;
     let deadline = Instant::now() + SESSION_TIMEOUT;
 
     while Instant::now() < deadline {
@@ -215,9 +217,19 @@ pub fn connect_display_disconnect(
             let mut output = [0_u8; CHANNEL_BUFFER];
             for data_type in [ChanData::Normal, ChanData::Stderr] {
                 loop {
+                    if Instant::now() >= deadline {
+                        bail!(
+                            "SSH session timed out after {} seconds",
+                            SESSION_TIMEOUT.as_secs()
+                        );
+                    }
                     match runner.read_channel(active_channel, data_type, &mut output) {
                         Ok(0) => break,
                         Ok(read) => {
+                            output_bytes = output_bytes.saturating_add(read);
+                            if output_bytes > MAX_OUTPUT_BYTES {
+                                bail!("SSH output exceeded {} byte limit", MAX_OUTPUT_BYTES);
+                            }
                             terminal.feed(&output[..read]);
                             did_work = true;
                         }

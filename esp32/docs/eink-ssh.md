@@ -105,7 +105,9 @@ restrict,command="/usr/local/bin/eink-status" ssh-ed25519 AAAA... esp32-eink
 The client never requests forwarding, an agent, X11, or a subsystem. A pinned
 host key prevents server impersonation, but it cannot make a legitimately
 compromised server trustworthy; fixed packet/output buffers and a 30-second
-session deadline limit that server primarily to denial of service.
+session deadline limit that server primarily to denial of service. The client
+also aborts after 64 KiB of stdout/stderr, including when a server continuously
+streams data.
 
 The private seed is plaintext in NVS for this prototype. `make provision` writes
 a complete NVS image and therefore replaces a generated key; after
