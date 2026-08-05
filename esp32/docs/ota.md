@@ -86,7 +86,7 @@ ssh     host            str    target SSH hostname (provisioned)
 ssh     port            u16    target port, normally 22 (provisioned)
 ssh     username        str    remote account (provisioned)
 ssh     host_key        blob   pinned 32-byte Ed25519 server key (provisioned)
-ssh     command         str    command typed into the 80×25 PTY (provisioned)
+ssh     command         str    command executed by the read-only client (provisioned)
 ssh     client_seed     blob   generated 32-byte Ed25519 seed (runtime, e-ink)
 
 ota     last_digest     str    last successfully-applied layer digest (runtime)
@@ -131,13 +131,12 @@ fulcio_root_pem = "trust/fulcio_root.pem"
 fulcio_intermediate_pem = "trust/fulcio_intermediate.pem"
 
 [[trust.identities]]
-identity = "imjasonh@gmail.com"
-issuer = "https://accounts.google.com"
-
-[[trust.identities]]
 identity = "https://github.com/imjasonh/playground/.github/workflows/esp32-publish.yml@refs/heads/main"
 issuer = "https://token.actions.githubusercontent.com"
 ```
+
+Add a developer email/issuer identity only when manual publishing is required;
+the main-branch workflow is the least-privilege default.
 
 Lose this file = lose your secrets. Keep a copy in a password manager.
 
@@ -184,29 +183,34 @@ creds. Run `make provision` to fix.
    `repository:<repo>:pull`, get a Bearer token.
 3. `GET /v2/<repo>/manifests/<tag>` with that token. Compute SHA-256
    of the response body — that's the manifest digest cosign signed.
-4. Parse manifest. Check that `layers[0].mediaType` is
-   `application/vnd.esp32.firmware.bin`. Compare layer digest to
-   `last_digest` from NVS.
+4. Parse manifest. Require exactly one
+   `application/vnd.esp32.firmware.bin` layer, a valid SHA-256 descriptor,
+   and a nonzero size no larger than ESP-IDF's inactive OTA partition.
+   Compare its digest to `last_digest` from NVS.
    - Match → `NoChange`, return to (1).
    - Different → continue.
 5. **Verify the signature** (see [Device verification](#device-verification-srcsigrs)
    below). On failure → log, increment `consecutive_failures`, return
    to (1) with exponential backoff (`60 s × 2^failures`, capped at 1 h).
-6. `GET /v2/<repo>/blobs/<layer-digest>`. Stream the body chunk by
+6. Fetch and digest-check the signed manifest's small config blob. Require its
+   `app_id`, `target_chip`, binary size, and binary SHA to match this firmware
+   and its layer descriptor.
+7. `GET /v2/<repo>/blobs/<layer-digest>`. Stream the body chunk by
    chunk into the inactive OTA partition via `EspOta::write()`,
    updating an SHA-256 hasher in parallel.
-7. After last byte: confirm `(actual size, actual SHA)` matches the
+8. After last byte: confirm `(actual size, actual SHA)` matches the
    manifest descriptor. On any mismatch → `EspOta::abort()`, fail
    loudly. On match → `EspOta::complete()` (sets boot partition).
-8. Persist `pending_digest = layer.digest` to NVS.
-9. `esp_restart()`.
+9. Persist `pending_digest = layer.digest` to NVS.
+10. `esp_restart()`.
 
 ### Post-reboot validation (firmware, `src/main.rs`)
 
 1. Early in `main()`, call `is_pending_verify()` →
    reads `esp_ota_get_state_partition()`.
-2. If `ESP_OTA_IMG_PENDING_VERIFY`, run the bringup checks:
-   Wi-Fi connect, then HTTPS GETs to ipify and wttr.
+2. If `ESP_OTA_IMG_PENDING_VERIFY`, run the application bringup checks. Both
+   applications connect Wi-Fi and start SNTP; e-ink additionally completes a
+   full panel refresh.
 3. On bringup success, call
    `esp_ota_mark_app_valid_cancel_rollback()` and promote
    `pending_digest → last_digest` in NVS.
@@ -307,10 +311,10 @@ publisher push. Cosign:
 | Manual `make publish` | `https://accounts.google.com` | `rfc822Name` (developer's email) |
 | GHA workflow on push to main | `https://token.actions.githubusercontent.com` | `URI` (`https://github.com/imjasonh/playground/.github/workflows/esp32-publish.yml@refs/heads/main`) |
 
-Both must be present in `trust/identities` (NVS) for the device to
-accept their signatures. Updating the allowlist requires editing
-`provisioning.toml` and re-running `make provision`; OTA cannot grant
-new signing identities.
+Only identities explicitly present in `trust/identities` (NVS) are accepted.
+The template trusts the GHA workflow only; add the manual identity only when
+needed. Updating the allowlist requires editing `provisioning.toml` and
+re-running `make provision`; OTA cannot grant new signing identities.
 
 ### GHA workflow specifics
 

@@ -8,7 +8,7 @@ use esp_idf_svc::{
     wifi::{AuthMethod, BlockingWifi, ClientConfiguration, Configuration as WifiConfig, EspWifi},
 };
 
-use esp32_blinky::{gcp_auth, nvs_util, ota, trust};
+use esp32_blinky::{gcp_auth, nvs_util, ota, time_sync, trust};
 use esp32_eink::terminal::TerminalBuffer;
 
 mod display;
@@ -43,6 +43,7 @@ fn main() -> Result<()> {
     connect_wifi(&mut wifi, &ssid, &pass)?;
     let ip = wifi.wifi().sta_netif().get_ip_info()?.ip;
     tracing::info!(%ip, "wifi connected");
+    let _sntp = time_sync::start_and_wait(Duration::from_secs(15))?;
 
     // Generate only after WiFi starts so ESP-IDF's hardware RNG has its
     // strongest entropy source enabled.
@@ -102,7 +103,17 @@ fn main() -> Result<()> {
     std::thread::Builder::new()
         .name("signed-ota".into())
         .stack_size(48 * 1024)
-        .spawn(move || ota::run(nvs, FW_VERSION, ota_trust, EINK_OTA_REPO, Some(short_https)))
+        .spawn(move || {
+            ota::run(
+                nvs,
+                FW_VERSION,
+                ota_trust,
+                EINK_OTA_REPO,
+                "eink",
+                "esp32",
+                Some(short_https),
+            )
+        })
         .expect("spawn signed OTA thread");
 
     tracing::info!("eink: panel asleep; signed OTA loop running");
@@ -117,7 +128,7 @@ fn run_ssh_on_worker(
     terminal: &mut TerminalBuffer,
 ) -> Result<()> {
     // Sunset's borrowed packet buffers, network buffer, and channel buffer
-    // total roughly 13 KiB before its protocol state and call frames. Keep
+    // total roughly 10 KiB before its protocol state and call frames. Keep
     // them off the 10 KiB ESP-IDF main task stack. This scoped worker is
     // joined before the 48 KiB display framebuffer is allocated, and OTA
     // starts only after the display refresh, so the large allocations do not

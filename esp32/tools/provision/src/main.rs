@@ -110,6 +110,25 @@ fn default_ssh_command() -> String {
     "uptime; uname -a".to_string()
 }
 
+fn validate_ssh_config(ssh: &SshProvisioningConfig) -> Result<()> {
+    if ssh.host.trim().is_empty() || ssh.username.trim().is_empty() {
+        bail!("[ssh] host and username must not be empty");
+    }
+    if ssh.host.len() > 255 {
+        bail!("[ssh] host exceeds the 255-byte NVS limit");
+    }
+    if ssh.username.len() > 31 {
+        bail!("[ssh] username exceeds Sunset's 31-byte limit");
+    }
+    if ssh.port == 0 {
+        bail!("[ssh] port must be greater than zero");
+    }
+    if ssh.command.trim().is_empty() || ssh.command.len() > 511 {
+        bail!("[ssh] command must contain 1..=511 bytes");
+    }
+    Ok(())
+}
+
 #[derive(Deserialize, Debug)]
 struct TrustConfig {
     identities: Vec<TrustedIdentity>,
@@ -320,9 +339,7 @@ fn main() -> Result<()> {
     // Store only the raw 32-byte Ed25519 host key in NVS. Parsing the
     // operator-friendly OpenSSH line here keeps the firmware parser small.
     let ssh_host_key_path = if let Some(ssh) = &cfg.ssh {
-        if ssh.host.trim().is_empty() || ssh.username.trim().is_empty() {
-            bail!("[ssh] host and username must not be empty");
-        }
+        validate_ssh_config(ssh)?;
         let host_key = parse_ed25519_public_key(&ssh.host_key)
             .context("parse [ssh].host_key as an OpenSSH Ed25519 public key")?;
         let path = target_dir.join("nvs-ssh-host-key.bin");
@@ -545,5 +562,18 @@ mod tests {
     fn rejects_truncated_host_key() {
         let error = parse_ed25519_public_key("ssh-ed25519 AAAA").unwrap_err();
         assert!(error.to_string().contains("truncated"));
+    }
+
+    #[test]
+    fn rejects_ssh_username_larger_than_sunset_limit() {
+        let config = SshProvisioningConfig {
+            host: "server.example.com".into(),
+            port: 22,
+            username: "x".repeat(32),
+            host_key: ED25519_KEY.into(),
+            command: "uptime".into(),
+        };
+        let error = validate_ssh_config(&config).unwrap_err();
+        assert!(error.to_string().contains("31-byte"));
     }
 }

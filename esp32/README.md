@@ -17,7 +17,7 @@ Apache-2.0 license.
 - `esp32-blinky` (workspace root): the original OTA + observability firmware.
 - `esp32-eink` (`eink/`): connects over WiFi, generates and persists an
   Ed25519 key, verifies a provisioned Ed25519 server host key, requests an
-  80×25 PTY, types a provisioned diagnostic command, displays the result, and
+  SSH exec channel, displays the command's output in an 80×25 buffer, and
   disconnects. Its signed OTA stream is `ghcr.io/imjasonh/esp32-eink:latest`.
 
 Both applications share the same OTA verifier and trust implementation from

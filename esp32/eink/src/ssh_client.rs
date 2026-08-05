@@ -6,18 +6,17 @@ use std::{
 
 use anyhow::{Context, Result, anyhow, bail};
 use sunset::{
-    ChanData, ChanHandle, CliEvent, Client, Error as SunsetError, Event, Pty, PubKey, Runner,
-    SignKey,
+    ChanData, ChanHandle, CliEvent, Client, Error as SunsetError, Event, PubKey, Runner, SignKey,
 };
 
-use esp32_eink::terminal::{COLS, ROWS, TerminalBuffer};
+use esp32_eink::terminal::TerminalBuffer;
 
 use crate::ssh_config::{SshConfig, host_key_fingerprint};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const SESSION_TIMEOUT: Duration = Duration::from_secs(30);
 const PACKET_BUFFER: usize = 4096;
-const NETWORK_BUFFER: usize = 4096;
+const NETWORK_BUFFER: usize = 1024;
 const CHANNEL_BUFFER: usize = 1024;
 
 enum ProgressAction {
@@ -47,9 +46,6 @@ pub fn connect_display_disconnect(
     let mut network_end = 0;
     let mut socket_eof = false;
     let mut channel: Option<ChanHandle> = None;
-    let mut shell_open = false;
-    let command = format!("{}\r\nexit\r\n", cfg.command);
-    let mut command_offset = 0;
     let mut authenticated = false;
     let mut exit_status = None;
     let deadline = Instant::now() + SESSION_TIMEOUT;
@@ -170,23 +166,9 @@ pub fn connect_display_disconnect(
                     ProgressAction::OpenSession
                 }
                 Event::Cli(CliEvent::SessionOpened(mut opener)) => {
-                    let pty = Pty {
-                        term: "xterm"
-                            .try_into()
-                            .map_err(|_| anyhow!("xterm PTY name is too long"))?,
-                        cols: COLS as u32,
-                        rows: ROWS as u32,
-                        width: 0,
-                        height: 0,
-                        modes: Default::default(),
-                    };
                     opener
-                        .pty(pty)
-                        .map_err(|error| anyhow!("request 80x25 PTY: {error}"))?;
-                    opener
-                        .shell()
-                        .map_err(|error| anyhow!("request SSH shell: {error}"))?;
-                    shell_open = true;
+                        .exec(&cfg.command)
+                        .map_err(|error| anyhow!("execute configured SSH command: {error}"))?;
                     terminal.clear();
                     ProgressAction::None
                 }
@@ -231,30 +213,17 @@ pub fn connect_display_disconnect(
 
         if let Some(active_channel) = channel.as_ref() {
             let mut output = [0_u8; CHANNEL_BUFFER];
-            loop {
-                match runner.read_channel(active_channel, ChanData::Normal, &mut output) {
-                    Ok(0) => break,
-                    Ok(read) => {
-                        terminal.feed(&output[..read]);
-                        did_work = true;
+            for data_type in [ChanData::Normal, ChanData::Stderr] {
+                loop {
+                    match runner.read_channel(active_channel, data_type, &mut output) {
+                        Ok(0) => break,
+                        Ok(read) => {
+                            terminal.feed(&output[..read]);
+                            did_work = true;
+                        }
+                        Err(SunsetError::ChannelEOF) => break,
+                        Err(error) => return Err(anyhow!("read SSH channel: {error}")),
                     }
-                    Err(SunsetError::ChannelEOF) => break,
-                    Err(error) => return Err(anyhow!("read SSH channel: {error}")),
-                }
-            }
-
-            if shell_open && command_offset < command.len() {
-                match runner.write_channel(
-                    active_channel,
-                    ChanData::Normal,
-                    &command.as_bytes()[command_offset..],
-                ) {
-                    Ok(written) => {
-                        command_offset += written;
-                        did_work |= written > 0;
-                    }
-                    Err(SunsetError::ChannelEOF) => {}
-                    Err(error) => return Err(anyhow!("write SSH command: {error}")),
                 }
             }
 

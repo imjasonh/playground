@@ -11,4 +11,5 @@ pub mod metrics;
 pub mod nvs_util;
 pub mod ota;
 pub mod sig;
+pub mod time_sync;
 pub mod trust;

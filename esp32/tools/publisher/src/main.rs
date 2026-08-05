@@ -16,6 +16,7 @@ use time::OffsetDateTime;
 
 const CONFIG_MEDIA_TYPE: &str = "application/vnd.esp32.firmware.v1+json";
 const LAYER_MEDIA_TYPE: &str = "application/vnd.esp32.firmware.bin";
+const DEFAULT_MAX_BIN_SIZE: u64 = 0x1F0000;
 
 #[derive(Parser)]
 #[command(
@@ -66,6 +67,10 @@ struct PushArgs {
     /// Firmware application identifier, recorded in artifact metadata.
     #[arg(long)]
     app_id: String,
+
+    /// Refuse to publish a binary larger than one OTA partition.
+    #[arg(long, default_value_t = DEFAULT_MAX_BIN_SIZE)]
+    max_bin_size: u64,
 
     /// IDF version, recorded in the artifact's config blob.
     #[arg(long, default_value = "v5.2.2")]
@@ -216,6 +221,7 @@ async fn push(args: PushArgs) -> Result<()> {
         .await
         .with_context(|| format!("read {}", args.bin.display()))?;
     let bin_size = bin_bytes.len() as u64;
+    validate_bin_size(bin_size, args.max_bin_size)?;
     let bin_sha256 = hex::encode(Sha256::digest(&bin_bytes));
     tracing::info!(
         path = %args.bin.display(),
@@ -317,6 +323,20 @@ async fn push(args: PushArgs) -> Result<()> {
     Ok(())
 }
 
+fn validate_bin_size(size: u64, max_size: u64) -> Result<()> {
+    if size == 0 {
+        return Err(anyhow!("refusing to publish an empty firmware image"));
+    }
+    if size > max_size {
+        return Err(anyhow!(
+            "firmware is {} bytes, exceeding the {} byte OTA slot limit",
+            size,
+            max_size,
+        ));
+    }
+    Ok(())
+}
+
 /// Extract `sha256:abc...` from a manifest URL like
 /// `https://ghcr.io/v2/owner/name/manifests/sha256:abc...`.
 fn digest_from_manifest_url(url: &str) -> Option<&str> {
@@ -368,4 +388,16 @@ fn registry_auth(repo: &str) -> Result<RegistryAuth> {
         .ok_or_else(|| anyhow!("can't infer github username from repo {}", repo))?
         .to_string();
     Ok(RegistryAuth::Basic(username, token))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_empty_or_oversized_firmware() {
+        assert!(validate_bin_size(0, 100).is_err());
+        assert!(validate_bin_size(101, 100).is_err());
+        assert!(validate_bin_size(100, 100).is_ok());
+    }
 }

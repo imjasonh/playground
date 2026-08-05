@@ -9,7 +9,7 @@ use std::ffi::CStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use esp32_blinky::{cloud_log, gcp_auth, metrics, nvs_util, ota, trust};
+use esp32_blinky::{cloud_log, gcp_auth, metrics, nvs_util, ota, time_sync, trust};
 
 // NVS schema (must match what tools/provision/ writes):
 //   namespace=wifi   key=ssid (str), key=pass (str)
@@ -102,35 +102,10 @@ fn main() -> Result<()> {
         "wifi connected",
     );
 
-    // SNTP is only needed for cloud logging — the service-account JWT
-    // auth requires real wall-clock time for `iat`/`exp` (Google rejects
-    // tokens minted from a 1970 clock). Devices without `[gcp]` skip
-    // the wait and boot faster. Cloud Logging entry timestamps
-    // themselves are assigned server-side by GCP if we omit them.
-    let _sntp = if gcp.is_some() {
-        let sntp = esp_idf_svc::sntp::EspSntp::new_default()?;
-        let started = std::time::Instant::now();
-        loop {
-            use esp_idf_svc::sntp::SyncStatus;
-            if sntp.get_sync_status() == SyncStatus::Completed {
-                tracing::info!(
-                    elapsed_ms = started.elapsed().as_millis() as u64,
-                    "ntp: synced",
-                );
-                break;
-            }
-            if started.elapsed() > Duration::from_secs(15) {
-                tracing::warn!(
-                    "ntp: not synced after 15s, cloud logging will fail until clock catches up",
-                );
-                break;
-            }
-            std::thread::sleep(Duration::from_millis(200));
-        }
-        Some(sntp)
-    } else {
-        None
-    };
+    // Fulcio certificate validity and optional GCP JWTs both require a real
+    // wall clock. Keep the handle alive so OTA never silently falls back to
+    // accepting certificates without a validity check.
+    let _sntp = time_sync::start_and_wait(Duration::from_secs(15))?;
 
     if pending_verify {
         match ota::mark_valid_after_pending_verify_passed(nvs.clone()) {
@@ -165,6 +140,8 @@ fn main() -> Result<()> {
                 FW_VERSION,
                 ota_trust,
                 ota::DEFAULT_REPO,
+                "blinky",
+                "esp32",
                 Some(ota_lock),
             )
         })

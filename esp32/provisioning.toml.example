@@ -18,15 +18,15 @@ fulcio_intermediate_pem = "trust/fulcio_intermediate.pem"
 # leaf cert — an rfc822Name (email) for OIDC issuers like Google, or a
 # URI for workflow-based issuers like GitHub Actions.
 
-# Manual `make publish` from a developer machine.
-[[trust.identities]]
-identity = "imjasonh@gmail.com"
-issuer = "https://accounts.google.com"
-
-# Automated publishes from the GHA workflow on push to main.
+# Trust only automated publishes from the reviewed main-branch workflow by
+# default. If manual `make publish` is genuinely needed, add the developer's
+# email + OIDC issuer as a second explicit identity.
 [[trust.identities]]
 identity = "https://github.com/imjasonh/playground/.github/workflows/esp32-publish.yml@refs/heads/main"
 issuer = "https://token.actions.githubusercontent.com"
+
+# The esp32-eink GHCR package must be Public so the device can obtain an
+# anonymous pull token. The publish workflow verifies this after uploading.
 
 # Required by the e-ink SSH firmware. Obtain the complete host key with:
 #

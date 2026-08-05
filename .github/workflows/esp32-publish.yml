@@ -63,3 +63,16 @@ jobs:
         env:
           COSIGN_REGISTRY_USERNAME: ${{ github.actor }}
         run: make APP=eink publish
+
+      - name: Verify devices can pull anonymously
+        run: |
+          token=$(
+            curl -fsS \
+              'https://ghcr.io/token?service=ghcr.io&scope=repository:imjasonh/esp32-eink:pull' |
+              python3 -c 'import json, sys; print(json.load(sys.stdin)["token"])'
+          )
+          curl -fsS \
+            -H "Authorization: Bearer ${token}" \
+            -H 'Accept: application/vnd.oci.image.manifest.v1+json' \
+            https://ghcr.io/v2/imjasonh/esp32-eink/manifests/latest \
+            >/dev/null

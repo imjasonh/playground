@@ -1,9 +1,9 @@
 # 7.5-inch e-ink SSH client
 
 The `eink/` firmware is a single-purpose SSH display client. It has no local
-shell: ESP-IDF firmware connects to WiFi, opens one authenticated SSH session,
-requests an 80×25 PTY, types a configured command, renders the output, closes
-the TCP connection, and puts the panel into deep sleep.
+shell: ESP-IDF firmware connects to WiFi, opens one authenticated SSH exec
+channel, reads the configured command's stdout/stderr into an 80×25 terminal
+buffer, closes the TCP connection, and puts the panel into deep sleep.
 
 ## Hardware
 
@@ -91,9 +91,21 @@ ssh-ed25519 AAAA... esp32-eink
 ```
 
 Append that line to the target account's `~/.ssh/authorized_keys`, then reset
-the ESP32. The next boot authenticates, requests an `xterm` PTY with 80 columns
-and 25 rows, types the configured command followed by `exit`, and displays the
-captured output.
+the ESP32. The next boot authenticates, executes the configured command without
+a PTY, and displays the captured output.
+
+Use a dedicated, low-privilege server account. For stronger containment, pin
+the generated key to a read-only forced command instead of granting a general
+shell:
+
+```text
+restrict,command="/usr/local/bin/eink-status" ssh-ed25519 AAAA... esp32-eink
+```
+
+The client never requests forwarding, an agent, X11, or a subsystem. A pinned
+host key prevents server impersonation, but it cannot make a legitimately
+compromised server trustworthy; fixed packet/output buffers and a 30-second
+session deadline limit that server primarily to denial of service.
 
 The private seed is plaintext in NVS for this prototype. `make provision` writes
 a complete NVS image and therefore replaces a generated key; after
@@ -120,7 +132,24 @@ intentionally not a complete xterm implementation yet.
 The e-ink image polls `ghcr.io/imjasonh/esp32-eink:latest`. The playground
 publish workflow signs each artifact keylessly, and the device verifies the
 Sigstore certificate chain, signer identity, DSSE signature, and artifact
-digest before writing the inactive OTA slot.
+digest before writing the inactive OTA slot. It also requires the signed OCI
+config to say `app_id=eink` and `target_chip=esp32`, and rejects images larger
+than the actual inactive partition.
+
+GHCR container packages are private by default. After the first publish, set
+the `esp32-eink` package visibility to **Public**. The publish workflow performs
+an anonymous manifest pull and fails until a device can pull it without a
+GitHub credential.
+
+Provisioning must trust this exact keyless-signing identity:
+
+```text
+https://github.com/imjasonh/playground/.github/workflows/esp32-publish.yml@refs/heads/main
+```
+
+SNTP starts on every boot because Fulcio certificate validity is checked
+against the device clock. An unsynchronized clock fails OTA verification
+closed.
 
 An OTA image is marked valid only after both WiFi and a full display refresh
 succeed. A failed display bring-up reboots into the previous slot.

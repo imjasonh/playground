@@ -34,6 +34,7 @@ HOST_TRIPLE := $(shell rustc -vV | sed -n 's/^host: //p')
 # App-only firmware binary (no bootloader / partition table) suitable for
 # pushing as the OTA artifact layer.
 FW_BIN := target/$(APP)-firmware.bin
+OTA_SLOT_BYTES := 2031616
 
 # Generated NVS partition image written by `tools/provision/`.
 NVS_BIN := target/nvs.bin
@@ -69,7 +70,7 @@ export PATH := $(PYTHON_SHIM):$(XTENSA_GCC_BIN):$(PATH)
 export ESP_IDF_TOOLS_INSTALL_DIR := custom:$(CURDIR)/.embuild
 
 .PHONY: help build flash flash-all monitor run clean ensure-python-shim \
-        save-image publish pull-verify check-gh-env \
+        save-image check-image-size publish pull-verify check-gh-env \
         provision provision-build bootstrap
 
 help:
@@ -81,6 +82,7 @@ help:
 	@echo "  make run           Build + flash + monitor"
 	@echo "  make clean         cargo clean"
 	@echo "  make save-image    Convert ELF -> app-only .bin (target/firmware.bin)"
+	@echo "  make check-image-size  Reject firmware that cannot fit an OTA slot"
 	@echo "  make publish       Build, save-image, push OCI artifact to OCI_REPO"
 	@echo "  make pull-verify   Pull from OCI_REPO and check layer matches local .bin"
 	@echo ""
@@ -203,6 +205,14 @@ $(FW_BIN): build
 	espflash save-image --chip esp32 $(BIN) $(FW_BIN)
 	@echo "Wrote $(FW_BIN) ($$(wc -c < $(FW_BIN)) bytes)"
 
+check-image-size: $(FW_BIN)
+	@SIZE=$$(wc -c < $(FW_BIN)); \
+	    echo "$(APP) firmware: $$SIZE bytes; OTA slot: $(OTA_SLOT_BYTES) bytes"; \
+	    test "$$SIZE" -le "$(OTA_SLOT_BYTES)" || { \
+	        echo "ERROR: firmware exceeds OTA slot by $$((SIZE - $(OTA_SLOT_BYTES))) bytes"; \
+	        exit 1; \
+	    }
+
 # Build firmware -> save-image -> push OCI artifact to OCI_REPO. Tags
 # pushed: :latest and :sha-<short>. Requires GH_TOKEN in gh.env.
 #
@@ -216,13 +226,14 @@ $(FW_BIN): build
 # with "Illegal option -o pipefail" before any other command runs. We
 # only need bash for this one recipe; everything else stays on /bin/sh.
 publish: SHELL := /bin/bash
-publish: $(FW_BIN) check-gh-env
+publish: check-image-size check-gh-env
 	@set -eo pipefail; \
 	    . ./gh.env; \
 	    DIGEST=$$(cd tools/publisher && cargo run --release --target $(HOST_TRIPLE) -- push \
 	        --bin $(CURDIR)/$(FW_BIN) \
 	        --repo $(OCI_REPO) \
 	        --app-id $(APP) \
+	        --max-bin-size $(OTA_SLOT_BYTES) \
 	        --source https://github.com/imjasonh/playground \
 	        --git-sha $(GIT_SHA) | grep '^digest:' | head -1 | cut -d' ' -f2); \
 	    test -n "$$DIGEST" || { echo "ERROR: publisher did not emit a 'digest:' line on stdout"; exit 1; }; \
