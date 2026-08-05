@@ -139,8 +139,8 @@ func TestJoinDeployExecArgs(t *testing.T) {
 	}
 
 	out, code = sshExec(t, addr, signer.PublicKey(), clientKey, "fortune", "true")
-	if code != 2 || !strings.Contains(out, "not implemented") {
-		t.Fatalf("app exec must fail explicitly: code=%d out=%q", code, out)
+	if code == 0 || !strings.Contains(out, "not configured") {
+		t.Fatalf("app exec without backend must fail explicitly: code=%d out=%q", code, out)
 	}
 
 	unknownKey := mustKey(t)
