@@ -1,0 +1,25 @@
+[package]
+name = "publisher"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "publisher"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+oci-distribution = { version = "0.11", default-features = false, features = ["rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.11"
+# `hex::encode` to render SHA digests; sha2 0.11's output type
+# (`Array<u8, ...>`) doesn't implement `LowerHex` like `GenericArray`
+# did, so `format!("{:x}", ...)` no longer works.
+hex = "0.4"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "fs"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+time = { version = "0.3", features = ["formatting", "macros"] }

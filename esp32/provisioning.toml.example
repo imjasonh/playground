@@ -1,0 +1,51 @@
+# Provisioning config for `make provision`. Copy to `provisioning.toml`
+# (gitignored) and fill in your values, then `make provision` to write
+# everything to the device's NVS partition over USB.
+
+[wifi]
+ssid = "your-wifi-ssid"
+pass = "your-wifi-password"
+
+[trust]
+# Bundled Sigstore Fulcio root + intermediate CA PEMs. These come from
+# https://github.com/sigstore/root-signing/tree/main/targets and need to
+# be re-fetched + re-provisioned if Sigstore rotates them (rare).
+fulcio_root_pem = "trust/fulcio_root.pem"
+fulcio_intermediate_pem = "trust/fulcio_intermediate.pem"
+
+# Allowlist of (identity, issuer) pairs the OTA verifier accepts as
+# signers of incoming firmware. Identity is the SAN value in the Fulcio
+# leaf cert — an rfc822Name (email) for OIDC issuers like Google, or a
+# URI for workflow-based issuers like GitHub Actions.
+
+# Manual `make publish` from a developer machine.
+[[trust.identities]]
+identity = "imjasonh@gmail.com"
+issuer = "https://accounts.google.com"
+
+# Automated publishes from the GHA workflow on push to main.
+[[trust.identities]]
+identity = "https://github.com/imjasonh/esp32/.github/workflows/publish.yml@refs/heads/main"
+issuer = "https://token.actions.githubusercontent.com"
+
+# Optional. If absent, the device boots with serial-only logging and
+# never tries to talk to GCP. Uncomment + fill in to enable shipping
+# tracing events (app + OTA) to Google Cloud Logging and chip-health
+# metrics (heap, stack, wifi, cpu, uptime, …) to Cloud Monitoring.
+#
+# [gcp]
+# project_id = "my-logs-project"
+# sa_email = "esp32-logger@my-logs-project.iam.gserviceaccount.com"
+# sa_key_id = "abc123..."           # the `private_key_id` field from the SA JSON key
+# sa_key_pem = "gcp-sa-key.pem"     # path to the PKCS#8 RSA private key PEM
+# min_severity = "info"             # trace / debug / info / warn / error
+# metrics_interval_secs = 300       # 0 = metrics off (logs still ship); default 300
+
+# Optional. If absent, OTA loop uses compile-time defaults
+# (ghcr.io/imjasonh/esp32:latest, 60 s poll). Each field is
+# individually optional too — only present ones override.
+#
+# [ota]
+# repo = "ghcr.io/imjasonh/esp32"   # default
+# tag = "latest"                    # default
+# poll_secs = 600                   # default 60; bump for steady-state fleets
