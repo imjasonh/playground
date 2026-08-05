@@ -9,7 +9,7 @@ use std::ffi::CStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use esp32_blinky::{cloud_log, gcp_auth, metrics, nvs_util, ota, time_sync, trust};
+use esp32_blinky::{cloud_log, gcp_auth, metrics, net_coord, nvs_util, ota, time_sync, trust};
 
 // NVS schema (must match what tools/provision/ writes):
 //   namespace=wifi   key=ssid (str), key=pass (str)
@@ -127,7 +127,7 @@ fn main() -> Result<()> {
     // when the [gcp] block is absent we still construct it so OTA's
     // signature can be the same; cloud_log/metrics just won't be there
     // to contend for it.
-    let short_https = gcp_auth::new_short_https_lock();
+    let short_https = net_coord::new_short_https_lock();
 
     let ota_nvs = nvs.clone();
     let ota_trust = trust.clone();

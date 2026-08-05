@@ -130,8 +130,9 @@ pub fn run(
     default_repo: &str,
     expected_app_id: &str,
     expected_target_chip: &str,
-    short_https: Option<crate::gcp_auth::ShortHttpsLock>,
+    short_https: Option<crate::net_coord::ShortHttpsLock>,
 ) -> ! {
+    #[cfg(feature = "observability")]
     crate::metrics::publish_self(&crate::metrics::handles::OTA);
     let mut nvs = match EspNvs::new(nvs_partition, NVS_NAMESPACE, true) {
         Ok(n) => n,
@@ -233,7 +234,7 @@ fn poll_once(
     trust: &crate::trust::TrustConfig,
     expected_app_id: &str,
     expected_target_chip: &str,
-    short_https: Option<&crate::gcp_auth::ShortHttpsLock>,
+    short_https: Option<&crate::net_coord::ShortHttpsLock>,
 ) -> Result<PollOutcome> {
     // Phase 1 — token + manifest. Two short HTTPS calls; serialise
     // against cloud_log + metrics POSTs so we don't pile concurrent
@@ -337,7 +338,7 @@ fn poll_once(
     // concurrent TLS reliably OOMs on this chip. The guard clears the
     // flag on Drop, so a download error via `?` still releases it.
     {
-        let _g = crate::gcp_auth::OtaDownloadGuard::enter();
+        let _g = crate::net_coord::OtaDownloadGuard::enter();
         download_and_apply(&cfg.repo, &layer, &token)?;
     }
 

@@ -18,7 +18,7 @@ embedded-svc = "0.29"
 # of its revision flags; this does not select our panel driver.
 epd-waveshare = { git = "https://github.com/rust-embedded-community/epd-waveshare.git", rev = "8fc19ae69aa7b1243953935dd8b6c076950e6ee7", default-features = false, features = ["graphics", "epd2in13_v3"] }
 esp-idf-svc = "0.52"
-esp32-blinky = { path = ".." }
+esp32-blinky = { path = "..", default-features = false, features = ["firmware"] }
 sha2 = "0.11"
 sunset = { version = "=0.6.0", default-features = false }
 tracing = { version = "0.1", features = ["log-always"] }

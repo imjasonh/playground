@@ -8,7 +8,7 @@ use esp_idf_svc::{
     wifi::{AuthMethod, BlockingWifi, ClientConfiguration, Configuration as WifiConfig, EspWifi},
 };
 
-use esp32_blinky::{gcp_auth, nvs_util, ota, trust};
+use esp32_blinky::{net_coord, nvs_util, ota, trust};
 use esp32_eink::terminal::TerminalBuffer;
 
 mod display;
@@ -98,7 +98,7 @@ fn main() -> Result<()> {
         tracing::info!("ota: WiFi + display bringup passed; image marked valid");
     }
 
-    let short_https = gcp_auth::new_short_https_lock();
+    let short_https = net_coord::new_short_https_lock();
     std::thread::Builder::new()
         .name("signed-ota".into())
         .stack_size(48 * 1024)

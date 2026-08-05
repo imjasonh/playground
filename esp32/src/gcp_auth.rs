@@ -22,72 +22,17 @@ use rsa::pkcs8::DecodePrivateKey;
 use rsa::signature::{SignatureEncoding, Signer};
 use rsa::RsaPrivateKey;
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use std::time::Duration;
 
 use crate::cloud_log::GcpConfig;
+pub use crate::net_coord::{
+    new_short_https_lock, ota_download_in_progress, OtaDownloadGuard, ShortHttpsLock,
+};
 
 /// `module_path!()` for this module — used by cloud_log to filter out
 /// our own tracing events without hardcoding the crate name.
 pub const TARGET: &str = module_path!();
-
-/// Set true while `ota::download_and_apply` is streaming a firmware
-/// blob (the only HTTPS call that *isn't* serialised by
-/// `ShortHttpsLock`). cloud_log + metrics check this before attempting
-/// their own POST and skip the cycle if it's set — their handshake
-/// would otherwise need to fit in heap alongside the held-open
-/// download session, and the second concurrent TLS reliably OOMs even
-/// with the dynamic-buffer + KEEP_PEER_CERT=n knobs.
-///
-/// Skipping is non-lossy for cloud_log (entries stay in the queue and
-/// flush in the next cycle, batched) and costs at most one snapshot
-/// for metrics. Downloads only happen when there's a genuinely new
-/// image, so this pause is rare in steady state.
-pub static OTA_DOWNLOAD_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
-
-/// RAII guard for `OTA_DOWNLOAD_IN_PROGRESS`. Sets on construction,
-/// clears on Drop — so the flag clears even if `download_and_apply`
-/// returns Err via `?`.
-pub struct OtaDownloadGuard;
-
-impl OtaDownloadGuard {
-    pub fn enter() -> Self {
-        OTA_DOWNLOAD_IN_PROGRESS.store(true, Ordering::Release);
-        Self
-    }
-}
-
-impl Drop for OtaDownloadGuard {
-    fn drop(&mut self) {
-        OTA_DOWNLOAD_IN_PROGRESS.store(false, Ordering::Release);
-    }
-}
-
-pub fn ota_download_in_progress() -> bool {
-    OTA_DOWNLOAD_IN_PROGRESS.load(Ordering::Acquire)
-}
-
-/// Serialises short HTTPS calls — cloud_log POSTs, metrics POSTs, OTA
-/// manifest + sig-bundle fetches, and the OAuth2 token mint that any
-/// of them may trigger. Each TLS handshake allocates ~25-35 KB of
-/// mbedtls context (less with `CONFIG_MBEDTLS_DYNAMIC_BUFFER`); three
-/// concurrent handshakes blew our heap budget (`min_free_heap` ~9 KB
-/// before this lock).
-///
-/// Held **at call sites** in the senders, not inside `http_post`
-/// itself — std `Mutex` isn't reentrant, so locking inside `http_post`
-/// would deadlock when `get_or_refresh()` mints a token while the
-/// caller already holds the lock.
-///
-/// `ota::download_and_apply` deliberately does **not** take this lock:
-/// the multi-second blob download must not block per-5-s cloud_log
-/// flushes or per-30-s metrics POSTs.
-pub type ShortHttpsLock = Arc<Mutex<()>>;
-
-pub fn new_short_https_lock() -> ShortHttpsLock {
-    Arc::new(Mutex::new(()))
-}
 
 /// A bearer token cached until ~5 min before expiry.
 struct CachedToken {
