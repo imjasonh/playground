@@ -26,6 +26,12 @@ resource "google_storage_bucket_object" "firecracker" {
   source = var.firecracker_asset_path
 }
 
+resource "google_storage_bucket_object" "jailer" {
+  name   = "jailer-${filesha256(var.jailer_asset_path)}"
+  bucket = google_storage_bucket.assets.name
+  source = var.jailer_asset_path
+}
+
 resource "google_storage_bucket_object" "kernel" {
   name   = "vmlinux-${filesha256(var.kernel_asset_path)}"
   bucket = google_storage_bucket.assets.name

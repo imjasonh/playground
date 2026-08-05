@@ -5,7 +5,8 @@
 # registry inside the test), not as a built-in base rootfs.
 #
 # Requires: /dev/kvm (rw), passwordless sudo for `ip` (TAP), curl, e2fsprogs, Go.
-# Firecracker itself runs as the invoking user (not root).
+# This exercises the explicit direct test runtime; Firecracker itself runs as
+# the invoking user (not root). Terraform production uses the jailer helpers.
 #
 # On GitHub Actions ubuntu-latest:
 #   # udev rule for /dev/kvm (see test.yml)

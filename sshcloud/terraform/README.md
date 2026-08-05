@@ -6,14 +6,15 @@ a nested-virt **host MIG** running the Firecracker agent.
 
 This is a private smoke-test environment, not a production/public module.
 Public SSH is closed by default; explicitly allow only an operator/Terraform
-runner `/32` while the VMM jailer and workload identity remain unfinished.
+runner `/32` while workload identity and the first operator-owned validation of
+the new jailer/helper boundary remain unfinished.
 
 ## Layout
 
 | File | What |
 |------|------|
 | `services.tf`, `modules/project-services/` | Required GCP API enablement barrier |
-| `images.tf` | `ko_build` for `gateway`, `orchestrator`, `agent`, `guestinit`, `fortune` |
+| `images.tf` | `ko_build` for platform services, VMM/TAP helpers, `guestinit`, and `fortune` |
 | `demo.tf` | Optional `local-exec` join/deploy followed by strict SSH release smoke test |
 | `firestore.tf` | Dedicated named Native-mode database |
 | `storage.tf` | Snapshot + platform-asset buckets, Artifact Registry |
@@ -103,12 +104,21 @@ The operator opening an IAP tunnel needs `roles/iap.tunnelResourceAccessor`
 plus OS Login/instance SSH access (for example `roles/compute.osLogin`).
 
 Host sshd on the gateway is moved to **:2222** (IAP) so platform SSH can own `:22`.
-Terraform uploads the exact local Firecracker/kernel files as content-addressed
-GCS objects before creating the agent template. Agents expose gateway-reachable
+Terraform uploads the exact local Firecracker/jailer/kernel files as
+content-addressed GCS objects before creating the agent template. Agents expose gateway-reachable
 SSH relays on `20000-29999`; TAP-local guest addresses are not returned across
 the VPC. The fetch helper always targets the agents' `linux/x86_64`
-architecture and verifies pinned upstream Firecracker and kernel SHA-256 values;
+architecture and verifies the pinned upstream release archive (both
+Firecracker and matching jailer) plus kernel SHA-256 values;
 it can therefore run from an ARM/macOS Terraform workstation.
+
+The `sshcloud` agent has an empty systemd capability bounding set and cannot
+open `root:kvm 0660` `/dev/kvm`. A mode-0600, SO_PEERCRED-authenticated socket
+fronts the root VMM helper; its fixed capability set excludes `CAP_NET_ADMIN`,
+and it launches Firecracker v1.10.1 only through the matching jailer with
+per-VM UID/GID, chroot, and fixed cgroup-v2 limits. A different system user
+runs the TAP helper with only `CAP_NET_ADMIN`; its RPC surface derives TAP
+names/owners and constructs a fixed deny-by-default iptables/ip6tables ruleset.
 
 **Non-interactive deploy / join** (SSH exec args, exit status set):
 
@@ -191,4 +201,8 @@ membership-list removal ineffective.
   reconnects the app hop. Hard auto-healing failures cannot run a pre-hook and
   still rely on durable snapshots plus lazy placement recovery.
 - **One region** in v1 (`var.region` / `var.zone`).
+- **Host-isolation verification still required:** CI structurally checks the
+  Terraform/systemd boundary and unit-tests request/rule/argv validation, but
+  cannot prove the GCE image's cgroup delegation, jailer mount/device syscalls,
+  systemd ambient capability behavior, or a real cross-host jailed restore.
 - Validate locally (no GCP apply): `bash hack/validate-terraform.sh`

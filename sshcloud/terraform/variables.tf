@@ -148,6 +148,11 @@ variable "firecracker_asset_path" {
   type        = string
 }
 
+variable "jailer_asset_path" {
+  description = "Local path to the matching pinned Firecracker jailer binary uploaded into the platform-assets bucket"
+  type        = string
+}
+
 variable "kernel_asset_path" {
   description = "Local path to the pinned Firecracker-compatible vmlinux uploaded into the platform-assets bucket"
   type        = string

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/imjasonh/playground/sshcloud/internal/firecracker"
+	"github.com/imjasonh/playground/sshcloud/internal/hostisolation"
 	"github.com/imjasonh/playground/sshcloud/internal/rootfs"
 )
 
@@ -24,6 +25,10 @@ type machine interface {
 // Runtime boots and restores microVMs. dialAddr is what the gateway should dial.
 type Runtime interface {
 	Available() bool
+	Ready(ctx context.Context) error
+	SnapshotLayout() string
+	CreateTap(ctx context.Context, name, hostIP string) error
+	DeleteTap(ctx context.Context, name string) error
 	Boot(ctx context.Context, spec BootSpec) (m machine, dialAddr string, err error)
 	Restore(ctx context.Context, spec RestoreSpec) (m machine, dialAddr string, err error)
 }
@@ -54,14 +59,36 @@ type RestoreSpec struct {
 	TapName        string
 	HostIP         string
 	GuestIP        string
+	VCPUs          int64
+	MemMiB         int64
 }
 
-// FirecrackerRuntime is the production Runtime.
-type FirecrackerRuntime struct{}
+// DirectRuntime launches Firecracker directly. It exists only for explicit
+// local/KVM integration tests; production uses HelperRuntime.
+type DirectRuntime struct{}
 
-func (FirecrackerRuntime) Available() bool { return firecracker.Available() }
+func (DirectRuntime) Available() bool { return firecracker.Available() }
 
-func (FirecrackerRuntime) Boot(ctx context.Context, spec BootSpec) (machine, string, error) {
+func (DirectRuntime) Ready(context.Context) error {
+	if !firecracker.Available() {
+		return fmt.Errorf("/dev/kvm is unavailable")
+	}
+	return nil
+}
+
+func (DirectRuntime) SnapshotLayout() string {
+	return hostisolation.SnapshotLayoutDirect
+}
+
+func (DirectRuntime) CreateTap(_ context.Context, name, hostIP string) error {
+	return firecracker.CreateTap(name, hostIP, 24)
+}
+
+func (DirectRuntime) DeleteTap(_ context.Context, name string) error {
+	return firecracker.DeleteTap(name)
+}
+
+func (DirectRuntime) Boot(ctx context.Context, spec BootSpec) (machine, string, error) {
 	sock := filepath.Join(spec.WorkDir, "firecracker.sock")
 	logPath := filepath.Join(spec.WorkDir, "firecracker.log")
 	m, err := firecracker.Start(ctx, firecracker.Config{
@@ -88,17 +115,17 @@ func (FirecrackerRuntime) Boot(ctx context.Context, spec BootSpec) (machine, str
 	return m, addr, nil
 }
 
-func (FirecrackerRuntime) Restore(ctx context.Context, spec RestoreSpec) (machine, string, error) {
+func (r DirectRuntime) Restore(ctx context.Context, spec RestoreSpec) (machine, string, error) {
 	if err := rootfs.Clone(spec.RootfsSrc, spec.RootfsDst); err != nil {
 		return nil, "", err
 	}
-	if err := firecracker.CreateTap(spec.TapName, spec.HostIP, 24); err != nil {
+	if err := r.CreateTap(ctx, spec.TapName, spec.HostIP); err != nil {
 		return nil, "", fmt.Errorf("recreate tap: %w", err)
 	}
 	keepTap := false
 	defer func() {
 		if !keepTap {
-			_ = firecracker.DeleteTap(spec.TapName)
+			_ = r.DeleteTap(context.Background(), spec.TapName)
 		}
 	}()
 	sock := filepath.Join(spec.WorkDir, "firecracker.sock")
@@ -124,4 +151,22 @@ func (FirecrackerRuntime) Restore(ctx context.Context, spec RestoreSpec) (machin
 	}
 	keepTap = true
 	return m, addr, nil
+}
+
+type unavailableRuntime struct{}
+
+func (unavailableRuntime) Available() bool { return false }
+func (unavailableRuntime) Ready(context.Context) error {
+	return fmt.Errorf("runtime is not configured")
+}
+func (unavailableRuntime) SnapshotLayout() string { return "" }
+func (unavailableRuntime) CreateTap(context.Context, string, string) error {
+	return fmt.Errorf("runtime is not configured")
+}
+func (unavailableRuntime) DeleteTap(context.Context, string) error { return nil }
+func (unavailableRuntime) Boot(context.Context, BootSpec) (machine, string, error) {
+	return nil, "", fmt.Errorf("runtime is not configured")
+}
+func (unavailableRuntime) Restore(context.Context, RestoreSpec) (machine, string, error) {
+	return nil, "", fmt.Errorf("runtime is not configured")
 }

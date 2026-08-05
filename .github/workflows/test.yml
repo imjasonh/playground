@@ -84,8 +84,8 @@ jobs:
           RUST_APPS: ${{ steps.discover.outputs.rust }}
         run: bash .github/scripts/test-rust-apps.sh
 
-  # Real Firecracker microVM tests. Free ubuntu-latest x86_64 runners expose
-  # nested virt (/dev/kvm) since 2024; we only need a udev rule + root for TAP.
+  # Explicit direct-runtime Firecracker tests. Production uses the jailer
+  # helpers; runner-only MODE=0666 and passwordless TAP setup are not deployed.
   sshcloud-kvm:
     runs-on: ubuntu-latest
     steps:

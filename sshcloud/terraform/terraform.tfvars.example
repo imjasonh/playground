@@ -4,6 +4,7 @@ zone       = "us-central1-a"
 
 # Run `bash ../hack/fetch-firecracker-assets.sh` first.
 firecracker_asset_path = "../_assets/firecracker"
+jailer_asset_path      = "../_assets/jailer"
 kernel_asset_path      = "../_assets/vmlinux"
 
 # Optional overrides:

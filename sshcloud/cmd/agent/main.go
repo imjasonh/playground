@@ -27,8 +27,11 @@ import (
 func main() {
 	listen := flag.String("listen", "127.0.0.1:8080", "agent HTTP listen address")
 	workDir := flag.String("work-dir", "/var/lib/sshcloud/agent", "instance work directory")
-	fcBin := flag.String("firecracker", "firecracker", "firecracker binary")
+	fcBin := flag.String("firecracker", "firecracker", "Firecracker binary (explicit direct-runtime test mode only)")
 	kernel := flag.String("kernel", "", "path to vmlinux")
+	directRuntime := flag.Bool("direct-runtime", false, "launch Firecracker/TAP directly (local/KVM tests only; never production)")
+	vmmHelperSocket := flag.String("vmm-helper-socket", "/run/sshcloud/vmmhelper.sock", "production VMM helper socket")
+	tapHelperSocket := flag.String("tap-helper-socket", "/run/sshcloud/taphelper.sock", "production TAP helper socket")
 	rootfsPath := flag.String("rootfs", "", "optional base ext4 for Ensure without image (test/dev only)")
 	bootSpec := flag.String("boot-spec", "", "PID 1 spec JSON for -rootfs (default: sibling .boot.json)")
 	caPub := flag.String("ca-pub", "", "platform user CA public key to inject")
@@ -48,8 +51,15 @@ func main() {
 	cpuTemplate := flag.String("cpu-template", "", "portable Firecracker CPU template (production: T2)")
 	flag.Parse()
 
-	if *kernel == "" {
-		log.Fatal("-kernel is required")
+	var vmRuntime agent.Runtime
+	if *directRuntime {
+		if *kernel == "" {
+			log.Fatal("-kernel is required with -direct-runtime")
+		}
+		log.Printf("WARNING: direct Firecracker runtime enabled; local/KVM test mode only")
+		vmRuntime = agent.DirectRuntime{}
+	} else {
+		vmRuntime = agent.NewHelperRuntime(*vmmHelperSocket, *tapHelperSocket)
 	}
 	controlToken, err := controlauth.LoadFile(*controlTokenFile)
 	if err != nil {
@@ -132,6 +142,7 @@ func main() {
 		CapacityMemMiB:    *capacityMemMiB,
 		PlatformVersion:   strings.TrimSpace(*platformVersion),
 		CPUTemplate:       strings.TrimSpace(*cpuTemplate),
+		Runtime:           vmRuntime,
 		SnapStore:         store,
 		IdleTimeout:       *idle,
 		RootfsResolver: func(ctx context.Context, imageRef string) (agent.ResolvedRootfs, error) {

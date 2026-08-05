@@ -35,6 +35,8 @@ output "images" {
     gateway      = ko_build.gateway.image_ref
     orchestrator = ko_build.orchestrator.image_ref
     agent        = ko_build.agent.image_ref
+    vmmhelper    = ko_build.vmmhelper.image_ref
+    taphelper    = ko_build.taphelper.image_ref
     guestinit    = ko_build.guestinit.image_ref
     fortune      = ko_build.fortune.image_ref
   }
@@ -68,7 +70,7 @@ output "snapshots_bucket" {
 }
 
 output "assets_bucket" {
-  description = "Terraform-managed Firecracker and kernel artifacts"
+  description = "Terraform-managed Firecracker, jailer, and kernel artifacts"
   value       = google_storage_bucket.assets.name
 }
 

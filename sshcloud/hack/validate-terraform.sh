@@ -33,6 +33,60 @@ if ! grep -q 'enable_nested_virtualization' "$TF/agents.tf"; then
   echo "agents.tf must enable nested virtualization" >&2
   exit 1
 fi
+if ! grep -q 'google_storage_bucket_object" "jailer' "$TF/storage.tf" ||
+  ! grep -q 'variable "jailer_asset_path"' "$TF/variables.tf" ||
+  ! grep -q 'ko_build" "vmmhelper' "$TF/images.tf" ||
+  ! grep -q 'ko_build" "taphelper' "$TF/images.tf"; then
+  echo "Terraform must upload the jailer and build both isolation helpers" >&2
+  exit 1
+fi
+agent_startup="$TF/scripts/agent.sh.tftpl"
+if grep -Eq 'chmod[[:space:]]+0?666[[:space:]]+/dev/kvm' "$agent_startup"; then
+  echo "production startup must never make /dev/kvm world-writable" >&2
+  exit 1
+fi
+if [[ "$(grep -c '^SocketMode=0600$' "$agent_startup")" -ne 2 ]] ||
+  ! grep -q 'Description=sshcloud root Firecracker jailer helper' "$agent_startup" ||
+  ! grep -q 'Description=sshcloud CAP_NET_ADMIN-only TAP helper' "$agent_startup"; then
+  echo "both host helpers need private systemd sockets and dedicated services" >&2
+  exit 1
+fi
+agent_service="$(
+  sed -n '/cat >\/etc\/systemd\/system\/sshcloud-agent.service <<EOF/,/^EOF$/p' "$agent_startup"
+)"
+if [[ "$agent_service" == *"CAP_NET_ADMIN"* ]] ||
+  [[ "$agent_service" == *"SSHCLOUD_IP_DIRECT"* ]] ||
+  [[ "$agent_service" == *"-direct-runtime"* ]] ||
+  [[ "$agent_service" == *"-firecracker"* ]] ||
+  [[ "$agent_service" == *"-kernel"* ]] ||
+  [[ "$agent_service" != *"DevicePolicy=closed"* ]] ||
+  ! grep -qx 'AmbientCapabilities=' <<<"$agent_service" ||
+  ! grep -qx 'CapabilityBoundingSet=' <<<"$agent_service"; then
+  echo "the production agent service must have empty capabilities and no direct VMM/network mode" >&2
+  exit 1
+fi
+vmm_service="$(
+  sed -n '/cat >\/etc\/systemd\/system\/sshcloud-vmmhelper.service <<EOF/,/^EOF$/p' "$agent_startup"
+)"
+if [[ "$vmm_service" == *"CAP_NET_ADMIN"* ]] ||
+  [[ "$vmm_service" != *"User=root"* ]] ||
+  [[ "$vmm_service" != *"-jailer /var/lib/sshcloud/assets/jailer"* ]] ||
+  [[ "$vmm_service" != *"DeviceAllow=/dev/kvm rwm"* ]] ||
+  [[ "$vmm_service" != *"Before=sshcloud-agent.service"* ]]; then
+  echo "the root VMM helper must own the fixed jailer/KVM boundary without CAP_NET_ADMIN" >&2
+  exit 1
+fi
+tap_service="$(
+  sed -n '/cat >\/etc\/systemd\/system\/sshcloud-taphelper.service <<EOF/,/^EOF$/p' "$agent_startup"
+)"
+if [[ "$tap_service" != *"User=sshcloud-tap"* ]] ||
+  [[ "$tap_service" != *"AmbientCapabilities=CAP_NET_ADMIN"* ]] ||
+  [[ "$tap_service" != *"CapabilityBoundingSet=CAP_NET_ADMIN"* ]] ||
+  [[ "$tap_service" != *"DeviceAllow=/dev/net/tun rw"* ]] ||
+  [[ "$tap_service" != *"RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6"* ]]; then
+  echo "the TAP helper must run separately with only CAP_NET_ADMIN" >&2
+  exit 1
+fi
 if ! grep -q 'google_firestore_database' "$TF/firestore.tf"; then
   echo "firestore.tf must declare google_firestore_database" >&2
   exit 1

@@ -7,21 +7,25 @@ Design: [`docs/ssh-app-cloud-design.md`](../docs/ssh-app-cloud-design.md).
 
 > **Prototype safety boundary:** this branch is suitable for local/KVM and
 > CIDR-restricted GCP smoke tests. It is not ready for public self-service.
-> Jailer-grade VMM isolation, workload identity/mTLS, optional audited egress,
-> hard-host-loss policy, and broader OCI runtime compatibility remain open.
+> The production host path now uses a root jailer helper plus a separate
+> CAP_NET_ADMIN-only TAP helper; workload identity/mTLS, optional audited
+> egress, hard-host-loss policy, and broader OCI runtime compatibility remain
+> open. The helper units still need an operator-owned GCP substrate smoke test.
 
 ## Layout
 
 | Path | Role |
 |------|------|
 | `cmd/gateway` | Public SSH entry (join, menu, deploy, proxy) |
-| `cmd/agent` | Host agent: Firecracker lifecycle + HTTP API |
+| `cmd/agent` | Unprivileged VM orchestration + HTTP API |
+| `cmd/vmmhelper` | Root boundary: fixed Firecracker+jailer staging, cgroups, lifecycle, API proxy |
+| `cmd/taphelper` | CAP_NET_ADMIN-only fixed TAP/ruleset boundary |
 | `cmd/guestinit` | Tiny guest PID 1 trampoline (OCI entrypoint/cmd/env/workdir) |
 | `cmd/fortune` | Sample SSH app — deploy as a normal digest-pinned OCI image |
 | `cmd/mkrootfs` | Optional offline ext4 builder (test/dev; not the deploy path) |
 | `cmd/ocirootfs` | Materialize digest-pinned OCI image → cached ext4 |
 | `cmd/orchestrator` | Placement + cross-host migrate HTTP API |
-| `internal/firecracker` | Firecracker API client, TAP, pause/snapshot/restore |
+| `internal/firecracker` | Firecracker API client + explicit direct-test runtime support |
 | `internal/snapshot` | Snapshot package format + local/GCS blob stores |
 | `internal/placement` | user/app → host ID map (memory or Firestore) |
 | `internal/store` | users / keys / apps (memory or Firestore) |
@@ -33,7 +37,7 @@ Design: [`docs/ssh-app-cloud-design.md`](../docs/ssh-app-cloud-design.md).
 | `internal/cutover` | Deploy drain/kick dual-instance cutover |
 | `internal/genid` | Generation ids (`g…`) + `app.gen` agent names |
 | `internal/agent` | Instance manager (boot, idle sleep, wake, adopt/evict) |
-| `hack/fetch-firecracker-assets.sh` | Download firecracker + kernel |
+| `hack/fetch-firecracker-assets.sh` | Download pinned Firecracker+jailer + kernel |
 | `hack/run-firestore-tests.sh` | Store/placement tests vs Firestore emulator |
 | `terraform/` | GCP env: Firestore, GCS, secrets, gateway, orchestrator, agent MIG + ko images |
 
@@ -47,13 +51,17 @@ go test ./...
 go test -race ./...
 go build -o bin/gateway ./cmd/gateway
 go build -o bin/agent ./cmd/agent
+go build -o bin/vmmhelper ./cmd/vmmhelper
+go build -o bin/taphelper ./cmd/taphelper
 go build -o bin/guestinit ./cmd/guestinit
 go build -o bin/fortune ./cmd/fortune
 go build -o bin/ocirootfs ./cmd/ocirootfs
 ```
 
-Firecracker e2e needs `/dev/kvm` + `CAP_NET_ADMIN` (TAP). Without KVM, unit
-tests still pass; `Manager.Ensure` returns a clear error.
+The explicit direct-runtime Firecracker e2e needs `/dev/kvm` +
+`CAP_NET_ADMIN` (TAP). Production gives neither KVM access nor
+`CAP_NET_ADMIN` to `cmd/agent`; it reaches the two peer-credential-authenticated
+helper sockets instead.
 
 Firestore tests skip unless `FIRESTORE_EMULATOR_HOST` is set (or use the helper):
 
@@ -89,9 +97,12 @@ The file schema is:
 }
 ```
 
-## Run — Firecracker backend (normal deploy)
+## Run — Firecracker backend (explicit local/KVM test mode)
 
 Fortune is a normal app: build/push an OCI image, then `ssh deploy@…`.
+This shortcut intentionally bypasses the production jailer helpers; production
+Terraform starts `vmmhelper` and `taphelper` systemd socket units and leaves
+`-direct-runtime` unset.
 
 ```bash
 # 1) platform assets + agent
@@ -100,6 +111,7 @@ go build -o bin/guestinit ./cmd/guestinit
 go run ./cmd/gateway -user-ca ./ssh_user_ca &  # once, to create CA; Ctrl-C after
 go build -o bin/agent ./cmd/agent
 sudo ./bin/agent \
+  -direct-runtime \
   -listen 127.0.0.1:8080 \
   -work-dir /tmp/sshcloud-agent \
   -firecracker "$PWD/_assets/firecracker" \
@@ -182,11 +194,15 @@ A new digest is a new rootfs/generation. The gateway (`-drain-timeout`, default
 
 ### Snapshot sleep / wake
 
-- Package: `vm.state` + `vm.mem` + `rootfs.ext4` + `meta.json` (tap/IP/MAC).
+- Package: `vm.state` + `vm.mem` + `rootfs.ext4` + `meta.json`
+  (schema/layout + tap/IP/MAC).
 - Agent API: `POST /v1/instances/sleep`, `POST /v1/instances/wake` (or
   `ensure`, which wakes if sleeping), `GET /v1/instances/status?user=&app=`.
 - Default store is local under `-snap-dir`; production uses `-gcs-bucket`.
 - TAP is kept across sleep; wake restores into the same network identity.
+- Production Firecracker always sees `/rootfs.ext4` and
+  `/snapshot/{vm.state,vm.mem}` inside its chroot. Snapshot schema 2 records a
+  layout ID, never an absolute host rootfs path; schema 1 is rejected.
 
 ### Cross-host migrate
 
@@ -233,16 +249,21 @@ enables KVM access, builds a fortune rootfs, and runs (fails if any test skips):
 - `TestKVMSleepWake` — boot → snapshot sleep → wake → dial guest `:22`
 - `TestKVMCrossHostMigrate` — sleep/evict on A → adopt on B (shared store)
 
-Locally (Linux + KVM; Firecracker runs as your user, `sudo ip` for TAP):
+Locally (Linux + KVM; the explicit direct runtime runs Firecracker as your user
+and uses `sudo ip` for TAP):
 
 ```bash
-# one-time: ensure /dev/kvm is usable
+# one-time, local test hosts only: ensure /dev/kvm is usable by the test user
 echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
   | sudo tee /etc/udev/rules.d/99-kvm4all.rules
 sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
 
 bash hack/run-kvm-e2e.sh   # not as root
 ```
+
+The `0666` local test rule above is not installed by Terraform. Deployed hosts
+keep `/dev/kvm` at `root:kvm 0660`, with neither `sshcloud` nor
+`sshcloud-tap` in that group.
 
 ### Chaos coverage in CI
 
@@ -290,13 +311,13 @@ Implemented and covered at package/integration level:
 - [x] Handshake/join/app/session/deploy/wake/awake-VM admission limits
 - [x] Durable pending/retiring deploy reconciliation and bounded snapshot retention
 - [x] TAP firewall isolation: guest-initiated host/VPC/metadata/egress traffic denied
+- [x] Pinned Firecracker+jailer host boundary with per-VM UID/GID, chroot,
+      cgroup-v2 limits, authenticated API proxy, and separate TAP helper
 - [x] Liveness/readiness and correlated placement/host diagnostics
 
 Required before public/self-service use:
 
 - [ ] Workload identity + mTLS in place of interim bearer tokens
-- [ ] Firecracker jailer/seccomp and a privileged TAP helper (agent VMM is not
-      yet a production-strength host boundary)
 - [ ] Optional audited guest internet egress allowlist (current policy is deny-all)
 - [ ] Distributed deploy-state CAS (placement operations are now leased)
 - [ ] Session leases/heartbeats (current no-idle hold is not crash-expiring)
@@ -305,4 +326,6 @@ Required before public/self-service use:
 - [ ] Long-term snapshot quota/accounting (current versions retain current+previous with grace)
 - [ ] External key management, encrypted remote Terraform state, rotation drills
 - [ ] Manual first apply/drain/rollout validation in an operator-owned environment
-      (there is no disposable GCP project available to CI)
+      (including jailer mount/cgroup-v2 behavior, systemd capability bounding,
+      TAP ownership, and snapshot wake; there is no disposable GCP project
+      available to CI)

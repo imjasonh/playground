@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
-# Download Firecracker binary + recommended kernel into ./_assets/
+# Download pinned Firecracker+jailer binaries + recommended kernel into ./_assets/
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="${OUT:-$ROOT/_assets}"
 mkdir -p "$OUT"
 
-FC_VERSION="${FC_VERSION:-v1.10.1}"
+PINNED_FC_VERSION="v1.10.1"
+if [[ -n "${FC_VERSION:-}" && "$FC_VERSION" != "$PINNED_FC_VERSION" ]]; then
+  echo "unsupported Firecracker version $FC_VERSION (production is pinned to $PINNED_FC_VERSION)" >&2
+  exit 1
+fi
+FC_VERSION="$PINNED_FC_VERSION"
 ARCH="${TARGET_ARCH:-x86_64}"
 case "$ARCH" in
   x86_64|amd64) ARCH=x86_64 ;;
@@ -63,6 +68,24 @@ if [[ "$HOST_OS" == "Linux" && "$HOST_ARCH" =~ ^(x86_64|amd64)$ ]] && ! "$OUT/fi
   exit 1
 fi
 
+JAILER_BIN="$OUT/release-${FC_VERSION}-${ARCH}/jailer-${FC_VERSION}-${ARCH}"
+if [[ ! -x "$JAILER_BIN" ]]; then
+  JAILER_BIN="$(find "$OUT" -type f -name "jailer-${FC_VERSION}-${ARCH}" ! -name '*.debug' | head -n1 || true)"
+fi
+if [[ -z "${JAILER_BIN}" || ! -f "${JAILER_BIN}" ]]; then
+  echo "could not find jailer binary in tarball" >&2
+  find "$OUT" -type f -name 'jailer*' -print >&2 || true
+  exit 1
+fi
+cp -f "$JAILER_BIN" "$OUT/jailer"
+chmod +x "$OUT/jailer"
+echo "jailer -> $OUT/jailer (from $JAILER_BIN)"
+if [[ "$HOST_OS" == "Linux" && "$HOST_ARCH" =~ ^(x86_64|amd64)$ ]] && ! "$OUT/jailer" --version; then
+  echo "ERROR: jailer --version failed (wrong binary?)" >&2
+  file "$OUT/jailer" >&2 || true
+  exit 1
+fi
+
 # Kernel: Firecracker CI artifact for this release line. Use the regional form
 # of the same S3 bucket so restrictive egress proxies do not reset the legacy
 # global endpoint.
@@ -78,5 +101,5 @@ fi
 echo "$KERNEL_ACTUAL  vmlinux" | tee "$OUT/vmlinux.sha256"
 echo "kernel -> $OUT/vmlinux"
 
-echo "done. Platform assets are firecracker + vmlinux."
+echo "done. Platform assets are firecracker + jailer + vmlinux."
 echo "Apps (including fortune) are digest-pinned OCI images — deploy via the gateway."

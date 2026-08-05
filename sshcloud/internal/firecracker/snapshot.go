@@ -38,12 +38,6 @@ func (m *Machine) CreateSnapshot(ctx context.Context, files SnapshotFiles) error
 	if files.StatePath == "" || files.MemPath == "" {
 		return fmt.Errorf("StatePath and MemPath required")
 	}
-	if err := os.MkdirAll(filepath.Dir(files.StatePath), 0o755); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(files.MemPath), 0o755); err != nil {
-		return err
-	}
 	return m.put(ctx, "/snapshot/create", map[string]any{
 		"snapshot_type": "Full",
 		"snapshot_path": files.StatePath,
@@ -113,7 +107,7 @@ func Restore(ctx context.Context, cfg RestoreConfig) (*Machine, error) {
 		cmd: cmd,
 		hc:  newUnixHTTPClient(cfg.SocketPath),
 	}
-	if err := m.waitSocket(ctx); err != nil {
+	if err := m.WaitAPI(ctx); err != nil {
 		logTail := readLogTail(cfg.LogPath, 4<<10)
 		exit := processExitErr(cmd)
 		_ = m.Kill()
@@ -122,19 +116,28 @@ func Restore(ctx context.Context, cfg RestoreConfig) (*Machine, error) {
 		}
 		return nil, err
 	}
-	body := map[string]any{
-		"snapshot_path": cfg.Snapshot.StatePath,
-		"mem_backend": map[string]string{
-			"backend_path": cfg.Snapshot.MemPath,
-			"backend_type": "File",
-		},
-		"resume_vm": cfg.ResumeImmediately,
-	}
-	if err := m.put(ctx, "/snapshot/load", body); err != nil {
+	if err := m.LoadSnapshot(ctx, cfg.Snapshot, cfg.ResumeImmediately); err != nil {
 		_ = m.Kill()
 		return nil, fmt.Errorf("snapshot/load: %w", err)
 	}
 	return m, nil
+}
+
+// LoadSnapshot asks an already-running Firecracker API to load fixed snapshot
+// files. Process lifecycle may be owned by the direct runtime or VMM helper.
+func (m *Machine) LoadSnapshot(ctx context.Context, snapshot SnapshotFiles, resumeImmediately bool) error {
+	if snapshot.StatePath == "" || snapshot.MemPath == "" {
+		return fmt.Errorf("snapshot files required")
+	}
+	body := map[string]any{
+		"snapshot_path": snapshot.StatePath,
+		"mem_backend": map[string]string{
+			"backend_path": snapshot.MemPath,
+			"backend_type": "File",
+		},
+		"resume_vm": resumeImmediately,
+	}
+	return m.put(ctx, "/snapshot/load", body)
 }
 
 // SnapshotThenKill pauses, writes a full snapshot, then kills the VMM.

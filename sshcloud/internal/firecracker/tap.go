@@ -16,8 +16,8 @@ type Tap struct {
 	Prefix  int    // e.g. 24
 }
 
-// ipCommand runs `ip` directly as root or when systemd supplied CAP_NET_ADMIN.
-// Local unprivileged development/CI retains the passwordless-sudo fallback.
+// ipCommand is used only by the explicit direct local/KVM test runtime.
+// Production delegates fixed operations to cmd/taphelper.
 func ipCommand(args ...string) *exec.Cmd {
 	if os.Geteuid() == 0 || os.Getenv("SSHCLOUD_IP_DIRECT") == "1" {
 		return exec.Command("ip", args...)

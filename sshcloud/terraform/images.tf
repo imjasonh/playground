@@ -28,6 +28,26 @@ resource "ko_build" "agent" {
   depends_on = [google_artifact_registry_repository.sshcloud]
 }
 
+resource "ko_build" "vmmhelper" {
+  importpath  = "github.com/imjasonh/playground/sshcloud/cmd/vmmhelper"
+  working_dir = "${path.module}/.."
+  repo        = "${local.registry}/vmmhelper"
+  platforms   = ["linux/amd64"]
+  sbom        = "spdx"
+
+  depends_on = [google_artifact_registry_repository.sshcloud]
+}
+
+resource "ko_build" "taphelper" {
+  importpath  = "github.com/imjasonh/playground/sshcloud/cmd/taphelper"
+  working_dir = "${path.module}/.."
+  repo        = "${local.registry}/taphelper"
+  platforms   = ["linux/amd64"]
+  sbom        = "spdx"
+
+  depends_on = [google_artifact_registry_repository.sshcloud]
+}
+
 resource "ko_build" "guestinit" {
   importpath  = "github.com/imjasonh/playground/sshcloud/cmd/guestinit"
   working_dir = "${path.module}/.."

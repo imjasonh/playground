@@ -10,8 +10,9 @@
 >
 > A review checkpoint found that the package-level vertical slice is ahead of
 > its production safety boundary. Public ingress remains closed by default.
-> Quotas/rate limits, jailer-based isolation, egress controls, and distributed deploy-state
-> reconciliation are launch blockers—not optional polish.
+> The jailer/helper host boundary is now implemented, but workload identity,
+> egress policy, distributed deploy-state CAS, and operator-owned GCP
+> verification remain launch blockers—not optional polish.
 
 ### Review constraints
 
@@ -423,6 +424,15 @@ GCE host MIG ── host agent ── Firecracker ── app :22
   generations of each app under one placement lease.
 - Production VMMs use Firecracker's portable `T2` CPU template; snapshot
   compatibility fencing covers VMM, kernel, and CPU baseline.
+- Production agents do not launch Firecracker, open `/dev/kvm`, or hold
+  `CAP_NET_ADMIN`. A mode-0600 Unix socket authenticated with `SO_PEERCRED`
+  reaches a root helper that stages a fixed jail layout and invokes pinned
+  Firecracker v1.10.1 only through its matching jailer. Each live VM gets a
+  distinct derived UID/GID plus cgroup-v2 CPU/memory/pid limits. A separate
+  user/process with only `CAP_NET_ADMIN` owns fixed TAP/ruleset operations.
+- Snapshot schema 2 fences the runtime layout. Jailed state embeds
+  `/rootfs.ext4` and `/snapshot/{vm.state,vm.mem}`, not an absolute host work
+  path; old schema-1 packages are rejected.
 - **Semantic limit:** the host-side TCP relay is not snapshot state. The outer
   client connection survives, but the app sees a fresh SSH session after thaw;
   transparent preservation would require a migratable/routed dataplane.
@@ -580,7 +590,7 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
   orchestrator VM (VPC), nested-virt agent MIG
 - Orchestrator `-hosts-file` refresh from MIG membership (`GET /v1/hosts`)
 - Cloud NAT/Private Google Access for private hosts; content-addressed
-  Firecracker/kernel GCS objects are in the Terraform DAG; agent-host SSH
+  Firecracker/jailer/kernel GCS objects are in the Terraform DAG; agent-host SSH
   relays provide the separate-VM gateway→guest data path
 - Gateway has a fixed internal migration-control address; orchestrator can
   freeze/thaw sessions while draining an agent. Agent templates remain
@@ -590,6 +600,10 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
   out of Terraform state. OCI→rootfs on agents: `internal/ocirootfs` + Ensure
   `"image"` hook + `guestinit` PID 1 from image config; deploy cutover pre-boots
   the new gen with that image.
+- CI unit/structural checks cover helper peer credentials, validation, fixed
+  jailer argv, TAP rules, and failure propagation. A disposable GCP project is
+  still required to verify the Debian image's cgroup delegation, jailer
+  mount/device syscalls, systemd capabilities, and jailed snapshot migration.
 
 ---
 

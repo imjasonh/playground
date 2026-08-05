@@ -97,7 +97,7 @@ func Start(ctx context.Context, cfg Config) (*Machine, error) {
 		cmd: cmd,
 		hc:  newUnixHTTPClient(cfg.SocketPath),
 	}
-	if err := m.waitSocket(ctx); err != nil {
+	if err := m.WaitAPI(ctx); err != nil {
 		logTail := readLogTail(cfg.LogPath, 4<<10)
 		exit := processExitErr(cmd)
 		_ = m.Kill()
@@ -106,13 +106,9 @@ func Start(ctx context.Context, cfg Config) (*Machine, error) {
 		}
 		return nil, err
 	}
-	if err := m.configure(ctx); err != nil {
+	if err := m.ConfigureAndStart(ctx, cfg); err != nil {
 		_ = m.Stop()
 		return nil, err
-	}
-	if err := m.put(ctx, "/actions", map[string]string{"action_type": "InstanceStart"}); err != nil {
-		_ = m.Stop()
-		return nil, fmt.Errorf("InstanceStart: %w", err)
 	}
 	return m, nil
 }
@@ -133,7 +129,17 @@ func (c Config) validate() error {
 	return nil
 }
 
-func (m *Machine) waitSocket(ctx context.Context) error {
+// Attach creates an API client for a Firecracker process owned by an external
+// lifecycle manager (the production VMM helper).
+func Attach(socketPath string) *Machine {
+	return &Machine{
+		cfg: Config{SocketPath: socketPath},
+		hc:  newUnixHTTPClient(socketPath),
+	}
+}
+
+// WaitAPI waits for the configured Firecracker API socket.
+func (m *Machine) WaitAPI(ctx context.Context) error {
 	deadline := time.Now().Add(5 * time.Second)
 	var d net.Dialer
 	for {
@@ -153,43 +159,54 @@ func (m *Machine) waitSocket(ctx context.Context) error {
 	}
 }
 
-func (m *Machine) configure(ctx context.Context) error {
-	machineConfig := map[string]any{
-		"vcpu_count":   m.cfg.VCPUs,
-		"mem_size_mib": m.cfg.MemMiB,
+// ConfigureAndStart applies a cold-boot config and starts the instance.
+func (m *Machine) ConfigureAndStart(ctx context.Context, cfg Config) error {
+	if err := cfg.validate(); err != nil {
+		return err
 	}
-	if m.cfg.CPUTemplate != "" {
-		machineConfig["cpu_template"] = m.cfg.CPUTemplate
+	m.cfg = cfg
+	if m.hc == nil {
+		m.hc = newUnixHTTPClient(cfg.SocketPath)
+	}
+	machineConfig := map[string]any{
+		"vcpu_count":   cfg.VCPUs,
+		"mem_size_mib": cfg.MemMiB,
+	}
+	if cfg.CPUTemplate != "" {
+		machineConfig["cpu_template"] = cfg.CPUTemplate
 	}
 	if err := m.put(ctx, "/machine-config", machineConfig); err != nil {
 		return fmt.Errorf("machine-config: %w", err)
 	}
 	bootArgs := "console=ttyS0 reboot=k panic=1 pci=off ipv6.disable=1"
-	if m.cfg.BootArgs != "" {
-		bootArgs = bootArgs + " " + m.cfg.BootArgs
+	if cfg.BootArgs != "" {
+		bootArgs = bootArgs + " " + cfg.BootArgs
 	}
 	if err := m.put(ctx, "/boot-source", map[string]any{
-		"kernel_image_path": m.cfg.KernelPath,
+		"kernel_image_path": cfg.KernelPath,
 		"boot_args":         bootArgs,
 	}); err != nil {
 		return fmt.Errorf("boot-source: %w", err)
 	}
 	if err := m.put(ctx, "/drives/1", map[string]any{
 		"drive_id":       "1",
-		"path_on_host":   m.cfg.RootfsPath,
+		"path_on_host":   cfg.RootfsPath,
 		"is_root_device": true,
 		"is_read_only":   false,
 	}); err != nil {
 		return fmt.Errorf("drives: %w", err)
 	}
-	if m.cfg.TapDevice != "" {
+	if cfg.TapDevice != "" {
 		if err := m.put(ctx, "/network-interfaces/eth0", map[string]any{
 			"iface_id":      "eth0",
-			"guest_mac":     m.cfg.GuestMAC,
-			"host_dev_name": m.cfg.TapDevice,
+			"guest_mac":     cfg.GuestMAC,
+			"host_dev_name": cfg.TapDevice,
 		}); err != nil {
 			return fmt.Errorf("network-interfaces: %w", err)
 		}
+	}
+	if err := m.put(ctx, "/actions", map[string]string{"action_type": "InstanceStart"}); err != nil {
+		return fmt.Errorf("InstanceStart: %w", err)
 	}
 	return nil
 }
@@ -231,7 +248,7 @@ func (m *Machine) Stop() error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	_ = m.put(ctx, "/actions", map[string]string{"action_type": "SendCtrlAltDel"})
+	_ = m.RequestShutdown(ctx)
 	done := make(chan error, 1)
 	go func() { done <- m.cmd.Wait() }()
 	select {
@@ -242,6 +259,12 @@ func (m *Machine) Stop() error {
 	}
 	_ = os.Remove(m.cfg.SocketPath)
 	return nil
+}
+
+// RequestShutdown asks the guest to shut down without taking ownership of the
+// Firecracker process lifecycle.
+func (m *Machine) RequestShutdown(ctx context.Context) error {
+	return m.put(ctx, "/actions", map[string]string{"action_type": "SendCtrlAltDel"})
 }
 
 // PID returns the Firecracker VMM pid.

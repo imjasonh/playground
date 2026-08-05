@@ -14,18 +14,17 @@ import (
 	"time"
 )
 
-// Meta is persisted beside snapshot artifacts (tap/IP/MAC/rootfs for wake).
-// RootfsPath and TapName must be recreated at the same absolute paths before
-// snapshot/load — Firecracker embeds them in the snapshot state.
+// Meta is persisted beside snapshot artifacts. LayoutVersion fences the fixed
+// paths embedded in Firecracker state; host absolute paths are never trusted.
 type Meta struct {
 	SchemaVersion    int       `json:"schema_version"`
+	LayoutVersion    string    `json:"layout_version"`
 	User             string    `json:"user"`
 	App              string    `json:"app"`
 	GuestIP          string    `json:"guest_ip"`
 	TapName          string    `json:"tap_name"`
 	GuestMAC         string    `json:"guest_mac"`
 	HostIP           string    `json:"host_ip"`
-	RootfsPath       string    `json:"rootfs_path"`
 	Image            string    `json:"image,omitempty"`
 	Tier             string    `json:"tier,omitempty"`
 	PlatformVersion  string    `json:"platform_version,omitempty"`
@@ -33,7 +32,9 @@ type Meta struct {
 	CreatedAt        time.Time `json:"created_at"`
 }
 
-const SchemaVersion = 1
+// SchemaVersion 2 rejects the pre-jailer format that persisted absolute host
+// rootfs paths. No deployed snapshot data exists to migrate.
+const SchemaVersion = 2
 
 // Package is a complete sleep artifact set on local disk before/after blob sync.
 type Package struct {

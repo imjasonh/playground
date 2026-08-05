@@ -7,6 +7,7 @@ require (
 	cloud.google.com/go/storage v1.64.0
 	github.com/google/go-containerregistry v0.21.8
 	golang.org/x/crypto v0.54.0
+	golang.org/x/sys v0.47.0
 	google.golang.org/api v0.287.1
 	google.golang.org/grpc v1.82.0
 )
@@ -55,7 +56,6 @@ require (
 	golang.org/x/net v0.56.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	google.golang.org/genproto v0.0.0-20260519071638-aa98bba5eb94 // indirect

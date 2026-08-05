@@ -20,6 +20,7 @@ import (
 	"github.com/imjasonh/playground/sshcloud/internal/firecracker"
 	"github.com/imjasonh/playground/sshcloud/internal/genid"
 	"github.com/imjasonh/playground/sshcloud/internal/guestinit"
+	"github.com/imjasonh/playground/sshcloud/internal/hostisolation"
 	"github.com/imjasonh/playground/sshcloud/internal/hostkey"
 	"github.com/imjasonh/playground/sshcloud/internal/image"
 	"github.com/imjasonh/playground/sshcloud/internal/rootfs"
@@ -108,7 +109,7 @@ type Config struct {
 	IdleTimeout time.Duration
 	// SnapStore persists sleep snapshots (required for sleep/migrate).
 	SnapStore snapshot.Store
-	// Runtime boots VMs; nil selects FirecrackerRuntime.
+	// Runtime boots VMs. Production supplies HelperRuntime; nil is unavailable.
 	Runtime Runtime
 	// RootfsResolver materializes a digest-pinned OCI image to an ext4 path
 	// plus the image's PID 1 spec. Used by bootCold when Ensure has an image ref.
@@ -182,7 +183,11 @@ func NewManager(cfg Config) (*Manager, error) {
 	if cfg.WorkDir == "" {
 		return nil, fmt.Errorf("WorkDir required")
 	}
-	if cfg.KernelPath == "" {
+	rt := cfg.Runtime
+	if rt == nil {
+		rt = unavailableRuntime{}
+	}
+	if rt.SnapshotLayout() == hostisolation.SnapshotLayoutDirect && cfg.KernelPath == "" {
 		return nil, fmt.Errorf("KernelPath required")
 	}
 	if cfg.BaseRootfs == "" && cfg.RootfsResolver == nil {
@@ -190,6 +195,9 @@ func NewManager(cfg Config) (*Manager, error) {
 	}
 	if cfg.SubnetBase == "" {
 		cfg.SubnetBase = "172.16"
+	}
+	if err := hostisolation.ValidateHostIP(cfg.SubnetBase+".1.1", cfg.SubnetBase); err != nil {
+		return nil, fmt.Errorf("SubnetBase: %w", err)
 	}
 	if cfg.RelayHost != "" {
 		if cfg.RelayPortMin == 0 {
@@ -201,10 +209,6 @@ func NewManager(cfg Config) (*Manager, error) {
 		if cfg.RelayPortMin < 1 || cfg.RelayPortMax > 65_535 || cfg.RelayPortMin > cfg.RelayPortMax {
 			return nil, fmt.Errorf("invalid relay port range %d-%d", cfg.RelayPortMin, cfg.RelayPortMax)
 		}
-	}
-	rt := cfg.Runtime
-	if rt == nil {
-		rt = FirecrackerRuntime{}
 	}
 	if err := os.MkdirAll(cfg.WorkDir, 0o700); err != nil {
 		return nil, err
@@ -330,7 +334,7 @@ func (m *Manager) EnsureWith(ctx context.Context, user, app string, opt EnsureOp
 		if stale.machine != nil {
 			_ = stale.machine.Kill()
 		}
-		_ = firecracker.DeleteTap(stale.TapName)
+		_ = m.rt.DeleteTap(context.Background(), stale.TapName)
 	}
 
 	if m.cfg.SnapStore != nil {
@@ -359,7 +363,7 @@ func (m *Manager) EnsureWith(ctx context.Context, user, app string, opt EnsureOp
 	if err := ctx.Err(); err != nil {
 		_ = in.relay.Close()
 		_ = in.machine.Stop()
-		_ = firecracker.DeleteTap(in.TapName)
+		_ = m.rt.DeleteTap(context.Background(), in.TapName)
 		_ = os.RemoveAll(in.WorkDir)
 		m.releaseResources(k)
 		m.releaseCapacity(k)
@@ -701,7 +705,7 @@ func (m *Manager) bootCold(ctx context.Context, k InstanceKey, n int, opt Ensure
 		}
 	}
 	if !m.rt.Available() {
-		return nil, fmt.Errorf("firecracker requires /dev/kvm (not available on this host)")
+		return nil, fmt.Errorf("VM runtime is unavailable on this host")
 	}
 	if err := m.reserveCapacity(k, opt.Tier, opt.CordonEpoch); err != nil {
 		return nil, err
@@ -770,12 +774,12 @@ func (m *Manager) bootCold(ctx context.Context, k InstanceKey, n int, opt Ensure
 			m.releaseResources(k)
 		}
 	}()
-	if err := firecracker.CreateTap(tapName, hostIP, 24); err != nil {
-		return nil, fmt.Errorf("create tap: %w (agent needs CAP_NET_ADMIN)", err)
+	if err := m.rt.CreateTap(ctx, tapName, hostIP); err != nil {
+		return nil, fmt.Errorf("create tap: %w", err)
 	}
 	defer func() {
 		if retErr != nil {
-			_ = firecracker.DeleteTap(tapName)
+			_ = m.rt.DeleteTap(context.Background(), tapName)
 		}
 	}()
 
@@ -939,16 +943,20 @@ func (m *Manager) statusLocked(k InstanceKey) (InstanceStatus, bool) {
 	}, true
 }
 
-// Ready verifies host prerequisites needed for a cold boot. Health checks use
-// this instead of reporting ready before KVM, assets, or rootfs tools exist.
+// Ready verifies the selected runtime (including both production helpers) and
+// the unprivileged image/rootfs prerequisites.
 func (m *Manager) Ready() error {
-	if !m.rt.Available() {
-		return fmt.Errorf("/dev/kvm is unavailable")
+	runtimeCtx, cancelRuntime := context.WithTimeout(context.Background(), 5*time.Second)
+	err := m.rt.Ready(runtimeCtx)
+	cancelRuntime()
+	if err != nil {
+		return fmt.Errorf("VM runtime: %w", err)
 	}
-	for label, file := range map[string]string{
-		"kernel":    m.cfg.KernelPath,
-		"guestinit": m.cfg.GuestInitPath,
-	} {
+	files := map[string]string{"guestinit": m.cfg.GuestInitPath}
+	if m.rt.SnapshotLayout() == hostisolation.SnapshotLayoutDirect {
+		files["kernel"] = m.cfg.KernelPath
+	}
+	for label, file := range files {
 		st, err := os.Stat(file)
 		if err != nil {
 			return fmt.Errorf("%s %q: %w", label, file, err)
@@ -957,21 +965,27 @@ func (m *Manager) Ready() error {
 			return fmt.Errorf("%s %q is not a regular file", label, file)
 		}
 	}
-	fc := m.cfg.FirecrackerBin
-	if fc == "" {
-		fc = "firecracker"
+	tools := []string{"mkfs.ext4", "debugfs"}
+	if m.rt.SnapshotLayout() == hostisolation.SnapshotLayoutDirect {
+		fc := m.cfg.FirecrackerBin
+		if fc == "" {
+			fc = "firecracker"
+		}
+		if _, err := exec.LookPath(fc); err != nil {
+			return fmt.Errorf("firecracker %q: %w", fc, err)
+		}
+		tools = append(tools, "ip", "iptables", "ip6tables")
 	}
-	if _, err := exec.LookPath(fc); err != nil {
-		return fmt.Errorf("firecracker %q: %w", fc, err)
-	}
-	for _, tool := range []string{"ip", "iptables", "ip6tables", "mkfs.ext4", "debugfs"} {
+	for _, tool := range tools {
 		if _, err := exec.LookPath(tool); err != nil {
 			return fmt.Errorf("required tool %q: %w", tool, err)
 		}
 	}
-	for _, tool := range []string{"iptables", "ip6tables"} {
-		if out, err := exec.Command(tool, "-w", "1", "-L").CombinedOutput(); err != nil {
-			return fmt.Errorf("%s capability/lock check: %v: %s", tool, err, out)
+	if m.rt.SnapshotLayout() == hostisolation.SnapshotLayoutDirect {
+		for _, tool := range []string{"iptables", "ip6tables"} {
+			if out, err := exec.Command(tool, "-w", "1", "-L").CombinedOutput(); err != nil {
+				return fmt.Errorf("%s capability/lock check: %v: %s", tool, err, out)
+			}
 		}
 	}
 	var fs syscall.Statfs_t
@@ -1069,13 +1083,13 @@ func (m *Manager) SleepWithEpoch(ctx context.Context, user, app, cordonEpoch str
 	}
 	meta := snapshot.Meta{
 		SchemaVersion:    snapshot.SchemaVersion,
+		LayoutVersion:    m.rt.SnapshotLayout(),
 		User:             user,
 		App:              app,
 		GuestIP:          in.GuestIP,
 		TapName:          in.TapName,
 		GuestMAC:         in.GuestMAC,
 		HostIP:           in.HostIP,
-		RootfsPath:       in.Rootfs,
 		Image:            in.Image,
 		Tier:             in.Tier,
 		PlatformVersion:  m.platformVersion(),
@@ -1137,8 +1151,7 @@ func (m *Manager) SleepWithEpoch(ctx context.Context, user, app, cordonEpoch str
 // Evict drops a sleeping instance from this host without deleting the snapshot.
 // Used after Sleep as the source side of cross-host migrate. Deletes TAP and
 // frees the VMM bookkeeping; the shared snapshot package retains rootfs bytes.
-// The on-disk rootfs path may be removed — Adopt recreates it from the package
-// at the same absolute path before snapshot/load.
+// Adopt recreates the runtime's schema-fenced fixed layout from the package.
 func (m *Manager) Evict(user, app string) error {
 	return m.EvictContext(context.Background(), user, app)
 }
@@ -1177,9 +1190,9 @@ func (m *Manager) EvictWithEpoch(ctx context.Context, user, app, cordonEpoch str
 		_ = in.machine.Kill()
 	}
 	if in.TapName != "" {
-		_ = firecracker.DeleteTap(in.TapName)
+		_ = m.rt.DeleteTap(context.Background(), in.TapName)
 	}
-	// Remove workdir but keep parent; Adopt will recreate rootfs at Meta.RootfsPath.
+	// Remove workdir; Adopt recreates the fixed runtime layout from the package.
 	_ = os.RemoveAll(in.WorkDir)
 	return nil
 }
@@ -1198,7 +1211,7 @@ func (m *Manager) PreflightSnapshot(ctx context.Context, user, app string) (Inst
 		return InstanceInfo{}, fmt.Errorf("snapshot store not configured")
 	}
 	if !m.rt.Available() {
-		return InstanceInfo{}, fmt.Errorf("firecracker requires /dev/kvm (not available on this host)")
+		return InstanceInfo{}, fmt.Errorf("VM runtime is unavailable on this host")
 	}
 	meta, err := m.cfg.SnapStore.Meta(ctx, snapshot.KeyFor(user, app))
 	if err != nil {
@@ -1209,6 +1222,9 @@ func (m *Manager) PreflightSnapshot(ctx context.Context, user, app string) (Inst
 	}
 	if meta.SchemaVersion != snapshot.SchemaVersion {
 		return InstanceInfo{}, fmt.Errorf("snapshot schema version %d is unsupported", meta.SchemaVersion)
+	}
+	if meta.LayoutVersion != m.rt.SnapshotLayout() {
+		return InstanceInfo{}, fmt.Errorf("snapshot layout %q is incompatible with runtime %q", meta.LayoutVersion, m.rt.SnapshotLayout())
 	}
 	tier, _, _, err := tierResources(meta.Tier)
 	if err != nil {
@@ -1221,8 +1237,7 @@ func (m *Manager) PreflightSnapshot(ctx context.Context, user, app string) (Inst
 		return InstanceInfo{}, err
 	}
 	resourceID := instanceResourceID(k)
-	if meta.RootfsPath != filepath.Join(m.cfg.WorkDir, "vm-"+resourceID, "rootfs.ext4") ||
-		meta.TapName != "fc-"+resourceID {
+	if meta.TapName != "fc-"+resourceID {
 		return InstanceInfo{}, fmt.Errorf("snapshot host resource metadata is incompatible")
 	}
 	if err := m.validateSnapshotNetwork(k, meta); err != nil {
@@ -1301,7 +1316,7 @@ func (m *Manager) adoptWith(ctx context.Context, user, app, cordonEpoch string) 
 		return nil, fmt.Errorf("snapshot store not configured")
 	}
 	if !m.rt.Available() {
-		return nil, fmt.Errorf("firecracker requires /dev/kvm (not available on this host)")
+		return nil, fmt.Errorf("VM runtime is unavailable on this host")
 	}
 	op := m.instanceLock(k)
 	op.Lock()
@@ -1332,14 +1347,29 @@ func (m *Manager) adoptWith(ctx context.Context, user, app, cordonEpoch string) 
 	return m.adopt(ctx, k, n, EnsureOpts{CordonEpoch: cordonEpoch})
 }
 
-func (m *Manager) adopt(ctx context.Context, k InstanceKey, n int, opt EnsureOpts) (*Instance, error) {
-	snapDir := filepath.Join(m.cfg.WorkDir, fmt.Sprintf("adopt-%d", n))
-	_ = os.RemoveAll(snapDir)
-	defer os.RemoveAll(snapDir)
-	pkg, err := m.cfg.SnapStore.Get(ctx, snapshot.KeyFor(k.User, k.App), snapDir)
+func (m *Manager) adopt(ctx context.Context, k InstanceKey, _ int, opt EnsureOpts) (*Instance, error) {
+	resourceID := instanceResourceID(k)
+	dir := filepath.Join(m.cfg.WorkDir, "vm-"+resourceID)
+	if _, err := os.Stat(dir); err == nil {
+		return nil, fmt.Errorf("orphaned instance workdir %s requires recovery; refusing snapshot adoption", dir)
+	} else if !os.IsNotExist(err) {
+		return nil, err
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, err
+	}
+	published := false
+	defer func() {
+		if !published {
+			_ = os.RemoveAll(dir)
+		}
+	}()
+	restoreDir := filepath.Join(dir, "restore")
+	pkg, err := m.cfg.SnapStore.Get(ctx, snapshot.KeyFor(k.User, k.App), restoreDir)
 	if err != nil {
 		return nil, fmt.Errorf("download snapshot: %w", err)
 	}
+	defer os.RemoveAll(restoreDir)
 	meta := pkg.Meta
 	if meta.GuestIP == "" {
 		meta, err = pkg.ReadMeta()
@@ -1353,6 +1383,9 @@ func (m *Manager) adopt(ctx context.Context, k InstanceKey, n int, opt EnsureOpt
 	}
 	if meta.SchemaVersion != snapshot.SchemaVersion {
 		return nil, fmt.Errorf("snapshot schema version %d is unsupported", meta.SchemaVersion)
+	}
+	if meta.LayoutVersion != m.rt.SnapshotLayout() {
+		return nil, fmt.Errorf("snapshot layout %q is incompatible with runtime %q", meta.LayoutVersion, m.rt.SnapshotLayout())
 	}
 	if platformVersion := m.platformVersion(); platformVersion != "" && meta.PlatformVersion != platformVersion {
 		return nil, fmt.Errorf("snapshot platform version %q is incompatible with host %q", meta.PlatformVersion, platformVersion)
@@ -1372,16 +1405,11 @@ func (m *Manager) adopt(ctx context.Context, k InstanceKey, n int, opt EnsureOpt
 		return nil, fmt.Errorf("snapshot tier %q does not match requested %q", meta.Tier, opt.Tier)
 	}
 
-	// Firecracker snapshots embed absolute rootfs + TAP names. Recreate those
-	// exact paths before snapshot/load. Paths and TAP names are deterministic
-	// from the instance identity so snapshot metadata cannot select host paths.
-	resourceID := instanceResourceID(k)
-	dir := filepath.Join(m.cfg.WorkDir, "vm-"+resourceID)
+	// The schema fences Firecracker's embedded layout. Production snapshots
+	// refer only to fixed paths inside the jail; host paths are always derived
+	// from identity and never loaded from snapshot metadata.
 	rootfsPath := filepath.Join(dir, "rootfs.ext4")
 	tapName := "fc-" + resourceID
-	if meta.RootfsPath != rootfsPath {
-		return nil, fmt.Errorf("snapshot rootfs path %q does not match expected %q", meta.RootfsPath, rootfsPath)
-	}
 	if meta.TapName != tapName {
 		return nil, fmt.Errorf("snapshot TAP %q does not match expected %q", meta.TapName, tapName)
 	}
@@ -1398,16 +1426,12 @@ func (m *Manager) adopt(ctx context.Context, k InstanceKey, n int, opt EnsureOpt
 		m.releaseCapacity(k)
 		return nil, err
 	}
-	published := false
 	defer func() {
 		if !published {
 			m.releaseResources(k)
 			m.releaseCapacity(k)
 		}
 	}()
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return nil, err
-	}
 	in := &Instance{
 		Key:              k,
 		State:            StateSleeping,
@@ -1437,6 +1461,7 @@ func (m *Manager) adopt(ctx context.Context, k InstanceKey, n int, opt EnsureOpt
 		relay, relayErr := startTCPRelay(m.cfg.RelayHost, addr, m.cfg.RelayPortMin, m.cfg.RelayPortMax, offset)
 		if relayErr != nil {
 			_ = mach.Stop()
+			_ = m.rt.DeleteTap(context.Background(), tapName)
 			_ = os.RemoveAll(dir)
 			return nil, fmt.Errorf("start SSH relay: %w", relayErr)
 		}
@@ -1449,7 +1474,7 @@ func (m *Manager) adopt(ctx context.Context, k InstanceKey, n int, opt EnsureOpt
 	if err := ctx.Err(); err != nil {
 		_ = in.relay.Close()
 		_ = mach.Stop()
-		_ = firecracker.DeleteTap(tapName)
+		_ = m.rt.DeleteTap(context.Background(), tapName)
 		_ = os.RemoveAll(dir)
 		return nil, err
 	}
@@ -1513,6 +1538,9 @@ func (m *Manager) publishInstance(in *Instance) {
 }
 
 func (m *Manager) validateSnapshotNetwork(k InstanceKey, meta snapshot.Meta) error {
+	if err := hostisolation.ValidateHostIP(meta.HostIP, m.cfg.SubnetBase); err != nil {
+		return fmt.Errorf("snapshot host network: %w", err)
+	}
 	host := net.ParseIP(meta.HostIP)
 	guest := net.ParseIP(meta.GuestIP)
 	if host == nil || guest == nil || host.To4() == nil || guest.To4() == nil {
@@ -1545,7 +1573,7 @@ func validateSSHHostPublicKey(raw string) error {
 
 func (m *Manager) wake(ctx context.Context, k InstanceKey) (*Instance, error) {
 	if !m.rt.Available() {
-		return nil, fmt.Errorf("firecracker requires /dev/kvm (not available on this host)")
+		return nil, fmt.Errorf("VM runtime is unavailable on this host")
 	}
 	if m.cfg.SnapStore == nil {
 		return nil, fmt.Errorf("snapshot store not configured")
@@ -1573,11 +1601,31 @@ func (m *Manager) wake(ctx context.Context, k InstanceKey) (*Instance, error) {
 		}
 	}()
 
-	snapDir := filepath.Join(in.WorkDir, "snap-wake")
-	_ = os.RemoveAll(snapDir)
-	pkg, err := m.cfg.SnapStore.Get(ctx, snapshot.KeyFor(k.User, k.App), snapDir)
+	restoreDir := filepath.Join(in.WorkDir, hostisolation.HostRestoreDir)
+	_ = os.RemoveAll(restoreDir)
+	pkg, err := m.cfg.SnapStore.Get(ctx, snapshot.KeyFor(k.User, k.App), restoreDir)
 	if err != nil {
 		return nil, fmt.Errorf("download snapshot: %w", err)
+	}
+	defer os.RemoveAll(restoreDir)
+	if pkg.Meta.SchemaVersion != snapshot.SchemaVersion {
+		return nil, fmt.Errorf("snapshot schema version %d is unsupported", pkg.Meta.SchemaVersion)
+	}
+	if pkg.Meta.LayoutVersion != m.rt.SnapshotLayout() {
+		return nil, fmt.Errorf("snapshot layout %q is incompatible with runtime %q", pkg.Meta.LayoutVersion, m.rt.SnapshotLayout())
+	}
+	if pkg.Meta.User != k.User || pkg.Meta.App != k.App {
+		return nil, fmt.Errorf("snapshot identity mismatch: got %s/%s, want %s", pkg.Meta.User, pkg.Meta.App, k)
+	}
+	if pkg.Meta.TapName != in.TapName || pkg.Meta.HostIP != in.HostIP ||
+		pkg.Meta.GuestIP != in.GuestIP || !strings.EqualFold(pkg.Meta.GuestMAC, in.GuestMAC) {
+		return nil, fmt.Errorf("snapshot network identity changed while sleeping")
+	}
+	if err := m.validateSnapshotNetwork(k, pkg.Meta); err != nil {
+		return nil, err
+	}
+	if platformVersion := m.platformVersion(); platformVersion != "" && pkg.Meta.PlatformVersion != platformVersion {
+		return nil, fmt.Errorf("snapshot platform version %q is incompatible with host %q", pkg.Meta.PlatformVersion, platformVersion)
 	}
 
 	mach, addr, err := m.restoreFromPackage(ctx, in, pkg)
@@ -1624,6 +1672,8 @@ func (m *Manager) restoreFromPackage(ctx context.Context, in *Instance, pkg snap
 		TapName:        in.TapName,
 		HostIP:         in.HostIP,
 		GuestIP:        in.GuestIP,
+		VCPUs:          in.VCPUs,
+		MemMiB:         in.MemMiB,
 	})
 }
 
@@ -1659,7 +1709,7 @@ func (m *Manager) StopContext(ctx context.Context, user, app string) error {
 	if in.machine != nil {
 		err = in.machine.Stop()
 	}
-	_ = firecracker.DeleteTap(in.TapName)
+	_ = m.rt.DeleteTap(context.Background(), in.TapName)
 	_ = os.RemoveAll(in.WorkDir)
 	return err
 }
@@ -1807,7 +1857,7 @@ func (m *Manager) shutdownLocal(k InstanceKey) error {
 	if in.machine != nil {
 		err = in.machine.Stop()
 	}
-	_ = firecracker.DeleteTap(in.TapName)
+	_ = m.rt.DeleteTap(context.Background(), in.TapName)
 	// Preserve the latest writable rootfs for operator recovery. A later cold
 	// boot refuses to overwrite an orphaned workdir.
 	return err

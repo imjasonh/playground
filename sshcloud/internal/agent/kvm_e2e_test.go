@@ -121,8 +121,8 @@ func TestKVMCrossHostMigrate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Production hosts use the same absolute WorkDir; Firecracker snapshot state
-	// embeds that path. Reuse it here after source eviction to model two hosts.
+	// The explicit direct test runtime embeds this host path. Production's
+	// jailed layout instead embeds the fixed in-chroot /rootfs.ext4 path.
 	hostWork := filepath.Join(work, "host")
 	mgrA, err := agent.NewManager(kvmManagerConfig(cfg, hostWork, store, "172.31"))
 	if err != nil {
@@ -215,6 +215,7 @@ func kvmManagerConfig(cfg kvmAssets, workDir string, store snapshot.Store, subne
 		SnapStore:      store,
 		IdleTimeout:    0,
 		SubnetBase:     subnet,
+		Runtime:        agent.DirectRuntime{},
 		RootfsResolver: func(ctx context.Context, imageRef string) (agent.ResolvedRootfs, error) {
 			res, err := ocirootfs.Materialize(ctx, imageRef, ocirootfs.Options{CacheDir: cache, SizeMB: 64})
 			if err != nil {
