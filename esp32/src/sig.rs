@@ -8,15 +8,15 @@
 //! Finally verify signer identity, the Fulcio chain, DSSE signature and
 //! payload type, and the in-toto manifest-digest binding.
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{anyhow, bail, Context, Result};
 use base64::Engine;
 use p256::ecdsa::signature::Verifier as _;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use x509_cert::Certificate;
-use x509_cert::der::{Decode, Encode, oid::ObjectIdentifier};
-use x509_cert::ext::pkix::SubjectAltName;
+use x509_cert::der::{oid::ObjectIdentifier, Decode, Encode};
 use x509_cert::ext::pkix::name::GeneralName;
+use x509_cert::ext::pkix::SubjectAltName;
+use x509_cert::Certificate;
 
 use crate::trust::{RekorPublicKey, TrustConfig, TrustedRekorLog};
 
@@ -211,7 +211,7 @@ struct TimeStampResp<'a> {
 #[derive(der::Sequence)]
 struct PkiStatusInfo<'a> {
     status: u8,
-    status_string: Option<der::asn1::SequenceOfVec<der::asn1::Utf8StringRef<'a>>>,
+    status_string: Option<Vec<der::asn1::Utf8StringRef<'a>>>,
     fail_info: Option<der::asn1::BitStringRef<'a>>,
 }
 
@@ -576,7 +576,6 @@ fn verify_rfc3161_timestamp(
     trust: &crate::trust::TrustedTimestampAuthority,
 ) -> Result<u64> {
     use cms::cert::CertificateChoices;
-    use cms::content_info::ContentInfo;
     use cms::signed_data::{SignedData, SignerIdentifier};
 
     let response = TimeStampResp::from_der(response_der).context("parse RFC3161 response")?;
@@ -811,8 +810,6 @@ fn verify_rekor_v2_checkpoint_and_inclusion(
     public_key: &[u8; 32],
     log: &TrustedRekorLog,
 ) -> Result<()> {
-    use ed25519_dalek::Verifier as _;
-
     let envelope = &entry.inclusion_proof.checkpoint.envelope;
     let (note_text, signatures) = envelope
         .rsplit_once("\n\n")
@@ -1162,7 +1159,7 @@ fn pem_to_cert(pem: &[u8]) -> Result<Certificate> {
 /// Verify `child.signature` is a valid P-384 ECDSA-SHA384 signature
 /// over `child.tbs_certificate` made with `parent`'s public key.
 fn verify_signed_by_p384(child: &Certificate, parent: &Certificate) -> Result<()> {
-    use p384::ecdsa::{Signature, VerifyingKey, signature::Verifier};
+    use p384::ecdsa::{signature::Verifier, Signature, VerifyingKey};
 
     let parent_pubkey_bytes = parent
         .tbs_certificate
