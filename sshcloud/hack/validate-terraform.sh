@@ -45,7 +45,8 @@ if grep -q 'agent_snapshots' "$TF/iam.tf" ||
   exit 1
 fi
 if ! grep -q 'cloudkms.googleapis.com' "$TF/services.tf" ||
-  ! grep -q 'google_kms_crypto_key" "snapshots' "$TF/kms.tf" ||
+  ! grep -q 'google_kms_crypto_key" "snapshot_bucket' "$TF/kms.tf" ||
+  ! grep -q 'google_kms_crypto_key" "snapshot_envelope' "$TF/kms.tf" ||
   ! grep -q 'default_kms_key_name' "$TF/storage.tf" ||
   ! grep -q 'snapshot_kek' "$TF/iam.tf" ||
   ! grep -q 'snapshot_bucket_cmek' "$TF/kms.tf"; then

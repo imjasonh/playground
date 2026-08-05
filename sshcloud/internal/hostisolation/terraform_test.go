@@ -170,8 +170,12 @@ func TestTerraformSnapshotBoundaryExcludesAgentsFromGCSAndKMS(t *testing.T) {
 		"snapshotd.tf": snapshotVM, "network.tf": network, "images.tf": images,
 	} {
 		for _, required := range map[string][]string{
-			"storage.tf":   {"default_kms_key_name"},
-			"kms.tf":       {`google_kms_crypto_key" "snapshots`, "snapshot_bucket_cmek"},
+			"storage.tf": {"default_kms_key_name"},
+			"kms.tf": {
+				`google_kms_crypto_key" "snapshot_bucket`,
+				`google_kms_crypto_key" "snapshot_envelope`,
+				"snapshot_bucket_cmek",
+			},
 			"agents.tf":    {"snapshotd_url"},
 			"snapshotd.tf": {`google_compute_instance" "snapshot`, "kms_key"},
 			"network.tf":   {"agents_to_snapshot"},
