@@ -16,16 +16,18 @@ resource "tls_private_key" "user_ca" {
 }
 
 locals {
-  control_roles = toset(["gateway", "orchestrator", "agent"])
+  control_roles = toset(["gateway", "orchestrator", "agent", "snapshot"])
   control_role_uris = {
     gateway      = "spiffe://sshcloud.internal/control/gateway"
     orchestrator = "spiffe://sshcloud.internal/control/orchestrator"
     agent        = "spiffe://sshcloud.internal/control/agent"
+    snapshot     = "spiffe://sshcloud.internal/control/snapshot"
   }
   control_role_dns = {
     gateway      = "gateway.control.sshcloud.internal"
     orchestrator = "orchestrator.control.sshcloud.internal"
     agent        = "agent.control.sshcloud.internal"
+    snapshot     = "snapshot.control.sshcloud.internal"
   }
 }
 

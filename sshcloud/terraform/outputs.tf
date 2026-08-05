@@ -26,6 +26,11 @@ output "orchestrator_ip" {
   value       = google_compute_address.orchestrator_internal.address
 }
 
+output "snapshot_internal_ip" {
+  description = "Internal snapshotd API address"
+  value       = google_compute_address.snapshot_internal.address
+}
+
 output "artifact_registry" {
   value = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.sshcloud.repository_id}"
 }
@@ -35,6 +40,7 @@ output "images" {
     gateway      = ko_build.gateway.image_ref
     orchestrator = ko_build.orchestrator.image_ref
     agent        = ko_build.agent.image_ref
+    snapshot     = ko_build.snapshot.image_ref
     vmmhelper    = ko_build.vmmhelper.image_ref
     taphelper    = ko_build.taphelper.image_ref
     guestinit    = ko_build.guestinit.image_ref
@@ -67,6 +73,14 @@ output "demo_private_key_openssh" {
 
 output "snapshots_bucket" {
   value = google_storage_bucket.snapshots.name
+}
+
+output "snapshot_kms_keys" {
+  description = "Separate bucket CMEK and snapshot envelope KEK"
+  value = {
+    bucket   = google_kms_crypto_key.snapshot_bucket.id
+    envelope = google_kms_crypto_key.snapshot_envelope.id
+  }
 }
 
 output "assets_bucket" {

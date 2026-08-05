@@ -17,6 +17,7 @@ import (
 // AgentClient talks to a host agent's HTTP API.
 type AgentClient struct {
 	BaseURL          string
+	InstanceID       string
 	ControlClient    *controlauth.Client
 	HTTPClient       *http.Client
 	InsecureLoopback bool

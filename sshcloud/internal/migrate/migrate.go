@@ -79,6 +79,9 @@ func (m *Migrator) MigrateGeneration(ctx context.Context, user, app, gen, toHost
 		return Result{}, err
 	}
 	if fromHost == toHost {
+		if guard.HostInstanceID() != "" && target.InstanceID != guard.HostInstanceID() {
+			return Result{}, fmt.Errorf("placed host %q incarnation changed", fromHost)
+		}
 		st, found, err := target.StatusContext(guard.Context(), user, app, gen)
 		if err != nil {
 			return Result{}, err
@@ -93,6 +96,9 @@ func (m *Migrator) MigrateGeneration(ctx context.Context, user, app, gen, toHost
 	source, ok := m.Hosts.Get(fromHost)
 	if !ok {
 		return Result{}, fmt.Errorf("unknown source host %q", fromHost)
+	}
+	if guard.HostInstanceID() != "" && source.InstanceID != guard.HostInstanceID() {
+		return Result{}, fmt.Errorf("source host %q incarnation changed", fromHost)
 	}
 	inventory, err := source.Instances(guard.Context())
 	if err != nil {
@@ -123,7 +129,8 @@ func (m *Migrator) MigrateGeneration(ctx context.Context, user, app, gen, toHost
 	}
 	operation := placement.Operation{
 		ID: guard.Owner(), Kind: "migrate", Phase: "freezing", SourceHost: fromHost,
-		TargetHost: toHost, Generations: []string{gen}, Desired: desiredGenerations,
+		SourceInstanceID: source.InstanceID, TargetHost: toHost, TargetInstanceID: target.InstanceID,
+		Generations: []string{gen}, Desired: desiredGenerations,
 	}
 	if err := guard.Mark(guard.Context(), operation); err != nil {
 		return Result{}, fmt.Errorf("persist migration operation: %w", err)
@@ -253,7 +260,7 @@ func (m *Migrator) MigrateGeneration(ctx context.Context, user, app, gen, toHost
 		thawed = true
 		return Result{}, fmt.Errorf("target adopted but ready journal failed: %w", err)
 	}
-	err = guard.CommitState(commitCtx, toHost, desiredGenerations)
+	err = guard.CommitStateIdentity(commitCtx, toHost, target.InstanceID, desiredGenerations)
 	cancelCommit()
 	if err != nil {
 		var lost placement.ErrLeaseLost
@@ -266,7 +273,8 @@ func (m *Migrator) MigrateGeneration(ctx context.Context, user, app, gen, toHost
 		checkCtx, checkCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		record, ok, checkErr := m.Placement.GetRecord(checkCtx, user, app)
 		checkCancel()
-		if checkErr == nil && ok && record.HostID == toHost && record.LeaseOwner == "" {
+		if checkErr == nil && ok && record.HostID == toHost &&
+			record.HostInstanceID == target.InstanceID && record.LeaseOwner == "" {
 			committed = true
 			err = nil
 		} else if checkErr != nil {

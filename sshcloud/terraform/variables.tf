@@ -81,6 +81,12 @@ variable "orchestrator_machine_type" {
   default     = "e2-small"
 }
 
+variable "snapshot_machine_type" {
+  description = "Machine type for the private snapshot proxy"
+  type        = string
+  default     = "e2-standard-2"
+}
+
 variable "gateway_disk_gb" {
   type    = number
   default = 20
@@ -89,6 +95,12 @@ variable "gateway_disk_gb" {
 variable "orchestrator_disk_gb" {
   type    = number
   default = 20
+}
+
+variable "snapshot_disk_gb" {
+  description = "Boot/staging disk size for snapshotd package proxying"
+  type        = number
+  default     = 20
 }
 
 variable "agent_disk_gb" {

@@ -360,6 +360,8 @@ SSH Gateway (single VM in v1; shared host key)
   │       proxy session/PTY/exec/subsystem (in-session handoff from menu)
   ▼
 GCE host MIG ── host agent ── Firecracker ── app :22
+                    │
+                    └─ TLS 1.3 mTLS + GCE identity ─ snapshotd ─ CMEK GCS/KMS
 ```
 
 ### Cold start UX
@@ -377,8 +379,20 @@ GCE host MIG ── host agent ── Firecracker ── app :22
 **Implemented in `sshcloud/` (host-local path first):**
 - Firecracker `Pause` → `CreateSnapshot` → kill VMM; wake via `snapshot/load` + `Resume`.
 - Package: `vm.state` + `vm.mem` + `rootfs.ext4` + `meta.json` (network identity).
-- Stores: `internal/snapshot.LocalStore` and `GCSStore`; agent `-snap-dir` /
-  `-gcs-bucket`, idle via `-idle` (default 5m, `0` disables).
+- Stores: local/KVM uses `internal/snapshot.LocalStore`; production agents
+  require `RemoteStore` + `-snapshotd-url` and have no GCS/KMS snapshot IAM.
+  Idle remains `-idle` (default 5m, `0` disables).
+- Snapshot refs are structured `(user, app, generation)` values. snapshotd
+  authenticates agent-role TLS 1.3 mTLS plus the snapshot audience GCE token,
+  extracts the verified exact instance name/ID, and checks every method against
+  Firestore placement and a non-expired ensure/migrate/drain operation fence.
+  A source loses access as soon as placement commits to the target.
+- Snapshot bytes are proxied. snapshotd validates the fixed four-entry archive,
+  per-file/package limits, metadata identity/schema/layout, and then writes one
+  immutable Tink v2 Streaming AEAD package using a fresh keyset. Cloud KMS wraps
+  that keyset with tenant/app/generation/snapshot AAD. A GCS generation CAS
+  publishes `current.json` only after package + immutable manifest complete;
+  the bucket also has a default CMEK.
 - TAP kept across sleep; `Ensure` / `POST /v1/instances/wake` restores.
 - Gateway wake loading TUI: `DialWithLoading` prints `Starting <app>…` while
   Ensure/Adopt runs; dial via `-agent-url` or placement-aware
@@ -398,7 +412,8 @@ GCE host MIG ── host agent ── Firecracker ── app :22
 **Implemented in `sshcloud/`:**
 - Agent: `Sleep` → `Evict` (drop local TAP/workdir, **keep** shared snapshot) →
   target `Adopt` (restore deterministic paths/TAP, same guest IP/MAC).
-- `internal/placement` maps `user/app` → host ID; `internal/migrate.Migrator`
+- `internal/placement` maps `user/app` → host name + immutable GCE instance ID;
+  `internal/migrate.Migrator`
   orchestrates the cutover with best-effort rollback Adopt on the source.
 - `cmd/orchestrator` exposes `POST /v1/migrate` and placement-aware `POST /v1/ensure`.
 - Gateway `-orchestrator-url` dials via orchestrator Ensure (vs single-host
@@ -412,8 +427,8 @@ GCE host MIG ── host agent ── Firecracker ── app :22
 - Placement: memory (default) or Firestore (`placement.Firestore`).
 - Firestore placement records carry revisioned, expiring operation leases.
   Wake/deploy/migrate cannot concurrently claim two hosts for one app.
-- Drain/migrate phases, source/target, and generations are journaled under the
-  lease. An orchestrator restart reconciles expired ambiguous operations back
+- Drain/migrate phases, exact source/target instance IDs, and generations are
+  journaled under the lease. An orchestrator restart reconciles expired ambiguous operations back
   to the authoritative source (or commits the prepared target if source died).
 - Agents report allocatable/used/reserved CPU+memory and cordon state;
   unplaced apps and host drain use deterministic best-fit bin packing.
@@ -543,17 +558,20 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
 | Component | Role |
 |-----------|------|
 | **SSH gateway** | Client SSH; join / menu / deploy; routing; handoff; session admit/reject; rate limits; session→instance pin; cordon/drain/kick; cert mint; proxy |
-| **API** | Internal control API for gateway/orchestrator/agent (not public deploy API) |
+| **API** | Internal control APIs for gateway/orchestrator/agent/snapshotd (not public deploy API) |
 | **Orchestrator** | Placement, wake/sleep, host migrate/drain, deploy cutover, quotas / abuse counters |
-| **Host agent** | Image→rootfs, inject CA, Firecracker lifecycle, volumes, probes, snapshots |
+| **Host agent** | Image→rootfs, inject CA, Firecracker lifecycle, volumes, probes, local snapshot creation/restore |
+| **snapshotd** | Exact-instance snapshot authorization, package validation, envelope encryption, GCS proxy |
 | **Firestore** | Users, keys, apps, placement pointers, quota counters, metadata |
-| **GCS** | Idle/migrate snapshots + volume bytes |
+| **GCS** | CMEK encrypted idle/migrate packages + volume bytes |
+| **Cloud KMS** | Per-package keyset wrapping and snapshot-bucket CMEK |
 | **Secret Manager** | Gateway host key; user CA signing key; versioned public-key access policy |
 
 **Implemented in `sshcloud/`:**
 - `store.Firestore` — `keys/{fp}`, `users/{id}`, `users/{id}/apps/{name}`;
   gateway `-firestore-project` (default remains in-memory).
-- `placement.Firestore` — `placement/{user__app}` → host ID;
+- `placement.Firestore` — `placement/{user__app}` → host name + immutable
+  GCE instance ID, generation inventory, and operation fence;
   orchestrator `-firestore-project`.
 - Emulator tests: `hack/run-firestore-tests.sh` (skips in plain `go test`
   without `FIRESTORE_EMULATOR_HOST`).
@@ -605,8 +623,8 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
 - Guest egress is deny-all for the private trial; an audited global allowlist is later.
 
 **Implemented in `sshcloud/terraform/` (first environment):**
-- `ko_build` images: gateway, orchestrator, agent, guestinit, fortune (sample app)
-- Dedicated named Firestore Native database, snapshot + asset GCS buckets,
+- `ko_build` images: gateway, orchestrator, snapshotd, agent, guestinit, fortune (sample app)
+- Dedicated named Firestore Native database, CMEK snapshot + asset GCS buckets,
   Artifact Registry
 - Secret Manager: gateway host key, user CA, two control CA slots, and
   role-specific control certificate/key bundles
@@ -614,7 +632,7 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
   allowlist/allowlist, with the opt-in demo key automatically admitted to both
   lists
 - Gateway static IP (`:22` only when CIDRs are explicitly supplied),
-  orchestrator VM (VPC), nested-virt agent MIG
+  orchestrator VM (VPC), snapshotd VM/internal IP, nested-virt agent MIG
 - Orchestrator `-hosts-file` refresh from MIG membership (`GET /v1/hosts`)
 - Cloud NAT/Private Google Access for private hosts; content-addressed
   Firecracker/jailer/kernel GCS objects are in the Terraform DAG; agent-host SSH
@@ -623,6 +641,11 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
   freeze/thaw sessions while draining an agent. Agent templates remain
   opportunistic and operators call drain-before-replace; hard auto-healing
   remains an uncoordinated failure path.
+- snapshotd is the only service account with snapshot object and envelope-KEK
+  permissions. Agents reach only its TLS API through a tagged firewall edge;
+  orchestrator reaches its separate health port. The snapshot bucket uses a
+  Cloud KMS CMEK, while per-package streaming keysets are independently wrapped
+  by the KEK.
 - Still open: optional egress allowlist and key rotation out of Terraform
   state. The initial role leaf keys are still Terraform-generated and therefore
   remain in state; this is a rotation/state-compromise risk, not a final
@@ -630,9 +653,12 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
   `"image"` hook + `guestinit` PID 1 from image config; deploy cutover pre-boots
   the new gen with that image.
 - CI unit/structural checks cover helper peer credentials, validation, fixed
-  jailer argv, TAP rules, and failure propagation. A disposable GCP project is
+  jailer argv, TAP rules, snapshot authorization fences, envelope
+  tamper/swap/truncation/AAD, generation preconditions, and failure propagation.
+  A disposable GCP project is
   still required to verify the Debian image's cgroup delegation, jailer
-  mount/device syscalls, systemd capabilities, and jailed snapshot migration.
+  mount/device syscalls, systemd capabilities, jailed snapshot migration, Cloud
+  KMS/GCS/CMEK behavior, Firestore/IAM conditions, and direct agent-bucket denial.
 
 ---
 
@@ -739,7 +765,12 @@ hits, wake/deploy denials — still **no session bytes**.
    leaves; moving leaf issuance/private keys out of Terraform remains a
    separate secret-rotation task.
 9. ~~**Repo layout**~~ — **`sshcloud/`** single Go module (`cmd/{gateway,orchestrator,agent}`, `internal/…`, `images/fortune`, `terraform/`).
-10. **Threat model** — tenant breakout, snapshot confidentiality in GCS, CA theft.  
+10. **Threat model** — snapshot confidentiality/isolation now uses snapshotd,
+    exact-instance operation fences, Tink envelope encryption, KMS AAD, and
+    bucket CMEK. Tenant breakout, CA theft, superseded-version lifecycle, and
+    operational KMS rotation remain open. A future KEK/CMEK rotation affects
+    new writes; old key versions must remain enabled until their packages and
+    objects have expired. No rotation schedule or drill is configured here.
 11. **Hub footgun UX** — deploy-time warnings / `~/.ssh/config` docs when local
     username collides with an app name (see §3).  
 12. **Deploy promote/rollback UX** — when to add explicit blue/green beyond

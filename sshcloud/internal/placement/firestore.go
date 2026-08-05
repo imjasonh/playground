@@ -22,6 +22,7 @@ type placementDoc struct {
 	User           string       `firestore:"user"`
 	App            string       `firestore:"app"`
 	HostID         string       `firestore:"host_id"`
+	HostInstanceID string       `firestore:"host_instance_id"`
 	Revision       int64        `firestore:"revision"`
 	LeaseOwner     string       `firestore:"lease_owner"`
 	LeaseUntilUnix int64        `firestore:"lease_until_unix"`
@@ -92,6 +93,14 @@ func (f *Firestore) Get(ctx context.Context, user, app string) (string, bool, er
 }
 
 func (f *Firestore) Set(ctx context.Context, user, app, hostID string) error {
+	return f.setIdentity(ctx, user, app, hostID, "")
+}
+
+func (f *Firestore) SetIdentity(ctx context.Context, user, app, hostID, hostInstanceID string) error {
+	return f.setIdentity(ctx, user, app, hostID, hostInstanceID)
+}
+
+func (f *Firestore) setIdentity(ctx context.Context, user, app, hostID, hostInstanceID string) error {
 	if user == "" || app == "" || hostID == "" {
 		return fmt.Errorf("user, app, and hostID required")
 	}
@@ -105,7 +114,7 @@ func (f *Firestore) Set(ctx context.Context, user, app, hostID string) error {
 		if leaseActive(r, time.Now()) {
 			return ErrLeaseHeld{User: user, App: app, Owner: r.LeaseOwner, Until: time.Unix(0, r.LeaseUntilUnix)}
 		}
-		d.User, d.App, d.HostID = user, app, hostID
+		d.User, d.App, d.HostID, d.HostInstanceID = user, app, hostID, hostInstanceID
 		d.Revision++
 		d.LeaseOwner, d.LeaseUntilUnix = "", 0
 		d.Operation = Operation{}
@@ -271,14 +280,22 @@ func (f *Firestore) Mark(ctx context.Context, lease Lease, operation Operation) 
 }
 
 func (f *Firestore) Commit(ctx context.Context, lease Lease, hostID string, _ time.Time) error {
-	return f.commit(ctx, lease, hostID, nil, false)
+	return f.commit(ctx, lease, hostID, "", nil, false)
 }
 
 func (f *Firestore) CommitState(ctx context.Context, lease Lease, hostID string, generations []Generation, _ time.Time) error {
-	return f.commit(ctx, lease, hostID, generations, true)
+	return f.commit(ctx, lease, hostID, "", generations, true)
 }
 
-func (f *Firestore) commit(ctx context.Context, lease Lease, hostID string, generations []Generation, replaceGenerations bool) error {
+func (f *Firestore) CommitIdentity(ctx context.Context, lease Lease, hostID, hostInstanceID string, _ time.Time) error {
+	return f.commit(ctx, lease, hostID, hostInstanceID, nil, false)
+}
+
+func (f *Firestore) CommitStateIdentity(ctx context.Context, lease Lease, hostID, hostInstanceID string, generations []Generation, _ time.Time) error {
+	return f.commit(ctx, lease, hostID, hostInstanceID, generations, true)
+}
+
+func (f *Firestore) commit(ctx context.Context, lease Lease, hostID, hostInstanceID string, generations []Generation, replaceGenerations bool) error {
 	if hostID == "" {
 		return fmt.Errorf("hostID required")
 	}
@@ -294,6 +311,7 @@ func (f *Firestore) commit(ctx context.Context, lease Lease, hostID string, gene
 			return ErrLeaseLost{User: lease.User, App: lease.App}
 		}
 		d.HostID = hostID
+		d.HostInstanceID = hostInstanceID
 		if replaceGenerations {
 			d.Generations = append([]Generation(nil), generations...)
 		}
@@ -339,7 +357,7 @@ func readPlacementTx(tx *firestore.Transaction, ref *firestore.DocumentRef) (pla
 
 func recordFromDoc(d placementDoc) Record {
 	return Record{
-		User: d.User, App: d.App, HostID: d.HostID, Revision: d.Revision,
+		User: d.User, App: d.App, HostID: d.HostID, HostInstanceID: d.HostInstanceID, Revision: d.Revision,
 		LeaseOwner: d.LeaseOwner, LeaseUntilUnix: d.LeaseUntilUnix,
 		Operation:   d.Operation,
 		Generations: append([]Generation(nil), d.Generations...),

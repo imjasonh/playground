@@ -24,20 +24,24 @@ func TestLocalStoreRoundTrip(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	meta := Meta{User: "alice", App: "fortune", GuestIP: "172.16.1.2", TapName: "fc-1", CreatedAt: time.Now().UTC()}
+	meta := Meta{
+		SchemaVersion: SchemaVersion, LayoutVersion: "firecracker-direct-v1",
+		User: "alice", App: "fortune", GuestIP: "172.16.1.2", TapName: "fc-1",
+		CreatedAt: time.Now().UTC(),
+	}
 	if err := src.WriteMeta(meta); err != nil {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	key := KeyFor("alice", "fortune")
-	if err := store.Put(ctx, key, src); err != nil {
+	ref := Ref{User: "alice", App: "fortune"}
+	if err := store.Put(ctx, ref, src); err != nil {
 		t.Fatal(err)
 	}
-	if !store.Exists(key) {
+	if !store.Exists(ref) {
 		t.Fatal("expected exists")
 	}
 	dstDir := filepath.Join(root, "dst")
-	got, err := store.Get(ctx, key, dstDir)
+	got, err := store.Get(ctx, ref, dstDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,10 +52,10 @@ func TestLocalStoreRoundTrip(t *testing.T) {
 	if err != nil || string(b) != "vm.state-data" {
 		t.Fatalf("state: %q %v", b, err)
 	}
-	if err := store.Delete(ctx, key); err != nil {
+	if err := store.Delete(ctx, ref); err != nil {
 		t.Fatal(err)
 	}
-	if store.Exists(key) {
+	if store.Exists(ref) {
 		t.Fatal("expected deleted")
 	}
 }
@@ -62,11 +66,10 @@ func TestLocalStoreRejectsTraversalKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pkg := NewPackageDir(t.TempDir())
-	if err := s.Put(context.Background(), "../outside", pkg); err == nil {
-		t.Fatal("expected traversal key to be rejected")
+	if err := s.Delete(context.Background(), Ref{User: "../outside", App: "app"}); err == nil {
+		t.Fatal("expected unsafe structured reference to be rejected")
 	}
-	if err := s.Delete(context.Background(), "alice/../../outside"); err == nil {
+	if _, err := ParseKey("v1/YWxpY2U/Zm9ydHVuZQ/../../outside"); err == nil {
 		t.Fatal("expected traversal key to be rejected")
 	}
 }
@@ -78,8 +81,8 @@ func TestLocalStoreHasRejectsIncompletePackage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	key := KeyFor("alice", "fortune")
-	dir, err := store.keyDir(key)
+	ref := Ref{User: "alice", App: "fortune"}
+	dir, err := store.keyDir(ref)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +92,7 @@ func TestLocalStoreHasRejectsIncompletePackage(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "meta.json"), []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if ok, err := store.Has(context.Background(), key); err != nil || ok {
+	if ok, err := store.Has(context.Background(), ref); err != nil || ok {
 		t.Fatalf("incomplete package reported present: ok=%v err=%v", ok, err)
 	}
 }

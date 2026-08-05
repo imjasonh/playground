@@ -30,6 +30,12 @@ func (f verifierFunc) Verify(ctx context.Context, token string, policy Verificat
 	return f(ctx, token, policy)
 }
 
+type identityVerifierFunc func(context.Context, string, VerificationPolicy) (Identity, error)
+
+func (f identityVerifierFunc) VerifyIdentity(ctx context.Context, token string, policy VerificationPolicy) (Identity, error) {
+	return f(ctx, token, policy)
+}
+
 type tokenSourceFunc func(context.Context, string) (string, error)
 
 func (f tokenSourceFunc) Token(ctx context.Context, audience string) (string, error) {
@@ -85,6 +91,45 @@ func TestRequireRejectsWrongRoleAndStaticBearer(t *testing.T) {
 	}
 }
 
+func TestRequireIdentityPropagatesVerifiedGCEInstance(t *testing.T) {
+	t.Parallel()
+	want := Identity{
+		ServiceAccount: "agent@test-project.iam.gserviceaccount.com",
+		InstanceName:   "sshcloud-agent-a",
+		InstanceID:     "987654321",
+		Zone:           "us-central1-a",
+		ProjectID:      "test-project",
+		ProjectNumber:  "123456789",
+	}
+	verifier := identityVerifierFunc(func(_ context.Context, token string, policy VerificationPolicy) (Identity, error) {
+		if token != "signed-google-token" || policy.CallerRole != RoleAgent ||
+			policy.ServiceAccount != want.ServiceAccount || policy.Audience != AudienceSnapshot {
+			return Identity{}, fmt.Errorf("unexpected verification input")
+		}
+		return want, nil
+	})
+	handler := RequireIdentity(verifier, VerificationPolicy{
+		CallerRole: RoleAgent, ServiceAccount: want.ServiceAccount, Audience: AudienceSnapshot,
+	}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got, ok := IdentityFromContext(r.Context())
+		if !ok || got != want {
+			http.Error(w, "missing identity", http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.TLS = &tls.ConnectionState{
+		Version: tls.VersionTLS13, PeerCertificates: []*x509.Certificate{testLeaf(t, RoleAgent)},
+	}
+	req.Header.Set("Authorization", "Bearer signed-google-token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status %d, want %d", rec.Code, http.StatusNoContent)
+	}
+}
+
 func TestGCEVerifierRejectsWrongAudienceServiceAccountAndReplay(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
 	payload := validPayload(now)
@@ -101,6 +146,13 @@ func TestGCEVerifierRejectsWrongAudienceServiceAccountAndReplay(t *testing.T) {
 	}
 	if err := verifier.Verify(t.Context(), "token", valid); err != nil {
 		t.Fatalf("valid payload: %v", err)
+	}
+	identity, err := verifier.VerifyIdentity(t.Context(), "token", valid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if identity.InstanceName != "sshcloud-gateway" || identity.InstanceID != "987654321" {
+		t.Fatalf("verified GCE identity = %+v", identity)
 	}
 
 	wrongAccount := valid

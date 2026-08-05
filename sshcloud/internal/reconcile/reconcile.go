@@ -56,6 +56,10 @@ func (c *Controller) reconcile(ctx context.Context, record placement.Record) err
 	if !sourceOK || !targetOK {
 		return fmt.Errorf("operation %s/%s awaits authoritative source and target inventory", record.User, record.App)
 	}
+	if (op.SourceInstanceID != "" && source.InstanceID != op.SourceInstanceID) ||
+		(op.TargetInstanceID != "" && target.InstanceID != op.TargetInstanceID) {
+		return fmt.Errorf("operation %s/%s host incarnation changed", record.User, record.App)
+	}
 
 	for _, gen := range op.Generations {
 		sourceStatus, sourceFound, err := source.StatusContext(guard.Context(), record.User, record.App, gen)
@@ -101,6 +105,9 @@ func (c *Controller) reconcileEnsure(guard *placement.Guard, record placement.Re
 	if !ok {
 		return fmt.Errorf("ensure operation %s/%s awaits target inventory", record.User, record.App)
 	}
+	if record.Operation.TargetInstanceID != "" && target.InstanceID != record.Operation.TargetInstanceID {
+		return fmt.Errorf("ensure operation %s/%s target incarnation changed", record.User, record.App)
+	}
 	found := 0
 	for _, gen := range record.Operation.Generations {
 		status, ok, err := target.StatusContext(guard.Context(), record.User, record.App, gen)
@@ -139,7 +146,7 @@ func (c *Controller) reconcileEnsure(guard *placement.Guard, record placement.Re
 			return release(guard, finished)
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		err := guard.CommitState(ctx, record.Operation.TargetHost, desired)
+		err := guard.CommitStateIdentity(ctx, record.Operation.TargetHost, target.InstanceID, desired)
 		cancel()
 		if err != nil {
 			return err

@@ -7,11 +7,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/imjasonh/playground/sshcloud/internal/genid"
+	"github.com/imjasonh/playground/sshcloud/internal/names"
 )
 
 // Meta is persisted beside snapshot artifacts. LayoutVersion fences the fixed
@@ -21,6 +23,7 @@ type Meta struct {
 	LayoutVersion    string    `json:"layout_version"`
 	User             string    `json:"user"`
 	App              string    `json:"app"`
+	Gen              string    `json:"gen,omitempty"`
 	GuestIP          string    `json:"guest_ip"`
 	TapName          string    `json:"tap_name"`
 	GuestMAC         string    `json:"guest_mac"`
@@ -35,6 +38,86 @@ type Meta struct {
 // SchemaVersion 2 rejects the pre-jailer format that persisted absolute host
 // rootfs paths. No deployed snapshot data exists to migrate.
 const SchemaVersion = 2
+
+const (
+	MaxStateBytes    int64 = 128 << 20
+	MaxMemoryBytes   int64 = 2 << 30
+	MaxRootfsBytes   int64 = 2 << 30
+	MaxMetadataBytes int64 = 64 << 10
+	MaxPackageBytes        = MaxStateBytes + MaxMemoryBytes + MaxRootfsBytes + MaxMetadataBytes
+	MaxRequestBytes        = MaxPackageBytes + (8 << 20)
+)
+
+// Ref is the complete tenant snapshot identity. It is passed as structured
+// data at every API boundary; callers never supply storage object paths.
+type Ref struct {
+	User string `json:"user"`
+	App  string `json:"app"`
+	Gen  string `json:"gen,omitempty"`
+}
+
+// Validate rejects ambiguous and non-canonical tenant identities.
+func (r Ref) Validate() error {
+	if err := names.ValidateIdent(r.User); err != nil {
+		return fmt.Errorf("invalid snapshot user: %w", err)
+	}
+	if err := names.ValidateIdent(r.App); err != nil {
+		return fmt.Errorf("invalid snapshot app: %w", err)
+	}
+	if r.Gen != "" {
+		if err := genid.Validate(r.Gen); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Key returns the canonical opaque storage key for a structured reference.
+func (r Ref) Key() string {
+	enc := base64.RawURLEncoding
+	return strings.Join([]string{
+		"v1",
+		"e" + enc.EncodeToString([]byte(r.User)),
+		"e" + enc.EncodeToString([]byte(r.App)),
+		"e" + enc.EncodeToString([]byte(r.Gen)),
+	}, "/")
+}
+
+// ParseKey reverses Key and rejects alternate encodings and unsafe identities.
+func ParseKey(key string) (Ref, error) {
+	parts := strings.Split(key, "/")
+	if len(parts) != 4 || parts[0] != "v1" {
+		return Ref{}, fmt.Errorf("invalid snapshot key")
+	}
+	enc := base64.RawURLEncoding
+	values := make([]string, 3)
+	for i, part := range parts[1:] {
+		if !strings.HasPrefix(part, "e") {
+			return Ref{}, fmt.Errorf("invalid snapshot key component")
+		}
+		encoded := strings.TrimPrefix(part, "e")
+		value, err := enc.DecodeString(encoded)
+		if err != nil || enc.EncodeToString(value) != encoded {
+			return Ref{}, fmt.Errorf("invalid snapshot key component")
+		}
+		values[i] = string(value)
+	}
+	ref := Ref{User: values[0], App: values[1], Gen: values[2]}
+	if err := ref.Validate(); err != nil {
+		return Ref{}, err
+	}
+	if ref.Key() != key {
+		return Ref{}, fmt.Errorf("non-canonical snapshot key")
+	}
+	return ref, nil
+}
+
+// RefForAgentApp converts the agent's collision-free app.gen name back to its
+// structured placement identity.
+func RefForAgentApp(user, agentApp string) Ref {
+	app, gen := genid.SplitAgentApp(agentApp)
+	return Ref{User: user, App: app, Gen: gen}
+}
 
 // Package is a complete sleep artifact set on local disk before/after blob sync.
 type Package struct {
@@ -80,18 +163,21 @@ func (p Package) ReadMeta() (Meta, error) {
 	return m, err
 }
 
-// Store persists snapshot packages under an opaque, slash-separated key.
+// Store persists snapshot packages by structured tenant identity.
 type Store interface {
 	// Put uploads all files from a local Package directory.
-	Put(ctx context.Context, key string, pkg Package) error
+	Put(ctx context.Context, ref Ref, pkg Package) error
 	// Get downloads into destDir and returns a Package pointing there.
-	Get(ctx context.Context, key, destDir string) (Package, error)
+	Get(ctx context.Context, ref Ref, destDir string) (Package, error)
 	// Has reports whether a complete package exists.
-	Has(ctx context.Context, key string) (bool, error)
+	Has(ctx context.Context, ref Ref) (bool, error)
 	// Meta reads compatibility/identity metadata without downloading memory or disk.
-	Meta(ctx context.Context, key string) (Meta, error)
+	Meta(ctx context.Context, ref Ref) (Meta, error)
 	// Delete removes a stored package.
-	Delete(ctx context.Context, key string) error
+	Delete(ctx context.Context, ref Ref) error
+	// Health verifies that the backing service is available without impersonating
+	// a tenant reference.
+	Health(ctx context.Context) error
 }
 
 func objectNames() []string {
@@ -118,17 +204,33 @@ func copyFile(src, dst string) error {
 	return out.Close()
 }
 
-// KeyFor builds an opaque blob key for a user/app. Encoding each component
-// prevents caller-controlled identifiers from becoming filesystem or GCS path
-// traversal, even if validation is accidentally skipped at an API boundary.
-func KeyFor(user, app string) string {
-	enc := base64.RawURLEncoding
-	return enc.EncodeToString([]byte(user)) + "/" + enc.EncodeToString([]byte(app))
+// KeyFor is retained for diagnostics and migration tooling. New code passes Ref
+// directly. An omitted generation names the legacy singleton generation.
+func KeyFor(user, app string, generation ...string) string {
+	gen := ""
+	if len(generation) == 1 {
+		gen = generation[0]
+	}
+	return (Ref{User: user, App: app, Gen: gen}).Key()
 }
 
-func validateKey(key string) error {
-	if key == "" || !fs.ValidPath(key) || strings.HasPrefix(key, "/") {
-		return fmt.Errorf("invalid snapshot key %q", key)
+// ValidateMeta binds persisted package metadata to its structured identity and
+// the server's configured Firecracker layout.
+func ValidateMeta(ref Ref, meta Meta, expectedLayout string) error {
+	if err := ref.Validate(); err != nil {
+		return err
+	}
+	if meta.User != ref.User || meta.App != ref.App || meta.Gen != ref.Gen {
+		return fmt.Errorf("snapshot metadata identity does not match reference")
+	}
+	if meta.SchemaVersion != SchemaVersion {
+		return fmt.Errorf("snapshot schema version %d is unsupported", meta.SchemaVersion)
+	}
+	if strings.TrimSpace(meta.LayoutVersion) == "" || len(meta.LayoutVersion) > 128 {
+		return fmt.Errorf("snapshot layout is invalid")
+	}
+	if expectedLayout != "" && meta.LayoutVersion != expectedLayout {
+		return fmt.Errorf("snapshot layout %q, want %q", meta.LayoutVersion, expectedLayout)
 	}
 	return nil
 }

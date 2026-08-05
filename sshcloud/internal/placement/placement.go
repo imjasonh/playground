@@ -26,11 +26,20 @@ type Store interface {
 	Release(ctx context.Context, lease Lease) error
 }
 
+// HostIdentityStore atomically persists the immutable GCE instance ID beside
+// the human-readable instance name. Production placement always uses it.
+type HostIdentityStore interface {
+	SetIdentity(ctx context.Context, user, app, hostID, hostInstanceID string) error
+	CommitIdentity(ctx context.Context, lease Lease, hostID, hostInstanceID string, now time.Time) error
+	CommitStateIdentity(ctx context.Context, lease Lease, hostID, hostInstanceID string, generations []Generation, now time.Time) error
+}
+
 // Record is the durable owner and operation fence for one app.
 type Record struct {
 	User           string
 	App            string
 	HostID         string
+	HostInstanceID string
 	Revision       int64
 	LeaseOwner     string
 	LeaseUntilUnix int64
@@ -49,25 +58,28 @@ type Generation struct {
 
 // Operation is durable recovery context for an in-flight host mutation.
 type Operation struct {
-	ID          string       `json:"id,omitempty" firestore:"id,omitempty"`
-	Sequence    int64        `json:"sequence,omitempty" firestore:"sequence,omitempty"`
-	Kind        string       `json:"kind,omitempty" firestore:"kind,omitempty"`
-	Phase       string       `json:"phase,omitempty" firestore:"phase,omitempty"`
-	SourceHost  string       `json:"source_host,omitempty" firestore:"source_host,omitempty"`
-	SourceEpoch string       `json:"source_epoch,omitempty" firestore:"source_epoch,omitempty"`
-	TargetHost  string       `json:"target_host,omitempty" firestore:"target_host,omitempty"`
-	Generations []string     `json:"generations,omitempty" firestore:"generations,omitempty"`
-	Desired     []Generation `json:"desired,omitempty" firestore:"desired,omitempty"`
+	ID               string       `json:"id,omitempty" firestore:"id,omitempty"`
+	Sequence         int64        `json:"sequence,omitempty" firestore:"sequence,omitempty"`
+	Kind             string       `json:"kind,omitempty" firestore:"kind,omitempty"`
+	Phase            string       `json:"phase,omitempty" firestore:"phase,omitempty"`
+	SourceHost       string       `json:"source_host,omitempty" firestore:"source_host,omitempty"`
+	SourceInstanceID string       `json:"source_instance_id,omitempty" firestore:"source_instance_id,omitempty"`
+	SourceEpoch      string       `json:"source_epoch,omitempty" firestore:"source_epoch,omitempty"`
+	TargetHost       string       `json:"target_host,omitempty" firestore:"target_host,omitempty"`
+	TargetInstanceID string       `json:"target_instance_id,omitempty" firestore:"target_instance_id,omitempty"`
+	Generations      []string     `json:"generations,omitempty" firestore:"generations,omitempty"`
+	Desired          []Generation `json:"desired,omitempty" firestore:"desired,omitempty"`
 }
 
 // Lease is an exclusive, expiring mutation right for one placement record.
 type Lease struct {
-	User      string
-	App       string
-	HostID    string
-	Owner     string
-	Revision  int64
-	UntilUnix int64
+	User           string
+	App            string
+	HostID         string
+	HostInstanceID string
+	Owner          string
+	Revision       int64
+	UntilUnix      int64
 }
 
 func (l Lease) Until() time.Time { return time.Unix(0, l.UntilUnix) }
@@ -131,9 +143,19 @@ func (m *Memory) Get(_ context.Context, user, app string) (string, bool, error) 
 }
 
 func (m *Memory) Set(_ context.Context, user, app, hostID string) error {
+	return m.setIdentity(user, app, hostID, "")
+}
+
+func (m *Memory) SetIdentity(_ context.Context, user, app, hostID, hostInstanceID string) error {
+	return m.setIdentity(user, app, hostID, hostInstanceID)
+}
+
+func (m *Memory) setIdentity(user, app, hostID, hostInstanceID string) error {
 	if user == "" || app == "" || hostID == "" {
 		return fmt.Errorf("user, app, and hostID required")
 	}
+	// Empty IDs remain supported for local/legacy tests; snapshotd fails closed
+	// on any durable placement without the immutable production instance ID.
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	k := key(user, app)
@@ -141,7 +163,7 @@ func (m *Memory) Set(_ context.Context, user, app, hostID string) error {
 	if leaseActive(r, time.Now()) {
 		return ErrLeaseHeld{User: user, App: app, Owner: r.LeaseOwner, Until: time.Unix(0, r.LeaseUntilUnix)}
 	}
-	r.User, r.App, r.HostID = user, app, hostID
+	r.User, r.App, r.HostID, r.HostInstanceID = user, app, hostID, hostInstanceID
 	r.Revision++
 	r.LeaseOwner, r.LeaseUntilUnix = "", 0
 	r.Operation = Operation{}
@@ -252,14 +274,22 @@ func (m *Memory) Mark(_ context.Context, lease Lease, operation Operation) error
 }
 
 func (m *Memory) Commit(_ context.Context, lease Lease, hostID string, now time.Time) error {
-	return m.commit(lease, hostID, nil, false, now)
+	return m.commit(lease, hostID, "", nil, false, now)
 }
 
 func (m *Memory) CommitState(_ context.Context, lease Lease, hostID string, generations []Generation, now time.Time) error {
-	return m.commit(lease, hostID, generations, true, now)
+	return m.commit(lease, hostID, "", generations, true, now)
 }
 
-func (m *Memory) commit(lease Lease, hostID string, generations []Generation, replaceGenerations bool, now time.Time) error {
+func (m *Memory) CommitIdentity(_ context.Context, lease Lease, hostID, hostInstanceID string, now time.Time) error {
+	return m.commit(lease, hostID, hostInstanceID, nil, false, now)
+}
+
+func (m *Memory) CommitStateIdentity(_ context.Context, lease Lease, hostID, hostInstanceID string, generations []Generation, now time.Time) error {
+	return m.commit(lease, hostID, hostInstanceID, generations, true, now)
+}
+
+func (m *Memory) commit(lease Lease, hostID, hostInstanceID string, generations []Generation, replaceGenerations bool, now time.Time) error {
 	if hostID == "" {
 		return fmt.Errorf("hostID required")
 	}
@@ -271,6 +301,7 @@ func (m *Memory) commit(lease Lease, hostID string, generations []Generation, re
 		return ErrLeaseLost{User: lease.User, App: lease.App}
 	}
 	r.HostID = hostID
+	r.HostInstanceID = hostInstanceID
 	if replaceGenerations {
 		r.Generations = append([]Generation(nil), generations...)
 	}
@@ -309,7 +340,7 @@ func leaseMatches(r Record, lease Lease) bool {
 
 func leaseFromRecord(r Record) Lease {
 	return Lease{
-		User: r.User, App: r.App, HostID: r.HostID, Owner: r.LeaseOwner,
+		User: r.User, App: r.App, HostID: r.HostID, HostInstanceID: r.HostInstanceID, Owner: r.LeaseOwner,
 		Revision: r.Revision, UntilUnix: r.LeaseUntilUnix,
 	}
 }

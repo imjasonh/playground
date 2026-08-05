@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+set -euo pipefail
+${helpers}
+
+install_docker
+retry 30 registry_login
+install -d -o 65532 -g 65532 -m 0700 /var/lib/sshcloud/snapshotd
+install_control_identity_refresher \
+  "${control_identity_secret}" \
+  "${control_ca_current_secret}" \
+  "${control_ca_previous_secret}" \
+  /var/lib/sshcloud/control 65532 65532
+
+IMAGE="${snapshot_image}"
+retry 30 docker pull "$IMAGE"
+docker rm -f sshcloud-snapshotd 2>/dev/null || true
+INTERNAL_IP="$(curl -fsS -H 'Metadata-Flavor: Google' \
+  http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/ip)"
+docker run -d --name sshcloud-snapshotd --restart unless-stopped --net host \
+  --user 65532:65532 \
+  --cap-drop ALL \
+  --read-only \
+  --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+  -v /var/lib/sshcloud/control:/var/lib/sshcloud/control:ro \
+  -v /var/lib/sshcloud/snapshotd:/var/lib/sshcloud/snapshotd:rw \
+  "$IMAGE" \
+  -listen "$${INTERNAL_IP}:8082" \
+  -health-listen "$${INTERNAL_IP}:8083" \
+  -temp-dir /var/lib/sshcloud/snapshotd \
+  -gcs-bucket "${snapshots_bucket}" \
+  -gcs-prefix "${snapshot_prefix}" \
+  -kms-key "${kms_key}" \
+  -firestore-project "${project_id}" \
+  -firestore-prefix "${firestore_prefix}" \
+  -firestore-database "${firestore_database}" \
+  -control-cert /var/lib/sshcloud/control/tls.crt \
+  -control-key /var/lib/sshcloud/control/tls.key \
+  -control-ca-current /var/lib/sshcloud/control/ca-current.pem \
+  -control-ca-previous /var/lib/sshcloud/control/ca-previous.pem \
+  -control-project-id "${project_id}" \
+  -control-project-number "${project_number}" \
+  -agent-service-account "${agent_service_account}"

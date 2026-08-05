@@ -338,7 +338,8 @@ func (m *Manager) EnsureWith(ctx context.Context, user, app string, opt EnsureOp
 	}
 
 	if m.cfg.SnapStore != nil {
-		has, err := m.cfg.SnapStore.Has(ctx, snapshot.KeyFor(user, app))
+		ref := snapshot.RefForAgentApp(user, app)
+		has, err := m.cfg.SnapStore.Has(ctx, ref)
 		if err != nil {
 			return nil, fmt.Errorf("check snapshot: %w", err)
 		}
@@ -997,7 +998,7 @@ func (m *Manager) Ready() error {
 	}
 	if m.cfg.SnapStore != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		_, err := m.cfg.SnapStore.Has(ctx, snapshot.KeyFor("healthcheck", "healthcheck"))
+		err := m.cfg.SnapStore.Health(ctx)
 		cancel()
 		if err != nil {
 			return fmt.Errorf("snapshot store: %w", err)
@@ -1081,11 +1082,13 @@ func (m *Manager) SleepWithEpoch(ctx context.Context, user, app, cordonEpoch str
 	if err := os.MkdirAll(snapDir, 0o700); err != nil {
 		return err
 	}
+	ref := snapshot.RefForAgentApp(user, app)
 	meta := snapshot.Meta{
 		SchemaVersion:    snapshot.SchemaVersion,
 		LayoutVersion:    m.rt.SnapshotLayout(),
-		User:             user,
-		App:              app,
+		User:             ref.User,
+		App:              ref.App,
+		Gen:              ref.Gen,
 		GuestIP:          in.GuestIP,
 		TapName:          in.TapName,
 		GuestMAC:         in.GuestMAC,
@@ -1122,8 +1125,7 @@ func (m *Manager) SleepWithEpoch(ctx context.Context, user, app, cordonEpoch str
 	if err := mach.CreateSnapshot(ctx, files); err != nil {
 		return resumeAfterFailure(fmt.Errorf("create snapshot: %w", err))
 	}
-	key := snapshot.KeyFor(user, app)
-	if err := m.cfg.SnapStore.Put(ctx, key, pkg); err != nil {
+	if err := m.cfg.SnapStore.Put(ctx, ref, pkg); err != nil {
 		return resumeAfterFailure(fmt.Errorf("upload snapshot: %w", err))
 	}
 	if err := mach.Kill(); err != nil {
@@ -1133,7 +1135,7 @@ func (m *Manager) SleepWithEpoch(ctx context.Context, user, app, cordonEpoch str
 		m.mu.Lock()
 		in.machine = nil
 		in.State = StateSleeping
-		in.snapKey = key
+		in.snapKey = ref.Key()
 		in.LastUsed = time.Now()
 		m.mu.Unlock()
 		return fmt.Errorf("kill after durable snapshot: %w", err)
@@ -1142,7 +1144,7 @@ func (m *Manager) SleepWithEpoch(ctx context.Context, user, app, cordonEpoch str
 	m.mu.Lock()
 	in.machine = nil
 	in.State = StateSleeping
-	in.snapKey = key
+	in.snapKey = ref.Key()
 	in.LastUsed = time.Now()
 	m.mu.Unlock()
 	return nil
@@ -1213,12 +1215,13 @@ func (m *Manager) PreflightSnapshot(ctx context.Context, user, app string) (Inst
 	if !m.rt.Available() {
 		return InstanceInfo{}, fmt.Errorf("VM runtime is unavailable on this host")
 	}
-	meta, err := m.cfg.SnapStore.Meta(ctx, snapshot.KeyFor(user, app))
+	ref := snapshot.RefForAgentApp(user, app)
+	meta, err := m.cfg.SnapStore.Meta(ctx, ref)
 	if err != nil {
 		return InstanceInfo{}, err
 	}
-	if meta.User != user || meta.App != app {
-		return InstanceInfo{}, fmt.Errorf("snapshot identity mismatch: got %s/%s, want %s", meta.User, meta.App, k)
+	if err := snapshot.ValidateMeta(ref, meta, m.rt.SnapshotLayout()); err != nil {
+		return InstanceInfo{}, err
 	}
 	if meta.SchemaVersion != snapshot.SchemaVersion {
 		return InstanceInfo{}, fmt.Errorf("snapshot schema version %d is unsupported", meta.SchemaVersion)
@@ -1281,7 +1284,8 @@ func (m *Manager) RegisterSleeping(ctx context.Context, user, app string) (Insta
 	if err != nil {
 		return InstanceInfo{}, err
 	}
-	meta, err := m.cfg.SnapStore.Meta(ctx, snapshot.KeyFor(user, app))
+	ref := snapshot.RefForAgentApp(user, app)
+	meta, err := m.cfg.SnapStore.Meta(ctx, ref)
 	if err != nil {
 		return InstanceInfo{}, err
 	}
@@ -1292,7 +1296,7 @@ func (m *Manager) RegisterSleeping(ctx context.Context, user, app string) (Insta
 		GuestMAC: meta.GuestMAC,
 		Rootfs:   filepath.Join(m.cfg.WorkDir, "vm-"+resourceID, "rootfs.ext4"),
 		WorkDir:  filepath.Join(m.cfg.WorkDir, "vm-"+resourceID),
-		Image:    meta.Image, Tier: info.Tier, snapKey: snapshot.KeyFor(user, app),
+		Image:    meta.Image, Tier: info.Tier, snapKey: ref.Key(),
 		SSHHostPublicKey: meta.SSHHostPublicKey, LastUsed: time.Now(),
 	}
 	_, in.VCPUs, in.MemMiB, _ = tierResources(info.Tier)
@@ -1365,7 +1369,8 @@ func (m *Manager) adopt(ctx context.Context, k InstanceKey, _ int, opt EnsureOpt
 		}
 	}()
 	restoreDir := filepath.Join(dir, "restore")
-	pkg, err := m.cfg.SnapStore.Get(ctx, snapshot.KeyFor(k.User, k.App), restoreDir)
+	ref := snapshot.RefForAgentApp(k.User, k.App)
+	pkg, err := m.cfg.SnapStore.Get(ctx, ref, restoreDir)
 	if err != nil {
 		return nil, fmt.Errorf("download snapshot: %w", err)
 	}
@@ -1378,8 +1383,8 @@ func (m *Manager) adopt(ctx context.Context, k InstanceKey, _ int, opt EnsureOpt
 		}
 		pkg.Meta = meta
 	}
-	if meta.User != k.User || meta.App != k.App {
-		return nil, fmt.Errorf("snapshot identity mismatch: got %s/%s, want %s", meta.User, meta.App, k)
+	if err := snapshot.ValidateMeta(ref, meta, m.rt.SnapshotLayout()); err != nil {
+		return nil, err
 	}
 	if meta.SchemaVersion != snapshot.SchemaVersion {
 		return nil, fmt.Errorf("snapshot schema version %d is unsupported", meta.SchemaVersion)
@@ -1441,7 +1446,7 @@ func (m *Manager) adopt(ctx context.Context, k InstanceKey, _ int, opt EnsureOpt
 		GuestMAC:         meta.GuestMAC,
 		Rootfs:           rootfsPath,
 		WorkDir:          dir,
-		snapKey:          snapshot.KeyFor(k.User, k.App),
+		snapKey:          ref.Key(),
 		LastUsed:         time.Now(),
 		Image:            meta.Image,
 		Tier:             meta.Tier,
@@ -1603,7 +1608,8 @@ func (m *Manager) wake(ctx context.Context, k InstanceKey) (*Instance, error) {
 
 	restoreDir := filepath.Join(in.WorkDir, hostisolation.HostRestoreDir)
 	_ = os.RemoveAll(restoreDir)
-	pkg, err := m.cfg.SnapStore.Get(ctx, snapshot.KeyFor(k.User, k.App), restoreDir)
+	ref := snapshot.RefForAgentApp(k.User, k.App)
+	pkg, err := m.cfg.SnapStore.Get(ctx, ref, restoreDir)
 	if err != nil {
 		return nil, fmt.Errorf("download snapshot: %w", err)
 	}
@@ -1614,8 +1620,8 @@ func (m *Manager) wake(ctx context.Context, k InstanceKey) (*Instance, error) {
 	if pkg.Meta.LayoutVersion != m.rt.SnapshotLayout() {
 		return nil, fmt.Errorf("snapshot layout %q is incompatible with runtime %q", pkg.Meta.LayoutVersion, m.rt.SnapshotLayout())
 	}
-	if pkg.Meta.User != k.User || pkg.Meta.App != k.App {
-		return nil, fmt.Errorf("snapshot identity mismatch: got %s/%s, want %s", pkg.Meta.User, pkg.Meta.App, k)
+	if err := snapshot.ValidateMeta(ref, pkg.Meta, m.rt.SnapshotLayout()); err != nil {
+		return nil, err
 	}
 	if pkg.Meta.TapName != in.TapName || pkg.Meta.HostIP != in.HostIP ||
 		pkg.Meta.GuestIP != in.GuestIP || !strings.EqualFold(pkg.Meta.GuestMAC, in.GuestMAC) {
@@ -1694,7 +1700,7 @@ func (m *Manager) StopContext(ctx context.Context, user, app string) error {
 	in, ok := m.inst[k]
 	m.mu.Unlock()
 	if m.cfg.SnapStore != nil {
-		if err := m.cfg.SnapStore.Delete(ctx, snapshot.KeyFor(user, app)); err != nil {
+		if err := m.cfg.SnapStore.Delete(ctx, snapshot.RefForAgentApp(user, app)); err != nil {
 			return fmt.Errorf("delete snapshot: %w", err)
 		}
 	}

@@ -107,9 +107,10 @@ func TestTerraformControlPlaneUsesWorkloadIdentityMTLSWithoutBearerSecrets(t *te
 	t.Parallel()
 	root := filepath.Join("..", "..", "terraform")
 	files := []string{
-		"secrets.tf", "iam.tf", "gateway.tf", "orchestrator.tf", "agents.tf", "network.tf",
+		"secrets.tf", "iam.tf", "gateway.tf", "orchestrator.tf", "snapshotd.tf", "agents.tf", "network.tf",
 		filepath.Join("scripts", "gateway.sh.tftpl"),
 		filepath.Join("scripts", "orchestrator.sh.tftpl"),
+		filepath.Join("scripts", "snapshotd.sh.tftpl"),
 		filepath.Join("scripts", "agent.sh.tftpl"),
 		filepath.Join("scripts", "run-container.sh.tftpl"),
 	}
@@ -133,6 +134,7 @@ func TestTerraformControlPlaneUsesWorkloadIdentityMTLSWithoutBearerSecrets(t *te
 		"spiffe://sshcloud.internal/control/gateway",
 		"spiffe://sshcloud.internal/control/orchestrator",
 		"spiffe://sshcloud.internal/control/agent",
+		"spiffe://sshcloud.internal/control/snapshot",
 		`control_ca["a"]`,
 		`control_ca["b"]`,
 		"sshcloud-control-identity-refresh.timer",
@@ -140,10 +142,44 @@ func TestTerraformControlPlaneUsesWorkloadIdentityMTLSWithoutBearerSecrets(t *te
 		"-control-ca-previous",
 		"-admin-socket /run/sshcloud/orchestrator-admin.sock",
 		"https://${orchestrator_ip}:8090",
-		"lines.append(f\"{name}=https://{ip}:8080\")",
+		"lines.append(f\"{name}@{instance_id}=https://{ip}:8080\")",
 	} {
 		if !strings.Contains(content, required) {
 			t.Errorf("production control-plane configuration is missing %q", required)
+		}
+	}
+}
+
+func TestTerraformSnapshotBoundaryExcludesAgentsFromGCSAndKMS(t *testing.T) {
+	t.Parallel()
+	root := filepath.Join("..", "..", "terraform")
+	iam := readTestFile(t, filepath.Join(root, "iam.tf"))
+	storage := readTestFile(t, filepath.Join(root, "storage.tf"))
+	kms := readTestFile(t, filepath.Join(root, "kms.tf"))
+	agents := readTestFile(t, filepath.Join(root, "agents.tf"))
+	agentStartup := readTestFile(t, filepath.Join(root, "scripts", "agent.sh.tftpl"))
+	snapshotVM := readTestFile(t, filepath.Join(root, "snapshotd.tf"))
+	network := readTestFile(t, filepath.Join(root, "network.tf"))
+	images := readTestFile(t, filepath.Join(root, "images.tf"))
+
+	if strings.Contains(iam, "agent_snapshots") || strings.Contains(agentStartup, "-gcs-bucket") {
+		t.Fatal("agent retains direct snapshot bucket access")
+	}
+	for name, content := range map[string]string{
+		"storage.tf": storage, "kms.tf": kms, "agents.tf": agents,
+		"snapshotd.tf": snapshotVM, "network.tf": network, "images.tf": images,
+	} {
+		for _, required := range map[string][]string{
+			"storage.tf":   {"default_kms_key_name"},
+			"kms.tf":       {`google_kms_crypto_key" "snapshots`, "snapshot_bucket_cmek"},
+			"agents.tf":    {"snapshotd_url"},
+			"snapshotd.tf": {`google_compute_instance" "snapshot`, "kms_key"},
+			"network.tf":   {"agents_to_snapshot"},
+			"images.tf":    {`ko_build" "snapshot`},
+		}[name] {
+			if !strings.Contains(content, required) {
+				t.Errorf("%s is missing %q", name, required)
+			}
 		}
 	}
 }

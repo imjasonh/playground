@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -103,10 +104,11 @@ func (h *HostSet) IDs() []string {
 
 // HostCandidate is a host that can fit one more instance of a tier.
 type HostCandidate struct {
-	ID        string
-	Client    *AgentClient
-	Capacity  agent.Capacity
-	Remaining agent.Resources
+	ID         string
+	InstanceID string
+	Client     *AgentClient
+	Capacity   agent.Capacity
+	Remaining  agent.Resources
 }
 
 type HostDiagnostic struct {
@@ -179,7 +181,8 @@ func (h *HostSet) CandidatesFor(ctx context.Context, need agent.Resources, exclu
 			continue
 		}
 		candidates = append(candidates, HostCandidate{
-			ID: result.id, Client: result.client, Capacity: result.capacity, Remaining: remaining,
+			ID: result.id, InstanceID: result.client.InstanceID,
+			Client: result.client, Capacity: result.capacity, Remaining: remaining,
 		})
 	}
 	sort.Slice(candidates, func(i, j int) bool {
@@ -273,7 +276,9 @@ func (h *HostSet) Diagnostics(ctx context.Context) []HostDiagnostic {
 	return out
 }
 
-// ParseHostsSpec parses "id=url" pairs separated by commas and/or newlines.
+// ParseHostsSpec parses "name@instance-id=url" pairs separated by commas and/or
+// newlines. The @instance-id suffix is mandatory in production-generated files
+// and optional only for local tests.
 func ParseHostsSpec(s string) (map[string]*AgentClient, error) {
 	out := make(map[string]*AgentClient)
 	s = strings.TrimSpace(s)
@@ -288,13 +293,23 @@ func ParseHostsSpec(s string) (map[string]*AgentClient, error) {
 		if part == "" {
 			continue
 		}
-		id, url, ok := strings.Cut(part, "=")
-		id = strings.TrimSpace(id)
+		identity, url, ok := strings.Cut(part, "=")
+		identity = strings.TrimSpace(identity)
 		url = strings.TrimSpace(url)
-		if !ok || id == "" || url == "" {
-			return nil, fmt.Errorf("invalid hosts entry %q (want id=url)", part)
+		if !ok || identity == "" || url == "" {
+			return nil, fmt.Errorf("invalid hosts entry %q (want name@instance-id=url)", part)
 		}
-		out[id] = &AgentClient{BaseURL: strings.TrimRight(url, "/")}
+		id, instanceID, hasInstanceID := strings.Cut(identity, "@")
+		if id == "" {
+			return nil, fmt.Errorf("invalid hosts entry %q", part)
+		}
+		if hasInstanceID {
+			parsed, err := strconv.ParseUint(instanceID, 10, 64)
+			if err != nil || parsed == 0 || strconv.FormatUint(parsed, 10) != instanceID {
+				return nil, fmt.Errorf("invalid GCE instance ID in hosts entry %q", part)
+			}
+		}
+		out[id] = &AgentClient{BaseURL: strings.TrimRight(url, "/"), InstanceID: instanceID}
 	}
 	return out, nil
 }

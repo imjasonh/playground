@@ -1,7 +1,7 @@
 // Command agent runs on each GCE host and manages Firecracker microVMs.
 //
-// Idle instances are snapshotted to -snap-dir (or -gcs-bucket) and restored on
-// the next Ensure / POST /v1/instances/wake.
+// Idle instances are snapshotted through snapshotd in production and restored
+// on the next Ensure / POST /v1/instances/wake.
 package main
 
 import (
@@ -40,8 +40,7 @@ func main() {
 	caPub := flag.String("ca-pub", "", "platform user CA public key to inject")
 	guestInit := flag.String("guestinit", "", "linux guest PID1 trampoline (default: guestinit beside this binary)")
 	snapDir := flag.String("snap-dir", "", "local snapshot directory (default: <work-dir>/snapshots)")
-	gcsBucket := flag.String("gcs-bucket", "", "GCS bucket for snapshots (overrides -snap-dir)")
-	gcsPrefix := flag.String("gcs-prefix", "sshcloud/snaps", "GCS object key prefix")
+	snapshotdURL := flag.String("snapshotd-url", "", "production snapshotd HTTPS origin")
 	idle := flag.Duration("idle", 5*time.Minute, "idle time before snapshot-sleep (0=disable)")
 	controlCert := flag.String("control-cert", "", "reloadable agent control certificate PEM")
 	controlKey := flag.String("control-key", "", "reloadable agent control private-key PEM")
@@ -86,14 +85,23 @@ func main() {
 
 	var store snapshot.Store
 	switch {
-	case *gcsBucket != "":
-		s, err := snapshot.NewGCSStore(context.Background(), *gcsBucket, *gcsPrefix)
-		if err != nil {
-			log.Fatalf("gcs store: %v", err)
+	case !*insecureControl:
+		if strings.TrimSpace(*snapshotdURL) == "" {
+			log.Fatal("production agent requires -snapshotd-url")
 		}
-		defer s.Close()
+		client, err := controlauth.NewClient(
+			controlFiles, controlauth.RoleAgent, controlauth.RoleSnapshot,
+			controlauth.MetadataTokenSource{}, controlauth.AudienceSnapshot, snapshot.RemoteOperationTimeout,
+		)
+		if err != nil {
+			log.Fatalf("snapshotd control client: %v", err)
+		}
+		s, err := snapshot.NewRemoteStore(strings.TrimSpace(*snapshotdURL), client)
+		if err != nil {
+			log.Fatalf("snapshotd store: %v", err)
+		}
 		store = s
-		log.Printf("snapshot store: gs://%s/%s", *gcsBucket, *gcsPrefix)
+		log.Printf("snapshot store: %s", *snapshotdURL)
 	default:
 		dir := *snapDir
 		if dir == "" {
@@ -195,7 +203,7 @@ func main() {
 		Handler:           controlHandler,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      6 * time.Minute,
+		WriteTimeout:      20 * time.Minute,
 		IdleTimeout:       60 * time.Second,
 	}
 	listener, err := net.Listen("tcp", *listen)

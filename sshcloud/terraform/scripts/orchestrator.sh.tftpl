@@ -47,6 +47,9 @@ for inst in mig.get("managedInstances", []):
     if not name:
         continue
     desc = api(f"projects/{PROJECT}/zones/{ZONE}/instances/{name}")
+    instance_id = str(desc.get("id", ""))
+    if not instance_id.isdigit() or instance_id == "0":
+        continue
     ip = desc["networkInterfaces"][0]["networkIP"]
     try:
         with urllib.request.urlopen(f"http://{ip}:8081/readyz", timeout=3) as ready:
@@ -55,7 +58,7 @@ for inst in mig.get("managedInstances", []):
     except Exception as exc:
         print(f"skip unready host {name}: {exc}")
         continue
-    lines.append(f"{name}=https://{ip}:8080")
+    lines.append(f"{name}@{instance_id}=https://{ip}:8080")
 os.makedirs(os.path.dirname(OUT), exist_ok=True)
 tmp = OUT + ".tmp"
 with open(tmp, "w", encoding="utf-8") as f:

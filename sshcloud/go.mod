@@ -4,8 +4,10 @@ go 1.25.0
 
 require (
 	cloud.google.com/go/firestore v1.24.0
+	cloud.google.com/go/kms v1.33.0
 	cloud.google.com/go/storage v1.64.0
 	github.com/google/go-containerregistry v0.21.8
+	github.com/tink-crypto/tink-go/v2 v2.7.0
 	golang.org/x/crypto v0.54.0
 	golang.org/x/sys v0.47.0
 	google.golang.org/api v0.287.1

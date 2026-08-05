@@ -11,7 +11,8 @@ Design: [`docs/ssh-app-cloud-design.md`](../docs/ssh-app-cloud-design.md).
 > CAP_NET_ADMIN-only TAP helper. Control APIs now require workload identity plus
 > mTLS, but Terraform-held initial control leaf keys, optional audited egress,
 > hard-host-loss policy, and broader OCI runtime compatibility remain open. The
-> helper units still need an operator-owned GCP substrate smoke test.
+> helper units and the snapshotd/KMS/IAM boundary still need an operator-owned
+> GCP substrate smoke test.
 
 ## Layout
 
@@ -26,9 +27,11 @@ Design: [`docs/ssh-app-cloud-design.md`](../docs/ssh-app-cloud-design.md).
 | `cmd/mkrootfs` | Optional offline ext4 builder (test/dev; not the deploy path) |
 | `cmd/ocirootfs` | Materialize digest-pinned OCI image → cached ext4 |
 | `cmd/orchestrator` | Placement + cross-host migrate HTTP API |
+| `cmd/snapshotd` | Private authenticated snapshot proxy; sole GCS/KMS data-plane principal |
 | `internal/firecracker` | Firecracker API client + explicit direct-test runtime support |
-| `internal/snapshot` | Snapshot package format + local/GCS blob stores |
-| `internal/placement` | user/app → host ID map (memory or Firestore) |
+| `internal/snapshot` | Structured refs, fixed archives, LocalStore/RemoteStore, encrypted GCS repository |
+| `internal/snapshotd` | Exact-instance placement/operation authorization + HTTP proxy |
+| `internal/placement` | user/app → host name + immutable GCE instance ID (memory or Firestore) |
 | `internal/store` | users / keys / apps (memory or Firestore) |
 | `internal/migrate` | Cross-host Sleep→Evict→Adopt |
 | `internal/rootfs` | ext4 build via mkfs.ext4 + debugfs (`BuildFromDir`) |
@@ -40,7 +43,7 @@ Design: [`docs/ssh-app-cloud-design.md`](../docs/ssh-app-cloud-design.md).
 | `internal/agent` | Instance manager (boot, idle sleep, wake, adopt/evict) |
 | `hack/fetch-firecracker-assets.sh` | Download pinned Firecracker+jailer + kernel |
 | `hack/run-firestore-tests.sh` | Store/placement tests vs Firestore emulator |
-| `terraform/` | GCP env: Firestore, GCS, secrets, gateway, orchestrator, agent MIG + ko images |
+| `terraform/` | GCP env: Firestore, CMEK GCS/KMS, gateway, orchestrator, snapshotd, agent MIG + ko images |
 
 ## Build & test
 
@@ -201,7 +204,19 @@ A new digest is a new rootfs/generation. The gateway (`-drain-timeout`, default
   (schema/layout + tap/IP/MAC).
 - Agent API: `POST /v1/instances/sleep`, `POST /v1/instances/wake` (or
   `ensure`, which wakes if sleeping), `GET /v1/instances/status?user=&app=`.
-- Default store is local under `-snap-dir`; production uses `-gcs-bucket`.
+- Local/KVM mode uses `LocalStore` under `-snap-dir`. Production requires
+  `-snapshotd-url` and `RemoteStore`; agent service accounts have no snapshot
+  bucket or KMS permissions.
+- Every operation carries a validated `(user, app, generation)` reference.
+  snapshotd derives the caller VM's exact name and immutable instance ID from
+  its verified full-format GCE token, then checks Firestore placement and the
+  live ensure/migrate/drain journal. Committing a move revokes the source.
+- Bytes are proxied through snapshotd. Publication validates the fixed
+  four-entry archive and metadata identity/layout, creates a fresh Tink v2
+  Streaming AEAD keyset, wraps it with Cloud KMS using
+  tenant/app/generation/snapshot AAD, writes an immutable encrypted version,
+  and CAS-publishes `current.json` with a GCS generation precondition. The
+  snapshot bucket also uses CMEK.
 - TAP is kept across sleep; wake restores into the same network identity.
 - Production Firecracker always sees `/rootfs.ext4` and
   `/snapshot/{vm.state,vm.mem}` inside its chroot. Snapshot schema 2 records a
@@ -278,7 +293,8 @@ keep `/dev/kvm` at `root:kvm 0660`, with neither `sshcloud` nor
 Normal Go CI runs deterministic fault injection (also under the race detector):
 
 - real SSH client → gateway → cert hop → app sessions across live drain and kick
-- snapshot pause/create/publish/resume failure matrix and incomplete packages
+- snapshot pause/create/publish/resume failures, fixed-package validation,
+  envelope tamper/swap/truncation/AAD rejection, and generation-CAS conflicts
 - unexpected Firecracker process death, lifecycle fencing, and resource reservations
 - deploy persistence/hold failures plus admission-vs-deploy linearization
 - stale-placement refusal, expiring lease takeover, and operation-journal reconciliation
@@ -288,8 +304,9 @@ Normal Go CI runs deterministic fault injection (also under the race detector):
 
 The KVM job adds substrate-dependent chaos: a canceled/failed snapshot publish
 must resume a dialable guest, and a fresh manager must recover a sleeping guest
-from the durable snapshot through ordinary `Ensure`. Cloud IAM, firewall/NAT,
-and Terraform replacement behavior are not exercised in CI; this repository
+from the durable snapshot through ordinary `Ensure`. Cloud KMS, GCS generation
+preconditions, IAM denial, firewall/NAT, and Terraform replacement behavior are
+modeled with fakes/structural checks but not exercised against GCP; this repository
 does not have a disposable GCP project. Local fakes deliberately do not claim
 to validate provider semantics.
 
@@ -305,6 +322,8 @@ Implemented and covered at package/integration level:
 - [x] Hardened OCI unpack, authenticated pulls, boot-spec PID 1, ext4 cache
 - [x] Firecracker boot plus consistent pause→disk→memory snapshots
 - [x] Atomic snapshot package publication and restart-on-Ensure recovery
+- [x] Per-generation snapshotd isolation with exact GCE instance fencing,
+      encrypted immutable packages, KMS-wrapped streaming keys, and bucket CMEK
 - [x] Serialized deploy cutover, same-artifact idempotency, drain/kick fencing
 - [x] Real `tiny` (1 vCPU/128 MiB) and `small` (2 vCPU/512 MiB) resources
 - [x] Generation-aware migrate primitives and placement-after-readiness
@@ -317,7 +336,7 @@ Implemented and covered at package/integration level:
 - [x] Content-addressed platform assets and opt-in Terraform fortune bootstrap
 - [x] Unit/Firestore/KVM suites plus Terraform and tagged-test CI validation
 - [x] Handshake/join/app/session/deploy/wake/awake-VM admission limits
-- [x] Durable pending/retiring deploy reconciliation and bounded snapshot retention
+- [x] Durable pending/retiring deploy reconciliation
 - [x] TAP firewall isolation: guest-initiated host/VPC/metadata/egress traffic denied
 - [x] Pinned Firecracker+jailer host boundary with per-VM UID/GID, chroot,
       cgroup-v2 limits, authenticated API proxy, and separate TAP helper
@@ -330,10 +349,12 @@ Required before public/self-service use:
 - [ ] Session leases/heartbeats (current no-idle hold is not crash-expiring)
 - [ ] Automatic pre-termination MIG hooks (manual drain-before-replace is available;
       auto-healing after a hard failure remains abrupt)
-- [ ] Long-term snapshot quota/accounting (current versions retain current+previous with grace)
+- [ ] Long-term snapshot quota/accounting and lifecycle cleanup of superseded
+      immutable encrypted versions
 - [ ] External key management, encrypted remote Terraform state, rotation drills
 - [ ] Move Terraform-held control leaf keys to an external issuer/rotation path
 - [ ] Manual first apply/drain/rollout validation in an operator-owned environment
       (including jailer mount/cgroup-v2 behavior, systemd capability bounding,
-      TAP ownership, and snapshot wake; there is no disposable GCP project
+      TAP ownership, snapshotd mTLS/token claims, Firestore fences, KMS/CMEK,
+      GCS generation preconditions, agent IAM denial, and snapshot wake; there is no disposable GCP project
       available to CI)

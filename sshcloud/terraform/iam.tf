@@ -16,6 +16,12 @@ resource "google_service_account" "agent" {
   depends_on   = [module.project_services]
 }
 
+resource "google_service_account" "snapshot" {
+  account_id   = "${local.prefix}-snapshot"
+  display_name = "sshcloud snapshot service"
+  depends_on   = [module.project_services]
+}
+
 # Gateway: Firestore users/apps + secrets + talk to orchestrator (network only).
 resource "google_project_iam_member" "gateway_datastore" {
   project = var.project_id
@@ -67,13 +73,8 @@ resource "google_project_iam_member" "orchestrator_compute_viewer" {
   member  = "serviceAccount:${google_service_account.orchestrator.email}"
 }
 
-# Agent: snapshot + asset buckets, user CA pub.
-resource "google_storage_bucket_iam_member" "agent_snapshots" {
-  bucket = google_storage_bucket.snapshots.name
-  role   = "roles/storage.objectAdmin"
-  member = "serviceAccount:${google_service_account.agent.email}"
-}
-
+# Agent: platform assets and user CA pub. It intentionally has no snapshot
+# bucket or Cloud KMS role; all snapshot bytes go through snapshotd.
 resource "google_storage_bucket_iam_member" "agent_assets" {
   bucket = google_storage_bucket.assets.name
   role   = "roles/storage.objectViewer"
@@ -87,11 +88,35 @@ resource "google_secret_manager_secret_iam_member" "agent_user_ca_pub" {
   member    = "serviceAccount:${google_service_account.agent.email}"
 }
 
+resource "google_project_iam_member" "snapshot_datastore" {
+  project = var.project_id
+  role    = "roles/datastore.viewer"
+  member  = "serviceAccount:${google_service_account.snapshot.email}"
+  condition {
+    title       = "${local.prefix}-snapshot-firestore-database"
+    description = "Limit snapshot placement reads to the dedicated sshcloud database"
+    expression  = "resource.name == \"projects/${var.project_id}/databases/${var.firestore_database}\""
+  }
+}
+
+resource "google_storage_bucket_iam_member" "snapshot_objects" {
+  bucket = google_storage_bucket.snapshots.name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${google_service_account.snapshot.email}"
+}
+
+resource "google_kms_crypto_key_iam_member" "snapshot_kek" {
+  crypto_key_id = google_kms_crypto_key.snapshot_envelope.id
+  role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+  member        = "serviceAccount:${google_service_account.snapshot.email}"
+}
+
 locals {
   control_service_accounts = {
     gateway      = google_service_account.gateway.email
     orchestrator = google_service_account.orchestrator.email
     agent        = google_service_account.agent.email
+    snapshot     = google_service_account.snapshot.email
   }
   control_ca_grants = {
     for pair in setproduct(local.control_roles, toset(["a", "b"])) :
@@ -123,6 +148,7 @@ resource "google_artifact_registry_repository_iam_member" "pullers" {
     gateway      = google_service_account.gateway.email
     orchestrator = google_service_account.orchestrator.email
     agent        = google_service_account.agent.email
+    snapshot     = google_service_account.snapshot.email
   }
   project    = var.project_id
   location   = var.region

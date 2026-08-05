@@ -13,6 +13,7 @@ import (
 
 	"github.com/imjasonh/playground/sshcloud/internal/firecracker"
 	"github.com/imjasonh/playground/sshcloud/internal/guestinit"
+	"github.com/imjasonh/playground/sshcloud/internal/hostisolation"
 	"github.com/imjasonh/playground/sshcloud/internal/hostkey"
 	"github.com/imjasonh/playground/sshcloud/internal/snapshot"
 )
@@ -347,18 +348,19 @@ type orderedSnapshotStore struct {
 	putErr error
 }
 
-func (s orderedSnapshotStore) Put(context.Context, string, snapshot.Package) error {
+func (s orderedSnapshotStore) Put(context.Context, snapshot.Ref, snapshot.Package) error {
 	*s.events = append(*s.events, "put")
 	return s.putErr
 }
-func (orderedSnapshotStore) Get(context.Context, string, string) (snapshot.Package, error) {
+func (orderedSnapshotStore) Get(context.Context, snapshot.Ref, string) (snapshot.Package, error) {
 	return snapshot.Package{}, os.ErrNotExist
 }
-func (orderedSnapshotStore) Has(context.Context, string) (bool, error) { return false, nil }
-func (orderedSnapshotStore) Meta(context.Context, string) (snapshot.Meta, error) {
+func (orderedSnapshotStore) Has(context.Context, snapshot.Ref) (bool, error) { return false, nil }
+func (orderedSnapshotStore) Meta(context.Context, snapshot.Ref) (snapshot.Meta, error) {
 	return snapshot.Meta{}, os.ErrNotExist
 }
-func (orderedSnapshotStore) Delete(context.Context, string) error { return nil }
+func (orderedSnapshotStore) Delete(context.Context, snapshot.Ref) error { return nil }
+func (orderedSnapshotStore) Health(context.Context) error               { return nil }
 
 func TestSleepPublishesBeforeKillingVMM(t *testing.T) {
 	t.Parallel()
@@ -469,11 +471,14 @@ func TestStopDeletesSnapshotAfterManagerRestart(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := pkg.WriteMeta(snapshot.Meta{User: "alice", App: "fortune"}); err != nil {
+	if err := pkg.WriteMeta(snapshot.Meta{
+		SchemaVersion: snapshot.SchemaVersion, LayoutVersion: hostisolation.SnapshotLayoutDirect,
+		User: "alice", App: "fortune",
+	}); err != nil {
 		t.Fatal(err)
 	}
-	key := snapshot.KeyFor("alice", "fortune")
-	if err := store.Put(context.Background(), key, pkg); err != nil {
+	ref := snapshot.Ref{User: "alice", App: "fortune"}
+	if err := store.Put(context.Background(), ref, pkg); err != nil {
 		t.Fatal(err)
 	}
 	mgr, err := NewManager(Config{
@@ -487,7 +492,7 @@ func TestStopDeletesSnapshotAfterManagerRestart(t *testing.T) {
 	if err := mgr.StopContext(context.Background(), "alice", "fortune"); err != nil {
 		t.Fatal(err)
 	}
-	if exists, err := store.Has(context.Background(), key); err != nil || exists {
+	if exists, err := store.Has(context.Background(), ref); err != nil || exists {
 		t.Fatalf("snapshot remains after stop: exists=%v err=%v", exists, err)
 	}
 }

@@ -5,10 +5,10 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TF="$ROOT/terraform"
 
 need=(
-  versions.tf variables.tf outputs.tf main.tf services.tf iam.tf firestore.tf storage.tf
-  secrets.tf images.tf network.tf gateway.tf orchestrator.tf agents.tf demo.tf
+  versions.tf variables.tf outputs.tf main.tf services.tf iam.tf firestore.tf storage.tf kms.tf
+  secrets.tf images.tf network.tf gateway.tf orchestrator.tf snapshotd.tf agents.tf demo.tf
   modules/project-services/main.tf
-  scripts/gateway.sh.tftpl scripts/orchestrator.sh.tftpl scripts/agent.sh.tftpl
+  scripts/gateway.sh.tftpl scripts/orchestrator.sh.tftpl scripts/snapshotd.sh.tftpl scripts/agent.sh.tftpl
   scripts/run-container.sh.tftpl scripts/ssh-client.sh scripts/deploy-fortune.sh
   scripts/verify-fortune.sh terraform.tfvars.example README.md
   ../hack/drain-agent-host.sh
@@ -27,6 +27,29 @@ if ! grep -q 'ko-build/ko' "$TF/versions.tf"; then
 fi
 if ! grep -q 'ko_build' "$TF/images.tf"; then
   echo "images.tf must declare ko_build resources" >&2
+  exit 1
+fi
+if ! grep -q 'ko_build" "snapshot' "$TF/images.tf" ||
+  ! grep -q 'RoleSnapshot' "$ROOT/internal/controlauth/auth.go" ||
+  ! grep -q 'spiffe://sshcloud.internal/control/snapshot' "$TF/secrets.tf" ||
+  ! grep -q 'google_compute_instance" "snapshot' "$TF/snapshotd.tf" ||
+  ! grep -q 'agents_to_snapshot' "$TF/network.tf" ||
+  ! grep -q -- '-snapshotd-url' "$TF/scripts/agent.sh.tftpl"; then
+  echo "snapshotd needs a ko image, workload certificate, VM, private firewall, and agent RemoteStore URL" >&2
+  exit 1
+fi
+if grep -q 'agent_snapshots' "$TF/iam.tf" ||
+  grep -q 'serviceAccount:.*agent.email.*storage.object' "$TF/iam.tf" ||
+  grep -q -- '-gcs-bucket' "$TF/scripts/agent.sh.tftpl"; then
+  echo "the agent must have zero direct snapshot-bucket access" >&2
+  exit 1
+fi
+if ! grep -q 'cloudkms.googleapis.com' "$TF/services.tf" ||
+  ! grep -q 'google_kms_crypto_key" "snapshots' "$TF/kms.tf" ||
+  ! grep -q 'default_kms_key_name' "$TF/storage.tf" ||
+  ! grep -q 'snapshot_kek' "$TF/iam.tf" ||
+  ! grep -q 'snapshot_bucket_cmek' "$TF/kms.tf"; then
+  echo "snapshot envelope encryption and bucket CMEK resources are incomplete" >&2
   exit 1
 fi
 if ! grep -q 'enable_nested_virtualization' "$TF/agents.tf"; then

@@ -45,8 +45,8 @@ func main() {
 	listen := flag.String("listen", "127.0.0.1:8090", "gateway-service HTTPS listen address")
 	healthListen := flag.String("health-listen", "127.0.0.1:8091", "unauthenticated health-only HTTP listen address")
 	adminSocket := flag.String("admin-socket", "", "root-owned Unix socket for the admin HTTPS API")
-	hostsFlag := flag.String("hosts", "", "comma-separated hostID=baseURL pairs")
-	hostsFile := flag.String("hosts-file", "", "hosts file (id=url per line); reloaded every 30s")
+	hostsFlag := flag.String("hosts", "", "comma-separated hostID[@instance-id]=baseURL pairs")
+	hostsFile := flag.String("hosts-file", "", "hosts file (name@instance-id=url per line in production); reloaded every 30s")
 	defaultHost := flag.String("default-host", "", "default placement host ID")
 	firestoreProject := flag.String("firestore-project", "", "GCP project for Firestore placement (default: in-memory)")
 	firestorePrefix := flag.String("firestore-prefix", "sshcloud", "Firestore collection prefix")
@@ -104,13 +104,18 @@ func main() {
 	if !*insecureControl {
 		agentControlClient, err = controlauth.NewClient(
 			controlFiles, controlauth.RoleOrchestrator, controlauth.RoleAgent,
-			controlauth.MetadataTokenSource{}, controlauth.AudienceAgent, 6*time.Minute,
+			controlauth.MetadataTokenSource{}, controlauth.AudienceAgent, 20*time.Minute,
 		)
 		if err != nil {
 			log.Fatalf("agent control client: %v", err)
 		}
 	}
 	configureAgentClients(initial, agentControlClient, *insecureControl)
+	if !*insecureControl {
+		if err := requireHostInstanceIDs(initial); err != nil {
+			log.Fatal(err)
+		}
+	}
 	if len(initial) == 0 && *hostsFile == "" {
 		log.Fatal("-hosts or -hosts-file is required")
 	}
@@ -526,6 +531,12 @@ func watchHostsFile(ctx context.Context, path string, hosts *backend.HostSet, co
 				continue
 			}
 			configureAgentClients(m, controlClient, insecureLoopback)
+			if !insecureLoopback {
+				if err := requireHostInstanceIDs(m); err != nil {
+					log.Printf("hosts-file reload: %v", err)
+					continue
+				}
+			}
 			hosts.Replace(m)
 			log.Printf("hosts-file reload: %v", hosts.IDs())
 		}
@@ -572,6 +583,15 @@ func configureAgentClients(hosts map[string]*backend.AgentClient, controlClient 
 		client.ControlClient = controlClient
 		client.InsecureLoopback = insecureLoopback
 	}
+}
+
+func requireHostInstanceIDs(hosts map[string]*backend.AgentClient) error {
+	for name, client := range hosts {
+		if client == nil || client.InstanceID == "" {
+			return fmt.Errorf("production host %q is missing its immutable GCE instance ID", name)
+		}
+	}
+	return nil
 }
 
 func gatewayServiceRoutes(next http.Handler) http.Handler {

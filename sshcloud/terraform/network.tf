@@ -55,7 +55,7 @@ resource "google_compute_firewall" "iap_ssh" {
   }
 
   source_ranges = ["35.235.240.0/20"]
-  target_tags   = ["${local.prefix}-gateway", "${local.prefix}-orchestrator", "${local.prefix}-agent"]
+  target_tags   = ["${local.prefix}-gateway", "${local.prefix}-orchestrator", "${local.prefix}-agent", "${local.prefix}-snapshot"]
 }
 
 # Host sshd is moved to 2222 on the gateway (app SSH takes :22).
@@ -112,4 +112,30 @@ resource "google_compute_firewall" "gateway_to_agent_relays" {
 
   source_tags = ["${local.prefix}-gateway"]
   target_tags = ["${local.prefix}-agent"]
+}
+
+resource "google_compute_firewall" "agents_to_snapshot" {
+  name    = "${local.prefix}-agents-to-snapshot"
+  network = google_compute_network.sshcloud.name
+
+  allow {
+    protocol = "tcp"
+    ports    = ["8082"]
+  }
+
+  source_tags = ["${local.prefix}-agent"]
+  target_tags = ["${local.prefix}-snapshot"]
+}
+
+resource "google_compute_firewall" "orchestrator_to_snapshot_health" {
+  name    = "${local.prefix}-orchestrator-to-snapshot-health"
+  network = google_compute_network.sshcloud.name
+
+  allow {
+    protocol = "tcp"
+    ports    = ["8083"]
+  }
+
+  source_tags = ["${local.prefix}-orchestrator"]
+  target_tags = ["${local.prefix}-snapshot"]
 }

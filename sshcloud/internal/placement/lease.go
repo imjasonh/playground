@@ -138,6 +138,9 @@ func (g *Guard) Context() context.Context { return g.ctx }
 // HostID is the placement observed when the lease was acquired.
 func (g *Guard) HostID() string { return g.current().HostID }
 
+// HostInstanceID is the immutable GCE instance incarnation paired with HostID.
+func (g *Guard) HostInstanceID() string { return g.current().HostInstanceID }
+
 // Owner is the operation's globally unique fencing identity.
 func (g *Guard) Owner() string { return g.current().Owner }
 
@@ -179,6 +182,27 @@ func (g *Guard) CommitState(ctx context.Context, hostID string, generations []Ge
 		return err
 	}
 	if err := g.store.CommitState(ctx, g.current(), hostID, generations, time.Now()); err != nil {
+		return err
+	}
+	g.cancel()
+	return nil
+}
+
+// CommitStateIdentity atomically updates host name, immutable GCE instance ID,
+// durable generation inventory, and releases the lease.
+func (g *Guard) CommitStateIdentity(ctx context.Context, hostID, hostInstanceID string, generations []Generation) error {
+	g.stopHeartbeat()
+	if err := g.Err(); err != nil {
+		return err
+	}
+	if hostID == "" {
+		return fmt.Errorf("host ID is required")
+	}
+	store, ok := g.store.(HostIdentityStore)
+	if !ok {
+		return fmt.Errorf("placement store does not support host instance identities")
+	}
+	if err := store.CommitStateIdentity(ctx, g.current(), hostID, hostInstanceID, generations, time.Now()); err != nil {
 		return err
 	}
 	g.cancel()

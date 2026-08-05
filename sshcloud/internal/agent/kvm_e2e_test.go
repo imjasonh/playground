@@ -187,7 +187,7 @@ func (s *cancelFirstPutStore) CancelNextPut(cancel context.CancelFunc) {
 	s.cancel = cancel
 }
 
-func (s *cancelFirstPutStore) Put(ctx context.Context, key string, pkg snapshot.Package) error {
+func (s *cancelFirstPutStore) Put(ctx context.Context, ref snapshot.Ref, pkg snapshot.Package) error {
 	s.mu.Lock()
 	cancel := s.cancel
 	s.cancel = nil
@@ -196,7 +196,7 @@ func (s *cancelFirstPutStore) Put(ctx context.Context, key string, pkg snapshot.
 		cancel()
 		return context.Canceled
 	}
-	return s.Store.Put(ctx, key, pkg)
+	return s.Store.Put(ctx, ref, pkg)
 }
 
 type kvmAssets struct {

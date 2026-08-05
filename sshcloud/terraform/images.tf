@@ -28,6 +28,16 @@ resource "ko_build" "agent" {
   depends_on = [google_artifact_registry_repository.sshcloud]
 }
 
+resource "ko_build" "snapshot" {
+  importpath  = "github.com/imjasonh/playground/sshcloud/cmd/snapshotd"
+  working_dir = "${path.module}/.."
+  repo        = "${local.registry}/snapshotd"
+  platforms   = ["linux/amd64"]
+  sbom        = "spdx"
+
+  depends_on = [google_artifact_registry_repository.sshcloud]
+}
+
 resource "ko_build" "vmmhelper" {
   importpath  = "github.com/imjasonh/playground/sshcloud/cmd/vmmhelper"
   working_dir = "${path.module}/.."

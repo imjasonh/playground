@@ -1,8 +1,9 @@
 # sshcloud Terraform
 
-First GCP environment: Firestore, GCS, Secret Manager, Artifact Registry,
-**ko-built** platform images, a single SSH gateway VM, an orchestrator VM, and
-a nested-virt **host MIG** running the Firecracker agent.
+First GCP environment: Firestore, CMEK GCS + Cloud KMS, Secret Manager,
+Artifact Registry, **ko-built** platform images, a single SSH gateway VM, an
+orchestrator VM, a private snapshotd VM, and a nested-virt **host MIG** running
+the Firecracker agent.
 
 This is a private smoke-test environment, not a production/public module.
 Public SSH is closed by default; explicitly allow only an operator/Terraform
@@ -14,13 +15,14 @@ and control-PKI boundaries remains unfinished.
 | File | What |
 |------|------|
 | `services.tf`, `modules/project-services/` | Required GCP API enablement barrier |
-| `images.tf` | `ko_build` for platform services, VMM/TAP helpers, `guestinit`, and `fortune` |
+| `images.tf` | `ko_build` for platform services (including snapshotd), VMM/TAP helpers, `guestinit`, and `fortune` |
 | `demo.tf` | Optional `local-exec` join/deploy followed by strict SSH release smoke test |
 | `firestore.tf` | Dedicated named Native-mode database |
-| `storage.tf` | Snapshot + platform-asset buckets, Artifact Registry |
+| `storage.tf`, `kms.tf` | CMEK snapshot bucket, envelope KEK, platform assets, Artifact Registry |
 | `secrets.tf` | Separate SSH keys/CA, versioned access policy, and A/B control PKI |
 | `gateway.tf` | Public SSH gateway (`:22`) |
 | `orchestrator.tf` | Internal placement/migrate API; reloads MIG hosts file |
+| `snapshotd.tf` | Internal snapshot proxy; only workload with snapshot GCS/KMS data access |
 | `agents.tf` | Instance template + zonal MIG (`enable_nested_virtualization`) |
 | `network.tf` | VPC/NAT, opt-in public `:22`, tagged internal APIs, agent SSH relay range |
 
@@ -97,6 +99,8 @@ gcloud compute instance-groups managed list-instances sshcloud-agents \
   --zone=us-central1-a
 # From the orchestrator VM, health is intentionally non-diagnostic:
 curl --fail http://ORCHESTRATOR_INTERNAL_IP:8091/readyz
+# From the orchestrator VM:
+curl --fail http://SNAPSHOT_INTERNAL_IP:8083/readyz
 # Admin routes, including /v1/diagnostics, exist only on the root-owned local
 # Unix socket and still require orchestrator mTLS + a fresh metadata token.
 ```
@@ -119,6 +123,7 @@ The only certificate URI identities are:
 - `spiffe://sshcloud.internal/control/gateway`
 - `spiffe://sshcloud.internal/control/orchestrator`
 - `spiffe://sshcloud.internal/control/agent`
+- `spiffe://sshcloud.internal/control/snapshot`
 
 Authorization is fixed: gateway may call only orchestrator
 `ensure`/`stop`/`no-idle`; orchestrator may call all agent routes and gateway
@@ -128,6 +133,13 @@ absent from the gateway-facing TCP listener. They are served only as HTTPS over
 enter through IAP + OS Login and use `sudo`; the local call still presents the
 orchestrator role certificate and a metadata identity token with the separate
 admin audience.
+
+Agents call snapshotd with the agent role certificate and a snapshot-specific
+identity-token audience. snapshotd uses the verified token's exact
+`instance_name` and numeric `instance_id`; it authorizes each structured
+user/app/generation method against Firestore placement and the non-expired
+ensure/migrate/drain fence. Agents have no snapshot bucket or KMS IAM grant.
+Package bytes are proxied rather than exposed through signed URLs.
 
 Control cert/key and two CA files are refreshed from Secret Manager each minute
 and reloaded on every new TLS handshake. Both A and B CAs remain trusted during
@@ -202,6 +214,14 @@ membership-list removal ineffective.
 
 ## Notes
 
+- **Snapshot encryption:** snapshotd validates the fixed archive and metadata,
+  encrypts each immutable package with a fresh Tink Streaming AEAD keyset, and
+  wraps that keyset with the regional Cloud KMS KEK using
+  tenant/app/generation/snapshot AAD. `current.json` is published with a GCS
+  generation precondition, and the bucket has a separate default CMEK. A future KMS
+  rotation would affect new wraps/CMEK writes; old key versions must remain
+  enabled until every package and GCS object encrypted under them has expired.
+  This change does not configure rotation, drills, or version retirement.
 - **Keys in state:** `tls_private_key` material is in Terraform state. Fine for
   an isolated playground only. This includes the initially provisioned control
   leaf keys. **TODO(secret-rotation):** move leaf issuance/private keys out of
@@ -240,4 +260,10 @@ membership-list removal ineffective.
   Terraform/systemd boundary and unit-tests request/rule/argv validation, but
   cannot prove the GCE image's cgroup delegation, jailer mount/device syscalls,
   systemd ambient capability behavior, or a real cross-host jailed restore.
+- **GCP snapshot verification still required:** local fakes exercise
+  generation conflicts and envelope tamper/swap/truncation/AAD rejection, but
+  do not prove Cloud KMS AAD behavior, GCS generation/CMEK semantics, Firestore
+  IAM conditions, source-tag firewall enforcement, or that the deployed agent
+  service account is denied direct bucket access. Verify those in an
+  operator-owned disposable project before production use.
 - Validate locally (no GCP apply): `bash hack/validate-terraform.sh`

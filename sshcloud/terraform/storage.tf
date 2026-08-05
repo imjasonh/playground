@@ -5,8 +5,16 @@ resource "google_storage_bucket" "snapshots" {
   public_access_prevention    = "enforced"
   force_destroy               = false
   labels                      = local.labels
+  default_kms_key_name        = google_kms_crypto_key.snapshot_bucket.id
 
-  depends_on = [module.project_services]
+  versioning {
+    enabled = true
+  }
+
+  depends_on = [
+    module.project_services,
+    google_kms_crypto_key_iam_member.snapshot_bucket_cmek,
+  ]
 }
 
 resource "google_storage_bucket" "assets" {

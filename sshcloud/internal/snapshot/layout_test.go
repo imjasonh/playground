@@ -28,3 +28,24 @@ func TestSnapshotSchemaFencesLayoutWithoutHostPath(t *testing.T) {
 		t.Fatalf("metadata persisted an absolute host path: %s", encoded)
 	}
 }
+
+func TestStructuredRefRoundTripAndGenerationIsolation(t *testing.T) {
+	t.Parallel()
+	first := Ref{User: "alice", App: "fortune", Gen: "g1"}
+	second := Ref{User: "alice", App: "fortune", Gen: "g2"}
+	if first.Key() == second.Key() {
+		t.Fatal("different generations share a snapshot key")
+	}
+	got, err := ParseKey(first.Key())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != first {
+		t.Fatalf("ParseKey() = %+v, want %+v", got, first)
+	}
+	for _, invalid := range []string{"", "../alice", first.Key() + "/", strings.ToUpper(first.Key())} {
+		if _, err := ParseKey(invalid); err == nil {
+			t.Fatalf("ParseKey(%q) succeeded", invalid)
+		}
+	}
+}

@@ -25,6 +25,7 @@ const (
 	AudienceOrchestratorGateway = "https://control.sshcloud.internal/orchestrator/gateway"
 	AudienceOrchestratorAdmin   = "https://control.sshcloud.internal/orchestrator/admin"
 	AudienceAgent               = "https://control.sshcloud.internal/agent"
+	AudienceSnapshot            = "https://control.sshcloud.internal/snapshot"
 	AudienceGatewayMigration    = "https://control.sshcloud.internal/gateway/migration"
 )
 
@@ -35,12 +36,14 @@ const (
 	RoleGateway      Role = "gateway"
 	RoleOrchestrator Role = "orchestrator"
 	RoleAgent        Role = "agent"
+	RoleSnapshot     Role = "snapshot"
 )
 
 var roleURIs = map[Role]string{
 	RoleGateway:      "spiffe://sshcloud.internal/control/gateway",
 	RoleOrchestrator: "spiffe://sshcloud.internal/control/orchestrator",
 	RoleAgent:        "spiffe://sshcloud.internal/control/agent",
+	RoleSnapshot:     "spiffe://sshcloud.internal/control/snapshot",
 }
 
 // URI returns the one URI SAN permitted for role certificates.
@@ -141,6 +144,21 @@ type TokenVerifier interface {
 	Verify(context.Context, string, VerificationPolicy) error
 }
 
+// Identity is the exact Compute Engine workload authenticated by Google. Both
+// name and immutable numeric instance ID are required for placement decisions.
+type Identity struct {
+	ServiceAccount string
+	InstanceName   string
+	InstanceID     string
+	Zone           string
+	ProjectID      string
+	ProjectNumber  string
+}
+
+type IdentityTokenVerifier interface {
+	VerifyIdentity(context.Context, string, VerificationPolicy) (Identity, error)
+}
+
 // GCEVerifier validates Google signatures/standard JWT claims, token freshness,
 // exact service-account email, and the full Compute Engine identity document.
 type GCEVerifier struct {
@@ -153,11 +171,16 @@ type GCEVerifier struct {
 }
 
 func (v *GCEVerifier) Verify(ctx context.Context, raw string, policy VerificationPolicy) error {
+	_, err := v.VerifyIdentity(ctx, raw, policy)
+	return err
+}
+
+func (v *GCEVerifier) VerifyIdentity(ctx context.Context, raw string, policy VerificationPolicy) (Identity, error) {
 	if v == nil {
-		return fmt.Errorf("GCE token verifier is required")
+		return Identity{}, fmt.Errorf("GCE token verifier is required")
 	}
 	if strings.TrimSpace(policy.Audience) == "" || strings.TrimSpace(policy.ServiceAccount) == "" {
-		return fmt.Errorf("token verification policy is incomplete")
+		return Identity{}, fmt.Errorf("token verification policy is incomplete")
 	}
 	validate := v.validate
 	if validate == nil {
@@ -165,20 +188,25 @@ func (v *GCEVerifier) Verify(ctx context.Context, raw string, policy Verificatio
 	}
 	payload, err := validate(ctx, raw, policy.Audience)
 	if err != nil {
-		return fmt.Errorf("validate Google identity token: %w", err)
+		return Identity{}, fmt.Errorf("validate Google identity token: %w", err)
 	}
-	return v.verifyPayload(payload, policy)
+	return v.verifyPayloadIdentity(payload, policy)
 }
 
 func (v *GCEVerifier) verifyPayload(payload *idtoken.Payload, policy VerificationPolicy) error {
+	_, err := v.verifyPayloadIdentity(payload, policy)
+	return err
+}
+
+func (v *GCEVerifier) verifyPayloadIdentity(payload *idtoken.Payload, policy VerificationPolicy) (Identity, error) {
 	if payload == nil {
-		return fmt.Errorf("Google identity token has no payload")
+		return Identity{}, fmt.Errorf("Google identity token has no payload")
 	}
 	if payload.Audience != policy.Audience {
-		return fmt.Errorf("identity-token audience %q, want %q", payload.Audience, policy.Audience)
+		return Identity{}, fmt.Errorf("identity-token audience %q, want %q", payload.Audience, policy.Audience)
 	}
 	if payload.Issuer != "https://accounts.google.com" && payload.Issuer != "accounts.google.com" {
-		return fmt.Errorf("identity-token issuer %q is not Google", payload.Issuer)
+		return Identity{}, fmt.Errorf("identity-token issuer %q is not Google", payload.Issuer)
 	}
 	now := time.Now()
 	if v.Now != nil {
@@ -197,53 +225,60 @@ func (v *GCEVerifier) verifyPayload(payload *idtoken.Payload, policy Verificatio
 	}
 	issued := time.Unix(payload.IssuedAt, 0)
 	if payload.IssuedAt <= 0 || issued.After(now.Add(skew)) {
-		return fmt.Errorf("identity token has an invalid issued-at time")
+		return Identity{}, fmt.Errorf("identity token has an invalid issued-at time")
 	}
 	if now.Sub(issued) > maxAge+skew {
-		return fmt.Errorf("identity token is older than %s", maxAge)
+		return Identity{}, fmt.Errorf("identity token is older than %s", maxAge)
 	}
 	expires := time.Unix(payload.Expires, 0)
 	if payload.Expires <= 0 || !expires.After(now.Add(-skew)) {
-		return fmt.Errorf("identity token is expired")
+		return Identity{}, fmt.Errorf("identity token is expired")
 	}
 	email, _ := payload.Claims["email"].(string)
 	if email != policy.ServiceAccount {
-		return fmt.Errorf("service-account email %q, want %q", email, policy.ServiceAccount)
+		return Identity{}, fmt.Errorf("service-account email %q, want %q", email, policy.ServiceAccount)
 	}
 	if !claimBool(payload.Claims["email_verified"]) {
-		return fmt.Errorf("service-account email is not verified")
+		return Identity{}, fmt.Errorf("service-account email is not verified")
 	}
 	google, ok := payload.Claims["google"].(map[string]any)
 	if !ok {
-		return fmt.Errorf("identity token is missing full google claims")
+		return Identity{}, fmt.Errorf("identity token is missing full google claims")
 	}
 	compute, ok := google["compute_engine"].(map[string]any)
 	if !ok {
-		return fmt.Errorf("identity token is missing full Compute Engine claims")
+		return Identity{}, fmt.Errorf("identity token is missing full Compute Engine claims")
 	}
 	for _, key := range []string{"instance_id", "instance_name", "zone", "project_id", "project_number", "instance_creation_timestamp"} {
 		if _, ok := compute[key]; !ok {
-			return fmt.Errorf("identity token is missing Compute Engine claim %q", key)
+			return Identity{}, fmt.Errorf("identity token is missing Compute Engine claim %q", key)
 		}
 	}
 	if projectID, _ := compute["project_id"].(string); projectID == "" || projectID != v.ProjectID {
-		return fmt.Errorf("Compute Engine project_id %q, want %q", projectID, v.ProjectID)
+		return Identity{}, fmt.Errorf("Compute Engine project_id %q, want %q", projectID, v.ProjectID)
 	}
 	projectNumber, ok := claimIntegerString(compute["project_number"])
 	if !ok || projectNumber != v.ProjectNumber {
-		return fmt.Errorf("Compute Engine project_number %q, want %q", projectNumber, v.ProjectNumber)
+		return Identity{}, fmt.Errorf("Compute Engine project_number %q, want %q", projectNumber, v.ProjectNumber)
 	}
 	for _, key := range []string{"instance_id", "instance_creation_timestamp"} {
 		if value, ok := claimIntegerString(compute[key]); !ok || value == "" || value == "0" {
-			return fmt.Errorf("Compute Engine claim %q is invalid", key)
+			return Identity{}, fmt.Errorf("Compute Engine claim %q is invalid", key)
 		}
 	}
 	for _, key := range []string{"instance_name", "zone"} {
 		if value, _ := compute[key].(string); strings.TrimSpace(value) == "" {
-			return fmt.Errorf("Compute Engine claim %q is invalid", key)
+			return Identity{}, fmt.Errorf("Compute Engine claim %q is invalid", key)
 		}
 	}
-	return nil
+	instanceID, _ := claimIntegerString(compute["instance_id"])
+	instanceName, _ := compute["instance_name"].(string)
+	zone, _ := compute["zone"].(string)
+	projectID, _ := compute["project_id"].(string)
+	return Identity{
+		ServiceAccount: email, InstanceName: instanceName, InstanceID: instanceID,
+		Zone: zone, ProjectID: projectID, ProjectNumber: projectNumber,
+	}, nil
 }
 
 func claimBool(value any) bool {
@@ -300,6 +335,45 @@ func Require(verifier TokenVerifier, policy VerificationPolicy, next http.Handle
 			return
 		}
 		next.ServeHTTP(w, r)
+	})
+}
+
+type identityContextKey struct{}
+
+// IdentityFromContext returns only the identity installed after signature,
+// audience, service account, and full GCE claim verification.
+func IdentityFromContext(ctx context.Context) (Identity, bool) {
+	identity, ok := ctx.Value(identityContextKey{}).(Identity)
+	return identity, ok && identity.InstanceName != "" && identity.InstanceID != ""
+}
+
+// RequireIdentity is Require plus verified Compute Engine identity propagation.
+// It is used by APIs whose authorization depends on one exact VM incarnation.
+func RequireIdentity(verifier IdentityTokenVerifier, policy VerificationPolicy, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		role, err := PeerRole(r)
+		if err != nil {
+			http.Error(w, "mutual TLS authentication required", http.StatusUnauthorized)
+			return
+		}
+		if role != policy.CallerRole {
+			http.Error(w, "caller role is not authorized", http.StatusForbidden)
+			return
+		}
+		raw, ok := bearerToken(r.Header.Values(authorizationHeader))
+		if !ok || verifier == nil {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="sshcloud-control"`)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		identity, err := verifier.VerifyIdentity(r.Context(), raw, policy)
+		if err != nil {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="sshcloud-control"`)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		ctx := context.WithValue(r.Context(), identityContextKey{}, identity)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 

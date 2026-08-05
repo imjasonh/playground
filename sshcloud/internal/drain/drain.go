@@ -193,6 +193,9 @@ func (c *Controller) moveGroup(ctx context.Context, sourceID, sourceEpoch string
 	if guard.HostID() != sourceID {
 		return MovedApp{}, fmt.Errorf("placement points to %q, not draining host %q", guard.HostID(), sourceID)
 	}
+	if guard.HostInstanceID() != "" && source.InstanceID != guard.HostInstanceID() {
+		return MovedApp{}, fmt.Errorf("draining host %q incarnation changed", sourceID)
+	}
 
 	need := agent.Resources{}
 	for _, instance := range group.instances {
@@ -225,7 +228,8 @@ func (c *Controller) moveGroup(ctx context.Context, sourceID, sourceEpoch string
 	}
 	operation := placement.Operation{
 		ID: guard.Owner(), Kind: "drain", Phase: "freezing", SourceHost: sourceID,
-		SourceEpoch: sourceEpoch, TargetHost: target.ID, Generations: generations,
+		SourceInstanceID: source.InstanceID, SourceEpoch: sourceEpoch,
+		TargetHost: target.ID, TargetInstanceID: target.InstanceID, Generations: generations,
 		Desired: generationState,
 	}
 	if err := guard.Mark(guard.Context(), operation); err != nil {
@@ -385,7 +389,7 @@ func (c *Controller) moveGroup(ctx context.Context, sourceID, sourceEpoch string
 		cancel()
 		return rollback(fmt.Errorf("persist ready phase: %w", err))
 	}
-	err = guard.CommitState(commitCtx, target.ID, generationState)
+	err = guard.CommitStateIdentity(commitCtx, target.ID, target.InstanceID, generationState)
 	cancel()
 	if err != nil {
 		var lost placement.ErrLeaseLost
@@ -410,7 +414,7 @@ func (c *Controller) moveGroup(ctx context.Context, sourceID, sourceEpoch string
 			abandoned = true
 			return MovedApp{}, fmt.Errorf("placement lease lost during commit: %w", err)
 		}
-		if record.HostID != target.ID || record.LeaseOwner != "" {
+		if record.HostID != target.ID || record.HostInstanceID != target.InstanceID || record.LeaseOwner != "" {
 			return rollback(fmt.Errorf("commit placement to %s: %w", target.ID, err))
 		}
 	}

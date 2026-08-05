@@ -41,8 +41,7 @@ resource "google_compute_instance_template" "agent" {
     jailer_object                = google_storage_bucket_object.jailer.name
     kernel_object                = google_storage_bucket_object.kernel.name
     platform_version             = "${google_storage_bucket_object.firecracker.name}:${google_storage_bucket_object.jailer.name}:${google_storage_bucket_object.kernel.name}"
-    snapshots_bucket             = local.snapshot_bucket
-    snapshot_prefix              = local.snapshot_prefix
+    snapshotd_url                = "https://${google_compute_address.snapshot_internal.address}:8082"
     agent_image                  = ko_build.agent.image_ref
     vmmhelper_image              = ko_build.vmmhelper.image_ref
     taphelper_image              = ko_build.taphelper.image_ref
@@ -65,13 +64,12 @@ resource "google_compute_instance_template" "agent" {
     google_storage_bucket_object.firecracker,
     google_storage_bucket_object.jailer,
     google_storage_bucket_object.kernel,
-    google_storage_bucket.snapshots,
     google_storage_bucket_iam_member.agent_assets,
-    google_storage_bucket_iam_member.agent_snapshots,
     ko_build.vmmhelper,
     ko_build.taphelper,
     google_artifact_registry_repository_iam_member.pullers["agent"],
     google_compute_router_nat.sshcloud,
+    google_compute_instance.snapshot,
   ]
 }
 
