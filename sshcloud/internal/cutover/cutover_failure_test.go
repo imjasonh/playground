@@ -16,10 +16,13 @@ import (
 type faultStore struct {
 	store.Store
 	upsertErr error
+	failAt    int
+	upserts   int
 }
 
 func (s *faultStore) UpsertApp(ctx context.Context, app store.App) error {
-	if s.upsertErr != nil {
+	s.upserts++
+	if s.upsertErr != nil && (s.failAt == 0 || s.upserts == s.failAt) {
 		return s.upsertErr
 	}
 	return s.Store.UpsertApp(ctx, app)
@@ -100,7 +103,7 @@ func TestDeployPersistenceFailureCleansNewGeneration(t *testing.T) {
 	if err := mem.UpsertApp(ctx, old); err != nil {
 		t.Fatal(err)
 	}
-	fault := &faultStore{Store: mem, upsertErr: errors.New("injected store failure")}
+	fault := &faultStore{Store: mem, upsertErr: errors.New("injected store failure"), failAt: 2}
 	instances := &faultInstances{}
 	controller := cutover.New(fault, sessions, instances)
 

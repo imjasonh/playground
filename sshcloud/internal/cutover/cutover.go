@@ -365,9 +365,6 @@ func (c *Controller) retireLocked(ctx context.Context, app *store.App) {
 	}
 	remaining := app.RetiringGens[:0]
 	for _, gen := range app.RetiringGens {
-		if gen == "" {
-			continue
-		}
 		if c.Instances != nil {
 			if err := c.Instances.Stop(ctx, app.Owner, app.Name, gen); err != nil {
 				remaining = append(remaining, gen)
@@ -379,9 +376,6 @@ func (c *Controller) retireLocked(ctx context.Context, app *store.App) {
 }
 
 func appendUnique(values []string, value string) []string {
-	if value == "" {
-		return values
-	}
 	for _, existing := range values {
 		if existing == value {
 			return values

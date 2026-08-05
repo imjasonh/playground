@@ -33,6 +33,10 @@ func TestOrchestratorClientAddr(t *testing.T) {
 			})
 			return
 		}
+		if r.URL.Path == "/v1/host/instances" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"instances": []agent.InstanceInfo{}})
+			return
+		}
 		if r.URL.Path != "/v1/instances/ensure" {
 			http.NotFound(w, r)
 			return
