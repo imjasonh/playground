@@ -5,7 +5,10 @@ resource "google_storage_bucket" "snapshots" {
   public_access_prevention    = "enforced"
   force_destroy               = false
   labels                      = local.labels
-  default_kms_key_name        = google_kms_crypto_key.snapshot_bucket.id
+
+  encryption {
+    default_kms_key_name = google_kms_crypto_key.snapshot_bucket.id
+  }
 
   versioning {
     enabled = true
