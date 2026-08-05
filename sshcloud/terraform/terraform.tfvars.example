@@ -7,13 +7,12 @@ firecracker_asset_path = "../_assets/firecracker"
 kernel_asset_path      = "../_assets/vmlinux"
 
 # Optional overrides:
-# name_prefix         = "sshcloud"
-# firestore_location  = "nam5"
-# manage_firestore_database = true
-# firestore_database       = "sshcloud"
-# firestore_prefix          = "sshcloud"
+# name_prefix        = "sshcloud"
+# firestore_location = "nam5"
+# firestore_database = "sshcloud"
+# firestore_prefix   = "sshcloud"
 # agent_count         = 2
-# Keep empty until quotas/rate limits are implemented. For a private smoke test,
-# use only the Terraform runner/operator's public /32.
+# Keep empty unless running a private smoke test. Even with application-level
+# quotas, use only the Terraform runner/operator's public /32.
 # ssh_client_cidrs      = ["203.0.113.10/32"]
 # enable_demo_bootstrap = true

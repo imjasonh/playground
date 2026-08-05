@@ -1,12 +1,14 @@
 data "google_compute_image" "debian" {
   family  = "debian-12"
   project = "debian-cloud"
+
+  depends_on = [module.project_services]
 }
 
 resource "google_compute_address" "gateway" {
   name       = "${local.prefix}-gateway"
   region     = var.region
-  depends_on = [google_project_service.services]
+  depends_on = [module.project_services]
 }
 
 resource "google_compute_address" "gateway_internal" {
@@ -70,7 +72,7 @@ resource "google_compute_instance" "gateway" {
     google_secret_manager_secret_iam_member.gateway_host_key,
     google_secret_manager_secret_iam_member.gateway_user_ca,
     google_secret_manager_secret_iam_member.gateway_orchestrator_auth,
-    google_firestore_database.default,
+    google_firestore_database.sshcloud,
     google_project_iam_member.gateway_datastore,
     google_artifact_registry_repository_iam_member.pullers["gateway"],
   ]

@@ -1,9 +1,8 @@
-resource "google_firestore_database" "default" {
-  count       = var.manage_firestore_database ? 1 : 0
+resource "google_firestore_database" "sshcloud" {
   project     = var.project_id
   name        = var.firestore_database
   location_id = var.firestore_location
   type        = "FIRESTORE_NATIVE"
 
-  depends_on = [google_project_service.services]
+  depends_on = [module.project_services]
 }

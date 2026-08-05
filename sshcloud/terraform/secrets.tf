@@ -27,7 +27,7 @@ resource "google_secret_manager_secret" "gateway_host_key" {
   replication {
     auto {}
   }
-  depends_on = [google_project_service.services]
+  depends_on = [module.project_services]
 }
 
 resource "google_secret_manager_secret_version" "gateway_host_key" {
@@ -41,7 +41,7 @@ resource "google_secret_manager_secret" "user_ca" {
   replication {
     auto {}
   }
-  depends_on = [google_project_service.services]
+  depends_on = [module.project_services]
 }
 
 resource "google_secret_manager_secret_version" "user_ca" {
@@ -55,7 +55,7 @@ resource "google_secret_manager_secret" "user_ca_pub" {
   replication {
     auto {}
   }
-  depends_on = [google_project_service.services]
+  depends_on = [module.project_services]
 }
 
 resource "google_secret_manager_secret_version" "user_ca_pub" {
@@ -69,7 +69,7 @@ resource "google_secret_manager_secret" "orchestrator_auth" {
   replication {
     auto {}
   }
-  depends_on = [google_project_service.services]
+  depends_on = [module.project_services]
 }
 
 resource "google_secret_manager_secret_version" "orchestrator_auth" {
@@ -83,7 +83,7 @@ resource "google_secret_manager_secret" "agent_auth" {
   replication {
     auto {}
   }
-  depends_on = [google_project_service.services]
+  depends_on = [module.project_services]
 }
 
 resource "google_secret_manager_secret_version" "agent_auth" {

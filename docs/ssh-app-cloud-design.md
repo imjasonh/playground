@@ -548,7 +548,8 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
 
 **Implemented in `sshcloud/terraform/` (first environment):**
 - `ko_build` images: gateway, orchestrator, agent, guestinit, fortune (sample app)
-- Firestore Native `(default)`, snapshot + asset GCS buckets, Artifact Registry
+- Dedicated named Firestore Native database, snapshot + asset GCS buckets,
+  Artifact Registry
 - Secret Manager: gateway host key, user CA, and separate per-hop control tokens
 - Gateway static IP (`:22` only when CIDRs are explicitly supplied),
   orchestrator VM (VPC), nested-virt agent MIG

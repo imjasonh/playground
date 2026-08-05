@@ -1,7 +1,7 @@
 resource "google_compute_network" "sshcloud" {
   name                    = local.prefix
   auto_create_subnetworks = false
-  depends_on              = [google_project_service.services]
+  depends_on              = [module.project_services]
 }
 
 resource "google_compute_subnetwork" "sshcloud" {

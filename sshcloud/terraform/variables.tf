@@ -27,12 +27,6 @@ variable "firestore_location" {
   default     = "nam5"
 }
 
-variable "manage_firestore_database" {
-  description = "Create the dedicated Firestore database. Set false only after importing/managing it elsewhere."
-  type        = bool
-  default     = true
-}
-
 variable "firestore_database" {
   description = "Dedicated Firestore database ID used only by sshcloud"
   type        = string

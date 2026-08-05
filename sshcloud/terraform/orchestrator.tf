@@ -49,7 +49,7 @@ resource "google_compute_instance" "orchestrator" {
   }
 
   depends_on = [
-    google_firestore_database.default,
+    google_firestore_database.sshcloud,
     google_compute_instance_group_manager.agents,
     google_secret_manager_secret_version.orchestrator_auth,
     google_secret_manager_secret_version.agent_auth,

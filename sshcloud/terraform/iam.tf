@@ -1,19 +1,19 @@
 resource "google_service_account" "gateway" {
   account_id   = "${local.prefix}-gateway"
   display_name = "sshcloud SSH gateway"
-  depends_on   = [google_project_service.services]
+  depends_on   = [module.project_services]
 }
 
 resource "google_service_account" "orchestrator" {
   account_id   = "${local.prefix}-orchestrator"
   display_name = "sshcloud orchestrator"
-  depends_on   = [google_project_service.services]
+  depends_on   = [module.project_services]
 }
 
 resource "google_service_account" "agent" {
   account_id   = "${local.prefix}-agent"
   display_name = "sshcloud host agent"
-  depends_on   = [google_project_service.services]
+  depends_on   = [module.project_services]
 }
 
 # Gateway: Firestore users/apps + secrets + talk to orchestrator (network only).

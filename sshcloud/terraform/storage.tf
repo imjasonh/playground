@@ -6,7 +6,7 @@ resource "google_storage_bucket" "snapshots" {
   force_destroy               = false
   labels                      = local.labels
 
-  depends_on = [google_project_service.services]
+  depends_on = [module.project_services]
 }
 
 resource "google_storage_bucket" "assets" {
@@ -17,7 +17,7 @@ resource "google_storage_bucket" "assets" {
   force_destroy               = false
   labels                      = local.labels
 
-  depends_on = [google_project_service.services]
+  depends_on = [module.project_services]
 }
 
 resource "google_storage_bucket_object" "firecracker" {
@@ -39,5 +39,5 @@ resource "google_artifact_registry_repository" "sshcloud" {
   format        = "DOCKER"
   labels        = local.labels
 
-  depends_on = [google_project_service.services]
+  depends_on = [module.project_services]
 }
