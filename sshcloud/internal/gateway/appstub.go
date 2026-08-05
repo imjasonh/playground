@@ -152,6 +152,7 @@ func runAppStub(ctx context.Context, t *term, hub *Hub, res Result) AppExit {
 	}
 
 	// Fallback when CA/backend not configured (unit tests / misconfig).
+	t.client.Spec.ReplyStart(true)
 	t.Printf("app %q: no backend configured\n", res.App)
 	t.Printf("(deploy a digest-pinned image and run gateway with -agent-url)\n")
 	if res.App == "fortune" {
@@ -161,7 +162,6 @@ func runAppStub(ctx context.Context, t *term, hub *Hub, res Result) AppExit {
 	}
 	t.Printf("Press enter to return.\n")
 	_, _ = t.ReadLine()
-	t.client.Spec.ReplyStart(true)
 	return AppExit{Code: 0}
 }
 
