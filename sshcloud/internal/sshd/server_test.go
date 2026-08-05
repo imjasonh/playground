@@ -144,9 +144,9 @@ func TestJoinDeployExecArgs(t *testing.T) {
 	}
 
 	unknownKey := mustKey(t)
-	out, code = sshExec(t, addr, signer.PublicKey(), unknownKey, "fortune", "git-upload-pack owner/repo")
-	if code != 2 || !strings.Contains(out, "join@host") {
-		t.Fatalf("unknown-key app exec: code=%d out=%q", code, out)
+	out = sshExecRejected(t, addr, signer.PublicKey(), unknownKey, "fortune", "git-upload-pack owner/repo")
+	if !strings.Contains(out, "join@host") {
+		t.Fatalf("unknown-key app exec: out=%q", out)
 	}
 	unknown, err := hub.Store.LookupUserByKey(ctx, ssh.FingerprintSHA256(unknownKey.PublicKey()))
 	if err != nil || unknown != nil {
@@ -157,6 +157,25 @@ func TestJoinDeployExecArgs(t *testing.T) {
 	if code != 2 || !strings.Contains(out, "Usage:") {
 		t.Fatalf("join extra args: code=%d out=%q", code, out)
 	}
+}
+
+func sshExecRejected(t *testing.T, addr string, hostPub ssh.PublicKey, client ssh.Signer, user, command string) string {
+	t.Helper()
+	conn := sshClient(t, addr, hostPub, client, user)
+	defer conn.Close()
+	sess, err := conn.NewSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stderr, err := sess.StderrPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sess.Start(command); err == nil {
+		t.Fatalf("command %q unexpectedly started", command)
+	}
+	output, _ := io.ReadAll(stderr)
+	return string(output)
 }
 
 func mustKey(t *testing.T) ssh.Signer {
