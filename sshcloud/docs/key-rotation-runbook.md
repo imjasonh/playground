@@ -490,7 +490,7 @@ Required gated procedure:
 
 1. Inventory every active, draining, and sleeping app generation.
 2. Prepare a next CA in an approved signing system and distribute only its
-   public key. Do not switch the gateway signer.
+   public key. Do not activate it as the gateway signer.
 3. Make each app capable of trusting old + next simultaneously. Deploy a new
    generation for every app, and replace rather than restore sleeping
    generations whose rootfs contains only the old CA. The present sample app

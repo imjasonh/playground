@@ -59,7 +59,8 @@ func TestTerraformObservabilityAPIsIAMAndRetention(t *testing.T) {
 		`resource "google_logging_project_exclusion" "sshcloud_default"`,
 		`resource "google_monitoring_dashboard" "sshcloud"`,
 		`resource "google_monitoring_alert_policy" "app_log_drops"`,
-		`resource.type = \"prometheus_target\"`,
+		`condition_prometheus_query_language`,
+		`increase(sshcloud_app_log_bytes_total{result=\"dropped\"}[5m]) > 0`,
 		`resource "google_billing_budget" "monthly"`,
 	} {
 		if !strings.Contains(config, required) {
