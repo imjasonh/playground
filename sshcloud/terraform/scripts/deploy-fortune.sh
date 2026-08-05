@@ -5,6 +5,10 @@
 #     bash deploy-fortune.sh GATEWAY_IP IMAGE_REF
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=ssh-client.sh
+source "$SCRIPT_DIR/ssh-client.sh"
+
 IP="${1:?gateway IP}"
 IMAGE="${2:?digest-pinned fortune image}"
 USER_NAME="${DEPLOY_USER:-demo}"
@@ -16,10 +20,6 @@ SLEEP_SECS="${DEPLOY_SLEEP:-10}"
 REQUEST_TIMEOUT="${DEPLOY_REQUEST_TIMEOUT:-360}"
 TOTAL_TIMEOUT="${DEPLOY_TOTAL_TIMEOUT:-1200}"
 
-if [[ -z "${DEMO_KEY_PEM:-}" || -z "${HOST_PUB:-}" ]]; then
-  echo "DEMO_KEY_PEM and HOST_PUB env vars are required" >&2
-  exit 1
-fi
 if [[ ! "$USER_NAME" =~ ^[a-z][a-z0-9-]{2,31}$ ]] || [[ ! "$APP_NAME" =~ ^[a-z][a-z0-9-]{2,31}$ ]]; then
   echo "DEPLOY_USER and DEPLOY_APP must match [a-z][a-z0-9-]{2,31}" >&2
   exit 2
@@ -40,72 +40,13 @@ for value in "$RETRIES" "$SLEEP_SECS" "$REQUEST_TIMEOUT" "$TOTAL_TIMEOUT"; do
 done
 deadline=$((SECONDS + TOTAL_TIMEOUT))
 
-tmpdir="$(mktemp -d)"
-trap 'rm -rf "$tmpdir"' EXIT
-key="$tmpdir/demo"
-known="$tmpdir/known_hosts"
-printf '%s\n' "$DEMO_KEY_PEM" >"$key"
-chmod 600 "$key"
-pub_type="$(echo "$HOST_PUB" | awk '{print $1}')"
-pub_b64="$(echo "$HOST_PUB" | awk '{print $2}')"
-echo "${IP} ${pub_type} ${pub_b64}" >"$known"
-
-ssh_base=(
-  ssh
-  -p 22
-  -i "$key"
-  -o IdentitiesOnly=yes
-  -o UserKnownHostsFile="$known"
-  -o GlobalKnownHostsFile=/dev/null
-  -o StrictHostKeyChecking=yes
-  -o ConnectTimeout=10
-  -o BatchMode=yes
-)
-
-TIMEOUT_BIN="$(command -v timeout || command -v gtimeout || true)"
-run_with_timeout() {
-  local seconds="$1"
-  shift
-  if [[ -n "$TIMEOUT_BIN" ]]; then
-    "$TIMEOUT_BIN" --signal=TERM --kill-after=5 "$seconds" "$@"
-    return
-  fi
-
-  "$@" &
-  local command_pid=$!
-  (
-    sleep "$seconds"
-    if kill -0 "$command_pid" 2>/dev/null; then
-      kill "$command_pid" 2>/dev/null || true
-      sleep 5
-      kill -9 "$command_pid" 2>/dev/null || true
-    fi
-  ) &
-  local watchdog_pid=$!
-  local rc=0
-  wait "$command_pid" || rc=$?
-  kill "$watchdog_pid" 2>/dev/null || true
-  wait "$watchdog_pid" 2>/dev/null || true
-  return "$rc"
-}
-
-run_ssh() {
-  run_with_timeout "$REQUEST_TIMEOUT" "${ssh_base[@]}" "$@"
-}
+ssh_client_init "$IP" "$REQUEST_TIMEOUT"
 
 pause_retry() {
   if (( SECONDS + SLEEP_SECS >= deadline )); then
     return 1
   fi
   sleep "$SLEEP_SECS"
-}
-
-port_open() {
-  if command -v nc >/dev/null 2>&1; then
-    nc -z -w 2 "$IP" 22
-  else
-    run_with_timeout 2 bash -c "echo >/dev/tcp/${IP}/22"
-  fi
 }
 
 echo "waiting for gateway SSH on ${IP}:22 …"
@@ -115,7 +56,7 @@ while (( i <= RETRIES )); do
   if (( SECONDS >= deadline )); then
     break
   fi
-  if port_open 2>/dev/null; then
+  if ssh_port_open 2>/dev/null; then
     ok=1
     break
   fi
@@ -136,7 +77,7 @@ while (( i <= RETRIES )); do
     break
   fi
   set +e
-  join_out="$(run_ssh "join@${IP}" "${USER_NAME}" 2>&1)"
+  join_out="$(ssh_run "join@${IP}" "${USER_NAME}" 2>&1)"
   join_rc=$?
   set -e
   echo "$join_out"
@@ -167,7 +108,7 @@ while (( i <= RETRIES )); do
     break
   fi
   set +e
-  last="$(run_ssh "deploy@${IP}" "${deploy_args[@]}" 2>&1)"
+  last="$(ssh_run "deploy@${IP}" "${deploy_args[@]}" 2>&1)"
   rc=$?
   set -e
   echo "$last"

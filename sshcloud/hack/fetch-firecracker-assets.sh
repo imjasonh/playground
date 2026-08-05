@@ -14,6 +14,11 @@ esac
 HOST_OS="$(uname -s)"
 HOST_ARCH="$(uname -m)"
 
+download() {
+  local url="$1" dest="$2"
+  curl --retry 5 --retry-all-errors --connect-timeout 15 -fsSL "$url" -o "$dest"
+}
+
 sha256_file() {
   if command -v sha256sum >/dev/null 2>&1; then
     sha256sum "$1" | awk '{print $1}'
@@ -27,8 +32,8 @@ FC_URL="https://github.com/firecracker-microvm/firecracker/releases/download/${F
 FC_SHA_URL="${FC_URL}.sha256.txt"
 
 echo "fetching $FC_URL"
-curl -fsSL "$FC_URL" -o "$OUT/$FC_TGZ"
-curl -fsSL "$FC_SHA_URL" -o "$OUT/$FC_TGZ.sha256"
+download "$FC_URL" "$OUT/$FC_TGZ"
+download "$FC_SHA_URL" "$OUT/$FC_TGZ.sha256"
 FC_EXPECTED="$(awk 'NR == 1 {print $1}' "$OUT/$FC_TGZ.sha256")"
 FC_ACTUAL="$(sha256_file "$OUT/$FC_TGZ")"
 if [[ "$FC_ACTUAL" != "$FC_EXPECTED" ]]; then
@@ -58,11 +63,13 @@ if [[ "$HOST_OS" == "Linux" && "$HOST_ARCH" =~ ^(x86_64|amd64)$ ]] && ! "$OUT/fi
   exit 1
 fi
 
-# Kernel: Firecracker CI artifact for this release line.
-KERNEL_URL="${KERNEL_URL:-https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/v1.10/x86_64/vmlinux-5.10.223}"
+# Kernel: Firecracker CI artifact for this release line. Use the regional form
+# of the same S3 bucket so restrictive egress proxies do not reset the legacy
+# global endpoint.
+KERNEL_URL="${KERNEL_URL:-https://s3.us-east-1.amazonaws.com/spec.ccfc.min/firecracker-ci/v1.10/x86_64/vmlinux-5.10.223}"
 KERNEL_SHA256="${KERNEL_SHA256:-22847375721aceea63d934c28f2dfce4670b6f52ec904fae19f5145a970c1e65}"
 echo "fetching kernel $KERNEL_URL"
-curl -fsSL "$KERNEL_URL" -o "$OUT/vmlinux"
+download "$KERNEL_URL" "$OUT/vmlinux"
 KERNEL_ACTUAL="$(sha256_file "$OUT/vmlinux")"
 if [[ "$KERNEL_ACTUAL" != "$KERNEL_SHA256" ]]; then
   echo "kernel checksum mismatch: got $KERNEL_ACTUAL want $KERNEL_SHA256" >&2

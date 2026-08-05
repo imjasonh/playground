@@ -16,6 +16,7 @@ resource "terraform_data" "deploy_fortune" {
     google_compute_instance.orchestrator.instance_id,
     google_compute_instance_template.agent.id,
     filesha256("${path.module}/scripts/deploy-fortune.sh"),
+    filesha256("${path.module}/scripts/ssh-client.sh"),
     var.demo_user,
     var.demo_app,
     var.demo_tier,
@@ -50,6 +51,37 @@ resource "terraform_data" "deploy_fortune" {
       bash "${path.module}/scripts/deploy-fortune.sh" \
         "${google_compute_instance.gateway.network_interface[0].access_config[0].nat_ip}" \
         "${ko_build.fortune.image_ref}"
+    EOT
+  }
+}
+
+# Keep release verification separate from deployment: a successful deploy is
+# not enough unless the public gateway can certificate-hop into the app and
+# return the expected response with both SSH host keys pinned.
+resource "terraform_data" "smoke_test_fortune" {
+  count = var.enable_demo_bootstrap ? 1 : 0
+
+  triggers_replace = [
+    terraform_data.deploy_fortune[0].id,
+    filesha256("${path.module}/scripts/verify-fortune.sh"),
+    filesha256("${path.module}/scripts/ssh-client.sh"),
+    var.demo_user,
+    var.demo_app,
+  ]
+
+  depends_on = [terraform_data.deploy_fortune]
+
+  provisioner "local-exec" {
+    interpreter = ["bash", "-c"]
+    environment = {
+      DEMO_KEY_PEM = tls_private_key.demo[0].private_key_openssh
+      HOST_PUB     = tls_private_key.gateway_host.public_key_openssh
+      VERIFY_USER  = var.demo_user
+    }
+    command = <<-EOT
+      bash "${path.module}/scripts/verify-fortune.sh" \
+        "${google_compute_instance.gateway.network_interface[0].access_config[0].nat_ip}" \
+        "${var.demo_app}"
     EOT
   }
 }

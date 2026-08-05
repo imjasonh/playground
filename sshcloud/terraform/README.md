@@ -6,15 +6,16 @@ a nested-virt **host MIG** running the Firecracker agent.
 
 This is a private smoke-test environment, not a production/public module.
 Public SSH is closed by default; explicitly allow only an operator/Terraform
-runner `/32` while quotas and abuse controls remain unfinished.
+runner `/32` while the VMM jailer and workload identity remain unfinished.
 
 ## Layout
 
 | File | What |
 |------|------|
+| `services.tf`, `modules/project-services/` | Required GCP API enablement barrier |
 | `images.tf` | `ko_build` for `gateway`, `orchestrator`, `agent`, `guestinit`, `fortune` |
-| `demo.tf` | Optional bootstrap user + `local-exec` `ssh deploy@… --image=…` smoke test |
-| `firestore.tf` | Native-mode `(default)` database |
+| `demo.tf` | Optional `local-exec` join/deploy followed by strict SSH release smoke test |
+| `firestore.tf` | Dedicated named Native-mode database |
 | `storage.tf` | Snapshot + platform-asset buckets, Artifact Registry |
 | `secrets.tf` | Gateway host key + user CA (tls_private_key → Secret Manager) |
 | `gateway.tf` | Public SSH gateway (`:22`) |
@@ -33,20 +34,12 @@ Storage, Secret Manager, and Artifact Registry resources; modify project IAM;
 act as the created service accounts; and push Artifact Registry images.
 Application Default Credentials are used by both Google and ko providers.
 
-The module does **not** assume an empty/disposable project. By default it creates
-a dedicated Native-mode database named `sshcloud`, and collections are further
+The module creates a dedicated Native-mode database named `sshcloud`, and
+collections are further
 isolated under `firestore_prefix`. This avoids collisions with an existing
 `(default)` database. Conditional `roles/datastore.user` bindings restrict the
 gateway and orchestrator to that exact database; the collection prefix is
 additional namespace separation rather than the primary IAM boundary.
-
-If the named database already exists, keep management enabled, match its
-immutable location, and import it before planning:
-
-```bash
-terraform import 'google_firestore_database.default[0]' \
-  'projects/PROJECT/databases/sshcloud'
-```
 
 ```bash
 cd sshcloud
@@ -56,25 +49,26 @@ cp terraform.tfvars.example terraform.tfvars
 # edit project_id, asset paths, and a narrow ssh_client_cidrs allowlist
 # optionally set enable_demo_bootstrap=true
 
-# Avoid first-apply service-enablement races.
-gcloud services enable \
-  compute.googleapis.com firestore.googleapis.com secretmanager.googleapis.com \
-  artifactregistry.googleapis.com iam.googleapis.com iamcredentials.googleapis.com \
-  storage.googleapis.com serviceusage.googleapis.com cloudresourcemanager.googleapis.com \
-  iap.googleapis.com \
-  --project=YOUR_PROJECT
-
 bash ../hack/preflight-gcp.sh YOUR_PROJECT us-central1 us-central1-a
 
 terraform init
-terraform apply
+terraform plan -out=tfplan
+terraform apply tfplan
 ```
+
+`module.project_services` enables every required API first. API-backed
+foundations and the Debian image lookup depend on that module, so a first apply
+does not require a separate `gcloud services enable` bootstrap.
 
 After apply:
 
 ```bash
 # With enable_demo_bootstrap=true, Terraform waits/retries through:
-# terraform_data.deploy_fortune → ssh join@ / ssh deploy@ with exec args.
+# terraform_data.deploy_fortune → ssh join@ / ssh deploy@ with exec args
+# terraform_data.smoke_test_fortune → strict ssh fortune@ through the release.
+# Both gateway and app host keys are pinned; a bad response fails terraform apply.
+
+# For additional manual sessions:
 umask 077
 terraform output -raw demo_private_key_openssh > /tmp/sshcloud-demo
 terraform output -raw gateway_known_hosts > /tmp/sshcloud-known
@@ -129,7 +123,8 @@ ssh deploy@HOST fortune --image=repo@sha256:… [--tier=tiny] [--strategy=kick|d
   key management before any public launch.
 - **Demo is opt-in:** `local-exec` is intentionally a smoke-test hack, not a
   durable application reconciler. `triggers_replace` covers its image, infra,
-  script, and deploy inputs; deploy itself is same-image idempotent.
+  scripts, and deploy inputs; deploy itself is same-image idempotent. A separate
+  post-deploy resource verifies the released app through the public SSH path.
 - **Internal auth:** separate interim bearer tokens protect gateway→orchestrator
   and orchestrator→agent. Source-tag firewalls and binding to each VM's VPC IP
   add defense in depth. Workload identity + mTLS remains required for launch.
