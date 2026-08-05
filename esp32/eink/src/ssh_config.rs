@@ -64,7 +64,7 @@ impl SshConfig {
 /// Call this only after WiFi has started: ESP-IDF's hardware RNG has its
 /// strongest entropy source enabled while WiFi or Bluetooth is active.
 pub fn load_or_generate_key(partition: EspDefaultNvsPartition) -> Result<SignKey> {
-    let mut nvs = EspNvs::new(partition, NAMESPACE, true)
+    let nvs = EspNvs::new(partition, NAMESPACE, true)
         .map_err(|e| anyhow!("open writable NVS namespace {NAMESPACE}: {e:?}"))?;
 
     if let Some(mut seed) = read_blob(&nvs, NAMESPACE, CLIENT_SEED, 64)? {

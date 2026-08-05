@@ -51,8 +51,9 @@ export GIT_SHA
 # Toolchain paths installed by `espup install --targets esp32`. The
 # wildcards absorb the date-stamped subdirectory names so espup upgrades
 # don't require editing this file.
-LIBCLANG_PATH  := $(firstword $(wildcard $(HOME)/.rustup/toolchains/esp/xtensa-esp32-elf-clang/*/esp-clang/lib))
-XTENSA_GCC_BIN := $(firstword $(wildcard $(HOME)/.rustup/toolchains/esp/xtensa-esp-elf/*/xtensa-esp-elf/bin))
+RUSTUP_HOME    := $(shell rustup show home 2>/dev/null)
+LIBCLANG_PATH  := $(firstword $(wildcard $(RUSTUP_HOME)/toolchains/esp/xtensa-esp32-elf-clang/*/esp-clang/lib))
+XTENSA_GCC_BIN := $(firstword $(wildcard $(RUSTUP_HOME)/toolchains/esp/xtensa-esp-elf/*/xtensa-esp-elf/bin))
 
 # A throwaway directory containing `python3` -> uv-managed Python 3.12.
 # Put on PATH ahead of system python so embuild bootstraps the IDF venv
@@ -63,6 +64,9 @@ PYTHON_SHIM := $(CURDIR)/.embuild/python-shim
 # Exported to every recipe shell. Replaces the old export-esp.sh script.
 export LIBCLANG_PATH
 export PATH := $(PYTHON_SHIM):$(XTENSA_GCC_BIN):$(PATH)
+# A custom absolute path keeps ESP-IDF shared by the app-specific Cargo target
+# directories. Without this, embuild puts a separate copy under target/.
+export ESP_IDF_TOOLS_INSTALL_DIR := custom:$(CURDIR)/.embuild
 
 .PHONY: help build flash flash-all monitor run clean ensure-python-shim \
         save-image publish pull-verify check-gh-env \
@@ -114,8 +118,8 @@ ensure-python-shim:
 	@command -v uv >/dev/null || { echo "ERROR: uv not installed. See docs/setup.md."; exit 1; }
 	@mkdir -p $(PYTHON_SHIM)
 	@rm -f $(PYTHON_SHIM)/python $(PYTHON_SHIM)/python3
-	@uv python find 3.12 >/dev/null 2>&1 || uv python install 3.12
-	@PY=$$(uv python find 3.12) && \
+	@uv python install 3.12 >/dev/null
+	@PY=$$(uv python find --managed-python 3.12) && \
 	    ln -sf "$$PY" $(PYTHON_SHIM)/python3 && \
 	    ln -sf "$$PY" $(PYTHON_SHIM)/python
 
@@ -172,8 +176,8 @@ provision-build: provisioning.toml build
 
 # ESP-IDF's NVS partition generator + the python venv to run it in.
 # Both come from .embuild after `make build` has cloned ESP-IDF.
-NVS_GEN_PY     := $(CURDIR)/.embuild/espressif/esp-idf/v5.2.2/components/nvs_flash/nvs_partition_generator/nvs_partition_gen.py
-NVS_GEN_PYTHON := $(CURDIR)/.embuild/espressif/python_env/idf5.2_py3.12_env/bin/python
+NVS_GEN_PY     := $(CURDIR)/.embuild/esp-idf/v5.2.2/components/nvs_flash/nvs_partition_generator/nvs_partition_gen.py
+NVS_GEN_PYTHON := $(CURDIR)/.embuild/python_env/idf5.2_py3.12_env/bin/python
 
 # Common new-device setup: full reflash + provision NVS. After this the
 # device should boot, connect to Wi-Fi, and start polling for OTAs.

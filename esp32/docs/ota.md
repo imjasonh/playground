@@ -260,13 +260,14 @@ clearing the parent's xtensa target). Built for the host.
 CLI:
 
 ```
-publisher push --bin <fw.bin> --repo ghcr.io/<owner>/<name> --git-sha <short>
+publisher push --bin <fw.bin> --repo ghcr.io/<owner>/<name> \
+  --app-id <blinky|eink> --git-sha <short>
 ```
 
 Produces an OCI manifest with:
 
 - **Config**: `application/vnd.esp32.firmware.v1+json` — small JSON
-  with `target_chip`, `idf_version`, `git_sha`, `built_at`,
+  with `app_id`, `target_chip`, `idf_version`, `git_sha`, `built_at`,
   `bin_size`, `bin_sha256`.
 - **Layer**: `application/vnd.esp32.firmware.bin` — the raw firmware
   bytes (no compression).

@@ -12,9 +12,9 @@ use epd_waveshare::{
 };
 use esp_idf_svc::hal::{
     delay::Ets,
-    gpio::{InputPin, OutputPin, PinDriver},
-    prelude::*,
+    gpio::{InputPin, OutputPin, PinDriver, Pull},
     spi::{SpiAnyPins, SpiDeviceDriver, config},
+    units::FromValueType,
 };
 
 use esp32_eink::terminal::{ROWS, TerminalBuffer};
@@ -48,7 +48,7 @@ where
     DC: OutputPin + 'static,
     RST: OutputPin + 'static,
 {
-    let spi_config = config::Config::new().baudrate(4.MHz().into());
+    let spi_config = config::Config::new().baudrate(4_u32.MHz().into());
     let mut spi = SpiDeviceDriver::new_single(
         spi,
         sclk,
@@ -60,7 +60,7 @@ where
     )
     .context("configure e-paper SPI")?;
 
-    let busy = PinDriver::input(busy).context("configure BUSY pin")?;
+    let busy = PinDriver::input(busy, Pull::Floating).context("configure BUSY pin")?;
     let dc = PinDriver::output(dc).context("configure DC pin")?;
     let rst = PinDriver::output(rst).context("configure RST pin")?;
     let mut delay = Ets;

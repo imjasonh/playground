@@ -30,7 +30,7 @@ issuer = "https://token.actions.githubusercontent.com"
 
 # Required by the e-ink SSH firmware. Obtain the complete host key with:
 #
-#   ssh-keyscan -t ed25519 your-server.example.com
+#   ssh-keyscan -t ed25519 your-server.example.com | awk '{print $2, $3}'
 #
 # Verify that key through a separate trusted channel before provisioning it.
 # The device rejects missing, changed, RSA, and ECDSA server host keys.

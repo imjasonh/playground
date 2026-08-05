@@ -45,6 +45,7 @@ pub fn connect_display_disconnect(
     let mut network = [0_u8; NETWORK_BUFFER];
     let mut network_start = 0;
     let mut network_end = 0;
+    let mut socket_eof = false;
     let mut channel: Option<ChanHandle> = None;
     let mut shell_open = false;
     let command = format!("{}\r\nexit\r\n", cfg.command);
@@ -91,9 +92,10 @@ pub fn connect_display_disconnect(
             }
         }
 
-        if network_start == network_end && runner.is_input_ready() {
+        if !socket_eof && network_start == network_end && runner.is_input_ready() {
             match socket.read(&mut network) {
                 Ok(0) => {
+                    socket_eof = true;
                     runner.close_input();
                     did_work = true;
                 }
@@ -220,7 +222,10 @@ pub fn connect_display_disconnect(
                 );
                 did_work = true;
             }
-            ProgressAction::Defunct => break,
+            ProgressAction::Defunct => {
+                channel = None;
+                break;
+            }
             ProgressAction::None => {}
         }
 

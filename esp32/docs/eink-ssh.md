@@ -66,7 +66,7 @@ command = "uptime; uname -a"
 Obtain the server key with:
 
 ```bash
-ssh-keyscan -t ed25519 server.example.com
+ssh-keyscan -t ed25519 server.example.com | awk '{print $2, $3}'
 ```
 
 `ssh-keyscan` does not authenticate what it retrieves. Compare the key or

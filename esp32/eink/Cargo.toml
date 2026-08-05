@@ -14,7 +14,9 @@ anyhow = "1"
 base64 = "0.23"
 embedded-graphics = "0.8"
 embedded-svc = "0.29"
-epd-waveshare = { git = "https://github.com/rust-embedded-community/epd-waveshare.git", rev = "8fc19ae69aa7b1243953935dd8b6c076950e6ee7", default-features = false, features = ["graphics"] }
+# Upstream compiles a shared 2.13-inch module unconditionally and requires one
+# of its revision flags; this does not select our panel driver.
+epd-waveshare = { git = "https://github.com/rust-embedded-community/epd-waveshare.git", rev = "8fc19ae69aa7b1243953935dd8b6c076950e6ee7", default-features = false, features = ["graphics", "epd2in13_v3"] }
 esp-idf-svc = "0.52"
 esp32-blinky = { path = ".." }
 sha2 = "0.11"
@@ -23,4 +25,4 @@ tracing = { version = "0.1", features = ["log-always"] }
 zeroize = "1"
 
 [build-dependencies]
-embuild = "0.33"
+embuild = { version = "0.33", features = ["espidf"] }
