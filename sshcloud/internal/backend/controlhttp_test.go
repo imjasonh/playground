@@ -141,7 +141,8 @@ func TestAgentServerProofStillBindsDiscoveredIncarnation(t *testing.T) {
 			},
 		},
 		ServerPolicy: controlauth.VerificationPolicy{
-			Audience: controlauth.AudienceAgentServer,
+			Audience:       controlauth.AudienceAgentServer,
+			ServiceAccount: "agent@test-project.iam.gserviceaccount.com",
 		},
 	}
 	if err := client.VerifyServerIdentity(context.Background()); err != nil {
