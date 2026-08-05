@@ -2,12 +2,15 @@ package backend_test
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/imjasonh/playground/sshcloud/internal/agent"
 	"github.com/imjasonh/playground/sshcloud/internal/backend"
 	"github.com/imjasonh/playground/sshcloud/internal/placement"
+	"github.com/imjasonh/playground/sshcloud/internal/quota"
 )
 
 func TestOrchestratorClientAddr(t *testing.T) {
@@ -171,5 +174,48 @@ func TestPlacedDialRefusesImplicitCrossHostRecovery(t *testing.T) {
 	host, ok, err := place.Get(t.Context(), "alice", "fortune")
 	if err != nil || !ok || host != "removed-host" {
 		t.Fatalf("placement host=%q ok=%v err=%v", host, ok, err)
+	}
+}
+
+func TestPlacedDialEnforcesAwakeUserQuotaBeforeEnsure(t *testing.T) {
+	t.Parallel()
+	ensureCalls := 0
+	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/instances/status":
+			_ = json.NewEncoder(w).Encode(backend.InstanceView{State: "sleeping"})
+		case "/v1/host/instances":
+			_ = json.NewEncoder(w).Encode(map[string]any{"instances": []agent.InstanceInfo{
+				{User: "alice", App: "one", Gen: "g1", State: agent.StateRunning},
+				{User: "alice", App: "two", Gen: "g1", State: agent.StateRunning},
+			}})
+		case "/v1/instances/ensure":
+			ensureCalls++
+			_ = json.NewEncoder(w).Encode(backend.InstanceView{
+				Addr: "127.0.0.1:22", State: "running", SSHHostPublicKey: "key",
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer host.Close()
+	place := placement.NewMemory()
+	if err := place.Set(t.Context(), "alice", "fortune", "host-a"); err != nil {
+		t.Fatal(err)
+	}
+	dial := &backend.PlacedDial{
+		Placement: place,
+		Agents: backend.NewHostSet(map[string]*backend.AgentClient{
+			"host-a": {BaseURL: host.URL},
+		}, "host-a"),
+		Quotas: quota.NewMemory(), MaxAwakePerUser: 2,
+	}
+	_, err := dial.EnsureAddr(t.Context(), "alice", "fortune", "gfortune", "", false)
+	var exceeded quota.ErrExceeded
+	if !errors.As(err, &exceeded) {
+		t.Fatalf("error %v, want awake quota", err)
+	}
+	if ensureCalls != 0 {
+		t.Fatalf("ensure called %d times after quota denial", ensureCalls)
 	}
 }

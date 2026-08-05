@@ -32,6 +32,7 @@ import (
 	"github.com/imjasonh/playground/sshcloud/internal/migrate"
 	"github.com/imjasonh/playground/sshcloud/internal/names"
 	"github.com/imjasonh/playground/sshcloud/internal/placement"
+	"github.com/imjasonh/playground/sshcloud/internal/quota"
 	hostreconcile "github.com/imjasonh/playground/sshcloud/internal/reconcile"
 )
 
@@ -46,6 +47,8 @@ func main() {
 	agentTokenFile := flag.String("agent-token-file", "", "bearer token file sent to host agents")
 	gatewayURL := flag.String("gateway-url", "", "gateway migration control base URL")
 	freezeTimeout := flag.Duration("freeze-timeout", 30*time.Second, "maximum outer-session freeze before forced reconnect")
+	maxAwakePerUser := flag.Int("max-awake-per-user", 2, "maximum running VMs per user (deploy gets one temporary burst)")
+	wakesPerHour := flag.Int("wakes-per-hour", 30, "wake/start admissions per user per hour")
 	flag.Parse()
 
 	controlToken, err := controlauth.LoadFile(*controlTokenFile)
@@ -84,6 +87,7 @@ func main() {
 	defer stop()
 
 	var place placement.Store = placement.NewMemory()
+	var quotaStore quota.Store = quota.NewMemory()
 	if *firestoreProject != "" {
 		fs, err := placement.NewFirestoreWithPrefix(ctx, *firestoreProject, *firestorePrefix)
 		if err != nil {
@@ -91,6 +95,11 @@ func main() {
 		}
 		defer fs.Close()
 		place = fs
+		quotaStore, err = quota.NewFirestore(ctx, *firestoreProject, *firestorePrefix)
+		if err != nil {
+			log.Fatalf("quota firestore: %v", err)
+		}
+		defer quotaStore.Close()
 		log.Printf("placement: firestore project %s", *firestoreProject)
 	} else {
 		log.Printf("placement: in-memory")
@@ -98,7 +107,10 @@ func main() {
 
 	hosts := backend.NewHostSet(initial, *defaultHost)
 	mig := &migrate.Migrator{Placement: place, Hosts: hosts}
-	dial := &backend.PlacedDial{Placement: place, Agents: hosts, DefaultHost: *defaultHost}
+	dial := &backend.PlacedDial{
+		Placement: place, Agents: hosts, DefaultHost: *defaultHost,
+		Quotas: quotaStore, MaxAwakePerUser: *maxAwakePerUser, WakesPerHour: *wakesPerHour,
+	}
 	var gatewayClient *backend.GatewayClient
 	if *gatewayURL != "" {
 		gatewayClient = &backend.GatewayClient{BaseURL: *gatewayURL, Token: controlToken}
@@ -116,10 +128,28 @@ func main() {
 
 	mux := http.NewServeMux()
 	api := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /livez", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
+	ready := func(w http.ResponseWriter, r *http.Request) {
+		if hosts.Len() == 0 {
+			http.Error(w, "no agent hosts discovered", http.StatusServiceUnavailable)
+			return
+		}
+		if _, err := place.ListRecords(r.Context()); err != nil {
+			http.Error(w, "placement store: "+err.Error(), http.StatusServiceUnavailable)
+			return
+		}
+		if _, err := hosts.Candidates(r.Context(), "tiny", nil); err != nil {
+			http.Error(w, "agent capacity: "+err.Error(), http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}
+	mux.HandleFunc("GET /readyz", ready)
+	mux.HandleFunc("GET /healthz", ready)
 	api.HandleFunc("GET /v1/hosts", func(w http.ResponseWriter, r *http.Request) {
 		type hostView struct {
 			ID       string         `json:"id"`
@@ -217,12 +247,14 @@ func main() {
 	})
 	api.HandleFunc("POST /v1/ensure", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
-			User   string `json:"user"`
-			App    string `json:"app"`
-			Gen    string `json:"gen"`
-			Image  string `json:"image"`
-			Tier   string `json:"tier"`
-			NoIdle bool   `json:"no_idle"`
+			User      string `json:"user"`
+			App       string `json:"app"`
+			Gen       string `json:"gen"`
+			Image     string `json:"image"`
+			Tier      string `json:"tier"`
+			NoIdle    bool   `json:"no_idle"`
+			Purpose   string `json:"purpose"`
+			RequestID string `json:"request_id"`
 		}
 		if !decodeJSON(w, r, &req) {
 			return
@@ -241,7 +273,13 @@ func main() {
 			http.Error(w, "tier must be tiny or small", http.StatusBadRequest)
 			return
 		}
-		addr, err := dial.EnsureAddrTier(r.Context(), req.User, req.App, req.Gen, req.Image, req.Tier, req.NoIdle)
+		if req.Purpose == "" {
+			req.Purpose = "session"
+		}
+		addr, err := dial.EnsureAddrTierWithOptions(
+			r.Context(), req.User, req.App, req.Gen, req.Image, req.Tier, req.NoIdle,
+			backend.StartOptions{Purpose: req.Purpose, RequestID: req.RequestID},
+		)
 		if err != nil {
 			writeControlError(w, err)
 			return
@@ -325,6 +363,36 @@ func main() {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"placements": records})
+	})
+	api.HandleFunc("GET /v1/diagnostics", func(w http.ResponseWriter, r *http.Request) {
+		records, err := place.ListRecords(r.Context())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		type hostDiagnostic struct {
+			ID        string               `json:"id"`
+			Capacity  agent.Capacity       `json:"capacity"`
+			Instances []agent.InstanceInfo `json:"instances"`
+			Error     string               `json:"error,omitempty"`
+		}
+		var hostDiagnostics []hostDiagnostic
+		for _, id := range hosts.IDs() {
+			client, _ := hosts.Get(id)
+			capacity, capacityErr := client.Capacity(r.Context())
+			instances, inventoryErr := client.Instances(r.Context())
+			diagnostic := hostDiagnostic{ID: id, Capacity: capacity, Instances: instances}
+			if capacityErr != nil {
+				diagnostic.Error = capacityErr.Error()
+			} else if inventoryErr != nil {
+				diagnostic.Error = inventoryErr.Error()
+			}
+			hostDiagnostics = append(hostDiagnostics, diagnostic)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"placements": records, "hosts": hostDiagnostics,
+		})
 	})
 	mux.Handle("/v1/", controlauth.Require(controlToken, api))
 
@@ -447,7 +515,10 @@ func writeControlError(w http.ResponseWriter, err error) {
 	var lost placement.ErrLeaseLost
 	var recovery placement.ErrRecoveryRequired
 	var capacity backend.ErrAgentCapacity
+	var exceeded quota.ErrExceeded
 	switch {
+	case errors.As(err, &exceeded):
+		http.Error(w, err.Error(), http.StatusTooManyRequests)
 	case errors.As(err, &held), errors.As(err, &lost), errors.As(err, &recovery):
 		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.As(err, &capacity):

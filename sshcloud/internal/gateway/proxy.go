@@ -16,13 +16,15 @@ import (
 
 // DialRequest is a backend wake/dial for one app generation.
 type DialRequest struct {
-	User     string
-	App      string
-	Gen      string
-	Image    string
-	Tier     string
-	NoIdle   bool
-	RetryFor time.Duration
+	User      string
+	App       string
+	Gen       string
+	Image     string
+	Tier      string
+	NoIdle    bool
+	RetryFor  time.Duration
+	Purpose   string
+	RequestID string
 }
 
 // DialTarget binds a backend address to its expected SSH host identity.

@@ -20,6 +20,7 @@ import (
 	"github.com/imjasonh/playground/sshcloud/internal/gateway"
 	"github.com/imjasonh/playground/sshcloud/internal/hostkey"
 	"github.com/imjasonh/playground/sshcloud/internal/image"
+	"github.com/imjasonh/playground/sshcloud/internal/quota"
 	"github.com/imjasonh/playground/sshcloud/internal/session"
 	"github.com/imjasonh/playground/sshcloud/internal/sshd"
 	"github.com/imjasonh/playground/sshcloud/internal/store"
@@ -39,6 +40,10 @@ func main() {
 	controlTokenFile := flag.String("control-token-file", "", "bearer token file sent to orchestrator/agent APIs")
 	controlListen := flag.String("control-listen", "", "internal migration control HTTP address (empty disables)")
 	allowedRegistries := flag.String("allowed-registries", "index.docker.io,docker.io,ghcr.io,*.pkg.dev", "comma-separated OCI registry hosts; supports *.suffix")
+	maxSessionsPerUser := flag.Int("max-sessions-per-user", 5, "concurrent sessions across all apps")
+	handshakesPerMinute := flag.Int("handshakes-per-minute", 60, "accepted SSH handshakes per source IP per minute")
+	maxAppsPerUser := flag.Int("max-apps-per-user", 5, "maximum apps per user")
+	deploysPerHour := flag.Int("deploys-per-hour", 10, "deploy admissions per user per hour")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -74,11 +79,22 @@ func main() {
 	}
 
 	sess := session.NewRegistry()
+	sess.MaxPerUser = *maxSessionsPerUser
+	var quotaStore quota.Store = quota.NewMemory()
+	if *firestoreProject != "" {
+		quotaStore, err = quota.NewFirestore(ctx, *firestoreProject, *firestorePrefix)
+		if err != nil {
+			log.Fatalf("quota firestore: %v", err)
+		}
+		defer quotaStore.Close()
+	}
 	hub := &gateway.Hub{
 		Store:             st,
 		Sessions:          sess,
 		UserCA:            ca,
 		AllowedRegistries: image.ParseRegistryAllowlist(*allowedRegistries),
+		Quotas:            quotaStore,
+		Limits:            gateway.Limits{AppsPerUser: *maxAppsPerUser, DeploysPerHour: *deploysPerHour},
 	}
 
 	var instances cutover.Instances
@@ -86,7 +102,7 @@ func main() {
 	case *orchURL != "":
 		oc := &backend.OrchestratorClient{BaseURL: *orchURL, Token: controlToken}
 		hub.Dial = func(ctx context.Context, req gateway.DialRequest) (gateway.DialTarget, error) {
-			target, err := oc.TargetTierContext(ctx, req.User, req.App, req.Gen, req.Image, req.Tier, req.NoIdle)
+			target, err := oc.TargetTierRequest(ctx, req.User, req.App, req.Gen, req.Image, req.Tier, req.NoIdle, req.Purpose, req.RequestID)
 			return gateway.DialTarget{Addr: target.Addr, SSHHostPublicKey: target.SSHHostPublicKey}, err
 		}
 		instances = oc
@@ -149,10 +165,11 @@ func main() {
 	}
 
 	srv := &sshd.Server{
-		Hub:     hub,
-		HostKey: signer,
-		Addr:    *addr,
-		Logger:  log.Default(),
+		Hub:              hub,
+		HostKey:          signer,
+		Addr:             *addr,
+		Logger:           log.Default(),
+		HandshakeLimiter: quota.NewIPRateLimiter(*handshakesPerMinute, time.Minute),
 	}
 
 	var controlServer *http.Server

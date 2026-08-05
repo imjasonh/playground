@@ -24,6 +24,13 @@ func ipCommand(args ...string) *exec.Cmd {
 	return exec.Command("sudo", append([]string{"-n", "ip"}, args...)...)
 }
 
+func netfilterCommand(args ...string) *exec.Cmd {
+	if os.Geteuid() == 0 || os.Getenv("SSHCLOUD_IP_DIRECT") == "1" {
+		return exec.Command("iptables", args...)
+	}
+	return exec.Command("sudo", append([]string{"-n", "iptables"}, args...)...)
+}
+
 // CreateTap creates and configures a TAP device (requires CAP_NET_ADMIN).
 // When not root, the TAP is owned by the current uid so Firecracker can open it.
 // Idempotent if the device already exists.
@@ -49,11 +56,16 @@ func CreateTap(name, hostIP string, prefix int) error {
 	if out, err := ipCommand("link", "set", "dev", name, "up").CombinedOutput(); err != nil {
 		return fmt.Errorf("link up: %v\n%s", err, out)
 	}
+	if err := isolateTap(name); err != nil {
+		_ = ipCommand("link", "del", "dev", name).Run()
+		return err
+	}
 	return nil
 }
 
 // DeleteTap removes a TAP device.
 func DeleteTap(name string) error {
+	deleteIsolationRules(name)
 	if !tapExists(name) {
 		return nil
 	}
@@ -61,6 +73,39 @@ func DeleteTap(name string) error {
 		return fmt.Errorf("link del: %v\n%s", err, out)
 	}
 	return nil
+}
+
+func isolateTap(name string) error {
+	rules := [][]string{
+		{"INPUT", "-i", name, "-j", "DROP"},
+		{"INPUT", "-i", name, "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT"},
+		{"FORWARD", "-i", name, "-j", "DROP"},
+	}
+	for _, rule := range rules {
+		check := append([]string{"-C"}, rule...)
+		if netfilterCommand(check...).Run() == nil {
+			continue
+		}
+		add := append([]string{"-I", rule[0], "1"}, rule[1:]...)
+		if out, err := netfilterCommand(add...).CombinedOutput(); err != nil {
+			deleteIsolationRules(name)
+			return fmt.Errorf("isolate TAP %s: %v\n%s", name, err, out)
+		}
+	}
+	return nil
+}
+
+func deleteIsolationRules(name string) {
+	rules := [][]string{
+		{"INPUT", "-i", name, "-j", "DROP"},
+		{"INPUT", "-i", name, "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT"},
+		{"FORWARD", "-i", name, "-j", "DROP"},
+	}
+	for _, rule := range rules {
+		del := append([]string{"-D"}, rule...)
+		for netfilterCommand(del...).Run() == nil {
+		}
+	}
 }
 
 func tapExists(name string) bool {

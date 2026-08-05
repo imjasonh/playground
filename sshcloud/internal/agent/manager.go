@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/imjasonh/playground/sshcloud/internal/firecracker"
@@ -956,9 +957,24 @@ func (m *Manager) Ready() error {
 	if _, err := exec.LookPath(fc); err != nil {
 		return fmt.Errorf("firecracker %q: %w", fc, err)
 	}
-	for _, tool := range []string{"ip", "mkfs.ext4", "debugfs"} {
+	for _, tool := range []string{"ip", "iptables", "mkfs.ext4", "debugfs"} {
 		if _, err := exec.LookPath(tool); err != nil {
 			return fmt.Errorf("required tool %q: %w", tool, err)
+		}
+	}
+	var fs syscall.Statfs_t
+	if err := syscall.Statfs(m.cfg.WorkDir, &fs); err != nil {
+		return fmt.Errorf("work-dir filesystem: %w", err)
+	}
+	if available := int64(fs.Bavail) * int64(fs.Bsize); available < 1<<30 {
+		return fmt.Errorf("work-dir has less than 1 GiB available")
+	}
+	if m.cfg.SnapStore != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		_, err := m.cfg.SnapStore.Has(ctx, snapshot.KeyFor("healthcheck", "healthcheck"))
+		cancel()
+		if err != nil {
+			return fmt.Errorf("snapshot store: %w", err)
 		}
 	}
 	return nil

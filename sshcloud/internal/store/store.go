@@ -17,15 +17,21 @@ const (
 
 // App is an app in a user's namespace.
 type App struct {
-	Owner           string
-	Name            string
-	Image           string // digest-pinned reference (required for a bootable app)
-	PreviousImage   string // image before last deploy (rollback later)
-	Tier            string // "tiny" | "small"
-	SessionStrategy string // StrategyDrain | StrategyKick; empty means drain
-	ActiveGen       string // generation receiving new sessions
-	DrainingGen     string // cordoned generation (drain cutover); "" is legacy singleton
-	DrainUntilUnix  int64  // unix seconds; 0 if not draining
+	Owner            string
+	Name             string
+	Image            string // digest-pinned reference (required for a bootable app)
+	PreviousImage    string // image before last deploy (rollback later)
+	Tier             string // "tiny" | "small"
+	SessionStrategy  string // StrategyDrain | StrategyKick; empty means drain
+	ActiveGen        string // generation receiving new sessions
+	DrainingGen      string // cordoned generation (drain cutover); "" is legacy singleton
+	DrainUntilUnix   int64  // unix seconds; 0 if not draining
+	PendingGen       string
+	PendingImage     string
+	PendingTier      string
+	PendingStrategy  string
+	PendingSinceUnix int64
+	RetiringGens     []string
 }
 
 // Store is the control-plane persistence surface used by the gateway.
@@ -36,6 +42,7 @@ type Store interface {
 	HasApp(ctx context.Context, userID, app string) (bool, error)
 	GetApp(ctx context.Context, userID, app string) (*App, error)
 	UpsertApp(ctx context.Context, app App) error
+	DeleteApp(ctx context.Context, userID, app string) error
 	ListApps(ctx context.Context, userID string) ([]App, error)
 	ListAllApps(ctx context.Context) ([]App, error)
 }

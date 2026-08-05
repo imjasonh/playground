@@ -9,6 +9,7 @@ import (
 	"github.com/imjasonh/playground/sshcloud/internal/cutover"
 	"github.com/imjasonh/playground/sshcloud/internal/image"
 	"github.com/imjasonh/playground/sshcloud/internal/names"
+	"github.com/imjasonh/playground/sshcloud/internal/quota"
 	"github.com/imjasonh/playground/sshcloud/internal/store"
 )
 
@@ -89,6 +90,8 @@ func applyDeploy(ctx context.Context, hub *Hub, userID string, args DeployArgs, 
 	if err := image.ValidateAllowedRegistry(args.Image, hub.AllowedRegistries); err != nil {
 		return false, err
 	}
+	unlock := hub.lockUser(userID)
+	defer unlock()
 	existing, err := hub.Store.GetApp(ctx, userID, args.Name)
 	if err != nil {
 		return false, err
@@ -96,6 +99,18 @@ func applyDeploy(ctx context.Context, hub *Hub, userID string, args DeployArgs, 
 	updated = existing != nil
 	if existing != nil && requireYes && !args.Yes {
 		return false, fmt.Errorf("app %q exists; pass --yes to update", args.Name)
+	}
+	if existing == nil {
+		apps, err := hub.Store.ListApps(ctx, userID)
+		if err != nil {
+			return false, err
+		}
+		if len(apps) >= hub.limits().AppsPerUser {
+			return false, quota.ErrExceeded{Kind: "apps", Limit: hub.limits().AppsPerUser}
+		}
+	}
+	if err := hub.allowDeploy(ctx, userID, args.Name, args.Image); err != nil {
+		return false, err
 	}
 
 	if hub.Cutover != nil {

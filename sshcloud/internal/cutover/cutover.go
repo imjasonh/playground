@@ -182,6 +182,10 @@ func (c *Controller) Deploy(ctx context.Context, req Request) (Result, error) {
 	if app == nil {
 		app = &store.App{Owner: req.User, Name: req.App}
 	}
+	isNewApp := app.ActiveGen == "" && app.Image == ""
+	if app.PendingGen != "" {
+		return Result{}, fmt.Errorf("app %q has pending deploy generation %s; wait for reconciliation", req.App, app.PendingGen)
+	}
 	if app.DrainingGen != "" && app.DrainUntilUnix > 0 && c.now().Unix() >= app.DrainUntilUnix {
 		c.kickGen(req.User, req.App, app.DrainingGen)
 		c.finishDrainLocked(ctx, req.User, req.App, app.DrainingGen)
@@ -212,14 +216,23 @@ func (c *Controller) Deploy(ctx context.Context, req Request) (Result, error) {
 
 	oldGen := app.ActiveGen
 	newGen := genid.New()
+	app.PendingGen = newGen
+	app.PendingImage = req.Image
+	app.PendingTier = req.Tier
+	app.PendingStrategy = strategy
+	app.PendingSinceUnix = c.now().Unix()
+	if err := c.Store.UpsertApp(ctx, *app); err != nil {
+		return Result{}, fmt.Errorf("persist deploy intent: %w", err)
+	}
 
 	if c.Instances != nil {
 		if err := c.Instances.Ensure(ctx, req.User, req.App, newGen, req.Image, req.Tier, true); err != nil {
+			_ = c.cleanupPending(context.Background(), app, isNewApp)
 			return Result{}, fmt.Errorf("boot new generation: %w", err)
 		}
 	}
 
-	persist := func(draining string, until time.Time) error {
+	persist := func(draining string, until time.Time, retiring string) error {
 		app.PreviousImage = app.Image
 		app.Image = req.Image
 		app.Tier = req.Tier
@@ -230,6 +243,11 @@ func (c *Controller) Deploy(ctx context.Context, req Request) (Result, error) {
 			app.DrainUntilUnix = until.Unix()
 		}
 		app.SessionStrategy = strategy
+		app.PendingGen, app.PendingImage, app.PendingTier, app.PendingStrategy = "", "", "", ""
+		app.PendingSinceUnix = 0
+		if retiring != "" {
+			app.RetiringGens = appendUnique(app.RetiringGens, retiring)
+		}
 		if err := c.Store.UpsertApp(ctx, *app); err != nil {
 			if c.Instances != nil {
 				_ = c.Instances.Stop(context.Background(), req.User, req.App, newGen)
@@ -244,25 +262,21 @@ func (c *Controller) Deploy(ctx context.Context, req Request) (Result, error) {
 
 	switch strategy {
 	case store.StrategyKick:
-		if err := persist("", time.Time{}); err != nil {
+		if err := persist("", time.Time{}, oldGen); err != nil {
 			return Result{}, err
 		}
 		c.kickGen(req.User, req.App, oldGen)
-		if c.Instances != nil {
-			_ = c.Instances.Stop(ctx, req.User, req.App, oldGen)
-		}
+		c.retireLocked(ctx, app)
 		c.clearTimer(req.User, req.App)
 		return Result{ActiveGen: newGen, Strategy: strategy}, nil
 
 	default: // drain
 		oldHasSession := c.Sessions != nil && c.Sessions.ActiveGen(req.User, req.App, oldGen)
 		if !oldHasSession {
-			if err := persist("", time.Time{}); err != nil {
+			if err := persist("", time.Time{}, oldGen); err != nil {
 				return Result{}, err
 			}
-			if c.Instances != nil {
-				_ = c.Instances.Stop(ctx, req.User, req.App, oldGen)
-			}
+			c.retireLocked(ctx, app)
 			c.clearTimer(req.User, req.App)
 			return Result{ActiveGen: newGen, Strategy: strategy}, nil
 		}
@@ -274,7 +288,7 @@ func (c *Controller) Deploy(ctx context.Context, req Request) (Result, error) {
 				return Result{}, fmt.Errorf("hold draining generation awake: %w", err)
 			}
 		}
-		if err := persist(oldGen, drainUntil); err != nil {
+		if err := persist(oldGen, drainUntil, ""); err != nil {
 			return Result{}, err
 		}
 		c.armDrainTimer(req.User, req.App, oldGen, drainUntil)
@@ -333,6 +347,49 @@ func (c *Controller) finishDrainLocked(ctx context.Context, user, app, gen strin
 	return nil
 }
 
+func (c *Controller) cleanupPending(ctx context.Context, app *store.App, deleteIfEmpty bool) error {
+	if app.PendingGen != "" && c.Instances != nil {
+		_ = c.Instances.Stop(ctx, app.Owner, app.Name, app.PendingGen)
+	}
+	if deleteIfEmpty {
+		return c.Store.DeleteApp(ctx, app.Owner, app.Name)
+	}
+	app.PendingGen, app.PendingImage, app.PendingTier, app.PendingStrategy = "", "", "", ""
+	app.PendingSinceUnix = 0
+	return c.Store.UpsertApp(ctx, *app)
+}
+
+func (c *Controller) retireLocked(ctx context.Context, app *store.App) {
+	if len(app.RetiringGens) == 0 {
+		return
+	}
+	remaining := app.RetiringGens[:0]
+	for _, gen := range app.RetiringGens {
+		if gen == "" {
+			continue
+		}
+		if c.Instances != nil {
+			if err := c.Instances.Stop(ctx, app.Owner, app.Name, gen); err != nil {
+				remaining = append(remaining, gen)
+			}
+		}
+	}
+	app.RetiringGens = append([]string(nil), remaining...)
+	_ = c.Store.UpsertApp(ctx, *app)
+}
+
+func appendUnique(values []string, value string) []string {
+	if value == "" {
+		return values
+	}
+	for _, existing := range values {
+		if existing == value {
+			return values
+		}
+	}
+	return append(values, value)
+}
+
 func (c *Controller) kickGen(user, app, gen string) {
 	if c.Sessions == nil {
 		return
@@ -388,6 +445,23 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 				first = getErr
 			}
 			continue
+		}
+		if current.PendingGen != "" {
+			deleteIfEmpty := current.ActiveGen == "" && current.Image == ""
+			if pendingErr := c.cleanupPending(ctx, current, deleteIfEmpty); pendingErr != nil {
+				if first == nil {
+					first = pendingErr
+				}
+				op.Unlock()
+				continue
+			}
+			if deleteIfEmpty {
+				op.Unlock()
+				continue
+			}
+		}
+		if len(current.RetiringGens) != 0 {
+			c.retireLocked(ctx, current)
 		}
 		if current.DrainingGen != "" {
 			active := c.Sessions != nil && c.Sessions.ActiveGen(current.Owner, current.Name, current.DrainingGen)

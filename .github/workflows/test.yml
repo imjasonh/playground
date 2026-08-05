@@ -142,7 +142,7 @@ jobs:
 
       - name: Install rootfs / TAP tooling
         if: steps.gate.outputs.run == 'true'
-        run: sudo apt-get update && sudo apt-get install -y e2fsprogs iproute2
+        run: sudo apt-get update && sudo apt-get install -y e2fsprogs iproute2 iptables
 
       - name: Run Firecracker KVM e2e
         if: steps.gate.outputs.run == 'true'

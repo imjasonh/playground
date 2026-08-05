@@ -41,5 +41,5 @@ fi
 
 export FIRESTORE_PROJECT_ID="$PROJECT"
 export GOTOOLCHAIN="${GOTOOLCHAIN:-auto}"
-go test ./internal/store/ ./internal/placement/ -count=1 -run 'Firestore'
+go test ./internal/store/ ./internal/placement/ ./internal/quota/ -count=1 -run 'Firestore'
 echo "Firestore tests passed"

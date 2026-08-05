@@ -4,17 +4,25 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
+	"github.com/imjasonh/playground/sshcloud/internal/agent"
 	"github.com/imjasonh/playground/sshcloud/internal/placement"
+	"github.com/imjasonh/playground/sshcloud/internal/quota"
 )
 
 // PlacedDial resolves (user, app) → host agent via placement, then Ensures.
 type PlacedDial struct {
-	Placement   placement.Store
-	Agents      *HostSet
-	DefaultHost string // used when no placement yet; empty falls back to Agents.DefaultHost
-	LeaseTTL    time.Duration
+	Placement       placement.Store
+	Agents          *HostSet
+	DefaultHost     string // used when no placement yet; empty falls back to Agents.DefaultHost
+	LeaseTTL        time.Duration
+	Quotas          quota.Store
+	MaxAwakePerUser int
+	WakesPerHour    int
+	startMu         sync.Mutex
+	startUsers      map[string]*sync.Mutex
 }
 
 func (p *PlacedDial) resolve(host, user, app string, allowFallback bool) (*AgentClient, string, error) {
@@ -63,9 +71,22 @@ func (p *PlacedDial) EnsureAddr(ctx context.Context, user, app, gen, image strin
 
 // EnsureAddrTier boots/wakes with an explicit resource tier.
 func (p *PlacedDial) EnsureAddrTier(ctx context.Context, user, app, gen, image, tier string, noIdle bool) (string, error) {
+	return p.EnsureAddrTierWithOptions(ctx, user, app, gen, image, tier, noIdle, StartOptions{
+		Purpose: "session", RequestID: gen + "\x00" + image,
+	})
+}
+
+type StartOptions struct {
+	Purpose   string
+	RequestID string
+}
+
+func (p *PlacedDial) EnsureAddrTierWithOptions(ctx context.Context, user, app, gen, image, tier string, noIdle bool, options StartOptions) (string, error) {
 	if p.Agents == nil {
 		return "", fmt.Errorf("no agents available for %s/%s", user, app)
 	}
+	unlockStart := p.lockStart(user)
+	defer unlockStart()
 	guard, err := placement.AcquireGuard(ctx, p.Placement, user, app, "ensure", p.LeaseTTL)
 	if err != nil {
 		return "", err
@@ -103,6 +124,19 @@ func (p *PlacedDial) EnsureAddrTier(ctx context.Context, user, app, gen, image, 
 	}
 	if len(choices) == 0 {
 		return "", fmt.Errorf("no host has capacity for %s/%s tier %s", user, app, tier)
+	}
+	alreadyRunning := false
+	if originalHost != "" {
+		status, found, err := choices[0].Client.StatusContext(guard.Context(), user, app, gen)
+		if err != nil {
+			return "", err
+		}
+		alreadyRunning = found && status.State == "running"
+	}
+	if !alreadyRunning {
+		if err := p.admitStart(guard.Context(), user, options); err != nil {
+			return "", err
+		}
 	}
 	var (
 		in           InstanceView
@@ -221,7 +255,9 @@ func (p *PlacedDial) EnsureAddrTier(ctx context.Context, user, app, gen, image, 
 
 // Ensure implements cutover.Instances (same host placement; dual-gen burst).
 func (p *PlacedDial) Ensure(ctx context.Context, user, app, gen, image, tier string, noIdle bool) error {
-	_, err := p.EnsureAddrTier(ctx, user, app, gen, image, tier, noIdle)
+	_, err := p.EnsureAddrTierWithOptions(ctx, user, app, gen, image, tier, noIdle, StartOptions{
+		Purpose: "deploy", RequestID: gen,
+	})
 	return err
 }
 
@@ -299,6 +335,61 @@ func (p *PlacedDial) StatusView(ctx context.Context, user, app, gen string) (Ins
 		}
 	}
 	return view, true, nil
+}
+
+func (p *PlacedDial) lockStart(user string) func() {
+	p.startMu.Lock()
+	if p.startUsers == nil {
+		p.startUsers = make(map[string]*sync.Mutex)
+	}
+	lock := p.startUsers[user]
+	if lock == nil {
+		lock = &sync.Mutex{}
+		p.startUsers[user] = lock
+	}
+	p.startMu.Unlock()
+	lock.Lock()
+	return lock.Unlock
+}
+
+func (p *PlacedDial) admitStart(ctx context.Context, user string, options StartOptions) error {
+	inventories, err := p.Agents.Inventories(ctx)
+	if err != nil {
+		return err
+	}
+	awake := 0
+	for _, inventory := range inventories {
+		for _, instance := range inventory {
+			if instance.User == user && instance.State == agent.StateRunning {
+				awake++
+			}
+		}
+	}
+	maxAwake := p.MaxAwakePerUser
+	if maxAwake <= 0 {
+		maxAwake = 2
+	}
+	if options.Purpose == "deploy" {
+		maxAwake++ // one controlled old+new cutover burst
+	}
+	if awake >= maxAwake {
+		return quota.ErrExceeded{Kind: "awake_vms", Limit: maxAwake}
+	}
+	if p.Quotas == nil {
+		return nil
+	}
+	wakes := p.WakesPerHour
+	if wakes <= 0 {
+		wakes = 30
+	}
+	eventID := options.RequestID
+	if eventID == "" {
+		eventID = placement.NewLeaseOwner("wake")
+	}
+	return p.Quotas.Take(ctx, quota.Request{
+		Kind: "wake", Subject: user, EventID: eventID, At: time.Now(),
+		Limit: quota.Limit{Max: wakes, Window: time.Hour},
+	})
 }
 
 func releasePlacementGuard(guard *placement.Guard) {

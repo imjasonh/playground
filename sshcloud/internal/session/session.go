@@ -41,17 +41,21 @@ const (
 
 // Registry is an in-memory session table for the gateway.
 type Registry struct {
-	mu      sync.Mutex
-	slots   map[Key][]slot
-	byID    map[ID]Key
-	nextSeq uint64
+	mu         sync.Mutex
+	slots      map[Key][]slot
+	byID       map[ID]Key
+	byUser     map[string]int
+	nextSeq    uint64
+	MaxPerUser int
 }
 
 // NewRegistry returns an empty session registry.
 func NewRegistry() *Registry {
 	return &Registry{
-		slots: make(map[Key][]slot),
-		byID:  make(map[ID]Key),
+		slots:      make(map[Key][]slot),
+		byID:       make(map[ID]Key),
+		byUser:     make(map[string]int),
+		MaxPerUser: 5,
 	}
 }
 
@@ -59,6 +63,15 @@ func NewRegistry() *Registry {
 // (or two generations are already occupied during drain).
 type ErrBusy struct {
 	Key Key
+}
+
+type ErrUserBusy struct {
+	User  string
+	Limit int
+}
+
+func (e ErrUserBusy) Error() string {
+	return fmt.Sprintf("session limit reached for %s (%d)", e.User, e.Limit)
 }
 
 func (e ErrBusy) Error() string {
@@ -75,6 +88,9 @@ func (r *Registry) Admit(user, app, gen string) (ID, error) {
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.MaxPerUser > 0 && r.byUser[user] >= r.MaxPerUser {
+		return "", ErrUserBusy{User: user, Limit: r.MaxPerUser}
+	}
 	cur := r.slots[k]
 	for _, s := range cur {
 		if s.Gen == gen {
@@ -88,6 +104,7 @@ func (r *Registry) Admit(user, app, gen string) (ID, error) {
 	id := ID(fmt.Sprintf("sess-%d", r.nextSeq))
 	r.slots[k] = append(cur, slot{ID: id, Gen: gen})
 	r.byID[id] = k
+	r.byUser[user]++
 	return id, nil
 }
 
@@ -351,6 +368,11 @@ func (r *Registry) Release(id ID) {
 		return
 	}
 	delete(r.byID, id)
+	if r.byUser[k.User] > 1 {
+		r.byUser[k.User]--
+	} else {
+		delete(r.byUser, k.User)
+	}
 	cur := r.slots[k]
 	out := cur[:0]
 	for _, s := range cur {

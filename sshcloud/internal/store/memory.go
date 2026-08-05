@@ -104,6 +104,13 @@ func (m *Memory) UpsertApp(_ context.Context, app App) error {
 	return nil
 }
 
+func (m *Memory) DeleteApp(_ context.Context, userID, app string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.apps[userID], app)
+	return nil
+}
+
 func (m *Memory) ListApps(_ context.Context, userID string) ([]App, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

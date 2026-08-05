@@ -4,7 +4,7 @@ ${helpers}
 
 install_docker
 retry 10 apt-get update -y
-retry 10 apt-get install -y e2fsprogs iproute2
+retry 10 apt-get install -y e2fsprogs iproute2 iptables
 install -d -m 0755 /var/lib/sshcloud/assets /var/lib/sshcloud/agent /usr/local/lib/sshcloud
 id sshcloud >/dev/null 2>&1 || useradd --system --home-dir /var/lib/sshcloud --shell /usr/sbin/nologin sshcloud
 

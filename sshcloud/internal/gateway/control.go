@@ -67,10 +67,24 @@ func (h *ControlHandler) Mount(mux *http.ServeMux) {
 	api.HandleFunc("POST /v1/sessions/thaw", h.thaw)
 	api.HandleFunc("POST /v1/sessions/abort", h.abort)
 	mux.Handle("/v1/", controlauth.Require(h.Token, api))
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /livez", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
+	ready := func(w http.ResponseWriter, r *http.Request) {
+		if h.Hub == nil || h.Hub.Store == nil {
+			http.Error(w, "gateway store unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		if _, err := h.Hub.Store.ListAllApps(r.Context()); err != nil {
+			http.Error(w, "gateway store: "+err.Error(), http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}
+	mux.HandleFunc("GET /readyz", ready)
+	mux.HandleFunc("GET /healthz", ready)
 }
 
 func (h *ControlHandler) freeze(w http.ResponseWriter, r *http.Request) {

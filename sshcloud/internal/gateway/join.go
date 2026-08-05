@@ -12,13 +12,13 @@ import (
 // When execCmd is set for a new user (`ssh join@host demo`), joins
 // non-interactively and returns an exit code (0 ok, 1 failure).
 func RunJoin(ctx context.Context, ch io.ReadWriter, hub *Hub, keyFP, userID, execCmd string) int {
-	return RunJoinSession(ctx, ClientSession{IO: ch, Stderr: ch, Spec: &SessionSpec{StartType: SessionShell, PTY: true}}, hub, keyFP, userID, execCmd)
+	return RunJoinSession(ctx, ClientSession{IO: ch, Stderr: ch, Spec: &SessionSpec{StartType: SessionShell, PTY: true}}, hub, keyFP, userID, "", execCmd)
 }
 
-func RunJoinSession(ctx context.Context, client ClientSession, hub *Hub, keyFP, userID, execCmd string) int {
+func RunJoinSession(ctx context.Context, client ClientSession, hub *Hub, keyFP, userID, sourceIP, execCmd string) int {
 	t := newSessionTerm(client)
 	if userID == "" {
-		return runJoinNew(ctx, t, hub, keyFP, execCmd)
+		return runJoinNew(ctx, t, hub, keyFP, sourceIP, execCmd)
 	}
 	if strings.TrimSpace(execCmd) != "" {
 		fields := strings.Fields(execCmd)
@@ -33,7 +33,7 @@ func RunJoinSession(ctx context.Context, client ClientSession, hub *Hub, keyFP, 
 	return 0
 }
 
-func runJoinNew(ctx context.Context, t *term, hub *Hub, keyFP, execCmd string) int {
+func runJoinNew(ctx context.Context, t *term, hub *Hub, keyFP, sourceIP, execCmd string) int {
 	execCmd = strings.TrimSpace(execCmd)
 	if execCmd != "" {
 		fields := strings.Fields(execCmd)
@@ -44,6 +44,10 @@ func runJoinNew(ctx context.Context, t *term, hub *Hub, keyFP, execCmd string) i
 		name := fields[0]
 		if err := names.ValidateIdent(name); err != nil {
 			t.Printf("Invalid username: %v\n", err)
+			return 1
+		}
+		if err := hub.allowJoin(ctx, sourceIP, name, keyFP); err != nil {
+			t.Printf("Join denied: %v\n", err)
 			return 1
 		}
 		if err := hub.Store.CreateUser(ctx, name, keyFP); err != nil {
@@ -66,6 +70,10 @@ func runJoinNew(ctx context.Context, t *term, hub *Hub, keyFP, execCmd string) i
 		if err := names.ValidateIdent(name); err != nil {
 			t.Printf("Invalid: %v\n", err)
 			continue
+		}
+		if err := hub.allowJoin(ctx, sourceIP, name, keyFP); err != nil {
+			t.Printf("Join denied: %v\n", err)
+			return 1
 		}
 		if err := hub.Store.CreateUser(ctx, name, keyFP); err != nil {
 			t.Printf("Could not create user: %v\n", err)

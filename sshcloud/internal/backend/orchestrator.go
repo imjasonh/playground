@@ -28,12 +28,14 @@ func (c *OrchestratorClient) client() *http.Client {
 }
 
 type orchEnsureBody struct {
-	User   string `json:"user"`
-	App    string `json:"app"`
-	Gen    string `json:"gen,omitempty"`
-	Image  string `json:"image,omitempty"`
-	Tier   string `json:"tier,omitempty"`
-	NoIdle bool   `json:"no_idle,omitempty"`
+	User      string `json:"user"`
+	App       string `json:"app"`
+	Gen       string `json:"gen,omitempty"`
+	Image     string `json:"image,omitempty"`
+	Tier      string `json:"tier,omitempty"`
+	NoIdle    bool   `json:"no_idle,omitempty"`
+	Purpose   string `json:"purpose,omitempty"`
+	RequestID string `json:"request_id,omitempty"`
 }
 
 type OrchestratorTarget struct {
@@ -64,8 +66,13 @@ func (c *OrchestratorClient) AddrTierContext(ctx context.Context, user, app, gen
 }
 
 func (c *OrchestratorClient) TargetTierContext(ctx context.Context, user, app, gen, image, tier string, noIdle bool) (OrchestratorTarget, error) {
+	return c.TargetTierRequest(ctx, user, app, gen, image, tier, noIdle, "session", gen+"\x00"+image)
+}
+
+func (c *OrchestratorClient) TargetTierRequest(ctx context.Context, user, app, gen, image, tier string, noIdle bool, purpose, requestID string) (OrchestratorTarget, error) {
 	return c.ensure(ctx, orchEnsureBody{
 		User: user, App: app, Gen: gen, Image: image, Tier: tier, NoIdle: noIdle,
+		Purpose: purpose, RequestID: requestID,
 	})
 }
 
@@ -118,6 +125,7 @@ func (c *OrchestratorClient) Ensure(ctx context.Context, user, app, gen, image, 
 func (c *OrchestratorClient) EnsureTier(ctx context.Context, user, app, gen, image, tier string, noIdle bool) error {
 	_, err := c.ensure(ctx, orchEnsureBody{
 		User: user, App: app, Gen: gen, Image: image, Tier: tier, NoIdle: noIdle,
+		Purpose: "deploy", RequestID: gen,
 	})
 	return err
 }

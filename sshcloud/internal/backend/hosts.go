@@ -196,6 +196,42 @@ func (h *HostSet) CandidatesFor(ctx context.Context, need agent.Resources, exclu
 	return candidates, nil
 }
 
+// Inventories returns every live host inventory or fails closed.
+func (h *HostSet) Inventories(ctx context.Context) (map[string][]agent.InstanceInfo, error) {
+	if h == nil {
+		return nil, fmt.Errorf("host set required")
+	}
+	h.mu.RLock()
+	clients := make(map[string]*AgentClient, len(h.agents))
+	for id, client := range h.agents {
+		clients[id] = client
+	}
+	h.mu.RUnlock()
+	type result struct {
+		id        string
+		instances []agent.InstanceInfo
+		err       error
+	}
+	results := make(chan result, len(clients))
+	for id, client := range clients {
+		go func(id string, client *AgentClient) {
+			probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+			defer cancel()
+			instances, err := client.Instances(probeCtx)
+			results <- result{id: id, instances: instances, err: err}
+		}(id, client)
+	}
+	out := make(map[string][]agent.InstanceInfo, len(clients))
+	for range clients {
+		result := <-results
+		if result.err != nil {
+			return nil, fmt.Errorf("host %s inventory: %w", result.id, result.err)
+		}
+		out[result.id] = result.instances
+	}
+	return out, nil
+}
+
 // ParseHostsSpec parses "id=url" pairs separated by commas and/or newlines.
 func ParseHostsSpec(s string) (map[string]*AgentClient, error) {
 	out := make(map[string]*AgentClient)

@@ -6,8 +6,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/imjasonh/playground/sshcloud/internal/cutover"
+	"github.com/imjasonh/playground/sshcloud/internal/quota"
 	"github.com/imjasonh/playground/sshcloud/internal/route"
 	"github.com/imjasonh/playground/sshcloud/internal/session"
 	"github.com/imjasonh/playground/sshcloud/internal/store"
@@ -44,14 +46,15 @@ func (a Action) String() string {
 
 // Result is the outcome of HandleConnect.
 type Result struct {
-	Action  Action
-	User    string // set when key is known (or after join — caller updates)
-	App     string // set for ActionProxyApp / ActionRejectBusy
-	Gen     string // microVM generation this session is pinned to
-	Image   string // immutable deploy spec pinned with Gen
-	Tier    string
-	Session session.ID
-	Message string
+	Action   Action
+	User     string // set when key is known (or after join — caller updates)
+	App      string // set for ActionProxyApp / ActionRejectBusy
+	Gen      string // microVM generation this session is pinned to
+	Image    string // immutable deploy spec pinned with Gen
+	Tier     string
+	SourceIP string
+	Session  session.ID
+	Message  string
 }
 
 // Hub wires store + session registry for one gateway process.
@@ -64,12 +67,17 @@ type Hub struct {
 	// AllowedRegistries mirrors the agent-side SSRF boundary for immediate
 	// deploy feedback. Empty is local-dev only.
 	AllowedRegistries []string
+	Quotas            quota.Store
+	Limits            Limits
+	quotaMu           sync.Mutex
+	quotaUsers        map[string]*sync.Mutex
 }
 
 // Connect is the inbound connection facts after SSH key auth attempt.
 type Connect struct {
 	SSHUser        string
 	KeyFingerprint string
+	SourceIP       string
 }
 
 // HandleConnect routes and (for apps) admits a session.
@@ -106,7 +114,7 @@ func (h *Hub) HandleConnect(ctx context.Context, c Connect) (Result, error) {
 
 	switch d.Kind {
 	case route.Join:
-		return Result{Action: ActionJoin, User: userID}, nil
+		return Result{Action: ActionJoin, User: userID, SourceIP: c.SourceIP}, nil
 	case route.Menu:
 		return Result{Action: ActionMenu, User: userID}, nil
 	case route.Deploy:
@@ -148,6 +156,13 @@ func (h *Hub) admitApp(ctx context.Context, userID, app string) (Result, error) 
 				App:     app,
 				Gen:     gen,
 				Message: busy.Error(),
+			}, nil
+		}
+		var userBusy session.ErrUserBusy
+		if errors.As(err, &userBusy) {
+			return Result{
+				Action: ActionRejectBusy, User: userID, App: app, Gen: gen,
+				Message: userBusy.Error(),
 			}, nil
 		}
 		return Result{}, err

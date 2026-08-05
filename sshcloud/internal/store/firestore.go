@@ -66,15 +66,21 @@ type userDoc struct {
 }
 
 type appDoc struct {
-	Owner           string `firestore:"owner"`
-	Name            string `firestore:"name"`
-	Image           string `firestore:"image"`
-	PreviousImage   string `firestore:"previous_image"`
-	Tier            string `firestore:"tier"`
-	SessionStrategy string `firestore:"session_strategy"`
-	ActiveGen       string `firestore:"active_gen"`
-	DrainingGen     string `firestore:"draining_gen"`
-	DrainUntilUnix  int64  `firestore:"drain_until_unix"`
+	Owner            string   `firestore:"owner"`
+	Name             string   `firestore:"name"`
+	Image            string   `firestore:"image"`
+	PreviousImage    string   `firestore:"previous_image"`
+	Tier             string   `firestore:"tier"`
+	SessionStrategy  string   `firestore:"session_strategy"`
+	ActiveGen        string   `firestore:"active_gen"`
+	DrainingGen      string   `firestore:"draining_gen"`
+	DrainUntilUnix   int64    `firestore:"drain_until_unix"`
+	PendingGen       string   `firestore:"pending_gen"`
+	PendingImage     string   `firestore:"pending_image"`
+	PendingTier      string   `firestore:"pending_tier"`
+	PendingStrategy  string   `firestore:"pending_strategy"`
+	PendingSinceUnix int64    `firestore:"pending_since_unix"`
+	RetiringGens     []string `firestore:"retiring_gens"`
 }
 
 func keyDocID(fingerprint string) string {
@@ -196,6 +202,14 @@ func (f *Firestore) UpsertApp(ctx context.Context, app App) error {
 	})
 }
 
+func (f *Firestore) DeleteApp(ctx context.Context, userID, app string) error {
+	_, err := f.appRef(userID, app).Delete(ctx)
+	if status.Code(err) == codes.NotFound {
+		return nil
+	}
+	return err
+}
+
 func (f *Firestore) ListApps(ctx context.Context, userID string) ([]App, error) {
 	iter := f.userRef(userID).Collection(f.colApps).Documents(ctx)
 	defer iter.Stop()
@@ -248,6 +262,9 @@ func appToDoc(a App) appDoc {
 		ActiveGen:       a.ActiveGen,
 		DrainingGen:     a.DrainingGen,
 		DrainUntilUnix:  a.DrainUntilUnix,
+		PendingGen:      a.PendingGen, PendingImage: a.PendingImage,
+		PendingTier: a.PendingTier, PendingStrategy: a.PendingStrategy,
+		PendingSinceUnix: a.PendingSinceUnix, RetiringGens: append([]string(nil), a.RetiringGens...),
 	}
 }
 
@@ -274,6 +291,9 @@ func appFromSnap(snap *firestore.DocumentSnapshot) (App, error) {
 		ActiveGen:       d.ActiveGen,
 		DrainingGen:     d.DrainingGen,
 		DrainUntilUnix:  d.DrainUntilUnix,
+		PendingGen:      d.PendingGen, PendingImage: d.PendingImage,
+		PendingTier: d.PendingTier, PendingStrategy: d.PendingStrategy,
+		PendingSinceUnix: d.PendingSinceUnix, RetiringGens: append([]string(nil), d.RetiringGens...),
 	}, nil
 }
 

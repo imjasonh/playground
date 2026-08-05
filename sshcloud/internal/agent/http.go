@@ -40,13 +40,19 @@ func (h *Handler) Mount(mux *http.ServeMux) {
 	api.HandleFunc("POST /v1/host/cordon", h.cordon)
 	api.HandleFunc("POST /v1/host/uncordon", h.uncordon)
 	mux.Handle("/v1/", controlauth.Require(h.Token, api))
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+	ready := func(w http.ResponseWriter, _ *http.Request) {
 		if h.Readiness != nil {
 			if err := h.Readiness(); err != nil {
 				http.Error(w, "not ready: "+err.Error(), http.StatusServiceUnavailable)
 				return
 			}
 		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}
+	mux.HandleFunc("GET /healthz", ready)
+	mux.HandleFunc("GET /readyz", ready)
+	mux.HandleFunc("GET /livez", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})

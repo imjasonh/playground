@@ -13,6 +13,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/imjasonh/playground/sshcloud/internal/gateway"
+	"github.com/imjasonh/playground/sshcloud/internal/quota"
 )
 
 const fingerprintExt = "sshcloud-key-fp"
@@ -28,10 +29,11 @@ type Server struct {
 	HandshakeTimeout time.Duration
 	// MaxConnections bounds process-wide accepted TCP connections. Zero
 	// defaults to 256.
-	MaxConnections int
-	listener       net.Listener
-	limitOnce      sync.Once
-	limit          chan struct{}
+	MaxConnections   int
+	HandshakeLimiter *quota.IPRateLimiter
+	listener         net.Listener
+	limitOnce        sync.Once
+	limit            chan struct{}
 }
 
 func (s *Server) logf(format string, args ...any) {
@@ -104,7 +106,14 @@ func (s *Server) handleConn(ctx context.Context, nc net.Conn) {
 			max = 256
 		}
 		s.limit = make(chan struct{}, max)
+		if s.HandshakeLimiter == nil {
+			s.HandshakeLimiter = quota.NewIPRateLimiter(60, time.Minute)
+		}
 	})
+	if !s.HandshakeLimiter.Allow(nc.RemoteAddr(), time.Now()) {
+		s.logf("connection rejected: source handshake rate exceeded")
+		return
+	}
 	select {
 	case s.limit <- struct{}{}:
 		defer func() { <-s.limit }()
@@ -344,6 +353,7 @@ func (s *Server) runSession(ctx context.Context, sc *ssh.ServerConn, ch ssh.Chan
 	res, err := s.Hub.HandleConnect(ctx, gateway.Connect{
 		SSHUser:        sc.User(),
 		KeyFingerprint: fp,
+		SourceIP:       sourceIP(sc.RemoteAddr()),
 	})
 	if err != nil {
 		spec.ReplyStart(false)
@@ -382,7 +392,7 @@ func (s *Server) runSession(ctx context.Context, sc *ssh.ServerConn, ch ssh.Chan
 	switch res.Action {
 	case gateway.ActionJoin:
 		spec.ReplyStart(true)
-		exit.Code = gateway.RunJoinSession(ctx, client, s.Hub, fp, res.User, execCmd)
+		exit.Code = gateway.RunJoinSession(ctx, client, s.Hub, fp, res.User, res.SourceIP, execCmd)
 	case gateway.ActionMenu:
 		spec.ReplyStart(true)
 		gateway.RunMenuSession(ctx, client, s.Hub, fp, res.User)
@@ -401,6 +411,17 @@ func (s *Server) runSession(ctx context.Context, sc *ssh.ServerConn, ch ssh.Chan
 		exit.Code = 1
 	}
 	sendAppExit(ch, exit)
+}
+
+func sourceIP(addr net.Addr) string {
+	if tcp, ok := addr.(*net.TCPAddr); ok {
+		if ip4 := tcp.IP.To4(); ip4 != nil {
+			return ip4.String()
+		}
+		return tcp.IP.String()
+	}
+	host, _, _ := net.SplitHostPort(addr.String())
+	return host
 }
 
 func sendAppExit(ch ssh.Channel, exit gateway.AppExit) {

@@ -171,3 +171,24 @@ func TestFreezeBeforeProxyBind(t *testing.T) {
 	}
 	r.Release(id)
 }
+
+func TestPerUserSessionLimit(t *testing.T) {
+	t.Parallel()
+	r := NewRegistry()
+	r.MaxPerUser = 2
+	first, _ := r.Admit("alice", "one", "g1")
+	second, _ := r.Admit("alice", "two", "g1")
+	if _, err := r.Admit("alice", "three", "g1"); err == nil {
+		t.Fatal("third user session was admitted")
+	} else {
+		var limited ErrUserBusy
+		if !errors.As(err, &limited) {
+			t.Fatalf("error %T, want ErrUserBusy", err)
+		}
+	}
+	r.Release(first)
+	if _, err := r.Admit("alice", "three", "g1"); err != nil {
+		t.Fatal(err)
+	}
+	r.Release(second)
+}

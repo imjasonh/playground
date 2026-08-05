@@ -11,7 +11,9 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
+	"time"
 
 	"cloud.google.com/go/storage"
 	"google.golang.org/api/iterator"
@@ -85,6 +87,66 @@ func (s *GCSStore) Put(ctx context.Context, key string, pkg Package) error {
 		return err
 	}
 	cancelWrite()
+	_ = s.pruneVersions(ctx, key, version, 2, time.Hour)
+	return nil
+}
+
+func (s *GCSStore) pruneVersions(ctx context.Context, key, current string, keep int, grace time.Duration) error {
+	type versionInfo struct {
+		name    string
+		created time.Time
+	}
+	prefix := s.objectKey(key, "versions") + "/"
+	it := s.client.Bucket(s.Bucket).Objects(ctx, &storage.Query{Prefix: prefix})
+	versions := make(map[string]time.Time)
+	for {
+		attrs, err := it.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		rest := strings.TrimPrefix(attrs.Name, prefix)
+		version, _, ok := strings.Cut(rest, "/")
+		if !ok || version == "" {
+			continue
+		}
+		if created, ok := versions[version]; !ok || attrs.Created.After(created) {
+			versions[version] = attrs.Created
+		}
+	}
+	list := make([]versionInfo, 0, len(versions))
+	for name, created := range versions {
+		list = append(list, versionInfo{name: name, created: created})
+	}
+	sort.Slice(list, func(i, j int) bool { return list[i].created.After(list[j].created) })
+	retained := 0
+	cutoff := time.Now().Add(-grace)
+	for _, version := range list {
+		if version.name == current || retained < keep {
+			retained++
+			continue
+		}
+		if version.created.After(cutoff) {
+			continue
+		}
+		versionPrefix := path.Join(prefix, version.name) + "/"
+		versionObjects := s.client.Bucket(s.Bucket).Objects(ctx, &storage.Query{Prefix: versionPrefix})
+		for {
+			attrs, err := versionObjects.Next()
+			if err == iterator.Done {
+				break
+			}
+			if err != nil {
+				return err
+			}
+			if err := s.client.Bucket(s.Bucket).Object(attrs.Name).Delete(ctx); err != nil &&
+				!errors.Is(err, storage.ErrObjectNotExist) {
+				return err
+			}
+		}
+	}
 	return nil
 }
 

@@ -76,12 +76,14 @@ func runAppStub(ctx context.Context, t *term, hub *Hub, res Result) AppExit {
 			}
 
 			request := DialRequest{
-				User:   res.User,
-				App:    res.App,
-				Gen:    res.Gen,
-				Image:  img,
-				Tier:   tier,
-				NoIdle: true,
+				User:      res.User,
+				App:       res.App,
+				Gen:       res.Gen,
+				Image:     img,
+				Tier:      tier,
+				NoIdle:    true,
+				Purpose:   "session",
+				RequestID: string(res.Session),
 			}
 			var target DialTarget
 			var err error
