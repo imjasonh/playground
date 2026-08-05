@@ -9,13 +9,7 @@ use std::ffi::CStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-mod cloud_log;
-mod gcp_auth;
-mod metrics;
-mod nvs_util;
-mod ota;
-mod sig;
-mod trust;
+use esp32_blinky::{cloud_log, gcp_auth, metrics, nvs_util, ota, trust};
 
 // NVS schema (must match what tools/provision/ writes):
 //   namespace=wifi   key=ssid (str), key=pass (str)
@@ -165,7 +159,15 @@ fn main() -> Result<()> {
         // and ECDSA P-256/P-384 verification on top, which want more.
         // 48 KB is observed-safe with headroom.
         .stack_size(48 * 1024)
-        .spawn(move || ota::run(ota_nvs, FW_VERSION, ota_trust, Some(ota_lock)))
+        .spawn(move || {
+            ota::run(
+                ota_nvs,
+                FW_VERSION,
+                ota_trust,
+                ota::DEFAULT_REPO,
+                Some(ota_lock),
+            )
+        })
         .expect("spawn ota thread");
 
     if let (Some(cfg), Some(queue)) = (gcp, log_queue) {

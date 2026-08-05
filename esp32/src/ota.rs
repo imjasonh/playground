@@ -6,7 +6,9 @@
 
 use anyhow::{anyhow, bail, Context, Result};
 use embedded_svc::http::client::Client;
-use esp_idf_svc::http::client::{Configuration as HttpConfig, EspHttpConnection, FollowRedirectsPolicy};
+use esp_idf_svc::http::client::{
+    Configuration as HttpConfig, EspHttpConnection, FollowRedirectsPolicy,
+};
 use esp_idf_svc::http::Method;
 use esp_idf_svc::nvs::{EspDefaultNvsPartition, EspNvs, NvsDefault};
 use esp_idf_svc::ota::EspOta;
@@ -36,27 +38,34 @@ const NVS_REPOTAG_BUF: usize = 256;
 
 const BACKOFF_CAP: Duration = Duration::from_secs(3600); // 1h max between polls
 
+/// OTA stream used by the original firmware.
+pub const DEFAULT_REPO: &str = "ghcr.io/imjasonh/esp32";
+
 /// Where to fetch firmware from.
 pub struct OtaConfig {
-    pub repo: String,           // "ghcr.io/imjasonh/esp32"
-    pub tag: String,            // "latest"
+    pub repo: String, // "ghcr.io/imjasonh/esp32"
+    pub tag: String,  // "latest"
     pub poll_interval: Duration,
 }
 
 impl Default for OtaConfig {
     fn default() -> Self {
+        Self::with_default_repo(DEFAULT_REPO)
+    }
+}
+
+impl OtaConfig {
+    fn with_default_repo(default_repo: &str) -> Self {
         Self {
-            repo: "ghcr.io/imjasonh/esp32".into(),
+            repo: default_repo.into(),
             tag: "latest".into(),
             // 60s for development; ota-plan.md targets 600s in steady state.
             poll_interval: Duration::from_secs(60),
         }
     }
-}
 
-impl OtaConfig {
-    fn load_from_nvs(nvs: &EspNvs<NvsDefault>) -> Self {
-        let mut cfg = Self::default();
+    fn load_from_nvs(nvs: &EspNvs<NvsDefault>, default_repo: &str) -> Self {
+        let mut cfg = Self::with_default_repo(default_repo);
         if let Some(repo) = read_repotag(nvs, NVS_REPO) {
             if !repo.is_empty() {
                 cfg.repo = repo;
@@ -103,6 +112,7 @@ pub fn run(
     nvs_partition: EspDefaultNvsPartition,
     fw_version: &str,
     trust: crate::trust::TrustConfig,
+    default_repo: &str,
     short_https: Option<crate::gcp_auth::ShortHttpsLock>,
 ) -> ! {
     crate::metrics::publish_self(&crate::metrics::handles::OTA);
@@ -117,7 +127,7 @@ pub fn run(
         }
     };
 
-    let cfg = OtaConfig::load_from_nvs(&nvs);
+    let cfg = OtaConfig::load_from_nvs(&nvs, default_repo);
     let last = read_digest(&nvs, NVS_LAST_DIGEST).unwrap_or_else(|| "<none>".into());
     tracing::info!(
         fw = fw_version,
@@ -291,8 +301,7 @@ fn fetch_anon_token(repo: &str) -> Result<String> {
 
     let mut buf = Vec::with_capacity(1024);
     fetch_to_buf(&url, &[], &mut buf)?;
-    let resp: TokenResponse =
-        serde_json::from_slice(&buf).context("parse token response JSON")?;
+    let resp: TokenResponse = serde_json::from_slice(&buf).context("parse token response JSON")?;
     Ok(resp.token)
 }
 
@@ -310,10 +319,7 @@ fn fetch_manifest(repo: &str, tag: &str, token: &str) -> Result<(Manifest, Strin
         &url,
         &[
             ("authorization", auth.as_str()),
-            (
-                "accept",
-                "application/vnd.oci.image.manifest.v1+json",
-            ),
+            ("accept", "application/vnd.oci.image.manifest.v1+json"),
         ],
         &mut buf,
     )?;
@@ -327,11 +333,7 @@ fn fetch_manifest(repo: &str, tag: &str, token: &str) -> Result<(Manifest, Strin
 /// manifest digest. Walks the OCI 1.1 referrers layout cosign uses:
 /// the bundle artifact lives at tag `sha256-<hex>` and is an image
 /// index → inner manifest → bundle layer blob.
-fn fetch_signature_bundle(
-    repo: &str,
-    manifest_digest_hex: &str,
-    token: &str,
-) -> Result<Vec<u8>> {
+fn fetch_signature_bundle(repo: &str, manifest_digest_hex: &str, token: &str) -> Result<Vec<u8>> {
     let repo_path = repo
         .strip_prefix("ghcr.io/")
         .ok_or_else(|| anyhow!("only ghcr.io is supported"))?;
@@ -375,41 +377,39 @@ fn fetch_signature_bundle(
         idx.manifests[0].digest.clone()
     } else {
         // Fallback: outer is already the manifest itself
-        let m: Manifest = serde_json::from_slice(&buf1)
-            .context("sig outer is neither index nor manifest")?;
+        let m: Manifest =
+            serde_json::from_slice(&buf1).context("sig outer is neither index nor manifest")?;
         return blob_for_sigstore_bundle(&m, repo_path, &auth);
     };
 
     // 2. Inner manifest
-    let url2 = format!("https://ghcr.io/v2/{}/manifests/{}", repo_path, inner_digest);
+    let url2 = format!(
+        "https://ghcr.io/v2/{}/manifests/{}",
+        repo_path, inner_digest
+    );
     let mut buf2 = Vec::with_capacity(2048);
     fetch_to_buf(
         &url2,
         &[
             ("authorization", auth.as_str()),
-            (
-                "accept",
-                "application/vnd.oci.image.manifest.v1+json",
-            ),
+            ("accept", "application/vnd.oci.image.manifest.v1+json"),
         ],
         &mut buf2,
     )
     .context("fetch sig inner manifest")?;
-    let inner: Manifest =
-        serde_json::from_slice(&buf2).context("parse sig inner manifest JSON")?;
+    let inner: Manifest = serde_json::from_slice(&buf2).context("parse sig inner manifest JSON")?;
 
     blob_for_sigstore_bundle(&inner, repo_path, &auth)
 }
 
-fn blob_for_sigstore_bundle(
-    m: &Manifest,
-    repo_path: &str,
-    auth: &str,
-) -> Result<Vec<u8>> {
+fn blob_for_sigstore_bundle(m: &Manifest, repo_path: &str, auth: &str) -> Result<Vec<u8>> {
     let layer = m
         .layers
         .iter()
-        .find(|l| l.media_type.starts_with("application/vnd.dev.sigstore.bundle."))
+        .find(|l| {
+            l.media_type
+                .starts_with("application/vnd.dev.sigstore.bundle.")
+        })
         .ok_or_else(|| anyhow!("sig manifest has no Sigstore bundle layer"))?;
     let url = format!("https://ghcr.io/v2/{}/blobs/{}", repo_path, layer.digest);
     let mut buf = Vec::with_capacity(layer.size as usize + 256);
@@ -495,7 +495,11 @@ fn download_and_apply(repo: &str, layer: &Descriptor, token: &str) -> Result<()>
         hasher.update(&buf[..n]);
         total += n as u64;
         if total >= next_log {
-            tracing::info!(written = total, total = layer.size, "ota: download progress");
+            tracing::info!(
+                written = total,
+                total = layer.size,
+                "ota: download progress"
+            );
             next_log += 256 * 1024;
         }
     }
@@ -513,20 +517,26 @@ fn download_and_apply(repo: &str, layer: &Descriptor, token: &str) -> Result<()>
         );
     }
     tracing::info!("ota: download complete, SHA verified, finalizing");
-    update.complete().context("OTA complete (set boot partition)")?;
+    update
+        .complete()
+        .context("OTA complete (set boot partition)")?;
     Ok(())
 }
 
 /// 96 B buffer — covers `sha256:` + 64 hex with headroom.
 fn read_digest(nvs: &EspNvs<NvsDefault>, key: &str) -> Option<String> {
-    read_str(nvs, NVS_NAMESPACE, key, NVS_DIGEST_BUF).ok().flatten()
+    read_str(nvs, NVS_NAMESPACE, key, NVS_DIGEST_BUF)
+        .ok()
+        .flatten()
 }
 
 /// 256 B buffer — operator-set OCI references can be long (nested orgs,
 /// long repo names); the prior 96 B silently fell back to defaults if a
 /// repo string overflowed.
 fn read_repotag(nvs: &EspNvs<NvsDefault>, key: &str) -> Option<String> {
-    read_str(nvs, NVS_NAMESPACE, key, NVS_REPOTAG_BUF).ok().flatten()
+    read_str(nvs, NVS_NAMESPACE, key, NVS_REPOTAG_BUF)
+        .ok()
+        .flatten()
 }
 
 fn write_string(nvs: &mut EspNvs<NvsDefault>, key: &str, value: &str) -> Result<()> {
@@ -561,9 +571,7 @@ pub fn is_pending_verify() -> bool {
 
 /// Call after the post-OTA bringup checks passed: marks the running app
 /// as valid (cancels rollback) and promotes pending_digest -> last_digest.
-pub fn mark_valid_after_pending_verify_passed(
-    nvs_partition: EspDefaultNvsPartition,
-) -> Result<()> {
+pub fn mark_valid_after_pending_verify_passed(nvs_partition: EspDefaultNvsPartition) -> Result<()> {
     use esp_idf_svc::sys::*;
     let err = unsafe { esp_ota_mark_app_valid_cancel_rollback() };
     if err != ESP_OK {
@@ -571,8 +579,8 @@ pub fn mark_valid_after_pending_verify_passed(
     }
     tracing::info!("ota: marked app valid, rollback cancelled");
 
-    let mut nvs = EspNvs::new(nvs_partition, NVS_NAMESPACE, true)
-        .context("open ota NVS namespace")?;
+    let mut nvs =
+        EspNvs::new(nvs_partition, NVS_NAMESPACE, true).context("open ota NVS namespace")?;
     if let Some(pending) = read_digest(&nvs, NVS_PENDING_DIGEST) {
         write_string(&mut nvs, NVS_LAST_DIGEST, &pending)?;
         // Best-effort clear of pending; not fatal if it fails.
@@ -594,4 +602,3 @@ fn ota_state_name(s: esp_idf_svc::sys::esp_ota_img_states_t) -> &'static str {
         _ => "?",
     }
 }
-

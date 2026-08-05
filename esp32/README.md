@@ -1,15 +1,31 @@
-# ESP32 Rust
+# ESP32 Rust firmware
 
-[![CI](https://github.com/imjasonh/esp32/actions/workflows/ci.yml/badge.svg)](https://github.com/imjasonh/esp32/actions/workflows/ci.yml)
-[![Publish OTA](https://github.com/imjasonh/esp32/actions/workflows/publish.yml/badge.svg)](https://github.com/imjasonh/esp32/actions/workflows/publish.yml)
+[![ESP32](https://github.com/imjasonh/playground/actions/workflows/esp32.yml/badge.svg)](https://github.com/imjasonh/playground/actions/workflows/esp32.yml)
+[![Publish OTA](https://github.com/imjasonh/playground/actions/workflows/esp32-publish.yml/badge.svg)](https://github.com/imjasonh/playground/actions/workflows/esp32-publish.yml)
 
 Std Rust on an Inland ESP-WROOM-32 dev board with end-to-end OTA over
 GHCR + cosign keyless signing. Optional Cloud Logging + Cloud
-Monitoring shipped from the device. E-ink display work coming next.
+Monitoring ships from the original firmware. The `eink/` firmware turns a
+Waveshare ESP32 driver board and 800×480 panel into an SSH display client.
 
-## What it does today
+This code was imported from
+[`github.com/imjasonh/esp32`](https://github.com/imjasonh/esp32) and retains its
+Apache-2.0 license.
 
-- Polls `ghcr.io/imjasonh/esp32:latest` every ~60 s for new firmware.
+## Firmware applications
+
+- `esp32-blinky` (workspace root): the original OTA + observability firmware.
+- `esp32-eink` (`eink/`): connects over WiFi, generates and persists an
+  Ed25519 key, verifies a provisioned Ed25519 server host key, requests an
+  80×25 PTY, types a provisioned diagnostic command, displays the result, and
+  disconnects. Its signed OTA stream is `ghcr.io/imjasonh/esp32-eink:latest`.
+
+Both applications share the same OTA verifier and trust implementation from
+`src/lib.rs`.
+
+## Secure OTA
+
+- Polls its application-specific GHCR repository every ~60 s for new firmware.
 - For each new digest: fetches the cosign Sigstore Bundle, verifies
   the signature + cert chain to the Sigstore root + that the signer's
   identity matches the allowlist provisioned into the device's NVS.
@@ -32,7 +48,8 @@ to GHCR → device picks it up on its next poll.
 - [`docs/ota.md`](docs/ota.md) — OTA + provisioning + signing design
 - [`docs/observability.md`](docs/observability.md) — Cloud Logging +
   Cloud Monitoring design (current state)
-- [`docs/eink-plan.md`](docs/eink-plan.md) — planned e-ink display work
+- [`docs/eink-ssh.md`](docs/eink-ssh.md) — e-ink hardware, provisioning, and
+  first SSH flow
 
 ## Quick start
 
@@ -48,5 +65,14 @@ make bootstrap                     # build, flash everything, write NVS
 make monitor                       # watch it boot and connect
 ```
 
-See [`docs/setup.md`](docs/setup.md) for full details, including
-optional GCP Logging + Monitoring setup.
+For the Waveshare device, use `APP=eink`:
+
+```bash
+make provisioning.toml
+$EDITOR provisioning.toml
+make APP=eink bootstrap
+make APP=eink monitor
+```
+
+See [`docs/setup.md`](docs/setup.md) for host prerequisites and
+[`docs/eink-ssh.md`](docs/eink-ssh.md) for SSH enrollment.

@@ -1,7 +1,7 @@
 # Setup
 
-End-to-end first-time setup for an Inland ESP-WROOM-32 dev board on
-macOS.
+End-to-end first-time setup for the original Inland ESP-WROOM-32 firmware and
+the Waveshare ESP32 e-ink firmware on macOS.
 
 ## Hardware
 
@@ -53,6 +53,17 @@ make run        Build + flash + monitor
 make publish    Build, push OCI artifact to ghcr.io/imjasonh/esp32, cosign sign
 make clean      cargo clean
 ```
+
+Select the Waveshare application on every firmware/flash/publish command:
+
+```bash
+make APP=eink build
+make APP=eink bootstrap
+make APP=eink monitor
+make APP=eink publish
+```
+
+See [`eink-ssh.md`](eink-ssh.md) for panel setup and SSH key enrollment.
 
 `make publish` requires `gh.env` (see [`ota.md`](ota.md) for PAT setup)
 and a real cosign OIDC flow the first time per ~10 min window — a

@@ -1,5 +1,10 @@
 # E-ink display — plan
 
+> Historical plan for the earlier Inland 2.13-inch panel. The implemented
+> 7.5-inch Waveshare SSH client is documented in
+> [`eink-ssh.md`](eink-ssh.md); do not use the wiring or panel assumptions
+> below for the current hardware.
+
 The Inland ESP-WROOM-32 dev board doesn't have a software-controllable LED
 (see [`setup.md`](setup.md)), so the visible-output story for this
 project is an e-ink display. This file captures the hardware choice,

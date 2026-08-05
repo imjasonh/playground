@@ -7,13 +7,17 @@
 //! produce the CSV input it expects, then shell out.
 
 use anyhow::{anyhow, bail, Context, Result};
+use base64::{engine::general_purpose, Engine as _};
 use clap::Parser;
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 #[derive(Parser)]
-#[command(version, about = "Build + flash NVS partition image from provisioning.toml")]
+#[command(
+    version,
+    about = "Build + flash NVS partition image from provisioning.toml"
+)]
 struct Cli {
     /// Path to provisioning.toml.
     #[arg(long, default_value = "provisioning.toml")]
@@ -42,13 +46,19 @@ struct Cli {
 
     /// Path to ESP-IDF's nvs_partition_gen.py. Defaults to the in-repo
     /// embuild copy that gets cloned by `make build`.
-    #[arg(long, default_value = ".embuild/espressif/esp-idf/v5.2.2/components/nvs_flash/nvs_partition_generator/nvs_partition_gen.py")]
+    #[arg(
+        long,
+        default_value = ".embuild/espressif/esp-idf/v5.2.2/components/nvs_flash/nvs_partition_generator/nvs_partition_gen.py"
+    )]
     nvs_gen: PathBuf,
 
     /// Path to the python interpreter to run nvs_partition_gen.py with.
     /// Defaults to the embuild-bootstrapped 3.12 venv (matches what the
     /// firmware build uses; ensures script deps are present).
-    #[arg(long, default_value = ".embuild/espressif/python_env/idf5.2_py3.12_env/bin/python")]
+    #[arg(
+        long,
+        default_value = ".embuild/espressif/python_env/idf5.2_py3.12_env/bin/python"
+    )]
     python: PathBuf,
 
     /// If true, only emit the NVS CSV and identities staging file; do
@@ -62,6 +72,9 @@ struct Cli {
 struct ProvisioningConfig {
     wifi: WifiConfig,
     trust: TrustConfig,
+    /// Optional. Required by the e-ink SSH firmware, ignored by the original
+    /// firmware.
+    ssh: Option<SshProvisioningConfig>,
     /// Optional. If absent, the device boots with serial-only logging.
     gcp: Option<GcpConfig>,
     /// Optional. If absent, OTA loop uses its compile-time defaults
@@ -74,6 +87,27 @@ struct ProvisioningConfig {
 struct WifiConfig {
     ssid: String,
     pass: String,
+}
+
+#[derive(Deserialize, Debug)]
+struct SshProvisioningConfig {
+    host: String,
+    #[serde(default = "default_ssh_port")]
+    port: u16,
+    username: String,
+    /// Complete OpenSSH public host key, for example:
+    /// `ssh-ed25519 AAAAC3...`.
+    host_key: String,
+    #[serde(default = "default_ssh_command")]
+    command: String,
+}
+
+fn default_ssh_port() -> u16 {
+    22
+}
+
+fn default_ssh_command() -> String {
+    "uptime; uname -a".to_string()
 }
 
 #[derive(Deserialize, Debug)]
@@ -161,6 +195,47 @@ fn severity_to_u8(s: &str) -> Result<u8> {
     }
 }
 
+fn parse_ed25519_public_key(line: &str) -> Result<[u8; 32]> {
+    let mut fields = line.split_whitespace();
+    let algorithm = fields.next().ok_or_else(|| anyhow!("host key is empty"))?;
+    if algorithm != "ssh-ed25519" {
+        bail!("host key algorithm must be ssh-ed25519, got {algorithm}");
+    }
+    let encoded = fields
+        .next()
+        .ok_or_else(|| anyhow!("host key is missing its base64 payload"))?;
+    let decoded = general_purpose::STANDARD
+        .decode(encoded)
+        .context("decode host key base64")?;
+
+    let mut cursor = 0;
+    let encoded_algorithm = read_ssh_string(&decoded, &mut cursor)?;
+    if encoded_algorithm != b"ssh-ed25519" {
+        bail!("host key payload says a different algorithm");
+    }
+    let key = read_ssh_string(&decoded, &mut cursor)?;
+    if cursor != decoded.len() {
+        bail!("host key payload has trailing data");
+    }
+    key.try_into()
+        .map_err(|_| anyhow!("Ed25519 host key must be 32 bytes, got {}", key.len()))
+}
+
+fn read_ssh_string<'a>(input: &'a [u8], cursor: &mut usize) -> Result<&'a [u8]> {
+    let length_bytes: [u8; 4] = input
+        .get(*cursor..*cursor + 4)
+        .ok_or_else(|| anyhow!("truncated SSH string length"))?
+        .try_into()
+        .unwrap();
+    *cursor += 4;
+    let length = u32::from_be_bytes(length_bytes) as usize;
+    let value = input
+        .get(*cursor..*cursor + length)
+        .ok_or_else(|| anyhow!("truncated SSH string payload"))?;
+    *cursor += length;
+    Ok(value)
+}
+
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
@@ -191,8 +266,7 @@ fn main() -> Result<()> {
         cfg.trust.fulcio_root_pem = config_dir.join(&cfg.trust.fulcio_root_pem);
     }
     if cfg.trust.fulcio_intermediate_pem.is_relative() {
-        cfg.trust.fulcio_intermediate_pem =
-            config_dir.join(&cfg.trust.fulcio_intermediate_pem);
+        cfg.trust.fulcio_intermediate_pem = config_dir.join(&cfg.trust.fulcio_intermediate_pem);
     }
     if let Some(gcp) = cfg.gcp.as_mut() {
         if gcp.sa_key_pem.is_relative() {
@@ -211,6 +285,7 @@ fn main() -> Result<()> {
     tracing::info!(
         identities = cfg.trust.identities.len(),
         ssid = cfg.wifi.ssid,
+        ssh = cfg.ssh.is_some(),
         gcp = cfg.gcp.is_some(),
         "loaded provisioning config",
     );
@@ -242,12 +317,28 @@ fn main() -> Result<()> {
         "wrote identities JSON",
     );
 
+    // Store only the raw 32-byte Ed25519 host key in NVS. Parsing the
+    // operator-friendly OpenSSH line here keeps the firmware parser small.
+    let ssh_host_key_path = if let Some(ssh) = &cfg.ssh {
+        if ssh.host.trim().is_empty() || ssh.username.trim().is_empty() {
+            bail!("[ssh] host and username must not be empty");
+        }
+        let host_key = parse_ed25519_public_key(&ssh.host_key)
+            .context("parse [ssh].host_key as an OpenSSH Ed25519 public key")?;
+        let path = target_dir.join("nvs-ssh-host-key.bin");
+        std::fs::write(&path, host_key).with_context(|| format!("write {}", path.display()))?;
+        Some(path)
+    } else {
+        None
+    };
+
     // Build the NVS CSV.
     let csv_path = target_dir.join("nvs.csv");
     write_csv(
         &csv_path,
         &cfg,
         &identities_json_path,
+        ssh_host_key_path.as_deref(),
     )
     .context("write NVS CSV")?;
     tracing::info!(path = %csv_path.display(), "wrote NVS CSV");
@@ -260,6 +351,9 @@ fn main() -> Result<()> {
         // Still clean up the identities staging file: it contains the
         // (public) trust identities only, but no need to leave it.
         let _ = std::fs::remove_file(&identities_json_path);
+        if let Some(path) = &ssh_host_key_path {
+            let _ = std::fs::remove_file(path);
+        }
         return Ok(());
     }
 
@@ -286,6 +380,9 @@ fn main() -> Result<()> {
     // CSV (useful for inspection), but the identities JSON is purely
     // an intermediate file.
     let _ = std::fs::remove_file(&identities_json_path);
+    if let Some(path) = &ssh_host_key_path {
+        let _ = std::fs::remove_file(path);
+    }
 
     if args.flash {
         tracing::info!(
@@ -320,6 +417,7 @@ fn write_csv(
     path: &Path,
     cfg: &ProvisioningConfig,
     identities_path: &Path,
+    ssh_host_key_path: Option<&Path>,
 ) -> Result<()> {
     let mut wtr = csv::WriterBuilder::new()
         .quote_style(csv::QuoteStyle::Necessary)
@@ -331,6 +429,24 @@ fn write_csv(
     wtr.write_record(&["wifi", "namespace", "", ""])?;
     wtr.write_record(&["ssid", "data", "string", &cfg.wifi.ssid])?;
     wtr.write_record(&["pass", "data", "string", &cfg.wifi.pass])?;
+
+    // ssh namespace (optional). client_seed is intentionally absent: the
+    // device creates it after WiFi starts and persists it here at runtime.
+    if let (Some(ssh), Some(host_key_path)) = (&cfg.ssh, ssh_host_key_path) {
+        wtr.write_record(&["ssh", "namespace", "", ""])?;
+        wtr.write_record(&["host", "data", "string", &ssh.host])?;
+        wtr.write_record(&["port", "data", "u16", &ssh.port.to_string()])?;
+        wtr.write_record(&["username", "data", "string", &ssh.username])?;
+        wtr.write_record(&[
+            "host_key",
+            "file",
+            "binary",
+            host_key_path
+                .to_str()
+                .ok_or_else(|| anyhow!("SSH host-key path not UTF-8"))?,
+        ])?;
+        wtr.write_record(&["command", "data", "string", &ssh.command])?;
+    }
 
     // trust namespace
     wtr.write_record(&["trust", "namespace", "", ""])?;
@@ -404,4 +520,30 @@ fn write_csv(
 
     wtr.flush()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ED25519_KEY: &str =
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4f test";
+
+    #[test]
+    fn parses_openssh_ed25519_host_key() {
+        let key = parse_ed25519_public_key(ED25519_KEY).unwrap();
+        assert_eq!(key, core::array::from_fn::<_, 32, _>(|index| index as u8));
+    }
+
+    #[test]
+    fn rejects_other_host_key_algorithms() {
+        let error = parse_ed25519_public_key("ssh-rsa AAAA").unwrap_err();
+        assert!(error.to_string().contains("must be ssh-ed25519"));
+    }
+
+    #[test]
+    fn rejects_truncated_host_key() {
+        let error = parse_ed25519_public_key("ssh-ed25519 AAAA").unwrap_err();
+        assert!(error.to_string().contains("truncated"));
+    }
 }

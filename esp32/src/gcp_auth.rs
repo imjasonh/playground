@@ -138,8 +138,8 @@ impl TokenProvider {
                 return Ok(t.token.clone());
             }
         }
-        let new = mint_access_token(&self.cfg, &self.signing_key)
-            .context("mint GCP access token")?;
+        let new =
+            mint_access_token(&self.cfg, &self.signing_key).context("mint GCP access token")?;
         let bearer = new.token.clone();
         let exp_in = new
             .expires_at_unix
@@ -161,8 +161,7 @@ fn parse_signing_key(pem_bytes: &[u8]) -> Result<SigningKey<rsa::sha2::Sha256>> 
     let pem_str = std::str::from_utf8(pem_bytes)
         .context("SA key PEM is not UTF-8")?
         .trim();
-    let key =
-        RsaPrivateKey::from_pkcs8_pem(pem_str).context("parse SA PKCS#8 private key")?;
+    let key = RsaPrivateKey::from_pkcs8_pem(pem_str).context("parse SA PKCS#8 private key")?;
     Ok(SigningKey::<rsa::sha2::Sha256>::new(key))
 }
 

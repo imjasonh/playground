@@ -16,7 +16,7 @@ against bad updates and unauthorized signers.
    developer push                                    │
    ──────────────▶  ┌──────────────────┐ push       ▼            poll
                     │  GHA workflow    │ ─────▶ ┌────────┐ ◀────────────
-                    │  publish.yml     │ sign   │  OCI   │   pull bundle
+                    │esp32-publish.yml │ sign   │  OCI   │   pull bundle
                     │   • cargo build  │ ─────▶ │artifact│   verify sig
                     │   • espflash     │        │ + sig  │   stream blob
                     │   • OCI push     │        └────────┘   write OTA
@@ -44,8 +44,8 @@ developer's email instead of the workflow's URI).
 | **Publisher** | `tools/publisher/` (Rust, host build) | Wraps the firmware `.bin` as an OCI artifact and pushes both `:latest` and `:sha-<short>` tags to GHCR. Prints the manifest digest on stdout for the next step. |
 | **Provisioner** | `tools/provision/` (Rust, host build) | Reads `provisioning.toml`, builds an NVS partition image via ESP-IDF's `nvs_partition_gen.py`, flashes it to the device over USB. |
 | **Cosign** | system binary, version 3 | Signs the just-pushed digest using keyless OIDC. Stores the signature as a sibling OCI artifact (Sigstore Bundle v0.3 format). |
-| **GHA publish workflow** | `.github/workflows/publish.yml` | Runs `make publish` on every push to main. Uses ambient OIDC token for cosign — no secrets needed for signing. Only the auto-injected `GITHUB_TOKEN` is required. |
-| **CI workflow** | `.github/workflows/ci.yml` | Runs on PRs. Builds firmware + publisher + provisioner to verify they compile. No publishing or signing. |
+| **GHA publish workflow** | `../.github/workflows/esp32-publish.yml` | Runs `make APP=eink publish` on relevant pushes to main. Uses ambient OIDC token for cosign — no secrets needed for signing. Only the auto-injected `GITHUB_TOKEN` is required. |
+| **CI workflow** | `../.github/workflows/esp32.yml` | Runs host tests and cross-builds both firmware applications on PRs. No publishing or signing. |
 | **OTA loop** | `src/ota.rs` | Background pthread, polls GHCR every 60 s with backoff + jitter, fetches manifest, compares to last applied. |
 | **Sig verifier** | `src/sig.rs` | Parses Sigstore Bundle v0.3, verifies cert chain + DSSE signature + in-toto subject digest. |
 | **Trust loader** | `src/trust.rs` | Reads the allowlist of `(identity, issuer)` pairs and bundled Sigstore Fulcio root + intermediate CAs from NVS at boot. |
@@ -81,6 +81,13 @@ ns      key             type   notes
 ─────────────────────────────────────────────────────────────────────
 wifi    ssid            str    network SSID (provisioned)
 wifi    pass            str    PSK (provisioned)
+
+ssh     host            str    target SSH hostname (provisioned)
+ssh     port            u16    target port, normally 22 (provisioned)
+ssh     username        str    remote account (provisioned)
+ssh     host_key        blob   pinned 32-byte Ed25519 server key (provisioned)
+ssh     command         str    command typed into the 80×25 PTY (provisioned)
+ssh     client_seed     blob   generated 32-byte Ed25519 seed (runtime, e-ink)
 
 ota     last_digest     str    last successfully-applied layer digest (runtime)
 ota     pending_digest  str    set during update, promoted on mark-valid (runtime)
@@ -128,7 +135,7 @@ identity = "imjasonh@gmail.com"
 issuer = "https://accounts.google.com"
 
 [[trust.identities]]
-identity = "https://github.com/imjasonh/esp32/.github/workflows/publish.yml@refs/heads/main"
+identity = "https://github.com/imjasonh/playground/.github/workflows/esp32-publish.yml@refs/heads/main"
 issuer = "https://token.actions.githubusercontent.com"
 ```
 
@@ -297,7 +304,7 @@ publisher push. Cosign:
 | Source | OIDC issuer | SAN form |
 |---|---|---|
 | Manual `make publish` | `https://accounts.google.com` | `rfc822Name` (developer's email) |
-| GHA workflow on push to main | `https://token.actions.githubusercontent.com` | `URI` (`https://github.com/<owner>/<repo>/.github/workflows/publish.yml@refs/heads/main`) |
+| GHA workflow on push to main | `https://token.actions.githubusercontent.com` | `URI` (`https://github.com/imjasonh/playground/.github/workflows/esp32-publish.yml@refs/heads/main`) |
 
 Both must be present in `trust/identities` (NVS) for the device to
 accept their signatures. Updating the allowlist requires editing
@@ -389,7 +396,7 @@ In practice the soft guarantee is enough here:
   Rekor's public key, parse the SET, verify the inclusion proof.
 - **GitHub Actions OIDC trust scoping by `job_workflow_ref`.** The
   GHA identity in `trust/identities` pins to
-  `publish.yml@refs/heads/main`. We could also enforce
+  `esp32-publish.yml@refs/heads/main`. We could also enforce
   `1.3.6.1.4.1.57264.1.x` Fulcio extensions like `Run Invocation
   URI` for stricter trust.
 - **Force-update GPIO button.** Wire a button to a GPIO; on short

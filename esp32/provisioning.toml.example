@@ -25,8 +25,22 @@ issuer = "https://accounts.google.com"
 
 # Automated publishes from the GHA workflow on push to main.
 [[trust.identities]]
-identity = "https://github.com/imjasonh/esp32/.github/workflows/publish.yml@refs/heads/main"
+identity = "https://github.com/imjasonh/playground/.github/workflows/esp32-publish.yml@refs/heads/main"
 issuer = "https://token.actions.githubusercontent.com"
+
+# Required by the e-ink SSH firmware. Obtain the complete host key with:
+#
+#   ssh-keyscan -t ed25519 your-server.example.com
+#
+# Verify that key through a separate trusted channel before provisioning it.
+# The device rejects missing, changed, RSA, and ECDSA server host keys.
+#
+# [ssh]
+# host = "your-server.example.com"
+# port = 22
+# username = "your-user"
+# host_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA..."
+# command = "uptime; uname -a"
 
 # Optional. If absent, the device boots with serial-only logging and
 # never tries to talk to GCP. Uncomment + fill in to enable shipping
@@ -42,8 +56,9 @@ issuer = "https://token.actions.githubusercontent.com"
 # metrics_interval_secs = 300       # 0 = metrics off (logs still ship); default 300
 
 # Optional. If absent, OTA loop uses compile-time defaults
-# (ghcr.io/imjasonh/esp32:latest, 60 s poll). Each field is
-# individually optional too — only present ones override.
+# (`ghcr.io/imjasonh/esp32:latest` for the original firmware,
+# `ghcr.io/imjasonh/esp32-eink:latest` for the e-ink firmware, 60 s
+# poll). Each field is individually optional too — only present ones override.
 #
 # [ota]
 # repo = "ghcr.io/imjasonh/esp32"   # default

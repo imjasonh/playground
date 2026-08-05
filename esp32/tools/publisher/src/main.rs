@@ -18,7 +18,10 @@ const CONFIG_MEDIA_TYPE: &str = "application/vnd.esp32.firmware.v1+json";
 const LAYER_MEDIA_TYPE: &str = "application/vnd.esp32.firmware.bin";
 
 #[derive(Parser)]
-#[command(version, about = "Push ESP32 firmware bins to an OCI registry as artifacts.")]
+#[command(
+    version,
+    about = "Push ESP32 firmware bins to an OCI registry as artifacts."
+)]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,
@@ -53,12 +56,16 @@ struct PushArgs {
 
     /// org.opencontainers.image.source URL embedded in the manifest annotations.
     /// GHCR uses this to auto-link the package to a source repo on first push.
-    #[arg(long, default_value = "https://github.com/imjasonh/esp32")]
+    #[arg(long, default_value = "https://github.com/imjasonh/playground")]
     source: String,
 
     /// Target chip, recorded in the artifact's config blob.
     #[arg(long, default_value = "esp32")]
     target_chip: String,
+
+    /// Firmware application identifier, recorded in artifact metadata.
+    #[arg(long)]
+    app_id: String,
 
     /// IDF version, recorded in the artifact's config blob.
     #[arg(long, default_value = "v5.2.2")]
@@ -87,6 +94,7 @@ struct PullVerifyArgs {
 
 #[derive(Serialize)]
 struct FirmwareConfig {
+    app_id: String,
     target_chip: String,
     idf_version: String,
     git_sha: Option<String>,
@@ -179,7 +187,10 @@ async fn pull_verify(args: PullVerifyArgs) -> Result<()> {
         .with_context(|| format!("fetch layer blob {}", layer_descriptor.digest))?;
 
     let pulled_sha = hex::encode(Sha256::digest(&layer_bytes));
-    let descriptor_sha = layer_descriptor.digest.strip_prefix("sha256:").unwrap_or("");
+    let descriptor_sha = layer_descriptor
+        .digest
+        .strip_prefix("sha256:")
+        .unwrap_or("");
     if pulled_sha != descriptor_sha {
         return Err(anyhow!(
             "pulled layer SHA mismatch with manifest descriptor: got {}, manifest says {}",
@@ -214,6 +225,7 @@ async fn push(args: PushArgs) -> Result<()> {
     );
 
     let cfg = FirmwareConfig {
+        app_id: args.app_id.clone(),
         target_chip: args.target_chip.clone(),
         idf_version: args.idf_version.clone(),
         git_sha: args.git_sha.clone(),
@@ -246,10 +258,7 @@ async fn push(args: PushArgs) -> Result<()> {
         cfg.built_at.clone(),
     );
     if let Some(sha) = &args.git_sha {
-        annotations.insert(
-            "org.opencontainers.image.revision".to_string(),
-            sha.clone(),
-        );
+        annotations.insert("org.opencontainers.image.revision".to_string(), sha.clone());
     }
 
     let manifest = build_manifest(&config, &layer, &annotations)?;
@@ -339,7 +348,12 @@ fn build_manifest(
         config: config_descriptor,
         layers: vec![layer_descriptor],
         artifact_type: None,
-        annotations: Some(annotations.iter().map(|(k, v)| (k.clone(), v.clone())).collect()),
+        annotations: Some(
+            annotations
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+        ),
     })
 }
 

@@ -8,20 +8,35 @@
 #   make monitor             # watch it boot + connect
 
 PORT ?= /dev/cu.usbserial-0001
-BIN  := target/xtensa-esp32-espidf/release/esp32-blinky
+APP  ?= blinky
+
+ifeq ($(APP),blinky)
+PACKAGE            := esp32-blinky
+TARGET_DIR         := target/blinky
+BIN                := $(TARGET_DIR)/xtensa-esp32-espidf/release/esp32-blinky
+SDKCONFIG_TEMPLATE := sdkconfig.defaults.in
+SDKCONFIG_DEFAULTS := sdkconfig.defaults
+OCI_REPO           ?= ghcr.io/imjasonh/esp32
+else ifeq ($(APP),eink)
+PACKAGE            := esp32-eink
+TARGET_DIR         := target/eink
+BIN                := $(TARGET_DIR)/xtensa-esp32-espidf/release/esp32-eink
+SDKCONFIG_TEMPLATE := eink/sdkconfig.defaults.in
+SDKCONFIG_DEFAULTS := eink/sdkconfig.defaults
+OCI_REPO           ?= ghcr.io/imjasonh/esp32-eink
+else
+$(error Unknown APP '$(APP)'; expected APP=blinky or APP=eink)
+endif
 
 # Host triple for building host-side tools (publisher, provision).
 HOST_TRIPLE := $(shell rustc -vV | sed -n 's/^host: //p')
 
 # App-only firmware binary (no bootloader / partition table) suitable for
 # pushing as the OTA artifact layer.
-FW_BIN := target/firmware.bin
+FW_BIN := target/$(APP)-firmware.bin
 
 # Generated NVS partition image written by `tools/provision/`.
 NVS_BIN := target/nvs.bin
-
-# OCI artifact destination.
-OCI_REPO ?= ghcr.io/imjasonh/esp32
 
 # Username for cosign's registry auth (its own auth, separate from the
 # OIDC identity used to sign). Override with COSIGN_REGISTRY_USERNAME=...
@@ -55,7 +70,7 @@ export PATH := $(PYTHON_SHIM):$(XTENSA_GCC_BIN):$(PATH)
 
 help:
 	@echo "Targets:"
-	@echo "  make build         Compile firmware"
+	@echo "  make build         Compile firmware (APP=blinky or APP=eink)"
 	@echo "  make flash         Build (if needed) and flash app to $(PORT)"
 	@echo "  make flash-all     Erase + write bootloader, partition table, app"
 	@echo "  make monitor       Open serial monitor on $(PORT)  (Ctrl+C to exit)"
@@ -68,22 +83,24 @@ help:
 	@echo "  make provision     Build NVS image from provisioning.toml + flash to device"
 	@echo "  make bootstrap     flash-all + provision (new device setup)"
 	@echo ""
-	@echo "Override the port: make flash PORT=/dev/cu.usbserial-XXXX"
+	@echo "Select the e-ink client: make APP=eink build"
+	@echo "Override the port: make APP=eink flash PORT=/dev/cu.usbserial-XXXX"
 
-build: ensure-python-shim sdkconfig.defaults
+build: ensure-python-shim $(SDKCONFIG_DEFAULTS)
 	# `+esp` selects the espup-installed toolchain explicitly. We don't
 	# use `rust-toolchain.toml` for the firmware crate anymore because
 	# Dependabot's runner doesn't have the esp toolchain installed and
 	# `cargo update` chokes on the override file. Host-side tools have
 	# their own `rust-toolchain.toml` pinning stable.
-	cargo +esp build --release
+	ESP_IDF_SDKCONFIG_DEFAULTS=$(SDKCONFIG_DEFAULTS) \
+	    cargo +esp build --release --package $(PACKAGE) --target-dir $(TARGET_DIR)
 
 # sdkconfig.defaults is generated from the .in template so we can substitute
 # the absolute project path into CONFIG_PARTITION_TABLE_CUSTOM_FILENAME
 # (IDF resolves it relative to the embuild synthetic project, not our repo
 # root, so a bare "partitions.csv" doesn't work). Gitignored.
-sdkconfig.defaults: sdkconfig.defaults.in partitions.csv
-	@sed 's|@PROJECT_DIR@|$(CURDIR)|g' sdkconfig.defaults.in > sdkconfig.defaults
+$(SDKCONFIG_DEFAULTS): $(SDKCONFIG_TEMPLATE) partitions.csv
+	@sed 's|@PROJECT_DIR@|$(CURDIR)|g' $(SDKCONFIG_TEMPLATE) > $(SDKCONFIG_DEFAULTS)
 
 # Idempotent: creates $(PYTHON_SHIM) and (re)points python3 at the current
 # uv-managed 3.12 interpreter. Auto-installs Python 3.12 via uv if missing.
@@ -114,7 +131,7 @@ flash: build
 # path if both OTA slots are bad and anti-bricking failed. After erase,
 # otadata is empty and the bootloader picks ota_0 by default. NVS is also
 # wiped, so the device will boot strict-inert until `make provision`.
-BOOTLOADER := $(firstword $(wildcard target/xtensa-esp32-espidf/release/build/esp-idf-sys-*/out/build/bootloader/bootloader.bin))
+BOOTLOADER := $(firstword $(wildcard $(TARGET_DIR)/xtensa-esp32-espidf/release/build/esp-idf-sys-*/out/build/bootloader/bootloader.bin))
 
 flash-all: build
 	@test -n "$(BOOTLOADER)" || { echo "ERROR: bootloader.bin not found under target/. Run 'make build' first."; exit 1; }
@@ -201,6 +218,8 @@ publish: $(FW_BIN) check-gh-env
 	    DIGEST=$$(cd tools/publisher && cargo run --release --target $(HOST_TRIPLE) -- push \
 	        --bin $(CURDIR)/$(FW_BIN) \
 	        --repo $(OCI_REPO) \
+	        --app-id $(APP) \
+	        --source https://github.com/imjasonh/playground \
 	        --git-sha $(GIT_SHA) | grep '^digest:' | head -1 | cut -d' ' -f2); \
 	    test -n "$$DIGEST" || { echo "ERROR: publisher did not emit a 'digest:' line on stdout"; exit 1; }; \
 	    echo ">>> Signing $(OCI_REPO)@$$DIGEST with cosign (keyless OIDC)"; \

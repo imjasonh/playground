@@ -134,8 +134,8 @@ pub fn verify_bundle(
     verify_p256_ecdsa(&leaf, &pae, &sig_bytes).context("DSSE signature verify")?;
     tracing::info!("ota: DSSE signature verified");
 
-    let stmt: InTotoStatement = serde_json::from_slice(&payload_bytes)
-        .context("parse in-toto Statement payload")?;
+    let stmt: InTotoStatement =
+        serde_json::from_slice(&payload_bytes).context("parse in-toto Statement payload")?;
     let subj = stmt
         .subject
         .first()
@@ -250,8 +250,8 @@ fn verify_chain(leaf: &Certificate, trust: &TrustConfig) -> Result<()> {
 /// here, but the OTA thread can in principle race with sync) we refuse
 /// to verify rather than fall back to "always valid".
 fn check_validity(cert: &Certificate, label: &str) -> Result<()> {
-    let now =
-        now_unix_secs().ok_or_else(|| anyhow!("clock not synced; cannot check {} validity", label))?;
+    let now = now_unix_secs()
+        .ok_or_else(|| anyhow!("clock not synced; cannot check {} validity", label))?;
     let validity = &cert.tbs_certificate.validity;
     let nb = validity.not_before.to_unix_duration().as_secs();
     let na = validity.not_after.to_unix_duration().as_secs();
@@ -283,8 +283,8 @@ fn verify_signed_by_p384(child: &Certificate, parent: &Certificate) -> Result<()
         .subject_public_key_info
         .subject_public_key
         .raw_bytes();
-    let key = VerifyingKey::from_sec1_bytes(parent_pubkey_bytes)
-        .context("parse parent P-384 pubkey")?;
+    let key =
+        VerifyingKey::from_sec1_bytes(parent_pubkey_bytes).context("parse parent P-384 pubkey")?;
 
     let tbs_der = child
         .tbs_certificate
@@ -308,10 +308,9 @@ fn verify_p256_ecdsa(cert: &Certificate, message: &[u8], sig_der: &[u8]) -> Resu
         .subject_public_key_info
         .subject_public_key
         .raw_bytes();
-    let key = VerifyingKey::from_sec1_bytes(pubkey_bytes)
-        .context("parse leaf P-256 pubkey")?;
+    let key = VerifyingKey::from_sec1_bytes(pubkey_bytes).context("parse leaf P-256 pubkey")?;
     let sig = Signature::from_der(sig_der).context("parse DSSE ECDSA signature")?;
-    key.verify(message, &sig).context("ECDSA-P256 verify failed")?;
+    key.verify(message, &sig)
+        .context("ECDSA-P256 verify failed")?;
     Ok(())
 }
-

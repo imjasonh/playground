@@ -18,8 +18,7 @@ use std::time::Duration;
 
 use crate::cloud_log::{GcpConfig, LogQueue};
 use crate::gcp_auth::{
-    device_mac, http_post, ota_download_in_progress, unix_to_rfc3339, ShortHttpsLock,
-    TokenProvider,
+    device_mac, http_post, ota_download_in_progress, unix_to_rfc3339, ShortHttpsLock, TokenProvider,
 };
 
 const METRIC_PREFIX: &str = "custom.googleapis.com/esp32";
@@ -82,7 +81,9 @@ pub fn run(
         // Backoff on failure, otherwise sleep the configured interval.
         let sleep_for = if consecutive_failures > 0 {
             let exp = consecutive_failures.min(4);
-            interval.saturating_mul(1 << exp).min(Duration::from_secs(3600))
+            interval
+                .saturating_mul(1 << exp)
+                .min(Duration::from_secs(3600))
         } else {
             interval
         };
@@ -118,10 +119,7 @@ pub fn run(
 
         match post_time_series(&url, &cfg.project_id, &mac, fw_version, &bearer, &snapshot) {
             Ok(()) => {
-                tracing::debug!(
-                    series = snapshot.series_count(),
-                    "metrics: posted",
-                );
+                tracing::debug!(series = snapshot.series_count(), "metrics: posted",);
                 consecutive_failures = 0;
             }
             Err(e) => {
@@ -186,15 +184,13 @@ fn collect(queue: &LogQueue) -> Snapshot {
     // Memory
     unsafe {
         s.free_heap = Some(esp_idf_svc::sys::esp_get_free_heap_size() as i64);
-        s.min_free_heap =
-            Some(esp_idf_svc::sys::esp_get_minimum_free_heap_size() as i64);
+        s.min_free_heap = Some(esp_idf_svc::sys::esp_get_minimum_free_heap_size() as i64);
         let largest = esp_idf_svc::sys::heap_caps_get_largest_free_block(
             esp_idf_svc::sys::MALLOC_CAP_DEFAULT,
         );
         s.largest_free_block = Some(largest as i64);
-        let internal = esp_idf_svc::sys::heap_caps_get_free_size(
-            esp_idf_svc::sys::MALLOC_CAP_INTERNAL,
-        );
+        let internal =
+            esp_idf_svc::sys::heap_caps_get_free_size(esp_idf_svc::sys::MALLOC_CAP_INTERNAL);
         s.free_heap_internal = Some(internal as i64);
     }
 
@@ -237,9 +233,7 @@ fn collect(queue: &LogQueue) -> Snapshot {
 
     // NVS stats (default partition; partition_name = NULL)
     let mut nvs_stats: esp_idf_svc::sys::nvs_stats_t = unsafe { core::mem::zeroed() };
-    let err = unsafe {
-        esp_idf_svc::sys::nvs_get_stats(core::ptr::null(), &mut nvs_stats)
-    };
+    let err = unsafe { esp_idf_svc::sys::nvs_get_stats(core::ptr::null(), &mut nvs_stats) };
     if err == esp_idf_svc::sys::ESP_OK {
         s.nvs_used_entries = Some(nvs_stats.used_entries as i64);
         s.nvs_free_entries = Some(nvs_stats.free_entries as i64);
@@ -313,8 +307,8 @@ fn post_time_series(
 ) -> Result<()> {
     let now_secs = crate::gcp_auth::now_unix_secs()
         .ok_or_else(|| anyhow::anyhow!("NTP not synced; cannot stamp metric points"))?;
-    let end_time = unix_to_rfc3339(now_secs)
-        .ok_or_else(|| anyhow::anyhow!("RFC3339 format failed"))?;
+    let end_time =
+        unix_to_rfc3339(now_secs).ok_or_else(|| anyhow::anyhow!("RFC3339 format failed"))?;
 
     let resource = MonitoredResource {
         type_: "generic_node",
@@ -333,53 +327,78 @@ fn post_time_series(
     // can split / group by release. Resource labels can't carry it
     // because `generic_node` has a fixed schema; metric labels are
     // per-series and let queries split heap, rssi, etc. by fw.
-    let mut push = |name: &str,
-                    extra_labels: serde_json::Map<String, serde_json::Value>,
-                    value: i64| {
-        let mut labels = extra_labels;
-        labels.insert(
-            "fw_version".into(),
-            serde_json::Value::String(fw_version.to_string()),
-        );
-        series.push(TimeSeries {
-            metric: Metric {
-                type_: format!("{}/{}", METRIC_PREFIX, name),
-                labels,
-            },
-            resource: resource.clone(),
-            metric_kind: "GAUGE",
-            value_type: "INT64",
-            points: vec![Point {
-                interval: Interval {
-                    end_time: end_time.clone(),
+    let mut push =
+        |name: &str, extra_labels: serde_json::Map<String, serde_json::Value>, value: i64| {
+            let mut labels = extra_labels;
+            labels.insert(
+                "fw_version".into(),
+                serde_json::Value::String(fw_version.to_string()),
+            );
+            series.push(TimeSeries {
+                metric: Metric {
+                    type_: format!("{}/{}", METRIC_PREFIX, name),
+                    labels,
                 },
-                value: PointValue {
-                    int64_value: value.to_string(),
-                },
-            }],
-        });
-    };
+                resource: resource.clone(),
+                metric_kind: "GAUGE",
+                value_type: "INT64",
+                points: vec![Point {
+                    interval: Interval {
+                        end_time: end_time.clone(),
+                    },
+                    value: PointValue {
+                        int64_value: value.to_string(),
+                    },
+                }],
+            });
+        };
 
     let no_labels = serde_json::Map::new();
-    if let Some(v) = snapshot.free_heap { push("free_heap", no_labels.clone(), v); }
-    if let Some(v) = snapshot.free_heap_internal { push("free_heap_internal", no_labels.clone(), v); }
-    if let Some(v) = snapshot.min_free_heap { push("min_free_heap", no_labels.clone(), v); }
-    if let Some(v) = snapshot.largest_free_block { push("largest_free_block", no_labels.clone(), v); }
-    if let Some(v) = snapshot.wifi_rssi { push("wifi_rssi", no_labels.clone(), v); }
-    if let Some(v) = snapshot.wifi_channel { push("wifi_channel", no_labels.clone(), v); }
-    if let Some(v) = snapshot.cpu_freq_mhz { push("cpu_freq_mhz", no_labels.clone(), v); }
-    if let Some(v) = snapshot.uptime_secs { push("uptime_secs", no_labels.clone(), v); }
-    if let Some(v) = snapshot.nvs_used_entries { push("nvs_used_entries", no_labels.clone(), v); }
-    if let Some(v) = snapshot.nvs_free_entries { push("nvs_free_entries", no_labels.clone(), v); }
-    if let Some(v) = snapshot.cloud_log_queue_depth { push("cloud_log_queue_depth", no_labels.clone(), v); }
-    if let Some(v) = snapshot.cloud_log_dropped_total { push("cloud_log_dropped_total", no_labels.clone(), v); }
+    if let Some(v) = snapshot.free_heap {
+        push("free_heap", no_labels.clone(), v);
+    }
+    if let Some(v) = snapshot.free_heap_internal {
+        push("free_heap_internal", no_labels.clone(), v);
+    }
+    if let Some(v) = snapshot.min_free_heap {
+        push("min_free_heap", no_labels.clone(), v);
+    }
+    if let Some(v) = snapshot.largest_free_block {
+        push("largest_free_block", no_labels.clone(), v);
+    }
+    if let Some(v) = snapshot.wifi_rssi {
+        push("wifi_rssi", no_labels.clone(), v);
+    }
+    if let Some(v) = snapshot.wifi_channel {
+        push("wifi_channel", no_labels.clone(), v);
+    }
+    if let Some(v) = snapshot.cpu_freq_mhz {
+        push("cpu_freq_mhz", no_labels.clone(), v);
+    }
+    if let Some(v) = snapshot.uptime_secs {
+        push("uptime_secs", no_labels.clone(), v);
+    }
+    if let Some(v) = snapshot.nvs_used_entries {
+        push("nvs_used_entries", no_labels.clone(), v);
+    }
+    if let Some(v) = snapshot.nvs_free_entries {
+        push("nvs_free_entries", no_labels.clone(), v);
+    }
+    if let Some(v) = snapshot.cloud_log_queue_depth {
+        push("cloud_log_queue_depth", no_labels.clone(), v);
+    }
+    if let Some(v) = snapshot.cloud_log_dropped_total {
+        push("cloud_log_dropped_total", no_labels.clone(), v);
+    }
     for (task, value) in &snapshot.stack_hwm {
         let mut labels = serde_json::Map::new();
         labels.insert("task".into(), serde_json::Value::String((*task).into()));
         push("stack_hwm", labels, *value);
     }
 
-    let req = CreateTimeSeriesRequest { time_series: series };
+    let req = CreateTimeSeriesRequest {
+        time_series: series,
+    };
     let body = serde_json::to_vec(&req).context("serialize CreateTimeSeries body")?;
     let auth = format!("Bearer {}", bearer);
     http_post(url, "application/json", &body, Some(&auth)).map(|_| ())

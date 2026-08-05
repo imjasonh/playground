@@ -74,9 +74,7 @@ impl GcpConfig {
     pub fn load(partition: EspDefaultNvsPartition) -> Result<Option<Self>> {
         let nvs = match EspNvs::new(partition, NVS_GCP_NS, false) {
             Ok(n) => n,
-            Err(e)
-                if e.code() == esp_idf_svc::sys::ESP_ERR_NVS_NOT_FOUND as i32 =>
-            {
+            Err(e) if e.code() == esp_idf_svc::sys::ESP_ERR_NVS_NOT_FOUND as i32 => {
                 // Namespace has never been written. Cloud logging is
                 // opt-in; this is the normal state for a device that
                 // wasn't provisioned with a [gcp] block.
@@ -217,9 +215,7 @@ impl<S: Subscriber> Layer<S> for CloudLogLayer {
         // `TARGET` constants come from each module's `module_path!()`,
         // so renaming the firmware crate doesn't silently break this.
         let target = event.metadata().target();
-        if target == TARGET
-            || target == crate::gcp_auth::TARGET
-            || target == crate::metrics::TARGET
+        if target == TARGET || target == crate::gcp_auth::TARGET || target == crate::metrics::TARGET
         {
             return;
         }
@@ -269,11 +265,7 @@ impl tracing::field::Visit for FieldCapture {
             .unwrap_or(serde_json::Value::Null);
         self.put(field.name(), v);
     }
-    fn record_debug(
-        &mut self,
-        field: &tracing::field::Field,
-        value: &dyn std::fmt::Debug,
-    ) {
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
         self.put(
             field.name(),
             serde_json::Value::String(format!("{:?}", value)),
@@ -387,10 +379,7 @@ pub fn run(
             &insert_seq,
         ) {
             Ok(()) => {
-                tracing::debug!(
-                    entries = batch.len(),
-                    "cloud_log: posted batch",
-                );
+                tracing::debug!(entries = batch.len(), "cloud_log: posted batch",);
                 consecutive_failures = 0;
             }
             Err(e) => {
