@@ -155,9 +155,9 @@ mod tests {
     }
 
     #[test]
-    fn rejects_tampered_inclusion_root() {
+    fn rejects_tampered_inclusion_hash() {
         let mut bundle: serde_json::Value = serde_json::from_slice(V2_BUNDLE).unwrap();
-        bundle["verificationMaterial"]["tlogEntries"][0]["inclusionProof"]["rootHash"] =
+        bundle["verificationMaterial"]["tlogEntries"][0]["inclusionProof"]["hashes"][0] =
             serde_json::Value::String(general_purpose::STANDARD.encode([0_u8; 32]));
         let tampered = serde_json::to_vec(&bundle).unwrap();
         assert!(super::sig::verify_bundle(&tampered, V2_SUBJECT_DIGEST, &v2_trust()).is_err());
