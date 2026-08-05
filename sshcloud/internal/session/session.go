@@ -334,12 +334,6 @@ func (r *Registry) Kick(user, app, gen string) int {
 	return n
 }
 
-// GenOf returns the generation bound to a session id.
-func (r *Registry) GenOf(id ID) (string, bool) {
-	_, _, gen, ok := r.Info(id)
-	return gen, ok
-}
-
 // Info returns user, app, and generation for an admitted session.
 func (r *Registry) Info(id ID) (user, app, gen string, ok bool) {
 	r.mu.Lock()

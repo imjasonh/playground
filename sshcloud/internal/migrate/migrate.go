@@ -248,7 +248,10 @@ func (m *Migrator) MigrateGeneration(ctx context.Context, user, app, gen, toHost
 	operation.Phase = "ready"
 	if err := guard.Mark(commitCtx, operation); err != nil {
 		cancelCommit()
-		return Result{}, err
+		guard.Abandon()
+		abandoned = true
+		thawed = true
+		return Result{}, fmt.Errorf("target adopted but ready journal failed: %w", err)
 	}
 	err = guard.CommitState(commitCtx, toHost, desiredGenerations)
 	cancelCommit()

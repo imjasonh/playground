@@ -21,6 +21,11 @@ resource "google_project_iam_member" "gateway_datastore" {
   project = var.project_id
   role    = "roles/datastore.user"
   member  = "serviceAccount:${google_service_account.gateway.email}"
+  condition {
+    title       = "${local.prefix}-gateway-firestore-database"
+    description = "Limit gateway data access to the dedicated sshcloud database"
+    expression  = "resource.name == \"projects/${var.project_id}/databases/${var.firestore_database}\""
+  }
 }
 
 resource "google_secret_manager_secret_iam_member" "gateway_host_key" {
@@ -49,6 +54,11 @@ resource "google_project_iam_member" "orchestrator_datastore" {
   project = var.project_id
   role    = "roles/datastore.user"
   member  = "serviceAccount:${google_service_account.orchestrator.email}"
+  condition {
+    title       = "${local.prefix}-orchestrator-firestore-database"
+    description = "Limit orchestrator data access to the dedicated sshcloud database"
+    expression  = "resource.name == \"projects/${var.project_id}/databases/${var.firestore_database}\""
+  }
 }
 
 resource "google_project_iam_member" "orchestrator_compute_viewer" {

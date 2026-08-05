@@ -43,6 +43,7 @@ func main() {
 	defaultHost := flag.String("default-host", "", "default placement host ID")
 	firestoreProject := flag.String("firestore-project", "", "GCP project for Firestore placement (default: in-memory)")
 	firestorePrefix := flag.String("firestore-prefix", "sshcloud", "Firestore collection prefix")
+	firestoreDatabase := flag.String("firestore-database", "sshcloud", "Firestore database ID")
 	controlTokenFile := flag.String("control-token-file", "", "bearer token file required by orchestrator APIs (empty is local-dev only)")
 	agentTokenFile := flag.String("agent-token-file", "", "bearer token file sent to host agents")
 	gatewayURL := flag.String("gateway-url", "", "gateway migration control base URL")
@@ -89,13 +90,13 @@ func main() {
 	var place placement.Store = placement.NewMemory()
 	var quotaStore quota.Store = quota.NewMemory()
 	if *firestoreProject != "" {
-		fs, err := placement.NewFirestoreWithPrefix(ctx, *firestoreProject, *firestorePrefix)
+		fs, err := placement.NewFirestoreDatabase(ctx, *firestoreProject, *firestoreDatabase, *firestorePrefix)
 		if err != nil {
 			log.Fatalf("firestore: %v", err)
 		}
 		defer fs.Close()
 		place = fs
-		quotaStore, err = quota.NewFirestore(ctx, *firestoreProject, *firestorePrefix)
+		quotaStore, err = quota.NewFirestoreDatabase(ctx, *firestoreProject, *firestoreDatabase, *firestorePrefix)
 		if err != nil {
 			log.Fatalf("quota firestore: %v", err)
 		}
@@ -108,7 +109,7 @@ func main() {
 	hosts := backend.NewHostSet(initial, *defaultHost)
 	mig := &migrate.Migrator{Placement: place, Hosts: hosts}
 	dial := &backend.PlacedDial{
-		Placement: place, Agents: hosts, DefaultHost: *defaultHost,
+		Placement: place, Agents: hosts,
 		Quotas: quotaStore, MaxAwakePerUser: *maxAwakePerUser, WakesPerHour: *wakesPerHour,
 	}
 	var gatewayClient *backend.GatewayClient
@@ -370,25 +371,7 @@ func main() {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		type hostDiagnostic struct {
-			ID        string               `json:"id"`
-			Capacity  agent.Capacity       `json:"capacity"`
-			Instances []agent.InstanceInfo `json:"instances"`
-			Error     string               `json:"error,omitempty"`
-		}
-		var hostDiagnostics []hostDiagnostic
-		for _, id := range hosts.IDs() {
-			client, _ := hosts.Get(id)
-			capacity, capacityErr := client.Capacity(r.Context())
-			instances, inventoryErr := client.Instances(r.Context())
-			diagnostic := hostDiagnostic{ID: id, Capacity: capacity, Instances: instances}
-			if capacityErr != nil {
-				diagnostic.Error = capacityErr.Error()
-			} else if inventoryErr != nil {
-				diagnostic.Error = inventoryErr.Error()
-			}
-			hostDiagnostics = append(hostDiagnostics, diagnostic)
-		}
+		hostDiagnostics := hosts.Diagnostics(r.Context())
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"placements": records, "hosts": hostDiagnostics,
@@ -426,10 +409,6 @@ func watchHostsFile(ctx context.Context, path string, hosts *backend.HostSet, ag
 			m, err := backend.LoadHostsFile(path)
 			if err != nil {
 				log.Printf("hosts-file reload: %v", err)
-				continue
-			}
-			if len(m) == 0 {
-				log.Printf("hosts-file reload: empty, keeping previous")
 				continue
 			}
 			setAgentToken(m, agentToken)

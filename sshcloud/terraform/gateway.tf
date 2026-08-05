@@ -49,6 +49,7 @@ resource "google_compute_instance" "gateway" {
     registry_host       = split("/", local.registry)[0]
     project_id          = var.project_id
     firestore_prefix    = var.firestore_prefix
+    firestore_database  = var.firestore_database
     host_key_secret     = google_secret_manager_secret.gateway_host_key.secret_id
     user_ca_secret      = google_secret_manager_secret.user_ca.secret_id
     control_auth_secret = google_secret_manager_secret.orchestrator_auth.secret_id

@@ -145,12 +145,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer func() {
-		if err := mgr.Close(); err != nil {
-			log.Printf("agent shutdown snapshot failures: %v", err)
-		}
-	}()
-
 	mux := http.NewServeMux()
 	(&agent.Handler{Manager: mgr, Token: controlToken, Readiness: mgr.Ready}).Mount(mux)
 
@@ -175,4 +169,7 @@ func main() {
 	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancelShutdown()
 	_ = srv.Shutdown(shutdownCtx)
+	if err := mgr.Close(); err != nil {
+		log.Fatalf("agent shutdown could not durably snapshot all instances: %v", err)
+	}
 }

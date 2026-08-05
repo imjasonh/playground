@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -17,6 +19,11 @@ import (
 )
 
 const fingerprintExt = "sshcloud-key-fp"
+
+const (
+	maxSessionSetupRequests = 32
+	maxSessionSetupBytes    = 16 << 10
+)
 
 // Server is a gateway SSH listener.
 type Server struct {
@@ -29,11 +36,15 @@ type Server struct {
 	HandshakeTimeout time.Duration
 	// MaxConnections bounds process-wide accepted TCP connections. Zero
 	// defaults to 256.
-	MaxConnections   int
-	HandshakeLimiter *quota.IPRateLimiter
-	listener         net.Listener
-	limitOnce        sync.Once
-	limit            chan struct{}
+	MaxConnections           int
+	MaxChannels              int
+	MaxChannelsPerConnection int
+	StartTimeout             time.Duration
+	HandshakeLimiter         *quota.IPRateLimiter
+	listener                 net.Listener
+	limitOnce                sync.Once
+	limit                    chan struct{}
+	channelLimit             chan struct{}
 }
 
 func (s *Server) logf(format string, args ...any) {
@@ -106,6 +117,11 @@ func (s *Server) handleConn(ctx context.Context, nc net.Conn) {
 			max = 256
 		}
 		s.limit = make(chan struct{}, max)
+		maxChannels := s.MaxChannels
+		if maxChannels <= 0 {
+			maxChannels = 512
+		}
+		s.channelLimit = make(chan struct{}, maxChannels)
 		if s.HandshakeLimiter == nil {
 			s.HandshakeLimiter = quota.NewIPRateLimiter(60, time.Minute)
 		}
@@ -152,16 +168,39 @@ func (s *Server) handleConn(ctx context.Context, nc net.Conn) {
 		fp = sc.Permissions.Extensions[fingerprintExt]
 	}
 
+	maxPerConnection := s.MaxChannelsPerConnection
+	if maxPerConnection <= 0 {
+		maxPerConnection = 16
+	}
+	var activeChannels atomic.Int32
 	for newCh := range chans {
 		if newCh.ChannelType() != "session" {
 			_ = newCh.Reject(ssh.UnknownChannelType, "only session supported")
 			continue
 		}
-		ch, creqs, err := newCh.Accept()
-		if err != nil {
+		if activeChannels.Load() >= int32(maxPerConnection) {
+			_ = newCh.Reject(ssh.ResourceShortage, "too many session channels")
 			continue
 		}
-		go s.handleSession(connCtx, sc, ch, creqs, fp)
+		select {
+		case s.channelLimit <- struct{}{}:
+		default:
+			_ = newCh.Reject(ssh.ResourceShortage, "gateway session capacity reached")
+			continue
+		}
+		ch, creqs, err := newCh.Accept()
+		if err != nil {
+			<-s.channelLimit
+			continue
+		}
+		activeChannels.Add(1)
+		go func() {
+			defer func() {
+				activeChannels.Add(-1)
+				<-s.channelLimit
+			}()
+			s.handleSession(connCtx, sc, ch, creqs, fp)
+		}()
 	}
 }
 
@@ -203,6 +242,7 @@ func (s *Server) handleSession(ctx context.Context, sc *ssh.ServerConn, ch ssh.C
 		defer close(reqDone)
 		defer close(changes)
 		var setup []gateway.ForwardRequest
+		setupBytes := 0
 		started := false
 		hasPTY := false
 		var currentSpec *gateway.SessionSpec
@@ -216,8 +256,15 @@ func (s *Server) handleSession(ctx context.Context, sc *ssh.ServerConn, ch ssh.C
 					}
 					continue
 				}
+				if len(setup) >= maxSessionSetupRequests || setupBytes+len(req.Payload) > maxSessionSetupBytes {
+					if req.WantReply {
+						_ = req.Reply(false, nil)
+					}
+					continue
+				}
 				hasPTY = true
 				setup = append(setup, gateway.ForwardRequest{Type: req.Type, Payload: append([]byte(nil), req.Payload...)})
+				setupBytes += len(req.Payload)
 				if req.WantReply {
 					_ = req.Reply(true, nil)
 				}
@@ -229,7 +276,14 @@ func (s *Server) handleSession(ctx context.Context, sc *ssh.ServerConn, ch ssh.C
 					}
 					continue
 				}
+				if len(setup) >= maxSessionSetupRequests || setupBytes+len(req.Payload) > maxSessionSetupBytes {
+					if req.WantReply {
+						_ = req.Reply(false, nil)
+					}
+					continue
+				}
 				setup = append(setup, gateway.ForwardRequest{Type: req.Type, Payload: append([]byte(nil), req.Payload...)})
+				setupBytes += len(req.Payload)
 				if req.WantReply {
 					_ = req.Reply(true, nil)
 				}
@@ -243,7 +297,10 @@ func (s *Server) handleSession(ctx context.Context, sc *ssh.ServerConn, ch ssh.C
 				}
 				forward := gateway.ForwardRequest{Type: req.Type, Payload: append([]byte(nil), req.Payload...)}
 				if !started {
-					setup = append(setup, forward)
+					if len(setup) < maxSessionSetupRequests && setupBytes+len(req.Payload) <= maxSessionSetupBytes {
+						setup = append(setup, forward)
+						setupBytes += len(req.Payload)
+					}
 				} else {
 					if currentSpec != nil {
 						_ = currentSpec.RecordDetachedChange(forward)
@@ -332,8 +389,17 @@ func (s *Server) handleSession(ctx context.Context, sc *ssh.ServerConn, ch ssh.C
 	}()
 
 	var spec *gateway.SessionSpec
+	startTimeout := s.StartTimeout
+	if startTimeout <= 0 {
+		startTimeout = 15 * time.Second
+	}
+	timer := time.NewTimer(startTimeout)
+	defer timer.Stop()
 	select {
 	case <-ctx.Done():
+		return
+	case <-timer.C:
+		_, _ = io.WriteString(ch.Stderr(), "session start request timed out\r\n")
 		return
 	case spec = <-start:
 	case <-reqDone:

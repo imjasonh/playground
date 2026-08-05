@@ -68,31 +68,6 @@ type Result struct {
 	DrainUntil  time.Time
 }
 
-// ActiveGen is what new sessions should pin to (empty = legacy singleton).
-func (c *Controller) ActiveGen(ctx context.Context, user, app string) (string, error) {
-	if c == nil || c.Store == nil {
-		return "", nil
-	}
-	op := c.appLock(user, app)
-	op.Lock()
-	defer op.Unlock()
-	a, err := c.Store.GetApp(ctx, user, app)
-	if err != nil || a == nil {
-		return "", err
-	}
-	if a.DrainingGen != "" && a.DrainUntilUnix > 0 && c.now().Unix() >= a.DrainUntilUnix {
-		c.kickGen(user, app, a.DrainingGen)
-		c.finishDrainLocked(ctx, user, app, a.DrainingGen)
-		a, err = c.Store.GetApp(ctx, user, app)
-		if err != nil || a == nil {
-			return "", err
-		}
-	} else if a.DrainingGen != "" && a.DrainUntilUnix > 0 {
-		c.armDrainTimer(user, app, a.DrainingGen, time.Unix(a.DrainUntilUnix, 0))
-	}
-	return a.ActiveGen, nil
-}
-
 // Admit atomically pins and registers a session against the active generation,
 // returning that generation's immutable image and tier.
 // It shares the per-app operation lock with Deploy so no connection can be
@@ -227,7 +202,9 @@ func (c *Controller) Deploy(ctx context.Context, req Request) (Result, error) {
 
 	if c.Instances != nil {
 		if err := c.Instances.Ensure(ctx, req.User, req.App, newGen, req.Image, req.Tier, true); err != nil {
-			_ = c.cleanupPending(context.Background(), app, isNewApp)
+			if cleanupErr := c.cleanupPending(context.Background(), app, isNewApp); cleanupErr != nil {
+				return Result{}, fmt.Errorf("boot new generation: %w (cleanup pending: %v)", err, cleanupErr)
+			}
 			return Result{}, fmt.Errorf("boot new generation: %w", err)
 		}
 	}
@@ -272,6 +249,10 @@ func (c *Controller) Deploy(ctx context.Context, req Request) (Result, error) {
 
 	default: // drain
 		oldHasSession := c.Sessions != nil && c.Sessions.ActiveGen(req.User, req.App, oldGen)
+		if oldHasSession && oldGen == "" {
+			_ = c.cleanupPending(context.Background(), app, false)
+			return Result{}, fmt.Errorf("legacy singleton generation cannot drain safely; redeploy with strategy kick")
+		}
 		if !oldHasSession {
 			if err := persist("", time.Time{}, oldGen); err != nil {
 				return Result{}, err
@@ -349,7 +330,9 @@ func (c *Controller) finishDrainLocked(ctx context.Context, user, app, gen strin
 
 func (c *Controller) cleanupPending(ctx context.Context, app *store.App, deleteIfEmpty bool) error {
 	if app.PendingGen != "" && c.Instances != nil {
-		_ = c.Instances.Stop(ctx, app.Owner, app.Name, app.PendingGen)
+		if err := c.Instances.Stop(ctx, app.Owner, app.Name, app.PendingGen); err != nil {
+			return fmt.Errorf("stop pending generation %s: %w", app.PendingGen, err)
+		}
 	}
 	if deleteIfEmpty {
 		return c.Store.DeleteApp(ctx, app.Owner, app.Name)

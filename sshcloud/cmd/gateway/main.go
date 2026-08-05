@@ -36,6 +36,7 @@ func main() {
 	orchURL := flag.String("orchestrator-url", "", "orchestrator base URL (placement-aware Ensure), e.g. http://127.0.0.1:8090")
 	firestoreProject := flag.String("firestore-project", "", "GCP project for Firestore user/app store (default: in-memory)")
 	firestorePrefix := flag.String("firestore-prefix", "sshcloud", "Firestore collection prefix")
+	firestoreDatabase := flag.String("firestore-database", "sshcloud", "Firestore database ID")
 	drainTimeout := flag.Duration("drain-timeout", cutover.DefaultDrainTimeout, "deploy drain kick timeout")
 	controlTokenFile := flag.String("control-token-file", "", "bearer token file sent to orchestrator/agent APIs")
 	controlListen := flag.String("control-listen", "", "internal migration control HTTP address (empty disables)")
@@ -67,7 +68,7 @@ func main() {
 
 	var st store.Store = store.NewMemory()
 	if *firestoreProject != "" {
-		fs, err := store.NewFirestoreWithPrefix(ctx, *firestoreProject, *firestorePrefix)
+		fs, err := store.NewFirestoreDatabase(ctx, *firestoreProject, *firestoreDatabase, *firestorePrefix)
 		if err != nil {
 			log.Fatalf("firestore: %v", err)
 		}
@@ -82,7 +83,7 @@ func main() {
 	sess.MaxPerUser = *maxSessionsPerUser
 	var quotaStore quota.Store = quota.NewMemory()
 	if *firestoreProject != "" {
-		quotaStore, err = quota.NewFirestore(ctx, *firestoreProject, *firestorePrefix)
+		quotaStore, err = quota.NewFirestoreDatabase(ctx, *firestoreProject, *firestoreDatabase, *firestorePrefix)
 		if err != nil {
 			log.Fatalf("quota firestore: %v", err)
 		}

@@ -109,6 +109,13 @@ type HostCandidate struct {
 	Remaining agent.Resources
 }
 
+type HostDiagnostic struct {
+	ID        string
+	Capacity  agent.Capacity
+	Instances []agent.InstanceInfo
+	Error     string
+}
+
 // Candidates returns non-cordoned hosts ordered by best-fit bin packing.
 func (h *HostSet) Candidates(ctx context.Context, tier string, exclude map[string]bool) ([]HostCandidate, error) {
 	need, err := agent.ResourcesForTier(tier)
@@ -230,6 +237,40 @@ func (h *HostSet) Inventories(ctx context.Context) (map[string][]agent.InstanceI
 		out[result.id] = result.instances
 	}
 	return out, nil
+}
+
+func (h *HostSet) Diagnostics(ctx context.Context) []HostDiagnostic {
+	if h == nil {
+		return nil
+	}
+	h.mu.RLock()
+	clients := make(map[string]*AgentClient, len(h.agents))
+	for id, client := range h.agents {
+		clients[id] = client
+	}
+	h.mu.RUnlock()
+	results := make(chan HostDiagnostic, len(clients))
+	for id, client := range clients {
+		go func(id string, client *AgentClient) {
+			probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			defer cancel()
+			capacity, capacityErr := client.Capacity(probeCtx)
+			instances, inventoryErr := client.Instances(probeCtx)
+			diagnostic := HostDiagnostic{ID: id, Capacity: capacity, Instances: instances}
+			if capacityErr != nil {
+				diagnostic.Error = capacityErr.Error()
+			} else if inventoryErr != nil {
+				diagnostic.Error = inventoryErr.Error()
+			}
+			results <- diagnostic
+		}(id, client)
+	}
+	out := make([]HostDiagnostic, 0, len(clients))
+	for range clients {
+		out = append(out, <-results)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
 }
 
 // ParseHostsSpec parses "id=url" pairs separated by commas and/or newlines.

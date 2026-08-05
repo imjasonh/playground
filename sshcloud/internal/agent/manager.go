@@ -331,7 +331,6 @@ func (m *Manager) EnsureWith(ctx context.Context, user, app string, opt EnsureOp
 			_ = stale.machine.Kill()
 		}
 		_ = firecracker.DeleteTap(stale.TapName)
-		_ = os.RemoveAll(stale.WorkDir)
 	}
 
 	if m.cfg.SnapStore != nil {
@@ -340,8 +339,14 @@ func (m *Manager) EnsureWith(ctx context.Context, user, app string, opt EnsureOp
 			return nil, fmt.Errorf("check snapshot: %w", err)
 		}
 		if has {
+			if stale != nil {
+				_ = os.RemoveAll(stale.WorkDir)
+			}
 			return m.adopt(ctx, k, n, opt)
 		}
+	}
+	if stale != nil {
+		return nil, fmt.Errorf("instance %s exited without a durable snapshot; preserved %s for operator recovery", k, stale.WorkDir)
 	}
 
 	if opt.Tier == "" {
@@ -708,7 +713,9 @@ func (m *Manager) bootCold(ctx context.Context, k InstanceKey, n int, opt Ensure
 	}()
 	resourceID := instanceResourceID(k)
 	dir := filepath.Join(m.cfg.WorkDir, "vm-"+resourceID)
-	if err := os.RemoveAll(dir); err != nil {
+	if _, err := os.Stat(dir); err == nil {
+		return nil, fmt.Errorf("orphaned instance workdir %s requires recovery; refusing destructive cold boot", dir)
+	} else if !os.IsNotExist(err) {
 		return nil, err
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -957,9 +964,14 @@ func (m *Manager) Ready() error {
 	if _, err := exec.LookPath(fc); err != nil {
 		return fmt.Errorf("firecracker %q: %w", fc, err)
 	}
-	for _, tool := range []string{"ip", "iptables", "mkfs.ext4", "debugfs"} {
+	for _, tool := range []string{"ip", "iptables", "ip6tables", "mkfs.ext4", "debugfs"} {
 		if _, err := exec.LookPath(tool); err != nil {
 			return fmt.Errorf("required tool %q: %w", tool, err)
+		}
+	}
+	for _, tool := range []string{"iptables", "ip6tables"} {
+		if out, err := exec.Command(tool, "-w", "1", "-L").CombinedOutput(); err != nil {
+			return fmt.Errorf("%s capability/lock check: %v: %s", tool, err, out)
 		}
 	}
 	var fs syscall.Statfs_t
@@ -977,7 +989,37 @@ func (m *Manager) Ready() error {
 			return fmt.Errorf("snapshot store: %w", err)
 		}
 	}
+	if orphans, err := m.Orphans(); err != nil {
+		return err
+	} else if len(orphans) != 0 {
+		return fmt.Errorf("%d orphaned instance workdirs require recovery", len(orphans))
+	}
 	return nil
+}
+
+func (m *Manager) Orphans() ([]string, error) {
+	entries, err := os.ReadDir(m.cfg.WorkDir)
+	if err != nil {
+		return nil, err
+	}
+	m.mu.Lock()
+	known := make(map[string]bool, len(m.inst))
+	for _, instance := range m.inst {
+		known[filepath.Clean(instance.WorkDir)] = true
+	}
+	m.mu.Unlock()
+	var orphans []string
+	for _, entry := range entries {
+		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), "vm-") {
+			continue
+		}
+		path := filepath.Join(m.cfg.WorkDir, entry.Name())
+		if !known[path] {
+			orphans = append(orphans, path)
+		}
+	}
+	sort.Strings(orphans)
+	return orphans, nil
 }
 
 // Sleep snapshots a running instance, uploads it, and frees the VMM (keeps TAP).
@@ -1622,15 +1664,6 @@ func (m *Manager) StopContext(ctx context.Context, user, app string) error {
 	return err
 }
 
-// Addr ensures the instance (app may be genid.AgentApp form) and returns its SSH address.
-func (m *Manager) Addr(user, app string) (string, error) {
-	in, err := m.Ensure(context.Background(), user, app)
-	if err != nil {
-		return "", err
-	}
-	return in.Addr, nil
-}
-
 // SetNoIdle prevents idle snapshot-sleep (used while a generation is draining
 // or freshly booted during cutover).
 func (m *Manager) SetNoIdle(user, app string, noIdle bool) error {
@@ -1661,16 +1694,6 @@ func (m *Manager) SetNoIdleWithEpoch(ctx context.Context, user, app string, noId
 		return nil
 	}
 	return nil
-}
-
-// Touch updates LastUsed so idle sleep is deferred.
-func (m *Manager) Touch(user, app string) {
-	k := InstanceKey{User: user, App: app}
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if in, ok := m.inst[k]; ok {
-		in.LastUsed = time.Now()
-	}
 }
 
 func (m *Manager) idleLoop() {
@@ -1785,6 +1808,7 @@ func (m *Manager) shutdownLocal(k InstanceKey) error {
 		err = in.machine.Stop()
 	}
 	_ = firecracker.DeleteTap(in.TapName)
-	_ = os.RemoveAll(in.WorkDir)
+	// Preserve the latest writable rootfs for operator recovery. A later cold
+	// boot refuses to overwrite an orphaned workdir.
 	return err
 }

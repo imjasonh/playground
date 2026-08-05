@@ -24,6 +24,7 @@ locals {
     "storage.googleapis.com",
     "serviceusage.googleapis.com",
     "cloudresourcemanager.googleapis.com",
+    "iap.googleapis.com",
   ])
   asset_bucket    = google_storage_bucket.assets.name
   snapshot_bucket = google_storage_bucket.snapshots.name

@@ -1,7 +1,7 @@
 resource "google_firestore_database" "default" {
   count       = var.manage_firestore_database ? 1 : 0
   project     = var.project_id
-  name        = "(default)"
+  name        = var.firestore_database
   location_id = var.firestore_location
   type        = "FIRESTORE_NATIVE"
 

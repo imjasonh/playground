@@ -37,7 +37,6 @@ output "images" {
     agent        = ko_build.agent.image_ref
     guestinit    = ko_build.guestinit.image_ref
     fortune      = ko_build.fortune.image_ref
-    api          = ko_build.api.image_ref
   }
 }
 

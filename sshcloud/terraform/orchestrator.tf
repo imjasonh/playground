@@ -34,6 +34,7 @@ resource "google_compute_instance" "orchestrator" {
     helpers             = templatefile("${path.module}/scripts/run-container.sh.tftpl", { registry_host = split("/", local.registry)[0], project_id = var.project_id })
     project_id          = var.project_id
     firestore_prefix    = var.firestore_prefix
+    firestore_database  = var.firestore_database
     zone                = var.zone
     mig_name            = "${local.prefix}-agents"
     hosts_path          = local.hosts_path

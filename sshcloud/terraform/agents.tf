@@ -61,20 +61,6 @@ resource "google_compute_instance_template" "agent" {
   ]
 }
 
-resource "google_compute_health_check" "agent" {
-  name                = "${local.prefix}-agent"
-  timeout_sec         = 5
-  check_interval_sec  = 10
-  healthy_threshold   = 2
-  unhealthy_threshold = 3
-
-  http_health_check {
-    port         = 8080
-    request_path = "/healthz"
-  }
-  depends_on = [google_project_service.services]
-}
-
 resource "google_compute_instance_group_manager" "agents" {
   name               = "${local.prefix}-agents"
   base_instance_name = "${local.prefix}-agent"

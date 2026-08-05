@@ -164,7 +164,7 @@ func (m *Machine) configure(ctx context.Context) error {
 	if err := m.put(ctx, "/machine-config", machineConfig); err != nil {
 		return fmt.Errorf("machine-config: %w", err)
 	}
-	bootArgs := "console=ttyS0 reboot=k panic=1 pci=off"
+	bootArgs := "console=ttyS0 reboot=k panic=1 pci=off ipv6.disable=1"
 	if m.cfg.BootArgs != "" {
 		bootArgs = bootArgs + " " + m.cfg.BootArgs
 	}

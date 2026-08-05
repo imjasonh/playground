@@ -62,9 +62,8 @@ func TestOrchestratorClientAddr(t *testing.T) {
 	agents["host-a"] = &backend.AgentClient{BaseURL: agent.URL}
 
 	dial := &backend.PlacedDial{
-		Placement:   place,
-		Agents:      backend.NewHostSet(agents, "host-a"),
-		DefaultHost: "host-a",
+		Placement: place,
+		Agents:    backend.NewHostSet(agents, "host-a"),
 	}
 	orch := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -170,7 +169,6 @@ func TestPlacedDialRefusesImplicitCrossHostRecovery(t *testing.T) {
 		Agents: backend.NewHostSet(map[string]*backend.AgentClient{
 			"host-b": {BaseURL: agent.URL},
 		}, "host-b"),
-		DefaultHost: "removed-host",
 	}
 	if _, err := dial.EnsureAddr(t.Context(), "alice", "fortune", "gabc", "", false); err == nil {
 		t.Fatal("stale placement implicitly booted on another host")

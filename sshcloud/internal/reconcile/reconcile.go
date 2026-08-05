@@ -123,13 +123,20 @@ func (c *Controller) reconcileEnsure(guard *placement.Guard, record placement.Re
 	switch {
 	case found == len(record.Operation.Generations):
 		desired := record.Operation.Desired
-		if len(desired) == 0 {
-			return fmt.Errorf("ensure operation %s/%s lacks durable generation identity", record.User, record.App)
-		}
+		identityComplete := len(desired) != 0
 		for _, generation := range desired {
 			if generation.SSHHostPublicKey == "" {
-				return fmt.Errorf("ensure operation %s/%s generation %s lacks SSH host key", record.User, record.App, generation.Gen)
+				identityComplete = false
+				break
 			}
+		}
+		if !identityComplete {
+			for _, gen := range record.Operation.Generations {
+				if err := target.StopContext(guard.Context(), record.User, record.App, gen); err != nil {
+					return fmt.Errorf("remove unpinned ensured generation %s: %w", gen, err)
+				}
+			}
+			return release(guard, finished)
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		err := guard.CommitState(ctx, record.Operation.TargetHost, desired)

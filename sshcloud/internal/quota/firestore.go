@@ -32,10 +32,17 @@ type windowDoc struct {
 }
 
 func NewFirestore(ctx context.Context, projectID, prefix string) (*Firestore, error) {
+	return NewFirestoreDatabase(ctx, projectID, "(default)", prefix)
+}
+
+func NewFirestoreDatabase(ctx context.Context, projectID, database, prefix string) (*Firestore, error) {
 	if projectID == "" || strings.TrimSpace(prefix) == "" {
 		return nil, fmt.Errorf("firestore project and prefix required")
 	}
-	client, err := firestore.NewClient(ctx, projectID)
+	if strings.TrimSpace(database) == "" {
+		return nil, fmt.Errorf("firestore database required")
+	}
+	client, err := firestore.NewClientWithDatabase(ctx, projectID, database)
 	if err != nil {
 		return nil, err
 	}

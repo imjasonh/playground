@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"math/rand"
 
 	"github.com/imjasonh/playground/sshcloud/internal/session"
@@ -23,11 +22,6 @@ var fortunes = []string{
 	"MicroVMs are just very small computers with trust issues.",
 	"Your future holds a short-lived SSH certificate.",
 	"Fortune favors the joined.",
-}
-
-// RunAppStub connects to the app backend (cert hop) or falls back to a stub UI.
-func RunAppStub(ctx context.Context, ch io.ReadWriter, hub *Hub, res Result) int {
-	return runAppStub(ctx, newTerm(ch), hub, res).Code
 }
 
 func RunAppSession(ctx context.Context, client ClientSession, hub *Hub, res Result) AppExit {

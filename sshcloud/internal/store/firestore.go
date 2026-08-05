@@ -32,14 +32,21 @@ func NewFirestore(ctx context.Context, projectID string) (*Firestore, error) {
 }
 
 func NewFirestoreWithPrefix(ctx context.Context, projectID, prefix string) (*Firestore, error) {
+	return NewFirestoreDatabase(ctx, projectID, "(default)", prefix)
+}
+
+func NewFirestoreDatabase(ctx context.Context, projectID, database, prefix string) (*Firestore, error) {
 	if projectID == "" {
 		return nil, fmt.Errorf("firestore project ID required")
+	}
+	if strings.TrimSpace(database) == "" {
+		return nil, fmt.Errorf("firestore database required")
 	}
 	prefix = strings.TrimSpace(prefix)
 	if prefix == "" {
 		return nil, fmt.Errorf("firestore collection prefix required")
 	}
-	client, err := firestore.NewClient(ctx, projectID)
+	client, err := firestore.NewClientWithDatabase(ctx, projectID, database)
 	if err != nil {
 		return nil, err
 	}

@@ -9,7 +9,8 @@ kernel_asset_path      = "../_assets/vmlinux"
 # Optional overrides:
 # name_prefix         = "sshcloud"
 # firestore_location  = "nam5"
-# manage_firestore_database = false # existing Native-mode default DB
+# manage_firestore_database = true
+# firestore_database       = "sshcloud"
 # firestore_prefix          = "sshcloud"
 # agent_count         = 2
 # Keep empty until quotas/rate limits are implemented. For a private smoke test,

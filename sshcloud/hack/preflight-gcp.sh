@@ -5,6 +5,8 @@ set -euo pipefail
 PROJECT="${1:?usage: preflight-gcp.sh PROJECT [REGION] [ZONE]}"
 REGION="${2:-us-central1}"
 ZONE="${3:-${REGION}-a}"
+FIRESTORE_DATABASE="${FIRESTORE_DATABASE:-sshcloud}"
+MANAGE_FIRESTORE_DATABASE="${MANAGE_FIRESTORE_DATABASE:-true}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 for command in gcloud terraform go; do
@@ -14,7 +16,18 @@ for command in gcloud terraform go; do
   }
 done
 
-echo "account: $(gcloud config get-value account 2>/dev/null)"
+cli_account="$(gcloud config get-value account 2>/dev/null)"
+echo "gcloud account: $cli_account"
+adc_token="$(gcloud auth application-default print-access-token)" || {
+  echo "Application Default Credentials are missing; run: gcloud auth application-default login" >&2
+  exit 1
+}
+adc_account="$(curl -fsS "https://oauth2.googleapis.com/tokeninfo?access_token=$adc_token" |
+  python3 -c 'import json,sys; print(json.load(sys.stdin).get("email","unknown"))' 2>/dev/null || echo unknown)"
+echo "ADC account: $adc_account"
+if [[ "$adc_account" != "unknown" && "$cli_account" != "$adc_account" ]]; then
+  echo "warning: gcloud and ADC use different principals; Terraform/ko use ADC" >&2
+fi
 gcloud projects describe "$PROJECT" --format='value(projectId)' >/dev/null
 
 required_services=(
@@ -27,6 +40,7 @@ required_services=(
   storage.googleapis.com
   serviceusage.googleapis.com
   cloudresourcemanager.googleapis.com
+  iap.googleapis.com
 )
 enabled="$(gcloud services list --enabled --project "$PROJECT" --format='value(config.name)')"
 missing=0
@@ -38,13 +52,17 @@ for service in "${required_services[@]}"; do
 done
 [[ "$missing" -eq 0 ]] || exit 1
 
-if ! gcloud firestore databases describe --database='(default)' --project "$PROJECT" \
-  --format='table(name,type,locationId)'; then
-  if [[ "${MANAGE_FIRESTORE_DATABASE:-false}" != "true" ]]; then
-    echo "a Native-mode (default) Firestore database is required; or set MANAGE_FIRESTORE_DATABASE=true and the Terraform variable" >&2
+database_type="$(gcloud firestore databases describe --database="$FIRESTORE_DATABASE" --project "$PROJECT" \
+  --format='value(type)' 2>/dev/null || true)"
+if [[ -z "$database_type" ]]; then
+  if [[ "$MANAGE_FIRESTORE_DATABASE" != "true" ]]; then
+    echo "Firestore database $FIRESTORE_DATABASE is missing; or set MANAGE_FIRESTORE_DATABASE=true and the Terraform variable" >&2
     exit 1
   fi
-  echo "Firestore default database will be created by Terraform"
+  echo "Firestore database $FIRESTORE_DATABASE will be created by Terraform"
+elif [[ "$database_type" != "FIRESTORE_NATIVE" ]]; then
+  echo "Firestore database $FIRESTORE_DATABASE has type $database_type, want FIRESTORE_NATIVE" >&2
+  exit 1
 fi
 gcloud compute machine-types describe n2-standard-4 --zone "$ZONE" --project "$PROJECT" \
   --format='value(name)' >/dev/null
@@ -64,5 +82,5 @@ terraform -chdir="$ROOT/terraform" init -backend=false -input=false >/dev/null
 terraform -chdir="$ROOT/terraform" validate >/dev/null
 go version
 
-echo "preflight passed for project=$PROJECT region=$REGION zone=$ZONE"
+echo "preflight passed for project=$PROJECT region=$REGION zone=$ZONE firestore=$FIRESTORE_DATABASE"
 echo "next: review terraform.tfvars, especially ssh_client_cidrs and manage_firestore_database"

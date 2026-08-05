@@ -16,7 +16,6 @@ import (
 type PlacedDial struct {
 	Placement       placement.Store
 	Agents          *HostSet
-	DefaultHost     string // used when no placement yet; empty falls back to Agents.DefaultHost
 	LeaseTTL        time.Duration
 	Quotas          quota.Store
 	MaxAwakePerUser int
@@ -25,34 +24,14 @@ type PlacedDial struct {
 	startUsers      map[string]*sync.Mutex
 }
 
-func (p *PlacedDial) resolve(host, user, app string, allowFallback bool) (*AgentClient, string, error) {
+func (p *PlacedDial) resolve(host, user, app string) (*AgentClient, string, error) {
 	if p.Agents == nil {
 		return nil, "", fmt.Errorf("no agents available for %s/%s", user, app)
 	}
 	if host == "" {
-		host = p.DefaultHost
-		if host == "" {
-			host = p.Agents.DefaultHost()
-		}
-		if host == "" {
-			return nil, "", fmt.Errorf("no placement for %s/%s and no default host", user, app)
-		}
+		return nil, "", fmt.Errorf("no placement for %s/%s", user, app)
 	}
 	c, ok := p.Agents.Get(host)
-	if !ok && allowFallback {
-		replacement := p.DefaultHost
-		if replacement == "" || replacement == host {
-			replacement = p.Agents.DefaultHost()
-		}
-		if replacement == "" || replacement == host {
-			return nil, "", fmt.Errorf("placed host %q is gone and no replacement is ready for %s/%s", host, user, app)
-		}
-		c, ok = p.Agents.Get(replacement)
-		if !ok {
-			return nil, "", fmt.Errorf("replacement host %q is not ready for %s/%s", replacement, user, app)
-		}
-		host = replacement
-	}
 	if !ok {
 		return nil, "", fmt.Errorf("placed host %q is unavailable for %s/%s", host, user, app)
 	}
@@ -276,7 +255,7 @@ func (p *PlacedDial) Stop(ctx context.Context, user, app, gen string) error {
 	if guard.HostID() == "" {
 		return fmt.Errorf("no placement for %s/%s", user, app)
 	}
-	c, _, err := p.resolve(guard.HostID(), user, app, false)
+	c, _, err := p.resolve(guard.HostID(), user, app)
 	if err != nil {
 		return err
 	}
@@ -307,7 +286,7 @@ func (p *PlacedDial) SetNoIdle(ctx context.Context, user, app, gen string, noIdl
 	if guard.HostID() == "" {
 		return fmt.Errorf("no placement for %s/%s", user, app)
 	}
-	c, _, err := p.resolve(guard.HostID(), user, app, false)
+	c, _, err := p.resolve(guard.HostID(), user, app)
 	if err != nil {
 		return err
 	}
@@ -320,7 +299,7 @@ func (p *PlacedDial) StatusView(ctx context.Context, user, app, gen string) (Ins
 	if err != nil || !ok {
 		return InstanceView{}, false, err
 	}
-	client, _, err := p.resolve(record.HostID, user, app, false)
+	client, _, err := p.resolve(record.HostID, user, app)
 	if err != nil {
 		return InstanceView{}, false, err
 	}

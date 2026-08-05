@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -24,11 +25,11 @@ func ipCommand(args ...string) *exec.Cmd {
 	return exec.Command("sudo", append([]string{"-n", "ip"}, args...)...)
 }
 
-func netfilterCommand(args ...string) *exec.Cmd {
+func netfilterCommand(binary string, args ...string) *exec.Cmd {
 	if os.Geteuid() == 0 || os.Getenv("SSHCLOUD_IP_DIRECT") == "1" {
-		return exec.Command("iptables", args...)
+		return exec.Command(binary, args...)
 	}
-	return exec.Command("sudo", append([]string{"-n", "iptables"}, args...)...)
+	return exec.Command("sudo", append([]string{"-n", binary}, args...)...)
 }
 
 // CreateTap creates and configures a TAP device (requires CAP_NET_ADMIN).
@@ -76,6 +77,17 @@ func DeleteTap(name string) error {
 }
 
 func isolateTap(name string) error {
+	_ = os.WriteFile(filepath.Join("/proc/sys/net/ipv6/conf", name, "disable_ipv6"), []byte("1\n"), 0o644)
+	for _, binary := range []string{"iptables", "ip6tables"} {
+		if err := installIsolationRules(binary, name); err != nil {
+			deleteIsolationRules(name)
+			return err
+		}
+	}
+	return nil
+}
+
+func installIsolationRules(binary, name string) error {
 	rules := [][]string{
 		{"INPUT", "-i", name, "-j", "DROP"},
 		{"INPUT", "-i", name, "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT"},
@@ -83,13 +95,12 @@ func isolateTap(name string) error {
 	}
 	for _, rule := range rules {
 		check := append([]string{"-C"}, rule...)
-		if netfilterCommand(check...).Run() == nil {
+		if netfilterCommand(binary, check...).Run() == nil {
 			continue
 		}
 		add := append([]string{"-I", rule[0], "1"}, rule[1:]...)
-		if out, err := netfilterCommand(add...).CombinedOutput(); err != nil {
-			deleteIsolationRules(name)
-			return fmt.Errorf("isolate TAP %s: %v\n%s", name, err, out)
+		if out, err := netfilterCommand(binary, add...).CombinedOutput(); err != nil {
+			return fmt.Errorf("isolate TAP %s with %s: %v\n%s", name, binary, err, out)
 		}
 	}
 	return nil
@@ -101,9 +112,11 @@ func deleteIsolationRules(name string) {
 		{"INPUT", "-i", name, "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT"},
 		{"FORWARD", "-i", name, "-j", "DROP"},
 	}
-	for _, rule := range rules {
-		del := append([]string{"-D"}, rule...)
-		for netfilterCommand(del...).Run() == nil {
+	for _, binary := range []string{"iptables", "ip6tables"} {
+		for _, rule := range rules {
+			del := append([]string{"-D"}, rule...)
+			for netfilterCommand(binary, del...).Run() == nil {
+			}
 		}
 	}
 }

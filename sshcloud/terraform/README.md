@@ -12,7 +12,7 @@ runner `/32` while quotas and abuse controls remain unfinished.
 
 | File | What |
 |------|------|
-| `images.tf` | `ko_build` for `gateway`, `orchestrator`, `agent`, `guestinit`, `fortune`, `api` |
+| `images.tf` | `ko_build` for `gateway`, `orchestrator`, `agent`, `guestinit`, `fortune` |
 | `demo.tf` | Optional bootstrap user + `local-exec` `ssh deploy@… --image=…` smoke test |
 | `firestore.tf` | Native-mode `(default)` database |
 | `storage.tf` | Snapshot + platform-asset buckets, Artifact Registry |
@@ -22,7 +22,6 @@ runner `/32` while quotas and abuse controls remain unfinished.
 | `agents.tf` | Instance template + zonal MIG (`enable_nested_virtualization`) |
 | `network.tf` | VPC/NAT, opt-in public `:22`, tagged internal APIs, agent SSH relay range |
 
-The `api` image is built (scaffold stub) but not deployed as a VM.
 `fortune` is a **sample user app image** (digest-pinned); deploy it through the
 gateway — it is not a platform builtin.
 
@@ -34,19 +33,19 @@ Storage, Secret Manager, and Artifact Registry resources; modify project IAM;
 act as the created service accounts; and push Artifact Registry images.
 Application Default Credentials are used by both Google and ko providers.
 
-The module does **not** assume an empty/disposable project. By default
-`manage_firestore_database=false`: the project must already have a Native-mode
-`(default)` Firestore database. Collections are isolated under
-`firestore_prefix` (default `sshcloud`). Set database management true only when
-you intentionally want Terraform to create the default database in a project
-that does not already have one.
+The module does **not** assume an empty/disposable project. By default it creates
+a dedicated Native-mode database named `sshcloud`, and collections are further
+isolated under `firestore_prefix`. This avoids collisions with an existing
+`(default)` database. Conditional `roles/datastore.user` bindings restrict the
+gateway and orchestrator to that exact database; the collection prefix is
+additional namespace separation rather than the primary IAM boundary.
 
-If you choose to manage an existing default database, set the variable true,
-match its immutable location, and import it before planning:
+If the named database already exists, keep management enabled, match its
+immutable location, and import it before planning:
 
 ```bash
 terraform import 'google_firestore_database.default[0]' \
-  'projects/PROJECT/databases/(default)'
+  'projects/PROJECT/databases/sshcloud'
 ```
 
 ```bash
@@ -62,6 +61,7 @@ gcloud services enable \
   compute.googleapis.com firestore.googleapis.com secretmanager.googleapis.com \
   artifactregistry.googleapis.com iam.googleapis.com iamcredentials.googleapis.com \
   storage.googleapis.com serviceusage.googleapis.com cloudresourcemanager.googleapis.com \
+  iap.googleapis.com \
   --project=YOUR_PROJECT
 
 bash ../hack/preflight-gcp.sh YOUR_PROJECT us-central1 us-central1-a
@@ -103,6 +103,9 @@ gcloud compute instance-groups managed list-instances sshcloud-agents \
 curl --fail http://ORCHESTRATOR_IP:8090/readyz
 # Authenticated GET /v1/diagnostics correlates placements, capacity and inventory.
 ```
+
+The operator opening an IAP tunnel needs `roles/iap.tunnelResourceAccessor`
+plus OS Login/instance SSH access (for example `roles/compute.osLogin`).
 
 Host sshd on the gateway is moved to **:2222** (IAP) so platform SSH can own `:22`.
 Terraform uploads the exact local Firecracker/kernel files as content-addressed

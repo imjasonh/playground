@@ -33,7 +33,6 @@ resource "terraform_data" "deploy_fortune" {
     google_compute_instance.gateway,
     google_compute_instance_group_manager.agents,
     google_compute_instance.orchestrator,
-    google_compute_health_check.agent,
     ko_build.fortune,
   ]
 

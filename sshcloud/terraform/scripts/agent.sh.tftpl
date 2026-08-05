@@ -7,6 +7,7 @@ retry 10 apt-get update -y
 retry 10 apt-get install -y e2fsprogs iproute2 iptables
 install -d -m 0755 /var/lib/sshcloud/assets /var/lib/sshcloud/agent /usr/local/lib/sshcloud
 id sshcloud >/dev/null 2>&1 || useradd --system --home-dir /var/lib/sshcloud --shell /usr/sbin/nologin sshcloud
+install -o sshcloud -g sshcloud -m 0600 /dev/null /var/lib/sshcloud/xtables.lock
 
 # KVM access for Firecracker (nested virt).
 if [[ -e /dev/kvm ]]; then
@@ -64,6 +65,7 @@ User=sshcloud
 Group=sshcloud
 Environment=HOME=/var/lib/sshcloud
 Environment=SSHCLOUD_IP_DIRECT=1
+Environment=XTABLES_LOCKFILE=/var/lib/sshcloud/xtables.lock
 ExecStart=/usr/local/lib/sshcloud/agent \
   -listen $${INTERNAL_IP}:8080 \
   -work-dir /var/lib/sshcloud/agent \
@@ -83,7 +85,7 @@ ExecStart=/usr/local/lib/sshcloud/agent \
 Restart=always
 RestartSec=5
 TimeoutStopSec=15min
-KillMode=control-group
+KillMode=mixed
 LimitNOFILE=65536
 AmbientCapabilities=CAP_NET_ADMIN
 CapabilityBoundingSet=CAP_NET_ADMIN

@@ -541,7 +541,7 @@ bundle exec fastlane test
 |-----------|------|-------|
 | `gitdb/` | git repository explorer backed by SQLite virtual tables | `go test ./...` |
 | `ocidb/` | OCI registry explorer backed by SQLite virtual tables | `go test ./...` |
-| `sshcloud/` | SSH App Cloud — gateway/orchestrator/agent/api (Firecracker SSH PaaS) | `go test ./...` |
+| `sshcloud/` | SSH App Cloud — gateway/orchestrator/agent (Firecracker SSH PaaS) | `go test ./...` |
 
 ## Current Rust apps
 

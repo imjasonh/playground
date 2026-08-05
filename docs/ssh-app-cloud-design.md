@@ -78,7 +78,7 @@
 | Sessions / user / app | **Max 1** — second connect is **rejected** (not replaced) |
 | Join spam | **Rate limits in v1**; invite codes later if needed |
 | Account recovery | **None in v1** (lost all keys → new username / support-only) |
-| Repo layout | **`sshcloud/`** — one Go module; `cmd/{gateway,orchestrator,agent,api}` |
+| Repo layout | **`sshcloud/`** — one Go module; `cmd/{gateway,orchestrator,agent}` plus guest/app tools |
 
 ### Starter quotas & rate limits
 
@@ -547,7 +547,7 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
 - Guest egress is deny-all for the private trial; an audited global allowlist is later.
 
 **Implemented in `sshcloud/terraform/` (first environment):**
-- `ko_build` images: gateway, orchestrator, agent, guestinit, fortune (sample app), api (api image only; no VM yet)
+- `ko_build` images: gateway, orchestrator, agent, guestinit, fortune (sample app)
 - Firestore Native `(default)`, snapshot + asset GCS buckets, Artifact Registry
 - Secret Manager: gateway host key, user CA, and separate per-hop control tokens
 - Gateway static IP (`:22` only when CIDRs are explicitly supplied),
@@ -666,7 +666,7 @@ hits, wake/deploy denials — still **no session bytes**.
 7. **Global allowlist contents** — what destinations ship by default.  
 8. **Internal API auth** — interim per-hop bearer tokens are implemented; replace
    them with workload identity + mTLS between gateway/orchestrator/agent.
-9. ~~**Repo layout**~~ — **`sshcloud/`** single Go module (`cmd/{gateway,orchestrator,agent,api}`, `internal/…`, `images/fortune`, `terraform/`).  
+9. ~~**Repo layout**~~ — **`sshcloud/`** single Go module (`cmd/{gateway,orchestrator,agent}`, `internal/…`, `images/fortune`, `terraform/`).
 10. **Threat model** — tenant breakout, snapshot confidentiality in GCS, CA theft.  
 11. **Hub footgun UX** — deploy-time warnings / `~/.ssh/config` docs when local
     username collides with an app name (see §3).  

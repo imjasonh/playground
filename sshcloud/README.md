@@ -7,8 +7,8 @@ Design: [`docs/ssh-app-cloud-design.md`](../docs/ssh-app-cloud-design.md).
 
 > **Prototype safety boundary:** this branch is suitable for local/KVM and
 > CIDR-restricted GCP smoke tests. It is not ready for public self-service.
-> Quotas/rate limits, app host identity, full SSH request proxying, jailer-based
-> isolation, egress policy, and production recovery/reconciliation remain open.
+> Jailer-grade VMM isolation, workload identity/mTLS, optional audited egress,
+> hard-host-loss policy, and broader OCI runtime compatibility remain open.
 
 ## Layout
 
@@ -21,7 +21,6 @@ Design: [`docs/ssh-app-cloud-design.md`](../docs/ssh-app-cloud-design.md).
 | `cmd/mkrootfs` | Optional offline ext4 builder (test/dev; not the deploy path) |
 | `cmd/ocirootfs` | Materialize digest-pinned OCI image → cached ext4 |
 | `cmd/orchestrator` | Placement + cross-host migrate HTTP API |
-| `cmd/api` | Internal control API stub |
 | `internal/firecracker` | Firecracker API client, TAP, pause/snapshot/restore |
 | `internal/snapshot` | Snapshot package format + local/GCS blob stores |
 | `internal/placement` | user/app → host ID map (memory or Firestore) |

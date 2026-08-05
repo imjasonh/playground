@@ -111,16 +111,3 @@ resource "google_compute_firewall" "gateway_to_agent_relays" {
   source_tags = ["${local.prefix}-gateway"]
   target_tags = ["${local.prefix}-agent"]
 }
-
-resource "google_compute_firewall" "agent_health_checks" {
-  name    = "${local.prefix}-agent-health-checks"
-  network = google_compute_network.sshcloud.name
-
-  allow {
-    protocol = "tcp"
-    ports    = ["8080"]
-  }
-
-  source_ranges = ["35.191.0.0/16", "130.211.0.0/22"]
-  target_tags   = ["${local.prefix}-agent"]
-}

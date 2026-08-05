@@ -37,6 +37,7 @@ func (h *Handler) Mount(mux *http.ServeMux) {
 	api.HandleFunc("GET /v1/instances/status", h.status)
 	api.HandleFunc("GET /v1/host/capacity", h.capacity)
 	api.HandleFunc("GET /v1/host/instances", h.instances)
+	api.HandleFunc("GET /v1/host/orphans", h.orphans)
 	api.HandleFunc("POST /v1/host/cordon", h.cordon)
 	api.HandleFunc("POST /v1/host/uncordon", h.uncordon)
 	mux.Handle("/v1/", controlauth.Require(h.Token, api))
@@ -296,6 +297,15 @@ func (h *Handler) capacity(w http.ResponseWriter, _ *http.Request) {
 
 func (h *Handler) instances(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, map[string]any{"instances": h.Manager.ListInstances()})
+}
+
+func (h *Handler) orphans(w http.ResponseWriter, _ *http.Request) {
+	orphans, err := h.Manager.Orphans()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]any{"orphans": orphans})
 }
 
 func (h *Handler) cordon(w http.ResponseWriter, r *http.Request) {

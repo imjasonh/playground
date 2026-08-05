@@ -28,9 +28,19 @@ variable "firestore_location" {
 }
 
 variable "manage_firestore_database" {
-  description = "Create the project's (default) Firestore database. Leave false for an existing project/database."
+  description = "Create the dedicated Firestore database. Set false only after importing/managing it elsewhere."
   type        = bool
-  default     = false
+  default     = true
+}
+
+variable "firestore_database" {
+  description = "Dedicated Firestore database ID used only by sshcloud"
+  type        = string
+  default     = "sshcloud"
+  validation {
+    condition     = can(regex("^[a-z][a-z0-9-]{3,62}$", var.firestore_database))
+    error_message = "firestore_database must be 4-63 lowercase letters, digits, or hyphens."
+  }
 }
 
 variable "firestore_prefix" {
