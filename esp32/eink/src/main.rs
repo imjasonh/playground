@@ -18,6 +18,7 @@ mod ssh_config;
 const FW_VERSION: &str = env!("GIT_SHA");
 const EINK_OTA_REPO: &str = "ghcr.io/imjasonh/esp32-eink";
 const WIFI_NAMESPACE: &str = "wifi";
+const SSH_THREAD_STACK_SIZE: usize = 32 * 1024;
 
 fn main() -> Result<()> {
     esp_idf_svc::sys::link_patches();
@@ -63,25 +64,7 @@ fn main() -> Result<()> {
 
     match ssh_config {
         Some(config) => {
-            tracing::info!(
-                host = %config.host,
-                port = config.port,
-                username = %config.username,
-                "ssh: connecting",
-            );
-            match ssh_client::connect_display_disconnect(&config, &client_key, &mut terminal) {
-                Ok(()) => {
-                    terminal.feed(b"\r\n");
-                    terminal.write_line("Disconnected.");
-                    tracing::info!("ssh: display command completed");
-                }
-                Err(error) => {
-                    tracing::error!(error = %format!("{error:#}"), "ssh session failed");
-                    terminal.feed(b"\r\n");
-                    terminal.write_line("SSH ERROR:");
-                    terminal.write_line(&format!("{error:#}"));
-                }
-            }
+            run_ssh_on_worker(&config, &client_key, &mut terminal)?;
         }
         None => {
             terminal.write_line("SSH is not provisioned.");
@@ -126,6 +109,50 @@ fn main() -> Result<()> {
     loop {
         std::thread::sleep(Duration::from_secs(3600));
     }
+}
+
+fn run_ssh_on_worker(
+    config: &ssh_config::SshConfig,
+    client_key: &sunset::SignKey,
+    terminal: &mut TerminalBuffer,
+) -> Result<()> {
+    // Sunset's borrowed packet buffers, network buffer, and channel buffer
+    // total roughly 13 KiB before its protocol state and call frames. Keep
+    // them off the 10 KiB ESP-IDF main task stack. This scoped worker is
+    // joined before the 48 KiB display framebuffer is allocated, and OTA
+    // starts only after the display refresh, so the large allocations do not
+    // overlap.
+    std::thread::scope(|scope| {
+        let worker = std::thread::Builder::new()
+            .name("ssh-client".into())
+            .stack_size(SSH_THREAD_STACK_SIZE)
+            .spawn_scoped(scope, || {
+                tracing::info!(
+                    host = %config.host,
+                    port = config.port,
+                    username = %config.username,
+                    "ssh: connecting",
+                );
+                match ssh_client::connect_display_disconnect(config, client_key, terminal) {
+                    Ok(()) => {
+                        terminal.feed(b"\r\n");
+                        terminal.write_line("Disconnected.");
+                        tracing::info!("ssh: display command completed");
+                    }
+                    Err(error) => {
+                        tracing::error!(error = %format!("{error:#}"), "ssh session failed");
+                        terminal.feed(b"\r\n");
+                        terminal.write_line("SSH ERROR:");
+                        terminal.write_line(&format!("{error:#}"));
+                    }
+                }
+            })
+            .map_err(|error| anyhow!("spawn 32 KiB SSH worker: {error}"))?;
+
+        worker
+            .join()
+            .map_err(|_| anyhow!("SSH worker panicked before producing display output"))
+    })
 }
 
 fn read_wifi_creds(partition: EspDefaultNvsPartition) -> Result<Option<(String, String)>> {

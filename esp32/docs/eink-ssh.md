@@ -106,6 +106,11 @@ One monochrome framebuffer costs 48,000 bytes. Text uses the built-in 9×18
 monospace font with 19-pixel line spacing and 40-pixel horizontal margins:
 80 columns × 25 rows fit in 800×480 while remaining physically readable.
 
+The SSH handshake and session run on a dedicated 32 KiB worker stack, which is
+joined before allocating the framebuffer. The signed-OTA thread starts only
+after the panel refresh. This deliberately prevents the SSH packet buffers,
+display framebuffer, and OTA/TLS stack from occupying RAM at the same time.
+
 The terminal parser handles printable ASCII, CR/LF, tabs, backspace, basic
 cursor movement, line/screen clearing, and ignores color attributes. It is
 intentionally not a complete xterm implementation yet.
