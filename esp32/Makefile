@@ -239,7 +239,9 @@ publish: check-image-size check-gh-env
 	    test -n "$$DIGEST" || { echo "ERROR: publisher did not emit a 'digest:' line on stdout"; exit 1; }; \
 	    echo ">>> Signing $(OCI_REPO)@$$DIGEST with cosign (keyless OIDC)"; \
 	    COSIGN_REGISTRY_USERNAME=$(COSIGN_REGISTRY_USERNAME) COSIGN_REGISTRY_PASSWORD="$$GH_TOKEN" \
-	        cosign sign --yes $(OCI_REPO)@$$DIGEST
+	        cosign sign --yes \
+	            --signing-config $(CURDIR)/trust/signing-config-rekor-v2.json \
+	            $(OCI_REPO)@$$DIGEST
 
 # Pull the latest artifact from OCI_REPO and verify its layer SHA matches
 # our locally-built firmware. Confirms the round trip works.

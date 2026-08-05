@@ -149,10 +149,11 @@ Provisioning must trust this exact keyless-signing identity:
 https://github.com/imjasonh/playground/.github/workflows/esp32-publish.yml@refs/heads/main
 ```
 
-Rekor verification is offline: Cosign's bundle carries the SET, checkpoint,
-and inclusion proof. The device verifies those against its provisioned Rekor
-key and checks Fulcio certificate validity at the authenticated integrated
-time. It neither contacts Rekor nor needs a current clock for OTA.
+Rekor verification is offline. For v1, the bundle carries a SET, checkpoint,
+and inclusion proof; for v2 it carries an Ed25519-signed checkpoint, inclusion
+proof, and RFC3161 TSA timestamp. The firmware's versioned trust set contains
+overlapping old/current shard keys and TSA certificates. It neither contacts
+Rekor nor needs a current clock for OTA.
 
 An OTA image is marked valid only after both WiFi and a full display refresh
 succeed. A failed display bring-up reboots into the previous slot.

@@ -134,9 +134,6 @@ struct TrustConfig {
     identities: Vec<TrustedIdentity>,
     fulcio_root_pem: PathBuf,
     fulcio_intermediate_pem: PathBuf,
-    rekor_public_key_pem: PathBuf,
-    rekor_valid_from: u64,
-    rekor_checkpoint_origin: String,
 }
 
 #[derive(Deserialize, serde::Serialize, Debug)]
@@ -289,14 +286,6 @@ fn main() -> Result<()> {
     }
     if cfg.trust.fulcio_intermediate_pem.is_relative() {
         cfg.trust.fulcio_intermediate_pem = config_dir.join(&cfg.trust.fulcio_intermediate_pem);
-    }
-    if cfg.trust.rekor_public_key_pem.is_relative() {
-        cfg.trust.rekor_public_key_pem = config_dir.join(&cfg.trust.rekor_public_key_pem);
-    }
-    if cfg.trust.rekor_checkpoint_origin.trim().is_empty()
-        || cfg.trust.rekor_checkpoint_origin.len() > 63
-    {
-        bail!("trust.rekor_checkpoint_origin must contain 1..=63 bytes");
     }
     if let Some(gcp) = cfg.gcp.as_mut() {
         if gcp.sa_key_pem.is_relative() {
@@ -504,28 +493,6 @@ fn write_csv(
             .to_str()
             .ok_or_else(|| anyhow!("fulcio_intermediate_pem path not UTF-8"))?,
     ])?;
-    wtr.write_record(&[
-        "rekor_key",
-        "file",
-        "binary",
-        cfg.trust
-            .rekor_public_key_pem
-            .to_str()
-            .ok_or_else(|| anyhow!("rekor_public_key_pem path not UTF-8"))?,
-    ])?;
-    wtr.write_record(&[
-        "rekor_from",
-        "data",
-        "u64",
-        &cfg.trust.rekor_valid_from.to_string(),
-    ])?;
-    wtr.write_record(&[
-        "rekor_origin",
-        "data",
-        "string",
-        &cfg.trust.rekor_checkpoint_origin,
-    ])?;
-
     // gcp namespace (optional)
     if let Some(gcp) = &cfg.gcp {
         wtr.write_record(&["gcp", "namespace", "", ""])?;

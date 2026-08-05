@@ -12,10 +12,6 @@ pass = "your-wifi-password"
 # be re-fetched + re-provisioned if Sigstore rotates them (rare).
 fulcio_root_pem = "trust/fulcio_root.pem"
 fulcio_intermediate_pem = "trust/fulcio_intermediate.pem"
-rekor_public_key_pem = "trust/rekor.pub"
-# From Sigstore's trusted_root.json for this Rekor log key.
-rekor_valid_from = 1610452407
-rekor_checkpoint_origin = "rekor.sigstore.dev"
 
 # Allowlist of (identity, issuer) pairs the OTA verifier accepts as
 # signers of incoming firmware. Identity is the SAN value in the Fulcio

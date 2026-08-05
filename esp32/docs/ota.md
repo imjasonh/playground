@@ -98,9 +98,6 @@ ota     poll_secs       u32    optional override (default 60)
 trust   identities      blob   JSON: [{"identity":"...","issuer":"..."}, ...]
 trust   fulcio_root     blob   PEM bytes (Sigstore root CA)
 trust   fulcio_inter    blob   PEM bytes (Sigstore intermediate CA)
-trust   rekor_key       blob   PEM public key for offline Rekor verification
-trust   rekor_from      u64    Rekor key validity start (UNIX seconds)
-trust   rekor_origin    str    checkpoint note signer name
 
 gcp     project_id      str    optional; cloud-logging GCP project
 gcp     sa_email        str    optional; logging service-account email
@@ -132,9 +129,6 @@ pass = "..."
 [trust]
 fulcio_root_pem = "trust/fulcio_root.pem"
 fulcio_intermediate_pem = "trust/fulcio_intermediate.pem"
-rekor_public_key_pem = "trust/rekor.pub"
-rekor_valid_from = 1610452407
-rekor_checkpoint_origin = "rekor.sigstore.dev"
 
 [[trust.identities]]
 identity = "https://github.com/imjasonh/playground/.github/workflows/esp32-publish.yml@refs/heads/main"
@@ -143,9 +137,11 @@ issuer = "https://token.actions.githubusercontent.com"
 
 Add a developer email/issuer identity only when manual publishing is required;
 the main-branch workflow is the least-privilege default.
-`trust/rekor.pub`, its validity start, and checkpoint origin come from
-Sigstore's `targets/trusted_root.json`. Rekor key rotation requires updating
-those values and USB re-provisioning; OTA cannot replace its own trust anchor.
+Rekor shard keys and TSA certificates are public, versioned firmware inputs
+under `trust/`, sourced from Sigstore's TUF targets. A transition firmware keeps
+old and new shard keys together and is published while the old shard still
+accepts entries, allowing the signed OTA itself to rotate public trust without
+USB access.
 
 Lose this file = lose your secrets. Keep a copy in a password manager.
 
@@ -177,8 +173,7 @@ polling GHCR. From then on updates flow over OTA.
 
 If a device boots and any of the required NVS keys (`wifi/ssid`,
 `wifi/pass`, `trust/identities`, `trust/fulcio_root`,
-`trust/fulcio_inter`, `trust/rekor_key`, `trust/rekor_from`, or
-`trust/rekor_origin`) is missing, the firmware logs
+`trust/fulcio_inter`) is missing, the firmware logs
 `NOT PROVISIONED — run \`make provision\`` to serial every 30 seconds
 and refuses to start Wi-Fi or OTA. No surprise boots, no fallback
 creds. Run `make provision` to fix.
@@ -357,17 +352,17 @@ For each candidate update, before downloading the firmware blob:
    URI). Read OIDC issuer from extension OID
    `1.3.6.1.4.1.57264.1.1`. Reject if `(identity, issuer)` isn't in
    `trust/identities` (loaded from NVS at boot).
-4. **Offline Rekor verification.** Require one Rekor DSSE entry. Verify its
-   provisioned log ID/key validity, Signed Entry Timestamp, signed checkpoint,
-   and RFC 6962 inclusion proof. Bind the canonicalized log body back to the
-   bundle's leaf certificate, DSSE signature, and payload hash. No Rekor
-   network request is made.
+4. **Offline transparency verification.** Select a versioned Rekor shard key by
+   full log ID. For v1, verify the SET, P-256 checkpoint, integrated time, and
+   inclusion proof. For v2, verify the hashedrekord DSSE binding, Ed25519
+   checkpoint, inclusion proof, and RFC3161 TSA timestamp. No Rekor network
+   request is made.
 5. **Cert chain and signing time.** Verify leaf was signed by the provisioned
    Sigstore intermediate (P-384 ECDSA-SHA384). Verify intermediate was signed
    by the provisioned Sigstore root (also P-384 ECDSA-SHA384). Both are loaded
    from NVS (`trust/fulcio_inter`, `trust/fulcio_root`). Require every
-   certificate to be valid at Rekor's authenticated integrated time, not at
-   the device's current time.
+   certificate to be valid at Rekor v1's integrated time or the v2 TSA time,
+   not at the device's current time.
 6. **DSSE signature.** Decode `dsseEnvelope.payload` (base64) and
    `signatures[0].sig` (base64). Compute the DSSE PAE
    (`"DSSEv1 <len> <payloadType> <len> <payload>"`). Verify the
@@ -382,11 +377,21 @@ If any step fails, the verifier returns an error. The OTA loop logs
 it (with anyhow chain), bumps `consecutive_failures` (driving
 backoff), and never touches the OTA partition.
 
+### Rekor v2 shard rotation
+
+Sigstore v2 shards approximately every six months. Before signing switches,
+update the committed `trust/rekor-v2.pub` and
+`trust/signing-config-rekor-v2.json` in a normal reviewed release while the
+previous shard still accepts entries. Keep previous verification keys in the
+firmware keyring so old bundles remain verifiable. A device that misses the
+entire overlap may still require USB recovery; rotation therefore depends on
+Sigstore's announced overlap window, not an online Rekor lookup at OTA time.
+
 ## Trust separation: soft vs hard
 
-Storing `TRUSTED_IDENTITIES` and the Sigstore CAs in NVS gives a
-**clean architectural separation**: the OTA-distributed firmware
-contains no policy data, and the same image runs on every device.
+Per-device signer identities and Fulcio CAs live in NVS. Public Rekor shard
+keys and TSA certificates are versioned with firmware so overlapping shards
+can rotate through OTA.
 
 But it's a **soft guarantee**. The OTA-distributed firmware code is
 what reads NVS and runs the verifier; a malicious image could ignore

@@ -7,6 +7,9 @@ publish = false
 [dependencies]
 anyhow = "1"
 base64 = "0.23"
+cms = { version = "0.2.3", default-features = false }
+der = { version = "0.7.10", default-features = false, features = ["alloc", "derive", "oid"] }
+ed25519-dalek = { version = "3", default-features = false, features = ["pkcs8"] }
 hex = "0.4"
 p256 = { version = "0.13", features = ["ecdsa"] }
 p384 = { version = "0.13", features = ["ecdsa"] }
