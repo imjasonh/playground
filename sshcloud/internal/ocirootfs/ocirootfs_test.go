@@ -15,6 +15,8 @@ import (
 
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/registry"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 
 	"github.com/imjasonh/playground/sshcloud/internal/guestinit"
@@ -96,7 +98,7 @@ func TestMaterializeFromLocalRegistry(t *testing.T) {
 	ref := fmt.Sprintf("%s/sshcloud/demo@%s", host, digest.String())
 
 	cache := t.TempDir()
-	res, err := Materialize(context.Background(), ref, Options{CacheDir: cache, SizeMB: 8})
+	res, err := Materialize(context.Background(), ref, Options{CacheDir: cache, SizeMB: 64})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +124,7 @@ func TestMaterializeFromLocalRegistry(t *testing.T) {
 		t.Fatalf("whiteout file still present:\n%s", listing)
 	}
 
-	again, err := Materialize(context.Background(), ref, Options{CacheDir: cache, SizeMB: 8})
+	again, err := Materialize(context.Background(), ref, Options{CacheDir: cache, SizeMB: 64})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,5 +133,37 @@ func TestMaterializeFromLocalRegistry(t *testing.T) {
 	}
 	if strings.Join(guestinit.Argv(again.Spec), " ") != "/app/bin --ssh" {
 		t.Fatalf("cached spec %+v", again.Spec)
+	}
+}
+
+func TestSpecRejectsUnsupportedRuntimeContract(t *testing.T) {
+	t.Parallel()
+	base := withConfig(t, imageFromLayers(t, layerFromEntries(t, []tarEnt{{name: "app", body: "x"}})), []string{"/app"}, nil, nil, "/")
+	tests := []struct {
+		name   string
+		mutate func(*v1.ConfigFile)
+		want   string
+	}{
+		{name: "user", mutate: func(cfg *v1.ConfigFile) { cfg.Config.User = "65532" }, want: "User"},
+		{name: "volumes", mutate: func(cfg *v1.ConfigFile) {
+			cfg.Config.Volumes = map[string]struct{}{"/data": {}}
+		}, want: "volumes"},
+		{name: "architecture", mutate: func(cfg *v1.ConfigFile) { cfg.Architecture = "arm64" }, want: "architecture"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := base.ConfigFile()
+			if err != nil {
+				t.Fatal(err)
+			}
+			tc.mutate(cfg)
+			image, err := mutate.ConfigFile(base, cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := specFromImage(image); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error %v, want %q", err, tc.want)
+			}
+		})
 	}
 }

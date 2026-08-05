@@ -118,6 +118,7 @@ func (m *Migrator) MigrateGeneration(ctx context.Context, user, app, gen, toHost
 	if len(matching) == 1 {
 		desiredGenerations = placement.UpsertGeneration(desiredGenerations, placement.Generation{
 			Gen: matching[0].Gen, Image: matching[0].Image, Tier: matching[0].Tier, State: "running",
+			SSHHostPublicKey: matching[0].SSHHostPublicKey,
 		})
 	}
 	operation := placement.Operation{

@@ -180,6 +180,7 @@ func scanWhiteouts(layer v1.Layer, remainingBytes int64, entries *int64) (opaque
 
 func extractEntry(root *os.Root, hdr *tar.Header, name string, r io.Reader, maxBytes int64, written *int64) error {
 	mode := hdr.FileInfo().Mode()
+	permissions := entryMode(mode)
 
 	switch hdr.Typeflag {
 	case tar.TypeDir:
@@ -188,10 +189,10 @@ func extractEntry(root *os.Root, hdr *tar.Header, name string, r io.Reader, maxB
 				return err
 			}
 		}
-		if err := root.MkdirAll(name, dirPerm(mode)); err != nil {
+		if err := root.MkdirAll(name, dirPerm(mode).Perm()); err != nil {
 			return err
 		}
-		return root.Chmod(name, dirPerm(mode))
+		return root.Chmod(name, permissions)
 	case tar.TypeReg, tar.TypeRegA:
 		if hdr.Size < 0 {
 			return fmt.Errorf("negative file size for %q", name)
@@ -205,7 +206,7 @@ func extractEntry(root *os.Root, hdr *tar.Header, name string, r io.Reader, maxB
 		if err := root.RemoveAll(name); err != nil {
 			return err
 		}
-		if err := writeFile(root, name, r, hdr.Size, mode.Perm()); err != nil {
+		if err := writeFile(root, name, r, hdr.Size, permissions); err != nil {
 			return err
 		}
 		*written += hdr.Size
@@ -239,7 +240,7 @@ func extractEntry(root *os.Root, hdr *tar.Header, name string, r io.Reader, maxB
 }
 
 func writeFile(root *os.Root, name string, r io.Reader, size int64, perm os.FileMode) error {
-	f, err := root.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, perm)
+	f, err := root.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, perm.Perm())
 	if err != nil {
 		return err
 	}
@@ -254,11 +255,15 @@ func writeFile(root *os.Root, name string, r io.Reader, size int64, perm os.File
 }
 
 func dirPerm(mode os.FileMode) os.FileMode {
-	p := mode.Perm()
+	p := entryMode(mode)
 	if p == 0 {
 		return 0o755
 	}
 	return p
+}
+
+func entryMode(mode os.FileMode) os.FileMode {
+	return mode.Perm() | mode&(os.ModeSetuid|os.ModeSetgid|os.ModeSticky)
 }
 
 func clearDir(root *os.Root, dir string) error {

@@ -12,8 +12,11 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/crypto/ssh"
+
 	"github.com/imjasonh/playground/sshcloud/internal/backend"
 	"github.com/imjasonh/playground/sshcloud/internal/gateway"
+	"github.com/imjasonh/playground/sshcloud/internal/hostkey"
 	"github.com/imjasonh/playground/sshcloud/internal/userca"
 )
 
@@ -36,7 +39,7 @@ func TestProxyFortuneWithCert(t *testing.T) {
 
 	lf := backend.NewLocalFortune(bin, caPub)
 	defer lf.Stop()
-	addr, err := lf.Ensure()
+	addr, hostPublicKey, err := lf.Target("", "fortune", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,11 +50,28 @@ func TestProxyFortuneWithCert(t *testing.T) {
 		io.Writer
 	}{Reader: eofReader{}, Writer: &out}
 
-	if err := gateway.ProxySSH(context.Background(), rw, ca, "alice", addr); err != nil {
+	_, err = gateway.ProxySSHStreams(
+		context.Background(), rw, &out, &out, ca, "alice",
+		gateway.DialTarget{Addr: addr, SSHHostPublicKey: hostPublicKey}, shellSpec(),
+	)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "hello alice") {
 		t.Fatalf("output: %q", out.String())
+	}
+	_, wrongSigner, err := hostkey.Generate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = gateway.ProxySSHStreams(
+		context.Background(), eofReader{}, io.Discard, io.Discard, ca, "alice",
+		gateway.DialTarget{
+			Addr: addr, SSHHostPublicKey: string(ssh.MarshalAuthorizedKey(wrongSigner.PublicKey())),
+		}, shellSpec(),
+	)
+	if err == nil || !strings.Contains(err.Error(), "handshake") {
+		t.Fatalf("wrong host key error = %v", err)
 	}
 }
 
@@ -76,11 +96,20 @@ func TestProxyCancelInterruptsStalledSSHHandshake(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	result := make(chan error, 1)
+	_, signer, err := hostkey.Generate()
+	if err != nil {
+		t.Fatal(err)
+	}
 	go func() {
-		result <- gateway.ProxySSH(ctx, struct {
+		_, err := gateway.ProxySSHStreams(ctx, struct {
 			io.Reader
 			io.Writer
-		}{Reader: eofReader{}, Writer: io.Discard}, ca, "alice", listener.Addr().String())
+		}{Reader: eofReader{}, Writer: io.Discard}, io.Discard, io.Discard, ca, "alice",
+			gateway.DialTarget{
+				Addr:             listener.Addr().String(),
+				SSHHostPublicKey: string(ssh.MarshalAuthorizedKey(signer.PublicKey())),
+			}, shellSpec())
+		result <- err
 	}()
 	var stalled net.Conn
 	select {
@@ -103,3 +132,9 @@ func TestProxyCancelInterruptsStalledSSHHandshake(t *testing.T) {
 type eofReader struct{}
 
 func (eofReader) Read([]byte) (int, error) { return 0, io.EOF }
+
+func shellSpec() *gateway.SessionSpec {
+	changes := make(chan gateway.ForwardRequest)
+	close(changes)
+	return gateway.NewSessionSpec(gateway.SessionShell, nil, "", nil, false, changes, nil)
+}

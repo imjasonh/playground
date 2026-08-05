@@ -69,9 +69,10 @@ func (c *AgentClient) Addr(user, app, gen, image string) (string, error) {
 
 // InstanceView is a subset of agent instance state.
 type InstanceView struct {
-	Addr    string `json:"addr"`
-	GuestIP string `json:"guest_ip"`
-	State   string `json:"state"`
+	Addr             string `json:"addr"`
+	GuestIP          string `json:"guest_ip"`
+	State            string `json:"state"`
+	SSHHostPublicKey string `json:"ssh_host_public_key"`
 }
 
 // ErrAgentCapacity is returned when a host is full or cordoned.
@@ -80,7 +81,8 @@ type ErrAgentCapacity struct {
 	Message    string
 }
 
-func (e ErrAgentCapacity) Error() string { return e.Message }
+func (e ErrAgentCapacity) Error() string   { return e.Message }
+func (e ErrAgentCapacity) Temporary() bool { return true }
 
 // Ensure boots or wakes the instance on this host.
 func (c *AgentClient) Ensure(user, app, gen, image string, noIdle bool) (InstanceView, error) {
@@ -118,6 +120,9 @@ func (c *AgentClient) EnsureTierContext(ctx context.Context, user, app, gen, ima
 	}
 	if out.Addr == "" {
 		return InstanceView{}, fmt.Errorf("agent returned empty addr")
+	}
+	if out.SSHHostPublicKey == "" {
+		return InstanceView{}, fmt.Errorf("agent returned empty SSH host key")
 	}
 	return out, nil
 }

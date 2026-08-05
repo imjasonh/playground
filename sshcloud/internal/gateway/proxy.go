@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -15,42 +16,50 @@ import (
 
 // DialRequest is a backend wake/dial for one app generation.
 type DialRequest struct {
-	User   string
-	App    string
-	Gen    string
-	Image  string
-	Tier   string
-	NoIdle bool
+	User     string
+	App      string
+	Gen      string
+	Image    string
+	Tier     string
+	NoIdle   bool
+	RetryFor time.Duration
 }
 
-// DialFunc resolves a running app instance address.
-type DialFunc func(ctx context.Context, req DialRequest) (addr string, err error)
-
-// ProxySSH dials the app SSH server with a minted user cert and pipes the session.
-// ctx cancel (deploy kick) closes the hop and ends the proxy.
-func ProxySSH(ctx context.Context, client io.ReadWriter, ca *userca.CA, principal, addr string) error {
-	return ProxySSHStreams(ctx, client, client, ca, principal, addr)
+// DialTarget binds a backend address to its expected SSH host identity.
+type DialTarget struct {
+	Addr             string
+	SSHHostPublicKey string
 }
 
-// ProxySSHStreams is ProxySSH with independently managed client input/output.
-// Host migration uses this to keep one bounded input buffer across backend hops.
-func ProxySSHStreams(ctx context.Context, input io.Reader, output io.Writer, ca *userca.CA, principal, addr string) error {
+// DialFunc resolves a running app instance and its host identity.
+type DialFunc func(ctx context.Context, req DialRequest) (DialTarget, error)
+
+// ProxySSHStreams forwards one exact outer session contract to an app.
+func ProxySSHStreams(ctx context.Context, input io.Reader, output, stderr io.Writer, ca *userca.CA, principal string, target DialTarget, spec *SessionSpec) (AppExit, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	cert, err := ca.Mint(principal, 5*time.Minute)
 	if err != nil {
-		return fmt.Errorf("mint cert: %w", err)
+		return AppExit{}, fmt.Errorf("mint cert: %w", err)
+	}
+	expectedHostKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(target.SSHHostPublicKey))
+	if err != nil {
+		return AppExit{}, fmt.Errorf("parse expected app host key: %w", err)
+	}
+	if expectedHostKey.Type() != ssh.KeyAlgoED25519 {
+		return AppExit{}, fmt.Errorf("app host key must be Ed25519, got %s", expectedHostKey.Type())
 	}
 	cfg := &ssh.ClientConfig{
-		User:            principal,
-		Auth:            []ssh.AuthMethod{ssh.PublicKeys(cert.Signer)},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // app host keys are ephemeral pre-Firecracker
-		Timeout:         10 * time.Second,
+		User:              principal,
+		Auth:              []ssh.AuthMethod{ssh.PublicKeys(cert.Signer)},
+		HostKeyCallback:   ssh.FixedHostKey(expectedHostKey),
+		HostKeyAlgorithms: []string{ssh.KeyAlgoED25519},
+		Timeout:           10 * time.Second,
 	}
-	raw, err := (&net.Dialer{Timeout: 10 * time.Second}).DialContext(ctx, "tcp", addr)
+	raw, err := (&net.Dialer{Timeout: 10 * time.Second}).DialContext(ctx, "tcp", target.Addr)
 	if err != nil {
-		return fmt.Errorf("dial app: %w", err)
+		return AppExit{}, fmt.Errorf("dial app: %w", err)
 	}
 	_ = raw.SetDeadline(time.Now().Add(10 * time.Second))
 	handshakeDone := make(chan struct{})
@@ -61,43 +70,44 @@ func ProxySSHStreams(ctx context.Context, input io.Reader, output io.Writer, ca 
 		case <-handshakeDone:
 		}
 	}()
-	sshConn, chans, reqs, err := ssh.NewClientConn(raw, addr, cfg)
+	sshConn, chans, reqs, err := ssh.NewClientConn(raw, target.Addr, cfg)
 	close(handshakeDone)
 	if err != nil {
 		_ = raw.Close()
-		return fmt.Errorf("handshake app: %w", err)
+		return AppExit{}, fmt.Errorf("handshake app: %w", err)
 	}
 	_ = raw.SetDeadline(time.Time{})
 	conn := ssh.NewClient(sshConn, chans, reqs)
 	defer conn.Close()
 
-	sess, err := conn.NewSession()
+	backend, backendReqs, err := conn.OpenChannel("session", nil)
 	if err != nil {
-		return err
+		return AppExit{}, err
 	}
-	defer sess.Close()
+	defer backend.Close()
+	for _, setup := range spec.SetupRequests() {
+		ok, err := backend.SendRequest(setup.Type, true, setup.Payload)
+		if err != nil || !ok {
+			spec.ReplyStart(false)
+			return AppExit{}, fmt.Errorf("backend rejected %s: %w", setup.Type, err)
+		}
+	}
+	ok, err := backend.SendRequest(spec.StartType, true, spec.StartPayload)
+	if err != nil || !ok {
+		spec.ReplyStart(false)
+		return AppExit{}, fmt.Errorf("backend rejected %s: %w", spec.StartType, err)
+	}
+	spec.ReplyStart(true)
 
-	sess.Stdout = output
-	sess.Stderr = output
-	stdin, err := sess.StdinPipe()
-	if err != nil {
-		return err
-	}
-
-	modes := ssh.TerminalModes{ssh.ECHO: 0}
-	_ = sess.RequestPty("xterm", 40, 80, modes)
-	if err := sess.Shell(); err != nil {
-		return err
-	}
 	inputDone := make(chan struct{})
 	go func() {
 		defer close(inputDone)
 		if buffered, ok := input.(*migrationAttachment); ok {
-			_ = buffered.pumpTo(stdin)
+			_ = buffered.pumpTo(backend)
 		} else {
-			_, _ = io.Copy(stdin, input)
+			_, _ = io.Copy(backend, input)
 		}
-		_ = stdin.Close()
+		_ = backend.CloseWrite()
 	}()
 	stopBufferedInput := func() {
 		if buffered, ok := input.(*migrationAttachment); ok {
@@ -106,8 +116,51 @@ func ProxySSHStreams(ctx context.Context, input io.Reader, output io.Writer, ca 
 		}
 	}
 
-	wait := make(chan error, 1)
-	go func() { wait <- sess.Wait() }()
+	stdoutDone := make(chan struct{})
+	go func() {
+		_, _ = io.Copy(output, backend)
+		close(stdoutDone)
+	}()
+	stderrDone := make(chan struct{})
+	go func() {
+		_, _ = io.Copy(stderr, backend.Stderr())
+		close(stderrDone)
+	}()
+	requestsDone := make(chan AppExit, 1)
+	go func() {
+		exit := AppExit{}
+		for req := range backendReqs {
+			switch req.Type {
+			case "exit-status":
+				if len(req.Payload) == 4 {
+					exit = AppExit{
+						RequestType: req.Type, Payload: append([]byte(nil), req.Payload...),
+						Code: int(binary.BigEndian.Uint32(req.Payload)),
+					}
+				}
+			case "exit-signal":
+				exit = AppExit{RequestType: req.Type, Payload: append([]byte(nil), req.Payload...), Code: 255}
+			default:
+				if req.WantReply {
+					_ = req.Reply(false, nil)
+				}
+			}
+		}
+		requestsDone <- exit
+	}()
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case change, ok := <-spec.Changes:
+				if !ok {
+					return
+				}
+				_, _ = backend.SendRequest(change.Type, false, change.Payload)
+			}
+		}
+	}()
 	select {
 	case <-ctx.Done():
 		if !errors.Is(context.Cause(ctx), errBackendMigration) {
@@ -115,10 +168,12 @@ func ProxySSHStreams(ctx context.Context, input io.Reader, output io.Writer, ca 
 		}
 		_ = conn.Close()
 		stopBufferedInput()
-		<-wait
-		return context.Cause(ctx)
-	case err := <-wait:
+		return AppExit{}, context.Cause(ctx)
+	case exit := <-requestsDone:
+		_ = backend.Close()
 		stopBufferedInput()
-		return err
+		<-stdoutDone
+		<-stderrDone
+		return exit, nil
 	}
 }

@@ -60,6 +60,7 @@ echo "::endgroup::"
 export SSHCLOUD_FIRECRACKER="$ASSETS/firecracker"
 export SSHCLOUD_KERNEL="$ASSETS/vmlinux"
 export SSHCLOUD_CA_PUB="$CA_PUB"
+export SSHCLOUD_CA_KEY="$CA_KEY"
 export SSHCLOUD_GUESTINIT="$ASSETS/guestinit"
 export SSHCLOUD_FORTUNE_BIN="$ASSETS/fortune"
 

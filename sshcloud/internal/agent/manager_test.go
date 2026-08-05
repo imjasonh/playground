@@ -9,8 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/crypto/ssh"
+
 	"github.com/imjasonh/playground/sshcloud/internal/firecracker"
 	"github.com/imjasonh/playground/sshcloud/internal/guestinit"
+	"github.com/imjasonh/playground/sshcloud/internal/hostkey"
 	"github.com/imjasonh/playground/sshcloud/internal/snapshot"
 )
 
@@ -630,5 +633,19 @@ func TestCordonStateSurvivesManagerRestart(t *testing.T) {
 	defer second.Close()
 	if !second.Capacity().Cordoned {
 		t.Fatal("cordon state was lost across restart")
+	}
+}
+
+func TestSSHHostKeyValidationFailsClosed(t *testing.T) {
+	t.Parallel()
+	if err := validateSSHHostPublicKey(""); err == nil {
+		t.Fatal("empty host key was accepted")
+	}
+	_, signer, err := hostkey.Generate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateSSHHostPublicKey(string(ssh.MarshalAuthorizedKey(signer.PublicKey()))); err != nil {
+		t.Fatal(err)
 	}
 }

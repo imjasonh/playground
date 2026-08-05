@@ -222,6 +222,29 @@ func TestUnpackSymlink(t *testing.T) {
 	}
 }
 
+func TestUnpackPreservesSpecialModeBits(t *testing.T) {
+	t.Parallel()
+	layer := layerFromEntries(t, []tarEnt{
+		{name: "tmp/", typ: tar.TypeDir, mode: 0o1777},
+		{name: "helper", body: "x", mode: 0o4755},
+	})
+	dir := t.TempDir()
+	if err := Unpack(imageFromLayers(t, layer), dir, 1<<20); err != nil {
+		t.Fatal(err)
+	}
+	tmp, err := os.Stat(filepath.Join(dir, "tmp"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	helper, err := os.Stat(filepath.Join(dir, "helper"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tmp.Mode()&os.ModeSticky == 0 || helper.Mode()&os.ModeSetuid == 0 {
+		t.Fatalf("tmp mode=%v helper mode=%v", tmp.Mode(), helper.Mode())
+	}
+}
+
 func TestUnpackRejectsWriteThroughEscapingSymlink(t *testing.T) {
 	t.Parallel()
 	parent := t.TempDir()

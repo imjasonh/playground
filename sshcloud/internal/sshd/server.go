@@ -160,45 +160,156 @@ type execMsg struct {
 	Command string
 }
 
+type subsystemMsg struct {
+	Name string
+}
+
+type ptyMsg struct {
+	Term                    string
+	Columns, Rows           uint32
+	PixelWidth, PixelHeight uint32
+	Modes                   string
+}
+
+type envMsg struct {
+	Name, Value string
+}
+
+type windowMsg struct {
+	Columns, Rows           uint32
+	PixelWidth, PixelHeight uint32
+}
+
+type signalMsg struct {
+	Signal string
+}
+
 func (s *Server) handleSession(ctx context.Context, sc *ssh.ServerConn, ch ssh.Channel, reqs <-chan *ssh.Request, fp string) {
 	defer ch.Close()
 
-	type startInfo struct {
-		execCmd string
-		kind    string
-	}
-	start := make(chan startInfo, 1)
+	start := make(chan *gateway.SessionSpec, 1)
+	changes := make(chan gateway.ForwardRequest, 32)
 	reqDone := make(chan struct{})
 	go func() {
 		defer close(reqDone)
+		defer close(changes)
+		var setup []gateway.ForwardRequest
+		started := false
+		hasPTY := false
 		for req := range reqs {
 			switch req.Type {
-			case "pty-req", "env", "window-change":
-				if req.WantReply {
-					_ = req.Reply(true, nil)
-				}
-			case "shell":
-				if req.WantReply {
-					_ = req.Reply(true, nil)
-				}
-				select {
-				case start <- startInfo{kind: "shell"}:
-				default:
-				}
-			case "exec":
-				var msg execMsg
-				if err := ssh.Unmarshal(req.Payload, &msg); err != nil {
+			case "pty-req":
+				var msg ptyMsg
+				if started || hasPTY || ssh.Unmarshal(req.Payload, &msg) != nil {
 					if req.WantReply {
 						_ = req.Reply(false, nil)
 					}
 					continue
 				}
+				hasPTY = true
+				setup = append(setup, gateway.ForwardRequest{Type: req.Type, Payload: append([]byte(nil), req.Payload...)})
 				if req.WantReply {
 					_ = req.Reply(true, nil)
 				}
+			case "env":
+				var msg envMsg
+				if started || ssh.Unmarshal(req.Payload, &msg) != nil {
+					if req.WantReply {
+						_ = req.Reply(false, nil)
+					}
+					continue
+				}
+				setup = append(setup, gateway.ForwardRequest{Type: req.Type, Payload: append([]byte(nil), req.Payload...)})
+				if req.WantReply {
+					_ = req.Reply(true, nil)
+				}
+			case "window-change":
+				var msg windowMsg
+				if ssh.Unmarshal(req.Payload, &msg) != nil {
+					if req.WantReply {
+						_ = req.Reply(false, nil)
+					}
+					continue
+				}
+				forward := gateway.ForwardRequest{Type: req.Type, Payload: append([]byte(nil), req.Payload...)}
+				if !started {
+					setup = append(setup, forward)
+				} else {
+					select {
+					case changes <- forward:
+					case <-ctx.Done():
+						return
+					}
+				}
+				if req.WantReply {
+					_ = req.Reply(true, nil)
+				}
+			case "signal":
+				var msg signalMsg
+				if !started || ssh.Unmarshal(req.Payload, &msg) != nil {
+					if req.WantReply {
+						_ = req.Reply(false, nil)
+					}
+					continue
+				}
 				select {
-				case start <- startInfo{execCmd: msg.Command, kind: "exec"}:
-				default:
+				case changes <- gateway.ForwardRequest{Type: req.Type, Payload: append([]byte(nil), req.Payload...)}:
+				case <-ctx.Done():
+					return
+				}
+				if req.WantReply {
+					_ = req.Reply(true, nil)
+				}
+			case "shell", "exec", "subsystem":
+				if started {
+					if req.WantReply {
+						_ = req.Reply(false, nil)
+					}
+					continue
+				}
+				argument := ""
+				switch req.Type {
+				case "shell":
+					if len(req.Payload) != 0 {
+						if req.WantReply {
+							_ = req.Reply(false, nil)
+						}
+						continue
+					}
+				case "exec":
+					var msg execMsg
+					if err := ssh.Unmarshal(req.Payload, &msg); err != nil {
+						if req.WantReply {
+							_ = req.Reply(false, nil)
+						}
+						continue
+					}
+					argument = msg.Command
+				case "subsystem":
+					var msg subsystemMsg
+					if err := ssh.Unmarshal(req.Payload, &msg); err != nil {
+						if req.WantReply {
+							_ = req.Reply(false, nil)
+						}
+						continue
+					}
+					argument = msg.Name
+				}
+				started = true
+				startReq := req
+				spec := gateway.NewSessionSpec(
+					req.Type, req.Payload, argument, setup, hasPTY, changes,
+					func(ok bool) {
+						if startReq.WantReply {
+							_ = startReq.Reply(ok, nil)
+						}
+					},
+				)
+				select {
+				case start <- spec:
+				case <-ctx.Done():
+					spec.ReplyStart(false)
+					return
 				}
 			default:
 				if req.WantReply {
@@ -208,40 +319,51 @@ func (s *Server) handleSession(ctx context.Context, sc *ssh.ServerConn, ch ssh.C
 		}
 	}()
 
+	var spec *gateway.SessionSpec
 	select {
 	case <-ctx.Done():
 		return
+	case spec = <-start:
 	case <-reqDone:
-		return
-	case info := <-start:
-		s.runSession(ctx, sc, ch, fp, info.kind, info.execCmd)
+		select {
+		case spec = <-start:
+		default:
+			return
+		}
 	}
+	s.runSession(ctx, sc, ch, fp, gateway.ClientSession{IO: ch, Stderr: ch.Stderr(), Spec: spec})
 }
 
-func (s *Server) runSession(ctx context.Context, sc *ssh.ServerConn, ch ssh.Channel, fp, startKind, execCmd string) {
+func (s *Server) runSession(ctx context.Context, sc *ssh.ServerConn, ch ssh.Channel, fp string, client gateway.ClientSession) {
+	spec := client.Spec
+	startKind, execCmd := spec.StartType, spec.Argument
 	s.logf("session start user=%q fp=%q request=%s", sc.User(), fp, startKind)
 	res, err := s.Hub.HandleConnect(ctx, gateway.Connect{
 		SSHUser:        sc.User(),
 		KeyFingerprint: fp,
 	})
 	if err != nil {
-		fmt.Fprintf(ch, "error: %v\r\n", err)
+		spec.ReplyStart(false)
+		fmt.Fprintf(client.Stderr, "error: %v\r\n", err)
 		sendExit(ch, 1)
 		return
 	}
 	defer s.Hub.ReleaseSession(res.Session)
-	if res.Action == gateway.ActionJoin && res.User == "" && startKind == "exec" && sc.User() != "join" {
-		fmt.Fprint(ch, "Unknown keys may run non-interactive onboarding only as join@host.\r\n")
+	if res.Action == gateway.ActionJoin && res.User == "" && startKind == gateway.SessionExec && sc.User() != "join" {
+		spec.ReplyStart(false)
+		fmt.Fprint(client.Stderr, "Unknown keys may run non-interactive onboarding only as join@host.\r\n")
 		sendExit(ch, 2)
 		return
 	}
-	if res.Action == gateway.ActionProxyApp && startKind == "exec" {
-		fmt.Fprint(ch, "App exec forwarding is not implemented yet; open an interactive shell session instead.\r\n")
+	if res.Action == gateway.ActionMenu && startKind != gateway.SessionShell {
+		spec.ReplyStart(false)
+		fmt.Fprint(client.Stderr, "That SSH username is not a deployed app, and menu@host accepts interactive shells only.\r\n")
 		sendExit(ch, 2)
 		return
 	}
-	if res.Action == gateway.ActionMenu && startKind == "exec" {
-		fmt.Fprint(ch, "That SSH username is not a deployed app, and menu@host accepts interactive sessions only.\r\n")
+	if (res.Action == gateway.ActionJoin || res.Action == gateway.ActionDeploy) && startKind == gateway.SessionSubsystem {
+		spec.ReplyStart(false)
+		fmt.Fprint(client.Stderr, "Platform commands do not support SSH subsystems.\r\n")
 		sendExit(ch, 2)
 		return
 	}
@@ -253,24 +375,37 @@ func (s *Server) runSession(ctx context.Context, sc *ssh.ServerConn, ch ssh.Chan
 		defer cancel()
 	}
 
-	code := 0
+	exit := gateway.AppExit{Code: 0}
 	switch res.Action {
 	case gateway.ActionJoin:
-		code = gateway.RunJoin(ctx, ch, s.Hub, fp, res.User, execCmd)
+		spec.ReplyStart(true)
+		exit.Code = gateway.RunJoinSession(ctx, client, s.Hub, fp, res.User, execCmd)
 	case gateway.ActionMenu:
-		gateway.RunMenu(ctx, ch, s.Hub, fp, res.User)
+		spec.ReplyStart(true)
+		gateway.RunMenuSession(ctx, client, s.Hub, fp, res.User)
 	case gateway.ActionDeploy:
-		code = gateway.RunDeploy(ctx, ch, s.Hub, res.User, execCmd)
+		spec.ReplyStart(true)
+		exit.Code = gateway.RunDeploySession(ctx, client, s.Hub, res.User, execCmd)
 	case gateway.ActionRejectBusy:
+		spec.ReplyStart(true)
 		fmt.Fprintf(ch, "%s\r\n", res.Message)
-		code = 1
+		exit.Code = 1
 	case gateway.ActionProxyApp:
-		code = gateway.RunAppStub(sessCtx, ch, s.Hub, res)
+		exit = gateway.RunAppSession(sessCtx, client, s.Hub, res)
 	default:
-		fmt.Fprintf(ch, "unhandled action %v\r\n", res.Action)
-		code = 1
+		spec.ReplyStart(false)
+		fmt.Fprintf(client.Stderr, "unhandled action %v\r\n", res.Action)
+		exit.Code = 1
 	}
-	sendExit(ch, code)
+	sendAppExit(ch, exit)
+}
+
+func sendAppExit(ch ssh.Channel, exit gateway.AppExit) {
+	if exit.RequestType != "" && len(exit.Payload) > 0 {
+		_, _ = ch.SendRequest(exit.RequestType, false, exit.Payload)
+		return
+	}
+	sendExit(ch, exit.Code)
 }
 
 func sendExit(ch ssh.Channel, code int) {

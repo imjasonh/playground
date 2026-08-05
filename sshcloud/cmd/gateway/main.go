@@ -84,16 +84,17 @@ func main() {
 	switch {
 	case *orchURL != "":
 		oc := &backend.OrchestratorClient{BaseURL: *orchURL, Token: controlToken}
-		hub.Dial = func(ctx context.Context, req gateway.DialRequest) (string, error) {
-			return oc.AddrTierContext(ctx, req.User, req.App, req.Gen, req.Image, req.Tier, req.NoIdle)
+		hub.Dial = func(ctx context.Context, req gateway.DialRequest) (gateway.DialTarget, error) {
+			target, err := oc.TargetTierContext(ctx, req.User, req.App, req.Gen, req.Image, req.Tier, req.NoIdle)
+			return gateway.DialTarget{Addr: target.Addr, SSHHostPublicKey: target.SSHHostPublicKey}, err
 		}
 		instances = oc
 		log.Printf("backend: orchestrator at %s (placement-aware)", *orchURL)
 	case *agentURL != "":
 		ac := &backend.AgentClient{BaseURL: *agentURL, Token: controlToken}
-		hub.Dial = func(ctx context.Context, req gateway.DialRequest) (string, error) {
+		hub.Dial = func(ctx context.Context, req gateway.DialRequest) (gateway.DialTarget, error) {
 			in, err := ac.EnsureTierContext(ctx, req.User, req.App, req.Gen, req.Image, req.Tier, req.NoIdle)
-			return in.Addr, err
+			return gateway.DialTarget{Addr: in.Addr, SSHHostPublicKey: in.SSHHostPublicKey}, err
 		}
 		instances = backend.AgentControl{Client: ac}
 		log.Printf("backend: firecracker agent at %s", *agentURL)
@@ -108,8 +109,9 @@ func main() {
 		}
 		lf := backend.NewLocalFortune(abs, caPubPath)
 		defer lf.Stop()
-		hub.Dial = func(_ context.Context, req gateway.DialRequest) (string, error) {
-			return lf.Addr(req.User, req.App, req.Gen, req.Image)
+		hub.Dial = func(_ context.Context, req gateway.DialRequest) (gateway.DialTarget, error) {
+			addr, hostKey, err := lf.Target(req.User, req.App, req.Gen, req.Image)
+			return gateway.DialTarget{Addr: addr, SSHHostPublicKey: hostKey}, err
 		}
 		log.Printf("backend: local fortune process %s", abs)
 	default:

@@ -23,7 +23,11 @@ var commonLocalUsernames = map[string]struct{}{
 // When execCmd is non-empty (SSH exec args), runs non-interactively and
 // returns a process exit code (0 ok, 1 failure).
 func RunDeploy(ctx context.Context, ch io.ReadWriter, hub *Hub, userID, execCmd string) int {
-	t := newTerm(ch)
+	return RunDeploySession(ctx, ClientSession{IO: ch, Stderr: ch, Spec: &SessionSpec{StartType: SessionShell, PTY: true}}, hub, userID, execCmd)
+}
+
+func RunDeploySession(ctx context.Context, client ClientSession, hub *Hub, userID, execCmd string) int {
+	t := newSessionTerm(client)
 	return runDeploy(ctx, t, hub, userID, execCmd)
 }
 

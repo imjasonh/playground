@@ -245,8 +245,18 @@ func main() {
 			writeControlError(w, err)
 			return
 		}
+		view, found, err := dial.StatusView(r.Context(), req.User, req.App, req.Gen)
+		if err != nil || !found || view.SSHHostPublicKey == "" {
+			if err == nil {
+				err = fmt.Errorf("ensured generation has no SSH host identity")
+			}
+			writeControlError(w, err)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]string{"addr": addr})
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"addr": addr, "ssh_host_public_key": view.SSHHostPublicKey,
+		})
 	})
 	api.HandleFunc("POST /v1/stop", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {

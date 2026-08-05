@@ -40,10 +40,11 @@ type Record struct {
 
 // Generation is durable app inventory independent of one agent process.
 type Generation struct {
-	Gen   string `json:"gen,omitempty" firestore:"gen,omitempty"`
-	Image string `json:"image,omitempty" firestore:"image,omitempty"`
-	Tier  string `json:"tier" firestore:"tier"`
-	State string `json:"state" firestore:"state"`
+	Gen              string `json:"gen,omitempty" firestore:"gen,omitempty"`
+	Image            string `json:"image,omitempty" firestore:"image,omitempty"`
+	Tier             string `json:"tier" firestore:"tier"`
+	State            string `json:"state" firestore:"state"`
+	SSHHostPublicKey string `json:"ssh_host_public_key" firestore:"ssh_host_public_key"`
 }
 
 // Operation is durable recovery context for an in-flight host mutation.

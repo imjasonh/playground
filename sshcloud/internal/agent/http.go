@@ -102,19 +102,21 @@ func decodeInstanceRequest(w http.ResponseWriter, r *http.Request) (instanceRequ
 }
 
 type ensureResponse struct {
-	Addr    string `json:"addr"`
-	GuestIP string `json:"guest_ip"`
-	State   string `json:"state"`
+	Addr             string `json:"addr"`
+	GuestIP          string `json:"guest_ip"`
+	State            string `json:"state"`
+	SSHHostPublicKey string `json:"ssh_host_public_key"`
 }
 
 type statusResponse struct {
-	User     string `json:"user"`
-	App      string `json:"app"`
-	State    string `json:"state"`
-	Addr     string `json:"addr,omitempty"`
-	GuestIP  string `json:"guest_ip,omitempty"`
-	LastUsed string `json:"last_used,omitempty"`
-	SnapKey  string `json:"snap_key,omitempty"`
+	User             string `json:"user"`
+	App              string `json:"app"`
+	State            string `json:"state"`
+	Addr             string `json:"addr,omitempty"`
+	GuestIP          string `json:"guest_ip,omitempty"`
+	LastUsed         string `json:"last_used,omitempty"`
+	SnapKey          string `json:"snap_key,omitempty"`
+	SSHHostPublicKey string `json:"ssh_host_public_key,omitempty"`
 }
 
 func (h *Handler) ensure(w http.ResponseWriter, r *http.Request) {
@@ -137,7 +139,7 @@ func (h *Handler) ensure(w http.ResponseWriter, r *http.Request) {
 		writeManagerError(w, err)
 		return
 	}
-	writeJSON(w, ensureResponse{Addr: in.Addr, GuestIP: in.GuestIP, State: string(in.State)})
+	writeJSON(w, ensureResponse{Addr: in.Addr, GuestIP: in.GuestIP, State: string(in.State), SSHHostPublicKey: in.SSHHostPublicKey})
 }
 
 func (h *Handler) stop(w http.ResponseWriter, r *http.Request) {
@@ -174,7 +176,7 @@ func (h *Handler) wake(w http.ResponseWriter, r *http.Request) {
 		writeManagerError(w, err)
 		return
 	}
-	writeJSON(w, ensureResponse{Addr: in.Addr, GuestIP: in.GuestIP, State: string(in.State)})
+	writeJSON(w, ensureResponse{Addr: in.Addr, GuestIP: in.GuestIP, State: string(in.State), SSHHostPublicKey: in.SSHHostPublicKey})
 }
 
 func (h *Handler) evict(w http.ResponseWriter, r *http.Request) {
@@ -205,7 +207,7 @@ func (h *Handler) adopt(w http.ResponseWriter, r *http.Request) {
 		writeManagerError(w, err)
 		return
 	}
-	writeJSON(w, ensureResponse{Addr: in.Addr, GuestIP: in.GuestIP, State: string(in.State)})
+	writeJSON(w, ensureResponse{Addr: in.Addr, GuestIP: in.GuestIP, State: string(in.State), SSHHostPublicKey: in.SSHHostPublicKey})
 }
 
 func (h *Handler) setNoIdle(w http.ResponseWriter, r *http.Request) {
@@ -268,12 +270,13 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp := statusResponse{
-		User:    user,
-		App:     app,
-		State:   string(st.State),
-		Addr:    st.Addr,
-		GuestIP: st.GuestIP,
-		SnapKey: st.SnapKey,
+		User:             user,
+		App:              app,
+		State:            string(st.State),
+		Addr:             st.Addr,
+		GuestIP:          st.GuestIP,
+		SnapKey:          st.SnapKey,
+		SSHHostPublicKey: st.SSHHostPublicKey,
 	}
 	if !st.LastUsed.IsZero() {
 		resp.LastUsed = st.LastUsed.UTC().Format(time.RFC3339)

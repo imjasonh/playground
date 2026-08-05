@@ -10,6 +10,7 @@ import (
 // term is a minimal line-oriented SSH UI (CRLF-friendly).
 type term struct {
 	rw     io.ReadWriter
+	client ClientSession
 	input  *migrationInput
 	reader *migrationAttachment
 	out    io.Writer
@@ -19,8 +20,13 @@ type term struct {
 const maxLineBytes = 1024
 
 func newTerm(rw io.ReadWriter) *term {
+	return newSessionTerm(ClientSession{IO: rw, Stderr: rw, Spec: &SessionSpec{StartType: SessionShell, PTY: true}})
+}
+
+func newSessionTerm(client ClientSession) *term {
+	rw := client.IO
 	input := newMigrationInput(rw, defaultMigrationBufferBytes)
-	return &term{rw: rw, input: input, reader: input.Attach(), out: rw}
+	return &term{rw: rw, client: client, input: input, reader: input.Attach(), out: rw}
 }
 
 func (t *term) Printf(format string, args ...any) {

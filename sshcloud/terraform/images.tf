@@ -54,6 +54,7 @@ resource "ko_build" "fortune" {
   working_dir = "${path.module}/.."
   repo        = "${local.registry}/fortune"
   platforms   = ["linux/amd64"]
+  base_image  = "scratch"
   sbom        = "spdx"
 
   depends_on = [google_artifact_registry_repository.sshcloud]

@@ -9,7 +9,11 @@ import (
 
 // RunMenu shows the hub app picker and hands off to an app or deploy.
 func RunMenu(ctx context.Context, ch io.ReadWriter, hub *Hub, keyFP, userID string) {
-	runMenu(ctx, newTerm(ch), hub, keyFP, userID)
+	RunMenuSession(ctx, ClientSession{IO: ch, Stderr: ch, Spec: &SessionSpec{StartType: SessionShell, PTY: true}}, hub, keyFP, userID)
+}
+
+func RunMenuSession(ctx context.Context, client ClientSession, hub *Hub, keyFP, userID string) {
+	runMenu(ctx, newSessionTerm(client), hub, keyFP, userID)
 }
 
 func runMenu(ctx context.Context, t *term, hub *Hub, keyFP, userID string) {

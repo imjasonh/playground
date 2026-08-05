@@ -10,8 +10,7 @@
 >
 > A review checkpoint found that the package-level vertical slice is ahead of
 > its production safety boundary. Public ingress remains closed by default.
-> Quotas/rate limits, full SSH request fidelity, app host identity,
-> jailer-based isolation, egress controls, and distributed deploy-state
+> Quotas/rate limits, jailer-based isolation, egress controls, and distributed deploy-state
 > reconciliation are launch blockers—not optional polish.
 
 ### Review constraints
@@ -251,10 +250,11 @@ through to the hub (unknown app).
 
 | Concern | Rule |
 |--------|------|
-| Artifact | Allowlisted OCI registry, **digest-pinned** (`repo@sha256:…`) |
+| Artifact | Allowlisted, digest-pinned Linux/amd64 OCI image; root `User`, no OCI volumes |
 | Process | PID 1 listens on TCP `:22` (SSH) |
 | Server | Any SSH implementation that verifies **platform user certs** |
 | CA | Read platform user CA from `/run/platform/ssh_user_ca.pub` (injected) |
+| Host identity | Present `/run/platform/ssh_host_ed25519_key` (per instance/generation, injected) |
 | Identity | Cert principal = platform username (e.g. `alice`) |
 | Ready | TCP accept on 22 |
 | Kernel | Platform-supplied (not from the image) |
@@ -273,9 +273,16 @@ Client↔gateway↔app supports:
 Not in v1: arbitrary multiplexing / port forwarding / agent forwarding as a
 platform guarantee.
 
-This is the target contract. The prototype currently proxies interactive shell
-sessions only and explicitly rejects app exec requests instead of silently
-misrouting them; PTY resize/env/signal/subsystem/stderr fidelity is still open.
+The gateway preserves shell/exec/subsystem start payloads, PTY modes and
+dimensions, env ordering, resize/signal requests, stdout/stderr separation, and
+exit-status/exit-signal payloads. Only interactive PTY shells use best-effort
+freeze/reconnect; exec, subsystem, and non-PTY sessions are force-disconnected
+rather than replayed.
+
+The current image contract is intentionally narrower than a container runtime:
+guestinit mounts basic pseudo-filesystems, but OCI UID/GID/xattrs, non-root
+users, declared volumes, cgroups, DNS/egress, and StopSignal supervision remain
+unsupported and are rejected or documented rather than silently promised.
 
 ### Access (v1)
 

@@ -45,7 +45,14 @@ func main() {
 		log.Fatalf("parse CA: %v", err)
 	}
 
-	hostSigner, err := hostkey.LoadOrGenerate(*hostKeyPath)
+	hostKeyFile := strings.TrimSpace(*hostKeyPath)
+	if hostKeyFile == "" {
+		hostKeyFile = firstExisting("/run/platform/ssh_host_ed25519_key", "/ssh_host_ed25519_key")
+		if _, statErr := os.Stat(hostKeyFile); statErr != nil {
+			log.Fatalf("platform SSH host key is required: %v", statErr)
+		}
+	}
+	hostSigner, err := hostkey.LoadOrGenerate(hostKeyFile)
 	if err != nil {
 		log.Fatalf("host key: %v", err)
 	}

@@ -105,6 +105,16 @@ func Materialize(ctx context.Context, ref string, opt Options) (Result, error) {
 	if err := Unpack(img, unpackDir, opt.MaxUncompressedBytes); err != nil {
 		return Result{}, err
 	}
+	usage, err := directoryBytes(unpackDir)
+	if err != nil {
+		return Result{}, err
+	}
+	// Reserve 25% plus 32 MiB for ext4 metadata and runtime writes.
+	requiredBytes := usage + usage/4 + int64(32<<20)
+	if requiredBytes > int64(opt.SizeMB)<<20 {
+		return Result{}, fmt.Errorf("image requires at least %d MiB rootfs with runtime headroom; configured %d MiB",
+			(requiredBytes+(1<<20)-1)>>20, opt.SizeMB)
+	}
 
 	tmpOut, err := os.CreateTemp(opt.CacheDir, hex+".ext4.tmp-*")
 	if err != nil {
@@ -124,6 +134,24 @@ func Materialize(ctx context.Context, ref string, opt Options) (Result, error) {
 		return Result{}, err
 	}
 	return Result{Rootfs: cachePath, Spec: spec}, nil
+}
+
+func directoryBytes(root string) (int64, error) {
+	var total int64
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.Type().IsRegular() {
+			info, err := entry.Info()
+			if err != nil {
+				return err
+			}
+			total += info.Size()
+		}
+		return nil
+	})
+	return total, err
 }
 
 func loadOrFetchSpec(ctx context.Context, digest name.Digest, specPath string) (guestinit.Spec, error) {
@@ -167,6 +195,20 @@ func specFromImage(img v1.Image) (guestinit.Spec, error) {
 	}
 	if cfg == nil {
 		return guestinit.Spec{}, fmt.Errorf("image config is empty")
+	}
+	if cfg.OS != "" && cfg.OS != "linux" {
+		return guestinit.Spec{}, fmt.Errorf("image OS %q is not supported (want linux)", cfg.OS)
+	}
+	if cfg.Architecture != "" && cfg.Architecture != "amd64" {
+		return guestinit.Spec{}, fmt.Errorf("image architecture %q is not supported (want amd64)", cfg.Architecture)
+	}
+	switch strings.TrimSpace(cfg.Config.User) {
+	case "", "0", "0:0", "root", "root:root":
+	default:
+		return guestinit.Spec{}, fmt.Errorf("image User %q is not supported; SSH apps currently run as guest root", cfg.Config.User)
+	}
+	if len(cfg.Config.Volumes) != 0 {
+		return guestinit.Spec{}, fmt.Errorf("OCI declared volumes are not supported")
 	}
 	spec := guestinit.Spec{
 		Entrypoint: append([]string{}, cfg.Config.Entrypoint...),

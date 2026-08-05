@@ -20,12 +20,14 @@ import (
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/registry"
+	"golang.org/x/crypto/ssh"
 
 	"github.com/imjasonh/playground/sshcloud/internal/agent"
 	"github.com/imjasonh/playground/sshcloud/internal/apppack"
 	"github.com/imjasonh/playground/sshcloud/internal/firecracker"
 	"github.com/imjasonh/playground/sshcloud/internal/ocirootfs"
 	"github.com/imjasonh/playground/sshcloud/internal/snapshot"
+	"github.com/imjasonh/playground/sshcloud/internal/userca"
 )
 
 // Real Firecracker e2e via the normal deploy path: fortune as a digest-pinned
@@ -60,16 +62,21 @@ func TestKVMSleepWake(t *testing.T) {
 		t.Fatalf("boot via HTTP: %d %s", rec.Code, rec.Body.String())
 	}
 	var in struct {
-		Addr    string `json:"addr"`
-		GuestIP string `json:"guest_ip"`
+		Addr             string `json:"addr"`
+		GuestIP          string `json:"guest_ip"`
+		SSHHostPublicKey string `json:"ssh_host_public_key"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&in); err != nil {
 		t.Fatal(err)
+	}
+	if _, _, _, _, err := ssh.ParseAuthorizedKey([]byte(in.SSHHostPublicKey)); err != nil {
+		t.Fatalf("invalid app host key: %v", err)
 	}
 	time.Sleep(100 * time.Millisecond)
 	if err := dialTCP(in.Addr, 5*time.Second); err != nil {
 		t.Fatalf("dial after HTTP request ended %s: %v", in.Addr, err)
 	}
+	assertAppSSH(t, in.Addr, in.SSHHostPublicKey, cfg.caKey, "alice")
 
 	// Chaos: persistence fails after canceling the request context. The manager
 	// must use its recovery context to resume the paused VMM.
@@ -100,6 +107,10 @@ func TestKVMSleepWake(t *testing.T) {
 	if err := dialTCP(woken.Addr, 10*time.Second); err != nil {
 		t.Fatalf("dial after wake %s: %v", woken.Addr, err)
 	}
+	if woken.SSHHostPublicKey != in.SSHHostPublicKey {
+		t.Fatal("SSH host key changed across snapshot wake")
+	}
+	assertAppSSH(t, woken.Addr, woken.SSHHostPublicKey, cfg.caKey, "alice")
 }
 
 func TestKVMCrossHostMigrate(t *testing.T) {
@@ -158,6 +169,10 @@ func TestKVMCrossHostMigrate(t *testing.T) {
 	if adopted.GuestIP != in.GuestIP {
 		t.Fatalf("guest IP changed: %s → %s", in.GuestIP, adopted.GuestIP)
 	}
+	if adopted.SSHHostPublicKey != in.SSHHostPublicKey {
+		t.Fatal("SSH host key changed across host migration")
+	}
+	assertAppSSH(t, adopted.Addr, adopted.SSHHostPublicKey, cfg.caKey, "bob")
 }
 
 type cancelFirstPutStore struct {
@@ -185,8 +200,8 @@ func (s *cancelFirstPutStore) Put(ctx context.Context, key string, pkg snapshot.
 }
 
 type kvmAssets struct {
-	fc, kernel, caPub, guestInit, image string
-	ociCache                            string
+	fc, kernel, caPub, caKey, guestInit, image string
+	ociCache                                   string
 }
 
 func kvmManagerConfig(cfg kvmAssets, workDir string, store snapshot.Store, subnet string) agent.Config {
@@ -228,10 +243,11 @@ func kvmConfig(t *testing.T) kvmAssets {
 		fc:        envOr(t, "SSHCLOUD_FIRECRACKER", "firecracker"),
 		kernel:    mustEnv(t, "SSHCLOUD_KERNEL"),
 		caPub:     mustEnv(t, "SSHCLOUD_CA_PUB"),
+		caKey:     mustEnv(t, "SSHCLOUD_CA_KEY"),
 		guestInit: mustEnv(t, "SSHCLOUD_GUESTINIT"),
 		ociCache:  ociCache,
 	}
-	for _, p := range []string{a.kernel, a.caPub, a.guestInit} {
+	for _, p := range []string{a.kernel, a.caPub, a.caKey, a.guestInit} {
 		if _, err := os.Stat(p); err != nil {
 			t.Fatalf("missing asset %s: %v", p, err)
 		}
@@ -243,6 +259,41 @@ func kvmConfig(t *testing.T) kvmAssets {
 	}
 	a.image = publishFortuneImage(t)
 	return a
+}
+
+func assertAppSSH(t *testing.T, addr, hostPublicKey, caKey, principal string) {
+	t.Helper()
+	hostKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(hostPublicKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca, err := userca.LoadOrGenerate(caKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := ca.Mint(principal, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := ssh.Dial("tcp", addr, &ssh.ClientConfig{
+		User: principal, Auth: []ssh.AuthMethod{ssh.PublicKeys(cert.Signer)},
+		HostKeyCallback: ssh.FixedHostKey(hostKey), Timeout: 5 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("cert-authenticated SSH: %v", err)
+	}
+	defer client.Close()
+	session, err := client.NewSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, err := session.CombinedOutput("probe")
+	if err != nil {
+		t.Fatalf("app exec: %v (%s)", err, output)
+	}
+	if !strings.Contains(string(output), "hello "+principal) {
+		t.Fatalf("app output %q", output)
+	}
 }
 
 func publishFortuneImage(t *testing.T) string {

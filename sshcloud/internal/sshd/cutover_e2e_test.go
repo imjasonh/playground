@@ -354,6 +354,81 @@ func TestLiveSessionHostMigrationFreezeThawE2E(t *testing.T) {
 	}
 }
 
+func TestSessionRequestFidelityE2E(t *testing.T) {
+	fx := newCutoverE2E(t)
+	image := "ghcr.io/example/app@sha256:" + strings.Repeat("9", 64)
+	fx.deploy(t, image, store.StrategyKick)
+
+	client := sshClient(t, fx.server.Addr, fx.hostKey.PublicKey(), fx.clientKey, chaosAppName)
+	defer client.Close()
+	execSession, err := client.NewSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	execSession.Stdout, execSession.Stderr = &stdout, &stderr
+	if err := execSession.Setenv("TEST_ENV", "exact-value"); err != nil {
+		t.Fatal(err)
+	}
+	command := `opaque "argument with spaces"`
+	err = execSession.Run(command)
+	exitErr, ok := err.(*ssh.ExitError)
+	if !ok || exitErr.ExitStatus() != 37 {
+		t.Fatalf("exec error=%v", err)
+	}
+	if !strings.Contains(stdout.String(), "EXEC "+command) {
+		t.Fatalf("stdout %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "EXEC-ERR "+command) {
+		t.Fatalf("stderr %q", stderr.String())
+	}
+	awaitSessionCount(t, fx.hub.Sessions, 0)
+
+	subsystem, err := client.NewSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var subsystemOut bytes.Buffer
+	subsystem.Stdout = &subsystemOut
+	if err := subsystem.RequestSubsystem("test-subsystem"); err != nil {
+		t.Fatal(err)
+	}
+	if err := subsystem.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(subsystemOut.String(), "SUBSYSTEM test-subsystem") {
+		t.Fatalf("subsystem output %q", subsystemOut.String())
+	}
+	awaitSessionCount(t, fx.hub.Sessions, 0)
+
+	live := fx.openApp(t)
+	defer live.close()
+	live.awaitLine(t, "PTY xterm 80 40")
+	if err := live.session.WindowChange(30, 120); err != nil {
+		t.Fatal(err)
+	}
+	live.awaitLine(t, "WINDOW 120 30")
+	if err := live.session.Signal(ssh.Signal("USR1")); err != nil {
+		t.Fatal(err)
+	}
+	live.awaitLine(t, "SIGNAL USR1")
+	live.send(t, "quit")
+	if err := live.awaitExit(t); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func awaitSessionCount(t *testing.T, registry *session.Registry, want int) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for registry.Count() != want {
+		if time.Now().After(deadline) {
+			t.Fatalf("session count=%d want=%d", registry.Count(), want)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 type chaosFleet struct {
 	t     *testing.T
 	caPub ssh.PublicKey
@@ -410,13 +485,14 @@ func (f *chaosFleet) SetNoIdle(context.Context, string, string, string, bool) er
 	return nil
 }
 
-func (f *chaosFleet) Dial(ctx context.Context, req gateway.DialRequest) (string, error) {
+func (f *chaosFleet) Dial(ctx context.Context, req gateway.DialRequest) (gateway.DialTarget, error) {
 	if err := f.Ensure(ctx, req.User, req.App, req.Gen, req.Image, req.Tier, req.NoIdle); err != nil {
-		return "", err
+		return gateway.DialTarget{}, err
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.apps[req.Gen].Addr(), nil
+	app := f.apps[req.Gen]
+	return gateway.DialTarget{Addr: app.Addr(), SSHHostPublicKey: app.hostPublicKey}, nil
 }
 
 func (f *chaosFleet) wasStopped(gen string) bool {
@@ -451,7 +527,7 @@ func (f *chaosFleet) replace(gen string) error {
 		return fmt.Errorf("unknown generation %s", gen)
 	}
 	old.Close()
-	replacement, err := newChaosApp(f.caPub, gen, image)
+	replacement, err := newChaosAppWithSigner(f.caPub, gen, image, old.hostSigner)
 	if err != nil {
 		return err
 	}
@@ -475,10 +551,12 @@ func (f *chaosFleet) Close() {
 }
 
 type chaosApp struct {
-	listener net.Listener
-	config   *ssh.ServerConfig
-	gen      string
-	image    string
+	listener      net.Listener
+	config        *ssh.ServerConfig
+	gen           string
+	image         string
+	hostSigner    ssh.Signer
+	hostPublicKey string
 
 	once  sync.Once
 	mu    sync.Mutex
@@ -490,6 +568,10 @@ func newChaosApp(caPub ssh.PublicKey, gen, image string) (*chaosApp, error) {
 	if err != nil {
 		return nil, err
 	}
+	return newChaosAppWithSigner(caPub, gen, image, hostSigner)
+}
+
+func newChaosAppWithSigner(caPub ssh.PublicKey, gen, image string, hostSigner ssh.Signer) (*chaosApp, error) {
 	checker := &ssh.CertChecker{
 		IsUserAuthority: func(auth ssh.PublicKey) bool {
 			return bytes.Equal(auth.Marshal(), caPub.Marshal())
@@ -503,7 +585,8 @@ func newChaosApp(caPub ssh.PublicKey, gen, image string) (*chaosApp, error) {
 	}
 	app := &chaosApp{
 		listener: ln, config: config, gen: gen, image: image,
-		conns: make(map[net.Conn]struct{}),
+		conns: make(map[net.Conn]struct{}), hostSigner: hostSigner,
+		hostPublicKey: string(ssh.MarshalAuthorizedKey(hostSigner.PublicKey())),
 	}
 	go app.serve()
 	return app, nil
@@ -552,28 +635,105 @@ func (a *chaosApp) handleConn(conn net.Conn) {
 
 func (a *chaosApp) handleSession(user string, channel ssh.Channel, requests <-chan *ssh.Request) {
 	defer channel.Close()
+	var (
+		pty     *ptyMsg
+		envs    []envMsg
+		started bool
+	)
 	for req := range requests {
 		switch req.Type {
-		case "pty-req", "env", "window-change":
+		case "pty-req":
+			var msg ptyMsg
+			if err := ssh.Unmarshal(req.Payload, &msg); err != nil {
+				_ = req.Reply(false, nil)
+				continue
+			}
+			pty = &msg
+			if req.WantReply {
+				_ = req.Reply(true, nil)
+			}
+		case "env":
+			var msg envMsg
+			if err := ssh.Unmarshal(req.Payload, &msg); err != nil {
+				_ = req.Reply(false, nil)
+				continue
+			}
+			envs = append(envs, msg)
 			if req.WantReply {
 				_ = req.Reply(true, nil)
 			}
 		case "shell":
+			started = true
 			if req.WantReply {
 				_ = req.Reply(true, nil)
 			}
 			_, _ = fmt.Fprintf(channel, "READY %s %s %s\r\n", a.gen, a.image, user)
-			scanner := bufio.NewScanner(channel)
-			for scanner.Scan() {
-				switch strings.TrimSpace(scanner.Text()) {
-				case "ping":
-					_, _ = fmt.Fprintf(channel, "PONG %s\r\n", a.gen)
-				case "quit":
-					sendExit(channel, 0)
-					return
+			if pty != nil {
+				_, _ = fmt.Fprintf(channel, "PTY %s %d %d\r\n", pty.Term, pty.Columns, pty.Rows)
+			}
+			for _, env := range envs {
+				_, _ = fmt.Fprintf(channel, "ENV %s=%s\r\n", env.Name, env.Value)
+			}
+			go func() {
+				scanner := bufio.NewScanner(channel)
+				for scanner.Scan() {
+					switch strings.TrimSpace(scanner.Text()) {
+					case "ping":
+						_, _ = fmt.Fprintf(channel, "PONG %s\r\n", a.gen)
+					case "quit":
+						sendExit(channel, 0)
+						_ = channel.Close()
+						return
+					}
 				}
+			}()
+		case "exec":
+			var msg execMsg
+			if err := ssh.Unmarshal(req.Payload, &msg); err != nil {
+				_ = req.Reply(false, nil)
+				continue
+			}
+			if req.WantReply {
+				_ = req.Reply(true, nil)
+			}
+			_, _ = fmt.Fprintf(channel, "EXEC %s\r\n", msg.Command)
+			_, _ = fmt.Fprintf(channel.Stderr(), "EXEC-ERR %s\r\n", msg.Command)
+			if msg.Command == "exit-signal" {
+				payload := ssh.Marshal(struct {
+					Signal     string
+					CoreDumped bool
+					Message    string
+					Language   string
+				}{Signal: "TERM", Message: "terminated", Language: "en"})
+				_, _ = channel.SendRequest("exit-signal", false, payload)
+			} else {
+				sendExit(channel, 37)
 			}
 			return
+		case "subsystem":
+			var msg subsystemMsg
+			if err := ssh.Unmarshal(req.Payload, &msg); err != nil {
+				_ = req.Reply(false, nil)
+				continue
+			}
+			if req.WantReply {
+				_ = req.Reply(true, nil)
+			}
+			_, _ = fmt.Fprintf(channel, "SUBSYSTEM %s\r\n", msg.Name)
+			sendExit(channel, 0)
+			return
+		case "window-change":
+			var msg windowMsg
+			if !started || ssh.Unmarshal(req.Payload, &msg) != nil {
+				continue
+			}
+			_, _ = fmt.Fprintf(channel, "WINDOW %d %d\r\n", msg.Columns, msg.Rows)
+		case "signal":
+			var msg signalMsg
+			if !started || ssh.Unmarshal(req.Payload, &msg) != nil {
+				continue
+			}
+			_, _ = fmt.Fprintf(channel, "SIGNAL %s\r\n", msg.Signal)
 		default:
 			if req.WantReply {
 				_ = req.Reply(false, nil)

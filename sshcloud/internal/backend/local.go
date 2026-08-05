@@ -8,15 +8,21 @@ import (
 	"os"
 	"os/exec"
 	"sync"
+
+	"golang.org/x/crypto/ssh"
+
+	"github.com/imjasonh/playground/sshcloud/internal/hostkey"
 )
 
 // LocalFortune starts cmd/fortune with the platform CA and tracks its address.
 type LocalFortune struct {
-	mu      sync.Mutex
-	cmdPath string
-	caPub   string // path to CA public key file
-	cmd     *exec.Cmd
-	addr    string
+	mu            sync.Mutex
+	cmdPath       string
+	caPub         string // path to CA public key file
+	cmd           *exec.Cmd
+	addr          string
+	hostKeyPath   string
+	hostPublicKey string
 }
 
 // NewLocalFortune returns a manager. cmdPath is the fortune binary; caPubPath is the CA .pub file.
@@ -34,7 +40,30 @@ func (l *LocalFortune) Ensure() (string, error) {
 	if l.cmdPath == "" {
 		return "", fmt.Errorf("fortune binary path not set")
 	}
-	cmd := exec.Command(l.cmdPath, "-listen", "127.0.0.1:0", "-ca", l.caPub)
+	if l.hostKeyPath == "" {
+		private, signer, err := hostkey.Generate()
+		if err != nil {
+			return "", err
+		}
+		file, err := os.CreateTemp("", "sshcloud-local-fortune-host-key-*")
+		if err != nil {
+			return "", err
+		}
+		if err := file.Chmod(0o600); err != nil {
+			_ = file.Close()
+			return "", err
+		}
+		if _, err := file.Write(private); err != nil {
+			_ = file.Close()
+			return "", err
+		}
+		if err := file.Close(); err != nil {
+			return "", err
+		}
+		l.hostKeyPath = file.Name()
+		l.hostPublicKey = string(ssh.MarshalAuthorizedKey(signer.PublicKey()))
+	}
+	cmd := exec.Command(l.cmdPath, "-listen", "127.0.0.1:0", "-ca", l.caPub, "-host-key", l.hostKeyPath)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return "", err
@@ -72,15 +101,32 @@ func (l *LocalFortune) Stop() {
 	}
 	l.cmd = nil
 	l.addr = ""
+	if l.hostKeyPath != "" {
+		_ = os.Remove(l.hostKeyPath)
+	}
+	l.hostKeyPath = ""
+	l.hostPublicKey = ""
 }
 
 // Addr returns the dial address for fortune (stub registry). gen/image ignored.
 func (l *LocalFortune) Addr(user, app, gen, image string) (string, error) {
+	addr, _, err := l.Target(user, app, gen, image)
+	return addr, err
+}
+
+func (l *LocalFortune) Target(user, app, gen, image string) (string, string, error) {
 	_ = user
 	_ = gen
 	_ = image
 	if app != "fortune" {
-		return "", fmt.Errorf("local backend only supports fortune, got %q", app)
+		return "", "", fmt.Errorf("local backend only supports fortune, got %q", app)
 	}
-	return l.Ensure()
+	addr, err := l.Ensure()
+	if err != nil {
+		return "", "", err
+	}
+	l.mu.Lock()
+	hostKey := l.hostPublicKey
+	l.mu.Unlock()
+	return addr, hostKey, nil
 }

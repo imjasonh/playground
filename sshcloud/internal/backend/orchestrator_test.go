@@ -47,9 +47,8 @@ func TestOrchestratorClientAddr(t *testing.T) {
 		}
 		got.User, got.App, got.Gen, got.Image, got.NoIdle = req.User, req.App, req.Gen, req.Image, req.NoIdle
 		_ = json.NewEncoder(w).Encode(map[string]string{
-			"addr":     "10.0.0.2:22",
-			"guest_ip": "10.0.0.2",
-			"state":    "running",
+			"addr": "10.0.0.2:22", "guest_ip": "10.0.0.2", "state": "running",
+			"ssh_host_public_key": "test-host-key",
 		})
 	}))
 	t.Cleanup(agent.Close)
@@ -79,7 +78,9 @@ func TestOrchestratorClientAddr(t *testing.T) {
 				http.Error(w, err.Error(), 500)
 				return
 			}
-			_ = json.NewEncoder(w).Encode(map[string]string{"addr": addr})
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"addr": addr, "ssh_host_public_key": "test-host-key",
+			})
 		case "/v1/stop":
 			var req struct {
 				User string `json:"user"`
@@ -153,6 +154,7 @@ func TestPlacedDialRefusesImplicitCrossHostRecovery(t *testing.T) {
 		}
 		_ = json.NewEncoder(w).Encode(map[string]string{
 			"addr": "10.20.0.8:24000", "guest_ip": "172.16.2.2", "state": "running",
+			"ssh_host_public_key": "test-host-key",
 		})
 	}))
 	t.Cleanup(agent.Close)

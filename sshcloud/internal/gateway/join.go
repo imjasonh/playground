@@ -12,7 +12,11 @@ import (
 // When execCmd is set for a new user (`ssh join@host demo`), joins
 // non-interactively and returns an exit code (0 ok, 1 failure).
 func RunJoin(ctx context.Context, ch io.ReadWriter, hub *Hub, keyFP, userID, execCmd string) int {
-	t := newTerm(ch)
+	return RunJoinSession(ctx, ClientSession{IO: ch, Stderr: ch, Spec: &SessionSpec{StartType: SessionShell, PTY: true}}, hub, keyFP, userID, execCmd)
+}
+
+func RunJoinSession(ctx context.Context, client ClientSession, hub *Hub, keyFP, userID, execCmd string) int {
+	t := newSessionTerm(client)
 	if userID == "" {
 		return runJoinNew(ctx, t, hub, keyFP, execCmd)
 	}

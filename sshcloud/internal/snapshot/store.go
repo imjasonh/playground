@@ -18,18 +18,22 @@ import (
 // RootfsPath and TapName must be recreated at the same absolute paths before
 // snapshot/load — Firecracker embeds them in the snapshot state.
 type Meta struct {
-	User            string    `json:"user"`
-	App             string    `json:"app"`
-	GuestIP         string    `json:"guest_ip"`
-	TapName         string    `json:"tap_name"`
-	GuestMAC        string    `json:"guest_mac"`
-	HostIP          string    `json:"host_ip"`
-	RootfsPath      string    `json:"rootfs_path"`
-	Image           string    `json:"image,omitempty"`
-	Tier            string    `json:"tier,omitempty"`
-	PlatformVersion string    `json:"platform_version,omitempty"`
-	CreatedAt       time.Time `json:"created_at"`
+	SchemaVersion    int       `json:"schema_version"`
+	User             string    `json:"user"`
+	App              string    `json:"app"`
+	GuestIP          string    `json:"guest_ip"`
+	TapName          string    `json:"tap_name"`
+	GuestMAC         string    `json:"guest_mac"`
+	HostIP           string    `json:"host_ip"`
+	RootfsPath       string    `json:"rootfs_path"`
+	Image            string    `json:"image,omitempty"`
+	Tier             string    `json:"tier,omitempty"`
+	PlatformVersion  string    `json:"platform_version,omitempty"`
+	SSHHostPublicKey string    `json:"ssh_host_public_key"`
+	CreatedAt        time.Time `json:"created_at"`
 }
+
+const SchemaVersion = 1
 
 // Package is a complete sleep artifact set on local disk before/after blob sync.
 type Package struct {

@@ -115,10 +115,16 @@ exist only for test/dev Ensures without an image.
 
 ### OCI image → ext4 rootfs
 
-Allowed apps are digest-pinned (`repo@sha256:…`). PID 1 must listen on `:22`
-and trust the platform user CA at `/run/platform/ssh_user_ca.pub`
-(`/ca.pub` remains as a compatibility alias). The kernel is platform-supplied,
-not taken from the image.
+Allowed apps are digest-pinned (`repo@sha256:…`) Linux/amd64 images with an
+empty/root OCI `User` and no declared OCI volumes. PID 1 runs as guest root,
+must listen on `:22`, accept arbitrary platform principals, trust the user CA
+at `/run/platform/ssh_user_ca.pub`, and present the injected Ed25519 host key at
+`/run/platform/ssh_host_ed25519_key`. The kernel is platform-supplied.
+
+`guestinit` mounts proc, sysfs, devtmpfs/devpts, and a bounded `/tmp` before
+exec. This is still an appliance-style OCI subset, not a full container
+runtime: layer UID/GID/xattrs, non-root users, OCI volumes, cgroups, DNS/egress,
+and graceful `StopSignal` supervision are not yet supported.
 
 `internal/ocirootfs.Materialize` pulls with
 [go-containerregistry](https://github.com/google/go-containerregistry)
@@ -239,8 +245,9 @@ Normal Go CI runs deterministic fault injection (also under the race detector):
 The KVM job adds substrate-dependent chaos: a canceled/failed snapshot publish
 must resume a dialable guest, and a fresh manager must recover a sleeping guest
 from the durable snapshot through ordinary `Ensure`. Cloud IAM, firewall/NAT,
-and Terraform replacement behavior still require a disposable GCP project;
-local fakes deliberately do not claim to validate those provider semantics.
+and Terraform replacement behavior are not exercised in CI; this repository
+does not have a disposable GCP project. Local fakes deliberately do not claim
+to validate provider semantics.
 
 ## Status
 
@@ -248,6 +255,9 @@ Implemented and covered at package/integration level:
 
 - [x] Owner-scoped routing, join/menu/deploy UX, busy admission
 - [x] Gateway-minted user certificates and normal digest-pinned fortune app
+- [x] Per-instance Ed25519 app host identity pinned through gateway→agent
+- [x] Shell/exec/subsystem, PTY/env/resize/signal, stderr, and exact exit forwarding
+- [x] Bounded, classified wake retry with in-session status
 - [x] Hardened OCI unpack, authenticated pulls, boot-spec PID 1, ext4 cache
 - [x] Firecracker boot plus consistent pause→disk→memory snapshots
 - [x] Atomic snapshot package publication and restart-on-Ensure recovery
@@ -265,8 +275,6 @@ Implemented and covered at package/integration level:
 Required before public/self-service use:
 
 - [ ] Gateway handshake/join/deploy/wake quotas and durable per-user limits
-- [ ] Full SSH PTY/exec/subsystem/env/signal/resize/stderr forwarding
-- [ ] Per-instance app SSH host identity (remove `InsecureIgnoreHostKey`)
 - [ ] Workload identity + mTLS in place of interim bearer tokens
 - [ ] Firecracker jailer/seccomp and a privileged TAP helper (agent VMM is not
       yet a production-strength host boundary)
@@ -277,4 +285,5 @@ Required before public/self-service use:
       auto-healing after a hard failure remains abrupt)
 - [ ] Snapshot retention/garbage collection, corruption/failure-injection tests
 - [ ] External key management, encrypted remote Terraform state, rotation drills
-- [ ] Disposable-project first-apply/reapply/rollout end-to-end test
+- [ ] Manual first apply/drain/rollout validation in an operator-owned environment
+      (there is no disposable GCP project available to CI)

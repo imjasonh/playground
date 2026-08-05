@@ -17,21 +17,21 @@ func TestDialWithLoadingShowsStarting(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 
-	dial := func(_ context.Context, req gateway.DialRequest) (string, error) {
+	dial := func(_ context.Context, req gateway.DialRequest) (gateway.DialTarget, error) {
 		if req.User != "alice" || req.App != "fortune" || req.Gen != "g1" {
 			t.Fatalf("dial args: %+v", req)
 		}
 		close(started)
 		<-release
-		return "10.0.0.2:22", nil
+		return gateway.DialTarget{Addr: "10.0.0.2:22"}, nil
 	}
 
 	done := make(chan struct{})
-	var addr string
+	var target gateway.DialTarget
 	var err error
 	go func() {
 		defer close(done)
-		addr, err = gateway.DialWithLoading(context.Background(), &lockedWriter{mu: &mu, buf: &buf}, "fortune", dial, gateway.DialRequest{
+		target, err = gateway.DialWithLoading(context.Background(), &lockedWriter{mu: &mu, buf: &buf}, "fortune", dial, gateway.DialRequest{
 			User: "alice", App: "fortune", Gen: "g1",
 		})
 	}()
@@ -66,8 +66,8 @@ func TestDialWithLoadingShowsStarting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if addr != "10.0.0.2:22" {
-		t.Fatalf("addr = %q", addr)
+	if target.Addr != "10.0.0.2:22" {
+		t.Fatalf("addr = %q", target.Addr)
 	}
 	mu.Lock()
 	out := buf.String()
@@ -78,8 +78,8 @@ func TestDialWithLoadingShowsStarting(t *testing.T) {
 }
 
 func TestDialWithLoadingError(t *testing.T) {
-	dial := func(context.Context, gateway.DialRequest) (string, error) {
-		return "", errBackend
+	dial := func(context.Context, gateway.DialRequest) (gateway.DialTarget, error) {
+		return gateway.DialTarget{}, errBackend
 	}
 	var buf bytes.Buffer
 	_, err := gateway.DialWithLoading(context.Background(), &buf, "fortune", dial, gateway.DialRequest{User: "alice", App: "fortune"})
@@ -93,9 +93,9 @@ func TestDialWithLoadingError(t *testing.T) {
 
 func TestDialWithLoadingCancel(t *testing.T) {
 	block := make(chan struct{})
-	dial := func(context.Context, gateway.DialRequest) (string, error) {
+	dial := func(context.Context, gateway.DialRequest) (gateway.DialTarget, error) {
 		<-block
-		return "10.0.0.2:22", nil
+		return gateway.DialTarget{Addr: "10.0.0.2:22"}, nil
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	errCh := make(chan error, 1)
@@ -113,6 +113,28 @@ func TestDialWithLoadingCancel(t *testing.T) {
 		t.Fatal("DialWithLoading did not return on cancel")
 	}
 	close(block)
+}
+
+func TestDialWithLoadingRetriesTemporaryFailures(t *testing.T) {
+	t.Parallel()
+	attempts := 0
+	dial := func(context.Context, gateway.DialRequest) (gateway.DialTarget, error) {
+		attempts++
+		if attempts < 3 {
+			return gateway.DialTarget{}, temporaryTestError{}
+		}
+		return gateway.DialTarget{Addr: "10.0.0.2:22"}, nil
+	}
+	var out bytes.Buffer
+	target, err := gateway.DialWithLoading(context.Background(), &out, "fortune", dial, gateway.DialRequest{
+		User: "alice", App: "fortune", RetryFor: 2 * time.Second,
+	})
+	if err != nil || target.Addr == "" || attempts != 3 {
+		t.Fatalf("target=%+v attempts=%d err=%v", target, attempts, err)
+	}
+	if !strings.Contains(out.String(), "retrying") {
+		t.Fatalf("missing retry status: %q", out.String())
+	}
 }
 
 type lockedWriter struct {
@@ -133,5 +155,10 @@ func (ioDiscard) Write(p []byte) (int, error) { return len(p), nil }
 type staticError string
 
 func (e staticError) Error() string { return string(e) }
+
+type temporaryTestError struct{}
+
+func (temporaryTestError) Error() string   { return "warming" }
+func (temporaryTestError) Temporary() bool { return true }
 
 const errBackend = staticError("wake failed")

@@ -149,6 +149,10 @@ func (p *PlacedDial) EnsureAddrTier(ctx context.Context, user, app, gen, image, 
 		}
 		return "", fmt.Errorf("no host accepted %s/%s tier %s", user, app, tier)
 	}
+	generations = placement.UpsertGeneration(generations, placement.Generation{
+		Gen: gen, Image: image, Tier: tier, State: "running",
+		SSHHostPublicKey: in.SSHHostPublicKey,
+	})
 	if originalHost != "" {
 		commitCtx, commitCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		err := guard.CommitState(commitCtx, originalHost, generations)
@@ -256,6 +260,29 @@ func (p *PlacedDial) SetNoIdle(ctx context.Context, user, app, gen string, noIdl
 		return err
 	}
 	return c.SetNoIdleContext(guard.Context(), user, app, gen, noIdle)
+}
+
+// StatusView reads the currently placed generation without changing placement.
+func (p *PlacedDial) StatusView(ctx context.Context, user, app, gen string) (InstanceView, bool, error) {
+	record, ok, err := p.Placement.GetRecord(ctx, user, app)
+	if err != nil || !ok {
+		return InstanceView{}, false, err
+	}
+	client, _, err := p.resolve(record.HostID, user, app, false)
+	if err != nil {
+		return InstanceView{}, false, err
+	}
+	view, found, err := client.StatusContext(ctx, user, app, gen)
+	if err != nil || !found {
+		return view, found, err
+	}
+	for _, generation := range record.Generations {
+		if generation.Gen == gen && generation.SSHHostPublicKey != "" &&
+			generation.SSHHostPublicKey != view.SSHHostPublicKey {
+			return InstanceView{}, false, fmt.Errorf("agent SSH host key does not match durable placement")
+		}
+	}
+	return view, true, nil
 }
 
 func releasePlacementGuard(guard *placement.Guard) {

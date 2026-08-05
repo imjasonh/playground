@@ -36,6 +36,17 @@ type orchEnsureBody struct {
 	NoIdle bool   `json:"no_idle,omitempty"`
 }
 
+type OrchestratorTarget struct {
+	Addr             string
+	SSHHostPublicKey string
+}
+
+type TemporaryError struct{ Err error }
+
+func (e TemporaryError) Error() string   { return e.Err.Error() }
+func (e TemporaryError) Unwrap() error   { return e.Err }
+func (e TemporaryError) Temporary() bool { return true }
+
 // Addr implements gateway dial via POST /v1/ensure.
 func (c *OrchestratorClient) Addr(user, app, gen, image string) (string, error) {
 	return c.AddrContext(context.Background(), user, app, gen, image)
@@ -48,41 +59,54 @@ func (c *OrchestratorClient) AddrContext(ctx context.Context, user, app, gen, im
 
 // AddrTierContext ensures an instance with tier/no-idle settings.
 func (c *OrchestratorClient) AddrTierContext(ctx context.Context, user, app, gen, image, tier string, noIdle bool) (string, error) {
+	target, err := c.TargetTierContext(ctx, user, app, gen, image, tier, noIdle)
+	return target.Addr, err
+}
+
+func (c *OrchestratorClient) TargetTierContext(ctx context.Context, user, app, gen, image, tier string, noIdle bool) (OrchestratorTarget, error) {
 	return c.ensure(ctx, orchEnsureBody{
 		User: user, App: app, Gen: gen, Image: image, Tier: tier, NoIdle: noIdle,
 	})
 }
 
-func (c *OrchestratorClient) ensure(ctx context.Context, body orchEnsureBody) (string, error) {
+func (c *OrchestratorClient) ensure(ctx context.Context, body orchEnsureBody) (OrchestratorTarget, error) {
 	base := strings.TrimRight(c.BaseURL, "/")
 	b, err := json.Marshal(body)
 	if err != nil {
-		return "", err
+		return OrchestratorTarget{}, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/v1/ensure", bytes.NewReader(b))
 	if err != nil {
-		return "", err
+		return OrchestratorTarget{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	controlauth.Add(req, c.Token)
 	res, err := c.client().Do(req)
 	if err != nil {
-		return "", err
+		return OrchestratorTarget{}, err
 	}
 	defer res.Body.Close()
 	if res.StatusCode >= 300 {
-		return "", fmt.Errorf("orchestrator ensure: %s: %s", res.Status, readErr(res.Body))
+		err := fmt.Errorf("orchestrator ensure: %s: %s", res.Status, readErr(res.Body))
+		if res.StatusCode == http.StatusConflict || res.StatusCode == http.StatusServiceUnavailable {
+			return OrchestratorTarget{}, TemporaryError{Err: err}
+		}
+		return OrchestratorTarget{}, err
 	}
 	var out struct {
-		Addr string `json:"addr"`
+		Addr             string `json:"addr"`
+		SSHHostPublicKey string `json:"ssh_host_public_key"`
 	}
 	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
-		return "", err
+		return OrchestratorTarget{}, err
 	}
 	if out.Addr == "" {
-		return "", fmt.Errorf("orchestrator returned empty addr")
+		return OrchestratorTarget{}, fmt.Errorf("orchestrator returned empty addr")
 	}
-	return out.Addr, nil
+	if out.SSHHostPublicKey == "" {
+		return OrchestratorTarget{}, fmt.Errorf("orchestrator returned empty SSH host key")
+	}
+	return OrchestratorTarget{Addr: out.Addr, SSHHostPublicKey: out.SSHHostPublicKey}, nil
 }
 
 // Ensure implements cutover.Instances via POST /v1/ensure.

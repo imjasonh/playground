@@ -91,10 +91,46 @@ func Run(specPath string) {
 		fmt.Fprintf(os.Stderr, "guestinit: %v\n", err)
 		os.Exit(127)
 	}
+	if err := mountRuntimeFilesystems(); err != nil {
+		fmt.Fprintf(os.Stderr, "guestinit: %v\n", err)
+		os.Exit(127)
+	}
 	if err := Exec(spec); err != nil {
 		fmt.Fprintf(os.Stderr, "guestinit: %v\n", err)
 		os.Exit(127)
 	}
+}
+
+func mountRuntimeFilesystems() error {
+	type mountSpec struct {
+		source, target, fs, data string
+		flags                    uintptr
+		optional                 bool
+	}
+	mounts := []mountSpec{
+		{source: "proc", target: "/proc", fs: "proc", flags: syscall.MS_NOSUID | syscall.MS_NODEV | syscall.MS_NOEXEC},
+		{source: "sysfs", target: "/sys", fs: "sysfs", flags: syscall.MS_RDONLY | syscall.MS_NOSUID | syscall.MS_NODEV | syscall.MS_NOEXEC, optional: true},
+		{source: "devtmpfs", target: "/dev", fs: "devtmpfs", flags: syscall.MS_NOSUID},
+		{source: "devpts", target: "/dev/pts", fs: "devpts", data: "newinstance,ptmxmode=0666,mode=0620", flags: syscall.MS_NOSUID | syscall.MS_NOEXEC},
+		{source: "tmpfs", target: "/tmp", fs: "tmpfs", data: "mode=1777,size=64m", flags: syscall.MS_NOSUID | syscall.MS_NODEV},
+	}
+	for _, mount := range mounts {
+		if err := os.MkdirAll(mount.target, 0o755); err != nil {
+			return err
+		}
+		if err := syscall.Mount(mount.source, mount.target, mount.fs, mount.flags, mount.data); err != nil &&
+			err != syscall.EBUSY {
+			if mount.optional {
+				continue
+			}
+			return fmt.Errorf("mount %s on %s: %w", mount.fs, mount.target, err)
+		}
+	}
+	_ = os.Remove("/dev/ptmx")
+	if err := os.Symlink("pts/ptmx", "/dev/ptmx"); err != nil && !os.IsExist(err) {
+		return fmt.Errorf("link /dev/ptmx: %w", err)
+	}
+	return nil
 }
 
 // Exec chdirs, builds env, and syscall.Exec's the image command.

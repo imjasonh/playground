@@ -101,6 +101,7 @@ func (c *Controller) DrainHost(ctx context.Context, hostID string) (Result, erro
 				User: record.User, App: record.App, Gen: generation.Gen,
 				AgentApp: genid.AgentApp(record.App, generation.Gen),
 				Image:    generation.Image, Tier: generation.Tier, State: agent.StateSleeping,
+				SSHHostPublicKey: generation.SSHHostPublicKey,
 			})
 		}
 	}
@@ -219,6 +220,7 @@ func (c *Controller) moveGroup(ctx context.Context, sourceID, sourceEpoch string
 		generations = append(generations, instance.Gen)
 		generationState = append(generationState, placement.Generation{
 			Gen: instance.Gen, Image: instance.Image, Tier: instance.Tier, State: string(instance.State),
+			SSHHostPublicKey: instance.SSHHostPublicKey,
 		})
 	}
 	operation := placement.Operation{

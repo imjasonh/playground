@@ -19,9 +19,11 @@ import (
 	"github.com/imjasonh/playground/sshcloud/internal/firecracker"
 	"github.com/imjasonh/playground/sshcloud/internal/genid"
 	"github.com/imjasonh/playground/sshcloud/internal/guestinit"
+	"github.com/imjasonh/playground/sshcloud/internal/hostkey"
 	"github.com/imjasonh/playground/sshcloud/internal/image"
 	"github.com/imjasonh/playground/sshcloud/internal/rootfs"
 	"github.com/imjasonh/playground/sshcloud/internal/snapshot"
+	"golang.org/x/crypto/ssh"
 )
 
 // InstanceKey identifies a running or sleeping app instance.
@@ -72,24 +74,25 @@ func (ErrCordoned) Error() string { return "host is cordoned" }
 
 // Instance is a live or sleeping microVM endpoint.
 type Instance struct {
-	Key      InstanceKey
-	State    State
-	Addr     string
-	GuestIP  string
-	HostIP   string
-	TapName  string
-	GuestMAC string
-	Rootfs   string
-	WorkDir  string
-	LastUsed time.Time
-	Image    string
-	Tier     string
-	VCPUs    int64
-	MemMiB   int64
-	machine  machine
-	snapKey  string
-	noIdle   bool
-	relay    *tcpRelay
+	Key              InstanceKey
+	State            State
+	Addr             string
+	GuestIP          string
+	HostIP           string
+	TapName          string
+	GuestMAC         string
+	Rootfs           string
+	WorkDir          string
+	LastUsed         time.Time
+	Image            string
+	Tier             string
+	VCPUs            int64
+	MemMiB           int64
+	SSHHostPublicKey string
+	machine          machine
+	snapKey          string
+	noIdle           bool
+	relay            *tcpRelay
 }
 
 // Config for the Manager.
@@ -202,7 +205,10 @@ func NewManager(cfg Config) (*Manager, error) {
 	if rt == nil {
 		rt = FirecrackerRuntime{}
 	}
-	if err := os.MkdirAll(cfg.WorkDir, 0o755); err != nil {
+	if err := os.MkdirAll(cfg.WorkDir, 0o700); err != nil {
+		return nil, err
+	}
+	if err := os.Chmod(cfg.WorkDir, 0o700); err != nil {
 		return nil, err
 	}
 	if cfg.CapacityVCPUs <= 0 {
@@ -570,14 +576,15 @@ func (m *Manager) Cordon(ctx context.Context) (string, error) {
 
 // InstanceInfo is host-drain inventory.
 type InstanceInfo struct {
-	User     string `json:"user"`
-	App      string `json:"app"`
-	Gen      string `json:"gen,omitempty"`
-	AgentApp string `json:"agent_app"`
-	Image    string `json:"image,omitempty"`
-	Tier     string `json:"tier"`
-	State    State  `json:"state"`
-	NoIdle   bool   `json:"no_idle"`
+	User             string `json:"user"`
+	App              string `json:"app"`
+	Gen              string `json:"gen,omitempty"`
+	AgentApp         string `json:"agent_app"`
+	Image            string `json:"image,omitempty"`
+	Tier             string `json:"tier"`
+	State            State  `json:"state"`
+	NoIdle           bool   `json:"no_idle"`
+	SSHHostPublicKey string `json:"ssh_host_public_key"`
 }
 
 // ListInstances returns a stable snapshot of this host's inventory.
@@ -590,6 +597,7 @@ func (m *Manager) ListInstances() []InstanceInfo {
 		out = append(out, InstanceInfo{
 			User: in.Key.User, App: app, Gen: gen, AgentApp: in.Key.App,
 			Image: in.Image, Tier: in.Tier, State: in.State, NoIdle: in.noIdle,
+			SSHHostPublicKey: in.SSHHostPublicKey,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -702,7 +710,7 @@ func (m *Manager) bootCold(ctx context.Context, k InstanceKey, n int, opt Ensure
 	if err := os.RemoveAll(dir); err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
 	defer func() {
@@ -725,6 +733,10 @@ func (m *Manager) bootCold(ctx context.Context, k InstanceKey, n int, opt Ensure
 		if err := rootfs.InjectFile(rootfsPath, m.cfg.CAPubPath, "/run/platform/ssh_user_ca.pub", "0644"); err != nil {
 			return nil, fmt.Errorf("inject canonical CA path: %w", err)
 		}
+	}
+	sshHostPublicKey, err := injectSSHHostKey(rootfsPath)
+	if err != nil {
+		return nil, err
 	}
 	initArgs, err := m.prepareGuestInit(rootfsPath, resolved.Spec)
 	if err != nil {
@@ -794,24 +806,70 @@ func (m *Manager) bootCold(ctx context.Context, k InstanceKey, n int, opt Ensure
 	}
 
 	return &Instance{
-		Key:      k,
-		State:    StateRunning,
-		Addr:     addr,
-		GuestIP:  guestIP,
-		HostIP:   hostIP,
-		TapName:  tapName,
-		GuestMAC: mac,
-		Rootfs:   rootfsPath,
-		WorkDir:  dir,
-		LastUsed: time.Now(),
-		Image:    imageRef,
-		Tier:     opt.Tier,
-		VCPUs:    vcpus,
-		MemMiB:   memMiB,
-		machine:  mach,
-		noIdle:   opt.NoIdle,
-		relay:    relay,
+		Key:              k,
+		State:            StateRunning,
+		Addr:             addr,
+		GuestIP:          guestIP,
+		HostIP:           hostIP,
+		TapName:          tapName,
+		GuestMAC:         mac,
+		Rootfs:           rootfsPath,
+		WorkDir:          dir,
+		LastUsed:         time.Now(),
+		Image:            imageRef,
+		Tier:             opt.Tier,
+		VCPUs:            vcpus,
+		MemMiB:           memMiB,
+		SSHHostPublicKey: sshHostPublicKey,
+		machine:          mach,
+		noIdle:           opt.NoIdle,
+		relay:            relay,
 	}, nil
+}
+
+func injectSSHHostKey(rootfsPath string) (string, error) {
+	privateKey, signer, err := hostkey.Generate()
+	if err != nil {
+		return "", fmt.Errorf("generate app host key: %w", err)
+	}
+	tmp, err := os.CreateTemp("", "sshcloud-app-host-key-*")
+	if err != nil {
+		return "", err
+	}
+	path := tmp.Name()
+	defer os.Remove(path)
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return "", err
+	}
+	if _, err := tmp.Write(privateKey); err != nil {
+		_ = tmp.Close()
+		return "", err
+	}
+	if err := tmp.Close(); err != nil {
+		return "", err
+	}
+	if err := rootfs.InjectFile(rootfsPath, path, "/run/platform/ssh_host_ed25519_key", "0600"); err != nil {
+		return "", fmt.Errorf("inject app host key: %w", err)
+	}
+	public := ssh.MarshalAuthorizedKey(signer.PublicKey())
+	publicPath, err := os.CreateTemp("", "sshcloud-app-host-key-*.pub")
+	if err != nil {
+		return "", err
+	}
+	publicTmp := publicPath.Name()
+	defer os.Remove(publicTmp)
+	if _, err := publicPath.Write(public); err != nil {
+		_ = publicPath.Close()
+		return "", err
+	}
+	if err := publicPath.Close(); err != nil {
+		return "", err
+	}
+	if err := rootfs.InjectFile(rootfsPath, publicTmp, "/run/platform/ssh_host_ed25519_key.pub", "0644"); err != nil {
+		return "", fmt.Errorf("inject app host public key: %w", err)
+	}
+	return string(public), nil
 }
 
 func instanceResourceID(k InstanceKey) string {
@@ -822,11 +880,12 @@ func instanceResourceID(k InstanceKey) string {
 
 // InstanceStatus is a read-only view for the HTTP API.
 type InstanceStatus struct {
-	State    State
-	Addr     string
-	GuestIP  string
-	LastUsed time.Time
-	SnapKey  string
+	State            State
+	Addr             string
+	GuestIP          string
+	LastUsed         time.Time
+	SnapKey          string
+	SSHHostPublicKey string
 }
 
 // Status returns the current state of an instance, if known.
@@ -863,11 +922,12 @@ func (m *Manager) statusLocked(k InstanceKey) (InstanceStatus, bool) {
 		return InstanceStatus{}, false
 	}
 	return InstanceStatus{
-		State:    in.State,
-		Addr:     in.Addr,
-		GuestIP:  in.GuestIP,
-		LastUsed: in.LastUsed,
-		SnapKey:  in.snapKey,
+		State:            in.State,
+		Addr:             in.Addr,
+		GuestIP:          in.GuestIP,
+		LastUsed:         in.LastUsed,
+		SnapKey:          in.snapKey,
+		SSHHostPublicKey: in.SSHHostPublicKey,
 	}, true
 }
 
@@ -946,21 +1006,23 @@ func (m *Manager) SleepWithEpoch(ctx context.Context, user, app, cordonEpoch str
 	snapDir := filepath.Join(in.WorkDir, "snap")
 	_ = os.RemoveAll(snapDir)
 	pkg := snapshot.NewPackageDir(snapDir)
-	if err := os.MkdirAll(snapDir, 0o755); err != nil {
+	if err := os.MkdirAll(snapDir, 0o700); err != nil {
 		return err
 	}
 	meta := snapshot.Meta{
-		User:            user,
-		App:             app,
-		GuestIP:         in.GuestIP,
-		TapName:         in.TapName,
-		GuestMAC:        in.GuestMAC,
-		HostIP:          in.HostIP,
-		RootfsPath:      in.Rootfs,
-		Image:           in.Image,
-		Tier:            in.Tier,
-		PlatformVersion: m.platformVersion(),
-		CreatedAt:       time.Now().UTC(),
+		SchemaVersion:    snapshot.SchemaVersion,
+		User:             user,
+		App:              app,
+		GuestIP:          in.GuestIP,
+		TapName:          in.TapName,
+		GuestMAC:         in.GuestMAC,
+		HostIP:           in.HostIP,
+		RootfsPath:       in.Rootfs,
+		Image:            in.Image,
+		Tier:             in.Tier,
+		PlatformVersion:  m.platformVersion(),
+		SSHHostPublicKey: in.SSHHostPublicKey,
+		CreatedAt:        time.Now().UTC(),
 	}
 	if err := pkg.WriteMeta(meta); err != nil {
 		return err
@@ -1087,12 +1149,18 @@ func (m *Manager) PreflightSnapshot(ctx context.Context, user, app string) (Inst
 	if meta.User != user || meta.App != app {
 		return InstanceInfo{}, fmt.Errorf("snapshot identity mismatch: got %s/%s, want %s", meta.User, meta.App, k)
 	}
+	if meta.SchemaVersion != snapshot.SchemaVersion {
+		return InstanceInfo{}, fmt.Errorf("snapshot schema version %d is unsupported", meta.SchemaVersion)
+	}
 	tier, _, _, err := tierResources(meta.Tier)
 	if err != nil {
 		return InstanceInfo{}, err
 	}
 	if platformVersion := m.platformVersion(); platformVersion != "" && meta.PlatformVersion != platformVersion {
 		return InstanceInfo{}, fmt.Errorf("snapshot platform version %q is incompatible with host %q", meta.PlatformVersion, platformVersion)
+	}
+	if err := validateSSHHostPublicKey(meta.SSHHostPublicKey); err != nil {
+		return InstanceInfo{}, err
 	}
 	resourceID := instanceResourceID(k)
 	if meta.RootfsPath != filepath.Join(m.cfg.WorkDir, "vm-"+resourceID, "rootfs.ext4") ||
@@ -1106,6 +1174,7 @@ func (m *Manager) PreflightSnapshot(ctx context.Context, user, app string) (Inst
 	return InstanceInfo{
 		User: user, App: baseApp, Gen: gen, AgentApp: app,
 		Image: meta.Image, Tier: tier, State: StateSleeping,
+		SSHHostPublicKey: meta.SSHHostPublicKey,
 	}, nil
 }
 
@@ -1122,6 +1191,7 @@ func (m *Manager) RegisterSleeping(ctx context.Context, user, app string) (Insta
 		info := InstanceInfo{
 			User: user, App: baseApp, Gen: gen, AgentApp: app,
 			Image: existing.Image, Tier: existing.Tier, State: existing.State,
+			SSHHostPublicKey: existing.SSHHostPublicKey,
 		}
 		m.mu.Unlock()
 		return info, nil
@@ -1150,7 +1220,7 @@ func (m *Manager) RegisterSleeping(ctx context.Context, user, app string) (Insta
 		Rootfs:   filepath.Join(m.cfg.WorkDir, "vm-"+resourceID, "rootfs.ext4"),
 		WorkDir:  filepath.Join(m.cfg.WorkDir, "vm-"+resourceID),
 		Image:    meta.Image, Tier: info.Tier, snapKey: snapshot.KeyFor(user, app),
-		LastUsed: time.Now(),
+		SSHHostPublicKey: meta.SSHHostPublicKey, LastUsed: time.Now(),
 	}
 	_, in.VCPUs, in.MemMiB, _ = tierResources(info.Tier)
 	m.mu.Lock()
@@ -1223,8 +1293,14 @@ func (m *Manager) adopt(ctx context.Context, k InstanceKey, n int, opt EnsureOpt
 	if meta.User != k.User || meta.App != k.App {
 		return nil, fmt.Errorf("snapshot identity mismatch: got %s/%s, want %s", meta.User, meta.App, k)
 	}
+	if meta.SchemaVersion != snapshot.SchemaVersion {
+		return nil, fmt.Errorf("snapshot schema version %d is unsupported", meta.SchemaVersion)
+	}
 	if platformVersion := m.platformVersion(); platformVersion != "" && meta.PlatformVersion != platformVersion {
 		return nil, fmt.Errorf("snapshot platform version %q is incompatible with host %q", meta.PlatformVersion, platformVersion)
+	}
+	if err := validateSSHHostPublicKey(meta.SSHHostPublicKey); err != nil {
+		return nil, err
 	}
 	tier, _, _, err := tierResources(meta.Tier)
 	if err != nil {
@@ -1271,23 +1347,24 @@ func (m *Manager) adopt(ctx context.Context, k InstanceKey, n int, opt EnsureOpt
 			m.releaseCapacity(k)
 		}
 	}()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
 	in := &Instance{
-		Key:      k,
-		State:    StateSleeping,
-		GuestIP:  meta.GuestIP,
-		HostIP:   meta.HostIP,
-		TapName:  tapName,
-		GuestMAC: meta.GuestMAC,
-		Rootfs:   rootfsPath,
-		WorkDir:  dir,
-		snapKey:  snapshot.KeyFor(k.User, k.App),
-		LastUsed: time.Now(),
-		Image:    meta.Image,
-		Tier:     meta.Tier,
-		noIdle:   opt.NoIdle,
+		Key:              k,
+		State:            StateSleeping,
+		GuestIP:          meta.GuestIP,
+		HostIP:           meta.HostIP,
+		TapName:          tapName,
+		GuestMAC:         meta.GuestMAC,
+		Rootfs:           rootfsPath,
+		WorkDir:          dir,
+		snapKey:          snapshot.KeyFor(k.User, k.App),
+		LastUsed:         time.Now(),
+		Image:            meta.Image,
+		Tier:             meta.Tier,
+		SSHHostPublicKey: meta.SSHHostPublicKey,
+		noIdle:           opt.NoIdle,
 	}
 	_, in.VCPUs, in.MemMiB, _ = tierResources(meta.Tier)
 
@@ -1393,6 +1470,17 @@ func (m *Manager) validateSnapshotNetwork(k InstanceKey, meta snapshot.Meta) err
 	wantMAC := fmt.Sprintf("AA:FC:00:%02x:%02x:%02x", sum[0], sum[1], sum[2])
 	if !strings.EqualFold(meta.GuestMAC, wantMAC) {
 		return fmt.Errorf("snapshot MAC %q does not match expected %q", meta.GuestMAC, wantMAC)
+	}
+	return nil
+}
+
+func validateSSHHostPublicKey(raw string) error {
+	key, _, _, rest, err := ssh.ParseAuthorizedKey([]byte(raw))
+	if err != nil {
+		return fmt.Errorf("invalid snapshot SSH host key: %w", err)
+	}
+	if strings.TrimSpace(string(rest)) != "" || key.Type() != ssh.KeyAlgoED25519 {
+		return fmt.Errorf("snapshot SSH host key must contain exactly one Ed25519 key")
 	}
 	return nil
 }
