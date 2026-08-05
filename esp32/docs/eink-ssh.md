@@ -149,9 +149,10 @@ Provisioning must trust this exact keyless-signing identity:
 https://github.com/imjasonh/playground/.github/workflows/esp32-publish.yml@refs/heads/main
 ```
 
-SNTP starts on every boot because Fulcio certificate validity is checked
-against the device clock. An unsynchronized clock fails OTA verification
-closed.
+Rekor verification is offline: Cosign's bundle carries the SET, checkpoint,
+and inclusion proof. The device verifies those against its provisioned Rekor
+key and checks Fulcio certificate validity at the authenticated integrated
+time. It neither contacts Rekor nor needs a current clock for OTA.
 
 An OTA image is marked valid only after both WiFi and a full display refresh
 succeed. A failed display bring-up reboots into the previous slot.

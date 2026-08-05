@@ -8,7 +8,7 @@ use esp_idf_svc::{
     wifi::{AuthMethod, BlockingWifi, ClientConfiguration, Configuration as WifiConfig, EspWifi},
 };
 
-use esp32_blinky::{gcp_auth, nvs_util, ota, time_sync, trust};
+use esp32_blinky::{gcp_auth, nvs_util, ota, trust};
 use esp32_eink::terminal::TerminalBuffer;
 
 mod display;
@@ -43,7 +43,6 @@ fn main() -> Result<()> {
     connect_wifi(&mut wifi, &ssid, &pass)?;
     let ip = wifi.wifi().sta_netif().get_ip_info()?.ip;
     tracing::info!(%ip, "wifi connected");
-    let _sntp = time_sync::start_and_wait(Duration::from_secs(15))?;
 
     // Generate only after WiFi starts so ESP-IDF's hardware RNG has its
     // strongest entropy source enabled.

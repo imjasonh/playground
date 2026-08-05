@@ -80,7 +80,7 @@ fn main() -> Result<()> {
     };
     let trust = match trust::TrustConfig::load(nvs.clone())? {
         Some(t) => t,
-        None => block_unprovisioned("trust/identities or trust/fulcio_{root,inter} missing in NVS"),
+        None => block_unprovisioned("required Fulcio/Rekor trust material missing in NVS"),
     };
     tracing::info!(
         identities = trust.identities.len(),
@@ -102,10 +102,13 @@ fn main() -> Result<()> {
         "wifi connected",
     );
 
-    // Fulcio certificate validity and optional GCP JWTs both require a real
-    // wall clock. Keep the handle alive so OTA never silently falls back to
-    // accepting certificates without a validity check.
-    let _sntp = time_sync::start_and_wait(Duration::from_secs(15))?;
+    // OTA uses Rekor's offline-authenticated integrated time. A wall clock is
+    // only needed for optional GCP JWTs.
+    let _sntp = if gcp.is_some() {
+        Some(time_sync::start_and_wait(Duration::from_secs(15))?)
+    } else {
+        None
+    };
 
     if pending_verify {
         match ota::mark_valid_after_pending_verify_passed(nvs.clone()) {

@@ -7,7 +7,7 @@ rust-version = "1.77"
 [workspace]
 members = ["eink"]
 default-members = ["."]
-exclude = ["tools/provision", "tools/publisher"]
+exclude = ["tools/bundle-verifier", "tools/provision", "tools/publisher"]
 resolver = "2"
 
 [[bin]]

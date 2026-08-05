@@ -32,6 +32,7 @@ jobs:
         with:
           workspaces: |
             esp32
+            esp32/tools/bundle-verifier
             esp32/tools/provision
             esp32/tools/publisher
           shared-key: esp32-host
@@ -44,6 +45,9 @@ jobs:
 
       - name: Test publisher
         run: cargo test --manifest-path esp32/tools/publisher/Cargo.toml --target x86_64-unknown-linux-gnu
+
+      - name: Test offline Rekor bundle verification
+        run: cargo test --manifest-path esp32/tools/bundle-verifier/Cargo.toml --target x86_64-unknown-linux-gnu
 
   firmware:
     name: Cross-build firmware

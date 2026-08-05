@@ -98,6 +98,9 @@ ota     poll_secs       u32    optional override (default 60)
 trust   identities      blob   JSON: [{"identity":"...","issuer":"..."}, ...]
 trust   fulcio_root     blob   PEM bytes (Sigstore root CA)
 trust   fulcio_inter    blob   PEM bytes (Sigstore intermediate CA)
+trust   rekor_key       blob   PEM public key for offline Rekor verification
+trust   rekor_from      u64    Rekor key validity start (UNIX seconds)
+trust   rekor_origin    str    checkpoint note signer name
 
 gcp     project_id      str    optional; cloud-logging GCP project
 gcp     sa_email        str    optional; logging service-account email
@@ -129,6 +132,9 @@ pass = "..."
 [trust]
 fulcio_root_pem = "trust/fulcio_root.pem"
 fulcio_intermediate_pem = "trust/fulcio_intermediate.pem"
+rekor_public_key_pem = "trust/rekor.pub"
+rekor_valid_from = 1610452407
+rekor_checkpoint_origin = "rekor.sigstore.dev"
 
 [[trust.identities]]
 identity = "https://github.com/imjasonh/playground/.github/workflows/esp32-publish.yml@refs/heads/main"
@@ -137,6 +143,9 @@ issuer = "https://token.actions.githubusercontent.com"
 
 Add a developer email/issuer identity only when manual publishing is required;
 the main-branch workflow is the least-privilege default.
+`trust/rekor.pub`, its validity start, and checkpoint origin come from
+Sigstore's `targets/trusted_root.json`. Rekor key rotation requires updating
+those values and USB re-provisioning; OTA cannot replace its own trust anchor.
 
 Lose this file = lose your secrets. Keep a copy in a password manager.
 
@@ -168,7 +177,8 @@ polling GHCR. From then on updates flow over OTA.
 
 If a device boots and any of the required NVS keys (`wifi/ssid`,
 `wifi/pass`, `trust/identities`, `trust/fulcio_root`,
-`trust/fulcio_inter`) is missing, the firmware logs
+`trust/fulcio_inter`, `trust/rekor_key`, `trust/rekor_from`, or
+`trust/rekor_origin`) is missing, the firmware logs
 `NOT PROVISIONED — run \`make provision\`` to serial every 30 seconds
 and refuses to start Wi-Fi or OTA. No surprise boots, no fallback
 creds. Run `make provision` to fix.
@@ -209,8 +219,8 @@ creds. Run `make provision` to fix.
 1. Early in `main()`, call `is_pending_verify()` →
    reads `esp_ota_get_state_partition()`.
 2. If `ESP_OTA_IMG_PENDING_VERIFY`, run the application bringup checks. Both
-   applications connect Wi-Fi and start SNTP; e-ink additionally completes a
-   full panel refresh.
+   applications connect Wi-Fi; e-ink additionally completes a full panel
+   refresh. OTA verification itself needs no current clock.
 3. On bringup success, call
    `esp_ota_mark_app_valid_cancel_rollback()` and promote
    `pending_digest → last_digest` in NVS.
@@ -347,15 +357,22 @@ For each candidate update, before downloading the firmware blob:
    URI). Read OIDC issuer from extension OID
    `1.3.6.1.4.1.57264.1.1`. Reject if `(identity, issuer)` isn't in
    `trust/identities` (loaded from NVS at boot).
-4. **Cert chain.** Verify leaf was signed by the bundled Sigstore
-   intermediate (P-384 ECDSA-SHA384). Verify intermediate was signed
-   by the bundled Sigstore root (also P-384 ECDSA-SHA384). Both are
-   loaded from NVS (`trust/fulcio_inter`, `trust/fulcio_root`).
-5. **DSSE signature.** Decode `dsseEnvelope.payload` (base64) and
+4. **Offline Rekor verification.** Require one Rekor DSSE entry. Verify its
+   provisioned log ID/key validity, Signed Entry Timestamp, signed checkpoint,
+   and RFC 6962 inclusion proof. Bind the canonicalized log body back to the
+   bundle's leaf certificate, DSSE signature, and payload hash. No Rekor
+   network request is made.
+5. **Cert chain and signing time.** Verify leaf was signed by the provisioned
+   Sigstore intermediate (P-384 ECDSA-SHA384). Verify intermediate was signed
+   by the provisioned Sigstore root (also P-384 ECDSA-SHA384). Both are loaded
+   from NVS (`trust/fulcio_inter`, `trust/fulcio_root`). Require every
+   certificate to be valid at Rekor's authenticated integrated time, not at
+   the device's current time.
+6. **DSSE signature.** Decode `dsseEnvelope.payload` (base64) and
    `signatures[0].sig` (base64). Compute the DSSE PAE
    (`"DSSEv1 <len> <payloadType> <len> <payload>"`). Verify the
    ECDSA-P256 signature using the leaf cert's public key.
-6. **In-toto binding.** Parse the DSSE payload as an in-toto
+7. **In-toto binding.** Parse the DSSE payload as an in-toto
    Statement. Confirm `subject[0].digest.sha256` exactly matches the
    manifest digest we're about to install. This is the cryptographic
    binding from "what the signer attested" to "what we're about to
@@ -392,13 +409,6 @@ In practice the soft guarantee is enough here:
 
 ## Future work
 
-- **Rekor SET verification.** The Sigstore Bundle includes
-  `tlogEntries[]` with Rekor's Signed Entry Timestamp. Verifying it
-  on-device would give us (a) detection of a Fulcio key compromise
-  that doesn't appear in the public log and (b) a trusted timestamp
-  to enforce the cert validity window (Fulcio certs are 10 min, so
-  without trusted time we currently skip the validity check). Bundle
-  Rekor's public key, parse the SET, verify the inclusion proof.
 - **GitHub Actions OIDC trust scoping by `job_workflow_ref`.** The
   GHA identity in `trust/identities` pins to
   `esp32-publish.yml@refs/heads/main`. We could also enforce

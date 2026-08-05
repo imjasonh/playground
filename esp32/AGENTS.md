@@ -24,6 +24,7 @@ Host-only checks:
 
 ```bash
 cargo test --manifest-path eink/Cargo.toml --lib --target "$(rustc -vV | sed -n 's/^host: //p')"
+cargo test --manifest-path tools/bundle-verifier/Cargo.toml --target "$(rustc -vV | sed -n 's/^host: //p')"
 cargo test --manifest-path tools/provision/Cargo.toml --target "$(rustc -vV | sed -n 's/^host: //p')"
 ```
 
@@ -33,6 +34,9 @@ cargo test --manifest-path tools/provision/Cargo.toml --target "$(rustc -vV | se
   client keys, or signer policy. Per-device values live in NVS.
 - Never weaken Sigstore verification or server host-key pinning to make a demo
   connect.
+- OTA verification must remain offline and bind Rekor's SET, checkpoint,
+  inclusion proof, canonicalized body, DSSE signature, and Fulcio certificate.
+  Rekor-key rotation is a USB re-provisioning event.
 - The e-ink client supports Ed25519 server and client keys only. Adding another
   algorithm requires equivalent host-key verification and resource testing.
 - The client key is generated on-device after WiFi starts and stored in plain
