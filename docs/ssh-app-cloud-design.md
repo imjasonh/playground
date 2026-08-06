@@ -390,14 +390,26 @@ GCE host MIG ── host agent ── Firecracker ── app :22
 - Snapshot refs are structured `(user, app, generation)` values. snapshotd
   authenticates agent-role TLS 1.3 mTLS plus the snapshot audience GCE token,
   extracts the verified exact instance name/ID, and checks every method against
-  Firestore placement and a non-expired ensure/migrate/drain operation fence.
-  A source loses access as soon as placement commits to the target.
+  the dedicated placement Firestore database and a non-expired
+  ensure/stop/migrate/drain operation fence. Mutation authorization returns the
+  exact record revision, operation ID/sequence, action, and caller incarnation;
+  that fence is revalidated inside the envelope store immediately before the
+  current-pointer publish/delete generation CAS. A source loses access as soon
+  as placement commits to the target, even after a long staging/encryption run.
 - Snapshot bytes are proxied. snapshotd validates the fixed four-entry archive,
   per-file/package limits, metadata identity/schema/layout, and then writes one
   immutable Tink v2 Streaming AEAD package using a fresh keyset. Cloud KMS wraps
-  that keyset with tenant/app/generation/snapshot AAD. A GCS generation CAS
-  publishes `current.json` only after package + immutable manifest complete;
-  the bucket also has a default CMEK.
+  that keyset with tenant/app/generation/snapshot plus canonical metadata AAD.
+  The immutable generation-pinned manifest metadata is authenticated before
+  preflight use. A GCS generation CAS publishes `current.json` only after
+  package + immutable manifest complete; the pointer retains exactly current
+  and previous encrypted versions, and generation-qualified cleanup removes
+  older object and pointer generations. The bucket also has a default CMEK.
+- snapshotd rejects before reading package bytes when its disk-sized global
+  weighted/concurrency guard or exact-agent-incarnation cap is full. Agent and
+  snapshotd plaintext staging is removed immediately after publish/restore;
+  static bounds, current use, rejections, and cleanup failures are exposed as
+  aggregate diagnostics/metrics.
 - TAP kept across sleep; `Ensure` / `POST /v1/instances/wake` restores.
 - Gateway wake loading TUI: `DialWithLoading` prints `Starting <app>…` while
   Ensure/Adopt runs; dial via `-agent-url` or placement-aware
@@ -579,14 +591,18 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
 | **Secret Manager** | Gateway host key; user CA signing key; versioned public-key access policy |
 
 **Implemented in `sshcloud/`:**
-- `store.Firestore` — `keys/{fp}`, `users/{id}`, `users/{id}/apps/{name}`;
-  gateway `-firestore-project` (default remains in-memory).
+- `store.Firestore` — `keys/{fp}`, `users/{id}`, `users/{id}/apps/{name}` in
+  the dedicated user/app/quota database; gateway `-firestore-project` (default
+  remains in-memory).
 - `placement.Firestore` — `placement/{user__app}` → host name + immutable
-  GCE instance ID, generation inventory, and operation fence;
+  GCE instance ID, generation inventory, and operation fence in a separate
+  dedicated placement/operation database;
   orchestrator `-firestore-project`.
 - Emulator tests: `hack/run-firestore-tests.sh` (skips in plain `go test`
   without `FIRESTORE_EMULATOR_HOST`).
-- Terraform provisions the Native `(default)` database (`sshcloud/terraform`).
+- Terraform provisions two named Native databases (`sshcloud-user` and
+  `sshcloud-placement`), never `(default)`. Gateway IAM reaches only the user
+  database; snapshotd has viewer-only access only to placement.
 - Terraform publishes the staged SSH access policy to Secret Manager; the
   gateway host refreshes `latest` every minute and the process reloads the JSON
   file per decision. Missing/corrupt configured policy fails closed.
@@ -640,7 +656,7 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
 
 **Implemented in `sshcloud/terraform/` (first environment):**
 - `ko_build` images: gateway, orchestrator, snapshotd, agent, guestinit, fortune (sample app)
-- Dedicated named Firestore Native database, CMEK snapshot + asset GCS buckets,
+- Separate named Firestore Native user and placement databases, CMEK snapshot + asset GCS buckets,
   Artifact Registry
 - Secret Manager: gateway host key, user CA, two control CA slots, and
   role-specific control certificate/key bundles
@@ -801,8 +817,9 @@ user/app/generation/run/session labels.
    moving CA/leaf issuance and private keys out of Terraform remains open.
 9. ~~**Repo layout**~~ — **`sshcloud/`** single Go module (`cmd/{gateway,orchestrator,agent}`, `internal/…`, `images/fortune`, `terraform/`).
 10. **Threat model** — snapshot confidentiality/isolation now uses snapshotd,
-    exact-instance operation fences, Tink envelope encryption, KMS AAD, and
-    bucket CMEK. Tenant breakout, CA theft, superseded-version lifecycle, and
+    exact-instance operation fences revalidated at publish/delete CAS, Tink
+    envelope encryption, KMS AAD, a bounded current+previous chain, and bucket
+    CMEK. Tenant breakout, CA theft, storage-byte quota/accounting, and
     operational KMS rotation remain open. A future KEK/CMEK rotation affects
     new writes; old key versions must remain enabled until their packages and
     objects have expired. The operator runbook documents safe ordering, but no

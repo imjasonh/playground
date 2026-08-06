@@ -126,4 +126,5 @@ docker run -d --name sshcloud-orchestrator --restart unless-stopped --net host \
   -gateway-url ${gateway_url} \
   -firestore-project ${project_id} \
   -firestore-prefix ${firestore_prefix} \
-  -firestore-database ${firestore_database}
+  -user-firestore-database ${user_firestore_database} \
+  -placement-firestore-database ${placement_firestore_database}

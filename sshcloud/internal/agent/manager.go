@@ -4,6 +4,7 @@ package agent
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -1152,7 +1153,18 @@ func (m *Manager) SleepWithEpoch(ctx context.Context, user, app, cordonEpoch str
 	m.mu.Unlock()
 
 	snapDir := filepath.Join(in.WorkDir, "snap")
-	_ = os.RemoveAll(snapDir)
+	if err := os.RemoveAll(snapDir); err != nil {
+		return fmt.Errorf("clear previous snapshot staging: %w", err)
+	}
+	stagingPresent := true
+	defer func() {
+		if !stagingPresent {
+			return
+		}
+		if err := os.RemoveAll(snapDir); err != nil {
+			retErr = errors.Join(retErr, fmt.Errorf("clean snapshot plaintext staging: %w", err))
+		}
+	}()
 	pkg := snapshot.NewPackageDir(snapDir)
 	if err := os.MkdirAll(snapDir, 0o700); err != nil {
 		return err
@@ -1208,6 +1220,10 @@ func (m *Manager) SleepWithEpoch(ctx context.Context, user, app, cordonEpoch str
 	if err := m.cfg.SnapStore.Put(ctx, ref, pkg); err != nil {
 		return resumeAfterFailure(fmt.Errorf("upload snapshot: %w", err))
 	}
+	if err := os.RemoveAll(snapDir); err != nil {
+		return resumeAfterFailure(fmt.Errorf("clean published snapshot plaintext staging: %w", err))
+	}
+	stagingPresent = false
 	killErr := mach.Kill()
 	if !terminationConfirmed(killErr) {
 		m.mu.Lock()
@@ -1277,15 +1293,27 @@ func (m *Manager) EvictWithEpoch(ctx context.Context, user, app, cordonEpoch str
 		m.mu.Unlock()
 		return fmt.Errorf("instance %s is still running or termination is unconfirmed; sleep before evict", k)
 	}
-	delete(m.inst, k)
 	m.mu.Unlock()
 
-	_ = in.relay.Close()
+	var cleanupErr error
+	if err := in.relay.Close(); err != nil {
+		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("close instance relay: %w", err))
+	}
 	if in.TapName != "" {
-		_ = m.rt.DeleteTap(context.Background(), in.TapName, in.HostIP)
+		if err := m.rt.DeleteTap(context.Background(), in.TapName, in.HostIP); err != nil {
+			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("delete instance TAP: %w", err))
+		}
 	}
 	// Remove workdir; Adopt recreates the fixed runtime layout from the package.
-	_ = os.RemoveAll(in.WorkDir)
+	if err := os.RemoveAll(in.WorkDir); err != nil {
+		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("remove instance plaintext workdir: %w", err))
+	}
+	if cleanupErr != nil {
+		return cleanupErr
+	}
+	m.mu.Lock()
+	delete(m.inst, k)
+	m.mu.Unlock()
 	return nil
 }
 
@@ -1298,55 +1326,70 @@ func (m *Manager) Adopt(ctx context.Context, user, app string) (*Instance, error
 // PreflightSnapshot validates that this host can eventually restore a sleeping
 // instance without allocating guest capacity or starting a VMM.
 func (m *Manager) PreflightSnapshot(ctx context.Context, user, app string) (InstanceInfo, error) {
+	info, _, err := m.preflightSnapshot(ctx, user, app)
+	return info, err
+}
+
+func (m *Manager) preflightSnapshot(
+	ctx context.Context,
+	user, app string,
+) (InstanceInfo, snapshot.Meta, error) {
 	k := InstanceKey{User: user, App: app}
 	if m.cfg.SnapStore == nil {
-		return InstanceInfo{}, fmt.Errorf("snapshot store not configured")
+		return InstanceInfo{}, snapshot.Meta{}, fmt.Errorf("snapshot store not configured")
 	}
 	if !m.rt.Available() {
-		return InstanceInfo{}, fmt.Errorf("VM runtime is unavailable on this host")
+		return InstanceInfo{}, snapshot.Meta{}, fmt.Errorf("VM runtime is unavailable on this host")
 	}
 	ref := snapshot.RefForAgentApp(user, app)
 	meta, err := m.cfg.SnapStore.Meta(ctx, ref)
 	if err != nil {
-		return InstanceInfo{}, err
+		return InstanceInfo{}, snapshot.Meta{}, err
 	}
 	if err := snapshot.ValidateMeta(ref, meta, m.rt.SnapshotLayout()); err != nil {
-		return InstanceInfo{}, err
+		return InstanceInfo{}, snapshot.Meta{}, err
 	}
 	if meta.SchemaVersion != snapshot.SchemaVersion {
-		return InstanceInfo{}, fmt.Errorf("snapshot schema version %d is unsupported", meta.SchemaVersion)
+		return InstanceInfo{}, snapshot.Meta{}, fmt.Errorf("snapshot schema version %d is unsupported", meta.SchemaVersion)
 	}
 	if meta.LayoutVersion != m.rt.SnapshotLayout() {
-		return InstanceInfo{}, fmt.Errorf("snapshot layout %q is incompatible with runtime %q", meta.LayoutVersion, m.rt.SnapshotLayout())
+		return InstanceInfo{}, snapshot.Meta{}, fmt.Errorf("snapshot layout %q is incompatible with runtime %q", meta.LayoutVersion, m.rt.SnapshotLayout())
 	}
 	tier, _, _, err := tierResources(meta.Tier)
 	if err != nil {
-		return InstanceInfo{}, err
+		return InstanceInfo{}, snapshot.Meta{}, err
 	}
 	if platformVersion := m.platformVersion(); platformVersion != "" && meta.PlatformVersion != platformVersion {
-		return InstanceInfo{}, fmt.Errorf("snapshot platform version %q is incompatible with host %q", meta.PlatformVersion, platformVersion)
+		return InstanceInfo{}, snapshot.Meta{}, fmt.Errorf("snapshot platform version %q is incompatible with host %q", meta.PlatformVersion, platformVersion)
 	}
 	if err := validateSSHHostPublicKey(meta.SSHHostPublicKey); err != nil {
-		return InstanceInfo{}, err
+		return InstanceInfo{}, snapshot.Meta{}, err
 	}
 	resourceID := instanceResourceID(k)
 	if meta.TapName != "fc-"+resourceID {
-		return InstanceInfo{}, fmt.Errorf("snapshot host resource metadata is incompatible")
+		return InstanceInfo{}, snapshot.Meta{}, fmt.Errorf("snapshot host resource metadata is incompatible")
 	}
 	if err := m.validateSnapshotNetwork(k, meta); err != nil {
-		return InstanceInfo{}, err
+		return InstanceInfo{}, snapshot.Meta{}, err
 	}
 	baseApp, gen := genid.SplitAgentApp(app)
 	return InstanceInfo{
 		User: user, App: baseApp, Gen: gen, AgentApp: app,
 		Image: meta.Image, Tier: tier, State: StateSleeping,
 		SSHHostPublicKey: meta.SSHHostPublicKey,
-	}, nil
+	}, meta, nil
 }
 
 // RegisterSleeping validates and records snapshot ownership on a target without
 // waking the VM. It is a cordon-visible host claim for sleeping generations.
 func (m *Manager) RegisterSleeping(ctx context.Context, user, app string) (InstanceInfo, error) {
+	return m.RegisterSleepingWithEpoch(ctx, user, app, "")
+}
+
+func (m *Manager) RegisterSleepingWithEpoch(
+	ctx context.Context,
+	user, app, cordonEpoch string,
+) (InstanceInfo, error) {
 	k := InstanceKey{User: user, App: app}
 	op := m.instanceLock(k)
 	op.Lock()
@@ -1363,22 +1406,18 @@ func (m *Manager) RegisterSleeping(ctx context.Context, user, app string) (Insta
 		return info, nil
 	}
 	m.mu.Unlock()
-	if err := m.beginLifecycle(k, ""); err != nil {
+	if err := m.beginLifecycle(k, cordonEpoch); err != nil {
 		return InstanceInfo{}, err
 	}
 	defer m.endLifecycle(k)
 	if err := ctx.Err(); err != nil {
 		return InstanceInfo{}, err
 	}
-	info, err := m.PreflightSnapshot(ctx, user, app)
+	info, meta, err := m.preflightSnapshot(ctx, user, app)
 	if err != nil {
 		return InstanceInfo{}, err
 	}
 	ref := snapshot.RefForAgentApp(user, app)
-	meta, err := m.cfg.SnapStore.Meta(ctx, ref)
-	if err != nil {
-		return InstanceInfo{}, err
-	}
 	resourceID := instanceResourceID(k)
 	in := &Instance{
 		Key: k, State: StateSleeping,
@@ -1441,7 +1480,7 @@ func (m *Manager) adoptWith(ctx context.Context, user, app, cordonEpoch string) 
 	return m.adopt(ctx, k, n, EnsureOpts{CordonEpoch: cordonEpoch})
 }
 
-func (m *Manager) adopt(ctx context.Context, k InstanceKey, _ int, opt EnsureOpts) (*Instance, error) {
+func (m *Manager) adopt(ctx context.Context, k InstanceKey, _ int, opt EnsureOpts) (_ *Instance, retErr error) {
 	resourceID := instanceResourceID(k)
 	dir := filepath.Join(m.cfg.WorkDir, "vm-"+resourceID)
 	if _, err := os.Stat(dir); err == nil {
@@ -1455,24 +1494,33 @@ func (m *Manager) adopt(ctx context.Context, k InstanceKey, _ int, opt EnsureOpt
 	published := false
 	defer func() {
 		if !published {
-			_ = os.RemoveAll(dir)
+			if err := os.RemoveAll(dir); err != nil {
+				retErr = errors.Join(
+					retErr,
+					fmt.Errorf("clean failed adoption plaintext workdir: %w", err),
+				)
+			}
 		}
 	}()
 	restoreDir := filepath.Join(dir, "restore")
+	if err := os.RemoveAll(restoreDir); err != nil {
+		return nil, fmt.Errorf("clear previous restore staging: %w", err)
+	}
 	ref := snapshot.RefForAgentApp(k.User, k.App)
 	pkg, err := m.cfg.SnapStore.Get(ctx, ref, restoreDir)
 	if err != nil {
 		return nil, fmt.Errorf("download snapshot: %w", err)
 	}
-	defer os.RemoveAll(restoreDir)
-	meta := pkg.Meta
-	if meta.GuestIP == "" {
-		meta, err = pkg.ReadMeta()
-		if err != nil {
-			return nil, err
+	stagingPresent := true
+	defer func() {
+		if !stagingPresent {
+			return
 		}
-		pkg.Meta = meta
-	}
+		if err := os.RemoveAll(restoreDir); err != nil {
+			retErr = errors.Join(retErr, fmt.Errorf("clean restore plaintext staging: %w", err))
+		}
+	}()
+	meta := pkg.Meta
 	if err := snapshot.ValidateMeta(ref, meta, m.rt.SnapshotLayout()); err != nil {
 		return nil, err
 	}
@@ -1550,6 +1598,12 @@ func (m *Manager) adopt(ctx context.Context, k InstanceKey, _ int, opt EnsureOpt
 		_ = os.RemoveAll(dir)
 		return nil, err
 	}
+	if err := os.RemoveAll(restoreDir); err != nil {
+		_ = mach.Stop()
+		_ = m.rt.DeleteTap(context.Background(), tapName, meta.HostIP)
+		return nil, fmt.Errorf("clean restored snapshot plaintext staging: %w", err)
+	}
+	stagingPresent = false
 	if m.cfg.RelayHost != "" {
 		sum := sha256.Sum256([]byte(k.User + "\x00" + k.App))
 		offset := int(sum[6])<<8 | int(sum[7])
@@ -1713,13 +1767,23 @@ func (m *Manager) wake(ctx context.Context, k InstanceKey) (result *Instance, re
 	}()
 
 	restoreDir := filepath.Join(in.WorkDir, hostisolation.HostRestoreDir)
-	_ = os.RemoveAll(restoreDir)
+	if err := os.RemoveAll(restoreDir); err != nil {
+		return nil, fmt.Errorf("clear previous restore staging: %w", err)
+	}
 	ref := snapshot.RefForAgentApp(k.User, k.App)
 	pkg, err := m.cfg.SnapStore.Get(ctx, ref, restoreDir)
 	if err != nil {
 		return nil, fmt.Errorf("download snapshot: %w", err)
 	}
-	defer os.RemoveAll(restoreDir)
+	stagingPresent := true
+	defer func() {
+		if !stagingPresent {
+			return
+		}
+		if err := os.RemoveAll(restoreDir); err != nil {
+			retErr = errors.Join(retErr, fmt.Errorf("clean restore plaintext staging: %w", err))
+		}
+	}()
 	if pkg.Meta.SchemaVersion != snapshot.SchemaVersion {
 		return nil, fmt.Errorf("snapshot schema version %d is unsupported", pkg.Meta.SchemaVersion)
 	}
@@ -1745,6 +1809,12 @@ func (m *Manager) wake(ctx context.Context, k InstanceKey) (result *Instance, re
 	if err != nil {
 		return nil, err
 	}
+	if err := os.RemoveAll(restoreDir); err != nil {
+		_ = mach.Stop()
+		_ = m.rt.DeleteTap(context.Background(), in.TapName, in.HostIP)
+		return nil, fmt.Errorf("clean restored snapshot plaintext staging: %w", err)
+	}
+	stagingPresent = false
 	if err := ctx.Err(); err != nil {
 		_ = mach.Stop()
 		return nil, err
@@ -1850,12 +1920,24 @@ func (m *Manager) StopContext(ctx context.Context, user, app string) (retErr err
 	if !ok {
 		return nil
 	}
+	var cleanupErr error
+	if err := in.relay.Close(); err != nil {
+		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("close instance relay: %w", err))
+	}
+	if in.TapName != "" {
+		if err := m.rt.DeleteTap(context.Background(), in.TapName, in.HostIP); err != nil {
+			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("delete instance TAP: %w", err))
+		}
+	}
+	if err := os.RemoveAll(in.WorkDir); err != nil {
+		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("remove instance plaintext workdir: %w", err))
+	}
+	if cleanupErr != nil {
+		return cleanupErr
+	}
 	m.mu.Lock()
 	delete(m.inst, k)
 	m.mu.Unlock()
-	_ = in.relay.Close()
-	_ = m.rt.DeleteTap(context.Background(), in.TapName, in.HostIP)
-	_ = os.RemoveAll(in.WorkDir)
 	return nil
 }
 

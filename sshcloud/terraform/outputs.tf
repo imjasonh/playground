@@ -75,6 +75,14 @@ output "snapshots_bucket" {
   value = google_storage_bucket.snapshots.name
 }
 
+output "firestore_databases" {
+  description = "Separated user/app/quota and placement/operation databases"
+  value = {
+    user      = google_firestore_database.user.name
+    placement = google_firestore_database.placement.name
+  }
+}
+
 output "snapshot_kms_keys" {
   description = "Separate bucket CMEK and snapshot envelope KEK"
   value = {

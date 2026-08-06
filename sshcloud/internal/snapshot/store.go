@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -149,18 +148,27 @@ func (p Package) WriteMeta(m Meta) error {
 	if err != nil {
 		return err
 	}
+	if len(b) == 0 || int64(len(b)) > MaxMetadataBytes {
+		return fmt.Errorf("snapshot metadata has invalid size %d", len(b))
+	}
 	return os.WriteFile(p.MetaPath, b, 0o600)
 }
 
 // ReadMeta loads meta.json.
 func (p Package) ReadMeta() (Meta, error) {
-	var m Meta
-	b, err := os.ReadFile(p.MetaPath)
+	file, err := os.Open(p.MetaPath)
 	if err != nil {
-		return m, err
+		return Meta{}, err
 	}
-	err = json.Unmarshal(b, &m)
-	return m, err
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return Meta{}, err
+	}
+	if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > MaxMetadataBytes {
+		return Meta{}, fmt.Errorf("snapshot metadata has invalid type or size %d", info.Size())
+	}
+	return decodeMeta(file)
 }
 
 // Store persists snapshot packages by structured tenant identity.
@@ -180,38 +188,18 @@ type Store interface {
 	Health(ctx context.Context) error
 }
 
-func objectNames() []string {
-	return []string{"vm.state", "vm.mem", "rootfs.ext4", "meta.json"}
-}
+// CommitGuard revalidates the authorization decision immediately before a
+// mutable current-pointer generation CAS. Long package staging and encryption
+// must never extend the lifetime of an expired placement decision.
+type CommitGuard func(context.Context) error
 
-func copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		return err
-	}
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-	if _, err := io.Copy(out, in); err != nil {
-		return err
-	}
-	return out.Close()
-}
-
-// KeyFor is retained for diagnostics and migration tooling. New code passes Ref
-// directly. An omitted generation names the legacy singleton generation.
-func KeyFor(user, app string, generation ...string) string {
-	gen := ""
-	if len(generation) == 1 {
-		gen = generation[0]
-	}
-	return (Ref{User: user, App: app, Gen: gen}).Key()
+// GuardedStore exposes mutation entry points whose current-pointer CAS is
+// fenced at the storage boundary. snapshotd requires this interface for remote
+// writes and deletes; LocalStore remains usable directly by local KVM mode.
+type GuardedStore interface {
+	Store
+	PutGuarded(context.Context, Ref, Package, CommitGuard) error
+	DeleteGuarded(context.Context, Ref, CommitGuard) error
 }
 
 // ValidateMeta binds persisted package metadata to its structured identity and
@@ -232,5 +220,25 @@ func ValidateMeta(ref Ref, meta Meta, expectedLayout string) error {
 	if expectedLayout != "" && meta.LayoutVersion != expectedLayout {
 		return fmt.Errorf("snapshot layout %q, want %q", meta.LayoutVersion, expectedLayout)
 	}
+	for field, value := range map[string]string{
+		"guest IP": meta.GuestIP, "TAP name": meta.TapName, "guest MAC": meta.GuestMAC,
+		"host IP": meta.HostIP, "image": meta.Image, "tier": meta.Tier,
+		"platform version": meta.PlatformVersion, "SSH host public key": meta.SSHHostPublicKey,
+	} {
+		if len(value) > maxMetaFieldBytes(field) || strings.ContainsRune(value, '\x00') {
+			return fmt.Errorf("snapshot metadata %s is invalid", field)
+		}
+	}
 	return nil
+}
+
+func maxMetaFieldBytes(field string) int {
+	switch field {
+	case "SSH host public key":
+		return 16 << 10
+	case "image":
+		return 4 << 10
+	default:
+		return 512
+	}
 }

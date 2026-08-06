@@ -41,7 +41,7 @@ func main() {
 	orchURL := flag.String("orchestrator-url", "", "orchestrator gateway-service HTTPS URL")
 	firestoreProject := flag.String("firestore-project", "", "GCP project for Firestore user/app store (default: in-memory)")
 	firestorePrefix := flag.String("firestore-prefix", "sshcloud", "Firestore collection prefix")
-	firestoreDatabase := flag.String("firestore-database", "sshcloud", "Firestore database ID")
+	userFirestoreDatabase := flag.String("user-firestore-database", "sshcloud-user", "user/app/quota Firestore database ID")
 	drainTimeout := flag.Duration("drain-timeout", cutover.DefaultDrainTimeout, "deploy drain kick timeout")
 	controlListen := flag.String("control-listen", "", "internal migration-control HTTPS address (empty disables)")
 	healthListen := flag.String("health-listen", "", "unauthenticated health-only HTTP address (empty disables)")
@@ -99,7 +99,7 @@ func main() {
 
 	var st store.Store = store.NewMemory()
 	if *firestoreProject != "" {
-		fs, err := store.NewFirestoreDatabase(ctx, *firestoreProject, *firestoreDatabase, *firestorePrefix)
+		fs, err := store.NewFirestoreDatabase(ctx, *firestoreProject, *userFirestoreDatabase, *firestorePrefix)
 		if err != nil {
 			log.Fatalf("firestore: %v", err)
 		}
@@ -126,7 +126,7 @@ func main() {
 	}
 	var quotaStore quota.Store = quota.NewMemory()
 	if *firestoreProject != "" {
-		quotaStore, err = quota.NewFirestoreDatabase(ctx, *firestoreProject, *firestoreDatabase, *firestorePrefix)
+		quotaStore, err = quota.NewFirestoreDatabase(ctx, *firestoreProject, *userFirestoreDatabase, *firestorePrefix)
 		if err != nil {
 			log.Fatalf("quota firestore: %v", err)
 		}

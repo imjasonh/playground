@@ -59,8 +59,8 @@ resource "google_project_iam_member" "gateway_datastore" {
   member  = "serviceAccount:${google_service_account.gateway.email}"
   condition {
     title       = "${local.prefix}-gateway-firestore-database"
-    description = "Limit gateway data access to the dedicated sshcloud database"
-    expression  = "resource.name == \"projects/${var.project_id}/databases/${var.firestore_database}\""
+    description = "Limit gateway data access to the user/app/quota database"
+    expression  = "resource.name == \"projects/${var.project_id}/databases/${var.user_firestore_database}\""
   }
 }
 
@@ -85,15 +85,27 @@ resource "google_secret_manager_secret_iam_member" "gateway_access_policy" {
   member    = "serviceAccount:${google_service_account.gateway.email}"
 }
 
-# Orchestrator: Firestore placement + list MIG members + agent subnet.
-resource "google_project_iam_member" "orchestrator_datastore" {
+# Orchestrator: placement journals plus quota counters in separately fenced
+# databases, and list MIG members + agent subnet.
+resource "google_project_iam_member" "orchestrator_placement_datastore" {
   project = var.project_id
   role    = "roles/datastore.user"
   member  = "serviceAccount:${google_service_account.orchestrator.email}"
   condition {
-    title       = "${local.prefix}-orchestrator-firestore-database"
-    description = "Limit orchestrator data access to the dedicated sshcloud database"
-    expression  = "resource.name == \"projects/${var.project_id}/databases/${var.firestore_database}\""
+    title       = "${local.prefix}-orchestrator-placement-firestore"
+    description = "Limit orchestrator placement access to the placement database"
+    expression  = "resource.name == \"projects/${var.project_id}/databases/${var.placement_firestore_database}\""
+  }
+}
+
+resource "google_project_iam_member" "orchestrator_user_datastore" {
+  project = var.project_id
+  role    = "roles/datastore.user"
+  member  = "serviceAccount:${google_service_account.orchestrator.email}"
+  condition {
+    title       = "${local.prefix}-orchestrator-user-firestore"
+    description = "Limit orchestrator quota access to the user/app/quota database"
+    expression  = "resource.name == \"projects/${var.project_id}/databases/${var.user_firestore_database}\""
   }
 }
 
@@ -124,8 +136,8 @@ resource "google_project_iam_member" "snapshot_datastore" {
   member  = "serviceAccount:${google_service_account.snapshot.email}"
   condition {
     title       = "${local.prefix}-snapshot-firestore-database"
-    description = "Limit snapshot placement reads to the dedicated sshcloud database"
-    expression  = "resource.name == \"projects/${var.project_id}/databases/${var.firestore_database}\""
+    description = "Limit snapshotd to read-only placement records"
+    expression  = "resource.name == \"projects/${var.project_id}/databases/${var.placement_firestore_database}\""
   }
 }
 

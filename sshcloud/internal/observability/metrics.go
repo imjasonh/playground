@@ -136,6 +136,68 @@ func (r *Registry) AddDiagnosticsQueueBytes(delta int64) {
 	r.values[key] = current
 }
 
+// SetSnapshotStaging records snapshotd's fixed disk/concurrency bounds and
+// aggregate utilization without exposing caller or tenant identities.
+func (r *Registry) SetSnapshotStaging(
+	maxBytes, usedBytes, retainedBytes int64,
+	maxConcurrent, active, maxPerAgent int,
+) {
+	for state, value := range map[string]int64{
+		"limit":    maxBytes,
+		"used":     usedBytes,
+		"retained": retainedBytes,
+	} {
+		r.set(
+			"sshcloud_snapshot_staging_bytes",
+			"Snapshot plaintext staging byte limit and current reservation.",
+			labels("state", state),
+			float64(max(value, 0)),
+		)
+	}
+	for state, value := range map[string]int{
+		"limit":  maxConcurrent,
+		"active": active,
+	} {
+		r.set(
+			"sshcloud_snapshot_staging_operations",
+			"Snapshot plaintext staging operation limit and current use.",
+			labels("state", state),
+			float64(max(value, 0)),
+		)
+	}
+	r.set(
+		"sshcloud_snapshot_staging_per_agent_limit",
+		"Maximum concurrent plaintext staging operations per exact agent incarnation.",
+		"",
+		float64(max(maxPerAgent, 0)),
+	)
+}
+
+// AddSnapshotStagingRejection records fixed-reason nonblocking admissions.
+func (r *Registry) AddSnapshotStagingRejection(reason string) {
+	if !oneOf(reason, "bytes", "concurrency", "per_agent", "invalid") {
+		return
+	}
+	r.add(
+		"sshcloud_snapshot_staging_rejections_total",
+		"Snapshot plaintext staging admissions rejected by fixed reason.",
+		metricCounter,
+		labels("reason", reason),
+		1,
+	)
+}
+
+// AddSnapshotStagingCleanupFailure surfaces plaintext staging cleanup errors.
+func (r *Registry) AddSnapshotStagingCleanupFailure() {
+	r.add(
+		"sshcloud_snapshot_staging_cleanup_failures_total",
+		"Snapshot plaintext staging cleanup failures.",
+		metricCounter,
+		"",
+		1,
+	)
+}
+
 // ObserveOperation records one fixed platform operation. Values outside the
 // schema are ignored to prevent label-cardinality expansion.
 func (r *Registry) ObserveOperation(family, operation, outcome string, duration time.Duration) {

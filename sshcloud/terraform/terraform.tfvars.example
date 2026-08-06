@@ -8,10 +8,12 @@ jailer_asset_path      = "../_assets/jailer"
 kernel_asset_path      = "../_assets/vmlinux"
 
 # Optional overrides:
-# name_prefix        = "sshcloud"
-# firestore_location = "nam5"
-# firestore_database = "sshcloud"
-# firestore_prefix   = "sshcloud"
+# name_prefix                 = "sshcloud"
+# firestore_location          = "nam5"
+# user_firestore_database     = "sshcloud-user"
+# placement_firestore_database = "sshcloud-placement"
+# firestore_prefix            = "sshcloud"
+# snapshot_staging_max_bytes  = 10737418240 # leaves 5+ GiB free on the default disk
 # Follow ../docs/key-rotation-runbook.md. Never increment the active CA slot:
 # control_ca_active_slot = "a"
 # control_ca_rotation_epochs = { a = 0, b = 0 }

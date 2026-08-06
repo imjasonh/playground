@@ -37,7 +37,12 @@ type ObjectStore interface {
 	Write(context.Context, string, ObjectCondition, func(io.Writer) error) (ObjectAttrs, error)
 	Read(context.Context, string, int64) (io.ReadCloser, ObjectAttrs, error)
 	Stat(context.Context, string) (ObjectAttrs, error)
+	// Delete removes one exact object generation, including a noncurrent
+	// generation in a versioned bucket.
 	Delete(context.Context, string, int64) error
+	// DeleteCurrent removes the live object only if its generation still
+	// matches. It is the delete-side current-pointer CAS.
+	DeleteCurrent(context.Context, string, int64) error
 	Health(context.Context) error
 	Close() error
 }
@@ -98,7 +103,7 @@ func (g *GCSObjects) Read(ctx context.Context, name string, generation int64) (i
 	}
 	object := g.client.Bucket(g.bucket).Object(name)
 	if generation > 0 {
-		object = object.If(storage.Conditions{GenerationMatch: generation})
+		object = object.Generation(generation)
 	}
 	reader, err := object.NewReader(ctx)
 	if err != nil {
@@ -122,10 +127,13 @@ func (g *GCSObjects) Delete(ctx context.Context, name string, generation int64) 
 	if err := validateObjectName(name); err != nil {
 		return err
 	}
-	object := g.client.Bucket(g.bucket).Object(name)
-	if generation > 0 {
-		object = object.If(storage.Conditions{GenerationMatch: generation})
+	if generation <= 0 {
+		return fmt.Errorf("object generation must be positive")
 	}
+	// GenerationMatch on the live ObjectHandle does not address a noncurrent
+	// generation in a versioned bucket. Select the exact generation so
+	// retention cleanup actually removes those bytes.
+	object := g.client.Bucket(g.bucket).Object(name).Generation(generation)
 	err := object.Delete(ctx)
 	if errors.Is(err, storage.ErrObjectNotExist) {
 		return nil
@@ -133,6 +141,23 @@ func (g *GCSObjects) Delete(ctx context.Context, name string, generation int64) 
 	err = mapObjectError(err)
 	if errors.Is(err, ErrObjectNotFound) {
 		return nil
+	}
+	return err
+}
+
+func (g *GCSObjects) DeleteCurrent(ctx context.Context, name string, generation int64) error {
+	if err := validateObjectName(name); err != nil {
+		return err
+	}
+	if generation <= 0 {
+		return fmt.Errorf("current object generation must be positive")
+	}
+	err := g.client.Bucket(g.bucket).Object(name).
+		If(storage.Conditions{GenerationMatch: generation}).
+		Delete(ctx)
+	err = mapObjectError(err)
+	if errors.Is(err, ErrObjectNotFound) {
+		return fmt.Errorf("%w: current object no longer exists", ErrObjectPrecondition)
 	}
 	return err
 }

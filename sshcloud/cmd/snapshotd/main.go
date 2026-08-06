@@ -35,8 +35,11 @@ func main() {
 	kmsKey := flag.String("kms-key", "", "Cloud KMS snapshot KEK resource name")
 	firestoreProject := flag.String("firestore-project", "", "placement Firestore project")
 	firestorePrefix := flag.String("firestore-prefix", "sshcloud", "placement collection prefix")
-	firestoreDatabase := flag.String("firestore-database", "sshcloud", "placement database")
+	placementFirestoreDatabase := flag.String("placement-firestore-database", "sshcloud-placement", "placement/operation database")
 	expectedLayout := flag.String("layout-version", hostisolation.SnapshotLayoutJailer, "only accepted snapshot layout")
+	stagingMaxBytes := flag.Int64("staging-max-bytes", 10<<30, "global reserved plaintext staging bytes")
+	stagingMaxOperations := flag.Int("staging-max-operations", 2, "global concurrent plaintext staging operations")
+	stagingMaxPerAgent := flag.Int("staging-max-per-agent", 1, "concurrent staging operations per exact agent incarnation")
 	controlCert := flag.String("control-cert", "", "reloadable snapshot control certificate PEM")
 	controlKey := flag.String("control-key", "", "reloadable snapshot control private-key PEM")
 	controlCACurrent := flag.String("control-ca-current", "", "reloadable current control CA PEM")
@@ -62,7 +65,28 @@ func main() {
 	if err := prepareTempDir(*tempDir); err != nil {
 		log.Fatalf("snapshot staging directory: %v", err)
 	}
-	place, err := placement.NewFirestoreDatabase(ctx, *firestoreProject, *firestoreDatabase, *firestorePrefix)
+	if *stagingMaxBytes < snapshot.MaxPackageBytes {
+		log.Fatalf("-staging-max-bytes must fit one maximum package (%d bytes)", snapshot.MaxPackageBytes)
+	}
+	staging, err := snapshotd.NewStagingGuard(snapshotd.StagingLimits{
+		MaxBytes: *stagingMaxBytes, MaxConcurrent: *stagingMaxOperations,
+		MaxPerAgent: *stagingMaxPerAgent, MaxRequestBytes: snapshot.MaxRequestBytes,
+	})
+	if err != nil {
+		log.Fatalf("snapshot staging limits: %v", err)
+	}
+	observability.DefaultMetrics().RegisterCollector(func() {
+		usage := staging.Usage()
+		observability.DefaultMetrics().SetSnapshotStaging(
+			usage.MaxBytes,
+			usage.UsedBytes,
+			usage.RetainedBytes,
+			usage.MaxConcurrent,
+			usage.Active,
+			usage.MaxPerAgent,
+		)
+	})
+	place, err := placement.NewFirestoreDatabase(ctx, *firestoreProject, *placementFirestoreDatabase, *firestorePrefix)
 	if err != nil {
 		log.Fatalf("placement firestore: %v", err)
 	}
@@ -75,7 +99,7 @@ func main() {
 
 	handler := &snapshotd.Handler{
 		Store: store, Authorizer: &snapshotd.Authorizer{Placement: place},
-		ExpectedLayout: *expectedLayout, TempDir: *tempDir,
+		ExpectedLayout: *expectedLayout, TempDir: *tempDir, Staging: staging,
 	}
 	api := http.NewServeMux()
 	handler.Mount(api)

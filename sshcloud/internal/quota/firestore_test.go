@@ -16,8 +16,12 @@ func TestFirestoreRollingWindow(t *testing.T) {
 	if project == "" {
 		project = "sshcloud-test"
 	}
+	database := os.Getenv("USER_FIRESTORE_DATABASE")
+	if database == "" {
+		database = "(default)"
+	}
 	prefix := fmt.Sprintf("quota_test_%d", time.Now().UnixNano())
-	store, err := NewFirestore(context.Background(), project, prefix)
+	store, err := NewFirestoreDatabase(context.Background(), project, database, prefix)
 	if err != nil {
 		t.Fatal(err)
 	}

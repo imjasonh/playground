@@ -37,8 +37,8 @@ func TestLocalStoreRoundTrip(t *testing.T) {
 	if err := store.Put(ctx, ref, src); err != nil {
 		t.Fatal(err)
 	}
-	if !store.Exists(ref) {
-		t.Fatal("expected exists")
+	if exists, err := store.Has(ctx, ref); err != nil || !exists {
+		t.Fatalf("expected exists: exists=%v err=%v", exists, err)
 	}
 	dstDir := filepath.Join(root, "dst")
 	got, err := store.Get(ctx, ref, dstDir)
@@ -55,8 +55,8 @@ func TestLocalStoreRoundTrip(t *testing.T) {
 	if err := store.Delete(ctx, ref); err != nil {
 		t.Fatal(err)
 	}
-	if store.Exists(ref) {
-		t.Fatal("expected deleted")
+	if exists, err := store.Has(ctx, ref); err != nil || exists {
+		t.Fatalf("expected deleted: exists=%v err=%v", exists, err)
 	}
 }
 
@@ -92,7 +92,7 @@ func TestLocalStoreHasRejectsIncompletePackage(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "meta.json"), []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if ok, err := store.Has(context.Background(), ref); err != nil || ok {
-		t.Fatalf("incomplete package reported present: ok=%v err=%v", ok, err)
+	if ok, err := store.Has(context.Background(), ref); err == nil || ok {
+		t.Fatalf("invalid package was not surfaced: ok=%v err=%v", ok, err)
 	}
 }

@@ -17,7 +17,11 @@ func TestFirestoreRoundTrip(t *testing.T) {
 	if project == "" {
 		project = "sshcloud-test"
 	}
-	fs, err := NewFirestore(ctx, project)
+	database := os.Getenv("PLACEMENT_FIRESTORE_DATABASE")
+	if database == "" {
+		database = "(default)"
+	}
+	fs, err := NewFirestoreDatabase(ctx, project, database, "sshcloud")
 	if err != nil {
 		t.Fatal(err)
 	}

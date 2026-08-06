@@ -27,13 +27,30 @@ variable "firestore_location" {
   default     = "nam5"
 }
 
-variable "firestore_database" {
-  description = "Dedicated Firestore database ID used only by sshcloud"
+variable "user_firestore_database" {
+  description = "Dedicated Firestore database ID for users, apps, keys, and quota counters"
   type        = string
-  default     = "sshcloud"
+  default     = "sshcloud-user"
   validation {
-    condition     = can(regex("^[a-z][a-z0-9-]{3,62}$", var.firestore_database))
-    error_message = "firestore_database must be 4-63 lowercase letters, digits, or hyphens."
+    condition     = can(regex("^[a-z][a-z0-9-]{3,62}$", var.user_firestore_database))
+    error_message = "user_firestore_database must be 4-63 lowercase letters, digits, or hyphens."
+  }
+}
+
+variable "placement_firestore_database" {
+  description = "Dedicated Firestore database ID for placement and operation journals"
+  type        = string
+  default     = "sshcloud-placement"
+  validation {
+    condition     = can(regex("^[a-z][a-z0-9-]{3,62}$", var.placement_firestore_database))
+    error_message = "placement_firestore_database must be 4-63 lowercase letters, digits, or hyphens."
+  }
+}
+
+check "firestore_databases_are_distinct" {
+  assert {
+    condition     = var.user_firestore_database != var.placement_firestore_database
+    error_message = "user_firestore_database and placement_firestore_database must be different named databases."
   }
 }
 
@@ -162,6 +179,60 @@ variable "snapshot_disk_gb" {
   description = "Boot/staging disk size for snapshotd package proxying"
   type        = number
   default     = 20
+}
+
+variable "snapshot_staging_max_bytes" {
+  description = "Global weighted plaintext staging reservation for snapshotd"
+  type        = number
+  default     = 10737418240
+  validation {
+    condition = (
+      var.snapshot_staging_max_bytes >= 4429250560 &&
+      var.snapshot_staging_max_bytes == floor(var.snapshot_staging_max_bytes)
+    )
+    error_message = "snapshot_staging_max_bytes must be an integer that fits one maximum package."
+  }
+}
+
+check "snapshot_staging_disk_capacity" {
+  assert {
+    condition     = var.snapshot_staging_max_bytes <= (var.snapshot_disk_gb - 5) * 1073741824
+    error_message = "snapshot_staging_max_bytes must leave 5 GiB of snapshotd disk unreserved."
+  }
+}
+
+variable "snapshot_staging_max_operations" {
+  description = "Maximum concurrent snapshotd plaintext staging operations"
+  type        = number
+  default     = 2
+  validation {
+    condition = (
+      var.snapshot_staging_max_operations >= 1 &&
+      var.snapshot_staging_max_operations <= 8 &&
+      var.snapshot_staging_max_operations == floor(var.snapshot_staging_max_operations)
+    )
+    error_message = "snapshot_staging_max_operations must be an integer from 1 through 8."
+  }
+}
+
+variable "snapshot_staging_max_per_agent" {
+  description = "Maximum concurrent snapshotd staging operations per exact agent incarnation"
+  type        = number
+  default     = 1
+  validation {
+    condition = (
+      var.snapshot_staging_max_per_agent >= 1 &&
+      var.snapshot_staging_max_per_agent == floor(var.snapshot_staging_max_per_agent)
+    )
+    error_message = "snapshot_staging_max_per_agent must be a positive integer."
+  }
+}
+
+check "snapshot_staging_concurrency" {
+  assert {
+    condition     = var.snapshot_staging_max_per_agent <= var.snapshot_staging_max_operations
+    error_message = "snapshot_staging_max_per_agent must not exceed snapshot_staging_max_operations."
+  }
 }
 
 variable "agent_disk_gb" {

@@ -82,28 +82,56 @@ func (c *Controller) reconcileEnsure(guard *placement.Guard, record placement.Re
 	}
 	found := 0
 	for _, gen := range record.Operation.Generations {
+		expected, expectedFound := generationByID(record.Operation.Desired, gen)
+		if !expectedFound || expected.SSHHostPublicKey == "" {
+			if err := target.StopContext(guard.Context(), record.User, record.App, gen); err != nil {
+				return fmt.Errorf("remove unpinned ensured generation %s: %w", gen, err)
+			}
+			continue
+		}
 		status, ok, err := target.StatusContext(guard.Context(), record.User, record.App, gen)
 		if err != nil {
 			return err
 		}
-		expectedKey := ""
-		for _, desired := range record.Operation.Desired {
-			if desired.Gen == gen {
-				expectedKey = desired.SSHHostPublicKey
-				break
+		switch {
+		case !ok && expected.State == "sleeping":
+			if _, err := target.RegisterSleeping(guard.Context(), record.User, record.App, gen); err != nil {
+				return fmt.Errorf("register desired sleeping generation %s: %w", gen, err)
+			}
+			status, ok, err = target.StatusContext(guard.Context(), record.User, record.App, gen)
+			if err != nil {
+				return err
+			}
+		case ok && status.State == "running" && expected.State == "sleeping":
+			if err := target.SetNoIdleContext(guard.Context(), record.User, record.App, gen, false); err != nil {
+				return err
+			}
+			if err := target.SleepContext(guard.Context(), record.User, record.App, gen); err != nil {
+				return fmt.Errorf("sleep unexpectedly running generation %s: %w", gen, err)
+			}
+			status, ok, err = target.StatusContext(guard.Context(), record.User, record.App, gen)
+			if err != nil {
+				return err
 			}
 		}
-		if ok && status.State == "running" && expectedKey != "" && status.SSHHostPublicKey == expectedKey {
+		expectedState := expected.State
+		if expectedState == "" {
+			expectedState = "running"
+		}
+		if ok && status.State == expectedState &&
+			status.SSHHostPublicKey == expected.SSHHostPublicKey {
 			found++
-		} else if ok && status.State == "running" {
-			return fmt.Errorf("ensure operation %s/%s generation %s has SSH host key mismatch", record.User, record.App, gen)
+		} else if ok {
+			return fmt.Errorf(
+				"ensure operation %s/%s generation %s is %s with an unexpected SSH host identity",
+				record.User, record.App, gen, status.State,
+			)
 		}
 	}
 	switch {
 	case found == len(record.Operation.Generations):
-		desired := record.Operation.Desired
-		identityComplete := len(desired) != 0
-		for _, generation := range desired {
+		identityComplete := len(record.Operation.Desired) != 0
+		for _, generation := range record.Operation.Desired {
 			if generation.SSHHostPublicKey == "" {
 				identityComplete = false
 				break
@@ -117,12 +145,23 @@ func (c *Controller) reconcileEnsure(guard *placement.Guard, record placement.Re
 			}
 			return release(guard, finished)
 		}
+		actual, err := actualInventory(
+			guard.Context(),
+			target,
+			record.User,
+			record.App,
+			record.Operation.Desired,
+			true,
+		)
+		if err != nil {
+			return fmt.Errorf("read ensured target inventory: %w", err)
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		if err := target.VerifyServerIdentity(ctx); err != nil {
 			cancel()
 			return fmt.Errorf("verify ensured target before recovery commit: %w", err)
 		}
-		err := guard.CommitStateIdentity(ctx, record.Operation.TargetHost, target.InstanceID, desired)
+		err = guard.CommitStateIdentity(ctx, record.Operation.TargetHost, target.InstanceID, actual)
 		cancel()
 		if err != nil {
 			return err
@@ -164,8 +203,12 @@ func (c *Controller) reconcileStop(guard *placement.Guard, record placement.Reco
 	if err := source.VerifyServerIdentity(commitCtx); err != nil {
 		return fmt.Errorf("verify stopped source before recovery commit: %w", err)
 	}
+	actual, err := actualInventory(commitCtx, source, record.User, record.App, op.Desired, true)
+	if err != nil {
+		return fmt.Errorf("read stopped source inventory: %w", err)
+	}
 	if err := guard.CommitStateIdentity(
-		commitCtx, op.SourceHost, op.SourceInstanceID, op.Desired,
+		commitCtx, op.SourceHost, op.SourceInstanceID, actual,
 	); err != nil {
 		return err
 	}
@@ -186,7 +229,10 @@ func (c *Controller) reconcileMove(guard *placement.Guard, record placement.Reco
 
 	switch {
 	case sourceGone && target != nil:
-		if err := verifyPreparedTarget(guard.Context(), target, record); err != nil {
+		actual, err := normalizeDesiredInventory(
+			guard.Context(), target, record.User, record.App, op.Desired, "",
+		)
+		if err != nil {
 			return fmt.Errorf("source is gone but target is not verifiably prepared: %w", err)
 		}
 		commitCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -195,7 +241,7 @@ func (c *Controller) reconcileMove(guard *placement.Guard, record placement.Reco
 			return fmt.Errorf("verify prepared target before recovery commit: %w", err)
 		}
 		if err := guard.CommitStateIdentity(
-			commitCtx, op.TargetHost, op.TargetInstanceID, op.Desired,
+			commitCtx, op.TargetHost, op.TargetInstanceID, actual,
 		); err != nil {
 			return err
 		}
@@ -249,14 +295,44 @@ func (c *Controller) restoreSource(ctx context.Context, source *backend.AgentCli
 		if err != nil {
 			return err
 		}
-		expected := generationByID(record.Generations, gen)
+		expected, expectedFound := generationByID(record.Generations, gen)
+		if !expectedFound {
+			return fmt.Errorf("source generation %s is absent from durable inventory", gen)
+		}
 		if found && expected.SSHHostPublicKey != "" &&
 			status.SSHHostPublicKey != expected.SSHHostPublicKey {
 			return fmt.Errorf("source generation %s has SSH host key mismatch", gen)
 		}
 		shouldRun := expected.State == "" || expected.State == "running"
-		if found && (!shouldRun || status.State == "running") {
+		if shouldRun && found && status.State == "running" {
 			continue
+		}
+		if !shouldRun {
+			switch {
+			case found && status.State == "sleeping":
+				continue
+			case found && status.State == "running":
+				if err := source.SetNoIdleWithEpoch(
+					ctx, record.User, record.App, gen, false, op.SourceEpoch,
+				); err != nil {
+					return fmt.Errorf("release source generation %s hold: %w", gen, err)
+				}
+				if err := source.SleepWithEpoch(
+					ctx, record.User, record.App, gen, op.SourceEpoch,
+				); err != nil {
+					return fmt.Errorf("sleep unexpected running source generation %s: %w", gen, err)
+				}
+				continue
+			case !found:
+				if _, err := source.RegisterSleepingWithEpoch(
+					ctx, record.User, record.App, gen, op.SourceEpoch,
+				); err != nil {
+					return fmt.Errorf("register source sleeping generation %s: %w", gen, err)
+				}
+				continue
+			default:
+				return fmt.Errorf("source generation %s is in unexpected state %q", gen, status.State)
+			}
 		}
 		var adoptErr error
 		if op.SourceEpoch != "" {
@@ -282,8 +358,14 @@ func commitSource(
 	if err := source.VerifyServerIdentity(ctx); err != nil {
 		return fmt.Errorf("verify retained source before recovery commit: %w", err)
 	}
+	actual, err := actualInventory(
+		ctx, source, record.User, record.App, record.Generations, true,
+	)
+	if err != nil {
+		return fmt.Errorf("read retained source inventory: %w", err)
+	}
 	if err := guard.CommitStateIdentity(
-		ctx, record.Operation.SourceHost, record.Operation.SourceInstanceID, record.Generations,
+		ctx, record.Operation.SourceHost, record.Operation.SourceInstanceID, actual,
 	); err != nil {
 		return err
 	}
@@ -291,37 +373,98 @@ func commitSource(
 	return nil
 }
 
-func verifyPreparedTarget(ctx context.Context, target *backend.AgentClient, record placement.Record) error {
-	for _, gen := range record.Operation.Generations {
-		status, found, err := target.StatusContext(ctx, record.User, record.App, gen)
+func normalizeDesiredInventory(
+	ctx context.Context,
+	client *backend.AgentClient,
+	user, app string,
+	desired []placement.Generation,
+	cordonEpoch string,
+) ([]placement.Generation, error) {
+	for _, generation := range desired {
+		expectedState := generation.State
+		if expectedState == "" {
+			expectedState = "running"
+		}
+		status, found, err := client.StatusContext(ctx, user, app, generation.Gen)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		if !found {
-			return fmt.Errorf("generation %s is missing", gen)
+		if expectedState != "sleeping" {
+			continue
 		}
-		expected := generationByID(record.Operation.Desired, gen)
-		if expected.Gen == "" && gen != "" {
-			return fmt.Errorf("generation %s is absent from desired inventory", gen)
-		}
-		if expected.State != "" && status.State != expected.State {
-			return fmt.Errorf("generation %s state is %s, want %s", gen, status.State, expected.State)
-		}
-		if expected.SSHHostPublicKey == "" ||
-			status.SSHHostPublicKey != expected.SSHHostPublicKey {
-			return fmt.Errorf("generation %s SSH host identity is not pinned", gen)
+		switch {
+		case !found:
+			if _, err := client.RegisterSleepingWithEpoch(
+				ctx, user, app, generation.Gen, cordonEpoch,
+			); err != nil {
+				return nil, fmt.Errorf("register desired sleeping generation %s: %w", generation.Gen, err)
+			}
+		case status.State == "running":
+			if err := client.SetNoIdleWithEpoch(
+				ctx, user, app, generation.Gen, false, cordonEpoch,
+			); err != nil {
+				return nil, err
+			}
+			if err := client.SleepWithEpoch(
+				ctx, user, app, generation.Gen, cordonEpoch,
+			); err != nil {
+				return nil, fmt.Errorf("sleep unexpected running generation %s: %w", generation.Gen, err)
+			}
 		}
 	}
-	return nil
+	return actualInventory(ctx, client, user, app, desired, true)
 }
 
-func generationByID(generations []placement.Generation, gen string) placement.Generation {
+func actualInventory(
+	ctx context.Context,
+	client *backend.AgentClient,
+	user, app string,
+	desired []placement.Generation,
+	registerSleeping bool,
+) ([]placement.Generation, error) {
+	actual := make([]placement.Generation, 0, len(desired))
+	for _, generation := range desired {
+		status, found, err := client.StatusContext(ctx, user, app, generation.Gen)
+		if err != nil {
+			return nil, err
+		}
+		if !found && registerSleeping && generation.State == "sleeping" {
+			info, err := client.RegisterSleeping(ctx, user, app, generation.Gen)
+			if err != nil {
+				return nil, err
+			}
+			status.State = string(info.State)
+			status.SSHHostPublicKey = info.SSHHostPublicKey
+			found = true
+		}
+		if !found {
+			return nil, fmt.Errorf("generation %s is missing", generation.Gen)
+		}
+		expectedState := generation.State
+		if expectedState == "" {
+			expectedState = "running"
+		}
+		if status.State != expectedState {
+			return nil, fmt.Errorf("generation %s state is %s, want %s", generation.Gen, status.State, expectedState)
+		}
+		if generation.SSHHostPublicKey == "" ||
+			status.SSHHostPublicKey != generation.SSHHostPublicKey {
+			return nil, fmt.Errorf("generation %s SSH host identity is not pinned", generation.Gen)
+		}
+		generation.State = status.State
+		generation.SSHHostPublicKey = status.SSHHostPublicKey
+		actual = append(actual, generation)
+	}
+	return actual, nil
+}
+
+func generationByID(generations []placement.Generation, gen string) (placement.Generation, bool) {
 	for _, generation := range generations {
 		if generation.Gen == gen {
-			return generation
+			return generation, true
 		}
 	}
-	return placement.Generation{}
+	return placement.Generation{}, false
 }
 
 func (c *Controller) participant(

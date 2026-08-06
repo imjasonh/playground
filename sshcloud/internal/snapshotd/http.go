@@ -20,6 +20,7 @@ type Handler struct {
 	Authorizer     *Authorizer
 	ExpectedLayout string
 	TempDir        string
+	Staging        *StagingGuard
 }
 
 func (h *Handler) Mount(mux *http.ServeMux) {
@@ -38,6 +39,7 @@ func (h *Handler) MountHealth(mux *http.ServeMux) {
 	})
 	mux.HandleFunc("GET /readyz", h.health)
 	mux.HandleFunc("GET /healthz", h.health)
+	mux.HandleFunc("GET /bounds", h.bounds)
 }
 
 func (h *Handler) health(w http.ResponseWriter, r *http.Request) {
@@ -57,8 +59,20 @@ func (h *Handler) health(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unavailable", http.StatusServiceUnavailable)
 		return
 	}
+	if h.Staging == nil {
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok"))
+}
+
+func (h *Handler) bounds(w http.ResponseWriter, _ *http.Request) {
+	if h.Staging == nil {
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	writeJSON(w, h.Staging.Usage())
 }
 
 func (h *Handler) put(w http.ResponseWriter, r *http.Request) {
@@ -70,18 +84,46 @@ func (h *Handler) put(w http.ResponseWriter, r *http.Request) {
 	startedAt := time.Now()
 	outcome := observability.OutcomeFailure
 	defer func() { emitSnapshotEvent(ref, "put", outcome, startedAt) }()
-	if !h.authorize(w, r, ref, ActionPut) {
+	fence, ok := h.authorize(w, r, ref, ActionPut)
+	if !ok {
 		outcome = observability.OutcomeRejected
 		return
 	}
+	if r.ContentLength > snapshot.MaxRequestBytes {
+		http.Error(w, "snapshot request is too large", http.StatusRequestEntityTooLarge)
+		outcome = observability.OutcomeRejected
+		return
+	}
+	weight := int64(snapshot.MaxPackageBytes)
+	if r.ContentLength > 0 {
+		weight = r.ContentLength
+	}
+	lease, ok := h.acquireStaging(w, fence, weight)
+	if !ok {
+		outcome = observability.OutcomeRejected
+		return
+	}
+	stagingDir := ""
+	cleaned := false
+	defer func() {
+		if stagingDir != "" && !cleaned {
+			cleaned = h.cleanupStaging(stagingDir)
+		}
+		if stagingDir != "" && !cleaned {
+			lease.Abandon()
+			return
+		}
+		lease.Release()
+	}()
 	r.Body = http.MaxBytesReader(w, r.Body, snapshot.MaxRequestBytes)
 	temp, err := h.tempPackage("put")
 	if err != nil {
 		http.Error(w, "snapshot staging unavailable", http.StatusInternalServerError)
 		return
 	}
-	defer os.RemoveAll(filepath.Dir(temp))
+	stagingDir = filepath.Dir(temp)
 	if _, err := snapshot.ReadArchive(r.Context(), r.Body, ref, temp, h.ExpectedLayout); err != nil {
+		cleaned = h.cleanupStaging(stagingDir)
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
 			http.Error(w, "snapshot request is too large", http.StatusRequestEntityTooLarge)
@@ -95,10 +137,26 @@ func (h *Handler) put(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "snapshot package contains trailing bytes", http.StatusBadRequest)
 		return
 	}
-	if err := h.Store.Put(r.Context(), ref, snapshot.NewPackageDir(temp)); err != nil {
+	store, ok := h.Store.(snapshot.GuardedStore)
+	if !ok {
+		http.Error(w, "snapshot store cannot fence publication", http.StatusServiceUnavailable)
+		return
+	}
+	if err := store.PutGuarded(
+		r.Context(),
+		ref,
+		snapshot.NewPackageDir(temp),
+		func(ctx context.Context) error { return h.Authorizer.Revalidate(ctx, fence) },
+	); err != nil {
+		cleaned = h.cleanupStaging(stagingDir)
 		writeStoreError(w, err)
 		return
 	}
+	if !h.cleanupStaging(stagingDir) {
+		http.Error(w, "snapshot plaintext cleanup failed", http.StatusInternalServerError)
+		return
+	}
+	cleaned = true
 	w.WriteHeader(http.StatusNoContent)
 	outcome = observability.OutcomeSuccess
 }
@@ -111,24 +169,47 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 	startedAt := time.Now()
 	outcome := observability.OutcomeFailure
 	defer func() { emitSnapshotEvent(ref, "get", outcome, startedAt) }()
-	if !h.authorize(w, r, ref, ActionGet) {
+	fence, ok := h.authorize(w, r, ref, ActionGet)
+	if !ok {
 		outcome = observability.OutcomeRejected
 		return
 	}
+	lease, ok := h.acquireStaging(w, fence, snapshot.MaxPackageBytes)
+	if !ok {
+		outcome = observability.OutcomeRejected
+		return
+	}
+	stagingDir := ""
+	cleaned := false
+	defer func() {
+		if stagingDir != "" && !cleaned {
+			cleaned = h.cleanupStaging(stagingDir)
+		}
+		if stagingDir != "" && !cleaned {
+			lease.Abandon()
+			return
+		}
+		lease.Release()
+	}()
 	temp, err := h.tempPackage("get")
 	if err != nil {
 		http.Error(w, "snapshot staging unavailable", http.StatusInternalServerError)
 		return
 	}
-	defer os.RemoveAll(filepath.Dir(temp))
+	stagingDir = filepath.Dir(temp)
 	pkg, err := h.Store.Get(r.Context(), ref, temp)
 	if err != nil {
+		cleaned = h.cleanupStaging(stagingDir)
 		writeStoreError(w, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/vnd.sshcloud.snapshot+tar")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	if err := snapshot.WriteArchive(r.Context(), w, ref, pkg, h.ExpectedLayout); err != nil {
+		return
+	}
+	cleaned = h.cleanupStaging(stagingDir)
+	if !cleaned {
 		return
 	}
 	outcome = observability.OutcomeSuccess
@@ -142,7 +223,7 @@ func (h *Handler) has(w http.ResponseWriter, r *http.Request) {
 	startedAt := time.Now()
 	outcome := observability.OutcomeFailure
 	defer func() { emitSnapshotEvent(ref, "has", outcome, startedAt) }()
-	if !h.authorize(w, r, ref, ActionHas) {
+	if _, ok := h.authorize(w, r, ref, ActionHas); !ok {
 		outcome = observability.OutcomeRejected
 		return
 	}
@@ -163,7 +244,7 @@ func (h *Handler) meta(w http.ResponseWriter, r *http.Request) {
 	startedAt := time.Now()
 	outcome := observability.OutcomeFailure
 	defer func() { emitSnapshotEvent(ref, "meta", outcome, startedAt) }()
-	if !h.authorize(w, r, ref, ActionMeta) {
+	if _, ok := h.authorize(w, r, ref, ActionMeta); !ok {
 		outcome = observability.OutcomeRejected
 		return
 	}
@@ -184,11 +265,21 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 	startedAt := time.Now()
 	outcome := observability.OutcomeFailure
 	defer func() { emitSnapshotEvent(ref, "delete", outcome, startedAt) }()
-	if !h.authorize(w, r, ref, ActionDelete) {
+	fence, ok := h.authorize(w, r, ref, ActionDelete)
+	if !ok {
 		outcome = observability.OutcomeRejected
 		return
 	}
-	if err := h.Store.Delete(r.Context(), ref); err != nil {
+	store, ok := h.Store.(snapshot.GuardedStore)
+	if !ok {
+		http.Error(w, "snapshot store cannot fence deletion", http.StatusServiceUnavailable)
+		return
+	}
+	if err := store.DeleteGuarded(
+		r.Context(),
+		ref,
+		func(ctx context.Context) error { return h.Authorizer.Revalidate(ctx, fence) },
+	); err != nil {
 		writeStoreError(w, err)
 		return
 	}
@@ -203,21 +294,27 @@ func emitSnapshotEvent(ref snapshot.Ref, action string, outcome observability.Ou
 	})
 }
 
-func (h *Handler) authorize(w http.ResponseWriter, r *http.Request, ref snapshot.Ref, action Action) bool {
+func (h *Handler) authorize(
+	w http.ResponseWriter,
+	r *http.Request,
+	ref snapshot.Ref,
+	action Action,
+) (Fence, bool) {
 	identity, ok := controlauth.IdentityFromContext(r.Context())
 	if !ok || h.Authorizer == nil {
 		http.Error(w, "forbidden", http.StatusForbidden)
-		return false
+		return Fence{}, false
 	}
-	if err := h.Authorizer.Authorize(r.Context(), identity, ref, action); err != nil {
+	fence, err := h.Authorizer.Authorize(r.Context(), identity, ref, action)
+	if err != nil {
 		if errors.Is(err, ErrForbidden) {
 			http.Error(w, "forbidden", http.StatusForbidden)
 		} else {
 			http.Error(w, "authorization unavailable", http.StatusServiceUnavailable)
 		}
-		return false
+		return Fence{}, false
 	}
-	return true
+	return fence, true
 }
 
 func (h *Handler) tempPackage(operation string) (string, error) {
@@ -226,6 +323,33 @@ func (h *Handler) tempPackage(operation string) (string, error) {
 		return "", err
 	}
 	return filepath.Join(root, "package"), nil
+}
+
+func (h *Handler) acquireStaging(
+	w http.ResponseWriter,
+	fence Fence,
+	weight int64,
+) (*StagingLease, bool) {
+	if h.Staging == nil {
+		http.Error(w, "snapshot staging unavailable", http.StatusServiceUnavailable)
+		return nil, false
+	}
+	agent := fence.CallerInstanceName + "\x00" + fence.CallerInstanceID
+	lease, reason := h.Staging.TryAcquire(agent, weight)
+	if lease == nil {
+		observability.DefaultMetrics().AddSnapshotStagingRejection(reason)
+		http.Error(w, "snapshot staging capacity exhausted", http.StatusServiceUnavailable)
+		return nil, false
+	}
+	return lease, true
+}
+
+func (h *Handler) cleanupStaging(dir string) bool {
+	if err := os.RemoveAll(dir); err != nil {
+		observability.DefaultMetrics().AddSnapshotStagingCleanupFailure()
+		return false
+	}
+	return true
 }
 
 func decodeRef(w http.ResponseWriter, r *http.Request) (snapshot.Ref, bool) {
@@ -250,6 +374,8 @@ func decodeRef(w http.ResponseWriter, r *http.Request) (snapshot.Ref, bool) {
 
 func writeStoreError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, ErrForbidden):
+		http.Error(w, "snapshot authorization fence expired", http.StatusForbidden)
 	case errors.Is(err, os.ErrNotExist), errors.Is(err, snapshot.ErrObjectNotFound):
 		http.Error(w, "snapshot not found", http.StatusNotFound)
 	case errors.Is(err, snapshot.ErrConcurrentPublication), errors.Is(err, snapshot.ErrObjectPrecondition):

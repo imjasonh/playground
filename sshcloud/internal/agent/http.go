@@ -283,7 +283,9 @@ func (h *Handler) registerSleeping(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	info, err := h.Manager.RegisterSleeping(r.Context(), req.User, agentApp(req))
+	info, err := h.Manager.RegisterSleepingWithEpoch(
+		r.Context(), req.User, agentApp(req), req.CordonEpoch,
+	)
 	if err != nil {
 		writeManagerError(w, err)
 		return

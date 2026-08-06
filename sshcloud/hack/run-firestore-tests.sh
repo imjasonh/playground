@@ -40,6 +40,8 @@ if [[ -z "$HOST" ]]; then
 fi
 
 export FIRESTORE_PROJECT_ID="$PROJECT"
+export USER_FIRESTORE_DATABASE="${USER_FIRESTORE_DATABASE:-sshcloud-user}"
+export PLACEMENT_FIRESTORE_DATABASE="${PLACEMENT_FIRESTORE_DATABASE:-sshcloud-placement}"
 export GOTOOLCHAIN="${GOTOOLCHAIN:-auto}"
 go test ./internal/store/ ./internal/placement/ ./internal/quota/ -count=1 -run 'Firestore'
 echo "Firestore tests passed"

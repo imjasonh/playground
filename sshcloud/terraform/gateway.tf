@@ -51,7 +51,7 @@ resource "google_compute_instance" "gateway" {
     registry_host           = split("/", local.registry)[0]
     project_id              = var.project_id
     firestore_prefix        = var.firestore_prefix
-    firestore_database      = var.firestore_database
+    user_firestore_database = var.user_firestore_database
     host_key_secret         = google_secret_manager_secret.gateway_host_key.secret_id
     user_ca_secret          = google_secret_manager_secret.user_ca.secret_id
     control_identity_secret = google_secret_manager_secret.control_identity["gateway"].secret_id
@@ -86,7 +86,7 @@ resource "google_compute_instance" "gateway" {
     google_secret_manager_secret_iam_member.control_ca["gateway-a"],
     google_secret_manager_secret_iam_member.control_ca["gateway-b"],
     google_secret_manager_secret_iam_member.gateway_access_policy,
-    google_firestore_database.sshcloud,
+    google_firestore_database.user,
     google_project_iam_member.gateway_datastore,
     google_project_iam_member.observability_writers,
     google_artifact_registry_repository_iam_member.pullers["gateway"],

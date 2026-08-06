@@ -2,6 +2,7 @@ package snapshot
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -33,14 +34,7 @@ func (s *LocalStore) keyDir(ref Ref) (string, error) {
 	return filepath.Join(s.Root, filepath.FromSlash(ref.Key())), nil
 }
 
-func (s *LocalStore) Put(ctx context.Context, ref Ref, pkg Package) error {
-	meta, err := pkg.ReadMeta()
-	if err != nil {
-		return err
-	}
-	if err := ValidateMeta(ref, meta, ""); err != nil {
-		return err
-	}
+func (s *LocalStore) Put(ctx context.Context, ref Ref, pkg Package) (retErr error) {
 	dst, err := s.keyDir(ref)
 	if err != nil {
 		return err
@@ -48,22 +42,22 @@ func (s *LocalStore) Put(ctx context.Context, ref Ref, pkg Package) error {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
 		return err
 	}
-	tmp, err := os.MkdirTemp(filepath.Dir(dst), "."+filepath.Base(dst)+".tmp-")
+	tmp, err := unusedTempPath(filepath.Dir(dst), "."+filepath.Base(dst)+".put-")
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(tmp)
-	for _, name := range objectNames() {
-		if err := ctx.Err(); err != nil {
-			return err
+	defer func() {
+		if err := os.RemoveAll(tmp); err != nil {
+			retErr = errors.Join(retErr, fmt.Errorf("clean local snapshot staging: %w", err))
 		}
-		src := filepath.Join(pkg.Dir, name)
-		if err := copyFile(src, filepath.Join(tmp, name)); err != nil {
-			return fmt.Errorf("put %s: %w", name, err)
-		}
+	}()
+	if _, err := ClonePackage(ctx, ref, pkg, tmp, ""); err != nil {
+		return err
 	}
-	backup := dst + ".old"
-	_ = os.RemoveAll(backup)
+	backup, err := unusedTempPath(filepath.Dir(dst), "."+filepath.Base(dst)+".previous-")
+	if err != nil {
+		return err
+	}
 	hadOld := false
 	if err := os.Rename(dst, backup); err == nil {
 		hadOld = true
@@ -72,11 +66,17 @@ func (s *LocalStore) Put(ctx context.Context, ref Ref, pkg Package) error {
 	}
 	if err := os.Rename(tmp, dst); err != nil {
 		if hadOld {
-			_ = os.Rename(backup, dst)
+			if rollbackErr := os.Rename(backup, dst); rollbackErr != nil {
+				return fmt.Errorf("publish local snapshot: %w (rollback: %v)", err, rollbackErr)
+			}
 		}
 		return err
 	}
-	_ = os.RemoveAll(backup)
+	if hadOld {
+		if err := os.RemoveAll(backup); err != nil {
+			return fmt.Errorf("clean previous local snapshot: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -86,26 +86,7 @@ func (s *LocalStore) Get(ctx context.Context, ref Ref, destDir string) (Package,
 	if err != nil {
 		return pkg, err
 	}
-	if err := os.MkdirAll(destDir, 0o700); err != nil {
-		return pkg, err
-	}
-	for _, name := range objectNames() {
-		if err := ctx.Err(); err != nil {
-			return pkg, err
-		}
-		if err := copyFile(filepath.Join(src, name), filepath.Join(destDir, name)); err != nil {
-			return pkg, fmt.Errorf("get %s: %w", name, err)
-		}
-	}
-	meta, err := pkg.ReadMeta()
-	if err != nil {
-		return pkg, err
-	}
-	if err := ValidateMeta(ref, meta, ""); err != nil {
-		return pkg, err
-	}
-	pkg.Meta = meta
-	return pkg, nil
+	return ClonePackage(ctx, ref, NewPackageDir(src), destDir, "")
 }
 
 func (s *LocalStore) Delete(ctx context.Context, ref Ref) error {
@@ -128,47 +109,30 @@ func (s *LocalStore) Has(ctx context.Context, ref Ref) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	for _, name := range objectNames() {
-		info, statErr := os.Stat(filepath.Join(dir, name))
-		if os.IsNotExist(statErr) {
-			return false, nil
-		}
-		if statErr != nil {
-			return false, statErr
-		}
-		if !info.Mode().IsRegular() || info.Size() == 0 {
-			return false, nil
-		}
-	}
-	meta, err := NewPackageDir(dir).ReadMeta()
-	if err != nil {
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return false, nil
+	} else if err != nil {
 		return false, err
 	}
-	if err := ValidateMeta(ref, meta, ""); err != nil {
+	if _, err := ValidatePackage(ref, NewPackageDir(dir), ""); err != nil {
 		return false, err
 	}
 	return true, nil
 }
 
 func (s *LocalStore) Meta(ctx context.Context, ref Ref) (Meta, error) {
-	ok, err := s.Has(ctx, ref)
-	if err != nil {
-		return Meta{}, err
-	}
-	if !ok {
-		return Meta{}, os.ErrNotExist
-	}
 	dir, err := s.keyDir(ref)
 	if err != nil {
 		return Meta{}, err
 	}
-	return NewPackageDir(dir).ReadMeta()
-}
-
-// Exists reports whether a package is present.
-func (s *LocalStore) Exists(ref Ref) bool {
-	ok, _ := s.Has(context.Background(), ref)
-	return ok
+	if err := ctx.Err(); err != nil {
+		return Meta{}, err
+	}
+	meta, err := ValidatePackage(ref, NewPackageDir(dir), "")
+	if os.IsNotExist(err) {
+		return Meta{}, os.ErrNotExist
+	}
+	return meta, err
 }
 
 func (s *LocalStore) Health(ctx context.Context) error {
@@ -177,4 +141,15 @@ func (s *LocalStore) Health(ctx context.Context) error {
 	}
 	_, err := os.Stat(s.Root)
 	return err
+}
+
+func unusedTempPath(parent, pattern string) (string, error) {
+	path, err := os.MkdirTemp(parent, pattern)
+	if err != nil {
+		return "", err
+	}
+	if err := os.Remove(path); err != nil {
+		return "", err
+	}
+	return path, nil
 }

@@ -285,10 +285,22 @@ func (c *AgentClient) PreflightSnapshot(ctx context.Context, user, app, gen stri
 
 // RegisterSleeping creates a durable host inventory claim without waking.
 func (c *AgentClient) RegisterSleeping(ctx context.Context, user, app, gen string) (agent.InstanceInfo, error) {
+	return c.RegisterSleepingWithEpoch(ctx, user, app, gen, "")
+}
+
+// RegisterSleepingWithEpoch permits recovery of sleeping inventory on the
+// exact cordoned source incarnation that owns the operation epoch.
+func (c *AgentClient) RegisterSleepingWithEpoch(
+	ctx context.Context,
+	user, app, gen, cordonEpoch string,
+) (agent.InstanceInfo, error) {
 	var info agent.InstanceInfo
-	if err := c.postInstance(
-		ctx, "/v1/instances/register-sleeping", "agent register sleeping",
-		user, app, gen, &info,
+	if err := c.postJSON(
+		ctx,
+		"/v1/instances/register-sleeping",
+		"agent register sleeping",
+		instanceBody{User: user, App: app, Gen: gen, CordonEpoch: cordonEpoch},
+		&info,
 	); err != nil {
 		return agent.InstanceInfo{}, err
 	}

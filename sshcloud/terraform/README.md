@@ -22,7 +22,7 @@ Secret Manager versions, and Terraform state are in
 | `services.tf`, `modules/project-services/` | Required GCP API enablement barrier |
 | `images.tf` | `ko_build` for platform services (including snapshotd), VMM/TAP helpers, `guestinit`, and `fortune` |
 | `demo.tf` | Optional `local-exec` join/deploy followed by strict SSH release smoke test |
-| `firestore.tf` | Dedicated named Native-mode database |
+| `firestore.tf` | Separate named Native-mode user/app/quota and placement/operation databases |
 | `storage.tf`, `kms.tf` | CMEK snapshot bucket, envelope KEK, platform assets, Artifact Registry |
 | `secrets.tf` | Separate SSH keys/CA, versioned access policy, A/B control PKI, and explicit rotation epochs |
 | `gateway.tf` | Public SSH gateway (`:22`) |
@@ -52,12 +52,14 @@ Registry images. Creating an optional budget also requires access to the
 configured billing account.
 Application Default Credentials are used by both Google and ko providers.
 
-The module creates a dedicated Native-mode database named `sshcloud`, and
-collections are further
-isolated under `firestore_prefix`. This avoids collisions with an existing
-`(default)` database. Conditional `roles/datastore.user` bindings restrict the
-gateway and orchestrator to that exact database; the collection prefix is
-additional namespace separation rather than the primary IAM boundary.
+The module creates two dedicated Native-mode databases: `sshcloud-user` for
+users, keys, apps, and quota counters, and `sshcloud-placement` for placement
+pointers and operation journals. Collections are further isolated under
+`firestore_prefix`; neither database uses `(default)`. Conditional IAM gives
+the gateway access only to the user database, gives the orchestrator the
+required access to both, and gives snapshotd only `datastore.viewer` on the
+placement database. The collection prefix is additional namespace separation,
+not the primary IAM boundary.
 
 ```bash
 cd sshcloud
@@ -127,6 +129,8 @@ gcloud compute instance-groups managed list-instances sshcloud-agents \
 curl --fail http://ORCHESTRATOR_INTERNAL_IP:8091/readyz
 # From the orchestrator VM:
 curl --fail http://SNAPSHOT_INTERNAL_IP:8083/readyz
+# Static/current snapshot plaintext staging bounds are non-tenant diagnostics:
+curl --fail http://SNAPSHOT_INTERNAL_IP:8083/bounds
 # Admin routes, including /v1/diagnostics, exist only on the root-owned local
 # Unix socket and still require orchestrator mTLS + a fresh metadata token.
 ```
@@ -165,8 +169,20 @@ Agents call snapshotd with the agent role certificate and a snapshot-specific
 identity-token audience. snapshotd uses the verified token's exact
 `instance_name` and numeric `instance_id`; it authorizes each structured
 user/app/generation method against Firestore placement and the non-expired
-ensure/migrate/drain fence. Agents have no snapshot bucket or KMS IAM grant.
-Package bytes are proxied rather than exposed through signed URLs.
+ensure/stop/migrate/drain fence. A write/delete authorization returns the exact
+record revision, operation ID/sequence, action, and caller incarnation;
+snapshotd revalidates it inside the envelope store immediately before the GCS
+current-pointer generation CAS. Agents have no snapshot bucket or KMS IAM
+grant. Package bytes are proxied rather than exposed through signed URLs.
+
+The default 20 GiB snapshotd disk admits at most two staged operations, reserves
+at most 10 GiB globally, and permits one operation per exact agent incarnation.
+Admission is nonblocking and occurs before package bytes are read. Tune
+`snapshot_staging_max_bytes`, `snapshot_staging_max_operations`, and
+`snapshot_staging_max_per_agent` together with `snapshot_disk_gb`; Terraform
+requires room for one maximum package and leaves at least 5 GiB unreserved.
+Failed plaintext removals remain visible and charged against the byte budget
+until snapshotd's next startup cleanup.
 
 Control cert/key and two CA files are refreshed from Secret Manager each minute
 and reloaded on every new TLS handshake. Both A and B CAs remain trusted during

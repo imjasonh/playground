@@ -27,12 +27,17 @@ type memoryObjects struct {
 	mu          sync.Mutex
 	next        int64
 	objects     map[string]memoryObject
+	versions    map[string]map[int64]memoryObject
 	currentGate chan struct{}
 	currentSeen chan struct{}
+	currentErr  error
 }
 
 func newMemoryObjects() *memoryObjects {
-	return &memoryObjects{objects: make(map[string]memoryObject), next: 100}
+	return &memoryObjects{
+		objects: make(map[string]memoryObject), versions: make(map[string]map[int64]memoryObject),
+		next: 100,
+	}
 }
 
 func (m *memoryObjects) Write(_ context.Context, name string, condition ObjectCondition, write func(io.Writer) error) (ObjectAttrs, error) {
@@ -56,6 +61,13 @@ func (m *memoryObjects) Write(_ context.Context, name string, condition ObjectCo
 	m.next++
 	object := memoryObject{body: append([]byte(nil), body.Bytes()...), generation: m.next}
 	m.objects[name] = object
+	if m.versions[name] == nil {
+		m.versions[name] = make(map[int64]memoryObject)
+	}
+	m.versions[name][object.generation] = object
+	if strings.HasSuffix(name, "/current.json") && m.currentErr != nil {
+		return ObjectAttrs{}, m.currentErr
+	}
 	return ObjectAttrs{Generation: object.generation, Size: int64(len(object.body))}, nil
 }
 
@@ -63,11 +75,11 @@ func (m *memoryObjects) Read(_ context.Context, name string, generation int64) (
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	object, ok := m.objects[name]
+	if generation > 0 && (!ok || object.generation != generation) {
+		object, ok = m.versions[name][generation]
+	}
 	if !ok {
 		return nil, ObjectAttrs{}, ErrObjectNotFound
-	}
-	if generation > 0 && generation != object.generation {
-		return nil, ObjectAttrs{}, ErrObjectPrecondition
 	}
 	body := append([]byte(nil), object.body...)
 	return io.NopCloser(bytes.NewReader(body)), ObjectAttrs{
@@ -88,14 +100,29 @@ func (m *memoryObjects) Stat(_ context.Context, name string) (ObjectAttrs, error
 func (m *memoryObjects) Delete(_ context.Context, name string, generation int64) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if generation <= 0 {
+		return errors.New("object generation must be positive")
+	}
 	object, ok := m.objects[name]
-	if !ok {
+	if _, ok := m.versions[name][generation]; !ok {
 		return nil
 	}
-	if generation > 0 && object.generation != generation {
+	delete(m.versions[name], generation)
+	if ok && object.generation == generation {
+		delete(m.objects, name)
+	}
+	return nil
+}
+
+func (m *memoryObjects) DeleteCurrent(_ context.Context, name string, generation int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	object, ok := m.objects[name]
+	if !ok || generation <= 0 || object.generation != generation {
 		return ErrObjectPrecondition
 	}
 	delete(m.objects, name)
+	delete(m.versions[name], generation)
 	return nil
 }
 
@@ -108,6 +135,7 @@ func (m *memoryObjects) alter(name string, alter func([]byte) []byte) {
 	object := m.objects[name]
 	object.body = alter(append([]byte(nil), object.body...))
 	m.objects[name] = object
+	m.versions[name][object.generation] = object
 }
 
 type fakeKMS struct {
@@ -273,6 +301,25 @@ func TestEnvelopeCurrentPublicationUsesGenerationPrecondition(t *testing.T) {
 	}
 }
 
+func TestEnvelopeRetainsImmutableObjectsWhenPublicationOutcomeIsUnknown(t *testing.T) {
+	t.Parallel()
+	store, objects := testEnvelope(t)
+	ref := Ref{User: "alice", App: "fortune", Gen: "g1"}
+	objects.currentErr = errors.New("lost write acknowledgement")
+	err := store.Put(t.Context(), ref, testPackage(t, ref))
+	if err == nil || !strings.Contains(err.Error(), "outcome is unknown") {
+		t.Fatalf("ambiguous publication error = %v", err)
+	}
+	objects.currentErr = nil
+	if _, err := store.Get(
+		t.Context(),
+		ref,
+		filepath.Join(t.TempDir(), "out"),
+	); err != nil {
+		t.Fatalf("committed ambiguous publication was corrupted by cleanup: %v", err)
+	}
+}
+
 func TestEnvelopeRejectsIdentityLayoutAndFileLimitsBeforePublish(t *testing.T) {
 	t.Parallel()
 	ref := Ref{User: "alice", App: "fortune", Gen: "g1"}
@@ -314,6 +361,144 @@ func TestEnvelopeRejectsIdentityLayoutAndFileLimitsBeforePublish(t *testing.T) {
 				t.Fatal("current pointer exists after rejected package")
 			}
 		})
+	}
+}
+
+func TestEnvelopeRetainsOnlyCurrentAndPreviousEncryptedVersions(t *testing.T) {
+	t.Parallel()
+	store, objects := testEnvelope(t)
+	ids := []string{
+		strings.Repeat("a", 32),
+		strings.Repeat("b", 32),
+		strings.Repeat("c", 32),
+	}
+	next := 0
+	store.NewSnapshotID = func() (string, error) {
+		id := ids[next]
+		next++
+		return id, nil
+	}
+	ref := Ref{User: "alice", App: "fortune", Gen: "g1"}
+	pkg := testPackage(t, ref)
+	for range ids {
+		if err := store.Put(t.Context(), ref, pkg); err != nil {
+			t.Fatal(err)
+		}
+	}
+	current := readCurrentForTest(t, store, ref)
+	if current.SnapshotID != ids[2] || current.Previous == nil ||
+		current.Previous.SnapshotID != ids[1] {
+		t.Fatalf("current chain = %+v", current)
+	}
+	objects.mu.Lock()
+	defer objects.mu.Unlock()
+	if generations := objects.versions[store.currentObject(ref)]; len(generations) != 1 {
+		t.Fatalf("current pointer retained %d object generations", len(generations))
+	}
+	for _, suffix := range []string{"package.tink", "manifest.json"} {
+		if _, ok := objects.objects[store.versionObject(ref, ids[0], suffix)]; ok {
+			t.Fatalf("superseded version %s remains", suffix)
+		}
+		for _, retained := range ids[1:] {
+			if _, ok := objects.objects[store.versionObject(ref, retained, suffix)]; !ok {
+				t.Fatalf("retained version %s %s is missing", retained, suffix)
+			}
+		}
+	}
+}
+
+func TestEnvelopeGuardFailureCannotPublishOrDeleteCurrent(t *testing.T) {
+	t.Parallel()
+	store, _ := testEnvelope(t)
+	ref := Ref{User: "alice", App: "fortune", Gen: "g1"}
+	pkg := testPackage(t, ref)
+	if err := store.Put(t.Context(), ref, pkg); err != nil {
+		t.Fatal(err)
+	}
+	before := readCurrentForTest(t, store, ref)
+	denied := errors.New("fence expired")
+	if err := store.PutGuarded(
+		t.Context(), ref, pkg, func(context.Context) error { return denied },
+	); !errors.Is(err, denied) {
+		t.Fatalf("guarded put error = %v", err)
+	}
+	if after := readCurrentForTest(t, store, ref); after != before {
+		t.Fatalf("guarded put changed current: before=%+v after=%+v", before, after)
+	}
+	if err := store.DeleteGuarded(
+		t.Context(), ref, func(context.Context) error { return denied },
+	); !errors.Is(err, denied) {
+		t.Fatalf("guarded delete error = %v", err)
+	}
+	if after := readCurrentForTest(t, store, ref); after != before {
+		t.Fatalf("guarded delete changed current: before=%+v after=%+v", before, after)
+	}
+}
+
+func TestEnvelopeDeleteCASCannotRemoveConcurrentPublicationPredecessor(t *testing.T) {
+	t.Parallel()
+	store, _ := testEnvelope(t)
+	ids := make(chan string, 2)
+	ids <- strings.Repeat("a", 32)
+	ids <- strings.Repeat("b", 32)
+	store.NewSnapshotID = func() (string, error) { return <-ids, nil }
+	ref := Ref{User: "alice", App: "fortune", Gen: "g1"}
+	pkg := testPackage(t, ref)
+	if err := store.Put(t.Context(), ref, pkg); err != nil {
+		t.Fatal(err)
+	}
+
+	err := store.DeleteGuarded(t.Context(), ref, func(ctx context.Context) error {
+		return store.Put(ctx, ref, pkg)
+	})
+	if !errors.Is(err, ErrConcurrentPublication) {
+		t.Fatalf("delete raced with publication: %v", err)
+	}
+	current := readCurrentForTest(t, store, ref)
+	if current.SnapshotID != strings.Repeat("b", 32) || current.Previous == nil ||
+		current.Previous.SnapshotID != strings.Repeat("a", 32) {
+		t.Fatalf("concurrent current chain was damaged: %+v", current)
+	}
+	if _, err := store.Get(t.Context(), ref, filepath.Join(t.TempDir(), "out")); err != nil {
+		t.Fatalf("concurrent publication is unreadable: %v", err)
+	}
+}
+
+func TestEnvelopeMetaAuthenticatesPinnedManifestMetadata(t *testing.T) {
+	t.Parallel()
+	store, objects := testEnvelope(t)
+	ref := Ref{User: "alice", App: "fortune", Gen: "g1"}
+	if err := store.Put(t.Context(), ref, testPackage(t, ref)); err != nil {
+		t.Fatal(err)
+	}
+	name := currentManifestName(t, store, ref)
+	objects.mu.Lock()
+	object := objects.objects[name]
+	var manifest versionManifest
+	if err := json.Unmarshal(object.body, &manifest); err != nil {
+		objects.mu.Unlock()
+		t.Fatal(err)
+	}
+	manifest.Meta.Tier = "small"
+	_, manifest.MetaSHA256, _ = digestMeta(manifest.Meta)
+	body, err := json.Marshal(manifest)
+	if err != nil {
+		objects.mu.Unlock()
+		t.Fatal(err)
+	}
+	object.body = append(body, '\n')
+	objects.objects[name] = object
+	objects.versions[name][object.generation] = object
+	objects.mu.Unlock()
+	if _, err := store.Meta(t.Context(), ref); err == nil {
+		t.Fatal("tampered manifest metadata authenticated")
+	}
+	before := readCurrentForTest(t, store, ref)
+	if err := store.Delete(t.Context(), ref); err == nil {
+		t.Fatal("delete trusted unauthenticated manifest metadata")
+	}
+	if after := readCurrentForTest(t, store, ref); after != before {
+		t.Fatalf("failed authenticated delete changed current: before=%+v after=%+v", before, after)
 	}
 }
 

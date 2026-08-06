@@ -116,8 +116,16 @@ if [[ "$tap_service" != *"User=sshcloud-tap"* ]] ||
   echo "the TAP helper must run separately with only CAP_NET_ADMIN" >&2
   exit 1
 fi
-if ! grep -q 'google_firestore_database' "$TF/firestore.tf"; then
-  echo "firestore.tf must declare google_firestore_database" >&2
+if [[ "$(grep -c 'resource "google_firestore_database"' "$TF/firestore.tf")" -ne 2 ]] ||
+  ! grep -q 'var.user_firestore_database' "$TF/firestore.tf" ||
+  ! grep -q 'var.placement_firestore_database' "$TF/firestore.tf"; then
+  echo "firestore.tf must declare separate user and placement databases" >&2
+  exit 1
+fi
+if ! grep -q 'var.user_firestore_database' "$TF/iam.tf" ||
+  ! grep -q 'var.placement_firestore_database' "$TF/iam.tf" ||
+  ! grep -q 'roles/datastore.viewer' "$TF/iam.tf"; then
+  echo "Firestore IAM must isolate gateway data and snapshotd placement reads" >&2
   exit 1
 fi
 if ! grep -q 'module "project_services"' "$TF/services.tf"; then

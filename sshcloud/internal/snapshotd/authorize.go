@@ -29,27 +29,99 @@ type Authorizer struct {
 	Now       func() time.Time
 }
 
+// Fence is the complete durable authorization decision that must still match
+// immediately before an encrypted current-pointer publish or delete CAS.
+type Fence struct {
+	Ref                snapshot.Ref
+	RecordRevision     int64
+	OperationID        string
+	OperationSequence  int64
+	OperationKind      string
+	CallerInstanceName string
+	CallerInstanceID   string
+	Action             Action
+}
+
 // Authorize binds every package operation to a complete placement reference
 // and one exact GCE VM incarnation.
-func (a *Authorizer) Authorize(ctx context.Context, caller controlauth.Identity, ref snapshot.Ref, action Action) error {
+func (a *Authorizer) Authorize(
+	ctx context.Context,
+	caller controlauth.Identity,
+	ref snapshot.Ref,
+	action Action,
+) (Fence, error) {
 	if a == nil || a.Placement == nil {
-		return fmt.Errorf("%w: placement store is unavailable", ErrForbidden)
+		return Fence{}, fmt.Errorf("%w: placement store is unavailable", ErrForbidden)
 	}
 	if err := ref.Validate(); err != nil {
-		return err
+		return Fence{}, err
 	}
 	if caller.InstanceName == "" || caller.InstanceID == "" {
-		return fmt.Errorf("%w: caller has no verified GCE instance identity", ErrForbidden)
+		return Fence{}, fmt.Errorf("%w: caller has no verified GCE instance identity", ErrForbidden)
 	}
 	record, ok, err := a.Placement.GetRecord(ctx, ref.User, ref.App)
 	if err != nil {
-		return err
+		return Fence{}, err
 	}
 	if !ok || record.User != ref.User || record.App != ref.App {
+		return Fence{}, ErrForbidden
+	}
+	if err := a.authorizeRecord(record, caller, ref, action); err != nil {
+		return Fence{}, err
+	}
+	return fenceFor(record, caller, ref, action), nil
+}
+
+// Revalidate requires the exact record revision, operation ID/sequence, action,
+// and caller incarnation captured before request staging.
+func (a *Authorizer) Revalidate(ctx context.Context, fence Fence) error {
+	if a == nil || a.Placement == nil {
+		return fmt.Errorf("%w: placement store is unavailable", ErrForbidden)
+	}
+	if err := fence.Ref.Validate(); err != nil {
 		return ErrForbidden
 	}
+	if fence.CallerInstanceName == "" || fence.CallerInstanceID == "" || fence.Action == "" {
+		return ErrForbidden
+	}
+	record, ok, err := a.Placement.GetRecord(ctx, fence.Ref.User, fence.Ref.App)
+	if err != nil {
+		return err
+	}
+	if !ok || record.User != fence.Ref.User || record.App != fence.Ref.App ||
+		record.Revision != fence.RecordRevision ||
+		record.Operation.ID != fence.OperationID ||
+		record.Operation.Sequence != fence.OperationSequence ||
+		record.Operation.Kind != fence.OperationKind {
+		return ErrForbidden
+	}
+	caller := controlauth.Identity{
+		InstanceName: fence.CallerInstanceName,
+		InstanceID:   fence.CallerInstanceID,
+	}
+	if err := a.authorizeRecord(record, caller, fence.Ref, fence.Action); err != nil {
+		return err
+	}
+	if fenceFor(record, caller, fence.Ref, fence.Action) != fence {
+		return ErrForbidden
+	}
+	return nil
+}
 
+func (a *Authorizer) authorizeRecord(
+	record placement.Record,
+	caller controlauth.Identity,
+	ref snapshot.Ref,
+	action Action,
+) error {
+	now := time.Now()
+	if a.Now != nil {
+		now = a.Now()
+	}
 	if record.Operation.Kind == "" {
+		if record.LeaseOwner != "" && record.LeaseUntilUnix > now.UnixNano() {
+			return ErrForbidden
+		}
 		if !generationInRecord(record.Generations, ref.Gen) ||
 			!sameHost(caller, record.HostID, record.HostInstanceID) {
 			return ErrForbidden
@@ -65,10 +137,6 @@ func (a *Authorizer) Authorize(ctx context.Context, caller controlauth.Identity,
 		return ErrForbidden
 	}
 
-	now := time.Now()
-	if a.Now != nil {
-		now = a.Now()
-	}
 	if record.LeaseOwner == "" || record.LeaseUntilUnix <= now.UnixNano() {
 		return ErrForbidden
 	}
@@ -146,6 +214,21 @@ func (a *Authorizer) Authorize(ctx context.Context, caller controlauth.Identity,
 		}
 	default:
 		return ErrForbidden
+	}
+}
+
+func fenceFor(
+	record placement.Record,
+	caller controlauth.Identity,
+	ref snapshot.Ref,
+	action Action,
+) Fence {
+	return Fence{
+		Ref: ref, RecordRevision: record.Revision,
+		OperationID: record.Operation.ID, OperationSequence: record.Operation.Sequence,
+		OperationKind:      record.Operation.Kind,
+		CallerInstanceName: caller.InstanceName, CallerInstanceID: caller.InstanceID,
+		Action: action,
 	}
 }
 

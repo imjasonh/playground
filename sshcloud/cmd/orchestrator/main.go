@@ -53,7 +53,8 @@ func main() {
 	gceZone := flag.String("gce-zone", "", "GCE zone used for immutable instance tombstone checks")
 	firestoreProject := flag.String("firestore-project", "", "GCP project for Firestore placement (default: in-memory)")
 	firestorePrefix := flag.String("firestore-prefix", "sshcloud", "Firestore collection prefix")
-	firestoreDatabase := flag.String("firestore-database", "sshcloud", "Firestore database ID")
+	userFirestoreDatabase := flag.String("user-firestore-database", "sshcloud-user", "user/app/quota Firestore database ID")
+	placementFirestoreDatabase := flag.String("placement-firestore-database", "sshcloud-placement", "placement/operation Firestore database ID")
 	controlCert := flag.String("control-cert", "", "reloadable orchestrator control certificate PEM")
 	controlKey := flag.String("control-key", "", "reloadable orchestrator control private-key PEM")
 	controlCACurrent := flag.String("control-ca-current", "", "reloadable current control CA PEM")
@@ -146,13 +147,13 @@ func main() {
 	var place placement.Store = placement.NewMemory()
 	var quotaStore quota.Store = quota.NewMemory()
 	if *firestoreProject != "" {
-		fs, err := placement.NewFirestoreDatabase(ctx, *firestoreProject, *firestoreDatabase, *firestorePrefix)
+		fs, err := placement.NewFirestoreDatabase(ctx, *firestoreProject, *placementFirestoreDatabase, *firestorePrefix)
 		if err != nil {
 			log.Fatalf("firestore: %v", err)
 		}
 		defer fs.Close()
 		place = fs
-		quotaStore, err = quota.NewFirestoreDatabase(ctx, *firestoreProject, *firestoreDatabase, *firestorePrefix)
+		quotaStore, err = quota.NewFirestoreDatabase(ctx, *firestoreProject, *userFirestoreDatabase, *firestorePrefix)
 		if err != nil {
 			log.Fatalf("quota firestore: %v", err)
 		}

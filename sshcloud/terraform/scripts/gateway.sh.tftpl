@@ -123,5 +123,5 @@ docker run -d --name sshcloud-gateway --restart unless-stopped --net host \
   -access-policy-file /var/lib/sshcloud/access-policy.json \
   -firestore-project ${project_id} \
   -firestore-prefix ${firestore_prefix} \
-  -firestore-database ${firestore_database} \
+  -user-firestore-database ${user_firestore_database} \
   -orchestrator-url https://${orchestrator_ip}:8090

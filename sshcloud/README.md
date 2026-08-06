@@ -33,8 +33,8 @@ Design: [`docs/ssh-app-cloud-design.md`](../docs/ssh-app-cloud-design.md).
 | `internal/firecracker` | Firecracker API client + explicit direct-test runtime support |
 | `internal/snapshot` | Structured refs, fixed archives, LocalStore/RemoteStore, encrypted GCS repository |
 | `internal/snapshotd` | Exact-instance placement/operation authorization + HTTP proxy |
-| `internal/placement` | user/app → host name + immutable GCE instance ID (memory or Firestore) |
-| `internal/store` | users / keys / apps (memory or Firestore) |
+| `internal/placement` | user/app → host name + immutable GCE instance ID (memory or dedicated placement Firestore) |
+| `internal/store` | users / keys / apps (memory or dedicated user Firestore) |
 | `internal/migrate` | Cross-host Sleep→Evict→Adopt |
 | `internal/rootfs` | ext4 build via mkfs.ext4 + debugfs (`BuildFromDir`) |
 | `internal/ocirootfs` | OCI pull (go-containerregistry) → unpack → ext4 cache + boot spec |
@@ -227,13 +227,24 @@ A new digest is a new rootfs/generation. The gateway (`-drain-timeout`, default
 - Every operation carries a validated `(user, app, generation)` reference.
   snapshotd derives the caller VM's exact name and immutable instance ID from
   its verified full-format GCE token, then checks Firestore placement and the
-  live ensure/migrate/drain journal. Committing a move revokes the source.
+  live ensure/stop/migrate/drain journal. Committing a move revokes the source.
 - Bytes are proxied through snapshotd. Publication validates the fixed
   four-entry archive and metadata identity/layout, creates a fresh Tink v2
   Streaming AEAD keyset, wraps it with Cloud KMS using
-  tenant/app/generation/snapshot AAD, writes an immutable encrypted version,
-  and CAS-publishes `current.json` with a GCS generation precondition. The
-  snapshot bucket also uses CMEK.
+  tenant/app/generation/snapshot plus canonical metadata AAD, writes an
+  immutable encrypted version,
+  and revalidates the exact placement revision, operation ID/sequence, action,
+  and caller incarnation immediately before CAS-publishing `current.json`.
+  The pointer retains exactly current+previous encrypted versions; generation-
+  qualified cleanup removes older package, manifest, and pointer generations.
+  Delete uses the same fence/CAS boundary. The snapshot bucket also uses CMEK.
+- snapshotd rejects staging before reading package bytes when its weighted
+  10 GiB/default two-operation disk budget or one-operation-per-agent-
+  incarnation cap is full. Agent and snapshotd plaintext staging is removed as
+  soon as publication/restore streaming completes; aggregate bounds, use,
+  residual cleanup reservations, rejection, and cleanup metrics are exposed on
+  the health listener. A failed removal remains charged to the disk budget
+  until startup cleanup, rather than silently reopening capacity.
 - TAP is kept across sleep; wake restores into the same network identity.
 - Production Firecracker always sees `/rootfs.ext4` and
   `/snapshot/{vm.state,vm.mem}` inside its chroot. Snapshot schema 2 records a
@@ -377,8 +388,8 @@ Required before public/self-service use:
 - [ ] Session leases/heartbeats (current no-idle hold is not crash-expiring)
 - [ ] Automatic pre-termination MIG hooks (manual drain-before-replace is available;
       auto-healing after a hard failure remains abrupt)
-- [ ] Long-term snapshot quota/accounting and lifecycle cleanup of superseded
-      immutable encrypted versions
+- [ ] Long-term snapshot quota/accounting beyond the bounded current+previous
+      encrypted version chain
 - [ ] External key management for every Terraform-held SSH/control private key
 - [ ] Per-environment migration to and access review of the required protected
       GCS Terraform backend (configuration alone is not a completed migration)

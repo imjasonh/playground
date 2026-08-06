@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -20,7 +21,7 @@ import (
 )
 
 const (
-	envelopeSchemaVersion = 1
+	envelopeSchemaVersion = 2
 	maxManifestBytes      = 32 << 10
 )
 
@@ -34,14 +35,21 @@ type versionManifest struct {
 	PackageSize       int64     `json:"package_size"`
 	WrappedKeyset     []byte    `json:"wrapped_keyset"`
 	Meta              Meta      `json:"meta"`
+	MetaSHA256        string    `json:"meta_sha256"`
 	CreatedAt         time.Time `json:"created_at"`
 }
 
-type currentManifest struct {
-	SchemaVersion      int    `json:"schema_version"`
-	Ref                Ref    `json:"ref"`
+type versionPointer struct {
 	SnapshotID         string `json:"snapshot_id"`
 	ManifestGeneration int64  `json:"manifest_generation"`
+}
+
+type currentManifest struct {
+	SchemaVersion      int             `json:"schema_version"`
+	Ref                Ref             `json:"ref"`
+	SnapshotID         string          `json:"snapshot_id"`
+	ManifestGeneration int64           `json:"manifest_generation"`
+	Previous           *versionPointer `json:"previous,omitempty"`
 }
 
 // EnvelopeStore stores immutable Tink Streaming AEAD packages and publishes a
@@ -75,10 +83,23 @@ func NewGCSStore(ctx context.Context, bucket, prefix, kmsKey, expectedLayout str
 }
 
 func (s *EnvelopeStore) Put(ctx context.Context, ref Ref, pkg Package) error {
+	return s.PutGuarded(ctx, ref, pkg, nil)
+}
+
+func (s *EnvelopeStore) PutGuarded(
+	ctx context.Context,
+	ref Ref,
+	pkg Package,
+	guard CommitGuard,
+) (retErr error) {
 	if err := s.validate(ref); err != nil {
 		return err
 	}
-	_, previousAttrs, exists, err := s.readCurrent(ctx, ref)
+	validated, err := validatePackage(ref, pkg, s.ExpectedLayout)
+	if err != nil {
+		return err
+	}
+	previous, previousAttrs, exists, err := s.readCurrent(ctx, ref)
 	if err != nil {
 		return err
 	}
@@ -86,14 +107,11 @@ func (s *EnvelopeStore) Put(ctx context.Context, ref Ref, pkg Package) error {
 	if err != nil {
 		return err
 	}
-	meta, err := pkg.ReadMeta()
+	metaDigest, metaDigestHex, err := digestMeta(validated.meta)
 	if err != nil {
-		return fmt.Errorf("read snapshot metadata: %w", err)
-	}
-	if err := ValidateMeta(ref, meta, s.ExpectedLayout); err != nil {
 		return err
 	}
-	keyAAD := envelopeAAD(ref, snapshotID)
+	keyAAD := envelopeAAD(ref, snapshotID, metaDigest)
 	handle, err := keyset.NewHandle(streamingaead.AES256GCMHKDF1MBKeyTemplate())
 	if err != nil {
 		return fmt.Errorf("generate snapshot streaming key: %w", err)
@@ -114,25 +132,39 @@ func (s *EnvelopeStore) Put(ctx context.Context, ref Ref, pkg Package) error {
 	}
 
 	packageName := s.versionObject(ref, snapshotID, "package.tink")
-	packageAttrs, err := s.Objects.Write(ctx, packageName, ObjectCondition{DoesNotExist: true}, func(out io.Writer) error {
+	var packageAttrs ObjectAttrs
+	packageAttrs, err = s.Objects.Write(ctx, packageName, ObjectCondition{DoesNotExist: true}, func(out io.Writer) error {
 		encrypted, err := primitive.NewEncryptingWriter(out, packageAAD(keyAAD))
 		if err != nil {
 			return err
 		}
-		writeErr := WriteArchive(ctx, encrypted, ref, pkg, s.ExpectedLayout)
+		writeErr := writeValidatedArchive(ctx, encrypted, validated)
 		closeErr := encrypted.Close()
-		if writeErr != nil {
-			return writeErr
-		}
-		return closeErr
+		return errors.Join(writeErr, closeErr)
 	})
 	if err != nil {
 		return fmt.Errorf("write immutable encrypted snapshot package: %w", err)
 	}
-	cleanupPackage := true
+	published := false
+	var manifestAttrs ObjectAttrs
 	defer func() {
-		if cleanupPackage {
-			_ = s.Objects.Delete(context.Background(), packageName, packageAttrs.Generation)
+		if published {
+			return
+		}
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		var cleanupErr error
+		if manifestAttrs.Generation > 0 {
+			cleanupErr = errors.Join(
+				cleanupErr,
+				s.Objects.Delete(cleanupCtx, s.versionObject(ref, snapshotID, "manifest.json"), manifestAttrs.Generation),
+			)
+		}
+		if packageAttrs.Generation > 0 {
+			cleanupErr = errors.Join(cleanupErr, s.Objects.Delete(cleanupCtx, packageName, packageAttrs.Generation))
+		}
+		if cleanupErr != nil {
+			retErr = errors.Join(retErr, fmt.Errorf("clean unpublished immutable snapshot objects: %w", cleanupErr))
 		}
 	}()
 	if packageAttrs.Generation <= 0 || packageAttrs.Size <= 0 || packageAttrs.Size > MaxRequestBytes {
@@ -142,19 +174,14 @@ func (s *EnvelopeStore) Put(ctx context.Context, ref Ref, pkg Package) error {
 	manifest := versionManifest{
 		SchemaVersion: envelopeSchemaVersion, Ref: ref, SnapshotID: snapshotID,
 		PackageGeneration: packageAttrs.Generation, PackageSize: packageAttrs.Size,
-		WrappedKeyset: append([]byte(nil), wrappedKeyset...), Meta: meta, CreatedAt: s.now(),
+		WrappedKeyset: append([]byte(nil), wrappedKeyset...), Meta: validated.meta,
+		MetaSHA256: metaDigestHex, CreatedAt: s.now(),
 	}
 	manifestName := s.versionObject(ref, snapshotID, "manifest.json")
-	manifestAttrs, err := s.writeJSON(ctx, manifestName, ObjectCondition{DoesNotExist: true}, manifest)
+	manifestAttrs, err = s.writeJSON(ctx, manifestName, ObjectCondition{DoesNotExist: true}, manifest)
 	if err != nil {
 		return fmt.Errorf("write immutable snapshot manifest: %w", err)
 	}
-	cleanupManifest := true
-	defer func() {
-		if cleanupManifest {
-			_ = s.Objects.Delete(context.Background(), manifestName, manifestAttrs.Generation)
-		}
-	}()
 	if manifestAttrs.Generation <= 0 {
 		return fmt.Errorf("immutable snapshot manifest has invalid generation")
 	}
@@ -166,19 +193,53 @@ func (s *EnvelopeStore) Put(ctx context.Context, ref Ref, pkg Package) error {
 	condition := ObjectCondition{DoesNotExist: true}
 	if exists {
 		condition = ObjectCondition{MatchGeneration: true, Generation: previousAttrs.Generation}
+		current.Previous = &versionPointer{
+			SnapshotID: previous.SnapshotID, ManifestGeneration: previous.ManifestGeneration,
+		}
 	}
-	if _, err := s.writeJSON(ctx, s.currentObject(ref), condition, current); err != nil {
+	currentBody, err := marshalManifest(current)
+	if err != nil {
+		return err
+	}
+	if guard != nil {
+		if err := guard(ctx); err != nil {
+			return fmt.Errorf("revalidate snapshot publication fence: %w", err)
+		}
+	}
+	if _, err := s.writeManifestBytes(ctx, s.currentObject(ref), condition, currentBody); err != nil {
 		if errors.Is(err, ErrObjectPrecondition) {
 			return fmt.Errorf("%w: %v", ErrConcurrentPublication, err)
 		}
-		return fmt.Errorf("publish current snapshot: %w", err)
+		// A transport error may arrive after GCS committed the conditional
+		// write. Retaining the immutable package and manifest is safer than
+		// deleting objects that an acknowledged current pointer may reference.
+		// The error surfaces the ambiguous outcome for an explicit retry.
+		published = true
+		return fmt.Errorf(
+			"publish current snapshot outcome is unknown; immutable objects retained: %w",
+			err,
+		)
 	}
-	cleanupPackage = false
-	cleanupManifest = false
+	published = true
 
-	// Old immutable bytes are deliberately not deleted synchronously. A reader
-	// that resolved the previous generation before this publish must be allowed
-	// to finish. Lifecycle cleanup can remove non-current versions after grace.
+	cleanupCtx, cancelCleanup := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancelCleanup()
+	var cleanupErr error
+	if exists {
+		cleanupErr = errors.Join(
+			cleanupErr,
+			s.Objects.Delete(cleanupCtx, s.currentObject(ref), previousAttrs.Generation),
+		)
+		if previous.Previous != nil {
+			cleanupErr = errors.Join(
+				cleanupErr,
+				s.deleteVersion(cleanupCtx, ref, *previous.Previous),
+			)
+		}
+	}
+	if cleanupErr != nil {
+		return fmt.Errorf("snapshot published but retention cleanup failed: %w", cleanupErr)
+	}
 	return nil
 }
 
@@ -194,11 +255,15 @@ func (s *EnvelopeStore) Get(ctx context.Context, ref Ref, destDir string) (Packa
 	if !exists {
 		return pkg, os.ErrNotExist
 	}
-	manifest, err := s.readVersion(ctx, ref, current)
+	manifest, err := s.readVersion(ctx, ref, current.pointer())
 	if err != nil {
 		return pkg, err
 	}
-	keyAAD := envelopeAAD(ref, current.SnapshotID)
+	metaDigest, _, err := digestMeta(manifest.Meta)
+	if err != nil {
+		return pkg, err
+	}
+	keyAAD := envelopeAAD(ref, current.SnapshotID, metaDigest)
 	cleartextKeyset, err := s.Wrapper.Unwrap(ctx, manifest.WrappedKeyset, keyAAD)
 	if err != nil {
 		return pkg, err
@@ -231,6 +296,19 @@ func (s *EnvelopeStore) Get(ctx context.Context, ref Ref, destDir string) (Packa
 	if err != nil {
 		return pkg, fmt.Errorf("authenticate snapshot package: %w", err)
 	}
+	archiveDigest, _, err := digestMeta(pkg.Meta)
+	if err != nil || !bytes.Equal(archiveDigest, metaDigest) {
+		if err == nil {
+			err = fmt.Errorf("snapshot archive metadata differs from pinned manifest")
+		}
+		if cleanupErr := os.RemoveAll(destDir); cleanupErr != nil {
+			err = errors.Join(
+				err,
+				fmt.Errorf("clean unauthenticated snapshot package: %w", cleanupErr),
+			)
+		}
+		return NewPackageDir(destDir), err
+	}
 	return pkg, nil
 }
 
@@ -242,10 +320,15 @@ func (s *EnvelopeStore) Has(ctx context.Context, ref Ref) (bool, error) {
 	if err != nil || !exists {
 		return false, err
 	}
-	manifest, err := s.readVersion(ctx, ref, current)
+	manifest, err := s.readVersion(ctx, ref, current.pointer())
 	if err != nil {
 		return false, err
 	}
+	cleartextKeyset, err := s.unwrapManifestKey(ctx, ref, current.pointer(), manifest)
+	if err != nil {
+		return false, err
+	}
+	wipe(cleartextKeyset)
 	attrs, err := s.Objects.Stat(ctx, s.versionObject(ref, current.SnapshotID, "package.tink"))
 	if errors.Is(err, ErrObjectNotFound) {
 		return false, fmt.Errorf("published snapshot package is missing")
@@ -270,14 +353,23 @@ func (s *EnvelopeStore) Meta(ctx context.Context, ref Ref) (Meta, error) {
 	if !exists {
 		return Meta{}, os.ErrNotExist
 	}
-	manifest, err := s.readVersion(ctx, ref, current)
+	manifest, err := s.readVersion(ctx, ref, current.pointer())
 	if err != nil {
 		return Meta{}, err
 	}
+	cleartextKeyset, err := s.unwrapManifestKey(ctx, ref, current.pointer(), manifest)
+	if err != nil {
+		return Meta{}, err
+	}
+	wipe(cleartextKeyset)
 	return manifest.Meta, nil
 }
 
 func (s *EnvelopeStore) Delete(ctx context.Context, ref Ref) error {
+	return s.DeleteGuarded(ctx, ref, nil)
+}
+
+func (s *EnvelopeStore) DeleteGuarded(ctx context.Context, ref Ref, guard CommitGuard) error {
 	if err := s.validate(ref); err != nil {
 		return err
 	}
@@ -285,19 +377,57 @@ func (s *EnvelopeStore) Delete(ctx context.Context, ref Ref) error {
 	if err != nil || !exists {
 		return err
 	}
-	if err := s.Objects.Delete(ctx, s.currentObject(ref), attrs.Generation); err != nil {
+	currentVersion, err := s.readVersion(ctx, ref, current.pointer())
+	if err != nil {
+		return err
+	}
+	currentKeyset, err := s.unwrapManifestKey(ctx, ref, current.pointer(), currentVersion)
+	if err != nil {
+		return err
+	}
+	wipe(currentKeyset)
+	var previousVersion *versionManifest
+	if current.Previous != nil {
+		manifest, err := s.readVersion(ctx, ref, *current.Previous)
+		if err != nil {
+			return err
+		}
+		previousKeyset, err := s.unwrapManifestKey(ctx, ref, *current.Previous, manifest)
+		if err != nil {
+			return err
+		}
+		wipe(previousKeyset)
+		previousVersion = &manifest
+	}
+	if guard != nil {
+		if err := guard(ctx); err != nil {
+			return fmt.Errorf("revalidate snapshot delete fence: %w", err)
+		}
+	}
+	if err := s.Objects.DeleteCurrent(ctx, s.currentObject(ref), attrs.Generation); err != nil {
 		if errors.Is(err, ErrObjectPrecondition) {
 			return fmt.Errorf("%w: %v", ErrConcurrentPublication, err)
 		}
 		return err
 	}
-	manifestName := s.versionObject(ref, current.SnapshotID, "manifest.json")
-	manifest, versionErr := s.readVersion(ctx, ref, current)
-	if versionErr == nil {
-		_ = s.Objects.Delete(ctx, s.versionObject(ref, current.SnapshotID, "package.tink"), manifest.PackageGeneration)
+	cleanupCtx, cancelCleanup := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancelCleanup()
+	cleanupErr := s.deleteVersionManifest(cleanupCtx, ref, current.pointer(), currentVersion)
+	if current.Previous != nil && previousVersion != nil {
+		cleanupErr = errors.Join(
+			cleanupErr,
+			s.deleteVersionManifest(
+				cleanupCtx,
+				ref,
+				*current.Previous,
+				*previousVersion,
+			),
+		)
 	}
-	_ = s.Objects.Delete(ctx, manifestName, current.ManifestGeneration)
-	return versionErr
+	if cleanupErr != nil {
+		return fmt.Errorf("snapshot pointer deleted but encrypted version cleanup failed: %w", cleanupErr)
+	}
+	return nil
 }
 
 func (s *EnvelopeStore) Health(ctx context.Context) error {
@@ -344,41 +474,138 @@ func (s *EnvelopeStore) readCurrent(ctx context.Context, ref Ref) (currentManife
 		attrs.Generation <= 0 {
 		return current, ObjectAttrs{}, false, fmt.Errorf("invalid current snapshot manifest")
 	}
+	if current.Previous != nil {
+		if err := current.Previous.validate(); err != nil ||
+			current.Previous.SnapshotID == current.SnapshotID {
+			return current, ObjectAttrs{}, false, fmt.Errorf("invalid previous snapshot manifest pointer")
+		}
+	}
 	return current, attrs, true, nil
 }
 
-func (s *EnvelopeStore) readVersion(ctx context.Context, ref Ref, current currentManifest) (versionManifest, error) {
+func (s *EnvelopeStore) readVersion(ctx context.Context, ref Ref, pointer versionPointer) (versionManifest, error) {
 	var manifest versionManifest
 	attrs, err := s.readJSON(
-		ctx, s.versionObject(ref, current.SnapshotID, "manifest.json"),
-		current.ManifestGeneration, &manifest,
+		ctx, s.versionObject(ref, pointer.SnapshotID, "manifest.json"),
+		pointer.ManifestGeneration, &manifest,
 	)
 	if err != nil {
 		return manifest, fmt.Errorf("read immutable snapshot manifest: %w", err)
 	}
 	if manifest.SchemaVersion != envelopeSchemaVersion || manifest.Ref != ref ||
-		manifest.SnapshotID != current.SnapshotID || manifest.PackageGeneration <= 0 ||
+		manifest.SnapshotID != pointer.SnapshotID || manifest.PackageGeneration <= 0 ||
 		manifest.PackageSize <= 0 || manifest.PackageSize > MaxRequestBytes ||
 		len(manifest.WrappedKeyset) == 0 || len(manifest.WrappedKeyset) > 16<<10 ||
-		manifest.CreatedAt.IsZero() || attrs.Generation != current.ManifestGeneration {
+		manifest.CreatedAt.IsZero() || attrs.Generation != pointer.ManifestGeneration {
 		return manifest, fmt.Errorf("invalid immutable snapshot manifest")
 	}
 	if err := ValidateMeta(ref, manifest.Meta, s.ExpectedLayout); err != nil {
 		return manifest, fmt.Errorf("invalid immutable snapshot metadata: %w", err)
 	}
+	_, digest, err := digestMeta(manifest.Meta)
+	if err != nil || digest != manifest.MetaSHA256 {
+		return manifest, fmt.Errorf("invalid immutable snapshot metadata digest")
+	}
 	return manifest, nil
 }
 
+func (s *EnvelopeStore) unwrapManifestKey(
+	ctx context.Context,
+	ref Ref,
+	pointer versionPointer,
+	manifest versionManifest,
+) ([]byte, error) {
+	metaDigest, _, err := digestMeta(manifest.Meta)
+	if err != nil {
+		return nil, err
+	}
+	cleartext, err := s.Wrapper.Unwrap(
+		ctx,
+		manifest.WrappedKeyset,
+		envelopeAAD(ref, pointer.SnapshotID, metaDigest),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("authenticate pinned snapshot manifest metadata: %w", err)
+	}
+	return cleartext, nil
+}
+
+func (s *EnvelopeStore) deleteVersion(ctx context.Context, ref Ref, pointer versionPointer) error {
+	manifest, err := s.readVersion(ctx, ref, pointer)
+	if errors.Is(err, ErrObjectNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	cleartextKeyset, err := s.unwrapManifestKey(ctx, ref, pointer, manifest)
+	if err != nil {
+		return err
+	}
+	wipe(cleartextKeyset)
+	return s.deleteVersionManifest(ctx, ref, pointer, manifest)
+}
+
+func (s *EnvelopeStore) deleteVersionManifest(
+	ctx context.Context,
+	ref Ref,
+	pointer versionPointer,
+	manifest versionManifest,
+) error {
+	packageErr := s.Objects.Delete(
+		ctx,
+		s.versionObject(ref, pointer.SnapshotID, "package.tink"),
+		manifest.PackageGeneration,
+	)
+	if packageErr != nil {
+		packageErr = fmt.Errorf(
+			"delete encrypted snapshot package %s: %w",
+			pointer.SnapshotID,
+			packageErr,
+		)
+	}
+	manifestErr := s.Objects.Delete(
+		ctx,
+		s.versionObject(ref, pointer.SnapshotID, "manifest.json"),
+		pointer.ManifestGeneration,
+	)
+	if manifestErr != nil {
+		manifestErr = fmt.Errorf(
+			"delete encrypted snapshot manifest %s: %w",
+			pointer.SnapshotID,
+			manifestErr,
+		)
+	}
+	return errors.Join(packageErr, manifestErr)
+}
+
 func (s *EnvelopeStore) writeJSON(ctx context.Context, name string, condition ObjectCondition, value any) (ObjectAttrs, error) {
-	body, err := json.Marshal(value)
+	body, err := marshalManifest(value)
 	if err != nil {
 		return ObjectAttrs{}, err
 	}
-	if len(body) > maxManifestBytes {
-		return ObjectAttrs{}, fmt.Errorf("snapshot manifest is too large")
+	return s.writeManifestBytes(ctx, name, condition, body)
+}
+
+func marshalManifest(value any) ([]byte, error) {
+	body, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
 	}
+	if len(body) > maxManifestBytes {
+		return nil, fmt.Errorf("snapshot manifest is too large")
+	}
+	return append(body, '\n'), nil
+}
+
+func (s *EnvelopeStore) writeManifestBytes(
+	ctx context.Context,
+	name string,
+	condition ObjectCondition,
+	body []byte,
+) (ObjectAttrs, error) {
 	return s.Objects.Write(ctx, name, condition, func(out io.Writer) error {
-		_, err := out.Write(append(body, '\n'))
+		_, err := out.Write(body)
 		return err
 	})
 }
@@ -411,6 +638,19 @@ func (s *EnvelopeStore) versionObject(ref Ref, snapshotID, name string) string {
 	return path.Join(s.Prefix, ref.Key(), "versions", snapshotID, name)
 }
 
+func (c currentManifest) pointer() versionPointer {
+	return versionPointer{
+		SnapshotID: c.SnapshotID, ManifestGeneration: c.ManifestGeneration,
+	}
+}
+
+func (p versionPointer) validate() error {
+	if !validSnapshotID(p.SnapshotID) || p.ManifestGeneration <= 0 {
+		return fmt.Errorf("invalid snapshot version pointer")
+	}
+	return nil
+}
+
 func (s *EnvelopeStore) snapshotID() (string, error) {
 	if s.NewSnapshotID != nil {
 		id, err := s.NewSnapshotID()
@@ -440,8 +680,21 @@ func validSnapshotID(id string) bool {
 	return len(id) == 32 && strings.Trim(id, "0123456789abcdef") == ""
 }
 
-func envelopeAAD(ref Ref, snapshotID string) []byte {
-	return []byte("sshcloud-snapshot-keyset-v1\x00" + ref.User + "\x00" + ref.App + "\x00" + ref.Gen + "\x00" + snapshotID)
+func digestMeta(meta Meta) ([]byte, string, error) {
+	body, err := json.Marshal(meta)
+	if err != nil {
+		return nil, "", fmt.Errorf("canonicalize snapshot metadata: %w", err)
+	}
+	if len(body) == 0 || int64(len(body)) > MaxMetadataBytes {
+		return nil, "", fmt.Errorf("canonical snapshot metadata has invalid size")
+	}
+	digest := sha256.Sum256(body)
+	return digest[:], hex.EncodeToString(digest[:]), nil
+}
+
+func envelopeAAD(ref Ref, snapshotID string, metaDigest []byte) []byte {
+	aad := []byte("sshcloud-snapshot-keyset-v2\x00" + ref.User + "\x00" + ref.App + "\x00" + ref.Gen + "\x00" + snapshotID + "\x00")
+	return append(aad, metaDigest...)
 }
 
 func packageAAD(keyAAD []byte) []byte {
@@ -455,3 +708,4 @@ func wipe(data []byte) {
 }
 
 var _ Store = (*EnvelopeStore)(nil)
+var _ GuardedStore = (*EnvelopeStore)(nil)
