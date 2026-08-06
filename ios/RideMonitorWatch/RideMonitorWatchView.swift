@@ -3,9 +3,7 @@ import SwiftUI
 /// Glanceable ride stats on Apple Watch: clock time, duration, distance, and
 /// current speed. Data is pushed from the phone via WatchConnectivity. While
 /// a ride is active an `HKWorkoutSession` keeps this app frontmost so raising
-/// the wrist returns here without hunting through the app list. If the session
-/// dies — or the Digital Crown dismissed the UI — the phone re-launches us and
-/// we restart the session so the clock face does not win the rest of the ride.
+/// the wrist returns here without hunting through the app list.
 ///
 /// Layout is intentionally dense and non-scrolling — a 2-column grid of
 /// compact cells so everything fits on a single Watch face at a glance.
@@ -33,8 +31,6 @@ struct RideMonitorWatchView: View {
                 .frame(width: geo.size.width, height: geo.size.height)
             }
         }
-        // Wrist-raise / Crown return: if the phone ride is still active but
-        // the HK session died, start a new one so we can stay frontmost.
         .onChange(of: scenePhase) { phase in
             if phase == .active {
                 workout.reassertIfNeeded()

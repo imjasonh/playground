@@ -2,10 +2,9 @@ import XCTest
 @testable import Playground
 
 final class RideWatchFrontmostPolicyTests: XCTestCase {
-    func testLaunchesImmediatelyOnFirstRideSnapshot() {
+    func testRelaunchesImmediatelyWhenNeverLaunched() {
         XCTAssertTrue(
-            RideWatchFrontmostPolicy.shouldLaunchWatch(
-                didLaunchThisRide: false,
+            RideWatchFrontmostPolicy.shouldRelaunchWatch(
                 lastLaunchAt: nil,
                 now: Date()
             )
@@ -16,8 +15,7 @@ final class RideWatchFrontmostPolicyTests: XCTestCase {
         let last = Date(timeIntervalSince1970: 1_000)
         let now = last.addingTimeInterval(RideWatchFrontmostPolicy.relaunchInterval - 1)
         XCTAssertFalse(
-            RideWatchFrontmostPolicy.shouldLaunchWatch(
-                didLaunchThisRide: true,
+            RideWatchFrontmostPolicy.shouldRelaunchWatch(
                 lastLaunchAt: last,
                 now: now
             )
@@ -28,49 +26,59 @@ final class RideWatchFrontmostPolicyTests: XCTestCase {
         let last = Date(timeIntervalSince1970: 1_000)
         let now = last.addingTimeInterval(RideWatchFrontmostPolicy.relaunchInterval)
         XCTAssertTrue(
-            RideWatchFrontmostPolicy.shouldLaunchWatch(
-                didLaunchThisRide: true,
+            RideWatchFrontmostPolicy.shouldRelaunchWatch(
                 lastLaunchAt: last,
                 now: now
             )
         )
     }
 
-    func testRelaunchesWhenLastLaunchUnknown() {
-        XCTAssertTrue(
-            RideWatchFrontmostPolicy.shouldLaunchWatch(
-                didLaunchThisRide: true,
-                lastLaunchAt: nil,
-                now: Date()
-            )
-        )
-    }
+    func testAttemptStartRequiresWantedSessionUnderCapAndCooldown() {
+        let now = Date(timeIntervalSince1970: 1_000)
 
-    func testUnexpectedRestartRequiresWantedSessionAndUnderCap() {
         XCTAssertTrue(
-            RideWatchFrontmostPolicy.shouldRestartAfterUnexpectedEnd(
+            RideWatchFrontmostPolicy.shouldAttemptStart(
                 wantsSession: true,
-                failureCount: 0
+                attemptCount: 0,
+                lastAttemptAt: nil,
+                now: now
             )
         )
         XCTAssertFalse(
-            RideWatchFrontmostPolicy.shouldRestartAfterUnexpectedEnd(
+            RideWatchFrontmostPolicy.shouldAttemptStart(
                 wantsSession: false,
-                failureCount: 0
+                attemptCount: 0,
+                lastAttemptAt: nil,
+                now: now
             )
         )
         XCTAssertFalse(
-            RideWatchFrontmostPolicy.shouldRestartAfterUnexpectedEnd(
+            RideWatchFrontmostPolicy.shouldAttemptStart(
                 wantsSession: true,
-                failureCount: RideWatchFrontmostPolicy.maxUnexpectedRestarts
+                attemptCount: RideWatchFrontmostPolicy.maxStartAttemptsPerRide,
+                lastAttemptAt: nil,
+                now: now
             )
         )
-    }
 
-    func testRestartDelayBacksOff() {
-        XCTAssertEqual(RideWatchFrontmostPolicy.restartDelay(afterFailureCount: 0), 1, accuracy: 0.001)
-        XCTAssertEqual(RideWatchFrontmostPolicy.restartDelay(afterFailureCount: 1), 2, accuracy: 0.001)
-        XCTAssertEqual(RideWatchFrontmostPolicy.restartDelay(afterFailureCount: 3), 8, accuracy: 0.001)
-        XCTAssertEqual(RideWatchFrontmostPolicy.restartDelay(afterFailureCount: 99), 32, accuracy: 0.001)
+        let recent = now.addingTimeInterval(-(RideWatchFrontmostPolicy.startAttemptCooldown - 1))
+        XCTAssertFalse(
+            RideWatchFrontmostPolicy.shouldAttemptStart(
+                wantsSession: true,
+                attemptCount: 1,
+                lastAttemptAt: recent,
+                now: now
+            )
+        )
+
+        let cooled = now.addingTimeInterval(-RideWatchFrontmostPolicy.startAttemptCooldown)
+        XCTAssertTrue(
+            RideWatchFrontmostPolicy.shouldAttemptStart(
+                wantsSession: true,
+                attemptCount: 1,
+                lastAttemptAt: cooled,
+                now: now
+            )
+        )
     }
 }

@@ -1,48 +1,46 @@
 import Foundation
 
-/// Decisions that keep the Ride Monitor Watch companion frontmost during a
-/// phone-driven ride.
+/// Keeps the Ride Monitor Watch companion frontmost for a phone-driven ride.
 ///
-/// watchOS only returns a third-party app on wrist-raise while an
-/// `HKWorkoutSession` is active — and even then, pressing the Digital Crown
-/// dismisses the app until something brings it forward again. The phone
-/// periodically re-calls `startWatchApp`, and the Watch restarts a lost
-/// session, using these intervals / caps.
+/// Invariant: while the phone ride is active, the Watch must want an
+/// `HKWorkoutSession` (watchOS only returns a third-party app on wrist-raise
+/// with a live session). Digital Crown dismissal still returns to the clock
+/// face even with a session — the phone periodically re-calls `startWatchApp`
+/// to bring the UI forward again.
 enum RideWatchFrontmostPolicy {
-    /// How often the phone may re-assert the Watch companion while riding.
-    /// Short enough to recover from an accidental Crown press mid-ride;
-    /// long enough to avoid spamming HealthKit.
+    /// How often the phone may re-assert the Watch UI while riding.
     static let relaunchInterval: TimeInterval = 45
 
-    /// Cap unexpected Watch-side session restarts so a competing workout
-    /// (or denied Health access) cannot loop forever.
-    static let maxUnexpectedRestarts = 8
+    /// Minimum gap between Watch-side session start attempts.
+    static let startAttemptCooldown: TimeInterval = 5
 
-    /// Whether the phone should call `HKHealthStore.startWatchApp` now.
-    static func shouldLaunchWatch(
-        didLaunchThisRide: Bool,
+    /// Cap Watch start attempts per ride so permanent HealthKit failures
+    /// cannot loop for the whole ride.
+    static let maxStartAttemptsPerRide = 8
+
+    /// Phone should call `startWatchApp` when it has never launched this ride
+    /// (`lastLaunchAt == nil`) or the relaunch interval has elapsed.
+    static func shouldRelaunchWatch(
         lastLaunchAt: Date?,
         now: Date,
         interval: TimeInterval = relaunchInterval
     ) -> Bool {
-        if !didLaunchThisRide { return true }
         guard let lastLaunchAt else { return true }
         return now.timeIntervalSince(lastLaunchAt) >= interval
     }
 
-    /// Whether the Watch should try to start a new session after an
-    /// unexpected end/failure while the phone ride is still active.
-    static func shouldRestartAfterUnexpectedEnd(
+    /// Watch should attempt to start a session when the phone ride still wants
+    /// one, attempts remain, and the cooldown has elapsed.
+    static func shouldAttemptStart(
         wantsSession: Bool,
-        failureCount: Int,
-        maxFailures: Int = maxUnexpectedRestarts
+        attemptCount: Int,
+        lastAttemptAt: Date?,
+        now: Date,
+        cooldown: TimeInterval = startAttemptCooldown,
+        maxAttempts: Int = maxStartAttemptsPerRide
     ) -> Bool {
-        wantsSession && failureCount < maxFailures
-    }
-
-    /// Backoff before an unexpected Watch session restart.
-    static func restartDelay(afterFailureCount failures: Int) -> TimeInterval {
-        let clamped = max(0, min(failures, 5))
-        return pow(2.0, Double(clamped)) // 1, 2, 4, 8, 16, 32
+        guard wantsSession, attemptCount < maxAttempts else { return false }
+        guard let lastAttemptAt else { return true }
+        return now.timeIntervalSince(lastAttemptAt) >= cooldown
     }
 }

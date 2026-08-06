@@ -17,11 +17,11 @@ final class RideWatchPhoneSession: NSObject, ObservableObject {
     private var pendingSnapshot: RideLiveSnapshot?
     private let healthStore = HKHealthStore()
     private var didRequestHealthAuthorization = false
-    /// True after the first `startWatchApp` attempt for the current ride.
-    private var didLaunchWatchForCurrentRide = false
-    /// Wall-clock of the last `startWatchApp` attempt — used to periodically
-    /// re-assert frontmost (Digital Crown dismissal, dead Watch session).
+    /// Wall-clock of the last `startWatchApp` attempt — nil means not yet
+    /// this ride. Used to periodically re-assert frontmost (Crown dismissal).
     private var lastWatchLaunchAt: Date?
+    /// Bumped when a ride ends so in-flight `startWatchApp` Tasks are ignored.
+    private var launchGeneration = 0
     /// Queue at most one authoritative WC `transferUserInfo` start per ride
     /// (ends always transfer so stop isn't lost when unreachable).
     private var didQueueStartTransfer = false
@@ -41,7 +41,7 @@ final class RideWatchPhoneSession: NSObject, ObservableObject {
         if snapshot.isRiding {
             maybeLaunchWatch()
         } else {
-            didLaunchWatchForCurrentRide = false
+            launchGeneration += 1
             didQueueStartTransfer = false
             lastWatchLaunchAt = nil
         }
@@ -50,8 +50,7 @@ final class RideWatchPhoneSession: NSObject, ObservableObject {
     /// Re-assert the Watch companion when reachability returns mid-ride.
     func handleWatchReachabilityChanged(isReachable: Bool) {
         flushPending()
-        guard isReachable else { return }
-        guard didLaunchWatchForCurrentRide || pendingSnapshot?.isRiding == true else { return }
+        guard isReachable, pendingSnapshot?.isRiding == true else { return }
         // Come back online promptly, but keep a short cooldown so flapping
         // reachability cannot spam `startWatchApp`.
         maybeLaunchWatch(interval: 10)
@@ -61,16 +60,13 @@ final class RideWatchPhoneSession: NSObject, ObservableObject {
         interval: TimeInterval = RideWatchFrontmostPolicy.relaunchInterval
     ) {
         let now = Date()
-        let due = RideWatchFrontmostPolicy.shouldLaunchWatch(
-            didLaunchThisRide: didLaunchWatchForCurrentRide,
+        guard RideWatchFrontmostPolicy.shouldRelaunchWatch(
             lastLaunchAt: lastWatchLaunchAt,
             now: now,
             interval: interval
-        )
-        guard due else { return }
-        didLaunchWatchForCurrentRide = true
+        ) else { return }
         lastWatchLaunchAt = now
-        launchWatchWorkoutIfPossible()
+        launchWatchWorkoutIfPossible(generation: launchGeneration)
     }
 
     func resetActivity() {
@@ -131,12 +127,15 @@ final class RideWatchPhoneSession: NSObject, ObservableObject {
     /// matches this app). Safe to call repeatedly — if the companion is
     /// already frontmost with a session, watchOS just redelivers the
     /// configuration.
-    private func launchWatchWorkoutIfPossible() {
+    private func launchWatchWorkoutIfPossible(generation: Int) {
         guard HKHealthStore.isHealthDataAvailable() else { return }
         guard let session, session.isPaired else { return }
 
         Task {
             await ensureHealthAuthorization()
+            // Ride may have ended while Health authorization was in flight.
+            guard generation == self.launchGeneration,
+                  self.pendingSnapshot?.isRiding == true else { return }
             let configuration = HKWorkoutConfiguration()
             configuration.activityType = .cycling
             configuration.locationType = .outdoor
