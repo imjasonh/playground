@@ -12,8 +12,8 @@
 //   back   — lid; print outer-face down (cradle + snaps open up)
 //
 // Assembly: panel press-fits into bezel pocket (crush ribs) → clamp bezel
-// to tray (Z sandwich) → fold SPI ribbon through the INTERNAL floor slot
-// onto the board → lid. No external ribbon hole — cable stays inside.
+// to tray (Z sandwich) → route SPI ribbon via the wall-edge chase into the
+// rear bay onto the board → lid. No mid-floor hole; no external ribbon port.
 // Use kit FFC extension for side/back USB.
 //
 // Panel retention (snug):
@@ -46,7 +46,7 @@ bezel_top = 3.40;            // [2:0.1:8] Bezel opposite the FPC edge (mm)
 fpc_w = 14.0;                // [10:0.5:20] FPC width allowance (mm)
 fpc_t = 0.35;                // [0.2:0.05:0.6] FPC thickness (mm)
 fpc_fold_bay = 6.0;          // [3:0.5:12] Internal bay between wall and panel FPC edge (mm)
-fpc_channel_w = 22.0;        // [14:1:40] Internal floor-slot width for the fold (mm)
+fpc_channel_w = 22.0;        // [14:1:40] Bezel fold-bay channel width (mm)
 
 /* [ESP32 driver board] */
 board_w = 29.46;             // [25:0.01:40] Board short axis (mm)
@@ -114,10 +114,11 @@ panel_y0 = outer_margin + fpc_fold_bay; // internal fold bay below FPC edge
 active_x0 = panel_x0 + bezel_left;
 active_y0 = panel_y0 + bezel_fpc;
 
-// Internal floor slot: cable passes from fold bay into rear bay (not outside).
+// Bezel fold-bay channel X. Tray: ribbon reaches the board bay through a
+// narrow chase against the INNER face of the FPC-edge wall (not a mid-floor
+// hole, not an external port).
 fpc_slot_x0 = panel_x0 + (panel_w - fpc_channel_w) / 2;
-fpc_slot_y0 = outer_margin - 1.0;    // still inside outer wall
-fpc_slot_y1 = panel_y0 + 10;
+fpc_chase_depth = 1.8; // into the floor from the inner wall face (mm)
 
 board_pose = board_placement();
 board_x0 = board_pose[0];
@@ -134,7 +135,8 @@ echo("Printable parts: 3  (bezel + tray + back lid)");
 echo("Print: bezel face-down | tray cavity-up | lid outer-down");
 echo(str("Panel hold: XY clear=", panel_clear, " + crush=", panel_crush,
          "; Z clamp via tray floor"));
-echo(str("FPC: internal fold bay ", fpc_fold_bay, " mm; no external ribbon hole"));
+echo(str("FPC: internal fold bay ", fpc_fold_bay,
+         " mm; wall-edge chase (no mid-floor hole)"));
 echo(str("Lid/bezel screws: M2x8 self-tap -> ", screw_boss_id, " mm pilots"));
 echo("Board screws: none (tray cradle + lid posts)");
 echo(str("Bay depth: ", bay_z, " mm; USB exit: ", usb_exit));
@@ -207,7 +209,7 @@ module panel_ghost() {
     color("#4a4a4a", 0.75)
         translate([active_x0, active_y0, bezel_face_t - 0.02])
             cube([active_w, active_h, 0.04]);
-    // Ribbon stays inside: fold bay → floor slot → rear bay → ZIF
+    // Ribbon stays inside: fold bay → wall-edge chase → rear bay → ZIF
     color("#c9a227", 0.95) {
         translate([
             panel_x0 + (panel_w - fpc_w) / 2,
@@ -217,10 +219,10 @@ module panel_ghost() {
             cube([fpc_w, fpc_fold_bay + 2, fpc_t]);
         translate([
             panel_x0 + (panel_w - fpc_w) / 2,
-            panel_y0 - 2,
+            wall,
             tray_floor_z0 - eps
         ])
-            cube([fpc_w, fpc_t + 1, tray_floor_t + 2]);
+            cube([fpc_w, fpc_chase_depth, tray_floor_t + bay_z * 0.3]);
         translate([
             panel_x0 + (panel_w - fpc_w) / 2,
             panel_y0 + 2,
@@ -292,17 +294,19 @@ module bezel() {
                     pocket_depth + eps
                 ]);
 
-            // Narrow INTERNAL fold bay (outer wall stays closed)
-            translate([
-                fpc_slot_x0 - 1,
-                outer_margin - 1.5,
-                bezel_face_t
-            ])
-                cube([
-                    fpc_channel_w + 2,
-                    fpc_fold_bay + panel_clear + 3,
-                    pocket_depth + eps
-                ]);
+        // Narrow INTERNAL fold bay from the inner wall to the panel FPC edge
+        // (outer wall stays closed). Cable runs under the tray floor here to
+        // the wall-edge chase.
+        translate([
+            fpc_slot_x0 - 1,
+            wall,
+            bezel_face_t
+        ])
+            cube([
+                fpc_channel_w + 2,
+                panel_y0 - wall + panel_clear + 2,
+                pocket_depth + eps
+            ]);
 
             // Screw clearances
             for (p = boss_xy())
@@ -336,12 +340,13 @@ module bezel() {
 // ---------------------------------------------------------------------------
 // Tray — print floor-down / cavity up (R1.2, R1.3)
 // Floor on the bed is the panel backer (solid — not a bridge).
-// Internal FPC slot through the floor only — outer wall stays closed.
+// Ribbon chase sits against the INNER wall at the FPC edge so the mid-floor
+// stays solid and the outer shell never opens.
 // ---------------------------------------------------------------------------
 module tray() {
     difference() {
         union() {
-            // Floor = panel backer (solid plate — prints on bed)
+            // Floor = full solid panel backer (prints on bed)
             translate([0, 0, tray_floor_z0])
                 rounded_box(case_outer_w, case_outer_h, tray_floor_t, corner_r);
 
@@ -359,15 +364,17 @@ module tray() {
                 }
         }
 
-        // Internal ribbon pass-through (floor only — not the outer wall)
+        // Wall-edge ribbon chase: opens the fold bay into the rear bay along
+        // the inner face of the FPC-edge wall. Outer wall (y=0..wall) stays
+        // solid — not an external cable port.
         translate([
             fpc_slot_x0,
-            fpc_slot_y0,
+            wall - eps,
             tray_floor_z0 - eps
         ])
             cube([
                 fpc_channel_w,
-                fpc_slot_y1 - fpc_slot_y0,
+                fpc_chase_depth + eps,
                 tray_floor_t + 2 * eps
             ]);
 

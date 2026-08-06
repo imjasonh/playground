@@ -22,9 +22,12 @@ With defaults the rim is wide enough for corner M2 bosses **outside** the glass
 
 There is no slide-in U-groove spanning the active area — that would be an FDM bridge. The three-part sandwich is the retention.
 
-## Ribbon cable (no external hole)
+## Ribbon cable (no external access)
 
-The SPI FPC never exits the case. A closed outer wall leaves an **internal fold bay** under the FPC edge; the cable folds there, passes through a **floor slot** into the rear bay, and lands on the driver-board ZIF. USB-C still has its own wall cutout (`usb_exit`).
+The SPI FPC never exits the case. It folds in the bezel’s internal bay (under
+the tray floor), then reaches the driver board through a **narrow chase against
+the inner wall** — not a hole in the middle of the floor, and not an opening in
+the outer shell. USB-C still has its own wall cutout (`usb_exit`).
 
 ## Three printable parts (FDM-friendly)
 
@@ -35,7 +38,7 @@ part has a flat bed face and **no floating spans**:
 | STL | Bed face | Role |
 |-----|----------|------|
 | [`stl/bezel.stl`](stl/bezel.stl) | Outer face down | Window + panel pocket + crush ribs |
-| [`stl/tray.stl`](stl/tray.stl) | Floor down (cavity up) | Panel backer, internal FPC slot, board cradle, bosses |
+| [`stl/tray.stl`](stl/tray.stl) | Floor down (cavity up) | Solid panel backer, wall-edge FPC chase, board cradle, bosses |
 | [`stl/back.stl`](stl/back.stl) | Outer face down | Lid, snaps, PCB hold-downs |
 
 See [`tools/fdm-design-rules.md`](tools/fdm-design-rules.md) and [`AGENTS.md`](AGENTS.md).
@@ -56,7 +59,7 @@ bash export-stl.sh
 
 1. Press the panel into the **bezel** pocket (FPC toward the internal fold bay — no external notch).
 2. Clamp **bezel** to **tray** with 4× M2 (tray floor backs and clamps the glass).
-3. Fold the SPI ribbon through the tray’s internal floor slot to the board; use the kit **FFC extension** if USB exits a side wall.
+3. Fold the SPI ribbon through the wall-edge chase to the board; use the kit **FFC extension** if USB exits a side wall.
 4. Seat the ESP32 board in the tray cradle.
 5. Close the **lid** (snaps + 4× M2 from the back).
 

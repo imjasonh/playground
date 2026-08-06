@@ -54,7 +54,8 @@ puts that floor **on the bed**.
 - Closed overall echoed by `validate.sh` (defaults ~192×140×~22 mm — rim
   clears corner bosses outside the glass).
 - Panel retention: bezel pocket + crush ribs (XY), tray-floor clamp (Z).
-- SPI ribbon stays inside: internal fold bay + tray floor slot — **no external
-  ribbon hole**. USB-C still uses `usb_exit`.
+- SPI ribbon stays inside: bezel fold bay under the floor + narrow wall-edge
+  chase into the board bay — **no mid-floor hole, outer wall closed**. USB-C
+  still uses `usb_exit`.
 - Side/back USB layouts need the kit FFC extension (~30 mm lateral jog).
 - Customizer knobs use `// [range] desc` comments for `extract-params.sh`.

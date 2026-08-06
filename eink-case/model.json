@@ -16,7 +16,7 @@ bezel_top            3.40            number     [2:0.1:8] Bezel opposite the FPC
 fpc_w                14.0            number     [10:0.5:20] FPC width allowance (mm)
 fpc_t                0.35            number     [0.2:0.05:0.6] FPC thickness (mm)
 fpc_fold_bay         6.0             number     [3:0.5:12] Internal bay between wall and panel FPC edge (mm)
-fpc_channel_w        22.0            number     [14:1:40] Internal floor-slot width for the fold (mm)
+fpc_channel_w        22.0            number     [14:1:40] Bezel fold-bay channel width (mm)
 board_w              29.46           number     [25:0.01:40] Board short axis (mm)
 board_l              48.25           number     [40:0.01:60] Board long axis, USB↔ZIF (mm)
 board_t              1.60            number     [1.2:0.1:2.4] PCB thickness (mm)
@@ -62,8 +62,7 @@ panel_y0             outer_margin + fpc_fold_bay expression internal fold bay be
 active_x0            panel_x0 + bezel_left expression 
 active_y0            panel_y0 + bezel_fpc expression 
 fpc_slot_x0          panel_x0 + (panel_w - fpc_channel_w) / 2 expression 
-fpc_slot_y0          outer_margin - 1.0 expression still inside outer wall
-fpc_slot_y1          panel_y0 + 10   expression 
+fpc_chase_depth      1.8             number     into the floor from the inner wall face (mm)
 board_pose           board_placement() expression 
 board_x0             board_pose[0]   expression 
 board_y0             board_pose[1]   expression 
