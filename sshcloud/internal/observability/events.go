@@ -138,7 +138,7 @@ func (e SessionEvent) toRecord(s *JSONSink) (eventRecord, error) {
 	if err := e.Identity.Validate(true); err != nil {
 		return eventRecord{}, err
 	}
-	if !oneOf(e.Action, "admit", "start", "end", "freeze", "thaw", "abort") {
+	if !oneOf(e.Action, "admit", "start", "end", "freeze", "thaw") {
 		return eventRecord{}, fmt.Errorf("invalid session action")
 	}
 	if e.Route != "" && !oneOf(e.Route, "join", "menu", "deploy", "app", "busy", "forbidden") {

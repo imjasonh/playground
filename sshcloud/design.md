@@ -113,7 +113,7 @@ checked-in coverage, not a production-readiness claim.
 | `healthhttp` | Standard bounded health server exposing `livez`, `readyz`, `healthz`, and aggregate `metrics`. | [`internal/healthhttp/health.go`](internal/healthhttp/health.go) | Exercised by service tests |
 | `helperrpc` | One-request strict JSON protocol, size/deadline bounds, systemd socket activation, and authoritative Linux `SO_PEERCRED` UID checks. | [`internal/helperrpc/rpc.go`](internal/helperrpc/rpc.go) | Unit/Unix-socket integration |
 | `hostisolation` | Fixed Firecracker version/layout, deterministic VM/TAP/sandbox IDs, safe work paths, and host-IP constraints. | [`internal/hostisolation/layout.go`](internal/hostisolation/layout.go) | Unit, Terraform structural |
-| `hostkey` | Atomic Ed25519 SSH host-key generation/loading with private permissions. Used by the gateway and per-app injection. | [`internal/hostkey/hostkey.go`](internal/hostkey/hostkey.go) | Unit |
+| `hostkey` | Atomic Ed25519 SSH host-key generation/loading with private permissions. Used by the gateway, per-app injection, and the local sample app path. | [`internal/hostkey/hostkey.go`](internal/hostkey/hostkey.go) | Unit |
 | `image` | Digest pinning and operator registry-host allowlist; rejects tags and arbitrary registry SSRF targets. | [`internal/image/ref.go`](internal/image/ref.go) | Unit |
 | `migrate` | One-generation cross-host freeze, sleep, evict, adopt, placement commit, thaw, and rollback. | [`internal/migrate/migrate.go`](internal/migrate/migrate.go) | Unit/httptest, KVM primitive path |
 | `names` | Owner/app identifier syntax and reserved platform SSH usernames. | [`internal/names/names.go`](internal/names/names.go) | Unit |
@@ -197,7 +197,7 @@ only on loopback and is for local development.
 
 | Listener | Routes | Caller |
 |---|---|---|
-| Gateway migration control | `POST /v1/sessions/freeze`, `POST /v1/sessions/thaw`, `POST /v1/sessions/abort` | Orchestrator only |
+| Gateway migration control | `POST /v1/sessions/freeze`, `POST /v1/sessions/thaw` | Orchestrator only |
 | Orchestrator gateway-service | `GET /v1/readyz`, `POST /v1/ensure`, `POST /v1/stop`, `POST /v1/no-idle` | Gateway only |
 | Orchestrator admin, HTTPS over root-owned Unix socket | `GET /v1/hosts`, `POST /v1/hosts/cordon`, `POST /v1/hosts/drain`, `POST /v1/migrate`, `GET /v1/placement`, `GET /v1/placements`, `GET /v1/diagnostics` | Orchestrator's own workload identity, invoked locally by an operator helper |
 | Agent control | Routes listed below | Orchestrator only |
@@ -247,12 +247,17 @@ health-only listener. Standard routes are `GET /livez`, `GET /readyz`,
 no HTTP listener. Health listeners do not expose placement or tenant
 diagnostics.
 
+The orchestrator's authenticated gateway listener also exposes
+`GET /v1/readyz`; its admin Unix socket does not. snapshotd's authenticated
+agent listener uses `GET /v1/healthz`, while host/operator checks use the
+unprefixed health routes on port 8083.
+
 Request bodies use bounded JSON decoders with unknown fields rejected.
 `internal/backend/controlhttp.go` rejects redirects, oversized bodies, trailing
 JSON, and non-loopback insecure URLs. Control errors are mapped to stable HTTP
-classes: malformed input is 400, stale target identity is 421, placement or
-capacity conflict is generally 409, temporary unavailability is 503, and
-authorization failures are 401/403.
+classes: malformed input is 400, an agent mutation addressed to a stale
+instance identity is 421, placement or capacity conflict is generally 409,
+temporary unavailability is 503, and authorization failures are 401/403.
 
 ### Unix-socket protocols
 
@@ -395,7 +400,7 @@ provided.
 | `sshcloud-user` | `<prefix>_keys/{slash-normalizedFingerprint}` | `{user_id}`. Gateway transactionally creates the initial key mapping. |
 | `sshcloud-user` | `<prefix>_users/{userID}` | `{id}`. User ID follows the shared identifier grammar. |
 | `sshcloud-user` | `<prefix>_users/{userID}/<prefix>_apps/{appName}` | Owner/name, current and previous image, tier/strategy, active/draining generation and deadline, pending deploy intent, and retiring generations. Gateway owns mutation. |
-| `sshcloud-user` | `<prefix>_quota_windows/{sha256(kind NUL subject)}` | Version, kind, ordered `{id, at_unix}` events, and expiry. Gateway records join/deploy; orchestrator records wakes. Event IDs make transport retries idempotent. |
+| `sshcloud-user` | `<prefix>_quota_windows/{sha256(kind NUL subject)}` | Version, kind, ordered `{id, at_unix}` events, and expiry. Gateway records `join_ip`, `join_prefix`, and `deploy`; orchestrator records `wake`. Event IDs make transport retries idempotent. |
 | `sshcloud-placement` | `<prefix>_placement/{user__app}` | User/app, host name and immutable instance ID, revision, lease owner/expiry, generation inventory, and in-flight operation journal. Orchestrator writes; snapshotd reads. |
 
 The app record is the durable deploy/cutover intent. It is not a transactional
@@ -978,7 +983,7 @@ Network edges are:
 | Orchestrator → agents | TCP 8080 control and 8081 health |
 | Gateway → agents | TCP 20000-29999 guest SSH relays |
 | Agents → snapshotd | TCP 8082 snapshot control |
-| Orchestrator → snapshotd | TCP 8083 health/bounds/metrics only |
+| Orchestrator host → snapshotd | TCP 8083 for operator/host-level health, bounds, and metrics checks; the orchestrator process has no snapshotd dependency |
 
 Cloud NAT lets private hosts reach registries/Google APIs. It does not grant
 guest egress; TAP forwarding is denied.

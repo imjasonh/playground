@@ -230,7 +230,7 @@ func allowedOperation(family, operation string) bool {
 	case "lifecycle":
 		return oneOf(operation, "boot", "restore", "sleep", "wake", "evict", "stop", "cordon", "uncordon")
 	case "session":
-		return oneOf(operation, "admit", "start", "end", "freeze", "thaw", "abort")
+		return oneOf(operation, "admit", "start", "end", "freeze", "thaw")
 	case "deploy":
 		return oneOf(operation, "deploy", "reconcile", "drain", "retire")
 	case "snapshot":

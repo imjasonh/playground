@@ -65,7 +65,6 @@ func (h *ControlHandler) Mount(mux *http.ServeMux) {
 	api := http.NewServeMux()
 	api.HandleFunc("POST /v1/sessions/freeze", h.freeze)
 	api.HandleFunc("POST /v1/sessions/thaw", h.thaw)
-	api.HandleFunc("POST /v1/sessions/abort", h.abort)
 	mux.Handle("/v1/", api)
 }
 
@@ -169,20 +168,6 @@ func (h *ControlHandler) thaw(w http.ResponseWriter, r *http.Request) {
 	h.remove(req.Token)
 	h.markFinished(req.Token)
 	writeControlJSON(w, map[string]any{"sessions": len(op.IDs)})
-}
-
-func (h *ControlHandler) abort(w http.ResponseWriter, r *http.Request) {
-	var req thawRequest
-	if !decodeControlJSON(w, r, &req) {
-		return
-	}
-	op, ok := h.remove(req.Token)
-	if !ok {
-		http.Error(w, "unknown or expired freeze token", http.StatusNotFound)
-		return
-	}
-	count := h.Hub.KickSessions(op.IDs)
-	writeControlJSON(w, map[string]any{"sessions": count})
 }
 
 func (h *ControlHandler) get(token string) (frozenSession, bool) {
