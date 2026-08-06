@@ -1,277 +1,74 @@
-{
-  "name": "Waveshare 7.5\" e-Paper + ESP32 case",
-  "description": "Three-part FDM-friendly case: flat bezel, cavity-up tray, flat-down lid. No AA-spanning decks. Slide-in/sandwich panel, ESP32 cradle, USB-C wall exit.",
-  "tags": [
-    "e-paper",
-    "waveshare",
-    "esp32",
-    "enclosure",
-    "functional"
-  ],
-  "closed_overall_mm": {
-    "w": 175.8,
-    "h": 120.4,
-    "d": 24.2
-  },
-  "printable_parts": [
-    "bezel",
-    "tray",
-    "back"
-  ],
-  "fasteners": {
-    "bezel_tray": "4x M2x8mm self-tapping pan-head",
-    "lid_tray": "4x M2x8mm self-tapping pan-head",
-    "board": "none (cradle + lid posts)"
-  },
-  "parameters": [
-    {
-      "name": "part",
-      "value": "assembled",
-      "type": "string",
-      "options": "assembled, front, back",
-      "description": "Which object to show / export"
-    },
-    {
-      "name": "show_components",
-      "value": "true",
-      "type": "boolean",
-      "description": "Ghost panel + board in assembled preview"
-    },
-    {
-      "name": "explode",
-      "value": "0",
-      "type": "integer",
-      "range": "0:0.5:25",
-      "description": "Lid / board separation for assembly views (mm)"
-    },
-    {
-      "name": "panel_w",
-      "value": "170.2",
-      "type": "number",
-      "range": "160:0.1:180",
-      "description": "Panel outline width (mm)"
-    },
-    {
-      "name": "panel_h",
-      "value": "111.2",
-      "type": "number",
-      "range": "100:0.1:120",
-      "description": "Panel outline height (mm)"
-    },
-    {
-      "name": "panel_t",
-      "value": "1.20",
-      "type": "number",
-      "range": "0.8:0.05:2",
-      "description": "Panel thickness (mm)"
-    },
-    {
-      "name": "active_w",
-      "value": "163.2",
-      "type": "number",
-      "range": "150:0.1:170",
-      "description": "Active area width (mm)"
-    },
-    {
-      "name": "active_h",
-      "value": "97.92",
-      "type": "number",
-      "range": "90:0.01:110",
-      "description": "Active area height (mm)"
-    },
-    {
-      "name": "bezel_left",
-      "value": "3.5",
-      "type": "number",
-      "range": "2:0.1:8",
-      "description": "Left outline\u2192AA bezel (mm)"
-    },
-    {
-      "name": "bezel_right",
-      "value": "3.5",
-      "type": "number",
-      "range": "2:0.1:8",
-      "description": "Right outline\u2192AA bezel (mm)"
-    },
-    {
-      "name": "bezel_top",
-      "value": "3.40",
-      "type": "number",
-      "range": "2:0.1:8",
-      "description": "Bezel opposite the FPC edge (mm)"
-    },
-    {
-      "name": "fpc_w",
-      "value": "14.0",
-      "type": "number",
-      "range": "10:0.5:20",
-      "description": "FPC width allowance (mm)"
-    },
-    {
-      "name": "fpc_t",
-      "value": "0.35",
-      "type": "number",
-      "range": "0.2:0.05:0.6",
-      "description": "FPC thickness (mm)"
-    },
-    {
-      "name": "fpc_slot_extra",
-      "value": "4.0",
-      "type": "number",
-      "range": "2:0.5:10",
-      "description": "Room outside panel edge for the fold (mm)"
-    },
-    {
-      "name": "fpc_channel_w",
-      "value": "22.0",
-      "type": "number",
-      "range": "14:1:40",
-      "description": "Trough width under panel for FPC + extension (mm)"
-    },
-    {
-      "name": "fpc_channel_len",
-      "value": "55.0",
-      "type": "number",
-      "range": "30:5:100",
-      "description": "Trough length under panel (mm)"
-    },
-    {
-      "name": "board_w",
-      "value": "29.46",
-      "type": "number",
-      "range": "25:0.01:40",
-      "description": "Board short axis (mm)"
-    },
-    {
-      "name": "board_l",
-      "value": "48.25",
-      "type": "number",
-      "range": "40:0.01:60",
-      "description": "Board long axis, USB\u2194ZIF (mm)"
-    },
-    {
-      "name": "board_t",
-      "value": "1.60",
-      "type": "number",
-      "range": "1.2:0.1:2.4",
-      "description": "PCB thickness (mm)"
-    },
-    {
-      "name": "board_comp_h",
-      "value": "8.0",
-      "type": "number",
-      "range": "5:0.5:15",
-      "description": "Component clearance above PCB (mm)"
-    },
-    {
-      "name": "usb_w",
-      "value": "9.2",
-      "type": "number",
-      "range": "8:0.1:12",
-      "description": "USB-C shell width (mm)"
-    },
-    {
-      "name": "usb_h",
-      "value": "3.6",
-      "type": "number",
-      "range": "3:0.1:5",
-      "description": "USB-C shell height (mm)"
-    },
-    {
-      "name": "usb_protrude",
-      "value": "1.5",
-      "type": "number",
-      "range": "0.5:0.1:3",
-      "description": "USB shell past PCB edge (mm)"
-    },
-    {
-      "name": "board_pocket_clear",
-      "value": "0.5",
-      "type": "number",
-      "range": "0.2:0.1:1.2",
-      "description": "XY slop in board cradle (mm)"
-    },
-    {
-      "name": "wall",
-      "value": "2.4",
-      "type": "number",
-      "range": "1.5:0.1:4",
-      "description": "Outer wall thickness (mm)"
-    },
-    {
-      "name": "groove_clearance",
-      "value": "0.40",
-      "type": "number",
-      "range": "0.2:0.05:0.8",
-      "description": "Slip fit around panel outline (mm)"
-    },
-    {
-      "name": "groove_lip",
-      "value": "1.2",
-      "type": "number",
-      "range": "0.8:0.1:2.5",
-      "description": "Front bezel lip thickness (mm)"
-    },
-    {
-      "name": "rear_bay_extra",
-      "value": "3.0",
-      "type": "number",
-      "range": "1:0.5:8",
-      "description": "Extra bay air around board / cable (mm)"
-    },
-    {
-      "name": "lid_thickness",
-      "value": "2.4",
-      "type": "number",
-      "range": "1.5:0.1:4",
-      "description": "Back lid thickness (mm)"
-    },
-    {
-      "name": "corner_r",
-      "value": "4.0",
-      "type": "number",
-      "range": "0:0.5:10",
-      "description": "Outer corner radius (mm)"
-    },
-    {
-      "name": "screw_d",
-      "value": "2.4",
-      "type": "number",
-      "range": "2:0.1:3.5",
-      "description": "Lid screw clearance hole (mm)"
-    },
-    {
-      "name": "screw_boss_d",
-      "value": "7.0",
-      "type": "number",
-      "range": "5:0.5:10",
-      "description": "Lid screw boss outer diameter (mm)"
-    },
-    {
-      "name": "screw_boss_id",
-      "value": "1.7",
-      "type": "number",
-      "range": "1.4:0.1:2.2",
-      "description": "M2 self-tap pilot diameter (mm)"
-    },
-    {
-      "name": "use_snaps",
-      "value": "true",
-      "type": "boolean",
-      "description": "Add lid snap tabs"
-    },
-    {
-      "name": "usb_exit",
-      "value": "back",
-      "type": "string",
-      "options": "back, side, bottom",
-      "description": "Perimeter wall for USB-C"
-    },
-    {
-      "name": "lid_post_gap",
-      "value": "0.3",
-      "type": "number",
-      "description": "air above PCB copper"
-    }
-  ]
-}
+Parameters in: case.scad
+===============================================
+NAME                 VALUE           TYPE       CONSTRAINT/DESC
+-----------------------------------------------
+part                 assembled       string     [assembled, bezel, tray, back] Which object to show / export
+show_components      true            boolean    Ghost panel + board in assembled preview
+explode              0               integer    [0:0.5:30] Part separation for assembly views (mm)
+panel_w              170.2           number     [160:0.1:180] Panel outline width (mm)
+panel_h              111.2           number     [100:0.1:120] Panel outline height (mm)
+panel_t              1.20            number     [0.8:0.05:2] Panel thickness (mm)
+active_w             163.2           number     [150:0.1:170] Active area width (mm)
+active_h             97.92           number     [90:0.01:110] Active area height (mm)
+bezel_left           3.5             number     [2:0.1:8] Left outline→AA bezel (mm)
+bezel_right          3.5             number     [2:0.1:8] Right outline→AA bezel (mm)
+bezel_top            3.40            number     [2:0.1:8] Bezel opposite the FPC edge (mm)
+fpc_w                14.0            number     [10:0.5:20] FPC width allowance (mm)
+fpc_t                0.35            number     [0.2:0.05:0.6] FPC thickness (mm)
+fpc_fold_bay         6.0             number     [3:0.5:12] Internal bay between wall and panel FPC edge (mm)
+fpc_channel_w        22.0            number     [14:1:40] Internal floor-slot width for the fold (mm)
+board_w              29.46           number     [25:0.01:40] Board short axis (mm)
+board_l              48.25           number     [40:0.01:60] Board long axis, USB↔ZIF (mm)
+board_t              1.60            number     [1.2:0.1:2.4] PCB thickness (mm)
+board_comp_h         8.0             number     [5:0.5:15] Component clearance above PCB (mm)
+usb_w                9.2             number     [8:0.1:12] USB-C shell width (mm)
+usb_h                3.6             number     [3:0.1:5] USB-C shell height (mm)
+usb_protrude         1.5             number     [0.5:0.1:3] USB shell past PCB edge (mm)
+board_pocket_clear   0.5             number     [0.2:0.1:1.2] XY slop in board cradle (mm)
+wall                 2.4             number     [1.5:0.1:4] Outer wall thickness (mm)
+panel_clear          0.30            number     [0.15:0.05:0.8] Base XY clearance around panel (mm)
+panel_crush          0.20            number     [0:0.05:0.4] Crush-rib intrusion for snug XY (mm)
+panel_front_clear    0.15            number     [0.05:0.05:0.4] Air between window lip and glass (mm)
+bezel_face_t         1.2             number     [0.8:0.1:2.5] Bezel front face thickness (mm)
+tray_floor_t         2.0             number     [1.5:0.1:3] Tray floor (panel backer) thickness (mm)
+rear_bay_extra       3.0             number     [1:0.5:8] Extra bay air (mm)
+lid_thickness        2.4             number     [1.5:0.1:4] Back lid thickness (mm)
+corner_r             4.0             number     [0:0.5:10] Outer corner radius (mm)
+screw_d              2.4             number     [2:0.1:3.5] Screw clearance through bezel/lid (mm)
+screw_boss_d         7.0             number     [5:0.5:10] Boss outer diameter (mm)
+screw_boss_id        1.7             number     [1.4:0.1:2.2] M2 self-tap pilot (mm)
+use_snaps            true            boolean    Lid snap tabs
+usb_exit             back            string     [back, side, bottom] Perimeter wall for USB-C
+eps                  0.02            number     Boolean overlap fudge (mm)
+bezel_fpc            panel_h - active_h - bezel_top expression 
+boss_inset           wall + screw_boss_d / 2 + 1.0 expression 
+outer_margin         boss_inset + screw_boss_d / 2 + 0.6 expression ≥ ~10.9 mm with defaults
+case_outer_w         panel_w + 2 * outer_margin expression 
+case_outer_h         panel_h + fpc_fold_bay + 2 * outer_margin expression 
+window_inset         0.4             number     
+window_w             active_w - 2 * window_inset expression 
+window_h             active_h - 2 * window_inset expression 
+board_standoff_h     2.0             number     
+bay_need             board_standoff_h + board_t + board_comp_h + 2.0 expression 
+bay_z                max(bay_need, 12.0) + rear_bay_extra expression 
+panel_z0             bezel_face_t + panel_front_clear expression 
+tray_floor_z0        panel_z0 + panel_t expression 
+bezel_total_z        tray_floor_z0   expression rim mates with tray floor
+bay_z0               tray_floor_z0 + tray_floor_t expression 
+front_body_z         bay_z0 + bay_z  expression lid mating plane
+total_z              front_body_z + lid_thickness expression 
+panel_x0             outer_margin    expression 
+panel_y0             outer_margin + fpc_fold_bay expression internal fold bay below FPC edge
+active_x0            panel_x0 + bezel_left expression 
+active_y0            panel_y0 + bezel_fpc expression 
+fpc_slot_x0          panel_x0 + (panel_w - fpc_channel_w) / 2 expression 
+fpc_slot_y0          outer_margin - 1.0 expression still inside outer wall
+fpc_slot_y1          panel_y0 + 10   expression 
+board_pose           board_placement() expression 
+board_x0             board_pose[0]   expression 
+board_y0             board_pose[1]   expression 
+board_rot            board_pose[2]   expression 
+board_z0             bay_z0 + board_standoff_h expression 
+lid_post_gap         0.3             number     
+lid_post_h           front_body_z - (board_z0 + board_t) - lid_post_gap expression 
+board_rot            = 90 ? [board_w, board_l] : [board_l, board_w] expression 

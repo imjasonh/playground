@@ -10,6 +10,21 @@ Parametric OpenSCAD enclosure for:
 ## Closed overall dimensions
 
 Run `./tools/validate.sh case.scad` — echoes the live size (tracks parameters).
+With defaults the rim is wide enough for corner M2 bosses **outside** the glass
+(~192 × 140 × 22 mm).
+
+## How the display is held snugly
+
+| Axis | Mechanism |
+|------|-----------|
+| **XY** | Bezel pocket ≈ panel + `panel_clear` (0.30 mm), plus short **crush ribs** (`panel_crush` 0.20 mm) on left/right/top that press-fit the outline. Shoulders beside the FPC stop the panel from sliding into the fold bay. |
+| **Z** | Tray floor clamps the glass against the bezel window lip when the four M2 screws are tightened (panel back and bezel rim share the same mating plane). |
+
+There is no slide-in U-groove spanning the active area — that would be an FDM bridge. The three-part sandwich is the retention.
+
+## Ribbon cable (no external hole)
+
+The SPI FPC never exits the case. A closed outer wall leaves an **internal fold bay** under the FPC edge; the cable folds there, passes through a **floor slot** into the rear bay, and lands on the driver-board ZIF. USB-C still has its own wall cutout (`usb_exit`).
 
 ## Three printable parts (FDM-friendly)
 
@@ -19,8 +34,8 @@ part has a flat bed face and **no floating spans**:
 
 | STL | Bed face | Role |
 |-----|----------|------|
-| [`stl/bezel.stl`](stl/bezel.stl) | Outer face down | Window + panel pocket |
-| [`stl/tray.stl`](stl/tray.stl) | Floor down (cavity up) | Panel backer, board cradle, screw bosses |
+| [`stl/bezel.stl`](stl/bezel.stl) | Outer face down | Window + panel pocket + crush ribs |
+| [`stl/tray.stl`](stl/tray.stl) | Floor down (cavity up) | Panel backer, internal FPC slot, board cradle, bosses |
 | [`stl/back.stl`](stl/back.stl) | Outer face down | Lid, snaps, PCB hold-downs |
 
 See [`tools/fdm-design-rules.md`](tools/fdm-design-rules.md) and [`AGENTS.md`](AGENTS.md).
@@ -39,9 +54,9 @@ bash export-stl.sh
 
 ## Assembly
 
-1. Drop the panel into the **bezel** pocket (FPC through the bottom notch).
-2. Clamp **bezel** to **tray** with 4× M2 (panel sandwiched; tray floor backs the glass).
-3. Fold the SPI ribbon into the tray; use the kit **FFC extension** if USB exits a side wall.
+1. Press the panel into the **bezel** pocket (FPC toward the internal fold bay — no external notch).
+2. Clamp **bezel** to **tray** with 4× M2 (tray floor backs and clamps the glass).
+3. Fold the SPI ribbon through the tray’s internal floor slot to the board; use the kit **FFC extension** if USB exits a side wall.
 4. Seat the ESP32 board in the tray cradle.
 5. Close the **lid** (snaps + 4× M2 from the back).
 
@@ -59,7 +74,9 @@ bash export-stl.sh
 | Parameter | Default | Meaning |
 |-----------|---------|---------|
 | `usb_exit` | `back` | USB wall: `back` / `side` / `bottom` |
-| `panel_clear` | `0.40` | Slip fit around the panel (mm) |
+| `panel_clear` | `0.30` | Base XY clearance around the panel (mm) |
+| `panel_crush` | `0.20` | Crush-rib intrusion for snug XY (mm) |
+| `fpc_fold_bay` | `6.0` | Internal bay under the FPC edge (mm) |
 | `part` | `assembled` | `assembled` / `bezel` / `tray` / `back` |
 
 ## Printing

@@ -11,8 +11,14 @@
 //   tray   — open bay; print floor-down / cavity up (no mid-air decks)
 //   back   — lid; print outer-face down (cradle + snaps open up)
 //
-// Assembly: panel in bezel pocket → clamp bezel to tray (sandwich) →
-// board in tray cradle → lid. Use kit FFC extension for side/back USB.
+// Assembly: panel press-fits into bezel pocket (crush ribs) → clamp bezel
+// to tray (Z sandwich) → fold SPI ribbon through the INTERNAL floor slot
+// onto the board → lid. No external ribbon hole — cable stays inside.
+// Use kit FFC extension for side/back USB.
+//
+// Panel retention (snug):
+//   XY — pocket ≈ panel + panel_clear, plus short crush ribs on L/R/top
+//   Z  — tray floor clamps the glass against the bezel window lip
 //
 // Fasteners:
 //   Bezel→tray: 4× M2×8 mm self-tapping (corner pilots)
@@ -39,8 +45,8 @@ bezel_top = 3.40;            // [2:0.1:8] Bezel opposite the FPC edge (mm)
 /* [FPC / SPI ribbon] */
 fpc_w = 14.0;                // [10:0.5:20] FPC width allowance (mm)
 fpc_t = 0.35;                // [0.2:0.05:0.6] FPC thickness (mm)
-fpc_slot_extra = 4.0;        // [2:0.5:10] Room outside panel edge for the fold (mm)
-fpc_channel_w = 22.0;        // [14:1:40] Cable channel width (mm)
+fpc_fold_bay = 6.0;          // [3:0.5:12] Internal bay between wall and panel FPC edge (mm)
+fpc_channel_w = 22.0;        // [14:1:40] Internal floor-slot width for the fold (mm)
 
 /* [ESP32 driver board] */
 board_w = 29.46;             // [25:0.01:40] Board short axis (mm)
@@ -54,9 +60,10 @@ board_pocket_clear = 0.5;    // [0.2:0.1:1.2] XY slop in board cradle (mm)
 
 /* [Case geometry] */
 wall = 2.4;                  // [1.5:0.1:4] Outer wall thickness (mm)
-panel_clear = 0.40;          // [0.2:0.05:0.8] Slip fit around panel outline (mm)
+panel_clear = 0.30;          // [0.15:0.05:0.8] Base XY clearance around panel (mm)
+panel_crush = 0.20;          // [0:0.05:0.4] Crush-rib intrusion for snug XY (mm)
+panel_front_clear = 0.15;    // [0.05:0.05:0.4] Air between window lip and glass (mm)
 bezel_face_t = 1.2;          // [0.8:0.1:2.5] Bezel front face thickness (mm)
-bezel_pocket_wall = 1.6;     // [1.2:0.1:3] Bezel pocket side-wall height over panel (mm)
 tray_floor_t = 2.0;          // [1.5:0.1:3] Tray floor (panel backer) thickness (mm)
 rear_bay_extra = 3.0;        // [1:0.5:8] Extra bay air (mm)
 lid_thickness = 2.4;         // [1.5:0.1:4] Back lid thickness (mm)
@@ -78,8 +85,12 @@ eps = 0.02;                  // Boolean overlap fudge (mm)
 // ---------------------------------------------------------------------------
 bezel_fpc = panel_h - active_h - bezel_top;
 
-case_outer_w = panel_w + 2 * panel_clear + 2 * wall;
-case_outer_h = panel_h + panel_clear + fpc_slot_extra + 2 * wall;
+// Rim outside the panel must fit M2 bosses without the screws hitting glass.
+boss_inset = wall + screw_boss_d / 2 + 1.0;
+outer_margin = boss_inset + screw_boss_d / 2 + 0.6; // ≥ ~10.9 mm with defaults
+
+case_outer_w = panel_w + 2 * outer_margin;
+case_outer_h = panel_h + fpc_fold_bay + 2 * outer_margin;
 
 window_inset = 0.4;
 window_w = active_w - 2 * window_inset;
@@ -89,19 +100,24 @@ board_standoff_h = 2.0;
 bay_need = board_standoff_h + board_t + board_comp_h + 2.0;
 bay_z = max(bay_need, 12.0) + rear_bay_extra;
 
-// Z stack (assembly): bezel face → panel pocket → tray floor → bay → lid
-bezel_total_z = bezel_face_t + panel_t + 2 * panel_clear + bezel_pocket_wall;
-tray_z0 = bezel_face_t;              // tray front face meets bezel back
-panel_z0 = bezel_face_t + panel_clear;
-tray_floor_z0 = panel_z0 + panel_t + panel_clear; // back of panel kisses tray floor
+// Z stack: bezel face → panel → tray floor clamps glass → bay → lid
+// Bezel rim top == tray floor bottom == panel back (snug Z clamp).
+panel_z0 = bezel_face_t + panel_front_clear;
+tray_floor_z0 = panel_z0 + panel_t;
+bezel_total_z = tray_floor_z0;       // rim mates with tray floor
 bay_z0 = tray_floor_z0 + tray_floor_t;
 front_body_z = bay_z0 + bay_z;       // lid mating plane
 total_z = front_body_z + lid_thickness;
 
-panel_x0 = wall + panel_clear;
-panel_y0 = wall + fpc_slot_extra;
+panel_x0 = outer_margin;
+panel_y0 = outer_margin + fpc_fold_bay; // internal fold bay below FPC edge
 active_x0 = panel_x0 + bezel_left;
 active_y0 = panel_y0 + bezel_fpc;
+
+// Internal floor slot: cable passes from fold bay into rear bay (not outside).
+fpc_slot_x0 = panel_x0 + (panel_w - fpc_channel_w) / 2;
+fpc_slot_y0 = outer_margin - 1.0;    // still inside outer wall
+fpc_slot_y1 = panel_y0 + 10;
 
 board_pose = board_placement();
 board_x0 = board_pose[0];
@@ -116,6 +132,9 @@ echo("============================================================");
 echo(str("CLOSED OVERALL: ", case_outer_w, " x ", case_outer_h, " x ", total_z, " mm"));
 echo("Printable parts: 3  (bezel + tray + back lid)");
 echo("Print: bezel face-down | tray cavity-up | lid outer-down");
+echo(str("Panel hold: XY clear=", panel_clear, " + crush=", panel_crush,
+         "; Z clamp via tray floor"));
+echo(str("FPC: internal fold bay ", fpc_fold_bay, " mm; no external ribbon hole"));
 echo(str("Lid/bezel screws: M2x8 self-tap -> ", screw_boss_id, " mm pilots"));
 echo("Board screws: none (tray cradle + lid posts)");
 echo(str("Bay depth: ", bay_z, " mm; USB exit: ", usb_exit));
@@ -134,12 +153,11 @@ function board_placement() =
     : /* back */ [m + usb_protrude, max(fpc_bias_y, m), 0];
 
 function boss_xy() =
-    let (inset = wall + screw_boss_d / 2 + 1.0)
     [
-        [inset, inset],
-        [case_outer_w - inset, inset],
-        [inset, case_outer_h - inset],
-        [case_outer_w - inset, case_outer_h - inset]
+        [boss_inset, boss_inset],
+        [case_outer_w - boss_inset, boss_inset],
+        [boss_inset, case_outer_h - boss_inset],
+        [case_outer_w - boss_inset, case_outer_h - boss_inset]
     ];
 
 function board_corner_xy() =
@@ -189,13 +207,20 @@ module panel_ghost() {
     color("#4a4a4a", 0.75)
         translate([active_x0, active_y0, bezel_face_t - 0.02])
             cube([active_w, active_h, 0.04]);
+    // Ribbon stays inside: fold bay → floor slot → rear bay → ZIF
     color("#c9a227", 0.95) {
         translate([
             panel_x0 + (panel_w - fpc_w) / 2,
-            panel_y0 - fpc_slot_extra - 1,
+            panel_y0 - fpc_fold_bay + 0.5,
             panel_z0 + panel_t / 2 - fpc_t / 2
         ])
-            cube([fpc_w, fpc_slot_extra + 3, fpc_t]);
+            cube([fpc_w, fpc_fold_bay + 2, fpc_t]);
+        translate([
+            panel_x0 + (panel_w - fpc_w) / 2,
+            panel_y0 - 2,
+            tray_floor_z0 - eps
+        ])
+            cube([fpc_w, fpc_t + 1, tray_floor_t + 2]);
         translate([
             panel_x0 + (panel_w - fpc_w) / 2,
             panel_y0 + 2,
@@ -231,76 +256,89 @@ module usb_cutout() {
 
 // ---------------------------------------------------------------------------
 // Bezel — flat frame, print outer-face down (R1.3)
+// Rim top mates with tray floor; panel is Z-clamped between window lip & tray.
+// Outer wall is closed. Panel seats on shoulders L/R of a narrow internal
+// fold bay; ribbon never exits the case.
 // ---------------------------------------------------------------------------
 module bezel() {
-    pocket_h = panel_t + 2 * panel_clear;
-    difference() {
-        union() {
-            // Front face
-            rounded_box(case_outer_w, case_outer_h, bezel_face_t, corner_r);
-            // Pocket walls (rise away from bed when face-down)
-            translate([0, 0, bezel_face_t - eps])
-                difference() {
-                    rounded_box(
-                        case_outer_w, case_outer_h,
-                        pocket_h + bezel_pocket_wall + eps,
-                        corner_r
-                    );
-                    translate([wall, wall, -eps])
-                        rounded_box(
-                            case_outer_w - 2 * wall,
-                            case_outer_h - 2 * wall,
-                            pocket_h + bezel_pocket_wall + 3 * eps,
-                            max(0.2, corner_r - wall)
-                        );
-                }
+    pocket_depth = panel_front_clear + panel_t; // rim top = tray floor
+    rib_len = 12;
+    rib_z0 = bezel_face_t + panel_front_clear;
+    rib_h = panel_t * 0.85;
+    embed = 0.2;
+
+    union() {
+        difference() {
+            // Solid blank: face + rim up to tray mating plane
+            rounded_box(case_outer_w, case_outer_h, bezel_total_z, corner_r);
+
+            // Active-area window through the face
+            translate([
+                active_x0 + window_inset,
+                active_y0 + window_inset,
+                -eps
+            ])
+                cube([window_w, window_h, bezel_total_z + 3 * eps]);
+
+            // Panel pocket — outline + clear; shoulders remain at FPC edge
+            translate([
+                panel_x0 - panel_clear,
+                panel_y0 - panel_clear,
+                bezel_face_t
+            ])
+                cube([
+                    panel_w + 2 * panel_clear,
+                    panel_h + 2 * panel_clear,
+                    pocket_depth + eps
+                ]);
+
+            // Narrow INTERNAL fold bay (outer wall stays closed)
+            translate([
+                fpc_slot_x0 - 1,
+                outer_margin - 1.5,
+                bezel_face_t
+            ])
+                cube([
+                    fpc_channel_w + 2,
+                    fpc_fold_bay + panel_clear + 3,
+                    pocket_depth + eps
+                ]);
+
+            // Screw clearances
+            for (p = boss_xy())
+                translate([p[0], p[1], -eps])
+                    cylinder(d = screw_d, h = bezel_total_z + 2 * eps);
         }
 
-        // Active-area window through the face
-        translate([
-            active_x0 + window_inset,
-            active_y0 + window_inset,
-            -eps
-        ])
-            cube([window_w, window_h, bezel_face_t + pocket_h + bezel_pocket_wall + 3 * eps]);
-
-        // Panel pocket (slightly larger than panel)
-        translate([
-            panel_x0 - panel_clear,
-            panel_y0 - panel_clear,
-            bezel_face_t
-        ])
-            cube([
-                panel_w + 2 * panel_clear,
-                panel_h + 2 * panel_clear + fpc_slot_extra,
-                pocket_h + eps
-            ]);
-
-        // FPC escape at bottom
-        translate([
-            panel_x0 + (panel_w - fpc_channel_w) / 2,
-            -eps,
-            bezel_face_t
-        ])
-            cube([
-                fpc_channel_w,
-                wall + fpc_slot_extra + 4,
-                pocket_h + bezel_pocket_wall + eps
-            ]);
-
-        // Screw clearances
-        for (p = boss_xy())
-            translate([p[0], p[1], -eps])
-                cylinder(d = screw_d, h = bezel_total_z + 2 * eps);
+        // Crush ribs: local XY interference for a snug press-fit (FDM-friendly).
+        // Vertical features — print cleanly. Skip FPC edge (fold bay).
+        if (panel_crush > 0) {
+            for (yy = [panel_y0 + 20, panel_y0 + panel_h - 20 - rib_len]) {
+                translate([panel_x0 - panel_clear - embed, yy, rib_z0])
+                    cube([panel_crush + embed, rib_len, rib_h]);
+                translate([
+                    panel_x0 + panel_w + panel_clear - panel_crush,
+                    yy, rib_z0
+                ])
+                    cube([panel_crush + embed, rib_len, rib_h]);
+            }
+            for (xx = [panel_x0 + 25, panel_x0 + panel_w - 25 - rib_len])
+                translate([
+                    xx,
+                    panel_y0 + panel_h + panel_clear - panel_crush,
+                    rib_z0
+                ])
+                    cube([rib_len, panel_crush + embed, rib_h]);
+        }
     }
 }
 
 // ---------------------------------------------------------------------------
 // Tray — print floor-down / cavity up (R1.2, R1.3)
 // Floor on the bed is the panel backer (solid — not a bridge).
+// Internal FPC slot through the floor only — outer wall stays closed.
 // ---------------------------------------------------------------------------
 module tray() {
-    // Geometry in assembly coords; tray_print() flips for bed.
     difference() {
         union() {
             // Floor = panel backer (solid plate — prints on bed)
@@ -321,16 +359,16 @@ module tray() {
                 }
         }
 
-        // FPC / cable channel through floor + wall
+        // Internal ribbon pass-through (floor only — not the outer wall)
         translate([
-            panel_x0 + (panel_w - fpc_channel_w) / 2,
-            -eps,
+            fpc_slot_x0,
+            fpc_slot_y0,
             tray_floor_z0 - eps
         ])
             cube([
                 fpc_channel_w,
-                wall + fpc_slot_extra + 8,
-                tray_floor_t + bay_z + 3 * eps
+                fpc_slot_y1 - fpc_slot_y0,
+                tray_floor_t + 2 * eps
             ]);
 
         // Through-holes for bezel screws (pilots continue in bosses)
@@ -350,14 +388,6 @@ module tray() {
                     cube([tab_d + 0.2, tab_w, tab_z + eps]);
         }
     }
-
-    // Shallow panel registration lip on the FRONT of the floor (toward bezel).
-    // In assembly this is -Z from floor; for print we put floor on bed so this
-    // lip would point at the bed — therefore it is engraved as a RECESS into
-    // the floor from the bay side instead? 
-    // Better: registration is the bezel pocket; tray floor stays flat on both
-    // sides (R1.3). Optional engraved outline from bay side (opens up in print).
-    // Skip raised lips on the panel face.
 
     // Board cradle on the bay floor (grows UP in print — self-supporting)
     board_cradle();

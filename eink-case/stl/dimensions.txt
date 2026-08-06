@@ -1,7 +1,9 @@
 ============================================================
-CLOSED OVERALL: 175.8 x 120.4 x 24.2 mm
+CLOSED OVERALL: 192.2 x 139.2 x 23.55 mm
 Printable parts: 3  (bezel + tray + back lid)
 Print: bezel face-down | tray cavity-up | lid outer-down
+Panel hold: XY clear=0.3 + crush=0.2; Z clamp via tray floor
+FPC: internal fold bay 6 mm; no external ribbon hole
 Lid/bezel screws: M2x8 self-tap -> 1.7 mm pilots
 Board screws: none (tray cradle + lid posts)
 Bay depth: 16.6 mm; USB exit: back
