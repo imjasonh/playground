@@ -16,7 +16,7 @@ echo "== assembled =="
 "$TOOLS/multi-preview.sh" "$ROOT/case.scad" "$OUT/assembled" \
   -D 'part="assembled"' -D 'show_components=true'
 
-for p in bezel tray back; do
+for p in shell cap; do
   echo ""
   echo "== $p (print orientation) =="
   "$TOOLS/multi-preview.sh" "$ROOT/case.scad" "$OUT/$p" \
@@ -25,7 +25,7 @@ done
 
 echo ""
 echo "== parameters =="
-"$TOOLS/extract-params.sh" "$ROOT/case.scad" | head -40
+"$TOOLS/extract-params.sh" "$ROOT/case.scad" | head -50
 
 echo ""
-echo "Previews under $OUT — inspect every PNG; check FDM rules in tools/fdm-design-rules.md"
+echo "Previews under $OUT — inspect every PNG; see LEARNINGS.md + tools/fdm-design-rules.md"

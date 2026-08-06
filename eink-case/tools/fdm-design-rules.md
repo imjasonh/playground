@@ -6,39 +6,39 @@ Distilled from:
 - [m-esm/3d-print-modeling `references/design-rules-checklist.md`](https://github.com/m-esm/3d-print-modeling/blob/main/references/design-rules-checklist.md)
 - [chriscantey/skill-3d-printing Design workflow](https://github.com/chriscantey/skill-3d-printing)
 
+Project-specific history: [`../LEARNINGS.md`](../LEARNINGS.md).
+
 Use with the OpenSCAD skill tools in this folder. Cite rules by id in review notes.
 
 ## Declared print orientations (R1.3)
 
 | Part | STL | Bed face | Why |
 |------|-----|----------|-----|
-| Bezel | `stl/bezel.stl` | **Outer face down** | Crisp window on the bed; panel pocket opens up |
-| Tray | `stl/tray.stl` | **Floor down (cavity up)** | Solid panel backer on the bed — not a mid-air deck |
-| Back lid | `stl/back.stl` | **Outer face down** | Large flat on bed; snaps + posts point up |
+| Shell | `stl/shell.stl` | **Closed end down** (FPC mouth up) | U-slot is extruded in print Z — every layer is the U profile; backer is a vertical wall, not a bridge |
+| Cap | `stl/cap.stl` | **Outer face down** | Flat plate; retention tongue + snaps point up |
 
 ## Hard rules we enforce here
 
 - **R1.1** Walls ≥ 0.8 mm (we use ≥ 2.0 mm).
-- **R1.2** No flat ceilings over open cavities. No solid floor spanning the active-area window. Panel is backed by a **perimeter ledge** only; board mounts on the **lid**, not on a mid-air deck over the glass.
+- **R1.2** No flat ceilings over open cavities. Do **not** print a solid deck behind the AA as a ceiling. The panel backer must be a wall in the print orientation (U-slot principle).
 - **R1.3** Orientation is chosen at design time; STLs are exported already flipped for the bed.
 - **R1.4** Holes undersize — screw clearance and USB cutouts include slop parameters.
-- **R1.7** Lid snaps / self-tap bosses are light-duty; PETG optional for snaps.
-- **Elephant foot** — each part’s bed-face outer perimeter gets a parametric
-  45° chamfer (`elephant_chamfer`, default 0.5 mm). The bezel window also gets
-  `window_elephant_chamfer` so the lip doesn’t flare inward. Set either to `0`
-  to disable. Still tune slicer first-layer compensation.
+- **R1.7** Cap snaps / self-tap bosses are light-duty; PETG optional for snaps.
+- **Elephant foot** — bed-face outer chamfer (`elephant_chamfer`) + optional window lip chamfer. Set `0` to disable. Still tune slicer compensation.
+- **Binary STLs** — `--export-format=binstl`; `*.stl binary` in `.gitattributes`.
 
-## Anti-patterns that bit this case
+## Anti-patterns (see LEARNINGS.md)
 
-1. **Solid bay floor behind the AA** — when printing bezel-down, that floor is a ~160×100 mm mid-air bridge over the window. Failed R1.2. Fixed with a perimeter ledge + open center.
-2. **Board cradle on the front shell** — pad overlapped the AA in XY, recreating a floating deck. Fixed by moving the cradle to the lid (prints as upward walls on a flat bed face).
-3. **Label recess deeper than remaining lid thickness** — punched a through-hole. Removed.
-4. **Exporting the lid in assembly orientation** — posts pointed at the bed. Fixed with `back_lid_print()`.
+1. Solid bay floor behind the AA printed bezel-down → huge bridge.
+2. 3-piece screw sandwich just to make the deck printable.
+3. External / mid-floor ribbon holes mistaken for cable exits.
+4. Screw bosses through the glass footprint.
+5. ASCII STLs exploding PR diffs.
 
 ## Checklist before exporting STLs
 
 1. `./tools/validate.sh case.scad` — manifold / echoes OK
 2. `bash render.sh` — inspect every PNG
-3. Mentally raycast from bed-up in the declared orientation: any region above the bed that isn't grown from a wall is a bridge — redesign it out
+3. Mentally raycast from bed-up: shell layers should look like a U (lip | slot | backer | bay). Any mid-air ceiling is a redesign.
 4. `bash export-stl.sh`
-5. In the slicer: confirm support volume is ~0 on both parts (tree support only if something slipped through)
+5. Slicer: support volume ~0 on both parts

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Export the three printable parts using the vendored OpenSCAD skill tools.
+# Export the printable parts using the vendored OpenSCAD skill tools.
 # Usage: bash export-stl.sh [output_dir]
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -12,12 +12,11 @@ echo "== validate =="
 "$TOOLS/validate.sh" "$ROOT/case.scad" | tee "$OUT/validate.log"
 
 echo ""
-"$TOOLS/export-stl.sh" "$ROOT/case.scad" "$OUT/bezel.stl" -D 'part="bezel"'
-"$TOOLS/export-stl.sh" "$ROOT/case.scad" "$OUT/tray.stl"  -D 'part="tray"'
-"$TOOLS/export-stl.sh" "$ROOT/case.scad" "$OUT/back.stl"  -D 'part="back"'
+"$TOOLS/export-stl.sh" "$ROOT/case.scad" "$OUT/shell.stl" -D 'part="shell"'
+"$TOOLS/export-stl.sh" "$ROOT/case.scad" "$OUT/cap.stl"   -D 'part="cap"'
 
-# Remove legacy combined front if present
-rm -f "$OUT/front.stl"
+# Remove legacy 3-piece STLs if present
+rm -f "$OUT/bezel.stl" "$OUT/tray.stl" "$OUT/back.stl" "$OUT/front.stl"
 
 python3 - <<PY
 from pathlib import Path

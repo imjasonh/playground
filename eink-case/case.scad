@@ -2,35 +2,32 @@
 //
 // Devices:
 //   - Waveshare 7.5inch e-Paper raw panel (ASIN B075R69T93)
-//     outline 170.2 x 111.2 x 1.18 mm, AA 163.2 x 97.92, 24-pin FPC
+//     outline 170.2 x 111.2 x 1.2 mm, AA 163.2 x 97.92, 24-pin FPC
 //   - Waveshare e-Paper ESP32 Driver Board (ASIN B07M5CNP3B)
 //     29.46 x 48.25 mm, USB-C (2024+). No mounting holes.
 //
-// THREE printable parts (FDM-friendly — see tools/fdm-design-rules.md):
-//   bezel  — flat frame; print outer-face down (pocket opens up)
-//   tray   — open bay; print floor-down / cavity up (no mid-air decks)
-//   back   — lid; print outer-face down (cradle + snaps open up)
+// TWO printable parts — see LEARNINGS.md and tools/fdm-design-rules.md:
+//   shell — U-slot + window + backer + bay; print CLOSED-END down (slide open up)
+//   cap   — closes FPC end, retains panel; print outer face down
 //
-// Assembly: panel press-fits into bezel pocket (crush ribs) → clamp bezel
-// to tray (Z sandwich) → route SPI ribbon via the wall-edge chase into the
-// rear bay onto the board → lid. No mid-floor hole; no external ribbon port.
-// Use kit FFC extension for side/back USB.
+// Principle: the panel groove is a U-channel extruded in the print Z
+// (slide direction). Every layer is self-supporting — the backer is a
+// vertical wall, not a bridge over the window.
 //
-// Panel retention (snug):
-//   XY — pocket ≈ panel + panel_clear, plus short crush ribs on L/R/top
-//   Z  — tray floor clamps the glass against the bezel window lip
+// Assembly: slide panel into shell from FPC end → fold ribbon into bay →
+// seat board → snap/screw cap on.
 //
 // Fasteners:
-//   Bezel→tray: 4× M2×8 mm self-tapping (corner pilots)
-//   Lid→tray:   4× M2×8 mm self-tapping (same bosses, from the back)
-//   Board:      none (cradle + lid posts). Optional VHB under PCB.
+//   Cap→shell: 2× M2×8 mm self-tapping (open-end bosses) + snaps
+//   Board:     none (cradle + optional VHB)
 //
-// Coordinates: X right, Y up (FPC near Y=0), Z toward back.
+// Assembly coords: X right, Y up (FPC at Y=0), Z toward back.
+// Print (shell): closed end (Y=max) on bed, FPC end open at top.
 
 /* [Parts] */
-part = "assembled"; // [assembled, bezel, tray, back] Which object to show / export
+part = "assembled"; // [assembled, shell, cap] Which object to show / export
 show_components = true; // Ghost panel + board in assembled preview
-explode = 0;            // [0:0.5:30] Part separation for assembly views (mm)
+explode = 0;            // [0:0.5:40] Part separation for assembly views (mm)
 
 /* [Panel — Waveshare 7.5" raw] */
 panel_w = 170.2;             // [160:0.1:180] Panel outline width (mm)
@@ -45,8 +42,8 @@ bezel_top = 3.40;            // [2:0.1:8] Bezel opposite the FPC edge (mm)
 /* [FPC / SPI ribbon] */
 fpc_w = 14.0;                // [10:0.5:20] FPC width allowance (mm)
 fpc_t = 0.35;                // [0.2:0.05:0.6] FPC thickness (mm)
-fpc_fold_bay = 6.0;          // [3:0.5:12] Internal bay between wall and panel FPC edge (mm)
-fpc_channel_w = 22.0;        // [14:1:40] Bezel fold-bay channel width (mm)
+fpc_fold_bay = 8.0;          // [4:0.5:14] Internal bay at FPC end before cap (mm)
+fpc_channel_w = 22.0;        // [14:1:40] Ribbon pass into board bay (mm)
 
 /* [ESP32 driver board] */
 board_w = 29.46;             // [25:0.01:40] Board short axis (mm)
@@ -60,130 +57,107 @@ board_pocket_clear = 0.5;    // [0.2:0.1:1.2] XY slop in board cradle (mm)
 
 /* [Case geometry] */
 wall = 2.4;                  // [1.5:0.1:4] Outer wall thickness (mm)
-panel_clear = 0.30;          // [0.15:0.05:0.8] Base XY clearance around panel (mm)
-panel_crush = 0.20;          // [0:0.05:0.4] Crush-rib intrusion for snug XY (mm)
-panel_front_clear = 0.15;    // [0.05:0.05:0.4] Air between window lip and glass (mm)
-bezel_face_t = 1.2;          // [0.8:0.1:2.5] Bezel front face thickness (mm)
-tray_floor_t = 2.0;          // [1.5:0.1:3] Tray floor (panel backer) thickness (mm)
+panel_clear = 0.30;          // [0.15:0.05:0.8] Slot clearance around panel (mm)
+panel_crush = 0.20;          // [0:0.05:0.4] Crush-rib intrusion in slot (mm)
+front_lip_t = 1.4;           // [1.0:0.1:2.5] Front window-lip thickness (mm)
+backer_t = 2.0;              // [1.5:0.1:3] Panel backer wall thickness (mm)
 rear_bay_extra = 3.0;        // [1:0.5:8] Extra bay air (mm)
-lid_thickness = 2.4;         // [1.5:0.1:4] Back lid thickness (mm)
-corner_r = 4.0;              // [0:0.5:10] Outer corner radius (mm)
-screw_d = 2.4;               // [2:0.1:3.5] Screw clearance through bezel/lid (mm)
+cap_t = 2.4;                 // [1.5:0.1:4] Cap thickness along slide axis (mm)
+side_rim = 3.0;              // [2:0.1:8] Rim outside panel L/R (mm)
+closed_end_wall = 3.0;       // [2:0.1:8] Wall opposite FPC / print bed (mm)
+screw_d = 2.4;               // [2:0.1:3.5] Screw clearance through cap (mm)
 screw_boss_d = 7.0;          // [5:0.5:10] Boss outer diameter (mm)
 screw_boss_id = 1.7;         // [1.4:0.1:2.2] M2 self-tap pilot (mm)
-use_snaps = true;            // Lid snap tabs
+use_snaps = true;            // Cap snap tabs
 
 /* [USB exit] */
-usb_exit = "back";           // [back, side, bottom] Perimeter wall for USB-C
+usb_exit = "back";           // [back, side] Perimeter wall for USB-C
 
 /* [FDM — elephant-foot relief] */
-// 45° chamfers on each part’s bed face so first-layer squish doesn’t flare
-// mating edges. Set to 0 to disable. Prefer slicer compensation too.
-elephant_chamfer = 0.5;      // [0:0.1:1.5] Outer bed-face chamfer (mm)
-window_elephant_chamfer = 0.3; // [0:0.1:1] Bezel window bed-face chamfer (mm)
+elephant_chamfer = 0.5;      // [0:0.1:1.5] Bed-face outer chamfer (mm)
+window_elephant_chamfer = 0.3; // [0:0.1:1] Window-edge relief on front lip (mm)
 
 /* [Tolerances / print] */
 $fn = 48;                    // [16:8:96] Circle segments
 eps = 0.02;                  // Boolean overlap fudge (mm)
 
 // ---------------------------------------------------------------------------
-// Derived
+// Derived — assembly frame (X right, Y up / FPC at 0, Z toward back)
 // ---------------------------------------------------------------------------
 bezel_fpc = panel_h - active_h - bezel_top;
 
-// Rim outside the panel must fit M2 bosses without the screws hitting glass.
-boss_inset = wall + screw_boss_d / 2 + 1.0;
-outer_margin = boss_inset + screw_boss_d / 2 + 0.6; // ≥ ~10.9 mm with defaults
+slot_t = panel_t + 2 * panel_clear;
+board_standoff = 2.0;
+bay_need = board_standoff + board_t + board_comp_h + 2.0;
+bay_d = max(bay_need, 12.0) + rear_bay_extra;
 
-case_outer_w = panel_w + 2 * outer_margin;
-case_outer_h = panel_h + fpc_fold_bay + 2 * outer_margin;
+z_lip1 = front_lip_t;
+z_slot0 = z_lip1;
+z_slot1 = z_slot0 + slot_t;
+z_backer0 = z_slot1;
+z_backer1 = z_backer0 + backer_t;
+z_bay0 = z_backer1;
+z_bay1 = z_bay0 + bay_d;
+case_depth = z_bay1 + wall;
+
+y_open = 0;
+y_panel0 = fpc_fold_bay;
+y_panel1 = y_panel0 + panel_h;
+case_h = y_panel1 + panel_clear + closed_end_wall;
+
+case_w = panel_w + 2 * panel_clear + 2 * side_rim + 2 * wall;
+panel_x0 = wall + side_rim + panel_clear;
+active_x0 = panel_x0 + bezel_left;
+active_y0 = y_panel0 + bezel_fpc;
 
 window_inset = 0.4;
+window_x0 = active_x0 + window_inset;
+window_y0 = active_y0 + window_inset;
 window_w = active_w - 2 * window_inset;
 window_h = active_h - 2 * window_inset;
 
-board_standoff_h = 2.0;
-bay_need = board_standoff_h + board_t + board_comp_h + 2.0;
-bay_z = max(bay_need, 12.0) + rear_bay_extra;
-
-// Z stack: bezel face → panel → tray floor clamps glass → bay → lid
-// Bezel rim top == tray floor bottom == panel back (snug Z clamp).
-panel_z0 = bezel_face_t + panel_front_clear;
-tray_floor_z0 = panel_z0 + panel_t;
-bezel_total_z = tray_floor_z0;       // rim mates with tray floor
-bay_z0 = tray_floor_z0 + tray_floor_t;
-front_body_z = bay_z0 + bay_z;       // lid mating plane
-total_z = front_body_z + lid_thickness;
-
-panel_x0 = outer_margin;
-panel_y0 = outer_margin + fpc_fold_bay; // internal fold bay below FPC edge
-active_x0 = panel_x0 + bezel_left;
-active_y0 = panel_y0 + bezel_fpc;
-
-// Bezel fold-bay channel X. Tray: ribbon reaches the board bay through a
-// narrow chase against the INNER face of the FPC-edge wall (not a mid-floor
-// hole, not an external port).
-fpc_slot_x0 = panel_x0 + (panel_w - fpc_channel_w) / 2;
-fpc_chase_depth = 1.8; // into the floor from the inner wall face (mm)
+fpc_pass_x0 = panel_x0 + (panel_w - fpc_channel_w) / 2;
+fpc_pass_y0 = y_open + 1;
+fpc_pass_y1 = y_panel0 + 8;
 
 board_pose = board_placement();
 board_x0 = board_pose[0];
 board_y0 = board_pose[1];
 board_rot = board_pose[2];
-board_z0 = bay_z0 + board_standoff_h;
+board_z0 = z_bay0 + board_standoff;
 
-lid_post_gap = 0.3;
-lid_post_h = front_body_z - (board_z0 + board_t) - lid_post_gap;
+boss_y = wall + screw_boss_d / 2 + 0.5;
+function boss_xy() = [
+    [wall + screw_boss_d / 2 + 0.5, boss_y],
+    [case_w - wall - screw_boss_d / 2 - 0.5, boss_y]
+];
 
 echo("============================================================");
-echo(str("CLOSED OVERALL: ", case_outer_w, " x ", case_outer_h, " x ", total_z, " mm"));
-echo("Printable parts: 3  (bezel + tray + back lid)");
-echo("Print: bezel face-down | tray cavity-up | lid outer-down");
-echo(str("Panel hold: XY clear=", panel_clear, " + crush=", panel_crush,
-         "; Z clamp via tray floor"));
-echo(str("FPC: internal fold bay ", fpc_fold_bay,
-         " mm; wall-edge chase (no mid-floor hole)"));
-echo(str("Lid/bezel screws: M2x8 self-tap -> ", screw_boss_id, " mm pilots"));
-echo("Board screws: none (tray cradle + lid posts)");
-echo(str("Bay depth: ", bay_z, " mm; USB exit: ", usb_exit));
-echo(str("Elephant-foot chamfer: outer=", elephant_chamfer,
-         " mm; window=", window_elephant_chamfer, " mm"));
-echo(str("FDM: no AA-spanning decks (see tools/fdm-design-rules.md)"));
+echo(str("CLOSED OVERALL: ", case_w, " x ", case_h + cap_t, " x ", case_depth, " mm"));
+echo("Printable parts: 2  (shell + cap)");
+echo("Print shell: CLOSED-END down, FPC slide-open UP (U-slot extruded in Z)");
+echo("Print cap:   outer face down");
+echo(str("Slot: clear=", panel_clear, " crush=", panel_crush,
+         "  (panel slides in from FPC end)"));
+echo(str("FPC: fold bay ", fpc_fold_bay, " mm; internal backer pass (no external hole)"));
+echo(str("Cap screws: 2× M2x8 self-tap -> ", screw_boss_id, " mm pilots + snaps"));
+echo("Board screws: none (bay cradle)");
+echo(str("Bay depth: ", bay_d, " mm; USB exit: ", usb_exit));
+echo(str("Elephant-foot chamfer: ", elephant_chamfer, " mm"));
+echo("See LEARNINGS.md — U-slot print-upward principle");
 echo("============================================================");
 
+// Board sits near the CLOSED end so its cradle grows UP in print (from the
+// bed-side bay floor). Horizontal shelves off the backer are forbidden (R1.2).
 function board_placement() =
     let (
         m = wall + 3.5,
-        fpc_bias_y = panel_y0 + 18
+        // Board long axis along X when usb_exit=back; place near closed end.
+        by = case_h - wall - m - (usb_exit == "side" ? board_l : board_w) - 2
     )
-    usb_exit == "bottom"
-        ? [case_outer_w / 2 - board_w / 2, m + usb_protrude, 90]
-    : usb_exit == "side"
-        ? [case_outer_w - m - usb_protrude - board_l, max(fpc_bias_y, m), 0]
-    : /* back */ [m + usb_protrude, max(fpc_bias_y, m), 0];
-
-function boss_xy() =
-    [
-        [boss_inset, boss_inset],
-        [case_outer_w - boss_inset, boss_inset],
-        [boss_inset, case_outer_h - boss_inset],
-        [case_outer_w - boss_inset, case_outer_h - boss_inset]
-    ];
-
-function board_corner_xy() =
-    board_rot == 90
-        ? [
-            [board_x0 + 3.5, board_y0 + 3.5],
-            [board_x0 + board_w - 3.5, board_y0 + 3.5],
-            [board_x0 + 3.5, board_y0 + board_l - 3.5],
-            [board_x0 + board_w - 3.5, board_y0 + board_l - 3.5]
-          ]
-        : [
-            [board_x0 + 3.5, board_y0 + 3.5],
-            [board_x0 + board_l - 3.5, board_y0 + 3.5],
-            [board_x0 + 3.5, board_y0 + board_w - 3.5],
-            [board_x0 + board_l - 3.5, board_y0 + board_w - 3.5]
-          ];
+    usb_exit == "side"
+        ? [case_w - m - usb_protrude - board_l, max(m, by), 0]
+    : /* back */ [m + usb_protrude, max(m, by), 0];
 
 function board_size_xy() =
     board_rot == 90 ? [board_w, board_l] : [board_l, board_w];
@@ -197,12 +171,6 @@ module rounded_rect(w, h, r) {
     else translate([rr, rr]) offset(r = rr) square([w - 2 * rr, h - 2 * rr]);
 }
 
-module rounded_box(w, h, t, r) {
-    linear_extrude(height = t) rounded_rect(w, h, r);
-}
-
-// 45° elephant-foot relief on the z=0 face outer perimeter.
-// At z=0 the outline is inset by `ch`; at z=`ch` it matches the full outline.
 module bottom_outer_chamfer_cut(w, h, r, ch) {
     if (ch > 0)
         difference() {
@@ -223,17 +191,6 @@ module bottom_outer_chamfer_cut(w, h, r, ch) {
         }
 }
 
-// Enlarge a rectangular window at z=0, tapering to nominal size at z=`ch`.
-module window_bed_chamfer_cut(x, y, w, h, ch) {
-    if (ch > 0)
-        hull() {
-            translate([x - ch, y - ch, -eps])
-                cube([w + 2 * ch, h + 2 * ch, eps]);
-            translate([x, y, ch])
-                cube([w, h, eps]);
-        }
-}
-
 module at_board() {
     translate([board_x0, board_y0, board_z0])
         rotate([0, 0, board_rot])
@@ -245,31 +202,24 @@ module at_board() {
 // ---------------------------------------------------------------------------
 module panel_ghost() {
     color("Ivory", 0.9)
-        translate([panel_x0, panel_y0, panel_z0])
+        translate([panel_x0, y_panel0, z_slot0 + panel_clear])
             cube([panel_w, panel_h, panel_t]);
     color("#4a4a4a", 0.75)
-        translate([active_x0, active_y0, bezel_face_t - 0.02])
+        translate([active_x0, active_y0, -0.02])
             cube([active_w, active_h, 0.04]);
-    // Ribbon stays inside: fold bay → wall-edge chase → rear bay → ZIF
     color("#c9a227", 0.95) {
         translate([
             panel_x0 + (panel_w - fpc_w) / 2,
-            panel_y0 - fpc_fold_bay + 0.5,
-            panel_z0 + panel_t / 2 - fpc_t / 2
+            y_open + 1,
+            z_slot0 + panel_clear + panel_t / 2 - fpc_t / 2
         ])
-            cube([fpc_w, fpc_fold_bay + 2, fpc_t]);
+            cube([fpc_w, y_panel0 + 2, fpc_t]);
         translate([
             panel_x0 + (panel_w - fpc_w) / 2,
-            wall,
-            tray_floor_z0 - eps
+            y_panel0 + 2,
+            z_bay0 + 0.5
         ])
-            cube([fpc_w, fpc_chase_depth, tray_floor_t + bay_z * 0.3]);
-        translate([
-            panel_x0 + (panel_w - fpc_w) / 2,
-            panel_y0 + 2,
-            bay_z0 + 0.5
-        ])
-            cube([fpc_w, 40, fpc_t]);
+            cube([fpc_w, 36, fpc_t]);
     }
 }
 
@@ -298,315 +248,224 @@ module usb_cutout() {
 }
 
 // ---------------------------------------------------------------------------
-// Bezel — flat frame, print outer-face down (R1.3)
-// Rim top mates with tray floor; panel is Z-clamped between window lip & tray.
-// Outer wall is closed. Panel seats on shoulders L/R of a narrow internal
-// fold bay; ribbon never exits the case.
+// Shell
 // ---------------------------------------------------------------------------
-module bezel() {
-    pocket_depth = panel_front_clear + panel_t; // rim top = tray floor
-    rib_len = 12;
-    rib_z0 = bezel_face_t + panel_front_clear;
-    rib_h = panel_t * 0.85;
-    embed = 0.2;
-
-    union() {
-        difference() {
-            // Solid blank: face + rim up to tray mating plane
-            rounded_box(case_outer_w, case_outer_h, bezel_total_z, corner_r);
-
-            // Bed-face outer chamfer (print: outer face down)
-            bottom_outer_chamfer_cut(
-                case_outer_w, case_outer_h, corner_r, elephant_chamfer
-            );
-
-            // Active-area window through the face
-            translate([
-                active_x0 + window_inset,
-                active_y0 + window_inset,
-                -eps
-            ])
-                cube([window_w, window_h, bezel_total_z + 3 * eps]);
-
-            // Bed-face window chamfer (keeps the lip from flaring inward)
-            window_bed_chamfer_cut(
-                active_x0 + window_inset,
-                active_y0 + window_inset,
-                window_w, window_h,
-                window_elephant_chamfer
-            );
-
-            // Panel pocket — outline + clear; shoulders remain at FPC edge
-            translate([
-                panel_x0 - panel_clear,
-                panel_y0 - panel_clear,
-                bezel_face_t
-            ])
-                cube([
-                    panel_w + 2 * panel_clear,
-                    panel_h + 2 * panel_clear,
-                    pocket_depth + eps
-                ]);
-
-            // Narrow INTERNAL fold bay from the inner wall to the panel FPC edge
-            // (outer wall stays closed). Cable runs under the tray floor here to
-            // the wall-edge chase.
-            translate([
-                fpc_slot_x0 - 1,
-                wall,
-                bezel_face_t
-            ])
-                cube([
-                    fpc_channel_w + 2,
-                    panel_y0 - wall + panel_clear + 2,
-                    pocket_depth + eps
-                ]);
-
-            // Screw clearances
-            for (p = boss_xy())
-                translate([p[0], p[1], -eps])
-                    cylinder(d = screw_d, h = bezel_total_z + 2 * eps);
-        }
-
-        // Crush ribs: local XY interference for a snug press-fit (FDM-friendly).
-        // Vertical features — print cleanly. Skip FPC edge (fold bay).
-        if (panel_crush > 0) {
-            for (yy = [panel_y0 + 20, panel_y0 + panel_h - 20 - rib_len]) {
-                translate([panel_x0 - panel_clear - embed, yy, rib_z0])
-                    cube([panel_crush + embed, rib_len, rib_h]);
-                translate([
-                    panel_x0 + panel_w + panel_clear - panel_crush,
-                    yy, rib_z0
-                ])
-                    cube([panel_crush + embed, rib_len, rib_h]);
-            }
-            for (xx = [panel_x0 + 25, panel_x0 + panel_w - 25 - rib_len])
-                translate([
-                    xx,
-                    panel_y0 + panel_h + panel_clear - panel_crush,
-                    rib_z0
-                ])
-                    cube([rib_len, panel_crush + embed, rib_h]);
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Tray — print floor-down / cavity up (R1.2, R1.3)
-// Floor on the bed is the panel backer (solid — not a bridge).
-// Ribbon chase sits against the INNER wall at the FPC edge so the mid-floor
-// stays solid and the outer shell never opens.
-// ---------------------------------------------------------------------------
-module tray() {
+module shell() {
     difference() {
-        union() {
-            // Floor = full solid panel backer (prints on bed)
-            translate([0, 0, tray_floor_z0])
-                rounded_box(case_outer_w, case_outer_h, tray_floor_t, corner_r);
+        cube([case_w, case_h, case_depth]);
 
-            // Bay walls
-            translate([0, 0, bay_z0 - eps])
-                difference() {
-                    rounded_box(case_outer_w, case_outer_h, bay_z + eps, corner_r);
-                    translate([wall, wall, -eps])
-                        rounded_box(
-                            case_outer_w - 2 * wall,
-                            case_outer_h - 2 * wall,
-                            bay_z + 3 * eps,
-                            max(0.2, corner_r - wall)
-                        );
-                }
-        }
+        // Window through front lip
+        translate([window_x0, window_y0, -eps])
+            cube([window_w, window_h, z_slot0 + eps]);
 
-        // Bed-face outer chamfer on the floor (print: floor down)
-        translate([0, 0, tray_floor_z0])
-            bottom_outer_chamfer_cut(
-                case_outer_w, case_outer_h, corner_r, elephant_chamfer
-            );
+        if (window_elephant_chamfer > 0)
+            hull() {
+                translate([
+                    window_x0 - window_elephant_chamfer,
+                    window_y0 - window_elephant_chamfer,
+                    -eps
+                ])
+                    cube([
+                        window_w + 2 * window_elephant_chamfer,
+                        window_h + 2 * window_elephant_chamfer,
+                        eps
+                    ]);
+                translate([window_x0, window_y0, window_elephant_chamfer])
+                    cube([window_w, window_h, eps]);
+            }
 
-        // Wall-edge ribbon chase: opens the fold bay into the rear bay along
-        // the inner face of the FPC-edge wall. Outer wall (y=0..wall) stays
-        // solid — not an external cable port.
+        // U-slot (panel groove) — open at FPC end, stopped by closed-end wall
         translate([
-            fpc_slot_x0,
-            wall - eps,
-            tray_floor_z0 - eps
+            panel_x0 - panel_clear,
+            y_open - eps,
+            z_slot0
+        ])
+            cube([
+                panel_w + 2 * panel_clear,
+                y_panel1 + panel_clear - y_open + eps,
+                slot_t
+            ]);
+
+        // Open the front lip at the FPC mouth so the panel can enter the U
+        translate([
+            panel_x0 - panel_clear,
+            y_open - eps,
+            -eps
+        ])
+            cube([
+                panel_w + 2 * panel_clear,
+                max(eps, y_panel0 - y_open + panel_clear),
+                z_slot0 + eps
+            ]);
+
+        // Electronics bay (open at FPC end under the cap)
+        translate([wall, wall, z_bay0])
+            cube([case_w - 2 * wall, case_h - 2 * wall, bay_d + eps]);
+        translate([wall, y_open - eps, z_bay0])
+            cube([case_w - 2 * wall, wall + 2 * eps, bay_d + eps]);
+
+        // Internal ribbon pass through backer into bay
+        translate([
+            fpc_pass_x0,
+            fpc_pass_y0,
+            z_backer0 - eps
         ])
             cube([
                 fpc_channel_w,
-                fpc_chase_depth + eps,
-                tray_floor_t + 2 * eps
+                fpc_pass_y1 - fpc_pass_y0,
+                backer_t + 2 * eps
             ]);
 
-        // Through-holes for bezel screws (pilots continue in bosses)
+        // Cap screw pilots (along +Y into open-end bosses)
         for (p = boss_xy())
-            translate([p[0], p[1], tray_floor_z0 - eps])
-                cylinder(d = screw_boss_id, h = tray_floor_t + 2 * eps);
+            translate([p[0], y_open - eps, z_bay0 + bay_d / 2])
+                rotate([-90, 0, 0])
+                    cylinder(d = screw_boss_id, h = 22);
 
         usb_cutout();
 
         if (use_snaps) {
-            tab_w = 10;
             tab_d = 1.4;
-            tab_z = 3.0;
-            ys = case_outer_h / 2;
-            for (x = [wall - 0.05, case_outer_w - wall - tab_d])
-                translate([x, ys - tab_w / 2, front_body_z - tab_z])
-                    cube([tab_d + 0.2, tab_w, tab_z + eps]);
+            tab_len = 3.0;
+            for (x = [wall - 0.05, case_w - wall - tab_d])
+                translate([x, y_open - eps, z_bay1 - tab_len])
+                    cube([tab_d + 0.2, 3.5, tab_len + eps]);
         }
     }
 
-    // Board cradle on the bay floor (grows UP in print — self-supporting)
-    board_cradle();
+    // Crush ribs in the slot (vertical beads along print Z after reorient)
+    if (panel_crush > 0) {
+        rib_len = 14;
+        rib_z = z_slot0 + panel_clear;
+        rib_h = panel_t * 0.85;
+        for (yy = [y_panel0 + 18, y_panel0 + panel_h - 18 - rib_len]) {
+            translate([panel_x0 - panel_clear - 0.15, yy, rib_z])
+                cube([panel_crush + 0.15, rib_len, rib_h]);
+            translate([
+                panel_x0 + panel_w + panel_clear - panel_crush,
+                yy, rib_z
+            ])
+                cube([panel_crush + 0.15, rib_len, rib_h]);
+        }
+    }
 
-    // Screw bosses from floor up to lid plane
+    // Cap bosses along +Y (become upright columns when shell is print-oriented)
+    boss_len = 16;
     for (p = boss_xy())
-        translate([p[0], p[1], bay_z0 - eps])
-            difference() {
-                cylinder(d = screw_boss_d, h = bay_z + eps);
-                translate([0, 0, -eps])
-                    cylinder(d = screw_boss_id, h = bay_z + 3 * eps);
-            }
+        translate([p[0], y_open + wall - eps, z_bay0 + bay_d / 2])
+            rotate([-90, 0, 0])
+                difference() {
+                    cylinder(d = screw_boss_d, h = boss_len);
+                    translate([0, 0, -eps])
+                        cylinder(d = screw_boss_id, h = boss_len + 2 * eps);
+                }
+
+    board_cradle();
 }
 
 module board_cradle() {
+    // Print-up safe: PCB plane is parallel to the backer (vertical in print).
+    // Side rails = walls of constant X (vertical). End stops = walls of
+    // constant Y near the closed end (also vertical after reorient).
+    // No shelves growing out of the backer in +Z.
     bs = board_size_xy();
     bw = bs[0];
     bh = bs[1];
-    wall_h = board_standoff_h + board_t + 0.6;
     t = 1.6;
-    z0 = bay_z0;
+    rail_z0 = z_bay0 + 1.0;
+    rail_z1 = board_z0 + board_t + 0.8;
+    rail_h = rail_z1 - rail_z0;
 
-    translate([
-        board_x0 - board_pocket_clear,
-        board_y0 - board_pocket_clear,
-        z0
+    // Left / right rails (constant X → vertical walls in print)
+    for (x = [
+        board_x0 - board_pocket_clear - t,
+        board_x0 + bw + board_pocket_clear
     ])
-        cube([
-            bw + 2 * board_pocket_clear,
-            bh + 2 * board_pocket_clear,
-            board_standoff_h
-        ]);
+        translate([x, board_y0 - board_pocket_clear, rail_z0])
+            cube([t, bh + 2 * board_pocket_clear, rail_h]);
 
-    difference() {
-        translate([
-            board_x0 - board_pocket_clear - t,
-            board_y0 - board_pocket_clear - t,
-            z0
-        ])
-            cube([
-                bw + 2 * board_pocket_clear + 2 * t,
-                bh + 2 * board_pocket_clear + 2 * t,
-                wall_h
-            ]);
-        translate([
-            board_x0 - board_pocket_clear,
-            board_y0 - board_pocket_clear,
-            z0 - eps
-        ])
-            cube([
-                bw + 2 * board_pocket_clear,
-                bh + 2 * board_pocket_clear,
-                wall_h + 2 * eps
-            ]);
-        // Open ZIF end
-        if (board_rot == 90)
-            translate([
-                board_x0 - board_pocket_clear - t - eps,
-                board_y0 + bh - 1,
-                z0 - eps
-            ])
-                cube([
-                    bw + 2 * board_pocket_clear + 2 * t + 2 * eps,
-                    t + 4, wall_h + 2 * eps
-                ]);
-        else
-            translate([
-                board_x0 + bw - 1,
-                board_y0 - board_pocket_clear - t - eps,
-                z0 - eps
-            ])
-                cube([
-                    t + 4,
-                    bh + 2 * board_pocket_clear + 2 * t + 2 * eps,
-                    wall_h + 2 * eps
-                ]);
-        // Open USB end
-        if (board_rot == 90)
-            translate([
-                board_x0 - board_pocket_clear - t - eps,
-                board_y0 - board_pocket_clear - t - eps,
-                z0 + board_standoff_h
-            ])
-                cube([
-                    bw + 2 * board_pocket_clear + 2 * t + 2 * eps,
-                    t + 3, wall_h
-                ]);
-        else
-            translate([
-                board_x0 - board_pocket_clear - t - eps,
-                board_y0 - board_pocket_clear - t - eps,
-                z0 + board_standoff_h
-            ])
-                cube([
-                    t + 3,
-                    bh + 2 * board_pocket_clear + 2 * t + 2 * eps,
-                    wall_h
-                ]);
-    }
+    // Closed-end stop (constant Y near case_h → vertical wall in print)
+    translate([
+        board_x0 - board_pocket_clear - t,
+        board_y0 + bh + board_pocket_clear,
+        rail_z0
+    ])
+        cube([bw + 2 * board_pocket_clear + 2 * t, t, rail_h]);
+
+    // Thin standoff beads on the backer (≤1.2 mm — printable as fat walls,
+    // not a deck) so the PCB sits off the backer face.
+    bead = min(board_standoff, 1.2);
+    for (yy = [board_y0 + 4, board_y0 + bh - 8])
+        for (xx = [board_x0 + 6, board_x0 + bw - 10])
+            translate([xx, yy, z_bay0])
+                cube([4, 4, bead]);
 }
 
-// Tray export: floor on bed (shift so tray_floor_z0 → 0)
-module tray_print() {
-    translate([0, 0, -tray_floor_z0])
-        tray();
+module shell_print() {
+    // Closed end on bed, FPC mouth up — U-slot extruded in print Z
+    translate([0, 0, case_h])
+        rotate([-90, 0, 0])
+            difference() {
+                shell();
+                if (elephant_chamfer > 0)
+                    translate([0, case_h + eps, 0])
+                        rotate([90, 0, 0])
+                            bottom_outer_chamfer_cut(
+                                case_w, case_depth, 0.01, elephant_chamfer
+                            );
+            }
 }
 
 // ---------------------------------------------------------------------------
-// Back lid — print outer-face down
+// Cap
 // ---------------------------------------------------------------------------
-module back_lid() {
+module cap() {
     difference() {
-        rounded_box(case_outer_w, case_outer_h, lid_thickness, corner_r);
-
-        // Bed-face outer chamfer (print: outer face down via back_lid_print)
-        bottom_outer_chamfer_cut(
-            case_outer_w, case_outer_h, corner_r, elephant_chamfer
-        );
+        translate([0, -cap_t, 0])
+            cube([case_w, cap_t, case_depth]);
 
         for (p = boss_xy())
-            translate([p[0], p[1], -eps])
-                cylinder(d = screw_d, h = lid_thickness + 2 * eps);
-
-        if (usb_exit == "back") {
-            clear = 0.7;
-            cw = usb_w + 2 * clear;
-            usb_cy = board_y0 + (board_rot == 90 ? board_l : board_w) / 2;
-            translate([-eps, usb_cy - cw / 2, -eps])
-                cube([wall + 6, cw, lid_thickness + 2 * eps]);
-        }
+            translate([p[0], -cap_t - eps, z_bay0 + bay_d / 2])
+                rotate([-90, 0, 0])
+                    cylinder(d = screw_d, h = cap_t + 2 * eps);
     }
+
+    // Retention tongue into the U-slot mouth
+    translate([
+        panel_x0 - panel_clear + 1,
+        -eps,
+        z_slot0
+    ])
+        cube([
+            panel_w + 2 * panel_clear - 2,
+            2.2,
+            slot_t
+        ]);
 
     if (use_snaps) {
-        tab_w = 9.4;
         tab_d = 1.2;
-        tab_z = 2.6;
-        ys = case_outer_h / 2;
-        for (x = [wall + 0.25, case_outer_w - wall - tab_d - 0.25])
-            translate([x, ys - tab_w / 2, -tab_z + eps])
-                cube([tab_d, tab_w, tab_z]);
+        tab_len = 2.6;
+        for (x = [wall + 0.25, case_w - wall - tab_d - 0.25])
+            translate([x, -eps, z_bay1 - tab_len])
+                cube([tab_d, 2.4, tab_len]);
     }
-
-    if (lid_post_h > 0.5)
-        for (p = board_corner_xy())
-            translate([p[0], p[1], -lid_post_h])
-                cylinder(d1 = 3.2, d2 = 2.4, h = lid_post_h);
 }
 
-module back_lid_print() {
-    translate([0, case_outer_h, lid_thickness])
-        rotate([180, 0, 0])
-            back_lid();
+module cap_print() {
+    // Outer face (y = -cap_t) on bed; thickness builds in +Z.
+    // Rx(90): (x,y,z) -> (x,-z,y). Shift y by +cap_t first so outer → y=0 → z_print=0.
+    translate([0, case_depth, 0])
+        rotate([90, 0, 0])
+            translate([0, cap_t, 0])
+                difference() {
+                    cap();
+                    if (elephant_chamfer > 0)
+                        translate([0, -cap_t - eps, 0])
+                            rotate([-90, 0, 0])
+                                bottom_outer_chamfer_cut(
+                                    case_w, case_depth, 0.01, elephant_chamfer
+                                );
+                }
 }
 
 // ---------------------------------------------------------------------------
@@ -614,32 +473,27 @@ module back_lid_print() {
 // ---------------------------------------------------------------------------
 module assembled() {
     color("#3d5a80")
-        bezel();
+        shell();
 
-    translate([0, 0, explode])
-        color("#4a6fa5")
-            tray();
-
-    translate([0, 0, front_body_z + 2 * explode])
+    translate([0, -explode, 0])
         color("#293241")
-            back_lid();
+            cap();
 
     if (show_components) {
-        translate([0, 0, explode * 0.4])
+        translate([0, -explode * 0.35, 0])
             panel_ghost();
-        translate([0, 0, explode * 0.7])
+        translate([0, -explode * 0.15, 0])
             board_ghost();
     }
 }
 
 if (part == "assembled")
     assembled();
-else if (part == "bezel")
-    bezel(); // already face-down printable
-else if (part == "tray")
-    tray_print();
+else if (part == "shell")
+    shell_print();
+else if (part == "cap")
+    cap_print();
+else if (part == "bezel" || part == "tray" || part == "front")
+    shell_print(); // legacy aliases
 else if (part == "back")
-    back_lid_print();
-// Legacy alias
-else if (part == "front")
-    tray_print();
+    cap_print();

@@ -3,61 +3,53 @@
 Parametric OpenSCAD case for a Waveshare 7.5″ e-Paper raw panel + ESP32
 driver board.
 
+**Read [`LEARNINGS.md`](LEARNINGS.md) before changing geometry.**
+
 ## Skills in this project
 
 1. **OpenSCAD skill** (vendored under `tools/` from
    [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff/tree/main/skills/openscad))
    — validate, multi-preview, extract-params, export-stl. Upstream text:
    `tools/UPSTREAM_SKILL.md`.
-2. **FDM printability rules** — `tools/fdm-design-rules.md` (distilled from
-   [m-esm/3d-print-modeling](https://github.com/m-esm/3d-print-modeling) and
-   [chriscantey/skill-3d-printing](https://github.com/chriscantey/skill-3d-printing)).
+2. **FDM printability rules** — `tools/fdm-design-rules.md`.
 
-**Never skip visual validation. Never export STLs that violate R1.2 (flat
-ceilings / AA-spanning decks).**
+**Never skip visual validation. Never export STLs that put a flat deck behind
+the AA as a print ceiling (R1.2).**
+
+## Design principle
+
+The panel groove is a **U-channel extruded in print Z** (slide direction).
+Shell prints **closed-end down / FPC mouth up**. The backer is a vertical wall
+in that orientation — not a bridge. Cap closes the open end and retains the
+panel.
 
 ## Workflow after every geometry edit
 
 ```bash
 ./tools/validate.sh case.scad
-bash render.sh                 # previews/{assembled,bezel,tray,back}/
-# READ every PNG with the image tool — check for bridges & floating spans
-bash export-stl.sh             # stl/{bezel,tray,back}.stl (binary)
+bash render.sh                 # previews/{assembled,shell,cap}/
+# READ every PNG with the image tool — confirm U-slot layers, no bridges
+bash export-stl.sh             # stl/{shell,cap}.stl (binary)
 ```
 
-Mentally raycast bed→up in each part’s declared print orientation
-(`tools/fdm-design-rules.md`). Any mid-air region that isn’t grown from a wall
-is a redesign, not “add support”.
-
-## Three printable parts
+## Two printable parts
 
 | Part | STL | Bed face | Role |
 |------|-----|----------|------|
-| `bezel` | `stl/bezel.stl` | Outer face down | Window frame + panel pocket |
-| `tray` | `stl/tray.stl` | Floor down (cavity up) | Panel backer, board cradle, bosses |
-| `back` | `stl/back.stl` | Outer face down | Lid + snaps + PCB hold-downs |
-
-Why not a one-piece “front”? A solid bay floor behind the active area becomes a
-~160×100 mm bridge when printed bezel-down (fails R1.2). Splitting face vs tray
-puts that floor **on the bed**.
+| `shell` | `stl/shell.stl` | Closed end down | Window, U-slot, backer, bay, cradle |
+| `cap` | `stl/cap.stl` | Outer face down | Retains panel; closes FPC end |
 
 ## Fasteners
 
 | Joint | Hardware |
 |-------|----------|
-| Bezel → tray | 4× M2×8 mm self-tapping into corner pilots |
-| Lid → tray | 4× M2×8 mm self-tapping (same bosses, from back) |
-| Board | None — cradle in tray + lid posts |
+| Cap → shell | 2× M2×8 mm self-tapping + snaps |
+| Board | None — bay cradle (optional VHB) |
 
 ## Fit notes
 
-- Closed overall echoed by `validate.sh` (defaults ~192×140×~22 mm — rim
-  clears corner bosses outside the glass).
-- Panel retention: bezel pocket + crush ribs (XY), tray-floor clamp (Z).
-- SPI ribbon stays inside: bezel fold bay under the floor + narrow wall-edge
-  chase into the board bay — **no mid-floor hole, outer wall closed**. USB-C
-  still uses `usb_exit`.
-- Side/back USB layouts need the kit FFC extension (~30 mm lateral jog).
-- Bed-face elephant-foot chamfers: `elephant_chamfer` /
-  `window_elephant_chamfer` (set `0` to disable).
-- Customizer knobs use `// [range] desc` comments for `extract-params.sh`.
+- Closed overall echoed by `validate.sh`.
+- Panel slides into the U-slot; crush ribs snug XY; cap tongue blocks slide-out.
+- Ribbon stays inside: fold bay + backer pass into bay — **no external hole**.
+- Datasheet outline is nominal (±0.2 mm typical) — measure before final print.
+- `elephant_chamfer` / `window_elephant_chamfer` (set `0` to disable).
