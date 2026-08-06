@@ -267,9 +267,12 @@ final class RideWatchWorkoutController: NSObject, ObservableObject {
     }
 
     private func handleUnexpectedSessionLoss() {
+        let orphanBuilder = builder
         session = nil
         builder = nil
         isSessionActive = false
+        // Discard rather than finish — this wasn't a clean end-of-ride stop.
+        orphanBuilder?.discardWorkout()
         scheduleRestartIfWanted()
     }
 
