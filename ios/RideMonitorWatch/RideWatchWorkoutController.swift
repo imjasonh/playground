@@ -13,6 +13,12 @@ import WatchConnectivity
 /// The activity type (`.cycling`) is just context for sensor fusion — any
 /// workout type would keep the app active the same way.
 ///
+/// If the session ends unexpectedly (crash recovery, competing workout that
+/// later finishes, HealthKit failure) while the phone ride is still active,
+/// we restart with backoff. Pressing the Digital Crown dismisses the UI even
+/// with a live session — the phone periodically re-calls `startWatchApp` to
+/// bring this companion forward again.
+///
 /// Collected quantities:
 /// - Heart rate, active + basal energy (Watch sensors)
 /// - Cycling distance (Watch GPS)
@@ -36,6 +42,12 @@ final class RideWatchWorkoutController: NSObject, ObservableObject {
     private let metricsPushInterval: TimeInterval = 1.0
     /// Coalesces concurrent `startIfNeeded` Tasks from rapid WC updates.
     private var isStarting = false
+    /// Phone ride still wants a frontmost session (independent of HK state).
+    private var wantsSession = false
+    private var rideStartedAt = Date()
+    /// Unexpected end/fail count for the current ride; reset on clean start.
+    private var unexpectedEndCount = 0
+    private var restartTask: Task<Void, Never>?
     /// If the Watch launches long after the phone ride started, HealthKit can
     /// reject an old `startActivity(with:)` date — clamp past that skew.
     private let maxStartSkew: TimeInterval = 30
@@ -47,19 +59,61 @@ final class RideWatchWorkoutController: NSObject, ObservableObject {
     /// Start (or keep) a cycling workout session while a ride is active.
     func sync(isRiding: Bool, startedAt: Date) {
         if isRiding {
+            wantsSession = true
+            rideStartedAt = startedAt
             startIfNeeded(startedAt: startedAt)
         } else {
+            wantsSession = false
+            unexpectedEndCount = 0
+            cancelScheduledRestart()
             endIfNeeded(saveToHealth: true)
         }
     }
 
     /// Invoked when the phone calls `HKHealthStore.startWatchApp`.
     func handle(_ configuration: HKWorkoutConfiguration) {
-        startIfNeeded(startedAt: Date(), configuration: configuration)
+        wantsSession = true
+        // Prefer the phone ride's start date when WC already delivered it;
+        // otherwise "now" (clamped by `maxStartSkew` inside beginSession).
+        let startedAt = rideStartedAt.timeIntervalSinceNow > -3600 ? rideStartedAt : Date()
+        startIfNeeded(startedAt: startedAt, configuration: configuration)
+    }
+
+    /// Re-attach to a workout that survived a Watch app crash / termination.
+    func recoverActiveSessionIfNeeded() {
+        healthStore.recoverActiveWorkoutSession { [weak self] recovered, error in
+            Task { @MainActor in
+                guard let self else { return }
+                if let error {
+                    // No recoverable session is normal when idle.
+                    _ = error
+                    return
+                }
+                guard let recovered else { return }
+                switch recovered.state {
+                case .running, .paused, .prepared:
+                    self.wantsSession = true
+                    self.adoptRecoveredSession(recovered)
+                default:
+                    break
+                }
+            }
+        }
+    }
+
+    /// Called when the Watch UI becomes active again — restart a missing
+    /// session if the phone ride is still in progress.
+    func reassertIfNeeded() {
+        guard wantsSession else { return }
+        if let session, session.state == .running || session.state == .prepared || session.state == .paused {
+            isSessionActive = true
+            return
+        }
+        startIfNeeded(startedAt: rideStartedAt)
     }
 
     private func startIfNeeded(startedAt: Date, configuration: HKWorkoutConfiguration? = nil) {
-        if let session, session.state == .running || session.state == .prepared {
+        if let session, session.state == .running || session.state == .prepared || session.state == .paused {
             isSessionActive = true
             return
         }
@@ -71,9 +125,10 @@ final class RideWatchWorkoutController: NSObject, ObservableObject {
             let authorized = await ensureAuthorization()
             guard authorized else {
                 lastErrorMessage = "Health access is required to keep Ride Monitor on-wrist and collect activity data."
+                scheduleRestartIfWanted()
                 return
             }
-            if let session, session.state == .running || session.state == .prepared {
+            if let session, session.state == .running || session.state == .prepared || session.state == .paused {
                 isSessionActive = true
                 return
             }
@@ -81,6 +136,7 @@ final class RideWatchWorkoutController: NSObject, ObservableObject {
                 try beginSession(startedAt: startedAt, configuration: configuration ?? Self.cyclingConfiguration())
             } catch {
                 lastErrorMessage = error.localizedDescription
+                scheduleRestartIfWanted()
             }
         }
     }
@@ -105,6 +161,8 @@ final class RideWatchWorkoutController: NSObject, ObservableObject {
         self.session = session
         self.builder = builder
         activity = .empty
+        unexpectedEndCount = 0
+        cancelScheduledRestart()
 
         // Use "now" when the phone's start date is far in the past (Watch
         // launched late). Keep a recent phone start so elapsed stays aligned.
@@ -119,10 +177,41 @@ final class RideWatchWorkoutController: NSObject, ObservableObject {
                     self.lastErrorMessage = error.localizedDescription
                 }
                 self.isSessionActive = success
+                if !success {
+                    self.scheduleRestartIfWanted()
+                }
             }
         }
         isSessionActive = true
         lastErrorMessage = nil
+    }
+
+    private func adoptRecoveredSession(_ recovered: HKWorkoutSession) {
+        // Prefer the recovered session over anything we were about to start.
+        cancelScheduledRestart()
+        if let session, session !== recovered {
+            endIfNeeded(saveToHealth: false)
+        }
+
+        let builder = recovered.associatedWorkoutBuilder()
+        let configuration = recovered.workoutConfiguration
+        let dataSource = HKLiveWorkoutDataSource(
+            healthStore: healthStore,
+            workoutConfiguration: configuration
+        )
+        for type in Self.collectibleQuantityTypes {
+            dataSource.enableCollection(for: type, predicate: nil)
+        }
+        builder.dataSource = dataSource
+        recovered.delegate = self
+        builder.delegate = self
+
+        session = recovered
+        self.builder = builder
+        isSessionActive = recovered.state == .running || recovered.state == .paused || recovered.state == .prepared
+        unexpectedEndCount = 0
+        lastErrorMessage = nil
+        refreshActivity(from: builder)
     }
 
     private func endIfNeeded(saveToHealth: Bool) {
@@ -175,6 +264,41 @@ final class RideWatchWorkoutController: NSObject, ObservableObject {
                 }
             }
         }
+    }
+
+    private func handleUnexpectedSessionLoss() {
+        session = nil
+        builder = nil
+        isSessionActive = false
+        scheduleRestartIfWanted()
+    }
+
+    private func scheduleRestartIfWanted() {
+        guard RideWatchFrontmostPolicy.shouldRestartAfterUnexpectedEnd(
+            wantsSession: wantsSession,
+            failureCount: unexpectedEndCount
+        ) else {
+            if wantsSession {
+                lastErrorMessage = lastErrorMessage
+                    ?? "Could not keep Ride Monitor on-wrist. Open it from the Watch app list."
+            }
+            return
+        }
+
+        cancelScheduledRestart()
+        let delay = RideWatchFrontmostPolicy.restartDelay(afterFailureCount: unexpectedEndCount)
+        unexpectedEndCount += 1
+        let startedAt = rideStartedAt
+        restartTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard !Task.isCancelled, self.wantsSession else { return }
+            self.startIfNeeded(startedAt: startedAt)
+        }
+    }
+
+    private func cancelScheduledRestart() {
+        restartTask?.cancel()
+        restartTask = nil
     }
 
     private func refreshActivity(from builder: HKLiveWorkoutBuilder, forcePush: Bool = false) {
@@ -297,9 +421,9 @@ extension RideWatchWorkoutController: HKWorkoutSessionDelegate {
             guard self.session === workoutSession else { return }
             self.isSessionActive = (toState == .running || toState == .paused)
             if toState == .ended || toState == .stopped {
-                self.session = nil
-                self.builder = nil
-                self.isSessionActive = false
+                // Intentional `endIfNeeded` nils `session` before stop/end, so
+                // this path is an unexpected system/user teardown.
+                self.handleUnexpectedSessionLoss()
             }
         }
     }
@@ -308,9 +432,7 @@ extension RideWatchWorkoutController: HKWorkoutSessionDelegate {
         Task { @MainActor in
             guard self.session === workoutSession else { return }
             self.lastErrorMessage = error.localizedDescription
-            self.session = nil
-            self.builder = nil
-            self.isSessionActive = false
+            self.handleUnexpectedSessionLoss()
         }
     }
 }

@@ -10,6 +10,7 @@ import SwiftUI
 struct RideMonitorWatchView: View {
     @EnvironmentObject private var receiver: RideWatchReceiver
     @EnvironmentObject private var workout: RideWatchWorkoutController
+    @Environment(\.scenePhase) private var scenePhase
 
     private let columns = [
         GridItem(.flexible(), spacing: 4),
@@ -28,6 +29,13 @@ struct RideMonitorWatchView: View {
                     }
                 }
                 .frame(width: geo.size.width, height: geo.size.height)
+            }
+        }
+        // Wrist-raise / Crown return: if the phone ride is still active but
+        // the HK session died, start a new one so we can stay frontmost.
+        .onChange(of: scenePhase) { phase in
+            if phase == .active {
+                workout.reassertIfNeeded()
             }
         }
     }
