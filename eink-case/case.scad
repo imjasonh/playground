@@ -63,6 +63,8 @@ front_lip_t = 1.4;           // [1.0:0.1:2.5] Front window-lip thickness (mm)
 backer_t = 2.0;              // [1.5:0.1:3] Panel backer wall thickness (mm)
 rear_bay_extra = 3.0;        // [1:0.5:8] Extra bay air (mm)
 cap_t = 2.4;                 // [1.5:0.1:4] Cap thickness along slide axis (mm)
+cap_rabbet = 1.2;            // [0.6:0.1:2.5] Cap lip into shell mouth (mm)
+cap_skirt = 3.0;             // [1.5:0.5:6] Cap return flange over front/back (mm)
 side_rim = 3.0;              // [2:0.1:8] Rim outside panel L/R (mm)
 closed_end_wall = 3.0;       // [2:0.1:8] Wall opposite FPC / print bed (mm)
 screw_d = 2.4;               // [2:0.1:3.5] Screw clearance through cap (mm)
@@ -274,7 +276,9 @@ module shell() {
                     cube([window_w, window_h, eps]);
             }
 
-        // U-slot (panel groove) — open at FPC end, stopped by closed-end wall
+        // U-slot (panel groove) — open at FPC end, stopped by closed-end wall.
+        // Front lip stays SOLID through the fold-bay strip so the front never
+        // shows bay innards; the panel end-loads under the continuous lip.
         translate([
             panel_x0 - panel_clear,
             y_open - eps,
@@ -286,23 +290,27 @@ module shell() {
                 slot_t
             ]);
 
-        // Open the front lip at the FPC mouth so the panel can enter the U
-        translate([
-            panel_x0 - panel_clear,
-            y_open - eps,
-            -eps
-        ])
-            cube([
-                panel_w + 2 * panel_clear,
-                max(eps, y_panel0 - y_open + panel_clear),
-                z_slot0 + eps
-            ]);
-
-        // Electronics bay (open at FPC end under the cap)
+        // Electronics bay
         translate([wall, wall, z_bay0])
             cube([case_w - 2 * wall, case_h - 2 * wall, bay_d + eps]);
+
+        // Bay access through the open-end wall (board + ribbon during assembly).
+        // Fully covered by the cap plug when closed — not a front-face hole.
         translate([wall, y_open - eps, z_bay0])
             cube([case_w - 2 * wall, wall + 2 * eps, bay_d + eps]);
+
+        // Perimeter rabbet on the open-end face for the cap lip (hides seam)
+        if (cap_rabbet > 0)
+            difference() {
+                translate([-eps, y_open - eps, -eps])
+                    cube([case_w + 2 * eps, cap_rabbet + eps, case_depth + 2 * eps]);
+                translate([cap_rabbet, y_open - 2 * eps, cap_rabbet])
+                    cube([
+                        case_w - 2 * cap_rabbet,
+                        cap_rabbet + 3 * eps,
+                        case_depth - 2 * cap_rabbet
+                    ]);
+            }
 
         // Internal ribbon pass through backer into bay
         translate([
@@ -421,6 +429,7 @@ module shell_print() {
 // ---------------------------------------------------------------------------
 module cap() {
     difference() {
+        // Outer end plate — full face, covers slot + bay mouth
         translate([0, -cap_t, 0])
             cube([case_w, cap_t, case_depth]);
 
@@ -430,17 +439,69 @@ module cap() {
                     cylinder(d = screw_d, h = cap_t + 2 * eps);
     }
 
-    // Retention tongue into the U-slot mouth
-    translate([
-        panel_x0 - panel_clear + 1,
-        -eps,
-        z_slot0
-    ])
-        cube([
-            panel_w + 2 * panel_clear - 2,
-            2.2,
-            slot_t
-        ]);
+    // Perimeter lip into the shell rabbet (tight visual seam)
+    if (cap_rabbet > 0)
+        difference() {
+            translate([0.1, -eps, 0.1])
+                cube([case_w - 0.2, cap_rabbet, case_depth - 0.2]);
+            translate([cap_rabbet + 0.05, -2 * eps, cap_rabbet + 0.05])
+                cube([
+                    case_w - 2 * cap_rabbet - 0.1,
+                    cap_rabbet + 3 * eps,
+                    case_depth - 2 * cap_rabbet - 0.1
+                ]);
+        }
+
+    // Return skirts over front + back — joint not visible from those faces
+    if (cap_skirt > 0) {
+        translate([0, -eps, -0.02])
+            cube([case_w, cap_skirt, front_lip_t + 0.02]);
+        translate([0, -eps, case_depth - wall - 0.02])
+            cube([case_w, cap_skirt, wall + 0.04]);
+    }
+
+    // Retention tongue into the U-slot — butts the panel's FPC edge so the
+    // glass cannot slide back into the fold bay / out the mouth.
+    // Center notch leaves the ribbon path clear into the backer pass.
+    tongue_len = y_panel0 - 0.2;
+    difference() {
+        translate([
+            panel_x0 - panel_clear + 1,
+            -eps,
+            z_slot0 + 0.05
+        ])
+            cube([
+                panel_w + 2 * panel_clear - 2,
+                tongue_len,
+                slot_t - 0.1
+            ]);
+        translate([
+            fpc_pass_x0 - 0.5,
+            -2 * eps,
+            z_slot0 - eps
+        ])
+            cube([
+                fpc_channel_w + 1,
+                tongue_len + 3 * eps,
+                slot_t + 2 * eps
+            ]);
+    }
+
+    // Bay plug — fills the end-wall access so you can't see the PCB.
+    // Depth stops short of the screw bosses (which start at y ≈ wall).
+    difference() {
+        translate([wall + 0.25, -eps, z_bay0 + 0.25])
+            cube([
+                case_w - 2 * wall - 0.5,
+                wall + 0.35,
+                bay_d - 0.5
+            ]);
+        // Clearance for open-end screw bosses
+        for (p = boss_xy())
+            translate([p[0], wall - 0.4, z_bay0 + bay_d / 2])
+                rotate([-90, 0, 0])
+                    cylinder(d = screw_boss_d + 0.8, h = 4);
+    }
 
     if (use_snaps) {
         tab_d = 1.2;

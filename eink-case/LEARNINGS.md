@@ -67,3 +67,16 @@ That restores a true snug slide-in slot without a 3-way screw sandwich.
 
 No bezel↔tray screw joint. Cap uses snaps and/or a couple of M2 pilots into
 the shell’s open-end bosses.
+
+## Open mouth vs “showing innards”
+
+The shell’s FPC end **must** stay open in the part itself — that is the
+slide-in mouth (panel tunnel + bay access for board install). In print
+orientation that is the top of `shell.stl`, so a lone shell preview will
+show the bay. That is not a finished exterior.
+
+What must *not* be open is the **front face** through the fold-bay strip:
+keep the front lip solid there (panel tunnels *behind* it). Then the cap
+closes the mouth with a full end plate, perimeter rabbet, front/back skirts,
+bay plug, and a notched retention tongue. Assembled, no see-through to the
+PCB from the display face or the FPC end.

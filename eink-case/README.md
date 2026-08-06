@@ -47,6 +47,11 @@ bash export-stl.sh   # binary STLs under stl/
 3. Fold the SPI ribbon through the internal backer pass into the bay; seat the board.
 4. Snap/screw the **cap** on — the tongue blocks the panel from sliding out.
 
+The shell’s FPC mouth is open on purpose for end-loading (bay access + slot).
+The **front lip stays solid** through the fold-bay strip, so the face never
+shows electronics. The **cap** closes that mouth: perimeter rabbet, front/back
+skirts, bay plug, and retention tongue — no see-through when assembled.
+
 ## How the display is held snugly
 
 | Axis | Mechanism |
