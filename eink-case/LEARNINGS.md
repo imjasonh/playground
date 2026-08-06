@@ -35,6 +35,18 @@ redesign to a print-upward slide-in slot.
    print. Use rails/stops that stay vertical walls (constant X or Y), plus
    tiny beads — not a deck.
 
+7. **Floating cradle rails / short standoff beads**
+   Rails that start above `z_bay0` are disconnected solids inside the bay.
+   Fuse rails to the backer (`rail_z0 = z_bay0`). Bead height must equal
+   `board_standoff` / `board_z0` or the PCB floats. Leave the USB-end rail
+   off so the connector can reach the wall.
+
+8. **USB tip recessed behind the wall**
+   Placing the board at `wall + margin + usb_protrude` left the connector
+   ~6 mm inside. Seat with `board_x0 = usb_face + usb_protrude` (tip at
+   `usb_face`, default flush) and cut PCB-edge relief through the wall
+   thickness where it overlaps.
+
 ## What worked
 
 1. **Orientation is a design input (R1.3)** — pick the bed face first; export

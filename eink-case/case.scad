@@ -53,6 +53,8 @@ board_comp_h = 8.0;          // [5:0.5:15] Component clearance above PCB (mm)
 usb_w = 9.2;                 // [8:0.1:12] USB-C shell width (mm)
 usb_h = 3.6;                 // [3:0.1:5] USB-C shell height (mm)
 usb_protrude = 1.5;          // [0.5:0.1:3] USB shell past PCB edge (mm)
+usb_face = 0.0;              // [-1:0.1:1] USB tip vs outer wall (0=flush) (mm)
+usb_cut_clear = 0.7;         // [0.3:0.1:1.5] USB cutout clearance (mm)
 board_pocket_clear = 0.5;    // [0.2:0.1:1.2] XY slop in board cradle (mm)
 
 /* [Case geometry] */
@@ -93,7 +95,8 @@ eps = 0.02;                  // Boolean overlap fudge (mm)
 bezel_fpc = panel_h - active_h - bezel_top;
 
 slot_t = panel_t + 2 * panel_clear;
-board_standoff = 2.0;
+// Standoff = printable bead height (≤~1.2 mm fat walls off the backer).
+board_standoff = 1.2;
 bay_need = board_standoff + board_t + board_comp_h + 2.0;
 bay_d = max(bay_need, 12.0) + rear_bay_extra;
 
@@ -149,26 +152,40 @@ echo(str("Slot: clear=", panel_clear, " crush=", panel_crush,
          "  (panel slides in from FPC end)"));
 echo(str("FPC: fold bay ", fpc_fold_bay, " mm; internal backer pass (no external hole)"));
 echo(str("Cap retention: 4× internal clips (barb ", clip_barb, " mm); no screws"));
-echo("Board screws: none (bay cradle)");
-echo(str("Bay depth: ", bay_d, " mm; USB exit: ", usb_exit));
+echo("Board screws: none (bay cradle, connected to backer)");
+echo(str("Bay depth: ", bay_d, " mm; USB exit: ", usb_exit,
+         "  tip@", usb_exit == "side" ? case_w - usb_face : usb_face, " mm"));
+echo(str("Board standoff/beads: ", board_standoff, " mm (rails fused to backer)"));
 echo(str("Elephant-foot chamfer: ", elephant_chamfer, " mm"));
 echo("See LEARNINGS.md — U-slot print-upward principle");
 echo("============================================================");
 
-// Board sits near the CLOSED end so its cradle grows UP in print (from the
-// bed-side bay floor). Horizontal shelves off the backer are forbidden (R1.2).
+// Board sits near the CLOSED end so cradle features grow UP in print Z.
+// USB exits a perimeter wall in XY (PCB is parallel to the backer, so the
+// connector cannot point out the rear Z face).
+//   usb_exit=back → left wall (X=0), board_rot=0, USB at local -X
+//   usb_exit=side → right wall (X=case_w), board_rot=180, USB at world +X
 function board_placement() =
     let (
         m = wall + 3.5,
-        // Board long axis along X when usb_exit=back; place near closed end.
-        by = case_h - wall - m - (usb_exit == "side" ? board_l : board_w) - 2
+        // rot 0/180 keeps board_w along Y
+        by = case_h - wall - m - board_w - 2,
+        y0 = max(m, by)
     )
     usb_exit == "side"
-        ? [case_w - m - usb_protrude - board_l, max(m, by), 0]
-    : /* back */ [m + usb_protrude, max(m, by), 0];
+        // Origin at ZIF end after 180°; USB tip at x = board_x0 + usb_protrude.
+        ? [case_w - usb_face - usb_protrude, y0 + board_w, 180]
+    : /* back */ [usb_face + usb_protrude, y0, 0];
 
 function board_size_xy() =
-    board_rot == 90 ? [board_w, board_l] : [board_l, board_w];
+    // Axis-aligned footprint in assembly XY (accounts for 180°).
+    [board_l, board_w];
+
+function board_footprint() =
+    let (sz = board_size_xy())
+        usb_exit == "side"
+            ? [board_x0 - sz[0], board_y0 - sz[1], sz[0], sz[1]]
+        : /* back */ [board_x0, board_y0, sz[0], sz[1]];
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -246,13 +263,43 @@ module board_ghost() {
 }
 
 module usb_cutout() {
-    clear = 0.7;
-    cw = usb_w + 2 * clear;
-    ch = usb_h + 2 * clear;
-    deep = wall + usb_protrude + board_l + 8;
+    // Tunnel sized to the USB-C shell, in board-local frame (works for rot 0/180).
+    cw = usb_w + 2 * usb_cut_clear;
+    ch = usb_h + 2 * usb_cut_clear;
+    // Reach from well outside the outer wall, past the connector, into the bay.
+    deep = wall + abs(usb_face) + usb_protrude + 10;
     at_board()
-        translate([-usb_protrude - wall - 6, (board_w - cw) / 2, board_t - clear])
+        translate([
+            -usb_protrude - wall - abs(usb_face) - 4,
+            (board_w - cw) / 2,
+            board_t - usb_cut_clear
+        ])
             cube([deep, cw, ch]);
+
+    // PCB edge relief where the board overlaps the perimeter wall thickness.
+    fp = board_footprint();
+    bx = fp[0];
+    by = fp[1];
+    bw = fp[2];
+    bh = fp[3];
+    if (usb_exit == "back")
+        translate([-eps, by - board_pocket_clear, board_z0 - 0.15])
+            cube([
+                max(wall, usb_face + usb_protrude) + 2 * eps,
+                bh + 2 * board_pocket_clear,
+                board_t + 0.3
+            ]);
+    else if (usb_exit == "side")
+        translate([
+            case_w - max(wall, usb_face + usb_protrude) - eps,
+            by - board_pocket_clear,
+            board_z0 - 0.15
+        ])
+            cube([
+                max(wall, usb_face + usb_protrude) + 2 * eps,
+                bh + 2 * board_pocket_clear,
+                board_t + 0.3
+            ]);
 }
 
 // ---------------------------------------------------------------------------
@@ -410,41 +457,54 @@ module shell() {
 }
 
 module board_cradle() {
-    // Print-up safe: PCB plane is parallel to the backer (vertical in print).
-    // Side rails = walls of constant X (vertical). End stops = walls of
-    // constant Y near the closed end (also vertical after reorient).
-    // No shelves growing out of the backer in +Z.
-    bs = board_size_xy();
-    bw = bs[0];
-    bh = bs[1];
+    // Print-up safe: PCB plane parallel to backer (vertical wall in print).
+    // Rails/stops are constant-X / constant-Y walls fused to the backer at
+    // z_bay0 — not floating, not horizontal shelves (R1.2).
+    // USB end is left open (no rail) so the connector can reach the wall.
+    fp = board_footprint();
+    bx = fp[0];
+    by = fp[1];
+    bw = fp[2];
+    bh = fp[3];
     t = 1.6;
-    rail_z0 = z_bay0 + 1.0;
-    rail_z1 = board_z0 + board_t + 0.8;
+    clear = board_pocket_clear;
+    // Overlap the backer by eps so CGAL unions (coplanar touch ≠ merge)
+    rail_z0 = z_bay0 - eps;
+    rail_z1 = board_z0 + board_t + 0.9;
     rail_h = rail_z1 - rail_z0;
+    groove_z = board_t + 0.2;
 
-    // Left / right rails (constant X → vertical walls in print)
-    for (x = [
-        board_x0 - board_pocket_clear - t,
-        board_x0 + bw + board_pocket_clear
-    ])
-        translate([x, board_y0 - board_pocket_clear, rail_z0])
-            cube([t, bh + 2 * board_pocket_clear, rail_h]);
+    module rail_with_groove(x, groove_from_right = false) {
+        difference() {
+            translate([x, by - clear, rail_z0])
+                cube([t, bh + 2 * clear, rail_h]);
+            // PCB edge groove — retains through-thickness without a shelf
+            gx = groove_from_right ? x - 0.2 : x + t - (t * 0.55);
+            translate([gx, by - clear - eps, board_z0])
+                cube([t * 0.55 + 0.3, bh + 2 * clear + 2 * eps, groove_z]);
+        }
+    }
 
-    // Closed-end stop (constant Y near case_h → vertical wall in print)
-    translate([
-        board_x0 - board_pocket_clear - t,
-        board_y0 + bh + board_pocket_clear,
-        rail_z0
-    ])
-        cube([bw + 2 * board_pocket_clear + 2 * t, t, rail_h]);
+    // Long-side rail opposite the USB wall only
+    if (usb_exit == "back")
+        rail_with_groove(bx + bw + clear, false);
+    else
+        rail_with_groove(bx - clear - t, true);
 
-    // Thin standoff beads on the backer (≤1.2 mm — printable as fat walls,
-    // not a deck) so the PCB sits off the backer face.
-    bead = min(board_standoff, 1.2);
-    for (yy = [board_y0 + 4, board_y0 + bh - 8])
-        for (xx = [board_x0 + 6, board_x0 + bw - 10])
-            translate([xx, yy, z_bay0])
-                cube([4, 4, bead]);
+    // Closed-end stop (high-Y) — fused to backer; low-Y stays open for insert
+    translate([bx - clear - (usb_exit == "back" ? 0 : t), by + bh + clear, rail_z0])
+        cube([
+            bw + 2 * clear + t,
+            t,
+            rail_h
+        ]);
+
+    // Standoff beads on the backer — height matches board_z0 exactly
+    for (yy = [by + 5, by + bh - 9])
+        for (xx = [bx + 8, bx + bw - 12])
+            if (xx > wall + 1 && xx + 4 < case_w - wall - 1)
+                translate([xx, yy, z_bay0 - eps])
+                    cube([4, 4, board_standoff + eps]);
 }
 
 module shell_print() {

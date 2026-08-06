@@ -79,7 +79,8 @@ bash export-stl.sh
 
 | Parameter | Default | Meaning |
 |-----------|---------|---------|
-| `usb_exit` | `back` | USB wall: `back` / `side` |
+| `usb_exit` | `back` | USB wall: `back`=left (X=0), `side`=right |
+| `usb_face` | `0.0` | USB tip vs outer wall (`0`=flush) (mm) |
 | `panel_clear` | `0.30` | Slot clearance (mm) |
 | `panel_crush` | `0.20` | Crush-rib intrusion (mm) |
 | `fpc_fold_bay` | `8.0` | Internal bay at FPC end (mm) |
