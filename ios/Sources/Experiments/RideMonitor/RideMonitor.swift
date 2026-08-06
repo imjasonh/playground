@@ -122,6 +122,10 @@ final class RideMonitor: NSObject, ObservableObject {
         location.pausesLocationUpdatesAutomatically = false
         // Activate WatchConnectivity early so the companion is ready at start.
         _ = watchSession
+        // Clear Live Activities left over from a previous process (force-quit
+        // mid-ride). Without this, Lock Screen / Dynamic Island keep ticking
+        // while the UI shows Start ride.
+        liveActivity.endOrphansIfNeeded()
     }
 
     deinit {

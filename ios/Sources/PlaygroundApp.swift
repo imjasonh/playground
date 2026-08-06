@@ -9,6 +9,13 @@ struct PlaygroundApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                // Ride Monitor Live Activities can outlive a force-quit. Clear
+                // orphans at cold launch so Dynamic Island / Lock Screen don't
+                // keep looking like a ride is recording before the user opens
+                // the experiment.
+                .onAppear {
+                    RideLiveActivityController.shared.endOrphansIfNeeded()
+                }
         }
     }
 }

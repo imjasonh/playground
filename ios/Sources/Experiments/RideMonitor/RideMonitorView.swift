@@ -80,12 +80,21 @@ struct RideMonitorView: View {
             case .active:
                 // Live Activity.request only works in the foreground; retry any
                 // start that was deferred while location was granted in Settings.
+                // Also clears force-quit leftovers while idle so Dynamic Island
+                // doesn't keep looking like an active ride.
                 monitor.handleSceneBecameActive()
             case .background:
                 // Re-assert background location keep-alive before we are suspended.
                 monitor.handleSceneEnteredBackground()
             default:
                 break
+            }
+        }
+        .onAppear {
+            // Same orphan sweep as cold launch / foreground — covers navigating
+            // into the experiment while a stale Live Activity is still up.
+            if !monitor.isRunning {
+                RideLiveActivityController.shared.endOrphansIfNeeded()
             }
         }
         // Leaving the experiment destroys `@StateObject` RideMonitor. Stop+save

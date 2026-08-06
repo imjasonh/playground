@@ -14,7 +14,8 @@ final class RideLiveActivityController {
     /// Held until `Activity.request` succeeds. Also used to defer starts that
     /// happen while the app is backgrounded (`request` only works when active).
     private var pendingStart: (startedAt: Date, snapshot: RideLiveSnapshot)?
-    /// Bumps so an in-flight async start is abandoned if a newer start/end wins.
+    /// Bumps so an in-flight async start/update is abandoned if a newer
+    /// start/end wins.
     private var generation = 0
 
     private init() {}
@@ -35,13 +36,38 @@ final class RideLiveActivityController {
         enqueueStart()
     }
 
-    /// Call when the host app becomes active so a deferred start can proceed.
+    /// Call when the host app becomes active so a deferred start can proceed,
+    /// or so force-quit leftovers can be cleared while idle.
     func handleSceneBecameActive() {
+        endOrphansIfNeeded()
         guard pendingStart != nil, activity == nil else { return }
         #if canImport(UIKit)
         guard UIApplication.shared.applicationState == .active else { return }
         #endif
         enqueueStart()
+    }
+
+    /// Ends Live Activities left behind after a crash / force-quit when this
+    /// process is not recording. Safe at cold launch and whenever the UI shows
+    /// idle (Start ride).
+    func endOrphansIfNeeded() {
+        let hasTracked = activity != nil
+        let hasPending = pendingStart != nil
+        guard RideLiveActivityPolicy.shouldEndOrphans(
+            hasTrackedActivity: hasTracked,
+            hasPendingStart: hasPending
+        ) else { return }
+
+        let orphans = Activity<RideMonitorAttributes>.activities
+        guard !orphans.isEmpty else { return }
+
+        RideMonitorLog.notice("ending \(orphans.count) orphan Live Activity(ies)")
+        generation += 1
+        Task {
+            for existing in Activity<RideMonitorAttributes>.activities {
+                await existing.end(nil, dismissalPolicy: .immediate)
+            }
+        }
     }
 
     func update(snapshot: RideLiveSnapshot) {
@@ -51,27 +77,45 @@ final class RideLiveActivityController {
             pendingStart = pending
         }
         guard let activity else { return }
+        let token = generation
         let state = RideMonitorAttributes.ContentState(snapshot: snapshot)
         let content = ActivityContent(state: state, staleDate: nil)
-        Task { await activity.update(content) }
+        Task {
+            // Drop updates that lost a race with `end()` / a newer start.
+            guard token == self.generation else { return }
+            await activity.update(content)
+        }
     }
 
     func end(snapshot: RideLiveSnapshot?) {
         pendingStart = nil
         generation += 1
         let content: ActivityContent<RideMonitorAttributes.ContentState>? = snapshot.map {
-            ActivityContent(state: RideMonitorAttributes.ContentState(snapshot: $0), staleDate: nil)
+            // Mark final content stale immediately so Lock Screen / Dynamic
+            // Island chrome cannot keep looking "live" if dismissal is delayed.
+            ActivityContent(
+                state: RideMonitorAttributes.ContentState(snapshot: $0),
+                staleDate: Date()
+            )
         }
         let tracked = activity
         activity = nil
 
-        // End every activity of this type, not only the one we tracked — a
-        // raced `request` or force-quit leftover can otherwise linger.
+        // Capture the system list now, then sweep again after awaits — a raced
+        // `request` or force-quit leftover can otherwise linger.
+        let known = Activity<RideMonitorAttributes>.activities
         Task {
             var seen = Set<String>()
             if let tracked {
                 seen.insert(tracked.id)
-                await tracked.end(content, dismissalPolicy: .default)
+                // Immediate dismissal: `.default` left the activity on Lock
+                // Screen / Dynamic Island for hours, which looked like the ride
+                // was still recording after Stop.
+                await tracked.end(content, dismissalPolicy: .immediate)
+            }
+            for existing in known where !seen.contains(existing.id) {
+                seen.insert(existing.id)
+                await existing.end(content, dismissalPolicy: .immediate)
             }
             for existing in Activity<RideMonitorAttributes>.activities where !seen.contains(existing.id) {
                 await existing.end(content, dismissalPolicy: .immediate)
