@@ -51,5 +51,8 @@ bash export-stl.sh             # stl/{shell,cap}.stl (binary)
 - Closed overall echoed by `validate.sh`.
 - Panel slides into the U-slot; crush ribs snug XY; cap tongue blocks slide-out.
 - Ribbon stays inside: fold bay + backer pass into bay — **no external hole**.
+- Board cradle rails/beads are fused to the backer; USB-end rail omitted.
+- USB tip defaults flush with the outer wall (`usb_face=0`); opening is
+  `usb_w/h + 2*usb_cut_clear` (≈10.6×5.0 mm for stock USB-C).
 - Datasheet outline is nominal (±0.2 mm typical) — measure before final print.
 - `elephant_chamfer` / `window_elephant_chamfer` (set `0` to disable).
