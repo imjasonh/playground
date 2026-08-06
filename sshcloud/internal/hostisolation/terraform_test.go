@@ -443,7 +443,11 @@ func TestTerraformStartupNetworkCallsHaveDeadlines(t *testing.T) {
 	} {
 		startup := readTestFile(t, filepath.Join(root, script))
 		for number, line := range strings.Split(startup, "\n") {
-			if !strings.Contains(line, "curl ") || strings.Contains(line, "command -v curl") {
+			trimmed := strings.TrimSpace(line)
+			isCurlCommand := strings.HasPrefix(trimmed, "curl ") ||
+				strings.HasPrefix(trimmed, "if ! curl ") ||
+				strings.Contains(trimmed, "$(curl ")
+			if !isCurlCommand || strings.Contains(trimmed, "command -v curl") {
 				continue
 			}
 			if !strings.Contains(line, "--connect-timeout") || !strings.Contains(line, "--max-time") {
