@@ -17,8 +17,11 @@ final class RideWatchPhoneSession: NSObject, ObservableObject {
     private var pendingSnapshot: RideLiveSnapshot?
     private let healthStore = HKHealthStore()
     private var didRequestHealthAuthorization = false
-    /// Avoid spamming `startWatchApp` on every 1 Hz snapshot while riding.
-    private var didLaunchWatchForCurrentRide = false
+    /// Wall-clock of the last `startWatchApp` attempt — nil means not yet
+    /// this ride. Used to periodically re-assert frontmost (Crown dismissal).
+    private var lastWatchLaunchAt: Date?
+    /// Bumped when a ride ends so in-flight `startWatchApp` Tasks are ignored.
+    private var launchGeneration = 0
     /// Queue at most one authoritative WC `transferUserInfo` start per ride
     /// (ends always transfer so stop isn't lost when unreachable).
     private var didQueueStartTransfer = false
@@ -36,14 +39,34 @@ final class RideWatchPhoneSession: NSObject, ObservableObject {
         pendingSnapshot = snapshot
         flushPending()
         if snapshot.isRiding {
-            if !didLaunchWatchForCurrentRide {
-                didLaunchWatchForCurrentRide = true
-                launchWatchWorkoutIfPossible()
-            }
+            maybeLaunchWatch()
         } else {
-            didLaunchWatchForCurrentRide = false
+            launchGeneration += 1
             didQueueStartTransfer = false
+            lastWatchLaunchAt = nil
         }
+    }
+
+    /// Re-assert the Watch companion when reachability returns mid-ride.
+    func handleWatchReachabilityChanged(isReachable: Bool) {
+        flushPending()
+        guard isReachable, pendingSnapshot?.isRiding == true else { return }
+        // Come back online promptly, but keep a short cooldown so flapping
+        // reachability cannot spam `startWatchApp`.
+        maybeLaunchWatch(interval: 10)
+    }
+
+    private func maybeLaunchWatch(
+        interval: TimeInterval = RideWatchFrontmostPolicy.relaunchInterval
+    ) {
+        let now = Date()
+        guard RideWatchFrontmostPolicy.shouldRelaunchWatch(
+            lastLaunchAt: lastWatchLaunchAt,
+            now: now,
+            interval: interval
+        ) else { return }
+        lastWatchLaunchAt = now
+        launchWatchWorkoutIfPossible(generation: launchGeneration)
     }
 
     func resetActivity() {
@@ -101,20 +124,27 @@ final class RideWatchPhoneSession: NSObject, ObservableObject {
     /// Ask watchOS to bring Ride Monitor to the front as a cycling workout so
     /// the user doesn't have to open it manually mid-ride. HealthKit is
     /// required for that frontmost session (any workout type works; cycling
-    /// matches this app).
-    private func launchWatchWorkoutIfPossible() {
+    /// matches this app). Safe to call repeatedly — if the companion is
+    /// already frontmost with a session, watchOS just redelivers the
+    /// configuration.
+    private func launchWatchWorkoutIfPossible(generation: Int) {
         guard HKHealthStore.isHealthDataAvailable() else { return }
         guard let session, session.isPaired else { return }
 
         Task {
             await ensureHealthAuthorization()
+            // Ride may have ended while Health authorization was in flight.
+            guard generation == self.launchGeneration,
+                  self.pendingSnapshot?.isRiding == true else { return }
             let configuration = HKWorkoutConfiguration()
             configuration.activityType = .cycling
             configuration.locationType = .outdoor
             do {
                 try await healthStore.startWatchApp(toHandle: configuration)
+                RideMonitorLog.info("startWatchApp requested for Ride Monitor companion")
             } catch {
                 // Watch is optional — phone recording continues regardless.
+                RideMonitorLog.error("startWatchApp failed: \(error.localizedDescription)")
             }
         }
     }
@@ -160,7 +190,7 @@ extension RideWatchPhoneSession: WCSessionDelegate {
 
     nonisolated func sessionReachabilityDidChange(_ session: WCSession) {
         Task { @MainActor in
-            self.flushPending()
+            self.handleWatchReachabilityChanged(isReachable: session.isReachable)
         }
     }
 

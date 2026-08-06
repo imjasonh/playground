@@ -5,11 +5,17 @@ import HealthKit
 /// Receives `startWatchApp` launches from the phone so we can start the
 /// frontmost HealthKit workout session (required for long-running Watch
 /// execution — not because the ride is specifically cycling) without the user
-/// hunting for the companion.
+/// hunting for the companion. Crash recovery uses `handleActiveWorkoutRecovery`.
 final class RideWatchAppDelegate: NSObject, WKApplicationDelegate {
     func handle(_ workoutConfiguration: HKWorkoutConfiguration) {
         Task { @MainActor in
             RideWatchWorkoutController.shared.handle(workoutConfiguration)
+        }
+    }
+
+    func handleActiveWorkoutRecovery() {
+        Task { @MainActor in
+            RideWatchWorkoutController.shared.recoverActiveSessionIfNeeded()
         }
     }
 }

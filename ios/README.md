@@ -78,10 +78,14 @@ history mid-ride does not trigger that stop). While a ride is active it also:
    remains the GPS/jolt recorder). Starting a ride launches the Watch app into
    an `HKWorkoutSession` so it stays frontmost — HealthKit is required for that
    long-running Watch execution (any workout type works; we use cycling to
-   match the app). The session collects heart rate, active/basal energy, Watch
-   cycling distance, and cadence/speed/power when available, mirrors them to
-   the phone for the saved ride, and finishes a cycling workout into Health on
-   stop.
+   match the app). watchOS returns to the clock face when that session is not
+   active, and also after the Digital Crown dismisses the app even with a live
+   session; while the phone ride is active the Watch keeps (or retries) an
+   `HKWorkoutSession`, and the phone re-calls `startWatchApp` every ~45s to
+   bring the UI forward again. The session collects heart rate, active/basal
+   energy, Watch cycling distance, and cadence/speed/power when available,
+   mirrors them to the phone for the saved ride, and finishes a cycling
+   workout into Health on stop.
 
 Both need a one-time **iOS signing bootstrap** after this tree lands (new Bundle
 IDs, and again when HealthKit is first enabled on the host + Watch App IDs).
