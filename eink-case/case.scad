@@ -24,57 +24,56 @@
 // Open in OpenSCAD Customizer, or override with -D on the CLI.
 
 /* [Parts] */
-part = "assembled"; // [assembled, front, back]
-show_components = true;
-explode = 0; // [0:0.5:25]
+part = "assembled";          // [assembled, front, back] Which object to show / export
+show_components = true;      // Ghost panel + board in assembled preview
+explode = 0;                 // [0:0.5:25] Lid / board separation for assembly views (mm)
 
 /* [Panel — Waveshare 7.5" raw] */
-panel_w = 170.2;
-panel_h = 111.2;
-panel_t = 1.20;
-active_w = 163.2;
-active_h = 97.92;
-bezel_left = 3.5;
-bezel_right = 3.5;
-bezel_top = 3.40; // edge opposite the FPC
+panel_w = 170.2;             // [160:0.1:180] Panel outline width (mm)
+panel_h = 111.2;             // [100:0.1:120] Panel outline height (mm)
+panel_t = 1.20;              // [0.8:0.05:2] Panel thickness (mm)
+active_w = 163.2;            // [150:0.1:170] Active area width (mm)
+active_h = 97.92;            // [90:0.01:110] Active area height (mm)
+bezel_left = 3.5;            // [2:0.1:8] Left outline→AA bezel (mm)
+bezel_right = 3.5;           // [2:0.1:8] Right outline→AA bezel (mm)
+bezel_top = 3.40;            // [2:0.1:8] Bezel opposite the FPC edge (mm)
 // bezel_fpc derived: panel_h - active_h - bezel_top
 
 /* [FPC / SPI ribbon] */
-fpc_w = 14.0;        // 24-pin @ 0.5 mm pitch outline, with margin
-fpc_t = 0.35;
-fpc_slot_extra = 4.0; // room outside the panel edge for the fold
-fpc_channel_w = 22.0; // trough under the panel for FPC + extension
-fpc_channel_len = 55.0;
+fpc_w = 14.0;                // [10:0.5:20] FPC width allowance (mm)
+fpc_t = 0.35;                // [0.2:0.05:0.6] FPC thickness (mm)
+fpc_slot_extra = 4.0;        // [2:0.5:10] Room outside panel edge for the fold (mm)
+fpc_channel_w = 22.0;        // [14:1:40] Trough width under panel for FPC + extension (mm)
+fpc_channel_len = 55.0;      // [30:5:100] Trough length under panel (mm)
 
 /* [ESP32 driver board] */
-board_w = 29.46;
-board_l = 48.25;
-board_t = 1.60;
-board_comp_h = 8.0;  // ESP32 module + USB-C shell clearance
-usb_w = 9.2;
-usb_h = 3.6;
-usb_protrude = 1.5;
-board_pocket_clear = 0.5; // XY slop around PCB in its cradle
+board_w = 29.46;             // [25:0.01:40] Board short axis (mm)
+board_l = 48.25;             // [40:0.01:60] Board long axis, USB↔ZIF (mm)
+board_t = 1.60;              // [1.2:0.1:2.4] PCB thickness (mm)
+board_comp_h = 8.0;          // [5:0.5:15] Component clearance above PCB (mm)
+usb_w = 9.2;                 // [8:0.1:12] USB-C shell width (mm)
+usb_h = 3.6;                 // [3:0.1:5] USB-C shell height (mm)
+usb_protrude = 1.5;          // [0.5:0.1:3] USB shell past PCB edge (mm)
+board_pocket_clear = 0.5;    // [0.2:0.1:1.2] XY slop in board cradle (mm)
 
 /* [Case geometry] */
-wall = 2.4;
-groove_clearance = 0.40;
-groove_lip = 1.2;
-rear_bay_extra = 3.0;
-lid_thickness = 2.4;
-corner_r = 4.0;
-screw_d = 2.4;           // M2 clearance through lid
-screw_boss_d = 7.0;
-screw_boss_id = 1.7;     // pilot for M2 self-tapping into plastic
-use_snaps = true;
+wall = 2.4;                  // [1.5:0.1:4] Outer wall thickness (mm)
+groove_clearance = 0.40;     // [0.2:0.05:0.8] Slip fit around panel outline (mm)
+groove_lip = 1.2;            // [0.8:0.1:2.5] Front bezel lip thickness (mm)
+rear_bay_extra = 3.0;        // [1:0.5:8] Extra bay air around board / cable (mm)
+lid_thickness = 2.4;         // [1.5:0.1:4] Back lid thickness (mm)
+corner_r = 4.0;              // [0:0.5:10] Outer corner radius (mm)
+screw_d = 2.4;               // [2:0.1:3.5] Lid screw clearance hole (mm)
+screw_boss_d = 7.0;          // [5:0.5:10] Lid screw boss outer diameter (mm)
+screw_boss_id = 1.7;         // [1.4:0.1:2.2] M2 self-tap pilot diameter (mm)
+use_snaps = true;            // Add lid snap tabs
 
 /* [USB exit] */
-// Perimeter wall the USB-C cable leaves through.
-usb_exit = "back"; // [back, side, bottom]
+usb_exit = "back";           // [back, side, bottom] Perimeter wall for USB-C
 
 /* [Tolerances / print] */
-$fn = 48;
-eps = 0.02;
+$fn = 48;                    // [16:8:96] Circle segments
+eps = 0.02;                  // Boolean overlap fudge (mm)
 
 // ---------------------------------------------------------------------------
 // Derived dimensions

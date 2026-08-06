@@ -1,0 +1,275 @@
+{
+  "name": "Waveshare 7.5\" e-Paper + ESP32 case",
+  "description": "Two-part parametric case: slide-in panel groove, folded SPI trough, ESP32 cradle, USB-C wall exit.",
+  "tags": [
+    "e-paper",
+    "waveshare",
+    "esp32",
+    "enclosure",
+    "functional"
+  ],
+  "closed_overall_mm": {
+    "w": 175.8,
+    "h": 120.4,
+    "d": 22.2
+  },
+  "printable_parts": [
+    "front",
+    "back"
+  ],
+  "fasteners": {
+    "lid": "4x M2x8mm self-tapping pan-head",
+    "board": "none (cradle + lid posts)"
+  },
+  "parameters": [
+    {
+      "name": "part",
+      "value": "assembled",
+      "type": "string",
+      "options": "assembled, front, back",
+      "description": "Which object to show / export"
+    },
+    {
+      "name": "show_components",
+      "value": "true",
+      "type": "boolean",
+      "description": "Ghost panel + board in assembled preview"
+    },
+    {
+      "name": "explode",
+      "value": "0",
+      "type": "integer",
+      "range": "0:0.5:25",
+      "description": "Lid / board separation for assembly views (mm)"
+    },
+    {
+      "name": "panel_w",
+      "value": "170.2",
+      "type": "number",
+      "range": "160:0.1:180",
+      "description": "Panel outline width (mm)"
+    },
+    {
+      "name": "panel_h",
+      "value": "111.2",
+      "type": "number",
+      "range": "100:0.1:120",
+      "description": "Panel outline height (mm)"
+    },
+    {
+      "name": "panel_t",
+      "value": "1.20",
+      "type": "number",
+      "range": "0.8:0.05:2",
+      "description": "Panel thickness (mm)"
+    },
+    {
+      "name": "active_w",
+      "value": "163.2",
+      "type": "number",
+      "range": "150:0.1:170",
+      "description": "Active area width (mm)"
+    },
+    {
+      "name": "active_h",
+      "value": "97.92",
+      "type": "number",
+      "range": "90:0.01:110",
+      "description": "Active area height (mm)"
+    },
+    {
+      "name": "bezel_left",
+      "value": "3.5",
+      "type": "number",
+      "range": "2:0.1:8",
+      "description": "Left outline\u2192AA bezel (mm)"
+    },
+    {
+      "name": "bezel_right",
+      "value": "3.5",
+      "type": "number",
+      "range": "2:0.1:8",
+      "description": "Right outline\u2192AA bezel (mm)"
+    },
+    {
+      "name": "bezel_top",
+      "value": "3.40",
+      "type": "number",
+      "range": "2:0.1:8",
+      "description": "Bezel opposite the FPC edge (mm)"
+    },
+    {
+      "name": "fpc_w",
+      "value": "14.0",
+      "type": "number",
+      "range": "10:0.5:20",
+      "description": "FPC width allowance (mm)"
+    },
+    {
+      "name": "fpc_t",
+      "value": "0.35",
+      "type": "number",
+      "range": "0.2:0.05:0.6",
+      "description": "FPC thickness (mm)"
+    },
+    {
+      "name": "fpc_slot_extra",
+      "value": "4.0",
+      "type": "number",
+      "range": "2:0.5:10",
+      "description": "Room outside panel edge for the fold (mm)"
+    },
+    {
+      "name": "fpc_channel_w",
+      "value": "22.0",
+      "type": "number",
+      "range": "14:1:40",
+      "description": "Trough width under panel for FPC + extension (mm)"
+    },
+    {
+      "name": "fpc_channel_len",
+      "value": "55.0",
+      "type": "number",
+      "range": "30:5:100",
+      "description": "Trough length under panel (mm)"
+    },
+    {
+      "name": "board_w",
+      "value": "29.46",
+      "type": "number",
+      "range": "25:0.01:40",
+      "description": "Board short axis (mm)"
+    },
+    {
+      "name": "board_l",
+      "value": "48.25",
+      "type": "number",
+      "range": "40:0.01:60",
+      "description": "Board long axis, USB\u2194ZIF (mm)"
+    },
+    {
+      "name": "board_t",
+      "value": "1.60",
+      "type": "number",
+      "range": "1.2:0.1:2.4",
+      "description": "PCB thickness (mm)"
+    },
+    {
+      "name": "board_comp_h",
+      "value": "8.0",
+      "type": "number",
+      "range": "5:0.5:15",
+      "description": "Component clearance above PCB (mm)"
+    },
+    {
+      "name": "usb_w",
+      "value": "9.2",
+      "type": "number",
+      "range": "8:0.1:12",
+      "description": "USB-C shell width (mm)"
+    },
+    {
+      "name": "usb_h",
+      "value": "3.6",
+      "type": "number",
+      "range": "3:0.1:5",
+      "description": "USB-C shell height (mm)"
+    },
+    {
+      "name": "usb_protrude",
+      "value": "1.5",
+      "type": "number",
+      "range": "0.5:0.1:3",
+      "description": "USB shell past PCB edge (mm)"
+    },
+    {
+      "name": "board_pocket_clear",
+      "value": "0.5",
+      "type": "number",
+      "range": "0.2:0.1:1.2",
+      "description": "XY slop in board cradle (mm)"
+    },
+    {
+      "name": "wall",
+      "value": "2.4",
+      "type": "number",
+      "range": "1.5:0.1:4",
+      "description": "Outer wall thickness (mm)"
+    },
+    {
+      "name": "groove_clearance",
+      "value": "0.40",
+      "type": "number",
+      "range": "0.2:0.05:0.8",
+      "description": "Slip fit around panel outline (mm)"
+    },
+    {
+      "name": "groove_lip",
+      "value": "1.2",
+      "type": "number",
+      "range": "0.8:0.1:2.5",
+      "description": "Front bezel lip thickness (mm)"
+    },
+    {
+      "name": "rear_bay_extra",
+      "value": "3.0",
+      "type": "number",
+      "range": "1:0.5:8",
+      "description": "Extra bay air around board / cable (mm)"
+    },
+    {
+      "name": "lid_thickness",
+      "value": "2.4",
+      "type": "number",
+      "range": "1.5:0.1:4",
+      "description": "Back lid thickness (mm)"
+    },
+    {
+      "name": "corner_r",
+      "value": "4.0",
+      "type": "number",
+      "range": "0:0.5:10",
+      "description": "Outer corner radius (mm)"
+    },
+    {
+      "name": "screw_d",
+      "value": "2.4",
+      "type": "number",
+      "range": "2:0.1:3.5",
+      "description": "Lid screw clearance hole (mm)"
+    },
+    {
+      "name": "screw_boss_d",
+      "value": "7.0",
+      "type": "number",
+      "range": "5:0.5:10",
+      "description": "Lid screw boss outer diameter (mm)"
+    },
+    {
+      "name": "screw_boss_id",
+      "value": "1.7",
+      "type": "number",
+      "range": "1.4:0.1:2.2",
+      "description": "M2 self-tap pilot diameter (mm)"
+    },
+    {
+      "name": "use_snaps",
+      "value": "true",
+      "type": "boolean",
+      "description": "Add lid snap tabs"
+    },
+    {
+      "name": "usb_exit",
+      "value": "back",
+      "type": "string",
+      "options": "back, side, bottom",
+      "description": "Perimeter wall for USB-C"
+    },
+    {
+      "name": "lid_post_gap",
+      "value": "0.3",
+      "type": "number",
+      "description": "air above PCB copper"
+    }
+  ]
+}

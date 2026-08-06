@@ -1,1 +1,10 @@
-
+============================================================
+CLOSED OVERALL: 175.8 x 120.4 x 22.2 mm
+  (W x H x D — width along panel long edge, depth front-to-back)
+Printable parts: 2  (front shell + back lid)
+Lid screws: 4 x M2x8mm self-tapping pan head -> 1.7 mm pilots
+Board screws: none (PCB has no holes; pocket + lid posts)
+Panel pocket: 171 x 111.6 x 2 mm
+Bay depth: 16.6 mm; USB exit: back
+FPC-side panel bezel: 9.88 mm; opposite: 3.4 mm
+============================================================

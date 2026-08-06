@@ -60,10 +60,16 @@ Snaps alone can hold the lid for a dry fit; use the M2 screws for a finished ass
 
 ## Usage
 
+This project vendors the
+[mitsuhiko/agent-stuff OpenSCAD skill](https://github.com/mitsuhiko/agent-stuff/tree/main/skills/openscad)
+under `tools/`. See [`AGENTS.md`](AGENTS.md) for the agent workflow.
+
 ```bash
-openscad case.scad          # Customizer
-bash render.sh              # PNG previews
-bash export-stl.sh          # refresh stl/front.stl + stl/back.stl
+openscad case.scad                 # Customizer GUI
+./tools/validate.sh case.scad      # syntax + dimension echoes
+bash render.sh                     # multi-angle PNGs → previews/
+bash export-stl.sh                 # refresh stl/front.stl + stl/back.stl
+./tools/extract-params.sh case.scad
 ```
 
 | Parameter | Default | Meaning |
