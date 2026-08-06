@@ -1,4 +1,5 @@
-*.stl
 *.amf
 *.3mf
 renders/
+# Keep committed reference STLs under stl/; ignore ad-hoc exports at the root.
+/*.stl
