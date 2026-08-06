@@ -255,21 +255,6 @@ func (h *Hub) BindMigration(id session.ID, commands chan session.MigrationComman
 	return h.Sessions.BindMigration(id, commands)
 }
 
-// FreezeApp disconnects a backend hop while preserving the outer SSH session.
-func (h *Hub) FreezeApp(ctx context.Context, user, app, gen string) (int, error) {
-	return h.Sessions.Freeze(ctx, user, app, gen)
-}
-
-// ThawApp lets a frozen session reconnect through current placement.
-func (h *Hub) ThawApp(ctx context.Context, user, app, gen string) (int, error) {
-	return h.Sessions.Thaw(ctx, user, app, gen)
-}
-
-// KickApp terminates matching outer sessions.
-func (h *Hub) KickApp(user, app, gen string) int {
-	return h.Sessions.Kick(user, app, gen)
-}
-
 func (h *Hub) SessionIDs(user, app, gen string) []session.ID {
 	return h.Sessions.MatchingIDs(user, app, gen)
 }

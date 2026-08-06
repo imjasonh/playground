@@ -33,6 +33,7 @@ import (
 	"github.com/imjasonh/playground/sshcloud/internal/controlauth"
 	"github.com/imjasonh/playground/sshcloud/internal/drain"
 	"github.com/imjasonh/playground/sshcloud/internal/genid"
+	"github.com/imjasonh/playground/sshcloud/internal/healthhttp"
 	"github.com/imjasonh/playground/sshcloud/internal/image"
 	"github.com/imjasonh/playground/sshcloud/internal/migrate"
 	"github.com/imjasonh/playground/sshcloud/internal/names"
@@ -49,18 +50,12 @@ func main() {
 	adminSocket := flag.String("admin-socket", "", "root-owned Unix socket for the admin HTTPS API")
 	hostsFlag := flag.String("hosts", "", "comma-separated hostID[@instance-id]=baseURL pairs")
 	hostsFile := flag.String("hosts-file", "", "hosts file (name@instance-id=url per line in production); reloaded every 30s")
-	defaultHost := flag.String("default-host", "", "default placement host ID")
 	gceZone := flag.String("gce-zone", "", "GCE zone used for immutable instance tombstone checks")
 	firestoreProject := flag.String("firestore-project", "", "GCP project for Firestore placement (default: in-memory)")
 	firestorePrefix := flag.String("firestore-prefix", "sshcloud", "Firestore collection prefix")
 	userFirestoreDatabase := flag.String("user-firestore-database", "sshcloud-user", "user/app/quota Firestore database ID")
 	placementFirestoreDatabase := flag.String("placement-firestore-database", "sshcloud-placement", "placement/operation Firestore database ID")
-	controlCert := flag.String("control-cert", "", "reloadable orchestrator control certificate PEM")
-	controlKey := flag.String("control-key", "", "reloadable orchestrator control private-key PEM")
-	controlCACurrent := flag.String("control-ca-current", "", "reloadable current control CA PEM")
-	controlCAPrevious := flag.String("control-ca-previous", "", "reloadable previous control CA PEM")
-	controlBundle := flag.String("control-bundle", "", "atomically switched control TLS bundle directory")
-	controlBundleMaxAge := flag.Duration("control-bundle-max-age", controlauth.DefaultBundleLease, "last-known-good control bundle lease")
+	controlTLS := controlauth.RegisterTLSFlags(flag.CommandLine, controlauth.RoleOrchestrator)
 	controlProjectID := flag.String("control-project-id", "", "expected GCE identity-token project ID")
 	controlProjectNumber := flag.String("control-project-number", "", "expected GCE identity-token project number")
 	gatewayServiceAccount := flag.String("gateway-service-account", "", "exact gateway service-account email")
@@ -73,12 +68,7 @@ func main() {
 	wakesPerHour := flag.Int("wakes-per-hour", 30, "wake/start admissions per user per hour")
 	flag.Parse()
 
-	controlFiles := controlauth.TLSFiles{
-		BundleDir: *controlBundle,
-		MaxAge:    *controlBundleMaxAge,
-		CertFile:  *controlCert, KeyFile: *controlKey,
-		CurrentCAFile: *controlCACurrent, PreviousCAFile: *controlCAPrevious,
-	}
+	controlFiles := controlTLS.Files()
 	if *insecureControl {
 		if err := controlauth.ValidateLoopbackListen(*listen); err != nil {
 			log.Fatal(err)
@@ -167,7 +157,7 @@ func main() {
 		log.Printf("placement: in-memory")
 	}
 
-	hosts := backend.NewHostSet(initial, *defaultHost)
+	hosts := backend.NewHostSet(initial)
 	mig := &migrate.Migrator{Placement: place, Hosts: hosts}
 	dial := &backend.PlacedDial{
 		Placement: place, Agents: hosts,
@@ -203,16 +193,11 @@ func main() {
 	}
 	go reconcilePlacementLeases(ctx, place, hosts, tombstones)
 
-	healthMux := http.NewServeMux()
 	api := http.NewServeMux()
-	healthMux.HandleFunc("GET /livez", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	})
 	ready := func(w http.ResponseWriter, r *http.Request) {
 		readyCtx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
 		defer cancel()
-		if err := controlauth.BundleFresh(*controlBundle, *controlBundleMaxAge); err != nil {
+		if err := controlTLS.Fresh(); err != nil {
 			http.Error(w, "unavailable", http.StatusServiceUnavailable)
 			return
 		}
@@ -231,9 +216,6 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	}
-	healthMux.HandleFunc("GET /readyz", ready)
-	healthMux.HandleFunc("GET /healthz", ready)
-	healthMux.Handle("GET /metrics", observability.MetricsHandler())
 	api.HandleFunc("GET /v1/readyz", ready)
 	api.HandleFunc("GET /v1/hosts", func(w http.ResponseWriter, r *http.Request) {
 		type hostView struct {
@@ -252,10 +234,7 @@ func main() {
 			views = append(views, view)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"hosts":   views,
-			"default": hosts.DefaultHost(),
-		})
+		_ = json.NewEncoder(w).Encode(map[string]any{"hosts": views})
 	})
 	api.HandleFunc("POST /v1/hosts/cordon", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -534,7 +513,7 @@ func main() {
 		gatewayListener = tls.NewListener(gatewayListener, serverTLS)
 	}
 	go func() {
-		log.Printf("sshcloud orchestrator gateway service on %s (hosts=%v default=%s)", *listen, hosts.IDs(), hosts.DefaultHost())
+		log.Printf("sshcloud orchestrator gateway service on %s (hosts=%v)", *listen, hosts.IDs())
 		if err := gatewayServer.Serve(gatewayListener); err != nil && err != http.ErrServerClosed {
 			log.Fatal(err)
 		}
@@ -564,11 +543,9 @@ func main() {
 
 	var healthServer *http.Server
 	if *healthListen != "" {
-		healthServer = &http.Server{
-			Addr: *healthListen, Handler: healthMux,
-			ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 5 * time.Second,
-			WriteTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second,
-		}
+		healthServer = healthhttp.NewServer(*healthListen, func(mux *http.ServeMux) {
+			healthhttp.Mount(mux, ready)
+		})
 		go func() {
 			log.Printf("sshcloud orchestrator health HTTP on %s", *healthListen)
 			if err := healthServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {

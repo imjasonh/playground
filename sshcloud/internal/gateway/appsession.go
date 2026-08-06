@@ -25,10 +25,10 @@ var fortunes = []string{
 }
 
 func RunAppSession(ctx context.Context, client ClientSession, hub *Hub, res Result) AppExit {
-	return runAppStub(ctx, newSessionTerm(client), hub, res)
+	return runAppSession(ctx, newSessionTerm(client), hub, res)
 }
 
-func runAppStub(ctx context.Context, t *term, hub *Hub, res Result) AppExit {
+func runAppSession(ctx context.Context, t *term, hub *Hub, res Result) AppExit {
 	if hub.UserCA != nil && hub.Dial != nil {
 		img, tier := res.Image, res.Tier
 		if img == "" || tier == "" {
@@ -177,7 +177,7 @@ func runAppStub(ctx context.Context, t *term, hub *Hub, res Result) AppExit {
 		}
 	}
 
-	// Fallback when CA/backend not configured (unit tests / misconfig).
+	// Local demonstration fallback when no CA/backend is configured.
 	if t.client.Spec.StartType != SessionShell {
 		t.client.Spec.ReplyStart(true)
 		fmt.Fprint(t.client.Stderr, "app backend is not configured\r\n")

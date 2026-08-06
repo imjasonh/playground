@@ -97,7 +97,7 @@ func runMenu(ctx context.Context, t *term, hub *Hub, keyFP, userID string) int {
 				continue
 			}
 			sessCtx, cancel := hub.BindSession(ctx, res.Session)
-			runAppStub(sessCtx, t, hub, res)
+			runAppSession(sessCtx, t, hub, res)
 			cancel()
 			hub.ReleaseSession(res.Session)
 			t.Printf("\n")

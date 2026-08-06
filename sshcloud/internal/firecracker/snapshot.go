@@ -14,14 +14,6 @@ type SnapshotFiles struct {
 	MemPath   string // guest memory (mem_file_path)
 }
 
-// SnapshotFilesIn returns default snapshot file paths inside dir.
-func SnapshotFilesIn(dir string) SnapshotFiles {
-	return SnapshotFiles{
-		StatePath: filepath.Join(dir, "vm.state"),
-		MemPath:   filepath.Join(dir, "vm.mem"),
-	}
-}
-
 // Pause freezes the running microVM (required before CreateSnapshot).
 // Firecracker ≥1.0 uses PATCH /vm {"state":"Paused"} (not /actions).
 func (m *Machine) Pause(ctx context.Context) error {

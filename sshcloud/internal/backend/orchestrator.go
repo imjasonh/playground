@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/imjasonh/playground/sshcloud/internal/controlauth"
-	"github.com/imjasonh/playground/sshcloud/internal/placement"
 )
 
 // OrchestratorClient talks to cmd/orchestrator for placement-aware Ensure.
@@ -46,29 +45,6 @@ type TemporaryError struct{ Err error }
 func (e TemporaryError) Error() string   { return e.Err.Error() }
 func (e TemporaryError) Unwrap() error   { return e.Err }
 func (e TemporaryError) Temporary() bool { return true }
-
-// Addr implements gateway dial via POST /v1/ensure.
-func (c *OrchestratorClient) Addr(user, app, gen, image string) (string, error) {
-	return c.AddrContext(context.Background(), user, app, gen, image)
-}
-
-// AddrContext is Addr with cancellation propagated to the orchestrator.
-func (c *OrchestratorClient) AddrContext(ctx context.Context, user, app, gen, image string) (string, error) {
-	return c.AddrTierContext(ctx, user, app, gen, image, "", false)
-}
-
-// AddrTierContext ensures an instance with tier/no-idle settings.
-func (c *OrchestratorClient) AddrTierContext(ctx context.Context, user, app, gen, image, tier string, noIdle bool) (string, error) {
-	target, err := c.TargetTierContext(ctx, user, app, gen, image, tier, noIdle)
-	return target.Addr, err
-}
-
-func (c *OrchestratorClient) TargetTierContext(ctx context.Context, user, app, gen, image, tier string, noIdle bool) (OrchestratorTarget, error) {
-	return c.TargetTierRequest(
-		ctx, user, app, gen, image, tier, noIdle,
-		"session", placement.NewLeaseOwner("session"),
-	)
-}
 
 func (c *OrchestratorClient) TargetTierRequest(ctx context.Context, user, app, gen, image, tier string, noIdle bool, purpose, requestID string) (OrchestratorTarget, error) {
 	return c.ensure(ctx, orchEnsureBody{
@@ -111,11 +87,6 @@ func (c *OrchestratorClient) Ready(ctx context.Context) error {
 
 // Ensure implements cutover.Instances via POST /v1/ensure.
 func (c *OrchestratorClient) Ensure(ctx context.Context, user, app, gen, image, tier string, noIdle bool) error {
-	return c.EnsureTier(ctx, user, app, gen, image, tier, noIdle)
-}
-
-// EnsureTier is Ensure with an explicit resource tier.
-func (c *OrchestratorClient) EnsureTier(ctx context.Context, user, app, gen, image, tier string, noIdle bool) error {
 	_, err := c.ensure(ctx, orchEnsureBody{
 		User: user, App: app, Gen: gen, Image: image, Tier: tier, NoIdle: noIdle,
 		Purpose: "deploy", RequestID: gen,

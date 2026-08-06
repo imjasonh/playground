@@ -64,8 +64,9 @@ func TestControlHTTPKernelRequiresBoundedExactJSON(t *testing.T) {
 			}))
 			defer server.Close()
 			client := &OrchestratorClient{BaseURL: server.URL, InsecureLoopback: true}
-			if _, err := client.TargetTierContext(
+			if _, err := client.TargetTierRequest(
 				context.Background(), "alice", "app", "g1", "", "tiny", false,
+				"session", "test-session",
 			); err == nil {
 				t.Fatal("invalid control JSON response was accepted")
 			}
@@ -96,7 +97,7 @@ func TestGatewayFreezeModelsCompleteStrictResponse(t *testing.T) {
 func TestControlHTTPKernelRejectsNonLoopbackInsecureURL(t *testing.T) {
 	t.Parallel()
 	client := &GatewayClient{BaseURL: "http://192.0.2.1", InsecureLoopback: true}
-	if err := client.Abort(context.Background(), "token"); err == nil {
+	if err := client.Thaw(context.Background(), "token"); err == nil {
 		t.Fatal("insecure non-loopback control URL was accepted")
 	}
 }

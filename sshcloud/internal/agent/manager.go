@@ -1346,46 +1346,20 @@ func (m *Manager) preflightSnapshot(
 	if err != nil {
 		return InstanceInfo{}, snapshot.Meta{}, err
 	}
-	if err := snapshot.ValidateMeta(ref, meta, m.rt.SnapshotLayout()); err != nil {
-		return InstanceInfo{}, snapshot.Meta{}, err
-	}
-	if meta.SchemaVersion != snapshot.SchemaVersion {
-		return InstanceInfo{}, snapshot.Meta{}, fmt.Errorf("snapshot schema version %d is unsupported", meta.SchemaVersion)
-	}
-	if meta.LayoutVersion != m.rt.SnapshotLayout() {
-		return InstanceInfo{}, snapshot.Meta{}, fmt.Errorf("snapshot layout %q is incompatible with runtime %q", meta.LayoutVersion, m.rt.SnapshotLayout())
-	}
-	tier, _, _, err := tierResources(meta.Tier)
+	meta, err = m.validateSnapshotCompatibility(k, meta)
 	if err != nil {
-		return InstanceInfo{}, snapshot.Meta{}, err
-	}
-	if platformVersion := m.platformVersion(); platformVersion != "" && meta.PlatformVersion != platformVersion {
-		return InstanceInfo{}, snapshot.Meta{}, fmt.Errorf("snapshot platform version %q is incompatible with host %q", meta.PlatformVersion, platformVersion)
-	}
-	if err := validateSSHHostPublicKey(meta.SSHHostPublicKey); err != nil {
-		return InstanceInfo{}, snapshot.Meta{}, err
-	}
-	resourceID := instanceResourceID(k)
-	if meta.TapName != "fc-"+resourceID {
-		return InstanceInfo{}, snapshot.Meta{}, fmt.Errorf("snapshot host resource metadata is incompatible")
-	}
-	if err := m.validateSnapshotNetwork(k, meta); err != nil {
 		return InstanceInfo{}, snapshot.Meta{}, err
 	}
 	baseApp, gen := genid.SplitAgentApp(app)
 	return InstanceInfo{
 		User: user, App: baseApp, Gen: gen, AgentApp: app,
-		Image: meta.Image, Tier: tier, State: StateSleeping,
+		Image: meta.Image, Tier: meta.Tier, State: StateSleeping,
 		SSHHostPublicKey: meta.SSHHostPublicKey,
 	}, meta, nil
 }
 
-// RegisterSleeping validates and records snapshot ownership on a target without
-// waking the VM. It is a cordon-visible host claim for sleeping generations.
-func (m *Manager) RegisterSleeping(ctx context.Context, user, app string) (InstanceInfo, error) {
-	return m.RegisterSleepingWithEpoch(ctx, user, app, "")
-}
-
+// RegisterSleepingWithEpoch validates and records snapshot ownership without
+// waking the VM, including an optional cordon recovery epoch.
 func (m *Manager) RegisterSleepingWithEpoch(
 	ctx context.Context,
 	user, app, cordonEpoch string,
@@ -1521,26 +1495,10 @@ func (m *Manager) adopt(ctx context.Context, k InstanceKey, _ int, opt EnsureOpt
 		}
 	}()
 	meta := pkg.Meta
-	if err := snapshot.ValidateMeta(ref, meta, m.rt.SnapshotLayout()); err != nil {
-		return nil, err
-	}
-	if meta.SchemaVersion != snapshot.SchemaVersion {
-		return nil, fmt.Errorf("snapshot schema version %d is unsupported", meta.SchemaVersion)
-	}
-	if meta.LayoutVersion != m.rt.SnapshotLayout() {
-		return nil, fmt.Errorf("snapshot layout %q is incompatible with runtime %q", meta.LayoutVersion, m.rt.SnapshotLayout())
-	}
-	if platformVersion := m.platformVersion(); platformVersion != "" && meta.PlatformVersion != platformVersion {
-		return nil, fmt.Errorf("snapshot platform version %q is incompatible with host %q", meta.PlatformVersion, platformVersion)
-	}
-	if err := validateSSHHostPublicKey(meta.SSHHostPublicKey); err != nil {
-		return nil, err
-	}
-	tier, _, _, err := tierResources(meta.Tier)
+	meta, err = m.validateSnapshotCompatibility(k, meta)
 	if err != nil {
-		return nil, fmt.Errorf("snapshot tier: %w", err)
+		return nil, err
 	}
-	meta.Tier = tier
 	if opt.Image != "" && meta.Image != opt.Image {
 		return nil, fmt.Errorf("snapshot image %q does not match requested %q", meta.Image, opt.Image)
 	}
@@ -1553,15 +1511,6 @@ func (m *Manager) adopt(ctx context.Context, k InstanceKey, _ int, opt EnsureOpt
 	// from identity and never loaded from snapshot metadata.
 	rootfsPath := filepath.Join(dir, "rootfs.ext4")
 	tapName := "fc-" + resourceID
-	if meta.TapName != tapName {
-		return nil, fmt.Errorf("snapshot TAP %q does not match expected %q", meta.TapName, tapName)
-	}
-	if meta.GuestIP == "" || meta.HostIP == "" || meta.GuestMAC == "" {
-		return nil, fmt.Errorf("snapshot network metadata is incomplete")
-	}
-	if err := m.validateSnapshotNetwork(k, meta); err != nil {
-		return nil, err
-	}
 	if err := m.reserveCapacity(k, meta.Tier, opt.CordonEpoch); err != nil {
 		return nil, err
 	}
@@ -1686,6 +1635,32 @@ func (m *Manager) publishInstance(in *Instance) {
 	m.inst[in.Key] = in
 }
 
+func (m *Manager) validateSnapshotCompatibility(k InstanceKey, meta snapshot.Meta) (snapshot.Meta, error) {
+	ref := snapshot.RefForAgentApp(k.User, k.App)
+	if err := snapshot.ValidateMeta(ref, meta, m.rt.SnapshotLayout()); err != nil {
+		return snapshot.Meta{}, err
+	}
+	tier, _, _, err := tierResources(meta.Tier)
+	if err != nil {
+		return snapshot.Meta{}, fmt.Errorf("snapshot tier: %w", err)
+	}
+	if platformVersion := m.platformVersion(); platformVersion != "" && meta.PlatformVersion != platformVersion {
+		return snapshot.Meta{}, fmt.Errorf("snapshot platform version %q is incompatible with host %q", meta.PlatformVersion, platformVersion)
+	}
+	if err := validateSSHHostPublicKey(meta.SSHHostPublicKey); err != nil {
+		return snapshot.Meta{}, err
+	}
+	expectedTap := "fc-" + instanceResourceID(k)
+	if meta.TapName != expectedTap {
+		return snapshot.Meta{}, fmt.Errorf("snapshot TAP %q does not match expected %q", meta.TapName, expectedTap)
+	}
+	if err := m.validateSnapshotNetwork(k, meta); err != nil {
+		return snapshot.Meta{}, err
+	}
+	meta.Tier = tier
+	return meta, nil
+}
+
 func (m *Manager) validateSnapshotNetwork(k InstanceKey, meta snapshot.Meta) error {
 	if err := hostisolation.ValidateHostIP(meta.HostIP, m.cfg.SubnetBase); err != nil {
 		return fmt.Errorf("snapshot host network: %w", err)
@@ -1784,24 +1759,13 @@ func (m *Manager) wake(ctx context.Context, k InstanceKey) (result *Instance, re
 			retErr = errors.Join(retErr, fmt.Errorf("clean restore plaintext staging: %w", err))
 		}
 	}()
-	if pkg.Meta.SchemaVersion != snapshot.SchemaVersion {
-		return nil, fmt.Errorf("snapshot schema version %d is unsupported", pkg.Meta.SchemaVersion)
-	}
-	if pkg.Meta.LayoutVersion != m.rt.SnapshotLayout() {
-		return nil, fmt.Errorf("snapshot layout %q is incompatible with runtime %q", pkg.Meta.LayoutVersion, m.rt.SnapshotLayout())
-	}
-	if err := snapshot.ValidateMeta(ref, pkg.Meta, m.rt.SnapshotLayout()); err != nil {
+	meta, err := m.validateSnapshotCompatibility(k, pkg.Meta)
+	if err != nil {
 		return nil, err
 	}
-	if pkg.Meta.TapName != in.TapName || pkg.Meta.HostIP != in.HostIP ||
-		pkg.Meta.GuestIP != in.GuestIP || !strings.EqualFold(pkg.Meta.GuestMAC, in.GuestMAC) {
+	if meta.TapName != in.TapName || meta.HostIP != in.HostIP ||
+		meta.GuestIP != in.GuestIP || !strings.EqualFold(meta.GuestMAC, in.GuestMAC) {
 		return nil, fmt.Errorf("snapshot network identity changed while sleeping")
-	}
-	if err := m.validateSnapshotNetwork(k, pkg.Meta); err != nil {
-		return nil, err
-	}
-	if platformVersion := m.platformVersion(); platformVersion != "" && pkg.Meta.PlatformVersion != platformVersion {
-		return nil, fmt.Errorf("snapshot platform version %q is incompatible with host %q", pkg.Meta.PlatformVersion, platformVersion)
 	}
 
 	mach, addr, err := m.restoreFromPackage(ctx, in, pkg)
@@ -1941,12 +1905,7 @@ func (m *Manager) StopContext(ctx context.Context, user, app string) (retErr err
 	return nil
 }
 
-// SetNoIdle prevents idle snapshot-sleep (used while a generation is draining
-// or freshly booted during cutover).
-func (m *Manager) SetNoIdle(user, app string, noIdle bool) error {
-	return m.SetNoIdleContext(context.Background(), user, app, noIdle)
-}
-
+// SetNoIdleContext changes the active-operation hold with cancellation.
 func (m *Manager) SetNoIdleContext(ctx context.Context, user, app string, noIdle bool) error {
 	return m.SetNoIdleWithEpoch(ctx, user, app, noIdle, "")
 }

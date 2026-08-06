@@ -10,6 +10,8 @@ import (
 	"google.golang.org/api/iterator"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/imjasonh/playground/sshcloud/internal/firestoredb"
 )
 
 // Firestore maps user/app → host ID in Cloud Firestore (or the emulator).
@@ -40,17 +42,7 @@ func NewFirestoreWithPrefix(ctx context.Context, projectID, prefix string) (*Fir
 }
 
 func NewFirestoreDatabase(ctx context.Context, projectID, database, prefix string) (*Firestore, error) {
-	if projectID == "" {
-		return nil, fmt.Errorf("firestore project ID required")
-	}
-	if strings.TrimSpace(database) == "" {
-		return nil, fmt.Errorf("firestore database required")
-	}
-	prefix = strings.TrimSpace(prefix)
-	if prefix == "" {
-		return nil, fmt.Errorf("firestore collection prefix required")
-	}
-	client, err := firestore.NewClientWithDatabase(ctx, projectID, database)
+	client, prefix, err := firestoredb.Open(ctx, projectID, database, prefix)
 	if err != nil {
 		return nil, err
 	}
@@ -59,10 +51,10 @@ func NewFirestoreDatabase(ctx context.Context, projectID, database, prefix strin
 
 // Close releases the Firestore client.
 func (f *Firestore) Close() error {
-	if f == nil || f.client == nil {
+	if f == nil {
 		return nil
 	}
-	return f.client.Close()
+	return firestoredb.Close(f.client)
 }
 
 func placementDocID(user, app string) string {

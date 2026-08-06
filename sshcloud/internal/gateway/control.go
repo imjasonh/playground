@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/imjasonh/playground/sshcloud/internal/genid"
+	"github.com/imjasonh/playground/sshcloud/internal/healthhttp"
 	"github.com/imjasonh/playground/sshcloud/internal/names"
 	"github.com/imjasonh/playground/sshcloud/internal/session"
 )
@@ -71,10 +72,6 @@ func (h *ControlHandler) Mount(mux *http.ServeMux) {
 // MountHealth registers only body-free health endpoints on a separate HTTP
 // listener.
 func (h *ControlHandler) MountHealth(mux *http.ServeMux) {
-	mux.HandleFunc("GET /livez", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	})
 	ready := func(w http.ResponseWriter, r *http.Request) {
 		if h.Hub == nil {
 			http.Error(w, "unavailable", http.StatusServiceUnavailable)
@@ -89,8 +86,7 @@ func (h *ControlHandler) MountHealth(mux *http.ServeMux) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	}
-	mux.HandleFunc("GET /readyz", ready)
-	mux.HandleFunc("GET /healthz", ready)
+	healthhttp.Mount(mux, ready)
 }
 
 func (h *ControlHandler) freeze(w http.ResponseWriter, r *http.Request) {

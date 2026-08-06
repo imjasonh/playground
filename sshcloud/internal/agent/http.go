@@ -12,6 +12,7 @@ import (
 
 	"github.com/imjasonh/playground/sshcloud/internal/controlauth"
 	"github.com/imjasonh/playground/sshcloud/internal/genid"
+	"github.com/imjasonh/playground/sshcloud/internal/healthhttp"
 	"github.com/imjasonh/playground/sshcloud/internal/image"
 	"github.com/imjasonh/playground/sshcloud/internal/names"
 )
@@ -87,12 +88,7 @@ func (h *Handler) MountHealth(mux *http.ServeMux) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	}
-	mux.HandleFunc("GET /healthz", ready)
-	mux.HandleFunc("GET /readyz", ready)
-	mux.HandleFunc("GET /livez", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	})
+	healthhttp.Mount(mux, ready)
 }
 
 type instanceRequest struct {

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/imjasonh/playground/sshcloud/internal/controlauth"
+	"github.com/imjasonh/playground/sshcloud/internal/healthhttp"
 	"github.com/imjasonh/playground/sshcloud/internal/hostisolation"
 	"github.com/imjasonh/playground/sshcloud/internal/observability"
 	"github.com/imjasonh/playground/sshcloud/internal/placement"
@@ -40,12 +41,7 @@ func main() {
 	stagingMaxBytes := flag.Int64("staging-max-bytes", 10<<30, "global reserved plaintext staging bytes")
 	stagingMaxOperations := flag.Int("staging-max-operations", 2, "global concurrent plaintext staging operations")
 	stagingMaxPerAgent := flag.Int("staging-max-per-agent", 1, "concurrent staging operations per exact agent incarnation")
-	controlCert := flag.String("control-cert", "", "reloadable snapshot control certificate PEM")
-	controlKey := flag.String("control-key", "", "reloadable snapshot control private-key PEM")
-	controlCACurrent := flag.String("control-ca-current", "", "reloadable current control CA PEM")
-	controlCAPrevious := flag.String("control-ca-previous", "", "reloadable previous control CA PEM")
-	controlBundle := flag.String("control-bundle", "", "atomically switched control TLS bundle directory")
-	controlBundleMaxAge := flag.Duration("control-bundle-max-age", controlauth.DefaultBundleLease, "last-known-good control bundle lease")
+	controlTLS := controlauth.RegisterTLSFlags(flag.CommandLine, controlauth.RoleSnapshot)
 	controlProjectID := flag.String("control-project-id", "", "expected GCE token project ID")
 	controlProjectNumber := flag.String("control-project-number", "", "expected GCE token project number")
 	agentServiceAccount := flag.String("agent-service-account", "", "exact agent service-account email")
@@ -103,7 +99,7 @@ func main() {
 		Store: store, Authorizer: &snapshotd.Authorizer{Placement: place},
 		ExpectedLayout: *expectedLayout, TempDir: *tempDir, Staging: staging,
 		Readiness: func() error {
-			return controlauth.BundleFresh(*controlBundle, *controlBundleMaxAge)
+			return controlTLS.Fresh()
 		},
 	}
 	api := http.NewServeMux()
@@ -115,12 +111,7 @@ func main() {
 		CallerRole: controlauth.RoleAgent, ServiceAccount: *agentServiceAccount,
 		Audience: controlauth.AudienceSnapshot,
 	}, api)
-	tlsConfig, err := controlauth.ServerTLSConfig(controlauth.TLSFiles{
-		BundleDir: *controlBundle,
-		MaxAge:    *controlBundleMaxAge,
-		CertFile:  *controlCert, KeyFile: *controlKey,
-		CurrentCAFile: *controlCACurrent, PreviousCAFile: *controlCAPrevious,
-	}, controlauth.RoleSnapshot)
+	tlsConfig, err := controlauth.ServerTLSConfig(controlTLS.Files(), controlauth.RoleSnapshot)
 	if err != nil {
 		log.Fatalf("snapshot control TLS: %v", err)
 	}
@@ -142,15 +133,8 @@ func main() {
 		}
 	}()
 
-	healthMux := http.NewServeMux()
-	handler.MountHealth(healthMux)
-	healthMux.Handle("GET /metrics", observability.MetricsHandler())
-	healthServer := &http.Server{
-		Addr: *healthListen, Handler: healthMux,
-		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 5 * time.Second,
-		WriteTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second,
-		MaxHeaderBytes: 8 << 10,
-	}
+	healthServer := healthhttp.NewServer(*healthListen, handler.MountHealth)
+	healthServer.MaxHeaderBytes = 8 << 10
 	go func() {
 		log.Printf("sshcloud snapshotd health on %s", *healthListen)
 		if err := healthServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {

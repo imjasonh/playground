@@ -36,13 +36,13 @@ func TestParseHostsSpec(t *testing.T) {
 	}
 }
 
-func TestHostSetReplaceAndDefault(t *testing.T) {
+func TestHostSetReplace(t *testing.T) {
 	t.Parallel()
 	hs := NewHostSet(map[string]*AgentClient{
 		"host-a": {BaseURL: "http://a"},
-	}, "host-a")
-	if hs.DefaultHost() != "host-a" || hs.Len() != 1 {
-		t.Fatalf("init: default=%s len=%d", hs.DefaultHost(), hs.Len())
+	})
+	if hs.Len() != 1 {
+		t.Fatalf("initial length = %d", hs.Len())
 	}
 	hs.Replace(map[string]*AgentClient{
 		"host-b": {BaseURL: "http://b"},
@@ -53,9 +53,6 @@ func TestHostSetReplaceAndDefault(t *testing.T) {
 	c, ok := hs.Get("host-b")
 	if !ok || c.BaseURL != "http://b" {
 		t.Fatalf("host-b: %#v ok=%v", c, ok)
-	}
-	if hs.DefaultHost() != "host-b" {
-		t.Fatalf("fallback default = %q", hs.DefaultHost())
 	}
 }
 
@@ -98,7 +95,7 @@ func TestCandidatesBestFitAndSkipCordoned(t *testing.T) {
 		"a": {BaseURL: a.URL, InsecureLoopback: true},
 		"b": {BaseURL: b.URL, InsecureLoopback: true},
 		"c": {BaseURL: c.URL, InsecureLoopback: true},
-	}, "")
+	})
 	candidates, err := hosts.Candidates(context.Background(), "tiny", nil)
 	if err != nil {
 		t.Fatal(err)

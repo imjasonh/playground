@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/imjasonh/playground/sshcloud/internal/controlauth"
+	"github.com/imjasonh/playground/sshcloud/internal/healthhttp"
 	"github.com/imjasonh/playground/sshcloud/internal/observability"
 	"github.com/imjasonh/playground/sshcloud/internal/snapshot"
 )
@@ -34,12 +35,7 @@ func (h *Handler) Mount(mux *http.ServeMux) {
 }
 
 func (h *Handler) MountHealth(mux *http.ServeMux) {
-	mux.HandleFunc("GET /livez", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	})
-	mux.HandleFunc("GET /readyz", h.health)
-	mux.HandleFunc("GET /healthz", h.health)
+	healthhttp.Mount(mux, h.health)
 	mux.HandleFunc("GET /bounds", h.bounds)
 }
 

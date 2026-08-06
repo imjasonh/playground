@@ -276,7 +276,7 @@ func TestDrainHostMovesRunningAndSleepingGenerations(t *testing.T) {
 		Placement: place,
 		Hosts: backend.NewHostSet(map[string]*backend.AgentClient{
 			"host-a": source.client(), "host-b": target.client(),
-		}, "host-a"),
+		}),
 		Gateway:      &backend.GatewayClient{BaseURL: gateway.server.URL, InsecureLoopback: true},
 		FreezeWindow: time.Second,
 	}

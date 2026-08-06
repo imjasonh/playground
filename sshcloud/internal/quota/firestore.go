@@ -4,14 +4,14 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"sort"
-	"strings"
 	"time"
 
 	"cloud.google.com/go/firestore"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/imjasonh/playground/sshcloud/internal/firestoredb"
 )
 
 type Firestore struct {
@@ -36,13 +36,7 @@ func NewFirestore(ctx context.Context, projectID, prefix string) (*Firestore, er
 }
 
 func NewFirestoreDatabase(ctx context.Context, projectID, database, prefix string) (*Firestore, error) {
-	if projectID == "" || strings.TrimSpace(prefix) == "" {
-		return nil, fmt.Errorf("firestore project and prefix required")
-	}
-	if strings.TrimSpace(database) == "" {
-		return nil, fmt.Errorf("firestore database required")
-	}
-	client, err := firestore.NewClientWithDatabase(ctx, projectID, database)
+	client, prefix, err := firestoredb.Open(ctx, projectID, database, prefix)
 	if err != nil {
 		return nil, err
 	}
@@ -92,8 +86,8 @@ func (f *Firestore) Take(ctx context.Context, req Request) error {
 }
 
 func (f *Firestore) Close() error {
-	if f == nil || f.client == nil {
+	if f == nil {
 		return nil
 	}
-	return f.client.Close()
+	return firestoredb.Close(f.client)
 }

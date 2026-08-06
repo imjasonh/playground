@@ -41,23 +41,6 @@ func (p *PlacedDial) resolve(host, hostInstanceID, user, app string) (*AgentClie
 	return c, host, nil
 }
 
-// Addr dials the placed host agent for this app generation.
-func (p *PlacedDial) Addr(user, app, gen, image string) (string, error) {
-	return p.EnsureAddr(context.Background(), user, app, gen, image, false)
-}
-
-// EnsureAddr boots/wakes and returns the guest SSH address.
-func (p *PlacedDial) EnsureAddr(ctx context.Context, user, app, gen, image string, noIdle bool) (string, error) {
-	return p.EnsureAddrTier(ctx, user, app, gen, image, "", noIdle)
-}
-
-// EnsureAddrTier boots/wakes with an explicit resource tier.
-func (p *PlacedDial) EnsureAddrTier(ctx context.Context, user, app, gen, image, tier string, noIdle bool) (string, error) {
-	return p.EnsureAddrTierWithOptions(ctx, user, app, gen, image, tier, noIdle, StartOptions{
-		Purpose: "session", RequestID: placement.NewLeaseOwner("session"),
-	})
-}
-
 type StartOptions struct {
 	Purpose   string
 	RequestID string

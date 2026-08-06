@@ -16,26 +16,18 @@ import (
 // HostSet is a mutable hostID → AgentClient map. Orchestrator can Replace it
 // when a GCE MIG membership file is refreshed.
 type HostSet struct {
-	mu          sync.RWMutex
-	agents      map[string]*AgentClient
-	defaultHost string
+	mu     sync.RWMutex
+	agents map[string]*AgentClient
 }
 
-// NewHostSet copies agents into a HostSet. defaultHost may be empty (first key).
-func NewHostSet(agents map[string]*AgentClient, defaultHost string) *HostSet {
+// NewHostSet copies agents into a HostSet.
+func NewHostSet(agents map[string]*AgentClient) *HostSet {
 	cp := make(map[string]*AgentClient, len(agents))
 	for k, v := range agents {
 		bindHostClientIdentity(k, v)
 		cp[k] = v
 	}
-	hs := &HostSet{agents: cp, defaultHost: defaultHost}
-	if hs.defaultHost == "" {
-		for id := range cp {
-			hs.defaultHost = id
-			break
-		}
-	}
-	return hs
+	return &HostSet{agents: cp}
 }
 
 // Get returns the agent client for hostID.
@@ -47,24 +39,6 @@ func (h *HostSet) Get(id string) (*AgentClient, bool) {
 	defer h.mu.RUnlock()
 	c, ok := h.agents[id]
 	return c, ok
-}
-
-// DefaultHost is used when placement has no entry yet.
-func (h *HostSet) DefaultHost() string {
-	if h == nil {
-		return ""
-	}
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	if h.defaultHost != "" {
-		if _, ok := h.agents[h.defaultHost]; ok {
-			return h.defaultHost
-		}
-	}
-	for id := range h.agents {
-		return id
-	}
-	return ""
 }
 
 // Replace swaps the live agent map (MIG refresh).

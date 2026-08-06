@@ -2,7 +2,9 @@ package agent
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -729,5 +731,65 @@ func TestSSHHostKeyValidationFailsClosed(t *testing.T) {
 	}
 	if err := validateSSHHostPublicKey(string(ssh.MarshalAuthorizedKey(signer.PublicKey()))); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestSnapshotCompatibilityValidation(t *testing.T) {
+	t.Parallel()
+	key := InstanceKey{User: "alice", App: "fortune"}
+	_, signer, err := hostkey.Generate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256([]byte(key.User + "\x00" + key.App))
+	valid := snapshot.Meta{
+		SchemaVersion:    snapshot.SchemaVersion,
+		LayoutVersion:    hostisolation.SnapshotLayoutDirect,
+		User:             key.User,
+		App:              key.App,
+		GuestIP:          "172.16.2.2",
+		HostIP:           "172.16.2.1",
+		TapName:          "fc-" + instanceResourceID(key),
+		GuestMAC:         fmt.Sprintf("AA:FC:00:%02x:%02x:%02x", sum[0], sum[1], sum[2]),
+		Tier:             " TINY ",
+		PlatformVersion:  "platform-v1",
+		SSHHostPublicKey: string(ssh.MarshalAuthorizedKey(signer.PublicKey())),
+	}
+	manager := &Manager{
+		cfg: Config{SubnetBase: "172.16", PlatformVersion: "platform-v1"},
+		rt:  DirectRuntime{},
+	}
+	got, err := manager.validateSnapshotCompatibility(key, valid)
+	if err != nil {
+		t.Fatalf("valid metadata: %v", err)
+	}
+	if got.Tier != "tiny" {
+		t.Fatalf("normalized tier = %q, want tiny", got.Tier)
+	}
+
+	tests := []struct {
+		name   string
+		change func(*snapshot.Meta)
+		want   string
+	}{
+		{"schema", func(m *snapshot.Meta) { m.SchemaVersion-- }, "schema version"},
+		{"layout", func(m *snapshot.Meta) { m.LayoutVersion = hostisolation.SnapshotLayoutJailer }, "layout"},
+		{"identity", func(m *snapshot.Meta) { m.User = "mallory" }, "identity"},
+		{"platform", func(m *snapshot.Meta) { m.PlatformVersion = "platform-v2" }, "platform version"},
+		{"host key", func(m *snapshot.Meta) { m.SSHHostPublicKey = "" }, "SSH host key"},
+		{"tap", func(m *snapshot.Meta) { m.TapName = "fc-wrong" }, "TAP"},
+		{"network", func(m *snapshot.Meta) { m.GuestIP = "172.16.2.3" }, "guest network"},
+		{"mac", func(m *snapshot.Meta) { m.GuestMAC = "AA:FC:00:00:00:00" }, "MAC"},
+		{"tier", func(m *snapshot.Meta) { m.Tier = "huge" }, "snapshot tier"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			meta := valid
+			tc.change(&meta)
+			_, err := manager.validateSnapshotCompatibility(key, meta)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %v, want substring %q", err, tc.want)
+			}
+		})
 	}
 }

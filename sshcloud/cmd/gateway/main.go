@@ -21,6 +21,7 @@ import (
 	"github.com/imjasonh/playground/sshcloud/internal/controlauth"
 	"github.com/imjasonh/playground/sshcloud/internal/cutover"
 	"github.com/imjasonh/playground/sshcloud/internal/gateway"
+	"github.com/imjasonh/playground/sshcloud/internal/healthhttp"
 	"github.com/imjasonh/playground/sshcloud/internal/hostkey"
 	"github.com/imjasonh/playground/sshcloud/internal/image"
 	"github.com/imjasonh/playground/sshcloud/internal/observability"
@@ -45,12 +46,7 @@ func main() {
 	drainTimeout := flag.Duration("drain-timeout", cutover.DefaultDrainTimeout, "deploy drain kick timeout")
 	controlListen := flag.String("control-listen", "", "internal migration-control HTTPS address (empty disables)")
 	healthListen := flag.String("health-listen", "", "unauthenticated health-only HTTP address (empty disables)")
-	controlCert := flag.String("control-cert", "", "reloadable gateway control certificate PEM")
-	controlKey := flag.String("control-key", "", "reloadable gateway control private-key PEM")
-	controlCACurrent := flag.String("control-ca-current", "", "reloadable current control CA PEM")
-	controlCAPrevious := flag.String("control-ca-previous", "", "reloadable previous control CA PEM")
-	controlBundle := flag.String("control-bundle", "", "atomically switched control TLS bundle directory")
-	controlBundleMaxAge := flag.Duration("control-bundle-max-age", controlauth.DefaultBundleLease, "last-known-good control bundle lease")
+	controlTLS := controlauth.RegisterTLSFlags(flag.CommandLine, controlauth.RoleGateway)
 	controlProjectID := flag.String("control-project-id", "", "expected GCE identity-token project ID")
 	controlProjectNumber := flag.String("control-project-number", "", "expected GCE identity-token project number")
 	orchestratorServiceAccount := flag.String("orchestrator-service-account", "", "exact orchestrator service-account email")
@@ -75,12 +71,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("user CA: %v", err)
 	}
-	controlFiles := controlauth.TLSFiles{
-		BundleDir: *controlBundle,
-		MaxAge:    *controlBundleMaxAge,
-		CertFile:  *controlCert, KeyFile: *controlKey,
-		CurrentCAFile: *controlCACurrent, PreviousCAFile: *controlCAPrevious,
-	}
+	controlFiles := controlTLS.Files()
 	controlEnabled := *orchURL != "" || *agentURL != "" || *controlListen != ""
 	if *insecureControl {
 		if *controlListen != "" {
@@ -145,7 +136,7 @@ func main() {
 		Quotas:            quotaStore,
 		Limits:            gateway.Limits{AppsPerUser: *maxAppsPerUser, DeploysPerHour: *deploysPerHour},
 		RuntimeReady: func() error {
-			return controlauth.BundleFresh(*controlBundle, *controlBundleMaxAge)
+			return controlTLS.Fresh()
 		},
 	}
 
@@ -195,7 +186,7 @@ func main() {
 		}
 		log.Printf("backend: local fortune process %s", abs)
 	default:
-		log.Printf("backend: in-process fortune stub")
+		log.Printf("backend: in-process sample fallback")
 	}
 
 	if instances != nil {
@@ -277,14 +268,7 @@ func main() {
 		}()
 	}
 	if *healthListen != "" {
-		healthMux := http.NewServeMux()
-		controlHandler.MountHealth(healthMux)
-		healthMux.Handle("GET /metrics", observability.MetricsHandler())
-		healthServer = &http.Server{
-			Addr: *healthListen, Handler: healthMux,
-			ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 5 * time.Second,
-			WriteTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second,
-		}
+		healthServer = healthhttp.NewServer(*healthListen, controlHandler.MountHealth)
 		go func() {
 			log.Printf("gateway health HTTP on %s", *healthListen)
 			if err := healthServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {

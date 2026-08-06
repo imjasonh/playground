@@ -97,15 +97,6 @@ func (c *AgentClient) postInstance(ctx context.Context, path, operation, user, a
 	return c.postJSON(ctx, path, operation, instanceBody{User: user, App: app, Gen: gen}, out)
 }
 
-// Addr dials via Ensure (generation + optional digest-pinned image).
-func (c *AgentClient) Addr(user, app, gen, image string) (string, error) {
-	in, err := c.Ensure(user, app, gen, image, false)
-	if err != nil {
-		return "", err
-	}
-	return in.Addr, nil
-}
-
 // InstanceView is a subset of agent instance state.
 type InstanceView struct {
 	User             string `json:"user,omitempty"`
@@ -127,17 +118,7 @@ type ErrAgentCapacity struct {
 func (e ErrAgentCapacity) Error() string   { return e.Message }
 func (e ErrAgentCapacity) Temporary() bool { return true }
 
-// Ensure boots or wakes the instance on this host.
-func (c *AgentClient) Ensure(user, app, gen, image string, noIdle bool) (InstanceView, error) {
-	return c.EnsureContext(context.Background(), user, app, gen, image, noIdle)
-}
-
-// EnsureContext is Ensure with cancellation propagated to the host agent.
-func (c *AgentClient) EnsureContext(ctx context.Context, user, app, gen, image string, noIdle bool) (InstanceView, error) {
-	return c.EnsureTierContext(ctx, user, app, gen, image, "", noIdle)
-}
-
-// EnsureTierContext is EnsureContext with an explicit resource tier.
+// EnsureTierContext boots or wakes an instance with an explicit resource tier.
 func (c *AgentClient) EnsureTierContext(ctx context.Context, user, app, gen, image, tier string, noIdle bool) (InstanceView, error) {
 	var out InstanceView
 	err := c.postJSON(ctx, "/v1/instances/ensure", "agent ensure", instanceBody{
@@ -191,15 +172,6 @@ func (c *AgentClient) Instances(ctx context.Context) ([]agent.InstanceInfo, erro
 	return out.Instances, nil
 }
 
-// SetCordoned toggles admission of new boots/restores on the host.
-func (c *AgentClient) SetCordoned(ctx context.Context, cordoned bool) error {
-	if cordoned {
-		_, err := c.Cordon(ctx)
-		return err
-	}
-	return fmt.Errorf("cordon epoch required; use Uncordon")
-}
-
 // Uncordon clears the exact epoch returned by Cordon.
 func (c *AgentClient) Uncordon(ctx context.Context, epoch string) error {
 	return c.postJSON(
@@ -225,11 +197,6 @@ func (c *AgentClient) Cordon(ctx context.Context) (string, error) {
 	return out.Epoch, nil
 }
 
-// Sleep snapshots and frees the VMM on this host.
-func (c *AgentClient) Sleep(user, app string) error {
-	return c.SleepContext(context.Background(), user, app, "")
-}
-
 // SleepContext snapshots one generation. Empty gen selects the legacy instance.
 func (c *AgentClient) SleepContext(ctx context.Context, user, app, gen string) error {
 	return c.SleepWithEpoch(ctx, user, app, gen, "")
@@ -241,11 +208,6 @@ func (c *AgentClient) SleepWithEpoch(ctx context.Context, user, app, gen, cordon
 	}, nil)
 }
 
-// Evict drops a sleeping instance without deleting the shared snapshot.
-func (c *AgentClient) Evict(user, app string) error {
-	return c.EvictContext(context.Background(), user, app, "")
-}
-
 // EvictContext evicts one sleeping generation.
 func (c *AgentClient) EvictContext(ctx context.Context, user, app, gen string) error {
 	return c.EvictWithEpoch(ctx, user, app, gen, "")
@@ -255,11 +217,6 @@ func (c *AgentClient) EvictWithEpoch(ctx context.Context, user, app, gen, cordon
 	return c.postJSON(ctx, "/v1/instances/evict", "agent evict", instanceBody{
 		User: user, App: app, Gen: gen, CordonEpoch: cordonEpoch,
 	}, nil)
-}
-
-// Adopt restores an instance from the shared snapshot store onto this host.
-func (c *AgentClient) Adopt(user, app string) (InstanceView, error) {
-	return c.AdoptContext(context.Background(), user, app, "")
 }
 
 // AdoptContext adopts one generation from the shared snapshot store.
@@ -318,17 +275,7 @@ func (c *AgentClient) adoptContext(ctx context.Context, user, app, gen, cordonEp
 	return out, nil
 }
 
-// Status returns instance state, or ok=false when not found.
-func (c *AgentClient) Status(user, app string) (InstanceView, bool, error) {
-	return c.StatusContext(context.Background(), user, app, "")
-}
-
-// StatusGen is Status with an optional generation.
-func (c *AgentClient) StatusGen(user, app, gen string) (InstanceView, bool, error) {
-	return c.StatusContext(context.Background(), user, app, gen)
-}
-
-// StatusContext is StatusGen with cancellation.
+// StatusContext returns generation state, or ok=false when not found.
 func (c *AgentClient) StatusContext(ctx context.Context, user, app, gen string) (InstanceView, bool, error) {
 	q := make(url.Values)
 	q.Set("user", user)
@@ -350,12 +297,7 @@ func (c *AgentClient) StatusContext(ctx context.Context, user, app, gen string) 
 	return out, true, nil
 }
 
-// Stop destroys the instance and deletes its snapshot.
-func (c *AgentClient) Stop(user, app, gen string) error {
-	return c.StopContext(context.Background(), user, app, gen)
-}
-
-// StopContext destroys one generation with cancellation.
+// StopContext destroys one generation and deletes its snapshot.
 func (c *AgentClient) StopContext(ctx context.Context, user, app, gen string) error {
 	return c.postInstance(ctx, "/v1/instances/stop", "agent stop", user, app, gen, nil)
 }

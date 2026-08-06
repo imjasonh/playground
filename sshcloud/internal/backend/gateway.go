@@ -41,11 +41,6 @@ func (c *GatewayClient) Thaw(ctx context.Context, token string) error {
 	return c.post(ctx, "/v1/sessions/thaw", map[string]string{"token": token}, nil)
 }
 
-// Abort kicks sessions associated with a freeze token.
-func (c *GatewayClient) Abort(ctx context.Context, token string) error {
-	return c.post(ctx, "/v1/sessions/abort", map[string]string{"token": token}, nil)
-}
-
 func (c *GatewayClient) post(ctx context.Context, path string, body, out any) error {
 	return c.kernel().json(
 		ctx, http.MethodPost, path, "gateway control "+path, body, out, nil,

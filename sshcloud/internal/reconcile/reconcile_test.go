@@ -182,7 +182,7 @@ func TestExpiredOperationRollsTargetBackToAuthoritativeSource(t *testing.T) {
 		Placement: store,
 		Hosts: backend.NewHostSet(map[string]*backend.AgentClient{
 			"host-a": source.client("local:host-a"), "host-b": target.client("local:host-b"),
-		}, "host-a"),
+		}),
 	}
 	if err := controller.RunOnce(ctx); err != nil {
 		t.Fatal(err)
@@ -228,7 +228,7 @@ func TestExpiredInitialEnsureCommitsPreparedTarget(t *testing.T) {
 		Placement: store,
 		Hosts: backend.NewHostSet(map[string]*backend.AgentClient{
 			"host-b": target.client("local:host-b"),
-		}, "host-b"),
+		}),
 	}
 	if err := controller.RunOnce(ctx); err != nil {
 		t.Fatal(err)
@@ -295,7 +295,7 @@ func TestExpiredEnsureCommitsVerifiedActualInventory(t *testing.T) {
 		Placement: store,
 		Hosts: backend.NewHostSet(map[string]*backend.AgentClient{
 			"host-b": target.client("202"),
-		}, "host-b"),
+		}),
 	}
 	if err := controller.RunOnce(ctx); err != nil {
 		t.Fatal(err)
@@ -342,7 +342,7 @@ func TestExpiredEnsureRegistersDesiredSleepingWithoutWake(t *testing.T) {
 		Placement: store,
 		Hosts: backend.NewHostSet(map[string]*backend.AgentClient{
 			"host-b": target.client("202"),
-		}, "host-b"),
+		}),
 	}
 	if err := controller.RunOnce(ctx); err != nil {
 		t.Fatal(err)
@@ -400,7 +400,7 @@ func TestExpiredMoveSleepsUnexpectedRunningSourceAndCommitsActualState(t *testin
 		Placement: store,
 		Hosts: backend.NewHostSet(map[string]*backend.AgentClient{
 			"host-a": source.client("101"), "host-b": target.client("202"),
-		}, "host-a"),
+		}),
 	}
 	if err := controller.RunOnce(ctx); err != nil {
 		t.Fatal(err)
@@ -460,7 +460,7 @@ func TestExpiredStopJournalRetriesExactSourceAndCommits(t *testing.T) {
 		Placement: store,
 		Hosts: backend.NewHostSet(map[string]*backend.AgentClient{
 			"host-a": source.client("101"),
-		}, "host-a"),
+		}),
 	}
 	if err := controller.RunOnce(ctx); err != nil {
 		t.Fatal(err)
@@ -500,7 +500,7 @@ func TestRecoveryRefusesReplacementParticipantIncarnations(t *testing.T) {
 		Placement: store,
 		Hosts: backend.NewHostSet(map[string]*backend.AgentClient{
 			"host-a": source.client("new-source"), "host-b": target.client("new-target"),
-		}, "host-a"),
+		}),
 	}
 	if err := controller.RunOnce(ctx); err == nil {
 		t.Fatal("replacement incarnations were accepted")

@@ -270,8 +270,7 @@ go run ./cmd/orchestrator \
   -control-insecure-loopback \
   -listen 127.0.0.1:8090 \
   -admin-socket /tmp/sshcloud-orchestrator-admin.sock \
-  -hosts host-a=http://127.0.0.1:8080,host-b=http://127.0.0.1:8081 \
-  -default-host host-a
+  -hosts host-a=http://127.0.0.1:8080,host-b=http://127.0.0.1:8081
 
 curl --unix-socket /tmp/sshcloud-orchestrator-admin.sock \
   -X POST http://localhost/v1/migrate \

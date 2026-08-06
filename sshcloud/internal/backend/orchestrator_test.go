@@ -63,7 +63,7 @@ func TestOrchestratorClientAddr(t *testing.T) {
 
 	dial := &backend.PlacedDial{
 		Placement: place,
-		Agents:    backend.NewHostSet(agents, "host-a"),
+		Agents:    backend.NewHostSet(agents),
 	}
 	orch := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -79,7 +79,10 @@ func TestOrchestratorClientAddr(t *testing.T) {
 				http.Error(w, err.Error(), 400)
 				return
 			}
-			addr, err := dial.EnsureAddr(r.Context(), req.User, req.App, req.Gen, req.Image, req.NoIdle)
+			addr, err := dial.EnsureAddrTierWithOptions(
+				r.Context(), req.User, req.App, req.Gen, req.Image, "", req.NoIdle,
+				backend.StartOptions{Purpose: "session", RequestID: "test-session"},
+			)
 			if err != nil {
 				http.Error(w, err.Error(), 500)
 				return
@@ -107,12 +110,15 @@ func TestOrchestratorClientAddr(t *testing.T) {
 
 	c := &backend.OrchestratorClient{BaseURL: orch.URL, InsecureLoopback: true}
 	digest := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-	addr, err := c.Addr("alice", "fortune", "gabc", "ghcr.io/me/app@sha256:"+digest)
+	target, err := c.TargetTierRequest(
+		t.Context(), "alice", "fortune", "gabc", "ghcr.io/me/app@sha256:"+digest,
+		"", false, "session", "test-session",
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if addr != "10.0.0.2:22" {
-		t.Fatalf("addr = %q", addr)
+	if target.Addr != "10.0.0.2:22" {
+		t.Fatalf("addr = %q", target.Addr)
 	}
 	if got.User != "alice" || got.App != "fortune" || got.Gen != "gabc" {
 		t.Fatalf("agent body %+v", got)
@@ -135,9 +141,12 @@ func TestPlacedDialUnknownHost(t *testing.T) {
 	_ = place.SetIdentity(t.Context(), "alice", "fortune", "missing", "local:missing")
 	dial := &backend.PlacedDial{
 		Placement: place,
-		Agents:    backend.NewHostSet(map[string]*backend.AgentClient{}, ""),
+		Agents:    backend.NewHostSet(map[string]*backend.AgentClient{}),
 	}
-	if _, err := dial.Addr("alice", "fortune", "", ""); err == nil {
+	if _, err := dial.EnsureAddrTierWithOptions(
+		t.Context(), "alice", "fortune", "", "", "", false,
+		backend.StartOptions{Purpose: "session", RequestID: "test-session"},
+	); err == nil {
 		t.Fatal("expected error for unknown host")
 	}
 }
@@ -168,9 +177,12 @@ func TestPlacedDialRefusesImplicitCrossHostRecovery(t *testing.T) {
 		Placement: place,
 		Agents: backend.NewHostSet(map[string]*backend.AgentClient{
 			"host-b": {BaseURL: agent.URL, InsecureLoopback: true},
-		}, "host-b"),
+		}),
 	}
-	if _, err := dial.EnsureAddr(t.Context(), "alice", "fortune", "gabc", "", false); err == nil {
+	if _, err := dial.EnsureAddrTierWithOptions(
+		t.Context(), "alice", "fortune", "gabc", "", "", false,
+		backend.StartOptions{Purpose: "session", RequestID: "test-session"},
+	); err == nil {
 		t.Fatal("stale placement implicitly booted on another host")
 	}
 	host, ok, err := place.Get(t.Context(), "alice", "fortune")
@@ -209,10 +221,13 @@ func TestPlacedDialEnforcesAwakeUserQuotaBeforeEnsure(t *testing.T) {
 		Placement: place,
 		Agents: backend.NewHostSet(map[string]*backend.AgentClient{
 			"host-a": {BaseURL: host.URL, InsecureLoopback: true},
-		}, "host-a"),
+		}),
 		Quotas: quota.NewMemory(), MaxAwakePerUser: 2,
 	}
-	_, err := dial.EnsureAddr(t.Context(), "alice", "fortune", "gfortune", "", false)
+	_, err := dial.EnsureAddrTierWithOptions(
+		t.Context(), "alice", "fortune", "gfortune", "", "", false,
+		backend.StartOptions{Purpose: "session", RequestID: "test-session"},
+	)
 	var exceeded quota.ErrExceeded
 	if !errors.As(err, &exceeded) {
 		t.Fatalf("error %v, want awake quota", err)
@@ -234,7 +249,7 @@ func TestPlacedDialWakeOperationIdentity(t *testing.T) {
 		Placement: place,
 		Agents: backend.NewHostSet(map[string]*backend.AgentClient{
 			"host-a": {BaseURL: host.URL, InsecureLoopback: true},
-		}, "host-a"),
+		}),
 		Quotas: quota.NewMemory(), MaxAwakePerUser: 10, WakesPerHour: 1,
 	}
 	options := backend.StartOptions{Purpose: "session", RequestID: "session-stable"}
@@ -295,7 +310,7 @@ func TestPlacedDialDeployBurstRequiresRunningOldGeneration(t *testing.T) {
 				Placement: place,
 				Agents: backend.NewHostSet(map[string]*backend.AgentClient{
 					"host-a": {BaseURL: host.URL, InsecureLoopback: true},
-				}, "host-a"),
+				}),
 				Quotas: quota.NewMemory(), MaxAwakePerUser: 2, WakesPerHour: 10,
 			}
 			_, err := dial.EnsureAddrTierWithOptions(
