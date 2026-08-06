@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Export the two printable parts using the vendored OpenSCAD skill tools.
+# Export the three printable parts using the vendored OpenSCAD skill tools.
 # Usage: bash export-stl.sh [output_dir]
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -12,8 +12,12 @@ echo "== validate =="
 "$TOOLS/validate.sh" "$ROOT/case.scad" | tee "$OUT/validate.log"
 
 echo ""
-"$TOOLS/export-stl.sh" "$ROOT/case.scad" "$OUT/front.stl" -D 'part="front"'
+"$TOOLS/export-stl.sh" "$ROOT/case.scad" "$OUT/bezel.stl" -D 'part="bezel"'
+"$TOOLS/export-stl.sh" "$ROOT/case.scad" "$OUT/tray.stl"  -D 'part="tray"'
 "$TOOLS/export-stl.sh" "$ROOT/case.scad" "$OUT/back.stl"  -D 'part="back"'
+
+# Remove legacy combined front if present
+rm -f "$OUT/front.stl"
 
 python3 - <<PY
 from pathlib import Path
@@ -28,4 +32,4 @@ if lines:
 PY
 
 ls -la "$OUT"
-echo "Done. Run bash render.sh and visually inspect previews before merging geometry changes."
+echo "Done. Visually inspect previews (bash render.sh) before merging geometry changes."

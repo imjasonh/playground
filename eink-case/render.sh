@@ -12,23 +12,20 @@ echo "== validate =="
 "$TOOLS/validate.sh" "$ROOT/case.scad"
 
 echo ""
-echo "== assembled (with ghost components) =="
+echo "== assembled =="
 "$TOOLS/multi-preview.sh" "$ROOT/case.scad" "$OUT/assembled" \
   -D 'part="assembled"' -D 'show_components=true'
 
-echo ""
-echo "== front shell =="
-"$TOOLS/multi-preview.sh" "$ROOT/case.scad" "$OUT/front" \
-  -D 'part="front"'
-
-echo ""
-echo "== back lid =="
-"$TOOLS/multi-preview.sh" "$ROOT/case.scad" "$OUT/back" \
-  -D 'part="back"'
+for p in bezel tray back; do
+  echo ""
+  echo "== $p (print orientation) =="
+  "$TOOLS/multi-preview.sh" "$ROOT/case.scad" "$OUT/$p" \
+    -D "part=\"$p\""
+done
 
 echo ""
 echo "== parameters =="
-"$TOOLS/extract-params.sh" "$ROOT/case.scad" | head -60
+"$TOOLS/extract-params.sh" "$ROOT/case.scad" | head -40
 
 echo ""
-echo "Previews under $OUT — visually inspect every PNG before shipping."
+echo "Previews under $OUT — inspect every PNG; check FDM rules in tools/fdm-design-rules.md"

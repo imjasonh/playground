@@ -1,6 +1,6 @@
 {
   "name": "Waveshare 7.5\" e-Paper + ESP32 case",
-  "description": "Two-part parametric case: slide-in panel groove, folded SPI trough, ESP32 cradle, USB-C wall exit.",
+  "description": "Three-part FDM-friendly case: flat bezel, cavity-up tray, flat-down lid. No AA-spanning decks. Slide-in/sandwich panel, ESP32 cradle, USB-C wall exit.",
   "tags": [
     "e-paper",
     "waveshare",
@@ -11,14 +11,16 @@
   "closed_overall_mm": {
     "w": 175.8,
     "h": 120.4,
-    "d": 22.2
+    "d": 24.2
   },
   "printable_parts": [
-    "front",
+    "bezel",
+    "tray",
     "back"
   ],
   "fasteners": {
-    "lid": "4x M2x8mm self-tapping pan-head",
+    "bezel_tray": "4x M2x8mm self-tapping pan-head",
+    "lid_tray": "4x M2x8mm self-tapping pan-head",
     "board": "none (cradle + lid posts)"
   },
   "parameters": [

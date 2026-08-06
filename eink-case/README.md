@@ -5,82 +5,67 @@ Parametric OpenSCAD enclosure for:
 | Device | ASIN | Notes |
 |--------|------|-------|
 | [Waveshare 7.5″ e-Paper raw panel](https://www.waveshare.com/7.5inch-e-Paper.htm) | `B075R69T93` | 800×480, **170.2 × 111.2 × 1.2 mm**, 24-pin SPI FPC |
-| [Waveshare e-Paper ESP32 Driver Board](https://www.waveshare.com/product/displays/e-paper-esp32-driver-board.htm) | `B07M5CNP3B` | **29.46 × 48.25 mm**, USB-C (2024+; Micro-USB earlier). **No mounting holes.** |
+| [Waveshare e-Paper ESP32 Driver Board](https://www.waveshare.com/product/displays/e-paper-esp32-driver-board.htm) | `B07M5CNP3B` | **29.46 × 48.25 mm**, USB-C. **No mounting holes.** |
 
 ## Closed overall dimensions
 
-**175.8 × 120.4 × 22.2 mm** (W × H × D)
+Run `./tools/validate.sh case.scad` — echoes the live size (tracks parameters).
 
-| Axis | Meaning |
-|------|---------|
-| W 175.8 mm | Along the panel’s long edge |
-| H 120.4 mm | Along the panel’s short edge (FPC on this side) |
-| D 22.2 mm | Front bezel → back lid |
+## Three printable parts (FDM-friendly)
 
-These track the parameters and are echoed whenever you open/render `case.scad`.
+A one-piece front shell needed a solid deck behind the glass. Printed
+bezel-down, that deck is a huge mid-air bridge. The design is split so every
+part has a flat bed face and **no floating spans**:
 
-## Two printable parts
+| STL | Bed face | Role |
+|-----|----------|------|
+| [`stl/bezel.stl`](stl/bezel.stl) | Outer face down | Window + panel pocket |
+| [`stl/tray.stl`](stl/tray.stl) | Floor down (cavity up) | Panel backer, board cradle, screw bosses |
+| [`stl/back.stl`](stl/back.stl) | Outer face down | Lid, snaps, PCB hold-downs |
 
-| STL | Role |
-|-----|------|
-| [`stl/front.stl`](stl/front.stl) | Bezel, panel groove, bay floor, board cradle, screw bosses |
-| [`stl/back.stl`](stl/back.stl) | Lid (exported flat-outer-down for printing) with snap tabs + PCB hold-down posts |
+See [`tools/fdm-design-rules.md`](tools/fdm-design-rules.md) and [`AGENTS.md`](AGENTS.md).
 
 ```bash
-openscad -o stl/front.stl -D 'part="front"' case.scad
-openscad -o stl/back.stl  -D 'part="back"'  case.scad
-# or: bash export-stl.sh
+bash export-stl.sh
 ```
 
 ## Screws
 
-| Joint | Hardware | Notes |
-|-------|----------|-------|
-| **Back lid → front** | **4× M2 × 8 mm self-tapping pan-head** | Into 1.7 mm pilots in the corner bosses. 6 mm is short; 10 mm works if you don’t bottom out hard. |
-| **ESP32 board** | **None** | The Waveshare PCB has no mounting holes. It drops into a three-sided cradle and the lid posts press on the PCB corners. Optional: a square of 3M VHB / foam tape under the board. |
+| Joint | Hardware |
+|-------|----------|
+| **Bezel → tray** | **4× M2 × 8 mm self-tapping pan-head** |
+| **Lid → tray** | **4× M2 × 8 mm self-tapping pan-head** (same corner bosses) |
+| **ESP32 board** | **None** — tray cradle + lid posts (optional VHB) |
 
-Snaps alone can hold the lid for a dry fit; use the M2 screws for a finished assembly.
+## Assembly
 
-## How it fits
+1. Drop the panel into the **bezel** pocket (FPC through the bottom notch).
+2. Clamp **bezel** to **tray** with 4× M2 (panel sandwiched; tray floor backs the glass).
+3. Fold the SPI ribbon into the tray; use the kit **FFC extension** if USB exits a side wall.
+4. Seat the ESP32 board in the tray cradle.
+5. Close the **lid** (snaps + 4× M2 from the back).
 
-1. **Slide** the panel into the three-sided groove from the FPC edge until it seats on the top stop.
-2. **Fold** the SPI ribbon under the panel into the cable trough (use the **FFC extension + adapter** that ships with the driver board when `usb_exit` is `back` or `side` — that layout needs ~30 mm of lateral routing).
-3. **Seat** the ESP32 board in the cradle; USB exits the chosen wall.
-4. **Close** the lid (snaps + 4× M2×8).
+## Tooling
 
-### Fit budget (defaults)
-
-| Item | Allowance |
-|------|-----------|
-| Panel XY | outline + 0.40 mm clearance each side |
-| Panel Z | 1.20 mm panel in a 2.00 mm groove |
-| Board XY | 29.46 × 48.25 mm + 0.50 mm pocket slop |
-| Board Z | 2.0 mm pad + 1.6 mm PCB + 8.0 mm component air |
-| Cable | 22 mm-wide trough under the panel for FPC + extension |
-
-## Usage
-
-This project vendors the
-[mitsuhiko/agent-stuff OpenSCAD skill](https://github.com/mitsuhiko/agent-stuff/tree/main/skills/openscad)
-under `tools/`. See [`AGENTS.md`](AGENTS.md) for the agent workflow.
+Vendored [mitsuhiko OpenSCAD skill](https://github.com/mitsuhiko/agent-stuff/tree/main/skills/openscad) + FDM rules:
 
 ```bash
-openscad case.scad                 # Customizer GUI
-./tools/validate.sh case.scad      # syntax + dimension echoes
-bash render.sh                     # multi-angle PNGs → previews/
-bash export-stl.sh                 # refresh stl/front.stl + stl/back.stl
+./tools/validate.sh case.scad
+bash render.sh                 # multi-angle PNGs
+bash export-stl.sh
 ./tools/extract-params.sh case.scad
 ```
 
 | Parameter | Default | Meaning |
 |-----------|---------|---------|
-| `usb_exit` | `back` | USB wall: `back` (left/−X), `side` (+X), or `bottom` (FPC edge) |
-| `groove_clearance` | `0.40` | Slip fit around the panel (mm) |
-| `part` | `assembled` | `assembled` / `front` / `back` |
+| `usb_exit` | `back` | USB wall: `back` / `side` / `bottom` |
+| `panel_clear` | `0.40` | Slip fit around the panel (mm) |
+| `part` | `assembled` | `assembled` / `bezel` / `tray` / `back` |
 
 ## Printing
 
 - PLA or PETG, 0.2 mm layers, ≥3 perimeters, 15–20% infill.
-- Print **front** with the bezel on the bed (window facing down) for a clean AA edge; support the bay overhangs if your slicer needs it.
-- Print **back** flat (outer face down).
-- Tap the M2 screws gently into the pilots — don’t over-torque into plastic.
+- **Bezel:** outer face on bed (pocket opens up). No supports.
+- **Tray:** floor on bed, cavity up. No supports.
+- **Lid:** outer face on bed, posts/snaps up. No supports.
+- Tap M2 gently into pilots — don’t over-torque.

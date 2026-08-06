@@ -18,3 +18,6 @@ unset so headless CI / cloud agents can preview and export.
 
 Use via [`../AGENTS.md`](../AGENTS.md) / [`../render.sh`](../render.sh) /
 [`../export-stl.sh`](../export-stl.sh).
+
+Also see [`fdm-design-rules.md`](fdm-design-rules.md) (print orientation +
+anti-bridge rules for this case).

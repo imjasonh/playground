@@ -1,71 +1,56 @@
 # Agent guide: eink-case
 
 Parametric OpenSCAD case for a Waveshare 7.5″ e-Paper raw panel + ESP32
-driver board. Follow the
-[mitsuhiko/agent-stuff OpenSCAD skill](https://github.com/mitsuhiko/agent-stuff/tree/main/skills/openscad)
-workflow (tools vendored under `tools/`; upstream text in
-`tools/UPSTREAM_SKILL.md`).
+driver board.
 
-## Never skip visual validation
+## Skills in this project
 
-After writing or editing `case.scad`:
+1. **OpenSCAD skill** (vendored under `tools/` from
+   [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff/tree/main/skills/openscad))
+   — validate, multi-preview, extract-params, export-stl. Upstream text:
+   `tools/UPSTREAM_SKILL.md`.
+2. **FDM printability rules** — `tools/fdm-design-rules.md` (distilled from
+   [m-esm/3d-print-modeling](https://github.com/m-esm/3d-print-modeling) and
+   [chriscantey/skill-3d-printing](https://github.com/chriscantey/skill-3d-printing)).
 
-1. `./tools/validate.sh case.scad`
-2. `./tools/multi-preview.sh case.scad ./previews/ -D 'part="assembled"' -D 'show_components=true'`
-3. **Read every generated PNG** (`previews/case_*.png`) with the image read tool
-4. Also preview printable parts alone:
-   - `./tools/multi-preview.sh case.scad ./previews/front/ -D 'part="front"'`
-   - `./tools/multi-preview.sh case.scad ./previews/back/ -D 'part="back"'`
-5. Fix geometry issues and re-validate before exporting STLs
+**Never skip visual validation. Never export STLs that violate R1.2 (flat
+ceilings / AA-spanning decks).**
 
-Syntax OK is not enough — catch inverted normals, bad booleans, missing
-features, and wrong proportions by looking at the images.
-
-## Tools (`tools/`)
-
-| Script | Purpose |
-|--------|---------|
-| `validate.sh` | Parse/eval; print echoes (closed size, fasteners) |
-| `preview.sh` | Single PNG (`--camera=…`, `--size=WxH`, `-D`) |
-| `multi-preview.sh` | front / back / left / right / top / iso PNGs |
-| `export-stl.sh` | Binary STL |
-| `extract-params.sh` | Customizer parameters (`--json` supported) |
-| `render-with-params.sh` | STL/PNG from a JSON param file |
-
-Convenience wrappers at the project root:
+## Workflow after every geometry edit
 
 ```bash
-bash render.sh                 # multi-preview assembled + front + back
-bash export-stl.sh             # stl/front.stl + stl/back.stl
+./tools/validate.sh case.scad
+bash render.sh                 # previews/{assembled,bezel,tray,back}/
+# READ every PNG with the image tool — check for bridges & floating spans
+bash export-stl.sh             # stl/{bezel,tray,back}.stl
 ```
 
-## Parameter comments
+Mentally raycast bed→up in each part’s declared print orientation
+(`tools/fdm-design-rules.md`). Any mid-air region that isn’t grown from a wall
+is a redesign, not “add support”.
 
-Keep Customizer knobs at file scope with skill-style trailing comments so
-`extract-params.sh` can read them:
+## Three printable parts
 
-```openscad
-wall = 2.4;              // [1.5:0.1:4] Outer wall thickness (mm)
-usb_exit = "back";       // [back, side, bottom] USB-C wall
-show_components = true;  // Ghost panel + board in assembled preview
-```
+| Part | STL | Bed face | Role |
+|------|-----|----------|------|
+| `bezel` | `stl/bezel.stl` | Outer face down | Window frame + panel pocket |
+| `tray` | `stl/tray.stl` | Floor down (cavity up) | Panel backer, board cradle, bosses |
+| `back` | `stl/back.stl` | Outer face down | Lid + snaps + PCB hold-downs |
 
-## Printable parts
+Why not a one-piece “front”? A solid bay floor behind the active area becomes a
+~160×100 mm bridge when printed bezel-down (fails R1.2). Splitting face vs tray
+puts that floor **on the bed**.
 
-Exactly **two** STLs:
+## Fasteners
 
-| Part | Export |
-|------|--------|
-| `front` | `./tools/export-stl.sh case.scad stl/front.stl -D 'part="front"'` |
-| `back` | `./tools/export-stl.sh case.scad stl/back.stl -D 'part="back"'` |
+| Joint | Hardware |
+|-------|----------|
+| Bezel → tray | 4× M2×8 mm self-tapping into corner pilots |
+| Lid → tray | 4× M2×8 mm self-tapping (same bosses, from back) |
+| Board | None — cradle in tray + lid posts |
 
-Do not commit `previews/` (generated). Do commit refreshed `stl/*.stl` when
-geometry changes.
+## Fit notes
 
-## Fit / fasteners (defaults)
-
-- Closed overall: **175.8 × 120.4 × 22.2 mm** (W × H × D) — confirm via
-  `validate.sh` echoes after param changes
-- Lid: 4× M2×8 mm self-tapping into 1.7 mm pilots
-- Board: no screws (PCB has no holes); cradle + lid posts
-- Side/back USB layouts expect the kit FFC extension for the lateral jog
+- Closed overall echoed by `validate.sh` (defaults ~176×120×~24 mm).
+- Side/back USB layouts need the kit FFC extension (~30 mm lateral jog).
+- Customizer knobs use `// [range] desc` comments for `extract-params.sh`.
