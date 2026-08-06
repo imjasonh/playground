@@ -22,7 +22,7 @@ ceilings / AA-spanning decks).**
 ./tools/validate.sh case.scad
 bash render.sh                 # previews/{assembled,bezel,tray,back}/
 # READ every PNG with the image tool — check for bridges & floating spans
-bash export-stl.sh             # stl/{bezel,tray,back}.stl
+bash export-stl.sh             # stl/{bezel,tray,back}.stl (binary)
 ```
 
 Mentally raycast bed→up in each part’s declared print orientation

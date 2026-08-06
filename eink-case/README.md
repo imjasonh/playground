@@ -44,7 +44,7 @@ part has a flat bed face and **no floating spans**:
 See [`tools/fdm-design-rules.md`](tools/fdm-design-rules.md) and [`AGENTS.md`](AGENTS.md).
 
 ```bash
-bash export-stl.sh
+bash export-stl.sh   # writes binary STLs under stl/
 ```
 
 ## Screws

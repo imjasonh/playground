@@ -46,11 +46,20 @@ if [ ${#DEFINES[@]} -gt 0 ]; then
     echo "Parameters: ${DEFINES[*]}"
 fi
 
+# Binary STL: smaller, and GitHub treats it as a binary blob (not tens of
+# thousands of ASCII facet lines in the PR diff). Slicers accept both; there
+# is no practical reason to commit ASCII STLs here.
 $OPENSCAD \
     "${DEFINES[@]}" \
+    --export-format=binstl \
     -o "$OUTPUT" \
     "$INPUT"
 
-# Show file info
+# Show file info (binary headers may literally start with "solid …"; sniff facets)
 SIZE=$(ls -lh "$OUTPUT" | awk '{print $5}')
-echo "STL exported: $OUTPUT ($SIZE)"
+if grep -a -q 'facet normal' "$OUTPUT"; then
+    KIND="ascii"
+else
+    KIND="binary"
+fi
+echo "STL exported: $OUTPUT ($SIZE, $KIND)"

@@ -124,7 +124,7 @@ This creates PNG images from multiple angles. Use the `read` tool to view them.
 
 ### 4. Export to STL
 ```bash
-./tools/export-stl.sh model.scad output.stl
+./tools/export-stl.sh model.scad output.stl          # binary STL (--export-format=binstl)
 # With custom parameters:
 ./tools/export-stl.sh model.scad output.stl -D 'width=60' -D 'height=40'
 ```
