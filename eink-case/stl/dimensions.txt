@@ -7,5 +7,6 @@ FPC: internal fold bay 6 mm; wall-edge chase (no mid-floor hole)
 Lid/bezel screws: M2x8 self-tap -> 1.7 mm pilots
 Board screws: none (tray cradle + lid posts)
 Bay depth: 16.6 mm; USB exit: back
+Elephant-foot chamfer: outer=0.5 mm; window=0.3 mm
 FDM: no AA-spanning decks (see tools/fdm-design-rules.md)
 ============================================================

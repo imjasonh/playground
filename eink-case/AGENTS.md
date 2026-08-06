@@ -58,4 +58,6 @@ puts that floor **on the bed**.
   chase into the board bay — **no mid-floor hole, outer wall closed**. USB-C
   still uses `usb_exit`.
 - Side/back USB layouts need the kit FFC extension (~30 mm lateral jog).
+- Bed-face elephant-foot chamfers: `elephant_chamfer` /
+  `window_elephant_chamfer` (set `0` to disable).
 - Customizer knobs use `// [range] desc` comments for `extract-params.sh`.

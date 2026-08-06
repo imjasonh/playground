@@ -76,6 +76,12 @@ use_snaps = true;            // Lid snap tabs
 /* [USB exit] */
 usb_exit = "back";           // [back, side, bottom] Perimeter wall for USB-C
 
+/* [FDM — elephant-foot relief] */
+// 45° chamfers on each part’s bed face so first-layer squish doesn’t flare
+// mating edges. Set to 0 to disable. Prefer slicer compensation too.
+elephant_chamfer = 0.5;      // [0:0.1:1.5] Outer bed-face chamfer (mm)
+window_elephant_chamfer = 0.3; // [0:0.1:1] Bezel window bed-face chamfer (mm)
+
 /* [Tolerances / print] */
 $fn = 48;                    // [16:8:96] Circle segments
 eps = 0.02;                  // Boolean overlap fudge (mm)
@@ -140,6 +146,8 @@ echo(str("FPC: internal fold bay ", fpc_fold_bay,
 echo(str("Lid/bezel screws: M2x8 self-tap -> ", screw_boss_id, " mm pilots"));
 echo("Board screws: none (tray cradle + lid posts)");
 echo(str("Bay depth: ", bay_z, " mm; USB exit: ", usb_exit));
+echo(str("Elephant-foot chamfer: outer=", elephant_chamfer,
+         " mm; window=", window_elephant_chamfer, " mm"));
 echo(str("FDM: no AA-spanning decks (see tools/fdm-design-rules.md)"));
 echo("============================================================");
 
@@ -191,6 +199,39 @@ module rounded_rect(w, h, r) {
 
 module rounded_box(w, h, t, r) {
     linear_extrude(height = t) rounded_rect(w, h, r);
+}
+
+// 45° elephant-foot relief on the z=0 face outer perimeter.
+// At z=0 the outline is inset by `ch`; at z=`ch` it matches the full outline.
+module bottom_outer_chamfer_cut(w, h, r, ch) {
+    if (ch > 0)
+        difference() {
+            translate([-eps, -eps, -eps])
+                cube([w + 2 * eps, h + 2 * eps, ch + eps]);
+            hull() {
+                translate([0, 0, ch])
+                    linear_extrude(height = eps)
+                        rounded_rect(w, h, r);
+                translate([ch, ch, -eps])
+                    linear_extrude(height = eps)
+                        rounded_rect(
+                            max(eps, w - 2 * ch),
+                            max(eps, h - 2 * ch),
+                            max(0.01, r - ch)
+                        );
+            }
+        }
+}
+
+// Enlarge a rectangular window at z=0, tapering to nominal size at z=`ch`.
+module window_bed_chamfer_cut(x, y, w, h, ch) {
+    if (ch > 0)
+        hull() {
+            translate([x - ch, y - ch, -eps])
+                cube([w + 2 * ch, h + 2 * ch, eps]);
+            translate([x, y, ch])
+                cube([w, h, eps]);
+        }
 }
 
 module at_board() {
@@ -274,6 +315,11 @@ module bezel() {
             // Solid blank: face + rim up to tray mating plane
             rounded_box(case_outer_w, case_outer_h, bezel_total_z, corner_r);
 
+            // Bed-face outer chamfer (print: outer face down)
+            bottom_outer_chamfer_cut(
+                case_outer_w, case_outer_h, corner_r, elephant_chamfer
+            );
+
             // Active-area window through the face
             translate([
                 active_x0 + window_inset,
@@ -281,6 +327,14 @@ module bezel() {
                 -eps
             ])
                 cube([window_w, window_h, bezel_total_z + 3 * eps]);
+
+            // Bed-face window chamfer (keeps the lip from flaring inward)
+            window_bed_chamfer_cut(
+                active_x0 + window_inset,
+                active_y0 + window_inset,
+                window_w, window_h,
+                window_elephant_chamfer
+            );
 
             // Panel pocket — outline + clear; shoulders remain at FPC edge
             translate([
@@ -294,19 +348,19 @@ module bezel() {
                     pocket_depth + eps
                 ]);
 
-        // Narrow INTERNAL fold bay from the inner wall to the panel FPC edge
-        // (outer wall stays closed). Cable runs under the tray floor here to
-        // the wall-edge chase.
-        translate([
-            fpc_slot_x0 - 1,
-            wall,
-            bezel_face_t
-        ])
-            cube([
-                fpc_channel_w + 2,
-                panel_y0 - wall + panel_clear + 2,
-                pocket_depth + eps
-            ]);
+            // Narrow INTERNAL fold bay from the inner wall to the panel FPC edge
+            // (outer wall stays closed). Cable runs under the tray floor here to
+            // the wall-edge chase.
+            translate([
+                fpc_slot_x0 - 1,
+                wall,
+                bezel_face_t
+            ])
+                cube([
+                    fpc_channel_w + 2,
+                    panel_y0 - wall + panel_clear + 2,
+                    pocket_depth + eps
+                ]);
 
             // Screw clearances
             for (p = boss_xy())
@@ -363,6 +417,12 @@ module tray() {
                         );
                 }
         }
+
+        // Bed-face outer chamfer on the floor (print: floor down)
+        translate([0, 0, tray_floor_z0])
+            bottom_outer_chamfer_cut(
+                case_outer_w, case_outer_h, corner_r, elephant_chamfer
+            );
 
         // Wall-edge ribbon chase: opens the fold bay into the rear bay along
         // the inner face of the FPC-edge wall. Outer wall (y=0..wall) stays
@@ -508,6 +568,11 @@ module tray_print() {
 module back_lid() {
     difference() {
         rounded_box(case_outer_w, case_outer_h, lid_thickness, corner_r);
+
+        // Bed-face outer chamfer (print: outer face down via back_lid_print)
+        bottom_outer_chamfer_cut(
+            case_outer_w, case_outer_h, corner_r, elephant_chamfer
+        );
 
         for (p = boss_xy())
             translate([p[0], p[1], -eps])

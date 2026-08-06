@@ -80,6 +80,8 @@ bash export-stl.sh
 | `panel_clear` | `0.30` | Base XY clearance around the panel (mm) |
 | `panel_crush` | `0.20` | Crush-rib intrusion for snug XY (mm) |
 | `fpc_fold_bay` | `6.0` | Internal bay under the FPC edge (mm) |
+| `elephant_chamfer` | `0.5` | Bed-face outer 45° chamfer (mm); `0` disables |
+| `window_elephant_chamfer` | `0.3` | Bezel window bed-face chamfer (mm) |
 | `part` | `assembled` | `assembled` / `bezel` / `tray` / `back` |
 
 ## Printing
@@ -88,4 +90,6 @@ bash export-stl.sh
 - **Bezel:** outer face on bed (pocket opens up). No supports.
 - **Tray:** floor on bed, cavity up. No supports.
 - **Lid:** outer face on bed, posts/snaps up. No supports.
+- Bed faces have parametric **elephant-foot chamfers** (`elephant_chamfer`,
+  `window_elephant_chamfer`). Still enable slicer elephant-foot compensation.
 - Tap M2 gently into pilots — don’t over-torque.

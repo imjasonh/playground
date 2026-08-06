@@ -23,6 +23,10 @@ Use with the OpenSCAD skill tools in this folder. Cite rules by id in review not
 - **R1.3** Orientation is chosen at design time; STLs are exported already flipped for the bed.
 - **R1.4** Holes undersize — screw clearance and USB cutouts include slop parameters.
 - **R1.7** Lid snaps / self-tap bosses are light-duty; PETG optional for snaps.
+- **Elephant foot** — each part’s bed-face outer perimeter gets a parametric
+  45° chamfer (`elephant_chamfer`, default 0.5 mm). The bezel window also gets
+  `window_elephant_chamfer` so the lip doesn’t flare inward. Set either to `0`
+  to disable. Still tune slicer first-layer compensation.
 
 ## Anti-patterns that bit this case
 

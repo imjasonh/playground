@@ -39,6 +39,8 @@ screw_boss_d         7.0             number     [5:0.5:10] Boss outer diameter (
 screw_boss_id        1.7             number     [1.4:0.1:2.2] M2 self-tap pilot (mm)
 use_snaps            true            boolean    Lid snap tabs
 usb_exit             back            string     [back, side, bottom] Perimeter wall for USB-C
+elephant_chamfer     0.5             number     [0:0.1:1.5] Outer bed-face chamfer (mm)
+window_elephant_chamfer 0.3             number     [0:0.1:1] Bezel window bed-face chamfer (mm)
 eps                  0.02            number     Boolean overlap fudge (mm)
 bezel_fpc            panel_h - active_h - bezel_top expression 
 boss_inset           wall + screw_boss_d / 2 + 1.0 expression 
