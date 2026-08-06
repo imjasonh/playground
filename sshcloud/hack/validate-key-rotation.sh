@@ -126,15 +126,17 @@ elif [[ "$args" == *" kms keys versions list "* ]]; then
 ]
 JSON
 elif [[ "$args" == *" storage buckets describe "* ]]; then
-  cat <<'JSON'
+  cat <<JSON
 {
   "name": "fixture-state",
+  "projectNumber": "${FIXTURE_BUCKET_PROJECT_NUMBER:-123456789}",
   "versioning": {"enabled": true},
   "iamConfiguration": {
     "uniformBucketLevelAccess": {"enabled": true},
     "publicAccessPrevention": "enforced"
   },
-  "softDeletePolicy": {"retentionDurationSeconds": "604800"},
+  "retentionPolicy": {"retentionPeriod": "${FIXTURE_BUCKET_RETENTION_SECONDS:-0}"},
+  "softDeletePolicy": {"retentionDurationSeconds": "${FIXTURE_BUCKET_SOFT_DELETE_SECONDS:-604800}"},
   "encryption": {"defaultKmsKeyName": "projects/fixture/locations/test/keyRings/state/cryptoKeys/state"}
 }
 JSON
@@ -142,6 +144,8 @@ elif [[ "$args" == *" storage buckets get-iam-policy "* ]]; then
   cat <<'JSON'
 {"bindings":[{"role":"roles/storage.objectAdmin","members":["serviceAccount:fixture@example.invalid"]}]}
 JSON
+elif [[ "$args" == *" projects describe fixture "* ]]; then
+  printf '123456789\n'
 else
   echo "unexpected fake gcloud invocation" >&2
   exit 90
@@ -209,6 +213,31 @@ if grep -Eq -- 'BEGIN .*PRIVATE KEY|TOP-SECRET-COMMENT|STATE-SECRET-SENTINEL|fix
   echo "rotation inspector emitted secret material or key comments" >&2
   exit 1
 fi
+
+for unsafe in project_mismatch retention_lock missing_soft_delete; do
+  case "$unsafe" in
+    project_mismatch)
+      unsafe_env=(FIXTURE_BUCKET_PROJECT_NUMBER=987654321)
+      ;;
+    retention_lock)
+      unsafe_env=(FIXTURE_BUCKET_RETENTION_SECONDS=3600)
+      ;;
+    missing_soft_delete)
+      unsafe_env=(FIXTURE_BUCKET_SOFT_DELETE_SECONDS=0)
+      ;;
+  esac
+  if env \
+    ROTATION_FIXTURES="$fixtures" \
+    PATH="$fakebin:$PATH" \
+    "${unsafe_env[@]}" \
+    "$ROOT/hack/inspect-terraform-backend.sh" \
+    --terraform-dir "$tfdir" \
+    --project fixture >"$tmp/backend-$unsafe" 2>&1; then
+    echo "backend inspector accepted unsafe fixture: $unsafe" >&2
+    exit 1
+  fi
+done
+
 for private_file in \
   "$fixtures/fixture-gateway-host-key" \
   "$fixtures/fixture-user-ca" \

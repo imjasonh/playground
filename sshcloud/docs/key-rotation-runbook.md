@@ -637,8 +637,11 @@ safely own the bucket that is required to read and destroy itself. Required
 controls:
 
 - dedicated bucket and prefix per environment;
+- bucket ownership in the exact expected GCP project;
 - uniform bucket-level access and public-access prevention;
-- object versioning plus soft delete or a retention policy;
+- object versioning plus a nonzero soft-delete window;
+- no bucket retention policy or retention lock: Terraform's GCS backend must be
+  able to delete its native lock object, and a retention policy breaks unlock;
 - Google-managed encryption at minimum, preferably a separately administered
   CMEK with narrowly scoped encrypter/decrypter access;
 - no `allUsers`/`allAuthenticatedUsers`, no legacy object ACL workflow;
@@ -683,6 +686,10 @@ bash ../hack/inspect-terraform-backend.sh \
   --terraform-dir "$PWD" \
   --project=PROJECT_ID
 ```
+
+The inspector compares the bucket's numeric owner project with `--project`,
+requires a nonzero soft-delete window, and rejects any retention period because
+retained lock objects cannot be deleted.
 
 Pull a post-migration backup to the encrypted volume and compare only lineage,
 serial, and a `terraform state list` resource-address inventory. Do not diff

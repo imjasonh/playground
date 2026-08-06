@@ -3,8 +3,14 @@ set -euo pipefail
 ${helpers}
 
 install_docker
-retry 10 apt-get update -y
-retry 10 apt-get install -y e2fsprogs iproute2 iptables
+systemctl stop sshcloud-agent.service sshcloud-vmmhelper.socket \
+  sshcloud-taphelper.socket >/dev/null 2>&1 || true
+retry 10 timeout 10m apt-get \
+  -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=3 \
+  update -y
+retry 10 timeout 10m apt-get \
+  -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=3 \
+  install -y e2fsprogs iproute2 iptables
 id sshcloud >/dev/null 2>&1 || useradd --system --home-dir /var/lib/sshcloud --shell /usr/sbin/nologin sshcloud
 id sshcloud-tap >/dev/null 2>&1 || useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin sshcloud-tap
 AGENT_UID="$(id -u sshcloud)"
@@ -30,18 +36,19 @@ retry 30 registry_login
 retry 30 pull_secret "${user_ca_pub_secret}" /var/lib/sshcloud/ssh_user_ca.pub
 chmod 644 /var/lib/sshcloud/ssh_user_ca.pub
 install_control_identity_refresher \
+  agent \
   "${control_identity_secret}" \
   "${control_ca_current_secret}" \
   "${control_ca_previous_secret}" \
-  /var/lib/sshcloud/control sshcloud sshcloud
+  /var/lib/sshcloud/control sshcloud
 
 # Platform assets (Firecracker + jailer + kernel) from GCS. Apps arrive as OCI digests.
-TOKEN="$(curl -fsS -H 'Metadata-Flavor: Google' \
+TOKEN="$(curl --connect-timeout 5 --max-time 20 --retry 3 --retry-all-errors -fsS -H 'Metadata-Flavor: Google' \
   http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')"
 download_asset() {
   local object="$1" dest="$2"
-  curl --retry 10 --retry-all-errors -fsS -H "Authorization: Bearer $TOKEN" \
+  curl --connect-timeout 5 --max-time 120 --retry 3 --retry-all-errors -fsS -H "Authorization: Bearer $TOKEN" \
     "https://storage.googleapis.com/storage/v1/b/${assets_bucket}/o/$${object}?alt=media" \
     -o "$dest"
 }
@@ -58,11 +65,11 @@ test -s /var/lib/sshcloud/assets/vmlinux
 
 extract_ko_binary() {
   local image="$1" binary="$2" dest="$3" container="sshcloud-extract-$2"
-  retry 30 docker pull "$image"
-  docker rm -f "$container" 2>/dev/null || true
-  docker create --name "$container" "$image" >/dev/null
-  docker cp "$container:/ko-app/$binary" "$dest"
-  docker rm "$container" >/dev/null
+  retry 30 timeout 10m docker pull "$image"
+  timeout 30s docker rm -f "$container" 2>/dev/null || true
+  timeout 30s docker create --name "$container" "$image" >/dev/null
+  timeout 2m docker cp "$container:/ko-app/$binary" "$dest"
+  timeout 30s docker rm "$container" >/dev/null
   chmod 0755 "$dest"
 }
 extract_ko_binary "${agent_image}" agent /usr/local/lib/sshcloud/agent
@@ -88,11 +95,11 @@ if [[ -f /sys/fs/cgroup/cgroup.controllers ]]; then
   done
 fi
 
-INTERNAL_IP="$(curl -fsS -H 'Metadata-Flavor: Google' \
+INTERNAL_IP="$(curl --connect-timeout 5 --max-time 20 --retry 3 --retry-all-errors -fsS -H 'Metadata-Flavor: Google' \
   http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/ip)"
-INSTANCE_NAME="$(curl -fsS -H 'Metadata-Flavor: Google' \
+INSTANCE_NAME="$(curl --connect-timeout 5 --max-time 20 --retry 3 --retry-all-errors -fsS -H 'Metadata-Flavor: Google' \
   http://metadata.google.internal/computeMetadata/v1/instance/name)"
-INSTANCE_ID="$(curl -fsS -H 'Metadata-Flavor: Google' \
+INSTANCE_ID="$(curl --connect-timeout 5 --max-time 20 --retry 3 --retry-all-errors -fsS -H 'Metadata-Flavor: Google' \
   http://metadata.google.internal/computeMetadata/v1/instance/id)"
 install_ops_agent agent "$INTERNAL_IP:8081" "127.0.0.1:9080"
 
@@ -146,6 +153,7 @@ ExecStart=/usr/local/lib/sshcloud/vmmhelper \
 KillMode=control-group
 TimeoutStopSec=10min
 UMask=0077
+LimitCORE=0
 CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER CAP_KILL CAP_MKNOD CAP_SETGID CAP_SETUID CAP_SYS_ADMIN CAP_SYS_CHROOT CAP_SYS_RESOURCE
 DevicePolicy=closed
 DeviceAllow=/dev/kvm rwm
@@ -200,6 +208,7 @@ ExecStart=/usr/local/lib/sshcloud/taphelper \
   -agent-gid $${AGENT_GID} \
   -subnet-base 172.16
 UMask=0077
+LimitCORE=0
 AmbientCapabilities=CAP_NET_ADMIN
 CapabilityBoundingSet=CAP_NET_ADMIN
 DevicePolicy=closed
@@ -221,9 +230,9 @@ EOF
 cat >/etc/systemd/system/sshcloud-agent.service <<EOF
 [Unit]
 Description=sshcloud Firecracker host agent
-After=network-online.target
+After=network-online.target sshcloud-control-identity-refresh.service
 Wants=network-online.target
-Requires=sshcloud-vmmhelper.service sshcloud-taphelper.service
+Requires=sshcloud-vmmhelper.service sshcloud-taphelper.service sshcloud-control-identity-refresh.service
 BindsTo=sshcloud-vmmhelper.service sshcloud-taphelper.service
 After=sshcloud-vmmhelper.service sshcloud-taphelper.service
 
@@ -241,10 +250,8 @@ ExecStart=/usr/local/lib/sshcloud/agent \
   -guestinit /var/lib/sshcloud/assets/guestinit \
   -vmm-helper-socket /run/sshcloud/vmmhelper.sock \
   -tap-helper-socket /run/sshcloud/taphelper.sock \
-  -control-cert /var/lib/sshcloud/control/tls.crt \
-  -control-key /var/lib/sshcloud/control/tls.key \
-  -control-ca-current /var/lib/sshcloud/control/ca-current.pem \
-  -control-ca-previous /var/lib/sshcloud/control/ca-previous.pem \
+  -control-bundle /var/lib/sshcloud/control/current \
+  -control-bundle-max-age 15m \
   -control-project-id ${project_id} \
   -control-project-number ${project_number} \
   -orchestrator-service-account ${orchestrator_service_account} \
@@ -262,6 +269,7 @@ RestartSec=5
 TimeoutStopSec=15min
 KillMode=mixed
 LimitNOFILE=65536
+LimitCORE=0
 AmbientCapabilities=
 CapabilityBoundingSet=
 DevicePolicy=closed

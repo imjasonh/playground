@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/imjasonh/playground/sshcloud/internal/controlauth"
+	"github.com/imjasonh/playground/sshcloud/internal/placement"
 )
 
 // OrchestratorClient talks to cmd/orchestrator for placement-aware Ensure.
@@ -63,7 +64,10 @@ func (c *OrchestratorClient) AddrTierContext(ctx context.Context, user, app, gen
 }
 
 func (c *OrchestratorClient) TargetTierContext(ctx context.Context, user, app, gen, image, tier string, noIdle bool) (OrchestratorTarget, error) {
-	return c.TargetTierRequest(ctx, user, app, gen, image, tier, noIdle, "session", gen+"\x00"+image)
+	return c.TargetTierRequest(
+		ctx, user, app, gen, image, tier, noIdle,
+		"session", placement.NewLeaseOwner("session"),
+	)
 }
 
 func (c *OrchestratorClient) TargetTierRequest(ctx context.Context, user, app, gen, image, tier string, noIdle bool, purpose, requestID string) (OrchestratorTarget, error) {
@@ -96,6 +100,13 @@ func (c *OrchestratorClient) ensure(ctx context.Context, body orchEnsureBody) (O
 		return OrchestratorTarget{}, fmt.Errorf("orchestrator returned empty SSH host key")
 	}
 	return OrchestratorTarget{Addr: out.Addr, SSHHostPublicKey: out.SSHHostPublicKey}, nil
+}
+
+// Ready verifies the authenticated placement backend without starting a VM.
+func (c *OrchestratorClient) Ready(ctx context.Context) error {
+	return c.kernel().json(
+		ctx, http.MethodGet, "/v1/readyz", "orchestrator readiness", nil, nil, nil,
+	)
 }
 
 // Ensure implements cutover.Instances via POST /v1/ensure.

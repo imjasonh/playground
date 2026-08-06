@@ -2,9 +2,11 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
+	"github.com/imjasonh/playground/sshcloud/internal/access"
 	"github.com/imjasonh/playground/sshcloud/internal/cutover"
 	"github.com/imjasonh/playground/sshcloud/internal/session"
 	"github.com/imjasonh/playground/sshcloud/internal/store"
@@ -131,4 +133,47 @@ func TestAdmissionPinsGenerationImageAndTier(t *testing.T) {
 		t.Fatalf("admission spec changed after deploy: %+v", res)
 	}
 	h.ReleaseSession(res.Session)
+}
+
+func TestHubReadinessIncludesPolicyBackendAndRuntime(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	h := &Hub{
+		Store:  store.NewMemory(),
+		Access: access.StaticSource{Policy: access.LocalDevelopmentPolicy()},
+		BackendReady: func(context.Context) error {
+			return nil
+		},
+		RuntimeReady: func() error {
+			return nil
+		},
+	}
+	if err := h.Ready(ctx); err != nil {
+		t.Fatalf("ready dependencies: %v", err)
+	}
+
+	h.Access = accessSourceFunc(func() (access.Policy, error) {
+		return access.Policy{}, errors.New("policy lease expired")
+	})
+	if err := h.Ready(ctx); err == nil || !strings.Contains(err.Error(), "access policy") {
+		t.Fatalf("policy readiness error = %v", err)
+	}
+
+	h.Access = access.StaticSource{Policy: access.LocalDevelopmentPolicy()}
+	h.BackendReady = func(context.Context) error { return errors.New("orchestrator unavailable") }
+	if err := h.Ready(ctx); err == nil || !strings.Contains(err.Error(), "backend") {
+		t.Fatalf("backend readiness error = %v", err)
+	}
+
+	h.BackendReady = nil
+	h.RuntimeReady = func() error { return errors.New("control bundle lease expired") }
+	if err := h.Ready(ctx); err == nil || !strings.Contains(err.Error(), "control bundle") {
+		t.Fatalf("runtime readiness error = %v", err)
+	}
+}
+
+type accessSourceFunc func() (access.Policy, error)
+
+func (f accessSourceFunc) Load() (access.Policy, error) {
+	return f()
 }

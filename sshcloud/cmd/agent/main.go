@@ -49,6 +49,8 @@ func main() {
 	controlKey := flag.String("control-key", "", "reloadable agent control private-key PEM")
 	controlCACurrent := flag.String("control-ca-current", "", "reloadable current control CA PEM")
 	controlCAPrevious := flag.String("control-ca-previous", "", "reloadable previous control CA PEM")
+	controlBundle := flag.String("control-bundle", "", "atomically switched control TLS bundle directory")
+	controlBundleMaxAge := flag.Duration("control-bundle-max-age", controlauth.DefaultBundleLease, "last-known-good control bundle lease")
 	controlProjectID := flag.String("control-project-id", "", "expected GCE identity-token project ID")
 	controlProjectNumber := flag.String("control-project-number", "", "expected GCE identity-token project number")
 	orchestratorServiceAccount := flag.String("orchestrator-service-account", "", "exact orchestrator service-account email")
@@ -79,7 +81,9 @@ func main() {
 		vmRuntime = agent.NewHelperRuntime(*vmmHelperSocket, *tapHelperSocket)
 	}
 	controlFiles := controlauth.TLSFiles{
-		CertFile: *controlCert, KeyFile: *controlKey,
+		BundleDir: *controlBundle,
+		MaxAge:    *controlBundleMaxAge,
+		CertFile:  *controlCert, KeyFile: *controlKey,
 		CurrentCAFile: *controlCACurrent, PreviousCAFile: *controlCAPrevious,
 	}
 	if *insecureControl {
@@ -214,7 +218,13 @@ func main() {
 	})
 	controlMux := http.NewServeMux()
 	handler := &agent.Handler{
-		Manager: mgr, Readiness: mgr.Ready,
+		Manager: mgr,
+		Readiness: func() error {
+			if err := controlauth.BundleFresh(*controlBundle, *controlBundleMaxAge); err != nil {
+				return err
+			}
+			return mgr.Ready()
+		},
 		InstanceName: strings.TrimSpace(*instanceName), InstanceID: strings.TrimSpace(*instanceID),
 	}
 	if !*insecureControl {

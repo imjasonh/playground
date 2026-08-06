@@ -379,6 +379,38 @@ variable "notification_email" {
   }
 }
 
+variable "log_routing_live_verified" {
+  description = "Set true only after the operator runbook proves both dedicated sinks receive records; until then sshcloud logs remain duplicated in _Default"
+  type        = bool
+  default     = false
+}
+
+variable "platform_log_reader_members" {
+  description = "IAM members granted roles/logging.viewAccessor on the dedicated platform log view"
+  type        = set(string)
+  default     = []
+  validation {
+    condition = alltrue([
+      for member in var.platform_log_reader_members :
+      can(regex("^(user|group|serviceAccount|domain):[^[:space:]]+$", member))
+    ])
+    error_message = "platform_log_reader_members entries must be explicit IAM principals."
+  }
+}
+
+variable "app_log_reader_members" {
+  description = "IAM members granted roles/logging.viewAccessor on the sensitive app-console log view"
+  type        = set(string)
+  default     = []
+  validation {
+    condition = alltrue([
+      for member in var.app_log_reader_members :
+      can(regex("^(user|group|serviceAccount|domain):[^[:space:]]+$", member))
+    ])
+    error_message = "app_log_reader_members entries must be explicit IAM principals."
+  }
+}
+
 variable "billing_account_id" {
   description = "Optional billing account ID used with monthly_budget_usd"
   type        = string

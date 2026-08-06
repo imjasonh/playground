@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -54,7 +55,9 @@ func (s StaticSource) Load() (Policy, error) {
 // FileSource reloads a JSON policy from Path on every decision. This makes an
 // atomic file replacement take effect without restarting the gateway.
 type FileSource struct {
-	Path string
+	Path   string
+	MaxAge time.Duration
+	Now    func() time.Time
 }
 
 // Load implements Source.
@@ -67,6 +70,22 @@ func (s FileSource) Load() (Policy, error) {
 		return Policy{}, fmt.Errorf("open access policy: %w", err)
 	}
 	defer f.Close()
+	if s.MaxAge > 0 {
+		info, err := f.Stat()
+		if err != nil {
+			return Policy{}, fmt.Errorf("stat access policy: %w", err)
+		}
+		now := time.Now()
+		if s.Now != nil {
+			now = s.Now()
+		}
+		if info.ModTime().After(now.Add(time.Minute)) {
+			return Policy{}, fmt.Errorf("access policy refresh time is in the future")
+		}
+		if now.Sub(info.ModTime()) > s.MaxAge {
+			return Policy{}, fmt.Errorf("access policy last-known-good lease expired")
+		}
+	}
 
 	data, err := io.ReadAll(io.LimitReader(f, maxPolicyBytes+1))
 	if err != nil {

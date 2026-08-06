@@ -24,6 +24,10 @@ kernel_asset_path      = "../_assets/vmlinux"
 # agent_count         = 2
 # agent_rootfs_cache_bytes = 8589934592 # 8 GiB hard LRU budget
 # notification_email  = "operator@example.com"
+# Keep false until both dedicated log routes pass the live runbook drill.
+# log_routing_live_verified = false
+# platform_log_reader_members = ["group:platform-ops@example.com"]
+# app_log_reader_members      = ["group:sensitive-app-logs@example.com"]
 # billing_account_id  = "000000-000000-000000" # set with monthly_budget_usd
 # monthly_budget_usd  = 100
 # Keep empty unless running a private smoke test. Even with application-level

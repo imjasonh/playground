@@ -20,6 +20,7 @@ func TestGatewayAndAdminRouteSeparation(t *testing.T) {
 		path    string
 		want    int
 	}{
+		{name: "gateway readiness", handler: gateway, method: http.MethodGet, path: "/v1/readyz", want: http.StatusNoContent},
 		{name: "gateway ensure", handler: gateway, method: http.MethodPost, path: "/v1/ensure", want: http.StatusNoContent},
 		{name: "gateway cannot drain", handler: gateway, method: http.MethodPost, path: "/v1/hosts/drain", want: http.StatusNotFound},
 		{name: "gateway cannot inspect", handler: gateway, method: http.MethodGet, path: "/v1/diagnostics", want: http.StatusNotFound},

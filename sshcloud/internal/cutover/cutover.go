@@ -125,7 +125,11 @@ func (c *Controller) Deploy(ctx context.Context, req Request) (result Result, re
 	}
 	startedAt := time.Now()
 	eventStrategy, eventTier := "", ""
+	noOp := false
 	defer func() {
+		if noOp {
+			return
+		}
 		outcome := observability.OutcomeSuccess
 		if retErr != nil {
 			outcome = observability.OutcomeFailure
@@ -195,17 +199,11 @@ func (c *Controller) Deploy(ctx context.Context, req Request) (result Result, re
 		return Result{}, fmt.Errorf("app %q is still draining generation %s; wait for it to finish before deploying again", req.App, app.DrainingGen)
 	}
 	if app.ActiveGen != "" && app.Image == req.Image && app.Tier == req.Tier {
-		if c.Instances != nil {
-			hold := c.Sessions != nil && c.Sessions.ActiveGen(req.User, req.App, app.ActiveGen)
-			if err := c.Instances.Ensure(ctx, req.User, req.App, app.ActiveGen, app.Image, app.Tier, hold); err != nil {
-				return Result{}, fmt.Errorf("verify active generation: %w", err)
-			}
-		}
-		app.SessionStrategy = strategy
-		if err := c.Store.UpsertApp(ctx, *app); err != nil {
-			return Result{}, err
-		}
-		return Result{ActiveGen: app.ActiveGen, Strategy: strategy}, nil
+		noOp = true
+		return Result{
+			ActiveGen: app.ActiveGen,
+			Strategy:  app.SessionStrategy,
+		}, nil
 	}
 
 	oldGen := app.ActiveGen

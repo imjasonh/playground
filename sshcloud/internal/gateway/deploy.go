@@ -115,6 +115,14 @@ func applyDeploy(ctx context.Context, hub *Hub, keyFP, userID string, args Deplo
 	if existing != nil && requireYes && !args.Yes {
 		return false, fmt.Errorf("app %q exists; pass --yes to update", args.Name)
 	}
+	if err := hub.authorizeDeploy(keyFP, userID); err != nil {
+		return false, err
+	}
+	// An identical artifact+tier request is an observation, not a deploy:
+	// do not mutate strategy/state, verify/wake a VM, or consume quota.
+	if existing != nil && existing.Image == args.Image && existing.Tier == args.Tier {
+		return true, nil
+	}
 	if existing == nil {
 		apps, err := hub.Store.ListApps(ctx, userID)
 		if err != nil {
@@ -129,7 +137,7 @@ func applyDeploy(ctx context.Context, hub *Hub, keyFP, userID string, args Deplo
 	if err := hub.authorizeDeploy(keyFP, userID); err != nil {
 		return false, err
 	}
-	if err := hub.allowDeploy(ctx, userID, args.Name, args.Image); err != nil {
+	if err := hub.allowDeploy(ctx, userID, quota.NewEventID("deploy")); err != nil {
 		return false, err
 	}
 

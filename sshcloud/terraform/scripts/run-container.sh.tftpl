@@ -17,28 +17,63 @@ retry() {
   return 1
 }
 
+install_core_dump_policy() {
+  # Core images may contain SSH channel bytes, credentials, or decrypted VM
+  # state. Disable dumps at the shell, PAM, kernel, and systemd-coredump layers.
+  ulimit -c 0
+  install -d -m 0755 /etc/security/limits.d /etc/sysctl.d /etc/systemd/coredump.conf.d
+  cat >/etc/security/limits.d/99-sshcloud-no-core.conf <<'EOF'
+* hard core 0
+* soft core 0
+root hard core 0
+root soft core 0
+EOF
+  cat >/etc/sysctl.d/99-sshcloud-no-core.conf <<'EOF'
+fs.suid_dumpable = 0
+kernel.core_pattern = /dev/null
+EOF
+  cat >/etc/systemd/coredump.conf.d/99-sshcloud-no-core.conf <<'EOF'
+[Coredump]
+Storage=none
+ProcessSizeMax=0
+EOF
+  sysctl --system >/dev/null
+}
+
 install_docker() {
-  if command -v docker >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+  install_core_dump_policy
+  if command -v docker >/dev/null 2>&1 &&
+    command -v jq >/dev/null 2>&1 &&
+    command -v curl >/dev/null 2>&1 &&
+    command -v openssl >/dev/null 2>&1 &&
+    command -v flock >/dev/null 2>&1 &&
+    command -v timeout >/dev/null 2>&1; then
+    systemctl enable --now docker
     return
   fi
-  retry 10 apt-get update -y
-  retry 10 apt-get install -y docker.io jq curl ca-certificates python3
+  retry 10 timeout 10m apt-get \
+    -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=3 \
+    update -y
+  retry 10 timeout 10m apt-get \
+    -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=3 \
+    install -y docker.io jq curl ca-certificates openssl python3 util-linux
   systemctl enable --now docker
 }
 
 registry_login() {
   local token
-  token="$(curl --retry 10 --retry-all-errors -fsS -H 'Metadata-Flavor: Google' \
+  token="$(curl --connect-timeout 5 --max-time 20 --retry 3 --retry-all-errors -fsS -H 'Metadata-Flavor: Google' \
     http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token \
     | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')"
-  echo "$token" | docker login -u oauth2accesstoken --password-stdin "https://${registry_host}"
+  echo "$token" |
+    timeout 45s docker login -u oauth2accesstoken --password-stdin "https://${registry_host}"
 }
 
 pull_secret() {
   local name="$1" dest="$2"
   mkdir -p "$(dirname "$dest")"
-  curl --retry 10 --retry-all-errors -fsS -H "Metadata-Flavor: Google" -H "Authorization: Bearer $(
-      curl --retry 10 --retry-all-errors -fsS -H 'Metadata-Flavor: Google' \
+  curl --connect-timeout 5 --max-time 30 --retry 3 --retry-all-errors -fsS -H "Metadata-Flavor: Google" -H "Authorization: Bearer $(
+      curl --connect-timeout 5 --max-time 20 --retry 3 --retry-all-errors -fsS -H 'Metadata-Flavor: Google' \
         http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token \
         | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])'
     )" \
@@ -49,16 +84,25 @@ pull_secret() {
 }
 
 install_control_identity_refresher() {
-  local identity_secret="$1" current_ca_secret="$2" previous_ca_secret="$3"
-  local dest="$4" owner="$5" group="$6"
-  install -d -o "$owner" -g "$group" -m 0700 "$dest"
+  local role="$1" identity_secret="$2" current_ca_secret="$3" previous_ca_secret="$4"
+  local dest="$5" group="$6"
+  local expected_uri="spiffe://sshcloud.internal/control/$role"
+  systemctl stop sshcloud-control-identity-refresh.timer \
+    sshcloud-control-identity-refresh.service >/dev/null 2>&1 || true
+  install -d -o root -g "$group" -m 0750 "$dest" "$dest/versions"
+  chown -R "root:$group" "$dest"
+  find "$dest" -type d -exec chmod 0750 {} +
+  find "$dest" -type f -exec chmod 0640 {} +
   cat >/etc/sshcloud-control-identity.env <<EOF
+CONTROL_ROLE=$role
+CONTROL_EXPECTED_URI=$expected_uri
 CONTROL_IDENTITY_SECRET=$identity_secret
 CONTROL_CURRENT_CA_SECRET=$current_ca_secret
 CONTROL_PREVIOUS_CA_SECRET=$previous_ca_secret
-CONTROL_DEST=$dest
-CONTROL_OWNER=$owner
+CONTROL_BUNDLE_ROOT=$dest
+CONTROL_OWNER=root
 CONTROL_GROUP=$group
+CONTROL_BUNDLE_LEASE_SECONDS=900
 EOF
   chmod 0600 /etc/sshcloud-control-identity.env
 
@@ -67,38 +111,135 @@ EOF
 set -euo pipefail
 source /etc/sshcloud-control-identity.env
 PROJECT_ID="${project_id}"
-tmp="$(mktemp -d "$${CONTROL_DEST}/.refresh.XXXXXX")"
+exec 9>"$CONTROL_BUNDLE_ROOT/.refresh.lock"
+flock -n 9 || exit 0
+tmp="$(mktemp -d "$${CONTROL_BUNDLE_ROOT}/.refresh.XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
 
 access_token() {
-  curl --retry 10 --retry-all-errors -fsS -H 'Metadata-Flavor: Google' \
+  curl --connect-timeout 5 --max-time 20 --retry 3 --retry-all-errors -fsS \
+    -H 'Metadata-Flavor: Google' \
     http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token \
     | jq -er .access_token
 }
 
 fetch_secret() {
-  local secret="$1" out="$2" token
-  token="$(access_token)"
-  curl --retry 10 --retry-all-errors -fsS \
+  local secret="$1" out="$2" version_out="$3" response="$tmp/response-$3.json"
+  curl --connect-timeout 5 --max-time 30 --retry 3 --retry-all-errors -fsS \
     -H "Authorization: Bearer $token" \
     "https://secretmanager.googleapis.com/v1/projects/$PROJECT_ID/secrets/$secret/versions/latest:access" \
-    | jq -er .payload.data | base64 -d >"$out"
+    >"$response"
+  jq -er .payload.data "$response" | base64 -d >"$out"
+  jq -er '.name | split("/")[-1] | select(test("^[0-9]+$"))' "$response" >"$version_out"
+  rm -f "$response"
 }
 
-fetch_secret "$CONTROL_IDENTITY_SECRET" "$tmp/identity.json"
-fetch_secret "$CONTROL_CURRENT_CA_SECRET" "$tmp/ca-current.pem"
-fetch_secret "$CONTROL_PREVIOUS_CA_SECRET" "$tmp/ca-previous.pem"
+token="$(access_token)"
+fetch_secret "$CONTROL_IDENTITY_SECRET" "$tmp/identity.json" identity.version
+fetch_secret "$CONTROL_CURRENT_CA_SECRET" "$tmp/ca-current.pem" current-ca.version
+fetch_secret "$CONTROL_PREVIOUS_CA_SECRET" "$tmp/ca-previous.pem" previous-ca.version
+jq -e \
+  --arg uri "$CONTROL_EXPECTED_URI" \
+  'type == "object"
+   and ((keys | sort) == (["certificate_pem", "private_key_pem", "uri_identity"] | sort))
+   and (.certificate_pem | type == "string" and length > 0)
+   and (.private_key_pem | type == "string" and length > 0)
+   and .uri_identity == $uri' \
+  "$tmp/identity.json" >/dev/null
 jq -er .certificate_pem "$tmp/identity.json" >"$tmp/tls.crt"
 jq -er .private_key_pem "$tmp/identity.json" >"$tmp/tls.key"
-test -s "$tmp/tls.crt" -a -s "$tmp/tls.key" -a -s "$tmp/ca-current.pem" -a -s "$tmp/ca-previous.pem"
-chown "$CONTROL_OWNER:$CONTROL_GROUP" "$tmp/tls.crt" "$tmp/tls.key" "$tmp/ca-current.pem" "$tmp/ca-previous.pem"
-chmod 0600 "$tmp/tls.crt" "$tmp/tls.key" "$tmp/ca-current.pem" "$tmp/ca-previous.pem"
-mv -f "$tmp/ca-current.pem" "$CONTROL_DEST/ca-current.pem"
-mv -f "$tmp/ca-previous.pem" "$CONTROL_DEST/ca-previous.pem"
-mv -f "$tmp/tls.crt" "$CONTROL_DEST/tls.crt"
-mv -f "$tmp/tls.key" "$CONTROL_DEST/tls.key"
+rm -f "$tmp/identity.json"
+
+# Validate the complete candidate before publishing one atomic bundle pointer.
+openssl x509 -in "$tmp/tls.crt" -noout -checkend "$CONTROL_BUNDLE_LEASE_SECONDS" >/dev/null
+openssl pkey -in "$tmp/tls.key" -noout >/dev/null
+for ca in ca-current.pem ca-previous.pem; do
+  test "$(grep -c '^-----BEGIN CERTIFICATE-----$' "$tmp/$ca")" -eq 1
+  test "$(grep -c '^-----END CERTIFICATE-----$' "$tmp/$ca")" -eq 1
+  ! grep -q 'PRIVATE KEY' "$tmp/$ca"
+  openssl x509 -in "$tmp/$ca" -noout -checkend "$CONTROL_BUNDLE_LEASE_SECONDS" >/dev/null
+  openssl x509 -in "$tmp/$ca" -noout -text |
+    grep -q 'CA:TRUE'
+  openssl verify -CAfile "$tmp/$ca" "$tmp/$ca" >/dev/null
+done
+current_fp="$(openssl x509 -in "$tmp/ca-current.pem" -noout -fingerprint -sha256)"
+previous_fp="$(openssl x509 -in "$tmp/ca-previous.pem" -noout -fingerprint -sha256)"
+test "$current_fp" != "$previous_fp"
+test "$(
+  openssl x509 -in "$tmp/tls.crt" -pubkey -noout |
+    openssl pkey -pubin -outform DER 2>/dev/null |
+    openssl dgst -sha256
+)" = "$(
+  openssl pkey -in "$tmp/tls.key" -pubout -outform DER 2>/dev/null |
+    openssl dgst -sha256
+)"
+uris="$(
+  openssl x509 -in "$tmp/tls.crt" -noout -ext subjectAltName |
+    tr ',' '\n' |
+    sed -n 's/.*URI:\([^[:space:]]*\).*/\1/p'
+)"
+test "$(printf '%s\n' "$uris" | sed '/^$/d' | wc -l)" -eq 1
+test "$uris" = "$CONTROL_EXPECTED_URI"
+verified=0
+for ca in ca-current.pem ca-previous.pem; do
+  if openssl verify -purpose sslclient -CAfile "$tmp/$ca" "$tmp/tls.crt" >/dev/null 2>&1 &&
+    openssl verify -purpose sslserver -CAfile "$tmp/$ca" "$tmp/tls.crt" >/dev/null 2>&1; then
+    verified=$((verified + 1))
+  fi
+done
+test "$verified" -eq 1
+
+date +%s >"$tmp/validated-at"
+bundle_name="$(
+  printf '%s-%s-%s-%s-%s' \
+    "$(cat "$tmp/identity.version")" \
+    "$(cat "$tmp/current-ca.version")" \
+    "$(cat "$tmp/previous-ca.version")" \
+    "$(cat "$tmp/validated-at")" \
+    "$$"
+)"
+chown -R "$CONTROL_OWNER:$CONTROL_GROUP" "$tmp"
+chmod 0750 "$tmp"
+chmod 0640 "$tmp"/*
+bundle="$CONTROL_BUNDLE_ROOT/versions/$bundle_name"
+mv "$tmp" "$bundle"
+trap - EXIT
+link="$CONTROL_BUNDLE_ROOT/.current.$$"
+ln -s "versions/$bundle_name" "$link"
+mv -Tf "$link" "$CONTROL_BUNDLE_ROOT/current"
+
+# Keep a small rollback inventory; the lease is time-based, not version-count
+# based, and readiness rejects current after CONTROL_BUNDLE_LEASE_SECONDS.
+current_target="$(readlink "$CONTROL_BUNDLE_ROOT/current")"
+mapfile -t bundles < <(printf '%s\n' "$CONTROL_BUNDLE_ROOT"/versions/* | sort -r)
+kept=0
+for candidate in "$${bundles[@]}"; do
+  [[ -d "$candidate" ]] || continue
+  if [[ "versions/$(basename "$candidate")" == "$current_target" || "$kept" -lt 2 ]]; then
+    kept=$((kept + 1))
+    continue
+  fi
+  rm -rf "$candidate"
+done
 EOF
   chmod 0700 /usr/local/sbin/sshcloud-refresh-control-identity
+
+  cat >/usr/local/sbin/sshcloud-check-control-bundle <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+source /etc/sshcloud-control-identity.env
+marker="$CONTROL_BUNDLE_ROOT/current/validated-at"
+validated_at="$(cat "$marker")"
+[[ "$validated_at" =~ ^[0-9]+$ ]]
+now="$(date +%s)"
+age=$((now - validated_at))
+if ((age < 0 || age > CONTROL_BUNDLE_LEASE_SECONDS)); then
+  echo "control identity last-known-good lease expired (age=$${age}s, lease=$${CONTROL_BUNDLE_LEASE_SECONDS}s)" >&2
+  exit 1
+fi
+echo "control identity refresh failed; retaining validated last-known-good bundle for $((CONTROL_BUNDLE_LEASE_SECONDS - age))s" >&2
+EOF
+  chmod 0700 /usr/local/sbin/sshcloud-check-control-bundle
 
   cat >/etc/systemd/system/sshcloud-control-identity-refresh.service <<'EOF'
 [Unit]
@@ -108,7 +249,9 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/sshcloud-refresh-control-identity
+ExecStart=/bin/bash -c '/usr/local/sbin/sshcloud-refresh-control-identity || /usr/local/sbin/sshcloud-check-control-bundle'
+UMask=0077
+LimitCORE=0
 EOF
 
   cat >/etc/systemd/system/sshcloud-control-identity-refresh.timer <<'EOF'
@@ -125,8 +268,13 @@ Persistent=true
 WantedBy=timers.target
 EOF
   systemctl daemon-reload
-  retry 30 /usr/local/sbin/sshcloud-refresh-control-identity
-  systemctl enable --now sshcloud-control-identity-refresh.timer
+  start_control_identity_refresh() {
+    systemctl reset-failed sshcloud-control-identity-refresh.service >/dev/null 2>&1 || true
+    systemctl start sshcloud-control-identity-refresh.service
+  }
+  retry 30 start_control_identity_refresh
+  systemctl enable sshcloud-control-identity-refresh.timer
+  systemctl start sshcloud-control-identity-refresh.timer
 }
 
 install_ops_agent() {
@@ -153,10 +301,10 @@ EOF
   if ! dpkg-query -W -f='$${Status}' google-cloud-ops-agent 2>/dev/null | grep -q 'install ok installed'; then
     local installer
     installer="$(mktemp)"
-    retry 10 curl --retry 10 --retry-all-errors -fsSL \
+    retry 10 curl --connect-timeout 5 --max-time 60 --retry 3 --retry-all-errors -fsSL \
       https://dl.google.com/cloudagents/add-google-cloud-ops-agent-repo.sh \
       -o "$installer"
-    retry 5 bash "$installer" --also-install
+    retry 5 timeout 10m bash "$installer" --also-install
     rm -f "$installer"
   fi
 

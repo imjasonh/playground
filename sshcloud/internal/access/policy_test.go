@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -140,6 +141,35 @@ func TestFileSourceReloadsAndFailsClosed(t *testing.T) {
 	}
 	if _, err := source.Load(); err == nil {
 		t.Fatal("missing configured policy must fail closed")
+	}
+}
+
+func TestFileSourceLastKnownGoodLease(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "access-policy.json")
+	writeTestPolicy(t, path, JoinAllowlist, DeployAllowlist, nil, nil)
+
+	validatedAt := time.Unix(1_800_000_000, 0)
+	if err := os.Chtimes(path, validatedAt, validatedAt); err != nil {
+		t.Fatal(err)
+	}
+	source := FileSource{
+		Path:   path,
+		MaxAge: 5 * time.Minute,
+		Now:    func() time.Time { return validatedAt.Add(5*time.Minute - time.Second) },
+	}
+	if _, err := source.Load(); err != nil {
+		t.Fatalf("fresh last-known-good policy: %v", err)
+	}
+
+	source.Now = func() time.Time { return validatedAt.Add(5*time.Minute + time.Second) }
+	if _, err := source.Load(); err == nil || !strings.Contains(err.Error(), "lease expired") {
+		t.Fatalf("expired last-known-good policy error = %v", err)
+	}
+
+	source.Now = func() time.Time { return validatedAt.Add(-2 * time.Minute) }
+	if _, err := source.Load(); err == nil || !strings.Contains(err.Error(), "in the future") {
+		t.Fatalf("future policy timestamp error = %v", err)
 	}
 }
 

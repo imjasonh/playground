@@ -4,7 +4,6 @@ locals {
     "billingbudgets.googleapis.com",
     "cloudbilling.googleapis.com",
     "cloudresourcemanager.googleapis.com",
-    "cloudtrace.googleapis.com",
     "cloudkms.googleapis.com",
     "compute.googleapis.com",
     "firestore.googleapis.com",

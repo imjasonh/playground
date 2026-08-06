@@ -3,6 +3,7 @@ locals {
     resource.type="gce_instance"
     AND labels."compute.googleapis.com/resource_name"=~"^${local.prefix}-(gateway|orchestrator|snapshot|agent)"
   EOT
+  sshcloud_vm_metric_filter   = "resource.type = \"gce_instance\" AND metadata.user_labels.\"app\" = \"sshcloud\" AND metadata.user_labels.\"managed\" = \"terraform\""
   alert_notification_channels = google_monitoring_notification_channel.email[*].name
 }
 
@@ -25,55 +26,68 @@ resource "google_logging_project_bucket_config" "app" {
 }
 
 resource "google_logging_project_sink" "platform" {
-  name                   = "${local.prefix}-platform"
-  project                = var.project_id
-  destination            = "logging.googleapis.com/${google_logging_project_bucket_config.platform.name}"
-  filter                 = "${local.sshcloud_vm_log_filter}\nAND NOT jsonPayload.log_type=\"app\""
-  unique_writer_identity = true
+  name        = "${local.prefix}-platform"
+  project     = var.project_id
+  destination = "logging.googleapis.com/${google_logging_project_bucket_config.platform.name}"
+  filter      = "${local.sshcloud_vm_log_filter}\nAND NOT jsonPayload.log_type=\"app\""
 }
 
 resource "google_logging_project_sink" "app" {
-  name                   = "${local.prefix}-app"
-  project                = var.project_id
-  destination            = "logging.googleapis.com/${google_logging_project_bucket_config.app.name}"
-  filter                 = "${local.sshcloud_vm_log_filter}\nAND jsonPayload.log_type=\"app\""
-  unique_writer_identity = true
+  name        = "${local.prefix}-app"
+  project     = var.project_id
+  destination = "logging.googleapis.com/${google_logging_project_bucket_config.app.name}"
+  filter      = "${local.sshcloud_vm_log_filter}\nAND jsonPayload.log_type=\"app\""
 }
 
-resource "google_project_iam_member" "platform_sink" {
-  project = var.project_id
-  role    = "roles/logging.bucketWriter"
-  member  = google_logging_project_sink.platform.writer_identity
-
-  condition {
-    title       = "${local.prefix}-platform-log-bucket"
-    description = "Limit the platform sink writer to its dedicated log bucket"
-    expression  = "resource.name == \"${google_logging_project_bucket_config.platform.name}\""
-  }
+resource "google_logging_log_view" "platform" {
+  name        = "${local.prefix}-platform"
+  parent      = "projects/${var.project_id}"
+  location    = "global"
+  bucket      = google_logging_project_bucket_config.platform.bucket_id
+  description = "sshcloud platform diagnostics only"
+  filter      = "SOURCE(\"projects/${var.project_id}\") AND resource.type = \"gce_instance\""
 }
 
-resource "google_project_iam_member" "app_sink" {
-  project = var.project_id
-  role    = "roles/logging.bucketWriter"
-  member  = google_logging_project_sink.app.writer_identity
-
-  condition {
-    title       = "${local.prefix}-app-log-bucket"
-    description = "Limit the app sink writer to its seven-day log bucket"
-    expression  = "resource.name == \"${google_logging_project_bucket_config.app.name}\""
-  }
+resource "google_logging_log_view" "app" {
+  name        = "${local.prefix}-app"
+  parent      = "projects/${var.project_id}"
+  location    = "global"
+  bucket      = google_logging_project_bucket_config.app.bucket_id
+  description = "Sensitive sshcloud app-owned console and telemetry records"
+  filter      = "SOURCE(\"projects/${var.project_id}\") AND resource.type = \"gce_instance\""
 }
 
-# Keep sshcloud records out of _Default after their dedicated sinks accept
-# them. _Required remains untouched.
+resource "google_logging_log_view_iam_member" "platform_readers" {
+  for_each = var.platform_log_reader_members
+  parent   = "projects/${var.project_id}"
+  location = "global"
+  bucket   = google_logging_project_bucket_config.platform.bucket_id
+  name     = google_logging_log_view.platform.name
+  role     = "roles/logging.viewAccessor"
+  member   = each.value
+}
+
+resource "google_logging_log_view_iam_member" "app_readers" {
+  for_each = var.app_log_reader_members
+  parent   = "projects/${var.project_id}"
+  location = "global"
+  bucket   = google_logging_project_bucket_config.app.bucket_id
+  name     = google_logging_log_view.app.name
+  role     = "roles/logging.viewAccessor"
+  member   = each.value
+}
+
+# Keep duplication in _Default until an operator has live-verified both sink
+# routes. _Required remains untouched.
 resource "google_logging_project_exclusion" "sshcloud_default" {
+  count       = var.log_routing_live_verified ? 1 : 0
   project     = var.project_id
   name        = "${local.prefix}-dedicated-buckets"
-  description = "Avoid duplicate retention after platform/app bucket routing"
+  description = "Avoid duplicate retention only after live sink verification"
   filter      = local.sshcloud_vm_log_filter
   depends_on = [
-    google_project_iam_member.platform_sink,
-    google_project_iam_member.app_sink,
+    google_logging_project_sink.platform,
+    google_logging_project_sink.app,
   ]
 }
 
@@ -110,7 +124,7 @@ resource "google_monitoring_alert_policy" "ops_agent_absent" {
   conditions {
     display_name = "No sshcloud scrape heartbeat for 10 minutes"
     condition_prometheus_query_language {
-      query                     = "absent_over_time(sshcloud_up[10m]) == 1"
+      query                     = "absent_over_time(sshcloud_up{job=~\"sshcloud-(gateway|orchestrator|snapshotd|agent)\"}[10m]) == 1"
       duration                  = "0s"
       evaluation_interval       = "60s"
       disable_metric_validation = true
@@ -132,7 +146,7 @@ resource "google_monitoring_alert_policy" "disk_high" {
   conditions {
     display_name = "Persistent disk percent used"
     condition_threshold {
-      filter          = "resource.type = \"gce_instance\" AND metric.type = \"agent.googleapis.com/disk/percent_used\" AND metric.label.\"state\" = \"used\""
+      filter          = "${local.sshcloud_vm_metric_filter} AND metric.type = \"agent.googleapis.com/disk/percent_used\" AND metric.label.\"state\" = \"used\""
       comparison      = "COMPARISON_GT"
       threshold_value = 90
       duration        = "300s"
@@ -160,7 +174,7 @@ resource "google_monitoring_alert_policy" "app_log_drops" {
   conditions {
     display_name = "Nonblocking host console guard dropped bytes"
     condition_prometheus_query_language {
-      query                     = "increase(sshcloud_app_log_bytes_total{result=\"dropped\"}[5m]) > 0"
+      query                     = "increase(sshcloud_app_log_bytes_total{job=~\"sshcloud-(gateway|orchestrator|snapshotd|agent)\",result=\"dropped\"}[5m]) > 0"
       duration                  = "0s"
       evaluation_interval       = "60s"
       disable_metric_validation = true
@@ -214,7 +228,7 @@ resource "google_monitoring_dashboard" "sshcloud" {
               plotType = "LINE"
               timeSeriesQuery = {
                 timeSeriesFilter = {
-                  filter = "resource.type=\"gce_instance\" metric.type=\"agent.googleapis.com/cpu/utilization\""
+                  filter = "${local.sshcloud_vm_metric_filter} AND metric.type = \"agent.googleapis.com/cpu/utilization\""
                   aggregation = {
                     alignmentPeriod  = "60s"
                     perSeriesAligner = "ALIGN_MEAN"
@@ -232,7 +246,7 @@ resource "google_monitoring_dashboard" "sshcloud" {
               plotType = "LINE"
               timeSeriesQuery = {
                 timeSeriesFilter = {
-                  filter = "resource.type=\"gce_instance\" metric.type=\"agent.googleapis.com/disk/percent_used\" metric.label.state=\"used\""
+                  filter = "${local.sshcloud_vm_metric_filter} AND metric.type = \"agent.googleapis.com/disk/percent_used\" AND metric.label.state = \"used\""
                   aggregation = {
                     alignmentPeriod  = "60s"
                     perSeriesAligner = "ALIGN_MEAN"
@@ -250,7 +264,7 @@ resource "google_monitoring_dashboard" "sshcloud" {
               plotType = "STACKED_AREA"
               timeSeriesQuery = {
                 timeSeriesFilter = {
-                  filter = "resource.type=\"prometheus_target\" metric.type=\"prometheus.googleapis.com/sshcloud_app_log_bytes_total/counter\""
+                  filter = "resource.type = \"prometheus_target\" AND metric.type = \"prometheus.googleapis.com/sshcloud_app_log_bytes_total/counter\" AND resource.label.\"job\" = monitoring.regex.full_match(\"sshcloud-(gateway|orchestrator|snapshotd|agent)\")"
                   aggregation = {
                     alignmentPeriod  = "300s"
                     perSeriesAligner = "ALIGN_DELTA"
@@ -268,7 +282,7 @@ resource "google_monitoring_dashboard" "sshcloud" {
               plotType = "STACKED_BAR"
               timeSeriesQuery = {
                 timeSeriesFilter = {
-                  filter = "resource.type=\"prometheus_target\" metric.type=\"prometheus.googleapis.com/sshcloud_lifecycle_operations_total/counter\" metric.label.outcome=\"failure\""
+                  filter = "resource.type = \"prometheus_target\" AND metric.type = \"prometheus.googleapis.com/sshcloud_lifecycle_operations_total/counter\" AND metric.label.\"outcome\" = \"failure\" AND resource.label.\"job\" = monitoring.regex.full_match(\"sshcloud-(gateway|orchestrator|snapshotd|agent)\")"
                   aggregation = {
                     alignmentPeriod  = "300s"
                     perSeriesAligner = "ALIGN_DELTA"

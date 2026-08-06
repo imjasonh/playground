@@ -49,11 +49,14 @@ func main() {
 	controlKey := flag.String("control-key", "", "reloadable gateway control private-key PEM")
 	controlCACurrent := flag.String("control-ca-current", "", "reloadable current control CA PEM")
 	controlCAPrevious := flag.String("control-ca-previous", "", "reloadable previous control CA PEM")
+	controlBundle := flag.String("control-bundle", "", "atomically switched control TLS bundle directory")
+	controlBundleMaxAge := flag.Duration("control-bundle-max-age", controlauth.DefaultBundleLease, "last-known-good control bundle lease")
 	controlProjectID := flag.String("control-project-id", "", "expected GCE identity-token project ID")
 	controlProjectNumber := flag.String("control-project-number", "", "expected GCE identity-token project number")
 	orchestratorServiceAccount := flag.String("orchestrator-service-account", "", "exact orchestrator service-account email")
 	insecureControl := flag.Bool("control-insecure-loopback", false, "explicitly allow unauthenticated plaintext control traffic on loopback only")
 	accessPolicyFile := flag.String("access-policy-file", "", "path to reloadable JSON SSH-key access policy (empty is local open/all-users)")
+	accessPolicyMaxAge := flag.Duration("access-policy-max-age", 5*time.Minute, "last-known-good access policy lease")
 	allowedRegistries := flag.String("allowed-registries", "index.docker.io,docker.io,ghcr.io,*.pkg.dev", "comma-separated OCI registry hosts; supports *.suffix")
 	maxSessionsPerUser := flag.Int("max-sessions-per-user", 5, "concurrent sessions across all apps")
 	handshakesPerMinute := flag.Int("handshakes-per-minute", 60, "accepted SSH handshakes per source IP per minute")
@@ -73,7 +76,9 @@ func main() {
 		log.Fatalf("user CA: %v", err)
 	}
 	controlFiles := controlauth.TLSFiles{
-		CertFile: *controlCert, KeyFile: *controlKey,
+		BundleDir: *controlBundle,
+		MaxAge:    *controlBundleMaxAge,
+		CertFile:  *controlCert, KeyFile: *controlKey,
 		CurrentCAFile: *controlCACurrent, PreviousCAFile: *controlCAPrevious,
 	}
 	controlEnabled := *orchURL != "" || *agentURL != "" || *controlListen != ""
@@ -114,13 +119,12 @@ func main() {
 	sess.MaxPerUser = *maxSessionsPerUser
 	var accessPolicy access.Source = access.StaticSource{Policy: access.LocalDevelopmentPolicy()}
 	if *accessPolicyFile != "" {
-		filePolicy := access.FileSource{Path: *accessPolicyFile}
+		filePolicy := access.FileSource{Path: *accessPolicyFile, MaxAge: *accessPolicyMaxAge}
 		accessPolicy = filePolicy
 		if _, err := filePolicy.Load(); err != nil {
-			log.Printf("WARNING: access policy is unavailable; gateway admissions will fail closed: %v", err)
-		} else {
-			log.Printf("access policy: reload %s on each admission", *accessPolicyFile)
+			log.Fatalf("access policy must be valid before gateway start: %v", err)
 		}
+		log.Printf("access policy: reload %s on each admission (lease %s)", *accessPolicyFile, accessPolicyMaxAge.String())
 	} else {
 		log.Printf("access policy: local development open/all-users (no policy file configured)")
 	}
@@ -140,6 +144,9 @@ func main() {
 		AllowedRegistries: image.ParseRegistryAllowlist(*allowedRegistries),
 		Quotas:            quotaStore,
 		Limits:            gateway.Limits{AppsPerUser: *maxAppsPerUser, DeploysPerHour: *deploysPerHour},
+		RuntimeReady: func() error {
+			return controlauth.BundleFresh(*controlBundle, *controlBundleMaxAge)
+		},
 	}
 
 	var instances cutover.Instances
@@ -161,6 +168,7 @@ func main() {
 			return gateway.DialTarget{Addr: target.Addr, SSHHostPublicKey: target.SSHHostPublicKey}, err
 		}
 		instances = oc
+		hub.BackendReady = oc.Ready
 		log.Printf("backend: orchestrator at %s (placement-aware)", *orchURL)
 	case *agentURL != "":
 		ac := &backend.AgentClient{BaseURL: *agentURL, InsecureLoopback: true}

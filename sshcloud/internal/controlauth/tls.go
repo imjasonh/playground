@@ -7,14 +7,22 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
 
+const DefaultBundleLease = 15 * time.Minute
+
 // TLSFiles names reloadable PEM files. CurrentCAFile and PreviousCAFile are
 // both mandatory trust slots so a new CA can overlap the old CA during leaf
-// rotation. Files are reread for every new TLS handshake.
+// rotation. Production sets BundleDir to an atomically switched, validated
+// version directory. The individual paths remain for explicit local tests.
 type TLSFiles struct {
+	BundleDir      string
+	MaxAge         time.Duration
 	CertFile       string
 	KeyFile        string
 	CurrentCAFile  string
@@ -22,15 +30,77 @@ type TLSFiles struct {
 }
 
 func (f TLSFiles) validate() error {
+	resolved, err := f.resolve()
+	if err != nil {
+		return err
+	}
 	for name, path := range map[string]string{
-		"certificate": f.CertFile,
-		"private key": f.KeyFile,
-		"current CA":  f.CurrentCAFile,
-		"previous CA": f.PreviousCAFile,
+		"certificate": resolved.CertFile,
+		"private key": resolved.KeyFile,
+		"current CA":  resolved.CurrentCAFile,
+		"previous CA": resolved.PreviousCAFile,
 	} {
 		if path == "" {
 			return fmt.Errorf("control TLS %s file is required", name)
 		}
+	}
+	return nil
+}
+
+func (f TLSFiles) resolve() (TLSFiles, error) {
+	if strings.TrimSpace(f.BundleDir) == "" {
+		return f, nil
+	}
+	dir, err := filepath.EvalSymlinks(f.BundleDir)
+	if err != nil {
+		return TLSFiles{}, fmt.Errorf("resolve control TLS bundle: %w", err)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		return TLSFiles{}, fmt.Errorf("stat control TLS bundle: %w", err)
+	}
+	if !info.IsDir() {
+		return TLSFiles{}, fmt.Errorf("control TLS bundle %s is not a directory", dir)
+	}
+	return TLSFiles{
+		BundleDir:      dir,
+		MaxAge:         f.MaxAge,
+		CertFile:       filepath.Join(dir, "tls.crt"),
+		KeyFile:        filepath.Join(dir, "tls.key"),
+		CurrentCAFile:  filepath.Join(dir, "ca-current.pem"),
+		PreviousCAFile: filepath.Join(dir, "ca-previous.pem"),
+	}, nil
+}
+
+// BundleFresh reports whether the last fully validated bundle is still inside
+// its last-known-good lease. Services remain live for diagnosis but become
+// unready after the lease instead of trusting stale identity indefinitely.
+func BundleFresh(bundleDir string, maxAge time.Duration) error {
+	if strings.TrimSpace(bundleDir) == "" {
+		return nil
+	}
+	if maxAge <= 0 {
+		maxAge = DefaultBundleLease
+	}
+	resolved, err := (TLSFiles{BundleDir: bundleDir}).resolve()
+	if err != nil {
+		return err
+	}
+	raw, err := os.ReadFile(filepath.Join(resolved.BundleDir, "validated-at"))
+	if err != nil {
+		return fmt.Errorf("read control TLS bundle validation time: %w", err)
+	}
+	seconds, err := strconv.ParseInt(strings.TrimSpace(string(raw)), 10, 64)
+	if err != nil || seconds <= 0 {
+		return fmt.Errorf("control TLS bundle validation time is invalid")
+	}
+	validatedAt := time.Unix(seconds, 0)
+	now := time.Now()
+	if validatedAt.After(now.Add(time.Minute)) {
+		return fmt.Errorf("control TLS bundle validation time is in the future")
+	}
+	if now.Sub(validatedAt) > maxAge {
+		return fmt.Errorf("control TLS bundle last-known-good lease expired")
 	}
 	return nil
 }
@@ -58,7 +128,16 @@ func newCertificateReloader(files TLSFiles, expectedRole Role) (*certificateRelo
 }
 
 func (r *certificateReloader) reload() (*tls.Certificate, error) {
-	cert, err := tls.LoadX509KeyPair(r.files.CertFile, r.files.KeyFile)
+	if r.files.BundleDir != "" {
+		if err := BundleFresh(r.files.BundleDir, r.files.MaxAge); err != nil {
+			return nil, err
+		}
+	}
+	files, resolveErr := r.files.resolve()
+	if resolveErr != nil {
+		return r.cachedOrError(resolveErr)
+	}
+	cert, err := tls.LoadX509KeyPair(files.CertFile, files.KeyFile)
 	if err == nil {
 		if len(cert.Certificate) == 0 {
 			err = fmt.Errorf("control TLS certificate chain is empty")
@@ -74,15 +153,20 @@ func (r *certificateReloader) reload() (*tls.Certificate, error) {
 			}
 		}
 	}
+	return r.cachedOrError(fmt.Errorf("load control TLS key pair: %w", err))
+}
+
+func (r *certificateReloader) cachedOrError(err error) (*tls.Certificate, error) {
 	r.mu.RLock()
 	last := r.last
 	r.mu.RUnlock()
 	if last != nil {
-		// Secret refreshers replace the cert and key independently. Retaining
-		// the last valid pair avoids a transient mismatch during that window.
+		// Local/test callers may still use independent paths, and a transient
+		// filesystem read can fail even for an atomically selected production
+		// bundle. Retain only the last pair that parsed and matched its role.
 		return last, nil
 	}
-	return nil, fmt.Errorf("load control TLS key pair: %w", err)
+	return nil, err
 }
 
 func (r *certificateReloader) certificate(*tls.ClientHelloInfo) (*tls.Certificate, error) {
@@ -109,8 +193,17 @@ func newRootsReloader(files TLSFiles) (*rootsReloader, error) {
 }
 
 func (r *rootsReloader) reload() (*x509.CertPool, error) {
+	if r.files.BundleDir != "" {
+		if err := BundleFresh(r.files.BundleDir, r.files.MaxAge); err != nil {
+			return nil, err
+		}
+	}
+	files, err := r.files.resolve()
+	if err != nil {
+		return r.cachedOrError(err)
+	}
 	pool := x509.NewCertPool()
-	for _, path := range []string{r.files.CurrentCAFile, r.files.PreviousCAFile} {
+	for _, path := range []string{files.CurrentCAFile, files.PreviousCAFile} {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return r.cachedOrError(fmt.Errorf("read control CA %s: %w", path, err))

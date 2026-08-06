@@ -221,3 +221,124 @@ func TestPlacedDialEnforcesAwakeUserQuotaBeforeEnsure(t *testing.T) {
 		t.Fatalf("ensure called %d times after quota denial", ensureCalls)
 	}
 }
+
+func TestPlacedDialWakeOperationIdentity(t *testing.T) {
+	t.Parallel()
+	ensureCalls := 0
+	host := quotaAgentServer(t, nil, &ensureCalls)
+	place := placement.NewMemory()
+	if err := place.SetIdentity(t.Context(), "alice", "fortune", "host-a", "local:host-a"); err != nil {
+		t.Fatal(err)
+	}
+	dial := &backend.PlacedDial{
+		Placement: place,
+		Agents: backend.NewHostSet(map[string]*backend.AgentClient{
+			"host-a": {BaseURL: host.URL, InsecureLoopback: true},
+		}, "host-a"),
+		Quotas: quota.NewMemory(), MaxAwakePerUser: 10, WakesPerHour: 1,
+	}
+	options := backend.StartOptions{Purpose: "session", RequestID: "session-stable"}
+	for attempt := 0; attempt < 2; attempt++ {
+		if _, err := dial.EnsureAddrTierWithOptions(
+			t.Context(), "alice", "fortune", "g1", "", "tiny", false, options,
+		); err != nil {
+			t.Fatalf("retry %d with stable operation ID: %v", attempt, err)
+		}
+	}
+	_, err := dial.EnsureAddrTierWithOptions(
+		t.Context(), "alice", "fortune", "g1", "", "tiny", false,
+		backend.StartOptions{Purpose: "session", RequestID: "session-separate"},
+	)
+	var exceeded quota.ErrExceeded
+	if !errors.As(err, &exceeded) || exceeded.Kind != "wake" {
+		t.Fatalf("separate wake error = %v, want wake quota", err)
+	}
+	if ensureCalls != 2 {
+		t.Fatalf("ensure calls = %d, want two retries before separate wake denial", ensureCalls)
+	}
+}
+
+func TestPlacedDialDeployBurstRequiresRunningOldGeneration(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		inventory []agent.InstanceInfo
+		wantError bool
+	}{
+		{
+			name: "initial deploy gets no burst",
+			inventory: []agent.InstanceInfo{
+				{User: "alice", App: "one", Gen: "g1", State: agent.StateRunning},
+				{User: "alice", App: "two", Gen: "g1", State: agent.StateRunning},
+			},
+			wantError: true,
+		},
+		{
+			name: "old plus new cutover gets one burst",
+			inventory: []agent.InstanceInfo{
+				{User: "alice", App: "fortune", Gen: "gold", State: agent.StateRunning},
+				{User: "alice", App: "other", Gen: "g1", State: agent.StateRunning},
+			},
+		},
+	}
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ensureCalls := 0
+			host := quotaAgentServer(t, tc.inventory, &ensureCalls)
+			place := placement.NewMemory()
+			if err := place.SetIdentity(t.Context(), "alice", "fortune", "host-a", "local:host-a"); err != nil {
+				t.Fatal(err)
+			}
+			dial := &backend.PlacedDial{
+				Placement: place,
+				Agents: backend.NewHostSet(map[string]*backend.AgentClient{
+					"host-a": {BaseURL: host.URL, InsecureLoopback: true},
+				}, "host-a"),
+				Quotas: quota.NewMemory(), MaxAwakePerUser: 2, WakesPerHour: 10,
+			}
+			_, err := dial.EnsureAddrTierWithOptions(
+				t.Context(), "alice", "fortune", "gnew", "", "tiny", true,
+				backend.StartOptions{Purpose: "deploy", RequestID: "deploy-gnew"},
+			)
+			if tc.wantError {
+				var exceeded quota.ErrExceeded
+				if !errors.As(err, &exceeded) || exceeded.Kind != "awake_vms" {
+					t.Fatalf("error = %v, want awake_vms quota", err)
+				}
+				if ensureCalls != 0 {
+					t.Fatalf("initial deploy used burst and called ensure %d times", ensureCalls)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if ensureCalls != 1 {
+				t.Fatalf("cutover ensure calls = %d, want 1", ensureCalls)
+			}
+		})
+	}
+}
+
+func quotaAgentServer(t *testing.T, inventory []agent.InstanceInfo, ensureCalls *int) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/instances/status":
+			_ = json.NewEncoder(w).Encode(backend.InstanceView{State: "sleeping"})
+		case "/v1/host/instances":
+			_ = json.NewEncoder(w).Encode(map[string]any{"instances": inventory})
+		case "/v1/instances/ensure":
+			(*ensureCalls)++
+			_ = json.NewEncoder(w).Encode(backend.InstanceView{
+				Addr: "127.0.0.1:22", State: "running", SSHHostPublicKey: "key",
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	return server
+}

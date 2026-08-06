@@ -53,7 +53,9 @@ Operations and privacy contract:
 particular, observability never reads or records SSH channel stdin/stdout/stderr,
 commands, environment, signals, or replay bytes. The bounded migration input
 queue remains an in-memory transport-continuity primitive and is explicitly
-outside observability.
+outside observability. Encrypted `vm.mem` snapshots are sensitive workload
+state that may incidentally contain application or terminal buffers; they are
+not session recordings and never enter observability or proxy diagnostics.
 
 Key/certificate/identity rotation and Terraform-state handling:
 [`docs/key-rotation-runbook.md`](docs/key-rotation-runbook.md). The runbook and
@@ -357,7 +359,7 @@ Implemented and covered at package/integration level:
 - [x] Atomic snapshot package publication and restart-on-Ensure recovery
 - [x] Per-generation snapshotd isolation with exact GCE instance fencing,
       encrypted immutable packages, KMS-wrapped streaming keys, and bucket CMEK
-- [x] Serialized deploy cutover, same-artifact idempotency, drain/kick fencing
+- [x] Serialized deploy cutover, same-image+tier no-op idempotency, drain/kick fencing
 - [x] Real `tiny` (1 vCPU/128 MiB) and `small` (2 vCPU/512 MiB) resources
 - [x] Generation-aware migrate primitives and placement-after-readiness
 - [x] Durable placement leases/CAS, capacity-aware bin packing, cordon + host drain

@@ -39,6 +39,11 @@ func (b *migrationInput) readSource() {
 	for {
 		n, err := b.source.Read(buf)
 		b.mu.Lock()
+		if b.closed {
+			clear(buf[:n])
+			b.mu.Unlock()
+			return
+		}
 		if n > 0 {
 			for b.attached && !b.closed && len(b.data)+n > b.max {
 				b.cond.Wait()
@@ -77,6 +82,8 @@ func (b *migrationInput) Overflow() <-chan struct{} { return b.overflow }
 func (b *migrationInput) Close() {
 	b.mu.Lock()
 	b.closed = true
+	clear(b.data)
+	b.data = nil
 	b.activeID++
 	b.attached = false
 	b.cond.Broadcast()
@@ -102,6 +109,7 @@ func (a *migrationAttachment) pumpTo(dst io.Writer) error {
 		}
 		n, err := dst.Write(b.data)
 		if n > 0 {
+			clear(b.data[:n])
 			b.data = b.data[n:]
 			b.cond.Broadcast()
 		}
@@ -125,6 +133,7 @@ func (a *migrationAttachment) Read(p []byte) (int, error) {
 		}
 		if len(b.data) > 0 {
 			n := copy(p, b.data)
+			clear(b.data[:n])
 			b.data = b.data[n:]
 			b.cond.Broadcast()
 			return n, nil

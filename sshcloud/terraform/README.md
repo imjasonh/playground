@@ -37,6 +37,9 @@ gateway — it is not a platform builtin.
 
 Every role installs the GCP Ops Agent. Platform logs are retained for 30 days
 and bounded app-owned console/telemetry logs for seven days in separate buckets.
+Each bucket has a dedicated log view and optional view-scoped reader list.
+sshcloud records remain duplicated in `_Default` until an operator completes
+the live routing drill and explicitly sets `log_routing_live_verified = true`.
 See [`../docs/observability-runbook.md`](../docs/observability-runbook.md) for
 the no-SSH-channel-data contract, telemetry syntax, queries, bounds, and drills.
 Set `notification_email` for alert email. Set `billing_account_id` and
@@ -157,13 +160,13 @@ The only certificate URI identities are:
 - `spiffe://sshcloud.internal/control/snapshot`
 
 Authorization is fixed: gateway may call only orchestrator
-`ensure`/`stop`/`no-idle`; orchestrator may call all agent routes and gateway
-migration routes. Host/migrate/placement/diagnostic orchestrator routes are
-absent from the gateway-facing TCP listener. They are served only as HTTPS over
-`/run/sshcloud/orchestrator-admin.sock`, mode `0600` and root-owned. Operators
-enter through IAP + OS Login and use `sudo`; the local call still presents the
-orchestrator role certificate and a metadata identity token with the separate
-admin audience.
+`readyz`/`ensure`/`stop`/`no-idle`; orchestrator may call all agent routes and
+gateway migration routes. Host/migrate/placement/diagnostic orchestrator routes
+are absent from the gateway-facing TCP listener. They are served only as HTTPS
+over `/run/sshcloud/orchestrator-admin.sock`, mode `0600` and root-owned.
+Operators enter through IAP + OS Login and use `sudo`; the local call still
+presents the orchestrator role certificate and a metadata identity token with
+the separate admin audience.
 
 Agents call snapshotd with the agent role certificate and a snapshot-specific
 identity-token audience. snapshotd uses the verified token's exact
@@ -184,15 +187,31 @@ requires room for one maximum package and leaves at least 5 GiB unreserved.
 Failed plaintext removals remain visible and charged against the byte budget
 until snapshotd's next startup cleanup.
 
-Control cert/key and two CA files are refreshed from Secret Manager each minute
-and reloaded on every new TLS handshake. Both A and B CAs remain trusted during
-rotation. Set `control_ca_active_slot = "b"` to reissue leaves under B while A
-remains trusted; only then replace idle A. Fixed A/B trust-file positions avoid
-Compute churn when the signing slot changes. Increment
-`control_ca_rotation_epochs` only for the inactive slot and
-`control_leaf_rotation_epochs` one role at a time—never use taint. Superseded
-Secret Manager versions are retained for explicit cleanup. Follow and verify
-every stage in the rotation runbook.
+Each role's identity secret and both CA secrets are fetched into a candidate
+version directory every minute. Before publication, startup verifies the
+certificate/private-key match, exact role URI SAN, both distinct CA
+certificates, expiry margin, and that exactly one trust slot issued the leaf.
+Only then does it atomically switch the `control/current` symlink, so a TLS
+handshake never observes files from different refreshes. Services reload that
+selected bundle on every new handshake. Bundles and the selector remain
+root-owned; non-root agent/snapshotd workloads receive read-only group access.
+A failed refresh may use the last validated bundle for at most 15 minutes; all
+role readiness endpoints then fail until a new complete bundle is published.
+
+Both A and B CAs remain trusted during rotation. Set
+`control_ca_active_slot = "b"` to reissue leaves under B while A remains
+trusted; only then replace idle A. Fixed A/B trust-file positions avoid Compute
+churn when the signing slot changes. Increment `control_ca_rotation_epochs`
+only for the inactive slot and `control_leaf_rotation_epochs` one role at a
+time—never use taint. Superseded Secret Manager versions are retained for
+explicit cleanup. Follow and verify every stage in the rotation runbook.
+
+systemd is the sole supervisor for gateway, orchestrator, and snapshotd. Each
+unit requires a successful pinned-image pull and a successful control-bundle
+refresh (plus gateway policy refresh or orchestrator host refresh) before it
+starts a foreground `docker run --rm`. Docker gets no restart policy. Startup
+also disables and removes containers left by the former Docker-supervised
+configuration, so they cannot auto-start on reboot.
 
 Host sshd on the gateway is moved to **:2222** (IAP) so platform SSH can own `:22`.
 Terraform uploads the exact local Firecracker/jailer/kernel files as
@@ -251,9 +270,13 @@ version and retries join/deploy while the gateway fetches that version.
 
 Every policy change creates a Secret Manager version. The gateway host refreshes
 `versions/latest` every minute (with up to 10 seconds of jitter), atomically
-replaces the mounted JSON file, and reloads it for every admission or deploy
-decision; no image rebuild or VM replacement is required. A missing, unreadable,
-or corrupt configured file denies all new joins, app/menu use, and deploys.
+replaces the mounted JSON file only after strict schema and OpenSSH-key
+validation, and reloads it for every admission or deploy decision; no image
+rebuild or VM replacement is required. A transient fetch or validation failure
+may retain the last validated file for at most five minutes. After that lease,
+the gateway becomes unready and denies all new joins, app/menu use, and
+deploys. A configured policy must be valid and inside the lease before the
+gateway process can start.
 
 Revocation takes effect for new admissions after the next successful refresh.
 Open SSH connections are rechecked every 30 seconds and closed when their key
@@ -298,9 +321,12 @@ membership-list removal ineffective.
 - **No guest observability credentials or port:** app logs/telemetry use the
   host-drained serial console. Terraform adds no guest telemetry firewall
   exception, and Ops Agent credentials remain on the host.
-- **MIG discovery:** orchestrator `-hosts-file` is rewritten every minute from
-  the Compute API's MIG membership; root-only admin `GET /v1/hosts` reports the
-  resulting authenticated agent view.
+- **MIG discovery:** orchestrator `-hosts-file` is rewritten under a lock with a
+  unique temporary file and atomic rename every minute from the Compute API's
+  ready MIG membership. A failed or empty refresh retains the non-empty
+  last-known-good list; first startup fails until at least one ready host can be
+  published. Root-only admin `GET /v1/hosts` reports the resulting
+  authenticated agent view.
 - **Drain before host rollout:** the MIG update policy remains opportunistic so
   Terraform never kills live app VMs implicitly. From an IAP + OS Login shell
   on the orchestrator VM, drain each instance through the root-only Unix socket
@@ -332,7 +358,9 @@ membership-list removal ineffective.
 - **GCP observability verification still required:** structural tests cannot
   prove actual Ops Agent ingestion, log-bucket routing/exclusion, retention,
   Prometheus descriptor creation, alert/email delivery, or budget delivery.
-  Run the ingestion and alert drills in the observability runbook after apply.
+  Run the ingestion and alert drills in the observability runbook after apply;
+  leave `log_routing_live_verified = false` until both dedicated routes are
+  proven.
 - Inspect rotation state without payload output:
   `bash hack/inspect-rotation-state.sh --help`
 - Validate locally (no GCP apply): `bash hack/validate-terraform.sh` (includes

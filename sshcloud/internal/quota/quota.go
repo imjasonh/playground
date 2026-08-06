@@ -3,6 +3,8 @@ package quota
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"sort"
 	"sync"
@@ -18,6 +20,17 @@ type Request struct {
 	Kind, Subject, EventID string
 	At                     time.Time
 	Limit                  Limit
+}
+
+// NewEventID returns one opaque admission-operation ID. Callers create it once
+// and reuse it across transport retries; separate user operations get distinct
+// IDs even when their image/generation inputs are identical.
+func NewEventID(prefix string) string {
+	var value [12]byte
+	if _, err := rand.Read(value[:]); err != nil {
+		return fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
+	}
+	return prefix + "-" + hex.EncodeToString(value[:])
 }
 
 type Store interface {

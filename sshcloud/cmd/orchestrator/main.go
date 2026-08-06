@@ -59,6 +59,8 @@ func main() {
 	controlKey := flag.String("control-key", "", "reloadable orchestrator control private-key PEM")
 	controlCACurrent := flag.String("control-ca-current", "", "reloadable current control CA PEM")
 	controlCAPrevious := flag.String("control-ca-previous", "", "reloadable previous control CA PEM")
+	controlBundle := flag.String("control-bundle", "", "atomically switched control TLS bundle directory")
+	controlBundleMaxAge := flag.Duration("control-bundle-max-age", controlauth.DefaultBundleLease, "last-known-good control bundle lease")
 	controlProjectID := flag.String("control-project-id", "", "expected GCE identity-token project ID")
 	controlProjectNumber := flag.String("control-project-number", "", "expected GCE identity-token project number")
 	gatewayServiceAccount := flag.String("gateway-service-account", "", "exact gateway service-account email")
@@ -72,7 +74,9 @@ func main() {
 	flag.Parse()
 
 	controlFiles := controlauth.TLSFiles{
-		CertFile: *controlCert, KeyFile: *controlKey,
+		BundleDir: *controlBundle,
+		MaxAge:    *controlBundleMaxAge,
+		CertFile:  *controlCert, KeyFile: *controlKey,
 		CurrentCAFile: *controlCACurrent, PreviousCAFile: *controlCAPrevious,
 	}
 	if *insecureControl {
@@ -206,15 +210,21 @@ func main() {
 		_, _ = w.Write([]byte("ok"))
 	})
 	ready := func(w http.ResponseWriter, r *http.Request) {
+		readyCtx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
+		defer cancel()
+		if err := controlauth.BundleFresh(*controlBundle, *controlBundleMaxAge); err != nil {
+			http.Error(w, "unavailable", http.StatusServiceUnavailable)
+			return
+		}
 		if hosts.Len() == 0 {
 			http.Error(w, "unavailable", http.StatusServiceUnavailable)
 			return
 		}
-		if _, err := place.ListRecords(r.Context()); err != nil {
+		if _, err := place.ListRecords(readyCtx); err != nil {
 			http.Error(w, "unavailable", http.StatusServiceUnavailable)
 			return
 		}
-		if _, err := hosts.Candidates(r.Context(), "tiny", nil); err != nil {
+		if _, err := hosts.Candidates(readyCtx, "tiny", nil); err != nil {
 			http.Error(w, "unavailable", http.StatusServiceUnavailable)
 			return
 		}
@@ -224,6 +234,7 @@ func main() {
 	healthMux.HandleFunc("GET /readyz", ready)
 	healthMux.HandleFunc("GET /healthz", ready)
 	healthMux.Handle("GET /metrics", observability.MetricsHandler())
+	api.HandleFunc("GET /v1/readyz", ready)
 	api.HandleFunc("GET /v1/hosts", func(w http.ResponseWriter, r *http.Request) {
 		type hostView struct {
 			ID       string         `json:"id"`
@@ -349,6 +360,16 @@ func main() {
 		}
 		if req.Purpose == "" {
 			req.Purpose = "session"
+		}
+		if req.Purpose != "session" && req.Purpose != "deploy" {
+			http.Error(w, "purpose must be session or deploy", http.StatusBadRequest)
+			return
+		}
+		req.RequestID = strings.TrimSpace(req.RequestID)
+		if req.RequestID == "" || len(req.RequestID) > 128 ||
+			strings.ContainsAny(req.RequestID, "\x00\r\n\t ") {
+			http.Error(w, "request_id must be a non-empty opaque operation ID", http.StatusBadRequest)
+			return
 		}
 		addr, err := dial.EnsureAddrTierWithOptions(
 			r.Context(), req.User, req.App, req.Gen, req.Image, req.Tier, req.NoIdle,
@@ -686,6 +707,7 @@ func requireHostInstanceIDs(hosts map[string]*backend.AgentClient) error {
 
 func gatewayServiceRoutes(next http.Handler) http.Handler {
 	return exactRoutes(next, map[string]struct{}{
+		"GET /v1/readyz":   {},
 		"POST /v1/ensure":  {},
 		"POST /v1/stop":    {},
 		"POST /v1/no-idle": {},

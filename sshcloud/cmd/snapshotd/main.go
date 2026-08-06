@@ -44,6 +44,8 @@ func main() {
 	controlKey := flag.String("control-key", "", "reloadable snapshot control private-key PEM")
 	controlCACurrent := flag.String("control-ca-current", "", "reloadable current control CA PEM")
 	controlCAPrevious := flag.String("control-ca-previous", "", "reloadable previous control CA PEM")
+	controlBundle := flag.String("control-bundle", "", "atomically switched control TLS bundle directory")
+	controlBundleMaxAge := flag.Duration("control-bundle-max-age", controlauth.DefaultBundleLease, "last-known-good control bundle lease")
 	controlProjectID := flag.String("control-project-id", "", "expected GCE token project ID")
 	controlProjectNumber := flag.String("control-project-number", "", "expected GCE token project number")
 	agentServiceAccount := flag.String("agent-service-account", "", "exact agent service-account email")
@@ -100,6 +102,9 @@ func main() {
 	handler := &snapshotd.Handler{
 		Store: store, Authorizer: &snapshotd.Authorizer{Placement: place},
 		ExpectedLayout: *expectedLayout, TempDir: *tempDir, Staging: staging,
+		Readiness: func() error {
+			return controlauth.BundleFresh(*controlBundle, *controlBundleMaxAge)
+		},
 	}
 	api := http.NewServeMux()
 	handler.Mount(api)
@@ -111,7 +116,9 @@ func main() {
 		Audience: controlauth.AudienceSnapshot,
 	}, api)
 	tlsConfig, err := controlauth.ServerTLSConfig(controlauth.TLSFiles{
-		CertFile: *controlCert, KeyFile: *controlKey,
+		BundleDir: *controlBundle,
+		MaxAge:    *controlBundleMaxAge,
+		CertFile:  *controlCert, KeyFile: *controlKey,
 		CurrentCAFile: *controlCACurrent, PreviousCAFile: *controlCAPrevious,
 	}, controlauth.RoleSnapshot)
 	if err != nil {

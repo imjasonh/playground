@@ -326,8 +326,8 @@ platform identity. The gateway guarantees:
 3. A second concurrent session for the same user×app will not be proxied
    (app will not see it).  
 
-Items 1–2 describe the launch contract, not current prototype behavior:
-concurrency is enforced today, but join/session/wake/deploy quotas are not.
+Join, session, wake, deploy, and concurrent-awake limits are enforced in the
+current prototype. Snapshot/volume storage-byte accounting remains open.
 
 Apps may still enforce **app-domain** rules later (e.g. multi-tenant git authz)
 when cross-user access exists; that is separate from platform anti-abuse.
@@ -405,6 +405,11 @@ GCE host MIG ── host agent ── Firecracker ── app :22
   package + immutable manifest complete; the pointer retains exactly current
   and previous encrypted versions, and generation-qualified cleanup removes
   older object and pointer generations. The bucket also has a default CMEK.
+- Encrypted memory packages are sensitive workload state, not session
+  recordings. `vm.mem` may incidentally contain application state,
+  credentials, or terminal buffers, but snapshot bytes remain opaque to the
+  SSH proxy and observability paths and are never exported as logs, traces,
+  diagnostics, or replay data.
 - snapshotd rejects before reading package bytes when its disk-sized global
   weighted/concurrency guard or exact-agent-incarnation cap is full. Agent and
   snapshotd plaintext staging is removed immediately after publish/restore;
@@ -508,6 +513,9 @@ Responsibilities (v1 sketch):
 - Serialized/idempotent dual-instance cutover: `internal/cutover` (drain + kick-on-timeout default,
   kick-now); gateway pins sessions to `ActiveGen`; agent instances are
   `app` or `app.gen`; draining gens set `no_idle`.
+- An exact same-image+tier deploy is a read-only no-op: it does not change
+  strategy/state, wake or verify a VM, emit a deploy event, or consume quota.
+  A tier change is a real deploy and consumes a new deploy admission.
 - Guest PID 1: always `guestinit` (`init=/platform-init` + `/platform-boot.json`).
   Spec from OCI image config — never a hardcoded platform default.
 - Sample app `fortune` is a normal deploy target (`ko_build.fortune` +
@@ -559,15 +567,17 @@ On deploy, active sessions:
 
 #### Constraints
 
-- **Dual-instance burst:** drain strategies need a temporary extra awake microVM
-  (quota exemption or awake+1 during deploy).
+- **Dual-instance burst:** a deploy receives one temporary extra awake microVM
+  only when an old generation is actually running and the new generation is
+  being started for cutover.
 - **R/W volumes:** two instances cannot mount the same volume R/W → volume apps
   fall back to **kick** or **maintenance** (no side-by-side drain) until
   volume fork/clone exists.
 - **No live session morph** onto a new image; clients reconnect after kick.
 - **Don’t snapshot-sleep** a draining instance until drain/kick completes.
 - Menu/status should show draining state (e.g. `myapp — draining, 3 sessions`).
-- Traces (metadata): `deploy_id`, `instance_id`, cordon/drain/kick events.
+- Metadata-only lifecycle logs/metrics: operation ID, generation, and
+  cordon/drain/kick outcomes.
 
 #### Out of scope
 
@@ -588,7 +598,7 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
 | **Firestore** | Users, keys, apps, placement pointers, quota counters, metadata |
 | **GCS** | CMEK encrypted idle/migrate packages + volume bytes |
 | **Cloud KMS** | Per-package keyset wrapping and snapshot-bucket CMEK |
-| **Secret Manager** | Gateway host key; user CA signing key; versioned public-key access policy |
+| **Secret Manager** | Gateway host key; user CA signing key; versioned public-key access policy; A/B control CAs and role identity bundles |
 
 **Implemented in `sshcloud/`:**
 - `store.Firestore` — `keys/{fp}`, `users/{id}`, `users/{id}/apps/{name}` in
@@ -604,8 +614,10 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
   `sshcloud-placement`), never `(default)`. Gateway IAM reaches only the user
   database; snapshotd has viewer-only access only to placement.
 - Terraform publishes the staged SSH access policy to Secret Manager; the
-  gateway host refreshes `latest` every minute and the process reloads the JSON
-  file per decision. Missing/corrupt configured policy fails closed.
+  gateway host refreshes `latest` every minute, strictly validates it, and
+  atomically replaces the file that the process reloads per decision. A failed
+  refresh may retain the last validated policy for five minutes; the gateway
+  then becomes unready and admissions fail closed.
 - Every production control request uses TLS 1.3 mutual authentication and a
   freshly fetched, audience-bound GCE metadata identity token. Servers verify
   the Google signature and standard claims, a 65-minute maximum token age plus
@@ -624,7 +636,7 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
 
   | Listener/API | Exact caller | Token audience |
   |---|---|---|
-  | Orchestrator `POST /v1/ensure`, `/v1/stop`, `/v1/no-idle` | gateway URI + exact gateway service account | `https://control.sshcloud.internal/orchestrator/gateway` |
+  | Orchestrator `GET /v1/readyz`, `POST /v1/ensure`, `/v1/stop`, `/v1/no-idle` | gateway URI + exact gateway service account | `https://control.sshcloud.internal/orchestrator/gateway` |
   | Agent `/v1/*` | orchestrator URI + exact orchestrator service account | `https://control.sshcloud.internal/agent` |
   | Snapshotd `/v1/snapshots/*` | agent URI + exact agent service account and instance claims | `https://control.sshcloud.internal/snapshot` |
   | Gateway migration `/v1/sessions/{freeze,thaw,abort}` | orchestrator URI + exact orchestrator service account | `https://control.sshcloud.internal/gateway/migration` |
@@ -634,15 +646,22 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
   listener; operators reach the VM with IAP + OS Login and invoke the local
   root-only helper path. Separate unauthenticated HTTP listeners expose only
   `livez`/`readyz`/`healthz`, with no diagnostics.
-- mTLS files reload on every new handshake. Two CA files are trusted
-  concurrently so leaves can move between A/B signing slots before retiring
-  the old CA. Fixed A/B trust positions plus explicit per-slot/per-role epochs
-  make manual replacement deterministic without taint; superseded Secret
-  Manager versions are retained for operator cleanup.
+- mTLS material reloads on every new handshake from one atomically selected,
+  versioned bundle. Startup validates the leaf/key match, exact role URI, both
+  distinct CA certificates, expiry margin, and one issuing slot before
+  switching the bundle symlink. Two CAs remain trusted concurrently so leaves
+  can move between A/B signing slots before retiring the old CA. A failed
+  refresh may use the last validated bundle for 15 minutes; role readiness then
+  fails until refresh succeeds. Fixed A/B trust positions plus explicit
+  per-slot/per-role epochs make manual replacement deterministic without taint;
+  superseded Secret Manager versions are retained for operator cleanup.
 - Placement changes use Firestore transactions with revisioned leases,
   renewal heartbeats, expiry takeover, and a reconciler for abandoned leases.
 - Rolling Firestore counters enforce join IP/prefix, deploy, and wake limits;
   gateway/orchestrator memory gates enforce handshakes, sessions, and awake VMs.
+  Session IDs and deploy generation IDs are stable quota event IDs across
+  transport retries; separate sessions/wakes remain distinct events. A deploy
+  receives the one-VM awake burst only for an observed old+new cutover.
   Still open: storage-byte accounting.
 
 ### Infra
@@ -665,7 +684,11 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
   lists
 - Gateway static IP (`:22` only when CIDRs are explicitly supplied),
   orchestrator VM (VPC), snapshotd VM/internal IP, nested-virt agent MIG
-- Orchestrator `-hosts-file` refresh from MIG membership (`GET /v1/hosts`)
+- systemd-only supervision for foreground, auto-removed gateway/orchestrator/
+  snapshotd containers, ordered after pinned image pull and mandatory
+  control/config refresh; Docker has no restart policy
+- Orchestrator `-hosts-file` refresh from ready MIG membership under a lock and
+  atomic rename, retaining a non-empty last-known-good list (`GET /v1/hosts`)
 - Cloud NAT/Private Google Access for private hosts; content-addressed
   Firecracker/jailer/kernel GCS objects are in the Terraform DAG; agent-host SSH
   relays provide the separate-VM gateway→guest data path
@@ -686,10 +709,11 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
   `"image"` hook + `guestinit` PID 1 from image config; deploy cutover pre-boots
   the new gen with that image.
 - GCP Ops Agent on every role, 30-day platform and seven-day app log buckets,
-  `_Default` duplicate exclusion, Prometheus/OpenTelemetry-compatible host and
-  lifecycle metrics, dashboard/core alerts, and optional email/budget. Real
-  ingestion, routing, retention, and alert delivery still require a manual
-  operator-owned GCP drill.
+  custom bucket views/readers, Prometheus/OpenTelemetry-compatible host and
+  lifecycle metrics, dashboard/core alerts, and optional email/budget.
+  `_Default` duplication remains until an operator explicitly confirms both
+  routes. Real ingestion, routing, retention, and alert delivery still require
+  a manual operator-owned GCP drill.
 - CI unit/structural checks cover helper peer credentials, validation, fixed
   jailer argv, TAP rules, snapshot authorization fences, envelope
   tamper/swap/truncation/AAD, generation preconditions, and failure propagation.
@@ -744,8 +768,8 @@ cap (or per-guest principals)—not silent app-side accept of duplicates.
 
 ### Signals
 
-Metadata traces/metrics: join accepts/rejects, session rejects (busy), rate-limit
-hits, wake/deploy denials — still **no session bytes**.
+Metadata-only logs/metrics: join accepts/rejects, session rejects (busy),
+rate-limit hits, wake/deploy denials — still **no session bytes**.
 
 The implemented privacy boundary is documented in
 [`sshcloud/docs/observability-runbook.md`](../sshcloud/docs/observability-runbook.md).
@@ -765,9 +789,9 @@ user/app/generation/run/session labels.
 - MicroVMs private (tap/CNI); not Internet-reachable.  
 - Egress: global allowlist.  
 - No app-to-app net; no port forwarding.  
-- Connection traces: metadata only (user, app, lifecycle phase, outcome, and
-  timings) — never channel bytes, commands, environment, signals, or replay
-  data.
+- Connection lifecycle logs/metrics: metadata only (user, app, phase, outcome,
+  and timings) — never channel bytes, commands, environment, signals, or replay
+  data. Cloud Trace is not enabled by the current deployment.
 - No account recovery in v1.  
 - Gateway host key: single stable key (published fingerprint in docs); host CA later.  
 - Abuse controls: §10.

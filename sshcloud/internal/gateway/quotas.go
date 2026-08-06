@@ -71,12 +71,12 @@ func (h *Hub) allowJoin(ctx context.Context, sourceIP, username, keyFingerprint 
 	})
 }
 
-func (h *Hub) allowDeploy(ctx context.Context, user, app, image string) error {
+func (h *Hub) allowDeploy(ctx context.Context, user, operationID string) error {
 	if h.Quotas == nil {
 		return nil
 	}
 	return h.Quotas.Take(ctx, quota.Request{
-		Kind: "deploy", Subject: user, EventID: app + "\x00" + image, At: time.Now(),
+		Kind: "deploy", Subject: user, EventID: operationID, At: time.Now(),
 		Limit: quota.Limit{Max: h.limits().DeploysPerHour, Window: time.Hour},
 	})
 }

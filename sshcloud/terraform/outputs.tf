@@ -134,10 +134,13 @@ output "agent_mig" {
 }
 
 output "observability" {
-  description = "Dedicated log buckets and Monitoring dashboard"
+  description = "Dedicated log buckets/views, _Default routing gate, and Monitoring dashboard"
   value = {
     platform_log_bucket = google_logging_project_bucket_config.platform.bucket_id
     app_log_bucket      = google_logging_project_bucket_config.app.bucket_id
+    platform_log_view   = google_logging_log_view.platform.name
+    app_log_view        = google_logging_log_view.app.name
+    default_excluded    = var.log_routing_live_verified
     dashboard_id        = google_monitoring_dashboard.sshcloud.id
     billing_budget_id   = try(google_billing_budget.monthly[0].id, null)
   }

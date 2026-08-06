@@ -10,7 +10,8 @@ Usage: inspect-terraform-backend.sh [options]
 
 Options:
   --terraform-dir DIR  Terraform root (default: ../terraform)
-  --project PROJECT    GCP project used to describe an initialized GCS backend
+  --project PROJECT    Expected owner project for the initialized GCS backend
+                       (default: active gcloud project)
 
 The script never runs terraform state pull/show/output and never queries or
 prints resource instances. For a GCS backend it selects only backend fields
@@ -161,23 +162,38 @@ command -v gcloud >/dev/null 2>&1 || {
   echo "required command not found: gcloud" >&2
   exit 1
 }
+command -v timeout >/dev/null 2>&1 || {
+  echo "required command not found: timeout" >&2
+  exit 1
+}
+if [[ -z "$project" ]]; then
+  project="$(gcloud config get-value project 2>/dev/null)"
+fi
+if [[ -z "$project" || "$project" == "(unset)" ]]; then
+  echo "an expected backend project is required (--project or active gcloud project)" >&2
+  exit 2
+fi
 bucket_json="$(mktemp "${TMPDIR:-/tmp}/sshcloud-state-bucket.XXXXXX")"
 iam_json="$(mktemp "${TMPDIR:-/tmp}/sshcloud-state-iam.XXXXXX")"
 trap 'rm -f "$bucket_json" "$iam_json"' EXIT
-project_args=()
-[[ -n "$project" ]] && project_args=(--project="$project")
-gcloud storage buckets describe "gs://$bucket" \
-  "${project_args[@]}" \
+timeout 30s gcloud storage buckets describe "gs://$bucket" \
+  --project="$project" \
   --format=json >"$bucket_json"
-gcloud storage buckets get-iam-policy "gs://$bucket" \
-  "${project_args[@]}" \
+timeout 30s gcloud storage buckets get-iam-policy "gs://$bucket" \
+  --project="$project" \
   --format=json >"$iam_json"
+expected_project_number="$(
+  timeout 30s gcloud projects describe "$project" --format='value(projectNumber)'
+)"
 
 versioning="$(jq -r '.versioning.enabled // false' "$bucket_json")"
 ubla="$(jq -r '.iamConfiguration.uniformBucketLevelAccess.enabled // false' "$bucket_json")"
 pap="$(jq -r '.iamConfiguration.publicAccessPrevention // "unspecified"' "$bucket_json")"
 retention_seconds="$(jq -r '.retentionPolicy.retentionPeriod // 0' "$bucket_json")"
 soft_delete_seconds="$(jq -r '.softDeletePolicy.retentionDurationSeconds // 0' "$bucket_json")"
+bucket_project_number="$(jq -r '.projectNumber // .project // ""' "$bucket_json")"
+project_match="no"
+[[ -n "$expected_project_number" && "$bucket_project_number" == "$expected_project_number" ]] && project_match="yes"
 cmek="no"
 [[ "$(jq -r '.encryption.defaultKmsKeyName // ""' "$bucket_json")" != "" ]] && cmek="yes"
 public_bindings="$(jq -r '
@@ -197,14 +213,20 @@ if [[ "$versioning" != "true" ||
   "$pap" != "enforced" ||
   "$public_bindings" != "0" ||
   "$admin_binding_count" != "0" ||
-  ( "$retention_seconds" == "0" && "$soft_delete_seconds" == "0" ) ]]; then
+  "$retention_seconds" != "0" ||
+  "$soft_delete_seconds" == "0" ||
+  "$project_match" != "yes" ]]; then
   safety="fail"
   reason="bucket_controls_incomplete"
 fi
 
 printf 'terraform_backend configured=gcs initialized=gcs bucket=%s prefix=%q locking=gcs-native local_state_files=%s safety=%s reason=%s\n' \
   "$bucket" "$prefix" "$local_state_count" "$safety" "$reason"
-printf 'terraform_backend_bucket versioning=%s uniform_access=%s public_access_prevention=%s retention_seconds=%s soft_delete_seconds=%s cmek=%s public_bindings=%s iam_bindings=%s admin_bindings=%s\n' \
+printf 'terraform_backend_bucket project=%s project_number=%s expected_project_number=%s project_match=%s versioning=%s uniform_access=%s public_access_prevention=%s retention_seconds=%s soft_delete_seconds=%s cmek=%s public_bindings=%s iam_bindings=%s admin_bindings=%s\n' \
+  "$project" \
+  "$bucket_project_number" \
+  "$expected_project_number" \
+  "$project_match" \
   "$versioning" \
   "$ubla" \
   "$pap" \

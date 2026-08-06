@@ -71,6 +71,11 @@ type Hub struct {
 	UserCA  *userca.CA // optional; when set with Dial, apps are proxied over SSH
 	Dial    DialFunc   // optional backend address resolver
 	Cutover *cutover.Controller
+	// BackendReady verifies the placement backend without waking an app.
+	// Production sets it to the authenticated orchestrator readiness endpoint.
+	BackendReady func(context.Context) error
+	// RuntimeReady verifies host-distributed identity/config leases.
+	RuntimeReady func() error
 	// AllowedRegistries mirrors the agent-side SSRF boundary for immediate
 	// deploy feedback. Empty is local-dev only.
 	AllowedRegistries []string
@@ -78,6 +83,33 @@ type Hub struct {
 	Limits            Limits
 	quotaMu           sync.Mutex
 	quotaUsers        map[string]*sync.Mutex
+}
+
+// Ready checks every dependency needed to admit and route a new session.
+func (h *Hub) Ready(ctx context.Context) error {
+	if h == nil || h.Store == nil {
+		return fmt.Errorf("gateway store unavailable")
+	}
+	if _, err := h.Store.ListAllApps(ctx); err != nil {
+		return fmt.Errorf("gateway store: %w", err)
+	}
+	if h.Access == nil {
+		return fmt.Errorf("gateway access policy unavailable")
+	}
+	if _, err := h.Access.Load(); err != nil {
+		return fmt.Errorf("gateway access policy: %w", err)
+	}
+	if h.BackendReady != nil {
+		if err := h.BackendReady(ctx); err != nil {
+			return fmt.Errorf("gateway backend: %w", err)
+		}
+	}
+	if h.RuntimeReady != nil {
+		if err := h.RuntimeReady(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Connect is the inbound connection facts after SSH key auth attempt.

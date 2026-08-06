@@ -236,21 +236,15 @@ func TestSameImageAndTierDeployIsIdempotent(t *testing.T) {
 	fi.mu.Lock()
 	gotBoots := len(fi.ensured)
 	fi.mu.Unlock()
-	if gotBoots != boots+1 {
-		t.Fatalf("same artifact should verify once: %d → %d", boots, gotBoots)
+	if gotBoots != boots {
+		t.Fatalf("same image+tier deploy touched runtime: %d → %d", boots, gotBoots)
 	}
 	if second.ActiveGen != first.ActiveGen {
 		t.Fatalf("generation changed: %s → %s", first.ActiveGen, second.ActiveGen)
 	}
-	fi.mu.Lock()
-	lastEnsure := fi.ensured[len(fi.ensured)-1]
-	fi.mu.Unlock()
-	if lastEnsure != "alice/myapp@"+first.ActiveGen {
-		t.Fatalf("verified wrong generation: %s", lastEnsure)
-	}
 	app, _ := st.GetApp(ctx, "alice", "myapp")
-	if app.SessionStrategy != store.StrategyDrain {
-		t.Fatalf("strategy was not updated: %+v", app)
+	if app.SessionStrategy != store.StrategyKick || second.Strategy != store.StrategyKick {
+		t.Fatalf("same image+tier deploy mutated strategy: app=%+v result=%+v", app, second)
 	}
 }
 

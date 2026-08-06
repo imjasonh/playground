@@ -32,7 +32,6 @@ locals {
   observability_roles = toset([
     "roles/logging.logWriter",
     "roles/monitoring.metricWriter",
-    "roles/cloudtrace.agent",
   ])
   observability_grants = {
     for grant in setproduct(keys(local.observability_service_accounts), local.observability_roles) :
@@ -43,7 +42,7 @@ locals {
   }
 }
 
-# Ops Agent workloads receive only the three standard observability writer
+# Ops Agent workloads receive only the actively used logging/metrics writer
 # roles. No guest receives a service-account token or these credentials.
 resource "google_project_iam_member" "observability_writers" {
   for_each = local.observability_grants

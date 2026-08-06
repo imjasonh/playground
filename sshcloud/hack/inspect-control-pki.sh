@@ -11,7 +11,7 @@ Usage: inspect-control-pki.sh [options]
 Options:
   --control-dir DIR    Directory containing tls.crt, tls.key,
                        ca-current.pem (slot A), and ca-previous.pem (slot B)
-                       (default: /var/lib/sshcloud/control)
+                       (default: /var/lib/sshcloud/control/current)
   --active-slot a|b    Label the configured leaf-signing slot (required)
   --expected-role ROLE Require gateway, orchestrator, agent, or snapshot
   --mode all|ca|leaf   Limit output (default: all)
@@ -26,7 +26,7 @@ boolean key-match result; it never prints PEM, public-key lines, or key bytes.
 EOF
 }
 
-control_dir="/var/lib/sshcloud/control"
+control_dir="/var/lib/sshcloud/control/current"
 active_slot=""
 expected_role=""
 mode="all"

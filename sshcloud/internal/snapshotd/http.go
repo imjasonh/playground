@@ -21,6 +21,7 @@ type Handler struct {
 	ExpectedLayout string
 	TempDir        string
 	Staging        *StagingGuard
+	Readiness      func() error
 }
 
 func (h *Handler) Mount(mux *http.ServeMux) {
@@ -43,11 +44,19 @@ func (h *Handler) MountHealth(mux *http.ServeMux) {
 }
 
 func (h *Handler) health(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
+	defer cancel()
+	if h.Readiness != nil {
+		if err := h.Readiness(); err != nil {
+			http.Error(w, "unavailable", http.StatusServiceUnavailable)
+			return
+		}
+	}
 	if h.Store == nil {
 		http.Error(w, "unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	if err := h.Store.Health(r.Context()); err != nil {
+	if err := h.Store.Health(ctx); err != nil {
 		http.Error(w, "unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -55,7 +64,7 @@ func (h *Handler) health(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	if _, err := h.Authorizer.Placement.ListRecords(r.Context()); err != nil {
+	if _, err := h.Authorizer.Placement.ListRecords(ctx); err != nil {
 		http.Error(w, "unavailable", http.StatusServiceUnavailable)
 		return
 	}

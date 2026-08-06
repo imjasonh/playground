@@ -54,7 +54,7 @@ func (p *PlacedDial) EnsureAddr(ctx context.Context, user, app, gen, image strin
 // EnsureAddrTier boots/wakes with an explicit resource tier.
 func (p *PlacedDial) EnsureAddrTier(ctx context.Context, user, app, gen, image, tier string, noIdle bool) (string, error) {
 	return p.EnsureAddrTierWithOptions(ctx, user, app, gen, image, tier, noIdle, StartOptions{
-		Purpose: "session", RequestID: gen + "\x00" + image,
+		Purpose: "session", RequestID: placement.NewLeaseOwner("session"),
 	})
 }
 
@@ -66,6 +66,9 @@ type StartOptions struct {
 func (p *PlacedDial) EnsureAddrTierWithOptions(ctx context.Context, user, app, gen, image, tier string, noIdle bool, options StartOptions) (string, error) {
 	if p.Agents == nil {
 		return "", fmt.Errorf("no agents available for %s/%s", user, app)
+	}
+	if options.RequestID == "" {
+		return "", fmt.Errorf("stable start operation ID is required")
 	}
 	unlockStart := p.lockStart(user)
 	defer unlockStart()
@@ -119,7 +122,7 @@ func (p *PlacedDial) EnsureAddrTierWithOptions(ctx context.Context, user, app, g
 		alreadyRunning = found && status.State == "running"
 	}
 	if !alreadyRunning {
-		if err := p.admitStart(guard.Context(), user, options); err != nil {
+		if err := p.admitStart(guard.Context(), user, app, gen, options); err != nil {
 			return "", err
 		}
 	}
@@ -388,16 +391,20 @@ func (p *PlacedDial) lockStart(user string) func() {
 	return lock.Unlock
 }
 
-func (p *PlacedDial) admitStart(ctx context.Context, user string, options StartOptions) error {
+func (p *PlacedDial) admitStart(ctx context.Context, user, app, gen string, options StartOptions) error {
 	inventories, err := p.Agents.Inventories(ctx)
 	if err != nil {
 		return err
 	}
 	awake := 0
+	oldGenerationAwake := false
 	for _, inventory := range inventories {
 		for _, instance := range inventory {
 			if instance.User == user && instance.State == agent.StateRunning {
 				awake++
+				if instance.App == app && instance.Gen != gen {
+					oldGenerationAwake = true
+				}
 			}
 		}
 	}
@@ -405,7 +412,7 @@ func (p *PlacedDial) admitStart(ctx context.Context, user string, options StartO
 	if maxAwake <= 0 {
 		maxAwake = 2
 	}
-	if options.Purpose == "deploy" {
+	if options.Purpose == "deploy" && oldGenerationAwake {
 		maxAwake++ // one controlled old+new cutover burst
 	}
 	if awake >= maxAwake {
@@ -419,9 +426,6 @@ func (p *PlacedDial) admitStart(ctx context.Context, user string, options StartO
 		wakes = 30
 	}
 	eventID := options.RequestID
-	if eventID == "" {
-		eventID = placement.NewLeaseOwner("wake")
-	}
 	return p.Quotas.Take(ctx, quota.Request{
 		Kind: "wake", Subject: user, EventID: eventID, At: time.Now(),
 		Limit: quota.Limit{Max: wakes, Window: time.Hour},

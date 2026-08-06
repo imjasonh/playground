@@ -287,6 +287,67 @@ func TestPrepareRequestRequiresProductionAuthOrExplicitLoopback(t *testing.T) {
 	}
 }
 
+func TestBundleFreshUsesAtomicallySelectedValidationLease(t *testing.T) {
+	root := t.TempDir()
+	bundle := filepath.Join(root, "versions", "bundle-1")
+	if err := os.MkdirAll(bundle, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	current := filepath.Join(root, "current")
+	if err := os.Symlink(filepath.Join("versions", "bundle-1"), current); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now()
+	marker := filepath.Join(bundle, "validated-at")
+	writeMarker := func(value string) {
+		t.Helper()
+		if err := os.WriteFile(marker, []byte(value+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeMarker(strconv.FormatInt(now.Add(-time.Minute).Unix(), 10))
+	if err := BundleFresh(current, 5*time.Minute); err != nil {
+		t.Fatalf("fresh bundle: %v", err)
+	}
+
+	expiredBundle := filepath.Join(root, "versions", "bundle-2")
+	if err := os.MkdirAll(expiredBundle, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	expiredMarker := filepath.Join(expiredBundle, "validated-at")
+	if err := os.WriteFile(
+		expiredMarker,
+		[]byte(strconv.FormatInt(now.Add(-10*time.Minute).Unix(), 10)+"\n"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	next := filepath.Join(root, ".current-next")
+	if err := os.Symlink(filepath.Join("versions", "bundle-2"), next); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(next, current); err != nil {
+		t.Fatal(err)
+	}
+	if err := BundleFresh(current, 5*time.Minute); err == nil ||
+		!strings.Contains(err.Error(), "lease expired") {
+		t.Fatalf("expired bundle error = %v", err)
+	}
+
+	if err := os.WriteFile(
+		expiredMarker,
+		[]byte(strconv.FormatInt(now.Add(2*time.Minute).Unix(), 10)+"\n"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := BundleFresh(current, 5*time.Minute); err == nil ||
+		!strings.Contains(err.Error(), "in the future") {
+		t.Fatalf("future bundle error = %v", err)
+	}
+}
+
 func TestTLSRejectsMissingCertificateAndWrongRole(t *testing.T) {
 	pki := newTestPKI(t)
 	serverFiles := pki.files(t, RoleOrchestrator, pki.caA, 10)

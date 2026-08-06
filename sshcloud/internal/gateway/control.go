@@ -76,11 +76,13 @@ func (h *ControlHandler) MountHealth(mux *http.ServeMux) {
 		_, _ = w.Write([]byte("ok"))
 	})
 	ready := func(w http.ResponseWriter, r *http.Request) {
-		if h.Hub == nil || h.Hub.Store == nil {
-			http.Error(w, "gateway store unavailable", http.StatusServiceUnavailable)
+		if h.Hub == nil {
+			http.Error(w, "unavailable", http.StatusServiceUnavailable)
 			return
 		}
-		if _, err := h.Hub.Store.ListAllApps(r.Context()); err != nil {
+		readyCtx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
+		defer cancel()
+		if err := h.Hub.Ready(readyCtx); err != nil {
 			http.Error(w, "unavailable", http.StatusServiceUnavailable)
 			return
 		}
