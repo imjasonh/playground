@@ -3,7 +3,8 @@
 Platform services for an SSH-only PaaS: users `ssh foo.com` to join or pick an
 app; apps speak SSH on `:22` and run in Firecracker microVMs.
 
-Design: [`docs/ssh-app-cloud-design.md`](../docs/ssh-app-cloud-design.md).
+Product design: [`docs/ssh-app-cloud-design.md`](../docs/ssh-app-cloud-design.md).
+Implementation design: [`design.md`](design.md).
 
 > **Prototype safety boundary:** this branch is suitable for local/KVM and
 > CIDR-restricted GCP smoke tests. It is not ready for public self-service.
@@ -171,10 +172,12 @@ must listen on `:22`, accept arbitrary platform principals, trust the user CA
 at `/run/platform/ssh_user_ca.pub`, and present the injected Ed25519 host key at
 `/run/platform/ssh_host_ed25519_key`. The kernel is platform-supplied.
 
-`guestinit` mounts proc, sysfs, devtmpfs/devpts, and a bounded `/tmp` before
-exec. This is still an appliance-style OCI subset, not a full container
-runtime: layer UID/GID/xattrs, non-root users, OCI volumes, cgroups, DNS/egress,
-and graceful `StopSignal` supervision are not yet supported.
+`guestinit` mounts proc, optional read-only sysfs, and devtmpfs/devpts, then
+ensures `/tmp` exists with mode `01777` on the writable rootfs before exec. It
+does not mount a separate tmpfs. This is still an appliance-style OCI subset,
+not a full container runtime: layer UID/GID/xattrs, non-root users, OCI
+volumes, cgroups, DNS/egress, and graceful `StopSignal` supervision are not yet
+supported.
 
 `internal/ocirootfs.Materialize` pulls with
 [go-containerregistry](https://github.com/google/go-containerregistry)

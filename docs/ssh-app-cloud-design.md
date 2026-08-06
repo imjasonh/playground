@@ -58,7 +58,7 @@ Key/certificate/identity/KMS rotation and Terraform-state operations:
 | “No shell” | No host/login shell; apps may offer PTY, exec/subsystem, long-lived multi-client sessions |
 | Proxy fidelity | Session + PTY + exec/subsystem (not full arbitrary channel proxy) |
 | Deploy unit | OCI image@**digest**; PID 1 speaks SSH on `:22` |
-| Image source | Public registries (GHCR / Docker Hub); **digest required** |
+| Image source | Operator-allowlisted registries (including GHCR / Docker Hub); **digest required** |
 | Kernel | Shared platform kernel for all apps |
 | Readiness | TCP accept on 22 |
 | Isolation | One Firecracker microVM per app instance |
@@ -69,11 +69,11 @@ Key/certificate/identity/KMS rotation and Terraform-state operations:
 | Wake failures | Retry in-place (time-capped) now; queue-for-capacity later |
 | Resources | `tiny` + `small` tiers in v1 |
 | Port forwarding | Not in v1 |
-| App-to-app net | None — inbound SSH + internet egress only |
-| Egress | Single **global** platform allowlist |
-| Volumes | Optional; **GCS-backed** block/virtio |
+| App-to-app net | None — inbound SSH only in the current private trial |
+| Egress | Deny-all now; an audited **global** platform allowlist is later |
+| Volumes | Not implemented; **GCS-backed** block/virtio remains a later design |
 | Snapshots | Orchestration (bin-pack/drain) **and** idle sleep; stored in GCS |
-| Migrate UX | Best-effort **freeze buffer** (time-capped); then force reconnect |
+| Migrate UX | Best-effort **freeze buffer** while replacing the backend SSH session; timeout kicks the outer session |
 | Control plane | Split: API / orchestrator / host agent / SSH gateway |
 | Datastore | **Firestore** for now |
 | Infra | Host MIG + agent; Terraform + ko for **platform** services only |
@@ -100,7 +100,7 @@ Key/certificate/identity/KMS rotation and Terraform-state operations:
 | Joins / source IP / 24h | 3 |
 | Joins / source /24 / 24h | 20 |
 | SSH handshakes / source IP / minute | modest gateway cap (tune in ops) |
-| Snapshot + volume storage / user | 5 GB |
+| Snapshot + volume storage / user | 5 GB target; byte accounting is not implemented |
 
 ---
 
@@ -174,7 +174,7 @@ showing a short loading UI before handoff.
 *        → join TUI
 
 # Key known
-join     → key management (no username re-prompt)
+join     → registered identity; key management is not implemented
 deploy   → deploy UX
 menu     → app menu (explicit)
 <app>    → if user has this app (deployed) → straight to app
@@ -223,7 +223,7 @@ Known key on `join@`:
 
 ```text
 ssh join@foo.com     # known key — no username prompt
-  └─ manage keys (add/list/revoke)
+  └─ show registered identity and current key-management limitation
 ```
 
 ### App menu flow
@@ -252,8 +252,8 @@ ssh menu@foo.com     # explicit
   final authorization check; remove a deployer from both lists to revoke its
   implied membership in allowlist mode.
 - Re-join with the same key never asks for a username again.
-- Adding a machine: from an already-authenticated `join` session (interim).
-  Exact UX for authorizing a *new* key still open (§12).
+- Adding, listing, or revoking keys is not implemented. The exact UX for
+  authorizing a *new* key is still open (§12).
 
 ### Fortune is a normal deployed app
 
@@ -343,9 +343,9 @@ Client key
   → App SSH: verifies cert with injected platform CA
 ```
 
-Users can rotate/add keys via `join` without redeploying or rewriting app
-`authorized_keys`. Certs are **session-bound** (minutes-scale), minted per
-attach.
+The certificate model permits user-key rotation without rewriting app
+`authorized_keys`, but the gateway does not yet expose add/list/revoke key
+management. Certs are **session-bound** (minutes-scale), minted per attach.
 
 ---
 
@@ -379,7 +379,8 @@ GCE host MIG ── host agent ── Firecracker ── app :22
 
 - On idle (no connections + timeout): **freeze + snapshot to GCS**, stop VM.
 - Wake = restore snapshot (memory + ephemeral disk).
-- Optional **GCS-backed volumes** remount/reattach across sleep/migrate.
+- There is no separate durable-volume implementation; the writable rootfs is
+  included in the snapshot package. GCS-backed volumes remain open.
 
 **Implemented in `sshcloud/` (host-local path first):**
 - Firecracker `Pause` → `CreateSnapshot` → kill VMM; wake via `snapshot/load` + `Resume`.
@@ -437,7 +438,8 @@ GCE host MIG ── host agent ── Firecracker ── app :22
 - `internal/placement` maps `user/app` → host name + immutable GCE instance ID;
   `internal/migrate.Migrator`
   orchestrates the cutover with best-effort rollback Adopt on the source.
-- `cmd/orchestrator` exposes `POST /v1/migrate` and placement-aware `POST /v1/ensure`.
+- `cmd/orchestrator` exposes placement-aware `POST /v1/ensure` to the gateway;
+  `POST /v1/migrate` exists only on its root-owned local admin socket.
 - Gateway `-orchestrator-url` dials via orchestrator Ensure (vs single-host
   `-agent-url`).
 - Migrate orchestration unit test: httptest agent stubs
@@ -492,7 +494,7 @@ Responsibilities (v1 sketch):
 - Create/update app name in the user’s namespace  
 - Set image **digest** (reject unpinned tags)  
 - Choose tier: `tiny` \| `small`  
-- Optional: attach/size GCS-backed volume  
+- Later/not implemented: attach/size a GCS-backed volume
 - Choose **session strategy** (below)  
 - Trigger pull/extract on a host + cut over per strategy  
 - Warn when app name collides with common local usernames (hub footgun)
@@ -593,26 +595,27 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
 | **SSH gateway** | Client SSH; join / menu / deploy; routing; handoff; session admit/reject; rate limits; session→instance pin; cordon/drain/kick; cert mint; proxy |
 | **API** | Internal control APIs for gateway/orchestrator/agent/snapshotd (not public deploy API) |
 | **Orchestrator** | Placement, wake/sleep, host migrate/drain, deploy cutover, quotas / abuse counters |
-| **Host agent** | Image→rootfs, inject CA, Firecracker lifecycle, volumes, probes, local snapshot creation/restore |
+| **Host agent** | Image→rootfs, inject CA, Firecracker lifecycle, probes, local snapshot creation/restore; no volume implementation yet |
 | **snapshotd** | Exact-instance snapshot authorization, package validation, envelope encryption, GCS proxy |
 | **Firestore** | Users, keys, apps, placement pointers, quota counters, metadata |
-| **GCS** | CMEK encrypted idle/migrate packages + volume bytes |
+| **GCS** | CMEK encrypted idle/migrate packages; no separate volume objects yet |
 | **Cloud KMS** | Per-package keyset wrapping and snapshot-bucket CMEK |
 | **Secret Manager** | Gateway host key; user CA signing key; versioned public-key access policy; A/B control CAs and role identity bundles |
 
 **Implemented in `sshcloud/`:**
-- `store.Firestore` — `keys/{fp}`, `users/{id}`, `users/{id}/apps/{name}` in
-  the dedicated user/app/quota database; gateway `-firestore-project` (default
-  remains in-memory).
-- `placement.Firestore` — `placement/{user__app}` → host name + immutable
-  GCE instance ID, generation inventory, and operation fence in a separate
-  dedicated placement/operation database;
+- `store.Firestore` — `<prefix>_keys/{fp}`, `<prefix>_users/{id}`, and
+  `<prefix>_users/{id}/<prefix>_apps/{name}` in the dedicated user/app/quota
+  database; gateway `-firestore-project` (default remains in-memory).
+- `placement.Firestore` — `<prefix>_placement/{user__app}` → host name +
+  immutable GCE instance ID, generation inventory, and operation fence in a
+  separate dedicated placement/operation database;
   orchestrator `-firestore-project`.
 - Emulator tests: `hack/run-firestore-tests.sh` (skips in plain `go test`
   without `FIRESTORE_EMULATOR_HOST`).
-- Terraform provisions two named Native databases (`sshcloud-user` and
-  `sshcloud-placement`), never `(default)`. Gateway IAM reaches only the user
-  database; snapshotd has viewer-only access only to placement.
+- Terraform provisions two named Native databases (default IDs
+  `sshcloud-user` and `sshcloud-placement`), never `(default)`. Gateway IAM
+  reaches only the user database; snapshotd has viewer-only access only to
+  placement.
 - Terraform publishes the staged SSH access policy to Secret Manager; the
   gateway host refreshes `latest` every minute, strictly validates it, and
   atomically replaces the file that the process reloads per decision. A failed
@@ -674,9 +677,10 @@ supported; drain only delays the reconnect until the client leaves (or timeout).
 - Guest egress is deny-all for the private trial; an audited global allowlist is later.
 
 **Implemented in `sshcloud/terraform/` (first environment):**
-- `ko_build` images: gateway, orchestrator, snapshotd, agent, guestinit, fortune (sample app)
-- Separate named Firestore Native user and placement databases, CMEK snapshot + asset GCS buckets,
-  Artifact Registry
+- `ko_build` images: gateway, orchestrator, snapshotd, agent, vmmhelper,
+  taphelper, guestinit, and fortune (sample app)
+- Separate named Firestore Native user and placement databases, a CMEK-backed
+  snapshot bucket, a separate asset GCS bucket, and Artifact Registry
 - Secret Manager: gateway host key, user CA, two control CA slots, and
   role-specific control certificate/key bundles
 - Versioned access policy from operator OpenSSH public-key lines; default
@@ -762,7 +766,8 @@ cap (or per-guest principals)—not silent app-side accept of duplicates.
 
 - Wakes/hour and deploys/hour quotas.  
 - One in-flight deploy per app.  
-- Snapshot/volume storage cap; retain policy for idle snapshots (ops detail).  
+- Snapshot/volume storage cap and long-term retain policy are targets, not
+  implemented accounting.
 - Max image size at deploy (open number — §12).  
 - Dual-instance drain burst is a controlled quota exception, not unlimited.
 
@@ -787,7 +792,7 @@ user/app/generation/run/session labels.
 
 - Public ingress: SSH to gateway only.  
 - MicroVMs private (tap/CNI); not Internet-reachable.  
-- Egress: global allowlist.  
+- Egress: deny-all in the current private trial; audited global allowlist later.
 - No app-to-app net; no port forwarding.  
 - Connection lifecycle logs/metrics: metadata only (user, app, phase, outcome,
   and timings) — never channel bytes, commands, environment, signals, or replay
@@ -886,7 +891,7 @@ ssh fortune@foo.com
 # Explicit menu if local username collides with an app
 ssh menu@foo.com
 
-# Key management
+# Registered identity (add/list/revoke key management is not implemented)
 ssh join@foo.com
 
 # Another custom app
