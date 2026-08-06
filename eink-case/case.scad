@@ -449,6 +449,10 @@ module board_cradle() {
 // ---------------------------------------------------------------------------
 // Back lid
 // ---------------------------------------------------------------------------
+// Assembly orientation: inner face at z=0 (toward the bay), outer face at
+// z=lid_thickness; snap tabs / PCB posts hang into -Z.
+// Print orientation (part="back"): flipped so the large outer face sits on
+// the bed and the posts/snaps point up.
 module back_lid() {
     difference() {
         rounded_box(case_outer_w, case_outer_h, lid_thickness, corner_r);
@@ -457,6 +461,7 @@ module back_lid() {
             translate([p[0], p[1], -eps])
                 cylinder(d = screw_d, h = lid_thickness + 2 * eps);
 
+        // Edge notch matching the USB wall cut (not a center window)
         if (usb_exit == "back") {
             clear = 0.7;
             cw = usb_w + 2 * clear;
@@ -464,14 +469,6 @@ module back_lid() {
             translate([-eps, usb_cy - cw / 2, -eps])
                 cube([wall + 6, cw, lid_thickness + 2 * eps]);
         }
-
-        // Recessed label pad
-        translate([
-            case_outer_w / 2 - 22,
-            case_outer_h / 2 - 7,
-            lid_thickness - 0.4
-        ])
-            cube([44, 14, 0.5]);
     }
 
     if (use_snaps) {
@@ -489,6 +486,13 @@ module back_lid() {
         for (p = board_corner_xy())
             translate([p[0], p[1], -lid_post_h])
                 cylinder(d1 = 3.2, d2 = 2.4, h = lid_post_h);
+}
+
+// Flat-outer-down for printing: outer face on z=0, posts/snaps in +Z.
+module back_lid_print() {
+    translate([0, case_outer_h, lid_thickness])
+        rotate([180, 0, 0])
+            back_lid();
 }
 
 // ---------------------------------------------------------------------------
@@ -514,4 +518,4 @@ if (part == "assembled")
 else if (part == "front")
     front_shell();
 else if (part == "back")
-    back_lid();
+    back_lid_print();

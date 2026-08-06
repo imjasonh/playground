@@ -24,7 +24,7 @@ These track the parameters and are echoed whenever you open/render `case.scad`.
 | STL | Role |
 |-----|------|
 | [`stl/front.stl`](stl/front.stl) | Bezel, panel groove, bay floor, board cradle, screw bosses |
-| [`stl/back.stl`](stl/back.stl) | Lid with snap tabs + PCB hold-down posts |
+| [`stl/back.stl`](stl/back.stl) | Lid (exported flat-outer-down for printing) with snap tabs + PCB hold-down posts |
 
 ```bash
 openscad -o stl/front.stl -D 'part="front"' case.scad

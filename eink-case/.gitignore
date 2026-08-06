@@ -2,5 +2,6 @@
 *.3mf
 previews/
 renders/
+stl/validate.log
 # Keep committed reference STLs under stl/; ignore ad-hoc exports at the root.
 /*.stl
