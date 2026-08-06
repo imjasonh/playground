@@ -15,15 +15,16 @@ Use with the OpenSCAD skill tools in this folder. Cite rules by id in review not
 | Part | STL | Bed face | Why |
 |------|-----|----------|-----|
 | Shell | `stl/shell.stl` | **Closed end down** (FPC mouth up) | U-slot is extruded in print Z — every layer is the U profile; backer is a vertical wall, not a bridge |
-| Cap | `stl/cap.stl` | **Outer face down** | Flat plate; retention tongue + snaps point up |
+| Cap | `stl/cap.stl` | **Outer face down** | Flat plate; retention tongue + clip arms point up |
 
 ## Hard rules we enforce here
 
 - **R1.1** Walls ≥ 0.8 mm (we use ≥ 2.0 mm).
 - **R1.2** No flat ceilings over open cavities. Do **not** print a solid deck behind the AA as a ceiling. The panel backer must be a wall in the print orientation (U-slot principle).
 - **R1.3** Orientation is chosen at design time; STLs are exported already flipped for the bed.
-- **R1.4** Holes undersize — screw clearance and USB cutouts include slop parameters.
-- **R1.7** Cap snaps / self-tap bosses are light-duty; PETG optional for snaps.
+- **R1.4** Holes undersize — USB cutouts and clip windows include slop parameters.
+- **R1.7** Cap clips are light-duty cantilevers with 45° lead-ins (print-up safe
+  on the cap). PETG preferred; no screw bosses.
 - **Elephant foot** — bed-face outer chamfer (`elephant_chamfer`) + optional window lip chamfer. Set `0` to disable. Still tune slicer compensation.
 - **Binary STLs** — `--export-format=binstl`; `*.stl binary` in `.gitattributes`.
 

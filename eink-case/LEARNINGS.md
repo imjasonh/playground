@@ -65,8 +65,9 @@ That restores a true snug slide-in slot without a 3-way screw sandwich.
 | `shell` | Window, U-slot, panel backer, electronics bay, board cradle |
 | `cap` | Closes the open (FPC) end; retains the panel; optional lid posts |
 
-No bezel↔tray screw joint. Cap uses snaps and/or a couple of M2 pilots into
-the shell’s open-end bosses.
+No bezel↔tray screw joint. Cap retention is **clip-only** — four internal
+cantilever barbs into flush side-wall windows. The cap outer face stays flat
+(no screw heads), so the FPC end can sit flush on a desk.
 
 ## Open mouth vs “showing innards”
 

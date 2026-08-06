@@ -2,10 +2,10 @@
 CLOSED OVERALL: 181.6 x 124.9 x 24.2 mm
 Printable parts: 2  (shell + cap)
 Print shell: CLOSED-END down, FPC slide-open UP (U-slot extruded in Z)
-Print cap:   outer face down
+Print cap:   outer face down (FLAT — no screw heads)
 Slot: clear=0.3 crush=0.2  (panel slides in from FPC end)
 FPC: fold bay 8 mm; internal backer pass (no external hole)
-Cap screws: 2× M2x8 self-tap -> 1.7 mm pilots + snaps
+Cap retention: 4× internal clips (barb 0.9 mm); no screws
 Board screws: none (bay cradle)
 Bay depth: 16.6 mm; USB exit: back
 Elephant-foot chamfer: 0.5 mm

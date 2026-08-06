@@ -27,25 +27,28 @@ Run `./tools/validate.sh case.scad` — echoes the live size (tracks parameters)
 | STL | Bed face | Role |
 |-----|----------|------|
 | [`stl/shell.stl`](stl/shell.stl) | Closed end down (FPC mouth up) | Window, U-slot, backer, bay, board cradle |
-| [`stl/cap.stl`](stl/cap.stl) | Outer face down | Closes FPC end; retention tongue; snaps |
+| [`stl/cap.stl`](stl/cap.stl) | Outer face down | Closes FPC end; retention tongue; clips |
 
 ```bash
 bash export-stl.sh   # binary STLs under stl/
 ```
 
-## Screws
+## Fasteners (no screws)
 
 | Joint | Hardware |
 |-------|----------|
-| **Cap → shell** | **2× M2 × 8 mm self-tapping** + snaps |
+| **Cap → shell** | **4× internal cantilever clips** (flush side windows; flat cap face) |
 | **ESP32 board** | **None** — bay cradle (optional VHB) |
+
+No screw heads — the cap’s outer face is flat so the FPC end can sit flush.
 
 ## Assembly
 
 1. Print shell closed-end down; print cap outer-face down.
 2. Slide the panel into the shell from the FPC end (crush ribs snug the outline).
 3. Fold the SPI ribbon through the internal backer pass into the bay; seat the board.
-4. Snap/screw the **cap** on — the tongue blocks the panel from sliding out.
+4. Press the **cap** on until the side clips click — the tongue blocks the panel
+   from sliding out. Pinch the flush side windows to release.
 
 The shell’s FPC mouth is open on purpose for end-loading (bay access + slot).
 The **front lip stays solid** through the fold-bay strip, so the face never
@@ -81,6 +84,7 @@ bash export-stl.sh
 | `panel_crush` | `0.20` | Crush-rib intrusion (mm) |
 | `fpc_fold_bay` | `8.0` | Internal bay at FPC end (mm) |
 | `elephant_chamfer` | `0.5` | Bed-face outer chamfer (mm) |
+| `clip_barb` | `0.9` | Side-clip engagement (mm); lower if too tight |
 | `part` | `assembled` | `assembled` / `shell` / `cap` |
 
 ## Printing
@@ -89,7 +93,7 @@ bash export-stl.sh
 - **Shell:** closed end on bed, FPC mouth up. No supports (U-slot layers).
 - **Cap:** outer face on bed. No supports.
 - Enable slicer elephant-foot compensation in addition to `elephant_chamfer`.
-- Tap M2 gently into pilots — don’t over-torque.
+- PETG is nicer for the cap clips; PLA works if `clip_barb` isn’t aggressive.
 
 ## Dimensions confidence
 

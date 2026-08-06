@@ -15,10 +15,10 @@
 // vertical wall, not a bridge over the window.
 //
 // Assembly: slide panel into shell from FPC end → fold ribbon into bay →
-// seat board → snap/screw cap on.
+// seat board → clip cap on (no screws).
 //
 // Fasteners:
-//   Cap→shell: 2× M2×8 mm self-tapping (open-end bosses) + snaps
+//   Cap→shell: internal cantilever clips (flush outer cap face — no screw heads)
 //   Board:     none (cradle + optional VHB)
 //
 // Assembly coords: X right, Y up (FPC at Y=0), Z toward back.
@@ -67,10 +67,14 @@ cap_rabbet = 1.2;            // [0.6:0.1:2.5] Cap lip into shell mouth (mm)
 cap_skirt = 3.0;             // [1.5:0.5:6] Cap return flange over front/back (mm)
 side_rim = 3.0;              // [2:0.1:8] Rim outside panel L/R (mm)
 closed_end_wall = 3.0;       // [2:0.1:8] Wall opposite FPC / print bed (mm)
-screw_d = 2.4;               // [2:0.1:3.5] Screw clearance through cap (mm)
-screw_boss_d = 7.0;          // [5:0.5:10] Boss outer diameter (mm)
-screw_boss_id = 1.7;         // [1.4:0.1:2.2] M2 self-tap pilot (mm)
-use_snaps = true;            // Cap snap tabs
+
+/* [Cap clips — no screws; outer cap face stays flat] */
+clip_arm_t = 1.3;            // [1.0:0.1:2.0] Flex-arm thickness (mm)
+clip_arm_w = 10.0;           // [6:0.5:16] Flex-arm width along depth (mm)
+clip_reach = 6.5;            // [4:0.5:10] Arm length into shell (mm)
+clip_barb = 0.9;             // [0.5:0.1:1.4] Barb protrusion into wall (mm)
+clip_barb_y = 1.4;           // [0.8:0.1:2.5] Barb catch face length along Y (mm)
+clip_clear = 0.25;           // [0.1:0.05:0.5] Pocket clearance (mm)
 
 /* [USB exit] */
 usb_exit = "back";           // [back, side] Perimeter wall for USB-C
@@ -128,21 +132,23 @@ board_y0 = board_pose[1];
 board_rot = board_pose[2];
 board_z0 = z_bay0 + board_standoff;
 
-boss_y = wall + screw_boss_d / 2 + 0.5;
-function boss_xy() = [
-    [wall + screw_boss_d / 2 + 0.5, boss_y],
-    [case_w - wall - screw_boss_d / 2 - 0.5, boss_y]
+// Two clip stations per side wall (front-of-bay / back-of-bay), flush windows.
+clip_z_pad = 2.0;
+function clip_z_list() = [
+    z_bay0 + clip_z_pad,
+    z_bay1 - clip_z_pad - clip_arm_w
 ];
+clip_catch_y = clip_reach - clip_barb_y - 0.15;
 
 echo("============================================================");
 echo(str("CLOSED OVERALL: ", case_w, " x ", case_h + cap_t, " x ", case_depth, " mm"));
 echo("Printable parts: 2  (shell + cap)");
 echo("Print shell: CLOSED-END down, FPC slide-open UP (U-slot extruded in Z)");
-echo("Print cap:   outer face down");
+echo("Print cap:   outer face down (FLAT — no screw heads)");
 echo(str("Slot: clear=", panel_clear, " crush=", panel_crush,
          "  (panel slides in from FPC end)"));
 echo(str("FPC: fold bay ", fpc_fold_bay, " mm; internal backer pass (no external hole)"));
-echo(str("Cap screws: 2× M2x8 self-tap -> ", screw_boss_id, " mm pilots + snaps"));
+echo(str("Cap retention: 4× internal clips (barb ", clip_barb, " mm); no screws"));
 echo("Board screws: none (bay cradle)");
 echo(str("Bay depth: ", bay_d, " mm; USB exit: ", usb_exit));
 echo(str("Elephant-foot chamfer: ", elephant_chamfer, " mm"));
@@ -250,6 +256,62 @@ module usb_cutout() {
 }
 
 // ---------------------------------------------------------------------------
+// Cap clips (internal cantilever — outer cap face stays flat)
+// ---------------------------------------------------------------------------
+// side = -1 (left wall) or +1 (right wall). Arm flexes in X; barb snaps into
+// a flush through-window in the side wall. 45° lead-in is print-up safe on
+// the cap (outer face down → arm grows in +Z_print).
+module cap_side_clip(side, z0) {
+    x_arm = side < 0
+        ? wall + clip_clear
+        : case_w - wall - clip_arm_t - clip_clear;
+    translate([x_arm, -eps, z0]) {
+        cube([clip_arm_t, clip_reach + eps, clip_arm_w]);
+        // Catch face + 45° insertion ramp (barb points outward)
+        y_catch = clip_reach - clip_barb_y;
+        if (side < 0) {
+            translate([-clip_barb, y_catch, 0])
+                cube([clip_barb + eps, clip_barb_y, clip_arm_w]);
+            hull() {
+                translate([0, y_catch - clip_barb, 0])
+                    cube([eps, eps, clip_arm_w]);
+                translate([0, y_catch, 0])
+                    cube([eps, eps, clip_arm_w]);
+                translate([-clip_barb, y_catch, 0])
+                    cube([eps, eps, clip_arm_w]);
+            }
+        } else {
+            translate([clip_arm_t - eps, y_catch, 0])
+                cube([clip_barb + eps, clip_barb_y, clip_arm_w]);
+            hull() {
+                translate([clip_arm_t - eps, y_catch - clip_barb, 0])
+                    cube([eps, eps, clip_arm_w]);
+                translate([clip_arm_t - eps, y_catch, 0])
+                    cube([eps, eps, clip_arm_w]);
+                translate([clip_arm_t + clip_barb - eps, y_catch, 0])
+                    cube([eps, eps, clip_arm_w]);
+            }
+        }
+    }
+}
+
+module shell_clip_windows() {
+    // Flush side windows — barb seats flush; pinch to release. No proud heads.
+    for (z0 = clip_z_list())
+        for (x = [-eps, case_w - wall - eps])
+            translate([
+                x,
+                clip_catch_y - clip_clear,
+                z0 - clip_clear
+            ])
+                cube([
+                    wall + 2 * eps,
+                    clip_barb_y + 2 * clip_clear,
+                    clip_arm_w + 2 * clip_clear
+                ]);
+}
+
+// ---------------------------------------------------------------------------
 // Shell
 // ---------------------------------------------------------------------------
 module shell() {
@@ -324,21 +386,8 @@ module shell() {
                 backer_t + 2 * eps
             ]);
 
-        // Cap screw pilots (along +Y into open-end bosses)
-        for (p = boss_xy())
-            translate([p[0], y_open - eps, z_bay0 + bay_d / 2])
-                rotate([-90, 0, 0])
-                    cylinder(d = screw_boss_id, h = 22);
-
+        shell_clip_windows();
         usb_cutout();
-
-        if (use_snaps) {
-            tab_d = 1.4;
-            tab_len = 3.0;
-            for (x = [wall - 0.05, case_w - wall - tab_d])
-                translate([x, y_open - eps, z_bay1 - tab_len])
-                    cube([tab_d + 0.2, 3.5, tab_len + eps]);
-        }
     }
 
     // Crush ribs in the slot (vertical beads along print Z after reorient)
@@ -356,17 +405,6 @@ module shell() {
                 cube([panel_crush + 0.15, rib_len, rib_h]);
         }
     }
-
-    // Cap bosses along +Y (become upright columns when shell is print-oriented)
-    boss_len = 16;
-    for (p = boss_xy())
-        translate([p[0], y_open + wall - eps, z_bay0 + bay_d / 2])
-            rotate([-90, 0, 0])
-                difference() {
-                    cylinder(d = screw_boss_d, h = boss_len);
-                    translate([0, 0, -eps])
-                        cylinder(d = screw_boss_id, h = boss_len + 2 * eps);
-                }
 
     board_cradle();
 }
@@ -428,16 +466,9 @@ module shell_print() {
 // Cap
 // ---------------------------------------------------------------------------
 module cap() {
-    difference() {
-        // Outer end plate — full face, covers slot + bay mouth
-        translate([0, -cap_t, 0])
-            cube([case_w, cap_t, case_depth]);
-
-        for (p = boss_xy())
-            translate([p[0], -cap_t - eps, z_bay0 + bay_d / 2])
-                rotate([-90, 0, 0])
-                    cylinder(d = screw_d, h = cap_t + 2 * eps);
-    }
+    // Outer end plate — full flat face (no screw holes / proud heads)
+    translate([0, -cap_t, 0])
+        cube([case_w, cap_t, case_depth]);
 
     // Perimeter lip into the shell rabbet (tight visual seam)
     if (cap_rabbet > 0)
@@ -488,27 +519,19 @@ module cap() {
     }
 
     // Bay plug — fills the end-wall access so you can't see the PCB.
-    // Depth stops short of the screw bosses (which start at y ≈ wall).
-    difference() {
-        translate([wall + 0.25, -eps, z_bay0 + 0.25])
-            cube([
-                case_w - 2 * wall - 0.5,
-                wall + 0.35,
-                bay_d - 0.5
-            ]);
-        // Clearance for open-end screw bosses
-        for (p = boss_xy())
-            translate([p[0], wall - 0.4, z_bay0 + bay_d / 2])
-                rotate([-90, 0, 0])
-                    cylinder(d = screw_boss_d + 0.8, h = 4);
-    }
+    // Inset from the side walls so it doesn't collide with the clip arms.
+    plug_inset = clip_arm_t + clip_clear + 0.4;
+    translate([wall + plug_inset, -eps, z_bay0 + 0.25])
+        cube([
+            case_w - 2 * wall - 2 * plug_inset,
+            wall + 0.35,
+            bay_d - 0.5
+        ]);
 
-    if (use_snaps) {
-        tab_d = 1.2;
-        tab_len = 2.6;
-        for (x = [wall + 0.25, case_w - wall - tab_d - 0.25])
-            translate([x, -eps, z_bay1 - tab_len])
-                cube([tab_d, 2.4, tab_len]);
+    // Four internal clips (2 per side) — latch into flush side windows
+    for (z0 = clip_z_list()) {
+        cap_side_clip(-1, z0);
+        cap_side_clip(+1, z0);
     }
 }
 

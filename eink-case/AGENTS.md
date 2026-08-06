@@ -43,7 +43,7 @@ bash export-stl.sh             # stl/{shell,cap}.stl (binary)
 
 | Joint | Hardware |
 |-------|----------|
-| Cap → shell | 2× M2×8 mm self-tapping + snaps |
+| Cap → shell | 4× internal cantilever clips (no screws; flat cap face) |
 | Board | None — bay cradle (optional VHB) |
 
 ## Fit notes

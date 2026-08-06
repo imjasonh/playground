@@ -32,12 +32,16 @@ front_lip_t          1.4             number     [1.0:0.1:2.5] Front window-lip t
 backer_t             2.0             number     [1.5:0.1:3] Panel backer wall thickness (mm)
 rear_bay_extra       3.0             number     [1:0.5:8] Extra bay air (mm)
 cap_t                2.4             number     [1.5:0.1:4] Cap thickness along slide axis (mm)
+cap_rabbet           1.2             number     [0.6:0.1:2.5] Cap lip into shell mouth (mm)
+cap_skirt            3.0             number     [1.5:0.5:6] Cap return flange over front/back (mm)
 side_rim             3.0             number     [2:0.1:8] Rim outside panel L/R (mm)
 closed_end_wall      3.0             number     [2:0.1:8] Wall opposite FPC / print bed (mm)
-screw_d              2.4             number     [2:0.1:3.5] Screw clearance through cap (mm)
-screw_boss_d         7.0             number     [5:0.5:10] Boss outer diameter (mm)
-screw_boss_id        1.7             number     [1.4:0.1:2.2] M2 self-tap pilot (mm)
-use_snaps            true            boolean    Cap snap tabs
+clip_arm_t           1.3             number     [1.0:0.1:2.0] Flex-arm thickness (mm)
+clip_arm_w           10.0            number     [6:0.5:16] Flex-arm width along depth (mm)
+clip_reach           6.5             number     [4:0.5:10] Arm length into shell (mm)
+clip_barb            0.9             number     [0.5:0.1:1.4] Barb protrusion into wall (mm)
+clip_barb_y          1.4             number     [0.8:0.1:2.5] Barb catch face length along Y (mm)
+clip_clear           0.25            number     [0.1:0.05:0.5] Pocket clearance (mm)
 usb_exit             back            string     [back, side] Perimeter wall for USB-C
 elephant_chamfer     0.5             number     [0:0.1:1.5] Bed-face outer chamfer (mm)
 window_elephant_chamfer 0.3             number     [0:0.1:1] Window-edge relief on front lip (mm)
@@ -76,5 +80,6 @@ board_x0             board_pose[0]   expression
 board_y0             board_pose[1]   expression 
 board_rot            board_pose[2]   expression 
 board_z0             z_bay0 + board_standoff expression 
-boss_y               wall + screw_boss_d / 2 + 0.5 expression 
+clip_z_pad           2.0             number     
+clip_catch_y         clip_reach - clip_barb_y - 0.15 expression 
 board_rot            = 90 ? [board_w, board_l] : [board_l, board_w] expression 
