@@ -92,14 +92,26 @@ jobs:
         env:
           SUMMARY_JSON: ${{ steps.play.outputs.summary }}
         run: |
+          KNOWER=$(echo "$SUMMARY_JSON" | jq -r '.knowerModel // "unknown"')
+          GUESSER=$(echo "$SUMMARY_JSON" | jq -r '.guesserModel // "unknown"')
+          OUTCOME=$(echo "$SUMMARY_JSON" | jq -r '.outcome.kind // "unknown"')
+          SECRET=$(echo "$SUMMARY_JSON" | jq -r '.secret // "unknown"')
           {
             echo "## It's Not Jaws — live game"
             echo
-            echo "Matchup: **knower** \`${{ env.KNOWER_MODEL || 'claude-fable-5' }}\` vs **guesser** \`${{ env.GUESSER_MODEL || 'gpt-5.6-sol' }}\`"
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Matchup | **knower** \`$KNOWER\` vs **guesser** \`$GUESSER\` |"
+            echo "| Outcome | \`$OUTCOME\` |"
+            echo "| Secret | \`$SECRET\` |"
+            echo
+            echo '<details><summary>Full summary JSON</summary>'
             echo
             echo '```json'
             echo "$SUMMARY_JSON"
             echo '```'
+            echo
+            echo '</details>'
             echo
             echo "Full JSON + HTML chat transcripts are in the workflow artifact (\`*.html\`)."
           } >> "$GITHUB_STEP_SUMMARY"
