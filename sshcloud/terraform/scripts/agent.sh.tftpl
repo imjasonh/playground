@@ -1,0 +1,290 @@
+#!/usr/bin/env bash
+set -euo pipefail
+${helpers}
+
+install_docker
+systemctl stop sshcloud-agent.service sshcloud-vmmhelper.socket \
+  sshcloud-taphelper.socket >/dev/null 2>&1 || true
+retry 10 timeout 10m apt-get \
+  -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=3 \
+  update -y
+retry 10 timeout 10m apt-get \
+  -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=3 \
+  install -y e2fsprogs iproute2 iptables
+id sshcloud >/dev/null 2>&1 || useradd --system --home-dir /var/lib/sshcloud --shell /usr/sbin/nologin sshcloud
+id sshcloud-tap >/dev/null 2>&1 || useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin sshcloud-tap
+AGENT_UID="$(id -u sshcloud)"
+AGENT_GID="$(id -g sshcloud)"
+install -d -o root -g root -m 0755 /var/lib/sshcloud /var/lib/sshcloud/assets /usr/local/lib/sshcloud
+install -d -o sshcloud -g sshcloud -m 0700 /var/lib/sshcloud/agent
+install -d -o root -g root -m 0700 /var/lib/sshcloud/jailer
+install -d -o root -g root -m 0755 /run/sshcloud /run/sshcloud/vmm-api
+install -o sshcloud-tap -g sshcloud-tap -m 0600 /dev/null /run/sshcloud/xtables.lock
+# Remove files left by the retired static bearer-token deployment.
+rm -f /var/lib/sshcloud/*_auth
+
+# Only the root VMM helper/jailer may open KVM. The agent is not in this group.
+if [[ -e /dev/kvm ]]; then
+  getent group kvm >/dev/null 2>&1 || groupadd --system kvm
+  chown root:kvm /dev/kvm
+  chmod 0660 /dev/kvm
+  gpasswd -d sshcloud kvm >/dev/null 2>&1 || true
+  gpasswd -d sshcloud-tap kvm >/dev/null 2>&1 || true
+fi
+
+retry 30 registry_login
+retry 30 pull_secret "${user_ca_pub_secret}" /var/lib/sshcloud/ssh_user_ca.pub
+chmod 644 /var/lib/sshcloud/ssh_user_ca.pub
+install_control_identity_refresher \
+  agent \
+  "${control_identity_secret}" \
+  "${control_ca_current_secret}" \
+  "${control_ca_previous_secret}" \
+  /var/lib/sshcloud/control sshcloud
+
+# Platform assets (Firecracker + jailer + kernel) from GCS. Apps arrive as OCI digests.
+TOKEN="$(curl --connect-timeout 5 --max-time 20 --retry 3 --retry-all-errors -fsS -H 'Metadata-Flavor: Google' \
+  http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')"
+download_asset() {
+  local object="$1" dest="$2"
+  curl --connect-timeout 5 --max-time 120 --retry 3 --retry-all-errors -fsS -H "Authorization: Bearer $TOKEN" \
+    "https://storage.googleapis.com/storage/v1/b/${assets_bucket}/o/$${object}?alt=media" \
+    -o "$dest"
+}
+retry 30 download_asset "${firecracker_object}" /var/lib/sshcloud/assets/firecracker
+retry 30 download_asset "${jailer_object}" /var/lib/sshcloud/assets/jailer
+retry 30 download_asset "${kernel_object}" /var/lib/sshcloud/assets/vmlinux
+chown root:root /var/lib/sshcloud/assets/firecracker /var/lib/sshcloud/assets/jailer /var/lib/sshcloud/assets/vmlinux
+chmod 0711 /var/lib/sshcloud/assets/firecracker
+chmod 0700 /var/lib/sshcloud/assets/jailer
+chmod 0400 /var/lib/sshcloud/assets/vmlinux
+test -s /var/lib/sshcloud/assets/vmlinux
+/var/lib/sshcloud/assets/firecracker --version
+/var/lib/sshcloud/assets/jailer --version
+
+extract_ko_binary() {
+  local image="$1" binary="$2" dest="$3" container="sshcloud-extract-$2"
+  retry 30 timeout 10m docker pull "$image"
+  timeout 30s docker rm -f "$container" 2>/dev/null || true
+  timeout 30s docker create --name "$container" "$image" >/dev/null
+  timeout 2m docker cp "$container:/ko-app/$binary" "$dest"
+  timeout 30s docker rm "$container" >/dev/null
+  chmod 0755 "$dest"
+}
+extract_ko_binary "${agent_image}" agent /usr/local/lib/sshcloud/agent
+extract_ko_binary "${vmmhelper_image}" vmmhelper /usr/local/lib/sshcloud/vmmhelper
+extract_ko_binary "${taphelper_image}" taphelper /usr/local/lib/sshcloud/taphelper
+extract_ko_binary "${guestinit_image}" guestinit /var/lib/sshcloud/assets/guestinit
+chown root:root /usr/local/lib/sshcloud/agent /usr/local/lib/sshcloud/vmmhelper /usr/local/lib/sshcloud/taphelper /var/lib/sshcloud/assets/guestinit
+chmod 0755 /usr/local/lib/sshcloud/agent /usr/local/lib/sshcloud/vmmhelper /usr/local/lib/sshcloud/taphelper /var/lib/sshcloud/assets/guestinit
+
+# The jailer creates one child under this fixed cgroup-v2 parent and writes
+# helper-derived cpu/memory/pid limits before execing Firecracker.
+if [[ -f /sys/fs/cgroup/cgroup.controllers ]]; then
+  for controller in cpu memory pids; do
+    if grep -qw "$controller" /sys/fs/cgroup/cgroup.controllers; then
+      echo "+$controller" >/sys/fs/cgroup/cgroup.subtree_control || true
+    fi
+  done
+  mkdir -p /sys/fs/cgroup/sshcloud
+  for controller in cpu memory pids; do
+    if grep -qw "$controller" /sys/fs/cgroup/sshcloud/cgroup.controllers; then
+      echo "+$controller" >/sys/fs/cgroup/sshcloud/cgroup.subtree_control || true
+    fi
+  done
+fi
+
+INTERNAL_IP="$(curl --connect-timeout 5 --max-time 20 --retry 3 --retry-all-errors -fsS -H 'Metadata-Flavor: Google' \
+  http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/ip)"
+INSTANCE_NAME="$(curl --connect-timeout 5 --max-time 20 --retry 3 --retry-all-errors -fsS -H 'Metadata-Flavor: Google' \
+  http://metadata.google.internal/computeMetadata/v1/instance/name)"
+INSTANCE_ID="$(curl --connect-timeout 5 --max-time 20 --retry 3 --retry-all-errors -fsS -H 'Metadata-Flavor: Google' \
+  http://metadata.google.internal/computeMetadata/v1/instance/id)"
+install_ops_agent agent "$INTERNAL_IP:8081" "127.0.0.1:9080"
+
+cat >/etc/tmpfiles.d/sshcloud.conf <<EOF
+d /run/sshcloud 0755 root root -
+d /run/sshcloud/vmm-api 0755 root root -
+f /run/sshcloud/xtables.lock 0600 sshcloud-tap sshcloud-tap -
+EOF
+
+cat >/etc/systemd/system/sshcloud-vmmhelper.socket <<EOF
+[Unit]
+Description=sshcloud private VMM helper socket
+
+[Socket]
+ListenStream=/run/sshcloud/vmmhelper.sock
+SocketMode=0600
+SocketUser=sshcloud
+SocketGroup=sshcloud
+RemoveOnStop=true
+
+[Install]
+WantedBy=sockets.target
+EOF
+
+cat >/etc/systemd/system/sshcloud-vmmhelper.service <<EOF
+[Unit]
+Description=sshcloud root Firecracker jailer helper
+Requires=sshcloud-vmmhelper.socket
+BindsTo=sshcloud-agent.service
+PartOf=sshcloud-agent.service
+After=local-fs.target
+Before=sshcloud-agent.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=/usr/local/lib/sshcloud/vmmhelper \
+  -socket-activation \
+  -agent-uid $${AGENT_UID} \
+  -agent-gid $${AGENT_GID} \
+  -work-root /var/lib/sshcloud/agent \
+  -chroot-base /var/lib/sshcloud/jailer \
+  -firecracker /var/lib/sshcloud/assets/firecracker \
+  -jailer /var/lib/sshcloud/assets/jailer \
+  -kernel /var/lib/sshcloud/assets/vmlinux \
+  -proxy-dir /run/sshcloud/vmm-api \
+  -cgroup-parent sshcloud \
+  -host-id %H \
+  -metrics-listen 127.0.0.1:9080
+KillMode=control-group
+TimeoutStopSec=10min
+UMask=0077
+LimitCORE=0
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER CAP_KILL CAP_MKNOD CAP_SETGID CAP_SETUID CAP_SYS_ADMIN CAP_SYS_CHROOT CAP_SYS_RESOURCE
+DevicePolicy=closed
+DeviceAllow=/dev/kvm rwm
+DeviceAllow=/dev/net/tun rwm
+DeviceAllow=/dev/urandom rwm
+DeviceAllow=/dev/userfaultfd rwm
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/sshcloud/agent /var/lib/sshcloud/jailer /run/sshcloud/vmm-api /sys/fs/cgroup
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectKernelTunables=true
+ProtectControlGroups=false
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+cat >/etc/systemd/system/sshcloud-taphelper.socket <<EOF
+[Unit]
+Description=sshcloud private TAP helper socket
+
+[Socket]
+ListenStream=/run/sshcloud/taphelper.sock
+SocketMode=0600
+SocketUser=sshcloud
+SocketGroup=sshcloud
+RemoveOnStop=true
+
+[Install]
+WantedBy=sockets.target
+EOF
+
+cat >/etc/systemd/system/sshcloud-taphelper.service <<EOF
+[Unit]
+Description=sshcloud CAP_NET_ADMIN-only TAP helper
+Requires=sshcloud-taphelper.socket
+BindsTo=sshcloud-agent.service
+PartOf=sshcloud-agent.service
+After=local-fs.target
+Before=sshcloud-agent.service
+
+[Service]
+Type=simple
+User=sshcloud-tap
+Group=sshcloud-tap
+Environment=XTABLES_LOCKFILE=/run/sshcloud/xtables.lock
+ExecStart=/usr/local/lib/sshcloud/taphelper \
+  -socket-activation \
+  -agent-uid $${AGENT_UID} \
+  -agent-gid $${AGENT_GID} \
+  -subnet-base 172.16
+UMask=0077
+LimitCORE=0
+AmbientCapabilities=CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_ADMIN
+DevicePolicy=closed
+DeviceAllow=/dev/net/tun rw
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/run/sshcloud
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+cat >/etc/systemd/system/sshcloud-agent.service <<EOF
+[Unit]
+Description=sshcloud Firecracker host agent
+After=network-online.target sshcloud-control-identity-refresh.service
+Wants=network-online.target
+Requires=sshcloud-vmmhelper.service sshcloud-taphelper.service sshcloud-control-identity-refresh.service
+BindsTo=sshcloud-vmmhelper.service sshcloud-taphelper.service
+After=sshcloud-vmmhelper.service sshcloud-taphelper.service
+
+[Service]
+Type=simple
+User=sshcloud
+Group=sshcloud
+Environment=HOME=/var/lib/sshcloud
+ExecStart=/usr/local/lib/sshcloud/agent \
+  -listen $${INTERNAL_IP}:8080 \
+  -health-listen $${INTERNAL_IP}:8081 \
+  -work-dir /var/lib/sshcloud/agent \
+  -rootfs-cache-bytes ${rootfs_cache_bytes} \
+  -ca-pub /var/lib/sshcloud/ssh_user_ca.pub \
+  -guestinit /var/lib/sshcloud/assets/guestinit \
+  -vmm-helper-socket /run/sshcloud/vmmhelper.sock \
+  -tap-helper-socket /run/sshcloud/taphelper.sock \
+  -control-bundle /var/lib/sshcloud/control/current \
+  -control-bundle-max-age 15m \
+  -control-project-id ${project_id} \
+  -control-project-number ${project_number} \
+  -orchestrator-service-account ${orchestrator_service_account} \
+  -instance-name $${INSTANCE_NAME} \
+  -instance-id $${INSTANCE_ID} \
+  -relay-host $${INTERNAL_IP} \
+  -relay-port-min 20000 \
+  -relay-port-max 29999 \
+  -platform-version ${platform_version} \
+  -cpu-template T2 \
+  -snapshotd-url ${snapshotd_url} \
+  -idle 5m
+Restart=always
+RestartSec=5
+TimeoutStopSec=15min
+KillMode=mixed
+LimitNOFILE=65536
+LimitCORE=0
+AmbientCapabilities=
+CapabilityBoundingSet=
+DevicePolicy=closed
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/sshcloud/agent
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now sshcloud-vmmhelper.socket sshcloud-taphelper.socket sshcloud-agent

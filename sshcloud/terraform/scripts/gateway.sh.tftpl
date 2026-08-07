@@ -1,0 +1,234 @@
+#!/usr/bin/env bash
+set -euo pipefail
+${helpers}
+
+install_docker
+systemctl stop sshcloud-gateway.service >/dev/null 2>&1 || true
+install_ops_agent gateway "${health_listen}"
+retry 30 registry_login
+
+# Public :22 is the platform gateway; keep host sshd on 2222 for IAP.
+install -d -m 0755 /etc/ssh/sshd_config.d
+cat >/etc/ssh/sshd_config.d/99-sshcloud-port.conf <<'EOF'
+Port 2222
+EOF
+/usr/sbin/sshd -t
+systemctl restart ssh.service
+
+mkdir -p /var/lib/sshcloud
+# Remove files left by the retired static bearer-token deployment.
+rm -f /var/lib/sshcloud/*_auth
+retry 30 pull_secret "${host_key_secret}" /var/lib/sshcloud/ssh_host_ed25519_key
+retry 30 pull_secret "${user_ca_secret}" /var/lib/sshcloud/ssh_user_ca
+install_control_identity_refresher \
+  gateway \
+  "${control_identity_secret}" \
+  "${control_ca_current_secret}" \
+  "${control_ca_previous_secret}" \
+  /var/lib/sshcloud/control root
+
+# Refresh the versioned public-key policy independently of the gateway image.
+# Replacement is atomic and fully validated. A transient fetch failure retains
+# the last-known-good file for five minutes; the gateway then fails admissions
+# closed and reports unready until a successful refresh.
+systemctl stop sshcloud-access-policy-refresh.timer \
+  sshcloud-access-policy-refresh.service >/dev/null 2>&1 || true
+cat >/usr/local/sbin/sshcloud-refresh-access-policy <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+PROJECT_ID="${project_id}"
+SECRET_ID="${access_policy_secret}"
+DEST="/var/lib/sshcloud/access-policy.json"
+exec 9>/run/sshcloud-access-policy-refresh.lock
+flock -n 9 || exit 0
+tmp="$(mktemp "$DEST.tmp.XXXXXX")"
+response="$(mktemp "$DEST.response.XXXXXX")"
+key_file="$(mktemp "$DEST.key.XXXXXX")"
+trap 'rm -f "$tmp" "$response" "$key_file"' EXIT
+
+token="$(curl --connect-timeout 5 --max-time 20 --retry 3 --retry-all-errors -fsS -H 'Metadata-Flavor: Google' \
+  http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')"
+curl --connect-timeout 5 --max-time 30 --retry 3 --retry-all-errors -fsS \
+  -H "Metadata-Flavor: Google" \
+  -H "Authorization: Bearer $token" \
+  "https://secretmanager.googleapis.com/v1/projects/$PROJECT_ID/secrets/$SECRET_ID/versions/latest:access" \
+  >"$response"
+jq -er .payload.data "$response" | base64 -d >"$tmp"
+python3 - "$tmp" <<'PY'
+import json
+import sys
+
+expected = {
+    "version",
+    "join_mode",
+    "deploy_mode",
+    "member_ssh_public_keys",
+    "deployer_ssh_public_keys",
+}
+
+def unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate policy field: {key}")
+        result[key] = value
+    return result
+
+with open(sys.argv[1], encoding="utf-8") as policy_file:
+    policy = json.load(policy_file, object_pairs_hook=unique_object)
+if not isinstance(policy, dict) or set(policy) != expected:
+    raise ValueError("access policy fields do not match the version 1 schema")
+if type(policy["version"]) is not int or policy["version"] != 1:
+    raise ValueError("access policy version must be 1")
+if policy["join_mode"] not in {"allowlist", "open"}:
+    raise ValueError("invalid access policy join_mode")
+if policy["deploy_mode"] not in {"allowlist", "all-users"}:
+    raise ValueError("invalid access policy deploy_mode")
+for field in ("member_ssh_public_keys", "deployer_ssh_public_keys"):
+    values = policy[field]
+    if not isinstance(values, list):
+        raise ValueError(f"{field} must be an array")
+    for value in values:
+        if not isinstance(value, str) or not value or "\n" in value or "\r" in value:
+            raise ValueError(f"{field} must contain one non-empty public key per entry")
+PY
+while IFS= read -r encoded; do
+  printf '%s' "$encoded" | base64 -d >"$key_file"
+  case "$(awk 'NR == 1 { print $1 }' "$key_file")" in
+    ssh-* | ecdsa-* | sk-*) ;;
+    *) exit 1 ;;
+  esac
+  ssh-keygen -l -f "$key_file" >/dev/null
+done < <(jq -r '(.member_ssh_public_keys + .deployer_ssh_public_keys)[] | @base64' "$tmp")
+chmod 600 "$tmp"
+mv -f "$tmp" "$DEST"
+EOF
+chmod 700 /usr/local/sbin/sshcloud-refresh-access-policy
+
+cat >/usr/local/sbin/sshcloud-check-access-policy <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+dest=/var/lib/sshcloud/access-policy.json
+modified="$(stat -c %Y "$dest")"
+now="$(date +%s)"
+age=$((now - modified))
+if ((age < 0 || age > 300)); then
+  echo "access policy last-known-good lease expired (age=$${age}s, lease=300s)" >&2
+  exit 1
+fi
+echo "access policy refresh failed; retaining validated last-known-good policy for $((300 - age))s" >&2
+EOF
+chmod 700 /usr/local/sbin/sshcloud-check-access-policy
+
+cat >/etc/systemd/system/sshcloud-access-policy-refresh.service <<'EOF'
+[Unit]
+Description=Refresh sshcloud SSH access policy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c '/usr/local/sbin/sshcloud-refresh-access-policy || /usr/local/sbin/sshcloud-check-access-policy'
+UMask=0077
+LimitCORE=0
+EOF
+
+cat >/etc/systemd/system/sshcloud-access-policy-refresh.timer <<'EOF'
+[Unit]
+Description=Refresh sshcloud SSH access policy every minute
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+RandomizedDelaySec=10s
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+systemctl daemon-reload
+start_access_policy_refresh() {
+  systemctl reset-failed sshcloud-access-policy-refresh.service >/dev/null 2>&1 || true
+  systemctl start sshcloud-access-policy-refresh.service
+}
+retry 30 start_access_policy_refresh
+systemctl enable sshcloud-access-policy-refresh.timer
+systemctl start sshcloud-access-policy-refresh.timer
+
+IMAGE="${gateway_image}"
+timeout 30s docker update --restart=no sshcloud-gateway >/dev/null 2>&1 || true
+timeout 30s docker rm -f sshcloud-gateway >/dev/null 2>&1 || true
+
+cat >/etc/systemd/system/sshcloud-gateway-image.service <<EOF
+[Unit]
+Description=Pull pinned sshcloud gateway image
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+StartLimitIntervalSec=10min
+StartLimitBurst=30
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker pull $IMAGE
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=10min
+LimitCORE=0
+EOF
+
+cat >/etc/systemd/system/sshcloud-gateway.service <<EOF
+[Unit]
+Description=sshcloud gateway container
+After=docker.service network-online.target sshcloud-control-identity-refresh.service sshcloud-access-policy-refresh.service sshcloud-gateway-image.service
+Requires=docker.service sshcloud-control-identity-refresh.service sshcloud-access-policy-refresh.service sshcloud-gateway-image.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStartPre=-/usr/bin/docker rm -f sshcloud-gateway
+ExecStart=/usr/bin/docker run --rm --name sshcloud-gateway --net host \
+  --log-driver=journald \
+  --log-opt tag=sshcloud-platform-gateway \
+  --user 0:0 \
+  --ulimit core=0:0 \
+  --cap-drop ALL \
+  --cap-add NET_BIND_SERVICE \
+  --security-opt no-new-privileges \
+  --read-only \
+  --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+  -v /var/lib/sshcloud:/var/lib/sshcloud:ro \
+  $IMAGE \
+  -listen ${gateway_listen} \
+  -control-listen ${control_listen} \
+  -health-listen ${health_listen} \
+  -host-key /var/lib/sshcloud/ssh_host_ed25519_key \
+  -user-ca /var/lib/sshcloud/ssh_user_ca \
+  -control-bundle /var/lib/sshcloud/control/current \
+  -control-bundle-max-age 15m \
+  -control-project-id ${project_id} \
+  -control-project-number ${project_number} \
+  -orchestrator-service-account ${orchestrator_service_account} \
+  -access-policy-file /var/lib/sshcloud/access-policy.json \
+  -access-policy-max-age 5m \
+  -firestore-project ${project_id} \
+  -firestore-prefix ${firestore_prefix} \
+  -user-firestore-database ${user_firestore_database} \
+  -orchestrator-url https://${orchestrator_ip}:8090
+ExecStop=-/usr/bin/docker stop -t 30 sshcloud-gateway
+Restart=always
+RestartSec=5
+TimeoutStartSec=2min
+TimeoutStopSec=45s
+KillMode=control-group
+LimitCORE=0
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable sshcloud-gateway.service
+systemctl restart sshcloud-gateway.service

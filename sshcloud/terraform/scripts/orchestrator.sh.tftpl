@@ -1,0 +1,227 @@
+#!/usr/bin/env bash
+set -euo pipefail
+${helpers}
+
+install_docker
+systemctl stop sshcloud-orchestrator.service >/dev/null 2>&1 || true
+INTERNAL_IP="$(curl --connect-timeout 5 --max-time 20 --retry 3 --retry-all-errors -fsS -H 'Metadata-Flavor: Google' \
+  http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/ip)"
+install_ops_agent orchestrator "$INTERNAL_IP:8091"
+retry 30 registry_login
+mkdir -p /var/lib/sshcloud /usr/local/lib/sshcloud
+# Remove files left by the retired static bearer-token deployment.
+rm -f /var/lib/sshcloud/*_auth
+install -d -o root -g root -m 0755 /run/sshcloud
+install_control_identity_refresher \
+  orchestrator \
+  "${control_identity_secret}" \
+  "${control_ca_current_secret}" \
+  "${control_ca_previous_secret}" \
+  /var/lib/sshcloud/control root
+echo "${drain_script_b64}" | base64 -d >/usr/local/sbin/sshcloud-drain-agent-host
+chmod 0755 /usr/local/sbin/sshcloud-drain-agent-host
+
+systemctl stop sshcloud-refresh-hosts.timer \
+  sshcloud-refresh-hosts.service >/dev/null 2>&1 || true
+cat >/usr/local/lib/sshcloud/refresh-hosts.py <<'PY'
+import fcntl, json, os, tempfile, urllib.request
+
+PROJECT = os.environ["PROJECT_ID"]
+ZONE = os.environ["ZONE"]
+MIG = os.environ["MIG"]
+OUT = os.environ.get("HOSTS_PATH", "/var/lib/sshcloud/hosts")
+META = "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token"
+TIMEOUT = 10
+
+def token():
+    req = urllib.request.Request(META, headers={"Metadata-Flavor": "Google"})
+    with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+        return json.load(r)["access_token"]
+
+TOKEN = ""
+
+def api(path, method="GET"):
+    req = urllib.request.Request(
+        "https://compute.googleapis.com/compute/v1/" + path,
+        headers={"Authorization": "Bearer " + TOKEN},
+        method=method,
+    )
+    with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+        return json.load(r)
+
+os.makedirs(os.path.dirname(OUT), exist_ok=True)
+with open(OUT + ".lock", "w", encoding="utf-8") as lock:
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        raise SystemExit(0)
+
+    TOKEN = token()
+    mig = api(f"projects/{PROJECT}/zones/{ZONE}/instanceGroupManagers/{MIG}/listManagedInstances", method="POST")
+    lines = []
+    refresh_errors = []
+    for inst in mig.get("managedInstances", []):
+        url = inst.get("instance", "")
+        name = url.rsplit("/", 1)[-1]
+        if not name:
+            refresh_errors.append("MIG member has no instance name")
+            continue
+        desc = api(f"projects/{PROJECT}/zones/{ZONE}/instances/{name}")
+        instance_id = str(desc.get("id", ""))
+        if not instance_id.isdigit() or instance_id == "0":
+            refresh_errors.append(f"{name} has no immutable instance ID")
+            continue
+        ip = desc["networkInterfaces"][0]["networkIP"]
+        try:
+            with urllib.request.urlopen(f"http://{ip}:8081/readyz", timeout=3) as ready:
+                if ready.status != 200:
+                    refresh_errors.append(f"{name} readiness returned {ready.status}")
+                    continue
+        except Exception as exc:
+            refresh_errors.append(f"{name} is unready: {exc}")
+            continue
+        lines.append(f"{name}@{instance_id}=https://{ip}:8080")
+
+    if refresh_errors or not lines:
+        try:
+            with open(OUT, encoding="utf-8") as current:
+                last_known_good = [line.strip() for line in current if line.strip()]
+        except FileNotFoundError:
+            last_known_good = []
+        if last_known_good:
+            print(
+                f"incomplete MIG refresh ({'; '.join(refresh_errors) or 'no ready hosts'}); "
+                f"retaining {len(last_known_good)} last-known-good hosts in {OUT}"
+            )
+            raise SystemExit(0)
+        raise RuntimeError(
+            f"incomplete MIG refresh with no last-known-good host list: "
+            f"{'; '.join(refresh_errors) or 'no ready hosts'}"
+        )
+
+    fd, tmp = tempfile.mkstemp(prefix=".hosts.", dir=os.path.dirname(OUT), text=True)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as output:
+            output.write("\n".join(lines) + ("\n" if lines else ""))
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(tmp, OUT)
+        directory = os.open(os.path.dirname(OUT), os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except FileNotFoundError:
+            pass
+        raise
+    print(f"wrote {len(lines)} hosts to {OUT}")
+PY
+
+cat >/etc/systemd/system/sshcloud-refresh-hosts.service <<EOF
+[Unit]
+Description=Refresh sshcloud agent host list from MIG
+[Service]
+Type=oneshot
+Environment=PROJECT_ID=${project_id}
+Environment=ZONE=${zone}
+Environment=MIG=${mig_name}
+Environment=HOSTS_PATH=${hosts_path}
+ExecStart=/usr/bin/python3 /usr/local/lib/sshcloud/refresh-hosts.py
+LimitCORE=0
+EOF
+
+cat >/etc/systemd/system/sshcloud-refresh-hosts.timer <<'EOF'
+[Unit]
+Description=Refresh sshcloud agent host list every minute
+[Timer]
+OnBootSec=15s
+OnUnitActiveSec=60s
+[Install]
+WantedBy=timers.target
+EOF
+
+systemctl daemon-reload
+systemctl enable sshcloud-refresh-hosts.timer
+retry 30 systemctl start sshcloud-refresh-hosts.service
+systemctl start sshcloud-refresh-hosts.timer
+
+IMAGE="${orchestrator_image}"
+timeout 30s docker update --restart=no sshcloud-orchestrator >/dev/null 2>&1 || true
+timeout 30s docker rm -f sshcloud-orchestrator >/dev/null 2>&1 || true
+
+cat >/etc/systemd/system/sshcloud-orchestrator-image.service <<EOF
+[Unit]
+Description=Pull pinned sshcloud orchestrator image
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+StartLimitIntervalSec=10min
+StartLimitBurst=30
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker pull $IMAGE
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=10min
+LimitCORE=0
+EOF
+
+cat >/etc/systemd/system/sshcloud-orchestrator.service <<EOF
+[Unit]
+Description=sshcloud orchestrator container
+After=docker.service network-online.target sshcloud-control-identity-refresh.service sshcloud-refresh-hosts.service sshcloud-orchestrator-image.service
+Requires=docker.service sshcloud-control-identity-refresh.service sshcloud-refresh-hosts.service sshcloud-orchestrator-image.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStartPre=-/usr/bin/docker rm -f sshcloud-orchestrator
+ExecStart=/usr/bin/docker run --rm --name sshcloud-orchestrator --net host \
+  --log-driver=journald \
+  --log-opt tag=sshcloud-platform-orchestrator \
+  --user 0:0 \
+  --ulimit core=0:0 \
+  --cap-drop ALL \
+  --security-opt no-new-privileges \
+  --read-only \
+  --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+  -v /var/lib/sshcloud:/var/lib/sshcloud:ro \
+  -v /run/sshcloud:/run/sshcloud:rw \
+  $IMAGE \
+  -listen "$${INTERNAL_IP}:8090" \
+  -health-listen "$${INTERNAL_IP}:8091" \
+  -admin-socket /run/sshcloud/orchestrator-admin.sock \
+  -hosts-file ${hosts_path} \
+  -control-bundle /var/lib/sshcloud/control/current \
+  -control-bundle-max-age 15m \
+  -control-project-id ${project_id} \
+  -control-project-number ${project_number} \
+  -gce-zone ${zone} \
+  -gateway-service-account ${gateway_service_account} \
+  -orchestrator-service-account ${orchestrator_service_account} \
+  -agent-service-account ${agent_service_account} \
+  -gateway-url ${gateway_url} \
+  -firestore-project ${project_id} \
+  -firestore-prefix ${firestore_prefix} \
+  -user-firestore-database ${user_firestore_database} \
+  -placement-firestore-database ${placement_firestore_database}
+ExecStop=-/usr/bin/docker stop -t 60 sshcloud-orchestrator
+Restart=always
+RestartSec=5
+TimeoutStartSec=2min
+TimeoutStopSec=75s
+KillMode=control-group
+LimitCORE=0
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable sshcloud-orchestrator.service
+systemctl restart sshcloud-orchestrator.service

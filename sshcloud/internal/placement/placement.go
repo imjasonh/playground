@@ -1,0 +1,355 @@
+// Package placement tracks which host agent owns each user/app instance.
+package placement
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
+	"sync"
+	"time"
+)
+
+// Store maps (user, app) → host ID.
+type Store interface {
+	Get(ctx context.Context, user, app string) (hostID string, ok bool, err error)
+	SetIdentity(ctx context.Context, user, app, hostID, hostInstanceID string) error
+	Delete(ctx context.Context, user, app string) error
+	GetRecord(ctx context.Context, user, app string) (Record, bool, error)
+	ListRecords(ctx context.Context) ([]Record, error)
+	Acquire(ctx context.Context, user, app, owner string, ttl time.Duration, now time.Time) (Lease, error)
+	AcquireRecovery(ctx context.Context, expected Record, owner string, ttl time.Duration, now time.Time) (Lease, error)
+	Renew(ctx context.Context, lease Lease, ttl time.Duration, now time.Time) (Lease, error)
+	Mark(ctx context.Context, lease Lease, operation Operation) error
+	CommitStateIdentity(ctx context.Context, lease Lease, hostID, hostInstanceID string, generations []Generation, now time.Time) error
+	Release(ctx context.Context, lease Lease) error
+}
+
+// Record is the durable owner and operation fence for one app.
+type Record struct {
+	User           string
+	App            string
+	HostID         string
+	HostInstanceID string
+	Revision       int64
+	LeaseOwner     string
+	LeaseUntilUnix int64
+	Operation      Operation
+	Generations    []Generation
+}
+
+// Generation is durable app inventory independent of one agent process.
+type Generation struct {
+	Gen              string `json:"gen,omitempty" firestore:"gen,omitempty"`
+	Image            string `json:"image,omitempty" firestore:"image,omitempty"`
+	Tier             string `json:"tier" firestore:"tier"`
+	State            string `json:"state" firestore:"state"`
+	SSHHostPublicKey string `json:"ssh_host_public_key" firestore:"ssh_host_public_key"`
+}
+
+// Operation is durable recovery context for an in-flight host mutation.
+type Operation struct {
+	ID               string       `json:"id,omitempty" firestore:"id,omitempty"`
+	Sequence         int64        `json:"sequence,omitempty" firestore:"sequence,omitempty"`
+	Kind             string       `json:"kind,omitempty" firestore:"kind,omitempty"`
+	Phase            string       `json:"phase,omitempty" firestore:"phase,omitempty"`
+	SourceHost       string       `json:"source_host,omitempty" firestore:"source_host,omitempty"`
+	SourceInstanceID string       `json:"source_instance_id,omitempty" firestore:"source_instance_id,omitempty"`
+	SourceEpoch      string       `json:"source_epoch,omitempty" firestore:"source_epoch,omitempty"`
+	TargetHost       string       `json:"target_host,omitempty" firestore:"target_host,omitempty"`
+	TargetInstanceID string       `json:"target_instance_id,omitempty" firestore:"target_instance_id,omitempty"`
+	Generations      []string     `json:"generations,omitempty" firestore:"generations,omitempty"`
+	Desired          []Generation `json:"desired,omitempty" firestore:"desired,omitempty"`
+}
+
+// Lease is an exclusive, expiring mutation right for one placement record.
+type Lease struct {
+	User           string
+	App            string
+	HostID         string
+	HostInstanceID string
+	Owner          string
+	Revision       int64
+	UntilUnix      int64
+}
+
+func (l Lease) Until() time.Time { return time.Unix(0, l.UntilUnix) }
+
+// ErrLeaseHeld means another live operation owns the app placement.
+type ErrLeaseHeld struct {
+	User  string
+	App   string
+	Owner string
+	Until time.Time
+}
+
+func (e ErrLeaseHeld) Error() string {
+	return fmt.Sprintf("placement lease for %s/%s is held by %s until %s", e.User, e.App, e.Owner, e.Until.UTC().Format(time.RFC3339))
+}
+
+// ErrLeaseLost means an operation no longer owns the record it is mutating.
+type ErrLeaseLost struct{ User, App string }
+
+func (e ErrLeaseLost) Error() string {
+	return fmt.Sprintf("placement lease for %s/%s was lost", e.User, e.App)
+}
+
+// ErrRecoveryRequired prevents normal operations from erasing an abandoned
+// operation journal before reconciliation.
+type ErrRecoveryRequired struct {
+	User, App, Operation string
+}
+
+func (e ErrRecoveryRequired) Error() string {
+	return fmt.Sprintf("placement recovery required for %s/%s operation %s", e.User, e.App, e.Operation)
+}
+
+// NewLeaseOwner returns an opaque operation owner ID.
+func NewLeaseOwner(prefix string) string {
+	var b [12]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
+	}
+	return prefix + "-" + hex.EncodeToString(b[:])
+}
+
+// Memory is an in-memory placement store.
+type Memory struct {
+	mu      sync.Mutex
+	records map[string]Record // "user/app" → record
+}
+
+// NewMemory returns an empty placement store.
+func NewMemory() *Memory {
+	return &Memory{records: make(map[string]Record)}
+}
+
+func key(user, app string) string { return user + "/" + app }
+
+func (m *Memory) Get(_ context.Context, user, app string) (string, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	r, ok := m.records[key(user, app)]
+	return r.HostID, ok && r.HostID != "", nil
+}
+
+func (m *Memory) SetIdentity(_ context.Context, user, app, hostID, hostInstanceID string) error {
+	if hostInstanceID == "" {
+		return fmt.Errorf("host instance ID required")
+	}
+	return m.setIdentity(user, app, hostID, hostInstanceID)
+}
+
+func (m *Memory) setIdentity(user, app, hostID, hostInstanceID string) error {
+	if user == "" || app == "" || hostID == "" {
+		return fmt.Errorf("user, app, and hostID required")
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	k := key(user, app)
+	r := m.records[k]
+	if leaseActive(r, time.Now()) {
+		return ErrLeaseHeld{User: user, App: app, Owner: r.LeaseOwner, Until: time.Unix(0, r.LeaseUntilUnix)}
+	}
+	r.User, r.App, r.HostID, r.HostInstanceID = user, app, hostID, hostInstanceID
+	r.Revision++
+	r.LeaseOwner, r.LeaseUntilUnix = "", 0
+	r.Operation = Operation{}
+	m.records[k] = r
+	return nil
+}
+
+func (m *Memory) Delete(_ context.Context, user, app string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	k := key(user, app)
+	if r, ok := m.records[k]; ok && leaseActive(r, time.Now()) {
+		return ErrLeaseHeld{User: user, App: app, Owner: r.LeaseOwner, Until: time.Unix(0, r.LeaseUntilUnix)}
+	}
+	delete(m.records, k)
+	return nil
+}
+
+func (m *Memory) GetRecord(_ context.Context, user, app string) (Record, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	r, ok := m.records[key(user, app)]
+	return cloneRecord(r), ok, nil
+}
+
+func (m *Memory) ListRecords(context.Context) ([]Record, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]Record, 0, len(m.records))
+	for _, r := range m.records {
+		out = append(out, cloneRecord(r))
+	}
+	return out, nil
+}
+
+func (m *Memory) Acquire(_ context.Context, user, app, owner string, ttl time.Duration, now time.Time) (Lease, error) {
+	if user == "" || app == "" || owner == "" || ttl <= 0 {
+		return Lease{}, fmt.Errorf("user, app, owner, and positive ttl required")
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	k := key(user, app)
+	r := m.records[k]
+	if r.Operation.Kind != "" {
+		return Lease{}, ErrRecoveryRequired{User: user, App: app, Operation: r.Operation.ID}
+	}
+	if leaseActive(r, now) && r.LeaseOwner != owner {
+		return Lease{}, ErrLeaseHeld{User: user, App: app, Owner: r.LeaseOwner, Until: time.Unix(0, r.LeaseUntilUnix)}
+	}
+	r.User, r.App = user, app
+	r.Revision++
+	r.LeaseOwner = owner
+	r.LeaseUntilUnix = now.Add(ttl).UnixNano()
+	m.records[k] = r
+	return leaseFromRecord(r), nil
+}
+
+func (m *Memory) AcquireRecovery(_ context.Context, expected Record, owner string, ttl time.Duration, now time.Time) (Lease, error) {
+	if owner == "" || ttl <= 0 || expected.Operation.Kind == "" {
+		return Lease{}, fmt.Errorf("owner, positive ttl, and operation required")
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	k := key(expected.User, expected.App)
+	r, ok := m.records[k]
+	if !ok || r.Revision != expected.Revision || r.Operation.ID != expected.Operation.ID ||
+		r.Operation.Kind != expected.Operation.Kind || r.Operation.Sequence != expected.Operation.Sequence {
+		return Lease{}, ErrLeaseLost{User: expected.User, App: expected.App}
+	}
+	if leaseActive(r, now) {
+		return Lease{}, ErrLeaseHeld{User: r.User, App: r.App, Owner: r.LeaseOwner, Until: time.Unix(0, r.LeaseUntilUnix)}
+	}
+	r.Revision++
+	r.LeaseOwner = owner
+	r.LeaseUntilUnix = now.Add(ttl).UnixNano()
+	m.records[k] = r
+	return leaseFromRecord(r), nil
+}
+
+func (m *Memory) Renew(_ context.Context, lease Lease, ttl time.Duration, now time.Time) (Lease, error) {
+	if ttl <= 0 {
+		return Lease{}, fmt.Errorf("positive ttl required")
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	k := key(lease.User, lease.App)
+	r, ok := m.records[k]
+	if !ok || !leaseMatches(r, lease) || !leaseActive(r, now) {
+		return Lease{}, ErrLeaseLost{User: lease.User, App: lease.App}
+	}
+	r.LeaseUntilUnix = now.Add(ttl).UnixNano()
+	m.records[k] = r
+	return leaseFromRecord(r), nil
+}
+
+func (m *Memory) Mark(_ context.Context, lease Lease, operation Operation) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	k := key(lease.User, lease.App)
+	r, ok := m.records[k]
+	if !ok || !leaseMatches(r, lease) {
+		return ErrLeaseLost{User: lease.User, App: lease.App}
+	}
+	operation.Sequence = r.Operation.Sequence + 1
+	r.Operation = cloneOperation(operation)
+	m.records[k] = r
+	return nil
+}
+
+func (m *Memory) CommitStateIdentity(_ context.Context, lease Lease, hostID, hostInstanceID string, generations []Generation, now time.Time) error {
+	return m.commitStateIdentity(lease, hostID, hostInstanceID, generations, now)
+}
+
+func (m *Memory) commitStateIdentity(lease Lease, hostID, hostInstanceID string, generations []Generation, now time.Time) error {
+	if hostID == "" || hostInstanceID == "" {
+		return fmt.Errorf("host ID and host instance ID required")
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	k := key(lease.User, lease.App)
+	r, ok := m.records[k]
+	if !ok || !leaseMatches(r, lease) || !leaseActive(r, now) {
+		return ErrLeaseLost{User: lease.User, App: lease.App}
+	}
+	r.HostID = hostID
+	r.HostInstanceID = hostInstanceID
+	r.Generations = append([]Generation(nil), generations...)
+	r.Revision++
+	r.LeaseOwner, r.LeaseUntilUnix = "", 0
+	r.Operation = Operation{}
+	m.records[k] = r
+	return nil
+}
+
+func (m *Memory) Release(_ context.Context, lease Lease) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	k := key(lease.User, lease.App)
+	r, ok := m.records[k]
+	if !ok {
+		return nil
+	}
+	if !leaseMatches(r, lease) {
+		return ErrLeaseLost{User: lease.User, App: lease.App}
+	}
+	r.Revision++
+	r.LeaseOwner, r.LeaseUntilUnix = "", 0
+	r.Operation = Operation{}
+	m.records[k] = r
+	return nil
+}
+
+func leaseActive(r Record, now time.Time) bool {
+	return r.LeaseOwner != "" && r.LeaseUntilUnix > now.UnixNano()
+}
+
+func leaseMatches(r Record, lease Lease) bool {
+	return r.Revision == lease.Revision && r.LeaseOwner == lease.Owner
+}
+
+func leaseFromRecord(r Record) Lease {
+	return Lease{
+		User: r.User, App: r.App, HostID: r.HostID, HostInstanceID: r.HostInstanceID, Owner: r.LeaseOwner,
+		Revision: r.Revision, UntilUnix: r.LeaseUntilUnix,
+	}
+}
+
+func cloneOperation(operation Operation) Operation {
+	operation.Generations = append([]string(nil), operation.Generations...)
+	operation.Desired = append([]Generation(nil), operation.Desired...)
+	return operation
+}
+
+func cloneRecord(record Record) Record {
+	record.Operation = cloneOperation(record.Operation)
+	record.Generations = append([]Generation(nil), record.Generations...)
+	return record
+}
+
+// UpsertGeneration returns inventory with generation inserted/replaced.
+func UpsertGeneration(generations []Generation, generation Generation) []Generation {
+	out := append([]Generation(nil), generations...)
+	for i := range out {
+		if out[i].Gen == generation.Gen {
+			out[i] = generation
+			return out
+		}
+	}
+	return append(out, generation)
+}
+
+// RemoveGeneration returns inventory without gen.
+func RemoveGeneration(generations []Generation, gen string) []Generation {
+	out := make([]Generation, 0, len(generations))
+	for _, generation := range generations {
+		if generation.Gen != gen {
+			out = append(out, generation)
+		}
+	}
+	return out
+}

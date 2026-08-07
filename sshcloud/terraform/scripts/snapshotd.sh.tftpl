@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+set -euo pipefail
+${helpers}
+
+install_docker
+systemctl stop sshcloud-snapshotd.service >/dev/null 2>&1 || true
+INTERNAL_IP="$(curl --connect-timeout 5 --max-time 20 --retry 3 --retry-all-errors -fsS -H 'Metadata-Flavor: Google' \
+  http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/ip)"
+install_ops_agent snapshotd "$INTERNAL_IP:8083"
+retry 30 registry_login
+install -d -o 65532 -g 65532 -m 0700 /var/lib/sshcloud/snapshotd
+install_control_identity_refresher \
+  snapshot \
+  "${control_identity_secret}" \
+  "${control_ca_current_secret}" \
+  "${control_ca_previous_secret}" \
+  /var/lib/sshcloud/control 65532
+
+IMAGE="${snapshot_image}"
+timeout 30s docker update --restart=no sshcloud-snapshotd >/dev/null 2>&1 || true
+timeout 30s docker rm -f sshcloud-snapshotd >/dev/null 2>&1 || true
+
+cat >/etc/systemd/system/sshcloud-snapshotd-image.service <<EOF
+[Unit]
+Description=Pull pinned sshcloud snapshotd image
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+StartLimitIntervalSec=10min
+StartLimitBurst=30
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker pull $IMAGE
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=10min
+LimitCORE=0
+EOF
+
+cat >/etc/systemd/system/sshcloud-snapshotd.service <<EOF
+[Unit]
+Description=sshcloud snapshotd container
+After=docker.service network-online.target sshcloud-control-identity-refresh.service sshcloud-snapshotd-image.service
+Requires=docker.service sshcloud-control-identity-refresh.service sshcloud-snapshotd-image.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStartPre=-/usr/bin/docker rm -f sshcloud-snapshotd
+ExecStart=/usr/bin/docker run --rm --name sshcloud-snapshotd --net host \
+  --log-driver=journald \
+  --log-opt tag=sshcloud-platform-snapshotd \
+  --user 65532:65532 \
+  --ulimit core=0:0 \
+  --cap-drop ALL \
+  --security-opt no-new-privileges \
+  --read-only \
+  --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+  -v /var/lib/sshcloud/control:/var/lib/sshcloud/control:ro \
+  -v /var/lib/sshcloud/snapshotd:/var/lib/sshcloud/snapshotd:rw \
+  $IMAGE \
+  -listen "$${INTERNAL_IP}:8082" \
+  -health-listen "$${INTERNAL_IP}:8083" \
+  -temp-dir /var/lib/sshcloud/snapshotd \
+  -gcs-bucket "${snapshots_bucket}" \
+  -gcs-prefix "${snapshot_prefix}" \
+  -kms-key "${kms_key}" \
+  -firestore-project "${project_id}" \
+  -firestore-prefix "${firestore_prefix}" \
+  -placement-firestore-database "${placement_firestore_database}" \
+  -staging-max-bytes "${staging_max_bytes}" \
+  -staging-max-operations "${staging_max_operations}" \
+  -staging-max-per-agent "${staging_max_per_agent}" \
+  -control-bundle /var/lib/sshcloud/control/current \
+  -control-bundle-max-age 15m \
+  -control-project-id "${project_id}" \
+  -control-project-number "${project_number}" \
+  -agent-service-account "${agent_service_account}"
+ExecStop=-/usr/bin/docker stop -t 60 sshcloud-snapshotd
+Restart=always
+RestartSec=5
+TimeoutStartSec=2min
+TimeoutStopSec=75s
+KillMode=control-group
+LimitCORE=0
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable sshcloud-snapshotd.service
+systemctl restart sshcloud-snapshotd.service

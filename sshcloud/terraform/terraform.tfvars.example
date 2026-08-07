@@ -1,0 +1,48 @@
+project_id = "my-gcp-project"
+region     = "us-central1"
+zone       = "us-central1-a"
+
+# Run `bash ../hack/fetch-firecracker-assets.sh` first.
+firecracker_asset_path = "../_assets/firecracker"
+jailer_asset_path      = "../_assets/jailer"
+kernel_asset_path      = "../_assets/vmlinux"
+
+# Optional overrides:
+# name_prefix                 = "sshcloud"
+# firestore_location          = "nam5"
+# user_firestore_database     = "sshcloud-user"
+# placement_firestore_database = "sshcloud-placement"
+# firestore_prefix            = "sshcloud"
+# snapshot_staging_max_bytes  = 10737418240 # leaves 5+ GiB free on the default disk
+# Follow ../docs/key-rotation-runbook.md. Never increment the active CA slot:
+# control_ca_active_slot = "a"
+# control_ca_rotation_epochs = { a = 0, b = 0 }
+# control_leaf_rotation_epochs = {
+#   gateway = 0, orchestrator = 0, agent = 0, snapshot = 0
+# }
+# gateway_host_key_rotation_epoch = 0
+# agent_count         = 2
+# agent_rootfs_cache_bytes = 8589934592 # 8 GiB hard LRU budget
+# notification_email  = "operator@example.com"
+# Keep false until both dedicated log routes pass the live runbook drill.
+# log_routing_live_verified = false
+# platform_log_reader_members = ["group:platform-ops@example.com"]
+# app_log_reader_members      = ["group:sensitive-app-logs@example.com"]
+# billing_account_id  = "000000-000000-000000" # set with monthly_budget_usd
+# monthly_budget_usd  = 100
+# Keep empty unless running a private smoke test. Even with application-level
+# quotas, use only the Terraform runner/operator's public /32.
+# ssh_client_cidrs      = ["203.0.113.10/32"]
+# enable_demo_bootstrap = true
+
+# Production defaults are private: both modes are "allowlist", and empty key
+# lists admit nobody. Configure complete OpenSSH public key lines, not SHA256
+# fingerprints. Deployer keys automatically imply membership.
+# member_ssh_public_keys = [
+#   "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... member@example",
+# ]
+# deployer_ssh_public_keys = [
+#   "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... operator@example",
+# ]
+# access_join_mode   = "allowlist" # allowlist | open
+# access_deploy_mode = "allowlist" # allowlist | all-users

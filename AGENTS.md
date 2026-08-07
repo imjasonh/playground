@@ -28,6 +28,7 @@ playground/
 ├── life-scad/             # OpenSCAD Life sculpture + reverse-history Python tool
 ├── life-stl/              # Rust CLI: Game of Life → printable STL (Z = time)
 ├── gitdb/                 # Go CLI (Go module + Go tests)
+├── sshcloud/              # SSH App Cloud platform (Go module + Go tests; not a Pages app)
 ├── hello/                 # example static app (HTML only)
 ├── hello-macos/           # example macOS SwiftUI app (XcodeGen + Sparkle CD)
 ├── geeksquad/             # offline Mac network/config triage (Sparkle CD)
@@ -59,6 +60,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `web-push-demo/` | yes | Static front-end for `web-push`; HTML/JS, no build or tests |
 | `gitdb/` | no | Go CLI; no `index.html` |
 | `ocidb/` | no | Go CLI; no `index.html` |
+| `sshcloud/` | no | SSH App Cloud platform (Go); no `index.html` |
 | `web-push/` | no | Rust Cloudflare Worker; no `index.html` |
 | `cors-proxy/` | no | Rust Cloudflare Worker; no `index.html` |
 | `git-server/` | no | Rust Cloudflare Worker; no `index.html` |
@@ -155,7 +157,7 @@ discovery scripts.
 | `deploy-workers.yml` | push to `main`, manual | Deploys changed Cloudflare Worker apps (those with `wrangler.toml`) with `wrangler`, using the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets; a manual *Run workflow* (`workflow_dispatch`) redeploys all of them. Before deploy it create-or-gets each Worker's KV namespaces (substituting the placeholder ids in `wrangler.toml`) and creates any declared R2 buckets that don't exist; after deploy it get-or-generates a `VAPID_PRIVATE_KEY` secret for any Worker shipping an `examples/genvapid.rs` |
 | `preview.yml` | pull request opened/sync | When a browser app changed: deploys under `/preview/pr-<N>/` and comments the URL; otherwise no-ops |
 | `cleanup.yml` | pull request closed, manual | Removes closed-PR preview dirs from `gh-pages` (reconciles all open PRs) and refreshes the root index |
-| `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps in one job |
+| `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps; plus `sshcloud-kvm` Firecracker e2e when `sshcloud/` changes |
 | `ios.yml` | push to `main`, pull requests | Tests changed iOS apps on macOS; on `main`, delivers them to TestFlight |
 | `macos.yml` | push to `main`, pull requests | Tests changed macOS apps on macOS; on `main`, ships notarized Sparkle updates when secrets are present |
 | `ios-bootstrap-label.yml` | pull request | Labels PRs that need signing re-bootstrap with `needs-ios-bootstrap` |
@@ -236,6 +238,7 @@ or the root `README.md` runs no app tests.
 |----------|---------------------------|--------------------------|
 | Browser | `index.html` **and** `package.json` with a `test` script | `npm ci` → `npm test` → `npm run test:e2e` (if defined; installs Playwright Chromium first) |
 | Go | `go.mod` | `go build ./...` → `go test ./...` |
+| Go (`sshcloud` only) | `sshcloud/` changed | Extra job `sshcloud-kvm`: enable `/dev/kvm` on `ubuntu-latest`, build fortune rootfs, `go test -tags=kvm` sleep/wake + migrate |
 | Rust | `Cargo.toml` | `cargo fmt --check` → `cargo clippy --locked --all-targets -D warnings` → `cargo test --locked`; Cloudflare Worker apps (with `wrangler.toml`) also run wasm clippy + a release `wasm32-unknown-unknown` build, then the wrangler `[build]` command (with a decoy `package.json` like wrangler-action creates) so Test covers the deploy artifact path |
 
 Browser apps without a `test` script (e.g. `hello/`) are never tested. Each Rust
@@ -542,6 +545,7 @@ bundle exec fastlane test
 |-----------|------|-------|
 | `gitdb/` | git repository explorer backed by SQLite virtual tables | `go test ./...` |
 | `ocidb/` | OCI registry explorer backed by SQLite virtual tables | `go test ./...` |
+| `sshcloud/` | SSH App Cloud — gateway/orchestrator/agent (Firecracker SSH PaaS) | `go test ./...` |
 
 ## Current Rust apps
 

@@ -52,6 +52,24 @@ jobs:
           MODULES: ${{ steps.discover.outputs.modules }}
         run: bash .github/scripts/test-go-modules.sh
 
+      - uses: hashicorp/setup-terraform@v3
+        if: ${{ contains(steps.discover.outputs.modules, '"sshcloud"') }}
+
+      - name: Validate sshcloud Terraform
+        if: ${{ contains(steps.discover.outputs.modules, '"sshcloud"') }}
+        working-directory: sshcloud
+        run: bash hack/validate-terraform.sh
+
+      - name: Compile sshcloud KVM-tagged tests
+        if: ${{ contains(steps.discover.outputs.modules, '"sshcloud"') }}
+        working-directory: sshcloud
+        run: go test -tags=kvm ./internal/agent -run '^$'
+
+      - name: Race-test sshcloud chaos paths
+        if: ${{ contains(steps.discover.outputs.modules, '"sshcloud"') }}
+        working-directory: sshcloud
+        run: go test -race ./...
+
       # Baseline stable toolchain; an app's rust-toolchain.toml (e.g. web-push
       # pins 1.83) overrides it per directory when cargo runs.
       - uses: dtolnay/rust-toolchain@stable
@@ -65,3 +83,69 @@ jobs:
         env:
           RUST_APPS: ${{ steps.discover.outputs.rust }}
         run: bash .github/scripts/test-rust-apps.sh
+
+  # Explicit direct-runtime Firecracker tests. Production uses the jailer
+  # helpers; runner-only MODE=0666 and passwordless TAP setup are not deployed.
+  sshcloud-kvm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Discover changed apps
+        id: discover
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: bash .github/scripts/discover-changed-apps.sh
+
+      - name: Skip if sshcloud unchanged
+        id: gate
+        run: |
+          if echo '${{ steps.discover.outputs.modules }}' | grep -q '"sshcloud"'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "sshcloud not in changed Go modules; skipping KVM e2e"
+          fi
+
+      - uses: actions/setup-go@v6
+        if: steps.gate.outputs.run == 'true'
+        with:
+          go-version: 'stable'
+          check-latest: true
+          cache: false
+
+      - name: Enable KVM device access
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          sudo modprobe kvm 2>/dev/null || true
+          sudo modprobe kvm_intel 2>/dev/null || sudo modprobe kvm_amd 2>/dev/null || true
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          for _ in $(seq 1 20); do
+            if [[ -e /dev/kvm ]] && [[ -r /dev/kvm ]] && [[ -w /dev/kvm ]]; then
+              ls -l /dev/kvm
+              exit 0
+            fi
+            sleep 0.5
+          done
+          echo "::error::/dev/kvm unavailable on this runner (nested virt not exposed)"
+          ls -l /dev/kvm 2>&1 || true
+          exit 1
+
+      - name: Install rootfs / TAP tooling
+        if: steps.gate.outputs.run == 'true'
+        run: sudo apt-get update && sudo apt-get install -y e2fsprogs iproute2 iptables
+
+      - name: Run Firecracker KVM e2e
+        if: steps.gate.outputs.run == 'true'
+        working-directory: sshcloud
+        # Firecracker runs as the runner user; `ip` for TAP uses passwordless sudo.
+        run: bash hack/run-kvm-e2e.sh

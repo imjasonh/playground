@@ -1,0 +1,15 @@
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+coverage.out
+ssh_host_ed25519_key
+ssh_host_ed25519_key.pub
+ssh_user_ca
+ssh_user_ca.pub
+/_assets/
+*.ext4
+
+firebase-debug.log
+firestore-debug.log

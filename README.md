@@ -59,6 +59,10 @@ skip them:
   contents with SQL, via SQLite virtual tables over go-git (Go CLI).
 - **[`ocidb/`](ocidb/)** — explore OCI container images on Docker Hub with SQL,
   via SQLite virtual tables over go-containerregistry (Go CLI).
+- **[`sshcloud/`](sshcloud/)** — SSH App Cloud platform (Go): gateway hub,
+  orchestrator, host agent, and internal API for Firecracker SSH apps
+  (see the [design](docs/ssh-app-cloud-design.md) and
+  [key-rotation runbook](sshcloud/docs/key-rotation-runbook.md)).
 - **[`web-push/`](web-push/)** — a Web Push application-server backend
   (RFC 8030/8188/8291/8292) for Cloudflare Workers, in Rust.
 - **[`git-server/`](git-server/)** — a git smart-HTTP server for Cloudflare
