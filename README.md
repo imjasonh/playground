@@ -76,6 +76,9 @@ skip them:
   plus an offline reverse-history searcher for shallow roof targets.
 - **[`life-qr/`](life-qr/)** — parametric OpenSCAD Life sculpture whose roof is
   a scannable QR code for any text and height (time runs toward the bed).
+- **[`its-not-jaws/`](its-not-jaws/)** — Cursor Agent SDK harness where two
+  agents play a secret-guessing game; tracks outcomes, leaks in thinking
+  traces, game length, and token cost (mock backend for tests).
 
 ## iOS app
 
