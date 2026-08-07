@@ -18,6 +18,13 @@ is_rust_app() {
     return 1
   fi
 
+  # ESP32 firmware uses the espup Xtensa toolchain and ESP-IDF, so it cannot
+  # run through the generic stable-Rust job. esp32.yml owns its host tests and
+  # cross-builds instead.
+  if [[ "$name" == "esp32" ]]; then
+    return 1
+  fi
+
   [[ -f "$name/Cargo.toml" ]]
 }
 

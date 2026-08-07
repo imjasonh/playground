@@ -76,6 +76,8 @@ skip them:
   plus an offline reverse-history searcher for shallow roof targets.
 - **[`life-qr/`](life-qr/)** — parametric OpenSCAD Life sculpture whose roof is
   a scannable QR code for any text and height (time runs toward the bed).
+- **[`esp32/`](esp32/)** — Rust/ESP-IDF firmware with signed, rollback-safe OTA;
+  includes an 800×480 e-ink SSH thin client that generates its own Ed25519 key.
 
 ## iOS app
 

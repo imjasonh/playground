@@ -1,0 +1,48 @@
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=7000
+# Default for std::thread::spawn() without explicit stack_size. Bumped from
+# 8192 because anything that does HTTPS + JSON + SHA blows past 8 KB.
+CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT=16384
+
+# HTTPS via ESP-IDF's bundled root CA store (esp_crt_bundle_attach in main.rs)
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL=y
+
+# mbedtls heap budgeting. We routinely have 2-3 concurrent TLS sessions
+# (cloud_log → logging.googleapis.com, metrics → monitoring.googleapis.com,
+# OTA → ghcr.io / pkg-containers); without these knobs the per-session
+# heap pinned for I/O buffers + cert chain blows our budget and the
+# next handshake fails with MBEDTLS_ERR_SSL_ALLOC_FAILED (-0x7F00).
+#
+# Even with serialization (cloud_log + metrics + OTA short fetches share
+# a Mutex; OTA blob download deliberately doesn't), the OTA download
+# holds its session open for tens of seconds while metrics/cloud_log
+# handshakes need to fit alongside it.
+#
+# - DYNAMIC_BUFFER: I/O buffers grow per-session up to the configured
+#   max instead of being pinned at 16+16 KB.
+# - DYNAMIC_FREE_CONFIG_DATA: free the mbedtls_ssl_config struct after
+#   handshake.
+# - DYNAMIC_FREE_CA_CERT: drop the CA bundle data after handshake (we
+#   re-attach it from esp_crt_bundle on the next handshake).
+# - SSL_KEEP_PEER_CERTIFICATE=n: drop the parsed peer cert chain after
+#   handshake. We don't reuse sessions or do mutual TLS, so we never
+#   need it post-handshake. Saves ~3-5 KB per active session.
+CONFIG_MBEDTLS_DYNAMIC_BUFFER=y
+CONFIG_MBEDTLS_DYNAMIC_FREE_CONFIG_DATA=y
+CONFIG_MBEDTLS_DYNAMIC_FREE_CA_CERT=y
+CONFIG_MBEDTLS_SSL_KEEP_PEER_CERTIFICATE=n
+
+# OTA: custom partition table with two app slots, plus app-rollback support
+# so a bad OTA can be reverted by the bootloader on next boot.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+# Absolute path because IDF resolves this relative to its CMake project,
+# which for embuild is the synthetic project under target/, not our repo
+# root. The Makefile generates sdkconfig.defaults from this template
+# (sdkconfig.defaults.in), substituting @PROJECT_DIR@ at build time.
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="@PROJECT_DIR@/partitions.csv"
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
+# Inland board has 4MB flash; default IDF assumes 2MB which is too small
+# for our 1.5MB-each OTA partition layout.
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="4MB"

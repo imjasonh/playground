@@ -1,0 +1,16 @@
+/target
+/.embuild
+wifi.env
+gh.env
+provisioning.toml
+sdkconfig.defaults
+tools/publisher/target
+tools/provision/target
+# GCP service-account key + the PEM extracted from it. Referenced by
+# provisioning.toml; never check in.
+gcp-sa-key.json
+gcp-sa-key.pem
+
+# Cargo.lock IS tracked: all crates here are binaries (firmware,
+# publisher, provision), and binary Cargo.lock files should be
+# committed for reproducible builds.

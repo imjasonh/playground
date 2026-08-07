@@ -1,0 +1,5 @@
+# The publisher is a host-side binary; the parent rust-toolchain.toml
+# pins `esp` for the firmware build, which isn't installed on host-only
+# CI jobs. Override here so cargo uses stable.
+[toolchain]
+channel = "stable"

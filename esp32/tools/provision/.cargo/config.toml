@@ -1,0 +1,6 @@
+# Override the firmware project's parent .cargo/config.toml so this builds
+# for the host. Same dance as tools/publisher — the parent has
+# `target = "xtensa-esp32-espidf"` and `[unstable] build-std`, neither of
+# which apply to a host tool.
+[unstable]
+build-std = []

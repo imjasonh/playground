@@ -1,0 +1,103 @@
+name: Maintain ESP32 dependencies
+
+on:
+  schedule:
+    - cron: "23 4 1 * *"
+  workflow_dispatch:
+
+concurrency:
+  group: esp32-maintenance
+  cancel-in-progress: false
+
+permissions:
+  actions: write
+  contents: write
+
+jobs:
+  update:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Install native build tools
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Setup Xtensa toolchain
+        uses: esp-rs/xtensa-toolchain@v1.7
+        with:
+          default: true
+          buildtargets: esp32
+          ldproxy: true
+
+      - name: Install espflash
+        run: cargo install espflash --locked
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            esp32
+            esp32/tools/bundle-verifier
+            esp32/tools/provision
+            esp32/tools/publisher
+          shared-key: esp32-maintenance
+
+      - name: Update every ESP32 lockfile
+        run: |
+          date -u +%Y-%m > esp32/trust/maintenance-epoch.txt
+          cargo +stable update --manifest-path esp32/Cargo.toml
+          cargo +stable update --manifest-path esp32/tools/bundle-verifier/Cargo.toml
+          cargo +stable update --manifest-path esp32/tools/provision/Cargo.toml
+          cargo +stable update --manifest-path esp32/tools/publisher/Cargo.toml
+
+      - name: Test host tools
+        run: |
+          cargo +stable test --manifest-path esp32/eink/Cargo.toml \
+            --lib --target x86_64-unknown-linux-gnu
+          cargo +stable test --manifest-path esp32/tools/bundle-verifier/Cargo.toml \
+            --target x86_64-unknown-linux-gnu
+          cargo +stable test --manifest-path esp32/tools/provision/Cargo.toml \
+            --target x86_64-unknown-linux-gnu
+          cargo +stable test --manifest-path esp32/tools/publisher/Cargo.toml \
+            --target x86_64-unknown-linux-gnu
+
+      - name: Cross-build firmware
+        working-directory: esp32
+        run: |
+          make APP=blinky build
+          make APP=eink check-image-size
+
+      - name: Push passing dependency updates
+        id: push
+        run: |
+          git add \
+            esp32/Cargo.lock \
+            esp32/tools/bundle-verifier/Cargo.lock \
+            esp32/tools/provision/Cargo.lock \
+            esp32/tools/publisher/Cargo.lock \
+            esp32/trust/maintenance-epoch.txt
+          if git diff --cached --quiet; then
+            echo "Dependencies already current."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(esp32): monthly trust and dependency refresh"
+          git push origin HEAD:main
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      # Pushes made with GITHUB_TOKEN intentionally do not trigger other
+      # workflows, so dispatch the signed publish explicitly.
+      - name: Publish monthly OTA
+        if: ${{ steps.push.outputs.changed == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run esp32-publish.yml --ref main

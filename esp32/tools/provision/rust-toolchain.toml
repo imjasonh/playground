@@ -1,0 +1,3 @@
+# Host build, not the xtensa firmware target.
+[toolchain]
+channel = "stable"

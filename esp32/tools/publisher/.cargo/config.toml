@@ -1,0 +1,10 @@
+# Override the firmware project's parent .cargo/config.toml so this builds
+# for the host (it runs on the dev machine, not the ESP32). The parent has
+# `target = "xtensa-esp32-espidf"` and `[unstable] build-std = ...` which
+# would both try to apply to a host build of the publisher otherwise.
+#
+# We don't hardcode a host triple here (machine-specific). The Makefile
+# passes `--target $(HOST_TRIPLE)` which takes precedence over any [build]
+# target setting from a parent config.
+[unstable]
+build-std = []

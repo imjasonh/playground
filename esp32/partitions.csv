@@ -1,0 +1,25 @@
+# Partition table for OTA. Two equal app slots (ota_0 / ota_1), no
+# `factory` partition — once OTA is enabled we always boot from one of
+# the OTA slots, with the other holding the previous (or pending) image.
+#
+# Flash layout (4 MB total):
+#   0x001000-0x008FFF  bootloader  (~28 KB)
+#   0x008000-0x008FFF  partition table itself (4 KB)
+#   0x009000-0x00EFFF  nvs         (24 KB)
+#   0x00F000-0x010FFF  otadata     (8 KB)   - which slot to boot
+#   0x011000-0x011FFF  phy_init    (4 KB)
+#   0x020000-0x20FFFF  ota_0       (1.9375 MB)
+#   0x210000-0x3FFFFF  ota_1       (1.9375 MB)
+#
+# Bumped from 1.75 MB to 1.9375 MB slots so we can absorb future feature
+# work (e-ink driver, more crates) without immediately running out. There
+# is no unused space left at the end of flash; if we need it later (extra
+# nvs, spiffs, etc.) we'd have to shrink slots again. Repartitioning is
+# a USB-only migration (`make flash-all`).
+#
+# Name,    Type, SubType, Offset,    Size
+nvs,      data, nvs,     0x9000,    0x6000
+otadata,  data, ota,     0xf000,    0x2000
+phy_init, data, phy,     0x11000,   0x1000
+ota_0,    app,  ota_0,   0x20000,   0x1F0000
+ota_1,    app,  ota_1,   0x210000,  0x1F0000

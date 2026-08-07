@@ -36,6 +36,7 @@ playground/
 ├── nypd-choppers/         # NYPD helicopter ADS-B tracker (JS + Node tests)
 ├── ocidb/                 # Go CLI (Go module + Go tests)
 ├── population-rays/       # directional 5° population-slice map (JS + Node tests)
+├── esp32/                 # Rust/ESP-IDF firmware: signed OTA + e-ink SSH client
 ├── web-push/              # Rust Cloudflare Worker (Cargo + tests; not a Pages app)
 └── web-push-demo/         # static browser front-end for the web-push Worker
 ```
@@ -66,6 +67,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `life-stl/` | no | Rust CLI (STL generator); no `index.html` |
 | `life-scad/` | no | OpenSCAD + Python reverse-history tool; no `index.html` |
 | `life-qr/` | no | OpenSCAD Life+QR sculpture; no `index.html` |
+| `esp32/` | no | Rust/ESP-IDF firmware; no `index.html` |
 | `ios/` | no | The single "Playground" iOS app (XcodeGen + SwiftUI); no `index.html` |
 | `hello-macos/` | no | Example macOS app (XcodeGen + SwiftUI); no `index.html` |
 | `geeksquad/` | no | Offline Mac network triage (XcodeGen + SwiftUI + Sparkle); no `index.html` |
@@ -99,6 +101,12 @@ Each Rust app is an isolated crate. Keep its sources, tests, `Cargo.toml`, and
 Cargo workspace. Pin the toolchain with a `rust-toolchain.toml` (channel,
 components, and any extra targets such as `wasm32-unknown-unknown`) so local
 builds and CI agree.
+
+**`esp32/` is the toolchain exception.** It is a self-contained nested Cargo
+workspace whose firmware requires espup's Xtensa toolchain and ESP-IDF. Generic
+Rust discovery and daily dependency updates skip it; `esp32.yml` runs its host
+tests and cross-builds. Use its Makefile rather than raw Cargo/espflash commands,
+because the Makefile selects the app-specific sdkconfig and OTA partition table.
 
 ### iOS apps
 
@@ -156,6 +164,9 @@ discovery scripts.
 | `preview.yml` | pull request opened/sync | When a browser app changed: deploys under `/preview/pr-<N>/` and comments the URL; otherwise no-ops |
 | `cleanup.yml` | pull request closed, manual | Removes closed-PR preview dirs from `gh-pages` (reconciles all open PRs) and refreshes the root index |
 | `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps in one job |
+| `esp32.yml` | push to `main`, pull requests, manual | Runs ESP32 host tests and cross-builds the original + e-ink Xtensa firmware |
+| `esp32-publish.yml` | push to `main`, manual | Publishes and keylessly signs the e-ink firmware OTA artifact in GHCR |
+| `esp32-maintenance.yml` | monthly, manual | Updates ESP32 dependencies/trust epoch, verifies both firmware images, and pushes a passing maintenance release |
 | `ios.yml` | push to `main`, pull requests | Tests changed iOS apps on macOS; on `main`, delivers them to TestFlight |
 | `macos.yml` | push to `main`, pull requests | Tests changed macOS apps on macOS; on `main`, ships notarized Sparkle updates when secrets are present |
 | `ios-bootstrap-label.yml` | pull request | Labels PRs that need signing re-bootstrap with `needs-ios-bootstrap` |
@@ -241,6 +252,11 @@ or the root `README.md` runs no app tests.
 Browser apps without a `test` script (e.g. `hello/`) are never tested. Each Rust
 app's toolchain comes from its `rust-toolchain.toml` (defaulting to stable);
 Worker apps pin Rust 1.88 (with `worker` 0.8 / wasm-bindgen 0.2.125).
+
+**ESP32 firmware is tested separately by `esp32.yml`.** The generic Rust helper
+intentionally excludes `esp32/`, because stable Linux Cargo cannot build its
+`xtensa-esp32-espidf` targets. The dedicated workflow also tests the
+hardware-independent terminal model and host provisioning/publishing tools.
 
 **The iOS app is tested by a separate workflow (`ios.yml`), not `test.yml`,**
 because it needs a macOS runner. A cheap Linux `discover` job reuses the same
@@ -552,6 +568,7 @@ bundle exec fastlane test
 | `git-server/` | git smart-HTTP server on R2 + Durable Objects — Cloudflare Worker | `cargo test` (incl. real-git integration) + clippy + wasm build |
 | `git-fuse/` | read-only FUSE adapter for git-server (mount commits/refs as files) — CLI, not a Worker | `cargo test` (incl. e2e over real FUSE mounts; skips without `/dev/fuse`) + clippy |
 | `life-stl/` | Conway's Game of Life → 3D-printable STL (Z = time); self-supporting causality braces (default) or breakaway supports | `cargo test` + clippy |
+| `esp32/` | Rust/ESP-IDF firmware with signed OTA and an e-ink SSH thin client | host unit tests + Xtensa cross-build via `esp32.yml` |
 
 > **`git-server` has its own agent guide:** read
 > [`git-server/AGENTS.md`](git-server/AGENTS.md) before working in that
