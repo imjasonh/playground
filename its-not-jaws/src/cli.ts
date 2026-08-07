@@ -2,6 +2,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runGame } from "./harness.js";
+import { LIMITS, clampMaxTurns } from "./limits.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..");
@@ -14,7 +15,7 @@ Options:
   --game <id>             Game definition (default: its-not-jaws)
   --knower-model <id>     Knower model id (default: composer-2.5)
   --guesser-model <id>    Guesser model id (default: composer-2.5)
-  --max-turns <n>         Max guesser turns (default: 8)
+  --max-turns <n>         Max guesser turns (default: ${LIMITS.DEFAULT_MAX_TURNS}, max ${LIMITS.MAX_MAX_TURNS})
   --results-dir <path>    Where to write JSON records (default: ./results)
   --verbose               Log paths / progress
   --help                  Show help
@@ -44,19 +45,15 @@ async function main(): Promise<void> {
     throw new Error("CURSOR_API_KEY is required for --backend cursor");
   }
 
-  // Back-compat alias from earlier keeper naming.
-  const knowerModel =
-    argValue(args, "--knower-model") ??
-    argValue(args, "--keeper-model") ??
-    "composer-2.5";
-
-  const maxTurns = Number(argValue(args, "--max-turns") ?? 8);
+  const maxTurns = clampMaxTurns(
+    Number(argValue(args, "--max-turns") ?? LIMITS.DEFAULT_MAX_TURNS),
+  );
   const record = await runGame({
     gameId: argValue(args, "--game") ?? "its-not-jaws",
     backend,
-    knowerModel,
+    knowerModel: argValue(args, "--knower-model") ?? "composer-2.5",
     guesserModel: argValue(args, "--guesser-model") ?? "composer-2.5",
-    maxTurns: Number.isFinite(maxTurns) ? maxTurns : 8,
+    maxTurns,
     apiKey: process.env.CURSOR_API_KEY,
     workspacesRoot: path.join(root, ".workspaces"),
     resultsDir: path.resolve(
@@ -67,20 +64,27 @@ async function main(): Promise<void> {
   });
 
   const report = record.guesserLeakReport;
-  const summary = {
-    id: record.id,
-    outcome: record.outcome,
-    secret: record.secret,
-    gameLength: record.gameLength,
-    usedLeakedClues: report?.usedLeakedClues ?? false,
-    helpfulClueLeaks: report?.usedLeakedClues ? report.leakedClues.length : 0,
-    guesserLeakReport: report,
-    totalTokens: record.usage.totalTokens,
-    totalRawCostCents: record.usage.totalRawCostCents,
-    knowerModel: record.knowerModel,
-    guesserModel: record.guesserModel,
-  };
-  console.log(JSON.stringify(summary, null, 2));
+  console.log(
+    JSON.stringify(
+      {
+        id: record.id,
+        outcome: record.outcome,
+        secret: record.secret,
+        gameLength: record.gameLength,
+        usedLeakedClues: report?.usedLeakedClues ?? false,
+        helpfulClueLeaks: report?.usedLeakedClues
+          ? report.leakedClues.length
+          : 0,
+        guesserLeakReport: report,
+        totalTokens: record.usage.totalTokens,
+        totalRawCostCents: record.usage.totalRawCostCents,
+        knowerModel: record.knowerModel,
+        guesserModel: record.guesserModel,
+      },
+      null,
+      2,
+    ),
+  );
 }
 
 main().catch((err) => {

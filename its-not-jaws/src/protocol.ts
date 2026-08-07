@@ -1,3 +1,4 @@
+import { LIMITS } from "./limits.js";
 import type {
   Move,
   PublicChannel,
@@ -74,10 +75,14 @@ export function parseReportedClues(value: unknown): ReportedLeakedClue[] {
   if (!Array.isArray(value)) return [];
   const out: ReportedLeakedClue[] = [];
   for (const item of value) {
+    if (out.length >= LIMITS.MAX_REPORTED_LEAKED_CLUES) break;
     if (!item || typeof item !== "object") continue;
     const rec = item as Record<string, unknown>;
-    const text = typeof rec.text === "string" ? rec.text.trim() : "";
+    let text = typeof rec.text === "string" ? rec.text.trim() : "";
     if (!text) continue;
+    if (text.length > LIMITS.MAX_LEAKED_CLUE_TEXT_CHARS) {
+      text = `${text.slice(0, LIMITS.MAX_LEAKED_CLUE_TEXT_CHARS)}…`;
+    }
     const channel =
       rec.channel === "thinking" ||
       rec.channel === "assistant" ||
@@ -141,12 +146,23 @@ export function normalizeAnswer(value: string): string {
 }
 
 /**
- * True when `secret` appears as a contiguous normalized substring of `haystack`.
- * Used for leak detection against published gameplay traces.
+ * True when `secret` appears in `haystack` (normalized).
+ * Short titles (≤3 chars) are common English words ("It", "Up", "Her"), so we
+ * only count explicit title-like mentions (quoted, or "called/titled/movie …").
  */
 export function containsSecret(haystack: string, secret: string): boolean {
-  if (!secret.trim()) return false;
-  return normalizeAnswer(haystack).includes(normalizeAnswer(secret));
+  const s = normalizeAnswer(secret);
+  if (!s) return false;
+  const h = normalizeAnswer(haystack);
+  if (s.length <= 3) {
+    const escaped = s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const quoted = new RegExp(`["']${escaped}["']`);
+    const titled = new RegExp(
+      `(?:called|titled|title is|movie|film|answer is)\\s+${escaped}(?:$|[^a-z0-9])`,
+    );
+    return quoted.test(h) || titled.test(h);
+  }
+  return h.includes(s);
 }
 
 /** Flatten a channel to a single string for leak scanning. */
@@ -161,10 +177,12 @@ export function assistantTextFromChannel(channel: PublicChannel): string {
     .join("");
 }
 
-/** Render a turn's full trace for the opponent (gameplay only). */
+/** Render a turn's trace for the opponent (gameplay only), with a size cap. */
 export function formatPublicChannel(channel: PublicChannel): string {
   if (channel.messages.length === 0) return "(no messages)";
-  return channel.messages.map(formatTraceMessage).join("\n\n");
+  const full = channel.messages.map(formatTraceMessage).join("\n\n");
+  if (full.length <= LIMITS.MAX_TRACE_CHARS_FOR_OPPONENT) return full;
+  return `${full.slice(0, LIMITS.MAX_TRACE_CHARS_FOR_OPPONENT)}\n\n…(truncated for prompt budget)`;
 }
 
 function formatTraceMessage(message: TraceMessage): string {

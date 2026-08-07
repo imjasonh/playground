@@ -4,7 +4,6 @@ import {
   escapeHtml,
   formatGameHtml,
   stripMoveFences,
-  stripTrailingMoveFence,
 } from "../src/format-html.js";
 import type { GameRecord } from "../src/types.js";
 
@@ -156,12 +155,6 @@ describe("stripMoveFences", () => {
   it("removes fenced and trailing move JSON", () => {
     assert.equal(
       stripMoveFences(
-        'Hello\n```json\n{"type":"guess","value":"X","usedLeakedClues":false,"leakedClues":[]}\n```',
-      ),
-      "Hello",
-    );
-    assert.equal(
-      stripTrailingMoveFence(
         'Hello\n```json\n{"type":"guess","value":"X","usedLeakedClues":false,"leakedClues":[]}\n```',
       ),
       "Hello",

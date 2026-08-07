@@ -32,6 +32,8 @@ export type AgentFactoryOptions = {
   systemPrompt: string;
   workspaceDir: string;
   apiKey?: string;
+  /** Cancel a hung Cursor turn after this many ms (cursor backend). */
+  turnTimeoutMs?: number;
   /** Mock-only knobs. */
   seed?: number;
   script?: MockScript;

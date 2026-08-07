@@ -41,6 +41,14 @@ describe("containsSecret", () => {
     );
     assert.equal(containsSecret("both are animated", "Finding Nemo"), false);
   });
+
+  it("requires explicit title cues for short titles", () => {
+    assert.equal(containsSecret("I think it through carefully", "It"), false);
+    assert.equal(containsSecret('the film is called "It"', "It"), true);
+    assert.equal(containsSecret("the film is called It", "It"), true);
+    assert.equal(containsSecret("follow up later", "Up"), false);
+    assert.equal(containsSecret("movie Up opens wide", "Up"), true);
+  });
 });
 
 describe("normalizeAnswer", () => {

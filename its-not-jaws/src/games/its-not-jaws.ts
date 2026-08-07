@@ -90,15 +90,8 @@ export const itsNotJawsGame: GameDefinition = {
   },
 };
 
-/** @deprecated Use itsNotJawsGame.id */
-export const stubGame = itsNotJawsGame;
-
 export function getGame(id: string): GameDefinition {
-  if (
-    id === itsNotJawsGame.id ||
-    id === "stub" ||
-    id === "stub-noun" // older harness default
-  ) {
+  if (id === itsNotJawsGame.id || id === "stub" || id === "stub-noun") {
     return itsNotJawsGame;
   }
   throw new Error(`Unknown game id: ${id}`);

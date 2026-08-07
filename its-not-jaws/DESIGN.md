@@ -83,11 +83,22 @@ Naming the title during private setup is expected and not a leak.
 - Full `turns[]` including setup (`phase`) and play traces
 - Token totals; optional billed `rawCostCents` via `Agent.getUsage()`
 
+## Spend guards
+
+Live Cursor games retain agent conversation across turns, so cost grows with
+round count and trace size. Guards live in `src/limits.ts`:
+
+- Clamp `maxTurns` (1–24) and matrix `games` / model-list size
+- 5-minute per-turn timeout with `run.cancel()`
+- Truncate opponent-forwarded traces (`MAX_TRACE_CHARS_FOR_OPPONENT`)
+- Early-stop gameplay after a knower title leak
+- GHA `timeout-minutes` on single-game and matrix jobs
+
 ## Near-term iteration
 
 - [ ] Richer well-known / exists judge (third agent or catalog) for `unguessable`
 - [ ] Judge whether shared facts are actually true of both films
-- [ ] Stronger title leak detectors (aliases, year disambiguation, word boundaries)
+- [ ] Stronger title leak detectors (aliases, year disambiguation)
 - [x] Suite runner: N games × model matrix → summary table (`npm run suite`, `.github/workflows/its-not-jaws-matrix.yml`)
 - [ ] Cloud runtime path for parallel tournaments
 - [x] App-specific GHA workflow (`.github/workflows/its-not-jaws.yml`) for PR live games via `CURSOR_API_KEY`

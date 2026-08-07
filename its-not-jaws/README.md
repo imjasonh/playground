@@ -93,6 +93,10 @@ Default pool (6×6 matchups × N games):
 
 Inputs: `games_per_matchup` (default 2), `max_turns`, `models`, `include_self_play`, `max_parallel`.
 
+Hard caps (see `src/limits.ts`): max 24 turns/game, 10 games/matchup, 12 models,
+5‑minute Cursor turn timeout, and opponent-trace truncation. Jobs also set
+`timeout-minutes`.
+
 The job summary includes matchup tables (guesser wins, title leaks, clue leaks),
 token/cost totals, and rankings for best guesser, best knower, and best secrecy.
 

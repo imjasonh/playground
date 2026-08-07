@@ -1,13 +1,14 @@
 import { mkdir } from "node:fs/promises";
+import { LIMITS } from "../limits.js";
+import { assistantTextFromChannel } from "../protocol.js";
+import { coalesceTraceMessages } from "../trace.js";
+import type { TokenUsage, TraceMessage } from "../types.js";
 import type {
   AgentFactory,
   PlayerAgent,
   PromptTurn,
   TurnResult,
 } from "./types.js";
-import type { TokenUsage, TraceMessage } from "../types.js";
-import { assistantTextFromChannel } from "../protocol.js";
-import { coalesceTraceMessages } from "../trace.js";
 
 type SdkModule = typeof import("@cursor/sdk");
 
@@ -41,8 +42,9 @@ export const createCursorAgent: AgentFactory = async (options) => {
     },
   });
 
+  const turnTimeoutMs = options.turnTimeoutMs ?? LIMITS.TURN_TIMEOUT_MS;
   const bootstrap = await agent.send(options.systemPrompt);
-  await bootstrap.wait();
+  await withTurnTimeout(bootstrap, turnTimeoutMs);
 
   const player: PlayerAgent = {
     role: options.role,
@@ -52,43 +54,53 @@ export const createCursorAgent: AgentFactory = async (options) => {
       const messages: TraceMessage[] = [];
 
       const run = await agent.send(input.prompt);
-
-      for await (const event of run.stream()) {
-        if (event.type === "thinking") {
-          const text = String(event.text ?? "");
-          if (text) messages.push({ type: "thinking", text });
-        } else if (event.type === "assistant") {
-          appendAssistantMessages(messages, event);
-        } else if (event.type === "tool_call") {
-          messages.push({
-            type: "tool_call",
-            name: String(event.name ?? "tool"),
-            status: String(event.status ?? "unknown"),
-            args: event.args,
-            result: event.result,
-          });
+      try {
+        for await (const event of run.stream()) {
+          if (Date.now() - started > turnTimeoutMs) {
+            await run.cancel().catch(() => undefined);
+            throw new Error(
+              `Cursor agent turn timed out after ${turnTimeoutMs}ms`,
+            );
+          }
+          if (event.type === "thinking") {
+            const text = String(event.text ?? "");
+            if (text) messages.push({ type: "thinking", text });
+          } else if (event.type === "assistant") {
+            appendAssistantMessages(messages, event);
+          } else if (event.type === "tool_call") {
+            messages.push({
+              type: "tool_call",
+              name: String(event.name ?? "tool"),
+              status: String(event.status ?? "unknown"),
+              args: event.args,
+              result: event.result,
+            });
+          }
         }
-      }
 
-      const result = await run.wait();
-      let coalesced = coalesceTraceMessages(messages);
-      let rawText = assistantTextFromChannel({ messages: coalesced });
-      if (!rawText) {
-        rawText = String(result.result ?? "");
-        if (rawText) {
-          coalesced = coalesceTraceMessages([
-            ...coalesced,
-            { type: "assistant", text: rawText },
-          ]);
+        const result = await withTurnTimeout(run, turnTimeoutMs - (Date.now() - started));
+        let coalesced = coalesceTraceMessages(messages);
+        let rawText = assistantTextFromChannel({ messages: coalesced });
+        if (!rawText) {
+          rawText = String(result.result ?? "");
+          if (rawText) {
+            coalesced = coalesceTraceMessages([
+              ...coalesced,
+              { type: "assistant", text: rawText },
+            ]);
+          }
         }
-      }
 
-      return {
-        public: { messages: coalesced },
-        rawText,
-        usage: normalizeUsage(result.usage ?? run.usage),
-        durationMs: Math.max(1, Date.now() - started),
-      };
+        return {
+          public: { messages: coalesced },
+          rawText,
+          usage: normalizeUsage(result.usage ?? run.usage),
+          durationMs: Math.max(1, Date.now() - started),
+        };
+      } catch (err) {
+        await run.cancel().catch(() => undefined);
+        throw err;
+      }
     },
     async getBilledUsage() {
       try {
@@ -163,4 +175,27 @@ function normalizeUsage(usage: unknown): TokenUsage | undefined {
     reasoningTokens: u.reasoningTokens,
     totalTokens,
   };
+}
+
+/** Race run.wait() against a wall-clock budget; cancel the run on timeout. */
+async function withTurnTimeout<T>(
+  run: { wait(): Promise<T>; cancel(): Promise<void> },
+  budgetMs: number,
+): Promise<T> {
+  if (budgetMs <= 0) {
+    await run.cancel().catch(() => undefined);
+    throw new Error("Cursor agent turn timed out");
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        void run.cancel().catch(() => undefined);
+        reject(new Error(`Cursor agent turn timed out after ${budgetMs}ms`));
+      }, budgetMs);
+    });
+    return await Promise.race([run.wait(), timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }

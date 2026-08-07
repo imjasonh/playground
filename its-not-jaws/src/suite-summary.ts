@@ -1,3 +1,4 @@
+import { LIMITS } from "./limits.js";
 import type { GameRecord, OutcomeKind } from "./types.js";
 
 /** Compact per-game row used for suite aggregation (from a full record or CI summary). */
@@ -43,8 +44,6 @@ export type ModelRoleStats = {
   knowerWins: number;
   clueLeakGames: number;
   leakedClueCount: number;
-  totalTokens: number;
-  totalRawCostCents: number;
 };
 
 export type SuiteReport = {
@@ -144,10 +143,8 @@ export function buildSuiteReport(
     const cost = row.totalRawCostCents ?? 0;
     matchup.totalTokens += tokens;
     matchup.totalRawCostCents += cost;
-    asGuesser.totalTokens += tokens;
-    asGuesser.totalRawCostCents += cost;
-    asKnower.totalTokens += tokens;
-    asKnower.totalRawCostCents += cost;
+    // Role tables intentionally omit tokens/cost — each game's total would be
+    // double-counted if attributed to both knower and guesser.
     totals.totalTokens += tokens;
     totals.totalRawCostCents += cost;
 
@@ -390,8 +387,6 @@ function emptyRole(model: string): ModelRoleStats {
     knowerWins: 0,
     clueLeakGames: 0,
     leakedClueCount: 0,
-    totalTokens: 0,
-    totalRawCostCents: 0,
   };
 }
 
@@ -495,6 +490,11 @@ export function expandMatchups(
       if (!includeSelfPlay && knower === guesser) continue;
       out.push({ knower, guesser });
     }
+  }
+  if (out.length > LIMITS.MAX_MATRIX_JOBS) {
+    throw new Error(
+      `Matchup count ${out.length} exceeds GitHub matrix cap ${LIMITS.MAX_MATRIX_JOBS}`,
+    );
   }
   return out;
 }

@@ -6,11 +6,7 @@ import type {
   OutcomeKind,
   TraceMessage,
 } from "./types.js";
-import {
-  assistantSpeech,
-  coalesceTraceMessages,
-  stripMoveFences,
-} from "./trace.js";
+import { coalesceTraceMessages, stripMoveFences } from "./trace.js";
 
 /** Render a game record as a self-contained HTML chat transcript. */
 export function formatGameHtml(record: GameRecord): string {
@@ -481,12 +477,7 @@ function outcomeClass(kind: OutcomeKind): string {
   }
 }
 
-/** @deprecated Prefer stripMoveFences — kept for older imports/tests. */
-export function stripTrailingMoveFence(text: string): string {
-  return stripMoveFences(text);
-}
-
-export { assistantSpeech, stripMoveFences };
+export { stripMoveFences };
 
 export function escapeHtml(value: string): string {
   return value

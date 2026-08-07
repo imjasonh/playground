@@ -11,8 +11,13 @@ import {
   guessHasLeakReport,
 } from "./guesser-leak-report.js";
 import { judge } from "./judge.js";
-import { parseMove } from "./protocol.js";
-import { coalesceTraceMessages } from "./trace.js";
+import { clampMaxTurns } from "./limits.js";
+import {
+  channelHaystack,
+  containsSecret,
+  normalizeAnswer,
+  parseMove,
+} from "./protocol.js";
 import {
   guesserLeakDebriefPrompt,
   guesserOpeningPrompt,
@@ -22,6 +27,7 @@ import {
   knowerSetupPrompt,
   knowerSystemPrompt,
 } from "./prompts.js";
+import { coalesceTraceMessages } from "./trace.js";
 import type {
   AgentTurn,
   GameRecord,
@@ -41,6 +47,7 @@ export type RunGameOptions = HarnessConfig & {
 
 export async function runGame(options: RunGameOptions): Promise<GameRecord> {
   const game = getGame(options.gameId);
+  const maxTurns = clampMaxTurns(options.maxTurns);
   const id = randomUUID();
   const startedAt = new Date().toISOString();
 
@@ -77,7 +84,6 @@ export async function runGame(options: RunGameOptions): Promise<GameRecord> {
   let secret: string | undefined;
   let secretCommitted = false;
   let hitMaxTurns = false;
-  let stop = false;
 
   try {
     // Private setup: knower picks + commits. Never forwarded to the guesser.
@@ -88,94 +94,75 @@ export async function runGame(options: RunGameOptions): Promise<GameRecord> {
       "setup",
     );
     turns.push(setup);
-    if (setup.move?.type === "commit") {
+    if (setup.move?.type !== "commit") {
+      // No secret — skip gameplay (still paid bootstrap + this setup turn).
+    } else {
       secret = setup.move.secret;
       secretCommitted = true;
-    } else {
-      stop = true;
-    }
 
-    // Guesser moves first (no free opening clue from the knower).
-    let round = 1;
-    while (!stop && round <= options.maxTurns) {
-      let guessPrompt = guesserOpeningPrompt();
-      if (round > 1) {
-        const lastKnower = lastPlayTurn(turns, "knower");
-        if (!lastKnower) {
-          stop = true;
+      // Guesser moves first (no free opening clue from the knower).
+      for (let round = 1; round <= maxTurns; round++) {
+        let guessPrompt = guesserOpeningPrompt();
+        if (round > 1) {
+          const lastKnower = lastPlayTurn(turns, "knower");
+          if (!lastKnower) break;
+          guessPrompt = guesserPromptFromKnower(
+            lastKnower.public,
+            round,
+            sharedFacts,
+          );
+        }
+
+        const guessTurn = await playTurn(
+          guesser,
+          guessPrompt,
+          turns.length,
+          "play",
+        );
+        turns.push(guessTurn);
+
+        if (guessTurn.move?.type === "give_up") break;
+        if (guessTurn.move?.type !== "guess") {
+          // No parseable guess — stop; judge classifies from the transcript.
           break;
         }
-        guessPrompt = guesserPromptFromKnower(
-          lastKnower.public,
-          round,
-          sharedFacts,
-        );
-      }
+        const guessValue = guessTurn.move.value;
 
-      const guessTurn = await playTurn(
-        guesser,
-        guessPrompt,
-        turns.length,
-        "play",
-      );
-      turns.push(guessTurn);
-
-      if (guessTurn.move?.type === "give_up") {
-        stop = true;
-        break;
-      }
-
-      const guessValue =
-        guessTurn.move?.type === "guess" ? guessTurn.move.value : undefined;
-
-      if (guessValue && secret && normalizeEq(guessValue, secret)) {
-        // If the winning guess omitted leak-report fields, ask once in private.
-        if (
-          guessTurn.move?.type === "guess" &&
-          !guessHasLeakReport(guessTurn.move)
-        ) {
-          const debrief = await playTurn(
-            guesser,
-            guesserLeakDebriefPrompt(guessValue),
-            turns.length,
-            "debrief",
-          );
-          turns.push(debrief);
+        if (normalizeAnswer(guessValue) === normalizeAnswer(secret)) {
+          // Winning guess omitted leak fields → one private debrief, then stop.
+          if (!guessHasLeakReport(guessTurn.move)) {
+            turns.push(
+              await playTurn(
+                guesser,
+                guesserLeakDebriefPrompt(guessValue),
+                turns.length,
+                "debrief",
+              ),
+            );
+          }
+          break;
         }
-        stop = true;
-        break;
-      }
 
-      if (round >= options.maxTurns) {
-        hitMaxTurns = true;
-        stop = true;
-        break;
-      }
+        if (round >= maxTurns) {
+          hitMaxTurns = true;
+          break;
+        }
 
-      if (!guessValue) {
-        // No parseable guess — end the loop; judge will classify from the transcript.
-        stop = true;
-        break;
+        const factTurn = await playTurn(
+          knower,
+          knowerPromptFromGuesser(guessTurn.public, guessValue, round),
+          turns.length,
+          "play",
+        );
+        turns.push(factTurn);
+        if (factTurn.move?.type === "shared_fact") {
+          sharedFacts.push(factTurn.move.text);
+        }
+        // Don't keep spending turns after a title leak — outcome is already decided.
+        if (containsSecret(channelHaystack(factTurn.public), secret)) {
+          break;
+        }
       }
-
-      const factTurn = await playTurn(
-        knower,
-        knowerPromptFromGuesser(guessTurn.public, guessValue, round),
-        turns.length,
-        "play",
-      );
-      turns.push(factTurn);
-      if (factTurn.move?.type === "shared_fact") {
-        sharedFacts.push(factTurn.move.text);
-      }
-      round++;
-    }
-
-    if (
-      !stop &&
-      turns.filter((t) => t.role === "guesser").length >= options.maxTurns
-    ) {
-      hitMaxTurns = true;
     }
   } finally {
     await Promise.allSettled([knower.dispose(), guesser.dispose()]);
@@ -274,13 +261,6 @@ function lastPlayTurn(
     if (t.role === role && t.phase === "play") return t;
   }
   return undefined;
-}
-
-function normalizeEq(a: string, b: string): boolean {
-  return (
-    a.trim().toLowerCase().replace(/\s+/g, " ") ===
-    b.trim().toLowerCase().replace(/\s+/g, " ")
-  );
 }
 
 async function finalizeUsage(

@@ -4,6 +4,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runGame } from "./harness.js";
 import {
+  LIMITS,
+  assertModelListSize,
+  clampGamesPerMatchup,
+  clampMaxTurns,
+} from "./limits.js";
+import {
   DEFAULT_MATRIX_MODELS,
   buildSuiteReport,
   expandMatchups,
@@ -29,15 +35,15 @@ Commands:
 play-matchup options:
   --knower-model <id>
   --guesser-model <id>
-  --games <n>              Games for this matchup (default: 2)
+  --games <n>              Games for this matchup (default: ${LIMITS.DEFAULT_GAMES_PER_MATCHUP}, max ${LIMITS.MAX_GAMES_PER_MATCHUP})
   --backend mock|cursor    (default: mock)
-  --max-turns <n>          (default: 8)
+  --max-turns <n>          (default: ${LIMITS.DEFAULT_MAX_TURNS}, max ${LIMITS.MAX_MAX_TURNS})
   --results-dir <path>     (default: ./results/matrix)
   --verbose
 
 play-matrix options:
-  --models <csv>           (default: ${DEFAULT_MATRIX_MODELS.join(",")})
-  --games <n>              Games per matchup (default: 2)
+  --models <csv>           (default: ${DEFAULT_MATRIX_MODELS.join(",")}; max ${LIMITS.MAX_MODELS})
+  --games <n>              Games per matchup (default: ${LIMITS.DEFAULT_GAMES_PER_MATCHUP}, max ${LIMITS.MAX_GAMES_PER_MATCHUP})
   --include-self-play      Include same-model matchups (default: true)
   --no-self-play
   --backend mock|cursor
@@ -108,8 +114,12 @@ async function playMatchup(args: string[]): Promise<void> {
     throw new Error("CURSOR_API_KEY is required for --backend cursor");
   }
 
-  const games = Math.max(1, Number(argValue(args, "--games") ?? 2));
-  const maxTurns = Number(argValue(args, "--max-turns") ?? 8);
+  const games = clampGamesPerMatchup(
+    Number(argValue(args, "--games") ?? LIMITS.DEFAULT_GAMES_PER_MATCHUP),
+  );
+  const maxTurns = clampMaxTurns(
+    Number(argValue(args, "--max-turns") ?? LIMITS.DEFAULT_MAX_TURNS),
+  );
   const resultsDir = path.resolve(
     root,
     argValue(args, "--results-dir") ?? "results/matrix",
@@ -135,7 +145,7 @@ async function playMatchup(args: string[]): Promise<void> {
         backend,
         knowerModel,
         guesserModel,
-        maxTurns: Number.isFinite(maxTurns) ? maxTurns : 8,
+        maxTurns,
         apiKey: process.env.CURSOR_API_KEY,
         workspacesRoot: path.join(root, ".workspaces"),
         resultsDir: matchupDir,
@@ -174,11 +184,13 @@ async function playMatrix(args: string[]): Promise<void> {
   const models = parseModelList(
     argValue(args, "--models") ?? DEFAULT_MATRIX_MODELS.join(","),
   );
-  if (models.length === 0) throw new Error("No models specified");
+  assertModelListSize(models);
 
   const includeSelfPlay = !hasFlag(args, "--no-self-play");
   const matchups = expandMatchups(models, { includeSelfPlay });
-  const games = Math.max(1, Number(argValue(args, "--games") ?? 2));
+  const games = clampGamesPerMatchup(
+    Number(argValue(args, "--games") ?? LIMITS.DEFAULT_GAMES_PER_MATCHUP),
+  );
   const resultsDir = path.resolve(
     root,
     argValue(args, "--results-dir") ?? "results/matrix",
@@ -250,6 +262,7 @@ async function emitMatchups(args: string[]): Promise<void> {
   const models = parseModelList(
     argValue(args, "--models") ?? DEFAULT_MATRIX_MODELS.join(","),
   );
+  assertModelListSize(models);
   const includeSelfPlay = !hasFlag(args, "--no-self-play");
   const matchups = expandMatchups(models, { includeSelfPlay }).map((m) => ({
     knower: m.knower,
