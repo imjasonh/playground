@@ -4,13 +4,17 @@ import path from "node:path";
 import { createCursorAgent } from "./agents/cursor.js";
 import { createMockAgent } from "./agents/mock.js";
 import type { AgentFactory, MockScript, PlayerAgent } from "./agents/types.js";
-import { findClueLeaks } from "./clue-leaks.js";
 import { formatGameHtml } from "./format-html.js";
 import { getGame } from "./games/its-not-jaws.js";
+import {
+  extractGuesserLeakReport,
+  guessHasLeakReport,
+} from "./guesser-leak-report.js";
 import { judge } from "./judge.js";
 import { parseMove } from "./protocol.js";
 import { coalesceTraceMessages } from "./trace.js";
 import {
+  guesserLeakDebriefPrompt,
   guesserOpeningPrompt,
   guesserPromptFromKnower,
   guesserSystemPrompt,
@@ -125,6 +129,19 @@ export async function runGame(options: RunGameOptions): Promise<GameRecord> {
         guessTurn.move?.type === "guess" ? guessTurn.move.value : undefined;
 
       if (guessValue && secret && normalizeEq(guessValue, secret)) {
+        // If the winning guess omitted leak-report fields, ask once in private.
+        if (
+          guessTurn.move?.type === "guess" &&
+          !guessHasLeakReport(guessTurn.move)
+        ) {
+          const debrief = await playTurn(
+            guesser,
+            guesserLeakDebriefPrompt(guessValue),
+            turns.length,
+            "debrief",
+          );
+          turns.push(debrief);
+        }
         stop = true;
         break;
       }
@@ -171,7 +188,10 @@ export async function runGame(options: RunGameOptions): Promise<GameRecord> {
     turns,
     hitMaxTurns,
   });
-  const clueLeaks = findClueLeaks({ secret, turns, outcome });
+  const guesserLeakReport =
+    outcome.kind === "guesser_correct" || outcome.kind === "secret_leaked"
+      ? extractGuesserLeakReport(turns, secret)
+      : undefined;
 
   const knowerUsage = await finalizeUsage(knower, "knower", turns);
   const guesserUsage = await finalizeUsage(guesser, "guesser", turns);
@@ -189,7 +209,7 @@ export async function runGame(options: RunGameOptions): Promise<GameRecord> {
     secretCommitted,
     turns,
     outcome,
-    clueLeaks,
+    guesserLeakReport,
     usage: {
       knower: knowerUsage,
       guesser: guesserUsage,
@@ -200,7 +220,9 @@ export async function runGame(options: RunGameOptions): Promise<GameRecord> {
         guesserUsage.cost?.rawCostCents,
       ),
     },
-    gameLength: turns.filter((t) => t.role === "guesser").length,
+    gameLength: turns.filter(
+      (t) => t.role === "guesser" && t.phase === "play",
+    ).length,
   };
 
   if (!options.dryRun) {
@@ -222,7 +244,7 @@ async function playTurn(
   agent: PlayerAgent,
   prompt: string,
   turnIndex: number,
-  phase: "setup" | "play",
+  phase: "setup" | "play" | "debrief",
 ): Promise<AgentTurn> {
   const result = await agent.turn({ prompt });
   const messages = coalesceTraceMessages(result.public.messages);

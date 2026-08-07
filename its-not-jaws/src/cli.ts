@@ -66,16 +66,15 @@ async function main(): Promise<void> {
     verbose: args.includes("--verbose"),
   });
 
-  const helpfulClueLeaks = record.clueLeaks.filter(
-    (l) => l.helpful && !l.isTitleLeak,
-  );
+  const report = record.guesserLeakReport;
   const summary = {
     id: record.id,
     outcome: record.outcome,
     secret: record.secret,
     gameLength: record.gameLength,
-    helpfulClueLeaks: helpfulClueLeaks.length,
-    clueLeaks: record.clueLeaks,
+    usedLeakedClues: report?.usedLeakedClues ?? false,
+    helpfulClueLeaks: report?.usedLeakedClues ? report.leakedClues.length : 0,
+    guesserLeakReport: report,
     totalTokens: record.usage.totalTokens,
     totalRawCostCents: record.usage.totalRawCostCents,
     knowerModel: record.knowerModel,

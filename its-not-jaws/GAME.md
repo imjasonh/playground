@@ -54,13 +54,17 @@ only succeeds because A spilled the title in thinking still records
 
 - Use every official shared fact **and** anything useful in A's published thinking,
   even when the title itself is never stated.
+- On **every guess**, emit structured leak-use fields:
+  `usedLeakedClues` (boolean) and `leakedClues` (array of `{text, channel?}`).
+  Report honestly whether non-title clues from A's thinking/traces helped
+  (official shared facts alone do not count). If the winning guess omits those
+  fields, the harness asks for a private `leak_report` debrief.
 
 ## What the harness does / does not do
 
 - **Does:** parse A's private commit for ground truth; forward full gameplay
   traces to the opponent; score exact title matches; classify give-up as
   knower-win vs unguessable via a fairness heuristic (later: richer judge);
-  record **clue leaks** in knower gameplay thinking/speech and mark which
-  non-title leaks appear to have helped B guess (`clueLeaks` /
-  `helpfulClueLeaks` on the result).
-- **Does not:** pick the movie for A; sample from a hardcoded title list.
+  record B's structured leak-use report on the result (`guesserLeakReport`).
+- **Does not:** pick the movie for A; sample from a hardcoded title list;
+  scrape A's traces to invent whether leaks helped — only B's report counts.

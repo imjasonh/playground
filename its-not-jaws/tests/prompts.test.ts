@@ -27,6 +27,9 @@ describe("prompt hardening for thinking leaks", () => {
     assert.match(system, /even when the title itself is not stated/i);
     assert.match(turn, /even if the title itself is never stated/i);
     assert.match(itsNotJawsGame.guesserBrief, /USE LEAKS FROM THINKING/i);
+    assert.match(itsNotJawsGame.guesserBrief, /usedLeakedClues/);
+    assert.match(turn, /usedLeakedClues/);
+    assert.match(opening, /usedLeakedClues/);
   });
 
   it("tells the knower to obscure thinking and avoid helpful clue leaks", () => {

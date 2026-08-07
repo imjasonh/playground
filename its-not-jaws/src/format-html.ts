@@ -1,7 +1,7 @@
 import type {
   AgentTurn,
-  ClueLeak,
   GameRecord,
+  GuesserLeakReport,
   Move,
   OutcomeKind,
   TraceMessage,
@@ -16,7 +16,9 @@ import {
 export function formatGameHtml(record: GameRecord): string {
   const title = escapeHtml(`It's Not Jaws — ${record.id.slice(0, 8)}`);
   const turnsHtml = record.turns.map((turn, i) => renderTurn(turn, i)).join("\n");
-  const helpful = (record.clueLeaks ?? []).filter((l) => l.helpful && !l.isTitleLeak);
+  const report = record.guesserLeakReport;
+  const helpfulCount =
+    report?.usedLeakedClues ? report.leakedClues.length : 0;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -276,7 +278,15 @@ export function formatGameHtml(record: GameRecord): string {
         <div><dt>Outcome</dt><dd>${escapeHtml(record.outcome.kind)}</dd></div>
         <div><dt>Secret</dt><dd>${escapeHtml(record.secret ?? "(none)")}</dd></div>
         <div><dt>Game length</dt><dd>${record.gameLength} guess${record.gameLength === 1 ? "" : "es"}</dd></div>
-        <div><dt>Helpful clue leaks</dt><dd>${helpful.length}</dd></div>
+        <div><dt>Used leaked clues</dt><dd>${
+          report == null
+            ? "—"
+            : report.reported
+              ? report.usedLeakedClues
+                ? `yes (${helpfulCount})`
+                : "no"
+              : "not reported"
+        }</dd></div>
         <div><dt>Knower</dt><dd>${escapeHtml(record.knowerModel ?? "—")}</dd></div>
         <div><dt>Guesser</dt><dd>${escapeHtml(record.guesserModel ?? "—")}</dd></div>
         <div><dt>Tokens</dt><dd>${record.usage.totalTokens.toLocaleString()}</dd></div>
@@ -294,7 +304,7 @@ export function formatGameHtml(record: GameRecord): string {
           ? ` — ${escapeHtml(record.outcome.detail)}`
           : ""
       }</p>
-      ${renderClueLeakSummary(record.clueLeaks ?? [])}
+      ${renderGuesserLeakSummary(report)}
     </header>
     <main class="chat">
 ${turnsHtml}
@@ -305,36 +315,45 @@ ${turnsHtml}
 `;
 }
 
-function renderClueLeakSummary(leaks: ClueLeak[]): string {
-  const helpful = leaks.filter((l) => l.helpful && !l.isTitleLeak);
-  if (helpful.length === 0) return "";
-  const items = helpful
+function renderGuesserLeakSummary(
+  report: GuesserLeakReport | undefined,
+): string {
+  if (!report?.reported) return "";
+  if (!report.usedLeakedClues || report.leakedClues.length === 0) {
+    return `<div class="clue-leaks"><h2>Guesser leak report</h2><p>Guesser reported <strong>no</strong> non-title leaked clues were used (${escapeHtml(report.source)}).</p></div>`;
+  }
+  const items = report.leakedClues
     .map(
       (l) =>
-        `<li><strong>turn ${l.turnIndex}</strong> (${escapeHtml(l.channel)}): ${escapeHtml(l.excerpt)}${
-          l.evidence
-            ? `<span class="evidence">${escapeHtml(l.evidence)}</span>`
+        `<li>${escapeHtml(l.text)}${
+          l.channel
+            ? ` <span class="evidence">from ${escapeHtml(l.channel)}</span>`
             : ""
         }</li>`,
     )
     .join("\n");
-  return `<div class="clue-leaks"><h2>Helpful non-title clue leaks</h2><ul>${items}</ul></div>`;
+  return `<div class="clue-leaks"><h2>Guesser-reported leaked clues</h2><ul>${items}</ul><p class="evidence">Source: ${escapeHtml(report.source)}</p></div>`;
 }
 
 function renderTurn(turn: AgentTurn, index: number): string {
-  const roleClass = turn.phase === "setup" ? "setup" : turn.role;
+  const roleClass =
+    turn.phase === "setup" || turn.phase === "debrief" ? "setup" : turn.role;
   const who =
     turn.phase === "setup"
       ? "Knower · private setup"
-      : turn.role === "knower"
-        ? "Knower"
-        : "Guesser";
+      : turn.phase === "debrief"
+        ? "Guesser · private debrief"
+        : turn.role === "knower"
+          ? "Knower"
+          : "Guesser";
   const body = renderTurnBody(turn);
   const badge = turn.move ? renderMoveBadge(turn.move) : "";
   const privateNote =
     turn.phase === "setup"
       ? `<p class="private-note">Not shown to the guesser — harness ground truth only.</p>`
-      : "";
+      : turn.phase === "debrief"
+        ? `<p class="private-note">Not shown to the knower — guesser leak-use report.</p>`
+        : "";
 
   return `      <article class="turn ${roleClass}" data-turn="${index}" data-phase="${turn.phase}">
         <div class="who">${escapeHtml(who)}</div>
@@ -391,6 +410,8 @@ function speechPlaceholder(move: Move): string {
       return "(issued shared fact via structured move)";
     case "guess":
       return "(submitted guess via structured move)";
+    case "leak_report":
+      return "(submitted leak report via structured move)";
     case "give_up":
       return "(gave up via structured move)";
     case "meta":
@@ -419,8 +440,20 @@ function renderMoveBadge(move: Move): string {
     case "shared_fact":
       label = `shared fact · ${move.text}`;
       break;
-    case "guess":
-      label = `guess · ${move.value}`;
+    case "guess": {
+      const leak =
+        typeof move.usedLeakedClues === "boolean"
+          ? move.usedLeakedClues
+            ? ` · used ${move.leakedClues?.length ?? 0} leaked clue(s)`
+            : " · no leaked clues"
+          : "";
+      label = `guess · ${move.value}${leak}`;
+      break;
+    }
+    case "leak_report":
+      label = move.usedLeakedClues
+        ? `leak report · used ${move.leakedClues.length} clue(s)`
+        : "leak report · no leaked clues";
       break;
     case "give_up":
       label = move.reason ? `give up · ${move.reason}` : "give up";

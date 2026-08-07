@@ -110,15 +110,15 @@ function defaultScript(options: AgentFactoryOptions): MockScript {
     turns: [
       {
         thinking: "Cold open — try a famous movie.",
-        text: 'Is it Titanic?\n```json\n{"type":"guess","value":"Titanic"}\n```',
+        text: 'Is it Titanic?\n```json\n{"type":"guess","value":"Titanic","usedLeakedClues":false,"leakedClues":[]}\n```',
       },
       {
         thinking: "Ocean setting... The Perfect Storm?",
-        text: '```json\n{"type":"guess","value":"The Perfect Storm"}\n```',
+        text: '```json\n{"type":"guess","value":"The Perfect Storm","usedLeakedClues":false,"leakedClues":[]}\n```',
       },
       {
-        thinking: "Ocean + parent-child — Finding Nemo.",
-        text: '```json\n{"type":"guess","value":"Finding Nemo"}\n```',
+        thinking: "Ocean + parent-child — Finding Nemo. Knower thinking said Pixar.",
+        text: '```json\n{"type":"guess","value":"Finding Nemo","usedLeakedClues":true,"leakedClues":[{"text":"Pixar","channel":"thinking"}]}\n```',
       },
     ],
   };

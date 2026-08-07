@@ -59,8 +59,9 @@ export type AgentTurn = {
   /**
    * `setup` = knower commits the secret to the harness only (not shown to guesser).
    * `play` = gameplay; full trace is forwarded to the opponent.
+   * `debrief` = post-win guesser report of leaked-clue use (not shown to knower).
    */
-  phase: "setup" | "play";
+  phase: "setup" | "play" | "debrief";
   durationMs: number;
   public: PublicChannel;
   usage?: TokenUsage;
@@ -75,7 +76,22 @@ export type Move =
   | { type: "commit"; secret: string }
   /** Fact shared by the guesser's last guess and the knower's movie. */
   | { type: "shared_fact"; text: string }
-  | { type: "guess"; value: string }
+  | {
+      type: "guess";
+      value: string;
+      /**
+       * Whether this guess relied on non-title clues leaked in the knower's
+       * published traces (usually thinking). Required on every guess.
+       */
+      usedLeakedClues?: boolean;
+      /** Clues the guesser reports using. Empty when usedLeakedClues is false. */
+      leakedClues?: ReportedLeakedClue[];
+    }
+  | {
+      type: "leak_report";
+      usedLeakedClues: boolean;
+      leakedClues: ReportedLeakedClue[];
+    }
   | { type: "give_up"; reason?: string }
   | { type: "meta"; text: string };
 
@@ -86,22 +102,23 @@ export type Outcome = {
   detail?: string;
 };
 
+/** One clue the guesser says they used from the knower's published traces. */
+export type ReportedLeakedClue = {
+  text: string;
+  channel?: "thinking" | "assistant" | "tool_call";
+};
+
 /**
- * A distinctive clue that appeared in the knower's published gameplay trace
- * (usually thinking). Used to measure non-title leakiness / guesser exploit rate.
+ * Guesser-authored report of whether non-title leaked clues helped them win.
+ * The harness does not scrape traces to invent this — it only records what B emits.
  */
-export type ClueLeak = {
-  turnIndex: number;
-  excerpt: string;
-  channel: "thinking" | "assistant";
-  /** True when the excerpt contains the secret title itself. */
-  isTitleLeak: boolean;
-  /**
-   * True when this clue appears to have helped the guesser reach the answer
-   * (echoed, acknowledged, or high-signal leak immediately before a correct guess).
-   */
-  helpful: boolean;
-  evidence?: string;
+export type GuesserLeakReport = {
+  usedLeakedClues: boolean;
+  leakedClues: ReportedLeakedClue[];
+  /** Where the structured report came from. */
+  source: "winning_guess" | "debrief";
+  /** False when the winning guess omitted the report fields and debrief also failed. */
+  reported: boolean;
 };
 
 export type GameRecord = {
@@ -121,10 +138,10 @@ export type GameRecord = {
   turns: AgentTurn[];
   outcome: Outcome;
   /**
-   * Non-title (and title) clues found in knower gameplay traces, with whether
-   * each appears to have helped the guesser.
+   * Guesser-reported use of non-title leaked clues on the winning guess
+   * (or a short debrief if the winning guess omitted the fields).
    */
-  clueLeaks: ClueLeak[];
+  guesserLeakReport?: GuesserLeakReport;
   usage: {
     knower: PlayerUsage;
     guesser: PlayerUsage;

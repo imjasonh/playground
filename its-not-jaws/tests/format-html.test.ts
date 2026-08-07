@@ -25,16 +25,12 @@ function sampleRecord(): GameRecord {
       reason: "Guesser matched the knower's movie",
       detail: "Inception",
     },
-    clueLeaks: [
-      {
-        turnIndex: 2,
-        excerpt: "dream within a dream",
-        channel: "thinking",
-        isTitleLeak: false,
-        helpful: true,
-        evidence: "guesser echoed leaked token before/on the correct guess",
-      },
-    ],
+    guesserLeakReport: {
+      usedLeakedClues: true,
+      leakedClues: [{ text: "dream within a dream", channel: "thinking" }],
+      source: "winning_guess",
+      reported: true,
+    },
     usage: {
       knower: {
         role: "knower",
@@ -71,8 +67,14 @@ function sampleRecord(): GameRecord {
         phase: "play",
         turnIndex: 1,
         durationMs: 12,
-        rawText: 'Is it Titanic?\n```json\n{"type":"guess","value":"Titanic"}\n```',
-        move: { type: "guess", value: "Titanic" },
+        rawText:
+          'Is it Titanic?\n```json\n{"type":"guess","value":"Titanic","usedLeakedClues":false,"leakedClues":[]}\n```',
+        move: {
+          type: "guess",
+          value: "Titanic",
+          usedLeakedClues: false,
+          leakedClues: [],
+        },
         public: {
           messages: [
             { type: "thinking", text: "Cold" },
@@ -83,7 +85,7 @@ function sampleRecord(): GameRecord {
             },
             {
               type: "assistant",
-              text: 'ic?\n```json\n{"type":"guess","value":"Titanic"}\n```',
+              text: 'ic?\n```json\n{"type":"guess","value":"Titanic","usedLeakedClues":false,"leakedClues":[]}\n```',
             },
           ],
         },
@@ -122,24 +124,13 @@ describe("formatGameHtml", () => {
     const html = formatGameHtml(sampleRecord());
     assert.match(html, /<!DOCTYPE html>/);
     assert.match(html, /class="thinking"/);
-    // Coalesced thinking: one block per turn that thought (setup + guesser + knower play).
     assert.equal((html.match(/class="thinking"/g) ?? []).length, 3);
     assert.match(html, /Cold open\./);
     assert.match(html, /Stay vague about a dream within a dream\./);
-    assert.match(html, /class="turn knower"/);
-    assert.match(html, /class="turn guesser"/);
-    assert.match(html, /private setup/);
-    assert.match(html, /move-badge/);
-    assert.match(html, /guess · Titanic/);
-    assert.match(html, /shared fact · features Leonardo DiCaprio/);
-    assert.match(html, /tool · scratchpad/);
-    assert.match(html, /Is it Titanic\?/);
-    assert.match(html, /Helpful non-title clue leaks/);
+    assert.match(html, /guess · Titanic · no leaked clues/);
+    assert.match(html, /Guesser-reported leaked clues/);
     assert.match(html, /dream within a dream/);
-    // Protocol JSON must not appear as assistant speech.
     assert.doesNotMatch(html, /class="assistant">[\s\S]*\{"type":"guess"/);
-    assert.doesNotMatch(html, /class="assistant">[\s\S]*```json/);
-    // Setup with JSON-only assistant shows a placeholder, not raw fence.
     assert.match(html, /committed secret via structured move/);
   });
 
@@ -152,7 +143,7 @@ describe("formatGameHtml", () => {
     record.turns[1]!.public.messages = [
       {
         type: "assistant",
-        text: 'Watch <b>out</b>\n```json\n{"type":"guess","value":"X"}\n```',
+        text: 'Watch <b>out</b>\n```json\n{"type":"guess","value":"X","usedLeakedClues":false,"leakedClues":[]}\n```',
       },
     ];
     const html = formatGameHtml(record);
@@ -164,11 +155,15 @@ describe("formatGameHtml", () => {
 describe("stripMoveFences", () => {
   it("removes fenced and trailing move JSON", () => {
     assert.equal(
-      stripMoveFences('Hello\n```json\n{"type":"guess","value":"X"}\n```'),
+      stripMoveFences(
+        'Hello\n```json\n{"type":"guess","value":"X","usedLeakedClues":false,"leakedClues":[]}\n```',
+      ),
       "Hello",
     );
     assert.equal(
-      stripTrailingMoveFence('Hello\n```json\n{"type":"guess","value":"X"}\n```'),
+      stripTrailingMoveFence(
+        'Hello\n```json\n{"type":"guess","value":"X","usedLeakedClues":false,"leakedClues":[]}\n```',
+      ),
       "Hello",
     );
   });

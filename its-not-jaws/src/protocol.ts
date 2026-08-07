@@ -1,4 +1,9 @@
-import type { Move, PublicChannel, TraceMessage } from "./types.js";
+import type {
+  Move,
+  PublicChannel,
+  ReportedLeakedClue,
+  TraceMessage,
+} from "./types.js";
 
 const MOVE_FENCE = /```(?:json)?\s*([\s\S]*?)```/i;
 
@@ -65,6 +70,25 @@ function matchingBrace(text: string, start: number): number {
   return -1;
 }
 
+export function parseReportedClues(value: unknown): ReportedLeakedClue[] {
+  if (!Array.isArray(value)) return [];
+  const out: ReportedLeakedClue[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const rec = item as Record<string, unknown>;
+    const text = typeof rec.text === "string" ? rec.text.trim() : "";
+    if (!text) continue;
+    const channel =
+      rec.channel === "thinking" ||
+      rec.channel === "assistant" ||
+      rec.channel === "tool_call"
+        ? rec.channel
+        : undefined;
+    out.push(channel ? { text, channel } : { text });
+  }
+  return out;
+}
+
 function asMove(value: unknown): Move | undefined {
   if (!value || typeof value !== "object") return undefined;
   const obj = value as Record<string, unknown>;
@@ -80,7 +104,24 @@ function asMove(value: unknown): Move | undefined {
     return { type: "shared_fact", text: obj.text };
   }
   if (type === "guess" && typeof obj.value === "string") {
-    return { type: "guess", value: obj.value };
+    const move: Extract<Move, { type: "guess" }> = {
+      type: "guess",
+      value: obj.value,
+    };
+    if (typeof obj.usedLeakedClues === "boolean") {
+      move.usedLeakedClues = obj.usedLeakedClues;
+    }
+    if (obj.leakedClues !== undefined) {
+      move.leakedClues = parseReportedClues(obj.leakedClues);
+    }
+    return move;
+  }
+  if (type === "leak_report" && typeof obj.usedLeakedClues === "boolean") {
+    return {
+      type: "leak_report",
+      usedLeakedClues: obj.usedLeakedClues,
+      leakedClues: parseReportedClues(obj.leakedClues),
+    };
   }
   if (type === "give_up") {
     return {

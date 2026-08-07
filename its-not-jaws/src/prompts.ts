@@ -31,6 +31,7 @@ export function guesserSystemPrompt(game: GameDefinition): string {
     ``,
     `Reminder: mine the knower's published <thinking> for leaked clues`,
     `(cast, year, studio, plot, near-misses) even when the title itself is not stated.`,
+    `On EVERY guess, report usedLeakedClues + leakedClues in the JSON move.`,
   ]
     .filter(Boolean)
     .join("\n");
@@ -52,7 +53,8 @@ export function guesserOpeningPrompt(): string {
     "Make your first guess. You have no shared facts yet.",
     "On later turns you will see the knower's full published traces — read their",
     "<thinking> for leaked clues even when they never name the title.",
-    "End with a JSON guess move.",
+    "End with a JSON guess move that ALWAYS includes leak reporting fields:",
+    '```json\n{"type":"guess","value":"Movie Title","usedLeakedClues":false,"leakedClues":[]}\n```',
   ].join("\n");
 }
 
@@ -80,7 +82,26 @@ export function guesserPromptFromKnower(
     "(cast, year, studio, director, franchise, plot beats, eliminations, near-misses)",
     "even if the title itself is never stated. Those leaks are fair game.",
     "Combine shared facts + thinking clues + prior guesses. Prefer a guess that fits both.",
-    "Make your next guess (or give up). End with a JSON move.",
+    "",
+    "End with a JSON guess (or give_up). On a guess you MUST report leak usage:",
+    '- usedLeakedClues: true if any non-title clue from the knower\'s thinking/traces',
+    "  helped this guess (not merely the official shared_fact list).",
+    "- leakedClues: array of {text, channel?} for each such clue you used;",
+    "  use [] when usedLeakedClues is false.",
+    'Example: {"type":"guess","value":"Title","usedLeakedClues":true,"leakedClues":[{"text":"Seahaven","channel":"thinking"}]}',
+  ].join("\n");
+}
+
+/** After a correct guess that omitted leak fields — ask once, privately. */
+export function guesserLeakDebriefPrompt(winningTitle: string): string {
+  return [
+    `DEBRIEF (private — the knower will not see this).`,
+    `You just correctly guessed ${JSON.stringify(winningTitle)}.`,
+    `Report whether non-title clues leaked in the knower's published thinking/traces`,
+    `helped you reach that answer (official shared facts alone do not count as leaks).`,
+    `Reply with ONLY:`,
+    '```json\n{"type":"leak_report","usedLeakedClues":true,"leakedClues":[{"text":"…","channel":"thinking"}]}\n```',
+    `or usedLeakedClues:false with leakedClues:[]. Be honest and specific.`,
   ].join("\n");
 }
 
