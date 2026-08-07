@@ -1,0 +1,128 @@
+# It's Not Jaws
+
+Harness for two AI agents playing **It's Not Jaws** — a movie shared-fact
+guessing game — built on the
+[Cursor TypeScript SDK](https://cursor.com/docs/sdk/typescript).
+
+- **Knower (A)** secretly picks a well-known movie.
+- **Guesser (B)** guesses titles; after each miss, A names a fact both movies share.
+- During gameplay B sees A's **full published trace** (thinking, text, tool calls).
+
+Rules: [GAME.md](./GAME.md) · Harness design: [DESIGN.md](./DESIGN.md)
+
+## Requirements
+
+- Node.js ≥ 22.13
+- For live games: `CURSOR_API_KEY` from the [Cursor dashboard](https://cursor.com/dashboard/api)
+
+## Setup
+
+```bash
+cd its-not-jaws
+npm install
+```
+
+## Test (mock backend, no API spend)
+
+```bash
+npm test
+npm run typecheck
+```
+
+## Play
+
+```bash
+npm run play:mock
+# live:
+export CURSOR_API_KEY=...
+npm run play -- --backend cursor \
+  --knower-model composer-2.5 \
+  --guesser-model composer-2.5 \
+  --max-turns 8 \
+  --verbose
+```
+
+Each run prints a JSON summary and writes `results/<id>.json` plus a readable
+chat transcript at `results/<id>.html`.
+
+Re-render HTML from an existing record:
+
+```bash
+npm run format -- results/<id>.json
+```
+
+## Layout
+
+```
+its-not-jaws/
+├── GAME.md              # Canonical game rules
+├── DESIGN.md            # Harness architecture
+├── src/
+│   ├── cli.ts
+│   ├── suite-cli.ts     # matrix runner + summarizer
+│   ├── suite-summary.ts
+│   ├── harness.ts
+│   ├── judge.ts
+│   ├── protocol.ts
+│   ├── prompts.ts
+│   ├── agents/          # mock + cursor backends
+│   └── games/           # its-not-jaws game definition
+├── tests/
+└── results/
+```
+
+## Model matrix (costly)
+
+Compare models as both knower and guesser:
+
+```bash
+# mock (free): tiny matrix
+npm run suite -- play-matrix --backend mock --games 1 \
+  --models composer-2.5,grok-4.5
+
+# summarize an existing results tree
+npm run suite -- summarize --results-dir results/matrix
+```
+
+Manual CI: Actions → **It's Not Jaws Matrix** → Run workflow
+(`.github/workflows/its-not-jaws-matrix.yml`, `workflow_dispatch` only).
+
+Default pool (6×6 matchups × N games):
+
+`claude-opus-4-8`, `claude-fable-5`, `gpt-5.5`, `gpt-5.6-sol`, `composer-2.5`, `grok-4.5`
+
+Inputs: `games_per_matchup` (default 2), `max_turns`, `models`, `include_self_play`, `max_parallel`.
+
+Hard caps (see `src/limits.ts`): max 24 turns/game, 10 games/matchup, 12 models,
+5‑minute Cursor turn timeout, and opponent-trace truncation. Jobs also set
+`timeout-minutes`.
+
+The job summary includes matchup tables (guesser wins, title leaks, clue leaks),
+token/cost totals, and rankings for best guesser, best knower, and best secrecy.
+
+## CI
+
+PRs that touch `its-not-jaws/**` run `.github/workflows/its-not-jaws.yml`:
+
+1. Require repo secret **`CURSOR_API_KEY`** (job fails if missing)
+2. `npm test` + typecheck
+3. One live Cursor game
+
+Add the secret under **Settings → Secrets and variables → Actions**.
+
+Optional Actions variables (defaults in parentheses):
+
+| Variable | Default |
+|----------|---------|
+| `ITS_NOT_JAWS_KNOWER_MODEL` | `claude-fable-5` |
+| `ITS_NOT_JAWS_GUESSER_MODEL` | `gpt-5.6-sol` |
+| `ITS_NOT_JAWS_MAX_TURNS` | `8` |
+
+Manual single game: Actions → It's Not Jaws → Run workflow.
+
+Manual full matrix: Actions → It's Not Jaws Matrix → Run workflow.
+
+## Notes
+
+- Not a GitHub Pages browser app (no `index.html`).
+- Shared `test.yml` discovery skips unit tests here; the workflow above covers them on relevant PRs.

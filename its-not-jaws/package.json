@@ -1,0 +1,27 @@
+{
+  "name": "its-not-jaws",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Harness for two Cursor agents playing a secret-guessing game (It's Not Jaws)",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "tsx --test tests/**/*.test.ts",
+    "play": "tsx src/cli.ts",
+    "play:mock": "tsx src/cli.ts --backend mock",
+    "suite": "tsx src/suite-cli.ts",
+    "format": "tsx src/format-cli.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@cursor/sdk": "^1.0.10"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
+  }
+}

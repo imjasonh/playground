@@ -1,0 +1,9 @@
+node_modules/
+dist/
+results/*
+!results/.gitkeep
+.workspaces/
+*.log
+.env
+.env.*
+coverage/

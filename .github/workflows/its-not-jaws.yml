@@ -1,0 +1,122 @@
+# App-specific: play one live It's Not Jaws game on PRs that touch the harness.
+#
+# Requires repo secret CURSOR_API_KEY (Cursor user or service-account API key).
+# The job fails if that secret is missing.
+#
+# Intentionally not folded into test.yml — this spends Cursor tokens and is
+# gated on an app-specific secret.
+
+name: It's Not Jaws
+
+on:
+  pull_request:
+    paths:
+      - 'its-not-jaws/**'
+      - '.github/workflows/its-not-jaws.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: its-not-jaws-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  play:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: its-not-jaws
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: its-not-jaws/package-lock.json
+
+      - name: Require CURSOR_API_KEY
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+        run: |
+          if [ -z "$CURSOR_API_KEY" ]; then
+            echo "::error title=CURSOR_API_KEY missing::Repo secret CURSOR_API_KEY is not set. Add it under Settings → Secrets and variables → Actions, then re-run this workflow."
+            exit 1
+          fi
+
+      - name: Install
+        run: npm ci
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Play one live game
+        id: play
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          # Defaults: Fable (knower) vs ChatGPT Sol (guesser). Override via repo vars.
+          KNOWER_MODEL: ${{ vars.ITS_NOT_JAWS_KNOWER_MODEL || 'claude-fable-5' }}
+          GUESSER_MODEL: ${{ vars.ITS_NOT_JAWS_GUESSER_MODEL || 'gpt-5.6-sol' }}
+          # Hard-capped in src/limits.ts (max 24); keep CI default modest.
+          MAX_TURNS: ${{ vars.ITS_NOT_JAWS_MAX_TURNS || '8' }}
+        run: |
+          set -euo pipefail
+          mkdir -p results
+          echo "Matchup: knower=$KNOWER_MODEL vs guesser=$GUESSER_MODEL (max_turns=$MAX_TURNS)"
+          # Invoke tsx directly so npm's script banner does not contaminate stdout JSON.
+          npx tsx src/cli.ts \
+            --backend cursor \
+            --knower-model "$KNOWER_MODEL" \
+            --guesser-model "$GUESSER_MODEL" \
+            --max-turns "$MAX_TURNS" \
+            --verbose \
+            > results/ci-summary.json
+          cat results/ci-summary.json
+
+      - name: Upload game record
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: its-not-jaws-results-${{ github.run_id }}
+          path: |
+            its-not-jaws/results/
+          if-no-files-found: warn
+
+      - name: Job summary
+        if: ${{ steps.play.outcome == 'success' }}
+        run: |
+          SUMMARY_JSON=$(cat results/ci-summary.json)
+          jq empty results/ci-summary.json
+          KNOWER=$(jq -r '.knowerModel // "unknown"' results/ci-summary.json)
+          GUESSER=$(jq -r '.guesserModel // "unknown"' results/ci-summary.json)
+          OUTCOME=$(jq -r '.outcome.kind // "unknown"' results/ci-summary.json)
+          SECRET=$(jq -r '.secret // "unknown"' results/ci-summary.json)
+          LENGTH=$(jq -r '.gameLength // "unknown"' results/ci-summary.json)
+          USED=$(jq -r '.usedLeakedClues // false' results/ci-summary.json)
+          HELPFUL=$(jq -r '.helpfulClueLeaks // 0' results/ci-summary.json)
+          {
+            echo "## It's Not Jaws — live game"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Matchup | **knower** \`$KNOWER\` vs **guesser** \`$GUESSER\` |"
+            echo "| Outcome | \`$OUTCOME\` |"
+            echo "| Secret | \`$SECRET\` |"
+            echo "| Game length | $LENGTH |"
+            echo "| Guesser used leaked clues | \`$USED\` ($HELPFUL listed) |"
+            echo
+            echo '<details><summary>Full summary JSON</summary>'
+            echo
+            echo '```json'
+            echo "$SUMMARY_JSON"
+            echo '```'
+            echo
+            echo '</details>'
+            echo
+            echo "Full JSON + HTML chat transcripts are in the workflow artifact (\`*.html\`)."
+          } >> "$GITHUB_STEP_SUMMARY"
