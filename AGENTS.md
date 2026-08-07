@@ -24,7 +24,7 @@ playground/
 ├── git-fuse/              # Rust CLI: read-only FUSE adapter for git-server (not a Pages app)
 ├── git-server/            # Rust Cloudflare Worker: git smart-HTTP server on R2/DO (not a Pages app)
 ├── life-lab/              # browser front-end for life-stl (wasm + three.js + Node tests)
-├── its-not-jaws/          # Cursor SDK harness: two agents play a secret-guessing game
+├── its-not-jaws/          # Cursor SDK harness: knower/guesser secret-guessing game
 ├── life-qr/               # OpenSCAD Life sculpture with a QR-code roof (parametric)
 ├── life-scad/             # OpenSCAD Life sculpture + reverse-history Python tool
 ├── life-stl/              # Rust CLI: Game of Life → printable STL (Z = time)
@@ -65,7 +65,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `git-server/` | no | Rust Cloudflare Worker; no `index.html` |
 | `git-fuse/` | no | Rust CLI (FUSE); no `index.html` |
 | `life-stl/` | no | Rust CLI (STL generator); no `index.html` |
-| `its-not-jaws/` | no | Cursor SDK agent-vs-agent guessing harness; no `index.html` |
+| `its-not-jaws/` | no | Cursor SDK knower/guesser guessing harness; no `index.html` |
 | `life-scad/` | no | OpenSCAD + Python reverse-history tool; no `index.html` |
 | `life-qr/` | no | OpenSCAD Life+QR sculpture; no `index.html` |
 | `ios/` | no | The single "Playground" iOS app (XcodeGen + SwiftUI); no `index.html` |
@@ -570,7 +570,7 @@ auto-discover them. Run their local tests when you change them.
 
 | Directory | Type | Tests |
 |-----------|------|-------|
-| `its-not-jaws/` | Cursor SDK harness: two agents play a secret-guessing game (full traces public to opponent); mock backend for tests, live agents via `CURSOR_API_KEY` | `cd its-not-jaws && npm test` |
+| `its-not-jaws/` | Cursor SDK harness: knower picks a secret, guesser sees full gameplay traces; mock backend for tests, live agents via `CURSOR_API_KEY` | `cd its-not-jaws && npm test` |
 | `life-scad/` | OpenSCAD Life sculpture (Z = time) plus optional Python reverse-history search | `python3 life-scad/reverse_life_test.py` (needs `pip install -r life-scad/requirements.txt`) |
 | `life-qr/` | Parametric OpenSCAD Life sculpture with a QR-code roof for any text/height | `python3 life-qr/life_qr_test.py` (optional `pip install segno`) |
 

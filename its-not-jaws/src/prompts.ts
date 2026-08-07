@@ -2,19 +2,14 @@ import type { GameDefinition } from "./games/types.js";
 import { formatPublicChannel } from "./protocol.js";
 import type { PublicChannel } from "./types.js";
 
-export function keeperSystemPrompt(game: GameDefinition, secret: string): string {
+export function knowerSystemPrompt(game: GameDefinition): string {
   return [
-    `# Role: Keeper`,
+    `# Role: Knower`,
     ``,
-    game.keeperBrief,
+    game.knowerBrief,
     game.domainHint ? `Domain: ${game.domainHint}` : "",
     ``,
-    `SECRET: ${secret}`,
-    ``,
-    `This SECRET line is harness setup only. The guesser never sees this prompt.`,
-    `They see every message you emit afterward (thinking, text, tool calls).`,
-    ``,
-    `Protocol: always end your visible reply with a single fenced JSON move.`,
+    `Protocol: end each reply with a single fenced JSON move.`,
   ]
     .filter(Boolean)
     .join("\n");
@@ -33,17 +28,27 @@ export function guesserSystemPrompt(game: GameDefinition): string {
     .join("\n");
 }
 
-export function keeperOpeningPrompt(): string {
+/** Private setup: knower picks and commits the secret to the harness only. */
+export function knowerSetupPrompt(): string {
   return [
-    "Start the game now.",
+    "SETUP (private — the guesser will not see this turn).",
+    "Pick a valid secret for this game, then reply with ONLY a commit move:",
+    '```json\n{"type":"commit","secret":"your-secret-here"}\n```',
+    "Do not give clues yet. Clues come on the next turn, which will be public.",
+  ].join("\n");
+}
+
+export function knowerFirstCluePrompt(): string {
+  return [
+    "Setup is done. The public game starts now.",
     "Give your first clue without naming the secret in thinking, text, or tools.",
     "End with a JSON clue move.",
   ].join("\n");
 }
 
-export function guesserPromptFromKeeper(channel: PublicChannel, round: number): string {
+export function guesserPromptFromKnower(channel: PublicChannel, round: number): string {
   return [
-    `Round ${round}. Here is the keeper's FULL published trace`,
+    `Round ${round}. Here is the knower's FULL published trace`,
     `(thinking, assistant text, and tool calls with args/results):`,
     ``,
     formatPublicChannel(channel),
@@ -52,7 +57,7 @@ export function guesserPromptFromKeeper(channel: PublicChannel, round: number): 
   ].join("\n");
 }
 
-export function keeperPromptFromGuesser(channel: PublicChannel, round: number): string {
+export function knowerPromptFromGuesser(channel: PublicChannel, round: number): string {
   return [
     `Round ${round}. Here is the guesser's FULL published trace`,
     `(thinking, assistant text, and tool calls with args/results):`,

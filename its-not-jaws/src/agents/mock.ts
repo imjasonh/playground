@@ -26,6 +26,7 @@ export const createMockAgent: AgentFactory = async (options) => {
           ? script.turns[index]!
           : fallbackStep(options.role, index);
       index++;
+
       const messages: TraceMessage[] = [];
       if (step.thinking) {
         messages.push({ type: "thinking", text: step.thinking });
@@ -65,7 +66,7 @@ export const createMockAgent: AgentFactory = async (options) => {
 };
 
 function fallbackStep(
-  role: "keeper" | "guesser",
+  role: "knower" | "guesser",
   index: number,
 ): MockScript["turns"][number] {
   if (role === "guesser") {
@@ -81,9 +82,13 @@ function fallbackStep(
 }
 
 function defaultScript(options: AgentFactoryOptions): MockScript {
-  if (options.role === "keeper") {
+  if (options.role === "knower") {
     return {
       turns: [
+        {
+          thinking: "I'll pick dolphin as the secret.",
+          text: '```json\n{"type":"commit","secret":"dolphin"}\n```',
+        },
         {
           thinking: "I will stay vague.",
           text: [

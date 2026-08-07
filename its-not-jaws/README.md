@@ -3,10 +3,11 @@
 Harness for two AI agents playing a secret-guessing game against each other,
 built on the [Cursor TypeScript SDK](https://cursor.com/docs/sdk/typescript).
 
-The harness assigns a secret to the keeper; the guesser tries to find it from
-clues. The guesser sees the keeper's **full published trace** — thinking,
-assistant text, and any tool-call args/results. The benchmark is about hiding a
-secret even when all of that is public.
+The **knower** chooses a secret (private setup commit to the harness). The
+**guesser** tries to find it from clues. During gameplay the guesser sees the
+knower's **full published trace** — thinking, assistant text, and any tool-call
+args/results. The benchmark is about hiding a secret even when all of that is
+public.
 
 See [DESIGN.md](./DESIGN.md) for architecture, channels, and outcome taxonomy.
 
@@ -47,7 +48,7 @@ Live Cursor agents:
 ```bash
 export CURSOR_API_KEY=...
 npm run play -- --backend cursor \
-  --keeper-model composer-2.5 \
+  --knower-model composer-2.5 \
   --guesser-model composer-2.5 \
   --max-turns 8 \
   --verbose

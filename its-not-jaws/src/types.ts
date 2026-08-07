@@ -8,7 +8,7 @@ export type OutcomeKind =
   | "protocol_error"
   | "aborted";
 
-export type PlayerRole = "keeper" | "guesser";
+export type PlayerRole = "knower" | "guesser";
 
 export type TokenUsage = {
   inputTokens: number;
@@ -33,8 +33,9 @@ export type PlayerUsage = {
 };
 
 /**
- * Everything the agent emitted that the opponent is allowed (and required) to see.
- * Includes thinking, assistant text, and full tool-call traces (name, args, result).
+ * Everything the agent emitted on a turn.
+ * During gameplay, the opponent sees the full trace (thinking, text, tool calls).
+ * Setup turns are harness-private and are not forwarded.
  */
 export type TraceMessage =
   | { type: "thinking"; text: string }
@@ -55,7 +56,11 @@ export type PublicChannel = {
 export type AgentTurn = {
   role: PlayerRole;
   turnIndex: number;
-  /** Wall-clock ms for this turn. */
+  /**
+   * `setup` = knower commits the secret to the harness only (not shown to guesser).
+   * `play` = gameplay; full trace is forwarded to the opponent.
+   */
+  phase: "setup" | "play";
   durationMs: number;
   public: PublicChannel;
   usage?: TokenUsage;
@@ -65,8 +70,9 @@ export type AgentTurn = {
   rawText: string;
 };
 
-/** Structured moves exchanged on the public channel. */
+/** Structured moves. `commit` is setup-only and never forwarded to the guesser. */
 export type Move =
+  | { type: "commit"; secret: string }
   | { type: "clue"; text: string }
   | { type: "guess"; value: string }
   | { type: "give_up"; reason?: string }
@@ -84,18 +90,19 @@ export type GameRecord = {
   game: string;
   startedAt: string;
   finishedAt: string;
-  keeperModel?: string;
+  knowerModel?: string;
   guesserModel?: string;
   backend: "mock" | "cursor";
   /**
-   * Ground-truth secret assigned by the harness and injected into the keeper's
-   * private setup prompt (not a message from the keeper, so not shown to the guesser).
+   * Ground-truth secret chosen by the knower during the private setup turn.
+   * Parsed from a structured commit move — the harness does not pick it.
    */
-  secret: string;
+  secret?: string;
+  secretCommitted: boolean;
   turns: AgentTurn[];
   outcome: Outcome;
   usage: {
-    keeper: PlayerUsage;
+    knower: PlayerUsage;
     guesser: PlayerUsage;
     totalTokens: number;
     totalRawCostCents?: number;
@@ -108,16 +115,14 @@ export type HarnessConfig = {
   gameId: string;
   maxTurns: number;
   backend: "mock" | "cursor";
-  keeperModel: string;
+  knowerModel: string;
   guesserModel: string;
   apiKey?: string;
   /** Directory for per-player empty workspaces (Cursor local cwd). */
   workspacesRoot: string;
   /** Where to write the JSON game record. */
   resultsDir: string;
-  /** Optional seed for deterministic secret pick / mock play. */
+  /** Optional seed reserved for future deterministic mock helpers. */
   seed?: number;
-  /** Override harness-assigned secret (tests). */
-  secret?: string;
   verbose?: boolean;
 };

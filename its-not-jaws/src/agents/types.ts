@@ -1,4 +1,4 @@
-import type { PublicChannel, TokenUsage } from "../types.js";
+import type { PlayerRole, PublicChannel, TokenUsage } from "../types.js";
 
 export type PromptTurn = {
   /** User-role message delivered to this agent for the turn. */
@@ -6,7 +6,7 @@ export type PromptTurn = {
 };
 
 export type TurnResult = {
-  /** Full published trace for the opponent (thinking, text, tool calls). */
+  /** Full emitted trace for this turn. */
   public: PublicChannel;
   rawText: string;
   usage?: TokenUsage;
@@ -14,9 +14,9 @@ export type TurnResult = {
 };
 
 export type PlayerAgent = {
-  readonly role: "keeper" | "guesser";
+  readonly role: PlayerRole;
   readonly model?: string;
-  /** Send one prompt and collect the full public channel. */
+  /** Send one prompt and collect the full emitted channel. */
   turn(input: PromptTurn): Promise<TurnResult>;
   /** Billed usage snapshot when the backend supports it. */
   getBilledUsage?(): Promise<{
@@ -27,7 +27,7 @@ export type PlayerAgent = {
 };
 
 export type AgentFactoryOptions = {
-  role: "keeper" | "guesser";
+  role: PlayerRole;
   model: string;
   systemPrompt: string;
   workspaceDir: string;
@@ -39,7 +39,7 @@ export type AgentFactoryOptions = {
 
 /** Deterministic mock behavior for unit tests. */
 export type MockScript = {
-  /** Responses in order; after exhaustion, errors. */
+  /** Responses in order; after exhaustion, uses a role-specific fallback. */
   turns: Array<{
     text: string;
     thinking?: string;

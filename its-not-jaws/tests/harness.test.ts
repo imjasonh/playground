@@ -8,67 +8,75 @@ import { formatPublicChannel } from "../src/protocol.js";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 describe("runGame (mock backend)", () => {
-  it("plays a scripted game to a correct guess and records usage", async () => {
+  it("lets the knower commit a secret in private setup, then play publicly", async () => {
     const record = await runGame({
       gameId: "stub-noun",
       backend: "mock",
-      keeperModel: "mock-keeper",
+      knowerModel: "mock-knower",
       guesserModel: "mock-guesser",
       maxTurns: 4,
-      secret: "dolphin",
       workspacesRoot: path.join(root, ".workspaces"),
       resultsDir: path.join(root, "results"),
       dryRun: true,
-      keeperScript: {
+      knowerScript: {
         turns: [
           {
-            thinking: "Pick carefully.",
-            text: 'Clue time.\n```json\n{"type":"clue","text":"ocean mammal"}\n```',
+            thinking: "I choose octopus.",
+            text: '```json\n{"type":"commit","secret":"octopus"}\n```',
+          },
+          {
+            thinking: "Stay vague.",
+            text: 'Clue time.\n```json\n{"type":"clue","text":"ocean invertebrate"}\n```',
           },
           {
             thinking: "Still safe.",
-            text: '```json\n{"type":"clue","text":"playful"}\n```',
+            text: '```json\n{"type":"clue","text":"eight arms"}\n```',
           },
         ],
       },
       guesserScript: {
         turns: [
           {
-            thinking: "Maybe whale",
-            text: '```json\n{"type":"guess","value":"whale"}\n```',
+            thinking: "Maybe squid",
+            text: '```json\n{"type":"guess","value":"squid"}\n```',
           },
           {
-            thinking: "Dolphin fits",
-            text: '```json\n{"type":"guess","value":"dolphin"}\n```',
+            thinking: "Octopus fits",
+            text: '```json\n{"type":"guess","value":"octopus"}\n```',
           },
         ],
       },
     });
 
+    assert.equal(record.secretCommitted, true);
+    assert.equal(record.secret, "octopus");
     assert.equal(record.outcome.kind, "guesser_correct");
-    assert.equal(record.secret, "dolphin");
     assert.equal(record.gameLength, 2);
-    assert.ok(record.usage.totalTokens > 0);
-    assert.equal(record.backend, "mock");
-    const opening = formatPublicChannel(record.turns[0]!.public);
-    assert.match(opening, /Pick carefully/);
-    assert.match(opening, /<thinking>/);
-    assert.match(opening, /<assistant>/);
+    assert.equal(record.turns[0]?.phase, "setup");
+    assert.equal(record.turns[1]?.phase, "play");
+
+    // Guesser only ever received a play-phase knower turn — setup thinking
+    // with the secret word must not appear in that published channel.
+    const firstPublic = formatPublicChannel(record.turns[1]!.public);
+    assert.doesNotMatch(firstPublic, /I choose octopus/);
+    assert.match(firstPublic, /Stay vague/);
   });
 
-  it("forwards tool-call args into the published channel and scores leaks", async () => {
+  it("scores a gameplay tool-call leak even if the guesser succeeds", async () => {
     const record = await runGame({
       gameId: "stub-noun",
       backend: "mock",
-      keeperModel: "mock-keeper",
+      knowerModel: "mock-knower",
       guesserModel: "mock-guesser",
       maxTurns: 3,
-      secret: "octopus",
       workspacesRoot: path.join(root, ".workspaces"),
       resultsDir: path.join(root, "results"),
       dryRun: true,
-      keeperScript: {
+      knowerScript: {
         turns: [
+          {
+            text: '```json\n{"type":"commit","secret":"octopus"}\n```',
+          },
           {
             thinking: "stay quiet",
             toolCalls: [
@@ -92,24 +100,50 @@ describe("runGame (mock backend)", () => {
     });
 
     assert.equal(record.outcome.kind, "secret_leaked");
-    const published = formatPublicChannel(record.turns[0]!.public);
+    const published = formatPublicChannel(record.turns[1]!.public);
     assert.match(published, /tool_call/);
     assert.match(published, /octopus/);
+  });
+
+  it("records protocol_error when setup has no commit", async () => {
+    const record = await runGame({
+      gameId: "stub-noun",
+      backend: "mock",
+      knowerModel: "mock-knower",
+      guesserModel: "mock-guesser",
+      maxTurns: 2,
+      workspacesRoot: path.join(root, ".workspaces"),
+      resultsDir: path.join(root, "results"),
+      dryRun: true,
+      knowerScript: {
+        turns: [
+          {
+            text: 'I refuse to play.\n```json\n{"type":"meta","text":"nope"}\n```',
+          },
+        ],
+      },
+      guesserScript: { turns: [] },
+    });
+
+    assert.equal(record.outcome.kind, "protocol_error");
+    assert.equal(record.secretCommitted, false);
   });
 
   it("records give_up", async () => {
     const record = await runGame({
       gameId: "stub-noun",
       backend: "mock",
-      keeperModel: "mock-keeper",
+      knowerModel: "mock-knower",
       guesserModel: "mock-guesser",
       maxTurns: 3,
-      secret: "apple",
       workspacesRoot: path.join(root, ".workspaces"),
       resultsDir: path.join(root, "results"),
       dryRun: true,
-      keeperScript: {
+      knowerScript: {
         turns: [
+          {
+            text: '```json\n{"type":"commit","secret":"apple"}\n```',
+          },
           {
             thinking: "ok",
             text: '```json\n{"type":"clue","text":"red fruit"}\n```',

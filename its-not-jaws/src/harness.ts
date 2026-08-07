@@ -8,11 +8,12 @@ import { getGame } from "./games/stub.js";
 import { judge } from "./judge.js";
 import { parseMove } from "./protocol.js";
 import {
-  guesserPromptFromKeeper,
+  guesserPromptFromKnower,
   guesserSystemPrompt,
-  keeperOpeningPrompt,
-  keeperPromptFromGuesser,
-  keeperSystemPrompt,
+  knowerFirstCluePrompt,
+  knowerPromptFromGuesser,
+  knowerSetupPrompt,
+  knowerSystemPrompt,
 } from "./prompts.js";
 import type {
   AgentTurn,
@@ -25,7 +26,7 @@ import type {
 export type RunGameOptions = HarnessConfig & {
   /** Override factories (tests). */
   factories?: { mock?: AgentFactory; cursor?: AgentFactory };
-  keeperScript?: MockScript;
+  knowerScript?: MockScript;
   guesserScript?: MockScript;
   /** Skip writing results JSON. */
   dryRun?: boolean;
@@ -35,24 +36,23 @@ export async function runGame(options: RunGameOptions): Promise<GameRecord> {
   const game = getGame(options.gameId);
   const id = randomUUID();
   const startedAt = new Date().toISOString();
-  const secret = options.secret ?? game.pickSecret(options.seed);
 
   const factory: AgentFactory =
     options.backend === "mock"
       ? (options.factories?.mock ?? createMockAgent)
       : (options.factories?.cursor ?? createCursorAgent);
 
-  const keeperWorkspace = path.join(options.workspacesRoot, id, "keeper");
+  const knowerWorkspace = path.join(options.workspacesRoot, id, "knower");
   const guesserWorkspace = path.join(options.workspacesRoot, id, "guesser");
 
-  const keeper = await factory({
-    role: "keeper",
-    model: options.keeperModel,
-    systemPrompt: keeperSystemPrompt(game, secret),
-    workspaceDir: keeperWorkspace,
+  const knower = await factory({
+    role: "knower",
+    model: options.knowerModel,
+    systemPrompt: knowerSystemPrompt(game),
+    workspaceDir: knowerWorkspace,
     apiKey: options.apiKey,
     seed: options.seed,
-    script: options.keeperScript,
+    script: options.knowerScript,
   });
 
   const guesser = await factory({
@@ -66,21 +66,49 @@ export async function runGame(options: RunGameOptions): Promise<GameRecord> {
   });
 
   const turns: AgentTurn[] = [];
+  let secret: string | undefined;
+  let secretCommitted = false;
   let hitMaxTurns = false;
   let stop = false;
 
   try {
-    turns.push(await playTurn(keeper, keeperOpeningPrompt(), turns.length));
+    // Private setup: knower picks + commits. Never forwarded to the guesser.
+    const setup = await playTurn(
+      knower,
+      knowerSetupPrompt(),
+      turns.length,
+      "setup",
+    );
+    turns.push(setup);
+    if (setup.move?.type === "commit") {
+      secret = setup.move.secret;
+      secretCommitted = true;
+    } else {
+      stop = true;
+    }
+
+    if (!stop) {
+      // First public clue — this trace IS shown to the guesser.
+      turns.push(
+        await playTurn(
+          knower,
+          knowerFirstCluePrompt(),
+          turns.length,
+          "play",
+        ),
+      );
+    }
 
     let round = 1;
     while (!stop && round <= options.maxTurns) {
-      const lastKeeper = lastTurn(turns, "keeper");
-      if (!lastKeeper) break;
+      const lastPublicKnower = lastPlayTurn(turns, "knower");
+      if (!lastPublicKnower) break;
 
       const guessTurn = await playTurn(
         guesser,
-        guesserPromptFromKeeper(lastKeeper.public, round),
+        guesserPromptFromKnower(lastPublicKnower.public, round),
         turns.length,
+        "play",
       );
       turns.push(guessTurn);
 
@@ -90,6 +118,7 @@ export async function runGame(options: RunGameOptions): Promise<GameRecord> {
       }
       if (
         guessTurn.move?.type === "guess" &&
+        secret &&
         normalizeEq(guessTurn.move.value, secret)
       ) {
         stop = true;
@@ -104,9 +133,10 @@ export async function runGame(options: RunGameOptions): Promise<GameRecord> {
 
       turns.push(
         await playTurn(
-          keeper,
-          keeperPromptFromGuesser(guessTurn.public, round),
+          knower,
+          knowerPromptFromGuesser(guessTurn.public, round),
           turns.length,
+          "play",
         ),
       );
       round++;
@@ -119,17 +149,18 @@ export async function runGame(options: RunGameOptions): Promise<GameRecord> {
       hitMaxTurns = true;
     }
   } finally {
-    await Promise.allSettled([keeper.dispose(), guesser.dispose()]);
+    await Promise.allSettled([knower.dispose(), guesser.dispose()]);
   }
 
   const outcome = judge({
     game,
     secret,
+    secretCommitted,
     turns,
     hitMaxTurns,
   });
 
-  const keeperUsage = await finalizeUsage(keeper, "keeper", turns);
+  const knowerUsage = await finalizeUsage(knower, "knower", turns);
   const guesserUsage = await finalizeUsage(guesser, "guesser", turns);
 
   const finishedAt = new Date().toISOString();
@@ -138,19 +169,20 @@ export async function runGame(options: RunGameOptions): Promise<GameRecord> {
     game: game.id,
     startedAt,
     finishedAt,
-    keeperModel: keeper.model,
+    knowerModel: knower.model,
     guesserModel: guesser.model,
     backend: options.backend,
     secret,
+    secretCommitted,
     turns,
     outcome,
     usage: {
-      keeper: keeperUsage,
+      knower: knowerUsage,
       guesser: guesserUsage,
       totalTokens:
-        keeperUsage.tokens.totalTokens + guesserUsage.tokens.totalTokens,
+        knowerUsage.tokens.totalTokens + guesserUsage.tokens.totalTokens,
       totalRawCostCents: sumOptional(
-        keeperUsage.cost?.rawCostCents,
+        knowerUsage.cost?.rawCostCents,
         guesserUsage.cost?.rawCostCents,
       ),
     },
@@ -173,11 +205,13 @@ async function playTurn(
   agent: PlayerAgent,
   prompt: string,
   turnIndex: number,
+  phase: "setup" | "play",
 ): Promise<AgentTurn> {
   const result = await agent.turn({ prompt });
   return {
     role: agent.role,
     turnIndex,
+    phase,
     durationMs: result.durationMs,
     public: result.public,
     usage: result.usage,
@@ -186,12 +220,13 @@ async function playTurn(
   };
 }
 
-function lastTurn(
+function lastPlayTurn(
   turns: AgentTurn[],
-  role: "keeper" | "guesser",
+  role: "knower" | "guesser",
 ): AgentTurn | undefined {
   for (let i = turns.length - 1; i >= 0; i--) {
-    if (turns[i]!.role === role) return turns[i];
+    const t = turns[i]!;
+    if (t.role === role && t.phase === "play") return t;
   }
   return undefined;
 }
@@ -205,7 +240,7 @@ function normalizeEq(a: string, b: string): boolean {
 
 async function finalizeUsage(
   agent: PlayerAgent,
-  role: "keeper" | "guesser",
+  role: "knower" | "guesser",
   turns: AgentTurn[],
 ): Promise<PlayerUsage> {
   const summed = sumTokens(

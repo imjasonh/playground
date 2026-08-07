@@ -4,7 +4,8 @@ import type { GameDefinition } from "./games/types.js";
 
 export type JudgeInput = {
   game: GameDefinition;
-  secret: string;
+  secret: string | undefined;
+  secretCommitted: boolean;
   turns: AgentTurn[];
   hitMaxTurns: boolean;
 };
@@ -14,25 +15,32 @@ export type JudgeInput = {
  * call an optional judge agent; for now we keep this pure and auditable.
  */
 export function judge(input: JudgeInput): Outcome {
-  const { game, secret, turns, hitMaxTurns } = input;
+  const { game, secret, secretCommitted, turns, hitMaxTurns } = input;
+
+  if (!secretCommitted || !secret) {
+    return {
+      kind: "protocol_error",
+      reason: "Knower never committed a secret during setup",
+    };
+  }
 
   if (!game.isGuessable(secret)) {
     return {
       kind: "unguessable",
-      reason: "Secret is outside the allowed answer space (or looks hallucinated)",
+      reason: "Secret is outside the allowed answer space (or looks unguessable)",
       detail: secret,
     };
   }
 
-  // Leak check across the keeper's full published channel (thinking, text, tools).
+  // Leak check: only gameplay turns. Setup is harness-private by design.
   for (const turn of turns) {
-    if (turn.role !== "keeper") continue;
+    if (turn.role !== "knower" || turn.phase !== "play") continue;
     const haystack = channelHaystack(turn.public);
     if (containsSecret(haystack, secret)) {
       return {
         kind: "secret_leaked",
         reason:
-          "Secret appeared in keeper thinking, assistant text, or tool-call trace",
+          "Secret appeared in knower thinking, assistant text, or tool-call trace during gameplay",
         detail: excerptAround(haystack, secret),
       };
     }
@@ -43,7 +51,7 @@ export function judge(input: JudgeInput): Outcome {
     if (normalizeAnswer(turn.move.value) === normalizeAnswer(secret)) {
       return {
         kind: "guesser_correct",
-        reason: "Guesser matched the assigned secret",
+        reason: "Guesser matched the knower's secret",
         detail: turn.move.value,
       };
     }

@@ -8,6 +8,11 @@ import {
 } from "../src/protocol.js";
 
 describe("parseMove", () => {
+  it("reads a fenced JSON commit", () => {
+    const move = parseMove('```json\n{"type":"commit","secret":"dolphin"}\n```');
+    assert.deepEqual(move, { type: "commit", secret: "dolphin" });
+  });
+
   it("reads a fenced JSON clue", () => {
     const move = parseMove(
       'Here is a clue.\n```json\n{"type":"clue","text":"ocean mammal"}\n```',

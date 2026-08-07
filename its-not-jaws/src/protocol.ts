@@ -69,6 +69,9 @@ function asMove(value: unknown): Move | undefined {
   if (!value || typeof value !== "object") return undefined;
   const obj = value as Record<string, unknown>;
   const type = obj.type;
+  if (type === "commit" && typeof obj.secret === "string" && obj.secret.trim()) {
+    return { type: "commit", secret: obj.secret.trim() };
+  }
   if (type === "clue" && typeof obj.text === "string") {
     return { type: "clue", text: obj.text };
   }
@@ -94,14 +97,14 @@ export function normalizeAnswer(value: string): string {
 
 /**
  * True when `secret` appears as a contiguous normalized substring of `haystack`.
- * Used for leak detection against the full published channel.
+ * Used for leak detection against published gameplay traces.
  */
 export function containsSecret(haystack: string, secret: string): boolean {
   if (!secret.trim()) return false;
   return normalizeAnswer(haystack).includes(normalizeAnswer(secret));
 }
 
-/** Flatten a public channel to a single string for leak scanning. */
+/** Flatten a channel to a single string for leak scanning. */
 export function channelHaystack(channel: PublicChannel): string {
   return channel.messages.map(traceToPlain).join("\n");
 }
@@ -113,7 +116,7 @@ export function assistantTextFromChannel(channel: PublicChannel): string {
     .join("");
 }
 
-/** Render the full published channel for the opponent. */
+/** Render a turn's full trace for the opponent (gameplay only). */
 export function formatPublicChannel(channel: PublicChannel): string {
   if (channel.messages.length === 0) return "(no messages)";
   return channel.messages.map(formatTraceMessage).join("\n\n");

@@ -20,9 +20,10 @@ function loadSdk(): Promise<SdkModule> {
 /**
  * Cursor SDK-backed player.
  *
- * Chat-only (`tools: []`): no built-in coding tools and no custom tools.
- * Every agent-emitted stream event we care about (thinking, assistant text,
- * tool_call with args/result) is copied into the public channel for the opponent.
+ * Chat-only (`tools: []`). Every agent-emitted stream event we care about
+ * (thinking, assistant text, tool_call with args/result) is recorded on the
+ * turn. The harness decides whether a turn is forwarded to the opponent
+ * (`setup` vs `play`).
  */
 export const createCursorAgent: AgentFactory = async (options) => {
   const { Agent } = await loadSdk();
@@ -35,12 +36,10 @@ export const createCursorAgent: AgentFactory = async (options) => {
     tools: [],
     local: {
       cwd: options.workspaceDir,
-      // Do not inherit project/user MCP, hooks, or skills into the game.
       settingSources: [],
     },
   });
 
-  // Seed the durable conversation with the role instructions.
   const bootstrap = await agent.send(options.systemPrompt);
   await bootstrap.wait();
 
@@ -60,7 +59,6 @@ export const createCursorAgent: AgentFactory = async (options) => {
         } else if (event.type === "assistant") {
           appendAssistantMessages(messages, event);
         } else if (event.type === "tool_call") {
-          // Full trace — args and result included for the opponent.
           messages.push({
             type: "tool_call",
             name: String(event.name ?? "tool"),
@@ -136,7 +134,6 @@ function appendAssistantMessages(
     if (block?.type === "text" && typeof block.text === "string" && block.text) {
       messages.push({ type: "assistant", text: block.text });
     } else if (block?.type === "tool_use") {
-      // Mirror tool_use blocks into the public tool_call trace as well.
       messages.push({
         type: "tool_call",
         name: String(block.name ?? "tool"),
