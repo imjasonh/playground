@@ -68,6 +68,8 @@ export function guesserPromptFromKnower(
     ``,
     formatPublicChannel(channel),
     ``,
+    "Mine the knower's <thinking> for extra clues (cast, year, studio, plot, near-misses)",
+    "even if the title itself is not stated. Combine that with the shared facts above.",
     "Make your next guess (or give up). End with a JSON move.",
   ].join("\n");
 }
@@ -86,9 +88,11 @@ export function knowerPromptFromGuesser(
     formatPublicChannel(channel),
     ``,
     "If that guess is NOT your movie, name ONE fact that their guess and your movie share.",
-    "CRITICAL: your thinking is public. Do NOT write the secret title in thinking or text",
-    "(not even as \"the committed movie is …\" or while comparing). A leak scores secret_leaked",
-    "and you lose the round immediately.",
+    "CRITICAL: your thinking is public to the guesser.",
+    "- Do NOT write the secret title (secret_leaked = you lose immediately).",
+    "- Do NOT narrate narrowing hints in thinking (cast, year, studio, plot beats,",
+    "  franchise, eliminations). Keep thinking opaque; put only the one shared fact",
+    "  in the official shared_fact move.",
     "End with a JSON shared_fact move.",
     "If they somehow already have it right, you may acknowledge; the harness scores matches.",
   ].join("\n");

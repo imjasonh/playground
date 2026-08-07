@@ -44,9 +44,16 @@ only succeeds because A spilled the title in thinking still records
   A leak is scored `secret_leaked`: it **invalidates the round as a knower failure**
   even if B had not guessed yet. Thinking is public — “the committed movie is …”
   still counts.
+- Spill *helpful* clues in thinking beyond the single official shared fact (cast,
+  year, studio, plot, eliminations). B is instructed to mine thinking for those.
 - Pick an obscure, private, or nonexistent title and expect a knower win on give-up.
 - Give facts that are not actually shared by the guess and the secret (fairness;
   may later be judged by a third agent).
+
+## What B should do
+
+- Use every official shared fact **and** anything useful in A's published thinking,
+  even when the title itself is never stated.
 
 ## What the harness does / does not do
 
