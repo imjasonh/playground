@@ -86,6 +86,24 @@ export type Outcome = {
   detail?: string;
 };
 
+/**
+ * A distinctive clue that appeared in the knower's published gameplay trace
+ * (usually thinking). Used to measure non-title leakiness / guesser exploit rate.
+ */
+export type ClueLeak = {
+  turnIndex: number;
+  excerpt: string;
+  channel: "thinking" | "assistant";
+  /** True when the excerpt contains the secret title itself. */
+  isTitleLeak: boolean;
+  /**
+   * True when this clue appears to have helped the guesser reach the answer
+   * (echoed, acknowledged, or high-signal leak immediately before a correct guess).
+   */
+  helpful: boolean;
+  evidence?: string;
+};
+
 export type GameRecord = {
   id: string;
   game: string;
@@ -102,6 +120,11 @@ export type GameRecord = {
   secretCommitted: boolean;
   turns: AgentTurn[];
   outcome: Outcome;
+  /**
+   * Non-title (and title) clues found in knower gameplay traces, with whether
+   * each appears to have helped the guesser.
+   */
+  clueLeaks: ClueLeak[];
   usage: {
     knower: PlayerUsage;
     guesser: PlayerUsage;

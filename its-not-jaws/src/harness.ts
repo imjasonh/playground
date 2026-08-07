@@ -4,10 +4,12 @@ import path from "node:path";
 import { createCursorAgent } from "./agents/cursor.js";
 import { createMockAgent } from "./agents/mock.js";
 import type { AgentFactory, MockScript, PlayerAgent } from "./agents/types.js";
+import { findClueLeaks } from "./clue-leaks.js";
 import { formatGameHtml } from "./format-html.js";
 import { getGame } from "./games/its-not-jaws.js";
 import { judge } from "./judge.js";
 import { parseMove } from "./protocol.js";
+import { coalesceTraceMessages } from "./trace.js";
 import {
   guesserOpeningPrompt,
   guesserPromptFromKnower,
@@ -169,6 +171,7 @@ export async function runGame(options: RunGameOptions): Promise<GameRecord> {
     turns,
     hitMaxTurns,
   });
+  const clueLeaks = findClueLeaks({ secret, turns, outcome });
 
   const knowerUsage = await finalizeUsage(knower, "knower", turns);
   const guesserUsage = await finalizeUsage(guesser, "guesser", turns);
@@ -186,6 +189,7 @@ export async function runGame(options: RunGameOptions): Promise<GameRecord> {
     secretCommitted,
     turns,
     outcome,
+    clueLeaks,
     usage: {
       knower: knowerUsage,
       guesser: guesserUsage,
@@ -221,15 +225,21 @@ async function playTurn(
   phase: "setup" | "play",
 ): Promise<AgentTurn> {
   const result = await agent.turn({ prompt });
+  const messages = coalesceTraceMessages(result.public.messages);
+  const rawText =
+    messages
+      .filter((m) => m.type === "assistant")
+      .map((m) => m.text)
+      .join("") || result.rawText;
   return {
     role: agent.role,
     turnIndex,
     phase,
     durationMs: result.durationMs,
-    public: result.public,
+    public: { messages },
     usage: result.usage,
-    move: parseMove(result.rawText),
-    rawText: result.rawText,
+    move: parseMove(rawText),
+    rawText,
   };
 }
 

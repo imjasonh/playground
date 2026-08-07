@@ -95,6 +95,7 @@ jobs:
           OUTCOME=$(jq -r '.outcome.kind // "unknown"' results/ci-summary.json)
           SECRET=$(jq -r '.secret // "unknown"' results/ci-summary.json)
           LENGTH=$(jq -r '.gameLength // "unknown"' results/ci-summary.json)
+          HELPFUL=$(jq -r '.helpfulClueLeaks // 0' results/ci-summary.json)
           {
             echo "## It's Not Jaws — live game"
             echo
@@ -104,6 +105,7 @@ jobs:
             echo "| Outcome | \`$OUTCOME\` |"
             echo "| Secret | \`$SECRET\` |"
             echo "| Game length | $LENGTH |"
+            echo "| Helpful clue leaks | $HELPFUL |"
             echo
             echo '<details><summary>Full summary JSON</summary>'
             echo

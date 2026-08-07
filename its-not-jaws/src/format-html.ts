@@ -1,15 +1,22 @@
 import type {
   AgentTurn,
+  ClueLeak,
   GameRecord,
   Move,
   OutcomeKind,
   TraceMessage,
 } from "./types.js";
+import {
+  assistantSpeech,
+  coalesceTraceMessages,
+  stripMoveFences,
+} from "./trace.js";
 
 /** Render a game record as a self-contained HTML chat transcript. */
 export function formatGameHtml(record: GameRecord): string {
   const title = escapeHtml(`It's Not Jaws — ${record.id.slice(0, 8)}`);
   const turnsHtml = record.turns.map((turn, i) => renderTurn(turn, i)).join("\n");
+  const helpful = (record.clueLeaks ?? []).filter((l) => l.helpful && !l.isTitleLeak);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -107,6 +114,33 @@ export function formatGameHtml(record: GameRecord): string {
     color: var(--muted);
     font-size: 0.92rem;
   }
+  .clue-leaks {
+    margin-top: 1rem;
+    padding: 0.75rem 0.9rem;
+    background: #f7e4c8;
+    border: 1px solid #e2c48a;
+    border-radius: 0.7rem;
+    font-family: "Avenir Next", "Segoe UI", sans-serif;
+    font-size: 0.86rem;
+  }
+  .clue-leaks h2 {
+    margin: 0 0 0.45rem;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--warn);
+  }
+  .clue-leaks ul {
+    margin: 0;
+    padding-left: 1.1rem;
+  }
+  .clue-leaks li { margin: 0.25rem 0; }
+  .clue-leaks .evidence {
+    display: block;
+    color: var(--muted);
+    font-size: 0.78rem;
+    margin-top: 0.1rem;
+  }
   .chat {
     display: flex;
     flex-direction: column;
@@ -190,6 +224,14 @@ export function formatGameHtml(record: GameRecord): string {
     white-space: pre-wrap;
     font-size: 1.02rem;
   }
+  .assistant + .assistant { margin-top: 0.65rem; }
+  .speech-empty {
+    margin: 0 0 0.35rem;
+    font-family: "Avenir Next", "Segoe UI", sans-serif;
+    font-size: 0.8rem;
+    color: var(--muted);
+    font-style: italic;
+  }
   .tool {
     margin: 0.65rem 0;
     padding: 0.55rem 0.7rem;
@@ -234,6 +276,7 @@ export function formatGameHtml(record: GameRecord): string {
         <div><dt>Outcome</dt><dd>${escapeHtml(record.outcome.kind)}</dd></div>
         <div><dt>Secret</dt><dd>${escapeHtml(record.secret ?? "(none)")}</dd></div>
         <div><dt>Game length</dt><dd>${record.gameLength} guess${record.gameLength === 1 ? "" : "es"}</dd></div>
+        <div><dt>Helpful clue leaks</dt><dd>${helpful.length}</dd></div>
         <div><dt>Knower</dt><dd>${escapeHtml(record.knowerModel ?? "—")}</dd></div>
         <div><dt>Guesser</dt><dd>${escapeHtml(record.guesserModel ?? "—")}</dd></div>
         <div><dt>Tokens</dt><dd>${record.usage.totalTokens.toLocaleString()}</dd></div>
@@ -251,6 +294,7 @@ export function formatGameHtml(record: GameRecord): string {
           ? ` — ${escapeHtml(record.outcome.detail)}`
           : ""
       }</p>
+      ${renderClueLeakSummary(record.clueLeaks ?? [])}
     </header>
     <main class="chat">
 ${turnsHtml}
@@ -261,6 +305,22 @@ ${turnsHtml}
 `;
 }
 
+function renderClueLeakSummary(leaks: ClueLeak[]): string {
+  const helpful = leaks.filter((l) => l.helpful && !l.isTitleLeak);
+  if (helpful.length === 0) return "";
+  const items = helpful
+    .map(
+      (l) =>
+        `<li><strong>turn ${l.turnIndex}</strong> (${escapeHtml(l.channel)}): ${escapeHtml(l.excerpt)}${
+          l.evidence
+            ? `<span class="evidence">${escapeHtml(l.evidence)}</span>`
+            : ""
+        }</li>`,
+    )
+    .join("\n");
+  return `<div class="clue-leaks"><h2>Helpful non-title clue leaks</h2><ul>${items}</ul></div>`;
+}
+
 function renderTurn(turn: AgentTurn, index: number): string {
   const roleClass = turn.phase === "setup" ? "setup" : turn.role;
   const who =
@@ -269,8 +329,7 @@ function renderTurn(turn: AgentTurn, index: number): string {
       : turn.role === "knower"
         ? "Knower"
         : "Guesser";
-  const modelHint = "";
-  const parts = turn.public.messages.map(renderMessage).join("\n");
+  const body = renderTurnBody(turn);
   const badge = turn.move ? renderMoveBadge(turn.move) : "";
   const privateNote =
     turn.phase === "setup"
@@ -278,11 +337,11 @@ function renderTurn(turn: AgentTurn, index: number): string {
       : "";
 
   return `      <article class="turn ${roleClass}" data-turn="${index}" data-phase="${turn.phase}">
-        <div class="who">${escapeHtml(who)}${modelHint}</div>
+        <div class="who">${escapeHtml(who)}</div>
         <div class="bubble">
           ${privateNote}
           ${badge}
-          ${parts || `<p class="assistant">(no messages)</p>`}
+          ${body}
         </div>
         <div class="foot">turn ${turn.turnIndex} · ${turn.durationMs}ms${
           turn.usage ? ` · ${turn.usage.totalTokens} tokens` : ""
@@ -290,27 +349,65 @@ function renderTurn(turn: AgentTurn, index: number): string {
       </article>`;
 }
 
-function renderMessage(message: TraceMessage): string {
-  switch (message.type) {
-    case "thinking":
-      return `<div class="thinking">${escapeHtml(message.text.trim())}</div>`;
-    case "assistant": {
-      const text = stripTrailingMoveFence(message.text).trim();
-      if (!text) return "";
-      return `<p class="assistant">${escapeHtml(text)}</p>`;
+function renderTurnBody(turn: AgentTurn): string {
+  const messages = coalesceTraceMessages(turn.public.messages);
+  const parts: string[] = [];
+  let sawSpeech = false;
+
+  for (const message of messages) {
+    if (message.type === "thinking") {
+      const text = message.text.trim();
+      if (!text) continue;
+      parts.push(`<div class="thinking">${escapeHtml(text)}</div>`);
+      continue;
     }
-    case "tool_call": {
-      const args =
-        message.args !== undefined
-          ? `\nargs: ${safeJson(message.args)}`
-          : "";
-      const result =
-        message.result !== undefined
-          ? `\nresult: ${safeJson(message.result)}`
-          : "";
-      return `<div class="tool"><div class="label">tool · ${escapeHtml(message.name)} · ${escapeHtml(message.status)}</div><pre>${escapeHtml(`${args}${result}`.trim() || "(no payload)")}</pre></div>`;
+    if (message.type === "assistant") {
+      const text = stripMoveFences(message.text);
+      if (!text) continue;
+      sawSpeech = true;
+      parts.push(`<p class="assistant">${escapeHtml(text)}</p>`);
+      continue;
     }
+    parts.push(renderTool(message));
   }
+
+  if (!sawSpeech && turn.move) {
+    parts.push(
+      `<p class="speech-empty">${escapeHtml(speechPlaceholder(turn.move))}</p>`,
+    );
+  }
+
+  if (parts.length === 0) {
+    return `<p class="assistant">(no messages)</p>`;
+  }
+  return parts.join("\n");
+}
+
+function speechPlaceholder(move: Move): string {
+  switch (move.type) {
+    case "commit":
+      return "(committed secret via structured move)";
+    case "shared_fact":
+      return "(issued shared fact via structured move)";
+    case "guess":
+      return "(submitted guess via structured move)";
+    case "give_up":
+      return "(gave up via structured move)";
+    case "meta":
+      return "(submitted meta move)";
+  }
+}
+
+function renderTool(
+  message: Extract<TraceMessage, { type: "tool_call" }>,
+): string {
+  const args =
+    message.args !== undefined ? `\nargs: ${safeJson(message.args)}` : "";
+  const result =
+    message.result !== undefined
+      ? `\nresult: ${safeJson(message.result)}`
+      : "";
+  return `<div class="tool"><div class="label">tool · ${escapeHtml(message.name)} · ${escapeHtml(message.status)}</div><pre>${escapeHtml(`${args}${result}`.trim() || "(no payload)")}</pre></div>`;
 }
 
 function renderMoveBadge(move: Move): string {
@@ -351,10 +448,12 @@ function outcomeClass(kind: OutcomeKind): string {
   }
 }
 
-/** Hide the trailing protocol JSON fence from the visible assistant prose. */
+/** @deprecated Prefer stripMoveFences — kept for older imports/tests. */
 export function stripTrailingMoveFence(text: string): string {
-  return text.replace(/\n*```(?:json)?\s*[\s\S]*?```\s*$/i, "").trimEnd();
+  return stripMoveFences(text);
 }
+
+export { assistantSpeech, stripMoveFences };
 
 export function escapeHtml(value: string): string {
   return value

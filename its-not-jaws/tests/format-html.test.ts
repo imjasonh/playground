@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   escapeHtml,
   formatGameHtml,
+  stripMoveFences,
   stripTrailingMoveFence,
 } from "../src/format-html.js";
 import type { GameRecord } from "../src/types.js";
@@ -24,6 +25,16 @@ function sampleRecord(): GameRecord {
       reason: "Guesser matched the knower's movie",
       detail: "Inception",
     },
+    clueLeaks: [
+      {
+        turnIndex: 2,
+        excerpt: "dream within a dream",
+        channel: "thinking",
+        isTitleLeak: false,
+        helpful: true,
+        evidence: "guesser echoed leaked token before/on the correct guess",
+      },
+    ],
     usage: {
       knower: {
         role: "knower",
@@ -64,10 +75,15 @@ function sampleRecord(): GameRecord {
         move: { type: "guess", value: "Titanic" },
         public: {
           messages: [
-            { type: "thinking", text: "Cold open." },
+            { type: "thinking", text: "Cold" },
+            { type: "thinking", text: " open." },
             {
               type: "assistant",
-              text: 'Is it Titanic?\n```json\n{"type":"guess","value":"Titanic"}\n```',
+              text: "Is it Titan",
+            },
+            {
+              type: "assistant",
+              text: 'ic?\n```json\n{"type":"guess","value":"Titanic"}\n```',
             },
           ],
         },
@@ -82,7 +98,8 @@ function sampleRecord(): GameRecord {
         move: { type: "shared_fact", text: "features Leonardo DiCaprio" },
         public: {
           messages: [
-            { type: "thinking", text: "Stay vague." },
+            { type: "thinking", text: "Stay" },
+            { type: "thinking", text: " vague about a dream within a dream." },
             {
               type: "tool_call",
               name: "scratchpad",
@@ -101,11 +118,14 @@ function sampleRecord(): GameRecord {
 }
 
 describe("formatGameHtml", () => {
-  it("renders a chat transcript with thinking styled and roles separated", () => {
+  it("coalesces stream segments and hides move JSON from speech", () => {
     const html = formatGameHtml(sampleRecord());
     assert.match(html, /<!DOCTYPE html>/);
     assert.match(html, /class="thinking"/);
-    assert.match(html, /I will pick Inception/);
+    // Coalesced thinking: one block per turn that thought (setup + guesser + knower play).
+    assert.equal((html.match(/class="thinking"/g) ?? []).length, 3);
+    assert.match(html, /Cold open\./);
+    assert.match(html, /Stay vague about a dream within a dream\./);
     assert.match(html, /class="turn knower"/);
     assert.match(html, /class="turn guesser"/);
     assert.match(html, /private setup/);
@@ -113,30 +133,40 @@ describe("formatGameHtml", () => {
     assert.match(html, /guess · Titanic/);
     assert.match(html, /shared fact · features Leonardo DiCaprio/);
     assert.match(html, /tool · scratchpad/);
-    // Protocol fence stripped from visible assistant prose.
     assert.match(html, /Is it Titanic\?/);
-    assert.doesNotMatch(
-      html,
-      /class="assistant">[\s\S]*\{"type":"guess"/,
-    );
+    assert.match(html, /Helpful non-title clue leaks/);
+    assert.match(html, /dream within a dream/);
+    // Protocol JSON must not appear as assistant speech.
+    assert.doesNotMatch(html, /class="assistant">[\s\S]*\{"type":"guess"/);
+    assert.doesNotMatch(html, /class="assistant">[\s\S]*```json/);
+    // Setup with JSON-only assistant shows a placeholder, not raw fence.
+    assert.match(html, /committed secret via structured move/);
   });
 
   it("escapes HTML in agent text", () => {
-    assert.equal(escapeHtml('<script>alert("x")</script>'),
-      "&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;");
+    assert.equal(
+      escapeHtml('<script>alert("x")</script>'),
+      "&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;",
+    );
     const record = sampleRecord();
-    record.turns[1]!.public.messages[1] = {
-      type: "assistant",
-      text: 'Watch <b>out</b>\n```json\n{"type":"guess","value":"X"}\n```',
-    };
+    record.turns[1]!.public.messages = [
+      {
+        type: "assistant",
+        text: 'Watch <b>out</b>\n```json\n{"type":"guess","value":"X"}\n```',
+      },
+    ];
     const html = formatGameHtml(record);
     assert.match(html, /Watch &lt;b&gt;out&lt;\/b&gt;/);
     assert.doesNotMatch(html, /Watch <b>out<\/b>/);
   });
 });
 
-describe("stripTrailingMoveFence", () => {
-  it("removes a trailing json fence", () => {
+describe("stripMoveFences", () => {
+  it("removes fenced and trailing move JSON", () => {
+    assert.equal(
+      stripMoveFences('Hello\n```json\n{"type":"guess","value":"X"}\n```'),
+      "Hello",
+    );
     assert.equal(
       stripTrailingMoveFence('Hello\n```json\n{"type":"guess","value":"X"}\n```'),
       "Hello",

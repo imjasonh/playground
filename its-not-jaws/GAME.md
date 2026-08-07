@@ -59,5 +59,8 @@ only succeeds because A spilled the title in thinking still records
 
 - **Does:** parse A's private commit for ground truth; forward full gameplay
   traces to the opponent; score exact title matches; classify give-up as
-  knower-win vs unguessable via a fairness heuristic (later: richer judge).
+  knower-win vs unguessable via a fairness heuristic (later: richer judge);
+  record **clue leaks** in knower gameplay thinking/speech and mark which
+  non-title leaks appear to have helped B guess (`clueLeaks` /
+  `helpfulClueLeaks` on the result).
 - **Does not:** pick the movie for A; sample from a hardcoded title list.

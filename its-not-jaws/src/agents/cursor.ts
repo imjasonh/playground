@@ -7,6 +7,7 @@ import type {
 } from "./types.js";
 import type { TokenUsage, TraceMessage } from "../types.js";
 import { assistantTextFromChannel } from "../protocol.js";
+import { coalesceTraceMessages } from "../trace.js";
 
 type SdkModule = typeof import("@cursor/sdk");
 
@@ -70,17 +71,20 @@ export const createCursorAgent: AgentFactory = async (options) => {
       }
 
       const result = await run.wait();
-      const channel = { messages };
-      let rawText = assistantTextFromChannel(channel);
+      let coalesced = coalesceTraceMessages(messages);
+      let rawText = assistantTextFromChannel({ messages: coalesced });
       if (!rawText) {
         rawText = String(result.result ?? "");
         if (rawText) {
-          messages.push({ type: "assistant", text: rawText });
+          coalesced = coalesceTraceMessages([
+            ...coalesced,
+            { type: "assistant", text: rawText },
+          ]);
         }
       }
 
       return {
-        public: channel,
+        public: { messages: coalesced },
         rawText,
         usage: normalizeUsage(result.usage ?? run.usage),
         durationMs: Math.max(1, Date.now() - started),
