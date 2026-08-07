@@ -164,6 +164,7 @@ jobs:
           path: its-not-jaws/results/matrix-artifacts
           pattern: matchup-*-${{ github.run_id }}
           merge-multiple: true
+          if-no-match-behavior: warn
 
       - name: Summarize matrix
         id: summary
