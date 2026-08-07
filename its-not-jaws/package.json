@@ -12,6 +12,7 @@
     "test": "tsx --test tests/**/*.test.ts",
     "play": "tsx src/cli.ts",
     "play:mock": "tsx src/cli.ts --backend mock",
+    "format": "tsx src/format-cli.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

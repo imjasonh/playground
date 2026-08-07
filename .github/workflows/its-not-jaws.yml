@@ -97,5 +97,5 @@ jobs:
             echo "$SUMMARY_JSON"
             echo '```'
             echo
-            echo "Full turn transcripts are in the workflow artifact."
+            echo "Full JSON + HTML chat transcripts are in the workflow artifact (\`*.html\`)."
           } >> "$GITHUB_STEP_SUMMARY"

@@ -4,6 +4,7 @@ import path from "node:path";
 import { createCursorAgent } from "./agents/cursor.js";
 import { createMockAgent } from "./agents/mock.js";
 import type { AgentFactory, MockScript, PlayerAgent } from "./agents/types.js";
+import { formatGameHtml } from "./format-html.js";
 import { getGame } from "./games/its-not-jaws.js";
 import { judge } from "./judge.js";
 import { parseMove } from "./protocol.js";
@@ -201,9 +202,12 @@ export async function runGame(options: RunGameOptions): Promise<GameRecord> {
   if (!options.dryRun) {
     await mkdir(options.resultsDir, { recursive: true });
     const outPath = path.join(options.resultsDir, `${id}.json`);
+    const htmlPath = path.join(options.resultsDir, `${id}.html`);
     await writeFile(outPath, JSON.stringify(record, null, 2), "utf8");
+    await writeFile(htmlPath, formatGameHtml(record), "utf8");
     if (options.verbose) {
       console.error(`Wrote ${outPath}`);
+      console.error(`Wrote ${htmlPath}`);
     }
   }
 

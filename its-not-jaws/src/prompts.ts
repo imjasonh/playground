@@ -10,6 +10,8 @@ export function knowerSystemPrompt(game: GameDefinition): string {
     game.domainHint ? `Domain: ${game.domainHint}` : "",
     ``,
     `Protocol: end each reply with a single fenced JSON move.`,
+    ``,
+    `Reminder: a gameplay leak of the title is scored secret_leaked — you lose that round.`,
   ]
     .filter(Boolean)
     .join("\n");

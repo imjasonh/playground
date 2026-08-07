@@ -42,7 +42,14 @@ npm run play -- --backend cursor \
   --verbose
 ```
 
-Each run prints a JSON summary and writes `results/<id>.json`.
+Each run prints a JSON summary and writes `results/<id>.json` plus a readable
+chat transcript at `results/<id>.html`.
+
+Re-render HTML from an existing record:
+
+```bash
+npm run format -- results/<id>.json
+```
 
 ## Layout
 
