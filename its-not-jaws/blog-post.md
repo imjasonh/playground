@@ -16,10 +16,10 @@ When I got to work, I used the [Cursor SDK](https://cursor.com/docs/sdk/typescri
 
 Some interesting findings:
 
-1.) Composer 2.5 is the most likely model to leak the full title — in 12 games, it directly said the answer 11 times.
-2.) Clue leaks are an endemic problem among Fable, GPT 5.5 and 5.6-Sol. All three leaked clues in 8 of 12 games. Fable never leaked the full title though.
-3.) Grok 4.5 didn’t leak a single clue or title in its 12 matchups! It still lost every game, which might indicate weak movie choices or clues that are too strong.
-4.) All of the models tend to pick the same ~3 movies (Lion King, Truman Show, Shawshank) so these are good guesses if you're ever up against an agent.
+1. Composer 2.5 is the most likely model to leak the full title — in 12 games, it directly said the answer 11 times.
+2. Clue leaks are an endemic problem among Fable, GPT 5.5 and 5.6-Sol. All three leaked clues in 8 of 12 games. Fable never leaked the full title though.
+3. Grok 4.5 didn’t leak a single clue or title in its 12 matchups! It still lost every game, which might indicate weak movie choices or clues that are too strong.
+4. All of the models tend to pick the same ~3 movies (Lion King, Truman Show, Shawshank) so these are good guesses if you're ever up against an agent.
 
 Anyway, I don’t know what this could be useful for, but it was super fun to build! I encourage you to have fun ideas and experiment with them, it’s one of the last things that make us truly human.
 
