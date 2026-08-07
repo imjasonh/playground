@@ -11,7 +11,6 @@ import {
 import type { PublicChannel } from "../src/types.js";
 
 const sampleChannel: PublicChannel = {
-  role: "knower",
   messages: [{ type: "thinking", text: "Keep this vague." }],
 };
 
