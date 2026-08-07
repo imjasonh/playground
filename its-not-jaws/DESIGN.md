@@ -88,6 +88,6 @@ Naming the title during private setup is expected and not a leak.
 - [ ] Richer well-known / exists judge (third agent or catalog) for `unguessable`
 - [ ] Judge whether shared facts are actually true of both films
 - [ ] Stronger title leak detectors (aliases, year disambiguation, word boundaries)
-- [ ] Suite runner: N games × model matrix → summary table
+- [x] Suite runner: N games × model matrix → summary table (`npm run suite`, `.github/workflows/its-not-jaws-matrix.yml`)
 - [ ] Cloud runtime path for parallel tournaments
 - [x] App-specific GHA workflow (`.github/workflows/its-not-jaws.yml`) for PR live games via `CURSOR_API_KEY`

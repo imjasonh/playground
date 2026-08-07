@@ -1,0 +1,192 @@
+# Manual-only: play a full knower×guesser model matrix for It's Not Jaws.
+#
+# Costly — N games × |models|² Cursor API calls. Do not run on push/PR.
+# Requires repo secret CURSOR_API_KEY.
+
+name: It's Not Jaws Matrix
+
+on:
+  workflow_dispatch:
+    inputs:
+      games_per_matchup:
+        description: Games to play for each knower×guesser matchup
+        type: number
+        default: 2
+      max_turns:
+        description: Max guesser turns per game
+        type: number
+        default: 8
+      models:
+        description: Comma-separated Cursor model ids (knower and guesser pool)
+        type: string
+        default: claude-opus-4-8,claude-fable-5,gpt-5.5,gpt-5.6-sol,composer-2.5,grok-4.5
+      include_self_play:
+        description: Include same-model knower vs guesser matchups
+        type: boolean
+        default: true
+      max_parallel:
+        description: Max concurrent matchup jobs
+        type: number
+        default: 4
+
+concurrency:
+  group: its-not-jaws-matrix
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      matchups: ${{ steps.gen.outputs.matchups }}
+      count: ${{ steps.gen.outputs.count }}
+      models: ${{ steps.gen.outputs.models }}
+    defaults:
+      run:
+        working-directory: its-not-jaws
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: its-not-jaws/package-lock.json
+
+      - name: Require CURSOR_API_KEY
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+        run: |
+          if [ -z "$CURSOR_API_KEY" ]; then
+            echo "::error title=CURSOR_API_KEY missing::Repo secret CURSOR_API_KEY is not set."
+            exit 1
+          fi
+
+      - name: Install
+        run: npm ci
+
+      - name: Unit tests (suite + harness)
+        run: npm test
+
+      - name: Emit matchup matrix
+        id: gen
+        env:
+          MODELS: ${{ inputs.models }}
+          INCLUDE_SELF_PLAY: ${{ inputs.include_self_play }}
+        run: |
+          set -euo pipefail
+          ARGS=(emit-matchups --models "$MODELS" --github-output)
+          if [ "$INCLUDE_SELF_PLAY" != "true" ]; then
+            ARGS+=(--no-self-play)
+          fi
+          npx tsx src/suite-cli.ts "${ARGS[@]}"
+
+  play:
+    needs: prepare
+    if: ${{ needs.prepare.outputs.count != '0' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ fromJSON(inputs.max_parallel) }}
+      matrix:
+        include: ${{ fromJSON(needs.prepare.outputs.matchups) }}
+    defaults:
+      run:
+        working-directory: its-not-jaws
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: its-not-jaws/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Play matchup
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          KNOWER: ${{ matrix.knower }}
+          GUESSER: ${{ matrix.guesser }}
+          GAMES: ${{ inputs.games_per_matchup }}
+          MAX_TURNS: ${{ inputs.max_turns }}
+        run: |
+          set -euo pipefail
+          mkdir -p results/matrix
+          echo "Matchup: knower=$KNOWER vs guesser=$GUESSER × $GAMES games"
+          npx tsx src/suite-cli.ts play-matchup \
+            --backend cursor \
+            --knower-model "$KNOWER" \
+            --guesser-model "$GUESSER" \
+            --games "$GAMES" \
+            --max-turns "$MAX_TURNS" \
+            --results-dir results/matrix \
+            --verbose
+
+      - name: Upload matchup results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: matchup-${{ matrix.name }}-${{ github.run_id }}
+          path: its-not-jaws/results/matrix/
+          if-no-files-found: warn
+          retention-days: 14
+
+  summarize:
+    needs: [prepare, play]
+    if: ${{ always() && needs.prepare.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: its-not-jaws
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: its-not-jaws/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Download all matchup artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: its-not-jaws/results/matrix-artifacts
+          pattern: matchup-*-${{ github.run_id }}
+          merge-multiple: true
+
+      - name: Summarize matrix
+        id: summary
+        env:
+          GAMES: ${{ inputs.games_per_matchup }}
+        run: |
+          set -euo pipefail
+          mkdir -p results/matrix
+          # Artifacts may unpack into nested dirs; summarize scans recursively.
+          npx tsx src/suite-cli.ts summarize \
+            --results-dir results/matrix-artifacts \
+            --out-dir results/matrix \
+            --games-per-matchup "$GAMES" \
+            | tee results/matrix/suite-summary.md
+          cp results/matrix/suite-summary.md "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload suite summary
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: its-not-jaws-matrix-summary-${{ github.run_id }}
+          path: |
+            its-not-jaws/results/matrix/suite-summary.md
+            its-not-jaws/results/matrix/suite-summary.json
+          if-no-files-found: warn
+          retention-days: 30

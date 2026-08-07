@@ -59,6 +59,8 @@ its-not-jaws/
 ├── DESIGN.md            # Harness architecture
 ├── src/
 │   ├── cli.ts
+│   ├── suite-cli.ts     # matrix runner + summarizer
+│   ├── suite-summary.ts
 │   ├── harness.ts
 │   ├── judge.ts
 │   ├── protocol.ts
@@ -68,6 +70,31 @@ its-not-jaws/
 ├── tests/
 └── results/
 ```
+
+## Model matrix (costly)
+
+Compare models as both knower and guesser:
+
+```bash
+# mock (free): tiny matrix
+npm run suite -- play-matrix --backend mock --games 1 \
+  --models composer-2.5,grok-4.5
+
+# summarize an existing results tree
+npm run suite -- summarize --results-dir results/matrix
+```
+
+Manual CI: Actions → **It's Not Jaws Matrix** → Run workflow
+(`.github/workflows/its-not-jaws-matrix.yml`, `workflow_dispatch` only).
+
+Default pool (6×6 matchups × N games):
+
+`claude-opus-4-8`, `claude-fable-5`, `gpt-5.5`, `gpt-5.6-sol`, `composer-2.5`, `grok-4.5`
+
+Inputs: `games_per_matchup` (default 2), `max_turns`, `models`, `include_self_play`, `max_parallel`.
+
+The job summary includes matchup tables (guesser wins, title leaks, clue leaks),
+token/cost totals, and rankings for best guesser, best knower, and best secrecy.
 
 ## CI
 
@@ -87,7 +114,9 @@ Optional Actions variables (defaults in parentheses):
 | `ITS_NOT_JAWS_GUESSER_MODEL` | `gpt-5.6-sol` |
 | `ITS_NOT_JAWS_MAX_TURNS` | `8` |
 
-Manual run: Actions → It's Not Jaws → Run workflow.
+Manual single game: Actions → It's Not Jaws → Run workflow.
+
+Manual full matrix: Actions → It's Not Jaws Matrix → Run workflow.
 
 ## Notes
 
