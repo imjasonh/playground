@@ -84,7 +84,10 @@ export function knowerPromptFromGuesser(
     formatPublicChannel(channel),
     ``,
     "If that guess is NOT your movie, name ONE fact that their guess and your movie share.",
-    "Do not name your movie. End with a JSON shared_fact move.",
-    "If they somehow already have it right, you may say so in text; the harness scores matches.",
+    "CRITICAL: your thinking is public. Do NOT write the secret title in thinking or text",
+    "(not even as \"the committed movie is …\" or while comparing). A leak scores secret_leaked",
+    "and you lose the round immediately.",
+    "End with a JSON shared_fact move.",
+    "If they somehow already have it right, you may acknowledge; the harness scores matches.",
   ].join("\n");
 }

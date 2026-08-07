@@ -41,6 +41,9 @@ only succeeds because A spilled the title in thinking still records
 ## What A must not do
 
 - Name (or clearly spell) the secret movie in any **gameplay** message or thinking.
+  A leak is scored `secret_leaked`: it **invalidates the round as a knower failure**
+  even if B had not guessed yet. Thinking is public — “the committed movie is …”
+  still counts.
 - Pick an obscure, private, or nonexistent title and expect a knower win on give-up.
 - Give facts that are not actually shared by the guess and the secret (fairness;
   may later be judged by a third agent).
