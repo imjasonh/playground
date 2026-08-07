@@ -96,6 +96,9 @@ struct RideMonitorView: View {
             if !monitor.isRunning {
                 RideLiveActivityController.shared.endOrphansIfNeeded()
             }
+            // Ask for Health before the first ride so Watch frontmost launch
+            // (`startWatchApp`) is not the first time the sheet appears.
+            RideWatchPhoneSession.shared.requestHealthAccessIfNeeded()
         }
         // Leaving the experiment destroys `@StateObject` RideMonitor. Stop+save
         // first so we don't silently drop the ride or leave Live Activity / Watch

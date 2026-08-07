@@ -5,8 +5,8 @@ import ActivityKit
 /// Fixed `startedAt` lets the Live Activity UI drive a ticking timer without
 /// a content update every second; mutable state carries distance, avg/max
 /// speed, and the elevation/speed sparkline. After the ride ends, `isRiding`
-/// flips false so the UI can freeze on `elapsedSeconds` instead of keeping
-/// the timer alive.
+/// flips false and the UI uses a closed timer interval on `elapsedSeconds`
+/// so the ~30 minute summary cannot keep counting.
 struct RideMonitorAttributes: ActivityAttributes {
     /// Live values refreshed while the ride is in progress.
     struct ContentState: Codable, Hashable {

@@ -121,6 +121,15 @@ final class RideWatchPhoneSession: NSObject, ObservableObject {
         }
     }
 
+    /// Prompt for Health access when the user opens Ride Monitor — before a
+    /// ride starts — so `startWatchApp` is not the first time they see the
+    /// system sheet. Safe to call repeatedly; the system sheet appears at most
+    /// once unless status is still not determined.
+    func requestHealthAccessIfNeeded() {
+        guard HKHealthStore.isHealthDataAvailable() else { return }
+        Task { await ensureHealthAuthorization() }
+    }
+
     /// Ask watchOS to bring Ride Monitor to the front as a cycling workout so
     /// the user doesn't have to open it manually mid-ride. HealthKit is
     /// required for that frontmost session (any workout type works; cycling
@@ -152,6 +161,10 @@ final class RideWatchPhoneSession: NSObject, ObservableObject {
     private func ensureHealthAuthorization() async {
         let workout = HKObjectType.workoutType()
         if healthStore.authorizationStatus(for: workout) == .sharingAuthorized {
+            return
+        }
+        // Denied: the system will not show the sheet again; skip the no-op call.
+        if healthStore.authorizationStatus(for: workout) == .sharingDenied {
             return
         }
         guard !didRequestHealthAuthorization else { return }

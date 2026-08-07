@@ -111,8 +111,8 @@ struct RideLiveActivityLockScreenView: View {
     }
 }
 
-/// Live ticking timer while riding; frozen duration once the ride ends so the
-/// dismissed Live Activity doesn't keep counting past stop.
+/// Live ticking timer while riding; closed interval once the ride ends so the
+/// ~30 minute summary Live Activity cannot keep counting past stop.
 struct RideLiveDurationText: View {
     var startedAt: Date
     var state: RideMonitorAttributes.ContentState
@@ -121,7 +121,16 @@ struct RideLiveDurationText: View {
         if state.isRiding {
             Text(timerInterval: startedAt...Date.distantFuture, countsDown: false)
         } else {
-            Text(state.formattedDuration)
+            // Prefer a closed Date interval over a plain string: ActivityKit's
+            // open-ended timer view can keep ticking if `isRiding` fails to
+            // flip, and a closed past…past interval renders a fixed duration.
+            Text(
+                timerInterval: RideLiveActivityPolicy.endedTimerInterval(
+                    startedAt: startedAt,
+                    elapsedSeconds: state.elapsedSeconds
+                ),
+                countsDown: false
+            )
         }
     }
 }

@@ -34,7 +34,14 @@ struct RideMonitorWatchView: View {
         .onChange(of: scenePhase) { phase in
             if phase == .active {
                 workout.reassertIfNeeded()
+                // Re-check when returning from Health settings (no-ops mid-ride).
+                workout.prepareHealthAccessIfNeeded()
             }
+        }
+        .onAppear {
+            // Ask for Health on first open of the companion — not only when a
+            // phone ride tries to start a workout session.
+            workout.prepareHealthAccessIfNeeded()
         }
     }
 
@@ -79,6 +86,15 @@ struct RideMonitorWatchView: View {
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+            if let message = workout.lastErrorMessage {
+                Text(message)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.orange)
+                    .lineLimit(3)
+                    .minimumScaleFactor(0.7)
+                    .multilineTextAlignment(.center)
+                    .padding(.top, 2)
+            }
         }
         .accessibilityIdentifier("watchIdle")
     }
