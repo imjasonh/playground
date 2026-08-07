@@ -58,12 +58,14 @@ jobs:
         id: play
         env:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
-          KNOWER_MODEL: ${{ vars.ITS_NOT_JAWS_KNOWER_MODEL || 'composer-2.5' }}
-          GUESSER_MODEL: ${{ vars.ITS_NOT_JAWS_GUESSER_MODEL || 'composer-2.5' }}
+          # Defaults: Fable (knower) vs ChatGPT Sol (guesser). Override via repo vars.
+          KNOWER_MODEL: ${{ vars.ITS_NOT_JAWS_KNOWER_MODEL || 'claude-fable-5' }}
+          GUESSER_MODEL: ${{ vars.ITS_NOT_JAWS_GUESSER_MODEL || 'gpt-5.6-sol' }}
           MAX_TURNS: ${{ vars.ITS_NOT_JAWS_MAX_TURNS || '8' }}
         run: |
           set -euo pipefail
           mkdir -p results
+          echo "Matchup: knower=$KNOWER_MODEL vs guesser=$GUESSER_MODEL (max_turns=$MAX_TURNS)"
           npm run play -- \
             --backend cursor \
             --knower-model "$KNOWER_MODEL" \
@@ -92,6 +94,8 @@ jobs:
         run: |
           {
             echo "## It's Not Jaws — live game"
+            echo
+            echo "Matchup: **knower** \`${{ env.KNOWER_MODEL || 'claude-fable-5' }}\` vs **guesser** \`${{ env.GUESSER_MODEL || 'gpt-5.6-sol' }}\`"
             echo
             echo '```json'
             echo "$SUMMARY_JSON"

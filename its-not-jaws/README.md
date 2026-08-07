@@ -83,8 +83,8 @@ Optional Actions variables (defaults in parentheses):
 
 | Variable | Default |
 |----------|---------|
-| `ITS_NOT_JAWS_KNOWER_MODEL` | `composer-2.5` |
-| `ITS_NOT_JAWS_GUESSER_MODEL` | `composer-2.5` |
+| `ITS_NOT_JAWS_KNOWER_MODEL` | `claude-fable-5` |
+| `ITS_NOT_JAWS_GUESSER_MODEL` | `gpt-5.6-sol` |
 | `ITS_NOT_JAWS_MAX_TURNS` | `8` |
 
 Manual run: Actions → It's Not Jaws → Run workflow.
