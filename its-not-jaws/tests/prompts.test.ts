@@ -32,17 +32,23 @@ describe("prompt hardening for thinking leaks", () => {
     assert.match(opening, /usedLeakedClues/);
   });
 
-  it("tells the knower to obscure thinking and avoid helpful clue leaks", () => {
+  it("tells the knower to keep thinking content-free and avoid brainstorming facts", () => {
     const system = knowerSystemPrompt(itsNotJawsGame);
     const turn = knowerPromptFromGuesser(sampleChannel, "Titanic", 1);
 
     for (const text of [itsNotJawsGame.knowerBrief, system, turn]) {
       assert.match(text, /thinking/i);
-      assert.match(text, /obscur/i);
     }
-    assert.match(itsNotJawsGame.knowerBrief, /OBSCURE YOUR THINKING/i);
-    assert.match(system, /do not leak cast, year, studio/i);
-    assert.match(turn, /only useful new information/i);
+    assert.match(itsNotJawsGame.knowerBrief, /HOSTILE PUBLIC CHANNEL/i);
+    assert.match(itsNotJawsGame.knowerBrief, /NEVER brainstorm candidate shared facts/i);
+    assert.match(
+      itsNotJawsGame.knowerBrief,
+      /Guess is wrong\. Choosing one shared fact\. Emitting JSON\./,
+    );
+    assert.match(system, /Brainstorming multiple candidate facts/i);
+    assert.match(turn, /THINKING DISCIPLINE/i);
+    assert.match(turn, /BAD \(leaks three clues/i);
+    assert.match(turn, /GOOD \(content-free\)/i);
     assert.match(turn, /shared_fact/i);
   });
 });

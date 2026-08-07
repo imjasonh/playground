@@ -11,10 +11,11 @@ export function knowerSystemPrompt(game: GameDefinition): string {
     ``,
     `Protocol: end each reply with a single fenced JSON move.`,
     ``,
-    `Reminders:`,
-    `- A gameplay leak of the title is scored secret_leaked — you lose that round.`,
-    `- Your thinking is public. Obscure it: do not leak cast, year, studio, plot,`,
-    `  franchise, or elimination clues beyond the single official shared_fact.`,
+    `HARD RULES (violations lose or hand the game to B):`,
+    `- Naming the title in gameplay thinking/text → secret_leaked (instant loss).`,
+    `- Brainstorming multiple candidate facts in <thinking> → each one is a free clue.`,
+    `- Safe thinking is nearly empty: "Guess is wrong. Choosing one shared fact. Emitting JSON."`,
+    `- The ONLY new information B should learn each turn is the shared_fact JSON field.`,
   ]
     .filter(Boolean)
     .join("\n");
@@ -44,6 +45,9 @@ export function knowerSetupPrompt(): string {
     "Pick a real, fairly well-known movie title, then reply with ONLY a commit move:",
     '```json\n{"type":"commit","secret":"Movie Title"}\n```',
     "Do not give shared facts yet. The guesser moves first after setup.",
+    "",
+    "After this turn, your thinking becomes public. Plan to keep gameplay thinking",
+    "nearly empty — never brainstorm candidate shared facts aloud.",
   ].join("\n");
 }
 
@@ -118,15 +122,20 @@ export function knowerPromptFromGuesser(
     ``,
     formatPublicChannel(channel),
     ``,
-    "If that guess is NOT your movie, name ONE fact that their guess and your movie share.",
-    "CRITICAL: your thinking is public to the guesser — they are told to mine it for clues.",
-    "- Do NOT write the secret title (secret_leaked = you lose immediately).",
-    "- Obscure your thinking: do not narrate narrowing hints (cast, year, studio,",
-    "  director, franchise, plot beats, eliminations, \"mine is the …\" paraphrases).",
-    "- Prefer opaque labels (\"film X\") and keep reasoning vague.",
-    "- The only useful new information for the guesser should be the single",
-    "  official shared_fact JSON move — nothing extra in thinking or prose.",
-    "End with a JSON shared_fact move.",
-    "If they somehow already have it right, you may acknowledge; the harness scores matches.",
+    "If that guess is NOT film X, emit ONE atomic shared_fact true of both films.",
+    "",
+    "THINKING DISCIPLINE (your <thinking> is shown to B, who mines it):",
+    "- Do NOT list or weigh candidate facts in thinking. Pick silently; emit one JSON fact.",
+    "- BAD (leaks three clues while choosing one):",
+    '    "both are 1990s comedy-dramas with trapped male leads; I could say comedy,',
+    '     or 1990s, or trapped-protagonist…"',
+    "- GOOD (content-free):",
+    '    "Guess is wrong. Choosing one shared fact. Emitting JSON."',
+    "- Do NOT name the secret title. Refer only to \"film X\".",
+    "- Do NOT add cast/year/studio/plot/franchise color beyond the JSON fact.",
+    "- Assistant prose must not expand on the fact.",
+    "",
+    'End with: ```json\n{"type":"shared_fact","text":"..."}\n```',
+    "If they already have it right, you may acknowledge; the harness scores matches.",
   ].join("\n");
 }
