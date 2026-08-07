@@ -570,7 +570,7 @@ auto-discover them. Run their local tests when you change them.
 
 | Directory | Type | Tests |
 |-----------|------|-------|
-| `its-not-jaws/` | Cursor SDK harness: knower picks a secret, guesser sees full gameplay traces; mock backend for tests, live agents via `CURSOR_API_KEY` | `cd its-not-jaws && npm test` |
+| `its-not-jaws/` | Cursor SDK harness for It's Not Jaws (movie shared-fact guessing); mock backend for tests, live agents via `CURSOR_API_KEY` | `cd its-not-jaws && npm test` |
 | `life-scad/` | OpenSCAD Life sculpture (Z = time) plus optional Python reverse-history search | `python3 life-scad/reverse_life_test.py` (needs `pip install -r life-scad/requirements.txt`) |
 | `life-qr/` | Parametric OpenSCAD Life sculpture with a QR-code roof for any text/height | `python3 life-qr/life_qr_test.py` (optional `pip install segno`) |
 
