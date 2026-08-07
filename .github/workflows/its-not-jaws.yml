@@ -1,8 +1,7 @@
 # App-specific: play one live It's Not Jaws game on PRs that touch the harness.
 #
 # Requires repo secret CURSOR_API_KEY (Cursor user or service-account API key).
-# Until that secret is set, the live step is skipped with a warning so the
-# workflow still goes green. Unit tests always run when this workflow fires.
+# The job fails if that secret is missing.
 #
 # Intentionally not folded into test.yml — this spends Cursor tokens and is
 # gated on an app-specific secret.
@@ -37,6 +36,15 @@ jobs:
           cache: npm
           cache-dependency-path: its-not-jaws/package-lock.json
 
+      - name: Require CURSOR_API_KEY
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+        run: |
+          if [ -z "$CURSOR_API_KEY" ]; then
+            echo "::error title=CURSOR_API_KEY missing::Repo secret CURSOR_API_KEY is not set. Add it under Settings → Secrets and variables → Actions, then re-run this workflow."
+            exit 1
+          fi
+
       - name: Install
         run: npm ci
 
@@ -46,20 +54,7 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Check for CURSOR_API_KEY
-        id: creds
-        env:
-          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
-        run: |
-          if [ -n "$CURSOR_API_KEY" ]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "::warning title=Live game skipped::Repo secret CURSOR_API_KEY is not set. Add it under Settings → Secrets and variables → Actions, then re-run this workflow."
-          fi
-
       - name: Play one live game
-        if: ${{ steps.creds.outputs.present == 'true' }}
         id: play
         env:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
@@ -82,7 +77,7 @@ jobs:
           echo "EOF" >> "$GITHUB_OUTPUT"
 
       - name: Upload game record
-        if: ${{ steps.creds.outputs.present == 'true' && always() }}
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: its-not-jaws-results-${{ github.run_id }}
@@ -91,7 +86,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Job summary
-        if: ${{ steps.creds.outputs.present == 'true' && steps.play.outcome == 'success' }}
+        if: ${{ steps.play.outcome == 'success' }}
         env:
           SUMMARY_JSON: ${{ steps.play.outputs.summary }}
         run: |

@@ -66,11 +66,11 @@ its-not-jaws/
 
 PRs that touch `its-not-jaws/**` run `.github/workflows/its-not-jaws.yml`:
 
-1. `npm test` + typecheck (always)
-2. One live Cursor game when repo secret **`CURSOR_API_KEY`** is set
+1. Require repo secret **`CURSOR_API_KEY`** (job fails if missing)
+2. `npm test` + typecheck
+3. One live Cursor game
 
-Add the secret under **Settings → Secrets and variables → Actions**. Until it
-exists, the live step is skipped with a warning (unit tests still run).
+Add the secret under **Settings → Secrets and variables → Actions**.
 
 Optional Actions variables (defaults in parentheses):
 
