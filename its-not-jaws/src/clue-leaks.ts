@@ -4,163 +4,35 @@ import type { AgentTurn, ClueLeak, Outcome } from "./types.js";
 
 const STOP = new Set(
   [
-    "a",
-    "an",
-    "the",
-    "and",
-    "or",
-    "but",
-    "both",
-    "films",
-    "film",
-    "movie",
-    "movies",
-    "guess",
-    "guessed",
-    "guesser",
-    "knower",
-    "secret",
-    "shared",
-    "fact",
-    "facts",
-    "true",
-    "common",
-    "with",
-    "from",
-    "that",
-    "this",
-    "they",
-    "their",
-    "them",
-    "have",
-    "has",
-    "had",
-    "are",
-    "was",
-    "were",
-    "been",
-    "being",
-    "into",
-    "onto",
-    "about",
-    "after",
-    "before",
-    "between",
-    "because",
-    "while",
-    "where",
-    "which",
-    "when",
-    "what",
-    "who",
-    "whom",
-    "whose",
-    "will",
-    "would",
-    "could",
-    "should",
-    "shall",
-    "may",
-    "might",
-    "must",
-    "can",
-    "not",
-    "no",
-    "yes",
-    "also",
-    "just",
-    "only",
-    "very",
-    "more",
-    "most",
-    "some",
-    "any",
-    "all",
-    "each",
-    "other",
-    "another",
-    "such",
-    "than",
-    "then",
-    "there",
-    "here",
-    "over",
-    "under",
-    "again",
-    "further",
-    "once",
-    "my",
-    "mine",
-    "your",
-    "our",
-    "its",
-    "i",
-    "i'm",
-    "im",
-    "we",
-    "you",
-    "he",
-    "she",
-    "it",
-    "one",
-    "two",
-    "three",
-    "for",
-    "of",
-    "in",
-    "on",
-    "to",
-    "as",
-    "by",
-    "at",
-    "is",
-    "be",
-    "do",
-    "did",
-    "does",
-    "doing",
-    "done",
-    "so",
-    "if",
-    "up",
-    "out",
-    "off",
-    "own",
-    "same",
-    "too",
-    "how",
-    "why",
-    "well",
-    "still",
-    "keep",
-    "opaque",
-    "wording",
-    "details",
-    "thinking",
-    "publish",
-    "published",
-    "official",
-    "match",
-    "point",
-    "coming",
-    "offer",
-    "broad",
-    "genuine",
-    "connection",
-    "looking",
-    "trying",
-    "find",
-    "choose",
-    "choosing",
-    "decided",
-    "decide",
-    "landing",
-    "possibilities",
+    "a","an","the","and","or","but","both","films","film","movie","movies",
+    "guess","guessed","guesser","knower","secret","shared","fact","facts",
+    "true","common","with","from","that","this","they","their","them",
+    "have","has","had","are","was","were","been","being","into","onto",
+    "about","after","before","between","because","while","where","which",
+    "when","what","who","whom","whose","will","would","could","should",
+    "shall","may","might","must","can","not","no","yes","also","just",
+    "only","very","more","most","some","any","all","each","other","another",
+    "such","than","then","there","here","over","under","again","further",
+    "once","my","mine","your","our","its","i","i'm","im","we","you","he",
+    "she","it","one","two","three","for","of","in","on","to","as","by","at",
+    "is","be","do","did","does","doing","done","so","if","up","out","off",
+    "own","same","too","how","why","well","still","keep","opaque","wording",
+    "details","thinking","publish","published","official","match","point",
+    "coming","offer","broad","genuine","connection","looking","trying",
+    "find","choose","choosing","decided","decide","landing","possibilities",
+    "comparing","checking","seems","though","rather","being","another",
+    "american","america","romantic","romance","comedy","drama","musical",
+    "productions","production","stories","story","leads","lead","male",
+    "female","central","features","feature","against","overlap","truthful",
+    "safest","ground","connected","blends","straightforward",
   ].map((w) => w.toLowerCase()),
 );
 
+const MINING_RE =
+  /\b(leaked|leak|mined|mining|their thinking|knower'?s thinking|in the thinking|from the (?:trace|thinking)|thinking (?:block|trace|leak))\b/i;
+
 /**
- * Find non-title (and title) clue material in knower gameplay traces and
+ * Find non-title (and title) clue material in knower gameplay *thinking* and
  * mark which ones appear to have helped the guesser.
  */
 export function findClueLeaks(input: {
@@ -186,18 +58,23 @@ export function findClueLeaks(input: {
   for (const turn of turns) {
     if (turn.role !== "knower" || turn.phase !== "play") continue;
     const messages = coalesceTraceMessages(turn.public.messages);
+
     for (const message of messages) {
+      // Non-title clue analytics focus on thinking. Title leaks are still
+      // checked in assistant/tool text via the judge; optionally record them.
       if (message.type === "tool_call") continue;
-      const text =
+      const raw =
         message.type === "assistant"
           ? stripMoveFences(message.text)
           : message.text;
-      if (!text.trim()) continue;
+      if (!raw.trim()) continue;
 
-      const isTitleLeak = containsSecret(text, secret);
+      const isTitleLeak = containsSecret(raw, secret);
+      if (!isTitleLeak && message.type !== "thinking") continue;
+
       const candidates = isTitleLeak
-        ? [excerptAround(text, secret)]
-        : extractClueCandidates(text, secret, sharedBlob, guessBlob);
+        ? [excerptAround(raw, secret)]
+        : extractClueCandidates(raw, secret, sharedBlob, guessBlob);
 
       for (const excerpt of candidates) {
         const helpful = isHelpfulLeak({
@@ -213,7 +90,7 @@ export function findClueLeaks(input: {
         leaks.push({
           turnIndex: turn.turnIndex,
           excerpt,
-          channel: message.type,
+          channel: message.type === "assistant" ? "assistant" : "thinking",
           isTitleLeak,
           helpful: helpful.helpful,
           evidence: helpful.evidence,
@@ -275,11 +152,12 @@ function isHelpfulLeak(input: {
     )
     .map(guesserVisibleText)
     .join("\n");
+  const laterNorm = normalizeAnswer(laterGuesserText);
 
-  const distinctive = distinctiveTokens(excerpt, secret);
-  const echoed = distinctive.find((tok) =>
-    normalizeAnswer(laterGuesserText).includes(normalizeAnswer(tok)),
+  const distinctive = distinctiveTokens(excerpt, secret).filter(
+    (tok) => !normalizeAnswer(sharedFacts.join("\n")).includes(normalizeAnswer(tok)),
   );
+  const echoed = distinctive.find((tok) => laterNorm.includes(normalizeAnswer(tok)));
   if (echoed) {
     return {
       helpful: true,
@@ -287,10 +165,7 @@ function isHelpfulLeak(input: {
     };
   }
 
-  if (
-    /\b(leak|leaked|thinking|trace|mined|clue)\b/i.test(laterGuesserText) &&
-    !isTitleLeak
-  ) {
+  if (!isTitleLeak && MINING_RE.test(laterGuesserText)) {
     return {
       helpful: true,
       evidence:
@@ -298,16 +173,7 @@ function isHelpfulLeak(input: {
     };
   }
 
-  // High-signal leak on the knower turn immediately before a correct guess.
-  const immediate =
-    winningGuessIndex != null &&
-    turns.some(
-      (t) =>
-        t.role === "knower" &&
-        t.phase === "play" &&
-        t.turnIndex === leakTurnIndex &&
-        t.turnIndex === winningGuessIndex - 1,
-    );
+  const immediate = leakTurnIndex === winningGuessIndex - 1;
   const gotCorrect =
     outcome.kind === "guesser_correct" ||
     (outcome.kind === "secret_leaked" && winningGuessIndex != null);
@@ -356,66 +222,61 @@ function extractClueCandidates(
   const sentences = text
     .split(/(?<=[.!?])\s+|\n+/)
     .map((s) => s.trim())
-    .filter((s) => s.length >= 12);
+    .filter((s) => s.length >= 20);
 
   for (const sentence of sentences) {
     if (containsSecret(sentence, secret)) continue;
     if (mostlyCoveredBySharedFacts(sentence, sharedBlob)) continue;
 
-    // Prefer multi-word proper nouns / place names (e.g. "Seahaven").
-    const proper = sentence.match(
-      /\b(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+|[A-Z][a-z]{5,})\b/g,
-    );
-    if (proper) {
-      for (const p of proper) {
-        const norm = normalizeAnswer(p);
-        if (normalizeAnswer(secret).includes(norm)) continue;
-        if (sharedBlob.includes(norm)) continue;
-        if (guessBlob.includes(norm)) continue; // restating the guess isn't a leak
-        if (STOP.has(p.toLowerCase())) continue;
-        if (isWeakProperNoun(p)) continue;
-        out.push(p);
-      }
+    // Multi-word proper nouns first; then uncommon single capitalized tokens
+    // that are not fragments of those multi-word names.
+    const multi = sentence.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b/g) ?? [];
+    const multiBlob = normalizeAnswer(multi.join("\n"));
+    const proper = [...multi, ...findUncommonProperNouns(sentence)];
+    for (const p of proper) {
+      const norm = normalizeAnswer(p);
+      if (normalizeAnswer(secret).includes(norm)) continue;
+      if (sharedBlob.includes(norm)) continue;
+      if (guessBlob.includes(norm)) continue;
+      if (STOP.has(p.toLowerCase())) continue;
+      // Drop "United" / "States" when "United States" was already captured.
+      if (!norm.includes(" ") && multiBlob.includes(norm)) continue;
+      out.push(p);
     }
 
-    // Keep a short distinctive sentence/clause when it carries plot specifics.
+    const toks = distinctiveTokens(sentence, secret).filter(
+      (t) => !sharedBlob.includes(normalizeAnswer(t)) && !guessBlob.includes(normalizeAnswer(t)),
+    );
     if (
-      sentence.length <= 160 &&
-      !/^(i['’]?m|i am|not a match|both (films|movies))/i.test(sentence) &&
-      distinctiveTokens(sentence, secret).length >= 3 &&
-      !mostlyCoveredBySharedFacts(sentence, guessBlob)
+      toks.length >= 3 &&
+      sentence.length <= 180 &&
+      !/^(i['’]?m|i am|not a match|both (films|movies)|comparing|checking)/i.test(
+        sentence,
+      )
     ) {
       out.push(clip(sentence, 140));
     }
   }
 
-  return [...new Set(out)].slice(0, 6);
+  return [...new Set(out)].slice(0, 5);
 }
 
-function isWeakProperNoun(value: string): boolean {
-  const weak = new Set([
-    "american",
-    "america",
-    "english",
-    "british",
-    "french",
-    "german",
-    "italian",
-    "spanish",
-    "european",
-    "hollywood",
-    "hollywood",
-    "hollywood",
-    "best",
-    "picture",
-    "academy",
-    "oscar",
-    "oscars",
-    "golden",
-    "globe",
-    "globes",
-  ]);
-  return weak.has(value.toLowerCase());
+/** Single capitalized tokens that look like names/places, not sentence starts. */
+function findUncommonProperNouns(sentence: string): string[] {
+  const out: string[] = [];
+  const re = /\b([A-Z][a-z]{4,})\b/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(sentence))) {
+    const word = match[1]!;
+    const idx = match.index;
+    // Skip likely sentence-initial words.
+    if (idx === 0 || /[.!?]\s*$/.test(sentence.slice(Math.max(0, idx - 2), idx))) {
+      continue;
+    }
+    if (STOP.has(word.toLowerCase())) continue;
+    out.push(word);
+  }
+  return out;
 }
 
 function mostlyCoveredBySharedFacts(
@@ -432,22 +293,29 @@ function mostlyCoveredBySharedFacts(
 function isHighSignalExcerpt(excerpt: string, sharedFacts: string[]): boolean {
   const sharedBlob = normalizeAnswer(sharedFacts.join("\n"));
   if (mostlyCoveredBySharedFacts(excerpt, sharedBlob)) return false;
-  // Proper noun or a fairly specific multi-word phrase.
-  if (/\b[A-Z][a-z]{3,}\b/.test(excerpt) && excerpt !== excerpt.toLowerCase()) {
+  // Multi-word proper noun / place (e.g. "United States") or a standalone
+  // uncommon capitalized token we already extracted (e.g. "Seahaven").
+  if (/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b/.test(excerpt)) return true;
+  if (/^[A-Z][a-z]{4,}$/.test(excerpt.trim()) && !STOP.has(excerpt.toLowerCase())) {
     return true;
   }
-  return distinctiveTokens(excerpt, "").length >= 3 && excerpt.split(/\s+/).length >= 6;
+  if (findUncommonProperNouns(excerpt).length > 0) return true;
+  return (
+    distinctiveTokens(excerpt, "").filter(
+      (t) => !sharedBlob.includes(normalizeAnswer(t)),
+    ).length >= 3 && excerpt.split(/\s+/).length >= 8
+  );
 }
 
 function distinctiveTokens(text: string, secret: string): string[] {
   const secretNorm = normalizeAnswer(secret);
-  const words = text.match(/[A-Za-z][A-Za-z'-]{2,}/g) ?? [];
+  const words = text.match(/[A-Za-z][A-Za-z'-]{3,}/g) ?? [];
   const out: string[] = [];
   for (const w of words) {
     const low = w.toLowerCase();
     if (STOP.has(low)) continue;
     if (secretNorm.includes(low)) continue;
-    if (low.length < 4) continue;
+    if (low.length < 5) continue;
     out.push(w);
   }
   return out;
@@ -472,22 +340,15 @@ function dedupeLeaks(leaks: ClueLeak[]): ClueLeak[] {
   const seen = new Set<string>();
   const out: ClueLeak[] = [];
   for (const leak of leaks) {
-    const key = `${leak.turnIndex}|${leak.channel}|${normalizeAnswer(leak.excerpt)}|${leak.helpful}`;
+    const key = `${leak.turnIndex}|${normalizeAnswer(leak.excerpt)}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(leak);
   }
-  // Prefer helpful entries when the same excerpt appears twice.
-  out.sort((a, b) => Number(b.helpful) - Number(a.helpful) || a.turnIndex - b.turnIndex);
-  const final: ClueLeak[] = [];
-  const excerptSeen = new Set<string>();
-  for (const leak of out) {
-    const ek = `${leak.turnIndex}|${normalizeAnswer(leak.excerpt)}`;
-    if (excerptSeen.has(ek)) continue;
-    excerptSeen.add(ek);
-    final.push(leak);
-  }
-  return final.sort((a, b) => a.turnIndex - b.turnIndex);
+  return out.sort(
+    (a, b) =>
+      a.turnIndex - b.turnIndex || Number(b.helpful) - Number(a.helpful),
+  );
 }
 
 export function helpfulClueLeakCount(leaks: ClueLeak[]): number {
