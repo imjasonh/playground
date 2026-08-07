@@ -18,6 +18,7 @@ playground/
 │   └── workflows/         # deploy, preview, test, cleanup, dependency updates
 ├── artillery/             # touch-first turn-based artillery duel (JS + Node tests)
 ├── cold-climb/            # touch-first two-handle arcade game (JS + Node tests)
+├── eink-case/             # OpenSCAD case for Waveshare 7.5" e-Paper + ESP32 board
 ├── cors-proxy/            # Rust Cloudflare Worker: SSRF-hardened CORS proxy (not a Pages app)
 ├── cors-proxy-demo/       # static browser front-end for the cors-proxy Worker
 ├── git/                   # in-browser read-only git client (JS + Jest + Playwright)
@@ -66,6 +67,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `life-stl/` | no | Rust CLI (STL generator); no `index.html` |
 | `life-scad/` | no | OpenSCAD + Python reverse-history tool; no `index.html` |
 | `life-qr/` | no | OpenSCAD Life+QR sculpture; no `index.html` |
+| `eink-case/` | no | OpenSCAD case for Waveshare 7.5″ e-Paper + ESP32 driver; no `index.html` |
 | `ios/` | no | The single "Playground" iOS app (XcodeGen + SwiftUI); no `index.html` |
 | `hello-macos/` | no | Example macOS app (XcodeGen + SwiftUI); no `index.html` |
 | `geeksquad/` | no | Offline Mac network triage (XcodeGen + SwiftUI + Sparkle); no `index.html` |
@@ -570,6 +572,7 @@ auto-discover them. Run their local tests when you change them.
 |-----------|------|-------|
 | `life-scad/` | OpenSCAD Life sculpture (Z = time) plus optional Python reverse-history search | `python3 life-scad/reverse_life_test.py` (needs `pip install -r life-scad/requirements.txt`) |
 | `life-qr/` | Parametric OpenSCAD Life sculpture with a QR-code roof for any text/height | `python3 life-qr/life_qr_test.py` (optional `pip install segno`) |
+| `eink-case/` | Parametric OpenSCAD case for Waveshare 7.5″ e-Paper + ESP32 (shell+cap; U-slot prints upward — see `eink-case/LEARNINGS.md`) | `bash eink-case/render.sh` / `bash eink-case/export-stl.sh` (needs OpenSCAD) |
 
 ## The iOS app
 
