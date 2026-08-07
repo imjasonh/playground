@@ -42,8 +42,8 @@ only succeeds because A spilled the title in thinking still records
 
 - Name (or clearly spell) the secret movie in any **gameplay** message or thinking.
   A leak is scored `secret_leaked`: it **invalidates the round as a knower failure**
-  even if B had not guessed yet. Thinking is public — “the committed movie is …”
-  still counts.
+  even if B had not guessed yet. Thinking is public — “Both \<guess\> and \<secret\>…”,
+  “My secret is …”, or “the committed movie is …” all count. After setup, say **film X** only.
 - Spill *helpful* clues in thinking beyond the single official shared fact.
   Especially: do **not** brainstorm candidate facts aloud (“I could say comedy,
   or 1990s, or trapped protagonist…”) — that leaks every option. B mines thinking.
