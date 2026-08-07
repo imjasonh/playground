@@ -66,17 +66,15 @@ jobs:
           set -euo pipefail
           mkdir -p results
           echo "Matchup: knower=$KNOWER_MODEL vs guesser=$GUESSER_MODEL (max_turns=$MAX_TURNS)"
-          npm run play -- \
+          # Invoke tsx directly so npm's script banner does not contaminate stdout JSON.
+          npx tsx src/cli.ts \
             --backend cursor \
             --knower-model "$KNOWER_MODEL" \
             --guesser-model "$GUESSER_MODEL" \
             --max-turns "$MAX_TURNS" \
             --verbose \
-            | tee results/ci-summary.json
-
-          echo "summary<<EOF" >> "$GITHUB_OUTPUT"
-          cat results/ci-summary.json >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
+            > results/ci-summary.json
+          cat results/ci-summary.json
 
       - name: Upload game record
         if: ${{ always() }}
@@ -89,13 +87,14 @@ jobs:
 
       - name: Job summary
         if: ${{ steps.play.outcome == 'success' }}
-        env:
-          SUMMARY_JSON: ${{ steps.play.outputs.summary }}
         run: |
-          KNOWER=$(echo "$SUMMARY_JSON" | jq -r '.knowerModel // "unknown"')
-          GUESSER=$(echo "$SUMMARY_JSON" | jq -r '.guesserModel // "unknown"')
-          OUTCOME=$(echo "$SUMMARY_JSON" | jq -r '.outcome.kind // "unknown"')
-          SECRET=$(echo "$SUMMARY_JSON" | jq -r '.secret // "unknown"')
+          SUMMARY_JSON=$(cat results/ci-summary.json)
+          jq empty results/ci-summary.json
+          KNOWER=$(jq -r '.knowerModel // "unknown"' results/ci-summary.json)
+          GUESSER=$(jq -r '.guesserModel // "unknown"' results/ci-summary.json)
+          OUTCOME=$(jq -r '.outcome.kind // "unknown"' results/ci-summary.json)
+          SECRET=$(jq -r '.secret // "unknown"' results/ci-summary.json)
+          LENGTH=$(jq -r '.gameLength // "unknown"' results/ci-summary.json)
           {
             echo "## It's Not Jaws — live game"
             echo
@@ -104,6 +103,7 @@ jobs:
             echo "| Matchup | **knower** \`$KNOWER\` vs **guesser** \`$GUESSER\` |"
             echo "| Outcome | \`$OUTCOME\` |"
             echo "| Secret | \`$SECRET\` |"
+            echo "| Game length | $LENGTH |"
             echo
             echo '<details><summary>Full summary JSON</summary>'
             echo
