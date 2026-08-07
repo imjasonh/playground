@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runGame } from "../src/harness.js";
+import { formatPublicChannel } from "../src/protocol.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -14,6 +15,7 @@ describe("runGame (mock backend)", () => {
       keeperModel: "mock-keeper",
       guesserModel: "mock-guesser",
       maxTurns: 4,
+      secret: "dolphin",
       workspacesRoot: path.join(root, ".workspaces"),
       resultsDir: path.join(root, "results"),
       dryRun: true,
@@ -22,7 +24,6 @@ describe("runGame (mock backend)", () => {
           {
             thinking: "Pick carefully.",
             text: 'Clue time.\n```json\n{"type":"clue","text":"ocean mammal"}\n```',
-            commitSecret: "dolphin",
           },
           {
             thinking: "Still safe.",
@@ -49,26 +50,35 @@ describe("runGame (mock backend)", () => {
     assert.equal(record.gameLength, 2);
     assert.ok(record.usage.totalTokens > 0);
     assert.equal(record.backend, "mock");
-    // Guesser saw keeper thinking in the prompt path; record keeps both channels.
-    assert.ok(record.turns[0]?.public.thinking.includes("Pick carefully"));
+    const opening = formatPublicChannel(record.turns[0]!.public);
+    assert.match(opening, /Pick carefully/);
+    assert.match(opening, /<thinking>/);
+    assert.match(opening, /<assistant>/);
   });
 
-  it("classifies a thinking leak even if the guesser later succeeds", async () => {
+  it("forwards tool-call args into the published channel and scores leaks", async () => {
     const record = await runGame({
       gameId: "stub-noun",
       backend: "mock",
       keeperModel: "mock-keeper",
       guesserModel: "mock-guesser",
       maxTurns: 3,
+      secret: "octopus",
       workspacesRoot: path.join(root, ".workspaces"),
       resultsDir: path.join(root, "results"),
       dryRun: true,
       keeperScript: {
         turns: [
           {
-            thinking: "The secret is octopus — hope they don't see this.",
+            thinking: "stay quiet",
+            toolCalls: [
+              {
+                name: "scratchpad",
+                args: { note: "octopus" },
+                result: "ok",
+              },
+            ],
             text: '```json\n{"type":"clue","text":"lives in the sea"}\n```',
-            commitSecret: "octopus",
           },
         ],
       },
@@ -82,7 +92,9 @@ describe("runGame (mock backend)", () => {
     });
 
     assert.equal(record.outcome.kind, "secret_leaked");
-    assert.match(record.outcome.detail ?? "", /octopus/i);
+    const published = formatPublicChannel(record.turns[0]!.public);
+    assert.match(published, /tool_call/);
+    assert.match(published, /octopus/);
   });
 
   it("records give_up", async () => {
@@ -92,6 +104,7 @@ describe("runGame (mock backend)", () => {
       keeperModel: "mock-keeper",
       guesserModel: "mock-guesser",
       maxTurns: 3,
+      secret: "apple",
       workspacesRoot: path.join(root, ".workspaces"),
       resultsDir: path.join(root, "results"),
       dryRun: true,
@@ -100,7 +113,6 @@ describe("runGame (mock backend)", () => {
           {
             thinking: "ok",
             text: '```json\n{"type":"clue","text":"red fruit"}\n```',
-            commitSecret: "apple",
           },
         ],
       },

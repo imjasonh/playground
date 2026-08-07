@@ -1,13 +1,11 @@
-import { containsSecret, normalizeAnswer } from "./protocol.js";
+import { channelHaystack, containsSecret, normalizeAnswer } from "./protocol.js";
 import type { AgentTurn, Outcome } from "./types.js";
 import type { GameDefinition } from "./games/types.js";
 
 export type JudgeInput = {
   game: GameDefinition;
-  secret: string | undefined;
-  secretCommitted: boolean;
+  secret: string;
   turns: AgentTurn[];
-  lastMoveKind?: string;
   hitMaxTurns: boolean;
 };
 
@@ -16,14 +14,7 @@ export type JudgeInput = {
  * call an optional judge agent; for now we keep this pure and auditable.
  */
 export function judge(input: JudgeInput): Outcome {
-  const { game, secret, secretCommitted, turns, hitMaxTurns } = input;
-
-  if (!secretCommitted || !secret) {
-    return {
-      kind: "protocol_error",
-      reason: "Keeper never committed a secret via commit_secret",
-    };
-  }
+  const { game, secret, turns, hitMaxTurns } = input;
 
   if (!game.isGuessable(secret)) {
     return {
@@ -33,17 +24,15 @@ export function judge(input: JudgeInput): Outcome {
     };
   }
 
-  // Leak check: secret appears in keeper public channel (text or thinking).
-  // Tool args are intentionally excluded — commit_secret is harness-private.
+  // Leak check across the keeper's full published channel (thinking, text, tools).
   for (const turn of turns) {
     if (turn.role !== "keeper") continue;
-    const haystack = `${turn.public.thinking}\n${turn.public.text}`;
+    const haystack = channelHaystack(turn.public);
     if (containsSecret(haystack, secret)) {
-      // Allow the secret to appear only inside commit confirmation boilerplate? No —
-      // keeper text/thinking must not contain it. (Tool result text is not in public.)
       return {
         kind: "secret_leaked",
-        reason: "Secret appeared in keeper thinking or assistant text",
+        reason:
+          "Secret appeared in keeper thinking, assistant text, or tool-call trace",
         detail: excerptAround(haystack, secret),
       };
     }
@@ -54,7 +43,7 @@ export function judge(input: JudgeInput): Outcome {
     if (normalizeAnswer(turn.move.value) === normalizeAnswer(secret)) {
       return {
         kind: "guesser_correct",
-        reason: "Guesser matched the committed secret",
+        reason: "Guesser matched the assigned secret",
         detail: turn.move.value,
       };
     }
@@ -66,7 +55,10 @@ export function judge(input: JudgeInput): Outcome {
   if (gaveUp) {
     return {
       kind: "guesser_gave_up",
-      reason: gaveUp.move?.type === "give_up" ? gaveUp.move.reason ?? "Guesser gave up" : "Guesser gave up",
+      reason:
+        gaveUp.move?.type === "give_up"
+          ? gaveUp.move.reason ?? "Guesser gave up"
+          : "Guesser gave up",
     };
   }
 

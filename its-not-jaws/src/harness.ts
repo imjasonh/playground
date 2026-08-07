@@ -35,37 +35,22 @@ export async function runGame(options: RunGameOptions): Promise<GameRecord> {
   const game = getGame(options.gameId);
   const id = randomUUID();
   const startedAt = new Date().toISOString();
+  const secret = options.secret ?? game.pickSecret(options.seed);
 
   const factory: AgentFactory =
     options.backend === "mock"
       ? (options.factories?.mock ?? createMockAgent)
       : (options.factories?.cursor ?? createCursorAgent);
 
-  const keeperWorkspace = path.join(
-    options.workspacesRoot,
-    id,
-    "keeper",
-  );
-  const guesserWorkspace = path.join(
-    options.workspacesRoot,
-    id,
-    "guesser",
-  );
-
-  let secret: string | undefined;
-  let secretCommitted = false;
+  const keeperWorkspace = path.join(options.workspacesRoot, id, "keeper");
+  const guesserWorkspace = path.join(options.workspacesRoot, id, "guesser");
 
   const keeper = await factory({
     role: "keeper",
     model: options.keeperModel,
-    systemPrompt: keeperSystemPrompt(game),
+    systemPrompt: keeperSystemPrompt(game, secret),
     workspaceDir: keeperWorkspace,
     apiKey: options.apiKey,
-    allowCommitSecret: true,
-    onCommitSecret: (value) => {
-      secret = value;
-      secretCommitted = true;
-    },
     seed: options.seed,
     script: options.keeperScript,
   });
@@ -76,7 +61,6 @@ export async function runGame(options: RunGameOptions): Promise<GameRecord> {
     systemPrompt: guesserSystemPrompt(game),
     workspaceDir: guesserWorkspace,
     apiKey: options.apiKey,
-    allowCommitSecret: false,
     seed: options.seed,
     script: options.guesserScript,
   });
@@ -86,13 +70,7 @@ export async function runGame(options: RunGameOptions): Promise<GameRecord> {
   let stop = false;
 
   try {
-    // Turn 0: keeper commits + first clue.
-    // commit_secret lands via onCommitSecret → secretCommitted.
     turns.push(await playTurn(keeper, keeperOpeningPrompt(), turns.length));
-
-    if (!secretCommitted) {
-      stop = true;
-    }
 
     let round = 1;
     while (!stop && round <= options.maxTurns) {
@@ -112,7 +90,6 @@ export async function runGame(options: RunGameOptions): Promise<GameRecord> {
       }
       if (
         guessTurn.move?.type === "guess" &&
-        secret &&
         normalizeEq(guessTurn.move.value, secret)
       ) {
         stop = true;
@@ -135,7 +112,10 @@ export async function runGame(options: RunGameOptions): Promise<GameRecord> {
       round++;
     }
 
-    if (!stop && turns.filter((t) => t.role === "guesser").length >= options.maxTurns) {
+    if (
+      !stop &&
+      turns.filter((t) => t.role === "guesser").length >= options.maxTurns
+    ) {
       hitMaxTurns = true;
     }
   } finally {
@@ -145,7 +125,6 @@ export async function runGame(options: RunGameOptions): Promise<GameRecord> {
   const outcome = judge({
     game,
     secret,
-    secretCommitted,
     turns,
     hitMaxTurns,
   });
@@ -163,13 +142,13 @@ export async function runGame(options: RunGameOptions): Promise<GameRecord> {
     guesserModel: guesser.model,
     backend: options.backend,
     secret,
-    secretCommitted,
     turns,
     outcome,
     usage: {
       keeper: keeperUsage,
       guesser: guesserUsage,
-      totalTokens: keeperUsage.tokens.totalTokens + guesserUsage.tokens.totalTokens,
+      totalTokens:
+        keeperUsage.tokens.totalTokens + guesserUsage.tokens.totalTokens,
       totalRawCostCents: sumOptional(
         keeperUsage.cost?.rawCostCents,
         guesserUsage.cost?.rawCostCents,
@@ -201,14 +180,16 @@ async function playTurn(
     turnIndex,
     durationMs: result.durationMs,
     public: result.public,
-    toolNames: result.toolNames,
     usage: result.usage,
     move: parseMove(result.rawText),
     rawText: result.rawText,
   };
 }
 
-function lastTurn(turns: AgentTurn[], role: "keeper" | "guesser"): AgentTurn | undefined {
+function lastTurn(
+  turns: AgentTurn[],
+  role: "keeper" | "guesser",
+): AgentTurn | undefined {
   for (let i = turns.length - 1; i >= 0; i--) {
     if (turns[i]!.role === role) return turns[i];
   }
@@ -216,8 +197,10 @@ function lastTurn(turns: AgentTurn[], role: "keeper" | "guesser"): AgentTurn | u
 }
 
 function normalizeEq(a: string, b: string): boolean {
-  return a.trim().toLowerCase().replace(/\s+/g, " ") ===
-    b.trim().toLowerCase().replace(/\s+/g, " ");
+  return (
+    a.trim().toLowerCase().replace(/\s+/g, " ") ===
+    b.trim().toLowerCase().replace(/\s+/g, " ")
+  );
 }
 
 async function finalizeUsage(

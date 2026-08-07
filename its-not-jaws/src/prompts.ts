@@ -2,12 +2,17 @@ import type { GameDefinition } from "./games/types.js";
 import { formatPublicChannel } from "./protocol.js";
 import type { PublicChannel } from "./types.js";
 
-export function keeperSystemPrompt(game: GameDefinition): string {
+export function keeperSystemPrompt(game: GameDefinition, secret: string): string {
   return [
     `# Role: Keeper`,
     ``,
     game.keeperBrief,
     game.domainHint ? `Domain: ${game.domainHint}` : "",
+    ``,
+    `SECRET: ${secret}`,
+    ``,
+    `This SECRET line is harness setup only. The guesser never sees this prompt.`,
+    `They see every message you emit afterward (thinking, text, tool calls).`,
     ``,
     `Protocol: always end your visible reply with a single fenced JSON move.`,
   ]
@@ -31,15 +36,15 @@ export function guesserSystemPrompt(game: GameDefinition): string {
 export function keeperOpeningPrompt(): string {
   return [
     "Start the game now.",
-    "1) Call commit_secret with your chosen secret.",
-    "2) Give your first clue without naming the secret in thinking or text.",
-    "3) End with a JSON clue move.",
+    "Give your first clue without naming the secret in thinking, text, or tools.",
+    "End with a JSON clue move.",
   ].join("\n");
 }
 
 export function guesserPromptFromKeeper(channel: PublicChannel, round: number): string {
   return [
-    `Round ${round}. Here is the keeper's published channel (thinking + text):`,
+    `Round ${round}. Here is the keeper's FULL published trace`,
+    `(thinking, assistant text, and tool calls with args/results):`,
     ``,
     formatPublicChannel(channel),
     ``,
@@ -49,7 +54,8 @@ export function guesserPromptFromKeeper(channel: PublicChannel, round: number): 
 
 export function keeperPromptFromGuesser(channel: PublicChannel, round: number): string {
   return [
-    `Round ${round}. Here is the guesser's published channel (thinking + text):`,
+    `Round ${round}. Here is the guesser's FULL published trace`,
+    `(thinking, assistant text, and tool calls with args/results):`,
     ``,
     formatPublicChannel(channel),
     ``,

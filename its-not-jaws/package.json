@@ -11,7 +11,7 @@
     "build": "tsc -p tsconfig.json",
     "test": "tsx --test tests/**/*.test.ts",
     "play": "tsx src/cli.ts",
-    "play:mock": "tsx src/cli.ts --backend mock",
+    "play:mock": "tsx src/cli.ts --backend mock --seed 0",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

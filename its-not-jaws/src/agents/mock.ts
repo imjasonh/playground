@@ -1,10 +1,12 @@
 import type {
   AgentFactory,
   AgentFactoryOptions,
+  MockScript,
   PlayerAgent,
   PromptTurn,
   TurnResult,
 } from "./types.js";
+import type { TraceMessage } from "../types.js";
 
 /**
  * Deterministic in-process agent for unit tests and --backend mock dry runs.
@@ -19,24 +21,29 @@ export const createMockAgent: AgentFactory = async (options) => {
     model: `mock:${options.model}`,
     async turn(_input: PromptTurn): Promise<TurnResult> {
       const started = Date.now();
-      if (index >= script.turns.length) {
-        throw new Error(
-          `Mock ${options.role} has no scripted turn at index ${index}`,
-        );
+      const step =
+        index < script.turns.length
+          ? script.turns[index]!
+          : fallbackStep(options.role, index);
+      index++;
+      const messages: TraceMessage[] = [];
+      if (step.thinking) {
+        messages.push({ type: "thinking", text: step.thinking });
       }
-      const step = script.turns[index++]!;
-      if (step.commitSecret) {
-        if (!options.allowCommitSecret) {
-          throw new Error("Mock tried to commit_secret without permission");
-        }
-        options.onCommitSecret?.(step.commitSecret);
+      for (const call of step.toolCalls ?? []) {
+        messages.push({
+          type: "tool_call",
+          name: call.name,
+          status: call.status ?? "completed",
+          args: call.args,
+          result: call.result,
+        });
       }
+      messages.push({ type: "assistant", text: step.text });
 
       return {
-        public: { text: step.text, thinking: step.thinking ?? "" },
+        public: { messages },
         rawText: step.text,
-        toolNames: step.commitSecret ? ["commit_secret"] : [],
-        committedSecret: step.commitSecret,
         usage: {
           inputTokens: 100 + index * 10,
           outputTokens: 50 + index * 5,
@@ -57,20 +64,35 @@ export const createMockAgent: AgentFactory = async (options) => {
   return agent;
 };
 
-function defaultScript(options: AgentFactoryOptions) {
+function fallbackStep(
+  role: "keeper" | "guesser",
+  index: number,
+): MockScript["turns"][number] {
+  if (role === "guesser") {
+    return {
+      thinking: "Out of ideas.",
+      text: `\`\`\`json\n{"type":"give_up","reason":"mock script exhausted at turn ${index}"}\n\`\`\``,
+    };
+  }
+  return {
+    thinking: "Another vague clue.",
+    text: `\`\`\`json\n{"type":"clue","text":"mock filler clue ${index}"}\n\`\`\``,
+  };
+}
+
+function defaultScript(options: AgentFactoryOptions): MockScript {
   if (options.role === "keeper") {
     return {
       turns: [
         {
-          thinking: "I will pick something other than a shark.",
+          thinking: "I will stay vague.",
           text: [
-            "Secret committed. First clue: it is a mammal that lives in the ocean.",
+            "First clue: it is a mammal that lives in the ocean.",
             '```json\n{"type":"clue","text":"it is a mammal that lives in the ocean"}\n```',
           ].join("\n"),
-          commitSecret: "dolphin",
         },
         {
-          thinking: "Stay vague but fair.",
+          thinking: "Still safe.",
           text: [
             "Clue: it is known for being playful and intelligent.",
             '```json\n{"type":"clue","text":"it is known for being playful and intelligent"}\n```',

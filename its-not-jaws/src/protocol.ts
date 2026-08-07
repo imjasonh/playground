@@ -1,4 +1,4 @@
-import type { Move } from "./types.js";
+import type { Move, PublicChannel, TraceMessage } from "./types.js";
 
 const MOVE_FENCE = /```(?:json)?\s*([\s\S]*?)```/i;
 
@@ -94,23 +94,70 @@ export function normalizeAnswer(value: string): string {
 
 /**
  * True when `secret` appears as a contiguous normalized substring of `haystack`.
- * Used for leak detection against published thinking + text.
+ * Used for leak detection against the full published channel.
  */
 export function containsSecret(haystack: string, secret: string): boolean {
   if (!secret.trim()) return false;
   return normalizeAnswer(haystack).includes(normalizeAnswer(secret));
 }
 
-export function formatPublicChannel(channel: {
-  text: string;
-  thinking: string;
-}): string {
-  const parts: string[] = [];
-  if (channel.thinking.trim()) {
-    parts.push(`<thinking>\n${channel.thinking.trim()}\n</thinking>`);
+/** Flatten a public channel to a single string for leak scanning. */
+export function channelHaystack(channel: PublicChannel): string {
+  return channel.messages.map(traceToPlain).join("\n");
+}
+
+export function assistantTextFromChannel(channel: PublicChannel): string {
+  return channel.messages
+    .filter((m): m is Extract<TraceMessage, { type: "assistant" }> => m.type === "assistant")
+    .map((m) => m.text)
+    .join("");
+}
+
+/** Render the full published channel for the opponent. */
+export function formatPublicChannel(channel: PublicChannel): string {
+  if (channel.messages.length === 0) return "(no messages)";
+  return channel.messages.map(formatTraceMessage).join("\n\n");
+}
+
+function formatTraceMessage(message: TraceMessage): string {
+  switch (message.type) {
+    case "thinking":
+      return `<thinking>\n${message.text}\n</thinking>`;
+    case "assistant":
+      return `<assistant>\n${message.text}\n</assistant>`;
+    case "tool_call": {
+      const parts = [
+        `<tool_call name=${JSON.stringify(message.name)} status=${JSON.stringify(message.status)}>`,
+      ];
+      if (message.args !== undefined) {
+        parts.push(`args: ${safeJson(message.args)}`);
+      }
+      if (message.result !== undefined) {
+        parts.push(`result: ${safeJson(message.result)}`);
+      }
+      parts.push(`</tool_call>`);
+      return parts.join("\n");
+    }
   }
-  if (channel.text.trim()) {
-    parts.push(channel.text.trim());
+}
+
+function traceToPlain(message: TraceMessage): string {
+  switch (message.type) {
+    case "thinking":
+    case "assistant":
+      return message.text;
+    case "tool_call":
+      return [message.name, safeJson(message.args), safeJson(message.result)]
+        .filter((s) => s.length > 0)
+        .join(" ");
   }
-  return parts.join("\n\n");
+}
+
+function safeJson(value: unknown): string {
+  if (value === undefined) return "";
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
 }

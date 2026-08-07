@@ -6,22 +6,17 @@ export type PromptTurn = {
 };
 
 export type TurnResult = {
+  /** Full published trace for the opponent (thinking, text, tool calls). */
   public: PublicChannel;
   rawText: string;
-  toolNames: string[];
   usage?: TokenUsage;
   durationMs: number;
-  /**
-   * Secret committed via the private `commit_secret` harness tool this turn.
-   * Never forwarded to the opponent.
-   */
-  committedSecret?: string;
 };
 
 export type PlayerAgent = {
   readonly role: "keeper" | "guesser";
   readonly model?: string;
-  /** Send one prompt and collect the public channel + private side effects. */
+  /** Send one prompt and collect the full public channel. */
   turn(input: PromptTurn): Promise<TurnResult>;
   /** Billed usage snapshot when the backend supports it. */
   getBilledUsage?(): Promise<{
@@ -37,12 +32,6 @@ export type AgentFactoryOptions = {
   systemPrompt: string;
   workspaceDir: string;
   apiKey?: string;
-  /**
-   * When true (keeper only), expose the private `commit_secret` tool.
-   * Tool args are harness-private and never copied into the public channel.
-   */
-  allowCommitSecret?: boolean;
-  onCommitSecret?: (secret: string) => void;
   /** Mock-only knobs. */
   seed?: number;
   script?: MockScript;
@@ -50,11 +39,16 @@ export type AgentFactoryOptions = {
 
 /** Deterministic mock behavior for unit tests. */
 export type MockScript = {
-  /** Responses in order; after exhaustion, repeats the last or errors. */
+  /** Responses in order; after exhaustion, errors. */
   turns: Array<{
     text: string;
     thinking?: string;
-    commitSecret?: string;
+    toolCalls?: Array<{
+      name: string;
+      status?: string;
+      args?: unknown;
+      result?: unknown;
+    }>;
   }>;
 };
 

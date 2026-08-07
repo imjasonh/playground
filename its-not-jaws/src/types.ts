@@ -32,11 +32,24 @@ export type PlayerUsage = {
   turns: number;
 };
 
+/**
+ * Everything the agent emitted that the opponent is allowed (and required) to see.
+ * Includes thinking, assistant text, and full tool-call traces (name, args, result).
+ */
+export type TraceMessage =
+  | { type: "thinking"; text: string }
+  | { type: "assistant"; text: string }
+  | {
+      type: "tool_call";
+      name: string;
+      status: string;
+      args?: unknown;
+      result?: unknown;
+    };
+
 export type PublicChannel = {
-  /** Assistant-visible text (clues, guesses, dialogue). */
-  text: string;
-  /** Published thinking / reasoning the opponent is allowed to see. */
-  thinking: string;
+  /** Ordered stream of agent-emitted messages for this turn. */
+  messages: TraceMessage[];
 };
 
 export type AgentTurn = {
@@ -45,12 +58,10 @@ export type AgentTurn = {
   /** Wall-clock ms for this turn. */
   durationMs: number;
   public: PublicChannel;
-  /** Tool names invoked this turn (args are never forwarded to the opponent). */
-  toolNames: string[];
   usage?: TokenUsage;
-  /** Structured move parsed from the assistant text, if any. */
+  /** Structured move parsed from assistant text, if any. */
   move?: Move;
-  /** Raw assistant text before move extraction. */
+  /** Concatenated assistant text (for move parsing). */
   rawText: string;
 };
 
@@ -76,9 +87,11 @@ export type GameRecord = {
   keeperModel?: string;
   guesserModel?: string;
   backend: "mock" | "cursor";
-  /** Ground-truth secret committed via the private harness tool (or mock). */
-  secret?: string;
-  secretCommitted: boolean;
+  /**
+   * Ground-truth secret assigned by the harness and injected into the keeper's
+   * private setup prompt (not a message from the keeper, so not shown to the guesser).
+   */
+  secret: string;
   turns: AgentTurn[];
   outcome: Outcome;
   usage: {
@@ -87,7 +100,7 @@ export type GameRecord = {
     totalTokens: number;
     totalRawCostCents?: number;
   };
-  /** Number of public clue/guess exchanges (excludes setup). */
+  /** Number of guesser turns. */
   gameLength: number;
 };
 
@@ -102,7 +115,9 @@ export type HarnessConfig = {
   workspacesRoot: string;
   /** Where to write the JSON game record. */
   resultsDir: string;
-  /** Optional seed for deterministic mock play. */
+  /** Optional seed for deterministic secret pick / mock play. */
   seed?: number;
+  /** Override harness-assigned secret (tests). */
+  secret?: string;
   verbose?: boolean;
 };

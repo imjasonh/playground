@@ -5,7 +5,8 @@ import type {
   PromptTurn,
   TurnResult,
 } from "./types.js";
-import type { TokenUsage } from "../types.js";
+import type { TokenUsage, TraceMessage } from "../types.js";
+import { assistantTextFromChannel } from "../protocol.js";
 
 type SdkModule = typeof import("@cursor/sdk");
 
@@ -19,74 +20,23 @@ function loadSdk(): Promise<SdkModule> {
 /**
  * Cursor SDK-backed player.
  *
- * - Built-in coding tools are disabled (`tools: []` or MCP-only).
- * - Keeper may receive a private `commit_secret` custom tool; its arguments
- *   stay in-process and are never copied into the public channel.
- * - Thinking stream events are captured and published to the opponent.
+ * Chat-only (`tools: []`): no built-in coding tools and no custom tools.
+ * Every agent-emitted stream event we care about (thinking, assistant text,
+ * tool_call with args/result) is copied into the public channel for the opponent.
  */
 export const createCursorAgent: AgentFactory = async (options) => {
   const { Agent } = await loadSdk();
   await mkdir(options.workspaceDir, { recursive: true });
 
-  let committedSecret: string | undefined;
-
-  const customTools =
-    options.allowCommitSecret
-      ? {
-          commit_secret: {
-            description:
-              "Privately commit the secret answer to the game harness. " +
-              "Call this exactly once before giving clues. " +
-              "The guesser does not see tool arguments — but they DO see your " +
-              "thinking and assistant text, so never name the secret there.",
-            inputSchema: {
-              type: "object",
-              properties: {
-                secret: {
-                  type: "string",
-                  description: "The secret the guesser must discover",
-                },
-              },
-              required: ["secret"],
-            },
-            async execute(args: Record<string, unknown>) {
-              const secret = String(args.secret ?? "").trim();
-              if (!secret) {
-                return {
-                  content: [{ type: "text", text: "Error: empty secret" }],
-                  isError: true,
-                };
-              }
-              if (committedSecret && committedSecret !== secret) {
-                return {
-                  content: [
-                    {
-                      type: "text",
-                      text: "Error: secret already committed; cannot change it",
-                    },
-                  ],
-                  isError: true,
-                };
-              }
-              committedSecret = secret;
-              options.onCommitSecret?.(secret);
-              return `Secret committed (${secret.length} chars). Do not repeat it in thinking or text.`;
-            },
-          },
-        }
-      : undefined;
-
   const agent = await Agent.create({
     apiKey: options.apiKey ?? process.env.CURSOR_API_KEY,
     model: { id: options.model },
     name: `its-not-jaws-${options.role}`,
-    // Keeper needs MCP for custom tools; guesser is pure chat.
-    tools: options.allowCommitSecret ? ["mcp"] : [],
+    tools: [],
     local: {
       cwd: options.workspaceDir,
       // Do not inherit project/user MCP, hooks, or skills into the game.
       settingSources: [],
-      ...(customTools ? { customTools } : {}),
     },
   });
 
@@ -99,42 +49,42 @@ export const createCursorAgent: AgentFactory = async (options) => {
     model: options.model,
     async turn(input: PromptTurn): Promise<TurnResult> {
       const started = Date.now();
-      const thinkingParts: string[] = [];
-      const textParts: string[] = [];
-      const toolNames: string[] = [];
-      const secretBefore = committedSecret;
+      const messages: TraceMessage[] = [];
 
       const run = await agent.send(input.prompt);
 
       for await (const event of run.stream()) {
         if (event.type === "thinking") {
-          thinkingParts.push(String(event.text ?? ""));
+          const text = String(event.text ?? "");
+          if (text) messages.push({ type: "thinking", text });
         } else if (event.type === "assistant") {
-          textParts.push(extractAssistantText(event));
+          appendAssistantMessages(messages, event);
         } else if (event.type === "tool_call") {
-          // Record the name only — never forward args (they may contain the secret).
-          toolNames.push(String(event.name ?? "tool"));
+          // Full trace — args and result included for the opponent.
+          messages.push({
+            type: "tool_call",
+            name: String(event.name ?? "tool"),
+            status: String(event.status ?? "unknown"),
+            args: event.args,
+            result: event.result,
+          });
         }
       }
 
       const result = await run.wait();
-      const rawText = textParts.join("") || String(result.result ?? "");
-      const usage = normalizeUsage(result.usage ?? run.usage);
-
-      const newlyCommitted =
-        committedSecret && committedSecret !== secretBefore
-          ? committedSecret
-          : undefined;
+      const channel = { messages };
+      let rawText = assistantTextFromChannel(channel);
+      if (!rawText) {
+        rawText = String(result.result ?? "");
+        if (rawText) {
+          messages.push({ type: "assistant", text: rawText });
+        }
+      }
 
       return {
-        public: {
-          text: rawText,
-          thinking: thinkingParts.join("\n").trim(),
-        },
+        public: channel,
         rawText,
-        toolNames: [...new Set(toolNames)],
-        committedSecret: newlyCommitted,
-        usage,
+        usage: normalizeUsage(result.usage ?? run.usage),
         durationMs: Math.max(1, Date.now() - started),
       };
     },
@@ -150,7 +100,6 @@ export const createCursorAgent: AgentFactory = async (options) => {
       }
     },
     async dispose() {
-      // SDKAgent.close() is sync; asyncDispose may exist on some versions.
       const disposable = agent as unknown as {
         [Symbol.asyncDispose]?: () => void | Promise<void>;
         close?: () => void;
@@ -167,15 +116,35 @@ export const createCursorAgent: AgentFactory = async (options) => {
   return player;
 };
 
-function extractAssistantText(event: {
-  message?: { content?: Array<{ type?: string; text?: string }> };
-}): string {
+function appendAssistantMessages(
+  messages: TraceMessage[],
+  event: {
+    message?: {
+      content?: Array<{
+        type?: string;
+        text?: string;
+        name?: string;
+        input?: unknown;
+        id?: string;
+      }>;
+    };
+  },
+): void {
   const content = event.message?.content;
-  if (!Array.isArray(content)) return "";
-  return content
-    .filter((block) => block?.type === "text" && typeof block.text === "string")
-    .map((block) => block.text!)
-    .join("");
+  if (!Array.isArray(content)) return;
+  for (const block of content) {
+    if (block?.type === "text" && typeof block.text === "string" && block.text) {
+      messages.push({ type: "assistant", text: block.text });
+    } else if (block?.type === "tool_use") {
+      // Mirror tool_use blocks into the public tool_call trace as well.
+      messages.push({
+        type: "tool_call",
+        name: String(block.name ?? "tool"),
+        status: "requested",
+        args: block.input,
+      });
+    }
+  }
 }
 
 function normalizeUsage(usage: unknown): TokenUsage | undefined {

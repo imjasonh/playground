@@ -2,41 +2,34 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { stubGame } from "../src/games/stub.js";
 import { judge } from "../src/judge.js";
-import type { AgentTurn } from "../src/types.js";
+import type { AgentTurn, TraceMessage } from "../src/types.js";
 
 function turn(
   role: "keeper" | "guesser",
-  partial: Partial<AgentTurn> & { text: string; thinking?: string },
+  partial: {
+    messages: TraceMessage[];
+    move?: AgentTurn["move"];
+  },
 ): AgentTurn {
+  const rawText = partial.messages
+    .filter((m) => m.type === "assistant")
+    .map((m) => m.text)
+    .join("");
   return {
     role,
     turnIndex: 0,
     durationMs: 1,
-    public: { text: partial.text, thinking: partial.thinking ?? "" },
-    toolNames: [],
-    rawText: partial.text,
+    public: { messages: partial.messages },
+    rawText,
     move: partial.move,
-    usage: partial.usage,
   };
 }
 
 describe("judge", () => {
-  it("flags missing secret commit", () => {
-    const outcome = judge({
-      game: stubGame,
-      secret: undefined,
-      secretCommitted: false,
-      turns: [],
-      hitMaxTurns: false,
-    });
-    assert.equal(outcome.kind, "protocol_error");
-  });
-
   it("flags unguessable / blocked secrets", () => {
     const outcome = judge({
       game: stubGame,
       secret: "shark",
-      secretCommitted: true,
       turns: [],
       hitMaxTurns: false,
     });
@@ -47,12 +40,35 @@ describe("judge", () => {
     const outcome = judge({
       game: stubGame,
       secret: "dolphin",
-      secretCommitted: true,
       turns: [
         turn("keeper", {
-          text: "It lives in the ocean.",
-          thinking: "Don't say dolphin... oops dolphin",
+          messages: [
+            { type: "thinking", text: "Don't say dolphin... oops dolphin" },
+            { type: "assistant", text: "It lives in the ocean." },
+          ],
           move: { type: "clue", text: "It lives in the ocean." },
+        }),
+      ],
+      hitMaxTurns: false,
+    });
+    assert.equal(outcome.kind, "secret_leaked");
+  });
+
+  it("detects leaks in tool-call args", () => {
+    const outcome = judge({
+      game: stubGame,
+      secret: "dolphin",
+      turns: [
+        turn("keeper", {
+          messages: [
+            {
+              type: "tool_call",
+              name: "notes",
+              status: "completed",
+              args: { remember: "dolphin" },
+            },
+            { type: "assistant", text: "ocean mammal" },
+          ],
         }),
       ],
       hitMaxTurns: false,
@@ -64,15 +80,24 @@ describe("judge", () => {
     const outcome = judge({
       game: stubGame,
       secret: "dolphin",
-      secretCommitted: true,
       turns: [
         turn("keeper", {
-          text: '```json\n{"type":"clue","text":"ocean mammal"}\n```',
-          thinking: "stay vague",
+          messages: [
+            { type: "thinking", text: "stay vague" },
+            {
+              type: "assistant",
+              text: '```json\n{"type":"clue","text":"ocean mammal"}\n```',
+            },
+          ],
           move: { type: "clue", text: "ocean mammal" },
         }),
         turn("guesser", {
-          text: '```json\n{"type":"guess","value":"Dolphin"}\n```',
+          messages: [
+            {
+              type: "assistant",
+              text: '```json\n{"type":"guess","value":"Dolphin"}\n```',
+            },
+          ],
           move: { type: "guess", value: "Dolphin" },
         }),
       ],
@@ -85,14 +110,15 @@ describe("judge", () => {
     const outcome = judge({
       game: stubGame,
       secret: "dolphin",
-      secretCommitted: true,
       turns: [
         turn("keeper", {
-          text: "clue",
-          thinking: "the answer is dolphin",
+          messages: [
+            { type: "thinking", text: "the answer is dolphin" },
+            { type: "assistant", text: "clue" },
+          ],
         }),
         turn("guesser", {
-          text: "guess",
+          messages: [{ type: "assistant", text: "guess" }],
           move: { type: "guess", value: "dolphin" },
         }),
       ],

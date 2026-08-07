@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   containsSecret,
+  formatPublicChannel,
   normalizeAnswer,
   parseMove,
 } from "../src/protocol.js";
@@ -37,5 +38,27 @@ describe("containsSecret", () => {
 describe("normalizeAnswer", () => {
   it("collapses whitespace and case", () => {
     assert.equal(normalizeAnswer("  Blue   Whale "), "blue whale");
+  });
+});
+
+describe("formatPublicChannel", () => {
+  it("includes thinking, assistant, and tool-call args", () => {
+    const rendered = formatPublicChannel({
+      messages: [
+        { type: "thinking", text: "hmm" },
+        {
+          type: "tool_call",
+          name: "scratchpad",
+          status: "completed",
+          args: { x: 1 },
+          result: "ok",
+        },
+        { type: "assistant", text: "clue" },
+      ],
+    });
+    assert.match(rendered, /<thinking>/);
+    assert.match(rendered, /scratchpad/);
+    assert.match(rendered, /"x":1/);
+    assert.match(rendered, /<assistant>/);
   });
 });
