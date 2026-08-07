@@ -72,8 +72,12 @@ function asMove(value: unknown): Move | undefined {
   if (type === "commit" && typeof obj.secret === "string" && obj.secret.trim()) {
     return { type: "commit", secret: obj.secret.trim() };
   }
+  if (type === "shared_fact" && typeof obj.text === "string") {
+    return { type: "shared_fact", text: obj.text };
+  }
+  // Older stub used "clue"; accept as shared_fact for back-compat in tests/logs.
   if (type === "clue" && typeof obj.text === "string") {
-    return { type: "clue", text: obj.text };
+    return { type: "shared_fact", text: obj.text };
   }
   if (type === "guess" && typeof obj.value === "string") {
     return { type: "guess", value: obj.value };

@@ -9,22 +9,22 @@ import {
 
 describe("parseMove", () => {
   it("reads a fenced JSON commit", () => {
-    const move = parseMove('```json\n{"type":"commit","secret":"dolphin"}\n```');
-    assert.deepEqual(move, { type: "commit", secret: "dolphin" });
+    const move = parseMove(
+      '```json\n{"type":"commit","secret":"Finding Nemo"}\n```',
+    );
+    assert.deepEqual(move, { type: "commit", secret: "Finding Nemo" });
   });
 
-  it("reads a fenced JSON clue", () => {
+  it("reads a shared_fact move", () => {
     const move = parseMove(
-      'Here is a clue.\n```json\n{"type":"clue","text":"ocean mammal"}\n```',
+      'Both have sequels.\n```json\n{"type":"shared_fact","text":"has sequels"}\n```',
     );
-    assert.deepEqual(move, { type: "clue", text: "ocean mammal" });
+    assert.deepEqual(move, { type: "shared_fact", text: "has sequels" });
   });
 
-  it("reads the last JSON object when narration precedes it", () => {
-    const move = parseMove(
-      'Thinking out loud {"type":"meta","text":"x"} then {"type":"guess","value":"dolphin"}',
-    );
-    assert.deepEqual(move, { type: "guess", value: "dolphin" });
+  it("maps legacy clue moves to shared_fact", () => {
+    const move = parseMove('```json\n{"type":"clue","text":"animated"}\n```');
+    assert.deepEqual(move, { type: "shared_fact", text: "animated" });
   });
 
   it("parses give_up", () => {
@@ -34,15 +34,18 @@ describe("parseMove", () => {
 });
 
 describe("containsSecret", () => {
-  it("detects normalized substrings", () => {
-    assert.equal(containsSecret("I almost said Dolphin aloud", "dolphin"), true);
-    assert.equal(containsSecret("ocean mammal", "dolphin"), false);
+  it("detects normalized title substrings", () => {
+    assert.equal(
+      containsSecret("I almost said Finding Nemo aloud", "Finding Nemo"),
+      true,
+    );
+    assert.equal(containsSecret("both are animated", "Finding Nemo"), false);
   });
 });
 
 describe("normalizeAnswer", () => {
   it("collapses whitespace and case", () => {
-    assert.equal(normalizeAnswer("  Blue   Whale "), "blue whale");
+    assert.equal(normalizeAnswer("  The   Matrix "), "the matrix");
   });
 });
 
@@ -58,7 +61,7 @@ describe("formatPublicChannel", () => {
           args: { x: 1 },
           result: "ok",
         },
-        { type: "assistant", text: "clue" },
+        { type: "assistant", text: "fact" },
       ],
     });
     assert.match(rendered, /<thinking>/);

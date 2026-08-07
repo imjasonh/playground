@@ -4,13 +4,13 @@ import path from "node:path";
 import { createCursorAgent } from "./agents/cursor.js";
 import { createMockAgent } from "./agents/mock.js";
 import type { AgentFactory, MockScript, PlayerAgent } from "./agents/types.js";
-import { getGame } from "./games/stub.js";
+import { getGame } from "./games/its-not-jaws.js";
 import { judge } from "./judge.js";
 import { parseMove } from "./protocol.js";
 import {
+  guesserOpeningPrompt,
   guesserPromptFromKnower,
   guesserSystemPrompt,
-  knowerFirstCluePrompt,
   knowerPromptFromGuesser,
   knowerSetupPrompt,
   knowerSystemPrompt,
@@ -66,6 +66,7 @@ export async function runGame(options: RunGameOptions): Promise<GameRecord> {
   });
 
   const turns: AgentTurn[] = [];
+  const sharedFacts: string[] = [];
   let secret: string | undefined;
   let secretCommitted = false;
   let hitMaxTurns = false;
@@ -87,26 +88,26 @@ export async function runGame(options: RunGameOptions): Promise<GameRecord> {
       stop = true;
     }
 
-    if (!stop) {
-      // First public clue — this trace IS shown to the guesser.
-      turns.push(
-        await playTurn(
-          knower,
-          knowerFirstCluePrompt(),
-          turns.length,
-          "play",
-        ),
-      );
-    }
-
+    // Guesser moves first (no free opening clue from the knower).
     let round = 1;
     while (!stop && round <= options.maxTurns) {
-      const lastPublicKnower = lastPlayTurn(turns, "knower");
-      if (!lastPublicKnower) break;
+      let guessPrompt = guesserOpeningPrompt();
+      if (round > 1) {
+        const lastKnower = lastPlayTurn(turns, "knower");
+        if (!lastKnower) {
+          stop = true;
+          break;
+        }
+        guessPrompt = guesserPromptFromKnower(
+          lastKnower.public,
+          round,
+          sharedFacts,
+        );
+      }
 
       const guessTurn = await playTurn(
         guesser,
-        guesserPromptFromKnower(lastPublicKnower.public, round),
+        guessPrompt,
         turns.length,
         "play",
       );
@@ -116,11 +117,11 @@ export async function runGame(options: RunGameOptions): Promise<GameRecord> {
         stop = true;
         break;
       }
-      if (
-        guessTurn.move?.type === "guess" &&
-        secret &&
-        normalizeEq(guessTurn.move.value, secret)
-      ) {
+
+      const guessValue =
+        guessTurn.move?.type === "guess" ? guessTurn.move.value : undefined;
+
+      if (guessValue && secret && normalizeEq(guessValue, secret)) {
         stop = true;
         break;
       }
@@ -131,14 +132,22 @@ export async function runGame(options: RunGameOptions): Promise<GameRecord> {
         break;
       }
 
-      turns.push(
-        await playTurn(
-          knower,
-          knowerPromptFromGuesser(guessTurn.public, round),
-          turns.length,
-          "play",
-        ),
+      if (!guessValue) {
+        // No parseable guess — end the loop; judge will classify from the transcript.
+        stop = true;
+        break;
+      }
+
+      const factTurn = await playTurn(
+        knower,
+        knowerPromptFromGuesser(guessTurn.public, guessValue, round),
+        turns.length,
+        "play",
       );
+      turns.push(factTurn);
+      if (factTurn.move?.type === "shared_fact") {
+        sharedFacts.push(factTurn.move.text);
+      }
       round++;
     }
 

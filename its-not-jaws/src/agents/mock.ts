@@ -76,8 +76,8 @@ function fallbackStep(
     };
   }
   return {
-    thinking: "Another vague clue.",
-    text: `\`\`\`json\n{"type":"clue","text":"mock filler clue ${index}"}\n\`\`\``,
+    thinking: "Another shared fact.",
+    text: `\`\`\`json\n{"type":"shared_fact","text":"mock shared fact ${index}"}\n\`\`\``,
   };
 }
 
@@ -86,21 +86,21 @@ function defaultScript(options: AgentFactoryOptions): MockScript {
     return {
       turns: [
         {
-          thinking: "I'll pick dolphin as the secret.",
-          text: '```json\n{"type":"commit","secret":"dolphin"}\n```',
+          thinking: "I'll pick Jaws... wait, better pick something else. Finding Nemo.",
+          text: '```json\n{"type":"commit","secret":"Finding Nemo"}\n```',
         },
         {
-          thinking: "I will stay vague.",
+          thinking: "They guessed Titanic. Shared: widely known, family-ish? Better: ocean setting.",
           text: [
-            "First clue: it is a mammal that lives in the ocean.",
-            '```json\n{"type":"clue","text":"it is a mammal that lives in the ocean"}\n```',
+            "Both are set primarily in or on the ocean.",
+            '```json\n{"type":"shared_fact","text":"set primarily in or on the ocean"}\n```',
           ].join("\n"),
         },
         {
-          thinking: "Still safe.",
+          thinking: "They guessed The Perfect Storm. Shared: animated? No — family film? Pixar.",
           text: [
-            "Clue: it is known for being playful and intelligent.",
-            '```json\n{"type":"clue","text":"it is known for being playful and intelligent"}\n```',
+            "Both feature a parent-child relationship as a central plot.",
+            '```json\n{"type":"shared_fact","text":"central parent-child relationship"}\n```',
           ].join("\n"),
         },
       ],
@@ -109,12 +109,16 @@ function defaultScript(options: AgentFactoryOptions): MockScript {
   return {
     turns: [
       {
-        thinking: "Ocean mammal... maybe whale?",
-        text: 'Is it a whale?\n```json\n{"type":"guess","value":"whale"}\n```',
+        thinking: "Cold open — try a famous movie.",
+        text: 'Is it Titanic?\n```json\n{"type":"guess","value":"Titanic"}\n```',
       },
       {
-        thinking: "Playful ocean mammal — dolphin.",
-        text: 'I think it is a dolphin.\n```json\n{"type":"guess","value":"dolphin"}\n```',
+        thinking: "Ocean setting... The Perfect Storm?",
+        text: '```json\n{"type":"guess","value":"The Perfect Storm"}\n```',
+      },
+      {
+        thinking: "Ocean + parent-child — Finding Nemo.",
+        text: '```json\n{"type":"guess","value":"Finding Nemo"}\n```',
       },
     ],
   };

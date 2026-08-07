@@ -11,7 +11,7 @@ function usage(): never {
 
 Options:
   --backend mock|cursor   Agent backend (default: mock)
-  --game <id>             Game definition (default: stub-noun)
+  --game <id>             Game definition (default: its-not-jaws)
   --knower-model <id>     Knower model id (default: composer-2.5)
   --guesser-model <id>    Guesser model id (default: composer-2.5)
   --max-turns <n>         Max guesser turns (default: 8)
@@ -52,7 +52,7 @@ async function main(): Promise<void> {
 
   const maxTurns = Number(argValue(args, "--max-turns") ?? 8);
   const record = await runGame({
-    gameId: argValue(args, "--game") ?? "stub-noun",
+    gameId: argValue(args, "--game") ?? "its-not-jaws",
     backend,
     knowerModel,
     guesserModel: argValue(args, "--guesser-model") ?? "composer-2.5",

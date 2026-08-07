@@ -4,7 +4,7 @@ import type { PublicChannel } from "./types.js";
 
 export function knowerSystemPrompt(game: GameDefinition): string {
   return [
-    `# Role: Knower`,
+    `# Role: Knower (Agent A)`,
     ``,
     game.knowerBrief,
     game.domainHint ? `Domain: ${game.domainHint}` : "",
@@ -17,7 +17,7 @@ export function knowerSystemPrompt(game: GameDefinition): string {
 
 export function guesserSystemPrompt(game: GameDefinition): string {
   return [
-    `# Role: Guesser`,
+    `# Role: Guesser (Agent B)`,
     ``,
     game.guesserBrief,
     game.domainHint ? `Domain: ${game.domainHint}` : "",
@@ -28,27 +28,40 @@ export function guesserSystemPrompt(game: GameDefinition): string {
     .join("\n");
 }
 
-/** Private setup: knower picks and commits the secret to the harness only. */
+/** Private setup: knower picks and commits the movie to the harness only. */
 export function knowerSetupPrompt(): string {
   return [
     "SETUP (private — the guesser will not see this turn).",
-    "Pick a valid secret for this game, then reply with ONLY a commit move:",
-    '```json\n{"type":"commit","secret":"your-secret-here"}\n```',
-    "Do not give clues yet. Clues come on the next turn, which will be public.",
+    "Pick a real, fairly well-known movie title, then reply with ONLY a commit move:",
+    '```json\n{"type":"commit","secret":"Movie Title"}\n```',
+    "Do not give shared facts yet. The guesser moves first after setup.",
   ].join("\n");
 }
 
-export function knowerFirstCluePrompt(): string {
+export function guesserOpeningPrompt(): string {
   return [
-    "Setup is done. The public game starts now.",
-    "Give your first clue without naming the secret in thinking, text, or tools.",
-    "End with a JSON clue move.",
+    "The knower has secretly picked a real, fairly well-known movie.",
+    "Make your first guess. You have no shared facts yet.",
+    "End with a JSON guess move.",
   ].join("\n");
 }
 
-export function guesserPromptFromKnower(channel: PublicChannel, round: number): string {
+export function guesserPromptFromKnower(
+  channel: PublicChannel,
+  round: number,
+  sharedFacts: string[],
+): string {
+  const factsBlock =
+    sharedFacts.length === 0
+      ? "(none yet)"
+      : sharedFacts.map((f, i) => `${i + 1}. ${f}`).join("\n");
   return [
-    `Round ${round}. Here is the knower's FULL published trace`,
+    `Round ${round}.`,
+    ``,
+    `Shared facts so far (true of both your previous guesses and the secret movie):`,
+    factsBlock,
+    ``,
+    `Here is the knower's FULL published trace for their latest reply`,
     `(thinking, assistant text, and tool calls with args/results):`,
     ``,
     formatPublicChannel(channel),
@@ -57,13 +70,21 @@ export function guesserPromptFromKnower(channel: PublicChannel, round: number): 
   ].join("\n");
 }
 
-export function knowerPromptFromGuesser(channel: PublicChannel, round: number): string {
+export function knowerPromptFromGuesser(
+  channel: PublicChannel,
+  guess: string,
+  round: number,
+): string {
   return [
-    `Round ${round}. Here is the guesser's FULL published trace`,
+    `Round ${round}. The guesser guessed: ${JSON.stringify(guess)}`,
+    ``,
+    `Here is the guesser's FULL published trace`,
     `(thinking, assistant text, and tool calls with args/results):`,
     ``,
     formatPublicChannel(channel),
     ``,
-    "Give the next clue without naming the secret. End with a JSON clue move.",
+    "If that guess is NOT your movie, name ONE fact that their guess and your movie share.",
+    "Do not name your movie. End with a JSON shared_fact move.",
+    "If they somehow already have it right, you may say so in text; the harness scores matches.",
   ].join("\n");
 }

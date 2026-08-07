@@ -1,9 +1,8 @@
 /**
- * Pluggable game rules. The stub is a stand-in until the real
- * "It's Not Jaws" rules are specified.
+ * Pluggable game rules. See GAME.md for the canonical It's Not Jaws rules.
  *
  * The knower picks the secret. The harness only validates / scores —
- * it does not choose from a word list.
+ * it does not choose from a title list.
  */
 export type GameDefinition = {
   id: string;
@@ -13,11 +12,12 @@ export type GameDefinition = {
   /** Instructions injected into the guesser system prompt. */
   guesserBrief: string;
   /**
-   * Return false when the secret could not fairly be guessed from clues
-   * (blocked domain, private trivia, empty, etc.). Heuristic only — not an
-   * allowlist the harness samples from.
+   * True when the secret looks like a fair, well-known-enough movie title.
+   * Used when the guesser gives up / hits max turns:
+   *   fair → knower_wins; unfair → unguessable.
+   * Heuristic only for now — not an allowlist the harness samples from.
    */
-  isGuessable(secret: string): boolean;
+  isFairSecret(secret: string): boolean;
   /** Optional domain hint for prompts. */
   domainHint?: string;
 };

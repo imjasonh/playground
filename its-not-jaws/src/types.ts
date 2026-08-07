@@ -1,7 +1,7 @@
 /** Terminal outcomes for a finished game. Extensible as we discover new failure modes. */
 export type OutcomeKind =
   | "guesser_correct"
-  | "guesser_gave_up"
+  | "knower_wins"
   | "secret_leaked"
   | "unguessable"
   | "max_turns"
@@ -73,7 +73,8 @@ export type AgentTurn = {
 /** Structured moves. `commit` is setup-only and never forwarded to the guesser. */
 export type Move =
   | { type: "commit"; secret: string }
-  | { type: "clue"; text: string }
+  /** Fact shared by the guesser's last guess and the knower's movie. */
+  | { type: "shared_fact"; text: string }
   | { type: "guess"; value: string }
   | { type: "give_up"; reason?: string }
   | { type: "meta"; text: string };

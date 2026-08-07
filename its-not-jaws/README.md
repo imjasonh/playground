@@ -1,18 +1,14 @@
 # It's Not Jaws
 
-Harness for two AI agents playing a secret-guessing game against each other,
-built on the [Cursor TypeScript SDK](https://cursor.com/docs/sdk/typescript).
+Harness for two AI agents playing **It's Not Jaws** — a movie shared-fact
+guessing game — built on the
+[Cursor TypeScript SDK](https://cursor.com/docs/sdk/typescript).
 
-The **knower** chooses a secret (private setup commit to the harness). The
-**guesser** tries to find it from clues. During gameplay the guesser sees the
-knower's **full published trace** — thinking, assistant text, and any tool-call
-args/results. The benchmark is about hiding a secret even when all of that is
-public.
+- **Knower (A)** secretly picks a well-known movie.
+- **Guesser (B)** guesses titles; after each miss, A names a fact both movies share.
+- During gameplay B sees A's **full published trace** (thinking, text, tool calls).
 
-See [DESIGN.md](./DESIGN.md) for architecture, channels, and outcome taxonomy.
-
-> Game rules are still a stub (`stub-noun`). The harness is ready for iteration
-> and live Cursor runs while the real It's Not Jaws rules are specified.
+Rules: [GAME.md](./GAME.md) · Harness design: [DESIGN.md](./DESIGN.md)
 
 ## Requirements
 
@@ -35,17 +31,9 @@ npm run typecheck
 
 ## Play
 
-Mock dry run (default):
-
 ```bash
 npm run play:mock
-# or
-npm run play -- --backend mock --verbose
-```
-
-Live Cursor agents:
-
-```bash
+# live:
 export CURSOR_API_KEY=...
 npm run play -- --backend cursor \
   --knower-model composer-2.5 \
@@ -54,28 +42,27 @@ npm run play -- --backend cursor \
   --verbose
 ```
 
-Each run prints a JSON summary and writes a full record to `results/<id>.json`
-(outcome, secret, full traces, token usage, optional cost).
+Each run prints a JSON summary and writes `results/<id>.json`.
 
 ## Layout
 
 ```
 its-not-jaws/
-├── DESIGN.md
+├── GAME.md              # Canonical game rules
+├── DESIGN.md            # Harness architecture
 ├── src/
-│   ├── cli.ts           # CLI entry
-│   ├── harness.ts       # Turn loop + record writer
-│   ├── judge.ts         # Deterministic outcomes
-│   ├── protocol.ts      # Move parsing + leak helpers
+│   ├── cli.ts
+│   ├── harness.ts
+│   ├── judge.ts
+│   ├── protocol.ts
 │   ├── prompts.ts
-│   ├── agents/          # mock + cursor PlayerAgent backends
-│   └── games/           # Pluggable rules (stub for now)
+│   ├── agents/          # mock + cursor backends
+│   └── games/           # its-not-jaws game definition
 ├── tests/
-└── results/             # Game JSON records (gitignored contents)
+└── results/
 ```
 
 ## Notes
 
-- Not a GitHub Pages browser app (no `index.html`); shared deploy workflows ignore it.
-- Shared `test.yml` app discovery also skips it today — run `npm test` here when
-  changing this directory (same pattern as other non-browser tools in the repo).
+- Not a GitHub Pages browser app (no `index.html`).
+- Shared `test.yml` discovery skips it today — run `npm test` here when changing this dir.

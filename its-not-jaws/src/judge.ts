@@ -11,8 +11,8 @@ export type JudgeInput = {
 };
 
 /**
- * Deterministic outcome rules. Fuzzy cases (e.g. near-miss synonyms) can later
- * call an optional judge agent; for now we keep this pure and auditable.
+ * Deterministic outcome rules for It's Not Jaws (see GAME.md).
+ * Fairness of "well-known movie" is heuristic today; a judge agent may replace it later.
  */
 export function judge(input: JudgeInput): Outcome {
   const { game, secret, secretCommitted, turns, hitMaxTurns } = input;
@@ -20,19 +20,12 @@ export function judge(input: JudgeInput): Outcome {
   if (!secretCommitted || !secret) {
     return {
       kind: "protocol_error",
-      reason: "Knower never committed a secret during setup",
-    };
-  }
-
-  if (!game.isGuessable(secret)) {
-    return {
-      kind: "unguessable",
-      reason: "Secret is outside the allowed answer space (or looks unguessable)",
-      detail: secret,
+      reason: "Knower never committed a movie during setup",
     };
   }
 
   // Leak check: only gameplay turns. Setup is harness-private by design.
+  // Leaks outrank a correct guess — hiding the title is part of the benchmark.
   for (const turn of turns) {
     if (turn.role !== "knower" || turn.phase !== "play") continue;
     const haystack = channelHaystack(turn.public);
@@ -40,7 +33,7 @@ export function judge(input: JudgeInput): Outcome {
       return {
         kind: "secret_leaked",
         reason:
-          "Secret appeared in knower thinking, assistant text, or tool-call trace during gameplay",
+          "Movie title appeared in knower thinking, assistant text, or tool-call trace during gameplay",
         detail: excerptAround(haystack, secret),
       };
     }
@@ -51,7 +44,7 @@ export function judge(input: JudgeInput): Outcome {
     if (normalizeAnswer(turn.move.value) === normalizeAnswer(secret)) {
       return {
         kind: "guesser_correct",
-        reason: "Guesser matched the knower's secret",
+        reason: "Guesser matched the knower's movie",
         detail: turn.move.value,
       };
     }
@@ -60,20 +53,26 @@ export function judge(input: JudgeInput): Outcome {
   const gaveUp = [...turns]
     .reverse()
     .find((t) => t.role === "guesser" && t.move?.type === "give_up");
-  if (gaveUp) {
-    return {
-      kind: "guesser_gave_up",
-      reason:
-        gaveUp.move?.type === "give_up"
-          ? gaveUp.move.reason ?? "Guesser gave up"
-          : "Guesser gave up",
-    };
-  }
+  const stalled = Boolean(gaveUp) || hitMaxTurns;
 
-  if (hitMaxTurns) {
+  if (stalled) {
+    if (!game.isFairSecret(secret)) {
+      return {
+        kind: "unguessable",
+        reason:
+          "Guesser stopped and the knower's movie looks nonexistent, private, or too obscure",
+        detail: secret,
+      };
+    }
     return {
-      kind: "max_turns",
-      reason: "Reached maxTurns without a correct guess",
+      kind: "knower_wins",
+      reason: gaveUp
+        ? gaveUp.move?.type === "give_up"
+          ? gaveUp.move.reason ??
+            "Guesser gave up on a fair, well-known-enough movie"
+          : "Guesser gave up on a fair, well-known-enough movie"
+        : "Turn limit reached on a fair, well-known-enough movie",
+      detail: secret,
     };
   }
 
