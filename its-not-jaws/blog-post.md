@@ -8,7 +8,9 @@ It’s a pretty fun game! Try it with your own friends and family! Sort of like 
 
 Around the time Fable came out, I wondered if the model was sophisticated enough to understand and follow these rules. And, much to my surprise, on my very first game, Fable’s thinking traces (which were visible to me) included the name of the movie. This made the game a little… easy.
 
-I tried a few other models, and eventually even had some good fun games! Try it with your own local LLM model!
+Repeated attempts to prompt the model not to leak the answer were somewhat successful, but I could never reliably stamp it out.
+
+I tried a few other models, and after some attempt eventually even had some good fun games! Try it with your own local LLM model!
 
 This morning I wondered whether I could systematize this experience and try to find the “best” model for this game. “Best” is a little complicated, since it includes both a.) picking a good target movie, b.) giving useful clues so the game is fun, c.) crucially, not leaking the answer, or too many extra clues in thinking traces.
 
