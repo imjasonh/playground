@@ -23,6 +23,8 @@ Some interesting findings:
 
 Anyway, I don’t know what this could be useful for, but it was super fun to build! I encourage you to have fun ideas and experiment with them, it’s one of the last things that make us truly human.
 
+You can see one matchup [here](https://github.com/imjasonh/playground/actions/runs/31191985994). It takes 30m and costs ~$20 to run, if you feel like reproducing my results. PRs welcome!
+
 And if we’re ever hanging out and you want to play a game, I’d be happy to give it a go.
 
 PS: the game is called “It’s Not Jaws” because there’s an extra rule where you cannot under any circumstances choose Jaws as the answer. I didn’t tell the models this, but they still never picked Jaws as the answer.
