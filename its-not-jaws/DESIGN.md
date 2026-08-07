@@ -90,4 +90,4 @@ Naming the title during private setup is expected and not a leak.
 - [ ] Stronger title leak detectors (aliases, year disambiguation, word boundaries)
 - [ ] Suite runner: N games × model matrix → summary table
 - [ ] Cloud runtime path for parallel tournaments
-- [ ] CI discovery for this Node CLI (today: `cd its-not-jaws && npm test`)
+- [x] App-specific GHA workflow (`.github/workflows/its-not-jaws.yml`) for PR live games via `CURSOR_API_KEY`

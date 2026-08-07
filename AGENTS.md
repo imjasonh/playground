@@ -165,6 +165,7 @@ discovery scripts.
 | `ios-signing-bootstrap.yml` | manual (`workflow_dispatch`) + reusable | Creates & stores signing cert/profile in the `match` repo; also called on labeled merges |
 | `deps.yaml` | daily at 00:00 UTC, manual | Updates every testable browser app, Go app, and Rust app; pushes passing updates to `main`, otherwise opens a PR |
 | `nypd-choppers-scrape.yml` | hourly, manual | **App-specific:** fetches NYPD helicopter full-day ADS-B traces and merges per-day JSON to `gh-pages` under `nypd-choppers/data/`. Not generalized; shares the `gh-pages-publish` concurrency group with deploy/preview/cleanup |
+| `its-not-jaws.yml` | pull requests touching `its-not-jaws/**`, manual | **App-specific:** unit-tests the harness and, when repo secret `CURSOR_API_KEY` is set, plays one live Cursor Agent SDK game; uploads the result artifact |
 
 Deploy workflows copy browser app directories as-is (they do **not** run
 `npm install` or build). Go and Rust app directories are not deployed. Only
@@ -570,7 +571,7 @@ auto-discover them. Run their local tests when you change them.
 
 | Directory | Type | Tests |
 |-----------|------|-------|
-| `its-not-jaws/` | Cursor SDK harness for It's Not Jaws (movie shared-fact guessing); mock backend for tests, live agents via `CURSOR_API_KEY` | `cd its-not-jaws && npm test` |
+| `its-not-jaws/` | Cursor SDK harness for It's Not Jaws (movie shared-fact guessing); mock backend for tests; live PR game via `its-not-jaws.yml` + `CURSOR_API_KEY` secret | `cd its-not-jaws && npm test` (CI also runs a live game when the secret is set) |
 | `life-scad/` | OpenSCAD Life sculpture (Z = time) plus optional Python reverse-history search | `python3 life-scad/reverse_life_test.py` (needs `pip install -r life-scad/requirements.txt`) |
 | `life-qr/` | Parametric OpenSCAD Life sculpture with a QR-code roof for any text/height | `python3 life-qr/life_qr_test.py` (optional `pip install segno`) |
 

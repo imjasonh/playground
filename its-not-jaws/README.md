@@ -62,7 +62,27 @@ its-not-jaws/
 └── results/
 ```
 
+## CI
+
+PRs that touch `its-not-jaws/**` run `.github/workflows/its-not-jaws.yml`:
+
+1. `npm test` + typecheck (always)
+2. One live Cursor game when repo secret **`CURSOR_API_KEY`** is set
+
+Add the secret under **Settings → Secrets and variables → Actions**. Until it
+exists, the live step is skipped with a warning (unit tests still run).
+
+Optional Actions variables (defaults in parentheses):
+
+| Variable | Default |
+|----------|---------|
+| `ITS_NOT_JAWS_KNOWER_MODEL` | `composer-2.5` |
+| `ITS_NOT_JAWS_GUESSER_MODEL` | `composer-2.5` |
+| `ITS_NOT_JAWS_MAX_TURNS` | `8` |
+
+Manual run: Actions → It's Not Jaws → Run workflow.
+
 ## Notes
 
 - Not a GitHub Pages browser app (no `index.html`).
-- Shared `test.yml` discovery skips it today — run `npm test` here when changing this dir.
+- Shared `test.yml` discovery skips unit tests here; the workflow above covers them on relevant PRs.
