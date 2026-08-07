@@ -106,6 +106,24 @@ final class RideWatchWorkoutController: NSObject, ObservableObject {
         ensureSession()
     }
 
+    /// Prompt for Health access while the Watch app is idle (before a ride),
+    /// so the user is not blocked mid-ride with "Health access is required".
+    func prepareHealthAccessIfNeeded() {
+        guard !wantsSession else { return }
+        Task {
+            let authorized = await ensureAuthorization()
+            if !authorized,
+               healthStore.authorizationStatus(for: HKObjectType.workoutType()) == .sharingDenied {
+                lastErrorMessage = "Health access is required to keep Ride Monitor on-wrist and collect activity data."
+            } else if authorized {
+                // Clear a prior denial message once access is granted.
+                if lastErrorMessage?.contains("Health access") == true {
+                    lastErrorMessage = nil
+                }
+            }
+        }
+    }
+
     private var hasUsableSession: Bool {
         guard let session else { return false }
         switch session.state {

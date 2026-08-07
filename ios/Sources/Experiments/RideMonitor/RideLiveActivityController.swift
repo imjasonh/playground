@@ -49,7 +49,9 @@ final class RideLiveActivityController {
 
     /// Ends Live Activities left behind after a crash / force-quit when this
     /// process is not recording. Safe at cold launch and whenever the UI shows
-    /// idle (Start ride).
+    /// idle (Start ride). Does not affect intentionally ended summaries that
+    /// ActivityKit is still presenting under `.after(summaryRetention)` —
+    /// those are already gone from `Activity.activities`.
     func endOrphansIfNeeded() {
         let hasTracked = activity != nil
         let hasPending = pendingStart != nil
@@ -78,11 +80,14 @@ final class RideLiveActivityController {
         }
         guard let activity else { return }
         let token = generation
+        let activityID = activity.id
         let state = RideMonitorAttributes.ContentState(snapshot: snapshot)
         let content = ActivityContent(state: state, staleDate: nil)
         Task {
             // Drop updates that lost a race with `end()` / a newer start.
-            guard token == self.generation else { return }
+            // Re-check after suspension points would be too late to un-apply an
+            // update, so require that we still own this activity id first.
+            guard token == self.generation, self.activity?.id == activityID else { return }
             await activity.update(content)
         }
     }
@@ -90,35 +95,46 @@ final class RideLiveActivityController {
     func end(snapshot: RideLiveSnapshot?) {
         pendingStart = nil
         generation += 1
+        let dismissalDate = RideLiveActivityPolicy.summaryDismissalDate()
         let content: ActivityContent<RideMonitorAttributes.ContentState>? = snapshot.map {
-            // Mark final content stale immediately so Lock Screen / Dynamic
-            // Island chrome cannot keep looking "live" if dismissal is delayed.
+            // Final content stays current for the summary retention window, then
+            // becomes stale at the same instant ActivityKit auto-dismisses.
             ActivityContent(
                 state: RideMonitorAttributes.ContentState(snapshot: $0),
-                staleDate: Date()
+                staleDate: dismissalDate
             )
         }
         let tracked = activity
         activity = nil
 
         // Capture the system list now, then sweep again after awaits — a raced
-        // `request` or force-quit leftover can otherwise linger.
+        // `request` or force-quit leftover can otherwise linger as an *active*
+        // ride. Ended summaries use delayed dismissal and leave this list.
         let known = Activity<RideMonitorAttributes>.activities
+        let dismissal = ActivityUIDismissalPolicy.after(dismissalDate)
         Task {
             var seen = Set<String>()
             if let tracked {
                 seen.insert(tracked.id)
-                // Immediate dismissal: `.default` left the activity on Lock
-                // Screen / Dynamic Island for hours, which looked like the ride
-                // was still recording after Stop.
-                await tracked.end(content, dismissalPolicy: .immediate)
+                // Push frozen summary before `end` so Lock Screen / Dynamic
+                // Island stop the open-ended timer even if dismissal is delayed.
+                if let content {
+                    await tracked.update(content)
+                }
+                await tracked.end(content, dismissalPolicy: dismissal)
             }
             for existing in known where !seen.contains(existing.id) {
                 seen.insert(existing.id)
-                await existing.end(content, dismissalPolicy: .immediate)
+                if let content {
+                    await existing.update(content)
+                }
+                await existing.end(content, dismissalPolicy: dismissal)
             }
             for existing in Activity<RideMonitorAttributes>.activities where !seen.contains(existing.id) {
-                await existing.end(content, dismissalPolicy: .immediate)
+                if let content {
+                    await existing.update(content)
+                }
+                await existing.end(content, dismissalPolicy: dismissal)
             }
         }
     }
@@ -132,6 +148,8 @@ final class RideLiveActivityController {
     private func performStart(token: Int) async {
         // Await stale ends before requesting so we don't hit the activity limit
         // after a force-quit left a previous ride's Live Activity around.
+        // Also clears any still-visible summary from a prior ride immediately
+        // so the new ride can take the Live Activity slot.
         let stale = Activity<RideMonitorAttributes>.activities
         for existing in stale {
             await existing.end(nil, dismissalPolicy: .immediate)
