@@ -16,7 +16,7 @@ echo "== assembled =="
 "$TOOLS/multi-preview.sh" "$ROOT/case.scad" "$OUT/assembled" \
   -D 'part="assembled"' -D 'show_components=true'
 
-for p in shell cap; do
+for p in shell cap key; do
   echo ""
   echo "== $p (print orientation) =="
   "$TOOLS/multi-preview.sh" "$ROOT/case.scad" "$OUT/$p" \

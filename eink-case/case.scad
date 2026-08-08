@@ -14,18 +14,18 @@
 // (slide direction). Every layer is self-supporting — the backer is a
 // vertical wall, not a bridge over the window.
 //
-// Assembly: slide panel into shell from FPC end → fold ribbon into bay →
-// seat board → clip cap on (no screws).
+// Assembly: slide panel into shell from FPC end → connect ribbon → slide the
+// board ZIF-end-first into straight rails → seat cap → insert two rigid keys.
 //
 // Fasteners:
-//   Cap→shell: internal cantilever clips (flush outer cap face — no screw heads)
-//   Board:     none (cradle + optional VHB)
+//   Cap→shell: two rigid printed side keys (PLA-safe; no flex, no screws)
+//   Board:     none (straight slide-in cradle; cap retains it)
 //
 // Assembly coords: X right, Y up (FPC at Y=0), Z toward back.
 // Print (shell): closed end (Y=max) on bed, FPC end open at top.
 
 /* [Parts] */
-part = "assembled"; // [assembled, shell, cap] Which object to show / export
+part = "assembled"; // [assembled, shell, cap, key] Which object to show / export
 show_components = true; // Ghost panel + board in assembled preview
 explode = 0;            // [0:0.5:40] Part separation for assembly views (mm)
 
@@ -53,36 +53,42 @@ board_comp_h = 8.0;          // [5:0.5:15] Component clearance above PCB (mm)
 usb_w = 9.2;                 // [8:0.1:12] USB-C shell width (mm)
 usb_h = 3.6;                 // [3:0.1:5] USB-C shell height (mm)
 usb_protrude = 1.5;          // [0.5:0.1:3] USB shell past PCB edge (mm)
-usb_face = 0.0;              // [-1:0.1:1] USB tip vs outer wall (0=flush) (mm)
+usb_face = 0.0;              // [0:0.1:2] USB recess from cap outer face (mm)
 usb_cut_clear = 0.7;         // [0.3:0.1:1.5] USB cutout clearance (mm)
-board_pocket_clear = 0.5;    // [0.2:0.1:1.2] XY slop in board cradle (mm)
+board_pocket_clear = 0.75;   // [0.4:0.05:1.2] PCB edge/rail clearance (mm)
+board_z_clear = 0.30;        // [0.15:0.05:0.6] PCB thickness clearance (mm)
+board_edge_capture = 1.0;    // [0.6:0.1:1.5] PCB edge held by each rail (mm)
+board_end_clear = 0.30;      // [0.1:0.05:0.8] End play between cap/stop (mm)
 
 /* [Case geometry] */
 wall = 2.4;                  // [1.5:0.1:4] Outer wall thickness (mm)
-panel_clear = 0.30;          // [0.15:0.05:0.8] Slot clearance around panel (mm)
-panel_crush = 0.20;          // [0:0.05:0.4] Crush-rib intrusion in slot (mm)
+panel_clear = 0.40;          // [0.2:0.05:0.8] Slot clearance around panel (mm)
+panel_crush = 0.15;          // [0:0.05:0.4] Crush-rib intrusion in slot (mm)
 front_lip_t = 1.4;           // [1.0:0.1:2.5] Front window-lip thickness (mm)
 backer_t = 2.0;              // [1.5:0.1:3] Panel backer wall thickness (mm)
 rear_bay_extra = 3.0;        // [1:0.5:8] Extra bay air (mm)
 cap_t = 2.4;                 // [1.5:0.1:4] Cap thickness along slide axis (mm)
 cap_rabbet = 1.2;            // [0.6:0.1:2.5] Cap lip into shell mouth (mm)
 cap_skirt = 3.0;             // [1.5:0.5:6] Cap return flange over front/back (mm)
-side_rim = 3.0;              // [2:0.1:8] Rim outside panel L/R (mm)
+side_rim = 1.5;              // [1.2:0.1:8] Rim outside panel L/R (mm)
 closed_end_wall = 3.0;       // [2:0.1:8] Wall opposite FPC / print bed (mm)
 
-/* [Cap clips — no screws; outer cap face stays flat] */
-clip_arm_t = 1.3;            // [1.0:0.1:2.0] Flex-arm thickness (mm)
-clip_arm_w = 10.0;           // [6:0.5:16] Flex-arm width along depth (mm)
-clip_reach = 6.5;            // [4:0.5:10] Arm length into shell (mm)
-clip_barb = 0.9;             // [0.5:0.1:1.4] Barb protrusion into wall (mm)
-clip_barb_y = 1.4;           // [0.8:0.1:2.5] Barb catch face length along Y (mm)
-clip_clear = 0.25;           // [0.1:0.05:0.5] Pocket clearance (mm)
+/* [Cap locks — rigid printed keys; PLA-safe, no bending] */
+lock_tongue_t = 2.0;         // [1.5:0.1:3] Cap side-tongue thickness (mm)
+lock_reach = 8.0;            // [6:0.5:12] Tongue reach into shell (mm)
+lock_key_y = 2.6;            // [2:0.1:4] Key shear thickness along case Y (mm)
+lock_key_z = 7.0;            // [5:0.5:10] Key body height (mm)
+lock_key_clear = 0.25;       // [0.15:0.05:0.5] Key/slot clearance (mm)
+lock_head_t = 1.2;           // [0.8:0.1:2] Side pull-tab projection (mm)
+lock_head_y = 5.2;           // [4:0.2:8] Pull-tab width (mm)
+lock_head_z = 10.0;          // [8:0.5:14] Pull-tab height (mm)
+lock_tip = 0.8;              // [0.4:0.1:1.5] Insertion lead-in length (mm)
 
 /* [USB exit] */
-usb_exit = "back";           // [back, side] Perimeter wall for USB-C
+usb_exit = "cap";            // [cap] USB-C exits through removable cap
 
 /* [FDM — elephant-foot relief] */
-elephant_chamfer = 0.5;      // [0:0.1:1.5] Bed-face outer chamfer (mm)
+elephant_chamfer = 0.3;      // [0:0.1:1.5] Bed-face outer chamfer (mm)
 window_elephant_chamfer = 0.3; // [0:0.1:1] Window-edge relief on front lip (mm)
 
 /* [Tolerances / print] */
@@ -135,57 +141,51 @@ board_y0 = board_pose[1];
 board_rot = board_pose[2];
 board_z0 = z_bay0 + board_standoff;
 
-// Two clip stations per side wall (front-of-bay / back-of-bay), flush windows.
-clip_z_pad = 2.0;
-function clip_z_list() = [
-    z_bay0 + clip_z_pad,
-    z_bay1 - clip_z_pad - clip_arm_w
-];
-clip_catch_y = clip_reach - clip_barb_y - 0.15;
+lock_key_center_y = 4.8;
+lock_key_center_z = z_bay0 + bay_d / 2;
+lock_key_body_l = wall + lock_key_clear + lock_tongue_t + 0.8;
+
+assert(panel_clear > panel_crush,
+       "panel_clear must exceed panel_crush so the glass can slide");
+assert(case_w <= 180,
+       "Default shell must fit the Bambu A1 Mini's 180 mm X dimension");
+assert(lock_key_center_y + lock_key_y / 2 + lock_key_clear < lock_reach,
+       "Rigid key slot must remain inside the cap lock tongue");
 
 echo("============================================================");
 echo(str("CLOSED OVERALL: ", case_w, " x ", case_h + cap_t, " x ", case_depth, " mm"));
-echo("Printable parts: 2  (shell + cap)");
+echo("Printable geometries: 3  (shell + cap + key; print 2 keys)");
 echo("Print shell: CLOSED-END down, FPC slide-open UP (U-slot extruded in Z)");
-echo("Print cap:   outer face down (FLAT — no screw heads)");
+echo("Print cap:   outer face down (flat; USB opening only)");
 echo(str("Slot: clear=", panel_clear, " crush=", panel_crush,
-         "  (panel slides in from FPC end)"));
+         " effective rib clearance/side=", panel_clear - panel_crush));
 echo(str("FPC: fold bay ", fpc_fold_bay, " mm; internal backer pass (no external hole)"));
-echo(str("Cap retention: 4× internal clips (barb ", clip_barb, " mm); no screws"));
-echo("Board screws: none (bay cradle, connected to backer)");
-echo(str("Bay depth: ", bay_d, " mm; USB exit: ", usb_exit,
-         "  tip@", usb_exit == "side" ? case_w - usb_face : usb_face, " mm"));
-echo(str("Board standoff/beads: ", board_standoff, " mm (rails fused to backer)"));
+echo(str("Cap retention: 2× rigid printed keys; clearance=", lock_key_clear,
+         " mm (PLA-safe, no flex)"));
+echo(str("Board: ZIF-end-first straight slide; edge clear=", board_pocket_clear,
+         " mm; thickness clear=", board_z_clear, " mm"));
+echo(str("USB: cap opening ", usb_w + 2 * usb_cut_clear, " x ",
+         usb_h + 2 * usb_cut_clear, " mm; face recess=", usb_face, " mm"));
+echo(str("Board standoff: ", board_standoff, " mm; rails fused to backer"));
 echo(str("Elephant-foot chamfer: ", elephant_chamfer, " mm"));
 echo("See LEARNINGS.md — U-slot print-upward principle");
 echo("============================================================");
 
-// Board sits near the CLOSED end so cradle features grow UP in print Z.
-// USB exits a perimeter wall in XY (PCB is parallel to the backer, so the
-// connector cannot point out the rear Z face).
-//   usb_exit=back → left wall (X=0), board_rot=0, USB at local -X
-//   usb_exit=side → right wall (X=case_w), board_rot=180, USB at world +X
+// Board rotates so its long axis follows the shell's insertion direction.
+// The ZIF end leads into two straight grooves; USB remains at the cap mouth.
+// Local -X (USB) maps to world -Y (the removable-cap end).
 function board_placement() =
-    let (
-        m = wall + 3.5,
-        // rot 0/180 keeps board_w along Y
-        by = case_h - wall - m - board_w - 2,
-        y0 = max(m, by)
-    )
-    usb_exit == "side"
-        // Origin at ZIF end after 180°; USB tip at x = board_x0 + usb_protrude.
-        ? [case_w - usb_face - usb_protrude, y0 + board_w, 180]
-    : /* back */ [usb_face + usb_protrude, y0, 0];
+    [
+        case_w / 2 + board_w / 2,
+        -cap_t + usb_face + usb_protrude,
+        90
+    ];
 
 function board_size_xy() =
-    // Axis-aligned footprint in assembly XY (accounts for 180°).
-    [board_l, board_w];
+    [board_w, board_l];
 
 function board_footprint() =
-    let (sz = board_size_xy())
-        usb_exit == "side"
-            ? [board_x0 - sz[0], board_y0 - sz[1], sz[0], sz[1]]
-        : /* back */ [board_x0, board_y0, sz[0], sz[1]];
+    [board_x0 - board_w, board_y0, board_w, board_l];
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -262,100 +262,155 @@ module board_ghost() {
     }
 }
 
-module usb_cutout() {
-    // Tunnel sized to the USB-C shell, in board-local frame (works for rot 0/180).
+module cap_usb_cutouts() {
+    // USB tunnel through the cap at final display resolution / placement.
     cw = usb_w + 2 * usb_cut_clear;
     ch = usb_h + 2 * usb_cut_clear;
-    // Reach from well outside the outer wall, past the connector, into the bay.
-    deep = wall + abs(usb_face) + usb_protrude + 10;
     at_board()
         translate([
-            -usb_protrude - wall - abs(usb_face) - 4,
+            -usb_protrude - usb_face - eps,
             (board_w - cw) / 2,
             board_t - usb_cut_clear
         ])
-            cube([deep, cw, ch]);
+            cube([
+                usb_protrude + usb_face + cap_t + 4,
+                cw,
+                ch
+            ]);
 
-    // PCB edge relief where the board overlaps the perimeter wall thickness.
+    // The PCB's USB edge sits partly inside the cap. Recess only the cap's
+    // inner face; the outer face remains solid except for the USB tunnel.
     fp = board_footprint();
     bx = fp[0];
     by = fp[1];
     bw = fp[2];
-    bh = fp[3];
-    if (usb_exit == "back")
-        translate([-eps, by - board_pocket_clear, board_z0 - 0.15])
-            cube([
-                max(wall, usb_face + usb_protrude) + 2 * eps,
-                bh + 2 * board_pocket_clear,
-                board_t + 0.3
-            ]);
-    else if (usb_exit == "side")
-        translate([
-            case_w - max(wall, usb_face + usb_protrude) - eps,
-            by - board_pocket_clear,
-            board_z0 - 0.15
-        ])
-            cube([
-                max(wall, usb_face + usb_protrude) + 2 * eps,
-                bh + 2 * board_pocket_clear,
-                board_t + 0.3
-            ]);
+    relief_y0 = min(by - board_end_clear, -eps);
+    translate([
+        bx - board_pocket_clear,
+        relief_y0,
+        board_z0 - board_z_clear
+    ])
+        cube([
+            bw + 2 * board_pocket_clear,
+            -relief_y0 + eps,
+            board_t + 2 * board_z_clear
+        ]);
 }
 
 // ---------------------------------------------------------------------------
-// Cap clips (internal cantilever — outer cap face stays flat)
+// PLA-safe cap locks — two rigid printed keys, no cantilever flex
 // ---------------------------------------------------------------------------
-// side = -1 (left wall) or +1 (right wall). Arm flexes in X; barb snaps into
-// a flush through-window in the side wall. 45° lead-in is print-up safe on
-// the cap (outer face down → arm grows in +Z_print).
-module cap_side_clip(side, z0) {
-    x_arm = side < 0
-        ? wall + clip_clear
-        : case_w - wall - clip_arm_t - clip_clear;
-    translate([x_arm, -eps, z0]) {
-        cube([clip_arm_t, clip_reach + eps, clip_arm_w]);
-        // Catch face + 45° insertion ramp (barb points outward)
-        y_catch = clip_reach - clip_barb_y;
-        if (side < 0) {
-            translate([-clip_barb, y_catch, 0])
-                cube([clip_barb + eps, clip_barb_y, clip_arm_w]);
-            hull() {
-                translate([0, y_catch - clip_barb, 0])
-                    cube([eps, eps, clip_arm_w]);
-                translate([0, y_catch, 0])
-                    cube([eps, eps, clip_arm_w]);
-                translate([-clip_barb, y_catch, 0])
-                    cube([eps, eps, clip_arm_w]);
-            }
-        } else {
-            translate([clip_arm_t - eps, y_catch, 0])
-                cube([clip_barb + eps, clip_barb_y, clip_arm_w]);
-            hull() {
-                translate([clip_arm_t - eps, y_catch - clip_barb, 0])
-                    cube([eps, eps, clip_arm_w]);
-                translate([clip_arm_t - eps, y_catch, 0])
-                    cube([eps, eps, clip_arm_w]);
-                translate([clip_arm_t + clip_barb - eps, y_catch, 0])
-                    cube([eps, eps, clip_arm_w]);
-            }
+module shell_lock_slots() {
+    hole_y = lock_key_y + 2 * lock_key_clear;
+    hole_z = lock_key_z + 2 * lock_key_clear;
+    for (x = [-eps, case_w - wall - eps])
+        translate([
+            x,
+            lock_key_center_y - hole_y / 2,
+            lock_key_center_z - hole_z / 2
+        ])
+            cube([wall + 2 * eps, hole_y, hole_z]);
+}
+
+module cap_lock_tongues() {
+    tongue_z0 =
+        lock_key_center_z - lock_key_z / 2 - lock_key_clear - 1.0;
+    tongue_h = lock_key_z + 2 * lock_key_clear + 2.0;
+    difference() {
+        union() {
+            translate([
+                wall + lock_key_clear,
+                -eps,
+                tongue_z0
+            ])
+                cube([lock_tongue_t, lock_reach + eps, tongue_h]);
+            translate([
+                case_w - wall - lock_key_clear - lock_tongue_t,
+                -eps,
+                tongue_z0
+            ])
+                cube([lock_tongue_t, lock_reach + eps, tongue_h]);
+        }
+        translate([
+            -eps,
+            lock_key_center_y - lock_key_y / 2 - lock_key_clear,
+            lock_key_center_z - lock_key_z / 2 - lock_key_clear
+        ])
+            cube([
+                case_w + 2 * eps,
+                lock_key_y + 2 * lock_key_clear,
+                lock_key_z + 2 * lock_key_clear
+            ]);
+    }
+}
+
+module lock_key() {
+    body_end = lock_key_body_l - lock_tip;
+    union() {
+        // Pull tab remains on the side of the case, not its standing end.
+        translate([
+            -lock_head_t,
+            -lock_head_y / 2,
+            -lock_head_z / 2
+        ])
+            cube([
+                lock_head_t + eps,
+                lock_head_y,
+                lock_head_z
+            ]);
+
+        translate([0, -lock_key_y / 2, -lock_key_z / 2])
+            cube([body_end, lock_key_y, lock_key_z]);
+
+        // Rigid lead-in taper; insertion requires no bending.
+        hull() {
+            translate([
+                body_end - eps,
+                -lock_key_y / 2,
+                -lock_key_z / 2
+            ])
+                cube([eps, lock_key_y, lock_key_z]);
+            translate([
+                lock_key_body_l - eps,
+                -lock_key_y / 2 + 0.35,
+                -lock_key_z / 2 + 0.35
+            ])
+                cube([
+                    eps,
+                    lock_key_y - 0.7,
+                    lock_key_z - 0.7
+                ]);
         }
     }
 }
 
-module shell_clip_windows() {
-    // Flush side windows — barb seats flush; pinch to release. No proud heads.
-    for (z0 = clip_z_list())
-        for (x = [-eps, case_w - wall - eps])
-            translate([
-                x,
-                clip_catch_y - clip_clear,
-                z0 - clip_clear
-            ])
-                cube([
-                    wall + 2 * eps,
-                    clip_barb_y + 2 * clip_clear,
-                    clip_arm_w + 2 * clip_clear
-                ]);
+module lock_key_at(side, pull = 0) {
+    if (side < 0)
+        translate([
+            -pull,
+            lock_key_center_y,
+            lock_key_center_z
+        ])
+            lock_key();
+    else
+        translate([
+            case_w + pull,
+            lock_key_center_y,
+            lock_key_center_z
+        ])
+            mirror([1, 0, 0])
+                lock_key();
+}
+
+module lock_key_print() {
+    // Largest head face on bed; rigid body grows upward.
+    translate([
+        lock_head_z / 2,
+        lock_head_y / 2,
+        lock_head_t
+    ])
+        rotate([0, -90, 0])
+            lock_key();
 }
 
 // ---------------------------------------------------------------------------
@@ -433,8 +488,7 @@ module shell() {
                 backer_t + 2 * eps
             ]);
 
-        shell_clip_windows();
-        usb_cutout();
+        shell_lock_slots();
     }
 
     // Crush ribs in the slot (vertical beads along print Z after reorient)
@@ -457,54 +511,87 @@ module shell() {
 }
 
 module board_cradle() {
-    // Print-up safe: PCB plane parallel to backer (vertical wall in print).
-    // Rails/stops are constant-X / constant-Y walls fused to the backer at
-    // z_bay0 — not floating, not horizontal shelves (R1.2).
-    // USB end is left open (no rail) so the connector can reach the wall.
+    // Two straight U-rails point at the open end. The board goes in ZIF-end
+    // first; no tilt or sideways move is required. In shell print orientation
+    // these constant cross-sections grow vertically and need no supports.
     fp = board_footprint();
     bx = fp[0];
     by = fp[1];
     bw = fp[2];
     bh = fp[3];
-    t = 1.6;
+    t = 2.0;
     clear = board_pocket_clear;
-    // Overlap the backer by eps so CGAL unions (coplanar touch ≠ merge)
+    capture = board_edge_capture;
+    stop_t = 1.6;
+    stop_y = by + bh + board_end_clear;
     rail_z0 = z_bay0 - eps;
-    rail_z1 = board_z0 + board_t + 0.9;
+    groove_z0 = board_z0 - board_z_clear;
+    groove_h = board_t + 2 * board_z_clear;
+    rail_z1 = groove_z0 + groove_h + 1.0;
     rail_h = rail_z1 - rail_z0;
-    groove_z = board_t + 0.2;
 
-    module rail_with_groove(x, groove_from_right = false) {
-        difference() {
-            translate([x, by - clear, rail_z0])
-                cube([t, bh + 2 * clear, rail_h]);
-            // PCB edge groove — retains through-thickness without a shelf
-            gx = groove_from_right ? x - 0.2 : x + t - (t * 0.55);
-            translate([gx, by - clear - eps, board_z0])
-                cube([t * 0.55 + 0.3, bh + 2 * clear + 2 * eps, groove_z]);
-        }
+    // Left rail: groove opens toward +X.
+    difference() {
+        translate([
+            bx - clear - t,
+            y_open,
+            rail_z0
+        ])
+            cube([
+                t + clear + capture,
+                stop_y + stop_t,
+                rail_h
+            ]);
+        translate([
+            bx - clear,
+            y_open - eps,
+            groove_z0
+        ])
+            cube([
+                clear + capture + eps,
+                stop_y + eps,
+                groove_h
+            ]);
     }
 
-    // Long-side rail opposite the USB wall only
-    if (usb_exit == "back")
-        rail_with_groove(bx + bw + clear, false);
-    else
-        rail_with_groove(bx - clear - t, true);
+    // Right rail: groove opens toward -X.
+    difference() {
+        translate([
+            bx + bw - capture,
+            y_open,
+            rail_z0
+        ])
+            cube([
+                capture + clear + t,
+                stop_y + stop_t,
+                rail_h
+            ]);
+        translate([
+            bx + bw - capture - eps,
+            y_open - eps,
+            groove_z0
+        ])
+            cube([
+                capture + clear + eps,
+                stop_y + eps,
+                groove_h
+            ]);
+    }
 
-    // Closed-end stop (high-Y) — fused to backer; low-Y stays open for insert
-    translate([bx - clear - (usb_exit == "back" ? 0 : t), by + bh + clear, rail_z0])
-        cube([
-            bw + 2 * clear + t,
-            t,
-            rail_h
-        ]);
-
-    // Standoff beads on the backer — height matches board_z0 exactly
-    for (yy = [by + 5, by + bh - 9])
-        for (xx = [bx + 8, bx + bw - 12])
-            if (xx > wall + 1 && xx + 4 < case_w - wall - 1)
+    // Four low pads set the PCB plane. Their 45° leading ramps prevent the
+    // ZIF edge catching while the board slides inward.
+    for (yy = [8, stop_y - 10])
+        for (xx = [bx + 6, bx + bw - 10])
+            union() {
                 translate([xx, yy, z_bay0 - eps])
                     cube([4, 4, board_standoff + eps]);
+                hull() {
+                    translate([xx, yy - 2, z_bay0 - eps])
+                        cube([4, eps, eps]);
+                    translate([xx, yy, z_bay0 - eps])
+                        cube([4, eps, board_standoff + eps]);
+                }
+            }
 }
 
 module shell_print() {
@@ -526,72 +613,85 @@ module shell_print() {
 // Cap
 // ---------------------------------------------------------------------------
 module cap() {
-    // Outer end plate — full flat face (no screw holes / proud heads)
-    translate([0, -cap_t, 0])
-        cube([case_w, cap_t, case_depth]);
+    difference() {
+        union() {
+            // Full end plate: flat standing face, except the USB opening.
+            translate([0, -cap_t, 0])
+                cube([case_w, cap_t, case_depth]);
 
-    // Perimeter lip into the shell rabbet (tight visual seam)
-    if (cap_rabbet > 0)
-        difference() {
-            translate([0.1, -eps, 0.1])
-                cube([case_w - 0.2, cap_rabbet, case_depth - 0.2]);
-            translate([cap_rabbet + 0.05, -2 * eps, cap_rabbet + 0.05])
-                cube([
-                    case_w - 2 * cap_rabbet - 0.1,
-                    cap_rabbet + 3 * eps,
-                    case_depth - 2 * cap_rabbet - 0.1
-                ]);
+            // Perimeter lip into the shell rabbet (tight visual seam)
+            if (cap_rabbet > 0)
+                difference() {
+                    translate([0.1, -eps, 0.1])
+                        cube([
+                            case_w - 0.2,
+                            cap_rabbet,
+                            case_depth - 0.2
+                        ]);
+                    translate([
+                        cap_rabbet + 0.05,
+                        -2 * eps,
+                        cap_rabbet + 0.05
+                    ])
+                        cube([
+                            case_w - 2 * cap_rabbet - 0.1,
+                            cap_rabbet + 3 * eps,
+                            case_depth - 2 * cap_rabbet - 0.1
+                        ]);
+                }
+
+            // Return skirts hide the seam from front and back.
+            if (cap_skirt > 0) {
+                translate([0, -eps, -0.02])
+                    cube([
+                        case_w,
+                        cap_skirt,
+                        front_lip_t + 0.02
+                    ]);
+                translate([
+                    0,
+                    -eps,
+                    case_depth - wall - 0.02
+                ])
+                    cube([
+                        case_w,
+                        cap_skirt,
+                        wall + 0.04
+                    ]);
+            }
+
+            // Retention tongue butts the panel's FPC edge. Center notch leaves
+            // the ribbon route clear.
+            tongue_len = y_panel0 - 0.2;
+            difference() {
+                translate([
+                    panel_x0 - panel_clear + 1,
+                    -eps,
+                    z_slot0 + 0.05
+                ])
+                    cube([
+                        panel_w + 2 * panel_clear - 2,
+                        tongue_len,
+                        slot_t - 0.1
+                    ]);
+                translate([
+                    fpc_pass_x0 - 0.5,
+                    -2 * eps,
+                    z_slot0 - eps
+                ])
+                    cube([
+                        fpc_channel_w + 1,
+                        tongue_len + 3 * eps,
+                        slot_t + 2 * eps
+                    ]);
+            }
+
+            cap_lock_tongues();
         }
 
-    // Return skirts over front + back — joint not visible from those faces
-    if (cap_skirt > 0) {
-        translate([0, -eps, -0.02])
-            cube([case_w, cap_skirt, front_lip_t + 0.02]);
-        translate([0, -eps, case_depth - wall - 0.02])
-            cube([case_w, cap_skirt, wall + 0.04]);
-    }
-
-    // Retention tongue into the U-slot — butts the panel's FPC edge so the
-    // glass cannot slide back into the fold bay / out the mouth.
-    // Center notch leaves the ribbon path clear into the backer pass.
-    tongue_len = y_panel0 - 0.2;
-    difference() {
-        translate([
-            panel_x0 - panel_clear + 1,
-            -eps,
-            z_slot0 + 0.05
-        ])
-            cube([
-                panel_w + 2 * panel_clear - 2,
-                tongue_len,
-                slot_t - 0.1
-            ]);
-        translate([
-            fpc_pass_x0 - 0.5,
-            -2 * eps,
-            z_slot0 - eps
-        ])
-            cube([
-                fpc_channel_w + 1,
-                tongue_len + 3 * eps,
-                slot_t + 2 * eps
-            ]);
-    }
-
-    // Bay plug — fills the end-wall access so you can't see the PCB.
-    // Inset from the side walls so it doesn't collide with the clip arms.
-    plug_inset = clip_arm_t + clip_clear + 0.4;
-    translate([wall + plug_inset, -eps, z_bay0 + 0.25])
-        cube([
-            case_w - 2 * wall - 2 * plug_inset,
-            wall + 0.35,
-            bay_d - 0.5
-        ]);
-
-    // Four internal clips (2 per side) — latch into flush side windows
-    for (z0 = clip_z_list()) {
-        cap_side_clip(-1, z0);
-        cap_side_clip(+1, z0);
+        // USB and the shallow PCB-edge recess are both in the removable cap,
+        // so the board follows a straight insertion path in the shell.
+        cap_usb_cutouts();
     }
 }
 
@@ -623,6 +723,11 @@ module assembled() {
         color("#293241")
             cap();
 
+    color("#ee6c4d") {
+        lock_key_at(-1, explode * 0.2);
+        lock_key_at(+1, explode * 0.2);
+    }
+
     if (show_components) {
         translate([0, -explode * 0.35, 0])
             panel_ghost();
@@ -637,6 +742,8 @@ else if (part == "shell")
     shell_print();
 else if (part == "cap")
     cap_print();
+else if (part == "key")
+    lock_key_print();
 else if (part == "bezel" || part == "tray" || part == "front")
     shell_print(); // legacy aliases
 else if (part == "back")

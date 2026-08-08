@@ -14,6 +14,7 @@ echo "== validate =="
 echo ""
 "$TOOLS/export-stl.sh" "$ROOT/case.scad" "$OUT/shell.stl" -D 'part="shell"'
 "$TOOLS/export-stl.sh" "$ROOT/case.scad" "$OUT/cap.stl"   -D 'part="cap"'
+"$TOOLS/export-stl.sh" "$ROOT/case.scad" "$OUT/cap-key.stl" -D 'part="key"'
 
 # Remove legacy 3-piece STLs if present
 rm -f "$OUT/bezel.stl" "$OUT/tray.stl" "$OUT/back.stl" "$OUT/front.stl"

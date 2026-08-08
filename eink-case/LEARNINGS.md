@@ -47,6 +47,24 @@ redesign to a print-upward slide-in slot.
    `usb_face`, default flush) and cut PCB-edge relief through the wall
    thickness where it overlaps.
 
+9. **PLA cantilever clips**
+   The four short cap clips did not latch reliably in a real PLA print.
+   Increasing flex would make layer orientation, PLA brand, and fatigue part
+   of the fit contract. Replace flex retention with two rigid printed keys:
+   cap and shell holes align, and the keys carry load in shear.
+
+10. **A board path that requires a sideways move**
+    A board inserted from the shell mouth could not comfortably descend and
+    then move sideways into a wall USB opening. Rotate it 90°: two straight
+    grooves now point at the mouth, the ZIF end enters first, and USB exits
+    through the removable cap. The cap is also the board’s withdrawal stop.
+
+11. **Nominal clearance is not long-slide clearance**
+    The first full-size panel entered but accumulated enough drag to stop
+    before the closed end. Increase `panel_clear` from 0.30 to 0.40 mm and
+    reduce rib intrusion from 0.20 to 0.15 mm. Board rail clearance increases
+    from 0.50 to 0.75 mm; neither fit relies on friction for retention.
+
 ## What worked
 
 1. **Orientation is a design input (R1.3)** — pick the bed face first; export
@@ -77,9 +95,9 @@ That restores a true snug slide-in slot without a 3-way screw sandwich.
 | `shell` | Window, U-slot, panel backer, electronics bay, board cradle |
 | `cap` | Closes the open (FPC) end; retains the panel; optional lid posts |
 
-No bezel↔tray screw joint. Cap retention is **clip-only** — four internal
-cantilever barbs into flush side-wall windows. The cap outer face stays flat
-(no screw heads), so the FPC end can sit flush on a desk.
+No bezel↔tray screw joint. Cap retention uses **two rigid printed side keys**.
+Nothing bends, so PLA is appropriate; no screw heads project from the standing
+end. Pull both keys to service the board or panel.
 
 ## Open mouth vs “showing innards”
 

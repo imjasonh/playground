@@ -78,7 +78,7 @@ skip them:
   a scannable QR code for any text and height (time runs toward the bed).
 - **[`eink-case/`](eink-case/)** — parametric OpenSCAD case for a Waveshare
   7.5″ e-Paper raw panel + ESP32 driver board (U-slot shell prints upward +
-  cap; see `eink-case/LEARNINGS.md`).
+  cap with rigid PLA-safe locking keys; see `eink-case/LEARNINGS.md`).
 
 ## iOS app
 

@@ -572,7 +572,7 @@ auto-discover them. Run their local tests when you change them.
 |-----------|------|-------|
 | `life-scad/` | OpenSCAD Life sculpture (Z = time) plus optional Python reverse-history search | `python3 life-scad/reverse_life_test.py` (needs `pip install -r life-scad/requirements.txt`) |
 | `life-qr/` | Parametric OpenSCAD Life sculpture with a QR-code roof for any text/height | `python3 life-qr/life_qr_test.py` (optional `pip install segno`) |
-| `eink-case/` | Parametric OpenSCAD case for Waveshare 7.5″ e-Paper + ESP32 (shell+cap; U-slot prints upward — see `eink-case/LEARNINGS.md`) | `bash eink-case/render.sh` / `bash eink-case/export-stl.sh` (needs OpenSCAD) |
+| `eink-case/` | Parametric OpenSCAD case for Waveshare 7.5″ e-Paper + ESP32 (U-slot shell + cap + rigid PLA-safe keys — see `eink-case/LEARNINGS.md`) | `bash eink-case/render.sh` / `bash eink-case/export-stl.sh` (needs OpenSCAD) |
 
 ## The iOS app
 

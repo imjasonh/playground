@@ -27,32 +27,33 @@ panel.
 
 ```bash
 ./tools/validate.sh case.scad
-bash render.sh                 # previews/{assembled,shell,cap}/
+bash render.sh                 # previews/{assembled,shell,cap,key}/
 # READ every PNG with the image tool — confirm U-slot layers, no bridges
-bash export-stl.sh             # stl/{shell,cap}.stl (binary)
+bash export-stl.sh             # shell, cap, cap-key STLs (binary)
 ```
 
-## Two printable parts
+## Printable parts
 
 | Part | STL | Bed face | Role |
 |------|-----|----------|------|
 | `shell` | `stl/shell.stl` | Closed end down | Window, U-slot, backer, bay, cradle |
 | `cap` | `stl/cap.stl` | Outer face down | Retains panel; closes FPC end |
+| `key` (print 2) | `stl/cap-key.stl` | Pull-tab face down | Rigid PLA-safe cap lock |
 
 ## Fasteners
 
 | Joint | Hardware |
 |-------|----------|
-| Cap → shell | 4× internal cantilever clips (no screws; flat cap face) |
-| Board | None — bay cradle (optional VHB) |
+| Cap → shell | 2× rigid printed side keys (no flex, no screws) |
+| Board | None — straight rails; cap is the withdrawal stop |
 
 ## Fit notes
 
 - Closed overall echoed by `validate.sh`.
 - Panel slides into the U-slot; crush ribs snug XY; cap tongue blocks slide-out.
 - Ribbon stays inside: fold bay + backer pass into bay — **no external hole**.
-- Board cradle rails/beads are fused to the backer; USB-end rail omitted.
-- USB tip defaults flush with the outer wall (`usb_face=0`); opening is
+- Board goes ZIF-end-first straight into two grooves from the shell mouth.
+- USB tip defaults flush with the cap (`usb_face=0`); opening is
   `usb_w/h + 2*usb_cut_clear` (≈10.6×5.0 mm for stock USB-C).
 - Datasheet outline is nominal (±0.2 mm typical) — measure before final print.
 - `elephant_chamfer` / `window_elephant_chamfer` (set `0` to disable).

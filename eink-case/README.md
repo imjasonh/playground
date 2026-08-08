@@ -16,18 +16,20 @@ printed with the **closed end on the bed** and the **FPC end open at the top**,
 so that groove is extruded in Z — every layer is the U profile. The backer is a
 vertical wall in that orientation, not a bridge over the window.
 
-No 3-piece screw sandwich. Two parts: shell + cap.
+No screw sandwich and no flexing PLA clips. The enclosure uses a shell, cap,
+and **two identical rigid locking keys**.
 
 ## Closed overall dimensions
 
 Run `./tools/validate.sh case.scad` — echoes the live size (tracks parameters).
 
-## Two printable parts
+## Printable parts
 
 | STL | Bed face | Role |
 |-----|----------|------|
 | [`stl/shell.stl`](stl/shell.stl) | Closed end down (FPC mouth up) | Window, U-slot, backer, bay, board cradle |
-| [`stl/cap.stl`](stl/cap.stl) | Outer face down | Closes FPC end; retention tongue; clips |
+| [`stl/cap.stl`](stl/cap.stl) | Outer face down | Closes FPC end; retains panel and board |
+| [`stl/cap-key.stl`](stl/cap-key.stl) | Pull-tab face down | Rigid cap lock — **print two** |
 
 ```bash
 bash export-stl.sh   # binary STLs under stl/
@@ -37,18 +39,30 @@ bash export-stl.sh   # binary STLs under stl/
 
 | Joint | Hardware |
 |-------|----------|
-| **Cap → shell** | **4× internal cantilever clips** (flush side windows; flat cap face) |
-| **ESP32 board** | **None** — bay cradle (optional VHB) |
+| **Cap → shell** | **2× printed rigid side keys** — no bending and no metal hardware |
+| **ESP32 board** | **None** — straight slide rails; cap traps the USB end |
 
-No screw heads — the cap’s outer face is flat so the FPC end can sit flush.
+The first PLA cantilever clips were too stiff/brittle in a real print. The
+replacement keys carry cap pull-out load in shear and do not flex. Their pull
+tabs sit on the case sides, so the cap end remains the flat standing surface
+(apart from the necessary USB-C opening).
 
 ## Assembly
 
 1. Print shell closed-end down; print cap outer-face down.
-2. Slide the panel into the shell from the FPC end (crush ribs snug the outline).
-3. Fold the SPI ribbon through the internal backer pass into the bay; seat the board.
-4. Press the **cap** on until the side clips click — the tongue blocks the panel
-   from sliding out. Pinch the flush side windows to release.
+2. Slide the panel into the shell from the open FPC end. The revised slot has
+   `0.40 mm` nominal clearance and gentler `0.15 mm` crush ribs.
+3. Fold the SPI ribbon through the internal backer pass. Connect it to the
+   board while the ZIF latch is still accessible.
+4. Hold the board with components facing away from the panel/backer. Put the
+   **ZIF end in first**, align both PCB edges with the two straight grooves,
+   then push directly inward until the rails stop it. There is no sideways
+   move and the USB-C connector remains at the shell mouth.
+5. Fit the cap over the USB-C connector and panel tongue. Insert one rigid key
+   from each side until its pull tab meets the wall.
+
+To reopen, pull the two side keys, then remove the cap. The cap releases both
+the panel and the board.
 
 The shell’s FPC mouth is open on purpose for end-loading (bay access + slot).
 The **front lip stays solid** through the fold-bay strip, so the face never
@@ -60,13 +74,15 @@ skirts, bay plug, and retention tongue — no see-through when assembled.
 | Axis | Mechanism |
 |------|-----------|
 | **Through-thickness** | True U-slot: front lip + backer |
-| **Width** | Slot ≈ panel + `panel_clear`, plus **crush ribs** |
+| **Width / length / thickness** | Panel + `0.40 mm` per side; sparse `0.15 mm` crush ribs |
 | **Slide-out** | Closed-end stop + **cap retention tongue** |
 
 ## Ribbon cable (no external access)
 
-FPC folds in the open-end bay, passes through an **internal backer opening** into
-the electronics bay. Outer shell stays closed. USB-C uses `usb_exit`.
+FPC folds in the open-end bay and passes through an **internal backer opening**
+into the electronics bay. USB-C exits through the removable cap at
+approximately **10.6 × 5.0 mm** (`9.2 × 3.6 mm` connector plus `0.7 mm`
+clearance on each edge).
 
 ## Tooling
 
@@ -79,25 +95,47 @@ bash export-stl.sh
 
 | Parameter | Default | Meaning |
 |-----------|---------|---------|
-| `usb_exit` | `back` | USB wall: `back`=left (X=0), `side`=right |
-| `usb_face` | `0.0` | USB tip vs outer wall (`0`=flush) (mm) |
-| `panel_clear` | `0.30` | Slot clearance (mm) |
-| `panel_crush` | `0.20` | Crush-rib intrusion (mm) |
+| `usb_face` | `0.0` | USB face recess from cap (`0`=flush) (mm) |
+| `panel_clear` | `0.40` | Clearance per panel side / face (mm) |
+| `panel_crush` | `0.15` | Sparse crush-rib intrusion (mm) |
+| `board_pocket_clear` | `0.75` | PCB edge clearance in each rail (mm) |
+| `board_z_clear` | `0.30` | PCB thickness clearance (mm) |
 | `fpc_fold_bay` | `8.0` | Internal bay at FPC end (mm) |
-| `elephant_chamfer` | `0.5` | Bed-face outer chamfer (mm) |
-| `clip_barb` | `0.9` | Side-clip engagement (mm); lower if too tight |
-| `part` | `assembled` | `assembled` / `shell` / `cap` |
+| `lock_key_clear` | `0.25` | Printed key / lock-slot clearance (mm) |
+| `elephant_chamfer` | `0.3` | Bed-face outer chamfer (mm) |
+| `part` | `assembled` | `assembled` / `shell` / `cap` / `key` |
 
-## Printing
+## Bambu A1 Mini / PLA starting profile
 
-- PLA or PETG, 0.2 mm layers, ≥3 perimeters, 15–20% infill.
+- Revised shell width is **178.8 mm**, under the A1 Mini’s 180 mm axis. Rotate
+  it about 20° on the plate if a wide brim would otherwise exceed the boundary.
+- Select the **actual plate type** in Bambu Studio. Textured PEI applies a
+  plate-specific Z adjustment; the wrong selection can make layer one too high.
+- Wash PEI with warm water and plain dish soap, rinse, dry, and avoid touching
+  the print area. Run bed leveling.
+- For PLA on textured PEI, start at **60 °C** and try **65 °C** if corners
+  still lift (Bambu recommends the 55–65 °C range).
+- Use **8–10 mm brim** with `0–0.05 mm` brim-object gap. Painted brim ears on
+  the four shell corners are often more useful than increasing brim everywhere.
+- No part cooling for the first **3 layers**; keep the printer away from HVAC
+  drafts. A room below about 20 °C makes lifting more likely.
+- First layer starting point: **0.25 mm height, 0.50 mm line width, 20 mm/s**.
+  Inspect it: adjacent lines should merge without ridges or nozzle scraping.
+- PLA, 0.2 mm normal layers, ≥3 perimeters, 15–20% infill.
 - **Shell:** closed end on bed, FPC mouth up. No supports (U-slot layers).
 - **Cap:** outer face on bed. No supports.
-- Enable slicer elephant-foot compensation in addition to `elephant_chamfer`.
-- PETG is nicer for the cap clips; PLA works if `clip_barb` isn’t aggressive.
+- **Keys:** print two, pull-tab face down. No supports.
+- Keep slicer elephant-foot compensation enabled. The model-side bed chamfer
+  was reduced from `0.5` to `0.3 mm` to preserve more first-layer contact.
+
+These are starting values rather than universal filament settings. Bambu’s
+official guidance also recommends plate cleaning, +5–10 °C bed temperature,
+8–10 mm brims / brim ears, and no cooling for the first three layers:
+[warping guide](https://wiki.bambulab.com/en/filament-acc/filament/print-quality/warping-falling-off-collapsing).
 
 ## Dimensions confidence
 
 Panel outline **170.2 × 111.2** is from Waveshare datasheets (typical drawing
-tolerance **±0.2 mm**). Thickness is **1.18–1.20** by SKU. Measure your unit and
-tweak `panel_w` / `panel_h` / `panel_clear` / `panel_crush` before a final print.
+tolerance **±0.2 mm**). Thickness is **1.18–1.20** by SKU. The revised defaults
+incorporate feedback from one full-size PLA print, but printer flow and XY-hole
+compensation still vary. Measure your unit before changing the fit parameters.
