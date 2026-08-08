@@ -45,7 +45,9 @@ bash export-stl.sh   # binary STLs under stl/
 The first PLA cantilever clips were too stiff/brittle in a real print. The
 replacement keys carry cap pull-out load in shear and do not flex. Their pull
 tabs sit on the case sides, so the cap end remains the flat standing surface
-(apart from the necessary USB-C opening).
+(apart from the necessary USB-C opening). A shallow self-locking taper reaches
+`0.10 mm` nominal interference only at full insertion, preventing a loose key
+from falling out without relying on a thin snap arm.
 
 ## Assembly
 
@@ -102,6 +104,7 @@ bash export-stl.sh
 | `board_z_clear` | `0.30` | PCB thickness clearance (mm) |
 | `fpc_fold_bay` | `8.0` | Internal bay at FPC end (mm) |
 | `lock_key_clear` | `0.25` | Printed key / lock-slot clearance (mm) |
+| `lock_wedge` | `0.10` | Full-seat key interference; reduce if too tight (mm) |
 | `elephant_chamfer` | `0.3` | Bed-face outer chamfer (mm) |
 | `part` | `assembled` | `assembled` / `shell` / `cap` / `key` |
 

@@ -79,6 +79,7 @@ lock_reach = 8.0;            // [6:0.5:12] Tongue reach into shell (mm)
 lock_key_y = 2.6;            // [2:0.1:4] Key shear thickness along case Y (mm)
 lock_key_z = 7.0;            // [5:0.5:10] Key body height (mm)
 lock_key_clear = 0.25;       // [0.15:0.05:0.5] Key/slot clearance (mm)
+lock_wedge = 0.10;           // [0:0.05:0.3] Full-seat wedge interference (mm)
 lock_head_t = 1.2;           // [0.8:0.1:2] Side pull-tab projection (mm)
 lock_head_y = 5.2;           // [4:0.2:8] Pull-tab width (mm)
 lock_head_z = 10.0;          // [8:0.5:14] Pull-tab height (mm)
@@ -161,7 +162,7 @@ echo(str("Slot: clear=", panel_clear, " crush=", panel_crush,
          " effective rib clearance/side=", panel_clear - panel_crush));
 echo(str("FPC: fold bay ", fpc_fold_bay, " mm; internal backer pass (no external hole)"));
 echo(str("Cap retention: 2× rigid printed keys; clearance=", lock_key_clear,
-         " mm (PLA-safe, no flex)"));
+         " mm; wedge=", lock_wedge, " mm (PLA-safe, no flex)"));
 echo(str("Board: ZIF-end-first straight slide; edge clear=", board_pocket_clear,
          " mm; thickness clear=", board_z_clear, " mm"));
 echo(str("USB: cap opening ", usb_w + 2 * usb_cut_clear, " x ",
@@ -346,6 +347,8 @@ module cap_lock_tongues() {
 
 module lock_key() {
     body_end = lock_key_body_l - lock_tip;
+    seated_y =
+        lock_key_y + 2 * lock_key_clear + lock_wedge;
     union() {
         // Pull tab remains on the side of the case, not its standing end.
         translate([
@@ -359,8 +362,23 @@ module lock_key() {
                 lock_head_z
             ]);
 
-        translate([0, -lock_key_y / 2, -lock_key_z / 2])
-            cube([body_end, lock_key_y, lock_key_z]);
+        // Shallow self-locking wedge: easy lead-in, then 0.10 mm nominal
+        // interference at full seat. The whole wall/tongue pair takes the
+        // tiny compliance; there is no thin PLA flexure to snap.
+        hull() {
+            translate([
+                0,
+                -seated_y / 2,
+                -lock_key_z / 2
+            ])
+                cube([eps, seated_y, lock_key_z]);
+            translate([
+                body_end - eps,
+                -lock_key_y / 2,
+                -lock_key_z / 2
+            ])
+                cube([eps, lock_key_y, lock_key_z]);
+        }
 
         // Rigid lead-in taper; insertion requires no bending.
         hull() {

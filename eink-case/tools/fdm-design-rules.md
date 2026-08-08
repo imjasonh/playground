@@ -25,7 +25,8 @@ Use with the OpenSCAD skill tools in this folder. Cite rules by id in review not
 - **R1.3** Orientation is chosen at design time; STLs are exported already flipped for the bed.
 - **R1.4** USB, rigid-key slots, panel slot, and PCB rails have explicit slop.
 - **R1.7** No functional PLA flexures. Cap locks use removable rigid keys in
-  shear; `lock_key_clear` controls fit.
+  shear; `lock_key_clear` controls lead-in and `lock_wedge` controls the
+  shallow self-locking final seat.
 - **Elephant foot** — bed-face outer chamfer (`elephant_chamfer`) + optional window lip chamfer. Set `0` to disable. Still tune slicer compensation.
 - **Binary STLs** — `--export-format=binstl`; `*.stl binary` in `.gitattributes`.
 - **A1 Mini envelope** — default shell X must remain ≤180 mm. Wide brims may

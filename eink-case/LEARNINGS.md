@@ -51,7 +51,9 @@ redesign to a print-upward slide-in slot.
    The four short cap clips did not latch reliably in a real PLA print.
    Increasing flex would make layer orientation, PLA brand, and fatigue part
    of the fit contract. Replace flex retention with two rigid printed keys:
-   cap and shell holes align, and the keys carry load in shear.
+   cap and shell holes align, and the keys carry load in shear. A shallow
+   self-locking taper keeps each key seated; `lock_wedge` tunes only the last
+   part of insertion.
 
 10. **A board path that requires a sideways move**
     A board inserted from the shell mouth could not comfortably descend and
