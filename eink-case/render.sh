@@ -25,7 +25,7 @@ done
 
 echo ""
 echo "== parameters =="
-"$TOOLS/extract-params.sh" "$ROOT/case.scad" | head -50
+"$TOOLS/extract-params.sh" "$ROOT/case.scad"
 
 echo ""
 echo "Previews under $OUT — inspect every PNG; see LEARNINGS.md + tools/fdm-design-rules.md"

@@ -580,7 +580,9 @@ module board_cradle() {
 
     // Four low pads set the PCB plane. Their 45° leading ramps prevent the
     // ZIF edge catching while the board slides inward.
-    for (yy = [8, stop_y - 10])
+    // Keep the first pair beyond fpc_pass_y1; a pad over that backer cutout
+    // would be a disconnected island.
+    for (yy = [fpc_pass_y1 + 3, stop_y - 9])
         for (xx = [bx + 6, bx + bw - 10])
             union() {
                 translate([xx, yy, z_bay0 - eps])
