@@ -1,14 +1,14 @@
 ============================================================
-CLOSED OVERALL: 181.6 x 124.9 x 23.4 mm
-Printable parts: 2  (shell + cap)
+CLOSED OVERALL: 178.8 x 125 x 23.6 mm
+Printable geometries: 3  (shell + cap + key; print 2 keys)
 Print shell: CLOSED-END down, FPC slide-open UP (U-slot extruded in Z)
-Print cap:   outer face down (FLAT — no screw heads)
-Slot: clear=0.3 crush=0.2  (panel slides in from FPC end)
+Print cap:   outer face down (flat; USB opening only)
+Slot: clear=0.4 crush=0.15 effective rib clearance/side=0.25
 FPC: fold bay 8 mm; internal backer pass (no external hole)
-Cap retention: 4× internal clips (barb 0.9 mm); no screws
-Board screws: none (bay cradle, connected to backer)
-Bay depth: 15.8 mm; USB exit: back  tip@0 mm
-Board standoff/beads: 1.2 mm (rails fused to backer)
-Elephant-foot chamfer: 0.5 mm
+Cap retention: 2× rigid printed keys; clearance=0.25 mm; wedge=0.1 mm (PLA-safe, no flex)
+Board: ZIF-end-first straight slide; edge clear=0.75 mm; thickness clear=0.3 mm
+USB: cap opening 10.6 x 5 mm; face recess=0 mm
+Board standoff: 1.2 mm; rails fused to backer
+Elephant-foot chamfer: 0.3 mm
 See LEARNINGS.md — U-slot print-upward principle
 ============================================================
