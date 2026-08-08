@@ -54,6 +54,14 @@ lock_tip             0.8             number     [0.4:0.1:1.5] Insertion lead-in 
 usb_exit             cap             string     [cap] USB-C exits through removable cap
 elephant_chamfer     0.3             number     [0:0.1:1.5] Bed-face outer chamfer (mm)
 window_elephant_chamfer 0.3             number     [0:0.1:1] Window-edge relief on front lip (mm)
+window_bridge_supports true            boolean    Built-in removable support lattice
+bridge_support_count 6               integer    [3:1:10] Vertical breakaway columns
+bridge_support_w     1.2             number     [0.8:0.1:2] Main column width (mm)
+bridge_support_neck  0.45            number     [0.4:0.05:0.8] Snap-off neck width (mm)
+bridge_support_neck_len 1.2             number     [0.6:0.1:2] Neck taper height (mm)
+bridge_support_gap   0.20            number     [0:0.05:0.4] Gap below lintel (one 0.2 layer)
+bridge_support_setback 0.25            number     [0:0.05:0.6] Recess from cosmetic face (mm)
+bridge_tie_h         0.8             number     [0.4:0.1:1.2] Two stabilizer rows (mm)
 eps                  0.02            number     Boolean overlap fudge (mm)
 bezel_fpc            panel_h - active_h - bezel_top expression
 slot_t               panel_t + 2 * panel_clear expression

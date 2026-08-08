@@ -9,6 +9,7 @@ Cap retention: 2× rigid printed keys; clearance=0.25 mm; wedge=0.1 mm (PLA-safe
 Board: ZIF-end-first straight slide; edge clear=0.75 mm; thickness clear=0.3 mm
 USB: cap opening 10.6 x 5 mm; face recess=0 mm
 Board standoff: 1.2 mm; rails fused to backer
+Window lintel support: 6 breakaway columns; max bridge≈22 mm; Z gap=0.2 mm
 Elephant-foot chamfer: 0.3 mm
 See LEARNINGS.md — U-slot print-upward principle
 ============================================================
