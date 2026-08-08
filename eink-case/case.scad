@@ -7,7 +7,7 @@
 //     29.46 x 48.25 mm, USB-C (2024+). No mounting holes.
 //
 // TWO printable parts — see LEARNINGS.md and tools/fdm-design-rules.md:
-//   shell — U-slot + window + backer + bay; print CLOSED-END down (slide open up)
+//   shell — U-slot + window lattice + backer + bay; print CLOSED-END down
 //   cap   — closes FPC end, retains panel; print outer face down
 //
 // Principle: the panel groove is a U-channel extruded in the print Z
@@ -92,6 +92,16 @@ usb_exit = "cap";            // [cap] USB-C exits through removable cap
 elephant_chamfer = 0.3;      // [0:0.1:1.5] Bed-face outer chamfer (mm)
 window_elephant_chamfer = 0.3; // [0:0.1:1] Window-edge relief on front lip (mm)
 
+/* [FDM — sacrificial support for the 162 mm window lintel] */
+window_bridge_supports = true; // Built-in removable support lattice
+bridge_support_count = 6;     // [3:1:10] Vertical breakaway columns
+bridge_support_w = 1.2;       // [0.8:0.1:2] Main column width (mm)
+bridge_support_neck = 0.45;   // [0.4:0.05:0.8] Snap-off neck width (mm)
+bridge_support_neck_len = 1.2; // [0.6:0.1:2] Neck taper height (mm)
+bridge_support_gap = 0.20;    // [0:0.05:0.4] Gap below lintel (one 0.2 layer)
+bridge_support_setback = 0.25; // [0:0.05:0.6] Recess from cosmetic face (mm)
+bridge_tie_h = 0.8;           // [0.4:0.1:1.2] Two stabilizer rows (mm)
+
 /* [Tolerances / print] */
 $fn = 48;                    // [16:8:96] Circle segments
 eps = 0.02;                  // Boolean overlap fudge (mm)
@@ -152,6 +162,11 @@ assert(case_w <= 180,
        "Default shell must fit the Bambu A1 Mini's 180 mm X dimension");
 assert(lock_key_center_y + lock_key_y / 2 + lock_key_clear < lock_reach,
        "Rigid key slot must remain inside the cap lock tongue");
+assert(!window_bridge_supports ||
+       (bridge_support_count >= 1 &&
+        bridge_support_neck <= bridge_support_w &&
+        bridge_support_setback < front_lip_t),
+       "Window bridge-support dimensions are invalid");
 
 echo("============================================================");
 echo(str("CLOSED OVERALL: ", case_w, " x ", case_h + cap_t, " x ", case_depth, " mm"));
@@ -168,6 +183,13 @@ echo(str("Board: ZIF-end-first straight slide; edge clear=", board_pocket_clear,
 echo(str("USB: cap opening ", usb_w + 2 * usb_cut_clear, " x ",
          usb_h + 2 * usb_cut_clear, " mm; face recess=", usb_face, " mm"));
 echo(str("Board standoff: ", board_standoff, " mm; rails fused to backer"));
+echo(str("Window lintel support: ",
+         window_bridge_supports ? bridge_support_count : 0,
+         " breakaway columns; max bridge≈",
+         window_bridge_supports
+            ? window_w / (bridge_support_count + 1) - bridge_support_w
+            : window_w,
+         " mm; Z gap=", bridge_support_gap, " mm"));
 echo(str("Elephant-foot chamfer: ", elephant_chamfer, " mm"));
 echo("See LEARNINGS.md — U-slot print-upward principle");
 echo("============================================================");
@@ -431,6 +453,84 @@ module lock_key_print() {
             lock_key();
 }
 
+module window_bridge_lattice() {
+    // In shell print orientation, assembly Y becomes print Z. The window's
+    // upper lintel would otherwise begin as one ~162 mm unsupported line.
+    // These sacrificial Y-columns turn it into short bridges. They attach only
+    // at the window's lower edge through narrow necks; a one-layer top gap
+    // lets the lintel land on them without strongly welding to them.
+    wy_top = window_y0;
+    wy_bottom = window_y0 + window_h;
+    y_top = wy_top + bridge_support_gap;
+    y_neck = wy_bottom - bridge_support_neck_len;
+    support_z0 = bridge_support_setback;
+    support_depth = front_lip_t - bridge_support_setback;
+    first_x =
+        window_x0 + window_w / (bridge_support_count + 1);
+    last_x =
+        window_x0 +
+        bridge_support_count * window_w /
+        (bridge_support_count + 1);
+
+    for (i = [1 : bridge_support_count]) {
+        cx =
+            window_x0 +
+            i * window_w / (bridge_support_count + 1);
+
+        // Main removable column
+        translate([
+            cx - bridge_support_w / 2,
+            y_top,
+            support_z0
+        ])
+            cube([
+                bridge_support_w,
+                y_neck - y_top + eps,
+                support_depth
+            ]);
+
+        // 45-ish-degree widening from a one-line breakaway neck
+        hull() {
+            translate([
+                cx - bridge_support_neck / 2,
+                wy_bottom - eps,
+                support_z0
+            ])
+                cube([
+                    bridge_support_neck,
+                    eps,
+                    support_depth
+                ]);
+            translate([
+                cx - bridge_support_w / 2,
+                y_neck,
+                support_z0
+            ])
+                cube([
+                    bridge_support_w,
+                    eps,
+                    support_depth
+                ]);
+        }
+    }
+
+    // Two rows prevent 97 mm tall, narrow columns wobbling. Each row only
+    // bridges between neighboring columns (~22 mm), not across the window.
+    for (fraction = [1 / 3, 2 / 3]) {
+        tie_y = y_top + fraction * (y_neck - y_top);
+        translate([
+            first_x - bridge_support_w / 2,
+            tie_y - bridge_tie_h / 2,
+            support_z0
+        ])
+            cube([
+                last_x - first_x + bridge_support_w,
+                bridge_tie_h,
+                support_depth
+            ]);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Shell
 // ---------------------------------------------------------------------------
@@ -524,6 +624,9 @@ module shell() {
                 cube([panel_crush + 0.15, rib_len, rib_h]);
         }
     }
+
+    if (window_bridge_supports)
+        window_bridge_lattice();
 
     board_cradle();
 }

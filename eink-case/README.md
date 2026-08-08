@@ -27,7 +27,7 @@ Run `./tools/validate.sh case.scad` — echoes the live size (tracks parameters)
 
 | STL | Bed face | Role |
 |-----|----------|------|
-| [`stl/shell.stl`](stl/shell.stl) | Closed end down (FPC mouth up) | Window, U-slot, backer, bay, board cradle |
+| [`stl/shell.stl`](stl/shell.stl) | Closed end down (FPC mouth up) | Window, removable bridge lattice, U-slot, backer, bay, board cradle |
 | [`stl/cap.stl`](stl/cap.stl) | Outer face down | Closes FPC end; retains panel and board |
 | [`stl/cap-key.stl`](stl/cap-key.stl) | Pull-tab face down | Rigid cap lock — **print two** |
 
@@ -52,19 +52,40 @@ from falling out without relying on a thin snap arm.
 ## Assembly
 
 1. Print shell closed-end down; print cap outer-face down.
-2. Slide the panel into the shell from the open FPC end. The revised slot has
+2. **Before inserting the display**, cut the six narrow necks along the
+   window’s lower edge and pull the sacrificial lattice out through the front.
+   Its top has a one-layer gap, so it should release rather than tear the
+   lintel. Trim any recessed nubs.
+3. Slide the panel into the shell from the open FPC end. The revised slot has
    `0.40 mm` nominal clearance and gentler `0.15 mm` crush ribs.
-3. Fold the SPI ribbon through the internal backer pass. Connect it to the
+4. Fold the SPI ribbon through the internal backer pass. Connect it to the
    board while the ZIF latch is still accessible.
-4. Hold the board with components facing away from the panel/backer. Put the
+5. Hold the board with components facing away from the panel/backer. Put the
    **ZIF end in first**, align both PCB edges with the two straight grooves,
    then push directly inward until the rails stop it. There is no sideways
    move and the USB-C connector remains at the shell mouth.
-5. Fit the cap over the USB-C connector and panel tongue. Insert one rigid key
+6. Fit the cap over the USB-C connector and panel tongue. Insert one rigid key
    from each side until its pull tab meets the wall.
 
 To reopen, pull the two side keys, then remove the cap. The cap releases both
 the panel and the board.
+
+## Removable support for the window lintel
+
+In print orientation, the upper edge of the display window is otherwise a
+**~162 mm bridge**. The shell STL now includes a sacrificial lattice by
+default:
+
+- 6 vertical columns reduce the longest unsupported segment to **~22 mm**.
+- Two horizontal rows keep the 97 mm-tall columns from wobbling.
+- `0.45 mm` bottom necks are meant to be cut/snapped.
+- The lattice is recessed `0.25 mm` from the cosmetic face.
+- A `0.20 mm` gap (one normal layer) below the lintel limits welding while
+  still catching the first bridge layer.
+
+Keep `bridge_support_gap` equal to your normal layer height. Set
+`window_bridge_supports=false` only if you intend to paint equivalent slicer
+support under the lintel.
 
 The shell’s FPC mouth is open on purpose for end-loading (bay access + slot).
 The **front lip stays solid** through the fold-bay strip, so the face never
@@ -105,6 +126,9 @@ bash export-stl.sh
 | `fpc_fold_bay` | `8.0` | Internal bay at FPC end (mm) |
 | `lock_key_clear` | `0.25` | Printed key / lock-slot clearance (mm) |
 | `lock_wedge` | `0.10` | Full-seat key interference; reduce if too tight (mm) |
+| `window_bridge_supports` | `true` | Include removable window lattice |
+| `bridge_support_count` | `6` | Columns under the window lintel |
+| `bridge_support_gap` | `0.20` | Gap below lintel; match normal layer height (mm) |
 | `elephant_chamfer` | `0.3` | Bed-face outer chamfer (mm) |
 | `part` | `assembled` | `assembled` / `shell` / `cap` / `key` |
 
@@ -124,6 +148,9 @@ bash export-stl.sh
   drafts. A room below about 20 °C makes lifting more likely.
 - First layer starting point: **0.25 mm height, 0.50 mm line width, 20 mm/s**.
   Inspect it: adjacent lines should merge without ridges or nozzle scraping.
+- For the lintel, start with **25–30 mm/s bridge speed** and full bridge fan.
+  The built-in lattice handles span length; no full-window slicer support is
+  needed.
 - PLA, 0.2 mm normal layers, ≥3 perimeters, 15–20% infill.
 - **Shell:** closed end on bed, FPC mouth up. No supports (U-slot layers).
 - **Cap:** outer face on bed. No supports.

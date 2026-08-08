@@ -14,7 +14,7 @@ Use with the OpenSCAD skill tools in this folder. Cite rules by id in review not
 
 | Part | STL | Bed face | Why |
 |------|-----|----------|-----|
-| Shell | `stl/shell.stl` | **Closed end down** (FPC mouth up) | U-slot is extruded in print Z — every layer is the U profile; backer is a vertical wall, not a bridge |
+| Shell | `stl/shell.stl` | **Closed end down** (FPC mouth up) | U-slot is extruded in print Z; a breakaway lattice supports the otherwise 162 mm window lintel |
 | Cap | `stl/cap.stl` | **Outer face down** | Flat plate; retention tongue + rigid lock tongues point up |
 | Cap key (print 2) | `stl/cap-key.stl` | **Pull-tab face down** | Wide tab gives a stable base; rigid key grows upward |
 
@@ -27,6 +27,9 @@ Use with the OpenSCAD skill tools in this folder. Cite rules by id in review not
 - **R1.7** No functional PLA flexures. Cap locks use removable rigid keys in
   shear; `lock_key_clear` controls lead-in and `lock_wedge` controls the
   shallow self-locking final seat.
+- **Window lintel** — keep `window_bridge_supports=true` unless equivalent
+  support is painted in the slicer. Match `bridge_support_gap` to normal layer
+  height, remove the lattice before panel insertion.
 - **Elephant foot** — bed-face outer chamfer (`elephant_chamfer`) + optional window lip chamfer. Set `0` to disable. Still tune slicer compensation.
 - **Binary STLs** — `--export-format=binstl`; `*.stl binary` in `.gitattributes`.
 - **A1 Mini envelope** — default shell X must remain ≤180 mm. Wide brims may
@@ -44,6 +47,8 @@ Use with the OpenSCAD skill tools in this folder. Cite rules by id in review not
 
 1. `./tools/validate.sh case.scad` — manifold / echoes OK
 2. `bash render.sh` — inspect every PNG
-3. Mentally raycast from bed-up: shell layers should look like a U (lip | slot | backer | bay). Any mid-air ceiling is a redesign.
+3. Mentally raycast from bed-up: shell layers should look like a U (lip | slot
+   | backer | bay). Confirm the removable lattice subdivides the window
+   lintel; never leave its full ~162 mm span unsupported.
 4. `bash export-stl.sh`
 5. Slicer: support volume ~0 on shell, cap, and keys

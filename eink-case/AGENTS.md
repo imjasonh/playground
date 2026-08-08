@@ -36,7 +36,7 @@ bash export-stl.sh             # shell, cap, cap-key STLs (binary)
 
 | Part | STL | Bed face | Role |
 |------|-----|----------|------|
-| `shell` | `stl/shell.stl` | Closed end down | Window, U-slot, backer, bay, cradle |
+| `shell` | `stl/shell.stl` | Closed end down | Window + breakaway lattice, U-slot, backer, bay, cradle |
 | `cap` | `stl/cap.stl` | Outer face down | Retains panel; closes FPC end |
 | `key` (print 2) | `stl/cap-key.stl` | Pull-tab face down | Rigid PLA-safe cap lock |
 
@@ -50,6 +50,8 @@ bash export-stl.sh             # shell, cap, cap-key STLs (binary)
 ## Fit notes
 
 - Closed overall echoed by `validate.sh`.
+- Shell STL includes a recessed, breakaway window lattice. Remove its six
+  lower necks before inserting the panel; keep its top gap equal to layer height.
 - Panel slides into the U-slot; crush ribs snug XY; cap tongue blocks slide-out.
 - Ribbon stays inside: fold bay + backer pass into bay — **no external hole**.
 - Board goes ZIF-end-first straight into two grooves from the shell mouth.

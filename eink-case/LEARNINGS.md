@@ -67,6 +67,13 @@ redesign to a print-upward slide-in slot.
     reduce rib intrusion from 0.20 to 0.15 mm. Board rail clearance increases
     from 0.50 to 0.75 mm; neither fit relies on friction for retention.
 
+12. **The U-slot solved the backer bridge, not the window lintel**
+    With the shell standing closed-end down, the first layer above the display
+    window still spans ~162 mm and visibly sags. Add a removable lattice inside
+    the window: six Y-columns reduce spans to ~22 mm, two cross-ties stop
+    wobble, narrow lower necks break away, and a one-layer upper gap limits
+    welding. Recess it from the cosmetic face and remove it before assembly.
+
 ## What worked
 
 1. **Orientation is a design input (R1.3)** — pick the bed face first; export
@@ -94,7 +101,7 @@ That restores a true snug slide-in slot without a 3-way screw sandwich.
 
 | Part | Role |
 |------|------|
-| `shell` | Window, U-slot, panel backer, electronics bay, board cradle |
+| `shell` | Window + sacrificial lintel lattice, U-slot, backer, bay, cradle |
 | `cap` | Closes the open (FPC) end; retains the panel; optional lid posts |
 
 No bezel↔tray screw joint. Cap retention uses **two rigid printed side keys**.
