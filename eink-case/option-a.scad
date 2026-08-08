@@ -566,7 +566,7 @@ module pod_collar_and_cradle() {
 // ---------------------------------------------------------------------------
 // Thin display shell
 // ---------------------------------------------------------------------------
-module shell() {
+module shell(include_window_supports = window_bridge_supports) {
     difference() {
         cube([case_w, case_h, body_depth]);
 
@@ -673,7 +673,7 @@ module shell() {
         }
     }
 
-    if (window_bridge_supports)
+    if (include_window_supports)
         window_bridge_lattice();
 
     pod_collar_and_cradle();
@@ -861,7 +861,7 @@ module pod_cover_print() {
 // ---------------------------------------------------------------------------
 module assembled() {
     color("#3d5a80")
-        shell();
+        shell(false); // show the finished shape after lattice removal
 
     translate([0, -explode, 0])
         color("#293241")

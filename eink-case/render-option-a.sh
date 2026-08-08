@@ -16,7 +16,7 @@ echo "== validate Option A =="
 echo ""
 echo "== assembled shape =="
 "$TOOLS/multi-preview.sh" "$MODEL" "$OUT/assembled" \
-  -D 'part="assembled"' -D 'show_components=false'
+  -D 'part="assembled"' -D 'show_components=true'
 
 echo ""
 echo "== exploded hardware =="
