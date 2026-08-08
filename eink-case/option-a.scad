@@ -558,7 +558,10 @@ module pod_collar_and_cradle() {
 
     // Four standoff pads; board components face away from the glass.
     for (xx = [board_x0 + 5, board_x0 + board_w - 9])
-        for (yy = [board_y0 + 7, board_y1 - 11])
+        for (yy = [
+            fpc_slot_y0 + fpc_slot_h + 2,
+            board_y1 - 11
+        ])
             translate([xx, yy, body_depth - eps])
                 cube([4, 4, board_standoff + eps]);
 }
