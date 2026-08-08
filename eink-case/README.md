@@ -9,6 +9,11 @@ Parametric OpenSCAD enclosure for:
 
 Design history and FDM lessons: [`LEARNINGS.md`](LEARNINGS.md).
 
+Direct-connect thin-back concept: [`OPTION_A.md`](OPTION_A.md) /
+[`option-a.scad`](option-a.scad). It keeps the full rear surface thin and adds
+only a centered board-sized backpack; it is separate from the current model
+pending physical FPC-position feedback.
+
 ## Principle: print the slot upward
 
 The panel sits in a **U-groove** (front lip | slot | backer). The shell is
