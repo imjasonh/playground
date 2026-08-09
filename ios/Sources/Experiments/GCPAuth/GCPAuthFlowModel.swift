@@ -147,6 +147,10 @@ final class GCPAuthFlowModel: ObservableObject {
         states[step] ?? .pending
     }
 
+    /// Runs one step, recording the failure against that step before rethrowing.
+    /// Main-actor isolated because it publishes: the work inside is a nonisolated
+    /// `async` call, so it still leaves the main thread to do the networking.
+    @MainActor
     private func perform<T>(_ step: GCPAuthStep, _ work: () async throws -> T) async throws -> T {
         set(step, .running)
         do {
@@ -157,6 +161,7 @@ final class GCPAuthFlowModel: ObservableObject {
         }
     }
 
+    @MainActor
     private func set(_ step: GCPAuthStep, _ state: GCPAuthStepState) {
         states[step] = state
     }

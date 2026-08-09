@@ -51,6 +51,7 @@ ios/
 | `voxel-world` | Voxel World | In-app; ARKit rebuilds the room as Minecraft-style palette blocks |
 | `wigglecam` | Wigglecam | In-app; dual-wide wigglegrams saved as GIF to Photos |
 | `local-lens` | Local Lens | In-app; live on-device Vision (classify / OCR / face landmarks / body & hand pose / barcodes) |
+| `gcp-auth` | GCP Auth | In-app; App Attest → Firebase App Check → Firebase Auth → Workload Identity Federation |
 
 ### Ride Monitor
 
@@ -205,6 +206,46 @@ in portrait and landscape through aspect-fill. Needs camera permission
 bootstrap). Simulator opens the UI but has no camera; use a physical device to
 see live labels. True gaze / attention tracking would need ARKit face tracking
 on a TrueDepth front camera — not wired here yet.
+
+### GCP Auth
+
+How an iOS app reaches Google Cloud without shipping a credential — because it
+cannot: anything in the binary is extractable. The only private key involved is
+generated in this device's Secure Enclave and can never leave it. Three
+exchanges, each shown as its own step in the UI:
+
+1. **App Attest → App Check.** `DCAppAttestService` generates an enclave key and
+   attests it; Firebase App Check trades that attestation for an artifact and a
+   token, then trades cheap assertions for tokens after that. The attestation
+   signs `SHA256(challenge)`; each later assertion signs
+   `SHA256(artifact ‖ challenge)`.
+2. **App Check → Firebase Auth.** Sign-in carries the token in
+   `X-Firebase-AppCheck`, which is what App Check enforcement keys off to turn
+   away unattested installs.
+3. **Firebase ID token → Google STS.** Workload Identity Federation exchanges it
+   (RFC 8693) for a Google access token good for about an hour, optionally
+   impersonating a service account.
+
+No Firebase SDK — plain `URLSession` against the REST endpoints, behind a
+transport protocol. Ships **unconfigured**, so with no project wired up it
+answers itself in-process and runs in the Simulator with no network and no
+Secure Enclave; the tokens it mints then are structurally real JWTs whose
+signature segment is a literal string, so nothing that verified them would
+accept them. Point it at a real project with a `GCPAuth` dictionary in
+`Info.plist` (Info.plist keys only — no new Bundle ID or signing bootstrap).
+
+Sign in with Apple is implemented but off by default: it needs the
+`com.apple.developer.applesignin` entitlement and App ID capability, which
+*would* require a bootstrap. Anonymous Firebase auth is the default and needs
+neither.
+
+Note the caveat the experiment states on screen: **STS does not check App
+Check.** Federating straight from the client leaves attestation out of that
+exchange's enforcement path, which is why the stronger design has the app call
+your own backend and never hold Google credentials at all.
+
+Full write-up, including the `gcloud` setup:
+[`docs/ios-gcp-auth-design.md`](../docs/ios-gcp-auth-design.md).
 
 ## Adding an experiment
 
