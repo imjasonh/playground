@@ -33,10 +33,12 @@ final class ContainerLabModel: ObservableObject {
     @Published private(set) var isolationMessage = "Not checked yet"
 
     private let client = RegistryClient()
-    private let runtimeServer = ContainerRuntimeServer()
+    let runtimeServer = ContainerRuntimeServer()
+    lazy var vmSession = ContainerVMSession(server: runtimeServer)
 
     var runtimeStatus: String { RuntimeAssets.status }
     var isRuntimeInstalled: Bool { RuntimeAssets.isInstalled }
+    var canOpenTerminal: Bool { RuntimeAssets.hasPage }
 
     var layerRows: [LayerRow] {
         guard let resolved else { return [] }

@@ -4,6 +4,7 @@ import SwiftUI
 /// and see whether this device can host the wasm runtime that would run it.
 struct ContainerLabView: View {
     @StateObject private var model = ContainerLabModel()
+    @State private var isTerminalPresented = false
 
     var body: some View {
         List {
@@ -19,6 +20,13 @@ struct ContainerLabView: View {
         }
         .navigationTitle("Container Lab")
         .navigationBarTitleDisplayMode(.inline)
+        .fullScreenCover(isPresented: $isTerminalPresented) {
+            ContainerTerminalView(
+                session: model.vmSession,
+                imageRoot: model.materialized?.root,
+                title: model.materialized?.reference ?? model.imageText
+            )
+        }
     }
 
     // MARK: - Sections
@@ -151,6 +159,15 @@ struct ContainerLabView: View {
                 .font(.footnote)
                 .foregroundStyle(isolationColor)
                 .accessibilityIdentifier("containerLabIsolationMessage")
+
+            if model.canOpenTerminal {
+                Button {
+                    isTerminalPresented = true
+                } label: {
+                    Label("Open runtime console", systemImage: "terminal")
+                }
+                .accessibilityIdentifier("containerLabRunButton")
+            }
         }
     }
 

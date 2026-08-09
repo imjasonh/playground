@@ -43,6 +43,11 @@ env:
   C2W_VERSION: v0.8.4
   C2W_SHA256: 1142ab95212578c0c7f666de830de6945f2abbea1713d1e07a7cb04072e00f31
   WASMTIME_VERSION: v27.0.0
+  # c2w's embedded Dockerfile still clones its build assets from the project's
+  # old home (github.com/ktock/container2wasm), which no longer carries the
+  # release tags, so every conversion dies on "Remote branch v0.8.4 not found".
+  # Point it at the current repository instead.
+  C2W_SOURCE_REPO: https://github.com/container2wasm/container2wasm
 
 jobs:
   smoke-wasi:
@@ -84,7 +89,10 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p out-wasi
-          time c2w alpine:3.20 "$PWD/out-wasi/alpine-amd64.wasm"
+          time c2w \
+            --build-arg "SOURCE_REPO=${C2W_SOURCE_REPO}" \
+            --build-arg "SOURCE_REPO_VERSION=${C2W_VERSION}" \
+            alpine:3.20 "$PWD/out-wasi/alpine-amd64.wasm"
           ls -lh out-wasi
 
       - name: Boot it
@@ -144,7 +152,10 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p out-js/htdocs
-          time c2w --to-js --target-arch="${TARGET_ARCH}" "${IMAGE}" "$PWD/out-js/htdocs/"
+          time c2w --to-js --target-arch="${TARGET_ARCH}" \
+            --build-arg "SOURCE_REPO=${C2W_SOURCE_REPO}" \
+            --build-arg "SOURCE_REPO_VERSION=${C2W_VERSION}" \
+            "${IMAGE}" "$PWD/out-js/htdocs/"
           ls -lh out-js/htdocs
 
       - name: Assemble the runtime directory
