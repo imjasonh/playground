@@ -1,6 +1,7 @@
 import AuthenticationServices
 import CryptoKit
 import Foundation
+import Security
 import UIKit
 
 enum GCPAuthNonce {
