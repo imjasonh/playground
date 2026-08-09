@@ -52,6 +52,7 @@ ios/
 | `wigglecam` | Wigglecam | In-app; dual-wide wigglegrams saved as GIF to Photos |
 | `local-lens` | Local Lens | In-app; live on-device Vision (classify / OCR / face landmarks / body & hand pose / barcodes) |
 | `container-lab` | Container Lab | In-app; pulls an OCI image to disk and runs an arm64 Linux guest in a `WKWebView` (runtime fetched separately) |
+| `wasm-service` | Wasm Service | In-app; pulls a wasm module from a registry, interprets it with WasmKit, and serves it over a real TCP port |
 
 ### Ride Monitor
 
@@ -254,6 +255,56 @@ with the image layout alongside at `/image/…`.
 Still to do: the boot on an actual device, and moving from an emulator with one
 image baked in to `--external-bundle`, so the image Container Lab pulls is the
 image that runs.
+
+### Wasm Service
+
+The other half of the same idea, for a payload that is already WebAssembly:
+pull a wasm module from a registry, run it **in the app** (not in a webview),
+and serve it on a real TCP port. Full design, host ABI, and the honest limits
+on background execution: [`docs/ios-wasm-service.md`](../docs/ios-wasm-service.md).
+
+The demo payload is [`wasm-hello/`](../wasm-hello/) — an ordinary Go
+`net/http` service compiled to `wasip1` and published to GHCR as an OCI
+artifact by `wasm-hello.yml`:
+
+```
+ghcr.io/imjasonh/playground/wasm-hello:latest
+```
+
+Type that reference, tap **Pull & run**, and the phone answers `curl` from a
+laptop on the same Wi-Fi. `/info` reports a request counter that keeps climbing
+— the evidence that the Go runtime is instantiated once and reused, rather than
+booted per request.
+
+Three things make it different from Container Lab:
+
+- **No webview, so no JIT** — WasmKit interprets, which is the only kind of
+  wasm runtime an App Store app may contain outside `WKWebView`. Slow, and
+  entirely adequate for a request handler.
+- **The app owns the listener.** wasip1 has no sockets, so `NWListener` accepts
+  the connection and hands the guest raw HTTP/1.1 bytes. That split is what
+  lets a non-JIT interpreter run a web service at all.
+- **It keeps serving in the background** — as far as iOS ever allows. The
+  foreground is unlimited (there is a keep-awake switch, and a charger is the
+  right way to run this); leaving the app buys about thirty seconds; after that
+  it comes back only during `BGProcessingTask` windows, which this requests
+  **only while charging**. Nothing here pretends a phone can host a server
+  permanently, because nothing can.
+
+To reach it from outside the Wi-Fi, install the Tailscale app and sign in: the
+device's `100.64.0.0/10` tailnet address shows up in the address list on its
+own, because inbound tailnet traffic arrives on an ordinary interface and the
+listener is already bound to it. No code in this app is involved.
+
+The Go module is several megabytes and is **not in git**; `ios.yml` builds it
+into `Tests/Fixtures/hello.wasm` so the simulator tests can drive the real
+thing, and those tests skip in a checkout that has not built it:
+
+```bash
+cd wasm-hello
+GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared \
+  -o ../ios/Tests/Fixtures/hello.wasm .
+```
 
 ## Adding an experiment
 

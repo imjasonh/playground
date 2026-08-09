@@ -584,7 +584,7 @@ auto-discover them. Run their local tests when you change them.
 
 | Directory | Type | Tests |
 |-----------|------|-------|
-| `ios/` | The single "Playground" SwiftUI app — a launcher hosting experiments (e.g. Ride Monitor, T9 Keyboard); TestFlight CD on `main` | XCTest unit tests + XCUITest UI tests (`fastlane test`) |
+| `ios/` | The single "Playground" SwiftUI app — a launcher hosting experiments (e.g. Ride Monitor, T9 Keyboard, Wasm Service); TestFlight CD on `main` | XCTest unit tests + XCUITest UI tests (`fastlane test`) |
 
 ## Current macOS apps
 

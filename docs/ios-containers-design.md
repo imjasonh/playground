@@ -230,6 +230,12 @@ squarely inside the "interpreter shipped in the reviewed binary" pattern.
 The catch is obvious: it only runs images someone built for wasm. It's a real
 and cheap capability, but it is not "run this arm64 image."
 
+**This one is built.** See [`ios-wasm-service.md`](ios-wasm-service.md): a Go
+`net/http` service compiled to `wasip1`, shipped through a registry as an OCI
+artifact, interpreted by WasmKit inside the app, and answering on a real TCP
+port. Because the guest is app code rather than webview code, it gets a socket
+and the app's own memory budget — the two things Option B cannot have.
+
 ### 5.3 Option D — native CPU interpreter (the iSH / UTM SE approach)
 
 Compile an emulator into the app and interpret guest instructions natively.
@@ -373,7 +379,17 @@ limits, so the memory ceiling still needs a device run.
 | 1 — native OCI pull | Done: reference parsing, Bearer auth, index → platform, digest-verified blobs, native gunzip, OCI layout on disk |
 | 2 — loopback + isolation | Done: server, headers, probe, all green in CI |
 | 3 — c2w runtime | Built and booting: `container-runtime.yml` converts `arm64v8/alpine`, boots it under Chromium and WebKit, and uploads it; not yet run on a device, and not yet `--external-bundle` |
-| 4 — follow-on | Not started |
+| 4 — follow-on | Option C done (see below); guest networking and Option A not started |
+
+**Option C shipped as its own experiment.** *Wasm Service* pulls a wasm module
+from a registry, interprets it in-process with WasmKit, and serves it over a
+real `NWListener` — a Go `net/http` service answering `curl` from a laptop.
+It reuses Phase 1's OCI client wholesale and needed no emulator, no webview,
+and no entitlement. It also answers the two questions Option B cannot: the
+guest can be handed a socket, and it keeps serving in the background windows
+iOS actually grants (foreground, a ~30 s assertion, and charging-only
+`BGProcessingTask`). Design, ABI, and the honest ceiling on "permanently in the
+background": [`ios-wasm-service.md`](ios-wasm-service.md).
 
 Two things worth writing down for whoever picks this up:
 
@@ -440,7 +456,9 @@ speed, and peak WebContent memory.
 
 **Phase 4 — choose the follow-on** based on Phase 3 numbers: guest networking,
 a `wasip1` fast path (Option C — cheap once the OCI client exists), or a remote
-backend (Option A) behind the same UI for workloads that need to finish.
+backend (Option A) behind the same UI for workloads that need to finish. The
+`wasip1` fast path was the one taken, and it was indeed cheap:
+[`ios-wasm-service.md`](ios-wasm-service.md).
 
 A sensible early kill-switch: if Phase 2 cannot get `crossOriginIsolated` in a
 `WKWebView`, Option B is dead, and the honest fallback is Option C for wasm
@@ -457,7 +475,10 @@ For the record, so nobody re-litigates these:
 - Real Linux isolation primitives (namespaces, cgroups, overlayfs) on XNU. What
   we call "the container" is a guest inside an emulator; the isolation is the
   emulator's, not the kernel's.
-- Running the guest in the background indefinitely.
+- Running the guest in the background indefinitely. Not with `audio`, not with
+  `location`, not with a Network Extension you will not be granted. What is
+  actually available, and how Wasm Service spends it, is in
+  [`ios-wasm-service.md`](ios-wasm-service.md) §5.
 - App Store–signed JIT, including the iOS 26 `JITAuthorizer` path.
 
 ## 9. References

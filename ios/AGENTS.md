@@ -50,6 +50,7 @@ After adding or changing any of these targets, re-run **iOS signing bootstrap** 
 | Info.plist privacy string or `UIBackgroundModes` | **No** |
 | Normal `project.yml` settings / version bumps | **No** |
 | On-device frameworks used from the host app (e.g. Foundation Models) | **No** |
+| Swift Package Manager dependency added to an existing target (e.g. WasmKit) | **No** — packages carry no Bundle ID |
 | **First time** adding/changing an **app extension** target (keyboard, widget, Watch, …) | **Yes** — new Bundle ID + match profile |
 | New App ID **capability / entitlement** on an existing id (Push, HealthKit, NFC, …) | **Often yes** — update App ID + refresh profile |
 | Second top-level iOS app | **Forbidden** |
@@ -124,10 +125,15 @@ ios/
 ├── T9Keyboard/              # Custom Keyboard appex (own Bundle ID)
 ├── RideMonitorWidget/       # Live Activity widget extension (own Bundle ID)
 ├── RideMonitorWatch/        # watchOS companion app (own Bundle ID)
+├── ContainerRuntime/        # Container Lab's wasm emulator assets (fetched, never committed)
 ├── Sources/
 │   ├── Experiment.swift
+│   ├── OCI/                 # registry client, shared by Container Lab + Wasm Service
 │   └── Experiments/<Name>/  # in-app experiments (host Bundle ID)
 └── Tests/
+    ├── PlaygroundTests/
+    ├── PlaygroundUITests/
+    └── Fixtures/            # built by CI (wasm-hello), git-ignored
 ```
 
 ## Local / CI
@@ -141,3 +147,8 @@ bundle exec fastlane test
 
 CI: `.github/workflows/ios.yml`. Setup:
 [`docs/ios-testflight-setup.md`](../docs/ios-testflight-setup.md).
+
+`ios.yml` also builds `wasm-hello` into `Tests/Fixtures/hello.wasm` before
+generating the project, so the Wasm Service end-to-end tests run against a real
+Go module. Those tests skip when the fixture is absent, so a plain checkout
+still builds and tests green — do not commit the fixture.
