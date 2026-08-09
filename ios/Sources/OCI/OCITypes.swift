@@ -67,9 +67,8 @@ struct OCIIndex: Codable, Equatable {
 struct OCIManifest: Codable, Equatable {
     var schemaVersion: Int?
     var mediaType: String?
-    /// Set by artifacts (`oras push --artifact-type`), absent on images. It is
-    /// how a registry tells you the manifest describes something that is not a
-    /// container root filesystem.
+    /// Set by artifacts, absent on images. It is how a registry tells you the
+    /// manifest describes something that is not a container root filesystem.
     var artifactType: String?
     var config: OCIDescriptor
     var layers: [OCIDescriptor]

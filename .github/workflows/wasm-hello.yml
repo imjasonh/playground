@@ -3,7 +3,7 @@ name: wasm-hello
 # App-specific: publishes wasm-hello as an OCI artifact so the iOS Wasm Service
 # experiment has something to pull. Building and testing the app is handled by
 # the shared test.yml, which discovers it from its go.mod; this workflow only
-# exists because nothing else in the repo pushes to a registry.
+# exists because no shared workflow pushes to a registry.
 
 on:
   push:
@@ -43,34 +43,39 @@ jobs:
           GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o hello.wasm .
           ls -lh hello.wasm
 
-      - uses: oras-project/setup-oras@v1
-
-      - name: Log in to GHCR
-        run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" \
-            | oras login ghcr.io --username "${{ github.actor }}" --password-stdin
-
       # Pushed as an artifact, not an image: there is no root filesystem and
-      # nothing to exec. The layer is the module, and OCI is only the transport.
+      # nothing to exec. cmd/publish assembles that manifest with
+      # go-containerregistry, which also handles the registry auth from
+      # GITHUB_TOKEN — so this needs no CLI installed and no login step.
       - name: Push the OCI artifact
+        id: push
         working-directory: wasm-hello
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          oras push \
-            --artifact-type application/vnd.wasm.config.v0+json \
+          ref=$(go run ./cmd/publish \
+            --module hello.wasm \
+            --repo "${IMAGE}" \
+            --tag latest \
+            --tag "${{ github.sha }}" \
             --annotation "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
             --annotation "org.opencontainers.image.revision=${{ github.sha }}" \
-            --annotation "org.opencontainers.image.description=Hello-world Go HTTP handler compiled to wasip1" \
-            "${IMAGE}:latest,${{ github.sha }}" \
-            hello.wasm:application/wasm
+            --annotation "org.opencontainers.image.description=Hello-world Go HTTP handler compiled to wasip1")
+          echo "ref=${ref}" >> "$GITHUB_OUTPUT"
 
       - name: Summary
+        working-directory: wasm-hello
         run: |
           {
             echo "## Published"
             echo
             echo '```'
-            oras manifest fetch --pretty "${IMAGE}:latest"
+            echo "${{ steps.push.outputs.ref }}"
+            echo '```'
+            echo
+            echo '```json'
+            go run ./cmd/publish --module hello.wasm --dry-run
             echo '```'
             echo
             echo "A newly created GHCR package is private. Anonymous pulls (what"

@@ -97,6 +97,8 @@ go test ./...
 `wire/` is tested natively; the root test builds the wasip1 module and performs
 real HTTP exchanges through it, asserting the export names and the packed
 return value so the ABI cannot drift away from the Swift host that decodes it.
+`internal/publish/` pushes to an in-memory registry and pulls the artifact back
+the way the phone does, so the published shape is checked rather than assumed.
 
 ## Distribution
 
@@ -111,9 +113,26 @@ ghcr.io/imjasonh/playground/wasm-hello:latest
 `application/wasm`; there is no root filesystem, because there is no container
 here — OCI is only the delivery mechanism.
 
+That shape is why [`cmd/publish`](cmd/publish) exists instead of a one-line
+`docker push`: the ordinary tools want a filesystem to tar up. It builds the
+manifest and hands the registry work to
+[go-containerregistry](https://github.com/google/go-containerregistry). Point
+it at any registry you can log in to — `$GITHUB_TOKEN` for GHCR, otherwise
+whatever `docker login` left behind:
+
 ```bash
-oras pull ghcr.io/imjasonh/playground/wasm-hello:latest
+go run ./cmd/publish --module hello.wasm --dry-run   # the manifest, pushes nothing
+go run ./cmd/publish --module hello.wasm --repo ghcr.io/you/wasm-hello
+```
+
+It prints the digest reference and nothing else on stdout, so it composes.
+Given the same module and annotations it produces the same digest every time.
+To look at what landed, [`crane`](https://github.com/google/go-containerregistry/tree/main/cmd/crane)
+is the same library with a CLI on it:
+
+```bash
 crane manifest ghcr.io/imjasonh/playground/wasm-hello:latest
+crane blob ghcr.io/imjasonh/playground/wasm-hello@sha256:… > hello.wasm
 ```
 
 > A package GHCR publishes for the first time is **private**. Anonymous pulls —

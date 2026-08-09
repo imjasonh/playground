@@ -112,8 +112,8 @@ final class WasmServiceHostTests: XCTestCase {
         XCTAssertEqual(try WasmArtifact.moduleLayer(in: manifest).digest, "sha256:cc")
     }
 
-    /// `oras push` labels the layer whatever you tell it to, and people tell it
-    /// nothing. A single blob under a wasm artifact type is unambiguous anyway.
+    /// A publisher labels the layer whatever it likes, and plenty label it
+    /// opaque. A single blob under a wasm artifact type is unambiguous anyway.
     func testSingleLayerUnderAWasmArtifactTypeIsAccepted() throws {
         var manifest = manifest(layers: [descriptor("application/octet-stream", digest: "sha256:dd")])
         manifest.artifactType = "application/vnd.wasm.config.v0+json"

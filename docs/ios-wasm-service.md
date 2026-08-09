@@ -108,8 +108,8 @@ layer stacking and just picks a descriptor:
 
 1. a layer whose media type is a known wasm type, or ends in `+wasm`;
 2. failing that, the single layer of a manifest whose `artifactType` (or config
-   media type) says wasm — which is what `oras push` produces, since it labels
-   the layer opaque by default;
+   media type) says wasm, which covers publishers that label the layer as
+   opaque bytes;
 3. failing that, a layer whose `org.opencontainers.image.title` ends in
    `.wasm`.
 
@@ -121,6 +121,14 @@ failure halfway through instantiating a tarball.
 Because the module travels as a normal OCI blob, **anything that compiles to
 `wasip1` works** — Go, Rust, TinyGo, Zig, and JS via a wasm-embedded engine —
 as long as it exports the three ABI functions.
+
+Publishing has the same asymmetry. `docker push` and `crane push` both want a
+root filesystem to tar up, and there isn't one, so `wasm-hello/cmd/publish`
+assembles the manifest itself — an empty config, a wasm `artifactType`, one
+`application/wasm` layer — and leaves auth, blob upload, and digest
+verification to [go-containerregistry](https://github.com/google/go-containerregistry).
+It is deterministic (nothing in it reads the clock), so republishing an
+unchanged module republishes an unchanged digest.
 
 ## 5. Running in the background, honestly
 
