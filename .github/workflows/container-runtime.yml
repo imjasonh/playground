@@ -27,17 +27,20 @@ on:
         description: c2w --target-arch value
         default: aarch64
         required: false
-  pull_request:
+  # Deliberately `push`, not `pull_request`: a pull_request path filter matches
+  # the whole PR diff, so once a PR touches the runtime, every later commit to
+  # it — a doc fix, a Swift tweak — restarts an hours-long emulator build. A
+  # push filter matches only what the commits actually changed.
+  push:
     paths:
       - 'ios/ContainerRuntime/**'
       - '.github/workflows/container-runtime.yml'
+      - '.github/scripts/prepare-c2w-build.sh'
+      - '.github/scripts/container-runtime-boot-smoke.mjs'
 
 concurrency:
   group: container-runtime-${{ github.ref }}
-  # Never cancel: a pull_request path filter matches the whole PR diff, so any
-  # later push would otherwise kill an hours-long emulator build that is
-  # unrelated to what changed.
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: read

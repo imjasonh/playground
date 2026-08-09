@@ -30,12 +30,26 @@ ios/ContainerRuntime/fetch-runtime.sh --from-zip ~/Downloads/container-runtime-a
 ios/ContainerRuntime/fetch-runtime.sh --from-dir /tmp/out-js/htdocs
 ```
 
-Or build locally on a machine with Docker + buildx:
+Or build locally on a machine with Docker + buildx. c2w v0.8.4 cannot fetch its
+own build inputs any more, so prepare them first — see the comments in
+`prepare-c2w-build.sh` for what it works around:
 
 ```bash
-mkdir -p /tmp/out-js/htdocs
-c2w --to-js --target-arch=aarch64 arm64v8/alpine:3.20 /tmp/out-js/htdocs/
-ios/ContainerRuntime/fetch-runtime.sh --from-dir /tmp/out-js/htdocs
+mkdir -p /tmp/out-js/htdocs && cd /tmp/out-js
+bash "$REPO"/.github/scripts/prepare-c2w-build.sh v0.8.4
+c2w --to-js --target-arch=aarch64 \
+  --dockerfile "$PWD/Dockerfile.c2w" --assets "$PWD/c2w-src" \
+  arm64v8/alpine:3.20 /tmp/out-js/htdocs/
+"$REPO"/ios/ContainerRuntime/fetch-runtime.sh --from-dir /tmp/out-js/htdocs
+```
+
+To check the result actually boots before putting it on a phone, serve it and
+drive it headlessly the way CI does:
+
+```bash
+npm install --no-save --prefix "$REPO"/.github/scripts playwright@1
+( cd "$REPO"/.github/scripts && npx playwright install chromium )
+node "$REPO"/.github/scripts/container-runtime-boot-smoke.mjs /tmp/out-js/htdocs
 ```
 
 `project.yml` picks this directory up as an optional resource folder, so the

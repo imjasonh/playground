@@ -364,11 +364,24 @@ Two things worth writing down for whoever picks this up:
   the resulting digest *is* the `diff_id` the image config already published,
   so the rewritten manifest checks itself against the original config. A
   mismatch aborts the pull.
-- **c2w v0.8.4 cannot build out of the box.** Its embedded Dockerfile clones
+- **c2w v0.8.4 cannot build out of the box**, and both of its failures are
+  network fetches inside a build that otherwise runs for tens of minutes, so
+  they are worth patching rather than retrying. Its embedded Dockerfile clones
   build assets from the project's old home, `github.com/ktock/container2wasm`,
-  which no longer carries the release tags, so every conversion dies in ~40s on
-  `Remote branch v0.8.4 not found`. Override it with
-  `--build-arg SOURCE_REPO=https://github.com/container2wasm/container2wasm`.
+  which no longer carries the release tags (`Remote branch v0.8.4 not found`),
+  and it fetches zlib from `zlib.net/fossils`, which answered a GitHub runner
+  with something `tar` read as "not in gzip format".
+  `.github/scripts/prepare-c2w-build.sh` sidesteps both: it hands buildx a
+  pinned local checkout as the `assets` context (`c2w --assets`) so there is no
+  clone, and patches the Dockerfile (`c2w --show-dockerfile` →
+  `c2w --dockerfile`) to take zlib from its byte-identical GitHub release.
+- **Building the emulator is not the same as it working.** The workflow serves
+  the converted output from a cross-origin-isolated origin and boots it in
+  headless Chromium, waiting for alpine's prompt and then asking the guest
+  `uname -sm`. It drives the very page the app bundles, so the page is under
+  test too. Chromium is not WebKit, but everything it exercises — the isolation
+  headers, the wasm, xterm-pty, the emscripten glue — is shared, which leaves
+  only WebKit's own behaviour to confirm on a device.
 
 **Phase 1 — "specify an image" (native, no emulation).** A `ContainerLab`
 experiment under `ios/Sources/Experiments/`: type a reference, resolve it, pull
