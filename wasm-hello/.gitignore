@@ -1,0 +1,7 @@
+# Built binaries. The wasm module is ~5 MB and is rebuilt by tests and CI, so
+# it is never committed; CI publishes it as an OCI artifact instead.
+/wasm-hello
+*.wasm
+*.test
+*.out
+coverage.txt

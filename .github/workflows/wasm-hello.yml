@@ -1,0 +1,79 @@
+name: wasm-hello
+
+# App-specific: publishes wasm-hello as an OCI artifact so the iOS Wasm Service
+# experiment has something to pull. Building and testing the app is handled by
+# the shared test.yml, which discovers it from its go.mod; this workflow only
+# exists because nothing else in the repo pushes to a registry.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'wasm-hello/**'
+      - '.github/workflows/wasm-hello.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: wasm-hello-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}/wasm-hello
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: 'stable'
+          check-latest: true
+          cache: false
+
+      - name: Build the wasip1 module
+        working-directory: wasm-hello
+        run: |
+          set -euo pipefail
+          GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o hello.wasm .
+          ls -lh hello.wasm
+
+      - uses: oras-project/setup-oras@v1
+
+      - name: Log in to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | oras login ghcr.io --username "${{ github.actor }}" --password-stdin
+
+      # Pushed as an artifact, not an image: there is no root filesystem and
+      # nothing to exec. The layer is the module, and OCI is only the transport.
+      - name: Push the OCI artifact
+        working-directory: wasm-hello
+        run: |
+          set -euo pipefail
+          oras push \
+            --artifact-type application/vnd.wasm.config.v0+json \
+            --annotation "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
+            --annotation "org.opencontainers.image.revision=${{ github.sha }}" \
+            --annotation "org.opencontainers.image.description=Hello-world Go HTTP handler compiled to wasip1" \
+            "${IMAGE}:latest,${{ github.sha }}" \
+            hello.wasm:application/wasm
+
+      - name: Summary
+        run: |
+          {
+            echo "## Published"
+            echo
+            echo '```'
+            oras manifest fetch --pretty "${IMAGE}:latest"
+            echo '```'
+            echo
+            echo "A newly created GHCR package is private. Anonymous pulls (what"
+            echo "the phone does) need it made public once in the repository's"
+            echo "Packages settings."
+          } >> "$GITHUB_STEP_SUMMARY"
