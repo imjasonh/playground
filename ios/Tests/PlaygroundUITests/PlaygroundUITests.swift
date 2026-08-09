@@ -90,6 +90,10 @@ final class PlaygroundUITests: XCTestCase {
             scrollLauncherUntilExists(app.staticTexts["Wigglecam"], in: app),
             "Wigglecam should appear after scrolling the launcher"
         )
+        XCTAssertTrue(
+            scrollLauncherUntilExists(app.staticTexts["GCP Auth"], in: app),
+            "GCP Auth should appear after scrolling the launcher"
+        )
     }
 
     func testRideMonitorExperimentOpens() {
@@ -212,5 +216,29 @@ final class PlaygroundUITests: XCTestCase {
             || app.otherElements["localLensStatusMessage"].waitForExistence(timeout: 3)
             || app.staticTexts["localLensPrivacyBadge"].waitForExistence(timeout: 3)
             || app.otherElements["localLensPrivacyBadge"].waitForExistence(timeout: 3))
+    }
+
+    func testGCPAuthExperimentRunsTheSimulatedChain() {
+        let app = launchApp()
+
+        openExperiment("gcp-auth", title: "GCP Auth", in: app)
+
+        XCTAssertTrue(app.navigationBars["GCP Auth"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["gcpAuthModeBadge"].waitForExistence(timeout: 8)
+            || app.otherElements["gcpAuthModeBadge"].waitForExistence(timeout: 3))
+
+        let run = app.buttons["gcpAuthRunButton"]
+        XCTAssertTrue(run.waitForExistence(timeout: 8))
+        run.tap()
+
+        XCTAssertTrue(app.buttons["gcpAuthResetButton"].waitForExistence(timeout: 8))
+
+        // No project is configured in CI, so the chain runs against the
+        // in-process transport and always finishes. The inspector section only
+        // renders once tokens exist, which makes it a real completion signal.
+        XCTAssertTrue(
+            app.staticTexts["What the tokens say"].waitForExistence(timeout: 20),
+            "The simulated chain should finish and produce inspectable tokens"
+        )
     }
 }

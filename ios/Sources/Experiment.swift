@@ -54,5 +54,6 @@ enum ExperimentCatalog {
         LocalLensExperiment.experiment,
         VoxelWorldExperiment.experiment,
         WigglecamExperiment.experiment,
+        GCPAuthExperiment.experiment,
     ]
 }
