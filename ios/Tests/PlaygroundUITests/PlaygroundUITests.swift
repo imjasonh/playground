@@ -194,6 +194,20 @@ final class PlaygroundUITests: XCTestCase {
             || app.otherElements["wigglecamReadinessBanner"].waitForExistence(timeout: 3))
     }
 
+    func testContainerLabExperimentOpens() {
+        let app = launchApp()
+
+        openExperiment("container-lab", title: "Container Lab", in: app)
+
+        XCTAssertTrue(app.navigationBars["Container Lab"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.textFields["containerLabImageField"].waitForExistence(timeout: 8)
+            || app.otherElements["containerLabImageField"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["containerLabInspectButton"].waitForExistence(timeout: 8)
+            || app.otherElements["containerLabInspectButton"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["containerLabIsolationButton"].waitForExistence(timeout: 8)
+            || app.otherElements["containerLabIsolationButton"].waitForExistence(timeout: 3))
+    }
+
     func testLocalLensExperimentOpens() {
         let app = launchApp()
 

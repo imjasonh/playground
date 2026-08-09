@@ -51,6 +51,7 @@ ios/
 | `voxel-world` | Voxel World | In-app; ARKit rebuilds the room as Minecraft-style palette blocks |
 | `wigglecam` | Wigglecam | In-app; dual-wide wigglegrams saved as GIF to Photos |
 | `local-lens` | Local Lens | In-app; live on-device Vision (classify / OCR / face landmarks / body & hand pose / barcodes) |
+| `container-lab` | Container Lab | In-app; pulls an OCI image to disk and probes whether WebKit can host a wasm runtime |
 
 ### Ride Monitor
 
@@ -205,6 +206,42 @@ in portrait and landscape through aspect-fill. Needs camera permission
 bootstrap). Simulator opens the UI but has no camera; use a physical device to
 see live labels. True gaze / attention tracking would need ARKit face tracking
 on a TrueDepth front camera — not wired here yet.
+
+### Container Lab
+
+Name a container image, pull it to an on-device **OCI image layout**, and check
+whether this device can host the wasm runtime that would eventually run it. See
+[`docs/ios-containers-design.md`](../docs/ios-containers-design.md) for why the
+runtime has to live in a `WKWebView` at all.
+
+What works today:
+
+- **Registry client in Swift** — reference parsing (`alpine`, `alpine:3.20`,
+  `ghcr.io/owner/name@sha256:…`), anonymous Bearer token auth, manifest lists
+  resolved to one platform (`linux/arm64` by default), and blob pulls where
+  every blob is checked against its digest before it is kept.
+- **Native decompression** — gzip layers are inflated on the phone, not in the
+  guest, because container2wasm's in-browser gunzip is documented as slow. The
+  rewritten manifest is self-checking: an uncompressed layer's digest *is* the
+  `diff_id` the image config already published, so a mismatch aborts the pull.
+- **Loopback origin** — an in-app HTTP server on `127.0.0.1` serves the layout
+  and the runtime page with `Cross-Origin-Opener-Policy: same-origin` and
+  `Cross-Origin-Embedder-Policy: require-corp`. This is the only way to get a
+  cross-origin-isolated page in `WKWebView`: a custom `WKURLSchemeHandler`
+  scheme is not a secure context, and the service-worker COOP/COEP shims that
+  work in Safari are ignored here.
+- **Isolation probe** — “Check webview isolation” loads that origin in a
+  `WKWebView` and reports `crossOriginIsolated`, `SharedArrayBuffer`, and
+  whether a shared `WebAssembly.Memory` can be constructed. Those are the
+  prerequisites for wasm threads, and therefore for any CPU emulator. The same
+  check runs in CI on the simulator (`ContainerLabIsolationProbeTests`).
+
+What does not work yet: **running** the image. That needs a bundled
+container2wasm/QEMU-wasm runtime, which has to be built with Docker +
+Emscripten and is not yet in the repo — the Runtime section says so plainly
+rather than pretending. `RuntimeAssets` looks for a bundled `ContainerRuntime/`
+directory and the loopback server already serves it at `/runtime/…`, with the
+image layout alongside at `/image/…`.
 
 ## Adding an experiment
 

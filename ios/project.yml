@@ -87,6 +87,13 @@ targets:
         # No non-exempt encryption → TestFlight upload doesn't stall on the
         # export-compliance question.
         ITSAppUsesNonExemptEncryption: false
+        # Container Lab serves its runtime from an in-app loopback HTTP server
+        # so the WKWebView page gets a secure origin whose COOP/COEP headers we
+        # control (a custom URL scheme is not a secure context, so it can never
+        # be cross-origin isolated). ATS needs the local-networking opt-in to
+        # allow http://127.0.0.1; nothing else is exempted.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
         # Ride Monitor Live Activity (Lock Screen / Dynamic Island).
         NSSupportsLiveActivities: true
         # Ride Monitor: motion + background location. Snore Log: microphone +
