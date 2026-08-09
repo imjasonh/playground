@@ -337,6 +337,39 @@ Open engineering questions to settle during Phase 2, in rough risk order:
 
 ## 7. Phased plan
 
+### 7.0 Where this stands
+
+**The kill-switch passed.** A page served by an in-app loopback HTTP server on
+`127.0.0.1`, with `Cross-Origin-Opener-Policy: same-origin` and
+`Cross-Origin-Embedder-Policy: require-corp`, is cross-origin isolated inside a
+`WKWebView`: `crossOriginIsolated === true`, `SharedArrayBuffer` exists, and a
+shared `WebAssembly.Memory` constructs. That is asserted in CI by
+`ContainerLabIsolationProbeTests` and re-checkable on a device from the
+experiment's Runtime section. Option B is therefore live, and the Option C/D
+fallbacks stay on the shelf.
+
+Measured on the simulator, not yet on a device — same WebKit, different process
+limits, so the memory ceiling still needs a device run.
+
+| Phase | State |
+|-------|-------|
+| 1 — native OCI pull | Done: reference parsing, Bearer auth, index → platform, digest-verified blobs, native gunzip, OCI layout on disk |
+| 2 — loopback + isolation | Done: server, headers, probe, all green in CI |
+| 3 — c2w runtime | In progress: `container-runtime.yml` builds it; not yet bundled |
+| 4 — follow-on | Not started |
+
+Two things worth writing down for whoever picks this up:
+
+- **Layer decompression is free verification.** Inflating layers natively means
+  the resulting digest *is* the `diff_id` the image config already published,
+  so the rewritten manifest checks itself against the original config. A
+  mismatch aborts the pull.
+- **c2w v0.8.4 cannot build out of the box.** Its embedded Dockerfile clones
+  build assets from the project's old home, `github.com/ktock/container2wasm`,
+  which no longer carries the release tags, so every conversion dies in ~40s on
+  `Remote branch v0.8.4 not found`. Override it with
+  `--build-arg SOURCE_REPO=https://github.com/container2wasm/container2wasm`.
+
 **Phase 1 — "specify an image" (native, no emulation).** A `ContainerLab`
 experiment under `ios/Sources/Experiments/`: type a reference, resolve it, pull
 manifest/config, pick the `linux/arm64` platform from an index, list layers with
@@ -347,14 +380,19 @@ no entitlement, no signing bootstrap. This is genuinely useful on its own and
 de-risks half the work.
 
 **Phase 2 — loopback + WebKit spike.** Loopback server with COOP/COEP; prove
-`crossOriginIsolated === true` and `SharedArrayBuffer` in a `WKWebView` on a real
-device before integrating anything else. Then a hello-world wasm-threaded module.
-This phase either validates or kills Option B, cheaply.
+`crossOriginIsolated === true` and `SharedArrayBuffer` in a `WKWebView` before
+integrating anything else. This phase either validates or kills Option B,
+cheaply. It validated it (§7.0).
 
-**Phase 3 — c2w runtime.** Bundle `--external-bundle` VM + `imagemounter.wasm`,
-serve the Phase 1 image layout to it, wire xterm-pty to a SwiftUI terminal, and
-boot `arm64v8/alpine`. Measure boot time, steady-state speed, and peak
-WebContent memory.
+**Phase 3 — c2w runtime.** Build the emulator (`c2w --to-js
+--target-arch=aarch64`, which is QEMU Wasm under Emscripten), bundle it under
+`ios/ContainerRuntime/`, wire xterm-pty to the console, and boot
+`arm64v8/alpine`. The build needs Docker + buildx and compiles both QEMU and a
+Linux kernel, so it lives in its own workflow and its output is fetched rather
+than committed. Then move from the baked-in image to `--external-bundle` +
+`imagemounter.wasm` reading the Phase 1 layout, which is what turns "boots
+alpine" into "boots the image you named". Measure boot time, steady-state
+speed, and peak WebContent memory.
 
 **Phase 4 — choose the follow-on** based on Phase 3 numbers: guest networking,
 a `wasip1` fast path (Option C — cheap once the OCI client exists), or a remote
