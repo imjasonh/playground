@@ -2,9 +2,11 @@
 OPTION A — THIN BODY + DIRECT-CONNECT BACKPACK
 CLOSED BODY: 178.8 x 125 x 5.4 mm
 MAX DEPTH AT POD: 19 mm
-POD FOOTPRINT: 38.36 x 57.15 mm
+POD FOOTPRINT: 57.15 x 38.36 mm
 POD PROJECTION FROM THIN BACK: 13.6 mm
-BOARD ASSUMPTION: direct FPC, ZIF at Y≈8, USB at Y≈56.25 mm
+BOARD: 48.25 x 29.46 mm; ZIF lower long edge; USB right short edge
+ZIF CENTER: X=89.4 mm (panel center); board X=53.6..101.85
+USB FACE: +X side at X=103.35 mm; Y center=25.2 mm; access recess=0.5 mm
 USB OPENING: 10.6 x 5 mm
 WINDOW SUPPORT: 6 columns; max bridge≈22 mm
 PARTS: shell + cap + pod_cover + 2× key
