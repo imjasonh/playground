@@ -99,12 +99,26 @@ jobs:
       - name: Boot it
         id: boot
         run: |
-          set -euo pipefail
-          wasmtime out-wasi/alpine-amd64.wasm uname -a | tee uname.txt
-          grep -q Linux uname.txt
-          wasmtime out-wasi/alpine-amd64.wasm cat /etc/alpine-release | tee release.txt
-          wasmtime out-wasi/alpine-amd64.wasm sh -c 'echo hello from $(cat /etc/alpine-release)' | tee hello.txt
-          grep -q "hello from 3" hello.txt
+          # Deliberately no -e: run every command and log all of it, then
+          # assert once. A first attempt failed with the guest printing
+          # nothing at all, which a bare `grep -q` reported as a naked
+          # "exit code 1".
+          set -uo pipefail
+          wasm=out-wasi/alpine-amd64.wasm
+
+          # -no-stdin: the runner has no tty, and the guest's init otherwise
+          # waits on a stdin that immediately reports EOF.
+          guest() {
+            echo "--- wasmtime run -- ${wasm} -no-stdin $*"
+            wasmtime run -- "${wasm}" -no-stdin "$@" 2>&1 | tee -a boot.log
+            echo "--- exit ${PIPESTATUS[0]}"
+          }
+
+          guest uname -a
+          guest cat /etc/alpine-release
+          guest sh -c 'echo hello from $(cat /etc/alpine-release)'
+
+          grep -q "hello from 3" boot.log
 
       - name: Summary
         if: ${{ always() }}
@@ -112,9 +126,9 @@ jobs:
           {
             echo "## alpine on WASI"
             echo
-            if [ -f uname.txt ]; then
+            if [ -s boot.log ]; then
               echo '```'
-              cat uname.txt release.txt hello.txt 2>/dev/null
+              cat boot.log
               echo '```'
             else
               echo "Conversion or boot did not get far enough to print anything."
@@ -171,6 +185,8 @@ jobs:
           cat out-js/htdocs/SHA256SUMS
           du -sh out-js/htdocs
 
+      # Uploaded before the boot test so a runtime that builds but does not
+      # boot is still available to poke at.
       - name: Upload runtime
         uses: actions/upload-artifact@v4
         with:
@@ -178,6 +194,20 @@ jobs:
           path: out-js/htdocs
           if-no-files-found: error
           retention-days: 30
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Boot it in headless Chromium
+        env:
+          TARGET_ARCH: ${{ inputs.target_arch || 'aarch64' }}
+        run: |
+          set -euo pipefail
+          npm install --no-save --prefix .github/scripts playwright@1
+          ( cd .github/scripts && npx playwright install --with-deps chromium )
+          node .github/scripts/container-runtime-boot-smoke.mjs \
+            "$PWD/out-js/htdocs" --arch "${TARGET_ARCH}"
 
       - name: Summary
         if: ${{ always() }}

@@ -54,6 +54,9 @@
     <script type="module">
       const terminal = new Terminal({ fontSize: 13, convertEol: true });
       terminal.open(document.getElementById("terminal"));
+      // Handle for Safari Web Inspector against the device, and for the
+      // headless boot smoke test in container-runtime.yml.
+      window.containerLabTerminal = terminal;
 
       const { master, slave } = openpty();
       terminal.loadAddon(master);
@@ -71,7 +74,10 @@
       }
 
       Module.pty = slave;
-      Module["mainScriptUrlOrBlob"] = location.origin + "/runtime/out.js";
+      // Emscripten hands this to the pthread workers, so it has to be
+      // absolute; resolve it against the page so the same file works whether
+      // the app serves it at / or at /runtime/.
+      Module["mainScriptUrlOrBlob"] = new URL("./out.js", location.href).href;
 
       // /pack/info carries the boot timestamp; cmd/init in the guest reads it.
       const info = "t:" + Math.round(new Date() / 1000) + "\n";
