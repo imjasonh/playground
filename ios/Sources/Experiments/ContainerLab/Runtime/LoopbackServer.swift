@@ -197,9 +197,37 @@ final class LoopbackServer {
             )
         }
 
-        let payload = Self.serialize(response)
-        connection.send(content: payload, completion: .contentProcessed { _ in
-            connection.cancel()
+        let head = Self.serializeHead(response)
+        connection.send(content: head, completion: .contentProcessed { [weak self] error in
+            guard error == nil, let self else {
+                connection.cancel()
+                return
+            }
+            self.sendBody(response.body, from: response.body.startIndex, on: connection)
+        })
+    }
+
+    /// Sends the body a chunk at a time. The emulator wasm runs to a hundred
+    /// megabytes or more; handing that to a single `send` costs a full extra
+    /// copy of it, which is exactly the kind of spike that gets a webview-heavy
+    /// app jetsammed.
+    private static let chunkSize = 1 << 20
+
+    private func sendBody(_ body: Data, from index: Data.Index, on connection: NWConnection) {
+        guard index < body.endIndex else {
+            connection.send(content: nil, isComplete: true, completion: .contentProcessed { _ in
+                connection.cancel()
+            })
+            return
+        }
+
+        let end = body.index(index, offsetBy: Self.chunkSize, limitedBy: body.endIndex) ?? body.endIndex
+        connection.send(content: Data(body[index..<end]), completion: .contentProcessed { [weak self] error in
+            guard error == nil, let self else {
+                connection.cancel()
+                return
+            }
+            self.sendBody(body, from: end, on: connection)
         })
     }
 
@@ -247,7 +275,7 @@ final class LoopbackServer {
         return Request(method: method, path: path, query: query, headers: headers)
     }
 
-    static func serialize(_ response: Response) -> Data {
+    static func serializeHead(_ response: Response) -> Data {
         var headers = response.headers
         for (name, value) in isolationHeaders where headers[name] == nil {
             headers[name] = value
@@ -260,8 +288,13 @@ final class LoopbackServer {
             head += "\(name): \(headers[name] ?? "")\r\n"
         }
         head += "\r\n"
+        return Data(head.utf8)
+    }
 
-        var out = Data(head.utf8)
+    /// The whole response in one buffer. Only tests use this; the server sends
+    /// the head and then streams the body.
+    static func serialize(_ response: Response) -> Data {
+        var out = serializeHead(response)
         out.append(response.body)
         return out
     }

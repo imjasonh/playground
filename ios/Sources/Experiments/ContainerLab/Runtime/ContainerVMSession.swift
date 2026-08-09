@@ -55,6 +55,13 @@ final class ContainerVMSession: NSObject, ObservableObject {
     /// Brings up the loopback origin and points the webview at the runtime page.
     func start(imageRoot: URL?) async {
         guard runtimeURL == nil else { return }
+        // `stop()` drops the handler to break the retain cycle the content
+        // controller would otherwise hold on this session, so re-register it
+        // here rather than only in `init` — otherwise a second visit to the
+        // console would show a webview nothing could report back through.
+        configuration.userContentController.removeScriptMessageHandler(forName: Self.messageName)
+        configuration.userContentController.add(self, name: Self.messageName)
+        lines.removeAll()
         phase = .starting
         do {
             let base = try await server.start(imageRoot: imageRoot)
