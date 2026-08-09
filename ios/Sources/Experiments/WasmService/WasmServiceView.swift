@@ -99,15 +99,14 @@ struct WasmServiceView: View {
 
     private var addressSection: some View {
         Section {
-            ForEach(model.addresses, id: \.address) { interface in
-                let url = "http://\(interface.address):\(model.portText)/"
+            ForEach(model.serviceURLs) { entry in
                 Button {
-                    UIPasteboard.general.string = url
+                    UIPasteboard.general.string = entry.url
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(url)
+                        Text(entry.url)
                             .font(.system(.body, design: .monospaced))
-                        Text(interface.kind)
+                        Text(entry.kind)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }

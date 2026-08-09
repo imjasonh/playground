@@ -82,10 +82,19 @@ final class WasmServiceModel: ObservableObject {
         return false
     }
 
-    /// The URLs worth showing, most useful first.
-    var serviceURLs: [String] {
+    struct ServiceURL: Identifiable, Equatable {
+        var url: String
+        /// "Wi-Fi", "tailnet — reachable anywhere", "this device".
+        var kind: String
+
+        var id: String { url }
+    }
+
+    /// The URLs worth showing, most useful first. Empty unless the service is
+    /// up, because an address with nothing listening on it is a lie.
+    var serviceURLs: [ServiceURL] {
         guard case .serving(let port) = phase else { return [] }
-        return addresses.map { "http://\($0.address):\(port)/" }
+        return addresses.map { ServiceURL(url: "http://\($0.address):\(port)/", kind: $0.kind) }
     }
 
     // MARK: - Actions

@@ -31,6 +31,16 @@ packages:
   WasmKit:
     url: https://github.com/swiftwasm/WasmKit
     exactVersion: 0.2.2
+  # WasmKit's own transitive dependency, pinned here because it accepts
+  # `from: "1.5.0"` and swift-system 1.7.0 added a public `Stat` type that
+  # shadows the C `stat` struct its `SystemExtras` sources declare — so a fresh
+  # resolution breaks WasmKit's build with "cannot convert value of type 'Stat'
+  # to specified type 'stat'". Capping below 1.7 is the only lever available
+  # without forking WasmKit or raising the deployment target to iOS 18 for 0.3.
+  swift-system:
+    url: https://github.com/apple/swift-system
+    minVersion: 1.5.0
+    maxVersion: 1.7.0
 
 settings:
   base:
@@ -61,6 +71,10 @@ targets:
     dependencies:
       - package: WasmKit
         product: WasmKit
+      # Depended on explicitly so the version cap above is part of the graph
+      # Xcode resolves. It links either way, transitively through WasmKit.
+      - package: swift-system
+        product: SystemPackage
       - target: T9Keyboard
         embed: true
       - target: RideMonitorWidget

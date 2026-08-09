@@ -93,11 +93,14 @@ final class WasmHTTPServer {
         let startup = StartupGate()
         let startQueue = queue
         let assignedPort: UInt16 = try await withCheckedThrowingContinuation { continuation in
-            listener.stateUpdateHandler = { state in
+            // Weakly, because the listener owns this handler: capturing it
+            // strongly would make the pair keep each other alive, and stopping
+            // the service would leak the socket rather than close it.
+            listener.stateUpdateHandler = { [weak listener] state in
                 startQueue.async {
                     switch state {
                     case .ready:
-                        guard let rawPort = listener.port?.rawValue else {
+                        guard let rawPort = listener?.port?.rawValue else {
                             startup.resumeOnce { continuation.resume(throwing: WasmHTTPServerError.noPort) }
                             return
                         }
