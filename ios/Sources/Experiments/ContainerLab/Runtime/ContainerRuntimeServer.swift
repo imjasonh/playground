@@ -9,23 +9,33 @@ import Foundation
 enum RuntimeAssets {
     static let directoryName = "ContainerRuntime"
     static let entryPointName = "index.html"
+    /// The emulator itself, produced by `c2w --to-js` and installed by
+    /// `ios/ContainerRuntime/fetch-runtime.sh`. It is not in git, so the page
+    /// can be present while the emulator is not.
+    static let emulatorName = "out.wasm"
 
     static var rootURL: URL? {
         Bundle.main.url(forResource: directoryName, withExtension: nil)
     }
 
-    static var isInstalled: Bool {
+    static func has(_ name: String) -> Bool {
         guard let rootURL else { return false }
-        return FileManager.default.fileExists(
-            atPath: rootURL.appendingPathComponent(entryPointName).path
-        )
+        return FileManager.default.fileExists(atPath: rootURL.appendingPathComponent(name).path)
     }
+
+    static var hasPage: Bool { has(entryPointName) }
+
+    static var isInstalled: Bool { hasPage && has(emulatorName) }
 
     /// Shown in the UI so the missing piece is obvious rather than mysterious.
     static var status: String {
-        isInstalled
-            ? "Bundled wasm runtime found"
-            : "No wasm runtime bundled yet — pull and inspection work, execution does not"
+        if isInstalled {
+            return "Bundled wasm runtime found"
+        }
+        if hasPage {
+            return "Runtime page bundled, emulator missing (out.wasm) — pull and inspect work, execution does not"
+        }
+        return "No wasm runtime bundled — pull and inspect work, execution does not"
     }
 }
 
@@ -105,11 +115,11 @@ final class ContainerRuntimeServer {
         let path = request.path
 
         if path == "/" || path == Route.probe {
-            if path == "/" , RuntimeAssets.isInstalled, let root = RuntimeAssets.rootURL {
+            if path == "/", RuntimeAssets.hasPage, let root = RuntimeAssets.rootURL {
                 return serveFile(relativePath: RuntimeAssets.entryPointName, under: root)
             }
             return LoopbackServer.Response.data(
-                Data(CrossOriginIsolationProbe.probeHTML.utf8),
+                Data(RuntimeProbePage.html.utf8),
                 contentType: "text/html; charset=utf-8"
             )
         }
@@ -124,7 +134,7 @@ final class ContainerRuntimeServer {
             return serveFile(relativePath: String(path.dropFirst(Route.runtime.count)), under: runtimeRoot)
         }
 
-        if RuntimeAssets.isInstalled, let runtimeRoot = RuntimeAssets.rootURL {
+        if RuntimeAssets.hasPage, let runtimeRoot = RuntimeAssets.rootURL {
             return serveFile(relativePath: String(path.dropFirst()), under: runtimeRoot)
         }
 

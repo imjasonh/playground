@@ -1,6 +1,18 @@
 import Foundation
 import WebKit
 
+/// The probe page, kept outside the main-actor probe class so the loopback
+/// server (which answers on its own queue) can serve it. Deliberately
+/// dependency-free, so a failure means the environment is wrong rather than
+/// the content.
+enum RuntimeProbePage {
+    static let html = """
+    <!doctype html>
+    <html><head><meta charset="utf-8"><title>Container Lab runtime probe</title></head>
+    <body><p id="status">probe</p></body></html>
+    """
+}
+
 /// Checks whether a page served from our loopback origin is cross-origin
 /// isolated inside a `WKWebView`.
 ///
@@ -56,14 +68,6 @@ final class CrossOriginIsolationProbe: NSObject {
 
     private var loadContinuation: CheckedContinuation<Void, Error>?
     private var loadToken = UUID()
-
-    /// The probe page. Deliberately dependency-free, so a failure means the
-    /// environment is wrong rather than the content.
-    static let probeHTML = """
-    <!doctype html>
-    <html><head><meta charset="utf-8"><title>Container Lab runtime probe</title></head>
-    <body><p id="status">probe</p></body></html>
-    """
 
     static let probeScript = """
     (function () {

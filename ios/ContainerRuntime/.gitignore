@@ -1,0 +1,11 @@
+# Emulator assets built by .github/workflows/container-runtime.yml and
+# installed by fetch-runtime.sh. Tens of megabytes of generated wasm — the
+# repo tracks the recipe, not the output.
+out.js
+out.wasm
+out.worker.js
+out.data
+load.js
+arg-module.js
+*.wasm
+*.wasm.gzip

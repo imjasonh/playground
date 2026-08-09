@@ -1,0 +1,121 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <title>Container Lab runtime</title>
+    <link rel="stylesheet" href="./vendor/xterm.css" />
+    <style>
+      html, body { margin: 0; padding: 0; height: 100%; background: #000; }
+      #terminal { height: 100%; }
+      #fallback { color: #f5a623; font: 13px -apple-system, system-ui, sans-serif; padding: 12px; }
+    </style>
+  </head>
+  <body>
+    <div id="terminal"></div>
+    <div id="fallback" hidden></div>
+
+    <!-- Vendored so the page has no network dependency: it is served from an
+         in-app loopback origin, and the device may well be offline. -->
+    <script src="./vendor/xterm.js"></script>
+    <script src="./vendor/xterm-pty.js"></script>
+
+    <script>
+      // Bridge to Swift. Every message is also mirrored to the console so the
+      // page can be debugged in Safari Web Inspector against the device.
+      function report(kind, detail) {
+        var payload = { kind: kind, detail: detail === undefined ? null : detail };
+        try {
+          window.webkit.messageHandlers.containerLab.postMessage(payload);
+        } catch (e) {
+          console.log("containerLab", payload);
+        }
+      }
+
+      function fail(message) {
+        var node = document.getElementById("fallback");
+        node.hidden = false;
+        node.textContent = message;
+        report("error", message);
+      }
+
+      if (!self.crossOriginIsolated) {
+        fail("Page is not cross-origin isolated, so wasm threads are unavailable. " +
+             "The loopback server must send COOP/COEP headers.");
+      }
+    </script>
+
+    <!-- load.js and arg-module.js are produced by container2wasm next to
+         out.js/out.wasm; they are fetched by fetch-runtime.sh and are not in
+         git. Both are optional-by-design here: without them the page still
+         loads and reports the runtime as missing. -->
+    <script src="./load.js" onerror="report('runtime-missing', 'load.js')"></script>
+
+    <script type="module">
+      const terminal = new Terminal({ fontSize: 13, convertEol: true });
+      terminal.open(document.getElementById("terminal"));
+
+      const { master, slave } = openpty();
+      terminal.loadAddon(master);
+
+      let initEmscriptenModule;
+      try {
+        ({ default: initEmscriptenModule } = await import("./out.js"));
+      } catch (error) {
+        report("runtime-missing", String(error));
+        terminal.write("\r\n\x1b[33mNo emulator bundled. Run ios/ContainerRuntime/fetch-runtime.sh.\x1b[0m\r\n");
+        throw error;
+      }
+
+      await import("./arg-module.js");
+
+      Module.pty = slave;
+      Module["mainScriptUrlOrBlob"] = location.origin + "/runtime/out.js";
+
+      // /pack/info carries the boot timestamp; cmd/init in the guest reads it.
+      const info = "t:" + Math.round(new Date() / 1000) + "\n";
+      Module["preRun"].push((mod) => {
+        try { FS.mkdir("/pack"); } catch (e) { /* already there */ }
+        mod.FS.writeFile("/pack/info", info);
+      });
+
+      // xterm-pty drives a non-blocking TTY: teach emscripten's TTY to poll it.
+      let readableCallbacks = [];
+      Module.pty.onReadable(() => {
+        readableCallbacks.forEach((cb) => cb());
+        readableCallbacks = [];
+      });
+      Module["preRun"].push((mod) => {
+        mod["TTY"].stream_ops.poll = (stream, timeout, notifyCallback) => {
+          if (Module.pty.readable) {
+            return 1;
+          }
+          if (notifyCallback != null) {
+            notifyCallback.registerCleanupFunc(() => {
+              const index = readableCallbacks.indexOf(notifyCallback);
+              if (index !== -1) readableCallbacks.splice(index, 1);
+            });
+            readableCallbacks.push(notifyCallback);
+          }
+          return 0;
+        };
+      });
+
+      // Mirror each completed guest line to Swift, so the app can tell
+      // "booted" from "hung" without scraping the canvas.
+      terminal.onLineFeed(() => {
+        const buffer = terminal.buffer.active;
+        const line = buffer.getLine(buffer.baseY + buffer.cursorY - 1);
+        report("output", line ? line.translateToString(true) : "");
+      });
+
+      report("starting");
+      try {
+        await initEmscriptenModule(Module);
+        report("exited");
+      } catch (error) {
+        fail("Emulator failed: " + String(error));
+      }
+    </script>
+  </body>
+</html>

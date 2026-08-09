@@ -53,8 +53,22 @@ final class LoopbackServer {
     private let handler: Handler
     private let queue = DispatchQueue(label: "io.github.imjasonh.playground.containerlab.loopback")
     private var listener: NWListener?
-    private var didResumeStart = false
     private(set) var port: UInt16?
+
+    /// Resumes the start continuation exactly once, however the listener's
+    /// state churns afterwards.
+    private final class StartupGate: @unchecked Sendable {
+        private let lock = NSLock()
+        private var resumed = false
+
+        func resumeOnce(_ body: () -> Void) {
+            lock.lock()
+            let alreadyResumed = resumed
+            resumed = true
+            lock.unlock()
+            if !alreadyResumed { body() }
+        }
+    }
 
     init(handler: @escaping Handler) {
         self.handler = handler
@@ -87,26 +101,25 @@ final class LoopbackServer {
             self?.accept(connection)
         }
 
+        // The state handler deliberately captures a small box instead of the
+        // server: NWListener calls it on its own queue, and `self` is not
+        // Sendable.
+        let startup = StartupGate()
+        let startQueue = queue
         let assignedPort: UInt16 = try await withCheckedThrowingContinuation { continuation in
-            listener.stateUpdateHandler = { [weak self] state in
-                guard let self else { return }
-                self.queue.async {
-                    guard !self.didResumeStart else { return }
+            listener.stateUpdateHandler = { state in
+                startQueue.async {
                     switch state {
                     case .ready:
                         guard let rawPort = listener.port?.rawValue else {
-                            self.didResumeStart = true
-                            continuation.resume(throwing: LoopbackServerError.noPort)
+                            startup.resumeOnce { continuation.resume(throwing: LoopbackServerError.noPort) }
                             return
                         }
-                        self.didResumeStart = true
-                        continuation.resume(returning: rawPort)
+                        startup.resumeOnce { continuation.resume(returning: rawPort) }
                     case .failed(let error):
-                        self.didResumeStart = true
-                        continuation.resume(throwing: error)
+                        startup.resumeOnce { continuation.resume(throwing: error) }
                     case .cancelled:
-                        self.didResumeStart = true
-                        continuation.resume(throwing: LoopbackServerError.cancelled)
+                        startup.resumeOnce { continuation.resume(throwing: LoopbackServerError.cancelled) }
                     default:
                         break
                     }
@@ -123,7 +136,6 @@ final class LoopbackServer {
         listener?.cancel()
         listener = nil
         port = nil
-        didResumeStart = false
     }
 
     // MARK: - Connection handling

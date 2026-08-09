@@ -1,0 +1,182 @@
+# App-specific: build the wasm container runtime that the iOS "Container Lab"
+# experiment hosts in a WKWebView.
+#
+# Two independent legs:
+#   * smoke-wasi     — converts alpine to a WASI wasm and actually runs it
+#                      under wasmtime. Fast proof that the toolchain on the
+#                      runner works and that a converted image really boots.
+#   * browser-arm64  — converts arm64v8/alpine with --to-js (QEMU Wasm +
+#                      emscripten), which is what the iOS app needs, and
+#                      uploads it as an artifact for
+#                      ios/ContainerRuntime/fetch-runtime.sh.
+#
+# Deliberately not folded into test.yml: it needs Docker + buildx, compiles an
+# emulator and a Linux kernel, and takes hours. The output is intentionally not
+# committed (tens of megabytes of generated wasm).
+
+name: Container runtime
+
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: Source image to convert (must match target_arch)
+        default: arm64v8/alpine:3.20
+        required: false
+      target_arch:
+        description: c2w --target-arch value
+        default: aarch64
+        required: false
+  pull_request:
+    paths:
+      - 'ios/ContainerRuntime/**'
+      - '.github/workflows/container-runtime.yml'
+
+concurrency:
+  group: container-runtime-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  C2W_VERSION: v0.8.4
+  C2W_SHA256: 1142ab95212578c0c7f666de830de6945f2abbea1713d1e07a7cb04072e00f31
+  WASMTIME_VERSION: v27.0.0
+
+jobs:
+  smoke-wasi:
+    name: alpine → WASI, run under wasmtime
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reclaim runner disk
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost || true
+          df -h /
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Install c2w ${{ env.C2W_VERSION }}
+        run: |
+          set -euo pipefail
+          curl -fsSL -o c2w.tar.gz \
+            "https://github.com/container2wasm/container2wasm/releases/download/${C2W_VERSION}/container2wasm-${C2W_VERSION}-linux-amd64.tar.gz"
+          echo "${C2W_SHA256}  c2w.tar.gz" | sha256sum -c -
+          mkdir -p c2w-dist && tar -xzf c2w.tar.gz -C c2w-dist
+          sudo install -m 0755 "$(find c2w-dist -type f -name c2w | head -1)" /usr/local/bin/c2w
+          c2w --version
+
+      - name: Install wasmtime ${{ env.WASMTIME_VERSION }}
+        run: |
+          set -euo pipefail
+          name="wasmtime-${WASMTIME_VERSION}-x86_64-linux"
+          curl -fsSL -o wasmtime.tar.xz \
+            "https://github.com/bytecodealliance/wasmtime/releases/download/${WASMTIME_VERSION}/${name}.tar.xz"
+          tar -xJf wasmtime.tar.xz
+          sudo install -m 0755 "${name}/wasmtime" /usr/local/bin/wasmtime
+          wasmtime --version
+
+      - name: Convert alpine:3.20 to WASI wasm
+        run: |
+          set -euo pipefail
+          mkdir -p out-wasi
+          time c2w alpine:3.20 "$PWD/out-wasi/alpine-amd64.wasm"
+          ls -lh out-wasi
+
+      - name: Boot it
+        id: boot
+        run: |
+          set -euo pipefail
+          wasmtime out-wasi/alpine-amd64.wasm uname -a | tee uname.txt
+          grep -q Linux uname.txt
+          wasmtime out-wasi/alpine-amd64.wasm cat /etc/alpine-release | tee release.txt
+          wasmtime out-wasi/alpine-amd64.wasm sh -c 'echo hello from $(cat /etc/alpine-release)' | tee hello.txt
+          grep -q "hello from 3" hello.txt
+
+      - name: Summary
+        if: ${{ always() }}
+        run: |
+          {
+            echo "## alpine on WASI"
+            echo
+            if [ -f uname.txt ]; then
+              echo '```'
+              cat uname.txt release.txt hello.txt 2>/dev/null
+              echo '```'
+            else
+              echo "Conversion or boot did not get far enough to print anything."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  browser-arm64:
+    name: arm64 alpine → QEMU Wasm (iOS runtime)
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reclaim runner disk
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost || true
+          df -h /
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Install c2w ${{ env.C2W_VERSION }}
+        run: |
+          set -euo pipefail
+          curl -fsSL -o c2w.tar.gz \
+            "https://github.com/container2wasm/container2wasm/releases/download/${C2W_VERSION}/container2wasm-${C2W_VERSION}-linux-amd64.tar.gz"
+          echo "${C2W_SHA256}  c2w.tar.gz" | sha256sum -c -
+          mkdir -p c2w-dist && tar -xzf c2w.tar.gz -C c2w-dist
+          sudo install -m 0755 "$(find c2w-dist -type f -name c2w | head -1)" /usr/local/bin/c2w
+          c2w --version
+
+      - name: Convert to QEMU Wasm (emscripten)
+        env:
+          IMAGE: ${{ inputs.image || 'arm64v8/alpine:3.20' }}
+          TARGET_ARCH: ${{ inputs.target_arch || 'aarch64' }}
+        run: |
+          set -euo pipefail
+          mkdir -p out-js/htdocs
+          time c2w --to-js --target-arch="${TARGET_ARCH}" "${IMAGE}" "$PWD/out-js/htdocs/"
+          ls -lh out-js/htdocs
+
+      - name: Assemble the runtime directory
+        run: |
+          set -euo pipefail
+          cp ios/ContainerRuntime/index.html out-js/htdocs/
+          cp -R ios/ContainerRuntime/vendor out-js/htdocs/vendor
+          ( cd out-js/htdocs && find . -type f -exec sha256sum {} + | sort -k2 > SHA256SUMS )
+          cat out-js/htdocs/SHA256SUMS
+          du -sh out-js/htdocs
+
+      - name: Upload runtime
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-runtime-aarch64
+          path: out-js/htdocs
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Summary
+        if: ${{ always() }}
+        run: |
+          {
+            echo "## QEMU Wasm runtime"
+            echo
+            if [ -d out-js/htdocs ]; then
+              echo '| file | size |'
+              echo '|---|---|'
+              ( cd out-js/htdocs && du -h --max-depth=0 * 2>/dev/null | awk '{print "| `" $2 "` | " $1 " |"}' )
+              echo
+              echo "Install it with \`ios/ContainerRuntime/fetch-runtime.sh --from-run ${{ github.run_id }}\`."
+            else
+              echo "The conversion did not produce an output directory."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

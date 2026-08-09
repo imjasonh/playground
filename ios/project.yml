@@ -39,6 +39,15 @@ targets:
       - path: Sources
       - path: Shared/T9
       - path: Shared/RideMonitor
+      # Container Lab's runtime page + vendored terminal, copied into the
+      # bundle as a folder so the loopback server can serve it by path. The
+      # emulator wasm alongside it is built by container-runtime.yml and
+      # installed by fetch-runtime.sh; the app reports it as missing when it
+      # isn't there, so builds without it still work.
+      - path: ContainerRuntime
+        type: folder
+        buildPhase: resources
+        optional: true
     dependencies:
       - target: T9Keyboard
         embed: true
