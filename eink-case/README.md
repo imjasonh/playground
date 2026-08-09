@@ -11,8 +11,9 @@ Design history and FDM lessons: [`LEARNINGS.md`](LEARNINGS.md).
 
 Direct-connect thin-back concept: [`OPTION_A.md`](OPTION_A.md) /
 [`option-a.scad`](option-a.scad). It keeps the full rear surface thin and adds
-only a centered board-sized backpack; it is separate from the current model
-pending physical FPC-position feedback.
+only a board-sized backpack aligned to the panel FPC. Its board model uses the
+actual 90° ZIF/USB relationship; it remains separate from the current model
+pending physical connector-position feedback.
 
 ## Principle: print the slot upward
 

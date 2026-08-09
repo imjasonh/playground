@@ -3,8 +3,8 @@
 // This is intentionally separate from case.scad while the physical layout is
 // reviewed. It assumes the raw panel plugs directly into the Waveshare ESP32
 // Driver Board, then the board folds flat against the panel back:
-//   - ZIF connector at the lower end of the backpack
-//   - USB-C at the upper end
+//   - ZIF connector on the lower long edge of the backpack
+//   - USB-C on the adjacent right short edge (90° from ZIF)
 //   - board components face outward, away from the glass
 //
 // Verify the connected board/FPC pose against real hardware before treating
@@ -33,16 +33,21 @@ fpc_slot_h = 11.0;
 fpc_fold_bay = 8.0;
 
 /* [ESP32 driver board] */
-board_w = 29.46;
-board_l = 48.25;
+board_w = 48.25;             // Board X dimension in final pose (mm)
+board_l = 29.46;             // Board Y dimension in final pose (mm)
 board_t = 1.60;
 board_comp_h = 8.0;
 board_clear = 0.75;
 board_standoff = 1.2;
+board_fpc_center_x = 35.8;   // ZIF center from board left edge (photo-derived)
+board_fpc_width = 17.0;      // ZIF housing envelope (mm)
+board_usb_center_y = 17.2;   // USB center from ZIF edge (photo-derived)
 usb_w = 9.2;
 usb_h = 3.6;
 usb_protrude = 1.5;
 usb_clear = 0.7;
+usb_face_recess = 0.5;       // Port face behind local access-well face (mm)
+usb_well_extra = 2.0;        // Access well beyond USB opening per edge (mm)
 
 /* [Thin display body] */
 wall = 2.4;
@@ -121,11 +126,18 @@ window_y0 = active_y0 + window_inset;
 window_w = active_w - 2 * window_inset;
 window_h = active_h - 2 * window_inset;
 
-// Board is rotated -90°: ZIF at bottom, USB at top.
-board_x0 = (case_w - board_w) / 2;
+// Official Rev 3 component-side layout:
+//   ZIF = lower long edge, center 35.8 mm from board left
+//   USB-C = adjacent right short edge, center 17.2 mm above ZIF edge
+// Folding the board behind the panel about the FPC edge preserves X, so USB
+// remains on the right. Align the off-center ZIF to the panel's centered FPC.
+board_x0 = case_w / 2 - board_fpc_center_x;
 board_y0 = y_panel0;
 board_y1 = board_y0 + board_l;
 board_z0 = body_depth + board_standoff;
+board_x1 = board_x0 + board_w;
+board_usb_face_x = board_x1 + usb_protrude;
+board_usb_center_world_y = board_y0 + board_usb_center_y;
 
 board_free_w = board_w + 2 * board_clear;
 board_free_h = board_l + 2 * board_clear;
@@ -136,7 +148,12 @@ pod_inner_h = collar_outer_h + 2 * pod_fit_clear;
 pod_outer_w = pod_inner_w + 2 * pod_wall;
 pod_outer_h = pod_inner_h + 2 * pod_wall;
 
-pod_x0 = (case_w - pod_outer_w) / 2;
+pod_x0 =
+    board_x0 -
+    board_clear -
+    pod_collar_t -
+    pod_fit_clear -
+    pod_wall;
 pod_y0 =
     board_y0 -
     board_clear -
@@ -146,7 +163,7 @@ pod_y0 =
 pod_x1 = pod_x0 + pod_outer_w;
 pod_y1 = pod_y0 + pod_outer_h;
 
-collar_x0 = (case_w - collar_outer_w) / 2;
+collar_x0 = board_x0 - board_clear - pod_collar_t;
 collar_y0 = board_y0 - board_clear - pod_collar_t;
 collar_inner_x0 = board_x0 - board_clear;
 collar_inner_y0 = board_y0 - board_clear;
@@ -173,6 +190,11 @@ assert(pod_inner_depth > board_standoff + board_t + board_comp_h,
        "Backpack lacks component clearance");
 assert(bridge_support_setback < front_lip_t,
        "Bridge lattice setback exceeds the front lip");
+assert(abs(board_x0 + board_fpc_center_x - case_w / 2) < 0.001,
+       "Board ZIF is not aligned to the panel FPC");
+assert(board_x0 > pod_x0 + pod_wall &&
+       board_x1 < pod_x1 - pod_wall,
+       "Board XY envelope does not fit inside the pod");
 
 echo("============================================================");
 echo("OPTION A — THIN BODY + DIRECT-CONNECT BACKPACK");
@@ -182,8 +204,13 @@ echo(str("MAX DEPTH AT POD: ", pod_back_z, " mm"));
 echo(str("POD FOOTPRINT: ", pod_outer_w, " x ", pod_outer_h, " mm"));
 echo(str("POD PROJECTION FROM THIN BACK: ",
          pod_back_z - body_depth, " mm"));
-echo(str("BOARD ASSUMPTION: direct FPC, ZIF at Y≈", board_y0,
-         ", USB at Y≈", board_y1, " mm"));
+echo(str("BOARD: ", board_w, " x ", board_l,
+         " mm; ZIF lower long edge; USB right short edge"));
+echo(str("ZIF CENTER: X=", board_x0 + board_fpc_center_x,
+         " mm (panel center); board X=", board_x0, "..", board_x1));
+echo(str("USB FACE: +X side at X=", board_usb_face_x,
+         " mm; Y center=", board_usb_center_world_y,
+         " mm; access recess=", usb_face_recess, " mm"));
 echo(str("USB OPENING: ", usb_w + 2 * usb_clear, " x ",
          usb_h + 2 * usb_clear, " mm"));
 echo(str("WINDOW SUPPORT: ", bridge_support_count,
@@ -228,13 +255,8 @@ module bottom_outer_chamfer_cut(w, h, ch) {
 }
 
 module at_board() {
-    translate([
-        board_x0,
-        board_y1,
-        board_z0
-    ])
-        rotate([0, 0, -90])
-            children();
+    translate([board_x0, board_y0, board_z0])
+        children();
 }
 
 // ---------------------------------------------------------------------------
@@ -277,24 +299,30 @@ module panel_ghost() {
 module board_ghost() {
     at_board() {
         color("#1b5e20", 0.94)
-            cube([board_l, board_w, board_t]);
+            cube([board_w, board_l, board_t]);
+
+        // ESP32 module on the component side
         color("#111111", 0.94)
-            translate([10, (board_w - 16) / 2, board_t])
-                cube([22, 16, 3.2]);
+            translate([5, 7, board_t])
+                cube([23, 19, 3.2]);
+
+        // USB-C on the right short edge
         color("#b0b0b0", 0.96)
             translate([
-                -usb_protrude,
-                (board_w - usb_w) / 2,
+                board_w - 2,
+                board_usb_center_y - usb_w / 2,
                 board_t
             ])
                 cube([usb_protrude + 2, usb_w, usb_h]);
+
+        // 24-pin ZIF on the lower long edge, offset toward USB
         color("#222222", 0.94)
             translate([
-                board_l - 7,
-                (board_w - 16) / 2,
+                board_fpc_center_x - board_fpc_width / 2,
+                0,
                 board_t
             ])
-                cube([6, 16, 2.2]);
+                cube([board_fpc_width, 4, 2.2]);
     }
 }
 
@@ -797,17 +825,34 @@ module cap_print() {
 module pod_usb_cutout() {
     cw = usb_w + 2 * usb_clear;
     ch = usb_h + 2 * usb_clear;
-    at_board()
-        translate([
-            -usb_protrude - pod_wall - 3,
-            (board_w - cw) / 2,
-            board_t - usb_clear
-        ])
-            cube([
-                usb_protrude + 2 * pod_wall + 7,
-                cw,
-                ch
-            ]);
+    port_z0 = board_z0 + board_t - usb_clear;
+
+    // Connector tunnel through the pod's right (+X) wall.
+    translate([
+        board_x1 - 2,
+        board_usb_center_world_y - cw / 2,
+        port_z0
+    ])
+        cube([
+            pod_x1 - board_x1 + 2 + eps,
+            cw,
+            ch
+        ]);
+
+    // A larger exterior well makes the USB shell effectively flush despite
+    // the collar + fit clearance + cover wall surrounding the PCB.
+    well_x0 = board_usb_face_x + usb_face_recess;
+    translate([
+        well_x0,
+        board_usb_center_world_y -
+            (cw + 2 * usb_well_extra) / 2,
+        port_z0 - usb_well_extra
+    ])
+        cube([
+            pod_x1 - well_x0 + eps,
+            cw + 2 * usb_well_extra,
+            ch + 2 * usb_well_extra
+        ]);
 }
 
 module pod_cover() {
