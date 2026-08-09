@@ -15,7 +15,10 @@
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-required=(out.js out.wasm load.js arg-module.js)
+# The wasm and its packaged guest are named for the emulated machine
+# (qemu-system-aarch64.wasm/.data), so check for the glue by name and the wasm
+# by glob.
+required=(out.js load.js arg-module.js)
 
 usage() {
   sed -n '2,14p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
@@ -28,6 +31,7 @@ install_from_dir() {
   for file in "${required[@]}"; do
     [ -f "$source/$file" ] || missing+=("$file")
   done
+  compgen -G "$source/*.wasm" >/dev/null || missing+=("*.wasm")
   if [ "${#missing[@]}" -ne 0 ]; then
     echo "error: $source is missing: ${missing[*]}" >&2
     exit 1

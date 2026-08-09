@@ -103,6 +103,8 @@ extension ContainerVMSession: WKScriptMessageHandler {
         switch kind {
         case "starting":
             phase = .booting
+        case "ready":
+            phase = .running
         case "output":
             if let detail { append(detail) }
             if phase == .booting { phase = .running }

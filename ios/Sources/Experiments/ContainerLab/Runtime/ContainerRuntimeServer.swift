@@ -9,10 +9,13 @@ import Foundation
 enum RuntimeAssets {
     static let directoryName = "ContainerRuntime"
     static let entryPointName = "index.html"
-    /// The emulator itself, produced by `c2w --to-js` and installed by
+    /// The emulator's entry point, produced by `c2w --to-js` and installed by
     /// `ios/ContainerRuntime/fetch-runtime.sh`. It is not in git, so the page
     /// can be present while the emulator is not.
-    static let emulatorName = "out.wasm"
+    ///
+    /// The wasm beside it is named for the machine it emulates
+    /// (`qemu-system-aarch64.wasm`), so this glue file is the stable marker.
+    static let emulatorName = "out.js"
 
     static var rootURL: URL? {
         Bundle.main.url(forResource: directoryName, withExtension: nil)
@@ -33,7 +36,7 @@ enum RuntimeAssets {
             return "Bundled wasm runtime found"
         }
         if hasPage {
-            return "Runtime page bundled, emulator missing (out.wasm) — pull and inspect work, execution does not"
+            return "Runtime page bundled, emulator missing (\(emulatorName)) — pull and inspect work, execution does not"
         }
         return "No wasm runtime bundled — pull and inspect work, execution does not"
     }

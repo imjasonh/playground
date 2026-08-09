@@ -2,10 +2,12 @@
 # installed by fetch-runtime.sh. Tens of megabytes of generated wasm — the
 # repo tracks the recipe, not the output.
 out.js
-out.wasm
 out.worker.js
-out.data
 load.js
 arg-module.js
+SHA256SUMS
+# The emulator and its packaged guest are named for the machine QEMU builds
+# for, e.g. qemu-system-aarch64.wasm and qemu-system-aarch64.data.
 *.wasm
 *.wasm.gzip
+*.data

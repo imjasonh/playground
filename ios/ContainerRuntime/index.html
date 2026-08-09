@@ -116,10 +116,17 @@
         report("output", line ? line.translateToString(true) : "");
       });
 
+      // The guest boots with loglevel=0, so a shell can appear without a
+      // single line feed. Without this the app would sit on "booting" while
+      // the user is already at a prompt.
+      Module["onExit"] = (code) => report("exited", String(code));
+
       report("starting");
       try {
+        // Resolves when the emulator is instantiated and running, not when
+        // the guest exits — that is what onExit above is for.
         await initEmscriptenModule(Module);
-        report("exited");
+        report("ready");
       } catch (error) {
         fail("Emulator failed: " + String(error));
       }
