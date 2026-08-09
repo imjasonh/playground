@@ -73,10 +73,16 @@ struct WasmModuleStore {
 
     /// `sha256:abcd…` is not a filename on every filesystem, and the algorithm
     /// prefix carries no information once it is in this directory.
+    ///
+    /// Anything that is not hex all the way through falls back to one shared
+    /// name rather than being filtered down to its hex characters: filtering
+    /// would silently map two different digests onto the same file. A digest
+    /// that reaches here has already been verified by the registry client, so
+    /// the fallback is for hand-written input only.
     static func fileName(forDigest digest: String) -> String {
         let hex = digest.split(separator: ":").last.map(String.init) ?? digest
-        let safe = hex.filter { $0.isHexDigit }
-        return (safe.isEmpty ? "module" : safe) + ".wasm"
+        guard !hex.isEmpty, hex.allSatisfy(\.isHexDigit) else { return "module.wasm" }
+        return hex + ".wasm"
     }
 
     enum StoreError: Error, LocalizedError {
