@@ -59,6 +59,9 @@ skip them:
   contents with SQL, via SQLite virtual tables over go-git (Go CLI).
 - **[`ocidb/`](ocidb/)** — explore OCI container images on Docker Hub with SQL,
   via SQLite virtual tables over go-containerregistry (Go CLI).
+- **[`wasm-hello/`](wasm-hello/)** — a hello-world `net/http` service compiled
+  to a wasip1 reactor module and published to GHCR as an OCI artifact: the
+  payload an iPhone pulls and serves in the iOS *Wasm Service* experiment.
 - **[`web-push/`](web-push/)** — a Web Push application-server backend
   (RFC 8030/8188/8291/8292) for Cloudflare Workers, in Rust.
 - **[`git-server/`](git-server/)** — a git smart-HTTP server for Cloudflare

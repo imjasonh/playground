@@ -37,6 +37,7 @@ playground/
 ├── nypd-choppers/         # NYPD helicopter ADS-B tracker (JS + Node tests)
 ├── ocidb/                 # Go CLI (Go module + Go tests)
 ├── population-rays/       # directional 5° population-slice map (JS + Node tests)
+├── wasm-hello/            # Go HTTP handler compiled to wasip1, shipped as an OCI artifact
 ├── web-push/              # Rust Cloudflare Worker (Cargo + tests; not a Pages app)
 └── web-push-demo/         # static browser front-end for the web-push Worker
 ```
@@ -60,6 +61,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `web-push-demo/` | yes | Static front-end for `web-push`; HTML/JS, no build or tests |
 | `gitdb/` | no | Go CLI; no `index.html` |
 | `ocidb/` | no | Go CLI; no `index.html` |
+| `wasm-hello/` | no | Go module built for wasip1; no `index.html` |
 | `web-push/` | no | Rust Cloudflare Worker; no `index.html` |
 | `cors-proxy/` | no | Rust Cloudflare Worker; no `index.html` |
 | `git-server/` | no | Rust Cloudflare Worker; no `index.html` |
@@ -165,6 +167,7 @@ discovery scripts.
 | `ios-signing-bootstrap.yml` | manual (`workflow_dispatch`) + reusable | Creates & stores signing cert/profile in the `match` repo; also called on labeled merges |
 | `deps.yaml` | daily at 00:00 UTC, manual | Updates every testable browser app, Go app, and Rust app; pushes passing updates to `main`, otherwise opens a PR |
 | `nypd-choppers-scrape.yml` | hourly, manual | **App-specific:** fetches NYPD helicopter full-day ADS-B traces and merges per-day JSON to `gh-pages` under `nypd-choppers/data/`. Not generalized; shares the `gh-pages-publish` concurrency group with deploy/preview/cleanup |
+| `wasm-hello.yml` | push to `main` touching `wasm-hello/**`, manual | **App-specific:** builds `wasm-hello` for wasip1 and pushes it to GHCR as an OCI artifact (`ghcr.io/<owner>/<repo>/wasm-hello`) with `oras`, so the iOS *Wasm Service* experiment has something to pull. Uses the built-in `GITHUB_TOKEN`; a newly created package is private until someone makes it public once |
 | `its-not-jaws.yml` | pull requests touching `its-not-jaws/**`, manual | **App-specific:** requires repo secret `CURSOR_API_KEY` (fails if missing), unit-tests the harness, plays one live Cursor Agent SDK game, uploads the result artifact |
 
 Deploy workflows copy browser app directories as-is (they do **not** run
@@ -545,6 +548,7 @@ bundle exec fastlane test
 |-----------|------|-------|
 | `gitdb/` | git repository explorer backed by SQLite virtual tables | `go test ./...` |
 | `ocidb/` | OCI registry explorer backed by SQLite virtual tables | `go test ./...` |
+| `wasm-hello/` | Hello-world `net/http` service compiled to a wasip1 reactor module and published as an OCI artifact; the payload the iOS *Wasm Service* experiment pulls | `go test ./...` (builds the module and drives it through wazero) |
 
 ## Current Rust apps
 
