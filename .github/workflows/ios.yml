@@ -45,6 +45,26 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
+      - uses: actions/setup-go@v6
+        with:
+          go-version: 'stable'
+          check-latest: true
+          cache: false
+
+      # The Wasm Service experiment's payload. Building it here rather than
+      # committing it keeps a multi-megabyte binary out of git while still
+      # letting the simulator run the real thing: a Go net/http service,
+      # compiled to wasip1, interpreted by WasmKit, answering over a socket.
+      # Without this the end-to-end tests skip rather than fail.
+      - name: Build the wasm-hello test fixture
+        run: |
+          set -euo pipefail
+          mkdir -p ios/Tests/Fixtures
+          cd wasm-hello
+          GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared \
+            -o ../ios/Tests/Fixtures/hello.wasm .
+          ls -lh ../ios/Tests/Fixtures/hello.wasm
+
       # A push to main with signing secrets configured is the only case that
       # ships to TestFlight; everything else just builds and tests.
       - name: Determine mode
