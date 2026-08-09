@@ -34,7 +34,10 @@ on:
 
 concurrency:
   group: container-runtime-${{ github.ref }}
-  cancel-in-progress: true
+  # Never cancel: a pull_request path filter matches the whole PR diff, so any
+  # later push would otherwise kill an hours-long emulator build that is
+  # unrelated to what changed.
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -43,11 +46,6 @@ env:
   C2W_VERSION: v0.8.4
   C2W_SHA256: 1142ab95212578c0c7f666de830de6945f2abbea1713d1e07a7cb04072e00f31
   WASMTIME_VERSION: v27.0.0
-  # c2w's embedded Dockerfile still clones its build assets from the project's
-  # old home (github.com/ktock/container2wasm), which no longer carries the
-  # release tags, so every conversion dies on "Remote branch v0.8.4 not found".
-  # Point it at the current repository instead.
-  C2W_SOURCE_REPO: https://github.com/container2wasm/container2wasm
 
 jobs:
   smoke-wasi:
@@ -85,13 +83,16 @@ jobs:
           sudo install -m 0755 "${name}/wasmtime" /usr/local/bin/wasmtime
           wasmtime --version
 
+      - name: Prepare c2w build inputs
+        run: bash .github/scripts/prepare-c2w-build.sh "${C2W_VERSION}"
+
       - name: Convert alpine:3.20 to WASI wasm
         run: |
           set -euo pipefail
           mkdir -p out-wasi
           time c2w \
-            --build-arg "SOURCE_REPO=${C2W_SOURCE_REPO}" \
-            --build-arg "SOURCE_REPO_VERSION=${C2W_VERSION}" \
+            --dockerfile "$PWD/Dockerfile.c2w" \
+            --assets "$PWD/c2w-src" \
             alpine:3.20 "$PWD/out-wasi/alpine-amd64.wasm"
           ls -lh out-wasi
 
@@ -145,6 +146,9 @@ jobs:
           sudo install -m 0755 "$(find c2w-dist -type f -name c2w | head -1)" /usr/local/bin/c2w
           c2w --version
 
+      - name: Prepare c2w build inputs
+        run: bash .github/scripts/prepare-c2w-build.sh "${C2W_VERSION}"
+
       - name: Convert to QEMU Wasm (emscripten)
         env:
           IMAGE: ${{ inputs.image || 'arm64v8/alpine:3.20' }}
@@ -153,8 +157,8 @@ jobs:
           set -euo pipefail
           mkdir -p out-js/htdocs
           time c2w --to-js --target-arch="${TARGET_ARCH}" \
-            --build-arg "SOURCE_REPO=${C2W_SOURCE_REPO}" \
-            --build-arg "SOURCE_REPO_VERSION=${C2W_VERSION}" \
+            --dockerfile "$PWD/Dockerfile.c2w" \
+            --assets "$PWD/c2w-src" \
             "${IMAGE}" "$PWD/out-js/htdocs/"
           ls -lh out-js/htdocs
 

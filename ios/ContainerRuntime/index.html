@@ -58,16 +58,17 @@
       const { master, slave } = openpty();
       terminal.loadAddon(master);
 
+      // arg-module.js seeds Module["arguments"], so it has to run before the
+      // emscripten module body — same order as container2wasm's own example.
       let initEmscriptenModule;
       try {
+        await import("./arg-module.js");
         ({ default: initEmscriptenModule } = await import("./out.js"));
       } catch (error) {
         report("runtime-missing", String(error));
         terminal.write("\r\n\x1b[33mNo emulator bundled. Run ios/ContainerRuntime/fetch-runtime.sh.\x1b[0m\r\n");
         throw error;
       }
-
-      await import("./arg-module.js");
 
       Module.pty = slave;
       Module["mainScriptUrlOrBlob"] = location.origin + "/runtime/out.js";
