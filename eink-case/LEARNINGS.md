@@ -74,6 +74,14 @@ redesign to a print-upward slide-in slot.
     wobble, narrow lower necks break away, and a one-layer upper gap limits
     welding. Recess it from the cosmetic face and remove it before assembly.
 
+13. **Do not infer connector placement from the PCB outline**
+    The Waveshare Rev 3 board is 48.25 × 29.46 mm, but USB-C is not opposite
+    the display connector. The 24-pin ZIF lies on a long edge (its center is
+    about 35.8 mm from board left in the official photo); USB-C lies on the
+    adjacent right short edge, 90° away. A direct-connect pod must align the
+    *ZIF center* to the panel FPC, accept the resulting board/pod offset, and
+    put its USB opening through the pod side wall.
+
 ## What worked
 
 1. **Orientation is a design input (R1.3)** — pick the bed face first; export
