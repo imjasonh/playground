@@ -22,6 +22,16 @@ options:
   createIntermediateGroups: true
   minimumXcodeGenVersion: "2.38.0"
 
+packages:
+  # Wasm Service interprets WebAssembly in-process. iOS grants no JIT
+  # entitlement outside WKWebView, so an interpreter is the only runtime an App
+  # Store app may contain — WasmKit is one, in pure Swift, with no JIT and no
+  # binary dependency. Pinned to 0.2.2: 0.3+ requires iOS 18, and this app
+  # deploys to 16.2.
+  WasmKit:
+    url: https://github.com/swiftwasm/WasmKit
+    exactVersion: 0.2.2
+
 settings:
   base:
     SWIFT_VERSION: "5.9"
@@ -49,6 +59,8 @@ targets:
         buildPhase: resources
         optional: true
     dependencies:
+      - package: WasmKit
+        product: WasmKit
       - target: T9Keyboard
         embed: true
       - target: RideMonitorWidget
@@ -117,9 +129,16 @@ targets:
         NSPhotoLibraryAddUsageDescription: Wigglecam saves wigglegram GIFs to your photo library when you tap Save.
         NSHealthShareUsageDescription: Ride Monitor uses HealthKit so the Apple Watch companion can stay active during a ride and record heart rate, energy, Watch distance, and cycling cadence/speed/power when a sensor is paired. GPS and jolt data stay in the app; the Watch workout is also saved to Health.
         NSHealthUpdateUsageDescription: Ride Monitor uses HealthKit so the Apple Watch companion can stay active during a ride and record heart rate, energy, Watch distance, and cycling cadence/speed/power when a sensor is paired. GPS and jolt data stay in the app; the Watch workout is also saved to Health.
+        # Wasm Service asks the system for periodic background windows so a
+        # module can keep serving while the phone is charging. `processing` is
+        # the only background mode that fits — see WasmServiceBackground for
+        # why the audio and location modes above are not (ab)used for it.
+        BGTaskSchedulerPermittedIdentifiers:
+          - io.github.imjasonh.playground.wasmservice.window
         UIBackgroundModes:
           - location
           - audio
+          - processing
         # iPad multitasking requires declared orientations or the upload is
         # rejected.
         UISupportedInterfaceOrientations:
@@ -244,8 +263,21 @@ targets:
     platform: iOS
     sources:
       - Tests/PlaygroundTests
+      # Optional: ios.yml builds wasm-hello into Tests/Fixtures/hello.wasm so
+      # the guest tests can run a genuine Go service end to end. It is several
+      # megabytes and git-ignored, so a plain checkout still generates and
+      # builds — WasmServiceGoModuleTests skips when the file is absent.
+      - path: Tests/Fixtures
+        type: folder
+        buildPhase: resources
+        optional: true
     dependencies:
       - target: Playground
+      # Lets tests assemble tiny modules from WebAssembly text, so the host ABI
+      # and the WASI implementation are covered without shipping a binary
+      # fixture in git.
+      - package: WasmKit
+        product: WAT
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.imjasonh.playground.tests

@@ -27,3 +27,6 @@ fastlane/screenshots/**/*.png
 # Ruby / bundler
 vendor/bundle/
 .bundle/
+
+# Wasm Service test fixture — built from wasm-hello by ios.yml (several MB).
+Tests/Fixtures/

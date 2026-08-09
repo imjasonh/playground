@@ -208,6 +208,24 @@ final class PlaygroundUITests: XCTestCase {
             || app.otherElements["containerLabIsolationButton"].waitForExistence(timeout: 3))
     }
 
+    func testWasmServiceExperimentOpens() {
+        let app = launchApp()
+
+        openExperiment("wasm-service", title: "Wasm Service", in: app)
+
+        XCTAssertTrue(app.navigationBars["Wasm Service"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.textFields["wasmServiceReferenceField"].waitForExistence(timeout: 8)
+            || app.otherElements["wasmServiceReferenceField"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["wasmServiceRunButton"].waitForExistence(timeout: 8)
+            || app.otherElements["wasmServiceRunButton"].waitForExistence(timeout: 3))
+        // Only the controls in the first section are asserted. Nothing is
+        // pulled — the registry is not this test's business — and a `List`
+        // renders lazily, so anything below the fold is not reliably in the
+        // hierarchy to wait for.
+        XCTAssertTrue(app.textFields["wasmServicePortField"].waitForExistence(timeout: 8)
+            || app.otherElements["wasmServicePortField"].waitForExistence(timeout: 3))
+    }
+
     func testLocalLensExperimentOpens() {
         let app = launchApp()
 

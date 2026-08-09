@@ -55,4 +55,8 @@ final class ExperimentCatalogTests: XCTestCase {
     func testIncludesContainerLab() {
         XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "container-lab" })
     }
+
+    func testIncludesWasmService() {
+        XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "wasm-service" })
+    }
 }

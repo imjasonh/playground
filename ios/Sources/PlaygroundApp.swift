@@ -6,6 +6,17 @@ import SwiftUI
 /// separate apps.
 @main
 struct PlaygroundApp: App {
+    init() {
+        // BGTaskScheduler refuses registrations once launch is finished, and
+        // the penalty is a crash at the next submit rather than an error here
+        // — so Wasm Service's background window is claimed before any view
+        // exists. Touching the model at the same time is deliberate: the
+        // window's job is to bring a cached module back up, and the handler
+        // reaches it through a closure the model installs when it is created.
+        WasmServiceBackground.shared.registerLaunchHandler()
+        _ = WasmServiceModel.shared
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()

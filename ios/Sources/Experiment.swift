@@ -55,5 +55,6 @@ enum ExperimentCatalog {
         VoxelWorldExperiment.experiment,
         WigglecamExperiment.experiment,
         ContainerLabExperiment.experiment,
+        WasmServiceExperiment.experiment,
     ]
 }
