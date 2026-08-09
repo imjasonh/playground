@@ -16,10 +16,13 @@ use.
 
 ## What is not in git
 
-The emulator itself: `out.js`, `out.wasm`, `load.js`, `arg-module.js` (plus any
-emscripten side files). That is tens of megabytes of generated wasm, so the
-repo tracks the recipe rather than the output, the same way `life-lab` keeps
-its wasm build script next to the app.
+The emulator itself: `out.js` and `load.js` (emscripten glue), `arg-module.js`
+(QEMU's command line), and the wasm plus its packaged guest, which are named
+for the emulated machine — `qemu-system-aarch64.wasm` (56 MB) and
+`qemu-system-aarch64.data` (187 MB, holding the kernel, EDK2 firmware, and the
+baked-in rootfs). A quarter of a gigabyte of generated output, so the repo
+tracks the recipe rather than the result, the same way `life-lab` keeps its
+wasm build script next to the app.
 
 Build it with the **Container runtime** workflow
 (`.github/workflows/container-runtime.yml`), then:
@@ -48,13 +51,17 @@ drive it headlessly the way CI does:
 
 ```bash
 npm install --no-save --prefix "$REPO"/.github/scripts playwright@1
-( cd "$REPO"/.github/scripts && npx playwright install chromium )
+( cd "$REPO"/.github/scripts && npx playwright install chromium webkit )
 node "$REPO"/.github/scripts/container-runtime-boot-smoke.mjs /tmp/out-js/htdocs
+node "$REPO"/.github/scripts/container-runtime-boot-smoke.mjs /tmp/out-js/htdocs --browser webkit
 ```
 
+Both should print `alpine booted and answered as Linux aarch64` in well under a
+minute. The WebKit leg matters most: it is the same engine `WKWebView` uses.
+
 `project.yml` picks this directory up as an optional resource folder, so the
-app builds either way. When `out.wasm` is absent, Container Lab says the
-runtime is missing instead of pretending it can run something.
+app builds either way. When `out.js` is absent, Container Lab says the runtime
+is missing instead of pretending it can run something.
 
 ## Why the loopback server
 

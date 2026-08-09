@@ -339,6 +339,23 @@ Open engineering questions to settle during Phase 2, in rough risk order:
 
 ### 7.0 Where this stands
 
+**An arm64 alpine container boots.** `c2w --to-js --target-arch=aarch64
+arm64v8/alpine:3.20` produces a QEMU Wasm runtime that, served from a
+cross-origin-isolated origin and loaded by the very page the app bundles,
+reaches a busybox prompt in about ten seconds and answers `uname -sm` with
+`Linux aarch64` — in Chromium *and* in WebKit, which is the engine iOS runs.
+That is the milestone this design was written for. What is left before it is
+true *on a phone* is the device run itself: the app's plumbing is in place and
+the runtime is built by CI, but the emulator is not in git, so a build that has
+not had `fetch-runtime.sh` run against it reports the runtime as missing rather
+than pretending.
+
+The runtime is **243 MB** (`qemu-system-aarch64.wasm` at 56 MB plus a 187 MB
+`.data` package holding the kernel, EDK2 firmware, and the baked-in rootfs).
+That is per-image today, and it is the main reason Phase 3 does not end here:
+`--external-bundle` + `imagemounter.wasm` would let one bundled emulator run
+the layout Phase 1 already pulls, instead of one emulator per image.
+
 **The kill-switch passed.** A page served by an in-app loopback HTTP server on
 `127.0.0.1`, with `Cross-Origin-Opener-Policy: same-origin` and
 `Cross-Origin-Embedder-Policy: require-corp`, is cross-origin isolated inside a
@@ -355,7 +372,7 @@ limits, so the memory ceiling still needs a device run.
 |-------|-------|
 | 1 — native OCI pull | Done: reference parsing, Bearer auth, index → platform, digest-verified blobs, native gunzip, OCI layout on disk |
 | 2 — loopback + isolation | Done: server, headers, probe, all green in CI |
-| 3 — c2w runtime | In progress: `container-runtime.yml` builds it; not yet bundled |
+| 3 — c2w runtime | Built and booting: `container-runtime.yml` converts `arm64v8/alpine`, boots it under Chromium and WebKit, and uploads it; not yet run on a device, and not yet `--external-bundle` |
 | 4 — follow-on | Not started |
 
 Two things worth writing down for whoever picks this up:
@@ -377,11 +394,25 @@ Two things worth writing down for whoever picks this up:
   `c2w --dockerfile`) to take zlib from its byte-identical GitHub release.
 - **Building the emulator is not the same as it working.** The workflow serves
   the converted output from a cross-origin-isolated origin and boots it in
-  headless Chromium, waiting for alpine's prompt and then asking the guest
-  `uname -sm`. It drives the very page the app bundles, so the page is under
-  test too. Chromium is not WebKit, but everything it exercises — the isolation
-  headers, the wasm, xterm-pty, the emscripten glue — is shared, which leaves
-  only WebKit's own behaviour to confirm on a device.
+  headless Chromium and then WebKit, waiting for alpine's prompt and asking the
+  guest `uname -sm`. It drives the very page the app bundles, so the page is
+  under test too. Playwright's WebKit is not `WKWebView`, but it is the same
+  JavaScriptCore and wasm implementation, which leaves only the iOS process
+  limits to find out about on a device.
+- **The emulator's file names are not `out.*`.** `c2w --to-js` emits `out.js`
+  and `load.js`, but the wasm and its packaged guest are named for the machine
+  QEMU was built for — `qemu-system-aarch64.wasm`, `qemu-system-aarch64.data`.
+  Anything checking "is the runtime installed" should key off `out.js`.
+- **The emscripten glue hardcodes a worker URL that does not exist.** `out.js`
+  spawns pthread workers from `new URL("qemu-system-aarch64", import.meta.url)`
+  — a file c2w renamed away — unless the page sets
+  `Module["mainScriptUrlOrBlob"]`. Set it relative to the page
+  (`new URL("./out.js", location.href)`), not to a fixed path: get it wrong and
+  every worker fails with a bare `Event`, no message, and the guest simply
+  never boots.
+- **Generated args ask for networking that is not there.** `arg-module.js`
+  includes `-netdev socket,connect=127.0.0.1:8888`, so a run without the
+  host-side network stack logs one refused WebSocket connection and carries on.
 
 **Phase 1 — "specify an image" (native, no emulation).** A `ContainerLab`
 experiment under `ios/Sources/Experiments/`: type a reference, resolve it, pull

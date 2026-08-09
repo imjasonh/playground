@@ -51,7 +51,7 @@ ios/
 | `voxel-world` | Voxel World | In-app; ARKit rebuilds the room as Minecraft-style palette blocks |
 | `wigglecam` | Wigglecam | In-app; dual-wide wigglegrams saved as GIF to Photos |
 | `local-lens` | Local Lens | In-app; live on-device Vision (classify / OCR / face landmarks / body & hand pose / barcodes) |
-| `container-lab` | Container Lab | In-app; pulls an OCI image to disk and probes whether WebKit can host a wasm runtime |
+| `container-lab` | Container Lab | In-app; pulls an OCI image to disk and runs an arm64 Linux guest in a `WKWebView` (runtime fetched separately) |
 
 ### Ride Monitor
 
@@ -236,12 +236,24 @@ What works today:
   prerequisites for wasm threads, and therefore for any CPU emulator. The same
   check runs in CI on the simulator (`ContainerLabIsolationProbeTests`).
 
-What does not work yet: **running** the image. That needs a bundled
-container2wasm/QEMU-wasm runtime, which has to be built with Docker +
-Emscripten and is not yet in the repo — the Runtime section says so plainly
-rather than pretending. `RuntimeAssets` looks for a bundled `ContainerRuntime/`
-directory and the loopback server already serves it at `/runtime/…`, with the
-image layout alongside at `/image/…`.
+- **A runtime that boots** — `.github/workflows/container-runtime.yml` converts
+  `arm64v8/alpine:3.20` with `c2w --to-js --target-arch=aarch64` (QEMU Wasm
+  under Emscripten), then boots the result in headless Chromium *and* WebKit
+  using this app's own runtime page: busybox prompt in about ten seconds,
+  `uname -sm` → `Linux aarch64`. "Open runtime console" loads that same page in
+  a `WKWebView` and streams the guest's output into the status bar.
+
+The catch: the runtime is 243 MB of generated wasm and packaged guest, so it is
+**not in git**. A checkout builds and runs without it, and Container Lab says
+the runtime is missing rather than pretending. To get it, run
+[`ContainerRuntime/fetch-runtime.sh`](ContainerRuntime/fetch-runtime.sh)
+against a workflow run. `RuntimeAssets` looks for a bundled `ContainerRuntime/`
+directory and the loopback server serves it at `/runtime/…` (and at the root),
+with the image layout alongside at `/image/…`.
+
+Still to do: the boot on an actual device, and moving from an emulator with one
+image baked in to `--external-bundle`, so the image Container Lab pulls is the
+image that runs.
 
 ## Adding an experiment
 

@@ -202,15 +202,22 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Boot it in headless Chromium
+      # Chromium first because it is the quicker failure, then WebKit — the
+      # engine iOS actually runs, so it is the leg that speaks to whether this
+      # will work on a phone.
+      - name: Boot it in a headless browser
         env:
           TARGET_ARCH: ${{ inputs.target_arch || 'aarch64' }}
         run: |
           set -euo pipefail
           npm install --no-save --prefix .github/scripts playwright@1
-          ( cd .github/scripts && npx playwright install --with-deps chromium )
-          node .github/scripts/container-runtime-boot-smoke.mjs \
-            "$PWD/out-js/htdocs" --arch "${TARGET_ARCH}"
+          ( cd .github/scripts && npx playwright install --with-deps chromium webkit )
+          for engine in chromium webkit; do
+            echo "::group::boot under ${engine}"
+            node .github/scripts/container-runtime-boot-smoke.mjs \
+              "$PWD/out-js/htdocs" --browser "${engine}" --arch "${TARGET_ARCH}"
+            echo "::endgroup::"
+          done
 
       - name: Summary
         if: ${{ always() }}
