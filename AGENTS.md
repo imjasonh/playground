@@ -162,6 +162,7 @@ discovery scripts.
 | `preview.yml` | pull request opened/sync | When a browser app changed: deploys under `/preview/pr-<N>/` and comments the URL; otherwise no-ops |
 | `cleanup.yml` | pull request closed, manual | Removes closed-PR preview dirs from `gh-pages` (reconciles all open PRs) and refreshes the root index |
 | `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps in one job |
+| `inkbot-esp32.yml` | push/PR touching `inkbot-esp32/**`, manual | Host lib tests + Xtensa cross-build for the e-ink firmware (excluded from `test.yml`) |
 | `ios.yml` | push to `main`, pull requests | Tests changed iOS apps on macOS; on `main`, delivers them to TestFlight |
 | `macos.yml` | push to `main`, pull requests | Tests changed macOS apps on macOS; on `main`, ships notarized Sparkle updates when secrets are present |
 | `ios-bootstrap-label.yml` | pull request | Labels PRs that need signing re-bootstrap with `needs-ios-bootstrap` |
@@ -239,7 +240,7 @@ directories (names starting with `.`) and changes outside any app directory
 (e.g. a lone top-level file) select nothing — so a PR that only edits CI scripts
 or the root `README.md` runs no app tests. `inkbot-esp32/` has a `Cargo.toml`
 but is excluded from Rust discovery because it needs the espup Xtensa toolchain;
-run its host tests with `cd inkbot-esp32 && cargo test --lib`.
+`inkbot-esp32.yml` runs its host lib tests and firmware cross-build instead.
 
 | App type | Selected when its dir has | CI runs, per changed app |
 |----------|---------------------------|--------------------------|
@@ -250,6 +251,11 @@ run its host tests with `cd inkbot-esp32 && cargo test --lib`.
 Browser apps without a `test` script (e.g. `hello/`) are never tested. Each Rust
 app's toolchain comes from its `rust-toolchain.toml` (defaulting to stable);
 Worker apps pin Rust 1.88 (with `worker` 0.8 / wasm-bindgen 0.2.125).
+
+**ESP32 firmware is tested by `inkbot-esp32.yml`, not `test.yml`.** Stable
+Linux Cargo cannot build `xtensa-esp32-espidf`; the dedicated workflow installs
+the esp-rs Xtensa toolchain, runs host `cargo test --lib` / clippy, and
+`make build`s the device image when `inkbot-esp32/` changes.
 
 **The iOS app is tested by a separate workflow (`ios.yml`), not `test.yml`,**
 because it needs a macOS runner. A cheap Linux `discover` job reuses the same
@@ -580,7 +586,7 @@ auto-discover them. Run their local tests when you change them.
 | Directory | Type | Tests |
 |-----------|------|-------|
 | `its-not-jaws/` | Cursor SDK harness for It's Not Jaws (movie shared-fact guessing); mock backend for tests; live PR game via `its-not-jaws.yml` + `CURSOR_API_KEY` secret | `cd its-not-jaws && npm test` (CI also runs a live game when the secret is set) |
-| `inkbot-esp32/` | Rust/ESP-IDF firmware: poll `inkbot` Worker, show 800×480 B/W PNG on Waveshare 7.5″ | `cargo test --lib` (host); device build via `make build` (espup; excluded from shared Rust CI) |
+| `inkbot-esp32/` | Rust/ESP-IDF firmware: poll `inkbot` Worker, show 800×480 B/W PNG on Waveshare 7.5″ | host lib tests + Xtensa cross-build via `inkbot-esp32.yml` |
 | `life-scad/` | OpenSCAD Life sculpture (Z = time) plus optional Python reverse-history search | `python3 life-scad/reverse_life_test.py` (needs `pip install -r life-scad/requirements.txt`) |
 | `life-qr/` | Parametric OpenSCAD Life sculpture with a QR-code roof for any text/height | `python3 life-qr/life_qr_test.py` (optional `pip install segno`) |
 

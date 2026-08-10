@@ -71,8 +71,9 @@ make test
 # or: cargo test --lib
 ```
 
-Cross-builds need the espup toolchain and are not run by the shared `test.yml`
-job (see root `AGENTS.md`).
+CI: `.github/workflows/inkbot-esp32.yml` runs those host checks plus an Xtensa
+`make build` whenever `inkbot-esp32/` changes (the shared `test.yml` Rust job
+skips this crate — it needs espup).
 
 ## Layout
 
