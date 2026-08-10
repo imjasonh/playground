@@ -18,7 +18,8 @@ pub mod slack;
 mod worker_entry;
 
 pub use api::{
-    begin_slack_event, finish_app_mention, handle, ApiRequest, ApiResponse, FrameStore,
-    HandlerConfig, SlackBegin, StoredFrame,
+    begin_slack_event, finish_app_mention, handle, name_from_filename, parse_slack_command,
+    validate_name, ApiRequest, ApiResponse, Catalog, HandlerConfig, ImageStore, SlackBegin,
+    SlackCommand, StoredFrame,
 };
 pub use panel::{PanelError, PanelSpec, DEFAULT_HEIGHT, DEFAULT_WIDTH};

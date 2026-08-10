@@ -933,6 +933,8 @@ dependencies = [
  "esp-idf-svc",
  "log",
  "png",
+ "serde",
+ "serde_json",
  "toml",
 ]
 
