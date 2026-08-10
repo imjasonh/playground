@@ -1,22 +1,28 @@
 //! Cloudflare Workers entry point (compiled only for `wasm32`).
 
+use std::collections::BTreeMap;
+
 use worker::js_sys::Uint8Array;
 use worker::{
     event, Bucket, Context, Env, Fetch, Headers, Method, Request, RequestInit, Response, Result,
 };
 
 use crate::api::{
-    self, begin_slack_event, finish_app_mention, ApiRequest, ApiResponse, FrameStore,
-    HandlerConfig, SlackBegin, StoredFrame,
+    self, begin_slack_event, finish_app_mention, ApiRequest, ApiResponse, Catalog, HandlerConfig,
+    ImageStore, SlackBegin, StoredFrame,
 };
 use crate::auth::now_unix;
 use crate::panel::PanelSpec;
 use crate::slack;
 
 const BUCKET_BINDING: &str = "IMAGES";
-const OBJECT_KEY: &str = "image.png";
-const PACKED_KEY: &str = "image.bin";
-const ETAG_KEY: &str = "image.etag";
+const CATALOG_KEY: &str = "catalog.json";
+const FRAMES_PREFIX: &str = "frames/";
+
+// Legacy single-image keys from before the multi-image library.
+const LEGACY_PNG: &str = "image.png";
+const LEGACY_BIN: &str = "image.bin";
+const LEGACY_ETAG: &str = "image.etag";
 
 #[event(fetch)]
 async fn fetch(mut req: Request, env: Env, _ctx: Context) -> Result<Response> {
@@ -59,12 +65,35 @@ async fn fetch(mut req: Request, env: Env, _ctx: Context) -> Result<Response> {
         body,
     };
 
-    // Slack Events need async outbound HTTP; handle them before the sync router.
     if method == Method::Post && normalize_path(&path) == "/slack/events" {
         return handle_slack(api_req, &env, &bucket, panel).await;
     }
 
-    let mut store = R2FrameStore::load(&bucket).await?;
+    // Cheap GET paths: don't pull every frame body into memory.
+    let norm = normalize_path(&path);
+    if method == Method::Get && norm == "/" {
+        let catalog = load_catalog(&bucket).await?;
+        return into_worker_response(ApiResponse::json(
+            200,
+            serde_json::to_string(&catalog).unwrap_or_else(|_| "{}".into()),
+        ));
+    }
+    if method == Method::Get && norm == "/latest.bin" {
+        let catalog = load_catalog(&bucket).await?;
+        let Some(name) = catalog.latest.clone() else {
+            return into_worker_response(ApiResponse::text(404, "no image yet\n"));
+        };
+        return respond_frame_get(&bucket, &api_req, &name, panel, upload_secret.as_str()).await;
+    }
+    if method == Method::Get {
+        if let Some((name, ext)) = parse_get_image(&norm) {
+            let mut req = api_req;
+            req.path = format!("/{name}.{ext}");
+            return respond_frame_get(&bucket, &req, &name, panel, upload_secret.as_str()).await;
+        }
+    }
+
+    let mut store = R2ImageStore::load(&bucket).await?;
     let mut cfg = HandlerConfig {
         store: &mut store,
         upload_secret: upload_secret.as_str(),
@@ -73,6 +102,63 @@ async fn fetch(mut req: Request, env: Env, _ctx: Context) -> Result<Response> {
     let response = api::handle(api_req, &mut cfg);
     store.flush(&bucket).await?;
     into_worker_response(response)
+}
+
+async fn respond_frame_get(
+    bucket: &Bucket,
+    api_req: &ApiRequest,
+    name: &str,
+    panel: PanelSpec,
+    upload_secret: &str,
+) -> Result<Response> {
+    let catalog = load_catalog(bucket).await?;
+    let Some(frame) = load_frame(bucket, name).await? else {
+        return into_worker_response(ApiResponse::text(404, "no such image\n"));
+    };
+    let mut one = OneFrameStore {
+        catalog,
+        frame: Some(frame),
+    };
+    let mut cfg = HandlerConfig {
+        store: &mut one,
+        upload_secret,
+        panel,
+    };
+    into_worker_response(api::handle(api_req.clone(), &mut cfg))
+}
+
+fn parse_get_image(path: &str) -> Option<(String, &'static str)> {
+    let rest = path.strip_prefix('/')?;
+    if rest.contains('/') {
+        return None;
+    }
+    let (stem, ext) = if let Some(s) = rest.strip_suffix(".bin") {
+        (s, "bin")
+    } else if let Some(s) = rest.strip_suffix(".png") {
+        (s, "png")
+    } else {
+        return None;
+    };
+    let name = api::validate_name(stem)?;
+    Some((name, ext))
+}
+
+struct OneFrameStore {
+    catalog: Catalog,
+    frame: Option<StoredFrame>,
+}
+
+impl ImageStore for OneFrameStore {
+    fn catalog(&self) -> Catalog {
+        self.catalog.clone()
+    }
+    fn get(&self, name: &str) -> Option<StoredFrame> {
+        self.frame.as_ref().filter(|f| f.name == name).cloned()
+    }
+    fn put(&mut self, _frame: StoredFrame) {}
+    fn delete(&mut self, _name: &str) -> bool {
+        false
+    }
 }
 
 async fn handle_slack(
@@ -99,8 +185,8 @@ async fn handle_slack(
                 None => None,
             };
 
-            let mut store = R2FrameStore::load(bucket).await?;
-            let reply_text = finish_app_mention(image_bytes, &mut store, panel);
+            let mut store = R2ImageStore::load(bucket).await?;
+            let reply_text = finish_app_mention(&mention, image_bytes, &mut store, panel);
             store.flush(bucket).await?;
 
             if let Err(e) = post_slack_reply(
@@ -173,82 +259,113 @@ async fn post_slack_reply(
     Ok(())
 }
 
-struct R2FrameStore {
-    current: Option<StoredFrame>,
-    dirty: bool,
+struct R2ImageStore {
+    frames: BTreeMap<String, StoredFrame>,
+    catalog: Catalog,
+    /// Names whose PNG+bin must be written on flush.
+    dirty_names: BTreeMap<String, bool>, // true = upsert, false = delete
+    catalog_dirty: bool,
 }
 
-impl R2FrameStore {
+async fn load_catalog(bucket: &Bucket) -> Result<Catalog> {
+    let catalog = match bucket.get(CATALOG_KEY).execute().await? {
+        Some(obj) => {
+            let bytes = obj
+                .body()
+                .ok_or_else(|| worker::Error::RustError("missing catalog body".into()))?
+                .bytes()
+                .await?;
+            serde_json::from_slice(&bytes).unwrap_or_else(|_| Catalog::empty())
+        }
+        None => Catalog::empty(),
+    };
+    Ok(catalog)
+}
+
+impl R2ImageStore {
     async fn load(bucket: &Bucket) -> Result<Self> {
-        let obj = bucket.get(OBJECT_KEY).execute().await?;
-        let Some(obj) = obj else {
-            return Ok(Self {
-                current: None,
-                dirty: false,
-            });
-        };
-        let png = obj
-            .body()
-            .ok_or_else(|| worker::Error::RustError("missing body".into()))?
-            .bytes()
-            .await?;
-        let etag = match bucket.get(ETAG_KEY).execute().await? {
-            Some(meta) => {
-                let bytes = meta
-                    .body()
-                    .ok_or_else(|| worker::Error::RustError("missing etag body".into()))?
-                    .bytes()
-                    .await?;
-                String::from_utf8(bytes).unwrap_or_else(|_| crate::panel::etag_for(&png))
+        let mut frames = BTreeMap::new();
+        let mut catalog = load_catalog(bucket).await?;
+
+        // Load each named frame listed in the catalog.
+        for name in catalog.images.clone() {
+            if let Some(frame) = load_frame(bucket, &name).await? {
+                frames.insert(name, frame);
             }
-            None => crate::panel::etag_for(&png),
-        };
-        let (packed, recovered) = match bucket.get(PACKED_KEY).execute().await? {
-            Some(obj) => (
-                obj.body()
-                    .ok_or_else(|| worker::Error::RustError("missing packed body".into()))?
-                    .bytes()
-                    .await?,
-                false,
-            ),
-            None => {
-                // Legacy objects only stored the PNG; recover the framebuffer
-                // and mark dirty so the next flush persists `image.bin`.
-                let spec = PanelSpec::default();
-                let packed = crate::panel::packed_from_panel_png(&png, spec)
-                    .map_err(|e| worker::Error::RustError(format!("recover packed frame: {e}")))?;
-                (packed, true)
+        }
+
+        let mut catalog_dirty = false;
+        // Migrate legacy single-image objects into `image`.
+        if frames.is_empty() {
+            if let Some(frame) = load_legacy_frame(bucket).await? {
+                catalog.revision = 1;
+                catalog.latest = Some(frame.name.clone());
+                catalog.images = vec![frame.name.clone()];
+                frames.insert(frame.name.clone(), frame);
+                catalog_dirty = true;
             }
+        }
+
+        // Reconcile catalog.images with what we actually loaded.
+        catalog.images = frames.keys().cloned().collect();
+        if let Some(latest) = &catalog.latest {
+            if !frames.contains_key(latest) {
+                catalog.latest = catalog.images.first().cloned();
+                catalog_dirty = true;
+            }
+        }
+
+        let dirty_names = if catalog_dirty {
+            // Persist migrated legacy frame.
+            frames.keys().map(|n| (n.clone(), true)).collect()
+        } else {
+            BTreeMap::new()
         };
+
         Ok(Self {
-            current: Some(StoredFrame { png, packed, etag }),
-            dirty: recovered,
+            frames,
+            catalog,
+            dirty_names,
+            catalog_dirty,
         })
     }
 
     async fn flush(&self, bucket: &Bucket) -> Result<()> {
-        if !self.dirty {
-            return Ok(());
+        for (name, upsert) in &self.dirty_names {
+            if *upsert {
+                let Some(frame) = self.frames.get(name) else {
+                    continue;
+                };
+                bucket
+                    .put(png_key(name), frame.png.clone())
+                    .http_metadata(worker::HttpMetadata {
+                        content_type: Some("image/png".into()),
+                        ..Default::default()
+                    })
+                    .execute()
+                    .await?;
+                bucket
+                    .put(bin_key(name), frame.packed.clone())
+                    .http_metadata(worker::HttpMetadata {
+                        content_type: Some("application/octet-stream".into()),
+                        ..Default::default()
+                    })
+                    .execute()
+                    .await?;
+            } else {
+                let _ = bucket.delete(png_key(name)).await;
+                let _ = bucket.delete(bin_key(name)).await;
+            }
         }
-        if let Some(frame) = &self.current {
+        if self.catalog_dirty || !self.dirty_names.is_empty() {
+            let bytes = serde_json::to_vec(&self.catalog)
+                .map_err(|e| worker::Error::RustError(format!("catalog encode: {e}")))?;
             bucket
-                .put(OBJECT_KEY, frame.png.clone())
+                .put(CATALOG_KEY, bytes)
                 .http_metadata(worker::HttpMetadata {
-                    content_type: Some("image/png".into()),
+                    content_type: Some("application/json".into()),
                     ..Default::default()
                 })
-                .execute()
-                .await?;
-            bucket
-                .put(PACKED_KEY, frame.packed.clone())
-                .http_metadata(worker::HttpMetadata {
-                    content_type: Some("application/octet-stream".into()),
-                    ..Default::default()
-                })
-                .execute()
-                .await?;
-            bucket
-                .put(ETAG_KEY, frame.etag.as_bytes().to_vec())
                 .execute()
                 .await?;
         }
@@ -256,15 +373,112 @@ impl R2FrameStore {
     }
 }
 
-impl FrameStore for R2FrameStore {
-    fn get(&self) -> Option<StoredFrame> {
-        self.current.clone()
+impl ImageStore for R2ImageStore {
+    fn catalog(&self) -> Catalog {
+        self.catalog.clone()
+    }
+
+    fn get(&self, name: &str) -> Option<StoredFrame> {
+        self.frames.get(name).cloned()
     }
 
     fn put(&mut self, frame: StoredFrame) {
-        self.current = Some(frame);
-        self.dirty = true;
+        self.catalog.latest = Some(frame.name.clone());
+        self.catalog.revision = self.catalog.revision.saturating_add(1);
+        self.dirty_names.insert(frame.name.clone(), true);
+        self.frames.insert(frame.name.clone(), frame);
+        self.catalog.images = self.frames.keys().cloned().collect();
+        self.catalog_dirty = true;
     }
+
+    fn delete(&mut self, name: &str) -> bool {
+        if self.frames.remove(name).is_none() {
+            return false;
+        }
+        self.catalog.revision = self.catalog.revision.saturating_add(1);
+        self.dirty_names.insert(name.to_string(), false);
+        self.catalog.images = self.frames.keys().cloned().collect();
+        if self.catalog.latest.as_deref() == Some(name) {
+            self.catalog.latest = self.catalog.images.first().cloned();
+        }
+        self.catalog_dirty = true;
+        true
+    }
+}
+
+async fn load_frame(bucket: &Bucket, name: &str) -> Result<Option<StoredFrame>> {
+    let png_obj = match bucket.get(png_key(name)).execute().await? {
+        Some(o) => o,
+        None => return Ok(None),
+    };
+    let png = png_obj
+        .body()
+        .ok_or_else(|| worker::Error::RustError("missing png body".into()))?
+        .bytes()
+        .await?;
+    let packed = match bucket.get(bin_key(name)).execute().await? {
+        Some(obj) => {
+            obj.body()
+                .ok_or_else(|| worker::Error::RustError("missing bin body".into()))?
+                .bytes()
+                .await?
+        }
+        None => crate::panel::packed_from_panel_png(&png, PanelSpec::default())
+            .map_err(|e| worker::Error::RustError(format!("recover packed: {e}")))?,
+    };
+    let etag = crate::panel::etag_for(&png);
+    Ok(Some(StoredFrame {
+        name: name.to_string(),
+        png,
+        packed,
+        etag,
+    }))
+}
+
+async fn load_legacy_frame(bucket: &Bucket) -> Result<Option<StoredFrame>> {
+    let Some(obj) = bucket.get(LEGACY_PNG).execute().await? else {
+        return Ok(None);
+    };
+    let png = obj
+        .body()
+        .ok_or_else(|| worker::Error::RustError("missing legacy png".into()))?
+        .bytes()
+        .await?;
+    let etag = match bucket.get(LEGACY_ETAG).execute().await? {
+        Some(meta) => {
+            let bytes = meta
+                .body()
+                .ok_or_else(|| worker::Error::RustError("missing legacy etag".into()))?
+                .bytes()
+                .await?;
+            String::from_utf8(bytes).unwrap_or_else(|_| crate::panel::etag_for(&png))
+        }
+        None => crate::panel::etag_for(&png),
+    };
+    let packed = match bucket.get(LEGACY_BIN).execute().await? {
+        Some(obj) => {
+            obj.body()
+                .ok_or_else(|| worker::Error::RustError("missing legacy bin".into()))?
+                .bytes()
+                .await?
+        }
+        None => crate::panel::packed_from_panel_png(&png, PanelSpec::default())
+            .map_err(|e| worker::Error::RustError(format!("recover legacy packed: {e}")))?,
+    };
+    Ok(Some(StoredFrame {
+        name: "image".into(),
+        png,
+        packed,
+        etag,
+    }))
+}
+
+fn png_key(name: &str) -> String {
+    format!("{FRAMES_PREFIX}{name}.png")
+}
+
+fn bin_key(name: &str) -> String {
+    format!("{FRAMES_PREFIX}{name}.bin")
 }
 
 fn header_from(req: &Request, name: &str) -> Option<String> {
@@ -297,9 +511,8 @@ fn into_worker_response(response: ApiResponse) -> Result<Response> {
     if let Some(cc) = response.cache_control {
         headers.set("Cache-Control", cc)?;
     }
-    // CORS is handy for a tiny upload demo page; Slack doesn't need it.
     headers.set("Access-Control-Allow-Origin", "*")?;
-    headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")?;
+    headers.set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")?;
     headers.set(
         "Access-Control-Allow-Headers",
         "Authorization, Content-Type, If-None-Match",

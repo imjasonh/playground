@@ -3,20 +3,45 @@
 use crate::auth::{authorize_upload, verify_slack_signature};
 use crate::panel::{self, PanelImage, PanelSpec};
 use crate::slack::{self, AppMention, SlackEvent};
+use serde::{Deserialize, Serialize};
 
-/// Stored frame the Worker persists in R2.
+/// One named frame in the rotation library.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StoredFrame {
+    pub name: String,
     pub png: Vec<u8>,
-    /// Packed 1-bit framebuffer for the ESP32 (`/image.bin`).
+    /// Packed 1-bit framebuffer for the ESP32 (`/{name}.bin`).
     pub packed: Vec<u8>,
     pub etag: String,
 }
 
-/// Side-effectful frame storage. Unit tests use an in-memory fake.
-pub trait FrameStore {
-    fn get(&self) -> Option<StoredFrame>;
+/// Catalog returned by `GET /` — device polls this every minute.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Catalog {
+    /// Monotonic counter bumped on every add/replace/delete.
+    pub revision: u64,
+    /// Most recently added/replaced image name (device shows this immediately).
+    pub latest: Option<String>,
+    /// All image names currently in the rotation (sorted).
+    pub images: Vec<String>,
+}
+
+impl Catalog {
+    pub fn empty() -> Self {
+        Self {
+            revision: 0,
+            latest: None,
+            images: Vec::new(),
+        }
+    }
+}
+
+/// Side-effectful image library. Unit tests use an in-memory fake.
+pub trait ImageStore {
+    fn catalog(&self) -> Catalog;
+    fn get(&self, name: &str) -> Option<StoredFrame>;
     fn put(&mut self, frame: StoredFrame);
+    fn delete(&mut self, name: &str) -> bool;
 }
 
 #[derive(Debug, Clone)]
@@ -92,26 +117,107 @@ impl ApiResponse {
 }
 
 /// Config shared by the simple (non-Slack-I/O) routes.
-pub struct HandlerConfig<'a, S: FrameStore> {
+pub struct HandlerConfig<'a, S: ImageStore> {
     pub store: &'a mut S,
     pub upload_secret: &'a str,
     pub panel: PanelSpec,
 }
 
-/// Route GET/POST image and health checks. Slack Events are handled by
-/// [`begin_slack_event`] + [`finish_app_mention`] so the Worker can await
-/// Slack's file download / chat.postMessage without a sync HTTP client.
-pub fn handle<S: FrameStore>(req: ApiRequest, cfg: &mut HandlerConfig<'_, S>) -> ApiResponse {
+/// Route catalog / image CRUD and health checks. Slack Events are handled by
+/// [`begin_slack_event`] + [`finish_app_mention`].
+pub fn handle<S: ImageStore>(req: ApiRequest, cfg: &mut HandlerConfig<'_, S>) -> ApiResponse {
     let path = normalize_path(&req.path);
     let method = req.method.to_ascii_uppercase();
 
     match (method.as_str(), path.as_str()) {
-        ("GET", "/") | ("GET", "/health") => ApiResponse::text(200, "inkbot ok\n"),
-        ("GET", "/image.png") => get_image(&req, cfg.store),
-        ("GET", "/image.bin") => get_image_bin(&req, cfg.store),
-        ("POST", "/image.png") => post_image(&req, cfg),
+        ("GET", "/") => list_catalog(cfg.store),
+        ("GET", "/health") => ApiResponse::text(200, "inkbot ok\n"),
+        // Single-request fetch of whatever `latest` points at (ESP32 boot path
+        // can't afford catalog+frame as two back-to-back HTTPS round-trips).
+        ("GET", "/latest.bin") => get_latest_bin(&req, cfg.store),
         ("OPTIONS", _) => ApiResponse::text(204, ""),
-        _ => ApiResponse::text(404, "not found\n"),
+        (m, p) => match parse_image_path(p) {
+            Some((name, kind)) => match (m, kind) {
+                ("GET", ImageKind::Bin) => get_image_bin(&req, cfg.store, &name),
+                ("GET", ImageKind::Png) => get_image_png(&req, cfg.store, &name),
+                ("POST", ImageKind::Bin) | ("POST", ImageKind::Png) => post_image(&req, cfg, &name),
+                ("DELETE", ImageKind::Bin) | ("DELETE", ImageKind::Png) => {
+                    delete_image(&req, cfg, &name)
+                }
+                _ => ApiResponse::text(405, "method not allowed\n"),
+            },
+            None => ApiResponse::text(404, "not found\n"),
+        },
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ImageKind {
+    Bin,
+    Png,
+}
+
+/// `/{name}.bin` or `/{name}.png` → validated name + kind.
+fn parse_image_path(path: &str) -> Option<(String, ImageKind)> {
+    let rest = path.strip_prefix('/')?;
+    if rest.contains('/') {
+        return None;
+    }
+    let (stem, kind) = if let Some(stem) = rest.strip_suffix(".bin") {
+        (stem, ImageKind::Bin)
+    } else if let Some(stem) = rest.strip_suffix(".png") {
+        (stem, ImageKind::Png)
+    } else {
+        return None;
+    };
+    let name = validate_name(stem)?;
+    Some((name, kind))
+}
+
+/// Image names: start with alphanumeric; then `[A-Za-z0-9_-]{0,62}`.
+pub fn validate_name(raw: &str) -> Option<String> {
+    let name = raw.trim();
+    if name.is_empty() || name.len() > 63 {
+        return None;
+    }
+    let mut chars = name.chars();
+    let first = chars.next()?;
+    if !first.is_ascii_alphanumeric() {
+        return None;
+    }
+    if !chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+        return None;
+    }
+    // Reserved route stems.
+    match name {
+        "health" | "slack" | "events" | "latest" => None,
+        _ => Some(name.to_string()),
+    }
+}
+
+/// Sanitize a Slack/upload filename into a valid image name.
+pub fn name_from_filename(filename: &str) -> String {
+    let base = filename.rsplit('/').next().unwrap_or(filename);
+    let stem = match base.rfind('.') {
+        Some(i) if i > 0 => &base[..i],
+        _ => base,
+    };
+    let mut out = String::new();
+    for c in stem.chars() {
+        if out.len() >= 63 {
+            break;
+        }
+        if c.is_ascii_alphanumeric() {
+            out.push(c.to_ascii_lowercase());
+        } else if (c == '_' || c == '-' || c == ' ') && !out.is_empty() && !out.ends_with('-') {
+            out.push('-');
+        }
+    }
+    let out = out.trim_matches('-').to_string();
+    if validate_name(&out).is_some() {
+        out
+    } else {
+        "image".into()
     }
 }
 
@@ -152,29 +258,114 @@ pub fn begin_slack_event(
     }
 }
 
-/// Apply a downloaded Slack attachment to the panel store and return the
-/// reply text to post back into the thread.
-pub fn finish_app_mention<S: FrameStore>(
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SlackCommand {
+    List,
+    Delete { name: String },
+    AddImage { name: String },
+    Help,
+}
+
+/// Parse `@inkbot …` text into a command. Leading `<@U…>` mentions are stripped.
+pub fn parse_slack_command(text: &str, attachment_name: Option<&str>) -> SlackCommand {
+    let stripped = strip_slack_mentions(text);
+    let mut parts = stripped.split_whitespace();
+    match parts.next().map(|s| s.to_ascii_lowercase()).as_deref() {
+        Some("list") => SlackCommand::List,
+        Some("delete") => {
+            let raw = parts.next().unwrap_or("");
+            let raw = raw.strip_suffix(".bin").unwrap_or(raw);
+            let raw = raw.strip_suffix(".png").unwrap_or(raw);
+            match validate_name(raw) {
+                Some(name) => SlackCommand::Delete { name },
+                None => SlackCommand::Help,
+            }
+        }
+        Some("help") => SlackCommand::Help,
+        _ => {
+            if let Some(filename) = attachment_name {
+                SlackCommand::AddImage {
+                    name: name_from_filename(filename),
+                }
+            } else if stripped.is_empty() {
+                SlackCommand::Help
+            } else {
+                // Bare mention with no attachment and unknown verb.
+                SlackCommand::Help
+            }
+        }
+    }
+}
+
+fn strip_slack_mentions(text: &str) -> String {
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(start) = rest.find("<@") {
+        out.push_str(&rest[..start]);
+        match rest[start..].find('>') {
+            Some(end) => rest = &rest[start + end + 1..],
+            None => {
+                rest = &rest[start + 2..];
+                break;
+            }
+        }
+    }
+    out.push_str(rest);
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Handle a Slack mention after any attachment bytes have been downloaded.
+pub fn finish_app_mention<S: ImageStore>(
+    mention: &AppMention,
     image_bytes: Option<Result<Vec<u8>, String>>,
     store: &mut S,
     panel: PanelSpec,
 ) -> String {
-    match image_bytes {
-        None => "Attach an image and mention me — I'll dither it to the e-ink frame.".into(),
-        Some(Err(e)) => format!("Couldn't download the attachment: {e}"),
-        Some(Ok(bytes)) => match panel::transform_for_panel(&bytes, panel) {
-            Ok(PanelImage { png, packed, etag }) => {
-                store.put(StoredFrame {
-                    png,
-                    packed,
-                    etag: etag.clone(),
-                });
+    let attachment_name = mention.first_image().map(|f| f.name.as_str());
+    let cmd = parse_slack_command(&mention.text, attachment_name);
+
+    match cmd {
+        SlackCommand::List => {
+            let cat = store.catalog();
+            if cat.images.is_empty() {
+                "No images in the rotation yet. Attach a picture and mention me to add one.".into()
+            } else {
                 format!(
-                    "Displayed on the e-ink frame ({}×{}, etag {}).",
-                    panel.width, panel.height, etag
+                    "Images ({}): {}\nLatest: {}",
+                    cat.images.len(),
+                    cat.images.join(", "),
+                    cat.latest.as_deref().unwrap_or("—")
                 )
             }
-            Err(e) => format!("Couldn't transform that image: {e}"),
+        }
+        SlackCommand::Delete { name } => {
+            if store.delete(&name) {
+                format!("Deleted `{name}` from the rotation.")
+            } else {
+                format!("No image named `{name}`.")
+            }
+        }
+        SlackCommand::Help => {
+            "Commands: attach an image to add it · `list` · `delete <name>`".into()
+        }
+        SlackCommand::AddImage { name } => match image_bytes {
+            None => "Attach an image and mention me — I'll dither it into the rotation.".into(),
+            Some(Err(e)) => format!("Couldn't download the attachment: {e}"),
+            Some(Ok(bytes)) => match panel::transform_for_panel(&bytes, panel) {
+                Ok(PanelImage { png, packed, etag }) => {
+                    store.put(StoredFrame {
+                        name: name.clone(),
+                        png,
+                        packed,
+                        etag: etag.clone(),
+                    });
+                    format!(
+                        "Added `{name}` to the rotation ({}×{}, etag {}).",
+                        panel.width, panel.height, etag
+                    )
+                }
+                Err(e) => format!("Couldn't transform that image: {e}"),
+            },
         },
     }
 }
@@ -188,9 +379,21 @@ fn normalize_path(path: &str) -> String {
     }
 }
 
-fn get_image<S: FrameStore>(req: &ApiRequest, store: &S) -> ApiResponse {
-    let Some(frame) = store.get() else {
+fn list_catalog<S: ImageStore>(store: &S) -> ApiResponse {
+    let body = serde_json::to_string(&store.catalog()).unwrap_or_else(|_| "{}".into());
+    ApiResponse::json(200, body)
+}
+
+fn get_latest_bin<S: ImageStore>(req: &ApiRequest, store: &S) -> ApiResponse {
+    let Some(name) = store.catalog().latest else {
         return ApiResponse::text(404, "no image yet\n");
+    };
+    get_image_bin(req, store, &name)
+}
+
+fn get_image_png<S: ImageStore>(req: &ApiRequest, store: &S, name: &str) -> ApiResponse {
+    let Some(frame) = store.get(name) else {
+        return ApiResponse::text(404, "no such image\n");
     };
     if let Some(inm) = req.if_none_match.as_deref() {
         if etags_match(inm, &frame.etag) {
@@ -200,9 +403,9 @@ fn get_image<S: FrameStore>(req: &ApiRequest, store: &S) -> ApiResponse {
     ApiResponse::png(&frame)
 }
 
-fn get_image_bin<S: FrameStore>(req: &ApiRequest, store: &S) -> ApiResponse {
-    let Some(frame) = store.get() else {
-        return ApiResponse::text(404, "no image yet\n");
+fn get_image_bin<S: ImageStore>(req: &ApiRequest, store: &S, name: &str) -> ApiResponse {
+    let Some(frame) = store.get(name) else {
+        return ApiResponse::text(404, "no such image\n");
     };
     if let Some(inm) = req.if_none_match.as_deref() {
         if etags_match(inm, &frame.etag) {
@@ -212,7 +415,11 @@ fn get_image_bin<S: FrameStore>(req: &ApiRequest, store: &S) -> ApiResponse {
     ApiResponse::packed(&frame)
 }
 
-fn post_image<S: FrameStore>(req: &ApiRequest, cfg: &mut HandlerConfig<'_, S>) -> ApiResponse {
+fn post_image<S: ImageStore>(
+    req: &ApiRequest,
+    cfg: &mut HandlerConfig<'_, S>,
+    name: &str,
+) -> ApiResponse {
     if cfg.upload_secret.is_empty() {
         return ApiResponse::text(500, "UPLOAD_SECRET is not configured\n");
     }
@@ -222,22 +429,45 @@ fn post_image<S: FrameStore>(req: &ApiRequest, cfg: &mut HandlerConfig<'_, S>) -
     if req.body.is_empty() {
         return ApiResponse::text(400, "empty body\n");
     }
-    match panel::accept_upload(&req.body, cfg.panel) {
-        Ok(PanelImage { png, packed, etag }) => {
-            cfg.store.put(StoredFrame {
-                png,
-                packed,
-                etag: etag.clone(),
-            });
-            ApiResponse::json(
-                200,
-                format!(
-                    r#"{{"ok":true,"etag":{}}}"#,
-                    serde_json::to_string(&etag).unwrap()
-                ),
-            )
-        }
-        Err(e) => ApiResponse::text(400, format!("{e}\n")),
+    // Accept either a strict panel PNG or an arbitrary photo (dithered).
+    let panel_image = match panel::accept_upload(&req.body, cfg.panel) {
+        Ok(img) => img,
+        Err(_) => match panel::transform_for_panel(&req.body, cfg.panel) {
+            Ok(img) => img,
+            Err(e) => return ApiResponse::text(400, format!("{e}\n")),
+        },
+    };
+    let PanelImage { png, packed, etag } = panel_image;
+    cfg.store.put(StoredFrame {
+        name: name.to_string(),
+        png,
+        packed,
+        etag: etag.clone(),
+    });
+    ApiResponse::json(
+        200,
+        serde_json::json!({ "ok": true, "name": name, "etag": etag }).to_string(),
+    )
+}
+
+fn delete_image<S: ImageStore>(
+    req: &ApiRequest,
+    cfg: &mut HandlerConfig<'_, S>,
+    name: &str,
+) -> ApiResponse {
+    if cfg.upload_secret.is_empty() {
+        return ApiResponse::text(500, "UPLOAD_SECRET is not configured\n");
+    }
+    if !authorize_upload(req.authorization.as_deref(), cfg.upload_secret) {
+        return ApiResponse::text(401, "unauthorized\n");
+    }
+    if cfg.store.delete(name) {
+        ApiResponse::json(
+            200,
+            serde_json::json!({ "ok": true, "deleted": name }).to_string(),
+        )
+    } else {
+        ApiResponse::text(404, "no such image\n")
     }
 }
 
@@ -256,14 +486,49 @@ mod tests {
     use super::*;
     use crate::panel::{encode_bw_png, PanelSpec};
     use image::{GrayImage, Luma};
+    use std::collections::BTreeMap;
 
-    struct MemStore(Option<StoredFrame>);
-    impl FrameStore for MemStore {
-        fn get(&self) -> Option<StoredFrame> {
-            self.0.clone()
+    struct MemStore {
+        frames: BTreeMap<String, StoredFrame>,
+        revision: u64,
+        latest: Option<String>,
+    }
+
+    impl MemStore {
+        fn new() -> Self {
+            Self {
+                frames: BTreeMap::new(),
+                revision: 0,
+                latest: None,
+            }
+        }
+    }
+
+    impl ImageStore for MemStore {
+        fn catalog(&self) -> Catalog {
+            Catalog {
+                revision: self.revision,
+                latest: self.latest.clone(),
+                images: self.frames.keys().cloned().collect(),
+            }
+        }
+        fn get(&self, name: &str) -> Option<StoredFrame> {
+            self.frames.get(name).cloned()
         }
         fn put(&mut self, frame: StoredFrame) {
-            self.0 = Some(frame);
+            self.latest = Some(frame.name.clone());
+            self.revision += 1;
+            self.frames.insert(frame.name.clone(), frame);
+        }
+        fn delete(&mut self, name: &str) -> bool {
+            if self.frames.remove(name).is_none() {
+                return false;
+            }
+            self.revision += 1;
+            if self.latest.as_deref() == Some(name) {
+                self.latest = self.frames.keys().next().cloned();
+            }
+            true
         }
     }
 
@@ -272,102 +537,144 @@ mod tests {
         encode_bw_png(&img, PanelSpec::default()).unwrap().0
     }
 
-    #[test]
-    fn post_then_get_with_etag() {
-        let mut store = MemStore(None);
-        let mut cfg = HandlerConfig {
-            store: &mut store,
+    fn cfg<'a>(store: &'a mut MemStore) -> HandlerConfig<'a, MemStore> {
+        HandlerConfig {
+            store,
             upload_secret: "secret",
             panel: PanelSpec::default(),
-        };
+        }
+    }
+
+    #[test]
+    fn validate_and_sanitize_names() {
+        assert_eq!(validate_name("sgt-pepper"), Some("sgt-pepper".into()));
+        assert_eq!(validate_name("health"), None);
+        assert_eq!(name_from_filename("Sgt Pepper!.PNG"), "sgt-pepper");
+        assert_eq!(name_from_filename("a.png"), "a");
+    }
+
+    #[test]
+    fn post_list_get_delete() {
+        let mut store = MemStore::new();
+        let mut c = cfg(&mut store);
         let post = handle(
             ApiRequest {
                 method: "POST".into(),
-                path: "/image.png".into(),
+                path: "/foo.bin".into(),
                 authorization: Some("Bearer secret".into()),
                 if_none_match: None,
                 slack_timestamp: None,
                 slack_signature: None,
                 body: solid_png(),
             },
-            &mut cfg,
+            &mut c,
         );
         assert_eq!(post.status, 200);
 
-        let frame = cfg.store.get().unwrap();
-        assert_eq!(frame.packed.len(), 800 * 480 / 8);
-        let etag = frame.etag;
-        let get = handle(
+        let list = handle(
             ApiRequest {
                 method: "GET".into(),
-                path: "/image.png".into(),
-                authorization: None,
-                if_none_match: Some(etag.clone()),
-                slack_timestamp: None,
-                slack_signature: None,
-                body: vec![],
-            },
-            &mut cfg,
-        );
-        assert_eq!(get.status, 304);
-
-        let bin = handle(
-            ApiRequest {
-                method: "GET".into(),
-                path: "/image.bin".into(),
+                path: "/".into(),
                 authorization: None,
                 if_none_match: None,
                 slack_timestamp: None,
                 slack_signature: None,
                 body: vec![],
             },
-            &mut cfg,
+            &mut c,
         );
-        assert_eq!(bin.status, 200);
-        assert_eq!(bin.content_type, "application/octet-stream");
-        assert_eq!(bin.body.len(), 800 * 480 / 8);
-        assert!(bin.body.iter().all(|&b| b == 0xff));
+        assert_eq!(list.status, 200);
+        let cat: Catalog = serde_json::from_slice(&list.body).unwrap();
+        assert_eq!(cat.images, vec!["foo".to_string()]);
+        assert_eq!(cat.latest.as_deref(), Some("foo"));
+        assert_eq!(cat.revision, 1);
 
-        let bin_304 = handle(
+        let bin = handle(
             ApiRequest {
                 method: "GET".into(),
-                path: "/image.bin".into(),
+                path: "/foo.bin".into(),
                 authorization: None,
-                if_none_match: Some(etag),
+                if_none_match: None,
                 slack_timestamp: None,
                 slack_signature: None,
                 body: vec![],
             },
-            &mut cfg,
+            &mut c,
         );
-        assert_eq!(bin_304.status, 304);
+        assert_eq!(bin.status, 200);
+        assert_eq!(bin.body.len(), 800 * 480 / 8);
+
+        let del = handle(
+            ApiRequest {
+                method: "DELETE".into(),
+                path: "/foo.bin".into(),
+                authorization: Some("Bearer secret".into()),
+                if_none_match: None,
+                slack_timestamp: None,
+                slack_signature: None,
+                body: vec![],
+            },
+            &mut c,
+        );
+        assert_eq!(del.status, 200);
+        assert!(c.store.catalog().images.is_empty());
     }
 
     #[test]
     fn post_rejects_bad_auth() {
-        let mut store = MemStore(None);
-        let mut cfg = HandlerConfig {
-            store: &mut store,
-            upload_secret: "secret",
-            panel: PanelSpec::default(),
-        };
+        let mut store = MemStore::new();
+        let mut c = cfg(&mut store);
         let resp = handle(
             ApiRequest {
                 method: "POST".into(),
-                path: "/image.png".into(),
+                path: "/foo.bin".into(),
                 authorization: Some("Bearer wrong".into()),
                 if_none_match: None,
                 slack_timestamp: None,
                 slack_signature: None,
                 body: solid_png(),
             },
-            &mut cfg,
+            &mut c,
         );
         assert_eq!(resp.status, 401);
     }
 
     #[test]
-    fn finish_mention_stores_transformed_image() {
+    fn slack_commands() {
+        assert_eq!(
+            parse_slack_command("<@Ubot> list", None),
+            SlackCommand::List
+        );
+        assert_eq!(
+            parse_slack_command("<@Ubot> delete sgt-pepper.bin", None),
+            SlackCommand::Delete {
+                name: "sgt-pepper".into()
+            }
+        );
+        assert_eq!(
+            parse_slack_command("<@Ubot> look", Some("Abbey Road.png")),
+            SlackCommand::AddImage {
+                name: "abbey-road".into()
+            }
+        );
+    }
+
+    #[test]
+    fn finish_mention_list_and_add() {
+        let mut store = MemStore::new();
+        let body = br#"{
+            "type":"event_callback",
+            "event":{
+                "type":"app_mention",
+                "user":"U1","text":"<@Ubot> list","ts":"1.0","channel":"C1"
+            }
+        }"#;
+        let SlackEvent::AppMention(mention) = slack::parse_event(body).unwrap() else {
+            panic!("expected mention");
+        };
+        let reply = finish_app_mention(&mention, None, &mut store, PanelSpec::default());
+        assert!(reply.contains("No images"));
+
         let mut src = GrayImage::new(100, 50);
         for (x, y, p) in src.enumerate_pixels_mut() {
             p.0 = [((x + y) % 256) as u8];
@@ -384,7 +691,7 @@ mod tests {
             "type":"event_callback",
             "event":{
                 "type":"app_mention",
-                "user":"U1","text":"hi","ts":"1.0","channel":"C1",
+                "user":"U1","text":"<@Ubot>","ts":"1.0","channel":"C1",
                 "files":[{"id":"F","name":"a.png","mimetype":"image/png",
                     "url_private_download":"https://example/a.png"}]
             }
@@ -392,11 +699,13 @@ mod tests {
         let SlackEvent::AppMention(mention) = slack::parse_event(body).unwrap() else {
             panic!("expected mention");
         };
-
-        let mut store = MemStore(None);
-        let reply = finish_app_mention(Some(Ok(src_png)), &mut store, PanelSpec::default());
-        assert!(reply.contains("Displayed"));
-        assert!(store.get().is_some());
-        assert!(mention.first_image().is_some());
+        let reply = finish_app_mention(
+            &mention,
+            Some(Ok(src_png)),
+            &mut store,
+            PanelSpec::default(),
+        );
+        assert!(reply.contains("Added `a`"));
+        assert_eq!(store.catalog().images, vec!["a".to_string()]);
     }
 }

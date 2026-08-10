@@ -3,7 +3,7 @@
 mod display;
 
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Result};
 use embedded_svc::http::client::Client as HttpClient;
@@ -13,19 +13,24 @@ use esp_idf_svc::eventloop::EspSystemEventLoop;
 use esp_idf_svc::hal::peripherals::Peripherals;
 use esp_idf_svc::http::client::{Configuration as HttpConfig, EspHttpConnection};
 use esp_idf_svc::nvs::{EspDefaultNvsPartition, EspNvs, NvsDefault};
-use esp_idf_svc::sys::{esp_get_free_heap_size, esp_reset_reason, esp_wifi_set_max_tx_power};
+use esp_idf_svc::sys::{
+    esp_get_free_heap_size, esp_random, esp_reset_reason, esp_wifi_set_max_tx_power,
+    esp_wifi_set_ps, wifi_ps_type_t_WIFI_PS_NONE,
+};
 use esp_idf_svc::wifi::{
     AuthMethod, BlockingWifi, ClientConfiguration, Configuration as WifiConfig, EspWifi,
 };
 use log::{info, warn};
 
 use display::Panel;
-use inkbot_esp32::FRAME_BYTES;
+use inkbot_esp32::{Catalog, FRAME_BYTES};
 
 include!(concat!(env!("OUT_DIR"), "/config_gen.rs"));
 
 const NVS_NS: &str = "inkbot";
+const NVS_NAME: &str = "name";
 const NVS_ETAG: &str = "etag";
+const NVS_LATEST: &str = "latest";
 
 fn main() -> Result<()> {
     esp_idf_svc::sys::link_patches();
@@ -55,11 +60,9 @@ fn main() -> Result<()> {
         EspWifi::new(peripherals.modem, sysloop.clone(), Some(nvs_part.clone()))?,
         sysloop,
     )?;
-    // Give a weak USB PSU a moment after panel bring-up before Wi-Fi TX peaks.
     thread::sleep(Duration::from_millis(500));
     if let Err(e) = connect_wifi(&mut wifi) {
         warn!("wifi failed: {e:#}");
-        // Short panel text so wall-powered boots (no serial) still show the stage.
         let mut msg = format!("WiFi: {e}");
         if msg.len() > 48 {
             msg.truncate(47);
@@ -75,36 +78,235 @@ fn main() -> Result<()> {
 
     let mut nvs =
         EspNvs::new(nvs_part, NVS_NS, true).map_err(|e| anyhow!("open NVS {NVS_NS}: {e:?}"))?;
-    let mut etag = read_etag(&nvs)?;
-    info!("nvs: last etag={etag:?}");
+    let mut current_name = read_str(&nvs, NVS_NAME)?;
+    let mut current_etag = read_str(&nvs, NVS_ETAG)?;
+    let mut seen_latest = read_str(&nvs, NVS_LATEST)?;
+    info!("nvs: name={current_name:?} etag={current_etag:?} latest={seen_latest:?}");
 
-    // Boot always downloads the current frame (no If-None-Match). A matching
-    // NVS etag used to yield 304 + an "inkbot ready" splash, which wiped the
-    // bistable panel even when the server image was already current.
-    match poll_once(&mut panel, &mut nvs, &mut etag, false) {
-        Ok(true) => info!("displayed boot frame"),
-        Ok(false) => {
-            info!("no image on server yet");
+    let mut last_rotate = Instant::now();
+
+    // Boot: one HTTPS GET of /latest.bin — a catalog+frame pair back-to-back
+    // fragments the classic ESP32 heap so the 48 KB alloc fails.
+    match boot_latest(
+        &mut panel,
+        &mut nvs,
+        &mut current_name,
+        &mut current_etag,
+        &mut seen_latest,
+    ) {
+        Ok(Some(name)) => {
+            last_rotate = Instant::now();
+            info!("boot displayed {name}");
+        }
+        Ok(None) => {
+            info!("no images on server yet");
             let _ = panel.show_message("inkbot ready");
         }
         Err(e) => {
             warn!("boot poll failed: {e:#}");
-            let _ = panel.show_message("poll failed");
+            let _ = panel.show_message(&short_err("poll", &e));
         }
     }
 
     loop {
         thread::sleep(Duration::from_secs(POLL_SECS));
-        match poll_once(&mut panel, &mut nvs, &mut etag, true) {
-            Ok(true) => info!("displayed new frame"),
-            Ok(false) => info!("no change"),
-            Err(e) => warn!("poll failed: {e:#}"),
+        match tick(
+            &mut panel,
+            &mut nvs,
+            &mut current_name,
+            &mut current_etag,
+            &mut seen_latest,
+            &mut last_rotate,
+        ) {
+            Ok(Action::Displayed { name, reason }) => {
+                info!("displayed {name} ({reason})")
+            }
+            Ok(Action::Idle) => info!("no change"),
+            Err(e) => {
+                warn!("poll failed: {e:#}");
+                // Don't refresh the panel on steady-state errors — keep the
+                // last good frame. Serial / next success recovers.
+            }
         }
     }
 }
 
-/// Connect with retries. Weak 5 V adapters often brown out during the first
-/// association TX burst; laptop USB usually does not.
+fn short_err(prefix: &str, err: &anyhow::Error) -> String {
+    // Prefer the leaf cause; Debug of EspIOError is too long for the panel.
+    let leaf = err.root_cause().to_string();
+    let mut msg = format!("{prefix}: {leaf}");
+    if msg.len() > 48 {
+        msg.truncate(47);
+        msg.push('…');
+    }
+    msg
+}
+
+fn boot_latest(
+    panel: &mut Panel,
+    nvs: &mut EspNvs<NvsDefault>,
+    current_name: &mut Option<String>,
+    current_etag: &mut Option<String>,
+    seen_latest: &mut Option<String>,
+) -> Result<Option<String>> {
+    let url = format!("{INKBOT_BASE_URL}/latest.bin");
+    info!("GET {url} (free_heap={})", unsafe {
+        esp_get_free_heap_size()
+    });
+    let response = http_get(&url, None)?;
+    match response.status {
+        404 => Ok(None),
+        200 => {
+            if response.body.len() != FRAME_BYTES {
+                return Err(anyhow!(
+                    "framebuffer must be {FRAME_BYTES} bytes, got {}",
+                    response.body.len()
+                ));
+            }
+            panel.show_frame(&response.body)?;
+            // Name comes from Content-Disposition? We don't have it — learn
+            // from the next catalog poll. Persist etag only.
+            if let Some(ref etag) = response.etag {
+                write_str(nvs, NVS_ETAG, etag)?;
+                *current_etag = Some(etag.clone());
+            }
+            // Drop the 48 KB body before opening another TLS session.
+            drop(response);
+            // Probe catalog after a breath so heap can coalesce; best-effort.
+            thread::sleep(Duration::from_millis(200));
+            if let Ok(cat) = fetch_catalog() {
+                if let Some(latest) = cat.latest {
+                    write_str(nvs, NVS_NAME, &latest)?;
+                    write_str(nvs, NVS_LATEST, &latest)?;
+                    *current_name = Some(latest.clone());
+                    *seen_latest = Some(latest.clone());
+                    return Ok(Some(latest));
+                }
+            }
+            Ok(Some("latest".into()))
+        }
+        other => Err(anyhow!("GET {url} → HTTP {other}")),
+    }
+}
+
+enum Action {
+    Displayed { name: String, reason: &'static str },
+    Idle,
+}
+
+fn tick(
+    panel: &mut Panel,
+    nvs: &mut EspNvs<NvsDefault>,
+    current_name: &mut Option<String>,
+    current_etag: &mut Option<String>,
+    seen_latest: &mut Option<String>,
+    last_rotate: &mut Instant,
+) -> Result<Action> {
+    let catalog = fetch_catalog()?;
+    info!(
+        "catalog rev={} latest={:?} n={}",
+        catalog.revision,
+        catalog.latest,
+        catalog.images.len()
+    );
+    if catalog.images.is_empty() {
+        return Ok(Action::Idle);
+    }
+
+    // Pause so TLS buffers from the catalog GET can free before the 48 KB frame.
+    thread::sleep(Duration::from_millis(200));
+
+    // 1) Newly uploaded image → show `latest` right away.
+    if let Some(latest) = catalog.latest.as_deref() {
+        let is_new = seen_latest.as_deref() != Some(latest);
+        if is_new {
+            show_named(panel, nvs, current_name, current_etag, latest, false)?;
+            write_str(nvs, NVS_LATEST, latest)?;
+            *seen_latest = Some(latest.to_string());
+            *last_rotate = Instant::now();
+            return Ok(Action::Displayed {
+                name: latest.to_string(),
+                reason: "new",
+            });
+        }
+    }
+
+    // 2) Periodic random rotation among the library.
+    if last_rotate.elapsed() >= Duration::from_secs(ROTATE_SECS) {
+        let rand = unsafe { esp_random() };
+        if let Some(name) = catalog
+            .pick_random(current_name.as_deref(), rand)
+            .map(str::to_string)
+        {
+            if current_name.as_deref() == Some(name.as_str()) {
+                *last_rotate = Instant::now();
+                return Ok(Action::Idle);
+            }
+            show_named(panel, nvs, current_name, current_etag, &name, false)?;
+            *last_rotate = Instant::now();
+            return Ok(Action::Displayed {
+                name,
+                reason: "rotate",
+            });
+        }
+    }
+
+    Ok(Action::Idle)
+}
+
+fn show_named(
+    panel: &mut Panel,
+    nvs: &mut EspNvs<NvsDefault>,
+    current_name: &mut Option<String>,
+    current_etag: &mut Option<String>,
+    name: &str,
+    use_etag: bool,
+) -> Result<()> {
+    let url = format!("{INKBOT_BASE_URL}/{name}.bin");
+    let if_none = if use_etag && current_name.as_deref() == Some(name) {
+        current_etag.as_deref()
+    } else {
+        None
+    };
+    info!("GET {url} (free_heap={})", unsafe {
+        esp_get_free_heap_size()
+    });
+    let response = http_get(&url, if_none)?;
+    match response.status {
+        304 => Ok(()),
+        200 => {
+            if response.body.len() != FRAME_BYTES {
+                return Err(anyhow!(
+                    "framebuffer must be {FRAME_BYTES} bytes, got {}",
+                    response.body.len()
+                ));
+            }
+            panel.show_frame(&response.body)?;
+            write_str(nvs, NVS_NAME, name)?;
+            *current_name = Some(name.to_string());
+            if let Some(etag) = response.etag {
+                write_str(nvs, NVS_ETAG, &etag)?;
+                *current_etag = Some(etag);
+            }
+            Ok(())
+        }
+        404 => Err(anyhow!("image {name} missing on server")),
+        other => Err(anyhow!("GET {url} → HTTP {other}")),
+    }
+}
+
+fn fetch_catalog() -> Result<Catalog> {
+    let url = format!("{INKBOT_BASE_URL}/");
+    info!("GET {url} (free_heap={})", unsafe {
+        esp_get_free_heap_size()
+    });
+    let response = http_get(&url, None)?;
+    if response.status != 200 {
+        return Err(anyhow!("GET {url} → HTTP {}", response.status));
+    }
+    Catalog::parse(&response.body).map_err(|e| anyhow!("catalog json: {e}"))
+}
+
 fn connect_wifi(wifi: &mut BlockingWifi<EspWifi<'static>>) -> Result<()> {
     const ATTEMPTS: u32 = 5;
     let mut last_err: Option<anyhow::Error> = None;
@@ -138,7 +340,6 @@ fn connect_wifi_once(wifi: &mut BlockingWifi<EspWifi<'static>>, attempt: u32) ->
     wifi.set_configuration(&WifiConfig::Client(ClientConfiguration {
         ssid: WIFI_SSID.try_into().map_err(|_| anyhow!("ssid too long"))?,
         password: WIFI_PASS.try_into().map_err(|_| anyhow!("pass too long"))?,
-        // NY Sphere is WPA3-SAE; WPA2/WPA3 personal lets ESP-IDF negotiate.
         auth_method: if WIFI_PASS.is_empty() {
             AuthMethod::None
         } else {
@@ -151,8 +352,6 @@ fn connect_wifi_once(wifi: &mut BlockingWifi<EspWifi<'static>>, attempt: u32) ->
     step("start");
     wifi.start().map_err(|e| anyhow!("start: {e:?}"))?;
 
-    // Cap TX power (~11 dBm) so weak wall-wart supplies are less likely to sag
-    // during association. Unit is 0.25 dBm (ESP-IDF).
     match unsafe { esp_wifi_set_max_tx_power(44) } {
         0 => info!("wifi[{attempt}] max_tx_power=44 (≈11 dBm)"),
         code => warn!("wifi[{attempt}] set_max_tx_power failed: {code}"),
@@ -162,64 +361,31 @@ fn connect_wifi_once(wifi: &mut BlockingWifi<EspWifi<'static>>, attempt: u32) ->
     wifi.connect().map_err(|e| anyhow!("connect: {e:?}"))?;
     step("dhcp");
     wifi.wait_netif_up().map_err(|e| anyhow!("dhcp: {e:?}"))?;
+
+    // Modem sleep (default WIFI_PS_MIN_MODEM) routinely stalls mbedtls reads of
+    // multi-KB HTTPS bodies on classic ESP32 — surfaces as EspIOError / EAGAIN.
+    match unsafe { esp_wifi_set_ps(wifi_ps_type_t_WIFI_PS_NONE) } {
+        0 => info!("wifi[{attempt}] power_save=NONE"),
+        code => warn!("wifi[{attempt}] set_ps(NONE) failed: {code}"),
+    }
+
     step("up");
     Ok(())
 }
 
-fn read_etag(nvs: &EspNvs<NvsDefault>) -> Result<Option<String>> {
+fn read_str(nvs: &EspNvs<NvsDefault>, key: &str) -> Result<Option<String>> {
     let mut buf = [0u8; 128];
-    match nvs.get_str(NVS_ETAG, &mut buf) {
+    match nvs.get_str(key, &mut buf) {
         Ok(Some(s)) if !s.is_empty() => Ok(Some(s.to_string())),
         Ok(_) => Ok(None),
-        Err(e) => Err(anyhow!("read etag: {e:?}")),
+        Err(e) => Err(anyhow!("read {key}: {e:?}")),
     }
 }
 
-fn write_etag(nvs: &mut EspNvs<NvsDefault>, etag: &str) -> Result<()> {
-    nvs.set_str(NVS_ETAG, etag)
-        .map_err(|e| anyhow!("write etag: {e:?}"))?;
+fn write_str(nvs: &mut EspNvs<NvsDefault>, key: &str, value: &str) -> Result<()> {
+    nvs.set_str(key, value)
+        .map_err(|e| anyhow!("write {key}: {e:?}"))?;
     Ok(())
-}
-
-/// Returns true when a new frame was displayed.
-///
-/// When `use_etag` is false, skips `If-None-Match` so the server always
-/// returns the body (used on boot to repaint after power-on).
-fn poll_once(
-    panel: &mut Panel,
-    nvs: &mut EspNvs<NvsDefault>,
-    etag: &mut Option<String>,
-    use_etag: bool,
-) -> Result<bool> {
-    // Fetch the pre-packed 48 KB framebuffer — no on-device zlib/PNG inflate.
-    let url = format!("{INKBOT_BASE_URL}/image.bin");
-    info!("GET {url} (free_heap={})", unsafe {
-        esp_get_free_heap_size()
-    });
-    let if_none_match = if use_etag { etag.as_deref() } else { None };
-    let response = http_get(&url, if_none_match)?;
-    match response.status {
-        304 => Ok(false),
-        200 => {
-            if response.body.len() != FRAME_BYTES {
-                return Err(anyhow!(
-                    "framebuffer must be {FRAME_BYTES} bytes, got {}",
-                    response.body.len()
-                ));
-            }
-            panel.show_frame(&response.body)?;
-            if let Some(new_etag) = response.etag {
-                write_etag(nvs, &new_etag)?;
-                *etag = Some(new_etag);
-            }
-            Ok(true)
-        }
-        404 => {
-            warn!("no image on server yet");
-            Ok(false)
-        }
-        other => Err(anyhow!("GET {url} → HTTP {other}")),
-    }
 }
 
 struct HttpResponse {
@@ -229,6 +395,22 @@ struct HttpResponse {
 }
 
 fn http_get(url: &str, if_none_match: Option<&str>) -> Result<HttpResponse> {
+    const ATTEMPTS: u32 = 3;
+    let mut last_err: Option<anyhow::Error> = None;
+    for attempt in 1..=ATTEMPTS {
+        match http_get_once(url, if_none_match) {
+            Ok(r) => return Ok(r),
+            Err(e) => {
+                warn!("GET {url} attempt {attempt}/{ATTEMPTS}: {e:#}");
+                last_err = Some(e);
+                thread::sleep(Duration::from_millis(400 * u64::from(attempt)));
+            }
+        }
+    }
+    Err(last_err.unwrap_or_else(|| anyhow!("http get failed")))
+}
+
+fn http_get_once(url: &str, if_none_match: Option<&str>) -> Result<HttpResponse> {
     let mut client = HttpClient::wrap(EspHttpConnection::new(&HttpConfig {
         buffer_size: Some(1024),
         buffer_size_tx: Some(1024),
@@ -244,10 +426,10 @@ fn http_get(url: &str, if_none_match: Option<&str>) -> Result<HttpResponse> {
 
     let request = client
         .request(Method::Get, url, &headers)
-        .map_err(|e| anyhow!("http request: {e:?}"))?;
+        .map_err(|e| anyhow!("http request: {e}"))?;
     let mut response = request
         .submit()
-        .map_err(|e| anyhow!("http submit: {e:?}"))?;
+        .map_err(|e| anyhow!("http submit: {e}"))?;
     let status = response.status();
 
     let etag = response
@@ -257,16 +439,17 @@ fn http_get(url: &str, if_none_match: Option<&str>) -> Result<HttpResponse> {
 
     let mut body = Vec::new();
     if status == 200 {
-        // Exact panel framebuffer size; reserve so we don't fragment while reading.
-        body.reserve(FRAME_BYTES);
+        // Catalog is small; frames are exactly FRAME_BYTES.
+        let reserve = if url.ends_with('/') { 512 } else { FRAME_BYTES };
+        body.reserve(reserve);
         let mut buf = [0u8; 512];
         loop {
-            let n = Read::read(&mut response, &mut buf).map_err(|e| anyhow!("http read: {e:?}"))?;
+            let n = Read::read(&mut response, &mut buf).map_err(|e| anyhow!("http read: {e}"))?;
             if n == 0 {
                 break;
             }
             body.extend_from_slice(&buf[..n]);
-            if body.len() > FRAME_BYTES + 1024 {
+            if body.len() > FRAME_BYTES + 2048 {
                 return Err(anyhow!("response body too large"));
             }
         }

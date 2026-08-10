@@ -1,11 +1,10 @@
 # inkbot-esp32
 
 Rust / ESP-IDF firmware for the **Waveshare e-Paper ESP32 Driver Board** +
-**7.5″ 800×480 mono** panel. It joins Wi-Fi, polls
-`{base_url}/image.bin` every minute with `If-None-Match`, and full-refreshes
-the panel when the ETag changes. The Worker serves a raw packed framebuffer
-so the device never runs zlib inflate (classic ESP32 heap is too fragmented
-after HTTPS).
+**7.5″ 800×480 mono** panel. It joins Wi-Fi, polls `{base_url}/` for the image
+catalog every minute, shows new uploads immediately, and every
+`rotate_secs` (default 30 min) picks a random frame from the library. Frames
+are fetched as raw `/{name}.bin` packed buffers (no on-device zlib).
 
 No OTA, no SSH — just the frame loop. Companion Worker: [`../inkbot/`](../inkbot/).
 
@@ -66,11 +65,10 @@ make monitor
 ## Behaviour
 
 1. Bring up the panel + Wi-Fi.
-2. Boot: `GET /image.bin` **without** `If-None-Match` and full-refresh so a
-   power cycle always repaints the current server frame.
-3. Later polls send `If-None-Match` from NVS; `304` skips the panel refresh.
-4. On `404` at boot: show “inkbot ready”.
-5. Sleep `poll_secs` (default 60) and repeat.
+2. Boot: `GET /`, then paint `latest` (full refresh).
+3. Every `poll_secs` (default 60): refresh catalog; if `latest` changed, show it.
+4. Every `rotate_secs` (default 1800): show a random other image.
+5. Empty catalog → “inkbot ready”.
 
 ## Host tests
 

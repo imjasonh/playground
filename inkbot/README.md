@@ -1,55 +1,53 @@
 # inkbot
 
-E-ink desk frame: a Cloudflare Worker that hosts a single 800×480 black-and-white
-PNG, plus a tiny ESP32 sketch that polls it once a minute. Mention `@inkbot` in
-Slack with an image attached and the Worker cover-crops, Floyd–Steinberg
-dithers, and publishes the frame.
+E-ink desk frame: a Cloudflare Worker that hosts a **library** of 800×480
+black-and-white frames, plus ESP32 firmware that rotates through them.
+Mention `@inkbot` in Slack with an image to add one; `list` / `delete` manage
+the rotation.
 
 Companion firmware (Rust / ESP-IDF): [`../inkbot-esp32/`](../inkbot-esp32/).
 
-## Why this shape
-
-The earlier ESP32 e-ink work ([PR #188](https://github.com/imjasonh/playground/pull/188))
-targeted the same Waveshare 7.5″ 800×480 panel + ESP32 driver board, but bundled
-SSH, signed OTA, and Rekor trust. This pair keeps only the useful hardware
-assumptions and the “show a picture” loop.
+## Shape
 
 ```
-Slack @inkbot + image ──► Worker (transform) ──► R2 image.png + image.bin
-curl POST /image.png  ──► Worker (validate)  ──┘
+Slack @inkbot + image ──► Worker (dither) ──► R2 frames/{name}.{png,bin}
+curl POST /foo.bin    ──► Worker (validate) ──┘
                                                          ▲
-ESP32 ──GET /image.bin every 60s (If-None-Match)─────────┘
+ESP32 ──GET / every 60s; GET /{name}.bin on change/rotate─┘
 ```
 
 ## Worker API
 
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
-| `GET` | `/image.png` | none | Current frame (PNG). Sends `ETag`; honors `If-None-Match` → `304`. |
-| `GET` | `/image.bin` | none | Raw 48 000-byte packed framebuffer for the ESP32. Same ETag / `304` rules. |
-| `POST` | `/image.png` | `Authorization: Bearer <UPLOAD_SECRET>` | Replace frame. Body must already be an 800×480 strictly B/W PNG. |
-| `POST` | `/slack/events` | Slack signing secret | Events API (`url_verification`, `app_mention`). |
-| `GET` | `/health` | none | Liveness. |
-
-Set secrets with wrangler (UPLOAD_SECRET can be generated via
-`cargo run --example gensecret`):
+| `GET` | `/` | none | Catalog JSON: `{ revision, latest, images }` |
+| `GET` | `/health` | none | Liveness |
+| `GET` | `/latest.bin` | none | Current `latest` framebuffer (device boot; one HTTPS) |
+| `GET` | `/{name}.bin` | none | Packed 48 000-byte framebuffer (`ETag` / `304`) |
+| `GET` | `/{name}.png` | none | PNG preview |
+| `POST` | `/{name}.bin` | `Authorization: Bearer <UPLOAD_SECRET>` | Create/replace (panel PNG or any photo) |
+| `DELETE` | `/{name}.bin` | Bearer | Remove from rotation |
+| `POST` | `/slack/events` | Slack signing secret | Events API |
 
 ```bash
-wrangler secret put UPLOAD_SECRET          # Bearer for POST /image.png
-wrangler secret put SLACK_BOT_TOKEN        # xoxb-…
-wrangler secret put SLACK_SIGNING_SECRET   # from Slack app Basic Information
+wrangler secret put UPLOAD_SECRET
+wrangler secret put SLACK_BOT_TOKEN
+wrangler secret put SLACK_SIGNING_SECRET
 ```
 
-## Slack app setup
+## Slack
 
-1. Create a Slack app → **OAuth & Permissions** bot scopes:
-   `app_mentions:read`, `files:read`, `chat:write`.
-2. **Event Subscriptions** → Request URL
-   `https://inkbot.<account>.workers.dev/slack/events`
-   (URL verification is handled automatically).
-3. Subscribe to bot event `app_mention`.
-4. Install to the workspace; put the bot token + signing secret into Worker secrets.
-5. Invite `@inkbot` to a channel, attach an image, mention it.
+| Mention | Effect |
+|---------|--------|
+| `@inkbot` + image attachment | Dither and add (name from filename) |
+| `@inkbot list` | List images in the rotation |
+| `@inkbot delete <name>` | Delete from rotation |
+
+## Device behaviour
+
+- Every `poll_secs` (default 60s): fetch catalog; if `latest` changed, display it.
+- Every `rotate_secs` (default 1800s): pick a random other image and display it.
+- Boot always paints `latest`.
 
 ## Local development
 
@@ -57,40 +55,22 @@ wrangler secret put SLACK_SIGNING_SECRET   # from Slack app Basic Information
 cd inkbot
 cargo test
 cargo clippy --all-targets -- -D warnings
-
-# Optional: run under wrangler (needs CLOUDFLARE_* + R2 binding)
-cp .dev.vars.example .dev.vars   # if present; or create with UPLOAD_SECRET=…
 npx wrangler dev
 ```
 
-Upload a panel-ready PNG:
+Upload:
 
 ```bash
 curl -X POST \
   -H "Authorization: Bearer $UPLOAD_SECRET" \
   --data-binary @frame.png \
-  https://inkbot.<account>.workers.dev/image.png
+  https://inkbot.<account>.workers.dev/sgt-pepper.bin
+
+curl https://inkbot.<account>.workers.dev/
 ```
 
 ## Tests
 
-Pure logic (PNG validate/transform, Bearer auth, Slack signature + event parse,
-HTTP routing) runs on the host — no Workers runtime needed:
-
 ```bash
 cargo test --locked
-```
-
-## Layout
-
-```
-inkbot/
-├── src/
-│   ├── panel.rs         # 800×480 B/W validate + Slack dither/encode
-│   ├── auth.rs          # Bearer + Slack HMAC
-│   ├── slack.rs         # Events API parse
-│   ├── api.rs           # transport-agnostic router
-│   └── worker_entry.rs  # R2 + fetch glue (wasm only)
-├── examples/gensecret.rs
-└── wrangler.toml        # R2 bucket inkbot-images
 ```

@@ -55,6 +55,10 @@ fn generate_config() {
         .get("poll_secs")
         .and_then(|v| v.as_integer())
         .unwrap_or(60) as u64;
+    let rotate_secs = inkbot
+        .get("rotate_secs")
+        .and_then(|v| v.as_integer())
+        .unwrap_or(1800) as u64;
 
     let out = PathBuf::from(env::var("OUT_DIR").unwrap()).join("config_gen.rs");
     fs::write(
@@ -63,7 +67,8 @@ fn generate_config() {
             "pub const WIFI_SSID: &str = {ssid:?};\n\
              pub const WIFI_PASS: &str = {pass:?};\n\
              pub const INKBOT_BASE_URL: &str = {base_url:?};\n\
-             pub const POLL_SECS: u64 = {poll_secs};\n"
+             pub const POLL_SECS: u64 = {poll_secs};\n\
+             pub const ROTATE_SECS: u64 = {rotate_secs};\n"
         ),
     )
     .expect("write config_gen.rs");
