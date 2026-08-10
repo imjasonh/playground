@@ -30,10 +30,11 @@ ESP32 ──GET /image.png every 60s (If-None-Match)───┘
 | `POST` | `/slack/events` | Slack signing secret | Events API (`url_verification`, `app_mention`). |
 | `GET` | `/health` | none | Liveness. |
 
-On deploy, if `UPLOAD_SECRET` is unset, CI generates one (see
-`.github/scripts/ensure-worker-upload-secret.sh`). Slack secrets are manual:
+Set secrets with wrangler (UPLOAD_SECRET can be generated via
+`cargo run --example gensecret`):
 
 ```bash
+wrangler secret put UPLOAD_SECRET          # Bearer for POST /image.png
 wrangler secret put SLACK_BOT_TOKEN        # xoxb-…
 wrangler secret put SLACK_SIGNING_SECRET   # from Slack app Basic Information
 ```

@@ -3,8 +3,8 @@
 # This project has no index.html, so the GitHub Pages workflows skip it; it is
 # deployed to Cloudflare by `deploy-workers.yml` on pushes to `main` (using the
 # CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID repo secrets). The deploy
-# creates the R2 bucket below if it doesn't exist, and get-or-generates the
-# UPLOAD_SECRET Worker secret when unset.
+# creates the R2 bucket below if it doesn't exist. Set UPLOAD_SECRET (and
+# optional Slack secrets) with `wrangler secret put`.
 
 name = "inkbot"
 main = "build/worker/shim.mjs"
@@ -32,6 +32,5 @@ PANEL_HEIGHT = "480"
 
 # Secrets (set out of band; never commit):
 #   UPLOAD_SECRET        — Bearer token for POST /image.png
-#                          (auto-generated on deploy if unset; see ensure script)
 #   SLACK_BOT_TOKEN      — xoxb-… bot token (Slack features disabled if unset)
 #   SLACK_SIGNING_SECRET — Events API request signature secret

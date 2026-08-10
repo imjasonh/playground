@@ -4,9 +4,6 @@
 //! cargo run --example gensecret
 //! wrangler secret put UPLOAD_SECRET   # paste the value
 //! ```
-//!
-//! On deploy, `.github/scripts/ensure-worker-upload-secret.sh` runs this when
-//! the Worker has no `UPLOAD_SECRET` yet, so the first deploy is hands-free.
 
 use rand_core::{OsRng, RngCore};
 
