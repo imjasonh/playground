@@ -15,17 +15,18 @@ SSH, signed OTA, and Rekor trust. This pair keeps only the useful hardware
 assumptions and the “show a picture” loop.
 
 ```
-Slack @inkbot + image ──► Worker (transform) ──► R2 image.png
+Slack @inkbot + image ──► Worker (transform) ──► R2 image.png + image.bin
 curl POST /image.png  ──► Worker (validate)  ──┘
-                                                   ▲
-ESP32 ──GET /image.png every 60s (If-None-Match)───┘
+                                                         ▲
+ESP32 ──GET /image.bin every 60s (If-None-Match)─────────┘
 ```
 
 ## Worker API
 
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
-| `GET` | `/image.png` | none | Current frame. Sends `ETag`; honors `If-None-Match` → `304`. |
+| `GET` | `/image.png` | none | Current frame (PNG). Sends `ETag`; honors `If-None-Match` → `304`. |
+| `GET` | `/image.bin` | none | Raw 48 000-byte packed framebuffer for the ESP32. Same ETag / `304` rules. |
 | `POST` | `/image.png` | `Authorization: Bearer <UPLOAD_SECRET>` | Replace frame. Body must already be an 800×480 strictly B/W PNG. |
 | `POST` | `/slack/events` | Slack signing secret | Events API (`url_verification`, `app_mention`). |
 | `GET` | `/health` | none | Liveness. |

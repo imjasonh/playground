@@ -1,21 +1,16 @@
 # Host tests + Xtensa cross-build for the inkbot e-ink firmware.
 #
 # inkbot-esp32/ is excluded from the shared Rust job in test.yml (stable
-# Linux Cargo cannot build xtensa-esp32-espidf). This workflow owns it,
-# mirroring the pattern from the earlier esp32 e-ink prototype.
+# Linux Cargo cannot build xtensa-esp32-espidf). This workflow always runs on
+# PRs/pushes (so its checks can be required), then no-ops the expensive jobs
+# when discovery finds no firmware changes — same pattern as ios.yml / macos.yml.
 
 name: inkbot-esp32
 
 on:
-  pull_request:
-    paths:
-      - "inkbot-esp32/**"
-      - ".github/workflows/inkbot-esp32.yml"
   push:
     branches: [main]
-    paths:
-      - "inkbot-esp32/**"
-      - ".github/workflows/inkbot-esp32.yml"
+  pull_request:
   workflow_dispatch:
 
 concurrency:
@@ -26,8 +21,37 @@ permissions:
   contents: read
 
 jobs:
+  # Cheap Linux job: decide whether firmware work is needed before installing
+  # toolchains / cross-building.
+  discover:
+    name: Discover
+    runs-on: ubuntu-latest
+    outputs:
+      inkbot_esp32: ${{ steps.discover.outputs.inkbot_esp32 }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Discover changed inkbot-esp32 firmware
+        id: discover
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo 'inkbot_esp32=["inkbot-esp32"]' >> "$GITHUB_OUTPUT"
+            echo "Manual run: testing inkbot-esp32."
+            exit 0
+          fi
+          bash .github/scripts/discover-changed-apps.sh
+
   host:
     name: Host lib tests
+    needs: discover
+    if: ${{ needs.discover.outputs.inkbot_esp32 != '[]' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -51,6 +75,8 @@ jobs:
 
   firmware:
     name: Cross-build firmware
+    needs: discover
+    if: ${{ needs.discover.outputs.inkbot_esp32 != '[]' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:

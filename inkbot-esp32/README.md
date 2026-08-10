@@ -2,8 +2,10 @@
 
 Rust / ESP-IDF firmware for the **Waveshare e-Paper ESP32 Driver Board** +
 **7.5″ 800×480 mono** panel. It joins Wi-Fi, polls
-`{base_url}/image.png` every minute with `If-None-Match`, decodes the Worker's
-packed 1-bit PNG, and full-refreshes the panel when the ETag changes.
+`{base_url}/image.bin` every minute with `If-None-Match`, and full-refreshes
+the panel when the ETag changes. The Worker serves a raw packed framebuffer
+so the device never runs zlib inflate (classic ESP32 heap is too fragmented
+after HTTPS).
 
 No OTA, no SSH — just the frame loop. Companion Worker: [`../inkbot/`](../inkbot/).
 
@@ -28,6 +30,14 @@ Fixed board wiring (no jumper wires):
 
 Set the driver-board resistor switch to the **0.47 Ω** path for the 7.5″ panel
 (usually labeled `B` on current boards).
+
+### Power
+
+Wi-Fi association draws brief ~300 mA spikes. A laptop USB port usually handles
+that; many wall chargers / thin cables sag and the board shows `WiFi: connect`
+(or reboots with `reset_reason=BROWNOUT`). Use a solid **5 V / ≥1 A** supply and
+a short data-capable cable. Firmware retries association several times and caps
+TX power to ease weak supplies.
 
 ## One-time host setup (macOS)
 
@@ -56,11 +66,11 @@ make monitor
 ## Behaviour
 
 1. Bring up the panel + Wi-Fi.
-2. Show a short “inkbot ready” splash.
-3. `GET /image.png` with `If-None-Match` from NVS.
-4. On `200`: decode PNG (must be 800×480 B/W), full refresh, store new ETag.
-5. On `304` / `404`: do nothing.
-6. Sleep `poll_secs` (default 60) and repeat.
+2. Boot: `GET /image.bin` **without** `If-None-Match` and full-refresh so a
+   power cycle always repaints the current server frame.
+3. Later polls send `If-None-Match` from NVS; `304` skips the panel refresh.
+4. On `404` at boot: show “inkbot ready”.
+5. Sleep `poll_secs` (default 60) and repeat.
 
 ## Host tests
 
@@ -71,9 +81,10 @@ make test
 # or: cargo test --lib
 ```
 
-CI: `.github/workflows/inkbot-esp32.yml` runs those host checks plus an Xtensa
-`make build` whenever `inkbot-esp32/` changes (the shared `test.yml` Rust job
-skips this crate — it needs espup).
+CI: `.github/workflows/inkbot-esp32.yml` always runs on PRs (so it can be a
+required check), then no-ops unless `inkbot-esp32/` changed; when it has work
+it runs host checks plus an Xtensa `make build` (the shared `test.yml` Rust
+job skips this crate — it needs espup).
 
 ## Layout
 

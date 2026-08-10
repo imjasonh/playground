@@ -32,6 +32,9 @@ type PanelSpi = SpiDeviceDriver<'static, SpiDriver<'static>>;
 type Epd = Epd7in5<PanelSpi, BusyPin, DcPin, RstPin, Ets>;
 
 /// Owns the SPI bus + panel for the life of the firmware.
+///
+/// The 48 KB framebuffer is allocated only around a refresh so HTTPS/TLS can
+/// claim a contiguous buffer while the panel is idle.
 pub struct Panel {
     spi: PanelSpi,
     epd: Epd,

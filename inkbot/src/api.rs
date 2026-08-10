@@ -8,6 +8,8 @@ use crate::slack::{self, AppMention, SlackEvent};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StoredFrame {
     pub png: Vec<u8>,
+    /// Packed 1-bit framebuffer for the ESP32 (`/image.bin`).
+    pub packed: Vec<u8>,
     pub etag: String,
 }
 
@@ -68,10 +70,20 @@ impl ApiResponse {
         }
     }
 
+    pub fn packed(frame: &StoredFrame) -> Self {
+        Self {
+            status: 200,
+            content_type: "application/octet-stream",
+            body: frame.packed.clone(),
+            etag: Some(frame.etag.clone()),
+            cache_control: Some("no-cache"),
+        }
+    }
+
     pub fn not_modified(etag: &str) -> Self {
         Self {
             status: 304,
-            content_type: "image/png",
+            content_type: "application/octet-stream",
             body: Vec::new(),
             etag: Some(etag.to_string()),
             cache_control: Some("no-cache"),
@@ -96,6 +108,7 @@ pub fn handle<S: FrameStore>(req: ApiRequest, cfg: &mut HandlerConfig<'_, S>) ->
     match (method.as_str(), path.as_str()) {
         ("GET", "/") | ("GET", "/health") => ApiResponse::text(200, "inkbot ok\n"),
         ("GET", "/image.png") => get_image(&req, cfg.store),
+        ("GET", "/image.bin") => get_image_bin(&req, cfg.store),
         ("POST", "/image.png") => post_image(&req, cfg),
         ("OPTIONS", _) => ApiResponse::text(204, ""),
         _ => ApiResponse::text(404, "not found\n"),
@@ -150,9 +163,10 @@ pub fn finish_app_mention<S: FrameStore>(
         None => "Attach an image and mention me — I'll dither it to the e-ink frame.".into(),
         Some(Err(e)) => format!("Couldn't download the attachment: {e}"),
         Some(Ok(bytes)) => match panel::transform_for_panel(&bytes, panel) {
-            Ok(PanelImage { png, etag }) => {
+            Ok(PanelImage { png, packed, etag }) => {
                 store.put(StoredFrame {
                     png,
+                    packed,
                     etag: etag.clone(),
                 });
                 format!(
@@ -186,6 +200,18 @@ fn get_image<S: FrameStore>(req: &ApiRequest, store: &S) -> ApiResponse {
     ApiResponse::png(&frame)
 }
 
+fn get_image_bin<S: FrameStore>(req: &ApiRequest, store: &S) -> ApiResponse {
+    let Some(frame) = store.get() else {
+        return ApiResponse::text(404, "no image yet\n");
+    };
+    if let Some(inm) = req.if_none_match.as_deref() {
+        if etags_match(inm, &frame.etag) {
+            return ApiResponse::not_modified(&frame.etag);
+        }
+    }
+    ApiResponse::packed(&frame)
+}
+
 fn post_image<S: FrameStore>(req: &ApiRequest, cfg: &mut HandlerConfig<'_, S>) -> ApiResponse {
     if cfg.upload_secret.is_empty() {
         return ApiResponse::text(500, "UPLOAD_SECRET is not configured\n");
@@ -197,9 +223,10 @@ fn post_image<S: FrameStore>(req: &ApiRequest, cfg: &mut HandlerConfig<'_, S>) -
         return ApiResponse::text(400, "empty body\n");
     }
     match panel::accept_upload(&req.body, cfg.panel) {
-        Ok(PanelImage { png, etag }) => {
+        Ok(PanelImage { png, packed, etag }) => {
             cfg.store.put(StoredFrame {
                 png,
+                packed,
                 etag: etag.clone(),
             });
             ApiResponse::json(
@@ -242,7 +269,7 @@ mod tests {
 
     fn solid_png() -> Vec<u8> {
         let img = GrayImage::from_pixel(800, 480, Luma([255]));
-        encode_bw_png(&img, PanelSpec::default()).unwrap()
+        encode_bw_png(&img, PanelSpec::default()).unwrap().0
     }
 
     #[test]
@@ -267,11 +294,44 @@ mod tests {
         );
         assert_eq!(post.status, 200);
 
-        let etag = cfg.store.get().unwrap().etag;
+        let frame = cfg.store.get().unwrap();
+        assert_eq!(frame.packed.len(), 800 * 480 / 8);
+        let etag = frame.etag;
         let get = handle(
             ApiRequest {
                 method: "GET".into(),
                 path: "/image.png".into(),
+                authorization: None,
+                if_none_match: Some(etag.clone()),
+                slack_timestamp: None,
+                slack_signature: None,
+                body: vec![],
+            },
+            &mut cfg,
+        );
+        assert_eq!(get.status, 304);
+
+        let bin = handle(
+            ApiRequest {
+                method: "GET".into(),
+                path: "/image.bin".into(),
+                authorization: None,
+                if_none_match: None,
+                slack_timestamp: None,
+                slack_signature: None,
+                body: vec![],
+            },
+            &mut cfg,
+        );
+        assert_eq!(bin.status, 200);
+        assert_eq!(bin.content_type, "application/octet-stream");
+        assert_eq!(bin.body.len(), 800 * 480 / 8);
+        assert!(bin.body.iter().all(|&b| b == 0xff));
+
+        let bin_304 = handle(
+            ApiRequest {
+                method: "GET".into(),
+                path: "/image.bin".into(),
                 authorization: None,
                 if_none_match: Some(etag),
                 slack_timestamp: None,
@@ -280,7 +340,7 @@ mod tests {
             },
             &mut cfg,
         );
-        assert_eq!(get.status, 304);
+        assert_eq!(bin_304.status, 304);
     }
 
     #[test]
