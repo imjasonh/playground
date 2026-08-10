@@ -1,0 +1,11 @@
+# No default [build] target — host `cargo test` must stay on the host triple.
+# The Makefile passes `--target xtensa-esp32-espidf` and `-Z build-std=...`.
+
+[target.xtensa-esp32-espidf]
+linker = "ldproxy"
+runner = "espflash flash --monitor"
+rustflags = ["--cfg", "espidf_time64"]
+
+[env]
+MCU = "esp32"
+ESP_IDF_VERSION = "v5.2.2"

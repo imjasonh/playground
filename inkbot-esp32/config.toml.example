@@ -1,0 +1,12 @@
+# Copy to config.toml (gitignored) and fill in your values before flashing:
+#   cp config.toml.example config.toml
+
+[wifi]
+ssid = "your-wifi-ssid"
+pass = "your-wifi-password"
+
+[inkbot]
+# Worker base URL, no trailing slash.
+# Example: "https://inkbot.<account>.workers.dev"
+base_url = "https://inkbot.example.workers.dev"
+poll_secs = 60

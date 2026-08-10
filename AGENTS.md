@@ -32,6 +32,8 @@ playground/
 ├── hello/                 # example static app (HTML only)
 ├── hello-macos/           # example macOS SwiftUI app (XcodeGen + Sparkle CD)
 ├── geeksquad/             # offline Mac network/config triage (Sparkle CD)
+├── inkbot/                # Rust Cloudflare Worker: e-ink frame host + Slack @inkbot
+├── inkbot-esp32/          # Rust/ESP-IDF firmware: poll inkbot, show on Waveshare 7.5″
 ├── ios/                   # the single "Playground" iOS app (SwiftUI; TestFlight CD)
 ├── kanoodle/              # example app with tests (JS + Jest + Playwright)
 ├── nypd-choppers/         # NYPD helicopter ADS-B tracker (JS + Node tests)
@@ -62,6 +64,8 @@ its root. This is the same rule used by deploy and preview workflows.
 | `ocidb/` | no | Go CLI; no `index.html` |
 | `web-push/` | no | Rust Cloudflare Worker; no `index.html` |
 | `cors-proxy/` | no | Rust Cloudflare Worker; no `index.html` |
+| `inkbot/` | no | Rust Cloudflare Worker (e-ink frame + Slack); no `index.html` |
+| `inkbot-esp32/` | no | Rust/ESP-IDF ESP32 firmware (espup); no `index.html` |
 | `git-server/` | no | Rust Cloudflare Worker; no `index.html` |
 | `git-fuse/` | no | Rust CLI (FUSE); no `index.html` |
 | `life-stl/` | no | Rust CLI (STL generator); no `index.html` |
@@ -158,6 +162,7 @@ discovery scripts.
 | `preview.yml` | pull request opened/sync | When a browser app changed: deploys under `/preview/pr-<N>/` and comments the URL; otherwise no-ops |
 | `cleanup.yml` | pull request closed, manual | Removes closed-PR preview dirs from `gh-pages` (reconciles all open PRs) and refreshes the root index |
 | `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps in one job |
+| `inkbot-esp32.yml` | push/PR touching `inkbot-esp32/**`, manual | Host lib tests + Xtensa cross-build for the e-ink firmware (excluded from `test.yml`) |
 | `ios.yml` | push to `main`, pull requests | Tests changed iOS apps on macOS; on `main`, delivers them to TestFlight |
 | `macos.yml` | push to `main`, pull requests | Tests changed macOS apps on macOS; on `main`, ships notarized Sparkle updates when secrets are present |
 | `ios-bootstrap-label.yml` | pull request | Labels PRs that need signing re-bootstrap with `needs-ios-bootstrap` |
@@ -233,7 +238,9 @@ Discovery is by **top-level directory**: a change under `kanoodle/` selects
 `kanoodle`, a change under `web-push/` selects `web-push`, and so on. Hidden
 directories (names starting with `.`) and changes outside any app directory
 (e.g. a lone top-level file) select nothing — so a PR that only edits CI scripts
-or the root `README.md` runs no app tests.
+or the root `README.md` runs no app tests. `inkbot-esp32/` has a `Cargo.toml`
+but is excluded from Rust discovery because it needs the espup Xtensa toolchain;
+`inkbot-esp32.yml` runs its host lib tests and firmware cross-build instead.
 
 | App type | Selected when its dir has | CI runs, per changed app |
 |----------|---------------------------|--------------------------|
@@ -244,6 +251,11 @@ or the root `README.md` runs no app tests.
 Browser apps without a `test` script (e.g. `hello/`) are never tested. Each Rust
 app's toolchain comes from its `rust-toolchain.toml` (defaulting to stable);
 Worker apps pin Rust 1.88 (with `worker` 0.8 / wasm-bindgen 0.2.125).
+
+**ESP32 firmware is tested by `inkbot-esp32.yml`, not `test.yml`.** Stable
+Linux Cargo cannot build `xtensa-esp32-espidf`; the dedicated workflow installs
+the esp-rs Xtensa toolchain, runs host `cargo test --lib` / clippy, and
+`make build`s the device image when `inkbot-esp32/` changes.
 
 **The iOS app is tested by a separate workflow (`ios.yml`), not `test.yml`,**
 because it needs a macOS runner. A cheap Linux `discover` job reuses the same
@@ -400,7 +412,7 @@ go test ./...
  The deploy self-provisions Cloudflare-side config: KV namespaces referenced
  with a placeholder id (e.g. `id = "REPLACE_WITH_..."`) are created-or-fetched
  and rewritten to real ids before deploy, R2 buckets named by `[[r2_buckets]]`
- entries are created if absent, and a Worker that ships
+  entries are created if absent, and a Worker that ships
  `examples/genvapid.rs` gets a `VAPID_PRIVATE_KEY` secret generated once (only
  if absent, so the key is stable across deploys).
 
@@ -552,6 +564,7 @@ bundle exec fastlane test
 |-----------|------|-------|
 | `web-push/` | Web Push backend — Cloudflare Worker (RFC 8030/8188/8291/8292) | `cargo test` + clippy + wasm build |
 | `cors-proxy/` | SSRF-hardened CORS proxy — Cloudflare Worker | `cargo test` + clippy + wasm build |
+| `inkbot/` | E-ink frame host + Slack `@inkbot` — Cloudflare Worker | `cargo test` + clippy + wasm build |
 | `git-server/` | git smart-HTTP server on R2 + Durable Objects — Cloudflare Worker | `cargo test` (incl. real-git integration) + clippy + wasm build |
 | `git-fuse/` | read-only FUSE adapter for git-server (mount commits/refs as files) — CLI, not a Worker | `cargo test` (incl. e2e over real FUSE mounts; skips without `/dev/fuse`) + clippy |
 | `life-stl/` | Conway's Game of Life → 3D-printable STL (Z = time); self-supporting causality braces (default) or breakaway supports | `cargo test` + clippy |
@@ -572,6 +585,7 @@ auto-discover them. Run their local tests when you change them.
 | Directory | Type | Tests |
 |-----------|------|-------|
 | `its-not-jaws/` | Cursor SDK harness for It's Not Jaws (movie shared-fact guessing); mock backend for tests; live PR game via `its-not-jaws.yml` + `CURSOR_API_KEY` secret | `cd its-not-jaws && npm test` (CI also runs a live game when the secret is set) |
+| `inkbot-esp32/` | Rust/ESP-IDF firmware: poll `inkbot` Worker, show 800×480 B/W PNG on Waveshare 7.5″ | host lib tests + Xtensa cross-build via `inkbot-esp32.yml` |
 | `life-scad/` | OpenSCAD Life sculpture (Z = time) plus optional Python reverse-history search | `python3 life-scad/reverse_life_test.py` (needs `pip install -r life-scad/requirements.txt`) |
 | `life-qr/` | Parametric OpenSCAD Life sculpture with a QR-code roof for any text/height | `python3 life-qr/life_qr_test.py` (optional `pip install segno`) |
 

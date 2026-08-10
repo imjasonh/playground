@@ -1,0 +1,6 @@
+# Host toolchain for `cargo test --lib` / clippy on the target-agnostic
+# PNG logic. Device builds use `cargo +esp` (espup) via the Makefile and
+# ignore this file.
+[toolchain]
+channel = "1.88.0"
+components = ["clippy", "rustfmt"]
