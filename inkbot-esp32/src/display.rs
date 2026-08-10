@@ -17,17 +17,17 @@ use epd_waveshare::{
 };
 use esp_idf_svc::hal::{
     delay::Ets,
-    gpio::{Gpio13, Gpio14, Gpio15, Gpio25, Gpio26, Gpio27, Input, Output, PinDriver, Pull},
-    peripheral::Peripheral,
-    spi::{config, SpiDeviceDriver, SpiDriver, SPI2},
+    gpio::{Input, InputPin, Output, OutputPin, PinDriver, Pull},
+    spi::{config, SpiAnyPins, SpiDeviceDriver, SpiDriver},
     units::FromValueType,
 };
 
 use inkbot_esp32::FRAME_BYTES;
 
-type BusyPin = PinDriver<'static, Gpio25, Input>;
-type DcPin = PinDriver<'static, Gpio27, Output>;
-type RstPin = PinDriver<'static, Gpio26, Output>;
+// esp-idf-hal 0.46: PinDriver<'d, MODE> — pin type is erased into MODE.
+type BusyPin = PinDriver<'static, Input>;
+type DcPin = PinDriver<'static, Output>;
+type RstPin = PinDriver<'static, Output>;
 type PanelSpi = SpiDeviceDriver<'static, SpiDriver<'static>>;
 type Epd = Epd7in5<PanelSpi, BusyPin, DcPin, RstPin, Ets>;
 
@@ -39,21 +39,34 @@ pub struct Panel {
 }
 
 impl Panel {
-    pub fn new(
-        spi2: impl Peripheral<P = SPI2> + 'static,
-        sclk: Gpio13,
-        mosi: Gpio14,
-        cs: Gpio15,
-        busy: Gpio25,
-        dc: Gpio27,
-        rst: Gpio26,
-    ) -> Result<Self> {
+    /// Consume the Waveshare board's fixed display pins and bring the panel up.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new<SPI, SCLK, MOSI, CS, BUSY, DC, RST>(
+        spi: SPI,
+        sclk: SCLK,
+        mosi: MOSI,
+        cs: CS,
+        busy: BUSY,
+        dc: DC,
+        rst: RST,
+    ) -> Result<Self>
+    where
+        SPI: SpiAnyPins + 'static,
+        SCLK: OutputPin + 'static,
+        MOSI: OutputPin + 'static,
+        CS: OutputPin + 'static,
+        BUSY: InputPin + 'static,
+        DC: OutputPin + 'static,
+        RST: OutputPin + 'static,
+    {
         let spi_config = config::Config::new().baudrate(4_u32.MHz().into());
+        // Typed None: new_single's sdi is `Option<impl InputPin>`; a bare None
+        // can't pick a concrete type. Reuse BUSY's InputPin bound.
         let mut spi = SpiDeviceDriver::new_single(
-            spi2,
+            spi,
             sclk,
             mosi,
-            Option::<Gpio14>::None,
+            Option::<BUSY>::None,
             Some(cs),
             &config::DriverConfig::new(),
             &spi_config,
