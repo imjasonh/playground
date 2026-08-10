@@ -31,6 +31,14 @@ Fixed board wiring (no jumper wires):
 Set the driver-board resistor switch to the **0.47 Ω** path for the 7.5″ panel
 (usually labeled `B` on current boards).
 
+### Power
+
+Wi-Fi association draws brief ~300 mA spikes. A laptop USB port usually handles
+that; many wall chargers / thin cables sag and the board shows `WiFi: connect`
+(or reboots with `reset_reason=BROWNOUT`). Use a solid **5 V / ≥1 A** supply and
+a short data-capable cable. Firmware retries association several times and caps
+TX power to ease weak supplies.
+
 ## One-time host setup (macOS)
 
 ```bash

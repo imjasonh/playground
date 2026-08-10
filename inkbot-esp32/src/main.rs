@@ -13,7 +13,7 @@ use esp_idf_svc::eventloop::EspSystemEventLoop;
 use esp_idf_svc::hal::peripherals::Peripherals;
 use esp_idf_svc::http::client::{Configuration as HttpConfig, EspHttpConnection};
 use esp_idf_svc::nvs::{EspDefaultNvsPartition, EspNvs, NvsDefault};
-use esp_idf_svc::sys::esp_get_free_heap_size;
+use esp_idf_svc::sys::{esp_get_free_heap_size, esp_reset_reason, esp_wifi_set_max_tx_power};
 use esp_idf_svc::wifi::{
     AuthMethod, BlockingWifi, ClientConfiguration, Configuration as WifiConfig, EspWifi,
 };
@@ -30,7 +30,12 @@ const NVS_ETAG: &str = "etag";
 fn main() -> Result<()> {
     esp_idf_svc::sys::link_patches();
     esp_idf_svc::log::EspLogger::initialize_default();
-    info!("inkbot-esp32: boot");
+    let reset = unsafe { esp_reset_reason() };
+    info!(
+        "inkbot-esp32: boot reset_reason={reset:?} ({}) free_heap={}",
+        reset as i32,
+        unsafe { esp_get_free_heap_size() }
+    );
 
     let peripherals = Peripherals::take()?;
     let sysloop = EspSystemEventLoop::take()?;
@@ -50,9 +55,17 @@ fn main() -> Result<()> {
         EspWifi::new(peripherals.modem, sysloop.clone(), Some(nvs_part.clone()))?,
         sysloop,
     )?;
+    // Give a weak USB PSU a moment after panel bring-up before Wi-Fi TX peaks.
+    thread::sleep(Duration::from_millis(500));
     if let Err(e) = connect_wifi(&mut wifi) {
         warn!("wifi failed: {e:#}");
-        let _ = panel.show_message("WiFi failed");
+        // Short panel text so wall-powered boots (no serial) still show the stage.
+        let mut msg = format!("WiFi: {e}");
+        if msg.len() > 48 {
+            msg.truncate(47);
+            msg.push('…');
+        }
+        let _ = panel.show_message(&msg);
         return Err(e);
     }
     let ip = wifi.wifi().sta_netif().get_ip_info()?.ip;
@@ -90,25 +103,66 @@ fn main() -> Result<()> {
     }
 }
 
+/// Connect with retries. Weak 5 V adapters often brown out during the first
+/// association TX burst; laptop USB usually does not.
 fn connect_wifi(wifi: &mut BlockingWifi<EspWifi<'static>>) -> Result<()> {
+    const ATTEMPTS: u32 = 5;
+    let mut last_err: Option<anyhow::Error> = None;
+    for attempt in 1..=ATTEMPTS {
+        info!(
+            "wifi attempt {attempt}/{ATTEMPTS} ssid={WIFI_SSID} free_heap={}",
+            unsafe { esp_get_free_heap_size() }
+        );
+        match connect_wifi_once(wifi, attempt) {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                warn!("wifi attempt {attempt}/{ATTEMPTS} failed: {e:#}");
+                let _ = wifi.disconnect();
+                let _ = wifi.stop();
+                last_err = Some(e);
+                thread::sleep(Duration::from_secs(2));
+            }
+        }
+    }
+    Err(last_err.unwrap_or_else(|| anyhow!("wifi failed")))
+}
+
+fn connect_wifi_once(wifi: &mut BlockingWifi<EspWifi<'static>>, attempt: u32) -> Result<()> {
+    let step = |name: &str| {
+        info!("wifi[{attempt}] {name} free_heap={}", unsafe {
+            esp_get_free_heap_size()
+        });
+    };
+
+    step("configure");
     wifi.set_configuration(&WifiConfig::Client(ClientConfiguration {
-        ssid: WIFI_SSID
-            .try_into()
-            .map_err(|_| anyhow!("WiFi SSID exceeds 32 bytes"))?,
-        password: WIFI_PASS
-            .try_into()
-            .map_err(|_| anyhow!("WiFi password exceeds 64 bytes"))?,
+        ssid: WIFI_SSID.try_into().map_err(|_| anyhow!("ssid too long"))?,
+        password: WIFI_PASS.try_into().map_err(|_| anyhow!("pass too long"))?,
+        // NY Sphere is WPA3-SAE; WPA2/WPA3 personal lets ESP-IDF negotiate.
         auth_method: if WIFI_PASS.is_empty() {
             AuthMethod::None
         } else {
-            AuthMethod::WPA2Personal
+            AuthMethod::WPA2WPA3Personal
         },
         ..Default::default()
-    }))?;
-    wifi.start()?;
-    info!("wifi started; connecting to {WIFI_SSID}");
-    wifi.connect()?;
-    wifi.wait_netif_up()?;
+    }))
+    .map_err(|e| anyhow!("configure: {e:?}"))?;
+
+    step("start");
+    wifi.start().map_err(|e| anyhow!("start: {e:?}"))?;
+
+    // Cap TX power (~11 dBm) so weak wall-wart supplies are less likely to sag
+    // during association. Unit is 0.25 dBm (ESP-IDF).
+    match unsafe { esp_wifi_set_max_tx_power(44) } {
+        0 => info!("wifi[{attempt}] max_tx_power=44 (≈11 dBm)"),
+        code => warn!("wifi[{attempt}] set_max_tx_power failed: {code}"),
+    }
+
+    step("connect");
+    wifi.connect().map_err(|e| anyhow!("connect: {e:?}"))?;
+    step("dhcp");
+    wifi.wait_netif_up().map_err(|e| anyhow!("dhcp: {e:?}"))?;
+    step("up");
     Ok(())
 }
 
