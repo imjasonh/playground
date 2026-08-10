@@ -32,6 +32,8 @@ playground/
 ├── hello/                 # example static app (HTML only)
 ├── hello-macos/           # example macOS SwiftUI app (XcodeGen + Sparkle CD)
 ├── geeksquad/             # offline Mac network/config triage (Sparkle CD)
+├── inkbot/                # Rust Cloudflare Worker: e-ink frame host + Slack @inkbot
+├── inkbot-esp32/          # PlatformIO firmware: poll inkbot, show on Waveshare 7.5″
 ├── ios/                   # the single "Playground" iOS app (SwiftUI; TestFlight CD)
 ├── kanoodle/              # example app with tests (JS + Jest + Playwright)
 ├── nypd-choppers/         # NYPD helicopter ADS-B tracker (JS + Node tests)
@@ -62,6 +64,8 @@ its root. This is the same rule used by deploy and preview workflows.
 | `ocidb/` | no | Go CLI; no `index.html` |
 | `web-push/` | no | Rust Cloudflare Worker; no `index.html` |
 | `cors-proxy/` | no | Rust Cloudflare Worker; no `index.html` |
+| `inkbot/` | no | Rust Cloudflare Worker (e-ink frame + Slack); no `index.html` |
+| `inkbot-esp32/` | no | PlatformIO/Arduino ESP32 firmware; no `index.html` |
 | `git-server/` | no | Rust Cloudflare Worker; no `index.html` |
 | `git-fuse/` | no | Rust CLI (FUSE); no `index.html` |
 | `life-stl/` | no | Rust CLI (STL generator); no `index.html` |
@@ -154,7 +158,7 @@ discovery scripts.
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
 | `deploy.yml` | push to `main` | Publishes all browser apps to GitHub Pages production |
-| `deploy-workers.yml` | push to `main`, manual | Deploys changed Cloudflare Worker apps (those with `wrangler.toml`) with `wrangler`, using the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets; a manual *Run workflow* (`workflow_dispatch`) redeploys all of them. Before deploy it create-or-gets each Worker's KV namespaces (substituting the placeholder ids in `wrangler.toml`) and creates any declared R2 buckets that don't exist; after deploy it get-or-generates a `VAPID_PRIVATE_KEY` secret for any Worker shipping an `examples/genvapid.rs` |
+| `deploy-workers.yml` | push to `main`, manual | Deploys changed Cloudflare Worker apps (those with `wrangler.toml`) with `wrangler`, using the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets; a manual *Run workflow* (`workflow_dispatch`) redeploys all of them. Before deploy it create-or-gets each Worker's KV namespaces (substituting the placeholder ids in `wrangler.toml`) and creates any declared R2 buckets that don't exist; after deploy it get-or-generates secrets Workers opt into via example binaries (`examples/genvapid.rs` → `VAPID_PRIVATE_KEY`, `examples/gensecret.rs` → `UPLOAD_SECRET`) |
 | `preview.yml` | pull request opened/sync | When a browser app changed: deploys under `/preview/pr-<N>/` and comments the URL; otherwise no-ops |
 | `cleanup.yml` | pull request closed, manual | Removes closed-PR preview dirs from `gh-pages` (reconciles all open PRs) and refreshes the root index |
 | `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps in one job |
@@ -400,9 +404,10 @@ go test ./...
  The deploy self-provisions Cloudflare-side config: KV namespaces referenced
  with a placeholder id (e.g. `id = "REPLACE_WITH_..."`) are created-or-fetched
  and rewritten to real ids before deploy, R2 buckets named by `[[r2_buckets]]`
- entries are created if absent, and a Worker that ships
- `examples/genvapid.rs` gets a `VAPID_PRIVATE_KEY` secret generated once (only
- if absent, so the key is stable across deploys).
+  entries are created if absent, and Workers that ship opt-in example
+ binaries get matching secrets generated once when absent
+ (`examples/genvapid.rs` → `VAPID_PRIVATE_KEY`,
+ `examples/gensecret.rs` → `UPLOAD_SECRET`).
 
 No workflow edits are required. CI discovers a new Rust app from its
 `Cargo.toml`, the deploy workflow discovers a new Worker from its
@@ -552,6 +557,7 @@ bundle exec fastlane test
 |-----------|------|-------|
 | `web-push/` | Web Push backend — Cloudflare Worker (RFC 8030/8188/8291/8292) | `cargo test` + clippy + wasm build |
 | `cors-proxy/` | SSRF-hardened CORS proxy — Cloudflare Worker | `cargo test` + clippy + wasm build |
+| `inkbot/` | E-ink frame host + Slack `@inkbot` — Cloudflare Worker | `cargo test` + clippy + wasm build |
 | `git-server/` | git smart-HTTP server on R2 + Durable Objects — Cloudflare Worker | `cargo test` (incl. real-git integration) + clippy + wasm build |
 | `git-fuse/` | read-only FUSE adapter for git-server (mount commits/refs as files) — CLI, not a Worker | `cargo test` (incl. e2e over real FUSE mounts; skips without `/dev/fuse`) + clippy |
 | `life-stl/` | Conway's Game of Life → 3D-printable STL (Z = time); self-supporting causality braces (default) or breakaway supports | `cargo test` + clippy |
@@ -572,6 +578,7 @@ auto-discover them. Run their local tests when you change them.
 | Directory | Type | Tests |
 |-----------|------|-------|
 | `its-not-jaws/` | Cursor SDK harness for It's Not Jaws (movie shared-fact guessing); mock backend for tests; live PR game via `its-not-jaws.yml` + `CURSOR_API_KEY` secret | `cd its-not-jaws && npm test` (CI also runs a live game when the secret is set) |
+| `inkbot-esp32/` | PlatformIO firmware: poll `inkbot` Worker, show 800×480 B/W PNG on Waveshare 7.5″ | host build via `pio run` (not in shared CI) |
 | `life-scad/` | OpenSCAD Life sculpture (Z = time) plus optional Python reverse-history search | `python3 life-scad/reverse_life_test.py` (needs `pip install -r life-scad/requirements.txt`) |
 | `life-qr/` | Parametric OpenSCAD Life sculpture with a QR-code roof for any text/height | `python3 life-qr/life_qr_test.py` (optional `pip install segno`) |
 

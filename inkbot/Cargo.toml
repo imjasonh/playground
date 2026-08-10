@@ -1,0 +1,45 @@
+[package]
+name = "inkbot-worker"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "E-ink frame image host + Slack app for Cloudflare Workers"
+repository = "https://github.com/imjasonh/playground"
+readme = "README.md"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+# Dependencies that build on every target (native + wasm). Keeping image
+# transform, auth, and Slack event parsing here means native `cargo test`
+# exercises the same code the Worker runs.
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+hmac = "0.12"
+hex = "0.4"
+base64 = "0.22"
+# Decode Slack attachments (png/jpeg/gif/webp) and encode the panel PNG.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+# Direct 1-bit PNG encode so the ESP32 gets a compact, packable frame.
+png = "0.17"
+rand_core = { version = "0.6", features = ["getrandom"] }
+
+# The Cloudflare Workers runtime bindings are wasm-only.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+worker = "0.8"
+getrandom = { version = "0.2", features = ["js"] }
+futures = "0.3"
+# Deploy pin: worker-build 0.8.x is version-locked with worker 0.8.x and
+# bundles wasm-bindgen CLI 0.2.125. The library schema must match that CLI
+# exactly — bump this in lock-step with worker-build in wrangler.toml.
+wasm-bindgen = "=0.2.125"
+
+[profile.release]
+opt-level = "s"
+lto = true
+# worker-build 0.8.5 + wasm-bindgen 0.2.125 need the wasm `target_features`
+# custom section. `strip = true` drops that section (workers-rs#1014).
+strip = "debuginfo"
