@@ -12,6 +12,9 @@
 #   make flash
 #   make monitor
 
+# Ubuntu CI's /bin/sh is dash, which rejects `set -o pipefail`.
+SHELL := /bin/bash
+
 PORT ?= /dev/cu.usbserial-0001
 TARGET := xtensa-esp32-espidf
 BIN := target/$(TARGET)/release/inkbot-esp32
@@ -58,16 +61,13 @@ clean:
 	cargo clean
 	rm -rf .embuild
 
-# One shell so UV_PY survives from find/install through the ln steps
-# (Make runs each recipe line in a fresh shell by default).
 ensure-python-shim:
-	@set -euo pipefail; \
-	command -v uv >/dev/null || { echo "ERROR: uv not installed (see README)."; exit 1; }; \
-	command -v cargo >/dev/null || { echo "ERROR: cargo not installed."; exit 1; }; \
-	rustup toolchain list | grep -q '^esp' || { echo "ERROR: esp toolchain missing. Run: espup install --targets esp32"; exit 1; }; \
-	rm -rf "$(PYTHON_SHIM)"; \
-	mkdir -p "$(PYTHON_SHIM)"; \
-	UV_PY=$$(uv python find 3.12 2>/dev/null || true); \
-	if [ -z "$$UV_PY" ]; then uv python install 3.12; UV_PY=$$(uv python find 3.12); fi; \
-	ln -sfn "$$UV_PY" "$(PYTHON_SHIM)/python3"; \
-	ln -sfn "$$UV_PY" "$(PYTHON_SHIM)/python"
+	@command -v uv >/dev/null || { echo "ERROR: uv not installed (see README)."; exit 1; }
+	@command -v cargo >/dev/null || { echo "ERROR: cargo not installed."; exit 1; }
+	@rustup toolchain list | grep -q '^esp' || { echo "ERROR: esp toolchain missing. Run: espup install --targets esp32"; exit 1; }
+	@mkdir -p "$(PYTHON_SHIM)"
+	@rm -f "$(PYTHON_SHIM)/python" "$(PYTHON_SHIM)/python3"
+	@uv python install 3.12 >/dev/null
+	@PY=$$(uv python find --managed-python 3.12) && \
+	    ln -sfn "$$PY" "$(PYTHON_SHIM)/python3" && \
+	    ln -sfn "$$PY" "$(PYTHON_SHIM)/python"
