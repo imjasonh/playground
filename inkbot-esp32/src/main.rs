@@ -15,6 +15,7 @@ use esp_idf_svc::http::client::{Configuration as HttpConfig, EspHttpConnection};
 use esp_idf_svc::nvs::{EspDefaultNvsPartition, EspNvs, NvsDefault};
 use esp_idf_svc::sys::{
     esp_get_free_heap_size, esp_random, esp_reset_reason, esp_wifi_set_max_tx_power,
+    esp_wifi_set_ps, wifi_ps_type_t_WIFI_PS_NONE,
 };
 use esp_idf_svc::wifi::{
     AuthMethod, BlockingWifi, ClientConfiguration, Configuration as WifiConfig, EspWifi,
@@ -131,7 +132,9 @@ fn main() -> Result<()> {
 }
 
 fn short_err(prefix: &str, err: &anyhow::Error) -> String {
-    let mut msg = format!("{prefix}: {err}");
+    // Prefer the leaf cause; Debug of EspIOError is too long for the panel.
+    let leaf = err.root_cause().to_string();
+    let mut msg = format!("{prefix}: {leaf}");
     if msg.len() > 48 {
         msg.truncate(47);
         msg.push('…');
@@ -163,10 +166,12 @@ fn boot_latest(
             panel.show_frame(&response.body)?;
             // Name comes from Content-Disposition? We don't have it — learn
             // from the next catalog poll. Persist etag only.
-            if let Some(etag) = response.etag {
-                write_str(nvs, NVS_ETAG, &etag)?;
-                *current_etag = Some(etag);
+            if let Some(ref etag) = response.etag {
+                write_str(nvs, NVS_ETAG, etag)?;
+                *current_etag = Some(etag.clone());
             }
+            // Drop the 48 KB body before opening another TLS session.
+            drop(response);
             // Probe catalog after a breath so heap can coalesce; best-effort.
             thread::sleep(Duration::from_millis(200));
             if let Ok(cat) = fetch_catalog() {
@@ -356,6 +361,14 @@ fn connect_wifi_once(wifi: &mut BlockingWifi<EspWifi<'static>>, attempt: u32) ->
     wifi.connect().map_err(|e| anyhow!("connect: {e:?}"))?;
     step("dhcp");
     wifi.wait_netif_up().map_err(|e| anyhow!("dhcp: {e:?}"))?;
+
+    // Modem sleep (default WIFI_PS_MIN_MODEM) routinely stalls mbedtls reads of
+    // multi-KB HTTPS bodies on classic ESP32 — surfaces as EspIOError / EAGAIN.
+    match unsafe { esp_wifi_set_ps(wifi_ps_type_t_WIFI_PS_NONE) } {
+        0 => info!("wifi[{attempt}] power_save=NONE"),
+        code => warn!("wifi[{attempt}] set_ps(NONE) failed: {code}"),
+    }
+
     step("up");
     Ok(())
 }
@@ -382,6 +395,22 @@ struct HttpResponse {
 }
 
 fn http_get(url: &str, if_none_match: Option<&str>) -> Result<HttpResponse> {
+    const ATTEMPTS: u32 = 3;
+    let mut last_err: Option<anyhow::Error> = None;
+    for attempt in 1..=ATTEMPTS {
+        match http_get_once(url, if_none_match) {
+            Ok(r) => return Ok(r),
+            Err(e) => {
+                warn!("GET {url} attempt {attempt}/{ATTEMPTS}: {e:#}");
+                last_err = Some(e);
+                thread::sleep(Duration::from_millis(400 * u64::from(attempt)));
+            }
+        }
+    }
+    Err(last_err.unwrap_or_else(|| anyhow!("http get failed")))
+}
+
+fn http_get_once(url: &str, if_none_match: Option<&str>) -> Result<HttpResponse> {
     let mut client = HttpClient::wrap(EspHttpConnection::new(&HttpConfig {
         buffer_size: Some(1024),
         buffer_size_tx: Some(1024),
@@ -397,10 +426,10 @@ fn http_get(url: &str, if_none_match: Option<&str>) -> Result<HttpResponse> {
 
     let request = client
         .request(Method::Get, url, &headers)
-        .map_err(|e| anyhow!("http request: {e:?}"))?;
+        .map_err(|e| anyhow!("http request: {e}"))?;
     let mut response = request
         .submit()
-        .map_err(|e| anyhow!("http submit: {e:?}"))?;
+        .map_err(|e| anyhow!("http submit: {e}"))?;
     let status = response.status();
 
     let etag = response
@@ -415,7 +444,7 @@ fn http_get(url: &str, if_none_match: Option<&str>) -> Result<HttpResponse> {
         body.reserve(reserve);
         let mut buf = [0u8; 512];
         loop {
-            let n = Read::read(&mut response, &mut buf).map_err(|e| anyhow!("http read: {e:?}"))?;
+            let n = Read::read(&mut response, &mut buf).map_err(|e| anyhow!("http read: {e}"))?;
             if n == 0 {
                 break;
             }
