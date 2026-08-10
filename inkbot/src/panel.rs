@@ -3,7 +3,7 @@
 //! The Waveshare 7.5″ V2 monochrome panel is 800×480. Direct uploads must
 //! already be that size and strictly black-and-white. Slack attachments are
 //! cover-cropped, Floyd–Steinberg dithered to 1-bit, and re-encoded as a
-//! compact packed PNG the ESP32 can decode into its framebuffer.
+//! compact packed PNG plus a raw framebuffer the ESP32 can display.
 
 use image::imageops::{self, FilterType};
 use image::{DynamicImage, GenericImageView, GrayImage, Luma, RgbaImage};
@@ -70,17 +70,20 @@ impl std::fmt::Display for PanelError {
 
 impl std::error::Error for PanelError {}
 
-/// Validated panel PNG plus a content hash used as an ETag.
+/// Validated panel image: browser-friendly PNG plus the packed 1-bit
+/// framebuffer the ESP32 can display without a zlib inflate.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PanelImage {
     pub png: Vec<u8>,
+    /// `width/8 * height` bytes, MSB-first, 1 = white.
+    pub packed: Vec<u8>,
     pub etag: String,
 }
 
 impl PanelImage {
-    pub fn from_png_bytes(png: Vec<u8>) -> Self {
+    pub fn from_encoded(png: Vec<u8>, packed: Vec<u8>) -> Self {
         let etag = etag_for(&png);
-        Self { png, etag }
+        Self { png, packed, etag }
     }
 }
 
@@ -98,8 +101,8 @@ pub fn accept_upload(bytes: &[u8], spec: PanelSpec) -> Result<PanelImage, PanelE
         return Err(PanelError::WrongSize { got_w: w, got_h: h });
     }
     let gray = to_strict_bw_gray(&img)?;
-    let png = encode_bw_png(&gray, spec)?;
-    Ok(PanelImage::from_png_bytes(png))
+    let (png, packed) = encode_bw_png(&gray, spec)?;
+    Ok(PanelImage::from_encoded(png, packed))
 }
 
 /// Transform an arbitrary photo (from Slack) into a panel-ready B/W PNG:
@@ -108,8 +111,8 @@ pub fn transform_for_panel(bytes: &[u8], spec: PanelSpec) -> Result<PanelImage, 
     let img = image::load_from_memory(bytes).map_err(|e| PanelError::Decode(e.to_string()))?;
     let fitted = cover_crop_resize(&img, spec);
     let dithered = floyd_steinberg_bw(&fitted);
-    let png = encode_bw_png(&dithered, spec)?;
-    Ok(PanelImage::from_png_bytes(png))
+    let (png, packed) = encode_bw_png(&dithered, spec)?;
+    Ok(PanelImage::from_encoded(png, packed))
 }
 
 /// Cover-crop then resize so the full panel is filled with no letterboxing.
@@ -187,7 +190,9 @@ fn to_strict_bw_gray(img: &DynamicImage) -> Result<GrayImage, PanelError> {
 }
 
 /// Encode a B/W gray image as a packed 1-bit PNG (0 = black, 1 = white).
-pub fn encode_bw_png(gray: &GrayImage, spec: PanelSpec) -> Result<Vec<u8>, PanelError> {
+///
+/// Returns `(png_bytes, packed_framebuffer)`.
+pub fn encode_bw_png(gray: &GrayImage, spec: PanelSpec) -> Result<(Vec<u8>, Vec<u8>), PanelError> {
     if gray.width() != spec.width || gray.height() != spec.height {
         return Err(PanelError::WrongSize {
             got_w: gray.width(),
@@ -219,7 +224,20 @@ pub fn encode_bw_png(gray: &GrayImage, spec: PanelSpec) -> Result<Vec<u8>, Panel
             .write_image_data(&packed)
             .map_err(|e| PanelError::Encode(e.to_string()))?;
     }
-    Ok(out)
+    Ok((out, packed))
+}
+
+/// Recover the packed framebuffer from a canonical 1-bit panel PNG (used when
+/// loading legacy R2 objects that only stored the PNG).
+pub fn packed_from_panel_png(png: &[u8], spec: PanelSpec) -> Result<Vec<u8>, PanelError> {
+    let img = image::load_from_memory(png).map_err(|e| PanelError::Decode(e.to_string()))?;
+    let (w, h) = img.dimensions();
+    if w != spec.width || h != spec.height {
+        return Err(PanelError::WrongSize { got_w: w, got_h: h });
+    }
+    let gray = to_strict_bw_gray(&img)?;
+    let (_png, packed) = encode_bw_png(&gray, spec)?;
+    Ok(packed)
 }
 
 #[cfg(test)]
@@ -230,7 +248,9 @@ mod tests {
     fn solid_bw_png(w: u32, h: u32, black: bool) -> Vec<u8> {
         let lum = if black { 0 } else { 255 };
         let img = GrayImage::from_pixel(w, h, Luma([lum]));
-        encode_bw_png(&img, PanelSpec::new(w, h).unwrap()).unwrap()
+        encode_bw_png(&img, PanelSpec::new(w, h).unwrap())
+            .unwrap()
+            .0
     }
 
     #[test]

@@ -15,6 +15,7 @@ use crate::slack;
 
 const BUCKET_BINDING: &str = "IMAGES";
 const OBJECT_KEY: &str = "image.png";
+const PACKED_KEY: &str = "image.bin";
 const ETAG_KEY: &str = "image.etag";
 
 #[event(fetch)]
@@ -202,9 +203,27 @@ impl R2FrameStore {
             }
             None => crate::panel::etag_for(&png),
         };
+        let (packed, recovered) = match bucket.get(PACKED_KEY).execute().await? {
+            Some(obj) => (
+                obj.body()
+                    .ok_or_else(|| worker::Error::RustError("missing packed body".into()))?
+                    .bytes()
+                    .await?,
+                false,
+            ),
+            None => {
+                // Legacy objects only stored the PNG; recover the framebuffer
+                // and mark dirty so the next flush persists `image.bin`.
+                let spec = PanelSpec::default();
+                let packed = crate::panel::packed_from_panel_png(&png, spec).map_err(|e| {
+                    worker::Error::RustError(format!("recover packed frame: {e}"))
+                })?;
+                (packed, true)
+            }
+        };
         Ok(Self {
-            current: Some(StoredFrame { png, etag }),
-            dirty: false,
+            current: Some(StoredFrame { png, packed, etag }),
+            dirty: recovered,
         })
     }
 
@@ -217,6 +236,14 @@ impl R2FrameStore {
                 .put(OBJECT_KEY, frame.png.clone())
                 .http_metadata(worker::HttpMetadata {
                     content_type: Some("image/png".into()),
+                    ..Default::default()
+                })
+                .execute()
+                .await?;
+            bucket
+                .put(PACKED_KEY, frame.packed.clone())
+                .http_metadata(worker::HttpMetadata {
+                    content_type: Some("application/octet-stream".into()),
                     ..Default::default()
                 })
                 .execute()

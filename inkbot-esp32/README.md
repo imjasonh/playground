@@ -2,8 +2,10 @@
 
 Rust / ESP-IDF firmware for the **Waveshare e-Paper ESP32 Driver Board** +
 **7.5″ 800×480 mono** panel. It joins Wi-Fi, polls
-`{base_url}/image.png` every minute with `If-None-Match`, decodes the Worker's
-packed 1-bit PNG, and full-refreshes the panel when the ETag changes.
+`{base_url}/image.bin` every minute with `If-None-Match`, and full-refreshes
+the panel when the ETag changes. The Worker serves a raw packed framebuffer
+so the device never runs zlib inflate (classic ESP32 heap is too fragmented
+after HTTPS).
 
 No OTA, no SSH — just the frame loop. Companion Worker: [`../inkbot/`](../inkbot/).
 
@@ -56,11 +58,10 @@ make monitor
 ## Behaviour
 
 1. Bring up the panel + Wi-Fi.
-2. Show a short “inkbot ready” splash.
-3. `GET /image.png` with `If-None-Match` from NVS.
-4. On `200`: decode PNG (must be 800×480 B/W), full refresh, store new ETag.
-5. On `304` / `404`: do nothing.
-6. Sleep `poll_secs` (default 60) and repeat.
+2. `GET /image.bin` with `If-None-Match` from NVS (boot poll before splash).
+3. On `200`: body must be exactly 48 000 bytes; full refresh; store new ETag.
+4. On `304` / `404`: show “inkbot ready” on first boot if nothing changed.
+5. Sleep `poll_secs` (default 60) and repeat.
 
 ## Host tests
 

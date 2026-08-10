@@ -5,7 +5,7 @@ mod display;
 use std::thread;
 use std::time::Duration;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use embedded_svc::http::client::Client as HttpClient;
 use embedded_svc::http::Method;
 use embedded_svc::io::Read;
@@ -13,13 +13,14 @@ use esp_idf_svc::eventloop::EspSystemEventLoop;
 use esp_idf_svc::hal::peripherals::Peripherals;
 use esp_idf_svc::http::client::{Configuration as HttpConfig, EspHttpConnection};
 use esp_idf_svc::nvs::{EspDefaultNvsPartition, EspNvs, NvsDefault};
+use esp_idf_svc::sys::esp_get_free_heap_size;
 use esp_idf_svc::wifi::{
     AuthMethod, BlockingWifi, ClientConfiguration, Configuration as WifiConfig, EspWifi,
 };
 use log::{info, warn};
 
 use display::Panel;
-use inkbot_esp32::decode_bw_png;
+use inkbot_esp32::FRAME_BYTES;
 
 include!(concat!(env!("OUT_DIR"), "/config_gen.rs"));
 
@@ -55,22 +56,37 @@ fn main() -> Result<()> {
         return Err(e);
     }
     let ip = wifi.wifi().sta_netif().get_ip_info()?.ip;
-    info!("wifi connected, ip={ip}");
+    info!(
+        "wifi connected, ip={ip}, free_heap={}",
+        unsafe { esp_get_free_heap_size() }
+    );
 
     let mut nvs =
         EspNvs::new(nvs_part, NVS_NS, true).map_err(|e| anyhow!("open NVS {NVS_NS}: {e:?}"))?;
     let mut etag = read_etag(&nvs)?;
     info!("nvs: last etag={etag:?}");
 
-    let _ = panel.show_message("inkbot ready");
+    // Fetch the packed framebuffer before drawing a splash — HTTPS is the
+    // memory-hungry step, and we want it while the heap is still contiguous.
+    match poll_once(&mut panel, &mut nvs, &mut etag) {
+        Ok(true) => info!("displayed new frame"),
+        Ok(false) => {
+            info!("no change on boot poll");
+            let _ = panel.show_message("inkbot ready");
+        }
+        Err(e) => {
+            warn!("boot poll failed: {e:#}");
+            let _ = panel.show_message("poll failed");
+        }
+    }
 
     loop {
+        thread::sleep(Duration::from_secs(POLL_SECS));
         match poll_once(&mut panel, &mut nvs, &mut etag) {
             Ok(true) => info!("displayed new frame"),
             Ok(false) => info!("no change"),
             Err(e) => warn!("poll failed: {e:#}"),
         }
-        thread::sleep(Duration::from_secs(POLL_SECS));
     }
 }
 
@@ -117,13 +133,23 @@ fn poll_once(
     nvs: &mut EspNvs<NvsDefault>,
     etag: &mut Option<String>,
 ) -> Result<bool> {
-    let url = format!("{INKBOT_BASE_URL}/image.png");
+    // Fetch the pre-packed 48 KB framebuffer — no on-device zlib/PNG inflate.
+    let url = format!("{INKBOT_BASE_URL}/image.bin");
+    info!(
+        "GET {url} (free_heap={})",
+        unsafe { esp_get_free_heap_size() }
+    );
     let response = http_get(&url, etag.as_deref())?;
     match response.status {
         304 => Ok(false),
         200 => {
-            let frame = decode_bw_png(&response.body).context("decode panel png")?;
-            panel.show_frame(&frame)?;
+            if response.body.len() != FRAME_BYTES {
+                return Err(anyhow!(
+                    "framebuffer must be {FRAME_BYTES} bytes, got {}",
+                    response.body.len()
+                ));
+            }
+            panel.show_frame(&response.body)?;
             if let Some(new_etag) = response.etag {
                 write_etag(nvs, &new_etag)?;
                 *etag = Some(new_etag);
@@ -146,6 +172,8 @@ struct HttpResponse {
 
 fn http_get(url: &str, if_none_match: Option<&str>) -> Result<HttpResponse> {
     let mut client = HttpClient::wrap(EspHttpConnection::new(&HttpConfig {
+        buffer_size: Some(1024),
+        buffer_size_tx: Some(1024),
         timeout: Some(Duration::from_secs(30)),
         crt_bundle_attach: Some(esp_idf_svc::sys::esp_crt_bundle_attach),
         ..Default::default()
@@ -171,16 +199,16 @@ fn http_get(url: &str, if_none_match: Option<&str>) -> Result<HttpResponse> {
 
     let mut body = Vec::new();
     if status == 200 {
-        let mut buf = [0u8; 1024];
+        // Exact panel framebuffer size; reserve so we don't fragment while reading.
+        body.reserve(FRAME_BYTES);
+        let mut buf = [0u8; 512];
         loop {
-            let n = response
-                .read(&mut buf)
-                .map_err(|e| anyhow!("http read: {e:?}"))?;
+            let n = Read::read(&mut response, &mut buf).map_err(|e| anyhow!("http read: {e:?}"))?;
             if n == 0 {
                 break;
             }
             body.extend_from_slice(&buf[..n]);
-            if body.len() > 256 * 1024 {
+            if body.len() > FRAME_BYTES + 1024 {
                 return Err(anyhow!("response body too large"));
             }
         }
