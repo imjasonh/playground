@@ -22,6 +22,7 @@ ESP32 ──GET / every 60s; GET /{name}.bin on change/rotate─┘
 |--------|------|------|---------|
 | `GET` | `/` | none | Catalog JSON: `{ revision, latest, images }` |
 | `GET` | `/health` | none | Liveness |
+| `GET` | `/latest.bin` | none | Current `latest` framebuffer (device boot; one HTTPS) |
 | `GET` | `/{name}.bin` | none | Packed 48 000-byte framebuffer (`ETag` / `304`) |
 | `GET` | `/{name}.png` | none | PNG preview |
 | `POST` | `/{name}.bin` | `Authorization: Bearer <UPLOAD_SECRET>` | Create/replace (panel PNG or any photo) |

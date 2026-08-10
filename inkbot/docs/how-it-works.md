@@ -20,6 +20,7 @@ imported once as the name `image` when no catalog exists yet.
 |--------|------|------|---------|
 | `GET` | `/` | none | Catalog JSON |
 | `GET` | `/health` | none | Liveness |
+| `GET` | `/latest.bin` | none | Packed framebuffer for `catalog.latest` (ESP32 boot) |
 | `GET` | `/{name}.bin` | none | Packed framebuffer (`ETag` / `304`) |
 | `GET` | `/{name}.png` | none | PNG preview |
 | `POST` | `/{name}.bin` | Bearer | Create/replace (PNG or photo body) |

@@ -84,26 +84,26 @@ fn main() -> Result<()> {
 
     let mut last_rotate = Instant::now();
 
-    // Boot: always paint something (latest if known, else first catalog entry).
-    match tick(
+    // Boot: one HTTPS GET of /latest.bin — a catalog+frame pair back-to-back
+    // fragments the classic ESP32 heap so the 48 KB alloc fails.
+    match boot_latest(
         &mut panel,
         &mut nvs,
         &mut current_name,
         &mut current_etag,
         &mut seen_latest,
-        &mut last_rotate,
-        true,
     ) {
-        Ok(Action::Displayed { name, reason }) => {
-            info!("boot displayed {name} ({reason})")
+        Ok(Some(name)) => {
+            last_rotate = Instant::now();
+            info!("boot displayed {name}");
         }
-        Ok(Action::Idle) => {
+        Ok(None) => {
             info!("no images on server yet");
             let _ = panel.show_message("inkbot ready");
         }
         Err(e) => {
             warn!("boot poll failed: {e:#}");
-            let _ = panel.show_message("poll failed");
+            let _ = panel.show_message(&short_err("poll", &e));
         }
     }
 
@@ -116,14 +116,71 @@ fn main() -> Result<()> {
             &mut current_etag,
             &mut seen_latest,
             &mut last_rotate,
-            false,
         ) {
             Ok(Action::Displayed { name, reason }) => {
                 info!("displayed {name} ({reason})")
             }
             Ok(Action::Idle) => info!("no change"),
-            Err(e) => warn!("poll failed: {e:#}"),
+            Err(e) => {
+                warn!("poll failed: {e:#}");
+                // Don't refresh the panel on steady-state errors — keep the
+                // last good frame. Serial / next success recovers.
+            }
         }
+    }
+}
+
+fn short_err(prefix: &str, err: &anyhow::Error) -> String {
+    let mut msg = format!("{prefix}: {err}");
+    if msg.len() > 48 {
+        msg.truncate(47);
+        msg.push('…');
+    }
+    msg
+}
+
+fn boot_latest(
+    panel: &mut Panel,
+    nvs: &mut EspNvs<NvsDefault>,
+    current_name: &mut Option<String>,
+    current_etag: &mut Option<String>,
+    seen_latest: &mut Option<String>,
+) -> Result<Option<String>> {
+    let url = format!("{INKBOT_BASE_URL}/latest.bin");
+    info!("GET {url} (free_heap={})", unsafe {
+        esp_get_free_heap_size()
+    });
+    let response = http_get(&url, None)?;
+    match response.status {
+        404 => Ok(None),
+        200 => {
+            if response.body.len() != FRAME_BYTES {
+                return Err(anyhow!(
+                    "framebuffer must be {FRAME_BYTES} bytes, got {}",
+                    response.body.len()
+                ));
+            }
+            panel.show_frame(&response.body)?;
+            // Name comes from Content-Disposition? We don't have it — learn
+            // from the next catalog poll. Persist etag only.
+            if let Some(etag) = response.etag {
+                write_str(nvs, NVS_ETAG, &etag)?;
+                *current_etag = Some(etag);
+            }
+            // Probe catalog after a breath so heap can coalesce; best-effort.
+            thread::sleep(Duration::from_millis(200));
+            if let Ok(cat) = fetch_catalog() {
+                if let Some(latest) = cat.latest {
+                    write_str(nvs, NVS_NAME, &latest)?;
+                    write_str(nvs, NVS_LATEST, &latest)?;
+                    *current_name = Some(latest.clone());
+                    *seen_latest = Some(latest.clone());
+                    return Ok(Some(latest));
+                }
+            }
+            Ok(Some("latest".into()))
+        }
+        other => Err(anyhow!("GET {url} → HTTP {other}")),
     }
 }
 
@@ -139,7 +196,6 @@ fn tick(
     current_etag: &mut Option<String>,
     seen_latest: &mut Option<String>,
     last_rotate: &mut Instant,
-    boot: bool,
 ) -> Result<Action> {
     let catalog = fetch_catalog()?;
     info!(
@@ -152,19 +208,20 @@ fn tick(
         return Ok(Action::Idle);
     }
 
-    // 1) Boot, or a newly uploaded image → show `latest` right away.
+    // Pause so TLS buffers from the catalog GET can free before the 48 KB frame.
+    thread::sleep(Duration::from_millis(200));
+
+    // 1) Newly uploaded image → show `latest` right away.
     if let Some(latest) = catalog.latest.as_deref() {
         let is_new = seen_latest.as_deref() != Some(latest);
-        if boot || is_new {
+        if is_new {
             show_named(panel, nvs, current_name, current_etag, latest, false)?;
-            // Track catalog.latest we've consumed — not the displayed name
-            // (rotation must not look like a "new upload").
             write_str(nvs, NVS_LATEST, latest)?;
             *seen_latest = Some(latest.to_string());
             *last_rotate = Instant::now();
             return Ok(Action::Displayed {
                 name: latest.to_string(),
-                reason: if boot { "boot" } else { "new" },
+                reason: "new",
             });
         }
     }

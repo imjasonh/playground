@@ -132,6 +132,9 @@ pub fn handle<S: ImageStore>(req: ApiRequest, cfg: &mut HandlerConfig<'_, S>) ->
     match (method.as_str(), path.as_str()) {
         ("GET", "/") => list_catalog(cfg.store),
         ("GET", "/health") => ApiResponse::text(200, "inkbot ok\n"),
+        // Single-request fetch of whatever `latest` points at (ESP32 boot path
+        // can't afford catalog+frame as two back-to-back HTTPS round-trips).
+        ("GET", "/latest.bin") => get_latest_bin(&req, cfg.store),
         ("OPTIONS", _) => ApiResponse::text(204, ""),
         (m, p) => match parse_image_path(p) {
             Some((name, kind)) => match (m, kind) {
@@ -187,7 +190,7 @@ pub fn validate_name(raw: &str) -> Option<String> {
     }
     // Reserved route stems.
     match name {
-        "health" | "slack" | "events" => None,
+        "health" | "slack" | "events" | "latest" => None,
         _ => Some(name.to_string()),
     }
 }
@@ -379,6 +382,13 @@ fn normalize_path(path: &str) -> String {
 fn list_catalog<S: ImageStore>(store: &S) -> ApiResponse {
     let body = serde_json::to_string(&store.catalog()).unwrap_or_else(|_| "{}".into());
     ApiResponse::json(200, body)
+}
+
+fn get_latest_bin<S: ImageStore>(req: &ApiRequest, store: &S) -> ApiResponse {
+    let Some(name) = store.catalog().latest else {
+        return ApiResponse::text(404, "no image yet\n");
+    };
+    get_image_bin(req, store, &name)
 }
 
 fn get_image_png<S: ImageStore>(req: &ApiRequest, store: &S, name: &str) -> ApiResponse {

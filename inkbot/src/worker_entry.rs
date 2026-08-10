@@ -69,6 +69,30 @@ async fn fetch(mut req: Request, env: Env, _ctx: Context) -> Result<Response> {
         return handle_slack(api_req, &env, &bucket, panel).await;
     }
 
+    // Cheap GET paths: don't pull every frame body into memory.
+    let norm = normalize_path(&path);
+    if method == Method::Get && norm == "/" {
+        let catalog = load_catalog(&bucket).await?;
+        return into_worker_response(ApiResponse::json(
+            200,
+            serde_json::to_string(&catalog).unwrap_or_else(|_| "{}".into()),
+        ));
+    }
+    if method == Method::Get && norm == "/latest.bin" {
+        let catalog = load_catalog(&bucket).await?;
+        let Some(name) = catalog.latest.clone() else {
+            return into_worker_response(ApiResponse::text(404, "no image yet\n"));
+        };
+        return respond_frame_get(&bucket, &api_req, &name, panel, upload_secret.as_str()).await;
+    }
+    if method == Method::Get {
+        if let Some((name, ext)) = parse_get_image(&norm) {
+            let mut req = api_req;
+            req.path = format!("/{name}.{ext}");
+            return respond_frame_get(&bucket, &req, &name, panel, upload_secret.as_str()).await;
+        }
+    }
+
     let mut store = R2ImageStore::load(&bucket).await?;
     let mut cfg = HandlerConfig {
         store: &mut store,
@@ -78,6 +102,63 @@ async fn fetch(mut req: Request, env: Env, _ctx: Context) -> Result<Response> {
     let response = api::handle(api_req, &mut cfg);
     store.flush(&bucket).await?;
     into_worker_response(response)
+}
+
+async fn respond_frame_get(
+    bucket: &Bucket,
+    api_req: &ApiRequest,
+    name: &str,
+    panel: PanelSpec,
+    upload_secret: &str,
+) -> Result<Response> {
+    let catalog = load_catalog(bucket).await?;
+    let Some(frame) = load_frame(bucket, name).await? else {
+        return into_worker_response(ApiResponse::text(404, "no such image\n"));
+    };
+    let mut one = OneFrameStore {
+        catalog,
+        frame: Some(frame),
+    };
+    let mut cfg = HandlerConfig {
+        store: &mut one,
+        upload_secret,
+        panel,
+    };
+    into_worker_response(api::handle(api_req.clone(), &mut cfg))
+}
+
+fn parse_get_image(path: &str) -> Option<(String, &'static str)> {
+    let rest = path.strip_prefix('/')?;
+    if rest.contains('/') {
+        return None;
+    }
+    let (stem, ext) = if let Some(s) = rest.strip_suffix(".bin") {
+        (s, "bin")
+    } else if let Some(s) = rest.strip_suffix(".png") {
+        (s, "png")
+    } else {
+        return None;
+    };
+    let name = api::validate_name(stem)?;
+    Some((name, ext))
+}
+
+struct OneFrameStore {
+    catalog: Catalog,
+    frame: Option<StoredFrame>,
+}
+
+impl ImageStore for OneFrameStore {
+    fn catalog(&self) -> Catalog {
+        self.catalog.clone()
+    }
+    fn get(&self, name: &str) -> Option<StoredFrame> {
+        self.frame.as_ref().filter(|f| f.name == name).cloned()
+    }
+    fn put(&mut self, _frame: StoredFrame) {}
+    fn delete(&mut self, _name: &str) -> bool {
+        false
+    }
 }
 
 async fn handle_slack(
@@ -186,20 +267,25 @@ struct R2ImageStore {
     catalog_dirty: bool,
 }
 
+async fn load_catalog(bucket: &Bucket) -> Result<Catalog> {
+    let catalog = match bucket.get(CATALOG_KEY).execute().await? {
+        Some(obj) => {
+            let bytes = obj
+                .body()
+                .ok_or_else(|| worker::Error::RustError("missing catalog body".into()))?
+                .bytes()
+                .await?;
+            serde_json::from_slice(&bytes).unwrap_or_else(|_| Catalog::empty())
+        }
+        None => Catalog::empty(),
+    };
+    Ok(catalog)
+}
+
 impl R2ImageStore {
     async fn load(bucket: &Bucket) -> Result<Self> {
         let mut frames = BTreeMap::new();
-        let mut catalog = match bucket.get(CATALOG_KEY).execute().await? {
-            Some(obj) => {
-                let bytes = obj
-                    .body()
-                    .ok_or_else(|| worker::Error::RustError("missing catalog body".into()))?
-                    .bytes()
-                    .await?;
-                serde_json::from_slice(&bytes).unwrap_or_else(|_| Catalog::empty())
-            }
-            None => Catalog::empty(),
-        };
+        let mut catalog = load_catalog(bucket).await?;
 
         // Load each named frame listed in the catalog.
         for name in catalog.images.clone() {
