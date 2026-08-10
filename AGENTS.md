@@ -33,7 +33,7 @@ playground/
 ├── hello-macos/           # example macOS SwiftUI app (XcodeGen + Sparkle CD)
 ├── geeksquad/             # offline Mac network/config triage (Sparkle CD)
 ├── inkbot/                # Rust Cloudflare Worker: e-ink frame host + Slack @inkbot
-├── inkbot-esp32/          # PlatformIO firmware: poll inkbot, show on Waveshare 7.5″
+├── inkbot-esp32/          # Rust/ESP-IDF firmware: poll inkbot, show on Waveshare 7.5″
 ├── ios/                   # the single "Playground" iOS app (SwiftUI; TestFlight CD)
 ├── kanoodle/              # example app with tests (JS + Jest + Playwright)
 ├── nypd-choppers/         # NYPD helicopter ADS-B tracker (JS + Node tests)
@@ -65,7 +65,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `web-push/` | no | Rust Cloudflare Worker; no `index.html` |
 | `cors-proxy/` | no | Rust Cloudflare Worker; no `index.html` |
 | `inkbot/` | no | Rust Cloudflare Worker (e-ink frame + Slack); no `index.html` |
-| `inkbot-esp32/` | no | PlatformIO/Arduino ESP32 firmware; no `index.html` |
+| `inkbot-esp32/` | no | Rust/ESP-IDF ESP32 firmware (espup); no `index.html` |
 | `git-server/` | no | Rust Cloudflare Worker; no `index.html` |
 | `git-fuse/` | no | Rust CLI (FUSE); no `index.html` |
 | `life-stl/` | no | Rust CLI (STL generator); no `index.html` |
@@ -237,7 +237,9 @@ Discovery is by **top-level directory**: a change under `kanoodle/` selects
 `kanoodle`, a change under `web-push/` selects `web-push`, and so on. Hidden
 directories (names starting with `.`) and changes outside any app directory
 (e.g. a lone top-level file) select nothing — so a PR that only edits CI scripts
-or the root `README.md` runs no app tests.
+or the root `README.md` runs no app tests. `inkbot-esp32/` has a `Cargo.toml`
+but is excluded from Rust discovery because it needs the espup Xtensa toolchain;
+run its host tests with `cd inkbot-esp32 && cargo test --lib`.
 
 | App type | Selected when its dir has | CI runs, per changed app |
 |----------|---------------------------|--------------------------|
@@ -578,7 +580,7 @@ auto-discover them. Run their local tests when you change them.
 | Directory | Type | Tests |
 |-----------|------|-------|
 | `its-not-jaws/` | Cursor SDK harness for It's Not Jaws (movie shared-fact guessing); mock backend for tests; live PR game via `its-not-jaws.yml` + `CURSOR_API_KEY` secret | `cd its-not-jaws && npm test` (CI also runs a live game when the secret is set) |
-| `inkbot-esp32/` | PlatformIO firmware: poll `inkbot` Worker, show 800×480 B/W PNG on Waveshare 7.5″ | host build via `pio run` (not in shared CI) |
+| `inkbot-esp32/` | Rust/ESP-IDF firmware: poll `inkbot` Worker, show 800×480 B/W PNG on Waveshare 7.5″ | `cargo test --lib` (host); device build via `make build` (espup; excluded from shared Rust CI) |
 | `life-scad/` | OpenSCAD Life sculpture (Z = time) plus optional Python reverse-history search | `python3 life-scad/reverse_life_test.py` (needs `pip install -r life-scad/requirements.txt`) |
 | `life-qr/` | Parametric OpenSCAD Life sculpture with a QR-code roof for any text/height | `python3 life-qr/life_qr_test.py` (optional `pip install segno`) |
 

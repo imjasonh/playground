@@ -18,6 +18,13 @@ is_rust_app() {
     return 1
   fi
 
+  # ESP32 firmware uses the espup Xtensa toolchain and ESP-IDF, so it cannot
+  # run through the generic stable-Rust job. Host-side lib tests are run via
+  # `make test` / `cargo test --lib` inside the app directory instead.
+  if [[ "$name" == "inkbot-esp32" ]]; then
+    return 1
+  fi
+
   [[ -f "$name/Cargo.toml" ]]
 }
 

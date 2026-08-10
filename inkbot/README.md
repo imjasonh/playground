@@ -5,7 +5,7 @@ PNG, plus a tiny ESP32 sketch that polls it once a minute. Mention `@inkbot` in
 Slack with an image attached and the Worker cover-crops, Floyd–Steinberg
 dithers, and publishes the frame.
 
-Companion firmware: [`../inkbot-esp32/`](../inkbot-esp32/).
+Companion firmware (Rust / ESP-IDF): [`../inkbot-esp32/`](../inkbot-esp32/).
 
 ## Why this shape
 
