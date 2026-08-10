@@ -65,12 +65,13 @@ fn main() -> Result<()> {
     let mut etag = read_etag(&nvs)?;
     info!("nvs: last etag={etag:?}");
 
-    // Fetch the packed framebuffer before drawing a splash — HTTPS is the
-    // memory-hungry step, and we want it while the heap is still contiguous.
-    match poll_once(&mut panel, &mut nvs, &mut etag) {
-        Ok(true) => info!("displayed new frame"),
+    // Boot always downloads the current frame (no If-None-Match). A matching
+    // NVS etag used to yield 304 + an "inkbot ready" splash, which wiped the
+    // bistable panel even when the server image was already current.
+    match poll_once(&mut panel, &mut nvs, &mut etag, false) {
+        Ok(true) => info!("displayed boot frame"),
         Ok(false) => {
-            info!("no change on boot poll");
+            info!("no image on server yet");
             let _ = panel.show_message("inkbot ready");
         }
         Err(e) => {
@@ -81,7 +82,7 @@ fn main() -> Result<()> {
 
     loop {
         thread::sleep(Duration::from_secs(POLL_SECS));
-        match poll_once(&mut panel, &mut nvs, &mut etag) {
+        match poll_once(&mut panel, &mut nvs, &mut etag, true) {
             Ok(true) => info!("displayed new frame"),
             Ok(false) => info!("no change"),
             Err(e) => warn!("poll failed: {e:#}"),
@@ -127,17 +128,22 @@ fn write_etag(nvs: &mut EspNvs<NvsDefault>, etag: &str) -> Result<()> {
 }
 
 /// Returns true when a new frame was displayed.
+///
+/// When `use_etag` is false, skips `If-None-Match` so the server always
+/// returns the body (used on boot to repaint after power-on).
 fn poll_once(
     panel: &mut Panel,
     nvs: &mut EspNvs<NvsDefault>,
     etag: &mut Option<String>,
+    use_etag: bool,
 ) -> Result<bool> {
     // Fetch the pre-packed 48 KB framebuffer — no on-device zlib/PNG inflate.
     let url = format!("{INKBOT_BASE_URL}/image.bin");
     info!("GET {url} (free_heap={})", unsafe {
         esp_get_free_heap_size()
     });
-    let response = http_get(&url, etag.as_deref())?;
+    let if_none_match = if use_etag { etag.as_deref() } else { None };
+    let response = http_get(&url, if_none_match)?;
     match response.status {
         304 => Ok(false),
         200 => {

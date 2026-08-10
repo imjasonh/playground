@@ -58,9 +58,10 @@ make monitor
 ## Behaviour
 
 1. Bring up the panel + Wi-Fi.
-2. `GET /image.bin` with `If-None-Match` from NVS (boot poll before splash).
-3. On `200`: body must be exactly 48 000 bytes; full refresh; store new ETag.
-4. On `304` / `404`: show “inkbot ready” on first boot if nothing changed.
+2. Boot: `GET /image.bin` **without** `If-None-Match` and full-refresh so a
+   power cycle always repaints the current server frame.
+3. Later polls send `If-None-Match` from NVS; `304` skips the panel refresh.
+4. On `404` at boot: show “inkbot ready”.
 5. Sleep `poll_secs` (default 60) and repeat.
 
 ## Host tests
