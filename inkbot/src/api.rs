@@ -163,11 +163,7 @@ pub fn finish_app_mention<S: FrameStore>(
         None => "Attach an image and mention me — I'll dither it to the e-ink frame.".into(),
         Some(Err(e)) => format!("Couldn't download the attachment: {e}"),
         Some(Ok(bytes)) => match panel::transform_for_panel(&bytes, panel) {
-            Ok(PanelImage {
-                png,
-                packed,
-                etag,
-            }) => {
+            Ok(PanelImage { png, packed, etag }) => {
                 store.put(StoredFrame {
                     png,
                     packed,
@@ -227,11 +223,7 @@ fn post_image<S: FrameStore>(req: &ApiRequest, cfg: &mut HandlerConfig<'_, S>) -
         return ApiResponse::text(400, "empty body\n");
     }
     match panel::accept_upload(&req.body, cfg.panel) {
-        Ok(PanelImage {
-            png,
-            packed,
-            etag,
-        }) => {
+        Ok(PanelImage { png, packed, etag }) => {
             cfg.store.put(StoredFrame {
                 png,
                 packed,

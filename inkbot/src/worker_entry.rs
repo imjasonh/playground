@@ -215,9 +215,8 @@ impl R2FrameStore {
                 // Legacy objects only stored the PNG; recover the framebuffer
                 // and mark dirty so the next flush persists `image.bin`.
                 let spec = PanelSpec::default();
-                let packed = crate::panel::packed_from_panel_png(&png, spec).map_err(|e| {
-                    worker::Error::RustError(format!("recover packed frame: {e}"))
-                })?;
+                let packed = crate::panel::packed_from_panel_png(&png, spec)
+                    .map_err(|e| worker::Error::RustError(format!("recover packed frame: {e}")))?;
                 (packed, true)
             }
         };

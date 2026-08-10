@@ -56,10 +56,9 @@ fn main() -> Result<()> {
         return Err(e);
     }
     let ip = wifi.wifi().sta_netif().get_ip_info()?.ip;
-    info!(
-        "wifi connected, ip={ip}, free_heap={}",
-        unsafe { esp_get_free_heap_size() }
-    );
+    info!("wifi connected, ip={ip}, free_heap={}", unsafe {
+        esp_get_free_heap_size()
+    });
 
     let mut nvs =
         EspNvs::new(nvs_part, NVS_NS, true).map_err(|e| anyhow!("open NVS {NVS_NS}: {e:?}"))?;
@@ -135,10 +134,9 @@ fn poll_once(
 ) -> Result<bool> {
     // Fetch the pre-packed 48 KB framebuffer — no on-device zlib/PNG inflate.
     let url = format!("{INKBOT_BASE_URL}/image.bin");
-    info!(
-        "GET {url} (free_heap={})",
-        unsafe { esp_get_free_heap_size() }
-    );
+    info!("GET {url} (free_heap={})", unsafe {
+        esp_get_free_heap_size()
+    });
     let response = http_get(&url, etag.as_deref())?;
     match response.status {
         304 => Ok(false),
