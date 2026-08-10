@@ -427,9 +427,7 @@ fn http_get_once(url: &str, if_none_match: Option<&str>) -> Result<HttpResponse>
     let request = client
         .request(Method::Get, url, &headers)
         .map_err(|e| anyhow!("http request: {e}"))?;
-    let mut response = request
-        .submit()
-        .map_err(|e| anyhow!("http submit: {e}"))?;
+    let mut response = request.submit().map_err(|e| anyhow!("http submit: {e}"))?;
     let status = response.status();
 
     let etag = response

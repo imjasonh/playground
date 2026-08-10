@@ -162,7 +162,7 @@ discovery scripts.
 | `preview.yml` | pull request opened/sync | When a browser app changed: deploys under `/preview/pr-<N>/` and comments the URL; otherwise no-ops |
 | `cleanup.yml` | pull request closed, manual | Removes closed-PR preview dirs from `gh-pages` (reconciles all open PRs) and refreshes the root index |
 | `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps in one job |
-| `inkbot-esp32.yml` | push to `main`, pull requests, manual | Always runs a cheap discover job; host lib tests + Xtensa cross-build only when `inkbot-esp32/` (or this workflow) changed (excluded from `test.yml`) |
+| `inkbot-esp32.yml` | push to `main`, pull requests, manual | Always runs discover + host/firmware jobs (so they can be required checks); host/firmware no-op when `inkbot-esp32/` (or this workflow) is unchanged (excluded from `test.yml`) |
 | `ios.yml` | push to `main`, pull requests | Tests changed iOS apps on macOS; on `main`, delivers them to TestFlight |
 | `macos.yml` | push to `main`, pull requests | Tests changed macOS apps on macOS; on `main`, ships notarized Sparkle updates when secrets are present |
 | `ios-bootstrap-label.yml` | pull request | Labels PRs that need signing re-bootstrap with `needs-ios-bootstrap` |
