@@ -26,6 +26,10 @@ jobs:
           HEAD_SHA: ${{ github.sha }}
         run: bash .github/scripts/discover-changed-apps.sh
 
+      # Install toolchains sequentially so PATH is ready before the parallel
+      # test group. Each setup stays conditional so unchanged ecosystems pay
+      # nothing. setup-node also runs when Go's node-image module changed
+      # (its conformance tests need node/pnpm on PATH).
       - uses: actions/setup-node@v4
         if: ${{ steps.discover.outputs.apps != '[]' || contains(steps.discover.outputs.modules, 'node-image') }}
         with:
@@ -33,24 +37,12 @@ jobs:
           cache: npm
           cache-dependency-path: '**/package-lock.json'
 
-      - name: Run tests for changed apps
-        if: ${{ steps.discover.outputs.apps != '[]' }}
-        env:
-          APPS: ${{ steps.discover.outputs.apps }}
-        run: bash .github/scripts/test-browser-apps.sh
-
       - uses: actions/setup-go@v6
         if: ${{ steps.discover.outputs.modules != '[]' }}
         with:
           go-version: 'stable'
           check-latest: true
           cache: false
-
-      - name: Build and test changed Go apps
-        if: ${{ steps.discover.outputs.modules != '[]' }}
-        env:
-          MODULES: ${{ steps.discover.outputs.modules }}
-        run: bash .github/scripts/test-go-modules.sh
 
       # Baseline stable toolchain; an app's rust-toolchain.toml (e.g. web-push
       # pins 1.83) overrides it per directory when cargo runs.
@@ -60,8 +52,22 @@ jobs:
           components: clippy, rustfmt
           targets: wasm32-unknown-unknown
 
-      - name: Lint, build, and test changed Rust apps
-        if: ${{ steps.discover.outputs.rust != '[]' }}
-        env:
-          RUST_APPS: ${{ steps.discover.outputs.rust }}
-        run: bash .github/scripts/test-rust-apps.sh
+      # Ecosystems are independent; overlap their wall time like deps.yaml.
+      - parallel:
+          - name: Run tests for changed apps
+            if: ${{ steps.discover.outputs.apps != '[]' }}
+            env:
+              APPS: ${{ steps.discover.outputs.apps }}
+            run: bash .github/scripts/test-browser-apps.sh
+
+          - name: Build and test changed Go apps
+            if: ${{ steps.discover.outputs.modules != '[]' }}
+            env:
+              MODULES: ${{ steps.discover.outputs.modules }}
+            run: bash .github/scripts/test-go-modules.sh
+
+          - name: Lint, build, and test changed Rust apps
+            if: ${{ steps.discover.outputs.rust != '[]' }}
+            env:
+              RUST_APPS: ${{ steps.discover.outputs.rust }}
+            run: bash .github/scripts/test-rust-apps.sh

@@ -230,9 +230,11 @@ Every push to `main` and every pull request runs a single `test` job. It first
 discovers which apps changed
 (`.github/scripts/discover-changed-apps.sh`), then tests **only the changed apps
 of each type**, installing each toolchain (Node, Go, Rust) only when that type
-has work to do. When a type has no changes its steps are skipped, so the run is
-one `test` check with no empty or skipped legs. On the first push to `main` (no
-prior commit), every app is tested.
+has work to do and running the browser / Go / Rust test legs concurrently via
+an Actions `parallel:` step group (same pattern as `deps.yaml`). When a type has
+no changes its steps are skipped, so the run is one `test` check with no empty
+or skipped legs. On the first push to `main` (no prior commit), every app is
+tested.
 
 Discovery is by **top-level directory**: a change under `kanoodle/` selects
 `kanoodle`, a change under `web-push/` selects `web-push`, and so on. Hidden
