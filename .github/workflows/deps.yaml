@@ -44,17 +44,21 @@ jobs:
           components: clippy, rustfmt
           targets: wasm32-unknown-unknown
 
-      - name: Update, build, and test every Go app
-        id: update_go
-        run: bash .github/scripts/update-go-dependencies.sh
+      # Ecosystems are independent (distinct lockfiles); run them concurrently.
+      # Nested step ids remain addressable after the group so later publish
+      # steps can read result / has_changes outputs.
+      - parallel:
+          - name: Update, build, and test every Go app
+            id: update_go
+            run: bash .github/scripts/update-go-dependencies.sh
 
-      - name: Update and test every JavaScript app
-        id: update_js
-        run: bash .github/scripts/update-js-dependencies.sh
+          - name: Update and test every JavaScript app
+            id: update_js
+            run: bash .github/scripts/update-js-dependencies.sh
 
-      - name: Update, build, and test every Rust app
-        id: update_rust
-        run: bash .github/scripts/update-rust-dependencies.sh
+          - name: Update, build, and test every Rust app
+            id: update_rust
+            run: bash .github/scripts/update-rust-dependencies.sh
 
       # App token (not GITHUB_TOKEN) so the automation PR triggers required
       # checks and can enable auto-merge onto protected main.
