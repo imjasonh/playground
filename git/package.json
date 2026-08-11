@@ -11,14 +11,14 @@
     "start": "npx --yes serve . -p 3000"
   },
   "dependencies": {
-    "@isomorphic-git/lightning-fs": "4.6.3",
-    "isomorphic-git": "1.40.0"
+    "@isomorphic-git/lightning-fs": "4.7.0",
+    "isomorphic-git": "1.41.3"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",
-    "@playwright/test": "^1.61.1",
+    "@playwright/test": "^1.62.1",
     "buffer": "^6.0.3",
-    "esbuild": "^0.28.1",
+    "esbuild": "^0.28.2",
     "jest": "^30.4.2",
     "jest-environment-jsdom": "^30.4.1"
   }
