@@ -1,0 +1,6 @@
+# Toolchain pin for this Cloudflare Worker crate. Matches the worker 0.8 /
+# wasm-bindgen 0.2.125 stack used by the other Workers in this repo.
+[toolchain]
+channel = "1.88.0"
+components = ["clippy", "rustfmt"]
+targets = ["wasm32-unknown-unknown"]

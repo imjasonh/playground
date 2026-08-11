@@ -10,7 +10,7 @@
     "start": "npx --yes serve . -p 3000"
   },
   "devDependencies": {
-    "@playwright/test": "^1.61.1",
+    "@playwright/test": "^1.62.1",
     "jest": "^30.4.2",
     "jest-environment-jsdom": "^30.4.1"
   }

@@ -8,6 +8,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  id-token: write # Octo STS OIDC federation
 
 concurrency:
   group: update-dependencies
@@ -43,20 +44,33 @@ jobs:
           components: clippy, rustfmt
           targets: wasm32-unknown-unknown
 
-      - name: Update, build, and test every Go app
-        id: update_go
-        run: bash .github/scripts/update-go-dependencies.sh
+      # Ecosystems are independent (distinct lockfiles); run them concurrently.
+      # Nested step ids remain addressable after the group so later publish
+      # steps can read result / has_changes outputs.
+      - parallel:
+          - name: Update, build, and test every Go app
+            id: update_go
+            run: bash .github/scripts/update-go-dependencies.sh
 
-      - name: Update and test every JavaScript app
-        id: update_js
-        run: bash .github/scripts/update-js-dependencies.sh
+          - name: Update and test every JavaScript app
+            id: update_js
+            run: bash .github/scripts/update-js-dependencies.sh
 
-      - name: Update, build, and test every Rust app
-        id: update_rust
-        run: bash .github/scripts/update-rust-dependencies.sh
+          - name: Update, build, and test every Rust app
+            id: update_rust
+            run: bash .github/scripts/update-rust-dependencies.sh
 
-      - name: Push passing updates to main
-        id: push
+      # App token (not GITHUB_TOKEN) so the automation PR triggers required
+      # checks and can enable auto-merge onto protected main.
+      - name: Federate GitHub App token via Octo STS
+        id: octo-sts
+        uses: octo-sts/action@f603d3be9d8dd9871a265776e625a27b00effe05 # v1.1.1
+        with:
+          scope: imjasonh/playground
+          identity: dependency-updates
+
+      - name: Open a pull request for passing updates
+        id: pr_success
         if: >-
           ${{
             steps.update_go.outputs.result == 'success' &&
@@ -68,33 +82,9 @@ jobs:
               steps.update_rust.outputs.has_changes == 'true'
             )
           }}
-        continue-on-error: true
-        run: bash .github/scripts/manage-dependency-update.sh push
-
-      - name: Create an empty failure commit when nothing changed
-        if: >-
-          ${{
-            (
-              steps.update_go.outputs.result == 'failure' ||
-              steps.update_js.outputs.result == 'failure' ||
-              steps.update_rust.outputs.result == 'failure'
-            ) &&
-            steps.update_go.outputs.has_changes != 'true' &&
-            steps.update_js.outputs.has_changes != 'true' &&
-            steps.update_rust.outputs.has_changes != 'true'
-          }}
-        run: bash .github/scripts/manage-dependency-update.sh failure-commit
-
-      - name: Open a pull request when automatic update fails
-        if: >-
-          ${{
-            steps.update_go.outputs.result == 'failure' ||
-            steps.update_js.outputs.result == 'failure' ||
-            steps.update_rust.outputs.result == 'failure' ||
-            steps.push.outcome == 'failure'
-          }}
         uses: peter-evans/create-pull-request@v8
         with:
+          token: ${{ steps.octo-sts.outputs.token }}
           branch: automation/dependency-updates
           base: main
           add-paths: |
@@ -108,9 +98,71 @@ jobs:
           commit-message: 'chore(deps): update dependencies'
           title: 'chore(deps): update dependencies'
           body: |
-            The daily dependency updater could not safely push these changes
-            directly to `main`. At least one dependency update, generated-asset
-            refresh, build, test, or push step failed.
+            Automated dependency update. Every upgraded app was built and tested
+            in the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).
+
+            Auto-merge is enabled; this PR will merge into `main` once required
+            status checks pass.
+          delete-branch: true
+
+      - name: Enable auto-merge for passing updates
+        if: >-
+          ${{
+            steps.update_go.outputs.result == 'success' &&
+            steps.update_js.outputs.result == 'success' &&
+            steps.update_rust.outputs.result == 'success' &&
+            (
+              steps.update_go.outputs.has_changes == 'true' ||
+              steps.update_js.outputs.has_changes == 'true' ||
+              steps.update_rust.outputs.has_changes == 'true'
+            )
+          }}
+        env:
+          GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
+          PR_NUMBER: ${{ steps.pr_success.outputs.pull-request-number }}
+        run: |
+          if [[ -z "${PR_NUMBER}" ]]; then
+            PR_NUMBER=$(gh pr list \
+              --head automation/dependency-updates \
+              --base main \
+              --state open \
+              --json number \
+              --jq '.[0].number // empty')
+          fi
+          if [[ -z "${PR_NUMBER}" ]]; then
+            echo "::error::No dependency-update pull request found to auto-merge"
+            exit 1
+          fi
+          bash .github/scripts/manage-dependency-update.sh enable-auto-merge "${PR_NUMBER}"
+
+      - name: Open a pull request when automatic update fails
+        id: pr_failure
+        if: >-
+          ${{
+            steps.update_go.outputs.result == 'failure' ||
+            steps.update_js.outputs.result == 'failure' ||
+            steps.update_rust.outputs.result == 'failure'
+          }}
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ steps.octo-sts.outputs.token }}
+          branch: automation/dependency-updates
+          base: main
+          add-paths: |
+            */go.mod
+            */go.sum
+            */package.json
+            */package-lock.json
+            */vendor/**
+            */Cargo.toml
+            */Cargo.lock
+          commit-empty: true
+          commit-message: 'chore(deps): update dependencies'
+          title: 'chore(deps): update dependencies'
+          body: |
+            The daily dependency updater could not safely land these changes.
+            At least one dependency update, generated-asset refresh, build, or
+            test step failed.
 
             Review the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
             before merging.
@@ -122,10 +174,13 @@ jobs:
             steps.update_go.outputs.result == 'success' &&
             steps.update_js.outputs.result == 'success' &&
             steps.update_rust.outputs.result == 'success' &&
-            steps.push.outcome != 'failure'
+            steps.update_go.outputs.has_changes != 'true' &&
+            steps.update_js.outputs.has_changes != 'true' &&
+            steps.update_rust.outputs.has_changes != 'true'
           }}
         uses: peter-evans/create-pull-request@v8
         with:
+          token: ${{ steps.octo-sts.outputs.token }}
           branch: automation/dependency-updates
           base: main
           delete-branch: true
@@ -135,7 +190,6 @@ jobs:
           ${{
             steps.update_go.outputs.result == 'failure' ||
             steps.update_js.outputs.result == 'failure' ||
-            steps.update_rust.outputs.result == 'failure' ||
-            steps.push.outcome == 'failure'
+            steps.update_rust.outputs.result == 'failure'
           }}
         run: bash .github/scripts/manage-dependency-update.sh report-failure

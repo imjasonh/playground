@@ -32,6 +32,8 @@ playground/
 ├── hello/                 # example static app (HTML only)
 ├── hello-macos/           # example macOS SwiftUI app (XcodeGen + Sparkle CD)
 ├── geeksquad/             # offline Mac network/config triage (Sparkle CD)
+├── inkbot/                # Rust Cloudflare Worker: e-ink frame host + Slack @inkbot
+├── inkbot-esp32/          # Rust/ESP-IDF firmware: poll inkbot, show on Waveshare 7.5″
 ├── ios/                   # the single "Playground" iOS app (SwiftUI; TestFlight CD)
 ├── kanoodle/              # example app with tests (JS + Jest + Playwright)
 ├── nypd-choppers/         # NYPD helicopter ADS-B tracker (JS + Node tests)
@@ -64,6 +66,8 @@ its root. This is the same rule used by deploy and preview workflows.
 | `wasm-hello/` | no | Go module built for wasip1; no `index.html` |
 | `web-push/` | no | Rust Cloudflare Worker; no `index.html` |
 | `cors-proxy/` | no | Rust Cloudflare Worker; no `index.html` |
+| `inkbot/` | no | Rust Cloudflare Worker (e-ink frame + Slack); no `index.html` |
+| `inkbot-esp32/` | no | Rust/ESP-IDF ESP32 firmware (espup); no `index.html` |
 | `git-server/` | no | Rust Cloudflare Worker; no `index.html` |
 | `git-fuse/` | no | Rust CLI (FUSE); no `index.html` |
 | `life-stl/` | no | Rust CLI (STL generator); no `index.html` |
@@ -160,12 +164,13 @@ discovery scripts.
 | `preview.yml` | pull request opened/sync | When a browser app changed: deploys under `/preview/pr-<N>/` and comments the URL; otherwise no-ops |
 | `cleanup.yml` | pull request closed, manual | Removes closed-PR preview dirs from `gh-pages` (reconciles all open PRs) and refreshes the root index |
 | `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps in one job |
+| `inkbot-esp32.yml` | push to `main`, pull requests, manual | Always runs discover + host/firmware jobs (so they can be required checks); host/firmware no-op when `inkbot-esp32/` (or this workflow) is unchanged (excluded from `test.yml`) |
 | `ios.yml` | push to `main`, pull requests | Tests changed iOS apps on macOS; on `main`, delivers them to TestFlight |
 | `macos.yml` | push to `main`, pull requests | Tests changed macOS apps on macOS; on `main`, ships notarized Sparkle updates when secrets are present |
 | `ios-bootstrap-label.yml` | pull request | Labels PRs that need signing re-bootstrap with `needs-ios-bootstrap` |
 | `ios-bootstrap-on-merge.yml` | pull request closed (merged) | If the PR had `needs-ios-bootstrap`, immediately re-runs signing bootstrap (races `ios.yml`; usually finishes first) |
 | `ios-signing-bootstrap.yml` | manual (`workflow_dispatch`) + reusable | Creates & stores signing cert/profile in the `match` repo; also called on labeled merges |
-| `deps.yaml` | daily at 00:00 UTC, manual | Updates every testable browser app, Go app, and Rust app; pushes passing updates to `main`, otherwise opens a PR |
+| `deps.yaml` | daily at 00:00 UTC, manual | Updates every testable browser app, Go app, and Rust app; opens a PR and auto-merges passing updates to `main`, otherwise leaves a PR for review |
 | `nypd-choppers-scrape.yml` | hourly, manual | **App-specific:** fetches NYPD helicopter full-day ADS-B traces and merges per-day JSON to `gh-pages` under `nypd-choppers/data/`. Not generalized; shares the `gh-pages-publish` concurrency group with deploy/preview/cleanup |
 | `wasm-hello.yml` | push to `main` touching `wasm-hello/**`, manual | **App-specific:** builds `wasm-hello` for wasip1 and pushes it to GHCR as an OCI artifact (`ghcr.io/<owner>/<repo>/wasm-hello`) with `oras`, so the iOS *Wasm Service* experiment has something to pull. Uses the built-in `GITHUB_TOKEN`; a newly created package is private until someone makes it public once |
 | `its-not-jaws.yml` | pull requests touching `its-not-jaws/**`, manual | **App-specific:** requires repo secret `CURSOR_API_KEY` (fails if missing), unit-tests the harness, plays one live Cursor Agent SDK game, uploads the result artifact |
@@ -228,15 +233,19 @@ Every push to `main` and every pull request runs a single `test` job. It first
 discovers which apps changed
 (`.github/scripts/discover-changed-apps.sh`), then tests **only the changed apps
 of each type**, installing each toolchain (Node, Go, Rust) only when that type
-has work to do. When a type has no changes its steps are skipped, so the run is
-one `test` check with no empty or skipped legs. On the first push to `main` (no
-prior commit), every app is tested.
+has work to do and running the browser / Go / Rust test legs concurrently via
+an Actions `parallel:` step group (same pattern as `deps.yaml`). When a type has
+no changes its steps are skipped, so the run is one `test` check with no empty
+or skipped legs. On the first push to `main` (no prior commit), every app is
+tested.
 
 Discovery is by **top-level directory**: a change under `kanoodle/` selects
 `kanoodle`, a change under `web-push/` selects `web-push`, and so on. Hidden
 directories (names starting with `.`) and changes outside any app directory
 (e.g. a lone top-level file) select nothing — so a PR that only edits CI scripts
-or the root `README.md` runs no app tests.
+or the root `README.md` runs no app tests. `inkbot-esp32/` has a `Cargo.toml`
+but is excluded from Rust discovery because it needs the espup Xtensa toolchain;
+`inkbot-esp32.yml` runs its host lib tests and firmware cross-build instead.
 
 | App type | Selected when its dir has | CI runs, per changed app |
 |----------|---------------------------|--------------------------|
@@ -247,6 +256,11 @@ or the root `README.md` runs no app tests.
 Browser apps without a `test` script (e.g. `hello/`) are never tested. Each Rust
 app's toolchain comes from its `rust-toolchain.toml` (defaulting to stable);
 Worker apps pin Rust 1.88 (with `worker` 0.8 / wasm-bindgen 0.2.125).
+
+**ESP32 firmware is tested by `inkbot-esp32.yml`, not `test.yml`.** Stable
+Linux Cargo cannot build `xtensa-esp32-espidf`; the dedicated workflow installs
+the esp-rs Xtensa toolchain, runs host `cargo test --lib` / clippy, and
+`make build`s the device image when `inkbot-esp32/` changes.
 
 **The iOS app is tested by a separate workflow (`ios.yml`), not `test.yml`,**
 because it needs a macOS runner. A cheap Linux `discover` job reuses the same
@@ -303,20 +317,25 @@ test workflow gates on:
 
 Publishing is all-or-nothing, so a green run never lands a half-broken bump:
 
-- **Everything upgraded, built, and tested** → it commits the changed
-  lockfiles/manifests (`go.mod`/`go.sum`, `package.json`/`package-lock.json`
-  plus vendored output, `Cargo.toml`/`Cargo.lock`) straight to `main` as a
-  single `chore(deps): update dependencies` commit, and closes any stale
-  automation PR.
-- **Any upgrade, build, test, or the push fails** → it opens (or updates) a pull
-  request on the `automation/dependency-updates` branch with whatever it could
-  change — or an empty commit when nothing did — so a human can finish the
-  upgrade, and the run is marked failed.
+- **Everything upgraded, built, and tested** → it opens (or updates) a pull
+  request on `automation/dependency-updates` with the changed lockfiles/manifests
+  (`go.mod`/`go.sum`, `package.json`/`package-lock.json` plus vendored output,
+  `Cargo.toml`/`Cargo.lock`), enables auto-merge, and lets required status
+  checks merge it into `main`. Direct pushes to `main` are blocked by branch
+  protection, so the workflow federates an [Octo STS](https://github.com/octo-sts/app)
+  GitHub App token (trust policy
+  `.github/chainguard/dependency-updates.sts.yaml`) instead of using
+  `GITHUB_TOKEN` — App-authored PRs trigger Actions checks; `GITHUB_TOKEN` ones
+  do not. When there is nothing to bump, it closes any stale automation PR.
+- **Any upgrade, build, or test fails** → it opens (or updates) the same pull
+  request with whatever it could change — or an empty commit when nothing did —
+  without auto-merge, so a human can finish the upgrade, and the run is marked
+  failed.
 
 Each ecosystem's work lives in its own script (`update-go-dependencies.sh`,
 `update-js-dependencies.sh`, `update-rust-dependencies.sh`), and
-`manage-dependency-update.sh` performs the shared commit / PR / report step. New
-apps are discovered automatically — no workflow edits are needed.
+`manage-dependency-update.sh` handles auto-merge / failure reporting. New apps
+are discovered automatically — no workflow edits are needed.
 
 ## Adding a new browser app
 
@@ -403,7 +422,7 @@ go test ./...
  The deploy self-provisions Cloudflare-side config: KV namespaces referenced
  with a placeholder id (e.g. `id = "REPLACE_WITH_..."`) are created-or-fetched
  and rewritten to real ids before deploy, R2 buckets named by `[[r2_buckets]]`
- entries are created if absent, and a Worker that ships
+  entries are created if absent, and a Worker that ships
  `examples/genvapid.rs` gets a `VAPID_PRIVATE_KEY` secret generated once (only
  if absent, so the key is stable across deploys).
 
@@ -556,6 +575,7 @@ bundle exec fastlane test
 |-----------|------|-------|
 | `web-push/` | Web Push backend — Cloudflare Worker (RFC 8030/8188/8291/8292) | `cargo test` + clippy + wasm build |
 | `cors-proxy/` | SSRF-hardened CORS proxy — Cloudflare Worker | `cargo test` + clippy + wasm build |
+| `inkbot/` | E-ink frame host + Slack `@inkbot` — Cloudflare Worker | `cargo test` + clippy + wasm build |
 | `git-server/` | git smart-HTTP server on R2 + Durable Objects — Cloudflare Worker | `cargo test` (incl. real-git integration) + clippy + wasm build |
 | `git-fuse/` | read-only FUSE adapter for git-server (mount commits/refs as files) — CLI, not a Worker | `cargo test` (incl. e2e over real FUSE mounts; skips without `/dev/fuse`) + clippy |
 | `life-stl/` | Conway's Game of Life → 3D-printable STL (Z = time); self-supporting causality braces (default) or breakaway supports | `cargo test` + clippy |
@@ -576,6 +596,7 @@ auto-discover them. Run their local tests when you change them.
 | Directory | Type | Tests |
 |-----------|------|-------|
 | `its-not-jaws/` | Cursor SDK harness for It's Not Jaws (movie shared-fact guessing); mock backend for tests; live PR game via `its-not-jaws.yml` + `CURSOR_API_KEY` secret | `cd its-not-jaws && npm test` (CI also runs a live game when the secret is set) |
+| `inkbot-esp32/` | Rust/ESP-IDF firmware: poll `inkbot` Worker, show 800×480 B/W PNG on Waveshare 7.5″ | host lib tests + Xtensa cross-build via `inkbot-esp32.yml` |
 | `life-scad/` | OpenSCAD Life sculpture (Z = time) plus optional Python reverse-history search | `python3 life-scad/reverse_life_test.py` (needs `pip install -r life-scad/requirements.txt`) |
 | `life-qr/` | Parametric OpenSCAD Life sculpture with a QR-code roof for any text/height | `python3 life-qr/life_qr_test.py` (optional `pip install segno`) |
 

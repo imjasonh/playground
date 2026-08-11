@@ -1,0 +1,56 @@
+[package]
+name = "inkbot-esp32"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "ESP32 firmware: poll inkbot Worker and show 800×480 B/W PNG on Waveshare 7.5″"
+repository = "https://github.com/imjasonh/playground"
+readme = "README.md"
+publish = false
+
+[lib]
+name = "inkbot_esp32"
+path = "src/lib.rs"
+
+[[bin]]
+name = "inkbot-esp32"
+path = "src/main.rs"
+harness = false
+required-features = ["firmware"]
+
+[features]
+default = []
+# Device firmware (Wi-Fi + HTTP + e-paper). Host `cargo test` leaves this off
+# so the lib's PNG/etag logic can be exercised without the ESP toolchain.
+firmware = []
+
+[dependencies]
+anyhow = "1"
+# Decode the Worker's packed 1-bit PNG into the 48 KB panel framebuffer.
+png = "0.17"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(target_os = "espidf")'.dependencies]
+embedded-graphics = "0.8"
+embedded-svc = "0.29"
+# Upstream compiles a shared 2.13″ module unconditionally and requires one of
+# its revision flags even when we drive the 7.5″ V2 panel.
+epd-waveshare = { git = "https://github.com/rust-embedded-community/epd-waveshare.git", rev = "8fc19ae69aa7b1243953935dd8b6c076950e6ee7", default-features = false, features = ["graphics", "epd2in13_v3"] }
+esp-idf-svc = { version = "0.52", features = ["std", "native", "binstart"] }
+log = "0.4"
+
+[build-dependencies]
+embuild = { version = "0.33", features = ["espidf"] }
+toml = "0.8"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
+
+[profile.dev]
+debug = true
+opt-level = "z"

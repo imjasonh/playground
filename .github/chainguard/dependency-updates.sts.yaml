@@ -1,0 +1,10 @@
+# Trust policy for the daily dependency-update workflow (deps.yaml).
+# Octo STS exchanges the workflow's OIDC token for a GitHub App installation
+# token so opening/updating the automation PR triggers required checks
+# (GITHUB_TOKEN-created PRs do not) and can enable auto-merge onto main.
+issuer: https://token.actions.githubusercontent.com
+subject: repo:imjasonh/playground:ref:refs/heads/main
+
+permissions:
+  contents: write
+  pull_requests: write

@@ -1,0 +1,8 @@
+/target
+/.embuild
+/config.toml
+sdkconfig
+sdkconfig.old
+dependencies.lock
+.vscode/.browse.c_cpp.db*
+*.pem
