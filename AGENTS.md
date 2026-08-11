@@ -168,7 +168,7 @@ discovery scripts.
 | `ios-bootstrap-label.yml` | pull request | Labels PRs that need signing re-bootstrap with `needs-ios-bootstrap` |
 | `ios-bootstrap-on-merge.yml` | pull request closed (merged) | If the PR had `needs-ios-bootstrap`, immediately re-runs signing bootstrap (races `ios.yml`; usually finishes first) |
 | `ios-signing-bootstrap.yml` | manual (`workflow_dispatch`) + reusable | Creates & stores signing cert/profile in the `match` repo; also called on labeled merges |
-| `deps.yaml` | daily at 00:00 UTC, manual | Updates every testable browser app, Go app, and Rust app; pushes passing updates to `main`, otherwise opens a PR |
+| `deps.yaml` | daily at 00:00 UTC, manual | Updates every testable browser app, Go app, and Rust app; opens a PR and auto-merges passing updates to `main`, otherwise leaves a PR for review |
 | `nypd-choppers-scrape.yml` | hourly, manual | **App-specific:** fetches NYPD helicopter full-day ADS-B traces and merges per-day JSON to `gh-pages` under `nypd-choppers/data/`. Not generalized; shares the `gh-pages-publish` concurrency group with deploy/preview/cleanup |
 | `its-not-jaws.yml` | pull requests touching `its-not-jaws/**`, manual | **App-specific:** requires repo secret `CURSOR_API_KEY` (fails if missing), unit-tests the harness, plays one live Cursor Agent SDK game, uploads the result artifact |
 
@@ -312,20 +312,25 @@ test workflow gates on:
 
 Publishing is all-or-nothing, so a green run never lands a half-broken bump:
 
-- **Everything upgraded, built, and tested** → it commits the changed
-  lockfiles/manifests (`go.mod`/`go.sum`, `package.json`/`package-lock.json`
-  plus vendored output, `Cargo.toml`/`Cargo.lock`) straight to `main` as a
-  single `chore(deps): update dependencies` commit, and closes any stale
-  automation PR.
-- **Any upgrade, build, test, or the push fails** → it opens (or updates) a pull
-  request on the `automation/dependency-updates` branch with whatever it could
-  change — or an empty commit when nothing did — so a human can finish the
-  upgrade, and the run is marked failed.
+- **Everything upgraded, built, and tested** → it opens (or updates) a pull
+  request on `automation/dependency-updates` with the changed lockfiles/manifests
+  (`go.mod`/`go.sum`, `package.json`/`package-lock.json` plus vendored output,
+  `Cargo.toml`/`Cargo.lock`), enables auto-merge, and lets required status
+  checks merge it into `main`. Direct pushes to `main` are blocked by branch
+  protection, so the workflow federates an [Octo STS](https://github.com/octo-sts/app)
+  GitHub App token (trust policy
+  `.github/chainguard/dependency-updates.sts.yaml`) instead of using
+  `GITHUB_TOKEN` — App-authored PRs trigger Actions checks; `GITHUB_TOKEN` ones
+  do not. When there is nothing to bump, it closes any stale automation PR.
+- **Any upgrade, build, or test fails** → it opens (or updates) the same pull
+  request with whatever it could change — or an empty commit when nothing did —
+  without auto-merge, so a human can finish the upgrade, and the run is marked
+  failed.
 
 Each ecosystem's work lives in its own script (`update-go-dependencies.sh`,
 `update-js-dependencies.sh`, `update-rust-dependencies.sh`), and
-`manage-dependency-update.sh` performs the shared commit / PR / report step. New
-apps are discovered automatically — no workflow edits are needed.
+`manage-dependency-update.sh` handles auto-merge / failure reporting. New apps
+are discovered automatically — no workflow edits are needed.
 
 ## Adding a new browser app
 
