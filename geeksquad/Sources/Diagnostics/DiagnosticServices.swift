@@ -1118,10 +1118,11 @@ struct DiagnosticServices: Sendable {
     }
 
     private func tcpConnect(host: String, port: UInt16, timeout: TimeInterval) async -> Bool {
-        await withCheckedContinuation { continuation in
+        guard let nwPort = NWEndpoint.Port(rawValue: port) else { return false }
+        return await withCheckedContinuation { continuation in
             let connection = NWConnection(
                 host: NWEndpoint.Host(host),
-                port: NWEndpoint.Port(rawValue: port)!,
+                port: nwPort,
                 using: .tcp
             )
             let lock = NSLock()

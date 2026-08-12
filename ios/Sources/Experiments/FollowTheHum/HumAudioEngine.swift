@@ -36,7 +36,8 @@ final class HumAudioEngine {
     }
 
     private static var stereoFormat: AVAudioFormat {
-        AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 2)!
+        // standardFormatWithSampleRate never fails for 44.1kHz stereo.
+        AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 2)! // pasta:ignore force_unwrap — standard AVAudioFormat
     }
 
     func start() throws {
@@ -89,7 +90,8 @@ final class HumAudioEngine {
     private func makeHumBuffer(frequency: Double, pan: Double) -> AVAudioPCMBuffer {
         let format = Self.stereoFormat
         let frames: AVAudioFrameCount = 44_100
-        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames)!
+        // frameCapacity > 0 with a valid PCM format always succeeds.
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames)! // pasta:ignore force_unwrap — AVAudioPCMBuffer
         buffer.frameLength = frames
 
         guard let left = buffer.floatChannelData?[0],

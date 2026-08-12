@@ -228,7 +228,8 @@ final class SnoreMonitor: ObservableObject {
         var mono = [Float](repeating: 0, count: frameCount)
         if channelCount <= 1 {
             mono.withUnsafeMutableBufferPointer { dst in
-                dst.baseAddress!.update(from: channels[0], count: frameCount)
+                guard let base = dst.baseAddress else { return }
+                base.update(from: channels[0], count: frameCount)
             }
         } else {
             let scale = 1 / Float(channelCount)
