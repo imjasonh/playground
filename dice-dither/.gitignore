@@ -1,0 +1,3 @@
+target/
+# Source photos fetched by render-examples.sh (not ours to redistribute in bulk).
+examples/source/

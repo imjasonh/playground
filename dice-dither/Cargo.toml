@@ -1,0 +1,29 @@
+[package]
+name = "dice-dither"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Dither an image into a grid of dice faces (1-6 pips), like a physical dice mosaic"
+repository = "https://github.com/imjasonh/playground"
+readme = "README.md"
+publish = false
+
+[lib]
+name = "dice_dither"
+path = "src/lib.rs"
+
+[[bin]]
+name = "dice-dither"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+image = { version = "0.25", default-features = false, features = [
+    "bmp",
+    "jpeg",
+    "png",
+    "webp",
+] }
+
+[dev-dependencies]
+tempfile = "3"
