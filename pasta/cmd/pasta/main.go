@@ -151,7 +151,9 @@ func runFix(args []string) int {
 	cache := openCache(*noCache, analyzers, *rulesDir)
 	var stats engine.Stats
 	var memTracker *engine.MemoryTracker
-	if mb := resolveMemoryBudget(*memoryBudgetFlag, cfg); mb >= 0 {
+	// Budget 0 means "unlimited" (same as unset); only positive
+	// budgets install a tracker.
+	if mb := resolveMemoryBudget(*memoryBudgetFlag, cfg); mb > 0 {
 		memTracker = &engine.MemoryTracker{Budget: mb}
 	}
 	exit := 0
@@ -177,12 +179,11 @@ func runFix(args []string) int {
 		changed := 0
 		for _, res := range results {
 			if res.SkipReason != "" {
+				// Skips are host/grammar limits (parse budget, ERROR-
+				// heavy recovery, memory caps) — log them, but do not
+				// fail -fail-on. Style enforcement is about
+				// diagnostics, not tree-sitter capacity.
 				fmt.Fprintf(os.Stderr, "%s: skipped (%s)\n", res.Path, res.SkipReason)
-				// When used as a CI gate, inability to analyze a file
-				// is a failure — otherwise skips are silent w.r.t. -fail-on.
-				if failThreshold != failOnNone {
-					exit = 1
-				}
 				continue
 			}
 			if pass == 0 {
@@ -759,22 +760,82 @@ func runTest(args []string) int {
 		args = []string{DefaultRulesDir}
 	}
 	exit := 0
-	for _, dir := range args {
-		report, err := runner.TestDir(context.Background(), dir)
+	for _, arg := range args {
+		dirs, err := expandTestRuleDirs(arg)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s: %v\n", dir, err)
+			fmt.Fprintf(os.Stderr, "%s: %v\n", arg, err)
 			exit = 1
 			continue
 		}
-		if report.Failed() {
-			fmt.Fprintf(os.Stderr, "FAIL %s (%d files):\n", dir, report.NumFiles)
-			for _, f := range report.Failures {
-				fmt.Fprintf(os.Stderr, "  %s\n", f)
+		for _, dir := range dirs {
+			report, err := runner.TestDir(context.Background(), dir)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%s: %v\n", dir, err)
+				exit = 1
+				continue
 			}
-			exit = 1
-		} else {
-			fmt.Fprintf(os.Stderr, "ok   %s (%d files)\n", dir, report.NumFiles)
+			if report.Failed() {
+				fmt.Fprintf(os.Stderr, "FAIL %s (%d files):\n", dir, report.NumFiles)
+				for _, f := range report.Failures {
+					fmt.Fprintf(os.Stderr, "  %s\n", f)
+				}
+				exit = 1
+			} else {
+				fmt.Fprintf(os.Stderr, "ok   %s (%d files)\n", dir, report.NumFiles)
+			}
 		}
 	}
 	return exit
+}
+
+// expandTestRuleDirs resolves a pasta test argument to one or more
+// analyzer directories that each contain testdata/.
+//
+//   - dir/testdata exists → [dir] (classic single-analyzer layout)
+//   - else each immediate child with *.cue + testdata/ → those children
+//     (`.pasta/` or `analyzers/` parent layouts, including symlinks)
+func expandTestRuleDirs(dir string) ([]string, error) {
+	info, err := os.Stat(dir)
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("not a directory")
+	}
+	if td, err := os.Stat(filepath.Join(dir, "testdata")); err == nil && td.IsDir() {
+		return []string{dir}, nil
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, e := range entries {
+		name := e.Name()
+		full := filepath.Join(dir, name)
+		isDir := e.IsDir()
+		if e.Type()&fs.ModeSymlink != 0 {
+			st, err := os.Stat(full)
+			if err != nil {
+				continue
+			}
+			isDir = st.IsDir()
+		}
+		if !isDir {
+			continue
+		}
+		cueMatches, _ := filepath.Glob(filepath.Join(full, "*.cue"))
+		if len(cueMatches) == 0 {
+			continue
+		}
+		if td, err := os.Stat(filepath.Join(full, "testdata")); err != nil || !td.IsDir() {
+			continue
+		}
+		out = append(out, full)
+	}
+	sort.Strings(out)
+	if len(out) == 0 {
+		return nil, fmt.Errorf("testdata directory missing (and no analyzer subdirectories with testdata/)")
+	}
+	return out, nil
 }

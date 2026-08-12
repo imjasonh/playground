@@ -29,7 +29,7 @@ enum SnoreClipWriter {
         buffer.frameLength = frameCount
         if let channel = buffer.floatChannelData?[0] {
             samples.withUnsafeBufferPointer { src in
-                channel.update(from: src.baseAddress!, count: samples.count)
+                channel.update(from: src.baseAddress!, count: samples.count) // pasta:ignore force_unwrap — withUnsafeBufferPointer baseAddress
             }
         }
         try file.write(from: buffer)

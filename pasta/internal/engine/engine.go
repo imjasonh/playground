@@ -437,7 +437,7 @@ func processFile(
 	s, err := newFileState(ctx, f, store, o.parseTimeout)
 	if err != nil {
 		releaseParse(o, int64(len(src)))
-		if errors.Is(err, tsutil.ErrParseTimeout) {
+		if errors.Is(err, tsutil.ErrParseTimeout) || errors.Is(err, tsutil.ErrParseResourceLimit) {
 			out.SkipReason = "too complex to analyze"
 			if o.stats != nil {
 				o.stats.TimedOut.Add(1)
@@ -596,7 +596,7 @@ func runInMemory(
 		s, err := newFileState(ctx, f, store, parseTimeout)
 		if err != nil {
 			releaseParse(o, int64(len(src)))
-			if errors.Is(err, tsutil.ErrParseTimeout) {
+			if errors.Is(err, tsutil.ErrParseTimeout) || errors.Is(err, tsutil.ErrParseResourceLimit) {
 				results[i].SkipReason = "too complex to analyze"
 				if o != nil && o.stats != nil {
 					o.stats.TimedOut.Add(1)

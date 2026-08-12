@@ -37,8 +37,11 @@ jobs:
           cache: npm
           cache-dependency-path: '**/package-lock.json'
 
+      # Go toolchain for Go modules and/or the pasta style leg (pasta is a
+      # Go module; the pasta leg builds the CLI even when no other Go app
+      # changed).
       - uses: actions/setup-go@v6
-        if: ${{ steps.discover.outputs.modules != '[]' }}
+        if: ${{ steps.discover.outputs.modules != '[]' || steps.discover.outputs.pasta == 'true' }}
         with:
           go-version: 'stable'
           check-latest: true
@@ -71,3 +74,7 @@ jobs:
             env:
               RUST_APPS: ${{ steps.discover.outputs.rust }}
             run: bash .github/scripts/test-rust-apps.sh
+
+          - name: pasta test and lint
+            if: ${{ steps.discover.outputs.pasta == 'true' }}
+            run: bash .github/scripts/test-pasta.sh

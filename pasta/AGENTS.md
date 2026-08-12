@@ -154,6 +154,13 @@ positional dir) to override. `.pasta` is added to the `./...` walk's
 default skip list so the rules and their testdata aren't picked up
 as project sources.
 
+`LoadDir` accepts both flat `*.cue` files and **nested packages** —
+each immediate subdirectory (or symlink) that contains `*.cue` is
+loaded as its own analyzer package. The playground monorepo enrolls
+rules as `.pasta/<name> → ../pasta/analyzers/<name>` symlinks plus a
+`.pasta/pasta.cue` for `disabled_rules` / `skip` / budgets. `pasta test
+.pasta` expands to every enrolled child that has `testdata/`.
+
 The single-rule shortcut still works: when the first positional arg
 is an existing `.cue` file, `pasta rule.cue source...` loads that
 one file as before.
@@ -171,8 +178,8 @@ Recognized config fields, all optional:
 
 ```cue
 imports: {"github.com/alice/lint-rules": "v1.2.3"}  // remote rule modules
-disabled_rules: ["go_iferr", "todo_format"]         // skip these rules entirely
-severity: {go_panic_empty: "error"}                  // override per-rule severity
+disabled_rules: ["go_iferr", "todo_format"]         // skip analyzers or rules
+severity: {go_panic_empty: "error"}                  // override per analyzer/rule
 skip: ["build", "dist"]                              // extra ./... walk skip-dirs
 max_file_size: 2_000_000                              // bytes; 0 disables; default 1 MiB
 parse_timeout_ms: 2000                                // per-file parse budget; 0 unlimited
@@ -180,7 +187,8 @@ memory_budget: 512_000_000                            // cumulative parsed sourc
 ```
 
 `disabled_rules` and `severity` are applied to the analyzers at load
-time by `applyConfig` (rule-name → drop / severity rewrite).
+time by `applyConfig`. Names may be **analyzer** names (`go_iferr`) or
+individual **rule** names (`inline_define`, `force_unwrap`).
 `skip` is consumed by the CLI, unioned with `-skip` and the built-in
 defaults. Severity values are validated — anything outside
 `error|warning|info|hint` is a load error.

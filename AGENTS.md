@@ -163,7 +163,7 @@ discovery scripts.
 | `deploy-workers.yml` | push to `main`, manual | Deploys changed Cloudflare Worker apps (those with `wrangler.toml`) with `wrangler`, using the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets; a manual *Run workflow* (`workflow_dispatch`) redeploys all of them. Before deploy it create-or-gets each Worker's KV namespaces (substituting the placeholder ids in `wrangler.toml`) and creates any declared R2 buckets that don't exist; after deploy it get-or-generates a `VAPID_PRIVATE_KEY` secret for any Worker shipping an `examples/genvapid.rs` |
 | `preview.yml` | pull request opened/sync | When a browser app changed: deploys under `/preview/pr-<N>/` and comments the URL; otherwise no-ops |
 | `cleanup.yml` | pull request closed, manual | Removes closed-PR preview dirs from `gh-pages` (reconciles all open PRs) and refreshes the root index |
-| `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps in one job |
+| `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps, plus the pasta style leg, in one job |
 | `inkbot-esp32.yml` | push to `main`, pull requests, manual | Always runs discover + host/firmware jobs (so they can be required checks); host/firmware no-op when `inkbot-esp32/` (or this workflow) is unchanged (excluded from `test.yml`) |
 | `ios.yml` | push to `main`, pull requests | Tests changed iOS apps on macOS; on `main`, delivers them to TestFlight |
 | `macos.yml` | push to `main`, pull requests | Tests changed macOS apps on macOS; on `main`, ships notarized Sparkle updates when secrets are present |
@@ -232,11 +232,13 @@ Every push to `main` and every pull request runs a single `test` job. It first
 discovers which apps changed
 (`.github/scripts/discover-changed-apps.sh`), then tests **only the changed apps
 of each type**, installing each toolchain (Node, Go, Rust) only when that type
-has work to do and running the browser / Go / Rust test legs concurrently via
+has work to do and running the browser / Go / Rust / pasta test legs concurrently via
 an Actions `parallel:` step group (same pattern as `deps.yaml`). When a type has
 no changes its steps are skipped, so the run is one `test` check with no empty
 or skipped legs. On the first push to `main` (no prior commit), every app is
-tested.
+tested. The **pasta** leg builds the `pasta/` CLI, runs `pasta test` over the
+enrolled `.pasta/` analyzers, and lints the monorepo with `-fail-on=warning`
+(see `.github/scripts/test-pasta.sh`).
 
 Discovery is by **top-level directory**: a change under `kanoodle/` selects
 `kanoodle`, a change under `web-push/` selects `web-push`, and so on. Hidden
@@ -251,6 +253,7 @@ but is excluded from Rust discovery because it needs the espup Xtensa toolchain;
 | Browser | `index.html` **and** `package.json` with a `test` script | `npm ci` → `npm test` → `npm run test:e2e` (if defined; installs Playwright Chromium first) |
 | Go | `go.mod` | `go build ./...` → `go test ./...` |
 | Rust | `Cargo.toml` | `cargo fmt --check` → `cargo clippy --locked --all-targets -D warnings` → `cargo test --locked`; Cloudflare Worker apps (with `wrangler.toml`) also run wasm clippy + a release `wasm32-unknown-unknown` build, then the wrangler `[build]` command (with a decoy `package.json` like wrangler-action creates) so Test covers the deploy artifact path |
+| pasta | `pasta/` / `.pasta/` / lintable sources (`.go`, `.js`, `.ts`, `.tsx`, `.jsx`, `.rs`, `.swift`, `.sh`, `.yml`, `.yaml`, `.html`, `.css`, …) via `discover-pasta.sh` | `go build ./pasta/cmd/pasta` → `pasta test .pasta` → `pasta -fail-on=warning ./...` |
 
 Browser apps without a `test` script (e.g. `hello/`) are never tested. Each Rust
 app's toolchain comes from its `rust-toolchain.toml` (defaulting to stable);
@@ -296,9 +299,11 @@ Run the per-type discovery helpers locally to see what CI would select:
 bash .github/scripts/discover-testable-apps.sh --all   # browser
 bash .github/scripts/discover-go-modules.sh --all      # Go
 bash .github/scripts/discover-rust-apps.sh --all       # Rust
+bash .github/scripts/discover-pasta.sh --all           # pasta style leg
 
 # Only what a diff touched (what CI uses on a PR)
 git diff --name-only origin/main...HEAD | bash .github/scripts/discover-rust-apps.sh --from-changes
+git diff --name-only origin/main...HEAD | bash .github/scripts/discover-pasta.sh --from-changes
 ```
 
 ## Dependency updates (`deps.yaml`)
@@ -566,7 +571,7 @@ bundle exec fastlane test
 |-----------|------|-------|
 | `gitdb/` | git repository explorer backed by SQLite virtual tables | `go test ./...` |
 | `ocidb/` | OCI registry explorer backed by SQLite virtual tables | `go test ./...` |
-| `pasta/` | CUE-described multi-language linters/fixers over tree-sitter ASTs; see [`pasta/AGENTS.md`](pasta/AGENTS.md) | `go test ./...` (incl. e2e shallow-clone smoke) |
+| `pasta/` | CUE-described multi-language linters/fixers over tree-sitter ASTs; see [`pasta/AGENTS.md`](pasta/AGENTS.md). Playground style rules are enrolled under repo-root `.pasta/` and gated by the pasta leg of `test.yml` | `go test ./...` (incl. e2e shallow-clone smoke); CI also runs `pasta test` + monorepo lint |
 
 ## Current Rust apps
 
