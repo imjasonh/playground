@@ -566,7 +566,7 @@ bundle exec fastlane test
 |-----------|------|-------|
 | `gitdb/` | git repository explorer backed by SQLite virtual tables | `go test ./...` |
 | `ocidb/` | OCI registry explorer backed by SQLite virtual tables | `go test ./...` |
-| `pasta/` | CUE-described multi-language linters/fixers over tree-sitter ASTs | `go test ./...` (incl. e2e shallow-clone smoke) |
+| `pasta/` | CUE-described multi-language linters/fixers over tree-sitter ASTs; see [`pasta/AGENTS.md`](pasta/AGENTS.md) | `go test ./...` (incl. e2e shallow-clone smoke) |
 
 ## Current Rust apps
 
