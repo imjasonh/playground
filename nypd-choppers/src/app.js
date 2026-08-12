@@ -180,7 +180,7 @@ function renderTable(analysis) {
     .map((a) => {
       const miles = Math.round(kmToMiles(a.distanceKm)).toLocaleString();
       return (
-        `<tr>` +
+        '<tr>' +
         `<td><span class="tail-cell"><span class="swatch" style="background:${a.color}"></span>${a.tail ?? a.hex}</span></td>` +
         `<td>${a.model ?? "&mdash;"}</td>` +
         `<td class="num">${a.flightCount}</td>` +
@@ -188,7 +188,7 @@ function renderTable(analysis) {
         `<td class="num">${miles} mi</td>` +
         `<td class="num">${Math.round(a.estimatedGallons).toLocaleString()} gal</td>` +
         `<td class="num">${fmtMoney(a.estimatedCost)}</td>` +
-        `</tr>`
+        '</tr>'
       );
     })
     .join("");

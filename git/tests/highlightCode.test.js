@@ -42,15 +42,15 @@ describe('grammarForPath / canHighlight', () => {
 
 describe('text preservation (never corrupts the file)', () => {
   const samples = {
-    js: `// a comment\nconst x = "hi";\nfunction foo(a) { return a + 1; }\nlet t = \`tpl \${x}\`;\n`,
-    json: `{\n  "name": "demo",\n  "count": 3,\n  "ok": true,\n  "nested": null\n}\n`,
-    css: `:root { --x: #fff; }\n.a { color: red; width: 10px; } /* c */\n`,
-    markup: `<!-- c -->\n<div class="x" id='y'>text &amp; more</div>\n`,
-    markdown: `# Title\n\n- item with \`code\`\n> quote\n\n**bold** and *em* [l](http://x)\n`,
-    python: `# c\ndef f(x):\n    return "s" + 'q'\nclass A: pass\n`,
-    shell: `#!/bin/bash\necho "$HOME/x" # note\nfor i in 1 2; do done\n`,
-    yaml: `# c\nname: demo\nlist:\n  - a\n  - b\nflag: true\n`,
-    clike: `#include <stdio.h>\nint main(void) { /* x */ return 0; }\n`,
+    js: `// a comment\nconst x = "hi";\nfunction foo(a) { return a + 1; }\nlet t = \`tpl \${x}\`;\n`, // pasta:ignore no_substitution — tests nested template highlighting
+    json: '{\n  "name": "demo",\n  "count": 3,\n  "ok": true,\n  "nested": null\n}\n',
+    css: ':root { --x: #fff; }\n.a { color: red; width: 10px; } /* c */\n',
+    markup: "<!-- c -->\n<div class=\"x\" id='y'>text &amp; more</div>\n",
+    markdown: '# Title\n\n- item with \'code\`\n> quote\n\n**bold** and *em* [l](http://x)\n',
+    python: "# c\ndef f(x):\n    return \"s\" + 'q'\nclass A: pass\n",
+    shell: '#!/bin/bash\necho "$HOME/x" # note\nfor i in 1 2; do done\n',
+    yaml: '# c\nname: demo\nlist:\n  - a\n  - b\nflag: true\n',
+    clike: '#include <stdio.h>\nint main(void) { /* x */ return 0; }\n',
   };
 
   test.each(Object.entries(samples))('round-trips %s', (grammar, code) => {
