@@ -9,19 +9,20 @@ package ts_any_type
 
 import (
 	"github.com/imjasonh/pasta/schema"
+	tsxlang "github.com/imjasonh/pasta/lang/tsx"
 	tslang "github.com/imjasonh/pasta/lang/typescript"
 )
 
 ts_any_type: schema.#Analyzer & {
 	name:    "ts_any_type"
-	version: "0.1.0"
+	version: "0.1.1"
 	doc:     "Flag `: any` type annotations"
 	facts: {}
 
 	rules: any_type: {
 		name:      "any_type"
 		doc:       "Flag `any` predefined type"
-		languages: [tslang.Name]
+		languages: [tslang.Name, tsxlang.Name]
 		requires: []
 		provides: []
 

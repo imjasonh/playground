@@ -8,7 +8,7 @@ enum SettingsDeepLinks {
         var phrases: [String]
         var urlString: String
 
-        var url: URL { URL(string: urlString)! }
+        var url: URL { URL(string: urlString)! } // pasta:ignore force_unwrap — constant URL
     }
 
     /// Prefer longer / more specific paths first when linkifying.

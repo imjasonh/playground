@@ -417,7 +417,11 @@ func collectSpecs(t *testing.T, root string, repo smokeRepo) []runner.FileSpec {
 			}
 			return nil
 		}
-		if _, ok := lang.ByExt(filepath.Ext(d.Name())); !ok {
+		name := d.Name()
+		if runner.IsGeneratedLockfile(name) {
+			return nil
+		}
+		if _, ok := lang.ByExt(filepath.Ext(name)); !ok {
 			return nil
 		}
 		info, ierr := d.Info()

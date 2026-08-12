@@ -37,6 +37,34 @@ func TestWalkSources_skipsVendorTrees(t *testing.T) {
 	}
 }
 
+func TestWalkSources_skipsPackageLockJSON(t *testing.T) {
+	dir := t.TempDir()
+	for name, body := range map[string]string{
+		"app.js":             "console.log(1)\n",
+		"package-lock.json":  `{"lockfileVersion": 3}`,
+		"npm-shrinkwrap.json": `{"name": "x"}`,
+		"data.json":          `{"ok": true}`,
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, _, err := walkSources(dir, map[string]bool{}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bases := map[string]bool{}
+	for _, p := range got {
+		bases[filepath.Base(p)] = true
+	}
+	if !bases["app.js"] || !bases["data.json"] {
+		t.Fatalf("expected app.js and data.json kept; got %v", got)
+	}
+	if bases["package-lock.json"] || bases["npm-shrinkwrap.json"] {
+		t.Fatalf("generated lockfiles should be skipped; got %v", got)
+	}
+}
+
 func TestWalkSources_skipsSymlink(t *testing.T) {
 	dir := t.TempDir()
 	real := filepath.Join(dir, "real.go")

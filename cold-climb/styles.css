@@ -361,7 +361,7 @@ h1 {
 }
 
 .touch-control {
-  --knob-y: 0px;
+  --knob-y: 0;
   position: relative;
   display: grid;
   grid-template-rows: auto 1fr auto;

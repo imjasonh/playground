@@ -7,19 +7,20 @@ package ts_array_type_style
 
 import (
 	"github.com/imjasonh/pasta/schema"
+	tsxlang "github.com/imjasonh/pasta/lang/tsx"
 	tslang "github.com/imjasonh/pasta/lang/typescript"
 )
 
 ts_array_type_style: schema.#Analyzer & {
 	name:    "ts_array_type_style"
-	version: "0.1.0"
+	version: "0.1.1"
 	doc:     "Rewrite Array<T> to T[] for simple T"
 	facts: {}
 
 	rules: prefer_shorthand: {
 		name: "prefer_shorthand"
 		doc:  "Array<T> -> T[]"
-		languages: [tslang.Name]
+		languages: [tslang.Name, tsxlang.Name]
 		requires: []
 		provides: []
 

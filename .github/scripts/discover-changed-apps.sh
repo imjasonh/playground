@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Discover changed testable browser apps, Go modules, Rust apps, iOS apps,
-# macOS apps, and inkbot-esp32 firmware for the test / platform workflows.
+# macOS apps, inkbot-esp32 firmware, and whether the pasta style leg should
+# run for the test / platform workflows.
 set -euo pipefail
 
 : "${EVENT_NAME:?EVENT_NAME must be set}"
@@ -26,6 +27,11 @@ EOF
   echo '[]'
 }
 
+pasta_from_changes() {
+  # discover-pasta.sh prints `pasta=true|false`; strip the key.
+  printf '%s\n' "$1" | bash .github/scripts/discover-pasta.sh --from-changes | sed -n 's/^pasta=//p'
+}
+
 if [ "$EVENT_NAME" = "pull_request" ]; then
   : "${BASE_REF:?BASE_REF must be set for pull requests}"
   git fetch origin "$BASE_REF"
@@ -41,6 +47,7 @@ else
     ios=$(bash .github/scripts/discover-ios-apps.sh --all)
     macos=$(bash .github/scripts/discover-macos-apps.sh --all)
     inkbot_esp32='["inkbot-esp32"]'
+    pasta=true
     {
       echo "apps=${apps}"
       echo "modules=${modules}"
@@ -48,6 +55,7 @@ else
       echo "ios=${ios}"
       echo "macos=${macos}"
       echo "inkbot_esp32=${inkbot_esp32}"
+      echo "pasta=${pasta}"
     } >> "$GITHUB_OUTPUT"
     echo "Testable browser apps: ${apps}"
     echo "Go apps: ${modules}"
@@ -55,6 +63,7 @@ else
     echo "iOS apps: ${ios}"
     echo "macOS apps: ${macos}"
     echo "inkbot-esp32: ${inkbot_esp32}"
+    echo "pasta: ${pasta}"
     exit 0
   else
     changed=$(git diff --name-only "$BEFORE_SHA" "$HEAD_SHA")
@@ -68,6 +77,7 @@ if [ -z "$changed" ]; then
   ios='[]'
   macos='[]'
   inkbot_esp32='[]'
+  pasta=false
 else
   apps=$(printf '%s\n' "$changed" | bash .github/scripts/discover-testable-apps.sh --from-changes)
   modules=$(printf '%s\n' "$changed" | bash .github/scripts/discover-go-modules.sh --from-changes)
@@ -75,6 +85,7 @@ else
   ios=$(printf '%s\n' "$changed" | bash .github/scripts/discover-ios-apps.sh --from-changes)
   macos=$(printf '%s\n' "$changed" | bash .github/scripts/discover-macos-apps.sh --from-changes)
   inkbot_esp32=$(inkbot_esp32_from_changes "$changed")
+  pasta=$(pasta_from_changes "$changed")
 fi
 
 {
@@ -84,6 +95,7 @@ fi
   echo "ios=${ios}"
   echo "macos=${macos}"
   echo "inkbot_esp32=${inkbot_esp32}"
+  echo "pasta=${pasta}"
 } >> "$GITHUB_OUTPUT"
 
 echo "Changed paths:"
@@ -94,3 +106,4 @@ echo "Rust apps: ${rust}"
 echo "iOS apps: ${ios}"
 echo "macOS apps: ${macos}"
 echo "inkbot-esp32: ${inkbot_esp32}"
+echo "pasta: ${pasta}"

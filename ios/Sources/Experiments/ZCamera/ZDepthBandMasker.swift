@@ -196,11 +196,11 @@ enum ZDepthBandMasker {
         bgra.withUnsafeMutableBufferPointer { bgraBuffer in
             depth.withUnsafeBufferPointer { depthBuffer in
                 applyBandInPlace(
-                    bgra: bgraBuffer.baseAddress!,
+                    bgra: bgraBuffer.baseAddress!, // pasta:ignore force_unwrap — withUnsafeMutableBufferPointer
                     width: width,
                     height: height,
                     bytesPerRow: width * 4,
-                    depth: depthBuffer.baseAddress!,
+                    depth: depthBuffer.baseAddress!, // pasta:ignore force_unwrap — withUnsafeBufferPointer
                     depthWidth: depthWidth,
                     depthHeight: depthHeight,
                     depthBytesPerRow: depthWidth * MemoryLayout<Float>.size,
