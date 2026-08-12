@@ -23,7 +23,7 @@ import (
 //	severity:       {go_panic_empty: "error"}            // override per-rule severity
 //	skip:           ["build", "dist"]                    // extra ./... walk skip-dirs
 //	max_file_size:  2_000_000                            // bytes; 0 = unlimited
-//	parse_timeout:  "2s"                                 // per-file parse budget; 0 = unlimited
+//	parse_timeout_ms: 2000                               // per-file parse budget in ms; 0 = unlimited
 //
 // `imports` is consumed by internal/remote (LoadManifest); this loader
 // only reads the config-relevant fields. Co-locating them in one file

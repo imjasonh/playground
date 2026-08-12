@@ -31,6 +31,10 @@ type FileResult struct {
 	Diagnostics []effect.Diagnostic
 	Ops         []effect.Op
 	Fixed       []byte
+	// Src is the source bytes the engine analyzed (Ops offsets refer
+	// to this slice). Prefer this over re-reading Path when applying
+	// fixes.
+	Src []byte
 	// SkipReason is set when the engine declined to analyze the file
 	// (e.g. parse budget exceeded). Empty on a normal run — including
 	// silent content-sniff pre-filter skips, which produce no
@@ -141,8 +145,8 @@ func WithParseTimeout(d time.Duration) Option {
 // FileResult per spec, positionally aligned.
 //
 // If applyFixes is true each result's Fixed is populated by applying
-// that file's ops to its source. When Src was nil, the source is
-// re-read from Path for the apply step.
+// that file's ops to the analyzed source bytes (engine.Result.Src),
+// never to a fresh re-read of Path.
 func RunGroup(ctx context.Context, specs []FileSpec, analyzers []*dsl.Analyzer, applyFixes bool, opts ...Option) ([]FileResult, error) {
 	if len(specs) == 0 {
 		return nil, nil
@@ -182,16 +186,19 @@ func RunGroup(ctx context.Context, specs []FileSpec, analyzers []*dsl.Analyzer, 
 			Path:        s.Path,
 			Diagnostics: results[i].Diagnostics,
 			Ops:         results[i].Ops,
+			Src:         results[i].Src,
 			SkipReason:  results[i].SkipReason,
 		}
 		if applyFixes && results[i].SkipReason == "" {
-			src := s.Src
+			src := results[i].Src
 			if src == nil {
-				var err error
-				src, err = os.ReadFile(s.Path)
-				if err != nil {
-					return nil, fmt.Errorf("read %s: %w", s.Path, err)
-				}
+				// Engine always sets Src after a successful load; this
+				// fallback only covers pre-engine failures that still
+				// returned a result slot.
+				src = s.Src
+			}
+			if src == nil {
+				return nil, fmt.Errorf("apply %s: no analyzed source bytes", s.Path)
 			}
 			fixed, err := apply.Apply(src, results[i].Ops, dsl.RewriteOpts{})
 			if err != nil {
@@ -354,6 +361,10 @@ func runTestGroup(ctx context.Context, paths []string, analyzers []*dsl.Analyzer
 	for i, res := range results {
 		p := specs[i].Path
 		src := specs[i].Src
+		if res.SkipReason != "" {
+			report.Failures = append(report.Failures, fmt.Sprintf("%s: skipped (%s)", p, res.SkipReason))
+			continue
+		}
 		if msg := checkDiagnostics(src, res.Diagnostics); msg != "" {
 			report.Failures = append(report.Failures, fmt.Sprintf("%s: %s", p, msg))
 		}

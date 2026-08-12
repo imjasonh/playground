@@ -148,17 +148,22 @@ func runFix(args []string) int {
 		if !*fix {
 			continue
 		}
-		// Skip the write when the rewrite is a no-op so we don't bump
-		// mtimes for every file in a `./...` run — that would defeat
-		// build caches and file watchers. Re-read rather than retaining
-		// the original bytes from the initial walk.
-		orig, err := os.ReadFile(res.Path)
+		// Fixed was computed against res.Src (the analyzed snapshot).
+		// Skip the write when it's a no-op, and refuse to write if the
+		// on-disk file changed since analysis — applying byte-offset
+		// ops to different bytes would corrupt the file.
+		if res.Fixed == nil || bytes.Equal(res.Src, res.Fixed) {
+			continue
+		}
+		onDisk, err := os.ReadFile(res.Path)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s: %v\n", res.Path, err)
 			exit = 1
 			continue
 		}
-		if bytes.Equal(orig, res.Fixed) {
+		if !bytes.Equal(onDisk, res.Src) {
+			fmt.Fprintf(os.Stderr, "%s: skipped write (file changed since analyze)\n", res.Path)
+			exit = 1
 			continue
 		}
 		if err := os.WriteFile(res.Path, res.Fixed, 0o644); err != nil {

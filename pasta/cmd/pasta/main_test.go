@@ -5,7 +5,9 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
+	"github.com/imjasonh/pasta/internal/engine"
 	"github.com/imjasonh/pasta/internal/loader"
 )
 
@@ -81,6 +83,28 @@ func TestResolveMaxFileSize(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := resolveMaxFileSize(tc.cfg); got != tc.want {
 				t.Errorf("got %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestResolveParseTimeout(t *testing.T) {
+	cases := []struct {
+		name string
+		flag time.Duration
+		cfg  *loader.Config
+		want time.Duration
+	}{
+		{name: "default", flag: -1, cfg: nil, want: engine.DefaultParseTimeout},
+		{name: "flag wins", flag: 500 * time.Millisecond, cfg: &loader.Config{ParseTimeout: int64Ptr(9999)}, want: 500 * time.Millisecond},
+		{name: "flag zero disables", flag: 0, cfg: nil, want: 0},
+		{name: "config ms", flag: -1, cfg: &loader.Config{ParseTimeout: int64Ptr(1500)}, want: 1500 * time.Millisecond},
+		{name: "config zero disables", flag: -1, cfg: &loader.Config{ParseTimeout: int64Ptr(0)}, want: 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := resolveParseTimeout(tc.flag, tc.cfg); got != tc.want {
+				t.Errorf("got %v, want %v", got, tc.want)
 			}
 		})
 	}

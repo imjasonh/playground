@@ -33,6 +33,11 @@ import (
 type Result struct {
 	Diagnostics []effect.Diagnostic
 	Ops         []effect.Op
+	// Src is the exact source bytes that were loaded (and, when
+	// analysis ran, that Ops byte offsets refer to). Callers applying
+	// fixes must use this slice — not a later re-read of Path — so
+	// concurrent edits can't corrupt the file.
+	Src []byte
 	// SkipReason is non-empty when the file was not analyzed. Common
 	// values: prefilter miss (empty string — silent), or a human
 	// message for parse-budget bailouts ("too complex to analyze").
@@ -298,6 +303,7 @@ func processFile(
 		return err
 	}
 	f.Src = src
+	out.Src = src
 
 	applicable := applicableRules(groups, f.Lang, filepath.Base(fileName(f)))
 	if len(applicable) == 0 {
@@ -375,6 +381,7 @@ func runInMemory(
 			return nil, err
 		}
 		f.Src = src
+		results[i].Src = src
 		applicable := applicableRules(groups, f.Lang, filepath.Base(fileName(f)))
 		if len(applicable) == 0 || !prefilter.MayMatch(src, prefilter.ForRules(applicable)) {
 			continue

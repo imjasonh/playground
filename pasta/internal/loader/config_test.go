@@ -151,6 +151,43 @@ func TestLoadConfig_maxFileSizeNegative(t *testing.T) {
 	}
 }
 
+func TestLoadConfig_parseTimeoutMS(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		want *int64
+	}{
+		{name: "absent", src: `disabled_rules: ["x"]`, want: nil},
+		{name: "positive", src: `parse_timeout_ms: 2000`, want: int64Ptr(2000)},
+		{name: "explicit zero", src: `parse_timeout_ms: 0`, want: int64Ptr(0)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, remote.ManifestFile), []byte(tc.src), 0o644); err != nil {
+				t.Fatalf("write: %v", err)
+			}
+			cfg, _, err := LoadConfig(dir)
+			if err != nil {
+				t.Fatalf("LoadConfig: %v", err)
+			}
+			if !reflect.DeepEqual(cfg.ParseTimeout, tc.want) {
+				t.Errorf("ParseTimeout: got %v, want %v", cfg.ParseTimeout, tc.want)
+			}
+		})
+	}
+}
+
+func TestLoadConfig_parseTimeoutMSNegative(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, remote.ManifestFile), []byte(`parse_timeout_ms: -1`), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if _, _, err := LoadConfig(dir); err == nil {
+		t.Fatal("expected error for negative parse_timeout_ms")
+	}
+}
+
 func int64Ptr(n int64) *int64 { return &n }
 
 func TestLoadConfig_invalidSeverity(t *testing.T) {

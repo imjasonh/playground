@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	gts "github.com/odvcencio/gotreesitter"
@@ -146,14 +147,22 @@ func ParseWithOptions(ctx context.Context, lang *gts.Language, src []byte, fileI
 	}
 	parser := gts.NewParser(lang)
 	if opts.Timeout > 0 {
-		parser.SetTimeoutMicros(uint64(opts.Timeout / time.Microsecond))
+		// gotreesitter treats 0 as unlimited; clamp sub-microsecond
+		// budgets up so a tiny Timeout can't silently disable the cap.
+		micros := opts.Timeout / time.Microsecond
+		if micros < 1 {
+			micros = 1
+		}
+		parser.SetTimeoutMicros(uint64(micros))
 	}
 	// Wire context cancellation into gotreesitter's cancellation flag
-	// so a cancelled ctx stops an in-flight parse promptly.
+	// so a cancelled ctx stops an in-flight parse promptly. The flag
+	// is read with atomic.LoadUint32 inside gotreesitter, so stores
+	// must be atomic too (plain assignment races under -race).
 	var cancelFlag uint32
 	parser.SetCancellationFlag(&cancelFlag)
 	stop := context.AfterFunc(ctx, func() {
-		cancelFlag = 1
+		atomic.StoreUint32(&cancelFlag, 1)
 	})
 	defer stop()
 

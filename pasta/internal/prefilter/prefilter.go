@@ -5,14 +5,19 @@
 //
 //   - explicit `require_substring` on the rule
 //   - `eq` / `token_eq` where-predicates with a literal (non-@) second arg
-//   - `within` rewrite tokens (the token must appear in source to fire)
-//   - simple `matches` regexes that are a literal or `|`-alternation of
-//     literals (e.g. `==|!=`)
+//   - at most one simple `matches` regex that is a literal or
+//     `|`-alternation of literals (e.g. `==|!=`)
 //
-// Within one rule, literal `eq`/`token_eq`/`within`/`require_substring`
-// constraints are AND-ed; simple `matches` alternatives are OR-ed. Across
-// rules, a file is kept if ANY rule's filter passes — or if any rule has
-// no usable filter (we can't prove it won't match).
+// Rewrite `within` tokens are intentionally NOT inferred: diagnostics
+// can fire whenever the pattern matches even if the rewrite token is
+// absent (`applyWithin` no-ops). Inferring them as AND constraints
+// would false-negative diagnose-only hits.
+//
+// Within one rule, `eq`/`token_eq`/`require_substring` constraints are
+// AND-ed; a single simple `matches` alternation is OR-ed. Multiple
+// `matches` predicates are not inferred (would need AND-of-OR groups).
+// Across rules, a file is kept if ANY rule's filter passes — or if any
+// rule has no usable filter (we can't prove it won't match).
 package prefilter
 
 import (
@@ -29,7 +34,7 @@ type Filter struct {
 	// possibly match. Empty means no AND constraint.
 	AllOf []string
 	// AnyOf, when non-empty, requires at least one entry to be present.
-	// Used for simple regex alternations from `matches`.
+	// Used for a single simple regex alternation from `matches`.
 	AnyOf []string
 }
 
@@ -80,20 +85,11 @@ func ForRule(rule *dsl.Rule) Filter {
 	for _, s := range rule.RequireSubstring {
 		addAll(s)
 	}
-	var anyOf []string
-	anySeen := map[string]bool{}
-	addAny := func(s string) {
-		s = strings.TrimSpace(s)
-		if s == "" || strings.HasPrefix(s, "@") {
-			return
-		}
-		if anySeen[s] {
-			return
-		}
-		anySeen[s] = true
-		anyOf = append(anyOf, s)
-	}
 
+	// Collect simple matches alternations separately. Only infer when
+	// there is exactly one — multiple would need AND-of-OR semantics
+	// and collapsing them into one AnyOf would loosen the filter.
+	var matchGroups [][]string
 	walkPattern(&rule.Match, func(p *dsl.Pattern) {
 		for _, w := range p.Where {
 			switch w.Op {
@@ -105,20 +101,15 @@ func ForRule(rule *dsl.Rule) Filter {
 				if len(w.Args) >= 2 {
 					lits, ok := simpleAlternationLiterals(w.Args[1].Str)
 					if ok {
-						for _, lit := range lits {
-							addAny(lit)
-						}
+						matchGroups = append(matchGroups, lits)
 					}
 				}
 			}
 		}
 	})
-	if rule.Rewrite != nil {
-		for _, e := range rule.Rewrite.Edits {
-			if e.Within != "" && e.Token != "" {
-				addAll(e.Token)
-			}
-		}
+	var anyOf []string
+	if len(matchGroups) == 1 {
+		anyOf = matchGroups[0]
 	}
 	return Filter{AllOf: allOf, AnyOf: anyOf}
 }
