@@ -78,6 +78,10 @@ skip them:
   Life with time as the Z axis (Rust CLI). Self-supporting by construction:
   every birth leans on its three B3 parents via small diagonal braces, so even
   gliders print as one piece with no supports to remove.
+- **[`dice-dither/`](dice-dither/)** — dither a photograph into a grid of dice
+  faces (Rust CLI): each cell becomes the die whose pip count matches its tone,
+  with the leftover error diffused into its neighbours, plus a build sheet if
+  you want to lay the mosaic out in real dice.
 - **[`life-scad/`](life-scad/)** — OpenSCAD Game of Life sculpture (Z = time)
   plus an offline reverse-history searcher for shallow roof targets.
 - **[`life-qr/`](life-qr/)** — parametric OpenSCAD Life sculpture whose roof is

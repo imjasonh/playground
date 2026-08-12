@@ -20,6 +20,7 @@ playground/
 ├── cold-climb/            # touch-first two-handle arcade game (JS + Node tests)
 ├── cors-proxy/            # Rust Cloudflare Worker: SSRF-hardened CORS proxy (not a Pages app)
 ├── cors-proxy-demo/       # static browser front-end for the cors-proxy Worker
+├── dice-dither/           # Rust CLI: dither an image into a grid of dice faces
 ├── git/                   # in-browser read-only git client (JS + Jest + Playwright)
 ├── git-fuse/              # Rust CLI: read-only FUSE adapter for git-server (not a Pages app)
 ├── git-server/            # Rust Cloudflare Worker: git smart-HTTP server on R2/DO (not a Pages app)
@@ -68,6 +69,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `inkbot-esp32/` | no | Rust/ESP-IDF ESP32 firmware (espup); no `index.html` |
 | `git-server/` | no | Rust Cloudflare Worker; no `index.html` |
 | `git-fuse/` | no | Rust CLI (FUSE); no `index.html` |
+| `dice-dither/` | no | Rust CLI (dice mosaic renderer); no `index.html` |
 | `life-stl/` | no | Rust CLI (STL generator); no `index.html` |
 | `its-not-jaws/` | no | Cursor SDK knower/guesser guessing harness; no `index.html` |
 | `life-scad/` | no | OpenSCAD + Python reverse-history tool; no `index.html` |
@@ -575,6 +577,7 @@ bundle exec fastlane test
 | `git-server/` | git smart-HTTP server on R2 + Durable Objects — Cloudflare Worker | `cargo test` (incl. real-git integration) + clippy + wasm build |
 | `git-fuse/` | read-only FUSE adapter for git-server (mount commits/refs as files) — CLI, not a Worker | `cargo test` (incl. e2e over real FUSE mounts; skips without `/dev/fuse`) + clippy |
 | `life-stl/` | Conway's Game of Life → 3D-printable STL (Z = time); self-supporting causality braces (default) or breakaway supports | `cargo test` + clippy |
+| `dice-dither/` | Dither an image into a grid of dice faces (1–6 pips, black and white dice); prints a build sheet for laying it out for real | `cargo test` + clippy |
 
 > **`git-server` has its own agent guide:** read
 > [`git-server/AGENTS.md`](git-server/AGENTS.md) before working in that
