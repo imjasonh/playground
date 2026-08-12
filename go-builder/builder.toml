@@ -1,0 +1,35 @@
+description = """
+Go-only Cloud Native Buildpacks builder in the spirit of ko.build.
+
+Detects go.mod apps, statically compiles them (CGO_ENABLED=0, -trimpath),
+installs the binary at a ko-compatible launch path, bundles kodata with
+KO_DATA_PATH, and runs on a tiny static run image. No Node/Java/Python —
+Go only.
+"""
+
+[[buildpacks]]
+id = "playground/go"
+version = "0.1.0"
+uri = "."
+
+[[order]]
+[[order.group]]
+id = "playground/go"
+version = "0.1.0"
+
+# Build image has a full userspace for compiling; run image is scratch-like
+# (ca-certs + tzdata), matching ko's default of a minimal static base.
+[build]
+image = "docker.io/paketobuildpacks/build-jammy-static:0.1.185"
+
+[run]
+[[run.images]]
+image = "docker.io/paketobuildpacks/run-jammy-static:0.1.185"
+
+[[targets]]
+os = "linux"
+arch = "amd64"
+
+[[targets]]
+os = "linux"
+arch = "arm64"

@@ -29,6 +29,7 @@ playground/
 ├── life-scad/             # OpenSCAD Life sculpture + reverse-history Python tool
 ├── life-stl/              # Rust CLI: Game of Life → printable STL (Z = time)
 ├── gitdb/                 # Go CLI (Go module + Go tests)
+├── go-builder/            # Go-only CNB builder (ko-style static images)
 ├── hello/                 # example static app (HTML only)
 ├── hello-macos/           # example macOS SwiftUI app (XcodeGen + Sparkle CD)
 ├── geeksquad/             # offline Mac network/config triage (Sparkle CD)
@@ -62,6 +63,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `population-rays/` | yes | Directional 5° population slices; JS modules, npm scripts, tests |
 | `web-push-demo/` | yes | Static front-end for `web-push`; HTML/JS, no build or tests |
 | `gitdb/` | no | Go CLI; no `index.html` |
+| `go-builder/` | no | Go-only Cloud Native Buildpacks builder (ko-style); no `index.html` |
 | `ocidb/` | no | Go CLI; no `index.html` |
 | `pasta/` | no | Go CLI (CUE + tree-sitter linters); no `index.html` |
 | `web-push/` | no | Rust Cloudflare Worker; no `index.html` |
@@ -570,6 +572,7 @@ bundle exec fastlane test
 | Directory | Type | Tests |
 |-----------|------|-------|
 | `gitdb/` | git repository explorer backed by SQLite virtual tables | `go test ./...` |
+| `go-builder/` | Go-only Cloud Native Buildpacks builder in the spirit of [`ko`](https://ko.build) (static binary, kodata, `.ko.yaml`, jammy-static run image) | `go test ./...` |
 | `ocidb/` | OCI registry explorer backed by SQLite virtual tables | `go test ./...` |
 | `pasta/` | CUE-described multi-language linters/fixers over tree-sitter ASTs; see [`pasta/AGENTS.md`](pasta/AGENTS.md). Playground style rules are enrolled under repo-root `.pasta/` and gated by the pasta leg of `test.yml` | `go test ./...` (incl. e2e shallow-clone smoke); CI also runs `pasta test` + monorepo lint |
 

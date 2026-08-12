@@ -1,0 +1,25 @@
+# Buildpack API — https://github.com/buildpacks/spec/blob/main/buildpack.md
+api = "0.10"
+
+[buildpack]
+id = "playground/go"
+version = "0.1.0"
+name = "Playground Go (ko-style)"
+homepage = "https://github.com/imjasonh/playground/tree/main/go-builder"
+description = "Build Go apps into tiny static images the way ko does: CGO off, -trimpath, /ko-app, kodata, .ko.yaml"
+
+[[buildpack.licenses]]
+type = "Apache-2.0"
+
+# Clear stacks: this buildpack targets static/tiny run images.
+[[targets]]
+os = "linux"
+arch = "amd64"
+
+[[targets]]
+os = "linux"
+arch = "arm64"
+
+[metadata]
+# Default Go toolchain when go.mod has no toolchain/go line we can honor.
+default-go-version = "1.25.0"

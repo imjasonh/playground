@@ -1,0 +1,9 @@
+defaultBaseImage: cgr.dev/chainguard/static
+builds:
+  - id: app
+    main: ./cmd/app
+    ldflags:
+      - -X
+      - main.version=test
+    flags:
+      - -trimpath
