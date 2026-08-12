@@ -184,8 +184,10 @@ Cold runs over large trees are tuned for sparse style rules:
 4. **Arena pool drain** — gotreesitter arenas are drained every ~100
    files so the Go GC can reclaim them on big cold runs.
 
-E2E smoke tests under [`e2e/`](./e2e/) shallow-clone real repos
-(Go / JS / TS) and run a realistic style-rule set against them.
+E2E smoke tests under [`e2e/`](./e2e/) shallow-clone real repos across
+Go, JavaScript, TypeScript, Python, Rust, YAML, Java, CSS, PHP, and HTML,
+scan them with a multi-language style-rule set, and exercise autofix
+(`applyFixes`) on the more complex trees.
 
 ## Use
 
