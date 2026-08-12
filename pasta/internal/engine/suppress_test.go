@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/imjasonh/pasta/internal/dsl"
 	"github.com/imjasonh/pasta/internal/tsutil"
 	"github.com/imjasonh/pasta/internal/tswasm"
 )
@@ -20,6 +21,21 @@ func parseGo(t *testing.T, src string) (tsutil.Node, func()) {
 }
 
 var goCommentTypes = map[string]bool{"comment": true}
+
+// suppressLogicEqual compares the user-facing suppress fields (all /
+// rules), ignoring usage tracking and byte anchors.
+func suppressLogicEqual(got, want map[int]suppression) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for ln, w := range want {
+		g, ok := got[ln]
+		if !ok || g.all != w.all || !reflect.DeepEqual(g.rules, w.rules) {
+			return false
+		}
+	}
+	return true
+}
 
 func TestParseSuppressions(t *testing.T) {
 	cases := []struct {
@@ -110,8 +126,13 @@ func TestParseSuppressions(t *testing.T) {
 			root, release := parseGo(t, tc.src)
 			defer release()
 			got := parseSuppressions(root, goCommentTypes)
-			if !reflect.DeepEqual(got, tc.want) {
+			if !suppressLogicEqual(got, tc.want) {
 				t.Errorf("parseSuppressions:\nsrc:\n%s\n  got:  %#v\n  want: %#v", tc.src, got, tc.want)
+			}
+			for _, e := range got {
+				if e.end <= e.start {
+					t.Errorf("expected positive byte range, got [%d,%d)", e.start, e.end)
+				}
 			}
 		})
 	}
@@ -156,5 +177,93 @@ func TestIsSuppressed(t *testing.T) {
 	}
 	if isSuppressed(nil, "foo", 1) {
 		t.Errorf("isSuppressed on nil map should be false")
+	}
+}
+
+func TestMarkSuppressed_tracksUsage(t *testing.T) {
+	m := map[int]suppression{
+		1: {all: true, start: 0, end: 12},
+		2: {rules: map[string]bool{"foo": true, "bar": true}, start: 20, end: 40},
+	}
+	if !markSuppressed(m, "anything", 1) {
+		t.Fatalf("bare ignore should suppress")
+	}
+	if !m[1].usedAll {
+		t.Errorf("bare ignore should be marked used")
+	}
+	if !markSuppressed(m, "foo", 2) {
+		t.Fatalf("named ignore should suppress foo")
+	}
+	if !m[2].usedRules["foo"] {
+		t.Errorf("foo should be marked used")
+	}
+	if markSuppressed(m, "baz", 2) {
+		t.Errorf("baz is not listed")
+	}
+
+	diags := unusedIgnoreDiagnostics(m)
+	if len(diags) != 1 {
+		t.Fatalf("want 1 unused diag, got %#v", diags)
+	}
+	if diags[0].Rule != unusedIgnoreRule || diags[0].Severity != dsl.SeverityWarning {
+		t.Errorf("unexpected diag: %#v", diags[0])
+	}
+	if diags[0].Message != `unused ignore: no "bar" finding on this line` {
+		t.Errorf("message = %q", diags[0].Message)
+	}
+}
+
+func TestUnusedIgnoreDiagnostics_bare(t *testing.T) {
+	m := map[int]suppression{
+		3: {all: true, start: 10, end: 22},
+	}
+	diags := unusedIgnoreDiagnostics(m)
+	if len(diags) != 1 {
+		t.Fatalf("got %#v", diags)
+	}
+	if diags[0].Message != "unused ignore: no finding on this line" {
+		t.Errorf("message = %q", diags[0].Message)
+	}
+	if diags[0].LineNum != 3 || diags[0].StartByte != 10 || diags[0].EndByte != 22 {
+		t.Errorf("anchor = line %d [%d,%d)", diags[0].LineNum, diags[0].StartByte, diags[0].EndByte)
+	}
+
+	m[3] = suppression{all: true, start: 10, end: 22, usedAll: true}
+	if diags := unusedIgnoreDiagnostics(m); len(diags) != 0 {
+		t.Errorf("used bare ignore should not warn: %#v", diags)
+	}
+}
+
+func TestHasPastaIgnore(t *testing.T) {
+	if !hasPastaIgnore([]byte("x // pasta:ignore foo\n")) {
+		t.Error("expected true")
+	}
+	if hasPastaIgnore([]byte("x // pasta:ignored foo\n")) {
+		t.Error("pasta:ignored is not a directive")
+	}
+}
+
+func TestParseSuppressions_wantMarkerDoesNotPoison(t *testing.T) {
+	// Same-line `# want` / `// want` markers must not become rule
+	// names, and a quoted `pasta:ignore` inside the want text must
+	// not become a second (bare) directive.
+	src := "package p\n\nvar x = 1 // pasta:ignore unrelated # want \"unused pasta:ignore\"\n"
+	root, release := parseGo(t, src)
+	defer release()
+	got := parseSuppressions(root, goCommentTypes)
+	want := map[int]suppression{3: {rules: map[string]bool{"unrelated": true}}}
+	if !suppressLogicEqual(got, want) {
+		t.Fatalf("got %#v, want %#v", got, want)
+	}
+}
+
+func TestParseSuppressions_tailStopsAtNestedLeader(t *testing.T) {
+	src := "package p\n\nvar x = 1 // pasta:ignore foo // want \"bar\"\n"
+	root, release := parseGo(t, src)
+	defer release()
+	got := parseSuppressions(root, goCommentTypes)
+	want := map[int]suppression{3: {rules: map[string]bool{"foo": true}}}
+	if !suppressLogicEqual(got, want) {
+		t.Fatalf("got %#v, want %#v", got, want)
 	}
 }

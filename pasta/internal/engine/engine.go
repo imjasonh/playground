@@ -399,6 +399,12 @@ func processFile(
 
 	applicable := applicableRules(groups, f.Lang, filepath.Base(fileName(f)))
 	if len(applicable) == 0 {
+		// No rules apply, but a stale pasta:ignore should still warn.
+		if hasPastaIgnore(src) {
+			if err := emitUnusedIgnoresOnly(ctx, f, out, o); err != nil {
+				return err
+			}
+		}
 		o.syncAdmit(index, 0)
 		return nil
 	}
@@ -407,6 +413,13 @@ func processFile(
 	}
 	filters := prefilter.ForRules(applicable)
 	if !prefilter.MayMatch(src, filters) {
+		if hasPastaIgnore(src) {
+			// Prefilter proves no rule can match, so every ignore is
+			// unused — parse only far enough to locate the directives.
+			if err := emitUnusedIgnoresOnly(ctx, f, out, o); err != nil {
+				return err
+			}
+		}
 		if o.stats != nil {
 			o.stats.PrefilterSkipped.Add(1)
 		}
@@ -467,6 +480,7 @@ func processFile(
 			return err
 		}
 	}
+	out.Diagnostics = append(out.Diagnostics, unusedIgnoreDiagnostics(s.suppress)...)
 	// Do not cache degraded (ERROR-light) trees — recovery shapes are
 	// grammar-sensitive and older cache entries predate ERROR skips.
 	if o.cache != nil && !degraded {
@@ -475,6 +489,43 @@ func processFile(
 			Ops:         append([]effect.Op(nil), out.Ops...),
 		})
 	}
+	return nil
+}
+
+// emitUnusedIgnoresOnly parses f solely to surface unused pasta:ignore
+// warnings (no rules run). Used when the prefilter proves no rule can
+// match, or when no applicable rules exist for the file's language.
+func emitUnusedIgnoresOnly(ctx context.Context, f FileInput, out *Result, o *runOpts) error {
+	parseTimeout := time.Duration(0)
+	if o != nil {
+		parseTimeout = o.parseTimeout
+	}
+	s, err := newFileState(ctx, f, factstore.New(), parseTimeout)
+	if err != nil {
+		if errors.Is(err, tsutil.ErrParseTimeout) {
+			out.SkipReason = "too complex to analyze"
+			if o != nil && o.stats != nil {
+				o.stats.TimedOut.Add(1)
+			}
+			return nil
+		}
+		return err
+	}
+	defer s.tree.Release()
+	if tsutil.ErrorHeavy(s.root) {
+		out.SkipReason = "parse errors"
+		if o != nil && o.stats != nil {
+			o.stats.ParseErrors.Add(1)
+		}
+		return nil
+	}
+	if o != nil && o.stats != nil {
+		o.stats.Parsed.Add(1)
+		if s.root.HasError() {
+			o.stats.ParseDegraded.Add(1)
+		}
+	}
+	out.Diagnostics = append(out.Diagnostics, unusedIgnoreDiagnostics(s.suppress)...)
 	return nil
 }
 
@@ -573,6 +624,11 @@ func runInMemory(
 		results[i].Src = src
 		applicable := applicableRules(groups, f.Lang, filepath.Base(fileName(f)))
 		if len(applicable) == 0 {
+			if hasPastaIgnore(src) {
+				if err := emitUnusedIgnoresOnly(ctx, f, &results[i], o); err != nil {
+					return nil, err
+				}
+			}
 			o.syncAdmit(i, 0)
 			continue
 		}
@@ -580,6 +636,11 @@ func runInMemory(
 			o.stats.Walked.Add(1)
 		}
 		if !prefilter.MayMatch(src, prefilter.ForRules(applicable)) {
+			if hasPastaIgnore(src) {
+				if err := emitUnusedIgnoresOnly(ctx, f, &results[i], o); err != nil {
+					return nil, err
+				}
+			}
 			if o != nil && o.stats != nil {
 				o.stats.PrefilterSkipped.Add(1)
 			}
@@ -653,6 +714,12 @@ func runInMemory(
 				return nil, err
 			}
 		}
+	}
+	for j, s := range states {
+		results[stateIdx[j]].Diagnostics = append(
+			results[stateIdx[j]].Diagnostics,
+			unusedIgnoreDiagnostics(s.suppress)...,
+		)
 	}
 	return results, nil
 }
@@ -785,8 +852,14 @@ func runRule(sr *scheduledRule, env *match.Env, root tsutil.Node, store *factsto
 		if collect == nil {
 			continue
 		}
+		// Fact-only rules never emit a user-visible finding, so an
+		// ignore naming them would stay unused — skip the suppress
+		// check entirely when there's nothing to drop.
+		if rule.Diagnose == nil && rule.Rewrite == nil {
+			continue
+		}
 		diagAnchor := pickDiagAnchor(&rule, m)
-		if isSuppressed(suppress, rule.Name, effect.ComputeLine(diagAnchor.Src, diagAnchor.StartByte())) {
+		if markSuppressed(suppress, rule.Name, effect.ComputeLine(diagAnchor.Src, diagAnchor.StartByte())) {
 			continue
 		}
 		if rule.Diagnose != nil {
