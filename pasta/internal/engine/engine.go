@@ -42,11 +42,11 @@ type Result struct {
 	// SkipReason is non-empty when the file was not analyzed. Common
 	// values:
 	//   - "too complex to analyze" — parse timeout
-	//   - "parse errors" — tree-sitter produced an ERROR-heavy tree
+	//   - "parse errors" — ERROR-heavy tree (dense ERROR/missing nodes)
 	//   - "memory budget exceeded" — run-level memory_budget cap
-	// Prefilter misses leave SkipReason empty and simply produce no
-	// diagnostics (see Stats.PrefilterSkipped); timeout / ERROR /
-	// memory skips set SkipReason so the CLI can report them.
+	// Light HasError trees are still analyzed (see Stats.ParseDegraded)
+	// and are not skipped. Prefilter misses leave SkipReason empty
+	// (Stats.PrefilterSkipped).
 	SkipReason string
 }
 
