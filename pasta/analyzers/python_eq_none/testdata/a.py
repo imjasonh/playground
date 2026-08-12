@@ -1,0 +1,41 @@
+def f(x):
+    if x == None:  # want "comparison to None should use `is None`"
+        return False
+    if x != None:  # want "comparison to None should use `is not None`"
+        return True
+    return None
+
+
+def g(x):
+    if None == x:  # want "comparison to None should use `is None`"
+        return False
+    if None != x:  # want "comparison to None should use `is not None`"
+        return True
+    return None
+
+
+def already_correct(x):
+    if x is None:
+        return False
+    if x is not None:
+        return True
+    return None
+
+
+def unrelated(x, y):
+    if x == y:
+        return True
+    if x == 5:
+        return False
+    if x != "":
+        return True
+    return None
+
+
+# Comments around the operator are preserved by the surgical rewrite.
+def keeps_comments(x, y):
+    return ((  # want:+1 "comparison to None should use `is None`"
+        x  # leading
+        ==  # operator note
+        None  # trailing
+    ), x)

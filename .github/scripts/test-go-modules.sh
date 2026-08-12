@@ -41,7 +41,8 @@ for module in "${modules[@]}"; do
     cd "$module"
     # -v so CI logs show each test (including Docker e2e PASS vs SKIP).
     # node-image Docker-socket e2e builds/runs several images; allow headroom.
-    if [ "$module" = "node-image" ]; then
+    # pasta e2e shallow-clones real repos and cold-parses them; allow headroom.
+    if [ "$module" = "node-image" ] || [ "$module" = "pasta" ]; then
       go test -v -timeout 30m ./...
     else
       go test -v ./...
