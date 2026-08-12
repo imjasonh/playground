@@ -267,3 +267,43 @@ func TestParseSuppressions_tailStopsAtNestedLeader(t *testing.T) {
 		t.Fatalf("got %#v, want %#v", got, want)
 	}
 }
+
+func TestParseSuppressions_emDashExplanationNotRules(t *testing.T) {
+	src := "package p\n\nvar x = 1 // pasta:ignore go_iferr — constant URL\n"
+	root, release := parseGo(t, src)
+	defer release()
+	got := parseSuppressions(root, goCommentTypes)
+	want := map[int]suppression{3: {rules: map[string]bool{"go_iferr": true}}}
+	if !suppressLogicEqual(got, want) {
+		t.Fatalf("got %#v, want %#v", got, want)
+	}
+}
+
+func TestParseSuppressions_proseMentionIgnored(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+	}{
+		{
+			name: "backtick mention",
+			src:  "package p\n\n// check `pasta:ignore` suppression before deciding\n",
+		},
+		{
+			name: "doc example mid-line",
+			src:  "package p\n\n// x := foo() // pasta:ignore go_iferr — one rule\n",
+		},
+		{
+			name: "sentence mention",
+			src:  "package p\n\n// A pasta:ignore directive suppresses the match.\n",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root, release := parseGo(t, tc.src)
+			defer release()
+			if got := parseSuppressions(root, goCommentTypes); got != nil {
+				t.Fatalf("prose should not suppress; got %#v", got)
+			}
+		})
+	}
+}

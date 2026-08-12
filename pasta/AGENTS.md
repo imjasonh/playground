@@ -240,9 +240,17 @@ form: once per listed rule that never matched). Pair with
 `-fail-on=warning` in CI so stale suppressions fail the build. Files
 the prefilter would otherwise skip are still parsed when they contain
 `pasta:ignore`, so unused directives are not silently dropped.
-Directive tails stop at a nested comment leader (`//`, `#`, `--`,
-`<!--`), and `pasta:ignore` inside double quotes in a comment is
-ignored — so `# want "…"` markers on the same line stay inert.
+
+Parsing is strict so comment prose does not look like a directive:
+
+- The token must sit in a **directive position**: after leading comment
+  decorations (`//`, `#`, `/*`, `*`, …), only prior `pasta:ignore`
+  directives may appear before it on that line. Mid-sentence mentions
+  and doc examples like `// x := foo() // pasta:ignore` are ignored.
+- Rule-name tails are only comma/whitespace-separated identifiers;
+  trailing explanations (`— constant URL`, `# want "…"`, …) are not
+  rule names.
+- Matches inside `"…"`, `'…'`, or `` `…` `` are ignored.
 
 ## Filename gating (`file_match`)
 
