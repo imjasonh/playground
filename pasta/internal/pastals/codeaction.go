@@ -18,6 +18,7 @@ func (s *Server) handleCodeAction(ctx context.Context, p protocol.CodeActionPara
 	if !ok {
 		return nil
 	}
+	snap := doc.snapshot()
 
 	var actions []protocol.CodeAction
 
@@ -26,7 +27,7 @@ func (s *Server) handleCodeAction(ctx context.Context, p protocol.CodeActionPara
 		if d.Data == nil || len(d.Data.Ops) == 0 {
 			continue
 		}
-		edits := opsToTextEdits(doc, d.Data.Ops)
+		edits := opsToTextEdits(snap, d.Data.Ops)
 		if len(edits) == 0 {
 			continue
 		}
@@ -49,7 +50,7 @@ func (s *Server) handleCodeAction(ctx context.Context, p protocol.CodeActionPara
 	// diagnostics in p.Context may not include everything if the editor
 	// filtered by range).
 	if shouldOfferFixAll(p.Context.Only) {
-		if action := s.buildFixAllAction(ctx, doc); action != nil {
+		if action := s.buildFixAllAction(ctx, snap); action != nil {
 			actions = append(actions, *action)
 		}
 	}
@@ -72,14 +73,14 @@ func shouldOfferFixAll(only []string) bool {
 	return false
 }
 
-// buildFixAllAction re-runs pasta over the document and bundles every
-// non-overlapping op into a single CodeAction.
-func (s *Server) buildFixAllAction(ctx context.Context, doc *document) *protocol.CodeAction {
+// buildFixAllAction re-runs pasta over the document snapshot and
+// bundles every non-overlapping op into a single CodeAction.
+func (s *Server) buildFixAllAction(ctx context.Context, snap docSnapshot) *protocol.CodeAction {
 	analyzers := s.analyzers()
 	if len(analyzers) == 0 {
 		return nil
 	}
-	res, err := runner.RunFile(ctx, doc.path, doc.src, analyzers, false)
+	res, err := runner.RunFile(ctx, snap.path, snap.src, analyzers, false)
 	if err != nil || len(res.Ops) == 0 {
 		return nil
 	}
@@ -87,7 +88,7 @@ func (s *Server) buildFixAllAction(ctx context.Context, doc *document) *protocol
 	for _, op := range res.Ops {
 		encoded = append(encoded, protocol.EncodedOp{Start: op.Start, End: op.End, Text: op.Text})
 	}
-	edits := opsToTextEdits(doc, dropOverlapping(encoded))
+	edits := opsToTextEdits(snap, dropOverlapping(encoded))
 	if len(edits) == 0 {
 		return nil
 	}
@@ -95,7 +96,7 @@ func (s *Server) buildFixAllAction(ctx context.Context, doc *document) *protocol
 		Title: "pasta: fix all",
 		Kind:  protocol.CodeActionKindSourceFixAll,
 		Edit: &protocol.WorkspaceEdit{
-			Changes: map[string][]protocol.TextEdit{doc.uri: edits},
+			Changes: map[string][]protocol.TextEdit{snap.uri: edits},
 		},
 	}
 }
@@ -131,11 +132,11 @@ func dropOverlapping(ops []protocol.EncodedOp) []protocol.EncodedOp {
 }
 
 // opsToTextEdits converts pasta byte-range ops to LSP TextEdits using
-// the document's lspconv.Doc for byte→position conversion.
-func opsToTextEdits(doc *document, ops []protocol.EncodedOp) []protocol.TextEdit {
+// the snapshot's lspconv.Doc for byte→position conversion.
+func opsToTextEdits(snap docSnapshot, ops []protocol.EncodedOp) []protocol.TextEdit {
 	out := make([]protocol.TextEdit, 0, len(ops))
 	for _, op := range ops {
-		r := doc.conv.RangeFromBytes(op.Start, op.End)
+		r := snap.conv.RangeFromBytes(op.Start, op.End)
 		out = append(out, protocol.TextEdit{
 			Range:   toLSPRange(r),
 			NewText: op.Text,

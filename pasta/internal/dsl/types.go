@@ -54,8 +54,10 @@ type Rule struct {
 	// must all appear in a file's source for the rule to be worth
 	// running. Used by the content-sniff pre-filter to skip parses on
 	// files that cannot match. The engine also infers substrings from
-	// `eq`/`token_eq` predicates and `within` rewrite tokens; this
-	// field covers cases inference can't see.
+	// `eq`/`token_eq` predicates and a single simple `matches`
+	// alternation; rewrite `within` tokens are intentionally not
+	// inferred (diagnose can fire without them). This field covers
+	// cases inference can't see.
 	RequireSubstring []string       `json:"require_substring,omitempty"`
 	Match            Pattern        `json:"match"`
 	PreConditions    []Precondition `json:"pre_conditions,omitempty"`

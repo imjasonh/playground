@@ -10,44 +10,49 @@ import (
 	"github.com/imjasonh/pasta/internal/runner"
 )
 
-// runDiagnostics executes pasta over doc and publishes the result.
-// Safe to call concurrently with other documents; the debouncer
-// ensures only one run is in flight per document.
-func (s *Server) runDiagnostics(ctx context.Context, doc *document) {
+// runDiagnostics executes pasta over a document snapshot and publishes
+// the result. Safe to call concurrently with other documents; the
+// debouncer ensures only one run is in flight per URI. The snapshot
+// is immutable, so didChange cannot race with this analysis.
+func (s *Server) runDiagnostics(ctx context.Context, snap docSnapshot) {
 	if ctx.Err() != nil {
 		return
 	}
 	analyzers := s.analyzers()
 	if len(analyzers) == 0 {
 		// No rules loaded — clear any stale diagnostics.
-		s.publishDiagnostics(doc.uri, doc.version, nil)
+		s.publishDiagnostics(snap.uri, snap.version, nil)
 		return
 	}
-	res, err := runner.RunFile(ctx, doc.path, doc.src, analyzers, false)
+	res, err := runner.RunFile(ctx, snap.path, snap.src, analyzers, false)
 	if err != nil {
 		// Most likely "no language registered for .ext" — silently
 		// clear, since the editor sent us a file we can't analyze.
-		s.publishDiagnostics(doc.uri, doc.version, nil)
+		s.publishDiagnostics(snap.uri, snap.version, nil)
 		return
 	}
 	if ctx.Err() != nil {
 		// A newer change canceled us before we could publish; drop.
 		return
 	}
-	diags := buildLSPDiagnostics(doc.conv, res.Diagnostics, res.Ops)
-	s.publishDiagnostics(doc.uri, doc.version, diags)
+	// Drop stale results if the buffer moved on while we analyzed.
+	if cur, ok := s.docs.get(snap.uri); ok && cur.currentVersion() != snap.version {
+		return
+	}
+	diags := buildLSPDiagnostics(snap.conv, res.Diagnostics, res.Ops)
+	s.publishDiagnostics(snap.uri, snap.version, diags)
 }
 
 // buildLSPDiagnostics converts pasta diagnostics + ops into LSP
 // diagnostics, attaching each op tagged with the diagnostic's rule to
-// Diagnostic.Data so the code-action handler can build a quickfix
+// Diagnostic.Data so the code-action handler can build a quick fix
 // without re-running pasta.
 //
 // Pairing is by rule name (effect.Op.Rule), not by range overlap —
 // rules like iferr emit a diagnostic at the assign statement and a
 // rewrite that spans the surrounding if-block, so range containment
 // would miss the fix. Multiple matches of the same rule in one file
-// bundle all of that rule's ops onto every diagnostic; quickfixing
+// bundle all of that rule's ops onto every diagnostic; quick fixing
 // any one applies them all. Splitting per-match needs the engine to
 // expose match-level grouping (future work).
 func buildLSPDiagnostics(conv *lspconv.Doc, ds []effect.Diagnostic, ops []effect.Op) []protocol.Diagnostic {

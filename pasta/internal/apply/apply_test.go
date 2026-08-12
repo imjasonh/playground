@@ -91,3 +91,15 @@ func f(x *int) bool {
 		t.Errorf("output mismatch\n--- got ---\n%s\n--- want ---\n%s", got, want)
 	}
 }
+
+func TestApply_rejectsOutOfBounds(t *testing.T) {
+	src := []byte("hello")
+	_, err := Apply(src, []effect.Op{{Rule: "r", Start: 1, End: 99, Text: "x"}}, dsl.RewriteOpts{})
+	if err == nil {
+		t.Fatal("expected error for end past len(src)")
+	}
+	_, err = Apply(src, []effect.Op{{Rule: "r", Start: 4, End: 2, Text: "x"}}, dsl.RewriteOpts{})
+	if err == nil {
+		t.Fatal("expected error for start > end")
+	}
+}

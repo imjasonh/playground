@@ -112,7 +112,7 @@ func TestOpsToTextEdits(t *testing.T) {
 		{Start: 0, End: 5, Text: "HELLO"},
 		{Start: 6, End: 11, Text: "WORLD"},
 	}
-	got := opsToTextEdits(doc, ops)
+	got := opsToTextEdits(doc.snapshot(), ops)
 	if len(got) != 2 {
 		t.Fatalf("got %d edits, want 2", len(got))
 	}

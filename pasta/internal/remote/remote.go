@@ -31,6 +31,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -134,12 +135,20 @@ func LoadManifest(dir string) (*Manifest, bool, error) {
 // manifest escape the cache directory or hit unexpected URLs. We keep
 // this strict on purpose — anything weird should be a load error, not
 // a partial fetch.
+//
+// DNS / private-IP checks happen later in assertPublicGitHost, right
+// before `git ls-remote`/`fetch`, so parsing a manifest stays offline.
 func validateModulePath(p string) error {
 	if p == "" {
 		return fmt.Errorf("module path must not be empty")
 	}
 	if strings.ContainsAny(p, " \t\r\n") {
 		return fmt.Errorf("module path %q contains whitespace", p)
+	}
+	// URL metacharacters / userinfo would let a path become an
+	// unexpected HTTPS destination when we prepend "https://".
+	if strings.ContainsAny(p, "@?#\\:%") {
+		return fmt.Errorf("module path %q contains URL metacharacters", p)
 	}
 	if strings.HasPrefix(p, "/") || filepath.IsAbs(p) {
 		return fmt.Errorf("module path %q must be relative (no leading /)", p)
@@ -160,7 +169,98 @@ func validateModulePath(p string) error {
 	if !strings.Contains(p, "/") {
 		return fmt.Errorf("module path %q must look like <host>/<path>", p)
 	}
+	host, _, _ := strings.Cut(p, "/")
+	if err := validateModuleHost(host); err != nil {
+		return fmt.Errorf("module path %q: %w", p, err)
+	}
 	return nil
+}
+
+// validateModuleHost rejects hosts that are obviously unsafe even
+// before DNS — loopback/private IP literals and well-known local names.
+func validateModuleHost(host string) error {
+	if host == "" {
+		return fmt.Errorf("host must not be empty")
+	}
+	lower := strings.ToLower(host)
+	switch lower {
+	case "localhost", "localhost.", "metadata", "metadata.google.internal":
+		return fmt.Errorf("host %q is not allowed", host)
+	}
+	if strings.HasSuffix(lower, ".localhost") ||
+		strings.HasSuffix(lower, ".local") ||
+		strings.HasSuffix(lower, ".internal") {
+		return fmt.Errorf("host %q is not allowed", host)
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		if !isPublicIP(ip) {
+			return fmt.Errorf("host %q is not a public IP", host)
+		}
+	}
+	return nil
+}
+
+// assertPublicGitHost resolves host and rejects non-public answers so a
+// pasta.cue import cannot SSRF into link-local / private networks via
+// DNS rebinding to an internal name.
+func assertPublicGitHost(modulePath string) error {
+	host, _, ok := strings.Cut(modulePath, "/")
+	if !ok || host == "" {
+		return fmt.Errorf("module path %q must look like <host>/<path>", modulePath)
+	}
+	if err := validateModuleHost(host); err != nil {
+		return err
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		// Literal already checked in validateModuleHost.
+		return nil
+	}
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return fmt.Errorf("resolve host %q: %w", host, err)
+	}
+	if len(ips) == 0 {
+		return fmt.Errorf("resolve host %q: no addresses", host)
+	}
+	for _, ip := range ips {
+		if !isPublicIP(ip) {
+			return fmt.Errorf("host %q resolves to non-public address %s", host, ip)
+		}
+	}
+	return nil
+}
+
+func isPublicIP(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() ||
+		ip.IsInterfaceLocalMulticast() {
+		return false
+	}
+	// Carrier-grade NAT / documentation / benchmarking ranges that
+	// net.IP.IsPrivate does not cover on older Go, plus common cloud
+	// metadata.
+	if ip4 := ip.To4(); ip4 != nil {
+		switch {
+		case ip4[0] == 100 && ip4[1] >= 64 && ip4[1] <= 127: // RFC 6598
+			return false
+		case ip4[0] == 192 && ip4[1] == 0 && ip4[2] == 0: // RFC 6890
+			return false
+		case ip4[0] == 192 && ip4[1] == 0 && ip4[2] == 2: // TEST-NET-1
+			return false
+		case ip4[0] == 198 && (ip4[1] == 18 || ip4[1] == 19): // benchmarking
+			return false
+		case ip4[0] == 198 && ip4[1] == 51 && ip4[2] == 100: // TEST-NET-2
+			return false
+		case ip4[0] == 203 && ip4[1] == 0 && ip4[2] == 113: // TEST-NET-3
+			return false
+		case ip4[0] >= 224: // multicast + reserved
+			return false
+		}
+	}
+	return true
 }
 
 // LoadLockfile reads dir/pasta.lock. Returns (nil, false, nil) when
@@ -265,7 +365,12 @@ func (g *GitFetcher) Fetch(modulePath, version string) (string, string, error) {
 func (g *GitFetcher) FetchCommit(modulePath, commit string) (string, error) {
 	target := g.cachePath(modulePath, commit)
 	if _, err := os.Stat(target); err == nil {
+		// Cache hit — stay offline. Host policy was enforced when the
+		// entry was first fetched (and at sync/load via HashTree).
 		return target, nil
+	}
+	if err := assertPublicGitHost(modulePath); err != nil {
+		return "", err
 	}
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		return "", fmt.Errorf("mkdir cache: %w", err)
@@ -320,6 +425,9 @@ func (g *GitFetcher) FetchCommit(modulePath, commit string) (string, error) {
 // into a full commit SHA without cloning. Cheaper than fetching, and
 // we'd need the full SHA to key the cache anyway.
 func (g *GitFetcher) resolve(modulePath, version string) (string, error) {
+	if err := assertPublicGitHost(modulePath); err != nil {
+		return "", err
+	}
 	cloneURL := "https://" + modulePath + ".git"
 	// ls-remote prints "<sha>\trefs/tags/v1.2.3" lines. Trying both
 	// tag and branch namespaces in one call is what `git ls-remote`
@@ -369,6 +477,9 @@ func (g *GitFetcher) resolve(modulePath, version string) (string, error) {
 // without cloning. Annotated-tag peels (`^{}`) are stripped so each
 // tag appears once.
 func (g *GitFetcher) ListTags(modulePath string) ([]string, error) {
+	if err := assertPublicGitHost(modulePath); err != nil {
+		return nil, err
+	}
 	cloneURL := "https://" + modulePath + ".git"
 	cmd := exec.Command("git", "ls-remote", "--tags", "--refs", cloneURL)
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
@@ -434,7 +545,9 @@ func DefaultCacheDir() (string, error) {
 // normalized) and detects any change to file content or layout.
 //
 // Files are streamed through sha256 rather than read into memory so
-// embedded fixtures don't blow up the heap.
+// embedded fixtures don't blow up the heap. Symlinks and non-regular
+// files are rejected — a malicious module must not be able to point
+// HashTree (or vendoring) at arbitrary local paths.
 func HashTree(dir string) (string, error) {
 	type entry struct{ path, hash string }
 	var entries []entry
@@ -449,11 +562,15 @@ func HashTree(dir string) (string, error) {
 		if err != nil {
 			return err
 		}
+		relSlash := filepath.ToSlash(rel)
+		if err := rejectUnsafeModuleFile(p, d, relSlash); err != nil {
+			return err
+		}
 		sum, err := hashFile(p)
 		if err != nil {
 			return err
 		}
-		entries = append(entries, entry{path: filepath.ToSlash(rel), hash: sum})
+		entries = append(entries, entry{path: relSlash, hash: sum})
 		return nil
 	})
 	if err != nil {
@@ -467,9 +584,35 @@ func HashTree(dir string) (string, error) {
 	return "sha256:" + hex.EncodeToString(h.Sum(nil)), nil
 }
 
+// maxModuleFileBytes caps individual files inside a remote module
+// during hash/vendor. Large blobs are almost never valid CUE rule
+// packs and can hang or OOM a load.
+const maxModuleFileBytes int64 = 8 << 20 // 8 MiB
+
+// rejectUnsafeModuleFile refuses symlinks, non-regular files, and
+// oversized blobs inside a fetched remote module.
+func rejectUnsafeModuleFile(p string, d fs.DirEntry, rel string) error {
+	if d.Type()&fs.ModeSymlink != 0 {
+		return fmt.Errorf("%s: symlinks are not allowed in remote modules", rel)
+	}
+	info, err := d.Info()
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("%s: non-regular files are not allowed in remote modules", rel)
+	}
+	if info.Size() > maxModuleFileBytes {
+		return fmt.Errorf("%s: file exceeds %d byte remote-module limit", rel, maxModuleFileBytes)
+	}
+	return nil
+}
+
 // hashFile streams f through sha256 and returns the hex digest.
+// Opens with O_NOFOLLOW when available so a TOCTOU symlink swap
+// cannot redirect the read after WalkDir's Type check.
 func hashFile(p string) (string, error) {
-	f, err := os.Open(p)
+	f, err := openNoFollow(p)
 	if err != nil {
 		return "", err
 	}

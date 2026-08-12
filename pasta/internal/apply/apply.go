@@ -37,13 +37,23 @@ func Apply(src []byte, ops []effect.Op, opts dsl.RewriteOpts) ([]byte, error) {
 		return sorted[i].End < sorted[j].End
 	})
 
-	for i := 1; i < len(sorted); i++ {
+	srcLen := uint32(len(src))
+	for i, op := range sorted {
+		if op.Start > op.End {
+			return nil, fmt.Errorf("invalid edit %q: start %d > end %d", op.Rule, op.Start, op.End)
+		}
+		if op.End > srcLen {
+			return nil, fmt.Errorf("invalid edit %q: range [%d-%d) exceeds source length %d",
+				op.Rule, op.Start, op.End, srcLen)
+		}
+		if i == 0 {
+			continue
+		}
 		prev := sorted[i-1]
-		cur := sorted[i]
 		// Allow exact same point (insert at the deletion's start = end).
-		if cur.Start < prev.End {
+		if op.Start < prev.End {
 			return nil, fmt.Errorf("conflicting edits: %q[%d-%d) overlaps %q[%d-%d)",
-				prev.Rule, prev.Start, prev.End, cur.Rule, cur.Start, cur.End)
+				prev.Rule, prev.Start, prev.End, op.Rule, op.Start, op.End)
 		}
 	}
 

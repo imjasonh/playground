@@ -70,7 +70,7 @@ Mechanically: `mkdir analyzers/<name>/` and create:
 analyzers/<name>/
   <name>.cue            # imports github.com/imjasonh/pasta/{schema,lang/...,patterns/...}
   testdata/
-    a.<ext>             # source with `// want "regex"` markers
+    a.<ext>             # source with `// want "substring"` markers
     a.<ext>.golden      # optional: expected output after -fix
     multi_pkg/          # optional: subdir = multi-file analysis group
       api.<ext>
@@ -82,10 +82,10 @@ Naming convention:
 - Cross-language rules: bare name (e.g. `todo_format`, `hardcoded_credentials`).
 
 Test data:
-- Each `// want "regex"` (or `# want`, `-- want`) anchors a diagnostic
-  expectation on the same line.
-- Use `// want:+1 "regex"` to anchor it on the next line — useful when
-  a rewrite is going to delete the line that holds the marker.
+- Each `// want "substring"` (or `# want`, `-- want`) anchors a
+  diagnostic expectation on the same line (literal substring match).
+- Use `// want:+1 "substring"` to anchor it on the next line — useful
+  when a rewrite is going to delete the line that holds the marker.
 - If a rule has a rewrite, ship a `.golden` showing the post-`-fix`
   source.
 - Files **directly in `testdata/`** are run as independent

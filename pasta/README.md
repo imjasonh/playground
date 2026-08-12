@@ -172,9 +172,11 @@ Rules with a ✏️ include an automatic rewrite for `-fix`.
 Cold runs over large trees are tuned for sparse style rules:
 
 1. **Content-sniff pre-filter** — before parsing, pasta checks cheap
-   substrings inferred from each rule (`eq` / `token_eq` / `within` /
-   simple `matches` alternations) plus optional `require_substring` on
-   the rule. Files that cannot match any applicable rule skip the parse.
+   substrings inferred from each rule (`eq` / `token_eq` / a single
+   simple `matches` alternation) plus optional `require_substring` on
+   the rule. Rewrite `within` tokens are not inferred (diagnose can
+   fire without them). Files that cannot match any applicable rule
+   skip the parse.
 2. **Per-file parse budget** — default 2s (`-parse-timeout`, or
    `parse_timeout_ms` in `pasta.cue`). Timed-out files are reported as
    `skipped (too complex to analyze)` instead of owning the run.
@@ -197,8 +199,10 @@ go install github.com/imjasonh/pasta/cmd/pasta@latest
 # Project-style: drop your rules in ./.pasta/ and just run pasta.
 # Rules are loaded from ./.pasta/, sources default to ./...
 mkdir -p .pasta && cp path/to/some-rule.cue .pasta/
-pasta              # report
-pasta -fix         # apply fixes
+pasta              # report (exit 0 even when findings are printed)
+pasta -fail-on=error   # CI-friendly: exit 1 on error-severity findings
+pasta -fail-on=warning # exit 1 on warning or error
+pasta -fix         # apply fixes (atomic rewrite; skips symlinks)
 
 # Same, but pointing at a different rule directory.
 pasta -rules path/to/rule-dir
@@ -255,10 +259,10 @@ my-rule/
 `pasta test` discovers `*.cue` rules in the directory, walks `testdata/`
 for source files in any registered language, runs the rules, and verifies:
 
-1. Every diagnostic emitted by a rule matches a `// want "regex"` marker
-   on the same line of the source. `// want:+N "regex"` shifts the
-   expected line by N (useful when the rewrite itself deletes the
-   marker line).
+1. Every diagnostic emitted by a rule matches a `// want "substring"`
+   marker on the same line of the source (literal substring match, not
+   a regex). `// want:+N "substring"` shifts the expected line by N
+   (useful when the rewrite itself deletes the marker line).
 2. Every `// want` marker is satisfied by exactly one diagnostic.
 3. If a `<file>.golden` exists, the `-fix` output matches it byte-for-byte.
 
@@ -378,8 +382,9 @@ is a working example covering two of the most common shapes:
   `widget.OldName(...)` calls in one pass.
 
 Each rule emits a diagnostic *and* a rewrite. Without `-fix`, `pasta`
-behaves as a CI lint pointing at unmigrated call sites (`go build` is also a hint); with `-fix` it
-edits them in place. The same pattern extends naturally to:
+reports unmigrated call sites; use `-fail-on=error` (or `warning`) in
+CI so findings fail the build. With `-fix` it edits them in place.
+The same pattern extends naturally to:
 
 - Removed arguments (`delete_from`/`delete_to` between captures).
 - Argument reorder (capture each arg, reassemble in the new order).

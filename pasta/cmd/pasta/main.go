@@ -90,7 +90,13 @@ func runFix(args []string) int {
 	rulesDir := fs.String("rules", "", "directory of CUE rule files to load (default: ./"+DefaultRulesDir+")")
 	noCache := fs.Bool("nocache", false, "disable the persistent parse-result cache for this run")
 	parseTimeoutFlag := fs.Duration("parse-timeout", -1, "per-file parse budget (e.g. 2s); 0 disables. Default 2s, or parse_timeout_ms from pasta.cue")
+	failOn := fs.String("fail-on", "none", "exit 1 when a diagnostic at this severity or higher is found: none, hint, info, warning, error")
 	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	failThreshold, err := parseFailOn(*failOn)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return 2
 	}
 
@@ -144,6 +150,9 @@ func runFix(args []string) int {
 		}
 		for _, d := range res.Diagnostics {
 			fmt.Fprintf(os.Stderr, "%s:%d: %s [%s]\n", res.Path, d.Line(), d.Message, d.Rule)
+			if failThreshold != failOnNone && severityAtLeast(d.Severity, failThreshold) {
+				exit = 1
+			}
 		}
 		if !*fix {
 			continue
@@ -166,7 +175,7 @@ func runFix(args []string) int {
 			exit = 1
 			continue
 		}
-		if err := os.WriteFile(res.Path, res.Fixed, 0o644); err != nil {
+		if err := writeFixedFile(res.Path, res.Fixed); err != nil {
 			fmt.Fprintf(os.Stderr, "%s: %v\n", res.Path, err)
 			exit = 1
 		}
@@ -181,6 +190,54 @@ func runFix(args []string) int {
 		_ = cache.Prune()
 	}
 	return exit
+}
+
+// failOn threshold for -fail-on. Ordered so higher severity has a
+// higher rank; "at least warning" means warning or error.
+type failOnLevel int
+
+const (
+	failOnNone failOnLevel = iota
+	failOnHint
+	failOnInfo
+	failOnWarning
+	failOnError
+)
+
+func parseFailOn(s string) (failOnLevel, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "none", "off":
+		return failOnNone, nil
+	case "hint":
+		return failOnHint, nil
+	case "info", "information":
+		return failOnInfo, nil
+	case "warning", "warn":
+		return failOnWarning, nil
+	case "error":
+		return failOnError, nil
+	default:
+		return failOnNone, fmt.Errorf("-fail-on: unknown level %q (want none|hint|info|warning|error)", s)
+	}
+}
+
+func severityRank(s dsl.Severity) failOnLevel {
+	switch s {
+	case dsl.SeverityError:
+		return failOnError
+	case dsl.SeverityWarning, "":
+		return failOnWarning
+	case dsl.SeverityInfo:
+		return failOnInfo
+	case dsl.SeverityHint:
+		return failOnHint
+	default:
+		return failOnWarning
+	}
+}
+
+func severityAtLeast(got dsl.Severity, threshold failOnLevel) bool {
+	return severityRank(got) >= threshold
 }
 
 // resolveParseTimeout picks the per-file parse budget.
@@ -399,7 +456,9 @@ func parseSkipDirs(extra string, cfg *loader.Config) map[string]bool {
 
 // walkSources walks root and returns every file with an extension
 // pasta knows about (via lang.ByExt). .golden files are skipped, as
-// are directories whose basename is in skip.
+// are directories whose basename is in skip. Symlinks (and other
+// non-regular files) are skipped so `pasta -fix ./...` cannot be
+// pointed at paths outside the tree via a crafted symlink.
 //
 // Files larger than maxFileSize bytes are reported as `skipped`
 // rather than analyzed. Pure-Go tree-sitter is super-linear on huge
@@ -423,18 +482,25 @@ func walkSources(root string, skip map[string]bool, maxFileSize int64) ([]string
 			}
 			return nil
 		}
+		if d.Type()&fs.ModeSymlink != 0 {
+			return nil
+		}
+		info, ierr := d.Info()
+		if ierr != nil {
+			return nil
+		}
+		if !info.Mode().IsRegular() {
+			return nil
+		}
 		if strings.HasSuffix(name, ".golden") {
 			return nil
 		}
 		if _, ok := lang.ByExt(filepath.Ext(name)); !ok {
 			return nil
 		}
-		if maxFileSize > 0 {
-			info, ierr := d.Info()
-			if ierr == nil && info.Size() > maxFileSize {
-				oversized = append(oversized, p)
-				return nil
-			}
+		if maxFileSize > 0 && info.Size() > maxFileSize {
+			oversized = append(oversized, p)
+			return nil
 		}
 		out = append(out, p)
 		return nil

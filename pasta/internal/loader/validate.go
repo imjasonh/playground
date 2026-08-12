@@ -14,6 +14,106 @@ import (
 // itself. Always considered "in scope" for capture validation.
 const rootCapture = "_root"
 
+// validateFactDeps ensures fact consumers/producers declare their
+// dependencies. The streaming engine only shares a cross-file fact
+// store when `requires` is non-empty, so a `has_fact`/`not_has_fact`
+// predicate whose kind is missing from `requires` can silently see an
+// empty store. Likewise, an `emit.fact` typo that isn't listed in
+// `provides` breaks downstream consumers without a load-time signal.
+func validateFactDeps(a *dsl.Analyzer) error {
+	var errs []string
+	for _, ruleKey := range sortedKeys(a.Rules) {
+		r := a.Rules[ruleKey]
+		req := stringSet(r.Requires)
+		prov := stringSet(r.Provides)
+		for _, kind := range gatherFactPredicateKinds(&r.Match) {
+			if !req[kind] {
+				errs = append(errs, fmt.Sprintf(
+					"rule %q: has_fact/not_has_fact %q must appear in requires (have: %s)",
+					r.Name, kind, sortedStringList(req)))
+			}
+		}
+		for i, em := range r.Emit {
+			if em.Fact == "" {
+				continue
+			}
+			if !prov[em.Fact] {
+				errs = append(errs, fmt.Sprintf(
+					"rule %q: emit[%d].fact %q must appear in provides (have: %s)",
+					r.Name, i, em.Fact, sortedStringList(prov)))
+			}
+		}
+	}
+	if len(errs) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%s", strings.Join(errs, "; "))
+}
+
+func stringSet(xs []string) map[string]bool {
+	out := make(map[string]bool, len(xs))
+	for _, x := range xs {
+		out[x] = true
+	}
+	return out
+}
+
+func sortedStringList(m map[string]bool) string {
+	if len(m) == 0 {
+		return "(none)"
+	}
+	return sortedCapList(m)
+}
+
+// gatherFactPredicateKinds walks p for has_fact / not_has_fact
+// predicates and returns the fact-kind literals (args[1]).
+func gatherFactPredicateKinds(p *dsl.Pattern) []string {
+	var out []string
+	seen := map[string]bool{}
+	var walk func(*dsl.Pattern)
+	walk = func(p *dsl.Pattern) {
+		if p == nil {
+			return
+		}
+		for _, pred := range p.Where {
+			if pred.Op != "has_fact" && pred.Op != "not_has_fact" {
+				continue
+			}
+			if len(pred.Args) < 2 {
+				continue
+			}
+			kind := strings.TrimSpace(pred.Args[1].Str)
+			if kind == "" || seen[kind] {
+				continue
+			}
+			seen[kind] = true
+			out = append(out, kind)
+		}
+		for k := range p.Fields {
+			c := p.Fields[k]
+			walk(c.AsPattern())
+			if c.Preceding != nil {
+				walk(c.Preceding.AsPattern())
+			}
+		}
+		for i := range p.Children {
+			walk(p.Children[i].AsPattern())
+			if p.Children[i].Preceding != nil {
+				walk(p.Children[i].Preceding.AsPattern())
+			}
+		}
+		for i := range p.Adjacent {
+			walk(p.Adjacent[i].AsPattern())
+		}
+		if p.Preceding != nil {
+			walk(p.Preceding.AsPattern())
+		}
+	}
+	walk(p)
+	sort.Strings(out)
+	return out
+}
+
 // validateFileMatch checks every rule's `file_match` entry compiles
 // as a valid filepath.Match pattern. A bad pattern (e.g. unclosed
 // `[`) would otherwise silently make the rule never match — better

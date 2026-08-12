@@ -299,6 +299,68 @@ func TestApplyConfig_disableSilencesSeverityWarning(t *testing.T) {
 	}
 }
 
+func TestValidateFactDeps(t *testing.T) {
+	missingRequires := &dsl.Analyzer{
+		Name: "demo",
+		Rules: map[string]dsl.Rule{
+			"r": {
+				Name: "r",
+				Match: dsl.Pattern{
+					Node: []string{"identifier"},
+					Where: []dsl.Predicate{
+						{Op: "has_fact", Args: []dsl.Arg{{Str: "@_root"}, {Str: "tainted"}}},
+					},
+				},
+			},
+		},
+	}
+	err := validateFactDeps(missingRequires)
+	if err == nil || !strings.Contains(err.Error(), "tainted") || !strings.Contains(err.Error(), "requires") {
+		t.Fatalf("expected requires error mentioning tainted; got %v", err)
+	}
+
+	missingProvides := &dsl.Analyzer{
+		Name: "demo",
+		Rules: map[string]dsl.Rule{
+			"r": {
+				Name:     "r",
+				Provides: nil,
+				Match:    dsl.Pattern{Node: []string{"identifier"}},
+				Emit:     []dsl.EmitFact{{Fact: "tainted", Attach: "_root"}},
+			},
+		},
+	}
+	err = validateFactDeps(missingProvides)
+	if err == nil || !strings.Contains(err.Error(), "provides") {
+		t.Fatalf("expected provides error; got %v", err)
+	}
+
+	ok := &dsl.Analyzer{
+		Name: "demo",
+		Rules: map[string]dsl.Rule{
+			"producer": {
+				Name:     "producer",
+				Provides: []string{"tainted"},
+				Match:    dsl.Pattern{Node: []string{"identifier"}},
+				Emit:     []dsl.EmitFact{{Fact: "tainted", Attach: "_root"}},
+			},
+			"consumer": {
+				Name:     "consumer",
+				Requires: []string{"tainted"},
+				Match: dsl.Pattern{
+					Node: []string{"identifier"},
+					Where: []dsl.Predicate{
+						{Op: "has_fact", Args: []dsl.Arg{{Str: "@_root"}, {Str: "tainted"}}},
+					},
+				},
+			},
+		},
+	}
+	if err := validateFactDeps(ok); err != nil {
+		t.Fatalf("valid fact deps rejected: %v", err)
+	}
+}
+
 func TestValidateFileMatch(t *testing.T) {
 	good := &dsl.Analyzer{
 		Name:  "demo",

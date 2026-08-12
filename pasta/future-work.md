@@ -46,15 +46,9 @@ DSL change: `Predicate.args` would need to allow nested predicate
 specs.
 
 ### File-extension / filename gating per rule
-**Effort:** S. **Surfaced by:** cpp_using_namespace_std (only really
-problematic in `.h`/`.hpp`), `*_test.go` rules, `*.spec.ts`-only
-rules.
-Today rules attach to a *language* (`languages: ["cpp"]`) but can't
-narrow to specific filenames or extensions. Schema once had a
-`file_match: [...string]` field — we removed it as dead, but this is
-the recurring use case. Wiring it through the engine is
-straightforward: skip rules whose glob doesn't include the current
-file's basename.
+**Status:** Done. Rules accept `file_match: [...string]`
+(`path/filepath.Match` globs on the basename). See
+`testdata/file_match/` and `CLAUDE.md`.
 
 ### Sibling-absence predicates
 **Effort:** S. **Surfaced by:** dockerfile_no_user (no `USER`
@@ -342,10 +336,11 @@ module), so this is polish, not a load-bearing item.
 
 ### Content-sniff pre-filter
 **Status:** Done. `internal/prefilter` infers substrings from
-`eq`/`token_eq`/`within`/`matches` (simple alternations) and
-honours explicit `require_substring` on `#Rule`. The streaming
-and in-memory engine paths skip the parse when no applicable rule
-can match.
+`eq`/`token_eq` and at most one simple `matches` alternation, and
+honours explicit `require_substring` on `#Rule`. Rewrite `within`
+tokens are intentionally not inferred (diagnose can fire without
+them). The streaming and in-memory engine paths skip the parse when
+no applicable rule can match.
 
 ### Tighter cache encoding than `gob`
 **Effort:** S.

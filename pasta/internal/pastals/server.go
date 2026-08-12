@@ -223,19 +223,23 @@ func (s *Server) handleDidChange(ctx context.Context, p protocol.DidChangeTextDo
 	}
 	// Full-sync: last entry's Text is the new full document.
 	d.update(p.TextDocument.Version, p.ContentChanges[len(p.ContentChanges)-1].Text)
+	if s.cfg.RunOnSave {
+		// Document buffer updated; diagnostics wait for didSave.
+		return
+	}
 	s.scheduleDiagnostics(d, 0)
 }
 
 func (s *Server) handleDidSave(ctx context.Context, p protocol.DidSaveTextDocumentParams) {
-	if !s.cfg.RunOnSave {
-		return // already running on change
-	}
 	d, ok := s.docs.get(p.TextDocument.URI)
 	if !ok {
 		return
 	}
 	if p.Text != nil {
-		d.update(d.version, *p.Text)
+		d.update(d.currentVersion(), *p.Text)
+	}
+	if !s.cfg.RunOnSave {
+		return // already running on change
 	}
 	s.scheduleDiagnostics(d, 0)
 }
@@ -273,7 +277,9 @@ func (s *Server) scheduleDiagnostics(d *document, delay time.Duration) {
 	ctx, cancel := context.WithCancel(context.Background())
 	s.cancels[d.uri] = cancel
 	s.timers[d.uri] = time.AfterFunc(delay, func() {
-		s.runDiagnostics(ctx, d)
+		// Snapshot under the document lock so didChange cannot mutate
+		// src/version/conv while the analysis goroutine reads them.
+		s.runDiagnostics(ctx, d.snapshot())
 	})
 }
 

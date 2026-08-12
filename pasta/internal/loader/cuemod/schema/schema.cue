@@ -136,9 +136,10 @@ package schema
 
 	// Optional content-sniff filter. When set, the engine skips the
 	// tree-sitter parse for files that lack every listed substring.
-	// Prefer relying on inference from `eq`/`token_eq`/`within` when
-	// those already name the sparse tokens; use this for cases
-	// inference can't see (e.g. comments-only rules).
+	// Prefer relying on inference from `eq`/`token_eq` and a single
+	// simple `matches` alternation when those already name the sparse
+	// tokens; rewrite `within` tokens are not inferred. Use this for
+	// cases inference can't see (e.g. comments-only rules).
 	require_substring?: [...string]
 
 	match: #Pattern
