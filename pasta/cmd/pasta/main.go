@@ -517,8 +517,9 @@ func parseSkipDirs(extra string, cfg *loader.Config) map[string]bool {
 }
 
 // walkSources walks root and returns every file with an extension
-// pasta knows about (via lang.ByExt). .golden files are skipped, as
-// are directories whose basename is in skip. Symlinks (and other
+// pasta knows about (via lang.ByExt). .golden files and known
+// generated lockfiles (e.g. package-lock.json) are skipped, as are
+// directories whose basename is in skip. Symlinks (and other
 // non-regular files) are skipped so `pasta -fix ./...` cannot be
 // pointed at paths outside the tree via a crafted symlink.
 //
