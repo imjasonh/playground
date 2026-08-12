@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/imjasonh/playground/go-builder/internal/cnb"
@@ -32,10 +31,14 @@ type Options struct {
 	// Stdout/Stderr for go build logs; default os.Stdout/os.Stderr.
 	Stdout io.Writer
 	Stderr io.Writer
-	// GOOS/GOARCH for the target binary; default linux/<runtime arch> for
-	// buildpack builds, or runtime for local unit tests when OverrideTarget set.
+	// GOOS/GOARCH for the target binary (CNB_TARGET_* / pack --platform).
 	GOOS   string
 	GOARCH string
+	// ToolchainOS/Arch are where the Go SDK runs (build container). Empty =
+	// runtime.GOOS/GOARCH. Distinct from target so amd64 builders can
+	// cross-compile linux/arm64 app binaries without downloading an arm64 SDK.
+	ToolchainOS   string
+	ToolchainArch string
 	// SkipToolchainDownload forces use of host `go` only.
 	SkipToolchainDownload bool
 	// DefaultGoVersion from buildpack.toml metadata.
@@ -59,17 +62,14 @@ func Run(env cnb.BuildEnv, opt Options) (Result, error) {
 	if opt.Stderr == nil {
 		opt.Stderr = os.Stderr
 	}
-	if opt.GOOS == "" {
-		opt.GOOS = firstNonEmpty(os.Getenv("CNB_TARGET_OS"), "linux")
-	}
-	if opt.GOARCH == "" {
-		opt.GOARCH = firstNonEmpty(os.Getenv("CNB_TARGET_ARCH"), runtime.GOARCH)
-	}
 	if opt.DefaultGoVersion == "" {
 		opt.DefaultGoVersion = "1.25.0"
 	}
+	target, toolc := ResolvePlatforms(opt)
+	opt.GOOS, opt.GOARCH = target.OS, target.Arch
 
 	fmt.Fprintln(opt.Stdout, "---> playground/go (ko-style)")
+	fmt.Fprintf(opt.Stdout, "---> target %s/%s (toolchain %s/%s)\n", target.OS, target.Arch, toolc.OS, toolc.Arch)
 
 	platformEnv, err := cnb.PlatformEnv(env.PlatformDir)
 	if err != nil {
@@ -103,17 +103,17 @@ func Run(env cnb.BuildEnv, opt Options) (Result, error) {
 		}
 	} else {
 		var rebuilt bool
-		goBin, rebuilt, err = toolchain.Ensure(goLayer.Path, goVersion, "linux", opt.GOARCH, prev)
+		goBin, rebuilt, err = toolchain.Ensure(goLayer.Path, goVersion, toolc.OS, toolc.Arch, prev)
 		if err != nil {
 			return Result{}, err
 		}
 		if rebuilt {
-			fmt.Fprintf(opt.Stdout, "---> Installed Go %s\n", goVersion)
+			fmt.Fprintf(opt.Stdout, "---> Installed Go %s (%s/%s)\n", goVersion, toolc.OS, toolc.Arch)
 		} else {
-			fmt.Fprintf(opt.Stdout, "---> Reusing Go %s\n", goVersion)
+			fmt.Fprintf(opt.Stdout, "---> Reusing Go %s (%s/%s)\n", goVersion, toolc.OS, toolc.Arch)
 		}
 	}
-	if err := cnb.WriteLayerTOML(goLayer, cnb.LayerTypes{Build: true, Cache: true}, toolchain.Metadata(goVersion, "linux", opt.GOARCH)); err != nil {
+	if err := cnb.WriteLayerTOML(goLayer, cnb.LayerTypes{Build: true, Cache: true}, toolchain.Metadata(goVersion, toolc.OS, toolc.Arch)); err != nil {
 		return Result{}, err
 	}
 	_ = cnb.WriteLayerEnv(goLayer.Path, "PATH", filepath.Dir(goBin), "prepend")

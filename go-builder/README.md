@@ -29,17 +29,47 @@ cd go-builder
 go test ./...
 ```
 
-### Create the builder (needs `pack` + Docker)
+### Local single-arch builder (daemon)
 
 ```bash
 cd go-builder
-./scripts/create-builder.sh          # → go-builder:local
+./scripts/create-builder.sh --local          # → go-builder:local (host arch)
 pack build hello-go \
   --builder go-builder:local \
   --path testdata/hello
 docker run --rm hello-go
 # → hello from go-builder
 ```
+
+### Multi-arch builder + app (amd64 + arm64)
+
+CNB supports multi-arch for **builders/buildpacks** (`pack … --target`) and for
+**app images** via per-platform `pack build --platform` + `pack manifest create`.
+go-builder wires both, defaulting to `linux/amd64,linux/arm64` like ko.
+
+```bash
+# 1) Multi-arch builder (must publish — registries hold OCI indexes)
+BUILDER_IMAGE=ttl.sh/$USER-go-builder:1h ./scripts/create-builder.sh
+
+# 2) Multi-arch app index (same platforms)
+./scripts/build-multiarch.sh ttl.sh/$USER-hello:1h \
+  --builder ttl.sh/$USER-go-builder:1h \
+  --path testdata/hello \
+  --publish
+```
+
+Under the hood that is pack’s supported flow:
+
+```bash
+pack build img-amd64 --platform linux/amd64 --publish …
+pack build img-arm64 --platform linux/arm64 --publish …
+pack manifest create img img-amd64 img-arm64 --publish
+```
+
+Each platform build sets `CNB_TARGET_ARCH`; the buildpack cross-compiles with
+`GOARCH` while downloading a Go SDK for the **build-container** arch (so an
+amd64 builder can emit a linux/arm64 `ko-app` without needing an arm64 toolchain
+tarball to *execute*).
 
 ### kodata (same convention as ko)
 
@@ -56,11 +86,11 @@ docker run --rm kodata-demo
 | Step | Behavior |
 |------|----------|
 | **Detect** | Passes only when `go.mod` exists |
-| **Toolchain** | Installs Go matching `toolchain` / `go` in `go.mod` into a cached layer |
-| **Compile** | `CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o …/ko-app <main>` |
+| **Toolchain** | Installs Go matching `toolchain` / `go` in `go.mod` (build-container arch) |
+| **Compile** | `CGO_ENABLED=0 GOOS/GOARCH=<target> go build -trimpath -ldflags="-s -w" -o …/ko-app <main>` |
 | **kodata** | Copies `<main>/kodata/` into a launch layer; sets `KO_DATA_PATH` |
 | **Launch** | Default process `web` → the `ko-app` binary |
-| **Run image** | Paketo `run-jammy-static` (tiny / distroless-like) |
+| **Run image** | Paketo `run-jammy-static` (tiny / distroless-like), per target arch |
 
 ### `.ko.yaml` (subset)
 
@@ -87,22 +117,29 @@ builds:
 | `BP_GO_TRIMPATH` | Set `false` to keep file paths |
 | `BP_GO_DISABLE_OPTIMIZATIONS` | `true` → `-gcflags=all=-N -l` |
 | `KO_BUILD_ID` / `BP_KO_BUILD_ID` | Select a `builds[].id` from `.ko.yaml` |
+| `CNB_TARGET_OS` / `CNB_TARGET_ARCH` | Set by lifecycle from `pack --platform` |
 
 ## Layout
 
 ```
 go-builder/
 ├── buildpack.toml      # playground/go buildpack identity
-├── builder.toml        # Go-only builder → jammy-static stack
+├── builder.toml        # Go-only builder → jammy-static (amd64+arm64 targets)
 ├── package.toml        # pack buildpack package targets
 ├── cmd/detect          # CNB bin/detect
 ├── cmd/build           # CNB bin/build
 ├── internal/           # detect, build, config, kodata, toolchain, cnb
 ├── scripts/
-│   ├── package.sh      # compile bin/detect + bin/build
-│   └── create-builder.sh
+│   ├── package.sh           # trampolines + per-arch binaries
+│   ├── create-builder.sh    # multi-arch (default) or --local
+│   ├── build-multiarch.sh   # pack build × platforms + manifest create
+│   └── bin-trampoline.sh
 └── testdata/           # hello, with-kodata, with-ko-yaml
 ```
+
+`scripts/package.sh` installs `bin/detect` / `bin/build` as arch trampolines that
+exec `bin/<amd64|arm64>/…`, so one buildpack directory can be embedded in every
+platform of a multi-arch builder.
 
 ## ko parity notes
 
@@ -114,8 +151,9 @@ go-builder/
   match).
 - **Base image:** Chosen by the builder’s run image, not `.ko.yaml`. The YAML
   field is accepted and logged so existing ko configs don’t break detect/build.
-- **Multi-arch:** `builder.toml` declares `linux/amd64` and `linux/arm64`; use
-  `pack build --target linux/arm64` (or buildx-style targets your pack supports).
+- **Multi-arch:** First-class via `create-builder.sh` + `build-multiarch.sh`
+  (pack’s `--target` / `--platform` + `manifest create`). Defaults match ko’s
+  usual `linux/amd64,linux/arm64`. Override with `TARGETS` / `PLATFORMS`.
 
 ## Non-goals
 
