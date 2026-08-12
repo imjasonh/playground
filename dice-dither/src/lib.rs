@@ -264,6 +264,9 @@ fn sample_luminance(source: &DynamicImage, cols: usize, rows: usize, space: Tone
     let rgb = source.to_rgb8();
     let (width, height) = rgb.dimensions();
     let mut grid = vec![0.0f32; cols * rows];
+    if width == 0 || height == 0 {
+        return grid;
+    }
 
     for (row, cell) in grid.chunks_mut(cols).enumerate() {
         let y0 = (row * height as usize / rows).min(height as usize - 1);
@@ -623,6 +626,19 @@ mod tests {
             },
         );
         assert_eq!(mosaic.dice(), 1);
+    }
+
+    #[test]
+    fn an_empty_source_does_not_panic() {
+        let mosaic = dice_dither(
+            &DynamicImage::ImageRgb8(RgbImage::new(0, 0)),
+            &Options {
+                cells: 4,
+                rows: Some(4),
+                ..Options::default()
+            },
+        );
+        assert_eq!(mosaic.dice(), 16);
     }
 
     #[test]
