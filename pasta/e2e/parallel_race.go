@@ -2,6 +2,6 @@
 
 package e2e_test
 
-// Under -race, gotreesitter's process-global arenas are not safe to
-// share across parallel RunGroup calls, so e2e subtests stay serial.
+// Under -race, keep smoke tests serial to avoid amplifying race-detector
+// overhead on the shared wazero runtime init path.
 const parallelSmoke = false

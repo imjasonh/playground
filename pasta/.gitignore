@@ -11,3 +11,6 @@
 .idea/
 .vscode/
 *.swp
+
+# tree-sitter WASM build intermediate (committed artifact is .br)
+internal/tswasm/ts-core.wasm

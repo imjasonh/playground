@@ -5,7 +5,8 @@ import "github.com/imjasonh/pasta/schema"
 
 Config: schema.#Language & {
 	grammar:    "javascript"
-	extensions: [".js", ".mjs", ".cjs"]
+	// .jsx shares the JSX-capable JavaScript grammar.
+	extensions: [".js", ".mjs", ".cjs", ".jsx"]
 	comment_types: ["comment"]
 }
 

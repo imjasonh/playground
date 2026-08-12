@@ -3,7 +3,7 @@ package match
 import (
 	"testing"
 
-	"github.com/odvcencio/gotreesitter/grammars"
+	"github.com/imjasonh/pasta/internal/tswasm"
 
 	"github.com/imjasonh/pasta/internal/dsl"
 	"github.com/imjasonh/pasta/internal/tsutil"
@@ -11,7 +11,7 @@ import (
 
 func TestNodeIsAndNodeIsNot(t *testing.T) {
 	src := []byte("const a = Object.assign({}, src);\nconst b = Object.assign({}, ...xs);\n")
-	tree, root, err := tsutil.Parse(t.Context(), grammars.JavascriptLanguage(), src, "")
+	tree, root, err := tsutil.Parse(t.Context(), &tswasm.Language{Grammar: "javascript"}, src, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestNodeIsAndNodeIsNot(t *testing.T) {
 
 func TestSubtreeLacks(t *testing.T) {
 	src := []byte("type A = Array<number>;\ntype B = Array<Array<number>>;\n")
-	tree, root, err := tsutil.Parse(t.Context(), grammars.TypescriptLanguage(), src, "")
+	tree, root, err := tsutil.Parse(t.Context(), &tswasm.Language{Grammar: "typescript"}, src, "")
 	if err != nil {
 		t.Fatal(err)
 	}

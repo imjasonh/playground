@@ -24,4 +24,24 @@ var DefaultSkipDirs = map[string]bool{
 	".tox":             true,
 	".nox":             true,
 	"third_party":      true,
+	"testdata":         true, // analyzer / Go test fixtures
+	"target":           true, // Rust build output
+	"dist":             true,
+	"build":            true,
+	"coverage":         true,
+	"test-results":     true,
+	"DerivedData":      true, // Xcode
+}
+
+// IsGeneratedLockfile reports whether basename is a known generated
+// package-manager lockfile that happens to use a language extension
+// pasta understands (e.g. package-lock.json → json). These are not
+// hand-written source and should not be linted during `./...` walks.
+func IsGeneratedLockfile(basename string) bool {
+	switch basename {
+	case "package-lock.json", "npm-shrinkwrap.json":
+		return true
+	default:
+		return false
+	}
 }

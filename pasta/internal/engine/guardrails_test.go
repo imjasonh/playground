@@ -16,7 +16,9 @@ func TestStreamingParseErrorsSkipHeavy(t *testing.T) {
 		t.Fatal("js language not registered")
 	}
 	// Heavily broken — ErrorHeavy should skip.
-	src := []byte("const x = {{{{")
+	// Official C tree-sitter recovers `{{{{` more cleanly than the old
+	// pure-Go port; use denser garbage so ERROR nodes dominate.
+	src := []byte("!!!!!!!\n@@@@@@@\n#######\n{{{{{{{{\n")
 	a := &dsl.Analyzer{
 		Name: "t",
 		Rules: map[string]dsl.Rule{

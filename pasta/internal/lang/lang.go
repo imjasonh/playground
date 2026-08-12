@@ -4,11 +4,12 @@
 // declared in CUE under github.com/imjasonh/pasta/lang/<name> and loaded at startup
 // from the embedded built-in module shipped by internal/loader. The only
 // non-CUE component is internal/lang/grammars.go, a small map from grammar
-// name to its gotreesitter GetLanguage function — required because
-// gotreesitter grammars are normal Go imports.
+// name to its WASM tree-sitter language handle — required because
+// grammar binaries live in the embedded ts-core.wasm module.
 //
 // Adding a new language alias for an existing grammar is a CUE-only
-// change. Adding a brand-new grammar requires editing grammars.go.
+// change. Adding a brand-new grammar requires rebuilding the WASM
+// module and editing grammars.go.
 package lang
 
 import (
@@ -16,11 +17,10 @@ import (
 	"io/fs"
 	"strings"
 
-	gts "github.com/odvcencio/gotreesitter"
-
 	"github.com/imjasonh/pasta/internal/dsl"
 	"github.com/imjasonh/pasta/internal/loader"
 	"github.com/imjasonh/pasta/internal/tsutil"
+	"github.com/imjasonh/pasta/internal/tswasm"
 )
 
 // Language is the runtime view of a registered language.
@@ -29,7 +29,7 @@ type Language struct {
 	Grammar      string
 	Extensions   []string
 	CommentTypes []string
-	GetLanguage  func() *gts.Language
+	GetLanguage  func() *tswasm.Language
 }
 
 // All is the live registry, populated from the embedded github.com/imjasonh/pasta module.

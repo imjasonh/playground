@@ -1,6 +1,8 @@
 package loader
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/imjasonh/pasta/internal/dsl"
@@ -280,4 +282,86 @@ func equal(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+func TestLoadDir_multiPackageFlatAndNested(t *testing.T) {
+	dir := t.TempDir()
+	ruleA := `package rule_a
+
+import "github.com/imjasonh/pasta/schema"
+
+rule_a: schema.#Analyzer & {
+	name: "rule_a"
+	version: "0.1.0"
+	facts: {}
+	rules: only: {
+		name: "only_a"
+		doc: "x"
+		languages: ["go"]
+		requires: []
+		provides: []
+		match: {node: "identifier"}
+		diagnose: {message: "a", severity: "hint"}
+	}
+}
+`
+	ruleB := `package rule_b
+
+import "github.com/imjasonh/pasta/schema"
+
+rule_b: schema.#Analyzer & {
+	name: "rule_b"
+	version: "0.1.0"
+	facts: {}
+	rules: only: {
+		name: "only_b"
+		doc: "x"
+		languages: ["go"]
+		requires: []
+		provides: []
+		match: {node: "identifier"}
+		diagnose: {message: "b", severity: "hint"}
+	}
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "a.cue"), []byte(ruleA), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b.cue"), []byte(ruleB), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, err := LoadDir(dir)
+	if err != nil {
+		t.Fatalf("flat multi-package LoadDir: %v", err)
+	}
+	if len(res.Analyzers) != 2 {
+		t.Fatalf("flat: expected 2 analyzers, got %d", len(res.Analyzers))
+	}
+
+	nested := t.TempDir()
+	for _, name := range []string{"rule_a", "rule_b"} {
+		sub := filepath.Join(nested, name)
+		if err := os.MkdirAll(sub, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(nested, "rule_a", "a.cue"), []byte(ruleA), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nested, "rule_b", "b.cue"), []byte(ruleB), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nested, "pasta.cue"), []byte("skip: [\"dist\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, err = LoadDir(nested)
+	if err != nil {
+		t.Fatalf("nested LoadDir: %v", err)
+	}
+	if len(res.Analyzers) != 2 {
+		t.Fatalf("nested: expected 2 analyzers, got %d", len(res.Analyzers))
+	}
+	if res.Config == nil || len(res.Config.Skip) != 1 || res.Config.Skip[0] != "dist" {
+		t.Fatalf("nested: expected skip from pasta.cue, got %+v", res.Config)
+	}
 }

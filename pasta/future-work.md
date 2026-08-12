@@ -314,14 +314,12 @@ cap shipped together (PR #7). Follow-ups that have also landed:
 The remaining ceiling on cold-cache runs is still the parser itself.
 
 ### Switch to cgo tree-sitter
-**Effort:** L.
-The pure-Go `gotreesitter` port parses at ~300 KB/s on the kubectl
-staging module; upstream C tree-sitter does ~30 MB/s. That's the
-single biggest remaining wall-clock win available — roughly 10×
-on cold runs. Cost: pasta gains a C-toolchain build dependency,
-which breaks the "go install" story we have today. Worth doing
-once warm-cache hit rates are routinely high enough that cold runs
-are an event rather than the common case.
+**Status:** Superseded by WASM. pasta now embeds the official C
+tree-sitter runtime + grammars as `internal/tswasm/ts-core.wasm.br`
+and drives them via wazero (`CGO_ENABLED=0`, `go install` still
+works). Native cgo would still be ~2× faster than WASM on raw parse
+(see dvcdsys/code-index PR #81) but is not worth the toolchain
+breakage unless a profile shows parse dominating end-to-end again.
 
 ### Parallel warm-cache reads
 **Effort:** S.

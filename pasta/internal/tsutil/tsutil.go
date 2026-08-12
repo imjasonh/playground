@@ -1,19 +1,19 @@
-// Package tsutil wraps the gotreesitter primitives (pure-Go tree-sitter
-// runtime) into a stable Node abstraction with byte ranges, named
-// children, field lookups, and per-language statement-list traversal.
+// Package tsutil wraps the tree-sitter Node abstraction with source
+// bytes + language + file-id. The parse backend is the official C
+// tree-sitter runtime compiled to WASM and driven via wazero
+// (internal/tswasm) — pure Go, CGO_ENABLED=0, go install friendly.
 package tsutil
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"sync/atomic"
 	"time"
 
-	gts "github.com/odvcencio/gotreesitter"
+	"github.com/imjasonh/pasta/internal/tswasm"
 )
 
-// Node is a thin wrapper around a gotreesitter node that carries the
+// Node is a thin wrapper around a tree-sitter node that carries the
 // source bytes and language so the rest of pasta can call methods like
 // Type() / ChildByFieldName() without threading the language through
 // every call site.
@@ -23,21 +23,21 @@ import (
 // single store (multi-file analysis groups). Single-file callers can
 // leave it empty.
 type Node struct {
-	N      *gts.Node
+	N      *tswasm.Node
 	Src    []byte
-	Lang   *gts.Language
+	Lang   *tswasm.Language
 	FileID string
 }
 
 // IsValid reports whether the node is non-nil.
-func (n Node) IsValid() bool { return n.N != nil }
+func (n Node) IsValid() bool { return n.N != nil && n.N.IsValid() }
 
 // Type returns the tree-sitter node type.
 func (n Node) Type() string {
 	if n.N == nil {
 		return ""
 	}
-	return n.N.Type(n.Lang)
+	return n.N.Type()
 }
 
 // IsNamed reports whether the node is a named (non-anonymous) child.
@@ -49,12 +49,22 @@ func (n Node) IsNamed() bool {
 }
 
 // StartByte and EndByte return the node's byte range in the source.
-func (n Node) StartByte() uint32 { return n.N.StartByte() }
-func (n Node) EndByte() uint32   { return n.N.EndByte() }
+func (n Node) StartByte() uint32 {
+	if n.N == nil {
+		return 0
+	}
+	return n.N.StartByte()
+}
+func (n Node) EndByte() uint32 {
+	if n.N == nil {
+		return 0
+	}
+	return n.N.EndByte()
+}
 
 // Range returns (start, end).
 func (n Node) Range() (uint32, uint32) {
-	return n.N.StartByte(), n.N.EndByte()
+	return n.StartByte(), n.EndByte()
 }
 
 // Text returns the source text covered by the node.
@@ -64,10 +74,10 @@ func (n Node) Text() string {
 
 // NamedChildren returns the named children in order.
 func (n Node) NamedChildren() []Node {
-	c := n.N.NamedChildCount()
-	out := make([]Node, c)
-	for i := 0; i < c; i++ {
-		out[i] = Node{N: n.N.NamedChild(i), Src: n.Src, Lang: n.Lang, FileID: n.FileID}
+	kids := n.N.NamedChildren()
+	out := make([]Node, len(kids))
+	for i, c := range kids {
+		out[i] = Node{N: c, Src: n.Src, Lang: n.Lang, FileID: n.FileID}
 	}
 	return out
 }
@@ -85,7 +95,7 @@ func (n Node) AllChildren() []Node {
 // ChildByFieldName returns the named child bound to fieldName, or an
 // invalid Node if no such field exists.
 func (n Node) ChildByFieldName(fieldName string) Node {
-	c := n.N.ChildByFieldName(fieldName, n.Lang)
+	c := n.N.ChildByFieldName(fieldName)
 	if c == nil {
 		return Node{Src: n.Src, Lang: n.Lang, FileID: n.FileID}
 	}
@@ -95,13 +105,13 @@ func (n Node) ChildByFieldName(fieldName string) Node {
 // HasFieldName reports whether the node has any child with the given field
 // name. Used to drive `absent_fields`.
 func (n Node) HasFieldName(fieldName string) bool {
-	return n.N.ChildByFieldName(fieldName, n.Lang) != nil
+	return n.N.ChildByFieldName(fieldName) != nil
 }
 
 // FieldNameForChildIdx returns the field name for the i-th child (including
 // anonymous), or "" if none.
 func (n Node) FieldNameForChildIdx(i int) string {
-	return n.N.FieldNameForChild(i, n.Lang)
+	return n.N.FieldNameForChild(i)
 }
 
 // Parent returns the parent node, or an invalid Node if at the root.
@@ -114,7 +124,7 @@ func (n Node) Parent() Node {
 }
 
 // HasError reports whether the subtree contains a parse error.
-func (n Node) HasError() bool { return n.N.HasError() }
+func (n Node) HasError() bool { return n.N != nil && n.N.HasError() }
 
 // IsError reports whether this node is an ERROR node.
 func (n Node) IsError() bool { return n.N != nil && n.N.IsError() }
@@ -147,81 +157,73 @@ func ErrorHeavy(root Node) bool {
 }
 
 // String returns the s-expression representation of the subtree (for tests).
-func (n Node) String() string { return n.N.SExpr(n.Lang) }
+func (n Node) String() string {
+	if n.N == nil {
+		return ""
+	}
+	return n.N.SExpr()
+}
 
 // ErrParseTimeout is returned when a parse hits the configured per-file
 // budget (or the context is cancelled mid-parse). Callers typically
 // skip the file and report it as too complex to analyze.
 var ErrParseTimeout = errors.New("parse timeout")
 
+// ErrParseResourceLimit is returned when the WASM guest stops early due
+// to a resource cap (memory budget trap, …). Like ErrParseTimeout,
+// callers should skip the file rather than fail the whole run.
+var ErrParseResourceLimit = errors.New("parse resource limit")
+
 // ParseOptions controls per-parse resource limits.
 type ParseOptions struct {
 	// Timeout bounds wall time for a single parse. Zero means no
-	// budget (gotreesitter default).
+	// budget (tree-sitter default).
 	Timeout time.Duration
 }
 
-// Parse parses src with the given gotreesitter language and returns the
-// tree and root Node. The caller must call tree.Release() when done.
+// Tree is the parse result; caller must Release() when done.
+type Tree = tswasm.Tree
+
+// Language is a grammar handle for Parse.
+type Language = tswasm.Language
+
+// Parse parses src with the given language and returns the tree and
+// root Node. The caller must call tree.Release() when done.
 //
 // fileID disambiguates nodes from this parse from those of other files
 // in the same multi-file analysis group; pass "" for single-file usage.
-func Parse(ctx context.Context, lang *gts.Language, src []byte, fileID string) (*gts.Tree, Node, error) {
+func Parse(ctx context.Context, lang *Language, src []byte, fileID string) (*Tree, Node, error) {
 	return ParseWithOptions(ctx, lang, src, fileID, ParseOptions{})
 }
 
 // ParseWithOptions is Parse plus an optional per-file timeout.
-func ParseWithOptions(ctx context.Context, lang *gts.Language, src []byte, fileID string, opts ParseOptions) (*gts.Tree, Node, error) {
+func ParseWithOptions(ctx context.Context, lang *Language, src []byte, fileID string, opts ParseOptions) (*Tree, Node, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, Node{}, err
 	}
-	parser := gts.NewParser(lang)
-	if opts.Timeout > 0 {
-		// gotreesitter treats 0 as unlimited; clamp sub-microsecond
-		// budgets up so a tiny Timeout can't silently disable the cap.
-		micros := opts.Timeout / time.Microsecond
-		if micros < 1 {
-			micros = 1
-		}
-		parser.SetTimeoutMicros(uint64(micros))
-	}
-	// Wire context cancellation into gotreesitter's cancellation flag
-	// so a cancelled ctx stops an in-flight parse promptly. The flag
-	// is read with atomic.LoadUint32 inside gotreesitter, so stores
-	// must be atomic too (plain assignment races under -race).
-	var cancelFlag uint32
-	parser.SetCancellationFlag(&cancelFlag)
-	stop := context.AfterFunc(ctx, func() {
-		atomic.StoreUint32(&cancelFlag, 1)
-	})
-	defer stop()
-
-	tree, err := parser.Parse(src)
+	tree, err := tswasm.Parse(ctx, lang, src, fileID, tswasm.ParseOptions{Timeout: opts.Timeout})
 	if err != nil {
-		return nil, Node{}, err
-	}
-	if tree != nil && tree.ParseStoppedEarly() {
-		reason := tree.ParseStopReason()
-		tree.Release()
-		switch reason {
-		case gts.ParseStopTimeout, gts.ParseStopCancelled:
+		switch {
+		case errors.Is(err, tswasm.ErrTimeout), errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 			if ctx.Err() != nil {
 				return nil, Node{}, ctx.Err()
 			}
-			return nil, Node{}, fmt.Errorf("%w: %s", ErrParseTimeout, reason)
+			return nil, Node{}, fmt.Errorf("%w: %v", ErrParseTimeout, err)
+		case errors.Is(err, tswasm.ErrResourceLimit):
+			return nil, Node{}, fmt.Errorf("%w: %v", ErrParseResourceLimit, err)
 		default:
-			return nil, Node{}, fmt.Errorf("parse stopped early: %s", reason)
+			return nil, Node{}, err
 		}
 	}
-	root := Node{N: tree.RootNode(), Src: src, Lang: lang, FileID: fileID}
+	rootN := tree.RootNode()
+	root := Node{N: rootN, Src: src, Lang: lang, FileID: fileID}
 	return tree, root, nil
 }
 
-// DrainArenaPools releases gotreesitter's process-global pooled arenas
-// so the Go GC can reclaim them. Call periodically on large streaming
-// runs after trees have been Release()'d.
+// DrainArenaPools is retained for API parity; the WASM backend pools
+// engines instead of gotreesitter arenas.
 func DrainArenaPools() {
-	gts.DrainArenaPools()
+	tswasm.DrainArenaPools()
 }
 
 // Walk invokes fn pre-order on every named descendant of n, including n.

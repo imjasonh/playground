@@ -49,8 +49,9 @@ than `go test`.
 | `internal/loader/`            | CUE loader. Embeds the built-in `github.com/imjasonh/pasta` module under `internal/loader/cuemod/`, and vendors any remote modules declared in the rule directory's `pasta.cue` into the same overlay. |
 | `internal/loader/cuemod/`     | The embedded built-in CUE module: `schema/`, `lang/<name>/`, `patterns/<name>/`. |
 | `internal/remote/`            | Remote rule imports: `pasta.cue` manifest + `pasta.lock` lockfile, git-based fetcher, on-disk cache under `$XDG_CACHE_HOME/pasta/modules/`. Flat deps only — a remote module declaring its own remote imports is rejected. |
-| `internal/lang/`              | Runtime language registry. `grammars.go` is the only Go-side language code (maps grammar name → tree-sitter `GetLanguage`). |
-| `internal/tsutil/`            | gotreesitter `Node` wrapper that carries source bytes + language + file-id, so callers don't have to thread them. |
+| `internal/lang/`              | Runtime language registry. `grammars.go` maps grammar name → WASM tree-sitter language handle. |
+| `internal/tswasm/`            | Official C tree-sitter + grammars as embedded `ts-core.wasm.br`, hosted by wazero. Rebuild with `internal/tswasm/build.sh`. |
+| `internal/tsutil/`            | Tree-sitter `Node` wrapper that carries source bytes + language + file-id, so callers don't have to thread them. |
 | `internal/match/`             | Pattern matcher: node unions, fields, adjacent windows, preceding, predicates (positional), checks (named). |
 | `internal/factstore/`         | Per-run fact store with dual indexing — by (kind, file-id, byte-range) and by (kind, identifier-text). The by-name index is file-agnostic so facts propagate across files in a multi-file group. |
 | `internal/effect/`            | Compiles edits to byte-range ops, handles `@capture` interpolation, comment preservation, and `trim_start`/`trim_end`. |
@@ -106,9 +107,10 @@ Two cases:
    No Go change required. See the existing `lang/go/`, `lang/python/`,
    etc. as templates.
 
-2. **The grammar isn't linked in yet.** Add an entry to
-   `internal/lang/grammars.go` mapping the new grammar name to its
-   `gotreesitter` `GetLanguage` function, then do (1).
+2. **The grammar isn't linked in yet.** Rebuild
+   `internal/tswasm/ts-core.wasm.br` with the new grammar in
+   `build.sh`, add an entry to `internal/lang/grammars.go`, then do
+   (1).
 
 Users can also publish their own external CUE module that adds
 languages — see `testdata/notgo_alias/` for a working example. The
@@ -128,9 +130,9 @@ and the runner registers them at startup.
 - **Want markers and rewrites can clash.** If a rewrite deletes the
   line that holds a `// want` marker, use `// want:+N` on a different
   line. Common for `delete_from`-style rewrites.
-- **Tree.Release() pools the arena.** gotreesitter recycles `Node`
-  storage when the tree is released. Anything you cache from the tree
-  (diagnostics, edit ops) must be self-contained — see how
+- **Don't hold `Node`s past `tree.Release()`.** The WASM backend
+  copies the tree into Go (so Release is currently a no-op), but
+  diagnostics/edit ops must stay self-contained anyway — see how
   `effect.Diagnostic` snapshots byte ranges and the line number rather
   than holding a `Node` reference.
 - **By-name fact lookup is scope-blind AND file-blind.** The
