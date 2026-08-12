@@ -19,8 +19,8 @@ import (
 // an empty Config.
 //
 //	imports: { "github.com/alice/lint-rules": "v1.2.3" } // remote rules
-//	disabled_rules: ["go_iferr", "todo_format"]          // skip these rules
-//	severity:       {go_panic_empty: "error"}            // override per-rule severity
+//	disabled_rules: ["go_iferr", "todo_format"]          // skip analyzers or rules
+//	severity:       {go_panic_empty: "error"}            // override per analyzer/rule
 //	skip:           ["build", "dist"]                    // extra ./... walk skip-dirs
 //	max_file_size:  2_000_000                            // bytes; 0 = unlimited
 //	parse_timeout_ms: 2000                               // per-file parse budget in ms; 0 = unlimited
@@ -158,12 +158,18 @@ func validSeverity(s string) bool {
 // configuration that didn't take effect:
 //
 //   - a name in DisabledRules that doesn't match any loaded rule
-//     (typo, or rule was removed upstream),
-//   - a key in Severity that doesn't match any loaded rule,
+//     or analyzer (typo, or rule was removed upstream),
+//   - a key in Severity that doesn't match any loaded rule or
+//     analyzer,
 //   - a key in Severity whose target rule has no `diagnose` block —
 //     overriding severity on a rewrite-only rule is meaningless and
 //     would otherwise cause the engine to emit empty-message
 //     diagnostics on every match.
+//
+// Names may refer to either a rule (`eq`, `force_unwrap`) or an
+// entire analyzer (`js_double_equals`, `go_iferr`). Analyzer-level
+// disable drops every rule in that analyzer; analyzer-level severity
+// rewrites every diagnose-bearing rule it contains.
 //
 // Callers (LoadDir) print these warnings to stderr. Both maps being
 // empty is a no-op, so callers can pass a possibly-nil Config.
@@ -180,13 +186,17 @@ func applyConfig(cfg *Config, analyzers []*dsl.Analyzer) []string {
 	// typo warnings don't fire against rules we just removed, and
 	// so each severity-override decision is an O(1) lookup instead
 	// of an O(rules) scan.
-	known := map[string]bool{}
+	knownRule := map[string]bool{}
+	knownAnalyzer := map[string]bool{}
 	withDiagnose := map[string]bool{}
+	analyzerHasDiagnose := map[string]bool{}
 	for _, a := range analyzers {
+		knownAnalyzer[a.Name] = true
 		for _, rule := range a.Rules {
-			known[rule.Name] = true
+			knownRule[rule.Name] = true
 			if rule.Diagnose != nil {
 				withDiagnose[rule.Name] = true
+				analyzerHasDiagnose[a.Name] = true
 			}
 		}
 	}
@@ -195,13 +205,13 @@ func applyConfig(cfg *Config, analyzers []*dsl.Analyzer) []string {
 	disabled := map[string]bool{}
 	for _, r := range cfg.DisabledRules {
 		disabled[r] = true
-		if !known[r] {
-			warns = append(warns, fmt.Sprintf("disabled_rules: rule %q is not loaded", r))
+		if !knownRule[r] && !knownAnalyzer[r] {
+			warns = append(warns, fmt.Sprintf("disabled_rules: %q is not a loaded rule or analyzer", r))
 		}
 	}
 	for r, sev := range cfg.Severity {
-		if !known[r] {
-			warns = append(warns, fmt.Sprintf("severity: rule %q is not loaded", r))
+		if !knownRule[r] && !knownAnalyzer[r] {
+			warns = append(warns, fmt.Sprintf("severity: %q is not a loaded rule or analyzer", r))
 			continue
 		}
 		if disabled[r] {
@@ -210,18 +220,30 @@ func applyConfig(cfg *Config, analyzers []*dsl.Analyzer) []string {
 			// be noise.
 			continue
 		}
-		if !withDiagnose[r] {
+		if knownRule[r] && !withDiagnose[r] {
 			warns = append(warns, fmt.Sprintf("severity: rule %q has no diagnose block; severity %q would not take effect", r, sev))
+			continue
+		}
+		if knownAnalyzer[r] && !knownRule[r] && !analyzerHasDiagnose[r] {
+			warns = append(warns, fmt.Sprintf("severity: analyzer %q has no diagnose-bearing rules; severity %q would not take effect", r, sev))
 		}
 	}
 
 	for _, a := range analyzers {
+		if disabled[a.Name] {
+			a.Rules = map[string]dsl.Rule{}
+			continue
+		}
+		analyzerSev, hasAnalyzerSev := cfg.Severity[a.Name]
 		for name, rule := range a.Rules {
 			if disabled[rule.Name] {
 				delete(a.Rules, name)
 				continue
 			}
 			sev, ok := cfg.Severity[rule.Name]
+			if !ok {
+				sev, ok = analyzerSev, hasAnalyzerSev
+			}
 			if !ok || rule.Diagnose == nil {
 				continue
 			}

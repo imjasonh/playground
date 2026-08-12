@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/odvcencio/gotreesitter/grammars"
+	"github.com/imjasonh/pasta/internal/tswasm"
 )
 
 func TestParseWithOptions_Timeout(t *testing.T) {
@@ -18,7 +18,7 @@ func TestParseWithOptions_Timeout(t *testing.T) {
 	for i := 0; i < 2000; i++ {
 		src = append(src, []byte("func F"+itoa(i)+"() { var x int; _ = x }\n")...)
 	}
-	_, _, err := ParseWithOptions(context.Background(), grammars.GoLanguage(), src, "big.go", ParseOptions{
+	_, _, err := ParseWithOptions(context.Background(), &tswasm.Language{Grammar: "go"}, src, "big.go", ParseOptions{
 		Timeout: time.Microsecond, // clamps to 1µs
 	})
 	if err == nil {
@@ -47,7 +47,7 @@ func TestParseWithOptions_CancelRace(t *testing.T) {
 		cancel()
 	}()
 	started.Store(true)
-	_, _, err := ParseWithOptions(ctx, grammars.GoLanguage(), src, "big.go", ParseOptions{
+	_, _, err := ParseWithOptions(ctx, &tswasm.Language{Grammar: "go"}, src, "big.go", ParseOptions{
 		Timeout: 2 * time.Second,
 	})
 	if err == nil {

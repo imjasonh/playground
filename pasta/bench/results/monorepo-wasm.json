@@ -1,0 +1,301 @@
+{
+  "summary": {
+    "workload": "playground monorepo ./... with .pasta enrolled rules",
+    "host": "linux cloud agent",
+    "before_gotreesitter": {
+      "cold_wall_median_sec": 22.858,
+      "warm_wall_median_sec": 2.388,
+      "cold_stats": {
+        "walked": 705,
+        "prefilter_skipped": 0,
+        "parsed": 638,
+        "parse_errors": 57,
+        "parse_degraded": 78,
+        "timed_out": 10,
+        "memory_skipped": 0,
+        "cache_hits": 0
+      },
+      "warm_stats": {
+        "walked": 705,
+        "prefilter_skipped": 0,
+        "parsed": 7,
+        "parse_errors": 2,
+        "parse_degraded": 7,
+        "timed_out": 0,
+        "memory_skipped": 0,
+        "cache_hits": 696
+      },
+      "cold_parse_error_skips": 57,
+      "cold_too_complex_skips": 10,
+      "cold_findings": 14
+    },
+    "after_wasm_wazero": {
+      "cold_wall_median_sec": 1.578,
+      "warm_wall_median_sec": 1.004,
+      "cold_stats": {
+        "walked": 705,
+        "prefilter_skipped": 0,
+        "parsed": 705,
+        "parse_errors": 0,
+        "parse_degraded": 9,
+        "timed_out": 0,
+        "memory_skipped": 0,
+        "cache_hits": 0
+      },
+      "warm_stats": {
+        "walked": 705,
+        "prefilter_skipped": 0,
+        "parsed": 9,
+        "parse_errors": 0,
+        "parse_degraded": 9,
+        "timed_out": 0,
+        "memory_skipped": 0,
+        "cache_hits": 696
+      },
+      "cold_parse_error_skips": 0,
+      "cold_too_complex_skips": 0,
+      "cold_findings": 19
+    },
+    "speedup_cold": 14.49,
+    "speedup_warm": 2.38,
+    "parse_error_skips_delta": -57,
+    "too_complex_skips_delta": -10,
+    "notes": [
+      "Cold=-nocache; warm=subsequent runs with default disk cache.",
+      "before: gotreesitter pasta (ci-enforce tip). after: C tree-sitter WASM via wazero (CGO_ENABLED=0).",
+      "Same .pasta rules; both binaries skip testdata/target/package-lock etc."
+    ]
+  },
+  "before_runs": [
+    {
+      "label": "before-cold",
+      "run": 1,
+      "wall_sec": 22.858,
+      "exit": 0,
+      "stats": {
+        "walked": 705,
+        "prefilter_skipped": 0,
+        "parsed": 638,
+        "parse_errors": 57,
+        "parse_degraded": 78,
+        "timed_out": 10,
+        "memory_skipped": 0,
+        "cache_hits": 0
+      },
+      "parse_error_skips": 57,
+      "too_complex_skips": 10,
+      "findings": 14
+    },
+    {
+      "label": "before-cold",
+      "run": 2,
+      "wall_sec": 22.558,
+      "exit": 0,
+      "stats": {
+        "walked": 705,
+        "prefilter_skipped": 0,
+        "parsed": 638,
+        "parse_errors": 57,
+        "parse_degraded": 78,
+        "timed_out": 10,
+        "memory_skipped": 0,
+        "cache_hits": 0
+      },
+      "parse_error_skips": 57,
+      "too_complex_skips": 10,
+      "findings": 14
+    },
+    {
+      "label": "before-cold",
+      "run": 3,
+      "wall_sec": 22.991,
+      "exit": 0,
+      "stats": {
+        "walked": 705,
+        "prefilter_skipped": 0,
+        "parsed": 638,
+        "parse_errors": 57,
+        "parse_degraded": 78,
+        "timed_out": 10,
+        "memory_skipped": 0,
+        "cache_hits": 0
+      },
+      "parse_error_skips": 57,
+      "too_complex_skips": 10,
+      "findings": 14
+    },
+    {
+      "label": "before-warm",
+      "run": 1,
+      "wall_sec": 2.365,
+      "exit": 0,
+      "stats": {
+        "walked": 705,
+        "prefilter_skipped": 0,
+        "parsed": 7,
+        "parse_errors": 2,
+        "parse_degraded": 7,
+        "timed_out": 0,
+        "memory_skipped": 0,
+        "cache_hits": 696
+      },
+      "parse_error_skips": 2,
+      "too_complex_skips": 0,
+      "findings": 19
+    },
+    {
+      "label": "before-warm",
+      "run": 2,
+      "wall_sec": 2.406,
+      "exit": 0,
+      "stats": {
+        "walked": 705,
+        "prefilter_skipped": 0,
+        "parsed": 7,
+        "parse_errors": 2,
+        "parse_degraded": 7,
+        "timed_out": 0,
+        "memory_skipped": 0,
+        "cache_hits": 696
+      },
+      "parse_error_skips": 2,
+      "too_complex_skips": 0,
+      "findings": 19
+    },
+    {
+      "label": "before-warm",
+      "run": 3,
+      "wall_sec": 2.388,
+      "exit": 0,
+      "stats": {
+        "walked": 705,
+        "prefilter_skipped": 0,
+        "parsed": 7,
+        "parse_errors": 2,
+        "parse_degraded": 7,
+        "timed_out": 0,
+        "memory_skipped": 0,
+        "cache_hits": 696
+      },
+      "parse_error_skips": 2,
+      "too_complex_skips": 0,
+      "findings": 19
+    }
+  ],
+  "after_runs": [
+    {
+      "label": "after-cold",
+      "run": 1,
+      "wall_sec": 1.669,
+      "exit": 0,
+      "stats": {
+        "walked": 705,
+        "prefilter_skipped": 0,
+        "parsed": 705,
+        "parse_errors": 0,
+        "parse_degraded": 9,
+        "timed_out": 0,
+        "memory_skipped": 0,
+        "cache_hits": 0
+      },
+      "parse_error_skips": 0,
+      "too_complex_skips": 0,
+      "findings": 19
+    },
+    {
+      "label": "after-cold",
+      "run": 2,
+      "wall_sec": 1.578,
+      "exit": 0,
+      "stats": {
+        "walked": 705,
+        "prefilter_skipped": 0,
+        "parsed": 705,
+        "parse_errors": 0,
+        "parse_degraded": 9,
+        "timed_out": 0,
+        "memory_skipped": 0,
+        "cache_hits": 0
+      },
+      "parse_error_skips": 0,
+      "too_complex_skips": 0,
+      "findings": 19
+    },
+    {
+      "label": "after-cold",
+      "run": 3,
+      "wall_sec": 1.546,
+      "exit": 0,
+      "stats": {
+        "walked": 705,
+        "prefilter_skipped": 0,
+        "parsed": 705,
+        "parse_errors": 0,
+        "parse_degraded": 9,
+        "timed_out": 0,
+        "memory_skipped": 0,
+        "cache_hits": 0
+      },
+      "parse_error_skips": 0,
+      "too_complex_skips": 0,
+      "findings": 19
+    },
+    {
+      "label": "after-warm",
+      "run": 1,
+      "wall_sec": 1.004,
+      "exit": 0,
+      "stats": {
+        "walked": 705,
+        "prefilter_skipped": 0,
+        "parsed": 9,
+        "parse_errors": 0,
+        "parse_degraded": 9,
+        "timed_out": 0,
+        "memory_skipped": 0,
+        "cache_hits": 696
+      },
+      "parse_error_skips": 0,
+      "too_complex_skips": 0,
+      "findings": 19
+    },
+    {
+      "label": "after-warm",
+      "run": 2,
+      "wall_sec": 1.08,
+      "exit": 0,
+      "stats": {
+        "walked": 705,
+        "prefilter_skipped": 0,
+        "parsed": 9,
+        "parse_errors": 0,
+        "parse_degraded": 9,
+        "timed_out": 0,
+        "memory_skipped": 0,
+        "cache_hits": 696
+      },
+      "parse_error_skips": 0,
+      "too_complex_skips": 0,
+      "findings": 19
+    },
+    {
+      "label": "after-warm",
+      "run": 3,
+      "wall_sec": 0.998,
+      "exit": 0,
+      "stats": {
+        "walked": 705,
+        "prefilter_skipped": 0,
+        "parsed": 9,
+        "parse_errors": 0,
+        "parse_degraded": 9,
+        "timed_out": 0,
+        "memory_skipped": 0,
+        "cache_hits": 696
+      },
+      "parse_error_skips": 0,
+      "too_complex_skips": 0,
+      "findings": 19
+    }
+  ]
+}

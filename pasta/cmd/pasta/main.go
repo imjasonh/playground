@@ -553,7 +553,7 @@ func walkSources(root string, skip map[string]bool, maxFileSize int64) ([]string
 		if !info.Mode().IsRegular() {
 			return nil
 		}
-		if strings.HasSuffix(name, ".golden") {
+		if strings.HasSuffix(name, ".golden") || runner.IsGeneratedLockfile(name) {
 			return nil
 		}
 		if _, ok := lang.ByExt(filepath.Ext(name)); !ok {

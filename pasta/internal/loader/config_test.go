@@ -259,6 +259,23 @@ func TestApplyConfig_disable(t *testing.T) {
 	}
 }
 
+func TestApplyConfig_disableAnalyzer(t *testing.T) {
+	a := &dsl.Analyzer{
+		Name: "go_iferr",
+		Rules: map[string]dsl.Rule{
+			"inline_define": {Name: "inline_define"},
+			"other":         {Name: "other"},
+		},
+	}
+	warns := applyConfig(&Config{DisabledRules: []string{"go_iferr"}}, []*dsl.Analyzer{a})
+	if len(warns) != 0 {
+		t.Errorf("unexpected warnings: %v", warns)
+	}
+	if len(a.Rules) != 0 {
+		t.Errorf("analyzer-level disable should clear all rules; got %v", a.Rules)
+	}
+}
+
 func TestApplyConfig_severityOverride(t *testing.T) {
 	a := &dsl.Analyzer{
 		Name: "demo",
@@ -313,6 +330,9 @@ func TestApplyConfig_typoWarnings(t *testing.T) {
 	}
 	if !strings.Contains(joined, "another_typo") {
 		t.Errorf("expected warning mentioning another_typo; got %v", warns)
+	}
+	if !strings.Contains(joined, "not a loaded rule or analyzer") {
+		t.Errorf("expected typo wording about rule or analyzer; got %v", warns)
 	}
 }
 

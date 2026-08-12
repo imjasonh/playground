@@ -132,10 +132,9 @@ type scheduledRule struct {
 const MaxFixpointIterations = 50
 
 // DefaultParseTimeout is the per-file tree-sitter parse budget used
-// when the caller doesn't override it. Pure-Go gotreesitter is
-// super-linear on pathological inputs; a couple of seconds is enough
-// for any realistic source file and stops one testUtils.ts from owning
-// the whole run.
+// when the caller doesn't override it. The WASM C backend is fast on
+// typical files; a couple of seconds still stops pathological inputs
+// from owning the whole run.
 const DefaultParseTimeout = 2 * time.Second
 
 // Run parses src with l's tree-sitter grammar, runs every applicable
@@ -166,7 +165,7 @@ type fileState struct {
 	suppress map[int]suppression
 }
 
-// releaser is the subset of *gts.Tree we actually need (Release).
+// releaser is the subset of *tsutil.Tree we actually need (Release).
 type releaser interface{ Release() }
 
 // Option configures a single RunGroup call. Options are applied in
@@ -367,9 +366,8 @@ func runStreaming(
 	if err := g.Wait(); err != nil {
 		return nil, err
 	}
-	// Drain only after every worker has released its tree. Mid-run
-	// drains race with in-flight parses (gotreesitter arenas are
-	// process-global).
+	// Drain is a no-op for the WASM backend (engines are pooled in
+	// tswasm); kept so a future arena-backed host still has a hook.
 	tsutil.DrainArenaPools()
 	return results, nil
 }

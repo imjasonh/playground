@@ -3,7 +3,7 @@ package match
 import (
 	"testing"
 
-	"github.com/odvcencio/gotreesitter/grammars"
+	"github.com/imjasonh/pasta/internal/tswasm"
 
 	"github.com/imjasonh/pasta/internal/dsl"
 	"github.com/imjasonh/pasta/internal/lang"
@@ -12,7 +12,7 @@ import (
 
 func parseGo(t *testing.T, src string) tsutil.Node {
 	t.Helper()
-	_, root, err := tsutil.Parse(t.Context(), grammars.GoLanguage(), []byte(src), "")
+	_, root, err := tsutil.Parse(t.Context(), &tswasm.Language{Grammar: "go"}, []byte(src), "")
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}

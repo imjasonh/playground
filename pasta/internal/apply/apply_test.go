@@ -3,7 +3,7 @@ package apply
 import (
 	"testing"
 
-	"github.com/odvcencio/gotreesitter/grammars"
+	"github.com/imjasonh/pasta/internal/tswasm"
 
 	"github.com/imjasonh/pasta/internal/dsl"
 	"github.com/imjasonh/pasta/internal/effect"
@@ -25,7 +25,7 @@ func f(x *int) bool {
 	return true
 }
 `)
-	tree, root, err := tsutil.Parse(t.Context(), grammars.GoLanguage(), src, "")
+	tree, root, err := tsutil.Parse(t.Context(), &tswasm.Language{Grammar: "go"}, src, "")
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}

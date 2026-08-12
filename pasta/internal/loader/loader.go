@@ -54,8 +54,19 @@ func LoadFile(path string) (*dsl.Analyzer, error) {
 	return res.Analyzers[0], nil
 }
 
-// LoadDir loads every *.cue file in dir and returns all analyzers and
-// language declarations found.
+// LoadDir loads every CUE package under dir and returns all analyzers
+// and language declarations found.
+//
+// Layouts supported (and mixable):
+//   - Flat: one or more *.cue files directly in dir. Each file is
+//     loaded as its own CUE instance so distinct `package` names can
+//     coexist (CUE rejects mixed packages when loaded as one unit).
+//   - Nested: each immediate subdirectory that contains *.cue files
+//     is loaded as its own package. This is the layout used by
+//     `.pasta/<analyzer>/` symlinks (or copies) of `analyzers/<name>/`.
+//
+// pasta.cue is never treated as a rule file — it carries the remote
+// imports manifest and project config.
 func LoadDir(dir string) (LoadResult, error) {
 	matches, err := filepath.Glob(filepath.Join(dir, "*.cue"))
 	if err != nil {
@@ -78,7 +89,11 @@ func LoadDir(dir string) (LoadResult, error) {
 	if err != nil {
 		return LoadResult{}, err
 	}
-	if len(matches) == 0 && len(remoteDirs) == 0 {
+	subPkgs, err := discoverLocalPackageDirs(abs)
+	if err != nil {
+		return LoadResult{}, err
+	}
+	if len(matches) == 0 && len(remoteDirs) == 0 && len(subPkgs) == 0 {
 		// A rule directory with neither local files nor a manifest
 		// listing remote modules has nothing to load. (A directory
 		// with only a manifest IS valid — its rules come entirely
@@ -91,30 +106,36 @@ func LoadDir(dir string) (LoadResult, error) {
 	}
 
 	var local LoadResult
-	if len(matches) > 0 {
-		// Pass each absolute file path to load.Instances.
-		absFiles := make([]string, len(matches))
-		for i, m := range matches {
-			af, err := filepath.Abs(m)
+	// Load each top-level file as its own instance. Passing every
+	// file to one load.Instances call fails when two files declare
+	// different package names ("found packages X and Y in …").
+	for _, m := range matches {
+		af, err := filepath.Abs(m)
+		if err != nil {
+			return LoadResult{}, err
+		}
+		extracted, err := buildAndExtract(af, cfg)
+		if err != nil {
+			return LoadResult{}, err
+		}
+		local.Analyzers = append(local.Analyzers, extracted.Analyzers...)
+		local.Languages = append(local.Languages, extracted.Languages...)
+	}
+	for _, sub := range subPkgs {
+		files, err := filepath.Glob(filepath.Join(sub, "*.cue"))
+		if err != nil {
+			return LoadResult{}, err
+		}
+		files = filterManifest(files)
+		if len(files) == 0 {
+			continue
+		}
+		for _, f := range files {
+			af, err := filepath.Abs(f)
 			if err != nil {
 				return LoadResult{}, err
 			}
-			absFiles[i] = af
-		}
-		insts := load.Instances(absFiles, cfg)
-		for _, inst := range insts {
-			if inst.Err != nil {
-				return LoadResult{}, fmt.Errorf("load %s: %s", inst.Dir, cueErrDetails(inst.Err))
-			}
-			ctx := cuecontext.New()
-			v := ctx.BuildInstance(inst)
-			if err := v.Err(); err != nil {
-				return LoadResult{}, fmt.Errorf("build %s: %s", inst.Dir, cueErrDetails(err))
-			}
-			if err := v.Validate(cue.Concrete(true)); err != nil {
-				return LoadResult{}, fmt.Errorf("validate %s: %s", inst.Dir, cueErrDetails(err))
-			}
-			extracted, err := extractTopLevel(v)
+			extracted, err := buildAndExtract(af, cfg)
 			if err != nil {
 				return LoadResult{}, err
 			}
@@ -138,8 +159,85 @@ func LoadDir(dir string) (LoadResult, error) {
 	for _, w := range applyConfig(projectCfg, merged.Analyzers) {
 		fmt.Fprintf(os.Stderr, "pasta: %s\n", w)
 	}
+	merged.Analyzers = filterEmptyAnalyzers(merged.Analyzers)
 	merged.Config = projectCfg
 	return merged, nil
+}
+
+// buildAndExtract loads one CUE file path, validates it, and extracts
+// analyzers / language decls.
+func buildAndExtract(absFile string, cfg *load.Config) (LoadResult, error) {
+	insts := load.Instances([]string{absFile}, cfg)
+	if len(insts) == 0 {
+		return LoadResult{}, fmt.Errorf("load %s: no instances", absFile)
+	}
+	inst := insts[0]
+	if inst.Err != nil {
+		return LoadResult{}, fmt.Errorf("load %s: %s", absFile, cueErrDetails(inst.Err))
+	}
+	ctx := cuecontext.New()
+	v := ctx.BuildInstance(inst)
+	if err := v.Err(); err != nil {
+		return LoadResult{}, fmt.Errorf("build %s: %s", absFile, cueErrDetails(err))
+	}
+	if err := v.Validate(cue.Concrete(true)); err != nil {
+		return LoadResult{}, fmt.Errorf("validate %s: %s", absFile, cueErrDetails(err))
+	}
+	return extractTopLevel(v)
+}
+
+// discoverLocalPackageDirs returns absolute paths of immediate
+// subdirectories of dir that contain at least one *.cue file (other
+// than pasta.cue). Symlinks to directories are followed so `.pasta/`
+// can enroll analyzers via `ln -s ../pasta/analyzers/foo foo`.
+func discoverLocalPackageDirs(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, e := range entries {
+		name := e.Name()
+		if name == "cue.mod" || name == "testdata" {
+			continue
+		}
+		full := filepath.Join(dir, name)
+		isDir := e.IsDir()
+		if e.Type()&fs.ModeSymlink != 0 {
+			info, err := os.Stat(full)
+			if err != nil {
+				continue
+			}
+			isDir = info.IsDir()
+		}
+		if !isDir {
+			continue
+		}
+		matches, err := filepath.Glob(filepath.Join(full, "*.cue"))
+		if err != nil {
+			return nil, err
+		}
+		if len(filterManifest(matches)) == 0 {
+			continue
+		}
+		out = append(out, full)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+// filterEmptyAnalyzers drops analyzers whose rules were all removed
+// by applyConfig (disabled_rules). Keeping empty analyzers around
+// would only confuse callers that iterate Rules.
+func filterEmptyAnalyzers(as []*dsl.Analyzer) []*dsl.Analyzer {
+	out := as[:0]
+	for _, a := range as {
+		if len(a.Rules) == 0 {
+			continue
+		}
+		out = append(out, a)
+	}
+	return out
 }
 
 // cueErrDetails formats a CUE error with full per-position detail.

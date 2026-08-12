@@ -3,13 +3,12 @@ package tsutil
 import (
 	"testing"
 
-	gts "github.com/odvcencio/gotreesitter"
-	"github.com/odvcencio/gotreesitter/grammars"
+	"github.com/imjasonh/pasta/internal/tswasm"
 )
 
-func parseGo(t *testing.T, src string) (*gts.Tree, Node) {
+func parseGo(t *testing.T, src string) (*Tree, Node) {
 	t.Helper()
-	tree, root, err := Parse(t.Context(), grammars.GoLanguage(), []byte(src), "")
+	tree, root, err := Parse(t.Context(), &tswasm.Language{Grammar: "go"}, []byte(src), "")
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}

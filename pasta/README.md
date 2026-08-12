@@ -6,7 +6,12 @@ Using `pasta`, you can express [AST](https://en.wikipedia.org/wiki/Abstract_synt
 
 Rules can also define an automatix fix, in which case `pasta -fix` will make the edit directly.
 
-`pasta` uses tree-sitter (specifically, [`gotreesitter`](https://github.com/odvcencio/gotreesitter)) for parsing, and [CUE](https://cuelang.org/) for rule schemas. It's heavily inspired by Go's `golang.org/x/tools/go/analysis`.
+`pasta` uses tree-sitter for parsing — the official C runtime and
+grammars, compiled to WASM and driven from pure Go via
+[wazero](https://github.com/tetratelabs/wazero) (so `go install` /
+`CGO_ENABLED=0` still work) — and [CUE](https://cuelang.org/) for
+rule schemas. It's heavily inspired by Go's
+`golang.org/x/tools/go/analysis`.
 
 The intention of `pasta` is to be able to declaratively describe rules for ASTs in any supported language, and quickly and reproducibly flag and fix findings. You can hook this up to your editor and/or CI to automatically flag and potentially fix violations of the rules you've specified.
 
@@ -209,7 +214,7 @@ Cold runs over large trees are tuned for sparse style rules:
 5. **Streamed reads** — the CLI passes paths into a worker pool; each
    worker reads its file on demand. Peak RSS stays O(workers × file)
    instead of O(all sources).
-6. **Arena pool drain** — gotreesitter arenas are drained every ~100
+6. **Arena pool drain** — parser host pools are drained every ~100
    files so the Go GC can reclaim them on big cold runs.
 
 ## Autofix guardrails
