@@ -263,6 +263,7 @@ var predicateCaptureArgs = map[string][]int{
 	"not_has_fact":         {0},
 	"ancestor_is":          {0},
 	"node_is":              {0},
+	"node_is_not":          {0},
 	"subtree_lacks":        {0},
 	"empty":                {0},
 	"named_child_count":    {0},

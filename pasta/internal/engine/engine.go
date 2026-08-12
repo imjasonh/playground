@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -57,6 +58,7 @@ type Stats struct {
 	PrefilterSkipped atomic.Int64 // content-sniff rejected before parse
 	Parsed           atomic.Int64 // successfully parsed + analyzed
 	ParseErrors      atomic.Int64 // skipped: ERROR-heavy tree
+	ParseDegraded    atomic.Int64 // HasError but not heavy — analyzed, not cached
 	TimedOut         atomic.Int64 // skipped: parse timeout
 	MemorySkipped    atomic.Int64 // skipped: memory_budget
 	CacheHits        atomic.Int64 // served from parse cache
@@ -68,6 +70,7 @@ type Snapshot struct {
 	PrefilterSkipped int64
 	Parsed           int64
 	ParseErrors      int64
+	ParseDegraded    int64
 	TimedOut         int64
 	MemorySkipped    int64
 	CacheHits        int64
@@ -83,10 +86,19 @@ func (s *Stats) Snapshot() Snapshot {
 		PrefilterSkipped: s.PrefilterSkipped.Load(),
 		Parsed:           s.Parsed.Load(),
 		ParseErrors:      s.ParseErrors.Load(),
+		ParseDegraded:    s.ParseDegraded.Load(),
 		TimedOut:         s.TimedOut.Load(),
 		MemorySkipped:    s.MemorySkipped.Load(),
 		CacheHits:        s.CacheHits.Load(),
 	}
+}
+
+// MemoryTracker is a cumulative parsed-byte budget that can span
+// multiple RunGroup calls (e.g. CLI multipass -fix). Zero Budget
+// means unlimited.
+type MemoryTracker struct {
+	Budget int64
+	Used   atomic.Int64
 }
 
 // FileInput describes one source file to run analyzers over as part of
@@ -168,8 +180,15 @@ type runOpts struct {
 	memoryBudget int64 // bytes of source parsed; 0 = unlimited
 	stats        *Stats
 	// parsedBytes tracks cumulative source bytes admitted to parse.
-	// Must be heap-allocated — runOpts is copied into workers.
+	// Shared across RunGroups when supplied via WithMemoryTracker.
 	parsedBytes *atomic.Int64
+
+	// admitMu/admitCond/admitNext serialize memory-budget decisions in
+	// FileInput order so the skip set is deterministic under the
+	// streaming worker pool. Only used when memoryBudget > 0.
+	admitMu   sync.Mutex
+	admitCond *sync.Cond
+	admitNext int
 }
 
 // WithCache enables the persistent parse-result cache for this run.
@@ -196,8 +215,22 @@ func WithParseTimeout(d time.Duration) Option {
 // it is skipped with SkipReason "memory budget exceeded" — the run
 // continues (same shape as a parse-timeout skip). Pass 0 or omit to
 // disable. Prefilter-skipped and cache-hit files do not count.
+// Admission is decided in FileInput order for determinism.
 func WithMemoryBudget(bytes int64) Option {
 	return func(o *runOpts) { o.memoryBudget = bytes }
+}
+
+// WithMemoryTracker installs a shared budget counter that persists
+// across RunGroup calls (CLI multipass -fix). Overrides the
+// per-run counter that WithMemoryBudget alone would allocate.
+func WithMemoryTracker(t *MemoryTracker) Option {
+	return func(o *runOpts) {
+		if t == nil {
+			return
+		}
+		o.memoryBudget = t.Budget
+		o.parsedBytes = &t.Used
+	}
 }
 
 // WithStats records walk / prefilter / parse / skip counters into s.
@@ -251,7 +284,12 @@ func RunGroup(
 	if !o.timeoutSet {
 		o.parseTimeout = DefaultParseTimeout
 	}
-	o.parsedBytes = &atomic.Int64{}
+	if o.parsedBytes == nil {
+		o.parsedBytes = &atomic.Int64{}
+	}
+	if o.memoryBudget > 0 {
+		o.admitCond = sync.NewCond(&o.admitMu)
+	}
 
 	if canStream(groups) {
 		return runStreaming(ctx, files, groups, &o)
@@ -319,9 +357,11 @@ func runStreaming(
 		i := i
 		g.Go(func() error {
 			if err := gctx.Err(); err != nil {
+				// Still advance admit turn so later indices aren't stuck.
+				o.syncAdmit(i, 0)
 				return err
 			}
-			return processFile(gctx, files[i], groups, store, &results[i], o)
+			return processFile(gctx, i, files[i], groups, store, &results[i], o)
 		})
 	}
 	if err := g.Wait(); err != nil {
@@ -344,6 +384,7 @@ func runStreaming(
 // cache, so the next run over unchanged bytes is a cheap read.
 func processFile(
 	ctx context.Context,
+	index int,
 	f FileInput,
 	groups []ruleGroup,
 	store *factstore.Store,
@@ -352,6 +393,7 @@ func processFile(
 ) error {
 	src, err := loadSource(f)
 	if err != nil {
+		o.syncAdmit(index, 0)
 		return err
 	}
 	f.Src = src
@@ -359,6 +401,7 @@ func processFile(
 
 	applicable := applicableRules(groups, f.Lang, filepath.Base(fileName(f)))
 	if len(applicable) == 0 {
+		o.syncAdmit(index, 0)
 		return nil
 	}
 	if o.stats != nil {
@@ -369,6 +412,7 @@ func processFile(
 		if o.stats != nil {
 			o.stats.PrefilterSkipped.Add(1)
 		}
+		o.syncAdmit(index, 0)
 		return nil
 	}
 
@@ -381,10 +425,11 @@ func processFile(
 			if o.stats != nil {
 				o.stats.CacheHits.Add(1)
 			}
+			o.syncAdmit(index, 0)
 			return nil
 		}
 	}
-	if !admitParse(o, int64(len(src))) {
+	if !o.syncAdmit(index, int64(len(src))) {
 		out.SkipReason = "memory budget exceeded"
 		if o.stats != nil {
 			o.stats.MemorySkipped.Add(1)
@@ -393,6 +438,7 @@ func processFile(
 	}
 	s, err := newFileState(ctx, f, store, o.parseTimeout)
 	if err != nil {
+		releaseParse(o, int64(len(src)))
 		if errors.Is(err, tsutil.ErrParseTimeout) {
 			out.SkipReason = "too complex to analyze"
 			if o.stats != nil {
@@ -403,25 +449,29 @@ func processFile(
 		return err
 	}
 	defer s.tree.Release()
-	if s.root.HasError() {
+	if tsutil.ErrorHeavy(s.root) {
+		releaseParse(o, int64(len(src)))
 		out.SkipReason = "parse errors"
 		if o.stats != nil {
 			o.stats.ParseErrors.Add(1)
 		}
 		return nil
 	}
+	degraded := s.root.HasError()
+	if degraded && o.stats != nil {
+		o.stats.ParseDegraded.Add(1)
+	}
+	if o.stats != nil {
+		o.stats.Parsed.Add(1)
+	}
 	for _, group := range groups {
 		if err := runGroupOnFile(group, s, store, out); err != nil {
 			return err
 		}
 	}
-	if o.stats != nil {
-		o.stats.Parsed.Add(1)
-	}
-	if o.cache != nil {
-		// Copy slices so a future append on `out` doesn't mutate
-		// what we hand the cache. The cache encodes immediately, so
-		// snapshotting here is fine even though out is shared.
+	// Do not cache degraded (ERROR-light) trees — recovery shapes are
+	// grammar-sensitive and older cache entries predate ERROR skips.
+	if o.cache != nil && !degraded {
 		o.cache.Put(key, parsecache.Entry{
 			Diagnostics: append([]effect.Diagnostic(nil), out.Diagnostics...),
 			Ops:         append([]effect.Op(nil), out.Ops...),
@@ -430,22 +480,60 @@ func processFile(
 	return nil
 }
 
-// admitParse reserves n bytes against the run's memory budget.
-// Returns false when the budget would be exceeded (and does not
-// reserve). Unlimited when memoryBudget <= 0.
-func admitParse(o *runOpts, n int64) bool {
-	if o == nil || o.memoryBudget <= 0 || o.parsedBytes == nil {
+// syncAdmit waits until FileInput index is next (when a memory budget
+// is active), then reserves nbytes against the budget. nbytes==0 means
+// "advance the turn without reserving" (prefilter/cache/no-rules paths).
+// Every streaming file must call syncAdmit exactly once so later
+// indices cannot stall. Returns false when a positive reservation
+// would exceed the budget.
+func (o *runOpts) syncAdmit(index int, nbytes int64) bool {
+	if o == nil {
 		return true
 	}
-	for {
+	if o.admitCond == nil {
+		if nbytes <= 0 || o.memoryBudget <= 0 || o.parsedBytes == nil {
+			return true
+		}
+		return reserveBytes(o.parsedBytes, o.memoryBudget, nbytes)
+	}
+	o.admitMu.Lock()
+	defer o.admitMu.Unlock()
+	for o.admitNext < index {
+		o.admitCond.Wait()
+	}
+	ok := true
+	if nbytes > 0 && o.memoryBudget > 0 && o.parsedBytes != nil {
 		cur := o.parsedBytes.Load()
-		if cur+n > o.memoryBudget {
+		if cur+nbytes > o.memoryBudget {
+			ok = false
+		} else {
+			o.parsedBytes.Add(nbytes)
+		}
+	}
+	o.admitNext++
+	o.admitCond.Broadcast()
+	return ok
+}
+
+func reserveBytes(used *atomic.Int64, budget, n int64) bool {
+	for {
+		cur := used.Load()
+		if cur+n > budget {
 			return false
 		}
-		if o.parsedBytes.CompareAndSwap(cur, cur+n) {
+		if used.CompareAndSwap(cur, cur+n) {
 			return true
 		}
 	}
+}
+
+// releaseParse refunds n bytes after a reserved parse was skipped
+// (timeout / ERROR-heavy) so later files can use the budget.
+func releaseParse(o *runOpts, n int64) {
+	if o == nil || o.memoryBudget <= 0 || o.parsedBytes == nil || n <= 0 {
+		return
+	}
+	o.parsedBytes.Add(-n)
 }
 
 // runInMemory is the legacy path used when the schedule has cross-file
@@ -487,6 +575,7 @@ func runInMemory(
 		results[i].Src = src
 		applicable := applicableRules(groups, f.Lang, filepath.Base(fileName(f)))
 		if len(applicable) == 0 {
+			o.syncAdmit(i, 0)
 			continue
 		}
 		if o != nil && o.stats != nil {
@@ -496,9 +585,10 @@ func runInMemory(
 			if o != nil && o.stats != nil {
 				o.stats.PrefilterSkipped.Add(1)
 			}
+			o.syncAdmit(i, 0)
 			continue
 		}
-		if !admitParse(o, int64(len(src))) {
+		if !o.syncAdmit(i, int64(len(src))) {
 			results[i].SkipReason = "memory budget exceeded"
 			if o != nil && o.stats != nil {
 				o.stats.MemorySkipped.Add(1)
@@ -507,6 +597,7 @@ func runInMemory(
 		}
 		s, err := newFileState(ctx, f, store, parseTimeout)
 		if err != nil {
+			releaseParse(o, int64(len(src)))
 			if errors.Is(err, tsutil.ErrParseTimeout) {
 				results[i].SkipReason = "too complex to analyze"
 				if o != nil && o.stats != nil {
@@ -516,13 +607,17 @@ func runInMemory(
 			}
 			return nil, err
 		}
-		if s.root.HasError() {
+		if tsutil.ErrorHeavy(s.root) {
+			releaseParse(o, int64(len(src)))
 			results[i].SkipReason = "parse errors"
 			if o != nil && o.stats != nil {
 				o.stats.ParseErrors.Add(1)
 			}
 			s.tree.Release()
 			continue
+		}
+		if s.root.HasError() && o != nil && o.stats != nil {
+			o.stats.ParseDegraded.Add(1)
 		}
 		states = append(states, s)
 		stateIdx = append(stateIdx, i)

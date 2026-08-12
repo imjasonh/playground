@@ -122,12 +122,13 @@ type FileSpec struct {
 type Option func(*runOpts)
 
 type runOpts struct {
-	cache         *parsecache.Cache
-	parseTimeout  time.Duration
-	timeoutSet    bool
-	memoryBudget  int64
+	cache           *parsecache.Cache
+	parseTimeout    time.Duration
+	timeoutSet      bool
+	memoryBudget    int64
 	memoryBudgetSet bool
-	stats         *engine.Stats
+	memoryTracker   *engine.MemoryTracker
+	stats           *engine.Stats
 }
 
 // WithCache plumbs a persistent parse-result cache through to the
@@ -148,12 +149,19 @@ func WithParseTimeout(d time.Duration) Option {
 
 // WithMemoryBudget plumbs a cumulative parse-byte budget through to
 // the engine. Exceeding it skips further files instead of failing the
-// run. Pass 0 to disable.
+// run. Pass 0 to disable. Prefer WithMemoryTracker when the budget
+// must span multiple RunGroup calls.
 func WithMemoryBudget(bytes int64) Option {
 	return func(o *runOpts) {
 		o.memoryBudget = bytes
 		o.memoryBudgetSet = true
 	}
+}
+
+// WithMemoryTracker plumbs a shared memory budget that persists across
+// RunGroup calls (CLI multipass -fix).
+func WithMemoryTracker(t *engine.MemoryTracker) Option {
+	return func(o *runOpts) { o.memoryTracker = t }
 }
 
 // WithStats records engine walk/prefilter/parse/skip counters.
@@ -198,7 +206,9 @@ func RunGroup(ctx context.Context, specs []FileSpec, analyzers []*dsl.Analyzer, 
 	if o.timeoutSet {
 		engineOpts = append(engineOpts, engine.WithParseTimeout(o.parseTimeout))
 	}
-	if o.memoryBudgetSet {
+	if o.memoryTracker != nil {
+		engineOpts = append(engineOpts, engine.WithMemoryTracker(o.memoryTracker))
+	} else if o.memoryBudgetSet {
 		engineOpts = append(engineOpts, engine.WithMemoryBudget(o.memoryBudget))
 	}
 	if o.stats != nil {

@@ -36,6 +36,7 @@ package schema
 		"has_fact" | "not_has_fact" |
 		"ancestor_is" |
 		"node_is" |
+		"node_is_not" |
 		"subtree_lacks" |
 		"last_non_blank" |
 		"nil_comparison" |

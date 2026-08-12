@@ -87,13 +87,13 @@ const DefaultRulesDir = ".pasta"
 func runFix(args []string) int {
 	fs := flag.NewFlagSet("pasta", flag.ExitOnError)
 	fix := fs.Bool("fix", false, "apply suggested fixes by rewriting each source file in place")
-	fixPasses := fs.Int("fix-passes", 1, "with -fix: number of analyze→apply passes (nested rewrites often need >1)")
-	fixUntilClean := fs.Bool("fix-until-clean", false, "with -fix: repeat analyze→apply until no file changes (cap 8)")
+	fixPasses := fs.Int("fix-passes", 0, "with -fix: number of analyze→apply passes (0=default 1; nested whole-node rewrites need multipass)")
+	fixUntilClean := fs.Bool("fix-until-clean", false, "with -fix: repeat analyze→apply until no file changes (safety cap 8, or -fix-passes if higher)")
 	skip := fs.String("skip", "", "comma-separated directory basenames to skip during ./... expansion (in addition to defaults: vendor, node_modules, venv, …)")
 	rulesDir := fs.String("rules", "", "directory of CUE rule files to load (default: ./"+DefaultRulesDir+")")
 	noCache := fs.Bool("nocache", false, "disable the persistent parse-result cache for this run")
 	parseTimeoutFlag := fs.Duration("parse-timeout", -1, "per-file parse budget (e.g. 2s); 0 disables. Default 2s, or parse_timeout_ms from pasta.cue")
-	memoryBudgetFlag := fs.Int64("memory-budget", -1, "cumulative parsed-source byte budget; 0 disables. Default unlimited, or memory_budget from pasta.cue")
+	memoryBudgetFlag := fs.Int64("memory-budget", -1, "cumulative parsed-source byte budget across the whole run; 0 disables. Default unlimited, or memory_budget from pasta.cue")
 	showStats := fs.Bool("stats", false, "print walk/prefilter/parse/skip counters on stderr")
 	failOn := fs.String("fail-on", "none", "exit 1 when a diagnostic at this severity or higher is found: none, hint, info, warning, error")
 	if err := fs.Parse(args); err != nil {
@@ -104,15 +104,17 @@ func runFix(args []string) int {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return 2
 	}
-	passes := *fixPasses
-	if *fixUntilClean {
-		passes = 8
-	}
-	if passes < 1 {
-		passes = 1
-	}
-	if !*fix {
-		passes = 1
+	passes := 1
+	if *fix {
+		switch {
+		case *fixUntilClean:
+			passes = 8
+			if *fixPasses > passes {
+				passes = *fixPasses
+			}
+		case *fixPasses > 0:
+			passes = *fixPasses
+		}
 	}
 
 	analyzers, cfg, rawSources, code := selectRules(*rulesDir, fs.Args())
@@ -148,6 +150,10 @@ func runFix(args []string) int {
 
 	cache := openCache(*noCache, analyzers, *rulesDir)
 	var stats engine.Stats
+	var memTracker *engine.MemoryTracker
+	if mb := resolveMemoryBudget(*memoryBudgetFlag, cfg); mb >= 0 {
+		memTracker = &engine.MemoryTracker{Budget: mb}
+	}
 	exit := 0
 	for pass := 0; pass < passes; pass++ {
 		var runOpts []runner.Option
@@ -155,8 +161,8 @@ func runFix(args []string) int {
 			runOpts = append(runOpts, runner.WithCache(cache))
 		}
 		runOpts = append(runOpts, runner.WithParseTimeout(resolveParseTimeout(*parseTimeoutFlag, cfg)))
-		if mb := resolveMemoryBudget(*memoryBudgetFlag, cfg); mb >= 0 {
-			runOpts = append(runOpts, runner.WithMemoryBudget(mb))
+		if memTracker != nil {
+			runOpts = append(runOpts, runner.WithMemoryTracker(memTracker))
 		}
 		if *showStats {
 			runOpts = append(runOpts, runner.WithStats(&stats))
@@ -171,8 +177,11 @@ func runFix(args []string) int {
 		changed := 0
 		for _, res := range results {
 			if res.SkipReason != "" {
-				if pass == 0 {
-					fmt.Fprintf(os.Stderr, "%s: skipped (%s)\n", res.Path, res.SkipReason)
+				fmt.Fprintf(os.Stderr, "%s: skipped (%s)\n", res.Path, res.SkipReason)
+				// When used as a CI gate, inability to analyze a file
+				// is a failure — otherwise skips are silent w.r.t. -fail-on.
+				if failThreshold != failOnNone {
+					exit = 1
 				}
 				continue
 			}
@@ -193,6 +202,7 @@ func runFix(args []string) int {
 			fixed, err := apply.Apply(res.Src, res.Ops, dsl.RewriteOpts{})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "%s: skipped fix (%v)\n", res.Path, err)
+				exit = 1
 				continue
 			}
 			if res.Src == nil || bytes.Equal(res.Src, fixed) {
@@ -225,8 +235,8 @@ func runFix(args []string) int {
 	}
 	if *showStats {
 		s := stats.Snapshot()
-		fmt.Fprintf(os.Stderr, "stats: walked=%d prefilter_skipped=%d parsed=%d parse_errors=%d timed_out=%d memory_skipped=%d cache_hits=%d\n",
-			s.Walked, s.PrefilterSkipped, s.Parsed, s.ParseErrors, s.TimedOut, s.MemorySkipped, s.CacheHits)
+		fmt.Fprintf(os.Stderr, "stats: walked=%d prefilter_skipped=%d parsed=%d parse_errors=%d parse_degraded=%d timed_out=%d memory_skipped=%d cache_hits=%d\n",
+			s.Walked, s.PrefilterSkipped, s.Parsed, s.ParseErrors, s.ParseDegraded, s.TimedOut, s.MemorySkipped, s.CacheHits)
 	}
 	if cache != nil {
 		if os.Getenv("PASTA_CACHE_STATS") != "" {

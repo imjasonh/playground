@@ -249,10 +249,18 @@ func interpolateWithCaptures(s string, caps match.Captures, captureText map[stri
 	}
 	var b strings.Builder
 	b.Grow(len(s))
+	trailingDots := 0 // how many '.' bytes end the builder so far (cap 3)
 	i := 0
 	for i < len(s) {
 		if s[i] != '@' {
 			b.WriteByte(s[i])
+			if s[i] == '.' {
+				if trailingDots < 3 {
+					trailingDots++
+				}
+			} else {
+				trailingDots = 0
+			}
 			i++
 			continue
 		}
@@ -269,16 +277,26 @@ func interpolateWithCaptures(s string, caps match.Captures, captureText map[stri
 			}
 		}
 		if ok {
-			if strings.HasSuffix(b.String(), "...") && strings.HasPrefix(text, "...") {
-				text = strings.TrimPrefix(text, "...")
+			if trailingDots == 3 && strings.HasPrefix(text, "...") {
+				text = text[3:]
 			}
 			b.WriteString(text)
+			trailingDots = trailingDotsSuffix(text)
 		} else {
 			b.WriteString(s[i:j])
+			trailingDots = 0
 		}
 		i = j
 	}
 	return b.String()
+}
+
+func trailingDotsSuffix(s string) int {
+	n := 0
+	for i := len(s) - 1; i >= 0 && s[i] == '.' && n < 3; i-- {
+		n++
+	}
+	return n
 }
 
 // applyCommentPreservation: for each delete-style op, find comment nodes

@@ -8,3 +8,6 @@ const d = {...src}; // OK: already spread
 
 // Must NOT rewrite: rest/spread source would become `{......xs}`.
 const e = Object.assign({}, ...xs);
+
+// Still rewritable: non-identifier sources (denylist, not allowlist).
+const f = Object.assign({}, () => ({})); // want `Object.assign({}, x) can be written as {...x}`

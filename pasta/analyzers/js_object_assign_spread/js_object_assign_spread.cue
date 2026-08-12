@@ -14,7 +14,7 @@ import (
 
 js_object_assign_spread: schema.#Analyzer & {
 	name:    "js_object_assign_spread"
-	version: "0.1.0"
+	version: "0.1.1"
 	doc:     "Rewrite Object.assign({}, x) to {...x}"
 	facts: {}
 
@@ -60,30 +60,9 @@ js_object_assign_spread: schema.#Analyzer & {
 				{op: "empty", args: ["@target"]},
 				// Refuse rest/spread args — `{...@src}` when @src is
 				// already a spread_element would become `{......xs}`
-				// without the interpolate guard; skip the match too.
-				{op: "node_is", args: ["@src", [
-					"identifier",
-					"member_expression",
-					"subscript_expression",
-					"call_expression",
-					"await_expression",
-					"parenthesized_expression",
-					"object",
-					"array",
-					"template_string",
-					"string",
-					"number",
-					"true",
-					"false",
-					"null",
-					"undefined",
-					"new_expression",
-					"ternary_expression",
-					"binary_expression",
-					"unary_expression",
-					"update_expression",
-					"this",
-				]]},
+				// without the interpolate guard; denylist keeps other
+				// expression shapes rewritable.
+				{op: "node_is_not", args: ["@src", "spread_element"]},
 			]
 		}
 

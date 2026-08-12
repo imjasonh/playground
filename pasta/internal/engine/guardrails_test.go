@@ -7,14 +7,15 @@ import (
 
 	"github.com/imjasonh/pasta/internal/dsl"
 	"github.com/imjasonh/pasta/internal/lang"
+	"github.com/imjasonh/pasta/internal/parsecache"
 )
 
-func TestStreamingParseErrorsSkip(t *testing.T) {
+func TestStreamingParseErrorsSkipHeavy(t *testing.T) {
 	js, ok := lang.ByExt(".js")
 	if !ok {
 		t.Fatal("js language not registered")
 	}
-	// Broken source — tree-sitter still returns a tree, but HasError.
+	// Heavily broken — ErrorHeavy should skip.
 	src := []byte("const x = {{{{")
 	a := &dsl.Analyzer{
 		Name: "t",
@@ -23,7 +24,7 @@ func TestStreamingParseErrorsSkip(t *testing.T) {
 				Name:      "r",
 				Languages: []string{js.Name},
 				Match:     dsl.Pattern{Node: []string{"program", "source_file"}},
-				Diagnose:  &dsl.Diagnostic{Message: "should not fire on ERROR tree"},
+				Diagnose:  &dsl.Diagnostic{Message: "should not fire on ERROR-heavy tree"},
 			},
 		},
 	}
@@ -38,7 +39,7 @@ func TestStreamingParseErrorsSkip(t *testing.T) {
 		t.Fatalf("SkipReason=%q, want parse errors", results[0].SkipReason)
 	}
 	if len(results[0].Diagnostics) != 0 {
-		t.Fatalf("ERROR skip must not diagnose, got %v", results[0].Diagnostics)
+		t.Fatalf("ERROR-heavy skip must not diagnose, got %v", results[0].Diagnostics)
 	}
 	if stats.ParseErrors.Load() != 1 {
 		t.Fatalf("ParseErrors=%d, want 1", stats.ParseErrors.Load())
@@ -48,7 +49,48 @@ func TestStreamingParseErrorsSkip(t *testing.T) {
 	}
 }
 
-func TestStreamingMemoryBudgetSkips(t *testing.T) {
+func TestStreamingParseDegradedStillAnalyzes(t *testing.T) {
+	js, ok := lang.ByExt(".js")
+	if !ok {
+		t.Fatal("js language not registered")
+	}
+	// Trailing junk: HasError but not ErrorHeavy.
+	src := []byte("const uniq_degraded_token = 1;\n}\n")
+	a := &dsl.Analyzer{
+		Name: "t",
+		Rules: map[string]dsl.Rule{
+			"r": {
+				Name:             "r",
+				Languages:        []string{js.Name},
+				RequireSubstring: []string{"uniq_degraded_token"},
+				Match:            dsl.Pattern{Node: []string{"program"}},
+				Diagnose:         &dsl.Diagnostic{Message: "hit"},
+			},
+		},
+	}
+	var stats Stats
+	cache := parsecache.Open(t.TempDir(), parsecache.HashRules([]*dsl.Analyzer{a}), 0)
+	results, err := RunGroup(context.Background(), []FileInput{
+		{FileID: "light.js", Src: src, Lang: js},
+	}, []*dsl.Analyzer{a}, WithStats(&stats), WithCache(cache))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if results[0].SkipReason != "" {
+		t.Fatalf("light ERROR should not skip, got %q", results[0].SkipReason)
+	}
+	if len(results[0].Diagnostics) != 1 {
+		t.Fatalf("want diagnose on degraded tree, got %v", results[0].Diagnostics)
+	}
+	if stats.ParseDegraded.Load() != 1 {
+		t.Fatalf("ParseDegraded=%d, want 1", stats.ParseDegraded.Load())
+	}
+	if s := cache.Stats(); s.Writes != 0 {
+		t.Fatalf("degraded trees must not be cached, writes=%d", s.Writes)
+	}
+}
+
+func TestStreamingMemoryBudgetSkipsDeterministic(t *testing.T) {
 	goLang, ok := lang.ByExt(".go")
 	if !ok {
 		t.Fatal("go language not registered")
@@ -77,25 +119,54 @@ func TestStreamingMemoryBudgetSkips(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var parsed, memSkip int
-	for _, r := range results {
-		switch r.SkipReason {
-		case "":
-			parsed++
-			if len(r.Diagnostics) != 1 {
-				t.Fatalf("parsed file diags=%v", r.Diagnostics)
-			}
-		case "memory budget exceeded":
-			memSkip++
-		default:
-			t.Fatalf("unexpected skip %q", r.SkipReason)
-		}
+	// FileInput order: first admitted, second skipped.
+	if results[0].SkipReason != "" || len(results[0].Diagnostics) != 1 {
+		t.Fatalf("first file: skip=%q diags=%v", results[0].SkipReason, results[0].Diagnostics)
 	}
-	if parsed != 1 || memSkip != 1 {
-		t.Fatalf("parsed=%d memSkip=%d stats=%+v", parsed, memSkip, stats.Snapshot())
+	if results[1].SkipReason != "memory budget exceeded" {
+		t.Fatalf("second file SkipReason=%q", results[1].SkipReason)
 	}
 	if stats.MemorySkipped.Load() != 1 {
 		t.Fatalf("MemorySkipped=%d", stats.MemorySkipped.Load())
+	}
+}
+
+func TestMemoryTrackerSpansRunGroups(t *testing.T) {
+	goLang, ok := lang.ByExt(".go")
+	if !ok {
+		t.Fatal("go language not registered")
+	}
+	src := []byte("package p\n\nfunc F() {}\n")
+	a := &dsl.Analyzer{
+		Name: "t",
+		Rules: map[string]dsl.Rule{
+			"r": {
+				Name:             "r",
+				Languages:        []string{goLang.Name},
+				RequireSubstring: []string{"package"},
+				Match:            dsl.Pattern{Node: []string{"source_file"}},
+				Diagnose:         &dsl.Diagnostic{Message: "hit"},
+			},
+		},
+	}
+	tracker := &MemoryTracker{Budget: int64(len(src))}
+	r1, err := RunGroup(context.Background(), []FileInput{
+		{FileID: "a.go", Src: src, Lang: goLang},
+	}, []*dsl.Analyzer{a}, WithMemoryTracker(tracker))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r1[0].SkipReason != "" {
+		t.Fatalf("first run skipped: %q", r1[0].SkipReason)
+	}
+	r2, err := RunGroup(context.Background(), []FileInput{
+		{FileID: "b.go", Src: src, Lang: goLang},
+	}, []*dsl.Analyzer{a}, WithMemoryTracker(tracker))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r2[0].SkipReason != "memory budget exceeded" {
+		t.Fatalf("second RunGroup should hit shared budget, got %q", r2[0].SkipReason)
 	}
 }
 
@@ -125,5 +196,38 @@ func TestStreamingPrefilterStats(t *testing.T) {
 	}
 	if stats.Walked.Load() != 1 || stats.PrefilterSkipped.Load() != 1 {
 		t.Fatalf("stats=%+v", stats.Snapshot())
+	}
+}
+
+func TestCacheMissAfterSchemaBump(t *testing.T) {
+	// Smoke: Open uses current schemaVersion path; a fresh cache has no
+	// v1 bleed-through. (Full cross-version fixture is overkill — the
+	// const bump is the invalidation mechanism.)
+	goLang, ok := lang.ByExt(".go")
+	if !ok {
+		t.Fatal("go language not registered")
+	}
+	src := []byte("package p\n")
+	a := &dsl.Analyzer{
+		Name: "t",
+		Rules: map[string]dsl.Rule{
+			"r": {
+				Name:      "r",
+				Languages: []string{goLang.Name},
+				Match:     dsl.Pattern{Node: []string{"source_file"}},
+				Diagnose:  &dsl.Diagnostic{Message: "hit"},
+			},
+		},
+	}
+	dir := t.TempDir()
+	cache := parsecache.Open(dir, parsecache.HashRules([]*dsl.Analyzer{a}), 0)
+	_, err := RunGroup(context.Background(), []FileInput{
+		{FileID: "a.go", Src: src, Lang: goLang},
+	}, []*dsl.Analyzer{a}, WithCache(cache))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cache.Stats().Writes != 1 {
+		t.Fatalf("writes=%d", cache.Stats().Writes)
 	}
 }

@@ -120,6 +120,7 @@ func DefaultRegistry() PredicateRegistry {
 			"not_has_fact":         predNotHasFact,
 			"ancestor_is":          predAncestorIs,
 			"node_is":              predNodeIs,
+			"node_is_not":          predNodeIsNot,
 			"subtree_lacks":        predSubtreeLacks,
 			"stmt_index_delta":     predStmtIndexDelta,
 		},
@@ -309,15 +310,8 @@ func lastNonBlankIdentText(list tsutil.Node) string {
 // predNodeIs: [@cap, types]. types is a string or list of node-type
 // names. True when @cap's Type() is one of the alternatives.
 func predNodeIs(args []dsl.Arg, env *Env, caps Captures) bool {
-	if len(args) != 2 {
-		return false
-	}
-	n, ok := resolveCapture(posStr(args, 0), caps)
-	if !ok || !n.IsValid() {
-		return false
-	}
-	types := posList(args, 1)
-	if len(types) == 0 {
+	n, types, ok := nodeTypeArgs(args, caps)
+	if !ok {
 		return false
 	}
 	got := n.Type()
@@ -327,6 +321,37 @@ func predNodeIs(args []dsl.Arg, env *Env, caps Captures) bool {
 		}
 	}
 	return false
+}
+
+// predNodeIsNot: [@cap, types]. True when @cap's Type() is not any of
+// the alternatives (denylist). Prefer this over long node_is allowlists.
+func predNodeIsNot(args []dsl.Arg, env *Env, caps Captures) bool {
+	n, types, ok := nodeTypeArgs(args, caps)
+	if !ok {
+		return false
+	}
+	got := n.Type()
+	for _, want := range types {
+		if got == want {
+			return false
+		}
+	}
+	return true
+}
+
+func nodeTypeArgs(args []dsl.Arg, caps Captures) (tsutil.Node, []string, bool) {
+	if len(args) != 2 {
+		return tsutil.Node{}, nil, false
+	}
+	n, ok := resolveCapture(posStr(args, 0), caps)
+	if !ok || !n.IsValid() {
+		return tsutil.Node{}, nil, false
+	}
+	types := posList(args, 1)
+	if len(types) == 0 {
+		return tsutil.Node{}, nil, false
+	}
+	return n, types, true
 }
 
 // predSubtreeLacks: [@cap, types]. True when no descendant of @cap

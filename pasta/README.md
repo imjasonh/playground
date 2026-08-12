@@ -195,14 +195,17 @@ Cold runs over large trees are tuned for sparse style rules:
 2. **Per-file parse budget** — default 2s (`-parse-timeout`, or
    `parse_timeout_ms` in `pasta.cue`). Timed-out files are reported as
    `skipped (too complex to analyze)` instead of owning the run.
-3. **ERROR-heavy parse skip** — trees with parse errors
-   (`root.HasError()`) are skipped as `skipped (parse errors)` and
-   counted separately from timeouts (pass `-stats` to see
+3. **ERROR-heavy vs degraded** — densely broken trees skip as
+   `skipped (parse errors)`. Light `HasError` glitches (e.g. a trailing
+   brace) still analyze (`parse_degraded` in `-stats`) and are not
+   cached. Pass `-stats` for
    `walked` / `prefilter_skipped` / `parsed` / `parse_errors` /
-   `timed_out` / `memory_skipped` / `cache_hits`).
+   `parse_degraded` / `timed_out` / `memory_skipped` / `cache_hits`.
 4. **Memory budget** — optional cumulative parsed-source byte cap
-   (`-memory-budget`, or `memory_budget` in `pasta.cue`). When
-   exceeded, further files skip like a timeout; the run does not fail.
+   (`-memory-budget`, or `memory_budget` in `pasta.cue`) across the
+   whole CLI run (including multipass `-fix`). Admission is in source
+   order so the skip set is deterministic. When exceeded, further files
+   skip like a timeout; with `-fail-on` set, skips fail the process.
 5. **Streamed reads** — the CLI passes paths into a worker pool; each
    worker reads its file on demand. Peak RSS stays O(workers × file)
    instead of O(all sources).
@@ -213,11 +216,11 @@ Cold runs over large trees are tuned for sparse style rules:
 
 - **Innermost nested edits** — when one rewrite fully contains another
   (e.g. layered `Array<…>` forms), pasta keeps the innermost edit.
-  Use `-fix -fix-until-clean` (or `-fix-passes N`) to peel outer
-  layers across passes.
+  Pair with `-fix -fix-until-clean` (or `-fix-passes N`) to peel
+  outer layers across passes — a single pass alone drops the outer edit.
 - **Per-file continue** — a partial overlapping-edit conflict skips
-  that file's write and continues the rest of the tree (no empty-looking
-  `-fix` run).
+  that file's write, sets exit status 1, and continues the rest of the
+  tree (no empty-looking `-fix` run).
 - **Spread interpolation** — `{...@cap}` / `[...@cap]` strips a leading
   `...` from the capture when it is already a spread, so
   `Object.assign({}, ...xs)` cannot become `{......xs}`.
