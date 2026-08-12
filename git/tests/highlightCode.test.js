@@ -42,7 +42,7 @@ describe('grammarForPath / canHighlight', () => {
 
 describe('text preservation (never corrupts the file)', () => {
   const samples = {
-    js: `// a comment\nconst x = "hi";\nfunction foo(a) { return a + 1; }\nlet t = \`tpl \${x}\`;\n`, // pasta:ignore no_substitution — tests nested template highlighting
+    js: `// a comment\nconst x = "hi";\nfunction foo(a) { return a + 1; }\nlet t = \`tpl \${x}\`;\n`, // nested template with ${…} (has substitution; not js_template_no_subst)
     json: '{\n  "name": "demo",\n  "count": 3,\n  "ok": true,\n  "nested": null\n}\n',
     css: ':root { --x: #fff; }\n.a { color: red; width: 10px; } /* c */\n',
     markup: "<!-- c -->\n<div class=\"x\" id='y'>text &amp; more</div>\n",

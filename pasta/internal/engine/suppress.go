@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/imjasonh/pasta/internal/dsl"
 	"github.com/imjasonh/pasta/internal/effect"
@@ -44,17 +46,12 @@ type suppression struct {
 // consuming the rest of the line and leaking the literal words
 // `pasta` and `ignore` into the rule-name list.
 //
-// No comment-leader requirement: callers only invoke us against text
-// already known to be a comment (per the language's `comment_types`),
-// so a string literal like
-// `log("user typed pasta:ignore go_iferr")` can never reach us.
+// Only comment text is scanned (per the language's `comment_types`),
+// so a string literal like `log("user typed pasta:ignore go_iferr")`
+// never reaches us. Within a comment, the match must also sit in a
+// directive position (see directiveSpans) — prose that merely mentions
+// the token is ignored.
 var directiveRe = regexp.MustCompile(`pasta:ignore\b`)
-
-// nameRe matches an identifier — used to pluck rule names from a
-// directive's tail, which is a comma- or whitespace-separated list.
-// Junk like comment terminators (`*/`, `-->`) is naturally filtered
-// out because it doesn't match the identifier pattern.
-var nameRe = regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_]*`)
 
 // parseSuppressions walks the parsed tree and returns a map from
 // 1-based source line number to the rules suppressed on that line by
@@ -104,10 +101,7 @@ func scanComment(n tsutil.Node, out *map[int]suppression) {
 	starts := directiveSpans(text)
 	for i, m := range starts {
 		// Tail runs from the end of THIS directive to the start of
-		// the NEXT one, capped at the next newline. Slicing this
-		// way (instead of letting the regex's `.*` greedily eat
-		// the rest of the line) prevents a second `pasta:ignore`
-		// on the same line from being parsed as rule names.
+		// the NEXT one, capped at the next newline.
 		tailStart := m[1]
 		tailEnd := len(text)
 		if i+1 < len(starts) {
@@ -116,22 +110,12 @@ func scanComment(n tsutil.Node, out *map[int]suppression) {
 		if nl := strings.IndexByte(text[tailStart:tailEnd], '\n'); nl >= 0 {
 			tailEnd = tailStart + nl
 		}
-		// Truncate before a nested comment leader so testdata markers
-		// like `# pasta:ignore foo # want "…"` don't treat `want` as
-		// a rule name. The byte anchor still covers only the
-		// directive + rule list.
 		tail := text[tailStart:tailEnd]
-		if stop := indexTailStop(tail); stop >= 0 {
-			tailEnd = tailStart + stop
-			tail = text[tailStart:tailEnd]
-		}
+		s, consumed := parseSuppressionTail(tail)
+		tailEnd = tailStart + consumed
 		line := effect.ComputeLine(n.Src, n.StartByte()+uint32(m[0]))
-		s := parseSuppressionTail(tail)
 		s.start = n.StartByte() + uint32(m[0])
 		s.end = n.StartByte() + uint32(tailEnd)
-		// Trim trailing whitespace from the end anchor so the
-		// diagnostic points at the directive / rule list, not the
-		// padding before a following comment or newline.
 		for s.end > s.start && isSpace(n.Src[s.end-1]) {
 			s.end--
 		}
@@ -139,10 +123,12 @@ func scanComment(n tsutil.Node, out *map[int]suppression) {
 	}
 }
 
-// directiveSpans returns [start,end) indexes of `pasta:ignore` tokens
-// that are not inside double-quoted regions of the comment. That way a
-// `# want "unused pasta:ignore"` marker cannot itself become a
-// suppression directive.
+// directiveSpans returns [start,end) indexes of active `pasta:ignore`
+// tokens in a comment. Matches inside quotes / backticks are skipped,
+// and a match only counts when the text before it on the same line
+// (after comment decorations) is empty or prior pasta:ignore
+// directives — so documentation that mentions the token mid-sentence
+// does not suppress anything.
 func directiveSpans(text string) [][]int {
 	all := directiveRe.FindAllStringIndex(text, -1)
 	if len(all) == 0 {
@@ -150,7 +136,10 @@ func directiveSpans(text string) [][]int {
 	}
 	out := make([][]int, 0, len(all))
 	for _, m := range all {
-		if inDoubleQuotes(text, m[0]) {
+		if inQuotedRegion(text, m[0]) {
+			continue
+		}
+		if !isDirectivePosition(text, m[0]) {
 			continue
 		}
 		out = append(out, m)
@@ -158,59 +147,181 @@ func directiveSpans(text string) [][]int {
 	return out
 }
 
-// inDoubleQuotes reports whether offset sits inside a "…" region of s,
-// using a simple backslash-aware scan (good enough for want markers
-// and ordinary comment prose).
-func inDoubleQuotes(s string, offset int) bool {
-	in := false
+// isDirectivePosition reports whether offset is a real suppression
+// site: on its line, after stripping leading comment decorations
+// (`//`, `#`, `--`, `/*`, `<!--`, `*`), only prior `pasta:ignore`
+// directives (and their rule lists) may appear before offset.
+func isDirectivePosition(text string, offset int) bool {
+	lineStart := 0
+	if i := strings.LastIndexByte(text[:offset], '\n'); i >= 0 {
+		lineStart = i + 1
+	}
+	prefix := stripLeadingCommentDecorations(text[lineStart:offset])
+	return onlyPriorDirectives(prefix)
+}
+
+// stripLeadingCommentDecorations removes comment leaders, block-comment
+// star columns, and whitespace from the start of s. Mid-line `//` after
+// other text is left alone so doc examples like
+// `// x := foo() // pasta:ignore` are not treated as directives.
+func stripLeadingCommentDecorations(s string) string {
+	i := 0
+	for i < len(s) {
+		if isSpace(s[i]) || s[i] == '*' {
+			i++
+			continue
+		}
+		switch {
+		case strings.HasPrefix(s[i:], "//"):
+			i += 2
+		case strings.HasPrefix(s[i:], "/*"):
+			i += 2
+		case strings.HasPrefix(s[i:], "<!--"):
+			i += 4
+		case strings.HasPrefix(s[i:], "--"):
+			i += 2
+		case s[i] == '#':
+			i++
+		default:
+			return s[i:]
+		}
+	}
+	return ""
+}
+
+// onlyPriorDirectives reports whether s is empty or a sequence of
+// `pasta:ignore` tokens with comma/whitespace-separated rule names.
+func onlyPriorDirectives(s string) bool {
+	i := 0
+	for i < len(s) {
+		for i < len(s) && isSpace(s[i]) {
+			i++
+		}
+		if i >= len(s) {
+			return true
+		}
+		const tok = "pasta:ignore"
+		if !strings.HasPrefix(s[i:], tok) {
+			return false
+		}
+		i += len(tok)
+		if i < len(s) {
+			if r, _ := utf8.DecodeRuneInString(s[i:]); unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' {
+				return false // pasta:ignored…
+			}
+		}
+		for i < len(s) {
+			for i < len(s) && isSpace(s[i]) {
+				i++
+			}
+			if i >= len(s) {
+				break
+			}
+			if s[i] == ',' {
+				i++
+				continue
+			}
+			if isIdentStart(s[i]) {
+				for i < len(s) && isIdentCont(s[i]) {
+					i++
+				}
+				continue
+			}
+			break
+		}
+	}
+	for i < len(s) && isSpace(s[i]) {
+		i++
+	}
+	return i >= len(s)
+}
+
+// inQuotedRegion reports whether offset sits inside a ", ', or `
+// quoted span of s (backslash escapes honored inside " and ').
+func inQuotedRegion(s string, offset int) bool {
+	var quote byte // 0 = outside
 	esc := false
 	for i := 0; i < offset && i < len(s); i++ {
 		c := s[i]
+		if quote == 0 {
+			if c == '"' || c == '\'' || c == '`' {
+				quote = c
+			}
+			continue
+		}
+		if quote == '`' {
+			if c == '`' {
+				quote = 0
+			}
+			continue
+		}
 		if esc {
 			esc = false
 			continue
 		}
-		if in && c == '\\' {
+		if c == '\\' {
 			esc = true
 			continue
 		}
-		if c == '"' {
-			in = !in
+		if c == quote {
+			quote = 0
 		}
 	}
-	return in
-}
-
-// indexTailStop returns the index of a nested comment leader inside a
-// directive tail, or -1 if none. Leaders recognized: //, #, --, <!--.
-func indexTailStop(tail string) int {
-	stop := -1
-	consider := func(i int) {
-		if i >= 0 && (stop < 0 || i < stop) {
-			stop = i
-		}
-	}
-	consider(strings.Index(tail, "//"))
-	consider(strings.Index(tail, "#"))
-	consider(strings.Index(tail, "--"))
-	consider(strings.Index(tail, "<!--"))
-	return stop
+	return quote != 0
 }
 
 func isSpace(b byte) bool {
 	return b == ' ' || b == '\t' || b == '\r' || b == '\n'
 }
 
-func parseSuppressionTail(tail string) suppression {
-	names := nameRe.FindAllString(tail, -1)
-	if len(names) == 0 {
-		return suppression{all: true}
+func isIdentStart(b byte) bool {
+	return b == '_' || (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z')
+}
+
+func isIdentCont(b byte) bool {
+	return isIdentStart(b) || (b >= '0' && b <= '9')
+}
+
+// parseSuppressionTail reads a comma/whitespace-separated rule-name
+// list from the start of tail and stops at the first other character
+// (em dash, nested `# want`, prose, …). The returned consumed length
+// covers only the list (plus leading whitespace), so anchors and
+// unused-ignore warnings stay on the directive — not the explanation.
+func parseSuppressionTail(tail string) (suppression, int) {
+	i := 0
+	for i < len(tail) && isSpace(tail[i]) {
+		i++
 	}
-	rules := make(map[string]bool, len(names))
-	for _, n := range names {
-		rules[n] = true
+	if i >= len(tail) || !isIdentStart(tail[i]) {
+		// Bare ignore. Trailing prose (` — constant URL`) is ignored.
+		return suppression{all: true}, i
 	}
-	return suppression{rules: rules}
+	rules := map[string]bool{}
+	for i < len(tail) {
+		for i < len(tail) && isSpace(tail[i]) {
+			i++
+		}
+		if i >= len(tail) {
+			break
+		}
+		if tail[i] == ',' {
+			i++
+			continue
+		}
+		if !isIdentStart(tail[i]) {
+			break
+		}
+		j := i + 1
+		for j < len(tail) && isIdentCont(tail[j]) {
+			j++
+		}
+		rules[tail[i:j]] = true
+		i = j
+	}
+	if len(rules) == 0 {
+		return suppression{all: true}, i
+	}
+	return suppression{rules: rules}, i
 }
 
 // addSuppression merges incoming into out[line] rather than
@@ -354,7 +465,8 @@ func unusedIgnoreDiagnostics(suppress map[int]suppression) []effect.Diagnostic {
 
 // hasPastaIgnore reports whether src contains the directive token.
 // Used to force a parse when the prefilter would otherwise skip a
-// file that may only need unused-ignore warnings.
+// file that may only need unused-ignore warnings. This is a cheap
+// byte scan — false positives only cost an extra parse.
 func hasPastaIgnore(src []byte) bool {
 	return directiveRe.Match(src)
 }
