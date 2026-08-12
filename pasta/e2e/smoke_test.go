@@ -236,7 +236,9 @@ func TestSmokeRealRepos(t *testing.T) {
 	for _, repo := range smokeRepos {
 		repo := repo
 		t.Run(repo.name, func(t *testing.T) {
-			t.Parallel()
+			if parallelSmoke {
+				t.Parallel()
+			}
 			dir := shallowClone(t, repo.url)
 			specs := collectSpecs(t, dir, repo)
 			if len(specs) == 0 {
@@ -390,10 +392,13 @@ func shallowClone(t *testing.T, url string) string {
 // php-src is capped to Zend/ + ext/standard/ so the smoke stays bounded.
 func collectSpecs(t *testing.T, root string, repo smokeRepo) []runner.FileSpec {
 	t.Helper()
-	skip := map[string]bool{
-		".git": true, "vendor": true, "node_modules": true, ".pasta": true,
-		"target": true, "dist": true, "build": true, ".tox": true,
-		"__pycache__": true, ".venv": true, "testdata": true,
+	skip := map[string]bool{}
+	for k := range runner.DefaultSkipDirs {
+		skip[k] = true
+	}
+	// Smoke-only extras: keep clones bounded (build outputs / fixtures).
+	for _, k := range []string{"target", "dist", "build", "testdata"} {
+		skip[k] = true
 	}
 	var specs []runner.FileSpec
 	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {

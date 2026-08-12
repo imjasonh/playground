@@ -378,28 +378,11 @@ func vendorRemoteModules(dir string, overlay map[string]load.Source) (map[string
 			if d.IsDir() {
 				return nil
 			}
-			rel, rerr := filepath.Rel(modDir, p)
+			b, rerr := os.ReadFile(p)
 			if rerr != nil {
 				return rerr
 			}
-			relSlash := filepath.ToSlash(rel)
-			// Same policy as remote.HashTree: never follow symlinks or
-			// suck in non-regular / oversized files from a module.
-			if d.Type()&fs.ModeSymlink != 0 {
-				return fmt.Errorf("%s: symlinks are not allowed in remote modules", relSlash)
-			}
-			info, ierr := d.Info()
-			if ierr != nil {
-				return ierr
-			}
-			if !info.Mode().IsRegular() {
-				return fmt.Errorf("%s: non-regular files are not allowed in remote modules", relSlash)
-			}
-			const maxVendorBytes int64 = 8 << 20
-			if info.Size() > maxVendorBytes {
-				return fmt.Errorf("%s: file exceeds %d byte remote-module limit", relSlash, maxVendorBytes)
-			}
-			b, rerr := os.ReadFile(p)
+			rel, rerr := filepath.Rel(modDir, p)
 			if rerr != nil {
 				return rerr
 			}

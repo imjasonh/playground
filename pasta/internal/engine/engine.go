@@ -13,7 +13,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sync/atomic"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -83,11 +82,6 @@ const MaxFixpointIterations = 50
 // for any realistic source file and stops one testUtils.ts from owning
 // the whole run.
 const DefaultParseTimeout = 2 * time.Second
-
-// arenaDrainBatch is how many streaming files to finish between
-// gotreesitter arena-pool drains. Draining lets the GC reclaim pooled
-// arenas that would otherwise stay live for the whole process.
-const arenaDrainBatch = 100
 
 // Run parses src with l's tree-sitter grammar, runs every applicable
 // rule across the given analyzers, and returns aggregated diagnostics
@@ -250,8 +244,6 @@ func runStreaming(
 		workers = 1
 	}
 
-	var completed atomic.Uint64
-
 	// errgroup gives us: bounded concurrency (SetLimit), automatic
 	// context cancellation on the first error (WithContext), and
 	// first-error propagation through Wait. Each iteration writes to
@@ -265,19 +257,15 @@ func runStreaming(
 			if err := gctx.Err(); err != nil {
 				return err
 			}
-			err := processFile(gctx, files[i], groups, store, &results[i], o)
-			n := completed.Add(1)
-			if n%arenaDrainBatch == 0 {
-				tsutil.DrainArenaPools()
-			}
-			return err
+			return processFile(gctx, files[i], groups, store, &results[i], o)
 		})
 	}
 	if err := g.Wait(); err != nil {
 		return nil, err
 	}
-	// Final drain so arenas from the trailing partial batch don't
-	// linger until process exit.
+	// Drain only after every worker has released its tree. Mid-run
+	// drains race with in-flight parses (gotreesitter arenas are
+	// process-global).
 	tsutil.DrainArenaPools()
 	return results, nil
 }

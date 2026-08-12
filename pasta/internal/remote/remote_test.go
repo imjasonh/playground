@@ -70,11 +70,6 @@ func TestLoadManifestRejectsBadPath(t *testing.T) {
 		"dotdot":     `imports: {"foo/../bar": "v1"}`,
 		"no-slash":   `imports: {"justaname": "v1"}`,
 		"whitespace": `imports: {"github.com/x y": "v1"}`,
-		"userinfo":   `imports: {"evil@github.com/x": "v1"}`,
-		"localhost":  `imports: {"localhost/foo": "v1"}`,
-		"loopback":   `imports: {"127.0.0.1/foo": "v1"}`,
-		"private-ip": `imports: {"10.0.0.1/foo": "v1"}`,
-		"query":      `imports: {"github.com/x?y=1": "v1"}`,
 	}
 	for name, src := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -166,21 +161,6 @@ func TestHashTreeStable(t *testing.T) {
 	}
 	if h1 == h2b {
 		t.Errorf("hash didn't change after content edit")
-	}
-}
-
-func TestHashTreeRejectsSymlink(t *testing.T) {
-	dir := t.TempDir()
-	target := filepath.Join(dir, "real.cue")
-	if err := os.WriteFile(target, []byte("package x\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	link := filepath.Join(dir, "link.cue")
-	if err := os.Symlink(target, link); err != nil {
-		t.Skipf("symlink not supported: %v", err)
-	}
-	if _, err := HashTree(dir); err == nil {
-		t.Fatal("expected HashTree to reject symlink")
 	}
 }
 

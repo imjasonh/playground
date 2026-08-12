@@ -11,6 +11,32 @@ import (
 	"github.com/imjasonh/pasta/internal/loader"
 )
 
+func TestWalkSources_skipsVendorTrees(t *testing.T) {
+	dir := t.TempDir()
+	write := func(rel, body string) {
+		t.Helper()
+		p := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("main.go", "package main\n")
+	write("vendor/github.com/x/y/y.go", "package y\n")
+	write("node_modules/leftpad/index.js", "module.exports = 1\n")
+	write(".venv/lib/site.py", "x = 1\n")
+
+	got, _, err := walkSources(dir, parseSkipDirs("", nil), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || filepath.Base(got[0]) != "main.go" {
+		t.Fatalf("got %v, want only main.go (vendored trees skipped)", got)
+	}
+}
+
 func TestWalkSources_skipsSymlink(t *testing.T) {
 	dir := t.TempDir()
 	real := filepath.Join(dir, "real.go")

@@ -16,9 +16,9 @@
 // A source argument ending in `/...` (or the literal `./...`) is
 // expanded to every file under that directory whose extension maps
 // to a registered language — Go-style "all packages below here".
-// During expansion, directories named `.git`, `vendor`, `node_modules`,
-// or `.pasta` are skipped by default; pass `-skip` with a
-// comma-separated list to add more.
+// During expansion, vendored dependency trees (e.g. `vendor/`,
+// `node_modules/`, Python venvs) and `.git` / `.pasta` are skipped by
+// default; pass `-skip` with a comma-separated list to add more.
 //
 // The source file's extension determines the tree-sitter language; see
 // internal/lang for the registered set. When more than one source file
@@ -86,7 +86,7 @@ const DefaultRulesDir = ".pasta"
 func runFix(args []string) int {
 	fs := flag.NewFlagSet("pasta", flag.ExitOnError)
 	fix := fs.Bool("fix", false, "apply suggested fixes by rewriting each source file in place")
-	skip := fs.String("skip", "", "comma-separated directory basenames to skip during ./... expansion (in addition to defaults: .git, vendor, node_modules, .pasta)")
+	skip := fs.String("skip", "", "comma-separated directory basenames to skip during ./... expansion (in addition to defaults: vendor, node_modules, venv, …)")
 	rulesDir := fs.String("rules", "", "directory of CUE rule files to load (default: ./"+DefaultRulesDir+")")
 	noCache := fs.Bool("nocache", false, "disable the persistent parse-result cache for this run")
 	parseTimeoutFlag := fs.Duration("parse-timeout", -1, "per-file parse budget (e.g. 2s); 0 disables. Default 2s, or parse_timeout_ms from pasta.cue")
@@ -396,18 +396,6 @@ func expandSources(args []string, skip map[string]bool, maxFileSize int64) ([]st
 	return out, skipped, nil
 }
 
-// defaultSkipDirs are directory basenames pasta won't descend into
-// during `./...` expansion. These hold third-party / vendored / VCS
-// data, or rule definitions / their testdata, that almost no
-// analyzer wants to lint — walking them turns `pasta -fix ./...`
-// into an unintended whole-tree edit.
-var defaultSkipDirs = map[string]bool{
-	".git":         true,
-	"vendor":       true,
-	"node_modules": true,
-	".pasta":       true,
-}
-
 // defaultMaxFileSize caps the size of files included in a `./...`
 // walk. Pure-Go tree-sitter's runtime is super-linear on huge inputs
 // (a multi-megabyte generated swagger.json can pin one worker for
@@ -431,12 +419,12 @@ func resolveMaxFileSize(cfg *loader.Config) int64 {
 	return *cfg.MaxFileSize
 }
 
-// parseSkipDirs returns the union of defaultSkipDirs, any `skip` list
-// the project config declared, and the comma-separated user-supplied
-// list. Empty entries are ignored.
+// parseSkipDirs returns the union of runner.DefaultSkipDirs, any
+// `skip` list the project config declared, and the comma-separated
+// user-supplied list. Empty entries are ignored.
 func parseSkipDirs(extra string, cfg *loader.Config) map[string]bool {
-	out := make(map[string]bool, len(defaultSkipDirs)+8)
-	for k := range defaultSkipDirs {
+	out := make(map[string]bool, len(runner.DefaultSkipDirs)+8)
+	for k := range runner.DefaultSkipDirs {
 		out[k] = true
 	}
 	if cfg != nil {

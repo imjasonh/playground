@@ -216,8 +216,9 @@ pasta -fix path/to/rule.cue ./...
 
 # `./...` recurses from the current dir; `pkg/...` is `pkg/` and below.
 # Files whose extension doesn't map to a registered language are skipped.
-# `.git`, `vendor`, `node_modules`, and `.pasta` are skipped by default;
-# use `-skip` with a comma-separated list to add more (e.g. `dist,build`).
+# Vendored dependency trees are skipped by default (`vendor/`,
+# `node_modules/`, Python venvs, CocoaPods, …) — pasta only looks at
+# first-party source. Use `-skip` to add more (e.g. `dist,build`).
 pasta -skip dist,build ./...
 
 # Run rules in a directory against its testdata/. Defaults to ./.pasta/.
