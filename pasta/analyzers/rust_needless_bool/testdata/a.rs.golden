@@ -26,3 +26,8 @@ fn no_else(x: bool) -> bool {
 fn nontrivial_branches(x: bool, y: bool) -> bool {
     if x { y } else { false }
 }
+
+fn if_let_pattern(x: Option<i32>) -> bool {
+    // Must NOT rewrite to `let Some(_) = x` — not a boolean condition.
+    if let Some(_y) = x { true } else { false }
+}

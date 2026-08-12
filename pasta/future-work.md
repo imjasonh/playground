@@ -48,7 +48,7 @@ specs.
 ### File-extension / filename gating per rule
 **Status:** Done. Rules accept `file_match: [...string]`
 (`path/filepath.Match` globs on the basename). See
-`testdata/file_match/` and `CLAUDE.md`.
+`testdata/file_match/` and `AGENTS.md`.
 
 ### Sibling-absence predicates
 **Effort:** S. **Surfaced by:** dockerfile_no_user (no `USER`

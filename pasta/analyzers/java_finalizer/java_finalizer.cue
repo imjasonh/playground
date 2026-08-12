@@ -26,6 +26,7 @@ java_finalizer: schema.#Analyzer & {
 		match: {
 			node: "method_declaration"
 			fields: {
+				type: {capture: "ret", pattern: {node: "void_type"}}
 				name: {capture: "name"}
 				parameters: {
 					capture: "params"

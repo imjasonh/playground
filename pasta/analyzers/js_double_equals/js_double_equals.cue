@@ -2,6 +2,10 @@
 // loose equality coerces operand types, which is almost always
 // surprising; the strict variants compare without coercion. ESLint
 // `eqeqeq` covers the same ground; this is a structural auto-fix.
+//
+// Comparisons against `null` / `undefined` are left alone: `x == null`
+// is an idiomatic "nullish" check that is *not* equivalent to
+// `x === null`.
 
 package js_double_equals
 
@@ -21,8 +25,19 @@ _eqRule: {
 
 		match: {
 			node: "binary_expression"
-			fields: operator: {capture: "op"}
-			where: [{op: "token_eq", args: ["@op", _from]}]
+			fields: {
+				left:     {capture: "left"}
+				operator: {capture: "op"}
+				right:    {capture: "right"}
+			}
+			where: [
+				{op: "token_eq", args: ["@op", _from]},
+				// Skip nullish idioms: `x == null` / `x != undefined`.
+				{op: "neq", args: ["@left", "null"]},
+				{op: "neq", args: ["@left", "undefined"]},
+				{op: "neq", args: ["@right", "null"]},
+				{op: "neq", args: ["@right", "undefined"]},
+			]
 		}
 
 		diagnose: {
@@ -42,7 +57,7 @@ _eqRule: {
 js_double_equals: schema.#Analyzer & {
 	name:    "js_double_equals"
 	version: "0.1.0"
-	doc:     "Replace == / != with === / !=="
+	doc:     "Replace == / != with === / !== (except null/undefined idioms)"
 	facts: {}
 
 	rules: {

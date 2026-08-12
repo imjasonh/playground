@@ -12,9 +12,9 @@
 //
 //   1. mapping value: `key: yes` — match the block_mapping_pair and
 //      descend through .value -> flow_node -> plain_scalar.
-//   2. sequence element: `[a, yes, b]` — match plain_scalar with a
-//      flow_sequence ancestor (block_sequence_item also covers the
-//      block-style `- yes` form).
+//   2. sequence element: `[a, yes, b]` / `- yes` — match a plain
+//      scalar that is the direct flow_node under a sequence item
+//      (not a mapping key nested inside `- on: push`).
 //
 // A bare `on:` mapping KEY is NOT a value in either shape, so it's
 // untouched (this is what GitHub Actions YAML relies on).
@@ -61,10 +61,8 @@ _mappingValueRule: {
 	}
 }
 
-// _sequenceElementRule: match plain_scalar whose ancestor is a
-// flow_sequence or block_sequence_item. This catches `[a, yes]` and
-// `- yes` shapes without flagging mapping keys.
-_sequenceElementRule: {
+// _flowSequenceElementRule: plain_scalar inside a flow sequence.
+_flowSequenceElementRule: {
 	_regex:       string
 	_replacement: "true" | "false"
 
@@ -77,7 +75,7 @@ _sequenceElementRule: {
 			node: "plain_scalar"
 			where: [
 				{op: "matches", args: ["@_root", _regex]},
-				{op: "ancestor_is", args: ["@_root", ["flow_sequence", "block_sequence_item"]]},
+				{op: "ancestor_is", args: ["@_root", "flow_sequence"]},
 			]
 		}
 
@@ -88,6 +86,42 @@ _sequenceElementRule: {
 
 		rewrite: edits: [{
 			target:      "_root"
+			replacement: _replacement
+		}]
+	}
+}
+
+// _blockSequenceElementRule: `- yes` form only — a block_sequence_item
+// whose child is a flow_node/plain_scalar. Nested mappings like
+// `- on: push` use block_node and are not matched.
+_blockSequenceElementRule: {
+	_regex:       string
+	_replacement: "true" | "false"
+
+	out: {
+		languages: [yamllang.Name]
+		requires: []
+		provides: []
+
+		match: {
+			node: "block_sequence_item"
+			children: [{
+				node: "flow_node"
+				children: [{
+					capture: "scalar"
+					pattern: {node: "plain_scalar"}
+				}]
+			}]
+			where: [{op: "matches", args: ["@scalar", _regex]}]
+		}
+
+		diagnose: {
+			severity: "warning"
+			message:  "non-canonical boolean; use `\(_replacement)`"
+		}
+
+		rewrite: edits: [{
+			target:      "scalar"
 			replacement: _replacement
 		}]
 	}
@@ -117,19 +151,33 @@ yaml_truthy: schema.#Analyzer & {
 			name: "mapping_value_false"
 			doc:  "key: No/Off/False -> key: false"
 		}
-		sequence_element_true: (_sequenceElementRule & {
+		flow_sequence_true: (_flowSequenceElementRule & {
 			_regex:       _truthyRegex
 			_replacement: "true"
 		}).out & {
-			name: "sequence_element_true"
+			name: "flow_sequence_true"
 			doc:  "[a, Yes/On/True, b] -> [a, true, b]"
 		}
-		sequence_element_false: (_sequenceElementRule & {
+		flow_sequence_false: (_flowSequenceElementRule & {
 			_regex:       _falsyRegex
 			_replacement: "false"
 		}).out & {
-			name: "sequence_element_false"
+			name: "flow_sequence_false"
 			doc:  "[a, No/Off/False, b] -> [a, false, b]"
+		}
+		block_sequence_true: (_blockSequenceElementRule & {
+			_regex:       _truthyRegex
+			_replacement: "true"
+		}).out & {
+			name: "block_sequence_true"
+			doc:  "- Yes/On/True -> - true"
+		}
+		block_sequence_false: (_blockSequenceElementRule & {
+			_regex:       _falsyRegex
+			_replacement: "false"
+		}).out & {
+			name: "block_sequence_false"
+			doc:  "- No/Off/False -> - false"
 		}
 	}
 }

@@ -15,10 +15,21 @@ The intention of `pasta` is to be able to declaratively describe rules for ASTs 
 Rules are defined in CUE files loaded at runtime. The framework ships generic predicates (parameterized over grammar specifics)
 so semantic checks like "no later use" and "no named-result clash" are expressed in CUE.
 
-The repo includes some analyzers as runnable examples. Single-language rules use a `<lang>_` prefix;
-cross-language rules (which match every grammar) have no prefix.
+The repo includes runnable **example analyzers** under [`analyzers/`](./analyzers/) —
+style and correctness rules used to exercise the engine (and by the
+[`e2e/`](./e2e/) smoke tests against real public repos). Single-language
+rules use a `<lang>_` prefix; cross-language rules have no prefix.
 
-Rules with a ✏️ include an automatic rewrite for `-fix`.
+Rules with a ✏️ include an automatic rewrite for `-fix`. Prefer the
+diagnose-only examples when a rewrite would change runtime semantics
+(for example `js_var_to_let` or `js_array_concat_spread`).
+
+Run every example's testdata with:
+
+```
+go test ./...                 # includes analyzers/* via pasta_test.go
+go run ./cmd/pasta test analyzers/js_double_equals
+```
 
 **Cross-language**
 
@@ -69,7 +80,7 @@ Rules with a ✏️ include an automatic rewrite for `-fix`.
 | [rust_needless_bool](./analyzers/rust_needless_bool/rust_needless_bool.cue) ✏️ | `if cond { true } else { false }` → `cond`; `if cond { false } else { true }` → `!(cond)` (clippy `needless_bool`) |
 | [rust_println_panic](./analyzers/rust_println_panic/rust_println_panic.cue) ✏️ | Drop redundant `println!()` immediately before `panic!()` |
 | [rust_println_redundant_format](./analyzers/rust_println_redundant_format/rust_println_redundant_format.cue) ✏️ | `println!("{}", "hello")` → `println!("hello")` |
-| [rust_dbg_macro](./analyzers/rust_dbg_macro/rust_dbg_macro.cue) ✏️             | Flag committed `dbg!()` invocations and rewrite `dbg!(expr)` to `expr` |
+| [rust_dbg_macro](./analyzers/rust_dbg_macro/rust_dbg_macro.cue)               | Flag committed `dbg!()` invocations (no autofix — empty/multi-arg forms are unsafe) |
 | [rust_deprecated_use](./analyzers/rust_deprecated_use/rust_deprecated_use.cue) | Flag calls to `#[deprecated]` functions (fact passing) |
 | [rust_taint](./analyzers/rust_taint/rust_taint.cue)                            | Track taint from `env::var()` through let bindings to `Command::new` (fact passing + fixpoint) |
 
@@ -78,10 +89,10 @@ Rules with a ✏️ include an automatic rewrite for `-fix`.
 | Path | What it does |
 |---|---|
 | [js_object_assign_spread](./analyzers/js_object_assign_spread/js_object_assign_spread.cue) ✏️ | `Object.assign({}, x)` → `{...x}` |
-| [js_array_concat_spread](./analyzers/js_array_concat_spread/js_array_concat_spread.cue) ✏️   | `[].concat(x)` → `[...x]` |
+| [js_array_concat_spread](./analyzers/js_array_concat_spread/js_array_concat_spread.cue)     | Flag `[].concat(x)` (prefer `[...x]` when iterable; no autofix — not always equivalent) |
 | [js_template_no_subst](./analyzers/js_template_no_subst/js_template_no_subst.cue) ✏️         | `` `abc` `` → `'abc'` when no interpolation |
-| [js_double_equals](./analyzers/js_double_equals/js_double_equals.cue) ✏️                     | `==` / `!=` → `===` / `!==` (no implicit type coercion) |
-| [js_var_to_let](./analyzers/js_var_to_let/js_var_to_let.cue) ✏️                              | `var x` → `let x` (block-scoped, no hoisting) |
+| [js_double_equals](./analyzers/js_double_equals/js_double_equals.cue) ✏️                     | `==` / `!=` → `===` / `!==` (skips `null` / `undefined` idioms) |
+| [js_var_to_let](./analyzers/js_var_to_let/js_var_to_let.cue) ✏️                              | `var x` → `let x` (block-scoped; autofix can change hoisting — use carefully) |
 | [js_empty_promise](./analyzers/js_empty_promise/js_empty_promise.cue)                        | Flag `new Promise(() => {})` with empty executor |
 | [js_taint](./analyzers/js_taint/js_taint.cue)                                                | Track taint from `req.query` / `req.body` / `req.params` to `eval` / `Function` (fact passing + fixpoint) |
 
@@ -89,7 +100,7 @@ Rules with a ✏️ include an automatic rewrite for `-fix`.
 
 | Path | What it does |
 |---|---|
-| [ts_array_type_style](./analyzers/ts_array_type_style/ts_array_type_style.cue) ✏️ | `Array<T>` → `T[]` |
+| [ts_array_type_style](./analyzers/ts_array_type_style/ts_array_type_style.cue) ✏️ | `Array<T>` → `T[]` for simple `T` (skips unions / keyof) |
 | [ts_any_type](./analyzers/ts_any_type/ts_any_type.cue)                            | Flag `: any` annotations (defeat TypeScript's type checking) |
 
 **YAML**
@@ -121,8 +132,9 @@ Rules with a ✏️ include an automatic rewrite for `-fix`.
 
 | Path | What it does |
 |---|---|
-| [java_string_equals_literal](./analyzers/java_string_equals_literal/java_string_equals_literal.cue) ✏️ | `x.equals("foo")` → `"foo".equals(x)` (NPE-safe) |
-| [java_finalizer](./analyzers/java_finalizer/java_finalizer.cue) | Flag `protected void finalize()` overrides (deprecated since Java 9) |
+| [java_string_equals_literal](./analyzers/java_string_equals_literal/java_string_equals_literal.cue) ✏️ | `x.equals("foo")` → `"foo".equals(x)` (NPE-safe; identifier receivers only) |
+| [java_finalizer](./analyzers/java_finalizer/java_finalizer.cue) | Flag no-arg `void finalize()` overrides (deprecated since Java 9) |
+| [java_system_out_println](./analyzers/java_system_out_println/java_system_out_println.cue) | Flag `System.out` / `System.err` print calls — prefer a logger |
 
 **Swift**
 
@@ -140,7 +152,8 @@ Rules with a ✏️ include an automatic rewrite for `-fix`.
 
 | Path | What it does |
 |---|---|
-| [php_loose_equality](./analyzers/php_loose_equality/php_loose_equality.cue) ✏️ | `==` / `!=` → `===` / `!==` (no type coercion) |
+| [php_loose_equality](./analyzers/php_loose_equality/php_loose_equality.cue) ✏️ | `==` / `!=` → `===` / `!==` (skips `null` idioms) |
+| [php_debug_output](./analyzers/php_debug_output/php_debug_output.cue) | Flag `var_dump` / `print_r` / `debug_zval_dump` |
 
 **SQL**
 
@@ -159,13 +172,15 @@ Rules with a ✏️ include an automatic rewrite for `-fix`.
 
 | Path | What it does |
 |---|---|
-| [html_deprecated_tags](./analyzers/html_deprecated_tags/html_deprecated_tags.cue) | Flag `<center>`, `<font>`, `<marquee>`, `<blink>`, `<strike>`, `<big>`, `<tt>` |
+| [html_deprecated_tags](./analyzers/html_deprecated_tags/html_deprecated_tags.cue) | Flag `<center>`, `<font>`, `<marquee>`, `<blink>`, `<strike>`, `<big>`, `<tt>` (case-insensitive) |
+| [html_img_alt](./analyzers/html_img_alt/html_img_alt.cue) | Flag `<img>` tags missing an `alt` attribute |
 
 **CSS**
 
 | Path | What it does |
 |---|---|
-| [css_zero_unit](./analyzers/css_zero_unit/css_zero_unit.cue) ✏️ | Drop unit on zero (`0px` → `0`) — the unit is meaningless |
+| [css_zero_unit](./analyzers/css_zero_unit/css_zero_unit.cue) ✏️ | Drop unit on length zero (`0px` → `0`; leaves `0%` alone) |
+| [css_important](./analyzers/css_important/css_important.cue) | Flag `!important` declarations |
 
 ## Performance
 
@@ -405,7 +420,7 @@ If you specify rules in your repo at `pasta.cue` or `.pasta/**/*.cue`, these rul
 
 -----
 
-Working in this repo? See [CLAUDE.md](./CLAUDE.md) for layout, how
+Working in this repo? See [AGENTS.md](./AGENTS.md) for layout, how
 to add a new analyzer or language, and conventions worth knowing.
 
 See [cue.md](./cue.md) for the case for CUE as the rule schema, and

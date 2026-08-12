@@ -4,5 +4,5 @@
     border: 0;          /* OK */
     width: 100px;       /* OK */
     height: 100%;       /* OK */
-    line-height: 0%;    /* want "the unit on zero is meaningless" */
+    line-height: 0%;    /* OK: percent zero is not a length */
 }

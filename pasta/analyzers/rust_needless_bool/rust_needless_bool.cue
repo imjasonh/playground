@@ -54,6 +54,8 @@ rust_needless_bool: schema.#Analyzer & {
 				where: [
 					{op: "token_eq", args: ["@lit_then", "true"]},
 					{op: "token_eq", args: ["@lit_else", "false"]},
+					// `if let …` conditions are not boolean expressions.
+					{op: "not_matches", args: ["@cond", "^let\\b"]},
 				]
 			}
 
@@ -96,6 +98,7 @@ rust_needless_bool: schema.#Analyzer & {
 				where: [
 					{op: "token_eq", args: ["@lit_then", "false"]},
 					{op: "token_eq", args: ["@lit_else", "true"]},
+					{op: "not_matches", args: ["@cond", "^let\\b"]},
 				]
 			}
 

@@ -1,8 +1,7 @@
 // ts_array_type_style rewrites the generic-array form `Array<T>` to
-// the shorthand `T[]`. The two are interchangeable; teams pick one and
-// stick with it. typescript-eslint has this lint but with the opposite
-// default in some configs; encoding it as a pasta rule lets a project
-// commit to a style consistently.
+// the shorthand `T[]`. Restricted to simple type arguments
+// (`type_identifier` / `predefined_type`) so `Array<string | number>`
+// is not rewritten to the wrong `string | number[]`.
 
 package ts_array_type_style
 
@@ -14,7 +13,7 @@ import (
 ts_array_type_style: schema.#Analyzer & {
 	name:    "ts_array_type_style"
 	version: "0.1.0"
-	doc:     "Rewrite Array<T> to T[]"
+	doc:     "Rewrite Array<T> to T[] for simple T"
 	facts: {}
 
 	rules: prefer_shorthand: {
@@ -29,12 +28,19 @@ ts_array_type_style: schema.#Analyzer & {
 			fields: {
 				name: {capture: "outer", pattern: {node: "type_identifier"}}
 				type_arguments: {
-					node: "type_arguments"
-					children: [{capture: "inner"}]
+					capture: "args"
+					pattern: {
+						node: "type_arguments"
+						children: [{
+							capture: "inner"
+							pattern: {node: ["type_identifier", "predefined_type"]}
+						}]
+					}
 				}
 			}
 			where: [
 				{op: "eq", args: ["@outer", "Array"]},
+				{op: "named_child_count", args: ["@args", "1"]},
 			]
 		}
 

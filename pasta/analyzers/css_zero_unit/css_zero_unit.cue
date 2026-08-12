@@ -1,7 +1,8 @@
-// css_zero_unit drops the unit suffix from `0px` / `0em` / `0%`
-// values. The unit on zero is meaningless; CSS treats `0` and `0px`
-// identically. Stylelint's `length-zero-no-unit` covers the same
-// ground.
+// css_zero_unit drops the unit suffix from `0px` / `0em` length
+// values. The unit on a zero *length* is meaningless; CSS treats
+// `0` and `0px` identically. Percentages are left alone — `0%` is a
+// percentage, not a length, and is not always interchangeable with
+// bare `0`. Stylelint's `length-zero-no-unit` covers the same ground.
 
 package css_zero_unit
 
@@ -13,7 +14,7 @@ import (
 css_zero_unit: schema.#Analyzer & {
 	name:    "css_zero_unit"
 	version: "0.1.0"
-	doc:     "Drop unit from 0px / 0em / 0% (the unit is meaningless on zero)"
+	doc:     "Drop unit from 0px / 0em (length zero only; not 0%)"
 	facts: {}
 
 	rules: zero_unit: {
@@ -29,7 +30,7 @@ css_zero_unit: schema.#Analyzer & {
 				capture: "unit"
 				pattern: {node: "unit"}
 			}]
-			where: [{op: "matches", args: ["@_root", "^0(px|em|rem|pt|pc|in|cm|mm|ex|ch|vh|vw|vmin|vmax|%)$"]}]
+			where: [{op: "matches", args: ["@_root", "^0(px|em|rem|pt|pc|in|cm|mm|ex|ch|vh|vw|vmin|vmax)$"]}]
 		}
 
 		diagnose: {

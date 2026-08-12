@@ -1,6 +1,9 @@
 // go_self_assignment flags `x = x` — assigning a variable to itself.
 // Almost always a typo (the author meant a different RHS) or dead
 // code. Includes the rewrite that simply deletes the statement.
+//
+// Multi-assignment forms (`x, y = x, z`) are left alone — matching
+// only the first identifiers would wrongly delete the whole statement.
 
 package go_self_assignment
 
@@ -26,18 +29,26 @@ go_self_assignment: schema.#Analyzer & {
 			node: "assignment_statement"
 			fields: {
 				left: {
-					node: "expression_list"
-					children: [{capture: "lhs", pattern: {node: "identifier"}}]
+					capture: "lhs_list"
+					pattern: {
+						node: "expression_list"
+						children: [{capture: "lhs", pattern: {node: "identifier"}}]
+					}
 				}
 				operator: {capture: "op"}
 				right: {
-					node: "expression_list"
-					children: [{capture: "rhs", pattern: {node: "identifier"}}]
+					capture: "rhs_list"
+					pattern: {
+						node: "expression_list"
+						children: [{capture: "rhs", pattern: {node: "identifier"}}]
+					}
 				}
 			}
 			where: [
 				{op: "token_eq", args: ["@op", "="]},
 				{op: "same_ident", args: ["@lhs", "@rhs"]},
+				{op: "named_child_count", args: ["@lhs_list", "1"]},
+				{op: "named_child_count", args: ["@rhs_list", "1"]},
 			]
 		}
 

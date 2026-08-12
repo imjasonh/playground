@@ -10,5 +10,10 @@ class A {
     // not overrides of Object.finalize.
     public void finalize(int x) {}
 
+    // Non-void finalize() is not Object.finalize.
+    public int finalize() {
+        return 0;
+    }
+
     public void close() {}
 }

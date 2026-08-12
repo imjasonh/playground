@@ -2,6 +2,9 @@
 // `"literal".equals(x)`. Putting the literal on the receiver side
 // avoids a NullPointerException when x is null. SonarQube and
 // PMD both flag the same pattern.
+//
+// Restricted to identifier receivers so `"a".equals("b")` and
+// `super.equals("x")` are not rewritten.
 
 package java_string_equals_literal
 
@@ -26,7 +29,10 @@ java_string_equals_literal: schema.#Analyzer & {
 		match: {
 			node: "method_invocation"
 			fields: {
-				object: {capture: "obj"}
+				object: {
+					capture: "obj"
+					pattern: {node: "identifier"}
+				}
 				name: {
 					capture: "method"
 					pattern: {node: "identifier"}

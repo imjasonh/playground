@@ -11,3 +11,8 @@ func g(x int) int {
 	x = x + 1 // OK: not self-assignment
 	return x
 }
+
+func multi(x, y, z int) (int, int) {
+	x, y = x, z // OK: multi-assign; must not delete the whole statement
+	return x, y
+}

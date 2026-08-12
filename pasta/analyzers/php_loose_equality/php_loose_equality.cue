@@ -1,8 +1,10 @@
 // php_loose_equality rewrites `==` / `!=` to `===` / `!==`. PHP's
 // loose equality coerces operand types in surprising ways
 // (`"0" == false` is true; `"abc" == 0` was true before PHP 8).
-// Strict equality compares without coercion. Mirror of
-// js_double_equals.
+// Strict equality compares without coercion.
+//
+// Comparisons against `null` are left alone: `$x == null` is a common
+// nullish check that is not equivalent to `$x === null`.
 
 package php_loose_equality
 
@@ -22,8 +24,16 @@ _eqRule: {
 
 		match: {
 			node: "binary_expression"
-			fields: operator: {capture: "op"}
-			where: [{op: "token_eq", args: ["@op", _from]}]
+			fields: {
+				left:     {capture: "left"}
+				operator: {capture: "op"}
+				right:    {capture: "right"}
+			}
+			where: [
+				{op: "token_eq", args: ["@op", _from]},
+				{op: "neq", args: ["@left", "null"]},
+				{op: "neq", args: ["@right", "null"]},
+			]
 		}
 
 		diagnose: {
@@ -41,7 +51,7 @@ _eqRule: {
 php_loose_equality: schema.#Analyzer & {
 	name:    "php_loose_equality"
 	version: "0.1.0"
-	doc:     "Replace == / != with === / !=="
+	doc:     "Replace == / != with === / !== (except null idioms)"
 	facts: {}
 
 	rules: {

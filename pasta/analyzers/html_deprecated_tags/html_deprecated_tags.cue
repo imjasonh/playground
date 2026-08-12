@@ -31,7 +31,7 @@ html_deprecated_tags: schema.#Analyzer & {
 				capture: "name"
 				pattern: {node: "tag_name"}
 			}]
-			where: [{op: "matches", args: ["@name", "^(center|font|marquee|blink|strike|big|tt)$"]}]
+			where: [{op: "matches", args: ["@name", "(?i)^(center|font|marquee|blink|strike|big|tt)$"]}]
 		}
 
 		diagnose: {

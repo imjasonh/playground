@@ -1,0 +1,4 @@
+.a {
+    color: red !important; /* want "avoid !important" */
+    margin: 0;
+}

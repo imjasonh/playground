@@ -1,8 +1,7 @@
-// js_array_concat_spread rewrites `[].concat(x)` to the spread form
-// `[...x]`. Same kind of cleanup as Object.assign → spread, but for
-// arrays. Limited to the two-arg form (empty literal + one source);
-// multi-arg `.concat(x, y)` would need `[...x, ...y]` which the
-// rewrite syntax doesn't easily express today.
+// js_array_concat_spread flags `[].concat(x)`. Teams often prefer the
+// spread form `[...x]`, but that rewrite is *not* equivalent for
+// scalars, strings, non-iterables, or `Symbol.isConcatSpreadable`
+// objects — so this rule diagnoses only.
 
 package js_array_concat_spread
 
@@ -14,12 +13,12 @@ import (
 js_array_concat_spread: schema.#Analyzer & {
 	name:    "js_array_concat_spread"
 	version: "0.1.0"
-	doc:     "Rewrite [].concat(x) to [...x]"
+	doc:     "Flag [].concat(x); prefer [...x] when x is known iterable"
 	facts: {}
 
 	rules: array_concat_to_spread: {
 		name: "array_concat_to_spread"
-		doc:  "[].concat(x) -> [...x]"
+		doc:  "[].concat(x) can often be [...x]"
 		languages: [jslang.Name]
 		requires: []
 		provides: []
@@ -55,13 +54,8 @@ js_array_concat_spread: schema.#Analyzer & {
 		}
 
 		diagnose: {
-			message:  "[].concat(x) can be written as [...x]"
+			message:  "[].concat(x) can often be written as [...x] when x is iterable"
 			severity: "hint"
 		}
-
-		rewrite: edits: [{
-			target:      "_root"
-			replacement: "[...@src]"
-		}]
 	}
 }

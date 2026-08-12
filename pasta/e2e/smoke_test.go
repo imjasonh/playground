@@ -32,10 +32,8 @@ import (
 // (and content-sniff pre-filter) stay engaged.
 var fixRules = []string{
 	// JavaScript / TypeScript
-	"js_var_to_let",
 	"js_object_assign_spread",
 	"js_double_equals",
-	"js_array_concat_spread",
 	"js_template_no_subst",
 	"ts_array_type_style",
 	// Go
@@ -51,7 +49,6 @@ var fixRules = []string{
 	"python_isinstance_singleton",
 	"python_explicit_object_base",
 	// Rust
-	"rust_dbg_macro",
 	"rust_needless_bool",
 	"rust_println_redundant_format",
 	// YAML / CSS / Java / PHP
@@ -67,9 +64,18 @@ var diagnoseOnlyRules = []string{
 	"ts_any_type",
 	"go_panic_empty",
 	"js_empty_promise",
+	"js_array_concat_spread",
+	"js_var_to_let", // rewrite exists but is scope-unsafe for autofix smoke
 	"python_mutable_default",
+	"rust_dbg_macro",
 	"rust_println_panic",
 	"yaml_empty_value",
+	"html_deprecated_tags",
+	"html_img_alt",
+	"css_important",
+	"java_system_out_println",
+	"java_finalizer",
+	"php_debug_output",
 }
 
 type smokeRepo struct {

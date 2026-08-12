@@ -3,6 +3,9 @@
 // returns its argument; it almost never belongs in committed code.
 // Often clippy's `dbg_macro` lint is left at warn-level by default; we
 // fire as a hard error so it shows up in CI.
+//
+// No auto-fix: trimming `dbg!(…)` bytes is unsafe for `dbg!()` (empty)
+// and multi-arg `dbg!(a, b)`.
 
 package rust_dbg_macro
 
@@ -36,17 +39,5 @@ rust_dbg_macro: schema.#Analyzer & {
 			message:  "dbg!() macro invocation — remove before committing"
 			severity: "error"
 		}
-
-		// Auto-fix: replace `dbg!(EXPR)` with `EXPR`. The macro
-		// invocation's text is `dbg!(...)`; we replace its byte range
-		// with the same text after trimming the leading `dbg!(` (5
-		// bytes) and the trailing `)` (1 byte). dbg! returns its
-		// argument unchanged, so this is semantically equivalent.
-		rewrite: edits: [{
-			target:      "_root"
-			replacement: "@_root"
-			trim_start:  5
-			trim_end:    1
-		}]
 	}
 }
