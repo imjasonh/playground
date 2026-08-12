@@ -15,7 +15,7 @@
     "isomorphic-git": "1.41.3"
   },
   "devDependencies": {
-    "@axe-core/playwright": "^4.12.1",
+    "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "^1.62.1",
     "buffer": "^6.0.3",
     "esbuild": "^0.28.2",
