@@ -38,6 +38,7 @@ playground/
 ├── kanoodle/              # example app with tests (JS + Jest + Playwright)
 ├── nypd-choppers/         # NYPD helicopter ADS-B tracker (JS + Node tests)
 ├── ocidb/                 # Go CLI (Go module + Go tests)
+├── pasta/                 # CUE + tree-sitter multi-language linters/fixers (Go CLI)
 ├── population-rays/       # directional 5° population-slice map (JS + Node tests)
 ├── web-push/              # Rust Cloudflare Worker (Cargo + tests; not a Pages app)
 └── web-push-demo/         # static browser front-end for the web-push Worker
@@ -62,6 +63,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `web-push-demo/` | yes | Static front-end for `web-push`; HTML/JS, no build or tests |
 | `gitdb/` | no | Go CLI; no `index.html` |
 | `ocidb/` | no | Go CLI; no `index.html` |
+| `pasta/` | no | Go CLI (CUE + tree-sitter linters); no `index.html` |
 | `web-push/` | no | Rust Cloudflare Worker; no `index.html` |
 | `cors-proxy/` | no | Rust Cloudflare Worker; no `index.html` |
 | `inkbot/` | no | Rust Cloudflare Worker (e-ink frame + Slack); no `index.html` |
@@ -564,6 +566,7 @@ bundle exec fastlane test
 |-----------|------|-------|
 | `gitdb/` | git repository explorer backed by SQLite virtual tables | `go test ./...` |
 | `ocidb/` | OCI registry explorer backed by SQLite virtual tables | `go test ./...` |
+| `pasta/` | CUE-described multi-language linters/fixers over tree-sitter ASTs; see [`pasta/AGENTS.md`](pasta/AGENTS.md) | `go test ./...` (incl. e2e shallow-clone smoke) |
 
 ## Current Rust apps
 

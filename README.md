@@ -59,6 +59,8 @@ skip them:
   contents with SQL, via SQLite virtual tables over go-git (Go CLI).
 - **[`ocidb/`](ocidb/)** — explore OCI container images on Docker Hub with SQL,
   via SQLite virtual tables over go-containerregistry (Go CLI).
+- **[`pasta/`](pasta/)** — multi-language linters and fixers described in CUE
+  over tree-sitter ASTs (Go CLI).
 - **[`web-push/`](web-push/)** — a Web Push application-server backend
   (RFC 8030/8188/8291/8292) for Cloudflare Workers, in Rust.
 - **[`inkbot/`](inkbot/)** — e-ink desk-frame backend for Cloudflare Workers:

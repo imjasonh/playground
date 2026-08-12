@@ -1,0 +1,13 @@
+# Go build artifacts
+/pasta
+/dist/
+*.test
+
+# Rust build artifacts (Zed extension)
+/editors/zed/target/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp

@@ -75,7 +75,7 @@ for module in "${modules[@]}"; do
 
   if (
     cd "$module"
-    if [ "$module" = "node-image" ]; then
+    if [ "$module" = "node-image" ] || [ "$module" = "pasta" ]; then
       go test -timeout 30m ./...
     else
       go test ./...
