@@ -209,7 +209,6 @@ func firstEnv(env map[string]string, keys ...string) string {
 }
 
 func mergeEnv(base, over []string) []string {
-	type kv struct{ k, v string }
 	seen := map[string]string{}
 	order := make([]string, 0, len(base)+len(over))
 	add := func(e string) {
@@ -232,6 +231,5 @@ func mergeEnv(base, over []string) []string {
 	for _, k := range order {
 		out = append(out, k+"="+seen[k])
 	}
-	_ = kv{}
 	return out
 }
