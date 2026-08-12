@@ -44,6 +44,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/imjasonh/pasta/internal/apply"
 	"github.com/imjasonh/pasta/internal/dsl"
 	"github.com/imjasonh/pasta/internal/engine"
 	"github.com/imjasonh/pasta/internal/lang"
@@ -86,10 +87,14 @@ const DefaultRulesDir = ".pasta"
 func runFix(args []string) int {
 	fs := flag.NewFlagSet("pasta", flag.ExitOnError)
 	fix := fs.Bool("fix", false, "apply suggested fixes by rewriting each source file in place")
+	fixPasses := fs.Int("fix-passes", 0, "with -fix: number of analyze→apply passes (0=default 1; nested whole-node rewrites need multipass)")
+	fixUntilClean := fs.Bool("fix-until-clean", false, "with -fix: repeat analyze→apply until no file changes (safety cap 8, or -fix-passes if higher)")
 	skip := fs.String("skip", "", "comma-separated directory basenames to skip during ./... expansion (in addition to defaults: vendor, node_modules, venv, …)")
 	rulesDir := fs.String("rules", "", "directory of CUE rule files to load (default: ./"+DefaultRulesDir+")")
 	noCache := fs.Bool("nocache", false, "disable the persistent parse-result cache for this run")
 	parseTimeoutFlag := fs.Duration("parse-timeout", -1, "per-file parse budget (e.g. 2s); 0 disables. Default 2s, or parse_timeout_ms from pasta.cue")
+	memoryBudgetFlag := fs.Int64("memory-budget", -1, "cumulative parsed-source byte budget across the whole run; 0 disables. Default unlimited, or memory_budget from pasta.cue")
+	showStats := fs.Bool("stats", false, "print walk/prefilter/parse/skip counters on stderr")
 	failOn := fs.String("fail-on", "none", "exit 1 when a diagnostic at this severity or higher is found: none, hint, info, warning, error")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -98,6 +103,18 @@ func runFix(args []string) int {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return 2
+	}
+	passes := 1
+	if *fix {
+		switch {
+		case *fixUntilClean:
+			passes = 8
+			if *fixPasses > passes {
+				passes = *fixPasses
+			}
+		case *fixPasses > 0:
+			passes = *fixPasses
+		}
 	}
 
 	analyzers, cfg, rawSources, code := selectRules(*rulesDir, fs.Args())
@@ -131,54 +148,95 @@ func runFix(args []string) int {
 		return 0
 	}
 
-	var runOpts []runner.Option
 	cache := openCache(*noCache, analyzers, *rulesDir)
-	if cache != nil {
-		runOpts = append(runOpts, runner.WithCache(cache))
-	}
-	runOpts = append(runOpts, runner.WithParseTimeout(resolveParseTimeout(*parseTimeoutFlag, cfg)))
-	results, err := runner.RunGroup(context.Background(), specs, analyzers, *fix, runOpts...)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
-		return 1
+	var stats engine.Stats
+	var memTracker *engine.MemoryTracker
+	if mb := resolveMemoryBudget(*memoryBudgetFlag, cfg); mb >= 0 {
+		memTracker = &engine.MemoryTracker{Budget: mb}
 	}
 	exit := 0
-	for _, res := range results {
-		if res.SkipReason != "" {
-			fmt.Fprintf(os.Stderr, "%s: skipped (%s)\n", res.Path, res.SkipReason)
-			continue
+	for pass := 0; pass < passes; pass++ {
+		var runOpts []runner.Option
+		if cache != nil {
+			runOpts = append(runOpts, runner.WithCache(cache))
 		}
-		for _, d := range res.Diagnostics {
-			fmt.Fprintf(os.Stderr, "%s:%d: %s [%s]\n", res.Path, d.Line(), d.Message, d.Rule)
-			if failThreshold != failOnNone && severityAtLeast(d.Severity, failThreshold) {
-				exit = 1
+		runOpts = append(runOpts, runner.WithParseTimeout(resolveParseTimeout(*parseTimeoutFlag, cfg)))
+		if memTracker != nil {
+			runOpts = append(runOpts, runner.WithMemoryTracker(memTracker))
+		}
+		if *showStats {
+			runOpts = append(runOpts, runner.WithStats(&stats))
+		}
+		// Always analyze with applyFixes=false, then apply per file so
+		// one overlapping-edit conflict cannot abort the whole group.
+		results, err := runner.RunGroup(context.Background(), specs, analyzers, false, runOpts...)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			return 1
+		}
+		changed := 0
+		for _, res := range results {
+			if res.SkipReason != "" {
+				fmt.Fprintf(os.Stderr, "%s: skipped (%s)\n", res.Path, res.SkipReason)
+				// When used as a CI gate, inability to analyze a file
+				// is a failure — otherwise skips are silent w.r.t. -fail-on.
+				if failThreshold != failOnNone {
+					exit = 1
+				}
+				continue
 			}
+			if pass == 0 {
+				for _, d := range res.Diagnostics {
+					fmt.Fprintf(os.Stderr, "%s:%d: %s [%s]\n", res.Path, d.Line(), d.Message, d.Rule)
+					if failThreshold != failOnNone && severityAtLeast(d.Severity, failThreshold) {
+						exit = 1
+					}
+				}
+			}
+			if !*fix {
+				continue
+			}
+			if len(res.Ops) == 0 {
+				continue
+			}
+			fixed, err := apply.Apply(res.Src, res.Ops, dsl.RewriteOpts{})
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%s: skipped fix (%v)\n", res.Path, err)
+				exit = 1
+				continue
+			}
+			if res.Src == nil || bytes.Equal(res.Src, fixed) {
+				continue
+			}
+			onDisk, err := os.ReadFile(res.Path)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%s: %v\n", res.Path, err)
+				exit = 1
+				continue
+			}
+			if !bytes.Equal(onDisk, res.Src) {
+				fmt.Fprintf(os.Stderr, "%s: skipped write (file changed since analyze)\n", res.Path)
+				exit = 1
+				continue
+			}
+			if err := writeFixedFile(res.Path, fixed); err != nil {
+				fmt.Fprintf(os.Stderr, "%s: %v\n", res.Path, err)
+				exit = 1
+				continue
+			}
+			changed++
 		}
 		if !*fix {
-			continue
+			break
 		}
-		// Fixed was computed against res.Src (the analyzed snapshot).
-		// Skip the write when it's a no-op, and refuse to write if the
-		// on-disk file changed since analysis — applying byte-offset
-		// ops to different bytes would corrupt the file.
-		if res.Fixed == nil || bytes.Equal(res.Src, res.Fixed) {
-			continue
+		if *fixUntilClean && changed == 0 {
+			break
 		}
-		onDisk, err := os.ReadFile(res.Path)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s: %v\n", res.Path, err)
-			exit = 1
-			continue
-		}
-		if !bytes.Equal(onDisk, res.Src) {
-			fmt.Fprintf(os.Stderr, "%s: skipped write (file changed since analyze)\n", res.Path)
-			exit = 1
-			continue
-		}
-		if err := writeFixedFile(res.Path, res.Fixed); err != nil {
-			fmt.Fprintf(os.Stderr, "%s: %v\n", res.Path, err)
-			exit = 1
-		}
+	}
+	if *showStats {
+		s := stats.Snapshot()
+		fmt.Fprintf(os.Stderr, "stats: walked=%d prefilter_skipped=%d parsed=%d parse_errors=%d parse_degraded=%d timed_out=%d memory_skipped=%d cache_hits=%d\n",
+			s.Walked, s.PrefilterSkipped, s.Parsed, s.ParseErrors, s.ParseDegraded, s.TimedOut, s.MemorySkipped, s.CacheHits)
 	}
 	if cache != nil {
 		if os.Getenv("PASTA_CACHE_STATS") != "" {
@@ -253,6 +311,21 @@ func resolveParseTimeout(flagVal time.Duration, cfg *loader.Config) time.Duratio
 		return time.Duration(*cfg.ParseTimeout) * time.Millisecond
 	}
 	return engine.DefaultParseTimeout
+}
+
+// resolveMemoryBudget picks the cumulative parse-byte budget.
+//
+//   - CLI flag >= 0 wins (0 = unlimited).
+//   - else pasta.cue memory_budget when set (0 = unlimited).
+//   - else -1 meaning "unset / unlimited" (caller skips WithMemoryBudget).
+func resolveMemoryBudget(flagVal int64, cfg *loader.Config) int64 {
+	if flagVal >= 0 {
+		return flagVal
+	}
+	if cfg != nil && cfg.MemoryBudget != nil {
+		return *cfg.MemoryBudget
+	}
+	return -1
 }
 
 // defaultCacheSizeBytes bounds the on-disk parse cache. Sized for a

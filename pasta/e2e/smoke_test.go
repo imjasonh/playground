@@ -65,7 +65,7 @@ var diagnoseOnlyRules = []string{
 	"go_panic_empty",
 	"js_empty_promise",
 	"js_array_concat_spread",
-	"js_var_to_let", // rewrite exists but is scope-unsafe for autofix smoke
+	"js_var_to_let", // report-only — scope-unsafe to autofix
 	"python_mutable_default",
 	"rust_dbg_macro",
 	"rust_println_panic",

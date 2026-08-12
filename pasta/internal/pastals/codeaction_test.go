@@ -57,15 +57,15 @@ func TestDropOverlapping(t *testing.T) {
 			},
 		},
 		{
-			"unsorted input is sorted then deduped",
+			"unsorted input: nested keeps innermost",
 			[]protocol.EncodedOp{
 				{Start: 10, End: 15, Text: "b"},
 				{Start: 0, End: 5, Text: "a"},
-				{Start: 12, End: 13, Text: "c"}, // contained in b -> dropped
+				{Start: 12, End: 13, Text: "c"}, // contained in b -> keep c, drop b
 			},
 			[]protocol.EncodedOp{
 				{Start: 0, End: 5, Text: "a"},
-				{Start: 10, End: 15, Text: "b"},
+				{Start: 12, End: 13, Text: "c"},
 			},
 		},
 		{

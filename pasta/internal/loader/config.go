@@ -24,6 +24,7 @@ import (
 //	skip:           ["build", "dist"]                    // extra ./... walk skip-dirs
 //	max_file_size:  2_000_000                            // bytes; 0 = unlimited
 //	parse_timeout_ms: 2000                               // per-file parse budget in ms; 0 = unlimited
+//	memory_budget:  512_000_000                          // cumulative parsed source bytes; 0 = unlimited
 //
 // `imports` is consumed by internal/remote (LoadManifest); this loader
 // only reads the config-relevant fields. Co-locating them in one file
@@ -45,6 +46,12 @@ type Config struct {
 	// "not specified" — the engine applies its default (2s). A pointer
 	// to 0 disables the budget. Negative values are rejected at load.
 	ParseTimeout *int64 `json:"parse_timeout_ms,omitempty"`
+
+	// MemoryBudget is a cumulative cap on source bytes admitted to
+	// parse in one run. Nil means "not specified" (unlimited). A
+	// pointer to 0 also means unlimited. When exceeded, further files
+	// are skipped (like parse timeout) — the run does not fail.
+	MemoryBudget *int64 `json:"memory_budget,omitempty"`
 }
 
 // LoadConfig reads `<dir>/pasta.cue` and extracts the config-relevant
@@ -93,6 +100,16 @@ func LoadConfig(dir string) (*Config, bool, error) {
 			return nil, false, fmt.Errorf("%s: parse_timeout_ms must be >= 0 (got %d)", path, n)
 		}
 		cfg.ParseTimeout = &n
+	}
+	if mb := v.LookupPath(cue.ParsePath("memory_budget")); mb.Exists() {
+		n, err := mb.Int64()
+		if err != nil {
+			return nil, false, fmt.Errorf("%s: memory_budget must be an integer: %w", path, err)
+		}
+		if n < 0 {
+			return nil, false, fmt.Errorf("%s: memory_budget must be >= 0 (got %d)", path, n)
+		}
+		cfg.MemoryBudget = &n
 	}
 	sev := v.LookupPath(cue.ParsePath("severity"))
 	if sev.Exists() {

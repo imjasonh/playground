@@ -237,16 +237,30 @@ func buildPrimaryOp(rule string, e dsl.Edit, ctx BuildContext, captureText map[s
 }
 
 // interpolateWithCaptures replaces @name in s with effective capture text.
+//
+// Spread hygiene: when the template already has `...` immediately before
+// `@cap` (as in `{...@src}` / `[...@src]`) and the capture text itself
+// begins with `...` (typical for a `spread_element` node), the leading
+// dots on the capture are stripped so the rewrite does not emit
+// `{......xs}`.
 func interpolateWithCaptures(s string, caps match.Captures, captureText map[string]string) string {
 	if !strings.Contains(s, "@") {
 		return s
 	}
 	var b strings.Builder
 	b.Grow(len(s))
+	trailingDots := 0 // how many '.' bytes end the builder so far (cap 3)
 	i := 0
 	for i < len(s) {
 		if s[i] != '@' {
 			b.WriteByte(s[i])
+			if s[i] == '.' {
+				if trailingDots < 3 {
+					trailingDots++
+				}
+			} else {
+				trailingDots = 0
+			}
 			i++
 			continue
 		}
@@ -255,16 +269,34 @@ func interpolateWithCaptures(s string, caps match.Captures, captureText map[stri
 			j++
 		}
 		name := s[i+1 : j]
-		if t, ok := captureText[name]; ok {
-			b.WriteString(t)
-		} else if n, ok := caps[name]; ok {
-			b.WriteString(n.Text())
+		text, ok := captureText[name]
+		if !ok {
+			if n, cok := caps[name]; cok {
+				text = n.Text()
+				ok = true
+			}
+		}
+		if ok {
+			if trailingDots == 3 && strings.HasPrefix(text, "...") {
+				text = text[3:]
+			}
+			b.WriteString(text)
+			trailingDots = trailingDotsSuffix(text)
 		} else {
 			b.WriteString(s[i:j])
+			trailingDots = 0
 		}
 		i = j
 	}
 	return b.String()
+}
+
+func trailingDotsSuffix(s string) int {
+	n := 0
+	for i := len(s) - 1; i >= 0 && s[i] == '.' && n < 3; i-- {
+		n++
+	}
+	return n
 }
 
 // applyCommentPreservation: for each delete-style op, find comment nodes

@@ -173,6 +173,8 @@ disabled_rules: ["go_iferr", "todo_format"]         // skip these rules entirely
 severity: {go_panic_empty: "error"}                  // override per-rule severity
 skip: ["build", "dist"]                              // extra ./... walk skip-dirs
 max_file_size: 2_000_000                              // bytes; 0 disables; default 1 MiB
+parse_timeout_ms: 2000                                // per-file parse budget; 0 unlimited
+memory_budget: 512_000_000                            // cumulative parsed source bytes; 0 unlimited
 ```
 
 `disabled_rules` and `severity` are applied to the analyzers at load

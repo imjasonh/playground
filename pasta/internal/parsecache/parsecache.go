@@ -45,7 +45,9 @@ import (
 // schemaVersion segregates entries written by different pasta
 // versions. Bump when the on-disk Entry struct changes shape or when
 // engine semantics shift in a way that invalidates prior runs.
-const schemaVersion = "v1"
+// v2: engine skips ERROR-heavy trees and no longer caches them; prior
+// v1 entries may still hold diagnostics/ops for those files.
+const schemaVersion = "v2"
 
 // Entry is the cached output for one (rule-set, file) pair.
 type Entry struct {

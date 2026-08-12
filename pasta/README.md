@@ -92,7 +92,7 @@ go run ./cmd/pasta test analyzers/js_double_equals
 | [js_array_concat_spread](./analyzers/js_array_concat_spread/js_array_concat_spread.cue)     | Flag `[].concat(x)` (prefer `[...x]` when iterable; no autofix — not always equivalent) |
 | [js_template_no_subst](./analyzers/js_template_no_subst/js_template_no_subst.cue) ✏️         | `` `abc` `` → `'abc'` when no interpolation |
 | [js_double_equals](./analyzers/js_double_equals/js_double_equals.cue) ✏️                     | `==` / `!=` → `===` / `!==` (skips `null` / `undefined` idioms) |
-| [js_var_to_let](./analyzers/js_var_to_let/js_var_to_let.cue) ✏️                              | `var x` → `let x` (block-scoped; autofix can change hoisting — use carefully) |
+| [js_var_to_let](./analyzers/js_var_to_let/js_var_to_let.cue)                                 | Flag `var` (prefer `let`); report-only — naive rewrite breaks redeclarations / hoisting |
 | [js_empty_promise](./analyzers/js_empty_promise/js_empty_promise.cue)                        | Flag `new Promise(() => {})` with empty executor |
 | [js_taint](./analyzers/js_taint/js_taint.cue)                                                | Track taint from `req.query` / `req.body` / `req.params` to `eval` / `Function` (fact passing + fixpoint) |
 
@@ -195,16 +195,42 @@ Cold runs over large trees are tuned for sparse style rules:
 2. **Per-file parse budget** — default 2s (`-parse-timeout`, or
    `parse_timeout_ms` in `pasta.cue`). Timed-out files are reported as
    `skipped (too complex to analyze)` instead of owning the run.
-3. **Streamed reads** — the CLI passes paths into a worker pool; each
+3. **ERROR-heavy vs degraded** — densely broken trees skip as
+   `skipped (parse errors)`. Light `HasError` glitches (e.g. a trailing
+   brace) still analyze (`parse_degraded` in `-stats`) and are not
+   cached. Pass `-stats` for
+   `walked` / `prefilter_skipped` / `parsed` / `parse_errors` /
+   `parse_degraded` / `timed_out` / `memory_skipped` / `cache_hits`.
+4. **Memory budget** — optional cumulative parsed-source byte cap
+   (`-memory-budget`, or `memory_budget` in `pasta.cue`) across the
+   whole CLI run (including multipass `-fix`). Admission is in source
+   order so the skip set is deterministic. When exceeded, further files
+   skip like a timeout; with `-fail-on` set, skips fail the process.
+5. **Streamed reads** — the CLI passes paths into a worker pool; each
    worker reads its file on demand. Peak RSS stays O(workers × file)
    instead of O(all sources).
-4. **Arena pool drain** — gotreesitter arenas are drained every ~100
+6. **Arena pool drain** — gotreesitter arenas are drained every ~100
    files so the Go GC can reclaim them on big cold runs.
+
+## Autofix guardrails
+
+- **Innermost nested edits** — when one rewrite fully contains another
+  (e.g. layered `Array<…>` forms), pasta keeps the innermost edit.
+  Pair with `-fix -fix-until-clean` (or `-fix-passes N`) to peel
+  outer layers across passes — a single pass alone drops the outer edit.
+- **Per-file continue** — a partial overlapping-edit conflict skips
+  that file's write, sets exit status 1, and continues the rest of the
+  tree (no empty-looking `-fix` run).
+- **Spread interpolation** — `{...@cap}` / `[...@cap]` strips a leading
+  `...` from the capture when it is already a spread, so
+  `Object.assign({}, ...xs)` cannot become `{......xs}`.
+- **Scope-sensitive rules** — `js_var_to_let` is diagnose-only; a
+  structural `var`→`let` rewrite is unsafe without scope analysis.
 
 E2E smoke tests under [`e2e/`](./e2e/) shallow-clone real repos across
 Go, JavaScript, TypeScript, Python, Rust, YAML, Java, CSS, PHP, and HTML,
 scan them with a multi-language style-rule set, and exercise autofix
-(`applyFixes`) on the more complex trees.
+on the more complex trees.
 
 ## Use
 
@@ -218,6 +244,8 @@ pasta              # report (exit 0 even when findings are printed)
 pasta -fail-on=error   # CI-friendly: exit 1 on error-severity findings
 pasta -fail-on=warning # exit 1 on warning or error
 pasta -fix         # apply fixes (atomic rewrite; skips symlinks)
+pasta -fix -fix-until-clean   # multipass until no file changes (nested rewrites)
+pasta -stats                     # walk / prefilter / parse / skip counters
 
 # Same, but pointing at a different rule directory.
 pasta -rules path/to/rule-dir

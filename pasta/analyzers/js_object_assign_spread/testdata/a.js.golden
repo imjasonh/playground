@@ -5,3 +5,9 @@ const b = Object.assign(target, src); // OK: target is not empty {}
 const c = Object.assign({}, src1, src2); // OK: 3 args, not handled
 
 const d = {...src}; // OK: already spread
+
+// Must NOT rewrite: rest/spread source would become `{......xs}`.
+const e = Object.assign({}, ...xs);
+
+// Still rewritable: non-identifier sources (denylist, not allowlist).
+const f = {...() => ({})}; // want `Object.assign({}, x) can be written as {...x}`

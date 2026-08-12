@@ -116,6 +116,36 @@ func (n Node) Parent() Node {
 // HasError reports whether the subtree contains a parse error.
 func (n Node) HasError() bool { return n.N.HasError() }
 
+// IsError reports whether this node is an ERROR node.
+func (n Node) IsError() bool { return n.N != nil && n.N.IsError() }
+
+// IsMissing reports whether this node was inserted as a missing token
+// during error recovery.
+func (n Node) IsMissing() bool { return n.N != nil && n.N.IsMissing() }
+
+// ErrorHeavy reports whether the tree is too broken to analyze
+// reliably. Tree-sitter often sets HasError (and even marks the root
+// ERROR) for a trailing glitch; those stay analyzable. Heavy means
+// ERROR/missing named nodes dominate (>50% of named nodes) or are
+// numerous (≥8).
+func ErrorHeavy(root Node) bool {
+	if !root.IsValid() || !root.HasError() {
+		return false
+	}
+	var named, bad int
+	Walk(root, func(n Node) bool {
+		named++
+		if n.IsError() || n.IsMissing() {
+			bad++
+		}
+		return true
+	})
+	if bad == 0 {
+		return false
+	}
+	return bad*2 > named || bad >= 8
+}
+
 // String returns the s-expression representation of the subtree (for tests).
 func (n Node) String() string { return n.N.SExpr(n.Lang) }
 
