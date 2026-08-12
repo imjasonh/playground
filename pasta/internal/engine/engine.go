@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -38,12 +39,54 @@ type Result struct {
 	// concurrent edits can't corrupt the file.
 	Src []byte
 	// SkipReason is non-empty when the file was not analyzed. Common
-	// values: prefilter miss (empty string — silent), or a human
-	// message for parse-budget bailouts ("too complex to analyze").
-	// Prefilter skips leave SkipReason empty and simply produce no
-	// diagnostics; parse-timeout skips set SkipReason so the CLI can
-	// report them.
+	// values:
+	//   - "too complex to analyze" — parse timeout
+	//   - "parse errors" — tree-sitter produced an ERROR-heavy tree
+	//   - "memory budget exceeded" — run-level memory_budget cap
+	// Prefilter misses leave SkipReason empty and simply produce no
+	// diagnostics (see Stats.PrefilterSkipped); timeout / ERROR /
+	// memory skips set SkipReason so the CLI can report them.
 	SkipReason string
+}
+
+// Stats counts per-file outcomes for a RunGroup. Optional — attach via
+// WithStats. All fields are safe for concurrent updates from the
+// streaming worker pool.
+type Stats struct {
+	Walked           atomic.Int64 // files considered (had applicable rules)
+	PrefilterSkipped atomic.Int64 // content-sniff rejected before parse
+	Parsed           atomic.Int64 // successfully parsed + analyzed
+	ParseErrors      atomic.Int64 // skipped: ERROR-heavy tree
+	TimedOut         atomic.Int64 // skipped: parse timeout
+	MemorySkipped    atomic.Int64 // skipped: memory_budget
+	CacheHits        atomic.Int64 // served from parse cache
+}
+
+// Snapshot is a plain copy of Stats counters for printing.
+type Snapshot struct {
+	Walked           int64
+	PrefilterSkipped int64
+	Parsed           int64
+	ParseErrors      int64
+	TimedOut         int64
+	MemorySkipped    int64
+	CacheHits        int64
+}
+
+// Snapshot returns a consistent-enough copy of the counters.
+func (s *Stats) Snapshot() Snapshot {
+	if s == nil {
+		return Snapshot{}
+	}
+	return Snapshot{
+		Walked:           s.Walked.Load(),
+		PrefilterSkipped: s.PrefilterSkipped.Load(),
+		Parsed:           s.Parsed.Load(),
+		ParseErrors:      s.ParseErrors.Load(),
+		TimedOut:         s.TimedOut.Load(),
+		MemorySkipped:    s.MemorySkipped.Load(),
+		CacheHits:        s.CacheHits.Load(),
+	}
 }
 
 // FileInput describes one source file to run analyzers over as part of
@@ -122,6 +165,11 @@ type runOpts struct {
 	cache        *parsecache.Cache
 	parseTimeout time.Duration
 	timeoutSet   bool
+	memoryBudget int64 // bytes of source parsed; 0 = unlimited
+	stats        *Stats
+	// parsedBytes tracks cumulative source bytes admitted to parse.
+	// Must be heap-allocated — runOpts is copied into workers.
+	parsedBytes *atomic.Int64
 }
 
 // WithCache enables the persistent parse-result cache for this run.
@@ -141,6 +189,21 @@ func WithParseTimeout(d time.Duration) Option {
 		o.parseTimeout = d
 		o.timeoutSet = true
 	}
+}
+
+// WithMemoryBudget caps the cumulative source bytes that may be
+// parsed in one RunGroup. When the next file would exceed the budget
+// it is skipped with SkipReason "memory budget exceeded" — the run
+// continues (same shape as a parse-timeout skip). Pass 0 or omit to
+// disable. Prefilter-skipped and cache-hit files do not count.
+func WithMemoryBudget(bytes int64) Option {
+	return func(o *runOpts) { o.memoryBudget = bytes }
+}
+
+// WithStats records walk / prefilter / parse / skip counters into s.
+// A nil s is ignored.
+func WithStats(s *Stats) Option {
+	return func(o *runOpts) { o.stats = s }
 }
 
 // RunGroup parses every file in files, sharing a single fact store
@@ -188,11 +251,12 @@ func RunGroup(
 	if !o.timeoutSet {
 		o.parseTimeout = DefaultParseTimeout
 	}
+	o.parsedBytes = &atomic.Int64{}
 
 	if canStream(groups) {
-		return runStreaming(ctx, files, groups, o)
+		return runStreaming(ctx, files, groups, &o)
 	}
-	return runInMemory(ctx, files, groups, o.parseTimeout)
+	return runInMemory(ctx, files, groups, &o)
 }
 
 // canStream reports whether the schedule is compatible with the
@@ -231,7 +295,7 @@ func runStreaming(
 	ctx context.Context,
 	files []FileInput,
 	groups []ruleGroup,
-	o runOpts,
+	o *runOpts,
 ) ([]Result, error) {
 	store := factstore.New()
 	results := make([]Result, len(files))
@@ -284,7 +348,7 @@ func processFile(
 	groups []ruleGroup,
 	store *factstore.Store,
 	out *Result,
-	o runOpts,
+	o *runOpts,
 ) error {
 	src, err := loadSource(f)
 	if err != nil {
@@ -297,8 +361,14 @@ func processFile(
 	if len(applicable) == 0 {
 		return nil
 	}
+	if o.stats != nil {
+		o.stats.Walked.Add(1)
+	}
 	filters := prefilter.ForRules(applicable)
 	if !prefilter.MayMatch(src, filters) {
+		if o.stats != nil {
+			o.stats.PrefilterSkipped.Add(1)
+		}
 		return nil
 	}
 
@@ -308,22 +378,45 @@ func processFile(
 		if e, ok := o.cache.Get(key); ok {
 			out.Diagnostics = append(out.Diagnostics, e.Diagnostics...)
 			out.Ops = append(out.Ops, e.Ops...)
+			if o.stats != nil {
+				o.stats.CacheHits.Add(1)
+			}
 			return nil
 		}
+	}
+	if !admitParse(o, int64(len(src))) {
+		out.SkipReason = "memory budget exceeded"
+		if o.stats != nil {
+			o.stats.MemorySkipped.Add(1)
+		}
+		return nil
 	}
 	s, err := newFileState(ctx, f, store, o.parseTimeout)
 	if err != nil {
 		if errors.Is(err, tsutil.ErrParseTimeout) {
 			out.SkipReason = "too complex to analyze"
+			if o.stats != nil {
+				o.stats.TimedOut.Add(1)
+			}
 			return nil
 		}
 		return err
 	}
 	defer s.tree.Release()
+	if s.root.HasError() {
+		out.SkipReason = "parse errors"
+		if o.stats != nil {
+			o.stats.ParseErrors.Add(1)
+		}
+		return nil
+	}
 	for _, group := range groups {
 		if err := runGroupOnFile(group, s, store, out); err != nil {
 			return err
 		}
+	}
+	if o.stats != nil {
+		o.stats.Parsed.Add(1)
 	}
 	if o.cache != nil {
 		// Copy slices so a future append on `out` doesn't mutate
@@ -337,6 +430,24 @@ func processFile(
 	return nil
 }
 
+// admitParse reserves n bytes against the run's memory budget.
+// Returns false when the budget would be exceeded (and does not
+// reserve). Unlimited when memoryBudget <= 0.
+func admitParse(o *runOpts, n int64) bool {
+	if o == nil || o.memoryBudget <= 0 || o.parsedBytes == nil {
+		return true
+	}
+	for {
+		cur := o.parsedBytes.Load()
+		if cur+n > o.memoryBudget {
+			return false
+		}
+		if o.parsedBytes.CompareAndSwap(cur, cur+n) {
+			return true
+		}
+	}
+}
+
 // runInMemory is the legacy path used when the schedule has cross-file
 // or fixpoint dependencies. Every file's tree is held in memory while
 // the engine walks the rule groups in topo order, so a consumer group
@@ -345,12 +456,16 @@ func runInMemory(
 	ctx context.Context,
 	files []FileInput,
 	groups []ruleGroup,
-	parseTimeout time.Duration,
+	o *runOpts,
 ) ([]Result, error) {
 	store := factstore.New()
 	states := make([]fileState, 0, len(files))
 	stateIdx := make([]int, 0, len(files))
 	results := make([]Result, len(files))
+	parseTimeout := time.Duration(0)
+	if o != nil {
+		parseTimeout = o.parseTimeout
+	}
 
 	// Register the release defer up front so a parse failure mid-loop
 	// still cleans up the trees we already parsed — `states` is the
@@ -371,19 +486,49 @@ func runInMemory(
 		f.Src = src
 		results[i].Src = src
 		applicable := applicableRules(groups, f.Lang, filepath.Base(fileName(f)))
-		if len(applicable) == 0 || !prefilter.MayMatch(src, prefilter.ForRules(applicable)) {
+		if len(applicable) == 0 {
+			continue
+		}
+		if o != nil && o.stats != nil {
+			o.stats.Walked.Add(1)
+		}
+		if !prefilter.MayMatch(src, prefilter.ForRules(applicable)) {
+			if o != nil && o.stats != nil {
+				o.stats.PrefilterSkipped.Add(1)
+			}
+			continue
+		}
+		if !admitParse(o, int64(len(src))) {
+			results[i].SkipReason = "memory budget exceeded"
+			if o != nil && o.stats != nil {
+				o.stats.MemorySkipped.Add(1)
+			}
 			continue
 		}
 		s, err := newFileState(ctx, f, store, parseTimeout)
 		if err != nil {
 			if errors.Is(err, tsutil.ErrParseTimeout) {
 				results[i].SkipReason = "too complex to analyze"
+				if o != nil && o.stats != nil {
+					o.stats.TimedOut.Add(1)
+				}
 				continue
 			}
 			return nil, err
 		}
+		if s.root.HasError() {
+			results[i].SkipReason = "parse errors"
+			if o != nil && o.stats != nil {
+				o.stats.ParseErrors.Add(1)
+			}
+			s.tree.Release()
+			continue
+		}
 		states = append(states, s)
 		stateIdx = append(stateIdx, i)
+		if o != nil && o.stats != nil {
+			o.stats.Parsed.Add(1)
+		}
 	}
 
 	for _, group := range groups {

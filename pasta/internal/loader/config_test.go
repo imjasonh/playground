@@ -188,6 +188,43 @@ func TestLoadConfig_parseTimeoutMSNegative(t *testing.T) {
 	}
 }
 
+func TestLoadConfig_memoryBudget(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		want *int64
+	}{
+		{name: "absent", src: `disabled_rules: ["x"]`, want: nil},
+		{name: "positive", src: `memory_budget: 512_000_000`, want: int64Ptr(512_000_000)},
+		{name: "explicit zero", src: `memory_budget: 0`, want: int64Ptr(0)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, remote.ManifestFile), []byte(tc.src), 0o644); err != nil {
+				t.Fatalf("write: %v", err)
+			}
+			cfg, _, err := LoadConfig(dir)
+			if err != nil {
+				t.Fatalf("LoadConfig: %v", err)
+			}
+			if !reflect.DeepEqual(cfg.MemoryBudget, tc.want) {
+				t.Errorf("MemoryBudget: got %v, want %v", cfg.MemoryBudget, tc.want)
+			}
+		})
+	}
+}
+
+func TestLoadConfig_memoryBudgetNegative(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, remote.ManifestFile), []byte(`memory_budget: -1`), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if _, _, err := LoadConfig(dir); err == nil {
+		t.Fatal("expected error for negative memory_budget")
+	}
+}
+
 func int64Ptr(n int64) *int64 { return &n }
 
 func TestLoadConfig_invalidSeverity(t *testing.T) {

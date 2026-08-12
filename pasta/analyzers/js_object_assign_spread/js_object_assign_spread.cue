@@ -58,6 +58,32 @@ js_object_assign_spread: schema.#Analyzer & {
 				{op: "named_child_count", args: ["@args", "2"]},
 				// Target must be `{}` empty object literal.
 				{op: "empty", args: ["@target"]},
+				// Refuse rest/spread args — `{...@src}` when @src is
+				// already a spread_element would become `{......xs}`
+				// without the interpolate guard; skip the match too.
+				{op: "node_is", args: ["@src", [
+					"identifier",
+					"member_expression",
+					"subscript_expression",
+					"call_expression",
+					"await_expression",
+					"parenthesized_expression",
+					"object",
+					"array",
+					"template_string",
+					"string",
+					"number",
+					"true",
+					"false",
+					"null",
+					"undefined",
+					"new_expression",
+					"ternary_expression",
+					"binary_expression",
+					"unary_expression",
+					"update_expression",
+					"this",
+				]]},
 			]
 		}
 

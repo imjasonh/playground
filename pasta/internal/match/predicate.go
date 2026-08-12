@@ -119,6 +119,8 @@ func DefaultRegistry() PredicateRegistry {
 			"has_fact":             predHasFact,
 			"not_has_fact":         predNotHasFact,
 			"ancestor_is":          predAncestorIs,
+			"node_is":              predNodeIs,
+			"subtree_lacks":        predSubtreeLacks,
 			"stmt_index_delta":     predStmtIndexDelta,
 		},
 		Checks: map[string]CheckFunc{
@@ -302,6 +304,66 @@ func lastNonBlankIdentText(list tsutil.Node) string {
 		}
 	}
 	return ""
+}
+
+// predNodeIs: [@cap, types]. types is a string or list of node-type
+// names. True when @cap's Type() is one of the alternatives.
+func predNodeIs(args []dsl.Arg, env *Env, caps Captures) bool {
+	if len(args) != 2 {
+		return false
+	}
+	n, ok := resolveCapture(posStr(args, 0), caps)
+	if !ok || !n.IsValid() {
+		return false
+	}
+	types := posList(args, 1)
+	if len(types) == 0 {
+		return false
+	}
+	got := n.Type()
+	for _, want := range types {
+		if got == want {
+			return true
+		}
+	}
+	return false
+}
+
+// predSubtreeLacks: [@cap, types]. True when no descendant of @cap
+// (excluding @cap itself) has a Type() in types. Useful as a leaf-only
+// filter — e.g. match Array only when @inner contains no nested Array
+// generic_type — without hand-rolled not_matches hacks.
+func predSubtreeLacks(args []dsl.Arg, env *Env, caps Captures) bool {
+	if len(args) != 2 {
+		return false
+	}
+	n, ok := resolveCapture(posStr(args, 0), caps)
+	if !ok || !n.IsValid() {
+		return false
+	}
+	types := posList(args, 1)
+	if len(types) == 0 {
+		return false
+	}
+	want := map[string]bool{}
+	for _, t := range types {
+		want[t] = true
+	}
+	found := false
+	// Walk descendants only — the capture itself is not a "nested" hit.
+	for _, c := range n.NamedChildren() {
+		tsutil.Walk(c, func(child tsutil.Node) bool {
+			if want[child.Type()] {
+				found = true
+				return false
+			}
+			return !found
+		})
+		if found {
+			break
+		}
+	}
+	return !found
 }
 
 // predAncestorIs: [@cap, types]. types is either a list of strings

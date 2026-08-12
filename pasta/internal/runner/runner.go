@@ -40,6 +40,10 @@ type FileResult struct {
 	// silent content-sniff pre-filter skips, which produce no
 	// diagnostics and no skip reason.
 	SkipReason string
+	// ApplyError is set when applyFixes was requested but applying
+	// this file's ops failed (typically a partial overlapping-edit
+	// conflict). Other files in the group still receive Fixed output.
+	ApplyError error
 }
 
 // LoadRules loads every *.cue file in dir, returning all analyzers
@@ -118,9 +122,12 @@ type FileSpec struct {
 type Option func(*runOpts)
 
 type runOpts struct {
-	cache        *parsecache.Cache
-	parseTimeout time.Duration
-	timeoutSet   bool
+	cache         *parsecache.Cache
+	parseTimeout  time.Duration
+	timeoutSet    bool
+	memoryBudget  int64
+	memoryBudgetSet bool
+	stats         *engine.Stats
 }
 
 // WithCache plumbs a persistent parse-result cache through to the
@@ -137,6 +144,21 @@ func WithParseTimeout(d time.Duration) Option {
 		o.parseTimeout = d
 		o.timeoutSet = true
 	}
+}
+
+// WithMemoryBudget plumbs a cumulative parse-byte budget through to
+// the engine. Exceeding it skips further files instead of failing the
+// run. Pass 0 to disable.
+func WithMemoryBudget(bytes int64) Option {
+	return func(o *runOpts) {
+		o.memoryBudget = bytes
+		o.memoryBudgetSet = true
+	}
+}
+
+// WithStats records engine walk/prefilter/parse/skip counters.
+func WithStats(s *engine.Stats) Option {
+	return func(o *runOpts) { o.stats = s }
 }
 
 // RunGroup runs every analyzer over all files in spec as one analysis
@@ -176,6 +198,12 @@ func RunGroup(ctx context.Context, specs []FileSpec, analyzers []*dsl.Analyzer, 
 	if o.timeoutSet {
 		engineOpts = append(engineOpts, engine.WithParseTimeout(o.parseTimeout))
 	}
+	if o.memoryBudgetSet {
+		engineOpts = append(engineOpts, engine.WithMemoryBudget(o.memoryBudget))
+	}
+	if o.stats != nil {
+		engineOpts = append(engineOpts, engine.WithStats(o.stats))
+	}
 	results, err := engine.RunGroup(ctx, inputs, analyzers, engineOpts...)
 	if err != nil {
 		return nil, err
@@ -202,7 +230,11 @@ func RunGroup(ctx context.Context, specs []FileSpec, analyzers []*dsl.Analyzer, 
 			}
 			fixed, err := apply.Apply(src, results[i].Ops, dsl.RewriteOpts{})
 			if err != nil {
-				return nil, fmt.Errorf("apply %s: %w", s.Path, err)
+				// Per-file continue: one overlapping-edit conflict must
+				// not abort the whole group (CLI -fix default). Stash
+				// the error on ApplyError and leave Fixed nil.
+				out[i].ApplyError = err
+				continue
 			}
 			out[i].Fixed = fixed
 		}
@@ -363,6 +395,10 @@ func runTestGroup(ctx context.Context, paths []string, analyzers []*dsl.Analyzer
 		src := specs[i].Src
 		if res.SkipReason != "" {
 			report.Failures = append(report.Failures, fmt.Sprintf("%s: skipped (%s)", p, res.SkipReason))
+			continue
+		}
+		if res.ApplyError != nil {
+			report.Failures = append(report.Failures, fmt.Sprintf("%s: apply: %v", p, res.ApplyError))
 			continue
 		}
 		if msg := checkDiagnostics(src, res.Diagnostics); msg != "" {

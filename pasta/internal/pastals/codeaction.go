@@ -101,11 +101,12 @@ func (s *Server) buildFixAllAction(ctx context.Context, snap docSnapshot) *proto
 	}
 }
 
-// dropOverlapping mirrors internal/apply.Apply's conflict policy at a
-// coarse level: sort by start, drop any later op whose range overlaps
-// an already-accepted op's range. For LSP this is gentler than
-// apply's hard-error behavior because losing a fix is better than the
-// editor rejecting the entire WorkspaceEdit.
+// dropOverlapping mirrors internal/apply.ResolveNested's conflict
+// policy at a coarse level: nested whole-node rewrites keep the
+// innermost edit; remaining partial overlaps drop the later op. For
+// LSP this is gentler than apply's hard-error on partial overlaps
+// because losing a fix is better than the editor rejecting the entire
+// WorkspaceEdit.
 func dropOverlapping(ops []protocol.EncodedOp) []protocol.EncodedOp {
 	sorted := make([]protocol.EncodedOp, len(ops))
 	copy(sorted, ops)
@@ -115,12 +116,41 @@ func dropOverlapping(ops []protocol.EncodedOp) []protocol.EncodedOp {
 		}
 		return sorted[i].End < sorted[j].End
 	})
+
+	drop := make([]bool, len(sorted))
+	for i := range sorted {
+		if drop[i] {
+			continue
+		}
+		a := sorted[i]
+		for j := i + 1; j < len(sorted); j++ {
+			if drop[j] {
+				continue
+			}
+			b := sorted[j]
+			if b.Start >= a.End {
+				break
+			}
+			switch {
+			case encodedContains(a, b):
+				drop[i] = true
+			case encodedContains(b, a):
+				drop[j] = true
+			case a.Start == b.Start && a.End == b.End:
+				drop[j] = true
+			}
+		}
+	}
+
 	out := make([]protocol.EncodedOp, 0, len(sorted))
 	var lastEnd uint32
 	first := true
-	for _, op := range sorted {
-		if !first && op.Start < lastEnd {
+	for i, op := range sorted {
+		if drop[i] {
 			continue
+		}
+		if !first && op.Start < lastEnd {
+			continue // partial overlap: drop later
 		}
 		out = append(out, op)
 		if op.End > lastEnd {
@@ -129,6 +159,10 @@ func dropOverlapping(ops []protocol.EncodedOp) []protocol.EncodedOp {
 		first = false
 	}
 	return out
+}
+
+func encodedContains(a, b protocol.EncodedOp) bool {
+	return a.Start <= b.Start && b.End <= a.End && (a.Start < b.Start || b.End < a.End)
 }
 
 // opsToTextEdits converts pasta byte-range ops to LSP TextEdits using

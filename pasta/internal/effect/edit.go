@@ -237,6 +237,12 @@ func buildPrimaryOp(rule string, e dsl.Edit, ctx BuildContext, captureText map[s
 }
 
 // interpolateWithCaptures replaces @name in s with effective capture text.
+//
+// Spread hygiene: when the template already has `...` immediately before
+// `@cap` (as in `{...@src}` / `[...@src]`) and the capture text itself
+// begins with `...` (typical for a `spread_element` node), the leading
+// dots on the capture are stripped so the rewrite does not emit
+// `{......xs}`.
 func interpolateWithCaptures(s string, caps match.Captures, captureText map[string]string) string {
 	if !strings.Contains(s, "@") {
 		return s
@@ -255,10 +261,18 @@ func interpolateWithCaptures(s string, caps match.Captures, captureText map[stri
 			j++
 		}
 		name := s[i+1 : j]
-		if t, ok := captureText[name]; ok {
-			b.WriteString(t)
-		} else if n, ok := caps[name]; ok {
-			b.WriteString(n.Text())
+		text, ok := captureText[name]
+		if !ok {
+			if n, cok := caps[name]; cok {
+				text = n.Text()
+				ok = true
+			}
+		}
+		if ok {
+			if strings.HasSuffix(b.String(), "...") && strings.HasPrefix(text, "...") {
+				text = strings.TrimPrefix(text, "...")
+			}
+			b.WriteString(text)
 		} else {
 			b.WriteString(s[i:j])
 		}
