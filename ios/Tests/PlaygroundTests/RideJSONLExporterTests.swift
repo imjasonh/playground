@@ -65,6 +65,70 @@ final class RideJSONLExporterTests: XCTestCase {
         XCTAssertEqual(rideHeaders.count, 2)
     }
 
+    func testFilenamesIncludeIdSuffixAndStayUniqueForSameSecondStarts() throws {
+        let rideA = makeRide()
+        let rideB = Ride(
+            id: UUID(uuidString: "B2C3D4E5-F6A7-8901-BCDE-F12345678901")!,
+            startedAt: rideA.startedAt,
+            endedAt: rideA.endedAt,
+            durationSeconds: rideA.durationSeconds,
+            distanceMeters: rideA.distanceMeters,
+            peakG: rideA.peakG,
+            joltCount: rideA.joltCount,
+            crashCount: rideA.crashCount,
+            events: rideA.events,
+            track: rideA.track,
+            motion: rideA.motion,
+            barometer: rideA.barometer
+        )
+        let names = RideJSONLExporter.filenames(for: [rideA, rideB])
+        let nameA = try XCTUnwrap(names[rideA.id])
+        let nameB = try XCTUnwrap(names[rideB.id])
+        XCTAssertNotEqual(nameA, nameB)
+        XCTAssertTrue(nameA.contains("a1b2c3d4"))
+        XCTAssertTrue(nameB.contains("b2c3d4e5"))
+        XCTAssertTrue(nameA.hasSuffix(".jsonl"))
+        XCTAssertTrue(nameB.hasSuffix(".jsonl"))
+    }
+
+    func testWriteIndividualFilesCreatesOneJSONLPerRide() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("RideJSONLExporterTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let rideA = makeRide()
+        let rideB = Ride(
+            id: UUID(uuidString: "C3D4E5F6-A7B8-9012-CDEF-123456789012")!,
+            startedAt: rideA.startedAt.addingTimeInterval(3600),
+            endedAt: rideA.endedAt.addingTimeInterval(3600),
+            durationSeconds: rideA.durationSeconds,
+            distanceMeters: rideA.distanceMeters,
+            peakG: rideA.peakG,
+            joltCount: rideA.joltCount,
+            crashCount: rideA.crashCount,
+            events: [],
+            track: [],
+            motion: [],
+            barometer: []
+        )
+
+        let urls = try RideJSONLExporter.writeIndividualFiles(for: [rideA, rideB], to: directory)
+        XCTAssertEqual(urls.count, 2)
+        XCTAssertEqual(Set(urls.map(\.lastPathComponent)).count, 2)
+        for url in urls {
+            let text = try String(contentsOf: url, encoding: .utf8)
+            XCTAssertTrue(text.contains("\"type\":\"ride\""))
+            XCTAssertEqual(text.last, "\n")
+        }
+    }
+
+    func testFileDocumentStoresBytes() throws {
+        let data = try RideJSONLExporter.data(for: makeRide())
+        let document = RideJSONLFileDocument(data: data)
+        XCTAssertEqual(document.data, data)
+        XCTAssertEqual(RideJSONLFileDocument.writableContentTypes, [RideJSONLExporter.contentType])
+    }
+
     func testLinesIncludeRecordingDiagnosticsWhenPresent() throws {
         var ride = makeRide()
         ride.recordingDiagnostics = RideRecordingDiagnostics(
