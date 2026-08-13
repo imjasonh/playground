@@ -104,6 +104,15 @@ mod tests {
         );
         assert_eq!(parse("GET", "/img/"), None);
         assert_eq!(parse("GET", "/post/abc"), None);
+        assert_eq!(parse("GET", "/subscribe"), Some(Route::Subscribe));
+        assert_eq!(parse("POST", "/subscribe"), Some(Route::Subscribe));
+        assert_eq!(parse("GET", "/subscribe/"), Some(Route::Subscribe));
+        assert_eq!(
+            parse("GET", "/img/assets/paperclip.png"),
+            Some(Route::Image {
+                key: "assets/paperclip.png".into()
+            })
+        );
     }
 
     #[test]
@@ -127,5 +136,28 @@ mod tests {
             Some(Route::AdminPasskeyDelete { id: 3 })
         );
         assert_eq!(parse("GET", "/admin/posts/7/delete"), None);
+        assert_eq!(parse("GET", "/admin/login"), Some(Route::AdminLogin));
+        assert_eq!(parse("POST", "/admin/login"), Some(Route::AdminLogin));
+        assert_eq!(parse("POST", "/admin/logout"), Some(Route::AdminLogout));
+        assert_eq!(parse("GET", "/admin/passkeys"), Some(Route::AdminPasskeys));
+        assert_eq!(
+            parse("POST", "/admin/passkeys/register/options"),
+            Some(Route::AdminPasskeyRegisterOptions)
+        );
+        assert_eq!(
+            parse("POST", "/admin/passkeys/register/verify"),
+            Some(Route::AdminPasskeyRegisterVerify)
+        );
+        assert_eq!(
+            parse("POST", "/admin/login/passkey/options"),
+            Some(Route::LoginPasskeyOptions)
+        );
+        assert_eq!(
+            parse("POST", "/admin/login/passkey/verify"),
+            Some(Route::LoginPasskeyVerify)
+        );
+        assert_eq!(parse("GET", "/admin/"), Some(Route::Admin));
+        assert_eq!(parse("POST", "/admin"), None);
+        assert_eq!(parse("GET", "/nope"), None);
     }
 }

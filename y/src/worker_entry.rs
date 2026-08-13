@@ -9,13 +9,14 @@ use worker::wasm_bindgen::JsValue;
 use worker::{event, Bucket, Context, Env, FormEntry, Headers, Method, Request, Response, Result};
 
 use crate::auth::{
-    make_challenge_cookie, make_session_cookie, verify_challenge_cookie, verify_password,
-    verify_session_cookie, CHALLENGE_COOKIE, CHALLENGE_TTL, SESSION_COOKIE, SESSION_MAX_AGE,
+    challenge_cookie_header, clear_cookie_header, make_challenge_cookie, make_session_cookie,
+    session_cookie_header, verify_challenge_cookie, verify_password, verify_session_cookie,
+    CHALLENGE_COOKIE, SESSION_COOKIE,
 };
 use crate::html::{
-    admin_compose, edit_page, image_ext_for, index_view, is_allowed_image_type, is_valid_email,
-    login_page, passkeys_page, post_view, rss_feed, subscribe_form, subscribe_thanks, utf16_len,
-    Post, PostImage, PAPERCLIP_KEY, POST_MAX_CHARS,
+    admin_compose, edit_page, grouped_has_images, image_ext_for, index_view, is_allowed_image_type,
+    is_valid_email, login_page, passkeys_page, post_view, rss_feed, subscribe_form,
+    subscribe_thanks, validate_post_body, Post, PostImage, PAPERCLIP_KEY,
 };
 use crate::route::{self, Route};
 use crate::webauthn::{
@@ -60,7 +61,17 @@ impl Site {
 }
 
 #[event(fetch)]
-async fn fetch(mut req: Request, env: Env, _ctx: Context) -> Result<Response> {
+async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
+    match handle_fetch(req, env, ctx).await {
+        Ok(resp) => Ok(resp),
+        Err(e) => {
+            worker::console_error!("{}", e);
+            text(500, "internal error")
+        }
+    }
+}
+
+async fn handle_fetch(mut req: Request, env: Env, _ctx: Context) -> Result<Response> {
     let method = req.method();
     let url = req.url()?;
     let path = url.path().to_string();
@@ -76,7 +87,7 @@ async fn fetch(mut req: Request, env: Env, _ctx: Context) -> Result<Response> {
     match route {
         Route::Home => handle_home(&req, &db, &site, now).await,
         Route::Post { id } => handle_post(&req, &db, &site, now, id).await,
-        Route::Feed => handle_feed(&db, &site).await,
+        Route::Feed => handle_feed(&db, &site, now).await,
         Route::Image { key } => handle_image(&images, &key).await,
         Route::Subscribe if method == Method::Get => {
             Ok(html(200, subscribe_form(&site.title, &site.url))?)
@@ -219,23 +230,13 @@ fn set_cookie(headers: &Headers, cookie: &str) -> Result<()> {
     headers.append("Set-Cookie", cookie)
 }
 
-fn session_cookie_header(value: &str) -> String {
-    format!(
-        "{SESSION_COOKIE}={value}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age={SESSION_MAX_AGE}"
-    )
-}
-
-fn challenge_cookie_header(value: &str) -> String {
-    format!(
-        "{CHALLENGE_COOKIE}={value}; Path=/admin; HttpOnly; Secure; SameSite=Strict; Max-Age={CHALLENGE_TTL}"
-    )
-}
-
 fn clear_cookie(headers: &Headers, name: &str, path: &str) -> Result<()> {
-    headers.append(
-        "Set-Cookie",
-        &format!("{name}=; Path={path}; HttpOnly; Secure; SameSite=Strict; Max-Age=0"),
-    )
+    headers.append("Set-Cookie", &clear_cookie_header(name, path))
+}
+
+fn with_cleared_challenge(resp: Response) -> Result<Response> {
+    clear_cookie(resp.headers(), CHALLENGE_COOKIE, "/admin")?;
+    Ok(resp)
 }
 
 async fn handle_home(req: &Request, db: &D1Database, site: &Site, now: u64) -> Result<Response> {
@@ -285,11 +286,11 @@ async fn handle_post(
     html(200, page)
 }
 
-async fn handle_feed(db: &D1Database, site: &Site) -> Result<Response> {
+async fn handle_feed(db: &D1Database, site: &Site, now: u64) -> Result<Response> {
     let posts = list_all_posts(db, 50).await?;
     let ids: Vec<i64> = posts.iter().map(|p| p.id).collect();
     let images = images_for_posts(db, &ids).await?;
-    let body = rss_feed(&site.title, &site.url, &posts, &images);
+    let body = rss_feed(&site.title, &site.url, &posts, &images, now as i64);
     let headers = Headers::new();
     headers.set("Content-Type", "application/rss+xml; charset=utf-8")?;
     headers.set("Cache-Control", "public, max-age=300")?;
@@ -299,26 +300,29 @@ async fn handle_feed(db: &D1Database, site: &Site) -> Result<Response> {
 }
 
 async fn handle_image(bucket: &Bucket, key: &str) -> Result<Response> {
+    if let Some(obj) = bucket.get(key).execute().await? {
+        let headers = Headers::new();
+        if let Some(ct) = obj.http_metadata().content_type {
+            headers.set("Content-Type", &ct)?;
+        }
+        headers.set("etag", &obj.http_etag())?;
+        headers.set("Cache-Control", "public, max-age=31536000, immutable")?;
+        let bytes = match obj.body() {
+            Some(b) => b.bytes().await?,
+            None => return text(404, "not found"),
+        };
+        return Ok(Response::from_bytes(bytes)?.with_headers(headers));
+    }
+    // CSS references /img/assets/paperclip.png; serve the committed asset if
+    // it was never uploaded to R2 (the TS Worker 404'd and broke the clip).
     if key == PAPERCLIP_KEY {
         let headers = Headers::new();
         headers.set("Content-Type", "image/png")?;
+        headers.set("etag", "\"paperclip\"")?;
         headers.set("Cache-Control", "public, max-age=31536000, immutable")?;
         return Ok(Response::from_bytes(PAPERCLIP_PNG.to_vec())?.with_headers(headers));
     }
-    let Some(obj) = bucket.get(key).execute().await? else {
-        return text(404, "not found");
-    };
-    let headers = Headers::new();
-    if let Some(ct) = obj.http_metadata().content_type {
-        headers.set("Content-Type", &ct)?;
-    }
-    headers.set("etag", &obj.http_etag())?;
-    headers.set("Cache-Control", "public, max-age=31536000, immutable")?;
-    let bytes = match obj.body() {
-        Some(b) => b.bytes().await?,
-        None => return text(404, "not found"),
-    };
-    Ok(Response::from_bytes(bytes)?.with_headers(headers))
+    text(404, "not found")
 }
 
 async fn handle_subscribe_post(
@@ -377,7 +381,7 @@ async fn handle_login_post(
 async fn handle_login_passkey_options(db: &D1Database, site: &Site, now: u64) -> Result<Response> {
     let rp = match site.rp() {
         Ok(r) => r,
-        Err(e) => return text(500, &e),
+        Err(e) => return Err(worker::Error::RustError(e)),
     };
     let creds = list_credentials(db).await?;
     let opts = authentication_options(&rp, &creds);
@@ -404,21 +408,22 @@ async fn handle_login_passkey_verify(
         now,
     );
     let Some(expected) = expected else {
-        let resp = text(400, "challenge expired")?;
-        clear_cookie(resp.headers(), CHALLENGE_COOKIE, "/admin")?;
-        return Ok(resp);
+        return with_cleared_challenge(text(400, "challenge expired")?);
     };
     let body = req.text().await.unwrap_or_default();
     let parsed: AuthenticationResponse = match serde_json::from_str(&body) {
         Ok(v) => v,
-        Err(_) => return text(400, "invalid json"),
+        Err(_) => return with_cleared_challenge(text(400, "invalid json")?),
     };
     let rp = match site.rp() {
         Ok(r) => r,
-        Err(e) => return text(500, &e),
+        Err(e) => {
+            worker::console_error!("{}", e);
+            return with_cleared_challenge(text(500, "internal error")?);
+        }
     };
     let Some(stored) = find_credential(db, &parsed.id).await? else {
-        return text(400, "unknown credential");
+        return with_cleared_challenge(text(400, "unknown credential")?);
     };
     match verify_authentication(&rp, &expected, &stored, &parsed) {
         Ok(info) => {
@@ -426,10 +431,9 @@ async fn handle_login_passkey_verify(
             let value = make_session_cookie(&site.session_secret, now);
             let resp = json(200, r#"{"ok":true}"#)?;
             set_cookie(resp.headers(), &session_cookie_header(&value))?;
-            clear_cookie(resp.headers(), CHALLENGE_COOKIE, "/admin")?;
-            Ok(resp)
+            with_cleared_challenge(resp)
         }
-        Err(e) => text(400, &e),
+        Err(e) => with_cleared_challenge(text(400, &e)?),
     }
 }
 
@@ -454,7 +458,7 @@ async fn handle_passkeys_get(req: &Request, db: &D1Database, site: &Site) -> Res
 async fn handle_register_options(db: &D1Database, site: &Site, now: u64) -> Result<Response> {
     let rp = match site.rp() {
         Ok(r) => r,
-        Err(e) => return text(500, &e),
+        Err(e) => return Err(worker::Error::RustError(e)),
     };
     let creds = list_credentials(db).await?;
     let opts = registration_options(&rp, &creds);
@@ -487,25 +491,23 @@ async fn handle_register_verify(
         now,
     );
     let Some(expected) = expected else {
-        return text(400, "challenge expired");
+        return with_cleared_challenge(text(400, "challenge expired")?);
     };
     let body = req.text().await.unwrap_or_default();
     let parsed: RegisterBody = match serde_json::from_str(&body) {
         Ok(v) => v,
-        Err(_) => return text(400, "invalid json"),
+        Err(_) => return with_cleared_challenge(text(400, "invalid json")?),
     };
     let rp = match site.rp() {
         Ok(r) => r,
-        Err(e) => return text(500, &e),
+        Err(e) => {
+            worker::console_error!("{}", e);
+            return with_cleared_challenge(text(500, "internal error")?);
+        }
     };
     match verify_registration(&rp, &expected, &parsed.response) {
         Ok(info) => {
-            let label = parsed
-                .label
-                .unwrap_or_else(|| "passkey".into())
-                .chars()
-                .take(80)
-                .collect::<String>();
+            let label = crate::html::passkey_label(parsed.label.as_deref());
             insert_credential(
                 db,
                 &info.credential_id,
@@ -516,11 +518,9 @@ async fn handle_register_verify(
                 now as i64,
             )
             .await?;
-            let resp = json(200, r#"{"ok":true}"#)?;
-            clear_cookie(resp.headers(), CHALLENGE_COOKIE, "/admin")?;
-            Ok(resp)
+            with_cleared_challenge(json(200, r#"{"ok":true}"#)?)
         }
-        Err(e) => text(400, &e),
+        Err(e) => with_cleared_challenge(text(400, &e)?),
     }
 }
 
@@ -536,9 +536,6 @@ async fn handle_create_post(
         .unwrap_or_default()
         .trim()
         .to_string();
-    if utf16_len(&body) > POST_MAX_CHARS {
-        return text(400, &format!("body exceeds {POST_MAX_CHARS} chars"));
-    }
     let mut files: Vec<(String, Vec<u8>)> = Vec::new();
     if let Some(entries) = form.get_all("image") {
         for entry in entries {
@@ -554,8 +551,8 @@ async fn handle_create_post(
             }
         }
     }
-    if body.is_empty() && files.is_empty() {
-        return text(400, "a post needs text or an image");
+    if let Err(msg) = validate_post_body(&body, !files.is_empty()) {
+        return text(400, &msg);
     }
     let parent_id = match form.get_field("parent_id") {
         Some(s) if !s.is_empty() => {
@@ -608,14 +605,9 @@ async fn handle_edit_post(req: &mut Request, db: &D1Database, id: i64) -> Result
         .unwrap_or_default()
         .trim()
         .to_string();
-    if utf16_len(&body) > POST_MAX_CHARS {
-        return text(400, &format!("body exceeds {POST_MAX_CHARS} chars"));
-    }
-    if body.is_empty() {
-        let imgs = images_for_posts(db, &[id]).await?;
-        if imgs.is_empty() {
-            return text(400, "a post needs text or an image");
-        }
+    let grouped = images_for_posts(db, &[id]).await?;
+    if let Err(msg) = validate_post_body(&body, grouped_has_images(&grouped, id)) {
+        return text(400, &msg);
     }
     update_post_body(db, id, &body).await?;
     redirect(&format!("/post/{id}"))
@@ -1032,7 +1024,7 @@ async fn insert_credential(
         None => D1Type::Null,
     };
     let label_t = D1Type::Text(label);
-    let created = D1Type::Integer(created_at as i32);
+    let created = D1Type::Real(created_at as f64);
     db.prepare(
         "INSERT INTO credentials (credential_id, public_key, counter, transports, label, created_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",

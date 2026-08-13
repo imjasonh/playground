@@ -47,14 +47,59 @@ pub fn escape_html(s: &str) -> String {
     out
 }
 
-pub fn truncate(s: &str, n: usize) -> String {
-    if s.chars().count() <= n {
+/// First `n` UTF-16 code units (JS `.slice(0, n)`), without splitting a
+/// Unicode scalar — so we never emit a lone surrogate the way JS can.
+pub fn clip_utf16(s: &str, n: usize) -> String {
+    if utf16_len(s) <= n {
         return s.to_string();
     }
-    let take = n.saturating_sub(1);
-    let mut out: String = s.chars().take(take).collect();
-    out.push('…');
-    out
+    let mut units = 0usize;
+    let mut end = 0usize;
+    for (i, ch) in s.char_indices() {
+        let u = ch.len_utf16();
+        if units + u > n {
+            break;
+        }
+        units += u;
+        end = i + ch.len_utf8();
+    }
+    s[..end].to_string()
+}
+
+/// JS `truncate`: if UTF-16 length > `n`, take `n - 1` units and append `…`.
+pub fn truncate(s: &str, n: usize) -> String {
+    if utf16_len(s) <= n {
+        return s.to_string();
+    }
+    format!("{}…", clip_utf16(s, n.saturating_sub(1)))
+}
+
+/// JS `s.slice(0, n) + (s.length > n ? "…" : "")` — used for the admin reply snippet.
+pub fn slice_ellipsis_utf16(s: &str, n: usize) -> String {
+    if utf16_len(s) <= n {
+        return s.to_string();
+    }
+    format!("{}…", clip_utf16(s, n))
+}
+
+/// True when `grouped` (as built by the Worker D1 helper) has at least one
+/// image row for `post_id`. The outer vec always has a slot per queried id,
+/// even when that slot's image list is empty — do not use `.is_empty()` on it.
+pub fn grouped_has_images(grouped: &[(i64, Vec<PostImage>)], post_id: i64) -> bool {
+    grouped
+        .iter()
+        .any(|(id, imgs)| *id == post_id && !imgs.is_empty())
+}
+
+/// Shared create/edit guard: UTF-16 length cap and "text or image" rule.
+pub fn validate_post_body(body: &str, has_images: bool) -> Result<(), String> {
+    if utf16_len(body) > POST_MAX_CHARS {
+        return Err(format!("body exceeds {POST_MAX_CHARS} chars"));
+    }
+    if body.is_empty() && !has_images {
+        return Err("a post needs text or an image".into());
+    }
+    Ok(())
 }
 
 /// UTF-16 code units — matches HTML `maxlength` / the original JS `.length`.
@@ -221,9 +266,58 @@ pub fn youtube_thumbnail_url(ref_: &YouTubeRef) -> String {
     format!("https://img.youtube.com/vi/{}/hqdefault.jpg", ref_.id)
 }
 
+/// Match TS `String(label ?? "passkey").slice(0, 80) || "passkey"`.
+pub fn passkey_label(raw: Option<&str>) -> String {
+    let clipped = clip_utf16(raw.unwrap_or("passkey"), 80);
+    if clipped.is_empty() {
+        "passkey".into()
+    } else {
+        clipped
+    }
+}
+
 const TRAILING_PUNCT: &[char] = &[
     '.', ',', ';', ':', '!', '?', ')', ']', '}', '>', '\'', '"', '`',
 ];
+
+/// TS `inner.replace(/^[ \t]*\r?\n/, "").replace(/\r?\n[ \t]*$/, "")`.
+fn strip_fence_inner(s: &str) -> &str {
+    let s = strip_leading_fence_newline(s);
+    strip_trailing_fence_newline(s)
+}
+
+fn strip_leading_fence_newline(s: &str) -> &str {
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
+        i += 1;
+    }
+    if i < bytes.len() && bytes[i] == b'\r' {
+        i += 1;
+    }
+    if i < bytes.len() && bytes[i] == b'\n' {
+        &s[i + 1..]
+    } else {
+        s
+    }
+}
+
+fn strip_trailing_fence_newline(s: &str) -> &str {
+    let bytes = s.as_bytes();
+    let mut end = bytes.len();
+    while end > 0 && (bytes[end - 1] == b' ' || bytes[end - 1] == b'\t') {
+        end -= 1;
+    }
+    if end > 0 && bytes[end - 1] == b'\n' {
+        end -= 1;
+        if end > 0 && bytes[end - 1] == b'\r' {
+            end -= 1;
+        }
+        &s[..end]
+    } else {
+        s
+    }
+}
 
 /// Render a post body: fenced blocks, inline code, then bare http(s) URLs.
 pub fn linkify_body(body: &str) -> String {
@@ -251,13 +345,7 @@ pub fn linkify_body(body: &str) -> String {
 
         if rest.starts_with("```") {
             if let Some(end) = rest[3..].find("```") {
-                let mut inner = &rest[3..3 + end];
-                if let Some(stripped) = inner.strip_prefix('\n') {
-                    inner = stripped;
-                } else if let Some(stripped) = inner.strip_prefix("\r\n") {
-                    inner = stripped;
-                }
-                inner = inner.trim_end_matches('\n').trim_end_matches('\r');
+                let inner = strip_fence_inner(&rest[3..3 + end]);
                 out.push_str("<pre><code>");
                 out.push_str(&escape_html(inner));
                 out.push_str("</code></pre>");
@@ -850,10 +938,11 @@ pub fn post_view(
 }
 
 pub fn simple_page(site_title: &str, site_url: &str, title: &str, body: &str) -> String {
-    let full = format!("{title} — {site_title}");
+    // TS admin/subscribe/login pages pass `title` straight to layout()
+    // (not `${title} — ${siteTitle}`).
     layout(
         LayoutOpts {
-            title: &full,
+            title,
             site_title,
             site_url,
             description: None,
@@ -870,6 +959,7 @@ pub fn rss_feed(
     site_url: &str,
     posts: &[Post],
     images_by_post: &[(i64, Vec<PostImage>)],
+    now: i64,
 ) -> String {
     let mut items = String::new();
     for p in posts {
@@ -921,7 +1011,7 @@ pub fn rss_feed(
     let last_build = if let Some(p) = posts.first() {
         format_rfc1123(p.created_at)
     } else {
-        format_rfc1123(0)
+        format_rfc1123(now)
     };
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -1049,7 +1139,7 @@ pub fn admin_compose(
         ));
     }
     if let Some(p) = reply_to {
-        let snippet = truncate(&p.body, 80);
+        let snippet = slice_ellipsis_utf16(&p.body, 80);
         inner.push_str(&format!(
             r#"<p class="reply-ctx">↳ replying to <a href="/post/{id}">«{snippet}»</a> · <a href="/admin">cancel</a></p>"#,
             id = p.id,
@@ -1118,14 +1208,40 @@ mod tests {
         assert_eq!(code, "use <code>x</code> here");
         let fence = linkify_body("```\nls\n```");
         assert!(fence.contains("<pre><code>ls</code></pre>"), "{fence}");
+        let padded = linkify_body("``` \nls\n  ```");
+        assert_eq!(
+            padded, "<pre><code>ls</code></pre>",
+            "TS strips [ \\t]* around the opening/closing fence newlines: {padded}"
+        );
+        let crlf = linkify_body("```\r\nls\r\n```");
+        assert_eq!(crlf, "<pre><code>ls</code></pre>", "{crlf}");
+        let in_ticks = linkify_body("use `https://example.com` here");
+        assert!(
+            in_ticks.contains("<code>https://example.com</code>"),
+            "{in_ticks}"
+        );
+        assert!(!in_ticks.contains("<a href"), "{in_ticks}");
+        let fenced_url = linkify_body("```\nhttps://example.com\n```");
+        assert!(
+            fenced_url.contains("<pre><code>https://example.com</code></pre>"),
+            "{fenced_url}"
+        );
+        assert!(!fenced_url.contains("<a href"), "{fenced_url}");
     }
 
     #[test]
-    fn youtube_watch_and_short() {
+    fn youtube_watch_short_embed_and_timestamp() {
         let a = extract_youtube_ref("watch https://www.youtube.com/watch?v=dQw4w9wgGcQ now");
         assert_eq!(a.unwrap().id, "dQw4w9wgGcQ");
         let b = extract_youtube_ref("https://youtu.be/dQw4w9wgGcQ?t=30s");
-        assert_eq!(b.unwrap().start, Some(30));
+        assert_eq!(b.as_ref().unwrap().start, Some(30));
+        let c = extract_youtube_ref("https://youtube.com/shorts/dQw4w9wgGcQ");
+        assert_eq!(c.unwrap().id, "dQw4w9wgGcQ");
+        let d = extract_youtube_ref("https://www.youtube-nocookie.com/embed/dQw4w9wgGcQ");
+        assert_eq!(d.unwrap().id, "dQw4w9wgGcQ");
+        let e = extract_youtube_ref("https://youtu.be/dQw4w9wgGcQ?t=1m30s");
+        assert_eq!(e.unwrap().start, Some(90));
+        assert!(extract_youtube_ref("https://example.com/watch?v=dQw4w9wgGcQ").is_none());
     }
 
     #[test]
@@ -1134,9 +1250,205 @@ mod tests {
     }
 
     #[test]
-    fn email_sanity() {
+    fn email_matches_original_regex() {
+        // Original TS: /^[^\s@]+@[^\s@.]+\.[^\s@]+$/ plus length ≤ 254.
         assert!(is_valid_email("a@b.co"));
+        assert!(is_valid_email("a+b@c.d"));
+        assert!(is_valid_email("a@b.co.uk"));
         assert!(!is_valid_email("nope"));
         assert!(!is_valid_email("a@b"));
+        assert!(!is_valid_email("@b.com"));
+        assert!(!is_valid_email("a@.com"));
+        assert!(!is_valid_email("a@b."));
+        assert!(!is_valid_email("a b@c.d"));
+        assert!(!is_valid_email("a@b.c d"));
+        assert!(!is_valid_email("a@b@c.com"));
+        assert!(!is_valid_email(&format!("{}@b.co", "x".repeat(250))));
+    }
+
+    #[test]
+    fn utf16_truncate_and_clip_match_js() {
+        assert_eq!(utf16_len("hi"), 2);
+        assert_eq!(utf16_len("😀"), 2); // one scalar, two UTF-16 units
+        assert_eq!(truncate("hello", 80), "hello");
+        assert_eq!(truncate("abcdefghij", 8), "abcdefg…"); // n-1 + ellipsis
+        assert_eq!(slice_ellipsis_utf16("abcdefghij", 8), "abcdefgh…"); // n + ellipsis
+        let emoji = "😀😀😀";
+        assert_eq!(utf16_len(emoji), 6);
+        assert_eq!(clip_utf16(emoji, 4), "😀😀");
+        assert_eq!(truncate(emoji, 5), "😀😀…");
+        assert!(utf16_len(&"é".repeat(260)) == 260);
+        assert!(validate_post_body(&"é".repeat(260), false).is_ok());
+        assert!(validate_post_body(&"é".repeat(261), false).is_err());
+        assert_eq!(
+            validate_post_body("", false).unwrap_err(),
+            "a post needs text or an image"
+        );
+        assert!(validate_post_body("", true).is_ok());
+    }
+
+    #[test]
+    fn grouped_has_images_looks_inside_slots() {
+        // The D1 helper always emits one slot per requested id.
+        let empty_slot: Vec<(i64, Vec<PostImage>)> = vec![(7, Vec::new())];
+        assert!(!empty_slot.is_empty());
+        assert!(!grouped_has_images(&empty_slot, 7));
+        let img = PostImage {
+            id: 1,
+            post_id: 7,
+            r2_key: "7/0.jpg".into(),
+            content_type: "image/jpeg".into(),
+            width: None,
+            height: None,
+            alt: None,
+            ordinal: 0,
+        };
+        let with = vec![(7, vec![img])];
+        assert!(grouped_has_images(&with, 7));
+        assert!(!grouped_has_images(&with, 8));
+        assert!(validate_post_body("", grouped_has_images(&with, 7)).is_ok());
+        assert!(validate_post_body("", grouped_has_images(&empty_slot, 7)).is_err());
+    }
+
+    #[test]
+    fn passkey_label_matches_typescript() {
+        assert_eq!(passkey_label(None), "passkey");
+        assert_eq!(passkey_label(Some("")), "passkey");
+        assert_eq!(passkey_label(Some("laptop")), "laptop");
+        assert_eq!(passkey_label(Some(&"x".repeat(90))), "x".repeat(80));
+        let emoji = "😀".repeat(50);
+        assert_eq!(utf16_len(&passkey_label(Some(&emoji))), 80);
+    }
+
+    fn sample_post(body: &str) -> Post {
+        Post {
+            id: 3,
+            body: body.into(),
+            created_at: 0,
+            parent_id: None,
+        }
+    }
+
+    #[test]
+    fn page_titles_match_typescript_layout() {
+        let login = login_page("y", "https://example.com", true, false);
+        assert!(login.contains("<title>login</title>"), "{login}");
+        assert!(!login.contains("login — y"));
+        let admin = admin_compose("y", "https://example.com", None, 0);
+        assert!(admin.contains("<title>admin</title>"));
+        let sub = subscribe_form("y", "https://example.com");
+        assert!(sub.contains("<title>subscribe</title>"));
+        let edit = edit_page("y", "https://example.com", &sample_post("hi"));
+        assert!(edit.contains("<title>edit</title>"));
+    }
+
+    #[test]
+    fn post_fragment_and_index_include_admin_chrome() {
+        let p = sample_post("hello https://example.com");
+        let html = post_fragment("https://example.com", &p, &[], true, false, 2);
+        assert!(html.contains(r#"datetime="1970-01-01T00:00:00.000Z""#));
+        assert!(html.contains("Thu, 01 Jan 1970 00:00:00 GMT"));
+        assert!(html.contains("→ 2 replies"));
+        assert!(html.contains("/admin?reply_to=3"));
+        assert!(html.contains("/admin/posts/3/edit"));
+        assert!(html.contains("href=\"https://example.com\""));
+        let page = index_view(
+            "y",
+            "https://example.com",
+            &[p.clone()],
+            &[],
+            true,
+            &[(3, 2)],
+        );
+        assert!(page.contains(r#"<p class="adminbar"><a href="/admin">+ post</a></p>"#));
+        assert!(page.contains("<title>y</title>"));
+        let empty = index_view("y", "https://example.com", &[], &[], false, &[]);
+        assert!(empty.contains("No posts yet."));
+        assert!(!empty.contains(r#"class="adminbar""#));
+    }
+
+    #[test]
+    fn post_view_og_and_thread_top() {
+        let head = sample_post("head");
+        let reply = Post {
+            id: 4,
+            body: "reply".into(),
+            created_at: 1,
+            parent_id: Some(3),
+        };
+        let page = post_view(
+            "y",
+            "https://example.com",
+            &reply,
+            &[head, reply.clone()],
+            &[],
+            false,
+            3,
+        );
+        assert!(page.contains("↑ top of thread"));
+        assert!(page.contains("/post/3"));
+        assert!(page.contains("og:type"));
+        assert!(page.contains("article"));
+        let long = sample_post(&"a".repeat(100));
+        let titled = post_view(
+            "y",
+            "https://example.com",
+            &long,
+            &[long.clone()],
+            &[],
+            false,
+            3,
+        );
+        assert!(titled.contains(&format!("{}… — y", "a".repeat(59))));
+    }
+
+    #[test]
+    fn rss_item_escapes_and_titles() {
+        let p = sample_post("hello <x>\nworld");
+        let xml = rss_feed("y", "https://example.com/", &[p], &[], 0);
+        assert!(xml.contains("<title>hello &lt;x&gt;"));
+        assert!(xml.contains("<br>"));
+        assert!(xml.contains("/post/3"));
+        let img_only = Post {
+            id: 9,
+            body: String::new(),
+            created_at: 0,
+            parent_id: None,
+        };
+        let img = PostImage {
+            id: 1,
+            post_id: 9,
+            r2_key: "9/0.jpg".into(),
+            content_type: "image/jpeg".into(),
+            width: None,
+            height: None,
+            alt: Some("pic".into()),
+            ordinal: 0,
+        };
+        let xml = rss_feed(
+            "y",
+            "https://example.com",
+            &[img_only],
+            &[(9, vec![img])],
+            0,
+        );
+        assert!(xml.contains("(image)"));
+        assert!(xml.contains("/img/9/0.jpg"));
+    }
+
+    #[test]
+    fn admin_reply_snippet_is_utf16_slice_plus_ellipsis() {
+        let p = sample_post(&"a".repeat(90));
+        let page = admin_compose("y", "https://example.com", Some(&p), 12);
+        assert!(page.contains("interest-banner"));
+        assert!(page.contains(&format!("«{}…»", "a".repeat(80))));
+        assert!(page.contains(r#"name="parent_id" value="3""#));
+    }
+
+    #[test]
+    fn rss_empty_feed_uses_now_not_epoch() {
+        let xml = rss_feed("y", "https://example.com", &[], &[], 1_700_000_000);
+        assert!(xml.contains("<lastBuildDate>Tue, 14 Nov 2023"));
+        assert!(!xml.contains("01 Jan 1970"));
     }
 }

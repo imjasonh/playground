@@ -52,13 +52,13 @@ pub struct Credential {
     pub transports: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct RegistrationResponse {
     pub id: String,
     pub response: RegistrationResponseInner,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct RegistrationResponseInner {
     #[serde(rename = "attestationObject")]
     pub attestation_object: String,
@@ -67,13 +67,13 @@ pub struct RegistrationResponseInner {
     pub transports: Option<Vec<String>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct AuthenticationResponse {
     pub id: String,
     pub response: AuthenticationResponseInner,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct AuthenticationResponseInner {
     #[serde(rename = "authenticatorData")]
     pub authenticator_data: String,
@@ -170,6 +170,7 @@ pub fn authentication_options(rp: &RpContext, existing: &[Credential]) -> Value 
     })
 }
 
+#[derive(Debug)]
 pub struct VerifiedRegistration {
     pub credential_id: String,
     pub public_key: Vec<u8>,
@@ -207,6 +208,7 @@ pub fn verify_registration(
     })
 }
 
+#[derive(Debug)]
 pub struct VerifiedAuthentication {
     pub new_counter: u32,
 }
@@ -298,6 +300,9 @@ fn parse_auth_data(data: &[u8], require_at: bool) -> Result<ParsedAuthData, Stri
     let mut rp_id_hash = [0u8; 32];
     rp_id_hash.copy_from_slice(&data[..32]);
     let flags = data[32];
+    if flags & 0x01 == 0 {
+        return Err("user presence required".into());
+    }
     let counter = u32::from_be_bytes(data[33..37].try_into().unwrap());
     let at = flags & 0x40 != 0;
     if require_at && !at {
@@ -707,6 +712,140 @@ mod tests {
         };
         let ok = verify_authentication(&rp, &challenge, &stored, &auth_resp).expect("assert");
         assert_eq!(ok.new_counter, 2);
+
+        let replay = verify_authentication(
+            &rp,
+            &challenge,
+            &Credential {
+                counter: 2,
+                ..stored.clone()
+            },
+            &auth_resp,
+        )
+        .unwrap_err();
+        assert!(replay.contains("counter"), "{replay}");
+
+        let mut bad_origin = get_client.clone();
+        bad_origin["origin"] = serde_json::json!("https://evil.example");
+        let bad_bytes = serde_json::to_vec(&bad_origin).unwrap();
+        let mut auth_bad = auth_resp.clone();
+        auth_bad.response.client_data_json = b64url_encode(&bad_bytes);
+        let origin_err = verify_authentication(&rp, &challenge, &stored, &auth_bad).unwrap_err();
+        assert!(origin_err.contains("origin"), "{origin_err}");
+
+        let challenge_err = verify_authentication(
+            &rp,
+            &b64url_encode(b"different-challenge"),
+            &stored,
+            &auth_resp,
+        )
+        .unwrap_err();
+        assert!(challenge_err.contains("challenge"), "{challenge_err}");
+
+        let mut mismatch = auth_resp.clone();
+        mismatch.id = b64url_encode(b"other");
+        let id_err = verify_authentication(&rp, &challenge, &stored, &mismatch).unwrap_err();
+        assert!(id_err.contains("credential id"), "{id_err}");
+    }
+
+    #[test]
+    fn authentication_requires_user_presence() {
+        let rp = RpContext {
+            rp_id: "example.com".into(),
+            origin: "https://example.com".into(),
+            rp_name: "y".into(),
+        };
+        let signing = SigningKey::random(&mut OsRng);
+        let vk = signing.verifying_key();
+        let stored = Credential {
+            id: b64url_encode(b"cred-1"),
+            public_key: cose_from_vk(vk),
+            counter: 1,
+            transports: None,
+        };
+        let mut get_ad = auth_data(&rp.rp_id, 2, None);
+        get_ad[32] = 0; // UP bit cleared
+        let challenge = b64url_encode(b"challenge-bytes-0123456789abcd");
+        let get_client = serde_json::json!({
+            "type": "webauthn.get",
+            "challenge": challenge,
+            "origin": rp.origin,
+        });
+        let get_client_bytes = serde_json::to_vec(&get_client).unwrap();
+        let client_hash = Sha256::digest(&get_client_bytes);
+        let mut signed = get_ad.clone();
+        signed.extend_from_slice(&client_hash);
+        let sig: Signature = signing.sign(&signed);
+        let auth_resp = AuthenticationResponse {
+            id: stored.id.clone(),
+            response: AuthenticationResponseInner {
+                authenticator_data: b64url_encode(&get_ad),
+                client_data_json: b64url_encode(&get_client_bytes),
+                signature: b64url_encode(&sig.to_bytes()[..]),
+            },
+        };
+        let err = verify_authentication(&rp, &challenge, &stored, &auth_resp).unwrap_err();
+        assert!(err.contains("user presence"), "{err}");
+    }
+
+    #[test]
+    fn options_advertise_es256_only() {
+        let rp = RpContext {
+            rp_id: "example.com".into(),
+            origin: "https://example.com".into(),
+            rp_name: "y".into(),
+        };
+        let existing = [Credential {
+            id: "abc".into(),
+            public_key: vec![],
+            counter: 0,
+            transports: Some("internal,hybrid".into()),
+        }];
+        let reg = registration_options(&rp, &existing);
+        let params = reg["pubKeyCredParams"].as_array().expect("params");
+        assert_eq!(params.len(), 1);
+        assert_eq!(params[0]["alg"], -7);
+        assert_eq!(reg["rp"]["id"], "example.com");
+        assert_eq!(reg["user"]["name"], "admin");
+        assert_eq!(reg["excludeCredentials"][0]["id"], "abc");
+        assert_eq!(
+            reg["excludeCredentials"][0]["transports"],
+            serde_json::json!(["internal", "hybrid"])
+        );
+        let auth = authentication_options(&rp, &existing);
+        assert_eq!(auth["rpId"], "example.com");
+        assert_eq!(auth["userVerification"], "preferred");
+        assert_eq!(auth["allowCredentials"][0]["id"], "abc");
+    }
+
+    #[test]
+    fn registration_rejects_wrong_origin() {
+        let rp = RpContext {
+            rp_id: "example.com".into(),
+            origin: "https://example.com".into(),
+            rp_name: "y".into(),
+        };
+        let signing = SigningKey::random(&mut OsRng);
+        let cose = cose_from_vk(signing.verifying_key());
+        let cred_id = b"cred-1";
+        let ad = auth_data(&rp.rp_id, 1, Some((cred_id, &cose)));
+        let att = att_object(&ad);
+        let challenge = b64url_encode(b"challenge-bytes-0123456789abcd");
+        let client = serde_json::json!({
+            "type": "webauthn.create",
+            "challenge": challenge,
+            "origin": "https://phishing.example",
+        });
+        let resp = RegistrationResponse {
+            id: b64url_encode(cred_id),
+            response: RegistrationResponseInner {
+                attestation_object: b64url_encode(&att),
+                client_data_json: b64url_encode(&serde_json::to_vec(&client).unwrap()),
+                transports: None,
+            },
+        };
+        let err = verify_registration(&rp, &challenge, &resp).unwrap_err();
+        assert!(err.contains("origin"), "{err}");
     }
 
     #[test]

@@ -166,6 +166,25 @@ pub fn random_challenge() -> String {
     crate::webauthn::b64url_encode(&bytes)
 }
 
+/// `Set-Cookie` value for a new session (Path=/, 30-day Max-Age).
+pub fn session_cookie_header(value: &str) -> String {
+    format!(
+        "{SESSION_COOKIE}={value}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age={SESSION_MAX_AGE}"
+    )
+}
+
+/// `Set-Cookie` value for a WebAuthn challenge (Path=/admin, 5-minute Max-Age).
+pub fn challenge_cookie_header(value: &str) -> String {
+    format!(
+        "{CHALLENGE_COOKIE}={value}; Path=/admin; HttpOnly; Secure; SameSite=Strict; Max-Age={CHALLENGE_TTL}"
+    )
+}
+
+/// `Set-Cookie` value that expires a cookie immediately.
+pub fn clear_cookie_header(name: &str, path: &str) -> String {
+    format!("{name}=; Path={path}; HttpOnly; Secure; SameSite=Strict; Max-Age=0")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -221,5 +240,27 @@ mod tests {
             None
         );
         assert_eq!(verify_challenge_cookie("nope", Some(&cookie), 50), None);
+    }
+
+    #[test]
+    fn cookie_header_flags_match_typescript() {
+        let session = session_cookie_header("abc");
+        assert_eq!(
+            session,
+            "y_session=abc; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=2592000"
+        );
+        let challenge = challenge_cookie_header("ch");
+        assert_eq!(
+            challenge,
+            "y_challenge=ch; Path=/admin; HttpOnly; Secure; SameSite=Strict; Max-Age=300"
+        );
+        assert_eq!(
+            clear_cookie_header(SESSION_COOKIE, "/"),
+            "y_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0"
+        );
+        assert_eq!(
+            clear_cookie_header(CHALLENGE_COOKIE, "/admin"),
+            "y_challenge=; Path=/admin; HttpOnly; Secure; SameSite=Strict; Max-Age=0"
+        );
     }
 }
