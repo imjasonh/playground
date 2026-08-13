@@ -8,9 +8,18 @@
 # and creates the R2 bucket if it is missing.
 
 name = "y"
-main = "src/index.ts"
+main = "build/worker/shim.mjs"
 compatibility_date = "2025-04-01"
-compatibility_flags = ["nodejs_compat"]
+
+# Build the wasm Worker from Rust. `worker-build` wraps `cargo build
+# --target wasm32-unknown-unknown` and emits the JS shim referenced by `main`.
+#
+# worker-build is major-version-locked with `worker` (0.8.x ↔ 0.8.x) and bundles
+# wasm-bindgen CLI 0.2.125, which must match the library pin in Cargo.toml.
+# Build the *tool* with stable — its deps need a recent Cargo — while
+# worker-build compiles this crate with rust-toolchain.toml.
+[build]
+command = "cargo +stable install -q worker-build@0.8.5 && worker-build --release"
 
 # Default vars; override per-env as needed.
 [vars]
@@ -30,5 +39,5 @@ binding = "IMAGES"
 bucket_name = "y-images"
 
 # Secrets to set with `wrangler secret put`:
-#   ADMIN_PASSWORD_HASH   (scrypt-style hash, see src/auth.ts)
+#   ADMIN_PASSWORD_HASH   (pbkdf2$iters$saltHex$hashHex, see examples/hash_password.rs)
 #   SESSION_SECRET        (random 32+ byte hex)

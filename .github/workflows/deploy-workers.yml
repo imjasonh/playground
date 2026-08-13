@@ -49,12 +49,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Rust Workers pin their toolchain via rust-toolchain.toml. JS/TS Workers
-      # have no Cargo.toml — skip rustup so those deploys don't wait on it.
-      # wrangler's [build] command (worker-build) compiles the wasm artifact
-      # during deploy for Rust Workers.
+      # Each Worker app pins its toolchain via rust-toolchain.toml; rustup honors
+      # it when cargo runs in the app directory. wrangler's [build] command
+      # (worker-build) compiles the wasm artifact during deploy.
       - uses: dtolnay/rust-toolchain@stable
-        if: ${{ hashFiles(format('{0}/Cargo.toml', matrix.app)) != '' }}
         with:
           targets: wasm32-unknown-unknown
 
@@ -69,8 +67,9 @@ jobs:
           # periodically (the dependency-update bot doesn't manage it).
           wranglerVersion: "4.107.0"
           # Before deploying, create-or-get the KV namespaces this Worker needs
-          # (rewriting the placeholder ids in wrangler.toml with the real ones)
-          # and create any R2 buckets it declares that don't exist yet.
+          # (rewriting the placeholder ids in wrangler.toml with the real ones),
+          # create any R2 buckets it declares that don't exist yet, and apply
+          # remote D1 migrations for declared [[d1_databases]].
           preCommands: |
             python3 "$GITHUB_WORKSPACE/.github/scripts/provision-worker-kv.py"
             python3 "$GITHUB_WORKSPACE/.github/scripts/provision-worker-r2.py"

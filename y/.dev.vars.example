@@ -1,4 +1,5 @@
 # Copy to `.dev.vars` for `wrangler dev`. Don't commit `.dev.vars`.
-# Generate ADMIN_PASSWORD_HASH with: node scripts/hash-password.mjs <password>
-ADMIN_PASSWORD_HASH="pbkdf2$200000$<salt-hex>$<hash-hex>"
+# Generate ADMIN_PASSWORD_HASH with:
+#   cargo run --example hash-password -- 'your-admin-password'
+ADMIN_PASSWORD_HASH="pbkdf2$100000$<salt-hex>$<hash-hex>"
 SESSION_SECRET="<32+ bytes of random hex>"

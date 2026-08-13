@@ -34,35 +34,6 @@ else
   echo "- ❌ Could not discover testable JavaScript apps." >> "$GITHUB_STEP_SUMMARY"
 fi
 
-# JS/TS Cloudflare Workers (wrangler.toml + package.json test, no Cargo.toml)
-# share the npm upgrade/test path but are not Pages browser apps.
-if js_json=$(bash .github/scripts/discover-js-workers.sh --all); then
-  if js_lines=$(printf '%s' "$js_json" | jq -r '.[]'); then
-    if [ -n "$js_lines" ]; then
-      while IFS= read -r w; do
-        skip=0
-        for existing in "${apps[@]+"${apps[@]}"}"; do
-          if [ "$existing" = "$w" ]; then
-            skip=1
-            break
-          fi
-        done
-        if [ "$skip" -eq 0 ]; then
-          apps+=("$w")
-        fi
-      done <<< "$js_lines"
-    fi
-  else
-    result=failure
-    echo "::error title=JS Worker discovery failed::Discovery returned invalid JSON."
-    echo "- ❌ JS Worker discovery returned invalid JSON." >> "$GITHUB_STEP_SUMMARY"
-  fi
-else
-  result=failure
-  echo "::error title=JS Worker discovery failed::Could not discover JS Worker apps."
-  echo "- ❌ Could not discover JS Worker apps." >> "$GITHUB_STEP_SUMMARY"
-fi
-
 if [ "${#apps[@]}" -eq 0 ]; then
   echo "No testable JavaScript apps found."
   if [ "$result" = success ]; then

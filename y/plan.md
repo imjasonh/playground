@@ -7,14 +7,15 @@ Source: https://github.com/imjasonh/ideas/issues/139
 
 ## Decisions
 
-- **Runtime:** Cloudflare Workers (paid). Hono for routing + HTML helpers.
+- **Runtime:** Cloudflare Workers (paid). Rust (`worker` 0.8).
 - **Storage:** D1 for posts, image metadata, subscribers. R2 for image bytes.
 - **Email:** Cloudflare Email Sending — `env.EMAIL.send({...})` via the
   `[[send_email]]` binding. **Caveat:** requires a domain on Cloudflare DNS
   with MX/SPF/DKIM/DMARC records (cannot send from `*.workers.dev`).
   Phase 1 ships without working email; Phase 2 attaches a custom domain.
 - **Auth:** Password-protected `/admin` with a signed cookie session. Single
-  user; password held as a Wrangler secret (hashed via Web Crypto + salt).
+  user; password held as a Wrangler secret (PBKDF2-HMAC-SHA256). After the
+  first passkey is registered, login is WebAuthn-only.
 - **Image upload:** `multipart/form-data` to `POST /admin/posts` — Worker
   writes bytes to R2 and rows to D1 in one request.
 - **Domain:** `*.workers.dev` for development; custom Cloudflare-managed

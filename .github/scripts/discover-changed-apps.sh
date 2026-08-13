@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Discover changed testable browser apps, Go modules, Rust apps, JS/TS
-# Cloudflare Workers, iOS apps, macOS apps, inkbot-esp32 firmware, and
-# whether the pasta style leg should run for the test / platform workflows.
+# Discover changed testable browser apps, Go modules, Rust apps, iOS apps,
+# macOS apps, inkbot-esp32 firmware, and whether the pasta style leg should
+# run for the test / platform workflows.
 set -euo pipefail
 
 : "${EVENT_NAME:?EVENT_NAME must be set}"
@@ -44,7 +44,6 @@ else
     apps=$(bash .github/scripts/discover-testable-apps.sh --all)
     modules=$(bash .github/scripts/discover-go-modules.sh --all)
     rust=$(bash .github/scripts/discover-rust-apps.sh --all)
-    js_workers=$(bash .github/scripts/discover-js-workers.sh --all)
     ios=$(bash .github/scripts/discover-ios-apps.sh --all)
     macos=$(bash .github/scripts/discover-macos-apps.sh --all)
     inkbot_esp32='["inkbot-esp32"]'
@@ -53,7 +52,6 @@ else
       echo "apps=${apps}"
       echo "modules=${modules}"
       echo "rust=${rust}"
-      echo "js_workers=${js_workers}"
       echo "ios=${ios}"
       echo "macos=${macos}"
       echo "inkbot_esp32=${inkbot_esp32}"
@@ -62,7 +60,6 @@ else
     echo "Testable browser apps: ${apps}"
     echo "Go apps: ${modules}"
     echo "Rust apps: ${rust}"
-    echo "JS Workers: ${js_workers}"
     echo "iOS apps: ${ios}"
     echo "macOS apps: ${macos}"
     echo "inkbot-esp32: ${inkbot_esp32}"
@@ -77,7 +74,6 @@ if [ -z "$changed" ]; then
   apps='[]'
   modules='[]'
   rust='[]'
-  js_workers='[]'
   ios='[]'
   macos='[]'
   inkbot_esp32='[]'
@@ -86,7 +82,6 @@ else
   apps=$(printf '%s\n' "$changed" | bash .github/scripts/discover-testable-apps.sh --from-changes)
   modules=$(printf '%s\n' "$changed" | bash .github/scripts/discover-go-modules.sh --from-changes)
   rust=$(printf '%s\n' "$changed" | bash .github/scripts/discover-rust-apps.sh --from-changes)
-  js_workers=$(printf '%s\n' "$changed" | bash .github/scripts/discover-js-workers.sh --from-changes)
   ios=$(printf '%s\n' "$changed" | bash .github/scripts/discover-ios-apps.sh --from-changes)
   macos=$(printf '%s\n' "$changed" | bash .github/scripts/discover-macos-apps.sh --from-changes)
   inkbot_esp32=$(inkbot_esp32_from_changes "$changed")
@@ -97,7 +92,6 @@ fi
   echo "apps=${apps}"
   echo "modules=${modules}"
   echo "rust=${rust}"
-  echo "js_workers=${js_workers}"
   echo "ios=${ios}"
   echo "macos=${macos}"
   echo "inkbot_esp32=${inkbot_esp32}"
@@ -109,7 +103,6 @@ printf '%s\n' "$changed"
 echo "Testable browser apps: ${apps}"
 echo "Go apps: ${modules}"
 echo "Rust apps: ${rust}"
-echo "JS Workers: ${js_workers}"
 echo "iOS apps: ${ios}"
 echo "macOS apps: ${macos}"
 echo "inkbot-esp32: ${inkbot_esp32}"

@@ -42,7 +42,7 @@ playground/
 ├── population-rays/       # directional 5° population-slice map (JS + Node tests)
 ├── web-push/              # Rust Cloudflare Worker (Cargo + tests; not a Pages app)
 ├── web-push-demo/         # static browser front-end for the web-push Worker
-└── y/                     # TypeScript Cloudflare Worker: one-user microblog
+└── y/                     # Rust Cloudflare Worker: one-user microblog
 ```
 
 ### Browser apps
@@ -66,7 +66,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `ocidb/` | no | Go CLI; no `index.html` |
 | `pasta/` | no | Go CLI (CUE + tree-sitter linters); no `index.html` |
 | `web-push/` | no | Rust Cloudflare Worker; no `index.html` |
-| `y/` | no | TypeScript Cloudflare Worker (one-user microblog); no `index.html` |
+| `y/` | no | Rust Cloudflare Worker (one-user microblog); no `index.html` |
 | `cors-proxy/` | no | Rust Cloudflare Worker; no `index.html` |
 | `inkbot/` | no | Rust Cloudflare Worker (e-ink frame + Slack); no `index.html` |
 | `inkbot-esp32/` | no | Rust/ESP-IDF ESP32 firmware (espup); no `index.html` |
@@ -98,12 +98,10 @@ Each Go app is an isolated module. Keep its Go sources, tests, `go.mod`, and
 A top-level directory is a **Rust app** when it contains **`Cargo.toml`** at its
 root. Rust apps (e.g. `web-push`, a Cloudflare Worker) are built, linted, and
 tested by CI but are not copied to GitHub Pages and do not receive PR preview
-deployments. A Cloudflare Worker app is a top-level directory with a
-`wrangler.toml` — most are Rust crates, but a JS/TS Worker (`y/`) is the same
-deploy path without `Cargo.toml`. Worker apps are deployed by
-`deploy-workers.yml` on pushes to `main` with `wrangler`, using the repo
-secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. A Rust app may
-also have a companion browser app that *is* served from Pages —
+deployments. A Cloudflare Worker app (a Rust app with a `wrangler.toml`) is
+instead deployed by `deploy-workers.yml` on pushes to `main` with `wrangler`,
+using the repo secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. A
+Rust app may also have a companion browser app that *is* served from Pages —
 `web-push` pairs with `web-push-demo`.
 
 Each Rust app is an isolated crate. Keep its sources, tests, `Cargo.toml`, and
@@ -167,14 +165,14 @@ discovery scripts.
 | `deploy-workers.yml` | push to `main`, manual | Deploys changed Cloudflare Worker apps (those with `wrangler.toml`) with `wrangler`, using the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets; a manual *Run workflow* (`workflow_dispatch`) redeploys all of them. Before deploy it create-or-gets each Worker's KV namespaces (substituting the placeholder ids in `wrangler.toml`), creates any declared R2 buckets that don't exist, and applies remote D1 migrations for declared `[[d1_databases]]`; after deploy it get-or-generates a `VAPID_PRIVATE_KEY` secret for any Worker shipping an `examples/genvapid.rs` |
 | `preview.yml` | pull request opened/sync | When a browser app changed: deploys under `/preview/pr-<N>/` and comments the URL; otherwise no-ops |
 | `cleanup.yml` | pull request closed, manual | Removes closed-PR preview dirs from `gh-pages` (reconciles all open PRs) and refreshes the root index |
-| `test.yml` | push to `main`, pull requests | Tests changed browser, Go, Rust, and JS/TS Worker apps, plus the pasta style leg, in one job |
+| `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps, plus the pasta style leg, in one job |
 | `inkbot-esp32.yml` | push to `main`, pull requests, manual | Always runs discover + host/firmware jobs (so they can be required checks); host/firmware no-op when `inkbot-esp32/` (or this workflow) is unchanged (excluded from `test.yml`) |
 | `ios.yml` | push to `main`, pull requests | Tests changed iOS apps on macOS; on `main`, delivers them to TestFlight |
 | `macos.yml` | push to `main`, pull requests | Tests changed macOS apps on macOS; on `main`, ships notarized Sparkle updates when secrets are present |
 | `ios-bootstrap-label.yml` | pull request | Labels PRs that need signing re-bootstrap with `needs-ios-bootstrap` |
 | `ios-bootstrap-on-merge.yml` | pull request closed (merged) | If the PR had `needs-ios-bootstrap`, immediately re-runs signing bootstrap (races `ios.yml`; usually finishes first) |
 | `ios-signing-bootstrap.yml` | manual (`workflow_dispatch`) + reusable | Creates & stores signing cert/profile in the `match` repo; also called on labeled merges |
-| `deps.yaml` | daily at 00:00 UTC, manual | Updates every testable browser app, JS/TS Worker, Go app, and Rust app; opens a PR and auto-merges passing updates to `main`, otherwise leaves a PR for review |
+| `deps.yaml` | daily at 00:00 UTC, manual | Updates every testable browser app, Go app, and Rust app; opens a PR and auto-merges passing updates to `main`, otherwise leaves a PR for review |
 | `nypd-choppers-scrape.yml` | hourly, manual | **App-specific:** fetches NYPD helicopter full-day ADS-B traces and merges per-day JSON to `gh-pages` under `nypd-choppers/data/`. Not generalized; shares the `gh-pages-publish` concurrency group with deploy/preview/cleanup |
 | `its-not-jaws.yml` | pull requests touching `its-not-jaws/**`, manual | **App-specific:** requires repo secret `CURSOR_API_KEY` (fails if missing), unit-tests the harness, plays one live Cursor Agent SDK game, uploads the result artifact |
 
@@ -236,7 +234,7 @@ Every push to `main` and every pull request runs a single `test` job. It first
 discovers which apps changed
 (`.github/scripts/discover-changed-apps.sh`), then tests **only the changed apps
 of each type**, installing each toolchain (Node, Go, Rust) only when that type
-has work to do and running the browser / Go / Rust / JS Worker / pasta test legs concurrently via
+has work to do and running the browser / Go / Rust / pasta test legs concurrently via
 an Actions `parallel:` step group (same pattern as `deps.yaml`). When a type has
 no changes its steps are skipped, so the run is one `test` check with no empty
 or skipped legs. On the first push to `main` (no prior commit), every app is
@@ -255,15 +253,13 @@ but is excluded from Rust discovery because it needs the espup Xtensa toolchain;
 | App type | Selected when its dir has | CI runs, per changed app |
 |----------|---------------------------|--------------------------|
 | Browser | `index.html` **and** `package.json` with a `test` script | `npm ci` → `npm test` → `npm run test:e2e` (if defined; installs Playwright Chromium first) |
-| JS Worker | `wrangler.toml` **and** `package.json` with a `test` script, **no** `Cargo.toml` | `npm ci` → `npm test` (typecheck for `y/`) |
 | Go | `go.mod` | `go build ./...` → `go test ./...` |
 | Rust | `Cargo.toml` | `cargo fmt --check` → `cargo clippy --locked --all-targets -D warnings` → `cargo test --locked`; Cloudflare Worker apps (with `wrangler.toml`) also run wasm clippy + a release `wasm32-unknown-unknown` build, then the wrangler `[build]` command (with a decoy `package.json` like wrangler-action creates) so Test covers the deploy artifact path |
 | pasta | `pasta/` / `.pasta/` / lintable sources (`.go`, `.js`, `.ts`, `.tsx`, `.jsx`, `.rs`, `.swift`, `.sh`, `.yml`, `.yaml`, `.html`, `.css`, …) via `discover-pasta.sh` | `go build ./pasta/cmd/pasta` → `pasta test .pasta` → `pasta -fail-on=warning ./...` |
 
 Browser apps without a `test` script (e.g. `hello/`) are never tested. Each Rust
 app's toolchain comes from its `rust-toolchain.toml` (defaulting to stable);
-Rust Worker apps pin Rust 1.88 (with `worker` 0.8 / wasm-bindgen 0.2.125). JS/TS
-Workers are typechecked with the Node toolchain instead.
+Worker apps pin Rust 1.88 (with `worker` 0.8 / wasm-bindgen 0.2.125).
 
 **ESP32 firmware is tested by `inkbot-esp32.yml`, not `test.yml`.** Stable
 Linux Cargo cannot build `xtensa-esp32-espidf`; the dedicated workflow installs
@@ -303,13 +299,11 @@ Run the per-type discovery helpers locally to see what CI would select:
 ```bash
 # Every app of one type
 bash .github/scripts/discover-testable-apps.sh --all   # browser
-bash .github/scripts/discover-js-workers.sh --all      # JS/TS Workers
 bash .github/scripts/discover-go-modules.sh --all      # Go
 bash .github/scripts/discover-rust-apps.sh --all       # Rust
 bash .github/scripts/discover-pasta.sh --all           # pasta style leg
 
 # Only what a diff touched (what CI uses on a PR)
-git diff --name-only origin/main...HEAD | bash .github/scripts/discover-js-workers.sh --from-changes
 git diff --name-only origin/main...HEAD | bash .github/scripts/discover-rust-apps.sh --from-changes
 git diff --name-only origin/main...HEAD | bash .github/scripts/discover-pasta.sh --from-changes
 ```
@@ -324,7 +318,6 @@ test workflow gates on:
 | App type | Upgrade | Verify |
 |----------|---------|--------|
 | Browser | `npx npm-check-updates --upgrade` → `npm install` → `npm run vendor` (if defined) | `npm test` (+ `npm run test:e2e` if defined) |
-| JS Worker | same as Browser (`npx npm-check-updates --upgrade` → `npm install`) | `npm test` |
 | Go | `go get -u ./...` | `go build ./...` → `go test ./...` |
 | Rust | `cargo update` | `cargo clippy -D warnings` → `cargo test`; Worker apps also wasm clippy + a release `wasm32-unknown-unknown` build + the wrangler `[build]` command |
 
@@ -453,28 +446,6 @@ cargo clippy --all-targets
 cargo test
 ```
 
-## Adding a JS/TS Cloudflare Worker
-
-Same deploy marker as a Rust Worker: a top-level directory with
-`wrangler.toml` and **no** `index.html`. Skip `Cargo.toml`; keep an independent
-`package.json` / `package-lock.json` and a `"test"` script (at least
-`tsc --noEmit`). `deploy-workers.yml` picks it up automatically; `test.yml`
-runs `npm ci` → `npm test`; the daily dependency workflow upgrades it with
-the other JS apps.
-
-Keep the Wrangler `name` equal to the already-deployed Worker if you are
-moving an existing script onto this account so deploys land on the same
-Cloudflare Worker.
-
-Run locally:
-
-```bash
-cd my-worker
-npm install
-npm test
-npm run dev   # if defined
-```
-
 ## Adding an experiment to the iOS app
 
 There is only one iOS **host** app (`ios/`). Add functionality as an
@@ -539,7 +510,6 @@ bundle exec fastlane test
 - **Prefer plain HTML + JS** for browser apps unless an app already uses a framework; match the style of neighboring code in that app directory.
 - **Go apps are independent modules**: each app owns its `go.mod` and `go.sum`; avoid cross-app imports.
 - **Rust apps are independent crates**: each app owns its `Cargo.toml`, `Cargo.lock`, and `rust-toolchain.toml`; avoid cross-app imports.
-- **JS/TS Worker apps are independent packages**: each owns its `package.json`, `package-lock.json`, and `wrangler.toml`; do not add `index.html` (they are not Pages apps).
 - **There is one iOS host app** (`ios/`, the "Playground" container): add
   features as **experiments** inside it (same Bundle ID, no re-bootstrap). A
   Custom Keyboard or other **app extension** needs a second Bundle ID (Apple
@@ -572,7 +542,7 @@ bundle exec fastlane test
   open a new PR for the remaining work. Check with
   `gh pr view <number> --json state` (or the GitHub UI / PR URL) before
   `git push`.
-- CI must pass (changed browser apps are tested; changed Go, Rust, and JS/TS Worker apps are built and tested).
+- CI must pass (changed browser apps are tested; changed Go and Rust apps are built and tested).
 - Preview deploy provides a live URL for browser apps only—use it to verify browser behavior, especially mobile.
 - If the repo uses Linear integration, include `Resolves ABC-123` in the PR body when applicable.
 
@@ -616,12 +586,7 @@ bundle exec fastlane test
 | `git-server/` | git smart-HTTP server on R2 + Durable Objects — Cloudflare Worker | `cargo test` (incl. real-git integration) + clippy + wasm build |
 | `git-fuse/` | read-only FUSE adapter for git-server (mount commits/refs as files) — CLI, not a Worker | `cargo test` (incl. e2e over real FUSE mounts; skips without `/dev/fuse`) + clippy |
 | `life-stl/` | Conway's Game of Life → 3D-printable STL (Z = time); self-supporting causality braces (default) or breakaway supports | `cargo test` + clippy |
-
-JS/TS Workers (no `Cargo.toml`; still deployed by `deploy-workers.yml`):
-
-| Directory | Type | Tests |
-|-----------|------|-------|
-| `y/` | One-user microblog (Hono + D1 + R2); 260-char posts, images, RSS | `npm test` (`tsc --noEmit`) |
+| `y/` | One-user microblog (D1 + R2); 260-char posts, images, RSS, passkeys | `cargo test` + clippy + wasm build |
 
 > **`git-server` has its own agent guide:** read
 > [`git-server/AGENTS.md`](git-server/AGENTS.md) before working in that

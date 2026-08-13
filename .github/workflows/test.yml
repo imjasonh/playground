@@ -17,7 +17,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Discover changed apps
+      - name: Discover changed browser and Go apps
         id: discover
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -31,7 +31,7 @@ jobs:
       # nothing. setup-node also runs when Go's node-image module changed
       # (its conformance tests need node/pnpm on PATH).
       - uses: actions/setup-node@v4
-        if: ${{ steps.discover.outputs.apps != '[]' || steps.discover.outputs.js_workers != '[]' || contains(steps.discover.outputs.modules, 'node-image') }}
+        if: ${{ steps.discover.outputs.apps != '[]' || contains(steps.discover.outputs.modules, 'node-image') }}
         with:
           node-version: '22'
           cache: npm
@@ -62,12 +62,6 @@ jobs:
             env:
               APPS: ${{ steps.discover.outputs.apps }}
             run: bash .github/scripts/test-browser-apps.sh
-
-          - name: Typecheck changed JS Workers
-            if: ${{ steps.discover.outputs.js_workers != '[]' }}
-            env:
-              JS_WORKERS: ${{ steps.discover.outputs.js_workers }}
-            run: bash .github/scripts/test-js-workers.sh
 
           - name: Build and test changed Go apps
             if: ${{ steps.discover.outputs.modules != '[]' }}
