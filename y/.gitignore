@@ -1,0 +1,8 @@
+node_modules/
+.wrangler/
+.dev.vars
+dist/
+*.log
+.DS_Store
+# wrangler-action may write a decoy package-lock during deploy
+test-results/
