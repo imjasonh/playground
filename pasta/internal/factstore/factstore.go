@@ -15,7 +15,7 @@ package factstore
 import (
 	"sync"
 
-	"github.com/imjasonh/pasta/internal/tsutil"
+	"github.com/imjasonh/playground/pasta/internal/tsutil"
 )
 
 // Key identifies a fact by its kind, the file the anchor lives in,

@@ -121,8 +121,9 @@ and the runner registers them at startup.
 
 - **Rules are pure CUE.** No per-analyzer Go code. All semantic checks
   go through the predicate / check registry in `internal/match/predicate.go`.
-- **`pasta.dev` is not our domain.** The built-in module is published
-  as `github.com/imjasonh/pasta`. All imports use that path.
+- **`pasta.dev` is not our domain.** The Go module is
+  `github.com/imjasonh/playground/pasta`. The built-in **CUE** module is
+  published as `github.com/imjasonh/pasta`; rule files import that path.
 - **Schema-first.** When adding a predicate or extending an edit form,
   update both `internal/loader/cuemod/schema/schema.cue` AND the
   corresponding Go side. Schema rejects unknown fields, so omissions

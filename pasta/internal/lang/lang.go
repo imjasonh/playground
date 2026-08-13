@@ -17,10 +17,10 @@ import (
 	"io/fs"
 	"strings"
 
-	"github.com/imjasonh/pasta/internal/dsl"
-	"github.com/imjasonh/pasta/internal/loader"
-	"github.com/imjasonh/pasta/internal/tsutil"
-	"github.com/imjasonh/pasta/internal/tswasm"
+	"github.com/imjasonh/playground/pasta/internal/dsl"
+	"github.com/imjasonh/playground/pasta/internal/loader"
+	"github.com/imjasonh/playground/pasta/internal/tsutil"
+	"github.com/imjasonh/playground/pasta/internal/tswasm"
 )
 
 // Language is the runtime view of a registered language.

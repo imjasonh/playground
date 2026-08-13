@@ -240,7 +240,7 @@ on the more complex trees.
 ## Use
 
 ```
-go install github.com/imjasonh/pasta/cmd/pasta@latest
+go install github.com/imjasonh/playground/pasta/cmd/pasta@latest
 
 # Project-style: drop your rules in ./.pasta/ and just run pasta.
 # Rules are loaded from ./.pasta/, sources default to ./...

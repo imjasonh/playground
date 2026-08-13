@@ -3,7 +3,7 @@ package tsutil
 import (
 	"testing"
 
-	"github.com/imjasonh/pasta/internal/tswasm"
+	"github.com/imjasonh/playground/pasta/internal/tswasm"
 )
 
 func parseGo(t *testing.T, src string) (*Tree, Node) {

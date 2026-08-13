@@ -3,8 +3,8 @@
 package match
 
 import (
-	"github.com/imjasonh/pasta/internal/dsl"
-	"github.com/imjasonh/pasta/internal/tsutil"
+	"github.com/imjasonh/playground/pasta/internal/dsl"
+	"github.com/imjasonh/playground/pasta/internal/tsutil"
 )
 
 // Captures is a map from capture name to the matched node.

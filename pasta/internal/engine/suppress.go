@@ -8,9 +8,9 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/imjasonh/pasta/internal/dsl"
-	"github.com/imjasonh/pasta/internal/effect"
-	"github.com/imjasonh/pasta/internal/tsutil"
+	"github.com/imjasonh/playground/pasta/internal/dsl"
+	"github.com/imjasonh/playground/pasta/internal/effect"
+	"github.com/imjasonh/playground/pasta/internal/tsutil"
 )
 
 // unusedIgnoreRule is the synthetic rule id on diagnostics emitted when

@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/imjasonh/pasta/internal/dsl"
-	"github.com/imjasonh/pasta/internal/lang"
+	"github.com/imjasonh/playground/pasta/internal/dsl"
+	"github.com/imjasonh/playground/pasta/internal/lang"
 )
 
 func TestStreamingPrefilterSkipsParse(t *testing.T) {

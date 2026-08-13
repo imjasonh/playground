@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/imjasonh/pasta/internal/dsl"
-	"github.com/imjasonh/pasta/internal/lang"
-	"github.com/imjasonh/pasta/internal/parsecache"
+	"github.com/imjasonh/playground/pasta/internal/dsl"
+	"github.com/imjasonh/playground/pasta/internal/lang"
+	"github.com/imjasonh/playground/pasta/internal/parsecache"
 )
 
 // TestRunGroup_CacheRoundTrip verifies that a second run with a warm

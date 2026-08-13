@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/imjasonh/pasta/internal/tswasm"
+	"github.com/imjasonh/playground/pasta/internal/tswasm"
 )
 
 func TestParseWithOptions_Timeout(t *testing.T) {

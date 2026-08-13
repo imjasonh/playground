@@ -3,7 +3,7 @@ package engine
 import (
 	"sort"
 
-	"github.com/imjasonh/pasta/internal/dsl"
+	"github.com/imjasonh/playground/pasta/internal/dsl"
 )
 
 // ruleGroup is one strongly-connected component of the rule dependency

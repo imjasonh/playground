@@ -3,7 +3,7 @@ package pastals
 import (
 	"sync"
 
-	"github.com/imjasonh/pasta/internal/pastals/lspconv"
+	"github.com/imjasonh/playground/pasta/internal/pastals/lspconv"
 )
 
 // document is an in-memory snapshot of an open file.

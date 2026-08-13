@@ -3,13 +3,13 @@ package apply
 import (
 	"testing"
 
-	"github.com/imjasonh/pasta/internal/tswasm"
+	"github.com/imjasonh/playground/pasta/internal/tswasm"
 
-	"github.com/imjasonh/pasta/internal/dsl"
-	"github.com/imjasonh/pasta/internal/effect"
-	"github.com/imjasonh/pasta/internal/lang"
-	"github.com/imjasonh/pasta/internal/match"
-	"github.com/imjasonh/pasta/internal/tsutil"
+	"github.com/imjasonh/playground/pasta/internal/dsl"
+	"github.com/imjasonh/playground/pasta/internal/effect"
+	"github.com/imjasonh/playground/pasta/internal/lang"
+	"github.com/imjasonh/playground/pasta/internal/match"
+	"github.com/imjasonh/playground/pasta/internal/tsutil"
 )
 
 // TestNilcheckEndToEnd exercises a tiny end-to-end rewrite — a rule

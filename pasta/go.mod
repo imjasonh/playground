@@ -1,4 +1,4 @@
-module github.com/imjasonh/pasta
+module github.com/imjasonh/playground/pasta
 
 go 1.25.0
 

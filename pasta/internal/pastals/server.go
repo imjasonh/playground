@@ -12,10 +12,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/imjasonh/pasta/internal/dsl"
-	"github.com/imjasonh/pasta/internal/pastals/jsonrpc"
-	"github.com/imjasonh/pasta/internal/pastals/protocol"
-	"github.com/imjasonh/pasta/internal/runner"
+	"github.com/imjasonh/playground/pasta/internal/dsl"
+	"github.com/imjasonh/playground/pasta/internal/pastals/jsonrpc"
+	"github.com/imjasonh/playground/pasta/internal/pastals/protocol"
+	"github.com/imjasonh/playground/pasta/internal/runner"
 )
 
 // Server holds all shared state for the LSP. One per process —

@@ -5,9 +5,9 @@ package effect
 import (
 	"strings"
 
-	"github.com/imjasonh/pasta/internal/dsl"
-	"github.com/imjasonh/pasta/internal/match"
-	"github.com/imjasonh/pasta/internal/tsutil"
+	"github.com/imjasonh/playground/pasta/internal/dsl"
+	"github.com/imjasonh/playground/pasta/internal/match"
+	"github.com/imjasonh/playground/pasta/internal/tsutil"
 )
 
 // Diagnostic is what a rule emits when it matches. It is self-contained

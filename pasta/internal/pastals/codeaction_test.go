@@ -3,7 +3,7 @@ package pastals
 import (
 	"testing"
 
-	"github.com/imjasonh/pasta/internal/pastals/protocol"
+	"github.com/imjasonh/playground/pasta/internal/pastals/protocol"
 )
 
 func TestShouldOfferFixAll(t *testing.T) {

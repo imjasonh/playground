@@ -21,10 +21,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/imjasonh/pasta/internal/apply"
-	"github.com/imjasonh/pasta/internal/dsl"
-	"github.com/imjasonh/pasta/internal/lang"
-	"github.com/imjasonh/pasta/internal/runner"
+	"github.com/imjasonh/playground/pasta/internal/apply"
+	"github.com/imjasonh/playground/pasta/internal/dsl"
+	"github.com/imjasonh/playground/pasta/internal/lang"
+	"github.com/imjasonh/playground/pasta/internal/runner"
 )
 
 // fixRules are sparse style/syntax rules that both diagnose and

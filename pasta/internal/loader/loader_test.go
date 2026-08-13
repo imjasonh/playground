@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/imjasonh/pasta/internal/dsl"
+	"github.com/imjasonh/playground/pasta/internal/dsl"
 )
 
 // loadAnalyzerFromBytes is a test convenience that loads a single

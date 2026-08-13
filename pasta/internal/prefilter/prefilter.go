@@ -25,7 +25,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/imjasonh/pasta/internal/dsl"
+	"github.com/imjasonh/playground/pasta/internal/dsl"
 )
 
 // Filter is the content-sniff constraint for one rule.

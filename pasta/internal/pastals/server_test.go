@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/imjasonh/pasta/internal/pastals/jsonrpc"
-	"github.com/imjasonh/pasta/internal/pastals/protocol"
+	"github.com/imjasonh/playground/pasta/internal/pastals/jsonrpc"
+	"github.com/imjasonh/playground/pasta/internal/pastals/protocol"
 )
 
 // TestEndToEnd spawns a server in-process, drives it through

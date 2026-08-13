@@ -1,6 +1,6 @@
 package lang
 
-import "github.com/imjasonh/pasta/internal/tswasm"
+import "github.com/imjasonh/playground/pasta/internal/tswasm"
 
 // Grammars maps grammar names (referenced from language CUE) to a
 // constructor for the WASM tree-sitter language handle. Adding a new

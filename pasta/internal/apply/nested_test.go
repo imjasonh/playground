@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/imjasonh/pasta/internal/dsl"
-	"github.com/imjasonh/pasta/internal/effect"
+	"github.com/imjasonh/playground/pasta/internal/dsl"
+	"github.com/imjasonh/playground/pasta/internal/effect"
 )
 
 func TestResolveNested_keepsInnermost(t *testing.T) {

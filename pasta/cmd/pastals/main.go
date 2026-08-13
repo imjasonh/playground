@@ -12,7 +12,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/imjasonh/pasta/internal/pastals"
+	"github.com/imjasonh/playground/pasta/internal/pastals"
 )
 
 func main() {
