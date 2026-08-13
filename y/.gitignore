@@ -1,0 +1,17 @@
+# Rust build output
+/target
+
+# worker-build / wrangler output
+/build
+.wrangler/
+
+# Node (only present if wrangler is installed locally)
+node_modules/
+
+# Created by wrangler-action / local `npm i wrangler` — never commit.
+package.json
+package-lock.json
+
+# Local secrets / dev vars — never commit
+.dev.vars
+*.env

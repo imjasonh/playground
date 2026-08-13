@@ -42,3 +42,6 @@ lto = true
 # `strip = true` (= "symbols") drops that section and fails bindgen with
 # "externref table required for catch wrappers" (workers-rs#1014).
 strip = "debuginfo"
+
+[lints.rust]
+unused = "deny"

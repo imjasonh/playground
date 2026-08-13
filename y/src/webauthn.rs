@@ -1,0 +1,1098 @@
+//! WebAuthn (passkey) options + ES256 verification.
+//!
+//! Single-user model: one virtual user (`y-admin`). RP ID and origin come from
+//! `SITE_URL`. Stored public keys are COSE_Key bytes, so existing D1 credentials
+//! keep working. Only ES256 (P-256) is verified.
+
+use p256::ecdsa::signature::Verifier;
+use p256::ecdsa::{Signature, VerifyingKey};
+use p256::EncodedPoint;
+use serde::Deserialize;
+use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
+
+use crate::auth::random_challenge;
+
+const MAX_B64_CHARS: usize = 24_000;
+const MAX_CBOR_INPUT: usize = 16 * 1024;
+const CBOR_MAX_DEPTH: u32 = 8;
+const CBOR_MAX_COLLECTION: u64 = 64;
+const CBOR_MAX_BYTES: u64 = 8_192;
+const FLAG_UP: u8 = 0x01;
+const FLAG_UV: u8 = 0x04;
+const FLAG_AT: u8 = 0x40;
+
+pub const RP_NAME_DEFAULT: &str = "y";
+pub const USER_HANDLE: &str = "y-admin";
+pub const USER_NAME: &str = "admin";
+
+#[derive(Debug, Clone)]
+pub struct RpContext {
+    pub rp_id: String,
+    pub origin: String,
+    pub rp_name: String,
+}
+
+impl RpContext {
+    pub fn from_site(site_url: &str, site_title: &str) -> Result<Self, String> {
+        let u = url::Url::parse(site_url).map_err(|_| "invalid SITE_URL".to_string())?;
+        let host = u
+            .host_str()
+            .ok_or_else(|| "SITE_URL missing host".to_string())?;
+        Ok(Self {
+            rp_id: host.to_string(),
+            origin: u.origin().ascii_serialization(),
+            rp_name: if site_title.is_empty() {
+                RP_NAME_DEFAULT.to_string()
+            } else {
+                site_title.to_string()
+            },
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Credential {
+    pub id: String,
+    pub public_key: Vec<u8>,
+    pub counter: u32,
+    pub transports: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RegistrationResponse {
+    pub id: String,
+    pub response: RegistrationResponseInner,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RegistrationResponseInner {
+    #[serde(rename = "attestationObject")]
+    pub attestation_object: String,
+    #[serde(rename = "clientDataJSON")]
+    pub client_data_json: String,
+    pub transports: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AuthenticationResponse {
+    pub id: String,
+    pub response: AuthenticationResponseInner,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AuthenticationResponseInner {
+    #[serde(rename = "authenticatorData")]
+    pub authenticator_data: String,
+    #[serde(rename = "clientDataJSON")]
+    pub client_data_json: String,
+    pub signature: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ClientData {
+    #[serde(rename = "type")]
+    type_: String,
+    challenge: String,
+    origin: String,
+}
+
+pub fn b64url_encode(bytes: &[u8]) -> String {
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use base64::Engine;
+    URL_SAFE_NO_PAD.encode(bytes)
+}
+
+pub fn b64url_decode(s: &str) -> Result<Vec<u8>, String> {
+    use base64::engine::general_purpose::{URL_SAFE, URL_SAFE_NO_PAD};
+    use base64::Engine;
+    let s = s.trim();
+    if s.len() > MAX_B64_CHARS {
+        return Err("payload too large".into());
+    }
+    if s.contains('=') {
+        URL_SAFE.decode(s)
+    } else {
+        URL_SAFE_NO_PAD.decode(s)
+    }
+    .map_err(|_| "invalid base64url".to_string())
+}
+
+pub fn registration_options(rp: &RpContext, existing: &[Credential]) -> Value {
+    let challenge = random_challenge();
+    let user_id = b64url_encode(USER_HANDLE.as_bytes());
+    let exclude: Vec<Value> = existing
+        .iter()
+        .map(|c| {
+            let mut cred = json!({ "type": "public-key", "id": c.id });
+            if let Some(t) = &c.transports {
+                let parts: Vec<&str> = t.split(',').filter(|s| !s.is_empty()).collect();
+                if !parts.is_empty() {
+                    cred["transports"] = json!(parts);
+                }
+            }
+            cred
+        })
+        .collect();
+    json!({
+        "challenge": challenge,
+        "rp": { "name": rp.rp_name, "id": rp.rp_id },
+        "user": {
+            "id": user_id,
+            "name": USER_NAME,
+            "displayName": USER_NAME,
+        },
+        "pubKeyCredParams": [
+            { "alg": -7, "type": "public-key" }
+        ],
+        "timeout": 60000,
+        "attestation": "none",
+        "excludeCredentials": exclude,
+        "authenticatorSelection": {
+            "residentKey": "preferred",
+            "userVerification": "required",
+            "requireResidentKey": false
+        },
+    })
+}
+
+pub fn authentication_options(rp: &RpContext, existing: &[Credential]) -> Value {
+    let challenge = random_challenge();
+    let allow: Vec<Value> = existing
+        .iter()
+        .map(|c| {
+            let mut cred = json!({ "type": "public-key", "id": c.id });
+            if let Some(t) = &c.transports {
+                let parts: Vec<&str> = t.split(',').filter(|s| !s.is_empty()).collect();
+                if !parts.is_empty() {
+                    cred["transports"] = json!(parts);
+                }
+            }
+            cred
+        })
+        .collect();
+    json!({
+        "challenge": challenge,
+        "timeout": 60000,
+        "rpId": rp.rp_id,
+        "allowCredentials": allow,
+        "userVerification": "required",
+    })
+}
+
+#[derive(Debug)]
+pub struct VerifiedRegistration {
+    pub credential_id: String,
+    pub public_key: Vec<u8>,
+    pub counter: u32,
+    pub transports: Option<Vec<String>>,
+}
+
+pub fn verify_registration(
+    rp: &RpContext,
+    expected_challenge: &str,
+    response: &RegistrationResponse,
+) -> Result<VerifiedRegistration, String> {
+    let client_raw = b64url_decode(&response.response.client_data_json)?;
+    check_client_data(
+        &client_raw,
+        "webauthn.create",
+        expected_challenge,
+        &rp.origin,
+    )?;
+
+    let att = b64url_decode(&response.response.attestation_object)?;
+    let auth_data = attestation_auth_data(&att)?;
+    let parsed = parse_auth_data(&auth_data, true)?;
+    check_rp_id_hash(&parsed.rp_id_hash, &rp.rp_id)?;
+    let cred = parsed
+        .credential
+        .ok_or_else(|| "attestation missing credential".to_string())?;
+    // Touch the COSE key now so we refuse non-ES256 at registration time.
+    cose_p256_key(&cred.public_key, true)?;
+    let credential_id = b64url_encode(&cred.id);
+    if response.id != credential_id {
+        return Err("credential id mismatch".into());
+    }
+    Ok(VerifiedRegistration {
+        credential_id,
+        public_key: cred.public_key,
+        counter: parsed.counter,
+        transports: response.response.transports.clone(),
+    })
+}
+
+#[derive(Debug)]
+pub struct VerifiedAuthentication {
+    pub new_counter: u32,
+}
+
+pub fn verify_authentication(
+    rp: &RpContext,
+    expected_challenge: &str,
+    stored: &Credential,
+    response: &AuthenticationResponse,
+) -> Result<VerifiedAuthentication, String> {
+    if response.id != stored.id {
+        return Err("credential id mismatch".into());
+    }
+    let client_raw = b64url_decode(&response.response.client_data_json)?;
+    check_client_data(&client_raw, "webauthn.get", expected_challenge, &rp.origin)?;
+
+    let auth_data = b64url_decode(&response.response.authenticator_data)?;
+    let parsed = parse_auth_data(&auth_data, false)?;
+    check_rp_id_hash(&parsed.rp_id_hash, &rp.rp_id)?;
+    if stored.counter > 0 && parsed.counter <= stored.counter {
+        return Err("authenticator counter did not increase".into());
+    }
+
+    let sig = b64url_decode(&response.response.signature)?;
+    let client_hash = Sha256::digest(&client_raw);
+    let mut signed = Vec::with_capacity(auth_data.len() + 32);
+    signed.extend_from_slice(&auth_data);
+    signed.extend_from_slice(&client_hash);
+
+    let vk = cose_p256_key(&stored.public_key, false)?;
+    let signature = Signature::from_der(&sig)
+        .or_else(|_| Signature::from_slice(&sig))
+        .map_err(|_| "invalid assertion signature".to_string())?;
+    vk.verify(&signed, &signature)
+        .map_err(|_| "assertion not verified".to_string())?;
+
+    Ok(VerifiedAuthentication {
+        new_counter: parsed.counter,
+    })
+}
+
+fn check_client_data(
+    raw: &[u8],
+    expected_type: &str,
+    expected_challenge: &str,
+    expected_origin: &str,
+) -> Result<(), String> {
+    let data: ClientData =
+        serde_json::from_slice(raw).map_err(|_| "invalid clientDataJSON".to_string())?;
+    if data.type_ != expected_type {
+        return Err("unexpected clientData type".into());
+    }
+    if data.origin != expected_origin {
+        return Err("origin mismatch".into());
+    }
+    if data.challenge != expected_challenge {
+        let got = b64url_decode(&data.challenge)?;
+        let want = b64url_decode(expected_challenge)?;
+        if got != want {
+            return Err("challenge mismatch".into());
+        }
+    }
+    Ok(())
+}
+
+fn check_rp_id_hash(got: &[u8; 32], rp_id: &str) -> Result<(), String> {
+    let want = Sha256::digest(rp_id.as_bytes());
+    if got[..] != want[..] {
+        return Err("rpIdHash mismatch".into());
+    }
+    Ok(())
+}
+
+struct AttestedCred {
+    id: Vec<u8>,
+    public_key: Vec<u8>,
+}
+
+struct ParsedAuthData {
+    rp_id_hash: [u8; 32],
+    counter: u32,
+    credential: Option<AttestedCred>,
+}
+
+fn parse_auth_data(data: &[u8], require_at: bool) -> Result<ParsedAuthData, String> {
+    if data.len() < 37 {
+        return Err("authenticatorData too short".into());
+    }
+    let mut rp_id_hash = [0u8; 32];
+    rp_id_hash.copy_from_slice(&data[..32]);
+    let flags = data[32];
+    if flags & FLAG_UP == 0 {
+        return Err("user presence required".into());
+    }
+    if flags & FLAG_UV == 0 {
+        return Err("user verification required".into());
+    }
+    let counter_bytes: [u8; 4] = data[33..37]
+        .try_into()
+        .map_err(|_| "authenticatorData truncated".to_string())?;
+    let counter = u32::from_be_bytes(counter_bytes);
+    let at = flags & FLAG_AT != 0;
+    if require_at && !at {
+        return Err("attested credential data missing".into());
+    }
+    let credential = if at {
+        if data.len() < 55 {
+            return Err("attested credential truncated".into());
+        }
+        let cred_len_bytes: [u8; 2] = data[53..55]
+            .try_into()
+            .map_err(|_| "credential id length truncated".to_string())?;
+        let cred_id_len = u16::from_be_bytes(cred_len_bytes) as usize;
+        let id_start: usize = 55;
+        let id_end = id_start
+            .checked_add(cred_id_len)
+            .ok_or_else(|| "credential id overflow".to_string())?;
+        if data.len() < id_end {
+            return Err("credential id truncated".into());
+        }
+        let id = data[id_start..id_end].to_vec();
+        let cose = data[id_end..].to_vec();
+        // COSE key may be followed by extensions; take the first CBOR value.
+        let (key, _) = take_cbor_item(&cose)?;
+        Some(AttestedCred {
+            id,
+            public_key: key,
+        })
+    } else {
+        None
+    };
+    Ok(ParsedAuthData {
+        rp_id_hash,
+        counter,
+        credential,
+    })
+}
+
+fn attestation_auth_data(att: &[u8]) -> Result<Vec<u8>, String> {
+    if att.len() > MAX_CBOR_INPUT {
+        return Err("attestationObject too large".into());
+    }
+    let (item, _) = take_cbor_item(att)?;
+    let map = decode_text_map(&item)?;
+    let fmt_ok = map
+        .iter()
+        .any(|(k, v)| k == "fmt" && matches!(v, Cbor::Text(s) if s == "none"));
+    if !fmt_ok {
+        return Err("unsupported attestation format".into());
+    }
+    let stmt_ok = map
+        .iter()
+        .any(|(k, v)| k == "attStmt" && matches!(v, Cbor::Map(m) if m.is_empty()));
+    if !stmt_ok {
+        return Err("attStmt must be empty for none attestation".into());
+    }
+    map.into_iter()
+        .find(|(k, _)| k == "authData")
+        .map(|(_, v)| v)
+        .ok_or_else(|| "attestationObject missing authData".to_string())
+        .and_then(|v| match v {
+            Cbor::Bytes(b) => Ok(b),
+            _ => Err("authData is not a bstr".into()),
+        })
+}
+
+fn cose_p256_key(cose: &[u8], require_alg: bool) -> Result<VerifyingKey, String> {
+    if cose.len() > MAX_CBOR_INPUT {
+        return Err("COSE key too large".into());
+    }
+    let map = decode_int_map(cose)?;
+    let kty = map
+        .iter()
+        .find(|(k, _)| *k == 1)
+        .and_then(|(_, v)| v.as_int())
+        .ok_or_else(|| "COSE key missing kty".to_string())?;
+    if kty != 2 {
+        return Err("unsupported COSE kty (want EC2/P-256)".into());
+    }
+    let alg = map
+        .iter()
+        .find(|(k, _)| *k == 3)
+        .and_then(|(_, v)| v.as_int());
+    match alg {
+        Some(-7) => {}
+        Some(_) => return Err("unsupported COSE alg (want ES256/-7)".into()),
+        None if require_alg => return Err("COSE key missing alg".into()),
+        None => {}
+    }
+    let crv = map
+        .iter()
+        .find(|(k, _)| *k == -1)
+        .and_then(|(_, v)| v.as_int())
+        .ok_or_else(|| "COSE key missing crv".to_string())?;
+    if crv != 1 {
+        return Err("unsupported COSE curve (want P-256)".into());
+    }
+    let x = map
+        .iter()
+        .find(|(k, _)| *k == -2)
+        .and_then(|(_, v)| v.as_bytes())
+        .ok_or_else(|| "COSE key missing x".to_string())?;
+    let y = map
+        .iter()
+        .find(|(k, _)| *k == -3)
+        .and_then(|(_, v)| v.as_bytes())
+        .ok_or_else(|| "COSE key missing y".to_string())?;
+    if x.len() != 32 || y.len() != 32 {
+        return Err("COSE P-256 coordinates must be 32 bytes".into());
+    }
+    let mut uncompressed = [0u8; 65];
+    uncompressed[0] = 0x04;
+    uncompressed[1..33].copy_from_slice(x);
+    uncompressed[33..].copy_from_slice(y);
+    let point =
+        EncodedPoint::from_bytes(uncompressed).map_err(|_| "invalid P-256 point".to_string())?;
+    VerifyingKey::from_encoded_point(&point).map_err(|_| "invalid P-256 public key".to_string())
+}
+
+#[derive(Debug)]
+enum Cbor {
+    Unsigned(u64),
+    Negative(i64),
+    Bytes(Vec<u8>),
+    Text(String),
+    Array,
+    Map(Vec<(Cbor, Cbor)>),
+    Other,
+}
+
+impl Cbor {
+    fn as_int(&self) -> Option<i64> {
+        match self {
+            Cbor::Unsigned(n) if *n <= i64::MAX as u64 => Some(*n as i64),
+            Cbor::Negative(n) => Some(*n),
+            _ => None,
+        }
+    }
+    fn as_bytes(&self) -> Option<&[u8]> {
+        match self {
+            Cbor::Bytes(b) => Some(b),
+            _ => None,
+        }
+    }
+}
+
+fn take_cbor_item(input: &[u8]) -> Result<(Vec<u8>, usize), String> {
+    if input.len() > MAX_CBOR_INPUT {
+        return Err("CBOR too large".into());
+    }
+    let (val, n) = decode_cbor(input, 0)?;
+    let _ = val;
+    Ok((input[..n].to_vec(), n))
+}
+
+fn decode_text_map(item: &[u8]) -> Result<Vec<(String, Cbor)>, String> {
+    let (val, _) = decode_cbor(item, 0)?;
+    match val {
+        Cbor::Map(entries) => {
+            let mut out = Vec::new();
+            for (k, v) in entries {
+                if let Cbor::Text(s) = k {
+                    out.push((s, v));
+                }
+            }
+            Ok(out)
+        }
+        _ => Err("expected CBOR map".into()),
+    }
+}
+
+fn decode_int_map(item: &[u8]) -> Result<Vec<(i64, Cbor)>, String> {
+    let (val, _) = decode_cbor(item, 0)?;
+    match val {
+        Cbor::Map(entries) => {
+            let mut out = Vec::new();
+            for (k, v) in entries {
+                if let Some(i) = k.as_int() {
+                    out.push((i, v));
+                }
+            }
+            Ok(out)
+        }
+        _ => Err("expected COSE CBOR map".into()),
+    }
+}
+
+fn decode_cbor(input: &[u8], depth: u32) -> Result<(Cbor, usize), String> {
+    if depth > CBOR_MAX_DEPTH {
+        return Err("CBOR nesting too deep".into());
+    }
+    if input.is_empty() {
+        return Err("truncated CBOR".into());
+    }
+    let b = input[0];
+    let major = b >> 5;
+    let ai = b & 0x1f;
+    let (len, hdr) = additional(input, ai)?;
+    let rest = &input[hdr..];
+    match major {
+        0 => Ok((Cbor::Unsigned(len), hdr)),
+        1 => Ok((Cbor::Negative(-1 - (len as i64)), hdr)),
+        2 => {
+            if len > CBOR_MAX_BYTES {
+                return Err("CBOR bstr too large".into());
+            }
+            let n = usize::try_from(len).map_err(|_| "CBOR bstr too large".to_string())?;
+            if rest.len() < n {
+                return Err("truncated bstr".into());
+            }
+            Ok((Cbor::Bytes(rest[..n].to_vec()), hdr + n))
+        }
+        3 => {
+            if len > CBOR_MAX_BYTES {
+                return Err("CBOR tstr too large".into());
+            }
+            let n = usize::try_from(len).map_err(|_| "CBOR tstr too large".to_string())?;
+            if rest.len() < n {
+                return Err("truncated tstr".into());
+            }
+            let s = std::str::from_utf8(&rest[..n]).map_err(|_| "invalid tstr utf8".to_string())?;
+            Ok((Cbor::Text(s.to_string()), hdr + n))
+        }
+        4 => {
+            if len > CBOR_MAX_COLLECTION {
+                return Err("CBOR array too large".into());
+            }
+            let mut pos = hdr;
+            for _ in 0..len {
+                let (_, n) = decode_cbor(&input[pos..], depth + 1)?;
+                pos += n;
+            }
+            Ok((Cbor::Array, pos))
+        }
+        5 => {
+            if len > CBOR_MAX_COLLECTION {
+                return Err("CBOR map too large".into());
+            }
+            let n = usize::try_from(len).map_err(|_| "CBOR map too large".to_string())?;
+            let mut pos = hdr;
+            let mut items = Vec::with_capacity(n);
+            for _ in 0..len {
+                let (k, n1) = decode_cbor(&input[pos..], depth + 1)?;
+                pos += n1;
+                let (v, n2) = decode_cbor(&input[pos..], depth + 1)?;
+                pos += n2;
+                items.push((k, v));
+            }
+            Ok((Cbor::Map(items), pos))
+        }
+        6 => {
+            let (inner, n) = decode_cbor(rest, depth + 1)?;
+            Ok((inner, hdr + n))
+        }
+        _ => {
+            if ai == 31 {
+                return Err("indefinite CBOR not supported".into());
+            }
+            Ok((Cbor::Other, hdr))
+        }
+    }
+}
+
+fn additional(input: &[u8], ai: u8) -> Result<(u64, usize), String> {
+    match ai {
+        n @ 0..=23 => Ok((n as u64, 1)),
+        24 => {
+            if input.len() < 2 {
+                return Err("truncated CBOR".into());
+            }
+            Ok((input[1] as u64, 2))
+        }
+        25 => {
+            if input.len() < 3 {
+                return Err("truncated CBOR".into());
+            }
+            Ok((u16::from_be_bytes([input[1], input[2]]) as u64, 3))
+        }
+        26 => {
+            if input.len() < 5 {
+                return Err("truncated CBOR".into());
+            }
+            let bytes: [u8; 4] = input[1..5]
+                .try_into()
+                .map_err(|_| "truncated CBOR".to_string())?;
+            Ok((u32::from_be_bytes(bytes) as u64, 5))
+        }
+        27 => {
+            if input.len() < 9 {
+                return Err("truncated CBOR".into());
+            }
+            let bytes: [u8; 8] = input[1..9]
+                .try_into()
+                .map_err(|_| "truncated CBOR".to_string())?;
+            Ok((u64::from_be_bytes(bytes), 9))
+        }
+        _ => Err("unsupported CBOR additional info".into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use p256::ecdsa::signature::Signer;
+    use p256::ecdsa::SigningKey;
+    use rand_core::OsRng;
+
+    fn encode_bstr(bytes: &[u8]) -> Vec<u8> {
+        let mut out = Vec::new();
+        if bytes.len() < 24 {
+            out.push(0x40 | bytes.len() as u8);
+        } else if bytes.len() < 256 {
+            out.push(0x58);
+            out.push(bytes.len() as u8);
+        } else {
+            out.push(0x59);
+            out.extend_from_slice(&(bytes.len() as u16).to_be_bytes());
+        }
+        out.extend_from_slice(bytes);
+        out
+    }
+
+    fn encode_tstr(s: &str) -> Vec<u8> {
+        let b = s.as_bytes();
+        let mut out = Vec::new();
+        out.push(0x60 | b.len() as u8);
+        out.extend_from_slice(b);
+        out
+    }
+
+    fn encode_u(n: u64) -> Vec<u8> {
+        if n < 24 {
+            vec![n as u8]
+        } else {
+            vec![24, n as u8]
+        }
+    }
+
+    fn encode_neg(n: i64) -> Vec<u8> {
+        // n is the CBOR negative value itself (e.g. -1)
+        let payload = (-1 - n) as u64;
+        if payload < 24 {
+            vec![0x20 | payload as u8]
+        } else {
+            vec![0x38, payload as u8]
+        }
+    }
+
+    fn cose_from_vk(vk: &VerifyingKey) -> Vec<u8> {
+        let point = vk.to_encoded_point(false);
+        let bytes = point.as_bytes();
+        let x = &bytes[1..33];
+        let y = &bytes[33..65];
+        // map of 5: kty=2, alg=-7, crv=1, x, y
+        let mut out = vec![0xa5];
+        out.extend(encode_u(1));
+        out.extend(encode_u(2));
+        out.extend(encode_u(3));
+        out.extend(encode_neg(-7));
+        out.extend(encode_neg(-1));
+        out.extend(encode_u(1));
+        out.extend(encode_neg(-2));
+        out.extend(encode_bstr(x));
+        out.extend(encode_neg(-3));
+        out.extend(encode_bstr(y));
+        out
+    }
+
+    fn auth_data(rp_id: &str, counter: u32, cred: Option<(&[u8], &[u8])>) -> Vec<u8> {
+        let hash = Sha256::digest(rp_id.as_bytes());
+        let mut out = Vec::new();
+        out.extend_from_slice(&hash);
+        let mut flags = FLAG_UP | FLAG_UV;
+        if cred.is_some() {
+            flags |= FLAG_AT;
+        }
+        out.push(flags);
+        out.extend_from_slice(&counter.to_be_bytes());
+        if let Some((id, cose)) = cred {
+            out.extend_from_slice(&[0u8; 16]); // aaguid
+            out.extend_from_slice(&(id.len() as u16).to_be_bytes());
+            out.extend_from_slice(id);
+            out.extend_from_slice(cose);
+        }
+        out
+    }
+
+    fn att_object(auth_data: &[u8]) -> Vec<u8> {
+        // {"fmt":"none","attStmt":{},"authData": ...}  — 3-entry map
+        let mut out = vec![0xa3];
+        out.extend(encode_tstr("fmt"));
+        out.extend(encode_tstr("none"));
+        out.extend(encode_tstr("attStmt"));
+        out.push(0xa0);
+        out.extend(encode_tstr("authData"));
+        out.extend(encode_bstr(auth_data));
+        out
+    }
+
+    #[test]
+    fn registration_and_assertion_es256() {
+        let rp = RpContext {
+            rp_id: "example.com".into(),
+            origin: "https://example.com".into(),
+            rp_name: "y".into(),
+        };
+        let signing = SigningKey::random(&mut OsRng);
+        let vk = signing.verifying_key();
+        let cose = cose_from_vk(vk);
+        let cred_id = b"cred-1";
+        let ad = auth_data(&rp.rp_id, 1, Some((cred_id, &cose)));
+        let att = att_object(&ad);
+        let challenge = b64url_encode(b"challenge-bytes-0123456789abcd");
+        let client = serde_json::json!({
+            "type": "webauthn.create",
+            "challenge": challenge,
+            "origin": rp.origin,
+        });
+        let client_bytes = serde_json::to_vec(&client).unwrap();
+        let resp = RegistrationResponse {
+            id: b64url_encode(cred_id),
+            response: RegistrationResponseInner {
+                attestation_object: b64url_encode(&att),
+                client_data_json: b64url_encode(&client_bytes),
+                transports: Some(vec!["internal".into()]),
+            },
+        };
+        let verified = verify_registration(&rp, &challenge, &resp).expect("register");
+        assert_eq!(verified.credential_id, b64url_encode(cred_id));
+        assert_eq!(verified.counter, 1);
+
+        let stored = Credential {
+            id: verified.credential_id.clone(),
+            public_key: verified.public_key.clone(),
+            counter: verified.counter,
+            transports: None,
+        };
+        let get_ad = auth_data(&rp.rp_id, 2, None);
+        let get_client = serde_json::json!({
+            "type": "webauthn.get",
+            "challenge": challenge,
+            "origin": rp.origin,
+        });
+        let get_client_bytes = serde_json::to_vec(&get_client).unwrap();
+        let client_hash = Sha256::digest(&get_client_bytes);
+        let mut signed = get_ad.clone();
+        signed.extend_from_slice(&client_hash);
+        let sig: Signature = signing.sign(&signed);
+        let auth_resp = AuthenticationResponse {
+            id: stored.id.clone(),
+            response: AuthenticationResponseInner {
+                authenticator_data: b64url_encode(&get_ad),
+                client_data_json: b64url_encode(&get_client_bytes),
+                signature: b64url_encode(&sig.to_bytes()[..]),
+            },
+        };
+        let ok = verify_authentication(&rp, &challenge, &stored, &auth_resp).expect("assert");
+        assert_eq!(ok.new_counter, 2);
+
+        let replay = verify_authentication(
+            &rp,
+            &challenge,
+            &Credential {
+                counter: 2,
+                ..stored.clone()
+            },
+            &auth_resp,
+        )
+        .unwrap_err();
+        assert!(replay.contains("counter"), "{replay}");
+
+        let mut bad_origin = get_client.clone();
+        bad_origin["origin"] = serde_json::json!("https://evil.example");
+        let bad_bytes = serde_json::to_vec(&bad_origin).unwrap();
+        let mut auth_bad = auth_resp.clone();
+        auth_bad.response.client_data_json = b64url_encode(&bad_bytes);
+        let origin_err = verify_authentication(&rp, &challenge, &stored, &auth_bad).unwrap_err();
+        assert!(origin_err.contains("origin"), "{origin_err}");
+
+        let challenge_err = verify_authentication(
+            &rp,
+            &b64url_encode(b"different-challenge"),
+            &stored,
+            &auth_resp,
+        )
+        .unwrap_err();
+        assert!(challenge_err.contains("challenge"), "{challenge_err}");
+
+        let mut mismatch = auth_resp.clone();
+        mismatch.id = b64url_encode(b"other");
+        let id_err = verify_authentication(&rp, &challenge, &stored, &mismatch).unwrap_err();
+        assert!(id_err.contains("credential id"), "{id_err}");
+    }
+
+    #[test]
+    fn authentication_requires_user_presence() {
+        let rp = RpContext {
+            rp_id: "example.com".into(),
+            origin: "https://example.com".into(),
+            rp_name: "y".into(),
+        };
+        let signing = SigningKey::random(&mut OsRng);
+        let vk = signing.verifying_key();
+        let stored = Credential {
+            id: b64url_encode(b"cred-1"),
+            public_key: cose_from_vk(vk),
+            counter: 1,
+            transports: None,
+        };
+        let mut get_ad = auth_data(&rp.rp_id, 2, None);
+        get_ad[32] = 0; // UP bit cleared
+        let challenge = b64url_encode(b"challenge-bytes-0123456789abcd");
+        let get_client = serde_json::json!({
+            "type": "webauthn.get",
+            "challenge": challenge,
+            "origin": rp.origin,
+        });
+        let get_client_bytes = serde_json::to_vec(&get_client).unwrap();
+        let client_hash = Sha256::digest(&get_client_bytes);
+        let mut signed = get_ad.clone();
+        signed.extend_from_slice(&client_hash);
+        let sig: Signature = signing.sign(&signed);
+        let auth_resp = AuthenticationResponse {
+            id: stored.id.clone(),
+            response: AuthenticationResponseInner {
+                authenticator_data: b64url_encode(&get_ad),
+                client_data_json: b64url_encode(&get_client_bytes),
+                signature: b64url_encode(&sig.to_bytes()[..]),
+            },
+        };
+        let err = verify_authentication(&rp, &challenge, &stored, &auth_resp).unwrap_err();
+        assert!(err.contains("user presence"), "{err}");
+    }
+
+    #[test]
+    fn options_advertise_es256_only() {
+        let rp = RpContext {
+            rp_id: "example.com".into(),
+            origin: "https://example.com".into(),
+            rp_name: "y".into(),
+        };
+        let existing = [Credential {
+            id: "abc".into(),
+            public_key: vec![],
+            counter: 0,
+            transports: Some("internal,hybrid".into()),
+        }];
+        let reg = registration_options(&rp, &existing);
+        let params = reg["pubKeyCredParams"].as_array().expect("params");
+        assert_eq!(params.len(), 1);
+        assert_eq!(params[0]["alg"], -7);
+        assert_eq!(reg["rp"]["id"], "example.com");
+        assert_eq!(reg["user"]["name"], "admin");
+        assert_eq!(reg["excludeCredentials"][0]["id"], "abc");
+        assert_eq!(
+            reg["excludeCredentials"][0]["transports"],
+            serde_json::json!(["internal", "hybrid"])
+        );
+        assert_eq!(
+            reg["authenticatorSelection"]["userVerification"],
+            "required"
+        );
+        let auth = authentication_options(&rp, &existing);
+        assert_eq!(auth["rpId"], "example.com");
+        assert_eq!(auth["userVerification"], "required");
+        assert_eq!(auth["allowCredentials"][0]["id"], "abc");
+    }
+
+    #[test]
+    fn registration_rejects_wrong_origin() {
+        let rp = RpContext {
+            rp_id: "example.com".into(),
+            origin: "https://example.com".into(),
+            rp_name: "y".into(),
+        };
+        let signing = SigningKey::random(&mut OsRng);
+        let cose = cose_from_vk(signing.verifying_key());
+        let cred_id = b"cred-1";
+        let ad = auth_data(&rp.rp_id, 1, Some((cred_id, &cose)));
+        let att = att_object(&ad);
+        let challenge = b64url_encode(b"challenge-bytes-0123456789abcd");
+        let client = serde_json::json!({
+            "type": "webauthn.create",
+            "challenge": challenge,
+            "origin": "https://phishing.example",
+        });
+        let resp = RegistrationResponse {
+            id: b64url_encode(cred_id),
+            response: RegistrationResponseInner {
+                attestation_object: b64url_encode(&att),
+                client_data_json: b64url_encode(&serde_json::to_vec(&client).unwrap()),
+                transports: None,
+            },
+        };
+        let err = verify_registration(&rp, &challenge, &resp).unwrap_err();
+        assert!(err.contains("origin"), "{err}");
+    }
+
+    #[test]
+    fn rp_from_site_url() {
+        let rp = RpContext::from_site("https://y.imjasonh.workers.dev", "y").unwrap();
+        assert_eq!(rp.rp_id, "y.imjasonh.workers.dev");
+        assert_eq!(rp.origin, "https://y.imjasonh.workers.dev");
+    }
+
+    #[test]
+    fn authentication_requires_user_verification() {
+        let rp = RpContext {
+            rp_id: "example.com".into(),
+            origin: "https://example.com".into(),
+            rp_name: "y".into(),
+        };
+        let signing = SigningKey::random(&mut OsRng);
+        let vk = signing.verifying_key();
+        let stored = Credential {
+            id: b64url_encode(b"cred-1"),
+            public_key: cose_from_vk(vk),
+            counter: 1,
+            transports: None,
+        };
+        let mut get_ad = auth_data(&rp.rp_id, 2, None);
+        get_ad[32] = FLAG_UP; // UV cleared
+        let challenge = b64url_encode(b"challenge-bytes-0123456789abcd");
+        let get_client = serde_json::json!({
+            "type": "webauthn.get",
+            "challenge": challenge,
+            "origin": rp.origin,
+        });
+        let get_client_bytes = serde_json::to_vec(&get_client).unwrap();
+        let client_hash = Sha256::digest(&get_client_bytes);
+        let mut signed = get_ad.clone();
+        signed.extend_from_slice(&client_hash);
+        let sig: Signature = signing.sign(&signed);
+        let auth_resp = AuthenticationResponse {
+            id: stored.id.clone(),
+            response: AuthenticationResponseInner {
+                authenticator_data: b64url_encode(&get_ad),
+                client_data_json: b64url_encode(&get_client_bytes),
+                signature: b64url_encode(&sig.to_bytes()[..]),
+            },
+        };
+        let err = verify_authentication(&rp, &challenge, &stored, &auth_resp).unwrap_err();
+        assert!(err.contains("user verification"), "{err}");
+    }
+
+    fn cose_from_vk_no_alg(vk: &VerifyingKey) -> Vec<u8> {
+        let point = vk.to_encoded_point(false);
+        let bytes = point.as_bytes();
+        let x = &bytes[1..33];
+        let y = &bytes[33..65];
+        let mut out = vec![0xa4];
+        out.extend(encode_u(1));
+        out.extend(encode_u(2));
+        out.extend(encode_neg(-1));
+        out.extend(encode_u(1));
+        out.extend(encode_neg(-2));
+        out.extend(encode_bstr(x));
+        out.extend(encode_neg(-3));
+        out.extend(encode_bstr(y));
+        out
+    }
+
+    #[test]
+    fn registration_requires_es256_alg() {
+        let rp = RpContext {
+            rp_id: "example.com".into(),
+            origin: "https://example.com".into(),
+            rp_name: "y".into(),
+        };
+        let signing = SigningKey::random(&mut OsRng);
+        let cose = cose_from_vk_no_alg(signing.verifying_key());
+        let cred_id = b"cred-1";
+        let ad = auth_data(&rp.rp_id, 1, Some((cred_id, &cose)));
+        let att = att_object(&ad);
+        let challenge = b64url_encode(b"challenge-bytes-0123456789abcd");
+        let client = serde_json::json!({
+            "type": "webauthn.create",
+            "challenge": challenge,
+            "origin": rp.origin,
+        });
+        let resp = RegistrationResponse {
+            id: b64url_encode(cred_id),
+            response: RegistrationResponseInner {
+                attestation_object: b64url_encode(&att),
+                client_data_json: b64url_encode(&serde_json::to_vec(&client).unwrap()),
+                transports: None,
+            },
+        };
+        let err = verify_registration(&rp, &challenge, &resp).unwrap_err();
+        assert!(err.contains("alg"), "{err}");
+
+        let vk = signing.verifying_key();
+        let stored = Credential {
+            id: b64url_encode(cred_id),
+            public_key: cose,
+            counter: 0,
+            transports: None,
+        };
+        let get_ad = auth_data(&rp.rp_id, 1, None);
+        let get_client = serde_json::json!({
+            "type": "webauthn.get",
+            "challenge": challenge,
+            "origin": rp.origin,
+        });
+        let get_client_bytes = serde_json::to_vec(&get_client).unwrap();
+        let client_hash = Sha256::digest(&get_client_bytes);
+        let mut signed = get_ad.clone();
+        signed.extend_from_slice(&client_hash);
+        let sig: Signature = signing.sign(&signed);
+        let auth_resp = AuthenticationResponse {
+            id: stored.id.clone(),
+            response: AuthenticationResponseInner {
+                authenticator_data: b64url_encode(&get_ad),
+                client_data_json: b64url_encode(&get_client_bytes),
+                signature: b64url_encode(&sig.to_bytes()[..]),
+            },
+        };
+        verify_authentication(&rp, &challenge, &stored, &auth_resp)
+            .expect("legacy COSE without alg still verifies");
+        let _ = vk;
+    }
+
+    #[test]
+    fn registration_rejects_non_none_attestation() {
+        let rp = RpContext {
+            rp_id: "example.com".into(),
+            origin: "https://example.com".into(),
+            rp_name: "y".into(),
+        };
+        let signing = SigningKey::random(&mut OsRng);
+        let cose = cose_from_vk(signing.verifying_key());
+        let cred_id = b"cred-1";
+        let ad = auth_data(&rp.rp_id, 1, Some((cred_id, &cose)));
+        let mut att = vec![0xa3];
+        att.extend(encode_tstr("fmt"));
+        att.extend(encode_tstr("packed"));
+        att.extend(encode_tstr("attStmt"));
+        att.push(0xa0);
+        att.extend(encode_tstr("authData"));
+        att.extend(encode_bstr(&ad));
+        let challenge = b64url_encode(b"challenge-bytes-0123456789abcd");
+        let client = serde_json::json!({
+            "type": "webauthn.create",
+            "challenge": challenge,
+            "origin": rp.origin,
+        });
+        let resp = RegistrationResponse {
+            id: b64url_encode(cred_id),
+            response: RegistrationResponseInner {
+                attestation_object: b64url_encode(&att),
+                client_data_json: b64url_encode(&serde_json::to_vec(&client).unwrap()),
+                transports: None,
+            },
+        };
+        let err = verify_registration(&rp, &challenge, &resp).unwrap_err();
+        assert!(err.contains("attestation format"), "{err}");
+    }
+
+    #[test]
+    fn cbor_rejects_huge_claimed_lengths() {
+        let mut input = vec![0xBB];
+        input.extend_from_slice(&u64::MAX.to_be_bytes());
+        let err = decode_cbor(&input, 0).unwrap_err();
+        assert!(
+            err.contains("too large") || err.contains("truncated"),
+            "{err}"
+        );
+        let nested_tag = [0xc0, 0xc0, 0xc0, 0xc0, 0xc0, 0xc0, 0xc0, 0xc0, 0xc0, 0x00];
+        let err = decode_cbor(&nested_tag, 0).unwrap_err();
+        assert!(err.contains("nesting"), "{err}");
+        assert!(b64url_decode(&"A".repeat(MAX_B64_CHARS + 1)).is_err());
+    }
+}

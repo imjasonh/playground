@@ -50,10 +50,10 @@ passes tests — so older experiments don't bit-rot.
 
 ## Tools
 
-Not every top-level directory is a browser app. Go command-line tools and Rust
-apps live here too. CI builds and tests each changed Go module and Rust crate;
-because these have no `index.html`, GitHub Pages deploy and preview workflows
-skip them:
+Not every top-level directory is a browser app. Go command-line tools, Rust
+apps, and Cloudflare Workers live here too. CI builds and tests each changed
+Go module, Rust crate, and Cloudflare Worker; because these have no `index.html`,
+GitHub Pages deploy and preview workflows skip them:
 
 - **[`gitdb/`](gitdb/)** — query a git repo's history, files, blame, and file
   contents with SQL, via SQLite virtual tables over go-git (Go CLI).
@@ -63,6 +63,8 @@ skip them:
   over tree-sitter ASTs (Go CLI).
 - **[`web-push/`](web-push/)** — a Web Push application-server backend
   (RFC 8030/8188/8291/8292) for Cloudflare Workers, in Rust.
+- **[`y/`](y/)** — a one-user microblog for Cloudflare Workers, in Rust
+  (D1 + R2): 260-char posts, images, RSS. Deployed as Worker `y`.
 - **[`inkbot/`](inkbot/)** — e-ink desk-frame backend for Cloudflare Workers:
   hosts one 800×480 B/W PNG, accepts signed uploads, and turns Slack
   `@inkbot` image mentions into dithered frames.

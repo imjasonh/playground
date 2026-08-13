@@ -41,7 +41,8 @@ playground/
 ├── pasta/                 # CUE + tree-sitter multi-language linters/fixers (Go CLI)
 ├── population-rays/       # directional 5° population-slice map (JS + Node tests)
 ├── web-push/              # Rust Cloudflare Worker (Cargo + tests; not a Pages app)
-└── web-push-demo/         # static browser front-end for the web-push Worker
+├── web-push-demo/         # static browser front-end for the web-push Worker
+└── y/                     # Rust Cloudflare Worker: one-user microblog
 ```
 
 ### Browser apps
@@ -65,6 +66,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `ocidb/` | no | Go CLI; no `index.html` |
 | `pasta/` | no | Go CLI (CUE + tree-sitter linters); no `index.html` |
 | `web-push/` | no | Rust Cloudflare Worker; no `index.html` |
+| `y/` | no | Rust Cloudflare Worker (one-user microblog); no `index.html` |
 | `cors-proxy/` | no | Rust Cloudflare Worker; no `index.html` |
 | `inkbot/` | no | Rust Cloudflare Worker (e-ink frame + Slack); no `index.html` |
 | `inkbot-esp32/` | no | Rust/ESP-IDF ESP32 firmware (espup); no `index.html` |
@@ -160,7 +162,7 @@ discovery scripts.
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
 | `deploy.yml` | push to `main` | Publishes all browser apps to GitHub Pages production |
-| `deploy-workers.yml` | push to `main`, manual | Deploys changed Cloudflare Worker apps (those with `wrangler.toml`) with `wrangler`, using the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets; a manual *Run workflow* (`workflow_dispatch`) redeploys all of them. Before deploy it create-or-gets each Worker's KV namespaces (substituting the placeholder ids in `wrangler.toml`) and creates any declared R2 buckets that don't exist; after deploy it get-or-generates a `VAPID_PRIVATE_KEY` secret for any Worker shipping an `examples/genvapid.rs` |
+| `deploy-workers.yml` | push to `main`, manual | Deploys changed Cloudflare Worker apps (those with `wrangler.toml`) with `wrangler`, using the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets; a manual *Run workflow* (`workflow_dispatch`) redeploys all of them. Before deploy it create-or-gets each Worker's KV namespaces (substituting the placeholder ids in `wrangler.toml`), creates any declared R2 buckets that don't exist, and applies remote D1 migrations for declared `[[d1_databases]]`; after deploy it get-or-generates a `VAPID_PRIVATE_KEY` secret for any Worker shipping an `examples/genvapid.rs` |
 | `preview.yml` | pull request opened/sync | When a browser app changed: deploys under `/preview/pr-<N>/` and comments the URL; otherwise no-ops |
 | `cleanup.yml` | pull request closed, manual | Removes closed-PR preview dirs from `gh-pages` (reconciles all open PRs) and refreshes the root index |
 | `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps, plus the pasta style leg, in one job |
@@ -252,7 +254,7 @@ but is excluded from Rust discovery because it needs the espup Xtensa toolchain;
 |----------|---------------------------|--------------------------|
 | Browser | `index.html` **and** `package.json` with a `test` script | `npm ci` → `npm test` → `npm run test:e2e` (if defined; installs Playwright Chromium first) |
 | Go | `go.mod` | `go build ./...` → `go test ./...` |
-| Rust | `Cargo.toml` | `cargo fmt --check` → `cargo clippy --locked --all-targets -D warnings` → `cargo test --locked`; Cloudflare Worker apps (with `wrangler.toml`) also run wasm clippy + a release `wasm32-unknown-unknown` build, then the wrangler `[build]` command (with a decoy `package.json` like wrangler-action creates) so Test covers the deploy artifact path |
+| Rust | `Cargo.toml` | `cargo fmt --check` → `cargo clippy --locked --all-targets -D warnings` → `cargo test --locked`; Cloudflare Worker apps (with `wrangler.toml`) also run wasm clippy + a release `wasm32-unknown-unknown` build, then the wrangler `[build]` command (with a decoy `package.json` like wrangler-action creates) so Test covers the deploy artifact path. Crates set `[lints.rust] unused = "deny"` so unused methods fail even without clippy. |
 | pasta | `pasta/` / `.pasta/` / lintable sources (`.go`, `.js`, `.ts`, `.tsx`, `.jsx`, `.rs`, `.swift`, `.sh`, `.yml`, `.yaml`, `.html`, `.css`, …) via `discover-pasta.sh` | `go build ./pasta/cmd/pasta` → `pasta test .pasta` → `pasta -fail-on=warning ./...` |
 
 Browser apps without a `test` script (e.g. `hello/`) are never tested. Each Rust
@@ -412,8 +414,8 @@ go test ./...
 ## Adding a new Rust app
 
 1. Create a **top-level directory** (for example, `my-worker/`).
-2. Initialize an independent crate at `my-worker/Cargo.toml` and commit
-   `Cargo.lock`.
+2. Initialize an independent crate at `my-worker/Cargo.toml` (include
+   `[lints.rust] unused = "deny"`) and commit `Cargo.lock`.
 3. Keep all Rust sources and tests inside that directory.
 4. Add `my-worker/rust-toolchain.toml` pinning the toolchain (and, for a
    Cloudflare Worker, the `wasm32-unknown-unknown` target).
@@ -426,7 +428,8 @@ go test ./...
  The deploy self-provisions Cloudflare-side config: KV namespaces referenced
  with a placeholder id (e.g. `id = "REPLACE_WITH_..."`) are created-or-fetched
  and rewritten to real ids before deploy, R2 buckets named by `[[r2_buckets]]`
-  entries are created if absent, and a Worker that ships
+  entries are created if absent, D1 databases declared in `[[d1_databases]]`
+  have remote migrations applied, and a Worker that ships
  `examples/genvapid.rs` gets a `VAPID_PRIVATE_KEY` secret generated once (only
  if absent, so the key is stable across deploys).
 
@@ -439,7 +442,7 @@ Run locally:
 ```bash
 cd my-worker
 cargo fmt --check
-cargo clippy --all-targets
+cargo clippy --all-targets -- -D warnings
 cargo test
 ```
 
@@ -506,7 +509,7 @@ bundle exec fastlane test
 - **Browser apps are client-side**: they must be static sites suitable for GitHub Pages (no server-side runtime in production).
 - **Prefer plain HTML + JS** for browser apps unless an app already uses a framework; match the style of neighboring code in that app directory.
 - **Go apps are independent modules**: each app owns its `go.mod` and `go.sum`; avoid cross-app imports.
-- **Rust apps are independent crates**: each app owns its `Cargo.toml`, `Cargo.lock`, and `rust-toolchain.toml`; avoid cross-app imports.
+- **Rust apps are independent crates**: each app owns its `Cargo.toml`, `Cargo.lock`, and `rust-toolchain.toml`; avoid cross-app imports. Each crate sets `[lints.rust] unused = "deny"` so unused methods, imports, and variables fail `cargo test` / `cargo build` (CI clippy also uses `-D warnings`, which includes rustc `dead_code` and clippy unused-* lints). Do not `#[allow(dead_code)]` to keep dead methods.
 - **There is one iOS host app** (`ios/`, the "Playground" container): add
   features as **experiments** inside it (same Bundle ID, no re-bootstrap). A
   Custom Keyboard or other **app extension** needs a second Bundle ID (Apple
@@ -583,6 +586,7 @@ bundle exec fastlane test
 | `git-server/` | git smart-HTTP server on R2 + Durable Objects — Cloudflare Worker | `cargo test` (incl. real-git integration) + clippy + wasm build |
 | `git-fuse/` | read-only FUSE adapter for git-server (mount commits/refs as files) — CLI, not a Worker | `cargo test` (incl. e2e over real FUSE mounts; skips without `/dev/fuse`) + clippy |
 | `life-stl/` | Conway's Game of Life → 3D-printable STL (Z = time); self-supporting causality braces (default) or breakaway supports | `cargo test` + clippy |
+| `y/` | One-user microblog (D1 + R2); 260-char posts, images, RSS, passkeys | `cargo test` + clippy + wasm build |
 
 > **`git-server` has its own agent guide:** read
 > [`git-server/AGENTS.md`](git-server/AGENTS.md) before working in that
