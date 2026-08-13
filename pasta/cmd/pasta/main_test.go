@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/imjasonh/pasta/internal/engine"
-	"github.com/imjasonh/pasta/internal/loader"
+	"github.com/imjasonh/playground/pasta/internal/engine"
+	"github.com/imjasonh/playground/pasta/internal/loader"
 )
 
 func TestWalkSources_skipsVendorTrees(t *testing.T) {

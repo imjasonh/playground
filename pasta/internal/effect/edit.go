@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/imjasonh/pasta/internal/dsl"
-	"github.com/imjasonh/pasta/internal/match"
-	"github.com/imjasonh/pasta/internal/tsutil"
+	"github.com/imjasonh/playground/pasta/internal/dsl"
+	"github.com/imjasonh/playground/pasta/internal/match"
+	"github.com/imjasonh/playground/pasta/internal/tsutil"
 )
 
 // Op is a compiled edit: replace bytes [Start, End) with Text.

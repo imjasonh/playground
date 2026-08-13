@@ -19,14 +19,14 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/imjasonh/pasta/internal/dsl"
-	"github.com/imjasonh/pasta/internal/effect"
-	"github.com/imjasonh/pasta/internal/factstore"
-	"github.com/imjasonh/pasta/internal/lang"
-	"github.com/imjasonh/pasta/internal/match"
-	"github.com/imjasonh/pasta/internal/parsecache"
-	"github.com/imjasonh/pasta/internal/prefilter"
-	"github.com/imjasonh/pasta/internal/tsutil"
+	"github.com/imjasonh/playground/pasta/internal/dsl"
+	"github.com/imjasonh/playground/pasta/internal/effect"
+	"github.com/imjasonh/playground/pasta/internal/factstore"
+	"github.com/imjasonh/playground/pasta/internal/lang"
+	"github.com/imjasonh/playground/pasta/internal/match"
+	"github.com/imjasonh/playground/pasta/internal/parsecache"
+	"github.com/imjasonh/playground/pasta/internal/prefilter"
+	"github.com/imjasonh/playground/pasta/internal/tsutil"
 )
 
 // Result is the output of running one or more analyzers over a single

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/imjasonh/pasta/internal/dsl"
-	"github.com/imjasonh/pasta/internal/remote"
+	"github.com/imjasonh/playground/pasta/internal/dsl"
+	"github.com/imjasonh/playground/pasta/internal/remote"
 )
 
 func TestLoadConfig_missing(t *testing.T) {

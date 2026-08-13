@@ -3,7 +3,7 @@ package effect
 import (
 	"testing"
 
-	"github.com/imjasonh/pasta/internal/match"
+	"github.com/imjasonh/playground/pasta/internal/match"
 )
 
 func TestInterpolateWithCaptures_stripsSpreadDots(t *testing.T) {

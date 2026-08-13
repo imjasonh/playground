@@ -6,7 +6,7 @@ Thin shim that tells Zed to spawn `pastals` as a language server.
 
 1. Build and install the binary so it's on your `$PATH`:
    ```
-   go install github.com/imjasonh/pasta/cmd/pastals@latest
+   go install github.com/imjasonh/playground/pasta/cmd/pastals@latest
    # or, from a checkout:
    cd /path/to/pasta && go install ./cmd/pastals
    ```

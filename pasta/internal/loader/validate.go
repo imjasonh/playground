@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/imjasonh/pasta/internal/dsl"
+	"github.com/imjasonh/playground/pasta/internal/dsl"
 )
 
 // rootCapture is bound by the engine on every match to the matched node

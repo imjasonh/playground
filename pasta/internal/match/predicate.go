@@ -5,8 +5,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/imjasonh/pasta/internal/dsl"
-	"github.com/imjasonh/pasta/internal/tsutil"
+	"github.com/imjasonh/playground/pasta/internal/dsl"
+	"github.com/imjasonh/playground/pasta/internal/tsutil"
 )
 
 // reCache memoizes regexp.Compile. Patterns come from rule definitions

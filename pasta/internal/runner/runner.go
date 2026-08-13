@@ -15,13 +15,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/imjasonh/pasta/internal/apply"
-	"github.com/imjasonh/pasta/internal/dsl"
-	"github.com/imjasonh/pasta/internal/effect"
-	"github.com/imjasonh/pasta/internal/engine"
-	"github.com/imjasonh/pasta/internal/lang"
-	"github.com/imjasonh/pasta/internal/loader"
-	"github.com/imjasonh/pasta/internal/parsecache"
+	"github.com/imjasonh/playground/pasta/internal/apply"
+	"github.com/imjasonh/playground/pasta/internal/dsl"
+	"github.com/imjasonh/playground/pasta/internal/effect"
+	"github.com/imjasonh/playground/pasta/internal/engine"
+	"github.com/imjasonh/playground/pasta/internal/lang"
+	"github.com/imjasonh/playground/pasta/internal/loader"
+	"github.com/imjasonh/playground/pasta/internal/parsecache"
 )
 
 // FileResult holds the engine output for a single source file plus the

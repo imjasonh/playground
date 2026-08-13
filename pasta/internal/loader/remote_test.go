@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/imjasonh/pasta/internal/remote"
+	"github.com/imjasonh/playground/pasta/internal/remote"
 )
 
 // fakeFetcher serves pre-staged module contents from an on-disk dir

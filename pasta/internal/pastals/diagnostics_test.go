@@ -3,10 +3,10 @@ package pastals
 import (
 	"testing"
 
-	"github.com/imjasonh/pasta/internal/dsl"
-	"github.com/imjasonh/pasta/internal/effect"
-	"github.com/imjasonh/pasta/internal/pastals/lspconv"
-	"github.com/imjasonh/pasta/internal/pastals/protocol"
+	"github.com/imjasonh/playground/pasta/internal/dsl"
+	"github.com/imjasonh/playground/pasta/internal/effect"
+	"github.com/imjasonh/playground/pasta/internal/pastals/lspconv"
+	"github.com/imjasonh/playground/pasta/internal/pastals/protocol"
 )
 
 func TestSeverityFromPasta(t *testing.T) {

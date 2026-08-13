@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/imjasonh/pasta/internal/dsl"
-	"github.com/imjasonh/pasta/internal/effect"
+	"github.com/imjasonh/playground/pasta/internal/dsl"
+	"github.com/imjasonh/playground/pasta/internal/effect"
 )
 
 // Apply applies ops to src and returns the new bytes.

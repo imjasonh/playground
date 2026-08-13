@@ -4,8 +4,8 @@ import (
 	"context"
 	"sort"
 
-	"github.com/imjasonh/pasta/internal/pastals/protocol"
-	"github.com/imjasonh/pasta/internal/runner"
+	"github.com/imjasonh/playground/pasta/internal/pastals/protocol"
+	"github.com/imjasonh/playground/pasta/internal/runner"
 )
 
 // handleCodeAction returns CodeActions for the diagnostics in p.

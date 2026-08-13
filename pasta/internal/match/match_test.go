@@ -3,11 +3,11 @@ package match
 import (
 	"testing"
 
-	"github.com/imjasonh/pasta/internal/tswasm"
+	"github.com/imjasonh/playground/pasta/internal/tswasm"
 
-	"github.com/imjasonh/pasta/internal/dsl"
-	"github.com/imjasonh/pasta/internal/lang"
-	"github.com/imjasonh/pasta/internal/tsutil"
+	"github.com/imjasonh/playground/pasta/internal/dsl"
+	"github.com/imjasonh/playground/pasta/internal/lang"
+	"github.com/imjasonh/playground/pasta/internal/tsutil"
 )
 
 func parseGo(t *testing.T, src string) tsutil.Node {

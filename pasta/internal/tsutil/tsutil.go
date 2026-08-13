@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/imjasonh/pasta/internal/tswasm"
+	"github.com/imjasonh/playground/pasta/internal/tswasm"
 )
 
 // Node is a thin wrapper around a tree-sitter node that carries the

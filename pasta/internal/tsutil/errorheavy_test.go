@@ -3,7 +3,7 @@ package tsutil
 import (
 	"testing"
 
-	"github.com/imjasonh/pasta/internal/tswasm"
+	"github.com/imjasonh/playground/pasta/internal/tswasm"
 )
 
 func TestErrorHeavy(t *testing.T) {

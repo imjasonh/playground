@@ -44,14 +44,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/imjasonh/pasta/internal/apply"
-	"github.com/imjasonh/pasta/internal/dsl"
-	"github.com/imjasonh/pasta/internal/engine"
-	"github.com/imjasonh/pasta/internal/lang"
-	"github.com/imjasonh/pasta/internal/loader"
-	"github.com/imjasonh/pasta/internal/parsecache"
-	"github.com/imjasonh/pasta/internal/remote"
-	"github.com/imjasonh/pasta/internal/runner"
+	"github.com/imjasonh/playground/pasta/internal/apply"
+	"github.com/imjasonh/playground/pasta/internal/dsl"
+	"github.com/imjasonh/playground/pasta/internal/engine"
+	"github.com/imjasonh/playground/pasta/internal/lang"
+	"github.com/imjasonh/playground/pasta/internal/loader"
+	"github.com/imjasonh/playground/pasta/internal/parsecache"
+	"github.com/imjasonh/playground/pasta/internal/remote"
+	"github.com/imjasonh/playground/pasta/internal/runner"
 )
 
 func main() {

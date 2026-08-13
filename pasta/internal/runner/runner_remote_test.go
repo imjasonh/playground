@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/imjasonh/pasta/internal/loader"
-	"github.com/imjasonh/pasta/internal/remote"
-	"github.com/imjasonh/pasta/internal/runner"
+	"github.com/imjasonh/playground/pasta/internal/loader"
+	"github.com/imjasonh/playground/pasta/internal/remote"
+	"github.com/imjasonh/playground/pasta/internal/runner"
 )
 
 // fakeFetcher serves staged module contents from on-disk dirs keyed

@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/imjasonh/pasta/internal/dsl"
+	"github.com/imjasonh/playground/pasta/internal/dsl"
 )
 
 func TestForRule_eqAndRequireSubstring(t *testing.T) {
