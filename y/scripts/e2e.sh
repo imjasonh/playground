@@ -96,6 +96,15 @@ curl_h -H "Origin: ${ORIGIN}" -d "email=e2e@example.com" "$Y_URL/subscribe"
 [ "$(status)" = "200" ] || fail "subscribe duplicate $(status)"
 echo "ok: subscribe"
 
+echo "==> unsubscribe token required, POST skips origin check"
+curl_h "$Y_URL/unsubscribe"
+[ "$(status)" = "400" ] || fail "unsubscribe missing $(status)"
+curl_h "$Y_URL/unsubscribe?token=deadbeefdeadbeefdeadbeefdeadbeef"
+[ "$(status)" = "404" ] || fail "unsubscribe unknown $(status)"
+curl_h -X POST "$Y_URL/unsubscribe?token=deadbeefdeadbeefdeadbeefdeadbeef"
+[ "$(status)" = "404" ] || fail "unsubscribe post no origin $(status)"
+echo "ok: unsubscribe"
+
 echo "==> passkey challenge claim (cookie + D1, no authenticator)"
 curl_h -c "$TMP/pk-cookies" -b "$TMP/pk-cookies" -H "Origin: ${ORIGIN}" \
   -X POST "$Y_URL/admin/login/passkey/options"

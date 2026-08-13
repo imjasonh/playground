@@ -1035,12 +1035,12 @@ pub fn subscribe_form(site_title: &str) -> String {
     simple_page(
         site_title,
         "subscribe",
-        r#"<p>Email subscriptions aren't built yet — but the RSS feed is.
-          Drop your address and I'll let you know when there's an email
-          option too.</p>
+        r#"<p>Drop your address and I'll email you about a minute after I
+          post — enough time to delete it if I change my mind. Each mail
+          has an unsubscribe link.</p>
         <form method="post" action="/subscribe" class="row">
           <input type="email" name="email" placeholder="you@example.com" required>
-          <button type="submit">register interest</button>
+          <button type="submit">subscribe</button>
         </form>
         <p>Or grab the <a href="/feed.xml">RSS feed</a> right now.</p>"#,
     )
@@ -1050,8 +1050,32 @@ pub fn subscribe_thanks(site_title: &str) -> String {
     simple_page(
         site_title,
         "thanks",
-        r#"<p class="ok">Got it — you're on the list. I'll reach out
-          when email subscriptions are live.</p>
+        r#"<p class="ok">Got it — you're on the list. I'll email you about
+          a minute after each post, unless I delete it first.</p>
+        <p><a href="/">← back</a></p>"#,
+    )
+}
+
+pub fn unsubscribe_confirm(site_title: &str, token: &str) -> String {
+    let token = escape_html(token);
+    simple_page(
+        site_title,
+        "unsubscribe",
+        &format!(
+            r#"<p>Stop emailing this address?</p>
+        <form method="post" action="/unsubscribe?token={token}">
+          <p><button type="submit">unsubscribe</button>
+          · <a href="/">cancel</a></p>
+        </form>"#
+        ),
+    )
+}
+
+pub fn unsubscribe_done(site_title: &str) -> String {
+    simple_page(
+        site_title,
+        "unsubscribed",
+        r#"<p class="ok">You're unsubscribed. You won't get email about new posts.</p>
         <p><a href="/">← back</a></p>"#,
     )
 }
@@ -1123,7 +1147,7 @@ pub fn admin_compose(site_title: &str, reply_to: Option<&Post>, interest_count: 
     let mut inner = String::new();
     if interest_count >= 10 {
         inner.push_str(&format!(
-            r#"<p class="interest-banner">📬 {interest_count} people have registered interest in email subscriptions — time to wire that up.</p>"#
+            r#"<p class="interest-banner">📬 {interest_count} people will be emailed a minute after you publish.</p>"#
         ));
     }
     if let Some(p) = reply_to {
@@ -1338,6 +1362,15 @@ mod tests {
         assert!(admin.contains("<title>admin</title>"));
         let sub = subscribe_form("y");
         assert!(sub.contains("<title>subscribe</title>"));
+        assert!(sub.contains("unsubscribe"));
+        let thanks = subscribe_thanks("y");
+        assert!(thanks.contains("minute"));
+        let unsub = unsubscribe_confirm("y", "ab&c");
+        assert!(unsub.contains("<title>unsubscribe</title>"));
+        assert!(unsub.contains("token=ab&amp;c"));
+        assert!(!unsub.contains("token=ab&c\""));
+        let done = unsubscribe_done("y");
+        assert!(done.contains("unsubscribed"));
         let edit = edit_page("y", &sample_post("hi"));
         assert!(edit.contains("<title>edit</title>"));
         assert!(edit.contains("[...this.value].length"));

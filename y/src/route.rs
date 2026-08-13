@@ -7,6 +7,7 @@ pub enum Route {
     Feed,
     Image { key: String },
     Subscribe,
+    Unsubscribe,
     Admin,
     AdminLogin,
     AdminLogout,
@@ -29,6 +30,7 @@ pub fn parse(method: &str, path: &str) -> Option<Route> {
         ("GET", "/") => Some(Route::Home),
         ("GET", "/feed.xml") => Some(Route::Feed),
         ("GET", "/subscribe") | ("POST", "/subscribe") => Some(Route::Subscribe),
+        ("GET", "/unsubscribe") | ("POST", "/unsubscribe") => Some(Route::Unsubscribe),
         ("GET", "/admin") => Some(Route::Admin),
         ("GET", "/admin/login") | ("POST", "/admin/login") => Some(Route::AdminLogin),
         ("POST", "/admin/logout") => Some(Route::AdminLogout),
@@ -105,6 +107,9 @@ mod tests {
         assert_eq!(parse("GET", "/subscribe"), Some(Route::Subscribe));
         assert_eq!(parse("POST", "/subscribe"), Some(Route::Subscribe));
         assert_eq!(parse("GET", "/subscribe/"), Some(Route::Subscribe));
+        assert_eq!(parse("GET", "/unsubscribe"), Some(Route::Unsubscribe));
+        assert_eq!(parse("POST", "/unsubscribe"), Some(Route::Unsubscribe));
+        assert_eq!(parse("GET", "/unsubscribe/"), Some(Route::Unsubscribe));
         assert_eq!(
             parse("GET", "/img/assets/paperclip.png"),
             Some(Route::Image {

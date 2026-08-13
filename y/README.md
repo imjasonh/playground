@@ -1,6 +1,6 @@
 # y
 
-A one-user microblog. 260-char posts, optional images, RSS. No JS on the
+A one-user microblog. 260-char posts, optional images, RSS, email. No JS on the
 public site, no tracking.
 
 Built on Cloudflare Workers in **Rust**. D1 for posts/subscribers/passkeys, R2
@@ -51,6 +51,10 @@ Edit `wrangler.toml` `[vars]`:
 
 - `SITE_TITLE` — header text
 - `SITE_URL`   — absolute base URL (used in OG tags, RSS, WebAuthn origin)
+- `MAIL_FROM`  — From address for post emails. Empty disables sending.
+  Must be a domain verified for [Cloudflare Email Sending](https://developers.cloudflare.com/email-service/)
+  (you cannot send from `*.workers.dev`). Set SPF/DKIM on that domain, then
+  put the address here (e.g. `posts@example.com`).
 
 ## Develop
 
@@ -83,7 +87,8 @@ Public:
 - `/post/:id`                  permalink with OpenGraph meta
 - `/feed.xml`                  RSS 2.0
 - `/img/:key+`                 R2-backed image
-- `/subscribe`                 interest-list signup (email sending not wired)
+- `/subscribe`                 email signup
+- `/unsubscribe?token=…`       confirm + one-click unsubscribe
 
 Admin (cookie-gated):
 - `/admin/login`, `/admin/logout`
@@ -91,6 +96,11 @@ Admin (cookie-gated):
 - `POST /admin/posts`          multipart: `body` + zero-or-more `image`
 - `POST /admin/posts/:id/delete`
 - `/admin/passkeys`            WebAuthn registration
+
+About a minute after each publish, a cron emails everyone who is not
+unsubscribed, unless the post was deleted in that window. Each message
+includes a per-subscriber unsubscribe link. Set `MAIL_FROM` to actually
+send; until then the cron no-ops (queued posts send once it is set).
 
 ## Out of scope
 
