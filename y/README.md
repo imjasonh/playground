@@ -17,8 +17,10 @@ Pages app (no `index.html`). `deploy-workers.yml` deploys it on pushes to
 Existing D1/R2 bindings and secrets (`ADMIN_PASSWORD_HASH`, `SESSION_SECRET`)
 are reused. Password hashes stay `pbkdf2$iters$saltHex$hashHex`. Passkeys are
 ES256 with user verification required; stored COSE keys in D1 are unchanged.
-Missing or empty secrets fail closed (the Worker returns 500) rather than
-signing sessions with an empty HMAC key.
+WebAuthn challenges travel in a signed cookie and are claimed once at verify
+(`webauthn_used_challenges`); options does not need a prior D1 write to be
+visible. Missing or empty secrets fail closed (the Worker returns 500) rather
+than signing sessions with an empty HMAC key.
 
 ## One-time setup
 

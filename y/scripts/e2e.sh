@@ -96,6 +96,32 @@ curl_h -H "Origin: ${ORIGIN}" -d "email=e2e@example.com" "$Y_URL/subscribe"
 [ "$(status)" = "200" ] || fail "subscribe duplicate $(status)"
 echo "ok: subscribe"
 
+echo "==> passkey challenge claim (cookie + D1, no authenticator)"
+curl_h -c "$TMP/pk-cookies" -b "$TMP/pk-cookies" -H "Origin: ${ORIGIN}" \
+  -X POST "$Y_URL/admin/login/passkey/options"
+[ "$(status)" = "200" ] || fail "passkey options $(status)"
+grep -q '"challenge"' "$TMP/body" || fail "passkey options missing challenge"
+CHALLENGE_COOKIE="$(awk '$6 == "y_challenge" { print $7 }' "$TMP/pk-cookies" | tail -1)"
+[ -n "$CHALLENGE_COOKIE" ] || fail "passkey options did not Set-Cookie y_challenge"
+
+curl_h -H "Origin: ${ORIGIN}" -H "content-type: application/json" \
+  -d 'not-json' -X POST "$Y_URL/admin/login/passkey/verify"
+[ "$(status)" = "400" ] || fail "verify without cookie $(status)"
+grep -q "challenge expired" "$TMP/body" || fail "verify without cookie body: $(cat "$TMP/body")"
+
+curl_h -H "Origin: ${ORIGIN}" -H "content-type: application/json" \
+  -H "Cookie: y_challenge=${CHALLENGE_COOKIE}" \
+  -d 'not-json' -X POST "$Y_URL/admin/login/passkey/verify"
+[ "$(status)" = "400" ] || fail "verify first use $(status)"
+grep -q "invalid json" "$TMP/body" || fail "first verify should pass the challenge; got: $(cat "$TMP/body")"
+
+curl_h -H "Origin: ${ORIGIN}" -H "content-type: application/json" \
+  -H "Cookie: y_challenge=${CHALLENGE_COOKIE}" \
+  -d 'not-json' -X POST "$Y_URL/admin/login/passkey/verify"
+[ "$(status)" = "400" ] || fail "verify replay $(status)"
+grep -q "challenge expired" "$TMP/body" || fail "replay should expire; got: $(cat "$TMP/body")"
+echo "ok: passkey challenge claim"
+
 echo "==> bootstrap login + unicode post"
 curl_h -c "$TMP/cookies" -H "Origin: ${ORIGIN}" \
   -d "password=e2e-pass" "$Y_URL/admin/login"
