@@ -4,7 +4,7 @@
 //! cookies for admin auth. HTML and WebAuthn live in the host-tested modules.
 
 use serde::Deserialize;
-use worker::d1::{D1Database, D1Type};
+use worker::d1::D1Database;
 use worker::wasm_bindgen::JsValue;
 use worker::{event, Bucket, Context, Env, FormEntry, Headers, Method, Request, Response, Result};
 
@@ -18,6 +18,7 @@ use crate::html::{
     is_valid_email, login_page, passkeys_page, post_view, rss_feed, subscribe_form,
     subscribe_thanks, validate_post_body, Post, PostImage, PAPERCLIP_KEY,
 };
+use crate::policy;
 use crate::route::{self, Route};
 use crate::webauthn::{
     authentication_options, registration_options, verify_authentication, verify_registration,
@@ -35,6 +36,16 @@ struct Site {
 
 impl Site {
     fn from_env(env: &Env) -> Result<Self> {
+        let session_secret = env
+            .secret("SESSION_SECRET")
+            .map(|v| v.to_string())
+            .unwrap_or_default();
+        policy::require_session_secret(&session_secret).map_err(worker::Error::RustError)?;
+        let password_hash = env
+            .secret("ADMIN_PASSWORD_HASH")
+            .map(|v| v.to_string())
+            .unwrap_or_default();
+        policy::require_password_hash(&password_hash).map_err(worker::Error::RustError)?;
         Ok(Self {
             title: env
                 .var("SITE_TITLE")
@@ -44,31 +55,36 @@ impl Site {
                 .var("SITE_URL")
                 .map(|v| v.to_string())
                 .unwrap_or_else(|_| "https://y.imjasonh.workers.dev".into()),
-            session_secret: env
-                .secret("SESSION_SECRET")
-                .map(|v| v.to_string())
-                .unwrap_or_default(),
-            password_hash: env
-                .secret("ADMIN_PASSWORD_HASH")
-                .map(|v| v.to_string())
-                .unwrap_or_default(),
+            session_secret,
+            password_hash,
         })
     }
 
     fn rp(&self) -> std::result::Result<RpContext, String> {
         RpContext::from_site(&self.url, &self.title)
     }
+
+    fn origin(&self) -> std::result::Result<String, String> {
+        Ok(self.rp()?.origin)
+    }
 }
 
 #[event(fetch)]
 async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
     match handle_fetch(req, env, ctx).await {
-        Ok(resp) => Ok(resp),
+        Ok(resp) => apply_security(resp),
         Err(e) => {
             worker::console_error!("{}", e);
-            text(500, "internal error")
+            apply_security(text(500, "internal error")?)
         }
     }
+}
+
+fn apply_security(resp: Response) -> Result<Response> {
+    for (name, value) in policy::security_headers() {
+        resp.headers().set(name, value)?;
+    }
+    Ok(resp)
 }
 
 async fn handle_fetch(mut req: Request, env: Env, _ctx: Context) -> Result<Response> {
@@ -78,11 +94,25 @@ async fn handle_fetch(mut req: Request, env: Env, _ctx: Context) -> Result<Respo
     let site = Site::from_env(&env)?;
     let db = env.d1("DB")?;
     let images = env.bucket("IMAGES")?;
-    let now = (js_now()) as u64;
+    let now = js_now() as u64;
 
     let Some(route) = route::parse(method.as_ref(), &path) else {
         return text(404, "not found");
     };
+
+    if method == Method::Post {
+        let site_origin = site.origin().map_err(worker::Error::RustError)?;
+        let req_origin = url.origin().ascii_serialization();
+        let origin = req.headers().get("Origin").ok().flatten();
+        let referer = req.headers().get("Referer").ok().flatten();
+        if !policy::origin_allowed_any(
+            &[&site_origin, &req_origin],
+            origin.as_deref(),
+            referer.as_deref(),
+        ) {
+            return text(403, "bad origin");
+        }
+    }
 
     match route {
         Route::Home => handle_home(&req, &db, &site, now).await,
@@ -93,7 +123,7 @@ async fn handle_fetch(mut req: Request, env: Env, _ctx: Context) -> Result<Respo
         Route::Subscribe => handle_subscribe_post(&mut req, &db, &site, now).await,
         Route::AdminLogin if method == Method::Get => handle_login_get(&req, &db, &site, now).await,
         Route::AdminLogin => handle_login_post(&mut req, &db, &site, now).await,
-        Route::LoginPasskeyOptions => handle_login_passkey_options(&db, &site, now).await,
+        Route::LoginPasskeyOptions => handle_login_passkey_options(&req, &db, &site, now).await,
         Route::LoginPasskeyVerify => handle_login_passkey_verify(&mut req, &db, &site, now).await,
         Route::AdminLogout => {
             if !logged_in(&req, &site, now) {
@@ -119,7 +149,7 @@ async fn handle_fetch(mut req: Request, env: Env, _ctx: Context) -> Result<Respo
             if !logged_in(&req, &site, now) {
                 return redirect("/admin/login");
             }
-            handle_register_options(&db, &site, now).await
+            handle_register_options(&req, &db, &site, now).await
         }
         Route::AdminPasskeyRegisterVerify => {
             if !logged_in(&req, &site, now) {
@@ -131,8 +161,7 @@ async fn handle_fetch(mut req: Request, env: Env, _ctx: Context) -> Result<Respo
             if !logged_in(&req, &site, now) {
                 return redirect("/admin/login");
             }
-            delete_credential(&db, id).await?;
-            redirect("/admin/passkeys")
+            handle_delete_passkey(&db, id).await
         }
         Route::AdminPosts => {
             if !logged_in(&req, &site, now) {
@@ -186,6 +215,23 @@ fn cookie(req: &Request, name: &str) -> Option<String> {
     None
 }
 
+fn client_ip(req: &Request) -> String {
+    req.headers()
+        .get("CF-Connecting-IP")
+        .ok()
+        .flatten()
+        .or_else(|| {
+            req.headers()
+                .get("X-Forwarded-For")
+                .ok()
+                .flatten()
+                .and_then(|s| s.split(',').next().map(|p| p.trim().to_string()))
+                .filter(|s| !s.is_empty())
+        })
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "unknown".into())
+}
+
 fn query(req: &Request, name: &str) -> Option<String> {
     req.url()
         .ok()?
@@ -237,8 +283,13 @@ fn with_cleared_challenge(resp: Response) -> Result<Response> {
     Ok(resp)
 }
 
+fn is_unique_violation(err: &worker::Error) -> bool {
+    let s = err.to_string().to_ascii_lowercase();
+    s.contains("unique") || s.contains("constraint")
+}
+
 async fn handle_home(req: &Request, db: &D1Database, site: &Site, now: u64) -> Result<Response> {
-    let before = query(req, "before").and_then(|s| s.parse::<i64>().ok());
+    let before = query(req, "before").and_then(|s| policy::parse_js_safe_id(&s));
     let posts = list_head_posts(db, 50, before).await?;
     let ids: Vec<i64> = posts.iter().map(|p| p.id).collect();
     let images = images_for_posts(db, &ids).await?;
@@ -298,6 +349,9 @@ async fn handle_feed(db: &D1Database, site: &Site, now: u64) -> Result<Response>
 }
 
 async fn handle_image(bucket: &Bucket, key: &str) -> Result<Response> {
+    if !policy::is_allowed_image_key(key) {
+        return text(404, "not found");
+    }
     if let Some(obj) = bucket.get(key).execute().await? {
         let headers = Headers::new();
         if let Some(ct) = obj.http_metadata().content_type {
@@ -305,14 +359,11 @@ async fn handle_image(bucket: &Bucket, key: &str) -> Result<Response> {
         }
         headers.set("etag", &obj.http_etag())?;
         headers.set("Cache-Control", "public, max-age=31536000, immutable")?;
-        let bytes = match obj.body() {
-            Some(b) => b.bytes().await?,
-            None => return text(404, "not found"),
+        let Some(body) = obj.body() else {
+            return text(404, "not found");
         };
-        return Ok(Response::from_bytes(bytes)?.with_headers(headers));
+        return Ok(Response::from_body(body.response_body()?)?.with_headers(headers));
     }
-    // CSS references /img/assets/paperclip.png; serve the committed asset if
-    // it was never uploaded to R2 (the TS Worker 404'd and broke the clip).
     if key == PAPERCLIP_KEY {
         let headers = Headers::new();
         headers.set("Content-Type", "image/png")?;
@@ -329,7 +380,23 @@ async fn handle_subscribe_post(
     site: &Site,
     now: u64,
 ) -> Result<Response> {
-    let form = req.form_data().await?;
+    let ip = client_ip(req);
+    let key = format!("subscribe:{ip}");
+    if !rate_allow(
+        db,
+        &key,
+        now,
+        policy::SUBSCRIBE_RATE_WINDOW_SECS,
+        policy::SUBSCRIBE_RATE_MAX,
+    )
+    .await?
+    {
+        return text(429, "too many attempts");
+    }
+    let form = match req.form_data().await {
+        Ok(f) => f,
+        Err(_) => return text(400, "invalid form"),
+    };
     let email = form
         .get_field("email")
         .unwrap_or_default()
@@ -338,9 +405,7 @@ async fn handle_subscribe_post(
     if !is_valid_email(&email) {
         return text(400, "invalid email");
     }
-    if !subscriber_exists(db, &email).await? {
-        insert_interested(db, &email, now as i64).await?;
-    }
+    insert_interested(db, &email, now as i64).await?;
     html(200, subscribe_thanks(&site.title))
 }
 
@@ -365,9 +430,26 @@ async fn handle_login_post(
     if count_credentials(db).await? > 0 {
         return text(403, "password login disabled");
     }
-    let form = req.form_data().await?;
+    let ip = client_ip(req);
+    let key = format!("login:{ip}");
+    if rate_exceeded(
+        db,
+        &key,
+        now,
+        policy::LOGIN_RATE_WINDOW_SECS,
+        policy::LOGIN_RATE_MAX,
+    )
+    .await?
+    {
+        return text(429, "too many attempts");
+    }
+    let form = match req.form_data().await {
+        Ok(f) => f,
+        Err(_) => return text(400, "invalid form"),
+    };
     let password = form.get_field("password").unwrap_or_default();
     if !verify_password(&password, &site.password_hash) {
+        rate_record(db, &key, now).await?;
         return redirect("/admin/login?err=1");
     }
     let value = make_session_cookie(&site.session_secret, now);
@@ -376,7 +458,24 @@ async fn handle_login_post(
     Ok(resp)
 }
 
-async fn handle_login_passkey_options(db: &D1Database, site: &Site, now: u64) -> Result<Response> {
+async fn handle_login_passkey_options(
+    req: &Request,
+    db: &D1Database,
+    site: &Site,
+    now: u64,
+) -> Result<Response> {
+    let ip = client_ip(req);
+    if !rate_allow(
+        db,
+        &format!("pkopt:{ip}"),
+        now,
+        policy::OPTIONS_RATE_WINDOW_SECS,
+        policy::OPTIONS_RATE_MAX,
+    )
+    .await?
+    {
+        return text(429, "too many attempts");
+    }
     let rp = match site.rp() {
         Ok(r) => r,
         Err(e) => return Err(worker::Error::RustError(e)),
@@ -388,10 +487,37 @@ async fn handle_login_passkey_options(db: &D1Database, site: &Site, now: u64) ->
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
+    store_challenge(db, &challenge, now).await?;
     let cookie = make_challenge_cookie(&site.session_secret, &challenge, now);
     let resp = json(200, opts.to_string())?;
     set_cookie(resp.headers(), &challenge_cookie_header(&cookie))?;
     Ok(resp)
+}
+
+async fn take_challenge(
+    req: &Request,
+    db: &D1Database,
+    site: &Site,
+    now: u64,
+) -> Result<std::result::Result<String, Response>> {
+    let expected = verify_challenge_cookie(
+        &site.session_secret,
+        cookie(req, CHALLENGE_COOKIE).as_deref(),
+        now,
+    );
+    let Some(expected) = expected else {
+        return Ok(Err(with_cleared_challenge(text(
+            400,
+            "challenge expired",
+        )?)?));
+    };
+    if !consume_challenge(db, &expected, now).await? {
+        return Ok(Err(with_cleared_challenge(text(
+            400,
+            "challenge expired",
+        )?)?));
+    }
+    Ok(Ok(expected))
 }
 
 async fn handle_login_passkey_verify(
@@ -400,15 +526,14 @@ async fn handle_login_passkey_verify(
     site: &Site,
     now: u64,
 ) -> Result<Response> {
-    let expected = verify_challenge_cookie(
-        &site.session_secret,
-        cookie(req, CHALLENGE_COOKIE).as_deref(),
-        now,
-    );
-    let Some(expected) = expected else {
-        return with_cleared_challenge(text(400, "challenge expired")?);
+    let expected = match take_challenge(req, db, site, now).await? {
+        Ok(c) => c,
+        Err(resp) => return Ok(resp),
     };
     let body = req.text().await.unwrap_or_default();
+    if policy::json_body_too_large(body.len()) {
+        return with_cleared_challenge(text(400, "payload too large")?);
+    }
     let parsed: AuthenticationResponse = match serde_json::from_str(&body) {
         Ok(v) => v,
         Err(_) => return with_cleared_challenge(text(400, "invalid json")?),
@@ -425,7 +550,12 @@ async fn handle_login_passkey_verify(
     };
     match verify_authentication(&rp, &expected, &stored, &parsed) {
         Ok(info) => {
-            update_counter(db, &stored.id, info.new_counter).await?;
+            if !update_counter(db, &stored.id, info.new_counter).await? {
+                return with_cleared_challenge(text(
+                    400,
+                    "authenticator counter did not increase",
+                )?);
+            }
             let value = make_session_cookie(&site.session_secret, now);
             let resp = json(200, r#"{"ok":true}"#)?;
             set_cookie(resp.headers(), &session_cookie_header(&value))?;
@@ -436,7 +566,7 @@ async fn handle_login_passkey_verify(
 }
 
 async fn handle_admin_get(req: &Request, db: &D1Database, site: &Site) -> Result<Response> {
-    let reply_to = match query(req, "reply_to").and_then(|s| s.parse::<i64>().ok()) {
+    let reply_to = match query(req, "reply_to").and_then(|s| policy::parse_js_safe_id(&s)) {
         Some(id) => get_post(db, id).await?,
         None => None,
     };
@@ -450,7 +580,24 @@ async fn handle_passkeys_get(req: &Request, db: &D1Database, site: &Site) -> Res
     html(200, passkeys_page(&site.title, &rows, bootstrap))
 }
 
-async fn handle_register_options(db: &D1Database, site: &Site, now: u64) -> Result<Response> {
+async fn handle_register_options(
+    req: &Request,
+    db: &D1Database,
+    site: &Site,
+    now: u64,
+) -> Result<Response> {
+    let ip = client_ip(req);
+    if !rate_allow(
+        db,
+        &format!("pkreg:{ip}"),
+        now,
+        policy::OPTIONS_RATE_WINDOW_SECS,
+        policy::OPTIONS_RATE_MAX,
+    )
+    .await?
+    {
+        return text(429, "too many attempts");
+    }
     let rp = match site.rp() {
         Ok(r) => r,
         Err(e) => return Err(worker::Error::RustError(e)),
@@ -462,6 +609,7 @@ async fn handle_register_options(db: &D1Database, site: &Site, now: u64) -> Resu
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
+    store_challenge(db, &challenge, now).await?;
     let cookie = make_challenge_cookie(&site.session_secret, &challenge, now);
     let resp = json(200, opts.to_string())?;
     set_cookie(resp.headers(), &challenge_cookie_header(&cookie))?;
@@ -480,15 +628,14 @@ async fn handle_register_verify(
     site: &Site,
     now: u64,
 ) -> Result<Response> {
-    let expected = verify_challenge_cookie(
-        &site.session_secret,
-        cookie(req, CHALLENGE_COOKIE).as_deref(),
-        now,
-    );
-    let Some(expected) = expected else {
-        return with_cleared_challenge(text(400, "challenge expired")?);
+    let expected = match take_challenge(req, db, site, now).await? {
+        Ok(c) => c,
+        Err(resp) => return Ok(resp),
     };
     let body = req.text().await.unwrap_or_default();
+    if policy::json_body_too_large(body.len()) {
+        return with_cleared_challenge(text(400, "payload too large")?);
+    }
     let parsed: RegisterBody = match serde_json::from_str(&body) {
         Ok(v) => v,
         Err(_) => return with_cleared_challenge(text(400, "invalid json")?),
@@ -503,7 +650,7 @@ async fn handle_register_verify(
     match verify_registration(&rp, &expected, &parsed.response) {
         Ok(info) => {
             let label = crate::html::passkey_label(parsed.label.as_deref());
-            insert_credential(
+            match insert_credential(
                 db,
                 &info.credential_id,
                 &info.public_key,
@@ -512,11 +659,26 @@ async fn handle_register_verify(
                 &label,
                 now as i64,
             )
-            .await?;
-            with_cleared_challenge(json(200, r#"{"ok":true}"#)?)
+            .await
+            {
+                Ok(()) => with_cleared_challenge(json(200, r#"{"ok":true}"#)?),
+                Err(e) if is_unique_violation(&e) => {
+                    with_cleared_challenge(text(400, "duplicate passkey")?)
+                }
+                Err(e) => Err(e),
+            }
         }
         Err(e) => with_cleared_challenge(text(400, &e)?),
     }
+}
+
+async fn handle_delete_passkey(db: &D1Database, id: i64) -> Result<Response> {
+    let n = count_credentials(db).await?;
+    if !policy::can_delete_passkey(n) {
+        return text(400, "cannot delete the last passkey");
+    }
+    delete_credential(db, id).await?;
+    redirect("/admin/passkeys")
 }
 
 async fn handle_create_post(
@@ -525,24 +687,33 @@ async fn handle_create_post(
     bucket: &Bucket,
     now: u64,
 ) -> Result<Response> {
-    let form = req.form_data().await?;
+    let form = match req.form_data().await {
+        Ok(f) => f,
+        Err(_) => return text(400, "invalid multipart"),
+    };
     let body = form
         .get_field("body")
         .unwrap_or_default()
         .trim()
         .to_string();
     let mut files: Vec<(String, Vec<u8>)> = Vec::new();
+    let mut total: u64 = 0;
     if let Some(entries) = form.get_all("image") {
         for entry in entries {
             if let FormEntry::File(f) = entry {
-                if f.size() == 0 {
+                let size = f.size() as u64;
+                if size == 0 {
                     continue;
+                }
+                if let Err(msg) = policy::check_image_upload(files.len(), size, total) {
+                    return text(400, &msg);
                 }
                 let ty = f.type_();
                 if !is_allowed_image_type(&ty) {
                     return text(400, &format!("unsupported image type: {ty}"));
                 }
                 files.push((ty, f.bytes().await?));
+                total += size;
             }
         }
     }
@@ -551,7 +722,7 @@ async fn handle_create_post(
     }
     let parent_id = match form.get_field("parent_id") {
         Some(s) if !s.is_empty() => {
-            let Ok(n) = s.parse::<i64>() else {
+            let Some(n) = policy::parse_js_safe_id(&s) else {
                 return text(400, "bad parent_id");
             };
             if get_post(db, n).await?.is_none() {
@@ -562,27 +733,56 @@ async fn handle_create_post(
         _ => None,
     };
     let post_id = insert_post(db, &body, now as i64, parent_id).await?;
-    for (i, (ty, bytes)) in files.iter().enumerate() {
-        let ext = image_ext_for(ty).unwrap_or("bin");
+    let mut uploaded: Vec<String> = Vec::new();
+    for (i, (ty, bytes)) in files.into_iter().enumerate() {
+        let ext = image_ext_for(&ty).unwrap_or("bin");
         let key = format!("{post_id}/{i}.{ext}");
-        bucket
-            .put(&key, bytes.clone())
+        if let Err(e) = bucket
+            .put(&key, bytes)
             .http_metadata(worker::HttpMetadata {
                 content_type: Some(ty.clone()),
                 ..Default::default()
             })
             .execute()
-            .await?;
-        insert_post_image(db, post_id, &key, ty, i as i64).await?;
+            .await
+        {
+            cleanup_failed_create(db, bucket, post_id, &uploaded).await;
+            return Err(e);
+        }
+        uploaded.push(key.clone());
+        if let Err(e) = insert_post_image(db, post_id, &key, &ty, i as i64).await {
+            cleanup_failed_create(db, bucket, post_id, &uploaded).await;
+            return Err(e);
+        }
     }
     redirect(&format!("/admin?reply_to={post_id}"))
 }
 
-async fn handle_delete_post(db: &D1Database, bucket: &Bucket, id: i64) -> Result<Response> {
-    let imgs = delete_post(db, id).await?;
-    for key in imgs {
+async fn cleanup_failed_create(db: &D1Database, bucket: &Bucket, post_id: i64, keys: &[String]) {
+    for key in keys {
         let _ = bucket.delete(key).await;
     }
+    if let Ok(stmt) = db
+        .prepare("DELETE FROM posts WHERE id = ?1")
+        .bind(&[JsValue::from_f64(post_id as f64)])
+    {
+        let _ = stmt.run().await;
+    }
+}
+
+async fn handle_delete_post(db: &D1Database, bucket: &Bucket, id: i64) -> Result<Response> {
+    let imgs = images_for_posts(db, &[id]).await?;
+    let keys: Vec<String> = imgs
+        .into_iter()
+        .flat_map(|(_, v)| v.into_iter().map(|i| i.r2_key))
+        .collect();
+    for key in &keys {
+        bucket.delete(key).await?;
+    }
+    db.prepare("DELETE FROM posts WHERE id = ?1")
+        .bind(&[JsValue::from_f64(id as f64)])?
+        .run()
+        .await?;
     redirect("/admin")
 }
 
@@ -594,7 +794,13 @@ async fn handle_edit_get(db: &D1Database, site: &Site, id: i64) -> Result<Respon
 }
 
 async fn handle_edit_post(req: &mut Request, db: &D1Database, id: i64) -> Result<Response> {
-    let form = req.form_data().await?;
+    if get_post(db, id).await?.is_none() {
+        return text(404, "not found");
+    }
+    let form = match req.form_data().await {
+        Ok(f) => f,
+        Err(_) => return text(400, "invalid form"),
+    };
     let body = form
         .get_field("body")
         .unwrap_or_default()
@@ -604,7 +810,15 @@ async fn handle_edit_post(req: &mut Request, db: &D1Database, id: i64) -> Result
     if let Err(msg) = validate_post_body(&body, grouped_has_images(&grouped, id)) {
         return text(400, &msg);
     }
-    update_post_body(db, id, &body).await?;
+    let result = db
+        .prepare("UPDATE posts SET body = ?1 WHERE id = ?2")
+        .bind(&[JsValue::from_str(&body), JsValue::from_f64(id as f64)])?
+        .run()
+        .await?;
+    let changes = result.meta()?.and_then(|m| m.changes).unwrap_or(0);
+    if changes == 0 {
+        return text(404, "not found");
+    }
     redirect(&format!("/post/{id}"))
 }
 
@@ -644,6 +858,11 @@ struct ImageRow {
 #[derive(Deserialize)]
 struct CountRow {
     n: i64,
+}
+
+#[derive(Deserialize)]
+struct IdRow {
+    id: i64,
 }
 
 #[derive(Deserialize)]
@@ -848,20 +1067,18 @@ async fn insert_post(
         Some(id) => JsValue::from_f64(id as f64),
         None => JsValue::NULL,
     };
-    let result = db
-        .prepare("INSERT INTO posts (body, created_at, parent_id) VALUES (?1, ?2, ?3)")
+    let row = db
+        .prepare("INSERT INTO posts (body, created_at, parent_id) VALUES (?1, ?2, ?3) RETURNING id")
         .bind(&[
             JsValue::from_str(body),
             JsValue::from_f64(created_at as f64),
             parent,
         ])?
-        .run()
-        .await?;
-    let id = result
-        .meta()?
-        .and_then(|m| m.last_row_id)
-        .ok_or_else(|| worker::Error::RustError("insert post: no last_row_id".into()))?;
-    Ok(id)
+        .first::<IdRow>(None)
+        .await?
+        .ok_or_else(|| worker::Error::RustError("insert post: no id".into()))?;
+    policy::js_safe_id(row.id)
+        .ok_or_else(|| worker::Error::RustError("insert post: id overflow".into()))
 }
 
 async fn insert_post_image(
@@ -886,40 +1103,11 @@ async fn insert_post_image(
     Ok(())
 }
 
-async fn update_post_body(db: &D1Database, id: i64, body: &str) -> Result<()> {
-    db.prepare("UPDATE posts SET body = ?1 WHERE id = ?2")
-        .bind(&[JsValue::from_str(body), JsValue::from_f64(id as f64)])?
-        .run()
-        .await?;
-    Ok(())
-}
-
-async fn delete_post(db: &D1Database, id: i64) -> Result<Vec<String>> {
-    let imgs = images_for_posts(db, &[id]).await?;
-    let keys = imgs
-        .into_iter()
-        .flat_map(|(_, v)| v.into_iter().map(|i| i.r2_key))
-        .collect();
-    db.prepare("DELETE FROM posts WHERE id = ?1")
-        .bind(&[JsValue::from_f64(id as f64)])?
-        .run()
-        .await?;
-    Ok(keys)
-}
-
-async fn subscriber_exists(db: &D1Database, email: &str) -> Result<bool> {
-    let row = db
-        .prepare("SELECT COUNT(*) AS n FROM subscribers WHERE email = ?1")
-        .bind(&[JsValue::from_str(email)])?
-        .first::<CountRow>(None)
-        .await?;
-    Ok(row.map(|r| r.n > 0).unwrap_or(false))
-}
-
 async fn insert_interested(db: &D1Database, email: &str, created_at: i64) -> Result<()> {
     db.prepare(
         "INSERT INTO subscribers (email, status, token, created_at)
-         VALUES (?1, 'pending', '', ?2)",
+         VALUES (?1, 'pending', '', ?2)
+         ON CONFLICT(email) DO NOTHING",
     )
     .bind(&[
         JsValue::from_str(email),
@@ -949,10 +1137,11 @@ async fn count_credentials(db: &D1Database) -> Result<i64> {
 fn cred_from_row(row: CredRow) -> Result<Credential> {
     let public_key = hex::decode(&row.public_key_hex)
         .map_err(|e| worker::Error::RustError(format!("credential blob: {e}")))?;
+    let counter = policy::counter_from_i64(row.counter).map_err(worker::Error::RustError)?;
     Ok(Credential {
         id: row.credential_id,
         public_key,
-        counter: row.counter as u32,
+        counter,
         transports: row.transports,
     })
 }
@@ -1011,34 +1200,42 @@ async fn insert_credential(
     label: &str,
     created_at: i64,
 ) -> Result<()> {
-    let blob = D1Type::Blob(public_key);
-    let id = D1Type::Text(credential_id);
-    let counter = D1Type::Integer(counter as i32);
+    let array = worker::js_sys::Uint8Array::new_with_length(public_key.len() as u32);
+    array.copy_from(public_key);
     let transports = match &transports {
-        Some(s) => D1Type::Text(s),
-        None => D1Type::Null,
+        Some(s) => JsValue::from_str(s),
+        None => JsValue::NULL,
     };
-    let label_t = D1Type::Text(label);
-    let created = D1Type::Real(created_at as f64);
     db.prepare(
         "INSERT INTO credentials (credential_id, public_key, counter, transports, label, created_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
     )
-    .bind_refs([&id, &blob, &counter, &transports, &label_t, &created])?
+    .bind(&[
+        JsValue::from_str(credential_id),
+        array.into(),
+        JsValue::from_f64(f64::from(counter)),
+        transports,
+        JsValue::from_str(label),
+        JsValue::from_f64(created_at as f64),
+    ])?
     .run()
     .await?;
     Ok(())
 }
 
-async fn update_counter(db: &D1Database, credential_id: &str, counter: u32) -> Result<()> {
-    db.prepare("UPDATE credentials SET counter = ?1 WHERE credential_id = ?2")
+async fn update_counter(db: &D1Database, credential_id: &str, counter: u32) -> Result<bool> {
+    let result = db
+        .prepare(
+            "UPDATE credentials SET counter = ?1
+              WHERE credential_id = ?2 AND (counter = 0 OR counter < ?1)",
+        )
         .bind(&[
-            JsValue::from_f64(counter as f64),
+            JsValue::from_f64(f64::from(counter)),
             JsValue::from_str(credential_id),
         ])?
         .run()
         .await?;
-    Ok(())
+    Ok(result.meta()?.and_then(|m| m.changes).unwrap_or(0) > 0)
 }
 
 async fn delete_credential(db: &D1Database, id: i64) -> Result<()> {
@@ -1047,4 +1244,78 @@ async fn delete_credential(db: &D1Database, id: i64) -> Result<()> {
         .run()
         .await?;
     Ok(())
+}
+
+async fn store_challenge(db: &D1Database, challenge: &str, now: u64) -> Result<()> {
+    db.prepare("DELETE FROM webauthn_challenges WHERE expires_at <= ?1")
+        .bind(&[JsValue::from_f64(now as f64)])?
+        .run()
+        .await?;
+    let expires = now + crate::auth::CHALLENGE_TTL;
+    db.prepare(
+        "INSERT OR REPLACE INTO webauthn_challenges (challenge, expires_at) VALUES (?1, ?2)",
+    )
+    .bind(&[
+        JsValue::from_str(challenge),
+        JsValue::from_f64(expires as f64),
+    ])?
+    .run()
+    .await?;
+    Ok(())
+}
+
+async fn consume_challenge(db: &D1Database, challenge: &str, now: u64) -> Result<bool> {
+    let result = db
+        .prepare("DELETE FROM webauthn_challenges WHERE challenge = ?1 AND expires_at > ?2")
+        .bind(&[JsValue::from_str(challenge), JsValue::from_f64(now as f64)])?
+        .run()
+        .await?;
+    let changes = result.meta()?.and_then(|m| m.changes).unwrap_or(0);
+    Ok(policy::challenge_consumed(changes as i64))
+}
+
+async fn rate_prune(db: &D1Database, key: &str, cutoff: u64) -> Result<()> {
+    db.prepare("DELETE FROM rate_limits WHERE key = ?1 AND ts < ?2")
+        .bind(&[JsValue::from_str(key), JsValue::from_f64(cutoff as f64)])?
+        .run()
+        .await?;
+    Ok(())
+}
+
+async fn rate_count(db: &D1Database, key: &str, cutoff: u64) -> Result<i64> {
+    let row = db
+        .prepare("SELECT COUNT(*) AS n FROM rate_limits WHERE key = ?1 AND ts >= ?2")
+        .bind(&[JsValue::from_str(key), JsValue::from_f64(cutoff as f64)])?
+        .first::<CountRow>(None)
+        .await?;
+    Ok(row.map(|r| r.n).unwrap_or(0))
+}
+
+async fn rate_record(db: &D1Database, key: &str, now: u64) -> Result<()> {
+    db.prepare("INSERT INTO rate_limits (key, ts) VALUES (?1, ?2)")
+        .bind(&[JsValue::from_str(key), JsValue::from_f64(now as f64)])?
+        .run()
+        .await?;
+    Ok(())
+}
+
+async fn rate_exceeded(
+    db: &D1Database,
+    key: &str,
+    now: u64,
+    window: u64,
+    max: i64,
+) -> Result<bool> {
+    let cutoff = now.saturating_sub(window);
+    rate_prune(db, key, cutoff).await?;
+    let n = rate_count(db, key, cutoff).await?;
+    Ok(policy::rate_limit_exceeded(n, max))
+}
+
+async fn rate_allow(db: &D1Database, key: &str, now: u64, window: u64, max: i64) -> Result<bool> {
+    if rate_exceeded(db, key, now, window, max).await? {
+        return Ok(false);
+    }
+    rate_record(db, key, now).await?;
+    Ok(true)
 }

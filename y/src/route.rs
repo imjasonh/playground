@@ -81,10 +81,7 @@ fn id_before(path: &str, prefix: &str, suffix: &str) -> Option<i64> {
 }
 
 fn parse_id(s: &str) -> Option<i64> {
-    if s.is_empty() || !s.bytes().all(|b| b.is_ascii_digit()) {
-        return None;
-    }
-    s.parse().ok()
+    crate::policy::parse_js_safe_id(s)
 }
 
 #[cfg(test)]
@@ -104,6 +101,7 @@ mod tests {
         );
         assert_eq!(parse("GET", "/img/"), None);
         assert_eq!(parse("GET", "/post/abc"), None);
+        assert_eq!(parse("GET", "/post/9007199254740992"), None);
         assert_eq!(parse("GET", "/subscribe"), Some(Route::Subscribe));
         assert_eq!(parse("POST", "/subscribe"), Some(Route::Subscribe));
         assert_eq!(parse("GET", "/subscribe/"), Some(Route::Subscribe));

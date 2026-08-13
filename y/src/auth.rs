@@ -224,6 +224,8 @@ mod tests {
         assert!(!verify_session_cookie("other", Some(&cookie), 1_000));
         assert!(!verify_session_cookie(secret, None, 1_000));
         assert!(!verify_session_cookie(secret, Some("nope"), 1_000));
+        assert!(crate::policy::require_session_secret("").is_err());
+        assert!(crate::policy::require_session_secret("0123456789abcdef").is_ok());
     }
 
     #[test]

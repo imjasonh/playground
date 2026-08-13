@@ -16,7 +16,9 @@ Pages app (no `index.html`). `deploy-workers.yml` deploys it on pushes to
 
 Existing D1/R2 bindings and secrets (`ADMIN_PASSWORD_HASH`, `SESSION_SECRET`)
 are reused. Password hashes stay `pbkdf2$iters$saltHex$hashHex`. Passkeys are
-ES256; stored COSE keys in D1 are unchanged.
+ES256 with user verification required; stored COSE keys in D1 are unchanged.
+Missing or empty secrets fail closed (the Worker returns 500) rather than
+signing sessions with an empty HMAC key.
 
 ## One-time setup
 
@@ -58,6 +60,10 @@ cargo clippy --all-targets
 npx wrangler dev   # or: wrangler dev
 # open http://localhost:8787
 # /admin/login with the password whose hash you set in .dev.vars
+# Set SITE_URL in wrangler.toml to the origin you browse (localhost when using wrangler dev).
+
+# Optional: workerd/miniflare HTTP smoke (builds wasm, applies local D1 migrations)
+./scripts/e2e.sh
 ```
 
 ## Deploy

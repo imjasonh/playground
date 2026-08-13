@@ -32,9 +32,25 @@ pub struct YouTubeRef {
     pub start: Option<u32>,
 }
 
+/// XML 1.0 / HTML-safe code points (drops NUL and other C0/C1 controls).
+fn is_xml_char(c: char) -> bool {
+    matches!(
+        c,
+        '\t'
+            | '\n'
+            | '\r'
+            | '\u{20}'..='\u{D7FF}'
+            | '\u{E000}'..='\u{FFFD}'
+            | '\u{10000}'..='\u{10FFFF}'
+    )
+}
+
 pub fn escape_html(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
+        if !is_xml_char(c) {
+            continue;
+        }
         match c {
             '&' => out.push_str("&amp;"),
             '<' => out.push_str("&lt;"),
@@ -129,19 +145,30 @@ pub fn is_valid_email(s: &str) -> bool {
 }
 
 pub fn extract_youtube_ref(text: &str) -> Option<YouTubeRef> {
-    let bytes = text.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if let Some(rest) = text[i..].strip_prefix("https://") {
-            if let Some(ref_) = parse_youtube_from(rest) {
-                return Some(ref_);
-            }
-        } else if let Some(rest) = text[i..].strip_prefix("http://") {
-            if let Some(ref_) = parse_youtube_from(rest) {
-                return Some(ref_);
-            }
+    let mut rest = text;
+    while !rest.is_empty() {
+        let https = rest.find("https://");
+        let http = rest.find("http://");
+        let at = match (https, http) {
+            (Some(a), Some(b)) => a.min(b),
+            (Some(a), None) => a,
+            (None, Some(b)) => b,
+            (None, None) => return None,
+        };
+        rest = &rest[at..];
+        let after = if let Some(r) = rest.strip_prefix("https://") {
+            r
+        } else if let Some(r) = rest.strip_prefix("http://") {
+            r
+        } else {
+            let ch = rest.chars().next()?;
+            rest = &rest[ch.len_utf8()..];
+            continue;
+        };
+        if let Some(ref_) = parse_youtube_from(after) {
+            return Some(ref_);
         }
-        i += 1;
+        rest = after;
     }
     None
 }
@@ -1114,9 +1141,9 @@ pub fn admin_compose(site_title: &str, reply_to: Option<&Post>, interest_count: 
     inner.push_str(&format!(
         r#"<form method="post" action="/admin/posts" enctype="multipart/form-data">
         {hidden}
-        <p><textarea name="body" maxlength="{POST_MAX_CHARS}" autofocus
+        <p><textarea name="body" autofocus
           placeholder="say something (max {POST_MAX_CHARS} chars), or just attach an image"
-          oninput="var r={POST_MAX_CHARS}-this.value.length;ycnt.textContent=r;ycnt.className=r<20?'warn':''"
+          oninput="var r={POST_MAX_CHARS}-[...this.value].length;ycnt.textContent=r;ycnt.className=r<20?'warn':''"
           onkeydown="if((event.metaKey||event.ctrlKey)&&event.key==='Enter'){{event.preventDefault();this.form.requestSubmit()}}"></textarea></p>
         <p><input type="file" name="image" accept="image/*" multiple></p>
         <p>
@@ -1142,8 +1169,8 @@ pub fn edit_page(site_title: &str, post: &Post) -> String {
     let body = format!(
         r#"<h2>edit post #{id}</h2>
         <form method="post" action="/admin/posts/{id}/edit">
-          <p><textarea name="body" maxlength="{POST_MAX_CHARS}"
-            oninput="var r={POST_MAX_CHARS}-this.value.length;ycnt.textContent=r;ycnt.className=r<20?'warn':''"
+          <p><textarea name="body"
+            oninput="var r={POST_MAX_CHARS}-[...this.value].length;ycnt.textContent=r;ycnt.className=r<20?'warn':''"
             onkeydown="if((event.metaKey||event.ctrlKey)&&event.key==='Enter'){{event.preventDefault();this.form.requestSubmit()}}">{escaped}</textarea></p>
           <p>
             <button type="submit">save</button>
@@ -1203,6 +1230,27 @@ mod tests {
         let e = extract_youtube_ref("https://youtu.be/dQw4w9wgGcQ?t=1m30s");
         assert_eq!(e.unwrap().start, Some(90));
         assert!(extract_youtube_ref("https://example.com/watch?v=dQw4w9wgGcQ").is_none());
+        let emoji = extract_youtube_ref("see 😀 https://youtu.be/dQw4w9wgGcQ now");
+        assert_eq!(emoji.unwrap().id, "dQw4w9wgGcQ");
+        let html = post_fragment(
+            "https://example.com",
+            &sample_post("see 😀 https://youtu.be/dQw4w9wgGcQ"),
+            &[],
+            false,
+            false,
+            0,
+        );
+        assert!(
+            html.contains("youtube-nocookie.com/embed/dQw4w9wgGcQ"),
+            "{html}"
+        );
+        let accented = extract_youtube_ref("café https://www.youtube.com/watch?v=dQw4w9wgGcQ");
+        assert_eq!(accented.unwrap().id, "dQw4w9wgGcQ");
+    }
+
+    #[test]
+    fn youtube_extract_does_not_panic_on_multibyte_without_url() {
+        assert!(extract_youtube_ref("just 😀 café «quotes»").is_none());
     }
 
     #[test]
@@ -1292,6 +1340,8 @@ mod tests {
         assert!(sub.contains("<title>subscribe</title>"));
         let edit = edit_page("y", &sample_post("hi"));
         assert!(edit.contains("<title>edit</title>"));
+        assert!(edit.contains("[...this.value].length"));
+        assert!(!edit.contains("maxlength="));
     }
 
     #[test]
@@ -1386,6 +1436,10 @@ mod tests {
         );
         assert!(xml.contains("(image)"));
         assert!(xml.contains("/img/9/0.jpg"));
+        let nasty = sample_post("ok\u{0000}nul");
+        let xml = rss_feed("y", "https://example.com", &[nasty], &[], 0);
+        assert!(!xml.contains('\u{0000}'));
+        assert!(xml.contains("oknul") || xml.contains("ok"));
     }
 
     #[test]
@@ -1396,6 +1450,9 @@ mod tests {
         assert!(page.contains("replying to"));
         assert!(page.contains('…'));
         assert!(page.contains(r#"name="parent_id" value="3""#));
+        assert!(page.contains("[...this.value].length"));
+        assert!(!page.contains("maxlength="));
+        assert!(!page.contains("this.value.length"));
     }
 
     #[test]
