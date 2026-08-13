@@ -88,6 +88,7 @@ Public:
 Admin (cookie-gated):
 - `/admin/login`, `/admin/logout`
 - `/admin`                     compose
+- `/admin/subscribers`         registered emails
 - `POST /admin/posts`          multipart: `body` + zero-or-more `image`
 - `POST /admin/posts/:id/delete`
 - `/admin/passkeys`            WebAuthn registration

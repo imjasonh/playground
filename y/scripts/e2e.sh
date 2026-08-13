@@ -123,9 +123,15 @@ grep -q "challenge expired" "$TMP/body" || fail "replay should expire; got: $(ca
 echo "ok: passkey challenge claim"
 
 echo "==> bootstrap login + unicode post"
+curl_h "$Y_URL/admin/subscribers"
+[ "$(status)" = "302" ] || fail "subscribers unauth $(status)"
 curl_h -c "$TMP/cookies" -H "Origin: ${ORIGIN}" \
   -d "password=e2e-pass" "$Y_URL/admin/login"
 [ "$(status)" = "302" ] || fail "login $(status)"
+curl_h -b "$TMP/cookies" "$Y_URL/admin/subscribers"
+[ "$(status)" = "200" ] || fail "subscribers auth $(status)"
+grep -q "e2e@example.com" "$TMP/body" || fail "subscribers missing email"
+grep -q "pending" "$TMP/body" || fail "subscribers missing status"
 curl_h -b "$TMP/cookies" -c "$TMP/cookies" -H "Origin: ${ORIGIN}" \
   -F "body=see 😀 https://youtu.be/dQw4w9wgGcQ" \
   "$Y_URL/admin/posts"
