@@ -6,7 +6,10 @@
 use serde::Deserialize;
 use worker::d1::D1Database;
 use worker::wasm_bindgen::JsValue;
-use worker::{event, Bucket, Context, Env, FormEntry, Headers, Method, Request, Response, Result};
+use worker::{
+    event, Bucket, Context, Env, FormEntry, Headers, Method, Request, Response, Result,
+    SendEmailBuilder,
+};
 
 use crate::auth::{
     challenge_cookie_header, clear_cookie_header, make_challenge_cookie, make_session_cookie,
@@ -16,7 +19,8 @@ use crate::auth::{
 use crate::html::{
     admin_compose, edit_page, grouped_has_images, image_ext_for, index_view, is_allowed_image_type,
     is_valid_email, login_page, passkeys_page, post_view, rss_feed, subscribe_form,
-    subscribe_thanks, validate_post_body, Post, PostImage, PAPERCLIP_KEY,
+    subscribe_thanks, unsubscribe_confirm, unsubscribe_done, validate_post_body, Post, PostImage,
+    PAPERCLIP_KEY,
 };
 use crate::policy;
 use crate::route::{self, Route};
@@ -32,6 +36,7 @@ struct Site {
     url: String,
     session_secret: String,
     password_hash: String,
+    mail_from: String,
 }
 
 impl Site {
@@ -57,6 +62,10 @@ impl Site {
                 .unwrap_or_else(|_| "https://y.imjasonh.workers.dev".into()),
             session_secret,
             password_hash,
+            mail_from: env
+                .var("MAIL_FROM")
+                .map(|v| v.to_string())
+                .unwrap_or_default(),
         })
     }
 
@@ -80,6 +89,14 @@ async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
     }
 }
 
+/// Every minute: email subscribers about posts whose 1-minute undo window ended.
+#[event(scheduled)]
+async fn scheduled(_event: worker::ScheduledEvent, env: Env, _ctx: worker::ScheduleContext) {
+    if let Err(e) = send_due_notifications(&env).await {
+        worker::console_error!("notify: {e}");
+    }
+}
+
 fn apply_security(resp: Response) -> Result<Response> {
     for (name, value) in policy::security_headers() {
         resp.headers().set(name, value)?;
@@ -100,7 +117,7 @@ async fn handle_fetch(mut req: Request, env: Env, _ctx: Context) -> Result<Respo
         return text(404, "not found");
     };
 
-    if method == Method::Post {
+    if method == Method::Post && route != Route::Unsubscribe {
         let site_origin = site.origin().map_err(worker::Error::RustError)?;
         let req_origin = url.origin().ascii_serialization();
         let origin = req.headers().get("Origin").ok().flatten();
@@ -121,6 +138,10 @@ async fn handle_fetch(mut req: Request, env: Env, _ctx: Context) -> Result<Respo
         Route::Image { key } => handle_image(&images, &key).await,
         Route::Subscribe if method == Method::Get => Ok(html(200, subscribe_form(&site.title))?),
         Route::Subscribe => handle_subscribe_post(&mut req, &db, &site, now).await,
+        Route::Unsubscribe if method == Method::Get => {
+            handle_unsubscribe_get(&req, &db, &site).await
+        }
+        Route::Unsubscribe => handle_unsubscribe_post(&req, &db, &site).await,
         Route::AdminLogin if method == Method::Get => handle_login_get(&req, &db, &site, now).await,
         Route::AdminLogin => handle_login_post(&mut req, &db, &site, now).await,
         Route::LoginPasskeyOptions => handle_login_passkey_options(&req, &db, &site, now).await,
@@ -405,8 +426,38 @@ async fn handle_subscribe_post(
     if !is_valid_email(&email) {
         return text(400, "invalid email");
     }
-    insert_interested(db, &email, now as i64).await?;
+    insert_interested(
+        db,
+        &email,
+        now as i64,
+        &crate::notify::new_subscriber_token(),
+    )
+    .await?;
     html(200, subscribe_thanks(&site.title))
+}
+
+async fn handle_unsubscribe_get(req: &Request, db: &D1Database, site: &Site) -> Result<Response> {
+    let Some(token) = unsubscribe_token(req) else {
+        return text(400, "missing token");
+    };
+    if !subscriber_token_exists(db, &token).await? {
+        return text(404, "not found");
+    }
+    html(200, unsubscribe_confirm(&site.title, &token))
+}
+
+async fn handle_unsubscribe_post(req: &Request, db: &D1Database, site: &Site) -> Result<Response> {
+    let Some(token) = unsubscribe_token(req) else {
+        return text(400, "missing token");
+    };
+    if !unsubscribe_by_token(db, &token).await? {
+        return text(404, "not found");
+    }
+    html(200, unsubscribe_done(&site.title))
+}
+
+fn unsubscribe_token(req: &Request) -> Option<String> {
+    query(req, "token").filter(|t| !t.is_empty())
 }
 
 async fn handle_login_get(
@@ -732,7 +783,14 @@ async fn handle_create_post(
         }
         _ => None,
     };
-    let post_id = insert_post(db, &body, now as i64, parent_id).await?;
+    let post_id = insert_post(
+        db,
+        &body,
+        now as i64,
+        parent_id,
+        crate::notify::notify_at(now as i64),
+    )
+    .await?;
     let mut uploaded: Vec<String> = Vec::new();
     for (i, (ty, bytes)) in files.into_iter().enumerate() {
         let ext = image_ext_for(&ty).unwrap_or("bin");
@@ -1067,17 +1125,22 @@ async fn insert_post(
     body: &str,
     created_at: i64,
     parent_id: Option<i64>,
+    notify_at: i64,
 ) -> Result<i64> {
     let parent = match parent_id {
         Some(id) => JsValue::from_f64(id as f64),
         None => JsValue::NULL,
     };
     let row = db
-        .prepare("INSERT INTO posts (body, created_at, parent_id) VALUES (?1, ?2, ?3) RETURNING id")
+        .prepare(
+            "INSERT INTO posts (body, created_at, parent_id, notify_at)
+             VALUES (?1, ?2, ?3, ?4) RETURNING id",
+        )
         .bind(&[
             JsValue::from_str(body),
             JsValue::from_f64(created_at as f64),
             parent,
+            JsValue::from_f64(notify_at as f64),
         ])?
         .first::<IdRow>(None)
         .await?
@@ -1108,14 +1171,20 @@ async fn insert_post_image(
     Ok(())
 }
 
-async fn insert_interested(db: &D1Database, email: &str, created_at: i64) -> Result<()> {
+async fn insert_interested(
+    db: &D1Database,
+    email: &str,
+    created_at: i64,
+    token: &str,
+) -> Result<()> {
     db.prepare(
         "INSERT INTO subscribers (email, status, token, created_at)
-         VALUES (?1, 'pending', '', ?2)
+         VALUES (?1, 'pending', ?2, ?3)
          ON CONFLICT(email) DO NOTHING",
     )
     .bind(&[
         JsValue::from_str(email),
+        JsValue::from_str(token),
         JsValue::from_f64(created_at as f64),
     ])?
     .run()
@@ -1129,6 +1198,123 @@ async fn count_interested(db: &D1Database) -> Result<i64> {
         .first::<CountRow>(None)
         .await?;
     Ok(row.map(|r| r.n).unwrap_or(0))
+}
+
+#[derive(Deserialize)]
+struct RecipientRow {
+    email: String,
+    token: String,
+    status: String,
+}
+
+async fn send_due_notifications(env: &Env) -> Result<()> {
+    let site = Site::from_env(env)?;
+    let from = crate::notify::sanitize_header(site.mail_from.trim());
+    if from.is_empty() {
+        return Ok(());
+    }
+    let email = match env.send_email("EMAIL") {
+        Ok(e) => e,
+        Err(e) => {
+            worker::console_error!("notify: EMAIL binding: {e}");
+            return Ok(());
+        }
+    };
+    let db = env.d1("DB")?;
+    let now = js_now() as i64;
+    let posts = due_posts(&db, now).await?;
+    if posts.is_empty() {
+        return Ok(());
+    }
+    let recipients = list_recipients(&db).await?;
+    for post in posts {
+        for recip in &recipients {
+            if !crate::notify::should_receive(&recip.status) {
+                continue;
+            }
+            let token = ensure_subscriber_token(&db, &recip.email, &recip.token).await?;
+            let to = crate::notify::sanitize_header(&recip.email);
+            if to.is_empty() {
+                continue;
+            }
+            let subject = crate::notify::post_subject(&site.title, &post.body);
+            let unsub = crate::notify::unsubscribe_url(&site.url, &token);
+            let body = crate::notify::post_text(&site.url, post.id, &post.body, &unsub);
+            let msg = SendEmailBuilder::builder(&from, &to, &subject)
+                .text(&body)
+                .build();
+            if let Err(e) = email.send_with_builder(&msg).await {
+                worker::console_error!("notify: send {}: {:?}", recip.email, e);
+            }
+        }
+        mark_notified(&db, post.id, now).await?;
+    }
+    Ok(())
+}
+
+async fn due_posts(db: &D1Database, now: i64) -> Result<Vec<Post>> {
+    let result = db
+        .prepare(format!(
+            "SELECT {POST_COLS} FROM posts
+              WHERE notify_at IS NOT NULL
+                AND notified_at IS NULL
+                AND notify_at <= ?1
+              ORDER BY notify_at ASC"
+        ))
+        .bind(&[JsValue::from_f64(now as f64)])?
+        .all()
+        .await?;
+    Ok(result
+        .results::<PostRow>()?
+        .into_iter()
+        .map(Post::from)
+        .collect())
+}
+
+async fn list_recipients(db: &D1Database) -> Result<Vec<RecipientRow>> {
+    let result = db
+        .prepare("SELECT email, token, status FROM subscribers ORDER BY id")
+        .all()
+        .await?;
+    result.results::<RecipientRow>()
+}
+
+async fn ensure_subscriber_token(db: &D1Database, email: &str, token: &str) -> Result<String> {
+    if !token.is_empty() {
+        return Ok(token.to_string());
+    }
+    let token = crate::notify::new_subscriber_token();
+    db.prepare("UPDATE subscribers SET token = ?1 WHERE email = ?2 AND token = ''")
+        .bind(&[JsValue::from_str(&token), JsValue::from_str(email)])?
+        .run()
+        .await?;
+    Ok(token)
+}
+
+async fn mark_notified(db: &D1Database, id: i64, now: i64) -> Result<()> {
+    db.prepare("UPDATE posts SET notified_at = ?1 WHERE id = ?2 AND notified_at IS NULL")
+        .bind(&[JsValue::from_f64(now as f64), JsValue::from_f64(id as f64)])?
+        .run()
+        .await?;
+    Ok(())
+}
+
+async fn subscriber_token_exists(db: &D1Database, token: &str) -> Result<bool> {
+    let row = db
+        .prepare("SELECT COUNT(*) AS n FROM subscribers WHERE token = ?1 AND token != ''")
+        .bind(&[JsValue::from_str(token)])?
+        .first::<CountRow>(None)
+        .await?;
+    Ok(row.map(|r| r.n).unwrap_or(0) > 0)
+}
+
+async fn unsubscribe_by_token(db: &D1Database, token: &str) -> Result<bool> {
+    let result = db
+        .prepare("UPDATE subscribers SET status = 'unsubscribed' WHERE token = ?1 AND token != ''")
+        .bind(&[JsValue::from_str(token)])?
+        .run()
+        .await?;
+    Ok(result.meta()?.and_then(|m| m.changes).unwrap_or(0) > 0)
 }
 
 async fn count_credentials(db: &D1Database) -> Result<i64> {

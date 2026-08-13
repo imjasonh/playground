@@ -6,6 +6,7 @@
 
 pub mod auth;
 pub mod html;
+pub mod notify;
 pub mod policy;
 pub mod route;
 pub mod webauthn;

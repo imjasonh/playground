@@ -25,6 +25,10 @@ command = "cargo +stable install -q worker-build@0.8.5 && worker-build --release
 [vars]
 SITE_TITLE = "y"
 SITE_URL = "https://y.imjasonh.workers.dev"
+# Verified Cloudflare Email Sending from-address. Empty disables outbound mail
+# (posts still wait one minute, then the cron no-ops). Cannot send from
+# *.workers.dev — use a domain with SPF/DKIM on this account.
+MAIL_FROM = ""
 
 # D1 — create with: wrangler d1 create y
 [[d1_databases]]
@@ -37,6 +41,14 @@ migrations_dir = "migrations"
 [[r2_buckets]]
 binding = "IMAGES"
 bucket_name = "y-images"
+
+# Outbound post notifications. Local `wrangler dev` logs mail instead of sending.
+[[send_email]]
+name = "EMAIL"
+
+# Fan out mail once a post's 1-minute undo window has passed.
+[triggers]
+crons = ["* * * * *"]
 
 # Secrets to set with `wrangler secret put`:
 #   ADMIN_PASSWORD_HASH   (pbkdf2$iters$saltHex$hashHex, see examples/hash_password.rs)
