@@ -11,6 +11,7 @@ pub enum Route {
     AdminLogin,
     AdminLogout,
     AdminPasskeys,
+    AdminSubscribers,
     AdminPasskeyRegisterOptions,
     AdminPasskeyRegisterVerify,
     AdminPasskeyDelete { id: i64 },
@@ -33,6 +34,7 @@ pub fn parse(method: &str, path: &str) -> Option<Route> {
         ("GET", "/admin/login") | ("POST", "/admin/login") => Some(Route::AdminLogin),
         ("POST", "/admin/logout") => Some(Route::AdminLogout),
         ("GET", "/admin/passkeys") => Some(Route::AdminPasskeys),
+        ("GET", "/admin/subscribers") => Some(Route::AdminSubscribers),
         ("POST", "/admin/passkeys/register/options") => Some(Route::AdminPasskeyRegisterOptions),
         ("POST", "/admin/passkeys/register/verify") => Some(Route::AdminPasskeyRegisterVerify),
         ("POST", "/admin/login/passkey/options") => Some(Route::LoginPasskeyOptions),
@@ -138,6 +140,15 @@ mod tests {
         assert_eq!(parse("POST", "/admin/login"), Some(Route::AdminLogin));
         assert_eq!(parse("POST", "/admin/logout"), Some(Route::AdminLogout));
         assert_eq!(parse("GET", "/admin/passkeys"), Some(Route::AdminPasskeys));
+        assert_eq!(
+            parse("GET", "/admin/subscribers"),
+            Some(Route::AdminSubscribers)
+        );
+        assert_eq!(
+            parse("GET", "/admin/subscribers/"),
+            Some(Route::AdminSubscribers)
+        );
+        assert_eq!(parse("POST", "/admin/subscribers"), None);
         assert_eq!(
             parse("POST", "/admin/passkeys/register/options"),
             Some(Route::AdminPasskeyRegisterOptions)

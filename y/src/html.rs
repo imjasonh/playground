@@ -32,6 +32,13 @@ pub struct YouTubeRef {
     pub start: Option<u32>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Subscriber {
+    pub email: String,
+    pub status: String,
+    pub created_at: i64,
+}
+
 /// XML 1.0 / HTML-safe code points (drops NUL and other C0/C1 controls).
 fn is_xml_char(c: char) -> bool {
     matches!(
@@ -1119,6 +1126,27 @@ pub fn passkeys_page(site_title: &str, creds: &[(i64, String, i64)], bootstrap: 
     simple_page(site_title, "passkeys", &inner)
 }
 
+pub fn subscribers_page(site_title: &str, subscribers: &[Subscriber]) -> String {
+    let mut inner = String::new();
+    inner.push_str("<h2>subscribers</h2>");
+    if subscribers.is_empty() {
+        inner.push_str(r#"<p class="empty">none registered.</p>"#);
+    } else {
+        inner.push_str(&format!("<p>{} registered.</p><ul>", subscribers.len()));
+        for s in subscribers {
+            inner.push_str(&format!(
+                r#"<li><strong>{}</strong><span class="meta"> — {} — added {}</span></li>"#,
+                escape_html(&s.email),
+                escape_html(&s.status),
+                escape_html(&format_rfc1123(s.created_at)),
+            ));
+        }
+        inner.push_str("</ul>");
+    }
+    inner.push_str(r#"<p><a href="/admin">← back to admin</a></p>"#);
+    simple_page(site_title, "subscribers", &inner)
+}
+
 pub fn admin_compose(site_title: &str, reply_to: Option<&Post>, interest_count: i64) -> String {
     let mut inner = String::new();
     if interest_count >= 10 {
@@ -1153,6 +1181,7 @@ pub fn admin_compose(site_title: &str, reply_to: Option<&Post>, interest_count: 
       </form>
       <p class="admin-bottom row">
         <a href="/admin/passkeys">passkeys</a>
+        <a href="/admin/subscribers">subscribers</a>
         <form method="post" action="/admin/logout" style="display:inline">
           <button type="submit">log out</button>
         </form>
@@ -1336,6 +1365,7 @@ mod tests {
         assert!(!login.contains("login — y"));
         let admin = admin_compose("y", None, 0);
         assert!(admin.contains("<title>admin</title>"));
+        assert!(admin.contains("/admin/subscribers"));
         let sub = subscribe_form("y");
         assert!(sub.contains("<title>subscribe</title>"));
         let edit = edit_page("y", &sample_post("hi"));
@@ -1440,6 +1470,27 @@ mod tests {
         let xml = rss_feed("y", "https://example.com", &[nasty], &[], 0);
         assert!(!xml.contains('\u{0000}'));
         assert!(xml.contains("oknul") || xml.contains("ok"));
+    }
+
+    #[test]
+    fn subscribers_page_lists_emails() {
+        let empty = subscribers_page("y", &[]);
+        assert!(empty.contains("<title>subscribers</title>"));
+        assert!(empty.contains("none registered."));
+        assert!(empty.contains("/admin"));
+        let page = subscribers_page(
+            "y",
+            &[Subscriber {
+                email: "a<b>@c.d".into(),
+                status: "pending".into(),
+                created_at: 0,
+            }],
+        );
+        assert!(page.contains("1 registered."));
+        assert!(page.contains("a&lt;b&gt;@c.d"));
+        assert!(page.contains("pending"));
+        assert!(page.contains("Thu, 01 Jan 1970 00:00:00 GMT"));
+        assert!(!page.contains("a<b>@c.d"));
     }
 
     #[test]

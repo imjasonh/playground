@@ -16,7 +16,8 @@ use crate::auth::{
 use crate::html::{
     admin_compose, edit_page, grouped_has_images, image_ext_for, index_view, is_allowed_image_type,
     is_valid_email, login_page, passkeys_page, post_view, rss_feed, subscribe_form,
-    subscribe_thanks, validate_post_body, Post, PostImage, PAPERCLIP_KEY,
+    subscribe_thanks, subscribers_page, validate_post_body, Post, PostImage, Subscriber,
+    PAPERCLIP_KEY,
 };
 use crate::policy;
 use crate::route::{self, Route};
@@ -144,6 +145,12 @@ async fn handle_fetch(mut req: Request, env: Env, _ctx: Context) -> Result<Respo
                 return redirect("/admin/login");
             }
             handle_passkeys_get(&req, &db, &site).await
+        }
+        Route::AdminSubscribers => {
+            if !logged_in(&req, &site, now) {
+                return redirect("/admin/login");
+            }
+            handle_subscribers_get(&db, &site).await
         }
         Route::AdminPasskeyRegisterOptions => {
             if !logged_in(&req, &site, now) {
@@ -579,6 +586,11 @@ async fn handle_passkeys_get(req: &Request, db: &D1Database, site: &Site) -> Res
     let rows = list_credential_rows(db).await?;
     let bootstrap = query(req, "bootstrap").as_deref() == Some("1");
     html(200, passkeys_page(&site.title, &rows, bootstrap))
+}
+
+async fn handle_subscribers_get(db: &D1Database, site: &Site) -> Result<Response> {
+    let rows = list_subscribers(db).await?;
+    html(200, subscribers_page(&site.title, &rows))
 }
 
 async fn handle_register_options(
@@ -1129,6 +1141,32 @@ async fn count_interested(db: &D1Database) -> Result<i64> {
         .first::<CountRow>(None)
         .await?;
     Ok(row.map(|r| r.n).unwrap_or(0))
+}
+
+#[derive(Deserialize)]
+struct SubscriberRow {
+    email: String,
+    status: String,
+    created_at: i64,
+}
+
+async fn list_subscribers(db: &D1Database) -> Result<Vec<Subscriber>> {
+    let result = db
+        .prepare(
+            "SELECT email, status, created_at FROM subscribers
+             ORDER BY created_at DESC, email",
+        )
+        .all()
+        .await?;
+    Ok(result
+        .results::<SubscriberRow>()?
+        .into_iter()
+        .map(|r| Subscriber {
+            email: r.email,
+            status: r.status,
+            created_at: r.created_at,
+        })
+        .collect())
 }
 
 async fn count_credentials(db: &D1Database) -> Result<i64> {
