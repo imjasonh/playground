@@ -109,10 +109,53 @@ enum RideJSONLExporter {
         return "ride-\(stamp).jsonl"
     }
 
-    /// Suggested filename when exporting every saved ride.
+    /// Suggested filename when exporting every saved ride into one JSONL file.
     static func filenameForAllRides() -> String {
         let stamp = filenameStampFormatter.string(from: Date())
         return "rides-\(stamp).jsonl"
+    }
+
+    /// One JSONL filename per ride for bulk export. Always includes a short id
+    /// suffix so same-second starts never overwrite a sibling file.
+    static func filenames(for rides: [Ride]) -> [UUID: String] {
+        var names: [UUID: String] = [:]
+        names.reserveCapacity(rides.count)
+        for ride in rides {
+            let stamp = filenameStampFormatter.string(from: ride.startedAt)
+            let suffix = String(ride.id.uuidString.prefix(8)).lowercased()
+            names[ride.id] = "ride-\(stamp)-\(suffix).jsonl"
+        }
+        return names
+    }
+
+    /// Writes one `.jsonl` file per ride into `directory`. Returns the written
+    /// file URLs in the same order as `rides`.
+    @discardableResult
+    static func writeIndividualFiles(for rides: [Ride], to directory: URL) throws -> [URL] {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let names = filenames(for: rides)
+        var urls: [URL] = []
+        urls.reserveCapacity(rides.count)
+        for ride in rides {
+            guard let name = names[ride.id] else {
+                throw ExportError.encodingFailed
+            }
+            let url = directory.appendingPathComponent(name)
+            try data(for: ride).write(to: url, options: .atomic)
+            urls.append(url)
+        }
+        return urls
+    }
+
+    /// Staging directory under the temp folder for a bulk Files export.
+    /// Caller owns cleanup.
+    static func makeBulkExportDirectory() throws -> URL {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ride-exports", isDirectory: true)
+        let stamp = filenameStampFormatter.string(from: Date())
+        let directory = root.appendingPathComponent("rides-\(stamp)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
     }
 
     static func lines(for ride: Ride) throws -> [String] {

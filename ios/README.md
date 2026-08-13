@@ -101,6 +101,11 @@ Intelligence / `FoundationModels`, iOS 26+) for a **few-word summary** and
 stores it on the ride for the Past rides list. If the model is unavailable or
 fails, the summary stays empty — there is no heuristic substitute.
 
+Past rides can be exported as JSON Lines (`.jsonl`): open a ride for a single
+export, or use **Export all** on the Past rides list to **Save to Files…**
+(one `.jsonl` per ride via the Files picker), save/share one combined JSONL, or
+share through the system share sheet.
+
 ### T9 Keyboard
 
 Old Nokia-style **multi-tap**. Same engine powers:
