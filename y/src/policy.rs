@@ -149,8 +149,10 @@ pub fn can_delete_passkey(credential_count: i64) -> bool {
     credential_count > 1
 }
 
-pub fn challenge_consumed(rows_deleted: i64) -> bool {
-    rows_deleted > 0
+/// True when `INSERT … ON CONFLICT DO NOTHING RETURNING` produced a row
+/// (first use). Zero rows means the challenge was already recorded (replay).
+pub fn challenge_consumed(returning_rows: i64) -> bool {
+    returning_rows > 0
 }
 
 pub fn counter_from_i64(n: i64) -> Result<u32, String> {

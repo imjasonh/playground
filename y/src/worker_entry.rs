@@ -487,7 +487,6 @@ async fn handle_login_passkey_options(
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
-    store_challenge(db, &challenge, now).await?;
     let cookie = make_challenge_cookie(&site.session_secret, &challenge, now);
     let resp = json(200, opts.to_string())?;
     set_cookie(resp.headers(), &challenge_cookie_header(&cookie))?;
@@ -506,12 +505,14 @@ async fn take_challenge(
         now,
     );
     let Some(expected) = expected else {
+        worker::console_error!("webauthn: challenge cookie missing or invalid");
         return Ok(Err(with_cleared_challenge(text(
             400,
             "challenge expired",
         )?)?));
     };
     if !consume_challenge(db, &expected, now).await? {
+        worker::console_error!("webauthn: challenge already used");
         return Ok(Err(with_cleared_challenge(text(
             400,
             "challenge expired",
@@ -609,7 +610,6 @@ async fn handle_register_options(
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
-    store_challenge(db, &challenge, now).await?;
     let cookie = make_challenge_cookie(&site.session_secret, &challenge, now);
     let resp = json(200, opts.to_string())?;
     set_cookie(resp.headers(), &challenge_cookie_header(&cookie))?;
@@ -863,6 +863,11 @@ struct CountRow {
 #[derive(Deserialize)]
 struct IdRow {
     id: i64,
+}
+
+#[derive(Deserialize)]
+struct ChallengeClaimRow {
+    challenge: String,
 }
 
 #[derive(Deserialize)]
@@ -1224,18 +1229,19 @@ async fn insert_credential(
 }
 
 async fn update_counter(db: &D1Database, credential_id: &str, counter: u32) -> Result<bool> {
-    let result = db
+    let row = db
         .prepare(
             "UPDATE credentials SET counter = ?1
-              WHERE credential_id = ?2 AND (counter = 0 OR counter < ?1)",
+              WHERE credential_id = ?2 AND (counter = 0 OR counter < ?1)
+              RETURNING id",
         )
         .bind(&[
             JsValue::from_f64(f64::from(counter)),
             JsValue::from_str(credential_id),
         ])?
-        .run()
+        .first::<IdRow>(None)
         .await?;
-    Ok(result.meta()?.and_then(|m| m.changes).unwrap_or(0) > 0)
+    Ok(row.is_some())
 }
 
 async fn delete_credential(db: &D1Database, id: i64) -> Result<()> {
@@ -1246,32 +1252,23 @@ async fn delete_credential(db: &D1Database, id: i64) -> Result<()> {
     Ok(())
 }
 
-async fn store_challenge(db: &D1Database, challenge: &str, now: u64) -> Result<()> {
-    db.prepare("DELETE FROM webauthn_challenges WHERE expires_at <= ?1")
-        .bind(&[JsValue::from_f64(now as f64)])?
-        .run()
-        .await?;
-    let expires = now + crate::auth::CHALLENGE_TTL;
-    db.prepare(
-        "INSERT OR REPLACE INTO webauthn_challenges (challenge, expires_at) VALUES (?1, ?2)",
-    )
-    .bind(&[
-        JsValue::from_str(challenge),
-        JsValue::from_f64(expires as f64),
-    ])?
-    .run()
-    .await?;
-    Ok(())
-}
-
 async fn consume_challenge(db: &D1Database, challenge: &str, now: u64) -> Result<bool> {
-    let result = db
-        .prepare("DELETE FROM webauthn_challenges WHERE challenge = ?1 AND expires_at > ?2")
-        .bind(&[JsValue::from_str(challenge), JsValue::from_f64(now as f64)])?
+    let cutoff = now.saturating_sub(crate::auth::CHALLENGE_TTL);
+    db.prepare("DELETE FROM webauthn_used_challenges WHERE used_at < ?1")
+        .bind(&[JsValue::from_f64(cutoff as f64)])?
         .run()
         .await?;
-    let changes = result.meta()?.and_then(|m| m.changes).unwrap_or(0);
-    Ok(policy::challenge_consumed(changes as i64))
+    let row = db
+        .prepare(
+            "INSERT INTO webauthn_used_challenges (challenge, used_at) VALUES (?1, ?2)
+             ON CONFLICT(challenge) DO NOTHING
+             RETURNING challenge",
+        )
+        .bind(&[JsValue::from_str(challenge), JsValue::from_f64(now as f64)])?
+        .first::<ChallengeClaimRow>(None)
+        .await?;
+    let claimed = row.is_some_and(|r| r.challenge == challenge);
+    Ok(policy::challenge_consumed(claimed as i64))
 }
 
 async fn rate_prune(db: &D1Database, key: &str, cutoff: u64) -> Result<()> {
