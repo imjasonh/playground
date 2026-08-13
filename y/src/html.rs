@@ -47,39 +47,23 @@ pub fn escape_html(s: &str) -> String {
     out
 }
 
-/// First `n` UTF-16 code units (JS `.slice(0, n)`), without splitting a
-/// Unicode scalar — so we never emit a lone surrogate the way JS can.
-pub fn clip_utf16(s: &str, n: usize) -> String {
-    if utf16_len(s) <= n {
-        return s.to_string();
-    }
-    let mut units = 0usize;
-    let mut end = 0usize;
-    for (i, ch) in s.char_indices() {
-        let u = ch.len_utf16();
-        if units + u > n {
-            break;
+fn ellipsize(s: &str, max_chars: usize) -> String {
+    let mut chars = s.chars();
+    let mut out = String::new();
+    for _ in 0..max_chars.saturating_sub(1) {
+        match chars.next() {
+            Some(c) => out.push(c),
+            None => return s.to_string(),
         }
-        units += u;
-        end = i + ch.len_utf8();
     }
-    s[..end].to_string()
-}
-
-/// JS `truncate`: if UTF-16 length > `n`, take `n - 1` units and append `…`.
-pub fn truncate(s: &str, n: usize) -> String {
-    if utf16_len(s) <= n {
-        return s.to_string();
+    match (chars.next(), chars.next()) {
+        (None, _) => s.to_string(),
+        (Some(_), None) => s.to_string(),
+        (Some(_), Some(_)) => {
+            out.push('…');
+            out
+        }
     }
-    format!("{}…", clip_utf16(s, n.saturating_sub(1)))
-}
-
-/// JS `s.slice(0, n) + (s.length > n ? "…" : "")` — used for the admin reply snippet.
-pub fn slice_ellipsis_utf16(s: &str, n: usize) -> String {
-    if utf16_len(s) <= n {
-        return s.to_string();
-    }
-    format!("{}…", clip_utf16(s, n))
 }
 
 /// True when `grouped` (as built by the Worker D1 helper) has at least one
@@ -91,20 +75,15 @@ pub fn grouped_has_images(grouped: &[(i64, Vec<PostImage>)], post_id: i64) -> bo
         .any(|(id, imgs)| *id == post_id && !imgs.is_empty())
 }
 
-/// Shared create/edit guard: UTF-16 length cap and "text or image" rule.
+/// Shared create/edit guard: character cap and "text or image" rule.
 pub fn validate_post_body(body: &str, has_images: bool) -> Result<(), String> {
-    if utf16_len(body) > POST_MAX_CHARS {
+    if body.chars().count() > POST_MAX_CHARS {
         return Err(format!("body exceeds {POST_MAX_CHARS} chars"));
     }
     if body.is_empty() && !has_images {
         return Err("a post needs text or an image".into());
     }
     Ok(())
-}
-
-/// UTF-16 code units — matches HTML `maxlength` / the original JS `.length`.
-pub fn utf16_len(s: &str) -> usize {
-    s.encode_utf16().count()
 }
 
 pub fn img_url(site_url: &str, key: &str) -> String {
@@ -266,9 +245,9 @@ pub fn youtube_thumbnail_url(ref_: &YouTubeRef) -> String {
     format!("https://img.youtube.com/vi/{}/hqdefault.jpg", ref_.id)
 }
 
-/// Match TS `String(label ?? "passkey").slice(0, 80) || "passkey"`.
+/// Label shown in the passkeys list; empty becomes `"passkey"`.
 pub fn passkey_label(raw: Option<&str>) -> String {
-    let clipped = clip_utf16(raw.unwrap_or("passkey"), 80);
+    let clipped: String = raw.unwrap_or("passkey").chars().take(80).collect();
     if clipped.is_empty() {
         "passkey".into()
     } else {
@@ -650,7 +629,6 @@ window.pkLogin = pkLogin;
 pub struct LayoutOpts<'a> {
     pub title: &'a str,
     pub site_title: &'a str,
-    pub site_url: &'a str,
     pub description: Option<&'a str>,
     pub og_image: Option<String>,
     pub canonical: Option<String>,
@@ -861,7 +839,6 @@ pub fn index_view(
         LayoutOpts {
             title: site_title,
             site_title,
-            site_url,
             description: None,
             og_image: None,
             canonical: Some(site_url.to_string()),
@@ -893,12 +870,12 @@ pub fn post_view(
     let desc = if post.body.is_empty() {
         None
     } else {
-        Some(truncate(&post.body, 200))
+        Some(ellipsize(&post.body, 200))
     };
     let title_text = if post.body.is_empty() {
         "image".to_string()
     } else {
-        truncate(&post.body, 60)
+        ellipsize(&post.body, 60)
     };
     let title = format!("{title_text} — {site_title}");
     let canonical = format!("{}/post/{}", site_url.trim_end_matches('/'), post.id);
@@ -927,7 +904,6 @@ pub fn post_view(
         LayoutOpts {
             title: &title,
             site_title,
-            site_url,
             description: desc.as_deref(),
             og_image,
             canonical: Some(canonical),
@@ -937,14 +913,11 @@ pub fn post_view(
     )
 }
 
-pub fn simple_page(site_title: &str, site_url: &str, title: &str, body: &str) -> String {
-    // TS admin/subscribe/login pages pass `title` straight to layout()
-    // (not `${title} — ${siteTitle}`).
+pub fn simple_page(site_title: &str, title: &str, body: &str) -> String {
     layout(
         LayoutOpts {
             title,
             site_title,
-            site_url,
             description: None,
             og_image: None,
             canonical: None,
@@ -988,7 +961,7 @@ pub fn rss_feed(
         );
         let link = format!("{}/post/{}", site_url.trim_end_matches('/'), p.id);
         let title = if !p.body.is_empty() {
-            truncate(&p.body, 80)
+            ellipsize(&p.body, 80)
         } else if !imgs.is_empty() {
             "(image)".into()
         } else {
@@ -1031,10 +1004,9 @@ pub fn rss_feed(
     )
 }
 
-pub fn subscribe_form(site_title: &str, site_url: &str) -> String {
+pub fn subscribe_form(site_title: &str) -> String {
     simple_page(
         site_title,
-        site_url,
         "subscribe",
         r#"<p>Email subscriptions aren't built yet — but the RSS feed is.
           Drop your address and I'll let you know when there's an email
@@ -1047,10 +1019,9 @@ pub fn subscribe_form(site_title: &str, site_url: &str) -> String {
     )
 }
 
-pub fn subscribe_thanks(site_title: &str, site_url: &str) -> String {
+pub fn subscribe_thanks(site_title: &str) -> String {
     simple_page(
         site_title,
-        site_url,
         "thanks",
         r#"<p class="ok">Got it — you're on the list. I'll reach out
           when email subscriptions are live.</p>
@@ -1058,7 +1029,7 @@ pub fn subscribe_thanks(site_title: &str, site_url: &str) -> String {
     )
 }
 
-pub fn login_page(site_title: &str, site_url: &str, bootstrap: bool, err: bool) -> String {
+pub fn login_page(site_title: &str, bootstrap: bool, err: bool) -> String {
     let inner = if bootstrap {
         format!(
             r#"<p class="ok">No passkey registered yet. Sign in with the bootstrap password to register one.</p>
@@ -1083,15 +1054,10 @@ pub fn login_page(site_title: &str, site_url: &str, bootstrap: bool, err: bool) 
             .to_string()
     };
     let body = format!("{inner}<script>{WEBAUTHN_CLIENT_JS}</script>");
-    simple_page(site_title, site_url, "login", &body)
+    simple_page(site_title, "login", &body)
 }
 
-pub fn passkeys_page(
-    site_title: &str,
-    site_url: &str,
-    creds: &[(i64, String, i64)],
-    bootstrap: bool,
-) -> String {
+pub fn passkeys_page(site_title: &str, creds: &[(i64, String, i64)], bootstrap: bool) -> String {
     let mut inner = String::new();
     if bootstrap {
         inner.push_str(r#"<p class="ok">You're in. Register a passkey now to lock down login — the bootstrap password becomes inactive after the first one is added.</p>"#);
@@ -1123,15 +1089,10 @@ pub fn passkeys_page(
         <p><a href="/admin">← back to admin</a></p>
         <script>{WEBAUTHN_CLIENT_JS}</script>"#
     ));
-    simple_page(site_title, site_url, "passkeys", &inner)
+    simple_page(site_title, "passkeys", &inner)
 }
 
-pub fn admin_compose(
-    site_title: &str,
-    site_url: &str,
-    reply_to: Option<&Post>,
-    interest_count: i64,
-) -> String {
+pub fn admin_compose(site_title: &str, reply_to: Option<&Post>, interest_count: i64) -> String {
     let mut inner = String::new();
     if interest_count >= 10 {
         inner.push_str(&format!(
@@ -1139,7 +1100,7 @@ pub fn admin_compose(
         ));
     }
     if let Some(p) = reply_to {
-        let snippet = slice_ellipsis_utf16(&p.body, 80);
+        let snippet = ellipsize(&p.body, 80);
         inner.push_str(&format!(
             r#"<p class="reply-ctx">↳ replying to <a href="/post/{id}">«{snippet}»</a> · <a href="/admin">cancel</a></p>"#,
             id = p.id,
@@ -1170,11 +1131,11 @@ pub fn admin_compose(
         </form>
       </p>"#
     ));
-    simple_page(site_title, site_url, "admin", &inner)
+    simple_page(site_title, "admin", &inner)
 }
 
-pub fn edit_page(site_title: &str, site_url: &str, post: &Post) -> String {
-    let left = POST_MAX_CHARS.saturating_sub(utf16_len(&post.body));
+pub fn edit_page(site_title: &str, post: &Post) -> String {
+    let left = POST_MAX_CHARS.saturating_sub(post.body.chars().count());
     let warn = if left < 20 { "warn" } else { "" };
     let id = post.id;
     let escaped = escape_html(&post.body);
@@ -1191,7 +1152,7 @@ pub fn edit_page(site_title: &str, site_url: &str, post: &Post) -> String {
           </p>
         </form>"#,
     );
-    simple_page(site_title, site_url, "edit", &body)
+    simple_page(site_title, "edit", &body)
 }
 
 #[cfg(test)]
@@ -1211,7 +1172,7 @@ mod tests {
         let padded = linkify_body("``` \nls\n  ```");
         assert_eq!(
             padded, "<pre><code>ls</code></pre>",
-            "TS strips [ \\t]* around the opening/closing fence newlines: {padded}"
+            "strip whitespace around fence newlines: {padded}"
         );
         let crlf = linkify_body("```\r\nls\r\n```");
         assert_eq!(crlf, "<pre><code>ls</code></pre>", "{crlf}");
@@ -1250,8 +1211,7 @@ mod tests {
     }
 
     #[test]
-    fn email_matches_original_regex() {
-        // Original TS: /^[^\s@]+@[^\s@.]+\.[^\s@]+$/ plus length ≤ 254.
+    fn email_validation() {
         assert!(is_valid_email("a@b.co"));
         assert!(is_valid_email("a+b@c.d"));
         assert!(is_valid_email("a@b.co.uk"));
@@ -1267,17 +1227,10 @@ mod tests {
     }
 
     #[test]
-    fn utf16_truncate_and_clip_match_js() {
-        assert_eq!(utf16_len("hi"), 2);
-        assert_eq!(utf16_len("😀"), 2); // one scalar, two UTF-16 units
-        assert_eq!(truncate("hello", 80), "hello");
-        assert_eq!(truncate("abcdefghij", 8), "abcdefg…"); // n-1 + ellipsis
-        assert_eq!(slice_ellipsis_utf16("abcdefghij", 8), "abcdefgh…"); // n + ellipsis
-        let emoji = "😀😀😀";
-        assert_eq!(utf16_len(emoji), 6);
-        assert_eq!(clip_utf16(emoji, 4), "😀😀");
-        assert_eq!(truncate(emoji, 5), "😀😀…");
-        assert!(utf16_len(&"é".repeat(260)) == 260);
+    fn ellipsize_and_post_body_limits() {
+        assert_eq!(ellipsize("hello", 80), "hello");
+        assert_eq!(ellipsize("abcdefghij", 8), "abcdefg…");
+        assert_eq!(ellipsize("😀😀😀", 2), "😀…");
         assert!(validate_post_body(&"é".repeat(260), false).is_ok());
         assert!(validate_post_body(&"é".repeat(261), false).is_err());
         assert_eq!(
@@ -1311,13 +1264,12 @@ mod tests {
     }
 
     #[test]
-    fn passkey_label_matches_typescript() {
+    fn passkey_label_defaults_and_clips() {
         assert_eq!(passkey_label(None), "passkey");
         assert_eq!(passkey_label(Some("")), "passkey");
         assert_eq!(passkey_label(Some("laptop")), "laptop");
         assert_eq!(passkey_label(Some(&"x".repeat(90))), "x".repeat(80));
-        let emoji = "😀".repeat(50);
-        assert_eq!(utf16_len(&passkey_label(Some(&emoji))), 80);
+        assert_eq!(passkey_label(Some(&"😀".repeat(90))).chars().count(), 80);
     }
 
     fn sample_post(body: &str) -> Post {
@@ -1330,15 +1282,15 @@ mod tests {
     }
 
     #[test]
-    fn page_titles_match_typescript_layout() {
-        let login = login_page("y", "https://example.com", true, false);
+    fn utility_pages_use_short_titles() {
+        let login = login_page("y", true, false);
         assert!(login.contains("<title>login</title>"), "{login}");
         assert!(!login.contains("login — y"));
-        let admin = admin_compose("y", "https://example.com", None, 0);
+        let admin = admin_compose("y", None, 0);
         assert!(admin.contains("<title>admin</title>"));
-        let sub = subscribe_form("y", "https://example.com");
+        let sub = subscribe_form("y");
         assert!(sub.contains("<title>subscribe</title>"));
-        let edit = edit_page("y", "https://example.com", &sample_post("hi"));
+        let edit = edit_page("y", &sample_post("hi"));
         assert!(edit.contains("<title>edit</title>"));
     }
 
@@ -1437,11 +1389,12 @@ mod tests {
     }
 
     #[test]
-    fn admin_reply_snippet_is_utf16_slice_plus_ellipsis() {
+    fn admin_reply_shows_snippet() {
         let p = sample_post(&"a".repeat(90));
-        let page = admin_compose("y", "https://example.com", Some(&p), 12);
+        let page = admin_compose("y", Some(&p), 12);
         assert!(page.contains("interest-banner"));
-        assert!(page.contains(&format!("«{}…»", "a".repeat(80))));
+        assert!(page.contains("replying to"));
+        assert!(page.contains('…'));
         assert!(page.contains(r#"name="parent_id" value="3""#));
     }
 

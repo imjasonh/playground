@@ -90,3 +90,6 @@ strip = "debuginfo"
 # Benchmarks want optimized code even in `cargo bench` default profile.
 [profile.bench]
 opt-level = 3
+
+[lints.rust]
+unused = "deny"

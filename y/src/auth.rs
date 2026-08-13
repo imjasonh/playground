@@ -2,7 +2,7 @@
 //!
 //! Password hashes are stored as `pbkdf2$<iterations>$<saltHex>$<hashHex>`
 //! (PBKDF2-HMAC-SHA256, 32-byte output) so existing `ADMIN_PASSWORD_HASH`
-//! secrets keep working after the move from TypeScript.
+//! secrets keep working.
 //!
 //! Sessions are a signed cookie `<expiresUnix>.<hmacHex>` — no DB row. Change
 //! `SESSION_SECRET` to revoke every session. Challenges are
@@ -18,12 +18,11 @@ type HmacSha256 = Hmac<Sha256>;
 pub const SESSION_COOKIE: &str = "y_session";
 pub const CHALLENGE_COOKIE: &str = "y_challenge";
 pub const SESSION_TTL_SECONDS: u64 = 60 * 60 * 24 * 30;
-pub const SESSION_MAX_AGE: u64 = SESSION_TTL_SECONDS;
 pub const CHALLENGE_TTL: u64 = 5 * 60;
 const PBKDF2_ITER: u32 = 100_000;
 
 /// Constant-time equality; length mismatch is false.
-pub fn bytes_equal(a: &[u8], b: &[u8]) -> bool {
+fn bytes_equal(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
         return false;
     }
@@ -169,7 +168,7 @@ pub fn random_challenge() -> String {
 /// `Set-Cookie` value for a new session (Path=/, 30-day Max-Age).
 pub fn session_cookie_header(value: &str) -> String {
     format!(
-        "{SESSION_COOKIE}={value}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age={SESSION_MAX_AGE}"
+        "{SESSION_COOKIE}={value}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age={SESSION_TTL_SECONDS}"
     )
 }
 
@@ -243,7 +242,7 @@ mod tests {
     }
 
     #[test]
-    fn cookie_header_flags_match_typescript() {
+    fn cookie_header_flags() {
         let session = session_cookie_header("abc");
         assert_eq!(
             session,

@@ -89,9 +89,7 @@ async fn handle_fetch(mut req: Request, env: Env, _ctx: Context) -> Result<Respo
         Route::Post { id } => handle_post(&req, &db, &site, now, id).await,
         Route::Feed => handle_feed(&db, &site, now).await,
         Route::Image { key } => handle_image(&images, &key).await,
-        Route::Subscribe if method == Method::Get => {
-            Ok(html(200, subscribe_form(&site.title, &site.url))?)
-        }
+        Route::Subscribe if method == Method::Get => Ok(html(200, subscribe_form(&site.title))?),
         Route::Subscribe => handle_subscribe_post(&mut req, &db, &site, now).await,
         Route::AdminLogin if method == Method::Get => handle_login_get(&req, &db, &site, now).await,
         Route::AdminLogin => handle_login_post(&mut req, &db, &site, now).await,
@@ -343,7 +341,7 @@ async fn handle_subscribe_post(
     if !subscriber_exists(db, &email).await? {
         insert_interested(db, &email, now as i64).await?;
     }
-    html(200, subscribe_thanks(&site.title, &site.url))
+    html(200, subscribe_thanks(&site.title))
 }
 
 async fn handle_login_get(
@@ -355,7 +353,7 @@ async fn handle_login_get(
     let count = count_credentials(db).await?;
     let bootstrap = count == 0;
     let err = query(req, "err").is_some();
-    html(200, login_page(&site.title, &site.url, bootstrap, err))
+    html(200, login_page(&site.title, bootstrap, err))
 }
 
 async fn handle_login_post(
@@ -443,16 +441,13 @@ async fn handle_admin_get(req: &Request, db: &D1Database, site: &Site) -> Result
         None => None,
     };
     let interest = count_interested(db).await?;
-    html(
-        200,
-        admin_compose(&site.title, &site.url, reply_to.as_ref(), interest),
-    )
+    html(200, admin_compose(&site.title, reply_to.as_ref(), interest))
 }
 
 async fn handle_passkeys_get(req: &Request, db: &D1Database, site: &Site) -> Result<Response> {
     let rows = list_credential_rows(db).await?;
     let bootstrap = query(req, "bootstrap").as_deref() == Some("1");
-    html(200, passkeys_page(&site.title, &site.url, &rows, bootstrap))
+    html(200, passkeys_page(&site.title, &rows, bootstrap))
 }
 
 async fn handle_register_options(db: &D1Database, site: &Site, now: u64) -> Result<Response> {
@@ -595,7 +590,7 @@ async fn handle_edit_get(db: &D1Database, site: &Site, id: i64) -> Result<Respon
     let Some(post) = get_post(db, id).await? else {
         return text(404, "not found");
     };
-    html(200, edit_page(&site.title, &site.url, &post))
+    html(200, edit_page(&site.title, &post))
 }
 
 async fn handle_edit_post(req: &mut Request, db: &D1Database, id: i64) -> Result<Response> {

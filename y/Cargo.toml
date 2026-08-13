@@ -43,3 +43,6 @@ lto = true
 # worker-build 0.8.5 + wasm-bindgen 0.2.125 need the wasm `target_features`
 # custom section. `strip = true` drops that section (workers-rs#1014).
 strip = "debuginfo"
+
+[lints.rust]
+unused = "deny"

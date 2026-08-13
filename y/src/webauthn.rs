@@ -1,10 +1,8 @@
 //! WebAuthn (passkey) options + ES256 verification.
 //!
 //! Single-user model: one virtual user (`y-admin`). RP ID and origin come from
-//! `SITE_URL`. Stored public keys are COSE_Key bytes (same as
-//! `@simplewebauthn/server`), so existing D1 credentials keep working.
-//! Only ES256 (P-256) is verified — that is what platform authenticators
-//! actually emit for this app.
+//! `SITE_URL`. Stored public keys are COSE_Key bytes, so existing D1 credentials
+//! keep working. Only ES256 (P-256) is verified.
 
 use p256::ecdsa::signature::Verifier;
 use p256::ecdsa::{Signature, VerifyingKey};
@@ -200,8 +198,12 @@ pub fn verify_registration(
         .ok_or_else(|| "attestation missing credential".to_string())?;
     // Touch the COSE key now so we refuse non-ES256 at registration time.
     cose_p256_key(&cred.public_key)?;
+    let credential_id = b64url_encode(&cred.id);
+    if response.id != credential_id {
+        return Err("credential id mismatch".into());
+    }
     Ok(VerifiedRegistration {
-        credential_id: b64url_encode(&cred.id),
+        credential_id,
         public_key: cred.public_key,
         counter: parsed.counter,
         transports: response.response.transports.clone(),
@@ -392,14 +394,12 @@ fn cose_p256_key(cose: &[u8]) -> Result<VerifyingKey, String> {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
 enum Cbor {
     Unsigned(u64),
     Negative(i64),
     Bytes(Vec<u8>),
     Text(String),
-    #[allow(dead_code)]
-    Array(Vec<Cbor>),
+    Array,
     Map(Vec<(Cbor, Cbor)>),
     Other,
 }
@@ -487,13 +487,11 @@ fn decode_cbor(input: &[u8]) -> Result<(Cbor, usize), String> {
         }
         4 => {
             let mut pos = hdr;
-            let mut items = Vec::with_capacity(len as usize);
             for _ in 0..len {
-                let (v, n) = decode_cbor(&input[pos..])?;
-                items.push(v);
+                let (_, n) = decode_cbor(&input[pos..])?;
                 pos += n;
             }
-            Ok((Cbor::Array(items), pos))
+            Ok((Cbor::Array, pos))
         }
         5 => {
             let mut pos = hdr;

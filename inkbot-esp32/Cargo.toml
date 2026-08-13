@@ -54,3 +54,6 @@ panic = "abort"
 [profile.dev]
 debug = true
 opt-level = "z"
+
+[lints.rust]
+unused = "deny"

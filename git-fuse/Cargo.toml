@@ -42,3 +42,6 @@ harness = false
 [[bench]]
 name = "large_repo"
 harness = false
+
+[lints.rust]
+unused = "deny"
