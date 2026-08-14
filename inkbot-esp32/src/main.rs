@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use anyhow::{anyhow, Result};
 use embedded_svc::http::client::Client as HttpClient;
 use embedded_svc::http::Method;
-use embedded_svc::io::Read;
+use embedded_svc::io::{Read, Write};
 use esp_idf_svc::eventloop::EspSystemEventLoop;
 use esp_idf_svc::hal::peripherals::Peripherals;
 use esp_idf_svc::http::client::{Configuration as HttpConfig, EspHttpConnection};
@@ -25,8 +25,8 @@ use log::{error, info, warn};
 
 use display::Panel;
 use inkbot_esp32::{
-    format_error_chain, format_panic_message, reset_is_abnormal, Catalog, CrashStatus, FetchStatus,
-    StatusReport, WifiStatus, FRAME_BYTES,
+    format_error_chain, format_panic_message, reset_is_abnormal, should_post_status, Catalog,
+    CrashStatus, DeviceTelemetry, FetchStatus, StatusReport, WifiStatus, FIRMWARE_ID, FRAME_BYTES,
 };
 
 include!(concat!(env!("OUT_DIR"), "/config_gen.rs"));
@@ -122,6 +122,7 @@ fn main() -> Result<()> {
     let mut last_rotate = Instant::now();
     let mut last_frame: Option<Vec<u8>> = None;
     let mut panel_has_status = !status.is_empty();
+    let mut remote = RemoteStatus::new();
 
     // Boot: one HTTPS GET of /latest.bin — a catalog+frame pair back-to-back
     // fragments the classic ESP32 heap so the 48 KB alloc fails.
@@ -168,6 +169,17 @@ fn main() -> Result<()> {
         }
     }
 
+    maybe_post_device(
+        &mut remote,
+        &mut nvs,
+        true,
+        &status,
+        reset,
+        &ip_str,
+        current_name.as_deref(),
+        panel_has_status,
+    );
+
     loop {
         thread::sleep(Duration::from_secs(POLL_SECS));
         // After the first successful image the crash line has been on-screen
@@ -210,6 +222,16 @@ fn main() -> Result<()> {
                 panel_has_status = true;
             }
         }
+        maybe_post_device(
+            &mut remote,
+            &mut nvs,
+            false,
+            &status,
+            reset,
+            &ip_str,
+            current_name.as_deref(),
+            panel_has_status,
+        );
     }
 }
 
@@ -661,6 +683,134 @@ fn note_op(nvs: &mut EspNvs<NvsDefault>, op: &str) {
     }
 }
 
+struct RemoteStatus {
+    last_post: Instant,
+    last_error: Option<String>,
+    posts_ok: u32,
+    posts_fail: u32,
+    last_post_error: Option<String>,
+}
+
+impl RemoteStatus {
+    fn new() -> Self {
+        Self {
+            last_post: Instant::now(),
+            last_error: None,
+            posts_ok: 0,
+            posts_fail: 0,
+            last_post_error: None,
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn maybe_post_device(
+    remote: &mut RemoteStatus,
+    nvs: &mut EspNvs<NvsDefault>,
+    force: bool,
+    status: &StatusReport,
+    reset_code: i32,
+    ip: &str,
+    current_image: Option<&str>,
+    panel_has_status: bool,
+) {
+    let secret_ok = !INKBOT_UPLOAD_SECRET.is_empty();
+    let err = status.render();
+    let error_changed = err != remote.last_error;
+    let secs = remote.last_post.elapsed().as_secs();
+    if !should_post_status(secret_ok, force, error_changed, secs, STATUS_SECS) {
+        return;
+    }
+    let last_op = read_str(nvs, NVS_LAST_OP).ok().flatten();
+    let heap = HeapSnap::now();
+    let tel = DeviceTelemetry::from_parts(
+        status,
+        uptime_secs(),
+        reset_code,
+        heap.free,
+        heap.min,
+        heap.largest,
+        Some(ip.to_string()),
+        Some(WIFI_SSID.to_string()),
+        current_image.map(str::to_string),
+        last_op,
+        panel_has_status,
+        remote.posts_ok,
+        remote.posts_fail,
+        remote.last_post_error.clone(),
+    );
+    thread::sleep(Duration::from_millis(200));
+    note_op(nvs, "POST /device");
+    match post_device_report(&tel) {
+        Ok(()) => {
+            remote.posts_ok = remote.posts_ok.saturating_add(1);
+            remote.last_post_error = None;
+            remote.last_error = err;
+            remote.last_post = Instant::now();
+            info!("POST /device ok");
+        }
+        Err(e) => {
+            remote.posts_fail = remote.posts_fail.saturating_add(1);
+            remote.last_post_error = Some(format_error_chain(&e));
+            remote.last_post = Instant::now();
+            warn!("POST /device failed: {e:#}");
+        }
+    }
+}
+
+fn post_device_report(tel: &DeviceTelemetry) -> Result<()> {
+    let body = serde_json::to_vec(tel).map_err(|e| anyhow!("status json: {e}"))?;
+    let url = format!("{INKBOT_BASE_URL}/device");
+    const ATTEMPTS: u32 = 2;
+    let mut last_err: Option<anyhow::Error> = None;
+    for attempt in 1..=ATTEMPTS {
+        match http_post_json(&url, &body) {
+            Ok(200) => return Ok(()),
+            Ok(status) => {
+                warn!("POST {url} attempt {attempt}/{ATTEMPTS} HTTP {status}");
+                last_err = Some(anyhow!("POST {url} -> HTTP {status}"));
+            }
+            Err(e) => {
+                warn!("POST {url} attempt {attempt}/{ATTEMPTS}: {e:#}");
+                last_err = Some(e);
+            }
+        }
+        thread::sleep(Duration::from_millis(300 * u64::from(attempt)));
+    }
+    Err(last_err.unwrap_or_else(|| anyhow!("POST /device failed")))
+}
+
+fn http_post_json(url: &str, body: &[u8]) -> Result<u16> {
+    let auth = format!("Bearer {INKBOT_UPLOAD_SECRET}");
+    let len = body.len().to_string();
+    let mut client = HttpClient::wrap(
+        EspHttpConnection::new(&HttpConfig {
+            buffer_size: Some(1024),
+            buffer_size_tx: Some(1024),
+            timeout: Some(Duration::from_secs(30)),
+            crt_bundle_attach: Some(esp_idf_svc::sys::esp_crt_bundle_attach),
+            ..Default::default()
+        })
+        .map_err(|e| anyhow!("http client: {e:?} {}", HeapSnap::now()))?,
+    );
+    let headers = [
+        ("User-Agent", FIRMWARE_ID),
+        ("Authorization", auth.as_str()),
+        ("Content-Type", "application/json"),
+        ("Content-Length", len.as_str()),
+    ];
+    let mut request = client
+        .request(Method::Post, url, &headers)
+        .map_err(|e| anyhow!("http request: {e} {}", HeapSnap::now()))?;
+    request
+        .write_all(body)
+        .map_err(|e| anyhow!("http write: {e} {}", HeapSnap::now()))?;
+    let response = request
+        .submit()
+        .map_err(|e| anyhow!("http submit: {e} {}", HeapSnap::now()))?;
+    Ok(response.status())
+}
+
 struct HttpResponse {
     status: u16,
     etag: Option<String>,
@@ -699,7 +849,7 @@ fn http_get_once(url: &str, if_none_match: Option<&str>) -> Result<HttpResponse>
         .map_err(|e| anyhow!("http client: {e:?} {}", HeapSnap::now()))?,
     );
 
-    let mut headers: Vec<(&str, &str)> = vec![("User-Agent", "inkbot-esp32/0.1")];
+    let mut headers: Vec<(&str, &str)> = vec![("User-Agent", FIRMWARE_ID)];
     if let Some(etag) = if_none_match {
         headers.push(("If-None-Match", etag));
     }

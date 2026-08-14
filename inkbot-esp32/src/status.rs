@@ -13,8 +13,12 @@ use embedded_graphics::{
     prelude::*,
     text::{Baseline, Text},
 };
+use serde::{Deserialize, Serialize};
 
 use crate::panel::{FRAME_BYTES, PANEL_HEIGHT, PANEL_WIDTH};
+
+/// Matches the HTTP `User-Agent` and `firmware` telemetry field.
+pub const FIRMWARE_ID: &str = "inkbot-esp32/0.1";
 
 /// Glyph width of `FONT_6X10` (includes the 1 px gap).
 const GLYPH_W: u32 = 6;
@@ -41,7 +45,7 @@ pub fn status_bar_height(lines: usize) -> u32 {
 }
 
 /// Wi-Fi association / DHCP failure.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WifiStatus {
     pub ssid: String,
     pub step: String,
@@ -57,7 +61,7 @@ pub struct WifiStatus {
 }
 
 /// Catalog or framebuffer HTTP failure.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FetchStatus {
     pub op: String,
     pub url: String,
@@ -74,7 +78,7 @@ pub struct FetchStatus {
 }
 
 /// Abnormal reset / panic captured at boot.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CrashStatus {
     pub reset_code: i32,
     pub panic_message: Option<String>,
@@ -114,6 +118,95 @@ impl StatusReport {
         }
         Some(wrap_lines(&lines, STATUS_MAX_COLS, STATUS_MAX_LINES).join("\n"))
     }
+}
+
+/// JSON payload POSTed to the Worker `POST /device`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeviceTelemetry {
+    pub firmware: String,
+    pub uptime_secs: u64,
+    pub reset_code: i32,
+    pub reset_name: String,
+    pub heap: u32,
+    pub heap_min: u32,
+    pub heap_largest: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ip: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ssid: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_image: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_op: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wifi: Option<WifiStatus>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fetch: Option<FetchStatus>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub crash: Option<CrashStatus>,
+    pub panel_has_status: bool,
+    pub posts_ok: u32,
+    pub posts_fail: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_post_error: Option<String>,
+}
+
+impl DeviceTelemetry {
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_parts(
+        status: &StatusReport,
+        uptime_secs: u64,
+        reset_code: i32,
+        heap: u32,
+        heap_min: u32,
+        heap_largest: u32,
+        ip: Option<String>,
+        ssid: Option<String>,
+        current_image: Option<String>,
+        last_op: Option<String>,
+        panel_has_status: bool,
+        posts_ok: u32,
+        posts_fail: u32,
+        last_post_error: Option<String>,
+    ) -> Self {
+        Self {
+            firmware: FIRMWARE_ID.to_string(),
+            uptime_secs,
+            reset_code,
+            reset_name: reset_reason_name(reset_code).to_string(),
+            heap,
+            heap_min,
+            heap_largest,
+            ip,
+            ssid,
+            current_image,
+            last_op,
+            error: status.render(),
+            wifi: status.wifi.clone(),
+            fetch: status.fetch.clone(),
+            crash: status.crash.clone(),
+            panel_has_status,
+            posts_ok,
+            posts_fail,
+            last_post_error,
+        }
+    }
+}
+
+/// When to POST `/device`: boot, error text change, or the periodic interval.
+pub fn should_post_status(
+    secret_configured: bool,
+    force: bool,
+    error_changed: bool,
+    secs_since_post: u64,
+    status_secs: u64,
+) -> bool {
+    if !secret_configured {
+        return false;
+    }
+    force || error_changed || secs_since_post >= status_secs
 }
 
 impl WifiStatus {
@@ -676,5 +769,55 @@ mod tests {
         assert!(text.contains("WIFI ERR"));
         // Crash may be truncated to "..." on the last line, but WIFI is first.
         assert!(text.contains("WIFI ERR") || text.contains("CRASH"));
+    }
+
+    #[test]
+    fn should_post_status_gates_on_secret_and_triggers() {
+        assert!(!should_post_status(false, true, true, 10_000, 900));
+        assert!(should_post_status(true, true, false, 0, 900));
+        assert!(should_post_status(true, false, true, 0, 900));
+        assert!(should_post_status(true, false, false, 900, 900));
+        assert!(!should_post_status(true, false, false, 899, 900));
+    }
+
+    #[test]
+    fn telemetry_json_includes_error_and_skips_empty_optionals() {
+        let status = StatusReport {
+            crash: Some(CrashStatus {
+                reset_code: 4,
+                panic_message: Some("boom @main.rs:1".into()),
+                last_op: Some("GET /".into()),
+                heap: 1,
+                heap_min: 1,
+                heap_largest: 1,
+            }),
+            ..Default::default()
+        };
+        let t = DeviceTelemetry::from_parts(
+            &status,
+            12,
+            4,
+            100,
+            50,
+            80,
+            Some("10.0.0.2".into()),
+            Some("CafeNet".into()),
+            Some("foo".into()),
+            Some("GET /".into()),
+            true,
+            3,
+            1,
+            None,
+        );
+        let v = serde_json::to_value(&t).unwrap();
+        assert_eq!(v["firmware"], FIRMWARE_ID);
+        assert_eq!(v["reset_name"], "PANIC");
+        assert!(v["error"].as_str().unwrap().contains("CRASH PANIC"));
+        assert!(v.get("last_post_error").is_none());
+        assert!(v["crash"]["panic_message"]
+            .as_str()
+            .unwrap()
+            .contains("boom"));
+        assert!(v.is_object());
     }
 }

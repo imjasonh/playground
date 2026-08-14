@@ -59,6 +59,14 @@ fn generate_config() {
         .get("rotate_secs")
         .and_then(|v| v.as_integer())
         .unwrap_or(1800) as u64;
+    let upload_secret = inkbot
+        .get("upload_secret")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let status_secs = inkbot
+        .get("status_secs")
+        .and_then(|v| v.as_integer())
+        .unwrap_or(900) as u64;
 
     let out = PathBuf::from(env::var("OUT_DIR").unwrap()).join("config_gen.rs");
     fs::write(
@@ -68,7 +76,9 @@ fn generate_config() {
              pub const WIFI_PASS: &str = {pass:?};\n\
              pub const INKBOT_BASE_URL: &str = {base_url:?};\n\
              pub const POLL_SECS: u64 = {poll_secs};\n\
-             pub const ROTATE_SECS: u64 = {rotate_secs};\n"
+             pub const ROTATE_SECS: u64 = {rotate_secs};\n\
+             pub const INKBOT_UPLOAD_SECRET: &str = {upload_secret:?};\n\
+             pub const STATUS_SECS: u64 = {status_secs};\n"
         ),
     )
     .expect("write config_gen.rs");

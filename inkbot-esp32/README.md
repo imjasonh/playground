@@ -72,7 +72,7 @@ make monitor
 
 ### Error status line
 
-The panel is the only debug surface in the field. On **error only**, a white
+The panel is the on-device debug surface. On **error only**, a white
 bar is painted over the bottom ~1–3 rows of 6×10 text (the rest of the image
 is left alone). When the device is healthy the bar is not drawn — there is no
 “no errors” / “ready” message, because that would steal image pixels.
@@ -93,6 +93,23 @@ the next refresh is a full frame. Wi-Fi failure retries forever and keeps the
 bar up until association succeeds.
 
 Brownout still usually means a weak 5 V supply (see Power above).
+
+### Remote status (`POST /device`)
+
+When `inkbot.upload_secret` matches the Worker's `UPLOAD_SECRET`, the firmware
+POSTs JSON telemetry to `{base_url}/device`:
+
+- once after boot (Wi-Fi is up)
+- whenever the on-panel error text changes
+- otherwise every `status_secs` (default 15 min)
+
+Empty `upload_secret` disables posting. Fetch the last report with:
+
+```bash
+curl -H "Authorization: Bearer $UPLOAD_SECRET" https://inkbot.<account>.workers.dev/device
+```
+
+or mention `@inkbot status` in Slack.
 
 ## Host tests
 

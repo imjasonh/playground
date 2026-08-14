@@ -44,6 +44,35 @@ pub trait ImageStore {
     fn delete(&mut self, name: &str) -> bool;
 }
 
+/// Last ESP32 telemetry report. The Worker stamps `received_at`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeviceSnapshot {
+    /// Unix seconds when the Worker accepted the POST.
+    pub received_at: i64,
+    /// Device-authored JSON object (heap, reset, errors, …).
+    pub report: serde_json::Value,
+}
+
+/// Persistence for the latest device report. Image routes may pass [`NoopDeviceStore`].
+pub trait DeviceStore {
+    fn get_device(&self) -> Option<DeviceSnapshot>;
+    fn put_device(&mut self, snap: DeviceSnapshot);
+}
+
+/// Drops device reads/writes. Used on image-only Worker paths.
+#[derive(Debug, Default)]
+pub struct NoopDeviceStore;
+
+impl DeviceStore for NoopDeviceStore {
+    fn get_device(&self) -> Option<DeviceSnapshot> {
+        None
+    }
+    fn put_device(&mut self, _snap: DeviceSnapshot) {}
+}
+
+/// Cap on `POST /device` bodies (ESP32 reports are ~1 KB).
+pub const DEVICE_REPORT_MAX_BYTES: usize = 8192;
+
 #[derive(Debug, Clone)]
 pub struct ApiRequest {
     pub method: String,
@@ -117,15 +146,20 @@ impl ApiResponse {
 }
 
 /// Config shared by the simple (non-Slack-I/O) routes.
-pub struct HandlerConfig<'a, S: ImageStore> {
+pub struct HandlerConfig<'a, S: ImageStore, D: DeviceStore> {
     pub store: &'a mut S,
+    pub devices: &'a mut D,
     pub upload_secret: &'a str,
     pub panel: PanelSpec,
+    pub now_unix: i64,
 }
 
-/// Route catalog / image CRUD and health checks. Slack Events are handled by
-/// [`begin_slack_event`] + [`finish_app_mention`].
-pub fn handle<S: ImageStore>(req: ApiRequest, cfg: &mut HandlerConfig<'_, S>) -> ApiResponse {
+/// Route catalog / image CRUD, device telemetry, and health checks. Slack
+/// Events are handled by [`begin_slack_event`] + [`finish_app_mention`].
+pub fn handle<S: ImageStore, D: DeviceStore>(
+    req: ApiRequest,
+    cfg: &mut HandlerConfig<'_, S, D>,
+) -> ApiResponse {
     let path = normalize_path(&req.path);
     let method = req.method.to_ascii_uppercase();
 
@@ -135,6 +169,8 @@ pub fn handle<S: ImageStore>(req: ApiRequest, cfg: &mut HandlerConfig<'_, S>) ->
         // Single-request fetch of whatever `latest` points at (ESP32 boot path
         // can't afford catalog+frame as two back-to-back HTTPS round-trips).
         ("GET", "/latest.bin") => get_latest_bin(&req, cfg.store),
+        ("GET", "/device") => get_device(&req, cfg),
+        ("POST", "/device") => post_device(&req, cfg),
         ("OPTIONS", _) => ApiResponse::text(204, ""),
         (m, p) => match parse_image_path(p) {
             Some((name, kind)) => match (m, kind) {
@@ -190,7 +226,7 @@ pub fn validate_name(raw: &str) -> Option<String> {
     }
     // Reserved route stems.
     match name {
-        "health" | "slack" | "events" | "latest" => None,
+        "health" | "slack" | "events" | "latest" | "device" => None,
         _ => Some(name.to_string()),
     }
 }
@@ -263,6 +299,7 @@ pub enum SlackCommand {
     List,
     Delete { name: String },
     AddImage { name: String },
+    Status,
     Help,
 }
 
@@ -272,6 +309,7 @@ pub fn parse_slack_command(text: &str, attachment_name: Option<&str>) -> SlackCo
     let mut parts = stripped.split_whitespace();
     match parts.next().map(|s| s.to_ascii_lowercase()).as_deref() {
         Some("list") => SlackCommand::List,
+        Some("status") => SlackCommand::Status,
         Some("delete") => {
             let raw = parts.next().unwrap_or("");
             let raw = raw.strip_suffix(".bin").unwrap_or(raw);
@@ -315,10 +353,11 @@ fn strip_slack_mentions(text: &str) -> String {
 }
 
 /// Handle a Slack mention after any attachment bytes have been downloaded.
-pub fn finish_app_mention<S: ImageStore>(
+pub fn finish_app_mention<S: ImageStore, D: DeviceStore>(
     mention: &AppMention,
     image_bytes: Option<Result<Vec<u8>, String>>,
     store: &mut S,
+    devices: &D,
     panel: PanelSpec,
 ) -> String {
     let attachment_name = mention.first_image().map(|f| f.name.as_str());
@@ -345,8 +384,9 @@ pub fn finish_app_mention<S: ImageStore>(
                 format!("No image named `{name}`.")
             }
         }
+        SlackCommand::Status => format_device_slack(devices.get_device().as_ref()),
         SlackCommand::Help => {
-            "Commands: attach an image to add it · `list` · `delete <name>`".into()
+            "Commands: attach an image to add it · `list` · `delete <name>` · `status`".into()
         }
         SlackCommand::AddImage { name } => match image_bytes {
             None => "Attach an image and mention me — I'll dither it into the rotation.".into(),
@@ -415,9 +455,9 @@ fn get_image_bin<S: ImageStore>(req: &ApiRequest, store: &S, name: &str) -> ApiR
     ApiResponse::packed(&frame)
 }
 
-fn post_image<S: ImageStore>(
+fn post_image<S: ImageStore, D: DeviceStore>(
     req: &ApiRequest,
-    cfg: &mut HandlerConfig<'_, S>,
+    cfg: &mut HandlerConfig<'_, S, D>,
     name: &str,
 ) -> ApiResponse {
     if cfg.upload_secret.is_empty() {
@@ -450,9 +490,9 @@ fn post_image<S: ImageStore>(
     )
 }
 
-fn delete_image<S: ImageStore>(
+fn delete_image<S: ImageStore, D: DeviceStore>(
     req: &ApiRequest,
-    cfg: &mut HandlerConfig<'_, S>,
+    cfg: &mut HandlerConfig<'_, S, D>,
     name: &str,
 ) -> ApiResponse {
     if cfg.upload_secret.is_empty() {
@@ -479,6 +519,117 @@ fn etags_match(if_none_match: &str, etag: &str) -> bool {
 
 fn strip_weak(etag: &str) -> &str {
     etag.strip_prefix("W/").unwrap_or(etag)
+}
+
+fn get_device<S: ImageStore, D: DeviceStore>(
+    req: &ApiRequest,
+    cfg: &HandlerConfig<'_, S, D>,
+) -> ApiResponse {
+    if cfg.upload_secret.is_empty() {
+        return ApiResponse::text(500, "UPLOAD_SECRET is not configured\n");
+    }
+    if !authorize_upload(req.authorization.as_deref(), cfg.upload_secret) {
+        return ApiResponse::text(401, "unauthorized\n");
+    }
+    match cfg.devices.get_device() {
+        Some(snap) => ApiResponse::json(
+            200,
+            serde_json::to_string(&snap).unwrap_or_else(|_| "{}".into()),
+        ),
+        None => ApiResponse::text(404, "no device report yet\n"),
+    }
+}
+
+fn post_device<S: ImageStore, D: DeviceStore>(
+    req: &ApiRequest,
+    cfg: &mut HandlerConfig<'_, S, D>,
+) -> ApiResponse {
+    if cfg.upload_secret.is_empty() {
+        return ApiResponse::text(500, "UPLOAD_SECRET is not configured\n");
+    }
+    if !authorize_upload(req.authorization.as_deref(), cfg.upload_secret) {
+        return ApiResponse::text(401, "unauthorized\n");
+    }
+    if req.body.is_empty() {
+        return ApiResponse::text(400, "empty body\n");
+    }
+    if req.body.len() > DEVICE_REPORT_MAX_BYTES {
+        return ApiResponse::text(413, "device report too large\n");
+    }
+    let report: serde_json::Value = match serde_json::from_slice::<serde_json::Value>(&req.body) {
+        Ok(v) if v.is_object() => v,
+        Ok(_) => return ApiResponse::text(400, "device report must be a JSON object\n"),
+        Err(e) => return ApiResponse::text(400, format!("invalid json: {e}\n")),
+    };
+    let snap = DeviceSnapshot {
+        received_at: cfg.now_unix,
+        report,
+    };
+    let body = serde_json::to_string(&snap).unwrap_or_else(|_| "{}".into());
+    cfg.devices.put_device(snap);
+    ApiResponse::json(200, body)
+}
+
+/// Slack-readable dump of the last ESP32 report.
+pub fn format_device_slack(snap: Option<&DeviceSnapshot>) -> String {
+    let Some(snap) = snap else {
+        return "No device report yet. The ESP32 POSTs /device on boot, on errors, and every status_secs once upload_secret is set.".into();
+    };
+    let mut out = format!("Last report received_at={} (unix)\n", snap.received_at);
+    let Some(obj) = snap.report.as_object() else {
+        out.push_str(&snap.report.to_string());
+        return truncate_slack(&out);
+    };
+    const KEYS: &[&str] = &[
+        "firmware",
+        "uptime_secs",
+        "reset_name",
+        "reset_code",
+        "heap",
+        "heap_min",
+        "heap_largest",
+        "ip",
+        "ssid",
+        "current_image",
+        "last_op",
+        "panel_has_status",
+        "posts_ok",
+        "posts_fail",
+        "last_post_error",
+        "error",
+        "wifi",
+        "fetch",
+        "crash",
+    ];
+    for key in KEYS {
+        if let Some(v) = obj.get(*key) {
+            if v.is_null() {
+                continue;
+            }
+            let brief = if v.is_object() || v.is_array() {
+                v.to_string()
+            } else if let Some(s) = v.as_str() {
+                s.replace('\n', " | ")
+            } else {
+                v.to_string()
+            };
+            out.push_str(key);
+            out.push('=');
+            out.push_str(&brief);
+            out.push('\n');
+        }
+    }
+    truncate_slack(&out)
+}
+
+fn truncate_slack(s: &str) -> String {
+    const MAX: usize = 3500;
+    if s.chars().count() <= MAX {
+        return s.to_string();
+    }
+    let mut out: String = s.chars().take(MAX - 3).collect();
+    out.push_str("...");
+    out
 }
 
 #[cfg(test)]
@@ -532,16 +683,35 @@ mod tests {
         }
     }
 
+    #[derive(Default)]
+    struct MemDevice {
+        snap: Option<DeviceSnapshot>,
+    }
+
+    impl DeviceStore for MemDevice {
+        fn get_device(&self) -> Option<DeviceSnapshot> {
+            self.snap.clone()
+        }
+        fn put_device(&mut self, snap: DeviceSnapshot) {
+            self.snap = Some(snap);
+        }
+    }
+
     fn solid_png() -> Vec<u8> {
         let img = GrayImage::from_pixel(800, 480, Luma([255]));
         encode_bw_png(&img, PanelSpec::default()).unwrap().0
     }
 
-    fn cfg<'a>(store: &'a mut MemStore) -> HandlerConfig<'a, MemStore> {
+    fn cfg<'a>(
+        store: &'a mut MemStore,
+        devices: &'a mut MemDevice,
+    ) -> HandlerConfig<'a, MemStore, MemDevice> {
         HandlerConfig {
             store,
+            devices,
             upload_secret: "secret",
             panel: PanelSpec::default(),
+            now_unix: 1_700_000_000,
         }
     }
 
@@ -549,6 +719,7 @@ mod tests {
     fn validate_and_sanitize_names() {
         assert_eq!(validate_name("sgt-pepper"), Some("sgt-pepper".into()));
         assert_eq!(validate_name("health"), None);
+        assert_eq!(validate_name("device"), None);
         assert_eq!(name_from_filename("Sgt Pepper!.PNG"), "sgt-pepper");
         assert_eq!(name_from_filename("a.png"), "a");
     }
@@ -556,7 +727,8 @@ mod tests {
     #[test]
     fn post_list_get_delete() {
         let mut store = MemStore::new();
-        let mut c = cfg(&mut store);
+        let mut devices = MemDevice::default();
+        let mut c = cfg(&mut store, &mut devices);
         let post = handle(
             ApiRequest {
                 method: "POST".into(),
@@ -623,7 +795,8 @@ mod tests {
     #[test]
     fn post_rejects_bad_auth() {
         let mut store = MemStore::new();
-        let mut c = cfg(&mut store);
+        let mut devices = MemDevice::default();
+        let mut c = cfg(&mut store, &mut devices);
         let resp = handle(
             ApiRequest {
                 method: "POST".into(),
@@ -644,6 +817,10 @@ mod tests {
         assert_eq!(
             parse_slack_command("<@Ubot> list", None),
             SlackCommand::List
+        );
+        assert_eq!(
+            parse_slack_command("<@Ubot> status", None),
+            SlackCommand::Status
         );
         assert_eq!(
             parse_slack_command("<@Ubot> delete sgt-pepper.bin", None),
@@ -672,7 +849,8 @@ mod tests {
         let SlackEvent::AppMention(mention) = slack::parse_event(body).unwrap() else {
             panic!("expected mention");
         };
-        let reply = finish_app_mention(&mention, None, &mut store, PanelSpec::default());
+        let devices = MemDevice::default();
+        let reply = finish_app_mention(&mention, None, &mut store, &devices, PanelSpec::default());
         assert!(reply.contains("No images"));
 
         let mut src = GrayImage::new(100, 50);
@@ -703,9 +881,132 @@ mod tests {
             &mention,
             Some(Ok(src_png)),
             &mut store,
+            &devices,
             PanelSpec::default(),
         );
         assert!(reply.contains("Added `a`"));
         assert_eq!(store.catalog().images, vec!["a".to_string()]);
+    }
+
+    fn device_req(method: &str, auth: Option<&str>, body: Vec<u8>) -> ApiRequest {
+        ApiRequest {
+            method: method.into(),
+            path: "/device".into(),
+            authorization: auth.map(|s| s.into()),
+            if_none_match: None,
+            slack_timestamp: None,
+            slack_signature: None,
+            body,
+        }
+    }
+
+    #[test]
+    fn device_post_get_requires_auth_and_round_trips() {
+        let mut store = MemStore::new();
+        let mut devices = MemDevice::default();
+        let mut c = cfg(&mut store, &mut devices);
+
+        let unauth = handle(
+            device_req("POST", None, b"{\"uptime_secs\":1}".to_vec()),
+            &mut c,
+        );
+        assert_eq!(unauth.status, 401);
+
+        let bad = handle(
+            device_req(
+                "POST",
+                Some("Bearer wrong"),
+                b"{\"uptime_secs\":1}".to_vec(),
+            ),
+            &mut c,
+        );
+        assert_eq!(bad.status, 401);
+
+        let missing = handle(device_req("GET", Some("Bearer secret"), vec![]), &mut c);
+        assert_eq!(missing.status, 404);
+
+        let report = serde_json::json!({
+            "firmware": "inkbot-esp32/0.1",
+            "uptime_secs": 42,
+            "reset_name": "PANIC",
+            "reset_code": 4,
+            "heap": 12345,
+            "heap_min": 8000,
+            "heap_largest": 9000,
+            "ip": "192.168.1.20",
+            "error": "CRASH PANIC (4)",
+            "crash": {"reset_code": 4, "last_op": "GET /latest.bin"}
+        });
+        let post = handle(
+            device_req(
+                "POST",
+                Some("Bearer secret"),
+                serde_json::to_vec(&report).unwrap(),
+            ),
+            &mut c,
+        );
+        assert_eq!(post.status, 200);
+        let stored: DeviceSnapshot = serde_json::from_slice(&post.body).unwrap();
+        assert_eq!(stored.received_at, 1_700_000_000);
+        assert_eq!(stored.report["firmware"], "inkbot-esp32/0.1");
+        assert_eq!(stored.report["error"], "CRASH PANIC (4)");
+
+        let get = handle(device_req("GET", Some("Bearer secret"), vec![]), &mut c);
+        assert_eq!(get.status, 200);
+        let got: DeviceSnapshot = serde_json::from_slice(&get.body).unwrap();
+        assert_eq!(got, stored);
+
+        let get_unauth = handle(device_req("GET", None, vec![]), &mut c);
+        assert_eq!(get_unauth.status, 401);
+    }
+
+    #[test]
+    fn device_post_rejects_non_object_and_huge_body() {
+        let mut store = MemStore::new();
+        let mut devices = MemDevice::default();
+        let mut c = cfg(&mut store, &mut devices);
+
+        let arr = handle(
+            device_req("POST", Some("Bearer secret"), b"[1,2,3]".to_vec()),
+            &mut c,
+        );
+        assert_eq!(arr.status, 400);
+
+        let huge = vec![b'x'; DEVICE_REPORT_MAX_BYTES + 1];
+        let too_big = handle(device_req("POST", Some("Bearer secret"), huge), &mut c);
+        assert_eq!(too_big.status, 413);
+    }
+
+    #[test]
+    fn slack_status_formats_last_report() {
+        let mut store = MemStore::new();
+        let mut devices = MemDevice::default();
+        let body = br#"{
+            "type":"event_callback",
+            "event":{
+                "type":"app_mention",
+                "user":"U1","text":"<@Ubot> status","ts":"1.0","channel":"C1"
+            }
+        }"#;
+        let SlackEvent::AppMention(mention) = slack::parse_event(body).unwrap() else {
+            panic!("expected mention");
+        };
+        let empty = finish_app_mention(&mention, None, &mut store, &devices, PanelSpec::default());
+        assert!(empty.contains("No device report yet"));
+
+        devices.put_device(DeviceSnapshot {
+            received_at: 1_700_000_000,
+            report: serde_json::json!({
+                "firmware": "inkbot-esp32/0.1",
+                "uptime_secs": 9,
+                "reset_name": "BROWNOUT",
+                "error": "WIFI ERR step=connect"
+            }),
+        });
+        let reply = finish_app_mention(&mention, None, &mut store, &devices, PanelSpec::default());
+        assert!(reply.contains("received_at=1700000000"));
+        assert!(reply.contains("BROWNOUT"));
+        assert!(reply.contains("WIFI ERR"));
+        assert!(reply.contains("inkbot-esp32/0.1"));
     }
 }
