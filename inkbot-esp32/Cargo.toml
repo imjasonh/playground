@@ -26,13 +26,14 @@ firmware = []
 
 [dependencies]
 anyhow = "1"
+# Status-line overlay on the packed 1-bit framebuffer (also used on-device).
+embedded-graphics = "0.8"
 # Decode the Worker's packed 1-bit PNG into the 48 KB panel framebuffer.
 png = "0.17"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 [target.'cfg(target_os = "espidf")'.dependencies]
-embedded-graphics = "0.8"
 embedded-svc = "0.29"
 # Upstream compiles a shared 2.13″ module unconditionally and requires one of
 # its revision flags even when we drive the 7.5″ V2 panel.
