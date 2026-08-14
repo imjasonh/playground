@@ -11,7 +11,6 @@ use crate::api::{
     self, begin_slack_event, finish_app_mention, ApiRequest, ApiResponse, Catalog, DeviceSnapshot,
     DeviceStore, HandlerConfig, ImageStore, NoopDeviceStore, SlackBegin, StoredFrame,
 };
-use crate::auth::now_unix;
 use crate::panel::PanelSpec;
 use crate::slack;
 
@@ -105,7 +104,10 @@ async fn fetch(mut req: Request, env: Env, _ctx: Context) -> Result<Response> {
         devices: &mut devices,
         upload_secret: upload_secret.as_str(),
         panel,
-        now_unix: now_unix(),
+        // `SystemTime::now()` panics on wasm32-unknown-unknown; JS Date
+        // imports have also 1101'd this Worker at instantiate time. Stamp 0
+        // until we have a clock that is safe on this stack.
+        now_unix: 0,
     };
     let response = api::handle(api_req, &mut cfg);
     store.flush(&bucket).await?;
@@ -138,7 +140,7 @@ async fn respond_frame_get(
         devices: &mut devices,
         upload_secret,
         panel,
-        now_unix: now_unix(),
+        now_unix: 0,
     };
     into_worker_response(api::handle(api_req.clone(), &mut cfg))
 }
@@ -159,7 +161,7 @@ async fn handle_device(
         devices: &mut devices,
         upload_secret,
         panel,
-        now_unix: now_unix(),
+        now_unix: 0,
     };
     let is_post = api_req.method.eq_ignore_ascii_case("POST");
     let response = api::handle(api_req, &mut cfg);
@@ -276,7 +278,7 @@ async fn handle_slack(
         .ok();
     let bot_token = env.secret("SLACK_BOT_TOKEN").map(|s| s.to_string()).ok();
 
-    match begin_slack_event(&api_req, signing.as_deref(), now_unix()) {
+    match begin_slack_event(&api_req, signing.as_deref(), 0) {
         SlackBegin::Respond(resp) => into_worker_response(resp),
         SlackBegin::Mention(mention) => {
             let Some(token) = bot_token.filter(|t| !t.is_empty()) else {
