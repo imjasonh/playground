@@ -121,7 +121,7 @@ fn main() -> Result<()> {
 
     let mut last_rotate = Instant::now();
     let mut last_frame: Option<Vec<u8>> = None;
-    let mut panel_has_status = !status.is_empty();
+    let mut panel_has_status;
     let mut remote = RemoteStatus::new();
 
     // Boot: one HTTPS GET of /latest.bin — a catalog+frame pair back-to-back
