@@ -13,3 +13,9 @@ base_url = "https://inkbot.example.workers.dev"
 poll_secs = 60
 # How often to pick a random image from the rotation when nothing new arrived.
 rotate_secs = 1800
+# Bearer token; must match the Worker's UPLOAD_SECRET. Leave empty to disable
+# remote POST /device (panel-only debug).
+upload_secret = ""
+# How often to POST /device when nothing about the error text changed.
+# Boot and error transitions also POST immediately.
+status_secs = 900

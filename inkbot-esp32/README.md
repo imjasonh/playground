@@ -65,10 +65,51 @@ make monitor
 ## Behaviour
 
 1. Bring up the panel + Wi-Fi.
-2. Boot: `GET /`, then paint `latest` (full refresh).
+2. Boot: `GET /latest.bin`, then paint `latest` (full refresh).
 3. Every `poll_secs` (default 60): refresh catalog; if `latest` changed, show it.
 4. Every `rotate_secs` (default 1800): show a random other image.
-5. Empty catalog → “inkbot ready”.
+5. Empty catalog → blank white panel (no banner).
+
+### Error status line
+
+The panel is the on-device debug surface. On **error only**, a white
+bar is painted over the bottom ~1–3 rows of 6×10 text (the rest of the image
+is left alone). When the device is healthy the bar is not drawn — there is no
+“no errors” / “ready” message, because that would steal image pixels.
+
+The bar can include:
+
+| Kind | What you get |
+|------|----------------|
+| Wi-Fi | `step=` (configure/start/connect/dhcp), `ssid=`, `try=n/n`, `2.4GHz` reminder, disconnect reason if known, ESP error chain, heap |
+| Fetch | `catalog` / `frame <name>` / `boot /latest.bin`, URL path, HTTP status, bytes read so far, IP, attempt count, error chain, heap |
+| Crash | `esp_reset_reason` name+code (`PANIC`, `BROWNOUT`, `TASK_WDT`, …), last operation (NVS + RTC), panic payload `@file:line` if a panic hook ran, heap at boot |
+
+Heap fields are `heap=` free bytes, `min=` lifetime minimum, `big=` largest
+contiguous 8-bit block — `big<48000` is why a framebuffer alloc failed.
+
+A crash line stays on the first image after reboot for one poll period, then
+the next refresh is a full frame. Wi-Fi failure retries forever and keeps the
+bar up until association succeeds.
+
+Brownout still usually means a weak 5 V supply (see Power above).
+
+### Remote status (`POST /device`)
+
+When `inkbot.upload_secret` matches the Worker's `UPLOAD_SECRET`, the firmware
+POSTs JSON telemetry to `{base_url}/device`:
+
+- once after boot (Wi-Fi is up)
+- whenever the on-panel error text changes
+- otherwise every `status_secs` (default 15 min)
+
+Empty `upload_secret` disables posting. Fetch the last report with:
+
+```bash
+curl -H "Authorization: Bearer $UPLOAD_SECRET" https://inkbot.<account>.workers.dev/device
+```
+
+or mention `@inkbot status` in Slack.
 
 ## Host tests
 
@@ -89,9 +130,9 @@ job skips this crate — it needs espup).
 ```
 inkbot-esp32/
 ├── src/
-│   ├── lib.rs / panel.rs / png_frame.rs   # host-tested
-│   ├── main.rs                            # Wi-Fi + HTTP poll loop
-│   └── display.rs                         # Waveshare 7.5″ V2 via epd-waveshare
+│   ├── lib.rs / panel.rs / png_frame.rs / status.rs  # host-tested
+│   ├── main.rs                                       # Wi-Fi + HTTP poll loop
+│   └── display.rs                                    # Waveshare 7.5″ V2 via epd-waveshare
 ├── config.toml.example
 ├── sdkconfig.defaults
 └── Makefile

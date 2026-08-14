@@ -8,16 +8,16 @@ use worker::{
 };
 
 use crate::api::{
-    self, begin_slack_event, finish_app_mention, ApiRequest, ApiResponse, Catalog, HandlerConfig,
-    ImageStore, SlackBegin, StoredFrame,
+    self, begin_slack_event, finish_app_mention, ApiRequest, ApiResponse, Catalog, DeviceSnapshot,
+    DeviceStore, HandlerConfig, ImageStore, NoopDeviceStore, SlackBegin, StoredFrame,
 };
-use crate::auth::now_unix;
 use crate::panel::PanelSpec;
 use crate::slack;
 
 const BUCKET_BINDING: &str = "IMAGES";
 const CATALOG_KEY: &str = "catalog.json";
 const FRAMES_PREFIX: &str = "frames/";
+const DEVICE_KEY: &str = "device.json";
 
 // Legacy single-image keys from before the multi-image library.
 const LEGACY_PNG: &str = "image.png";
@@ -69,8 +69,12 @@ async fn fetch(mut req: Request, env: Env, _ctx: Context) -> Result<Response> {
         return handle_slack(api_req, &env, &bucket, panel).await;
     }
 
-    // Cheap GET paths: don't pull every frame body into memory.
     let norm = normalize_path(&path);
+    if (method == Method::Get || method == Method::Post) && norm == "/device" {
+        return handle_device(&bucket, api_req, panel, upload_secret.as_str()).await;
+    }
+
+    // Cheap GET paths: don't pull every frame body into memory.
     if method == Method::Get && norm == "/" {
         let catalog = load_catalog(&bucket).await?;
         return into_worker_response(ApiResponse::json(
@@ -94,10 +98,16 @@ async fn fetch(mut req: Request, env: Env, _ctx: Context) -> Result<Response> {
     }
 
     let mut store = R2ImageStore::load(&bucket).await?;
+    let mut devices = NoopDeviceStore;
     let mut cfg = HandlerConfig {
         store: &mut store,
+        devices: &mut devices,
         upload_secret: upload_secret.as_str(),
         panel,
+        // `SystemTime::now()` panics on wasm32-unknown-unknown; JS Date
+        // imports have also 1101'd this Worker at instantiate time. Stamp 0
+        // until we have a clock that is safe on this stack.
+        now_unix: 0,
     };
     let response = api::handle(api_req, &mut cfg);
     store.flush(&bucket).await?;
@@ -111,20 +121,115 @@ async fn respond_frame_get(
     panel: PanelSpec,
     upload_secret: &str,
 ) -> Result<Response> {
-    let catalog = load_catalog(bucket).await?;
-    let Some(frame) = load_frame(bucket, name).await? else {
-        return into_worker_response(ApiResponse::text(404, "no such image\n"));
+    let catalog = match load_catalog(bucket).await {
+        Ok(c) => c,
+        Err(e) => return text_response(500, &format!("catalog: {e}\n")),
+    };
+    let frame = match load_frame(bucket, name).await {
+        Ok(Some(frame)) => frame,
+        Ok(None) => return into_worker_response(ApiResponse::text(404, "no such image\n")),
+        Err(e) => return text_response(500, &format!("frame {name}: {e}\n")),
     };
     let mut one = OneFrameStore {
         catalog,
         frame: Some(frame),
     };
+    let mut devices = NoopDeviceStore;
     let mut cfg = HandlerConfig {
         store: &mut one,
+        devices: &mut devices,
         upload_secret,
         panel,
+        now_unix: 0,
     };
     into_worker_response(api::handle(api_req.clone(), &mut cfg))
+}
+
+async fn handle_device(
+    bucket: &Bucket,
+    api_req: ApiRequest,
+    panel: PanelSpec,
+    upload_secret: &str,
+) -> Result<Response> {
+    let mut images = EmptyImages;
+    let mut devices = match load_device_store(bucket).await {
+        Ok(d) => d,
+        Err(e) => return text_response(500, &format!("device store: {e}\n")),
+    };
+    let mut cfg = HandlerConfig {
+        store: &mut images,
+        devices: &mut devices,
+        upload_secret,
+        panel,
+        now_unix: 0,
+    };
+    let is_post = api_req.method.eq_ignore_ascii_case("POST");
+    let response = api::handle(api_req, &mut cfg);
+    if is_post && response.status == 200 {
+        if let Some(snap) = cfg.devices.get_device() {
+            save_device(bucket, &snap).await?;
+        }
+    }
+    into_worker_response(response)
+}
+
+async fn load_device_store(bucket: &Bucket) -> Result<SingleDevice> {
+    Ok(SingleDevice {
+        snap: load_device(bucket).await?,
+    })
+}
+
+async fn load_device(bucket: &Bucket) -> Result<Option<DeviceSnapshot>> {
+    let Some(obj) = bucket.get(DEVICE_KEY).execute().await? else {
+        return Ok(None);
+    };
+    let Some(body) = obj.body() else {
+        return Ok(None);
+    };
+    let bytes = body.bytes().await?;
+    Ok(serde_json::from_slice(&bytes).ok())
+}
+
+async fn save_device(bucket: &Bucket, snap: &DeviceSnapshot) -> Result<()> {
+    let bytes = serde_json::to_vec(snap)
+        .map_err(|e| worker::Error::RustError(format!("device encode: {e}")))?;
+    bucket
+        .put(DEVICE_KEY, bytes)
+        .http_metadata(worker::HttpMetadata {
+            content_type: Some("application/json".into()),
+            ..Default::default()
+        })
+        .execute()
+        .await?;
+    Ok(())
+}
+
+struct EmptyImages;
+
+impl ImageStore for EmptyImages {
+    fn catalog(&self) -> Catalog {
+        Catalog::empty()
+    }
+    fn get(&self, _name: &str) -> Option<StoredFrame> {
+        None
+    }
+    fn put(&mut self, _frame: StoredFrame) {}
+    fn delete(&mut self, _name: &str) -> bool {
+        false
+    }
+}
+
+struct SingleDevice {
+    snap: Option<DeviceSnapshot>,
+}
+
+impl DeviceStore for SingleDevice {
+    fn get_device(&self) -> Option<DeviceSnapshot> {
+        self.snap.clone()
+    }
+    fn put_device(&mut self, snap: DeviceSnapshot) {
+        self.snap = Some(snap);
+    }
 }
 
 fn parse_get_image(path: &str) -> Option<(String, &'static str)> {
@@ -173,7 +278,7 @@ async fn handle_slack(
         .ok();
     let bot_token = env.secret("SLACK_BOT_TOKEN").map(|s| s.to_string()).ok();
 
-    match begin_slack_event(&api_req, signing.as_deref(), now_unix()) {
+    match begin_slack_event(&api_req, signing.as_deref(), 0) {
         SlackBegin::Respond(resp) => into_worker_response(resp),
         SlackBegin::Mention(mention) => {
             let Some(token) = bot_token.filter(|t| !t.is_empty()) else {
@@ -186,7 +291,8 @@ async fn handle_slack(
             };
 
             let mut store = R2ImageStore::load(bucket).await?;
-            let reply_text = finish_app_mention(&mention, image_bytes, &mut store, panel);
+            let devices = load_device_store(bucket).await?;
+            let reply_text = finish_app_mention(&mention, image_bytes, &mut store, &devices, panel);
             store.flush(bucket).await?;
 
             if let Err(e) = post_slack_reply(

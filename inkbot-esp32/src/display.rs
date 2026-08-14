@@ -4,17 +4,7 @@
 //! SCLK=13, MOSI=14, CS=15, DC=27, RST=26, BUSY=25.
 
 use anyhow::{anyhow, Context, Result};
-use embedded_graphics::{
-    mono_font::{ascii::FONT_9X18, MonoTextStyle},
-    prelude::*,
-    text::{Baseline, Text},
-};
-use epd_waveshare::{
-    color::Color,
-    epd7in5_v2::{Epd7in5, HEIGHT, WIDTH},
-    graphics::VarDisplay,
-    prelude::WaveshareDisplay,
-};
+use epd_waveshare::{epd7in5_v2::Epd7in5, prelude::WaveshareDisplay};
 use esp_idf_svc::hal::{
     delay::Ets,
     gpio::{Input, InputPin, Output, OutputPin, PinDriver, Pull},
@@ -22,7 +12,7 @@ use esp_idf_svc::hal::{
     units::FromValueType,
 };
 
-use inkbot_esp32::FRAME_BYTES;
+use inkbot_esp32::{overlay_status_line, FRAME_BYTES};
 
 // esp-idf-hal 0.46: PinDriver<'d, MODE> — pin type is erased into MODE.
 type BusyPin = PinDriver<'static, Input>;
@@ -107,18 +97,24 @@ impl Panel {
         Ok(())
     }
 
-    /// Render a short status string on a white panel.
-    pub fn show_message(&mut self, message: &str) -> Result<()> {
-        let mut frame = vec![0xffu8; FRAME_BYTES];
-        {
-            let mut target = VarDisplay::<Color>::new(WIDTH, HEIGHT, &mut frame, false)
-                .map_err(|_| anyhow!("48 KB e-paper framebuffer rejected"))?;
-            target.clear(Color::White).unwrap();
-            let style = MonoTextStyle::new(&FONT_9X18, Color::Black);
-            Text::with_baseline(message, Point::new(24, 220), style, Baseline::Top)
-                .draw(&mut target)
-                .unwrap();
+    /// Full-refresh `frame`, overlaying a bottom status bar only when `status`
+    /// is `Some`. Healthy frames are painted unchanged so the image keeps the
+    /// full 800×480.
+    pub fn show_with_status(&mut self, frame: &[u8], status: Option<&str>) -> Result<()> {
+        match status {
+            None => self.show_frame(frame),
+            Some(text) => {
+                let mut copy = frame.to_vec();
+                overlay_status_line(&mut copy, text).map_err(|e| anyhow!("status overlay: {e}"))?;
+                self.show_frame(&copy)
+            }
         }
+    }
+
+    /// White panel with only the bottom status bar (no image available).
+    pub fn show_status_only(&mut self, status: &str) -> Result<()> {
+        let mut frame = vec![0xffu8; FRAME_BYTES];
+        overlay_status_line(&mut frame, status).map_err(|e| anyhow!("status overlay: {e}"))?;
         self.show_frame(&frame)
     }
 }
