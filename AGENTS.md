@@ -18,6 +18,7 @@ playground/
 │   └── workflows/         # deploy, preview, test, cleanup, dependency updates
 ├── artillery/             # touch-first turn-based artillery duel (JS + Node tests)
 ├── cold-climb/            # touch-first two-handle arcade game (JS + Node tests)
+├── droneski/              # FPV drone filming a downhill skier (JS + three.js + Node tests)
 ├── cors-proxy/            # Rust Cloudflare Worker: SSRF-hardened CORS proxy (not a Pages app)
 ├── cors-proxy-demo/       # static browser front-end for the cors-proxy Worker
 ├── git/                   # in-browser read-only git client (JS + Jest + Playwright)
@@ -54,6 +55,7 @@ its root. This is the same rule used by deploy and preview workflows.
 |------|--------------|-------|
 | `artillery/` | yes | Turn-based artillery duel; JS modules, npm scripts, tests |
 | `cold-climb/` | yes | Touch-first arcade game; JS modules, npm scripts, tests |
+| `droneski/` | yes | FPV drone / downhill skier game; JS modules, vendored three.js, tests |
 | `cors-proxy-demo/` | yes | Static front-end for `cors-proxy`; HTML/JS, no build or tests |
 | `git/` | yes | In-browser read-only git client; JS modules, npm scripts, tests |
 | `hello/` | yes | Static HTML; no build or tests |
@@ -552,6 +554,7 @@ bundle exec fastlane test
 |-----------|------|-------|
 | `artillery/` | Turn-based artillery duel with local and AI modes | Node test runner |
 | `cold-climb/` | Two-handle ball-climbing arcade game | Node test runner |
+| `droneski/` | FPV drone filming a procedurally generated downhill skier | Node test runner |
 | `cors-proxy-demo/` | Browser playground for the `cors-proxy` Worker (send a request, inspect the CORS response) | none (static) |
 | `git/` | In-browser read-only git client (clone, browse, branches, history) | Jest + Playwright |
 | `hello/` | Static demo | none |
