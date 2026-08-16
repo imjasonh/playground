@@ -31,7 +31,7 @@ playground/
 ├── gitdb/                 # Go CLI (Go module + Go tests)
 ├── hello/                 # example static app (HTML only)
 ├── hello-macos/           # example macOS SwiftUI app (XcodeGen + Sparkle CD)
-├── geeksquad/             # offline Mac network/config triage (Sparkle CD)
+├── onramp/             # offline Mac can’t-get-online triage (Sparkle CD)
 ├── inkbot/                # Rust Cloudflare Worker: e-ink frame host + Slack @inkbot
 ├── inkbot-esp32/          # Rust/ESP-IDF firmware: poll inkbot, show on Waveshare 7.5″
 ├── ios/                   # the single "Playground" iOS app (SwiftUI; TestFlight CD)
@@ -78,7 +78,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `life-qr/` | no | OpenSCAD Life+QR sculpture; no `index.html` |
 | `ios/` | no | The single "Playground" iOS app (XcodeGen + SwiftUI); no `index.html` |
 | `hello-macos/` | no | Example macOS app (XcodeGen + SwiftUI); no `index.html` |
-| `geeksquad/` | no | Offline Mac network triage (XcodeGen + SwiftUI + Sparkle); no `index.html` |
+| `onramp/` | no | Offline Mac network triage / can’t-get-online playbooks (XcodeGen + SwiftUI + Sparkle); no `index.html` |
 | `.github/` | no | Infrastructure only |
 | `README.md` | no | Not a directory |
 
@@ -619,13 +619,15 @@ auto-discover them. Run their local tests when you change them.
 | Directory | Type | Tests |
 |-----------|------|-------|
 | `hello-macos/` | Minimal SwiftUI "Hello Mac" sample; notarized Sparkle CD + in-app updater | XCTest via `fastlane test` |
-| `geeksquad/` | Geek Squad — on-device chat triage + Manual Toolbox; Sparkle CD | XCTest via `fastlane test` |
+| `onramp/` | Onramp — offline can’t-get-online playbooks + network toolbox (+ optional chat); Sparkle CD | XCTest via `fastlane test` |
 
-> **`geeksquad` has its own agent guide:** read
-> [`geeksquad/AGENTS.md`](geeksquad/AGENTS.md) before working in that
-> directory. In particular, tools available to the Geek Squad agent (and the
-> shared Manual Toolbox / menu-bar diagnostics behind them) **must never take
-> action** — only read and diagnose. Propose remediations for the human; do
-> not add mutating tools.
+> **`onramp` has its own agent guide:** read
+> [`onramp/AGENTS.md`](onramp/AGENTS.md) before working in that
+> directory. Autonomous diagnostic tools **must never take action** — only
+> read and diagnose. Confirmed click-to-run `SuggestedAction` buttons may open
+> Settings/URLs or run allowlisted read-only probes and feed output back into
+> another playbook pass; do not add mutating commands without an explicit
+> product decision. Prefer the install-online → offline Can’t get online golden
+> path over once-online Activity Monitor clones.
 
 See each app's `README.md` for app-specific rules and local development.

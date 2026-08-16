@@ -34,7 +34,7 @@ jobs:
           # Fastfile only when the hunks touch signing (not Info.plist privacy
           # strings or test-lane tweaks) — same rules as ios/AGENTS.md.
           # IMPORTANT: only ios/** entitlements — macOS apps (hello-macos,
-          # geeksquad, …) also ship *.entitlements for Hardened Runtime/Sparkle
+          # onramp, …) also ship *.entitlements for Hardened Runtime/Sparkle
           # and must NOT get needs-ios-bootstrap.
           needed=false
           while IFS= read -r path; do
