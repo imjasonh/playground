@@ -50,7 +50,7 @@ enum TriageHeuristics {
 
     static func needsLiveDiagnostics(_ text: String) -> Bool {
         focus(for: text) != nil
-            || text.lowercased().contains("slow")
+            || containsToken(text.lowercased(), "slow")
             || isRecheckFollowUp(text)
     }
 
@@ -73,8 +73,9 @@ enum TriageHeuristics {
             "port ", "port:", "listening", "bind", "already in use", "eaddrinuse",
             "crash", "crashed", "quit unexpectedly", "diagnostic report",
         ]
-        if functionality.contains(where: { t.contains($0) })
-            || t.contains("port") && (t.contains("in use") || t.contains("busy") || t.contains("taken"))
+        if functionality.contains(where: { containsToken(t, $0) })
+            || (containsToken(t, "port")
+                && (t.contains("in use") || t.contains("busy") || t.contains("taken")))
         {
             return .functionality
         }
@@ -90,7 +91,7 @@ enum TriageHeuristics {
             "battery", "on battery", "low power", "plugged in", "charging",
             "spotlight", "indexing", "mdworker",
         ]
-        if performance.contains(where: { t.contains($0) }) || t.contains("slow") {
+        if performance.contains(where: { containsToken(t, $0) }) || containsToken(t, "slow") {
             return .performance
         }
 
@@ -101,10 +102,22 @@ enum TriageHeuristics {
             "ping", "traceroute", "packet loss", "latency", "hops",
             "arp", "dig +trace", "dns trace",
         ]
-        if network.contains(where: { t.contains($0) }) {
+        if network.contains(where: { containsToken(t, $0) }) {
             return .network
         }
 
         return nil
+    }
+
+    /// Substring match for multi-word / punctuated needles; word-boundary match for
+    /// short tokens so “Onramp” doesn’t hit “ram”, etc.
+    static func containsToken(_ text: String, _ needle: String) -> Bool {
+        let n = needle.lowercased()
+        guard !n.isEmpty else { return false }
+        if n.count <= 3 || n == "ram" || n == "disk" || n == "port" || n == "slow" {
+            let pattern = "(?<![a-z0-9])\(NSRegularExpression.escapedPattern(for: n))(?![a-z0-9])"
+            return text.range(of: pattern, options: .regularExpression) != nil
+        }
+        return text.contains(n)
     }
 }

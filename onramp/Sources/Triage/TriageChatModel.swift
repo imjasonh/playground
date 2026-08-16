@@ -58,7 +58,7 @@ final class TriageChatModel: ObservableObject {
     private var toolHubBox: Any?
     #endif
 
-    static let scenarioPrompts: [(title: String, prompt: String)] = [
+    nonisolated static let scenarioPrompts: [(title: String, prompt: String)] = [
         (
             "Can't get online",
             "I can't get online — browsers won't load sites even though Wi‑Fi looks connected. Run a full offline connectivity investigation (path, route, DNS, proxy, VPN, hosts, probes) and propose fixes."

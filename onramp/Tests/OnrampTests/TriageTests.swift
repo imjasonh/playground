@@ -58,6 +58,8 @@ final class TriageHeuristicsTests: XCTestCase {
         XCTAssertTrue(TriageHeuristics.needsLiveDiagnostics("Cursor app is slow"))
         XCTAssertTrue(TriageHeuristics.needsLiveDiagnostics("DNS feels wrong on this Mac"))
         XCTAssertFalse(TriageHeuristics.needsLiveDiagnostics("What does Onramp do?"))
+        XCTAssertFalse(TriageHeuristics.containsToken("what does onramp do?", "ram"))
+        XCTAssertTrue(TriageHeuristics.containsToken("low ram warning", "ram"))
     }
 
     func testRecheckChipNeedsLiveDiagnostics() {
