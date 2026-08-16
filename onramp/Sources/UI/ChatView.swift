@@ -2,21 +2,40 @@ import AppKit
 import SwiftUI
 
 struct ChatView: View {
+    @EnvironmentObject private var foundationModelsGate: FoundationModelsGateModel
     @StateObject private var model = TriageChatModel()
     @FocusState private var composerFocused: Bool
 
     var body: some View {
+        Group {
+            if foundationModelsGate.status == .available {
+                chatBody
+            } else {
+                chatUnavailableBody
+            }
+        }
+        .navigationTitle("Onramp")
+        .onAppear {
+            model.refreshAvailability()
+        }
+        .onChange(of: foundationModelsGate.status) { _, newStatus in
+            model.refreshAvailability()
+            if newStatus == .available {
+                model.resetSession()
+            }
+        }
+    }
+
+    private var chatBody: some View {
         VStack(spacing: 0) {
-            availabilityBanner
             messageList
-            if case .available = model.availability, model.messages.count <= 1 {
+            if model.messages.count <= 1 {
                 scenarioChips
             } else if !model.followUpPrompts.isEmpty {
                 followUpChips
             }
             composer
         }
-        .navigationTitle("Onramp")
         .toolbar {
             ToolbarItem(placement: .automatic) {
                 Button("Copy chat") {
@@ -27,6 +46,7 @@ struct ChatView: View {
             }
             ToolbarItem(placement: .primaryAction) {
                 Button("New chat") {
+                    foundationModelsGate.refresh()
                     model.refreshAvailability()
                     model.resetSession()
                 }
@@ -36,35 +56,57 @@ struct ChatView: View {
         }
     }
 
-    @ViewBuilder
-    private var availabilityBanner: some View {
-        switch model.availability {
-        case .checking:
-            banner(text: "Checking Apple Intelligence…", color: .secondary, showSettingsLink: false)
-        case .available:
-            EmptyView()
-        case .unavailable(let reason):
-            banner(text: reason, color: .orange, showSettingsLink: true)
+    /// Shown when the user bypassed the gate with Playbooks-only — Chat still demands setup.
+    private var chatUnavailableBody: some View {
+        VStack(spacing: 20) {
+            Spacer(minLength: 12)
+            Image(systemName: foundationModelsGate.status == .modelNotReady
+                  ? "arrow.down.circle.fill"
+                  : "apple.logo")
+                .font(.system(size: 48))
+                .foregroundStyle(.tint)
+            Text("Chat needs the on-device model")
+                .font(.title2.weight(.bold))
+            Text(chatUnavailableCopy)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 420)
+            if foundationModelsGate.status.isSetupRequired {
+                ProgressView()
+                    .padding(.top, 4)
+            }
+            Button {
+                foundationModelsGate.allowPlaybooksWithoutModel = false
+                foundationModelsGate.refresh()
+            } label: {
+                Text("Finish Apple Intelligence setup…")
+                    .frame(maxWidth: 320)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .accessibilityIdentifier("chat-finish-setup")
+            Button("Open Settings") {
+                foundationModelsGate.openSettingsAndRefresh()
+            }
+            .buttonStyle(.bordered)
+            Spacer(minLength: 12)
         }
+        .padding(32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityIdentifier("chat-model-required")
     }
 
-    private func banner(text: String, color: Color, showSettingsLink: Bool) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            MarkdownText(source: text, font: .callout)
-                .foregroundStyle(color)
-            if showSettingsLink {
-                Button("Open Settings…") {
-                    AppleIntelligenceSettings.open()
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .accessibilityIdentifier("open-apple-intelligence-settings")
-            }
+    private var chatUnavailableCopy: String {
+        switch foundationModelsGate.status {
+        case .modelNotReady:
+            return "The Foundation Model is still downloading. Playbooks work without it; Chat does not."
+        case .needsAppleIntelligenceEnabled:
+            return "Enable Apple Intelligence and wait for the model download. Playbooks work without Chat; Chat does not."
+        case .unsupportedOperatingSystem, .deviceNotEligible:
+            return "This Mac can’t run Apple Intelligence, so Chat is unavailable."
+        default:
+            return "Finish on-device model setup to use Chat. Playbooks remain available for can’t-get-online triage."
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(color.opacity(0.08))
-        .accessibilityIdentifier("availability-banner")
     }
 
     private var messageList: some View {
@@ -257,6 +299,9 @@ private struct MessageBubble: View {
 }
 
 #Preview {
-    ChatView()
-        .frame(width: 640, height: 480)
+    NavigationStack {
+        ChatView()
+            .environmentObject(FoundationModelsGateModel())
+    }
+    .frame(width: 640, height: 480)
 }

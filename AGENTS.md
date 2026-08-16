@@ -624,8 +624,9 @@ auto-discover them. Run their local tests when you change them.
 > **`onramp` has its own agent guide:** read
 > [`onramp/AGENTS.md`](onramp/AGENTS.md) before working in that
 > directory. In particular, tools available to the Onramp agent (and the
-> shared Manual Toolbox / menu-bar diagnostics behind them) **must never take
-> action** — only read and diagnose. Propose remediations for the human; do
-> not add mutating tools.
+> shared Playbooks / Manual Toolbox / menu-bar diagnostics behind them)
+> **must never take action** — only read and diagnose. Propose remediations
+> for the human; do not add mutating tools. Prefer improving can’t-get-online
+> playbooks over once-online Activity Monitor clones.
 
 See each app's `README.md` for app-specific rules and local development.

@@ -139,6 +139,18 @@ Request only what a tool needs, at first use:
 
 No TCC prompt on launch. No Full Disk Access required for v1.
 
+### Foundation Models gate (first launch)
+
+| State | UX |
+|-------|-----|
+| macOS &lt; 26 / framework missing | **Hard block** — full window, no tabs, no workaround |
+| `deviceNotEligible` | **Hard block** — hardware/region will never get the model |
+| `appleIntelligenceNotEnabled` | Fullscreen setup — primary CTA opens Settings; polls until ready |
+| `modelNotReady` | Fullscreen setup — “download in progress”, auto-poll every few seconds |
+| Available | Normal Playbooks / Toolbox / Chat |
+
+A small **Playbooks only** escape exists for the offline chicken-and-egg (can’t download while offline); Chat remains blocked until the model is ready.
+
 ---
 
 ## 4. Architecture

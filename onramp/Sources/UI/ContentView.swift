@@ -1,7 +1,23 @@
 import SwiftUI
 
 struct ContentView: View {
+    @EnvironmentObject private var foundationModelsGate: FoundationModelsGateModel
+
     var body: some View {
+        Group {
+            if foundationModelsGate.showsMainApp {
+                mainTabs
+            } else {
+                FoundationModelsGateView(gate: foundationModelsGate)
+            }
+        }
+        .frame(minWidth: 800, minHeight: 540)
+        .onAppear {
+            foundationModelsGate.refresh()
+        }
+    }
+
+    private var mainTabs: some View {
         TabView {
             PlaybooksView()
                 .tabItem {
@@ -23,10 +39,10 @@ struct ContentView: View {
             }
             .accessibilityIdentifier("tab-chat")
         }
-        .frame(minWidth: 800, minHeight: 540)
     }
 }
 
 #Preview {
     ContentView()
+        .environmentObject(FoundationModelsGateModel())
 }

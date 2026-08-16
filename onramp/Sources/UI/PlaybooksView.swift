@@ -2,6 +2,7 @@ import SwiftUI
 
 /// Primary surface: offline playbooks that chain network checks and rank causes.
 struct PlaybooksView: View {
+    @EnvironmentObject private var foundationModelsGate: FoundationModelsGateModel
     @State private var selection: ConnectivityPlaybookKind? = .cantGetOnline
     @State private var isRunning = false
     @State private var progress = ""
@@ -9,27 +10,63 @@ struct PlaybooksView: View {
     @State private var showRawChecks = false
 
     var body: some View {
-        NavigationSplitView {
-            List(ConnectivityPlaybookKind.allCases, selection: $selection) { kind in
-                Label {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(kind.title)
-                        Text(kind.subtitle)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                } icon: {
-                    Image(systemName: kind.symbolName)
-                }
-                .tag(kind)
-                .accessibilityIdentifier("playbook-\(kind.rawValue)")
+        VStack(spacing: 0) {
+            if foundationModelsGate.allowPlaybooksWithoutModel,
+               foundationModelsGate.status.isSetupRequired
+            {
+                modelSetupNudge
             }
-            .navigationSplitViewColumnWidth(min: 240, ideal: 280)
-            .navigationTitle("Playbooks")
-        } detail: {
-            detailPane
+            NavigationSplitView {
+                List(ConnectivityPlaybookKind.allCases, selection: $selection) { kind in
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(kind.title)
+                            Text(kind.subtitle)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    } icon: {
+                        Image(systemName: kind.symbolName)
+                    }
+                    .tag(kind)
+                    .accessibilityIdentifier("playbook-\(kind.rawValue)")
+                }
+                .navigationSplitViewColumnWidth(min: 240, ideal: 280)
+                .navigationTitle("Playbooks")
+            } detail: {
+                detailPane
+            }
         }
+    }
+
+    private var modelSetupNudge: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Finish Apple Intelligence setup")
+                    .font(.headline)
+                Text(
+                    foundationModelsGate.status == .modelNotReady
+                        ? "The on-device model is still downloading. Playbooks work; Chat won’t until it finishes."
+                        : "Enable Apple Intelligence and download the on-device model — Chat needs it."
+                )
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            Button("Set up…") {
+                foundationModelsGate.allowPlaybooksWithoutModel = false
+                foundationModelsGate.refresh()
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .accessibilityIdentifier("playbooks-finish-setup")
+        }
+        .padding(12)
+        .background(Color.orange.opacity(0.12))
+        .accessibilityIdentifier("playbooks-model-nudge")
     }
 
     @ViewBuilder
@@ -145,4 +182,5 @@ struct PlaybooksView: View {
 
 #Preview {
     PlaybooksView()
+        .environmentObject(FoundationModelsGateModel())
 }

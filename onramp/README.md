@@ -46,10 +46,11 @@ bundle exec fastlane test
 
 ## What 0.2.0 includes
 
-- **Playbooks (primary):** Can’t get online (and VPN / DNS / captive / some-sites variants) — chained checks + ranked cause card
+- **Foundation Models gate:** hard block on unsupported OS / ineligible Mac; fullscreen setup that pushes Apple Intelligence enable + model download (Chat needs it)
+- **Playbooks (primary offline path):** Can’t get online (+ VPN / DNS / captive / some-sites) — works while the model downloads if you choose Playbooks-only
 - **Toolbox:** network checks up front; advanced once-online checks demoted
-- **Chat (optional):** describe symptoms → on-device model runs diagnostic tools → proposes steps
-- Menu bar: one-click Can’t get online
+- **Chat:** on-device model required; scenario chips for network triage
+- Menu bar: one-click Can’t get online (after setup, or Playbooks-only)
 - Sparkle **Check for Updates…**
 
 ## CI / releases

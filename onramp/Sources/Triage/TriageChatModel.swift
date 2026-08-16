@@ -87,20 +87,31 @@ final class TriageChatModel: ObservableObject {
     }
 
     func refreshAvailability() {
-        #if canImport(FoundationModels)
-        if #available(macOS 26.0, *) {
-            let model = SystemLanguageModel.default
-            if model.isAvailable {
-                availability = .available
-            } else {
-                availability = .unavailable(unavailableReason(for: model))
-            }
-            return
+        let status = FoundationModelsGateModel.evaluate()
+        switch status {
+        case .checking:
+            availability = .checking
+        case .available:
+            availability = .available
+        case .needsAppleIntelligenceEnabled:
+            availability = .unavailable(
+                "Apple Intelligence is off. Enable it in System Settings and wait for the on-device model to download — Onramp Chat needs it."
+            )
+        case .modelNotReady:
+            availability = .unavailable(
+                "The on-device Foundation Model is still downloading. Keep the Mac awake and plugged in, then tap New chat when it’s ready."
+            )
+        case .unsupportedOperatingSystem:
+            availability = .unavailable(
+                "Onramp requires macOS 26+ with Apple Intelligence. This OS can’t run the on-device Foundation Model."
+            )
+        case .deviceNotEligible:
+            availability = .unavailable(
+                "This Mac isn’t eligible for Apple Intelligence, so Onramp Chat can’t run here."
+            )
+        case .unavailableOther(let detail):
+            availability = .unavailable(detail)
         }
-        #endif
-        availability = .unavailable(
-            "On-device Apple Intelligence (Foundation Models) needs macOS 26+ with Apple Intelligence enabled. Open Settings to enable it if supported, or use the Toolbox tab."
-        )
     }
 
     func resetSession() {
@@ -111,7 +122,7 @@ final class TriageChatModel: ObservableObject {
             messages.append(
                 ChatMessage(
                     role: .system,
-                    text: "Ask what’s going wrong — I’ll run the read-only checks myself (network, performance, disk, ports, crashes, battery), then suggest practical Settings/Activity Monitor steps. I won’t recommend hardware upgrades."
+                    text: "Ask what’s going wrong online — I’ll run the read-only network checks myself, then suggest practical System Settings steps."
                 )
             )
         }
@@ -452,13 +463,5 @@ final class TriageChatModel: ObservableObject {
         }
     }
 
-    @available(macOS 26.0, *)
-    private func unavailableReason(for model: SystemLanguageModel) -> String {
-        // Keep this resilient across SDK refinements of Availability.Reason.
-        if model.isAvailable {
-            return "Model reported unavailable."
-        }
-        return "Apple Intelligence isn’t available (off, ineligible, or model not ready). Open Settings to enable it if supported, or use the Toolbox tab."
-    }
     #endif
 }
