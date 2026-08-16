@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>onramp updates</title>
+    <link>https://imjasonh.github.io/playground/macos/onramp/appcast.xml</link>
+    <description>Sparkle updates for onramp</description>
+    <language>en</language>
+    <item>
+      <title>Onramp 0.2.1</title>
+      <pubDate>Sun, 16 Aug 2026 23:32:11 +0000</pubDate>
+      <sparkle:version>22</sparkle:version>
+      <sparkle:shortVersionString>0.2.1</sparkle:shortVersionString>
+      <enclosure url="https://github.com/imjasonh/playground/releases/download/onramp-v0.2.1/Onramp-0.2.1.zip" length="3840229" type="application/octet-stream" sparkle:edSignature="HbrKNn8mkjrs5ibwyUw4tJ7xwOM9lGmtDz1vZP9OY15z8YUrLOJ2d5+vejopv1VZMdxxz/euzCQVYSii1oW5Bw=="/>
+    </item>
+  </channel>
+</rss>
