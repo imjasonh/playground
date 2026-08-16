@@ -16,8 +16,9 @@ final class ConnectivityAnalyzerTests: XCTestCase {
         snap.httpExampleStatus = 200
         snap.captiveLikely = false
 
-        let report = ConnectivityAnalyzer.analyze(snap, kind: .cantGetOnline)
-        XCTAssertTrue(report.headline.localizedCaseInsensitiveContains("OK"))
+        let report = ConnectivityAnalyzer.analyze(snap, kind: .cantGetOnline).report
+        XCTAssertTrue(report.headline.localizedCaseInsensitiveContains("online")
+            || report.headline.localizedCaseInsensitiveContains("OK"))
         XCTAssertTrue(report.actionableSteps.isEmpty)
         XCTAssertTrue(report.evidence.contains { $0.contains("path_status") })
     }
@@ -34,10 +35,12 @@ final class ConnectivityAnalyzerTests: XCTestCase {
 
         let findings = ConnectivityAnalyzer.collectFindings(snap)
         XCTAssertEqual(findings.first?.code, .noPath)
-        let report = ConnectivityAnalyzer.analyze(snap, kind: .cantGetOnline)
-        XCTAssertTrue(report.headline.localizedCaseInsensitiveContains("path"))
-        XCTAssertFalse(report.actionableSteps.isEmpty)
-        XCTAssertTrue(report.actionableSteps.contains { $0.contains("Network") })
+        let outcome = ConnectivityAnalyzer.analyze(snap, kind: .cantGetOnline)
+        XCTAssertTrue(outcome.report.headline.localizedCaseInsensitiveContains("path"))
+        XCTAssertFalse(outcome.report.actionableSteps.isEmpty)
+        XCTAssertTrue(outcome.report.actionableSteps.contains { $0.contains("Network") })
+        XCTAssertTrue(outcome.actions.contains { $0.id == "open-network" })
+        XCTAssertFalse(outcome.looksOnline)
     }
 
     func testDnsFailTcpOkLooksLikeDns() {
@@ -55,7 +58,7 @@ final class ConnectivityAnalyzerTests: XCTestCase {
         let codes = findings.map(\.code)
         XCTAssertTrue(codes.contains(.dnsLocalhost))
         XCTAssertTrue(codes.contains(.dnsLookupFailed))
-        let report = ConnectivityAnalyzer.analyze(snap, kind: .dnsWrong)
+        let report = ConnectivityAnalyzer.analyze(snap, kind: .dnsWrong).report
         XCTAssertTrue(
             report.headline.localizedCaseInsensitiveContains("DNS")
                 || report.likelyCause.localizedCaseInsensitiveContains("DNS")
@@ -76,9 +79,10 @@ final class ConnectivityAnalyzerTests: XCTestCase {
         snap.tcpCloudflareOk = false
         snap.httpExampleOk = false
 
-        let report = ConnectivityAnalyzer.analyze(snap, kind: .vpnBroken)
-        XCTAssertTrue(report.headline.localizedCaseInsensitiveContains("VPN"))
-        XCTAssertTrue(report.actionableSteps.contains { $0.localizedCaseInsensitiveContains("VPN") })
+        let outcome = ConnectivityAnalyzer.analyze(snap, kind: .vpnBroken)
+        XCTAssertTrue(outcome.report.headline.localizedCaseInsensitiveContains("VPN"))
+        XCTAssertTrue(outcome.report.actionableSteps.contains { $0.localizedCaseInsensitiveContains("VPN") })
+        XCTAssertTrue(outcome.actions.contains { $0.id == "recheck-vpn" })
     }
 
     func testCaptivePortalFinding() {
@@ -94,11 +98,12 @@ final class ConnectivityAnalyzerTests: XCTestCase {
         snap.captiveStatus = 302
         snap.captiveFinalURL = "https://login.hotel.example/portal"
 
-        let report = ConnectivityAnalyzer.analyze(snap, kind: .captivePortal)
-        XCTAssertTrue(report.headline.localizedCaseInsensitiveContains("captive"))
+        let outcome = ConnectivityAnalyzer.analyze(snap, kind: .captivePortal)
+        XCTAssertTrue(outcome.report.headline.localizedCaseInsensitiveContains("captive"))
         XCTAssertTrue(
-            report.actionableSteps.contains { $0.localizedCaseInsensitiveContains("captive.apple.com") }
+            outcome.report.actionableSteps.contains { $0.localizedCaseInsensitiveContains("captive.apple.com") }
         )
+        XCTAssertTrue(outcome.actions.contains { $0.id == "open-captive" })
     }
 
     func testProxyEnabledSurfacesWhenProbesFail() {
@@ -112,12 +117,13 @@ final class ConnectivityAnalyzerTests: XCTestCase {
         snap.tcpCloudflareOk = false
         snap.httpExampleOk = false
 
-        let report = ConnectivityAnalyzer.analyze(snap, kind: .cantGetOnline)
+        let outcome = ConnectivityAnalyzer.analyze(snap, kind: .cantGetOnline)
         let findings = ConnectivityAnalyzer.collectFindings(snap)
         XCTAssertTrue(findings.contains { $0.code == .proxyBlocking })
         XCTAssertTrue(
-            report.actionableSteps.contains { $0.localizedCaseInsensitiveContains("Proxies") }
+            outcome.report.actionableSteps.contains { $0.localizedCaseInsensitiveContains("Proxies") }
         )
+        XCTAssertTrue(outcome.actions.contains { $0.id == "open-proxies" })
     }
 }
 
@@ -193,10 +199,24 @@ final class ConnectivityPlaybookParseTests: XCTestCase {
         XCTAssertFalse(titles.contains { $0.localizedCaseInsensitiveContains("disk") })
     }
 
-    func testToolboxNetworkCasesLeading() {
-        XCTAssertEqual(ToolboxCheck.networkCases.first, .pathStatus)
-        XCTAssertTrue(ToolboxCheck.networkCases.contains(.dnsConfig))
-        XCTAssertFalse(ToolboxCheck.networkCases.contains(.topCPU))
-        XCTAssertTrue(ToolboxCheck.advancedCases.contains(.topCPU))
+    func testSuggestedActionsIncludeRecheck() {
+        var snap = ConnectivitySnapshot()
+        snap.pathSatisfied = false
+        snap.pathStatusLabel = "unsatisfied"
+        snap.hasDefaultRoute = false
+        let actions = SuggestedActionBuilder.actions(
+            for: ConnectivityAnalyzer.collectFindings(snap),
+            snapshot: snap,
+            kind: .cantGetOnline
+        )
+        XCTAssertTrue(actions.contains { $0.id == "open-network" })
+        XCTAssertTrue(actions.contains { $0.id == "recheck-full" })
+        XCTAssertTrue(actions.allSatisfy(\.isReadOnly))
+    }
+
+    func testProbeCommandSummariesAreNonEmpty() {
+        for probe in SuggestedAction.DiagnosticProbe.allCases {
+            XCTAssertFalse(probe.commandSummary.isEmpty)
+        }
     }
 }

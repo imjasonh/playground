@@ -15,8 +15,8 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.9"
-    MARKETING_VERSION: "0.2.0"
-    CURRENT_PROJECT_VERSION: "21"
+    MARKETING_VERSION: "0.2.1"
+    CURRENT_PROJECT_VERSION: "22"
     VERSIONING_SYSTEM: apple-generic
 
 packages:

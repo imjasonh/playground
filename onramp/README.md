@@ -44,13 +44,13 @@ open Onramp.xcodeproj
 bundle exec fastlane test
 ```
 
-## What 0.2.0 includes
+## What 0.2.x includes
 
-- **Foundation Models gate:** hard block on unsupported OS / ineligible Mac; fullscreen setup that pushes Apple Intelligence enable + model download (Chat needs it)
-- **Playbooks (primary offline path):** Can’t get online (+ VPN / DNS / captive / some-sites) — works while the model downloads if you choose Playbooks-only
+- **Install-while-online setup:** hard gate for unsupported OS; aggressive model download; first-run baseline playbook so you’re ready before trouble
+- **Can’t get online golden path:** auto-runs on open; ranked cause; **Fix & recheck** buttons (Settings / captive / read-only probes) with confirm sheets; output feeds another diagnosis until online
 - **Toolbox:** network checks up front; advanced once-online checks demoted
-- **Chat:** on-device model required; scenario chips for network triage
-- Menu bar: one-click Can’t get online (after setup, or Playbooks-only)
+- **Chat:** on-device model required; network scenario chips
+- Menu bar: Can’t get online when allowed
 - Sparkle **Check for Updates…**
 
 ## CI / releases

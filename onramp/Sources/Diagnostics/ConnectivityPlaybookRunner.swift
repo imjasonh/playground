@@ -12,8 +12,14 @@ enum ConnectivityPlaybookRunner {
             services: services,
             onProgress: onProgress
         )
-        let triage = ConnectivityAnalyzer.analyze(snapshot, kind: kind)
-        return PlaybookResult(kind: kind, triage: triage, checks: snapshot.checkReports)
+        let outcome = ConnectivityAnalyzer.analyze(snapshot, kind: kind)
+        return PlaybookResult(
+            kind: kind,
+            triage: outcome.report,
+            checks: snapshot.checkReports,
+            actions: outcome.actions,
+            looksOnline: outcome.looksOnline
+        )
     }
 
     // MARK: - Gather

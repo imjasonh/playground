@@ -101,9 +101,18 @@ struct PlaybookResult: Equatable, Sendable {
     var kind: ConnectivityPlaybookKind
     var triage: TriageReportViewModel
     var checks: [DiagnosticReport]
+    var actions: [SuggestedAction]
+    var looksOnline: Bool
 
     var markdown: String {
         var parts = [triage.markdown]
+        if !actions.isEmpty {
+            parts.append("")
+            parts.append("## Suggested actions")
+            for (i, action) in actions.enumerated() {
+                parts.append("\(i + 1). **\(action.title)** — \(action.why)")
+            }
+        }
         if !checks.isEmpty {
             parts.append("")
             parts.append("---")

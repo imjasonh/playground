@@ -1,8 +1,11 @@
 # Agent guide: onramp
 
 Onramp is an offline Mac **network** triage app (SwiftUI + Foundation Models +
-Sparkle). Product focus: **can’t get online** — playbooks + toolbox. Chat is
-optional sugar when Apple Intelligence is available.
+Sparkle). Golden path:
+
+1. **Install while online** — finish Apple Intelligence / model download + baseline check.
+2. **Later, offline** — open Playbooks → Can’t get online (auto-runs), follow
+   click-to-run next steps; each probe’s output feeds another diagnosis pass.
 
 Read [`README.md`](README.md) for layout/run instructions and
 [`docs/onramp-design.md`](../docs/onramp-design.md) for product design.
@@ -11,36 +14,31 @@ rules specific to this app.
 
 ## Hard rules
 
-- **Diagnostic tools must NEVER take action — only read and diagnose.**
-  Anything exposed to the on-device model as a Foundation Models `Tool`, and
-  anything the Playbooks / Manual Toolbox / menu bar runs through
-  `DiagnosticServices`, must be **read-only**: observe system state, return a
-  report, propose what the *human* can do. Do **not** add tools (or service
-  methods behind tools) that mutate the Mac — for example killing processes,
-  deleting/moving files, changing System Settings / network config, clearing
-  caches, toggling VPN or proxies, writing plists/hosts, or running privileged
-  remediation commands. Propose-only is enforced by the tool surface, not by
-  hoping the model obeys “don’t do that” prompt text.
-- **New checks stay read-only end-to-end.** Parsers, `ProcessRunner` CLI
-  fallbacks, playbooks, and toolbox buttons share the same constraint: gather
-  evidence, never remediate. If a future feature needs confirmed apply actions,
-  that is an explicit product decision (see design non-goals) — not something
-  to sneak into an existing tool.
-- **Prefer network/offline value.** New work should improve “can’t get online”
-  (playbooks, ranking, probes, copy). Don’t grow once-online Activity Monitor
-  clones unless asked.
+- **Autonomous tools stay read-only.** Anything the on-device model can call as a
+  Foundation Models `Tool`, and anything Playbooks / Toolbox / menu bar run
+  through `DiagnosticServices` **without** an explicit user click, must only
+  observe and report — never mutate the Mac (no killing processes, rewriting
+  proxies, toggling VPN, editing hosts, privileged flush, etc.).
+- **Confirmed click-to-run is allowed for the golden path.** `SuggestedAction`
+  buttons may, after showing what/why and getting a click: open Settings or a
+  captive URL, or run an **allowlisted read-only** probe (`SuggestedAction.DiagnosticProbe`).
+  Probe output is shown and then fed into another playbook pass. Do **not** add
+  mutating shell commands to that allowlist without an explicit product decision.
+- **Prefer network/offline value.** Improve Can’t get online (setup → diagnose →
+  act → recheck) over once-online Activity Monitor clones.
 
 ## Where tools live
 
 | Layer | Path | Role |
 |-------|------|------|
-| Playbooks | `Sources/Diagnostics/Connectivity*.swift` | Chained gather + ranked triage |
+| Playbooks + actions | `Sources/Diagnostics/Connectivity*.swift`, `SuggestedAction.swift` | Gather, rank, click-to-run |
+| First-run | `Sources/UI/FirstRunReadyView.swift` | Online install / baseline |
 | FM tool wrappers | `Sources/Triage/DiagnosticTools.swift` | What the chat agent can call |
 | Shared implementations | `Sources/Diagnostics/DiagnosticServices.swift` | Chat + Toolbox + playbooks |
 | Parsers / CLI helpers | `Sources/Diagnostics/` | Pure reads + formatting |
 
 When adding a diagnostic, wire it through `DiagnosticServices` (and tests)
-first, then expose it via playbooks / toolbox / FM tools as needed.
+first, then expose it via playbooks / suggested actions / FM tools as needed.
 
 ## Verify before you're done
 

@@ -3,11 +3,17 @@ import SwiftUI
 /// Primary surface: offline playbooks that chain network checks and rank causes.
 struct PlaybooksView: View {
     @EnvironmentObject private var foundationModelsGate: FoundationModelsGateModel
+    @EnvironmentObject private var onboarding: OnboardingModel
+    /// When true (default for golden path), auto-run Can’t get online on appear.
+    var autoStartCantGetOnline: Bool = true
+
     @State private var selection: ConnectivityPlaybookKind? = .cantGetOnline
     @State private var isRunning = false
     @State private var progress = ""
     @State private var result: PlaybookResult?
     @State private var showRawChecks = false
+    @State private var actionLog: [String] = []
+    @State private var didAutoStart = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -37,6 +43,9 @@ struct PlaybooksView: View {
             } detail: {
                 detailPane
             }
+        }
+        .task {
+            await maybeAutoStart()
         }
     }
 
@@ -74,28 +83,17 @@ struct PlaybooksView: View {
         if let selection {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    HStack(alignment: .top, spacing: 12) {
-                        Image(systemName: selection.symbolName)
-                            .font(.largeTitle)
-                            .foregroundStyle(.tint)
-                            .accessibilityHidden(true)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(selection.title)
-                                .font(.title2.weight(.semibold))
-                            Text(selection.subtitle)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
+                    header(for: selection)
 
                     if selection == .cantGetOnline {
                         Text(
-                            "Best starting point when browsers won’t load. Runs path, route, DNS, proxy, VPN, hosts, then live probes — works fully offline for local config, and uses the network only for the probes themselves."
+                            "Golden path when browsers won’t load: Onramp gathers path, DNS, proxy, VPN, and live probes, then offers click-to-run next steps. After each step it re-diagnoses until you’re online — or until it can’t help further."
                         )
                         .foregroundStyle(.secondary)
                     }
 
                     HStack {
-                        Button(isRunning ? "Running…" : "Run playbook") {
+                        Button(isRunning ? "Diagnosing…" : "Run playbook") {
                             Task { await run(selection) }
                         }
                         .disabled(isRunning)
@@ -121,7 +119,38 @@ struct PlaybooksView: View {
                     }
 
                     if let result {
+                        if result.looksOnline {
+                            onlineBanner
+                        }
+
                         TriageReportCard(report: result.triage)
+
+                        if !result.actions.isEmpty, !result.looksOnline {
+                            SuggestedActionsView(
+                                actions: result.actions,
+                                isRunningPlaybook: isRunning,
+                                onRecheck: {
+                                    Task { await run(selection) }
+                                },
+                                onActionOutput: { output in
+                                    actionLog.append("### \(output.title)\n\n\(output.body)")
+                                }
+                            )
+                        } else if result.looksOnline {
+                            Text("Nothing else to do — probes succeeded. If one site still fails, try “Only some sites fail”.")
+                                .foregroundStyle(.secondary)
+                        }
+
+                        if !actionLog.isEmpty {
+                            DisclosureGroup("Steps you ran this session (\(actionLog.count))") {
+                                ForEach(Array(actionLog.enumerated()), id: \.offset) { _, entry in
+                                    Text(entry)
+                                        .font(.caption.monospaced())
+                                        .textSelection(.enabled)
+                                        .padding(.vertical, 4)
+                                }
+                            }
+                        }
 
                         DisclosureGroup("Raw checks (\(result.checks.count))", isExpanded: $showRawChecks) {
                             VStack(alignment: .leading, spacing: 12) {
@@ -144,7 +173,7 @@ struct PlaybooksView: View {
                         .accessibilityIdentifier("playbook-raw-checks")
                     } else if !isRunning {
                         Text(
-                            "Run to get a ranked likely cause plus proposed steps. Nothing is changed on your Mac — fixes are for you to apply."
+                            "Run to get a ranked likely cause plus click-to-run next steps. Fixes that change Settings are done by you; probes are read-only."
                         )
                         .foregroundStyle(.secondary)
                     }
@@ -157,6 +186,7 @@ struct PlaybooksView: View {
                 result = nil
                 progress = ""
                 showRawChecks = false
+                actionLog = []
             }
         } else {
             Text("Select a playbook")
@@ -165,10 +195,53 @@ struct PlaybooksView: View {
         }
     }
 
+    private func header(for selection: ConnectivityPlaybookKind) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: selection.symbolName)
+                .font(.largeTitle)
+                .foregroundStyle(.tint)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(selection.title)
+                    .font(.title2.weight(.semibold))
+                Text(selection.subtitle)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var onlineBanner: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+                .font(.title2)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Back online")
+                    .font(.headline)
+                Text("Path, DNS, and probes look healthy. You’re done unless a specific site still fails.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.green.opacity(0.12))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .accessibilityIdentifier("online-banner")
+    }
+
+    private func maybeAutoStart() async {
+        guard autoStartCantGetOnline, !didAutoStart, onboarding.isCompleted || !onboarding.showReadyFlow else {
+            return
+        }
+        didAutoStart = true
+        selection = .cantGetOnline
+        await run(.cantGetOnline)
+    }
+
     private func run(_ kind: ConnectivityPlaybookKind) async {
         isRunning = true
         progress = "Starting…"
-        result = nil
         defer { isRunning = false }
         let finished = await ConnectivityPlaybookRunner.run(kind: kind) { message in
             await MainActor.run {
@@ -176,11 +249,13 @@ struct PlaybooksView: View {
             }
         }
         result = finished
-        progress = "Done"
+        progress = finished.looksOnline ? "Online" : "Diagnosis ready — try a suggested step"
+        showRawChecks = false
     }
 }
 
 #Preview {
     PlaybooksView()
         .environmentObject(FoundationModelsGateModel())
+        .environmentObject(OnboardingModel())
 }

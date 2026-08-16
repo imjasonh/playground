@@ -151,6 +151,11 @@ No TCC prompt on launch. No Full Disk Access required for v1.
 
 A small **Playbooks only** escape exists for the offline chicken-and-egg (can’t download while offline); Chat remains blocked until the model is ready.
 
+### Golden path
+
+1. **Online install:** gate → model ready → first-run baseline Can’t get online → “You’re set.”
+2. **Offline later:** open app → Playbooks auto-runs Can’t get online → ranked cause → **Fix & recheck** (`SuggestedAction`: Settings / captive / allowlisted read-only probes) → confirm sheet → run → output → auto re-diagnose until `looksOnline` or stuck.
+
 ---
 
 ## 4. Architecture

@@ -56,14 +56,14 @@ struct FoundationModelsGateView: View {
                     .accessibilityHidden(true)
 
                 Text(kind == .download
-                     ? "Download the on-device model"
-                     : "Turn on Apple Intelligence")
+                     ? "Download the on-device model now — while you’re online"
+                     : "Turn on Apple Intelligence now — while you’re online")
                     .font(.largeTitle.weight(.bold))
                     .multilineTextAlignment(.center)
 
                 Text(kind == .download
-                     ? "Apple Intelligence is on, but the Foundation Model isn’t ready yet. Onramp can’t triage until the download finishes — keep power plugged in and this window open."
-                     : "Onramp is built around Apple’s on-device Foundation Model. Until Apple Intelligence is enabled (and the model finishes downloading), Chat won’t work and triage is incomplete.")
+                     ? "Install Onramp before you need it. Finish the Foundation Model download while the network works; later, when Wi‑Fi lies, open Can’t get online and Onramp diagnoses offline."
+                     : "Onramp’s Chat triage needs Apple’s on-device Foundation Model. Enable Apple Intelligence now (and let the model download) so you’re ready the next time you can’t get online.")
                     .font(.title3)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

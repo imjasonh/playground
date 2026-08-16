@@ -3,37 +3,46 @@ import Foundation
 /// Ranks likely causes from a `ConnectivitySnapshot` without calling the network.
 /// Used by playbooks (Toolbox / menu bar) so “can't get online” works without Apple Intelligence.
 enum ConnectivityAnalyzer {
+    struct Outcome: Equatable, Sendable {
+        var report: TriageReportViewModel
+        var actions: [SuggestedAction]
+        var looksOnline: Bool
+    }
+
     static func analyze(
         _ snapshot: ConnectivitySnapshot,
         kind: ConnectivityPlaybookKind = .cantGetOnline
-    ) -> TriageReportViewModel {
+    ) -> Outcome {
         let findings = collectFindings(snapshot)
         let ranked = rank(findings, kind: kind, snapshot: snapshot)
         let primary = ranked.first
         let evidence = evidenceBullets(snapshot: snapshot, findings: ranked)
         let steps = proposedSteps(for: ranked, snapshot: snapshot, kind: kind)
+        let actions = SuggestedActionBuilder.actions(for: ranked, snapshot: snapshot, kind: kind)
+        let online = looksHealthy(snapshot)
 
         let headline: String
         let likelyCause: String
-        if let primary {
+        if online {
+            headline = "You're online"
+            likelyCause =
+                "Path, DNS, and probes succeeded. If a specific site still fails, try “Only some sites fail” — otherwise you’re done."
+        } else if let primary {
             headline = primary.headline
             likelyCause = primary.detail
-        } else if looksHealthy(snapshot) {
-            headline = "Connectivity looks OK from here"
-            likelyCause =
-                "Path, DNS, and probes succeeded. If a specific site still fails, try the “Only some sites fail” playbook or check that site’s status once you can load others."
         } else {
             headline = "Couldn’t pinpoint a single cause"
             likelyCause =
-                "Some checks were inconclusive. Review the evidence below and re-run after changing Wi‑Fi/VPN, or try a more specific playbook."
+                "Some checks were inconclusive. Try the suggested steps below, then re-run diagnosis."
         }
 
-        return TriageReportViewModel(
+        let report = TriageReportViewModel(
             headline: headline,
             likelyCause: likelyCause,
             evidence: evidence,
             proposedSteps: steps
         )
+        return Outcome(report: report, actions: actions, looksOnline: online)
     }
 
     // MARK: - Findings
