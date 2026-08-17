@@ -24,6 +24,10 @@ rules specific to this app.
   captive URL, or run an **allowlisted read-only** probe (`SuggestedAction.DiagnosticProbe`).
   Probe output is shown and then fed into another playbook pass. Do **not** add
   mutating shell commands to that allowlist without an explicit product decision.
+- **Custom / MDM playbooks stay inside that allowlist.** Admin-defined playbooks
+  (`PlaybookCatalog`, preference domain `io.github.imjasonh.onramp`) may only
+  override probe hosts/URLs and add display-only `extraSteps`. Do not add a
+  path that runs arbitrary commands from a profile.
 - **Prefer network/offline value.** Improve Can’t get online (setup → diagnose →
   act → recheck) over once-online Activity Monitor clones.
 
@@ -31,7 +35,7 @@ rules specific to this app.
 
 | Layer | Path | Role |
 |-------|------|------|
-| Playbooks + actions | `Sources/Diagnostics/Connectivity*.swift`, `SuggestedAction.swift` | Gather, rank, click-to-run |
+| Playbooks + actions | `Sources/Diagnostics/Connectivity*.swift`, `PlaybookDefinition.swift`, `SuggestedAction.swift` | Gather, rank, click-to-run; MDM/local catalog |
 | First-run | `Sources/UI/FirstRunReadyView.swift` | Online install / baseline |
 | FM tool wrappers | `Sources/Triage/DiagnosticTools.swift` | What the chat agent can call |
 | Shared implementations | `Sources/Diagnostics/DiagnosticServices.swift` | Chat + Toolbox + playbooks |

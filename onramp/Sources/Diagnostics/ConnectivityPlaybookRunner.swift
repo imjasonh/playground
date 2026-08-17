@@ -7,14 +7,26 @@ enum ConnectivityPlaybookRunner {
         services: DiagnosticServices = .shared,
         onProgress: (@Sendable (String) async -> Void)? = nil
     ) async -> PlaybookResult {
+        await run(playbook: .builtIn(kind), services: services, onProgress: onProgress)
+    }
+
+    static func run(
+        playbook: PlaybookDefinition,
+        services: DiagnosticServices = .shared,
+        onProgress: (@Sendable (String) async -> Void)? = nil
+    ) async -> PlaybookResult {
         let snapshot = await gather(
-            kind: kind,
+            playbook: playbook,
             services: services,
             onProgress: onProgress
         )
-        let outcome = ConnectivityAnalyzer.analyze(snapshot, kind: kind)
+        let outcome = ConnectivityAnalyzer.analyze(
+            snapshot,
+            kind: playbook.focus,
+            extraSteps: playbook.extraSteps
+        )
         return PlaybookResult(
-            kind: kind,
+            kind: playbook.focus,
             triage: outcome.report,
             checks: snapshot.checkReports,
             actions: outcome.actions,
@@ -29,6 +41,16 @@ enum ConnectivityPlaybookRunner {
         services: DiagnosticServices = .shared,
         onProgress: (@Sendable (String) async -> Void)? = nil
     ) async -> ConnectivitySnapshot {
+        await gather(playbook: .builtIn(kind), services: services, onProgress: onProgress)
+    }
+
+    static func gather(
+        playbook: PlaybookDefinition,
+        services: DiagnosticServices = .shared,
+        onProgress: (@Sendable (String) async -> Void)? = nil
+    ) async -> ConnectivitySnapshot {
+        let kind = playbook.focus
+        let probes = playbook.probes
         if let onProgress {
             await onProgress("Checking network path…")
         }
@@ -49,6 +71,10 @@ enum ConnectivityPlaybookRunner {
         let wifi = await wifiReport
 
         var snap = ConnectivitySnapshot()
+        snap.probeDnsHost = probes.dnsHostname
+        snap.probeHttpURL = probes.httpURL
+        snap.probeReachHost = probes.reachHost
+        snap.probeReachPort = probes.reachPort
         applyPath(path.body, into: &snap)
         applyRoute(route.body, into: &snap)
         applyDnsConfig(from: dns.body, into: &snap)
@@ -71,9 +97,9 @@ enum ConnectivityPlaybookRunner {
         if let onProgress {
             await onProgress("Probing DNS and connectivity…")
         }
-        async let lookupReport = services.dnsLookup(hostname: "example.com")
-        async let reachReport = services.reachability(host: "1.1.1.1", port: 443)
-        async let httpReport = services.httpProbe(urlString: "https://example.com")
+        async let lookupReport = services.dnsLookup(hostname: probes.dnsHostname)
+        async let reachReport = services.reachability(host: probes.reachHost, port: probes.reachPort)
+        async let httpReport = services.httpProbe(urlString: probes.httpURL)
         async let captiveReport = services.httpProbe(
             urlString: "http://captive.apple.com/hotspot-detect.html"
         )
@@ -119,13 +145,13 @@ enum ConnectivityPlaybookRunner {
             if let onProgress {
                 await onProgress("DNS delegation trace…")
             }
-            let trace = await services.dnsTrace(hostname: "example.com")
+            let trace = await services.dnsTrace(hostname: probes.dnsHostname)
             checks.append(trace)
         }
 
         snap.checkReports = checks
         if let onProgress {
-            await onProgress("Ranking likely causes…")
+            await onProgress("Summarizing results…")
         }
         return snap
     }
