@@ -1,0 +1,50 @@
+on: # want "workflow has no top-level name" # want "workflow has no concurrency"
+  pull_request_target: # want "dangerous trigger pull_request_target"
+  workflow_run: # want "dangerous trigger workflow_run"
+    workflows: ["CI"]
+    types: [completed]
+permissions: write-all # want "permissions: write-all"
+env:
+  ACTIONS_ALLOW_UNSECURE_COMMANDS: true # want "ACTIONS_ALLOW_UNSECURE_COMMANDS"
+jobs:
+  build:
+    runs-on: self-hosted # want "self-hosted runner"
+    permissions: read-all # want "permissions: read-all"
+    container:
+      image: node:20 # want "container image is tag-pinned"
+      credentials: # want "container registry credentials with password"
+        username: admin
+        password: s3cret
+    secrets: inherit # want "secrets: inherit"
+    steps:
+      # want:+1 "unpinned actions ref" # want:+1 "with.persist-credentials to false"
+      - uses: actions/checkout@v4
+      # want:+1 "with.persist-credentials to false"
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: ./local-action
+      - uses: docker://ubuntu:22.04 # want "docker:// action image is not digest-pinned"
+      - uses: softprops/action-gh-release@v2 # want "unpinned actions ref" # want "superfluous action"
+      - name: inject
+        if: github.actor == 'dependabot[bot]' # want "github.actor bot check is spoofable"
+        run: echo "${{ github.event.issue.title }}" # want "attacker-controllable context"
+      - run: echo "tok=${{ secrets.MY_SECRET }}" # want "secret expanded directly"
+      - run: npm install lodash # want "ad-hoc npm install"
+      - run: yarn add left-pad # want "ad-hoc yarn add"
+      - run: pnpm add chalk # want "ad-hoc pnpm add"
+      - run: gem install rake # want "ad-hoc gem install"
+      - run: bundle add rake # want "ad-hoc bundle add"
+      - run: curl http://example.com/install.sh | bash # want "insecure http://"
+      - run: echo "x=1" >> $GITHUB_ENV # want "writing to GITHUB_ENV"
+      # want:+1 "unpinned actions ref" # want:+1 "skip-token-revoke: true"
+      - uses: actions/create-github-app-token@v1
+        with:
+          skip-token-revoke: true
+  reuse:
+    uses: org/repo/.github/workflows/ci.yml@v1 # want "unpinned actions ref"
+    secrets: '*' # want "forwards every secret"
+  matrix_runner:
+    runs-on: [self-hosted, linux] # want "self-hosted runner label"
+    steps:
+      - run: | # want "attacker-controllable context"
+          echo "${{ github.event.comment.body }}"
+      - run: "echo ${{ github.head_ref }}" # want "attacker-controllable context"
