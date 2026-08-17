@@ -252,6 +252,7 @@ final class ConnectivityPlaybookParseTests: XCTestCase {
         var snap = ConnectivitySnapshot()
         snap.pathSatisfied = true
         snap.hasDefaultRoute = true
+        snap.dnsResolvers = ["1.1.1.1"]
         snap.dnsLookupOk = true
         snap.tcpCloudflareOk = true
         snap.httpExampleOk = true
@@ -263,6 +264,7 @@ final class ConnectivityPlaybookParseTests: XCTestCase {
         )
         XCTAssertTrue(outcome.looksOnline)
         XCTAssertTrue(outcome.report.actionableSteps.isEmpty)
+        XCTAssertFalse(outcome.report.actionableSteps.contains { $0.contains("Corp VPN") })
     }
 
     func testCustomProbeTargetsAppearInEvidence() {
