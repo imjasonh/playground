@@ -69,6 +69,10 @@ make monitor
 3. Every `poll_secs` (default 60): refresh catalog; if `latest` changed, show it.
 4. Every `rotate_secs` (default 1800): show a random other image.
 5. Empty catalog → blank white panel (no banner).
+6. Every `dhcp_renew_secs` (default 6 h): re-run DHCP while staying associated.
+   `ESP_ERR_HTTP_CONNECT` (or a dropped STA) triggers a full re-associate and
+   one immediate catalog retry, so a desk frame can stay up without a power
+   cycle if lwIP’s automatic lease renew stalls.
 
 ### Error status line
 

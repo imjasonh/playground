@@ -19,3 +19,7 @@ upload_secret = ""
 # How often to POST /device when nothing about the error text changed.
 # Boot and error transitions also POST immediately.
 status_secs = 900
+# How often to re-run DHCP while still associated (0 = only on fetch
+# connect failures / dropped STA). lwIP also auto-renews; this is a
+# safety net so a desk frame can stay up for months if auto-renew stalls.
+dhcp_renew_secs = 21600

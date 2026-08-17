@@ -25,8 +25,9 @@ use log::{error, info, warn};
 
 use display::Panel;
 use inkbot_esp32::{
-    format_error_chain, format_panic_message, reset_is_abnormal, should_post_status, Catalog,
-    CrashStatus, DeviceTelemetry, FetchStatus, StatusReport, WifiStatus, FIRMWARE_ID, FRAME_BYTES,
+    format_error_chain, format_panic_message, is_http_connect_failure, reset_is_abnormal,
+    should_post_status, should_refresh_wifi, Catalog, CrashStatus, DeviceTelemetry, FetchStatus,
+    StatusReport, WifiRefresh, WifiStatus, FIRMWARE_ID, FRAME_BYTES,
 };
 
 include!(concat!(env!("OUT_DIR"), "/config_gen.rs"));
@@ -39,6 +40,8 @@ const NVS_LAST_OP: &str = "op";
 
 const HTTP_ATTEMPTS: u32 = 3;
 const WIFI_ATTEMPTS: u32 = 5;
+/// Avoid tight-looping STA reconnect when the AP is actually gone.
+const WIFI_RECONNECT_COOLDOWN_SECS: u64 = 120;
 
 fn main() -> Result<()> {
     esp_idf_svc::sys::link_patches();
@@ -105,14 +108,12 @@ fn main() -> Result<()> {
             }
         }
     }
-    let ip = wifi
-        .wifi()
-        .sta_netif()
-        .get_ip_info()
-        .map_err(|e| anyhow!("sta ip: {e:?}"))?
-        .ip;
-    let ip_str = ip.to_string();
+    let mut ip_str = sta_ip(&wifi)?;
     info!("wifi connected, ip={ip_str}, {}", HeapSnap::now());
+    let mut last_wifi_refresh = Instant::now();
+    // None = never reconnected this boot, so the first CONNECT failure
+    // can recover immediately (associated-but-no-internet is common).
+    let mut last_reconnect: Option<Instant> = None;
 
     let mut current_name = read_str(&nvs, NVS_NAME)?;
     let mut current_etag = read_str(&nvs, NVS_ETAG)?;
@@ -187,7 +188,16 @@ fn main() -> Result<()> {
         if last_frame.is_some() {
             status.crash = None;
         }
-        match tick(
+        maybe_refresh_wifi(
+            &mut wifi,
+            &mut nvs,
+            &mut ip_str,
+            &mut last_wifi_refresh,
+            &mut last_reconnect,
+            &mut status,
+            false,
+        );
+        let mut result = tick(
             &mut panel,
             &mut nvs,
             &mut current_name,
@@ -197,7 +207,34 @@ fn main() -> Result<()> {
             &mut last_frame,
             &mut status,
             &ip_str,
-        ) {
+        );
+        if let Err(ref e) = result {
+            if is_http_connect_failure(&format_error_chain(e))
+                && maybe_refresh_wifi(
+                    &mut wifi,
+                    &mut nvs,
+                    &mut ip_str,
+                    &mut last_wifi_refresh,
+                    &mut last_reconnect,
+                    &mut status,
+                    true,
+                )
+            {
+                info!("retrying poll after wifi recovery");
+                result = tick(
+                    &mut panel,
+                    &mut nvs,
+                    &mut current_name,
+                    &mut current_etag,
+                    &mut seen_latest,
+                    &mut last_rotate,
+                    &mut last_frame,
+                    &mut status,
+                    &ip_str,
+                );
+            }
+        }
+        match result {
             Ok(Action::Displayed { name, reason }) => {
                 status.fetch = None;
                 panel_has_status = !status.is_empty();
@@ -596,6 +633,133 @@ fn fetch_catalog() -> Result<Catalog> {
             response.body.len()
         )
     })
+}
+
+fn sta_ip(wifi: &BlockingWifi<EspWifi<'static>>) -> Result<String> {
+    let ip = wifi
+        .wifi()
+        .sta_netif()
+        .get_ip_info()
+        .map_err(|e| anyhow!("sta ip: {e:?}"))?
+        .ip;
+    Ok(ip.to_string())
+}
+
+/// Re-run DHCP without dropping Wi-Fi association.
+fn renew_dhcp(wifi: &mut BlockingWifi<EspWifi<'static>>) -> Result<String> {
+    use esp_idf_svc::handle::RawHandle;
+    use esp_idf_svc::sys::{esp_netif_dhcpc_start, esp_netif_dhcpc_stop};
+
+    let handle = wifi.wifi().sta_netif().handle();
+    // ALREADY_STOPPED is fine — we still want a fresh start.
+    let _ = unsafe { esp_netif_dhcpc_stop(handle) };
+    thread::sleep(Duration::from_millis(250));
+    let start = unsafe { esp_netif_dhcpc_start(handle) };
+    if start != 0 {
+        return Err(anyhow!("dhcp start: {start}"));
+    }
+    wifi.wait_netif_up()
+        .map_err(|e| anyhow!("dhcp renew: {e:?}"))?;
+    sta_ip(wifi)
+}
+
+fn reconnect_wifi(wifi: &mut BlockingWifi<EspWifi<'static>>) -> Result<String> {
+    let _ = wifi.disconnect();
+    let _ = wifi.stop();
+    thread::sleep(Duration::from_millis(300));
+    connect_wifi(wifi)?;
+    sta_ip(wifi)
+}
+
+/// Periodic DHCP renew, dropped-STA reconnect, or connect-failure recovery.
+/// Returns true when a refresh actually ran and succeeded.
+fn maybe_refresh_wifi(
+    wifi: &mut BlockingWifi<EspWifi<'static>>,
+    nvs: &mut EspNvs<NvsDefault>,
+    ip_str: &mut String,
+    last_wifi_refresh: &mut Instant,
+    last_reconnect: &mut Option<Instant>,
+    status: &mut StatusReport,
+    connect_failure: bool,
+) -> bool {
+    let sta_connected = wifi.is_connected().unwrap_or(false);
+    let netif_up = wifi.is_up().unwrap_or(false);
+    let action = should_refresh_wifi(
+        sta_connected,
+        netif_up,
+        connect_failure,
+        last_wifi_refresh.elapsed().as_secs(),
+        DHCP_RENEW_SECS,
+        last_reconnect
+            .map(|t| t.elapsed().as_secs())
+            .unwrap_or(WIFI_RECONNECT_COOLDOWN_SECS),
+        WIFI_RECONNECT_COOLDOWN_SECS,
+    );
+    match action {
+        WifiRefresh::None => false,
+        WifiRefresh::RenewDhcp => {
+            note_op(nvs, "wifi-dhcp");
+            info!(
+                "wifi dhcp renew (up={}s ip={ip_str}) {}",
+                uptime_secs(),
+                HeapSnap::now()
+            );
+            match renew_dhcp(wifi) {
+                Ok(ip) => {
+                    if ip != *ip_str {
+                        info!("wifi dhcp renew: ip {ip_str} -> {ip}");
+                    }
+                    *ip_str = ip;
+                    *last_wifi_refresh = Instant::now();
+                    status.wifi = None;
+                    true
+                }
+                Err(e) => {
+                    warn!("wifi dhcp renew failed: {e:#}; reconnecting");
+                    match reconnect_wifi(wifi) {
+                        Ok(ip) => {
+                            info!("wifi reconnect after dhcp fail, ip={ip}");
+                            *ip_str = ip;
+                            *last_wifi_refresh = Instant::now();
+                            *last_reconnect = Some(Instant::now());
+                            status.wifi = None;
+                            true
+                        }
+                        Err(re) => {
+                            warn!("wifi reconnect failed: {re:#}");
+                            *last_reconnect = Some(Instant::now());
+                            status.wifi =
+                                Some(wifi_status_from_err(&re, WIFI_ATTEMPTS, WIFI_ATTEMPTS));
+                            false
+                        }
+                    }
+                }
+            }
+        }
+        WifiRefresh::Reconnect => {
+            note_op(nvs, "wifi-reconnect");
+            info!(
+                "wifi reconnect (connected={sta_connected} netif={netif_up} connect_fail={connect_failure}) {}",
+                HeapSnap::now()
+            );
+            match reconnect_wifi(wifi) {
+                Ok(ip) => {
+                    info!("wifi reconnect ok, ip={ip}");
+                    *ip_str = ip;
+                    *last_wifi_refresh = Instant::now();
+                    *last_reconnect = Some(Instant::now());
+                    status.wifi = None;
+                    true
+                }
+                Err(e) => {
+                    warn!("wifi reconnect failed: {e:#}");
+                    *last_reconnect = Some(Instant::now());
+                    status.wifi = Some(wifi_status_from_err(&e, WIFI_ATTEMPTS, WIFI_ATTEMPTS));
+                    false
+                }
+            }
+        }
+    }
 }
 
 fn connect_wifi(wifi: &mut BlockingWifi<EspWifi<'static>>) -> Result<()> {

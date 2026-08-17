@@ -52,6 +52,10 @@ Every `poll_secs` (default 60):
 2. If `latest` changed since last seen → `GET /{latest}.bin` and display.
 3. Else if `rotate_secs` (default 1800) elapsed → pick a random other name and display.
 
+The firmware re-runs DHCP every `dhcp_renew_secs` (default 6 h) and fully
+re-associates on `ESP_ERR_HTTP_CONNECT` or a dropped STA so a long-lived
+device can recover a stale lease without a power cycle.
+
 Boot always paints `latest` (no `If-None-Match`) so a power cycle restores the
 current frame.
 
