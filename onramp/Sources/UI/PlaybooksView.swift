@@ -7,13 +7,26 @@ struct PlaybooksView: View {
     /// When true (default for golden path), auto-run Can’t get online on appear.
     var autoStartCantGetOnline: Bool = true
 
-    @State private var selection: ConnectivityPlaybookKind? = .cantGetOnline
+    @State private var catalog: [PlaybookDefinition] = PlaybookCatalog.load()
+    @State private var selectionID: String? = ConnectivityPlaybookKind.cantGetOnline.rawValue
     @State private var isRunning = false
     @State private var progress = ""
     @State private var result: PlaybookResult?
     @State private var showRawChecks = false
     @State private var actionLog: [String] = []
     @State private var didAutoStart = false
+
+    private var selection: PlaybookDefinition? {
+        catalog.first { $0.id == selectionID }
+    }
+
+    private var builtInPlaybooks: [PlaybookDefinition] {
+        catalog.filter(\.isBuiltIn)
+    }
+
+    private var customPlaybooks: [PlaybookDefinition] {
+        catalog.filter { !$0.isBuiltIn }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -23,20 +36,19 @@ struct PlaybooksView: View {
                 modelSetupNudge
             }
             NavigationSplitView {
-                List(ConnectivityPlaybookKind.allCases, selection: $selection) { kind in
-                    Label {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(kind.title)
-                            Text(kind.subtitle)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
+                List(selection: $selectionID) {
+                    Section("Built-in") {
+                        ForEach(builtInPlaybooks) { playbook in
+                            playbookRow(playbook)
                         }
-                    } icon: {
-                        Image(systemName: kind.symbolName)
                     }
-                    .tag(kind)
-                    .accessibilityIdentifier("playbook-\(kind.rawValue)")
+                    if !customPlaybooks.isEmpty {
+                        Section("Custom") {
+                            ForEach(customPlaybooks) { playbook in
+                                playbookRow(playbook)
+                            }
+                        }
+                    }
                 }
                 .navigationSplitViewColumnWidth(min: 240, ideal: 280)
                 .navigationTitle("Playbooks")
@@ -45,6 +57,7 @@ struct PlaybooksView: View {
             }
         }
         .task {
+            catalog = PlaybookCatalog.load()
             await maybeAutoStart()
         }
     }
@@ -85,9 +98,14 @@ struct PlaybooksView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     header(for: selection)
 
-                    if selection == .cantGetOnline {
+                    if selection.id == ConnectivityPlaybookKind.cantGetOnline.rawValue {
                         Text(
                             "Golden path when browsers won’t load: Onramp gathers path, DNS, proxy, VPN, and live probes, then offers click-to-run next steps. After each step it re-diagnoses until you’re online — or until it can’t help further."
+                        )
+                        .foregroundStyle(.secondary)
+                    } else if !selection.isBuiltIn {
+                        Text(
+                            "Admin playbook: same read-only path, DNS, proxy, VPN, and probe checks, using any hosts this profile specified. It cannot change Settings or run arbitrary commands."
                         )
                         .foregroundStyle(.secondary)
                     }
@@ -173,7 +191,7 @@ struct PlaybooksView: View {
                         .accessibilityIdentifier("playbook-raw-checks")
                     } else if !isRunning {
                         Text(
-                            "Run to get a ranked likely cause plus click-to-run next steps. Fixes that change Settings are done by you; probes are read-only."
+                            "Run to get a ranked diagnosis plus click-to-run next steps. Fixes that change Settings are done by you; probes are read-only."
                         )
                         .foregroundStyle(.secondary)
                     }
@@ -182,7 +200,7 @@ struct PlaybooksView: View {
                 }
                 .padding(20)
             }
-            .onChange(of: self.selection) { _, _ in
+            .onChange(of: selectionID) { _, _ in
                 result = nil
                 progress = ""
                 showRawChecks = false
@@ -195,7 +213,28 @@ struct PlaybooksView: View {
         }
     }
 
-    private func header(for selection: ConnectivityPlaybookKind) -> some View {
+    private func playbookRow(_ playbook: PlaybookDefinition) -> some View {
+        Label {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(playbook.title)
+                Text(playbook.subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let caption = playbook.sourceCaption {
+                    Text(caption)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        } icon: {
+            Image(systemName: playbook.symbolName)
+        }
+        .tag(playbook.id)
+        .accessibilityIdentifier("playbook-\(playbook.id)")
+    }
+
+    private func header(for selection: PlaybookDefinition) -> some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: selection.symbolName)
                 .font(.largeTitle)
@@ -206,6 +245,11 @@ struct PlaybooksView: View {
                     .font(.title2.weight(.semibold))
                 Text(selection.subtitle)
                     .foregroundStyle(.secondary)
+                if let caption = selection.sourceCaption {
+                    Text(caption)
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
             }
         }
     }
@@ -235,15 +279,17 @@ struct PlaybooksView: View {
             return
         }
         didAutoStart = true
-        selection = .cantGetOnline
-        await run(.cantGetOnline)
+        selectionID = ConnectivityPlaybookKind.cantGetOnline.rawValue
+        if let playbook = catalog.first(where: { $0.id == ConnectivityPlaybookKind.cantGetOnline.rawValue }) {
+            await run(playbook)
+        }
     }
 
-    private func run(_ kind: ConnectivityPlaybookKind) async {
+    private func run(_ playbook: PlaybookDefinition) async {
         isRunning = true
         progress = "Starting…"
         defer { isRunning = false }
-        let finished = await ConnectivityPlaybookRunner.run(kind: kind) { message in
+        let finished = await ConnectivityPlaybookRunner.run(playbook: playbook) { message in
             await MainActor.run {
                 progress = message
             }

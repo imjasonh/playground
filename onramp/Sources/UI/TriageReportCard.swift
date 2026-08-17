@@ -20,7 +20,7 @@ struct TriageReportCard: View {
                 .accessibilityIdentifier("copy-triage-report")
             }
 
-            labeled("Likely cause", report.likelyCause)
+            labeled(report.causeSectionTitle, report.likelyCause)
 
             if !report.evidence.isEmpty {
                 Text("Evidence")

@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>PayloadContent</key>
+	<array>
+		<dict>
+			<key>PayloadDisplayName</key>
+			<string>Onramp playbooks</string>
+			<key>PayloadIdentifier</key>
+			<string>io.github.imjasonh.onramp.playbooks</string>
+			<key>PayloadType</key>
+			<string>io.github.imjasonh.onramp</string>
+			<key>PayloadUUID</key>
+			<string>7C2E4A11-8B6F-4D3A-9E10-2F6C8A1B4D90</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+			<key>Playbooks</key>
+			<array>
+				<dict>
+					<key>id</key>
+					<string>corp-intranet</string>
+					<key>title</key>
+					<string>Can't reach intranet</string>
+					<key>subtitle</key>
+					<string>VPN plus internal DNS and HTTP health</string>
+					<key>symbol</key>
+					<string>building.columns</string>
+					<key>focus</key>
+					<string>vpn</string>
+					<key>dnsHostname</key>
+					<string>intranet.example.com</string>
+					<key>httpURL</key>
+					<string>https://intranet.example.com/health</string>
+					<key>reachHost</key>
+					<string>10.1.0.10</string>
+					<key>reachPort</key>
+					<integer>443</integer>
+					<key>extraSteps</key>
+					<array>
+						<string>Connect to Corp VPN from the menu bar, then re-run this playbook.</string>
+					</array>
+				</dict>
+			</array>
+		</dict>
+	</array>
+	<key>PayloadDisplayName</key>
+	<string>Onramp custom playbooks</string>
+	<key>PayloadIdentifier</key>
+	<string>io.github.imjasonh.onramp.playbooks.profile</string>
+	<key>PayloadOrganization</key>
+	<string>Example Corp</string>
+	<key>PayloadRemovalDisallowed</key>
+	<false/>
+	<key>PayloadScope</key>
+	<string>System</string>
+	<key>PayloadType</key>
+	<string>Configuration</string>
+	<key>PayloadUUID</key>
+	<string>B91D0C44-3E27-4A8F-B6C1-5A0E9D2F7C11</string>
+	<key>PayloadVersion</key>
+	<integer>1</integer>
+</dict>
+</plist>

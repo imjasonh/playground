@@ -11,13 +11,14 @@ enum ConnectivityAnalyzer {
 
     static func analyze(
         _ snapshot: ConnectivitySnapshot,
-        kind: ConnectivityPlaybookKind = .cantGetOnline
+        kind: ConnectivityPlaybookKind = .cantGetOnline,
+        extraSteps: [String] = []
     ) -> Outcome {
         let findings = collectFindings(snapshot)
         let ranked = rank(findings, kind: kind, snapshot: snapshot)
         let primary = ranked.first
         let evidence = evidenceBullets(snapshot: snapshot, findings: ranked)
-        let steps = proposedSteps(for: ranked, snapshot: snapshot, kind: kind)
+        var steps = proposedSteps(for: ranked, snapshot: snapshot, kind: kind)
         let actions = SuggestedActionBuilder.actions(for: ranked, snapshot: snapshot, kind: kind)
         let online = looksHealthy(snapshot)
 
@@ -36,11 +37,22 @@ enum ConnectivityAnalyzer {
                 "Some checks were inconclusive. Try the suggested steps below, then re-run diagnosis."
         }
 
+        if !online {
+            for step in extraSteps {
+                let trimmed = step.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty, !RemediationCopy.isNoOp(trimmed) else { continue }
+                if !steps.contains(trimmed) {
+                    steps.append(trimmed)
+                }
+            }
+        }
+
         let report = TriageReportViewModel(
             headline: headline,
             likelyCause: likelyCause,
             evidence: evidence,
-            proposedSteps: steps
+            proposedSteps: steps,
+            looksHealthy: online
         )
         return Outcome(report: report, actions: actions, looksOnline: online)
     }
@@ -297,14 +309,22 @@ enum ConnectivityAnalyzer {
             bullets.append("current_wifi: \(ssid)")
         }
         if let dns = s.dnsLookupOk {
-            bullets.append("dns_lookup: \(dns ? "ok" : "failed")")
+            let host = s.probeDnsHost == PlaybookProbes.defaults.dnsHostname
+                ? ""
+                : " \(s.probeDnsHost)"
+            bullets.append("dns_lookup\(host): \(dns ? "ok" : "failed")")
         }
         if let tcp = s.tcpCloudflareOk {
-            bullets.append("reachability 1.1.1.1:443: \(tcp ? "ok" : "failed")")
+            let target = "\(s.probeReachHost):\(s.probeReachPort)"
+            let label = target == "1.1.1.1:443" ? "reachability 1.1.1.1:443" : "reachability \(target)"
+            bullets.append("\(label): \(tcp ? "ok" : "failed")")
         }
         if let http = s.httpExampleOk {
+            let probeLabel = s.probeHttpURL == PlaybookProbes.defaults.httpURL
+                ? "http_probe example.com"
+                : "http_probe \(s.probeHttpURL)"
             bullets.append(
-                "http_probe example.com: \(http ? "ok" : "failed")\(s.httpExampleStatus.map { " (HTTP \($0))" } ?? "")"
+                "\(probeLabel): \(http ? "ok" : "failed")\(s.httpExampleStatus.map { " (HTTP \($0))" } ?? "")"
             )
         }
         if s.captiveStatus != nil || s.captiveLikely {

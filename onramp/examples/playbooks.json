@@ -1,0 +1,20 @@
+{
+  "Playbooks": [
+    {
+      "id": "corp-intranet",
+      "title": "Can't reach intranet",
+      "subtitle": "VPN plus internal DNS and HTTP health",
+      "symbol": "building.columns",
+      "focus": "vpn",
+      "dnsHostname": "intranet.example.com",
+      "httpURL": "https://intranet.example.com/health",
+      "reachHost": "10.1.0.10",
+      "reachPort": 443,
+      "extraSteps": [
+        "Connect to Corp VPN from the menu bar, then re-run this playbook.",
+        "If VPN is up but intranet still fails, try a different VPN region in the company client."
+      ]
+    }
+  ],
+  "DisabledPlaybookIDs": ["captivePortal"]
+}

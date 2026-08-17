@@ -19,6 +19,10 @@ final class ConnectivityAnalyzerTests: XCTestCase {
         let report = ConnectivityAnalyzer.analyze(snap, kind: .cantGetOnline).report
         XCTAssertTrue(report.headline.localizedCaseInsensitiveContains("online")
             || report.headline.localizedCaseInsensitiveContains("OK"))
+        XCTAssertTrue(report.looksHealthy)
+        XCTAssertEqual(report.causeSectionTitle, "What we found")
+        XCTAssertTrue(report.markdown.contains("What we found"))
+        XCTAssertFalse(report.markdown.contains("Likely cause"))
         XCTAssertTrue(report.actionableSteps.isEmpty)
         XCTAssertTrue(report.evidence.contains { $0.contains("path_status") })
     }
@@ -41,6 +45,10 @@ final class ConnectivityAnalyzerTests: XCTestCase {
         XCTAssertTrue(outcome.report.actionableSteps.contains { $0.contains("Network") })
         XCTAssertTrue(outcome.actions.contains { $0.id == "open-network" })
         XCTAssertFalse(outcome.looksOnline)
+        XCTAssertFalse(outcome.report.looksHealthy)
+        XCTAssertEqual(outcome.report.causeSectionTitle, "Likely cause")
+        XCTAssertTrue(outcome.report.markdown.contains("Likely cause"))
+        XCTAssertFalse(outcome.report.markdown.contains("What we found"))
     }
 
     func testDnsFailTcpOkLooksLikeDns() {
@@ -218,5 +226,254 @@ final class ConnectivityPlaybookParseTests: XCTestCase {
         for probe in SuggestedAction.DiagnosticProbe.allCases {
             XCTAssertFalse(probe.commandSummary.isEmpty)
         }
+    }
+
+    func testAdminExtraStepsAppendWhenUnhealthy() {
+        var snap = ConnectivitySnapshot()
+        snap.pathSatisfied = false
+        snap.pathStatusLabel = "unsatisfied"
+        snap.hasDefaultRoute = false
+        snap.dnsLookupOk = false
+        snap.tcpCloudflareOk = false
+        snap.httpExampleOk = false
+        let outcome = ConnectivityAnalyzer.analyze(
+            snap,
+            kind: .vpnBroken,
+            extraSteps: ["Connect to Corp VPN from the menu bar, then re-run."]
+        )
+        XCTAssertTrue(
+            outcome.report.actionableSteps.contains {
+                $0.contains("Corp VPN")
+            }
+        )
+    }
+
+    func testAdminExtraStepsOmittedWhenHealthy() {
+        var snap = ConnectivitySnapshot()
+        snap.pathSatisfied = true
+        snap.hasDefaultRoute = true
+        snap.dnsLookupOk = true
+        snap.tcpCloudflareOk = true
+        snap.httpExampleOk = true
+        snap.captiveLikely = false
+        let outcome = ConnectivityAnalyzer.analyze(
+            snap,
+            kind: .cantGetOnline,
+            extraSteps: ["Connect to Corp VPN from the menu bar, then re-run."]
+        )
+        XCTAssertTrue(outcome.looksOnline)
+        XCTAssertTrue(outcome.report.actionableSteps.isEmpty)
+    }
+
+    func testCustomProbeTargetsAppearInEvidence() {
+        var snap = ConnectivitySnapshot()
+        snap.pathSatisfied = true
+        snap.pathStatusLabel = "satisfied"
+        snap.hasDefaultRoute = true
+        snap.dnsLookupOk = false
+        snap.tcpCloudflareOk = false
+        snap.httpExampleOk = false
+        snap.probeDnsHost = "intranet.example.com"
+        snap.probeHttpURL = "https://intranet.example.com/health"
+        snap.probeReachHost = "10.1.0.10"
+        snap.probeReachPort = 443
+        let evidence = ConnectivityAnalyzer.evidenceBullets(
+            snapshot: snap,
+            findings: ConnectivityAnalyzer.collectFindings(snap)
+        )
+        XCTAssertTrue(evidence.contains { $0.contains("intranet.example.com") })
+        XCTAssertTrue(evidence.contains { $0.contains("10.1.0.10:443") })
+    }
+}
+
+final class PlaybookCatalogTests: XCTestCase {
+    func testParsesManagedPlistEntry() {
+        let entry: [String: Any] = [
+            "id": "corp-intranet",
+            "title": "Can't reach intranet",
+            "subtitle": "VPN + internal DNS/HTTP",
+            "symbol": "building.columns",
+            "focus": "vpn",
+            "dnsHostname": "intranet.example.com",
+            "httpURL": "https://intranet.example.com/health",
+            "reachHost": "10.1.0.10",
+            "reachPort": 443,
+            "extraSteps": ["Connect to Corp VPN, then re-run."],
+        ]
+        guard let parsed = PlaybookDefinitionParser.parseEntry(entry, source: .managed) else {
+            return XCTFail("expected a playbook")
+        }
+        XCTAssertEqual(parsed.id, "corp-intranet")
+        XCTAssertEqual(parsed.focus, .vpnBroken)
+        XCTAssertEqual(parsed.probes.dnsHostname, "intranet.example.com")
+        XCTAssertEqual(parsed.probes.httpURL, "https://intranet.example.com/health")
+        XCTAssertEqual(parsed.probes.reachHost, "10.1.0.10")
+        XCTAssertEqual(parsed.probes.reachPort, 443)
+        XCTAssertEqual(parsed.extraSteps, ["Connect to Corp VPN, then re-run."])
+        XCTAssertEqual(parsed.source, .managed)
+    }
+
+    func testParsesJSONArrayAndWrapper() {
+        let json = """
+        {
+          "Playbooks": [
+            {"id": "corp-dns", "title": "Corp DNS", "focus": "dns"}
+          ],
+          "DisabledPlaybookIDs": ["captivePortal"]
+        }
+        """
+        let parsed = PlaybookDefinitionParser.parseJSONString(json, source: .managed)
+        XCTAssertEqual(parsed.playbooks.map(\.id), ["corp-dns"])
+        XCTAssertEqual(parsed.playbooks.first?.focus, .dnsWrong)
+        XCTAssertEqual(parsed.disabledIDs, ["captivePortal"])
+    }
+
+    func testRejectsUnsafeOrInvalidEntries() {
+        let fileURL = PlaybookDefinitionParser.parseEntry(
+            ["id": "ok", "title": "Safe title", "httpURL": "file:///etc/hosts"],
+            source: .managed
+        )
+        XCTAssertEqual(fileURL?.probes.httpURL, PlaybookProbes.defaults.httpURL)
+
+        XCTAssertNil(
+            PlaybookDefinitionParser.parseEntry(
+                ["id": "has spaces", "title": "Nope"],
+                source: .managed
+            )
+        )
+        XCTAssertNil(
+            PlaybookDefinitionParser.parseEntry(
+                ["id": "ok", "title": ""],
+                source: .managed
+            )
+        )
+        XCTAssertNil(PlaybookDefinitionParser.parseHTTPURL("javascript:alert(1)"))
+        XCTAssertNil(PlaybookDefinitionParser.parseHTTPURL("https://user:pass@example.com/"))
+        XCTAssertNil(PlaybookDefinitionParser.parseHTTPURL("/etc/hosts"))
+        XCTAssertNotNil(PlaybookDefinitionParser.parseHTTPURL("https://intranet.example.com/health"))
+        XCTAssertNil(PlaybookDefinitionParser.sanitizeID("rm -rf"))
+        XCTAssertNil(PlaybookDefinitionParser.parsePort(0))
+        XCTAssertNil(PlaybookDefinitionParser.parsePort(70000))
+        XCTAssertEqual(PlaybookDefinitionParser.parsePort(443), 443)
+    }
+
+    func testAssembleMergesManagedOverLocalAndHidesDisabled() {
+        let local = PlaybookDefinition(
+            id: "corp-intranet",
+            title: "Local intranet",
+            subtitle: "from file",
+            symbolName: "building.columns",
+            focus: .vpnBroken,
+            source: .localFile,
+            probes: .defaults,
+            extraSteps: []
+        )
+        let managed = PlaybookDefinition(
+            id: "corp-intranet",
+            title: "Managed intranet",
+            subtitle: "from MDM",
+            symbolName: "building.columns",
+            focus: .vpnBroken,
+            source: .managed,
+            probes: .defaults,
+            extraSteps: []
+        )
+        let extra = PlaybookDefinition(
+            id: "wifi-guest",
+            title: "Guest Wi‑Fi",
+            subtitle: "captive",
+            symbolName: "building.2",
+            focus: .captivePortal,
+            source: .localFile,
+            probes: .defaults,
+            extraSteps: []
+        )
+        let catalog = PlaybookCatalog.assemble(
+            managed: [managed],
+            local: [local, extra],
+            disabledIDs: ["captivePortal", "someSitesFail"]
+        )
+        let ids = catalog.map(\.id)
+        XCTAssertTrue(ids.contains(ConnectivityPlaybookKind.cantGetOnline.rawValue))
+        XCTAssertFalse(ids.contains(ConnectivityPlaybookKind.captivePortal.rawValue))
+        XCTAssertFalse(ids.contains(ConnectivityPlaybookKind.someSitesFail.rawValue))
+        XCTAssertEqual(catalog.filter { $0.id == "corp-intranet" }.map(\.title), ["Managed intranet"])
+        XCTAssertTrue(ids.contains("wifi-guest"))
+    }
+
+    func testAssembleSkipsReservedBuiltInIDs() {
+        let spoof = PlaybookDefinition(
+            id: ConnectivityPlaybookKind.cantGetOnline.rawValue,
+            title: "Evil",
+            subtitle: "",
+            symbolName: "xmark",
+            focus: .cantGetOnline,
+            source: .managed,
+            probes: .defaults,
+            extraSteps: []
+        )
+        let catalog = PlaybookCatalog.assemble(managed: [spoof], local: [], disabledIDs: [])
+        XCTAssertEqual(catalog.filter { $0.id == spoof.id }.count, 1)
+        XCTAssertEqual(catalog.first?.title, ConnectivityPlaybookKind.cantGetOnline.title)
+        XCTAssertTrue(catalog.first?.isBuiltIn == true)
+    }
+
+    func testAssembleKeepsCantGetOnlineIfAllBuiltInsDisabled() {
+        let disabled = Set(ConnectivityPlaybookKind.allCases.map(\.rawValue))
+        let catalog = PlaybookCatalog.assemble(managed: [], local: [], disabledIDs: disabled)
+        XCTAssertEqual(catalog.map(\.id), [ConnectivityPlaybookKind.cantGetOnline.rawValue])
+    }
+
+    func testLoadFromUserDefaultsAndJSONFile() throws {
+        let suiteName = "onramp.playbook.tests.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            return XCTFail("suite")
+        }
+        defaults.removePersistentDomain(forName: suiteName)
+        defaults.set(
+            [[
+                "id": "from-defaults",
+                "title": "From defaults",
+                "focus": "dns",
+            ]],
+            forKey: PlaybookPreferenceKey.playbooks
+        )
+        defaults.set(["vpnBroken"], forKey: PlaybookPreferenceKey.disabledPlaybookIDs)
+
+        let json = """
+        [{"id":"from-file","title":"From file","focus":"captive"}]
+        """
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("onramp-playbook-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let file = dir.appendingPathComponent("playbooks.json")
+        try Data(json.utf8).write(to: file)
+
+        let catalog = PlaybookCatalog.load(defaults: defaults, fileURLs: [file])
+        let ids = catalog.map(\.id)
+        XCTAssertTrue(ids.contains("from-defaults"))
+        XCTAssertTrue(ids.contains("from-file"))
+        XCTAssertFalse(ids.contains(ConnectivityPlaybookKind.vpnBroken.rawValue))
+
+        defaults.removePersistentDomain(forName: suiteName)
+        try? FileManager.default.removeItem(at: dir)
+    }
+
+    func testExampleJSONParses() throws {
+        let examples = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("examples")
+        let jsonURL = examples.appendingPathComponent("playbooks.json")
+        let json = PlaybookDefinitionParser.parseFile(try Data(contentsOf: jsonURL), url: jsonURL)
+        XCTAssertEqual(json.playbooks.first?.id, "corp-intranet")
+        XCTAssertEqual(json.playbooks.first?.focus, .vpnBroken)
+        XCTAssertEqual(json.disabledIDs, ["captivePortal"])
+
+        let plistURL = examples.appendingPathComponent("playbooks.plist")
+        let plist = PlaybookDefinitionParser.parseFile(try Data(contentsOf: plistURL), url: plistURL)
+        XCTAssertEqual(plist.playbooks.first?.id, "corp-intranet")
+        XCTAssertEqual(plist.playbooks.first?.probes.reachPort, 443)
     }
 }

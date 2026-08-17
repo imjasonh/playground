@@ -90,7 +90,9 @@ for chat/toolbox escape hatches, but does not compete there.
 - Cloud LLM fallback.
 - Wi‑Fi neighbour survey / channel planner / RSSI ranking.
 - Auto-remediation (flush DNS, toggle VPN, rewrite proxies, etc.).
-- Enterprise MDM / remote agent / always-on daemon.
+- Remote agent / always-on daemon. **MDM-provisioned playbook definitions**
+  (preference domain + drop-in plist/JSON) are supported; Onramp is still not
+  an MDM client or remote-control agent.
 - General-purpose “slow Mac” product positioning (demoted).
 - Folding into `hello-macos` (keep hello as the tiny CD canary).
 - Keeping the “Geek Squad” name.
@@ -103,9 +105,14 @@ for chat/toolbox escape hatches, but does not compete there.
 
 **A. Playbooks (always available — primary)**  
 “Can’t get online” runs path → route → DNS → proxy → VPN → hosts → Wi‑Fi →
-DNS lookup / TCP / HTTP / captive probes, then ranks causes into the same
-structured card as chat (`headline` / `likelyCause` / `evidence` / `proposedSteps`).
-Variants: VPN broken, DNS wrong, captive portal, only some sites fail.
+DNS lookup / TCP / HTTP / captive probes, then ranks into the same structured
+card as chat (`headline` / summary / `evidence` / `proposedSteps`). The summary
+is labeled **Likely cause** only when something looks wrong; a healthy run
+uses **What we found**. Variants: VPN broken, DNS wrong, captive portal, only
+some sites fail. Device admins can add more playbooks via the
+`io.github.imjasonh.onramp` preference domain (MDM Custom Settings) or a
+drop-in file under `/Library/Application Support/Onramp/` — same read-only
+probes, optional corp hosts; see `onramp/README.md`.
 
 **B. Manual Toolbox**  
 Network checks first; advanced once-online checks demoted. Each shows a result

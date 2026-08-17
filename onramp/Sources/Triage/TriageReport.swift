@@ -28,6 +28,13 @@ struct TriageReportViewModel: Equatable {
     var likelyCause: String
     var evidence: [String]
     var proposedSteps: [String]
+    /// When true, probes succeeded — do not label the summary as a “cause.”
+    var looksHealthy: Bool
+
+    /// Section title above the summary: “Likely cause” only when something looks wrong.
+    var causeSectionTitle: String {
+        looksHealthy ? "What we found" : "Likely cause"
+    }
 
     /// Non-empty, non-placeholder steps suitable for the card / markdown.
     var actionableSteps: [String] { RemediationCopy.actionable(proposedSteps) }
@@ -36,7 +43,7 @@ struct TriageReportViewModel: Equatable {
         var lines = [
             "## \(headline)",
             "",
-            "**Likely cause:** \(likelyCause)",
+            "**\(causeSectionTitle):** \(likelyCause)",
             "",
             "**Evidence:**",
         ]
@@ -61,13 +68,21 @@ struct TriageReportViewModel: Equatable {
         likelyCause = report.likelyCause
         evidence = report.evidence
         proposedSteps = report.proposedSteps
+        looksHealthy = false
     }
     #endif
 
-    init(headline: String, likelyCause: String, evidence: [String], proposedSteps: [String]) {
+    init(
+        headline: String,
+        likelyCause: String,
+        evidence: [String],
+        proposedSteps: [String],
+        looksHealthy: Bool = false
+    ) {
         self.headline = headline
         self.likelyCause = likelyCause
         self.evidence = evidence
         self.proposedSteps = proposedSteps
+        self.looksHealthy = looksHealthy
     }
 }

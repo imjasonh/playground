@@ -47,6 +47,12 @@ struct ConnectivitySnapshot: Equatable, Sendable {
     var pingLossPercent: Double?
     var pingDetail: String?
 
+    /// Probe targets used for this run (built-in defaults or admin playbook overrides).
+    var probeDnsHost: String = PlaybookProbes.defaults.dnsHostname
+    var probeHttpURL: String = PlaybookProbes.defaults.httpURL
+    var probeReachHost: String = PlaybookProbes.defaults.reachHost
+    var probeReachPort: UInt16 = PlaybookProbes.defaults.reachPort
+
     /// Per-check reports for the UI evidence list / copy-all.
     var checkReports: [DiagnosticReport] = []
 }
