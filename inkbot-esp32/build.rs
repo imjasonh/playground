@@ -67,6 +67,10 @@ fn generate_config() {
         .get("status_secs")
         .and_then(|v| v.as_integer())
         .unwrap_or(900) as u64;
+    let dhcp_renew_secs = inkbot
+        .get("dhcp_renew_secs")
+        .and_then(|v| v.as_integer())
+        .unwrap_or(21600) as u64;
 
     let out = PathBuf::from(env::var("OUT_DIR").unwrap()).join("config_gen.rs");
     fs::write(
@@ -78,7 +82,8 @@ fn generate_config() {
              pub const POLL_SECS: u64 = {poll_secs};\n\
              pub const ROTATE_SECS: u64 = {rotate_secs};\n\
              pub const INKBOT_UPLOAD_SECRET: &str = {upload_secret:?};\n\
-             pub const STATUS_SECS: u64 = {status_secs};\n"
+             pub const STATUS_SECS: u64 = {status_secs};\n\
+             pub const DHCP_RENEW_SECS: u64 = {dhcp_renew_secs};\n"
         ),
     )
     .expect("write config_gen.rs");
