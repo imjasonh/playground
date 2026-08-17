@@ -29,6 +29,8 @@ passes tests — so older experiments don't bit-rot.
   into local storage and browse its files, branches, and commit history.
 - **[`cold-climb/`](cold-climb/)** — a touch-first, two-handle arcade game:
   balance a ball up the wall while avoiding unlit pockets.
+- **[`droneski/`](droneski/)** — pilot an FPV camera drone filming a skier on a
+  procedurally generated Olympic downhill course.
 - **[`hello/`](hello/)** — a minimal static demo.
 - **[`kanoodle/`](kanoodle/)** — the Kanoodle puzzle game (5×11 board, 12 pieces).
 - **[`webrtc/`](webrtc/)** — serverless, link-based WebRTC app: share a link to
