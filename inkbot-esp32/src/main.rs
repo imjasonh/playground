@@ -3,7 +3,7 @@
 mod display;
 
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{anyhow, Result};
 use embedded_svc::http::client::Client as HttpClient;
@@ -13,6 +13,7 @@ use esp_idf_svc::eventloop::EspSystemEventLoop;
 use esp_idf_svc::hal::peripherals::Peripherals;
 use esp_idf_svc::http::client::{Configuration as HttpConfig, EspHttpConnection};
 use esp_idf_svc::nvs::{EspDefaultNvsPartition, EspNvs, NvsDefault};
+use esp_idf_svc::sntp::{EspSntp, SyncStatus};
 use esp_idf_svc::sys::{
     esp_get_free_heap_size, esp_get_minimum_free_heap_size, esp_random, esp_reset_reason,
     esp_timer_get_time, esp_wifi_set_max_tx_power, esp_wifi_set_ps,
@@ -25,9 +26,10 @@ use log::{error, info, warn};
 
 use display::Panel;
 use inkbot_esp32::{
-    format_error_chain, format_panic_message, is_http_connect_failure, reset_is_abnormal,
-    should_post_status, should_refresh_wifi, Catalog, CrashStatus, DeviceTelemetry, FetchStatus,
-    StatusReport, WifiRefresh, WifiStatus, FIRMWARE_ID, FRAME_BYTES,
+    format_error_chain, format_panic_message, incident_needs_post, is_http_connect_failure,
+    reset_is_abnormal, should_post_status, should_refresh_wifi, Catalog, CrashStatus,
+    DeviceTelemetry, FetchStatus, LastIncident, StatusReport, WifiRefresh, WifiStatus, FIRMWARE_ID,
+    FRAME_BYTES,
 };
 
 include!(concat!(env!("OUT_DIR"), "/config_gen.rs"));
@@ -37,6 +39,9 @@ const NVS_NAME: &str = "name";
 const NVS_ETAG: &str = "etag";
 const NVS_LATEST: &str = "latest";
 const NVS_LAST_OP: &str = "op";
+/// JSON blob for an unposted FETCH/WIFI incident (survives reboot / USB reset).
+const NVS_INCIDENT: &str = "inc";
+const INCIDENT_BLOB: usize = 1024;
 
 const HTTP_ATTEMPTS: u32 = 3;
 const WIFI_ATTEMPTS: u32 = 5;
@@ -74,6 +79,7 @@ fn main() -> Result<()> {
     )?;
 
     let mut status = StatusReport::default();
+    let mut remote = RemoteStatus::from_nvs(&nvs);
     let nvs_last_op = read_str(&nvs, NVS_LAST_OP)?;
     let last_op = rtc_take_last_op().or(nvs_last_op);
     if reset_is_abnormal(reset) {
@@ -103,6 +109,7 @@ fn main() -> Result<()> {
             Err(e) => {
                 warn!("wifi failed: {e:#}");
                 status.wifi = Some(wifi_status_from_err(&e, WIFI_ATTEMPTS, WIFI_ATTEMPTS));
+                capture_incident(&mut remote, &nvs, &wifi, &status, "wifi");
                 paint_error(&mut panel, None, &status);
                 thread::sleep(Duration::from_secs(3));
             }
@@ -110,6 +117,8 @@ fn main() -> Result<()> {
     }
     let mut ip_str = sta_ip(&wifi)?;
     info!("wifi connected, ip={ip_str}, {}", HeapSnap::now());
+    // Keep SNTP alive so SystemTime (and unix_secs telemetry) stay valid.
+    let _sntp = start_sntp();
     let mut last_wifi_refresh = Instant::now();
     // None = never reconnected this boot, so the first CONNECT failure
     // can recover immediately (associated-but-no-internet is common).
@@ -123,7 +132,6 @@ fn main() -> Result<()> {
     let mut last_rotate = Instant::now();
     let mut last_frame: Option<Vec<u8>> = None;
     let mut panel_has_status;
-    let mut remote = RemoteStatus::new();
 
     // Boot: one HTTPS GET of /latest.bin — a catalog+frame pair back-to-back
     // fragments the classic ESP32 heap so the 48 KB alloc fails.
@@ -165,6 +173,7 @@ fn main() -> Result<()> {
                 HTTP_ATTEMPTS,
                 Some(ip_str.as_str()),
             ));
+            capture_incident(&mut remote, &nvs, &wifi, &status, "fetch");
             paint_error(&mut panel, last_frame.as_deref(), &status);
             panel_has_status = true;
         }
@@ -173,10 +182,10 @@ fn main() -> Result<()> {
     maybe_post_device(
         &mut remote,
         &mut nvs,
+        &wifi,
         true,
         &status,
         reset,
-        &ip_str,
         current_name.as_deref(),
         panel_has_status,
     );
@@ -188,9 +197,10 @@ fn main() -> Result<()> {
         if last_frame.is_some() {
             status.crash = None;
         }
-        maybe_refresh_wifi(
+        let mut recovered = maybe_refresh_wifi(
             &mut wifi,
             &mut nvs,
+            &mut remote,
             &mut ip_str,
             &mut last_wifi_refresh,
             &mut last_reconnect,
@@ -209,10 +219,12 @@ fn main() -> Result<()> {
             &ip_str,
         );
         if let Err(ref e) = result {
+            capture_incident(&mut remote, &nvs, &wifi, &status, "fetch");
             if is_http_connect_failure(&format_error_chain(e))
                 && maybe_refresh_wifi(
                     &mut wifi,
                     &mut nvs,
+                    &mut remote,
                     &mut ip_str,
                     &mut last_wifi_refresh,
                     &mut last_reconnect,
@@ -220,6 +232,7 @@ fn main() -> Result<()> {
                     true,
                 )
             {
+                recovered = true;
                 info!("retrying poll after wifi recovery");
                 result = tick(
                     &mut panel,
@@ -232,16 +245,21 @@ fn main() -> Result<()> {
                     &mut status,
                     &ip_str,
                 );
+                if result.is_err() {
+                    capture_incident(&mut remote, &nvs, &wifi, &status, "fetch");
+                }
             }
         }
         match result {
             Ok(Action::Displayed { name, reason }) => {
                 status.fetch = None;
                 panel_has_status = !status.is_empty();
+                note_last_ok(&mut remote, &nvs);
                 info!("displayed {name} ({reason})")
             }
             Ok(Action::Idle) => {
                 status.fetch = None;
+                note_last_ok(&mut remote, &nvs);
                 if panel_has_status && status.is_empty() {
                     if let Some(ref frame) = last_frame {
                         if let Err(e) = panel.show_frame(frame) {
@@ -262,10 +280,10 @@ fn main() -> Result<()> {
         maybe_post_device(
             &mut remote,
             &mut nvs,
-            false,
+            &wifi,
+            incident_needs_post(!remote.incident_posted, recovered),
             &status,
             reset,
-            &ip_str,
             current_name.as_deref(),
             panel_has_status,
         );
@@ -636,13 +654,74 @@ fn fetch_catalog() -> Result<Catalog> {
 }
 
 fn sta_ip(wifi: &BlockingWifi<EspWifi<'static>>) -> Result<String> {
-    let ip = wifi
+    Ok(net_snap(wifi).ip)
+}
+
+struct NetSnap {
+    ip: String,
+    gateway: Option<String>,
+    dns: Option<String>,
+    rssi: Option<i32>,
+}
+
+fn net_snap(wifi: &BlockingWifi<EspWifi<'static>>) -> NetSnap {
+    let info = wifi.wifi().sta_netif().get_ip_info().ok();
+    let ip = info
+        .as_ref()
+        .map(|i| i.ip.to_string())
+        .unwrap_or_else(|| "0.0.0.0".into());
+    let gateway = info.as_ref().map(|i| i.subnet.gateway.to_string());
+    let dns = info
+        .as_ref()
+        .and_then(|i| i.dns)
+        .map(|d| d.to_string())
+        .filter(|s| s != "0.0.0.0");
+    let rssi = wifi
         .wifi()
-        .sta_netif()
-        .get_ip_info()
-        .map_err(|e| anyhow!("sta ip: {e:?}"))?
-        .ip;
-    Ok(ip.to_string())
+        .get_ap_info()
+        .ok()
+        .map(|ap| i32::from(ap.signal_strength))
+        .filter(|r| *r < 0);
+    NetSnap {
+        ip,
+        gateway,
+        dns,
+        rssi,
+    }
+}
+
+/// SNTP after STA is up. The handle must be kept so time does not stop.
+fn start_sntp() -> Option<EspSntp<'static>> {
+    match EspSntp::new_default() {
+        Ok(sntp) => {
+            for i in 0..20 {
+                if matches!(sntp.get_sync_status(), SyncStatus::Completed) {
+                    info!("sntp synced after {}ms unix={:?}", i * 250, wall_unix());
+                    return Some(sntp);
+                }
+                thread::sleep(Duration::from_millis(250));
+            }
+            warn!(
+                "sntp still in progress after 5s unix={:?} status={:?}",
+                wall_unix(),
+                sntp.get_sync_status()
+            );
+            Some(sntp)
+        }
+        Err(e) => {
+            warn!("sntp init failed: {e:?}");
+            None
+        }
+    }
+}
+
+/// Wall clock after SNTP; `None` until the clock looks like a real date.
+fn wall_unix() -> Option<i64> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .map(|d| d.as_secs() as i64)
+        .filter(|&t| t >= 1_700_000_000)
 }
 
 /// Re-run DHCP without dropping Wi-Fi association.
@@ -676,6 +755,7 @@ fn reconnect_wifi(wifi: &mut BlockingWifi<EspWifi<'static>>) -> Result<String> {
 fn maybe_refresh_wifi(
     wifi: &mut BlockingWifi<EspWifi<'static>>,
     nvs: &mut EspNvs<NvsDefault>,
+    remote: &mut RemoteStatus,
     ip_str: &mut String,
     last_wifi_refresh: &mut Instant,
     last_reconnect: &mut Option<Instant>,
@@ -712,6 +792,7 @@ fn maybe_refresh_wifi(
                     *ip_str = ip;
                     *last_wifi_refresh = Instant::now();
                     status.wifi = None;
+                    remote.note_refresh("dhcp", true);
                     true
                 }
                 Err(e) => {
@@ -723,6 +804,7 @@ fn maybe_refresh_wifi(
                             *last_wifi_refresh = Instant::now();
                             *last_reconnect = Some(Instant::now());
                             status.wifi = None;
+                            remote.note_refresh("reconnect-after-dhcp", true);
                             true
                         }
                         Err(re) => {
@@ -730,6 +812,8 @@ fn maybe_refresh_wifi(
                             *last_reconnect = Some(Instant::now());
                             status.wifi =
                                 Some(wifi_status_from_err(&re, WIFI_ATTEMPTS, WIFI_ATTEMPTS));
+                            remote.note_refresh("reconnect-fail", false);
+                            capture_incident(remote, nvs, wifi, status, "wifi");
                             false
                         }
                     }
@@ -749,12 +833,15 @@ fn maybe_refresh_wifi(
                     *last_wifi_refresh = Instant::now();
                     *last_reconnect = Some(Instant::now());
                     status.wifi = None;
+                    remote.note_refresh("reconnect", true);
                     true
                 }
                 Err(e) => {
                     warn!("wifi reconnect failed: {e:#}");
                     *last_reconnect = Some(Instant::now());
                     status.wifi = Some(wifi_status_from_err(&e, WIFI_ATTEMPTS, WIFI_ATTEMPTS));
+                    remote.note_refresh("reconnect-fail", false);
+                    capture_incident(remote, nvs, wifi, status, "wifi");
                     false
                 }
             }
@@ -847,12 +934,82 @@ fn note_op(nvs: &mut EspNvs<NvsDefault>, op: &str) {
     }
 }
 
+fn read_incident(nvs: &EspNvs<NvsDefault>) -> Result<Option<LastIncident>> {
+    let mut buf = [0u8; INCIDENT_BLOB];
+    match nvs.get_blob(NVS_INCIDENT, &mut buf) {
+        Ok(Some(bytes)) if !bytes.is_empty() => serde_json::from_slice(bytes)
+            .map(Some)
+            .map_err(|e| anyhow!("incident json: {e}")),
+        Ok(_) => Ok(None),
+        Err(e) => Err(anyhow!("read inc: {e:?}")),
+    }
+}
+
+fn write_incident(nvs: &EspNvs<NvsDefault>, inc: &LastIncident) -> Result<()> {
+    let bytes = serde_json::to_vec(inc).map_err(|e| anyhow!("incident json: {e}"))?;
+    if bytes.len() > INCIDENT_BLOB {
+        return Err(anyhow!("incident too large ({})", bytes.len()));
+    }
+    nvs.set_blob(NVS_INCIDENT, &bytes)
+        .map_err(|e| anyhow!("write inc: {e:?}"))?;
+    Ok(())
+}
+
+fn clear_incident(nvs: &EspNvs<NvsDefault>) -> Result<()> {
+    nvs.remove(NVS_INCIDENT)
+        .map(|_| ())
+        .map_err(|e| anyhow!("erase inc: {e:?}"))
+}
+
+fn capture_incident(
+    remote: &mut RemoteStatus,
+    nvs: &EspNvs<NvsDefault>,
+    wifi: &BlockingWifi<EspWifi<'static>>,
+    status: &StatusReport,
+    kind: &str,
+) {
+    let net = net_snap(wifi);
+    let op = read_str(nvs, NVS_LAST_OP).ok().flatten();
+    let Some(inc) = LastIncident::from_status(
+        kind,
+        status,
+        uptime_secs(),
+        wall_unix(),
+        Some(net.ip),
+        op,
+        net.rssi,
+        net.gateway,
+    ) else {
+        return;
+    };
+    info!(
+        "incident queued kind={} up={}s rssi={:?} gw={:?}",
+        inc.kind, inc.uptime_secs, inc.rssi, inc.gateway
+    );
+    remote.queue_incident(nvs, inc);
+}
+
+fn note_last_ok(remote: &mut RemoteStatus, nvs: &EspNvs<NvsDefault>) {
+    remote.last_ok_uptime_secs = Some(uptime_secs());
+    remote.last_ok_op = read_str(nvs, NVS_LAST_OP).ok().flatten();
+}
+
 struct RemoteStatus {
     last_post: Instant,
     last_error: Option<String>,
     posts_ok: u32,
     posts_fail: u32,
     last_post_error: Option<String>,
+    last_incident: Option<LastIncident>,
+    /// False while NVS still holds an incident that has not POSTed 200.
+    incident_posted: bool,
+    last_ok_uptime_secs: Option<u64>,
+    last_ok_op: Option<String>,
+    dhcp_renews: u32,
+    reconnects_ok: u32,
+    reconnects_fail: u32,
+    last_refresh: Option<String>,
+    last_refresh_uptime: Option<u64>,
 }
 
 impl RemoteStatus {
@@ -863,7 +1020,72 @@ impl RemoteStatus {
             posts_ok: 0,
             posts_fail: 0,
             last_post_error: None,
+            last_incident: None,
+            incident_posted: true,
+            last_ok_uptime_secs: None,
+            last_ok_op: None,
+            dhcp_renews: 0,
+            reconnects_ok: 0,
+            reconnects_fail: 0,
+            last_refresh: None,
+            last_refresh_uptime: None,
         }
+    }
+
+    fn from_nvs(nvs: &EspNvs<NvsDefault>) -> Self {
+        let mut s = Self::new();
+        match read_incident(nvs) {
+            Ok(Some(inc)) => {
+                info!(
+                    "restored unposted incident kind={} up={}s",
+                    inc.kind, inc.uptime_secs
+                );
+                s.last_incident = Some(inc);
+                s.incident_posted = false;
+            }
+            Ok(None) => {}
+            Err(e) => warn!("read incident: {e:#}"),
+        }
+        s
+    }
+
+    fn queue_incident(&mut self, nvs: &EspNvs<NvsDefault>, inc: LastIncident) {
+        if let Err(e) = write_incident(nvs, &inc) {
+            warn!("persist incident: {e:#}");
+        }
+        self.last_incident = Some(inc);
+        self.incident_posted = false;
+    }
+
+    fn mark_incident_posted(&mut self, nvs: &EspNvs<NvsDefault>) {
+        if self.incident_posted {
+            return;
+        }
+        if let Err(e) = clear_incident(nvs) {
+            warn!("clear incident: {e:#}");
+        }
+        self.incident_posted = true;
+    }
+
+    fn note_refresh(&mut self, kind: &str, ok: bool) {
+        match kind {
+            "dhcp" => {
+                self.dhcp_renews = self.dhcp_renews.saturating_add(1);
+            }
+            "reconnect" | "reconnect-after-dhcp" => {
+                if ok {
+                    self.reconnects_ok = self.reconnects_ok.saturating_add(1);
+                } else {
+                    self.reconnects_fail = self.reconnects_fail.saturating_add(1);
+                }
+            }
+            "reconnect-fail" => {
+                self.reconnects_fail = self.reconnects_fail.saturating_add(1);
+            }
+            _ => {}
+        }
+        self.last_refresh = Some(kind.to_string());
+        self.last_refresh_uptime = Some(uptime_secs());
     }
 }
 
@@ -871,10 +1093,10 @@ impl RemoteStatus {
 fn maybe_post_device(
     remote: &mut RemoteStatus,
     nvs: &mut EspNvs<NvsDefault>,
+    wifi: &BlockingWifi<EspWifi<'static>>,
     force: bool,
     status: &StatusReport,
     reset_code: i32,
-    ip: &str,
     current_image: Option<&str>,
     panel_has_status: bool,
 ) {
@@ -887,14 +1109,15 @@ fn maybe_post_device(
     }
     let last_op = read_str(nvs, NVS_LAST_OP).ok().flatten();
     let heap = HeapSnap::now();
-    let tel = DeviceTelemetry::from_parts(
+    let net = net_snap(wifi);
+    let mut tel = DeviceTelemetry::from_parts(
         status,
         uptime_secs(),
         reset_code,
         heap.free,
         heap.min,
         heap.largest,
-        Some(ip.to_string()),
+        Some(net.ip),
         Some(WIFI_SSID.to_string()),
         current_image.map(str::to_string),
         last_op,
@@ -903,6 +1126,18 @@ fn maybe_post_device(
         remote.posts_fail,
         remote.last_post_error.clone(),
     );
+    tel.unix_secs = wall_unix();
+    tel.rssi = net.rssi;
+    tel.gateway = net.gateway;
+    tel.dns = net.dns;
+    tel.last_ok_uptime_secs = remote.last_ok_uptime_secs;
+    tel.last_ok_op = remote.last_ok_op.clone();
+    tel.last_incident = remote.last_incident.clone();
+    tel.dhcp_renews = remote.dhcp_renews;
+    tel.reconnects_ok = remote.reconnects_ok;
+    tel.reconnects_fail = remote.reconnects_fail;
+    tel.last_refresh = remote.last_refresh.clone();
+    tel.last_refresh_uptime = remote.last_refresh_uptime;
     thread::sleep(Duration::from_millis(200));
     note_op(nvs, "POST /device");
     match post_device_report(&tel) {
@@ -911,6 +1146,7 @@ fn maybe_post_device(
             remote.last_post_error = None;
             remote.last_error = err;
             remote.last_post = Instant::now();
+            remote.mark_incident_posted(nvs);
             info!("POST /device ok");
         }
         Err(e) => {

@@ -44,14 +44,29 @@ pub trait ImageStore {
     fn delete(&mut self, name: &str) -> bool;
 }
 
-/// Last ESP32 telemetry report. The Worker stamps `received_at`.
+/// Last ESP32 telemetry report. The Worker stamps `received_at` when it has a
+/// clock; otherwise it copies `report.unix_secs` from the device (SNTP).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeviceSnapshot {
-    /// Unix seconds when the Worker accepted the POST.
+    /// Unix seconds when the report was accepted (`0` if unknown).
     pub received_at: i64,
     /// Device-authored JSON object (heap, reset, errors, …).
     pub report: serde_json::Value,
+    /// Previous reports, newest first (CONNECT failures arrive only after
+    /// HTTPS recovers, so the last healthy POST would otherwise be overwritten).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub recent: Vec<DeviceReport>,
 }
+
+/// One historical `POST /device` body stored next to the latest snapshot.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeviceReport {
+    pub received_at: i64,
+    pub report: serde_json::Value,
+}
+
+/// How many prior reports to keep in `device.json`.
+pub const DEVICE_HISTORY: usize = 8;
 
 /// Persistence for the latest device report. Image routes may pass [`NoopDeviceStore`].
 pub trait DeviceStore {
@@ -561,9 +576,27 @@ fn post_device<S: ImageStore, D: DeviceStore>(
         Ok(_) => return ApiResponse::text(400, "device report must be a JSON object\n"),
         Err(e) => return ApiResponse::text(400, format!("invalid json: {e}\n")),
     };
+    let received_at = if cfg.now_unix != 0 {
+        cfg.now_unix
+    } else {
+        report
+            .get("unix_secs")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0)
+    };
+    let mut recent = Vec::new();
+    if let Some(prev) = cfg.devices.get_device() {
+        recent.push(DeviceReport {
+            received_at: prev.received_at,
+            report: prev.report,
+        });
+        recent.extend(prev.recent);
+        recent.truncate(DEVICE_HISTORY);
+    }
     let snap = DeviceSnapshot {
-        received_at: cfg.now_unix,
+        received_at,
         report,
+        recent,
     };
     let body = serde_json::to_string(&snap).unwrap_or_else(|_| "{}".into());
     cfg.devices.put_device(snap);
@@ -597,6 +630,18 @@ pub fn format_device_slack(snap: Option<&DeviceSnapshot>) -> String {
         "posts_fail",
         "last_post_error",
         "error",
+        "unix_secs",
+        "rssi",
+        "gateway",
+        "dns",
+        "last_ok_uptime_secs",
+        "last_ok_op",
+        "last_incident",
+        "dhcp_renews",
+        "reconnects_ok",
+        "reconnects_fail",
+        "last_refresh",
+        "last_refresh_uptime",
         "wifi",
         "fetch",
         "crash",
@@ -617,6 +662,40 @@ pub fn format_device_slack(snap: Option<&DeviceSnapshot>) -> String {
             out.push('=');
             out.push_str(&brief);
             out.push('\n');
+        }
+    }
+    if !snap.recent.is_empty() {
+        out.push_str(&format!("recent={}\n", snap.recent.len()));
+        for (i, prev) in snap.recent.iter().take(4).enumerate() {
+            let err = prev
+                .report
+                .get("error")
+                .and_then(|v| v.as_str())
+                .or_else(|| {
+                    prev.report
+                        .get("last_incident")
+                        .and_then(|v| v.get("error"))
+                        .and_then(|v| v.as_str())
+                })
+                .unwrap_or("-");
+            let up = prev
+                .report
+                .get("uptime_secs")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let ip = prev
+                .report
+                .get("ip")
+                .and_then(|v| v.as_str())
+                .unwrap_or("-");
+            out.push_str(&format!(
+                "prev[{}] received_at={} up={}s ip={} err={}\n",
+                i,
+                prev.received_at,
+                up,
+                ip,
+                err.replace('\n', " | ")
+            ));
         }
     }
     truncate_slack(&out)
@@ -1002,11 +1081,111 @@ mod tests {
                 "reset_name": "BROWNOUT",
                 "error": "WIFI ERR step=connect"
             }),
+            recent: vec![],
         });
         let reply = finish_app_mention(&mention, None, &mut store, &devices, PanelSpec::default());
         assert!(reply.contains("received_at=1700000000"));
         assert!(reply.contains("BROWNOUT"));
         assert!(reply.contains("WIFI ERR"));
         assert!(reply.contains("inkbot-esp32/0.1"));
+    }
+
+    #[test]
+    fn device_history_keeps_prior_reports() {
+        let mut store = MemStore::new();
+        let mut devices = MemDevice::default();
+        let mut c = cfg(&mut store, &mut devices);
+        for n in 0..3u64 {
+            let report = serde_json::json!({
+                "firmware": "inkbot-esp32/0.2",
+                "uptime_secs": n,
+                "error": format!("e{n}")
+            });
+            let post = handle(
+                device_req(
+                    "POST",
+                    Some("Bearer secret"),
+                    serde_json::to_vec(&report).unwrap(),
+                ),
+                &mut c,
+            );
+            assert_eq!(post.status, 200);
+        }
+        let got: DeviceSnapshot = serde_json::from_slice(
+            &handle(device_req("GET", Some("Bearer secret"), vec![]), &mut c).body,
+        )
+        .unwrap();
+        assert_eq!(got.report["uptime_secs"], 2);
+        assert_eq!(got.recent.len(), 2);
+        assert_eq!(got.recent[0].report["uptime_secs"], 1);
+        assert_eq!(got.recent[1].report["uptime_secs"], 0);
+    }
+
+    #[test]
+    fn device_received_at_falls_back_to_report_unix_secs() {
+        let mut store = MemStore::new();
+        let mut devices = MemDevice::default();
+        let mut c = HandlerConfig {
+            store: &mut store,
+            devices: &mut devices,
+            upload_secret: "secret",
+            panel: PanelSpec::default(),
+            now_unix: 0,
+        };
+        let report = serde_json::json!({
+            "firmware": "inkbot-esp32/0.2",
+            "unix_secs": 1_700_000_111
+        });
+        let post = handle(
+            device_req(
+                "POST",
+                Some("Bearer secret"),
+                serde_json::to_vec(&report).unwrap(),
+            ),
+            &mut c,
+        );
+        assert_eq!(post.status, 200);
+        let stored: DeviceSnapshot = serde_json::from_slice(&post.body).unwrap();
+        assert_eq!(stored.received_at, 1_700_000_111);
+    }
+
+    #[test]
+    fn device_snapshot_deserializes_legacy_json_without_recent() {
+        let snap: DeviceSnapshot =
+            serde_json::from_str(r#"{"received_at":1,"report":{"firmware":"inkbot-esp32/0.1"}}"#)
+                .unwrap();
+        assert!(snap.recent.is_empty());
+        assert_eq!(snap.received_at, 1);
+    }
+
+    #[test]
+    fn slack_status_summarizes_recent_incidents() {
+        let snap = DeviceSnapshot {
+            received_at: 100,
+            report: serde_json::json!({
+                "firmware": "inkbot-esp32/0.2",
+                "uptime_secs": 10,
+                "ip": "10.1.1.2",
+                "rssi": -61
+            }),
+            recent: vec![DeviceReport {
+                received_at: 90,
+                report: serde_json::json!({
+                    "uptime_secs": 8,
+                    "ip": "10.1.1.1",
+                    "last_incident": {
+                        "kind": "fetch",
+                        "error": "ESP_ERR_HTTP_CONNECT",
+                        "uptime_secs": 7
+                    }
+                }),
+            }],
+        };
+        let s = format_device_slack(Some(&snap));
+        assert!(s.contains("recent=1"), "{s}");
+        assert!(s.contains("prev[0]"), "{s}");
+        assert!(s.contains("10.1.1.1"), "{s}");
+        assert!(s.contains("ESP_ERR_HTTP_CONNECT"), "{s}");
+        assert!(s.contains("rssi=-61"), "{s}");
     }
 }

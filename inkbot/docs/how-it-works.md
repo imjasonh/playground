@@ -7,7 +7,11 @@ R2 holds a small catalog plus per-image objects:
 - `catalog.json` — `{ revision, latest, images: [...] }`
 - `frames/{name}.png` — browser-friendly packed 1-bit PNG
 - `frames/{name}.bin` — raw 48 000-byte MSB-first framebuffer (ESP32)
-- `device.json` — last ESP32 telemetry (`{ received_at, report }`)
+- `device.json` — latest ESP32 telemetry plus up to 8 prior reports
+  (`{ received_at, report, recent: [{ received_at, report }, ...] }`).
+  `received_at` is the Worker clock when it has one; this Worker copies
+  `report.unix_secs` from the device (SNTP) because the wasm clock is
+  not used here.
 
 `revision` bumps on every add/replace/delete. `latest` is the name most
 recently written so the device can show new uploads immediately.
@@ -24,7 +28,7 @@ imported once as the name `image` when no catalog exists yet.
 | `GET` | `/latest.bin` | none | Packed framebuffer for `catalog.latest` (ESP32 boot) |
 | `GET` | `/{name}.bin` | none | Packed framebuffer (`ETag` / `304`) |
 | `GET` | `/{name}.png` | none | PNG preview |
-| `GET` | `/device` | Bearer | Last ESP32 telemetry report |
+| `GET` | `/device` | Bearer | Last ESP32 telemetry + recent history |
 | `POST` | `/{name}.bin` | Bearer | Create/replace (PNG or photo body) |
 | `POST` | `/device` | Bearer | ESP32 status report (JSON object, ≤8 KiB) |
 | `DELETE` | `/{name}.bin` | Bearer | Remove from rotation |
@@ -60,5 +64,9 @@ Boot always paints `latest` (no `If-None-Match`) so a power cycle restores the
 current frame.
 
 The device also `POST /device` with Bearer `UPLOAD_SECRET` after boot, whenever
-its error text changes, and every `status_secs` (default 900). The Worker stores
-the last report in `device.json` (`GET /device`, or Slack `@inkbot status`).
+its error text changes, after a Wi-Fi reconnect, and every `status_secs`
+(default 900). A FETCH/WIFI overlay is queued as `last_incident` (NVS + RAM)
+*before* reconnect, then POSTed once HTTPS works — otherwise a recovered
+`ESP_ERR_HTTP_CONNECT` would look healthy and never be stored. The Worker keeps
+the latest report plus eight prior ones in `device.json` (`GET /device`, or
+Slack `@inkbot status`).
