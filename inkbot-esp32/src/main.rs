@@ -277,11 +277,12 @@ fn main() -> Result<()> {
                 panel_has_status = true;
             }
         }
+        let force = incident_needs_post(!remote.incident_posted, recovered);
         maybe_post_device(
             &mut remote,
             &mut nvs,
             &wifi,
-            incident_needs_post(!remote.incident_posted, recovered),
+            force,
             &status,
             reset,
             current_name.as_deref(),
