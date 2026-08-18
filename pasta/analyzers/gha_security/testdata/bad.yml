@@ -17,10 +17,16 @@ jobs:
         password: s3cret
     secrets: inherit # want "secrets: inherit"
     steps:
-      # want:+1 "unpinned actions ref" # want:+1 "with.persist-credentials to false"
+      # want:+1 "unpinned actions ref" # want:+1 "persist-credentials implicit"
       - uses: actions/checkout@v4
-      # want:+1 "with.persist-credentials to false"
+      # want:+1 "persist-credentials implicit"
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: true
       - uses: ./local-action
       - uses: docker://ubuntu:22.04 # want "docker:// action image is not digest-pinned"
       - uses: softprops/action-gh-release@v2 # want "unpinned actions ref" # want "superfluous action"

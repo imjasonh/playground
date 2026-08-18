@@ -20,29 +20,33 @@ jobs:
     if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           ref: main
           fetch-depth: 0
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: 'stable'
           check-latest: true
           cache: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: '**/package-lock.json'
 
       # Baseline stable toolchain; an app's rust-toolchain.toml (e.g. web-push
-      # pins 1.83) overrides it per directory when cargo runs.
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
-          targets: wasm32-unknown-unknown
+      # pins 1.83) overrides it per directory when cargo runs. Use the
+      # runner's preinstalled rustup instead of dtolnay/rust-toolchain.
+      - name: Install Rust stable
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update \
+            --component clippy --component rustfmt \
+            --target wasm32-unknown-unknown
+          rustup default stable
 
       # Ecosystems are independent (distinct lockfiles); run them concurrently.
       # Nested step ids remain addressable after the group so later publish
@@ -82,28 +86,9 @@ jobs:
               steps.update_rust.outputs.has_changes == 'true'
             )
           }}
-        uses: peter-evans/create-pull-request@v8
-        with:
-          token: ${{ steps.octo-sts.outputs.token }}
-          branch: automation/dependency-updates
-          base: main
-          add-paths: |
-            */go.mod
-            */go.sum
-            */package.json
-            */package-lock.json
-            */vendor/**
-            */Cargo.toml
-            */Cargo.lock
-          commit-message: 'chore(deps): update dependencies'
-          title: 'chore(deps): update dependencies'
-          body: |
-            Automated dependency update. Every upgraded app was built and tested
-            in the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).
-
-            Auto-merge is enabled; this PR will merge into `main` once required
-            status checks pass.
-          delete-branch: true
+        env:
+          GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
+        run: bash .github/scripts/manage-dependency-update.sh open-success-pr
 
       - name: Enable auto-merge for passing updates
         if: >-
@@ -143,30 +128,9 @@ jobs:
             steps.update_js.outputs.result == 'failure' ||
             steps.update_rust.outputs.result == 'failure'
           }}
-        uses: peter-evans/create-pull-request@v8
-        with:
-          token: ${{ steps.octo-sts.outputs.token }}
-          branch: automation/dependency-updates
-          base: main
-          add-paths: |
-            */go.mod
-            */go.sum
-            */package.json
-            */package-lock.json
-            */vendor/**
-            */Cargo.toml
-            */Cargo.lock
-          commit-empty: true
-          commit-message: 'chore(deps): update dependencies'
-          title: 'chore(deps): update dependencies'
-          body: |
-            The daily dependency updater could not safely land these changes.
-            At least one dependency update, generated-asset refresh, build, or
-            test step failed.
-
-            Review the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
-            before merging.
-          delete-branch: true
+        env:
+          GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
+        run: bash .github/scripts/manage-dependency-update.sh open-failure-pr
 
       - name: Close a stale dependency-update pull request
         if: >-
@@ -178,12 +142,9 @@ jobs:
             steps.update_js.outputs.has_changes != 'true' &&
             steps.update_rust.outputs.has_changes != 'true'
           }}
-        uses: peter-evans/create-pull-request@v8
-        with:
-          token: ${{ steps.octo-sts.outputs.token }}
-          branch: automation/dependency-updates
-          base: main
-          delete-branch: true
+        env:
+          GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
+        run: bash .github/scripts/manage-dependency-update.sh close-stale
 
       - name: Report unsuccessful automatic update
         if: >-

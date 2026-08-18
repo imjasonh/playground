@@ -13,8 +13,9 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Discover changed browser and Go apps
@@ -30,7 +31,7 @@ jobs:
       # test group. Each setup stays conditional so unchanged ecosystems pay
       # nothing. setup-node also runs when Go's node-image module changed
       # (its conformance tests need node/pnpm on PATH).
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         if: ${{ steps.discover.outputs.apps != '[]' || contains(steps.discover.outputs.modules, 'node-image') }}
         with:
           node-version: '22'
@@ -40,7 +41,7 @@ jobs:
       # Go toolchain for Go modules and/or the pasta style leg (pasta is a
       # Go module; the pasta leg builds the CLI even when no other Go app
       # changed).
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         if: ${{ steps.discover.outputs.modules != '[]' || steps.discover.outputs.pasta == 'true' }}
         with:
           go-version: 'stable'
@@ -48,12 +49,15 @@ jobs:
           cache: false
 
       # Baseline stable toolchain; an app's rust-toolchain.toml (e.g. web-push
-      # pins 1.83) overrides it per directory when cargo runs.
-      - uses: dtolnay/rust-toolchain@stable
+      # pins 1.83) overrides it per directory when cargo runs. Use the
+      # runner's preinstalled rustup instead of dtolnay/rust-toolchain.
+      - name: Install Rust stable
         if: ${{ steps.discover.outputs.rust != '[]' }}
-        with:
-          components: clippy, rustfmt
-          targets: wasm32-unknown-unknown
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update \
+            --component clippy --component rustfmt \
+            --target wasm32-unknown-unknown
+          rustup default stable
 
       # Ecosystems are independent; overlap their wall time like deps.yaml.
       - parallel:

@@ -19,13 +19,6 @@ disabled_rules: [
 	"yaml_empty_value",
 	// XcodeGen project.yml uses YES/NO; canonical true/false breaks tooling.
 	"yaml_truthy",
-	// gha_security: repo workflows are still tag-pinned / checkout-default;
-	// keep the high-signal checks, silence the repo-wide hygiene findings.
-	"unpinned_uses",
-	"artipacked",
-	"superfluous_actions",
-	"missing_concurrency",
-	"secrets_inherit",
 ]
 
 // Extra ./... skip dirs on top of pasta defaults (vendor, node_modules,

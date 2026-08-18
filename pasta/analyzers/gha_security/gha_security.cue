@@ -251,10 +251,11 @@ gha_security: schema.#Analyzer & {
 		}).out
 
 		// --- artipacked ----------------------------------------------------
-		// Step-level: uses actions/checkout without persist-credentials: false.
+		// Flag actions/checkout when persist-credentials is left implicit.
+		// Explicit true (needed for git push) or false both satisfy the check.
 		artipacked: {
 			name:      "artipacked"
-			doc:       "Flag actions/checkout without persist-credentials: false"
+			doc:       "Flag actions/checkout without an explicit persist-credentials setting"
 			languages: [yamllang.Name]
 			requires: []
 			provides: []
@@ -264,13 +265,13 @@ gha_security: schema.#Analyzer & {
 				node: "block_sequence_item"
 				where: [
 					{op: "matches", args: ["@_root", "(?s)uses:\\s*actions/checkout@"]},
-					{op: "not_matches", args: ["@_root", "persist-credentials:\\s*false"]},
+					{op: "not_matches", args: ["@_root", "persist-credentials:\\s*(true|false)"]},
 				]
 			}
 
 			diagnose: {
 				severity: "warning"
-				message:  "actions/checkout persists git credentials by default; set with.persist-credentials to false (zizmor artipacked)"
+				message:  "actions/checkout leaves persist-credentials implicit; set with.persist-credentials to false (or true if git push needs it) (zizmor artipacked)"
 			}
 		}
 

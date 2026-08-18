@@ -24,8 +24,9 @@ jobs:
     outputs:
       workers: ${{ steps.discover.outputs.workers }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Discover Worker apps to deploy
@@ -47,17 +48,21 @@ jobs:
       matrix:
         app: ${{ fromJSON(needs.discover.outputs.workers) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       # Each Worker app pins its toolchain via rust-toolchain.toml; rustup honors
       # it when cargo runs in the app directory. wrangler's [build] command
       # (worker-build) compiles the wasm artifact during deploy.
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
+      - name: Install Rust stable (wasm target)
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update \
+            --target wasm32-unknown-unknown
+          rustup default stable
 
       - name: Deploy ${{ matrix.app }}
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
