@@ -101,13 +101,24 @@ Brownout still usually means a weak 5 V supply (see Power above).
 ### Remote status (`POST /device`)
 
 When `inkbot.upload_secret` matches the Worker's `UPLOAD_SECRET`, the firmware
-POSTs JSON telemetry to `{base_url}/device`:
+POSTs JSON telemetry to `{base_url}/device` (`User-Agent` / `firmware` =
+`inkbot-esp32/0.2`):
 
-- once after boot (Wi-Fi is up)
+- once after boot (Wi-Fi is up; SNTP is started first so `unix_secs` can fill in)
 - whenever the on-panel error text changes
+- after a DHCP renew or STA reconnect (so a new `ip` / `rssi` lands quickly)
+- when a FETCH/WIFI incident is still unposted (NVS-backed; USB reset does
+  not drop it)
 - otherwise every `status_secs` (default 15 min)
 
-Empty `upload_secret` disables posting. Fetch the last report with:
+A CONNECT failure is snapshotted *before* reconnect. The overlay is cleared if
+the retry works, but `last_incident` (kind, uptime, unix time, ip, rssi,
+gateway, error text) is POSTed as soon as HTTPS succeeds. Reports also include
+`gateway`, `dns`, `last_ok_uptime_secs` / `last_ok_op`, and DHCP/reconnect
+counters.
+
+Empty `upload_secret` disables posting. Fetch the last report (and recent
+history) with:
 
 ```bash
 curl -H "Authorization: Bearer $UPLOAD_SECRET" https://inkbot.<account>.workers.dev/device

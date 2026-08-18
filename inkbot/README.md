@@ -25,7 +25,7 @@ ESP32 POST /device    ──► Worker (Bearer) ──► R2 device.json
 | `GET` | `/latest.bin` | none | Current `latest` framebuffer (device boot; one HTTPS) |
 | `GET` | `/{name}.bin` | none | Packed 48 000-byte framebuffer (`ETag` / `304`) |
 | `GET` | `/{name}.png` | none | PNG preview |
-| `GET` | `/device` | Bearer | Last ESP32 telemetry (`received_at` + `report`) |
+| `GET` | `/device` | Bearer | Last ESP32 telemetry (`received_at` + `report` + `recent`) |
 | `POST` | `/{name}.bin` | `Authorization: Bearer <UPLOAD_SECRET>` | Create/replace (panel PNG or any photo) |
 | `POST` | `/device` | Bearer | ESP32 status report (JSON object) |
 | `DELETE` | `/{name}.bin` | Bearer | Remove from rotation |
@@ -51,7 +51,10 @@ wrangler secret put SLACK_SIGNING_SECRET
 - Every `poll_secs` (default 60s): fetch catalog; if `latest` changed, display it.
 - Every `rotate_secs` (default 1800s): pick a random other image and display it.
 - Boot always paints `latest`.
-- POSTs `/device` (Bearer) on boot, when the error text changes, and every `status_secs`.
+- POSTs `/device` (Bearer) on boot, when the error text changes, after Wi-Fi
+  recovery, and every `status_secs`. Outages are queued as `last_incident` so a
+  CONNECT failure is still visible after HTTPS recovers. The Worker keeps a
+  short history in `device.json`.
 
 ## Local development
 

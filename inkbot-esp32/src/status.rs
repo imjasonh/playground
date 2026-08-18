@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use crate::panel::{FRAME_BYTES, PANEL_HEIGHT, PANEL_WIDTH};
 
 /// Matches the HTTP `User-Agent` and `firmware` telemetry field.
-pub const FIRMWARE_ID: &str = "inkbot-esp32/0.1";
+pub const FIRMWARE_ID: &str = "inkbot-esp32/0.2";
 
 /// Glyph width of `FONT_6X10` (includes the 1 px gap).
 const GLYPH_W: u32 = 6;
@@ -151,6 +151,75 @@ pub struct DeviceTelemetry {
     pub posts_fail: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_post_error: Option<String>,
+    /// Wall clock after SNTP; omitted if NTP has not synced.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unix_secs: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rssi: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gateway: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dns: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_ok_uptime_secs: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_ok_op: Option<String>,
+    /// Last FETCH/WIFI failure kept until a POST succeeds, so a CONNECT
+    /// outage is still visible after HTTPS recovers (or after a reboot).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_incident: Option<LastIncident>,
+    pub dhcp_renews: u32,
+    pub reconnects_ok: u32,
+    pub reconnects_fail: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_refresh: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_refresh_uptime: Option<u64>,
+}
+
+/// Compact outage record: NVS + `POST /device` after the radio recovers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LastIncident {
+    pub kind: String,
+    pub uptime_secs: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unix_secs: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ip: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub op: Option<String>,
+    pub error: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rssi: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gateway: Option<String>,
+}
+
+/// Radio / clock fields captured with a FETCH or WIFI overlay.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct IncidentContext {
+    pub uptime_secs: u64,
+    pub unix_secs: Option<i64>,
+    pub ip: Option<String>,
+    pub op: Option<String>,
+    pub rssi: Option<i32>,
+    pub gateway: Option<String>,
+}
+
+impl LastIncident {
+    pub fn from_status(kind: &str, status: &StatusReport, ctx: IncidentContext) -> Option<Self> {
+        let error = status.render()?;
+        Some(Self {
+            kind: kind.to_string(),
+            uptime_secs: ctx.uptime_secs,
+            unix_secs: ctx.unix_secs,
+            ip: ctx.ip,
+            op: ctx.op,
+            error,
+            rssi: ctx.rssi,
+            gateway: ctx.gateway,
+        })
+    }
 }
 
 impl DeviceTelemetry {
@@ -191,11 +260,23 @@ impl DeviceTelemetry {
             posts_ok,
             posts_fail,
             last_post_error,
+            unix_secs: None,
+            rssi: None,
+            gateway: None,
+            dns: None,
+            last_ok_uptime_secs: None,
+            last_ok_op: None,
+            last_incident: None,
+            dhcp_renews: 0,
+            reconnects_ok: 0,
+            reconnects_fail: 0,
+            last_refresh: None,
+            last_refresh_uptime: None,
         }
     }
 }
 
-/// When to POST `/device`: boot, error text change, or the periodic interval.
+/// When to POST `/device`: boot, error text change, queued incident, or interval.
 pub fn should_post_status(
     secret_configured: bool,
     force: bool,
@@ -207,6 +288,12 @@ pub fn should_post_status(
         return false;
     }
     force || error_changed || secs_since_post >= status_secs
+}
+
+/// Force a POST after Wi-Fi recovery so `last_incident` reaches the Worker
+/// even if the retry succeeded and the panel overlay was cleared.
+pub fn incident_needs_post(incident_unposted: bool, recovered: bool) -> bool {
+    incident_unposted || recovered
 }
 
 impl WifiStatus {
@@ -781,6 +868,13 @@ mod tests {
     }
 
     #[test]
+    fn incident_needs_post_after_recovery_or_unposted() {
+        assert!(incident_needs_post(true, false));
+        assert!(incident_needs_post(false, true));
+        assert!(!incident_needs_post(false, false));
+    }
+
+    #[test]
     fn telemetry_json_includes_error_and_skips_empty_optionals() {
         let status = StatusReport {
             crash: Some(CrashStatus {
@@ -793,7 +887,7 @@ mod tests {
             }),
             ..Default::default()
         };
-        let t = DeviceTelemetry::from_parts(
+        let mut t = DeviceTelemetry::from_parts(
             &status,
             12,
             4,
@@ -809,15 +903,85 @@ mod tests {
             1,
             None,
         );
+        t.unix_secs = Some(1_700_000_000);
+        t.rssi = Some(-62);
+        t.last_incident = LastIncident::from_status(
+            "fetch",
+            &status,
+            IncidentContext {
+                uptime_secs: 12,
+                unix_secs: Some(1_700_000_000),
+                ip: Some("10.0.0.2".into()),
+                op: Some("GET /".into()),
+                rssi: Some(-62),
+                gateway: Some("10.0.0.1".into()),
+            },
+        );
         let v = serde_json::to_value(&t).unwrap();
         assert_eq!(v["firmware"], FIRMWARE_ID);
         assert_eq!(v["reset_name"], "PANIC");
         assert!(v["error"].as_str().unwrap().contains("CRASH PANIC"));
         assert!(v.get("last_post_error").is_none());
+        assert_eq!(v["unix_secs"], 1_700_000_000);
+        assert_eq!(v["rssi"], -62);
+        assert_eq!(v["last_incident"]["kind"], "fetch");
+        assert_eq!(v["dhcp_renews"], 0);
         assert!(v["crash"]["panic_message"]
             .as_str()
             .unwrap()
             .contains("boom"));
         assert!(v.is_object());
+    }
+
+    #[test]
+    fn last_incident_from_fetch_status() {
+        let status = StatusReport {
+            fetch: Some(FetchStatus {
+                op: "catalog".into(),
+                url: "https://inkbot.example.workers.dev/".into(),
+                http_status: None,
+                cause: "ESP_ERR_HTTP_CONNECT".into(),
+                attempt: 3,
+                attempts: 3,
+                bytes_read: None,
+                heap: 170000,
+                heap_min: 99000,
+                heap_largest: 110000,
+                uptime_secs: 86370,
+                ip: Some("10.10.19.35".into()),
+            }),
+            ..Default::default()
+        };
+        let inc = LastIncident::from_status(
+            "fetch",
+            &status,
+            IncidentContext {
+                uptime_secs: 86370,
+                unix_secs: Some(1_700_000_000),
+                ip: Some("10.10.19.35".into()),
+                op: Some("GET /".into()),
+                rssi: Some(-62),
+                gateway: Some("10.10.19.1".into()),
+            },
+        )
+        .expect("fetch overlay should become an incident");
+        assert_eq!(inc.kind, "fetch");
+        assert!(inc.error.contains("ESP_ERR_HTTP_CONNECT"));
+        assert_eq!(inc.rssi, Some(-62));
+        let v = serde_json::to_value(&inc).unwrap();
+        assert!(v.get("http_status").is_none());
+    }
+
+    #[test]
+    fn last_incident_none_when_healthy() {
+        assert!(LastIncident::from_status(
+            "fetch",
+            &StatusReport::default(),
+            IncidentContext {
+                uptime_secs: 1,
+                ..Default::default()
+            },
+        )
+        .is_none());
     }
 }
