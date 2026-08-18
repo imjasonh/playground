@@ -17,6 +17,21 @@ if [ "${#apps[@]}" -eq 0 ]; then
 fi
 
 result=0
+
+# Worker apps share one observability convention; exercise the checker once
+# when any changed crate is a Worker so a broken check script fails CI.
+for app in "${apps[@]}"; do
+  if [ -f "$app/wrangler.toml" ]; then
+    if bash "$repo_root/.github/scripts/check-worker-observability_test.sh"; then
+      echo "worker observability checker tests passed"
+    else
+      echo "::error title=Worker observability checker failed::.github/scripts/check-worker-observability_test.sh"
+      result=1
+    fi
+    break
+  fi
+done
+
 for app in "${apps[@]}"; do
   echo "::group::Lint, build, and test ${app}"
 
@@ -48,6 +63,16 @@ for app in "${apps[@]}"; do
   else
     echo "::error title=Rust tests failed::${app}: cargo test --locked"
     result=1
+  fi
+
+  # Cloudflare Worker apps persist logs + traces by default (see AGENTS.md).
+  if [ -f "$app/wrangler.toml" ]; then
+    if python3 "$repo_root/.github/scripts/check-worker-observability.py" "$app/wrangler.toml"; then
+      echo "${app}: worker observability ok"
+    else
+      echo "::error title=Worker observability missing::${app}: wrangler.toml must enable Workers Logs and Traces"
+      result=1
+    fi
   fi
 
   # Cloudflare Worker apps compile to wasm; verify the deployable artifact too.

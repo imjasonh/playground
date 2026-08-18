@@ -533,8 +533,9 @@ until emission) and emitted three ways:
   line per repo.
 
 Persistent invocation logs and traces are enabled in `wrangler.toml`
-(`[observability]` / `[observability.traces]`; both are opt-in). Every
-invocation stores Cloudflare's `outcome` field alongside our log lines —
+(`[observability]` / `[observability.logs]` / `[observability.traces]`;
+the playground default for every Worker). Every invocation stores
+Cloudflare's `outcome` field alongside our log lines —
 diagnostic signatures worth knowing:
 
 | Symptom | Signature in logs |

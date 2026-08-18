@@ -256,7 +256,7 @@ but is excluded from Rust discovery because it needs the espup Xtensa toolchain;
 |----------|---------------------------|--------------------------|
 | Browser | `index.html` **and** `package.json` with a `test` script | `npm ci` → `npm test` → `npm run test:e2e` (if defined; installs Playwright Chromium first) |
 | Go | `go.mod` | `go build ./...` → `go test ./...` |
-| Rust | `Cargo.toml` | `cargo fmt --check` → `cargo clippy --locked --all-targets -D warnings` → `cargo test --locked`; Cloudflare Worker apps (with `wrangler.toml`) also run wasm clippy + a release `wasm32-unknown-unknown` build, then the wrangler `[build]` command (with a decoy `package.json` like wrangler-action creates) so Test covers the deploy artifact path. Crates set `[lints.rust] unused = "deny"` so unused methods fail even without clippy. |
+| Rust | `Cargo.toml` | `cargo fmt --check` → `cargo clippy --locked --all-targets -D warnings` → `cargo test --locked`; Cloudflare Worker apps (with `wrangler.toml`) also run wasm clippy + a release `wasm32-unknown-unknown` build, then the wrangler `[build]` command (with a decoy `package.json` like wrangler-action creates) so Test covers the deploy artifact path, and `check-worker-observability.py` so Workers Logs + Traces stay enabled. Crates set `[lints.rust] unused = "deny"` so unused methods fail even without clippy. |
 | pasta | `pasta/` / `.pasta/` / lintable sources (`.go`, `.js`, `.ts`, `.tsx`, `.jsx`, `.rs`, `.swift`, `.sh`, `.yml`, `.yaml`, `.html`, `.css`, …) via `discover-pasta.sh` | `go build ./pasta/cmd/pasta` → `pasta test .pasta` → `pasta -fail-on=warning ./...` |
 
 Browser apps without a `test` script (e.g. `hello/`) are never tested. Each Rust
@@ -294,6 +294,7 @@ secrets, tests still run and ship is skipped. Discovery:
 bash .github/scripts/discover-macos-apps.sh --all
 git diff --name-only origin/main...HEAD | bash .github/scripts/discover-macos-apps.sh --from-changes
 bash .github/scripts/discover-xcodegen-apps_test.sh   # ios vs macos marker tests
+bash .github/scripts/check-worker-observability_test.sh # Workers Logs + Traces default
 ```
 
 Run the per-type discovery helpers locally to see what CI would select:
@@ -433,7 +434,12 @@ go test ./...
   entries are created if absent, D1 databases declared in `[[d1_databases]]`
   have remote migrations applied, and a Worker that ships
  `examples/genvapid.rs` gets a `VAPID_PRIVATE_KEY` secret generated once (only
- if absent, so the key is stable across deploys).
+ if absent, so the key is stable across deploys). Every Worker also enables
+ Workers Logs (including invocation logs) and Workers Traces by default —
+ copy the `[observability]` / `[observability.logs]` / `[observability.traces]`
+ block from an existing Worker `wrangler.toml`. Head sampling is 100% at
+ playground traffic; CI fails a Worker whose config turns these off
+ (`python3 .github/scripts/check-worker-observability.py --all`).
 
 No workflow edits are required. CI discovers a new Rust app from its
 `Cargo.toml`, the deploy workflow discovers a new Worker from its
