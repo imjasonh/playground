@@ -195,27 +195,29 @@ pub struct LastIncident {
     pub gateway: Option<String>,
 }
 
+/// Radio / clock fields captured with a FETCH or WIFI overlay.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct IncidentContext {
+    pub uptime_secs: u64,
+    pub unix_secs: Option<i64>,
+    pub ip: Option<String>,
+    pub op: Option<String>,
+    pub rssi: Option<i32>,
+    pub gateway: Option<String>,
+}
+
 impl LastIncident {
-    pub fn from_status(
-        kind: &str,
-        status: &StatusReport,
-        uptime_secs: u64,
-        unix_secs: Option<i64>,
-        ip: Option<String>,
-        op: Option<String>,
-        rssi: Option<i32>,
-        gateway: Option<String>,
-    ) -> Option<Self> {
+    pub fn from_status(kind: &str, status: &StatusReport, ctx: IncidentContext) -> Option<Self> {
         let error = status.render()?;
         Some(Self {
             kind: kind.to_string(),
-            uptime_secs,
-            unix_secs,
-            ip,
-            op,
+            uptime_secs: ctx.uptime_secs,
+            unix_secs: ctx.unix_secs,
+            ip: ctx.ip,
+            op: ctx.op,
             error,
-            rssi,
-            gateway,
+            rssi: ctx.rssi,
+            gateway: ctx.gateway,
         })
     }
 }
@@ -906,12 +908,14 @@ mod tests {
         t.last_incident = LastIncident::from_status(
             "fetch",
             &status,
-            12,
-            Some(1_700_000_000),
-            Some("10.0.0.2".into()),
-            Some("GET /".into()),
-            Some(-62),
-            Some("10.0.0.1".into()),
+            IncidentContext {
+                uptime_secs: 12,
+                unix_secs: Some(1_700_000_000),
+                ip: Some("10.0.0.2".into()),
+                op: Some("GET /".into()),
+                rssi: Some(-62),
+                gateway: Some("10.0.0.1".into()),
+            },
         );
         let v = serde_json::to_value(&t).unwrap();
         assert_eq!(v["firmware"], FIRMWARE_ID);
@@ -951,12 +955,14 @@ mod tests {
         let inc = LastIncident::from_status(
             "fetch",
             &status,
-            86370,
-            Some(1_700_000_000),
-            Some("10.10.19.35".into()),
-            Some("GET /".into()),
-            Some(-62),
-            Some("10.10.19.1".into()),
+            IncidentContext {
+                uptime_secs: 86370,
+                unix_secs: Some(1_700_000_000),
+                ip: Some("10.10.19.35".into()),
+                op: Some("GET /".into()),
+                rssi: Some(-62),
+                gateway: Some("10.10.19.1".into()),
+            },
         )
         .expect("fetch overlay should become an incident");
         assert_eq!(inc.kind, "fetch");
@@ -971,12 +977,10 @@ mod tests {
         assert!(LastIncident::from_status(
             "fetch",
             &StatusReport::default(),
-            1,
-            None,
-            None,
-            None,
-            None,
-            None,
+            IncidentContext {
+                uptime_secs: 1,
+                ..Default::default()
+            },
         )
         .is_none());
     }

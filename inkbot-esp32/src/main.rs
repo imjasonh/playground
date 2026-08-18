@@ -28,8 +28,8 @@ use display::Panel;
 use inkbot_esp32::{
     format_error_chain, format_panic_message, incident_needs_post, is_http_connect_failure,
     reset_is_abnormal, should_post_status, should_refresh_wifi, Catalog, CrashStatus,
-    DeviceTelemetry, FetchStatus, LastIncident, StatusReport, WifiRefresh, WifiStatus, FIRMWARE_ID,
-    FRAME_BYTES,
+    DeviceTelemetry, FetchStatus, IncidentContext, LastIncident, StatusReport, WifiRefresh,
+    WifiStatus, FIRMWARE_ID, FRAME_BYTES,
 };
 
 include!(concat!(env!("OUT_DIR"), "/config_gen.rs"));
@@ -973,12 +973,14 @@ fn capture_incident(
     let Some(inc) = LastIncident::from_status(
         kind,
         status,
-        uptime_secs(),
-        wall_unix(),
-        Some(net.ip),
-        op,
-        net.rssi,
-        net.gateway,
+        IncidentContext {
+            uptime_secs: uptime_secs(),
+            unix_secs: wall_unix(),
+            ip: Some(net.ip),
+            op,
+            rssi: net.rssi,
+            gateway: net.gateway,
+        },
     ) else {
         return;
     };
