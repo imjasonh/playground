@@ -1,0 +1,7 @@
+version: 2 # want "Dependabot config lacks cooldown"
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: daily
+    insecure-external-code-execution: allow # want "insecure-external-code-execution: allow"

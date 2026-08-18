@@ -17,7 +17,9 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Build site
         run: |
@@ -32,7 +34,7 @@ jobs:
           done
 
       - name: Deploy
-        uses: peaceiris/actions-gh-pages@v4
+        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./dist
@@ -42,8 +44,9 @@ jobs:
       # and any active PR previews (preview/pr-<N>/preview.json). Runs after the
       # deploy above so the gh-pages checkout reflects the just-published apps.
       - name: Check out gh-pages
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          persist-credentials: true
           ref: gh-pages
           path: gh-pages
 

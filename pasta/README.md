@@ -114,6 +114,7 @@ go run ./cmd/pasta test analyzers/js_double_equals
 |---|---|
 | [yaml_truthy](./analyzers/yaml_truthy/yaml_truthy.cue) ✏️             | `Yes`/`On`/`True`/etc. → `true`; `No`/`Off`/`False`/etc. → `false` |
 | [yaml_empty_value](./analyzers/yaml_empty_value/yaml_empty_value.cue) | Flag keys with no value (parses as null) |
+| [gha_security](./analyzers/gha_security/gha_security.cue)             | GitHub Actions / Dependabot security checks inspired by [zizmor](https://docs.zizmor.sh/audits/) (unpinned uses, dangerous triggers, template injection, artipacked, …) |
 
 **Bash**
 

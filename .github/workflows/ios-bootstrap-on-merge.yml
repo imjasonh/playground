@@ -9,6 +9,10 @@ on:
   pull_request:
     types: [closed]
 
+concurrency:
+  group: ios-bootstrap-on-merge
+  cancel-in-progress: false
+
 jobs:
   bootstrap:
     if: >
@@ -17,4 +21,11 @@ jobs:
     uses: ./.github/workflows/ios-signing-bootstrap.yml
     with:
       app: ios
-    secrets: inherit
+    secrets:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
+      MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+      MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}

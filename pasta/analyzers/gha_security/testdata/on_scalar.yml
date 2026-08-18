@@ -1,0 +1,9 @@
+name: Dangerous on scalar
+on: pull_request_target # want "dangerous workflow trigger"
+concurrency:
+  group: x
+jobs:
+  noop:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ok

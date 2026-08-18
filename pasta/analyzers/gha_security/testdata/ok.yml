@@ -1,0 +1,26 @@
+name: Clean workflow
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+on:
+  push:
+  pull_request:
+permissions: {}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdec4ab # v4
+      - name: safe title via env
+        run: echo "$TITLE"
+        env:
+          TITLE: ${{ github.event.issue.title }}
+      - run: npm ci
+      - uses: docker://ubuntu@sha256:b060fffe8e1561c9c3e6dea6db010e092a4a8c7f7f1d4d4f1f1c1e1a1b1c1d1e
+      - run: curl https://example.com/

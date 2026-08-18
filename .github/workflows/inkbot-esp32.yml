@@ -31,8 +31,9 @@ jobs:
     outputs:
       inkbot_esp32: ${{ steps.discover.outputs.inkbot_esp32 }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Discover changed inkbot-esp32 firmware
@@ -65,16 +66,20 @@ jobs:
             echo "run=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
         if: steps.gate.outputs.run == 'true'
 
       # rust-toolchain.toml in inkbot-esp32 pins 1.88 for host checks.
-      - uses: dtolnay/rust-toolchain@1.88.0
+      - name: Install Rust 1.88
         if: steps.gate.outputs.run == 'true'
-        with:
-          components: clippy, rustfmt
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update \
+            --component clippy --component rustfmt
+          rustup default 1.88.0
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         if: steps.gate.outputs.run == 'true'
         with:
           workspaces: inkbot-esp32
@@ -104,7 +109,9 @@ jobs:
             echo "run=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
         if: steps.gate.outputs.run == 'true'
 
       - name: Install native build tools
@@ -113,17 +120,17 @@ jobs:
 
       - name: Setup uv
         if: steps.gate.outputs.run == 'true'
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
 
       - name: Setup Xtensa toolchain
         if: steps.gate.outputs.run == 'true'
-        uses: esp-rs/xtensa-toolchain@v1.7
+        uses: esp-rs/xtensa-toolchain@ec6d36527049a7f4fb2cb0c1a644668c1bb8a2a4 # v1.7
         with:
           default: true
           buildtargets: esp32
           ldproxy: true
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         if: steps.gate.outputs.run == 'true'
         with:
           workspaces: inkbot-esp32

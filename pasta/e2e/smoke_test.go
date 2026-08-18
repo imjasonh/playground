@@ -70,6 +70,7 @@ var diagnoseOnlyRules = []string{
 	"rust_dbg_macro",
 	"rust_println_panic",
 	"yaml_empty_value",
+	"gha_security",
 	"html_deprecated_tags",
 	"html_img_alt",
 	"css_important",
