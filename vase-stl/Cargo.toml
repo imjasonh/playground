@@ -1,0 +1,23 @@
+[package]
+name = "vase-stl"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Convert an arbitrary STL into a vase-mode-printable solid by lofting its radial envelope"
+repository = "https://github.com/imjasonh/playground"
+readme = "README.md"
+publish = false
+
+[[bin]]
+name = "vase-stl"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+stl_io = "0.8"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints.rust]
+unused = "deny"

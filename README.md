@@ -84,6 +84,8 @@ GitHub Pages deploy and preview workflows skip them:
   Life with time as the Z axis (Rust CLI). Self-supporting by construction:
   every birth leans on its three B3 parents via small diagonal braces, so even
   gliders print as one piece with no supports to remove.
+- **[`vase-stl/`](vase-stl/)** — convert an arbitrary STL into a solid suitable
+  for FDM vase / spiral printing by lofting its radial envelope (Rust CLI).
 - **[`life-scad/`](life-scad/)** — OpenSCAD Game of Life sculpture (Z = time)
   plus an offline reverse-history searcher for shallow roof targets.
 - **[`life-qr/`](life-qr/)** — parametric OpenSCAD Life sculpture whose roof is
