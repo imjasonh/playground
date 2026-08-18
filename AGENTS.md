@@ -433,7 +433,11 @@ go test ./...
   entries are created if absent, D1 databases declared in `[[d1_databases]]`
   have remote migrations applied, and a Worker that ships
  `examples/genvapid.rs` gets a `VAPID_PRIVATE_KEY` secret generated once (only
- if absent, so the key is stable across deploys).
+ if absent, so the key is stable across deploys). Every Worker enables
+ Workers Logs (including invocation logs) and Workers Traces by default —
+ copy the `[observability]` / `[observability.logs]` / `[observability.traces]`
+ block from an existing Worker `wrangler.toml`. Head sampling is 100% at
+ playground traffic; dial down before serious volume.
 
 No workflow edits are required. CI discovers a new Rust app from its
 `Cargo.toml`, the deploy workflow discovers a new Worker from its
