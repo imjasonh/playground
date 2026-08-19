@@ -58,6 +58,10 @@ SelectorExpression: schema.#Pattern & {node: "selector_expression"}
 // `fields.arguments` to constrain.
 CallExpression: schema.#Pattern & {node: "call_expression"}
 
+// Any matches a node of any type. Use it as a positional placeholder
+// in `children` when a later sibling is constrained.
+Any: schema.#Pattern & {node: []}
+
 // PackageCall is the structural shape of a `pkg.fn(...)` style call.
 // Captures `pkg` (the package identifier on the left of the dot) and
 // `fn` (the field identifier on the right) so the user's `where`

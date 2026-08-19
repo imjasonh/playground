@@ -64,6 +64,8 @@ go run ./cmd/pasta test analyzers/js_double_equals
 
 Syntactic ports of [`golang.org/x/tools/go/analysis/passes`](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes). Each rule matches trees, not types; the CUE file documents what the original analyzer does that Pasta cannot. `assign` is `go_self_assignment` earlier in this table. Passes that need SSA, sizes, or assembly are omitted.
 
+The playground enrolls the high-signal ports as `.pasta/` symlinks. `go_composite`, `go_errorsas`, `go_nilfunc`, and `go_unmarshal` need type information to stay precise, so they ship here but are not enrolled.
+
 | Path | What it does |
 |---|---|
 | [go_appends](./analyzers/go_appends/go_appends.cue)                           | Flag `append(s)` with no values |

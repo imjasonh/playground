@@ -42,14 +42,14 @@ go_httpresponse: schema.#Analyzer & {
 							}
 							right: {
 								node: "expression_list"
-								children: [{
-									pattern: gopat.PackageCall & {
+								children: [
+									gopat.PackageCall & {
 										where: [
 											{op: "eq", args: ["@pkg", "http"]},
 											{op: "matches", args: ["@fn", "^(Get|Head|Post|PostForm)$"]},
 										]
-									}
-								}]
+									},
+								]
 							}
 						}
 					}

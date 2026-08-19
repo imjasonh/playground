@@ -113,6 +113,7 @@ func DefaultRegistry() PredicateRegistry {
 			"nil_comparison":       predNilComparison,
 			"last_non_blank":       predLastNonBlank,
 			"same_ident":           predSameIdent,
+			"not_same_ident":       predNotSameIdent,
 			"empty":                predEmptyNamedChildren,
 			"named_child_count":    predNamedChildCount,
 			"prev_sibling_matches": predPrevSiblingMatches,
@@ -241,6 +242,19 @@ func predSameIdent(args []dsl.Arg, env *Env, caps Captures) bool {
 		return false
 	}
 	return a.Text() == b.Text()
+}
+
+// predNotSameIdent reports whether two captures have different text.
+func predNotSameIdent(args []dsl.Arg, env *Env, caps Captures) bool {
+	if len(args) != 2 {
+		return false
+	}
+	a, ok1 := resolveCapture(posStr(args, 0), caps)
+	b, ok2 := resolveCapture(posStr(args, 1), caps)
+	if !ok1 || !ok2 {
+		return false
+	}
+	return a.Text() != b.Text()
 }
 
 // predNilComparison: [@x, @y, @list].

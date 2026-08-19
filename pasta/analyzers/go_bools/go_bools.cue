@@ -63,32 +63,28 @@ _suspect: {
 			fields: {
 				operator: {capture: "outer"}
 				left: {
-					pattern: {
-						node: "binary_expression"
-						fields: {
-							operator: {capture: "lop"}
-							left:     {capture: "x1", pattern: gopat.Identifier}
-							right:    {capture: "c1"}
-						}
-						where: [{op: "token_eq", args: ["@lop", _inner]}]
+					node: "binary_expression"
+					fields: {
+						operator: {capture: "lop"}
+						left:     {capture: "x1", pattern: gopat.Identifier}
+						right:    {capture: "c1"}
 					}
+					where: [{op: "token_eq", args: ["@lop", _inner]}]
 				}
 				right: {
-					pattern: {
-						node: "binary_expression"
-						fields: {
-							operator: {capture: "rop"}
-							left:     {capture: "x2", pattern: gopat.Identifier}
-							right:    {capture: "c2"}
-						}
-						where: [{op: "token_eq", args: ["@rop", _inner]}]
+					node: "binary_expression"
+					fields: {
+						operator: {capture: "rop"}
+						left:     {capture: "x2", pattern: gopat.Identifier}
+						right:    {capture: "c2"}
 					}
+					where: [{op: "token_eq", args: ["@rop", _inner]}]
 				}
 			}
 			where: [
 				{op: "token_eq", args: ["@outer", _outer]},
 				{op: "same_ident", args: ["@x1", "@x2"]},
-				{op: "neq", args: ["@c1", "@c2"]},
+				{op: "not_same_ident", args: ["@c1", "@c2"]},
 			]
 		}
 

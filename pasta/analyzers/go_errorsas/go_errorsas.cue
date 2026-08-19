@@ -31,7 +31,7 @@ go_errorsas: schema.#Analyzer & {
 			fields: arguments: {
 				node: "argument_list"
 				children: [
-					{},
+					gopat.Any,
 					{capture: "dst", pattern: gopat.Identifier},
 				]
 			}

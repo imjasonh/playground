@@ -41,8 +41,8 @@ go_atomic: schema.#Analyzer & {
 				operator: {capture: "op"}
 				right: {
 					node: "expression_list"
-					children: [{
-						pattern: gopat.PackageCall & {
+					children: [
+						gopat.PackageCall & {
 							fields: arguments: {
 								node: "argument_list"
 								children: [
@@ -50,15 +50,18 @@ go_atomic: schema.#Analyzer & {
 										capture: "addr"
 										pattern: {
 											node: "unary_expression"
-											fields: operand: {capture: "inner", pattern: gopat.Identifier}
-											where: [{op: "matches", args: ["@_root", "^&"]}]
+											fields: {
+												operator: {capture: "amp"}
+												operand:  {capture: "inner", pattern: gopat.Identifier}
+											}
+											where: [{op: "token_eq", args: ["@amp", "&"]}]
 										}
 									},
-									{},
+									gopat.Any,
 								]
 							}
-						}
-					}]
+						},
+					]
 				}
 			}
 			where: [

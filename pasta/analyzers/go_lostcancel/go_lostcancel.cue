@@ -48,13 +48,13 @@ go_lostcancel: schema.#Analyzer & {
 					left: {
 						node: "expression_list"
 						children: [
-							{},
+							gopat.Any,
 							{capture: "cancel", pattern: gopat.Identifier},
 						]
 					}
 					right: {
 						node: "expression_list"
-						children: [{pattern: _withCall}]
+						children: [_withCall]
 					}
 				}
 				where: [{op: "eq", args: ["@cancel", "_"]}]
@@ -70,13 +70,13 @@ go_lostcancel: schema.#Analyzer & {
 					left: {
 						node: "expression_list"
 						children: [
-							{},
+							gopat.Any,
 							{capture: "cancel", pattern: gopat.Identifier},
 						]
 					}
 					right: {
 						node: "expression_list"
-						children: [{pattern: _withCall}]
+						children: [_withCall]
 					}
 				}
 				where: [{op: "eq", args: ["@cancel", "_"]}]

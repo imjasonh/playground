@@ -35,7 +35,7 @@ go_slog: schema.#Analyzer & {
 				pattern: {
 					node: "argument_list"
 					children: [
-						{},
+						gopat.Any,
 						{capture: "key", pattern: {node: ["interpreted_string_literal", "raw_string_literal"]}},
 					]
 				}

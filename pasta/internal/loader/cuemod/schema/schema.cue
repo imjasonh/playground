@@ -40,7 +40,7 @@ package schema
 		"subtree_lacks" |
 		"last_non_blank" |
 		"nil_comparison" |
-		"same_ident" |
+		"same_ident" | "not_same_ident" |
 		"token_eq" |
 		"stmt_index_delta" |
 		"empty" |

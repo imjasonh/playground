@@ -28,7 +28,7 @@ _oneDecl: {
 			fields: arguments: {
 				node: "argument_list"
 				children: [
-					{},
+					gopat.Any,
 					{
 						node: "func_literal"
 						fields: parameters: {
@@ -77,7 +77,7 @@ go_sortslice: schema.#Analyzer & {
 				fields: arguments: {
 					node: "argument_list"
 					children: [
-						{},
+						gopat.Any,
 						{
 							node: "func_literal"
 							fields: parameters: {capture: "params"}

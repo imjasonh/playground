@@ -31,7 +31,7 @@ go_composite: schema.#Analyzer & {
 		match: {
 			node: "composite_literal"
 			fields: {
-				type: {pattern: {node: "qualified_type"}}
+				type: {node: "qualified_type"}
 				body: {
 					node: "literal_value"
 					children: [{capture: "elem"}]

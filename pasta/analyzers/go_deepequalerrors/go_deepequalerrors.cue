@@ -79,15 +79,15 @@ go_deepequalerrors: schema.#Analyzer & {
 	facts: {}
 
 	rules: {
-		new_first: (_deep & {_arg0: {pattern: _errNew}, _arg1: {}}).out & {
+		new_first: (_deep & {_arg0: _errNew, _arg1: gopat.Any}).out & {
 			name: "new_first"
 			doc:  "DeepEqual(errors.New(...), x)"
 		}
-		new_second: (_deep & {_arg0: {}, _arg1: {pattern: _errNew}}).out & {
+		new_second: (_deep & {_arg0: gopat.Any, _arg1: _errNew}).out & {
 			name: "new_second"
 			doc:  "DeepEqual(x, errors.New(...))"
 		}
-		errorf_first: (_deep & {_arg0: {pattern: _errErrorf}, _arg1: {}}).out & {
+		errorf_first: (_deep & {_arg0: _errErrorf, _arg1: gopat.Any}).out & {
 			name: "errorf_first"
 			doc:  "DeepEqual(fmt.Errorf(...), x)"
 		}

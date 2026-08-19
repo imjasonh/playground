@@ -32,7 +32,7 @@ go_structtag: schema.#Analyzer & {
 			match: {
 				node: "field_declaration"
 				fields: tag: {capture: "tag"}
-				where: [{op: "matches", args: ["@tag", "\"[^\"]+\"[A-Za-z]"]}]
+				where: [{op: "matches", args: ["@tag", "[A-Za-z0-9_]+:\"[^\"]*\"[A-Za-z]"]}]
 			}
 
 			diagnose: {

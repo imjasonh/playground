@@ -54,7 +54,7 @@ go_nilfunc: schema.#Analyzer & {
 				fields: {
 					left:     {capture: "fn", pattern: gopat.Identifier}
 					operator: {capture: "op"}
-					right:    {pattern: gopat.Nil}
+					right: {node: "nil"}
 				}
 				where: [
 					{op: "matches", args: ["@op", "^(==|!=)$"]},
@@ -78,7 +78,7 @@ go_nilfunc: schema.#Analyzer & {
 			match: {
 				node: "binary_expression"
 				fields: {
-					left:     {pattern: gopat.Nil}
+					left:     gopat.Nil
 					operator: {capture: "op"}
 					right:    {capture: "fn", pattern: gopat.Identifier}
 				}
