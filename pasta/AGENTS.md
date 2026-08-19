@@ -117,7 +117,8 @@ Two cases:
 2. **The grammar isn't linked in yet.** Rebuild
    `internal/tswasm/ts-core.wasm.br` with the new grammar in
    `build.sh`, add an entry to `internal/lang/grammars.go`, then do
-   (1).
+   (1). `lang/hcl` plus the `lang/terraform` alias (`.tf` and `.tfvars`
+   on the same grammar) is the current example.
 
 Users can also publish their own external CUE module that adds
 languages — see `testdata/notgo_alias/` for a working example. The

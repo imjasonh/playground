@@ -5,7 +5,8 @@
 // diagnostics.
 //
 // Languages exercised today: Go, JavaScript, TypeScript, Python, Rust,
-// YAML, Java, CSS, PHP (via analyzers + file-extension discovery).
+// YAML, Java, CSS, PHP, HTML, Terraform, and HCL (via analyzers and
+// file-extension discovery).
 //
 // Skip with `go test -short`. CI runs them as part of `go test ./...`.
 package e2e_test
@@ -71,6 +72,7 @@ var diagnoseOnlyRules = []string{
 	"rust_println_panic",
 	"yaml_empty_value",
 	"gha_security",
+	"terraform_security",
 	"html_deprecated_tags",
 	"html_img_alt",
 	"css_important",

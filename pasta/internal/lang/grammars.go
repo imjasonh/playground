@@ -31,6 +31,7 @@ var Grammars = map[string]func() *tswasm.Language{
 	"sql":        lang("sql"),
 	"swift":      lang("swift"),
 	"toml":       lang("toml"),
+	"hcl":        lang("hcl"),
 }
 
 func lang(grammar string) func() *tswasm.Language {

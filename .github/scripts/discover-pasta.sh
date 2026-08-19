@@ -16,7 +16,7 @@ emit() {
 
 is_lintable() {
   case "$1" in
-    *.go|*.js|*.mjs|*.cjs|*.jsx|*.ts|*.tsx|*.rs|*.swift|*.sh|*.bash|*.yml|*.yaml|*.html|*.htm|*.css|*.cue|*.toml)
+    *.go|*.js|*.mjs|*.cjs|*.jsx|*.ts|*.tsx|*.rs|*.swift|*.sh|*.bash|*.yml|*.yaml|*.html|*.htm|*.css|*.cue|*.toml|*.tf|*.tfvars|*.hcl)
       return 0
       ;;
   esac
