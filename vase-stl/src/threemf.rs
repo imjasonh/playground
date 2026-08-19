@@ -109,7 +109,9 @@ transform=\"1 0 0 0 0 1 0 0 0 0 1 0\" />\n </build>\n</model>\n"
     Ok(())
 }
 
-fn dedup_mesh(mesh: &TriMesh) -> std::io::Result<(Vec<[f32; 3]>, Vec<[u32; 3]>)> {
+type MeshBuffers = (Vec<[f32; 3]>, Vec<[u32; 3]>);
+
+fn dedup_mesh(mesh: &TriMesh) -> std::io::Result<MeshBuffers> {
     let mut verts: Vec<[f32; 3]> = Vec::new();
     let mut index_of = std::collections::HashMap::<[u32; 3], u32>::new();
     let mut tris: Vec<[u32; 3]> = Vec::new();
