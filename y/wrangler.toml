@@ -42,12 +42,6 @@ bucket_name = "y-images"
 #   ADMIN_PASSWORD_HASH   (pbkdf2$iters$saltHex$hashHex, see examples/hash_password.rs)
 #   SESSION_SECRET        (random 32+ byte hex)
 
-# Persist per-invocation logs and traces so failures are diagnosable after
-# the fact, not only while `wrangler tail` is attached. Invocation logs
-# record Cloudflare's `outcome` (`ok`, `exception`, `exceededMemory`,
-# `exceededCpu`, `canceled`) plus console output. Automatic tracing
-# captures the fetch handler and binding calls. 100% head sampling is
-# the playground default; dial down before serious volume.
 [observability]
 enabled = true
 head_sampling_rate = 1

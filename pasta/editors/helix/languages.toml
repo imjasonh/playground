@@ -45,3 +45,7 @@ language-servers = ["bash-language-server", "pastals"]
 [[language]]
 name = "json"
 language-servers = ["vscode-json-language-server", "pastals"]
+
+[[language]]
+name = "toml"
+language-servers = ["taplo", "pastals"]
