@@ -3,7 +3,7 @@ use std::process::ExitCode;
 
 use clap::{Parser, ValueEnum};
 
-use vase_stl::{convert, read_stl, write_stl, ConvertOptions, ShellMode, UpAxis};
+use vase_stl::{convert, optimize_convert, read_stl, write_stl, ConvertOptions, ShellMode, UpAxis};
 
 /// Convert an STL into a vase-mode-printable solid (radial envelope loft).
 #[derive(Debug, Parser)]
@@ -17,11 +17,11 @@ struct Cli {
     output: PathBuf,
 
     /// Slice / loft layer height in mm.
-    #[arg(long, default_value_t = 0.2)]
+    #[arg(long, default_value_t = 0.15)]
     layer_height: f32,
 
     /// Angular samples around the print axis.
-    #[arg(long, default_value_t = 256)]
+    #[arg(long, default_value_t = 360)]
     samples: usize,
 
     /// Minimum radius at every angle (mm).
@@ -40,9 +40,13 @@ struct Cli {
     #[arg(long, default_value_t = 0.0)]
     smooth_vertical: f32,
 
-    /// Gaussian σ along Z in mm — removes layer terraces on smooth hulls.
-    #[arg(long, default_value_t = 1.5)]
+    /// Spatial σ along Z in mm (edge-preserving when range σ is set).
+    #[arg(long, default_value_t = 0.0)]
     smooth_vertical_mm: f32,
+
+    /// Bilateral range σ on radius in mm (`0` = plain Gaussian).
+    #[arg(long, default_value_t = 0.0)]
+    smooth_vertical_range_mm: f32,
 
     /// Force the input axis that becomes print-up. Default: longest AABB edge.
     #[arg(long, value_enum)]
@@ -67,6 +71,15 @@ struct Cli {
     /// Exaggerate silhouette relief vs a low-pass baseline (1 = faithful).
     #[arg(long, default_value_t = 1.0)]
     detail_gain: f32,
+
+    /// Sweep smoothing/detail knobs vs the raw radial envelope; write the
+    /// best-scoring vase. Prints a CSV of trials to stderr.
+    #[arg(long, default_value_t = false)]
+    optimize: bool,
+
+    /// Soft choppiness budget (mean |Δr| between layers, mm) for --optimize.
+    #[arg(long, default_value_t = 0.12)]
+    chop_budget: f32,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -140,6 +153,7 @@ fn run(cli: Cli) -> Result<(), String> {
         smooth_angular: cli.smooth_angular,
         smooth_vertical: cli.smooth_vertical,
         smooth_vertical_mm: cli.smooth_vertical_mm,
+        smooth_vertical_range_mm: cli.smooth_vertical_range_mm,
         up_axis: cli.up.map(UpAxis::from),
         shell,
         scale: cli.scale,
@@ -147,7 +161,49 @@ fn run(cli: Cli) -> Result<(), String> {
         detail_gain: cli.detail_gain,
     };
 
-    let result = convert(&input, &opts)?;
+    let result = if cli.optimize {
+        let (best, trials) = optimize_convert(&input, &opts, cli.chop_budget)?;
+        eprintln!(
+            "optimize: {} trials  chop_budget={:.3} mm",
+            trials.len(),
+            cli.chop_budget
+        );
+        eprintln!("rank,score,mean_abs_r,max_abs_r,rms_r,chop,vol_rel,sigma_z,sigma_r,gain,ang");
+        for (i, t) in trials.iter().take(25).enumerate() {
+            let m = &t.metrics;
+            eprintln!(
+                "{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.3},{:.2},{}",
+                i + 1,
+                t.score,
+                m.mean_abs_r_err,
+                m.max_abs_r_err,
+                m.rms_r_err,
+                m.mean_abs_dr_dz,
+                m.volume_rel_err,
+                t.options.smooth_vertical_mm,
+                t.options.smooth_vertical_range_mm,
+                t.options.detail_gain,
+                t.options.smooth_angular
+            );
+        }
+        if let Some(t) = trials.first() {
+            eprintln!(
+                "best: sigma_z={:.3} sigma_r={:.3} gain={:.2} ang={}  mean|Δr|={:.4} max|Δr|={:.4} chop={:.4} vol_rel={:.4}",
+                t.options.smooth_vertical_mm,
+                t.options.smooth_vertical_range_mm,
+                t.options.detail_gain,
+                t.options.smooth_angular,
+                t.metrics.mean_abs_r_err,
+                t.metrics.max_abs_r_err,
+                t.metrics.mean_abs_dr_dz,
+                t.metrics.volume_rel_err
+            );
+        }
+        best
+    } else {
+        convert(&input, &opts)?
+    };
+
     write_stl(&cli.output, &result.mesh)
         .map_err(|e| format!("write {}: {e}", cli.output.display()))?;
 

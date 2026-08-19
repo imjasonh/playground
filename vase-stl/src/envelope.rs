@@ -44,9 +44,13 @@ pub struct EnvelopeOptions {
     pub smooth_angular: usize,
     /// Legacy neighbor-blend amount along Z (`0`–`1`). Prefer `smooth_vertical_mm`.
     pub smooth_vertical: f32,
-    /// Gaussian σ along Z in millimeters. This is what removes layer terraces
-    /// on smooth hulls (`0` disables). Try `1.5`–`3` for organic shapes.
+    /// Spatial σ along Z in millimeters for vertical smoothing (`0` disables).
+    /// Prefer small values (`0.3`–`0.8`) with a range σ so real features stay.
     pub smooth_vertical_mm: f32,
+    /// Bilateral *range* σ on radius (mm). When `>0`, vertical smoothing is
+    /// edge-preserving: large |Δr| (creases) are kept, small jitter is blurred.
+    /// When `0`, plain Gaussian along Z is used.
+    pub smooth_vertical_range_mm: f32,
     /// Exaggerate local radius deviations from a low-pass baseline.
     /// `1.0` = faithful envelope; `>1` makes shallow grooves/crests more
     /// printable in vase mode; `<1` softens them.
@@ -56,14 +60,17 @@ pub struct EnvelopeOptions {
 impl Default for EnvelopeOptions {
     fn default() -> Self {
         Self {
-            layer_height: 0.2,
-            angular_samples: 256,
+            layer_height: 0.15,
+            angular_samples: 360,
             min_radius: 0.4,
             inflate: 0.0,
             smooth_angular: 0,
             smooth_vertical: 0.0,
-            // Mild vertical blur by default so discrete slices don't terrace.
-            smooth_vertical_mm: 1.5,
+            // Light edge-preserving vertical pass — enough to kill slice noise,
+            // not enough to melt the silhouette.
+            // Off by default: raw envelope ≈ minimal vase-mode difference.
+            smooth_vertical_mm: 0.0,
+            smooth_vertical_range_mm: 0.0,
             detail_gain: 1.0,
         }
     }
@@ -136,7 +143,16 @@ pub fn extract_radial_envelope(
     // Vertical smoothing last so slice noise (and any detail-gain jitter)
     // doesn't terrace the lofted wall.
     if opts.smooth_vertical_mm > 0.0 && contours.len() > 2 {
-        gaussian_smooth_vertical(&mut contours, opts.smooth_vertical_mm, opts.min_radius);
+        if opts.smooth_vertical_range_mm > 0.0 {
+            bilateral_smooth_vertical(
+                &mut contours,
+                opts.smooth_vertical_mm,
+                opts.smooth_vertical_range_mm,
+                opts.min_radius,
+            );
+        } else {
+            gaussian_smooth_vertical(&mut contours, opts.smooth_vertical_mm, opts.min_radius);
+        }
     } else if opts.smooth_vertical > 0.0 && contours.len() > 2 {
         smooth_vertical_blend(&mut contours, opts.smooth_vertical.clamp(0.0, 1.0));
     }
@@ -370,32 +386,53 @@ fn smooth_vertical_blend(contours: &mut [Contour], amount: f32) {
 
 /// Gaussian blur of radius along Z, independently per angular column.
 fn gaussian_smooth_vertical(contours: &mut [Contour], sigma_mm: f32, min_radius: f32) {
-    let sigma = sigma_mm.max(1e-4);
+    bilateral_smooth_vertical(contours, sigma_mm, f32::INFINITY, min_radius);
+}
+
+/// Edge-preserving blur along Z: spatial Gaussian × range Gaussian on |Δr|.
+///
+/// Real armor creases (large |Δr| across a few layers) keep their weight near
+/// zero from neighbors; slice-sampling jitter (tiny |Δr|) is averaged away.
+fn bilateral_smooth_vertical(
+    contours: &mut [Contour],
+    sigma_z_mm: f32,
+    sigma_r_mm: f32,
+    min_radius: f32,
+) {
+    let sigma_z = sigma_z_mm.max(1e-4);
+    let sigma_r = sigma_r_mm.max(1e-4);
     let n_layers = contours.len();
     let n_ang = contours[0].radii.len();
     let zs: Vec<f32> = contours.iter().map(|c| c.z).collect();
     let original: Vec<Vec<f32>> = contours.iter().map(|c| c.radii.clone()).collect();
 
-    // Limit kernel to ~3σ for speed.
-    let radius = (3.0 * sigma).max(sigma);
+    let z_radius = (3.0 * sigma_z).max(sigma_z);
 
     for i in 0..n_layers {
         for j in 0..n_ang {
+            let center = original[i][j];
             let mut sum = 0.0_f32;
             let mut wsum = 0.0_f32;
             for k in 0..n_layers {
                 let dz = (zs[k] - zs[i]).abs();
-                if dz > radius {
+                if dz > z_radius {
                     continue;
                 }
-                let w = (-0.5 * (dz / sigma) * (dz / sigma)).exp();
+                let w_z = (-0.5 * (dz / sigma_z) * (dz / sigma_z)).exp();
+                let dr = (original[k][j] - center).abs();
+                let w_r = if sigma_r.is_finite() {
+                    (-0.5 * (dr / sigma_r) * (dr / sigma_r)).exp()
+                } else {
+                    1.0
+                };
+                let w = w_z * w_r;
                 sum += original[k][j] * w;
                 wsum += w;
             }
             contours[i].radii[j] = if wsum > 0.0 {
                 (sum / wsum).max(min_radius)
             } else {
-                original[i][j].max(min_radius)
+                center.max(min_radius)
             };
         }
     }
@@ -499,6 +536,7 @@ mod tests {
             smooth_angular: 0,
             smooth_vertical: 0.0,
             smooth_vertical_mm: 0.0,
+            smooth_vertical_range_mm: 0.0,
             detail_gain: 1.0,
         };
         let env = extract_radial_envelope(&tris, [0.5, 0.5], 0.0, 1.0, &opts);
