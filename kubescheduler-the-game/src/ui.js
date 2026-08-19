@@ -2,7 +2,7 @@
 // node grid, pending queue, KPIs and log. Handles click-to-schedule, drag and
 // drop, and the operator controls. No framework — just small render functions.
 
-import { INSTANCE_TYPES, fmtCpu, fmtMem } from "./types.js";
+import { INSTANCE_TYPES, TICKS_PER_SECOND, fmtCpu, fmtMem } from "./types.js";
 import { SCENARIOS } from "./workload.js";
 import { evaluateFit } from "./scheduler.js";
 
@@ -167,7 +167,8 @@ export class UI {
     if (!card) return;
     const res = this.game.schedulePod(this.selectedPodId, card.dataset.node);
     if (res.ok) {
-      this.game.log("info", `Bound pod to ${card.dataset.node}.`);
+      const node = this.game.nodeById(card.dataset.node);
+      this.game.log("info", `Bound pod to ${node?.name || card.dataset.node}.`);
       this.selectedPodId = null;
     } else {
       this.toast(res.reasons[0], "bad");
@@ -206,7 +207,8 @@ export class UI {
     const podId = this.dragPodId || e.dataTransfer.getData("text/plain");
     const res = this.game.schedulePod(podId, card.dataset.node);
     if (res.ok) {
-      this.game.log("info", `Bound pod to ${card.dataset.node}.`);
+      const node = this.game.nodeById(card.dataset.node);
+      this.game.log("info", `Bound pod to ${node?.name || card.dataset.node}.`);
       if (this.selectedPodId === podId) this.selectedPodId = null;
     } else {
       this.toast(res.reasons[0], "bad");
@@ -384,7 +386,9 @@ export class UI {
       : "";
     const reclaim =
       node.status === "Reclaiming"
-        ? `<div class="reclaim">⚠ spot reclaim in ${(node.spotWarnTicksLeft / 4).toFixed(1)}s — drain to save pods!</div>`
+        ? `<div class="reclaim">⚠ spot reclaim in ${(
+            node.spotWarnTicksLeft / TICKS_PER_SECOND
+          ).toFixed(1)}s — drain to save pods!</div>`
         : "";
 
     const cordonLabel = node.status === "Cordoned" ? "Uncordon" : "Cordon";
@@ -474,7 +478,7 @@ export class UI {
       `<span class="pill ${p.kind === "job" ? "kind-job" : ""}">${p.kind}</span>`
     );
 
-    const waitS = (p.pendingTicks / 4).toFixed(1);
+    const waitS = (p.pendingTicks / TICKS_PER_SECOND).toFixed(1);
     return `
     <div class="pod ${selected} ${breached}" data-pod-id="${p.id}" draggable="true">
       <div class="stripe" style="background:${p.color}"></div>
@@ -494,7 +498,7 @@ export class UI {
     const ev = this.game.state.events.slice(-60);
     this.els.eventlog.innerHTML = ev
       .map((e) => {
-        const secs = Math.floor(e.tick / 4);
+        const secs = Math.floor(e.tick / TICKS_PER_SECOND);
         const t = `${String(Math.floor(secs / 60)).padStart(2, "0")}:${String(secs % 60).padStart(2, "0")}`;
         return `<div class="logline ${e.level}"><span class="t">${t}</span>${escapeHtml(e.msg)}</div>`;
       })
