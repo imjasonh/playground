@@ -3,7 +3,9 @@ use std::path::PathBuf;
 
 use stl_io::{Normal, Triangle, Vertex};
 use tempfile::tempdir;
-use vase_stl::{convert, read_stl, write_stl, ConvertOptions, ShellMode, TriMesh, UpAxis};
+use vase_stl::{
+    convert, read_stl, write_3mf, write_stl, ConvertOptions, ShellMode, TriMesh, UpAxis,
+};
 
 fn tri(a: [f32; 3], b: [f32; 3], c: [f32; 3]) -> Triangle {
     Triangle {
@@ -76,7 +78,8 @@ fn converts_box_to_solid_vase() {
         angular_samples: 32,
         smooth_vertical: 0.0,
         couple_weight: 0.0,
-        couple_gap_mm: 0.0,
+        couple_gap_mm: 5.0, // box faces are vertical; generous budget for test
+        line_width_mm: 5.0,
         loft_subdivide: 1,
         band_subsamples: 1,
         up_axis: Some(UpAxis::Z),
@@ -98,6 +101,9 @@ fn auto_orients_tall_x_box() {
     let opts = ConvertOptions {
         layer_height: 1.0,
         angular_samples: 24,
+        couple_gap_mm: 5.0,
+        line_width_mm: 5.0,
+        loft_subdivide: 1,
         ..ConvertOptions::default()
     };
     let out = convert(&input, &opts).expect("convert");
@@ -113,6 +119,9 @@ fn hollow_shell_has_more_triangles_than_solid() {
         layer_height: 1.0,
         angular_samples: 24,
         up_axis: Some(UpAxis::Z),
+        couple_gap_mm: 5.0,
+        line_width_mm: 5.0,
+        loft_subdivide: 1,
         ..ConvertOptions::default()
     };
     let solid = convert(&input, &base).unwrap();
@@ -135,6 +144,9 @@ fn roundtrip_write_read_stl() {
         layer_height: 0.5,
         angular_samples: 48,
         up_axis: Some(UpAxis::Z),
+        couple_gap_mm: 5.0,
+        line_width_mm: 5.0,
+        loft_subdivide: 1,
         ..ConvertOptions::default()
     };
     let out = convert(&loaded, &opts).unwrap();
@@ -153,6 +165,9 @@ fn target_height_scales_output() {
         angular_samples: 24,
         up_axis: Some(UpAxis::Z),
         target_height_mm: Some(100.0),
+        couple_gap_mm: 5.0,
+        line_width_mm: 5.0,
+        loft_subdivide: 1,
         ..ConvertOptions::default()
     };
     let out = convert(&input, &opts).expect("convert");
@@ -164,4 +179,26 @@ fn target_height_scales_output() {
 fn rejects_empty_mesh() {
     let err = convert(&TriMesh::from_triangles(vec![]), &ConvertOptions::default());
     assert!(err.is_err());
+}
+
+#[test]
+fn writes_valid_3mf_zip() {
+    let input = box_mesh([-5.0, -5.0, 0.0], [5.0, 5.0, 20.0]);
+    let opts = ConvertOptions {
+        layer_height: 1.0,
+        angular_samples: 24,
+        couple_gap_mm: 5.0,
+        line_width_mm: 5.0,
+        loft_subdivide: 1,
+        up_axis: Some(UpAxis::Z),
+        ..ConvertOptions::default()
+    };
+    let out = convert(&input, &opts).unwrap();
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("vase.3mf");
+    write_3mf(&path, &out.mesh, "test-vase").unwrap();
+    let data = std::fs::read(&path).unwrap();
+    assert!(data.starts_with(b"PK"));
+    assert!(out.validation.ok);
+    assert!(out.bbox_after.min[2].abs() < 1e-4);
 }

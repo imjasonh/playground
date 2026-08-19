@@ -13,15 +13,21 @@ mod mesh;
 mod metrics;
 mod orient;
 mod stl;
+mod threemf;
+mod validate;
 
 pub use convert::{
     convert, optimize_convert, optimize_convert_with_budget, ConvertOptions, ConvertResult,
     OptimizeTrial, ShellMode,
 };
-pub use envelope::{densify_catmull_rom, extract_radial_envelope, Contour, Envelope};
+pub use envelope::{
+    densify_catmull_rom, extract_radial_envelope, max_layer_step, Contour, Envelope,
+};
 pub use mesh::{
     loft_hollow, loft_solid, loft_solid_open_top, loft_wall, prepare_loft_envelope, MeshStats,
 };
 pub use metrics::{compare_envelopes, envelope_volume, EnvelopeMetrics};
 pub use orient::{choose_up_axis, BoundingBox, UpAxis};
 pub use stl::{read_stl, write_stl, TriMesh};
+pub use threemf::write_3mf;
+pub use validate::{validate_envelope, VaseValidation};

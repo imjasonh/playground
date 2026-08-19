@@ -81,7 +81,7 @@ impl Default for EnvelopeOptions {
             smooth_vertical_range_mm: 0.0,
             band_subsamples: 5,
             couple_weight: 0.25,
-            couple_gap_mm: 0.30,
+            couple_gap_mm: 0.35,
             loft_subdivide: 3,
             detail_gain: 1.0,
         }
@@ -210,7 +210,10 @@ fn couple_layer_bands(contours: &mut [Contour], weight: f32, gap_mm: f32, min_ra
     }
 
     if gap_mm > 0.0 {
-        gap_drag(contours, gap_mm, min_radius, 12);
+        // Hard constraint: keep iterating until every consecutive |Δr| ≤ gap_mm
+        // (or we hit the iteration cap). 12 passes was not enough for steep
+        // helmet features — those left floating vase walls.
+        enforce_max_step(contours, gap_mm, min_radius, 400);
     }
 }
 
@@ -276,34 +279,54 @@ fn k_apply_offdiag(i: usize, n: usize, r: &[Vec<f32>], j: usize) -> (f32, f32) {
     (6.0, off)
 }
 
-/// Drag only band pairs whose `|Δr|` exceeds `gap_mm` toward each other.
-fn gap_drag(contours: &mut [Contour], gap_mm: f32, min_radius: f32, iters: usize) {
+/// Project each angular column onto `|r[i+1] − r[i]| ≤ max_step`.
+///
+/// One forward + one backward clamp pass is exact for a 1-D chain (Lipschitz
+/// projection). Multiple sweeps cover any residual from `min_radius` clamps.
+fn enforce_max_step(contours: &mut [Contour], max_step: f32, min_radius: f32, max_iters: usize) {
     let n = contours.len();
     let n_ang = contours[0].radii.len();
-    let gap_mm = gap_mm.max(1e-6);
-    for _ in 0..iters {
-        let snap: Vec<Vec<f32>> = contours.iter().map(|c| c.radii.clone()).collect();
-        let mut changed = false;
-        for i in 0..n - 1 {
-            for j in 0..n_ang {
-                let a = snap[i][j];
-                let b = snap[i + 1][j];
-                let d = b - a;
-                let ad = d.abs();
-                if ad <= gap_mm {
-                    continue;
-                }
-                changed = true;
-                let excess = ad - gap_mm;
-                let step = 0.5 * excess * d.signum();
-                contours[i].radii[j] = (a + step).max(min_radius);
-                contours[i + 1].radii[j] = (b - step).max(min_radius);
+    let max_step = max_step.max(1e-6);
+    for _ in 0..max_iters.max(1) {
+        let mut worst = 0.0_f32;
+        for j in 0..n_ang {
+            // Forward: each band within max_step of the previous.
+            for i in 1..n {
+                let lo = contours[i - 1].radii[j] - max_step;
+                let hi = contours[i - 1].radii[j] + max_step;
+                let r = contours[i].radii[j].clamp(lo, hi).max(min_radius);
+                contours[i].radii[j] = r;
+            }
+            // Backward: each band within max_step of the next.
+            for i in (0..n - 1).rev() {
+                let lo = contours[i + 1].radii[j] - max_step;
+                let hi = contours[i + 1].radii[j] + max_step;
+                let r = contours[i].radii[j].clamp(lo, hi).max(min_radius);
+                contours[i].radii[j] = r;
+            }
+            for i in 0..n - 1 {
+                worst = worst.max((contours[i + 1].radii[j] - contours[i].radii[j]).abs());
             }
         }
-        if !changed {
+        if worst <= max_step + 1e-6 {
             break;
         }
     }
+}
+
+/// Max consecutive `|Δr|` over the envelope (mm). Used for vase validation.
+pub fn max_layer_step(contours: &[Contour]) -> f32 {
+    if contours.len() < 2 {
+        return 0.0;
+    }
+    let n_ang = contours[0].radii.len();
+    let mut worst = 0.0_f32;
+    for w in contours.windows(2) {
+        for j in 0..n_ang {
+            worst = worst.max((w[1].radii[j] - w[0].radii[j]).abs());
+        }
+    }
+    worst
 }
 
 /// Insert `subdivide` Catmull-Rom samples between each pair of band contours.
@@ -758,5 +781,22 @@ mod tests {
     fn ray_hits_unit_segment() {
         let r = ray_segment_hit([0.0, 0.0], 0.0, [1.0, -1.0], [1.0, 1.0]).unwrap();
         assert!((r - 1.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn enforce_max_step_caps_consecutive_delta() {
+        let n = 20;
+        let mut contours: Vec<Contour> = (0..n)
+            .map(|i| {
+                let r = if i == 10 { 10.0_f32 } else { 1.0_f32 };
+                Contour {
+                    z: i as f32 * 0.15,
+                    radii: vec![r; 8],
+                }
+            })
+            .collect();
+        enforce_max_step(&mut contours, 0.35, 0.4, 8);
+        let worst = max_layer_step(&contours);
+        assert!(worst <= 0.35 + 1e-5, "expected ≤0.35, got {worst}");
     }
 }

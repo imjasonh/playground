@@ -8,36 +8,37 @@ spiral mode**.
 1. **Layer bands** — partition the (scaled) model into slabs one `--layer-height`
    thick. Inside each band, sample several Z planes and keep the **max** radius
    per angle (outer silhouette of that band).
-2. **Couple bands** — pull consecutive bands together so the wall stays
-   vase-printable and round ridges stay round:
-   - curvature springs (`--couple-weight`) kill stair-steps without melting
-     steady slopes;
-   - gap drag (`--couple-gap-mm`) only moves pairs whose `|Δr|` exceeds the
-     budget (≈ printable overhang).
+2. **Couple bands** — curvature springs (`--couple-weight`) kill stair-steps on
+   round ridges; then an **exact Lipschitz projection** enforces
+   `|Δr| ≤ min(--couple-gap-mm, --line-width)` at every angle so consecutive
+   walls always overlap within one extrusion. Conversion **fails** if this
+   bonding check does not pass.
 3. **Smooth loft** — Catmull-Rom densify along Z before meshing so the STL
-   isn’t a coarse frustum staircase.
+   isn’t a coarse frustum staircase. The mesh is placed on the bed (`z=0`).
 
-`--optimize` sweeps couple weight / gap and picks the minimum of
-hull-error + staircasing score.
+Output may be **STL** or **3MF** (extension of `-o`).
 
 ```bash
 cd vase-stl
-cargo run --release -- input.stl -o vase.stl --height 120
+cargo run --release -- input.stl -o vase.3mf --height 120 --line-width 0.42
 cargo run --release -- input.stl -o vase.stl --height 120 --optimize
 ```
 
-In the slicer: spiral vase / vase mode, 0 top layers, 0 infill, 0–3 bottoms.
+In Bambu / any slicer: **Spiral vase** (or vase mode), 1 wall, 0 infill, 0 top
+layers. Use a line width ≥ the `--line-width` you converted with (default
+`0.42` for a 0.4 mm nozzle).
 
 ## CLI
 
 | Flag | Default | Meaning |
 |------|---------|---------|
-| `-o, --output` | required | Output STL path |
+| `-o, --output` | required | Output `.stl` or `.3mf` |
 | `--layer-height` | `0.15` | Band thickness (mm) |
 | `--samples` | `360` | Angular samples |
 | `--band-subsamples` | `5` | Z samples per band (max radius) |
 | `--couple-weight` | `0.25` | Curvature spring (`0`–`1`) |
-| `--couple-gap-mm` | `0.30` | Max \|Δr\| between bands before drag |
+| `--couple-gap-mm` | `0.35` | Max \|Δr\| between bands (capped at line width) |
+| `--line-width` | `0.42` | Extrusion width; hard bonding budget |
 | `--loft-subdivide` | `3` | Catmull-Rom densify factor |
 | `--min-radius` | `0.4` | Floor under every radius (mm) |
 | `--inflate` | `0` | Extra radius (mm) |
@@ -47,7 +48,7 @@ In the slicer: spiral vase / vase mode, 0 top layers, 0 infill, 0–3 bottoms.
 | `--wall` | `0.8` | Wall thickness when hollow |
 | `--scale` / `--height` | — | Uniform scale / target height (mm) |
 | `--detail-gain` | `1` | Amplify silhouette relief |
-| `--optimize` | off | Sweep couple knobs; write best |
+| `--optimize` | off | Sweep couple knobs among bonding-safe trials |
 
 ## Tests
 

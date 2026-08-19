@@ -10,22 +10,15 @@ cargo run --release -- ../life-stl/examples/gusset-glider-tower.stl \
 
 ## `secret-level-titus-vase.stl`
 
-Layer-band + curvature/gap coupling (tuned with `--optimize`):
+Bonding-safe conversion (worst consecutive `|Δr|` ≤ line width):
 
 ```bash
 cargo run --release -- /path/to/Secret_level_titus.stl \
-  -o examples/secret-level-titus-vase.stl \
-  --height 120 --layer-height 0.4 --samples 180 \
-  --couple-weight 0.25 --couple-gap-mm 0.30 \
+  -o examples/secret-level-titus-vase.3mf \
+  --height 120 --layer-height 0.15 --samples 360 \
+  --couple-weight 0.25 --couple-gap-mm 0.35 --line-width 0.42 \
   --band-subsamples 5 --loft-subdivide 3 --up z
 ```
 
-Print-ready:
-
-```bash
-cargo run --release -- titus.stl -o titus-vase.stl \
-  --height 120 --layer-height 0.15 --samples 360 \
-  --couple-weight 0.25 --couple-gap-mm 0.30 \
-  --band-subsamples 5 --loft-subdivide 3
-# or: ... --optimize
-```
+In Bambu Studio: import the `.3mf`, enable **Spiral vase**, 0.42 mm line width,
+0.15 mm layer height, 1 wall, 0 infill, 0 top layers.

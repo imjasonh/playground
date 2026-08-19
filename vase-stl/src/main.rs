@@ -3,7 +3,9 @@ use std::process::ExitCode;
 
 use clap::{Parser, ValueEnum};
 
-use vase_stl::{convert, optimize_convert, read_stl, write_stl, ConvertOptions, ShellMode, UpAxis};
+use vase_stl::{
+    convert, optimize_convert, read_stl, write_3mf, write_stl, ConvertOptions, ShellMode, UpAxis,
+};
 
 /// Convert an STL into a vase-mode-printable solid (radial envelope loft).
 #[derive(Debug, Parser)]
@@ -12,7 +14,7 @@ struct Cli {
     /// Input STL (binary or ASCII).
     input: PathBuf,
 
-    /// Output STL path.
+    /// Output path (`.stl` or `.3mf`).
     #[arg(short = 'o', long)]
     output: PathBuf,
 
@@ -56,9 +58,13 @@ struct Cli {
     #[arg(long, default_value_t = 0.25)]
     couple_weight: f32,
 
-    /// Max |Δr| between bands (mm); larger gaps are dragged shut.
-    #[arg(long, default_value_t = 0.30)]
+    /// Max |Δr| between bands (mm); capped at --line-width. Use 0 for auto.
+    #[arg(long, default_value_t = 0.35)]
     couple_gap_mm: f32,
+
+    /// Extrusion line width (mm). Hard bonding budget for consecutive walls.
+    #[arg(long, default_value_t = 0.42)]
+    line_width: f32,
 
     /// Catmull-Rom subdivisions per band for a smoother STL loft.
     #[arg(long, default_value_t = 3)]
@@ -88,7 +94,7 @@ struct Cli {
     #[arg(long, default_value_t = 1.0)]
     detail_gain: f32,
 
-    /// Sweep couple-weight vs uncoupled bands; write the best-scoring vase.
+    /// Sweep couple-weight vs bonding-safe bands; write the best-scoring vase.
     #[arg(long, default_value_t = false)]
     optimize: bool,
 
@@ -141,6 +147,9 @@ fn run(cli: Cli) -> Result<(), String> {
     if cli.scale <= 0.0 {
         return Err("--scale must be > 0".into());
     }
+    if cli.line_width <= 0.0 {
+        return Err("--line-width must be > 0".into());
+    }
     if let Some(h) = cli.height {
         if h <= 0.0 {
             return Err("--height must be > 0".into());
@@ -172,6 +181,7 @@ fn run(cli: Cli) -> Result<(), String> {
         band_subsamples: cli.band_subsamples,
         couple_weight: cli.couple_weight,
         couple_gap_mm: cli.couple_gap_mm,
+        line_width_mm: cli.line_width,
         loft_subdivide: cli.loft_subdivide,
         up_axis: cli.up.map(UpAxis::from),
         shell,
@@ -183,35 +193,23 @@ fn run(cli: Cli) -> Result<(), String> {
     let result = if cli.optimize {
         let (best, trials) = optimize_convert(&input, &opts, cli.chop_budget)?;
         eprintln!(
-            "optimize: {} trials  chop_budget={:.3} mm",
+            "optimize: {} bonding-safe trials  chop_budget={:.3} mm",
             trials.len(),
             cli.chop_budget
         );
-        eprintln!("rank,score,mean_abs_r,max_abs_r,d2r,chop,vol_rel,couple_w,gap");
+        eprintln!("rank,score,mean_abs_r,max_abs_r,d2r,chop,couple_w,gap");
         for (i, t) in trials.iter().take(20).enumerate() {
             let m = &t.metrics;
             eprintln!(
-                "{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.2},{:.3}",
+                "{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.2},{:.3}",
                 i + 1,
                 t.score,
                 m.mean_abs_r_err,
                 m.max_abs_r_err,
                 m.mean_abs_d2r,
                 m.mean_abs_dr_dz,
-                m.volume_rel_err,
                 t.options.couple_weight,
                 t.options.couple_gap_mm
-            );
-        }
-        if let Some(t) = trials.first() {
-            eprintln!(
-                "best: couple_w={:.2} gap={:.3}  mean|Δr|={:.4} max|Δr|={:.4} d2r={:.4} chop={:.4}",
-                t.options.couple_weight,
-                t.options.couple_gap_mm,
-                t.metrics.mean_abs_r_err,
-                t.metrics.max_abs_r_err,
-                t.metrics.mean_abs_d2r,
-                t.metrics.mean_abs_dr_dz
             );
         }
         best
@@ -219,8 +217,29 @@ fn run(cli: Cli) -> Result<(), String> {
         convert(&input, &opts)?
     };
 
-    write_stl(&cli.output, &result.mesh)
-        .map_err(|e| format!("write {}: {e}", cli.output.display()))?;
+    let v = &result.validation;
+    eprintln!(
+        "vase-check: {}  worst|Δr|={:.3} mm  budget={:.3} mm  over={:.2}%  layers={} samples={}",
+        if v.ok { "PASS" } else { "FAIL" },
+        v.worst_step_mm,
+        v.max_step_mm,
+        100.0 * v.frac_over_budget,
+        v.layers,
+        v.angular_samples
+    );
+
+    let out = cli.output;
+    let ext = out
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if ext == "3mf" {
+        write_3mf(&out, &result.mesh, "vase")
+            .map_err(|e| format!("write {}: {e}", out.display()))?;
+    } else {
+        write_stl(&out, &result.mesh).map_err(|e| format!("write {}: {e}", out.display()))?;
+    }
 
     let before = result.bbox_before.size();
     let after = result.bbox_after.size();
@@ -236,11 +255,12 @@ fn run(cli: Cli) -> Result<(), String> {
         before[0], before[1], before[2]
     );
     eprintln!(
-        "output size {:.2} × {:.2} × {:.2} mm → {}",
+        "output size {:.2} × {:.2} × {:.2} mm  z_min={:.3} → {}",
         after[0],
         after[1],
         after[2],
-        cli.output.display()
+        result.bbox_after.min[2],
+        out.display()
     );
     Ok(())
 }

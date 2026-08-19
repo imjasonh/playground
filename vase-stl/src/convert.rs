@@ -1,8 +1,9 @@
-use crate::envelope::{extract_radial_envelope, Envelope, EnvelopeOptions};
+use crate::envelope::{extract_radial_envelope, max_layer_step, Envelope, EnvelopeOptions};
 use crate::mesh::{loft_hollow, loft_solid, loft_solid_open_top, prepare_loft_envelope, MeshStats};
 use crate::metrics::{compare_envelopes, EnvelopeMetrics};
 use crate::orient::{choose_up_axis, reorient_to_z_up, BoundingBox, UpAxis};
 use crate::stl::TriMesh;
+use crate::validate::{validate_envelope, VaseValidation};
 
 /// How to finish the lofted mesh.
 #[derive(Debug, Clone, Copy)]
@@ -38,8 +39,10 @@ pub struct ConvertOptions {
     pub band_subsamples: usize,
     /// Spring weight pulling consecutive bands together.
     pub couple_weight: f32,
-    /// Soft |Δr| gap budget (mm) between bands.
+    /// Hard |Δr| budget between bands (mm). Capped at `line_width_mm`.
     pub couple_gap_mm: f32,
+    /// Extrusion line width (mm). Consecutive walls must step by ≤ this.
+    pub line_width_mm: f32,
     /// Catmull-Rom loft densification factor (`1` = off).
     pub loft_subdivide: usize,
     /// Force a print-up axis; `None` = pick the longest AABB edge.
@@ -66,7 +69,9 @@ impl Default for ConvertOptions {
             smooth_vertical_range_mm: 0.0,
             band_subsamples: 5,
             couple_weight: 0.25,
-            couple_gap_mm: 0.30,
+            // Bonding budget ≤ line width (0.42 for a 0.4 mm nozzle).
+            couple_gap_mm: 0.35,
+            line_width_mm: 0.42,
             loft_subdivide: 3,
             up_axis: None,
             shell: ShellMode::Solid,
@@ -86,6 +91,8 @@ pub struct ConvertResult {
     pub up_axis: UpAxis,
     pub bbox_before: BoundingBox,
     pub bbox_after: BoundingBox,
+    /// Layer-step check against the bonding budget.
+    pub validation: VaseValidation,
 }
 
 /// One trial from [`optimize_convert`].
@@ -96,20 +103,57 @@ pub struct OptimizeTrial {
     pub score: f32,
 }
 
+fn effective_gap_mm(opts: &ConvertOptions) -> f32 {
+    let lw = opts.line_width_mm.max(0.2);
+    if opts.couple_gap_mm > 0.0 {
+        opts.couple_gap_mm.min(lw)
+    } else {
+        lw * 0.85
+    }
+}
+
 /// Convert `input` into a vase-mode-printable mesh.
 pub fn convert(input: &TriMesh, opts: &ConvertOptions) -> Result<ConvertResult, String> {
     let prepared = prepare_mesh(input, opts)?;
-    let envelope = extract_envelope(&prepared.oriented, &prepared.bbox, opts);
+    let mut opts = opts.clone();
+    opts.couple_gap_mm = effective_gap_mm(&opts);
+
+    let mut envelope = extract_envelope(&prepared.oriented, &prepared.bbox, &opts);
     if envelope.contours.is_empty() {
         return Err("envelope extraction produced no contours".into());
     }
 
+    let validation = validate_envelope(&envelope, opts.couple_gap_mm);
+    if !validation.ok {
+        return Err(format!(
+            "vase validation failed: worst layer step {:.3} mm exceeds bonding budget {:.3} mm ({:.1}% of samples over budget)",
+            validation.worst_step_mm,
+            validation.max_step_mm,
+            100.0 * validation.frac_over_budget
+        ));
+    }
+
     let loft_env = prepare_loft_envelope(&envelope, opts.loft_subdivide, opts.min_radius);
-    let (tris, stats) = match opts.shell {
+    let worst_loft = max_layer_step(&loft_env.contours);
+    if worst_loft > opts.couple_gap_mm + 1e-3 {
+        return Err(format!(
+            "loft densify introduced step {:.3} mm > budget {:.3} mm",
+            worst_loft, opts.couple_gap_mm
+        ));
+    }
+
+    let (mut tris, stats) = match opts.shell {
         ShellMode::Solid => loft_solid(&loft_env),
         ShellMode::OpenTop => loft_solid_open_top(&loft_env),
         ShellMode::Hollow { wall_mm } => loft_hollow(&loft_env, wall_mm),
     };
+
+    place_on_bed(&mut tris);
+
+    let z0 = envelope.contours.first().map(|c| c.z).unwrap_or(0.0);
+    for c in &mut envelope.contours {
+        c.z -= z0;
+    }
 
     let mesh = TriMesh::from_triangles(tris);
     let bbox_after = BoundingBox::from_triangles(&mesh.triangles)
@@ -122,17 +166,18 @@ pub fn convert(input: &TriMesh, opts: &ConvertOptions) -> Result<ConvertResult, 
         up_axis: prepared.up_axis,
         bbox_before: prepared.bbox_before,
         bbox_after,
+        validation,
     })
 }
 
-/// Sweep band-coupling weights against the uncoupled band envelope and pick
-/// the weight that minimizes hull error + staircasing (round ridges stay round).
+/// Sweep couple-weight / gap; only keep trials that pass the line-width bonding
+/// check, then pick the lowest hull+staircasing score among them.
 pub fn optimize_convert(
     input: &TriMesh,
     base: &ConvertOptions,
     chop_budget_mm: f32,
 ) -> Result<(ConvertResult, Vec<OptimizeTrial>), String> {
-    optimize_convert_with_budget(input, base, chop_budget_mm, 0.15)
+    optimize_convert_with_budget(input, base, chop_budget_mm, 0.5)
 }
 
 /// Like [`optimize_convert`], with an explicit mean-|Δr| fidelity budget.
@@ -143,35 +188,41 @@ pub fn optimize_convert_with_budget(
     fidelity_budget_mm: f32,
 ) -> Result<(ConvertResult, Vec<OptimizeTrial>), String> {
     let prepared = prepare_mesh(input, base)?;
+    let bond = effective_gap_mm(base);
+
     let mut ref_opts = base.clone();
     ref_opts.smooth_angular = 0;
     ref_opts.smooth_vertical = 0.0;
     ref_opts.smooth_vertical_mm = 0.0;
     ref_opts.smooth_vertical_range_mm = 0.0;
     ref_opts.couple_weight = 0.0;
+    ref_opts.couple_gap_mm = bond; // still enforce bonding on the reference path
     ref_opts.detail_gain = 1.0;
+    // Uncoupled-but-enforced reference for fidelity: gap clamp only.
     let reference = extract_envelope(&prepared.oriented, &prepared.bbox, &ref_opts);
     if reference.contours.is_empty() {
         return Err("reference envelope is empty".into());
     }
 
     let weights = [0.0_f32, 0.1, 0.25, 0.4, 0.6, 0.8, 1.0];
-    let gaps = [0.20_f32, 0.30, 0.45];
+    // Gaps must be ≤ bonding budget.
+    let gaps = [bond * 0.7, bond * 0.85, bond];
 
     let mut trials = Vec::new();
     for &w in &weights {
         for &gap in &gaps {
-            if w <= 0.0 && gap != gaps[0] {
-                continue; // uncoupled once
-            }
             let mut opts = base.clone();
             opts.couple_weight = w;
-            opts.couple_gap_mm = gap;
+            opts.couple_gap_mm = gap.min(bond);
             opts.smooth_vertical_mm = 0.0;
             opts.smooth_vertical_range_mm = 0.0;
             opts.detail_gain = 1.0;
             opts.smooth_angular = 0;
             let env = extract_envelope(&prepared.oriented, &prepared.bbox, &opts);
+            let v = validate_envelope(&env, bond);
+            if !v.ok {
+                continue;
+            }
             let metrics = compare_envelopes(&reference, &env);
             let score = metrics.score(chop_budget_mm);
             trials.push(OptimizeTrial {
@@ -182,43 +233,30 @@ pub fn optimize_convert_with_budget(
         }
     }
 
+    if trials.is_empty() {
+        return Err(format!(
+            "no couple settings satisfied bonding budget {bond:.3} mm"
+        ));
+    }
+
     trials.sort_by(|a, b| {
         a.score
             .partial_cmp(&b.score)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    // Prefer lowest score among trials under the fidelity budget; else best score.
     let best_idx = pick_min_score_under_budget(&trials, fidelity_budget_mm);
-    let opts = trials[best_idx].options.clone();
-    let envelope = extract_envelope(&prepared.oriented, &prepared.bbox, &opts);
-    let loft_env = prepare_loft_envelope(&envelope, opts.loft_subdivide, opts.min_radius);
-
-    let (tris, stats) = match opts.shell {
-        ShellMode::Solid => loft_solid(&loft_env),
-        ShellMode::OpenTop => loft_solid_open_top(&loft_env),
-        ShellMode::Hollow { wall_mm } => loft_hollow(&loft_env, wall_mm),
-    };
-    let mesh = TriMesh::from_triangles(tris);
-    let bbox_after = BoundingBox::from_triangles(&mesh.triangles)
-        .ok_or_else(|| "output mesh is empty".to_string())?;
+    let mut opts = trials[best_idx].options.clone();
+    opts.couple_gap_mm = effective_gap_mm(&opts);
+    // Re-run through convert() so bed placement + validation are consistent.
+    let result = convert(input, &opts)?;
 
     if best_idx != 0 {
         let w = trials.remove(best_idx);
         trials.insert(0, w);
     }
 
-    Ok((
-        ConvertResult {
-            mesh,
-            envelope,
-            stats,
-            up_axis: prepared.up_axis,
-            bbox_before: prepared.bbox_before,
-            bbox_after,
-        },
-        trials,
-    ))
+    Ok((result, trials))
 }
 
 fn pick_min_score_under_budget(trials: &[OptimizeTrial], fidelity_budget_mm: f32) -> usize {
@@ -234,7 +272,6 @@ fn pick_min_score_under_budget(trials: &[OptimizeTrial], fidelity_budget_mm: f32
     if let Some((i, _)) = best {
         return i;
     }
-    // Fallback: lowest score overall.
     let mut idx = 0usize;
     for (i, t) in trials.iter().enumerate() {
         if t.score < trials[idx].score {
@@ -333,6 +370,22 @@ fn scale_triangles(triangles: &mut [stl_io::Triangle], scale: f32) {
             v.0[0] *= scale;
             v.0[1] *= scale;
             v.0[2] *= scale;
+        }
+    }
+}
+
+fn place_on_bed(triangles: &mut [stl_io::Triangle]) {
+    let Some(bbox) = BoundingBox::from_triangles(triangles) else {
+        return;
+    };
+    let cx = 0.5 * (bbox.min[0] + bbox.max[0]);
+    let cy = 0.5 * (bbox.min[1] + bbox.max[1]);
+    let z0 = bbox.min[2];
+    for tri in triangles {
+        for v in &mut tri.vertices {
+            v.0[0] -= cx;
+            v.0[1] -= cy;
+            v.0[2] -= z0;
         }
     }
 }
