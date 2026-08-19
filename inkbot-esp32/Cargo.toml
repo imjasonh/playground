@@ -3,7 +3,7 @@ name = "inkbot-esp32"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-description = "ESP32 firmware: poll inkbot Worker and show 800×480 B/W PNG on Waveshare 7.5″"
+description = "ESP32 firmware: inkbot frame poller and offline maze on Waveshare 7.5″"
 repository = "https://github.com/imjasonh/playground"
 readme = "README.md"
 publish = false
@@ -15,6 +15,12 @@ path = "src/lib.rs"
 [[bin]]
 name = "inkbot-esp32"
 path = "src/main.rs"
+harness = false
+required-features = ["firmware"]
+
+[[bin]]
+name = "maze-esp32"
+path = "src/maze_main.rs"
 harness = false
 required-features = ["firmware"]
 

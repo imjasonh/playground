@@ -1,8 +1,10 @@
 //! Host-testable pieces of the inkbot ESP32 firmware.
 //!
 //! Device Wi-Fi / HTTP / e-paper code lives in `main.rs` (feature `firmware`).
+//! The maze firmware (`maze_main.rs`) uses [`maze`] plus a local panel driver.
 
 pub mod catalog;
+pub mod maze;
 pub mod net;
 pub mod panel;
 pub mod png_frame;
