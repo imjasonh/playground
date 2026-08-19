@@ -121,6 +121,9 @@ func (s *Server) handleRequest(ctx context.Context, m jsonrpc.Message) {
 			_ = s.conn.ReplyErr(m.ID, jsonrpc.CodeInvalidParams, err.Error())
 			return
 		}
+		// Reply before compiling CUE. LoadRules can take seconds when
+		// this process is competing with other pasta packages (and, in
+		// the daily deps job, with cargo/npm on the same runner).
 		_ = s.conn.Reply(m.ID, s.handleInitialize(p))
 	case "shutdown":
 		s.shuttingDown = true
@@ -169,8 +172,6 @@ func (s *Server) handleInitialize(p protocol.InitializeParams) protocol.Initiali
 	s.root = root
 	s.mu.Unlock()
 
-	s.reloadRules()
-
 	return protocol.InitializeResult{
 		Capabilities: protocol.ServerCapabilities{
 			TextDocumentSync: 1, // full
@@ -191,9 +192,13 @@ func (s *Server) handleInitialize(p protocol.InitializeParams) protocol.Initiali
 	}
 }
 
-// handleInitialized fires after the client acks initialize. We use it
-// to register file watchers for the rule globs.
+// handleInitialized fires after the client acks initialize. Rules are
+// loaded here (not during initialize) so the initialize response is
+// not blocked on CUE compilation. Notifications are handled on the
+// dispatch goroutine, so a subsequent didOpen waits until the analyzer
+// set is ready.
 func (s *Server) handleInitialized(ctx context.Context) {
+	s.reloadRules()
 	s.registerRuleWatcher()
 }
 
