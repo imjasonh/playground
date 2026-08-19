@@ -31,16 +31,17 @@ usually 0–3 bottom layers (or rely on the mesh bottom).
 |------|---------|---------|
 | `-o, --output` | required | Output STL path |
 | `--layer-height` | `0.2` | Slice / loft step (mm) |
-| `--samples` | `96` | Angular samples around the axis |
+| `--samples` | `256` | Angular samples around the axis |
 | `--min-radius` | `0.4` | Floor under every radius (mm) |
 | `--inflate` | `0` | Extra radius added everywhere (mm) |
-| `--smooth-angular` | `1` | Circular blur half-width (samples; `0` off) |
-| `--smooth-vertical` | `0.25` | Blend with neighbor layers (`0`–`1`) |
+| `--smooth-angular` | `0` | Circular blur half-width (samples; keep `0` for detail) |
+| `--smooth-vertical` | `0` | Blend with neighbor layers (`0`–`1`; keep `0` for detail) |
 | `--up` | auto | Force `x` / `y` / `z` as print-up |
 | `--shell` | `solid` | `solid`, `open-top`, or `hollow` |
 | `--wall` | `0.8` | Wall thickness when `--shell hollow` (mm) |
 | `--scale` | `1` | Uniform scale after orientation |
 | `--height` | unset | Scale so oriented height becomes this (mm) |
+| `--detail-gain` | `1` | Amplify silhouette relief (`2`–`3` for more punch) |
 
 ## Library
 

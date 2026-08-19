@@ -36,21 +36,24 @@ pub struct ConvertOptions {
     pub scale: f32,
     /// If set, overrides `scale` so the oriented height becomes this many mm.
     pub target_height_mm: Option<f32>,
+    /// Exaggerate silhouette relief (`1.0` = faithful; try `2.0`–`3.0`).
+    pub detail_gain: f32,
 }
 
 impl Default for ConvertOptions {
     fn default() -> Self {
         Self {
             layer_height: 0.2,
-            angular_samples: 96,
+            angular_samples: 256,
             min_radius: 0.4,
             inflate: 0.0,
-            smooth_angular: 1,
-            smooth_vertical: 0.25,
+            smooth_angular: 0,
+            smooth_vertical: 0.0,
             up_axis: None,
             shell: ShellMode::Solid,
             scale: 1.0,
             target_height_mm: None,
+            detail_gain: 1.0,
         }
     }
 }
@@ -118,6 +121,7 @@ pub fn convert(input: &TriMesh, opts: &ConvertOptions) -> Result<ConvertResult, 
         inflate: opts.inflate,
         smooth_angular: opts.smooth_angular,
         smooth_vertical: opts.smooth_vertical,
+        detail_gain: opts.detail_gain,
     };
     let envelope = extract_radial_envelope(&oriented, axis_xy, bbox.min[2], bbox.max[2], &env_opts);
     if envelope.contours.is_empty() {

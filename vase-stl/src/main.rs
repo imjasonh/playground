@@ -21,7 +21,7 @@ struct Cli {
     layer_height: f32,
 
     /// Angular samples around the print axis.
-    #[arg(long, default_value_t = 96)]
+    #[arg(long, default_value_t = 256)]
     samples: usize,
 
     /// Minimum radius at every angle (mm).
@@ -32,12 +32,12 @@ struct Cli {
     #[arg(long, default_value_t = 0.0)]
     inflate: f32,
 
-    /// Angular smoothing half-width in samples (0 disables).
-    #[arg(long, default_value_t = 1)]
+    /// Angular smoothing half-width in samples (0 disables; default keeps detail).
+    #[arg(long, default_value_t = 0)]
     smooth_angular: usize,
 
-    /// Vertical smoothing blend 0..1.
-    #[arg(long, default_value_t = 0.25)]
+    /// Vertical smoothing blend 0..1 (0 disables; default keeps detail).
+    #[arg(long, default_value_t = 0.0)]
     smooth_vertical: f32,
 
     /// Force the input axis that becomes print-up. Default: longest AABB edge.
@@ -59,6 +59,10 @@ struct Cli {
     /// Scale so the oriented model height becomes this many millimeters.
     #[arg(long)]
     height: Option<f32>,
+
+    /// Exaggerate silhouette relief vs a low-pass baseline (1 = faithful).
+    #[arg(long, default_value_t = 1.0)]
+    detail_gain: f32,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -135,6 +139,7 @@ fn run(cli: Cli) -> Result<(), String> {
         shell,
         scale: cli.scale,
         target_height_mm: cli.height,
+        detail_gain: cli.detail_gain,
     };
 
     let result = convert(&input, &opts)?;
