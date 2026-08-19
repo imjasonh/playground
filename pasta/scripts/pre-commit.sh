@@ -37,6 +37,6 @@ go build ./...
 # TestExtensionDemos. E2E smoke tests (e2e/) shallow-clone real repos;
 # pass -short to skip them for a faster local loop.
 step "go test"
-go test ./... -count=1
+go test -race ./... -count=1
 
 green "all checks passed"

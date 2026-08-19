@@ -39,18 +39,19 @@ for module in "${modules[@]}"; do
 
   if (
     cd "$module"
+    # -race is the Go equivalent of a data-race detector. Always on in CI.
     # -v so CI logs show each test (including Docker e2e PASS vs SKIP).
     # node-image Docker-socket e2e builds/runs several images; allow headroom.
     # pasta e2e shallow-clones real repos and cold-parses them; allow headroom.
     if [ "$module" = "node-image" ] || [ "$module" = "pasta" ]; then
-      go test -v -timeout 30m ./...
+      go test -race -v -timeout 30m ./...
     else
-      go test -v ./...
+      go test -race -v ./...
     fi
   ); then
     echo "${module}: tests passed"
   else
-    echo "::error title=Go tests failed::${module}: go test -v ./..."
+    echo "::error title=Go tests failed::${module}: go test -race -v ./..."
     result=1
   fi
 
