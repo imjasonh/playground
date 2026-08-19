@@ -2,6 +2,8 @@
 
 I believe that monorepos are the future. For the record, I believed that _before_ LLMs could write tens of thousands of lines of code before I finished checking Slack. It's only more true now.
 
+![a delightful meme about monorepos](./monorepo.jpg)
+
 All the benefits of monorepos for humans -- consistent checks and policy, consistently available context, consistent access control -- are only more important when you can hire a relatively cheap army of over-eager junior supergeniuses.
 
 One consistent problem I've experienced in a monorepo is ensuring consistent quality checks across the codebase. Is every* line of Go [`gofmt`](https://go.dev/blog/gofmt)ed and [`go vet`](https://pkg.go.dev/cmd/vet)ted and [`golangci-lint run`](https://golangci-lint.run/)ned? In a polyglot monorepo -- a monorepo which may include backend code, frontend code, infra-as-code, CI-as-code, docs, and the whole kitchen sink -- this gets even worse. You may start running [`rustfmt`](https://rust-lang.github.io/rustfmt/) and [`clippy`](https://doc.rust-lang.org/clippy/) and [`eslint`](https://eslint.org/), then before you know it you're running [`checkov`](https://www.checkov.io/) and [`zizmor`](https://docs.zizmor.sh/) and [`yamlfmt`](https://github.com/google/yamlfmt) and who knows what else.
