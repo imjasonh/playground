@@ -16,7 +16,10 @@
 # Ubuntu CI's /bin/sh is dash, which rejects `set -o pipefail`.
 SHELL := /bin/bash
 
-PORT ?= /dev/cu.usbserial-0001
+PORT ?= $(firstword $(wildcard /dev/cu.usbmodem* /dev/cu.usbserial-*))
+ifeq ($(PORT),)
+PORT := /dev/cu.usbserial-0001
+endif
 TARGET := xtensa-esp32-espidf
 APP ?= inkbot
 
@@ -64,7 +67,7 @@ help:
 	@echo "  make clean          cargo clean"
 
 test:
-	cargo test --lib
+	cargo test --lib --locked
 
 build: ensure-python-shim
 	@if [ -z "$(INKBOT_FIRMWARE_ID)" ]; then \

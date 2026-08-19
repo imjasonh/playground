@@ -1,5 +1,6 @@
 /target
 /.embuild
+/.preview
 /config.toml
 sdkconfig
 sdkconfig.old

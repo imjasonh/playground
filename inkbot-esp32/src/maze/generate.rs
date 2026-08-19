@@ -64,7 +64,7 @@ impl Rng {
         if n <= 1 {
             return 0;
         }
-        (self.next_u64() as usize) % n
+        (self.next_u64() % n as u64) as usize
     }
 }
 
@@ -147,5 +147,12 @@ mod tests {
         assert_eq!(maze.rows, 2);
         assert_eq!(reachable(&maze), 4);
         assert_eq!(carved_internal_walls(&maze), 3);
+    }
+
+    #[test]
+    fn default_panel_size_is_a_spanning_tree() {
+        let maze = generate(crate::maze::MAZE_COLS, crate::maze::MAZE_ROWS, 1);
+        assert_eq!(carved_internal_walls(&maze), maze.cell_count() - 1);
+        assert_eq!(reachable(&maze), maze.cell_count());
     }
 }

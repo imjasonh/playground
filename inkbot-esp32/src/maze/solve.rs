@@ -7,6 +7,9 @@ use super::{Maze, Path};
 /// Returns an empty path when the end is unreachable (the generator never
 /// does that). The path includes both endpoints and no off-route cells.
 pub fn solve(maze: &Maze) -> Path {
+    if !maze.contains(maze.start) || !maze.contains(maze.end) {
+        return Vec::new();
+    }
     let n = maze.cell_count();
     let mut came = vec![None; n];
     let mut seen = vec![false; n];
@@ -96,5 +99,13 @@ mod tests {
             path,
             vec![Cell::new(0, 0), Cell::new(1, 0), Cell::new(2, 0)]
         );
+    }
+
+    #[test]
+    fn sealed_clamps_start_and_end_into_the_grid() {
+        let maze = Maze::sealed(4, 4, Cell::new(99, 99), Cell::new(50, 50));
+        assert_eq!(maze.start, Cell::new(3, 3));
+        assert_eq!(maze.end, Cell::new(3, 3));
+        assert_eq!(solve(&maze), vec![Cell::new(3, 3)]);
     }
 }

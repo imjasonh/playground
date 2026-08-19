@@ -5,6 +5,8 @@
 //! follows Waveshare's `Init_Part` + `Display_Partial` sequence; the pinned
 //! `epd-waveshare` crate leaves `update_partial_frame` unimplemented.
 
+use std::time::{Duration, Instant};
+
 use anyhow::{anyhow, Context, Result};
 use esp_idf_svc::hal::{
     delay::{Ets, FreeRtos},
@@ -14,7 +16,7 @@ use esp_idf_svc::hal::{
 };
 
 use inkbot_esp32::maze::ByteRect;
-use inkbot_esp32::{FRAME_BYTES, PANEL_HEIGHT, PANEL_WIDTH};
+use inkbot_esp32::FRAME_BYTES;
 
 type BusyPin = PinDriver<'static, Input>;
 type DcPin = PinDriver<'static, Output>;
@@ -118,21 +120,16 @@ impl Panel {
     /// DTM2 gets the packed 1-bit crop as-is (1 = white), matching Waveshare's
     /// C `Display_Part` after a 1=white buffer.
     pub fn show_partial(&mut self, window: &[u8], rect: ByteRect) -> Result<()> {
+        let Some(rect) = rect.clamped() else {
+            return Err(anyhow!(
+                "partial rect {rect:?} is empty or not byte-aligned"
+            ));
+        };
         if window.len() != rect.byte_count() {
             return Err(anyhow!(
                 "partial window must be {} bytes, got {}",
                 rect.byte_count(),
                 window.len()
-            ));
-        }
-        if rect.x % 8 != 0 || rect.width % 8 != 0 || rect.width == 0 || rect.height == 0 {
-            return Err(anyhow!(
-                "partial rect must be byte-aligned and non-empty, got {rect:?}"
-            ));
-        }
-        if rect.x + rect.width > PANEL_WIDTH || rect.y + rect.height > PANEL_HEIGHT {
-            return Err(anyhow!(
-                "partial rect {rect:?} exceeds {PANEL_WIDTH}x{PANEL_HEIGHT}"
             ));
         }
 
@@ -212,12 +209,17 @@ impl Panel {
     }
 
     fn wait_idle(&mut self) -> Result<()> {
-        // BUSY is low while the UC8179 is working.
+        // BUSY is low while the UC8179 is working. A 7.5″ full refresh is a few
+        // seconds; if the pin sticks, fail instead of hanging the desk loop.
+        let start = Instant::now();
         loop {
             self.cmd(CMD_GET_STATUS)?;
             FreeRtos::delay_ms(10);
             if !self.busy.is_low() {
                 break;
+            }
+            if start.elapsed() > Duration::from_secs(15) {
+                return Err(anyhow!("panel busy timeout"));
             }
         }
         FreeRtos::delay_ms(5);

@@ -29,33 +29,57 @@ impl ByteRect {
     pub fn byte_count(self) -> usize {
         (self.width as usize / 8) * self.height as usize
     }
+
+    /// Intersect with the panel. `None` when the window would be empty.
+    pub fn clamped(self) -> Option<Self> {
+        if self.x >= PANEL_WIDTH || self.y >= PANEL_HEIGHT {
+            return None;
+        }
+        if self.x % 8 != 0 || self.width % 8 != 0 || self.width == 0 || self.height == 0 {
+            return None;
+        }
+        let width = (self.width.min(PANEL_WIDTH - self.x) / 8) * 8;
+        let height = self.height.min(PANEL_HEIGHT - self.y);
+        if width == 0 || height == 0 {
+            return None;
+        }
+        Some(Self {
+            x: self.x,
+            y: self.y,
+            width,
+            height,
+        })
+    }
 }
 
 /// Center a `cols`×`rows` maze on the panel with thick enough walls for e-ink.
+///
+/// Cell pitch is the largest square that still fits: this never returns a
+/// layout whose bounds exceed the panel, even for very dense grids.
 pub fn layout_for(cols: u16, rows: u16) -> Layout {
     const WALL: u32 = 3;
     let cols_u = u32::from(cols.max(2));
     let rows_u = u32::from(rows.max(2));
     let cell_w = (PANEL_WIDTH - WALL) / cols_u;
     let cell_h = (PANEL_HEIGHT - WALL) / rows_u;
-    let cell = cell_w.min(cell_h).max(WALL + 4);
-    let total_w = cols_u * cell + WALL;
-    let total_h = rows_u * cell + WALL;
+    let cell = cell_w.min(cell_h).max(1);
+    let wall = WALL.min(cell);
+    let total_w = cols_u
+        .saturating_mul(cell)
+        .saturating_add(wall)
+        .min(PANEL_WIDTH);
+    let total_h = rows_u
+        .saturating_mul(cell)
+        .saturating_add(wall)
+        .min(PANEL_HEIGHT);
     Layout {
         cols: cols_u as u16,
         rows: rows_u as u16,
-        origin_x: (PANEL_WIDTH.saturating_sub(total_w)) / 2,
-        origin_y: (PANEL_HEIGHT.saturating_sub(total_h)) / 2,
+        origin_x: (PANEL_WIDTH - total_w) / 2,
+        origin_y: (PANEL_HEIGHT - total_h) / 2,
         cell,
-        wall: WALL,
+        wall,
     }
-}
-
-/// How many solution cells to add per frame so `path_len` finishes in about
-/// `target_frames` updates. Always at least one cell.
-pub fn cells_per_frame(path_len: usize, target_frames: usize) -> usize {
-    let frames = target_frames.max(1);
-    path_len.max(1).div_ceil(frames).max(1)
 }
 
 /// Packed 1-bit framebuffer of the empty maze (walls + start/end markers).
@@ -93,8 +117,8 @@ pub fn dirty_rect(layout: &Layout, path: &[Cell], from: usize, to: usize) -> Byt
         }
         x0 = x0.min(x);
         y0 = y0.min(y);
-        x1 = x1.max(x + w);
-        y1 = y1.max(y + h);
+        x1 = x1.max(x.saturating_add(w));
+        y1 = y1.max(y.saturating_add(h));
     };
 
     if from < to {
@@ -122,11 +146,19 @@ pub fn dirty_rect(layout: &Layout, path: &[Cell], from: usize, to: usize) -> Byt
 }
 
 /// Copy the packed bytes of `rect` out of a full panel framebuffer.
+///
+/// Out-of-bounds windows yield an empty buffer instead of panicking.
 pub fn crop_packed(frame: &[u8], rect: ByteRect) -> Vec<u8> {
+    let Some(rect) = rect.clamped() else {
+        return Vec::new();
+    };
+    if frame.len() != FRAME_BYTES {
+        return Vec::new();
+    }
     let row_bytes = (PANEL_WIDTH / 8) as usize;
     let x_byte = (rect.x / 8) as usize;
     let w_bytes = (rect.width / 8) as usize;
-    let mut out = Vec::with_capacity(w_bytes * rect.height as usize);
+    let mut out = Vec::with_capacity(rect.byte_count());
     for row in 0..rect.height {
         let y = (rect.y + row) as usize;
         let start = y * row_bytes + x_byte;
@@ -136,6 +168,8 @@ pub fn crop_packed(frame: &[u8], rect: ByteRect) -> Vec<u8> {
 }
 
 fn paint_maze(frame: &mut [u8], maze: &Maze, layout: &Layout) {
+    debug_assert_eq!(layout.cols, maze.cols);
+    debug_assert_eq!(layout.rows, maze.rows);
     let (bx, by, bw, bh) = maze_bounds(layout);
     fill_rect(frame, bx, by, bw, bh, true);
     for y in 0..maze.rows {
@@ -193,8 +227,14 @@ fn paint_path(frame: &mut [u8], layout: &Layout, path: &[Cell]) {
 }
 
 fn maze_bounds(layout: &Layout) -> (u32, u32, u32, u32) {
-    let w = u32::from(layout.cols) * layout.cell + layout.wall;
-    let h = u32::from(layout.rows) * layout.cell + layout.wall;
+    let w = u32::from(layout.cols)
+        .saturating_mul(layout.cell)
+        .saturating_add(layout.wall)
+        .min(PANEL_WIDTH.saturating_sub(layout.origin_x));
+    let h = u32::from(layout.rows)
+        .saturating_mul(layout.cell)
+        .saturating_add(layout.wall)
+        .min(PANEL_HEIGHT.saturating_sub(layout.origin_y));
     (layout.origin_x, layout.origin_y, w, h)
 }
 
@@ -252,18 +292,21 @@ fn path_connector(layout: &Layout, a: Cell, b: Cell) -> Option<(u32, u32, u32, u
 }
 
 fn align_byte_rect(x: u32, y: u32, w: u32, h: u32) -> ByteRect {
-    let x2 = (x + w).min(PANEL_WIDTH);
-    let y2 = (y + h).min(PANEL_HEIGHT);
-    let x0 = (x / 8) * 8;
-    let x1 = x2.div_ceil(8) * 8;
-    let x1 = x1.min(PANEL_WIDTH);
-    let y0 = y.min(PANEL_HEIGHT);
-    let y1 = y2.min(PANEL_HEIGHT);
+    let x2 = x.saturating_add(w).min(PANEL_WIDTH);
+    let y2 = y.saturating_add(h).min(PANEL_HEIGHT);
+    let mut x0 = (x / 8) * 8;
+    if x0 >= PANEL_WIDTH {
+        x0 = PANEL_WIDTH - 8;
+    }
+    let mut x1 = x2.div_ceil(8) * 8;
+    x1 = x1.min(PANEL_WIDTH).max(x0 + 8);
+    let y0 = y.min(PANEL_HEIGHT.saturating_sub(1));
+    let y1 = y2.max(y0 + 1).min(PANEL_HEIGHT);
     ByteRect {
         x: x0,
         y: y0,
-        width: x1.saturating_sub(x0).max(8).min(PANEL_WIDTH - x0),
-        height: y1.saturating_sub(y0).max(1),
+        width: x1 - x0,
+        height: y1 - y0,
     }
 }
 
@@ -271,8 +314,8 @@ fn fill_rect(frame: &mut [u8], x: u32, y: u32, w: u32, h: u32, black: bool) {
     if w == 0 || h == 0 {
         return;
     }
-    let x1 = (x + w).min(PANEL_WIDTH);
-    let y1 = (y + h).min(PANEL_HEIGHT);
+    let x1 = x.saturating_add(w).min(PANEL_WIDTH);
+    let y1 = y.saturating_add(h).min(PANEL_HEIGHT);
     let x0 = x.min(PANEL_WIDTH);
     let y0 = y.min(PANEL_HEIGHT);
     for py in y0..y1 {
@@ -313,14 +356,6 @@ mod tests {
 
     fn ink(frame: &[u8]) -> u32 {
         frame.iter().map(|b| (!b).count_ones()).sum()
-    }
-
-    #[test]
-    fn cells_per_frame_covers_the_path() {
-        assert_eq!(cells_per_frame(180, 60), 3);
-        assert_eq!(cells_per_frame(20, 60), 1);
-        assert_eq!(cells_per_frame(0, 60), 1);
-        assert_eq!(cells_per_frame(10, 0), 10);
     }
 
     #[test]
@@ -372,7 +407,7 @@ mod tests {
         let layout = layout_for(maze.cols, maze.rows);
         let path = solve(&maze);
         let mut prev = ink(&render_progress(&maze, &layout, &path, 0));
-        let step = cells_per_frame(path.len(), 8);
+        let step = 3;
         let mut shown = 0;
         while shown < path.len() {
             shown = (shown + step).min(path.len());
@@ -399,16 +434,85 @@ mod tests {
         let path = solve(&maze);
         let frame = render_progress(&maze, &layout, &path, path.len().min(3));
         let rect = dirty_rect(&layout, &path, 0, path.len().min(3));
+        let rect = rect.clamped().expect("dirty window must fit the panel");
         let crop = crop_packed(&frame, rect);
         assert_eq!(crop.len(), rect.byte_count());
     }
 
     #[test]
     fn layout_fits_the_panel() {
-        let layout = layout_for(25, 15);
+        let layout = layout_for(40, 24);
         let (x, y, w, h) = maze_bounds(&layout);
         assert!(x + w <= PANEL_WIDTH);
         assert!(y + h <= PANEL_HEIGHT);
-        assert!(layout.cell > layout.wall);
+        assert!(layout.cell > 0);
+        assert!(layout.wall > 0);
+        assert!(layout.wall <= layout.cell);
+    }
+
+    #[test]
+    fn layout_never_exceeds_panel_for_dense_grids() {
+        for (cols, rows) in [(80, 48), (120, 72), (200, 120), (800, 480)] {
+            let layout = layout_for(cols, rows);
+            let (x, y, w, h) = maze_bounds(&layout);
+            assert!(
+                x + w <= PANEL_WIDTH,
+                "{cols}x{rows} width {}+{} > {PANEL_WIDTH}",
+                x,
+                w
+            );
+            assert!(
+                y + h <= PANEL_HEIGHT,
+                "{cols}x{rows} height {}+{} > {PANEL_HEIGHT}",
+                y,
+                h
+            );
+        }
+    }
+
+    #[test]
+    fn align_byte_rect_stays_on_the_panel() {
+        let r = align_byte_rect(792, 476, 32, 20);
+        assert_eq!(r.x % 8, 0);
+        assert_eq!(r.width % 8, 0);
+        assert!(r.x + r.width <= PANEL_WIDTH);
+        assert!(r.y + r.height <= PANEL_HEIGHT);
+        assert!(r.width >= 8);
+        assert!(r.height >= 1);
+        let edge = align_byte_rect(0, PANEL_HEIGHT, 8, 1);
+        assert!(edge.y < PANEL_HEIGHT);
+        assert!(edge.y + edge.height <= PANEL_HEIGHT);
+    }
+
+    #[test]
+    fn crop_packed_does_not_panic_on_out_of_bounds() {
+        let frame = vec![0xffu8; FRAME_BYTES];
+        let crop = crop_packed(
+            &frame,
+            ByteRect {
+                x: 0,
+                y: PANEL_HEIGHT,
+                width: 8,
+                height: 1,
+            },
+        );
+        assert!(crop.is_empty());
+        let crop = crop_packed(&frame[0..16], align_byte_rect(0, 0, 8, 1));
+        assert!(crop.is_empty());
+    }
+
+    #[test]
+    fn dirty_rects_are_valid_crops_along_a_full_path() {
+        let maze = generate(40, 24, 7);
+        let layout = layout_for(maze.cols, maze.rows);
+        let path = solve(&maze);
+        assert!(!path.is_empty());
+        let frame = render_progress(&maze, &layout, &path, path.len());
+        for i in 0..path.len() {
+            let rect = dirty_rect(&layout, &path, i, i + 1);
+            let rect = rect.clamped().expect("dirty window must fit the panel");
+            let crop = crop_packed(&frame, rect);
+            assert_eq!(crop.len(), rect.byte_count(), "step {i} {rect:?}");
+        }
     }
 }

@@ -1,7 +1,7 @@
 //! maze-esp32 — generate a maze on the Waveshare 7.5″ and animate the solution.
 //!
 //! No Wi-Fi, HTTP, or Worker: flash, power the board, and the panel loops
-//! empty maze → correct solve (~1 s partials) → hold → next maze.
+//! empty maze → correct solve (see CELLS_PER_TICK / TICK_MS) → hold → next maze.
 
 mod maze_display;
 
@@ -11,11 +11,11 @@ use std::time::{Duration, Instant};
 use anyhow::Result;
 use esp_idf_svc::hal::peripherals::Peripherals;
 use esp_idf_svc::sys::esp_random;
-use log::info;
+use log::{info, warn};
 
 use inkbot_esp32::maze::{
-    cells_per_frame, crop_packed, dirty_rect, generate, layout_for, render_empty, render_progress,
-    solve, HOLD_COMPLETE_MS, MAZE_COLS, MAZE_FIRMWARE_ID, MAZE_ROWS, TARGET_FRAMES, TICK_MS,
+    crop_packed, dirty_rect, generate, layout_for, render_empty, render_progress, solve,
+    CELLS_PER_TICK, HOLD_COMPLETE_MS, MAZE_COLS, MAZE_FIRMWARE_ID, MAZE_ROWS, TICK_MS,
 };
 use maze_display::Panel;
 
@@ -36,48 +36,64 @@ fn main() -> Result<()> {
     )?;
 
     loop {
-        let seed = mix_seed();
-        let maze = generate(MAZE_COLS, MAZE_ROWS, seed);
-        let path = solve(&maze);
-        let layout = layout_for(maze.cols, maze.rows);
-        info!(
-            "maze {}x{} seed={seed:#x} path={}",
-            maze.cols,
-            maze.rows,
-            path.len()
-        );
-
-        let empty = render_empty(&maze, &layout);
-        panel.show_frame_awake(&empty)?;
-        thread::sleep(Duration::from_millis(TICK_MS));
-
-        if path.is_empty() {
-            info!("no path; holding empty maze");
-            thread::sleep(Duration::from_millis(HOLD_COMPLETE_MS));
-            panel.sleep()?;
-            continue;
+        if let Err(e) = run_cycle(&mut panel) {
+            warn!("maze cycle failed: {e:#}");
+            thread::sleep(Duration::from_secs(2));
         }
+    }
+}
 
-        panel.enter_partial_mode()?;
-        let step = cells_per_frame(path.len(), TARGET_FRAMES);
-        let mut shown = 0usize;
-        while shown < path.len() {
-            let tick = Instant::now();
-            let next = (shown + step).min(path.len());
-            let frame = render_progress(&maze, &layout, &path, next);
-            let rect = dirty_rect(&layout, &path, shown, next);
-            let window = crop_packed(&frame, rect);
-            panel.show_partial(&window, rect)?;
-            shown = next;
-            let wait = Duration::from_millis(TICK_MS).saturating_sub(tick.elapsed());
-            if !wait.is_zero() {
-                thread::sleep(wait);
-            }
-        }
+fn run_cycle(panel: &mut Panel) -> Result<()> {
+    let seed = mix_seed();
+    let maze = generate(MAZE_COLS, MAZE_ROWS, seed);
+    let path = solve(&maze);
+    let layout = layout_for(maze.cols, maze.rows);
+    let step = CELLS_PER_TICK.max(1);
+    info!(
+        "maze {}x{} seed={seed:#x} path={} pace={}/{TICK_MS}ms",
+        maze.cols,
+        maze.rows,
+        path.len(),
+        step
+    );
 
+    let empty = render_empty(&maze, &layout);
+    panel.show_frame_awake(&empty)?;
+    thread::sleep(Duration::from_millis(TICK_MS));
+
+    if path.is_empty() {
+        info!("no path; holding empty maze");
         thread::sleep(Duration::from_millis(HOLD_COMPLETE_MS));
         panel.sleep()?;
+        return Ok(());
     }
+
+    panel.enter_partial_mode()?;
+    let mut shown = 0usize;
+    while shown < path.len() {
+        let tick = Instant::now();
+        let next = (shown + step).min(path.len());
+        let frame = render_progress(&maze, &layout, &path, next);
+        let Some(rect) = dirty_rect(&layout, &path, shown, next).clamped() else {
+            shown = next;
+            continue;
+        };
+        let window = crop_packed(&frame, rect);
+        if window.is_empty() {
+            shown = next;
+            continue;
+        }
+        panel.show_partial(&window, rect)?;
+        shown = next;
+        let wait = Duration::from_millis(TICK_MS).saturating_sub(tick.elapsed());
+        if !wait.is_zero() {
+            thread::sleep(wait);
+        }
+    }
+
+    thread::sleep(Duration::from_millis(HOLD_COMPLETE_MS));
+    panel.sleep()?;
+    Ok(())
 }
 
 fn mix_seed() -> u64 {

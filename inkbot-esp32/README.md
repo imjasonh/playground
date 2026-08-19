@@ -7,7 +7,7 @@ panel geometry:
 | Binary | `make flash` | What it does |
 |--------|--------------|--------------|
 | `inkbot-esp32` | `APP=inkbot` (default) | Joins Wi-Fi, polls the inkbot Worker, shows frames |
-| `maze-esp32` | `APP=maze` | Offline maze: empty grid, then a correct solve on ~1 s partial refreshes |
+| `maze-esp32` | `APP=maze` | Offline maze: empty grid, then a correct solve on partial refreshes |
 
 The inkbot binary polls `{base_url}/` for the image catalog every minute, shows
 new uploads immediately, and every `rotate_secs` (default 30 min) picks a random
@@ -84,9 +84,11 @@ compile time via `build.rs`. The maze binary does not read them.
 The maze binary does not join Wi-Fi or call a backend. Flash it, power the
 board, and the panel loops on its own:
 
-1. Full-refresh an empty 25×15 perfect maze (start and end marked).
-2. Partial-refresh about once a second, adding a prefix of the unique
-   solution path (never a search or a dead end).
+1. Full-refresh an empty 40×24 perfect maze (start and end marked).
+2. Partial-refresh the unique solution path (never a search or a dead end).
+   Pacing is two independent knobs in `src/maze/mod.rs`: `CELLS_PER_TICK`
+   (default 1) and `TICK_MS` (default 5000). Set them to `10` and `1000` to
+   advance 10 cells every second.
 3. Hold the completed maze for 8 seconds, then generate another.
 
 Generation, solving, and pixel drawing are separate modules under
@@ -97,9 +99,12 @@ To put the maze firmware on the panel:
 
 ```bash
 cd inkbot-esp32
-make flash APP=maze PORT=/dev/cu.usbserial-XXXX
+make flash APP=maze
 make monitor
 ```
+
+`make flash` picks the first `/dev/cu.usbmodem*` or `/dev/cu.usbserial-*`
+device. If more than one USB serial device is present, pass `PORT=`.
 
 To return to the inkbot frame loop, flash without `APP=maze`. A USB-only
 supply is enough here: the maze binary never associates, so it avoids the
