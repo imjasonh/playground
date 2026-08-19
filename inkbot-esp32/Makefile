@@ -17,7 +17,17 @@ SHELL := /bin/bash
 
 PORT ?= /dev/cu.usbserial-0001
 TARGET := xtensa-esp32-espidf
-BIN := target/$(TARGET)/release/inkbot-esp32
+
+# Cursor/agent shells often export CARGO_TARGET_DIR into a sandbox cache.
+# cargo then writes the ESP ELF there while `make flash` still uploaded
+# inkbot-esp32/target/... — a stale image, so the panel kept reporting
+# inkbot-esp32/0.1 after we thought we had flashed 0.2. Pin every
+# Make-driven cargo invocation to this crate.
+override CARGO_TARGET_DIR := $(CURDIR)/target
+export CARGO_TARGET_DIR
+
+BIN := $(CARGO_TARGET_DIR)/$(TARGET)/release/inkbot-esp32
+FIRMWARE_ID := $(shell awk -F'"' '/FIRMWARE_ID/ { print $$2; exit }' src/status.rs)
 
 RUSTUP_HOME    := $(shell rustup show home 2>/dev/null)
 LIBCLANG_PATH  := $(firstword $(wildcard $(RUSTUP_HOME)/toolchains/esp/xtensa-esp32-elf-clang/*/esp-clang/lib))
@@ -29,12 +39,12 @@ export PATH := $(PYTHON_SHIM):$(XTENSA_GCC_BIN):$(PATH)
 export ESP_IDF_TOOLS_INSTALL_DIR := custom:$(CURDIR)/.embuild
 export ESP_IDF_SDKCONFIG_DEFAULTS := $(CURDIR)/sdkconfig.defaults
 
-.PHONY: help build flash monitor run clean test ensure-python-shim
+.PHONY: help build check-firmware flash monitor run clean test ensure-python-shim
 
 help:
 	@echo "Targets:"
 	@echo "  make build     Cross-compile firmware (espup toolchain)"
-	@echo "  make flash     Build + flash app to $(PORT)"
+	@echo "  make flash     Build + flash $(FIRMWARE_ID) to $(PORT)"
 	@echo "  make monitor   Serial monitor on $(PORT)"
 	@echo "  make run       Build + flash + monitor"
 	@echo "  make test      Host-side unit tests (no ESP toolchain needed)"
@@ -44,10 +54,25 @@ test:
 	cargo test --lib
 
 build: ensure-python-shim
+	@if [ -z "$(FIRMWARE_ID)" ]; then \
+	  echo "ERROR: could not read FIRMWARE_ID from src/status.rs"; \
+	  exit 1; \
+	fi
 	ESP_IDF_SDKCONFIG_DEFAULTS=$(ESP_IDF_SDKCONFIG_DEFAULTS) \
 	  cargo +esp build --release --features firmware \
 	    --target $(TARGET) \
 	    -Z build-std=std,panic_abort
+	@$(MAKE) --no-print-directory check-firmware
+
+# Refuse to flash (or CI-ship) an ELF whose baked User-Agent doesn't
+# match src/status.rs — the usual symptom of a CARGO_TARGET_DIR mismatch.
+check-firmware:
+	@if [ ! -f "$(BIN)" ]; then echo "ERROR: missing $(BIN)"; exit 1; fi
+	@if ! grep -a -F -q "$(FIRMWARE_ID)" "$(BIN)"; then \
+	  echo "ERROR: $(BIN) does not contain $(FIRMWARE_ID) (stale ELF?)"; \
+	  exit 1; \
+	fi
+	@echo "firmware $(FIRMWARE_ID) -> $(BIN)"
 
 flash: build
 	espflash flash --port $(PORT) $(BIN)
