@@ -84,6 +84,10 @@ Naming convention:
 - Cross-language rules: bare name (e.g. `todo_format`, `hardcoded_credentials`).
 
 Test data:
+- Ship **both** a clean (positive) case and at least one violating
+  (negative) case whenever both are meaningful. Positive files have
+  **no** `want` markers and must produce zero diagnostics. Negative
+  files use `want` markers for every expected finding.
 - Each `// want "substring"` (or `# want`, `-- want`) anchors a
   diagnostic expectation on the same line (literal substring match).
 - Use `// want:+1 "substring"` to anchor it on the next line — useful
@@ -96,7 +100,9 @@ Test data:
   every source file under that subdir (recursively) is analyzed with
   a shared fact store, so a fact emitted in one file is visible at
   query sites in the others. Use subdirs to test cross-file
-  analyzers (see `analyzers/go_unused_export/` for an example).
+  analyzers (see `analyzers/go_unused_export/` for an example), or
+  when `file_match` requires a specific basename (see
+  `analyzers/wrangler_observability/`).
 
 ## Adding a language alias
 
