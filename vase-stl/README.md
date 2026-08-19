@@ -34,8 +34,9 @@ usually 0–3 bottom layers (or rely on the mesh bottom).
 | `--samples` | `256` | Angular samples around the axis |
 | `--min-radius` | `0.4` | Floor under every radius (mm) |
 | `--inflate` | `0` | Extra radius added everywhere (mm) |
-| `--smooth-angular` | `0` | Circular blur half-width (samples; keep `0` for detail) |
-| `--smooth-vertical` | `0` | Blend with neighbor layers (`0`–`1`; keep `0` for detail) |
+| `--smooth-angular` | `0` | Circular blur half-width (samples) |
+| `--smooth-vertical` | `0` | Legacy neighbor blend along Z (`0`–`1`) |
+| `--smooth-vertical-mm` | `1.5` | Gaussian σ along Z in mm (kills layer terraces) |
 | `--up` | auto | Force `x` / `y` / `z` as print-up |
 | `--shell` | `solid` | `solid`, `open-top`, or `hollow` |
 | `--wall` | `0.8` | Wall thickness when `--shell hollow` (mm) |

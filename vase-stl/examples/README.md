@@ -2,8 +2,6 @@
 
 ## `glider-tower-vase.stl`
 
-Radial-envelope conversion of `../life-stl/examples/gusset-glider-tower.stl`:
-
 ```bash
 cargo run --release -- ../life-stl/examples/gusset-glider-tower.stl \
   -o examples/glider-tower-vase.stl --layer-height 1.0 --samples 48
@@ -11,23 +9,24 @@ cargo run --release -- ../life-stl/examples/gusset-glider-tower.stl \
 
 ## `secret-level-titus-vase.stl`
 
-Vase-mode silhouette of the Secret Level Titus figure, scaled to 120 mm.
-Defaults keep smoothing off; `--detail-gain` exaggerates shallow relief so it
-survives a single-perimeter spiral print:
+120 mm vase silhouette of Secret Level Titus. Uses vertical Gaussian
+smoothing (`--smooth-vertical-mm`) so discrete slices don't terrace on a
+smooth helmet hull:
 
 ```bash
 cargo run --release -- /path/to/Secret_level_titus.stl \
   -o examples/secret-level-titus-vase.stl \
-  --height 120 --layer-height 0.5 --samples 180 \
-  --smooth-angular 0 --smooth-vertical 0 --detail-gain 2.5 --up z
+  --height 120 --layer-height 0.4 --samples 180 \
+  --detail-gain 1.0 --smooth-vertical-mm 2.5 --smooth-angular 1 --up z
 ```
 
-Print-ready (finer) settings used for artifacts:
+Print-ready artifact settings:
 
 ```bash
 cargo run --release -- titus.stl -o titus-vase.stl \
-  --height 120 --layer-height 0.15 --samples 720 \
-  --detail-gain 2.5 --up z
+  --height 120 --layer-height 0.2 --samples 360 \
+  --detail-gain 1.0 --smooth-vertical-mm 2.5 --smooth-angular 1 --up z
 ```
 
-Print in spiral / vase mode (0 infill, 0 top layers).
+Increase `--smooth-vertical-mm` (e.g. `3.5`) for an even creamier hull;
+set it to `0` if you want every slice notch preserved.

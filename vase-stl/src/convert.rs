@@ -29,6 +29,8 @@ pub struct ConvertOptions {
     pub inflate: f32,
     pub smooth_angular: usize,
     pub smooth_vertical: f32,
+    /// Gaussian σ along Z in mm (`0` = off). Removes layer terraces.
+    pub smooth_vertical_mm: f32,
     /// Force a print-up axis; `None` = pick the longest AABB edge.
     pub up_axis: Option<UpAxis>,
     pub shell: ShellMode,
@@ -49,6 +51,7 @@ impl Default for ConvertOptions {
             inflate: 0.0,
             smooth_angular: 0,
             smooth_vertical: 0.0,
+            smooth_vertical_mm: 1.5,
             up_axis: None,
             shell: ShellMode::Solid,
             scale: 1.0,
@@ -121,6 +124,7 @@ pub fn convert(input: &TriMesh, opts: &ConvertOptions) -> Result<ConvertResult, 
         inflate: opts.inflate,
         smooth_angular: opts.smooth_angular,
         smooth_vertical: opts.smooth_vertical,
+        smooth_vertical_mm: opts.smooth_vertical_mm,
         detail_gain: opts.detail_gain,
     };
     let envelope = extract_radial_envelope(&oriented, axis_xy, bbox.min[2], bbox.max[2], &env_opts);

@@ -32,13 +32,17 @@ struct Cli {
     #[arg(long, default_value_t = 0.0)]
     inflate: f32,
 
-    /// Angular smoothing half-width in samples (0 disables; default keeps detail).
+    /// Angular smoothing half-width in samples (0 disables).
     #[arg(long, default_value_t = 0)]
     smooth_angular: usize,
 
-    /// Vertical smoothing blend 0..1 (0 disables; default keeps detail).
+    /// Legacy neighbor-blend along Z, 0..1 (prefer --smooth-vertical-mm).
     #[arg(long, default_value_t = 0.0)]
     smooth_vertical: f32,
+
+    /// Gaussian σ along Z in mm — removes layer terraces on smooth hulls.
+    #[arg(long, default_value_t = 1.5)]
+    smooth_vertical_mm: f32,
 
     /// Force the input axis that becomes print-up. Default: longest AABB edge.
     #[arg(long, value_enum)]
@@ -135,6 +139,7 @@ fn run(cli: Cli) -> Result<(), String> {
         inflate: cli.inflate,
         smooth_angular: cli.smooth_angular,
         smooth_vertical: cli.smooth_vertical,
+        smooth_vertical_mm: cli.smooth_vertical_mm,
         up_axis: cli.up.map(UpAxis::from),
         shell,
         scale: cli.scale,

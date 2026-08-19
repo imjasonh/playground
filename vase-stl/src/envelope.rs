@@ -42,9 +42,11 @@ pub struct EnvelopeOptions {
     /// Optional Gaussian-ish angular blur kernel half-width in samples.
     /// Prefer `0` when you want to keep silhouette detail.
     pub smooth_angular: usize,
-    /// Blend each contour with neighbors (0 = none, 1 = full average).
-    /// Prefer `0` when you want to keep silhouette detail.
+    /// Legacy neighbor-blend amount along Z (`0`–`1`). Prefer `smooth_vertical_mm`.
     pub smooth_vertical: f32,
+    /// Gaussian σ along Z in millimeters. This is what removes layer terraces
+    /// on smooth hulls (`0` disables). Try `1.5`–`3` for organic shapes.
+    pub smooth_vertical_mm: f32,
     /// Exaggerate local radius deviations from a low-pass baseline.
     /// `1.0` = faithful envelope; `>1` makes shallow grooves/crests more
     /// printable in vase mode; `<1` softens them.
@@ -58,10 +60,10 @@ impl Default for EnvelopeOptions {
             angular_samples: 256,
             min_radius: 0.4,
             inflate: 0.0,
-            // No blur by default — vase mode already forces a single perimeter;
-            // extra smoothing just erases printable silhouette detail.
             smooth_angular: 0,
             smooth_vertical: 0.0,
+            // Mild vertical blur by default so discrete slices don't terrace.
+            smooth_vertical_mm: 1.5,
             detail_gain: 1.0,
         }
     }
@@ -127,12 +129,16 @@ pub fn extract_radial_envelope(
         contours.push(Contour { z, radii });
     }
 
-    if opts.smooth_vertical > 0.0 && contours.len() > 2 {
-        smooth_vertical(&mut contours, opts.smooth_vertical.clamp(0.0, 1.0));
-    }
-
     if (opts.detail_gain - 1.0).abs() > 1e-6 {
         apply_detail_gain(&mut contours, opts.detail_gain, opts.min_radius);
+    }
+
+    // Vertical smoothing last so slice noise (and any detail-gain jitter)
+    // doesn't terrace the lofted wall.
+    if opts.smooth_vertical_mm > 0.0 && contours.len() > 2 {
+        gaussian_smooth_vertical(&mut contours, opts.smooth_vertical_mm, opts.min_radius);
+    } else if opts.smooth_vertical > 0.0 && contours.len() > 2 {
+        smooth_vertical_blend(&mut contours, opts.smooth_vertical.clamp(0.0, 1.0));
     }
 
     Envelope { axis_xy, contours }
@@ -340,7 +346,7 @@ fn smooth_circular(radii: &[f32], half_width: usize) -> Vec<f32> {
     out
 }
 
-fn smooth_vertical(contours: &mut [Contour], amount: f32) {
+fn smooth_vertical_blend(contours: &mut [Contour], amount: f32) {
     let original: Vec<Vec<f32>> = contours.iter().map(|c| c.radii.clone()).collect();
     let n_layers = contours.len();
     for i in 0..n_layers {
@@ -358,6 +364,39 @@ fn smooth_vertical(contours: &mut [Contour], amount: f32) {
             }
             let avg = sum / w;
             contours[i].radii[j] = original[i][j] * (1.0 - amount) + avg * amount;
+        }
+    }
+}
+
+/// Gaussian blur of radius along Z, independently per angular column.
+fn gaussian_smooth_vertical(contours: &mut [Contour], sigma_mm: f32, min_radius: f32) {
+    let sigma = sigma_mm.max(1e-4);
+    let n_layers = contours.len();
+    let n_ang = contours[0].radii.len();
+    let zs: Vec<f32> = contours.iter().map(|c| c.z).collect();
+    let original: Vec<Vec<f32>> = contours.iter().map(|c| c.radii.clone()).collect();
+
+    // Limit kernel to ~3σ for speed.
+    let radius = (3.0 * sigma).max(sigma);
+
+    for i in 0..n_layers {
+        for j in 0..n_ang {
+            let mut sum = 0.0_f32;
+            let mut wsum = 0.0_f32;
+            for k in 0..n_layers {
+                let dz = (zs[k] - zs[i]).abs();
+                if dz > radius {
+                    continue;
+                }
+                let w = (-0.5 * (dz / sigma) * (dz / sigma)).exp();
+                sum += original[k][j] * w;
+                wsum += w;
+            }
+            contours[i].radii[j] = if wsum > 0.0 {
+                (sum / wsum).max(min_radius)
+            } else {
+                original[i][j].max(min_radius)
+            };
         }
     }
 }
@@ -459,6 +498,7 @@ mod tests {
             inflate: 0.0,
             smooth_angular: 0,
             smooth_vertical: 0.0,
+            smooth_vertical_mm: 0.0,
             detail_gain: 1.0,
         };
         let env = extract_radial_envelope(&tris, [0.5, 0.5], 0.0, 1.0, &opts);
