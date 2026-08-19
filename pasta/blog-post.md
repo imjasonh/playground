@@ -33,6 +33,8 @@ I call the tool 🍝`pasta` by the way. Like AST? And because code is spaghetti?
 
 With this in place, it was just a matter of having an agent write a bunch of rules, and generating before/after testdata examples. `pasta` looks for rules in a `.pasta/` directory. Like any good linter tool, it also supports `//nolint` directives in comments, to ignore known rules violations.
 
+My agent and I have managed to implement a subset of both [Zizmor](https://github.com/imjasonh/playground/pull/229) and [Checkov](https://github.com/imjasonh/playground/pull/238) rules with relatively little config.
+
 ### 🌴 Tree-Sitter and Go Crimes
 
 `pasta` worked well for my monorepo, but my monorepo isn't exactly a challenge, so eventually I ran it against a large slice of a codebase at work, with a few relatively simple rules, just to see how it went.
@@ -42,6 +44,8 @@ It went ...slowly.
 Out of a strong preference for pure-Go solutions ([cgo](https://go.dev/wiki/cgo) tends to complicate things unless it's truly necessary), I'd opted for [`gotreesitter`](https://github.com/odvcencio/gotreesitter), a pure-Go implementation of tree-sitter. Unfortunately this made parsing code into ASTs significantly slower than just using the standard C tree-sitter code via cgo. Cgo was truly necessary. 😭
 
 ...Or was it! I'd heard of other folks avoiding cgo by compiling C to [Wasm](https://webassembly.org/) then executing it directly in Go, and that seemed just crazy enough to work for me too. After a bit of prompting, I got tree-sitter wasmed and `go:embed`ded into `pasta`, where it executes using [`wazero`](https://wazero.io/). It's an abomination, but it made `pasta` _14x faster_. This wasn't as fast as tree-sitter via cgo, but it was fast enough for me, and it made `pasta lint`ing tens of thousands of files reasonably fast. It now parses and lints at ~1MB/s, and the whole journey only made the binary ~1.4 MB bigger. Not bad!
+
+For reference, the PR where we made the change: https://github.com/imjasonh/playground/pull/210
 
 ### Conclusion
 
