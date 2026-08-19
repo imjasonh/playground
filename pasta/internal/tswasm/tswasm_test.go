@@ -20,7 +20,7 @@ func TestParseGo(t *testing.T) {
 	if root.HasError() {
 		t.Fatalf("unexpected error: %s", root.SExpr())
 	}
-	if !HasGrammar("go") || !HasGrammar("tsx") || !HasGrammar("swift") {
+	if !HasGrammar("go") || !HasGrammar("tsx") || !HasGrammar("swift") || !HasGrammar("toml") {
 		t.Fatal("expected core grammars to be exported")
 	}
 }

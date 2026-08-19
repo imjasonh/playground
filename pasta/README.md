@@ -116,6 +116,12 @@ go run ./cmd/pasta test analyzers/js_double_equals
 | [yaml_empty_value](./analyzers/yaml_empty_value/yaml_empty_value.cue) | Flag keys with no value (parses as null) |
 | [gha_security](./analyzers/gha_security/gha_security.cue)             | GitHub Actions / Dependabot security checks inspired by [zizmor](https://docs.zizmor.sh/audits/) (unpinned uses, dangerous triggers, template injection, artipacked, …) |
 
+**TOML**
+
+| Path | What it does |
+|---|---|
+| [wrangler_observability](./analyzers/wrangler_observability/wrangler_observability.cue) | Require `[observability]` / `[observability.logs]` / `[observability.traces]` enabled (with `invocation_logs = true`) in every `wrangler.toml` |
+
 **Bash**
 
 | Path | What it does |

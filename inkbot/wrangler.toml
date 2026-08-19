@@ -35,12 +35,6 @@ PANEL_HEIGHT = "480"
 #   SLACK_BOT_TOKEN      — xoxb-… bot token (Slack features disabled if unset)
 #   SLACK_SIGNING_SECRET — Events API request signature secret
 
-# Persist per-invocation logs and traces so failures are diagnosable after
-# the fact, not only while `wrangler tail` is attached. Invocation logs
-# record Cloudflare's `outcome` (`ok`, `exception`, `exceededMemory`,
-# `exceededCpu`, `canceled`) plus console output. Automatic tracing
-# captures the fetch handler and binding calls. 100% head sampling is
-# the playground default; dial down before serious volume.
 [observability]
 enabled = true
 head_sampling_rate = 1

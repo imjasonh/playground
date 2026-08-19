@@ -1,0 +1,4 @@
+# want "must enable [observability]" # want "must enable [observability.logs]" # want "must set invocation_logs" # want "must enable [observability.traces]"
+name = "bare-worker"
+main = "build/worker/shim.mjs"
+compatibility_date = "2024-11-01"

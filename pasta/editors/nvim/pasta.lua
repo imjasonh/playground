@@ -9,7 +9,7 @@ local M = {}
 -- by pkg/lang/*. Add or remove as you customize your build.
 local default_filetypes = {
   "go", "python", "rust", "javascript", "javascriptreact",
-  "typescript", "typescriptreact", "yaml", "sh", "bash", "json",
+  "typescript", "typescriptreact", "yaml", "sh", "bash", "json", "toml",
 }
 
 function M.setup(opts)

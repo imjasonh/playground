@@ -38,12 +38,6 @@ ALLOWED_ORIGINS = "*"
 MAX_RESPONSE_BYTES = "26214400"
 MAX_REQUEST_BYTES = "10485760"
 
-# Persist per-invocation logs and traces so failures are diagnosable after
-# the fact, not only while `wrangler tail` is attached. Invocation logs
-# record Cloudflare's `outcome` (`ok`, `exception`, `exceededMemory`,
-# `exceededCpu`, `canceled`) plus console output. Automatic tracing
-# captures the fetch handler and binding calls. 100% head sampling is
-# the playground default; dial down before serious volume.
 [observability]
 enabled = true
 head_sampling_rate = 1

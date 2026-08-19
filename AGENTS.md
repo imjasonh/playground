@@ -259,7 +259,7 @@ but is excluded from Rust discovery because it needs the espup Xtensa toolchain;
 | Rust | `Cargo.toml` | `cargo fmt --check` → `cargo clippy --locked --all-targets -D warnings` → `cargo test --locked`; Cloudflare Worker apps (with `wrangler.toml`) also run wasm clippy + a release `wasm32-unknown-unknown` build, then the wrangler `[build]` command (with a decoy `package.json` like wrangler-action creates) so Test covers the deploy artifact path. Crates set `[lints.rust] unused = "deny"` so unused methods fail even without clippy. |
 
 Go is the only ecosystem here with a stable, first-class data-race detector (`go test -race`). Rust ThreadSanitizer is still nightly-only and cannot instrument `wasm32-unknown-unknown` Worker tests; JavaScript/Node has no equivalent flag. Those legs stay as they are.
-| pasta | `pasta/` / `.pasta/` / lintable sources (`.go`, `.js`, `.ts`, `.tsx`, `.jsx`, `.rs`, `.swift`, `.sh`, `.yml`, `.yaml`, `.html`, `.css`, …) via `discover-pasta.sh` | `go build ./pasta/cmd/pasta` → `pasta test .pasta` → `pasta -fail-on=warning ./...` |
+| pasta | `pasta/` / `.pasta/` / lintable sources (`.go`, `.js`, `.ts`, `.tsx`, `.jsx`, `.rs`, `.swift`, `.sh`, `.yml`, `.yaml`, `.html`, `.css`, `.toml`, …) via `discover-pasta.sh` | `go build ./pasta/cmd/pasta` → `pasta test .pasta` → `pasta -fail-on=warning ./...` |
 
 Browser apps without a `test` script (e.g. `hello/`) are never tested. Each Rust
 app's toolchain comes from its `rust-toolchain.toml` (defaulting to stable);
@@ -436,11 +436,11 @@ go test ./...
   entries are created if absent, D1 databases declared in `[[d1_databases]]`
   have remote migrations applied, and a Worker that ships
  `examples/genvapid.rs` gets a `VAPID_PRIVATE_KEY` secret generated once (only
- if absent, so the key is stable across deploys). Every Worker enables
- Workers Logs (including invocation logs) and Workers Traces by default —
- copy the `[observability]` / `[observability.logs]` / `[observability.traces]`
- block from an existing Worker `wrangler.toml`. Head sampling is 100% at
- playground traffic; dial down before serious volume.
+ if absent, so the key is stable across deploys). Every Worker must enable
+ Workers Logs (including invocation logs) and Workers Traces in its
+ `wrangler.toml` — the `wrangler_observability` pasta rule enforces this.
+ Head sampling is 100% at playground traffic; dial down before serious
+ volume.
 
 No workflow edits are required. CI discovers a new Rust app from its
 `Cargo.toml`, the deploy workflow discovers a new Worker from its
