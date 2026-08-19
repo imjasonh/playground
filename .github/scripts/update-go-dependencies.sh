@@ -75,16 +75,17 @@ for module in "${modules[@]}"; do
 
   if (
     cd "$module"
+    # Match test-go-modules.sh: always race-detect. Heavy modules get more time.
     if [ "$module" = "node-image" ] || [ "$module" = "pasta" ]; then
-      go test -timeout 30m ./...
+      go test -race -timeout 30m ./...
     else
-      go test ./...
+      go test -race ./...
     fi
   ); then
     echo "- ✅ \`${module}\`: tests passed" >> "$GITHUB_STEP_SUMMARY"
   else
     result=failure
-    echo "::error title=Tests failed::${module}: go test ./..."
+    echo "::error title=Tests failed::${module}: go test -race ./..."
     echo "- ❌ \`${module}\`: tests failed" >> "$GITHUB_STEP_SUMMARY"
   fi
 

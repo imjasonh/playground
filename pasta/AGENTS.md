@@ -11,15 +11,16 @@ standalone-repo commit gate that used to live here.
 
 ## Pre-commit / local checks
 
-`scripts/pre-commit.sh` runs gofmt, go vet, go build, and `go test ./...`
-from the pasta module root. Run it before sending a PR:
+`scripts/pre-commit.sh` runs gofmt, go vet, go build, and
+`go test -race ./...` from the pasta module root. Run it before sending
+a PR:
 
 ```
 ./scripts/pre-commit.sh
 ```
 
 Pass `go test -short ./...` to skip the e2e shallow-clone smoke tests
-during a tight local loop; CI runs the full suite.
+during a tight local loop; CI runs the full suite with `-race`.
 
 ## Running everything
 

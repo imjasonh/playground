@@ -35,9 +35,9 @@ func TestParseWithOptions_CancelRace(t *testing.T) {
 		src = append(src, []byte("func F"+itoa(i)+"() { var x int; _ = x }\n")...)
 	}
 
-	// Cancel almost immediately so AfterFunc races with the parser's
-	// atomic loads of the cancellation flag. Under -race this used to
-	// fail with a data race on a plain store.
+	// Cancel during parse. Must stay -race clean: guest-memory stores
+	// from AfterFunc race with wazero Memory.Grow, so cancel only
+	// discards the result after the wasm Call returns.
 	ctx, cancel := context.WithCancel(context.Background())
 	var started atomic.Bool
 	go func() {

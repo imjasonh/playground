@@ -255,8 +255,10 @@ but is excluded from Rust discovery because it needs the espup Xtensa toolchain;
 | App type | Selected when its dir has | CI runs, per changed app |
 |----------|---------------------------|--------------------------|
 | Browser | `index.html` **and** `package.json` with a `test` script | `npm ci` → `npm test` → `npm run test:e2e` (if defined; installs Playwright Chromium first) |
-| Go | `go.mod` | `go build ./...` → `go test ./...` |
+| Go | `go.mod` | `go build ./...` → `go test -race ./...` |
 | Rust | `Cargo.toml` | `cargo fmt --check` → `cargo clippy --locked --all-targets -D warnings` → `cargo test --locked`; Cloudflare Worker apps (with `wrangler.toml`) also run wasm clippy + a release `wasm32-unknown-unknown` build, then the wrangler `[build]` command (with a decoy `package.json` like wrangler-action creates) so Test covers the deploy artifact path. Crates set `[lints.rust] unused = "deny"` so unused methods fail even without clippy. |
+
+Go is the only ecosystem here with a stable, first-class data-race detector (`go test -race`). Rust ThreadSanitizer is still nightly-only and cannot instrument `wasm32-unknown-unknown` Worker tests; JavaScript/Node has no equivalent flag. Those legs stay as they are.
 | pasta | `pasta/` / `.pasta/` / lintable sources (`.go`, `.js`, `.ts`, `.tsx`, `.jsx`, `.rs`, `.swift`, `.sh`, `.yml`, `.yaml`, `.html`, `.css`, …) via `discover-pasta.sh` | `go build ./pasta/cmd/pasta` → `pasta test .pasta` → `pasta -fail-on=warning ./...` |
 
 Browser apps without a `test` script (e.g. `hello/`) are never tested. Each Rust
@@ -320,7 +322,7 @@ test workflow gates on:
 | App type | Upgrade | Verify |
 |----------|---------|--------|
 | Browser | `npx npm-check-updates --upgrade` → `npm install` → `npm run vendor` (if defined) | `npm test` (+ `npm run test:e2e` if defined) |
-| Go | `go get -u ./...` | `go build ./...` → `go test ./...` |
+| Go | `go get -u ./...` | `go build ./...` → `go test -race ./...` |
 | Rust | `cargo update` | `cargo clippy -D warnings` → `cargo test`; Worker apps also wasm clippy + a release `wasm32-unknown-unknown` build + the wrangler `[build]` command |
 
 Publishing is all-or-nothing, so a green run never lands a half-broken bump:
@@ -411,6 +413,7 @@ Run locally:
 cd my-tool
 go build ./...
 go test ./...
+# CI runs `go test -race ./...` (pasta / node-image also get -timeout 30m)
 ```
 
 ## Adding a new Rust app
@@ -579,9 +582,9 @@ bundle exec fastlane test
 
 | Directory | Type | Tests |
 |-----------|------|-------|
-| `gitdb/` | git repository explorer backed by SQLite virtual tables | `go test ./...` |
-| `ocidb/` | OCI registry explorer backed by SQLite virtual tables | `go test ./...` |
-| `pasta/` | CUE-described multi-language linters/fixers over tree-sitter ASTs; see [`pasta/AGENTS.md`](pasta/AGENTS.md). Playground style rules are enrolled under repo-root `.pasta/` and gated by the pasta leg of `test.yml` | `go test ./...` (incl. e2e shallow-clone smoke); CI also runs `pasta test` + monorepo lint |
+| `gitdb/` | git repository explorer backed by SQLite virtual tables | `go test -race ./...` |
+| `ocidb/` | OCI registry explorer backed by SQLite virtual tables | `go test -race ./...` |
+| `pasta/` | CUE-described multi-language linters/fixers over tree-sitter ASTs; see [`pasta/AGENTS.md`](pasta/AGENTS.md). Playground style rules are enrolled under repo-root `.pasta/` and gated by the pasta leg of `test.yml` | `go test -race ./...` (incl. e2e shallow-clone smoke); CI also runs `pasta test` + monorepo lint |
 
 ## Current Rust apps
 

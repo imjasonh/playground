@@ -90,15 +90,15 @@ type Node struct {
 }
 
 type node struct {
-	kind                 string
-	start, end           uint32
-	named, err, missing  bool
-	extra, hasError      bool
-	fieldName            string
-	parent               *node
-	children             []*node
-	namedChildren        []*node
-	fieldIndex           map[string]*node // first child per field name
+	kind                string
+	start, end          uint32
+	named, err, missing bool
+	extra, hasError     bool
+	fieldName           string
+	parent              *node
+	children            []*node
+	namedChildren       []*node
+	fieldIndex          map[string]*node // first child per field name
 }
 
 // ---------------------------------------------------------------------------
@@ -112,12 +112,12 @@ type runtime struct {
 }
 
 var (
-	rtOnce sync.Once
-	rt     *runtime
-	rtErr  error
-	gpool  enginePool
-	instN  atomic.Int64
-	instLim *concLimiter
+	rtOnce        sync.Once
+	rt            *runtime
+	rtErr         error
+	gpool         enginePool
+	instN         atomic.Int64
+	instLim       *concLimiter
 	baselineBytes atomic.Uint64
 )
 
@@ -193,7 +193,7 @@ type engine struct {
 	malloc, free                         api.Function
 	parserNew, parserDelete, parserReset api.Function
 	setLang, parse, treeDelete           api.Function
-	setTimeout, setCancel                api.Function
+	setTimeout                           api.Function
 	dumpTree                             api.Function
 	langSymCount, langSymName            api.Function
 	langFieldCount, langFieldName        api.Function
@@ -202,9 +202,9 @@ type engine struct {
 }
 
 var (
-	symNameMu     sync.Mutex
-	symNameCache  = map[string]map[uint32]string{}
-	fieldNameMu   sync.Mutex
+	symNameMu      sync.Mutex
+	symNameCache   = map[string]map[uint32]string{}
+	fieldNameMu    sync.Mutex
 	fieldNameCache = map[string]map[uint32]string{}
 )
 
@@ -221,22 +221,21 @@ func newEngine() (*engine, error) {
 	}
 	e := &engine{
 		ctx: rt.ctx, mod: mod, mem: mod.Memory(),
-		malloc:        mod.ExportedFunction("malloc"),
-		free:          mod.ExportedFunction("free"),
-		parserNew:     mod.ExportedFunction("ts_parser_new"),
-		parserDelete:  mod.ExportedFunction("ts_parser_delete"),
-		parserReset:   mod.ExportedFunction("ts_parser_reset"),
-		setLang:       mod.ExportedFunction("ts_parser_set_language"),
-		parse:         mod.ExportedFunction("ts_parser_parse_string"),
-		treeDelete:    mod.ExportedFunction("ts_tree_delete"),
-		setTimeout:    mod.ExportedFunction("ts_parser_set_timeout_micros"),
-		setCancel:     mod.ExportedFunction("ts_parser_set_cancellation_flag"),
-		dumpTree:      mod.ExportedFunction("ts_dump_tree"),
-		langSymCount:  mod.ExportedFunction("ts_language_symbol_count"),
-		langSymName:   mod.ExportedFunction("ts_language_symbol_name"),
+		malloc:         mod.ExportedFunction("malloc"),
+		free:           mod.ExportedFunction("free"),
+		parserNew:      mod.ExportedFunction("ts_parser_new"),
+		parserDelete:   mod.ExportedFunction("ts_parser_delete"),
+		parserReset:    mod.ExportedFunction("ts_parser_reset"),
+		setLang:        mod.ExportedFunction("ts_parser_set_language"),
+		parse:          mod.ExportedFunction("ts_parser_parse_string"),
+		treeDelete:     mod.ExportedFunction("ts_tree_delete"),
+		setTimeout:     mod.ExportedFunction("ts_parser_set_timeout_micros"),
+		dumpTree:       mod.ExportedFunction("ts_dump_tree"),
+		langSymCount:   mod.ExportedFunction("ts_language_symbol_count"),
+		langSymName:    mod.ExportedFunction("ts_language_symbol_name"),
 		langFieldCount: mod.ExportedFunction("ts_language_field_count"),
 		langFieldName:  mod.ExportedFunction("ts_language_field_name_for_id"),
-		langPtr:       map[string]uint32{},
+		langPtr:        map[string]uint32{},
 	}
 	if rs := e.call(mod.ExportedFunction("ts_dump_rec_size")); rs != recSize {
 		mod.Close(rt.ctx)
@@ -246,7 +245,7 @@ func newEngine() (*engine, error) {
 	return e, nil
 }
 
-func (e *engine) close() { e.mod.Close(e.ctx) }
+func (e *engine) close()          { e.mod.Close(e.ctx) }
 func (e *engine) memSize() uint64 { return uint64(e.mem.Size()) }
 
 type enginePool struct {
@@ -451,18 +450,6 @@ func (e *engine) parseRoot(ctx context.Context, langExport string, src []byte, o
 		e.call(e.setTimeout, parser, uint64(micros))
 	}
 
-	// Cancellation flag in guest memory (uint32).
-	flagPtr := uint32(e.call(e.malloc, 4))
-	defer e.call(e.free, uint64(flagPtr))
-	e.mem.WriteUint32Le(flagPtr, 0)
-	e.call(e.setCancel, parser, uint64(flagPtr))
-	stop := context.AfterFunc(ctx, func() {
-		// Best-effort: may race with Free after parse returns.
-		defer func() { _ = recover() }()
-		e.mem.WriteUint32Le(flagPtr, 1)
-	})
-	defer stop()
-
 	sp := uint32(e.call(e.malloc, uint64(len(src)+1)))
 	if sp == 0 {
 		return nil, fmt.Errorf("%w: malloc source failed", ErrResourceLimit)
@@ -471,11 +458,14 @@ func (e *engine) parseRoot(ctx context.Context, langExport string, src []byte, o
 	e.mem.WriteByte(sp+uint32(len(src)), 0)
 	defer e.call(e.free, uint64(sp))
 
+	// Do not write a guest cancellation flag from AfterFunc: that
+	// races with wazero Memory.Grow during parse. Bound in-flight
+	// work with opts.Timeout; if ctx is done, discard the result.
 	tree := e.call(e.parse, parser, 0, uint64(sp), uint64(len(src)))
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
 	if tree == 0 {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
 		if opts.Timeout > 0 {
 			return nil, fmt.Errorf("%w: null tree", ErrTimeout)
 		}
@@ -503,6 +493,9 @@ func (e *engine) parseRoot(ctx context.Context, langExport string, src []byte, o
 
 	kinds := e.symbolNames(langExport, lang)
 	fields := e.fieldNames(langExport, lang)
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
 	return buildGraph(raw, n, kinds, fields), nil
 }
 
