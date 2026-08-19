@@ -155,10 +155,16 @@ export class Game {
 
   /** Delete a node's DaemonSet pods from the pod map (used when a node leaves). */
   purgeDaemonPods(node) {
+    const keep = [];
     for (const id of node.podIds) {
       const p = this.state.pods.get(id);
-      if (p && p.kind === "daemon") this.state.pods.delete(id);
+      if (p && p.kind === "daemon") {
+        this.state.pods.delete(id);
+        continue;
+      }
+      if (p) keep.push(id);
     }
+    node.podIds = keep;
   }
 
   cordon(nodeId) {
@@ -257,9 +263,12 @@ export class Game {
     return { ok: true };
   }
 
-  /** When every node is on the current version, the rollout is complete. */
+  /** When every remaining node is on the current version, the rollout is complete. */
   checkUpgradeComplete() {
     if (!this.state.upgradePending) return;
+    // An empty cluster is not a finished rollout — terminating every outdated
+    // node must not award the bonus.
+    if (this.state.nodes.length === 0) return;
     const outdated = this.state.nodes.some((n) => n.minor < this.state.clusterMinor);
     if (!outdated) {
       this.state.upgradePending = false;
@@ -387,8 +396,13 @@ export class Game {
       // provisioning (spot replacements etc.) or the rollout can stall.
       const upgrading = s.nodes.some((n) => n.status === "Upgrading");
       if (!upgrading) {
+        // Include Cordoned nodes (e.g. after a manual drain) so the rollout
+        // cannot stall while outdated-node penalties keep accruing.
         const outdated = s.nodes
-          .filter((n) => n.status === "Ready" && n.minor < s.clusterMinor)
+          .filter(
+            (n) =>
+              (n.status === "Ready" || n.status === "Cordoned") && n.minor < s.clusterMinor
+          )
           .sort((a, b) => this.workloadPodsOnNode(a).length - this.workloadPodsOnNode(b).length)[0];
         if (outdated) this.upgradeNode(outdated.id);
       }
