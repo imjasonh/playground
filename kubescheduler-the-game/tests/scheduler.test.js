@@ -290,6 +290,46 @@ test("completing a version rollout awards the bonus exactly once", () => {
   assert.equal(game.state.breakdown.upgrade - before, 35);
 });
 
+test("deleting every outdated node does not award the rollout bonus", () => {
+  const game = new Game("steady");
+  game.triggerUpgrade();
+  const before = game.state.breakdown.upgrade;
+  for (const n of [...game.state.nodes]) game.deleteNode(n.id);
+  assert.equal(game.state.nodes.length, 0);
+  assert.equal(game.state.upgradePending, true);
+  assert.equal(game.state.breakdown.upgrade, before);
+});
+
+test("purgeDaemonPods removes daemon ids from the node", () => {
+  const game = new Game("steady");
+  const node = game.schedulableNodes()[0];
+  game.triggerUpgrade();
+  game.upgradeNode(node.id);
+  assert.equal(node.podIds.length, 0);
+  assert.equal(game.podsOnNode(node).length, 0);
+  bootNode(game, node);
+  assert.equal(node.podIds.length, game.podsOnNode(node).length);
+  assert.ok(node.podIds.every((id) => game.state.pods.has(id)));
+});
+
+test("auto rolling upgrade includes cordoned outdated nodes", () => {
+  const game = new Game("steady");
+  game.state.autoSchedule = true;
+  game.state.autoScale = true;
+  const node = game.schedulableNodes()[0];
+  game.drain(node.id);
+  assert.equal(node.status, "Cordoned");
+  game.triggerUpgrade();
+  const target = game.state.clusterMinor;
+  let done = false;
+  for (let i = 0; i < 250 && !done; i++) {
+    game.tick();
+    done = !game.state.upgradePending;
+  }
+  assert.equal(done, true, "rollout should finish even with a drained node");
+  assert.equal(game.nodeById(node.id).minor, target);
+});
+
 test("auto rolling upgrade brings the whole fleet current under automation", () => {
   const game = new Game("steady");
   game.state.autoSchedule = true;
