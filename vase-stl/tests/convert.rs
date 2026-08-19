@@ -211,8 +211,8 @@ fn writes_valid_3mf_zip() {
             .read_to_string(&mut model)
             .unwrap();
         assert!(
-            model.contains("PrusaSlicer"),
-            "Application metadata must mention PrusaSlicer for Bambu"
+            model.contains("BambuStudio"),
+            "Application metadata must identify BambuStudio for project import"
         );
         assert!(model.contains("<vertex "), "missing vertices");
         assert!(model.contains("<triangle "), "missing triangles");

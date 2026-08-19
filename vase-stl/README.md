@@ -27,9 +27,10 @@ cargo run --release -- input.stl -o vase.3mf --height 120 --line-width 0.42
 cargo run --release -- input.stl -o vase.stl --height 120 --optimize
 ```
 
-In Bambu / any slicer: **Spiral vase** (or vase mode), 1 wall, 0 infill, 0 top
-layers. Use a line width ≥ the `--line-width` you converted with (default
-`0.42` for a 0.4 mm nozzle).
+In Bambu / any slicer: prefer **File → Import** (not Open project) if a `.3mf`
+warns about missing geometry; or use the `.stl`. Enable **Spiral vase** (or vase
+mode), 1 wall, 0 infill, 0 top layers. Use a line width ≥ the `--line-width` you
+converted with (default `0.42` for a 0.4 mm nozzle).
 
 ## CLI
 
