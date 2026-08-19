@@ -180,6 +180,12 @@ go run ./cmd/pasta test analyzers/js_double_equals
 | [dockerfile_latest_tag](./analyzers/dockerfile_latest_tag/dockerfile_latest_tag.cue) | Flag `FROM image:latest` and implicit-latest `FROM image` |
 | [dockerfile_apt_no_recommends](./analyzers/dockerfile_apt_no_recommends/dockerfile_apt_no_recommends.cue) | Flag `apt-get install` without `--no-install-recommends` |
 
+**Terraform**
+
+| Path | What it does |
+|---|---|
+| [terraform_security](./analyzers/terraform_security/terraform_security.cue) | Terraform and OpenTofu security checks inspired by [Checkov](https://github.com/bridgecrewio/checkov): unpinned modules, public RDS, S3, and security groups, missing encryption, IMDSv2, and IAM `*:*` |
+
 **HTML**
 
 | Path | What it does |

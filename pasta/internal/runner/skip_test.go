@@ -28,6 +28,7 @@ func TestDefaultSkipDirs_coversEcosystemVendors(t *testing.T) {
 		"third_party",
 		".git",
 		".pasta",
+		".terraform",
 		"testdata",
 		"target",
 		"DerivedData",

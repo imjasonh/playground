@@ -38,6 +38,7 @@ GRAMMARS=(
   "sql          DerekStride/tree-sitter-sql          v0.3.11  src 1"
   "swift        alex-pinkus/tree-sitter-swift        0.7.3-with-generated-files src"
   "toml         tree-sitter-grammars/tree-sitter-toml v0.7.0  src"
+  "hcl          tree-sitter-grammars/tree-sitter-hcl  v1.2.0  src"
 )
 
 clone() {

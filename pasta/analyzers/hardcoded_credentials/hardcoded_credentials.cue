@@ -25,7 +25,7 @@ hardcoded_credentials: schema.#Analyzer & {
 			requires: []
 			provides: []
 			match: {
-				node: ["string", "string_literal", "interpreted_string_literal", "raw_string_literal", "string_fragment"]
+				node: ["string", "string_literal", "interpreted_string_literal", "raw_string_literal", "string_fragment", "string_lit", "quoted_template"]
 				where: [{op: "matches", args: ["@_root", "(AKIA|ASIA)[A-Z0-9]{16}"]}]
 			}
 			diagnose: {
@@ -42,7 +42,7 @@ hardcoded_credentials: schema.#Analyzer & {
 			requires: []
 			provides: []
 			match: {
-				node: ["string", "string_literal", "interpreted_string_literal", "raw_string_literal", "string_fragment"]
+				node: ["string", "string_literal", "interpreted_string_literal", "raw_string_literal", "string_fragment", "string_lit", "quoted_template"]
 				where: [{op: "matches", args: ["@_root", "(ghp_|gho_|ghs_|ghu_|ghr_|github_pat_)[A-Za-z0-9_]{20,}"]}]
 			}
 			diagnose: {
@@ -59,7 +59,7 @@ hardcoded_credentials: schema.#Analyzer & {
 			requires: []
 			provides: []
 			match: {
-				node: ["string", "string_literal", "interpreted_string_literal", "raw_string_literal", "string_fragment"]
+				node: ["string", "string_literal", "interpreted_string_literal", "raw_string_literal", "string_fragment", "string_lit", "quoted_template"]
 				where: [{op: "matches", args: ["@_root", "xox[abprsoa]-[A-Za-z0-9-]{10,}"]}]
 			}
 			diagnose: {
@@ -76,7 +76,7 @@ hardcoded_credentials: schema.#Analyzer & {
 			requires: []
 			provides: []
 			match: {
-				node: ["string", "string_literal", "interpreted_string_literal", "raw_string_literal", "string_fragment"]
+				node: ["string", "string_literal", "interpreted_string_literal", "raw_string_literal", "string_fragment", "string_lit", "quoted_template"]
 				where: [{op: "matches", args: ["@_root", "BEGIN (RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY"]}]
 			}
 			diagnose: {

@@ -20,8 +20,24 @@ func TestParseGo(t *testing.T) {
 	if root.HasError() {
 		t.Fatalf("unexpected error: %s", root.SExpr())
 	}
-	if !HasGrammar("go") || !HasGrammar("tsx") || !HasGrammar("swift") || !HasGrammar("toml") {
+	if !HasGrammar("go") || !HasGrammar("tsx") || !HasGrammar("swift") || !HasGrammar("toml") || !HasGrammar("hcl") {
 		t.Fatal("expected core grammars to be exported")
+	}
+}
+
+func TestParseHCL(t *testing.T) {
+	src := []byte("resource \"aws_s3_bucket\" \"example\" {\n  bucket = \"ok\"\n}\n")
+	tree, err := Parse(context.Background(), &Language{Grammar: "hcl"}, src, "", ParseOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tree.Release()
+	root := tree.RootNode()
+	if root.Type() != "config_file" {
+		t.Fatalf("type=%q", root.Type())
+	}
+	if root.HasError() {
+		t.Fatalf("unexpected error: %s", root.SExpr())
 	}
 }
 

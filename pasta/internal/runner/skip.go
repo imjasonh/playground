@@ -9,6 +9,7 @@ package runner
 var DefaultSkipDirs = map[string]bool{
 	".git":             true,
 	".pasta":           true,
+	".terraform":       true, // Terraform and OpenTofu providers and modules
 	"vendor":           true, // Go modules, PHP Composer, and similar
 	"node_modules":     true, // npm / yarn / pnpm
 	"bower_components": true,
