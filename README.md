@@ -33,6 +33,9 @@ passes tests — so older experiments don't bit-rot.
   procedurally generated Olympic downhill course.
 - **[`hello/`](hello/)** — a minimal static demo.
 - **[`kanoodle/`](kanoodle/)** — the Kanoodle puzzle game (5×11 board, 12 pieces).
+- **[`kubescheduler-the-game/`](kubescheduler-the-game/)** — play the Kubernetes
+  scheduler and cluster operator: bin-pack pods onto nodes, handle spot
+  reclaims and rolling upgrades, and keep utilization high without overspending.
 - **[`webrtc/`](webrtc/)** — serverless, link-based WebRTC app: share a link to
   open a direct peer-to-peer session with video, voice, text, file transfer,
   live location sharing, and live captions (with on-device translation) — all
