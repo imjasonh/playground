@@ -60,6 +60,11 @@ make monitor
 # or: make run
 ```
 
+`make build` / `make flash` always write the ELF under `inkbot-esp32/target/`
+(they ignore an inherited `CARGO_TARGET_DIR`) and refuse to continue unless
+that ELF contains the `FIRMWARE_ID` from `src/status.rs`. After boot, `POST
+/device` / `@inkbot status` should show the same `firmware=` string.
+
 `config.toml` is gitignored. Values are baked in at compile time via `build.rs`.
 
 ## Behaviour
