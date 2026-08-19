@@ -16,7 +16,10 @@ spiral mode**.
 3. **Smooth loft** — Catmull-Rom densify along Z before meshing so the STL
    isn’t a coarse frustum staircase. The mesh is placed on the bed (`z=0`).
 
-Output may be **STL** or **3MF** (extension of `-o`).
+Output may be **STL** or **3MF** (extension of `-o`). For `.3mf`, loft densify is
+forced to `1` and the package is stamped so **Bambu Studio** opens it as geometry
+(not a broken project). Prefer `.3mf` for import; keep `.stl` if you want denser
+preview meshes.
 
 ```bash
 cd vase-stl

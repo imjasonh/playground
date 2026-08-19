@@ -169,7 +169,7 @@ fn run(cli: Cli) -> Result<(), String> {
         ShellArg::Hollow => ShellMode::hollow(cli.wall),
     };
 
-    let opts = ConvertOptions {
+    let mut opts = ConvertOptions {
         layer_height: cli.layer_height,
         angular_samples: cli.samples,
         min_radius: cli.min_radius,
@@ -189,6 +189,22 @@ fn run(cli: Cli) -> Result<(), String> {
         target_height_mm: cli.height,
         detail_gain: cli.detail_gain,
     };
+
+    let out = cli.output.clone();
+    let ext = out
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    // Multi-million-triangle densified lofts produce 100MB+ XML that Bambu
+    // Studio fails to open. For 3MF, keep one ring per print layer.
+    if ext == "3mf" && opts.loft_subdivide > 1 {
+        eprintln!(
+            "note: writing .3mf with --loft-subdivide 1 (was {}) for slicer compatibility",
+            opts.loft_subdivide
+        );
+        opts.loft_subdivide = 1;
+    }
 
     let result = if cli.optimize {
         let (best, trials) = optimize_convert(&input, &opts, cli.chop_budget)?;
@@ -228,12 +244,6 @@ fn run(cli: Cli) -> Result<(), String> {
         v.angular_samples
     );
 
-    let out = cli.output;
-    let ext = out
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
     if ext == "3mf" {
         write_3mf(&out, &result.mesh, "vase")
             .map_err(|e| format!("write {}: {e}", out.display()))?;
