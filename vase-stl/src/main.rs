@@ -51,6 +51,14 @@ struct Cli {
     /// Wall thickness in mm when `--shell hollow`.
     #[arg(long, default_value_t = 0.8)]
     wall: f32,
+
+    /// Uniform scale after orientation (ignored when `--height` is set).
+    #[arg(long, default_value_t = 1.0)]
+    scale: f32,
+
+    /// Scale so the oriented model height becomes this many millimeters.
+    #[arg(long)]
+    height: Option<f32>,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -94,6 +102,14 @@ fn run(cli: Cli) -> Result<(), String> {
     if cli.samples < 8 {
         return Err("--samples must be >= 8".into());
     }
+    if cli.scale <= 0.0 {
+        return Err("--scale must be > 0".into());
+    }
+    if let Some(h) = cli.height {
+        if h <= 0.0 {
+            return Err("--height must be > 0".into());
+        }
+    }
 
     let input = read_stl(&cli.input).map_err(|e| format!("read {}: {e}", cli.input.display()))?;
     eprintln!(
@@ -117,6 +133,8 @@ fn run(cli: Cli) -> Result<(), String> {
         smooth_vertical: cli.smooth_vertical,
         up_axis: cli.up.map(UpAxis::from),
         shell,
+        scale: cli.scale,
+        target_height_mm: cli.height,
     };
 
     let result = convert(&input, &opts)?;

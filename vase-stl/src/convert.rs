@@ -32,6 +32,10 @@ pub struct ConvertOptions {
     /// Force a print-up axis; `None` = pick the longest AABB edge.
     pub up_axis: Option<UpAxis>,
     pub shell: ShellMode,
+    /// Uniform scale applied after orientation (`1.0` = unchanged).
+    pub scale: f32,
+    /// If set, overrides `scale` so the oriented height becomes this many mm.
+    pub target_height_mm: Option<f32>,
 }
 
 impl Default for ConvertOptions {
@@ -45,6 +49,8 @@ impl Default for ConvertOptions {
             smooth_vertical: 0.25,
             up_axis: None,
             shell: ShellMode::Solid,
+            scale: 1.0,
+            target_height_mm: None,
         }
     }
 }
@@ -64,12 +70,37 @@ pub fn convert(input: &TriMesh, opts: &ConvertOptions) -> Result<ConvertResult, 
     if input.is_empty() {
         return Err("input STL has no triangles".into());
     }
+    if opts.scale <= 0.0 {
+        return Err("scale must be > 0".into());
+    }
+    if let Some(h) = opts.target_height_mm {
+        if h <= 0.0 {
+            return Err("target height must be > 0".into());
+        }
+    }
+
     let bbox_before = BoundingBox::from_triangles(&input.triangles)
         .ok_or_else(|| "could not compute bounding box".to_string())?;
     let up = opts.up_axis.unwrap_or_else(|| choose_up_axis(&bbox_before));
-    let oriented = reorient_to_z_up(&input.triangles, up);
-    let bbox = BoundingBox::from_triangles(&oriented)
+    let mut oriented = reorient_to_z_up(&input.triangles, up);
+    let oriented_bbox = BoundingBox::from_triangles(&oriented)
         .ok_or_else(|| "oriented mesh is empty".to_string())?;
+
+    let scale = if let Some(target) = opts.target_height_mm {
+        let h = oriented_bbox.size()[2];
+        if h < 1e-6 {
+            return Err("oriented mesh has zero height".into());
+        }
+        target / h
+    } else {
+        opts.scale
+    };
+    if (scale - 1.0).abs() > 1e-9 {
+        scale_triangles(&mut oriented, scale);
+    }
+
+    let bbox =
+        BoundingBox::from_triangles(&oriented).ok_or_else(|| "scaled mesh is empty".to_string())?;
 
     let size = bbox.size();
     if size[2] < opts.layer_height {
@@ -110,4 +141,14 @@ pub fn convert(input: &TriMesh, opts: &ConvertOptions) -> Result<ConvertResult, 
         bbox_before,
         bbox_after,
     })
+}
+
+fn scale_triangles(triangles: &mut [stl_io::Triangle], scale: f32) {
+    for tri in triangles {
+        for v in &mut tri.vertices {
+            v.0[0] *= scale;
+            v.0[1] *= scale;
+            v.0[2] *= scale;
+        }
+    }
 }

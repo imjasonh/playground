@@ -142,6 +142,21 @@ fn roundtrip_write_read_stl() {
 }
 
 #[test]
+fn target_height_scales_output() {
+    let input = box_mesh([0.0, 0.0, 0.0], [10.0, 10.0, 20.0]);
+    let opts = ConvertOptions {
+        layer_height: 1.0,
+        angular_samples: 24,
+        up_axis: Some(UpAxis::Z),
+        target_height_mm: Some(100.0),
+        ..ConvertOptions::default()
+    };
+    let out = convert(&input, &opts).expect("convert");
+    let h = out.bbox_after.size()[2];
+    assert!((h - 100.0).abs() < 2.0, "height {h}");
+}
+
+#[test]
 fn rejects_empty_mesh() {
     let err = convert(&TriMesh::from_triangles(vec![]), &ConvertOptions::default());
     assert!(err.is_err());

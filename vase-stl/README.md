@@ -12,6 +12,9 @@ contours into a watertight solid (or thin open-top wall).
 cd vase-stl
 cargo run --release -- input.stl -o vase.stl
 
+# Scale a tiny model up to a printable height:
+cargo run --release -- tiny.stl -o vase.stl --height 120
+
 # Thin open-top wall instead of a solid:
 cargo run --release -- input.stl -o vase-wall.stl --shell hollow --wall 0.8
 
@@ -36,6 +39,8 @@ usually 0–3 bottom layers (or rely on the mesh bottom).
 | `--up` | auto | Force `x` / `y` / `z` as print-up |
 | `--shell` | `solid` | `solid`, `open-top`, or `hollow` |
 | `--wall` | `0.8` | Wall thickness when `--shell hollow` (mm) |
+| `--scale` | `1` | Uniform scale after orientation |
+| `--height` | unset | Scale so oriented height becomes this (mm) |
 
 ## Library
 
