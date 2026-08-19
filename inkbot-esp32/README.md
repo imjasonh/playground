@@ -1,12 +1,21 @@
 # inkbot-esp32
 
 Rust / ESP-IDF firmware for the **Waveshare e-Paper ESP32 Driver Board** +
-**7.5″ 800×480 mono** panel. It joins Wi-Fi, polls `{base_url}/` for the image
-catalog every minute, shows new uploads immediately, and every
-`rotate_secs` (default 30 min) picks a random frame from the library. Frames
-are fetched as raw `/{name}.bin` packed buffers (no on-device zlib).
+**7.5″ 800×480 mono** panel. This crate ships two binaries that share the
+panel geometry:
 
-No OTA, no SSH — just the frame loop. Companion Worker: [`../inkbot/`](../inkbot/).
+| Binary | `make flash` | What it does |
+|--------|--------------|--------------|
+| `inkbot-esp32` | `APP=inkbot` (default) | Joins Wi-Fi, polls the inkbot Worker, shows frames |
+| `maze-esp32` | `APP=maze` | Offline maze: empty grid, then a correct solve on ~1 s partial refreshes |
+
+The inkbot binary polls `{base_url}/` for the image catalog every minute, shows
+new uploads immediately, and every `rotate_secs` (default 30 min) picks a random
+frame from the library. Frames are fetched as raw `/{name}.bin` packed buffers
+(no on-device zlib).
+
+No OTA, no SSH. Companion Worker for the inkbot binary:
+[`../inkbot/`](../inkbot/).
 
 ## Hardware
 
@@ -60,12 +69,41 @@ make monitor
 # or: make run
 ```
 
-`make build` / `make flash` always write the ELF under `inkbot-esp32/target/`
-(they ignore an inherited `CARGO_TARGET_DIR`) and refuse to continue unless
-that ELF contains the `FIRMWARE_ID` from `src/status.rs`. After boot, `POST
-/device` / `@inkbot status` should show the same `firmware=` string.
+`make build` always compiles both ELFs under `inkbot-esp32/target/` (it ignores
+an inherited `CARGO_TARGET_DIR`) and refuses to continue unless each ELF
+contains its baked id (`FIRMWARE_ID` in `src/status.rs`, `MAZE_FIRMWARE_ID` in
+`src/maze/mod.rs`). `make flash` uploads the binary selected by `APP`. After
+the inkbot binary boots, `POST /device` / `@inkbot status` shows the same
+`firmware=` string.
 
-`config.toml` is gitignored. Values are baked in at compile time via `build.rs`.
+`config.toml` is gitignored. The inkbot binary bakes those values in at
+compile time via `build.rs`. The maze binary does not read them.
+
+## Maze firmware
+
+The maze binary does not join Wi-Fi or call a backend. Flash it, power the
+board, and the panel loops on its own:
+
+1. Full-refresh an empty 25×15 perfect maze (start and end marked).
+2. Partial-refresh about once a second, adding a prefix of the unique
+   solution path (never a search or a dead end).
+3. Hold the completed maze for 8 seconds, then generate another.
+
+Generation, solving, and pixel drawing are separate modules under
+`src/maze/` so you can swap any one later. Host tests cover those stages
+without the ESP toolchain.
+
+To put the maze firmware on the panel:
+
+```bash
+cd inkbot-esp32
+make flash APP=maze PORT=/dev/cu.usbserial-XXXX
+make monitor
+```
+
+To return to the inkbot frame loop, flash without `APP=maze`. A USB-only
+supply is enough here: the maze binary never associates, so it avoids the
+Wi-Fi TX current spikes described in Power.
 
 ## Behaviour
 
@@ -151,8 +189,10 @@ job skips this crate — it needs espup).
 inkbot-esp32/
 ├── src/
 │   ├── lib.rs / panel.rs / png_frame.rs / status.rs  # host-tested
-│   ├── main.rs                                       # Wi-Fi + HTTP poll loop
-│   └── display.rs                                    # Waveshare 7.5″ V2 via epd-waveshare
+│   ├── maze/                                         # generate / solve / render (host-tested)
+│   ├── main.rs                                       # inkbot: Wi-Fi + HTTP poll loop
+│   ├── maze_main.rs / maze_display.rs                # maze: offline panel loop
+│   └── display.rs                                    # inkbot: Waveshare 7.5″ V2 via epd-waveshare
 ├── config.toml.example
 ├── sdkconfig.defaults
 └── Makefile
