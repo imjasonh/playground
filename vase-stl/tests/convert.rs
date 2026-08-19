@@ -75,6 +75,10 @@ fn converts_box_to_solid_vase() {
         layer_height: 1.0,
         angular_samples: 32,
         smooth_vertical: 0.0,
+        couple_weight: 0.0,
+        couple_gap_mm: 0.0,
+        loft_subdivide: 1,
+        band_subsamples: 1,
         up_axis: Some(UpAxis::Z),
         ..ConvertOptions::default()
     };

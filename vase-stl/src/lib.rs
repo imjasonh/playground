@@ -18,8 +18,10 @@ pub use convert::{
     convert, optimize_convert, optimize_convert_with_budget, ConvertOptions, ConvertResult,
     OptimizeTrial, ShellMode,
 };
-pub use envelope::{extract_radial_envelope, Contour, Envelope};
-pub use mesh::{loft_hollow, loft_solid, loft_solid_open_top, loft_wall, MeshStats};
+pub use envelope::{densify_catmull_rom, extract_radial_envelope, Contour, Envelope};
+pub use mesh::{
+    loft_hollow, loft_solid, loft_solid_open_top, loft_wall, prepare_loft_envelope, MeshStats,
+};
 pub use metrics::{compare_envelopes, envelope_volume, EnvelopeMetrics};
 pub use orient::{choose_up_axis, BoundingBox, UpAxis};
 pub use stl::{read_stl, write_stl, TriMesh};

@@ -31,7 +31,7 @@ pub struct Envelope {
 /// Parameters for radial envelope extraction.
 #[derive(Debug, Clone)]
 pub struct EnvelopeOptions {
-    /// Vertical step between slices (mm).
+    /// Vertical step between slices (mm) — one vase "band" thick.
     pub layer_height: f32,
     /// Number of angular samples around the axis.
     pub angular_samples: usize,
@@ -42,15 +42,26 @@ pub struct EnvelopeOptions {
     /// Optional Gaussian-ish angular blur kernel half-width in samples.
     /// Prefer `0` when you want to keep silhouette detail.
     pub smooth_angular: usize,
-    /// Legacy neighbor-blend amount along Z (`0`–`1`). Prefer `smooth_vertical_mm`.
+    /// Legacy neighbor-blend amount along Z (`0`–`1`). Prefer `couple_weight`.
     pub smooth_vertical: f32,
     /// Spatial σ along Z in millimeters for vertical smoothing (`0` disables).
-    /// Prefer small values (`0.3`–`0.8`) with a range σ so real features stay.
     pub smooth_vertical_mm: f32,
-    /// Bilateral *range* σ on radius (mm). When `>0`, vertical smoothing is
-    /// edge-preserving: large |Δr| (creases) are kept, small jitter is blurred.
-    /// When `0`, plain Gaussian along Z is used.
+    /// Bilateral *range* σ on radius (mm). When `>0` with `smooth_vertical_mm`,
+    /// vertical smoothing is edge-preserving.
     pub smooth_vertical_range_mm: f32,
+    /// How many Z samples inside each layer-height band (max radius kept).
+    /// `1` = single mid-plane; `4`–`8` better captures round ridges.
+    pub band_subsamples: usize,
+    /// Spring weight pulling consecutive layer bands together along Z.
+    /// Solves `(I + w L) r = r₀` per angle. Higher = smoother, less step.
+    /// Tune with `--optimize` (hull-error minimum under a gap budget).
+    pub couple_weight: f32,
+    /// Soft gap budget (mm of |Δr| between layers). Used by optimize scoring;
+    /// also scales an extra pull when `|Δr|` exceeds this during coupling.
+    pub couple_gap_mm: f32,
+    /// Subdivide each layer interval this many times with Catmull-Rom before
+    /// lofting, so the STL surface isn't a coarse frustum staircase.
+    pub loft_subdivide: usize,
     /// Exaggerate local radius deviations from a low-pass baseline.
     /// `1.0` = faithful envelope; `>1` makes shallow grooves/crests more
     /// printable in vase mode; `<1` softens them.
@@ -66,11 +77,12 @@ impl Default for EnvelopeOptions {
             inflate: 0.0,
             smooth_angular: 0,
             smooth_vertical: 0.0,
-            // Light edge-preserving vertical pass — enough to kill slice noise,
-            // not enough to melt the silhouette.
-            // Off by default: raw envelope ≈ minimal vase-mode difference.
             smooth_vertical_mm: 0.0,
             smooth_vertical_range_mm: 0.0,
+            band_subsamples: 5,
+            couple_weight: 0.25,
+            couple_gap_mm: 0.30,
+            loft_subdivide: 3,
             detail_gain: 1.0,
         }
     }
@@ -78,10 +90,13 @@ impl Default for EnvelopeOptions {
 
 /// Extract the radial envelope of `triangles` (already Z-up, mm units).
 ///
-/// For each slice plane `z`, collect triangle–plane intersection *segments*,
-/// then for every angular sample `θ` take the farthest ray hit against those
-/// segments. Empty angles are filled by polar interpolation between the
-/// nearest measured samples (no blur).
+/// Pipeline (layer bands → vase coupling):
+/// 1. Partition height into bands of `layer_height`.
+/// 2. Inside each band, sample several Z planes and keep the **max** radius
+///    per angle (outer silhouette of that band).
+/// 3. Pull consecutive bands together with spring weight `couple_weight` so
+///    vase-illegal radial gaps close smoothly (no staircase on round ridges).
+/// 4. Optionally densify along Z with Catmull-Rom before lofting.
 pub fn extract_radial_envelope(
     triangles: &[Triangle],
     axis_xy: [f32; 2],
@@ -91,35 +106,43 @@ pub fn extract_radial_envelope(
 ) -> Envelope {
     let n_ang = opts.angular_samples.max(8);
     let dz = opts.layer_height.max(1e-3);
-    let mut zs = Vec::new();
+    let subs = opts.band_subsamples.max(1);
+
+    // Band bottoms: [z_min, z_min+dz, ...]; last band may be shorter.
+    let mut band_z0 = Vec::new();
     let mut z = z_min;
     while z < z_max - 1e-5 {
-        zs.push(z);
+        band_z0.push(z);
         z += dz;
     }
-    if zs.last().copied().unwrap_or(z_min) < z_max - 1e-4 {
-        zs.push(z_max);
-    }
-    if zs.is_empty() {
-        zs.push(z_min);
+    if band_z0.is_empty() {
+        band_z0.push(z_min);
     }
 
-    let mut contours = Vec::with_capacity(zs.len());
+    let mut contours = Vec::with_capacity(band_z0.len());
     let mut prev_radii: Option<Vec<f32>> = None;
 
-    for &z in &zs {
-        let segments = plane_segments(triangles, z);
+    for (bi, &z0) in band_z0.iter().enumerate() {
+        let z1 = if bi + 1 < band_z0.len() {
+            band_z0[bi + 1]
+        } else {
+            z_max
+        };
+        let z1 = z1.max(z0 + 1e-6);
+
         let mut radii = vec![0.0_f32; n_ang];
         let mut hit = vec![false; n_ang];
 
-        for &(a, b) in &segments {
-            accumulate_segment_max_radius(a, b, axis_xy, &mut radii, &mut hit);
-        }
-
-        // Also keep dense samples along each segment as a fallback for bins
-        // the exact ray test might miss at grazing angles.
-        for &(a, b) in &segments {
-            densify_segment_into_bins(a, b, axis_xy, n_ang, &mut radii, &mut hit);
+        for s in 0..subs {
+            let t = (s as f32 + 0.5) / subs as f32;
+            let z_s = z0 + (z1 - z0) * t;
+            let segments = plane_segments(triangles, z_s);
+            for &(a, b) in &segments {
+                accumulate_segment_max_radius(a, b, axis_xy, &mut radii, &mut hit);
+            }
+            for &(a, b) in &segments {
+                densify_segment_into_bins(a, b, axis_xy, n_ang, &mut radii, &mut hit);
+            }
         }
 
         fill_empty_bins_polar(&mut radii, &hit, prev_radii.as_deref());
@@ -133,16 +156,24 @@ pub fn extract_radial_envelope(
         }
 
         prev_radii = Some(radii.clone());
-        contours.push(Contour { z, radii });
+        // Contour sits at band mid-height for lofting.
+        let z_mid = 0.5 * (z0 + z1);
+        contours.push(Contour { z: z_mid, radii });
     }
 
     if (opts.detail_gain - 1.0).abs() > 1e-6 {
         apply_detail_gain(&mut contours, opts.detail_gain, opts.min_radius);
     }
 
-    // Vertical smoothing last so slice noise (and any detail-gain jitter)
-    // doesn't terrace the lofted wall.
-    if opts.smooth_vertical_mm > 0.0 && contours.len() > 2 {
+    // Primary continuity: curvature coupling + gap-only pulls between bands.
+    if (opts.couple_weight > 0.0 || opts.couple_gap_mm > 0.0) && contours.len() > 2 {
+        couple_layer_bands(
+            &mut contours,
+            opts.couple_weight,
+            opts.couple_gap_mm,
+            opts.min_radius,
+        );
+    } else if opts.smooth_vertical_mm > 0.0 && contours.len() > 2 {
         if opts.smooth_vertical_range_mm > 0.0 {
             bilateral_smooth_vertical(
                 &mut contours,
@@ -157,7 +188,178 @@ pub fn extract_radial_envelope(
         smooth_vertical_blend(&mut contours, opts.smooth_vertical.clamp(0.0, 1.0));
     }
 
+    // Loft densification happens in `mesh` so metrics stay on band resolution.
     Envelope { axis_xy, contours }
+}
+
+/// Make consecutive layer bands vase-continuous without melting the hull.
+///
+/// 1. **Curvature springs** (`weight`): minimize `‖r−r₀‖² + w Σ (Δ²r)²` so
+///    linear slopes (round ridges that change steadily) stay put, while
+///    stair-steps (sign-flipping Δr) are pulled flat.
+/// 2. **Gap clamp** (`gap_mm`): if `|rᵢ₊₁−rᵢ|` still exceeds the budget after
+///    that, iteratively drag that pair toward each other (only those pairs).
+fn couple_layer_bands(contours: &mut [Contour], weight: f32, gap_mm: f32, min_radius: f32) {
+    let n = contours.len();
+    if n < 3 {
+        return;
+    }
+
+    if weight > 0.0 {
+        curvature_couple(contours, weight, min_radius);
+    }
+
+    if gap_mm > 0.0 {
+        gap_drag(contours, gap_mm, min_radius, 12);
+    }
+}
+
+/// Jacobi solve of `(I + w K) r = r₀` with `K = L₂ᵀ L₂` (2nd-difference Gram).
+/// Interior stencil of `K` is `[1, -4, 6, -4, 1]`. Uses under-relaxation and a
+/// hard clamp to `r₀ ± 1.5 mm` so large `w` cannot explode the hull.
+fn curvature_couple(contours: &mut [Contour], weight: f32, min_radius: f32) {
+    let n = contours.len();
+    let n_ang = contours[0].radii.len();
+    // Keep w modest — beyond ~1 the discrete operator needs a direct solve.
+    let w = weight.clamp(0.0, 1.0);
+    if w == 0.0 {
+        return;
+    }
+    let r0: Vec<Vec<f32>> = contours.iter().map(|c| c.radii.clone()).collect();
+    let mut cur = r0.clone();
+    let omega = 0.5_f32; // under-relaxation
+    let max_dev = 1.5_f32;
+
+    for _ in 0..32 {
+        let prev = cur.clone();
+        for j in 0..n_ang {
+            for i in 0..n {
+                let (diag, off) = k_apply_offdiag(i, n, &prev, j);
+                let denom = 1.0 + w * diag;
+                let target = (r0[i][j] - w * off) / denom;
+                let blended = (1.0 - omega) * prev[i][j] + omega * target;
+                cur[i][j] = blended
+                    .clamp(r0[i][j] - max_dev, r0[i][j] + max_dev)
+                    .max(min_radius);
+            }
+        }
+    }
+
+    for (c, col) in contours.iter_mut().zip(cur.iter()) {
+        c.radii.clone_from(col);
+    }
+}
+
+/// `(K_ii, Σ_{m≠i} K_im r_m)` for the 2nd-difference Gram matrix.
+fn k_apply_offdiag(i: usize, n: usize, r: &[Vec<f32>], j: usize) -> (f32, f32) {
+    // Ends: little/no curvature coupling.
+    if i == 0 || i + 1 == n {
+        return (0.0, 0.0);
+    }
+    if i == 1 || i + 2 == n {
+        // One-sided: K ~ [1, -2, 1] Gram → diag 5? Use soft [1,-2,1] energy only.
+        // Energy (r[i-1]-2r[i]+r[i+1])² once: diag=4 for center of that triple when
+        // i is the middle — here i is near boundary; use diag=5 stencil approx.
+        let im1 = r[i - 1][j];
+        let ii = r[i][j];
+        let ip1 = r[i + 1][j];
+        // For row of L2^T L2 at boundary-adjacent index, use:
+        // off = -2*im1 + -2*ip1 + (contribution without self from expanded form)
+        // Simpler Jacobi using energy of the single Δ² involving this point as center:
+        // (I + w*[...]) with diag 4, off = -2 im1 - 2 ip1  ... wait
+        // x = (r0 - w*(-2 im1 - 2 ip1)) / (1+4w) if we only couple as center.
+        let _ = ii;
+        return (4.0, -2.0 * im1 - 2.0 * ip1);
+    }
+    // Interior: stencil 1, -4, 6, -4, 1
+    let off = r[i - 2][j] - 4.0 * r[i - 1][j] - 4.0 * r[i + 1][j] + r[i + 2][j];
+    (6.0, off)
+}
+
+/// Drag only band pairs whose `|Δr|` exceeds `gap_mm` toward each other.
+fn gap_drag(contours: &mut [Contour], gap_mm: f32, min_radius: f32, iters: usize) {
+    let n = contours.len();
+    let n_ang = contours[0].radii.len();
+    let gap_mm = gap_mm.max(1e-6);
+    for _ in 0..iters {
+        let snap: Vec<Vec<f32>> = contours.iter().map(|c| c.radii.clone()).collect();
+        let mut changed = false;
+        for i in 0..n - 1 {
+            for j in 0..n_ang {
+                let a = snap[i][j];
+                let b = snap[i + 1][j];
+                let d = b - a;
+                let ad = d.abs();
+                if ad <= gap_mm {
+                    continue;
+                }
+                changed = true;
+                let excess = ad - gap_mm;
+                let step = 0.5 * excess * d.signum();
+                contours[i].radii[j] = (a + step).max(min_radius);
+                contours[i + 1].radii[j] = (b - step).max(min_radius);
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+}
+
+/// Insert `subdivide` Catmull-Rom samples between each pair of band contours.
+pub fn densify_catmull_rom(
+    contours: &[Contour],
+    subdivide: usize,
+    min_radius: f32,
+) -> Vec<Contour> {
+    let n = contours.len();
+    let n_ang = contours[0].radii.len();
+    let sub = subdivide.max(1);
+    if n < 2 || sub <= 1 {
+        return contours.to_vec();
+    }
+
+    let mut out = Vec::with_capacity((n - 1) * sub + 1);
+    for i in 0..n - 1 {
+        let c0 = if i == 0 {
+            &contours[0]
+        } else {
+            &contours[i - 1]
+        };
+        let c1 = &contours[i];
+        let c2 = &contours[i + 1];
+        let c3 = if i + 2 < n {
+            &contours[i + 2]
+        } else {
+            &contours[n - 1]
+        };
+
+        for s in 0..sub {
+            let t = s as f32 / sub as f32;
+            let z = c1.z * (1.0 - t) + c2.z * t;
+            let mut radii = vec![0.0_f32; n_ang];
+            for (j, slot) in radii.iter_mut().enumerate() {
+                let v = catmull(c0.radii[j], c1.radii[j], c2.radii[j], c3.radii[j], t);
+                // Clamp to the segment's endpoint range so Catmull can't overshoot
+                // (which would spike the vase radius on sharp Z features).
+                let lo = c1.radii[j].min(c2.radii[j]);
+                let hi = c1.radii[j].max(c2.radii[j]);
+                *slot = v.clamp(lo, hi).max(min_radius);
+            }
+            out.push(Contour { z, radii });
+        }
+    }
+    out.push(contours[n - 1].clone());
+    out
+}
+
+fn catmull(p0: f32, p1: f32, p2: f32, p3: f32, t: f32) -> f32 {
+    let t2 = t * t;
+    let t3 = t2 * t;
+    0.5 * ((2.0 * p1)
+        + (-p0 + p2) * t
+        + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2
+        + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3)
 }
 
 /// Amplify high-frequency radius variation relative to a mild angular baseline.
@@ -537,6 +739,10 @@ mod tests {
             smooth_vertical: 0.0,
             smooth_vertical_mm: 0.0,
             smooth_vertical_range_mm: 0.0,
+            band_subsamples: 1,
+            couple_weight: 0.0,
+            couple_gap_mm: 0.0,
+            loft_subdivide: 1,
             detail_gain: 1.0,
         };
         let env = extract_radial_envelope(&tris, [0.5, 0.5], 0.0, 1.0, &opts);

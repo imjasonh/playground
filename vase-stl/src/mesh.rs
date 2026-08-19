@@ -1,6 +1,6 @@
 use stl_io::Triangle;
 
-use crate::envelope::Envelope;
+use crate::envelope::{densify_catmull_rom, Envelope};
 use crate::stl::make_triangle_auto;
 
 /// Summary of a lofted mesh.
@@ -16,6 +16,17 @@ fn empty_stats() -> MeshStats {
         layers: 0,
         angular_samples: 0,
         triangles: 0,
+    }
+}
+
+/// Optionally densify band contours with Catmull-Rom before lofting.
+pub fn prepare_loft_envelope(envelope: &Envelope, subdivide: usize, min_radius: f32) -> Envelope {
+    if subdivide <= 1 || envelope.contours.len() < 3 {
+        return envelope.clone();
+    }
+    Envelope {
+        axis_xy: envelope.axis_xy,
+        contours: densify_catmull_rom(&envelope.contours, subdivide, min_radius),
     }
 }
 
@@ -58,9 +69,6 @@ fn append_wall(tris: &mut Vec<Triangle>, rings: &[Vec<[f32; 3]>], n: usize, outw
 }
 
 /// Loft the envelope into a solid (closed bottom + closed top).
-///
-/// Slicer spiral-vase mode ignores infill/top/bottom and follows the outer
-/// perimeter, so a solid is the usual input.
 pub fn loft_solid(envelope: &Envelope) -> (Vec<Triangle>, MeshStats) {
     if envelope.contours.is_empty() {
         return (Vec::new(), empty_stats());
@@ -68,7 +76,6 @@ pub fn loft_solid(envelope: &Envelope) -> (Vec<Triangle>, MeshStats) {
     let (n, cx, cy, outer) = rings(envelope);
     let mut tris = Vec::new();
 
-    // Bottom cap, normal −Z.
     let center_bottom = [cx, cy, envelope.contours[0].z];
     for i in 0..n {
         let j = (i + 1) % n;
@@ -77,7 +84,6 @@ pub fn loft_solid(envelope: &Envelope) -> (Vec<Triangle>, MeshStats) {
 
     append_wall(&mut tris, &outer, n, true);
 
-    // Top cap, normal +Z.
     let last = outer.len() - 1;
     let center_top = [cx, cy, envelope.contours[last].z];
     for i in 0..n {
@@ -125,7 +131,6 @@ pub fn loft_hollow(envelope: &Envelope, wall_mm: f32) -> (Vec<Triangle>, MeshSta
         })
         .collect();
 
-    // Bottom annulus, normal −Z.
     for i in 0..n {
         let j = (i + 1) % n;
         tris.push(make_triangle_auto(outer[0][i], inner[0][i], inner[0][j]));

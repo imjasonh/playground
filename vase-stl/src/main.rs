@@ -16,7 +16,7 @@ struct Cli {
     #[arg(short = 'o', long)]
     output: PathBuf,
 
-    /// Slice / loft layer height in mm.
+    /// Slice / loft layer height in mm (one band thick).
     #[arg(long, default_value_t = 0.15)]
     layer_height: f32,
 
@@ -36,17 +36,33 @@ struct Cli {
     #[arg(long, default_value_t = 0)]
     smooth_angular: usize,
 
-    /// Legacy neighbor-blend along Z, 0..1 (prefer --smooth-vertical-mm).
+    /// Legacy neighbor-blend along Z, 0..1.
     #[arg(long, default_value_t = 0.0)]
     smooth_vertical: f32,
 
-    /// Spatial σ along Z in mm (edge-preserving when range σ is set).
+    /// Legacy Gaussian σ along Z in mm (`0` = off). Prefer --couple-weight.
     #[arg(long, default_value_t = 0.0)]
     smooth_vertical_mm: f32,
 
-    /// Bilateral range σ on radius in mm (`0` = plain Gaussian).
+    /// Legacy bilateral range σ on radius in mm.
     #[arg(long, default_value_t = 0.0)]
     smooth_vertical_range_mm: f32,
+
+    /// Z samples inside each layer band (max radius kept).
+    #[arg(long, default_value_t = 5)]
+    band_subsamples: usize,
+
+    /// Curvature spring weight (`0`–`1`) — kills stair-steps on round ridges.
+    #[arg(long, default_value_t = 0.25)]
+    couple_weight: f32,
+
+    /// Max |Δr| between bands (mm); larger gaps are dragged shut.
+    #[arg(long, default_value_t = 0.30)]
+    couple_gap_mm: f32,
+
+    /// Catmull-Rom subdivisions per band for a smoother STL loft.
+    #[arg(long, default_value_t = 3)]
+    loft_subdivide: usize,
 
     /// Force the input axis that becomes print-up. Default: longest AABB edge.
     #[arg(long, value_enum)]
@@ -72,8 +88,7 @@ struct Cli {
     #[arg(long, default_value_t = 1.0)]
     detail_gain: f32,
 
-    /// Sweep smoothing/detail knobs vs the raw radial envelope; write the
-    /// best-scoring vase. Prints a CSV of trials to stderr.
+    /// Sweep couple-weight vs uncoupled bands; write the best-scoring vase.
     #[arg(long, default_value_t = false)]
     optimize: bool,
 
@@ -154,6 +169,10 @@ fn run(cli: Cli) -> Result<(), String> {
         smooth_vertical: cli.smooth_vertical,
         smooth_vertical_mm: cli.smooth_vertical_mm,
         smooth_vertical_range_mm: cli.smooth_vertical_range_mm,
+        band_subsamples: cli.band_subsamples,
+        couple_weight: cli.couple_weight,
+        couple_gap_mm: cli.couple_gap_mm,
+        loft_subdivide: cli.loft_subdivide,
         up_axis: cli.up.map(UpAxis::from),
         shell,
         scale: cli.scale,
@@ -168,35 +187,31 @@ fn run(cli: Cli) -> Result<(), String> {
             trials.len(),
             cli.chop_budget
         );
-        eprintln!("rank,score,mean_abs_r,max_abs_r,rms_r,chop,vol_rel,sigma_z,sigma_r,gain,ang");
-        for (i, t) in trials.iter().take(25).enumerate() {
+        eprintln!("rank,score,mean_abs_r,max_abs_r,d2r,chop,vol_rel,couple_w,gap");
+        for (i, t) in trials.iter().take(20).enumerate() {
             let m = &t.metrics;
             eprintln!(
-                "{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.3},{:.2},{}",
+                "{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.2},{:.3}",
                 i + 1,
                 t.score,
                 m.mean_abs_r_err,
                 m.max_abs_r_err,
-                m.rms_r_err,
+                m.mean_abs_d2r,
                 m.mean_abs_dr_dz,
                 m.volume_rel_err,
-                t.options.smooth_vertical_mm,
-                t.options.smooth_vertical_range_mm,
-                t.options.detail_gain,
-                t.options.smooth_angular
+                t.options.couple_weight,
+                t.options.couple_gap_mm
             );
         }
         if let Some(t) = trials.first() {
             eprintln!(
-                "best: sigma_z={:.3} sigma_r={:.3} gain={:.2} ang={}  mean|Δr|={:.4} max|Δr|={:.4} chop={:.4} vol_rel={:.4}",
-                t.options.smooth_vertical_mm,
-                t.options.smooth_vertical_range_mm,
-                t.options.detail_gain,
-                t.options.smooth_angular,
+                "best: couple_w={:.2} gap={:.3}  mean|Δr|={:.4} max|Δr|={:.4} d2r={:.4} chop={:.4}",
+                t.options.couple_weight,
+                t.options.couple_gap_mm,
                 t.metrics.mean_abs_r_err,
                 t.metrics.max_abs_r_err,
-                t.metrics.mean_abs_dr_dz,
-                t.metrics.volume_rel_err
+                t.metrics.mean_abs_d2r,
+                t.metrics.mean_abs_dr_dz
             );
         }
         best

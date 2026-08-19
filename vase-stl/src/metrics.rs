@@ -12,6 +12,8 @@ pub struct EnvelopeMetrics {
     pub rms_r_err: f32,
     /// Mean |Δ half-width| between consecutive layers (mm) — terrace proxy.
     pub mean_abs_dr_dz: f32,
+    /// Mean |r[i+1] − 2r[i] + r[i−1]| — staircasing / pixelation proxy.
+    pub mean_abs_d2r: f32,
     /// Approximate solid-of-revolution volume of the candidate (mm³).
     pub volume_mm3: f32,
     /// Approximate volume of the reference (mm³).
@@ -23,10 +25,10 @@ pub struct EnvelopeMetrics {
 }
 
 impl EnvelopeMetrics {
-    /// Scalar score to minimize: fidelity first, with a soft choppiness penalty.
+    /// Scalar score to minimize: fidelity + soft staircasing / gap penalties.
     pub fn score(&self, chop_budget_mm: f32) -> f32 {
         let chop_pen = (self.mean_abs_dr_dz - chop_budget_mm).max(0.0);
-        self.mean_abs_r_err + 0.15 * self.max_abs_r_err + 0.5 * chop_pen
+        self.mean_abs_r_err + 0.08 * self.max_abs_r_err + 1.5 * self.mean_abs_d2r + 0.5 * chop_pen
     }
 }
 
@@ -61,6 +63,7 @@ pub fn compare_envelopes(reference: &Envelope, candidate: &Envelope) -> Envelope
     }
 
     let mean_abs_dr_dz = mean_layer_choppiness(&cand);
+    let mean_abs_d2r = mean_second_diff(&cand);
     let volume_mm3 = envelope_volume(&cand);
     let ref_volume_mm3 = envelope_volume(reference);
     let volume_rel_err = if ref_volume_mm3 > 1e-6 {
@@ -78,6 +81,7 @@ pub fn compare_envelopes(reference: &Envelope, candidate: &Envelope) -> Envelope
             0.0
         },
         mean_abs_dr_dz,
+        mean_abs_d2r,
         volume_mm3,
         ref_volume_mm3,
         volume_rel_err,
@@ -116,6 +120,28 @@ fn mean_layer_choppiness(env: &Envelope) -> f32 {
     for w in env.contours.windows(2) {
         for j in 0..n_ang {
             sum += (w[1].radii[j] - w[0].radii[j]).abs();
+            n += 1;
+        }
+    }
+    if n == 0 {
+        0.0
+    } else {
+        sum / n as f32
+    }
+}
+
+fn mean_second_diff(env: &Envelope) -> f32 {
+    if env.contours.len() < 3 {
+        return 0.0;
+    }
+    let n_ang = env.contours[0].radii.len();
+    let mut sum = 0.0_f32;
+    let mut n = 0usize;
+    for i in 1..env.contours.len() - 1 {
+        for j in 0..n_ang {
+            let d2 = env.contours[i + 1].radii[j] - 2.0 * env.contours[i].radii[j]
+                + env.contours[i - 1].radii[j];
+            sum += d2.abs();
             n += 1;
         }
     }
