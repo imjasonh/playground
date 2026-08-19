@@ -202,7 +202,6 @@ fn writes_valid_3mf_zip() {
     assert!(out.validation.ok);
     assert!(out.bbox_after.min[2].abs() < 1e-4);
     // Bambu Studio needs PrusaSlicer marker + intact ZIP EOCD.
-    let mut found_app = false;
     {
         use std::io::Read;
         let mut z = zip::ZipArchive::new(std::io::Cursor::new(&data)).unwrap();
@@ -211,13 +210,12 @@ fn writes_valid_3mf_zip() {
             .unwrap()
             .read_to_string(&mut model)
             .unwrap();
-        found_app = model.contains("PrusaSlicer");
+        assert!(
+            model.contains("PrusaSlicer"),
+            "Application metadata must mention PrusaSlicer for Bambu"
+        );
         assert!(model.contains("<vertex "), "missing vertices");
         assert!(model.contains("<triangle "), "missing triangles");
-        assert!(
-            z.by_name("_rels/.rels").is_ok(),
-            "missing relationships"
-        );
+        assert!(z.by_name("_rels/.rels").is_ok(), "missing relationships");
     }
-    assert!(found_app, "Application metadata must mention PrusaSlicer for Bambu");
 }
