@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#1d2330" />
+    <meta
+      name="description"
+      content="Simulate real e-ink / e-paper displays: pick a device, upload an image, and preview it with realistic palettes, dithering, and reflective panel response."
+    />
+    <title>E-Ink Display Simulator</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="controls" aria-label="Controls">
+        <header class="masthead">
+          <h1>E-Ink Simulator</h1>
+          <p class="tagline">
+            Preview any image on realistic e-paper panels — real resolutions,
+            palettes, dithering, and reflective response.
+          </p>
+        </header>
+
+        <section class="panel">
+          <h2>Display</h2>
+          <label class="field">
+            <span class="field-label">Device</span>
+            <select id="display-select"></select>
+          </label>
+          <div id="display-info" class="info-grid" aria-live="polite"></div>
+        </section>
+
+        <section class="panel">
+          <h2>Image</h2>
+          <div
+            id="drop-zone"
+            class="drop-zone"
+            tabindex="0"
+            role="button"
+            aria-label="Upload an image"
+          >
+            <input
+              id="file-input"
+              type="file"
+              accept="image/*"
+              hidden
+            />
+            <span class="drop-zone-title">Drop an image or click to upload</span>
+            <span class="drop-zone-sub">PNG, JPG, WebP, GIF…</span>
+          </div>
+          <div class="field">
+            <span class="field-label">Or load a test pattern</span>
+            <div class="button-row" id="sample-row">
+              <button type="button" data-sample="photo">Photo</button>
+              <button type="button" data-sample="bars">Color bars</button>
+              <button type="button" data-sample="wheel">Color wheel</button>
+              <button type="button" data-sample="gradient">Gradient</button>
+              <button type="button" data-sample="text">Text page</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>Rendering strategy</h2>
+          <label class="field">
+            <span class="field-label">Dithering</span>
+            <select id="dither-select"></select>
+          </label>
+          <label class="checkbox">
+            <input id="serpentine" type="checkbox" checked />
+            <span>Serpentine scan (reduces worm artifacts)</span>
+          </label>
+          <label class="field">
+            <span class="field-label">Fit</span>
+            <select id="fit-select">
+              <option value="contain">Contain (letterbox)</option>
+              <option value="cover">Cover (crop)</option>
+              <option value="stretch">Stretch</option>
+            </select>
+          </label>
+          <label class="checkbox">
+            <input id="rotate" type="checkbox" />
+            <span>Rotate panel 90°</span>
+          </label>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Pre-processing</h2>
+            <button id="auto-boost" class="link-button" type="button">
+              Auto e-paper boost
+            </button>
+          </div>
+          <div class="slider" data-adjust="saturation">
+            <label>Saturation <output>1.00</output></label>
+            <input type="range" min="0" max="3" step="0.05" value="1" />
+          </div>
+          <div class="slider" data-adjust="contrast">
+            <label>Contrast <output>1.00</output></label>
+            <input type="range" min="0.3" max="2.5" step="0.05" value="1" />
+          </div>
+          <div class="slider" data-adjust="brightness">
+            <label>Brightness <output>1.00</output></label>
+            <input type="range" min="0.3" max="2" step="0.05" value="1" />
+          </div>
+          <div class="slider" data-adjust="gamma">
+            <label>Gamma <output>1.00</output></label>
+            <input type="range" min="0.3" max="2.5" step="0.05" value="1" />
+          </div>
+          <button id="reset-adjust" class="link-button" type="button">
+            Reset adjustments
+          </button>
+        </section>
+
+        <section class="panel">
+          <h2>Realism &amp; view</h2>
+          <label class="checkbox">
+            <input id="realism" type="checkbox" checked />
+            <span>Reflective panel response (muted, low contrast)</span>
+          </label>
+          <label class="checkbox">
+            <input id="paper-texture" type="checkbox" checked />
+            <span>Paper grain texture</span>
+          </label>
+          <label class="checkbox">
+            <input id="show-grid" type="checkbox" />
+            <span>Pixel grid (when zoomed in)</span>
+          </label>
+          <label class="field">
+            <span class="field-label">Zoom</span>
+            <select id="zoom-select">
+              <option value="fit">Fit to window</option>
+              <option value="1">1× pixels</option>
+              <option value="2">2×</option>
+              <option value="3">3×</option>
+              <option value="4">4×</option>
+              <option value="6">6×</option>
+              <option value="8">8×</option>
+            </select>
+          </label>
+        </section>
+      </aside>
+
+      <main class="stage">
+        <div class="stage-toolbar">
+          <div id="stage-title" class="stage-title">No device</div>
+          <div class="stage-actions">
+            <button id="compare" class="ghost-button" type="button">
+              Hold to compare
+            </button>
+            <button id="download" class="primary-button" type="button" disabled>
+              Download PNG
+            </button>
+          </div>
+        </div>
+
+        <div class="viewport" id="viewport">
+          <div class="device" id="device">
+            <canvas id="view-canvas"></canvas>
+          </div>
+          <p class="empty-hint" id="empty-hint">
+            Upload an image or load a test pattern to begin.
+          </p>
+        </div>
+
+        <div class="stage-footer">
+          <details class="source-details">
+            <summary>Source image (fitted, before e-ink processing)</summary>
+            <canvas id="source-canvas" class="source-canvas"></canvas>
+          </details>
+          <div id="render-caption" class="render-caption"></div>
+        </div>
+      </main>
+    </div>
+
+    <script type="module" src="src/app.js"></script>
+  </body>
+</html>
