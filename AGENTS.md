@@ -227,6 +227,7 @@ builder is covered by `python3 .github/scripts/build-blog_test.py`.
 - Site root: `https://<owner>.github.io/<repo>/`
 - App: `https://<owner>.github.io/<repo>/<app-name>/`
 - Posts: `https://<owner>.github.io/<repo>/posts/`
+- Posts RSS: `https://<owner>.github.io/<repo>/posts/feed.xml`
 - Example: `https://imjasonh.github.io/playground/kanoodle/`
 
 ### PR preview URLs
@@ -234,6 +235,7 @@ builder is covered by `python3 .github/scripts/build-blog_test.py`.
 - Preview root: `https://<owner>.github.io/<repo>/preview/pr-<N>/`
 - App: `https://<owner>.github.io/<repo>/preview/pr-<N>/<app-name>/`
 - Posts: `https://<owner>.github.io/<repo>/preview/pr-<N>/posts/`
+- Posts RSS: `https://<owner>.github.io/<repo>/preview/pr-<N>/posts/feed.xml`
 
 The preview workflow posts the preview root URL on the PR when the PR
 changes a browser app or the posts catalog (same condition as writing
@@ -412,7 +414,8 @@ npm start          # if defined (static server)
 A `blog-post.md` file anywhere in the source tree (except hidden and generated
 directories) is published to `/posts/<parent-dir>/`. Dates come from git
 author history. Local images referenced from the file are copied next to the
-generated HTML; a missing image fails the build.
+generated HTML; a missing image fails the build. The catalog also writes
+`/posts/feed.xml` (RSS 2.0, newest first, full post HTML).
 
 **Agents must not create, edit, or rewrite `blog-post.md` files.** Only a
 human author writes those.
@@ -420,7 +423,8 @@ human author writes those.
 To preview the catalog locally:
 
 ```bash
-python3 .github/scripts/build-blog.py --out /tmp/posts
+python3 .github/scripts/build-blog.py --out /tmp/posts \
+  --base-url https://example.github.io/playground/posts
 python3 .github/scripts/build-blog_test.py
 ```
 
@@ -559,7 +563,7 @@ bundle exec fastlane test
 - **Keep all apps isolated**: do not add repo-root `package.json`, `go.mod`, `go.work`, or Cargo workspace files unless the maintainers explicitly request a monorepo toolchain.
 - **Minimize scope**: when fixing or extending one app, avoid unrelated changes in other directories.
 - **Comments and documentation**: follow the [Google developer documentation style guide](https://developers.google.com/style). Agents: read [`.cursor/skills/google-developer-style/SKILL.md`](.cursor/skills/google-developer-style/SKILL.md) before writing or editing comments, READMEs, or other docs.
-- **Visual design and typography**: when you design or restyle HTML, CSS, or Pages templates, read [`.cursor/skills/frontend-design/SKILL.md`](.cursor/skills/frontend-design/SKILL.md) (Anthropic's [frontend-design](https://github.com/anthropics/skills/tree/main/skills/frontend-design) skill).
+- **Visual design and typography**: when you design or restyle HTML, CSS, or Pages templates, read [`.cursor/skills/web-typography/SKILL.md`](.cursor/skills/web-typography/SKILL.md) (Wondel's [web-typography](https://skills.wondel.ai/skills/web-typography/) skill).
 - **Do not commit**: `node_modules/`, secrets, env files, browser/Go/Rust build artifacts (`target/`), `*.xcodeproj`, `*.dmg`, or Playwright/Jest output (`test-results/`, `coverage/`).
 - **Do not write `blog-post.md` files.** Those are human-authored project
   posts. Agents must not create, edit, or rewrite them. The published

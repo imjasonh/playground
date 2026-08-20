@@ -148,7 +148,24 @@ def test_render_site_has_apps_previews_and_workers() -> None:
         check("__POSTS__" not in out, "posts placeholder replaced")
         check('href="posts/pasta/"' in out, "post link rendered")
         check("August 19, 2026" in out, "post published date rendered")
+        check('href="posts/feed.xml"' in out, "posts section links the RSS feed")
         check(">posts<" in out or ", posts" in out, "preview card mentions posts")
+
+
+def test_render_posts_updated_date_is_marked() -> None:
+    posts = [
+        {
+            "slug": "app",
+            "title": "Hello",
+            "published": "2026-01-15",
+            "updated": "2026-03-02",
+        }
+    ]
+    out = ri.render_posts_section(posts)
+    check("January 15, 2026" in out, "published date")
+    check("Updated March 2, 2026" in out, "updated date")
+    check('class="updated"' in out, "updated date marked")
+    check("August" not in out, "fixture-only dates")
 
 
 def test_render_without_previews_or_workers_omits_sections() -> None:

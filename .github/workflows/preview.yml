@@ -79,7 +79,8 @@ jobs:
             fi
           done
 
-          python3 .github/scripts/build-blog.py --out "$dest/posts"
+          python3 .github/scripts/build-blog.py --out "$dest/posts" \
+            --base-url "https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/preview/pr-${PR}/posts"
 
           # Per-PR preview index listing the apps bundled in this preview.
           python3 .github/scripts/render-index.py preview \
@@ -197,7 +198,7 @@ jobs:
             const repo = context.repo.repo;
             const url = `https://${owner}.github.io/${repo}/preview/pr-${pr}/`;
             const marker = '<!-- gh-pages-preview -->';
-            const body = `${marker}\n## 🔍 Preview deployment\n\n**PR #${pr}** is deployed at: ${url}\n\nPosts: ${url}posts/\n\n_Updated on every push to this PR._`;
+            const body = `${marker}\n## 🔍 Preview deployment\n\n**PR #${pr}** is deployed at: ${url}\n\nPosts: ${url}posts/\nRSS: ${url}posts/feed.xml\n\n_Updated on every push to this PR._`;
             const { data: comments } = await github.rest.issues.listComments({
               owner, repo, issue_number: pr,
             });
