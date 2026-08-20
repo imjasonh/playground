@@ -1,0 +1,1 @@
+function okRe() { return /abc/ }

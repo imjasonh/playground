@@ -1,0 +1,1 @@
+function escN() { return "\n" }

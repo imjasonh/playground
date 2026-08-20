@@ -136,6 +136,12 @@ Syntactic ports of [`golang.org/x/tools/go/analysis/passes`](https://pkg.go.dev/
 | [js_debugger](./analyzers/js_debugger/js_debugger.cue)                                       | Flag `debugger;` statements |
 | [js_useless_catch](./analyzers/js_useless_catch/js_useless_catch.cue)                         | Flag `catch (e) { throw e; }` — a no-op rethrow |
 
+Structural ports of [ESLint built-in rules](https://eslint.org/docs/latest/rules/). Each available rule pasta can express as a tree-sitter pattern is its own analyzer named `js_<rule>` (hyphens become underscores), so `disabled_rules: ["js_no_func_assign"]` turns off only that check. These are not enrolled in playground `.pasta/` — symlink an analyzer to enable it.
+
+A few ESLint ids already have a dedicated analyzer and keep that name: `js_debugger` (`no-debugger`), `js_console_log` (`no-console`), `js_double_equals` (`eqeqeq`), `js_var_to_let` (`no-var`), `js_useless_catch` (`no-useless-catch`), `js_object_assign_spread` (`prefer-object-spread`).
+
+Omitted: rules that need a scope chain, CFG, or ESLint option object (`no-undef`, `no-unused-vars`, `prefer-const`, `complexity`, …), config-only rules whose default reports nothing (`no-restricted-*`, `id-denylist`), deprecated/removed core rules, and layout rules that moved to `@stylistic/eslint-plugin`.
+
 **TypeScript**
 
 | Path | What it does |

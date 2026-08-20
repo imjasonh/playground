@@ -1,0 +1,1 @@
+function filledClass() { return /[a]/ }
