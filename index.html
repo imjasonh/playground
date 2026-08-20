@@ -180,6 +180,39 @@
   }
   footer a { color: var(--accent); text-decoration: none; }
   footer a:hover { text-decoration: underline; }
+
+  ul.post-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: .65rem;
+  }
+  ul.post-list li { margin: 0; }
+  ul.post-list a {
+    display: flex;
+    flex-direction: column;
+    gap: .2rem;
+    padding: .9rem 1.1rem;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    color: var(--text);
+    text-decoration: none;
+    transition: transform .12s ease, border-color .12s ease, background .12s ease;
+  }
+  ul.post-list a:hover {
+    transform: translateY(-2px);
+    background: var(--card-hover);
+    border-color: var(--accent);
+  }
+  ul.post-list .title { font-weight: 600; line-height: 1.3; }
+  ul.post-list .meta {
+    font-size: .8rem;
+    color: var(--muted);
+  }
 </style>
 </head><body>
 <main>
@@ -208,6 +241,21 @@
       <li><a href="web-push-demo/">web-push-demo</a></li>
       <li><a href="webrtc/">webrtc</a></li>
     </ul>
+  </section>
+
+  <section class="previews">
+    <h2>Active previews <span class="count">1</span></h2>
+    <div class="preview-list">
+      <div class="preview-card">
+        <span class="pr">PR #254</span>
+        <span class="title">Publish project posts to /posts/</span>
+        <span class="apps">posts</span>
+        <span class="links">
+          <a class="open" href="preview/pr-254/">Open preview</a>
+          <a href="https://github.com/imjasonh/playground/pull/254">View PR</a>
+        </span>
+      </div>
+    </div>
   </section>
 
 
