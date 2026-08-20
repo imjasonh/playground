@@ -665,7 +665,7 @@ export class GitRepoSource {
         prefix: wanted,
       });
     } catch (err) {
-      throw new Error(`Could not check the remote: ${err && err.message ? err.message : err}`);
+      throw new Error(`Could not check the remote: ${err && err.message ? err.message : err}`, { cause: err });
     }
 
     const match = (refs || []).find((r) => r && r.ref === wanted);

@@ -54,8 +54,7 @@ func TestParseInitOptions_PartialOverride(t *testing.T) {
 
 func TestParseInitOptions_Malformed(t *testing.T) {
 	raw := json.RawMessage(`{not json`)
-	_, err := parseInitOptions(&raw)
-	if err == nil {
+	if _, err := parseInitOptions(&raw); err == nil {
 		t.Fatal("expected error on malformed JSON")
 	}
 }
@@ -81,8 +80,7 @@ func TestUriToPath_Escaped(t *testing.T) {
 }
 
 func TestUriToPath_NonFileScheme(t *testing.T) {
-	_, err := uriToPath("http://example.com/foo")
-	if err == nil {
+	if _, err := uriToPath("http://example.com/foo"); err == nil {
 		t.Fatal("expected error for non-file scheme")
 	}
 }

@@ -3,6 +3,10 @@
 // programmer to parenthesize sub-expressions that rely on operator
 // precedence or associativity rules to evaluate the way they look.
 //
+// This lives under testdata/ as an engine demo, not as a production
+// lint: mixed-precedence arithmetic is idiomatic in most languages,
+// so the check floods real trees.
+//
 // The classic bug this prevents is the C-style:
 //
 //     args->endp - args->begin_argv + consume

@@ -26,8 +26,7 @@ func TestEnsureSendsAuthHeader(t *testing.T) {
 
 	t.Setenv("NODE_AUTH_TOKEN", "secret-token")
 	c := &fetch.Cache{Dir: t.TempDir()}
-	_, err := c.Ensure(srv.URL+"/pkg.tgz", "sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==")
-	if err == nil {
+	if _, err := c.Ensure(srv.URL+"/pkg.tgz", "sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="); err == nil {
 		t.Fatal("expected integrity/status error")
 	}
 	if gotAuth != "Bearer secret-token" {

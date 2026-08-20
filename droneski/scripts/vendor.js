@@ -14,5 +14,5 @@ const vendor = join(root, 'vendor');
 mkdirSync(vendor, { recursive: true });
 for (const name of ['three.module.min.js', 'three.core.min.js']) {
   copyFileSync(join(build, name), join(vendor, name));
-  console.log(`vendored ${name}`);
+  console.log(`vendored ${name}`); // pasta:ignore console_noise
 }

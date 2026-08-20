@@ -1,5 +1,6 @@
-// js_no_sparse_arrays flags sparse array literal.
-// ESLint `no-sparse-arrays` covers the same ground.
+// js_no_sparse_arrays flags sparse array literals with holes (`[1,, 2]`
+// or `[, 1]`). ESLint `no-sparse-arrays` covers the same ground. A
+// trailing comma (`[1, 2,]`) is valid ES5+ and is not a hole.
 
 package js_no_sparse_arrays
 
@@ -29,7 +30,7 @@ js_no_sparse_arrays: schema.#Analyzer & {
 		provides: []
 		match: {
 			node: "array"
-			where: [{op: "matches", args: ["@_root", ",\\s*,|\\[\\s*,|,\\s*\\]"]}]
+			where: [{op: "matches", args: ["@_root", ",\\s*,|\\[\\s*,"]}]
 		}
 		diagnose: {
 			severity: "warning"

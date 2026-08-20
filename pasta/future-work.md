@@ -226,7 +226,7 @@ the by-name index is intentionally file-agnostic so an
 `identifier`-anchored fact emitted in one file is visible at query
 sites in another. `runner.TestDir` treats each subdirectory of
 `testdata/` as a multi-file analysis group; top-level files remain
-independent. See `analyzers/go_unused_export/` for a worked example
+independent. See `testdata/go_unused_export/` for a worked example
 and `analyzers/go_deprecated_use/testdata/cross_file/` for a
 cross-file regression of an existing single-file analyzer.
 

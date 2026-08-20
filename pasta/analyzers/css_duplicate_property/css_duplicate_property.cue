@@ -5,9 +5,9 @@
 // and also catches non-consecutive duplicates; this rule only sees
 // adjacent pairs (pasta has no unordered sibling search yet).
 // No auto-fix — which declaration to keep is a product choice.
-//
-// Disable in playground `.pasta/pasta.cue` if a tree uses
-// `min-height: 100vh` then `min-height: 100dvh` as a browser fallback.
+// Progressive-enhancement fallbacks (`min-height: 100vh` then
+// `min-height: 100dvh`) look identical to dead duplicates; use
+// `pasta:ignore` on those pairs.
 
 package css_duplicate_property
 

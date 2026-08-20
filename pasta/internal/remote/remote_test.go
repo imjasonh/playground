@@ -77,8 +77,7 @@ func TestLoadManifestRejectsBadPath(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(dir, ManifestFile), []byte(src+"\n"), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			_, _, err := LoadManifest(dir)
-			if err == nil {
+			if _, _, err := LoadManifest(dir); err == nil {
 				t.Fatalf("expected error for %s", name)
 			}
 		})
@@ -388,8 +387,7 @@ func TestVendorDirsManifestDrift(t *testing.T) {
 func TestVendorDirsMissingFromLock(t *testing.T) {
 	m := &Manifest{Modules: map[string]string{"github.com/alice/rules": "v1"}}
 	lf := &Lockfile{Modules: map[string]LockedModule{}}
-	_, err := VendorDirs(m, lf, &fakeFetcher{root: t.TempDir()})
-	if err == nil {
+	if _, err := VendorDirs(m, lf, &fakeFetcher{root: t.TempDir()}); err == nil {
 		t.Fatal("expected error for module missing from lockfile")
 	}
 }

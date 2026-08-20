@@ -289,8 +289,7 @@ func (g *GitFetcher) FetchCommit(modulePath, commit string) (string, error) {
 	for _, args := range steps {
 		cmd := exec.Command(args[0], args[1:]...)
 		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-		out, err := cmd.CombinedOutput()
-		if err != nil {
+		if out, err := cmd.CombinedOutput(); err != nil {
 			os.RemoveAll(tmp)
 			return "", fmt.Errorf("git %s: %w: %s", strings.Join(args[1:], " "), err, strings.TrimSpace(string(out)))
 		}
@@ -329,8 +328,7 @@ func (g *GitFetcher) resolve(modulePath, version string) (string, error) {
 		"refs/tags/"+version, "refs/tags/"+version+"^{}",
 		"refs/heads/"+version)
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-	out, err := cmd.Output()
-	if err == nil {
+	if out, err := cmd.Output(); err == nil {
 		// Prefer a peeled tag (^{}) when present — that's the commit
 		// the tag points to, even for annotated tags.
 		var tagSHA, peeledSHA, branchSHA string
@@ -439,7 +437,7 @@ func DefaultCacheDir() (string, error) {
 func HashTree(dir string) (string, error) {
 	type entry struct{ path, hash string }
 	var entries []entry
-	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+	if err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -456,8 +454,7 @@ func HashTree(dir string) (string, error) {
 		}
 		entries = append(entries, entry{path: filepath.ToSlash(rel), hash: sum})
 		return nil
-	})
-	if err != nil {
+	}); err != nil {
 		return "", err
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].path < entries[j].path })
@@ -489,7 +486,7 @@ func hashFile(p string) (string, error) {
 // non-empty imports.
 func CheckFlat(dir string) error {
 	var bad []string
-	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+	if err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -509,8 +506,7 @@ func CheckFlat(dir string) error {
 			bad = append(bad, rel)
 		}
 		return nil
-	})
-	if err != nil {
+	}); err != nil {
 		return err
 	}
 	if len(bad) > 0 {

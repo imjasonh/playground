@@ -487,7 +487,7 @@ func vendorRemoteModules(dir string, overlay map[string]load.Source) (map[string
 		return nil, err
 	}
 	for modPath, modDir := range dirs {
-		err := filepath.WalkDir(modDir, func(p string, d fs.DirEntry, walkErr error) error {
+		if err := filepath.WalkDir(modDir, func(p string, d fs.DirEntry, walkErr error) error {
 			if walkErr != nil {
 				return walkErr
 			}
@@ -505,8 +505,7 @@ func vendorRemoteModules(dir string, overlay map[string]load.Source) (map[string
 			target := filepath.Join(dir, "cue.mod", "pkg", filepath.FromSlash(modPath), rel)
 			overlay[target] = load.FromBytes(b)
 			return nil
-		})
-		if err != nil {
+		}); err != nil {
 			return nil, fmt.Errorf("vendor %s: %w", modPath, err)
 		}
 	}

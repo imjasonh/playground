@@ -409,8 +409,7 @@ func rawJSON(v any) *json.RawMessage {
 
 func pathToFileURI(p string) string {
 	if !filepath.IsAbs(p) {
-		abs, err := filepath.Abs(p)
-		if err == nil {
+		if abs, err := filepath.Abs(p); err == nil {
 			p = abs
 		}
 	}

@@ -42,7 +42,7 @@ targets:
         PRODUCT_NAME: HelloMac
         # Ad-hoc / local Debug builds; CI release signing overrides this.
         CODE_SIGN_STYLE: Automatic
-        ENABLE_HARDENED_RUNTIME: YES
+        ENABLE_HARDENED_RUNTIME: YES # pasta:ignore mapping_value_true
     # Sparkle loads helper XPC services; library validation must allow them.
     # Still notarizable with Developer ID + Hardened Runtime.
     entitlements:
@@ -84,7 +84,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.imjasonh.hello-macos.tests
-        GENERATE_INFOPLIST_FILE: YES
+        GENERATE_INFOPLIST_FILE: YES # pasta:ignore mapping_value_true
 
 schemes:
   HelloMac:

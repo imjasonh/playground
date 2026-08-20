@@ -94,9 +94,7 @@ export async function runGame(options: RunGameOptions): Promise<GameRecord> {
       "setup",
     );
     turns.push(setup);
-    if (setup.move?.type !== "commit") {
-      // No secret — skip gameplay (still paid bootstrap + this setup turn).
-    } else {
+    if (setup.move?.type === "commit") {
       secret = setup.move.secret;
       secretCommitted = true;
 

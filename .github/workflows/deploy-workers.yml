@@ -5,7 +5,7 @@ on:
     branches: [main]
   # Manual "Run workflow": redeploy every Worker app on demand (e.g. to roll a
   # config/secret change that didn't touch the app's own directory).
-  workflow_dispatch:
+  workflow_dispatch: # pasta:ignore missing_value
 
 # Worker deploys are independent of the GitHub Pages publish, but serialize
 # among themselves so two pushes don't race the same Cloudflare deployment.

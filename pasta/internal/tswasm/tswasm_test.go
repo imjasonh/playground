@@ -45,10 +45,9 @@ func TestParseTimeout(t *testing.T) {
 	for i := 0; i < 3000; i++ {
 		src = append(src, []byte("func F() { var x int; _ = x }\n")...)
 	}
-	_, err := Parse(t.Context(), &Language{Grammar: "go"}, src, "", ParseOptions{
+	if _, err := Parse(t.Context(), &Language{Grammar: "go"}, src, "", ParseOptions{
 		Timeout: time.Microsecond,
-	})
-	if err == nil {
+	}); err == nil {
 		t.Skip("parse finished within 1µs")
 	}
 }

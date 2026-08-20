@@ -10,9 +10,7 @@
 // pattern-matches cleanly.
 //
 // Rules gate on GHA-shaped content (uses:/jobs:/runs-on:/package-ecosystem)
-// so ordinary application YAML is left alone. Playground CI disables the
-// noisiest findings against this repo's still-tag-pinned workflows via
-// .pasta/pasta.cue.
+// so ordinary application YAML is left alone.
 
 package gha_security
 

@@ -189,10 +189,9 @@ func TestStreamingPrefilterStats(t *testing.T) {
 		},
 	}
 	var stats Stats
-	_, err := RunGroup(t.Context(), []FileInput{
+	if _, err := RunGroup(t.Context(), []FileInput{
 		{FileID: "a.go", Src: []byte("package p\n"), Lang: goLang},
-	}, []*dsl.Analyzer{a}, WithStats(&stats))
-	if err != nil {
+	}, []*dsl.Analyzer{a}, WithStats(&stats)); err != nil {
 		t.Fatal(err)
 	}
 	if stats.Walked.Load() != 1 || stats.PrefilterSkipped.Load() != 1 {
@@ -222,10 +221,9 @@ func TestCacheMissAfterSchemaBump(t *testing.T) {
 	}
 	dir := t.TempDir()
 	cache := parsecache.Open(dir, parsecache.HashRules([]*dsl.Analyzer{a}), 0)
-	_, err := RunGroup(t.Context(), []FileInput{
+	if _, err := RunGroup(t.Context(), []FileInput{
 		{FileID: "a.go", Src: src, Lang: goLang},
-	}, []*dsl.Analyzer{a}, WithCache(cache))
-	if err != nil {
+	}, []*dsl.Analyzer{a}, WithCache(cache)); err != nil {
 		t.Fatal(err)
 	}
 	if cache.Stats().Writes != 1 {

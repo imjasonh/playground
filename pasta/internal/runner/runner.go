@@ -350,7 +350,7 @@ func discoverTestGroups(testdata string) ([][]string, error) {
 // files of unknown languages are ignored.
 func collectSourceFiles(dir string) ([]string, error) {
 	var out []string
-	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+	if err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -361,8 +361,7 @@ func collectSourceFiles(dir string) ([]string, error) {
 			out = append(out, p)
 		}
 		return nil
-	})
-	if err != nil {
+	}); err != nil {
 		return nil, err
 	}
 	sort.Strings(out)
@@ -518,8 +517,7 @@ func extractWantMarkers(src []byte) map[int][]string {
 			// (empty if quote form); m[3] = quote-delimited content.
 			line := i + 1
 			if m[1] != "" {
-				off, err := parseOffset(m[1])
-				if err == nil {
+				if off, err := parseOffset(m[1]); err == nil {
 					line += off
 				}
 			}

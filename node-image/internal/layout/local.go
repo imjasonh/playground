@@ -106,7 +106,7 @@ func LocalContentKeyAndHash(srcDir string) (key, sha512hex string, err error) {
 
 func hashTree(root string) (string, error) {
 	h := sha512.New()
-	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+	if err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -139,8 +139,7 @@ func hashTree(root string) (string, error) {
 		_ = f.Close()
 		_, _ = io.WriteString(h, "\n")
 		return copyErr
-	})
-	if err != nil {
+	}); err != nil {
 		return "", err
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil

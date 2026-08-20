@@ -233,8 +233,7 @@ func TestLoadConfig_invalidSeverity(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, remote.ManifestFile), []byte(src), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	_, _, err := LoadConfig(dir)
-	if err == nil {
+	if _, _, err := LoadConfig(dir); err == nil {
 		t.Fatalf("expected error for invalid severity")
 	}
 }

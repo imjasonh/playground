@@ -8,8 +8,8 @@
 import qrcode from "./vendor/qrcode-generator.js";
 
 export class QrCapacityError extends Error {
-  constructor(message) {
-    super(message);
+  constructor(message, options) {
+    super(message, options);
     this.name = "QrCapacityError";
   }
 }
@@ -23,6 +23,7 @@ export function buildMatrix(text, ecLevel = "L") {
   } catch (err) {
     throw new QrCapacityError(
       `Data too large for a QR code (${text.length} chars): ${err}`,
+      { cause: err },
     );
   }
   const count = qr.getModuleCount();
