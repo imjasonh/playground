@@ -184,8 +184,8 @@ Deploy workflows copy browser app directories as-is (they do **not** run
 commit source files—never commit `node_modules/` or Go/Rust build artifacts.
 
 The production home page (`index.html` at the Pages root) is generated at build
-time by `.github/scripts/render-index.py` from the shared template. It has a
-**Posts** section (from the generated `posts/index.json` catalog) above a
+time by `.github/scripts/render-index.py` from the shared template. The header
+links to the generated **Posts** catalog (`posts/`). The page then lists a
 **Browser apps** section (the deployed `index.html` directories) and a separate
 **Cloudflare Workers apps** section (directories with `wrangler.toml`). Workers
 are not served from Pages, so the renderer discovers them by scanning the repo

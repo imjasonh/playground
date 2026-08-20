@@ -14,8 +14,9 @@ Two modes:
            section.
 
 The template lives at ../pages/index.html.tmpl relative to this script and
-exposes these placeholders: __TITLE__, __HEADING__, __POSTS__, __ITEMS__,
-__PREVIEWS__, __WORKERS__ and __REPO_URL__.
+exposes these placeholders: __TITLE__, __HEADING__, __ITEMS__, __PREVIEWS__,
+__WORKERS__ and __REPO_URL__. The header links to the generated ``posts/``
+catalog instead of listing individual posts.
 
 Browser apps and previews are discovered from the published site directory
 (``--dir``). Cloudflare Worker apps are not served from Pages, so they are
@@ -28,7 +29,6 @@ from __future__ import annotations
 import argparse
 import html
 import json
-from datetime import datetime
 from pathlib import Path
 
 TEMPLATE_PATH = Path(__file__).resolve().parents[1] / "pages" / "index.html.tmpl"
@@ -111,49 +111,6 @@ def scan_previews(root: Path) -> list[dict]:
     return previews
 
 
-def scan_posts(root: Path) -> list[dict]:
-    """Published posts from ``root/posts/index.json`` (written by build-blog.py).
-
-    Returns a list of ``{"slug", "title", "published", "updated"}`` dicts in
-    the file's order (newest first). A missing or invalid manifest yields
-    an empty list.
-    """
-    manifest = root / "posts" / "index.json"
-    if not manifest.is_file():
-        return []
-    try:
-        data = json.loads(manifest.read_text())
-    except (ValueError, OSError):
-        return []
-    if not isinstance(data, list):
-        return []
-    posts = []
-    for item in data:
-        if not isinstance(item, dict) or not item.get("slug"):
-            continue
-        posts.append(
-            {
-                "slug": str(item["slug"]),
-                "title": str(item.get("title") or item["slug"]),
-                "published": item.get("published"),
-                "updated": item.get("updated"),
-            }
-        )
-    return posts
-
-
-def format_iso_date(value: object) -> str:
-    """Turn an ISO date string into 'August 19, 2026', or '' if missing."""
-    if not value:
-        return ""
-    raw = str(value)
-    try:
-        parsed = datetime.fromisoformat(raw)
-    except ValueError:
-        return raw
-    return f"{parsed.strftime('%B')} {parsed.day}, {parsed.year}"
-
-
 def render_items(apps: list[str]) -> str:
     return "\n".join(
         f'      <li><a href="{html.escape(a)}/">{html.escape(a)}</a></li>' for a in apps
@@ -226,43 +183,6 @@ def render_previews_section(previews: list[dict], repo_url: str) -> str:
     )
 
 
-def render_posts_section(posts: list[dict]) -> str:
-    """Render the Posts section above browser apps, or '' when there are none."""
-    if not posts:
-        return ""
-    items = []
-    for p in posts:
-        bits = []
-        published = format_iso_date(p.get("published"))
-        updated = format_iso_date(p.get("updated"))
-        if published:
-            bits.append(f'<span class="published">{html.escape(published)}</span>')
-        if updated and updated != published:
-            bits.append(
-                f'<span class="updated">Updated {html.escape(updated)}</span>'
-            )
-        meta = ""
-        if bits:
-            meta = f'\n        <span class="meta">{" · ".join(bits)}</span>'
-        items.append(
-            "      <li>\n"
-            f'        <a href="posts/{html.escape(p["slug"], quote=True)}/">\n'
-            f'          <span class="title">{html.escape(p["title"])}</span>'
-            f"{meta}\n"
-            "        </a>\n"
-            "      </li>"
-        )
-    return (
-        '\n  <section class="posts">\n'
-        '    <h2>Posts <a class="feed" href="posts/feed.xml">RSS</a></h2>\n'
-        '    <ul class="post-list">\n'
-        + "\n".join(items)
-        + "\n"
-        "    </ul>\n"
-        "  </section>\n"
-    )
-
-
 def render(
     title: str,
     heading: str,
@@ -270,14 +190,12 @@ def render(
     previews: list[dict],
     repo_url: str,
     workers: list[str] | None = None,
-    posts: list[dict] | None = None,
     template: str | None = None,
 ) -> str:
     tmpl = template if template is not None else TEMPLATE_PATH.read_text()
     return (
         tmpl.replace("__TITLE__", html.escape(title))
         .replace("__HEADING__", html.escape(heading))
-        .replace("__POSTS__", render_posts_section(posts or []))
         .replace("__ITEMS__", render_items(apps))
         .replace("__PREVIEWS__", render_previews_section(previews, repo_url))
         .replace("__WORKERS__", render_workers_section(workers or [], repo_url))
@@ -318,7 +236,6 @@ def main(argv: list[str] | None = None) -> None:
             scan_previews(root),
             args.repo_url,
             workers=scan_workers(Path(args.source_dir)),
-            posts=scan_posts(root),
         )
     else:
         label = f"Preview — PR #{args.pr}"
@@ -328,7 +245,6 @@ def main(argv: list[str] | None = None) -> None:
             scan_apps(root),
             [],
             args.repo_url,
-            posts=scan_posts(root),
         )
 
     Path(args.output).write_text(content)
