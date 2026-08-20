@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f4efe6;
+    --ink: #241d16;
+    --muted: #6b6258;
+    --rule: #d7cfc3;
+    --accent: #6b3a2a;
+    --code-bg: #ebe4d6;
+    --quote-bar: #c4b8a6;
+    --alert-border: #6b3a2a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161310;
+      --ink: #efe7db;
+      --muted: #b3a897;
+      --rule: #3a342c;
+      --accent: #e0b59a;
+      --code-bg: #241f19;
+      --quote-bar: #5a5046;
+      --alert-border: #e0b59a;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+    color: var(--ink);
+    background: var(--bg);
+    line-height: 1.65;
+  }
+  main {
+    max-width: 38rem;
+    margin: 0 auto;
+    padding: clamp(2rem, 6vw, 4.5rem) clamp(1.1rem, 4vw, 2rem) 4.5rem;
+  }
+  .crumbs {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: .8rem;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 2rem;
+  }
+  .crumbs a { color: var(--accent); text-decoration: none; }
+  .crumbs a:hover { text-decoration: underline; }
+  header { margin-bottom: 2rem; }
+  h1 {
+    font-size: clamp(2rem, 6vw, 2.7rem);
+    font-weight: 400;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+    margin: 0;
+  }
+  .meta {
+    margin: .85rem 0 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: .8rem;
+    letter-spacing: .03em;
+    color: var(--muted);
+  }
+  .body { font-size: 1.12rem; }
+  .body > *:first-child { margin-top: 0; }
+  .body h2, .body h3, .body h4 {
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    line-height: 1.25;
+    margin: 2.1rem 0 .7rem;
+  }
+  .body h2 { font-size: 1.45rem; }
+  .body h3 { font-size: 1.2rem; }
+  .body h4 { font-size: 1.08rem; }
+  .body p, .body ul, .body ol { margin: 0 0 1.1rem; }
+  .body li { margin: .3rem 0; }
+  .body a { color: var(--accent); }
+  .body img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 1.4rem auto;
+  }
+  .body code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: .84em;
+    background: var(--code-bg);
+    padding: .08em .32em;
+    border-radius: 4px;
+  }
+  .body pre {
+    overflow: auto;
+    padding: 1rem 1.1rem;
+    background: var(--code-bg);
+    margin: 0 0 1.25rem;
+    font-size: .95rem;
+  }
+  .body pre code { background: none; padding: 0; }
+  .body blockquote {
+    margin: 0 0 1.25rem;
+    padding: .1rem 0 .1rem 1.1rem;
+    border-left: 2px solid var(--quote-bar);
+    color: var(--muted);
+    font-style: italic;
+  }
+  .body blockquote p:last-child { margin-bottom: 0; }
+  .body hr {
+    border: 0;
+    border-top: 1px solid var(--rule);
+    margin: 2.2rem 0;
+  }
+  .alert {
+    margin: 0 0 1.25rem;
+    padding: 1rem 1.1rem;
+    border: 1px solid var(--alert-border);
+    font-style: normal;
+  }
+  .alert-label {
+    margin: 0 0 .4rem;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: .72rem;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .alert p:last-child { margin-bottom: 0; }
+</style>
+</head><body>
+<main>
+  <nav class="crumbs" aria-label="Breadcrumb">
+    <a href="../../">Playground</a>
+    · <a href="../">Posts</a>
+  </nav>
+  <article>
+    <header>
+      <h1>__TITLE_HTML__</h1>
+__DATES__
+    </header>
+    <div class="body">
+__BODY__
+    </div>
+  </article>
+</main>
+</body></html>

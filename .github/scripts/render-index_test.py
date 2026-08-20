@@ -24,6 +24,7 @@ spec.loader.exec_module(ri)
 
 TEMPLATE = (
     "T=__TITLE__ H=__HEADING__ R=__REPO_URL__\n"
+    "__POSTS__"
     "<ul>\n__ITEMS__\n</ul>\n__PREVIEWS__\n__WORKERS__END"
 )
 
@@ -48,6 +49,22 @@ def make_site(tmp: Path) -> Path:
     (tmp / ".git" / "index.html").write_text("x")
     (tmp / ".hidden-worker").mkdir()
     (tmp / ".hidden-worker" / "wrangler.toml").write_text("x")
+    # Generated posts catalog looks like a browser app (index.html) but is
+    # not one — scan_apps must skip it.
+    (tmp / "posts").mkdir()
+    (tmp / "posts" / "index.html").write_text("x")
+    (tmp / "posts" / "index.json").write_text(
+        json.dumps(
+            [
+                {
+                    "slug": "pasta",
+                    "title": "pasta",
+                    "published": "2026-08-19",
+                    "updated": "2026-08-19",
+                }
+            ]
+        )
+    )
 
     preview = tmp / "preview"
     (preview / "pr-7").mkdir(parents=True)
@@ -56,7 +73,14 @@ def make_site(tmp: Path) -> Path:
     )
     (preview / "pr-12").mkdir(parents=True)
     (preview / "pr-12" / "preview.json").write_text(
-        json.dumps({"number": 12, "title": "Fix bug", "apps": ["artillery", "git"]})
+        json.dumps(
+            {
+                "number": 12,
+                "title": "Fix bug",
+                "apps": ["artillery", "git"],
+                "posts": True,
+            }
+        )
     )
     # Preview dir without a manifest (non-browser PR) -> not listed.
     (preview / "pr-3").mkdir(parents=True)
@@ -93,6 +117,7 @@ def test_scan_previews_sorted_and_filtered() -> None:
         numbers = [p["number"] for p in previews]
         check(numbers == [12, 7], f"previews sorted desc, manifest-only: {numbers}")
         check(previews[0]["apps"] == ["artillery", "git"], "preview apps preserved")
+        check(previews[0]["posts"] is True, "preview posts flag preserved")
 
 
 def test_render_site_has_apps_previews_and_workers() -> None:
@@ -105,6 +130,7 @@ def test_render_site_has_apps_previews_and_workers() -> None:
             ri.scan_previews(root),
             "https://github.com/o/r",
             workers=ri.scan_workers(root),
+            posts=ri.scan_posts(root),
             template=TEMPLATE,
         )
         check('<a href="kanoodle/">kanoodle</a>' in out, "app link rendered")
@@ -119,6 +145,10 @@ def test_render_site_has_apps_previews_and_workers() -> None:
         check("__PREVIEWS__" not in out, "previews placeholder replaced")
         check("__WORKERS__" not in out, "workers placeholder replaced")
         check("__REPO_URL__" not in out, "repo url placeholder replaced")
+        check("__POSTS__" not in out, "posts placeholder replaced")
+        check('href="posts/pasta/"' in out, "post link rendered")
+        check("August 19, 2026" in out, "post published date rendered")
+        check(">posts<" in out or ", posts" in out, "preview card mentions posts")
 
 
 def test_render_without_previews_or_workers_omits_sections() -> None:
@@ -126,11 +156,28 @@ def test_render_without_previews_or_workers_omits_sections() -> None:
     check(out.rstrip().endswith("END"), "trailing sections empty when nothing to show")
     check("preview-card" not in out, "no preview cards when empty")
     check("Cloudflare Workers apps" not in out, "no workers section when empty")
+    check("post-list" not in out, "no posts section when empty")
 
 
 def test_render_workers_relative_link_without_repo_url() -> None:
     out = ri.render("t", "h", [], [], "", workers=["web-push"], template=TEMPLATE)
     check('<a href="web-push">web-push</a>' in out, "relative worker link fallback")
+
+
+def test_scan_posts() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = make_site(Path(d))
+        posts = ri.scan_posts(root)
+        check(len(posts) == 1, f"one post: {posts}")
+        check(posts[0]["slug"] == "pasta", "slug")
+        check(posts[0]["published"] == "2026-08-19", "published")
+
+
+def test_scan_apps_skips_generated_posts_dir() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = make_site(Path(d))
+        apps = ri.scan_apps(root)
+        check("posts" not in apps, f"posts dir is not an app: {apps}")
 
 
 def test_render_escapes_title() -> None:
