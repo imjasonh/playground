@@ -122,11 +122,55 @@ final class RideJSONLExporterTests: XCTestCase {
         }
     }
 
+    func testZipDataContainsOneJSONLPerRide() throws {
+        let rideA = makeRide()
+        let rideB = Ride(
+            id: UUID(uuidString: "C3D4E5F6-A7B8-9012-CDEF-123456789012")!,
+            startedAt: rideA.startedAt.addingTimeInterval(3600),
+            endedAt: rideA.endedAt.addingTimeInterval(3600),
+            durationSeconds: rideA.durationSeconds,
+            distanceMeters: rideA.distanceMeters,
+            peakG: rideA.peakG,
+            joltCount: rideA.joltCount,
+            crashCount: rideA.crashCount,
+            events: [],
+            track: [],
+            motion: [],
+            barometer: []
+        )
+
+        let zip = try RideJSONLExporter.zipData(for: [rideA, rideB])
+        XCTAssertEqual(Array(zip.prefix(4)), [0x50, 0x4b, 0x03, 0x04])
+
+        let names = RideJSONLExporter.filenames(for: [rideA, rideB])
+        let expectedNameA = try XCTUnwrap(names[rideA.id])
+        let expectedNameB = try XCTUnwrap(names[rideB.id])
+        let entries = try StoredZipReader.entries(in: zip)
+        XCTAssertEqual(Set(entries.map(\.name)), Set([expectedNameA, expectedNameB]))
+
+        let payloadA = try XCTUnwrap(entries.first { $0.name == expectedNameA }?.data)
+        let payloadB = try XCTUnwrap(entries.first { $0.name == expectedNameB }?.data)
+        XCTAssertEqual(payloadA, try RideJSONLExporter.data(for: rideA))
+        XCTAssertEqual(payloadB, try RideJSONLExporter.data(for: rideB))
+        XCTAssertTrue(RideJSONLExporter.filenameForAllRidesZip().hasSuffix(".zip"))
+    }
+
+    func testZipArchiveRejectsEmptyEntryList() {
+        XCTAssertThrowsError(try RideZipArchive.data(entries: [])) { error in
+            XCTAssertEqual(error as? RideZipArchive.ArchiveError, .emptyArchive)
+        }
+    }
+
     func testFileDocumentStoresBytes() throws {
         let data = try RideJSONLExporter.data(for: makeRide())
         let document = RideJSONLFileDocument(data: data)
         XCTAssertEqual(document.data, data)
         XCTAssertEqual(RideJSONLFileDocument.writableContentTypes, [RideJSONLExporter.contentType])
+
+        let zipData = try RideJSONLExporter.zipData(for: [makeRide()])
+        let zipDocument = RideZipFileDocument(data: zipData)
+        XCTAssertEqual(zipDocument.data, zipData)
+        XCTAssertEqual(RideZipFileDocument.writableContentTypes, [.zip])
     }
 
     func testLinesIncludeRecordingDiagnosticsWhenPresent() throws {
@@ -168,5 +212,60 @@ final class RideJSONLExporterTests: XCTestCase {
         XCTAssertTrue(header.contains("\"averageCadenceRPM\":80"))
         XCTAssertTrue(header.contains("\"averageCyclingPowerWatts\":200"))
         XCTAssertTrue(header.contains("\"maxCyclingPowerWatts\":350"))
+    }
+}
+
+/// Minimal reader for store-method ZIP archives produced by `RideZipArchive`.
+private enum StoredZipReader {
+    struct Entry {
+        let name: String
+        let data: Data
+    }
+
+    static func entries(in archive: Data) throws -> [Entry] {
+        var entries: [Entry] = []
+        var offset = 0
+        while offset + 4 <= archive.count {
+            let signature = readUInt32(archive, at: offset)
+            if signature == 0x0201_4b50 || signature == 0x0605_4b50 {
+                break
+            }
+            guard signature == 0x0403_4b50 else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            guard offset + 30 <= archive.count else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            let method = readUInt16(archive, at: offset + 8)
+            let compressedSize = Int(readUInt32(archive, at: offset + 18))
+            let uncompressedSize = Int(readUInt32(archive, at: offset + 22))
+            let nameLength = Int(readUInt16(archive, at: offset + 26))
+            let extraLength = Int(readUInt16(archive, at: offset + 28))
+            let nameStart = offset + 30
+            let nameEnd = nameStart + nameLength
+            let dataStart = nameEnd + extraLength
+            let dataEnd = dataStart + compressedSize
+            guard method == 0,
+                  compressedSize == uncompressedSize,
+                  nameEnd <= archive.count,
+                  dataEnd <= archive.count,
+                  let name = String(data: archive.subdata(in: nameStart..<nameEnd), encoding: .utf8) else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            entries.append(Entry(name: name, data: archive.subdata(in: dataStart..<dataEnd)))
+            offset = dataEnd
+        }
+        return entries
+    }
+
+    private static func readUInt16(_ data: Data, at offset: Int) -> UInt16 {
+        UInt16(data[offset]) | (UInt16(data[offset + 1]) << 8)
+    }
+
+    private static func readUInt32(_ data: Data, at offset: Int) -> UInt32 {
+        UInt32(data[offset])
+            | (UInt32(data[offset + 1]) << 8)
+            | (UInt32(data[offset + 2]) << 16)
+            | (UInt32(data[offset + 3]) << 24)
     }
 }
