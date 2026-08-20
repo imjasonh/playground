@@ -33,7 +33,7 @@ var embeddedFS embed.FS
 // LoadResult is the parsed contents of one or more CUE files: zero or
 // more analyzers and zero or more language declarations, plus an
 // optional Config when the directory's pasta.cue carried any config
-// fields (disabled_rules / severity / skip).
+// fields (disabled_rules / disabled_on / severity / skip).
 type LoadResult struct {
 	Analyzers []*dsl.Analyzer
 	Languages []dsl.LanguageDecl

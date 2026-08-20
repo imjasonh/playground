@@ -16,6 +16,13 @@ skip: [
 	"PlaygroundUITests",
 ]
 
+// XcodeGen uses YES/NO for build settings. yaml_truthy would rewrite
+// those to true/false, which Xcode does not accept. Other YAML rules
+// still run on those files.
+disabled_on: {
+	yaml_truthy: ["**/project.yml"]
+}
+
 // Keep the per-file parse timeout; hang defense still matters.
 // Cumulative memory_budget is left unset (unlimited).
 parse_timeout_ms: 5000
