@@ -89,7 +89,7 @@ async function collectTraces() {
       }
     }
     if (hostReachable) {
-      console.log(`Trace host ${host}: ${ok} aircraft with data, ${samples.length} points.`); // pasta:ignore console_noise
+      console.log(`Trace host ${host}: ${ok} aircraft with data, ${samples.length} points.`);
       return { samples, host };
     }
   }
@@ -107,7 +107,7 @@ async function fetchSnapshot() {
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = await res.json();
-      console.log(`Snapshot fallback: ${body?.ac?.length ?? 0} aircraft from ${url}`); // pasta:ignore console_noise
+      console.log(`Snapshot fallback: ${body?.ac?.length ?? 0} aircraft from ${url}`);
       return buildSnapshot(body).samples;
     } catch (err) {
       lastError = err;
@@ -137,14 +137,14 @@ async function main() {
   const traces = await collectTraces();
   if (traces && traces.samples.length) {
     samples = traces.samples;
-    console.log(`Using ${samples.length} trace points from ${traces.host}.`); // pasta:ignore console_noise
+    console.log(`Using ${samples.length} trace points from ${traces.host}.`);
   } else {
-    console.log("No trace data available; falling back to live snapshot."); // pasta:ignore console_noise
+    console.log("No trace data available; falling back to live snapshot.");
     samples = await fetchSnapshot();
   }
 
   if (!samples.length) {
-    console.log("No positions collected this run; nothing to write."); // pasta:ignore console_noise
+    console.log("No positions collected this run; nothing to write.");
     return;
   }
 
@@ -160,20 +160,20 @@ async function main() {
     const existing = await readJson(dayPath);
     const { day, added } = mergeDay(existing, daySamples, date);
     if (added === 0) {
-      console.log(`${date}: no new points.`); // pasta:ignore console_noise
+      console.log(`${date}: no new points.`);
       continue;
     }
     await writeFile(dayPath, JSON.stringify(day) + "\n");
     index = updateIndex(index, date, day.samples.length);
     totalAdded += added;
-    console.log(`${date}: +${added} new point(s), ${day.samples.length} total.`); // pasta:ignore console_noise
+    console.log(`${date}: +${added} new point(s), ${day.samples.length} total.`);
   }
 
   if (totalAdded > 0) {
     await writeFile(indexPath, JSON.stringify(index, null, 2) + "\n");
-    console.log(`Updated ${indexPath} across ${byDate.size} date(s).`); // pasta:ignore console_noise
+    console.log(`Updated ${indexPath} across ${byDate.size} date(s).`);
   } else {
-    console.log("No new points across any date; data files unchanged."); // pasta:ignore console_noise
+    console.log("No new points across any date; data files unchanged.");
   }
 }
 

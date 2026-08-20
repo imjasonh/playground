@@ -33,7 +33,7 @@ function rel(p) {
 
 function report(to) {
   const bytes = readFileSync(to).length;
-  console.log(`vendored ${rel(to)} (${(bytes / 1024).toFixed(0)} KiB)`); // pasta:ignore console_noise
+  console.log(`vendored ${rel(to)} (${(bytes / 1024).toFixed(0)} KiB)`);
 }
 
 const isoRoot = join(modules, 'isomorphic-git');
@@ -98,4 +98,4 @@ const manifest = {
   lightningFs: pkgVersion('@isomorphic-git/lightning-fs'),
   buffer: pkgVersion('buffer'),
 };
-console.log('versions:', JSON.stringify(manifest)); // pasta:ignore console_noise
+console.log('versions:', JSON.stringify(manifest));
