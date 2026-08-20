@@ -54,6 +54,7 @@ go run ./cmd/pasta test analyzers/js_double_equals
 | [go_empty_else](./analyzers/go_empty_else/go_empty_else.cue) ✏️               | Drop `else { }` empty-else branches |
 | [go_self_assignment](./analyzers/go_self_assignment/go_self_assignment.cue) ✏️ | Delete `x = x` self-assignments |
 | [go_panic_empty](./analyzers/go_panic_empty/go_panic_empty.cue)               | Flag `panic("")` with empty message |
+| [go_test_context](./analyzers/go_test_context/go_test_context.cue) ✏️         | `context.Background()` / `context.TODO()` → `t.Context()` in `*_test.go` |
 | [go_string_concat_empty](./analyzers/go_string_concat_empty/go_string_concat_empty.cue) ✏️ | Drop empty operand in `"" + x` / `x + ""` |
 | [go_for_range_one_literal](./analyzers/go_for_range_one_literal/go_for_range_one_literal.cue) | Flag `for _, v := range []T{x} {...}` — equivalent to a plain assignment |
 | [go_errcheck](./analyzers/go_errcheck/go_errcheck.cue) ✏️                     | Flag and rewrite `foo()` to `_ = foo()` when foo returns error (fact passing) |

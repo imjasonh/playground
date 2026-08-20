@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -29,7 +28,7 @@ func TestStreamingPrefilterSkipsParse(t *testing.T) {
 		},
 	}
 	src := []byte("package p\n\nfunc F() {}\n")
-	results, err := RunGroup(context.Background(), []FileInput{
+	results, err := RunGroup(t.Context(), []FileInput{
 		{FileID: "a.go", Src: src, Lang: goLang},
 	}, []*dsl.Analyzer{a}, WithParseTimeout(2*time.Second))
 	if err != nil {
@@ -61,7 +60,7 @@ func TestStreamingPrefilterAllowsHit(t *testing.T) {
 		},
 	}
 	src := []byte("package p\n\n// UNIQ_TOKEN_ZZZ\nfunc F() {}\n")
-	results, err := RunGroup(context.Background(), []FileInput{
+	results, err := RunGroup(t.Context(), []FileInput{
 		{FileID: "a.go", Src: src, Lang: goLang},
 	}, []*dsl.Analyzer{a})
 	if err != nil {

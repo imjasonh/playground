@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -31,7 +30,7 @@ func TestStreamingParseErrorsSkipHeavy(t *testing.T) {
 		},
 	}
 	var stats Stats
-	results, err := RunGroup(context.Background(), []FileInput{
+	results, err := RunGroup(t.Context(), []FileInput{
 		{FileID: "bad.js", Src: src, Lang: js},
 	}, []*dsl.Analyzer{a}, WithStats(&stats), WithParseTimeout(2*time.Second))
 	if err != nil {
@@ -72,7 +71,7 @@ func TestStreamingParseDegradedStillAnalyzes(t *testing.T) {
 	}
 	var stats Stats
 	cache := parsecache.Open(t.TempDir(), parsecache.HashRules([]*dsl.Analyzer{a}), 0)
-	results, err := RunGroup(context.Background(), []FileInput{
+	results, err := RunGroup(t.Context(), []FileInput{
 		{FileID: "light.js", Src: src, Lang: js},
 	}, []*dsl.Analyzer{a}, WithStats(&stats), WithCache(cache))
 	if err != nil {
@@ -111,7 +110,7 @@ func TestStreamingMemoryBudgetSkipsDeterministic(t *testing.T) {
 		},
 	}
 	var stats Stats
-	results, err := RunGroup(context.Background(), []FileInput{
+	results, err := RunGroup(t.Context(), []FileInput{
 		{FileID: "a.go", Src: src, Lang: goLang},
 		{FileID: "b.go", Src: src, Lang: goLang},
 	}, []*dsl.Analyzer{a},
@@ -152,7 +151,7 @@ func TestMemoryTrackerSpansRunGroups(t *testing.T) {
 		},
 	}
 	tracker := &MemoryTracker{Budget: int64(len(src))}
-	r1, err := RunGroup(context.Background(), []FileInput{
+	r1, err := RunGroup(t.Context(), []FileInput{
 		{FileID: "a.go", Src: src, Lang: goLang},
 	}, []*dsl.Analyzer{a}, WithMemoryTracker(tracker))
 	if err != nil {
@@ -161,7 +160,7 @@ func TestMemoryTrackerSpansRunGroups(t *testing.T) {
 	if r1[0].SkipReason != "" {
 		t.Fatalf("first run skipped: %q", r1[0].SkipReason)
 	}
-	r2, err := RunGroup(context.Background(), []FileInput{
+	r2, err := RunGroup(t.Context(), []FileInput{
 		{FileID: "b.go", Src: src, Lang: goLang},
 	}, []*dsl.Analyzer{a}, WithMemoryTracker(tracker))
 	if err != nil {
@@ -190,7 +189,7 @@ func TestStreamingPrefilterStats(t *testing.T) {
 		},
 	}
 	var stats Stats
-	_, err := RunGroup(context.Background(), []FileInput{
+	_, err := RunGroup(t.Context(), []FileInput{
 		{FileID: "a.go", Src: []byte("package p\n"), Lang: goLang},
 	}, []*dsl.Analyzer{a}, WithStats(&stats))
 	if err != nil {
@@ -223,7 +222,7 @@ func TestCacheMissAfterSchemaBump(t *testing.T) {
 	}
 	dir := t.TempDir()
 	cache := parsecache.Open(dir, parsecache.HashRules([]*dsl.Analyzer{a}), 0)
-	_, err := RunGroup(context.Background(), []FileInput{
+	_, err := RunGroup(t.Context(), []FileInput{
 		{FileID: "a.go", Src: src, Lang: goLang},
 	}, []*dsl.Analyzer{a}, WithCache(cache))
 	if err != nil {
