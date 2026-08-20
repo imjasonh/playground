@@ -63,7 +63,8 @@ func LoadFile(path string) (*dsl.Analyzer, error) {
 //     coexist (CUE rejects mixed packages when loaded as one unit).
 //   - Nested: each immediate subdirectory that contains *.cue files
 //     is loaded as its own package. This is the layout used by
-//     `.pasta/<analyzer>/` symlinks (or copies) of `analyzers/<name>/`.
+//     `.pasta/examples/` (a symlink onto `analyzers/`) or
+//     `.pasta/<analyzer>/` copies of `analyzers/<name>/`.
 //
 // pasta.cue is never treated as a rule file — it carries the remote
 // imports manifest and project config.
@@ -89,7 +90,7 @@ func LoadDir(dir string) (LoadResult, error) {
 	if err != nil {
 		return LoadResult{}, err
 	}
-	subPkgs, err := discoverLocalPackageDirs(abs)
+	subPkgs, err := DiscoverPackageDirs(abs)
 	if err != nil {
 		return LoadResult{}, err
 	}
@@ -186,11 +187,21 @@ func buildAndExtract(absFile string, cfg *load.Config) (LoadResult, error) {
 	return extractTopLevel(v)
 }
 
-// discoverLocalPackageDirs returns absolute paths of immediate
-// subdirectories of dir that contain at least one *.cue file (other
-// than pasta.cue). Symlinks to directories are followed so `.pasta/`
-// can enroll analyzers via `ln -s ../pasta/analyzers/foo foo`.
-func discoverLocalPackageDirs(dir string) ([]string, error) {
+// DiscoverPackageDirs returns analyzer package directories under dir.
+// Each returned path is an immediate subdirectory that contains at
+// least one *.cue file other than pasta.cue. Directory symlinks are
+// followed so `.pasta/` can enroll analyzers with
+// `ln -s ../pasta/analyzers/foo foo`.
+//
+// When a child has no rule files of its own but contains analyzer
+// packages (for example `.pasta/examples` → `pasta/analyzers`), those
+// nested packages are included too — one extra level, so a project can
+// enroll every shipped analyzer with a single symlink.
+func DiscoverPackageDirs(dir string) ([]string, error) {
+	return discoverPackageDirs(dir, true)
+}
+
+func discoverPackageDirs(dir string, nest bool) ([]string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
@@ -218,6 +229,13 @@ func discoverLocalPackageDirs(dir string) ([]string, error) {
 			return nil, err
 		}
 		if len(filterManifest(matches)) == 0 {
+			if nest {
+				nested, err := discoverPackageDirs(full, false)
+				if err != nil {
+					return nil, err
+				}
+				out = append(out, nested...)
+			}
 			continue
 		}
 		out = append(out, full)

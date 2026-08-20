@@ -166,7 +166,7 @@ as project sources.
 `LoadDir` accepts both flat `*.cue` files and **nested packages** —
 each immediate subdirectory (or symlink) that contains `*.cue` is
 loaded as its own analyzer package. The playground monorepo enrolls
-rules as `.pasta/<name> → ../pasta/analyzers/<name>` symlinks plus a
+every shipped analyzer with `.pasta/examples` → `pasta/analyzers` plus
 `.pasta/pasta.cue` for `disabled_rules` / `skip` / budgets. `pasta test
 .pasta` expands to every enrolled child that has `testdata/`.
 

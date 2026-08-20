@@ -63,7 +63,7 @@ go run ./cmd/pasta test analyzers/js_double_equals
 | [go_taint](./analyzers/go_taint/go_taint.cue)                                  | Track taint from `os.Getenv` through assignments to `exec.Command` (fact passing + fixpoint) |
 | [go_api_migration](./analyzers/go_api_migration/go_api_migration.cue) ✏️       | Worked example: ship a `.cue` adapter for breaking API changes -- added trailing arg (`widget.Render(x)` → `widget.Render(x, nil)`) and rename (`widget.OldName` → `widget.NewName`) |
 
-Syntactic ports of [`golang.org/x/tools/go/analysis/passes`](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes). Each rule matches trees, not types; the CUE file documents what the original analyzer does that Pasta cannot. `assign` is `go_self_assignment` earlier in this table. Passes that need types, SSA, sizes, or assembly are omitted, including `composite`, `errorsas`, `nilfunc`, and `unmarshal` (pointer vs value, or function vs another identifier of the same name, is not visible from the tree). The playground enrolls these ports as `.pasta/` symlinks.
+Syntactic ports of [`golang.org/x/tools/go/analysis/passes`](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes). Each rule matches trees, not types; the CUE file documents what the original analyzer does that Pasta cannot. `assign` is `go_self_assignment` earlier in this table. Passes that need types, SSA, sizes, or assembly are omitted, including `composite`, `errorsas`, `nilfunc`, and `unmarshal` (pointer vs value, or function vs another identifier of the same name, is not visible from the tree). The playground enrolls these ports through `.pasta/examples` → `pasta/analyzers`.
 
 | Path | What it does |
 |---|---|
@@ -136,7 +136,7 @@ Syntactic ports of [`golang.org/x/tools/go/analysis/passes`](https://pkg.go.dev/
 | [js_debugger](./analyzers/js_debugger/js_debugger.cue)                                       | Flag `debugger;` statements |
 | [js_useless_catch](./analyzers/js_useless_catch/js_useless_catch.cue)                         | Flag `catch (e) { throw e; }` — a no-op rethrow |
 
-Structural ports of [ESLint built-in rules](https://eslint.org/docs/latest/rules/). Each available rule pasta can express as a tree-sitter pattern is its own analyzer named `js_<rule>` (hyphens become underscores), so `disabled_rules: ["js_no_func_assign"]` turns off only that check. These are not enrolled in playground `.pasta/` — symlink an analyzer to enable it.
+Structural ports of [ESLint built-in rules](https://eslint.org/docs/latest/rules/). Each available rule pasta can express as a tree-sitter pattern is its own analyzer named `js_<rule>` (hyphens become underscores), so `disabled_rules: ["js_no_func_assign"]` turns off only that check. Playground enrollment is the `.pasta/examples` symlink onto `pasta/analyzers`; disable noisy ids in `.pasta/pasta.cue`.
 
 A few ESLint ids already have a dedicated analyzer and keep that name: `js_debugger` (`no-debugger`), `js_console_log` (`no-console`), `js_double_equals` (`eqeqeq`), `js_var_to_let` (`no-var`), `js_useless_catch` (`no-useless-catch`), `js_object_assign_spread` (`prefer-object-spread`).
 

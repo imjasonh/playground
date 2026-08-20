@@ -6,9 +6,8 @@
 // adjacent pairs (pasta has no unordered sibling search yet).
 // No auto-fix — which declaration to keep is a product choice.
 //
-// Not enrolled in playground `.pasta/`: several apps set
-// `min-height: 100vh` then `min-height: 100dvh` as a browser fallback,
-// which this rule flags.
+// Disable in playground `.pasta/pasta.cue` if a tree uses
+// `min-height: 100vh` then `min-height: 100dvh` as a browser fallback.
 
 package css_duplicate_property
 
