@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Introducing Inkbot · Posts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="alternate" type="application/rss+xml" title="Posts" href="../feed.xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root {
+  color-scheme: light dark;
+  --font-text: "Source Serif 4", Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, serif;
+  --font-ui: "Source Sans 3", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --bg: #f7f5f0;
+  --ink: #1b1a17;
+  --muted: #5a564e;
+  --meta-updated: #8f887c;
+  --rule: #e4e0d8;
+  --link: #1d4ed8;
+  --link-hover: #1e3a8a;
+  --code-bg: #ece8e0;
+  --quote: #3f3c36;
+  --alert-bg: #efebe3;
+  --alert-border: #c9c3b6;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1a1916;
+    --ink: #f2efe8;
+    --muted: #b7b1a6;
+    --meta-updated: #7a756c;
+    --rule: #3a3731;
+    --link: #93c5fd;
+    --link-hover: #bfdbfe;
+    --code-bg: #26231e;
+    --quote: #d8d2c6;
+    --alert-bg: #24211c;
+    --alert-border: #4a453c;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font-text);
+  font-optical-sizing: auto;
+  font-size: clamp(1.125rem, 1.06rem + 0.3vw, 1.25rem);
+  font-weight: 400;
+  line-height: 1.6;
+  letter-spacing: normal;
+  color: var(--ink);
+  background: var(--bg);
+}
+main {
+  width: min(65ch, 100%);
+  margin: 0 auto;
+  padding: clamp(2.25rem, 7vw, 5rem) clamp(1.25rem, 5vw, 2.25rem) 5rem;
+}
+a {
+  color: var(--link);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.16em;
+}
+a:hover { color: var(--link-hover); }
+a:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 3px;
+}
+.crumbs {
+  font-family: var(--font-ui);
+  font-size: 0.95rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted);
+  margin: 0 0 2.75rem;
+}
+.crumbs a { color: var(--muted); }
+.crumbs a:hover { color: var(--link); }
+h1 {
+  font-family: var(--font-text);
+  font-optical-sizing: auto;
+  font-size: clamp(2rem, 1.5rem + 2vw, 3rem);
+  font-weight: 600;
+  letter-spacing: -0.018em;
+  line-height: 1.2;
+  text-wrap: balance;
+  margin: 0 0 0.5rem;
+}
+.meta {
+  margin: 0.85rem 0 0;
+  font-family: var(--font-ui);
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  color: var(--muted);
+}
+.meta .updated { color: var(--meta-updated); }
+
+  article header {
+    margin-bottom: 2.4rem;
+    padding-bottom: 1.6rem;
+    border-bottom: 1px solid var(--rule);
+  }
+  .body {
+    overflow-wrap: break-word;
+    hanging-punctuation: first;
+    hyphens: auto;
+  }
+  .body > *:first-child { margin-top: 0; }
+  .body h2, .body h3, .body h4 {
+    font-optical-sizing: auto;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    line-height: 1.25;
+    text-wrap: balance;
+    margin: 1.5em 0 0.5em;
+  }
+  .body h2 { font-size: 1.5em; }
+  .body h3 { font-size: 1.25em; }
+  .body h4 { font-size: 1.125em; }
+  .body p, .body ul, .body ol { margin: 0 0 1em; }
+  .body li { margin: 0.28em 0; }
+  .body li::marker { color: var(--muted); }
+  .body img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 1.6em auto;
+    border-radius: 2px;
+  }
+  .body code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.86em;
+    background: var(--code-bg);
+    padding: 0.12em 0.34em;
+    border-radius: 4px;
+    hyphens: none;
+  }
+  .body pre {
+    overflow: auto;
+    padding: 1em 1.1em;
+    background: var(--code-bg);
+    margin: 0 0 1.2em;
+    font-size: 0.9em;
+    line-height: 1.45;
+    border-radius: 6px;
+  }
+  .body pre code { background: none; padding: 0; }
+  .body blockquote {
+    margin: 0 0 1.15em;
+    padding: 0.15em 0 0.15em 1.05em;
+    border-left: 2px solid var(--rule);
+    color: var(--quote);
+  }
+  .body blockquote p:last-child { margin-bottom: 0; }
+  .body hr {
+    border: 0;
+    border-top: 1px solid var(--rule);
+    margin: 2.1em 0;
+  }
+  .alert {
+    margin: 0 0 1.2em;
+    padding: 1em 1.1em;
+    background: var(--alert-bg);
+    border: 1px solid var(--alert-border);
+    border-radius: 8px;
+    font-style: normal;
+    hyphens: none;
+  }
+  .alert-label {
+    margin: 0 0 0.4em;
+    font-family: var(--font-ui);
+    font-size: 0.82rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--muted);
+  }
+  .alert p:last-child { margin-bottom: 0; }
+</style>
+</head><body>
+<main>
+  <nav class="crumbs" aria-label="Breadcrumb">
+    <a href="../../">Playground</a>
+    · <a href="../">Posts</a>
+    · <a href="../feed.xml">RSS</a>
+  </nav>
+  <article>
+    <header>
+      <h1>Introducing Inkbot</h1>
+      <p class="meta"><span class="published">Published August 20, 2026</span></p>
+
+    </header>
+    <div class="body">
+<p>Everyone seems to be hopping on the ESP32 bandwagon these days. They've been cool for a while now, due to them being relatively cheap, relatively powerful, and widely available. But I think the real gasoline on the bonfire has been the introduction of coding agents capable of translating ideas into embedded code in a matter of minutes.</p>
+<p>I'm not immune to this hype. While I was between jobs I toyed with <a href="http://github.com/imjasonh/esp32">signed over-the-air (OTA) updates automated with GitHub Actions</a>, but at the end all it did was blink and log that it was working. It was fun, but it was ...uninspiring. </p>
+    </div>
+  </article>
+</main>
+</body></html>
