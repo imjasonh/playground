@@ -4,22 +4,18 @@
 [![GitHub Pages](https://github.com/imjasonh/playground/actions/workflows/deploy.yml/badge.svg)](https://github.com/imjasonh/playground/actions/workflows/deploy.yml)
 [![Cloudflare Workers](https://github.com/imjasonh/playground/actions/workflows/deploy-workers.yml/badge.svg)](https://github.com/imjasonh/playground/actions/workflows/deploy-workers.yml)
 
-A personal playground monorepo for small, self-contained side projects — browser
-toys, command-line tools, native Apple apps, and the occasional backend service —
-collected in one place for fun and learning. There's no grand plan and no shared
-build at the root: each experiment is its own top-level directory that builds,
-tests, and ships entirely on its own, whether it's a static browser app deployed
-to GitHub Pages, a standalone Go command-line tool, a Rust crate such as a
-Cloudflare Worker, or a native macOS / iOS app.
+This is a pile of small projects I actually wanted to build. Each top-level
+directory is one experiment. It builds, tests, and ships on its own: a static
+page on GitHub Pages, a Go CLI, a Rust Cloudflare Worker, an iOS experiment
+inside the one TestFlight app, or a macOS app. There is no shared build at the
+root. There is no grand plan.
 
-The point is to keep trying things cheap and low-ceremony. Drop in a new
-directory, follow a couple of conventions, and open a PR: CI tests whatever
-changed, browser apps get a live preview link, and once merged they deploy
-themselves to GitHub Pages. The iOS Playground app ships to TestFlight on merge
-to `main`; macOS apps are tested on a macOS runner and (with signing secrets)
-will ship notarized Sparkle updates. A daily job keeps each project's
-dependencies current too, landing an upgrade only when it still builds and
-passes tests — so older experiments don't bit-rot.
+Adding a new one should stay cheap. Make a directory, follow a couple of
+conventions, open a PR. CI tests whatever you touched. Browser apps get a live
+preview. Merge to `main` and they ship: GitHub Pages for the web apps,
+TestFlight for iOS, notarized Sparkle updates for macOS if the signing secrets
+are present. A daily job bumps each project's dependencies, and only lands the
+bump when the tests still pass, so old experiments don't rot.
 
 ## Apps
 
@@ -38,8 +34,8 @@ passes tests — so older experiments don't bit-rot.
   reclaims and rolling upgrades, and keep utilization high without overspending.
 - **[`webrtc/`](webrtc/)** — serverless, link-based WebRTC app: share a link to
   open a direct peer-to-peer session with video, voice, text, file transfer,
-  live location sharing, and live captions (with on-device translation) — all
-  with no backend.
+  live location sharing, and live captions with on-device translation. No
+  backend.
 - **[`nypd-choppers/`](nypd-choppers/)** — daily flight paths, airborne hours,
   and estimated fuel cost for NYPD Aviation Unit helicopters, from public ADS-B
   data collected by an hourly scrape workflow.
@@ -50,15 +46,15 @@ passes tests — so older experiments don't bit-rot.
   `web-push` Worker: subscribe/unsubscribe and send notifications end to end.
 - **[`life-lab/`](life-lab/)** — draw a Game of Life starting row, watch it
   grow into a 3D-printable tower (time as the Z axis), and export STL or a
-  ready-to-slice Bambu 3MF — powered by the `life-stl` Rust crate compiled to
+  ready-to-slice Bambu 3MF. Powered by the `life-stl` Rust crate compiled to
   WebAssembly.
 
 ## Tools
 
-Not every top-level directory is a browser app. Go command-line tools, Rust
-apps, and Cloudflare Workers live here too. CI builds and tests each changed
-Go module, Rust crate, and Cloudflare Worker; because these have no `index.html`,
-GitHub Pages deploy and preview workflows skip them:
+Not every top-level directory is a browser app. Go CLIs, Rust crates, and
+Cloudflare Workers live here too. CI still builds and tests them when they
+change. They have no `index.html`, so GitHub Pages deploy and preview skip
+them:
 
 - **[`gitdb/`](gitdb/)** — query a git repo's history, files, blame, and file
   contents with SQL, via SQLite virtual tables over go-git (Go CLI).
@@ -97,26 +93,24 @@ GitHub Pages deploy and preview workflows skip them:
 
 ## iOS app
 
-There is a **single** iOS app that builds and tests on a macOS runner and ships
-to **TestFlight** on merge to `main` (it isn't deployed to GitHub Pages). Just as
-the Pages site hosts many browser apps, this one TestFlight app hosts many
-experiments internally:
+There is one iOS app. It builds on a macOS runner and ships to **TestFlight** on
+merge to `main`. It is not published to GitHub Pages. Experiments live as folders
+inside the app, not as extra iOS projects.
 
 - **[`ios/`](ios/)** — the **Playground** app: a launcher that hosts many
-  self-contained experiments (one folder each under
-  `ios/Sources/Experiments/`). Add an experiment by creating that folder,
-  self-declaring a `*Experiment.swift`, and appending it to the catalog — no
-  new app, no CI changes. Unit + UI tests, continuous delivery to TestFlight.
+  experiments (one folder each under `ios/Sources/Experiments/`). Add an
+  experiment by creating that folder, self-declaring a `*Experiment.swift`, and
+  appending it to the catalog. No new app, no CI changes. Unit + UI tests,
+  continuous delivery to TestFlight.
 
 See [`docs/ios-testflight-design.md`](docs/ios-testflight-design.md) for the iOS
 CD/preview design, and [`docs/ios-testflight-setup.md`](docs/ios-testflight-setup.md)
-for a click-by-click, beginner-friendly Apple/TestFlight setup guide.
+for a click-by-click Apple/TestFlight setup guide.
 
 ## macOS apps
 
-Unlike iOS (one Playground container), **macOS apps are ordinary top-level
-directories** — one app per directory, discovered by an XcodeGen `project.yml`
-that declares `platform: macOS`:
+macOS apps are ordinary top-level directories. One app per directory. CI finds
+them from an XcodeGen `project.yml` that declares `platform: macOS`:
 
 - **[`hello-macos/`](hello-macos/)** — minimal SwiftUI "Hello Mac" sample (the
   macOS counterpart of static `hello/`). Discovery, CI, notarized Sparkle CD,
