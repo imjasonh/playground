@@ -64,7 +64,7 @@ enum RideZipArchive {
         return archive
     }
 
-    enum ArchiveError: Error {
+    enum ArchiveError: Error, Equatable {
         case emptyArchive
         case filenameTooLong
         case invalidFilename
