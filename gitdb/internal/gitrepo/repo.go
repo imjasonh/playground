@@ -157,8 +157,7 @@ func (m *Manager) openOrClone(path, cloneURL string) (*git.Repository, error) {
 			if m.progress != nil {
 				fmt.Fprintf(m.progress, "Updating %s ...\n", cloneURL)
 			}
-			err := gr.Fetch(&git.FetchOptions{Tags: git.AllTags, Force: true, Progress: m.progress})
-			if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
+			if err := gr.Fetch(&git.FetchOptions{Tags: git.AllTags, Force: true, Progress: m.progress}); err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
 				return nil, fmt.Errorf("fetch %q: %w", cloneURL, err)
 			}
 		}

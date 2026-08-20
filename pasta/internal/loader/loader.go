@@ -399,7 +399,7 @@ language: version: "v0.13.0"
 	// Vendor github.com/imjasonh/pasta: walk embedded cuemod/ and place each file at
 	// the user's cue.mod/pkg/github.com/imjasonh/pasta/<rel>.
 	root := "cuemod"
-	err := fs.WalkDir(embeddedFS, root, func(p string, d fs.DirEntry, err error) error {
+	if err := fs.WalkDir(embeddedFS, root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -414,8 +414,7 @@ language: version: "v0.13.0"
 		target := filepath.Join(userDir, "cue.mod", "pkg", "github.com/imjasonh/pasta", rel)
 		overlay[target] = load.FromBytes(b)
 		return nil
-	})
-	if err != nil {
+	}); err != nil {
 		return nil, nil, err
 	}
 
@@ -578,7 +577,7 @@ func loadRemoteAnalyzers(userDir string, remoteDirs map[string]string, overlay m
 		// synthesized cue.mod/module.cue); cfg.Dir = pkgDir confuses
 		// CUE because cue.mod/pkg/<...> isn't itself a module root.
 		pkgRels := map[string]bool{}
-		err := filepath.WalkDir(modDir, func(p string, d fs.DirEntry, walkErr error) error {
+		if err := filepath.WalkDir(modDir, func(p string, d fs.DirEntry, walkErr error) error {
 			if walkErr != nil {
 				return walkErr
 			}
@@ -604,8 +603,7 @@ func loadRemoteAnalyzers(userDir string, remoteDirs map[string]string, overlay m
 			}
 			pkgRels[filepath.ToSlash(rel)] = true
 			return nil
-		})
-		if err != nil {
+		}); err != nil {
 			return LoadResult{}, fmt.Errorf("scan %s: %w", modPath, err)
 		}
 		rels := make([]string, 0, len(pkgRels))

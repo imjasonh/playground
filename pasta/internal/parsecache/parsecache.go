@@ -222,7 +222,7 @@ func (c *Cache) Prune() error {
 	root := filepath.Join(c.dir, schemaVersion)
 	var files []entryInfo
 	var total int64
-	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+	if err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			// Don't abort the prune over a single bad subdir.
 			return nil
@@ -237,8 +237,7 @@ func (c *Cache) Prune() error {
 		files = append(files, entryInfo{path: p, size: info.Size(), mtime: info.ModTime()})
 		total += info.Size()
 		return nil
-	})
-	if err != nil || total <= c.sizeLimit {
+	}); err != nil || total <= c.sizeLimit {
 		return err
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].mtime.Before(files[j].mtime) })

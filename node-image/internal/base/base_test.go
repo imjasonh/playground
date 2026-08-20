@@ -10,9 +10,9 @@ import (
 func TestDetectLibcFromRef(t *testing.T) {
 	cases := map[string]string{
 		"gcr.io/distroless/nodejs22-debian12": "glibc",
-		"node:22-alpine":                     "musl",
-		"cgr.dev/chainguard/node:latest":     "musl",
-		"mirror.gcr.io/library/node:22":      "",
+		"node:22-alpine":                      "musl",
+		"cgr.dev/chainguard/node:latest":      "musl",
+		"mirror.gcr.io/library/node:22":       "",
 	}
 	for ref, want := range cases {
 		got := base.DetectLibc(ref, nil)
@@ -23,8 +23,7 @@ func TestDetectLibcFromRef(t *testing.T) {
 }
 
 func TestRequireGlibcMusl(t *testing.T) {
-	err := base.RequireGlibc(&base.Info{Ref: "node:22-alpine", Libc: "musl"})
-	if err == nil || !strings.Contains(err.Error(), "musl") {
+	if err := base.RequireGlibc(&base.Info{Ref: "node:22-alpine", Libc: "musl"}); err == nil || !strings.Contains(err.Error(), "musl") {
 		t.Fatalf("got %v", err)
 	}
 	if err := base.RequireGlibc(&base.Info{Ref: "distroless", Libc: "glibc"}); err != nil {

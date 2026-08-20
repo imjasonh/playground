@@ -370,8 +370,7 @@ func TestValidateFactDeps(t *testing.T) {
 			},
 		},
 	}
-	err := validateFactDeps(missingRequires)
-	if err == nil || !strings.Contains(err.Error(), "tainted") || !strings.Contains(err.Error(), "requires") {
+	if err := validateFactDeps(missingRequires); err == nil || !strings.Contains(err.Error(), "tainted") || !strings.Contains(err.Error(), "requires") {
 		t.Fatalf("expected requires error mentioning tainted; got %v", err)
 	}
 
