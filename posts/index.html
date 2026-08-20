@@ -5,15 +5,17 @@
 <title>Posts · Playground</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&display=swap">
+<link rel="alternate" type="application/rss+xml" title="Posts" href="feed.xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&display=swap">
 <style>
 :root {
   color-scheme: light dark;
-  --font-text: "Newsreader", "Iowan Old Style", Georgia, serif;
+  --font-text: "Source Serif 4", Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, serif;
   --font-ui: "Source Sans 3", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --bg: #f7f5f0;
   --ink: #1b1a17;
   --muted: #5a564e;
+  --meta-updated: #8f887c;
   --rule: #e4e0d8;
   --link: #1d4ed8;
   --link-hover: #1e3a8a;
@@ -27,6 +29,7 @@
     --bg: #1a1916;
     --ink: #f2efe8;
     --muted: #b7b1a6;
+    --meta-updated: #7a756c;
     --rule: #3a3731;
     --link: #93c5fd;
     --link-hover: #bfdbfe;
@@ -43,14 +46,15 @@ body {
   min-height: 100vh;
   font-family: var(--font-text);
   font-optical-sizing: auto;
-  font-size: clamp(1.125rem, 0.98rem + 0.55vw, 1.25rem);
+  font-size: clamp(1.125rem, 1.06rem + 0.3vw, 1.25rem);
   font-weight: 400;
-  line-height: 1.45;
+  line-height: 1.6;
+  letter-spacing: normal;
   color: var(--ink);
   background: var(--bg);
 }
 main {
-  width: min(42rem, 100%);
+  width: min(65ch, 100%);
   margin: 0 auto;
   padding: clamp(2.25rem, 7vw, 5rem) clamp(1.25rem, 5vw, 2.25rem) 5rem;
 }
@@ -78,20 +82,22 @@ a:focus-visible {
 h1 {
   font-family: var(--font-text);
   font-optical-sizing: auto;
-  font-size: clamp(2rem, 1.4rem + 2.4vw, 2.85rem);
+  font-size: clamp(2rem, 1.5rem + 2vw, 3rem);
   font-weight: 600;
   letter-spacing: -0.018em;
-  line-height: 1.15;
+  line-height: 1.2;
   text-wrap: balance;
-  margin: 0 0 0.65rem;
+  margin: 0 0 0.5rem;
 }
 .meta {
   margin: 0.85rem 0 0;
   font-family: var(--font-ui);
   font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
   letter-spacing: 0;
   color: var(--muted);
 }
+.meta .updated { color: var(--meta-updated); }
 
   .posts {
     list-style: none;
@@ -126,19 +132,20 @@ h1 {
   <nav class="crumbs" aria-label="Breadcrumb">
     <a href="../">Playground</a>
     · Posts
+    · <a href="feed.xml">RSS</a>
   </nav>
   <h1>Posts</h1>
   <ol class="posts">
     <li>
       <a href="pasta/">
         <span class="title"><code>pasta</code>: a polyglot linter/fixer for monorepos</span>
-        <span class="meta">August 19, 2026 · Updated August 20, 2026</span>
+        <span class="meta"><span class="published">August 19, 2026</span> · <span class="updated">Updated August 20, 2026</span></span>
       </a>
     </li>
     <li>
       <a href="its-not-jaws/">
         <span class="title">It's Not <em>Jaws</em></span>
-        <span class="meta">August 7, 2026 · Updated August 20, 2026</span>
+        <span class="meta"><span class="published">August 7, 2026</span> · <span class="updated">Updated August 20, 2026</span></span>
       </a>
     </li>
   </ol>

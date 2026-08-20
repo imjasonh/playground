@@ -5,15 +5,17 @@
 <title>It&#x27;s Not Jaws · Posts</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&display=swap">
+<link rel="alternate" type="application/rss+xml" title="Posts" href="../feed.xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&display=swap">
 <style>
 :root {
   color-scheme: light dark;
-  --font-text: "Newsreader", "Iowan Old Style", Georgia, serif;
+  --font-text: "Source Serif 4", Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, serif;
   --font-ui: "Source Sans 3", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --bg: #f7f5f0;
   --ink: #1b1a17;
   --muted: #5a564e;
+  --meta-updated: #8f887c;
   --rule: #e4e0d8;
   --link: #1d4ed8;
   --link-hover: #1e3a8a;
@@ -27,6 +29,7 @@
     --bg: #1a1916;
     --ink: #f2efe8;
     --muted: #b7b1a6;
+    --meta-updated: #7a756c;
     --rule: #3a3731;
     --link: #93c5fd;
     --link-hover: #bfdbfe;
@@ -43,14 +46,15 @@ body {
   min-height: 100vh;
   font-family: var(--font-text);
   font-optical-sizing: auto;
-  font-size: clamp(1.125rem, 0.98rem + 0.55vw, 1.25rem);
+  font-size: clamp(1.125rem, 1.06rem + 0.3vw, 1.25rem);
   font-weight: 400;
-  line-height: 1.45;
+  line-height: 1.6;
+  letter-spacing: normal;
   color: var(--ink);
   background: var(--bg);
 }
 main {
-  width: min(42rem, 100%);
+  width: min(65ch, 100%);
   margin: 0 auto;
   padding: clamp(2.25rem, 7vw, 5rem) clamp(1.25rem, 5vw, 2.25rem) 5rem;
 }
@@ -78,20 +82,22 @@ a:focus-visible {
 h1 {
   font-family: var(--font-text);
   font-optical-sizing: auto;
-  font-size: clamp(2rem, 1.4rem + 2.4vw, 2.85rem);
+  font-size: clamp(2rem, 1.5rem + 2vw, 3rem);
   font-weight: 600;
   letter-spacing: -0.018em;
-  line-height: 1.15;
+  line-height: 1.2;
   text-wrap: balance;
-  margin: 0 0 0.65rem;
+  margin: 0 0 0.5rem;
 }
 .meta {
   margin: 0.85rem 0 0;
   font-family: var(--font-ui);
   font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
   letter-spacing: 0;
   color: var(--muted);
 }
+.meta .updated { color: var(--meta-updated); }
 
   article header {
     margin-bottom: 2.4rem;
@@ -108,14 +114,14 @@ h1 {
     font-optical-sizing: auto;
     font-weight: 600;
     letter-spacing: -0.015em;
-    line-height: 1.22;
+    line-height: 1.25;
     text-wrap: balance;
-    margin: 2.15em 0 0.55em;
+    margin: 1.5em 0 0.5em;
   }
-  .body h2 { font-size: 1.42em; }
-  .body h3 { font-size: 1.2em; }
-  .body h4 { font-size: 1.08em; }
-  .body p, .body ul, .body ol { margin: 0 0 0.95em; }
+  .body h2 { font-size: 1.5em; }
+  .body h3 { font-size: 1.25em; }
+  .body h4 { font-size: 1.125em; }
+  .body p, .body ul, .body ol { margin: 0 0 1em; }
   .body li { margin: 0.28em 0; }
   .body li::marker { color: var(--muted); }
   .body img {
@@ -179,11 +185,12 @@ h1 {
   <nav class="crumbs" aria-label="Breadcrumb">
     <a href="../../">Playground</a>
     · <a href="../">Posts</a>
+    · <a href="../feed.xml">RSS</a>
   </nav>
   <article>
     <header>
       <h1>It's Not <em>Jaws</em></h1>
-      <p class="meta">Published August 7, 2026 · Updated August 20, 2026</p>
+      <p class="meta"><span class="published">Published August 7, 2026</span> · <span class="updated">Updated August 20, 2026</span></p>
 
     </header>
     <div class="body">
