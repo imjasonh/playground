@@ -214,7 +214,23 @@ jobs:
             const repo = context.repo.repo;
             const url = `https://${owner}.github.io/${repo}/preview/pr-${pr}/`;
             const marker = '<!-- gh-pages-preview -->';
-            const body = `${marker}\n## 🔍 Preview deployment\n\n**PR #${pr}** is deployed at: ${url}\n\nPosts: ${url}posts/\nRSS: ${url}posts/feed.xml\n\n_Updated on every push to this PR._`;
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner, repo, pull_number: pr,
+            });
+            const changedPosts = [];
+            for (const f of files) {
+              if (f.status === 'removed') continue;
+              const name = f.filename;
+              if (name !== 'blog-post.md' && !name.endsWith('/blog-post.md')) continue;
+              const parts = name.split('/');
+              // Default slug is the parent directory, matching assign_slugs.
+              const slug = parts.length === 1 ? 'home' : parts[parts.length - 2];
+              changedPosts.push(`${url}posts/${slug}/`);
+            }
+            const postLinks = changedPosts.length
+              ? `\n${changedPosts.map((u) => `- ${u}`).join('\n')}`
+              : '';
+            const body = `${marker}\n## 🔍 Preview deployment\n\n**PR #${pr}** is deployed at: ${url}\n\nPosts: ${url}posts/\nRSS: ${url}posts/feed.xml${postLinks}\n\n_Updated on every push to this PR._`;
             const { data: comments } = await github.rest.issues.listComments({
               owner, repo, issue_number: pr,
             });

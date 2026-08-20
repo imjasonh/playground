@@ -294,6 +294,49 @@ def test_sort_is_reverse_chronological() -> None:
     check([p.slug for p in ordered] == ["new", "old", "x"], "newest dated first")
 
 
+def test_newer_post_sorts_ahead_of_existing() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        repo = Path(d)
+        _git(repo, "init")
+        _git(repo, "config", "user.email", "dev@example.com")
+        _git(repo, "config", "user.name", "Dev")
+        (repo / "pasta").mkdir()
+        (repo / "pasta" / "blog-post.md").write_text("# pasta\n\nexisting\n")
+        _git(repo, "add", "pasta/blog-post.md")
+        _git(
+            repo,
+            "commit",
+            "-m",
+            "pasta",
+            env={
+                "GIT_AUTHOR_DATE": "2026-08-19T12:00:00-05:00",
+                "GIT_COMMITTER_DATE": "2026-08-19T12:00:00-05:00",
+            },
+        )
+        (repo / "ios").mkdir()
+        (repo / "ios" / "blog-post.md").write_text("# iOS\n\ndraft\n")
+        _git(repo, "add", "ios/blog-post.md")
+        _git(
+            repo,
+            "commit",
+            "-m",
+            "ios",
+            env={
+                "GIT_AUTHOR_DATE": "2026-08-20T12:00:00-05:00",
+                "GIT_COMMITTER_DATE": "2026-08-20T12:00:00-05:00",
+            },
+        )
+        posts = bb.build(repo, repo / "out")
+        slugs = [p.slug for p in posts]
+        check(slugs == ["ios", "pasta"], f"new post is newest: {slugs}")
+        pasta_html = (repo / "out" / "pasta" / "index.html").read_text()
+        check("existing" in pasta_html, "existing post still renders")
+        ios_html = (repo / "out" / "ios" / "index.html").read_text()
+        check("draft" in ios_html, "new post renders")
+        index = json.loads((repo / "out" / "index.json").read_text())
+        check([e["slug"] for e in index] == slugs, "index.json matches catalog")
+
+
 def test_real_repo_posts_build() -> None:
     with tempfile.TemporaryDirectory() as d:
         dest = Path(d) / "posts"
@@ -301,7 +344,8 @@ def test_real_repo_posts_build() -> None:
         slugs = [p.slug for p in posts]
         check("pasta" in slugs, f"pasta post present: {slugs}")
         check("its-not-jaws" in slugs, f"its-not-jaws post present: {slugs}")
-        check(slugs[0] == "pasta", f"pasta is newest: {slugs}")
+        # Do not pin the newest slug. A PR that adds blog-post.md has a later
+        # git author date than pasta, so a pasta-is-newest check fails those PRs.
         pasta_html = (dest / "pasta" / "index.html").read_text()
         check("__SHARED_CSS__" not in pasta_html, "shared CSS inlined")
         check("--font-text" in pasta_html, "reading theme tokens present")
@@ -310,10 +354,16 @@ def test_real_repo_posts_build() -> None:
         feed = (dest / "feed.xml").read_text()
         check("<rss version=" in feed, "feed is RSS 2.0")
         check("<item>" in feed, "feed has items")
-        pasta_idx = feed.find("<title>pasta")
-        jaws_idx = feed.find("Jaws")
-        check(pasta_idx != -1 and jaws_idx != -1, "feed lists both posts")
-        check(pasta_idx < jaws_idx, "feed is newest first")
+        positions = []
+        for slug in slugs:
+            pos = feed.find(f">{slug}</guid>")
+            check(pos != -1, f"feed lists {slug}")
+            positions.append(pos)
+        check(positions == sorted(positions), f"feed is newest first: {slugs}")
+        check(
+            slugs.index("pasta") < slugs.index("its-not-jaws"),
+            "pasta is newer than its-not-jaws",
+        )
         check("<code>pasta</code>" in pasta_html, "pasta title code")
         check('src="./monorepo.jpg"' in pasta_html, "monorepo image")
         check((dest / "pasta" / "monorepo.jpg").is_file(), "monorepo.jpg copied")
@@ -321,7 +371,7 @@ def test_real_repo_posts_build() -> None:
         jaws = (dest / "its-not-jaws" / "index.html").read_text()
         check("It" in jaws and "Jaws" in jaws, "jaws title")
         index = json.loads((dest / "index.json").read_text())
-        check(index[0]["slug"] == "pasta", "index.json newest first")
+        check([e["slug"] for e in index] == slugs, "index.json newest first")
         check("published" in index[0], "index.json has published")
 
 
