@@ -5,6 +5,9 @@
 // `assert_eq!(false, x)` vs `assert_eq!(x, false)` to `assert!(!x)`
 // is straightforward, but `assert_ne!` polarity is easy to get wrong
 // without inspecting both sides.
+//
+// Not enrolled in playground `.pasta/`: Worker and CLI tests compare
+// JSON bools with `assert_eq!(x, true)`.
 
 package rust_bool_assert_comparison
 

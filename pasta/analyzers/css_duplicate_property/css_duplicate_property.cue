@@ -5,6 +5,10 @@
 // and also catches non-consecutive duplicates; this rule only sees
 // adjacent pairs (pasta has no unordered sibling search yet).
 // No auto-fix — which declaration to keep is a product choice.
+//
+// Not enrolled in playground `.pasta/`: several apps set
+// `min-height: 100vh` then `min-height: 100dvh` as a browser fallback,
+// which this rule flags.
 
 package css_duplicate_property
 
