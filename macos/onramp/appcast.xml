@@ -7,6 +7,13 @@
     <language>en</language>
     <item>
       <title>Onramp 0.2.1</title>
+      <pubDate>Thu, 20 Aug 2026 15:56:00 +0000</pubDate>
+      <sparkle:version>22</sparkle:version>
+      <sparkle:shortVersionString>0.2.1</sparkle:shortVersionString>
+      <enclosure url="https://github.com/imjasonh/playground/releases/download/onramp-v0.2.1/Onramp-0.2.1.zip" length="3898291" type="application/octet-stream" sparkle:edSignature="/4I3T/FwlGcMsmpp1ZsOiyLZ8F31A5H7pc/m/GUx82pk71V0jjF3dnYtWGs8vWM1haFzWiLudSKofitQydK+CA=="/>
+    </item>
+    <item>
+      <title>Onramp 0.2.1</title>
       <pubDate>Mon, 17 Aug 2026 20:33:08 +0000</pubDate>
       <sparkle:version>22</sparkle:version>
       <sparkle:shortVersionString>0.2.1</sparkle:shortVersionString>
