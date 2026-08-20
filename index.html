@@ -13,6 +13,7 @@
     --border: #e3e6ec;
     --text: #1b1f24;
     --muted: #656d78;
+    --meta-updated: #9aa1ab;
     --accent: #3b5bdb;
     --accent-soft: #eef1ff;
     --shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 8px 24px rgba(16, 24, 40, .06);
@@ -26,6 +27,7 @@
       --border: #262c36;
       --text: #e6edf3;
       --muted: #99a3b3;
+      --meta-updated: #6b7380;
       --accent: #7c93ff;
       --accent-soft: #1a2138;
       --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .35);
@@ -46,26 +48,13 @@
     margin: 0 auto;
     padding: clamp(2rem, 5vw, 4rem) clamp(1rem, 4vw, 2rem) 4rem;
   }
-  header {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 1rem;
-    flex-wrap: wrap;
-    margin-bottom: 2.5rem;
-  }
+  header { margin-bottom: 2.5rem; }
   h1 {
     font-size: clamp(2rem, 6vw, 2.8rem);
     line-height: 1.1;
     letter-spacing: -0.02em;
     margin: 0;
   }
-  header nav a {
-    color: var(--accent);
-    font-weight: 600;
-    text-decoration: none;
-  }
-  header nav a:hover { text-decoration: underline; }
   section { margin-top: 2.5rem; }
   h2 {
     font-size: .82rem;
@@ -187,15 +176,74 @@
   }
   footer a { color: var(--accent); text-decoration: none; }
   footer a:hover { text-decoration: underline; }
+
+  ul.post-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: .65rem;
+  }
+  ul.post-list li { margin: 0; }
+  ul.post-list a {
+    display: flex;
+    flex-direction: column;
+    gap: .2rem;
+    padding: .9rem 1.1rem;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    color: var(--text);
+    text-decoration: none;
+    transition: transform .12s ease, border-color .12s ease, background .12s ease;
+  }
+  ul.post-list a:hover {
+    transform: translateY(-2px);
+    background: var(--card-hover);
+    border-color: var(--accent);
+  }
+  ul.post-list .title { font-weight: 600; line-height: 1.3; }
+  ul.post-list .meta {
+    font-size: .8rem;
+    color: var(--muted);
+  }
+  ul.post-list .meta .updated { color: var(--meta-updated); }
+  h2 a.feed {
+    margin-left: auto;
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 500;
+    color: var(--accent);
+    text-decoration: none;
+  }
+  h2 a.feed:hover { text-decoration: underline; }
 </style>
 </head><body>
 <main>
   <header>
     <h1>Playground</h1>
-    <nav aria-label="Site">
-      <a href="posts/">Posts</a>
-    </nav>
   </header>
+
+  <section class="posts">
+    <h2>Posts <a class="feed" href="posts/feed.xml">RSS</a></h2>
+    <ul class="post-list">
+      <li>
+        <a href="posts/pasta/">
+          <span class="title">pasta: a polyglot linter/fixer for monorepos</span>
+        <span class="meta"><span class="published">August 19, 2026</span> · <span class="updated">Updated August 20, 2026</span></span>
+        </a>
+      </li>
+      <li>
+        <a href="posts/its-not-jaws/">
+          <span class="title">It&#x27;s Not Jaws</span>
+        <span class="meta"><span class="published">August 7, 2026</span> · <span class="updated">Updated August 20, 2026</span></span>
+        </a>
+      </li>
+    </ul>
+  </section>
+
   <section class="apps">
     <h2>Browser apps</h2>
     <ul class="cards">
@@ -224,7 +272,6 @@
       <div class="preview-card">
         <span class="pr">PR #257</span>
         <span class="title">Link the playground home page to the posts catalog</span>
-        <span class="apps">index</span>
         <span class="links">
           <a class="open" href="preview/pr-257/">Open preview</a>
           <a href="https://github.com/imjasonh/playground/pull/257">View PR</a>
