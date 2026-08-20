@@ -385,8 +385,7 @@ func TestValidateFactDeps(t *testing.T) {
 			},
 		},
 	}
-	err = validateFactDeps(missingProvides)
-	if err == nil || !strings.Contains(err.Error(), "provides") {
+	if err := validateFactDeps(missingProvides); err == nil || !strings.Contains(err.Error(), "provides") {
 		t.Fatalf("expected provides error; got %v", err)
 	}
 
