@@ -1,10 +1,9 @@
 # Agent guide: playground
 
 This repository is a **multi-app playground**. Each top-level directory can be a
-self-contained browser app deployed to GitHub Pages, an independent Go
-command-line app, a Rust app (e.g. a Cloudflare Worker), an iOS app delivered
-to TestFlight, or a macOS app delivered via Developer ID + Sparkle. There is no
-shared build step at the repo root.
+browser app on GitHub Pages, a Go CLI, a Rust app (for example a Cloudflare
+Worker), an iOS app on TestFlight, or a macOS app signed with Developer ID and
+shipped through Sparkle. There is no shared build step at the repo root.
 
 ## Repository layout
 
@@ -563,6 +562,7 @@ bundle exec fastlane test
 - **Keep all apps isolated**: do not add repo-root `package.json`, `go.mod`, `go.work`, or Cargo workspace files unless the maintainers explicitly request a monorepo toolchain.
 - **Minimize scope**: when fixing or extending one app, avoid unrelated changes in other directories.
 - **Comments and documentation**: follow the [Google developer documentation style guide](https://developers.google.com/style). Agents: read [`.cursor/skills/google-developer-style/SKILL.md`](.cursor/skills/google-developer-style/SKILL.md) before writing or editing comments, READMEs, or other docs.
+- **Unslop**: when you write comments, docs, HTML copy, or PR prose, read [`.cursor/skills/unslop/SKILL.md`](.cursor/skills/unslop/SKILL.md) ([unslop](https://github.com/cursor/plugins/blob/HEAD/pstack/skills/unslop/SKILL.md) from cursor/plugins) and strip AI tells. Google style still owns headings, code font, inclusive language, and procedures. First person is fine in README ledes and PR descriptions.
 - **Visual design and typography**: when you design or restyle HTML, CSS, or Pages templates, read [`.cursor/skills/web-typography/SKILL.md`](.cursor/skills/web-typography/SKILL.md) (Wondel's [web-typography](https://skills.wondel.ai/skills/web-typography/) skill).
 - **Do not commit**: `node_modules/`, secrets, env files, browser/Go/Rust build artifacts (`target/`), `*.xcodeproj`, `*.dmg`, or Playwright/Jest output (`test-results/`, `coverage/`).
 - **Do not write `blog-post.md` files.** Those are human-authored project
