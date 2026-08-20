@@ -34,7 +34,8 @@ jobs:
             fi
           done
 
-          python3 .github/scripts/build-blog.py --out dist/posts
+          python3 .github/scripts/build-blog.py --out dist/posts \
+            --base-url "https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/posts"
 
       - name: Deploy
         uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4

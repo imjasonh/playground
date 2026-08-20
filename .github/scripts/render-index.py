@@ -236,12 +236,14 @@ def render_posts_section(posts: list[dict]) -> str:
         published = format_iso_date(p.get("published"))
         updated = format_iso_date(p.get("updated"))
         if published:
-            bits.append(published)
+            bits.append(f'<span class="published">{html.escape(published)}</span>')
         if updated and updated != published:
-            bits.append(f"Updated {updated}")
+            bits.append(
+                f'<span class="updated">Updated {html.escape(updated)}</span>'
+            )
         meta = ""
         if bits:
-            meta = f'\n        <span class="meta">{html.escape(" · ".join(bits))}</span>'
+            meta = f'\n        <span class="meta">{" · ".join(bits)}</span>'
         items.append(
             "      <li>\n"
             f'        <a href="posts/{html.escape(p["slug"], quote=True)}/">\n'
@@ -252,7 +254,7 @@ def render_posts_section(posts: list[dict]) -> str:
         )
     return (
         '\n  <section class="posts">\n'
-        "    <h2>Posts</h2>\n"
+        '    <h2>Posts <a class="feed" href="posts/feed.xml">RSS</a></h2>\n'
         '    <ul class="post-list">\n'
         + "\n".join(items)
         + "\n"

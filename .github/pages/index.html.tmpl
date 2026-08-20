@@ -13,6 +13,7 @@
     --border: #e3e6ec;
     --text: #1b1f24;
     --muted: #656d78;
+    --meta-updated: #9aa1ab;
     --accent: #3b5bdb;
     --accent-soft: #eef1ff;
     --shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 8px 24px rgba(16, 24, 40, .06);
@@ -26,6 +27,7 @@
       --border: #262c36;
       --text: #e6edf3;
       --muted: #99a3b3;
+      --meta-updated: #6b7380;
       --accent: #7c93ff;
       --accent-soft: #1a2138;
       --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .35);
@@ -213,6 +215,16 @@
     font-size: .8rem;
     color: var(--muted);
   }
+  ul.post-list .meta .updated { color: var(--meta-updated); }
+  h2 a.feed {
+    margin-left: auto;
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 500;
+    color: var(--accent);
+    text-decoration: none;
+  }
+  h2 a.feed:hover { text-decoration: underline; }
 </style>
 </head><body>
 <main>

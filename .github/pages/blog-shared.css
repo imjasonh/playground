@@ -1,10 +1,11 @@
 :root {
   color-scheme: light dark;
-  --font-text: "Newsreader", "Iowan Old Style", Georgia, serif;
+  --font-text: "Source Serif 4", Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, serif;
   --font-ui: "Source Sans 3", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --bg: #f7f5f0;
   --ink: #1b1a17;
   --muted: #5a564e;
+  --meta-updated: #8f887c;
   --rule: #e4e0d8;
   --link: #1d4ed8;
   --link-hover: #1e3a8a;
@@ -18,6 +19,7 @@
     --bg: #1a1916;
     --ink: #f2efe8;
     --muted: #b7b1a6;
+    --meta-updated: #7a756c;
     --rule: #3a3731;
     --link: #93c5fd;
     --link-hover: #bfdbfe;
@@ -34,14 +36,15 @@ body {
   min-height: 100vh;
   font-family: var(--font-text);
   font-optical-sizing: auto;
-  font-size: clamp(1.125rem, 0.98rem + 0.55vw, 1.25rem);
+  font-size: clamp(1.125rem, 1.06rem + 0.3vw, 1.25rem);
   font-weight: 400;
-  line-height: 1.45;
+  line-height: 1.6;
+  letter-spacing: normal;
   color: var(--ink);
   background: var(--bg);
 }
 main {
-  width: min(42rem, 100%);
+  width: min(65ch, 100%);
   margin: 0 auto;
   padding: clamp(2.25rem, 7vw, 5rem) clamp(1.25rem, 5vw, 2.25rem) 5rem;
 }
@@ -69,17 +72,19 @@ a:focus-visible {
 h1 {
   font-family: var(--font-text);
   font-optical-sizing: auto;
-  font-size: clamp(2rem, 1.4rem + 2.4vw, 2.85rem);
+  font-size: clamp(2rem, 1.5rem + 2vw, 3rem);
   font-weight: 600;
   letter-spacing: -0.018em;
-  line-height: 1.15;
+  line-height: 1.2;
   text-wrap: balance;
-  margin: 0 0 0.65rem;
+  margin: 0 0 0.5rem;
 }
 .meta {
   margin: 0.85rem 0 0;
   font-family: var(--font-ui);
   font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
   letter-spacing: 0;
   color: var(--muted);
 }
+.meta .updated { color: var(--meta-updated); }

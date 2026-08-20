@@ -3,13 +3,14 @@
 
 Discovers every ``blog-post.md`` in a repository source tree, converts the
 Markdown to HTML, copies local images the posts reference, and writes a
-reverse-chronological index. Publication and update dates come from git
-author dates (oldest commit that touched the file, newest commit that
-touched it).
+reverse-chronological index plus an RSS 2.0 feed. Publication and update
+dates come from git author dates (oldest commit that touched the file,
+newest commit that touched it).
 
 Usage:
   python3 .github/scripts/build-blog.py --out dist/posts
   python3 .github/scripts/build-blog.py --source /path/to/repo --out /tmp/posts
+  python3 .github/scripts/build-blog.py --out dist/posts --base-url https://example.github.io/playground/posts
 """
 from __future__ import annotations
 
@@ -21,9 +22,10 @@ import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
+from email.utils import format_datetime
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote, urljoin, urlparse
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -554,17 +556,25 @@ def load_post(root: Path, path: Path, slug: str) -> Post:
     )
 
 
+def show_updated(post: Post) -> bool:
+    """True when the update day is later than the publish day."""
+    if post.updated is None:
+        return False
+    return post.published is None or post.updated.date() != post.published.date()
+
+
 def dates_html(post: Post) -> str:
     if post.published is None and post.updated is None:
         return ""
     bits: list[str] = []
     if post.published is not None:
-        bits.append(f"Published {html.escape(format_date(post.published))}")
-    if (
-        post.updated is not None
-        and (post.published is None or post.updated.date() != post.published.date())
-    ):
-        bits.append(f"Updated {html.escape(format_date(post.updated))}")
+        bits.append(
+            f'<span class="published">Published {html.escape(format_date(post.published))}</span>'
+        )
+    if show_updated(post) and post.updated is not None:
+        bits.append(
+            f'<span class="updated">Updated {html.escape(format_date(post.updated))}</span>'
+        )
     if not bits:
         return ""
     return f'      <p class="meta">{" · ".join(bits)}</p>\n'
@@ -598,22 +608,21 @@ def render_index_items(posts: list[Post]) -> str:
             "    <li>\n"
             f'      <a href="{html.escape(post.slug, quote=True)}/">\n'
             f'        <span class="title">{post.title_html}</span>\n'
-            f'        <span class="meta">{html.escape(dates_label(post))}</span>\n'
+            f'        <span class="meta">{dates_label_html(post)}</span>\n'
             "      </a>\n"
             "    </li>"
         )
     return "\n".join(items)
 
 
-def dates_label(post: Post) -> str:
+def dates_label_html(post: Post) -> str:
     bits: list[str] = []
     if post.published is not None:
-        bits.append(format_date(post.published))
-    if (
-        post.updated is not None
-        and (post.published is None or post.updated.date() != post.published.date())
-    ):
-        bits.append(f"Updated {format_date(post.updated)}")
+        bits.append(f'<span class="published">{html.escape(format_date(post.published))}</span>')
+    if show_updated(post) and post.updated is not None:
+        bits.append(
+            f'<span class="updated">Updated {html.escape(format_date(post.updated))}</span>'
+        )
     return " · ".join(bits)
 
 
@@ -638,11 +647,109 @@ def sort_posts(posts: list[Post]) -> list[Post]:
     return sorted(posts, key=key, reverse=True)
 
 
+_REL_URL_ATTR = re.compile(
+    r"""(?P<attr>\b(?:src|href))=(?P<q>["'])(?P<url>[^"']+)(?P=q)""",
+    re.IGNORECASE,
+)
+
+
+def normalize_base_url(base_url: str) -> str:
+    return base_url.rstrip("/")
+
+
+def post_page_url(base_url: str, slug: str) -> str:
+    base = normalize_base_url(base_url)
+    if base:
+        return f"{base}/{slug}/"
+    return f"{slug}/"
+
+
+def absolutize_html(fragment: str, page_url: str) -> str:
+    """Turn relative src/href values into absolute URLs for the feed."""
+    if not urlparse(page_url).scheme:
+        return fragment
+    if not page_url.endswith("/"):
+        page_url += "/"
+
+    def repl(match: re.Match[str]) -> str:
+        url = match.group("url")
+        parsed = urlparse(url)
+        if parsed.scheme or url.startswith("//") or url.startswith(("#", "data:", "mailto:")):
+            return match.group(0)
+        return (
+            f"{match.group('attr')}={match.group('q')}"
+            f"{urljoin(page_url, url)}{match.group('q')}"
+        )
+
+    return _REL_URL_ATTR.sub(repl, fragment)
+
+
+def rfc822(value: datetime | None) -> str:
+    if value is None:
+        return ""
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return format_datetime(value)
+
+
+def cdata(text: str) -> str:
+    return "<![CDATA[" + text.replace("]]>", "]]]]><![CDATA[>") + "]]>"
+
+
+def render_rss(posts: list[Post], base_url: str) -> str:
+    """RSS 2.0 channel of the catalog, newest first."""
+    base = normalize_base_url(base_url)
+    channel_link = f"{base}/" if base else "./"
+    feed_href = f"{base}/feed.xml" if base else "feed.xml"
+    last = ""
+    for post in posts:
+        stamp = post.updated or post.published
+        if stamp is not None:
+            last = rfc822(stamp)
+            break
+    items: list[str] = []
+    for post in posts:
+        page = post_page_url(base, post.slug)
+        body = absolutize_html(markdown_to_html(post.body_md), page)
+        pub = post.published or post.updated
+        guid_attr = ' isPermaLink="true"' if base else ' isPermaLink="false"'
+        guid = page if base else post.slug
+        parts = [
+            "    <item>",
+            f"      <title>{html.escape(post.title_text)}</title>",
+            f"      <link>{html.escape(page, quote=True)}</link>",
+            f"      <guid{guid_attr}>{html.escape(guid, quote=True)}</guid>",
+            f"      <description>{html.escape(post.title_text)}</description>",
+        ]
+        if pub is not None:
+            parts.append(f"      <pubDate>{html.escape(rfc822(pub))}</pubDate>")
+        parts.append(f"      <content:encoded>{cdata(body)}</content:encoded>")
+        parts.append("    </item>")
+        items.append("\n".join(parts))
+    last_line = f"    <lastBuildDate>{html.escape(last)}</lastBuildDate>\n" if last else ""
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" '
+        'xmlns:content="http://purl.org/rss/1.0/modules/content/">\n'
+        "  <channel>\n"
+        "    <title>Posts · Playground</title>\n"
+        f"    <link>{html.escape(channel_link, quote=True)}</link>\n"
+        "    <description>Posts from Playground.</description>\n"
+        f'    <atom:link href="{html.escape(feed_href, quote=True)}" '
+        'rel="self" type="application/rss+xml"/>\n'
+        f"{last_line}"
+        + ("\n".join(items) + "\n" if items else "")
+        + "  </channel>\n"
+        "</rss>\n"
+    )
+
+
 def build(
     source: Path,
     dest: Path,
     index_template: str | None = None,
     post_template: str | None = None,
+    base_url: str = "",
 ) -> list[Post]:
     """Write the catalog into ``dest``. Raises ``BuildError`` on missing images."""
     source = source.resolve()
@@ -676,6 +783,7 @@ def build(
     (dest / "index.json").write_text(
         json.dumps(posts_to_json(posts), indent=2) + "\n", encoding="utf-8"
     )
+    (dest / "feed.xml").write_text(render_rss(posts, base_url), encoding="utf-8")
     return posts
 
 
@@ -687,9 +795,14 @@ def main(argv: list[str] | None = None) -> int:
         help="repository source tree to scan (default: this checkout)",
     )
     parser.add_argument("--out", required=True, help="directory to write the generated catalog")
+    parser.add_argument(
+        "--base-url",
+        default="",
+        help="public URL of the /posts/ catalog (used for absolute RSS links)",
+    )
     args = parser.parse_args(argv)
     try:
-        posts = build(Path(args.source), Path(args.out))
+        posts = build(Path(args.source), Path(args.out), base_url=args.base_url)
     except BuildError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

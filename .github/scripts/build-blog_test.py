@@ -172,6 +172,39 @@ def test_copies_local_image_and_remote_urls_stay() -> None:
         html = (root / "out" / "app" / "index.html").read_text()
         check('src="./pic.jpg"' in html, "local src preserved")
         check('src="https://example.com/x.png"' in html, "remote src preserved")
+        feed = (root / "out" / "feed.xml").read_text()
+        check('src="./pic.jpg"' in feed, "relative image kept when no base-url")
+
+
+def test_rss_uses_absolute_urls_and_full_html() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        (root / "app").mkdir()
+        (root / "app" / "pic.jpg").write_bytes(b"jpeg")
+        (root / "app" / "blog-post.md").write_text(
+            "# Hello\n\nA paragraph.\n\n![local](./pic.jpg)\n"
+        )
+        dest = root / "out"
+        bb.build(
+            root,
+            dest,
+            base_url="https://example.test/playground/posts",
+        )
+        feed = (dest / "feed.xml").read_text()
+        check("<rss version=" in feed, "rss root")
+        check(
+            "<link>https://example.test/playground/posts/app/</link>" in feed,
+            "item link is absolute",
+        )
+        check(
+            'href="https://example.test/playground/posts/feed.xml"' in feed,
+            "self link is absolute",
+        )
+        check(
+            'src="https://example.test/playground/posts/app/pic.jpg"' in feed,
+            "local image rewritten",
+        )
+        check("<p>A paragraph.</p>" in feed, "full body in content:encoded")
 
 
 def _git(repo: Path, *args: str, env: dict[str, str] | None = None) -> None:
@@ -228,6 +261,7 @@ def test_git_dates_first_and_last() -> None:
         html = (repo / "out" / "app" / "index.html").read_text()
         check("Published January 15, 2026" in html, "published label")
         check("Updated March 2, 2026" in html, "updated label")
+        check('class="updated"' in html, "updated date is marked for lighter type")
         check(posts[0].slug == "app", "slug from parent")
 
 
@@ -271,7 +305,15 @@ def test_real_repo_posts_build() -> None:
         pasta_html = (dest / "pasta" / "index.html").read_text()
         check("__SHARED_CSS__" not in pasta_html, "shared CSS inlined")
         check("--font-text" in pasta_html, "reading theme tokens present")
-        check("Newsreader" in pasta_html, "screen reading face linked")
+        check("Source Serif 4" in pasta_html, "screen reading face linked")
+        check('type="application/rss+xml"' in pasta_html, "post page links the feed")
+        feed = (dest / "feed.xml").read_text()
+        check("<rss version=" in feed, "feed is RSS 2.0")
+        check("<item>" in feed, "feed has items")
+        pasta_idx = feed.find("<title>pasta")
+        jaws_idx = feed.find("Jaws")
+        check(pasta_idx != -1 and jaws_idx != -1, "feed lists both posts")
+        check(pasta_idx < jaws_idx, "feed is newest first")
         check("<code>pasta</code>" in pasta_html, "pasta title code")
         check('src="./monorepo.jpg"' in pasta_html, "monorepo image")
         check((dest / "pasta" / "monorepo.jpg").is_file(), "monorepo.jpg copied")
