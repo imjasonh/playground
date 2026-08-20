@@ -81,8 +81,7 @@ func TestExtractRejectsSymlinkEscape(t *testing.T) {
 		{name: "package/link/pwned", typ: tar.TypeReg, body: []byte("pwned")},
 	})
 	dest := filepath.Join(dir, "pkg")
-	err := layout.ExtractNPMTarballForTest(tgz, dest)
-	if err == nil {
+	if err := layout.ExtractNPMTarballForTest(tgz, dest); err == nil {
 		t.Fatal("expected symlink escape to be rejected")
 	}
 	if _, err := os.Stat(filepath.Join(outside, "pwned")); err == nil {

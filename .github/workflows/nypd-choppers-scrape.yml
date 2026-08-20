@@ -20,7 +20,7 @@ name: NYPD choppers hourly scrape
 on:
   schedule:
     - cron: '17 * * * *' # hourly, at :17 to avoid the top-of-hour rush
-  workflow_dispatch:
+  workflow_dispatch: {}
 
 permissions:
   contents: write

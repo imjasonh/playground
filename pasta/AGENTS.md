@@ -100,7 +100,7 @@ Test data:
   every source file under that subdir (recursively) is analyzed with
   a shared fact store, so a fact emitted in one file is visible at
   query sites in the others. Use subdirs to test cross-file
-  analyzers (see `analyzers/go_unused_export/` for an example), or
+  analyzers (see `testdata/go_unused_export/` for an example), or
   when `file_match` requires a specific basename (see
   `analyzers/wrangler_observability/`).
 
@@ -166,9 +166,9 @@ as project sources.
 `LoadDir` accepts both flat `*.cue` files and **nested packages** —
 each immediate subdirectory (or symlink) that contains `*.cue` is
 loaded as its own analyzer package. The playground monorepo enrolls
-rules as `.pasta/<name> → ../pasta/analyzers/<name>` symlinks plus a
-`.pasta/pasta.cue` for `disabled_rules` / `skip` / budgets. `pasta test
-.pasta` expands to every enrolled child that has `testdata/`.
+every shipped analyzer with `.pasta/examples` → `pasta/analyzers`.
+Skip dirs and budgets live in `.pasta/pasta.cue`. `pasta test .pasta`
+expands to every enrolled child that has `testdata/`.
 
 The single-rule shortcut still works: when the first positional arg
 is an existing `.cue` file, `pasta rule.cue source...` loads that

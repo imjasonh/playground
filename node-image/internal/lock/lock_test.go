@@ -35,16 +35,15 @@ func TestParsePureJSFixture(t *testing.T) {
 }
 
 func TestRejectOldLockfile(t *testing.T) {
-	_, err := lock.Parse([]byte("lockfileVersion: '6.0'\nimporters: {}\npackages: {}\n"))
-	if err == nil {
+	if _, err := lock.Parse([]byte("lockfileVersion: '6.0'\nimporters: {}\npackages: {}\n")); err == nil {
 		t.Fatal("expected error")
 	}
 }
 
 func TestPackageIDFromDepPath(t *testing.T) {
 	cases := map[string]string{
-		"foo@1.0.0":                    "foo@1.0.0",
-		"foo@1.0.0(bar@2.0.0)":         "foo@1.0.0",
+		"foo@1.0.0":                      "foo@1.0.0",
+		"foo@1.0.0(bar@2.0.0)":           "foo@1.0.0",
 		"@scope/pkg@1.0.0(react@18.0.0)": "@scope/pkg@1.0.0",
 	}
 	for in, want := range cases {

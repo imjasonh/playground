@@ -419,7 +419,7 @@ func collectSpecs(t *testing.T, root string, repo smokeRepo) []runner.FileSpec {
 		skip[k] = true
 	}
 	var specs []runner.FileSpec
-	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+	if err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -442,8 +442,7 @@ func collectSpecs(t *testing.T, root string, repo smokeRepo) []runner.FileSpec {
 		}
 		specs = append(specs, runner.FileSpec{Path: p})
 		return nil
-	})
-	if err != nil {
+	}); err != nil {
 		t.Fatalf("walk %s: %v", root, err)
 	}
 	return specs

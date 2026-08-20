@@ -42,7 +42,6 @@ go run ./cmd/pasta test analyzers/js_double_equals
 |---|---|
 | [todo_format](./analyzers/todo_format/todo_format.cue)                       | Flag `TODO`/`FIXME`/`XXX`/`HACK` comments without an owner: `TODO(name): ...` |
 | [hardcoded_credentials](./analyzers/hardcoded_credentials/hardcoded_credentials.cue) | String literals that look like AWS access keys, GitHub tokens, Slack tokens, or PEM private keys |
-| [hardcoded_localhost](./analyzers/hardcoded_localhost/hardcoded_localhost.cue) | String literals containing `localhost` / `127.0.0.1` / `0.0.0.0` URLs |
 
 **Go**
 
@@ -59,11 +58,10 @@ go run ./cmd/pasta test analyzers/js_double_equals
 | [go_for_range_one_literal](./analyzers/go_for_range_one_literal/go_for_range_one_literal.cue) | Flag `for _, v := range []T{x} {...}` — equivalent to a plain assignment |
 | [go_errcheck](./analyzers/go_errcheck/go_errcheck.cue) ✏️                     | Flag and rewrite `foo()` to `_ = foo()` when foo returns error (fact passing) |
 | [go_deprecated_use](./analyzers/go_deprecated_use/go_deprecated_use.cue)      | Flag calls to functions whose doc comment contains `Deprecated:` (fact passing, works cross-file) |
-| [go_unused_export](./analyzers/go_unused_export/go_unused_export.cue)         | Flag exported funcs that no file in the analysis group calls (cross-file fact passing) |
 | [go_taint](./analyzers/go_taint/go_taint.cue)                                  | Track taint from `os.Getenv` through assignments to `exec.Command` (fact passing + fixpoint) |
 | [go_api_migration](./analyzers/go_api_migration/go_api_migration.cue) ✏️       | Worked example: ship a `.cue` adapter for breaking API changes -- added trailing arg (`widget.Render(x)` → `widget.Render(x, nil)`) and rename (`widget.OldName` → `widget.NewName`) |
 
-Syntactic ports of [`golang.org/x/tools/go/analysis/passes`](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes). Each rule matches trees, not types; the CUE file documents what the original analyzer does that Pasta cannot. `assign` is `go_self_assignment` earlier in this table. Passes that need types, SSA, sizes, or assembly are omitted, including `composite`, `errorsas`, `nilfunc`, and `unmarshal` (pointer vs value, or function vs another identifier of the same name, is not visible from the tree). The playground enrolls these ports as `.pasta/` symlinks.
+Syntactic ports of [`golang.org/x/tools/go/analysis/passes`](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes). Each rule matches trees, not types; the CUE file documents what the original analyzer does that Pasta cannot. `assign` is `go_self_assignment` earlier in this table. Passes that need types, SSA, sizes, or assembly are omitted, including `composite`, `errorsas`, `nilfunc`, and `unmarshal` (pointer vs value, or function vs another identifier of the same name, is not visible from the tree).
 
 | Path | What it does |
 |---|---|
@@ -135,6 +133,12 @@ Syntactic ports of [`golang.org/x/tools/go/analysis/passes`](https://pkg.go.dev/
 | [js_taint](./analyzers/js_taint/js_taint.cue)                                                | Track taint from `req.query` / `req.body` / `req.params` to `eval` / `Function` (fact passing + fixpoint) |
 | [js_debugger](./analyzers/js_debugger/js_debugger.cue)                                       | Flag `debugger;` statements |
 | [js_useless_catch](./analyzers/js_useless_catch/js_useless_catch.cue)                         | Flag `catch (e) { throw e; }` — a no-op rethrow |
+
+Structural ports of [ESLint built-in rules](https://eslint.org/docs/latest/rules/). Each available rule pasta can express as a tree-sitter pattern is its own analyzer named `js_<rule>` (hyphens become underscores).
+
+A few ESLint ids already have a dedicated analyzer and keep that name: `js_debugger` (`no-debugger`), `js_double_equals` (`eqeqeq`), `js_var_to_let` (`no-var`), `js_useless_catch` (`no-useless-catch`), `js_object_assign_spread` (`prefer-object-spread`).
+
+Omitted: rules that need a scope chain, CFG, or ESLint option object (`no-undef`, `no-unused-vars`, `prefer-const`, `no-const-assign`, `no-func-assign`, `no-class-assign`, `no-import-assign`, `no-param-reassign`, `complexity`, …). Pasta's by-name fact index is file-blind and scope-blind, so assignment-to-binding checks treat a `const x` in one file as the same `x` assigned in another. Also omitted: `no-await-in-loop` (sequential `await` in a loop is ordinary control flow); `no-constant-binary-expression` (a structural "both operands are literals" stand-in flags `1 / 120` and test arithmetic instead of ESLint's constant-folding bugs); `no-console` (`console.log` is ordinary stdout in Node CLIs, and pasta cannot tell those from leftover browser debug); config-only rules whose default reports nothing (`no-restricted-*`, `id-denylist`); deprecated/removed core rules; and layout rules that moved to `@stylistic/eslint-plugin`.
 
 **TypeScript**
 
@@ -345,11 +349,14 @@ pasta sync path/to/rule-dir
 When more than one source file is supplied (directly or via `./...`
 expansion) `pasta` analyzes them as a **single group**: a fact store is
 shared across the files, so cross-file analyzers like
-[`go_unused_export`](./analyzers/go_unused_export/go_unused_export.cue)
-or [`go_deprecated_use`](./analyzers/go_deprecated_use/go_deprecated_use.cue)
+[`go_deprecated_use`](./analyzers/go_deprecated_use/go_deprecated_use.cue)
 can answer "is this name called anywhere in this codebase?" in one
 invocation. A single source path runs as a one-file group (fresh fact
-store), matching the historical behavior.
+store), matching the historical behavior. The
+[`testdata/go_unused_export`](./testdata/go_unused_export/go_unused_export.cue)
+demo walks the same grouping without shipping as a production lint
+(selector calls and whole-repo `./...` groups produce too many
+false positives).
 
 A rule directory has shape:
 

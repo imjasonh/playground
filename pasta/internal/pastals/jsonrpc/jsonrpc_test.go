@@ -60,8 +60,7 @@ func TestReadMissingHeader(t *testing.T) {
 
 func TestReadBadContentLength(t *testing.T) {
 	c := NewConn(strings.NewReader("Content-Length: not-a-number\r\n\r\n{}"), io.Discard)
-	_, err := c.Read()
-	if err == nil {
+	if _, err := c.Read(); err == nil {
 		t.Fatal("expected error for bad Content-Length")
 	}
 }

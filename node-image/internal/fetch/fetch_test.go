@@ -26,8 +26,7 @@ func TestEnsureUsesTimeoutClient(t *testing.T) {
 	body := []byte("hello-tarball")
 	sum := sha512.Sum512(body)
 	integrity := "sha512-" + base64.StdEncoding.EncodeToString(sum[:])
-	_, err := c.Ensure(srv.URL+"/pkg.tgz", integrity)
-	if err == nil {
+	if _, err := c.Ensure(srv.URL+"/pkg.tgz", integrity); err == nil {
 		t.Fatal("expected timeout error")
 	}
 }

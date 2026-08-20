@@ -98,7 +98,7 @@ func WriteCompressed(w io.Writer, files []File) error {
 // Regular file contents are referenced by DiskPath (not loaded into memory).
 func FromDir(root, prefix string) ([]File, error) {
 	var files []File
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	if err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -152,8 +152,7 @@ func FromDir(root, prefix string) ([]File, error) {
 			DiskPath: path,
 		})
 		return nil
-	})
-	if err != nil {
+	}); err != nil {
 		return nil, err
 	}
 	sortFiles(files)

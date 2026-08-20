@@ -1,25 +1,8 @@
 // Playground monorepo pasta project config.
-// Rules are enrolled as subdirectories of .pasta/ (symlinks into pasta/analyzers/).
+// Every analyzer under pasta/analyzers is enrolled by
+// `.pasta/examples` → `pasta/analyzers`.
 
 package pasta_project
-
-// Analyzer-level disables for rules that are too noisy (or not yet
-// actionable) across this multi-app tree. Prefer pasta:ignore for
-// one-off lines over growing this list.
-disabled_rules: [
-	// Scope-unsafe to autofix; still useful locally but floods CI.
-	"js_var_to_let",
-	// Expect/unwrap is idiomatic in Rust tests and several Workers.
-	"rust_unwrap",
-	// Many sample/demo apps intentionally use console.log.
-	"js_console_log",
-	// Games and demos rely on !important for layered UI states.
-	"css_important",
-	// GitHub Actions uses empty `on:` / `push:` keys idiomatically.
-	"yaml_empty_value",
-	// XcodeGen project.yml uses YES/NO; canonical true/false breaks tooling.
-	"yaml_truthy",
-]
 
 // Extra ./... skip dirs on top of pasta defaults (vendor, node_modules,
 // testdata, target, …).

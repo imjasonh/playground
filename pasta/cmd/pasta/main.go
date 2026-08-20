@@ -833,8 +833,9 @@ func runTest(args []string) int {
 // analyzer directories that each contain testdata/.
 //
 //   - dir/testdata exists → [dir] (classic single-analyzer layout)
-//   - else each immediate child with *.cue + testdata/ → those children
-//     (`.pasta/` or `analyzers/` parent layouts, including symlinks)
+//   - else each analyzer package under dir that has testdata/ → those
+//     children (`.pasta/` or `analyzers/` parent layouts, including a
+//     nested `.pasta/examples` symlink into `pasta/analyzers`)
 func expandTestRuleDirs(dir string) ([]string, error) {
 	info, err := os.Stat(dir)
 	if err != nil {
@@ -846,29 +847,12 @@ func expandTestRuleDirs(dir string) ([]string, error) {
 	if td, err := os.Stat(filepath.Join(dir, "testdata")); err == nil && td.IsDir() {
 		return []string{dir}, nil
 	}
-	entries, err := os.ReadDir(dir)
+	pkgs, err := loader.DiscoverPackageDirs(dir)
 	if err != nil {
 		return nil, err
 	}
 	var out []string
-	for _, e := range entries {
-		name := e.Name()
-		full := filepath.Join(dir, name)
-		isDir := e.IsDir()
-		if e.Type()&fs.ModeSymlink != 0 {
-			st, err := os.Stat(full)
-			if err != nil {
-				continue
-			}
-			isDir = st.IsDir()
-		}
-		if !isDir {
-			continue
-		}
-		cueMatches, _ := filepath.Glob(filepath.Join(full, "*.cue"))
-		if len(cueMatches) == 0 {
-			continue
-		}
+	for _, full := range pkgs {
 		if td, err := os.Stat(filepath.Join(full, "testdata")); err != nil || !td.IsDir() {
 			continue
 		}

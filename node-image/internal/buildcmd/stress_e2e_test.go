@@ -128,7 +128,7 @@ func TestE2EBuildGlobs(t *testing.T) {
 func TestE2EMultiCommand(t *testing.T) {
 	dir := fixtureDir(t, "multi-cmd")
 	var outBuf, errBuf bytes.Buffer
-	_, err := buildcmd.Run(buildcmd.Options{
+	if _, err := buildcmd.Run(buildcmd.Options{
 		Dir:       dir,
 		NoPush:    true,
 		OCIDir:    t.TempDir(),
@@ -138,8 +138,7 @@ func TestE2EMultiCommand(t *testing.T) {
 		Command:   "worker",
 		Stdout:    &outBuf,
 		Stderr:    &errBuf,
-	})
-	if err != nil {
+	}); err != nil {
 		t.Fatalf("%v\n%s", err, errBuf.String())
 	}
 }
@@ -184,7 +183,7 @@ snapshots:
 		}
 	}
 	// Build the clean importer — unused git package must not block.
-	_, err := buildcmd.Run(buildcmd.Options{
+	if _, err := buildcmd.Run(buildcmd.Options{
 		Dir:       root,
 		NoPush:    true,
 		OCIDir:    t.TempDir(),
@@ -193,8 +192,7 @@ snapshots:
 		Platforms: []string{"linux/amd64"},
 		Stdout:    &bytes.Buffer{},
 		Stderr:    &bytes.Buffer{},
-	})
-	if err != nil {
+	}); err != nil {
 		t.Fatalf("clean importer blocked by unused git pkg: %v", err)
 	}
 }

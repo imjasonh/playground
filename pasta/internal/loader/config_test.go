@@ -233,8 +233,7 @@ func TestLoadConfig_invalidSeverity(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, remote.ManifestFile), []byte(src), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	_, _, err := LoadConfig(dir)
-	if err == nil {
+	if _, _, err := LoadConfig(dir); err == nil {
 		t.Fatalf("expected error for invalid severity")
 	}
 }
@@ -371,8 +370,7 @@ func TestValidateFactDeps(t *testing.T) {
 			},
 		},
 	}
-	err := validateFactDeps(missingRequires)
-	if err == nil || !strings.Contains(err.Error(), "tainted") || !strings.Contains(err.Error(), "requires") {
+	if err := validateFactDeps(missingRequires); err == nil || !strings.Contains(err.Error(), "tainted") || !strings.Contains(err.Error(), "requires") {
 		t.Fatalf("expected requires error mentioning tainted; got %v", err)
 	}
 
@@ -387,8 +385,7 @@ func TestValidateFactDeps(t *testing.T) {
 			},
 		},
 	}
-	err = validateFactDeps(missingProvides)
-	if err == nil || !strings.Contains(err.Error(), "provides") {
+	if err := validateFactDeps(missingProvides); err == nil || !strings.Contains(err.Error(), "provides") {
 		t.Fatalf("expected provides error; got %v", err)
 	}
 

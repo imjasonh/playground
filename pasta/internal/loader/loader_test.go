@@ -365,3 +365,78 @@ rule_b: schema.#Analyzer & {
 		t.Fatalf("nested: expected skip from pasta.cue, got %+v", res.Config)
 	}
 }
+
+func TestLoadDir_nestedCollectionSymlink(t *testing.T) {
+	// `.pasta/examples` → tree of analyzer packages, plus pasta.cue
+	// at the `.pasta` root for project config.
+	examples := t.TempDir()
+	for _, name := range []string{"rule_a", "rule_b"} {
+		sub := filepath.Join(examples, name)
+		if err := os.MkdirAll(sub, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ruleA := `package rule_a
+
+import "github.com/imjasonh/pasta/schema"
+
+rule_a: schema.#Analyzer & {
+	name: "rule_a"
+	version: "0.1.0"
+	facts: {}
+	rules: only: {
+		name: "only_a"
+		doc: "x"
+		languages: ["go"]
+		requires: []
+		provides: []
+		match: {node: "identifier"}
+		diagnose: {message: "a", severity: "hint"}
+	}
+}
+`
+	ruleB := `package rule_b
+
+import "github.com/imjasonh/pasta/schema"
+
+rule_b: schema.#Analyzer & {
+	name: "rule_b"
+	version: "0.1.0"
+	facts: {}
+	rules: only: {
+		name: "only_b"
+		doc: "x"
+		languages: ["go"]
+		requires: []
+		provides: []
+		match: {node: "identifier"}
+		diagnose: {message: "b", severity: "hint"}
+	}
+}
+`
+	if err := os.WriteFile(filepath.Join(examples, "rule_a", "a.cue"), []byte(ruleA), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(examples, "rule_b", "b.cue"), []byte(ruleB), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	root := t.TempDir()
+	if err := os.Symlink(examples, filepath.Join(root, "examples")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "pasta.cue"), []byte("skip: [\"dist\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := LoadDir(root)
+	if err != nil {
+		t.Fatalf("LoadDir nested collection: %v", err)
+	}
+	if len(res.Analyzers) != 2 {
+		t.Fatalf("nested collection: expected 2 analyzers, got %d", len(res.Analyzers))
+	}
+	if res.Config == nil || len(res.Config.Skip) != 1 || res.Config.Skip[0] != "dist" {
+		t.Fatalf("nested collection: expected skip from pasta.cue, got %+v", res.Config)
+	}
+}

@@ -2,8 +2,9 @@
 // pasta:
 //
 //   - analyzers/* — the production analyzers (iferr, negcmp, etc.).
-//   - testdata/* — extension/integration demos (e.g. external language
-//     modules, custom file extensions).
+//   - testdata/* — engine demos that are not production lints
+//     (external language modules, custom file extensions, grouping
+//     examples such as go_unused_export).
 //
 // Each directory is treated as a rule package: its *.cue files are
 // loaded as analyzers and/or language declarations, and run against

@@ -129,7 +129,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.imjasonh.playground.t9keyboard
         TARGETED_DEVICE_FAMILY: "1,2"
-        SKIP_INSTALL: YES
+        SKIP_INSTALL: YES # pasta:ignore mapping_value_true
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"
     info:
       path: T9Keyboard-Info.plist
@@ -159,7 +159,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.imjasonh.playground.ridemonitorwidget
         TARGETED_DEVICE_FAMILY: "1,2"
-        SKIP_INSTALL: YES
+        SKIP_INSTALL: YES # pasta:ignore mapping_value_true
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"
         PRODUCT_NAME: RideMonitorWidget
     info:
@@ -187,7 +187,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.imjasonh.playground.watch
         TARGETED_DEVICE_FAMILY: "4"
-        SKIP_INSTALL: YES
+        SKIP_INSTALL: YES # pasta:ignore mapping_value_true
         SDKROOT: watchos
         PRODUCT_NAME: RideMonitorWatch
         # App Store / TestFlight require a Watch app icon in an asset catalog
@@ -233,7 +233,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.imjasonh.playground.tests
-        GENERATE_INFOPLIST_FILE: YES
+        GENERATE_INFOPLIST_FILE: YES # pasta:ignore mapping_value_true
 
   PlaygroundUITests:
     type: bundle.ui-testing
@@ -245,7 +245,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.imjasonh.playground.uitests
-        GENERATE_INFOPLIST_FILE: YES
+        GENERATE_INFOPLIST_FILE: YES # pasta:ignore mapping_value_true
 
 schemes:
   Playground:
