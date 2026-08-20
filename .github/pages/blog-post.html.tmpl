@@ -3,131 +3,89 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>__TITLE__</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&display=swap">
 <style>
-  :root {
-    color-scheme: light dark;
-    --bg: #f4efe6;
-    --ink: #241d16;
-    --muted: #6b6258;
-    --rule: #d7cfc3;
-    --accent: #6b3a2a;
-    --code-bg: #ebe4d6;
-    --quote-bar: #c4b8a6;
-    --alert-border: #6b3a2a;
+__SHARED_CSS__
+  article header {
+    margin-bottom: 2.4rem;
+    padding-bottom: 1.6rem;
+    border-bottom: 1px solid var(--rule);
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #161310;
-      --ink: #efe7db;
-      --muted: #b3a897;
-      --rule: #3a342c;
-      --accent: #e0b59a;
-      --code-bg: #241f19;
-      --quote-bar: #5a5046;
-      --alert-border: #e0b59a;
-    }
+  .body {
+    overflow-wrap: break-word;
+    hanging-punctuation: first;
+    hyphens: auto;
   }
-  * { box-sizing: border-box; }
-  html { -webkit-text-size-adjust: 100%; }
-  body {
-    margin: 0;
-    min-height: 100vh;
-    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
-    color: var(--ink);
-    background: var(--bg);
-    line-height: 1.65;
-  }
-  main {
-    max-width: 38rem;
-    margin: 0 auto;
-    padding: clamp(2rem, 6vw, 4.5rem) clamp(1.1rem, 4vw, 2rem) 4.5rem;
-  }
-  .crumbs {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    font-size: .8rem;
-    letter-spacing: .04em;
-    text-transform: uppercase;
-    color: var(--muted);
-    margin: 0 0 2rem;
-  }
-  .crumbs a { color: var(--accent); text-decoration: none; }
-  .crumbs a:hover { text-decoration: underline; }
-  header { margin-bottom: 2rem; }
-  h1 {
-    font-size: clamp(2rem, 6vw, 2.7rem);
-    font-weight: 400;
-    letter-spacing: -0.02em;
-    line-height: 1.15;
-    margin: 0;
-  }
-  .meta {
-    margin: .85rem 0 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    font-size: .8rem;
-    letter-spacing: .03em;
-    color: var(--muted);
-  }
-  .body { font-size: 1.12rem; }
   .body > *:first-child { margin-top: 0; }
   .body h2, .body h3, .body h4 {
+    font-optical-sizing: auto;
     font-weight: 600;
     letter-spacing: -0.015em;
-    line-height: 1.25;
-    margin: 2.1rem 0 .7rem;
+    line-height: 1.22;
+    text-wrap: balance;
+    margin: 2.15em 0 0.55em;
   }
-  .body h2 { font-size: 1.45rem; }
-  .body h3 { font-size: 1.2rem; }
-  .body h4 { font-size: 1.08rem; }
-  .body p, .body ul, .body ol { margin: 0 0 1.1rem; }
-  .body li { margin: .3rem 0; }
-  .body a { color: var(--accent); }
+  .body h2 { font-size: 1.42em; }
+  .body h3 { font-size: 1.2em; }
+  .body h4 { font-size: 1.08em; }
+  .body p, .body ul, .body ol { margin: 0 0 0.95em; }
+  .body li { margin: 0.28em 0; }
+  .body li::marker { color: var(--muted); }
   .body img {
     display: block;
     max-width: 100%;
     height: auto;
-    margin: 1.4rem auto;
+    margin: 1.6em auto;
+    border-radius: 2px;
   }
   .body code {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: .84em;
+    font-size: 0.86em;
     background: var(--code-bg);
-    padding: .08em .32em;
+    padding: 0.12em 0.34em;
     border-radius: 4px;
+    hyphens: none;
   }
   .body pre {
     overflow: auto;
-    padding: 1rem 1.1rem;
+    padding: 1em 1.1em;
     background: var(--code-bg);
-    margin: 0 0 1.25rem;
-    font-size: .95rem;
+    margin: 0 0 1.2em;
+    font-size: 0.9em;
+    line-height: 1.45;
+    border-radius: 6px;
   }
   .body pre code { background: none; padding: 0; }
   .body blockquote {
-    margin: 0 0 1.25rem;
-    padding: .1rem 0 .1rem 1.1rem;
-    border-left: 2px solid var(--quote-bar);
-    color: var(--muted);
-    font-style: italic;
+    margin: 0 0 1.15em;
+    padding: 0.15em 0 0.15em 1.05em;
+    border-left: 2px solid var(--rule);
+    color: var(--quote);
   }
   .body blockquote p:last-child { margin-bottom: 0; }
   .body hr {
     border: 0;
     border-top: 1px solid var(--rule);
-    margin: 2.2rem 0;
+    margin: 2.1em 0;
   }
   .alert {
-    margin: 0 0 1.25rem;
-    padding: 1rem 1.1rem;
+    margin: 0 0 1.2em;
+    padding: 1em 1.1em;
+    background: var(--alert-bg);
     border: 1px solid var(--alert-border);
+    border-radius: 8px;
     font-style: normal;
+    hyphens: none;
   }
   .alert-label {
-    margin: 0 0 .4rem;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    font-size: .72rem;
-    font-weight: 700;
-    letter-spacing: .08em;
-    text-transform: uppercase;
+    margin: 0 0 0.4em;
+    font-family: var(--font-ui);
+    font-size: 0.82rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--muted);
   }
   .alert p:last-child { margin-bottom: 0; }
 </style>

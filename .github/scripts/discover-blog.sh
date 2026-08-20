@@ -18,7 +18,7 @@ is_blog_path() {
     blog-post.md|*/blog-post.md) return 0 ;;
     .github/scripts/build-blog.py|.github/scripts/build-blog_test.py) return 0 ;;
     .github/scripts/test-blog.sh|.github/scripts/discover-blog.sh) return 0 ;;
-    .github/pages/blog-index.html.tmpl|.github/pages/blog-post.html.tmpl) return 0 ;;
+    .github/pages/blog-index.html.tmpl|.github/pages/blog-post.html.tmpl|.github/pages/blog-shared.css) return 0 ;;
   esac
   return 1
 }

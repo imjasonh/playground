@@ -30,6 +30,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 PAGES_DIR = SCRIPT_DIR.parent / "pages"
 INDEX_TEMPLATE_PATH = PAGES_DIR / "blog-index.html.tmpl"
 POST_TEMPLATE_PATH = PAGES_DIR / "blog-post.html.tmpl"
+SHARED_CSS_PATH = PAGES_DIR / "blog-shared.css"
 SOURCE_ROOT = SCRIPT_DIR.parents[1]
 
 POST_FILENAME = "blog-post.md"
@@ -569,9 +570,17 @@ def dates_html(post: Post) -> str:
     return f'      <p class="meta">{" · ".join(bits)}</p>\n'
 
 
+def apply_shared_css(template: str) -> str:
+    """Inline the shared reading theme when the template asks for it."""
+    if "__SHARED_CSS__" not in template:
+        return template
+    return template.replace("__SHARED_CSS__", SHARED_CSS_PATH.read_text())
+
+
 def render_post(post: Post, template: str) -> str:
     body = markdown_to_html(post.body_md)
     page_title = f"{post.title_text} · Posts"
+    template = apply_shared_css(template)
     return (
         template.replace("__TITLE__", html.escape(page_title))
         .replace("__TITLE_HTML__", post.title_html)
@@ -655,9 +664,11 @@ def build(
         posts.append(post)
 
     posts = sort_posts(posts)
+    index_html = apply_shared_css(
+        index_template if index_template is not None else INDEX_TEMPLATE_PATH.read_text()
+    )
     index_html = (
-        (index_template if index_template is not None else INDEX_TEMPLATE_PATH.read_text())
-        .replace("__TITLE__", "Posts · Playground")
+        index_html.replace("__TITLE__", "Posts · Playground")
         .replace("__HEADING__", "Posts")
         .replace("__ITEMS__", render_index_items(posts))
     )
