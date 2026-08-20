@@ -64,7 +64,7 @@ func TestLoadConfig_importsOnly(t *testing.T) {
 	if !ok || cfg == nil {
 		t.Fatalf("imports-only manifest should yield ok=true, empty Config; got ok=%v cfg=%v", ok, cfg)
 	}
-	if len(cfg.DisabledRules) != 0 || len(cfg.Severity) != 0 || len(cfg.Skip) != 0 {
+	if len(cfg.DisabledRules) != 0 || len(cfg.Severity) != 0 || len(cfg.Skip) != 0 || len(cfg.DisabledOn) != 0 {
 		t.Errorf("expected empty config, got %+v", cfg)
 	}
 }
@@ -433,6 +433,96 @@ func TestValidateFileMatch(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "[unclosed") {
 		t.Errorf("error should mention the bad pattern; got %v", err)
+	}
+}
+
+func TestApplyConfig_disableOnAnalyzer(t *testing.T) {
+	a := &dsl.Analyzer{
+		Name: "yaml_truthy",
+		Rules: map[string]dsl.Rule{
+			"mapping_value_true":  {Name: "mapping_value_true"},
+			"mapping_value_false": {Name: "mapping_value_false"},
+		},
+	}
+	keep := &dsl.Analyzer{
+		Name:  "other",
+		Rules: map[string]dsl.Rule{"r": {Name: "r"}},
+	}
+	warns := applyConfig(&Config{
+		DisabledOn: map[string][]string{"yaml_truthy": {"ios/**/project.yml"}},
+	}, []*dsl.Analyzer{a, keep})
+	if len(warns) != 0 {
+		t.Errorf("unexpected warnings: %v", warns)
+	}
+	for _, name := range []string{"mapping_value_true", "mapping_value_false"} {
+		got := a.Rules[name].FileExclude
+		if !reflect.DeepEqual(got, []string{"ios/**/project.yml"}) {
+			t.Errorf("%s FileExclude = %v", name, got)
+		}
+	}
+	if len(keep.Rules["r"].FileExclude) != 0 {
+		t.Errorf("unrelated analyzer should not get FileExclude; got %v", keep.Rules["r"].FileExclude)
+	}
+}
+
+func TestApplyConfig_disableOnRule(t *testing.T) {
+	a := &dsl.Analyzer{
+		Name: "demo",
+		Rules: map[string]dsl.Rule{
+			"drop_here": {Name: "drop_here"},
+			"keep":      {Name: "keep"},
+		},
+	}
+	warns := applyConfig(&Config{
+		DisabledOn: map[string][]string{"drop_here": {"skip_me.py"}},
+	}, []*dsl.Analyzer{a})
+	if len(warns) != 0 {
+		t.Errorf("unexpected warnings: %v", warns)
+	}
+	if !reflect.DeepEqual(a.Rules["drop_here"].FileExclude, []string{"skip_me.py"}) {
+		t.Errorf("drop_here FileExclude = %v", a.Rules["drop_here"].FileExclude)
+	}
+	if len(a.Rules["keep"].FileExclude) != 0 {
+		t.Errorf("keep should have no FileExclude; got %v", a.Rules["keep"].FileExclude)
+	}
+}
+
+func TestLoadConfig_disabledOn(t *testing.T) {
+	dir := t.TempDir()
+	src := `
+disabled_on: {yaml_truthy: ["ios/**/project.yml"]}
+`
+	if err := os.WriteFile(filepath.Join(dir, remote.ManifestFile), []byte(src), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	cfg, ok, err := LoadConfig(dir)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !ok || cfg == nil {
+		t.Fatalf("expected config, got ok=%v cfg=%v", ok, cfg)
+	}
+	want := map[string][]string{"yaml_truthy": {"ios/**/project.yml"}}
+	if !reflect.DeepEqual(cfg.DisabledOn, want) {
+		t.Errorf("disabled_on: %v", cfg.DisabledOn)
+	}
+}
+
+func TestLoadConfig_disabledOnInvalidGlob(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, remote.ManifestFile), []byte(`disabled_on: {yaml_truthy: ["[unclosed"]}`), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if _, _, err := LoadConfig(dir); err == nil {
+		t.Fatal("expected error for invalid glob")
+	}
+}
+
+func TestApplyConfig_disableOnTypo(t *testing.T) {
+	a := &dsl.Analyzer{Name: "demo", Rules: map[string]dsl.Rule{"r": {Name: "r"}}}
+	warns := applyConfig(&Config{DisabledOn: map[string][]string{"nope": {"*.go"}}}, []*dsl.Analyzer{a})
+	if len(warns) != 1 || !strings.Contains(warns[0], "nope") {
+		t.Errorf("expected typo warning; got %v", warns)
 	}
 }
 

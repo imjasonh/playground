@@ -188,6 +188,7 @@ Recognized config fields, all optional:
 ```cue
 imports: {"github.com/alice/lint-rules": "v1.2.3"}  // remote rule modules
 disabled_rules: ["go_iferr", "todo_format"]         // skip analyzers or rules
+disabled_on: {yaml_truthy: ["ios/**/project.yml"]}   // skip analyzers or rules on matching paths
 severity: {go_panic_empty: "error"}                  // override per analyzer/rule
 skip: ["build", "dist"]                              // extra ./... walk skip-dirs
 max_file_size: 2_000_000                              // bytes; 0 disables; default 1 MiB
@@ -198,6 +199,12 @@ memory_budget: 512_000_000                            // cumulative parsed sourc
 `disabled_rules` and `severity` are applied to the analyzers at load
 time by `applyConfig`. Names may be **analyzer** names (`go_iferr`) or
 individual **rule** names (`inline_define`, `force_unwrap`).
+`disabled_on` uses the same names but only skips those rules on files
+whose slash-separated path matches one of the listed globs. `**`
+matches zero or more directories. Globs are compared against the file
+path and every `/`-suffix of it, so `ios/**/project.yml` matches
+`ios/project.yml` and `/abs/ios/foo/project.yml`. Other rules still
+run on those files.
 `skip` is consumed by the CLI, unioned with `-skip` and the built-in
 defaults. Severity values are validated — anything outside
 `error|warning|info|hint` is a load error.
@@ -268,7 +275,9 @@ files whose basename matches one of the listed
 `path/filepath.Match` globs. Empty / absent means "every file the
 language filter already accepted". Applied in
 `engine.runGroupOnFile` via `ruleAppliesToFile`, alongside the
-existing language filter.
+existing language filter. Project-config `disabled_on` globs are
+attached as `FileExclude` on the matching rules and evaluated in the
+same helper against the full path.
 
 ## Remote imports
 

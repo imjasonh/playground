@@ -68,8 +68,8 @@ type Project struct {
 
 // LoadProject is LoadRules + access to the parsed project config.
 // Use this when the caller needs config fields (e.g. the CLI consumes
-// `skip` for ./... expansion). Disabled-rule and severity-override
-// transforms have already been applied to Analyzers.
+// `skip` for ./... expansion). Disabled-rule, path-disable, and
+// severity-override transforms have already been applied to Analyzers.
 func LoadProject(dir string) (Project, error) {
 	res, err := loader.LoadDir(dir)
 	if err != nil {

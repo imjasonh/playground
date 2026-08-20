@@ -10,6 +10,7 @@ import (
 	"cuelang.org/go/cue/cuecontext"
 
 	"github.com/imjasonh/playground/pasta/internal/dsl"
+	"github.com/imjasonh/playground/pasta/internal/pathglob"
 	"github.com/imjasonh/playground/pasta/internal/remote"
 )
 
@@ -20,6 +21,7 @@ import (
 //
 //	imports: { "github.com/alice/lint-rules": "v1.2.3" } // remote rules
 //	disabled_rules: ["go_iferr", "todo_format"]          // skip analyzers or rules
+//	disabled_on:    {yaml_truthy: ["ios/**/project.yml"]} // skip analyzers or rules on matching paths
 //	severity:       {go_panic_empty: "error"}            // override per analyzer/rule
 //	skip:           ["build", "dist"]                    // extra ./... walk skip-dirs
 //	max_file_size:  2_000_000                            // bytes; 0 = unlimited
@@ -30,9 +32,10 @@ import (
 // only reads the config-relevant fields. Co-locating them in one file
 // keeps a project's pasta-side metadata in a single place.
 type Config struct {
-	DisabledRules []string          `json:"disabled_rules,omitempty"`
-	Severity      map[string]string `json:"severity,omitempty"`
-	Skip          []string          `json:"skip,omitempty"`
+	DisabledRules []string            `json:"disabled_rules,omitempty"`
+	DisabledOn    map[string][]string `json:"disabled_on,omitempty"`
+	Severity      map[string]string   `json:"severity,omitempty"`
+	Skip          []string            `json:"skip,omitempty"`
 
 	// MaxFileSize is the size cap, in bytes, applied during `./...`
 	// expansion: files larger than this are dropped from the source
@@ -80,6 +83,16 @@ func LoadConfig(dir string) (*Config, bool, error) {
 	}
 	if err := decodeStringList(v, "skip", &cfg.Skip); err != nil {
 		return nil, false, fmt.Errorf("%s: %w", path, err)
+	}
+	if err := decodeStringListMap(v, "disabled_on", &cfg.DisabledOn); err != nil {
+		return nil, false, fmt.Errorf("%s: %w", path, err)
+	}
+	for name, globs := range cfg.DisabledOn {
+		for _, g := range globs {
+			if err := pathglob.Valid(g); err != nil {
+				return nil, false, fmt.Errorf("%s: disabled_on[%q]: %q: %w", path, name, g, err)
+			}
+		}
 	}
 	if mfs := v.LookupPath(cue.ParsePath("max_file_size")); mfs.Exists() {
 		n, err := mfs.Int64()
@@ -144,6 +157,21 @@ func decodeStringList(v cue.Value, field string, dst *[]string) error {
 	return nil
 }
 
+func decodeStringListMap(v cue.Value, field string, dst *map[string][]string) error {
+	x := v.LookupPath(cue.ParsePath(field))
+	if !x.Exists() {
+		return nil
+	}
+	jb, err := x.MarshalJSON()
+	if err != nil {
+		return fmt.Errorf("%s: %w", field, err)
+	}
+	if err := json.Unmarshal(jb, dst); err != nil {
+		return fmt.Errorf("%s must be a string→list-of-strings map: %w", field, err)
+	}
+	return nil
+}
+
 func validSeverity(s string) bool {
 	switch dsl.Severity(s) {
 	case dsl.SeverityError, dsl.SeverityWarning, dsl.SeverityInfo, dsl.SeverityHint:
@@ -153,12 +181,15 @@ func validSeverity(s string) bool {
 }
 
 // applyConfig mutates analyzers in place: drops rules listed in
-// DisabledRules and overrides Diagnose.Severity for rules listed in
-// Severity. Returns zero or more human-readable warnings for
-// configuration that didn't take effect:
+// DisabledRules, attaches path globs from DisabledOn onto matching
+// rules' FileExclude, and overrides Diagnose.Severity for rules
+// listed in Severity. Returns zero or more human-readable warnings
+// for configuration that didn't take effect:
 //
 //   - a name in DisabledRules that doesn't match any loaded rule
 //     or analyzer (typo, or rule was removed upstream),
+//   - a key in DisabledOn that doesn't match any loaded rule or
+//     analyzer,
 //   - a key in Severity that doesn't match any loaded rule or
 //     analyzer,
 //   - a key in Severity whose target rule has no `diagnose` block —
@@ -168,8 +199,10 @@ func validSeverity(s string) bool {
 //
 // Names may refer to either a rule (`eq`, `force_unwrap`) or an
 // entire analyzer (`js_double_equals`, `go_iferr`). Analyzer-level
-// disable drops every rule in that analyzer; analyzer-level severity
-// rewrites every diagnose-bearing rule it contains.
+// disable drops every rule in that analyzer; analyzer-level
+// DisabledOn copies the globs onto every remaining rule in that
+// analyzer; analyzer-level severity rewrites every diagnose-bearing
+// rule it contains.
 //
 // Callers (LoadDir) print these warnings to stderr. Both maps being
 // empty is a no-op, so callers can pass a possibly-nil Config.
@@ -209,6 +242,14 @@ func applyConfig(cfg *Config, analyzers []*dsl.Analyzer) []string {
 			warns = append(warns, fmt.Sprintf("disabled_rules: %q is not a loaded rule or analyzer", r))
 		}
 	}
+	for r := range cfg.DisabledOn {
+		if disabled[r] {
+			continue
+		}
+		if !knownRule[r] && !knownAnalyzer[r] {
+			warns = append(warns, fmt.Sprintf("disabled_on: %q is not a loaded rule or analyzer", r))
+		}
+	}
 	for r, sev := range cfg.Severity {
 		if !knownRule[r] && !knownAnalyzer[r] {
 			warns = append(warns, fmt.Sprintf("severity: %q is not a loaded rule or analyzer", r))
@@ -240,16 +281,30 @@ func applyConfig(cfg *Config, analyzers []*dsl.Analyzer) []string {
 				delete(a.Rules, name)
 				continue
 			}
+			if extra := disabledOnGlobs(cfg, a.Name, rule.Name); len(extra) > 0 {
+				rule.FileExclude = append(append([]string{}, rule.FileExclude...), extra...)
+			}
 			sev, ok := cfg.Severity[rule.Name]
 			if !ok {
 				sev, ok = analyzerSev, hasAnalyzerSev
 			}
-			if !ok || rule.Diagnose == nil {
-				continue
+			if ok && rule.Diagnose != nil {
+				rule.Diagnose.Severity = dsl.Severity(sev)
 			}
-			rule.Diagnose.Severity = dsl.Severity(sev)
 			a.Rules[name] = rule
 		}
 	}
 	return warns
+}
+
+func disabledOnGlobs(cfg *Config, analyzer, rule string) []string {
+	if len(cfg.DisabledOn) == 0 {
+		return nil
+	}
+	var out []string
+	out = append(out, cfg.DisabledOn[analyzer]...)
+	if rule != analyzer {
+		out = append(out, cfg.DisabledOn[rule]...)
+	}
+	return out
 }

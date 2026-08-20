@@ -50,6 +50,11 @@ type Rule struct {
 	// matches at least one entry. Empty means "every file the
 	// language filter already accepted".
 	FileMatch []string `json:"file_match,omitempty"`
+	// FileExclude is an optional list of slash-separated path globs
+	// (`**` allowed). When a file's path matches any entry, the rule
+	// is skipped for that file. Populated from project-config
+	// `disabled_on`; not a CUE schema field.
+	FileExclude []string `json:"-"`
 	// RequireSubstring is an optional list of literal substrings that
 	// must all appear in a file's source for the rule to be worth
 	// running. Used by the content-sniff pre-filter to skip parses on

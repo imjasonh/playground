@@ -25,6 +25,7 @@ import (
 	"github.com/imjasonh/playground/pasta/internal/lang"
 	"github.com/imjasonh/playground/pasta/internal/match"
 	"github.com/imjasonh/playground/pasta/internal/parsecache"
+	"github.com/imjasonh/playground/pasta/internal/pathglob"
 	"github.com/imjasonh/playground/pasta/internal/prefilter"
 	"github.com/imjasonh/playground/pasta/internal/tsutil"
 )
@@ -397,7 +398,7 @@ func processFile(
 	f.Src = src
 	out.Src = src
 
-	applicable := applicableRules(groups, f.Lang, filepath.Base(fileName(f)))
+	applicable := applicableRules(groups, f.Lang, fileName(f))
 	if len(applicable) == 0 {
 		// No rules apply, but a stale pasta:ignore should still warn.
 		if hasPastaIgnore(src) {
@@ -622,7 +623,7 @@ func runInMemory(
 		}
 		f.Src = src
 		results[i].Src = src
-		applicable := applicableRules(groups, f.Lang, filepath.Base(fileName(f)))
+		applicable := applicableRules(groups, f.Lang, fileName(f))
 		if len(applicable) == 0 {
 			if hasPastaIgnore(src) {
 				if err := emitUnusedIgnoresOnly(ctx, f, &results[i], o); err != nil {
@@ -750,8 +751,8 @@ func fileName(f FileInput) string {
 }
 
 // applicableRules returns the rules from groups that apply to the given
-// language and filename basename.
-func applicableRules(groups []ruleGroup, l lang.Language, base string) []*dsl.Rule {
+// language and file path.
+func applicableRules(groups []ruleGroup, l lang.Language, file string) []*dsl.Rule {
 	var out []*dsl.Rule
 	for _, g := range groups {
 		for i := range g.rules {
@@ -759,7 +760,7 @@ func applicableRules(groups []ruleGroup, l lang.Language, base string) []*dsl.Ru
 			if !ruleAppliesToLanguage(&sr.rule, l) {
 				continue
 			}
-			if !ruleAppliesToFile(&sr.rule, base) {
+			if !ruleAppliesToFile(&sr.rule, file) {
 				continue
 			}
 			out = append(out, &sr.rule)
@@ -802,12 +803,12 @@ func newFileState(ctx context.Context, f FileInput, store *factstore.Store, pars
 // using s's parse tree and env. When collect is nil only facts are
 // emitted; when non-nil, diagnostics and edit ops are appended.
 func runGroupOnFile(group ruleGroup, s fileState, store *factstore.Store, collect *Result) error {
-	base := filepath.Base(fileName(s.input))
+	file := fileName(s.input)
 	for _, sr := range group.rules {
 		if !ruleAppliesToLanguage(&sr.rule, s.input.Lang) {
 			continue
 		}
-		if !ruleAppliesToFile(&sr.rule, base) {
+		if !ruleAppliesToFile(&sr.rule, file) {
 			continue
 		}
 		if err := runRule(&sr, s.env, s.root, store, collect, s.suppress); err != nil {
@@ -817,19 +818,30 @@ func runGroupOnFile(group ruleGroup, s fileState, store *factstore.Store, collec
 	return nil
 }
 
-// ruleAppliesToFile evaluates a rule's file_match globs against the
-// file's basename. An empty list means "no filter — apply to every
-// file the language filter already accepted".
-func ruleAppliesToFile(rule *dsl.Rule, base string) bool {
-	if len(rule.FileMatch) == 0 {
-		return true
-	}
-	for _, pat := range rule.FileMatch {
-		if ok, _ := filepath.Match(pat, base); ok {
-			return true
+// ruleAppliesToFile evaluates a rule's file_match and file-exclude
+// globs. file_match is matched against the basename (empty list means
+// no include filter). FileExclude is matched against the full
+// slash-separated path (`**` allowed); a hit skips the rule.
+func ruleAppliesToFile(rule *dsl.Rule, file string) bool {
+	base := filepath.Base(file)
+	if len(rule.FileMatch) > 0 {
+		ok := false
+		for _, pat := range rule.FileMatch {
+			if m, _ := filepath.Match(pat, base); m {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			return false
 		}
 	}
-	return false
+	for _, pat := range rule.FileExclude {
+		if pathglob.Match(pat, file) {
+			return false
+		}
+	}
+	return true
 }
 
 // runRule matches the rule, runs preconditions, and (if collect != nil)
