@@ -1,0 +1,9 @@
+a {} /* want "empty CSS block" */
+
+b {
+    color: red;
+}
+
+c { /* want "empty CSS block" */
+    /* comment only */
+}

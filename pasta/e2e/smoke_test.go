@@ -37,6 +37,7 @@ var fixRules = []string{
 	"js_double_equals",
 	"js_template_no_subst",
 	"ts_array_type_style",
+	"ts_inferrable_types",
 	// Go
 	"go_negcmp",
 	"go_empty_else",
@@ -52,6 +53,7 @@ var fixRules = []string{
 	// Rust
 	"rust_needless_bool",
 	"rust_println_redundant_format",
+	"rust_almost_complete_range",
 	// YAML / CSS / Java / PHP
 	"yaml_truthy",
 	"css_zero_unit",
@@ -67,7 +69,10 @@ var diagnoseOnlyRules = []string{
 	"js_empty_promise",
 	"js_array_concat_spread",
 	"js_var_to_let", // report-only — scope-unsafe to autofix
+	"js_debugger",
+	"js_useless_catch",
 	"python_mutable_default",
+	"python_eval_use",
 	"rust_dbg_macro",
 	"rust_println_panic",
 	"yaml_empty_value",
@@ -75,9 +80,13 @@ var diagnoseOnlyRules = []string{
 	"terraform_security",
 	"html_deprecated_tags",
 	"html_img_alt",
+	"html_lang",
 	"css_important",
+	"css_empty_block",
+	"css_duplicate_property",
 	"java_system_out_println",
 	"java_finalizer",
+	"java_print_stack_trace",
 	"php_debug_output",
 }
 

@@ -78,6 +78,7 @@ go run ./cmd/pasta test analyzers/js_double_equals
 | [python_deprecated_use](./analyzers/python_deprecated_use/python_deprecated_use.cue) | Flag calls to `@deprecated`-decorated functions (fact passing) |
 | [python_taint](./analyzers/python_taint/python_taint.cue)                              | Track taint from `input()` through assignments to `eval`/`exec`/`system` (fact passing + fixpoint propagation) |
 | [python_method_no_self](./analyzers/python_method_no_self/python_method_no_self.cue)   | Flag class methods missing `self`/`cls` as first parameter (uses `ancestor_is`) |
+| [python_eval_use](./analyzers/python_eval_use/python_eval_use.cue)                     | Flag `eval()` (code-injection hazard; Bandit B307) |
 
 **Rust**
 
@@ -89,6 +90,8 @@ go run ./cmd/pasta test analyzers/js_double_equals
 | [rust_dbg_macro](./analyzers/rust_dbg_macro/rust_dbg_macro.cue)               | Flag committed `dbg!()` invocations (no autofix — empty/multi-arg forms are unsafe) |
 | [rust_deprecated_use](./analyzers/rust_deprecated_use/rust_deprecated_use.cue) | Flag calls to `#[deprecated]` functions (fact passing) |
 | [rust_taint](./analyzers/rust_taint/rust_taint.cue)                            | Track taint from `env::var()` through let bindings to `Command::new` (fact passing + fixpoint) |
+| [rust_almost_complete_range](./analyzers/rust_almost_complete_range/rust_almost_complete_range.cue) ✏️ | `'a'..'z'` → `'a'..='z'` (clippy `almost_complete_range`) |
+| [rust_bool_assert_comparison](./analyzers/rust_bool_assert_comparison/rust_bool_assert_comparison.cue) | Flag `assert_eq!(x, true/false)` (clippy `bool_assert_comparison`) |
 
 **JavaScript**
 
@@ -101,6 +104,8 @@ go run ./cmd/pasta test analyzers/js_double_equals
 | [js_var_to_let](./analyzers/js_var_to_let/js_var_to_let.cue)                                 | Flag `var` (prefer `let`); report-only — naive rewrite breaks redeclarations / hoisting |
 | [js_empty_promise](./analyzers/js_empty_promise/js_empty_promise.cue)                        | Flag `new Promise(() => {})` with empty executor |
 | [js_taint](./analyzers/js_taint/js_taint.cue)                                                | Track taint from `req.query` / `req.body` / `req.params` to `eval` / `Function` (fact passing + fixpoint) |
+| [js_debugger](./analyzers/js_debugger/js_debugger.cue)                                       | Flag `debugger;` statements |
+| [js_useless_catch](./analyzers/js_useless_catch/js_useless_catch.cue)                         | Flag `catch (e) { throw e; }` — a no-op rethrow |
 
 **TypeScript**
 
@@ -108,6 +113,7 @@ go run ./cmd/pasta test analyzers/js_double_equals
 |---|---|
 | [ts_array_type_style](./analyzers/ts_array_type_style/ts_array_type_style.cue) ✏️ | `Array<T>` → `T[]` for simple `T` (skips unions / keyof) |
 | [ts_any_type](./analyzers/ts_any_type/ts_any_type.cue)                            | Flag `: any` annotations (defeat TypeScript's type checking) |
+| [ts_inferrable_types](./analyzers/ts_inferrable_types/ts_inferrable_types.cue) ✏️ | Drop `: string` / `: number` / `: boolean` when the initializer is a matching literal |
 
 **YAML**
 
@@ -122,18 +128,23 @@ go run ./cmd/pasta test analyzers/js_double_equals
 | Path | What it does |
 |---|---|
 | [wrangler_observability](./analyzers/wrangler_observability/wrangler_observability.cue) | Require `[observability]` / `[observability.logs]` / `[observability.traces]` enabled (with `invocation_logs = true`) in every `wrangler.toml` |
+| [toml_duplicate_key](./analyzers/toml_duplicate_key/toml_duplicate_key.cue) | Flag consecutive duplicate keys in a table |
 
 **Bash**
 
 | Path | What it does |
 |---|---|
 | [bash_eval_use](./analyzers/bash_eval_use/bash_eval_use.cue) | Flag `eval` invocations (code-injection hazard) |
+| [bash_unquoted_expansion](./analyzers/bash_unquoted_expansion/bash_unquoted_expansion.cue) | Flag unquoted `$VAR` in `[ -z $VAR ]` tests (ShellCheck SC2086) |
+| [bash_grep_glob](./analyzers/bash_grep_glob/bash_grep_glob.cue) | Flag `grep '*foo*'` patterns that look like globs (ShellCheck SC2063) |
 
 **C**
 
 | Path | What it does |
 |---|---|
 | [c_gets_unsafe](./analyzers/c_gets_unsafe/c_gets_unsafe.cue) | Flag `gets()` (CWE-242, removed in C11) — use `fgets()` |
+| [c_unchecked_stdlib](./analyzers/c_unchecked_stdlib/c_unchecked_stdlib.cue) | Flag `system` / `strcpy` / `strcat` / `sprintf` / `ato*` (C and C++) |
+| [c_empty_if](./analyzers/c_empty_if/c_empty_if.cue) | Flag `if (cond);` empty then-clauses (C and C++) |
 
 **C++**
 
@@ -147,6 +158,8 @@ go run ./cmd/pasta test analyzers/js_double_equals
 |---|---|
 | [java_string_equals_literal](./analyzers/java_string_equals_literal/java_string_equals_literal.cue) ✏️ | `x.equals("foo")` → `"foo".equals(x)` (NPE-safe; identifier receivers only) |
 | [java_finalizer](./analyzers/java_finalizer/java_finalizer.cue) | Flag no-arg `void finalize()` overrides (deprecated since Java 9) |
+| [java_finalize_overload](./analyzers/java_finalize_overload/java_finalize_overload.cue) | Flag `void finalize(…)` overloads that are not `Object.finalize` |
+| [java_print_stack_trace](./analyzers/java_print_stack_trace/java_print_stack_trace.cue) | Flag `e.printStackTrace()` — prefer a logger |
 | [java_system_out_println](./analyzers/java_system_out_println/java_system_out_println.cue) | Flag `System.out` / `System.err` print calls — prefer a logger |
 
 **Swift**
@@ -160,6 +173,7 @@ go run ./cmd/pasta test analyzers/js_double_equals
 | Path | What it does |
 |---|---|
 | [ruby_unless_else](./analyzers/ruby_unless_else/ruby_unless_else.cue) | Flag `unless ... else ... end` — invert to `if` and swap branches |
+| [ruby_double_negation](./analyzers/ruby_double_negation/ruby_double_negation.cue) | Flag `!!x` boolean conversion (RuboCop `Style/DoubleNegation`) |
 
 **PHP**
 
@@ -173,6 +187,7 @@ go run ./cmd/pasta test analyzers/js_double_equals
 | Path | What it does |
 |---|---|
 | [sql_select_star](./analyzers/sql_select_star/sql_select_star.cue) | Flag `SELECT *` (fragile under schema changes) |
+| [sql_comma_join](./analyzers/sql_comma_join/sql_comma_join.cue) | Flag `FROM a, b` comma joins — prefer an explicit `JOIN` |
 
 **Dockerfile**
 
@@ -193,6 +208,7 @@ go run ./cmd/pasta test analyzers/js_double_equals
 |---|---|
 | [html_deprecated_tags](./analyzers/html_deprecated_tags/html_deprecated_tags.cue) | Flag `<center>`, `<font>`, `<marquee>`, `<blink>`, `<strike>`, `<big>`, `<tt>` (case-insensitive) |
 | [html_img_alt](./analyzers/html_img_alt/html_img_alt.cue) | Flag `<img>` tags missing an `alt` attribute |
+| [html_lang](./analyzers/html_lang/html_lang.cue) | Flag `<html>` tags missing a `lang` attribute |
 
 **CSS**
 
@@ -200,6 +216,8 @@ go run ./cmd/pasta test analyzers/js_double_equals
 |---|---|
 | [css_zero_unit](./analyzers/css_zero_unit/css_zero_unit.cue) ✏️ | Drop unit on length zero (`0px` → `0`; leaves `0%` alone) |
 | [css_important](./analyzers/css_important/css_important.cue) | Flag `!important` declarations |
+| [css_empty_block](./analyzers/css_empty_block/css_empty_block.cue) | Flag empty `{}` rule bodies |
+| [css_duplicate_property](./analyzers/css_duplicate_property/css_duplicate_property.cue) | Flag consecutive duplicate properties in a block |
 
 ## Performance
 
