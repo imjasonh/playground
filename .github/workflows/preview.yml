@@ -15,18 +15,20 @@ permissions:
 
 jobs:
   # Cheap discovery before contending for the gh-pages-publish lock. Go/Rust/
-  # iOS/CI-only PRs exit here with no deploy and no PR comment.
+  # iOS/CI-only PRs exit here with no deploy and no PR comment unless the
+  # posts catalog changed.
   discover:
     runs-on: ubuntu-latest
     outputs:
       apps: ${{ steps.discover.outputs.apps }}
+      blog: ${{ steps.discover.outputs.blog }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
           fetch-depth: 0   # need base history to detect changed browser apps
 
-      - name: Discover changed browser apps
+      - name: Discover changed browser apps and posts
         id: discover
         env:
           BASE_REF: ${{ github.base_ref }}
@@ -35,15 +37,18 @@ jobs:
           git fetch --no-tags origin "$BASE_REF"
           changed=$(git diff --name-only "origin/${BASE_REF}...HEAD")
           apps=$(printf '%s\n' "$changed" | bash .github/scripts/discover-browser-apps.sh --from-changes)
+          blog=$(printf '%s\n' "$changed" | bash .github/scripts/discover-blog.sh --from-changes | sed -n 's/^blog=//p')
           echo "Changed browser apps: ${apps}"
+          echo "Posts catalog changed: ${blog}"
           echo "apps=${apps}" >> "$GITHUB_OUTPUT"
-          if [ "$apps" = "[]" ]; then
-            echo "No browser app changed; skipping preview deploy and PR comment."
+          echo "blog=${blog}" >> "$GITHUB_OUTPUT"
+          if [ "$apps" = "[]" ] && [ "$blog" != "true" ]; then
+            echo "No browser app or posts catalog change; skipping preview deploy and PR comment."
           fi
 
   preview:
     needs: discover
-    if: ${{ needs.discover.outputs.apps != '[]' }}
+    if: ${{ needs.discover.outputs.apps != '[]' || needs.discover.outputs.blog == 'true' }}
     runs-on: ubuntu-latest
     # Production, preview, and cleanup workflows all update the same branch.
     concurrency:
@@ -53,6 +58,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+          fetch-depth: 0   # git history for post published / updated dates
 
       - name: Build preview
         env:
@@ -60,6 +66,7 @@ jobs:
           PR_TITLE: ${{ github.event.pull_request.title }}
           REPO_URL: ${{ github.server_url }}/${{ github.repository }}
           APPS: ${{ needs.discover.outputs.apps }}
+          BLOG: ${{ needs.discover.outputs.blog }}
         run: |
           set -euo pipefail
           dest="dist/preview/pr-${PR}"
@@ -72,19 +79,21 @@ jobs:
             fi
           done
 
+          python3 .github/scripts/build-blog.py --out "$dest/posts"
+
           # Per-PR preview index listing the apps bundled in this preview.
           python3 .github/scripts/render-index.py preview \
             --dir "$dest" --pr "$PR" --repo-url "$REPO_URL" \
             --output "$dest/index.html"
 
-          # Manifest so the production home page lists this preview (only
-          # written when discover found a browser-app change).
-          PR_NUMBER="$PR" PR_TITLE="$PR_TITLE" APPS="$APPS" python3 - <<'PY' > "$dest/preview.json"
+          # Manifest so the production home page lists this preview.
+          PR_NUMBER="$PR" PR_TITLE="$PR_TITLE" APPS="$APPS" BLOG="$BLOG" python3 - <<'PY' > "$dest/preview.json"
           import json, os
           print(json.dumps({
               "number": int(os.environ["PR_NUMBER"]),
               "title": os.environ["PR_TITLE"],
               "apps": json.loads(os.environ["APPS"]),
+              "posts": os.environ.get("BLOG") == "true",
           }))
           PY
 
@@ -103,6 +112,17 @@ jobs:
           persist-credentials: true
           ref: gh-pages
           path: gh-pages
+
+      - name: Publish posts catalog into this preview
+        env:
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          dest="gh-pages/preview/pr-${PR}/posts"
+          rm -rf "$dest"
+          if [ -d "dist/preview/pr-${PR}/posts" ]; then
+            mkdir -p "gh-pages/preview/pr-${PR}"
+            cp -a "dist/preview/pr-${PR}/posts" "$dest"
+          fi
 
       - name: Refresh site index
         env:
@@ -177,7 +197,7 @@ jobs:
             const repo = context.repo.repo;
             const url = `https://${owner}.github.io/${repo}/preview/pr-${pr}/`;
             const marker = '<!-- gh-pages-preview -->';
-            const body = `${marker}\n## 🔍 Preview deployment\n\n**PR #${pr}** is deployed at: ${url}\n\n_Updated on every push to this PR._`;
+            const body = `${marker}\n## 🔍 Preview deployment\n\n**PR #${pr}** is deployed at: ${url}\n\nPosts: ${url}posts/\n\n_Updated on every push to this PR._`;
             const { data: comments } = await github.rest.issues.listComments({
               owner, repo, issue_number: pr,
             });

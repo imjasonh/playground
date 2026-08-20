@@ -11,7 +11,8 @@
 #
 # An orphan is a top-level directory in <site-dir> that looks like a browser app
 # (contains index.html) but has no matching source browser app directory. The
-# preview directory and hidden directories are never touched.
+# preview directory, the generated posts catalog, and hidden directories are
+# never touched.
 #
 # Usage:
 #   prune-orphaned-apps.sh <site-dir> [source-dir]
@@ -50,6 +51,7 @@ for dir in "$site_dir"/*/; do
   name="$(basename "$dir")"
   [[ "$name" == .* ]] && continue
   [[ "$name" == "preview" ]] && continue
+  [[ "$name" == "posts" ]] && continue
   # Only prune things that were published as browser apps.
   [[ -f "$dir/index.html" ]] || continue
   if [[ -z "${source_apps[$name]+x}" ]]; then

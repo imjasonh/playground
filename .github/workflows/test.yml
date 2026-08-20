@@ -82,3 +82,7 @@ jobs:
           - name: pasta test and lint
             if: ${{ steps.discover.outputs.pasta == 'true' }}
             run: bash .github/scripts/test-pasta.sh
+
+          - name: Test posts catalog
+            if: ${{ steps.discover.outputs.blog == 'true' }}
+            run: bash .github/scripts/test-blog.sh

@@ -128,4 +128,8 @@ that declares `platform: macOS`:
 See [`docs/macos-sparkle-design.md`](docs/macos-sparkle-design.md) for the macOS
 release design (Developer ID + notarization + Sparkle appcast on GitHub Pages).
 
+Human-authored project posts (`blog-post.md` next to an experiment) publish to
+[`/posts/`](https://imjasonh.github.io/playground/posts/) and are listed above
+the browser apps on the home page.
+
 See [`AGENTS.md`](AGENTS.md) for repository conventions, CI, and how to add a new app.

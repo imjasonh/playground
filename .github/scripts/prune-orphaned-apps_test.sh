@@ -45,6 +45,7 @@ make_app "$site_dir/webrtc"
 make_app "$site_dir/kanoodle"
 make_app "$site_dir/linkchat"           # orphan: renamed away in source
 make_app "$site_dir/preview/pr-42"      # preview app must never be pruned
+make_app "$site_dir/posts"              # generated catalog must never be pruned
 echo "<!doctype html>" > "$site_dir/index.html"
 mkdir -p "$site_dir/.git"               # hidden: ignored
 echo "ref" > "$site_dir/.git/HEAD"
@@ -56,6 +57,7 @@ assert_exists "$site_dir/webrtc/index.html"
 assert_exists "$site_dir/kanoodle/index.html"
 assert_exists "$site_dir/index.html"
 assert_exists "$site_dir/preview/pr-42/index.html"
+assert_exists "$site_dir/posts/index.html"
 assert_exists "$site_dir/.git/HEAD"
 
 if [[ "$output" != *"Pruning orphaned app: linkchat"* ]]; then

@@ -14,8 +14,8 @@ Two modes:
            section.
 
 The template lives at ../pages/index.html.tmpl relative to this script and
-exposes these placeholders: __TITLE__, __HEADING__, __ITEMS__, __PREVIEWS__,
-__WORKERS__ and __REPO_URL__.
+exposes these placeholders: __TITLE__, __HEADING__, __POSTS__, __ITEMS__,
+__PREVIEWS__, __WORKERS__ and __REPO_URL__.
 
 Browser apps and previews are discovered from the published site directory
 (``--dir``). Cloudflare Worker apps are not served from Pages, so they are
@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+from datetime import datetime
 from pathlib import Path
 
 TEMPLATE_PATH = Path(__file__).resolve().parents[1] / "pages" / "index.html.tmpl"
@@ -48,7 +49,7 @@ def scan_apps(root: Path) -> list[str]:
         if not child.is_dir():
             continue
         name = child.name
-        if name.startswith(".") or name == "preview":
+        if name.startswith(".") or name in {"preview", "posts"}:
             continue
         if (child / "index.html").is_file():
             apps.append(name)
@@ -103,10 +104,54 @@ def scan_previews(root: Path) -> list[dict]:
                 "number": number,
                 "title": str(data.get("title", "")),
                 "apps": [str(a) for a in data.get("apps", []) if a],
+                "posts": bool(data.get("posts")),
             }
         )
     previews.sort(key=lambda p: p["number"], reverse=True)
     return previews
+
+
+def scan_posts(root: Path) -> list[dict]:
+    """Published posts from ``root/posts/index.json`` (written by build-blog.py).
+
+    Returns a list of ``{"slug", "title", "published", "updated"}`` dicts in
+    the file's order (newest first). A missing or invalid manifest yields
+    an empty list.
+    """
+    manifest = root / "posts" / "index.json"
+    if not manifest.is_file():
+        return []
+    try:
+        data = json.loads(manifest.read_text())
+    except (ValueError, OSError):
+        return []
+    if not isinstance(data, list):
+        return []
+    posts = []
+    for item in data:
+        if not isinstance(item, dict) or not item.get("slug"):
+            continue
+        posts.append(
+            {
+                "slug": str(item["slug"]),
+                "title": str(item.get("title") or item["slug"]),
+                "published": item.get("published"),
+                "updated": item.get("updated"),
+            }
+        )
+    return posts
+
+
+def format_iso_date(value: object) -> str:
+    """Turn an ISO date string into 'August 19, 2026', or '' if missing."""
+    if not value:
+        return ""
+    raw = str(value)
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError:
+        return raw
+    return f"{parsed.strftime('%B')} {parsed.day}, {parsed.year}"
 
 
 def render_items(apps: list[str]) -> str:
@@ -148,11 +193,14 @@ def render_previews_section(previews: list[dict], repo_url: str) -> str:
     for p in previews:
         n = p["number"]
         title = html.escape(p["title"]) if p["title"] else f"PR #{n}"
+        labels = list(p["apps"])
+        if p.get("posts"):
+            labels.append("posts")
         apps_line = ""
-        if p["apps"]:
+        if labels:
             apps_line = (
                 '        <span class="apps">'
-                + html.escape(", ".join(p["apps"]))
+                + html.escape(", ".join(labels))
                 + "</span>\n"
             )
         pr_link = f"{repo_url}/pull/{n}" if repo_url else f"pull/{n}"
@@ -178,6 +226,41 @@ def render_previews_section(previews: list[dict], repo_url: str) -> str:
     )
 
 
+def render_posts_section(posts: list[dict]) -> str:
+    """Render the Posts section above browser apps, or '' when there are none."""
+    if not posts:
+        return ""
+    items = []
+    for p in posts:
+        bits = []
+        published = format_iso_date(p.get("published"))
+        updated = format_iso_date(p.get("updated"))
+        if published:
+            bits.append(published)
+        if updated and updated != published:
+            bits.append(f"Updated {updated}")
+        meta = ""
+        if bits:
+            meta = f'\n        <span class="meta">{html.escape(" · ".join(bits))}</span>'
+        items.append(
+            "      <li>\n"
+            f'        <a href="posts/{html.escape(p["slug"], quote=True)}/">\n'
+            f'          <span class="title">{html.escape(p["title"])}</span>'
+            f"{meta}\n"
+            "        </a>\n"
+            "      </li>"
+        )
+    return (
+        '\n  <section class="posts">\n'
+        "    <h2>Posts</h2>\n"
+        '    <ul class="post-list">\n'
+        + "\n".join(items)
+        + "\n"
+        "    </ul>\n"
+        "  </section>\n"
+    )
+
+
 def render(
     title: str,
     heading: str,
@@ -185,12 +268,14 @@ def render(
     previews: list[dict],
     repo_url: str,
     workers: list[str] | None = None,
+    posts: list[dict] | None = None,
     template: str | None = None,
 ) -> str:
     tmpl = template if template is not None else TEMPLATE_PATH.read_text()
     return (
         tmpl.replace("__TITLE__", html.escape(title))
         .replace("__HEADING__", html.escape(heading))
+        .replace("__POSTS__", render_posts_section(posts or []))
         .replace("__ITEMS__", render_items(apps))
         .replace("__PREVIEWS__", render_previews_section(previews, repo_url))
         .replace("__WORKERS__", render_workers_section(workers or [], repo_url))
@@ -231,10 +316,18 @@ def main(argv: list[str] | None = None) -> None:
             scan_previews(root),
             args.repo_url,
             workers=scan_workers(Path(args.source_dir)),
+            posts=scan_posts(root),
         )
     else:
         label = f"Preview — PR #{args.pr}"
-        content = render(label, label, scan_apps(root), [], args.repo_url)
+        content = render(
+            label,
+            label,
+            scan_apps(root),
+            [],
+            args.repo_url,
+            posts=scan_posts(root),
+        )
 
     Path(args.output).write_text(content)
 
