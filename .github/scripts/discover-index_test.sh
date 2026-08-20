@@ -44,6 +44,11 @@ assert_eq \
   "publisher"
 
 assert_eq \
+  "$(from_changes '.github/workflows/preview.yml')" \
+  "true" \
+  "preview workflow"
+
+assert_eq \
   "$(from_changes '.github/pages/blog-index.html.tmpl' 'README.md' 'kanoodle/index.html')" \
   "false" \
   "blog template, README, and apps do not select the index leg"

@@ -6,8 +6,8 @@
 #   publish-site-index.sh <gh-pages-dir> [repo-url] [commit-message]
 #
 # The renderer (render-index.py) and template are resolved relative to this
-# script — i.e. from the repository checkout — while it scans and commits inside
-# <gh-pages-dir>, which is expected to be a checkout of the gh-pages branch.
+# script, so callers must invoke the copy that should own production. preview.yml
+# uses the PR base checkout. deploy.yml and cleanup.yml use the default branch.
 set -euo pipefail
 
 ghpages_dir="${1:?gh-pages directory required}"

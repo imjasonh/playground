@@ -19,6 +19,7 @@ is_index_path() {
     .github/scripts/render-index.py|.github/scripts/render-index_test.py) return 0 ;;
     .github/scripts/publish-site-index.sh) return 0 ;;
     .github/scripts/test-index.sh|.github/scripts/discover-index.sh|.github/scripts/discover-index_test.sh) return 0 ;;
+    .github/workflows/preview.yml) return 0 ;;
   esac
   return 1
 }

@@ -195,7 +195,10 @@ previews**: `preview.yml` discovers changed browser apps, posts-catalog
 files, and the Pages home-page index first and **skips deploy + PR comment**
 when none of those changed (so Go/Rust/iOS/CI-only PRs, whose preview would be
 identical to production, stay quiet). If any of those changed, it writes
-`preview/pr-<N>/preview.json` and comments the URL. `deploy.yml` also runs
+`preview/pr-<N>/preview.json` and comments the URL. The preview directory is
+built from the PR. The production home page is regenerated with the PR base
+branch's index template, so an unmerged template change does not go live.
+`deploy.yml` also runs
 `.github/scripts/build-blog.py` to publish `/posts/` from every `blog-post.md`
 in the source tree. `deploy.yml`, `preview.yml`, and `cleanup.yml` each
 regenerate the root index from the published `gh-pages` tree so the list stays

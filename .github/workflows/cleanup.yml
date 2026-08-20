@@ -21,11 +21,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # The scripts and template used to regenerate the root index live on the
-      # default branch, so check it out at the root.
+      # default branch, so check it out at the root. A pull_request closed
+      # event would otherwise check out the PR and could publish its index
+      # template to production.
       - name: Check out scripts
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+          ref: ${{ github.event.repository.default_branch }}
 
       - name: Check out gh-pages branch
         id: checkout

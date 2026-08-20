@@ -131,10 +131,20 @@ jobs:
             cp -a "dist/preview/pr-${PR}/posts" "$dest"
           fi
 
+      # The preview directory is built from this PR. The production home page
+      # must keep the base branch template, otherwise an unmerged index change
+      # would go live as soon as preview ran.
+      - name: Check out PR base for the production index
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.base_ref }}
+          path: base
+
       - name: Refresh site index
         env:
           REPO_URL: ${{ github.server_url }}/${{ github.repository }}
-        run: bash .github/scripts/publish-site-index.sh gh-pages "$REPO_URL"
+        run: bash base/.github/scripts/publish-site-index.sh gh-pages "$REPO_URL"
 
       - name: Wait for GitHub Pages deployment
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
