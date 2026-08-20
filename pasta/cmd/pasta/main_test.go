@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/imjasonh/playground/pasta/internal/dsl"
 	"github.com/imjasonh/playground/pasta/internal/engine"
 	"github.com/imjasonh/playground/pasta/internal/loader"
 )
@@ -260,5 +261,33 @@ func sortStrings(s []string) {
 		for j := i; j > 0 && s[j-1] > s[j]; j-- {
 			s[j-1], s[j] = s[j], s[j-1]
 		}
+	}
+}
+
+func TestFormatCompletionReport(t *testing.T) {
+	got := formatCompletionReport(100, 12, 5_000_000, time.Second)
+	want := "scanned 100 files, 12 rules, 5.0 MB/s"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	// Zero duration must not Inf/NaN.
+	got = formatCompletionReport(0, 0, 0, 0)
+	want = "scanned 0 files, 0 rules, 0.0 MB/s"
+	if got != want {
+		t.Fatalf("zero: got %q, want %q", got, want)
+	}
+}
+
+func TestCountRules(t *testing.T) {
+	analyzers := []*dsl.Analyzer{
+		{Name: "a", Rules: map[string]dsl.Rule{"r1": {}, "r2": {}}},
+		{Name: "b", Rules: map[string]dsl.Rule{"r3": {}}},
+		{Name: "c", Rules: nil},
+	}
+	if n := countRules(analyzers); n != 3 {
+		t.Fatalf("countRules=%d, want 3", n)
+	}
+	if n := countRules(nil); n != 0 {
+		t.Fatalf("nil=%d, want 0", n)
 	}
 }

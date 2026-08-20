@@ -145,6 +145,7 @@ func runFix(args []string) int {
 		specs = append(specs, runner.FileSpec{Path: src})
 	}
 	if len(specs) == 0 {
+		fmt.Fprintln(os.Stderr, formatCompletionReport(0, countRules(analyzers), 0, 0))
 		return 0
 	}
 
@@ -156,6 +157,12 @@ func runFix(args []string) int {
 	if mb := resolveMemoryBudget(*memoryBudgetFlag, cfg); mb > 0 {
 		memTracker = &engine.MemoryTracker{Budget: mb}
 	}
+	rulesApplied := countRules(analyzers)
+	var (
+		reportFiles int
+		reportBytes int64
+		reportDur   time.Duration
+	)
 	exit := 0
 	for pass := 0; pass < passes; pass++ {
 		var runOpts []runner.Option
@@ -171,10 +178,21 @@ func runFix(args []string) int {
 		}
 		// Always analyze with applyFixes=false, then apply per file so
 		// one overlapping-edit conflict cannot abort the whole group.
+		t0 := time.Now()
 		results, err := runner.RunGroup(context.Background(), specs, analyzers, false, runOpts...)
+		passDur := time.Since(t0)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%v\n", err)
 			return 1
+		}
+		if pass == 0 {
+			// Report the first analyze pass only — multipass -fix
+			// would otherwise inflate files/bytes/time.
+			reportFiles = len(results)
+			reportDur = passDur
+			for _, res := range results {
+				reportBytes += int64(len(res.Src))
+			}
 		}
 		changed := 0
 		for _, res := range results {
@@ -234,6 +252,7 @@ func runFix(args []string) int {
 			break
 		}
 	}
+	fmt.Fprintln(os.Stderr, formatCompletionReport(reportFiles, rulesApplied, reportBytes, reportDur))
 	if *showStats {
 		s := stats.Snapshot()
 		fmt.Fprintf(os.Stderr, "stats: walked=%d prefilter_skipped=%d parsed=%d parse_errors=%d parse_degraded=%d timed_out=%d memory_skipped=%d cache_hits=%d\n",
@@ -249,6 +268,27 @@ func runFix(args []string) int {
 		_ = cache.Prune()
 	}
 	return exit
+}
+
+// countRules returns the number of individual rules across analyzers
+// (after project config has disabled any).
+func countRules(analyzers []*dsl.Analyzer) int {
+	n := 0
+	for _, a := range analyzers {
+		n += len(a.Rules)
+	}
+	return n
+}
+
+// formatCompletionReport builds the one-line summary printed after a
+// successful analyze pass. Throughput uses decimal megabytes (1e6).
+func formatCompletionReport(files, rules int, nbytes int64, elapsed time.Duration) string {
+	secs := elapsed.Seconds()
+	mbs := 0.0
+	if secs > 0 {
+		mbs = (float64(nbytes) / 1e6) / secs
+	}
+	return fmt.Sprintf("scanned %d files, %d rules, %.1f MB/s", files, rules, mbs)
 }
 
 // failOn threshold for -fail-on. Ordered so higher severity has a

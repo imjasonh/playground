@@ -264,7 +264,8 @@ pasta -fail-on=error   # CI-friendly: exit 1 on error-severity findings
 pasta -fail-on=warning # exit 1 on warning or error
 pasta -fix         # apply fixes (atomic rewrite; skips symlinks)
 pasta -fix -fix-until-clean   # multipass until no file changes (nested rewrites)
-pasta -stats                     # walk / prefilter / parse / skip counters
+pasta -stats                     # also print walk / prefilter / parse / skip counters
+# Every run ends with: scanned N files, R rules, X.Y MB/s
 
 # Same, but pointing at a different rule directory.
 pasta -rules path/to/rule-dir
