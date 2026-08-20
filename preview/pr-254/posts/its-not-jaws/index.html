@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>It&#x27;s Not Jaws · Posts</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f4efe6;
+    --ink: #241d16;
+    --muted: #6b6258;
+    --rule: #d7cfc3;
+    --accent: #6b3a2a;
+    --code-bg: #ebe4d6;
+    --quote-bar: #c4b8a6;
+    --alert-border: #6b3a2a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161310;
+      --ink: #efe7db;
+      --muted: #b3a897;
+      --rule: #3a342c;
+      --accent: #e0b59a;
+      --code-bg: #241f19;
+      --quote-bar: #5a5046;
+      --alert-border: #e0b59a;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+    color: var(--ink);
+    background: var(--bg);
+    line-height: 1.65;
+  }
+  main {
+    max-width: 38rem;
+    margin: 0 auto;
+    padding: clamp(2rem, 6vw, 4.5rem) clamp(1.1rem, 4vw, 2rem) 4.5rem;
+  }
+  .crumbs {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: .8rem;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 2rem;
+  }
+  .crumbs a { color: var(--accent); text-decoration: none; }
+  .crumbs a:hover { text-decoration: underline; }
+  header { margin-bottom: 2rem; }
+  h1 {
+    font-size: clamp(2rem, 6vw, 2.7rem);
+    font-weight: 400;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+    margin: 0;
+  }
+  .meta {
+    margin: .85rem 0 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: .8rem;
+    letter-spacing: .03em;
+    color: var(--muted);
+  }
+  .body { font-size: 1.12rem; }
+  .body > *:first-child { margin-top: 0; }
+  .body h2, .body h3, .body h4 {
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    line-height: 1.25;
+    margin: 2.1rem 0 .7rem;
+  }
+  .body h2 { font-size: 1.45rem; }
+  .body h3 { font-size: 1.2rem; }
+  .body h4 { font-size: 1.08rem; }
+  .body p, .body ul, .body ol { margin: 0 0 1.1rem; }
+  .body li { margin: .3rem 0; }
+  .body a { color: var(--accent); }
+  .body img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 1.4rem auto;
+  }
+  .body code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: .84em;
+    background: var(--code-bg);
+    padding: .08em .32em;
+    border-radius: 4px;
+  }
+  .body pre {
+    overflow: auto;
+    padding: 1rem 1.1rem;
+    background: var(--code-bg);
+    margin: 0 0 1.25rem;
+    font-size: .95rem;
+  }
+  .body pre code { background: none; padding: 0; }
+  .body blockquote {
+    margin: 0 0 1.25rem;
+    padding: .1rem 0 .1rem 1.1rem;
+    border-left: 2px solid var(--quote-bar);
+    color: var(--muted);
+    font-style: italic;
+  }
+  .body blockquote p:last-child { margin-bottom: 0; }
+  .body hr {
+    border: 0;
+    border-top: 1px solid var(--rule);
+    margin: 2.2rem 0;
+  }
+  .alert {
+    margin: 0 0 1.25rem;
+    padding: 1rem 1.1rem;
+    border: 1px solid var(--alert-border);
+    font-style: normal;
+  }
+  .alert-label {
+    margin: 0 0 .4rem;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: .72rem;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .alert p:last-child { margin-bottom: 0; }
+</style>
+</head><body>
+<main>
+  <nav class="crumbs" aria-label="Breadcrumb">
+    <a href="../../">Playground</a>
+    · <a href="../">Posts</a>
+  </nav>
+  <article>
+    <header>
+      <h1>It's Not Jaws</h1>
+      <p class="meta">Published August 7, 2026</p>
+
+    </header>
+    <div class="body">
+<p>Months ago, my kids and I came up with a fun guessing game. The rules are simple:</p>
+<blockquote>
+<p>One person picks a movie that we’ve all seen, and keeps it secret. Everyone else takes turns guessing movie titles; if we guessed correctly, we win. If not, the person responds with a clue in the form of, “it’s not X, but like X, it <em>_</em><em>_</em>_”, giving a signal to “triangulate” the answer.</p>
+</blockquote>
+<p>It’s a pretty fun game! Try it with your own friends and family! Sort of like Wordle for movie lovers.</p>
+<p>Around the time Fable came out, I wondered if the model was sophisticated enough to understand and follow these rules. And, much to my surprise, on my very first game, Fable’s thinking traces (which were visible to me) included the name of the movie. This made the game a little… easy.</p>
+<p>Repeated attempts to prompt the model not to leak the answer were somewhat successful, but I could never reliably stamp it out.</p>
+<p>I tried a few other models, and after some attempt eventually even had some good fun games! Try it with your own local LLM model!</p>
+<p>This morning I wondered whether I could systematize this experience and try to find the “best” model for this game. “Best” is a little complicated, since it includes both a.) picking a good target movie, b.) giving useful clues so the game is fun, c.) crucially, not leaking the answer, or too many extra clues in thinking traces.</p>
+<p>When I got to work, I used the <a href="https://cursor.com/docs/sdk/typescript">Cursor SDK</a> to build an agent harness to match up a series of models against each other in successive games.</p>
+<p>Some interesting findings:</p>
+<ol>
+<li>Composer 2.5 is the most likely model to leak the full title — in 12 games, it directly said the answer 11 times.</li>
+<li>Clue leaks are an endemic problem among Fable, GPT 5.5 and 5.6-Sol. All three leaked clues in 8 of 12 games. Fable never leaked the full title though.</li>
+<li>Grok 4.5 didn’t leak a single clue or title in its 12 matchups! It still lost every game, which might indicate weak movie choices or clues that are too strong.</li>
+<li>All of the models tend to pick the same ~3 movies (Lion King, Truman Show, Shawshank) so these are good guesses if you're ever up against an agent.</li>
+</ol>
+<p>Anyway, I don’t know what this could be useful for, but it was super fun to build! I encourage you to have fun ideas and experiment with them, it’s one of the last things that make us truly human.</p>
+<p>You can see one matchup <a href="https://github.com/imjasonh/playground/actions/runs/31191985994">here</a>. It takes 30m and costs ~$20 to run, if you feel like reproducing my results. PRs welcome!</p>
+<p>And if we’re ever hanging out and you want to play a game, I’d be happy to give it a go.</p>
+<p>PS: the game is called “It’s Not Jaws” because there’s an extra rule where you cannot under any circumstances choose Jaws as the answer. I didn’t tell the models this, but they still never picked Jaws as the answer.</p>
+    </div>
+  </article>
+</main>
+</body></html>
