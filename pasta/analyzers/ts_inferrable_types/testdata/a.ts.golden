@@ -1,0 +1,20 @@
+const a = "a"; // want "type `string` is inferrable"
+const n = 1; // want "type `number` is inferrable"
+const b = true; // want "type `boolean` is inferrable"
+const f = false; // want "type `boolean` is inferrable"
+
+const s = "already inferred";
+let z: number;
+const fromCall: number = Number("1");
+
+function g(
+    x = "hi", // want "type `string` is inferrable"
+    y = 5, // want "type `number` is inferrable"
+    z = true, // want "type `boolean` is inferrable"
+) {
+    return x + y + String(z);
+}
+
+function h(x: string) {
+    return x;
+}

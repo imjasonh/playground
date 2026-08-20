@@ -1,0 +1,13 @@
+name = "a"  # want "duplicate key"
+name = "b"
+
+ok = 1
+other = 2
+
+[pkg]
+name = "c"  # want "duplicate key"
+name = "d"
+
+[unique]
+name = "once"
+version = "1"

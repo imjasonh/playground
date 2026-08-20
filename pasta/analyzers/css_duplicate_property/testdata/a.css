@@ -1,0 +1,16 @@
+a {
+    color: pink; /* want "duplicate property" */
+    color: orange;
+    color: red;
+}
+
+b {
+    color: pink;
+    background: blue;
+}
+
+c {
+    color: pink;
+    background: blue;
+    color: red;
+}
