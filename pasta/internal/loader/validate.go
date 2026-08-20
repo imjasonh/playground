@@ -259,6 +259,7 @@ var predicateCaptureArgs = map[string][]int{
 	"nil_comparison":       {0, 1, 2},
 	"last_non_blank":       {0, 1},
 	"same_ident":           {0, 1},
+	"not_same_ident":       {0, 1},
 	"has_fact":             {0},
 	"not_has_fact":         {0},
 	"ancestor_is":          {0},

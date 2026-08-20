@@ -1,0 +1,19 @@
+package a
+
+import "time"
+
+func badParse() {
+	time.Parse("2006-01-02", "2020-01-02") // want "2006-02-01 should be 2006-01-02"
+}
+
+func badFormat(t time.Time) string {
+	return t.Format("2006-01-02") // want "2006-02-01 should be 2006-01-02"
+}
+
+func okParse() {
+	time.Parse("2006-01-02", "2020-01-02")
+}
+
+func okFormat(t time.Time) string {
+	return t.Format("2006-01-02")
+}

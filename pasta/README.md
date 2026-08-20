@@ -52,7 +52,7 @@ go run ./cmd/pasta test analyzers/js_double_equals
 | [go_negcmp](./analyzers/go_negcmp/go_negcmp.cue) ✏️                           | `!(a == b)` → `a != b`, `!(a != b)` → `a == b` |
 | [go_errors_is_nil](./analyzers/go_errors_is_nil/go_errors_is_nil.cue) ✏️      | `errors.Is(err, nil)` → `err == nil` |
 | [go_empty_else](./analyzers/go_empty_else/go_empty_else.cue) ✏️               | Drop `else { }` empty-else branches |
-| [go_self_assignment](./analyzers/go_self_assignment/go_self_assignment.cue) ✏️ | Delete `x = x` self-assignments |
+| [go_self_assignment](./analyzers/go_self_assignment/go_self_assignment.cue) ✏️ | Delete `x = x` self-assignments (vet [`assign`](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/assign)) |
 | [go_panic_empty](./analyzers/go_panic_empty/go_panic_empty.cue)               | Flag `panic("")` with empty message |
 | [go_test_context](./analyzers/go_test_context/go_test_context.cue) ✏️         | `context.Background()` / `context.TODO()` → `t.Context()` in `*_test.go` |
 | [go_string_concat_empty](./analyzers/go_string_concat_empty/go_string_concat_empty.cue) ✏️ | Drop empty operand in `"" + x` / `x + ""` |
@@ -62,6 +62,35 @@ go run ./cmd/pasta test analyzers/js_double_equals
 | [go_unused_export](./analyzers/go_unused_export/go_unused_export.cue)         | Flag exported funcs that no file in the analysis group calls (cross-file fact passing) |
 | [go_taint](./analyzers/go_taint/go_taint.cue)                                  | Track taint from `os.Getenv` through assignments to `exec.Command` (fact passing + fixpoint) |
 | [go_api_migration](./analyzers/go_api_migration/go_api_migration.cue) ✏️       | Worked example: ship a `.cue` adapter for breaking API changes -- added trailing arg (`widget.Render(x)` → `widget.Render(x, nil)`) and rename (`widget.OldName` → `widget.NewName`) |
+
+Syntactic ports of [`golang.org/x/tools/go/analysis/passes`](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes). Each rule matches trees, not types; the CUE file documents what the original analyzer does that Pasta cannot. `assign` is `go_self_assignment` earlier in this table. Passes that need types, SSA, sizes, or assembly are omitted, including `composite`, `errorsas`, `nilfunc`, and `unmarshal` (pointer vs value, or function vs another identifier of the same name, is not visible from the tree). The playground enrolls these ports as `.pasta/` symlinks.
+
+| Path | What it does |
+|---|---|
+| [go_appends](./analyzers/go_appends/go_appends.cue)                           | Flag `append(s)` with no values |
+| [go_atomic](./analyzers/go_atomic/go_atomic.cue)                             | Flag `x = atomic.AddInt32(&x, 1)` (non-atomic store of the add) |
+| [go_bools](./analyzers/go_bools/go_bools.cue)                                 | Flag redundant `x \|\| x` / `x && x` and suspect `x != a \|\| x != b` |
+| [go_copylock](./analyzers/go_copylock/go_copylock.cue)                       | Flag `sync.Mutex` / `sync.RWMutex` passed by value |
+| [go_deepequalerrors](./analyzers/go_deepequalerrors/go_deepequalerrors.cue)   | Flag `reflect.DeepEqual` on `errors.New` / `fmt.Errorf` |
+| [go_defers](./analyzers/go_defers/go_defers.cue)                             | Flag `time.Since` evaluated as a deferred call argument |
+| [go_hostport](./analyzers/go_hostport/go_hostport.cue)                       | Flag `fmt.Sprintf("%s:%d", host, port)`; use `net.JoinHostPort` |
+| [go_httpresponse](./analyzers/go_httpresponse/go_httpresponse.cue)           | Flag `defer resp.Body.Close()` immediately after `http.Get` |
+| [go_lostcancel](./analyzers/go_lostcancel/go_lostcancel.cue)                 | Flag discarding the cancel func from `context.WithCancel` |
+| [go_printf](./analyzers/go_printf/go_printf.cue)                             | Flag `fmt.Printf`/`Sprintf`/`Errorf` with a verb and no operand |
+| [go_shift](./analyzers/go_shift/go_shift.cue)                                 | Flag `x << 64` (and larger) integer-literal shift counts |
+| [go_sigchanyzer](./analyzers/go_sigchanyzer/go_sigchanyzer.cue) ✏️             | `signal.Notify(make(chan T))` → buffer the channel with `, 1` |
+| [go_slog](./analyzers/go_slog/go_slog.cue)                                   | Flag `slog.Info("msg", "key")` missing a value |
+| [go_sortslice](./analyzers/go_sortslice/go_sortslice.cue)                     | Flag `sort.Slice` comparison funcs that do not take two parameters |
+| [go_stdmethods](./analyzers/go_stdmethods/go_stdmethods.cue)                 | Flag `String`/`Error`/`ReadByte` methods with the wrong signature |
+| [go_stringintconv](./analyzers/go_stringintconv/go_stringintconv.cue) ✏️       | `string(123)` → `string(rune(123))` |
+| [go_structtag](./analyzers/go_structtag/go_structtag.cue)                     | Flag malformed struct tags and json/xml tags on unexported fields |
+| [go_testinggoroutine](./analyzers/go_testinggoroutine/go_testinggoroutine.cue) | Flag `t.Fatal` from a goroutine started by the test |
+| [go_tests](./analyzers/go_tests/go_tests.cue)                                 | Flag `Test`/`Benchmark`/`Fuzz` funcs in `*_test.go` with no testing parameter |
+| [go_timeformat](./analyzers/go_timeformat/go_timeformat.cue) ✏️               | `2006-02-01` → `2006-01-02` in time layouts |
+| [go_unreachable](./analyzers/go_unreachable/go_unreachable.cue)               | Flag the statement immediately after `return` or `panic` |
+| [go_unsafeptr](./analyzers/go_unsafeptr/go_unsafeptr.cue)                     | Flag `unsafe.Pointer(uintptr(...))` |
+| [go_unusedresult](./analyzers/go_unusedresult/go_unusedresult.cue) ✏️           | Flag unused `fmt.Sprintf`, `errors.New`, `context.With*`, `slices.*`, `sort.Reverse` |
+| [go_waitgroup](./analyzers/go_waitgroup/go_waitgroup.cue)                     | Flag `WaitGroup.Add` as the first statement of a new goroutine |
 
 **Python**
 
