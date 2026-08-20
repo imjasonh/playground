@@ -1,5 +1,7 @@
-// js_preserve_caught_error flags throwing a new error from catch without passing the cause.
-// ESLint `preserve-caught-error` covers the same ground.
+// js_preserve_caught_error flags `catch (e) { throw new Error(...) }`
+// when the thrown `new` expression does not pass `{ cause: … }`.
+// ESLint `preserve-caught-error` covers the same ground. The word
+// "because" in a message is not treated as a cause property.
 
 package js_preserve_caught_error
 
@@ -42,7 +44,7 @@ js_preserve_caught_error: schema.#Analyzer & {
 					}]
 				}
 			}
-			where: [{op: "not_matches", args: ["@thrown", "cause"]}]
+			where: [{op: "not_matches", args: ["@thrown", "\\bcause\\s*:"]}]
 		}
 		diagnose: {
 			severity: "warning"

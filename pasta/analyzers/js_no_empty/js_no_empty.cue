@@ -1,5 +1,7 @@
-// js_no_empty flags empty if block.
-// ESLint `no-empty` covers the same ground.
+// js_no_empty flags empty if / while / for blocks. ESLint `no-empty`
+// covers the same ground. A block that only holds a comment
+// (`if (x) { /* ignore */ }`) is treated as intentional and is left
+// alone.
 
 package js_no_empty
 
@@ -15,6 +17,11 @@ _langs: [jslang.Name, tslang.Name, tsxlang.Name]
 _base: {
 	languages: _langs
 }
+
+_emptyBlock: [
+	{op: "empty", args:       ["@body"]},
+	{op: "not_matches", args: ["@body", "//|/\\*"]},
+]
 
 js_no_empty: schema.#Analyzer & {
 	name:    "js_no_empty"
@@ -32,7 +39,7 @@ js_no_empty: schema.#Analyzer & {
 			fields: {
 				consequence: {capture: "body", pattern: {node: "statement_block"}}
 			}
-			where: [{op: "empty", args: ["@body"]}]
+			where: _emptyBlock
 		}
 		diagnose: {
 			severity: "warning"
@@ -49,7 +56,7 @@ js_no_empty: schema.#Analyzer & {
 			fields: {
 				body: {capture: "body", pattern: {node: "statement_block"}}
 			}
-			where: [{op: "empty", args: ["@body"]}]
+			where: _emptyBlock
 		}
 		diagnose: {
 			severity: "warning"
@@ -66,7 +73,7 @@ js_no_empty: schema.#Analyzer & {
 			fields: {
 				body: {capture: "body", pattern: {node: "statement_block"}}
 			}
-			where: [{op: "empty", args: ["@body"]}]
+			where: _emptyBlock
 		}
 		diagnose: {
 			severity: "warning"
