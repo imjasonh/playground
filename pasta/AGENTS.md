@@ -188,7 +188,7 @@ Recognized config fields, all optional:
 ```cue
 imports: {"github.com/alice/lint-rules": "v1.2.3"}  // remote rule modules
 disabled_rules: ["go_iferr", "todo_format"]         // skip analyzers or rules
-disabled_on: {yaml_truthy: ["ios/**/project.yml"]}   // skip analyzers or rules on matching paths
+disabled_on: {yaml_truthy: ["**/project.yml"]}       // skip analyzers or rules on matching paths
 severity: {go_panic_empty: "error"}                  // override per analyzer/rule
 skip: ["build", "dist"]                              // extra ./... walk skip-dirs
 max_file_size: 2_000_000                              // bytes; 0 disables; default 1 MiB
@@ -202,8 +202,8 @@ individual **rule** names (`inline_define`, `force_unwrap`).
 `disabled_on` uses the same names but only skips those rules on files
 whose slash-separated path matches one of the listed globs. `**`
 matches zero or more directories. Globs are compared against the file
-path and every `/`-suffix of it, so `ios/**/project.yml` matches
-`ios/project.yml` and `/abs/ios/foo/project.yml`. Other rules still
+path and every `/`-suffix of it, so `**/project.yml` matches
+`ios/project.yml` and `/abs/hello-macos/project.yml`. Other rules still
 run on those files.
 `skip` is consumed by the CLI, unioned with `-skip` and the built-in
 defaults. Severity values are validated — anything outside

@@ -21,7 +21,7 @@ import (
 //
 //	imports: { "github.com/alice/lint-rules": "v1.2.3" } // remote rules
 //	disabled_rules: ["go_iferr", "todo_format"]          // skip analyzers or rules
-//	disabled_on:    {yaml_truthy: ["ios/**/project.yml"]} // skip analyzers or rules on matching paths
+//	disabled_on:    {yaml_truthy: ["**/project.yml"]}     // skip analyzers or rules on matching paths
 //	severity:       {go_panic_empty: "error"}            // override per analyzer/rule
 //	skip:           ["build", "dist"]                    // extra ./... walk skip-dirs
 //	max_file_size:  2_000_000                            // bytes; 0 = unlimited

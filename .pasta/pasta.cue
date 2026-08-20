@@ -18,9 +18,9 @@ skip: [
 
 // XcodeGen uses YES/NO for build settings. yaml_truthy would rewrite
 // those to true/false, which Xcode does not accept. Other YAML rules
-// still run on this file.
+// still run on those files.
 disabled_on: {
-	yaml_truthy: ["ios/**/project.yml"]
+	yaml_truthy: ["**/project.yml"]
 }
 
 // Keep the per-file parse timeout; hang defense still matters.
