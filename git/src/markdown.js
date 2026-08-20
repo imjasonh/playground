@@ -40,7 +40,7 @@ function safeUrl(url) {
 // HTML (code/links/images) from the later escape + emphasis passes.
 const PH_OPEN = '\u0000';
 const PH_CLOSE = '\u0001';
-const PH_RE = /\u0000(\d+)\u0001/g;
+const PH_RE = /\u0000(\d+)\u0001/g; // pasta:ignore js_no_control_regex
 
 /** Render inline Markdown (within a single block) to safe HTML. */
 function parseInline(input) {
