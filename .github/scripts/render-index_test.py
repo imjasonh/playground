@@ -66,6 +66,7 @@ def make_site(tmp: Path) -> Path:
                 "title": "Fix bug",
                 "apps": ["artillery", "git"],
                 "posts": True,
+                "index": True,
             }
         )
     )
@@ -105,6 +106,7 @@ def test_scan_previews_sorted_and_filtered() -> None:
         check(numbers == [12, 7], f"previews sorted desc, manifest-only: {numbers}")
         check(previews[0]["apps"] == ["artillery", "git"], "preview apps preserved")
         check(previews[0]["posts"] is True, "preview posts flag preserved")
+        check(previews[0]["index"] is True, "preview index flag preserved")
 
 
 def test_render_site_has_apps_previews_and_workers() -> None:
@@ -132,6 +134,7 @@ def test_render_site_has_apps_previews_and_workers() -> None:
         check("__WORKERS__" not in out, "workers placeholder replaced")
         check("__REPO_URL__" not in out, "repo url placeholder replaced")
         check(">posts<" in out or ", posts" in out, "preview card mentions posts")
+        check(">index<" in out or ", index" in out, "preview card mentions index")
 
 
 def test_render_without_previews_or_workers_omits_sections() -> None:

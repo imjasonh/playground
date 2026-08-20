@@ -105,6 +105,7 @@ def scan_previews(root: Path) -> list[dict]:
                 "title": str(data.get("title", "")),
                 "apps": [str(a) for a in data.get("apps", []) if a],
                 "posts": bool(data.get("posts")),
+                "index": bool(data.get("index")),
             }
         )
     previews.sort(key=lambda p: p["number"], reverse=True)
@@ -153,6 +154,8 @@ def render_previews_section(previews: list[dict], repo_url: str) -> str:
         labels = list(p["apps"])
         if p.get("posts"):
             labels.append("posts")
+        if p.get("index"):
+            labels.append("index")
         apps_line = ""
         if labels:
             apps_line = (
