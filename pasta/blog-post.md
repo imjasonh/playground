@@ -1,4 +1,4 @@
-# `pasta`
+# `pasta`: a polyglot linter/fixer for monorepos
 
 I believe that monorepos are the future. For the record, I believed that _before_ LLMs could write tens of thousands of lines of code before I finished checking Slack. It's only more true now.
 
