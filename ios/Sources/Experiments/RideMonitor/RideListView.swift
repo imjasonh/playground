@@ -4,9 +4,9 @@ import SwiftUI
 /// just recorded shows up.
 struct RideListView: View {
     @State private var rides: [Ride] = []
-    @State private var isExportingIndividualFiles = false
-    @State private var individualExportURLs: [URL] = []
-    @State private var individualExportDirectory: URL?
+    @State private var isSavingZipFile = false
+    @State private var zipExportDocument: RideZipFileDocument?
+    @State private var zipExportFilename = RideJSONLExporter.filenameForAllRidesZip()
     @State private var isSavingCombinedFile = false
     @State private var combinedExportDocument: RideJSONLFileDocument?
     @State private var combinedExportFilename = RideJSONLExporter.filenameForAllRides()
@@ -37,9 +37,9 @@ struct RideListView: View {
                 if !rides.isEmpty {
                     Menu {
                         Button {
-                            beginIndividualFilesExport()
+                            beginZipExport()
                         } label: {
-                            Label("Save to Files…", systemImage: "folder")
+                            Label("Save ZIP…", systemImage: "doc.zipper")
                         }
                         .accessibilityIdentifier("saveAllRidesToFilesButton")
 
@@ -77,6 +77,17 @@ struct RideListView: View {
             Text(exportErrorMessage ?? "")
         }
         .fileExporter(
+            isPresented: $isSavingZipFile,
+            document: zipExportDocument,
+            contentType: .zip,
+            defaultFilename: zipExportFilename
+        ) { result in
+            if case .failure(let error) = result {
+                exportErrorMessage = error.localizedDescription
+            }
+            zipExportDocument = nil
+        }
+        .fileExporter(
             isPresented: $isSavingCombinedFile,
             document: combinedExportDocument,
             contentType: RideJSONLExporter.contentType,
@@ -87,18 +98,6 @@ struct RideListView: View {
             }
             combinedExportDocument = nil
         }
-        #if canImport(UIKit)
-        .background {
-            if isExportingIndividualFiles {
-                RideBulkFilesExporter(
-                    urls: individualExportURLs,
-                    isPresented: $isExportingIndividualFiles,
-                    onFinished: cleanupIndividualExport
-                )
-                .frame(width: 0, height: 0)
-            }
-        }
-        #endif
     }
 
     private func row(for ride: Ride) -> some View {
@@ -139,22 +138,14 @@ struct RideListView: View {
         return String(format: "%d:%02d", total / 60, total % 60)
     }
 
-    private func beginIndividualFilesExport() {
-        cleanupIndividualExport()
+    private func beginZipExport() {
         do {
-            let directory = try RideJSONLExporter.makeBulkExportDirectory()
-            let urls = try RideJSONLExporter.writeIndividualFiles(for: rides, to: directory)
-            individualExportDirectory = directory
-            individualExportURLs = urls
-            #if canImport(UIKit)
-            isExportingIndividualFiles = true
-            #else
-            exportErrorMessage = "Saving individual ride files requires iOS."
-            cleanupIndividualExport()
-            #endif
+            let data = try RideJSONLExporter.zipData(for: rides)
+            zipExportFilename = RideJSONLExporter.filenameForAllRidesZip()
+            zipExportDocument = RideZipFileDocument(data: data)
+            isSavingZipFile = true
         } catch {
             exportErrorMessage = error.localizedDescription
-            cleanupIndividualExport()
         }
     }
 
@@ -167,13 +158,5 @@ struct RideListView: View {
         } catch {
             exportErrorMessage = error.localizedDescription
         }
-    }
-
-    private func cleanupIndividualExport() {
-        if let directory = individualExportDirectory {
-            try? FileManager.default.removeItem(at: directory)
-        }
-        individualExportDirectory = nil
-        individualExportURLs = []
     }
 }
