@@ -13,6 +13,7 @@
     --border: #e3e6ec;
     --text: #1b1f24;
     --muted: #656d78;
+    --meta-updated: #9aa1ab;
     --accent: #3b5bdb;
     --accent-soft: #eef1ff;
     --shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 8px 24px rgba(16, 24, 40, .06);
@@ -26,6 +27,7 @@
       --border: #262c36;
       --text: #e6edf3;
       --muted: #99a3b3;
+      --meta-updated: #6b7380;
       --accent: #7c93ff;
       --accent-soft: #1a2138;
       --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .35);
@@ -213,6 +215,16 @@
     font-size: .8rem;
     color: var(--muted);
   }
+  ul.post-list .meta .updated { color: var(--meta-updated); }
+  h2 a.feed {
+    margin-left: auto;
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 500;
+    color: var(--accent);
+    text-decoration: none;
+  }
+  h2 a.feed:hover { text-decoration: underline; }
 </style>
 </head><body>
 <main>
@@ -222,18 +234,18 @@
   </header>
 
   <section class="posts">
-    <h2>Posts</h2>
+    <h2>Posts <a class="feed" href="posts/feed.xml">RSS</a></h2>
     <ul class="post-list">
       <li>
         <a href="posts/pasta/">
           <span class="title">pasta: a polyglot linter/fixer for monorepos</span>
-        <span class="meta">August 19, 2026 · Updated August 20, 2026</span>
+        <span class="meta"><span class="published">August 19, 2026</span> · <span class="updated">Updated August 20, 2026</span></span>
         </a>
       </li>
       <li>
         <a href="posts/its-not-jaws/">
           <span class="title">It&#x27;s Not Jaws</span>
-        <span class="meta">August 7, 2026 · Updated August 20, 2026</span>
+        <span class="meta"><span class="published">August 7, 2026</span> · <span class="updated">Updated August 20, 2026</span></span>
         </a>
       </li>
     </ul>
@@ -259,6 +271,21 @@
       <li><a href="web-push-demo/">web-push-demo</a></li>
       <li><a href="webrtc/">webrtc</a></li>
     </ul>
+  </section>
+
+  <section class="previews">
+    <h2>Active previews <span class="count">1</span></h2>
+    <div class="preview-list">
+      <div class="preview-card">
+        <span class="pr">PR #255</span>
+        <span class="title">Add posts RSS and apply web-typography skill</span>
+        <span class="apps">posts</span>
+        <span class="links">
+          <a class="open" href="preview/pr-255/">Open preview</a>
+          <a href="https://github.com/imjasonh/playground/pull/255">View PR</a>
+        </span>
+      </div>
+    </div>
   </section>
 
 
