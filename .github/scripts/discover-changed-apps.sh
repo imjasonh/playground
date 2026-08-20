@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Discover changed testable browser apps, Go modules, Rust apps, iOS apps,
 # macOS apps, inkbot-esp32 firmware, whether the pasta style leg should run,
-# and whether the posts catalog builder should run.
+# whether the posts catalog builder should run, and whether the Pages home-page
+# index renderer should run.
 set -euo pipefail
 
 : "${EVENT_NAME:?EVENT_NAME must be set}"
@@ -37,6 +38,11 @@ blog_from_changes() {
   printf '%s\n' "$1" | bash .github/scripts/discover-blog.sh --from-changes | sed -n 's/^blog=//p'
 }
 
+index_from_changes() {
+  # discover-index.sh prints `index=true|false`; strip the key.
+  printf '%s\n' "$1" | bash .github/scripts/discover-index.sh --from-changes | sed -n 's/^index=//p'
+}
+
 if [ "$EVENT_NAME" = "pull_request" ]; then
   : "${BASE_REF:?BASE_REF must be set for pull requests}"
   git fetch origin "$BASE_REF"
@@ -54,6 +60,7 @@ else
     inkbot_esp32='["inkbot-esp32"]'
     pasta=true
     blog=true
+    index=true
     {
       echo "apps=${apps}"
       echo "modules=${modules}"
@@ -63,6 +70,7 @@ else
       echo "inkbot_esp32=${inkbot_esp32}"
       echo "pasta=${pasta}"
       echo "blog=${blog}"
+      echo "index=${index}"
     } >> "$GITHUB_OUTPUT"
     echo "Testable browser apps: ${apps}"
     echo "Go apps: ${modules}"
@@ -72,6 +80,7 @@ else
     echo "inkbot-esp32: ${inkbot_esp32}"
     echo "pasta: ${pasta}"
     echo "blog: ${blog}"
+    echo "index: ${index}"
     exit 0
   else
     changed=$(git diff --name-only "$BEFORE_SHA" "$HEAD_SHA")
@@ -87,6 +96,7 @@ if [ -z "$changed" ]; then
   inkbot_esp32='[]'
   pasta=false
   blog=false
+  index=false
 else
   apps=$(printf '%s\n' "$changed" | bash .github/scripts/discover-testable-apps.sh --from-changes)
   modules=$(printf '%s\n' "$changed" | bash .github/scripts/discover-go-modules.sh --from-changes)
@@ -96,6 +106,7 @@ else
   inkbot_esp32=$(inkbot_esp32_from_changes "$changed")
   pasta=$(pasta_from_changes "$changed")
   blog=$(blog_from_changes "$changed")
+  index=$(index_from_changes "$changed")
 fi
 
 {
@@ -107,6 +118,7 @@ fi
   echo "inkbot_esp32=${inkbot_esp32}"
   echo "pasta=${pasta}"
   echo "blog=${blog}"
+  echo "index=${index}"
 } >> "$GITHUB_OUTPUT"
 
 echo "Changed paths:"
@@ -119,3 +131,4 @@ echo "macOS apps: ${macos}"
 echo "inkbot-esp32: ${inkbot_esp32}"
 echo "pasta: ${pasta}"
 echo "blog: ${blog}"
+echo "index: ${index}"

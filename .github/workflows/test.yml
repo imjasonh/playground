@@ -86,3 +86,7 @@ jobs:
           - name: Test posts catalog
             if: ${{ steps.discover.outputs.blog == 'true' }}
             run: bash .github/scripts/test-blog.sh
+
+          - name: Test site index
+            if: ${{ steps.discover.outputs.index == 'true' }}
+            run: bash .github/scripts/test-index.sh

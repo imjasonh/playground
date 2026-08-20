@@ -124,7 +124,7 @@ release design (Developer ID + notarization + Sparkle appcast on GitHub Pages).
 
 Human-authored project posts (`blog-post.md` next to an experiment) publish to
 [`/posts/`](https://imjasonh.github.io/playground/posts/) (with an
-[RSS feed](https://imjasonh.github.io/playground/posts/feed.xml)) and are
-listed above the browser apps on the home page.
+[RSS feed](https://imjasonh.github.io/playground/posts/feed.xml)). The home
+page header links to that catalog.
 
 See [`AGENTS.md`](AGENTS.md) for repository conventions, CI, and how to add a new app.

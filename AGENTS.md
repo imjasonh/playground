@@ -166,9 +166,9 @@ discovery scripts.
 |----------|---------|---------|
 | `deploy.yml` | push to `main` | Publishes all browser apps to GitHub Pages production |
 | `deploy-workers.yml` | push to `main`, manual | Deploys changed Cloudflare Worker apps (those with `wrangler.toml`) with `wrangler`, using the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets; a manual *Run workflow* (`workflow_dispatch`) redeploys all of them. Before deploy it create-or-gets each Worker's KV namespaces (substituting the placeholder ids in `wrangler.toml`), creates any declared R2 buckets that don't exist, and applies remote D1 migrations for declared `[[d1_databases]]`; after deploy it get-or-generates a `VAPID_PRIVATE_KEY` secret for any Worker shipping an `examples/genvapid.rs` |
-| `preview.yml` | pull request opened/sync | When a browser app or the posts catalog changed: deploys under `/preview/pr-<N>/` and comments the URL; otherwise no-ops |
+| `preview.yml` | pull request opened/sync | When a browser app, the posts catalog, or the Pages home-page index changed: deploys under `/preview/pr-<N>/` and comments the URL; otherwise no-ops |
 | `cleanup.yml` | pull request closed, manual | Removes closed-PR preview dirs from `gh-pages` (reconciles all open PRs) and refreshes the root index |
-| `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps, plus the pasta style leg and posts catalog, in one job |
+| `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps, plus the pasta style leg, posts catalog, and site index, in one job |
 | `inkbot-esp32.yml` | push to `main`, pull requests, manual | Always runs discover + host/firmware jobs (so they can be required checks); host/firmware no-op when `inkbot-esp32/` (or this workflow) is unchanged (excluded from `test.yml`) |
 | `ios.yml` | push to `main`, pull requests | Tests changed iOS apps on macOS; on `main`, delivers them to TestFlight |
 | `macos.yml` | push to `main`, pull requests | Tests changed macOS apps on macOS; on `main`, ships notarized Sparkle updates when secrets are present |
@@ -184,18 +184,21 @@ Deploy workflows copy browser app directories as-is (they do **not** run
 commit source files—never commit `node_modules/` or Go/Rust build artifacts.
 
 The production home page (`index.html` at the Pages root) is generated at build
-time by `.github/scripts/render-index.py` from the shared template. It has a
-**Posts** section (from the generated `posts/index.json` catalog) above a
+time by `.github/scripts/render-index.py` from the shared template. The header
+links to the generated **Posts** catalog (`posts/`). The page then lists a
 **Browser apps** section (the deployed `index.html` directories) and a separate
 **Cloudflare Workers apps** section (directories with `wrangler.toml`). Workers
 are not served from Pages, so the renderer discovers them by scanning the repo
 source tree (`--source-dir`, defaulting to the checkout it runs from) and links
 each to its source on GitHub. Under the browser apps it lists **active PR
-previews**: `preview.yml` discovers changed browser apps and posts-catalog
-files first and **skips deploy + PR comment** when neither changed (so
-Go/Rust/iOS/CI-only PRs, whose preview would be identical to production, stay
-quiet). When a browser app or post did change it writes `preview/pr-<N>/preview.json`
-and comments the URL. `deploy.yml` also runs
+previews**: `preview.yml` discovers changed browser apps, posts-catalog
+files, and the Pages home-page index first and **skips deploy + PR comment**
+when none of those changed (so Go/Rust/iOS/CI-only PRs, whose preview would be
+identical to production, stay quiet). If any of those changed, it writes
+`preview/pr-<N>/preview.json` and comments the URL. The preview directory is
+built from the PR. The production home page is regenerated with the PR base
+branch's index template, so an unmerged template change does not go live.
+`deploy.yml` also runs
 `.github/scripts/build-blog.py` to publish `/posts/` from every `blog-post.md`
 in the source tree. `deploy.yml`, `preview.yml`, and `cleanup.yml` each
 regenerate the root index from the published `gh-pages` tree so the list stays
@@ -215,6 +218,8 @@ also run `.github/scripts/prune-orphaned-previews.sh`, which deletes every
 `workflow_dispatch` for a manual reconcile). `discover-browser-apps.sh` reports
 which browser apps a change set touched; `render-index_test.py` covers the
 renderer (run `python3 .github/scripts/render-index_test.py`),
+`discover-index_test.sh` covers when the site-index preview/CI leg runs (run
+`bash .github/scripts/discover-index_test.sh`),
 `prune-orphaned-apps_test.sh` covers the app pruner (run
 `bash .github/scripts/prune-orphaned-apps_test.sh`), and
 `prune-orphaned-previews_test.sh` covers the preview pruner (run
@@ -237,9 +242,9 @@ builder is covered by `python3 .github/scripts/build-blog_test.py`.
 - Posts RSS: `https://<owner>.github.io/<repo>/preview/pr-<N>/posts/feed.xml`
 
 The preview workflow posts the preview root URL on the PR when the PR
-changes a browser app or the posts catalog (same condition as writing
-`preview.json`); other Go/Rust/iOS/CI-only PRs get neither a deploy nor a
-comment.
+changes a browser app, the posts catalog, or the Pages home-page index (same
+condition as writing `preview.json`); other Go/Rust/iOS/CI-only PRs get
+neither a deploy nor a comment.
 
 ## Testing (`test.yml`)
 
@@ -247,7 +252,7 @@ Every push to `main` and every pull request runs a single `test` job. It first
 discovers which apps changed
 (`.github/scripts/discover-changed-apps.sh`), then tests **only the changed apps
 of each type**, installing each toolchain (Node, Go, Rust) only when that type
-has work to do and running the browser / Go / Rust / pasta / posts test legs concurrently via
+has work to do and running the browser / Go / Rust / pasta / posts / site-index test legs concurrently via
 an Actions `parallel:` step group (same pattern as `deps.yaml`). When a type has
 no changes its steps are skipped, so the run is one `test` check with no empty
 or skipped legs. On the first push to `main` (no prior commit), every app is
@@ -270,6 +275,7 @@ but is excluded from Rust discovery because it needs the espup Xtensa toolchain;
 | Rust | `Cargo.toml` | `cargo fmt --check` → `cargo clippy --locked --all-targets -D warnings` → `cargo test --locked`; Cloudflare Worker apps (with `wrangler.toml`) also run wasm clippy + a release `wasm32-unknown-unknown` build, then the wrangler `[build]` command (with a decoy `package.json` like wrangler-action creates) so Test covers the deploy artifact path. Crates set `[lints.rust] unused = "deny"` so unused methods fail even without clippy. |
 | pasta | `pasta/` / `.pasta/` / lintable sources (`.go`, `.js`, `.ts`, `.tsx`, `.jsx`, `.rs`, `.swift`, `.sh`, `.yml`, `.yaml`, `.html`, `.css`, `.toml`, `.tf`, `.tfvars`, `.hcl`, …) via `discover-pasta.sh` | `go build ./pasta/cmd/pasta` → `pasta test .pasta` → `pasta -fail-on=warning ./...` |
 | posts | any `blog-post.md`, or `.github/scripts/build-blog*` / `test-blog.sh` / `discover-blog.sh` / the blog page templates, via `discover-blog.sh` | `python3 .github/scripts/build-blog_test.py` |
+| site index | `.github/pages/index.html.tmpl`, `render-index.py`, `publish-site-index.sh`, or the index discovery/test scripts, via `discover-index.sh` | `python3 .github/scripts/render-index_test.py` and `bash .github/scripts/discover-index_test.sh` |
 
 Go is the only ecosystem here with a stable, first-class data-race detector (`go test -race`). Rust ThreadSanitizer is still nightly-only and cannot instrument `wasm32-unknown-unknown` Worker tests; JavaScript/Node has no equivalent flag. Those legs stay as they are.
 
@@ -319,11 +325,13 @@ bash .github/scripts/discover-go-modules.sh --all      # Go
 bash .github/scripts/discover-rust-apps.sh --all       # Rust
 bash .github/scripts/discover-pasta.sh --all           # pasta style leg
 bash .github/scripts/discover-blog.sh --all            # posts catalog
+bash .github/scripts/discover-index.sh --all           # Pages home-page index
 
 # Only what a diff touched (what CI uses on a PR)
 git diff --name-only origin/main...HEAD | bash .github/scripts/discover-rust-apps.sh --from-changes
 git diff --name-only origin/main...HEAD | bash .github/scripts/discover-pasta.sh --from-changes
 git diff --name-only origin/main...HEAD | bash .github/scripts/discover-blog.sh --from-changes
+git diff --name-only origin/main...HEAD | bash .github/scripts/discover-index.sh --from-changes
 ```
 
 ## Dependency updates (`deps.yaml`)
@@ -594,8 +602,8 @@ bundle exec fastlane test
   `gh pr view <number> --json state` (or the GitHub UI / PR URL) before
   `git push`.
 - CI must pass (changed browser apps are tested; changed Go and Rust apps are built and tested).
-- Preview deploy provides a live URL when a browser app or the posts catalog
-  changed—use it to verify browser behavior, especially mobile.
+- Preview deploy provides a live URL when a browser app, the posts catalog, or
+  the Pages home-page index changed. Use it to verify browser behavior, especially mobile.
 - If the repo uses Linear integration, include `Resolves ABC-123` in the PR body when applicable.
 
 ## Current browser apps
