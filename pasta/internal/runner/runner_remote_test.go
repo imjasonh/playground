@@ -1,7 +1,6 @@
 package runner_test
 
 import (
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -137,7 +136,7 @@ flag_pkg: schema.#Analyzer & {
 	if err := os.WriteFile(srcPath, src, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	results, err := runner.RunGroup(context.Background(),
+	results, err := runner.RunGroup(t.Context(),
 		[]runner.FileSpec{{Path: srcPath, Src: src}},
 		analyzers, false)
 	if err != nil {

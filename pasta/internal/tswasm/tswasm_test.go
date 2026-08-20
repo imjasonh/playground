@@ -1,14 +1,13 @@
 package tswasm
 
 import (
-	"context"
 	"testing"
 	"time"
 )
 
 func TestParseGo(t *testing.T) {
 	src := []byte("package p\n\nfunc F() {}\n")
-	tree, err := Parse(context.Background(), &Language{Grammar: "go"}, src, "", ParseOptions{})
+	tree, err := Parse(t.Context(), &Language{Grammar: "go"}, src, "", ParseOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,7 +26,7 @@ func TestParseGo(t *testing.T) {
 
 func TestParseHCL(t *testing.T) {
 	src := []byte("resource \"aws_s3_bucket\" \"example\" {\n  bucket = \"ok\"\n}\n")
-	tree, err := Parse(context.Background(), &Language{Grammar: "hcl"}, src, "", ParseOptions{})
+	tree, err := Parse(t.Context(), &Language{Grammar: "hcl"}, src, "", ParseOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +45,7 @@ func TestParseTimeout(t *testing.T) {
 	for i := 0; i < 3000; i++ {
 		src = append(src, []byte("func F() { var x int; _ = x }\n")...)
 	}
-	_, err := Parse(context.Background(), &Language{Grammar: "go"}, src, "", ParseOptions{
+	_, err := Parse(t.Context(), &Language{Grammar: "go"}, src, "", ParseOptions{
 		Timeout: time.Microsecond,
 	})
 	if err == nil {
@@ -56,7 +55,7 @@ func TestParseTimeout(t *testing.T) {
 
 func TestFieldNames(t *testing.T) {
 	src := []byte("package p\nfunc f() {\n\tif err != nil {\n\t\treturn\n\t}\n}\n")
-	tree, err := Parse(context.Background(), &Language{Grammar: "go"}, src, "", ParseOptions{})
+	tree, err := Parse(t.Context(), &Language{Grammar: "go"}, src, "", ParseOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

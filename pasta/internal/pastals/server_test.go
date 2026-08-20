@@ -2,7 +2,6 @@ package pastals
 
 import (
 	"bufio"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -27,7 +26,7 @@ func TestEndToEnd(t *testing.T) {
 	srv := New(c2sR, s2cW)
 
 	srvDone := make(chan error, 1)
-	go func() { srvDone <- srv.Run(context.Background()) }()
+	go func() { srvDone <- srv.Run(t.Context()) }()
 
 	client := newTestClient(t, c2sW, s2cR)
 	t.Cleanup(func() {
@@ -167,7 +166,7 @@ func TestInitializeRepliesBeforeRuleLoad(t *testing.T) {
 	srv := New(c2sR, s2cW)
 
 	srvDone := make(chan error, 1)
-	go func() { srvDone <- srv.Run(context.Background()) }()
+	go func() { srvDone <- srv.Run(t.Context()) }()
 
 	client := newTestClient(t, c2sW, s2cR)
 	t.Cleanup(func() {

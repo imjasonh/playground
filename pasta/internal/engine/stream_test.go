@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -48,7 +47,7 @@ func TestStreamingReadsPathLazily(t *testing.T) {
 		},
 	}
 
-	results, err := RunGroup(context.Background(), []FileInput{
+	results, err := RunGroup(t.Context(), []FileInput{
 		{FileID: path, Path: path, Lang: goLang}, // Src intentionally nil
 	}, []*dsl.Analyzer{analyzer}, WithParseTimeout(2*time.Second))
 	if err != nil {

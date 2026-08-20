@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"context"
 	"testing"
 
 	"github.com/imjasonh/playground/pasta/internal/dsl"
@@ -59,7 +58,7 @@ func main() {
 	inputs := []FileInput{{FileID: "a.go", Src: src, Lang: goLang}}
 
 	// First run: cache miss, expect to populate.
-	r1, err := RunGroup(context.Background(), inputs, []*dsl.Analyzer{analyzer}, WithCache(cache))
+	r1, err := RunGroup(t.Context(), inputs, []*dsl.Analyzer{analyzer}, WithCache(cache))
 	if err != nil {
 		t.Fatalf("first run: %v", err)
 	}
@@ -72,7 +71,7 @@ func main() {
 	}
 
 	// Second run: cache hit, same diagnostics, no rule eval needed.
-	r2, err := RunGroup(context.Background(), inputs, []*dsl.Analyzer{analyzer}, WithCache(cache))
+	r2, err := RunGroup(t.Context(), inputs, []*dsl.Analyzer{analyzer}, WithCache(cache))
 	if err != nil {
 		t.Fatalf("second run: %v", err)
 	}

@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -31,7 +30,7 @@ func TestStreamingParseTimeoutSetsSkipReason(t *testing.T) {
 		},
 	}
 	cache := parsecache.Open(t.TempDir(), parsecache.HashRules([]*dsl.Analyzer{a}), 0)
-	results, err := RunGroup(context.Background(), []FileInput{
+	results, err := RunGroup(t.Context(), []FileInput{
 		{FileID: "big.go", Src: src, Lang: goLang},
 	}, []*dsl.Analyzer{a}, WithParseTimeout(time.Microsecond), WithCache(cache))
 	if err != nil {

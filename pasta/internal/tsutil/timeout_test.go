@@ -18,7 +18,7 @@ func TestParseWithOptions_Timeout(t *testing.T) {
 	for i := 0; i < 2000; i++ {
 		src = append(src, []byte("func F"+itoa(i)+"() { var x int; _ = x }\n")...)
 	}
-	_, _, err := ParseWithOptions(context.Background(), &tswasm.Language{Grammar: "go"}, src, "big.go", ParseOptions{
+	_, _, err := ParseWithOptions(t.Context(), &tswasm.Language{Grammar: "go"}, src, "big.go", ParseOptions{
 		Timeout: time.Microsecond, // clamps to 1µs
 	})
 	if err == nil {
@@ -38,7 +38,7 @@ func TestParseWithOptions_CancelRace(t *testing.T) {
 	// Cancel during parse. Must stay -race clean: guest-memory stores
 	// from AfterFunc race with wazero Memory.Grow, so cancel only
 	// discards the result after the wasm Call returns.
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	var started atomic.Bool
 	go func() {
 		for !started.Load() {
