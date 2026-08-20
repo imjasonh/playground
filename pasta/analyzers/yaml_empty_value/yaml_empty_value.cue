@@ -4,6 +4,10 @@
 // they typically meant either an empty string `""` or to delete the
 // key. Common source of bugs in CI pipelines and Helm charts.
 //
+// `key: {}` is an empty mapping, not a missing value — pasta does not
+// flag it. GitHub Actions uses that form for event triggers with
+// default options (`workflow_dispatch: {}`, `pull_request: {}`).
+//
 // No auto-fix: we don't know whether the intent was `""`, `null`
 // explicit, or to delete the key.
 

@@ -12,8 +12,8 @@ name: inkbot-esp32
 on:
   push:
     branches: [main]
-  pull_request: # pasta:ignore missing_value
-  workflow_dispatch: # pasta:ignore missing_value
+  pull_request: {}
+  workflow_dispatch: {}
 
 concurrency:
   group: inkbot-esp32-${{ github.workflow }}-${{ github.ref }}

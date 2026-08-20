@@ -5,7 +5,7 @@ on:
     types: [closed]
   # Manual reconcile: prune every preview/pr-* whose PR is no longer open.
   # Useful after bulk-closes where some pull_request closed webhooks were dropped.
-  workflow_dispatch: # pasta:ignore missing_value
+  workflow_dispatch: {}
 
 # Production, preview, and cleanup workflows all update the same branch.
 concurrency:

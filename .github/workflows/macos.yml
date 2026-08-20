@@ -3,7 +3,7 @@ name: macOS
 on:
   push:
     branches: [main]
-  pull_request: # pasta:ignore missing_value
+  pull_request: {}
 
 concurrency:
   group: macos-${{ github.workflow }}-${{ github.ref }}

@@ -3,7 +3,7 @@ name: Test
 on:
   push:
     branches: [main]
-  pull_request: # pasta:ignore missing_value
+  pull_request: {}
 
 concurrency:
   group: test-${{ github.workflow }}-${{ github.ref }}
