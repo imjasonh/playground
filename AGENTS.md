@@ -193,7 +193,9 @@ links to the generated **Posts** catalog (`posts/`). The page then lists a
 **Cloudflare Workers apps** section (directories with `wrangler.toml`). Workers
 are not served from Pages, so the renderer discovers them by scanning the repo
 source tree (`--source-dir`, defaulting to the checkout it runs from) and links
-each to its source on GitHub. Under the browser apps it lists **active PR
+each to its deployed Worker at
+`https://<wrangler-name>.imjasonh.workers.dev` (the top-level `name` in that
+app's `wrangler.toml`). Under the browser apps it lists **active PR
 previews**: `preview.yml` discovers changed browser apps, posts-catalog
 files, and the Pages home-page index first and **skips deploy + PR comment**
 when none of those changed (so Go/Rust/iOS/CI-only PRs, whose preview would be
@@ -236,6 +238,8 @@ builder is covered by `python3 .github/scripts/build-blog_test.py`.
 - Posts: `https://<owner>.github.io/<repo>/posts/`
 - Posts RSS: `https://<owner>.github.io/<repo>/posts/feed.xml`
 - Example: `https://imjasonh.github.io/playground/kanoodle/`
+- Worker: `https://<wrangler-name>.imjasonh.workers.dev` (for example
+  `https://y.imjasonh.workers.dev`)
 
 ### PR preview URLs
 

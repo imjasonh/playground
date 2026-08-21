@@ -22,14 +22,19 @@ Browser apps and previews are discovered from the published site directory
 (``--dir``). Cloudflare Worker apps are not served from Pages, so they are
 discovered instead by scanning the repository source tree (``--source-dir``,
 defaulting to the repo checkout this script lives in) for wrangler.toml, and
-linked to their source on GitHub.
+linked to the deployed Worker at ``https://<name>.imjasonh.workers.dev``.
 """
 from __future__ import annotations
 
 import argparse
 import html
 import json
+import tomllib
 from pathlib import Path
+from typing import NamedTuple
+
+# Deployed Workers for this playground live on this workers.dev subdomain.
+WORKERS_DEV_HOST = "imjasonh.workers.dev"
 
 TEMPLATE_PATH = Path(__file__).resolve().parents[1] / "pages" / "index.html.tmpl"
 # The repository root: two levels up from .github/scripts/render-index.py.
@@ -56,7 +61,32 @@ def scan_apps(root: Path) -> list[str]:
     return apps
 
 
-def scan_workers(root: Path) -> list[str]:
+class WorkerApp(NamedTuple):
+    """A top-level Cloudflare Worker app discovered from wrangler.toml."""
+
+    directory: str
+    script_name: str
+
+
+def worker_script_name(wrangler_path: Path) -> str:
+    """Return the Wrangler script name, or the parent directory if unset.
+
+    The script name is the top-level ``name`` in wrangler.toml, which is also
+    the first label of the workers.dev hostname
+    (``https://<name>.imjasonh.workers.dev``).
+    """
+    fallback = wrangler_path.parent.name
+    try:
+        data = tomllib.loads(wrangler_path.read_text())
+    except (OSError, tomllib.TOMLDecodeError, UnicodeDecodeError):
+        return fallback
+    name = data.get("name")
+    if isinstance(name, str) and name.strip():
+        return name.strip()
+    return fallback
+
+
+def scan_workers(root: Path) -> list[WorkerApp]:
     """Top-level Cloudflare Worker apps in ``root`` (directories with wrangler.toml).
 
     Hidden directories are ignored, matching the deploy-workers definition of a
@@ -72,8 +102,9 @@ def scan_workers(root: Path) -> list[str]:
         name = child.name
         if name.startswith("."):
             continue
-        if (child / "wrangler.toml").is_file():
-            workers.append(name)
+        wrangler = child / "wrangler.toml"
+        if wrangler.is_file():
+            workers.append(WorkerApp(name, worker_script_name(wrangler)))
     return workers
 
 
@@ -118,20 +149,24 @@ def render_items(apps: list[str]) -> str:
     )
 
 
-def render_workers_section(workers: list[str], repo_url: str) -> str:
+def worker_url(script_name: str) -> str:
+    """Return the deployed workers.dev URL for a Wrangler script name."""
+    return f"https://{script_name}.{WORKERS_DEV_HOST}"
+
+
+def render_workers_section(workers: list[WorkerApp]) -> str:
     """Render the Cloudflare Workers section, or '' when there are none.
 
-    Workers are not served from Pages, so each card links to its source
-    directory on GitHub (falling back to a relative path when repo_url is
-    unknown).
+    Workers are not served from Pages, so each card links to the deployed
+    Worker on ``imjasonh.workers.dev`` using the Wrangler script name.
     """
     if not workers:
         return ""
     items = []
     for w in workers:
-        href = f"{repo_url}/tree/main/{w}" if repo_url else w
+        href = worker_url(w.script_name)
         items.append(
-            f'      <li><a href="{html.escape(href)}">{html.escape(w)}</a></li>'
+            f'      <li><a href="{html.escape(href)}">{html.escape(w.directory)}</a></li>'
         )
     return (
         '\n  <section class="workers">\n'
@@ -192,7 +227,7 @@ def render(
     apps: list[str],
     previews: list[dict],
     repo_url: str,
-    workers: list[str] | None = None,
+    workers: list[WorkerApp] | None = None,
     template: str | None = None,
 ) -> str:
     tmpl = template if template is not None else TEMPLATE_PATH.read_text()
@@ -201,7 +236,7 @@ def render(
         .replace("__HEADING__", html.escape(heading))
         .replace("__ITEMS__", render_items(apps))
         .replace("__PREVIEWS__", render_previews_section(previews, repo_url))
-        .replace("__WORKERS__", render_workers_section(workers or [], repo_url))
+        .replace("__WORKERS__", render_workers_section(workers or []))
         .replace("__REPO_URL__", html.escape(repo_url))
     )
 
