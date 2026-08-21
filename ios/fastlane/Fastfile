@@ -77,6 +77,34 @@ def ensure_healthkit!(identifier)
   UI.success("Enabled HealthKit on '#{identifier}'")
 end
 
+# Enable NFC Tag Reading on an existing App ID so match profiles include
+# com.apple.developer.nfc.readersession.formats. Idempotent.
+def ensure_nfc_tag_reading!(identifier)
+  require "spaceship"
+  bundle_id = Spaceship::ConnectAPI::BundleId.find(identifier)
+  UI.user_error!("Bundle ID '#{identifier}' not found — create it first") unless bundle_id
+
+  capabilities = bundle_id.get_capabilities
+  already = Array(capabilities).any? do |cap|
+    type = cap.respond_to?(:capability_type) ? cap.capability_type.to_s : cap.to_s
+    type.upcase.include?("NFC")
+  end
+  if already
+    UI.success("NFC Tag Reading already enabled on '#{identifier}'")
+    return
+  end
+
+  UI.message("Enabling NFC Tag Reading on '#{identifier}'…")
+  nfc_type =
+    if defined?(Spaceship::ConnectAPI::BundleIdCapability::Type::NFC_TAG_READING)
+      Spaceship::ConnectAPI::BundleIdCapability::Type::NFC_TAG_READING
+    else
+      "NFC_TAG_READING"
+    end
+  bundle_id.create_capability(nfc_type)
+  UI.success("Enabled NFC Tag Reading on '#{identifier}'")
+end
+
 def profile_name_for(identifier)
   ENV["sigh_#{identifier}_appstore_profile-name"] || "match AppStore #{identifier}"
 end
@@ -134,6 +162,10 @@ platform :ios do
     # before match can issue profiles that include the entitlement.
     ensure_healthkit!(APP_IDENTIFIER)
     ensure_healthkit!(WATCH_IDENTIFIER)
+
+    # NFC Tags uses Core NFC NDEF read/write — host App ID needs NFC Tag Reading
+    # before match can issue a profile that includes the NFC entitlement.
+    ensure_nfc_tag_reading!(APP_IDENTIFIER)
 
     match(
       type: "appstore",

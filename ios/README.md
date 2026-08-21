@@ -17,11 +17,13 @@ On every push to `main`, CI builds, tests, and (with signing secrets) uploads to
 |--------------------|-----------|---------------------------|
 | In-app experiment (Ride Monitor–style) | Host only | **No** |
 | Info.plist privacy / background modes | Host only | **No** |
+| New App ID capability (HealthKit, NFC, …) | Host, plus extensions when they need it | **Yes** for a profile refresh |
 | Custom Keyboard / other **app extension** | Host + **extension id** (Apple requires it) | **Yes, once** for that extension |
 
-Bootstrap is **not** per experiment. It is once for the host app, and once more
+Bootstrap is **not** per experiment. It is once for the host app, once more
 when you add a new extension Bundle ID (today: T9 keyboard, Ride Monitor
-widget, Ride Monitor Watch).
+widget, Ride Monitor Watch), and again when you add an App ID capability such
+as NFC Tag Reading.
 
 ## How it's structured
 
@@ -51,6 +53,7 @@ ios/
 | `voxel-world` | Voxel World | In-app; ARKit rebuilds the room as Minecraft-style palette blocks |
 | `wigglecam` | Wigglecam | In-app; dual-wide wigglegrams saved as GIF to Photos |
 | `local-lens` | Local Lens | In-app; live on-device Vision (classify / OCR / face landmarks / body & hand pose / barcodes) |
+| `nfc-tags` | NFC Tags | In-app Core NFC NDEF read/write for text and URL; needs NFC Tag Reading capability bootstrap |
 
 ### Ride Monitor
 
@@ -210,6 +213,16 @@ in portrait and landscape through aspect-fill. Needs camera permission
 bootstrap). Simulator opens the UI but has no camera; use a physical device to
 see live labels. True gaze / attention tracking would need ARKit face tracking
 on a TrueDepth front camera — not wired here yet.
+
+### NFC Tags
+
+Read and write NDEF text or URL records with Core NFC (`NFCNDEFReaderSession`).
+Scan shows decoded records. Write builds one Text or URI record onto a writable
+tag. Requires the NFC Tag Reading App ID capability
+(`com.apple.developer.nfc.readersession.formats`) and
+`NFCReaderUsageDescription`. That entitlement change on the host Bundle ID needs
+`needs-ios-bootstrap` so match refreshes the App Store profile after merge.
+Simulator opens the UI but cannot scan; use a physical iPhone.
 
 ## Adding an experiment
 
