@@ -16,12 +16,20 @@ use crate::device_config::AppConfig;
 use crate::https::{http_get, lock_or_poison, OtaDownloadGuard, ShortHttpsLock};
 use crate::nvs_util::read_str;
 use crate::trust::TrustConfig;
+use inkbot_esp32::{
+    check_ota_image, FirmwareConfig, OTA_CONFIG_MEDIA_TYPE, OTA_LAYER_MEDIA_TYPE, OTA_SLOT_BYTES,
+};
 
 const NVS_NAMESPACE: &str = "ota";
 const NVS_LAST_DIGEST: &str = "last_digest";
 const NVS_PENDING_DIGEST: &str = "pending_digest";
 const NVS_DIGEST_BUF: usize = 96;
 const BACKOFF_CAP: Duration = Duration::from_secs(3600);
+
+const MAX_TOKEN: usize = 4 * 1024;
+const MAX_MANIFEST: usize = 16 * 1024;
+const MAX_CONFIG: usize = 8 * 1024;
+const MAX_SIG_BUNDLE: usize = 128 * 1024;
 
 pub enum PollOutcome {
     Skipped,
@@ -103,12 +111,18 @@ fn poll_once(
         (token, manifest, mdig)
     };
 
+    if manifest.layers.len() != 1 {
+        bail!(
+            "firmware manifest has {} layers, expected exactly 1",
+            manifest.layers.len()
+        );
+    }
     let layer = manifest
         .layers
         .into_iter()
         .next()
         .ok_or_else(|| anyhow!("manifest has no layers"))?;
-    if layer.media_type != "application/vnd.esp32.firmware.bin" {
+    if layer.media_type != OTA_LAYER_MEDIA_TYPE {
         bail!("unexpected layer mediaType: {}", layer.media_type);
     }
 
@@ -118,6 +132,12 @@ fn poll_once(
     }
     log::info!("ota: new digest {}, verifying", layer.digest);
 
+    let fw_cfg = {
+        let _l = lock_or_poison(short_https);
+        fetch_firmware_config(&cfg.ota_repo, &manifest.config, &token)?
+    };
+    check_ota_image(&fw_cfg, layer.size).map_err(|e| anyhow!("{e}"))?;
+
     let bundle = {
         let _l = lock_or_poison(short_https);
         fetch_signature_bundle(&cfg.ota_repo, &manifest_digest_hex, &token)
@@ -125,7 +145,6 @@ fn poll_once(
     };
     crate::sig::verify_bundle(&bundle, &manifest_digest_hex, trust)
         .context("verify signature bundle")?;
-    log::info!("ota: signature verified, downloading");
 
     {
         let _g = OtaDownloadGuard::enter();
@@ -138,6 +157,8 @@ fn poll_once(
 
 #[derive(Deserialize)]
 struct Manifest {
+    #[serde(default)]
+    config: Option<Descriptor>,
     layers: Vec<Descriptor>,
 }
 
@@ -163,7 +184,7 @@ fn fetch_anon_token(repo: &str) -> Result<String> {
     let repo_path = repo_path(repo)?;
     let url = format!("https://ghcr.io/token?service=ghcr.io&scope=repository:{repo_path}:pull");
     let mut buf = Vec::with_capacity(1024);
-    http_get(&url, &[], &mut buf)?;
+    http_get(&url, &[], &mut buf, MAX_TOKEN)?;
     let resp: TokenResponse = serde_json::from_slice(&buf).context("parse token response JSON")?;
     Ok(resp.token)
 }
@@ -180,11 +201,43 @@ fn fetch_manifest(repo: &str, tag: &str, token: &str) -> Result<(Manifest, Strin
             ("accept", "application/vnd.oci.image.manifest.v1+json"),
         ],
         &mut buf,
+        MAX_MANIFEST,
     )?;
     let digest_hex = hex::encode(Sha256::digest(&buf));
     let m: Manifest = serde_json::from_slice(&buf)
         .with_context(|| format!("parse manifest JSON ({} bytes)", buf.len()))?;
     Ok((m, digest_hex))
+}
+
+fn fetch_firmware_config(
+    repo: &str,
+    config: &Option<Descriptor>,
+    token: &str,
+) -> Result<FirmwareConfig> {
+    let desc = config
+        .as_ref()
+        .ok_or_else(|| anyhow!("firmware manifest has no config descriptor"))?;
+    if desc.media_type != OTA_CONFIG_MEDIA_TYPE {
+        bail!("unexpected config mediaType: {}", desc.media_type);
+    }
+    if desc.size > MAX_CONFIG as u64 {
+        bail!("firmware config blob too large ({})", desc.size);
+    }
+    let repo_path = repo_path(repo)?;
+    let url = format!("https://ghcr.io/v2/{repo_path}/blobs/{}", desc.digest);
+    let auth = format!("Bearer {token}");
+    let mut buf = Vec::with_capacity(desc.size as usize + 64);
+    http_get(
+        &url,
+        &[
+            ("authorization", auth.as_str()),
+            ("accept", "application/json"),
+        ],
+        &mut buf,
+        MAX_CONFIG,
+    )
+    .context("fetch firmware config blob")?;
+    serde_json::from_slice(&buf).context("parse firmware config JSON")
 }
 
 fn fetch_signature_bundle(repo: &str, manifest_digest_hex: &str, token: &str) -> Result<Vec<u8>> {
@@ -204,6 +257,7 @@ fn fetch_signature_bundle(repo: &str, manifest_digest_hex: &str, token: &str) ->
             ),
         ],
         &mut buf1,
+        MAX_MANIFEST,
     )
     .context("fetch sig outer manifest/index")?;
 
@@ -238,6 +292,7 @@ fn fetch_signature_bundle(repo: &str, manifest_digest_hex: &str, token: &str) ->
             ("accept", "application/vnd.oci.image.manifest.v1+json"),
         ],
         &mut buf2,
+        MAX_MANIFEST,
     )
     .context("fetch sig inner manifest")?;
     let inner: Manifest = serde_json::from_slice(&buf2).context("parse sig inner manifest JSON")?;
@@ -253,8 +308,11 @@ fn blob_for_sigstore_bundle(m: &Manifest, repo_path: &str, auth: &str) -> Result
                 .starts_with("application/vnd.dev.sigstore.bundle.")
         })
         .ok_or_else(|| anyhow!("sig manifest has no Sigstore bundle layer"))?;
+    if layer.size > MAX_SIG_BUNDLE as u64 {
+        bail!("sig bundle too large ({})", layer.size);
+    }
     let url = format!("https://ghcr.io/v2/{repo_path}/blobs/{}", layer.digest);
-    let mut buf = Vec::with_capacity(layer.size as usize + 256);
+    let mut buf = Vec::with_capacity((layer.size as usize).saturating_add(256));
     http_get(
         &url,
         &[
@@ -262,12 +320,19 @@ fn blob_for_sigstore_bundle(m: &Manifest, repo_path: &str, auth: &str) -> Result
             ("accept", "application/octet-stream"),
         ],
         &mut buf,
+        MAX_SIG_BUNDLE,
     )
     .context("fetch sig bundle blob")?;
     Ok(buf)
 }
 
 fn download_and_apply(repo: &str, layer: &Descriptor, token: &str) -> Result<()> {
+    if layer.size == 0 || layer.size > OTA_SLOT_BYTES {
+        bail!(
+            "firmware layer size {} does not fit OTA slot ({OTA_SLOT_BYTES} bytes)",
+            layer.size
+        );
+    }
     let repo_path = repo_path(repo)?;
     let url = format!("https://ghcr.io/v2/{repo_path}/blobs/{}", layer.digest);
     let auth = format!("Bearer {token}");
@@ -306,9 +371,13 @@ fn download_and_apply(repo: &str, layer: &Descriptor, token: &str) -> Result<()>
         if n == 0 {
             break;
         }
+        total += n as u64;
+        if total > layer.size {
+            update.abort().ok();
+            bail!("blob larger than manifest size {}", layer.size);
+        }
         update.write(&buf[..n]).context("OTA write")?;
         hasher.update(&buf[..n]);
-        total += n as u64;
         if total >= next_log {
             log::info!("ota: download progress {total}/{}", layer.size);
             next_log += 256 * 1024;
@@ -323,7 +392,6 @@ fn download_and_apply(repo: &str, layer: &Descriptor, token: &str) -> Result<()>
         update.abort().ok();
         bail!("blob SHA mismatch: got {actual_sha_hex}, manifest says {expected_sha_hex}");
     }
-    log::info!("ota: download complete, finalizing");
     update
         .complete()
         .context("OTA complete (set boot partition)")?;
@@ -358,6 +426,27 @@ pub fn is_pending_verify() -> bool {
     }
 }
 
+/// If this boot is not `PENDING_VERIFY` but `pending_digest` is still set,
+/// the previous image rolled back. Record that digest as `last_digest` so
+/// the next poll does not re-flash the same binary.
+pub fn remember_rolled_back_digest(nvs_partition: EspDefaultNvsPartition) -> Result<()> {
+    if is_pending_verify() {
+        return Ok(());
+    }
+    persist_pending_as_last(nvs_partition)
+}
+
+fn persist_pending_as_last(nvs_partition: EspDefaultNvsPartition) -> Result<()> {
+    let mut nvs =
+        EspNvs::new(nvs_partition, NVS_NAMESPACE, true).context("open ota NVS namespace")?;
+    if let Some(pending) = read_digest_pending(&nvs) {
+        write_string(&mut nvs, NVS_LAST_DIGEST, &pending)?;
+        let _ = nvs.remove(NVS_PENDING_DIGEST);
+        log::info!("ota: recorded rejected digest {pending} (skip until GHCR changes)");
+    }
+    Ok(())
+}
+
 pub fn mark_valid_after_pending_verify_passed(nvs_partition: EspDefaultNvsPartition) -> Result<()> {
     use esp_idf_svc::sys::*;
     let err = unsafe { esp_ota_mark_app_valid_cancel_rollback() };
@@ -374,6 +463,17 @@ pub fn mark_valid_after_pending_verify_passed(nvs_partition: EspDefaultNvsPartit
         log::info!("ota: promoted pending -> last_digest {pending}");
     }
     Ok(())
+}
+
+/// Persist the pending digest as rejected, then ask the bootloader to
+/// roll back. Does not return on success.
+pub fn reject_pending_and_reboot(nvs_partition: EspDefaultNvsPartition) -> ! {
+    if let Err(e) = persist_pending_as_last(nvs_partition) {
+        log::error!("ota: persist rejected digest failed: {e:#}");
+    }
+    let err = unsafe { esp_idf_svc::sys::esp_ota_mark_app_invalid_rollback_and_reboot() };
+    log::error!("ota: mark_invalid returned {err}; restarting");
+    unsafe { esp_idf_svc::sys::esp_restart() }
 }
 
 fn read_digest_pending(nvs: &EspNvs<NvsDefault>) -> Option<String> {

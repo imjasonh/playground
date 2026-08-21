@@ -53,11 +53,15 @@ TX power to ease weak supplies.
 ## One-time host setup (macOS)
 
 ```bash
-cargo install espup espflash ldproxy
+cargo install espup ldproxy
+cargo install espflash --locked --version 4.2.2
 brew install cmake ninja dfu-util cosign
 espup install --targets esp32
 curl -LsSf https://astral.sh/uv/install.sh | sh   # Python 3.12 for ESP-IDF
 ```
+
+CI uses the same `espflash` 4.2.2 pin. On Linux, pass `PORT=/dev/ttyUSB0` or
+`PORT=/dev/ttyACM0` (the Makefile also probes those paths).
 
 ## Configure, build, flash
 
@@ -69,7 +73,7 @@ cp provisioning.toml.example provisioning.toml
 $EDITOR provisioning.toml    # wifi, inkbot.base_url, trust; optional [gcp] / [ota]
 
 make build                   # first run clones ESP-IDF (~minutes)
-make bootstrap PORT=/dev/cu.usbserial-XXXX
+make bootstrap PORT=/dev/cu.usbserial-XXXX   # Linux: PORT=/dev/ttyUSB0
 make monitor
 ```
 
@@ -86,9 +90,15 @@ always passes `partitions.csv` so espflash 4.x does not rewrite a factory-only
 table. After the inkbot binary boots, `POST /device` / `@inkbot status` shows
 the same `firmware=` string (`inkbot-esp32/0.3`).
 
-`provisioning.toml` is gitignored. Re-run `make provision` after you change
-it (that replaces the whole NVS partition). The maze binary does not read NVS
-config.
+`provisioning.toml` is gitignored. `inkbot.base_url` must be `https://`.
+Re-run `make provision` after you change the file (that replaces the whole
+NVS partition, including runtime keys and `ota/last_digest`). `make provision`
+does not rebuild firmware; run `make build` once first so ESP-IDF is present.
+`make provision-build` writes `target/nvs.bin` without flashing. The maze
+binary does not read NVS config.
+
+`FIRMWARE_ID` in `src/status.rs` (`inkbot-esp32/0.3`) is the on-wire and OTA
+contract. It is independent of the crate `version` in `Cargo.toml`.
 
 To flash without erasing (app slot only) after the first bootstrap:
 
@@ -102,7 +112,9 @@ On a provisioned inkbot image, the main loop polls
 `ghcr.io/imjasonh/playground/inkbot-esp32:latest` every 10 minutes by default,
 verifies a Cosign Sigstore bundle against the identities in NVS, writes the
 inactive slot, and reboots. The new image stays pending-verify until the
-Worker boot fetch succeeds; a failure rolls back.
+Worker boot fetch succeeds. A fetch error marks the slot invalid so the
+bootloader rolls back, and the device records that digest so it does not
+re-download the same image.
 
 Pushes to `main` that touch this directory publish and sign that package
 (`.github/workflows/inkbot-esp32-publish.yml`). The GHCR package must be
@@ -140,8 +152,9 @@ make flash APP=maze
 make monitor
 ```
 
-`make flash` picks the first `/dev/cu.usbmodem*` or `/dev/cu.usbserial-*`
-device. If more than one USB serial device is present, pass `PORT=`.
+`make flash` picks the first `/dev/cu.usbmodem*`, `/dev/cu.usbserial-*`,
+`/dev/ttyACM*`, or `/dev/ttyUSB*` device. If more than one USB serial device
+is present, pass `PORT=`.
 
 To return to the inkbot frame loop, flash without `APP=maze`. A USB-only
 supply is enough here: the maze binary never associates, so it avoids the

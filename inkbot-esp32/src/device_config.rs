@@ -4,6 +4,7 @@ use anyhow::{anyhow, Result};
 use esp_idf_svc::nvs::{EspDefaultNvsPartition, EspNvs};
 
 use crate::nvs_util::{is_not_found, read_str};
+use inkbot_esp32::require_https_url;
 
 const NVS_WIFI_NS: &str = "wifi";
 const NVS_INKBOT_NS: &str = "inkbot";
@@ -54,6 +55,7 @@ impl AppConfig {
         if ssid.is_empty() || base_url.is_empty() {
             return Ok(None);
         }
+        require_https_url(&base_url).map_err(|e| anyhow!("inkbot/base_url: {e}"))?;
 
         let poll_secs = inkbot
             .get_u32("poll_secs")

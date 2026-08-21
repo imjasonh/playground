@@ -11,7 +11,7 @@ mod trust;
 
 use std::sync::OnceLock;
 use std::thread;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Result};
 use embedded_svc::http::client::Client as HttpClient;
@@ -35,8 +35,8 @@ use log::{error, info, warn};
 use device_config::AppConfig;
 use display::Panel;
 use inkbot_esp32::{
-    format_error_chain, format_panic_message, incident_needs_post, is_http_connect_failure,
-    reset_is_abnormal, should_post_status, should_refresh_wifi, Catalog, CrashStatus,
+    crash_after_reset, format_error_chain, format_panic_message, incident_needs_post,
+    is_http_connect_failure, should_post_status, should_refresh_wifi, Catalog, CrashStatus,
     DeviceTelemetry, FetchStatus, IncidentContext, LastIncident, StatusReport, WifiRefresh,
     WifiStatus, FIRMWARE_ID, FRAME_BYTES,
 };
@@ -135,13 +135,15 @@ fn main() -> Result<()> {
     let pending_verify = ota::is_pending_verify();
     if pending_verify {
         info!("ota: image is PENDING_VERIFY — Worker fetch must succeed");
+    } else if let Err(e) = ota::remember_rolled_back_digest(nvs_part.clone()) {
+        warn!("ota: reconcile rolled-back digest: {e:#}");
     }
 
     let mut status = StatusReport::default();
     let mut remote = RemoteStatus::from_nvs(&nvs);
     let nvs_last_op = read_str(&nvs, NVS_LAST_OP)?;
     let last_op = rtc_take_last_op().or(nvs_last_op);
-    if reset_is_abnormal(reset) {
+    if crash_after_reset(reset, last_op.as_deref()) {
         status.crash = Some(CrashStatus {
             reset_code: reset,
             panic_message: rtc_take_panic(),
@@ -176,7 +178,7 @@ fn main() -> Result<()> {
     }
     let mut ip_str = sta_ip(&wifi)?;
     info!("wifi connected, ip={ip_str}, {}", HeapSnap::now());
-    // Keep SNTP alive so SystemTime (unix_secs, Sigstore validity, GCP JWT) stay valid.
+    // Keep the SNTP handle so unix_secs, Sigstore validity, and GCP JWT stay valid.
     let _sntp = start_sntp();
     let https_lock = https::new_short_https_lock();
     let mut gcp_client = match (gcp_cfg, pending_log_queue) {
@@ -256,9 +258,10 @@ fn main() -> Result<()> {
             paint_error(&mut panel, last_frame.as_deref(), &status);
             panel_has_status = true;
             if pending_verify {
-                error!("ota: Worker fetch failed during PENDING_VERIFY; rebooting to roll back");
+                error!("ota: Worker fetch failed during PENDING_VERIFY; rolling back");
+                note_op(&mut nvs, "ota:rollback");
                 thread::sleep(Duration::from_secs(2));
-                unsafe { esp_idf_svc::sys::esp_restart() };
+                ota::reject_pending_and_reboot(nvs_part.clone());
             }
         }
     }
@@ -266,9 +269,10 @@ fn main() -> Result<()> {
         match ota::mark_valid_after_pending_verify_passed(nvs_part.clone()) {
             Ok(()) => info!("ota: pending-verify passed (Worker reachable)"),
             Err(e) => {
-                error!("ota: mark-valid failed ({e:#}); rebooting to roll back");
+                error!("ota: mark-valid failed ({e:#}); rolling back");
+                note_op(&mut nvs, "ota:rollback");
                 thread::sleep(Duration::from_secs(2));
-                unsafe { esp_idf_svc::sys::esp_restart() };
+                ota::reject_pending_and_reboot(nvs_part.clone());
             }
         }
     }
@@ -295,6 +299,7 @@ fn main() -> Result<()> {
             match ota_state.tick(nvs_part.clone(), app(), &trust, &https_lock) {
                 Ok(ota::PollOutcome::Updated(d)) => {
                     info!("ota: applied {d}, rebooting");
+                    note_op(&mut nvs, "ota:reboot");
                     thread::sleep(Duration::from_secs(1));
                     unsafe { esp_idf_svc::sys::esp_restart() };
                 }
@@ -669,7 +674,12 @@ fn show_named(
     // can share the classic ESP32 heap. Restore it if the GET fails.
     let saved = last_frame.take();
     info!("GET {url} ({})", HeapSnap::now());
-    let response = match http_get(&url, None) {
+    let if_none_match = if current_name.as_deref() == Some(name) {
+        current_etag.as_deref()
+    } else {
+        None
+    };
+    let response = match http_get(&url, if_none_match) {
         Ok(r) => r,
         Err(e) => {
             *last_frame = saved;
@@ -828,13 +838,9 @@ fn start_sntp() -> Option<EspSntp<'static>> {
     }
 }
 
-/// Wall clock after SNTP; `None` until the clock looks like a real date.
+/// Wall clock after SNTP; `None` until the clock is past 2020-01-01.
 fn wall_unix() -> Option<i64> {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .ok()
-        .map(|d| d.as_secs() as i64)
-        .filter(|&t| t >= 1_700_000_000)
+    https::now_unix_secs().map(|s| s as i64)
 }
 
 /// Re-run DHCP without dropping Wi-Fi association.
@@ -1068,13 +1074,19 @@ fn read_incident(nvs: &EspNvs<NvsDefault>) -> Result<Option<LastIncident>> {
 }
 
 fn write_incident(nvs: &EspNvs<NvsDefault>, inc: &LastIncident) -> Result<()> {
-    let bytes = serde_json::to_vec(inc).map_err(|e| anyhow!("incident json: {e}"))?;
-    if bytes.len() > INCIDENT_BLOB {
-        return Err(anyhow!("incident too large ({})", bytes.len()));
+    let mut inc = inc.clone();
+    loop {
+        let bytes = serde_json::to_vec(&inc).map_err(|e| anyhow!("incident json: {e}"))?;
+        if bytes.len() <= INCIDENT_BLOB {
+            nvs.set_blob(NVS_INCIDENT, &bytes)
+                .map_err(|e| anyhow!("write inc: {e:?}"))?;
+            return Ok(());
+        }
+        if inc.error.len() <= 32 {
+            return Err(anyhow!("incident too large ({})", bytes.len()));
+        }
+        inc.error.truncate(inc.error.len() / 2);
     }
-    nvs.set_blob(NVS_INCIDENT, &bytes)
-        .map_err(|e| anyhow!("write inc: {e:?}"))?;
-    Ok(())
 }
 
 fn clear_incident(nvs: &EspNvs<NvsDefault>) -> Result<()> {
@@ -1125,7 +1137,7 @@ struct RemoteStatus {
     posts_fail: u32,
     last_post_error: Option<String>,
     last_incident: Option<LastIncident>,
-    /// False while NVS still holds an incident that has not POSTed 200.
+    /// False while NVS still holds an incident that has not POSTed 2xx.
     incident_posted: bool,
     last_ok_uptime_secs: Option<u64>,
     last_ok_op: Option<String>,
@@ -1289,7 +1301,7 @@ fn post_device_report(tel: &DeviceTelemetry) -> Result<()> {
     let mut last_err: Option<anyhow::Error> = None;
     for attempt in 1..=ATTEMPTS {
         match http_post_json(&url, &body) {
-            Ok(200) => return Ok(()),
+            Ok(status) if (200..300).contains(&status) => return Ok(()),
             Ok(status) => {
                 warn!("POST {url} attempt {attempt}/{ATTEMPTS} HTTP {status}");
                 last_err = Some(anyhow!("POST {url} -> HTTP {status}"));
@@ -1556,6 +1568,8 @@ fn rtc_take_last_op() -> Option<String> {
     let s = String::from_utf8_lossy(&slot.last_op[..n])
         .trim_end_matches('\0')
         .to_string();
+    slot.op_magic = 0;
+    slot.op_len = 0;
     if s.is_empty() {
         None
     } else {

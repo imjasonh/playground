@@ -14,7 +14,7 @@
 
 SHELL := /bin/bash
 
-PORT ?= $(firstword $(wildcard /dev/cu.usbmodem* /dev/cu.usbserial-*))
+PORT ?= $(firstword $(wildcard /dev/cu.usbmodem* /dev/cu.usbserial-* /dev/ttyACM* /dev/ttyUSB*))
 ifeq ($(PORT),)
 PORT := /dev/cu.usbserial-0001
 endif
@@ -60,7 +60,7 @@ NVS_GEN_PY := $(CURDIR)/.embuild/espressif/esp-idf/v5.2.2/components/nvs_flash/n
 NVS_GEN_PYTHON := $(CURDIR)/.embuild/espressif/python_env/idf5.2_py3.12_env/bin/python
 
 .PHONY: help build check-firmware flash flash-all monitor run clean test \
-	ensure-python-shim sdkconfig.defaults save-image publish pull-verify \
+	ensure-python-shim ensure-idf sdkconfig.defaults save-image publish pull-verify \
 	provision provision-build bootstrap check-gh-env
 
 help:
@@ -69,7 +69,8 @@ help:
 	@echo "  make flash          Build + flash $(FIRMWARE_ID) to $(PORT) (APP=$(APP))"
 	@echo "  make flash APP=maze Flash the maze firmware (same OTA partition table)"
 	@echo "  make flash-all      Erase + write bootloader, partition table, app"
-	@echo "  make provision      Write NVS from provisioning.toml"
+	@echo "  make provision      Write NVS from provisioning.toml (needs one prior make build)"
+	@echo "  make provision-build  Build target/nvs.bin without flashing"
 	@echo "  make bootstrap      flash-all + provision"
 	@echo "  make publish        Push signed firmware to $(OCI_REPO)"
 	@echo "  make monitor        Serial monitor on $(PORT)"
@@ -156,7 +157,17 @@ provisioning.toml:
 	@echo "Edit it with Wi-Fi, Worker URL, trust identities, and optional [gcp], then re-run."
 	@exit 1
 
-provision: provisioning.toml build
+ensure-idf:
+	@test -f "$(NVS_GEN_PY)" || { \
+	  echo "ERROR: $(NVS_GEN_PY) missing. Run 'make build' once so embuild clones ESP-IDF."; \
+	  exit 1; \
+	}
+	@test -x "$(NVS_GEN_PYTHON)" || { \
+	  echo "ERROR: $(NVS_GEN_PYTHON) missing. Run 'make build' once so embuild sets up Python."; \
+	  exit 1; \
+	}
+
+provision: provisioning.toml ensure-idf
 	cargo run --release --manifest-path tools/provision/Cargo.toml --target $(HOST_TRIPLE) -- \
 	  --config $(CURDIR)/provisioning.toml \
 	  --out $(CURDIR)/$(NVS_BIN) \
@@ -165,7 +176,7 @@ provision: provisioning.toml build
 	  --port $(PORT) \
 	  --flash
 
-provision-build: provisioning.toml build
+provision-build: provisioning.toml ensure-idf
 	cargo run --release --manifest-path tools/provision/Cargo.toml --target $(HOST_TRIPLE) -- \
 	  --config $(CURDIR)/provisioning.toml \
 	  --out $(CURDIR)/$(NVS_BIN) \

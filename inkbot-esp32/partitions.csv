@@ -2,8 +2,8 @@
 # factory partition — the bootloader always boots one OTA slot.
 #
 # Flash layout (4 MB total):
-# 0x001000-0x008FFF bootloader (~28 KB)
-# 0x008000-0x008FFF partition table itself (4 KB)
+# 0x001000-0x007FFF bootloader (grows toward 0x8000)
+# 0x008000-0x008FFF partition table (4 KB)
 # 0x009000-0x00EFFF nvs (24 KB)
 # 0x00F000-0x010FFF otadata (8 KB)
 # 0x011000-0x011FFF phy_init (4 KB)

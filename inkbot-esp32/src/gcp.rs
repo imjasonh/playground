@@ -16,7 +16,7 @@ use crate::https::{
     device_mac, http_post, now_unix_secs, ota_download_in_progress, ShortHttpsLock,
 };
 use crate::nvs_util::{is_not_found, read_blob, read_str};
-use inkbot_esp32::ota_format::b64url;
+use inkbot_esp32::ota_format::{b64url, json_escape};
 
 const NVS_GCP_NS: &str = "gcp";
 pub const QUEUE_CAPACITY: usize = 64;
@@ -140,7 +140,7 @@ impl ForkLogger {
             None => (None, Level::Info),
         };
         let _ = log::set_boxed_logger(Box::new(Self { queue, min }));
-        log::set_max_level(log::LevelFilter::Info);
+        log::set_max_level(min.to_level_filter());
     }
 }
 
@@ -150,9 +150,6 @@ impl Log for ForkLogger {
     }
 
     fn log(&self, record: &Record) {
-        // EspLogger is a type alias (not a unit struct) in esp-idf-svc 0.52.
-        // Compose the IDF logger with a no-op filter so serial format matches
-        // `make monitor` without installing it as the global logger.
         static SERIAL: esp_idf_svc::log::EspIdfLogger = esp_idf_svc::log::EspIdfLogger::new(());
         SERIAL.log(record);
         let Some(queue) = &self.queue else {
@@ -263,10 +260,6 @@ fn mint_access_token(cfg: &GcpConfig) -> Result<CachedToken> {
         token: resp.access_token,
         expires_at_unix: now + resp.expires_in,
     })
-}
-
-fn json_escape(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
 fn mbedtls_rs256_sign(pem: &[u8], message: &[u8]) -> Result<Vec<u8>> {

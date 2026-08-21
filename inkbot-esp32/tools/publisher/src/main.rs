@@ -16,6 +16,8 @@ use time::OffsetDateTime;
 
 const CONFIG_MEDIA_TYPE: &str = "application/vnd.esp32.firmware.v1+json";
 const LAYER_MEDIA_TYPE: &str = "application/vnd.esp32.firmware.bin";
+const APP_ID: &str = "inkbot-esp32";
+const OTA_SLOT_BYTES: u64 = 0x1F_0000;
 
 #[derive(Parser)]
 #[command(
@@ -90,6 +92,7 @@ struct PullVerifyArgs {
 #[derive(Serialize)]
 struct FirmwareConfig {
     target_chip: String,
+    app: String,
     idf_version: String,
     git_sha: Option<String>,
     built_at: String,
@@ -206,6 +209,11 @@ async fn push(args: PushArgs) -> Result<()> {
         .await
         .with_context(|| format!("read {}", args.bin.display()))?;
     let bin_size = bin_bytes.len() as u64;
+    if bin_size == 0 || bin_size > OTA_SLOT_BYTES {
+        return Err(anyhow!(
+            "firmware.bin is {bin_size} bytes; OTA slot is {OTA_SLOT_BYTES} bytes"
+        ));
+    }
     let bin_sha256 = hex::encode(Sha256::digest(&bin_bytes));
     tracing::info!(
         path = %args.bin.display(),
@@ -216,6 +224,7 @@ async fn push(args: PushArgs) -> Result<()> {
 
     let cfg = FirmwareConfig {
         target_chip: args.target_chip.clone(),
+        app: APP_ID.to_string(),
         idf_version: args.idf_version.clone(),
         git_sha: args.git_sha.clone(),
         built_at: OffsetDateTime::from(SystemTime::now())

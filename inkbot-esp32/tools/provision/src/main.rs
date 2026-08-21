@@ -246,6 +246,15 @@ fn main() -> Result<()> {
     if cfg.inkbot.base_url.is_empty() {
         bail!("inkbot.base_url must not be empty");
     }
+    if !cfg.inkbot.base_url.starts_with("https://") {
+        bail!("inkbot.base_url must start with https://");
+    }
+    if cfg.wifi.ssid.len() > 32 {
+        bail!("wifi.ssid is longer than 32 bytes");
+    }
+    if cfg.wifi.pass.len() > 64 {
+        bail!("wifi.pass is longer than 64 bytes");
+    }
     if cfg.trust.identities.is_empty() {
         bail!("trust.identities must contain at least one entry");
     }

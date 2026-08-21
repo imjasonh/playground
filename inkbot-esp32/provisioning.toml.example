@@ -8,7 +8,7 @@ ssid = "your-wifi-ssid"
 pass = "your-wifi-password"
 
 [inkbot]
-# Worker base URL, no trailing slash.
+# Worker base URL, no trailing slash. Must be https://.
 base_url = "https://inkbot.example.workers.dev"
 poll_secs = 60
 rotate_secs = 1800

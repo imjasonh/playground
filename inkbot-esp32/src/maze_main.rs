@@ -1,7 +1,7 @@
 //! maze-esp32 — generate a maze on the Waveshare 7.5″ and animate the solution.
 //!
 //! No Wi-Fi, HTTP, or Worker: flash, power the board, and the panel loops
-//! empty maze → correct solve (see CELLS_PER_TICK / TICK_MS) → hold → next maze.
+//! empty maze → correct solve (defaults: 1 cell / 5 s) → hold → next maze.
 
 mod maze_display;
 

@@ -21,7 +21,8 @@ pub fn read_str(
     Ok(nvs
         .get_str(key, &mut buf)
         .map_err(|e| anyhow!("read NVS {namespace}/{key}: {e:?}"))?
-        .map(|s| s.to_string()))
+        .map(|s| s.trim_end_matches('\0').to_string())
+        .filter(|s| !s.is_empty()))
 }
 
 /// Read a blob from `nvs[key]`. Returns `Ok(None)` if the key is absent.

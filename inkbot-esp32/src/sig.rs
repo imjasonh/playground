@@ -11,10 +11,12 @@ use x509_cert::Certificate;
 
 use crate::https::now_unix_secs;
 use crate::trust::TrustConfig;
+use inkbot_esp32::decode_fulcio_issuer_value;
 use inkbot_esp32::ota_format::pae_dsse_v1;
 
 const DSSE_INTOTO_PAYLOAD_TYPE: &str = "application/vnd.in-toto+json";
 const OID_OIDC_ISSUER_V1: &str = "1.3.6.1.4.1.57264.1.1";
+const OID_OIDC_ISSUER_V2: &str = "1.3.6.1.4.1.57264.1.8";
 const OID_SAN: &str = "2.5.29.17";
 
 #[derive(Deserialize)]
@@ -82,7 +84,7 @@ pub fn verify_bundle(
     let leaf = Certificate::from_der(&cert_der).context("parse leaf cert DER")?;
 
     let identity = extract_san_identity(&leaf).context("extract SAN identity")?;
-    let issuer = extract_oidc_issuer_v1(&leaf).context("extract OIDC issuer")?;
+    let issuer = extract_oidc_issuer(&leaf).context("extract OIDC issuer")?;
     if !trust
         .identities
         .iter()
@@ -159,20 +161,28 @@ fn extract_san_identity(cert: &Certificate) -> Result<String> {
     bail!("no SubjectAltName extension")
 }
 
-fn extract_oidc_issuer_v1(cert: &Certificate) -> Result<String> {
-    let oid: ObjectIdentifier = OID_OIDC_ISSUER_V1.parse().unwrap();
+fn extract_oidc_issuer(cert: &Certificate) -> Result<String> {
+    let oid_v2: ObjectIdentifier = OID_OIDC_ISSUER_V2.parse().unwrap();
+    let oid_v1: ObjectIdentifier = OID_OIDC_ISSUER_V1.parse().unwrap();
     let extensions = cert
         .tbs_certificate
         .extensions
         .as_ref()
         .ok_or_else(|| anyhow!("no extensions"))?;
+    let mut v1 = None;
     for ext in extensions {
-        if ext.extn_id == oid {
-            let bytes = ext.extn_value.as_bytes();
-            return String::from_utf8(bytes.to_vec()).context("issuer is not UTF-8");
+        if ext.extn_id == oid_v2 {
+            return decode_fulcio_issuer_value(ext.extn_value.as_bytes())
+                .map_err(|e| anyhow!("Fulcio issuer v2: {e}"));
+        }
+        if ext.extn_id == oid_v1 {
+            v1 = Some(ext.extn_value.as_bytes().to_vec());
         }
     }
-    bail!("no OIDC issuer (1.3.6.1.4.1.57264.1.1) extension")
+    if let Some(bytes) = v1 {
+        return decode_fulcio_issuer_value(&bytes).map_err(|e| anyhow!("Fulcio issuer v1: {e}"));
+    }
+    bail!("no OIDC issuer (1.3.6.1.4.1.57264.1.8 or .1.1) extension")
 }
 
 fn verify_chain(leaf: &Certificate, trust: &TrustConfig) -> Result<()> {

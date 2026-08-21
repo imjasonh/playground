@@ -15,18 +15,21 @@ loop, and [`docs/ota.md`](docs/ota.md) for NVS, OTA, and GCP.
   `nvs` partition. An OTA image must boot on a device that was
   provisioned once over USB.
 - **Required NVS or the panel loops `NOT PROVISIONED`:** `wifi/ssid`,
-  `wifi/pass`, `inkbot/base_url`, `trust/identities`, `trust/fulcio_root`,
-  `trust/fulcio_inter`. Optional: `gcp/*`, `ota/repo|tag|poll_secs`.
-  `ota.poll_secs = 0` disables GHCR polling.
+  `wifi/pass`, `inkbot/base_url` (must be `https://`), `trust/identities`,
+  `trust/fulcio_root`, `trust/fulcio_inter`. Optional: `gcp/*`,
+  `ota/repo|tag|poll_secs`. `ota.poll_secs = 0` disables GHCR polling.
 - **NVS keys are at most 15 characters.** The DHCP interval is stored as
   `dhcp_renew`, not `dhcp_renew_secs`. GCP's interval is `metric_intvl`.
 - **OTA is signed GHCR, not a raw URL.** Layer media type
-  `application/vnd.esp32.firmware.bin`. Verify the Cosign Sigstore bundle
-  (Fulcio + DSSE + in-toto subject = manifest SHA) before writing the
-  inactive slot. Identity allowlist comes from NVS, not the image.
+  `application/vnd.esp32.firmware.bin`. Require OCI config
+  `app=inkbot-esp32` and `target_chip=esp32`, and reject a layer larger
+  than the `0x1F0000` slot. Verify the Cosign Sigstore bundle (Fulcio +
+  DSSE + in-toto subject = manifest SHA) before writing the inactive
+  slot. Identity allowlist comes from NVS, not the image.
 - **Pending-verify:** after an OTA reboot, mark the slot valid only when
   the Worker boot fetch succeeds (`Displayed` or empty catalog). On fetch
-  error, `esp_restart()` so the bootloader rolls back.
+  error, call `esp_ota_mark_app_invalid_rollback_and_reboot()` and store
+  the digest as `last_digest` so the next poll does not re-flash it.
 - **No extra stacks for OTA or GCP.** Both run on the main loop
   (`CONFIG_ESP_MAIN_TASK_STACK_SIZE=49152`). Set
   `OTA_DOWNLOAD_IN_PROGRESS` while the blob streams so frame GETs and GCP
@@ -47,10 +50,11 @@ loop, and [`docs/ota.md`](docs/ota.md) for NVS, OTA, and GCP.
   `cargo test --lib` plus `provision --dry-run` against
   `provisioning.toml.example`.
 - **CI:** `inkbot-esp32.yml` hosts tests + Xtensa `make build`.
-  `inkbot-esp32-publish.yml` (main + dispatch) pushes and Cosign-signs
-  `ghcr.io/imjasonh/playground/inkbot-esp32`. The example trust identity
-  is that workflow `@refs/heads/main`. The GHCR package must stay public;
-  the device pulls anonymously.
+  `inkbot-esp32-publish.yml` (push to `main`, or dispatch from `main`)
+  pushes and Cosign-signs `ghcr.io/imjasonh/playground/inkbot-esp32`, then
+  `make pull-verify`. The example trust identity is that workflow
+  `@refs/heads/main`. The GHCR package must stay public; the device pulls
+  anonymously.
 - **`FIRMWARE_ID`** in `src/status.rs` is the HTTP `User-Agent` and
   telemetry `firmware` field. Bump it when the on-wire or OTA contract
   changes.

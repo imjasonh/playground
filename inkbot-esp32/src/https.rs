@@ -67,7 +67,12 @@ pub fn device_mac() -> String {
     s
 }
 
-pub fn http_get(url: &str, headers: &[(&str, &str)], buf: &mut Vec<u8>) -> Result<()> {
+pub fn http_get(
+    url: &str,
+    headers: &[(&str, &str)],
+    buf: &mut Vec<u8>,
+    max_bytes: usize,
+) -> Result<()> {
     let conn = EspHttpConnection::new(&HttpConfig {
         crt_bundle_attach: Some(esp_idf_svc::sys::esp_crt_bundle_attach),
         follow_redirects_policy: FollowRedirectsPolicy::FollowAll,
@@ -88,6 +93,9 @@ pub fn http_get(url: &str, headers: &[(&str, &str)], buf: &mut Vec<u8>) -> Resul
         let n = resp.read(&mut chunk)?;
         if n == 0 {
             break;
+        }
+        if buf.len().saturating_add(n) > max_bytes {
+            bail!("GET {url} body exceeded {max_bytes} bytes");
         }
         buf.extend_from_slice(&chunk[..n]);
     }
@@ -124,12 +132,16 @@ pub fn http_post(
     req.flush().ok();
     let mut resp = req.submit()?;
     let status = resp.status();
+    const MAX_BODY: usize = 32 * 1024;
     let mut buf = Vec::with_capacity(1024);
     let mut chunk = [0u8; 1024];
     loop {
         let n = resp.read(&mut chunk).context("read response chunk")?;
         if n == 0 {
             break;
+        }
+        if buf.len().saturating_add(n) > MAX_BODY {
+            bail!("POST {url} response exceeded {MAX_BODY} bytes");
         }
         buf.extend_from_slice(&chunk[..n]);
     }

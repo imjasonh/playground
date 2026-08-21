@@ -19,7 +19,7 @@ provision** is required once. You cannot OTA from the pre-OTA image.
 cd inkbot-esp32
 cp provisioning.toml.example provisioning.toml
 # Edit wifi, inkbot.base_url, and (optionally) [gcp] / [ota].
-make bootstrap PORT=/dev/cu.usbserial-XXXX
+make bootstrap PORT=/dev/cu.usbserial-XXXX   # Linux: PORT=/dev/ttyUSB0
 make monitor
 ```
 
@@ -30,9 +30,19 @@ arrive over GHCR.
 If Wi-Fi or trust keys are missing, the panel shows `NOT PROVISIONED` and
 the serial log repeats the same message.
 
-Re-running `make provision` replaces the entire NVS partition. Runtime keys
-in the `inkbot` namespace (`name`, `etag`, `latest`, `op`, `inc`) are wiped
-and the device treats the catalog as new on the next boot.
+`inkbot.base_url` must start with `https://` (the provisioner and the
+firmware both reject plaintext). `make provision` does not rebuild the
+app; run `make build` once so ESP-IDF's NVS generator is present, then
+re-provision as often as you need. `make provision-build` writes
+`target/nvs.bin` without flashing.
+
+Re-running `make provision` replaces the entire NVS partition. These keys
+are wiped:
+
+- Runtime keys in the `inkbot` namespace (`name`, `etag`, `latest`, `op`,
+  `inc`). The device treats the catalog as new on the next boot.
+- OTA digest cache (`ota/last_digest`, `ota/pending_digest`). The next
+  poll re-downloads `:latest` even when GHCR has not changed.
 
 ## What you put in `provisioning.toml`
 
@@ -100,18 +110,25 @@ period, the inkbot binary:
 
 1. Fetches an anonymous GHCR pull token and the OCI manifest for
    `repo:tag`.
-2. Skips the rest if the layer digest matches the last successful digest
-   in NVS.
-3. Pulls the Cosign Sigstore bundle, checks the leaf SAN + OIDC issuer
+2. Skips the rest if the layer digest matches the last successful (or
+   rejected) digest in NVS.
+3. Fetches the OCI config blob and requires `app=inkbot-esp32`,
+   `target_chip=esp32`, and a layer that fits the `0x1F0000` slot.
+4. Pulls the Cosign Sigstore bundle, checks the leaf SAN + OIDC issuer
    against `trust/identities`, verifies the Fulcio chain, and checks the
    DSSE / in-toto subject against the manifest digest.
-4. Streams the firmware blob into the inactive slot, hashing as it goes.
-5. Marks that slot to boot and restarts.
+5. Streams the firmware blob into the inactive slot, hashing as it goes.
+6. Marks that slot to boot and restarts.
 
 On the new image, ESP-IDF leaves the slot in `PENDING_VERIFY`. The firmware
 marks the image valid only after the Worker boot fetch succeeds (`Displayed`
-or empty catalog). A fetch error in that window calls `esp_restart()` so
-the bootloader rolls back.
+or empty catalog). A fetch error in that window calls
+`esp_ota_mark_app_invalid_rollback_and_reboot()` and records the digest as
+rejected so the next poll does not re-flash the same binary.
+
+The on-device verifier does not check Fulcio certificate transparency
+SCTs or the leaf EKU. The identity allowlist plus the pinned Fulcio
+PEMs in NVS are the trust boundary.
 
 OTA runs on the main task (48 KB stack). Frame fetches and GCP posts pause
 while the blob download holds a TLS session. The maze binary never joins
@@ -125,11 +142,13 @@ and change visibility if GitHub created it as private.
 ## Publish a new image
 
 CI: a push to `main` that touches `inkbot-esp32/` (or a manual *Run
-workflow*) runs `.github/workflows/inkbot-esp32-publish.yml`. That job
-cross-compiles, pushes
-`ghcr.io/imjasonh/playground/inkbot-esp32:latest` plus `:sha-<git>`, and
-keyless-signs the digest with Cosign. Devices that already trust the
-workflow identity pick it up on the next poll.
+workflow* **from `main`**) runs `.github/workflows/inkbot-esp32-publish.yml`.
+That job cross-compiles, pushes
+`ghcr.io/imjasonh/playground/inkbot-esp32:latest` plus `:sha-<git>`,
+keyless-signs the digest with Cosign, then `make pull-verify`s the layer.
+Devices that already trust the workflow identity pick it up on the next
+poll. Dispatch from any other branch is skipped: keyless Cosign would
+produce `@refs/heads/<branch>`, which the example allowlist rejects.
 
 From a laptop (identity must be in `trust/identities`):
 
@@ -140,8 +159,8 @@ brew install cosign
 make publish
 ```
 
-`make publish` needs `espflash` (for `save-image`), `cosign`, and a token
-that can write the package.
+`make publish` needs `espflash` 4.2.2 (for `save-image`), `cosign`, and a
+token that can write the package.
 
 ## Flash and RAM budget
 
