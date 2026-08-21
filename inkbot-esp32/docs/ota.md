@@ -130,9 +130,8 @@ period, the inkbot binary:
    image. It still rejects a leaf that is not yet valid. Intermediate and
    root certificates use a full wall-clock window.
 5. Follows GHCR blob redirects (typically one 307 to the package CDN)
-   with a 4 KiB HTTP header buffer, then streams the firmware blob into
-   the inactive slot, hashing as it goes. Does not send the GHCR bearer
-   token to the redirected host.
+   with an 8 KiB HTTP header buffer, then streams the firmware blob into
+   the inactive slot, hashing as it goes.
 6. Marks that slot to boot and restarts.
 
 On the new image, ESP-IDF leaves the slot in `PENDING_VERIFY`. inkbot
