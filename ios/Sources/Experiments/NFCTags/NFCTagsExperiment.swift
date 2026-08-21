@@ -6,7 +6,7 @@ enum NFCTagsExperiment {
         id: "nfc-tags",
         title: "NFC Tags",
         summary: "Read and write NDEF text or URL tags with Core NFC.",
-        icon: "wave.3.right.circle"
+        icon: "wave.3.right"
     ) {
         NFCTagsView()
     }
