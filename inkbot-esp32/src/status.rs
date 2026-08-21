@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use crate::panel::{FRAME_BYTES, PANEL_HEIGHT, PANEL_WIDTH};
 
 /// Matches the HTTP `User-Agent` and `firmware` telemetry field.
-pub const FIRMWARE_ID: &str = "inkbot-esp32/0.5";
+pub const FIRMWARE_ID: &str = "inkbot-esp32/0.6";
 
 /// Glyph width of `FONT_6X10` (includes the 1 px gap).
 const GLYPH_W: u32 = 6;

@@ -32,8 +32,10 @@ loop, and [`docs/ota.md`](docs/ota.md) for NVS, OTA, and GCP.
   slot. Verify the Cosign signature (Fulcio leaf + identity allowlist)
   before writing the inactive slot. Cosign 2.5 attaches
   `sha256-<manifest>.sig` with simple-signing; also accept a Sigstore
-  bundle layer (`sha256-<manifest>` without `.sig`). Identity allowlist
-  comes from NVS, not the image.
+  bundle layer (`sha256-<manifest>` without `.sig`). Fulcio leaves last
+  about 10 minutes; accept an expired leaf (this firmware does not query
+  Rekor). Reject a not-yet-valid leaf. Identity allowlist comes from
+  NVS, not the image.
 - **Pending-verify:** after an OTA reboot, mark the slot valid only when
   the health check succeeds. inkbot: Worker boot fetch (`Displayed` or
   empty catalog). maze: first successful panel paint. On that check

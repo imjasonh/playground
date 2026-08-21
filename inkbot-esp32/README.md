@@ -90,7 +90,7 @@ with Wi-Fi too. Each ELF must contain its baked id (`FIRMWARE_ID` in
 refuses to continue. `make flash` uploads the binary selected by `APP` and
 always passes `partitions.csv` so espflash 4.x does not rewrite a factory-only
 table. After the inkbot binary boots, `POST /device` / `@inkbot status` shows
-the same `firmware=` string (`inkbot-esp32/0.5`). `make build GCP=0` compiles
+the same `firmware=` string (`inkbot-esp32/0.6`). `make build GCP=0` compiles
 GCP out of the inkbot image.
 
 `provisioning.toml` is gitignored. `inkbot.base_url` must be `https://`.
@@ -100,7 +100,7 @@ does not rebuild firmware; run `make build` once first so ESP-IDF is present.
 `make provision-build` writes `target/nvs.bin` without flashing. Maze reads
 NVS only for OTA pending-verify (it ignores Wi-Fi and Worker keys).
 
-`FIRMWARE_ID` in `src/status.rs` (`inkbot-esp32/0.5`) is the on-wire and OTA
+`FIRMWARE_ID` in `src/status.rs` (`inkbot-esp32/0.6`) is the on-wire and OTA
 contract. It is independent of the crate `version` in `Cargo.toml`.
 
 To flash without erasing (app slot only) after the first bootstrap:
@@ -210,7 +210,7 @@ Brownout still usually means a weak 5 V supply (see Power above).
 
 When `inkbot.upload_secret` matches the Worker's `UPLOAD_SECRET`, the firmware
 POSTs JSON telemetry to `{base_url}/device` (`User-Agent` / `firmware` =
-`inkbot-esp32/0.5`):
+`inkbot-esp32/0.6`):
 
 - once after boot (Wi-Fi is up; SNTP is started first so `unix_secs` can fill in)
 - whenever the on-panel error text changes

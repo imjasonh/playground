@@ -123,6 +123,10 @@ period, the inkbot binary:
    simple-signing), then `sha256-<manifest>` (Sigstore bundle). Checks the
    Fulcio leaf SAN + OIDC issuer against `trust/identities`, verifies the
    chain, and checks the signed payload binds the firmware manifest digest.
+   Fulcio leaves last about 10 minutes. The verifier accepts an expired
+   leaf so a board that was unplugged during publish can still install the
+   image. It still rejects a leaf that is not yet valid. Intermediate and
+   root certificates use a full wall-clock window.
 5. Streams the firmware blob into the inactive slot, hashing as it goes.
 6. Marks that slot to boot and restarts.
 
@@ -134,8 +138,10 @@ successful panel paint. A failed health check in that window calls
 rejected so the next poll does not re-flash the same binary.
 
 The on-device verifier does not check Fulcio certificate transparency
-SCTs or the leaf EKU. The identity allowlist plus the pinned Fulcio
-PEMs in NVS are the trust boundary.
+SCTs, the leaf EKU, or Rekor. The identity allowlist plus the pinned Fulcio
+PEMs in NVS are the trust boundary. Cosign uses Rekor's integrated time to
+accept expired Fulcio leaves; this firmware does the same by skipping the
+leaf `notAfter` check.
 
 OTA runs on the inkbot main task (48 KB stack). Frame fetches and GCP posts
 pause while the blob download holds a TLS session. The maze binary never

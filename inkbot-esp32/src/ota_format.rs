@@ -150,6 +150,49 @@ pub fn require_https_url(url: &str) -> Result<(), &'static str> {
     }
 }
 
+/// Result of comparing unix `now` to a certificate notBefore/notAfter window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CertWindow {
+    Valid,
+    NotYetValid,
+    Expired,
+}
+
+/// Classify `now` against `[not_before, not_after]`.
+pub fn cert_window(now: u64, not_before: u64, not_after: u64) -> CertWindow {
+    if now < not_before {
+        CertWindow::NotYetValid
+    } else if now > not_after {
+        CertWindow::Expired
+    } else {
+        CertWindow::Valid
+    }
+}
+
+/// Fulcio signing leaves last about 10 minutes. Cosign uses Rekor's integrated
+/// time after that. This firmware does not query Rekor, so an expired leaf is
+/// still accepted when chain, identity, and signature match. A not-yet-valid
+/// leaf is rejected.
+pub fn fulcio_leaf_window_ok(
+    now: u64,
+    not_before: u64,
+    not_after: u64,
+) -> Result<(), &'static str> {
+    match cert_window(now, not_before, not_after) {
+        CertWindow::NotYetValid => Err("leaf cert not yet valid"),
+        CertWindow::Valid | CertWindow::Expired => Ok(()),
+    }
+}
+
+/// Intermediate and root certificates keep a full wall-clock validity check.
+pub fn ca_cert_window_ok(now: u64, not_before: u64, not_after: u64) -> Result<(), &'static str> {
+    match cert_window(now, not_before, not_after) {
+        CertWindow::Valid => Ok(()),
+        CertWindow::NotYetValid => Err("cert not yet valid"),
+        CertWindow::Expired => Err("cert expired"),
+    }
+}
+
 /// Decode a Fulcio OIDC issuer extension value.
 ///
 /// OID `1.3.6.1.4.1.57264.1.8` is a DER UTF8String. The deprecated
@@ -289,6 +332,28 @@ mod tests {
             decode_fulcio_issuer_value(b"https://accounts.google.com").unwrap(),
             "https://accounts.google.com"
         );
+    }
+
+    #[test]
+    fn cert_window_classifies_not_before_and_not_after() {
+        assert_eq!(cert_window(50, 100, 200), CertWindow::NotYetValid);
+        assert_eq!(cert_window(100, 100, 200), CertWindow::Valid);
+        assert_eq!(cert_window(200, 100, 200), CertWindow::Valid);
+        assert_eq!(cert_window(201, 100, 200), CertWindow::Expired);
+    }
+
+    #[test]
+    fn fulcio_leaf_accepts_expired_window() {
+        // Issued 1h ago, 10-minute Fulcio lifetime, verified later.
+        assert!(fulcio_leaf_window_ok(3_600, 0, 600).is_ok());
+        assert!(fulcio_leaf_window_ok(300, 0, 600).is_ok());
+        assert_eq!(
+            fulcio_leaf_window_ok(50, 100, 200).unwrap_err(),
+            "leaf cert not yet valid"
+        );
+        assert!(ca_cert_window_ok(3_600, 0, 600).is_err());
+        assert!(ca_cert_window_ok(300, 0, 600).is_ok());
+        assert!(ca_cert_window_ok(50, 100, 200).is_err());
     }
 
     #[test]
