@@ -443,8 +443,6 @@ fn running_slot_digest(len: u64) -> Option<String> {
 }
 
 fn download_and_apply(repo: &str, layer: &Descriptor, token: &str) -> Result<()> {
-    use embedded_svc::io::Read;
-
     if layer.size == 0 || layer.size > OTA_SLOT_BYTES {
         bail!(
             "firmware layer size {} does not fit OTA slot ({OTA_SLOT_BYTES} bytes)",
@@ -454,27 +452,21 @@ fn download_and_apply(repo: &str, layer: &Descriptor, token: &str) -> Result<()>
     let repo_path = repo_path(repo)?;
     let start_url = format!("https://ghcr.io/v2/{repo_path}/blobs/{}", layer.digest);
     let bearer = format!("Bearer {token}");
+    let anon_headers = [("accept", "application/octet-stream")];
 
     let mut url = start_url;
     let mut use_auth = true;
     for _ in 0..BLOB_REDIRECTS {
         let conn = EspHttpConnection::new(&blob_http_config())?;
         let mut client = Client::wrap(conn);
+        let auth_headers = [
+            ("authorization", bearer.as_str()),
+            ("accept", "application/octet-stream"),
+        ];
         let mut resp = if use_auth {
-            client
-                .request(
-                    Method::Get,
-                    &url,
-                    &[
-                        ("authorization", bearer.as_str()),
-                        ("accept", "application/octet-stream"),
-                    ],
-                )?
-                .submit()?
+            client.request(Method::Get, &url, &auth_headers)?.submit()?
         } else {
-            client
-                .request(Method::Get, &url, &[("accept", "application/octet-stream")])?
-                .submit()?
+            client.request(Method::Get, &url, &anon_headers)?.submit()?
         };
         let status = resp.status();
         if is_http_redirect(status) {
