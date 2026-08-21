@@ -74,8 +74,9 @@ GitHub Pages deploy and preview workflows skip them:
   hosts one 800×480 B/W PNG, accepts signed uploads, and turns Slack
   `@inkbot` image mentions into dithered frames.
 - **[`inkbot-esp32/`](inkbot-esp32/)** — Rust/ESP-IDF firmware for the Waveshare
-  ESP32 + 7.5″ panel: poll `inkbot` every minute, or flash `APP=maze` for an
-  offline maze that partial-refreshes a correct solve (no OTA/SSH).
+  ESP32 + 7.5″ panel: poll `inkbot` every minute, signed OTA from GHCR
+  after a USB NVS provision, or flash `APP=maze` for an offline maze that
+  partial-refreshes a correct solve.
 - **[`git-server/`](git-server/)** — a git smart-HTTP server for Cloudflare
   Workers, in Rust: repositories in R2, refs in Durable Objects, plus
   file/tree/blame APIs and streaming pack ingest.

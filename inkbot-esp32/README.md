@@ -6,7 +6,7 @@ panel geometry:
 
 | Binary | `make flash` | What it does |
 |--------|--------------|--------------|
-| `inkbot-esp32` | `APP=inkbot` (default) | Joins Wi-Fi, polls the inkbot Worker, shows frames |
+| `inkbot-esp32` | `APP=inkbot` (default) | Joins Wi-Fi, polls the inkbot Worker, shows frames, and polls GHCR for signed OTA images |
 | `maze-esp32` | `APP=maze` | Offline maze: empty grid, then a correct solve on partial refreshes |
 
 The inkbot binary polls `{base_url}/` for the image catalog every minute, shows
@@ -14,8 +14,11 @@ new uploads immediately, and every `rotate_secs` (default 30 min) picks a rand
 frame from the library. Frames are fetched as raw `/{name}.bin` packed buffers
 (no on-device zlib).
 
-No OTA, no SSH. Companion Worker for the inkbot binary:
-[`../inkbot/`](../inkbot/).
+Wi-Fi, Worker, Sigstore trust, and optional GCP credentials live in NVS
+(not in the ELF). After a one-time USB bootstrap, later inkbot builds can
+arrive as signed GHCR images. Companion Worker:
+[`../inkbot/`](../inkbot/). OTA / NVS / GCP details:
+[`docs/ota.md`](docs/ota.md).
 
 ## Hardware
 
@@ -51,33 +54,67 @@ TX power to ease weak supplies.
 
 ```bash
 cargo install espup espflash ldproxy
-brew install cmake ninja dfu-util
+brew install cmake ninja dfu-util cosign
 espup install --targets esp32
 curl -LsSf https://astral.sh/uv/install.sh | sh   # Python 3.12 for ESP-IDF
 ```
 
 ## Configure, build, flash
 
+Secrets are **not** compiled in. Copy the example, edit it, then bootstrap:
+
 ```bash
 cd inkbot-esp32
-cp config.toml.example config.toml
-$EDITOR config.toml          # wifi.ssid / wifi.pass / inkbot.base_url
+cp provisioning.toml.example provisioning.toml
+$EDITOR provisioning.toml    # wifi, inkbot.base_url, trust; optional [gcp] / [ota]
 
 make build                   # first run clones ESP-IDF (~minutes)
-make flash PORT=/dev/cu.usbserial-XXXX
+make bootstrap PORT=/dev/cu.usbserial-XXXX
 make monitor
-# or: make run
 ```
+
+`make bootstrap` erases flash and writes the bootloader, the two-slot OTA
+partition table, the inkbot app, and the NVS image. Boards that still have
+the old factory-only table need this USB erase once; they cannot OTA from
+the pre-OTA firmware.
 
 `make build` always compiles both ELFs under `inkbot-esp32/target/` (it ignores
 an inherited `CARGO_TARGET_DIR`) and refuses to continue unless each ELF
 contains its baked id (`FIRMWARE_ID` in `src/status.rs`, `MAZE_FIRMWARE_ID` in
-`src/maze/mod.rs`). `make flash` uploads the binary selected by `APP`. After
-the inkbot binary boots, `POST /device` / `@inkbot status` shows the same
-`firmware=` string.
+`src/maze/mod.rs`). `make flash` uploads the binary selected by `APP` and
+always passes `partitions.csv` so espflash 4.x does not rewrite a factory-only
+table. After the inkbot binary boots, `POST /device` / `@inkbot status` shows
+the same `firmware=` string (`inkbot-esp32/0.3`).
 
-`config.toml` is gitignored. The inkbot binary bakes those values in at
-compile time via `build.rs`. The maze binary does not read them.
+`provisioning.toml` is gitignored. Re-run `make provision` after you change
+it (that replaces the whole NVS partition). The maze binary does not read NVS
+config.
+
+To flash without erasing (app slot only) after the first bootstrap:
+
+```bash
+make flash PORT=/dev/cu.usbserial-XXXX
+```
+
+## OTA and optional GCP
+
+On a provisioned inkbot image, the main loop polls
+`ghcr.io/imjasonh/playground/inkbot-esp32:latest` every 10 minutes by default,
+verifies a Cosign Sigstore bundle against the identities in NVS, writes the
+inactive slot, and reboots. The new image stays pending-verify until the
+Worker boot fetch succeeds; a failure rolls back.
+
+Pushes to `main` that touch this directory publish and sign that package
+(`.github/workflows/inkbot-esp32-publish.yml`). The GHCR package must be
+**public** — the device pulls anonymously.
+
+If you uncomment `[gcp]` and flash a service-account PKCS#8 PEM into NVS,
+the same loop tees serial logs to Cloud Logging and posts heap / RSSI gauges
+to Cloud Monitoring. There is no Google client crate on the device; JWT
+RS256 uses mbedTLS.
+
+Set `ota.poll_secs = 0` in `provisioning.toml` if you want USB-only updates.
+For the full contract, see [`docs/ota.md`](docs/ota.md).
 
 ## Maze firmware
 
@@ -121,6 +158,8 @@ Wi-Fi TX current spikes described in Power.
    `ESP_ERR_HTTP_CONNECT` (or a dropped STA) triggers a full re-associate and
    one immediate catalog retry, so a desk frame can stay up without a power
    cycle if lwIP’s automatic lease renew stalls.
+7. Every `ota.poll_secs` (default 600, after a 30 s boot grace): poll GHCR
+   for a newer signed image. Frame fetches pause while the blob downloads.
 
 ### Error status line
 
@@ -150,7 +189,7 @@ Brownout still usually means a weak 5 V supply (see Power above).
 
 When `inkbot.upload_secret` matches the Worker's `UPLOAD_SECRET`, the firmware
 POSTs JSON telemetry to `{base_url}/device` (`User-Agent` / `firmware` =
-`inkbot-esp32/0.2`):
+`inkbot-esp32/0.3`):
 
 - once after boot (Wi-Fi is up; SNTP is started first so `unix_secs` can fill in)
 - whenever the on-panel error text changes
@@ -176,29 +215,36 @@ or mention `@inkbot status` in Slack.
 
 ## Host tests
 
-PNG decode / geometry logic is target-agnostic:
+PNG decode / geometry logic and OTA encoding helpers are target-agnostic:
 
 ```bash
 make test
-# or: cargo test --lib
+# cargo test --lib, then provision --dry-run on provisioning.toml.example
 ```
 
 CI: `.github/workflows/inkbot-esp32.yml` always runs on PRs (so it can be a
 required check), then no-ops unless `inkbot-esp32/` changed; when it has work
 it runs host checks plus an Xtensa `make build` (the shared `test.yml` Rust
-job skips this crate — it needs espup).
+job skips this crate — it needs espup). Pushes to `main` also run
+`inkbot-esp32-publish.yml` to push and sign the GHCR image.
 
 ## Layout
 
 ```
 inkbot-esp32/
 ├── src/
-│   ├── lib.rs / panel.rs / png_frame.rs / status.rs  # host-tested
-│   ├── maze/                                         # generate / solve / render (host-tested)
-│   ├── main.rs                                       # inkbot: Wi-Fi + HTTP poll loop
-│   ├── maze_main.rs / maze_display.rs                # maze: offline panel loop
-│   └── display.rs                                    # inkbot: Waveshare 7.5″ V2 via epd-waveshare
-├── config.toml.example
-├── sdkconfig.defaults
+│   ├── lib.rs / panel.rs / png_frame.rs / status.rs / ota_format.rs
+│   ├── maze/                         # generate / solve / render (host-tested)
+│   ├── main.rs                       # inkbot: Wi-Fi + HTTP + OTA + GCP
+│   ├── maze_main.rs / maze_display.rs
+│   ├── display.rs                    # Waveshare 7.5″ V2 via epd-waveshare
+│   └── ota.rs / sig.rs / gcp.rs / https.rs / device_config.rs
+├── tools/provision/                  # NVS image from provisioning.toml
+├── tools/publisher/                  # OCI push of the firmware .bin
+├── certs/                            # short HTTPS CA bundle
+├── trust/                            # Fulcio PEMs staged into NVS
+├── partitions.csv                    # two 1.9375 MiB OTA slots
+├── provisioning.toml.example
+├── docs/ota.md
 └── Makefile
 ```

@@ -35,7 +35,7 @@ playground/
 ├── hello-macos/           # example macOS SwiftUI app (XcodeGen + Sparkle CD)
 ├── onramp/             # offline Mac can’t-get-online triage (Sparkle CD)
 ├── inkbot/                # Rust Cloudflare Worker: e-ink frame host + Slack @inkbot
-├── inkbot-esp32/          # Rust/ESP-IDF firmware: poll inkbot or flash APP=maze on Waveshare 7.5″
+├── inkbot-esp32/          # Rust/ESP-IDF firmware: poll inkbot + signed OTA, or APP=maze, on Waveshare 7.5″
 ├── ios/                   # the single "Playground" iOS app (SwiftUI; TestFlight CD)
 ├── kanoodle/              # example app with tests (JS + Jest + Playwright)
 ├── nypd-choppers/         # NYPD helicopter ADS-B tracker (JS + Node tests)
@@ -171,6 +171,7 @@ discovery scripts.
 | `cleanup.yml` | pull request closed, manual | Removes closed-PR preview dirs from `gh-pages` (reconciles all open PRs) and refreshes the root index |
 | `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps, plus the pasta style leg, in one job |
 | `inkbot-esp32.yml` | push to `main`, pull requests, manual | Always runs discover + host/firmware jobs (so they can be required checks); host/firmware no-op when `inkbot-esp32/` (or this workflow) is unchanged (excluded from `test.yml`) |
+| `inkbot-esp32-publish.yml` | push to `main` touching `inkbot-esp32/**` (or this workflow), manual | Cross-builds inkbot firmware, pushes `ghcr.io/<owner>/playground/inkbot-esp32`, and Cosign-signs the digest (devices poll this for OTA) |
 | `ios.yml` | push to `main`, pull requests | Tests changed iOS apps on macOS; on `main`, delivers them to TestFlight |
 | `macos.yml` | push to `main`, pull requests | Tests changed macOS apps on macOS; on `main`, ships notarized Sparkle updates when secrets are present |
 | `ios-bootstrap-label.yml` | pull request | Labels PRs that need signing re-bootstrap with `needs-ios-bootstrap` |
@@ -269,8 +270,10 @@ Worker apps pin Rust 1.88 (with `worker` 0.8 / wasm-bindgen 0.2.125).
 
 **ESP32 firmware is tested by `inkbot-esp32.yml`, not `test.yml`.** Stable
 Linux Cargo cannot build `xtensa-esp32-espidf`; the dedicated workflow installs
-the esp-rs Xtensa toolchain, runs host `cargo test --lib` / clippy, and
-`make build`s both the inkbot and maze device images when `inkbot-esp32/` changes.
+the esp-rs Xtensa toolchain, runs host `cargo test --lib` / clippy / provision
+dry-run, and `make build`s both the inkbot and maze device images when
+`inkbot-esp32/` changes. Signed OTA images are published by
+`inkbot-esp32-publish.yml` on `main` (see [`inkbot-esp32/docs/ota.md`](inkbot-esp32/docs/ota.md)).
 
 **The iOS app is tested by a separate workflow (`ios.yml`), not `test.yml`,**
 because it needs a macOS runner. A cheap Linux `discover` job reuses the same
@@ -618,7 +621,7 @@ auto-discover them. Run their local tests when you change them.
 | Directory | Type | Tests |
 |-----------|------|-------|
 | `its-not-jaws/` | Cursor SDK harness for It's Not Jaws (movie shared-fact guessing); mock backend for tests; live PR game via `its-not-jaws.yml` + `CURSOR_API_KEY` secret | `cd its-not-jaws && npm test` (CI also runs a live game when the secret is set) |
-| `inkbot-esp32/` | Rust/ESP-IDF firmware: poll `inkbot` Worker, or `APP=maze` for an offline maze on the same 7.5″ panel | host lib tests + Xtensa cross-build of both binaries via `inkbot-esp32.yml` |
+| `inkbot-esp32/` | Rust/ESP-IDF firmware: poll `inkbot` Worker and signed GHCR OTA, or `APP=maze` for an offline maze on the same 7.5″ panel. Secrets in NVS (`make provision`). Agent guide: [`inkbot-esp32/AGENTS.md`](inkbot-esp32/AGENTS.md) | host lib tests + provision dry-run + Xtensa cross-build via `inkbot-esp32.yml`; publish + Cosign on `main` via `inkbot-esp32-publish.yml` |
 | `life-scad/` | OpenSCAD Life sculpture (Z = time) plus optional Python reverse-history search | `python3 life-scad/reverse_life_test.py` (needs `pip install -r life-scad/requirements.txt`) |
 | `life-qr/` | Parametric OpenSCAD Life sculpture with a QR-code roof for any text/height | `python3 life-qr/life_qr_test.py` (optional `pip install segno`) |
 

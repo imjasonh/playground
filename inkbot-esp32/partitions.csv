@@ -1,0 +1,18 @@
+# Partition table for OTA. Two equal app slots (ota_0 / ota_1), no
+# factory partition — the bootloader always boots one OTA slot.
+#
+# Flash layout (4 MB total):
+# 0x001000-0x008FFF bootloader (~28 KB)
+# 0x008000-0x008FFF partition table itself (4 KB)
+# 0x009000-0x00EFFF nvs (24 KB)
+# 0x00F000-0x010FFF otadata (8 KB)
+# 0x011000-0x011FFF phy_init (4 KB)
+# 0x020000-0x20FFFF ota_0 (1.9375 MB)
+# 0x210000-0x3FFFFF ota_1 (1.9375 MB)
+#
+# Name, Type, SubType, Offset, Size
+nvs, data, nvs, 0x9000, 0x6000
+otadata, data, ota, 0xf000, 0x2000
+phy_init, data, phy, 0x11000, 0x1000
+ota_0, app, ota_0, 0x20000, 0x1F0000
+ota_1, app, ota_1, 0x210000, 0x1F0000

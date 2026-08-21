@@ -1,7 +1,15 @@
 //! inkbot-esp32 — poll the inkbot Worker and show frames on Waveshare 7.5″.
 
+mod device_config;
 mod display;
+mod gcp;
+mod https;
+mod nvs_util;
+mod ota;
+mod sig;
+mod trust;
 
+use std::sync::OnceLock;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -24,6 +32,7 @@ use esp_idf_svc::wifi::{
 };
 use log::{error, info, warn};
 
+use device_config::AppConfig;
 use display::Panel;
 use inkbot_esp32::{
     format_error_chain, format_panic_message, incident_needs_post, is_http_connect_failure,
@@ -31,8 +40,18 @@ use inkbot_esp32::{
     DeviceTelemetry, FetchStatus, IncidentContext, LastIncident, StatusReport, WifiRefresh,
     WifiStatus, FIRMWARE_ID, FRAME_BYTES,
 };
+use trust::TrustConfig;
 
-include!(concat!(env!("OUT_DIR"), "/config_gen.rs"));
+const GIT_SHA: &str = match option_env!("GIT_SHA") {
+    Some(s) => s,
+    None => "unknown",
+};
+
+static APP: OnceLock<AppConfig> = OnceLock::new();
+
+fn app() -> &'static AppConfig {
+    APP.get().expect("AppConfig not loaded")
+}
 
 const NVS_NS: &str = "inkbot";
 const NVS_NAME: &str = "name";
@@ -50,21 +69,32 @@ const WIFI_RECONNECT_COOLDOWN_SECS: u64 = 120;
 
 fn main() -> Result<()> {
     esp_idf_svc::sys::link_patches();
-    esp_idf_svc::log::EspLogger::initialize_default();
     install_panic_hook();
 
     let reset = unsafe { esp_reset_reason() } as i32;
     let heap = HeapSnap::now();
+
+    let peripherals = Peripherals::take()?;
+    let sysloop = EspSystemEventLoop::take()?;
+    let nvs_part = EspDefaultNvsPartition::take()?;
+
+    let gcp_cfg = gcp::GcpConfig::load(nvs_part.clone())?;
+    let pending_log_queue = if let Some(cfg) = gcp_cfg.as_ref() {
+        let q = gcp::LogQueue::new(gcp::QUEUE_CAPACITY);
+        gcp::ForkLogger::install(Some((q.clone(), cfg.min_level)));
+        Some(q)
+    } else {
+        gcp::ForkLogger::install(None);
+        None
+    };
+
     info!(
-        "inkbot-esp32: boot reset_reason={} ({}) {}",
+        "inkbot-esp32: boot fw={FIRMWARE_ID} git={GIT_SHA} reset_reason={} ({}) {}",
         inkbot_esp32::reset_reason_name(reset),
         reset,
         heap
     );
 
-    let peripherals = Peripherals::take()?;
-    let sysloop = EspSystemEventLoop::take()?;
-    let nvs_part = EspDefaultNvsPartition::take()?;
     let mut nvs = EspNvs::new(nvs_part.clone(), NVS_NS, true)
         .map_err(|e| anyhow!("open NVS {NVS_NS}: {e:?}"))?;
 
@@ -77,6 +107,35 @@ fn main() -> Result<()> {
         peripherals.pins.gpio27,
         peripherals.pins.gpio26,
     )?;
+
+    let Some(cfg) = AppConfig::load(nvs_part.clone())? else {
+        let _ = panel.show_status_only("NOT PROVISIONED — make provision");
+        loop {
+            error!("NOT PROVISIONED — run `make provision` to write NVS, then reboot");
+            thread::sleep(Duration::from_secs(30));
+        }
+    };
+    let Some(trust) = TrustConfig::load(nvs_part.clone())? else {
+        let _ = panel.show_status_only("NOT PROVISIONED — trust keys missing");
+        loop {
+            error!("NOT PROVISIONED — trust/identities or Fulcio PEMs missing in NVS");
+            thread::sleep(Duration::from_secs(30));
+        }
+    };
+    APP.set(cfg).map_err(|_| anyhow!("AppConfig already set"))?;
+    info!(
+        "provisioned ssid={} base={} ota={}:{} poll={}s",
+        app().wifi_ssid,
+        app().base_url,
+        app().ota_repo,
+        app().ota_tag,
+        app().ota_poll_secs
+    );
+
+    let pending_verify = ota::is_pending_verify();
+    if pending_verify {
+        info!("ota: image is PENDING_VERIFY — Worker fetch must succeed");
+    }
 
     let mut status = StatusReport::default();
     let mut remote = RemoteStatus::from_nvs(&nvs);
@@ -117,8 +176,28 @@ fn main() -> Result<()> {
     }
     let mut ip_str = sta_ip(&wifi)?;
     info!("wifi connected, ip={ip_str}, {}", HeapSnap::now());
-    // Keep SNTP alive so SystemTime (and unix_secs telemetry) stay valid.
+    // Keep SNTP alive so SystemTime (unix_secs, Sigstore validity, GCP JWT) stay valid.
     let _sntp = start_sntp();
+    let https_lock = https::new_short_https_lock();
+    let mut gcp_client = match (gcp_cfg, pending_log_queue) {
+        (Some(cfg), Some(queue)) => {
+            info!(
+                "gcp: Cloud Logging + Monitoring enabled project={}",
+                cfg.project_id
+            );
+            Some(gcp::GcpClient::start(
+                cfg,
+                queue,
+                https_lock.clone(),
+                FIRMWARE_ID,
+            ))
+        }
+        _ => {
+            info!("gcp: not provisioned, serial only");
+            None
+        }
+    };
+    let mut ota_state = ota::OtaState::new();
     let mut last_wifi_refresh = Instant::now();
     // None = never reconnected this boot, so the first CONNECT failure
     // can recover immediately (associated-but-no-internet is common).
@@ -167,7 +246,7 @@ fn main() -> Result<()> {
             warn!("boot poll failed: {e:#}");
             status.fetch = Some(fetch_status_from_err(
                 "boot /latest.bin",
-                &format!("{INKBOT_BASE_URL}/latest.bin"),
+                &format!("{}/latest.bin", app().base_url),
                 &e,
                 HTTP_ATTEMPTS,
                 HTTP_ATTEMPTS,
@@ -176,6 +255,21 @@ fn main() -> Result<()> {
             capture_incident(&mut remote, &nvs, &wifi, &status, "fetch");
             paint_error(&mut panel, last_frame.as_deref(), &status);
             panel_has_status = true;
+            if pending_verify {
+                error!("ota: Worker fetch failed during PENDING_VERIFY; rebooting to roll back");
+                thread::sleep(Duration::from_secs(2));
+                unsafe { esp_idf_svc::sys::esp_restart() };
+            }
+        }
+    }
+    if pending_verify && status.fetch.is_none() {
+        match ota::mark_valid_after_pending_verify_passed(nvs_part.clone()) {
+            Ok(()) => info!("ota: pending-verify passed (Worker reachable)"),
+            Err(e) => {
+                error!("ota: mark-valid failed ({e:#}); rebooting to roll back");
+                thread::sleep(Duration::from_secs(2));
+                unsafe { esp_idf_svc::sys::esp_restart() };
+            }
         }
     }
 
@@ -191,11 +285,29 @@ fn main() -> Result<()> {
     );
 
     loop {
-        thread::sleep(Duration::from_secs(POLL_SECS));
+        thread::sleep(Duration::from_secs(app().poll_secs));
         // After the first successful image the crash line has been on-screen
         // for a full poll period; drop it so the next paint is a full frame.
         if last_frame.is_some() {
             status.crash = None;
+        }
+        if !https::ota_download_in_progress() {
+            match ota_state.tick(nvs_part.clone(), app(), &trust, &https_lock) {
+                Ok(ota::PollOutcome::Updated(d)) => {
+                    info!("ota: applied {d}, rebooting");
+                    thread::sleep(Duration::from_secs(1));
+                    unsafe { esp_idf_svc::sys::esp_restart() };
+                }
+                Ok(ota::PollOutcome::NoChange) => info!("ota: no change"),
+                Ok(ota::PollOutcome::Skipped) => {}
+                Err(e) => warn!("ota: poll failed: {e:#}"),
+            }
+        }
+        if let Some(client) = gcp_client.as_mut() {
+            client.tick();
+        }
+        if https::ota_download_in_progress() {
+            continue;
         }
         let mut recovered = maybe_refresh_wifi(
             &mut wifi,
@@ -308,7 +420,7 @@ fn wifi_status_from_err(err: &anyhow::Error, attempt: u32, attempts: u32) -> Wif
     let heap = HeapSnap::now();
     let top = err.to_string();
     WifiStatus {
-        ssid: WIFI_SSID.to_string(),
+        ssid: app().wifi_ssid.clone(),
         step: wifi_step_from(&top).to_string(),
         cause: format_error_chain(err),
         attempt,
@@ -401,7 +513,7 @@ fn boot_latest(
     status: &StatusReport,
     ip: &str,
 ) -> Result<Boot> {
-    let url = format!("{INKBOT_BASE_URL}/latest.bin");
+    let url = format!("{}/latest.bin", app().base_url);
     info!("GET {url} ({})", HeapSnap::now());
     let response = http_get(&url, None)?;
     match response.status {
@@ -462,7 +574,7 @@ fn tick(
         Err(e) => {
             status.fetch = Some(fetch_status_from_err(
                 "catalog",
-                &format!("{INKBOT_BASE_URL}/"),
+                &format!("{}/", app().base_url),
                 &e,
                 HTTP_ATTEMPTS,
                 HTTP_ATTEMPTS,
@@ -509,7 +621,7 @@ fn tick(
     }
 
     // 2) Periodic random rotation among the library.
-    if last_rotate.elapsed() >= Duration::from_secs(ROTATE_SECS) {
+    if last_rotate.elapsed() >= Duration::from_secs(app().rotate_secs) {
         let rand = unsafe { esp_random() };
         if let Some(name) = catalog
             .pick_random(current_name.as_deref(), rand)
@@ -551,7 +663,7 @@ fn show_named(
     name: &str,
     ip: &str,
 ) -> Result<()> {
-    let url = format!("{INKBOT_BASE_URL}/{name}.bin");
+    let url = format!("{}/{name}.bin", app().base_url);
     note_op(nvs, &format!("GET /{name}.bin"));
     // Drop the last framebuffer before the 48 KB HTTPS body so TLS + frame
     // can share the classic ESP32 heap. Restore it if the GET fails.
@@ -634,7 +746,7 @@ fn show_named(
 }
 
 fn fetch_catalog() -> Result<Catalog> {
-    let url = format!("{INKBOT_BASE_URL}/");
+    let url = format!("{}/", app().base_url);
     info!("GET {url} ({})", HeapSnap::now());
     let response = http_get(&url, None)?;
     if response.status != 200 {
@@ -770,7 +882,7 @@ fn maybe_refresh_wifi(
         netif_up,
         connect_failure,
         last_wifi_refresh.elapsed().as_secs(),
-        DHCP_RENEW_SECS,
+        app().dhcp_renew_secs,
         last_reconnect
             .map(|t| t.elapsed().as_secs())
             .unwrap_or(WIFI_RECONNECT_COOLDOWN_SECS),
@@ -854,7 +966,8 @@ fn connect_wifi(wifi: &mut BlockingWifi<EspWifi<'static>>) -> Result<()> {
     let mut last_err: Option<anyhow::Error> = None;
     for attempt in 1..=WIFI_ATTEMPTS {
         info!(
-            "wifi attempt {attempt}/{WIFI_ATTEMPTS} ssid={WIFI_SSID} {}",
+            "wifi attempt {attempt}/{WIFI_ATTEMPTS} ssid={} {}",
+            app().wifi_ssid,
             HeapSnap::now()
         );
         match connect_wifi_once(wifi, attempt) {
@@ -878,9 +991,17 @@ fn connect_wifi_once(wifi: &mut BlockingWifi<EspWifi<'static>>, attempt: u32) ->
 
     step("configure");
     wifi.set_configuration(&WifiConfig::Client(ClientConfiguration {
-        ssid: WIFI_SSID.try_into().map_err(|_| anyhow!("ssid too long"))?,
-        password: WIFI_PASS.try_into().map_err(|_| anyhow!("pass too long"))?,
-        auth_method: if WIFI_PASS.is_empty() {
+        ssid: app()
+            .wifi_ssid
+            .as_str()
+            .try_into()
+            .map_err(|_| anyhow!("ssid too long"))?,
+        password: app()
+            .wifi_pass
+            .as_str()
+            .try_into()
+            .map_err(|_| anyhow!("pass too long"))?,
+        auth_method: if app().wifi_pass.is_empty() {
             AuthMethod::None
         } else {
             AuthMethod::WPA2WPA3Personal
@@ -1103,11 +1224,11 @@ fn maybe_post_device(
     current_image: Option<&str>,
     panel_has_status: bool,
 ) {
-    let secret_ok = !INKBOT_UPLOAD_SECRET.is_empty();
+    let secret_ok = !app().upload_secret.is_empty();
     let err = status.render();
     let error_changed = err != remote.last_error;
     let secs = remote.last_post.elapsed().as_secs();
-    if !should_post_status(secret_ok, force, error_changed, secs, STATUS_SECS) {
+    if !should_post_status(secret_ok, force, error_changed, secs, app().status_secs) {
         return;
     }
     let last_op = read_str(nvs, NVS_LAST_OP).ok().flatten();
@@ -1121,7 +1242,7 @@ fn maybe_post_device(
         heap.min,
         heap.largest,
         Some(net.ip),
-        Some(WIFI_SSID.to_string()),
+        Some(app().wifi_ssid.clone()),
         current_image.map(str::to_string),
         last_op,
         panel_has_status,
@@ -1163,7 +1284,7 @@ fn maybe_post_device(
 
 fn post_device_report(tel: &DeviceTelemetry) -> Result<()> {
     let body = serde_json::to_vec(tel).map_err(|e| anyhow!("status json: {e}"))?;
-    let url = format!("{INKBOT_BASE_URL}/device");
+    let url = format!("{}/device", app().base_url);
     const ATTEMPTS: u32 = 2;
     let mut last_err: Option<anyhow::Error> = None;
     for attempt in 1..=ATTEMPTS {
@@ -1184,7 +1305,7 @@ fn post_device_report(tel: &DeviceTelemetry) -> Result<()> {
 }
 
 fn http_post_json(url: &str, body: &[u8]) -> Result<u16> {
-    let auth = format!("Bearer {INKBOT_UPLOAD_SECRET}");
+    let auth = format!("Bearer {}", app().upload_secret);
     let len = body.len().to_string();
     let mut client = HttpClient::wrap(
         EspHttpConnection::new(&HttpConfig {

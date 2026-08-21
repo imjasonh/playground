@@ -1,0 +1,164 @@
+# OTA, NVS provisioning, and optional GCP
+
+This page is for someone flashing a Waveshare ESP32 desk frame. It covers
+the first USB write, how the device picks up later images, and how to ship
+logs and metrics to Google Cloud.
+
+Secrets never go in the ELF. Wi-Fi, the Worker URL, Sigstore trust, the
+optional service-account key, and OTA overrides live in the NVS partition
+that `make provision` writes. An OTA image can replace the app slots without
+touching those keys.
+
+## First flash on a board that already has factory firmware
+
+Today's in-field image uses a single factory partition. This firmware uses
+two OTA slots and a different NVS layout, so a USB **erase + flash-all +
+provision** is required once. You cannot OTA from the pre-OTA image.
+
+```bash
+cd inkbot-esp32
+cp provisioning.toml.example provisioning.toml
+# Edit wifi, inkbot.base_url, and (optionally) [gcp] / [ota].
+make bootstrap PORT=/dev/cu.usbserial-XXXX
+make monitor
+```
+
+`make bootstrap` erases flash, writes the bootloader, the OTA partition
+table, the inkbot app, and the NVS image. After that, later updates can
+arrive over GHCR.
+
+If Wi-Fi or trust keys are missing, the panel shows `NOT PROVISIONED` and
+the serial log repeats the same message.
+
+Re-running `make provision` replaces the entire NVS partition. Runtime keys
+in the `inkbot` namespace (`name`, `etag`, `latest`, `op`, `inc`) are wiped
+and the device treats the catalog as new on the next boot.
+
+## What you put in `provisioning.toml`
+
+| Section | Required | What it does |
+|---------|----------|--------------|
+| `[wifi]` | yes | `ssid` and `pass` (empty `pass` is an open network) |
+| `[inkbot]` | yes | Worker `base_url` plus poll / rotate / status / DHCP intervals |
+| `[trust]` | yes | Fulcio PEMs and the identities allowed to sign OTA images |
+| `[gcp]` | no | Cloud Logging + Monitoring. Omit for serial-only logs |
+| `[ota]` | no | Overrides the compiled default repo / tag / poll interval |
+
+`inkbot.upload_secret` must match the Worker's `UPLOAD_SECRET` if you want
+`POST /device`. Leave it empty to keep telemetry on the panel and serial
+only.
+
+`ota.poll_secs = 0` disables GHCR polling (USB flash only). If you omit
+`[ota]`, the firmware polls `ghcr.io/imjasonh/playground/inkbot-esp32:latest`
+every 600 seconds.
+
+The example file already allowlists two signers:
+
+- A Google account for a laptop `make publish`
+- The `inkbot-esp32-publish.yml` workflow on `main` for CI
+
+If you publish from another identity, add it under `[[trust.identities]]`
+and re-run `make provision`.
+
+## Optional Google Cloud logs and metrics
+
+The firmware does not take the official Google client crates. A small client
+mints a JWT with mbedTLS (already linked for HTTPS), exchanges it for an
+access token, and POSTs to Cloud Logging and Cloud Monitoring. That keeps
+RSA / tracing / time crates out of the image.
+
+1. Create a service account in the project that should receive logs.
+2. Grant `roles/logging.logWriter` and `roles/monitoring.metricWriter`.
+   The first custom metric descriptor create can also need
+   `roles/monitoring.admin` once.
+3. Create a JSON key. Extract the PKCS#8 PEM and fields:
+
+   ```bash
+   jq -r .private_key sa.json > gcp-sa-key.pem
+   chmod 600 gcp-sa-key.pem
+   ```
+
+   Use `client_email` as `sa_email` and `private_key_id` as `sa_key_id`.
+   Keep the PEM out of the git worktree when you can; the filename
+   `gcp-sa-key.pem` is gitignored if you leave it in `inkbot-esp32/`.
+4. Uncomment `[gcp]` in `provisioning.toml` and run `make provision`.
+
+On boot the device tees `log` records into a 64-entry queue and flushes
+batches from the main loop (the same loop that paints the panel). It does
+not start a GCP thread. During an OTA blob download, flushes are skipped so
+two TLS sessions do not fight the 48 KB framebuffer for heap.
+
+Metrics (when `metrics_interval_secs` is not 0) are gauges on
+`custom.googleapis.com/inkbot/*`: free heap, min free heap, largest 8-bit
+block, uptime, Wi-Fi RSSI, and log-queue depth / drops. The resource type
+is `generic_node` with `node_id` set to the chip MAC.
+
+## How OTA works after bootstrap
+
+Every `ota.poll_secs` (default 10 minutes), after a 30-second boot grace
+period, the inkbot binary:
+
+1. Fetches an anonymous GHCR pull token and the OCI manifest for
+   `repo:tag`.
+2. Skips the rest if the layer digest matches the last successful digest
+   in NVS.
+3. Pulls the Cosign Sigstore bundle, checks the leaf SAN + OIDC issuer
+   against `trust/identities`, verifies the Fulcio chain, and checks the
+   DSSE / in-toto subject against the manifest digest.
+4. Streams the firmware blob into the inactive slot, hashing as it goes.
+5. Marks that slot to boot and restarts.
+
+On the new image, ESP-IDF leaves the slot in `PENDING_VERIFY`. The firmware
+marks the image valid only after the Worker boot fetch succeeds (`Displayed`
+or empty catalog). A fetch error in that window calls `esp_restart()` so
+the bootloader rolls back.
+
+OTA runs on the main task (48 KB stack). Frame fetches and GCP posts pause
+while the blob download holds a TLS session. The maze binary never joins
+Wi-Fi and never polls GHCR; flash it with `make flash APP=maze` over USB.
+
+The GHCR package must be **public**. The device uses an anonymous pull
+token. After the first CI publish, open
+[the package settings](https://github.com/imjasonh/playground/pkgs)
+and change visibility if GitHub created it as private.
+
+## Publish a new image
+
+CI: a push to `main` that touches `inkbot-esp32/` (or a manual *Run
+workflow*) runs `.github/workflows/inkbot-esp32-publish.yml`. That job
+cross-compiles, pushes
+`ghcr.io/imjasonh/playground/inkbot-esp32:latest` plus `:sha-<git>`, and
+keyless-signs the digest with Cosign. Devices that already trust the
+workflow identity pick it up on the next poll.
+
+From a laptop (identity must be in `trust/identities`):
+
+```bash
+cd inkbot-esp32
+echo 'export GH_TOKEN=ghp_xxxxxxxx' > gh.env   # packages:write
+brew install cosign
+make publish
+```
+
+`make publish` needs `espflash` (for `save-image`), `cosign`, and a token
+that can write the package.
+
+## Flash and RAM budget
+
+The Waveshare driver board is a classic ESP32 with 4 MB flash. The OTA
+table is two slots of `0x1F0000` (1.9375 MiB) each. There is no leftover
+flash for a factory partition.
+
+TLS record buffers are 4 KiB in / 2 KiB out. The CA store is the eight
+roots in `certs/` (Let's Encrypt, Google Trust Services, DigiCert,
+USERTrust) instead of the full Mozilla bundle. Keep that list short; a
+full bundle plus the 48 KB framebuffer does not fit in DRAM next to Wi-Fi.
+
+Do not add an OTA thread or hold the last framebuffer during a GHCR
+download. Those are the two ways this board OOMs.
+
+## Maze firmware
+
+`APP=maze` still builds a second ELF and flashes it into an OTA slot.
+It is USB-only. To return to the inkbot loop, flash without `APP=maze`
+(or wait for an inkbot OTA after you are back on the inkbot binary).

@@ -6,6 +6,7 @@
 pub mod catalog;
 pub mod maze;
 pub mod net;
+pub mod ota_format;
 pub mod panel;
 pub mod png_frame;
 pub mod status;
