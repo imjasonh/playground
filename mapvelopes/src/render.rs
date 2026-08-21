@@ -5,7 +5,7 @@ use pdf_writer::{Content, Filter, Name, Pdf, Rect, Ref, Str, TextStr};
 use crate::address::Address;
 use crate::error::Error;
 use crate::geo::format_miles;
-use crate::maps::{jpeg_dimensions, EnvelopeSpec, MapSource};
+use crate::maps::{jpeg_dimensions, EnvelopeSpec};
 
 /// US #10 business envelope, in PDF points (1/72 inch).
 pub const PAGE_W: f32 = 9.5 * 72.0;
@@ -35,10 +35,7 @@ pub fn render(spec: &EnvelopeSpec) -> Result<Vec<u8>, Error> {
     let info_id = Ref::new(8);
     let image_id = Ref::new(9);
 
-    let jpeg = spec
-        .map_jpeg
-        .as_deref()
-        .filter(|bytes| jpeg_dimensions(bytes).is_ok());
+    let jpeg = spec.map_jpeg.as_deref();
     let jpeg_size = match jpeg {
         Some(bytes) => Some(jpeg_dimensions(bytes)?),
         None => None,
@@ -58,8 +55,8 @@ pub fn render(spec: &EnvelopeSpec) -> Result<Vec<u8>, Error> {
             fonts.pair(FONT_R, font_r_id);
             fonts.pair(FONT_B, font_b_id);
         }
-        resources.ext_g_states().pair(GS, gs_id);
         if jpeg_size.is_some() {
+            resources.ext_g_states().pair(GS, gs_id);
             resources.x_objects().pair(IMG, image_id);
         }
     }
@@ -70,10 +67,11 @@ pub fn render(spec: &EnvelopeSpec) -> Result<Vec<u8>, Error> {
     pdf.type1_font(font_b_id)
         .base_font(Name(b"Helvetica-Bold"))
         .encoding_predefined(Name(b"WinAnsiEncoding"));
-    pdf.ext_graphics(gs_id)
-        .non_stroking_alpha(0.90)
-        .stroking_alpha(0.90);
-
+    if jpeg_size.is_some() {
+        pdf.ext_graphics(gs_id)
+            .non_stroking_alpha(0.90)
+            .stroking_alpha(0.90);
+    }
     pdf.document_info(info_id)
         .title(TextStr("Mapvelope"))
         .creator(TextStr("mapvelopes"));
@@ -122,16 +120,19 @@ fn paint_overlays(content: &mut Content, spec: &EnvelopeSpec, has_photo: bool) {
     let dest_x = 250.0;
     let dest_y = 92.0;
 
-    // Translucent cards so type stays readable on a photo map.
-    content.save_state();
-    content.set_parameters(GS);
+    if has_photo {
+        content.save_state();
+        content.set_parameters(GS);
+    }
     fill_rgb(content, CARD);
     rounded_rect(content, return_x, return_y, return_w, return_h, 3.0);
     content.fill_nonzero();
     fill_rgb(content, CARD);
     rounded_rect(content, dest_x, dest_y, dest_w, dest_h, 3.5);
     content.fill_nonzero();
-    content.restore_state();
+    if has_photo {
+        content.restore_state();
+    }
 
     write_address(
         content,
@@ -197,25 +198,20 @@ fn draw_stamp(content: &mut Content) {
 }
 
 fn draw_legend(content: &mut Content, spec: &EnvelopeSpec, has_photo: bool) {
-    fill_rgb(content, MUTED);
-    let distance = spec
-        .route
-        .distance_text
-        .clone()
-        .unwrap_or_else(|| format_miles(spec.route.path_miles()));
-    let mut legend = distance;
-    if let Some(dur) = &spec.route.duration_text {
-        legend = format!("{legend}  ·  {dur}");
+    if let Some(route) = &spec.route {
+        fill_rgb(content, MUTED);
+        let mut legend = route
+            .distance_text
+            .clone()
+            .unwrap_or_else(|| format_miles(route.path_miles()));
+        if let Some(dur) = &route.duration_text {
+            legend = format!("{legend}  ·  {dur}");
+        }
+        show_text(content, FONT_R, 7.0, 16.0, 18.0, &legend);
     }
-    show_text(content, FONT_R, 7.0, 16.0, 18.0, &legend);
-
-    let attrib = match spec.source {
-        MapSource::Google if has_photo => Some("Map data © Google"),
-        MapSource::Google => Some("Route data © Google"),
-        MapSource::Schematic => None,
-    };
-    if let Some(attrib) = attrib {
-        show_text(content, FONT_R, 6.5, 16.0, 8.0, attrib);
+    if has_photo {
+        fill_rgb(content, MUTED);
+        show_text(content, FONT_R, 6.5, 16.0, 8.0, "Map data © Google");
     }
 }
 
@@ -283,8 +279,7 @@ mod tests {
     use crate::maps::EnvelopeSpec;
 
     fn pdf_for(from: &str, to: &str) -> Vec<u8> {
-        let spec =
-            EnvelopeSpec::schematic(Address::parse(from).unwrap(), Address::parse(to).unwrap());
+        let spec = EnvelopeSpec::no_map(Address::parse(from).unwrap(), Address::parse(to).unwrap());
         render(&spec).unwrap()
     }
 

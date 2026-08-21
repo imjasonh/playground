@@ -12,9 +12,8 @@ pub struct Address {
 }
 
 impl Address {
-    /// Parse a freeform block. Blank lines are dropped. The first non-empty
-    /// line is treated as the name when it contains no digits; Google still
-    /// geocodes the whole block.
+    /// Parse a freeform block. Blank lines are dropped. Extra lines beyond
+    /// [`MAX_LINES`] are dropped.
     pub fn parse(text: &str) -> Result<Self, Error> {
         Self::parse_named("address", text)
     }

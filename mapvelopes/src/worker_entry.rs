@@ -9,8 +9,7 @@ use crate::address::Address;
 use crate::api::{self, Classified};
 use crate::error::Error;
 use crate::maps::{
-    api_key_usable, directions_url, geocode_url, looks_like_jpeg, spec_from_google, static_map_url,
-    EnvelopeSpec,
+    api_key_usable, directions_url, geocode_url, spec_from_google, static_map_url, EnvelopeSpec,
 };
 use crate::render;
 
@@ -69,7 +68,7 @@ async fn build_spec(
     let from = Address::parse_named("from", from)?;
     let to = Address::parse_named("to", to)?;
     if !api_key_usable(key) {
-        return Ok(EnvelopeSpec::schematic(from, to));
+        return Ok(EnvelopeSpec::no_map(from, to));
     }
     let key = key.expect("usable key");
     live_spec(from, to, key).await
@@ -86,11 +85,8 @@ async fn live_spec(
     let to_ll = crate::maps::parse_geocode(&to_body)?;
     let dir_body = fetch_bytes(&directions_url(from_ll, to_ll, key)).await?;
     let route = crate::maps::parse_directions(&dir_body)?;
-    let jpeg = match fetch_bytes(&static_map_url(&route, key)).await {
-        Ok(bytes) if looks_like_jpeg(&bytes) => Some(bytes),
-        Ok(_) | Err(_) => None,
-    };
-    spec_from_google(from, to, &from_body, &to_body, &dir_body, jpeg.as_deref())
+    let jpeg = fetch_bytes(&static_map_url(&route, key)).await?;
+    spec_from_google(from, to, &from_body, &to_body, &dir_body, &jpeg)
 }
 
 async fn fetch_bytes(url: &str) -> std::result::Result<Vec<u8>, Error> {

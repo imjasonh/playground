@@ -1,13 +1,13 @@
 # mapvelopes
 
-A US #10 envelope PDF with the driving route from sender to recipient printed
-as the background. The idea is Nick Johnson's 2010
-[Mapvelopes](http://blog.notdot.net/2010/04/Generating-PDFs-on-App-Engine-Python-and-introducing-Mapvelopes)
-(and the [Yanko Design writeup](https://www.yankodesign.com/2010/03/30/google-envelopes-beta-of-course/)
-that went with it), rebuilt as a Rust Cloudflare Worker.
+A US #10 envelope PDF with the driving route from sender to recipient as the
+background. Nick Johnson published this in 2010 as
+[Mapvelopes](http://blog.notdot.net/2010/04/Generating-PDFs-on-App-Engine-Python-and-introducing-Mapvelopes).
+[Yanko Design](https://www.yankodesign.com/2010/03/30/google-envelopes-beta-of-course/)
+wrote it up as Google Envelopes. This is that envelope, as a Rust Cloudflare
+Worker.
 
-I wanted to open a PDF and see whether the joke still holds: two addresses, a
-blue line between them, something you could print and fold.
+I wanted a PDF I could print: two addresses, a blue line between them.
 
 > **Not a Pages app.** This directory has no `index.html`. GitHub Pages
 > deploy and preview skip it. `deploy-workers.yml` publishes it to Cloudflare
@@ -16,28 +16,22 @@ blue line between them, something you could print and fold.
 
 ## What you get
 
-A one-page PDF at **9.5 × 4.125 in** (US #10). Return address in the upper
-left, delivery address in the usual spot, a stamp box, and, when a Google
-Maps key is set, a route map filling the rest.
-
-With a Google Maps Platform key the Worker (and the CLI) geocodes both
-addresses, asks Directions for a driving polyline, and tries Maps Static for
-the background JPEG. Without a key, or when you pass `--stub`, the PDF is
-still a #10 with the two addresses. There is no stand-in map. That is enough
-to check type and page size before wiring up billing.
-
-Print at 100% scale. "Fit to page" shrinks a #10 onto letter paper.
+One page, 9.5 × 4.125 in (US #10). Return address, delivery address, stamp
+box. With a Google Maps Platform key, the Worker (and the CLI) call Geocoding,
+Directions, and Maps Static, and print the route as the background JPEG.
+Without a key, or with `--stub`, you get the addresses on a blank page. Print
+at 100% scale. "Fit to page" shrinks a #10 onto letter paper.
 
 ## Run it on your machine
 
-The same crate builds a native CLI. From `mapvelopes/`:
+From `mapvelopes/`:
 
 ```bash
 cargo run --example envelope
 ```
 
-That writes `envelope.pdf` in the current directory, Mountain View to New
-York, no map. Open it in a PDF viewer. Override the addresses:
+That writes `envelope.pdf` in the current directory (Mountain View to New
+York, no map). Override the addresses:
 
 ```bash
 cargo run --example envelope -- \
@@ -46,7 +40,7 @@ cargo run --example envelope -- \
   -o /tmp/envelope.pdf
 ```
 
-To hit Google, export a key (or pass `--key`) and drop `--stub`:
+To hit Google, export a key or pass `--key`:
 
 ```bash
 export GOOGLE_MAPS_API_KEY='…'
@@ -70,8 +64,8 @@ Once deployed (or under `wrangler dev`):
 | `GET` | `/envelope?from=…&to=…` | PDF |
 | `POST` | `/envelope` | PDF (`application/x-www-form-urlencoded` or JSON `{"from","to"}`) |
 
-Addresses are freeform, one line per envelope line. The first line is set in
-bold on the delivery block.
+Addresses are freeform, one line per envelope line. The first line is bold on
+the delivery block.
 
 ## Develop and test
 
@@ -100,13 +94,11 @@ hand:
 cd mapvelopes
 cargo +stable install worker-build@0.8.5
 npx wrangler deploy
-# optional, when you have a key:
 npx wrangler secret put GOOGLE_MAPS_API_KEY
 ```
 
 For `wrangler dev`, copy `.dev.vars.example` to `.dev.vars` and put the key
-there if you want live maps locally. An empty value skips Google and leaves
-the envelope blank.
+there if you want live maps locally. An empty value skips Google.
 
 The crate name is `mapvelopes-worker`; the Worker script name is
 `mapvelopes-worker`.

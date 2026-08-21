@@ -5,39 +5,25 @@ use url::Url;
 
 use crate::address::Address;
 use crate::error::Error;
-use crate::geo::{
-    decode_polyline, encode_polyline, format_miles, schematic_route, subsample, LatLng, Route,
-};
-
-/// How the background was produced. Attribution on the envelope depends on this.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MapSource {
-    /// Geocoding + directions (and maybe Static Maps) used a real key.
-    Google,
-    /// No usable key; coordinates come from the gazetteer / hash. No map image.
-    Schematic,
-}
+use crate::geo::{decode_polyline, encode_polyline, format_miles, subsample, LatLng, Route};
 
 /// Everything [`crate::render::render`] needs to draw one envelope.
 #[derive(Debug, Clone)]
 pub struct EnvelopeSpec {
     pub from: Address,
     pub to: Address,
-    pub route: Route,
+    pub route: Option<Route>,
     pub map_jpeg: Option<Vec<u8>>,
-    pub source: MapSource,
 }
 
 impl EnvelopeSpec {
-    /// Plan a route with no network. The PDF has no map background.
-    pub fn schematic(from: Address, to: Address) -> Self {
-        let route = schematic_route(&from, &to);
+    /// Addresses only. No Maps calls, no background image.
+    pub fn no_map(from: Address, to: Address) -> Self {
         EnvelopeSpec {
             from,
             to,
-            route,
+            route: None,
             map_jpeg: None,
-            source: MapSource::Schematic,
         }
     }
 }
@@ -315,30 +301,39 @@ pub fn jpeg_dimensions(data: &[u8]) -> Result<(u32, u32), Error> {
     Err(Error::Pdf("JPEG has no size markers".into()))
 }
 
-/// Build a spec from Google API payloads. If `jpeg` is missing or not a JPEG,
-/// the route is still real and the background is left blank.
+/// Accept a Maps Static body only if it is a JPEG. Google returns JSON (often
+/// with HTTP 200) when the key cannot serve the image.
+pub fn jpeg_from_static_map(body: &[u8]) -> Result<&[u8], Error> {
+    if looks_like_jpeg(body) {
+        return Ok(body);
+    }
+    if let Some(msg) = static_map_error(body) {
+        return Err(Error::Maps(msg));
+    }
+    Err(Error::Maps("staticmap: response was not a JPEG".into()))
+}
+
+/// Build a spec from Google API payloads. `jpeg` must be a JPEG (use
+/// [`jpeg_from_static_map`] to turn a Static Maps body into one).
 pub fn spec_from_google(
     from: Address,
     to: Address,
     geocode_from: &[u8],
     geocode_to: &[u8],
     directions: &[u8],
-    jpeg: Option<&[u8]>,
+    jpeg: &[u8],
 ) -> Result<EnvelopeSpec, Error> {
     // Geocode bodies are fetched so a bad address fails before directions;
     // the polyline already contains start/end, so the parsed points are unused.
     let _ = parse_geocode(geocode_from)?;
     let _ = parse_geocode(geocode_to)?;
     let route = parse_directions(directions)?;
-    let map_jpeg = jpeg
-        .filter(|bytes| looks_like_jpeg(bytes))
-        .map(|bytes| bytes.to_vec());
+    let jpeg = jpeg_from_static_map(jpeg)?;
     Ok(EnvelopeSpec {
         from,
         to,
-        route,
-        map_jpeg,
-        source: MapSource::Google,
+        route: Some(route),
+        map_jpeg: Some(jpeg.to_vec()),
     })
 }
 
@@ -425,12 +420,35 @@ mod tests {
     }
 
     #[test]
-    fn spec_from_google_without_jpeg_still_google() {
+    fn spec_from_google_embeds_jpeg() {
         let from = Address::parse("Mountain View, CA").unwrap();
         let to = Address::parse("San Francisco, CA").unwrap();
-        let spec = spec_from_google(from, to, GEOCODE, GEOCODE, DIRECTIONS, None).unwrap();
-        assert_eq!(spec.source, MapSource::Google);
-        assert!(spec.map_jpeg.is_none());
-        assert!(spec.route.points.len() >= 2);
+        let mut jpeg = vec![0xFF, 0xD8, 0xFF, 0xC0, 0x00, 0x0B, 0x08];
+        jpeg.extend_from_slice(&283u16.to_be_bytes());
+        jpeg.extend_from_slice(&640u16.to_be_bytes());
+        jpeg.extend_from_slice(&[1, 1, 0x11, 0x00]);
+        let spec = spec_from_google(from, to, GEOCODE, GEOCODE, DIRECTIONS, &jpeg).unwrap();
+        assert!(spec.map_jpeg.is_some());
+        assert_eq!(spec.route.as_ref().unwrap().points.len(), 3);
+    }
+
+    #[test]
+    fn spec_from_google_requires_jpeg() {
+        let from = Address::parse("Mountain View, CA").unwrap();
+        let to = Address::parse("San Francisco, CA").unwrap();
+        let err =
+            spec_from_google(from, to, GEOCODE, GEOCODE, DIRECTIONS, b"not a jpeg").unwrap_err();
+        assert!(err.to_string().contains("not a JPEG"));
+    }
+
+    #[test]
+    fn jpeg_from_static_map_surfaces_json_error() {
+        let err = jpeg_from_static_map(
+            br#"{"status":"REQUEST_DENIED","error_message":"Static Maps disabled"}"#,
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("REQUEST_DENIED"));
+        assert!(msg.contains("Static Maps disabled"));
     }
 }

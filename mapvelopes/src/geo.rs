@@ -1,6 +1,4 @@
-//! Coordinates, Google encoded polylines, and the no-key geocoder.
-
-use crate::address::Address;
+//! Coordinates and Google encoded polylines.
 
 /// WGS84 point.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -153,96 +151,6 @@ pub fn subsample(points: &[LatLng], max: usize) -> Vec<LatLng> {
         .collect()
 }
 
-/// Well-known places for the no-key geocoder. Longer names win when several match.
-const PLACES: &[(&str, f64, f64)] = &[
-    ("mountain view", 37.3861, -122.0839),
-    ("cupertino", 37.3230, -122.0322),
-    ("san francisco", 37.7749, -122.4194),
-    ("los angeles", 34.0522, -118.2437),
-    ("new york", 40.7128, -74.0060),
-    ("brooklyn", 40.6782, -73.9442),
-    ("chicago", 41.8781, -87.6298),
-    ("seattle", 47.6062, -122.3321),
-    ("boston", 42.3601, -71.0589),
-    ("austin", 30.2672, -97.7431),
-    ("denver", 39.7392, -104.9903),
-    ("miami", 25.7617, -80.1918),
-    ("portland", 45.5152, -122.6784),
-    ("washington", 38.9072, -77.0369),
-    ("atlanta", 33.7490, -84.3880),
-    ("phoenix", 33.4484, -112.0740),
-    ("philadelphia", 39.9526, -75.1652),
-    ("london", 51.5074, -0.1278),
-    ("paris", 48.8566, 2.3522),
-    ("tokyo", 35.6762, 139.6503),
-];
-
-/// Geocode without a network: explicit `lat,lng`, then the gazetteer, then a
-/// stable hash into the continental US.
-pub fn geocode_stub(text: &str) -> LatLng {
-    if let Some(ll) = parse_coords(text) {
-        return ll;
-    }
-    for line in text.lines().rev() {
-        if let Some(ll) = parse_coords(line) {
-            return ll;
-        }
-    }
-    let lower = text.to_lowercase();
-    let mut best: Option<(&str, LatLng)> = None;
-    for (name, lat, lng) in PLACES {
-        if lower.contains(name) && best.map(|(n, _)| name.len() > n.len()).unwrap_or(true) {
-            best = Some((*name, LatLng::new(*lat, *lng)));
-        }
-    }
-    best.map(|(_, ll)| ll)
-        .unwrap_or_else(|| hash_latlng(&lower))
-}
-
-fn parse_coords(text: &str) -> Option<LatLng> {
-    let t = text.trim();
-    let mut parts = t.split(',');
-    let a = parts.next()?.trim().parse::<f64>().ok()?;
-    let b = parts.next()?.trim().parse::<f64>().ok()?;
-    if parts.next().is_some() {
-        return None;
-    }
-    if (-90.0..=90.0).contains(&a) && (-180.0..=180.0).contains(&b) {
-        Some(LatLng::new(a, b))
-    } else {
-        None
-    }
-}
-
-fn hash_latlng(s: &str) -> LatLng {
-    let h = fnv1a(s);
-    let lat = 25.0 + ((h % 10_000) as f64 / 10_000.0) * 23.0;
-    let lng = -124.0 + (((h / 10_000) % 10_000) as f64 / 10_000.0) * 56.0;
-    LatLng::new(lat, lng)
-}
-
-pub(crate) fn fnv1a(s: &str) -> u64 {
-    let mut h = 0xcbf29ce484222325;
-    for b in s.as_bytes() {
-        h ^= u64::from(*b);
-        h = h.wrapping_mul(0x100000001b3);
-    }
-    h
-}
-
-/// Build a no-network [`Route`] for two addresses. Endpoints come from the
-/// gazetteer; there is no map drawing for this path.
-pub fn schematic_route(from: &Address, to: &Address) -> Route {
-    let start = geocode_stub(&from.geocode_query());
-    let end = geocode_stub(&to.geocode_query());
-    let miles = haversine_miles(start, end);
-    Route {
-        points: vec![start, end],
-        distance_text: Some(format!("about {}", format_miles(miles))),
-        duration_text: None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -261,31 +169,6 @@ mod tests {
             assert!((a.lat - b.lat).abs() < 1e-5);
             assert!((a.lng - b.lng).abs() < 1e-5);
         }
-    }
-
-    #[test]
-    fn gazetteer_picks_longest_match() {
-        let ll = geocode_stub("Alice\n1600 Amphitheatre Parkway\nMountain View, CA 94043");
-        assert!((ll.lat - 37.3861).abs() < 0.01);
-        assert!((ll.lng + 122.0839).abs() < 0.01);
-    }
-
-    #[test]
-    fn coords_line_wins() {
-        let ll = geocode_stub("Somewhere\n40.7,-74.0");
-        assert!((ll.lat - 40.7).abs() < 1e-9);
-        assert!((ll.lng + 74.0).abs() < 1e-9);
-    }
-
-    #[test]
-    fn stub_route_is_deterministic() {
-        let a = Address::parse("Mountain View, CA").unwrap();
-        let b = Address::parse("New York, NY").unwrap();
-        let r1 = schematic_route(&a, &b);
-        let r2 = schematic_route(&a, &b);
-        assert_eq!(r1.points, r2.points);
-        assert_eq!(r1.points.len(), 2);
-        assert_ne!(r1.points.first(), r1.points.last());
     }
 
     #[test]

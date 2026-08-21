@@ -3,16 +3,14 @@
 use serde::Deserialize;
 use url::form_urlencoded;
 
-use crate::address::Address;
 use crate::error::Error;
-use crate::maps::EnvelopeSpec;
 
 const FORM_HTML: &str = include_str!("form.html");
 
 const LIVE_STATUS: &str =
-    "This Worker has a Google Maps key, so the envelope uses a real driving route.";
+    "This Worker has a Google Maps key. The envelope background is the driving route between the two addresses.";
 const STUB_STATUS: &str =
-    "No Google Maps key is configured, so the envelope is addresses and a stamp box on a blank page. Set a key to fill the background with a route map.";
+    "This Worker has no Google Maps key. The PDF is addresses and a stamp box until a key is configured.";
 
 /// A request reduced to method, path, query, and body.
 #[derive(Debug, Clone)]
@@ -125,14 +123,6 @@ pub fn error_json(err: &Error) -> Vec<u8> {
         .into_bytes()
 }
 
-/// Parse addresses and build a no-map spec. Callers that have a Maps key
-/// fetch Google payloads themselves and use [`crate::maps::spec_from_google`].
-pub fn schematic_from_fields(from: &str, to: &str) -> Result<EnvelopeSpec, Error> {
-    let from = Address::parse_named("from", from)?;
-    let to = Address::parse_named("to", to)?;
-    Ok(EnvelopeSpec::schematic(from, to))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -216,7 +206,7 @@ mod tests {
     fn form_html_splices_status() {
         let html = String::from_utf8(form_html(false)).unwrap();
         assert!(html.contains("<html lang=\"en\">"));
-        assert!(html.contains("blank page"));
+        assert!(html.contains("no Google Maps key"));
         assert!(!html.contains("__MAPS_STATUS__"));
         let live = String::from_utf8(form_html(true)).unwrap();
         assert!(live.contains("Google Maps key"));

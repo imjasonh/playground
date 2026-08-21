@@ -3,7 +3,7 @@
 //! Transport-agnostic modules, unit-tested on the host:
 //!
 //! * [`address`] — print lines for return and delivery addresses
-//! * [`geo`] — polylines, gazetteer, stub geocoding
+//! * [`geo`] — encoded polylines
 //! * [`maps`] — Google Maps URLs and JSON, plus [`maps::EnvelopeSpec`]
 //! * [`render`] — PDF drawing
 //! * [`api`] — HTTP classification (form, health, envelope)
@@ -19,11 +19,10 @@ pub mod maps;
 pub mod render;
 
 pub use address::Address;
-pub use api::{classify, form_html, health_json, schematic_from_fields, ApiRequest, Classified};
+pub use api::{classify, form_html, health_json, ApiRequest, Classified};
 pub use error::Error;
 pub use maps::{
     api_key_usable, directions_url, geocode_url, spec_from_google, static_map_url, EnvelopeSpec,
-    MapSource,
 };
 pub use render::render;
 

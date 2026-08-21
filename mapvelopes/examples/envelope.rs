@@ -10,7 +10,7 @@
 //! ```
 //!
 //! If `GOOGLE_MAPS_API_KEY` is set (or `--key` is passed), the example geocodes
-//! both addresses, fetches driving directions, and tries a Static Maps JPEG.
+//! both addresses, fetches driving directions, and downloads a Static Maps JPEG.
 //! Otherwise the PDF is addresses and a stamp box with no map. Pass `--stub`
 //! to skip Google even when a key is set.
 
@@ -21,8 +21,8 @@ use std::time::Duration;
 
 use mapvelopes_worker::address::Address;
 use mapvelopes_worker::maps::{
-    api_key_usable, directions_url, geocode_url, looks_like_jpeg, parse_directions, parse_geocode,
-    spec_from_google, static_map_url, EnvelopeSpec, MapSource,
+    api_key_usable, directions_url, geocode_url, parse_directions, parse_geocode, spec_from_google,
+    static_map_url, EnvelopeSpec,
 };
 use mapvelopes_worker::render;
 
@@ -65,7 +65,7 @@ fn run() -> Result<(), String> {
     let to = Address::parse_named("to", &parsed.to).map_err(|e| e.to_string())?;
 
     let spec = if parsed.stub || !api_key_usable(parsed.key.as_deref()) {
-        EnvelopeSpec::schematic(from, to)
+        EnvelopeSpec::no_map(from, to)
     } else {
         let key = parsed.key.as_deref().expect("usable key");
         live_spec(from, to, key)?
@@ -73,10 +73,10 @@ fn run() -> Result<(), String> {
 
     let pdf = render(&spec).map_err(|e| e.to_string())?;
     std::fs::write(&parsed.out, &pdf).map_err(|e| format!("{}: {e}", parsed.out))?;
-    let kind = match spec.source {
-        MapSource::Google if spec.map_jpeg.is_some() => "google map",
-        MapSource::Google => "google route, no map",
-        MapSource::Schematic => "no map",
+    let kind = if spec.map_jpeg.is_some() {
+        "google map"
+    } else {
+        "no map"
     };
     eprintln!("wrote {} ({} bytes, {kind})", parsed.out, pdf.len());
     Ok(())
@@ -163,12 +163,8 @@ fn live_spec(from: Address, to: Address, key: &str) -> Result<EnvelopeSpec, Stri
     let to_ll = parse_geocode(&to_body).map_err(|e| e.to_string())?;
     let dir_body = http_get(&agent, &directions_url(from_ll, to_ll, key))?;
     let route = parse_directions(&dir_body).map_err(|e| e.to_string())?;
-    let jpeg = match http_get(&agent, &static_map_url(&route, key)) {
-        Ok(bytes) if looks_like_jpeg(&bytes) => Some(bytes),
-        Ok(_) | Err(_) => None,
-    };
-    spec_from_google(from, to, &from_body, &to_body, &dir_body, jpeg.as_deref())
-        .map_err(|e| e.to_string())
+    let jpeg = http_get(&agent, &static_map_url(&route, key))?;
+    spec_from_google(from, to, &from_body, &to_body, &dir_body, &jpeg).map_err(|e| e.to_string())
 }
 
 fn http_get(agent: &ureq::Agent, url: &str) -> Result<Vec<u8>, String> {
