@@ -874,34 +874,33 @@ mod tests {
         assert_eq!(spec.route.as_ref().unwrap().points.len(), 3);
     }
 
-    const BROOKLYN: &[u8] = br#"{
+    const FAKE_ST: &[u8] = br#"{
         "status": "OK",
         "results": [{
-            "formatted_address": "98 16th St, Brooklyn, NY 11215, USA",
+            "formatted_address": "123 Fake St, Brooklyn, NY 11231, USA",
             "address_components": [
-                {"long_name": "98", "short_name": "98", "types": ["street_number"]},
-                {"long_name": "16th Street", "short_name": "16th St", "types": ["route"]},
-                {"long_name": "Gowanus", "short_name": "Gowanus", "types": ["neighborhood", "political"]},
+                {"long_name": "123", "short_name": "123", "types": ["street_number"]},
+                {"long_name": "Fake Street", "short_name": "Fake St", "types": ["route"]},
                 {"long_name": "Brooklyn", "short_name": "Brooklyn", "types": ["political", "sublocality", "sublocality_level_1"]},
                 {"long_name": "New York", "short_name": "NY", "types": ["administrative_area_level_1", "political"]},
                 {"long_name": "United States", "short_name": "US", "types": ["country", "political"]},
-                {"long_name": "11215", "short_name": "11215", "types": ["postal_code"]},
-                {"long_name": "7575", "short_name": "7575", "types": ["postal_code_suffix"]}
+                {"long_name": "11231", "short_name": "11231", "types": ["postal_code"]},
+                {"long_name": "0001", "short_name": "0001", "types": ["postal_code_suffix"]}
             ],
-            "geometry": {"location": {"lat": 40.665, "lng": -73.992}}
+            "geometry": {"location": {"lat": 40.65, "lng": -74.0}}
         }]
     }"#;
 
     #[test]
-    fn geocode_expands_brooklyn_street() {
-        let geo = parse_geocode(BROOKLYN).unwrap();
-        assert_eq!(geo.postal_lines, ["98 16th St", "Brooklyn, NY 11215"]);
+    fn geocode_expands_sublocality_city() {
+        let geo = parse_geocode(FAKE_ST).unwrap();
+        assert_eq!(geo.postal_lines, ["123 Fake St", "Brooklyn, NY 11231"]);
     }
 
     #[test]
     fn spec_from_google_prints_expanded_address() {
         let from = Address::parse("Ada Example\n1600 Amphitheatre Parkway").unwrap();
-        let to = Address::parse("98 16th st\nbrooklyn").unwrap();
+        let to = Address::parse("123 fake st\nbrooklyn").unwrap();
         let mut jpeg = vec![0xFF, 0xD8, 0xFF, 0xC0, 0x00, 0x0B, 0x08];
         jpeg.extend_from_slice(&8u16.to_be_bytes());
         jpeg.extend_from_slice(&8u16.to_be_bytes());
@@ -910,14 +909,14 @@ mod tests {
             from,
             to,
             GEOCODE,
-            BROOKLYN,
+            FAKE_ST,
             DIRECTIONS,
             &jpeg,
             MapStyle::Google,
             EnvelopeSize::Ten,
         )
         .unwrap();
-        assert_eq!(spec.to.lines(), ["98 16th St", "Brooklyn, NY 11215"]);
+        assert_eq!(spec.to.lines(), ["123 Fake St", "Brooklyn, NY 11231"]);
         assert_eq!(spec.from.lines()[0], "Ada Example");
     }
 
@@ -926,13 +925,13 @@ mod tests {
         let body = br#"{
             "status": "OK",
             "predictions": [
-                {"description": "98 16th St, Brooklyn, NY, USA", "place_id": "ChIJ50"},
-                {"description": "98 16th St, Oak Brook, IL, USA", "place_id": "ChIJxx"}
+                {"description": "123 Fake St, Brooklyn, NY, USA", "place_id": "ChIJ50"},
+                {"description": "123 Fake St, Springfield, IL, USA", "place_id": "ChIJxx"}
             ]
         }"#;
         let got = parse_autocomplete(body).unwrap();
         assert_eq!(got.len(), 2);
-        assert_eq!(got[0].label, "98 16th St, Brooklyn, NY, USA");
+        assert_eq!(got[0].label, "123 Fake St, Brooklyn, NY, USA");
         assert_eq!(got[0].place_id, "ChIJ50");
     }
 
@@ -957,24 +956,24 @@ mod tests {
         let body = br#"{
             "status": "OK",
             "result": {
-                "formatted_address": "98 16th St, Brooklyn, NY 11215, USA",
+                "formatted_address": "123 Fake St, Brooklyn, NY 11231, USA",
                 "address_components": [
-                    {"long_name": "98", "short_name": "98", "types": ["street_number"]},
-                    {"long_name": "16th Street", "short_name": "16th St", "types": ["route"]},
+                    {"long_name": "123", "short_name": "123", "types": ["street_number"]},
+                    {"long_name": "Fake Street", "short_name": "Fake St", "types": ["route"]},
                     {"long_name": "Brooklyn", "short_name": "Brooklyn", "types": ["sublocality", "sublocality_level_1"]},
                     {"long_name": "New York", "short_name": "NY", "types": ["administrative_area_level_1"]},
                     {"long_name": "United States", "short_name": "US", "types": ["country"]},
-                    {"long_name": "11215", "short_name": "11215", "types": ["postal_code"]}
+                    {"long_name": "11231", "short_name": "11231", "types": ["postal_code"]}
                 ]
             }
         }"#;
         let lines = parse_place_details(body).unwrap();
-        assert_eq!(lines, ["98 16th St", "Brooklyn, NY 11215"]);
+        assert_eq!(lines, ["123 Fake St", "Brooklyn, NY 11231"]);
     }
 
     #[test]
     fn places_urls_include_key() {
-        let auto = places_autocomplete_url("98 16th", "secret-key");
+        let auto = places_autocomplete_url("123 Fake", "secret-key");
         assert!(auto.contains("place/autocomplete/json"));
         assert!(auto.contains("secret-key"));
         assert!(auto.contains("types=address"));
