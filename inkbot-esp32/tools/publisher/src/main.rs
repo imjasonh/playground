@@ -145,7 +145,7 @@ async fn pull_verify(args: PullVerifyArgs) -> Result<()> {
     let (manifest, manifest_digest) = client
         .pull_image_manifest(&reference, &auth)
         .await
-        .with_context(|| format!("fetch manifest for {}", reference))?;
+        .with_context(|| format!("fetch manifest for {reference}"))?;
     tracing::info!(
         reference = %reference,
         manifest_digest = %manifest_digest,
@@ -187,18 +187,14 @@ async fn pull_verify(args: PullVerifyArgs) -> Result<()> {
         .unwrap_or("");
     if pulled_sha != descriptor_sha {
         return Err(anyhow!(
-            "pulled layer SHA mismatch with manifest descriptor: got {}, manifest says {}",
-            pulled_sha,
-            descriptor_sha,
+            "pulled layer SHA mismatch with manifest descriptor: got {pulled_sha}, manifest says {descriptor_sha}"
         ));
     }
     tracing::info!(sha256 = %pulled_sha, "pulled layer matches manifest digest");
 
     if pulled_sha != local_sha {
         return Err(anyhow!(
-            "pulled layer SHA {} != local file SHA {}",
-            pulled_sha,
-            local_sha,
+            "pulled layer SHA {pulled_sha} != local file SHA {local_sha}"
         ));
     }
     tracing::info!("pulled layer SHA matches local .bin");
@@ -279,7 +275,7 @@ async fn push(args: PushArgs) -> Result<()> {
                 Some(manifest.clone()),
             )
             .await
-            .with_context(|| format!("push {}", reference))?;
+            .with_context(|| format!("push {reference}"))?;
         let digest = digest_from_manifest_url(&resp.manifest_url)
             .ok_or_else(|| anyhow::anyhow!("could not parse digest from {}", resp.manifest_url))?;
         tracing::info!(
@@ -355,7 +351,7 @@ fn registry_auth(repo: &str) -> Result<RegistryAuth> {
     let username = repo
         .split('/')
         .nth(1)
-        .ok_or_else(|| anyhow!("can't infer github username from repo {}", repo))?
+        .ok_or_else(|| anyhow!("can't infer github username from repo {repo}"))?
         .to_string();
     Ok(RegistryAuth::Basic(username, token))
 }

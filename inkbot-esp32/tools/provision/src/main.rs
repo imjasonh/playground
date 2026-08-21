@@ -197,7 +197,7 @@ fn severity_to_u8(s: &str) -> Result<u8> {
         "info" => Ok(2),
         "warn" => Ok(3),
         "error" => Ok(4),
-        other => Err(anyhow!("unknown min_severity: {}", other)),
+        other => Err(anyhow!("unknown min_severity: {other}")),
     }
 }
 
@@ -307,7 +307,7 @@ fn main() -> Result<()> {
         .status()
         .with_context(|| format!("run {}", args.nvs_gen.display()))?;
     if !status.success() {
-        bail!("nvs_partition_gen.py failed: {}", status);
+        bail!("nvs_partition_gen.py failed: {status}");
     }
     let bin_size = std::fs::metadata(&args.out)?.len();
     tracing::info!(
@@ -334,7 +334,7 @@ fn main() -> Result<()> {
             .status()
             .context("run espflash write-bin")?;
         if !status.success() {
-            bail!("espflash write-bin failed: {}", status);
+            bail!("espflash write-bin failed: {status}");
         }
         tracing::info!("NVS partition flashed; reboot the device to pick it up");
     } else {
