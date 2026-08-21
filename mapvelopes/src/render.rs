@@ -1,11 +1,10 @@
 //! Draw a US #10 envelope PDF.
 
-use pdf_writer::types::{LineCapStyle, LineJoinStyle};
 use pdf_writer::{Content, Filter, Name, Pdf, Rect, Ref, Str, TextStr};
 
 use crate::address::Address;
 use crate::error::Error;
-use crate::geo::{format_miles, Bounds};
+use crate::geo::format_miles;
 use crate::maps::{jpeg_dimensions, EnvelopeSpec, MapSource};
 
 /// US #10 business envelope, in PDF points (1/72 inch).
@@ -18,18 +17,10 @@ const IMG: Name = Name(b"Im");
 const GS: Name = Name(b"GS");
 
 const LAND: (f32, f32, f32) = (0.957, 0.941, 0.910);
-const WATER: (f32, f32, f32) = (0.655, 0.816, 0.922);
-const PARK: (f32, f32, f32) = (0.769, 0.886, 0.718);
-const ROAD: (f32, f32, f32) = (0.98, 0.98, 0.97);
-const ROAD_EDGE: (f32, f32, f32) = (0.82, 0.80, 0.76);
-const HIGHWAY: (f32, f32, f32) = (0.976, 0.839, 0.361);
-const ROUTE: (f32, f32, f32) = (0.102, 0.451, 0.910);
 const INK: (f32, f32, f32) = (0.12, 0.12, 0.14);
 const MUTED: (f32, f32, f32) = (0.35, 0.37, 0.40);
 const CARD: (f32, f32, f32) = (1.0, 0.99, 0.97);
 const STAMP: (f32, f32, f32) = (0.55, 0.22, 0.22);
-const PIN_FROM: (f32, f32, f32) = (0.204, 0.659, 0.325);
-const PIN_TO: (f32, f32, f32) = (0.918, 0.263, 0.208);
 
 /// Write one #10 envelope as a PDF.
 pub fn render(spec: &EnvelopeSpec) -> Result<Vec<u8>, Error> {
@@ -100,7 +91,7 @@ pub fn render(spec: &EnvelopeSpec) -> Result<Vec<u8>, Error> {
     if jpeg_size.is_some() {
         paint_jpeg(&mut content);
     } else {
-        paint_schematic(&mut content, spec);
+        paint_blank(&mut content);
     }
     paint_overlays(&mut content, spec, jpeg_size.is_some());
     pdf.stream(content_id, &content.finish());
@@ -114,189 +105,9 @@ fn paint_jpeg(content: &mut Content) {
     content.restore_state();
 }
 
-fn paint_schematic(content: &mut Content, spec: &EnvelopeSpec) {
+fn paint_blank(content: &mut Content) {
     fill_rgb(content, LAND);
     content.rect(0.0, 0.0, PAGE_W, PAGE_H);
-    content.fill_nonzero();
-
-    content.save_state();
-    content.rect(0.0, 0.0, PAGE_W, PAGE_H);
-    content.clip_nonzero();
-    content.end_path();
-
-    let mut rng = crate::geo::map_rng(&spec.from, &spec.to);
-    draw_water(content, &mut rng);
-    draw_parks(content, &mut rng);
-    draw_streets(content, &mut rng);
-
-    let bounds = Bounds::for_points(&spec.route.points);
-    draw_route(content, spec, bounds);
-
-    content.restore_state();
-}
-
-fn draw_water(content: &mut Content, rng: &mut impl crate::geo::RngF32) {
-    fill_rgb(content, WATER);
-    let blobs = 2 + (rng.range(0.0, 1.5) as i32);
-    for _ in 0..blobs {
-        let cx = rng.range(-40.0, PAGE_W + 40.0);
-        let cy = rng.range(-20.0, PAGE_H + 20.0);
-        let rx = rng.range(50.0, 140.0);
-        let ry = rng.range(24.0, 70.0);
-        ellipse(content, cx, cy, rx, ry);
-        content.fill_nonzero();
-    }
-}
-
-fn draw_parks(content: &mut Content, rng: &mut impl crate::geo::RngF32) {
-    fill_rgb(content, PARK);
-    let n = 3 + (rng.range(0.0, 3.0) as i32);
-    for _ in 0..n {
-        let x = rng.range(10.0, PAGE_W - 80.0);
-        let y = rng.range(10.0, PAGE_H - 50.0);
-        let w = rng.range(28.0, 90.0);
-        let h = rng.range(18.0, 48.0);
-        rounded_rect(content, x, y, w, h, 4.0);
-        content.fill_nonzero();
-    }
-}
-
-fn draw_streets(content: &mut Content, rng: &mut impl crate::geo::RngF32) {
-    let angle = rng.range(-0.18, 0.18);
-    let (sin, cos) = angle.sin_cos();
-    let spacing_x = rng.range(16.0, 22.0);
-    let spacing_y = rng.range(14.0, 19.0);
-
-    content.save_state();
-    // Rotate about the page center so the grid is not perfectly axis-aligned.
-    let cx = PAGE_W / 2.0;
-    let cy = PAGE_H / 2.0;
-    content.transform([
-        cos,
-        sin,
-        -sin,
-        cos,
-        cx - cos * cx + sin * cy,
-        cy - sin * cx - cos * cy,
-    ]);
-
-    let span = PAGE_W.max(PAGE_H) + 80.0;
-    let mut i = 0;
-    let mut x = -span;
-    while x < span {
-        let highway = i % 7 == 0;
-        if highway {
-            stroke_rgb(content, ROAD_EDGE);
-            content.set_line_width(3.2);
-            content.set_line_cap(LineCapStyle::ButtCap);
-            content.move_to(x, -span);
-            content.line_to(x, span);
-            content.stroke();
-            stroke_rgb(content, HIGHWAY);
-            content.set_line_width(2.0);
-            content.move_to(x, -span);
-            content.line_to(x, span);
-            content.stroke();
-        } else {
-            stroke_rgb(content, ROAD_EDGE);
-            content.set_line_width(1.15);
-            content.move_to(x, -span);
-            content.line_to(x, span);
-            content.stroke();
-            stroke_rgb(content, ROAD);
-            content.set_line_width(0.75);
-            content.move_to(x, -span);
-            content.line_to(x, span);
-            content.stroke();
-        }
-        x += spacing_x;
-        i += 1;
-    }
-
-    i = 0;
-    let mut y = -span;
-    while y < span {
-        let highway = i % 8 == 0;
-        if highway {
-            stroke_rgb(content, ROAD_EDGE);
-            content.set_line_width(2.6);
-            content.move_to(-span, y);
-            content.line_to(span, y);
-            content.stroke();
-            stroke_rgb(content, HIGHWAY);
-            content.set_line_width(1.6);
-            content.move_to(-span, y);
-            content.line_to(span, y);
-            content.stroke();
-        } else {
-            stroke_rgb(content, ROAD_EDGE);
-            content.set_line_width(1.0);
-            content.move_to(-span, y);
-            content.line_to(span, y);
-            content.stroke();
-            stroke_rgb(content, ROAD);
-            content.set_line_width(0.65);
-            content.move_to(-span, y);
-            content.line_to(span, y);
-            content.stroke();
-        }
-        y += spacing_y;
-        i += 1;
-    }
-    content.restore_state();
-}
-
-fn draw_route(content: &mut Content, spec: &EnvelopeSpec, bounds: Bounds) {
-    let pts: Vec<(f32, f32)> = spec
-        .route
-        .points
-        .iter()
-        .map(|p| bounds.project(*p, PAGE_W, PAGE_H))
-        .collect();
-    if pts.len() < 2 {
-        return;
-    }
-
-    content.set_line_cap(LineCapStyle::RoundCap);
-    content.set_line_join(LineJoinStyle::RoundJoin);
-
-    stroke_rgb(content, (1.0, 1.0, 1.0));
-    content.set_line_width(7.0);
-    polyline(content, &pts);
-    content.stroke();
-
-    stroke_rgb(content, ROUTE);
-    content.set_line_width(3.4);
-    polyline(content, &pts);
-    content.stroke();
-
-    if let (Some(start), Some(end)) = (pts.first(), pts.last()) {
-        pin(content, start.0, start.1, PIN_FROM);
-        pin(content, end.0, end.1, PIN_TO);
-    }
-}
-
-fn polyline(content: &mut Content, pts: &[(f32, f32)]) {
-    let mut iter = pts.iter();
-    if let Some((x, y)) = iter.next() {
-        content.move_to(*x, *y);
-        for (x, y) in iter {
-            content.line_to(*x, *y);
-        }
-    }
-}
-
-fn pin(content: &mut Content, x: f32, y: f32, color: (f32, f32, f32)) {
-    let h = 16.0;
-    let r = 5.2;
-    fill_rgb(content, color);
-    content.move_to(x, y);
-    content.cubic_to(x - r * 1.4, y + h * 0.45, x - r, y + h - r, x, y + h - 0.2);
-    content.cubic_to(x + r, y + h - r, x + r * 1.4, y + h * 0.45, x, y);
-    content.close_path();
-    content.fill_nonzero();
-    fill_rgb(content, (1.0, 1.0, 1.0));
-    ellipse(content, x, y + h - r * 0.15, 2.1, 2.1);
     content.fill_nonzero();
 }
 
@@ -311,7 +122,7 @@ fn paint_overlays(content: &mut Content, spec: &EnvelopeSpec, has_photo: bool) {
     let dest_x = 250.0;
     let dest_y = 92.0;
 
-    // Translucent cards so type stays readable on both schematic and photo maps.
+    // Translucent cards so type stays readable on a photo map.
     content.save_state();
     content.set_parameters(GS);
     fill_rgb(content, CARD);
@@ -399,11 +210,13 @@ fn draw_legend(content: &mut Content, spec: &EnvelopeSpec, has_photo: bool) {
     show_text(content, FONT_R, 7.0, 16.0, 18.0, &legend);
 
     let attrib = match spec.source {
-        MapSource::Google if has_photo => "Map data © Google",
-        MapSource::Google => "Route data © Google",
-        MapSource::Schematic => "Schematic route, not a surveyed map",
+        MapSource::Google if has_photo => Some("Map data © Google"),
+        MapSource::Google => Some("Route data © Google"),
+        MapSource::Schematic => None,
     };
-    show_text(content, FONT_R, 6.5, 16.0, 8.0, attrib);
+    if let Some(attrib) = attrib {
+        show_text(content, FONT_R, 6.5, 16.0, 8.0, attrib);
+    }
 }
 
 fn show_text(content: &mut Content, font: Name, size: f32, x: f32, y: f32, text: &str) {
@@ -420,18 +233,6 @@ fn fill_rgb(content: &mut Content, c: (f32, f32, f32)) {
 
 fn stroke_rgb(content: &mut Content, c: (f32, f32, f32)) {
     content.set_stroke_rgb(c.0, c.1, c.2);
-}
-
-fn ellipse(content: &mut Content, cx: f32, cy: f32, rx: f32, ry: f32) {
-    let k = 0.552_284_8;
-    let kx = k * rx;
-    let ky = k * ry;
-    content.move_to(cx + rx, cy);
-    content.cubic_to(cx + rx, cy + ky, cx + kx, cy + ry, cx, cy + ry);
-    content.cubic_to(cx - kx, cy + ry, cx - rx, cy + ky, cx - rx, cy);
-    content.cubic_to(cx - rx, cy - ky, cx - kx, cy - ry, cx, cy - ry);
-    content.cubic_to(cx + kx, cy - ry, cx + rx, cy - ky, cx + rx, cy);
-    content.close_path();
 }
 
 fn rounded_rect(content: &mut Content, x: f32, y: f32, w: f32, h: f32, r: f32) {
@@ -488,7 +289,7 @@ mod tests {
     }
 
     #[test]
-    fn schematic_pdf_is_validish() {
+    fn stub_pdf_is_validish() {
         let pdf = pdf_for(
             "Ada Example\n1600 Amphitheatre Parkway\nMountain View, CA 94043",
             "Bob Example\n350 Fifth Avenue\nNew York, NY 10118",

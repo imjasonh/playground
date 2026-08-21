@@ -1,4 +1,4 @@
-//! Coordinates, Google encoded polylines, and the schematic geocoder.
+//! Coordinates, Google encoded polylines, and the no-key geocoder.
 
 use crate::address::Address;
 
@@ -13,82 +13,9 @@ impl LatLng {
     pub fn new(lat: f64, lng: f64) -> Self {
         Self { lat, lng }
     }
-
-    fn distance_deg(self, other: Self) -> f64 {
-        let dlat = self.lat - other.lat;
-        let dlng = self.lng - other.lng;
-        (dlat * dlat + dlng * dlng).sqrt()
-    }
 }
 
-/// Inclusive geographic bounding box.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Bounds {
-    pub south: f64,
-    pub west: f64,
-    pub north: f64,
-    pub east: f64,
-}
-
-impl Bounds {
-    /// Bounding box of `points`, padded and given a minimum span so a short
-    /// hop still fills the envelope.
-    pub fn for_points(points: &[LatLng]) -> Self {
-        let mut south = f64::INFINITY;
-        let mut west = f64::INFINITY;
-        let mut north = f64::NEG_INFINITY;
-        let mut east = f64::NEG_INFINITY;
-        for p in points {
-            south = south.min(p.lat);
-            north = north.max(p.lat);
-            west = west.min(p.lng);
-            east = east.max(p.lng);
-        }
-        if !south.is_finite() {
-            return Bounds {
-                south: 24.0,
-                west: -125.0,
-                north: 49.0,
-                east: -66.0,
-            };
-        }
-        let mut dlat = (north - south).max(0.04);
-        let mut dlng = (east - west).max(0.04);
-        // Keep roughly the envelope aspect so the route is not a thin ribbon.
-        const ASPECT: f64 = 9.5 / 4.125;
-        if dlng / dlat < ASPECT {
-            dlng = dlat * ASPECT;
-        } else {
-            dlat = dlng / ASPECT;
-        }
-        let pad_lat = dlat * 0.18;
-        let pad_lng = dlng * 0.18;
-        let clat = (south + north) / 2.0;
-        let clng = (west + east) / 2.0;
-        Bounds {
-            south: clat - dlat / 2.0 - pad_lat,
-            north: clat + dlat / 2.0 + pad_lat,
-            west: clng - dlng / 2.0 - pad_lng,
-            east: clng + dlng / 2.0 + pad_lng,
-        }
-    }
-
-    /// Project a point into PDF user space. `y` grows up, like PDF and latitude.
-    pub fn project(self, p: LatLng, page_w: f32, page_h: f32) -> (f32, f32) {
-        let x = ((p.lng - self.west) / (self.east - self.west)) as f32;
-        let y0 = mercator_y(self.south);
-        let y1 = mercator_y(self.north);
-        let y = ((mercator_y(p.lat) - y0) / (y1 - y0)) as f32;
-        (x.clamp(0.0, 1.0) * page_w, y.clamp(0.0, 1.0) * page_h)
-    }
-}
-
-fn mercator_y(lat: f64) -> f64 {
-    let lat = lat.clamp(-85.0, 85.0).to_radians();
-    (std::f64::consts::FRAC_PI_4 + lat / 2.0).tan().ln()
-}
-
-/// Driving (or schematic) path plus optional Google-provided labels.
+/// Driving path plus optional Google-provided labels.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Route {
     pub points: Vec<LatLng>,
@@ -303,82 +230,16 @@ pub(crate) fn fnv1a(s: &str) -> u64 {
     h
 }
 
-/// A wiggly interpolation so a stub route looks like a road, not a ruler.
-pub fn stub_route(from: LatLng, to: LatLng, seed: u64) -> Vec<LatLng> {
-    let n = 20usize;
-    let mut rng = SplitMix64::new(seed | 1);
-    let span = from.distance_deg(to).max(0.25);
-    let mut pts = Vec::with_capacity(n);
-    for i in 0..n {
-        let t = i as f64 / (n - 1) as f64;
-        let lat = from.lat + (to.lat - from.lat) * t;
-        let lng = from.lng + (to.lng - from.lng) * t;
-        let wobble = (t * std::f64::consts::PI).sin();
-        let amp = 0.07 * span;
-        let nx = -(to.lat - from.lat);
-        let ny = to.lng - from.lng;
-        let len = (nx * nx + ny * ny).sqrt().max(1e-6);
-        let jitter = (rng.f64() - 0.5) * 0.4;
-        pts.push(LatLng::new(
-            lat + (nx / len) * wobble * amp * (1.0 + jitter),
-            lng + (ny / len) * wobble * amp * (1.0 + jitter),
-        ));
-    }
-    pts[0] = from;
-    pts[n - 1] = to;
-    pts
-}
-
-/// Build a schematic [`Route`] for two addresses.
+/// Build a no-network [`Route`] for two addresses. Endpoints come from the
+/// gazetteer; there is no map drawing for this path.
 pub fn schematic_route(from: &Address, to: &Address) -> Route {
     let start = geocode_stub(&from.geocode_query());
     let end = geocode_stub(&to.geocode_query());
-    let seed = fnv1a(&format!("{}|{}", from.geocode_query(), to.geocode_query()));
-    let points = stub_route(start, end, seed);
-    let miles = points.windows(2).map(|w| haversine_miles(w[0], w[1])).sum();
+    let miles = haversine_miles(start, end);
     Route {
-        points,
+        points: vec![start, end],
         distance_text: Some(format!("about {}", format_miles(miles))),
         duration_text: None,
-    }
-}
-
-struct SplitMix64(u64);
-
-impl SplitMix64 {
-    fn new(seed: u64) -> Self {
-        Self(seed)
-    }
-
-    fn next(&mut self) -> u64 {
-        self.0 = self.0.wrapping_add(0x9E3779B97F4A7C15);
-        let mut z = self.0;
-        z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
-        z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
-        z ^ (z >> 31)
-    }
-
-    fn f64(&mut self) -> f64 {
-        (self.next() >> 11) as f64 / ((1u64 << 53) as f64)
-    }
-}
-
-/// Seeded RNG used by the schematic map so a given pair of addresses is stable.
-pub(crate) fn map_rng(from: &Address, to: &Address) -> impl RngF32 {
-    SplitMix64::new(fnv1a(&format!(
-        "map|{}|{}",
-        from.geocode_query(),
-        to.geocode_query()
-    )))
-}
-
-pub(crate) trait RngF32 {
-    fn range(&mut self, a: f32, b: f32) -> f32;
-}
-
-impl RngF32 for SplitMix64 {
-    fn range(&mut self, a: f32, b: f32) -> f32 {
-        a + (b - a) * self.f64() as f32
     }
 }
 
@@ -423,7 +284,7 @@ mod tests {
         let r1 = schematic_route(&a, &b);
         let r2 = schematic_route(&a, &b);
         assert_eq!(r1.points, r2.points);
-        assert!(r1.points.len() >= 2);
+        assert_eq!(r1.points.len(), 2);
         assert_ne!(r1.points.first(), r1.points.last());
     }
 

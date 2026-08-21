@@ -20,8 +20,8 @@ compatibility_date = "2024-11-01"
 [build]
 command = "cargo +stable install -q worker-build@0.8.5 && worker-build --release"
 
-# GOOGLE_MAPS_API_KEY is a secret, not a var. Leave it unset to draw a
-# schematic route (enough to check layout). When you have a key:
+# GOOGLE_MAPS_API_KEY is a secret, not a var. Leave it unset and the
+# envelope has no map (addresses and a stamp box only). When you have a key:
 #   wrangler secret put GOOGLE_MAPS_API_KEY
 # Restrict the key to Geocoding, Directions, and Maps Static. Do not use
 # HTTP-referrer restrictions; Workers and the CLI send no matching Referer.

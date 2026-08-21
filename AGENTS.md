@@ -650,7 +650,7 @@ bundle exec fastlane test
 | `git-server/` | git smart-HTTP server on R2 + Durable Objects — Cloudflare Worker | `cargo test` (incl. real-git integration) + clippy + wasm build |
 | `git-fuse/` | read-only FUSE adapter for git-server (mount commits/refs as files) — CLI, not a Worker | `cargo test` (incl. e2e over real FUSE mounts; skips without `/dev/fuse`) + clippy |
 | `life-stl/` | Conway's Game of Life → 3D-printable STL (Z = time); self-supporting causality braces (default) or breakaway supports | `cargo test` + clippy |
-| `mapvelopes/` | #10 envelope PDFs with the sender-to-recipient route as the background (Google Maps or schematic stub) | `cargo test` + clippy + wasm build |
+| `mapvelopes/` | #10 envelope PDFs with the sender-to-recipient route as the background (Google Maps when a key is set) | `cargo test` + clippy + wasm build |
 | `y/` | One-user microblog (D1 + R2); 260-char posts, images, RSS, passkeys | `cargo test` + clippy + wasm build |
 
 > **`git-server` has its own agent guide:** read

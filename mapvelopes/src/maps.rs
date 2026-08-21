@@ -14,7 +14,7 @@ use crate::geo::{
 pub enum MapSource {
     /// Geocoding + directions (and maybe Static Maps) used a real key.
     Google,
-    /// No usable key; coordinates come from the gazetteer / hash.
+    /// No usable key; coordinates come from the gazetteer / hash. No map image.
     Schematic,
 }
 
@@ -29,7 +29,7 @@ pub struct EnvelopeSpec {
 }
 
 impl EnvelopeSpec {
-    /// Plan a route with no network. The map is drawn as vectors.
+    /// Plan a route with no network. The PDF has no map background.
     pub fn schematic(from: Address, to: Address) -> Self {
         let route = schematic_route(&from, &to);
         EnvelopeSpec {
@@ -316,7 +316,7 @@ pub fn jpeg_dimensions(data: &[u8]) -> Result<(u32, u32), Error> {
 }
 
 /// Build a spec from Google API payloads. If `jpeg` is missing or not a JPEG,
-/// the route is still real and the background is drawn as vectors.
+/// the route is still real and the background is left blank.
 pub fn spec_from_google(
     from: Address,
     to: Address,

@@ -12,7 +12,7 @@ const FORM_HTML: &str = include_str!("form.html");
 const LIVE_STATUS: &str =
     "This Worker has a Google Maps key, so the envelope uses a real driving route.";
 const STUB_STATUS: &str =
-    "No Google Maps key is configured, so the envelope uses a schematic route. That is enough to check layout.";
+    "No Google Maps key is configured, so the envelope is addresses and a stamp box on a blank page. Set a key to fill the background with a route map.";
 
 /// A request reduced to method, path, query, and body.
 #[derive(Debug, Clone)]
@@ -106,7 +106,7 @@ fn pair_value(pairs: &[(String, String)], key: &str) -> Option<String> {
 
 /// JSON body for `GET /health`.
 pub fn health_json(maps_live: bool) -> Vec<u8> {
-    let maps = if maps_live { "google" } else { "schematic" };
+    let maps = if maps_live { "google" } else { "none" };
     serde_json::json!({ "ok": true, "maps": maps })
         .to_string()
         .into_bytes()
@@ -125,7 +125,7 @@ pub fn error_json(err: &Error) -> Vec<u8> {
         .into_bytes()
 }
 
-/// Parse addresses and build a schematic spec. Callers that have a Maps key
+/// Parse addresses and build a no-map spec. Callers that have a Maps key
 /// fetch Google payloads themselves and use [`crate::maps::spec_from_google`].
 pub fn schematic_from_fields(from: &str, to: &str) -> Result<EnvelopeSpec, Error> {
     let from = Address::parse_named("from", from)?;
@@ -157,7 +157,7 @@ mod tests {
     fn health() {
         assert_eq!(classify(&req("GET", "/health/")), Classified::Health);
         let body = String::from_utf8(health_json(false)).unwrap();
-        assert!(body.contains("schematic"));
+        assert!(body.contains("none"));
     }
 
     #[test]
@@ -216,7 +216,7 @@ mod tests {
     fn form_html_splices_status() {
         let html = String::from_utf8(form_html(false)).unwrap();
         assert!(html.contains("<html lang=\"en\">"));
-        assert!(html.contains("schematic route"));
+        assert!(html.contains("blank page"));
         assert!(!html.contains("__MAPS_STATUS__"));
         let live = String::from_utf8(form_html(true)).unwrap();
         assert!(live.contains("Google Maps key"));

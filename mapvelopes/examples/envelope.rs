@@ -11,7 +11,8 @@
 //!
 //! If `GOOGLE_MAPS_API_KEY` is set (or `--key` is passed), the example geocodes
 //! both addresses, fetches driving directions, and tries a Static Maps JPEG.
-//! Otherwise it draws a schematic route. Pass `--stub` to force the schematic.
+//! Otherwise the PDF is addresses and a stamp box with no map. Pass `--stub`
+//! to skip Google even when a key is set.
 
 use std::env;
 use std::io::Read;
@@ -39,7 +40,7 @@ Options:
   --to TEXT       Delivery address (default: a New York example)
   -o, --out PATH  Output PDF (default: envelope.pdf)
   --key KEY       Google Maps API key (default: $GOOGLE_MAPS_API_KEY)
-  --stub          Draw a schematic route even if a key is set
+  --stub          Skip Google even if a key is set (no map background)
   -h, --help      Show this help
 ";
 
@@ -74,8 +75,8 @@ fn run() -> Result<(), String> {
     std::fs::write(&parsed.out, &pdf).map_err(|e| format!("{}: {e}", parsed.out))?;
     let kind = match spec.source {
         MapSource::Google if spec.map_jpeg.is_some() => "google map",
-        MapSource::Google => "google route, schematic map",
-        MapSource::Schematic => "schematic",
+        MapSource::Google => "google route, no map",
+        MapSource::Schematic => "no map",
     };
     eprintln!("wrote {} ({} bytes, {kind})", parsed.out, pdf.len());
     Ok(())

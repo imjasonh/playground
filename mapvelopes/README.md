@@ -17,15 +17,14 @@ blue line between them, something you could print and fold.
 ## What you get
 
 A one-page PDF at **9.5 × 4.125 in** (US #10). Return address in the upper
-left, delivery address in the usual spot, a stamp box, and a map filling the
-rest.
+left, delivery address in the usual spot, a stamp box, and, when a Google
+Maps key is set, a route map filling the rest.
 
 With a Google Maps Platform key the Worker (and the CLI) geocodes both
 addresses, asks Directions for a driving polyline, and tries Maps Static for
-the background JPEG. Without a key, or when you pass `--stub`, it geocodes
-from a small gazetteer and draws a schematic street grid. The PDF layout is
-the same either way, which is the point of the stub: you can spot-check
-type, pins, and page size before wiring up billing.
+the background JPEG. Without a key, or when you pass `--stub`, the PDF is
+still a #10 with the two addresses. There is no stand-in map. That is enough
+to check type and page size before wiring up billing.
 
 Print at 100% scale. "Fit to page" shrinks a #10 onto letter paper.
 
@@ -38,7 +37,7 @@ cargo run --example envelope
 ```
 
 That writes `envelope.pdf` in the current directory, Mountain View to New
-York, schematic map. Open it in a PDF viewer. Override the addresses:
+York, no map. Open it in a PDF viewer. Override the addresses:
 
 ```bash
 cargo run --example envelope -- \
@@ -67,7 +66,7 @@ Once deployed (or under `wrangler dev`):
 | Method | Path | Result |
 |--------|------|--------|
 | `GET` | `/` | HTML form |
-| `GET` | `/health` | `{"ok":true,"maps":"schematic"}` or `"google"` |
+| `GET` | `/health` | `{"ok":true,"maps":"none"}` or `"google"` |
 | `GET` | `/envelope?from=…&to=…` | PDF |
 | `POST` | `/envelope` | PDF (`application/x-www-form-urlencoded` or JSON `{"from","to"}`) |
 
@@ -106,7 +105,8 @@ npx wrangler secret put GOOGLE_MAPS_API_KEY
 ```
 
 For `wrangler dev`, copy `.dev.vars.example` to `.dev.vars` and put the key
-there if you want live maps locally. An empty value keeps the schematic path.
+there if you want live maps locally. An empty value skips Google and leaves
+the envelope blank.
 
 The crate name is `mapvelopes-worker`; the Worker script name is
 `mapvelopes-worker`.

@@ -3,7 +3,7 @@
 //! Transport-agnostic modules, unit-tested on the host:
 //!
 //! * [`address`] — print lines for return and delivery addresses
-//! * [`geo`] — polylines, gazetteer, schematic routes
+//! * [`geo`] — polylines, gazetteer, stub geocoding
 //! * [`maps`] — Google Maps URLs and JSON, plus [`maps::EnvelopeSpec`]
 //! * [`render`] — PDF drawing
 //! * [`api`] — HTTP classification (form, health, envelope)
