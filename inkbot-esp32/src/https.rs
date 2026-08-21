@@ -11,9 +11,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-/// Set while an OTA blob download holds a TLS session open. Frame
-/// fetches and GCP posts skip that window so a second handshake does
-/// not OOM the 48 KB framebuffer path.
+/// Set while an OTA blob download is in progress. Frame fetches and GCP
+/// posts skip that window so a second handshake does not OOM the 48 KB
+/// framebuffer path.
 pub static OTA_DOWNLOAD_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 
 pub struct OtaDownloadGuard;

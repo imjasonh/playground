@@ -18,7 +18,8 @@ use crate::https::{http_get, lock_or_poison, OtaDownloadGuard, ShortHttpsLock};
 use crate::ota_slot::{self, NVS_NAMESPACE};
 use crate::trust::TrustConfig;
 use inkbot_esp32::{
-    check_ota_image, cosign_signature_tags, layer_already_installed, FirmwareConfig,
+    blob_byte_range, check_ota_image, cosign_signature_tags, layer_already_installed,
+    range_request_header, range_response_ok, require_https_url, FirmwareConfig,
     COSIGN_SIMPLE_SIGNING_MEDIA_TYPE, OTA_CONFIG_MEDIA_TYPE, OTA_LAYER_MEDIA_TYPE, OTA_SLOT_BYTES,
     SIGSTORE_BUNDLE_MEDIA_TYPE_PREFIX,
 };
@@ -389,19 +390,115 @@ fn fetch_layer_blob(
     Ok(buf)
 }
 
-/// GHCR blob GETs 307 to pkg-containers. 4 KiB was too small for FollowAll
-/// (Location + CDN headers). 16 KiB left too little heap for TLS + EspOta.
+/// GHCR blob GETs 307 to pkg-containers. 4 KiB was too small for the
+/// Location + CDN headers; 16 KiB left too little heap for TLS + EspOta.
 const BLOB_HEADER_BUF: usize = 8192;
+/// Bytes per Range GET. Flash writes stall Wi-Fi, so TLS must be closed
+/// before `esp_ota_write`. 32 KiB fits next to the 48 KB framebuffer.
+const BLOB_RANGE_BYTES: u64 = 32 * 1024;
 
 fn blob_http_config() -> HttpConfig {
     HttpConfig {
         crt_bundle_attach: Some(esp_idf_svc::sys::esp_crt_bundle_attach),
-        follow_redirects_policy: FollowRedirectsPolicy::FollowAll,
-        timeout: Some(Duration::from_secs(120)),
+        follow_redirects_policy: FollowRedirectsPolicy::FollowNone,
+        timeout: Some(Duration::from_secs(30)),
         buffer_size: Some(BLOB_HEADER_BUF),
         buffer_size_tx: Some(2048),
         ..Default::default()
     }
+}
+
+struct BlobSource {
+    url: String,
+    send_auth: bool,
+}
+
+/// Resolve GHCR's blob 307 without reading the body. Do not log `url`
+/// (the CDN Location carries a SAS query).
+fn resolve_blob_source(ghcr_url: &str, token: &str) -> Result<BlobSource> {
+    let bearer = format!("Bearer {token}");
+    let headers = [
+        ("authorization", bearer.as_str()),
+        ("accept", "application/octet-stream"),
+    ];
+    let conn = EspHttpConnection::new(&blob_http_config())?;
+    let mut client = Client::wrap(conn);
+    let resp = client.request(Method::Get, ghcr_url, &headers)?.submit()?;
+    let status = resp.status();
+    if status == 200 {
+        return Ok(BlobSource {
+            url: ghcr_url.to_string(),
+            send_auth: true,
+        });
+    }
+    if matches!(status, 301 | 302 | 303 | 307 | 308) {
+        let loc = resp
+            .header("location")
+            .ok_or_else(|| anyhow!("blob redirect {status} with no Location"))?;
+        require_https_url(loc).map_err(|e| anyhow!("{e}"))?;
+        log::info!("ota: blob redirected ({status})");
+        return Ok(BlobSource {
+            url: loc.to_string(),
+            send_auth: false,
+        });
+    }
+    bail!("blob GET -> {status}");
+}
+
+fn fetch_blob_range(
+    url: &str,
+    token: Option<&str>,
+    start: u64,
+    end: u64,
+    buf: &mut Vec<u8>,
+) -> Result<()> {
+    let expected = end.saturating_sub(start).saturating_add(1);
+    let range = range_request_header(start, end);
+    let bearer = token.map(|t| format!("Bearer {t}"));
+    let mut headers: Vec<(&str, &str)> = vec![
+        ("accept", "application/octet-stream"),
+        ("range", range.as_str()),
+    ];
+    if let Some(ref b) = bearer {
+        headers.push(("authorization", b.as_str()));
+    }
+    let conn = EspHttpConnection::new(&blob_http_config())?;
+    let mut client = Client::wrap(conn);
+    let mut resp = client.request(Method::Get, url, &headers)?.submit()?;
+    let status = resp.status();
+    if status != 206 && status != 200 {
+        bail!("blob range GET -> {status}");
+    }
+    if let Some(cl) = resp
+        .header("content-length")
+        .and_then(|s| s.parse::<u64>().ok())
+    {
+        if cl > expected {
+            bail!("blob range Content-Length {cl} exceeds requested {expected}");
+        }
+    }
+    let content_range = resp.header("content-range").map(str::to_string);
+    let mut tmp = [0u8; 1024];
+    loop {
+        let n = resp.read(&mut tmp)?;
+        if n == 0 {
+            break;
+        }
+        if (buf.len() as u64).saturating_add(n as u64) > expected {
+            bail!("blob range body exceeded requested {expected}");
+        }
+        buf.extend_from_slice(&tmp[..n]);
+    }
+    drop(resp);
+    drop(client);
+    range_response_ok(
+        status,
+        content_range.as_deref(),
+        buf.len() as u64,
+        start,
+        end,
+    )
+    .map_err(|e| anyhow!("{e}"))
 }
 
 /// SHA-256 of the running slot's first `len` bytes, as `sha256:<hex>`.
@@ -446,69 +543,47 @@ fn download_and_apply(repo: &str, layer: &Descriptor, token: &str) -> Result<()>
         );
     }
     let repo_path = repo_path(repo)?;
-    let url = format!("https://ghcr.io/v2/{repo_path}/blobs/{}", layer.digest);
-    let bearer = format!("Bearer {token}");
-    let headers = [
-        ("authorization", bearer.as_str()),
-        ("accept", "application/octet-stream"),
-    ];
+    let ghcr_url = format!("https://ghcr.io/v2/{repo_path}/blobs/{}", layer.digest);
     let expected_sha_hex = layer
         .digest
         .strip_prefix("sha256:")
         .ok_or_else(|| anyhow!("non-sha256 digest: {}", layer.digest))?;
 
-    // Erase the unused slot before opening TLS. initiate_update() erases flash
-    // and stalls Wi-Fi long enough that an in-flight CDN download dies with
-    // mbedtls -0x7100 on the next read.
+    // Erase the unused slot before any blob TLS. initiate_update() stalls
+    // Wi-Fi long enough to kill an in-flight CDN stream (mbedtls -0x7100).
     let mut ota = EspOta::new().context("EspOta::new")?;
     let mut update = ota.initiate_update().context("initiate OTA update")?;
 
-    let conn = EspHttpConnection::new(&blob_http_config())?;
-    let mut client = Client::wrap(conn);
-    let mut resp = match client.request(Method::Get, &url, &headers) {
-        Ok(req) => match req.submit() {
-            Ok(r) => r,
-            Err(e) => {
-                update.abort().ok();
-                return Err(e).context("blob GET submit");
-            }
-        },
+    let source = match resolve_blob_source(&ghcr_url, token) {
+        Ok(s) => s,
         Err(e) => {
             update.abort().ok();
-            return Err(e).context("blob GET request");
+            return Err(e);
         }
     };
-    let status = resp.status();
-    if status != 200 {
-        update.abort().ok();
-        bail!("blob GET -> {status}");
-    }
 
     let mut hasher = Sha256::new();
-    let mut buf = [0u8; 4096];
+    let mut buf = Vec::with_capacity(BLOB_RANGE_BYTES as usize);
     let mut total: u64 = 0;
     let mut next_log = 256u64 * 1024;
-    loop {
-        let n = match resp.read(&mut buf) {
-            Ok(n) => n,
-            Err(e) => {
-                update.abort().ok();
-                return Err(e).context("read blob chunk");
-            }
-        };
-        if n == 0 {
-            break;
-        }
-        total += n as u64;
-        if total > layer.size {
+    while total < layer.size {
+        let Some((start, end)) = blob_byte_range(total, layer.size, BLOB_RANGE_BYTES) else {
             update.abort().ok();
-            bail!("blob larger than manifest size {}", layer.size);
+            bail!("blob range underflow at {total}");
+        };
+        buf.clear();
+        let auth = source.send_auth.then_some(token);
+        if let Err(e) = fetch_blob_range(&source.url, auth, start, end, &mut buf) {
+            update.abort().ok();
+            return Err(e).context(format!("read blob bytes {start}-{end}"));
         }
-        if let Err(e) = update.write(&buf[..n]) {
+        // TLS is closed: fetch_blob_range dropped the HTTP client.
+        if let Err(e) = update.write(&buf) {
             update.abort().ok();
             return Err(e).context("OTA write");
         }
-        hasher.update(&buf[..n]);
+        hasher.update(&buf);
+        total += buf.len() as u64;
         if total >= next_log {
             log::info!("ota: download progress {total}/{}", layer.size);
             next_log += 256 * 1024;
