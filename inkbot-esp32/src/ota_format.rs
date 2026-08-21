@@ -300,6 +300,78 @@ pub fn layer_already_installed(
         && (layer_digest == last_digest || running_digest == Some(layer_digest))
 }
 
+/// Inclusive byte span for one firmware Range GET, or `None` when done.
+///
+/// Flash writes stall Wi-Fi on classic ESP32, so the device fetches this
+/// many bytes, closes TLS, then calls `esp_ota_write`.
+pub fn blob_byte_range(offset: u64, total: u64, chunk: u64) -> Option<(u64, u64)> {
+    if chunk == 0 || offset >= total {
+        return None;
+    }
+    let last = total - 1;
+    let end = offset.saturating_add(chunk - 1).min(last);
+    Some((offset, end))
+}
+
+/// RFC 7233 `Range` value for an inclusive span (`bytes=start-end`).
+pub fn range_request_header(start: u64, end: u64) -> String {
+    format!("bytes={start}-{end}")
+}
+
+/// Parse `Content-Range: bytes start-end/total` (total may be `*`).
+pub fn parse_content_range(value: &str) -> Result<(u64, u64, Option<u64>), &'static str> {
+    let rest = value
+        .trim()
+        .strip_prefix("bytes ")
+        .ok_or("content-range is not bytes")?;
+    let (span, total) = rest.split_once('/').ok_or("content-range missing /")?;
+    let (start, end) = span.split_once('-').ok_or("content-range missing -")?;
+    let start = start
+        .trim()
+        .parse::<u64>()
+        .map_err(|_| "content-range start")?;
+    let end = end.trim().parse::<u64>().map_err(|_| "content-range end")?;
+    if end < start {
+        return Err("content-range inverted");
+    }
+    let total = match total.trim() {
+        "*" => None,
+        t => Some(t.parse::<u64>().map_err(|_| "content-range total")?),
+    };
+    Ok((start, end, total))
+}
+
+/// Check that a Range response body is exactly the requested inclusive span.
+///
+/// `206` is the usual CDN answer. `200` is accepted only when the body is
+/// already clipped to the request; a full-blob `200` must be rejected
+/// before this runs, by `Content-Length`.
+pub fn range_response_ok(
+    status: u16,
+    content_range: Option<&str>,
+    body_len: u64,
+    start: u64,
+    end: u64,
+) -> Result<(), &'static str> {
+    let expected = end.saturating_sub(start).saturating_add(1);
+    if body_len != expected {
+        return Err("range body length mismatch");
+    }
+    match status {
+        206 => {
+            if let Some(cr) = content_range {
+                let (got_start, got_end, _) = parse_content_range(cr)?;
+                if got_start != start || got_end != end {
+                    return Err("content-range does not match request");
+                }
+            }
+            Ok(())
+        }
+        200 => Ok(()),
+        _ => Err("unexpected range HTTP status"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -469,5 +541,45 @@ mod tests {
         assert!(!layer_already_installed(d, "", None));
         assert!(!layer_already_installed(d, "sha256:bb", Some("sha256:cc")));
         assert!(!layer_already_installed("", d, Some(d)));
+    }
+
+    #[test]
+    fn blob_byte_range_covers_the_layer_without_overlap() {
+        let total = 100u64;
+        let chunk = 32u64;
+        let mut offset = 0;
+        let mut spans = Vec::new();
+        while let Some((start, end)) = blob_byte_range(offset, total, chunk) {
+            spans.push((start, end));
+            offset = end + 1;
+        }
+        assert_eq!(spans, vec![(0, 31), (32, 63), (64, 95), (96, 99)]);
+        assert_eq!(range_request_header(96, 99), "bytes=96-99");
+        assert!(blob_byte_range(100, total, chunk).is_none());
+        assert!(blob_byte_range(0, total, 0).is_none());
+    }
+
+    #[test]
+    fn parse_content_range_reads_rfc7233() {
+        assert_eq!(
+            parse_content_range("bytes 0-32767/1623312").unwrap(),
+            (0, 32767, Some(1_623_312))
+        );
+        assert_eq!(
+            parse_content_range("bytes 10-11/*").unwrap(),
+            (10, 11, None)
+        );
+        assert!(parse_content_range("bytes 5-1/10").is_err());
+        assert!(parse_content_range("items 0-1/2").is_err());
+    }
+
+    #[test]
+    fn range_response_ok_accepts_206_and_clipped_200() {
+        assert!(range_response_ok(206, Some("bytes 0-3/10"), 4, 0, 3).is_ok());
+        assert!(range_response_ok(206, None, 4, 0, 3).is_ok());
+        assert!(range_response_ok(200, None, 4, 0, 3).is_ok());
+        assert!(range_response_ok(206, Some("bytes 0-3/10"), 5, 0, 3).is_err());
+        assert!(range_response_ok(206, Some("bytes 1-4/10"), 4, 0, 3).is_err());
+        assert!(range_response_ok(416, None, 4, 0, 3).is_err());
     }
 }

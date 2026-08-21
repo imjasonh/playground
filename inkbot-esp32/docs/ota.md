@@ -130,8 +130,10 @@ period, the inkbot binary:
    image. It still rejects a leaf that is not yet valid. Intermediate and
    root certificates use a full wall-clock window.
 5. Follows GHCR blob redirects (typically one 307 to the package CDN)
-   with an 8 KiB HTTP header buffer, then streams the firmware blob into
-   the inactive slot, hashing as it goes.
+   with an 8 KiB HTTP header buffer. It then Range-GETs about 32 KiB at a
+   time, closes TLS, writes that chunk to the inactive slot, and hashes
+   as it goes. Flash writes stall Wi-Fi, so the TLS session must not stay
+   open across `esp_ota_write`.
 6. Marks that slot to boot and restarts.
 
 On the new image, ESP-IDF leaves the slot in `PENDING_VERIFY`. inkbot
@@ -148,7 +150,7 @@ accept expired Fulcio leaves; this firmware does the same by skipping the
 leaf `notAfter` check.
 
 OTA runs on the inkbot main task (48 KB stack). Frame fetches and GCP posts
-pause while the blob download holds a TLS session. The maze binary never
+pause while the blob download runs. The maze binary never
 joins Wi-Fi and never polls GHCR. inkbot can still *install* maze over OTA
 when `ota/app` is `maze-esp32`; returning to inkbot is `make flash`.
 
