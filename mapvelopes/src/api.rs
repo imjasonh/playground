@@ -351,6 +351,8 @@ mod tests {
         assert_eq!(classify(&req("GET", "/form.js")), Classified::FormJs);
         let js = String::from_utf8(form_js()).unwrap();
         assert!(js.contains("bindAddressField"));
+        assert!(js.contains("/suggest?q="));
+        assert!(js.contains("/place?id="));
     }
 
     #[test]

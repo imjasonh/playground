@@ -47,10 +47,7 @@ impl Address {
         self.lines.join(", ")
     }
 
-    /// True when the first print line is a name, not a street.
-    ///
-    /// Delivery addresses bold that line. A street like `98 16th St` is
-    /// left in the regular weight.
+    /// Delivery addresses bold the first line when it has no digits.
     pub fn first_line_is_name(&self) -> bool {
         match self.lines.first() {
             Some(line) => !has_digit(line),
@@ -58,9 +55,8 @@ impl Address {
         }
     }
 
-    /// Keep leading name lines and replace the rest with `postal_lines`
-    /// from Geocoding or Place Details. If `postal_lines` is empty, the
-    /// original address is kept.
+    /// Keep leading name lines and replace the rest with Geocoding print
+    /// lines. Empty `postal_lines` leaves the original address.
     pub fn expand_with(&self, postal_lines: &[String]) -> Address {
         let postal: Vec<String> = postal_lines
             .iter()
@@ -77,8 +73,8 @@ impl Address {
         Address { lines }
     }
 
-    /// Lines before the street (no digits), or every line but the last
-    /// when the block has no street number at all.
+    /// Lines before the first digit, or every line but the last when
+    /// nothing looks like a street number.
     fn leading_names(&self) -> Vec<String> {
         if self.lines.iter().any(|line| has_digit(line)) {
             return self

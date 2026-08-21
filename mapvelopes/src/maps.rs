@@ -169,7 +169,7 @@ impl EnvelopeSpec {
     }
 }
 
-/// True when `key` should be sent to Google. Empty strings and the
+/// True when `key` is sent to Google. Empty strings and the
 /// `REPLACE_…` / `stub` placeholders are treated as unset.
 pub fn api_key_usable(key: Option<&str>) -> bool {
     match key.map(str::trim) {
@@ -204,7 +204,7 @@ pub fn geocode_url(address: &str, key: &str) -> String {
     url.to_string()
 }
 
-/// Places Autocomplete (legacy) for the form typeahead.
+/// Places Autocomplete JSON API for the form typeahead.
 pub fn places_autocomplete_url(input: &str, key: &str) -> String {
     let mut url = Url::parse("https://maps.googleapis.com/maps/api/place/autocomplete/json")
         .expect("static places autocomplete URL");
@@ -215,7 +215,7 @@ pub fn places_autocomplete_url(input: &str, key: &str) -> String {
     url.to_string()
 }
 
-/// Place Details (legacy) for a prediction's `place_id`.
+/// Place Details JSON API for a prediction's `place_id`.
 pub fn place_details_url(place_id: &str, key: &str) -> String {
     let mut url = Url::parse("https://maps.googleapis.com/maps/api/place/details/json")
         .expect("static place details URL");
@@ -940,6 +940,16 @@ mod tests {
     fn parse_autocomplete_zero_results() {
         let got = parse_autocomplete(br#"{"status":"ZERO_RESULTS","predictions":[]}"#).unwrap();
         assert!(got.is_empty());
+    }
+
+    #[test]
+    fn parse_autocomplete_denied() {
+        let err =
+            parse_autocomplete(br#"{"status":"REQUEST_DENIED","error_message":"Places disabled"}"#)
+                .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("REQUEST_DENIED"));
+        assert!(msg.contains("Places disabled"));
     }
 
     #[test]

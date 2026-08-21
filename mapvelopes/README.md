@@ -20,10 +20,12 @@ One page in a US envelope size you pick: #10 (9.5 × 4.125 in, default), #9
 (8.875 × 3.875), Monarch (7.5 × 3.875), #6¾ (6.5 × 3.625), or A7 (7.25 ×
 5.25). Return address, delivery address, stamp box, and a Maps Static JPEG
 of the driving route as the background. The map is washed toward cream so
-the addresses stay readable (hybrid more than the others). Short addresses
-are expanded to USPS-style lines before printing: `98 16th st brooklyn`
-becomes `98 16th St` / `Brooklyn, NY 11215`. The form offers Google, paper,
-terrain, muted, and hybrid looks, plus Places Autocomplete as you type.
+the addresses stay readable. Hybrid gets more wash than the others.
+
+Short addresses expand before printing. `98 16th st brooklyn` becomes
+`98 16th St` / `Brooklyn, NY 11215`. The form offers Google, paper,
+terrain, muted, and hybrid looks, and suggests addresses as you type.
+
 The Worker and CLI both require a Google Maps Platform key. If the key is
 missing or Google rejects it, they return an error instead of a blank
 envelope. Print at 100% scale. "Fit to page" shrinks the PDF onto letter
@@ -52,11 +54,11 @@ cargo run --example envelope -- \
 `terrain`, `muted`, `hybrid`) and `--size` (`10`, `9`, `monarch`,
 `6-3/4`, `a7`).
 
-The key needs **Geocoding**, **Directions**, **Maps Static**, and **Places**
-(Autocomplete + Place Details). Do not restrict it by HTTP referrer; neither
-the CLI nor the Worker send a Referer Google will accept. Restricting by
-API is enough. The form never sees the key: typeahead goes through
-`/suggest` and `/place` on this Worker.
+The key needs Geocoding, Directions, Maps Static, Autocomplete, and Place
+Details. Do not restrict it by HTTP referrer. Neither the CLI nor the Worker
+send a Referer that Google accepts. Restricting by API is enough. The
+browser form does not include the key. Typeahead goes through `/suggest`
+and `/place` on this Worker.
 
 ## HTTP API
 
@@ -73,11 +75,10 @@ Once deployed (or under `wrangler dev`):
 | `POST` | `/envelope` | PDF (`application/x-www-form-urlencoded` or JSON `{"from","to","style","size"}`) |
 
 Addresses are freeform, one line per envelope line. A name on the first
-line is kept; the rest is expanded from Geocoding (street, city, state,
-ZIP). The first line is bold on the delivery block when it looks like a
-name. `style` is `google` (default), `paper`, `terrain`, `muted`, or
-`hybrid`. `size` is `10` (default, #10), `9`, `monarch`, `6-3/4`, or
-`a7`.
+line is kept. Geocoding expands the rest into street, city, state, and
+ZIP. The first line is bold on the delivery block when it has no digits.
+`style` is `google` (default), `paper`, `terrain`, `muted`, or `hybrid`.
+`size` is `10` (default, #10), `9`, `monarch`, `6-3/4`, or `a7`.
 
 ## Develop and test
 
@@ -99,7 +100,7 @@ Nothing in `cargo test` calls Google.
 
 ## Deploy
 
-Pushes to `main` deploy this Worker via `deploy-workers.yml`. To deploy by
+On push to `main`, `deploy-workers.yml` deploys this Worker. To deploy by
 hand:
 
 ```bash

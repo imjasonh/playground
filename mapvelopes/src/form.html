@@ -96,7 +96,7 @@
       outline: 2px solid var(--focus);
       outline-offset: 2px;
     }
-    button {
+    form > button {
       font: inherit;
       font-weight: 600;
       font-size: 1rem;
@@ -107,7 +107,7 @@
       color: var(--accent-ink);
       cursor: pointer;
     }
-    button:focus {
+    form > button:focus {
       outline: 2px solid var(--focus);
       outline-offset: 3px;
     }
@@ -158,6 +158,7 @@
       display: block;
       width: 100%;
       text-align: left;
+      font: inherit;
       font-weight: 500;
       font-size: 0.95rem;
       padding: 0.45rem 0.75rem;
@@ -221,10 +222,10 @@
     <p class="hint">
       #10 is 9.5 × 4.125 in (default), #9 is 8.875 × 3.875, Monarch is
       7.5 × 3.875, #6¾ is 6.5 × 3.625, A7 is 7.25 × 5.25. Print at 100%
-      scale, not "fit to page." Short addresses are expanded from Google
-      (so "98 16th st brooklyn" prints as 98 16th St / Brooklyn, NY 11215).
+      scale, not "fit to page." A short address expands on the PDF.
+      "98 16th st brooklyn" prints as 98 16th St / Brooklyn, NY 11215.
     </p>
   </main>
-  <script src="form.js" defer></script>
+  <script src="/form.js" defer></script>
 </body>
 </html>

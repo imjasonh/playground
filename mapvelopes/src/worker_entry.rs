@@ -164,7 +164,7 @@ async fn suggest(query: String, key: Option<&str>) -> std::result::Result<Vec<u8
     }
     let key = key.expect("usable key");
     let body = fetch_bytes(&places_autocomplete_url(&query, key)).await?;
-    let suggestions = parse_autocomplete(&body).unwrap_or_default();
+    let suggestions = parse_autocomplete(&body)?;
     Ok(api::suggest_json(&suggestions))
 }
 

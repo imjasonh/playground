@@ -92,8 +92,11 @@ function applyLines(textarea, postalLines) {
 
 function pickPlace(textarea, list, placeId) {
   hideList(list);
-  fetch("place?id=" + encodeURIComponent(placeId))
+  fetch("/place?id=" + encodeURIComponent(placeId))
     .then(function readPlace(resp) {
+      if (!resp.ok) {
+        throw new Error("place failed");
+      }
       return resp.json();
     })
     .then(function fillPlace(data) {
@@ -155,8 +158,11 @@ function bindAddressField(textarea) {
     }
     seq += 1;
     const mine = seq;
-    fetch("suggest?q=" + encodeURIComponent(q))
+    fetch("/suggest?q=" + encodeURIComponent(q))
       .then(function readSuggest(resp) {
+        if (!resp.ok) {
+          throw new Error("suggest failed");
+        }
         return resp.json();
       })
       .then(function showSuggest(data) {
@@ -202,7 +208,10 @@ function bindAddressField(textarea) {
       return;
     }
     if (ev.key === "Enter") {
-      const chosen = selectedButton(list);
+      let chosen = selectedButton(list);
+      if (!chosen) {
+        chosen = list.querySelector("button");
+      }
       if (chosen && chosen.dataset.placeId) {
         pickPlace(textarea, list, chosen.dataset.placeId);
         ev.preventDefault();
