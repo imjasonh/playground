@@ -14,8 +14,10 @@ new uploads immediately, and every `rotate_secs` (default 30 min) picks a rand
 frame from the library. Frames are fetched as raw `/{name}.bin` packed buffers
 (no on-device zlib).
 
-No OTA, no SSH. Companion Worker for the inkbot binary:
-[`../inkbot/`](../inkbot/).
+No on-device OTA yet (USB flash only). Companion Worker for the inkbot binary:
+[`../inkbot/`](../inkbot/). Sigstore keyless signing for future OTA is designed
+in [`docs/sigstore-ota.md`](docs/sigstore-ota.md): verify in the **app** before
+flipping the boot slot — not by forking the ESP-IDF bootloader.
 
 ## Hardware
 
@@ -194,10 +196,12 @@ job skips this crate — it needs espup).
 inkbot-esp32/
 ├── src/
 │   ├── lib.rs / panel.rs / png_frame.rs / status.rs  # host-tested
+│   ├── sigstore_ota.rs                               # OTA identity policy + Cosign helper
 │   ├── maze/                                         # generate / solve / render (host-tested)
 │   ├── main.rs                                       # inkbot: Wi-Fi + HTTP poll loop
 │   ├── maze_main.rs / maze_display.rs                # maze: offline panel loop
 │   └── display.rs                                    # inkbot: Waveshare 7.5″ V2 via epd-waveshare
+├── docs/sigstore-ota.md                              # why not bootloader; CD shape
 ├── config.toml.example
 ├── sdkconfig.defaults
 └── Makefile

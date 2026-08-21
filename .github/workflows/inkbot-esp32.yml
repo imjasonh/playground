@@ -21,6 +21,8 @@ concurrency:
 
 permissions:
   contents: read
+  # Keyless Cosign on main needs a GitHub OIDC token for Fulcio.
+  id-token: write
 
 jobs:
   # Cheap Linux job: decide whether firmware work is needed before installing
@@ -146,3 +148,38 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         working-directory: inkbot-esp32
         run: make build
+
+      # Sigstore keyless provenance for the inkbot ELF (see docs/sigstore-ota.md).
+      # Runs on main only: fork PRs do not get a usable release identity.
+      - name: Install Cosign
+        if: steps.gate.outputs.run == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: sigstore/cosign-installer@3454372f43399081ed03b604cb2d021dabca52bb # v3.8.2
+
+      - name: Sign firmware (keyless)
+        if: steps.gate.outputs.run == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        working-directory: inkbot-esp32
+        env:
+          COSIGN_YES: "true"
+        run: |
+          set -euo pipefail
+          ELF="target/xtensa-esp32-espidf/release/inkbot-esp32"
+          BUNDLE="${ELF}.sigstore.json"
+          cosign sign-blob --yes --bundle "$BUNDLE" "$ELF"
+          IDENTITY="https://github.com/${{ github.repository }}/.github/workflows/inkbot-esp32.yml@refs/heads/main"
+          cosign verify-blob \
+            --bundle "$BUNDLE" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-identity "$IDENTITY" \
+            "$ELF"
+          echo "Signed and verified $ELF as $IDENTITY"
+
+      - name: Upload signed firmware artifacts
+        if: steps.gate.outputs.run == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: inkbot-esp32-sigstore
+          path: |
+            inkbot-esp32/target/xtensa-esp32-espidf/release/inkbot-esp32
+            inkbot-esp32/target/xtensa-esp32-espidf/release/inkbot-esp32.sigstore.json
+          if-no-files-found: error
+          retention-days: 30
