@@ -80,12 +80,14 @@ pub fn reject_pending_and_reboot(nvs_partition: EspDefaultNvsPartition) -> ! {
     unsafe { esp_idf_svc::sys::esp_restart() }
 }
 
+#[cfg(feature = "ota-pull")]
 pub(crate) fn read_last_digest(nvs: &EspNvs<NvsDefault>) -> Option<String> {
     read_str(nvs, NVS_NAMESPACE, NVS_LAST_DIGEST, NVS_DIGEST_BUF)
         .ok()
         .flatten()
 }
 
+#[cfg(feature = "ota-pull")]
 pub(crate) fn write_pending_digest(nvs: &mut EspNvs<NvsDefault>, digest: &str) -> Result<()> {
     write_string(nvs, NVS_PENDING_DIGEST, digest)
 }
