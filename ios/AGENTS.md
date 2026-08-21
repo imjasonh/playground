@@ -40,6 +40,9 @@ After adding or changing any of these targets, re-run **iOS signing bootstrap** 
 - Prefer demonstrating platform ideas **in-app** when possible; use an
   extension only when the feature *is* an extension (e.g. you want a real
   system keyboard).
+- Host **`CFBundleName`** and **`CFBundleDisplayName`** must both be unique
+  on the App Store (`ITMS-90129`). Do not set either to `Playground`; that
+  name is taken. The Xcode target can stay `Playground`.
 
 ## Will my change need re-bootstrap?
 
