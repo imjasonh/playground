@@ -82,20 +82,7 @@ pub fn verify_bundle(
         .decode(&bundle.verification_material.certificate.raw_bytes)
         .context("base64-decode leaf cert")?;
     let leaf = Certificate::from_der(&cert_der).context("parse leaf cert DER")?;
-
-    let identity = extract_san_identity(&leaf).context("extract SAN identity")?;
-    let issuer = extract_oidc_issuer(&leaf).context("extract OIDC issuer")?;
-    if !trust
-        .identities
-        .iter()
-        .any(|t| t.identity == identity && t.issuer == issuer)
-    {
-        bail!("untrusted identity: {identity} (issuer {issuer})");
-    }
-    log::info!("ota: signer identity OK {identity}");
-
-    verify_chain(&leaf, trust).context("cert chain verification")?;
-    log::info!("ota: cert chain to Sigstore root OK");
+    verify_leaf_identity_and_chain(&leaf, trust)?;
 
     let dsse_sig = bundle
         .dsse_envelope
@@ -130,6 +117,49 @@ pub fn verify_bundle(
         );
     }
     log::info!("ota: in-toto subject binds to {actual_digest_hex}");
+    Ok(())
+}
+
+/// Verify Cosign 2 simple-signing (`application/vnd.dev.cosign.simplesigning.v1+json`).
+///
+/// The payload JSON binds `docker-manifest-digest`. The ECDSA-P256 signature
+/// and Fulcio leaf PEM live in the OCI layer annotations.
+pub fn verify_cosign_simple(
+    payload: &[u8],
+    cert_pem: &[u8],
+    sig_b64: &str,
+    expected_manifest_digest_hex: &str,
+    trust: &TrustConfig,
+) -> Result<()> {
+    let actual = inkbot_esp32::cosign_manifest_digest_hex(payload).map_err(anyhow::Error::msg)?;
+    if actual != expected_manifest_digest_hex {
+        bail!(
+            "cosign payload digest mismatch: signed={actual} expected={expected_manifest_digest_hex}"
+        );
+    }
+    let leaf = pem_to_cert(cert_pem).context("parse Cosign leaf PEM")?;
+    verify_leaf_identity_and_chain(&leaf, trust)?;
+    let sig_bytes = b64_std()
+        .decode(sig_b64)
+        .context("base64-decode Cosign signature")?;
+    verify_p256_ecdsa(&leaf, payload, &sig_bytes).context("Cosign simple-signing verify")?;
+    log::info!("ota: Cosign simple-signing verified {actual}");
+    Ok(())
+}
+
+fn verify_leaf_identity_and_chain(leaf: &Certificate, trust: &TrustConfig) -> Result<()> {
+    let identity = extract_san_identity(leaf).context("extract SAN identity")?;
+    let issuer = extract_oidc_issuer(leaf).context("extract OIDC issuer")?;
+    if !trust
+        .identities
+        .iter()
+        .any(|t| t.identity == identity && t.issuer == issuer)
+    {
+        bail!("untrusted identity: {identity} (issuer {issuer})");
+    }
+    log::info!("ota: signer identity OK {identity}");
+    verify_chain(leaf, trust).context("cert chain verification")?;
+    log::info!("ota: cert chain to Sigstore root OK");
     Ok(())
 }
 

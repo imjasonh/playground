@@ -25,9 +25,11 @@ pub use catalog::Catalog;
 #[cfg(any(not(target_os = "espidf"), feature = "inkbot-lib"))]
 pub use net::{is_http_connect_failure, should_refresh_wifi, WifiRefresh};
 pub use ota_format::{
-    check_ota_image, decode_fulcio_issuer_value, default_ota_repo, json_escape, known_ota_app,
-    require_https_url, FirmwareConfig, GHCR_NAMESPACE, OTA_APPS, OTA_APP_INKBOT, OTA_APP_MAZE,
+    check_ota_image, cosign_manifest_digest_hex, cosign_signature_tags, decode_fulcio_issuer_value,
+    default_ota_repo, json_escape, known_ota_app, require_https_url, FirmwareConfig,
+    COSIGN_SIMPLE_SIGNING_MEDIA_TYPE, GHCR_NAMESPACE, OTA_APPS, OTA_APP_INKBOT, OTA_APP_MAZE,
     OTA_CONFIG_MEDIA_TYPE, OTA_LAYER_MEDIA_TYPE, OTA_SLOT_BYTES, OTA_TARGET_CHIP,
+    SIGSTORE_BUNDLE_MEDIA_TYPE_PREFIX,
 };
 pub use panel::{FRAME_BYTES, PANEL_HEIGHT, PANEL_WIDTH};
 #[cfg(any(not(target_os = "espidf"), feature = "inkbot-lib"))]

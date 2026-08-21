@@ -119,9 +119,10 @@ period, the inkbot binary:
    `ota/app` (default `inkbot-esp32`), `target_chip=esp32`, and a layer
    that fits the `0x1F0000` slot. A maze image is valid when `ota/app` is
    `maze-esp32`.
-4. Pulls the Cosign Sigstore bundle, checks the leaf SAN + OIDC issuer
-   against `trust/identities`, verifies the Fulcio chain, and checks the
-   DSSE / in-toto subject against the manifest digest.
+4. Pulls the Cosign signature: first `sha256-<manifest>.sig` (Cosign 2.5
+   simple-signing), then `sha256-<manifest>` (Sigstore bundle). Checks the
+   Fulcio leaf SAN + OIDC issuer against `trust/identities`, verifies the
+   chain, and checks the signed payload binds the firmware manifest digest.
 5. Streams the firmware blob into the inactive slot, hashing as it goes.
 6. Marks that slot to boot and restarts.
 
