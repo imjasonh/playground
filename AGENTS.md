@@ -18,6 +18,7 @@ playground/
 ├── artillery/             # touch-first turn-based artillery duel (JS + Node tests)
 ├── cold-climb/            # touch-first two-handle arcade game (JS + Node tests)
 ├── droneski/              # FPV drone filming a downhill skier (JS + three.js + Node tests)
+├── esp-flash/             # Web Serial / WebUSB ESP32 flasher (inkbot GHCR + local .bin)
 ├── kubescheduler-the-game/ # Kubernetes scheduler + cluster-operator game (JS + Node tests)
 ├── cors-proxy/            # Rust Cloudflare Worker: SSRF-hardened CORS proxy (not a Pages app)
 ├── cors-proxy-demo/       # static browser front-end for the cors-proxy Worker
@@ -57,6 +58,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `artillery/` | yes | Turn-based artillery duel; JS modules, npm scripts, tests |
 | `cold-climb/` | yes | Touch-first arcade game; JS modules, npm scripts, tests |
 | `droneski/` | yes | FPV drone / downhill skier game; JS modules, vendored three.js, tests |
+| `esp-flash/` | yes | Web Serial / WebUSB ESP32 flasher; JS modules, vendored esptool-js, tests |
 | `kubescheduler-the-game/` | yes | Kubernetes scheduler game; JS modules, npm scripts, tests |
 | `cors-proxy-demo/` | yes | Static front-end for `cors-proxy`; HTML/JS, no build or tests |
 | `git/` | yes | In-browser read-only git client; JS modules, npm scripts, tests |
@@ -622,6 +624,7 @@ bundle exec fastlane test
 | `artillery/` | Turn-based artillery duel with local and AI modes | Node test runner |
 | `cold-climb/` | Two-handle ball-climbing arcade game | Node test runner |
 | `droneski/` | FPV drone filming a procedurally generated downhill skier | Node test runner |
+| `esp-flash/` | Flash inkbot/maze (or a local `.bin`) to an ESP32 over Web Serial / WebUSB | Node test runner |
 | `kubescheduler-the-game/` | Play the Kubernetes scheduler and cluster operator | Node test runner |
 | `cors-proxy-demo/` | Browser playground for the `cors-proxy` Worker (send a request, inspect the CORS response) | none (static) |
 | `git/` | In-browser read-only git client (clone, browse, branches, history) | Jest + Playwright |
