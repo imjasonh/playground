@@ -169,7 +169,7 @@ impl EnvelopeSpec {
     }
 }
 
-/// True when `key` should be sent to Google. Empty strings and the
+/// True when `key` is sent to Google. Empty strings and the
 /// `REPLACE_…` / `stub` placeholders are treated as unset.
 pub fn api_key_usable(key: Option<&str>) -> bool {
     match key.map(str::trim) {
@@ -180,12 +180,48 @@ pub fn api_key_usable(key: Option<&str>) -> bool {
     }
 }
 
+/// A geocoded point plus envelope print lines.
+#[derive(Debug, Clone)]
+pub struct Geocode {
+    pub location: LatLng,
+    pub postal_lines: Vec<String>,
+}
+
+/// One Places Autocomplete prediction.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlaceSuggestion {
+    pub label: String,
+    pub place_id: String,
+}
+
 /// Geocoding request for one address.
 pub fn geocode_url(address: &str, key: &str) -> String {
     let mut url = Url::parse("https://maps.googleapis.com/maps/api/geocode/json")
         .expect("static geocode URL");
     url.query_pairs_mut()
         .append_pair("address", address)
+        .append_pair("key", key);
+    url.to_string()
+}
+
+/// Places Autocomplete JSON API for the form typeahead.
+pub fn places_autocomplete_url(input: &str, key: &str) -> String {
+    let mut url = Url::parse("https://maps.googleapis.com/maps/api/place/autocomplete/json")
+        .expect("static places autocomplete URL");
+    url.query_pairs_mut()
+        .append_pair("input", input)
+        .append_pair("types", "address")
+        .append_pair("key", key);
+    url.to_string()
+}
+
+/// Place Details JSON API for a prediction's `place_id`.
+pub fn place_details_url(place_id: &str, key: &str) -> String {
+    let mut url = Url::parse("https://maps.googleapis.com/maps/api/place/details/json")
+        .expect("static place details URL");
+    url.query_pairs_mut()
+        .append_pair("place_id", place_id)
+        .append_pair("fields", "address_component,formatted_address")
         .append_pair("key", key);
     url.to_string()
 }
@@ -318,6 +354,10 @@ struct GeocodeBody {
 #[derive(Debug, Deserialize)]
 struct GeocodeResult {
     geometry: GeocodeGeometry,
+    #[serde(default)]
+    formatted_address: Option<String>,
+    #[serde(default)]
+    address_components: Vec<AddressComponent>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -329,6 +369,46 @@ struct GeocodeGeometry {
 struct GeoPoint {
     lat: f64,
     lng: f64,
+}
+
+#[derive(Debug, Deserialize)]
+struct AddressComponent {
+    long_name: String,
+    short_name: String,
+    #[serde(default)]
+    types: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AutocompleteBody {
+    status: String,
+    #[serde(default)]
+    error_message: Option<String>,
+    #[serde(default)]
+    predictions: Vec<AutocompletePrediction>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AutocompletePrediction {
+    description: String,
+    place_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct PlaceDetailsBody {
+    status: String,
+    #[serde(default)]
+    error_message: Option<String>,
+    #[serde(default)]
+    result: Option<PlaceDetailsResult>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PlaceDetailsResult {
+    #[serde(default)]
+    formatted_address: Option<String>,
+    #[serde(default)]
+    address_components: Vec<AddressComponent>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -374,8 +454,8 @@ fn maps_status_error(kind: &str, status: &str, message: Option<&str>) -> Error {
     }
 }
 
-/// Parse a Geocoding API body. The first result's location is used.
-pub fn parse_geocode(body: &[u8]) -> Result<LatLng, Error> {
+/// Parse a Geocoding API body. Location plus envelope lines from components.
+pub fn parse_geocode(body: &[u8]) -> Result<Geocode, Error> {
     let parsed: GeocodeBody =
         serde_json::from_slice(body).map_err(|e| Error::Maps(format!("geocode JSON: {e}")))?;
     if parsed.status != "OK" {
@@ -385,13 +465,157 @@ pub fn parse_geocode(body: &[u8]) -> Result<LatLng, Error> {
             parsed.error_message.as_deref(),
         ));
     }
-    let loc = &parsed
+    let result = parsed
         .results
         .first()
-        .ok_or_else(|| Error::Maps("geocode: OK but no results".into()))?
-        .geometry
-        .location;
-    Ok(LatLng::new(loc.lat, loc.lng))
+        .ok_or_else(|| Error::Maps("geocode: OK but no results".into()))?;
+    let loc = &result.geometry.location;
+    Ok(Geocode {
+        location: LatLng::new(loc.lat, loc.lng),
+        postal_lines: postal_lines(
+            &result.address_components,
+            result.formatted_address.as_deref(),
+        ),
+    })
+}
+
+/// Parse Places Autocomplete. `ZERO_RESULTS` is an empty list, not an error.
+pub fn parse_autocomplete(body: &[u8]) -> Result<Vec<PlaceSuggestion>, Error> {
+    let parsed: AutocompleteBody =
+        serde_json::from_slice(body).map_err(|e| Error::Maps(format!("places JSON: {e}")))?;
+    if parsed.status == "ZERO_RESULTS" {
+        return Ok(Vec::new());
+    }
+    if parsed.status != "OK" {
+        return Err(maps_status_error(
+            "places",
+            &parsed.status,
+            parsed.error_message.as_deref(),
+        ));
+    }
+    Ok(parsed
+        .predictions
+        .into_iter()
+        .map(|p| PlaceSuggestion {
+            label: p.description,
+            place_id: p.place_id,
+        })
+        .collect())
+}
+
+/// Parse Place Details into envelope print lines.
+pub fn parse_place_details(body: &[u8]) -> Result<Vec<String>, Error> {
+    let parsed: PlaceDetailsBody = serde_json::from_slice(body)
+        .map_err(|e| Error::Maps(format!("place details JSON: {e}")))?;
+    if parsed.status != "OK" {
+        return Err(maps_status_error(
+            "place",
+            &parsed.status,
+            parsed.error_message.as_deref(),
+        ));
+    }
+    let result = parsed
+        .result
+        .ok_or_else(|| Error::Maps("place: OK but no result".into()))?;
+    let lines = postal_lines(
+        &result.address_components,
+        result.formatted_address.as_deref(),
+    );
+    if lines.is_empty() {
+        return Err(Error::Maps("place: no address lines".into()));
+    }
+    Ok(lines)
+}
+
+fn postal_lines(components: &[AddressComponent], formatted: Option<&str>) -> Vec<String> {
+    let mut lines = Vec::new();
+    if let Some(street) = street_line(components) {
+        lines.push(street);
+    }
+    if let Some(city) = city_line(components) {
+        lines.push(city);
+    }
+    if let Some(country) = component(components, "country") {
+        let short = country.short_name.as_str();
+        if short != "US" && !short.eq_ignore_ascii_case("USA") {
+            lines.push(country.long_name.clone());
+        }
+    }
+    if lines.is_empty() {
+        if let Some(formatted) = formatted {
+            return lines_from_formatted(formatted);
+        }
+    }
+    lines
+}
+
+fn component<'a>(cs: &'a [AddressComponent], ty: &str) -> Option<&'a AddressComponent> {
+    cs.iter().find(|c| c.types.iter().any(|t| t == ty))
+}
+
+fn street_line(cs: &[AddressComponent]) -> Option<String> {
+    let num = component(cs, "street_number").map(|c| c.short_name.as_str());
+    let route = component(cs, "route").map(|c| c.short_name.as_str());
+    let unit = component(cs, "subpremise").map(|c| c.short_name.as_str());
+    match (num, route) {
+        (Some(n), Some(r)) => {
+            let mut s = format!("{n} {r}");
+            if let Some(u) = unit {
+                if u.chars().all(|c| c.is_ascii_digit()) {
+                    s.push_str(" #");
+                    s.push_str(u);
+                } else {
+                    s.push(' ');
+                    s.push_str(u);
+                }
+            }
+            Some(s)
+        }
+        (None, Some(r)) => Some(r.to_string()),
+        (Some(n), None) => Some(n.to_string()),
+        (None, None) => component(cs, "premise").map(|c| c.long_name.clone()),
+    }
+}
+
+fn city_name(cs: &[AddressComponent]) -> Option<&str> {
+    component(cs, "locality")
+        .or_else(|| component(cs, "postal_town"))
+        .or_else(|| component(cs, "sublocality_level_1"))
+        .or_else(|| component(cs, "sublocality"))
+        .map(|c| c.long_name.as_str())
+}
+
+fn city_line(cs: &[AddressComponent]) -> Option<String> {
+    let city = city_name(cs)?;
+    let state = component(cs, "administrative_area_level_1").map(|c| c.short_name.as_str());
+    let zip = component(cs, "postal_code").map(|c| c.short_name.as_str());
+    Some(match (state, zip) {
+        (Some(st), Some(z)) => format!("{city}, {st} {z}"),
+        (Some(st), None) => format!("{city}, {st}"),
+        (None, Some(z)) => format!("{city} {z}"),
+        (None, None) => city.to_string(),
+    })
+}
+
+fn lines_from_formatted(formatted: &str) -> Vec<String> {
+    let mut parts: Vec<&str> = formatted
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect();
+    if let Some(last) = parts.last() {
+        if last.eq_ignore_ascii_case("USA") || last.eq_ignore_ascii_case("United States") {
+            parts.pop();
+        }
+    }
+    if parts.len() >= 3 {
+        let street = parts[0].to_string();
+        let city = parts[1];
+        let rest = parts[2..].join(", ");
+        vec![street, format!("{city}, {rest}")]
+    } else {
+        parts.into_iter().map(str::to_string).collect()
+    }
 }
 
 /// Parse a Directions API body.
@@ -529,15 +753,13 @@ pub fn spec_from_google(
     style: MapStyle,
     size: EnvelopeSize,
 ) -> Result<EnvelopeSpec, Error> {
-    // Geocode bodies are fetched so a bad address fails before directions;
-    // the polyline already contains start/end, so the parsed points are unused.
-    let _ = parse_geocode(geocode_from)?;
-    let _ = parse_geocode(geocode_to)?;
+    let from_geo = parse_geocode(geocode_from)?;
+    let to_geo = parse_geocode(geocode_to)?;
     let route = parse_directions(directions)?;
     let jpeg = jpeg_from_static_map(jpeg)?;
     Ok(EnvelopeSpec {
-        from,
-        to,
+        from: from.expand_with(&from_geo.postal_lines),
+        to: to.expand_with(&to_geo.postal_lines),
         route: Some(route),
         map_jpeg: Some(jpeg.to_vec()),
         map_style: style,
@@ -595,9 +817,10 @@ mod tests {
 
     #[test]
     fn parse_geocode_ok() {
-        let ll = parse_geocode(GEOCODE).unwrap();
-        assert!((ll.lat - 37.422).abs() < 1e-6);
-        assert!((ll.lng + 122.084).abs() < 1e-6);
+        let geo = parse_geocode(GEOCODE).unwrap();
+        assert!((geo.location.lat - 37.422).abs() < 1e-6);
+        assert!((geo.location.lng + 122.084).abs() < 1e-6);
+        assert!(geo.postal_lines.is_empty());
     }
 
     #[test]
@@ -649,6 +872,115 @@ mod tests {
         assert_eq!(spec.size, EnvelopeSize::Ten);
         assert!(spec.map_jpeg.is_some());
         assert_eq!(spec.route.as_ref().unwrap().points.len(), 3);
+    }
+
+    const BROOKLYN: &[u8] = br#"{
+        "status": "OK",
+        "results": [{
+            "formatted_address": "98 16th St, Brooklyn, NY 11215, USA",
+            "address_components": [
+                {"long_name": "98", "short_name": "98", "types": ["street_number"]},
+                {"long_name": "16th Street", "short_name": "16th St", "types": ["route"]},
+                {"long_name": "Gowanus", "short_name": "Gowanus", "types": ["neighborhood", "political"]},
+                {"long_name": "Brooklyn", "short_name": "Brooklyn", "types": ["political", "sublocality", "sublocality_level_1"]},
+                {"long_name": "New York", "short_name": "NY", "types": ["administrative_area_level_1", "political"]},
+                {"long_name": "United States", "short_name": "US", "types": ["country", "political"]},
+                {"long_name": "11215", "short_name": "11215", "types": ["postal_code"]},
+                {"long_name": "7575", "short_name": "7575", "types": ["postal_code_suffix"]}
+            ],
+            "geometry": {"location": {"lat": 40.665, "lng": -73.992}}
+        }]
+    }"#;
+
+    #[test]
+    fn geocode_expands_brooklyn_street() {
+        let geo = parse_geocode(BROOKLYN).unwrap();
+        assert_eq!(geo.postal_lines, ["98 16th St", "Brooklyn, NY 11215"]);
+    }
+
+    #[test]
+    fn spec_from_google_prints_expanded_address() {
+        let from = Address::parse("Ada Example\n1600 Amphitheatre Parkway").unwrap();
+        let to = Address::parse("98 16th st\nbrooklyn").unwrap();
+        let mut jpeg = vec![0xFF, 0xD8, 0xFF, 0xC0, 0x00, 0x0B, 0x08];
+        jpeg.extend_from_slice(&8u16.to_be_bytes());
+        jpeg.extend_from_slice(&8u16.to_be_bytes());
+        jpeg.extend_from_slice(&[1, 1, 0x11, 0x00]);
+        let spec = spec_from_google(
+            from,
+            to,
+            GEOCODE,
+            BROOKLYN,
+            DIRECTIONS,
+            &jpeg,
+            MapStyle::Google,
+            EnvelopeSize::Ten,
+        )
+        .unwrap();
+        assert_eq!(spec.to.lines(), ["98 16th St", "Brooklyn, NY 11215"]);
+        assert_eq!(spec.from.lines()[0], "Ada Example");
+    }
+
+    #[test]
+    fn parse_autocomplete_predictions() {
+        let body = br#"{
+            "status": "OK",
+            "predictions": [
+                {"description": "98 16th St, Brooklyn, NY, USA", "place_id": "ChIJ50"},
+                {"description": "98 16th St, Oak Brook, IL, USA", "place_id": "ChIJxx"}
+            ]
+        }"#;
+        let got = parse_autocomplete(body).unwrap();
+        assert_eq!(got.len(), 2);
+        assert_eq!(got[0].label, "98 16th St, Brooklyn, NY, USA");
+        assert_eq!(got[0].place_id, "ChIJ50");
+    }
+
+    #[test]
+    fn parse_autocomplete_zero_results() {
+        let got = parse_autocomplete(br#"{"status":"ZERO_RESULTS","predictions":[]}"#).unwrap();
+        assert!(got.is_empty());
+    }
+
+    #[test]
+    fn parse_autocomplete_denied() {
+        let err =
+            parse_autocomplete(br#"{"status":"REQUEST_DENIED","error_message":"Places disabled"}"#)
+                .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("REQUEST_DENIED"));
+        assert!(msg.contains("Places disabled"));
+    }
+
+    #[test]
+    fn parse_place_details_lines() {
+        let body = br#"{
+            "status": "OK",
+            "result": {
+                "formatted_address": "98 16th St, Brooklyn, NY 11215, USA",
+                "address_components": [
+                    {"long_name": "98", "short_name": "98", "types": ["street_number"]},
+                    {"long_name": "16th Street", "short_name": "16th St", "types": ["route"]},
+                    {"long_name": "Brooklyn", "short_name": "Brooklyn", "types": ["sublocality", "sublocality_level_1"]},
+                    {"long_name": "New York", "short_name": "NY", "types": ["administrative_area_level_1"]},
+                    {"long_name": "United States", "short_name": "US", "types": ["country"]},
+                    {"long_name": "11215", "short_name": "11215", "types": ["postal_code"]}
+                ]
+            }
+        }"#;
+        let lines = parse_place_details(body).unwrap();
+        assert_eq!(lines, ["98 16th St", "Brooklyn, NY 11215"]);
+    }
+
+    #[test]
+    fn places_urls_include_key() {
+        let auto = places_autocomplete_url("98 16th", "secret-key");
+        assert!(auto.contains("place/autocomplete/json"));
+        assert!(auto.contains("secret-key"));
+        assert!(auto.contains("types=address"));
+        let details = place_details_url("ChIJ50", "secret-key");
+        assert!(details.contains("place/details/json"));
+        assert!(details.contains("ChIJ50"));
     }
 
     #[test]

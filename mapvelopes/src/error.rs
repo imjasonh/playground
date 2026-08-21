@@ -9,7 +9,7 @@ pub enum Error {
     EmptyAddress(&'static str),
     /// The request was malformed (missing fields, bad JSON, unknown path).
     BadRequest(String),
-    /// Geocoding, directions, or static-map JSON/bytes were unusable.
+    /// Google Maps JSON or bytes were unusable.
     Maps(String),
     /// `GOOGLE_MAPS_API_KEY` is missing, empty, or a known placeholder.
     Unavailable(String),
