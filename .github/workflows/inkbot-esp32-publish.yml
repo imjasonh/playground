@@ -64,6 +64,9 @@ jobs:
 
       - name: Setup Xtensa toolchain
         uses: esp-rs/xtensa-toolchain@ec6d36527049a7f4fb2cb0c1a644668c1bb8a2a4 # v1.7
+        env:
+          # espup hits api.github.com; unauthenticated runners 403.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           default: true
           buildtargets: esp32
@@ -78,9 +81,9 @@ jobs:
         uses: sigstore/cosign-installer@fb28c2b6339dcd94da6e4cbcbc5e888961f6f8c3 # v3.9.0
 
       - name: Install espflash
-        # Pin 4.2.0 (there is no 4.2.2). Use the 1.88 host toolchain; the
-        # Xtensa step above makes `esp` the default rustc.
-        run: cargo +1.88.0 install espflash --locked --version 4.2.0
+        # Pin 4.5.0 to match the host that flashes this board. Use 1.88;
+        # the Xtensa step above makes `esp` the default rustc.
+        run: cargo +1.88.0 install espflash --locked --version 4.5.0
 
       - name: Publish signed image
         working-directory: inkbot-esp32

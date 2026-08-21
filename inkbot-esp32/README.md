@@ -54,13 +54,13 @@ TX power to ease weak supplies.
 
 ```bash
 cargo install espup ldproxy
-cargo install espflash --locked --version 4.2.0
+cargo install espflash --locked --version 4.5.0
 brew install cmake ninja dfu-util cosign
 espup install --targets esp32
 curl -LsSf https://astral.sh/uv/install.sh | sh   # Python 3.12 for ESP-IDF
 ```
 
-CI uses the same `espflash` 4.2.0 pin. On Linux, pass `PORT=/dev/ttyUSB0` or
+CI uses the same `espflash` 4.5.0 pin. On Linux, pass `PORT=/dev/ttyUSB0` or
 `PORT=/dev/ttyACM0` (the Makefile also probes those paths).
 
 ## Configure, build, flash

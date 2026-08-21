@@ -132,6 +132,9 @@ jobs:
       - name: Setup Xtensa toolchain
         if: steps.gate.outputs.run == 'true'
         uses: esp-rs/xtensa-toolchain@ec6d36527049a7f4fb2cb0c1a644668c1bb8a2a4 # v1.7
+        env:
+          # espup hits api.github.com; unauthenticated runners 403.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           default: true
           buildtargets: esp32

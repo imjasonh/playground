@@ -249,12 +249,14 @@ save-image: $(INKBOT_FW_BIN) $(MAZE_FW_BIN)
 
 $(INKBOT_FW_BIN): build-inkbot
 	@mkdir -p $(dir $@)
-	espflash save-image --chip esp32 --partition-table partitions.csv $(INKBOT_BIN) $@
+	espflash save-image --chip esp32 --partition-table partitions.csv \
+	  --ignore-app-descriptor --skip-padding $(INKBOT_BIN) $@
 	@echo "Wrote $@ ($$(wc -c < $@) bytes)"
 
 $(MAZE_FW_BIN): build-maze
 	@mkdir -p $(dir $@)
-	espflash save-image --chip esp32 --partition-table partitions.csv $(MAZE_BIN) $@
+	espflash save-image --chip esp32 --partition-table partitions.csv \
+	  --ignore-app-descriptor --skip-padding $(MAZE_BIN) $@
 	@echo "Wrote $@ ($$(wc -c < $@) bytes)"
 
 publish: SHELL := /bin/bash
