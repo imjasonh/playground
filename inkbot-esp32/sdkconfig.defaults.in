@@ -2,9 +2,12 @@ CONFIG_ESP_MAIN_TASK_STACK_SIZE=49152
 CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT=16384
 
 # HTTPS to the inkbot Worker, GHCR, and (optional) Google APIs.
-# Custom bundle is the eight roots in certs/ (~12 KB) instead of the
-# full Mozilla store. IDF resolves the path relative to embuild's
-# synthetic project, so the Makefile substitutes @PROJECT_DIR@.
+# Custom bundle is the PEMs in certs/ (GTS, ISRG, DigiCert, USERTrust,
+# and GlobalSign Root CA) instead of the full Mozilla store. Cloudflare
+# currently sends GTS Root R4 cross-signed by GlobalSign; ESP-IDF's
+# bundle callback looks up that issuer and fails without it. IDF
+# resolves the path relative to embuild's synthetic project, so the
+# Makefile substitutes @PROJECT_DIR@.
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL=n
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_CMN=n
@@ -17,7 +20,9 @@ CONFIG_MBEDTLS_DYNAMIC_FREE_CA_CERT=y
 CONFIG_MBEDTLS_SSL_KEEP_PEER_CERTIFICATE=n
 # Classic ESP32 has ~160–200 KB DRAM after Wi-Fi. Default 16 KiB TLS
 # records leave no contiguous room for the 48 KB panel framebuffer.
-CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN=4096
+# 8 KiB is the minimum that fits Google OAuth / Cloud API chains
+# (~4 KB DER plus TLS 1.3 framing); 4 KiB is enough for workers.dev.
+CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN=8192
 CONFIG_MBEDTLS_SSL_OUT_CONTENT_LEN=2048
 
 # Trim Wi-Fi buffers so HTTPS + 48 KB frame can coexist.

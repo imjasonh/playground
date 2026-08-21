@@ -266,8 +266,7 @@ fn mbedtls_rs256_sign(pem: &[u8], message: &[u8]) -> Result<Vec<u8>> {
     use core::ffi::c_void;
     use esp_idf_svc::sys::{
         esp_fill_random, mbedtls_md_type_t_MBEDTLS_MD_SHA256, mbedtls_pk_context, mbedtls_pk_free,
-        mbedtls_pk_init, mbedtls_pk_parse_key, mbedtls_pk_sign, mbedtls_sha256,
-        MBEDTLS_PK_SIGNATURE_MAX_SIZE,
+        mbedtls_pk_init, mbedtls_pk_parse_key, mbedtls_pk_sign, mbedtls_sha256, psa_crypto_init,
     };
 
     unsafe extern "C" fn rng(_p: *mut c_void, output: *mut u8, len: usize) -> i32 {
@@ -284,6 +283,11 @@ fn mbedtls_rs256_sign(pem: &[u8], message: &[u8]) -> Result<Vec<u8>> {
     pem_z.push(0);
 
     unsafe {
+        // PKCS#8 parse goes through PSA when IDF enables MBEDTLS_USE_PSA_CRYPTO.
+        let psa = psa_crypto_init();
+        if psa != 0 {
+            bail!("psa_crypto_init {psa}");
+        }
         let mut pk: mbedtls_pk_context = core::mem::zeroed();
         mbedtls_pk_init(&mut pk);
         let parsed = mbedtls_pk_parse_key(
@@ -301,7 +305,10 @@ fn mbedtls_rs256_sign(pem: &[u8], message: &[u8]) -> Result<Vec<u8>> {
         }
         let mut hash = [0u8; 32];
         mbedtls_sha256(message.as_ptr(), message.len(), hash.as_mut_ptr(), 0);
-        let mut sig = vec![0u8; MBEDTLS_PK_SIGNATURE_MAX_SIZE as usize];
+        // Bindgen reports MBEDTLS_PK_SIGNATURE_MAX_SIZE as 0 because the C
+        // macro is assembled from ifdefs. RSA-2048 signatures are 256 bytes;
+        // 512 bytes covers RSA-4096.
+        let mut sig = vec![0u8; 512];
         let mut sig_len = 0usize;
         let signed = mbedtls_pk_sign(
             &mut pk,

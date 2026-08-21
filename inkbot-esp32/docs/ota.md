@@ -176,10 +176,13 @@ The Waveshare driver board is a classic ESP32 with 4 MB flash. The OTA
 table is two slots of `0x1F0000` (1.9375 MiB) each. There is no leftover
 flash for a factory partition.
 
-TLS record buffers are 4 KiB in / 2 KiB out. The CA store is the eight
-roots in `certs/` (Let's Encrypt, Google Trust Services, DigiCert,
-USERTrust) instead of the full Mozilla bundle. Keep that list short; a
-full bundle plus the 48 KB framebuffer does not fit in DRAM next to Wi-Fi.
+TLS record buffers are 8 KiB in / 2 KiB out (Google OAuth chains need
+more than 4 KiB). The CA store is the PEMs
+in `certs/` (Let's Encrypt, Google Trust Services, DigiCert, USERTrust,
+and GlobalSign Root CA) instead of the full Mozilla bundle. Cloudflare
+Workers presents GTS Root R4 cross-signed by GlobalSign, and ESP-IDF's
+bundle callback looks up that issuer. Keep the list short; a full
+bundle plus the 48 KB framebuffer does not fit in DRAM next to Wi-Fi.
 
 Do not add an OTA thread or hold the last framebuffer during a GHCR
 download. Those are the two ways this board OOMs.
