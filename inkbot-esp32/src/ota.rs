@@ -389,8 +389,9 @@ fn fetch_layer_blob(
     Ok(buf)
 }
 
-/// GHCR blob GETs 307 to pkg-containers; those responses have fat headers.
-const BLOB_HEADER_BUF: usize = 16 * 1024;
+/// GHCR blob GETs 307 to pkg-containers. Headers there are ~1 KB; a 16 KiB
+/// RX buffer left too little heap for the TLS record + EspOta write.
+const BLOB_HEADER_BUF: usize = 4096;
 const BLOB_REDIRECTS: u8 = 5;
 
 fn blob_http_config() -> HttpConfig {
@@ -484,16 +485,25 @@ fn download_and_apply(repo: &str, layer: &Descriptor, token: &str) -> Result<()>
             bail!("blob GET -> {status}");
         }
 
-        let mut ota = EspOta::new().context("EspOta::new")?;
-        let mut update = ota.initiate_update().context("initiate OTA update")?;
-
         let expected_sha_hex = layer
             .digest
             .strip_prefix("sha256:")
             .ok_or_else(|| anyhow!("non-sha256 digest: {}", layer.digest))?;
         let mut hasher = Sha256::new();
         let mut buf = [0u8; 4096];
-        let mut total: u64 = 0;
+        let first = resp.read(&mut buf).context("read blob chunk")?;
+        if first == 0 {
+            bail!("blob GET returned an empty body");
+        }
+        if first as u64 > layer.size {
+            bail!("blob larger than manifest size {}", layer.size);
+        }
+
+        let mut ota = EspOta::new().context("EspOta::new")?;
+        let mut update = ota.initiate_update().context("initiate OTA update")?;
+        update.write(&buf[..first]).context("OTA write")?;
+        hasher.update(&buf[..first]);
+        let mut total = first as u64;
         let mut next_log = 256u64 * 1024;
         loop {
             let n = resp.read(&mut buf).context("read blob chunk")?;

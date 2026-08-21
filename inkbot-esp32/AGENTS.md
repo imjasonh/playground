@@ -37,7 +37,7 @@ loop, and [`docs/ota.md`](docs/ota.md) for NVS, OTA, and GCP.
   bundle layer (`sha256-<manifest>` without `.sig`). Fulcio leaves last
   about 10 minutes; accept an expired leaf (this firmware does not query
   Rekor). Reject a not-yet-valid leaf. Identity allowlist comes from
-  NVS, not the image. Follow GHCR blob 307s with a 16 KiB header buffer
+  NVS, not the image. Follow GHCR blob 307s with a 4 KiB header buffer
   and stream into the inactive slot.
 - **Pending-verify:** after an OTA reboot, mark the slot valid only when
   the health check succeeds. inkbot: Worker boot fetch (`Displayed` or
