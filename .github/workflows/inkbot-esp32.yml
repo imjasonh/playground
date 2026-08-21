@@ -138,12 +138,6 @@ jobs:
           workspaces: inkbot-esp32
           shared-key: inkbot-esp32-firmware
 
-      # Bake placeholder Wi-Fi / URL so the build doesn't need secrets.
-      - name: Prepare config.toml
-        if: steps.gate.outputs.run == 'true'
-        working-directory: inkbot-esp32
-        run: cp config.toml.example config.toml
-
       - name: Build firmware
         if: steps.gate.outputs.run == 'true'
         working-directory: inkbot-esp32

@@ -28,11 +28,11 @@ use display::Panel;
 use inkbot_esp32::{
     format_error_chain, format_panic_message, incident_needs_post, is_http_connect_failure,
     reset_is_abnormal, should_post_status, should_refresh_wifi, Catalog, CrashStatus,
-    DeviceTelemetry, FetchStatus, IncidentContext, LastIncident, StatusReport, WifiRefresh,
-    WifiStatus, FIRMWARE_ID, FRAME_BYTES,
+    DeviceConfig, DeviceConfigRaw, DeviceTelemetry, FetchStatus, IncidentContext, LastIncident,
+    StatusReport, WifiRefresh, WifiStatus, FIRMWARE_ID, FRAME_BYTES, NVS_KEY_BASE_URL,
+    NVS_KEY_DHCP_RENEW_SECS, NVS_KEY_PASS, NVS_KEY_POLL_SECS, NVS_KEY_ROTATE_SECS, NVS_KEY_SSID,
+    NVS_KEY_STATUS_SECS, NVS_KEY_UPLOAD_SECRET, NVS_NS_WIFI,
 };
-
-include!(concat!(env!("OUT_DIR"), "/config_gen.rs"));
 
 const NVS_NS: &str = "inkbot";
 const NVS_NAME: &str = "name";
@@ -67,6 +67,8 @@ fn main() -> Result<()> {
     let nvs_part = EspDefaultNvsPartition::take()?;
     let mut nvs = EspNvs::new(nvs_part.clone(), NVS_NS, true)
         .map_err(|e| anyhow!("open NVS {NVS_NS}: {e:?}"))?;
+    let wifi_nvs = EspNvs::new(nvs_part.clone(), NVS_NS_WIFI, true)
+        .map_err(|e| anyhow!("open NVS {NVS_NS_WIFI}: {e:?}"))?;
 
     let mut panel = Panel::new(
         peripherals.spi2,
@@ -99,16 +101,39 @@ fn main() -> Result<()> {
         sysloop,
     )?;
     thread::sleep(Duration::from_millis(500));
+
+    let cfg = loop {
+        match load_device_config(&wifi_nvs, &nvs) {
+            Ok(c) => {
+                info!(
+                    "config ssid={} base_url={} poll={}s rotate={}s status={}s dhcp={}s",
+                    c.wifi_ssid,
+                    c.base_url,
+                    c.poll_secs,
+                    c.rotate_secs,
+                    c.status_secs,
+                    c.dhcp_renew_secs
+                );
+                break c;
+            }
+            Err(e) => {
+                warn!("device config: {e:#}");
+                let _ = panel.show_status_only(&format!("config: {e}"));
+                thread::sleep(Duration::from_secs(5));
+            }
+        }
+    };
+
     loop {
         note_op(&mut nvs, "wifi");
-        match connect_wifi(&mut wifi) {
+        match connect_wifi(&mut wifi, &cfg) {
             Ok(()) => {
                 status.wifi = None;
                 break;
             }
             Err(e) => {
                 warn!("wifi failed: {e:#}");
-                status.wifi = Some(wifi_status_from_err(&e, WIFI_ATTEMPTS, WIFI_ATTEMPTS));
+                status.wifi = Some(wifi_status_from_err(&e, cfg, WIFI_ATTEMPTS, WIFI_ATTEMPTS));
                 capture_incident(&mut remote, &nvs, &wifi, &status, "wifi");
                 paint_error(&mut panel, None, &status);
                 thread::sleep(Duration::from_secs(3));
@@ -139,6 +164,7 @@ fn main() -> Result<()> {
     match boot_latest(
         &mut panel,
         &mut nvs,
+        &cfg,
         &mut current_name,
         &mut current_etag,
         &mut seen_latest,
@@ -167,7 +193,7 @@ fn main() -> Result<()> {
             warn!("boot poll failed: {e:#}");
             status.fetch = Some(fetch_status_from_err(
                 "boot /latest.bin",
-                &format!("{INKBOT_BASE_URL}/latest.bin"),
+                &format!("{}{}", cfg.base_url, "/latest.bin"),
                 &e,
                 HTTP_ATTEMPTS,
                 HTTP_ATTEMPTS,
@@ -183,6 +209,7 @@ fn main() -> Result<()> {
         &mut remote,
         &mut nvs,
         &wifi,
+        &cfg,
         true,
         &status,
         reset,
@@ -191,7 +218,7 @@ fn main() -> Result<()> {
     );
 
     loop {
-        thread::sleep(Duration::from_secs(POLL_SECS));
+        thread::sleep(Duration::from_secs(cfg.poll_secs));
         // After the first successful image the crash line has been on-screen
         // for a full poll period; drop it so the next paint is a full frame.
         if last_frame.is_some() {
@@ -205,11 +232,13 @@ fn main() -> Result<()> {
             &mut last_wifi_refresh,
             &mut last_reconnect,
             &mut status,
+            &cfg,
             false,
         );
         let mut result = tick(
             &mut panel,
             &mut nvs,
+            &cfg,
             &mut current_name,
             &mut current_etag,
             &mut seen_latest,
@@ -229,6 +258,7 @@ fn main() -> Result<()> {
                     &mut last_wifi_refresh,
                     &mut last_reconnect,
                     &mut status,
+                    &cfg,
                     true,
                 )
             {
@@ -237,6 +267,7 @@ fn main() -> Result<()> {
                 result = tick(
                     &mut panel,
                     &mut nvs,
+                    &cfg,
                     &mut current_name,
                     &mut current_etag,
                     &mut seen_latest,
@@ -282,6 +313,7 @@ fn main() -> Result<()> {
             &mut remote,
             &mut nvs,
             &wifi,
+            &cfg,
             force,
             &status,
             reset,
@@ -304,11 +336,11 @@ fn paint_error(panel: &mut Panel, last_frame: Option<&[u8]>, status: &StatusRepo
     }
 }
 
-fn wifi_status_from_err(err: &anyhow::Error, attempt: u32, attempts: u32) -> WifiStatus {
+fn wifi_status_from_err(err: &anyhow::Error, cfg: &DeviceConfig, attempt: u32, attempts: u32) -> WifiStatus {
     let heap = HeapSnap::now();
     let top = err.to_string();
     WifiStatus {
-        ssid: WIFI_SSID.to_string(),
+        ssid: cfg.wifi_ssid.clone(),
         step: wifi_step_from(&top).to_string(),
         cause: format_error_chain(err),
         attempt,
@@ -394,6 +426,7 @@ enum Boot {
 fn boot_latest(
     panel: &mut Panel,
     nvs: &mut EspNvs<NvsDefault>,
+    cfg: &DeviceConfig,
     current_name: &mut Option<String>,
     current_etag: &mut Option<String>,
     seen_latest: &mut Option<String>,
@@ -401,7 +434,7 @@ fn boot_latest(
     status: &StatusReport,
     ip: &str,
 ) -> Result<Boot> {
-    let url = format!("{INKBOT_BASE_URL}/latest.bin");
+    let url = format!("{}{}", cfg.base_url, "/latest.bin");
     info!("GET {url} ({})", HeapSnap::now());
     let response = http_get(&url, None)?;
     match response.status {
@@ -421,7 +454,7 @@ fn boot_latest(
             *last_frame = Some(response.body);
             // Probe catalog after a breath so heap can coalesce; best-effort.
             thread::sleep(Duration::from_millis(200));
-            if let Ok(cat) = fetch_catalog() {
+            if let Ok(cat) = fetch_catalog(cfg) {
                 if let Some(latest) = cat.latest {
                     write_str(nvs, NVS_NAME, &latest)?;
                     write_str(nvs, NVS_LATEST, &latest)?;
@@ -445,6 +478,7 @@ enum Action {
 fn tick(
     panel: &mut Panel,
     nvs: &mut EspNvs<NvsDefault>,
+    cfg: &DeviceConfig,
     current_name: &mut Option<String>,
     current_etag: &mut Option<String>,
     seen_latest: &mut Option<String>,
@@ -454,7 +488,7 @@ fn tick(
     ip: &str,
 ) -> Result<Action> {
     note_op(nvs, "GET /");
-    let catalog = match fetch_catalog() {
+    let catalog = match fetch_catalog(cfg) {
         Ok(c) => {
             status.fetch = None;
             c
@@ -462,7 +496,7 @@ fn tick(
         Err(e) => {
             status.fetch = Some(fetch_status_from_err(
                 "catalog",
-                &format!("{INKBOT_BASE_URL}/"),
+                &format!("{}{}", cfg.base_url, "/"),
                 &e,
                 HTTP_ATTEMPTS,
                 HTTP_ATTEMPTS,
@@ -491,6 +525,7 @@ fn tick(
             show_named(
                 panel,
                 nvs,
+                cfg,
                 current_name,
                 current_etag,
                 last_frame,
@@ -509,7 +544,7 @@ fn tick(
     }
 
     // 2) Periodic random rotation among the library.
-    if last_rotate.elapsed() >= Duration::from_secs(ROTATE_SECS) {
+    if last_rotate.elapsed() >= Duration::from_secs(cfg.rotate_secs) {
         let rand = unsafe { esp_random() };
         if let Some(name) = catalog
             .pick_random(current_name.as_deref(), rand)
@@ -522,6 +557,7 @@ fn tick(
             show_named(
                 panel,
                 nvs,
+                cfg,
                 current_name,
                 current_etag,
                 last_frame,
@@ -544,6 +580,7 @@ fn tick(
 fn show_named(
     panel: &mut Panel,
     nvs: &mut EspNvs<NvsDefault>,
+    cfg: &DeviceConfig,
     current_name: &mut Option<String>,
     current_etag: &mut Option<String>,
     last_frame: &mut Option<Vec<u8>>,
@@ -551,7 +588,7 @@ fn show_named(
     name: &str,
     ip: &str,
 ) -> Result<()> {
-    let url = format!("{INKBOT_BASE_URL}/{name}.bin");
+    let url = format!("{}/{name}.bin", cfg.base_url);
     note_op(nvs, &format!("GET /{name}.bin"));
     // Drop the last framebuffer before the 48 KB HTTPS body so TLS + frame
     // can share the classic ESP32 heap. Restore it if the GET fails.
@@ -633,8 +670,8 @@ fn show_named(
     }
 }
 
-fn fetch_catalog() -> Result<Catalog> {
-    let url = format!("{INKBOT_BASE_URL}/");
+fn fetch_catalog(cfg: &DeviceConfig) -> Result<Catalog> {
+    let url = format!("{}{}", cfg.base_url, "/");
     info!("GET {url} ({})", HeapSnap::now());
     let response = http_get(&url, None)?;
     if response.status != 200 {
@@ -743,11 +780,11 @@ fn renew_dhcp(wifi: &mut BlockingWifi<EspWifi<'static>>) -> Result<String> {
     sta_ip(wifi)
 }
 
-fn reconnect_wifi(wifi: &mut BlockingWifi<EspWifi<'static>>) -> Result<String> {
+fn reconnect_wifi(wifi: &mut BlockingWifi<EspWifi<'static>>, cfg: &DeviceConfig) -> Result<String> {
     let _ = wifi.disconnect();
     let _ = wifi.stop();
     thread::sleep(Duration::from_millis(300));
-    connect_wifi(wifi)?;
+    connect_wifi(wifi, cfg)?;
     sta_ip(wifi)
 }
 
@@ -761,6 +798,7 @@ fn maybe_refresh_wifi(
     last_wifi_refresh: &mut Instant,
     last_reconnect: &mut Option<Instant>,
     status: &mut StatusReport,
+    cfg: &DeviceConfig,
     connect_failure: bool,
 ) -> bool {
     let sta_connected = wifi.is_connected().unwrap_or(false);
@@ -770,7 +808,7 @@ fn maybe_refresh_wifi(
         netif_up,
         connect_failure,
         last_wifi_refresh.elapsed().as_secs(),
-        DHCP_RENEW_SECS,
+        cfg.dhcp_renew_secs,
         last_reconnect
             .map(|t| t.elapsed().as_secs())
             .unwrap_or(WIFI_RECONNECT_COOLDOWN_SECS),
@@ -798,7 +836,7 @@ fn maybe_refresh_wifi(
                 }
                 Err(e) => {
                     warn!("wifi dhcp renew failed: {e:#}; reconnecting");
-                    match reconnect_wifi(wifi) {
+                    match reconnect_wifi(wifi, cfg) {
                         Ok(ip) => {
                             info!("wifi reconnect after dhcp fail, ip={ip}");
                             *ip_str = ip;
@@ -812,7 +850,7 @@ fn maybe_refresh_wifi(
                             warn!("wifi reconnect failed: {re:#}");
                             *last_reconnect = Some(Instant::now());
                             status.wifi =
-                                Some(wifi_status_from_err(&re, WIFI_ATTEMPTS, WIFI_ATTEMPTS));
+                                Some(wifi_status_from_err(&re, cfg, WIFI_ATTEMPTS, WIFI_ATTEMPTS));
                             remote.note_refresh("reconnect-fail", false);
                             capture_incident(remote, nvs, wifi, status, "wifi");
                             false
@@ -827,7 +865,7 @@ fn maybe_refresh_wifi(
                 "wifi reconnect (connected={sta_connected} netif={netif_up} connect_fail={connect_failure}) {}",
                 HeapSnap::now()
             );
-            match reconnect_wifi(wifi) {
+            match reconnect_wifi(wifi, cfg) {
                 Ok(ip) => {
                     info!("wifi reconnect ok, ip={ip}");
                     *ip_str = ip;
@@ -840,7 +878,7 @@ fn maybe_refresh_wifi(
                 Err(e) => {
                     warn!("wifi reconnect failed: {e:#}");
                     *last_reconnect = Some(Instant::now());
-                    status.wifi = Some(wifi_status_from_err(&e, WIFI_ATTEMPTS, WIFI_ATTEMPTS));
+                    status.wifi = Some(wifi_status_from_err(&e, cfg, WIFI_ATTEMPTS, WIFI_ATTEMPTS));
                     remote.note_refresh("reconnect-fail", false);
                     capture_incident(remote, nvs, wifi, status, "wifi");
                     false
@@ -850,14 +888,15 @@ fn maybe_refresh_wifi(
     }
 }
 
-fn connect_wifi(wifi: &mut BlockingWifi<EspWifi<'static>>) -> Result<()> {
+fn connect_wifi(wifi: &mut BlockingWifi<EspWifi<'static>>, cfg: &DeviceConfig) -> Result<()> {
     let mut last_err: Option<anyhow::Error> = None;
     for attempt in 1..=WIFI_ATTEMPTS {
         info!(
-            "wifi attempt {attempt}/{WIFI_ATTEMPTS} ssid={WIFI_SSID} {}",
+            "wifi attempt {attempt}/{WIFI_ATTEMPTS} ssid={} {}",
+            cfg.wifi_ssid,
             HeapSnap::now()
         );
-        match connect_wifi_once(wifi, attempt) {
+        match connect_wifi_once(wifi, cfg, attempt) {
             Ok(()) => return Ok(()),
             Err(e) => {
                 warn!("wifi attempt {attempt}/{WIFI_ATTEMPTS} failed: {e:#}");
@@ -871,16 +910,16 @@ fn connect_wifi(wifi: &mut BlockingWifi<EspWifi<'static>>) -> Result<()> {
     Err(last_err.unwrap_or_else(|| anyhow!("wifi failed")))
 }
 
-fn connect_wifi_once(wifi: &mut BlockingWifi<EspWifi<'static>>, attempt: u32) -> Result<()> {
+fn connect_wifi_once(wifi: &mut BlockingWifi<EspWifi<'static>>, cfg: &DeviceConfig, attempt: u32) -> Result<()> {
     let step = |name: &str| {
         info!("wifi[{attempt}] {name} {}", HeapSnap::now());
     };
 
     step("configure");
     wifi.set_configuration(&WifiConfig::Client(ClientConfiguration {
-        ssid: WIFI_SSID.try_into().map_err(|_| anyhow!("ssid too long"))?,
-        password: WIFI_PASS.try_into().map_err(|_| anyhow!("pass too long"))?,
-        auth_method: if WIFI_PASS.is_empty() {
+        ssid: cfg.wifi_ssid.as_str().try_into().map_err(|_| anyhow!("ssid too long"))?,
+        password: cfg.wifi_pass.as_str().try_into().map_err(|_| anyhow!("pass too long"))?,
+        auth_method: if cfg.wifi_pass.is_empty() {
             AuthMethod::None
         } else {
             AuthMethod::WPA2WPA3Personal
@@ -911,6 +950,32 @@ fn connect_wifi_once(wifi: &mut BlockingWifi<EspWifi<'static>>, attempt: u32) ->
 
     step("up");
     Ok(())
+}
+
+
+fn load_device_config(
+    wifi_nvs: &EspNvs<NvsDefault>,
+    inkbot_nvs: &EspNvs<NvsDefault>,
+) -> Result<DeviceConfig> {
+    let raw = DeviceConfigRaw {
+        wifi_ssid: read_str(wifi_nvs, NVS_KEY_SSID)?,
+        wifi_pass: read_str(wifi_nvs, NVS_KEY_PASS)?,
+        base_url: read_str(inkbot_nvs, NVS_KEY_BASE_URL)?,
+        poll_secs: read_u32(inkbot_nvs, NVS_KEY_POLL_SECS)?,
+        rotate_secs: read_u32(inkbot_nvs, NVS_KEY_ROTATE_SECS)?,
+        upload_secret: read_str(inkbot_nvs, NVS_KEY_UPLOAD_SECRET)?,
+        status_secs: read_u32(inkbot_nvs, NVS_KEY_STATUS_SECS)?,
+        dhcp_renew_secs: read_u32(inkbot_nvs, NVS_KEY_DHCP_RENEW_SECS)?,
+    };
+    DeviceConfig::from_raw(raw).map_err(|e| anyhow!("{e}"))
+}
+
+fn read_u32(nvs: &EspNvs<NvsDefault>, key: &str) -> Result<Option<u64>> {
+    match nvs.get_u32(key) {
+        Ok(Some(v)) => Ok(Some(u64::from(v))),
+        Ok(None) => Ok(None),
+        Err(e) => Err(anyhow!("read {key}: {e:?}")),
+    }
 }
 
 fn read_str(nvs: &EspNvs<NvsDefault>, key: &str) -> Result<Option<String>> {
@@ -1097,17 +1162,18 @@ fn maybe_post_device(
     remote: &mut RemoteStatus,
     nvs: &mut EspNvs<NvsDefault>,
     wifi: &BlockingWifi<EspWifi<'static>>,
+    cfg: &DeviceConfig,
     force: bool,
     status: &StatusReport,
     reset_code: i32,
     current_image: Option<&str>,
     panel_has_status: bool,
 ) {
-    let secret_ok = !INKBOT_UPLOAD_SECRET.is_empty();
+    let secret_ok = !cfg.upload_secret.is_empty();
     let err = status.render();
     let error_changed = err != remote.last_error;
     let secs = remote.last_post.elapsed().as_secs();
-    if !should_post_status(secret_ok, force, error_changed, secs, STATUS_SECS) {
+    if !should_post_status(secret_ok, force, error_changed, secs, cfg.status_secs) {
         return;
     }
     let last_op = read_str(nvs, NVS_LAST_OP).ok().flatten();
@@ -1121,7 +1187,7 @@ fn maybe_post_device(
         heap.min,
         heap.largest,
         Some(net.ip),
-        Some(WIFI_SSID.to_string()),
+        Some(cfg.wifi_ssid.clone()),
         current_image.map(str::to_string),
         last_op,
         panel_has_status,
@@ -1143,7 +1209,7 @@ fn maybe_post_device(
     tel.last_refresh_uptime = remote.last_refresh_uptime;
     thread::sleep(Duration::from_millis(200));
     note_op(nvs, "POST /device");
-    match post_device_report(&tel) {
+    match post_device_report(&tel, cfg) {
         Ok(()) => {
             remote.posts_ok = remote.posts_ok.saturating_add(1);
             remote.last_post_error = None;
@@ -1161,13 +1227,13 @@ fn maybe_post_device(
     }
 }
 
-fn post_device_report(tel: &DeviceTelemetry) -> Result<()> {
+fn post_device_report(tel: &DeviceTelemetry, cfg: &DeviceConfig) -> Result<()> {
     let body = serde_json::to_vec(tel).map_err(|e| anyhow!("status json: {e}"))?;
-    let url = format!("{INKBOT_BASE_URL}/device");
+    let url = format!("{}{}", cfg.base_url, "/device");
     const ATTEMPTS: u32 = 2;
     let mut last_err: Option<anyhow::Error> = None;
     for attempt in 1..=ATTEMPTS {
-        match http_post_json(&url, &body) {
+        match http_post_json(&url, &body, cfg) {
             Ok(200) => return Ok(()),
             Ok(status) => {
                 warn!("POST {url} attempt {attempt}/{ATTEMPTS} HTTP {status}");
@@ -1183,8 +1249,8 @@ fn post_device_report(tel: &DeviceTelemetry) -> Result<()> {
     Err(last_err.unwrap_or_else(|| anyhow!("POST /device failed")))
 }
 
-fn http_post_json(url: &str, body: &[u8]) -> Result<u16> {
-    let auth = format!("Bearer {INKBOT_UPLOAD_SECRET}");
+fn http_post_json(url: &str, body: &[u8], cfg: &DeviceConfig) -> Result<u16> {
+    let auth = format!("Bearer {}", cfg.upload_secret);
     let len = body.len().to_string();
     let mut client = HttpClient::wrap(
         EspHttpConnection::new(&HttpConfig {

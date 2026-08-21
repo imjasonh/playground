@@ -14,12 +14,12 @@ new uploads immediately, and every `rotate_secs` (default 30 min) picks a rand
 frame from the library. Frames are fetched as raw `/{name}.bin` packed buffers
 (no on-device zlib).
 
-No on-device OTA yet (USB flash only). Companion Worker for the inkbot binary:
-[`../inkbot/`](../inkbot/). Sigstore keyless signing for future OTA is designed
-in [`docs/sigstore-ota.md`](docs/sigstore-ota.md): verify in the **app** before
-flipping the boot slot — not by forking the ESP-IDF bootloader. Trust pins
-(`oidc_iss` / `cert_id`) live in **NVS** and are flashed with
-`make nvs-sigstore` (same ELF, different device pins).
+Wi-Fi, Worker URL, cadence, and upload secret are **flash-time NVS** (not baked
+into the ELF) — see [`docs/device-config.md`](docs/device-config.md). No
+on-device OTA yet (USB flash only). Companion Worker:
+[`../inkbot/`](../inkbot/). Sigstore keyless signing for future OTA is in
+[`docs/sigstore-ota.md`](docs/sigstore-ota.md) (app-side verify; trust pins in
+the same NVS CSV).
 
 ## Hardware
 
@@ -64,13 +64,14 @@ curl -LsSf https://astral.sh/uv/install.sh | sh   # Python 3.12 for ESP-IDF
 
 ```bash
 cd inkbot-esp32
-cp config.toml.example config.toml
-$EDITOR config.toml          # wifi.ssid / wifi.pass / inkbot.base_url
+cp nvs/device.csv.example nvs/device.csv
+$EDITOR nvs/device.csv       # wifi ssid/pass, inkbot base_url, optional cadence
 
 make build                   # first run clones ESP-IDF (~minutes)
 make flash PORT=/dev/cu.usbserial-XXXX
+make nvs PORT=/dev/cu.usbserial-XXXX
 make monitor
-# or: make run
+# or: make run   # then make nvs once for credentials
 ```
 
 `make build` always compiles both ELFs under `inkbot-esp32/target/` (it ignores
@@ -80,8 +81,9 @@ contains its baked id (`FIRMWARE_ID` in `src/status.rs`, `MAZE_FIRMWARE_ID` in
 the inkbot binary boots, `POST /device` / `@inkbot status` shows the same
 `firmware=` string.
 
-`config.toml` is gitignored. The inkbot binary bakes those values in at
-compile time via `build.rs`. The maze binary does not read them.
+`nvs/device.csv` is gitignored. The same ELF runs on every board; only the NVS
+blob changes. `make nvs` replaces the entire NVS partition (clears catalog
+bookmarks). The maze binary ignores Wi-Fi / Worker keys.
 
 ## Maze firmware
 
@@ -152,7 +154,7 @@ Brownout still usually means a weak 5 V supply (see Power above).
 
 ### Remote status (`POST /device`)
 
-When `inkbot.upload_secret` matches the Worker's `UPLOAD_SECRET`, the firmware
+When `upload_sec` in NVS matches the Worker's `UPLOAD_SECRET`, the firmware
 POSTs JSON telemetry to `{base_url}/device` (`User-Agent` / `firmware` =
 `inkbot-esp32/0.2`):
 
@@ -198,14 +200,15 @@ job skips this crate — it needs espup).
 inkbot-esp32/
 ├── src/
 │   ├── lib.rs / panel.rs / png_frame.rs / status.rs  # host-tested
+│   ├── device_config.rs                              # NVS Wi-Fi / Worker settings
 │   ├── sigstore_ota.rs                               # OTA identity policy + Cosign helper
 │   ├── maze/                                         # generate / solve / render (host-tested)
 │   ├── main.rs                                       # inkbot: Wi-Fi + HTTP poll loop
 │   ├── maze_main.rs / maze_display.rs                # maze: offline panel loop
 │   └── display.rs                                    # inkbot: Waveshare 7.5″ V2 via epd-waveshare
+├── docs/device-config.md                             # flash-time NVS keys
 ├── docs/sigstore-ota.md                              # why not bootloader; NVS pins
-├── nvs/sigstore.csv.example                          # flash-time Sigstore identity
-├── config.toml.example
+├── nvs/device.csv.example                            # Wi-Fi + Worker + Sigstore pins
 ├── sdkconfig.defaults
 └── Makefile
 ```

@@ -1,0 +1,22 @@
+# Device runtime config for NVS (flash-time, not compiled into the ELF).
+#
+# Copy to device.csv, fill in ssid / pass / base_url (and optional cadence /
+# Sigstore pins), then:
+#   make nvs PORT=/dev/cu.usbserial-XXXX
+#
+# This replaces the entire NVS partition (catalog bookmarks are cleared).
+# Format: ESP-IDF nvs_partition_gen CSV. Key names must be ≤15 characters.
+key,type,encoding,value
+wifi,namespace,,
+ssid,data,string,your-wifi-ssid
+pass,data,string,your-wifi-password
+inkbot,namespace,,
+base_url,data,string,https://inkbot.example.workers.dev
+poll_secs,data,u32,60
+rotate_secs,data,u32,1800
+upload_sec,data,string,
+status_secs,data,u32,900
+dhcp_renew,data,u32,21600
+sigstore,namespace,,
+oidc_iss,data,string,https://token.actions.githubusercontent.com
+cert_id,data,string,https://github.com/OWNER/REPO/.github/workflows/inkbot-esp32.yml@refs/heads/main

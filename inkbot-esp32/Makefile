@@ -7,7 +7,7 @@
 #   curl -LsSf https://astral.sh/uv/install.sh | sh
 #
 # Then:
-#   cp config.toml.example config.toml   # Wi-Fi + Worker URL (inkbot binary)
+#   cp nvs/device.csv.example nvs/device.csv   # Wi-Fi + Worker URL (inkbot)
 #   make build                           # both inkbot-esp32 and maze-esp32
 #   make flash                           # APP=inkbot (default)
 #   make flash APP=maze
@@ -54,14 +54,14 @@ export PATH := $(PYTHON_SHIM):$(XTENSA_GCC_BIN):$(PATH)
 export ESP_IDF_TOOLS_INSTALL_DIR := custom:$(CURDIR)/.embuild
 export ESP_IDF_SDKCONFIG_DEFAULTS := $(CURDIR)/sdkconfig.defaults
 
-.PHONY: help build check-firmware flash monitor run clean test ensure-python-shim nvs-sigstore
+.PHONY: help build check-firmware flash monitor run clean test ensure-python-shim nvs
 
 help:
 	@echo "Targets:"
 	@echo "  make build          Cross-compile inkbot + maze firmware (espup toolchain)"
 	@echo "  make flash          Build + flash $(FIRMWARE_ID) to $(PORT) (APP=$(APP))"
 	@echo "  make flash APP=maze Flash the maze firmware (no Wi-Fi)"
-	@echo "  make nvs-sigstore   Flash Sigstore OTA pins from nvs/sigstore.csv (no rebuild)"
+	@echo "  make nvs            Flash device config from nvs/device.csv (no rebuild)"
 	@echo "  make monitor        Serial monitor on $(PORT)"
 	@echo "  make run            Build + flash + monitor"
 	@echo "  make test           Host-side unit tests (no ESP toolchain needed)"
@@ -106,20 +106,21 @@ check-firmware:
 flash: build
 	espflash flash --port $(PORT) $(BIN)
 
-# Flash Sigstore OTA trust pins without rebuilding the app ELF.
-# Requires nvs/sigstore.csv (from nvs/sigstore.csv.example) and a prior
+# Flash Wi-Fi / Worker / Sigstore pins without rebuilding the app ELF.
+# Requires nvs/device.csv (from nvs/device.csv.example) and a prior
 # `make build` so ESP-IDF's nvs_partition_gen.py is available under .embuild.
-NVS_CSV ?= $(CURDIR)/nvs/sigstore.csv
-NVS_BIN ?= $(CURDIR)/nvs/sigstore.bin
+# Replaces the entire NVS partition (clears catalog bookmarks).
+NVS_CSV ?= $(CURDIR)/nvs/device.csv
+NVS_BIN ?= $(CURDIR)/nvs/device.bin
 # Default single-app table: nvs at 0x9000, size 0x6000.
 NVS_OFFSET ?= 0x9000
 NVS_SIZE ?= 0x6000
 NVS_GEN := $(firstword $(wildcard $(CURDIR)/.embuild/espressif/esp-idf/*/components/nvs_flash/nvs_partition_generator/nvs_partition_gen.py))
 
-nvs-sigstore: ensure-python-shim
+nvs: ensure-python-shim
 	@if [ ! -f "$(NVS_CSV)" ]; then \
 	  echo "ERROR: missing $(NVS_CSV)"; \
-	  echo "  cp nvs/sigstore.csv.example nvs/sigstore.csv  # then edit cert_id"; \
+	  echo "  cp nvs/device.csv.example nvs/device.csv  # then edit ssid / base_url"; \
 	  exit 1; \
 	fi
 	@if [ -z "$(NVS_GEN)" ]; then \
@@ -129,7 +130,7 @@ nvs-sigstore: ensure-python-shim
 	fi
 	$(PYTHON_SHIM)/python "$(NVS_GEN)" generate "$(NVS_CSV)" "$(NVS_BIN)" $(NVS_SIZE)
 	espflash write-bin --port $(PORT) $(NVS_OFFSET) "$(NVS_BIN)"
-	@echo "flashed Sigstore NVS from $(NVS_CSV) -> $(NVS_OFFSET)"
+	@echo "flashed device NVS from $(NVS_CSV) -> $(NVS_OFFSET)"
 
 monitor:
 	espflash monitor --port $(PORT)

@@ -46,17 +46,18 @@ Exact strings only (no regexp), stored under NVS namespace `sigstore`:
 | `oidc_iss` | Fulcio OIDC issuer | `https://token.actions.githubusercontent.com` |
 | `cert_id` | Fulcio cert identity (SAN URI) | `https://github.com/<owner>/<repo>/.github/workflows/inkbot-esp32.yml@refs/heads/main` |
 
-Provision without rebuilding:
+Provision without rebuilding (same CSV as Wi-Fi / Worker settings):
 
 ```bash
-cp nvs/sigstore.csv.example nvs/sigstore.csv
-# edit cert_id
-make nvs-sigstore PORT=/dev/cu.usbserial-XXXX
+cp nvs/device.csv.example nvs/device.csv
+# edit cert_id (and ssid / base_url)
+make nvs PORT=/dev/cu.usbserial-XXXX
 ```
 
-`make nvs-sigstore` runs ESP-IDF’s `nvs_partition_gen.py` and writes the blob
-at the default NVS offset (`0x9000` on the stock table). Missing keys mean
-Sigstore OTA verify stays disabled until you provision.
+`make nvs` runs ESP-IDF’s `nvs_partition_gen.py` and writes the blob at the
+default NVS offset (`0x9000` on the stock table). Missing Sigstore keys mean
+OTA verify stays disabled until you provision. See
+[`docs/device-config.md`](device-config.md).
 
 CI still passes `--certificate-identity` into Cosign when **signing** artifacts;
 that is workflow config, not firmware.
@@ -66,7 +67,7 @@ that is workflow config, not firmware.
 | Piece | Role |
 |-------|------|
 | [`src/sigstore_ota.rs`](../src/sigstore_ota.rs) | Policy from NVS strings, digest binding, Cosign CLI helper |
-| [`nvs/sigstore.csv.example`](../nvs/sigstore.csv.example) | Flash-time pin template |
+| [`nvs/device.csv.example`](../nvs/device.csv.example) | Flash-time Wi-Fi / Worker / Sigstore template |
 | This doc | Architecture and non-goals |
 | `inkbot-esp32.yml` (on `main`) | Keyless `sign-blob` + `verify-blob` on the built ELF |
 

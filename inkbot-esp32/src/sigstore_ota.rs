@@ -6,7 +6,7 @@
 //! into the ELF. The Cosign CLI helper is host-only
 //! (`cfg(not(target_os = "espidf"))`).
 //!
-//! Provision issuer + identity with the NVS CSV (see `nvs/sigstore.csv.example`)
+//! Provision issuer + identity with the NVS CSV (see `nvs/device.csv.example`)
 //! when you flash; the same binary works for any repo/workflow pin.
 
 use std::fmt;

@@ -1,7 +1,8 @@
 /target
 /.embuild
 /.preview
-/config.toml
+/nvs/device.csv
+/nvs/device.bin
 /nvs/sigstore.csv
 /nvs/sigstore.bin
 sdkconfig

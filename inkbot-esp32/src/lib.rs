@@ -4,6 +4,7 @@
 //! The maze firmware (`maze_main.rs`) uses [`maze`] plus a local panel driver.
 
 pub mod catalog;
+pub mod device_config;
 pub mod maze;
 pub mod net;
 pub mod panel;
@@ -12,6 +13,12 @@ pub mod sigstore_ota;
 pub mod status;
 
 pub use catalog::Catalog;
+pub use device_config::{
+    DeviceConfig, DeviceConfigError, DeviceConfigRaw, DEFAULT_DHCP_RENEW_SECS, DEFAULT_POLL_SECS,
+    DEFAULT_ROTATE_SECS, DEFAULT_STATUS_SECS, NVS_KEY_BASE_URL, NVS_KEY_DHCP_RENEW_SECS,
+    NVS_KEY_PASS, NVS_KEY_POLL_SECS, NVS_KEY_ROTATE_SECS, NVS_KEY_SSID, NVS_KEY_STATUS_SECS,
+    NVS_KEY_UPLOAD_SECRET, NVS_NS_INKBOT, NVS_NS_WIFI,
+};
 pub use net::{is_http_connect_failure, should_refresh_wifi, WifiRefresh};
 pub use panel::{FRAME_BYTES, PANEL_HEIGHT, PANEL_WIDTH};
 pub use png_frame::{decode_bw_png, PngFrameError};

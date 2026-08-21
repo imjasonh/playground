@@ -50,7 +50,6 @@ log = "0.4"
 
 [build-dependencies]
 embuild = { version = "0.33", features = ["espidf"] }
-toml = "0.8"
 
 [profile.release]
 opt-level = "s"
