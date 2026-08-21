@@ -313,7 +313,7 @@ fn main() -> Result<()> {
                     thread::sleep(Duration::from_secs(1));
                     unsafe { esp_idf_svc::sys::esp_restart() };
                 }
-                Ok(ota::PollOutcome::NoChange) => info!("ota: no change"),
+                Ok(ota::PollOutcome::NoChange) => info!("ota: no updates"),
                 Ok(ota::PollOutcome::Skipped) => {}
                 Err(e) => warn!("ota: poll failed: {e:#}"),
             }

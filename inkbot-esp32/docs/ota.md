@@ -114,7 +114,9 @@ period, the inkbot binary:
 1. Fetches an anonymous GHCR pull token and the OCI manifest for
    `repo:tag` (`repo` defaults to `ghcr.io/imjasonh/playground/{ota/app}`).
 2. Skips the rest if the layer digest matches the last successful (or
-   rejected) digest in NVS.
+   rejected) digest in NVS, or matches a SHA-256 of the running slot (USB
+   flash of the same bits). Logs `ota: no updates` and does not fetch the
+   config, signature, or blob.
 3. Fetches the OCI config blob and requires `app` to equal the requested
    `ota/app` (default `inkbot-esp32`), `target_chip=esp32`, and a layer
    that fits the `0x1F0000` slot. A maze image is valid when `ota/app` is
@@ -123,7 +125,13 @@ period, the inkbot binary:
    simple-signing), then `sha256-<manifest>` (Sigstore bundle). Checks the
    Fulcio leaf SAN + OIDC issuer against `trust/identities`, verifies the
    chain, and checks the signed payload binds the firmware manifest digest.
-5. Streams the firmware blob into the inactive slot, hashing as it goes.
+   Fulcio leaves last about 10 minutes. The verifier accepts an expired
+   leaf so a board that was unplugged during publish can still install the
+   image. It still rejects a leaf that is not yet valid. Intermediate and
+   root certificates use a full wall-clock window.
+5. Follows GHCR blob redirects (typically one 307 to the package CDN)
+   with an 8 KiB HTTP header buffer, then streams the firmware blob into
+   the inactive slot, hashing as it goes.
 6. Marks that slot to boot and restarts.
 
 On the new image, ESP-IDF leaves the slot in `PENDING_VERIFY`. inkbot
@@ -134,8 +142,10 @@ successful panel paint. A failed health check in that window calls
 rejected so the next poll does not re-flash the same binary.
 
 The on-device verifier does not check Fulcio certificate transparency
-SCTs or the leaf EKU. The identity allowlist plus the pinned Fulcio
-PEMs in NVS are the trust boundary.
+SCTs, the leaf EKU, or Rekor. The identity allowlist plus the pinned Fulcio
+PEMs in NVS are the trust boundary. Cosign uses Rekor's integrated time to
+accept expired Fulcio leaves; this firmware does the same by skipping the
+leaf `notAfter` check.
 
 OTA runs on the inkbot main task (48 KB stack). Frame fetches and GCP posts
 pause while the blob download holds a TLS session. The maze binary never

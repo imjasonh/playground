@@ -13,6 +13,7 @@ use crate::https::now_unix_secs;
 use crate::trust::TrustConfig;
 use inkbot_esp32::decode_fulcio_issuer_value;
 use inkbot_esp32::ota_format::pae_dsse_v1;
+use inkbot_esp32::{ca_cert_window_ok, fulcio_leaf_window_ok};
 
 const DSSE_INTOTO_PAYLOAD_TYPE: &str = "application/vnd.in-toto+json";
 const OID_OIDC_ISSUER_V1: &str = "1.3.6.1.4.1.57264.1.1";
@@ -219,28 +220,41 @@ fn verify_chain(leaf: &Certificate, trust: &TrustConfig) -> Result<()> {
     let intermediate = pem_to_cert(&trust.fulcio_intermediate_pem)?;
     let root = pem_to_cert(&trust.fulcio_root_pem)?;
 
-    check_validity(leaf, "leaf").context("leaf validity window")?;
-    check_validity(&intermediate, "intermediate").context("intermediate validity window")?;
-    check_validity(&root, "root").context("root validity window")?;
+    check_leaf_window(leaf).context("leaf validity window")?;
+    check_ca_window(&intermediate, "intermediate").context("intermediate validity window")?;
+    check_ca_window(&root, "root").context("root validity window")?;
 
     verify_signed_by_p384(leaf, &intermediate).context("leaf -> intermediate")?;
     verify_signed_by_p384(&intermediate, &root).context("intermediate -> root")?;
     Ok(())
 }
 
-fn check_validity(cert: &Certificate, label: &str) -> Result<()> {
-    let now = now_unix_secs()
-        .ok_or_else(|| anyhow!("clock not synced; cannot check {label} validity"))?;
+fn cert_unix_window(cert: &Certificate) -> (u64, u64) {
     let validity = &cert.tbs_certificate.validity;
-    let nb = validity.not_before.to_unix_duration().as_secs();
-    let na = validity.not_after.to_unix_duration().as_secs();
-    if now < nb {
-        bail!("{label} cert not yet valid: now={now} notBefore={nb}");
-    }
+    (
+        validity.not_before.to_unix_duration().as_secs(),
+        validity.not_after.to_unix_duration().as_secs(),
+    )
+}
+
+fn check_leaf_window(leaf: &Certificate) -> Result<()> {
+    let now =
+        now_unix_secs().ok_or_else(|| anyhow!("clock not synced; cannot check leaf validity"))?;
+    let (nb, na) = cert_unix_window(leaf);
+    fulcio_leaf_window_ok(now, nb, na)
+        .map_err(|e| anyhow!("{e}: now={now} notBefore={nb} notAfter={na}"))?;
     if now > na {
-        bail!("{label} cert expired: now={now} notAfter={na}");
+        log::info!("ota: Fulcio leaf expired notAfter={na}; accepting (no Rekor)");
     }
     Ok(())
+}
+
+fn check_ca_window(cert: &Certificate, label: &str) -> Result<()> {
+    let now = now_unix_secs()
+        .ok_or_else(|| anyhow!("clock not synced; cannot check {label} validity"))?;
+    let (nb, na) = cert_unix_window(cert);
+    ca_cert_window_ok(now, nb, na)
+        .map_err(|e| anyhow!("{label} {e}: now={now} notBefore={nb} notAfter={na}"))
 }
 
 fn pem_to_cert(pem: &[u8]) -> Result<Certificate> {
