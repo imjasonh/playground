@@ -9,6 +9,12 @@ function fakeEspTool({ chip = "ESP32-D0WDQ6 (revision v1.0)" } = {}) {
     constructor(port) {
       this.port = port;
     }
+    async setDTR(state) {
+      calls.push(["DTR", state]);
+    }
+    async setRTS(state) {
+      calls.push(["RTS", state]);
+    }
     async disconnect() {
       calls.push("disconnect");
     }
@@ -31,7 +37,7 @@ function fakeEspTool({ chip = "ESP32-D0WDQ6 (revision v1.0)" } = {}) {
   return { Transport, ESPLoader, calls };
 }
 
-test("flashFirmware writes both slots, resets, and disconnects", async () => {
+test("flashFirmware writes both slots, pulses EN into the app, and disconnects", async () => {
   const { Transport, ESPLoader, calls } = fakeEspTool();
   const firmware = new Uint8Array([0xe9, 0, 1]);
   const result = await flashFirmware({
@@ -39,6 +45,7 @@ test("flashFirmware writes both slots, resets, and disconnects", async () => {
     firmware,
     ESPLoader,
     Transport,
+    sleep: async () => {},
   });
   assert.equal(result.chip.startsWith("ESP32"), true);
   assert.deepEqual(
@@ -53,7 +60,13 @@ test("flashFirmware writes both slots, resets, and disconnects", async () => {
   assert.equal(calls[1][1].fileArray[0].data.charCodeAt(0), 0xe9);
   assert.equal(calls[2][0], "after");
   assert.equal(calls[2][1], "hard_reset");
-  assert.equal(calls[3], "disconnect");
+  assert.deepEqual(calls.slice(3, 7), [
+    ["DTR", false],
+    ["RTS", true],
+    ["RTS", false],
+    ["DTR", false],
+  ]);
+  assert.equal(calls[7], "disconnect");
 });
 
 test("flashFirmware warns when the chip is not classic ESP32", async () => {
@@ -65,6 +78,7 @@ test("flashFirmware warns when the chip is not classic ESP32", async () => {
     bothSlots: false,
     ESPLoader,
     Transport,
+    sleep: async () => {},
     terminal: {
       clean() {},
       writeLine(line) {

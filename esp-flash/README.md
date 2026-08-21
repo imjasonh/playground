@@ -46,6 +46,11 @@ Then open http://localhost:3000, load an image, plug in the board, and click
 **Connect and flash**. If the ROM bootloader does not appear, hold **BOOT**,
 tap **RESET**, and try again.
 
+The e-ink panel keeps the last picture until the new firmware paints. A 7.5-inch
+full refresh takes several seconds. If the picture still has not changed after
+that, tap **RESET** without holding **BOOT**. The CH9102 auto-reset circuit can
+leave the chip in the ROM bootloader after the serial port closes.
+
 GHCR fetches go through the deployed
 [`cors-proxy`](../cors-proxy/) Worker because `ghcr.io` does not send CORS
 headers. Override the proxy with `?proxy=` if you run your own.

@@ -171,7 +171,10 @@ async function flash() {
     });
     el.progressBar.value = 100;
     el.progressLabel.textContent = "Done";
-    log(`Wrote ${firmwareLabel} to ${result.chip}. The board is resetting.`, "success");
+    log(
+      `Wrote ${firmwareLabel} to ${result.chip}. If the panel still shows the old picture after about 10 seconds, tap RESET without holding BOOT.`,
+      "success",
+    );
   } catch (err) {
     log(err.message || String(err), "error");
     el.progressLabel.textContent = "Failed";
