@@ -27,11 +27,11 @@ use log::{error, info, warn};
 use display::Panel;
 use inkbot_esp32::{
     format_error_chain, format_panic_message, incident_needs_post, is_http_connect_failure,
-    reset_is_abnormal, should_post_status, should_refresh_wifi, Catalog, CrashStatus,
-    DeviceConfig, DeviceConfigRaw, DeviceTelemetry, FetchStatus, IncidentContext, LastIncident,
-    StatusReport, WifiRefresh, WifiStatus, FIRMWARE_ID, FRAME_BYTES, NVS_KEY_BASE_URL,
-    NVS_KEY_DHCP_RENEW_SECS, NVS_KEY_PASS, NVS_KEY_POLL_SECS, NVS_KEY_ROTATE_SECS, NVS_KEY_SSID,
-    NVS_KEY_STATUS_SECS, NVS_KEY_UPLOAD_SECRET, NVS_NS_WIFI,
+    reset_is_abnormal, should_post_status, should_refresh_wifi, Catalog, CrashStatus, DeviceConfig,
+    DeviceConfigRaw, DeviceTelemetry, FetchStatus, IncidentContext, LastIncident, StatusReport,
+    WifiRefresh, WifiStatus, FIRMWARE_ID, FRAME_BYTES, NVS_KEY_BASE_URL, NVS_KEY_DHCP_RENEW_SECS,
+    NVS_KEY_PASS, NVS_KEY_POLL_SECS, NVS_KEY_ROTATE_SECS, NVS_KEY_SSID, NVS_KEY_STATUS_SECS,
+    NVS_KEY_UPLOAD_SECRET, NVS_NS_WIFI,
 };
 
 const NVS_NS: &str = "inkbot";
@@ -336,7 +336,12 @@ fn paint_error(panel: &mut Panel, last_frame: Option<&[u8]>, status: &StatusRepo
     }
 }
 
-fn wifi_status_from_err(err: &anyhow::Error, cfg: &DeviceConfig, attempt: u32, attempts: u32) -> WifiStatus {
+fn wifi_status_from_err(
+    err: &anyhow::Error,
+    cfg: &DeviceConfig,
+    attempt: u32,
+    attempts: u32,
+) -> WifiStatus {
     let heap = HeapSnap::now();
     let top = err.to_string();
     WifiStatus {
@@ -910,15 +915,27 @@ fn connect_wifi(wifi: &mut BlockingWifi<EspWifi<'static>>, cfg: &DeviceConfig) -
     Err(last_err.unwrap_or_else(|| anyhow!("wifi failed")))
 }
 
-fn connect_wifi_once(wifi: &mut BlockingWifi<EspWifi<'static>>, cfg: &DeviceConfig, attempt: u32) -> Result<()> {
+fn connect_wifi_once(
+    wifi: &mut BlockingWifi<EspWifi<'static>>,
+    cfg: &DeviceConfig,
+    attempt: u32,
+) -> Result<()> {
     let step = |name: &str| {
         info!("wifi[{attempt}] {name} {}", HeapSnap::now());
     };
 
     step("configure");
     wifi.set_configuration(&WifiConfig::Client(ClientConfiguration {
-        ssid: cfg.wifi_ssid.as_str().try_into().map_err(|_| anyhow!("ssid too long"))?,
-        password: cfg.wifi_pass.as_str().try_into().map_err(|_| anyhow!("pass too long"))?,
+        ssid: cfg
+            .wifi_ssid
+            .as_str()
+            .try_into()
+            .map_err(|_| anyhow!("ssid too long"))?,
+        password: cfg
+            .wifi_pass
+            .as_str()
+            .try_into()
+            .map_err(|_| anyhow!("pass too long"))?,
         auth_method: if cfg.wifi_pass.is_empty() {
             AuthMethod::None
         } else {
@@ -951,7 +968,6 @@ fn connect_wifi_once(wifi: &mut BlockingWifi<EspWifi<'static>>, cfg: &DeviceConf
     step("up");
     Ok(())
 }
-
 
 fn load_device_config(
     wifi_nvs: &EspNvs<NvsDefault>,
