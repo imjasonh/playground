@@ -17,7 +17,7 @@ inkbot_esp32_from_changes() {
   local path
   while IFS= read -r path; do
     case "$path" in
-      inkbot-esp32/* | .github/workflows/inkbot-esp32.yml)
+      inkbot-esp32/* | .github/workflows/inkbot-esp32.yml | .github/workflows/inkbot-esp32-publish.yml)
         echo '["inkbot-esp32"]'
         return 0
         ;;

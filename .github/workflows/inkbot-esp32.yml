@@ -82,7 +82,10 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         if: steps.gate.outputs.run == 'true'
         with:
-          workspaces: inkbot-esp32
+          workspaces: |
+            inkbot-esp32
+            inkbot-esp32/tools/provision
+            inkbot-esp32/tools/publisher
           shared-key: inkbot-esp32-host
 
       - name: Format, lint, and test (host)
@@ -91,7 +94,11 @@ jobs:
         run: |
           cargo fmt --check
           cargo clippy --lib --locked -- -D warnings
-          cargo test --lib --locked
+          cargo fmt --check --manifest-path tools/provision/Cargo.toml
+          cargo clippy --manifest-path tools/provision/Cargo.toml --locked -- -D warnings
+          cargo fmt --check --manifest-path tools/publisher/Cargo.toml
+          cargo clippy --manifest-path tools/publisher/Cargo.toml --locked -- -D warnings
+          make test
 
   firmware:
     name: Cross-build firmware
@@ -135,12 +142,6 @@ jobs:
         with:
           workspaces: inkbot-esp32
           shared-key: inkbot-esp32-firmware
-
-      # Bake placeholder Wi-Fi / URL so the build doesn't need secrets.
-      - name: Prepare config.toml
-        if: steps.gate.outputs.run == 'true'
-        working-directory: inkbot-esp32
-        run: cp config.toml.example config.toml
 
       - name: Build firmware
         if: steps.gate.outputs.run == 'true'

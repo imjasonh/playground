@@ -1,0 +1,94 @@
+# Push and Cosign-sign inkbot-esp32 and maze-esp32 firmware to GHCR.
+#
+# Devices pull ghcr.io/imjasonh/playground/{app}:latest anonymously
+# (app is NVS ota/app, default inkbot-esp32) and verify the Sigstore
+# bundle against the identities in NVS. The example provisioning.toml
+# allowlists this workflow @refs/heads/main.
+#
+# Intentionally separate from inkbot-esp32.yml so the test workflow does
+# not need packages:write / id-token:write.
+
+name: inkbot-esp32 publish
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - inkbot-esp32/**
+      - .github/workflows/inkbot-esp32-publish.yml
+  workflow_dispatch: {}
+
+concurrency:
+  group: inkbot-esp32-publish
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+jobs:
+  publish:
+    name: Publish firmware
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Install Rust 1.88
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update \
+            --component rustfmt
+          rustup default 1.88.0
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: |
+            inkbot-esp32
+            inkbot-esp32/tools/provision
+            inkbot-esp32/tools/publisher
+          shared-key: inkbot-esp32-publish-host
+
+      - name: Host tests
+        working-directory: inkbot-esp32
+        run: make test
+
+      - name: Install native build tools
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+
+      - name: Setup Xtensa toolchain
+        uses: esp-rs/xtensa-toolchain@ec6d36527049a7f4fb2cb0c1a644668c1bb8a2a4 # v1.7
+        with:
+          default: true
+          buildtargets: esp32
+          ldproxy: true
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: inkbot-esp32
+          shared-key: inkbot-esp32-publish-firmware
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@fb28c2b6339dcd94da6e4cbcbc5e888961f6f8c3 # v3.9.0
+
+      - name: Install espflash
+        run: cargo install espflash --locked --version 4.2.2
+
+      - name: Publish signed image
+        working-directory: inkbot-esp32
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COSIGN_REGISTRY_USERNAME: ${{ github.actor }}
+        run: make publish
+
+      - name: Pull and verify published layer
+        working-directory: inkbot-esp32
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: make pull-verify

@@ -1,0 +1,22 @@
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
+CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT=8192
+
+# Maze never opens TLS. Skip the CA store the inkbot image carries.
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=n
+
+# Hidden IDF symbol (no menuconfig prompt). When it sticks, the Wi-Fi
+# driver is stubbed out and maze does not link wpa_supplicant. ESP32
+# defaults this to y; if a later IDF rewrite ignores the assignment,
+# the image still builds — it just keeps the unused driver.
+CONFIG_ESP_WIFI_ENABLED=n
+CONFIG_ESP_WIFI_SOFTAP_SUPPORT=n
+CONFIG_ESP_WIFI_NAN_ENABLE=n
+CONFIG_ESP_WIFI_ENTERPRISE_SUPPORT=n
+
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="@PROJECT_DIR@/partitions.csv"
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
+# Waveshare ESP32 driver board typically ships with 4 MB flash.
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="4MB"

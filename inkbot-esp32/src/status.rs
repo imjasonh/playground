@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use crate::panel::{FRAME_BYTES, PANEL_HEIGHT, PANEL_WIDTH};
 
 /// Matches the HTTP `User-Agent` and `firmware` telemetry field.
-pub const FIRMWARE_ID: &str = "inkbot-esp32/0.2";
+pub const FIRMWARE_ID: &str = "inkbot-esp32/0.4";
 
 /// Glyph width of `FONT_6X10` (includes the 1 px gap).
 const GLYPH_W: u32 = 6;
@@ -475,6 +475,17 @@ pub fn reset_is_abnormal(code: i32) -> bool {
     matches!(code, 0 | 3 | 4 | 5 | 6 | 7 | 9 | 14 | 15)
 }
 
+/// True when the panel should show a crash line for this reset.
+///
+/// `ESP_RST_SW` (3) after an intentional OTA reboot (`last_op` starts
+/// with `ota:`) is expected and is not a crash.
+pub fn crash_after_reset(code: i32, last_op: Option<&str>) -> bool {
+    if code == 3 && last_op.is_some_and(|op| op.starts_with("ota:")) {
+        return false;
+    }
+    reset_is_abnormal(code)
+}
+
 /// Short field-debug hint for an abnormal reset. Empty for normal boots.
 pub fn reset_reason_hint(code: i32) -> &'static str {
     match code {
@@ -781,6 +792,10 @@ mod tests {
         assert!(reset_is_abnormal(9));
         assert_eq!(reset_reason_name(4), "PANIC");
         assert_eq!(reset_reason_name(6), "TASK_WDT");
+        assert!(reset_is_abnormal(3));
+        assert!(!crash_after_reset(3, Some("ota:reboot")));
+        assert!(crash_after_reset(3, Some("GET /latest.bin")));
+        assert!(crash_after_reset(4, Some("ota:reboot")));
     }
 
     #[test]

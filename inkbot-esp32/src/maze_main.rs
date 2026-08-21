@@ -1,17 +1,20 @@
 //! maze-esp32 — generate a maze on the Waveshare 7.5″ and animate the solution.
 //!
-//! No Wi-Fi, HTTP, or Worker: flash, power the board, and the panel loops
-//! empty maze → correct solve (see CELLS_PER_TICK / TICK_MS) → hold → next maze.
+//! No Wi-Fi, HTTP, or Worker: this image never polls GHCR. inkbot can OTA
+//! *into* maze; returning to inkbot is a USB flash (`make flash`).
 
 mod maze_display;
+mod nvs_util;
+mod ota_slot;
 
 use std::thread;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use esp_idf_svc::hal::peripherals::Peripherals;
+use esp_idf_svc::nvs::EspDefaultNvsPartition;
 use esp_idf_svc::sys::esp_random;
-use log::{info, warn};
+use log::{error, info, warn};
 
 use inkbot_esp32::maze::{
     crop_packed, dirty_rect, generate, layout_for, render_empty, render_progress, solve,
@@ -24,6 +27,14 @@ fn main() -> Result<()> {
     esp_idf_svc::log::EspLogger::initialize_default();
     info!("{MAZE_FIRMWARE_ID} boot");
 
+    let nvs_part = EspDefaultNvsPartition::take()?;
+    let pending_verify = ota_slot::is_pending_verify();
+    if pending_verify {
+        info!("ota: image is PENDING_VERIFY — first successful paint will mark valid");
+    } else if let Err(e) = ota_slot::remember_rolled_back_digest(nvs_part.clone()) {
+        warn!("ota: reconcile rolled-back digest: {e:#}");
+    }
+
     let peripherals = Peripherals::take()?;
     let mut panel = Panel::new(
         peripherals.spi2,
@@ -35,15 +46,33 @@ fn main() -> Result<()> {
         peripherals.pins.gpio26,
     )?;
 
+    let mut marked_valid = !pending_verify;
     loop {
-        if let Err(e) = run_cycle(&mut panel) {
+        let result = run_cycle(&mut panel, || {
+            if marked_valid {
+                return Ok(());
+            }
+            match ota_slot::mark_valid_after_pending_verify_passed(nvs_part.clone()) {
+                Ok(()) => {
+                    info!("ota: pending-verify passed (panel painted)");
+                    marked_valid = true;
+                    Ok(())
+                }
+                Err(e) => {
+                    error!("ota: mark-valid failed ({e:#}); rolling back");
+                    thread::sleep(Duration::from_secs(2));
+                    ota_slot::reject_pending_and_reboot(nvs_part.clone());
+                }
+            }
+        });
+        if let Err(e) = result {
             warn!("maze cycle failed: {e:#}");
             thread::sleep(Duration::from_secs(2));
         }
     }
 }
 
-fn run_cycle(panel: &mut Panel) -> Result<()> {
+fn run_cycle(panel: &mut Panel, mut on_first_paint: impl FnMut() -> Result<()>) -> Result<()> {
     let seed = mix_seed();
     let maze = generate(MAZE_COLS, MAZE_ROWS, seed);
     let path = solve(&maze);
@@ -59,6 +88,7 @@ fn run_cycle(panel: &mut Panel) -> Result<()> {
 
     let empty = render_empty(&maze, &layout);
     panel.show_frame_awake(&empty)?;
+    on_first_paint()?;
     thread::sleep(Duration::from_millis(TICK_MS));
 
     if path.is_empty() {

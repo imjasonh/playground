@@ -16,19 +16,30 @@ path = "src/lib.rs"
 name = "inkbot-esp32"
 path = "src/main.rs"
 harness = false
-required-features = ["firmware"]
+required-features = ["firmware", "inkbot-lib", "net", "ota-pull", "epd"]
 
 [[bin]]
 name = "maze-esp32"
 path = "src/maze_main.rs"
 harness = false
-required-features = ["firmware"]
+required-features = ["firmware", "maze-lib"]
 
 [features]
 default = []
-# Device firmware (Wi-Fi + HTTP + e-paper). Host `cargo test` leaves this off
-# so the lib's PNG/etag logic can be exercised without the ESP toolchain.
+# Device firmware (esp-idf HAL + log). Host `cargo test` leaves this off.
 firmware = []
+# Worker poller modules (catalog, status overlay, PNG, Wi-Fi policy).
+inkbot-lib = []
+# Maze generator / solver / renderer.
+maze-lib = []
+# Wi-Fi + HTTP client types.
+net = ["dep:embedded-svc"]
+# GHCR pull + Sigstore verify.
+ota-pull = ["net", "dep:sha2", "dep:hex", "dep:p256", "dep:p384", "dep:x509-cert", "dep:base64"]
+# Cloud Logging / Monitoring (mbedTLS JWT in gcp.rs). Off with `GCP=0`.
+gcp = ["net"]
+# Waveshare driver used by the inkbot panel path (maze talks to the UC8179 itself).
+epd = ["dep:epd-waveshare"]
 
 [dependencies]
 anyhow = "1"
@@ -40,16 +51,21 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 [target.'cfg(target_os = "espidf")'.dependencies]
-embedded-svc = "0.29"
+embedded-svc = { version = "0.29", optional = true }
 # Upstream compiles a shared 2.13″ module unconditionally and requires one of
 # its revision flags even when we drive the 7.5″ V2 panel.
-epd-waveshare = { git = "https://github.com/rust-embedded-community/epd-waveshare.git", rev = "8fc19ae69aa7b1243953935dd8b6c076950e6ee7", default-features = false, features = ["graphics", "epd2in13_v3"] }
+epd-waveshare = { git = "https://github.com/rust-embedded-community/epd-waveshare.git", rev = "8fc19ae69aa7b1243953935dd8b6c076950e6ee7", default-features = false, features = ["graphics", "epd2in13_v3"], optional = true }
 esp-idf-svc = { version = "0.52", features = ["std", "native", "binstart"] }
 log = "0.4"
+sha2 = { version = "0.11", optional = true }
+hex = { version = "0.4", optional = true }
+p256 = { version = "0.13", features = ["ecdsa"], optional = true }
+p384 = { version = "0.13", features = ["ecdsa"], optional = true }
+x509-cert = { version = "0.2", features = ["pem"], optional = true }
+base64 = { version = "0.22", optional = true }
 
 [build-dependencies]
 embuild = { version = "0.33", features = ["espidf"] }
-toml = "0.8"
 
 [profile.release]
 opt-level = "s"

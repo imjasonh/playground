@@ -1,0 +1,58 @@
+# Copy to provisioning.toml (gitignored) and fill in real values, then:
+#   make provision
+# or, on a new board:
+#   make bootstrap
+
+[wifi]
+ssid = "your-wifi-ssid"
+pass = "your-wifi-password"
+
+[inkbot]
+# Worker base URL, no trailing slash. Must be https://.
+base_url = "https://inkbot.example.workers.dev"
+poll_secs = 60
+rotate_secs = 1800
+# Bearer token; must match the Worker's UPLOAD_SECRET. Leave empty to
+# disable remote POST /device (panel-only debug).
+upload_secret = ""
+status_secs = 900
+# NVS key is dhcp_renew (15-char limit).
+dhcp_renew_secs = 21600
+
+[trust]
+fulcio_root_pem = "trust/fulcio_root.pem"
+fulcio_intermediate_pem = "trust/fulcio_intermediate.pem"
+
+# Manual `make publish` from a developer machine.
+[[trust.identities]]
+identity = "imjasonh@gmail.com"
+issuer = "https://accounts.google.com"
+
+# Automated publishes from the playground publish workflow on main.
+[[trust.identities]]
+identity = "https://github.com/imjasonh/playground/.github/workflows/inkbot-esp32-publish.yml@refs/heads/main"
+issuer = "https://token.actions.githubusercontent.com"
+
+# Optional. If absent, the device boots with serial-only logging and
+# never talks to GCP. Uncomment and fill in to ship logs + metrics.
+#
+# [gcp]
+# project_id = "my-logs-project"
+# sa_email = "inkbot-logger@my-logs-project.iam.gserviceaccount.com"
+# sa_key_id = "abc123..."
+# sa_key_pem = "gcp-sa-key.pem"
+# min_severity = "info"
+# metrics_interval_secs = 300
+
+# Optional. If absent, OTA uses compile-time defaults
+# (app = inkbot-esp32, repo = ghcr.io/imjasonh/playground/{app},
+# tag = latest, poll every 600 s). poll_secs = 0 disables OTA
+# (USB flash only). Setting app = "maze-esp32" makes a running
+# inkbot image pull maze; maze has no Wi-Fi, so returning to
+# inkbot is `make flash`.
+#
+# [ota]
+# app = "inkbot-esp32"
+# repo = "ghcr.io/imjasonh/playground/inkbot-esp32"
+# tag = "latest"
+# poll_secs = 600
