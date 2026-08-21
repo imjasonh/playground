@@ -34,6 +34,16 @@ final class NFCNDEFCodecTests: XCTestCase {
         XCTAssertEqual(decoded?.text, "Hello NFC")
     }
 
+    func testDecodeUTF16TextPayload() {
+        // Status: UTF-16 flag + language length 2 ("en"), then BE "Hi"
+        var payload = Data([0x82])
+        payload.append(Data("en".utf8))
+        payload.append(contentsOf: [0x00, 0x48, 0x00, 0x69]) // "Hi" UTF-16 BE
+        let decoded = NFCNDEFCodec.decodeTextPayload(payload)
+        XCTAssertEqual(decoded?.languageCode, "en")
+        XCTAssertEqual(decoded?.text, "Hi")
+    }
+
     func testURIPayloadRoundTripHTTPS() {
         let original = "https://example.com/nfc"
         let payload = NFCNDEFCodec.encodeURIPayload(urlString: original)
