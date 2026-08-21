@@ -9,7 +9,6 @@ import {
 import {
   blobUrl,
   checkFirmwareConfig,
-  defaultOtaRepo,
   fetchFirmware,
   manifestUrl,
   pickFirmwareLayer,
@@ -22,7 +21,6 @@ import assert from "node:assert/strict";
 
 test("repo helpers name the public GHCR packages", () => {
   assert.equal(repoPath(OTA_APP_INKBOT), "imjasonh/playground/inkbot-esp32");
-  assert.equal(defaultOtaRepo(OTA_APP_MAZE), "ghcr.io/imjasonh/playground/maze-esp32");
   assert.equal(
     tokenUrl(OTA_APP_INKBOT),
     "https://ghcr.io/token?service=ghcr.io&scope=repository:imjasonh/playground/inkbot-esp32:pull",

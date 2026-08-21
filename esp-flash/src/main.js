@@ -1,5 +1,5 @@
 import { ESPLoader, Transport } from "../vendor/esptool-js.js";
-import { DEFAULT_OTA_TAG, DEFAULT_PROXY_BASE, OTA_APP_INKBOT, OTA_APP_MAZE } from "./constants.js";
+import { DEFAULT_OTA_TAG, DEFAULT_PROXY_BASE, OTA_APP_INKBOT } from "./constants.js";
 import { flashFirmware } from "./flash.js";
 import { fetchFirmware } from "./ghcr.js";
 import { formatBytes, inspectImage } from "./image.js";
@@ -28,14 +28,7 @@ function setBadge(node, text, state) {
 }
 
 function selectedApp() {
-  const value = document.querySelector('input[name="source"]:checked')?.value;
-  if (value === OTA_APP_MAZE) {
-    return OTA_APP_MAZE;
-  }
-  if (value === "file") {
-    return "file";
-  }
-  return OTA_APP_INKBOT;
+  return document.querySelector('input[name="source"]:checked')?.value || OTA_APP_INKBOT;
 }
 
 function proxyBase() {
@@ -52,13 +45,14 @@ function saveProxyBase() {
 
 let firmware = null;
 let firmwareLabel = "";
+let serialAvailable = false;
 
 function setFirmware(bytes, label) {
   const info = inspectImage(bytes);
   firmware = bytes;
   firmwareLabel = label;
   el.imageMeta.textContent = `${label}: ${formatBytes(info.size)}, ESP magic 0x${info.magic.toString(16)}, flash at 0x${info.flashAddress.toString(16)}`;
-  el.flashBtn.disabled = false;
+  el.flashBtn.disabled = !serialAvailable;
 }
 
 function clearFirmware() {
@@ -70,7 +64,7 @@ function clearFirmware() {
 
 function setBusy(busy) {
   el.fetchBtn.disabled = busy;
-  el.flashBtn.disabled = busy || !firmware;
+  el.flashBtn.disabled = busy || !firmware || !serialAvailable;
   el.fileInput.disabled = busy;
   for (const input of document.querySelectorAll('input[name="source"]')) {
     input.disabled = busy;
@@ -147,7 +141,6 @@ async function flash() {
     return;
   }
 
-  const bothSlots = el.bothSlots.checked;
   setBusy(true);
   el.progress.hidden = false;
   el.progressBar.value = 0;
@@ -155,11 +148,9 @@ async function flash() {
   log(`Using ${kind}. Hold the device in download mode if connect fails (BOOT, then RESET).`);
 
   try {
-    inspectImage(firmware);
     const result = await flashFirmware({
       port,
       firmware,
-      bothSlots,
       ESPLoader,
       Transport,
       terminal: terminal(),
@@ -186,17 +177,20 @@ async function flash() {
 async function describeBrowser() {
   const { kind } = await getSerial();
   if (kind === "web-serial") {
+    serialAvailable = true;
     setBadge(el.browserState, "Web Serial", "ok");
     el.browserHint.textContent =
       "Chrome or Edge on this computer will open a serial-port picker.";
     return;
   }
   if (kind === "webusb-polyfill") {
+    serialAvailable = true;
     setBadge(el.browserState, "WebUSB polyfill", "ok");
     el.browserHint.textContent =
       "This browser has WebUSB but not Web Serial. The page uses a polyfill so Android Chrome can flash too.";
     return;
   }
+  serialAvailable = false;
   setBadge(el.browserState, "unsupported", "bad");
   el.browserHint.textContent =
     "Use Chrome or Edge on desktop, or Chrome on Android. Safari and Firefox do not expose a serial or USB API a page can call.";
@@ -214,26 +208,19 @@ function sourceChanged() {
 }
 
 function cacheElements() {
-  const ids = [
-    "browser-state",
-    "browser-hint",
-    "proxy-base",
-    "fetch-btn",
-    "file-field",
-    "file-input",
-    "image-meta",
-    "both-slots",
-    "flash-btn",
-    "progress",
-    "progress-bar",
-    "progress-label",
-    "log",
-    "clear-log-btn",
-  ];
-  for (const id of ids) {
-    const camel = id.replace(/-([a-z])/g, (_m, c) => c.toUpperCase());
-    el[camel] = $(id);
-  }
+  el.browserState = $("browser-state");
+  el.browserHint = $("browser-hint");
+  el.proxyBase = $("proxy-base");
+  el.fetchBtn = $("fetch-btn");
+  el.fileField = $("file-field");
+  el.fileInput = $("file-input");
+  el.imageMeta = $("image-meta");
+  el.flashBtn = $("flash-btn");
+  el.progress = $("progress");
+  el.progressBar = $("progress-bar");
+  el.progressLabel = $("progress-label");
+  el.log = $("log");
+  el.clearLogBtn = $("clear-log-btn");
 }
 
 async function init() {

@@ -2,8 +2,8 @@
  * Resolve a SerialPort factory.
  *
  * Desktop Chrome and Edge expose `navigator.serial` (Web Serial). Android
- * Chrome exposes `navigator.usb` (WebUSB); `web-serial-polyfill` turns that
- * into the same SerialPort shape esptool-js already speaks.
+ * Chrome exposes `navigator.usb` (WebUSB). `web-serial-polyfill` turns that
+ * into the SerialPort shape esptool-js already speaks.
  *
  * @param {{
  *   navigator?: { serial?: Serial, usb?: USB },

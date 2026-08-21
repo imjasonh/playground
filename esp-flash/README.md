@@ -1,10 +1,10 @@
 # ESP32 flash
 
-A static page that writes an ESP32 app image over USB. Desktop Chrome and Edge
-use the Web Serial API. Android Chrome uses WebUSB through
-[web-serial-polyfill](https://github.com/google/web-serial-polyfill). The
-protocol is still the ESP ROM bootloader; [esptool-js](https://github.com/espressif/esptool-js)
-speaks it.
+A static page that writes an ESP32 app image over USB. Chrome and Edge on a
+computer use the Web Serial API. Chrome on Android uses WebUSB and
+[web-serial-polyfill](https://github.com/google/web-serial-polyfill).
+[esptool-js](https://github.com/espressif/esptool-js) speaks the ESP ROM
+bootloader.
 
 Safari and Firefox do not expose either API, so this page cannot flash from
 those browsers.
@@ -16,24 +16,24 @@ The GHCR packages
 and
 [`maze-esp32`](https://github.com/imjasonh/playground/pkgs/container/playground%2Fmaze-esp32)
 are the same `firmware.bin` files the desk frame pulls for OTA. You can also
-choose a local `.bin` (for example the output of `make save-image` in
-[`inkbot-esp32`](../inkbot-esp32/)).
+choose a local `.bin`, for example the output of `make save-image` in
+[`inkbot-esp32`](../inkbot-esp32/).
 
-The write goes to the OTA app slots at `0x20000` and, by default, `0x210000`.
-NVS is not erased, so Wi-Fi and trust keys survive. This is the browser
-equivalent of `make flash`, not `make bootstrap`.
+The write goes to both OTA app slots (`0x20000` and `0x210000`). NVS is not
+erased, so Wi-Fi and trust keys survive. This is the browser equivalent of
+`make flash`, not `make bootstrap`.
 
 A board that still has the factory partition table cannot boot these slots.
 Flash that layout once with `make bootstrap` on a machine that has the
 ESP-IDF tree, then use this page for later app images.
 
-This page does not verify Cosign. Device OTA still does. Treat a USB flash as
-something you do from a computer you trust.
+This page does not verify Cosign. Device OTA still does. Flash from a computer
+you trust.
 
 ## Run locally
 
-Serve over `http://localhost` (not `file://`). Web Serial is a secure-context
-API, and `localhost` counts.
+Serve the page over `http://localhost`. Web Serial needs a secure context, and
+`file://` is not one.
 
 ```bash
 cd esp-flash
@@ -46,14 +46,15 @@ Then open http://localhost:3000, load an image, plug in the board, and click
 **Connect and flash**. If the ROM bootloader does not appear, hold **BOOT**,
 tap **RESET**, and try again.
 
-The e-ink panel keeps the last picture until the new firmware paints. A 7.5-inch
-full refresh takes several seconds. If the picture still has not changed after
-that, tap **RESET** without holding **BOOT**. The CH9102 auto-reset circuit can
-leave the chip in the ROM bootloader after the serial port closes.
+E-ink keeps the last picture until the new firmware paints. A 7.5-inch full
+refresh takes several seconds. The page pulses EN after the write so the app
+can boot. If the picture still has not changed after that, tap **RESET**
+without holding **BOOT**. The CH9102 auto-reset circuit can leave the chip in
+the ROM bootloader after the serial port closes.
 
 GHCR fetches go through the deployed
 [`cors-proxy`](../cors-proxy/) Worker because `ghcr.io` does not send CORS
-headers. Override the proxy with `?proxy=` if you run your own.
+headers. If you run your own Worker, add `?proxy=`.
 
 ## Tests
 

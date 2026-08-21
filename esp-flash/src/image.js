@@ -42,17 +42,14 @@ export function inspectImage(bytes) {
  * one otadata currently selects. NVS is left alone.
  *
  * @param {Uint8Array} firmware
- * @param {{ bothSlots?: boolean }} [opts]
  * @returns {{ data: Uint8Array, address: number }[]}
  */
-export function flashParts(firmware, opts = {}) {
+export function flashParts(firmware) {
   inspectImage(firmware);
-  const bothSlots = opts.bothSlots !== false;
-  const parts = [{ data: firmware, address: OTA_0_OFFSET }];
-  if (bothSlots) {
-    parts.push({ data: firmware, address: OTA_1_OFFSET });
-  }
-  return parts;
+  return [
+    { data: firmware, address: OTA_0_OFFSET },
+    { data: firmware, address: OTA_1_OFFSET },
+  ];
 }
 
 /**

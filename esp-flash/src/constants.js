@@ -1,13 +1,9 @@
-/** ESP ROM image magic. Every bootloader and app image starts with this byte. */
 export const ESP_IMAGE_MAGIC = 0xe9;
 
 /** Bytes reserved for each OTA slot in inkbot-esp32 `partitions.csv`. */
 export const OTA_SLOT_BYTES = 0x1f0000;
 
-/** Flash offset of `ota_0`. */
 export const OTA_0_OFFSET = 0x20000;
-
-/** Flash offset of `ota_1`. */
 export const OTA_1_OFFSET = 0x210000;
 
 /** Default UART baud used to enter the ROM bootloader. */

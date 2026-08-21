@@ -113,7 +113,7 @@ From Chrome or Edge you can do the same write without `espflash`: open
 [`esp-flash/`](../esp-flash/) (Pages or `npm start` in that directory), load
 `inkbot-esp32:latest` or `maze-esp32:latest`, and connect the board over USB.
 If the e-ink panel still shows the old picture, tap **RESET** without holding
-**BOOT**. The glass keeps the last image until the new firmware paints.
+**BOOT**. E-ink keeps the last picture until the new firmware paints.
 
 ## OTA and optional GCP
 

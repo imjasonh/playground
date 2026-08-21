@@ -27,7 +27,7 @@ test("inspectImage rejects an empty buffer, wrong magic, and oversized blob", ()
   assert.throws(() => inspectImage(image(OTA_SLOT_BYTES + 1)), /OTA slot/);
 });
 
-test("flashParts writes ota_0 and ota_1 by default", () => {
+test("flashParts writes ota_0 and ota_1", () => {
   const firmware = image(64);
   const parts = flashParts(firmware);
   assert.equal(parts.length, 2);
@@ -35,14 +35,6 @@ test("flashParts writes ota_0 and ota_1 by default", () => {
   assert.equal(parts[1].address, OTA_1_OFFSET);
   assert.equal(parts[0].data, firmware);
   assert.equal(parts[1].data, firmware);
-});
-
-test("flashParts can write only ota_0", () => {
-  const parts = flashParts(image(32), { bothSlots: false });
-  assert.deepEqual(
-    parts.map((p) => p.address),
-    [OTA_0_OFFSET],
-  );
 });
 
 test("isClassicEsp32 accepts ESP32 and rejects later families", () => {

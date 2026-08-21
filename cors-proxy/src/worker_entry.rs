@@ -220,14 +220,11 @@ async fn proxy_fetch(
     Err(ProxyError::Guard(GuardError::TooManyRedirects))
 }
 
-/// Read an upstream response body, aborting as soon as it exceeds `max` bytes so
-/// a chunked (no `Content-Length`) response can't force us to buffer the whole
-/// payload in the isolate.
+/// Read the upstream body, stopping if it exceeds `max` bytes so a chunked
+/// response cannot force the isolate to buffer the whole payload.
 ///
-/// workers-rs `stream()` only works when the body is a `ReadableStream`. A
-/// 204/304 or `redirect: manual` 3xx has a null body (`ResponseBody::Empty`)
-/// and used to fail with "body is not streamable". `bytes()` handles Empty,
-/// buffered Body, and Stream.
+/// `stream()` only works for a `ReadableStream`. A 204/304 or
+/// `redirect: manual` 3xx has an empty body, so fall back to `bytes()`.
 async fn read_body_capped(
     response: &mut Response,
     max: usize,

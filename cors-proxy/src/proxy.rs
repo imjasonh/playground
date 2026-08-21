@@ -57,9 +57,9 @@ const STRIP_REQUEST_HEADERS: &[&str] = &[
     "x-forwarded-proto",
     "x-real-ip",
     "via",
-    // Conditional headers would make GHCR (and others) reply 304 with an
-    // empty body. workers-rs cannot stream an empty fetch body, and a CORS
-    // proxy has to return the real bytes anyway.
+    // Conditional headers make GHCR reply 304 with an empty body.
+    // workers-rs cannot stream an empty fetch body, and a CORS proxy has
+    // to return the real bytes anyway.
     "if-match",
     "if-none-match",
     "if-modified-since",
@@ -84,8 +84,8 @@ const STRIP_RESPONSE_HEADERS: &[&str] = &[
     // relaying the upstream values would corrupt the response.
     "content-encoding",
     "content-length",
-    // The proxy is not a cache. Relaying validators lets the browser send
-    // If-None-Match on the next call and get a 304 we cannot turn into bytes.
+    // Relaying validators lets the browser send If-None-Match on the next
+    // call and get a 304 the proxy cannot turn into bytes.
     "etag",
     "last-modified",
     "expires",
