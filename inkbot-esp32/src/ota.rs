@@ -452,37 +452,50 @@ fn download_and_apply(repo: &str, layer: &Descriptor, token: &str) -> Result<()>
         ("authorization", bearer.as_str()),
         ("accept", "application/octet-stream"),
     ];
-
-    let conn = EspHttpConnection::new(&blob_http_config())?;
-    let mut client = Client::wrap(conn);
-    let mut resp = client.request(Method::Get, &url, &headers)?.submit()?;
-    let status = resp.status();
-    if status != 200 {
-        bail!("blob GET -> {status}");
-    }
-
     let expected_sha_hex = layer
         .digest
         .strip_prefix("sha256:")
         .ok_or_else(|| anyhow!("non-sha256 digest: {}", layer.digest))?;
-    let mut hasher = Sha256::new();
-    let mut buf = [0u8; 4096];
-    let first = resp.read(&mut buf).context("read blob chunk")?;
-    if first == 0 {
-        bail!("blob GET returned an empty body");
-    }
-    if first as u64 > layer.size {
-        bail!("blob larger than manifest size {}", layer.size);
-    }
 
+    // Erase the unused slot before opening TLS. initiate_update() erases flash
+    // and stalls Wi-Fi long enough that an in-flight CDN download dies with
+    // mbedtls -0x7100 on the next read.
     let mut ota = EspOta::new().context("EspOta::new")?;
     let mut update = ota.initiate_update().context("initiate OTA update")?;
-    update.write(&buf[..first]).context("OTA write")?;
-    hasher.update(&buf[..first]);
-    let mut total = first as u64;
+
+    let conn = EspHttpConnection::new(&blob_http_config())?;
+    let mut client = Client::wrap(conn);
+    let mut resp = match client.request(Method::Get, &url, &headers) {
+        Ok(req) => match req.submit() {
+            Ok(r) => r,
+            Err(e) => {
+                update.abort().ok();
+                return Err(e).context("blob GET submit");
+            }
+        },
+        Err(e) => {
+            update.abort().ok();
+            return Err(e).context("blob GET request");
+        }
+    };
+    let status = resp.status();
+    if status != 200 {
+        update.abort().ok();
+        bail!("blob GET -> {status}");
+    }
+
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 4096];
+    let mut total: u64 = 0;
     let mut next_log = 256u64 * 1024;
     loop {
-        let n = resp.read(&mut buf).context("read blob chunk")?;
+        let n = match resp.read(&mut buf) {
+            Ok(n) => n,
+            Err(e) => {
+                update.abort().ok();
+                return Err(e).context("read blob chunk");
+            }
+        };
         if n == 0 {
             break;
         }
@@ -491,7 +504,10 @@ fn download_and_apply(repo: &str, layer: &Descriptor, token: &str) -> Result<()>
             update.abort().ok();
             bail!("blob larger than manifest size {}", layer.size);
         }
-        update.write(&buf[..n]).context("OTA write")?;
+        if let Err(e) = update.write(&buf[..n]) {
+            update.abort().ok();
+            return Err(e).context("OTA write");
+        }
         hasher.update(&buf[..n]);
         if total >= next_log {
             log::info!("ota: download progress {total}/{}", layer.size);
