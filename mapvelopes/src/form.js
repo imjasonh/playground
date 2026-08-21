@@ -152,7 +152,7 @@ function bindAddressField(textarea) {
 
   function runSuggest() {
     const q = locationQuery(textarea.value);
-    if (q.length < 3) {
+    if (q.length < 3 || !hasDigit(q)) {
       hideList(list);
       return;
     }
@@ -208,10 +208,7 @@ function bindAddressField(textarea) {
       return;
     }
     if (ev.key === "Enter") {
-      let chosen = selectedButton(list);
-      if (!chosen) {
-        chosen = list.querySelector("button");
-      }
+      const chosen = selectedButton(list);
       if (chosen && chosen.dataset.placeId) {
         pickPlace(textarea, list, chosen.dataset.placeId);
         ev.preventDefault();

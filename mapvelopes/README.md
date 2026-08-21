@@ -24,7 +24,8 @@ the addresses stay readable. Hybrid gets more wash than the others.
 
 Short addresses expand before printing. `123 fake st brooklyn` becomes
 `123 Fake St` / `Brooklyn, NY 11231`. The form offers Google, paper,
-terrain, muted, and hybrid looks, and suggests addresses as you type.
+terrain, muted, and hybrid looks, and suggests addresses once a line has
+a street number.
 
 The Worker and CLI both require a Google Maps Platform key. If the key is
 missing or Google rejects it, they return an error instead of a blank
