@@ -178,7 +178,10 @@ fn live_spec(
     let to_body = http_get(&agent, &geocode_url(&to.geocode_query(), key))?;
     let from_ll = parse_geocode(&from_body).map_err(|e| e.to_string())?;
     let to_ll = parse_geocode(&to_body).map_err(|e| e.to_string())?;
-    let dir_body = http_get(&agent, &directions_url(from_ll, to_ll, key))?;
+    let dir_body = http_get(
+        &agent,
+        &directions_url(from_ll.location, to_ll.location, key),
+    )?;
     let route = parse_directions(&dir_body).map_err(|e| e.to_string())?;
     let jpeg = http_get(&agent, &static_map_url(&route, key, style, size))?;
     spec_from_google(

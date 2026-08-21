@@ -20,11 +20,14 @@ One page in a US envelope size you pick: #10 (9.5 × 4.125 in, default), #9
 (8.875 × 3.875), Monarch (7.5 × 3.875), #6¾ (6.5 × 3.625), or A7 (7.25 ×
 5.25). Return address, delivery address, stamp box, and a Maps Static JPEG
 of the driving route as the background. The map is washed toward cream so
-the addresses stay readable (hybrid more than the others). The form offers
-Google, paper, terrain, muted, and hybrid looks. The Worker and CLI both
-require a Google Maps Platform key. If the key is missing or Google rejects
-it, they return an error instead of a blank envelope. Print at 100% scale.
-"Fit to page" shrinks the PDF onto letter paper.
+the addresses stay readable (hybrid more than the others). Short addresses
+are expanded to USPS-style lines before printing: `98 16th st brooklyn`
+becomes `98 16th St` / `Brooklyn, NY 11215`. The form offers Google, paper,
+terrain, muted, and hybrid looks, plus Places Autocomplete as you type.
+The Worker and CLI both require a Google Maps Platform key. If the key is
+missing or Google rejects it, they return an error instead of a blank
+envelope. Print at 100% scale. "Fit to page" shrinks the PDF onto letter
+paper.
 
 ## Run it on your machine
 
@@ -49,9 +52,11 @@ cargo run --example envelope -- \
 `terrain`, `muted`, `hybrid`) and `--size` (`10`, `9`, `monarch`,
 `6-3/4`, `a7`).
 
-The key needs **Geocoding**, **Directions**, and **Maps Static**. Do not
-restrict it by HTTP referrer; neither the CLI nor the Worker send a Referer
-Google will accept. Restricting by API is enough.
+The key needs **Geocoding**, **Directions**, **Maps Static**, and **Places**
+(Autocomplete + Place Details). Do not restrict it by HTTP referrer; neither
+the CLI nor the Worker send a Referer Google will accept. Restricting by
+API is enough. The form never sees the key: typeahead goes through
+`/suggest` and `/place` on this Worker.
 
 ## HTTP API
 
@@ -60,14 +65,19 @@ Once deployed (or under `wrangler dev`):
 | Method | Path | Result |
 |--------|------|--------|
 | `GET` | `/` | HTML form |
+| `GET` | `/form.js` | Typeahead script for the form |
 | `GET` | `/health` | `{"ok":true,"maps":"google"}` or 503 `{"ok":false,"maps":"none"}` |
+| `GET` | `/suggest?q=…` | `{ "suggestions": [{ "label", "place_id" }] }` |
+| `GET` | `/place?id=…` | `{ "lines": ["98 16th St", "Brooklyn, NY 11215"] }` |
 | `GET` | `/envelope?from=…&to=…` | PDF (optional `style=`, `size=`) |
 | `POST` | `/envelope` | PDF (`application/x-www-form-urlencoded` or JSON `{"from","to","style","size"}`) |
 
-Addresses are freeform, one line per envelope line. The first line is bold on
-the delivery block. `style` is `google` (default), `paper`, `terrain`,
-`muted`, or `hybrid`. `size` is `10` (default, #10), `9`, `monarch`,
-`6-3/4`, or `a7`.
+Addresses are freeform, one line per envelope line. A name on the first
+line is kept; the rest is expanded from Geocoding (street, city, state,
+ZIP). The first line is bold on the delivery block when it looks like a
+name. `style` is `google` (default), `paper`, `terrain`, `muted`, or
+`hybrid`. `size` is `10` (default, #10), `9`, `monarch`, `6-3/4`, or
+`a7`.
 
 ## Develop and test
 

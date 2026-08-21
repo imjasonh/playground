@@ -12,7 +12,8 @@ use crate::address::Address;
 use crate::api::{self, Classified};
 use crate::error::Error;
 use crate::maps::{
-    api_key_usable, directions_url, geocode_url, spec_from_google, static_map_url, EnvelopeSize,
+    api_key_usable, directions_url, geocode_url, parse_autocomplete, parse_place_details,
+    place_details_url, places_autocomplete_url, spec_from_google, static_map_url, EnvelopeSize,
     EnvelopeSpec, MapStyle,
 };
 use crate::render;
@@ -54,8 +55,23 @@ async fn fetch(mut req: Request, env: Env, _ctx: Context) -> Result<Response> {
             json(status, api::health_json(maps_live))
         }
         Classified::Form => html(api::form_html(maps_live)),
+        Classified::FormJs => js(api::form_js()),
         Classified::NotFound => json_error(&Error::BadRequest("not found".into()), 404),
         Classified::BadRequest(msg) => json_error(&Error::BadRequest(msg), 400),
+        Classified::Suggest { query } => match suggest(query, key.as_deref()).await {
+            Ok(body) => json(200, body),
+            Err(err) => {
+                console_error!("suggest: {err}");
+                json(200, api::suggest_json(&[]))
+            }
+        },
+        Classified::Place { id } => match place_lines(&id, key.as_deref()).await {
+            Ok(body) => json(200, body),
+            Err(err) => {
+                console_error!("place: {err}");
+                json_error(&err, err.status())
+            }
+        },
         Classified::Envelope {
             from,
             to,
@@ -130,7 +146,7 @@ async fn live_spec(
     let from_ll =
         crate::maps::parse_geocode(&from_body).map_err(|e| annotate("geocode from", e))?;
     let to_ll = crate::maps::parse_geocode(&to_body).map_err(|e| annotate("geocode to", e))?;
-    let dir_body = fetch_bytes(&directions_url(from_ll, to_ll, key))
+    let dir_body = fetch_bytes(&directions_url(from_ll.location, to_ll.location, key))
         .await
         .map_err(|e| annotate("directions", e))?;
     let route = crate::maps::parse_directions(&dir_body).map_err(|e| annotate("directions", e))?;
@@ -140,6 +156,28 @@ async fn live_spec(
     spec_from_google(
         from, to, &from_body, &to_body, &dir_body, &jpeg, style, size,
     )
+}
+
+async fn suggest(query: String, key: Option<&str>) -> std::result::Result<Vec<u8>, Error> {
+    if query.chars().count() < 3 || !api_key_usable(key) {
+        return Ok(api::suggest_json(&[]));
+    }
+    let key = key.expect("usable key");
+    let body = fetch_bytes(&places_autocomplete_url(&query, key)).await?;
+    let suggestions = parse_autocomplete(&body).unwrap_or_default();
+    Ok(api::suggest_json(&suggestions))
+}
+
+async fn place_lines(id: &str, key: Option<&str>) -> std::result::Result<Vec<u8>, Error> {
+    if !api_key_usable(key) {
+        return Err(Error::missing_maps_key());
+    }
+    let key = key.expect("usable key");
+    let body = fetch_bytes(&place_details_url(id, key))
+        .await
+        .map_err(|e| annotate("place", e))?;
+    let lines = parse_place_details(&body).map_err(|e| annotate("place", e))?;
+    Ok(api::place_json(&lines))
 }
 
 fn annotate(step: &str, err: Error) -> Error {
@@ -190,6 +228,14 @@ fn pdf_response(pdf: Vec<u8>) -> Result<Response> {
 fn html(body: Vec<u8>) -> Result<Response> {
     let headers = Headers::new();
     let _ = headers.set("Content-Type", "text/html; charset=utf-8");
+    Ok(Response::from_bytes(body)?
+        .with_status(200)
+        .with_headers(headers))
+}
+
+fn js(body: Vec<u8>) -> Result<Response> {
+    let headers = Headers::new();
+    let _ = headers.set("Content-Type", "text/javascript; charset=utf-8");
     Ok(Response::from_bytes(body)?
         .with_status(200)
         .with_headers(headers))

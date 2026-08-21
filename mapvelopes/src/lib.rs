@@ -6,7 +6,7 @@
 //! * [`geo`] — encoded polylines
 //! * [`maps`] — Google Maps URLs and JSON, plus [`maps::EnvelopeSpec`]
 //! * [`render`] — PDF drawing
-//! * [`api`] — HTTP classification (form, health, envelope)
+//! * [`api`] — HTTP classification (form, health, envelope, suggest)
 //!
 //! The Cloudflare Workers entry point is compiled only for `wasm32`. The
 //! native CLI is `cargo run --example envelope`.

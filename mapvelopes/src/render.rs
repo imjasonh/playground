@@ -175,7 +175,11 @@ fn write_address(
     fill_rgb(content, INK);
     for (i, line) in addr.lines().iter().enumerate() {
         let y = top - i as f32 * leading;
-        let font = if delivery && i == 0 { FONT_B } else { FONT_R };
+        let font = if delivery && i == 0 && addr.first_line_is_name() {
+            FONT_B
+        } else {
+            FONT_R
+        };
         let fitted = fit_chars(line, if delivery { 32 } else { 36 });
         show_text(content, font, size, x, y, &fitted);
     }

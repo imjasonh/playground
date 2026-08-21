@@ -4,9 +4,10 @@ use serde::Deserialize;
 use url::form_urlencoded;
 
 use crate::error::Error;
-use crate::maps::{EnvelopeSize, MapStyle};
+use crate::maps::{EnvelopeSize, MapStyle, PlaceSuggestion};
 
 const FORM_HTML: &str = include_str!("form.html");
+const FORM_JS: &str = include_str!("form.js");
 
 const LIVE_STATUS: &str =
     "This Worker has a Google Maps key. The envelope background is the driving route between the two addresses.";
@@ -28,11 +29,18 @@ pub struct ApiRequest {
 pub enum Classified {
     Health,
     Form,
+    FormJs,
     Envelope {
         from: String,
         to: String,
         style: MapStyle,
         size: EnvelopeSize,
+    },
+    Suggest {
+        query: String,
+    },
+    Place {
+        id: String,
     },
     BadRequest(String),
     NotFound,
@@ -46,6 +54,9 @@ pub fn classify(req: &ApiRequest) -> Classified {
     match (method.as_str(), path) {
         ("GET" | "HEAD", "/health") => Classified::Health,
         ("GET" | "HEAD", "/") => Classified::Form,
+        ("GET" | "HEAD", "/form.js") => Classified::FormJs,
+        ("GET" | "HEAD", "/suggest") => suggest_from_pairs(&req.query),
+        ("GET" | "HEAD", "/place") => place_from_pairs(&req.query),
         ("GET" | "HEAD", "/envelope") => envelope_from_pairs(&req.query),
         ("POST", "/envelope") => envelope_from_post(req),
         _ => Classified::NotFound,
@@ -59,6 +70,28 @@ fn normalize_path(path: &str) -> &str {
     } else {
         p
     }
+}
+
+fn suggest_from_pairs(pairs: &[(String, String)]) -> Classified {
+    let query = pair_value(pairs, "q").unwrap_or_default();
+    let query = query.trim().to_string();
+    if query.chars().count() > 200 {
+        return Classified::BadRequest("q is too long".into());
+    }
+    Classified::Suggest { query }
+}
+
+fn place_from_pairs(pairs: &[(String, String)]) -> Classified {
+    let id = pair_value(pairs, "id").unwrap_or_default();
+    let id = id.trim().to_string();
+    if !valid_place_id(&id) {
+        return Classified::BadRequest("id is required".into());
+    }
+    Classified::Place { id }
+}
+
+fn valid_place_id(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 512 && !id.contains([' ', '\n', '\r', '&', '?', '#'])
 }
 
 fn envelope_from_pairs(pairs: &[(String, String)]) -> Classified {
@@ -160,6 +193,32 @@ pub fn form_html(maps_live: bool) -> Vec<u8> {
         }
     }
     html.into_bytes()
+}
+
+/// Typeahead script for the form (`GET /form.js`).
+pub fn form_js() -> Vec<u8> {
+    FORM_JS.as_bytes().to_vec()
+}
+
+/// JSON body for `GET /suggest`.
+pub fn suggest_json(suggestions: &[PlaceSuggestion]) -> Vec<u8> {
+    serde_json::json!({
+        "suggestions": suggestions.iter().map(|s| {
+            serde_json::json!({
+                "label": s.label,
+                "place_id": s.place_id,
+            })
+        }).collect::<Vec<_>>()
+    })
+    .to_string()
+    .into_bytes()
+}
+
+/// JSON body for `GET /place`.
+pub fn place_json(lines: &[String]) -> Vec<u8> {
+    serde_json::json!({ "lines": lines })
+        .to_string()
+        .into_bytes()
 }
 
 /// JSON error body.
@@ -283,6 +342,50 @@ mod tests {
         assert!(live.contains("name=\"size\""));
         assert!(live.contains("value=\"a7\""));
         assert!(live.contains("value=\"6-3/4\""));
+        assert!(live.contains("form.js"));
+        assert!(live.contains("autocomplete=\"off\""));
+    }
+
+    #[test]
+    fn get_form_js() {
+        assert_eq!(classify(&req("GET", "/form.js")), Classified::FormJs);
+        let js = String::from_utf8(form_js()).unwrap();
+        assert!(js.contains("bindAddressField"));
+    }
+
+    #[test]
+    fn get_suggest() {
+        let mut r = req("GET", "/suggest");
+        r.query = vec![("q".into(), "98 16th".into())];
+        assert_eq!(
+            classify(&r),
+            Classified::Suggest {
+                query: "98 16th".into()
+            }
+        );
+        let empty = classify(&req("GET", "/suggest"));
+        assert_eq!(
+            empty,
+            Classified::Suggest {
+                query: String::new()
+            }
+        );
+    }
+
+    #[test]
+    fn get_place() {
+        let mut r = req("GET", "/place");
+        r.query = vec![("id".into(), "ChIJ50".into())];
+        assert_eq!(
+            classify(&r),
+            Classified::Place {
+                id: "ChIJ50".into()
+            }
+        );
+        assert!(matches!(
+            classify(&req("GET", "/place")),
+            Classified::BadRequest(_)
+        ));
     }
 
     #[test]

@@ -133,6 +133,44 @@
       margin: 0;
       accent-color: var(--accent);
     }
+    .addr {
+      position: relative;
+    }
+    .suggest {
+      list-style: none;
+      margin: 0.25rem 0 0;
+      padding: 0.25rem 0;
+      position: absolute;
+      left: 0;
+      right: 0;
+      z-index: 2;
+      max-height: 14rem;
+      overflow: auto;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: 0 8px 24px color-mix(in srgb, var(--ink) 12%, transparent);
+    }
+    .suggest[hidden] {
+      display: none;
+    }
+    .suggest button {
+      display: block;
+      width: 100%;
+      text-align: left;
+      font-weight: 500;
+      font-size: 0.95rem;
+      padding: 0.45rem 0.75rem;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+    }
+    .suggest button[aria-selected="true"],
+    .suggest button:hover {
+      background: color-mix(in srgb, var(--accent) 16%, transparent);
+    }
   </style>
 </head>
 <body>
@@ -143,14 +181,20 @@
       <fieldset>
         <legend>Return address</legend>
         <label for="from">From</label>
-        <textarea id="from" name="from" required
-          placeholder="Ada Example&#10;1600 Amphitheatre Parkway&#10;Mountain View, CA 94043"></textarea>
+        <div class="addr">
+          <textarea id="from" name="from" required autocomplete="off"
+            placeholder="Ada Example&#10;1600 Amphitheatre Parkway&#10;Mountain View, CA 94043"></textarea>
+          <ul class="suggest" id="from-suggest" hidden></ul>
+        </div>
       </fieldset>
       <fieldset>
         <legend>Delivery address</legend>
         <label for="to">To</label>
-        <textarea id="to" name="to" required
-          placeholder="Bob Example&#10;350 Fifth Avenue&#10;New York, NY 10118"></textarea>
+        <div class="addr">
+          <textarea id="to" name="to" required autocomplete="off"
+            placeholder="Bob Example&#10;350 Fifth Avenue&#10;New York, NY 10118"></textarea>
+          <ul class="suggest" id="to-suggest" hidden></ul>
+        </div>
       </fieldset>
       <fieldset>
         <legend>Map</legend>
@@ -177,8 +221,10 @@
     <p class="hint">
       #10 is 9.5 × 4.125 in (default), #9 is 8.875 × 3.875, Monarch is
       7.5 × 3.875, #6¾ is 6.5 × 3.625, A7 is 7.25 × 5.25. Print at 100%
-      scale, not "fit to page."
+      scale, not "fit to page." Short addresses are expanded from Google
+      (so "98 16th st brooklyn" prints as 98 16th St / Brooklyn, NY 11215).
     </p>
   </main>
+  <script src="form.js" defer></script>
 </body>
 </html>
