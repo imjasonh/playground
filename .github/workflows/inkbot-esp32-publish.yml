@@ -78,7 +78,9 @@ jobs:
         uses: sigstore/cosign-installer@fb28c2b6339dcd94da6e4cbcbc5e888961f6f8c3 # v3.9.0
 
       - name: Install espflash
-        run: cargo install espflash --locked --version 4.2.2
+        # Pin 4.2.0 (there is no 4.2.2). Use the 1.88 host toolchain; the
+        # Xtensa step above makes `esp` the default rustc.
+        run: cargo +1.88.0 install espflash --locked --version 4.2.0
 
       - name: Publish signed image
         working-directory: inkbot-esp32
