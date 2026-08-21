@@ -90,6 +90,10 @@ final class PlaygroundUITests: XCTestCase {
             scrollLauncherUntilExists(app.staticTexts["Wigglecam"], in: app),
             "Wigglecam should appear after scrolling the launcher"
         )
+        XCTAssertTrue(
+            scrollLauncherUntilExists(app.staticTexts["NFC Tags"], in: app),
+            "NFC Tags should appear after scrolling the launcher"
+        )
     }
 
     func testRideMonitorExperimentOpens() {
@@ -212,5 +216,22 @@ final class PlaygroundUITests: XCTestCase {
             || app.otherElements["localLensStatusMessage"].waitForExistence(timeout: 3)
             || app.staticTexts["localLensPrivacyBadge"].waitForExistence(timeout: 3)
             || app.otherElements["localLensPrivacyBadge"].waitForExistence(timeout: 3))
+    }
+
+    func testNFCTagsExperimentOpens() {
+        let app = launchApp()
+
+        openExperiment("nfc-tags", title: "NFC Tags", in: app)
+
+        XCTAssertTrue(app.navigationBars["NFC Tags"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["nfcScanButton"].waitForExistence(timeout: 8)
+            || app.otherElements["nfcScanButton"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["nfcStatusMessage"].waitForExistence(timeout: 8)
+            || app.otherElements["nfcStatusMessage"].waitForExistence(timeout: 3)
+            || app.staticTexts["Hold an NDEF tag near the top of the iPhone."].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["nfcAvailabilityBanner"].waitForExistence(timeout: 8)
+            || app.otherElements["nfcAvailabilityBanner"].waitForExistence(timeout: 3)
+            || app.staticTexts["NFC reader ready"].waitForExistence(timeout: 3)
+            || app.staticTexts["NFC needs a physical iPhone — Simulator cannot scan tags."].waitForExistence(timeout: 3))
     }
 }
