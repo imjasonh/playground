@@ -23,7 +23,7 @@ use mapvelopes_worker::address::Address;
 use mapvelopes_worker::error::Error;
 use mapvelopes_worker::maps::{
     api_key_usable, directions_url, geocode_url, parse_directions, parse_geocode, spec_from_google,
-    static_map_url, EnvelopeSpec,
+    static_map_url, EnvelopeSpec, MapStyle,
 };
 use mapvelopes_worker::render;
 
@@ -40,6 +40,7 @@ Options:
   --from TEXT     Return address (default: a Mountain View example)
   --to TEXT       Delivery address (default: a New York example)
   -o, --out PATH  Output PDF (default: envelope.pdf)
+  --style NAME    google, paper, terrain, muted, or hybrid (default: google)
   --key KEY       Google Maps API key (default: $GOOGLE_MAPS_API_KEY)
   -h, --help      Show this help
 ";
@@ -68,7 +69,7 @@ fn run() -> Result<(), String> {
         return Err(Error::missing_maps_key().to_string());
     }
     let key = parsed.key.as_deref().expect("usable key");
-    let spec = live_spec(from, to, key)?;
+    let spec = live_spec(from, to, parsed.style, key)?;
 
     let pdf = render(&spec).map_err(|e| e.to_string())?;
     std::fs::write(&parsed.out, &pdf).map_err(|e| format!("{}: {e}", parsed.out))?;
@@ -81,6 +82,7 @@ struct Args {
     to: String,
     out: String,
     key: Option<String>,
+    style: MapStyle,
 }
 
 fn parse_args(args: &[String]) -> Result<Args, String> {
@@ -88,6 +90,7 @@ fn parse_args(args: &[String]) -> Result<Args, String> {
     let mut to = None;
     let mut out = None;
     let mut key = env::var("GOOGLE_MAPS_API_KEY").ok();
+    let mut style = MapStyle::Google;
     let mut i = 0;
     while i < args.len() {
         let a = &args[i];
@@ -103,6 +106,10 @@ fn parse_args(args: &[String]) -> Result<Args, String> {
             }
             "--key" => {
                 key = Some(need_value(args, &mut i, "--key")?);
+            }
+            "--style" => {
+                let raw = need_value(args, &mut i, "--style")?;
+                style = MapStyle::parse(Some(&raw)).map_err(|e| e.to_string())?;
             }
             other if other.starts_with("--from=") => {
                 from = Some(other[7..].to_string());
@@ -120,6 +127,10 @@ fn parse_args(args: &[String]) -> Result<Args, String> {
                 key = Some(other[6..].to_string());
                 i += 1;
             }
+            other if other.starts_with("--style=") => {
+                style = MapStyle::parse(Some(&other[8..])).map_err(|e| e.to_string())?;
+                i += 1;
+            }
             other => return Err(format!("unknown argument: {other}\n{USAGE}")),
         }
     }
@@ -128,6 +139,7 @@ fn parse_args(args: &[String]) -> Result<Args, String> {
         to: to.unwrap_or_else(|| DEFAULT_TO.to_string()),
         out: out.unwrap_or_else(|| "envelope.pdf".to_string()),
         key,
+        style,
     })
 }
 
@@ -139,7 +151,12 @@ fn need_value(args: &[String], i: &mut usize, flag: &str) -> Result<String, Stri
     Ok(next.clone())
 }
 
-fn live_spec(from: Address, to: Address, key: &str) -> Result<EnvelopeSpec, String> {
+fn live_spec(
+    from: Address,
+    to: Address,
+    style: MapStyle,
+    key: &str,
+) -> Result<EnvelopeSpec, String> {
     let agent = ureq::AgentBuilder::new()
         .timeout(Duration::from_secs(25))
         .user_agent("mapvelopes/0.1")
@@ -150,8 +167,9 @@ fn live_spec(from: Address, to: Address, key: &str) -> Result<EnvelopeSpec, Stri
     let to_ll = parse_geocode(&to_body).map_err(|e| e.to_string())?;
     let dir_body = http_get(&agent, &directions_url(from_ll, to_ll, key))?;
     let route = parse_directions(&dir_body).map_err(|e| e.to_string())?;
-    let jpeg = http_get(&agent, &static_map_url(&route, key))?;
-    spec_from_google(from, to, &from_body, &to_body, &dir_body, &jpeg).map_err(|e| e.to_string())
+    let jpeg = http_get(&agent, &static_map_url(&route, key, style))?;
+    spec_from_google(from, to, &from_body, &to_body, &dir_body, &jpeg, style)
+        .map_err(|e| e.to_string())
 }
 
 fn http_get(agent: &ureq::Agent, url: &str) -> Result<Vec<u8>, String> {

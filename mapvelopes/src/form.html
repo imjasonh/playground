@@ -116,6 +116,23 @@
       font-size: 0.95rem;
       margin: 1.25rem 0 0;
     }
+    .choices {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem 1rem;
+    }
+    .choices label {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-weight: 500;
+      margin: 0;
+      cursor: pointer;
+    }
+    .choices input {
+      margin: 0;
+      accent-color: var(--accent);
+    }
   </style>
 </head>
 <body>
@@ -134,6 +151,16 @@
         <label for="to">To</label>
         <textarea id="to" name="to" required
           placeholder="Bob Example&#10;350 Fifth Avenue&#10;New York, NY 10118"></textarea>
+      </fieldset>
+      <fieldset>
+        <legend>Map</legend>
+        <div class="choices">
+          <label><input type="radio" name="style" value="google" checked> Google</label>
+          <label><input type="radio" name="style" value="paper"> Paper</label>
+          <label><input type="radio" name="style" value="terrain"> Terrain</label>
+          <label><input type="radio" name="style" value="muted"> Muted</label>
+          <label><input type="radio" name="style" value="hybrid"> Hybrid</label>
+        </div>
       </fieldset>
       <button type="submit">Make envelope PDF</button>
     </form>

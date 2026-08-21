@@ -69,8 +69,8 @@ pub fn render(spec: &EnvelopeSpec) -> Result<Vec<u8>, Error> {
         .encoding_predefined(Name(b"WinAnsiEncoding"));
     if jpeg_size.is_some() {
         pdf.ext_graphics(gs_id)
-            .non_stroking_alpha(0.90)
-            .stroking_alpha(0.90);
+            .non_stroking_alpha(spec.map_style.map_alpha())
+            .stroking_alpha(spec.map_style.map_alpha());
     }
     pdf.document_info(info_id)
         .title(TextStr("Mapvelope"))
@@ -87,17 +87,19 @@ pub fn render(spec: &EnvelopeSpec) -> Result<Vec<u8>, Error> {
 
     let mut content = Content::new();
     if jpeg_size.is_some() {
+        paint_blank(&mut content);
         paint_jpeg(&mut content);
     } else {
         paint_blank(&mut content);
     }
-    paint_overlays(&mut content, spec, jpeg_size.is_some());
+    paint_overlays(&mut content, spec);
     pdf.stream(content_id, &content.finish());
     Ok(pdf.finish())
 }
 
 fn paint_jpeg(content: &mut Content) {
     content.save_state();
+    content.set_parameters(GS);
     content.transform([PAGE_W, 0.0, 0.0, PAGE_H, 0.0, 0.0]);
     content.x_object(IMG);
     content.restore_state();
@@ -109,7 +111,8 @@ fn paint_blank(content: &mut Content) {
     content.fill_nonzero();
 }
 
-fn paint_overlays(content: &mut Content, spec: &EnvelopeSpec, has_photo: bool) {
+fn paint_overlays(content: &mut Content, spec: &EnvelopeSpec) {
+    let has_photo = spec.map_jpeg.is_some();
     let return_h = card_height(&spec.from, 9.0, 11.0);
     let return_w = 210.0;
     let return_x = 16.0;
@@ -120,19 +123,12 @@ fn paint_overlays(content: &mut Content, spec: &EnvelopeSpec, has_photo: bool) {
     let dest_x = 250.0;
     let dest_y = 92.0;
 
-    if has_photo {
-        content.save_state();
-        content.set_parameters(GS);
-    }
     fill_rgb(content, CARD);
     rounded_rect(content, return_x, return_y, return_w, return_h, 3.0);
     content.fill_nonzero();
     fill_rgb(content, CARD);
     rounded_rect(content, dest_x, dest_y, dest_w, dest_h, 3.5);
     content.fill_nonzero();
-    if has_photo {
-        content.restore_state();
-    }
 
     write_address(
         content,
@@ -185,6 +181,9 @@ fn draw_stamp(content: &mut Content) {
     let h = 72.0;
     let x = PAGE_W - 16.0 - w;
     let y = PAGE_H - 16.0 - h;
+    fill_rgb(content, CARD);
+    rounded_rect(content, x, y, w, h, 2.0);
+    content.fill_nonzero();
     content.set_dash_pattern([2.5, 2.0], 0.0);
     stroke_rgb(content, STAMP);
     content.set_line_width(0.9);
@@ -198,6 +197,12 @@ fn draw_stamp(content: &mut Content) {
 }
 
 fn draw_legend(content: &mut Content, spec: &EnvelopeSpec, has_photo: bool) {
+    if spec.route.is_none() && !has_photo {
+        return;
+    }
+    fill_rgb(content, CARD);
+    rounded_rect(content, 12.0, 5.0, 228.0, 26.0, 2.0);
+    content.fill_nonzero();
     if let Some(route) = &spec.route {
         fill_rgb(content, MUTED);
         let mut legend = route
@@ -276,7 +281,7 @@ fn winansi(s: &str) -> Vec<u8> {
 mod tests {
     use super::*;
     use crate::address::Address;
-    use crate::maps::EnvelopeSpec;
+    use crate::maps::{EnvelopeSpec, MapStyle};
 
     fn pdf_for(from: &str, to: &str) -> Vec<u8> {
         let spec = EnvelopeSpec::no_map(Address::parse(from).unwrap(), Address::parse(to).unwrap());
@@ -312,5 +317,33 @@ mod tests {
         let a = pdf_for("Mountain View, CA", "New York, NY");
         let b = pdf_for("Mountain View, CA", "New York, NY");
         assert_eq!(a, b);
+    }
+
+    fn tiny_jpeg() -> Vec<u8> {
+        let mut jpeg = vec![0xFF, 0xD8, 0xFF, 0xC0, 0x00, 0x0B, 0x08];
+        jpeg.extend_from_slice(&8u16.to_be_bytes());
+        jpeg.extend_from_slice(&8u16.to_be_bytes());
+        jpeg.extend_from_slice(&[1, 1, 0x11, 0x00]);
+        jpeg
+    }
+
+    fn spec_with_style(style: MapStyle) -> EnvelopeSpec {
+        EnvelopeSpec {
+            from: Address::parse("Ada\nMountain View, CA").unwrap(),
+            to: Address::parse("Bob\nNew York, NY").unwrap(),
+            route: None,
+            map_jpeg: Some(tiny_jpeg()),
+            map_style: style,
+        }
+    }
+
+    #[test]
+    fn hybrid_washes_more_than_google() {
+        assert!(MapStyle::Hybrid.map_alpha() < MapStyle::Google.map_alpha());
+        let google = render(&spec_with_style(MapStyle::Google)).unwrap();
+        let hybrid = render(&spec_with_style(MapStyle::Hybrid)).unwrap();
+        assert_ne!(google, hybrid);
+        assert!(String::from_utf8_lossy(&google).contains("0.68"));
+        assert!(String::from_utf8_lossy(&hybrid).contains("0.4"));
     }
 }
