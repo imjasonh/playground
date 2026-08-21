@@ -223,22 +223,38 @@ async fn proxy_fetch(
 /// Read an upstream response body, aborting as soon as it exceeds `max` bytes so
 /// a chunked (no `Content-Length`) response can't force us to buffer the whole
 /// payload in the isolate.
+///
+/// workers-rs `stream()` only works when the body is a `ReadableStream`. A
+/// 204/304 or `redirect: manual` 3xx has a null body (`ResponseBody::Empty`)
+/// and used to fail with "body is not streamable". `bytes()` handles Empty,
+/// buffered Body, and Stream.
 async fn read_body_capped(
     response: &mut Response,
     max: usize,
 ) -> std::result::Result<Vec<u8>, ProxyError> {
-    let mut stream = response
-        .stream()
-        .map_err(|e| ProxyError::Upstream(e.to_string()))?;
-    let mut buf: Vec<u8> = Vec::new();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| ProxyError::Upstream(e.to_string()))?;
-        if buf.len() + chunk.len() > max {
-            return Err(ProxyError::TooLarge(max));
+    match response.stream() {
+        Ok(mut stream) => {
+            let mut buf: Vec<u8> = Vec::new();
+            while let Some(chunk) = stream.next().await {
+                let chunk = chunk.map_err(|e| ProxyError::Upstream(e.to_string()))?;
+                if buf.len() + chunk.len() > max {
+                    return Err(ProxyError::TooLarge(max));
+                }
+                buf.extend_from_slice(&chunk);
+            }
+            Ok(buf)
         }
-        buf.extend_from_slice(&chunk);
+        Err(_) => {
+            let bytes = response
+                .bytes()
+                .await
+                .map_err(|e| ProxyError::Upstream(e.to_string()))?;
+            if bytes.len() > max {
+                return Err(ProxyError::TooLarge(max));
+            }
+            Ok(bytes)
+        }
     }
-    Ok(buf)
 }
 
 /// Build the browser-facing response from an upstream result.
@@ -292,6 +308,7 @@ fn apply_cors(headers: &Headers, cors: &CorsDecision) {
         let _ = headers.set("Access-Control-Allow-Headers", "*");
         let _ = headers.set("Access-Control-Expose-Headers", "*");
         let _ = headers.set("Access-Control-Max-Age", "86400");
+        let _ = headers.set("Cache-Control", "no-store");
     }
 }
 

@@ -216,8 +216,8 @@ async function fetchBytes(fetchImpl, url, init) {
   return new Uint8Array(buf);
 }
 
-async function fetchOk(fetchImpl, url, init) {
-  const res = await fetchImpl(url, init);
+async function fetchOk(fetchImpl, url, init = {}) {
+  const res = await fetchImpl(url, { ...init, cache: "no-store" });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     throw new Error(

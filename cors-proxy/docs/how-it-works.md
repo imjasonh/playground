@@ -104,7 +104,10 @@ An open proxy is attractive to scrapers and as an IP launderer, so:
 - **Redirect cap.** At most 5 hops.
 - **Header hygiene.** Inbound `X-Forwarded-*`, `CF-*`, `X-Real-IP`, `Via`,
   `Forwarded` are stripped so the proxy can't be used to spoof identity headers
-  to the upstream; `Cookie` is not forwarded.
+  to the upstream; `Cookie` is not forwarded. Conditional request headers
+  (`If-None-Match` and friends) are stripped, and responses go out with
+  `Cache-Control: no-store`, so a browser cannot turn a successful proxy GET
+  into a 304 empty body on the next try.
 - **Origin allow-list.** `ALLOWED_ORIGINS` lets you restrict the proxy to your
   own front-ends instead of running it fully open.
 

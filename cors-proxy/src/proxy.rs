@@ -57,6 +57,14 @@ const STRIP_REQUEST_HEADERS: &[&str] = &[
     "x-forwarded-proto",
     "x-real-ip",
     "via",
+    // Conditional headers would make GHCR (and others) reply 304 with an
+    // empty body. workers-rs cannot stream an empty fetch body, and a CORS
+    // proxy has to return the real bytes anyway.
+    "if-match",
+    "if-none-match",
+    "if-modified-since",
+    "if-unmodified-since",
+    "if-range",
 ];
 
 /// Response headers that must not be relayed back to the browser.
@@ -76,6 +84,14 @@ const STRIP_RESPONSE_HEADERS: &[&str] = &[
     // relaying the upstream values would corrupt the response.
     "content-encoding",
     "content-length",
+    // The proxy is not a cache. Relaying validators lets the browser send
+    // If-None-Match on the next call and get a 304 we cannot turn into bytes.
+    "etag",
+    "last-modified",
+    "expires",
+    "age",
+    "cache-control",
+    "pragma",
 ];
 
 fn is_stripped(name: &str, list: &[&str]) -> bool {
@@ -288,6 +304,8 @@ mod tests {
             ("X-Forwarded-For", "1.2.3.4"),
             ("CF-Connecting-IP", "1.2.3.4"),
             ("Accept-Encoding", "gzip"),
+            ("If-None-Match", "\"abc\""),
+            ("If-Modified-Since", "Wed, 21 Oct 2015 07:28:00 GMT"),
         ]);
         let out = names(&outbound_request_headers(&input));
         assert!(out.contains(&"accept".to_string()));
@@ -300,6 +318,8 @@ mod tests {
             "x-forwarded-for",
             "cf-connecting-ip",
             "accept-encoding",
+            "if-none-match",
+            "if-modified-since",
         ] {
             assert!(!out.contains(&banned.to_string()), "leaked {banned}");
         }
@@ -315,6 +335,9 @@ mod tests {
             ("Content-Encoding", "gzip"),
             ("Access-Control-Allow-Origin", "https://upstream"),
             ("Transfer-Encoding", "chunked"),
+            ("ETag", "\"abc\""),
+            ("Last-Modified", "Wed, 21 Oct 2015 07:28:00 GMT"),
+            ("Cache-Control", "max-age=3600"),
         ]);
         let out = names(&filtered_response_headers(&input));
         assert_eq!(out, vec!["content-type".to_string()]);

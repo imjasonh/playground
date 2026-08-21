@@ -62,8 +62,8 @@ This is an open URL fetcher, so it is hardened against SSRF and abuse. See
 | Hostname blocking | Refuses `localhost`, `*.localhost`, `*.local`, `*.internal`, `*.home.arpa`, and cloud-metadata names. |
 | Redirect re-validation | Redirects are followed **manually** and every `Location` hop is re-validated (defeats redirect-to-internal). Max 5 hops. |
 | Cross-origin credential stripping | `Authorization`, `Proxy-Authorization`, `Cookie`, and `X-Api-Key` are dropped when a redirect crosses to a different origin, so a redirect can't harvest a caller's secrets. |
-| Request header hygiene | Strips `Cookie`, `Origin`, `Referer`, forwarding headers (`X-Forwarded-*`, `CF-*`, `X-Real-IP`, `Via`), and hop-by-hop headers before calling the upstream. |
-| Response header hygiene | Strips `Set-Cookie`/`Set-Cookie2` and upstream `Access-Control-*`; sets its own CORS headers. |
+| Request header hygiene | Strips `Cookie`, `Origin`, `Referer`, forwarding headers (`X-Forwarded-*`, `CF-*`, `X-Real-IP`, `Via`), hop-by-hop headers, and conditional validators (`If-None-Match`, `If-Modified-Since`, …) before calling the upstream. |
+| Response header hygiene | Strips `Set-Cookie`/`Set-Cookie2`, upstream `Access-Control-*`, and cache validators (`ETag`, `Last-Modified`, `Cache-Control`); sets its own CORS headers and `Cache-Control: no-store`. |
 | Response size cap | Rejects responses larger than `MAX_RESPONSE_BYTES` (default 25 MiB), enforced **while streaming** so a chunked body can't be buffered unbounded. |
 | Request size cap | Rejects inbound bodies larger than `MAX_REQUEST_BYTES` (default 10 MiB). |
 | Origin allow-list | `ALLOWED_ORIGINS` restricts which browser origins may use the proxy (default `*`). |
