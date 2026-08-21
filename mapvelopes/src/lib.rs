@@ -1,4 +1,4 @@
-//! Mapvelopes: #10 envelope PDFs with the sender-to-recipient route as the background.
+//! Mapvelopes: envelope PDFs with the sender-to-recipient route as the background.
 //!
 //! Transport-agnostic modules, unit-tested on the host:
 //!
@@ -22,8 +22,8 @@ pub use address::Address;
 pub use api::{classify, form_html, health_json, ApiRequest, Classified};
 pub use error::Error;
 pub use maps::{
-    api_key_usable, directions_url, geocode_url, spec_from_google, static_map_url, EnvelopeSpec,
-    MapStyle,
+    api_key_usable, directions_url, geocode_url, spec_from_google, static_map_url, EnvelopeSize,
+    EnvelopeSpec, MapStyle,
 };
 pub use render::render;
 

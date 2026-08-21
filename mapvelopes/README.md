@@ -1,6 +1,6 @@
 # mapvelopes
 
-A US #10 envelope PDF with the driving route from sender to recipient as the
+A US envelope PDF with the driving route from sender to recipient as the
 background. Nick Johnson published this in 2010 as
 [Mapvelopes](http://blog.notdot.net/2010/04/Generating-PDFs-on-App-Engine-Python-and-introducing-Mapvelopes).
 [Yanko Design](https://www.yankodesign.com/2010/03/30/google-envelopes-beta-of-course/)
@@ -16,14 +16,15 @@ I wanted a PDF I could print: two addresses, a blue line between them.
 
 ## What you get
 
-One page, 9.5 × 4.125 in (US #10). Return address, delivery address, stamp
-box, and a Maps Static JPEG of the driving route as the background. The map
-is washed toward cream so the addresses stay readable (hybrid more than the
-others). The form offers Google, paper, terrain, muted, and hybrid looks.
-The Worker and CLI both require a Google Maps Platform key. If the key is
-missing or Google rejects it, they return an error instead of a blank
-envelope. Print at 100% scale. "Fit to page" shrinks a #10 onto letter
-paper.
+One page in a US envelope size you pick: #10 (9.5 × 4.125 in, default), #9
+(8.875 × 3.875), Monarch (7.5 × 3.875), #6¾ (6.5 × 3.625), or A7 (7.25 ×
+5.25). Return address, delivery address, stamp box, and a Maps Static JPEG
+of the driving route as the background. The map is washed toward cream so
+the addresses stay readable (hybrid more than the others). The form offers
+Google, paper, terrain, muted, and hybrid looks. The Worker and CLI both
+require a Google Maps Platform key. If the key is missing or Google rejects
+it, they return an error instead of a blank envelope. Print at 100% scale.
+"Fit to page" shrinks the PDF onto letter paper.
 
 ## Run it on your machine
 
@@ -45,7 +46,8 @@ cargo run --example envelope -- \
 ```
 
 `--help` lists the flags, including `--style` (`google`, `paper`,
-`terrain`, `muted`, `hybrid`).
+`terrain`, `muted`, `hybrid`) and `--size` (`10`, `9`, `monarch`,
+`6-3/4`, `a7`).
 
 The key needs **Geocoding**, **Directions**, and **Maps Static**. Do not
 restrict it by HTTP referrer; neither the CLI nor the Worker send a Referer
@@ -59,12 +61,13 @@ Once deployed (or under `wrangler dev`):
 |--------|------|--------|
 | `GET` | `/` | HTML form |
 | `GET` | `/health` | `{"ok":true,"maps":"google"}` or 503 `{"ok":false,"maps":"none"}` |
-| `GET` | `/envelope?from=…&to=…` | PDF (optional `style=`) |
-| `POST` | `/envelope` | PDF (`application/x-www-form-urlencoded` or JSON `{"from","to","style"}`) |
+| `GET` | `/envelope?from=…&to=…` | PDF (optional `style=`, `size=`) |
+| `POST` | `/envelope` | PDF (`application/x-www-form-urlencoded` or JSON `{"from","to","style","size"}`) |
 
 Addresses are freeform, one line per envelope line. The first line is bold on
 the delivery block. `style` is `google` (default), `paper`, `terrain`,
-`muted`, or `hybrid`.
+`muted`, or `hybrid`. `size` is `10` (default, #10), `9`, `monarch`,
+`6-3/4`, or `a7`.
 
 ## Develop and test
 

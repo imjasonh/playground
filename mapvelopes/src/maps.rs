@@ -49,6 +49,101 @@ impl MapStyle {
     }
 }
 
+/// US envelope stock. Default is #10 (business).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EnvelopeSize {
+    /// 9.5 × 4.125 in. Common business envelope.
+    Ten,
+    /// 8.875 × 3.875 in. Fits inside a #10.
+    Nine,
+    /// 7.5 × 3.875 in.
+    Monarch,
+    /// 6.5 × 3.625 in. Also written #6¾.
+    SixThreeQuarter,
+    /// 7.25 × 5.25 in. Invitation / A7.
+    A7,
+}
+
+impl EnvelopeSize {
+    /// Every stock the form and CLI offer.
+    pub const ALL: [Self; 5] = [
+        Self::Ten,
+        Self::Nine,
+        Self::Monarch,
+        Self::SixThreeQuarter,
+        Self::A7,
+    ];
+
+    /// Parse a form, query, JSON, or CLI value. Missing or empty is #10.
+    pub fn parse(raw: Option<&str>) -> Result<Self, Error> {
+        match raw.map(str::trim).filter(|s| !s.is_empty()) {
+            None => Ok(Self::Ten),
+            Some(s) => match canonical_size(s).as_str() {
+                "10" | "ten" | "business" => Ok(Self::Ten),
+                "9" | "nine" => Ok(Self::Nine),
+                "monarch" | "7.5" | "7-1/2" => Ok(Self::Monarch),
+                "6-3/4" | "6.75" | "6-75" | "63/4" | "6-3-4" => Ok(Self::SixThreeQuarter),
+                "a7" | "invitation" => Ok(Self::A7),
+                _ => Err(Error::BadRequest(format!(
+                    "unknown size {s:?}; use 10, 9, monarch, 6-3/4, or a7"
+                ))),
+            },
+        }
+    }
+
+    /// Form / query id (`10`, `9`, `monarch`, `6-3/4`, `a7`).
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Ten => "10",
+            Self::Nine => "9",
+            Self::Monarch => "monarch",
+            Self::SixThreeQuarter => "6-3/4",
+            Self::A7 => "a7",
+        }
+    }
+
+    /// Width × height in inches, flap along the long edge.
+    pub fn inches(self) -> (f32, f32) {
+        match self {
+            Self::Ten => (9.5, 4.125),
+            Self::Nine => (8.875, 3.875),
+            Self::Monarch => (7.5, 3.875),
+            Self::SixThreeQuarter => (6.5, 3.625),
+            Self::A7 => (7.25, 5.25),
+        }
+    }
+
+    /// Width × height in PDF points (1/72 inch).
+    pub fn points(self) -> (f32, f32) {
+        let (w, h) = self.inches();
+        (w * 72.0, h * 72.0)
+    }
+
+    /// Static Maps `size=` before `scale=2`. Longest side is 640.
+    pub fn static_map_pixels(self) -> (u32, u32) {
+        let (w, h) = self.inches();
+        const MAX: f32 = 640.0;
+        if w >= h {
+            let ph = ((MAX * h / w).round() as u32).clamp(1, 640);
+            (640, ph)
+        } else {
+            let pw = ((MAX * w / h).round() as u32).clamp(1, 640);
+            (pw, 640)
+        }
+    }
+}
+
+fn canonical_size(s: &str) -> String {
+    let mut t = s.trim().to_ascii_lowercase();
+    t = t.replace('¾', "3/4");
+    t.retain(|c| !c.is_whitespace() && c != '_');
+    let t = t.trim_start_matches('#');
+    let t = t.strip_prefix("number").unwrap_or(t);
+    let t = t.strip_prefix("no.").unwrap_or(t);
+    let t = t.strip_prefix("no").unwrap_or(t);
+    t.trim_start_matches(['#', '-', '.']).to_string()
+}
+
 /// Everything [`crate::render::render`] needs to draw one envelope.
 #[derive(Debug, Clone)]
 pub struct EnvelopeSpec {
@@ -57,6 +152,7 @@ pub struct EnvelopeSpec {
     pub route: Option<Route>,
     pub map_jpeg: Option<Vec<u8>>,
     pub map_style: MapStyle,
+    pub size: EnvelopeSize,
 }
 
 impl EnvelopeSpec {
@@ -68,6 +164,7 @@ impl EnvelopeSpec {
             route: None,
             map_jpeg: None,
             map_style: MapStyle::Google,
+            size: EnvelopeSize::Ten,
         }
     }
 }
@@ -132,8 +229,8 @@ const MUTED_STYLES: &[&str] = &[
     "feature:road|element:labels.icon|visibility:off",
 ];
 
-/// Static Maps request: route polyline plus start/end markers. JPEG, #10 aspect.
-pub fn static_map_url(route: &Route, key: &str, style: MapStyle) -> String {
+/// Static Maps request: route polyline plus start/end markers. JPEG, envelope aspect.
+pub fn static_map_url(route: &Route, key: &str, style: MapStyle, size: EnvelopeSize) -> String {
     let mut url =
         Url::parse("https://maps.googleapis.com/maps/api/staticmap").expect("static map URL");
     let pts = subsample(&route.points, 80);
@@ -178,7 +275,8 @@ pub fn static_map_url(route: &Route, key: &str, style: MapStyle) -> String {
     let path = format!("weight:5|color:{path_color}|enc:{enc}");
     {
         let mut q = url.query_pairs_mut();
-        q.append_pair("size", "640x276");
+        let (pw, ph) = size.static_map_pixels();
+        q.append_pair("size", &format!("{pw}x{ph}"));
         q.append_pair("scale", "2");
         q.append_pair("maptype", maptype);
         q.append_pair("format", "jpg");
@@ -420,6 +518,7 @@ pub fn jpeg_from_static_map(body: &[u8]) -> Result<&[u8], Error> {
 
 /// Build a spec from Google API payloads. `jpeg` must be a JPEG (use
 /// [`jpeg_from_static_map`] to turn a Static Maps body into one).
+#[allow(clippy::too_many_arguments)]
 pub fn spec_from_google(
     from: Address,
     to: Address,
@@ -428,6 +527,7 @@ pub fn spec_from_google(
     directions: &[u8],
     jpeg: &[u8],
     style: MapStyle,
+    size: EnvelopeSize,
 ) -> Result<EnvelopeSpec, Error> {
     // Geocode bodies are fetched so a bad address fails before directions;
     // the polyline already contains start/end, so the parsed points are unused.
@@ -441,6 +541,7 @@ pub fn spec_from_google(
         route: Some(route),
         map_jpeg: Some(jpeg.to_vec()),
         map_style: style,
+        size,
     })
 }
 
@@ -542,8 +643,10 @@ mod tests {
             DIRECTIONS,
             &jpeg,
             MapStyle::Google,
+            EnvelopeSize::Ten,
         )
         .unwrap();
+        assert_eq!(spec.size, EnvelopeSize::Ten);
         assert!(spec.map_jpeg.is_some());
         assert_eq!(spec.route.as_ref().unwrap().points.len(), 3);
     }
@@ -560,6 +663,7 @@ mod tests {
             DIRECTIONS,
             b"not a jpeg",
             MapStyle::Google,
+            EnvelopeSize::Ten,
         )
         .unwrap_err();
         assert!(err.to_string().contains("not a JPEG"));
@@ -578,20 +682,74 @@ mod tests {
     #[test]
     fn static_map_url_varies_by_style() {
         let route = parse_directions(DIRECTIONS).unwrap();
-        let google = static_map_url(&route, "k", MapStyle::Google);
+        let google = static_map_url(&route, "k", MapStyle::Google, EnvelopeSize::Ten);
         assert!(google.contains("maptype=roadmap"));
         assert!(google.contains("1A73E8"));
-        let paper = static_map_url(&route, "k", MapStyle::Paper);
+        let paper = static_map_url(&route, "k", MapStyle::Paper, EnvelopeSize::Ten);
         assert!(paper.contains("F4ECD8"));
         assert!(paper.contains("5C3A21"));
-        let hybrid = static_map_url(&route, "k", MapStyle::Hybrid);
+        let hybrid = static_map_url(&route, "k", MapStyle::Hybrid, EnvelopeSize::Ten);
         assert!(hybrid.contains("maptype=hybrid"));
         assert!(hybrid.contains("F9E27A"));
         assert!(!hybrid.contains("F4ECD8"));
-        let terrain = static_map_url(&route, "k", MapStyle::Terrain);
+        let terrain = static_map_url(&route, "k", MapStyle::Terrain, EnvelopeSize::Ten);
         assert!(terrain.contains("maptype=terrain"));
-        let muted = static_map_url(&route, "k", MapStyle::Muted);
+        let muted = static_map_url(&route, "k", MapStyle::Muted, EnvelopeSize::Ten);
         assert!(muted.contains("saturation"));
+    }
+
+    #[test]
+    fn size_parse() {
+        assert_eq!(EnvelopeSize::parse(None).unwrap(), EnvelopeSize::Ten);
+        assert_eq!(EnvelopeSize::parse(Some("")).unwrap(), EnvelopeSize::Ten);
+        assert_eq!(
+            EnvelopeSize::parse(Some(" #10 ")).unwrap(),
+            EnvelopeSize::Ten
+        );
+        assert_eq!(EnvelopeSize::parse(Some("ten")).unwrap(), EnvelopeSize::Ten);
+        assert_eq!(
+            EnvelopeSize::parse(Some("no. 10")).unwrap(),
+            EnvelopeSize::Ten
+        );
+        assert_eq!(EnvelopeSize::parse(Some("9")).unwrap(), EnvelopeSize::Nine);
+        assert_eq!(
+            EnvelopeSize::parse(Some("monarch")).unwrap(),
+            EnvelopeSize::Monarch
+        );
+        assert_eq!(
+            EnvelopeSize::parse(Some("6-3/4")).unwrap(),
+            EnvelopeSize::SixThreeQuarter
+        );
+        assert_eq!(
+            EnvelopeSize::parse(Some("6.75")).unwrap(),
+            EnvelopeSize::SixThreeQuarter
+        );
+        assert_eq!(
+            EnvelopeSize::parse(Some("6¾")).unwrap(),
+            EnvelopeSize::SixThreeQuarter
+        );
+        assert_eq!(EnvelopeSize::parse(Some("A7")).unwrap(), EnvelopeSize::A7);
+        for size in EnvelopeSize::ALL {
+            assert_eq!(EnvelopeSize::parse(Some(size.id())).unwrap(), size);
+        }
+        let err = EnvelopeSize::parse(Some("c5")).unwrap_err();
+        assert!(err.to_string().contains("unknown size"));
+    }
+
+    #[test]
+    fn static_map_url_matches_envelope_aspect() {
+        let route = parse_directions(DIRECTIONS).unwrap();
+        let ten = static_map_url(&route, "k", MapStyle::Google, EnvelopeSize::Ten);
+        let (tw, th) = EnvelopeSize::Ten.static_map_pixels();
+        assert!(ten.contains(&format!("size={tw}x{th}")));
+        let a7 = static_map_url(&route, "k", MapStyle::Google, EnvelopeSize::A7);
+        let (aw, ah) = EnvelopeSize::A7.static_map_pixels();
+        assert!(a7.contains(&format!("size={aw}x{ah}")));
+        assert_ne!((tw, th), (aw, ah));
+        let small = EnvelopeSize::SixThreeQuarter.static_map_pixels();
+        assert_ne!(small, (tw, th));
+        assert_eq!(tw, 640);
+        assert_eq!(aw, 640);
     }
 
     #[test]

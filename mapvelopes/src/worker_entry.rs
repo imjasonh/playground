@@ -12,8 +12,8 @@ use crate::address::Address;
 use crate::api::{self, Classified};
 use crate::error::Error;
 use crate::maps::{
-    api_key_usable, directions_url, geocode_url, spec_from_google, static_map_url, EnvelopeSpec,
-    MapStyle,
+    api_key_usable, directions_url, geocode_url, spec_from_google, static_map_url, EnvelopeSize,
+    EnvelopeSpec, MapStyle,
 };
 use crate::render;
 
@@ -56,21 +56,24 @@ async fn fetch(mut req: Request, env: Env, _ctx: Context) -> Result<Response> {
         Classified::Form => html(api::form_html(maps_live)),
         Classified::NotFound => json_error(&Error::BadRequest("not found".into()), 404),
         Classified::BadRequest(msg) => json_error(&Error::BadRequest(msg), 400),
-        Classified::Envelope { from, to, style } => {
-            match build_spec(&from, &to, style, key.as_deref()).await {
-                Ok(spec) => match render::render(&spec) {
-                    Ok(pdf) => pdf_response(pdf),
-                    Err(err) => {
-                        console_error!("pdf: {err}");
-                        json_error(&err, err.status())
-                    }
-                },
+        Classified::Envelope {
+            from,
+            to,
+            style,
+            size,
+        } => match build_spec(&from, &to, style, size, key.as_deref()).await {
+            Ok(spec) => match render::render(&spec) {
+                Ok(pdf) => pdf_response(pdf),
                 Err(err) => {
-                    console_error!("envelope: {err}");
+                    console_error!("pdf: {err}");
                     json_error(&err, err.status())
                 }
+            },
+            Err(err) => {
+                console_error!("envelope: {err}");
+                json_error(&err, err.status())
             }
-        }
+        },
     }
 }
 
@@ -99,6 +102,7 @@ async fn build_spec(
     from: &str,
     to: &str,
     style: MapStyle,
+    size: EnvelopeSize,
     key: Option<&str>,
 ) -> std::result::Result<EnvelopeSpec, Error> {
     let from = Address::parse_named("from", from)?;
@@ -107,13 +111,14 @@ async fn build_spec(
         return Err(Error::missing_maps_key());
     }
     let key = key.expect("usable key");
-    live_spec(from, to, style, key).await
+    live_spec(from, to, style, size, key).await
 }
 
 async fn live_spec(
     from: Address,
     to: Address,
     style: MapStyle,
+    size: EnvelopeSize,
     key: &str,
 ) -> std::result::Result<EnvelopeSpec, Error> {
     let from_body = fetch_bytes(&geocode_url(&from.geocode_query(), key))
@@ -129,10 +134,12 @@ async fn live_spec(
         .await
         .map_err(|e| annotate("directions", e))?;
     let route = crate::maps::parse_directions(&dir_body).map_err(|e| annotate("directions", e))?;
-    let jpeg = fetch_bytes(&static_map_url(&route, key, style))
+    let jpeg = fetch_bytes(&static_map_url(&route, key, style, size))
         .await
         .map_err(|e| annotate("staticmap", e))?;
-    spec_from_google(from, to, &from_body, &to_body, &dir_body, &jpeg, style)
+    spec_from_google(
+        from, to, &from_body, &to_body, &dir_body, &jpeg, style, size,
+    )
 }
 
 fn annotate(step: &str, err: Error) -> Error {

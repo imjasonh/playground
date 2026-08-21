@@ -1,4 +1,4 @@
-//! Draw a US #10 envelope PDF.
+//! Draw a US envelope PDF.
 
 use pdf_writer::{Content, Filter, Name, Pdf, Rect, Ref, Str, TextStr};
 
@@ -6,7 +6,8 @@ use crate::address::Address;
 use crate::error::Error;
 use crate::maps::{jpeg_dimensions, EnvelopeSpec};
 
-/// US #10 business envelope, in PDF points (1/72 inch).
+/// US #10 business envelope, in PDF points (1/72 inch). Overlay layout
+/// scales from these when the spec picks a different stock.
 pub const PAGE_W: f32 = 9.5 * 72.0;
 pub const PAGE_H: f32 = 4.125 * 72.0;
 
@@ -20,7 +21,7 @@ const INK: (f32, f32, f32) = (0.12, 0.12, 0.14);
 const CARD: (f32, f32, f32) = (1.0, 0.99, 0.97);
 const STAMP: (f32, f32, f32) = (0.55, 0.22, 0.22);
 
-/// Write one #10 envelope as a PDF.
+/// Write one envelope as a PDF. Page size comes from [`EnvelopeSpec::size`].
 pub fn render(spec: &EnvelopeSpec) -> Result<Vec<u8>, Error> {
     let mut pdf = Pdf::new();
     let catalog_id = Ref::new(1);
@@ -33,6 +34,7 @@ pub fn render(spec: &EnvelopeSpec) -> Result<Vec<u8>, Error> {
     let info_id = Ref::new(8);
     let image_id = Ref::new(9);
 
+    let (page_w, page_h) = spec.size.points();
     let jpeg = spec.map_jpeg.as_deref();
     let jpeg_size = match jpeg {
         Some(bytes) => Some(jpeg_dimensions(bytes)?),
@@ -44,7 +46,7 @@ pub fn render(spec: &EnvelopeSpec) -> Result<Vec<u8>, Error> {
 
     {
         let mut page = pdf.page(page_id);
-        page.media_box(Rect::new(0.0, 0.0, PAGE_W, PAGE_H));
+        page.media_box(Rect::new(0.0, 0.0, page_w, page_h));
         page.parent(pages_id);
         page.contents(content_id);
         let mut resources = page.resources();
@@ -85,40 +87,47 @@ pub fn render(spec: &EnvelopeSpec) -> Result<Vec<u8>, Error> {
 
     let mut content = Content::new();
     if jpeg_size.is_some() {
-        paint_blank(&mut content);
-        paint_jpeg(&mut content);
+        paint_blank(&mut content, page_w, page_h);
+        paint_jpeg(&mut content, page_w, page_h);
     } else {
-        paint_blank(&mut content);
+        paint_blank(&mut content, page_w, page_h);
     }
-    paint_overlays(&mut content, spec);
+    paint_overlays(&mut content, spec, page_w, page_h);
     pdf.stream(content_id, &content.finish());
     Ok(pdf.finish())
 }
 
-fn paint_jpeg(content: &mut Content) {
+fn paint_jpeg(content: &mut Content, page_w: f32, page_h: f32) {
     content.save_state();
     content.set_parameters(GS);
-    content.transform([PAGE_W, 0.0, 0.0, PAGE_H, 0.0, 0.0]);
+    content.transform([page_w, 0.0, 0.0, page_h, 0.0, 0.0]);
     content.x_object(IMG);
     content.restore_state();
 }
 
-fn paint_blank(content: &mut Content) {
+fn paint_blank(content: &mut Content, page_w: f32, page_h: f32) {
     fill_rgb(content, LAND);
-    content.rect(0.0, 0.0, PAGE_W, PAGE_H);
+    content.rect(0.0, 0.0, page_w, page_h);
     content.fill_nonzero();
 }
 
-fn paint_overlays(content: &mut Content, spec: &EnvelopeSpec) {
-    let return_h = card_height(&spec.from, 9.0, 11.0);
-    let return_w = 210.0;
-    let return_x = 16.0;
-    let return_y = PAGE_H - 16.0 - return_h;
+fn paint_overlays(content: &mut Content, spec: &EnvelopeSpec, page_w: f32, page_h: f32) {
+    let sx = page_w / PAGE_W;
+    let sy = page_h / PAGE_H;
+    let return_size = (9.0 * sy).clamp(8.0, 9.0);
+    let return_lead = (11.0 * sy).clamp(9.5, 11.0);
+    let dest_size = (11.0 * sy).clamp(9.0, 11.0);
+    let dest_lead = (13.5 * sy).clamp(11.0, 13.5);
 
-    let dest_h = card_height(&spec.to, 11.0, 13.5);
-    let dest_w = 260.0;
-    let dest_x = 250.0;
-    let dest_y = 92.0;
+    let return_h = card_height(&spec.from, return_size, return_lead);
+    let return_w = 210.0 * sx;
+    let return_x = 16.0 * sx;
+    let return_y = page_h - 16.0 * sy - return_h;
+
+    let dest_h = card_height(&spec.to, dest_size, dest_lead);
+    let dest_w = 260.0 * sx;
+    let dest_x = 250.0 * sx;
+    let dest_y = 92.0 * sy;
 
     fill_rgb(content, CARD);
     rounded_rect(content, return_x, return_y, return_w, return_h, 3.0);
@@ -130,23 +139,23 @@ fn paint_overlays(content: &mut Content, spec: &EnvelopeSpec) {
     write_address(
         content,
         &spec.from,
-        return_x + 8.0,
-        return_y + return_h - 14.0,
-        9.0,
-        11.0,
+        return_x + 8.0 * sx,
+        return_y + return_h - 14.0 * sy,
+        return_size,
+        return_lead,
         false,
     );
     write_address(
         content,
         &spec.to,
-        dest_x + 12.0,
-        dest_y + dest_h - 16.0,
-        11.0,
-        13.5,
+        dest_x + 12.0 * sx,
+        dest_y + dest_h - 16.0 * sy,
+        dest_size,
+        dest_lead,
         true,
     );
 
-    draw_stamp(content);
+    draw_stamp(content, page_w, page_h);
 }
 
 fn card_height(addr: &Address, size: f32, leading: f32) -> f32 {
@@ -172,11 +181,11 @@ fn write_address(
     }
 }
 
-fn draw_stamp(content: &mut Content) {
+fn draw_stamp(content: &mut Content, page_w: f32, page_h: f32) {
     let w = 62.0;
     let h = 72.0;
-    let x = PAGE_W - 16.0 - w;
-    let y = PAGE_H - 16.0 - h;
+    let x = page_w - 16.0 - w;
+    let y = page_h - 16.0 - h;
     fill_rgb(content, CARD);
     rounded_rect(content, x, y, w, h, 2.0);
     content.fill_nonzero();
@@ -254,7 +263,7 @@ mod tests {
     use super::*;
     use crate::address::Address;
     use crate::geo::{LatLng, Route};
-    use crate::maps::{EnvelopeSpec, MapStyle};
+    use crate::maps::{EnvelopeSize, EnvelopeSpec, MapStyle};
 
     fn pdf_for(from: &str, to: &str) -> Vec<u8> {
         let spec = EnvelopeSpec::no_map(Address::parse(from).unwrap(), Address::parse(to).unwrap());
@@ -311,6 +320,7 @@ mod tests {
             }),
             map_jpeg: Some(tiny_jpeg()),
             map_style: style,
+            size: EnvelopeSize::Ten,
         }
     }
 
@@ -331,5 +341,59 @@ mod tests {
         assert!(!s.contains("2944 miles"));
         assert!(!s.contains("43 hr 22 min"));
         assert!(!s.contains("Map data"));
+    }
+
+    fn media_box_wh(pdf: &[u8]) -> (f32, f32) {
+        let s = String::from_utf8_lossy(pdf);
+        let start = s.find("/MediaBox").expect("MediaBox");
+        let slice = &s[start..];
+        let lb = slice.find('[').expect("[");
+        let rb = slice.find(']').expect("]");
+        let nums: Vec<f32> = slice[lb + 1..rb]
+            .split_whitespace()
+            .map(|n| n.parse().expect("MediaBox number"))
+            .collect();
+        assert_eq!(nums.len(), 4);
+        (nums[2] - nums[0], nums[3] - nums[1])
+    }
+
+    #[test]
+    fn page_follows_envelope_size() {
+        let from = Address::parse("Ada\nMountain View, CA").unwrap();
+        let to = Address::parse("Bob\nNew York, NY").unwrap();
+        let mut spec = EnvelopeSpec::no_map(from, to);
+        let ten = render(&spec).unwrap();
+        let (w, h) = media_box_wh(&ten);
+        assert!((w - PAGE_W).abs() < 0.01);
+        assert!((h - PAGE_H).abs() < 0.01);
+
+        spec.size = EnvelopeSize::A7;
+        let a7 = render(&spec).unwrap();
+        let (aw, ah) = EnvelopeSize::A7.points();
+        let (got_w, got_h) = media_box_wh(&a7);
+        assert!((got_w - aw).abs() < 0.01);
+        assert!((got_h - ah).abs() < 0.01);
+
+        spec.size = EnvelopeSize::SixThreeQuarter;
+        let small = render(&spec).unwrap();
+        let (sw, sh) = EnvelopeSize::SixThreeQuarter.points();
+        let (got_sw, got_sh) = media_box_wh(&small);
+        assert!((got_sw - sw).abs() < 0.01);
+        assert!((got_sh - sh).abs() < 0.01);
+        assert_ne!(media_box_wh(&ten), media_box_wh(&small));
+    }
+
+    #[test]
+    fn dest_card_fits_beside_stamp() {
+        for size in EnvelopeSize::ALL {
+            let (w, _) = size.points();
+            let sx = w / PAGE_W;
+            let dest_right = (250.0 + 260.0) * sx;
+            let stamp_left = w - 16.0 - 62.0;
+            assert!(
+                dest_right < stamp_left,
+                "{size:?}: dest right {dest_right} overlaps stamp at {stamp_left}"
+            );
+        }
     }
 }

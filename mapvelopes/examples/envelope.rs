@@ -1,4 +1,4 @@
-//! Write a #10 envelope PDF to disk so you can open it without deploying.
+//! Write an envelope PDF to disk so you can open it without deploying.
 //!
 //! ```bash
 //! export GOOGLE_MAPS_API_KEY='…'
@@ -23,7 +23,7 @@ use mapvelopes_worker::address::Address;
 use mapvelopes_worker::error::Error;
 use mapvelopes_worker::maps::{
     api_key_usable, directions_url, geocode_url, parse_directions, parse_geocode, spec_from_google,
-    static_map_url, EnvelopeSpec, MapStyle,
+    static_map_url, EnvelopeSize, EnvelopeSpec, MapStyle,
 };
 use mapvelopes_worker::render;
 
@@ -31,7 +31,7 @@ const DEFAULT_FROM: &str = "Ada Example\n1600 Amphitheatre Parkway\nMountain Vie
 const DEFAULT_TO: &str = "Bob Example\n350 Fifth Avenue\nNew York, NY 10118";
 
 const USAGE: &str = "\
-Write a US #10 envelope PDF with the route from sender to recipient.
+Write a US envelope PDF with the route from sender to recipient.
 
 Usage:
   cargo run --example envelope -- [options]
@@ -41,6 +41,7 @@ Options:
   --to TEXT       Delivery address (default: a New York example)
   -o, --out PATH  Output PDF (default: envelope.pdf)
   --style NAME    google, paper, terrain, muted, or hybrid (default: google)
+  --size NAME     10, 9, monarch, 6-3/4, or a7 (default: 10)
   --key KEY       Google Maps API key (default: $GOOGLE_MAPS_API_KEY)
   -h, --help      Show this help
 ";
@@ -69,7 +70,7 @@ fn run() -> Result<(), String> {
         return Err(Error::missing_maps_key().to_string());
     }
     let key = parsed.key.as_deref().expect("usable key");
-    let spec = live_spec(from, to, parsed.style, key)?;
+    let spec = live_spec(from, to, parsed.style, parsed.size, key)?;
 
     let pdf = render(&spec).map_err(|e| e.to_string())?;
     std::fs::write(&parsed.out, &pdf).map_err(|e| format!("{}: {e}", parsed.out))?;
@@ -83,6 +84,7 @@ struct Args {
     out: String,
     key: Option<String>,
     style: MapStyle,
+    size: EnvelopeSize,
 }
 
 fn parse_args(args: &[String]) -> Result<Args, String> {
@@ -91,6 +93,7 @@ fn parse_args(args: &[String]) -> Result<Args, String> {
     let mut out = None;
     let mut key = env::var("GOOGLE_MAPS_API_KEY").ok();
     let mut style = MapStyle::Google;
+    let mut size = EnvelopeSize::Ten;
     let mut i = 0;
     while i < args.len() {
         let a = &args[i];
@@ -110,6 +113,10 @@ fn parse_args(args: &[String]) -> Result<Args, String> {
             "--style" => {
                 let raw = need_value(args, &mut i, "--style")?;
                 style = MapStyle::parse(Some(&raw)).map_err(|e| e.to_string())?;
+            }
+            "--size" => {
+                let raw = need_value(args, &mut i, "--size")?;
+                size = EnvelopeSize::parse(Some(&raw)).map_err(|e| e.to_string())?;
             }
             other if other.starts_with("--from=") => {
                 from = Some(other[7..].to_string());
@@ -131,6 +138,10 @@ fn parse_args(args: &[String]) -> Result<Args, String> {
                 style = MapStyle::parse(Some(&other[8..])).map_err(|e| e.to_string())?;
                 i += 1;
             }
+            other if other.starts_with("--size=") => {
+                size = EnvelopeSize::parse(Some(&other[7..])).map_err(|e| e.to_string())?;
+                i += 1;
+            }
             other => return Err(format!("unknown argument: {other}\n{USAGE}")),
         }
     }
@@ -140,6 +151,7 @@ fn parse_args(args: &[String]) -> Result<Args, String> {
         out: out.unwrap_or_else(|| "envelope.pdf".to_string()),
         key,
         style,
+        size,
     })
 }
 
@@ -155,6 +167,7 @@ fn live_spec(
     from: Address,
     to: Address,
     style: MapStyle,
+    size: EnvelopeSize,
     key: &str,
 ) -> Result<EnvelopeSpec, String> {
     let agent = ureq::AgentBuilder::new()
@@ -167,9 +180,11 @@ fn live_spec(
     let to_ll = parse_geocode(&to_body).map_err(|e| e.to_string())?;
     let dir_body = http_get(&agent, &directions_url(from_ll, to_ll, key))?;
     let route = parse_directions(&dir_body).map_err(|e| e.to_string())?;
-    let jpeg = http_get(&agent, &static_map_url(&route, key, style))?;
-    spec_from_google(from, to, &from_body, &to_body, &dir_body, &jpeg, style)
-        .map_err(|e| e.to_string())
+    let jpeg = http_get(&agent, &static_map_url(&route, key, style, size))?;
+    spec_from_google(
+        from, to, &from_body, &to_body, &dir_body, &jpeg, style, size,
+    )
+    .map_err(|e| e.to_string())
 }
 
 fn http_get(agent: &ureq::Agent, url: &str) -> Result<Vec<u8>, String> {
