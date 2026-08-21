@@ -1,0 +1,51 @@
+[package]
+name = "mapvelopes-worker"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Printable #10 envelope PDFs with the sender-to-recipient route as the background, for Cloudflare Workers"
+repository = "https://github.com/imjasonh/playground"
+readme = "README.md"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+# Dependencies that build on every target (native + wasm). PDF generation,
+# polyline math, and Google Maps URL/JSON handling live here so native
+# `cargo test` and `cargo run --example envelope` exercise the same code
+# the Worker runs.
+[dependencies]
+pdf-writer = "0.12"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+url = "2"
+
+# Blocking HTTP for the native CLI only. The wasm Worker uses `fetch`.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+ureq = "2"
+
+# The Cloudflare Workers runtime bindings are wasm-only. Gating them to the
+# wasm32 target keeps native `cargo test` free of the JS/wasm-bindgen glue.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+worker = "0.8"
+# Deploy pin: worker-build 0.8.x is version-locked with worker 0.8.x and
+# bundles wasm-bindgen CLI 0.2.125. The library schema must match that CLI
+# exactly — bump this in lock-step with worker-build in wrangler.toml.
+wasm-bindgen = "=0.2.125"
+
+[[example]]
+name = "envelope"
+path = "examples/envelope.rs"
+
+[profile.release]
+opt-level = "s"
+lto = true
+# worker-build 0.8.5 + wasm-bindgen 0.2.125 need the wasm `target_features`
+# custom section (for `reference-types` / externref catch wrappers).
+# `strip = true` (= "symbols") drops that section and fails bindgen with
+# "externref table required for catch wrappers" (workers-rs#1014).
+strip = "debuginfo"
+
+[lints.rust]
+unused = "deny"

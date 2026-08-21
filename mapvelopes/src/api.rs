@@ -1,0 +1,224 @@
+//! HTTP routing that does not depend on the Workers runtime.
+
+use serde::Deserialize;
+use url::form_urlencoded;
+
+use crate::address::Address;
+use crate::error::Error;
+use crate::maps::EnvelopeSpec;
+
+const FORM_HTML: &str = include_str!("form.html");
+
+const LIVE_STATUS: &str =
+    "This Worker has a Google Maps key, so the envelope uses a real driving route.";
+const STUB_STATUS: &str =
+    "No Google Maps key is configured, so the envelope uses a schematic route. That is enough to check layout.";
+
+/// A request reduced to method, path, query, and body.
+#[derive(Debug, Clone)]
+pub struct ApiRequest {
+    pub method: String,
+    pub path: String,
+    pub query: Vec<(String, String)>,
+    pub content_type: Option<String>,
+    pub body: Vec<u8>,
+}
+
+/// What the caller asked for, after parsing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Classified {
+    Health,
+    Form,
+    Envelope { from: String, to: String },
+    BadRequest(String),
+    NotFound,
+}
+
+/// Classify a request. Fetching maps and writing the PDF happen at the edge
+/// (Worker or CLI) so this stays synchronous and testable.
+pub fn classify(req: &ApiRequest) -> Classified {
+    let method = req.method.to_ascii_uppercase();
+    let path = normalize_path(&req.path);
+    match (method.as_str(), path) {
+        ("GET" | "HEAD", "/health") => Classified::Health,
+        ("GET" | "HEAD", "/") => Classified::Form,
+        ("GET" | "HEAD", "/envelope") => envelope_from_pairs(&req.query),
+        ("POST", "/envelope") => envelope_from_post(req),
+        _ => Classified::NotFound,
+    }
+}
+
+fn normalize_path(path: &str) -> &str {
+    let p = path.trim_end_matches('/');
+    if p.is_empty() {
+        "/"
+    } else {
+        p
+    }
+}
+
+fn envelope_from_pairs(pairs: &[(String, String)]) -> Classified {
+    let from = pair_value(pairs, "from").unwrap_or_default();
+    let to = pair_value(pairs, "to").unwrap_or_default();
+    if from.trim().is_empty() || to.trim().is_empty() {
+        return Classified::BadRequest("from and to are required".into());
+    }
+    Classified::Envelope { from, to }
+}
+
+fn envelope_from_post(req: &ApiRequest) -> Classified {
+    let ctype = req
+        .content_type
+        .as_deref()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if ctype.contains("application/json") {
+        return match serde_json::from_slice::<EnvelopeJson>(&req.body) {
+            Ok(body) => {
+                if body.from.trim().is_empty() || body.to.trim().is_empty() {
+                    Classified::BadRequest("from and to are required".into())
+                } else {
+                    Classified::Envelope {
+                        from: body.from,
+                        to: body.to,
+                    }
+                }
+            }
+            Err(e) => Classified::BadRequest(format!("JSON: {e}")),
+        };
+    }
+    let pairs: Vec<(String, String)> = form_urlencoded::parse(&req.body).into_owned().collect();
+    envelope_from_pairs(&pairs)
+}
+
+#[derive(Debug, Deserialize)]
+struct EnvelopeJson {
+    from: String,
+    to: String,
+}
+
+fn pair_value(pairs: &[(String, String)], key: &str) -> Option<String> {
+    pairs
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case(key))
+        .map(|(_, v)| v.clone())
+}
+
+/// JSON body for `GET /health`.
+pub fn health_json(maps_live: bool) -> Vec<u8> {
+    let maps = if maps_live { "google" } else { "schematic" };
+    serde_json::json!({ "ok": true, "maps": maps })
+        .to_string()
+        .into_bytes()
+}
+
+/// HTML form, with a status line that says whether Google Maps is live.
+pub fn form_html(maps_live: bool) -> Vec<u8> {
+    let status = if maps_live { LIVE_STATUS } else { STUB_STATUS };
+    FORM_HTML.replace("__MAPS_STATUS__", status).into_bytes()
+}
+
+/// JSON error body.
+pub fn error_json(err: &Error) -> Vec<u8> {
+    serde_json::json!({ "error": err.to_string() })
+        .to_string()
+        .into_bytes()
+}
+
+/// Parse addresses and build a schematic spec. Callers that have a Maps key
+/// fetch Google payloads themselves and use [`crate::maps::spec_from_google`].
+pub fn schematic_from_fields(from: &str, to: &str) -> Result<EnvelopeSpec, Error> {
+    let from = Address::parse_named("from", from)?;
+    let to = Address::parse_named("to", to)?;
+    Ok(EnvelopeSpec::schematic(from, to))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn req(method: &str, path: &str) -> ApiRequest {
+        ApiRequest {
+            method: method.into(),
+            path: path.into(),
+            query: Vec::new(),
+            content_type: None,
+            body: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn get_root_is_form() {
+        assert_eq!(classify(&req("GET", "/")), Classified::Form);
+        assert_eq!(classify(&req("get", "/")), Classified::Form);
+    }
+
+    #[test]
+    fn health() {
+        assert_eq!(classify(&req("GET", "/health/")), Classified::Health);
+        let body = String::from_utf8(health_json(false)).unwrap();
+        assert!(body.contains("schematic"));
+    }
+
+    #[test]
+    fn get_envelope_query() {
+        let mut r = req("GET", "/envelope");
+        r.query = vec![
+            ("from".into(), "Mountain View, CA".into()),
+            ("to".into(), "New York, NY".into()),
+        ];
+        match classify(&r) {
+            Classified::Envelope { from, to } => {
+                assert!(from.contains("Mountain View"));
+                assert!(to.contains("New York"));
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn post_form() {
+        let mut r = req("POST", "/envelope");
+        r.content_type = Some("application/x-www-form-urlencoded".into());
+        r.body = b"from=Ada%0AMountain+View%2C+CA&to=Bob%0ANew+York%2C+NY".to_vec();
+        match classify(&r) {
+            Classified::Envelope { from, to } => {
+                assert!(from.contains("Ada"));
+                assert!(from.contains("Mountain View"));
+                assert!(to.contains("Bob"));
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn post_json() {
+        let mut r = req("POST", "/envelope");
+        r.content_type = Some("application/json".into());
+        r.body = br#"{"from":"A","to":"B"}"#.to_vec();
+        assert_eq!(
+            classify(&r),
+            Classified::Envelope {
+                from: "A".into(),
+                to: "B".into()
+            }
+        );
+    }
+
+    #[test]
+    fn missing_fields() {
+        let mut r = req("POST", "/envelope");
+        r.body = b"from=only".to_vec();
+        assert!(matches!(classify(&r), Classified::BadRequest(_)));
+    }
+
+    #[test]
+    fn form_html_splices_status() {
+        let html = String::from_utf8(form_html(false)).unwrap();
+        assert!(html.contains("<html lang=\"en\">"));
+        assert!(html.contains("schematic route"));
+        assert!(!html.contains("__MAPS_STATUS__"));
+        let live = String::from_utf8(form_html(true)).unwrap();
+        assert!(live.contains("Google Maps key"));
+    }
+}

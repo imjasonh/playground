@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mapvelopes</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f4f0e8;
+      --ink: #1b1f24;
+      --muted: #5c6570;
+      --card: #fffdf8;
+      --border: #d9d1c3;
+      --accent: #1a73e8;
+      --accent-ink: #fff;
+      --focus: #1a73e8;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #161410;
+        --ink: #f0ebe3;
+        --muted: #b3aa9c;
+        --card: #221e18;
+        --border: #3a342c;
+        --accent: #8ab4f8;
+        --accent-ink: #0d1117;
+        --focus: #8ab4f8;
+      }
+    }
+    * { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+      font-size: 1.125rem;
+      line-height: 1.55;
+      color: var(--ink);
+      background: var(--bg);
+    }
+    main {
+      max-width: 38rem;
+      margin: 0 auto;
+      padding: clamp(1.5rem, 4vw, 3rem) clamp(1rem, 4vw, 1.75rem) 4rem;
+    }
+    h1 {
+      font-size: clamp(1.8rem, 5vw, 2.4rem);
+      line-height: 1.15;
+      letter-spacing: -0.03em;
+      font-weight: 700;
+      margin: 0 0 0.6rem;
+    }
+    .lede {
+      color: var(--muted);
+      margin: 0 0 1.75rem;
+      max-width: 36em;
+    }
+    form {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem 1.25rem 1.4rem;
+    }
+    fieldset {
+      border: 0;
+      margin: 0 0 1.15rem;
+      padding: 0;
+    }
+    legend {
+      font-weight: 600;
+      font-size: 0.95rem;
+      margin-bottom: 0.4rem;
+      padding: 0;
+    }
+    label {
+      display: block;
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin-bottom: 0.35rem;
+    }
+    textarea {
+      width: 100%;
+      min-height: 7.5rem;
+      font: inherit;
+      font-size: 1rem;
+      line-height: 1.45;
+      padding: 0.65rem 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: transparent;
+      color: inherit;
+      resize: vertical;
+    }
+    textarea:focus {
+      outline: 2px solid var(--focus);
+      outline-offset: 2px;
+    }
+    button {
+      font: inherit;
+      font-weight: 600;
+      font-size: 1rem;
+      padding: 0.7rem 1.15rem;
+      border: 0;
+      border-radius: 8px;
+      background: var(--accent);
+      color: var(--accent-ink);
+      cursor: pointer;
+    }
+    button:focus {
+      outline: 2px solid var(--focus);
+      outline-offset: 3px;
+    }
+    .hint {
+      color: var(--muted);
+      font-size: 0.95rem;
+      margin: 1.25rem 0 0;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Mapvelopes</h1>
+    <p class="lede">__MAPS_STATUS__</p>
+    <form method="post" action="/envelope">
+      <fieldset>
+        <legend>Return address</legend>
+        <label for="from">From</label>
+        <textarea id="from" name="from" required
+          placeholder="Ada Example&#10;1600 Amphitheatre Parkway&#10;Mountain View, CA 94043"></textarea>
+      </fieldset>
+      <fieldset>
+        <legend>Delivery address</legend>
+        <label for="to">To</label>
+        <textarea id="to" name="to" required
+          placeholder="Bob Example&#10;350 Fifth Avenue&#10;New York, NY 10118"></textarea>
+      </fieldset>
+      <button type="submit">Make envelope PDF</button>
+    </form>
+    <p class="hint">
+      The PDF is a US #10 envelope (9.5 × 4.125 in). Print at 100% scale,
+      not “fit to page.”
+    </p>
+  </main>
+</body>
+</html>

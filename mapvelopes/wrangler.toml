@@ -1,0 +1,39 @@
+# Cloudflare Workers configuration for mapvelopes.
+#
+# This project has no index.html, so the GitHub Pages workflows skip it; it is
+# deployed to Cloudflare by `deploy-workers.yml` on pushes to `main` (using the
+# CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID repo secrets). To deploy it
+# yourself you need a Cloudflare account and `wrangler`/`worker-build`; see
+# README.md.
+
+name = "mapvelopes-worker"
+main = "build/worker/shim.mjs"
+compatibility_date = "2024-11-01"
+
+# Build the wasm Worker from Rust. `worker-build` wraps `cargo build
+# --target wasm32-unknown-unknown` and emits the JS shim referenced by `main`.
+#
+# worker-build is major-version-locked with `worker` (0.8.x ↔ 0.8.x) and bundles
+# wasm-bindgen CLI 0.2.125, which must match the library pin in Cargo.toml.
+# Build the *tool* with stable — its deps need a recent Cargo — while
+# worker-build compiles this crate with rust-toolchain.toml.
+[build]
+command = "cargo +stable install -q worker-build@0.8.5 && worker-build --release"
+
+# GOOGLE_MAPS_API_KEY is a secret, not a var. Leave it unset to draw a
+# schematic route (enough to check layout). When you have a key:
+#   wrangler secret put GOOGLE_MAPS_API_KEY
+# Restrict the key to Geocoding, Directions, and Maps Static. Do not use
+# HTTP-referrer restrictions; Workers and the CLI send no matching Referer.
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[observability.logs]
+enabled = true
+invocation_logs = true
+
+[observability.traces]
+enabled = true
+head_sampling_rate = 1

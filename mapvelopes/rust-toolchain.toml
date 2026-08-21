@@ -1,0 +1,8 @@
+# Toolchain pin for this Cloudflare Worker crate (the Rust analog of a Go app's
+# go.mod version). Bumped with the worker 0.8 / wasm-bindgen 0.2.125 stack so
+# transitive crates that need edition2024 parse and build. CI reads this
+# channel; rustup uses the whole file for local builds too.
+[toolchain]
+channel = "1.88.0"
+components = ["clippy", "rustfmt"]
+targets = ["wasm32-unknown-unknown"]
