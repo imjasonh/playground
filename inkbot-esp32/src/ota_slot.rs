@@ -92,6 +92,11 @@ pub(crate) fn write_pending_digest(nvs: &mut EspNvs<NvsDefault>, digest: &str) -
     write_string(nvs, NVS_PENDING_DIGEST, digest)
 }
 
+#[cfg(feature = "ota-pull")]
+pub(crate) fn write_last_digest(nvs: &mut EspNvs<NvsDefault>, digest: &str) -> Result<()> {
+    write_string(nvs, NVS_LAST_DIGEST, digest)
+}
+
 fn write_string(nvs: &mut EspNvs<NvsDefault>, key: &str, value: &str) -> Result<()> {
     nvs.set_str(key, value)
         .with_context(|| format!("write NVS key {key}"))

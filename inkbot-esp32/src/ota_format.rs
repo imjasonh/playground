@@ -286,6 +286,20 @@ pub fn check_ota_image(
     Ok(())
 }
 
+/// True when GHCR's firmware layer is already installed.
+///
+/// `last_digest` is NVS `ota/last_digest` (empty when never set).
+/// `running_digest` is `sha256:<hex>` of the running slot's first
+/// `layer.size` bytes, when that hash was computed.
+pub fn layer_already_installed(
+    layer_digest: &str,
+    last_digest: &str,
+    running_digest: Option<&str>,
+) -> bool {
+    !layer_digest.is_empty()
+        && (layer_digest == last_digest || running_digest == Some(layer_digest))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -444,5 +458,16 @@ mod tests {
         assert!(known_ota_app(OTA_APP_MAZE));
         assert!(!known_ota_app("not-an-app"));
         assert_eq!(OTA_APPS, &[OTA_APP_INKBOT, OTA_APP_MAZE]);
+    }
+
+    #[test]
+    fn layer_already_installed_uses_last_or_running_digest() {
+        let d = "sha256:aa";
+        assert!(layer_already_installed(d, d, None));
+        assert!(layer_already_installed(d, "", Some(d)));
+        assert!(layer_already_installed(d, "sha256:bb", Some(d)));
+        assert!(!layer_already_installed(d, "", None));
+        assert!(!layer_already_installed(d, "sha256:bb", Some("sha256:cc")));
+        assert!(!layer_already_installed("", d, Some(d)));
     }
 }

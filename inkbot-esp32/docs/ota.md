@@ -114,7 +114,9 @@ period, the inkbot binary:
 1. Fetches an anonymous GHCR pull token and the OCI manifest for
    `repo:tag` (`repo` defaults to `ghcr.io/imjasonh/playground/{ota/app}`).
 2. Skips the rest if the layer digest matches the last successful (or
-   rejected) digest in NVS.
+   rejected) digest in NVS, or matches a SHA-256 of the running slot (USB
+   flash of the same bits). Logs `ota: no updates` and does not fetch the
+   config, signature, or blob.
 3. Fetches the OCI config blob and requires `app` to equal the requested
    `ota/app` (default `inkbot-esp32`), `target_chip=esp32`, and a layer
    that fits the `0x1F0000` slot. A maze image is valid when `ota/app` is
@@ -127,7 +129,10 @@ period, the inkbot binary:
    leaf so a board that was unplugged during publish can still install the
    image. It still rejects a leaf that is not yet valid. Intermediate and
    root certificates use a full wall-clock window.
-5. Streams the firmware blob into the inactive slot, hashing as it goes.
+5. Follows GHCR blob redirects (typically one 307 to the package CDN)
+   with a 16 KiB HTTP header buffer, then streams the firmware blob into
+   the inactive slot, hashing as it goes. Does not send the GHCR bearer
+   token to the redirected host.
 6. Marks that slot to boot and restarts.
 
 On the new image, ESP-IDF leaves the slot in `PENDING_VERIFY`. inkbot

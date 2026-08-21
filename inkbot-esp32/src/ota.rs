@@ -18,8 +18,9 @@ use crate::https::{http_get, lock_or_poison, OtaDownloadGuard, ShortHttpsLock};
 use crate::ota_slot::{self, NVS_NAMESPACE};
 use crate::trust::TrustConfig;
 use inkbot_esp32::{
-    check_ota_image, cosign_signature_tags, FirmwareConfig, COSIGN_SIMPLE_SIGNING_MEDIA_TYPE,
-    OTA_CONFIG_MEDIA_TYPE, OTA_LAYER_MEDIA_TYPE, OTA_SLOT_BYTES, SIGSTORE_BUNDLE_MEDIA_TYPE_PREFIX,
+    check_ota_image, cosign_signature_tags, layer_already_installed, FirmwareConfig,
+    COSIGN_SIMPLE_SIGNING_MEDIA_TYPE, OTA_CONFIG_MEDIA_TYPE, OTA_LAYER_MEDIA_TYPE, OTA_SLOT_BYTES,
+    SIGSTORE_BUNDLE_MEDIA_TYPE_PREFIX,
 };
 
 pub use crate::ota_slot::{
@@ -130,7 +131,11 @@ fn poll_once(
     }
 
     let last = ota_slot::read_last_digest(nvs).unwrap_or_default();
-    if last == layer.digest {
+    let running = running_slot_digest(layer.size);
+    if layer_already_installed(&layer.digest, &last, running.as_deref()) {
+        if last != layer.digest {
+            ota_slot::write_last_digest(nvs, &layer.digest)?;
+        }
         return Ok(PollOutcome::NoChange);
     }
     log::info!("ota: new digest {}, verifying", layer.digest);
@@ -384,7 +389,62 @@ fn fetch_layer_blob(
     Ok(buf)
 }
 
+/// GHCR blob GETs 307 to pkg-containers; those responses have fat headers.
+const BLOB_HEADER_BUF: usize = 16 * 1024;
+const BLOB_REDIRECTS: u8 = 5;
+
+fn blob_http_config() -> HttpConfig {
+    HttpConfig {
+        crt_bundle_attach: Some(esp_idf_svc::sys::esp_crt_bundle_attach),
+        follow_redirects_policy: FollowRedirectsPolicy::FollowNone,
+        timeout: Some(Duration::from_secs(120)),
+        buffer_size: Some(BLOB_HEADER_BUF),
+        buffer_size_tx: Some(2048),
+        ..Default::default()
+    }
+}
+
+fn is_http_redirect(status: u16) -> bool {
+    matches!(status, 301 | 302 | 303 | 307 | 308)
+}
+
+/// SHA-256 of the running slot's first `len` bytes, as `sha256:<hex>`.
+///
+/// USB `make flash` writes the same app image GHCR stores as the layer, so
+/// this matches `layer.digest` when `:latest` is already on the board even
+/// if NVS `last_digest` was never set.
+fn running_slot_digest(len: u64) -> Option<String> {
+    use esp_idf_svc::sys::{esp_ota_get_running_partition, esp_partition_read, ESP_OK};
+    unsafe {
+        let part = esp_ota_get_running_partition();
+        if part.is_null() {
+            return None;
+        }
+        let part_size = (*part).size as u64;
+        if len == 0 || len > part_size {
+            return None;
+        }
+        let mut hasher = Sha256::new();
+        let mut buf = [0u8; 4096];
+        let total = len as usize;
+        let mut off = 0usize;
+        while off < total {
+            let n = (total - off).min(buf.len());
+            let err = esp_partition_read(part, off, buf.as_mut_ptr().cast(), n);
+            if err != ESP_OK {
+                log::warn!("ota: running slot read failed {err} at {off}");
+                return None;
+            }
+            hasher.update(&buf[..n]);
+            off += n;
+        }
+        Some(format!("sha256:{}", hex::encode(hasher.finalize())))
+    }
+}
+
 fn download_and_apply(repo: &str, layer: &Descriptor, token: &str) -> Result<()> {
+    use embedded_svc::io::Read;
+
     if layer.size == 0 || layer.size > OTA_SLOT_BYTES {
         bail!(
             "firmware layer size {} does not fit OTA slot ({OTA_SLOT_BYTES} bytes)",
@@ -392,66 +452,87 @@ fn download_and_apply(repo: &str, layer: &Descriptor, token: &str) -> Result<()>
         );
     }
     let repo_path = repo_path(repo)?;
-    let url = format!("https://ghcr.io/v2/{repo_path}/blobs/{}", layer.digest);
-    let auth = format!("Bearer {token}");
+    let start_url = format!("https://ghcr.io/v2/{repo_path}/blobs/{}", layer.digest);
+    let bearer = format!("Bearer {token}");
 
-    let conn = EspHttpConnection::new(&HttpConfig {
-        crt_bundle_attach: Some(esp_idf_svc::sys::esp_crt_bundle_attach),
-        follow_redirects_policy: FollowRedirectsPolicy::FollowAll,
-        timeout: Some(Duration::from_secs(120)),
-        buffer_size: Some(4096),
-        ..Default::default()
-    })?;
-    let mut client = Client::wrap(conn);
-    let headers = [
-        ("authorization", auth.as_str()),
-        ("accept", "application/octet-stream"),
-    ];
-    let req = client.request(Method::Get, &url, &headers)?;
-    let mut resp = req.submit()?;
-    if resp.status() != 200 {
-        bail!("blob GET {} -> {}", url, resp.status());
-    }
-
-    let mut ota = EspOta::new().context("EspOta::new")?;
-    let mut update = ota.initiate_update().context("initiate OTA update")?;
-
-    let expected_sha_hex = layer
-        .digest
-        .strip_prefix("sha256:")
-        .ok_or_else(|| anyhow!("non-sha256 digest: {}", layer.digest))?;
-    let mut hasher = Sha256::new();
-    let mut buf = [0u8; 4096];
-    let mut total: u64 = 0;
-    let mut next_log = 256u64 * 1024;
-    loop {
-        let n = resp.read(&mut buf).context("read blob chunk")?;
-        if n == 0 {
-            break;
+    let mut url = start_url;
+    let mut use_auth = true;
+    for _ in 0..BLOB_REDIRECTS {
+        let conn = EspHttpConnection::new(&blob_http_config())?;
+        let mut client = Client::wrap(conn);
+        let mut resp = if use_auth {
+            client
+                .request(
+                    Method::Get,
+                    &url,
+                    &[
+                        ("authorization", bearer.as_str()),
+                        ("accept", "application/octet-stream"),
+                    ],
+                )?
+                .submit()?
+        } else {
+            client
+                .request(Method::Get, &url, &[("accept", "application/octet-stream")])?
+                .submit()?
+        };
+        let status = resp.status();
+        if is_http_redirect(status) {
+            let loc = resp
+                .header("Location")
+                .or_else(|| resp.header("location"))
+                .ok_or_else(|| anyhow!("blob GET redirect {status} with no Location"))?
+                .to_string();
+            log::info!("ota: blob redirect {status}");
+            url = loc;
+            use_auth = false;
+            continue;
         }
-        total += n as u64;
-        if total > layer.size {
+        if status != 200 {
+            bail!("blob GET -> {status}");
+        }
+
+        let mut ota = EspOta::new().context("EspOta::new")?;
+        let mut update = ota.initiate_update().context("initiate OTA update")?;
+
+        let expected_sha_hex = layer
+            .digest
+            .strip_prefix("sha256:")
+            .ok_or_else(|| anyhow!("non-sha256 digest: {}", layer.digest))?;
+        let mut hasher = Sha256::new();
+        let mut buf = [0u8; 4096];
+        let mut total: u64 = 0;
+        let mut next_log = 256u64 * 1024;
+        loop {
+            let n = resp.read(&mut buf).context("read blob chunk")?;
+            if n == 0 {
+                break;
+            }
+            total += n as u64;
+            if total > layer.size {
+                update.abort().ok();
+                bail!("blob larger than manifest size {}", layer.size);
+            }
+            update.write(&buf[..n]).context("OTA write")?;
+            hasher.update(&buf[..n]);
+            if total >= next_log {
+                log::info!("ota: download progress {total}/{}", layer.size);
+                next_log += 256 * 1024;
+            }
+        }
+        if total != layer.size {
             update.abort().ok();
-            bail!("blob larger than manifest size {}", layer.size);
+            bail!("blob size mismatch: got {total}, expected {}", layer.size);
         }
-        update.write(&buf[..n]).context("OTA write")?;
-        hasher.update(&buf[..n]);
-        if total >= next_log {
-            log::info!("ota: download progress {total}/{}", layer.size);
-            next_log += 256 * 1024;
+        let actual_sha_hex = hex::encode(hasher.finalize());
+        if actual_sha_hex != expected_sha_hex {
+            update.abort().ok();
+            bail!("blob SHA mismatch: got {actual_sha_hex}, manifest says {expected_sha_hex}");
         }
+        update
+            .complete()
+            .context("OTA complete (set boot partition)")?;
+        return Ok(());
     }
-    if total != layer.size {
-        update.abort().ok();
-        bail!("blob size mismatch: got {total}, expected {}", layer.size);
-    }
-    let actual_sha_hex = hex::encode(hasher.finalize());
-    if actual_sha_hex != expected_sha_hex {
-        update.abort().ok();
-        bail!("blob SHA mismatch: got {actual_sha_hex}, manifest says {expected_sha_hex}");
-    }
-    update
-        .complete()
-        .context("OTA complete (set boot partition)")?;
-    Ok(())
+    bail!("blob GET exceeded {BLOB_REDIRECTS} redirects");
 }
