@@ -27,6 +27,8 @@ bump when the tests still pass, so old experiments don't rot.
   balance a ball up the wall while avoiding unlit pockets.
 - **[`droneski/`](droneski/)** — pilot an FPV camera drone filming a skier on a
   procedurally generated Olympic downhill course.
+- **[`esp-flash/`](esp-flash/)** — flash `inkbot-esp32` / `maze-esp32` (or a
+  local `.bin`) to a USB ESP32 from Chrome or Edge.
 - **[`hello/`](hello/)** — a minimal static demo.
 - **[`kanoodle/`](kanoodle/)** — the Kanoodle puzzle game (5×11 board, 12 pieces).
 - **[`kubescheduler-the-game/`](kubescheduler-the-game/)** — play the Kubernetes
