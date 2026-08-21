@@ -2,9 +2,11 @@
 
 use anyhow::{anyhow, Result};
 use esp_idf_svc::nvs::{EspNvs, NvsDefault};
+#[cfg(feature = "inkbot-lib")]
 use esp_idf_svc::sys::EspError;
 
 /// True when `EspNvs::new` failed because the namespace has never been written.
+#[cfg(feature = "inkbot-lib")]
 pub fn is_not_found(e: &EspError) -> bool {
     e.code() == esp_idf_svc::sys::ESP_ERR_NVS_NOT_FOUND as i32
 }
@@ -26,6 +28,7 @@ pub fn read_str(
 }
 
 /// Read a blob from `nvs[key]`. Returns `Ok(None)` if the key is absent.
+#[cfg(feature = "inkbot-lib")]
 pub fn read_blob(
     nvs: &EspNvs<NvsDefault>,
     namespace: &str,

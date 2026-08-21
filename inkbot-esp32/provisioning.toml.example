@@ -45,10 +45,14 @@ issuer = "https://token.actions.githubusercontent.com"
 # metrics_interval_secs = 300
 
 # Optional. If absent, OTA uses compile-time defaults
-# (ghcr.io/imjasonh/playground/inkbot-esp32:latest, 600 s).
-# poll_secs = 0 disables OTA (USB flash only).
+# (app = inkbot-esp32, repo = ghcr.io/imjasonh/playground/{app},
+# tag = latest, poll every 600 s). poll_secs = 0 disables OTA
+# (USB flash only). Setting app = "maze-esp32" makes a running
+# inkbot image pull maze; maze has no Wi-Fi, so returning to
+# inkbot is `make flash`.
 #
 # [ota]
+# app = "inkbot-esp32"
 # repo = "ghcr.io/imjasonh/playground/inkbot-esp32"
 # tag = "latest"
 # poll_secs = 600

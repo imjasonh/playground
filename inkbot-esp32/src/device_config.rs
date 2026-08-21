@@ -4,14 +4,14 @@ use anyhow::{anyhow, Result};
 use esp_idf_svc::nvs::{EspDefaultNvsPartition, EspNvs};
 
 use crate::nvs_util::{is_not_found, read_str};
-use inkbot_esp32::require_https_url;
+use inkbot_esp32::{default_ota_repo, known_ota_app, require_https_url, OTA_APP_INKBOT};
 
 const NVS_WIFI_NS: &str = "wifi";
 const NVS_INKBOT_NS: &str = "inkbot";
 const NVS_OTA_NS: &str = "ota";
 
 /// Compile-time OTA defaults. NVS `ota/*` keys override these.
-pub const DEFAULT_OTA_REPO: &str = "ghcr.io/imjasonh/playground/inkbot-esp32";
+pub const DEFAULT_OTA_APP: &str = OTA_APP_INKBOT;
 pub const DEFAULT_OTA_TAG: &str = "latest";
 pub const DEFAULT_OTA_POLL_SECS: u64 = 600;
 
@@ -25,6 +25,7 @@ pub struct AppConfig {
     pub upload_secret: String,
     pub status_secs: u64,
     pub dhcp_renew_secs: u64,
+    pub ota_app: String,
     pub ota_repo: String,
     pub ota_tag: String,
     pub ota_poll_secs: u64,
@@ -79,7 +80,7 @@ impl AppConfig {
             .unwrap_or(900) as u64;
         let dhcp_renew_secs = inkbot.get_u32("dhcp_renew").ok().flatten().unwrap_or(21600) as u64;
 
-        let (ota_repo, ota_tag, ota_poll_secs) = load_ota(partition)?;
+        let (ota_app, ota_repo, ota_tag, ota_poll_secs) = load_ota(partition)?;
 
         Ok(Some(Self {
             wifi_ssid: ssid,
@@ -90,6 +91,7 @@ impl AppConfig {
             upload_secret,
             status_secs,
             dhcp_renew_secs,
+            ota_app,
             ota_repo,
             ota_tag,
             ota_poll_secs,
@@ -97,20 +99,29 @@ impl AppConfig {
     }
 }
 
-fn load_ota(partition: EspDefaultNvsPartition) -> Result<(String, String, u64)> {
+fn load_ota(partition: EspDefaultNvsPartition) -> Result<(String, String, String, u64)> {
     let nvs = match EspNvs::new(partition, NVS_OTA_NS, false) {
         Ok(n) => n,
         Err(_) => {
             return Ok((
-                DEFAULT_OTA_REPO.into(),
+                DEFAULT_OTA_APP.into(),
+                default_ota_repo(DEFAULT_OTA_APP),
                 DEFAULT_OTA_TAG.into(),
                 DEFAULT_OTA_POLL_SECS,
             ));
         }
     };
+    let app = match read_str(&nvs, NVS_OTA_NS, "app", 32)? {
+        Some(s) if known_ota_app(&s) => s,
+        Some(s) => {
+            log::warn!("ota/app={s} is unknown; using {DEFAULT_OTA_APP}");
+            DEFAULT_OTA_APP.into()
+        }
+        None => DEFAULT_OTA_APP.into(),
+    };
     let repo = read_str(&nvs, NVS_OTA_NS, "repo", 256)?
         .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| DEFAULT_OTA_REPO.into());
+        .unwrap_or_else(|| default_ota_repo(&app));
     let tag = read_str(&nvs, NVS_OTA_NS, "tag", 64)?
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| DEFAULT_OTA_TAG.into());
@@ -120,5 +131,5 @@ fn load_ota(partition: EspDefaultNvsPartition) -> Result<(String, String, u64)> 
         Some(n) => n as u64,
         None => DEFAULT_OTA_POLL_SECS,
     };
-    Ok((repo, tag, poll))
+    Ok((app, repo, tag, poll))
 }

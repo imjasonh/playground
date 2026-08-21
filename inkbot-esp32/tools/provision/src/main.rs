@@ -159,13 +159,19 @@ fn default_metrics_interval() -> u32 {
 
 #[derive(Deserialize, Debug, Default)]
 struct OtaProvisioningConfig {
-    /// Override `ghcr.io/<owner>/<name>` repo.
+    /// Which firmware image to pull: `inkbot-esp32` or `maze-esp32`.
+    /// Default `inkbot-esp32`. Written as NVS `ota/app`.
+    app: Option<String>,
+    /// Override `ghcr.io/<owner>/<name>` repo. Default is
+    /// `ghcr.io/imjasonh/playground/{app}`.
     repo: Option<String>,
     /// Override the image tag. Default `latest`.
     tag: Option<String>,
     /// Override the OTA poll interval in seconds. `0` disables OTA.
     poll_secs: Option<u32>,
 }
+
+const KNOWN_OTA_APPS: &[&str] = &["inkbot-esp32", "maze-esp32"];
 
 /// Emit a loud warning if the resolved service-account key path lives
 /// inside the repo. It's gitignored by convention but we'd rather
@@ -258,12 +264,23 @@ fn main() -> Result<()> {
     if cfg.trust.identities.is_empty() {
         bail!("trust.identities must contain at least one entry");
     }
+    if let Some(ota) = &cfg.ota {
+        if let Some(app) = &ota.app {
+            if !KNOWN_OTA_APPS.contains(&app.as_str()) {
+                bail!(
+                    "ota.app={app} is unknown; must be one of {}",
+                    KNOWN_OTA_APPS.join(", ")
+                );
+            }
+        }
+    }
 
     tracing::info!(
         identities = cfg.trust.identities.len(),
         ssid = cfg.wifi.ssid,
         base_url = cfg.inkbot.base_url,
         gcp = cfg.gcp.is_some(),
+        ota_app = cfg.ota.as_ref().and_then(|o| o.app.as_deref()),
         "loaded provisioning config",
     );
 
@@ -447,6 +464,9 @@ fn write_csv(path: &Path, cfg: &ProvisioningConfig, identities_path: &Path) -> R
 
     if let Some(ota) = &cfg.ota {
         wtr.write_record(["ota", "namespace", "", ""])?;
+        if let Some(app) = &ota.app {
+            wtr.write_record(["app", "data", "string", app])?;
+        }
         if let Some(repo) = &ota.repo {
             wtr.write_record(["repo", "data", "string", repo])?;
         }

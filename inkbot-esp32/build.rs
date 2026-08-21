@@ -5,6 +5,7 @@ use std::env;
 fn main() {
     println!("cargo:rerun-if-changed=sdkconfig.defaults");
     println!("cargo:rerun-if-changed=sdkconfig.defaults.in");
+    println!("cargo:rerun-if-changed=sdkconfig.defaults.maze.in");
     println!("cargo:rerun-if-changed=partitions.csv");
     println!("cargo:rerun-if-env-changed=GIT_SHA");
     let sha = env::var("GIT_SHA").unwrap_or_else(|_| "unknown".into());

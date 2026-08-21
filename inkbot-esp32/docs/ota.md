@@ -52,7 +52,7 @@ are wiped:
 | `[inkbot]` | yes | Worker `base_url` plus poll / rotate / status / DHCP intervals |
 | `[trust]` | yes | Fulcio PEMs and the identities allowed to sign OTA images |
 | `[gcp]` | no | Cloud Logging + Monitoring. Omit for serial-only logs |
-| `[ota]` | no | Overrides the compiled default repo / tag / poll interval |
+| `[ota]` | no | Overrides the compiled default app / repo / tag / poll interval |
 
 `inkbot.upload_secret` must match the Worker's `UPLOAD_SECRET` if you want
 `POST /device`. Leave it empty to keep telemetry on the panel and serial
@@ -60,7 +60,9 @@ only.
 
 `ota.poll_secs = 0` disables GHCR polling (USB flash only). If you omit
 `[ota]`, the firmware polls `ghcr.io/imjasonh/playground/inkbot-esp32:latest`
-every 600 seconds.
+every 600 seconds. Set `ota.app = "maze-esp32"` (and omit `repo`, or set it
+to the maze package) so a running inkbot image pulls maze instead. Maze
+never polls GHCR, so that switch is one-way until you USB-flash inkbot.
 
 The example file already allowlists two signers:
 
@@ -92,6 +94,7 @@ RSA / tracing / time crates out of the image.
    Keep the PEM out of the git worktree when you can; the filename
    `gcp-sa-key.pem` is gitignored if you leave it in `inkbot-esp32/`.
 4. Uncomment `[gcp]` in `provisioning.toml` and run `make provision`.
+   To leave GCP out of the ELF entirely, build with `make build GCP=0`.
 
 On boot the device tees `log` records into a 64-entry queue and flushes
 batches from the main loop (the same loop that paints the panel). It does
@@ -109,20 +112,23 @@ Every `ota.poll_secs` (default 10 minutes), after a 30-second boot grace
 period, the inkbot binary:
 
 1. Fetches an anonymous GHCR pull token and the OCI manifest for
-   `repo:tag`.
+   `repo:tag` (`repo` defaults to `ghcr.io/imjasonh/playground/{ota/app}`).
 2. Skips the rest if the layer digest matches the last successful (or
    rejected) digest in NVS.
-3. Fetches the OCI config blob and requires `app=inkbot-esp32`,
-   `target_chip=esp32`, and a layer that fits the `0x1F0000` slot.
+3. Fetches the OCI config blob and requires `app` to equal the requested
+   `ota/app` (default `inkbot-esp32`), `target_chip=esp32`, and a layer
+   that fits the `0x1F0000` slot. A maze image is valid when `ota/app` is
+   `maze-esp32`.
 4. Pulls the Cosign Sigstore bundle, checks the leaf SAN + OIDC issuer
    against `trust/identities`, verifies the Fulcio chain, and checks the
    DSSE / in-toto subject against the manifest digest.
 5. Streams the firmware blob into the inactive slot, hashing as it goes.
 6. Marks that slot to boot and restarts.
 
-On the new image, ESP-IDF leaves the slot in `PENDING_VERIFY`. The firmware
-marks the image valid only after the Worker boot fetch succeeds (`Displayed`
-or empty catalog). A fetch error in that window calls
+On the new image, ESP-IDF leaves the slot in `PENDING_VERIFY`. inkbot
+marks the image valid only after the Worker boot fetch succeeds
+(`Displayed` or empty catalog). maze marks valid after the first
+successful panel paint. A failed health check in that window calls
 `esp_ota_mark_app_invalid_rollback_and_reboot()` and records the digest as
 rejected so the next poll does not re-flash the same binary.
 
@@ -130,22 +136,24 @@ The on-device verifier does not check Fulcio certificate transparency
 SCTs or the leaf EKU. The identity allowlist plus the pinned Fulcio
 PEMs in NVS are the trust boundary.
 
-OTA runs on the main task (48 KB stack). Frame fetches and GCP posts pause
-while the blob download holds a TLS session. The maze binary never joins
-Wi-Fi and never polls GHCR; flash it with `make flash APP=maze` over USB.
+OTA runs on the inkbot main task (48 KB stack). Frame fetches and GCP posts
+pause while the blob download holds a TLS session. The maze binary never
+joins Wi-Fi and never polls GHCR. inkbot can still *install* maze over OTA
+when `ota/app` is `maze-esp32`; returning to inkbot is `make flash`.
 
-The GHCR package must be **public**. The device uses an anonymous pull
+The GHCR packages must be **public**. The device uses an anonymous pull
 token. After the first CI publish, open
 [the package settings](https://github.com/imjasonh/playground/pkgs)
-and change visibility if GitHub created it as private.
+and change visibility if GitHub created them as private.
 
 ## Publish a new image
 
 CI: a push to `main` that touches `inkbot-esp32/` (or a manual *Run
 workflow* **from `main`**) runs `.github/workflows/inkbot-esp32-publish.yml`.
-That job cross-compiles, pushes
-`ghcr.io/imjasonh/playground/inkbot-esp32:latest` plus `:sha-<git>`,
-keyless-signs the digest with Cosign, then `make pull-verify`s the layer.
+That job cross-compiles both apps, pushes
+`ghcr.io/imjasonh/playground/inkbot-esp32:latest` and
+`ghcr.io/imjasonh/playground/maze-esp32:latest` plus `:sha-<git>` on each,
+keyless-signs the digests with Cosign, then `make pull-verify`s both layers.
 Devices that already trust the workflow identity pick it up on the next
 poll. Dispatch from any other branch is skipped: keyless Cosign would
 produce `@refs/heads/<branch>`, which the example allowlist rejects.
@@ -178,6 +186,15 @@ download. Those are the two ways this board OOMs.
 
 ## Maze firmware
 
-`APP=maze` still builds a second ELF and flashes it into an OTA slot.
-It is USB-only. To return to the inkbot loop, flash without `APP=maze`
-(or wait for an inkbot OTA after you are back on the inkbot binary).
+`APP=maze` builds a second ELF with `sdkconfig.defaults.maze.in` (no CA
+bundle, smaller stack, Wi-Fi driver requested off) into
+`target/maze-esp32/`. It does not compile inkbot-lib, OTA-pull, or GCP.
+
+You can put maze on the panel two ways:
+
+- USB: `make flash APP=maze`
+- OTA from a running inkbot image: set `[ota] app = "maze-esp32"` in
+  `provisioning.toml`, `make provision`, and wait for the next poll
+
+Maze never joins Wi-Fi, so it cannot pull inkbot back. To return to the
+frame loop, USB-flash without `APP=maze`.

@@ -16,7 +16,6 @@ use time::OffsetDateTime;
 
 const CONFIG_MEDIA_TYPE: &str = "application/vnd.esp32.firmware.v1+json";
 const LAYER_MEDIA_TYPE: &str = "application/vnd.esp32.firmware.bin";
-const APP_ID: &str = "inkbot-esp32";
 const OTA_SLOT_BYTES: u64 = 0x1F_0000;
 
 #[derive(Parser)]
@@ -67,6 +66,11 @@ struct PushArgs {
     /// IDF version, recorded in the artifact's config blob.
     #[arg(long, default_value = "v5.2.2")]
     idf_version: String,
+
+    /// App id written into the OCI config blob. Defaults to the last
+    /// path segment of `--repo` (`inkbot-esp32`, `maze-esp32`, ...).
+    #[arg(long)]
+    app: Option<String>,
 }
 
 #[derive(clap::Args)]
@@ -222,9 +226,11 @@ async fn push(args: PushArgs) -> Result<()> {
         "loaded firmware",
     );
 
+    let app = app_id(&args.repo, args.app.as_deref())?;
+    tracing::info!(app = %app, repo = %args.repo, "firmware config app");
     let cfg = FirmwareConfig {
         target_chip: args.target_chip.clone(),
-        app: APP_ID.to_string(),
+        app,
         idf_version: args.idf_version.clone(),
         git_sha: args.git_sha.clone(),
         built_at: OffsetDateTime::from(SystemTime::now())
@@ -312,6 +318,25 @@ async fn push(args: PushArgs) -> Result<()> {
     Ok(())
 }
 
+fn app_id(repo: &str, app: Option<&str>) -> Result<String> {
+    if let Some(app) = app {
+        if app.is_empty() {
+            return Err(anyhow!("--app must not be empty"));
+        }
+        return Ok(app.to_string());
+    }
+    let inferred = repo
+        .trim_end_matches('/')
+        .rsplit('/')
+        .next()
+        .unwrap_or("")
+        .to_string();
+    if inferred.is_empty() {
+        return Err(anyhow!("could not infer app from repo {repo}; pass --app"));
+    }
+    Ok(inferred)
+}
+
 /// Extract `sha256:abc...` from a manifest URL like
 /// `https://ghcr.io/v2/owner/name/manifests/sha256:abc...`.
 fn digest_from_manifest_url(url: &str) -> Option<&str> {
@@ -363,4 +388,35 @@ fn registry_auth(repo: &str) -> Result<RegistryAuth> {
         .ok_or_else(|| anyhow!("can't infer github username from repo {repo}"))?
         .to_string();
     Ok(RegistryAuth::Basic(username, token))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn app_id_prefers_flag() {
+        assert_eq!(
+            app_id(
+                "ghcr.io/imjasonh/playground/inkbot-esp32",
+                Some("maze-esp32")
+            )
+            .unwrap(),
+            "maze-esp32"
+        );
+    }
+
+    #[test]
+    fn app_id_infers_from_repo() {
+        assert_eq!(
+            app_id("ghcr.io/imjasonh/playground/maze-esp32", None).unwrap(),
+            "maze-esp32"
+        );
+    }
+
+    #[test]
+    fn app_id_rejects_empty() {
+        assert!(app_id("ghcr.io/imjasonh/playground/inkbot-esp32", Some("")).is_err());
+        assert!(app_id("", None).is_err());
+    }
 }

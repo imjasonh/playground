@@ -1,8 +1,9 @@
-# Push and Cosign-sign inkbot-esp32 firmware to GHCR.
+# Push and Cosign-sign inkbot-esp32 and maze-esp32 firmware to GHCR.
 #
-# Devices pull ghcr.io/imjasonh/playground/inkbot-esp32:latest anonymously
-# and verify the Sigstore bundle against the identities in NVS. The
-# example provisioning.toml allowlists this workflow @refs/heads/main.
+# Devices pull ghcr.io/imjasonh/playground/{app}:latest anonymously
+# (app is NVS ota/app, default inkbot-esp32) and verify the Sigstore
+# bundle against the identities in NVS. The example provisioning.toml
+# allowlists this workflow @refs/heads/main.
 #
 # Intentionally separate from inkbot-esp32.yml so the test workflow does
 # not need packages:write / id-token:write.

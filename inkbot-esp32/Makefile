@@ -11,6 +11,10 @@
 #   $EDITOR provisioning.toml
 #   make bootstrap
 #   make monitor
+#
+# Per-app images use separate CARGO_TARGET_DIR + sdkconfig trees so maze
+# does not inherit Wi-Fi / CA-bundle from inkbot (Cargo features are
+# per-package, not per-bin). `GCP=0` compiles GCP out of the inkbot image.
 
 SHELL := /bin/bash
 
@@ -20,27 +24,48 @@ PORT := /dev/cu.usbserial-0001
 endif
 TARGET := xtensa-esp32-espidf
 APP ?= inkbot
+GCP ?= 1
 HOST_TRIPLE := $(shell rustc -vV | sed -n 's/^host: //p')
 
+# Host tests and tools. Firmware recipes override this per app.
 override CARGO_TARGET_DIR := $(CURDIR)/target
 export CARGO_TARGET_DIR
 
-INKBOT_BIN := $(CARGO_TARGET_DIR)/$(TARGET)/release/inkbot-esp32
-MAZE_BIN := $(CARGO_TARGET_DIR)/$(TARGET)/release/maze-esp32
-FW_BIN := $(CARGO_TARGET_DIR)/firmware.bin
-NVS_BIN := $(CARGO_TARGET_DIR)/nvs.bin
+INKBOT_TARGET_DIR := $(CURDIR)/target/inkbot-esp32
+MAZE_TARGET_DIR := $(CURDIR)/target/maze-esp32
+INKBOT_BIN := $(INKBOT_TARGET_DIR)/$(TARGET)/release/inkbot-esp32
+MAZE_BIN := $(MAZE_TARGET_DIR)/$(TARGET)/release/maze-esp32
+INKBOT_FW_BIN := $(INKBOT_TARGET_DIR)/firmware.bin
+MAZE_FW_BIN := $(MAZE_TARGET_DIR)/firmware.bin
+INKBOT_SDKCONFIG_DEFAULTS := $(INKBOT_TARGET_DIR)/sdkconfig.defaults
+MAZE_SDKCONFIG_DEFAULTS := $(MAZE_TARGET_DIR)/sdkconfig.defaults
+INKBOT_SDKCONFIG := $(INKBOT_TARGET_DIR)/sdkconfig
+MAZE_SDKCONFIG := $(MAZE_TARGET_DIR)/sdkconfig
+NVS_BIN := $(CURDIR)/target/nvs.bin
 INKBOT_FIRMWARE_ID := $(shell awk -F'"' '/pub const FIRMWARE_ID/ { print $$2; exit }' src/status.rs)
 MAZE_FIRMWARE_ID := $(shell awk -F'"' '/MAZE_FIRMWARE_ID/ { print $$2; exit }' src/maze/mod.rs)
+
+ifneq ($(GCP),0)
+INKBOT_FEATURES := firmware,inkbot-lib,net,ota-pull,epd,gcp
+else
+INKBOT_FEATURES := firmware,inkbot-lib,net,ota-pull,epd
+endif
+MAZE_FEATURES := firmware,maze-lib
 
 ifeq ($(APP),maze)
 BIN := $(MAZE_BIN)
 FIRMWARE_ID := $(MAZE_FIRMWARE_ID)
+BOOTLOADER := $(firstword $(wildcard $(MAZE_TARGET_DIR)/$(TARGET)/release/build/esp-idf-sys-*/out/build/bootloader/bootloader.bin))
+FLASH_DEPS := build-maze
 else
 BIN := $(INKBOT_BIN)
 FIRMWARE_ID := $(INKBOT_FIRMWARE_ID)
+BOOTLOADER := $(firstword $(wildcard $(INKBOT_TARGET_DIR)/$(TARGET)/release/build/esp-idf-sys-*/out/build/bootloader/bootloader.bin))
+FLASH_DEPS := build-inkbot
 endif
 
-OCI_REPO ?= ghcr.io/imjasonh/playground/inkbot-esp32
+INKBOT_OCI_REPO ?= ghcr.io/imjasonh/playground/inkbot-esp32
+MAZE_OCI_REPO ?= ghcr.io/imjasonh/playground/maze-esp32
 COSIGN_REGISTRY_USERNAME ?= imjasonh
 GIT_SHA := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 export GIT_SHA
@@ -53,77 +78,105 @@ PYTHON_SHIM    := $(CURDIR)/.embuild/python-shim
 export LIBCLANG_PATH
 export PATH := $(PYTHON_SHIM):$(XTENSA_GCC_BIN):$(PATH)
 export ESP_IDF_TOOLS_INSTALL_DIR := custom:$(CURDIR)/.embuild
-export ESP_IDF_SDKCONFIG_DEFAULTS := $(CURDIR)/sdkconfig.defaults
 
-BOOTLOADER := $(firstword $(wildcard $(CARGO_TARGET_DIR)/$(TARGET)/release/build/esp-idf-sys-*/out/build/bootloader/bootloader.bin))
 NVS_GEN_PY := $(CURDIR)/.embuild/espressif/esp-idf/v5.2.2/components/nvs_flash/nvs_partition_generator/nvs_partition_gen.py
 NVS_GEN_PYTHON := $(CURDIR)/.embuild/espressif/python_env/idf5.2_py3.12_env/bin/python
 
-.PHONY: help build check-firmware flash flash-all monitor run clean test \
-	ensure-python-shim ensure-idf sdkconfig.defaults save-image publish pull-verify \
+.PHONY: help build build-inkbot build-maze check-firmware-inkbot check-firmware-maze \
+	flash flash-all monitor run clean test \
+	ensure-python-shim ensure-idf save-image publish publish-one pull-verify pull-verify-one \
 	provision provision-build bootstrap check-gh-env
 
 help:
 	@echo "Targets:"
-	@echo "  make build          Cross-compile inkbot + maze firmware"
+	@echo "  make build          Cross-compile inkbot + maze (separate IDF trees)"
 	@echo "  make flash          Build + flash $(FIRMWARE_ID) to $(PORT) (APP=$(APP))"
 	@echo "  make flash APP=maze Flash the maze firmware (same OTA partition table)"
+	@echo "  make build GCP=0    inkbot image without Cloud Logging / Monitoring"
 	@echo "  make flash-all      Erase + write bootloader, partition table, app"
 	@echo "  make provision      Write NVS from provisioning.toml (needs one prior make build)"
 	@echo "  make provision-build  Build target/nvs.bin without flashing"
 	@echo "  make bootstrap      flash-all + provision"
-	@echo "  make publish        Push signed firmware to $(OCI_REPO)"
+	@echo "  make publish        Push signed inkbot + maze images to GHCR"
 	@echo "  make monitor        Serial monitor on $(PORT)"
 	@echo "  make test           Host-side unit tests + provision dry-run"
 	@echo "  make clean          cargo clean"
 
 test:
 	cargo test --lib --locked
+	cargo test --manifest-path tools/publisher/Cargo.toml --locked
 	cargo run --manifest-path tools/provision/Cargo.toml --locked -- \
 	  --config $(CURDIR)/provisioning.toml.example \
 	  --out $(CURDIR)/target/nvs-dry.bin \
 	  --dry-run
 
-sdkconfig.defaults: sdkconfig.defaults.in partitions.csv
-	@sed 's|@PROJECT_DIR@|$(CURDIR)|g' sdkconfig.defaults.in > sdkconfig.defaults
+$(INKBOT_SDKCONFIG_DEFAULTS): sdkconfig.defaults.in partitions.csv
+	@mkdir -p $(INKBOT_TARGET_DIR)
+	@sed 's|@PROJECT_DIR@|$(CURDIR)|g' sdkconfig.defaults.in > $@
 
-build: ensure-python-shim sdkconfig.defaults
+$(MAZE_SDKCONFIG_DEFAULTS): sdkconfig.defaults.maze.in partitions.csv
+	@mkdir -p $(MAZE_TARGET_DIR)
+	@sed 's|@PROJECT_DIR@|$(CURDIR)|g' sdkconfig.defaults.maze.in > $@
+
+# Two sequential IDF builds: different sdkconfig + features cannot share
+# one CMake tree, and a combined `cargo build --bin inkbot --bin maze`
+# would compile maze with Wi-Fi too (features are per-package).
+build:
+	$(MAKE) build-inkbot
+	$(MAKE) build-maze
+
+build-inkbot: ensure-python-shim $(INKBOT_SDKCONFIG_DEFAULTS)
 	@if [ -z "$(INKBOT_FIRMWARE_ID)" ]; then \
 	  echo "ERROR: could not read FIRMWARE_ID from src/status.rs"; \
 	  exit 1; \
 	fi
+	CARGO_TARGET_DIR=$(INKBOT_TARGET_DIR) \
+	ESP_IDF_SDKCONFIG_DEFAULTS=$(INKBOT_SDKCONFIG_DEFAULTS) \
+	ESP_IDF_SDKCONFIG=$(INKBOT_SDKCONFIG) \
+	  cargo +esp build --release \
+	    --features $(INKBOT_FEATURES) \
+	    --bin inkbot-esp32 \
+	    --target $(TARGET) \
+	    -Z build-std=std,panic_abort
+	@$(MAKE) --no-print-directory check-firmware-inkbot
+
+build-maze: ensure-python-shim $(MAZE_SDKCONFIG_DEFAULTS)
 	@if [ -z "$(MAZE_FIRMWARE_ID)" ]; then \
 	  echo "ERROR: could not read MAZE_FIRMWARE_ID from src/maze/mod.rs"; \
 	  exit 1; \
 	fi
-	ESP_IDF_SDKCONFIG_DEFAULTS=$(ESP_IDF_SDKCONFIG_DEFAULTS) \
-	  cargo +esp build --release --features firmware \
-	    --bin inkbot-esp32 --bin maze-esp32 \
+	CARGO_TARGET_DIR=$(MAZE_TARGET_DIR) \
+	ESP_IDF_SDKCONFIG_DEFAULTS=$(MAZE_SDKCONFIG_DEFAULTS) \
+	ESP_IDF_SDKCONFIG=$(MAZE_SDKCONFIG) \
+	  cargo +esp build --release \
+	    --features $(MAZE_FEATURES) \
+	    --bin maze-esp32 \
 	    --target $(TARGET) \
 	    -Z build-std=std,panic_abort
-	@$(MAKE) --no-print-directory check-firmware
+	@$(MAKE) --no-print-directory check-firmware-maze
 
-check-firmware:
+check-firmware-inkbot:
 	@if [ ! -f "$(INKBOT_BIN)" ]; then echo "ERROR: missing $(INKBOT_BIN)"; exit 1; fi
-	@if [ ! -f "$(MAZE_BIN)" ]; then echo "ERROR: missing $(MAZE_BIN)"; exit 1; fi
 	@if ! grep -a -F -q "$(INKBOT_FIRMWARE_ID)" "$(INKBOT_BIN)"; then \
 	  echo "ERROR: $(INKBOT_BIN) does not contain $(INKBOT_FIRMWARE_ID) (stale ELF?)"; \
 	  exit 1; \
 	fi
+	@echo "firmware $(INKBOT_FIRMWARE_ID) -> $(INKBOT_BIN) ($$(wc -c < "$(INKBOT_BIN)") bytes ELF) features=$(INKBOT_FEATURES)"
+
+check-firmware-maze:
+	@if [ ! -f "$(MAZE_BIN)" ]; then echo "ERROR: missing $(MAZE_BIN)"; exit 1; fi
 	@if ! grep -a -F -q "$(MAZE_FIRMWARE_ID)" "$(MAZE_BIN)"; then \
 	  echo "ERROR: $(MAZE_BIN) does not contain $(MAZE_FIRMWARE_ID) (stale ELF?)"; \
 	  exit 1; \
 	fi
-	@echo "firmware $(INKBOT_FIRMWARE_ID) -> $(INKBOT_BIN) ($$(wc -c < "$(INKBOT_BIN)") bytes ELF)"
-	@echo "firmware $(MAZE_FIRMWARE_ID) -> $(MAZE_BIN) ($$(wc -c < "$(MAZE_BIN)") bytes ELF)"
-	@echo "flash APP=$(APP) -> $(BIN) ($(FIRMWARE_ID))"
+	@echo "firmware $(MAZE_FIRMWARE_ID) -> $(MAZE_BIN) ($$(wc -c < "$(MAZE_BIN)") bytes ELF) features=$(MAZE_FEATURES)"
 
 # Always pass the OTA partition table. Without it, espflash 4.x writes a
 # factory-only table and the next OTA poll cannot find a second slot.
-flash: build
+flash: $(FLASH_DEPS)
 	espflash flash --port $(PORT) --partition-table partitions.csv $(BIN)
 
-flash-all: build
+flash-all: $(FLASH_DEPS)
 	@test -n "$(BOOTLOADER)" || { echo "ERROR: bootloader.bin not found under target/. Run 'make build' first."; exit 1; }
 	espflash erase-flash --port $(PORT)
 	espflash flash --port $(PORT) \
@@ -170,7 +223,7 @@ ensure-idf:
 provision: provisioning.toml ensure-idf
 	cargo run --release --manifest-path tools/provision/Cargo.toml --target $(HOST_TRIPLE) -- \
 	  --config $(CURDIR)/provisioning.toml \
-	  --out $(CURDIR)/$(NVS_BIN) \
+	  --out $(NVS_BIN) \
 	  --nvs-gen $(NVS_GEN_PY) \
 	  --python $(NVS_GEN_PYTHON) \
 	  --port $(PORT) \
@@ -179,25 +232,40 @@ provision: provisioning.toml ensure-idf
 provision-build: provisioning.toml ensure-idf
 	cargo run --release --manifest-path tools/provision/Cargo.toml --target $(HOST_TRIPLE) -- \
 	  --config $(CURDIR)/provisioning.toml \
-	  --out $(CURDIR)/$(NVS_BIN) \
+	  --out $(NVS_BIN) \
 	  --nvs-gen $(NVS_GEN_PY) \
 	  --python $(NVS_GEN_PYTHON)
 
 bootstrap: flash-all provision
 
-save-image: $(FW_BIN)
+save-image: $(INKBOT_FW_BIN) $(MAZE_FW_BIN)
 
-$(FW_BIN): build
-	espflash save-image --chip esp32 --partition-table partitions.csv $(INKBOT_BIN) $(FW_BIN)
-	@echo "Wrote $(FW_BIN) ($$(wc -c < $(FW_BIN)) bytes)"
+$(INKBOT_FW_BIN): build-inkbot
+	@mkdir -p $(dir $@)
+	espflash save-image --chip esp32 --partition-table partitions.csv $(INKBOT_BIN) $@
+	@echo "Wrote $@ ($$(wc -c < $@) bytes)"
+
+$(MAZE_FW_BIN): build-maze
+	@mkdir -p $(dir $@)
+	espflash save-image --chip esp32 --partition-table partitions.csv $(MAZE_BIN) $@
+	@echo "Wrote $@ ($$(wc -c < $@) bytes)"
 
 publish: SHELL := /bin/bash
-publish: $(FW_BIN) check-gh-env
+publish: $(INKBOT_FW_BIN) $(MAZE_FW_BIN) check-gh-env
+	$(MAKE) publish-one OCI_REPO=$(INKBOT_OCI_REPO) FW_BIN=$(INKBOT_FW_BIN) OTA_APP=inkbot-esp32
+	$(MAKE) publish-one OCI_REPO=$(MAZE_OCI_REPO) FW_BIN=$(MAZE_FW_BIN) OTA_APP=maze-esp32
+
+publish-one: SHELL := /bin/bash
+publish-one: check-gh-env
+	@test -n "$(OCI_REPO)" || { echo "ERROR: OCI_REPO is empty"; exit 1; }
+	@test -n "$(FW_BIN)" || { echo "ERROR: FW_BIN is empty"; exit 1; }
+	@test -n "$(OTA_APP)" || { echo "ERROR: OTA_APP is empty"; exit 1; }
 	@set -eo pipefail; \
 	if [ -f gh.env ]; then . ./gh.env; fi; \
 	DIGEST=$$(cargo run --release --manifest-path tools/publisher/Cargo.toml --target $(HOST_TRIPLE) -- push \
-	  --bin $(CURDIR)/$(FW_BIN) \
+	  --bin $(FW_BIN) \
 	  --repo $(OCI_REPO) \
+	  --app $(OTA_APP) \
 	  --git-sha $(GIT_SHA) \
 	  --source https://github.com/imjasonh/playground | grep '^digest:' | head -1 | cut -d' ' -f2); \
 	test -n "$$DIGEST" || { echo "ERROR: publisher did not emit a 'digest:' line on stdout"; exit 1; }; \
@@ -205,13 +273,19 @@ publish: $(FW_BIN) check-gh-env
 	COSIGN_REGISTRY_USERNAME=$(COSIGN_REGISTRY_USERNAME) COSIGN_REGISTRY_PASSWORD="$$GH_TOKEN" \
 	  cosign sign --yes $(OCI_REPO)@$$DIGEST
 
-pull-verify: $(FW_BIN) check-gh-env
+pull-verify: SHELL := /bin/bash
+pull-verify: $(INKBOT_FW_BIN) $(MAZE_FW_BIN) check-gh-env
+	$(MAKE) pull-verify-one OCI_REPO=$(INKBOT_OCI_REPO) FW_BIN=$(INKBOT_FW_BIN)
+	$(MAKE) pull-verify-one OCI_REPO=$(MAZE_OCI_REPO) FW_BIN=$(MAZE_FW_BIN)
+
+pull-verify-one: SHELL := /bin/bash
+pull-verify-one: check-gh-env
 	@set -eo pipefail; \
 	if [ -f gh.env ]; then . ./gh.env; fi; \
 	cargo run --release --manifest-path tools/publisher/Cargo.toml --target $(HOST_TRIPLE) -- pull-verify \
 	  --repo $(OCI_REPO) \
 	  --tag latest \
-	  --bin $(CURDIR)/$(FW_BIN) \
+	  --bin $(FW_BIN) \
 	  --auth
 
 check-gh-env:

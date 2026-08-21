@@ -9,11 +9,30 @@ pub const OTA_CONFIG_MEDIA_TYPE: &str = "application/vnd.esp32.firmware.v1+json"
 /// Bytes reserved for each OTA slot in `partitions.csv` (`0x1F0000`).
 pub const OTA_SLOT_BYTES: u64 = 0x1F_0000;
 
-/// App id the device accepts in the signed OCI config blob.
-pub const OTA_APP_ID: &str = "inkbot-esp32";
+/// GHCR namespace that holds one package per firmware app.
+pub const GHCR_NAMESPACE: &str = "ghcr.io/imjasonh/playground";
+
+/// inkbot Worker poller image (`make flash`, default `ota/app`).
+pub const OTA_APP_INKBOT: &str = "inkbot-esp32";
+
+/// Offline maze image. inkbot can pull this; maze cannot pull back.
+pub const OTA_APP_MAZE: &str = "maze-esp32";
+
+/// Apps the device is willing to flash. Add a new OTA image here.
+pub const OTA_APPS: &[&str] = &[OTA_APP_INKBOT, OTA_APP_MAZE];
 
 /// Chip id the device accepts in the signed OCI config blob.
 pub const OTA_TARGET_CHIP: &str = "esp32";
+
+/// True when `app` is a firmware image this device knows how to boot.
+pub fn known_ota_app(app: &str) -> bool {
+    OTA_APPS.contains(&app)
+}
+
+/// Default GHCR repo for `app` when NVS `ota/repo` is unset.
+pub fn default_ota_repo(app: &str) -> String {
+    format!("{GHCR_NAMESPACE}/{app}")
+}
 
 /// DSSE Pre-Authentication Encoding (https://github.com/secure-systems-lab/dsse).
 ///
@@ -138,17 +157,27 @@ pub struct FirmwareConfig {
     pub bin_size: Option<u64>,
 }
 
-/// Check that a signed config blob is an inkbot image that fits one OTA slot.
-pub fn check_ota_image(cfg: &FirmwareConfig, layer_size: u64) -> Result<(), String> {
+/// Check that a signed config blob is the requested app and fits one OTA slot.
+///
+/// `expected_app` is the NVS `ota/app` value (or the compile-time default),
+/// not the binary that is currently running. That is how inkbot pulls maze.
+pub fn check_ota_image(
+    cfg: &FirmwareConfig,
+    layer_size: u64,
+    expected_app: &str,
+) -> Result<(), String> {
+    if !known_ota_app(expected_app) {
+        return Err(format!("unknown expected app {expected_app}"));
+    }
     if cfg.target_chip != OTA_TARGET_CHIP {
         return Err(format!(
             "firmware config target_chip={} (want {OTA_TARGET_CHIP})",
             cfg.target_chip
         ));
     }
-    if cfg.app != OTA_APP_ID {
+    if cfg.app != expected_app {
         return Err(format!(
-            "firmware config app={} (want {OTA_APP_ID})",
+            "firmware config app={} (want {expected_app})",
             cfg.app
         ));
     }
@@ -216,37 +245,69 @@ mod tests {
     }
 
     #[test]
-    fn check_ota_image_accepts_inkbot_esp32() {
-        let cfg = FirmwareConfig {
+    fn check_ota_image_accepts_requested_app() {
+        let inkbot = FirmwareConfig {
             target_chip: OTA_TARGET_CHIP.into(),
-            app: OTA_APP_ID.into(),
+            app: OTA_APP_INKBOT.into(),
             bin_size: Some(100),
         };
-        assert!(check_ota_image(&cfg, 100).is_ok());
+        assert!(check_ota_image(&inkbot, 100, OTA_APP_INKBOT).is_ok());
+
+        let maze = FirmwareConfig {
+            target_chip: OTA_TARGET_CHIP.into(),
+            app: OTA_APP_MAZE.into(),
+            bin_size: Some(100),
+        };
+        assert!(check_ota_image(&maze, 100, OTA_APP_MAZE).is_ok());
+        assert!(check_ota_image(&maze, 100, OTA_APP_INKBOT).is_err());
+        assert!(check_ota_image(&inkbot, 100, OTA_APP_MAZE).is_err());
     }
 
     #[test]
-    fn check_ota_image_rejects_wrong_app_chip_or_size() {
-        let maze = FirmwareConfig {
+    fn check_ota_image_rejects_unknown_expected_app() {
+        let cfg = FirmwareConfig {
             target_chip: OTA_TARGET_CHIP.into(),
-            app: "maze-esp32".into(),
-            bin_size: Some(100),
-        };
-        assert!(check_ota_image(&maze, 100).is_err());
-
-        let chip = FirmwareConfig {
-            target_chip: "esp32s3".into(),
-            app: OTA_APP_ID.into(),
+            app: "not-an-app".into(),
             bin_size: None,
         };
-        assert!(check_ota_image(&chip, 100).is_err());
+        assert!(check_ota_image(&cfg, 100, "not-an-app").is_err());
+    }
+
+    #[test]
+    fn check_ota_image_rejects_wrong_chip_or_size() {
+        let chip = FirmwareConfig {
+            target_chip: "esp32s3".into(),
+            app: OTA_APP_INKBOT.into(),
+            bin_size: None,
+        };
+        assert!(check_ota_image(&chip, 100, OTA_APP_INKBOT).is_err());
 
         let ok = FirmwareConfig {
             target_chip: OTA_TARGET_CHIP.into(),
-            app: OTA_APP_ID.into(),
+            app: OTA_APP_INKBOT.into(),
             bin_size: None,
         };
-        assert!(check_ota_image(&ok, OTA_SLOT_BYTES + 1).is_err());
-        assert!(check_ota_image(&ok, 0).is_err());
+        assert!(check_ota_image(&ok, OTA_SLOT_BYTES + 1, OTA_APP_INKBOT).is_err());
+        assert!(check_ota_image(&ok, 0, OTA_APP_INKBOT).is_err());
+    }
+
+    #[test]
+    fn default_ota_repo_uses_namespace_and_app() {
+        assert_eq!(
+            default_ota_repo(OTA_APP_INKBOT),
+            format!("{GHCR_NAMESPACE}/{OTA_APP_INKBOT}")
+        );
+        assert_eq!(
+            default_ota_repo(OTA_APP_MAZE),
+            format!("{GHCR_NAMESPACE}/{OTA_APP_MAZE}")
+        );
+    }
+
+    #[test]
+    fn known_ota_app_accepts_catalog() {
+        assert!(known_ota_app(OTA_APP_INKBOT));
+        assert!(known_ota_app(OTA_APP_MAZE));
+        assert!(!known_ota_app("not-an-app"));
+        assert_eq!(OTA_APPS, &[OTA_APP_INKBOT, OTA_APP_MAZE]);
     }
 }

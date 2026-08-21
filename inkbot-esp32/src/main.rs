@@ -2,10 +2,12 @@
 
 mod device_config;
 mod display;
+#[cfg(feature = "gcp")]
 mod gcp;
 mod https;
 mod nvs_util;
 mod ota;
+mod ota_slot;
 mod sig;
 mod trust;
 
@@ -78,15 +80,21 @@ fn main() -> Result<()> {
     let sysloop = EspSystemEventLoop::take()?;
     let nvs_part = EspDefaultNvsPartition::take()?;
 
-    let gcp_cfg = gcp::GcpConfig::load(nvs_part.clone())?;
-    let pending_log_queue = if let Some(cfg) = gcp_cfg.as_ref() {
-        let q = gcp::LogQueue::new(gcp::QUEUE_CAPACITY);
-        gcp::ForkLogger::install(Some((q.clone(), cfg.min_level)));
-        Some(q)
-    } else {
-        gcp::ForkLogger::install(None);
-        None
+    #[cfg(feature = "gcp")]
+    let (gcp_cfg, pending_log_queue) = {
+        let gcp_cfg = gcp::GcpConfig::load(nvs_part.clone())?;
+        let pending_log_queue = if let Some(cfg) = gcp_cfg.as_ref() {
+            let q = gcp::LogQueue::new(gcp::QUEUE_CAPACITY);
+            gcp::ForkLogger::install(Some((q.clone(), cfg.min_level)));
+            Some(q)
+        } else {
+            gcp::ForkLogger::install(None);
+            None
+        };
+        (gcp_cfg, pending_log_queue)
     };
+    #[cfg(not(feature = "gcp"))]
+    esp_idf_svc::log::EspLogger::initialize_default();
 
     info!(
         "inkbot-esp32: boot fw={FIRMWARE_ID} git={GIT_SHA} reset_reason={} ({}) {}",
@@ -124,9 +132,10 @@ fn main() -> Result<()> {
     };
     APP.set(cfg).map_err(|_| anyhow!("AppConfig already set"))?;
     info!(
-        "provisioned ssid={} base={} ota={}:{} poll={}s",
+        "provisioned ssid={} base={} ota_app={} ota={}:{} poll={}s",
         app().wifi_ssid,
         app().base_url,
+        app().ota_app,
         app().ota_repo,
         app().ota_tag,
         app().ota_poll_secs
@@ -181,6 +190,7 @@ fn main() -> Result<()> {
     // Keep the SNTP handle so unix_secs, Sigstore validity, and GCP JWT stay valid.
     let _sntp = start_sntp();
     let https_lock = https::new_short_https_lock();
+    #[cfg(feature = "gcp")]
     let mut gcp_client = match (gcp_cfg, pending_log_queue) {
         (Some(cfg), Some(queue)) => {
             info!(
@@ -308,6 +318,7 @@ fn main() -> Result<()> {
                 Err(e) => warn!("ota: poll failed: {e:#}"),
             }
         }
+        #[cfg(feature = "gcp")]
         if let Some(client) = gcp_client.as_mut() {
             client.tick();
         }
