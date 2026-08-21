@@ -4,8 +4,8 @@ import {
   FLASH_SIZE,
   ROM_BAUD,
 } from "./constants.js";
-import { flashParts, inspectImage, isClassicEsp32 } from "./image.js";
-import { resetIntoApp, sleep } from "./reset.js";
+import { flashParts, isClassicEsp32 } from "./image.js";
+import { resetIntoApp } from "./reset.js";
 
 /**
  * Convert firmware bytes to the binary string esptool-js 0.5.x still flashes.
@@ -33,27 +33,22 @@ export function toBinaryString(bytes) {
  * @param {{
  *   port: SerialPort,
  *   firmware: Uint8Array,
- *   bothSlots?: boolean,
  *   baudrate?: number,
  *   terminal?: { clean: Function, writeLine: Function, write: Function },
  *   ESPLoader: new (opts: object) => {
  *     main: () => Promise<string>,
  *     writeFlash: (opts: object) => Promise<void>,
- *     after: (mode: string) => Promise<void>,
  *   },
- *   Transport: new (port: SerialPort, tracing?: boolean) => {
+ *   Transport: new (port: SerialPort) => {
  *     disconnect: () => Promise<void>,
  *     setDTR: (state: boolean) => Promise<void>,
  *     setRTS: (state: boolean) => Promise<void>,
  *   },
  *   onProgress?: (fileIndex: number, written: number, total: number) => void,
- *   sleep?: (ms: number) => Promise<void>,
  * }} opts
  */
 export async function flashFirmware(opts) {
-  const firmware = opts.firmware;
-  inspectImage(firmware);
-  const parts = flashParts(firmware, { bothSlots: opts.bothSlots }).map((part) => ({
+  const parts = flashParts(opts.firmware).map((part) => ({
     address: part.address,
     data: toBinaryString(part.data),
   }));
@@ -63,7 +58,7 @@ export async function flashFirmware(opts) {
     throw new Error("esptool-js Transport/ESPLoader are not loaded");
   }
 
-  const transport = new Transport(opts.port, true);
+  const transport = new Transport(opts.port);
   const loader = new ESPLoader({
     transport,
     baudrate: opts.baudrate || ROM_BAUD,
@@ -86,11 +81,9 @@ export async function flashFirmware(opts) {
       compress: true,
       reportProgress: opts.onProgress,
     });
-    await loader.after("hard_reset");
-    // esptool-js HardReset only deasserts RTS, which is already false
-    // after ClassicReset. Pulse EN with IO0 high so the app actually boots.
-    await resetIntoApp(transport, { sleep: opts.sleep });
-    await sleep(100, { sleep: opts.sleep });
+    // esptool-js HardReset only deasserts RTS, which is already false after
+    // ClassicReset, so skip it and pulse EN with IO0 high instead.
+    await resetIntoApp(transport);
     return { chip, parts };
   } finally {
     try {

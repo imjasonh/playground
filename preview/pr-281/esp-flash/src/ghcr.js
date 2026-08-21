@@ -9,11 +9,6 @@ import {
   OTA_TARGET_CHIP,
 } from "./constants.js";
 
-/**
- * GHCR repository path (`owner/name`) for a firmware app.
- *
- * @param {string} app
- */
 export function repoPath(app) {
   if (!OTA_APPS.includes(app)) {
     throw new Error(`unknown firmware app ${app}`);
@@ -21,21 +16,6 @@ export function repoPath(app) {
   return `${GHCR_NAMESPACE.replace(/^ghcr\.io\//, "")}/${app}`;
 }
 
-/**
- * Full `ghcr.io/…` repo name for a firmware app.
- *
- * @param {string} app
- */
-export function defaultOtaRepo(app) {
-  return `${GHCR_NAMESPACE}/${app}`;
-}
-
-/**
- * cors-proxy query URL for an upstream target.
- *
- * @param {string} proxyBase
- * @param {string} target
- */
 export function proxiedUrl(proxyBase, target) {
   const base = String(proxyBase || "").trim().replace(/\/+$/, "");
   if (!base) {
@@ -62,11 +42,6 @@ export function blobUrl(app, digest) {
   return `https://ghcr.io/v2/${repoPath(app)}/blobs/${digest}`;
 }
 
-/**
- * Pick the single firmware layer from an OCI image manifest.
- *
- * @param {{ layers?: { mediaType?: string, digest?: string, size?: number }[] }} manifest
- */
 export function pickFirmwareLayer(manifest) {
   const layers = manifest?.layers;
   if (!Array.isArray(layers) || layers.length !== 1) {
@@ -90,13 +65,6 @@ export function pickFirmwareLayer(manifest) {
   return layer;
 }
 
-/**
- * Check that a signed config blob is the requested app and fits one OTA slot.
- *
- * @param {{ target_chip?: string, app?: string, bin_size?: number }} cfg
- * @param {number} layerSize
- * @param {string} expectedApp
- */
 export function checkFirmwareConfig(cfg, layerSize, expectedApp) {
   if (!OTA_APPS.includes(expectedApp)) {
     throw new Error(`unknown expected app ${expectedApp}`);
@@ -109,11 +77,6 @@ export function checkFirmwareConfig(cfg, layerSize, expectedApp) {
   if (cfg.app !== expectedApp) {
     throw new Error(`firmware config app=${cfg.app} (want ${expectedApp})`);
   }
-  if (layerSize === 0 || layerSize > OTA_SLOT_BYTES) {
-    throw new Error(
-      `firmware layer size ${layerSize} does not fit OTA slot (${OTA_SLOT_BYTES} bytes)`,
-    );
-  }
   if (cfg.bin_size != null && Number(cfg.bin_size) !== layerSize) {
     throw new Error(
       `firmware config bin_size=${cfg.bin_size} does not match layer size ${layerSize}`,
@@ -124,8 +87,8 @@ export function checkFirmwareConfig(cfg, layerSize, expectedApp) {
 /**
  * Pull `:tag` of `app` from GHCR through cors-proxy.
  *
- * This path does not verify Cosign. USB flash is a trusted-computer operation;
- * the device still verifies signatures on its own OTA pulls.
+ * Does not verify Cosign. USB flash is a trusted-computer operation; the
+ * device still verifies signatures on its own OTA pulls.
  *
  * @param {{
  *   app: string,

@@ -6,8 +6,9 @@ import assert from "node:assert/strict";
 function fakeEspTool({ chip = "ESP32-D0WDQ6 (revision v1.0)" } = {}) {
   const calls = [];
   class Transport {
-    constructor(port) {
+    constructor(port, tracing) {
       this.port = port;
+      calls.push(["Transport", tracing]);
     }
     async setDTR(state) {
       calls.push(["DTR", state]);
@@ -30,9 +31,6 @@ function fakeEspTool({ chip = "ESP32-D0WDQ6 (revision v1.0)" } = {}) {
     async writeFlash(flashOpts) {
       calls.push(["writeFlash", flashOpts]);
     }
-    async after(mode) {
-      calls.push(["after", mode]);
-    }
   }
   return { Transport, ESPLoader, calls };
 }
@@ -45,21 +43,20 @@ test("flashFirmware writes both slots, pulses EN into the app, and disconnects",
     firmware,
     ESPLoader,
     Transport,
-    sleep: async () => {},
   });
   assert.equal(result.chip.startsWith("ESP32"), true);
   assert.deepEqual(
     result.parts.map((p) => p.address),
     [OTA_0_OFFSET, OTA_1_OFFSET],
   );
-  assert.equal(calls[0], "main");
-  assert.equal(calls[1][0], "writeFlash");
-  assert.equal(calls[1][1].eraseAll, false);
-  assert.equal(calls[1][1].flashSize, "4MB");
-  assert.equal(typeof calls[1][1].fileArray[0].data, "string");
-  assert.equal(calls[1][1].fileArray[0].data.charCodeAt(0), 0xe9);
-  assert.equal(calls[2][0], "after");
-  assert.equal(calls[2][1], "hard_reset");
+  assert.equal(calls[0][0], "Transport");
+  assert.equal(calls[0][1], undefined);
+  assert.equal(calls[1], "main");
+  assert.equal(calls[2][0], "writeFlash");
+  assert.equal(calls[2][1].eraseAll, false);
+  assert.equal(calls[2][1].flashSize, "4MB");
+  assert.equal(typeof calls[2][1].fileArray[0].data, "string");
+  assert.equal(calls[2][1].fileArray[0].data.charCodeAt(0), 0xe9);
   assert.deepEqual(calls.slice(3, 7), [
     ["DTR", false],
     ["RTS", true],
@@ -75,10 +72,8 @@ test("flashFirmware warns when the chip is not classic ESP32", async () => {
   await flashFirmware({
     port: {},
     firmware: new Uint8Array([0xe9]),
-    bothSlots: false,
     ESPLoader,
     Transport,
-    sleep: async () => {},
     terminal: {
       clean() {},
       writeLine(line) {

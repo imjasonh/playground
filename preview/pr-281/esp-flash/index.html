@@ -16,35 +16,24 @@
       <header class="hero">
         <h1>ESP32 flash</h1>
         <p>
-          Write an ESP32 app image over USB from this page. Desktop Chrome and
-          Edge use
+          Write an ESP32 app image over USB. Chrome and Edge on a computer use
           <a href="https://developer.mozilla.org/en-US/docs/Web/API/Web_Serial_API">Web Serial</a>.
-          Android Chrome uses
+          Chrome on Android uses
           <a href="https://developer.mozilla.org/en-US/docs/Web/API/WebUSB_API">WebUSB</a>
-          through Espressif's serial polyfill. The flasher is
+          and Espressif's serial polyfill. The flasher is
           <a href="https://github.com/espressif/esptool-js">esptool-js</a>.
         </p>
       </header>
-
-      <section class="card" aria-labelledby="browser-heading">
-        <h2 id="browser-heading">Browser</h2>
-        <p class="status">
-          USB access:
-          <span id="browser-state" class="badge" data-state="unknown">checking</span>
-        </p>
-        <p id="browser-hint" class="hint">Checking for Web Serial or WebUSB…</p>
-      </section>
 
       <section class="card" aria-labelledby="image-heading">
         <h2 id="image-heading">Image</h2>
         <p class="hint">
           GHCR copies are the same <code>firmware.bin</code> the desk frame
-          pulls for OTA. This page does not check Cosign; treat USB flash as a
-          trusted-computer path. A board that still has the factory partition
-          table needs a one-time
-          <code>make bootstrap</code> from
+          pulls for OTA. This page does not check Cosign. Flash from a computer
+          you trust. A board still on the factory partition table needs a
+          one-time <code>make bootstrap</code> from
           <a href="https://github.com/imjasonh/playground/tree/main/inkbot-esp32">inkbot-esp32</a>
-          before this flasher can land an app in the OTA slots.
+          before this page can write the OTA slots.
         </p>
 
         <fieldset class="source">
@@ -63,23 +52,25 @@
           </label>
         </fieldset>
 
-        <div class="field">
-          <label for="proxy-base">CORS proxy</label>
-          <input
-            id="proxy-base"
-            type="url"
-            inputmode="url"
-            autocomplete="off"
-            spellcheck="false"
-            placeholder="https://cors-proxy-worker.imjasonh.workers.dev"
-          />
-          <p class="hint">
-            GHCR does not send CORS headers, so the fetch goes through
-            <a href="https://github.com/imjasonh/playground/tree/main/cors-proxy">cors-proxy</a>.
-            Override with
-            <code>?proxy=</code> if you run your own Worker.
-          </p>
-        </div>
+        <details class="proxy">
+          <summary>CORS proxy</summary>
+          <div class="field">
+            <label for="proxy-base">Worker URL</label>
+            <input
+              id="proxy-base"
+              type="url"
+              inputmode="url"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="https://cors-proxy-worker.imjasonh.workers.dev"
+            />
+            <p class="hint">
+              GHCR does not send CORS headers, so this page fetches through
+              <a href="https://github.com/imjasonh/playground/tree/main/cors-proxy">cors-proxy</a>.
+              If you run your own Worker, add <code>?proxy=</code>.
+            </p>
+          </div>
+        </details>
 
         <div class="row">
           <button id="fetch-btn" type="button" class="primary">Load from GHCR</button>
@@ -94,19 +85,19 @@
       </section>
 
       <section class="card" aria-labelledby="flash-heading">
-        <h2 id="flash-heading">Flash</h2>
+        <div class="card-head">
+          <h2 id="flash-heading">Flash</h2>
+          <span id="browser-state" class="badge" data-state="unknown">checking</span>
+        </div>
+        <p id="browser-hint" class="hint">Checking for Web Serial or WebUSB.</p>
         <p class="hint">
-          Plug in the Waveshare ESP32 driver board. The write replaces the app
-          slots only; Wi-Fi and other NVS keys stay. If connect fails, hold
+          Plug in the Waveshare ESP32 driver board. The write replaces both app
+          slots and leaves NVS alone, so Wi-Fi keys stay. If connect fails, hold
           <strong>BOOT</strong>, tap <strong>RESET</strong>, then try again.
-          After a successful write, tap <strong>RESET</strong> alone if the
-          panel does not change. The e-ink panel keeps the last picture until
-          the new firmware paints.
+          After a successful write, tap <strong>RESET</strong> without holding
+          <strong>BOOT</strong> if the panel does not change. E-ink keeps the
+          last picture until the new firmware paints.
         </p>
-        <label class="check">
-          <input id="both-slots" type="checkbox" checked />
-          Write both OTA slots so the running slot is replaced
-        </label>
         <div class="row">
           <button id="flash-btn" type="button" class="primary" disabled>Connect and flash</button>
         </div>

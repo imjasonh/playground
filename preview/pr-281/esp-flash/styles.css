@@ -10,7 +10,6 @@
   --code-bg: #f3f4f6;
   --ok-bg: #dcfce7;
   --ok-fg: #166534;
-  --warn-bg: #fef9c3;
   --warn-fg: #854d0e;
   --bad-bg: #fee2e2;
   --bad-fg: #991b1b;
@@ -30,7 +29,6 @@
     --code-bg: #0f1424;
     --ok-bg: #064e3b;
     --ok-fg: #6ee7b7;
-    --warn-bg: #4d3b07;
     --warn-fg: #fde68a;
     --bad-bg: #4c1d1d;
     --bad-fg: #fca5a5;
@@ -112,12 +110,6 @@ main {
   max-width: 65ch;
 }
 
-.status {
-  color: var(--muted);
-  font-size: 0.95rem;
-  margin: 0 0 0.5rem;
-}
-
 .field {
   margin-bottom: 1rem;
 }
@@ -167,11 +159,19 @@ input:focus {
   margin: 0.4rem 0;
 }
 
-.check {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.5rem;
+.proxy {
   margin: 0 0 1rem;
+}
+
+.proxy summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.proxy .field {
+  margin-top: 0.75rem;
+  margin-bottom: 0;
 }
 
 .row {
@@ -227,11 +227,6 @@ button.link {
 .badge[data-state="ok"] {
   background: var(--ok-bg);
   color: var(--ok-fg);
-}
-
-.badge[data-state="warn"] {
-  background: var(--warn-bg);
-  color: var(--warn-fg);
 }
 
 .badge[data-state="bad"] {
