@@ -353,6 +353,7 @@ mod tests {
         assert!(js.contains("bindAddressField"));
         assert!(js.contains("/suggest?q="));
         assert!(js.contains("/place?id="));
+        assert!(js.contains("hasDigit(q)"));
     }
 
     #[test]
