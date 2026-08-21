@@ -29,28 +29,9 @@ impl Route {
     pub fn end(&self) -> Option<LatLng> {
         self.points.last().copied()
     }
-
-    /// Great-circle miles along the polyline, used when Google did not send a distance.
-    pub fn path_miles(&self) -> f64 {
-        self.points
-            .windows(2)
-            .map(|w| haversine_miles(w[0], w[1]))
-            .sum()
-    }
 }
 
-/// Statute miles between two points.
-pub fn haversine_miles(a: LatLng, b: LatLng) -> f64 {
-    const R: f64 = 3958.8;
-    let dlat = (b.lat - a.lat).to_radians();
-    let dlng = (b.lng - a.lng).to_radians();
-    let la1 = a.lat.to_radians();
-    let la2 = b.lat.to_radians();
-    let h = (dlat / 2.0).sin().powi(2) + la1.cos() * la2.cos() * (dlng / 2.0).sin().powi(2);
-    2.0 * R * h.sqrt().asin()
-}
-
-/// Format a mile count the way a legend on an envelope can hold.
+/// Format a mile count from Google's distance, in statute miles.
 pub fn format_miles(miles: f64) -> String {
     if miles < 0.15 {
         "under a mile".to_string()

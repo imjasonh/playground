@@ -4,7 +4,6 @@ use pdf_writer::{Content, Filter, Name, Pdf, Rect, Ref, Str, TextStr};
 
 use crate::address::Address;
 use crate::error::Error;
-use crate::geo::format_miles;
 use crate::maps::{jpeg_dimensions, EnvelopeSpec};
 
 /// US #10 business envelope, in PDF points (1/72 inch).
@@ -18,7 +17,6 @@ const GS: Name = Name(b"GS");
 
 const LAND: (f32, f32, f32) = (0.957, 0.941, 0.910);
 const INK: (f32, f32, f32) = (0.12, 0.12, 0.14);
-const MUTED: (f32, f32, f32) = (0.35, 0.37, 0.40);
 const CARD: (f32, f32, f32) = (1.0, 0.99, 0.97);
 const STAMP: (f32, f32, f32) = (0.55, 0.22, 0.22);
 
@@ -112,7 +110,6 @@ fn paint_blank(content: &mut Content) {
 }
 
 fn paint_overlays(content: &mut Content, spec: &EnvelopeSpec) {
-    let has_photo = spec.map_jpeg.is_some();
     let return_h = card_height(&spec.from, 9.0, 11.0);
     let return_w = 210.0;
     let return_x = 16.0;
@@ -150,7 +147,6 @@ fn paint_overlays(content: &mut Content, spec: &EnvelopeSpec) {
     );
 
     draw_stamp(content);
-    draw_legend(content, spec, has_photo);
 }
 
 fn card_height(addr: &Address, size: f32, leading: f32) -> f32 {
@@ -194,30 +190,6 @@ fn draw_stamp(content: &mut Content) {
     show_text(content, FONT_R, 6.0, x + 7.0, y + h / 2.0 + 4.0, "PLACE");
     show_text(content, FONT_R, 6.0, x + 7.0, y + h / 2.0 - 5.0, "STAMP");
     show_text(content, FONT_R, 6.0, x + 7.0, y + h / 2.0 - 14.0, "HERE");
-}
-
-fn draw_legend(content: &mut Content, spec: &EnvelopeSpec, has_photo: bool) {
-    if spec.route.is_none() && !has_photo {
-        return;
-    }
-    fill_rgb(content, CARD);
-    rounded_rect(content, 12.0, 5.0, 228.0, 26.0, 2.0);
-    content.fill_nonzero();
-    if let Some(route) = &spec.route {
-        fill_rgb(content, MUTED);
-        let mut legend = route
-            .distance_text
-            .clone()
-            .unwrap_or_else(|| format_miles(route.path_miles()));
-        if let Some(dur) = &route.duration_text {
-            legend = format!("{legend}  ·  {dur}");
-        }
-        show_text(content, FONT_R, 7.0, 16.0, 18.0, &legend);
-    }
-    if has_photo {
-        fill_rgb(content, MUTED);
-        show_text(content, FONT_R, 6.5, 16.0, 8.0, "Map data © Google");
-    }
 }
 
 fn show_text(content: &mut Content, font: Name, size: f32, x: f32, y: f32, text: &str) {
@@ -281,6 +253,7 @@ fn winansi(s: &str) -> Vec<u8> {
 mod tests {
     use super::*;
     use crate::address::Address;
+    use crate::geo::{LatLng, Route};
     use crate::maps::{EnvelopeSpec, MapStyle};
 
     fn pdf_for(from: &str, to: &str) -> Vec<u8> {
@@ -331,7 +304,11 @@ mod tests {
         EnvelopeSpec {
             from: Address::parse("Ada\nMountain View, CA").unwrap(),
             to: Address::parse("Bob\nNew York, NY").unwrap(),
-            route: None,
+            route: Some(Route {
+                points: vec![LatLng::new(37.4, -122.1), LatLng::new(40.7, -74.0)],
+                distance_text: Some("2944 miles".into()),
+                duration_text: Some("43 hr 22 min".into()),
+            }),
             map_jpeg: Some(tiny_jpeg()),
             map_style: style,
         }
@@ -345,5 +322,14 @@ mod tests {
         assert_ne!(google, hybrid);
         assert!(String::from_utf8_lossy(&google).contains("0.68"));
         assert!(String::from_utf8_lossy(&hybrid).contains("0.4"));
+    }
+
+    #[test]
+    fn map_pdf_has_no_distance_or_extra_google_credit() {
+        let pdf = render(&spec_with_style(MapStyle::Google)).unwrap();
+        let s = String::from_utf8_lossy(&pdf);
+        assert!(!s.contains("2944 miles"));
+        assert!(!s.contains("43 hr 22 min"));
+        assert!(!s.contains("Map data"));
     }
 }
