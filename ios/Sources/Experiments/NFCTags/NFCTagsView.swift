@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Read and write NDEF tags. Core NFC needs a physical iPhone; Simulator opens the UI only.
+/// Read and write NFC tags (NDEF text/URL). Needs a physical iPhone; Simulator opens the UI only.
 struct NFCTagsView: View {
     @StateObject private var controller = NFCTagsController()
 
@@ -145,8 +145,9 @@ struct NFCTagsView: View {
             Text("How it works")
                 .font(.subheadline.bold())
             Text(
-                "Reads and writes NDEF Text and URL records. Blank phone-writable tags work; "
-                    + "many transit and product tags are locked read-only."
+                "Reads and writes NDEF Text and URL records. Blank NTAG / Type 2 tags show as "
+                    + "empty (with UID) instead of an error; switch to Write to store content. "
+                    + "Many transit and product tags are locked read-only."
             )
             .font(.caption)
             .foregroundStyle(.secondary)

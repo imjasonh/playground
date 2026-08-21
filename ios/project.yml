@@ -63,8 +63,8 @@ targets:
         # Ride Monitor launches the Watch companion via HealthKit startWatchApp
         # so the wrist stays on the ride UI without the user hunting for it.
         com.apple.developer.healthkit: true
-        # NFC Tags experiment: Core NFC NDEF read/write (Near Field Communication
-        # Tag Reading). Needs App ID capability + match profile refresh (bootstrap).
+        # NFC Tags experiment: Core NFC Tag Reading (NFCTagReaderSession + NDEF).
+        # Needs App ID capability + match profile refresh (bootstrap).
         com.apple.developer.nfc.readersession.formats:
           - TAG
     # Explicit Info.plist so CFBundleName and CFBundleDisplayName can

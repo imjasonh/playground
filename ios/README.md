@@ -53,7 +53,7 @@ ios/
 | `voxel-world` | Voxel World | In-app; ARKit rebuilds the room as Minecraft-style palette blocks |
 | `wigglecam` | Wigglecam | In-app; dual-wide wigglegrams saved as GIF to Photos |
 | `local-lens` | Local Lens | In-app; live on-device Vision (classify / OCR / face landmarks / body & hand pose / barcodes) |
-| `nfc-tags` | NFC Tags | In-app Core NFC NDEF read/write for text and URL; needs NFC Tag Reading capability bootstrap |
+| `nfc-tags` | NFC Tags | In-app Core NFC tag read/write (NDEF text/URL, blank NTAGs); needs NFC Tag Reading capability bootstrap |
 
 ### Ride Monitor
 
@@ -216,10 +216,12 @@ on a TrueDepth front camera — not wired here yet.
 
 ### NFC Tags
 
-Read and write NDEF text or URL records with Core NFC (`NFCNDEFReaderSession`).
-Scan shows decoded records. Write builds one Text or URI record onto a writable
-tag. Requires the NFC Tag Reading App ID capability
-(`com.apple.developer.nfc.readersession.formats`) and
+Read and write NDEF text or URL records with Core NFC (`NFCTagReaderSession`).
+Scan connects to ISO 14443 / 15693 / FeliCa tags, shows UID and family, and
+decodes NDEF when present. Blank NTAG / Type 2 tags (no NDEF message yet) count
+as a successful read instead of the old "does not contain any NDEF message"
+failure; use Write to store a Text or URI record. Requires the NFC Tag Reading
+App ID capability (`com.apple.developer.nfc.readersession.formats`) and
 `NFCReaderUsageDescription`. That entitlement change on the host Bundle ID needs
 `needs-ios-bootstrap` so match refreshes the App Store profile after merge.
 Simulator opens the UI but cannot scan; use a physical iPhone.

@@ -228,7 +228,7 @@ final class PlaygroundUITests: XCTestCase {
             || app.otherElements["nfcScanButton"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["nfcStatusMessage"].waitForExistence(timeout: 8)
             || app.otherElements["nfcStatusMessage"].waitForExistence(timeout: 3)
-            || app.staticTexts["Hold an NDEF tag near the top of the iPhone."].waitForExistence(timeout: 3))
+            || app.staticTexts["Hold an NFC tag near the top of the iPhone."].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["nfcAvailabilityBanner"].waitForExistence(timeout: 8)
             || app.otherElements["nfcAvailabilityBanner"].waitForExistence(timeout: 3)
             || app.staticTexts["NFC reader ready"].waitForExistence(timeout: 3)
