@@ -3,7 +3,6 @@
 use anyhow::{anyhow, bail, Context, Result};
 use embedded_svc::http::client::Client;
 use embedded_svc::http::Method;
-use embedded_svc::io::Read;
 use esp_idf_svc::http::client::{
     Configuration as HttpConfig, EspHttpConnection, FollowRedirectsPolicy,
 };

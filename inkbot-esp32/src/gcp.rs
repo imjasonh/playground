@@ -150,8 +150,12 @@ impl Log for ForkLogger {
     }
 
     fn log(&self, record: &Record) {
-        // Match EspLogger's usual line so `make monitor` stays readable.
-        esp_idf_svc::log::EspLogger.log(record);
+        // EspLogger is a type alias (not a unit struct) in esp-idf-svc 0.52.
+        // Compose the IDF logger with a no-op filter so serial format matches
+        // `make monitor` without installing it as the global logger.
+        static SERIAL: esp_idf_svc::log::EspIdfLogger =
+            esp_idf_svc::log::EspIdfLogger::new(());
+        SERIAL.log(record);
         let Some(queue) = &self.queue else {
             return;
         };

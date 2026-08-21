@@ -154,7 +154,7 @@ fn main() -> Result<()> {
     }
 
     let mut wifi = BlockingWifi::wrap(
-        EspWifi::new(peripherals.modem, sysloop.clone(), Some(nvs_part))?,
+        EspWifi::new(peripherals.modem, sysloop.clone(), Some(nvs_part.clone()))?,
         sysloop,
     )?;
     thread::sleep(Duration::from_millis(500));
