@@ -78,7 +78,7 @@ test("fetchFirmware pulls token, manifest, config, and blob through the proxy", 
   const firmware = new Uint8Array([0xe9, 1, 2, 3]);
   const calls = [];
   const fetchImpl = async (url, init = {}) => {
-    calls.push({ url, headers: init.headers || {} });
+    calls.push({ url, headers: init.headers || {}, cache: init.cache });
     const target = new URL(url).searchParams.get("url");
     if (target.includes("/token?")) {
       return json({ token: "anon" });
@@ -111,6 +111,8 @@ test("fetchFirmware pulls token, manifest, config, and blob through the proxy", 
   assert.equal(result.config.app, OTA_APP_INKBOT);
   assert.equal(new URL(calls[0].url).searchParams.get("url").includes("ghcr.io/token"), true);
   assert.equal(calls[1].headers.Authorization, "Bearer anon");
+  assert.equal(calls[0].cache, "no-store");
+  assert.equal(calls[1].cache, "no-store");
 });
 
 function json(obj) {
