@@ -5,6 +5,7 @@ import {
   ROM_BAUD,
 } from "./constants.js";
 import { flashParts, inspectImage, isClassicEsp32 } from "./image.js";
+import { resetIntoApp, sleep } from "./reset.js";
 
 /**
  * Convert firmware bytes to the binary string esptool-js 0.5.x still flashes.
@@ -42,8 +43,11 @@ export function toBinaryString(bytes) {
  *   },
  *   Transport: new (port: SerialPort, tracing?: boolean) => {
  *     disconnect: () => Promise<void>,
+ *     setDTR: (state: boolean) => Promise<void>,
+ *     setRTS: (state: boolean) => Promise<void>,
  *   },
  *   onProgress?: (fileIndex: number, written: number, total: number) => void,
+ *   sleep?: (ms: number) => Promise<void>,
  * }} opts
  */
 export async function flashFirmware(opts) {
@@ -83,6 +87,10 @@ export async function flashFirmware(opts) {
       reportProgress: opts.onProgress,
     });
     await loader.after("hard_reset");
+    // esptool-js HardReset only deasserts RTS, which is already false
+    // after ClassicReset. Pulse EN with IO0 high so the app actually boots.
+    await resetIntoApp(transport, { sleep: opts.sleep });
+    await sleep(100, { sleep: opts.sleep });
     return { chip, parts };
   } finally {
     try {
