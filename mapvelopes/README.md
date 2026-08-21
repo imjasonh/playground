@@ -22,8 +22,8 @@ One page in a US envelope size you pick: #10 (9.5 × 4.125 in, default), #9
 of the driving route as the background. The map is washed toward cream so
 the addresses stay readable. Hybrid gets more wash than the others.
 
-Short addresses expand before printing. `98 16th st brooklyn` becomes
-`98 16th St` / `Brooklyn, NY 11215`. The form offers Google, paper,
+Short addresses expand before printing. `123 fake st brooklyn` becomes
+`123 Fake St` / `Brooklyn, NY 11231`. The form offers Google, paper,
 terrain, muted, and hybrid looks, and suggests addresses as you type.
 
 The Worker and CLI both require a Google Maps Platform key. If the key is
@@ -70,7 +70,7 @@ Once deployed (or under `wrangler dev`):
 | `GET` | `/form.js` | Typeahead script for the form |
 | `GET` | `/health` | `{"ok":true,"maps":"google"}` or 503 `{"ok":false,"maps":"none"}` |
 | `GET` | `/suggest?q=…` | `{ "suggestions": [{ "label", "place_id" }] }` |
-| `GET` | `/place?id=…` | `{ "lines": ["98 16th St", "Brooklyn, NY 11215"] }` |
+| `GET` | `/place?id=…` | `{ "lines": ["123 Fake St", "Brooklyn, NY 11231"] }` |
 | `GET` | `/envelope?from=…&to=…` | PDF (optional `style=`, `size=`) |
 | `POST` | `/envelope` | PDF (`application/x-www-form-urlencoded` or JSON `{"from","to","style","size"}`) |
 

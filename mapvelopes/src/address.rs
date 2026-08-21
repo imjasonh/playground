@@ -128,9 +128,9 @@ mod tests {
 
     #[test]
     fn expand_short_street_keeps_no_name() {
-        let addr = Address::parse("98 16th st\nbrooklyn").unwrap();
-        let expanded = addr.expand_with(&["98 16th St".into(), "Brooklyn, NY 11215".into()]);
-        assert_eq!(expanded.lines(), ["98 16th St", "Brooklyn, NY 11215"]);
+        let addr = Address::parse("123 fake st\nbrooklyn").unwrap();
+        let expanded = addr.expand_with(&["123 Fake St".into(), "Brooklyn, NY 11231".into()]);
+        assert_eq!(expanded.lines(), ["123 Fake St", "Brooklyn, NY 11231"]);
         assert!(!expanded.first_line_is_name());
     }
 
@@ -154,7 +154,7 @@ mod tests {
 
     #[test]
     fn expand_empty_postal_keeps_original() {
-        let addr = Address::parse("98 16th st\nbrooklyn").unwrap();
+        let addr = Address::parse("123 fake st\nbrooklyn").unwrap();
         assert_eq!(addr.expand_with(&[]).lines(), addr.lines());
     }
 }

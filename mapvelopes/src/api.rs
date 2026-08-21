@@ -358,11 +358,11 @@ mod tests {
     #[test]
     fn get_suggest() {
         let mut r = req("GET", "/suggest");
-        r.query = vec![("q".into(), "98 16th".into())];
+        r.query = vec![("q".into(), "123 Fake".into())];
         assert_eq!(
             classify(&r),
             Classified::Suggest {
-                query: "98 16th".into()
+                query: "123 Fake".into()
             }
         );
         let empty = classify(&req("GET", "/suggest"));
