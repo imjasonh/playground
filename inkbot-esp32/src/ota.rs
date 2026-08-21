@@ -10,6 +10,7 @@ use esp_idf_svc::nvs::{EspDefaultNvsPartition, EspNvs, NvsDefault};
 use esp_idf_svc::ota::EspOta;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use crate::device_config::AppConfig;
@@ -17,7 +18,8 @@ use crate::https::{http_get, lock_or_poison, OtaDownloadGuard, ShortHttpsLock};
 use crate::ota_slot::{self, NVS_NAMESPACE};
 use crate::trust::TrustConfig;
 use inkbot_esp32::{
-    check_ota_image, FirmwareConfig, OTA_CONFIG_MEDIA_TYPE, OTA_LAYER_MEDIA_TYPE, OTA_SLOT_BYTES,
+    check_ota_image, cosign_signature_tags, FirmwareConfig, COSIGN_SIMPLE_SIGNING_MEDIA_TYPE,
+    OTA_CONFIG_MEDIA_TYPE, OTA_LAYER_MEDIA_TYPE, OTA_SLOT_BYTES, SIGSTORE_BUNDLE_MEDIA_TYPE_PREFIX,
 };
 
 pub use crate::ota_slot::{
@@ -139,13 +141,11 @@ fn poll_once(
     };
     check_ota_image(&fw_cfg, layer.size, &cfg.ota_app).map_err(|e| anyhow!("{e}"))?;
 
-    let bundle = {
+    {
         let _l = lock_or_poison(short_https);
-        fetch_signature_bundle(&cfg.ota_repo, &manifest_digest_hex, &token)
-            .context("fetch signature bundle")?
-    };
-    crate::sig::verify_bundle(&bundle, &manifest_digest_hex, trust)
-        .context("verify signature bundle")?;
+        verify_ghcr_signature(&cfg.ota_repo, &manifest_digest_hex, &token, trust)
+            .context("verify signature")?;
+    }
 
     {
         let _g = OtaDownloadGuard::enter();
@@ -169,6 +169,8 @@ struct Descriptor {
     size: u64,
     #[serde(rename = "mediaType")]
     media_type: String,
+    #[serde(default)]
+    annotations: HashMap<String, String>,
 }
 
 #[derive(Deserialize)]
@@ -241,26 +243,18 @@ fn fetch_firmware_config(
     serde_json::from_slice(&buf).context("parse firmware config JSON")
 }
 
-fn fetch_signature_bundle(repo: &str, manifest_digest_hex: &str, token: &str) -> Result<Vec<u8>> {
+const COSIGN_CERT_ANNOTATION: &str = "dev.sigstore.cosign/certificate";
+const COSIGN_SIG_ANNOTATION: &str = "dev.cosignproject.cosign/signature";
+
+fn verify_ghcr_signature(
+    repo: &str,
+    manifest_digest_hex: &str,
+    token: &str,
+    trust: &TrustConfig,
+) -> Result<()> {
     let repo_path = repo_path(repo)?;
     let auth = format!("Bearer {token}");
-    let bundle_tag = format!("sha256-{manifest_digest_hex}");
-
-    let url1 = format!("https://ghcr.io/v2/{repo_path}/manifests/{bundle_tag}");
-    let mut buf1 = Vec::with_capacity(1024);
-    http_get(
-        &url1,
-        &[
-            ("authorization", auth.as_str()),
-            (
-                "accept",
-                "application/vnd.oci.image.index.v1+json,application/vnd.oci.image.manifest.v1+json",
-            ),
-        ],
-        &mut buf1,
-        MAX_MANIFEST,
-    )
-    .context("fetch sig outer manifest/index")?;
+    let buf1 = fetch_sig_outer(repo_path, manifest_digest_hex, &auth)?;
 
     #[derive(Deserialize)]
     struct Index {
@@ -270,47 +264,111 @@ fn fetch_signature_bundle(repo: &str, manifest_digest_hex: &str, token: &str) ->
     struct IndexEntry {
         digest: String,
     }
-    let inner_digest = if let Ok(idx) = serde_json::from_slice::<Index>(&buf1) {
+    let manifest = if let Ok(idx) = serde_json::from_slice::<Index>(&buf1) {
         if idx.manifests.len() != 1 {
             bail!(
                 "sig index has {} manifests, expected exactly 1",
                 idx.manifests.len()
             );
         }
-        idx.manifests[0].digest.clone()
+        let url2 = format!(
+            "https://ghcr.io/v2/{repo_path}/manifests/{}",
+            idx.manifests[0].digest
+        );
+        let mut buf2 = Vec::with_capacity(2048);
+        http_get(
+            &url2,
+            &[
+                ("authorization", auth.as_str()),
+                ("accept", "application/vnd.oci.image.manifest.v1+json"),
+            ],
+            &mut buf2,
+            MAX_MANIFEST,
+        )
+        .context("fetch sig inner manifest")?;
+        serde_json::from_slice(&buf2).context("parse sig inner manifest JSON")?
     } else {
-        let m: Manifest =
-            serde_json::from_slice(&buf1).context("sig outer is neither index nor manifest")?;
-        return blob_for_sigstore_bundle(&m, repo_path, &auth);
+        serde_json::from_slice(&buf1).context("sig outer is neither index nor manifest")?
     };
-
-    let url2 = format!("https://ghcr.io/v2/{repo_path}/manifests/{inner_digest}");
-    let mut buf2 = Vec::with_capacity(2048);
-    http_get(
-        &url2,
-        &[
-            ("authorization", auth.as_str()),
-            ("accept", "application/vnd.oci.image.manifest.v1+json"),
-        ],
-        &mut buf2,
-        MAX_MANIFEST,
-    )
-    .context("fetch sig inner manifest")?;
-    let inner: Manifest = serde_json::from_slice(&buf2).context("parse sig inner manifest JSON")?;
-    blob_for_sigstore_bundle(&inner, repo_path, &auth)
+    verify_sig_layers(&manifest, repo_path, &auth, manifest_digest_hex, trust)
 }
 
-fn blob_for_sigstore_bundle(m: &Manifest, repo_path: &str, auth: &str) -> Result<Vec<u8>> {
-    let layer = m
+fn fetch_sig_outer(repo_path: &str, manifest_digest_hex: &str, auth: &str) -> Result<Vec<u8>> {
+    let mut last_err = None;
+    for tag in cosign_signature_tags(manifest_digest_hex) {
+        let url = format!("https://ghcr.io/v2/{repo_path}/manifests/{tag}");
+        let mut buf = Vec::with_capacity(1024);
+        match http_get(
+            &url,
+            &[
+                ("authorization", auth),
+                (
+                    "accept",
+                    "application/vnd.oci.image.index.v1+json,application/vnd.oci.image.manifest.v1+json",
+                ),
+            ],
+            &mut buf,
+            MAX_MANIFEST,
+        ) {
+            Ok(()) => return Ok(buf),
+            Err(e) if format!("{e:#}").contains(" -> 404") => last_err = Some(e),
+            Err(e) => return Err(e).context("fetch sig outer manifest/index"),
+        }
+    }
+    Err(last_err.unwrap_or_else(|| anyhow!("no Cosign signature tag")))
+        .context("fetch sig outer manifest/index (tried sha256-<digest>.sig then sha256-<digest>)")
+}
+
+fn verify_sig_layers(
+    m: &Manifest,
+    repo_path: &str,
+    auth: &str,
+    manifest_digest_hex: &str,
+    trust: &TrustConfig,
+) -> Result<()> {
+    if let Some(layer) = m
         .layers
         .iter()
-        .find(|l| {
-            l.media_type
-                .starts_with("application/vnd.dev.sigstore.bundle.")
-        })
-        .ok_or_else(|| anyhow!("sig manifest has no Sigstore bundle layer"))?;
-    if layer.size > MAX_SIG_BUNDLE as u64 {
-        bail!("sig bundle too large ({})", layer.size);
+        .find(|l| l.media_type.starts_with(SIGSTORE_BUNDLE_MEDIA_TYPE_PREFIX))
+    {
+        let bundle = fetch_layer_blob(layer, repo_path, auth, MAX_SIG_BUNDLE)
+            .context("fetch sig bundle blob")?;
+        return crate::sig::verify_bundle(&bundle, manifest_digest_hex, trust);
+    }
+    if let Some(layer) = m
+        .layers
+        .iter()
+        .find(|l| l.media_type == COSIGN_SIMPLE_SIGNING_MEDIA_TYPE)
+    {
+        let payload = fetch_layer_blob(layer, repo_path, auth, MAX_SIG_BUNDLE)
+            .context("fetch Cosign simple-signing payload")?;
+        let cert = layer
+            .annotations
+            .get(COSIGN_CERT_ANNOTATION)
+            .ok_or_else(|| anyhow!("Cosign layer missing {COSIGN_CERT_ANNOTATION}"))?;
+        let sig = layer
+            .annotations
+            .get(COSIGN_SIG_ANNOTATION)
+            .ok_or_else(|| anyhow!("Cosign layer missing {COSIGN_SIG_ANNOTATION}"))?;
+        return crate::sig::verify_cosign_simple(
+            &payload,
+            cert.as_bytes(),
+            sig,
+            manifest_digest_hex,
+            trust,
+        );
+    }
+    bail!("sig manifest has no Sigstore bundle or Cosign simple-signing layer")
+}
+
+fn fetch_layer_blob(
+    layer: &Descriptor,
+    repo_path: &str,
+    auth: &str,
+    max_bytes: usize,
+) -> Result<Vec<u8>> {
+    if layer.size > max_bytes as u64 {
+        bail!("sig blob too large ({})", layer.size);
     }
     let url = format!("https://ghcr.io/v2/{repo_path}/blobs/{}", layer.digest);
     let mut buf = Vec::with_capacity((layer.size as usize).saturating_add(256));
@@ -321,9 +379,8 @@ fn blob_for_sigstore_bundle(m: &Manifest, repo_path: &str, auth: &str) -> Result
             ("accept", "application/octet-stream"),
         ],
         &mut buf,
-        MAX_SIG_BUNDLE,
-    )
-    .context("fetch sig bundle blob")?;
+        max_bytes,
+    )?;
     Ok(buf)
 }
 

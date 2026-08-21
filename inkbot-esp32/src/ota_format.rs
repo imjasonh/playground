@@ -24,6 +24,53 @@ pub const OTA_APPS: &[&str] = &[OTA_APP_INKBOT, OTA_APP_MAZE];
 /// Chip id the device accepts in the signed OCI config blob.
 pub const OTA_TARGET_CHIP: &str = "esp32";
 
+/// Cosign 2 registry attachment (`sha256-<digest>.sig` layer).
+pub const COSIGN_SIMPLE_SIGNING_MEDIA_TYPE: &str =
+    "application/vnd.dev.cosign.simplesigning.v1+json";
+
+/// Sigstore bundle layer prefix (device-side DSSE / in-toto path).
+pub const SIGSTORE_BUNDLE_MEDIA_TYPE_PREFIX: &str = "application/vnd.dev.sigstore.bundle.";
+
+/// Tags Cosign 2 and older Cosign use for a signature attachment.
+///
+/// Cosign 2.5 tags `sha256-<hex>.sig`. The first firmware looked up
+/// `sha256-<hex>` with no suffix and 404'd.
+pub fn cosign_signature_tags(manifest_digest_hex: &str) -> [String; 2] {
+    [
+        format!("sha256-{manifest_digest_hex}.sig"),
+        format!("sha256-{manifest_digest_hex}"),
+    ]
+}
+
+/// Manifest digest hex (no `sha256:`) bound in a Cosign simple-signing payload.
+pub fn cosign_manifest_digest_hex(payload: &[u8]) -> Result<String, &'static str> {
+    #[derive(serde::Deserialize)]
+    struct Payload {
+        critical: Critical,
+    }
+    #[derive(serde::Deserialize)]
+    struct Critical {
+        image: Image,
+        #[serde(rename = "type")]
+        kind: String,
+    }
+    #[derive(serde::Deserialize)]
+    struct Image {
+        #[serde(rename = "docker-manifest-digest")]
+        digest: String,
+    }
+
+    let p: Payload = serde_json::from_slice(payload).map_err(|_| "cosign payload is not JSON")?;
+    if p.critical.kind != "cosign container image signature" {
+        return Err("cosign payload type is not a container image signature");
+    }
+    let d = p.critical.image.digest;
+    d.strip_prefix("sha256:")
+        .map(str::to_string)
+        .filter(|h| !h.is_empty() && h.bytes().all(|b| b.is_ascii_hexdigit()))
+        .ok_or("cosign payload digest is not sha256:<hex>")
+}
+
 /// True when `app` is a firmware image this device knows how to boot.
 pub fn known_ota_app(app: &str) -> bool {
     OTA_APPS.contains(&app)
@@ -261,6 +308,29 @@ mod tests {
         assert!(check_ota_image(&maze, 100, OTA_APP_MAZE).is_ok());
         assert!(check_ota_image(&maze, 100, OTA_APP_INKBOT).is_err());
         assert!(check_ota_image(&inkbot, 100, OTA_APP_MAZE).is_err());
+    }
+
+    #[test]
+    fn cosign_signature_tags_try_dot_sig_first() {
+        assert_eq!(
+            cosign_signature_tags("abc"),
+            ["sha256-abc.sig".to_string(), "sha256-abc".to_string(),]
+        );
+    }
+
+    #[test]
+    fn cosign_manifest_digest_hex_from_simple_signing() {
+        let payload = br#"{"critical":{"identity":{"docker-reference":"ghcr.io/imjasonh/playground/inkbot-esp32"},"image":{"docker-manifest-digest":"sha256:cb75825bdc31b9121b9a5ff45f27170b3ce32898d727bc336ff171ee55ba3155"},"type":"cosign container image signature"},"optional":null}"#;
+        assert_eq!(
+            cosign_manifest_digest_hex(payload).unwrap(),
+            "cb75825bdc31b9121b9a5ff45f27170b3ce32898d727bc336ff171ee55ba3155"
+        );
+    }
+
+    #[test]
+    fn cosign_manifest_digest_hex_rejects_wrong_type() {
+        let payload = br#"{"critical":{"identity":{"docker-reference":"x"},"image":{"docker-manifest-digest":"sha256:aa"},"type":"not-cosign"},"optional":null}"#;
+        assert!(cosign_manifest_digest_hex(payload).is_err());
     }
 
     #[test]

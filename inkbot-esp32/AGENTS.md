@@ -29,9 +29,11 @@ loop, and [`docs/ota.md`](docs/ota.md) for NVS, OTA, and GCP.
   `application/vnd.esp32.firmware.bin`. Require OCI config `app` to match
   the **requested** `ota/app` (not the running binary) and
   `target_chip=esp32`, and reject a layer larger than the `0x1F0000`
-  slot. Verify the Cosign Sigstore bundle (Fulcio + DSSE + in-toto
-  subject = manifest SHA) before writing the inactive slot. Identity
-  allowlist comes from NVS, not the image.
+  slot. Verify the Cosign signature (Fulcio leaf + identity allowlist)
+  before writing the inactive slot. Cosign 2.5 attaches
+  `sha256-<manifest>.sig` with simple-signing; also accept a Sigstore
+  bundle layer (`sha256-<manifest>` without `.sig`). Identity allowlist
+  comes from NVS, not the image.
 - **Pending-verify:** after an OTA reboot, mark the slot valid only when
   the health check succeeds. inkbot: Worker boot fetch (`Displayed` or
   empty catalog). maze: first successful panel paint. On that check
