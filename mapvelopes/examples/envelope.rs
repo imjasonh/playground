@@ -1,6 +1,7 @@
 //! Write a #10 envelope PDF to disk so you can open it without deploying.
 //!
 //! ```bash
+//! export GOOGLE_MAPS_API_KEY='…'
 //! cargo run --example envelope
 //! cargo run --example envelope -- --from 'Ada Example
 //! 1600 Amphitheatre Parkway
@@ -11,8 +12,7 @@
 //!
 //! If `GOOGLE_MAPS_API_KEY` is set (or `--key` is passed), the example geocodes
 //! both addresses, fetches driving directions, and downloads a Static Maps JPEG.
-//! Otherwise the PDF is addresses and a stamp box with no map. Pass `--stub`
-//! to skip Google even when a key is set.
+//! Without a usable key the example exits with an error.
 
 use std::env;
 use std::io::Read;
@@ -20,6 +20,7 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use mapvelopes_worker::address::Address;
+use mapvelopes_worker::error::Error;
 use mapvelopes_worker::maps::{
     api_key_usable, directions_url, geocode_url, parse_directions, parse_geocode, spec_from_google,
     static_map_url, EnvelopeSpec,
@@ -40,7 +41,6 @@ Options:
   --to TEXT       Delivery address (default: a New York example)
   -o, --out PATH  Output PDF (default: envelope.pdf)
   --key KEY       Google Maps API key (default: $GOOGLE_MAPS_API_KEY)
-  --stub          Skip Google even if a key is set (no map background)
   -h, --help      Show this help
 ";
 
@@ -64,21 +64,15 @@ fn run() -> Result<(), String> {
     let from = Address::parse_named("from", &parsed.from).map_err(|e| e.to_string())?;
     let to = Address::parse_named("to", &parsed.to).map_err(|e| e.to_string())?;
 
-    let spec = if parsed.stub || !api_key_usable(parsed.key.as_deref()) {
-        EnvelopeSpec::no_map(from, to)
-    } else {
-        let key = parsed.key.as_deref().expect("usable key");
-        live_spec(from, to, key)?
-    };
+    if !api_key_usable(parsed.key.as_deref()) {
+        return Err(Error::missing_maps_key().to_string());
+    }
+    let key = parsed.key.as_deref().expect("usable key");
+    let spec = live_spec(from, to, key)?;
 
     let pdf = render(&spec).map_err(|e| e.to_string())?;
     std::fs::write(&parsed.out, &pdf).map_err(|e| format!("{}: {e}", parsed.out))?;
-    let kind = if spec.map_jpeg.is_some() {
-        "google map"
-    } else {
-        "no map"
-    };
-    eprintln!("wrote {} ({} bytes, {kind})", parsed.out, pdf.len());
+    eprintln!("wrote {} ({} bytes)", parsed.out, pdf.len());
     Ok(())
 }
 
@@ -87,7 +81,6 @@ struct Args {
     to: String,
     out: String,
     key: Option<String>,
-    stub: bool,
 }
 
 fn parse_args(args: &[String]) -> Result<Args, String> {
@@ -95,7 +88,6 @@ fn parse_args(args: &[String]) -> Result<Args, String> {
     let mut to = None;
     let mut out = None;
     let mut key = env::var("GOOGLE_MAPS_API_KEY").ok();
-    let mut stub = false;
     let mut i = 0;
     while i < args.len() {
         let a = &args[i];
@@ -111,10 +103,6 @@ fn parse_args(args: &[String]) -> Result<Args, String> {
             }
             "--key" => {
                 key = Some(need_value(args, &mut i, "--key")?);
-            }
-            "--stub" => {
-                stub = true;
-                i += 1;
             }
             other if other.starts_with("--from=") => {
                 from = Some(other[7..].to_string());
@@ -140,7 +128,6 @@ fn parse_args(args: &[String]) -> Result<Args, String> {
         to: to.unwrap_or_else(|| DEFAULT_TO.to_string()),
         out: out.unwrap_or_else(|| "envelope.pdf".to_string()),
         key,
-        stub,
     })
 }
 

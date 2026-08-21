@@ -9,8 +9,8 @@ const FORM_HTML: &str = include_str!("form.html");
 
 const LIVE_STATUS: &str =
     "This Worker has a Google Maps key. The envelope background is the driving route between the two addresses.";
-const STUB_STATUS: &str =
-    "This Worker has no Google Maps key. The PDF is addresses and a stamp box until a key is configured.";
+const DOWN_STATUS: &str =
+    "GOOGLE_MAPS_API_KEY is missing or unusable. Envelope generation is disabled until a usable key is bound to this Worker.";
 
 /// A request reduced to method, path, query, and body.
 #[derive(Debug, Clone)]
@@ -104,16 +104,29 @@ fn pair_value(pairs: &[(String, String)], key: &str) -> Option<String> {
 
 /// JSON body for `GET /health`.
 pub fn health_json(maps_live: bool) -> Vec<u8> {
-    let maps = if maps_live { "google" } else { "none" };
-    serde_json::json!({ "ok": true, "maps": maps })
-        .to_string()
-        .into_bytes()
+    if maps_live {
+        serde_json::json!({ "ok": true, "maps": "google" })
+    } else {
+        serde_json::json!({
+            "ok": false,
+            "maps": "none",
+            "error": "GOOGLE_MAPS_API_KEY is missing or unusable",
+        })
+    }
+    .to_string()
+    .into_bytes()
 }
 
 /// HTML form, with a status line that says whether Google Maps is live.
 pub fn form_html(maps_live: bool) -> Vec<u8> {
-    let status = if maps_live { LIVE_STATUS } else { STUB_STATUS };
-    FORM_HTML.replace("__MAPS_STATUS__", status).into_bytes()
+    let status = if maps_live { LIVE_STATUS } else { DOWN_STATUS };
+    let mut html = FORM_HTML.replace("__MAPS_STATUS__", status);
+    if !maps_live {
+        if let (Some(start), Some(end)) = (html.find("<form"), html.find("</form>")) {
+            html.replace_range(start..end + "</form>".len(), "");
+        }
+    }
+    html.into_bytes()
 }
 
 /// JSON error body.
@@ -148,6 +161,10 @@ mod tests {
         assert_eq!(classify(&req("GET", "/health/")), Classified::Health);
         let body = String::from_utf8(health_json(false)).unwrap();
         assert!(body.contains("none"));
+        assert!(body.contains("false"));
+        assert!(String::from_utf8(health_json(true))
+            .unwrap()
+            .contains("google"));
     }
 
     #[test]
@@ -206,9 +223,11 @@ mod tests {
     fn form_html_splices_status() {
         let html = String::from_utf8(form_html(false)).unwrap();
         assert!(html.contains("<html lang=\"en\">"));
-        assert!(html.contains("no Google Maps key"));
+        assert!(html.contains("GOOGLE_MAPS_API_KEY"));
+        assert!(!html.contains("<form"));
         assert!(!html.contains("__MAPS_STATUS__"));
         let live = String::from_utf8(form_html(true)).unwrap();
         assert!(live.contains("Google Maps key"));
+        assert!(live.contains("<form"));
     }
 }
