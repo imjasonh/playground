@@ -4,7 +4,7 @@ use serde::Deserialize;
 use url::form_urlencoded;
 
 use crate::error::Error;
-use crate::maps::MapStyle;
+use crate::maps::{EnvelopeSize, MapStyle};
 
 const FORM_HTML: &str = include_str!("form.html");
 
@@ -32,6 +32,7 @@ pub enum Classified {
         from: String,
         to: String,
         style: MapStyle,
+        size: EnvelopeSize,
     },
     BadRequest(String),
     NotFound,
@@ -66,9 +67,19 @@ fn envelope_from_pairs(pairs: &[(String, String)]) -> Classified {
     if from.trim().is_empty() || to.trim().is_empty() {
         return Classified::BadRequest("from and to are required".into());
     }
-    match MapStyle::parse(pair_value(pairs, "style").as_deref()) {
-        Ok(style) => Classified::Envelope { from, to, style },
-        Err(e) => Classified::BadRequest(e.to_string()),
+    let style = match MapStyle::parse(pair_value(pairs, "style").as_deref()) {
+        Ok(style) => style,
+        Err(e) => return Classified::BadRequest(e.to_string()),
+    };
+    let size = match EnvelopeSize::parse(pair_value(pairs, "size").as_deref()) {
+        Ok(size) => size,
+        Err(e) => return Classified::BadRequest(e.to_string()),
+    };
+    Classified::Envelope {
+        from,
+        to,
+        style,
+        size,
     }
 }
 
@@ -84,13 +95,19 @@ fn envelope_from_post(req: &ApiRequest) -> Classified {
                 if body.from.trim().is_empty() || body.to.trim().is_empty() {
                     Classified::BadRequest("from and to are required".into())
                 } else {
-                    match MapStyle::parse(body.style.as_deref()) {
-                        Ok(style) => Classified::Envelope {
-                            from: body.from,
-                            to: body.to,
-                            style,
-                        },
-                        Err(e) => Classified::BadRequest(e.to_string()),
+                    let style = match MapStyle::parse(body.style.as_deref()) {
+                        Ok(style) => style,
+                        Err(e) => return Classified::BadRequest(e.to_string()),
+                    };
+                    let size = match EnvelopeSize::parse(body.size.as_deref()) {
+                        Ok(size) => size,
+                        Err(e) => return Classified::BadRequest(e.to_string()),
+                    };
+                    Classified::Envelope {
+                        from: body.from,
+                        to: body.to,
+                        style,
+                        size,
                     }
                 }
             }
@@ -107,6 +124,8 @@ struct EnvelopeJson {
     to: String,
     #[serde(default)]
     style: Option<String>,
+    #[serde(default)]
+    size: Option<String>,
 }
 
 fn pair_value(pairs: &[(String, String)], key: &str) -> Option<String> {
@@ -189,10 +208,16 @@ mod tests {
             ("to".into(), "New York, NY".into()),
         ];
         match classify(&r) {
-            Classified::Envelope { from, to, style } => {
+            Classified::Envelope {
+                from,
+                to,
+                style,
+                size,
+            } => {
                 assert!(from.contains("Mountain View"));
                 assert!(to.contains("New York"));
                 assert_eq!(style, MapStyle::Google);
+                assert_eq!(size, EnvelopeSize::Ten);
             }
             other => panic!("{other:?}"),
         }
@@ -204,11 +229,17 @@ mod tests {
         r.content_type = Some("application/x-www-form-urlencoded".into());
         r.body = b"from=Ada%0AMountain+View%2C+CA&to=Bob%0ANew+York%2C+NY".to_vec();
         match classify(&r) {
-            Classified::Envelope { from, to, style } => {
+            Classified::Envelope {
+                from,
+                to,
+                style,
+                size,
+            } => {
                 assert!(from.contains("Ada"));
                 assert!(from.contains("Mountain View"));
                 assert!(to.contains("Bob"));
                 assert_eq!(style, MapStyle::Google);
+                assert_eq!(size, EnvelopeSize::Ten);
             }
             other => panic!("{other:?}"),
         }
@@ -225,6 +256,7 @@ mod tests {
                 from: "A".into(),
                 to: "B".into(),
                 style: MapStyle::Google,
+                size: EnvelopeSize::Ten,
             }
         );
     }
@@ -248,6 +280,9 @@ mod tests {
         assert!(live.contains("<form"));
         assert!(live.contains("name=\"style\""));
         assert!(live.contains("value=\"paper\""));
+        assert!(live.contains("name=\"size\""));
+        assert!(live.contains("value=\"a7\""));
+        assert!(live.contains("value=\"6-3/4\""));
     }
 
     #[test]
@@ -268,6 +303,42 @@ mod tests {
             ("from".into(), "A".into()),
             ("to".into(), "B".into()),
             ("style".into(), "oil".into()),
+        ];
+        assert!(matches!(classify(&r), Classified::BadRequest(_)));
+    }
+
+    #[test]
+    fn post_form_size() {
+        let mut r = req("POST", "/envelope");
+        r.content_type = Some("application/x-www-form-urlencoded".into());
+        r.body = b"from=Ada&to=Bob&size=a7".to_vec();
+        match classify(&r) {
+            Classified::Envelope { size, .. } => assert_eq!(size, EnvelopeSize::A7),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn post_json_size() {
+        let mut r = req("POST", "/envelope");
+        r.content_type = Some("application/json".into());
+        r.body = br#"{"from":"A","to":"B","size":"6-3/4"}"#.to_vec();
+        match classify(&r) {
+            Classified::Envelope { size, style, .. } => {
+                assert_eq!(size, EnvelopeSize::SixThreeQuarter);
+                assert_eq!(style, MapStyle::Google);
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn unknown_size_is_bad_request() {
+        let mut r = req("GET", "/envelope");
+        r.query = vec![
+            ("from".into(), "A".into()),
+            ("to".into(), "B".into()),
+            ("size".into(), "c5".into()),
         ];
         assert!(matches!(classify(&r), Classified::BadRequest(_)));
     }
