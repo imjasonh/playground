@@ -33,7 +33,7 @@ struct T9KeyboardDemoView: View {
             Text(
                 """
                 1. Open Settings → General → Keyboard → Keyboards → Add New Keyboard…
-                2. Under Third-Party Keyboards, choose “T9 Multi-tap” (ImJasonH Playground).
+                2. Under Third-Party Keyboards, choose “T9 Multi-tap” (Playground).
                 3. Tap it in any text field, or hold the globe key to switch.
                 """
             )
