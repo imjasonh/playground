@@ -40,9 +40,12 @@ def make_site(tmp: Path) -> Path:
     # Cloudflare Worker apps (wrangler.toml) -> not browser apps, listed
     # separately. web-push also has an index.html-free demo companion.
     (tmp / "web-push").mkdir()
-    (tmp / "web-push" / "wrangler.toml").write_text("name = 'web-push'")
+    (tmp / "web-push" / "wrangler.toml").write_text("name = 'web-push-worker'\n")
     (tmp / "cors-proxy").mkdir()
-    (tmp / "cors-proxy" / "wrangler.toml").write_text("name = 'cors-proxy'")
+    (tmp / "cors-proxy" / "wrangler.toml").write_text("name = 'cors-proxy'\n")
+    # Missing name falls back to the directory.
+    (tmp / "nameless").mkdir()
+    (tmp / "nameless" / "wrangler.toml").write_text("# no name\n")
     # Hidden dir -> ignored.
     (tmp / ".git").mkdir()
     (tmp / ".git" / "index.html").write_text("x")
@@ -93,8 +96,13 @@ def test_scan_workers() -> None:
         root = make_site(Path(d))
         workers = ri.scan_workers(root)
         check(
-            workers == ["cors-proxy", "web-push"],
-            f"scan_workers sorted, hidden excluded: {workers}",
+            workers
+            == [
+                ri.WorkerApp("cors-proxy", "cors-proxy"),
+                ri.WorkerApp("nameless", "nameless"),
+                ri.WorkerApp("web-push", "web-push-worker"),
+            ],
+            f"scan_workers sorted, hidden excluded, names from wrangler: {workers}",
         )
 
 
@@ -127,8 +135,21 @@ def test_render_site_has_apps_previews_and_workers() -> None:
         check('class="count">2<' in out, "preview count rendered")
         check("Cloudflare Workers apps" in out, "workers heading rendered")
         check(
-            '<a href="https://github.com/o/r/tree/main/web-push">web-push</a>' in out,
-            "worker source link rendered",
+            '<a href="https://web-push-worker.imjasonh.workers.dev">web-push</a>'
+            in out,
+            "worker workers.dev link uses wrangler name",
+        )
+        check(
+            '<a href="https://cors-proxy.imjasonh.workers.dev">cors-proxy</a>' in out,
+            "worker workers.dev link for matching name",
+        )
+        check(
+            "github.com/o/r/tree/main/web-push" not in out,
+            "workers do not link to GitHub source",
+        )
+        check(
+            '<a href="https://nameless.imjasonh.workers.dev">nameless</a>' in out,
+            "worker without wrangler name falls back to directory",
         )
         check("__PREVIEWS__" not in out, "previews placeholder replaced")
         check("__WORKERS__" not in out, "workers placeholder replaced")
@@ -144,9 +165,53 @@ def test_render_without_previews_or_workers_omits_sections() -> None:
     check("Cloudflare Workers apps" not in out, "no workers section when empty")
 
 
-def test_render_workers_relative_link_without_repo_url() -> None:
-    out = ri.render("t", "h", [], [], "", workers=["web-push"], template=TEMPLATE)
-    check('<a href="web-push">web-push</a>' in out, "relative worker link fallback")
+def test_worker_script_name_invalid_toml_falls_back() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        wrangler = Path(d) / "broken" / "wrangler.toml"
+        wrangler.parent.mkdir()
+        wrangler.write_text("name = [unterminated\n")
+        check(
+            ri.worker_script_name(wrangler) == "broken",
+            "invalid toml falls back to directory name",
+        )
+
+
+def test_render_workers_links_to_workers_dev() -> None:
+    out = ri.render(
+        "t",
+        "h",
+        [],
+        [],
+        "",
+        workers=[ri.WorkerApp("web-push", "web-push-worker")],
+        template=TEMPLATE,
+    )
+    check(
+        '<a href="https://web-push-worker.imjasonh.workers.dev">web-push</a>' in out,
+        "worker link is the deployed workers.dev URL",
+    )
+
+
+def test_real_workers_use_wrangler_names() -> None:
+    workers = {w.directory: w.script_name for w in ri.scan_workers(ri.SOURCE_ROOT)}
+    check(workers.get("y") == "y", f"y script name: {workers.get('y')}")
+    check(
+        workers.get("web-push") == "web-push-worker",
+        f"web-push script name: {workers.get('web-push')}",
+    )
+    check(
+        workers.get("git-server") == "git",
+        f"git-server script name: {workers.get('git-server')}",
+    )
+    check(
+        workers.get("cors-proxy") == "cors-proxy-worker",
+        f"cors-proxy script name: {workers.get('cors-proxy')}",
+    )
+    href = ri.worker_url(workers["y"])
+    check(
+        href == "https://y.imjasonh.workers.dev",
+        f"y workers.dev URL: {href}",
+    )
 
 
 def test_scan_apps_skips_generated_posts_dir() -> None:
