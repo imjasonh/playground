@@ -1,36 +1,37 @@
 //! Sigstore-backed OTA admission (host-tested).
 //!
 //! Full Cosign/Fulcio/Rekor verification does not fit in the ESP-IDF second-stage
-//! bootloader (see `docs/sigstore-ota.md`). This module holds the identity
-//! policy and digest checks the firmware and CI share. The Cosign CLI helper is
-//! host-only (`cfg(not(target_os = "espidf"))`).
+//! bootloader (see `docs/sigstore-ota.md`). This module holds digest checks and
+//! an **exact** identity policy loaded at runtime from flash (NVS) — never baked
+//! into the ELF. The Cosign CLI helper is host-only
+//! (`cfg(not(target_os = "espidf"))`).
 //!
-//! Identity pins are **exact** Fulcio certificate identity strings (no regexp).
-//! Device-side crypto verify lands later; until then CI must `verify-blob`
-//! before publishing.
+//! Provision issuer + identity with the NVS CSV (see `nvs/sigstore.csv.example`)
+//! when you flash; the same binary works for any repo/workflow pin.
+
+use std::fmt;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 #[cfg(not(target_os = "espidf"))]
-use std::fmt;
-#[cfg(not(target_os = "espidf"))]
 use std::path::Path;
 #[cfg(not(target_os = "espidf"))]
 use std::process::Command;
 
-/// GitHub Actions OIDC issuer Fulcio embeds in keyless certs.
-pub const GITHUB_ACTIONS_OIDC_ISSUER: &str = "https://token.actions.githubusercontent.com";
+/// NVS namespace for Sigstore OTA pins (separate from image catalog keys).
+pub const NVS_NAMESPACE: &str = "sigstore";
 
-/// Exact Fulcio certificate identity for inkbot firmware signed on `main`.
-///
-/// Format: `https://github.com/<owner>/<repo>/.github/workflows/<file>@<ref>`
-pub const DEFAULT_CERTIFICATE_IDENTITY: &str = concat!(
-    "https://github.com/imjasonh/playground/",
-    ".github/workflows/inkbot-esp32.yml@refs/heads/main"
-);
+/// NVS key: exact Fulcio OIDC issuer URL (string).
+pub const NVS_KEY_OIDC_ISSUER: &str = "oidc_iss";
+
+/// NVS key: exact Fulcio certificate identity / SAN URI (string).
+pub const NVS_KEY_CERT_IDENTITY: &str = "cert_id";
 
 /// Who is allowed to mint a trusted firmware image.
+///
+/// Construct only from flash-time / runtime values ([`OtaIdentityPolicy::from_parts`]).
+/// There is no compiled-in default identity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OtaIdentityPolicy {
     /// Expected Fulcio OIDC issuer URL.
@@ -39,19 +40,42 @@ pub struct OtaIdentityPolicy {
     pub certificate_identity: String,
 }
 
-impl Default for OtaIdentityPolicy {
-    fn default() -> Self {
-        Self {
-            certificate_oidc_issuer: GITHUB_ACTIONS_OIDC_ISSUER.to_string(),
-            certificate_identity: DEFAULT_CERTIFICATE_IDENTITY.to_string(),
+/// Why [`OtaIdentityPolicy::from_parts`] rejected the stored values.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OtaIdentityPolicyError {
+    MissingIssuer,
+    MissingIdentity,
+}
+
+impl fmt::Display for OtaIdentityPolicyError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MissingIssuer => write!(f, "sigstore OIDC issuer not set in NVS"),
+            Self::MissingIdentity => write!(f, "sigstore certificate identity not set in NVS"),
         }
     }
 }
 
+impl std::error::Error for OtaIdentityPolicyError {}
+
 impl OtaIdentityPolicy {
-    /// Policy for this playground's inkbot-esp32 workflow on `main`.
-    pub fn inkbot_main() -> Self {
-        Self::default()
+    /// Build a policy from flash-time strings. Both must be non-empty after trim.
+    pub fn from_parts(
+        certificate_oidc_issuer: &str,
+        certificate_identity: &str,
+    ) -> Result<Self, OtaIdentityPolicyError> {
+        let issuer = certificate_oidc_issuer.trim();
+        let identity = certificate_identity.trim();
+        if issuer.is_empty() {
+            return Err(OtaIdentityPolicyError::MissingIssuer);
+        }
+        if identity.is_empty() {
+            return Err(OtaIdentityPolicyError::MissingIdentity);
+        }
+        Ok(Self {
+            certificate_oidc_issuer: issuer.to_string(),
+            certificate_identity: identity.to_string(),
+        })
     }
 
     /// True when the certificate identity equals the pinned string.
@@ -138,10 +162,9 @@ impl fmt::Display for SigstoreVerifyError {
 #[cfg(not(target_os = "espidf"))]
 impl std::error::Error for SigstoreVerifyError {}
 
-/// Run `cosign verify-blob` with an exact identity pin.
+/// Run `cosign verify-blob` with an exact identity pin from runtime config.
 ///
-/// Host / CI only. The ESP32 app will gain an equivalent check without shelling
-/// out once a slim on-device verifier lands.
+/// Host / CI only. Pass the same issuer/identity you flash into NVS.
 #[cfg(not(target_os = "espidf"))]
 pub fn verify_blob_with_cosign(
     artifact: &Path,
@@ -184,21 +207,39 @@ mod tests {
     use std::process::Command;
 
     #[test]
-    fn default_policy_requires_exact_identity() {
-        let p = OtaIdentityPolicy::inkbot_main();
-        assert!(p.issuer_matches(GITHUB_ACTIONS_OIDC_ISSUER));
-        assert!(!p.issuer_matches("https://oauth2.sigstore.dev/auth"));
+    fn policy_requires_both_parts_from_storage() {
+        assert_eq!(
+            OtaIdentityPolicy::from_parts("", "https://example/id"),
+            Err(OtaIdentityPolicyError::MissingIssuer)
+        );
+        assert_eq!(
+            OtaIdentityPolicy::from_parts("https://token.actions.githubusercontent.com", ""),
+            Err(OtaIdentityPolicyError::MissingIdentity)
+        );
+        assert_eq!(
+            OtaIdentityPolicy::from_parts("  ", "  id  "),
+            Err(OtaIdentityPolicyError::MissingIssuer)
+        );
 
-        assert!(p.identity_matches(DEFAULT_CERTIFICATE_IDENTITY));
-        assert!(!p.identity_matches(
-            "https://github.com/imjasonh/playground/.github/workflows/inkbot-esp32.yml@refs/heads/evil"
+        let p = OtaIdentityPolicy::from_parts(
+            "https://token.actions.githubusercontent.com",
+            "https://github.com/acme/app/.github/workflows/fw.yml@refs/heads/main",
+        )
+        .unwrap();
+        assert!(p.issuer_matches("https://token.actions.githubusercontent.com"));
+        assert!(p.identity_matches(
+            "https://github.com/acme/app/.github/workflows/fw.yml@refs/heads/main"
         ));
         assert!(!p.identity_matches(
-            "https://github.com/imjasonh/playground/.github/workflows/deps.yaml@refs/heads/main"
+            "https://github.com/acme/app/.github/workflows/fw.yml@refs/heads/evil"
         ));
-        assert!(!p.identity_matches(
-            "https://github.com/other/playground/.github/workflows/inkbot-esp32.yml@refs/heads/main"
-        ));
+    }
+
+    #[test]
+    fn nvs_key_names_are_stable() {
+        assert_eq!(NVS_NAMESPACE, "sigstore");
+        assert_eq!(NVS_KEY_OIDC_ISSUER, "oidc_iss");
+        assert_eq!(NVS_KEY_CERT_IDENTITY, "cert_id");
     }
 
     #[test]

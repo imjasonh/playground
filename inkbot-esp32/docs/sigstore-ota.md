@@ -27,32 +27,46 @@ identities.
 CI (main)          Worker / R2              Device app
 ─────────          ───────────              ──────────
 build app.bin  →   store bin + bundle  →    HTTPS GET
-cosign sign-blob                            SHA-256 + offline verify
-  (GH OIDC)                                 only then esp_ota_set_boot
-verify-blob gate                            reboot → mark valid / rollback
+cosign sign-blob                            read pins from NVS
+  (GH OIDC)                                 SHA-256 + offline verify
+verify-blob gate                            only then esp_ota_set_boot
+                                            reboot → mark valid / rollback
 ```
 
 Security property: **the update channel** only accepts images signed by the
-pinned workflow identity. A compromised app could skip the gate; stopping that
-needs Secure Boot / a measured boot path, not a bigger Sigstore bootloader.
+identity pinned **on the device** at flash/provision time. The ELF does not
+contain a repo or workflow string.
 
-## Identity pin
+## Identity pin (flash-time NVS)
 
-Verify both with **exact** strings (no regexp):
+Exact strings only (no regexp), stored under NVS namespace `sigstore`:
 
-- OIDC issuer: `https://token.actions.githubusercontent.com`
-- Certificate identity:
-  `https://github.com/imjasonh/playground/.github/workflows/inkbot-esp32.yml@refs/heads/main`
+| Key | Meaning | Example |
+|-----|---------|---------|
+| `oidc_iss` | Fulcio OIDC issuer | `https://token.actions.githubusercontent.com` |
+| `cert_id` | Fulcio cert identity (SAN URI) | `https://github.com/<owner>/<repo>/.github/workflows/inkbot-esp32.yml@refs/heads/main` |
 
-Cosign: `--certificate-identity` and `--certificate-oidc-issuer`. The same
-literals live in [`src/sigstore_ota.rs`](../src/sigstore_ota.rs) as
-`DEFAULT_CERTIFICATE_IDENTITY` / `GITHUB_ACTIONS_OIDC_ISSUER`.
+Provision without rebuilding:
+
+```bash
+cp nvs/sigstore.csv.example nvs/sigstore.csv
+# edit cert_id
+make nvs-sigstore PORT=/dev/cu.usbserial-XXXX
+```
+
+`make nvs-sigstore` runs ESP-IDF’s `nvs_partition_gen.py` and writes the blob
+at the default NVS offset (`0x9000` on the stock table). Missing keys mean
+Sigstore OTA verify stays disabled until you provision.
+
+CI still passes `--certificate-identity` into Cosign when **signing** artifacts;
+that is workflow config, not firmware.
 
 ## Repo pieces
 
 | Piece | Role |
 |-------|------|
-| [`src/sigstore_ota.rs`](../src/sigstore_ota.rs) | Host-tested policy, digest binding, Cosign CLI verify helper |
+| [`src/sigstore_ota.rs`](../src/sigstore_ota.rs) | Policy from NVS strings, digest binding, Cosign CLI helper |
+| [`nvs/sigstore.csv.example`](../nvs/sigstore.csv.example) | Flash-time pin template |
 | This doc | Architecture and non-goals |
 | `inkbot-esp32.yml` (on `main`) | Keyless `sign-blob` + `verify-blob` on the built ELF |
 
@@ -63,5 +77,6 @@ bootloader for Fulcio/Rekor.
 ## Non-goals
 
 - Forking or replacing the ESP-IDF second-stage bootloader with Sigstore
+- Compiling issuer/identity into the firmware binary
 - On-device TUF refresh of Sigstore roots in v1
 - Signing the maze binary for OTA (USB-only demo image)

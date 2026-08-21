@@ -16,8 +16,8 @@ pub use net::{is_http_connect_failure, should_refresh_wifi, WifiRefresh};
 pub use panel::{FRAME_BYTES, PANEL_HEIGHT, PANEL_WIDTH};
 pub use png_frame::{decode_bw_png, PngFrameError};
 pub use sigstore_ota::{
-    bundle_name_for_image, hex_sha256, FirmwareManifest, OtaIdentityPolicy,
-    DEFAULT_CERTIFICATE_IDENTITY, GITHUB_ACTIONS_OIDC_ISSUER,
+    bundle_name_for_image, hex_sha256, FirmwareManifest, OtaIdentityPolicy, OtaIdentityPolicyError,
+    NVS_KEY_CERT_IDENTITY, NVS_KEY_OIDC_ISSUER, NVS_NAMESPACE,
 };
 #[cfg(not(target_os = "espidf"))]
 pub use sigstore_ota::{verify_blob_with_cosign, SigstoreVerifyError};

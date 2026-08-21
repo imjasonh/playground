@@ -17,7 +17,9 @@ frame from the library. Frames are fetched as raw `/{name}.bin` packed buffers
 No on-device OTA yet (USB flash only). Companion Worker for the inkbot binary:
 [`../inkbot/`](../inkbot/). Sigstore keyless signing for future OTA is designed
 in [`docs/sigstore-ota.md`](docs/sigstore-ota.md): verify in the **app** before
-flipping the boot slot — not by forking the ESP-IDF bootloader.
+flipping the boot slot — not by forking the ESP-IDF bootloader. Trust pins
+(`oidc_iss` / `cert_id`) live in **NVS** and are flashed with
+`make nvs-sigstore` (same ELF, different device pins).
 
 ## Hardware
 
@@ -201,7 +203,8 @@ inkbot-esp32/
 │   ├── main.rs                                       # inkbot: Wi-Fi + HTTP poll loop
 │   ├── maze_main.rs / maze_display.rs                # maze: offline panel loop
 │   └── display.rs                                    # inkbot: Waveshare 7.5″ V2 via epd-waveshare
-├── docs/sigstore-ota.md                              # why not bootloader; CD shape
+├── docs/sigstore-ota.md                              # why not bootloader; NVS pins
+├── nvs/sigstore.csv.example                          # flash-time Sigstore identity
 ├── config.toml.example
 ├── sdkconfig.defaults
 └── Makefile

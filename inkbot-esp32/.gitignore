@@ -2,6 +2,8 @@
 /.embuild
 /.preview
 /config.toml
+/nvs/sigstore.csv
+/nvs/sigstore.bin
 sdkconfig
 sdkconfig.old
 dependencies.lock
