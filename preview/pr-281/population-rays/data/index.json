@@ -1,9 +1,0 @@
-{
-  "version": 1,
-  "defaultDataset": "conus-0p02",
-  "datasets": [
-    "conus-0p02",
-    "northeast-0p005"
-  ],
-  "description": "Gridded residential population for directional corridor visualization."
-}
