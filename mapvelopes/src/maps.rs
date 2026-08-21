@@ -7,6 +7,48 @@ use crate::address::Address;
 use crate::error::Error;
 use crate::geo::{decode_polyline, encode_polyline, format_miles, subsample, LatLng, Route};
 
+/// Static Maps look. The PDF still washes the JPEG toward cream so
+/// address type stays readable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MapStyle {
+    /// Default Google roadmap. Blue route, green/red pins.
+    Google,
+    /// Cream land, muted water, no POIs. Brown route.
+    Paper,
+    /// Google terrain shading.
+    Terrain,
+    /// Desaturated roadmap. Dark gray route.
+    Muted,
+    /// Satellite plus labels. Hybrid needs a heavier PDF wash.
+    Hybrid,
+}
+
+impl MapStyle {
+    /// Parse a form, query, or JSON value. Missing or empty is Google.
+    pub fn parse(raw: Option<&str>) -> Result<Self, Error> {
+        match raw.map(str::trim).filter(|s| !s.is_empty()) {
+            None => Ok(Self::Google),
+            Some(s) if s.eq_ignore_ascii_case("google") => Ok(Self::Google),
+            Some(s) if s.eq_ignore_ascii_case("paper") => Ok(Self::Paper),
+            Some(s) if s.eq_ignore_ascii_case("terrain") => Ok(Self::Terrain),
+            Some(s) if s.eq_ignore_ascii_case("muted") => Ok(Self::Muted),
+            Some(s) if s.eq_ignore_ascii_case("hybrid") => Ok(Self::Hybrid),
+            Some(s) => Err(Error::BadRequest(format!(
+                "unknown style {s:?}; use google, paper, terrain, muted, or hybrid"
+            ))),
+        }
+    }
+
+    /// JPEG opacity over the cream page fill. Hybrid is busier, so it
+    /// gets more wash.
+    pub fn map_alpha(self) -> f32 {
+        match self {
+            Self::Hybrid => 0.4,
+            _ => 0.68,
+        }
+    }
+}
+
 /// Everything [`crate::render::render`] needs to draw one envelope.
 #[derive(Debug, Clone)]
 pub struct EnvelopeSpec {
@@ -14,6 +56,7 @@ pub struct EnvelopeSpec {
     pub to: Address,
     pub route: Option<Route>,
     pub map_jpeg: Option<Vec<u8>>,
+    pub map_style: MapStyle,
 }
 
 impl EnvelopeSpec {
@@ -24,6 +67,7 @@ impl EnvelopeSpec {
             to,
             route: None,
             map_jpeg: None,
+            map_style: MapStyle::Google,
         }
     }
 }
@@ -61,31 +105,92 @@ pub fn directions_url(from: LatLng, to: LatLng, key: &str) -> String {
     url.to_string()
 }
 
+const PAPER_STYLES: &[&str] = &[
+    "saturation:-20|lightness:8",
+    "feature:poi|visibility:off",
+    "feature:transit|visibility:off",
+    "feature:landscape|element:geometry|color:0xF4ECD8",
+    "feature:water|element:geometry|color:0xC5D4CE",
+    "feature:poi.park|element:geometry|color:0xD5E0C8",
+    "feature:road|element:geometry.fill|color:0xE8DCC4",
+    "feature:road|element:geometry.stroke|color:0xD4C4A8",
+    "feature:road.highway|element:geometry.fill|color:0xCBB892",
+    "feature:road|element:labels.icon|visibility:off",
+    "element:labels.text.fill|color:0x5C5346",
+    "element:labels.text.stroke|color:0xF4ECD8",
+];
+
+const TERRAIN_STYLES: &[&str] = &[
+    "feature:poi|visibility:off",
+    "feature:transit|visibility:off",
+];
+
+const MUTED_STYLES: &[&str] = &[
+    "saturation:-85|lightness:12",
+    "feature:poi|visibility:off",
+    "feature:transit|visibility:off",
+    "feature:road|element:labels.icon|visibility:off",
+];
+
 /// Static Maps request: route polyline plus start/end markers. JPEG, #10 aspect.
-pub fn static_map_url(route: &Route, key: &str) -> String {
+pub fn static_map_url(route: &Route, key: &str, style: MapStyle) -> String {
     let mut url =
         Url::parse("https://maps.googleapis.com/maps/api/staticmap").expect("static map URL");
     let pts = subsample(&route.points, 80);
     let enc = encode_polyline(&pts);
-    let path = format!("weight:5|color:0x1A73E8ff|enc:{enc}");
+    let (maptype, path_color, start_marker, end_marker, extra_styles) = match style {
+        MapStyle::Paper => (
+            "roadmap",
+            "0x5C3A21ff",
+            "color:0x5C3A21|size:mid",
+            "color:0x8B1E1E|size:mid",
+            PAPER_STYLES,
+        ),
+        MapStyle::Terrain => (
+            "terrain",
+            "0x1A73E8ff",
+            "color:0x34A853|size:mid",
+            "color:0xEA4335|size:mid",
+            TERRAIN_STYLES,
+        ),
+        MapStyle::Muted => (
+            "roadmap",
+            "0x333333ff",
+            "color:0x555555|size:mid",
+            "color:0x111111|size:mid",
+            MUTED_STYLES,
+        ),
+        MapStyle::Hybrid => (
+            "hybrid",
+            "0xF9E27Aff",
+            "color:yellow|size:mid",
+            "color:red|size:mid",
+            &[] as &[&str],
+        ),
+        MapStyle::Google => (
+            "roadmap",
+            "0x1A73E8ff",
+            "color:0x34A853|size:mid",
+            "color:0xEA4335|size:mid",
+            &[] as &[&str],
+        ),
+    };
+    let path = format!("weight:5|color:{path_color}|enc:{enc}");
     {
         let mut q = url.query_pairs_mut();
         q.append_pair("size", "640x276");
         q.append_pair("scale", "2");
-        q.append_pair("maptype", "roadmap");
+        q.append_pair("maptype", maptype);
         q.append_pair("format", "jpg");
         q.append_pair("path", &path);
         if let Some(start) = route.start() {
-            q.append_pair(
-                "markers",
-                &format!("color:0x34A853|size:mid|{}", format_ll(start)),
-            );
+            q.append_pair("markers", &format!("{start_marker}|{}", format_ll(start)));
         }
         if let Some(end) = route.end() {
-            q.append_pair(
-                "markers",
-                &format!("color:0xEA4335|size:mid|{}", format_ll(end)),
-            );
+            q.append_pair("markers", &format!("{end_marker}|{}", format_ll(end)));
+        }
+        for s in extra_styles {
+            q.append_pair("style", s);
         }
         q.append_pair("key", key);
     }
@@ -322,6 +427,7 @@ pub fn spec_from_google(
     geocode_to: &[u8],
     directions: &[u8],
     jpeg: &[u8],
+    style: MapStyle,
 ) -> Result<EnvelopeSpec, Error> {
     // Geocode bodies are fetched so a bad address fails before directions;
     // the polyline already contains start/end, so the parsed points are unused.
@@ -334,6 +440,7 @@ pub fn spec_from_google(
         to,
         route: Some(route),
         map_jpeg: Some(jpeg.to_vec()),
+        map_style: style,
     })
 }
 
@@ -427,7 +534,16 @@ mod tests {
         jpeg.extend_from_slice(&283u16.to_be_bytes());
         jpeg.extend_from_slice(&640u16.to_be_bytes());
         jpeg.extend_from_slice(&[1, 1, 0x11, 0x00]);
-        let spec = spec_from_google(from, to, GEOCODE, GEOCODE, DIRECTIONS, &jpeg).unwrap();
+        let spec = spec_from_google(
+            from,
+            to,
+            GEOCODE,
+            GEOCODE,
+            DIRECTIONS,
+            &jpeg,
+            MapStyle::Google,
+        )
+        .unwrap();
         assert!(spec.map_jpeg.is_some());
         assert_eq!(spec.route.as_ref().unwrap().points.len(), 3);
     }
@@ -436,9 +552,46 @@ mod tests {
     fn spec_from_google_requires_jpeg() {
         let from = Address::parse("Mountain View, CA").unwrap();
         let to = Address::parse("San Francisco, CA").unwrap();
-        let err =
-            spec_from_google(from, to, GEOCODE, GEOCODE, DIRECTIONS, b"not a jpeg").unwrap_err();
+        let err = spec_from_google(
+            from,
+            to,
+            GEOCODE,
+            GEOCODE,
+            DIRECTIONS,
+            b"not a jpeg",
+            MapStyle::Google,
+        )
+        .unwrap_err();
         assert!(err.to_string().contains("not a JPEG"));
+    }
+
+    #[test]
+    fn style_parse() {
+        assert_eq!(MapStyle::parse(None).unwrap(), MapStyle::Google);
+        assert_eq!(MapStyle::parse(Some("")).unwrap(), MapStyle::Google);
+        assert_eq!(MapStyle::parse(Some(" paper ")).unwrap(), MapStyle::Paper);
+        assert_eq!(MapStyle::parse(Some("HYBRID")).unwrap(), MapStyle::Hybrid);
+        let err = MapStyle::parse(Some("oil-paint")).unwrap_err();
+        assert!(err.to_string().contains("unknown style"));
+    }
+
+    #[test]
+    fn static_map_url_varies_by_style() {
+        let route = parse_directions(DIRECTIONS).unwrap();
+        let google = static_map_url(&route, "k", MapStyle::Google);
+        assert!(google.contains("maptype=roadmap"));
+        assert!(google.contains("1A73E8"));
+        let paper = static_map_url(&route, "k", MapStyle::Paper);
+        assert!(paper.contains("F4ECD8"));
+        assert!(paper.contains("5C3A21"));
+        let hybrid = static_map_url(&route, "k", MapStyle::Hybrid);
+        assert!(hybrid.contains("maptype=hybrid"));
+        assert!(hybrid.contains("F9E27A"));
+        assert!(!hybrid.contains("F4ECD8"));
+        let terrain = static_map_url(&route, "k", MapStyle::Terrain);
+        assert!(terrain.contains("maptype=terrain"));
+        let muted = static_map_url(&route, "k", MapStyle::Muted);
+        assert!(muted.contains("saturation"));
     }
 
     #[test]

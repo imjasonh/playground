@@ -4,6 +4,7 @@ use serde::Deserialize;
 use url::form_urlencoded;
 
 use crate::error::Error;
+use crate::maps::MapStyle;
 
 const FORM_HTML: &str = include_str!("form.html");
 
@@ -27,7 +28,11 @@ pub struct ApiRequest {
 pub enum Classified {
     Health,
     Form,
-    Envelope { from: String, to: String },
+    Envelope {
+        from: String,
+        to: String,
+        style: MapStyle,
+    },
     BadRequest(String),
     NotFound,
 }
@@ -61,7 +66,10 @@ fn envelope_from_pairs(pairs: &[(String, String)]) -> Classified {
     if from.trim().is_empty() || to.trim().is_empty() {
         return Classified::BadRequest("from and to are required".into());
     }
-    Classified::Envelope { from, to }
+    match MapStyle::parse(pair_value(pairs, "style").as_deref()) {
+        Ok(style) => Classified::Envelope { from, to, style },
+        Err(e) => Classified::BadRequest(e.to_string()),
+    }
 }
 
 fn envelope_from_post(req: &ApiRequest) -> Classified {
@@ -76,9 +84,13 @@ fn envelope_from_post(req: &ApiRequest) -> Classified {
                 if body.from.trim().is_empty() || body.to.trim().is_empty() {
                     Classified::BadRequest("from and to are required".into())
                 } else {
-                    Classified::Envelope {
-                        from: body.from,
-                        to: body.to,
+                    match MapStyle::parse(body.style.as_deref()) {
+                        Ok(style) => Classified::Envelope {
+                            from: body.from,
+                            to: body.to,
+                            style,
+                        },
+                        Err(e) => Classified::BadRequest(e.to_string()),
                     }
                 }
             }
@@ -93,6 +105,8 @@ fn envelope_from_post(req: &ApiRequest) -> Classified {
 struct EnvelopeJson {
     from: String,
     to: String,
+    #[serde(default)]
+    style: Option<String>,
 }
 
 fn pair_value(pairs: &[(String, String)], key: &str) -> Option<String> {
@@ -175,9 +189,10 @@ mod tests {
             ("to".into(), "New York, NY".into()),
         ];
         match classify(&r) {
-            Classified::Envelope { from, to } => {
+            Classified::Envelope { from, to, style } => {
                 assert!(from.contains("Mountain View"));
                 assert!(to.contains("New York"));
+                assert_eq!(style, MapStyle::Google);
             }
             other => panic!("{other:?}"),
         }
@@ -189,10 +204,11 @@ mod tests {
         r.content_type = Some("application/x-www-form-urlencoded".into());
         r.body = b"from=Ada%0AMountain+View%2C+CA&to=Bob%0ANew+York%2C+NY".to_vec();
         match classify(&r) {
-            Classified::Envelope { from, to } => {
+            Classified::Envelope { from, to, style } => {
                 assert!(from.contains("Ada"));
                 assert!(from.contains("Mountain View"));
                 assert!(to.contains("Bob"));
+                assert_eq!(style, MapStyle::Google);
             }
             other => panic!("{other:?}"),
         }
@@ -207,7 +223,8 @@ mod tests {
             classify(&r),
             Classified::Envelope {
                 from: "A".into(),
-                to: "B".into()
+                to: "B".into(),
+                style: MapStyle::Google,
             }
         );
     }
@@ -229,5 +246,29 @@ mod tests {
         let live = String::from_utf8(form_html(true)).unwrap();
         assert!(live.contains("Google Maps key"));
         assert!(live.contains("<form"));
+        assert!(live.contains("name=\"style\""));
+        assert!(live.contains("value=\"paper\""));
+    }
+
+    #[test]
+    fn post_form_style() {
+        let mut r = req("POST", "/envelope");
+        r.content_type = Some("application/x-www-form-urlencoded".into());
+        r.body = b"from=Ada&to=Bob&style=hybrid".to_vec();
+        match classify(&r) {
+            Classified::Envelope { style, .. } => assert_eq!(style, MapStyle::Hybrid),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn unknown_style_is_bad_request() {
+        let mut r = req("GET", "/envelope");
+        r.query = vec![
+            ("from".into(), "A".into()),
+            ("to".into(), "B".into()),
+            ("style".into(), "oil".into()),
+        ];
+        assert!(matches!(classify(&r), Classified::BadRequest(_)));
     }
 }

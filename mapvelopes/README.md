@@ -17,8 +17,10 @@ I wanted a PDF I could print: two addresses, a blue line between them.
 ## What you get
 
 One page, 9.5 × 4.125 in (US #10). Return address, delivery address, stamp
-box, and a Maps Static JPEG of the driving route as the background. The
-Worker and CLI both require a Google Maps Platform key. If the key is
+box, and a Maps Static JPEG of the driving route as the background. The map
+is washed toward cream so the addresses stay readable (hybrid more than the
+others). The form offers Google, paper, terrain, muted, and hybrid looks.
+The Worker and CLI both require a Google Maps Platform key. If the key is
 missing or Google rejects it, they return an error instead of a blank
 envelope. Print at 100% scale. "Fit to page" shrinks a #10 onto letter
 paper.
@@ -42,7 +44,8 @@ cargo run --example envelope -- \
   -o /tmp/envelope.pdf
 ```
 
-`--help` lists the flags.
+`--help` lists the flags, including `--style` (`google`, `paper`,
+`terrain`, `muted`, `hybrid`).
 
 The key needs **Geocoding**, **Directions**, and **Maps Static**. Do not
 restrict it by HTTP referrer; neither the CLI nor the Worker send a Referer
@@ -56,11 +59,12 @@ Once deployed (or under `wrangler dev`):
 |--------|------|--------|
 | `GET` | `/` | HTML form |
 | `GET` | `/health` | `{"ok":true,"maps":"google"}` or 503 `{"ok":false,"maps":"none"}` |
-| `GET` | `/envelope?from=…&to=…` | PDF |
-| `POST` | `/envelope` | PDF (`application/x-www-form-urlencoded` or JSON `{"from","to"}`) |
+| `GET` | `/envelope?from=…&to=…` | PDF (optional `style=`) |
+| `POST` | `/envelope` | PDF (`application/x-www-form-urlencoded` or JSON `{"from","to","style"}`) |
 
 Addresses are freeform, one line per envelope line. The first line is bold on
-the delivery block.
+the delivery block. `style` is `google` (default), `paper`, `terrain`,
+`muted`, or `hybrid`.
 
 ## Develop and test
 
