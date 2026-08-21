@@ -66,7 +66,8 @@ enum NFCNDEFCodec {
         let languageData = payload.subdata(in: 1..<(1 + languageLength))
         let bodyData = payload.subdata(in: (1 + languageLength)..<payload.count)
         let languageCode = String(data: languageData, encoding: .utf8) ?? ""
-        let encoding: String.Encoding = isUTF16 ? .utf16 : .utf8
+        // NFC Forum Text RTD uses UTF-16 BE when the UTF-16 flag is set.
+        let encoding: String.Encoding = isUTF16 ? .utf16BigEndian : .utf8
         guard let text = String(data: bodyData, encoding: encoding) else { return nil }
         return (languageCode, text)
     }
@@ -97,7 +98,8 @@ enum NFCNDEFCodec {
     ) -> NFCNDEFDecodedRecord {
         // NFCTypeNameFormat.nfcWellKnown.rawValue == 1
         let isWellKnown = typeNameFormatRawValue == 1
-        let typeString = String(data: type, encoding: .utf8) ?? type.map { String(format: "%02X", $0) }.joined()
+        let typeString = String(data: type, encoding: .utf8)
+            ?? type.map { String(format: "%02X", $0) }.joined()
 
         if isWellKnown, typeString == "T", let decoded = decodeTextPayload(payload) {
             let language = decoded.languageCode.isEmpty ? "" : " (\(decoded.languageCode))"
@@ -107,10 +109,16 @@ enum NFCNDEFCodec {
             return NFCNDEFDecodedRecord(typeLabel: "URL", body: url)
         }
         if payload.isEmpty {
-            return NFCNDEFDecodedRecord(typeLabel: typeString.isEmpty ? "Empty" : typeString, body: "(no payload)")
+            return NFCNDEFDecodedRecord(
+                typeLabel: typeString.isEmpty ? "Empty" : typeString,
+                body: "(no payload)"
+            )
         }
         if let utf8 = String(data: payload, encoding: .utf8), !utf8.isEmpty {
-            return NFCNDEFDecodedRecord(typeLabel: typeString.isEmpty ? "Record" : typeString, body: utf8)
+            return NFCNDEFDecodedRecord(
+                typeLabel: typeString.isEmpty ? "Record" : typeString,
+                body: utf8
+            )
         }
         let hex = payload.prefix(64).map { String(format: "%02X", $0) }.joined(separator: " ")
         let suffix = payload.count > 64 ? "…" : ""
@@ -132,54 +140,53 @@ enum NFCNDEFCodec {
 
     // MARK: - URI abbreviation table (NFC Forum RTD-URI)
 
-    private static let uriPrefixes: [(UInt8, String)] = [
-        (0x01, "http://www."),
-        (0x02, "https://www."),
-        (0x03, "http://"),
-        (0x04, "https://"),
-        (0x05, "tel:"),
-        (0x06, "mailto:"),
+    /// Longest-first so `https://www.` wins over `https://`.
+    private static let uriPrefixesLongestFirst: [(UInt8, String)] = [
         (0x07, "ftp://anonymous:anonymous@"),
+        (0x02, "https://www."),
+        (0x01, "http://www."),
         (0x08, "ftp://ftp."),
+        (0x1E, "urn:epc:id:"),
+        (0x1F, "urn:epc:tag:"),
+        (0x20, "urn:epc:pat:"),
+        (0x21, "urn:epc:raw:"),
         (0x09, "ftps://"),
         (0x0A, "sftp://"),
         (0x0B, "smb://"),
         (0x0C, "nfs://"),
         (0x0D, "ftp://"),
         (0x0E, "dav://"),
-        (0x0F, "news:"),
         (0x10, "telnet://"),
-        (0x11, "imap:"),
         (0x12, "rtsp://"),
-        (0x13, "urn:"),
-        (0x14, "pop:"),
-        (0x15, "sip:"),
-        (0x16, "sips:"),
-        (0x17, "tftp:"),
         (0x18, "btspp://"),
         (0x19, "btl2cap://"),
         (0x1A, "btgoep://"),
         (0x1B, "tcpobex://"),
         (0x1C, "irdaobex://"),
         (0x1D, "file://"),
-        (0x1E, "urn:epc:id:"),
-        (0x1F, "urn:epc:tag:"),
-        (0x20, "urn:epc:pat:"),
-        (0x21, "urn:epc:raw:"),
         (0x22, "urn:epc:"),
         (0x23, "urn:nfc:"),
+        (0x03, "http://"),
+        (0x04, "https://"),
+        (0x06, "mailto:"),
+        (0x0F, "news:"),
+        (0x11, "imap:"),
+        (0x14, "pop:"),
+        (0x15, "sip:"),
+        (0x16, "sips:"),
+        (0x17, "tftp:"),
+        (0x05, "tel:"),
+        (0x13, "urn:"),
     ]
 
     private static func uriPrefix(for urlString: String) -> (UInt8, String) {
-        // Longest matching prefix wins so https://www. beats https://.
-        let sorted = uriPrefixes.sorted { $0.1.count > $1.1.count }
-        for (code, prefix) in sorted where urlString.hasPrefix(prefix) {
+        for (code, prefix) in uriPrefixesLongestFirst where urlString.hasPrefix(prefix) {
             return (code, String(urlString.dropFirst(prefix.count)))
         }
         return (0x00, urlString)
     }
 
     private static func uriPrefixString(for code: UInt8) -> String {
-        uriPrefixes.first(where: { $0.0 == code })?.1 ?? ""
+        uriPrefixesLongestFirst.first(where: { $0.0 == code })?.1 ?? ""
     }
 }

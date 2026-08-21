@@ -232,6 +232,6 @@ final class PlaygroundUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["nfcAvailabilityBanner"].waitForExistence(timeout: 8)
             || app.otherElements["nfcAvailabilityBanner"].waitForExistence(timeout: 3)
             || app.staticTexts["NFC reader ready"].waitForExistence(timeout: 3)
-            || app.staticTexts["NFC needs a physical iPhone — Simulator cannot scan tags."].waitForExistence(timeout: 3))
+            || app.staticTexts["NFC needs a physical iPhone. The Simulator cannot scan tags."].waitForExistence(timeout: 3))
     }
 }

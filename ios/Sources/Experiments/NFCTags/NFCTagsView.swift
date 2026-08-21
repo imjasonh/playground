@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Read / write NDEF tags. Core NFC needs a physical iPhone; Simulator opens the UI only.
+/// Read and write NDEF tags. Core NFC needs a physical iPhone; Simulator opens the UI only.
 struct NFCTagsView: View {
     @StateObject private var controller = NFCTagsController()
 
@@ -47,7 +47,7 @@ struct NFCTagsView: View {
                     .foregroundStyle(.green)
             } else {
                 Label(
-                    "NFC needs a physical iPhone — Simulator cannot scan tags.",
+                    "NFC needs a physical iPhone. The Simulator cannot scan tags.",
                     systemImage: "iphone.slash"
                 )
                 .foregroundStyle(.orange)
@@ -120,7 +120,7 @@ struct NFCTagsView: View {
                 Button {
                     controller.startRead()
                 } label: {
-                    Label("Scan tag", systemImage: "radiowaves.right")
+                    Label("Scan tag", systemImage: "wave.3.right")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
@@ -130,7 +130,7 @@ struct NFCTagsView: View {
                 Button {
                     controller.startWrite()
                 } label: {
-                    Label("Write to tag", systemImage: "square.and.arrow.down")
+                    Label("Write to tag", systemImage: "square.and.pencil")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
@@ -145,9 +145,8 @@ struct NFCTagsView: View {
             Text("How it works")
                 .font(.subheadline.bold())
             Text(
-                "Uses Core NFC (`NFCNDEFReaderSession`) to read and write NDEF Text or URL records. "
-                    + "Blank or phone-writable tags work best. Locked / system tags may be read-only. "
-                    + "Needs the NFC Tag Reading App ID capability (signing bootstrap after this lands)."
+                "Reads and writes NDEF Text and URL records. Blank phone-writable tags work; "
+                    + "many transit and product tags are locked read-only."
             )
             .font(.caption)
             .foregroundStyle(.secondary)

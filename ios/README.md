@@ -17,7 +17,7 @@ On every push to `main`, CI builds, tests, and (with signing secrets) uploads to
 |--------------------|-----------|---------------------------|
 | In-app experiment (Ride Monitor–style) | Host only | **No** |
 | Info.plist privacy / background modes | Host only | **No** |
-| New App ID capability (HealthKit, NFC, …) | Host (and extensions if needed) | **Yes** — refresh match profiles |
+| New App ID capability (HealthKit, NFC, …) | Host, plus extensions when they need it | **Yes** for a profile refresh |
 | Custom Keyboard / other **app extension** | Host + **extension id** (Apple requires it) | **Yes, once** for that extension |
 
 Bootstrap is **not** per experiment. It is once for the host app, once more
@@ -53,7 +53,7 @@ ios/
 | `voxel-world` | Voxel World | In-app; ARKit rebuilds the room as Minecraft-style palette blocks |
 | `wigglecam` | Wigglecam | In-app; dual-wide wigglegrams saved as GIF to Photos |
 | `local-lens` | Local Lens | In-app; live on-device Vision (classify / OCR / face landmarks / body & hand pose / barcodes) |
-| `nfc-tags` | NFC Tags | In-app; Core NFC NDEF read/write (text / URL); **needs NFC Tag Reading capability bootstrap** |
+| `nfc-tags` | NFC Tags | In-app Core NFC NDEF read/write for text and URL; needs NFC Tag Reading capability bootstrap |
 
 ### Ride Monitor
 
@@ -216,14 +216,13 @@ on a TrueDepth front camera — not wired here yet.
 
 ### NFC Tags
 
-Read and write **NDEF** text or URL records with **Core NFC**
-(`NFCNDEFReaderSession`). Scan shows decoded records; Write builds a single
-Text or URI record and writes it to a writable tag. Needs the **NFC Tag
-Reading** App ID capability (`com.apple.developer.nfc.readersession.formats`)
-and `NFCReaderUsageDescription` — this is an entitlement change on the host
-Bundle ID, so the PR needs **`needs-ios-bootstrap`** so match refreshes the
-App Store profile after merge. Simulator opens the UI but cannot scan; use a
-physical iPhone.
+Read and write NDEF text or URL records with Core NFC (`NFCNDEFReaderSession`).
+Scan shows decoded records. Write builds one Text or URI record onto a writable
+tag. Requires the NFC Tag Reading App ID capability
+(`com.apple.developer.nfc.readersession.formats`) and
+`NFCReaderUsageDescription`. That entitlement change on the host Bundle ID needs
+`needs-ios-bootstrap` so match refreshes the App Store profile after merge.
+Simulator opens the UI but cannot scan; use a physical iPhone.
 
 ## Adding an experiment
 

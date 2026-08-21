@@ -25,7 +25,7 @@ final class NFCTagsController: NSObject, ObservableObject {
 
     func startRead() {
         guard isNFCAvailable else {
-            statusMessage = "NFC is not available on this device (or the Simulator)."
+            statusMessage = "NFC is not available on this device or the Simulator."
             return
         }
         pendingWriteMessage = nil
@@ -34,7 +34,7 @@ final class NFCTagsController: NSObject, ObservableObject {
 
     func startWrite() {
         guard isNFCAvailable else {
-            statusMessage = "NFC is not available on this device (or the Simulator)."
+            statusMessage = "NFC is not available on this device or the Simulator."
             return
         }
         if let error = NFCNDEFCodec.validationError(for: draft) {
@@ -59,9 +59,11 @@ final class NFCTagsController: NSObject, ObservableObject {
     // MARK: - Session
 
     private func beginSession(alertMessage: String) {
+        // Drop any prior session before starting. Its invalidate callback must
+        // not clear the new session; see didInvalidateWithError.
         cancelSession()
-        // invalidateAfterFirstRead must be false so we can connect and write
-        // (and so read can use the tag APIs after detection).
+        // invalidateAfterFirstRead must be false so connect + write can run
+        // after detection.
         let session = NFCNDEFReaderSession(
             delegate: self,
             queue: nil,
@@ -110,6 +112,13 @@ final class NFCTagsController: NSObject, ObservableObject {
         session.alertMessage = alert
         session.invalidate()
     }
+
+    private func clearSessionIfCurrent(_ session: NFCNDEFReaderSession) {
+        guard session === readerSession else { return }
+        readerSession = nil
+        pendingWriteMessage = nil
+        isSessionActive = false
+    }
 }
 
 // MARK: - NFCNDEFReaderSessionDelegate
@@ -119,13 +128,20 @@ extension NFCTagsController: NFCNDEFReaderSessionDelegate {
 
     nonisolated func readerSession(_ session: NFCNDEFReaderSession, didInvalidateWithError error: Error) {
         Task { @MainActor in
-            self.isSessionActive = false
-            self.readerSession = nil
-            self.pendingWriteMessage = nil
+            // A superseded session must not wipe a newer beginSession().
+            self.clearSessionIfCurrent(session)
+
             let nsError = error as NSError
-            // User cancelled — keep the prior status rather than flashing an error.
-            if nsError.domain == NFCReaderError.errorDomain,
-               nsError.code == NFCReaderError.readerSessionInvalidationErrorUserCanceled.rawValue {
+            guard nsError.domain == NFCReaderError.errorDomain else {
+                self.statusMessage = error.localizedDescription
+                return
+            }
+            // Expected endings after a successful finish() or user Cancel.
+            let benign: Set<Int> = [
+                NFCReaderError.readerSessionInvalidationErrorUserCanceled.rawValue,
+                NFCReaderError.readerSessionInvalidationErrorFirstNDEFTagRead.rawValue,
+            ]
+            if benign.contains(nsError.code) {
                 return
             }
             self.statusMessage = error.localizedDescription
@@ -139,6 +155,7 @@ extension NFCTagsController: NFCNDEFReaderSessionDelegate {
         // Prefer didDetect tags for connect / write. This path covers older
         // read-only discovery when tags are already NDEF-formatted.
         Task { @MainActor in
+            guard session === self.readerSession else { return }
             guard self.pendingWriteMessage == nil else { return }
             let records = messages.flatMap { self.decode($0) }
             self.lastReadSummary = NFCNDEFCodec.summary(for: records)
@@ -149,6 +166,7 @@ extension NFCTagsController: NFCNDEFReaderSessionDelegate {
 
     nonisolated func readerSession(_ session: NFCNDEFReaderSession, didDetect tags: [NFCNDEFTag]) {
         Task { @MainActor in
+            guard session === self.readerSession else { return }
             self.handleDetectedTags(tags, session: session)
         }
     }
@@ -163,7 +181,7 @@ extension NFCTagsController: NFCNDEFReaderSessionDelegate {
 
         session.connect(to: tag) { [weak self] error in
             Task { @MainActor in
-                guard let self else { return }
+                guard let self, session === self.readerSession else { return }
                 if let error {
                     self.finish(
                         session: session,
@@ -183,7 +201,7 @@ extension NFCTagsController: NFCNDEFReaderSessionDelegate {
     private func read(from tag: NFCNDEFTag, session: NFCNDEFReaderSession) {
         tag.queryNDEFStatus { [weak self] status, _, error in
             Task { @MainActor in
-                guard let self else { return }
+                guard let self, session === self.readerSession else { return }
                 if let error {
                     self.finish(
                         session: session,
@@ -197,6 +215,7 @@ extension NFCTagsController: NFCNDEFReaderSessionDelegate {
                 case .readOnly, .readWrite:
                     tag.readNDEF { message, readError in
                         Task { @MainActor in
+                            guard session === self.readerSession else { return }
                             if let readError {
                                 self.finish(
                                     session: session,
@@ -224,7 +243,7 @@ extension NFCTagsController: NFCNDEFReaderSessionDelegate {
     private func write(_ message: NFCNDEFMessage, to tag: NFCNDEFTag, session: NFCNDEFReaderSession) {
         tag.queryNDEFStatus { [weak self] status, capacity, error in
             Task { @MainActor in
-                guard let self else { return }
+                guard let self, session === self.readerSession else { return }
                 if let error {
                     self.finish(
                         session: session,
@@ -248,6 +267,7 @@ extension NFCTagsController: NFCNDEFReaderSessionDelegate {
                     }
                     tag.writeNDEF(message) { writeError in
                         Task { @MainActor in
+                            guard session === self.readerSession else { return }
                             if let writeError {
                                 self.finish(
                                     session: session,
