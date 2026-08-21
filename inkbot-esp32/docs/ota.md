@@ -167,7 +167,7 @@ brew install cosign
 make publish
 ```
 
-`make publish` needs `espflash` 4.2.2 (for `save-image`), `cosign`, and a
+`make publish` needs `espflash` 4.2.0 (for `save-image`), `cosign`, and a
 token that can write the package.
 
 ## Flash and RAM budget
