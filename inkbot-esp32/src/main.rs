@@ -133,7 +133,7 @@ fn main() -> Result<()> {
             }
             Err(e) => {
                 warn!("wifi failed: {e:#}");
-                status.wifi = Some(wifi_status_from_err(&e, cfg, WIFI_ATTEMPTS, WIFI_ATTEMPTS));
+                status.wifi = Some(wifi_status_from_err(&e, &cfg, WIFI_ATTEMPTS, WIFI_ATTEMPTS));
                 capture_incident(&mut remote, &nvs, &wifi, &status, "wifi");
                 paint_error(&mut panel, None, &status);
                 thread::sleep(Duration::from_secs(3));
