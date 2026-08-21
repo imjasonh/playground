@@ -1,5 +1,5 @@
 import Combine
-import CoreNFC
+@preconcurrency import CoreNFC
 import Foundation
 
 /// Drives Core NFC tag sessions for the NFC Tags experiment.
@@ -66,11 +66,16 @@ final class NFCTagsController: NSObject, ObservableObject {
         // Drop any prior session before starting. Its invalidate callback must
         // not clear the new session; see didInvalidateWithError.
         cancelSession()
-        let session = NFCTagReaderSession(
+        // NFCTagReaderSession's initializer is failable (nil when NFC is
+        // unavailable, e.g. Simulator).
+        guard let session = NFCTagReaderSession(
             pollingOption: [.iso14443, .iso15693, .iso18092],
             delegate: self,
             queue: nil
-        )
+        ) else {
+            statusMessage = "NFC is not available on this device or the Simulator."
+            return
+        }
         session.alertMessage = alertMessage
         tagSession = session
         isSessionActive = true
