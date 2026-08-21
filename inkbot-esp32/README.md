@@ -109,6 +109,12 @@ To flash without erasing (app slot only) after the first bootstrap:
 make flash PORT=/dev/cu.usbserial-XXXX
 ```
 
+From Chrome or Edge you can do the same write without `espflash`: open
+[`esp-flash/`](../esp-flash/) (Pages or `npm start` in that directory), load
+`inkbot-esp32:latest` or `maze-esp32:latest`, and connect the board over USB.
+If the e-ink panel still shows the old picture, tap **RESET** without holding
+**BOOT**. E-ink keeps the last picture until the new firmware paints.
+
 ## OTA and optional GCP
 
 On a provisioned inkbot image, the main loop polls the GHCR package for
