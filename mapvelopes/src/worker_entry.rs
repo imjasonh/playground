@@ -117,7 +117,8 @@ async fn live_spec(
     let to_body = fetch_bytes(&geocode_url(&to.geocode_query(), key))
         .await
         .map_err(|e| annotate("geocode to", e))?;
-    let from_ll = crate::maps::parse_geocode(&from_body).map_err(|e| annotate("geocode from", e))?;
+    let from_ll =
+        crate::maps::parse_geocode(&from_body).map_err(|e| annotate("geocode from", e))?;
     let to_ll = crate::maps::parse_geocode(&to_body).map_err(|e| annotate("geocode to", e))?;
     let dir_body = fetch_bytes(&directions_url(from_ll, to_ll, key))
         .await
