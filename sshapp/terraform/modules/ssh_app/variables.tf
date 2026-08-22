@@ -9,7 +9,7 @@ variable "namespace" {
 }
 
 variable "importpath" {
-  description = "Go import path passed to ko_build."
+  description = "Go import path passed to ko_build for the Wish app."
   type        = string
 }
 
@@ -29,9 +29,27 @@ variable "dns_managed_zone" {
 }
 
 variable "replicas" {
-  description = "Desired pod replicas."
+  description = "Warm replicas when the activator has traffic (ignored as a fixed count when scale_to_zero is true; activator owns scaling)."
   type        = number
-  default     = 2
+  default     = 1
+}
+
+variable "scale_to_zero" {
+  description = "When true, put a always-on activator in front of the app and let it scale the app Deployment 0↔replicas."
+  type        = bool
+  default     = true
+}
+
+variable "activator_importpath" {
+  description = "Go import path for the activator binary."
+  type        = string
+  default     = "github.com/imjasonh/playground/sshapp/apps/activator"
+}
+
+variable "idle_after" {
+  description = "How long the activator waits with zero connections before scaling the app to zero."
+  type        = string
+  default     = "5m"
 }
 
 variable "ssh_source_ranges" {
@@ -40,7 +58,7 @@ variable "ssh_source_ranges" {
 }
 
 variable "container_port" {
-  description = "Port the Wish process listens on inside the container."
+  description = "Port the Wish process (and activator) listen on inside the container."
   type        = number
   default     = 2222
 }

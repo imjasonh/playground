@@ -16,12 +16,12 @@ domain     = "example.com"
 # github_repository = "imjasonh/playground"
 
 # Add more Wish apps by extending this map (and adding apps/<name>/ under sshapp/).
+# scale_to_zero (default true) puts the activator in front and scales 0↔replicas.
 # apps = {
 #   hello = {
-#     importpath = "github.com/imjasonh/playground/sshapp/apps/hello"
-#     replicas   = 2
+#     importpath    = "github.com/imjasonh/playground/sshapp/apps/hello"
+#     replicas      = 1
+#     scale_to_zero = true
+#     idle_after    = "5m"
 #   }
-#   # myapp = {
-#   #   importpath = "github.com/imjasonh/playground/sshapp/apps/myapp"
-#   # }
 # }

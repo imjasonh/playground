@@ -9,6 +9,8 @@ module "app" {
   domain            = var.domain
   dns_managed_zone  = local.dns_zone_name
   replicas          = each.value.replicas
+  scale_to_zero     = each.value.scale_to_zero
+  idle_after        = each.value.idle_after
   ssh_source_ranges = local.ssh_source_ranges
 
   labels = {

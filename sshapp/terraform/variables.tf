@@ -67,13 +67,16 @@ variable "github_repository" {
 variable "apps" {
   description = "SSH apps to build with ko and deploy. Key is the DNS label (<key>.domain)."
   type = map(object({
-    importpath = string
-    replicas   = optional(number, 2)
+    importpath    = string
+    replicas      = optional(number, 1)
+    scale_to_zero = optional(bool, true)
+    idle_after    = optional(string, "5m")
   }))
   default = {
     hello = {
-      importpath = "github.com/imjasonh/playground/sshapp/apps/hello"
-      replicas   = 2
+      importpath    = "github.com/imjasonh/playground/sshapp/apps/hello"
+      replicas      = 1
+      scale_to_zero = true
     }
   }
 }
