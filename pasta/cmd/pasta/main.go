@@ -206,7 +206,7 @@ func runFix(args []string) int {
 			}
 			if pass == 0 {
 				for _, d := range res.Diagnostics {
-					fmt.Fprintf(os.Stderr, "%s:%d: %s [%s]\n", res.Path, d.Line(), d.Message, d.Rule)
+					fmt.Fprintln(os.Stderr, formatDiagnostic(res.Path, d.Line(), d.Severity, d.Message, d.Rule))
 					if failThreshold != failOnNone && severityAtLeast(d.Severity, failThreshold) {
 						exit = 1
 					}
@@ -317,6 +317,22 @@ func parseFailOn(s string) (failOnLevel, error) {
 		return failOnError, nil
 	default:
 		return failOnNone, fmt.Errorf("-fail-on: unknown level %q (want none|hint|info|warning|error)", s)
+	}
+}
+
+// formatDiagnostic renders one finding as
+// `path:line: severity: message [rule]`. Empty or unknown severity
+// prints as warning, matching -fail-on.
+func formatDiagnostic(path string, line int, sev dsl.Severity, message, rule string) string {
+	return fmt.Sprintf("%s:%d: %s: %s [%s]", path, line, severityLabel(sev), message, rule)
+}
+
+func severityLabel(s dsl.Severity) string {
+	switch s {
+	case dsl.SeverityError, dsl.SeverityWarning, dsl.SeverityInfo, dsl.SeverityHint:
+		return string(s)
+	default:
+		return string(dsl.SeverityWarning)
 	}
 }
 
