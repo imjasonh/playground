@@ -170,6 +170,11 @@ every shipped analyzer with `.pasta/examples` → `pasta/analyzers`.
 Skip dirs and budgets live in `.pasta/pasta.cue`. `pasta test .pasta`
 expands to every enrolled child that has `testdata/`.
 
+Hint-severity rules stay enrolled. The CLI prints `hint:` on those
+findings (and `warning:` / `error:` / `info:` on the others);
+`-fail-on=warning` does not fail the job on hints. `pastals`
+publishes them as LSP `DiagnosticSeverity.Hint`.
+
 The single-rule shortcut still works: when the first positional arg
 is an existing `.cue` file, `pasta rule.cue source...` loads that
 one file as before.

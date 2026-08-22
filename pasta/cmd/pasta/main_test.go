@@ -88,6 +88,19 @@ func TestWalkSources_skipsSymlink(t *testing.T) {
 	}
 }
 
+func TestFormatDiagnostic(t *testing.T) {
+	got := formatDiagnostic("git/src/app.js", 12, dsl.SeverityHint, "ternary expression", "js_no_ternary")
+	want := "git/src/app.js:12: hint: ternary expression [js_no_ternary]"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	got = formatDiagnostic("main.go", 3, "", "unused ignore", "unused_ignore")
+	want = "main.go:3: warning: unused ignore [unused_ignore]"
+	if got != want {
+		t.Errorf("empty severity: got %q, want %q", got, want)
+	}
+}
+
 func TestParseFailOn(t *testing.T) {
 	cases := []struct {
 		in      string

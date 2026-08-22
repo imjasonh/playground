@@ -403,7 +403,7 @@ returns structured failures, so this is glue.
 
 ### Better diagnostic output
 **Effort:** S.
-Today the CLI prints `path:line: message [rule]`. Adding column
+Today the CLI prints `path:line: severity: message [rule]`. Adding column
 ranges (we have byte ranges in Diagnostic.StartByte/EndByte) and
 optionally a snippet of the offending source would match what
 modern linters output. A `-format=text|json|sarif|github` flag
