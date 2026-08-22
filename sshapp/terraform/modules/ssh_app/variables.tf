@@ -1,5 +1,5 @@
 variable "name" {
-  description = "App name and DNS label (<name>.domain)."
+  description = "App name. Also the mux route key (ssh user@ssh.domain <name>)."
   type        = string
 }
 
@@ -18,47 +18,20 @@ variable "working_dir" {
   type        = string
 }
 
-variable "domain" {
-  description = "DNS apex. The app is published at <name>.<domain>."
-  type        = string
-}
-
-variable "dns_managed_zone" {
-  description = "Cloud DNS managed zone name that holds records for domain."
-  type        = string
-}
-
 variable "replicas" {
-  description = "Warm replicas when the activator has traffic (ignored as a fixed count when scale_to_zero is true; activator owns scaling)."
+  description = "Warm replicas the mux scales to when the app has traffic."
   type        = number
   default     = 1
 }
 
 variable "scale_to_zero" {
-  description = "When true, put a always-on activator in front of the app and let it scale the app Deployment 0↔replicas."
+  description = "When true, Terraform leaves the Deployment at 0 replicas; the mux scales 0↔replicas."
   type        = bool
   default     = true
 }
 
-variable "activator_importpath" {
-  description = "Go import path for the activator binary."
-  type        = string
-  default     = "github.com/imjasonh/playground/sshapp/apps/activator"
-}
-
-variable "idle_after" {
-  description = "How long the activator waits with zero connections before scaling the app to zero."
-  type        = string
-  default     = "5m"
-}
-
-variable "ssh_source_ranges" {
-  description = "CIDRs allowed to connect to the LoadBalancer on port 22."
-  type        = list(string)
-}
-
 variable "container_port" {
-  description = "Port the Wish process (and activator) listen on inside the container."
+  description = "Port the Wish process listens on inside the container."
   type        = number
   default     = 2222
 }

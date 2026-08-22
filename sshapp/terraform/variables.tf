@@ -16,7 +16,7 @@ variable "name" {
 }
 
 variable "domain" {
-  description = "DNS apex for apps. Each app is served at <app>.<domain> over SSH."
+  description = "DNS apex. Mux is ssh.<domain>; apps route as ssh user@ssh.<domain> <app> (and *.<domain> points at the same IP)."
   type        = string
 }
 
@@ -38,9 +38,15 @@ variable "dns_zone_name" {
 }
 
 variable "ssh_allowed_cidrs" {
-  description = "CIDR ranges allowed to reach each app LoadBalancer on port 22. Empty means 0.0.0.0/0."
+  description = "CIDR ranges allowed to reach the shared mux LoadBalancer on port 22. Empty means 0.0.0.0/0."
   type        = list(string)
   default     = []
+}
+
+variable "mux_idle_after" {
+  description = "How long the mux waits with zero connections to an app before scaling that app to zero."
+  type        = string
+  default     = "5m"
 }
 
 variable "master_authorized_cidrs" {
@@ -65,12 +71,11 @@ variable "github_repository" {
 }
 
 variable "apps" {
-  description = "SSH apps to build with ko and deploy. Key is the DNS label (<key>.domain)."
+  description = "SSH apps to build with ko and deploy. Key is the mux route name (ssh user@ssh.domain <key>)."
   type = map(object({
     importpath    = string
     replicas      = optional(number, 1)
     scale_to_zero = optional(bool, true)
-    idle_after    = optional(string, "5m")
   }))
   default = {
     hello = {

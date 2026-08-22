@@ -19,17 +19,31 @@ output "dns_name_servers" {
   value       = var.create_dns_zone ? google_dns_managed_zone.apps[0].name_servers : []
 }
 
+output "mux_load_balancer_ip" {
+  description = "Shared mux LoadBalancer IP (ssh.<domain> and *.<domain>)."
+  value = one([
+    for ingress in kubernetes_service_v1.mux.status[0].load_balancer[0].ingress : ingress.ip
+    if ingress.ip != null && ingress.ip != ""
+  ])
+}
+
+output "mux_fqdn" {
+  description = "Primary SSH hostname for the shared mux."
+  value       = "ssh.${trimsuffix(var.domain, ".")}"
+}
+
+output "mux_image_ref" {
+  description = "ko image reference for the mux."
+  value       = ko_build.mux.image_ref
+}
+
 output "apps" {
-  description = "Deployed SSH apps keyed by DNS label."
+  description = "Deployed SSH apps keyed by mux route name."
   value = {
     for name, app in module.app : name => {
-      fqdn                        = app.fqdn
-      load_balancer_ip            = app.load_balancer_ip
-      image_ref                   = app.image_ref
-      activator_image_ref         = app.activator_image_ref
-      host_key_fingerprint_sha256 = app.host_key_fingerprint_sha256
-      scale_to_zero               = app.scale_to_zero
-      ssh_command                 = "ssh ${app.fqdn}"
+      image_ref     = app.image_ref
+      scale_to_zero = app.scale_to_zero
+      ssh_command   = "ssh ssh.${trimsuffix(var.domain, ".")} ${name}"
     }
   }
 }

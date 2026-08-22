@@ -2,16 +2,12 @@ module "app" {
   source   = "./modules/ssh_app"
   for_each = var.apps
 
-  name              = each.key
-  namespace         = kubernetes_namespace.apps.metadata[0].name
-  importpath        = each.value.importpath
-  working_dir       = abspath("${path.module}/..")
-  domain            = var.domain
-  dns_managed_zone  = local.dns_zone_name
-  replicas          = each.value.replicas
-  scale_to_zero     = each.value.scale_to_zero
-  idle_after        = each.value.idle_after
-  ssh_source_ranges = local.ssh_source_ranges
+  name        = each.key
+  namespace   = kubernetes_namespace.apps.metadata[0].name
+  importpath  = each.value.importpath
+  working_dir = abspath("${path.module}/..")
+  replicas    = each.value.replicas
+  scale_to_zero = each.value.scale_to_zero
 
   labels = {
     "app.kubernetes.io/part-of" = var.name

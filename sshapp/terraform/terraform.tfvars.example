@@ -3,8 +3,11 @@ project_id = "your-gcp-project"
 region     = "us-central1"
 domain     = "example.com"
 
-# Restrict who can open SSH to the LoadBalancers. Empty allows the public Internet.
+# Restrict who can open SSH to the shared mux LoadBalancer. Empty allows the public Internet.
 # ssh_allowed_cidrs = ["203.0.113.0/24"]
+
+# How long the mux waits with no sessions to an app before scaling that app to zero.
+# mux_idle_after = "5m"
 
 # Restrict who can talk to the GKE API. Empty leaves the public endpoint open
 # (still TLS + IAM protected). Prefer your office / CI egress CIDRs.
@@ -16,12 +19,10 @@ domain     = "example.com"
 # github_repository = "imjasonh/playground"
 
 # Add more Wish apps by extending this map (and adding apps/<name>/ under sshapp/).
-# scale_to_zero (default true) puts the activator in front and scales 0↔replicas.
 # apps = {
 #   hello = {
 #     importpath    = "github.com/imjasonh/playground/sshapp/apps/hello"
 #     replicas      = 1
 #     scale_to_zero = true
-#     idle_after    = "5m"
 #   }
 # }
