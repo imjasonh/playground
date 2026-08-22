@@ -26,10 +26,14 @@ prefix=${TF_STATE_R2_PREFIX:-exe/}
 ttl=${TF_STATE_R2_TTL_SECONDS:-3600}
 api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/r2/temp-access-credentials"
 
-body=$(TF_STATE_R2_ACCESS_KEY_ID="$TF_STATE_R2_ACCESS_KEY_ID" \
+# Write request/response via files so bash does not treat ')' inside Python as
+# closing a $(...) substitution, and so we never need eval.
+TF_STATE_R2_ACCESS_KEY_ID="$TF_STATE_R2_ACCESS_KEY_ID" \
   bucket="$bucket" prefix="$prefix" ttl="$ttl" python3 - <<'PY'
 import json, os
-print(json.dumps({
+from pathlib import Path
+
+Path("/tmp/r2-temp-creds-body.json").write_text(json.dumps({
     "bucket": os.environ["bucket"],
     "parentAccessKeyId": os.environ["TF_STATE_R2_ACCESS_KEY_ID"],
     "permission": "object-read-write",
@@ -37,13 +41,12 @@ print(json.dumps({
     "prefixes": [os.environ["prefix"]],
 }))
 PY
-)
 
 code=$(curl -sS -o /tmp/r2-temp-creds.json -w '%{http_code}' \
   -X POST \
   -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
   -H "Content-Type: application/json" \
-  --data "$body" \
+  --data @/tmp/r2-temp-creds-body.json \
   "$api")
 
 if [ "$code" != "200" ]; then
@@ -52,23 +55,31 @@ if [ "$code" != "200" ]; then
   exit 1
 fi
 
-eval "$(python3 - <<'PY'
-import json, shlex
+python3 - <<'PY'
+import json
+from pathlib import Path
+
 data = json.load(open("/tmp/r2-temp-creds.json"))
 if not data.get("success", False):
     raise SystemExit(f"Cloudflare API error: {data.get('errors')}")
 result = data.get("result") or {}
-for key, env in (
-    ("accessKeyId", "AWS_ACCESS_KEY_ID"),
-    ("secretAccessKey", "AWS_SECRET_ACCESS_KEY"),
-    ("sessionToken", "AWS_SESSION_TOKEN"),
+for key, path in (
+    ("accessKeyId", "/tmp/r2-aws-access-key-id"),
+    ("secretAccessKey", "/tmp/r2-aws-secret-access-key"),
+    ("sessionToken", "/tmp/r2-aws-session-token"),
 ):
     val = result.get(key)
     if not val:
         raise SystemExit(f"missing {key} in temp-access-credentials response")
-    print(f"export {env}={shlex.quote(val)}")
+    Path(path).write_text(val)
 PY
-)"
+
+AWS_ACCESS_KEY_ID=$(cat /tmp/r2-aws-access-key-id)
+AWS_SECRET_ACCESS_KEY=$(cat /tmp/r2-aws-secret-access-key)
+AWS_SESSION_TOKEN=$(cat /tmp/r2-aws-session-token)
+export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
+rm -f /tmp/r2-temp-creds-body.json \
+  /tmp/r2-aws-access-key-id /tmp/r2-aws-secret-access-key /tmp/r2-aws-session-token
 
 if [ -n "${GITHUB_ENV:-}" ]; then
   {
