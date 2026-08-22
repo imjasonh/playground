@@ -16,7 +16,6 @@ playground/
 │   ├── scripts/           # CI helpers: app discovery + index-page rendering
 │   └── workflows/         # deploy, preview, test, cleanup, dependency updates
 ├── artillery/             # touch-first turn-based artillery duel (JS + Node tests)
-├── chessh/                # multiplayer chess over SSH (Go + Terraform)
 ├── cold-climb/            # touch-first two-handle arcade game (JS + Node tests)
 ├── droneski/              # FPV drone filming a downhill skier (JS + three.js + Node tests)
 ├── esp-flash/             # Web Serial / WebUSB ESP32 flasher (inkbot GHCR + local .bin)
@@ -69,7 +68,6 @@ its root. This is the same rule used by deploy and preview workflows.
 | `nypd-choppers/` | yes | NYPD helicopter tracker; JS modules, npm scripts, tests |
 | `population-rays/` | yes | Directional 5° population slices; JS modules, npm scripts, tests |
 | `web-push-demo/` | yes | Static front-end for `web-push`; HTML/JS, no build or tests |
-| `chessh/` | no | Go SSH chess server on exe.dev; no `index.html` |
 | `gitdb/` | no | Go CLI; no `index.html` |
 | `ocidb/` | no | Go CLI; no `index.html` |
 | `pasta/` | no | Go CLI (CUE + tree-sitter linters); no `index.html` |
@@ -172,7 +170,6 @@ discovery scripts.
 |----------|---------|---------|
 | `deploy.yml` | push to `main` | Publishes all browser apps to GitHub Pages production |
 | `deploy-workers.yml` | push to `main`, manual | Deploys changed Cloudflare Worker apps (those with `wrangler.toml`) with `wrangler`, using the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets; a manual *Run workflow* (`workflow_dispatch`) redeploys all of them. Before deploy it create-or-gets each Worker's KV namespaces (substituting the placeholder ids in `wrangler.toml`), creates any declared R2 buckets that don't exist, and applies remote D1 migrations for declared `[[d1_databases]]`; after deploy it get-or-generates a `VAPID_PRIVATE_KEY` secret for any Worker shipping an `examples/genvapid.rs` |
-| `deploy-exe.yml` | push to `main`, manual | Deploys changed [exe.dev](https://exe.dev) apps (top-level dirs whose `iac/` declares the `benjamin-lykins/exedev` Terraform provider). Uses `ko_build` to push images to GHCR, applies Terraform with state in Cloudflare R2 (`playground-terraform-state`), and authenticates to exe.dev by minting `EXEDEV_TOKEN` from the `EXEDEV_SSH_PRIVATE_KEY` secret (optional `EXEDEV_SSH_PASSPHRASE` if the key is encrypted). Terraform talks to R2 with short-lived S3 credentials minted from the existing `CLOUDFLARE_API_TOKEN` (bucket create uses the same token). Manual dispatch redeploys every exe app. |
 | `preview.yml` | pull request opened/sync | When a browser app, the posts catalog, or the Pages home-page index changed: deploys under `/preview/pr-<N>/` and comments the URL; otherwise no-ops |
 | `cleanup.yml` | pull request closed, manual | Removes closed-PR preview dirs from `gh-pages` (reconciles all open PRs) and refreshes the root index |
 | `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps, plus the pasta style leg, posts catalog, and site index, in one job |
@@ -458,8 +455,7 @@ python3 .github/scripts/build-blog_test.py
 5. Add `my-tool/README.md` with build, run, and test instructions.
 6. Add `my-tool/.gitignore` for local binaries and other generated output.
 7. Do **not** add `index.html`; Go apps are not deployed or previewed on
-   GitHub Pages. To ship a Go service on exe.dev instead, see
-   [Adding an exe app](#adding-an-exe-app).
+   GitHub Pages.
 
 No workflow edits are required. CI discovers a new Go app from its `go.mod`,
 and the daily dependency workflow includes it automatically.
@@ -471,36 +467,6 @@ cd my-tool
 go build ./...
 go test ./...
 # CI runs `go test -race ./...` (pasta / node-image also get -timeout 30m)
-```
-
-## Adding an exe app
-
-An **exe app** is a top-level directory whose `iac/` Terraform stack declares
-the community [`benjamin-lykins/exedev`](https://registry.terraform.io/providers/benjamin-lykins/exedev)
-provider. `deploy-exe.yml` discovers those apps the same way
-`deploy-workers.yml` discovers `wrangler.toml`.
-
-1. Put app sources in a top-level directory (for example `my-exe-app/`).
-2. Add `my-exe-app/iac/` with:
-   - `providers.tf` requiring `benjamin-lykins/exedev` and `ko-build/ko`
-   - an S3 backend aimed at R2 bucket `playground-terraform-state` with key
-     `exe/<app>/terraform.tfstate`
-   - `ko_build.app` pushing to `ghcr.io/<owner>/playground/<app>` (set
-     `repo` so the importpath is not appended)
-   - `exedev_vm.app` using `ko_build.app.image_ref` as `image`
-3. Keep the GHCR package **public** (the registry provider has no
-   `registry_auth`; set visibility once in the GitHub Packages UI after
-   the first push).
-4. Document required repo secrets in the app README
-   (`EXEDEV_SSH_PRIVATE_KEY`; Cloudflare secrets are shared — CI mints
-   short-lived R2 S3 credentials from `CLOUDFLARE_API_TOKEN`).
-
-No workflow edits are required for a new exe app that follows this layout.
-Discovery:
-
-```bash
-bash .github/scripts/discover-exe-apps.sh --all
-git diff --name-only origin/main...HEAD | bash .github/scripts/discover-exe-apps.sh --from-changes
 ```
 
 ## Adding a new Rust app
@@ -681,7 +647,6 @@ bundle exec fastlane test
 
 | Directory | Type | Tests |
 |-----------|------|-------|
-| `chessh/` | Multiplayer chess over SSH (Bubble Tea + wish); deployed to exe.dev as `chessh.exe.xyz` via `deploy-exe.yml` | `go test -race ./...` |
 | `gitdb/` | git repository explorer backed by SQLite virtual tables | `go test -race ./...` |
 | `ocidb/` | OCI registry explorer backed by SQLite virtual tables | `go test -race ./...` |
 | `pasta/` | CUE-described multi-language linters/fixers over tree-sitter ASTs; see [`pasta/AGENTS.md`](pasta/AGENTS.md). Playground style rules are enrolled via `.pasta/examples` → `pasta/analyzers` and gated by the pasta leg of `test.yml` | `go test -race ./...` (incl. e2e shallow-clone smoke); CI also runs `pasta test` + monorepo lint |
