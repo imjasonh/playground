@@ -21,39 +21,30 @@ You may need to wait for another player, or open a second terminal to play
 against yourself. Players are matched when they connect. When an opponent
 disconnects, you win.
 
-## How SSH works on exe.dev
+## How it runs on exe.dev
 
-exe.dev injects its own `sshd` on port 22. CheSSH does not bind that port.
+The container has no shell. CheSSH (wish) is PID 1 and listens on port 22.
+exe.dev's SSH edge authenticates you, then dials that listener, so you land
+in the game with no login shell hop.
 
-1. Container PID 1 runs `chessh` in **serve** mode: wish on `127.0.0.1:2222`
-   (override with `CHESSH_ADDR`).
-2. An interactive login sources `/etc/profile.d/chessh.sh`, which runs
-   `chessh play`.
-3. **play** opens an SSH client session to the local wish server and attaches
-   your terminal to the game.
-
-The image base is `cgr.dev/chainguard/wolfi-base` so a real login shell
-exists for that hop. A first-boot `setup_script` writes the profile snippet.
+The image is `gcr.io/distroless/static-debian12` (root, no shell) so the
+process can bind port 22. Host keys are ephemeral in production; set
+`SSH_HOST_KEY` or `SSH_HOST_KEY_FILE` if you need a stable one.
 
 ## Running locally
 
 ```bash
-go run ./ --local serve
+go run ./ --local
 ```
 
-Then in another terminal:
+Then:
 
 ```bash
 ssh localhost -p 2222
-# or:
-go run ./ play
 ```
 
-`--local` writes an SSH host key under `~/.chessh/host_key` (or set
-`SSH_HOST_KEY` / `SSH_HOST_KEY_FILE` yourself). On exe.dev the process
-mints an ephemeral host key for the inner wish listener; clients talk to
-exe.dev's SSH broker on port 22, so there is nothing to manage in Terraform
-for host keys.
+`--local` writes an SSH host key under `~/.chessh/host_key` and listens on
+port 2222 (so it does not fight your machine's sshd).
 
 ## Deploying
 

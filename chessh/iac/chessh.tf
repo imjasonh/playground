@@ -4,9 +4,10 @@ resource "ko_build" "app" {
   # Exact GHCR repository (no importpath suffix). Keep the package public so
   # exe.dev can pull without registry credentials.
   repo = "ghcr.io/imjasonh/playground/chessh"
-  # Need a real shell for exe.dev's injected sshd login hop.
-  # static:latest has no /bin/sh. chainguard/latest is FORBIDDEN.
-  base_image = "cgr.dev/chainguard/wolfi-base:latest"
+  # No shell: wish is PID 1 and listens on :22 so exe.dev's SSH edge dials it
+  # directly. Must run as root to bind port 22 (Chainguard static is nonroot).
+  # chainguard/latest is FORBIDDEN.
+  base_image = "gcr.io/distroless/static-debian12"
   platforms  = ["linux/amd64"]
   sbom       = "none"
 }
@@ -19,23 +20,5 @@ resource "exedev_vm" "app" {
   env = {
     # Optional HTTP health listener (exe.dev HTTPS proxy can target it).
     PORT = "8080"
-    # Wish listens here; login shells hop in via `chessh play`.
-    CHESSH_ADDR = "127.0.0.1:2222"
   }
-
-  # exe.dev owns port 22 (injected sshd). The container entrypoint runs wish
-  # on :2222. Interactive logins source profile.d and exec into the game.
-  # Non-interactive `ssh host <cmd>` does not source profile, so probes stay
-  # usable.
-  setup_script = <<-EOT
-    #!/bin/sh
-    set -eu
-    BIN=/ko-app/chessh
-    if [ ! -x "$BIN" ]; then
-      BIN="$(readlink -f /proc/1/exe)"
-    fi
-    mkdir -p /etc/profile.d /root
-    printf 'if [ -n "$${SSH_CONNECTION:-}$${SSH_CLIENT:-}" ] && [ -t 0 ]; then\n  exec "%s" play\nfi\n' "$BIN" > /etc/profile.d/chessh.sh
-    printf '. /etc/profile.d/chessh.sh\n' > /root/.profile
-  EOT
 }
