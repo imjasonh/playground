@@ -78,4 +78,11 @@ if [ -n "${GITHUB_ENV:-}" ]; then
   } >>"$GITHUB_ENV"
 fi
 
+# Keep temporary secrets out of Actions logs if a later step echoes env.
+if [ -n "${GITHUB_ACTIONS:-}" ]; then
+  echo "::add-mask::${AWS_ACCESS_KEY_ID}"
+  echo "::add-mask::${AWS_SECRET_ACCESS_KEY}"
+  echo "::add-mask::${AWS_SESSION_TOKEN}"
+fi
+
 echo "Minted R2 temporary credentials for bucket ${bucket} (prefix ${prefix}, ttl ${ttl}s)."
