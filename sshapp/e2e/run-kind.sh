@@ -304,8 +304,8 @@ for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
 done
 if [[ "${matched}" -ne 1 ]]; then
   echo "expected two chess clients to match; outs:" >&2
-  # Strip CSI so phrases are readable in CI logs.
-  for f in "${WORKDIR}/chess-ssh.out" "${WORKDIR}/chess2-ssh.out"; do
+  for f in "${WORKDIR}/chess-ssh.out" "${WORKDIR}/chess2-ssh.out" \
+           "${WORKDIR}/chess-ssh.err" "${WORKDIR}/chess2-ssh.err"; do
     echo "--- ${f} ---" >&2
     sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' "${f}" 2>/dev/null | tr -d '\r' | head -c 2000 >&2 || true
     echo >&2
