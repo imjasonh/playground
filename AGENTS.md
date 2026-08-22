@@ -172,7 +172,7 @@ discovery scripts.
 |----------|---------|---------|
 | `deploy.yml` | push to `main` | Publishes all browser apps to GitHub Pages production |
 | `deploy-workers.yml` | push to `main`, manual | Deploys changed Cloudflare Worker apps (those with `wrangler.toml`) with `wrangler`, using the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets; a manual *Run workflow* (`workflow_dispatch`) redeploys all of them. Before deploy it create-or-gets each Worker's KV namespaces (substituting the placeholder ids in `wrangler.toml`), creates any declared R2 buckets that don't exist, and applies remote D1 migrations for declared `[[d1_databases]]`; after deploy it get-or-generates a `VAPID_PRIVATE_KEY` secret for any Worker shipping an `examples/genvapid.rs` |
-| `deploy-exe.yml` | push to `main`, manual | Deploys changed [exe.dev](https://exe.dev) apps (top-level dirs whose `iac/` declares the `benjamin-lykins/exedev` Terraform provider). Uses `ko_build` to push images to GHCR, applies Terraform with state in Cloudflare R2 (`playground-terraform-state`), and authenticates to exe.dev by minting `EXEDEV_TOKEN` from the `EXEDEV_SSH_PRIVATE_KEY` secret. Terraform talks to R2 with short-lived S3 credentials minted from `TF_STATE_R2_ACCESS_KEY_ID` via the existing `CLOUDFLARE_API_TOKEN` (bucket create uses the same token). Manual dispatch redeploys every exe app. |
+| `deploy-exe.yml` | push to `main`, manual | Deploys changed [exe.dev](https://exe.dev) apps (top-level dirs whose `iac/` declares the `benjamin-lykins/exedev` Terraform provider). Uses `ko_build` to push images to GHCR, applies Terraform with state in Cloudflare R2 (`playground-terraform-state`), and authenticates to exe.dev by minting `EXEDEV_TOKEN` from the `EXEDEV_SSH_PRIVATE_KEY` secret. Terraform talks to R2 with short-lived S3 credentials minted from the existing `CLOUDFLARE_API_TOKEN` (bucket create uses the same token). Manual dispatch redeploys every exe app. |
 | `preview.yml` | pull request opened/sync | When a browser app, the posts catalog, or the Pages home-page index changed: deploys under `/preview/pr-<N>/` and comments the URL; otherwise no-ops |
 | `cleanup.yml` | pull request closed, manual | Removes closed-PR preview dirs from `gh-pages` (reconciles all open PRs) and refreshes the root index |
 | `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps, plus the pasta style leg, posts catalog, and site index, in one job |
@@ -491,9 +491,8 @@ provider. `deploy-exe.yml` discovers those apps the same way
 3. Keep the GHCR package **public** (the registry provider has no
    `registry_auth`; CI sets visibility after the first push).
 4. Document required repo secrets in the app README
-   (`EXEDEV_SSH_PRIVATE_KEY`, `TF_STATE_R2_ACCESS_KEY_ID`; Cloudflare secrets
-   are shared — CI mints short-lived R2 S3 credentials from the parent Access
-   Key ID).
+   (`EXEDEV_SSH_PRIVATE_KEY`; Cloudflare secrets are shared — CI mints
+   short-lived R2 S3 credentials from `CLOUDFLARE_API_TOKEN`).
 
 No workflow edits are required for a new exe app that follows this layout.
 Discovery:
