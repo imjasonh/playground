@@ -64,6 +64,8 @@ them:
   via SQLite virtual tables over go-containerregistry (Go CLI).
 - **[`pasta/`](pasta/)** — multi-language linters and fixers described in CUE
   over tree-sitter ASTs (Go CLI).
+- **[`sshapp/`](sshapp/)** — Wish SSH apps on GKE Autopilot, served at
+  `<app>.domain` over SSH only (Terraform + `ko_build`; hello app included).
 - **[`web-push/`](web-push/)** — a Web Push application-server backend
   (RFC 8030/8188/8291/8292) for Cloudflare Workers, in Rust.
 - **[`y/`](y/)** — a one-user microblog for Cloudflare Workers, in Rust

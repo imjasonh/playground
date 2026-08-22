@@ -1,0 +1,27 @@
+# Copy to terraform.tfvars (gitignored) and fill in values.
+project_id = "your-gcp-project"
+region     = "us-central1"
+domain     = "example.com"
+
+# Restrict who can open SSH to the LoadBalancers. Empty allows the public Internet.
+# ssh_allowed_cidrs = ["203.0.113.0/24"]
+
+# Restrict who can talk to the GKE API. Empty leaves the public endpoint open
+# (still TLS + IAM protected). Prefer your office / CI egress CIDRs.
+# master_authorized_cidrs = [
+#   { cidr_block = "203.0.113.0/24", display_name = "office" },
+# ]
+
+# Create GitHub Actions WIF once you are ready to deploy from CI:
+# github_repository = "imjasonh/playground"
+
+# Add more Wish apps by extending this map (and adding apps/<name>/ under sshapp/).
+# apps = {
+#   hello = {
+#     importpath = "github.com/imjasonh/playground/sshapp/apps/hello"
+#     replicas   = 2
+#   }
+#   # myapp = {
+#   #   importpath = "github.com/imjasonh/playground/sshapp/apps/myapp"
+#   # }
+# }
