@@ -11,6 +11,11 @@ A multiplayer chess game playable via SSH.
 ssh chessh.exe.xyz
 ```
 
+You need an [exe.dev](https://exe.dev) account and SSH access to the `chessh`
+VM (owner, or `share add <email> --root`). exe.dev brokers SSH; there is no
+anonymous public SSH. The community Terraform `exedev_vm` resource also has no
+`public` flag — `share set-public` only opens the HTTPS proxy, not SSH.
+
 ![Screenshot of CheSSH gameplay](screenshot.png)
 
 You may need to wait for another player, or open a second terminal to play
