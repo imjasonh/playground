@@ -21,30 +21,38 @@ You may need to wait for another player, or open a second terminal to play
 against yourself. Players are matched when they connect. When an opponent
 disconnects, you win.
 
-## How it runs on exe.dev
+## How SSH works on exe.dev
 
-The container has no shell. CheSSH (wish) is PID 1 and listens on port 22.
-exe.dev's SSH edge authenticates you, then dials that listener, so you land
-in the game with no login shell hop.
+exe.dev's edge always dials an **injected sshd** inside the VM. A process
+listening on port 22 in the container does not receive `ssh chessh.exe.xyz`.
 
-The image is `gcr.io/distroless/static-debian12` (root, no shell) so the
-process can bind port 22. Host keys are ephemeral in production; set
-`SSH_HOST_KEY` or `SSH_HOST_KEY_FILE` if you need a stable one.
+CheSSH works with that model:
+
+1. PID 1 runs `chessh serve` (wish on `127.0.0.1:2222`).
+2. The login program for `root` / `ubuntu` is the **chessh binary itself**
+   (not bash). Interactive SSH never drops you into a shell.
+3. That login process sees `SSH_CONNECTION` and runs `play`, which opens a
+   local SSH session to wish so you land in the game.
+
+The image base is `ubuntu:24.04` only so the injected sshd has a normal user
+database. You do not get an interactive Ubuntu shell.
 
 ## Running locally
 
 ```bash
-go run ./ --local
+go run ./ --local serve
 ```
 
-Then:
+Then in another terminal:
 
 ```bash
 ssh localhost -p 2222
+# or:
+go run ./ --local play
 ```
 
-`--local` writes an SSH host key under `~/.chessh/host_key` and listens on
-port 2222 (so it does not fight your machine's sshd).
+`--local` writes an SSH host key under `~/.chessh/host_key` (or set
+`SSH_HOST_KEY` / `SSH_HOST_KEY_FILE`).
 
 ## Deploying
 

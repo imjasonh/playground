@@ -4,10 +4,10 @@ resource "ko_build" "app" {
   # Exact GHCR repository (no importpath suffix). Keep the package public so
   # exe.dev can pull without registry credentials.
   repo = "ghcr.io/imjasonh/playground/chessh"
-  # No shell: wish is PID 1 and listens on :22 so exe.dev's SSH edge dials it
-  # directly. Must run as root to bind port 22 (Chainguard static is nonroot).
+  # ubuntu so exe.dev's injected sshd has a normal user database. Login shell
+  # is set to the chessh binary (not bash) via `command` below.
   # chainguard/latest is FORBIDDEN.
-  base_image = "gcr.io/distroless/static-debian12"
+  base_image = "ubuntu:24.04"
   platforms  = ["linux/amd64"]
   sbom       = "none"
 }
@@ -18,7 +18,15 @@ resource "exedev_vm" "app" {
   disk  = "10GB"
 
   env = {
-    # Optional HTTP health listener (exe.dev HTTPS proxy can target it).
-    PORT = "8080"
+    PORT        = "8080"
+    CHESSH_ADDR = "127.0.0.1:2222"
   }
+
+  # exe.dev's edge always SSHs to its injected sshd (not our process on :22).
+  # Point the login program at this binary so interactive sessions hop into
+  # local wish; PID 1 runs wish serve. Non-interactive `ssh host -c` is
+  # handled inside the binary by exec'ing /bin/sh.
+  command = <<-EOT
+    /bin/bash -c 'BIN=/ko-app/chessh; for u in root ubuntu; do if getent passwd "$u" >/dev/null; then usermod -s "$BIN" "$u"; fi; done; exec "$BIN" serve'
+  EOT
 }

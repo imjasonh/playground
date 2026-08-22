@@ -8,9 +8,11 @@ import (
 	"encoding/pem"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"slices"
@@ -23,6 +25,8 @@ import (
 	"github.com/charmbracelet/wish"
 	"github.com/charmbracelet/wish/bubbletea"
 	"github.com/charmbracelet/wish/logging"
+	gossh "golang.org/x/crypto/ssh"
+	"golang.org/x/term"
 )
 
 type model struct {
@@ -506,8 +510,8 @@ func loadHostKey(local bool) ([]byte, error) {
 		}
 		return generateOrLoadHostKey(filepath.Join(homeDir, ".chessh", "host_key"))
 	}
-	// Production (exe.dev): ephemeral host key. exe.dev's edge already
-	// authenticated the client; this key is only for the in-VM wish listener.
+	// Production: ephemeral host key for the in-VM wish listener. Clients
+	// authenticate to exe.dev's edge; this key is only for the local hop.
 	keyPEM, err := generateHostKeyPEM()
 	if err != nil {
 		return nil, err
@@ -516,30 +520,88 @@ func loadHostKey(local bool) ([]byte, error) {
 	return keyPEM, nil
 }
 
-func main() {
-	var (
-		sshPort = flag.Int("port", 0, "SSH listen port (default 22; 2222 with -local)")
-		local   = flag.Bool("local", false, "reuse ~/.chessh/host_key; default port 2222")
-	)
-	flag.Parse()
+func wishAddr() string {
+	if addr := os.Getenv("CHESSH_ADDR"); addr != "" {
+		return addr
+	}
+	return "127.0.0.1:2222"
+}
 
-	if *sshPort == 0 {
-		if *local {
-			*sshPort = 2222
-		} else {
-			*sshPort = 22
-		}
+// runPlay dials the local wish server and attaches this terminal.
+// Used when this binary is the login program for exe.dev's injected sshd.
+func runPlay(addr string) {
+	config := &gossh.ClientConfig{
+		User: "player",
+		Auth: []gossh.AuthMethod{
+			gossh.Password(""),
+		},
+		HostKeyCallback: gossh.InsecureIgnoreHostKey(),
+		Timeout:         5 * time.Second,
 	}
 
-	hostKeyData, err := loadHostKey(*local)
+	client, err := gossh.Dial("tcp", addr, config)
+	if err != nil {
+		log.Fatalf("connect to chessh server at %s: %v", addr, err)
+	}
+	defer client.Close()
+
+	session, err := client.NewSession()
+	if err != nil {
+		log.Fatalf("session: %v", err)
+	}
+	defer session.Close()
+
+	session.Stdin = os.Stdin
+	session.Stdout = os.Stdout
+	session.Stderr = os.Stderr
+
+	fd := int(os.Stdin.Fd())
+	if term.IsTerminal(fd) {
+		w, h, err := term.GetSize(fd)
+		if err != nil {
+			w, h = 80, 24
+		}
+		oldState, err := term.MakeRaw(fd)
+		if err != nil {
+			log.Fatalf("terminal raw mode: %v", err)
+		}
+		defer term.Restore(fd, oldState)
+
+		if err := session.RequestPty("xterm-256color", h, w, gossh.TerminalModes{}); err != nil {
+			log.Fatalf("request pty: %v", err)
+		}
+
+		winch := make(chan os.Signal, 1)
+		signal.Notify(winch, syscall.SIGWINCH)
+		go func() {
+			for range winch {
+				if w, h, err := term.GetSize(fd); err == nil {
+					_ = session.WindowChange(h, w)
+				}
+			}
+		}()
+		defer signal.Stop(winch)
+	}
+
+	if err := session.Shell(); err != nil {
+		log.Fatalf("shell: %v", err)
+	}
+	if err := session.Wait(); err != nil && err != io.EOF {
+		if _, ok := err.(*gossh.ExitMissingError); !ok {
+			log.Printf("session ended: %v", err)
+		}
+	}
+}
+
+func runServe(listenAddr string, local bool) {
+	hostKeyData, err := loadHostKey(local)
 	if err != nil {
 		log.Fatalf("host key: %v", err)
 	}
 
 	s, err := wish.NewServer(
-		wish.WithAddress(fmt.Sprintf(":%d", *sshPort)),
+		wish.WithAddress(listenAddr),
 		wish.WithHostKeyPEM(hostKeyData),
-		// Open auth: exe.dev's edge already authenticated the player.
 		wish.WithPasswordAuth(func(ssh.Context, string) bool { return true }),
 		wish.WithPublicKeyAuth(func(ssh.Context, ssh.PublicKey) bool { return true }),
 		wish.WithMiddleware(
@@ -572,12 +634,12 @@ func main() {
 		log.Fatalln(err)
 	}
 
-	done := make(chan os.Signal, 1)
-	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
-	log.Printf("Starting SSH chess server on :%d", *sshPort)
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
 
 	go func() {
-		if err = s.ListenAndServe(); err != nil && err != ssh.ErrServerClosed {
+		log.Printf("Starting SSH chess server on %s", listenAddr)
+		if err := s.ListenAndServe(); err != nil && err != ssh.ErrServerClosed {
 			log.Fatalln(err)
 		}
 	}()
@@ -600,11 +662,74 @@ func main() {
 		}()
 	}
 
-	<-done
+	<-ctx.Done()
 	log.Println("Stopping SSH server")
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	if err := s.Shutdown(ctx); err != nil {
+	tctx, tcancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer tcancel()
+	if err := s.Shutdown(tctx); err != nil {
 		log.Fatalln(err)
+	}
+}
+
+func main() {
+	// OpenSSH login-shell -c for non-interactive commands (ssh host ls).
+	if len(os.Args) >= 3 && os.Args[1] == "-c" {
+		cmd := exec.Command("/bin/sh", append([]string{"-c"}, os.Args[2:]...)...)
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			if ee, ok := err.(*exec.ExitError); ok {
+				os.Exit(ee.ExitCode())
+			}
+			log.Fatal(err)
+		}
+		return
+	}
+
+	var (
+		local = flag.Bool("local", false, "reuse ~/.chessh/host_key")
+		addr  = flag.String("addr", "", "wish listen/dial address (default CHESSH_ADDR or 127.0.0.1:2222)")
+	)
+	flag.Parse()
+
+	mode := "auto"
+	if flag.NArg() > 0 {
+		mode = flag.Arg(0)
+	}
+
+	listenAddr := *addr
+	if listenAddr == "" {
+		listenAddr = wishAddr()
+	}
+	// Local debugging: bind all interfaces on the same port play dials.
+	if *local && *addr == "" && os.Getenv("CHESSH_ADDR") == "" {
+		listenAddr = ":2222"
+	}
+
+	switch mode {
+	case "serve":
+		runServe(listenAddr, *local)
+	case "play":
+		playAddr := listenAddr
+		if strings.HasPrefix(playAddr, ":") {
+			playAddr = "127.0.0.1" + playAddr
+		}
+		runPlay(playAddr)
+	case "auto":
+		// exe.dev injects sshd and execs this binary as the login program.
+		// SSH_CONNECTION means we are that login; hop into local wish.
+		if os.Getenv("SSH_CONNECTION") != "" || os.Getenv("SSH_CLIENT") != "" {
+			playAddr := listenAddr
+			if strings.HasPrefix(playAddr, ":") {
+				playAddr = "127.0.0.1" + playAddr
+			}
+			runPlay(playAddr)
+			return
+		}
+		runServe(listenAddr, *local)
+	default:
+		fmt.Fprintf(os.Stderr, "usage: %s [serve|play]\n", os.Args[0])
+		os.Exit(2)
 	}
 }
