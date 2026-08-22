@@ -268,34 +268,28 @@ fi
 echo "::endgroup::"
 
 echo "::group::SSH command path (ssh … chess) scales up"
-# Hold a PTY session long enough for EnsureReady; chess waits for an opponent.
-# Use a FIFO so we can send quit after scale-up, then close the client.
-chess_in="${WORKDIR}/chess-stdin"
-mkfifo "${chess_in}"
-ssh_mux_tty chess <"${chess_in}" >"${WORKDIR}/chess-ssh.out" 2>"${WORKDIR}/chess-ssh.err" &
+# OpenSSH -tt over a FIFO/exec{fd} writer SIGPIPEs under pipefail in CI.
+# Keep sessions alive with timeout + /dev/null stdin instead (sshtea normalizes
+# the resulting dumb/0x0 PTY).
+timeout 30 ssh_mux_tty chess </dev/null >"${WORKDIR}/chess-ssh.out" 2>"${WORKDIR}/chess-ssh.err" &
 CHESS_SSH_PID=$!
-# Keep the FIFO open from a writer that we control.
-exec {chess_fd}>"${chess_in}"
 if ! await_deploy_ready chess; then
-  exec {chess_fd}>&-
+  kill "${CHESS_SSH_PID}" 2>/dev/null || true
+  wait "${CHESS_SSH_PID}" 2>/dev/null || true
+  CHESS_SSH_PID=""
   dump_debug
   exit 1
 fi
-# Second client should match and leave the waiting screen.
-chess2_in="${WORKDIR}/chess2-stdin"
-mkfifo "${chess2_in}"
-ssh_mux_tty chess <"${chess2_in}" >"${WORKDIR}/chess2-ssh.out" 2>"${WORKDIR}/chess2-ssh.err" &
+timeout 30 ssh_mux_tty chess </dev/null >"${WORKDIR}/chess2-ssh.out" 2>"${WORKDIR}/chess2-ssh.err" &
 CHESS2_SSH_PID=$!
-exec {chess2_fd}>"${chess2_in}"
+
 matched=0
 for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
-  # Alt-screen dumps are noisy; match on stable UI phrases.
   if grep -aqE 'YOUR TURN|OPPONENT|vs ' "${WORKDIR}/chess-ssh.out" 2>/dev/null \
     || grep -aqE 'YOUR TURN|OPPONENT|vs ' "${WORKDIR}/chess2-ssh.out" 2>/dev/null; then
     matched=1
     break
   fi
-  # Still waiting is OK only while both clients are alive.
   if ! kill -0 "${CHESS_SSH_PID}" 2>/dev/null || ! kill -0 "${CHESS2_SSH_PID}" 2>/dev/null; then
     echo "chess SSH client exited before match" >&2
     break
@@ -304,33 +298,20 @@ for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
 done
 if [[ "${matched}" -ne 1 ]]; then
   echo "expected two chess clients to match; outs:" >&2
+  set +o pipefail
   for f in "${WORKDIR}/chess-ssh.out" "${WORKDIR}/chess2-ssh.out" \
            "${WORKDIR}/chess-ssh.err" "${WORKDIR}/chess2-ssh.err"; do
     echo "--- ${f} ---" >&2
     sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' "${f}" 2>/dev/null | tr -d '\r' | head -c 2000 >&2 || true
     echo >&2
   done
-  exec {chess_fd}>&-
-  exec {chess2_fd}>&-
+  set -o pipefail
   dump_debug
   exit 1
 fi
-# Ask both TUIs to quit, then force-close if needed so the mux Releases.
-printf 'q' >&"${chess_fd}" || true
-printf 'q' >&"${chess2_fd}" || true
-exec {chess_fd}>&-
-exec {chess2_fd}>&-
 for pid_var in CHESS_SSH_PID CHESS2_SSH_PID; do
   pid="${!pid_var}"
-  for _ in 1 2 3 4 5; do
-    if ! kill -0 "${pid}" 2>/dev/null; then
-      break
-    fi
-    sleep 1
-  done
-  if kill -0 "${pid}" 2>/dev/null; then
-    kill -KILL "${pid}" 2>/dev/null || true
-  fi
+  kill "${pid}" 2>/dev/null || true
   wait "${pid}" 2>/dev/null || true
 done
 CHESS_SSH_PID=""
