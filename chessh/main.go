@@ -8,6 +8,7 @@ import (
 	"encoding/pem"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -23,6 +24,8 @@ import (
 	"github.com/charmbracelet/wish"
 	"github.com/charmbracelet/wish/bubbletea"
 	"github.com/charmbracelet/wish/logging"
+	gossh "golang.org/x/crypto/ssh"
+	"golang.org/x/term"
 )
 
 type model struct {
@@ -506,8 +509,8 @@ func loadHostKey(local bool) ([]byte, error) {
 		}
 		return generateOrLoadHostKey(filepath.Join(homeDir, ".chessh", "host_key"))
 	}
-	// Production (exe.dev): ephemeral host key for this process. exe.dev's own
-	// SSH broker is what clients trust; we do not manage a game host key in TF.
+	// Production (exe.dev): ephemeral host key for this process. Clients reach
+	// the game through exe.dev's injected sshd, then a local hop to wish.
 	keyPEM, err := generateHostKeyPEM()
 	if err != nil {
 		return nil, err
@@ -516,34 +519,97 @@ func loadHostKey(local bool) ([]byte, error) {
 	return keyPEM, nil
 }
 
-func main() {
-	var (
-		sshPort = flag.Int("port", 0, "SSH server port (default 22; 2222 with -local)")
-		local   = flag.Bool("local", false, "generate or reuse ~/.chessh/host_key; default port 2222")
-	)
-	flag.Parse()
-	if *sshPort == 0 {
-		if *local {
-			*sshPort = 2222
-		} else {
-			*sshPort = 22
-		}
+func wishAddr() string {
+	if addr := os.Getenv("CHESSH_ADDR"); addr != "" {
+		return addr
+	}
+	return "127.0.0.1:2222"
+}
+
+// runPlay dials the local wish server and attaches this terminal. Used when
+// exe.dev's injected sshd starts a login shell — that platform owns port 22,
+// so wish listens on a high port and login hops here.
+func runPlay(addr string) {
+	config := &gossh.ClientConfig{
+		User: "player",
+		Auth: []gossh.AuthMethod{
+			gossh.Password(""),
+		},
+		HostKeyCallback: gossh.InsecureIgnoreHostKey(),
+		Timeout:         5 * time.Second,
 	}
 
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
-	defer cancel()
+	client, err := gossh.Dial("tcp", addr, config)
+	if err != nil {
+		log.Fatalf("connect to chessh server at %s: %v\n(is the serve process listening?)", addr, err)
+	}
+	defer client.Close()
 
-	hostKeyData, err := loadHostKey(*local)
+	session, err := client.NewSession()
+	if err != nil {
+		log.Fatalf("session: %v", err)
+	}
+	defer session.Close()
+
+	session.Stdin = os.Stdin
+	session.Stdout = os.Stdout
+	session.Stderr = os.Stderr
+
+	fd := int(os.Stdin.Fd())
+	if term.IsTerminal(fd) {
+		w, h, err := term.GetSize(fd)
+		if err != nil {
+			w, h = 80, 24
+		}
+		oldState, err := term.MakeRaw(fd)
+		if err != nil {
+			log.Fatalf("terminal raw mode: %v", err)
+		}
+		defer term.Restore(fd, oldState)
+
+		if err := session.RequestPty("xterm-256color", h, w, gossh.TerminalModes{}); err != nil {
+			log.Fatalf("request pty: %v", err)
+		}
+
+		winch := make(chan os.Signal, 1)
+		signal.Notify(winch, syscall.SIGWINCH)
+		go func() {
+			for range winch {
+				w, h, err := term.GetSize(fd)
+				if err == nil {
+					_ = session.WindowChange(h, w)
+				}
+			}
+		}()
+		defer signal.Stop(winch)
+	}
+
+	if err := session.Shell(); err != nil {
+		log.Fatalf("shell: %v", err)
+	}
+	if err := session.Wait(); err != nil && err != io.EOF {
+		// Remote closed the session (normal when the game ends).
+		if _, ok := err.(*gossh.ExitMissingError); !ok {
+			log.Printf("session ended: %v", err)
+		}
+	}
+}
+
+func runServe(listenAddr string, local bool) {
+	hostKeyData, err := loadHostKey(local)
 	if err != nil {
 		log.Fatalf("host key: %v", err)
 	}
 
 	s, err := wish.NewServer(
-		wish.WithAddress(fmt.Sprintf(":%d", *sshPort)),
+		wish.WithAddress(listenAddr),
 		wish.WithHostKeyPEM(hostKeyData),
+		// Open auth: players arrive via exe.dev (already authenticated there) or
+		// locally; the inner hop uses an empty password.
+		wish.WithPasswordAuth(func(ssh.Context, string) bool { return true }),
+		wish.WithPublicKeyAuth(func(ssh.Context, ssh.PublicKey) bool { return true }),
 		wish.WithMiddleware(
 			bubbletea.Middleware(func(s ssh.Session) (tea.Model, []tea.ProgramOption) {
-				// Create player from SSH session
 				player := &Player{
 					ID:         fmt.Sprintf("player_%d", time.Now().UnixNano()),
 					Session:    s,
@@ -552,13 +618,9 @@ func main() {
 					UpdateChan: make(chan GameUpdate, 10),
 				}
 
-				// Create model with player
 				m := initialModelWithPlayer(player)
-
-				// Add player to matchmaking queue first
 				GetGameManager().AddPlayer(player)
 
-				// Handle cleanup on session end
 				go func() {
 					<-s.Context().Done()
 					GetGameManager().RemovePlayer(player.ID)
@@ -575,22 +637,34 @@ func main() {
 	if err != nil {
 		log.Fatalln(err)
 	}
+
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
 	go func() {
-		log.Printf("Starting SSH chess server on :%d", *sshPort)
-		if err = s.ListenAndServe(); err != nil {
+		log.Printf("Starting SSH chess server on %s", listenAddr)
+		if err := s.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			// wish returns ssh.ErrServerClosed; treat any listen error as fatal.
 			log.Fatalln(err)
 		}
 	}()
 
 	if httpPort := os.Getenv("PORT"); httpPort != "" {
-		log.Print("Starting HTTP health check server on port ", httpPort)
-		http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("OK"))
-		})
-		if err := http.ListenAndServe(fmt.Sprintf(":%s", httpPort), nil); err != nil {
-			log.Fatalln("HTTP server error:", err)
-		}
+		go func() {
+			log.Print("Starting HTTP health check server on port ", httpPort)
+			mux := http.NewServeMux()
+			mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte("OK"))
+			})
+			mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+				_, _ = w.Write([]byte("CheSSH — play with: ssh chessh.exe.xyz\n"))
+			})
+			if err := http.ListenAndServe(fmt.Sprintf(":%s", httpPort), mux); err != nil {
+				log.Fatalln("HTTP server error:", err)
+			}
+		}()
 	}
 
 	<-ctx.Done()
@@ -600,5 +674,41 @@ func main() {
 	defer tcancel()
 	if err := s.Shutdown(tctx); err != nil {
 		log.Fatalln(err)
+	}
+}
+
+func main() {
+	var (
+		local = flag.Bool("local", false, "reuse ~/.chessh/host_key")
+		addr  = flag.String("addr", "", "wish listen/dial address (default CHESSH_ADDR or 127.0.0.1:2222)")
+	)
+	flag.Parse()
+
+	mode := "auto"
+	if flag.NArg() > 0 {
+		mode = flag.Arg(0)
+	}
+
+	listenAddr := *addr
+	if listenAddr == "" {
+		listenAddr = wishAddr()
+	}
+
+	switch mode {
+	case "serve":
+		runServe(listenAddr, *local)
+	case "play":
+		runPlay(listenAddr)
+	case "auto":
+		// exe.dev owns port 22 (injected sshd). PID 1 has no SSH_CONNECTION and
+		// runs wish on a high port; a login shell has SSH_CONNECTION and hops in.
+		if os.Getenv("SSH_CONNECTION") != "" || os.Getenv("SSH_CLIENT") != "" {
+			runPlay(listenAddr)
+			return
+		}
+		runServe(listenAddr, *local)
+	default:
+		fmt.Fprintf(os.Stderr, "usage: %s [serve|play]\n", os.Args[0])
+		os.Exit(2)
 	}
 }
