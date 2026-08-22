@@ -211,6 +211,13 @@ func proxySSHSession(clientSess ssh.Session, addr string, signer gossh.Signer, t
 		_, _ = io.Copy(stdin, clientSess)
 		_ = stdin.Close()
 	}()
+	// Long-lived backends (for example chess) keep Shell open after stdin EOF.
+	// Tear them down when the client session ends so the mux can Release and idle.
+	go func() {
+		<-clientSess.Context().Done()
+		_ = bs.Close()
+		_ = conn.Close()
+	}()
 
 	if len(target.Args) > 0 {
 		err = bs.Run(strings.Join(target.Args, " "))

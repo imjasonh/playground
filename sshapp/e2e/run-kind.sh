@@ -269,14 +269,30 @@ echo "::endgroup::"
 
 echo "::group::SSH command path (ssh … chess) scales up"
 # Hold a PTY session long enough for EnsureReady; chess waits for an opponent.
-ssh_mux_tty chess >"${WORKDIR}/chess-ssh.out" 2>"${WORKDIR}/chess-ssh.err" &
+# Use a FIFO so we can send quit after scale-up, then close the client.
+chess_in="${WORKDIR}/chess-stdin"
+mkfifo "${chess_in}"
+ssh_mux_tty chess <"${chess_in}" >"${WORKDIR}/chess-ssh.out" 2>"${WORKDIR}/chess-ssh.err" &
 CHESS_SSH_PID=$!
+# Keep the FIFO open from a writer that we control.
+exec {chess_fd}>"${chess_in}"
 if ! await_deploy_ready chess; then
+  exec {chess_fd}>&-
   dump_debug
   exit 1
 fi
-# Session output may be alt-screen; scale-up is the coverage bar for chess.
-kill "${CHESS_SSH_PID}" 2>/dev/null || true
+# Ask the TUI to quit, then force-close if needed so the mux Releases.
+printf 'q' >&"${chess_fd}" || true
+exec {chess_fd}>&-
+for _ in 1 2 3 4 5; do
+  if ! kill -0 "${CHESS_SSH_PID}" 2>/dev/null; then
+    break
+  fi
+  sleep 1
+done
+if kill -0 "${CHESS_SSH_PID}" 2>/dev/null; then
+  kill -KILL "${CHESS_SSH_PID}" 2>/dev/null || true
+fi
 wait "${CHESS_SSH_PID}" 2>/dev/null || true
 CHESS_SSH_PID=""
 echo "chess scaled up under mux routing"

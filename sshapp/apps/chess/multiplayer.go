@@ -287,8 +287,7 @@ func (gm *GameManager) GetGameSession(playerID string) *GameSession {
 }
 
 func (gm *GameManager) BroadcastUpdate(playerID string, update GameUpdate) {
-	session := gm.GetGameSession(playerID)
-	if session != nil {
+	if session := gm.GetGameSession(playerID); session != nil {
 		update.FromPlayer = playerID
 		select {
 		case session.Updates <- update:
