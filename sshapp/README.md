@@ -57,7 +57,8 @@ sshapp/
 │   ├── registry/       # in-mux app menu (list + pick)
 │   ├── route/          # command path / SSHAPP / subsystem → app
 │   ├── scaler/         # Deployment 0↔N via the Kubernetes API
-│   └── session/        # Snapshot Store (Memory + GCS) for app state dumps
+│   ├── session/        # Snapshot Store (Memory + GCS) for app state dumps
+│   └── sshtea/         # Wish Bubble Tea middleware (mux-safe winCh)
 ├── e2e/                # KinD mux + hello (CI when sshapp/ changes)
 ├── terraform/
 │   ├── modules/ssh_app/
@@ -69,6 +70,9 @@ sshapp/
 To add another app:
 
 1. Create `apps/<name>/` with a `main` package (Wish server on `:2222`).
+   For Bubble Tea TUIs, use `sshtea.Middleware` (same shape as
+   `wish/bubbletea.Middleware`) instead of Wish's stock one — see
+   `internal/sshtea`.
 2. Add an entry to `var.apps` in Terraform (see `terraform.tfvars.example`).
 3. Apply. Terraform builds with `ko_build` and registers the name with the mux.
 

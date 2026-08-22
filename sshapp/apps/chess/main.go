@@ -18,7 +18,7 @@ import (
 	"charm.land/wish/v2"
 	"charm.land/wish/v2/activeterm"
 	"charm.land/wish/v2/logging"
-	"github.com/charmbracelet/colorprofile"
+	"github.com/imjasonh/playground/sshapp/internal/sshtea"
 )
 
 type model struct {
@@ -68,8 +68,6 @@ func (m model) listenForUpdates() tea.Cmd {
 		if m.player == nil || m.player.UpdateChan == nil {
 			return sessionEndedMsg{}
 		}
-		// Do not watch Session.Context() here: behind the mux / Go SSH clients
-		// that context can already be done when Init runs, which Quits immediately.
 		update, ok := <-m.player.UpdateChan
 		if !ok {
 			return sessionEndedMsg{}
@@ -393,7 +391,7 @@ func newServer(addr, hostKeyPEM, hostKeyPath string) (*ssh.Server, error) {
 			return true
 		}),
 		wish.WithMiddleware(
-			teaMiddleware(),
+			sshtea.Middleware(teaHandler),
 			activeterm.Middleware(),
 			logging.Middleware(),
 		),
@@ -406,34 +404,7 @@ func newServer(addr, hostKeyPEM, hostKeyPath string) (*ssh.Server, error) {
 	return wish.NewServer(opts...)
 }
 
-// teaMiddleware runs Bubble Tea without wish's stock window-change loop.
-// That loop does `case w := <-winCh` on a closed channel, which yields endless
-// {0,0} resizes and then Quits; `for range` stops cleanly instead.
-func teaMiddleware() wish.Middleware {
-	return func(next ssh.Handler) ssh.Handler {
-		return func(sess ssh.Session) {
-			program := teaProgram(sess)
-			_, winCh, ok := sess.Pty()
-			if !ok {
-				wish.Fatalln(sess, "no active terminal, skipping")
-				return
-			}
-			go func() {
-				for win := range winCh {
-					program.Send(tea.WindowSizeMsg{Width: win.Width, Height: win.Height})
-				}
-			}()
-			if _, err := program.Run(); err != nil {
-				log.Error("app exit with error", "error", err)
-			}
-			program.Kill()
-			next(sess)
-		}
-	}
-}
-
-// teaProgram starts one Bubble Tea session for an emulated PTY behind the mux.
-func teaProgram(s ssh.Session) *tea.Program {
+func teaHandler(s ssh.Session) (tea.Model, []tea.ProgramOption) {
 	player := &Player{
 		ID:         fmt.Sprintf("player_%d", time.Now().UnixNano()),
 		Session:    s,
@@ -446,29 +417,7 @@ func teaProgram(s ssh.Session) *tea.Program {
 		<-s.Context().Done()
 		GetGameManager().RemovePlayer(player.ID)
 	}()
-
-	pty, _, _ := s.Pty()
-	env := append(s.Environ(),
-		"TERM=xterm-256color",
-		"COLORTERM=truecolor",
-		"SSH_TTY=/dev/pts/0",
-	)
-	opts := []tea.ProgramOption{
-		tea.WithInput(s),
-		tea.WithOutput(s),
-		tea.WithEnvironment(env),
-		tea.WithColorProfile(colorprofile.ANSI256),
-		tea.WithFilter(func(_ tea.Model, msg tea.Msg) tea.Msg {
-			if _, ok := msg.(tea.SuspendMsg); ok {
-				return tea.ResumeMsg{}
-			}
-			return msg
-		}),
-	}
-	if pty.Window.Width > 0 && pty.Window.Height > 0 {
-		opts = append(opts, tea.WithWindowSize(pty.Window.Width, pty.Window.Height))
-	}
-	return tea.NewProgram(initialModelWithPlayer(player), opts...)
+	return initialModelWithPlayer(player), nil
 }
 
 func envOr(key, fallback string) string {
