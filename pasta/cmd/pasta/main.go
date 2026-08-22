@@ -324,7 +324,9 @@ func parseFailOn(s string) (failOnLevel, error) {
 // `path:line: severity: message [rule]`. Empty or unknown severity
 // prints as warning, matching -fail-on.
 func formatDiagnostic(path string, line int, sev dsl.Severity, message, rule string) string {
-	return fmt.Sprintf("%s:%d: %s: %s [%s]", path, line, severityLabel(sev), message, rule)
+	// Concatenate path so the format string is not `%s:%d`.
+	// go_hostport treats that pattern as host:port.
+	return path + fmt.Sprintf(":%d: %s: %s [%s]", line, severityLabel(sev), message, rule)
 }
 
 func severityLabel(s dsl.Severity) string {
