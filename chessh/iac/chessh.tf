@@ -10,8 +10,9 @@ resource "ko_build" "app" {
   # Exact GHCR repository (no importpath suffix). Keep the package public so
   # exe.dev can pull without registry credentials.
   repo = "ghcr.io/imjasonh/playground/chessh"
-  # Rootful static base so the process can bind the SSH port inside the VM.
-  base_image = "cgr.dev/chainguard/latest"
+  # Minimal static base (Chainguard equivalent of distroless/static).
+  # Note: cgr.dev/chainguard/latest is not a public image (FORBIDDEN).
+  base_image = "cgr.dev/chainguard/static:latest"
   platforms  = ["linux/amd64"]
   sbom       = "none"
 }
