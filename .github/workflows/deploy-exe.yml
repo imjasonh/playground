@@ -95,7 +95,10 @@ jobs:
         # EXEDEV_TOKEN is set on the job env by mint-exedev-token.sh via GITHUB_ENV.
         run: terraform apply -input=false -auto-approve -target=ko_build.app
 
+      # Best-effort: GITHUB_TOKEN often cannot change visibility. Prefer making the
+      # package public once in the GHCR UI; do not block terraform apply on this.
       - name: Make GHCR package public
+        continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
