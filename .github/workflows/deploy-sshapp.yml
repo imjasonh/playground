@@ -1,0 +1,94 @@
+# Post-merge CD for sshapp (GKE Autopilot via Terraform + ko).
+#
+# Skips cleanly until Workload Identity Federation is wired up. Set the repo
+# variables / secret listed in sshapp/README.md ("GitHub Actions CD"), then
+# set github_repository in terraform and apply once so the WIF pool exists.
+name: Deploy sshapp
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "sshapp/**"
+      - ".github/workflows/deploy-sshapp.yml"
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-sshapp
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sshapp/terraform
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Check WIF is configured
+        id: wif
+        env:
+          WIF_PROVIDER: ${{ vars.SSHAPP_WIF_PROVIDER }}
+          DEPLOY_SA: ${{ vars.SSHAPP_DEPLOY_SA }}
+          TF_STATE_BUCKET: ${{ vars.SSHAPP_TF_STATE_BUCKET }}
+          TFVARS: ${{ secrets.SSHAPP_TFVARS }}
+        run: |
+          missing=()
+          [ -n "$WIF_PROVIDER" ] || missing+=(SSHAPP_WIF_PROVIDER)
+          [ -n "$DEPLOY_SA" ] || missing+=(SSHAPP_DEPLOY_SA)
+          [ -n "$TF_STATE_BUCKET" ] || missing+=(SSHAPP_TF_STATE_BUCKET)
+          [ -n "$TFVARS" ] || missing+=(SSHAPP_TFVARS)
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=sshapp CD skipped::WIF/CD not configured yet (${missing[*]}). See sshapp/README.md."
+            exit 0
+          fi
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+
+      - name: Authenticate to Google Cloud
+        if: steps.wif.outputs.configured == 'true'
+        uses: google-github-actions/auth@b7593ed2efd1c1617e1b0254da33b86225adb2a5 # v2.1.12
+        with:
+          workload_identity_provider: ${{ vars.SSHAPP_WIF_PROVIDER }}
+          service_account: ${{ vars.SSHAPP_DEPLOY_SA }}
+
+      - name: Set up gcloud
+        if: steps.wif.outputs.configured == 'true'
+        uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2.2.1
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        if: steps.wif.outputs.configured == 'true'
+        with:
+          go-version-file: sshapp/go.mod
+          cache-dependency-path: sshapp/go.sum
+
+      - name: Install ko
+        if: steps.wif.outputs.configured == 'true'
+        run: go install github.com/google/ko@v0.17.1
+
+      - name: Set up Terraform
+        if: steps.wif.outputs.configured == 'true'
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+
+      - name: Terraform init and apply
+        if: steps.wif.outputs.configured == 'true'
+        env:
+          TF_STATE_BUCKET: ${{ vars.SSHAPP_TF_STATE_BUCKET }}
+          SSHAPP_TFVARS: ${{ secrets.SSHAPP_TFVARS }}
+        run: |
+          printf '%s\n' "$SSHAPP_TFVARS" > terraform.tfvars
+          terraform init \
+            -input=false \
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="prefix=sshapp"
+          terraform apply -input=false -auto-approve

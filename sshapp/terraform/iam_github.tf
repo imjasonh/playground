@@ -1,6 +1,8 @@
 # GitHub Actions Workload Identity Federation scaffolding.
 # Leave github_repository empty until you are ready to deploy from GHA.
-# Then set it to OWNER/REPO and grant the deploy SA in your workflow with:
+# Then set it to OWNER/REPO, apply, and wire repo vars/secrets as documented
+# in ../README.md ("GitHub Actions CD"). The workflow is
+# .github/workflows/deploy-sshapp.yml (skips until those vars exist).
 #
 #   permissions:
 #     id-token: write
@@ -61,6 +63,10 @@ resource "google_service_account_iam_member" "github_wif" {
 
 resource "google_project_iam_member" "github_deploy_roles" {
   for_each = var.github_repository != "" ? toset([
+    # Day-2 terraform apply: rebuild ko images, patch Deployments/Services,
+    # touch DNS. Bootstrap the cluster locally first; this SA is not meant to
+    # create the Autopilot cluster from scratch. Grant the SA objectAdmin (or
+    # finer) on the Terraform state bucket separately.
     "roles/artifactregistry.writer",
     "roles/container.developer",
     "roles/dns.admin",

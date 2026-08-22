@@ -143,7 +143,11 @@ cd sshapp/terraform
 cp terraform.tfvars.example terraform.tfvars
 # edit project_id, domain, and optional CIDR allowlists
 
-terraform init
+# Remote state (required for CD; also fine for local). Create the bucket once.
+#   gcloud storage buckets create gs://YOUR_TFSTATE_BUCKET --location=us-central1
+terraform init \
+  -backend-config=bucket=YOUR_TFSTATE_BUCKET \
+  -backend-config=prefix=sshapp
 terraform apply
 ```
 
@@ -189,10 +193,43 @@ Idle, you pay for the mux (~100m–500m CPU / 256–512Mi), one LoadBalancer
 (~$18/mo), Cloud NAT, and DNS. Wish pods scale to zero. Adding apps does not
 add forwarding rules.
 
-## GitHub Actions (later)
+## GitHub Actions CD
 
-Set `github_repository = "OWNER/REPO"` and re-apply when you want WIF outputs
-for `google-github-actions/auth`.
+`deploy-sshapp.yml` runs on pushes to `main` that touch `sshapp/` (and on
+manual *Run workflow*). Until WIF is wired up it **exits 0** with a notice —
+it will not fail the merge.
+
+### Enable later
+
+1. Bootstrap the stack locally (`terraform apply`) once, including:
+
+   ```hcl
+   github_repository = "imjasonh/playground"
+   ```
+
+2. Create a GCS bucket for Terraform state (if you have not already) and grant
+   the deploy SA access on **that bucket only**, for example:
+
+   ```bash
+   gcloud storage buckets add-iam-policy-binding gs://YOUR_TFSTATE_BUCKET \
+     --member="serviceAccount:$(terraform output -raw github_actions_service_account)" \
+     --role=roles/storage.objectAdmin
+   ```
+
+3. Repo **variables**:
+
+   | Variable | Value |
+   |----------|-------|
+   | `SSHAPP_WIF_PROVIDER` | `terraform output -raw github_actions_workload_identity_provider` |
+   | `SSHAPP_DEPLOY_SA` | `terraform output -raw github_actions_service_account` |
+   | `SSHAPP_TF_STATE_BUCKET` | the GCS bucket name |
+
+4. Repo **secret** `SSHAPP_TFVARS`: contents of your `terraform.tfvars` (do not
+   commit that file). Project ID lives there, not as a separate Actions var.
+
+5. Re-run *Deploy sshapp* (or push a `sshapp/` change). The workflow authenticates
+   with WIF and runs `terraform apply`, which rebuilds ko images and rolls the
+   mux / app Deployments.
 
 ## Destroy
 
