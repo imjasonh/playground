@@ -1,22 +1,2 @@
-
-variable "project_id" {
-  description = "GCP Project ID"
-  type        = string
-}
-
-variable "region" {
-  description = "GCP Region"
-  type        = string
-  default     = "us-central1"
-}
-
-variable "name" {
-  description = "Name prefix for resources"
-  type        = string
-}
-
-variable "deletion_protection" {
-  description = "Enable deletion protection for GKE Autopilot cluster"
-  type        = bool
-  default     = false
-}
+# No input variables today. Auth and backend credentials come from the
+# environment (EXEDEV_TOKEN, R2 access keys, KO/GHCR docker config).

@@ -1,21 +1,30 @@
-# Container image build configuration
-data "apko_config" "config" {
-  config_contents = jsonencode({
-    contents = {
-      repositories = ["https://apk.cgr.dev/chainguard"]
-      packages     = ["ca-certificates-bundle", "grype"]
-    }
-    archs = ["x86_64"]
-  })
+# Stable SSH host key for the game server. Kept in Terraform state (R2) so
+# clients do not see host-key warnings across deploys.
+resource "tls_private_key" "ssh_host" {
+  algorithm = "ED25519"
 }
 
-resource "apko_build" "base" {
-  repo   = "${var.region}-docker.pkg.dev/${var.project_id}/chessh/github.com/imjasonh/playground/chessh"
-  config = data.apko_config.config.config
+resource "ko_build" "app" {
+  importpath  = "github.com/imjasonh/playground/chessh"
+  working_dir = ".."
+  # Exact GHCR repository (no importpath suffix). Keep the package public so
+  # exe.dev can pull without registry credentials.
+  repo = "ghcr.io/imjasonh/playground/chessh"
+  # Rootful static base so the process can bind the SSH port inside the VM.
+  base_image = "gcr.io/distroless/static:latest"
+  platforms  = ["linux/amd64"]
+  sbom       = "none"
 }
 
-resource "ko_build" "chessh" {
-  importpath = "github.com/imjasonh/playground/chessh"
-  base_image = apko_build.base.image_ref
-  depends_on = [google_artifact_registry_repository.artifact_repo]
+resource "exedev_vm" "app" {
+  name  = "chessh"
+  image = ko_build.app.image_ref
+  disk  = "10GB"
+
+  env = {
+    # PKCS#8 PEM; loadHostKey in main.go reads SSH_HOST_KEY.
+    SSH_HOST_KEY = tls_private_key.ssh_host.private_key_pem
+    # Optional HTTP health listener (exe.dev HTTPS proxy can target it).
+    PORT = "8080"
+  }
 }

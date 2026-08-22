@@ -1,10 +1,16 @@
-chessh
+# Built binary
+/chessh
+chessh.exe
 
-.ssh/
+# Go test/coverage artifacts
+*.test
+*.out
+coverage.txt
 
-# Terraform artifacts
+# Terraform
 *.tfstate
 *.tfstate.backup
 .terraform/
-.terraform.lock.hcl
 *.tfvars
+crash.log
+crash.*.log

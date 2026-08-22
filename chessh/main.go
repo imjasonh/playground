@@ -18,8 +18,6 @@ import (
 	"syscall"
 	"time"
 
-	secretmanager "cloud.google.com/go/secretmanager/apiv1"
-	"cloud.google.com/go/secretmanager/apiv1/secretmanagerpb"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/ssh"
 	"github.com/charmbracelet/wish"
@@ -494,46 +492,42 @@ func generateOrLoadHostKey(keyPath string) ([]byte, error) {
 	return keyPEM, nil
 }
 
+func loadHostKey(local bool) ([]byte, error) {
+	// Prefer an explicit PEM from the environment (exe.dev / Terraform).
+	if pemKey := os.Getenv("SSH_HOST_KEY"); pemKey != "" {
+		return []byte(pemKey), nil
+	}
+	if keyPath := os.Getenv("SSH_HOST_KEY_FILE"); keyPath != "" {
+		return os.ReadFile(keyPath)
+	}
+	if !local {
+		return nil, fmt.Errorf("set SSH_HOST_KEY or SSH_HOST_KEY_FILE, or pass -local")
+	}
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("user home directory: %w", err)
+	}
+	return generateOrLoadHostKey(filepath.Join(homeDir, ".chessh", "host_key"))
+}
+
 func main() {
+	defaultPort := 2222
+	if os.Getenv("SSH_HOST_KEY") != "" || os.Getenv("SSH_HOST_KEY_FILE") != "" {
+		// Production images listen on 22 so exe.dev's brokered SSH reaches wish.
+		defaultPort = 22
+	}
 	var (
-		sshPort = flag.Int("port", 2222, "SSH server port")
-		local   = flag.Bool("local", false, "run in local mode (generates/uses local host key instead of Secret Manager)")
+		sshPort = flag.Int("port", defaultPort, "SSH server port")
+		local   = flag.Bool("local", false, "generate or reuse ~/.chessh/host_key when no SSH_HOST_KEY is set")
 	)
 	flag.Parse()
-
-	var hostKeyData []byte
-	var err error
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	if *local {
-		// Local mode: generate or load local host key
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			log.Fatalf("failed to get user home directory: %v", err)
-		}
-		keyPath := filepath.Join(homeDir, ".chessh", "host_key")
-		hostKeyData, err = generateOrLoadHostKey(keyPath)
-		if err != nil {
-			log.Fatalf("failed to generate/load host key: %v", err)
-		}
-		log.Println("Running in local mode")
-	} else {
-		// Cloud mode: use Secret Manager
-		client, err := secretmanager.NewClient(ctx)
-		if err != nil {
-			log.Fatalf("failed to create Secret Manager client: %v", err)
-		}
-		defer client.Close()
-		resp, err := client.AccessSecretVersion(ctx, &secretmanagerpb.AccessSecretVersionRequest{
-			Name: os.Getenv("SSH_HOST_KEY_SECRET"),
-		})
-		if err != nil {
-			log.Fatalf("failed to access secret version: %v", err)
-		}
-		hostKeyData = resp.Payload.Data
-		log.Println("Running in cloud mode with Secret Manager")
+	hostKeyData, err := loadHostKey(*local)
+	if err != nil {
+		log.Fatalf("host key: %v", err)
 	}
 
 	s, err := wish.NewServer(

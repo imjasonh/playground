@@ -8,16 +8,14 @@ A multiplayer chess game playable via SSH.
 ## Play the game
 
 ```
-ssh chessh.app.imjasonh.com
+ssh chessh.exe.xyz
 ```
 
 ![Screenshot of CheSSH gameplay](screenshot.png)
 
-You may need to wait for another player to play against, or join from another terminal if you want to play with yourself.
-
-Players are automatically matched when they connect to the SSH server.
-
-When an opponent disconnects, you win!
+You may need to wait for another player, or open a second terminal to play
+against yourself. Players are matched when they connect. When an opponent
+disconnects, you win.
 
 ## Running locally
 
@@ -25,24 +23,52 @@ When an opponent disconnects, you win!
 go run ./ --local
 ```
 
-then
+Then:
 
 ```bash
 ssh localhost -p 2222
 ```
 
+`--local` writes an SSH host key under `~/.chessh/host_key` (or set
+`SSH_HOST_KEY` / `SSH_HOST_KEY_FILE` yourself).
+
 ## Deploying
+
+Infrastructure lives in `iac/` and targets [exe.dev](https://exe.dev):
+
+- `ko_build` builds the Go binary and pushes
+  `ghcr.io/imjasonh/playground/chessh` to GHCR
+- `exedev_vm` runs that image as the `chessh` VM (`chessh.exe.xyz`)
+- Terraform state is stored in Cloudflare R2
+  (`playground-terraform-state` / `exe/chessh/terraform.tfstate`)
+- A stable game SSH host key is generated once in Terraform and passed to
+  the VM as `SSH_HOST_KEY`
+
+On merges to `main` that touch `chessh/`, `.github/workflows/deploy-exe.yml`
+applies the stack (same idea as `deploy-workers.yml` for Cloudflare Workers).
+You can also apply by hand after minting an exe.dev API token and configuring
+the R2 backend:
 
 ```bash
 cd iac/
-terraform init
+# Set EXEDEV_TOKEN, AWS_* (R2), and docker-login to ghcr.io first.
+terraform init \
+  -backend-config="endpoints={s3=\"https://$CLOUDFLARE_ACCOUNT_ID.r2.cloudflarestorage.com\"}" \
+  -backend-config="access_key=$TF_STATE_R2_ACCESS_KEY_ID" \
+  -backend-config="secret_key=$TF_STATE_R2_SECRET_ACCESS_KEY"
 terraform apply
 ```
 
-This will create:
-- A container image containing the app's code
-- GCE VM instances running the app container
-- TCP Load Balancer for direct SSH access on port 22
-- Health checks and auto-healing for high availability
-- DNS records pointing to the load balancer
-- SSH host key management via Secret Manager
+### Repo secrets for CI
+
+| Secret | Purpose |
+|--------|---------|
+| `EXEDEV_SSH_PRIVATE_KEY` | OpenSSH private key whose public half is registered on exe.dev; CI mints `EXEDEV_TOKEN` from it |
+| `TF_STATE_R2_ACCESS_KEY_ID` | R2 access key for the Terraform state bucket |
+| `TF_STATE_R2_SECRET_ACCESS_KEY` | R2 secret for that access key |
+| `CLOUDFLARE_ACCOUNT_ID` | Already used by Worker deploys; R2 S3 endpoint host |
+| `CLOUDFLARE_API_TOKEN` | Creates the state bucket if missing |
+
+The GHCR package must be **public** so exe.dev can pull the image (the
+community `exedev` provider has no `registry_auth`). CI publishes the package
+and sets visibility after the first push.
