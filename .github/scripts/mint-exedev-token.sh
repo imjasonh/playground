@@ -3,6 +3,11 @@
 # OpenSSH private key. Writes EXEDEV_TOKEN into $GITHUB_ENV when set, and always
 # prints a redacted confirmation to stdout.
 #
+# Token format matches https://exe.dev/docs/https-api (local signing):
+#   payload = base64url(permissions JSON)
+#   sigblob = base64url(SSH signature body without BEGIN/END lines)
+# Do not re-base64-encode the signature body — it is already base64.
+#
 # Environment:
 #   EXEDEV_SSH_PRIVATE_KEY     OpenSSH private key whose public half is on exe.dev
 #   EXEDEV_SSH_PASSPHRASE      Optional passphrase if the private key is encrypted
@@ -52,12 +57,11 @@ else
   export SSH_ASKPASS_REQUIRE=never
 fi
 
-b64url() {
-  # stdin -> base64url without padding
-  openssl base64 -A | tr '+/' '-_' | tr -d '='
-}
+# RFC 4648 base64url: strip newlines/padding and map +/ -> -_.
+# Input is already standard base64 (payload from `base64`, or SSH signature body).
+b64url() { tr -d '\n=' | tr '+/' '-_'; }
 
-payload=$(printf '%s' "$perms" | b64url)
+payload=$(printf '%s' "$perms" | base64 | b64url)
 
 set +e
 sig=$(printf '%s' "$perms" | ssh-keygen -Y sign -f "$key_file" -n v0@exe.dev 2>/tmp/exedev-sign.err)
@@ -76,7 +80,8 @@ if [ "$sign_status" -ne 0 ]; then
   exit "$sign_status"
 fi
 
-sigblob=$(printf '%s\n' "$sig" | sed '1d;$d' | tr -d '\n' | b64url)
+# Strip -----BEGIN/END SSH SIGNATURE-----; body is already base64.
+sigblob=$(printf '%s\n' "$sig" | sed '1d;$d' | b64url)
 
 token="exe0.${payload}.${sigblob}"
 
@@ -90,3 +95,19 @@ fi
 
 export EXEDEV_TOKEN="$token"
 echo "Minted EXEDEV_TOKEN (${#token} chars) for exe.dev API access."
+
+# Fail fast if the signature or key is wrong (avoids a late terraform 401).
+whoami_code=$(curl -sS -o /tmp/exedev-whoami.txt -w '%{http_code}' \
+  -X POST https://exe.dev/exec \
+  -H "Authorization: Bearer ${EXEDEV_TOKEN}" \
+  -d 'whoami' || true)
+if [ "$whoami_code" != "200" ]; then
+  echo "exe.dev rejected the minted token (HTTP ${whoami_code}):" >&2
+  cat /tmp/exedev-whoami.txt >&2 || true
+  echo >&2
+  echo "Check that the public half of EXEDEV_SSH_PRIVATE_KEY is registered" >&2
+  echo "(ssh exe.dev ssh-key list) and that the token encoding matches" >&2
+  echo "https://exe.dev/docs/https-api" >&2
+  exit 1
+fi
+echo "Verified EXEDEV_TOKEN against exe.dev whoami."

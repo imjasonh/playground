@@ -453,39 +453,38 @@ func (m model) getPieceName(piece Piece) string {
 	return fmt.Sprintf("%s %s", color, pieceType)
 }
 
-// generateOrLoadHostKey generates a new ED25519 host key or loads existing one
+// generateHostKeyPEM creates a new ED25519 host key as PKCS#8 PEM.
+func generateHostKeyPEM() ([]byte, error) {
+	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, fmt.Errorf("generate ED25519 key: %w", err)
+	}
+	pkcs8Key, err := x509.MarshalPKCS8PrivateKey(privateKey)
+	if err != nil {
+		return nil, fmt.Errorf("marshal private key: %w", err)
+	}
+	return pem.EncodeToMemory(&pem.Block{
+		Type:  "PRIVATE KEY",
+		Bytes: pkcs8Key,
+	}), nil
+}
+
+// generateOrLoadHostKey generates a new ED25519 host key or loads an existing one.
 func generateOrLoadHostKey(keyPath string) ([]byte, error) {
-	// Try to read existing key first
 	if keyData, err := os.ReadFile(keyPath); err == nil {
 		return keyData, nil
 	}
 
-	// Generate new key
-	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	keyPEM, err := generateHostKeyPEM()
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate ED25519 key: %w", err)
+		return nil, err
 	}
 
-	// Convert to PKCS#8 format
-	pkcs8Key, err := x509.MarshalPKCS8PrivateKey(privateKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal private key: %w", err)
-	}
-
-	// Encode as PEM
-	keyPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "PRIVATE KEY",
-		Bytes: pkcs8Key,
-	})
-
-	// Create directory if it doesn't exist
 	if err := os.MkdirAll(filepath.Dir(keyPath), 0700); err != nil {
-		return nil, fmt.Errorf("failed to create key directory: %w", err)
+		return nil, fmt.Errorf("create key directory: %w", err)
 	}
-
-	// Save key to file
 	if err := os.WriteFile(keyPath, keyPEM, 0600); err != nil {
-		return nil, fmt.Errorf("failed to save host key: %w", err)
+		return nil, fmt.Errorf("save host key: %w", err)
 	}
 
 	log.Printf("Generated new SSH host key: %s", keyPath)
@@ -493,34 +492,43 @@ func generateOrLoadHostKey(keyPath string) ([]byte, error) {
 }
 
 func loadHostKey(local bool) ([]byte, error) {
-	// Prefer an explicit PEM from the environment (exe.dev / Terraform).
+	// Optional overrides (local debugging or a mounted secret).
 	if pemKey := os.Getenv("SSH_HOST_KEY"); pemKey != "" {
 		return []byte(pemKey), nil
 	}
 	if keyPath := os.Getenv("SSH_HOST_KEY_FILE"); keyPath != "" {
-		return os.ReadFile(keyPath)
+		return generateOrLoadHostKey(keyPath)
 	}
-	if !local {
-		return nil, fmt.Errorf("set SSH_HOST_KEY or SSH_HOST_KEY_FILE, or pass -local")
+	if local {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return nil, fmt.Errorf("user home directory: %w", err)
+		}
+		return generateOrLoadHostKey(filepath.Join(homeDir, ".chessh", "host_key"))
 	}
-	homeDir, err := os.UserHomeDir()
+	// Production (exe.dev): ephemeral host key for this process. exe.dev's own
+	// SSH broker is what clients trust; we do not manage a game host key in TF.
+	keyPEM, err := generateHostKeyPEM()
 	if err != nil {
-		return nil, fmt.Errorf("user home directory: %w", err)
+		return nil, err
 	}
-	return generateOrLoadHostKey(filepath.Join(homeDir, ".chessh", "host_key"))
+	log.Println("Using ephemeral SSH host key")
+	return keyPEM, nil
 }
 
 func main() {
-	defaultPort := 2222
-	if os.Getenv("SSH_HOST_KEY") != "" || os.Getenv("SSH_HOST_KEY_FILE") != "" {
-		// Production images listen on 22 so exe.dev's brokered SSH reaches wish.
-		defaultPort = 22
-	}
 	var (
-		sshPort = flag.Int("port", defaultPort, "SSH server port")
-		local   = flag.Bool("local", false, "generate or reuse ~/.chessh/host_key when no SSH_HOST_KEY is set")
+		sshPort = flag.Int("port", 0, "SSH server port (default 22; 2222 with -local)")
+		local   = flag.Bool("local", false, "generate or reuse ~/.chessh/host_key; default port 2222")
 	)
 	flag.Parse()
+	if *sshPort == 0 {
+		if *local {
+			*sshPort = 2222
+		} else {
+			*sshPort = 22
+		}
+	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
