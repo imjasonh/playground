@@ -95,13 +95,6 @@ jobs:
         # EXEDEV_TOKEN is set on the job env by mint-exedev-token.sh via GITHUB_ENV.
         run: terraform apply -input=false -auto-approve -target=ko_build.app
 
-      - name: Make GHCR package public
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
-          GHCR_PACKAGE: playground/${{ matrix.app }}
-        run: bash .github/scripts/make-ghcr-package-public.sh
-
       - name: Terraform apply
         working-directory: ${{ matrix.app }}/iac
         run: terraform apply -input=false -auto-approve

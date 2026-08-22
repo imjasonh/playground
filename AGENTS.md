@@ -489,7 +489,8 @@ provider. `deploy-exe.yml` discovers those apps the same way
      `repo` so the importpath is not appended)
    - `exedev_vm.app` using `ko_build.app.image_ref` as `image`
 3. Keep the GHCR package **public** (the registry provider has no
-   `registry_auth`; CI sets visibility after the first push).
+   `registry_auth`; set visibility once in the GitHub Packages UI after
+   the first push).
 4. Document required repo secrets in the app README
    (`EXEDEV_SSH_PRIVATE_KEY`; Cloudflare secrets are shared — CI mints
    short-lived R2 S3 credentials from `CLOUDFLARE_API_TOKEN`).
