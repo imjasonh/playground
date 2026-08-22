@@ -170,6 +170,13 @@ every shipped analyzer with `.pasta/examples` → `pasta/analyzers`.
 Skip dirs and budgets live in `.pasta/pasta.cue`. `pasta test .pasta`
 expands to every enrolled child that has `testdata/`.
 
+If a new analyzer fires on code this repo already prefers, do **not**
+`pasta:ignore` it, drop it in `disabled_rules`, or leave it at hint
+severity so CI (`-fail-on=warning`) stays green. Move the analyzer to
+`testdata/` (engine demo, not a production lint) or fix the code.
+Hint-severity findings still print, and a log full of unenforced
+style nits is a bad example of using pasta.
+
 The single-rule shortcut still works: when the first positional arg
 is an existing `.cue` file, `pasta rule.cue source...` loads that
 one file as before.

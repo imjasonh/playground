@@ -1,6 +1,7 @@
 // Playground monorepo pasta project config.
 // Every analyzer under pasta/analyzers is enrolled by
 // `.pasta/examples` → `pasta/analyzers`.
+// Engine-only demos stay in pasta/testdata (not enrolled).
 
 package pasta_project
 

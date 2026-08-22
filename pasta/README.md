@@ -126,7 +126,6 @@ Syntactic ports of [`golang.org/x/tools/go/analysis/passes`](https://pkg.go.dev/
 |---|---|
 | [js_object_assign_spread](./analyzers/js_object_assign_spread/js_object_assign_spread.cue) ✏️ | `Object.assign({}, x)` → `{...x}` |
 | [js_array_concat_spread](./analyzers/js_array_concat_spread/js_array_concat_spread.cue)     | Flag `[].concat(x)` (prefer `[...x]` when iterable; no autofix — not always equivalent) |
-| [js_template_no_subst](./analyzers/js_template_no_subst/js_template_no_subst.cue) ✏️         | `` `abc` `` → `'abc'` when no interpolation |
 | [js_double_equals](./analyzers/js_double_equals/js_double_equals.cue) ✏️                     | `==` / `!=` → `===` / `!==` (skips `null` / `undefined` idioms) |
 | [js_var_to_let](./analyzers/js_var_to_let/js_var_to_let.cue)                                 | Flag `var` (prefer `let`); report-only — naive rewrite breaks redeclarations / hoisting |
 | [js_empty_promise](./analyzers/js_empty_promise/js_empty_promise.cue)                        | Flag `new Promise(() => {})` with empty executor |
@@ -134,11 +133,13 @@ Syntactic ports of [`golang.org/x/tools/go/analysis/passes`](https://pkg.go.dev/
 | [js_debugger](./analyzers/js_debugger/js_debugger.cue)                                       | Flag `debugger;` statements |
 | [js_useless_catch](./analyzers/js_useless_catch/js_useless_catch.cue)                         | Flag `catch (e) { throw e; }` — a no-op rethrow |
 
-Structural ports of [ESLint built-in rules](https://eslint.org/docs/latest/rules/). Each available rule pasta can express as a tree-sitter pattern is its own analyzer named `js_<rule>` (hyphens become underscores).
+Structural ports of [ESLint built-in rules](https://eslint.org/docs/latest/rules/). Each default-on port is its own analyzer named `js_<rule>` (hyphens become underscores).
 
 A few ESLint ids already have a dedicated analyzer and keep that name: `js_debugger` (`no-debugger`), `js_double_equals` (`eqeqeq`), `js_var_to_let` (`no-var`), `js_useless_catch` (`no-useless-catch`), `js_object_assign_spread` (`prefer-object-spread`).
 
 Omitted: rules that need a scope chain, CFG, or ESLint option object (`no-undef`, `no-unused-vars`, `prefer-const`, `no-const-assign`, `no-func-assign`, `no-class-assign`, `no-import-assign`, `no-param-reassign`, `complexity`, …). Pasta's by-name fact index is file-blind and scope-blind, so assignment-to-binding checks treat a `const x` in one file as the same `x` assigned in another. Also omitted: `no-await-in-loop` (sequential `await` in a loop is ordinary control flow); `no-constant-binary-expression` (a structural "both operands are literals" stand-in flags `1 / 120` and test arithmetic instead of ESLint's constant-folding bugs); `no-console` (`console.log` is ordinary stdout in Node CLIs, and pasta cannot tell those from leftover browser debug); config-only rules whose default reports nothing (`no-restricted-*`, `id-denylist`); deprecated/removed core rules; and layout rules that moved to `@stylistic/eslint-plugin`.
+
+Stylistic ESLint suggestions this repository's JavaScript does not follow (`curly`, `no-ternary`, `no-continue`, `no-plusplus`, and similar) are not default-on builtins. They live under [`testdata/`](./testdata/) as engine demos. `css_important` is there too: `!important` is ordinary in the playground CSS. Printing those as hints on every CI run is the same as ignoring the rule.
 
 **TypeScript**
 
@@ -248,7 +249,6 @@ Omitted: rules that need a scope chain, CFG, or ESLint option object (`no-undef`
 | Path | What it does |
 |---|---|
 | [css_zero_unit](./analyzers/css_zero_unit/css_zero_unit.cue) ✏️ | Drop unit on length zero (`0px` → `0`; leaves `0%` alone) |
-| [css_important](./analyzers/css_important/css_important.cue) | Flag `!important` declarations |
 | [css_empty_block](./analyzers/css_empty_block/css_empty_block.cue) | Flag empty `{}` rule bodies |
 | [css_duplicate_property](./analyzers/css_duplicate_property/css_duplicate_property.cue) | Flag consecutive duplicate properties in a block |
 
