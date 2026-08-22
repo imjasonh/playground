@@ -70,5 +70,5 @@ terraform apply
 | `CLOUDFLARE_API_TOKEN` | Creates the state bucket if missing, and is the parent for short-lived R2 S3 credentials (needs R2 Object Read & Write on `playground-terraform-state`) |
 
 The GHCR package must be **public** so exe.dev can pull the image (the
-community `exedev` provider has no `registry_auth`). CI publishes the package
-and sets visibility after the first push.
+community `exedev` provider has no `registry_auth`). Make it public once in
+the GitHub Packages UI after the first push.
