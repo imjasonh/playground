@@ -16,6 +16,7 @@ playground/
 │   ├── scripts/           # CI helpers: app discovery + index-page rendering
 │   └── workflows/         # deploy, preview, test, cleanup, dependency updates
 ├── artillery/             # touch-first turn-based artillery duel (JS + Node tests)
+├── chessh/                # multiplayer chess over SSH (Go + Terraform)
 ├── cold-climb/            # touch-first two-handle arcade game (JS + Node tests)
 ├── droneski/              # FPV drone filming a downhill skier (JS + three.js + Node tests)
 ├── esp-flash/             # Web Serial / WebUSB ESP32 flasher (inkbot GHCR + local .bin)
@@ -68,6 +69,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `nypd-choppers/` | yes | NYPD helicopter tracker; JS modules, npm scripts, tests |
 | `population-rays/` | yes | Directional 5° population slices; JS modules, npm scripts, tests |
 | `web-push-demo/` | yes | Static front-end for `web-push`; HTML/JS, no build or tests |
+| `chessh/` | no | Go SSH chess server; no `index.html` |
 | `gitdb/` | no | Go CLI; no `index.html` |
 | `ocidb/` | no | Go CLI; no `index.html` |
 | `pasta/` | no | Go CLI (CUE + tree-sitter linters); no `index.html` |
@@ -646,6 +648,7 @@ bundle exec fastlane test
 
 | Directory | Type | Tests |
 |-----------|------|-------|
+| `chessh/` | Multiplayer chess over SSH (Bubble Tea + wish) | `go test -race ./...` |
 | `gitdb/` | git repository explorer backed by SQLite virtual tables | `go test -race ./...` |
 | `ocidb/` | OCI registry explorer backed by SQLite virtual tables | `go test -race ./...` |
 | `pasta/` | CUE-described multi-language linters/fixers over tree-sitter ASTs; see [`pasta/AGENTS.md`](pasta/AGENTS.md). Playground style rules are enrolled via `.pasta/examples` → `pasta/analyzers` and gated by the pasta leg of `test.yml` | `go test -race ./...` (incl. e2e shallow-clone smoke); CI also runs `pasta test` + monorepo lint |

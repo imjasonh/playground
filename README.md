@@ -58,6 +58,7 @@ Cloudflare Workers live here too. CI still builds and tests them when they
 change. They have no `index.html`, so GitHub Pages deploy and preview skip
 them:
 
+- **[`chessh/`](chessh/)** — multiplayer chess over SSH (Go).
 - **[`gitdb/`](gitdb/)** — query a git repo's history, files, blame, and file
   contents with SQL, via SQLite virtual tables over go-git (Go CLI).
 - **[`ocidb/`](ocidb/)** — explore OCI container images on Docker Hub with SQL,
