@@ -6,15 +6,24 @@ LoadBalancer. There is no HTTP ingress. Terraform builds images with
 app as a ClusterIP Service, and publishes DNS for `ssh.<domain>` plus `*.<domain>`
 to that single LB IP.
 
-A shared **mux** terminates SSH (so real usernames stay available), picks an app
-from the remote command path / subsystem / `SSHAPP` env, scales that app from
-0→N, then SSH-proxies the session to the Wish backend. After idle, it scales
-that app back to 0.
+A shared **mux** terminates SSH (so real usernames stay available). A bare
+session gets an in-process app registry menu. Named apps (command path /
+subsystem / `SSHAPP` env) scale from 0→N, then the mux SSH-proxies the session
+to the Wish backend. After idle, it scales that app back to 0.
 
 ## Connect
 
+Bare SSH hits the always-on mux registry (not a separate app pod):
+
+```bash
+ssh alice@ssh.YOUR_DOMAIN
+# available apps:
+#   1) hello
+# select number or name (q to quit): 1
+```
+
 OpenSSH does not support `ssh host:foo/bar` (the part after `:` is a port, and
-must be numeric). Use a command path instead:
+must be numeric). Skip the menu with a command path:
 
 ```bash
 ssh alice@ssh.YOUR_DOMAIN hello
@@ -44,6 +53,7 @@ sshapp/
 │   └── activator/      # optional raw-TCP activator (not used by Terraform)
 ├── internal/
 │   ├── proxy/          # accept → wait → splice (TCP)
+│   ├── registry/       # in-mux app menu (list + pick)
 │   ├── route/          # command path / SSHAPP / subsystem → app
 │   ├── scaler/         # Deployment 0↔N via the Kubernetes API
 │   └── session/        # Snapshot Store (Memory + GCS) for app state dumps
@@ -73,7 +83,8 @@ username), then dials the right ClusterIP.
 
 ```
 client --SSH:22--> LB --> mux (always 1)
-                           |  route: command / SSHAPP / subsystem
+                           |  no app? show registry menu in-process
+                           |  else route: command / SSHAPP / subsystem
                            |  EnsureReady: scale Deployment 0→1
                            |  SSH-proxy to pod:2222
                            '  idle → scale that app to 0
@@ -136,7 +147,8 @@ Connect:
 
 ```bash
 terraform output mux_fqdn
-ssh "$(terraform output -raw mux_fqdn)" hello
+ssh "$(terraform output -raw mux_fqdn)"          # registry menu on the mux
+ssh "$(terraform output -raw mux_fqdn)" hello    # skip the menu
 ```
 
 ## Local development

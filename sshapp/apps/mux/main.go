@@ -1,7 +1,7 @@
 // Command mux is the shared SSH front door for sshapp. One LoadBalancer hits
-// this process. It authenticates real users, picks an app from the remote
-// command path (ssh user@host foo/bar), subsystem, or SSHAPP environ, scales
-// that app from zero, then SSH-proxies the session to the Wish backend.
+// this process. Bare SSH sessions get an in-process app registry menu. Named
+// apps (command path / subsystem / SSHAPP env) scale from zero and are
+// SSH-proxied to the Wish backend.
 package main
 
 import (
@@ -24,6 +24,7 @@ import (
 	"charm.land/wish/v2/logging"
 	gossh "golang.org/x/crypto/ssh"
 
+	"github.com/imjasonh/playground/sshapp/internal/registry"
 	"github.com/imjasonh/playground/sshapp/internal/route"
 	"github.com/imjasonh/playground/sshapp/internal/scaler"
 )
@@ -34,6 +35,7 @@ func main() {
 		log.Fatal("config", "error", err)
 	}
 
+	catalog := registry.FromNames(cfg.Apps)
 	pool := scaler.NewPool(cfg.Apps, func(app string) (*scaler.DeploymentScaler, error) {
 		return scaler.NewK8s(scaler.K8sConfig{
 			Namespace:    cfg.Namespace,
@@ -58,7 +60,7 @@ func main() {
 			return true
 		}),
 		wish.WithMiddleware(
-			muxMiddleware(pool, signer, cfg.WarmTimeout),
+			muxMiddleware(catalog, pool, signer, cfg.WarmTimeout),
 			logging.Middleware(),
 		),
 	}
@@ -93,12 +95,27 @@ func main() {
 	_ = srv.Shutdown(shutdownCtx)
 }
 
-func muxMiddleware(pool *scaler.Pool, signer gossh.Signer, warmTimeout time.Duration) wish.Middleware {
+func muxMiddleware(catalog registry.Catalog, pool *scaler.Pool, signer gossh.Signer, warmTimeout time.Duration) wish.Middleware {
 	return func(next ssh.Handler) ssh.Handler {
 		return func(sess ssh.Session) {
 			target, ok := route.FromSession(sess)
 			if !ok {
-				_, _ = fmt.Fprint(sess.Stderr(), "usage: ssh user@host <app>[/<path>]   or SetEnv SSHAPP=<app>\n")
+				entry, err := catalog.Pick(sess, sess)
+				if errors.Is(err, registry.ErrCanceled) {
+					_ = sess.Exit(0)
+					return
+				}
+				if err != nil {
+					_, _ = fmt.Fprintf(sess.Stderr(), "%v\n", err)
+					_ = sess.Exit(2)
+					return
+				}
+				target = route.Target{App: entry.Name}
+			}
+
+			if _, known := catalog.Lookup(target.App); !known {
+				_, _ = fmt.Fprintf(sess.Stderr(), "unknown app %q\n", target.App)
+				_ = catalog.WriteList(sess.Stderr())
 				_ = sess.Exit(2)
 				return
 			}
