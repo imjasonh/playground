@@ -35,6 +35,7 @@ var fixRules = []string{
 	// JavaScript / TypeScript
 	"js_object_assign_spread",
 	"js_double_equals",
+	"js_template_no_subst",
 	"ts_array_type_style",
 	"ts_inferrable_types",
 	// Go
@@ -80,6 +81,7 @@ var diagnoseOnlyRules = []string{
 	"html_deprecated_tags",
 	"html_img_alt",
 	"html_lang",
+	"css_important",
 	"css_empty_block",
 	"css_duplicate_property",
 	"java_system_out_println",
