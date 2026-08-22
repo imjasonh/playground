@@ -43,6 +43,7 @@ playground/
 ├── ocidb/                 # Go CLI (Go module + Go tests)
 ├── pasta/                 # CUE + tree-sitter multi-language linters/fixers (Go CLI)
 ├── population-rays/       # directional 5° population-slice map (JS + Node tests)
+├── sshapp/                # GKE Autopilot Wish SSH apps (Go + Terraform + ko_build)
 ├── web-push/              # Rust Cloudflare Worker (Cargo + tests; not a Pages app)
 ├── web-push-demo/         # static browser front-end for the web-push Worker
 └── y/                     # Rust Cloudflare Worker: one-user microblog
@@ -71,6 +72,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `gitdb/` | no | Go CLI; no `index.html` |
 | `ocidb/` | no | Go CLI; no `index.html` |
 | `pasta/` | no | Go CLI (CUE + tree-sitter linters); no `index.html` |
+| `sshapp/` | no | GKE Autopilot Wish SSH apps (Go + Terraform); no `index.html` |
 | `web-push/` | no | Rust Cloudflare Worker; no `index.html` |
 | `y/` | no | Rust Cloudflare Worker (one-user microblog); no `index.html` |
 | `cors-proxy/` | no | Rust Cloudflare Worker; no `index.html` |
@@ -650,6 +652,7 @@ bundle exec fastlane test
 | `gitdb/` | git repository explorer backed by SQLite virtual tables | `go test -race ./...` |
 | `ocidb/` | OCI registry explorer backed by SQLite virtual tables | `go test -race ./...` |
 | `pasta/` | CUE-described multi-language linters/fixers over tree-sitter ASTs; see [`pasta/AGENTS.md`](pasta/AGENTS.md). Playground style rules are enrolled via `.pasta/examples` → `pasta/analyzers` and gated by the pasta leg of `test.yml` | `go test -race ./...` (incl. e2e shallow-clone smoke); CI also runs `pasta test` + monorepo lint |
+| `sshapp/` | Wish SSH apps on GKE Autopilot (shared mux LB; `ssh user@ssh.domain <app>`); Terraform + `ko_build` | `go test -race ./...`; KinD e2e (`SSHAPP_KIND_E2E=1`) when the module changes |
 
 ## Current Rust apps
 

@@ -43,6 +43,7 @@ for module in "${modules[@]}"; do
     # -v so CI logs show each test (including Docker e2e PASS vs SKIP).
     # node-image Docker-socket e2e builds/runs several images; allow headroom.
     # pasta e2e shallow-clones real repos and cold-parses them; allow headroom.
+    # sshapp KinD e2e is separate (see below) so unit tests stay fast.
     if [ "$module" = "node-image" ] || [ "$module" = "pasta" ]; then
       go test -race -v -timeout 30m ./...
     else
@@ -53,6 +54,28 @@ for module in "${modules[@]}"; do
   else
     echo "::error title=Go tests failed::${module}: go test -race -v ./..."
     result=1
+  fi
+
+  # sshapp: KinD e2e for mux + hello (scale-up, registry menu, scale-to-zero).
+  # Needs Docker (present on ubuntu-latest). Skips outside CI when unset.
+  if [ "$module" = "sshapp" ]; then
+    echo "::group::KinD e2e for sshapp"
+    if ! command -v docker >/dev/null 2>&1; then
+      echo "::error title=sshapp KinD e2e::docker is required"
+      result=1
+    elif ! docker info >/dev/null 2>&1; then
+      echo "::error title=sshapp KinD e2e::docker daemon is not reachable"
+      result=1
+    elif (
+      cd "$module"
+      SSHAPP_KIND_E2E=1 go test -race -v -timeout 20m ./e2e/
+    ); then
+      echo "${module}: KinD e2e passed"
+    else
+      echo "::error title=sshapp KinD e2e failed::${module}: SSHAPP_KIND_E2E=1 go test ./e2e/"
+      result=1
+    fi
+    echo "::endgroup::"
   fi
 
   echo "::endgroup::"
