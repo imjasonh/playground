@@ -54,7 +54,6 @@ cd iac/
 # Set EXEDEV_TOKEN and docker-login to ghcr.io first.
 export CLOUDFLARE_API_TOKEN=...
 export CLOUDFLARE_ACCOUNT_ID=...
-export TF_STATE_R2_ACCESS_KEY_ID=...   # parent R2 Access Key ID
 bash ../../.github/scripts/mint-r2-temp-credentials.sh
 terraform init \
   -backend-config="endpoints={s3=\"https://$CLOUDFLARE_ACCOUNT_ID.r2.cloudflarestorage.com\"}"
@@ -66,9 +65,8 @@ terraform apply
 | Secret | Purpose |
 |--------|---------|
 | `EXEDEV_SSH_PRIVATE_KEY` | OpenSSH private key whose public half is registered on exe.dev; CI mints `EXEDEV_TOKEN` from it |
-| `TF_STATE_R2_ACCESS_KEY_ID` | Parent R2 Access Key ID (Object Read & Write on the state bucket). CI mints a short-lived S3 session from it via `CLOUDFLARE_API_TOKEN`; no long-lived secret key is stored |
 | `CLOUDFLARE_ACCOUNT_ID` | Already used by Worker deploys; R2 S3 endpoint host |
-| `CLOUDFLARE_API_TOKEN` | Creates the state bucket if missing, and mints temporary R2 credentials |
+| `CLOUDFLARE_API_TOKEN` | Creates the state bucket if missing, and is the parent for short-lived R2 S3 credentials (needs R2 Object Read & Write on `playground-terraform-state`) |
 
 The GHCR package must be **public** so exe.dev can pull the image (the
 community `exedev` provider has no `registry_auth`). CI publishes the package
