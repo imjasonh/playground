@@ -136,7 +136,6 @@ await_scaled_to_zero() {
   return 1
 }
 
-# Open an SSH chess session with a controllable stdin FIFO. Sets nameref outs.
 open_chess_ssh() {
   local -n _pid=$1 _fd=$2
   local out=$3 err=$4

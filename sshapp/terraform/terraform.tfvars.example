@@ -27,8 +27,8 @@ domain     = "example.com"
 #   }
 #   chess = {
 #     importpath          = "github.com/imjasonh/playground/sshapp/apps/chess"
-#     replicas            = 1 # required: in-memory matchmaking
+#     replicas            = 1
 #     scale_to_zero       = true
-#     deployment_strategy = "Recreate" # never two pods with split queues
+#     deployment_strategy = "Recreate"
 #   }
 # }
