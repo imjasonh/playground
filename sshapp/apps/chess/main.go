@@ -19,6 +19,7 @@ import (
 	"charm.land/wish/v2/activeterm"
 	wishtea "charm.land/wish/v2/bubbletea"
 	"charm.land/wish/v2/logging"
+	"github.com/charmbracelet/colorprofile"
 )
 
 type model struct {
@@ -458,7 +459,7 @@ func newServer(addr, hostKeyPEM, hostKeyPath string) (*ssh.Server, error) {
 			return true
 		}),
 		wish.WithMiddleware(
-			wishtea.Middleware(teaHandler),
+			wishtea.MiddlewareWithProgramHandler(teaProgram),
 			activeterm.Middleware(),
 			logging.Middleware(),
 		),
@@ -471,7 +472,11 @@ func newServer(addr, hostKeyPEM, hostKeyPath string) (*ssh.Server, error) {
 	return wish.NewServer(opts...)
 }
 
-func teaHandler(s ssh.Session) (tea.Model, []tea.ProgramOption) {
+// teaProgram builds a Bubble Tea program for one SSH session.
+// Behind the mux there is no interactive client answering DECRQM queries, so
+// we set SSH_TTY and a fixed color profile to skip those probes (they otherwise
+// cancel input after ~2s and end the session).
+func teaProgram(s ssh.Session) *tea.Program {
 	player := &Player{
 		ID:         fmt.Sprintf("player_%d", time.Now().UnixNano()),
 		Session:    s,
@@ -489,7 +494,13 @@ func teaHandler(s ssh.Session) (tea.Model, []tea.ProgramOption) {
 		// instead of ranging a closed channel (busy-loop / send panic).
 	}()
 
-	return m, wishtea.MakeOptions(s)
+	env := append([]string{}, s.Environ()...)
+	env = append(env, "TERM=xterm-256color", "SSH_TTY=/dev/pts/0")
+	opts := append(wishtea.MakeOptions(s),
+		tea.WithColorProfile(colorprofile.ANSI256),
+		tea.WithEnvironment(env),
+	)
+	return tea.NewProgram(m, opts...)
 }
 
 func envOr(key, fallback string) string {

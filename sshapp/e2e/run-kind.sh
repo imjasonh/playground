@@ -288,18 +288,28 @@ ssh_mux_tty chess <"${chess2_in}" >"${WORKDIR}/chess2-ssh.out" 2>"${WORKDIR}/che
 CHESS2_SSH_PID=$!
 exec {chess2_fd}>"${chess2_in}"
 matched=0
-for _ in 1 2 3 4 5 6 7 8 9 10; do
-  if grep -aqE 'YOUR TURN|OPPONENT' "${WORKDIR}/chess-ssh.out" 2>/dev/null \
-    || grep -aqE 'YOUR TURN|OPPONENT' "${WORKDIR}/chess2-ssh.out" 2>/dev/null; then
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+  # Alt-screen dumps are noisy; match on stable UI phrases.
+  if grep -aqE 'YOUR TURN|OPPONENT|vs ' "${WORKDIR}/chess-ssh.out" 2>/dev/null \
+    || grep -aqE 'YOUR TURN|OPPONENT|vs ' "${WORKDIR}/chess2-ssh.out" 2>/dev/null; then
     matched=1
+    break
+  fi
+  # Still waiting is OK only while both clients are alive.
+  if ! kill -0 "${CHESS_SSH_PID}" 2>/dev/null || ! kill -0 "${CHESS2_SSH_PID}" 2>/dev/null; then
+    echo "chess SSH client exited before match" >&2
     break
   fi
   sleep 1
 done
 if [[ "${matched}" -ne 1 ]]; then
   echo "expected two chess clients to match; outs:" >&2
-  sed -n '1,40p' "${WORKDIR}/chess-ssh.out" >&2 || true
-  sed -n '1,40p' "${WORKDIR}/chess2-ssh.out" >&2 || true
+  # Strip CSI so phrases are readable in CI logs.
+  for f in "${WORKDIR}/chess-ssh.out" "${WORKDIR}/chess2-ssh.out"; do
+    echo "--- ${f} ---" >&2
+    sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' "${f}" 2>/dev/null | tr -d '\r' | head -c 2000 >&2 || true
+    echo >&2
+  done
   exec {chess_fd}>&-
   exec {chess2_fd}>&-
   dump_debug
