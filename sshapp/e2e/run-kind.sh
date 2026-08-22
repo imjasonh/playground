@@ -268,10 +268,9 @@ fi
 echo "::endgroup::"
 
 echo "::group::SSH command path (ssh … chess) scales up"
-# OpenSSH -tt over a FIFO/exec{fd} writer SIGPIPEs under pipefail in CI.
-# Keep sessions alive with timeout + /dev/null stdin instead (sshtea normalizes
-# the resulting dumb/0x0 PTY).
-timeout 30 ssh_mux_tty chess </dev/null >"${WORKDIR}/chess-ssh.out" 2>"${WORKDIR}/chess-ssh.err" &
+# Keep stdin open without a FIFO (FIFOs SIGPIPE under pipefail) and without
+# wrapping the bash function in `timeout` (timeout can only exec binaries).
+ssh_mux_tty chess < <(sleep 90) >"${WORKDIR}/chess-ssh.out" 2>"${WORKDIR}/chess-ssh.err" &
 CHESS_SSH_PID=$!
 if ! await_deploy_ready chess; then
   kill "${CHESS_SSH_PID}" 2>/dev/null || true
@@ -280,7 +279,7 @@ if ! await_deploy_ready chess; then
   dump_debug
   exit 1
 fi
-timeout 30 ssh_mux_tty chess </dev/null >"${WORKDIR}/chess2-ssh.out" 2>"${WORKDIR}/chess2-ssh.err" &
+ssh_mux_tty chess < <(sleep 90) >"${WORKDIR}/chess2-ssh.out" 2>"${WORKDIR}/chess2-ssh.err" &
 CHESS2_SSH_PID=$!
 
 matched=0
