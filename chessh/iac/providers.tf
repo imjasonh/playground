@@ -16,7 +16,8 @@ terraform {
     }
   }
 
-  # Partial S3 backend: CI passes R2 endpoint and credentials via -backend-config.
+  # Partial S3 backend: CI mints R2 credentials from CLOUDFLARE_API_TOKEN and
+  # passes the endpoint via -backend-config.
   # Local applies can use the same flags, or switch to a local backend override.
   backend "s3" {
     bucket = "playground-terraform-state"
