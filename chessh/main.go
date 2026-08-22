@@ -575,8 +575,7 @@ func runPlay(addr string) {
 		signal.Notify(winch, syscall.SIGWINCH)
 		go func() {
 			for range winch {
-				w, h, err := term.GetSize(fd)
-				if err == nil {
+				if w, h, err := term.GetSize(fd); err == nil {
 					_ = session.WindowChange(h, w)
 				}
 			}
