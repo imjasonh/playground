@@ -25,6 +25,7 @@ import (
 	"charm.land/wish/v2"
 	wishtea "charm.land/wish/v2/bubbletea"
 	"github.com/charmbracelet/colorprofile"
+	"github.com/imjasonh/playground/sshapp/internal/sshpty"
 )
 
 // Handler is the same shape as wish/bubbletea.Handler.
@@ -70,17 +71,19 @@ func MiddlewareWithProgramHandler(handler wishtea.ProgramHandler) wish.Middlewar
 	}
 }
 
-// Options is wishtea.MakeOptions plus mux-safe env for emulated PTYs.
+// Options is wishtea.MakeOptions plus mux-safe env/size for emulated PTYs
+// (see package sshpty: OpenSSH -tt over a pipe often reports dumb/0x0).
 // Do not also pass tea.WithContext(sess.Context()): behind the mux that
 // context can already be done when the program starts.
 func Options(s ssh.Session) []tea.ProgramOption {
 	opts := wishtea.MakeOptions(s)
-	if !s.EmulatedPty() {
+	pty, _, ok := s.Pty()
+	if !ok {
 		return opts
 	}
-	term := "xterm-256color"
-	if pty, _, ok := s.Pty(); ok && pty.Term != "" {
-		term = pty.Term
+	term, width, height := sshpty.Normalize(pty.Term, pty.Window.Width, pty.Window.Height)
+	if !s.EmulatedPty() && term == pty.Term && width == pty.Window.Width && height == pty.Window.Height {
+		return opts
 	}
 	env := append(s.Environ(),
 		"TERM="+term,
@@ -90,5 +93,6 @@ func Options(s ssh.Session) []tea.ProgramOption {
 	return append(opts,
 		tea.WithEnvironment(env),
 		tea.WithColorProfile(colorprofile.ANSI256),
+		tea.WithWindowSize(width, height),
 	)
 }

@@ -58,6 +58,7 @@ sshapp/
 │   ├── route/          # command path / SSHAPP / subsystem → app
 │   ├── scaler/         # Deployment 0↔N via the Kubernetes API
 │   ├── session/        # Snapshot Store (Memory + GCS) for app state dumps
+│   ├── sshpty/         # TERM/size defaults for pipe-backed OpenSSH PTYs
 │   └── sshtea/         # Wish Bubble Tea middleware (mux-safe winCh)
 ├── e2e/                # KinD mux + hello (CI when sshapp/ changes)
 ├── terraform/

@@ -28,6 +28,7 @@ import (
 	"github.com/imjasonh/playground/sshapp/internal/registry"
 	"github.com/imjasonh/playground/sshapp/internal/route"
 	"github.com/imjasonh/playground/sshapp/internal/scaler"
+	"github.com/imjasonh/playground/sshapp/internal/sshpty"
 )
 
 func main() {
@@ -174,12 +175,14 @@ func proxySSHSession(clientSess ssh.Session, addr string, signer gossh.Signer, t
 
 	pty, winCh, isPty := clientSess.Pty()
 	if isPty {
-		if err := bs.RequestPty(pty.Term, pty.Window.Height, pty.Window.Width, nil); err != nil {
+		term, width, height := sshpty.Normalize(pty.Term, pty.Window.Width, pty.Window.Height)
+		if err := bs.RequestPty(term, height, width, nil); err != nil {
 			return 1, err
 		}
 		go func() {
 			for win := range winCh {
-				_ = bs.WindowChange(win.Height, win.Width)
+				_, w, h := sshpty.Normalize(term, win.Width, win.Height)
+				_ = bs.WindowChange(h, w)
 			}
 		}()
 	}
