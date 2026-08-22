@@ -518,6 +518,8 @@ and its `.golden` counterpart.
 
 The repo also has an [LSP](https://en.wikipedia.org/wiki/Language_Server_Protocol) server, `pastals`. The [`.editors/`](./editors/) directory has instructions about setting this up for your IDE; I've only tested it with Zed.
 
+`pastals` maps pasta severity onto the matching [LSP DiagnosticSeverity](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#diagnosticSeverity) (`error` = 1, `warning` = 2, `info` = 3, `hint` = 4) and publishes every finding, including hints. Zed shows them inline. A rule with a rewrite also offers `pasta: fix <rule>` from the code-actions menu, regardless of severity.
+
 If you specify rules in your repo at `pasta.cue` or `.pasta/**/*.cue`, these rules will be loaded and evaluated.
 
 -----
