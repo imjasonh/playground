@@ -10,10 +10,6 @@ terraform {
       source  = "ko-build/ko"
       version = "~> 0.0"
     }
-    tls = {
-      source  = "hashicorp/tls"
-      version = "~> 4.0"
-    }
   }
 
   # Partial S3 backend: CI mints R2 credentials from CLOUDFLARE_API_TOKEN and
@@ -41,5 +37,3 @@ provider "ko" {
   # Default repo; each ko_build.app.repo overrides to an exact GHCR path.
   repo = "ghcr.io/imjasonh/playground"
 }
-
-provider "tls" {}

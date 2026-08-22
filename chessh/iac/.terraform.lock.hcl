@@ -5,6 +5,7 @@ provider "registry.terraform.io/benjamin-lykins/exedev" {
   version     = "0.1.2"
   constraints = "~> 0.1"
   hashes = [
+    "h1:G2c2yDt4ZfaVp/vopsddOJgGnNf1/D+dFwRJ7VtN/3A=",
     "h1:jKwfqIl+8anlx2N5JHBEM1VTymmfcvDX7XCQ3FEfA7k=",
     "zh:05837a7f71ed31e521a98ba8ddf8eb75894c088100d0a2ae64898343c6e9ea82",
     "zh:0ecd1b02ca55892e6e02c529bb84628d66df8f5936c39e8023604121aeef5201",
@@ -48,6 +49,7 @@ provider "registry.terraform.io/ko-build/ko" {
   version     = "0.0.21"
   constraints = "~> 0.0"
   hashes = [
+    "h1:gusxzwB/8VXvdWYhakElRRSaf4eyEIFsJ66wGsyMQ9U=",
     "h1:op8PjMAnsUmw7k7ibuCj2xIIPcX5HCk54nXr7kNipXw=",
     "zh:04eabe6873259bd0d35c25a8660a59b4cabf1a43e5a28e099353444d174261dd",
     "zh:286dbbd1a9efa9dfdfa2724b4ad36b3dedca0baffc805481d77f31887585776d",

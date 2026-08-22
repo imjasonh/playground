@@ -1,9 +1,3 @@
-# Stable SSH host key for the game server. Kept in Terraform state (R2) so
-# clients do not see host-key warnings across deploys.
-resource "tls_private_key" "ssh_host" {
-  algorithm = "ED25519"
-}
-
 resource "ko_build" "app" {
   importpath  = "github.com/imjasonh/playground/chessh"
   working_dir = ".."
@@ -23,8 +17,6 @@ resource "exedev_vm" "app" {
   disk  = "10GB"
 
   env = {
-    # PKCS#8 PEM; loadHostKey in main.go reads SSH_HOST_KEY.
-    SSH_HOST_KEY = tls_private_key.ssh_host.private_key_pem
     # Optional HTTP health listener (exe.dev HTTPS proxy can target it).
     PORT = "8080"
   }

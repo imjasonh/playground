@@ -30,7 +30,9 @@ ssh localhost -p 2222
 ```
 
 `--local` writes an SSH host key under `~/.chessh/host_key` (or set
-`SSH_HOST_KEY` / `SSH_HOST_KEY_FILE` yourself).
+`SSH_HOST_KEY` / `SSH_HOST_KEY_FILE` yourself). On exe.dev the process
+mints an ephemeral host key; clients talk to exe.dev's SSH broker, so
+there is nothing to manage in Terraform.
 
 ## Deploying
 
@@ -41,8 +43,6 @@ Infrastructure lives in `iac/` and targets [exe.dev](https://exe.dev):
 - `exedev_vm` runs that image as the `chessh` VM (`chessh.exe.xyz`)
 - Terraform state is stored in Cloudflare R2
   (`playground-terraform-state` / `exe/chessh/terraform.tfstate`)
-- A stable game SSH host key is generated once in Terraform and passed to
-  the VM as `SSH_HOST_KEY`
 
 On merges to `main` that touch `chessh/`, `.github/workflows/deploy-exe.yml`
 applies the stack (same idea as `deploy-workers.yml` for Cloudflare Workers).
