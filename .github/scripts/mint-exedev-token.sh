@@ -16,7 +16,7 @@ set -euo pipefail
 
 : "${EXEDEV_SSH_PRIVATE_KEY:?EXEDEV_SSH_PRIVATE_KEY must be set}"
 
-perms=${EXEDEV_TOKEN_PERMS:-'{"cmds":["ls","new","rm","rename","resize","ssh-key list","ssh-key add","ssh-key remove","ssh-key rename"]}'}
+perms=${EXEDEV_TOKEN_PERMS:-'{"cmds":["ls","new","rm","rename","resize","whoami","ssh-key list","ssh-key add","ssh-key remove","ssh-key rename"]}'}
 
 key_file=$(mktemp)
 askpass_file=""
@@ -97,17 +97,20 @@ export EXEDEV_TOKEN="$token"
 echo "Minted EXEDEV_TOKEN (${#token} chars) for exe.dev API access."
 
 # Fail fast if the signature or key is wrong (avoids a late terraform 401).
-whoami_code=$(curl -sS -o /tmp/exedev-whoami.txt -w '%{http_code}' \
+# Use `ls` — it is always in our deploy cmds. `whoami` is included too, but
+# verifying with a required deploy command catches both auth and permission gaps.
+probe_code=$(curl -sS -o /tmp/exedev-probe.txt -w '%{http_code}' \
   -X POST https://exe.dev/exec \
   -H "Authorization: Bearer ${EXEDEV_TOKEN}" \
-  -d 'whoami' || true)
-if [ "$whoami_code" != "200" ]; then
-  echo "exe.dev rejected the minted token (HTTP ${whoami_code}):" >&2
-  cat /tmp/exedev-whoami.txt >&2 || true
+  -d 'ls' || true)
+if [ "$probe_code" != "200" ]; then
+  echo "exe.dev rejected the minted token (HTTP ${probe_code}):" >&2
+  cat /tmp/exedev-probe.txt >&2 || true
   echo >&2
   echo "Check that the public half of EXEDEV_SSH_PRIVATE_KEY is registered" >&2
   echo "(ssh exe.dev ssh-key list) and that the token encoding matches" >&2
-  echo "https://exe.dev/docs/https-api" >&2
+  echo "https://exe.dev/docs/https-api. Custom cmds must include deploy" >&2
+  echo "commands (ls/new/rm/...); specifying cmds replaces the defaults." >&2
   exit 1
 fi
-echo "Verified EXEDEV_TOKEN against exe.dev whoami."
+echo "Verified EXEDEV_TOKEN against exe.dev ls."
