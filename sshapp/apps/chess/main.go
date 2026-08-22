@@ -222,7 +222,7 @@ func (m model) View() tea.View {
 				fmt.Fprintf(&s, "Queue position: %d\n", n)
 			}
 		}
-		s.WriteString("Arrows move cursor · q quits\n\n")
+		s.WriteString("Arrows move cursor, q quits\n\n")
 	case "opponent_disconnected":
 		s.WriteString("*** OPPONENT DISCONNECTED; YOU WIN ***\n")
 		s.WriteString("q to quit\n\n")
@@ -232,7 +232,7 @@ func (m model) View() tea.View {
 				m.player.Name, m.player.Color, m.opponent.Name, m.opponent.Color)
 		}
 		if m.isMyTurn {
-			s.WriteString("YOUR TURN · arrows · space select · esc clear · q quit\n\n")
+			s.WriteString("YOUR TURN - arrows, space select, esc clear, q quit\n\n")
 		} else {
 			s.WriteString("OPPONENT'S TURN\n\n")
 		}
@@ -242,9 +242,7 @@ func (m model) View() tea.View {
 	}
 	s.WriteString(m.renderBoardWithInfo())
 
-	v := tea.NewView(s.String())
-	v.AltScreen = true
-	return v
+	return tea.NewView(s.String())
 }
 
 func (m model) renderBoardWithInfo() string {
@@ -415,8 +413,9 @@ func newServer(addr, hostKeyPEM, hostKeyPath string) (*ssh.Server, error) {
 	return wish.NewServer(opts...)
 }
 
-// teaProgram starts one Bubble Tea session. SSH_TTY + a fixed color profile
-// skip terminal capability probes that hang behind the mux (~2s then quit).
+// teaProgram starts one Bubble Tea session. Build options ourselves for the
+// emulated PTY behind the mux: MakeOptions alone still probes the terminal,
+// and unanswered probes cancel input after ~2s.
 func teaProgram(s ssh.Session) *tea.Program {
 	player := &Player{
 		ID:         fmt.Sprintf("player_%d", time.Now().UnixNano()),
@@ -431,11 +430,28 @@ func teaProgram(s ssh.Session) *tea.Program {
 		GetGameManager().RemovePlayer(player.ID)
 	}()
 
-	env := append(append([]string{}, s.Environ()...), "TERM=xterm-256color", "SSH_TTY=/dev/pts/0")
-	opts := append(wishtea.MakeOptions(s),
-		tea.WithColorProfile(colorprofile.ANSI256),
-		tea.WithEnvironment(env),
+	pty, _, _ := s.Pty()
+	env := append(s.Environ(),
+		"TERM=xterm-256color",
+		"COLORTERM=truecolor",
+		"SSH_TTY=/dev/pts/0",
 	)
+	opts := []tea.ProgramOption{
+		tea.WithInput(s),
+		tea.WithOutput(s),
+		tea.WithEnvironment(env),
+		tea.WithColorProfile(colorprofile.ANSI256),
+		tea.WithContext(s.Context()),
+		tea.WithFilter(func(_ tea.Model, msg tea.Msg) tea.Msg {
+			if _, ok := msg.(tea.SuspendMsg); ok {
+				return tea.ResumeMsg{}
+			}
+			return msg
+		}),
+	}
+	if pty.Window.Width > 0 && pty.Window.Height > 0 {
+		opts = append(opts, tea.WithWindowSize(pty.Window.Width, pty.Window.Height))
+	}
 	return tea.NewProgram(initialModelWithPlayer(player), opts...)
 }
 
