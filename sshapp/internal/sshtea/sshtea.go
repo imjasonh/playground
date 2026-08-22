@@ -1,10 +1,21 @@
 // Package sshtea wraps Wish's Bubble Tea middleware for apps behind the mux.
 //
-// Prefer this over charm.land/wish/v2/bubbletea directly: Wish's stock window-
-// change loop does `case w := <-winCh` on a closed channel, which yields endless
-// {0,0} resizes and Quits the program. That shows up behind the mux (and any
-// Go SSH client that closes the session request channel early). Everything else
-// is Wish — MakeOptions for PTY I/O, activeterm, logging.
+// Prefer this over charm.land/wish/v2/bubbletea when the session is proxied
+// (our mux) or otherwise closes the SSH session request channel early.
+//
+// Workaround: Wish v2.0.3's MiddlewareWithProgramHandler loops on
+//
+//	case w := <-windowChanges:
+//		program.Send(tea.WindowSizeMsg{Width: w.Width, Height: w.Height})
+//
+// When charm.land/ssh closes winCh (defer close after the request channel
+// ends), that receive never blocks and keeps sending {0,0}. The TUI then
+// dies within milliseconds. We range the channel instead so close is clean.
+// No upstream Wish issue was filed for this; delete this package and switch
+// apps to wishtea.Middleware once Wish stops spinning on a closed winCh.
+//
+// Everything else is Wish: MakeOptions for PTY I/O, plus the usual
+// activeterm / logging middlewares in each app.
 package sshtea
 
 import (
@@ -30,8 +41,8 @@ func Middleware(handler Handler) wish.Middleware {
 	})
 }
 
-// MiddlewareWithProgramHandler is like wishtea.MiddlewareWithProgramHandler,
-// but ranges the window-change channel so a closed channel stops cleanly.
+// MiddlewareWithProgramHandler is like wishtea.MiddlewareWithProgramHandler.
+// The only intentional difference is `for range winCh` (see package comment).
 func MiddlewareWithProgramHandler(handler wishtea.ProgramHandler) wish.Middleware {
 	return func(next ssh.Handler) ssh.Handler {
 		return func(sess ssh.Session) {
