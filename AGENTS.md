@@ -652,7 +652,7 @@ bundle exec fastlane test
 | `gitdb/` | git repository explorer backed by SQLite virtual tables | `go test -race ./...` |
 | `ocidb/` | OCI registry explorer backed by SQLite virtual tables | `go test -race ./...` |
 | `pasta/` | CUE-described multi-language linters/fixers over tree-sitter ASTs; see [`pasta/AGENTS.md`](pasta/AGENTS.md). Playground style rules are enrolled via `.pasta/examples` → `pasta/analyzers` and gated by the pasta leg of `test.yml` | `go test -race ./...` (incl. e2e shallow-clone smoke); CI also runs `pasta test` + monorepo lint |
-| `sshapp/` | Wish SSH apps on GKE Autopilot (shared mux LB; `ssh user@ssh.domain <app>`); Terraform + `ko_build` | `go test -race ./...`; KinD e2e (`SSHAPP_KIND_E2E=1`) when the module changes |
+| `sshapp/` | Wish SSH apps on GKE Autopilot (shared mux LB; `ssh user@ssh.domain <app>`; includes `hello` + `chess`); Terraform + `ko_build` | `go test -race ./...`; KinD e2e (`SSHAPP_KIND_E2E=1`) when the module changes |
 
 ## Current Rust apps
 

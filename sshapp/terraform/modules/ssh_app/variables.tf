@@ -30,6 +30,17 @@ variable "scale_to_zero" {
   default     = true
 }
 
+variable "deployment_strategy" {
+  description = "Deployment strategy. Use Recreate when matchmaking is in-process so rolls never run two pods."
+  type        = string
+  default     = "RollingUpdate"
+
+  validation {
+    condition     = contains(["RollingUpdate", "Recreate"], var.deployment_strategy)
+    error_message = "deployment_strategy must be RollingUpdate or Recreate."
+  }
+}
+
 variable "container_port" {
   description = "Port the Wish process listens on inside the container."
   type        = number

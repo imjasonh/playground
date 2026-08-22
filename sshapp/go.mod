@@ -3,6 +3,7 @@ module github.com/imjasonh/playground/sshapp
 go 1.26.0
 
 require (
+	charm.land/bubbletea/v2 v2.0.8
 	charm.land/log/v2 v2.0.0
 	charm.land/ssh v0.4.3
 	charm.land/wish/v2 v2.0.3
@@ -15,7 +16,6 @@ require (
 
 require (
 	cel.dev/expr v0.25.1 // indirect
-	charm.land/bubbletea/v2 v2.0.8 // indirect
 	charm.land/lipgloss/v2 v2.0.5 // indirect
 	cloud.google.com/go v0.123.0 // indirect
 	cloud.google.com/go/auth v0.20.0 // indirect

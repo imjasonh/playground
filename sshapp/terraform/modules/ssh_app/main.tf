@@ -65,10 +65,14 @@ resource "kubernetes_deployment_v1" "app" {
     replicas = local.app_replicas
 
     strategy {
-      type = "RollingUpdate"
-      rolling_update {
-        max_unavailable = "0"
-        max_surge       = "1"
+      type = var.deployment_strategy
+
+      dynamic "rolling_update" {
+        for_each = var.deployment_strategy == "RollingUpdate" ? [1] : []
+        content {
+          max_unavailable = "0"
+          max_surge       = "1"
+        }
       }
     }
 

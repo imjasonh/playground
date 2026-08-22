@@ -48,6 +48,7 @@ label. Clients need a recent OpenSSH that supports `SetEnv`.
 ```
 sshapp/
 ├── apps/
+│   ├── chess/          # multiplayer chess (Wish + Bubble Tea)
 │   ├── hello/          # example Wish app
 │   ├── mux/            # shared SSH front + scale-to-zero
 │   └── activator/      # optional raw-TCP activator (not used by Terraform)
@@ -56,7 +57,9 @@ sshapp/
 │   ├── registry/       # in-mux app menu (list + pick)
 │   ├── route/          # command path / SSHAPP / subsystem → app
 │   ├── scaler/         # Deployment 0↔N via the Kubernetes API
-│   └── session/        # Snapshot Store (Memory + GCS) for app state dumps
+│   ├── session/        # Snapshot Store (Memory + GCS) for app state dumps
+│   ├── sshpty/         # TERM/size defaults for pipe-backed OpenSSH PTYs
+│   └── sshtea/         # Wish Bubble Tea middleware (mux-safe winCh)
 ├── e2e/                # KinD mux + hello (CI when sshapp/ changes)
 ├── terraform/
 │   ├── modules/ssh_app/
@@ -68,6 +71,9 @@ sshapp/
 To add another app:
 
 1. Create `apps/<name>/` with a `main` package (Wish server on `:2222`).
+   For Bubble Tea TUIs, use `sshtea.Middleware` (same shape as
+   `wish/bubbletea.Middleware`) instead of Wish's stock one — see
+   `internal/sshtea`.
 2. Add an entry to `var.apps` in Terraform (see `terraform.tfvars.example`).
 3. Apply. Terraform builds with `ko_build` and registers the name with the mux.
 
@@ -165,9 +171,9 @@ ssh -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null localhos
 ## KinD e2e
 
 PRs that touch `sshapp/` run a KinD e2e through `test.yml` (via
-`test-go-modules.sh`): create a cluster, `ko build` mux + hello into it, apply
-`e2e/manifests/sshapp.yaml`, then check command-path routing, the registry menu,
-and idle scale-to-zero.
+`test-go-modules.sh`): create a cluster, `ko build` mux + hello + chess into
+it, apply `e2e/manifests/sshapp.yaml`, then check command-path routing for both
+apps, the registry menu, and idle scale-to-zero.
 
 ```bash
 cd sshapp

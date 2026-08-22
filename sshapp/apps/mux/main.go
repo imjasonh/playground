@@ -28,6 +28,7 @@ import (
 	"github.com/imjasonh/playground/sshapp/internal/registry"
 	"github.com/imjasonh/playground/sshapp/internal/route"
 	"github.com/imjasonh/playground/sshapp/internal/scaler"
+	"github.com/imjasonh/playground/sshapp/internal/sshpty"
 )
 
 func main() {
@@ -104,7 +105,7 @@ func main() {
 }
 
 func muxMiddleware(catalog registry.Catalog, pool *scaler.Pool, signer gossh.Signer, warmTimeout time.Duration) wish.Middleware {
-	return func(next ssh.Handler) ssh.Handler {
+	return func(_ ssh.Handler) ssh.Handler {
 		return func(sess ssh.Session) {
 			target, ok := route.FromSession(sess)
 			if !ok {
@@ -147,7 +148,6 @@ func muxMiddleware(catalog registry.Catalog, pool *scaler.Pool, signer gossh.Sig
 				return
 			}
 			_ = sess.Exit(code)
-			next(sess)
 		}
 	}
 }
@@ -175,12 +175,14 @@ func proxySSHSession(clientSess ssh.Session, addr string, signer gossh.Signer, t
 
 	pty, winCh, isPty := clientSess.Pty()
 	if isPty {
-		if err := bs.RequestPty(pty.Term, pty.Window.Height, pty.Window.Width, nil); err != nil {
+		term, width, height := sshpty.Normalize(pty.Term, pty.Window.Width, pty.Window.Height)
+		if err := bs.RequestPty(term, height, width, nil); err != nil {
 			return 1, err
 		}
 		go func() {
 			for win := range winCh {
-				_ = bs.WindowChange(win.Height, win.Width)
+				_, w, h := sshpty.Normalize(term, win.Width, win.Height)
+				_ = bs.WindowChange(h, w)
 			}
 		}()
 	}
@@ -211,15 +213,29 @@ func proxySSHSession(clientSess ssh.Session, addr string, signer gossh.Signer, t
 		_, _ = io.Copy(stdin, clientSess)
 		_ = stdin.Close()
 	}()
+	// Close the backend when the client leaves so long-lived apps Release.
+	go func() {
+		<-clientSess.Context().Done()
+		_ = bs.Close()
+		_ = conn.Close()
+	}()
 
 	if len(target.Args) > 0 {
 		err = bs.Run(strings.Join(target.Args, " "))
 	} else {
 		err = bs.Shell()
 	}
-	// Drain stdout/stderr so a short-lived backend greeting is not lost.
-	<-copyDone
-	<-copyDone
+	// Finish copying greeting bytes, but don't block Acquire forever.
+	drain := time.NewTimer(2 * time.Second)
+	defer drain.Stop()
+	for remaining := 2; remaining > 0; {
+		select {
+		case <-copyDone:
+			remaining--
+		case <-drain.C:
+			remaining = 0
+		}
+	}
 
 	if err == nil {
 		return 0, nil
