@@ -140,17 +140,19 @@ func muxMiddleware(catalog registry.Catalog, pool *scaler.Pool, signer gossh.Sig
 				return
 			}
 
-			if err := proxySSHSession(sess, addr, signer, target); err != nil {
+			code, err := proxySSHSession(sess, addr, signer, target)
+			if err != nil {
 				log.Error("proxy session", "app", target.App, "error", err)
 				_ = sess.Exit(1)
 				return
 			}
+			_ = sess.Exit(code)
 			next(sess)
 		}
 	}
 }
 
-func proxySSHSession(clientSess ssh.Session, addr string, signer gossh.Signer, target route.Target) error {
+func proxySSHSession(clientSess ssh.Session, addr string, signer gossh.Signer, target route.Target) (int, error) {
 	cfg := &gossh.ClientConfig{
 		User: clientSess.User(),
 		Auth: []gossh.AuthMethod{
@@ -161,20 +163,20 @@ func proxySSHSession(clientSess ssh.Session, addr string, signer gossh.Signer, t
 	}
 	conn, err := gossh.Dial("tcp", addr, cfg)
 	if err != nil {
-		return err
+		return 1, err
 	}
 	defer conn.Close()
 
 	bs, err := conn.NewSession()
 	if err != nil {
-		return err
+		return 1, err
 	}
 	defer bs.Close()
 
 	pty, winCh, isPty := clientSess.Pty()
 	if isPty {
 		if err := bs.RequestPty(pty.Term, pty.Window.Height, pty.Window.Width, nil); err != nil {
-			return err
+			return 1, err
 		}
 		go func() {
 			for win := range winCh {
@@ -183,21 +185,50 @@ func proxySSHSession(clientSess ssh.Session, addr string, signer gossh.Signer, t
 		}()
 	}
 
-	bs.Stdout = clientSess
-	bs.Stderr = clientSess.Stderr()
+	stdout, err := bs.StdoutPipe()
+	if err != nil {
+		return 1, err
+	}
+	stderr, err := bs.StderrPipe()
+	if err != nil {
+		return 1, err
+	}
 	stdin, err := bs.StdinPipe()
 	if err != nil {
-		return err
+		return 1, err
 	}
+
+	copyDone := make(chan struct{}, 2)
+	go func() {
+		_, _ = io.Copy(clientSess, stdout)
+		copyDone <- struct{}{}
+	}()
+	go func() {
+		_, _ = io.Copy(clientSess.Stderr(), stderr)
+		copyDone <- struct{}{}
+	}()
 	go func() {
 		_, _ = io.Copy(stdin, clientSess)
 		_ = stdin.Close()
 	}()
 
 	if len(target.Args) > 0 {
-		return bs.Run(strings.Join(target.Args, " "))
+		err = bs.Run(strings.Join(target.Args, " "))
+	} else {
+		err = bs.Shell()
 	}
-	return bs.Shell()
+	// Drain stdout/stderr so a short-lived backend greeting is not lost.
+	<-copyDone
+	<-copyDone
+
+	if err == nil {
+		return 0, nil
+	}
+	var exitErr *gossh.ExitError
+	if errors.As(err, &exitErr) {
+		return exitErr.ExitStatus(), nil
+	}
+	return 1, err
 }
 
 func newEphemeralSigner() (gossh.Signer, error) {

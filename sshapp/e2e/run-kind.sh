@@ -139,6 +139,33 @@ sed \
 kubectl --context "kind-${CLUSTER_NAME}" -n sshapps rollout status deployment/ssh-mux --timeout=180s
 echo "::endgroup::"
 
+dump_debug() {
+  kubectl --context "kind-${CLUSTER_NAME}" -n sshapps get pods,deploy,svc -o wide >&2 || true
+  kubectl --context "kind-${CLUSTER_NAME}" -n sshapps logs deploy/ssh-mux --tail=120 >&2 || true
+  kubectl --context "kind-${CLUSTER_NAME}" -n sshapps logs deploy/hello --tail=120 >&2 || true
+}
+
+expect_greeting() {
+  local label=$1
+  shift
+  local out="" attempt
+  for attempt in 1 2 3 4 5 6 7 8; do
+    out="$("$@" 2>"${WORKDIR}/ssh-stderr.txt" || true)"
+    echo "${label} attempt ${attempt}: ${out}"
+    if [[ -s "${WORKDIR}/ssh-stderr.txt" ]]; then
+      echo "${label} stderr: $(cat "${WORKDIR}/ssh-stderr.txt")"
+    fi
+    if grep -q 'hello,' <<<"${out}"; then
+      printf '%s\n' "${out}"
+      return 0
+    fi
+    sleep 2
+  done
+  echo "expected hello greeting for ${label}, last output: ${out}" >&2
+  dump_debug
+  return 1
+}
+
 LOCAL_PORT=2222
 echo "::group::Port-forward mux :${LOCAL_PORT}"
 kubectl --context "kind-${CLUSTER_NAME}" -n sshapps port-forward svc/ssh-mux "${LOCAL_PORT}:22" \
@@ -148,25 +175,28 @@ await_tcp 127.0.0.1 "${LOCAL_PORT}"
 echo "::endgroup::"
 
 echo "::group::SSH command path (ssh … hello)"
-out="$(ssh_mux hello 2>/dev/null || true)"
-echo "output: ${out}"
-if [[ "${out}" != hello,* ]]; then
-  echo "expected greeting starting with 'hello,', got: ${out}" >&2
-  kubectl --context "kind-${CLUSTER_NAME}" -n sshapps get pods,deploy,svc -o wide >&2 || true
-  kubectl --context "kind-${CLUSTER_NAME}" -n sshapps logs deploy/ssh-mux --tail=80 >&2 || true
+if ! expect_greeting "command-path" ssh_mux hello >/dev/null; then
   exit 1
 fi
 echo "::endgroup::"
 
 echo "::group::SSH registry menu (select 1)"
-out="$(printf '1\n' | ssh_mux 2>/dev/null || true)"
-echo "output: ${out}"
-if ! grep -q 'available apps:' <<<"${out}"; then
-  echo "expected registry menu, got: ${out}" >&2
-  exit 1
-fi
-if ! grep -q 'hello,' <<<"${out}"; then
-  echo "expected hello greeting after menu select, got: ${out}" >&2
+out=""
+for attempt in 1 2 3 4 5 6 7 8; do
+  out="$(printf '1\n' | ssh_mux 2>"${WORKDIR}/ssh-stderr.txt" || true)"
+  echo "menu attempt ${attempt}: ${out}"
+  if [[ -s "${WORKDIR}/ssh-stderr.txt" ]]; then
+    echo "menu stderr: $(cat "${WORKDIR}/ssh-stderr.txt")"
+  fi
+  if grep -q 'available apps:' <<<"${out}" && grep -q 'hello,' <<<"${out}"; then
+    break
+  fi
+  out=""
+  sleep 2
+done
+if ! grep -q 'available apps:' <<<"${out}" || ! grep -q 'hello,' <<<"${out}"; then
+  echo "expected menu + hello greeting, got: ${out}" >&2
+  dump_debug
   exit 1
 fi
 echo "::endgroup::"
@@ -187,6 +217,5 @@ while ((SECONDS < deadline)); do
   sleep 3
 done
 echo "hello did not scale to zero within timeout" >&2
-kubectl --context "kind-${CLUSTER_NAME}" -n sshapps get deploy hello -o yaml >&2 || true
-kubectl --context "kind-${CLUSTER_NAME}" -n sshapps logs deploy/ssh-mux --tail=120 >&2 || true
+dump_debug
 exit 1

@@ -72,6 +72,7 @@ func helloMiddleware(greeting string) wish.Middleware {
 		return func(sess ssh.Session) {
 			_, _ = io.WriteString(sess, greet(greeting, sess.User()))
 			next(sess)
+			_ = sess.Exit(0)
 		}
 	}
 }
