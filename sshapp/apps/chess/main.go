@@ -17,7 +17,6 @@ import (
 	"charm.land/ssh"
 	"charm.land/wish/v2"
 	"charm.land/wish/v2/activeterm"
-	wishtea "charm.land/wish/v2/bubbletea"
 	"charm.land/wish/v2/logging"
 	"github.com/charmbracelet/colorprofile"
 )
@@ -69,19 +68,13 @@ func (m model) listenForUpdates() tea.Cmd {
 		if m.player == nil || m.player.UpdateChan == nil {
 			return sessionEndedMsg{}
 		}
-		ctx := context.Background()
-		if m.player.Session != nil {
-			ctx = m.player.Session.Context()
-		}
-		select {
-		case <-ctx.Done():
+		// Do not watch Session.Context() here: behind the mux / Go SSH clients
+		// that context can already be done when Init runs, which Quits immediately.
+		update, ok := <-m.player.UpdateChan
+		if !ok {
 			return sessionEndedMsg{}
-		case update, ok := <-m.player.UpdateChan:
-			if !ok {
-				return sessionEndedMsg{}
-			}
-			return update
 		}
+		return update
 	}
 }
 
@@ -400,7 +393,7 @@ func newServer(addr, hostKeyPEM, hostKeyPath string) (*ssh.Server, error) {
 			return true
 		}),
 		wish.WithMiddleware(
-			wishtea.MiddlewareWithProgramHandler(teaProgram),
+			teaMiddleware(),
 			activeterm.Middleware(),
 			logging.Middleware(),
 		),
@@ -413,9 +406,33 @@ func newServer(addr, hostKeyPEM, hostKeyPath string) (*ssh.Server, error) {
 	return wish.NewServer(opts...)
 }
 
-// teaProgram starts one Bubble Tea session. Build options ourselves for the
-// emulated PTY behind the mux: MakeOptions alone still probes the terminal,
-// and unanswered probes cancel input after ~2s.
+// teaMiddleware runs Bubble Tea without wish's stock window-change loop.
+// That loop does `case w := <-winCh` on a closed channel, which yields endless
+// {0,0} resizes and then Quits; `for range` stops cleanly instead.
+func teaMiddleware() wish.Middleware {
+	return func(next ssh.Handler) ssh.Handler {
+		return func(sess ssh.Session) {
+			program := teaProgram(sess)
+			_, winCh, ok := sess.Pty()
+			if !ok {
+				wish.Fatalln(sess, "no active terminal, skipping")
+				return
+			}
+			go func() {
+				for win := range winCh {
+					program.Send(tea.WindowSizeMsg{Width: win.Width, Height: win.Height})
+				}
+			}()
+			if _, err := program.Run(); err != nil {
+				log.Error("app exit with error", "error", err)
+			}
+			program.Kill()
+			next(sess)
+		}
+	}
+}
+
+// teaProgram starts one Bubble Tea session for an emulated PTY behind the mux.
 func teaProgram(s ssh.Session) *tea.Program {
 	player := &Player{
 		ID:         fmt.Sprintf("player_%d", time.Now().UnixNano()),
@@ -441,7 +458,6 @@ func teaProgram(s ssh.Session) *tea.Program {
 		tea.WithOutput(s),
 		tea.WithEnvironment(env),
 		tea.WithColorProfile(colorprofile.ANSI256),
-		tea.WithContext(s.Context()),
 		tea.WithFilter(func(_ tea.Model, msg tea.Msg) tea.Msg {
 			if _, ok := msg.(tea.SuspendMsg); ok {
 				return tea.ResumeMsg{}
