@@ -46,16 +46,18 @@ Infrastructure lives in `iac/` and targets [exe.dev](https://exe.dev):
 
 On merges to `main` that touch `chessh/`, `.github/workflows/deploy-exe.yml`
 applies the stack (same idea as `deploy-workers.yml` for Cloudflare Workers).
-You can also apply by hand after minting an exe.dev API token and configuring
-the R2 backend:
+You can also apply by hand after minting an exe.dev API token and short-lived
+R2 credentials:
 
 ```bash
 cd iac/
-# Set EXEDEV_TOKEN, AWS_* (R2), and docker-login to ghcr.io first.
+# Set EXEDEV_TOKEN and docker-login to ghcr.io first.
+export CLOUDFLARE_API_TOKEN=...
+export CLOUDFLARE_ACCOUNT_ID=...
+export TF_STATE_R2_ACCESS_KEY_ID=...   # parent R2 Access Key ID
+bash ../../.github/scripts/mint-r2-temp-credentials.sh
 terraform init \
-  -backend-config="endpoints={s3=\"https://$CLOUDFLARE_ACCOUNT_ID.r2.cloudflarestorage.com\"}" \
-  -backend-config="access_key=$TF_STATE_R2_ACCESS_KEY_ID" \
-  -backend-config="secret_key=$TF_STATE_R2_SECRET_ACCESS_KEY"
+  -backend-config="endpoints={s3=\"https://$CLOUDFLARE_ACCOUNT_ID.r2.cloudflarestorage.com\"}"
 terraform apply
 ```
 
@@ -64,10 +66,9 @@ terraform apply
 | Secret | Purpose |
 |--------|---------|
 | `EXEDEV_SSH_PRIVATE_KEY` | OpenSSH private key whose public half is registered on exe.dev; CI mints `EXEDEV_TOKEN` from it |
-| `TF_STATE_R2_ACCESS_KEY_ID` | R2 access key for the Terraform state bucket |
-| `TF_STATE_R2_SECRET_ACCESS_KEY` | R2 secret for that access key |
+| `TF_STATE_R2_ACCESS_KEY_ID` | Parent R2 Access Key ID (Object Read & Write on the state bucket). CI mints a short-lived S3 session from it via `CLOUDFLARE_API_TOKEN`; no long-lived secret key is stored |
 | `CLOUDFLARE_ACCOUNT_ID` | Already used by Worker deploys; R2 S3 endpoint host |
-| `CLOUDFLARE_API_TOKEN` | Creates the state bucket if missing |
+| `CLOUDFLARE_API_TOKEN` | Creates the state bucket if missing, and mints temporary R2 credentials |
 
 The GHCR package must be **public** so exe.dev can pull the image (the
 community `exedev` provider has no `registry_auth`). CI publishes the package
