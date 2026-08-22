@@ -8,17 +8,17 @@ CLUSTER_NAME="${SSHAPP_KIND_CLUSTER:-sshapp-e2e}"
 WORKDIR="${TMPDIR:-/tmp}/sshapp-kind-e2e-$$"
 PORT_FORWARD_PID=""
 CHESS_SSH_PID=""
+CHESS2_SSH_PID=""
 KIND_CREATED=0
 
 cleanup() {
-  if [[ -n "${CHESS_SSH_PID}" ]] && kill -0 "${CHESS_SSH_PID}" 2>/dev/null; then
-    kill "${CHESS_SSH_PID}" 2>/dev/null || true
-    wait "${CHESS_SSH_PID}" 2>/dev/null || true
-  fi
-  if [[ -n "${PORT_FORWARD_PID}" ]] && kill -0 "${PORT_FORWARD_PID}" 2>/dev/null; then
-    kill "${PORT_FORWARD_PID}" 2>/dev/null || true
-    wait "${PORT_FORWARD_PID}" 2>/dev/null || true
-  fi
+  for pid_var in CHESS_SSH_PID CHESS2_SSH_PID PORT_FORWARD_PID; do
+    pid="${!pid_var}"
+    if [[ -n "${pid}" ]] && kill -0 "${pid}" 2>/dev/null; then
+      kill "${pid}" 2>/dev/null || true
+      wait "${pid}" 2>/dev/null || true
+    fi
+  done
   if [[ "${SSHAPP_KIND_KEEP:-}" != "1" && "${KIND_CREATED}" -eq 1 ]]; then
     kind delete cluster --name "${CLUSTER_NAME}" >/dev/null 2>&1 || true
   fi
@@ -281,21 +281,51 @@ if ! await_deploy_ready chess; then
   dump_debug
   exit 1
 fi
-# Ask the TUI to quit, then force-close if needed so the mux Releases.
-printf 'q' >&"${chess_fd}" || true
-exec {chess_fd}>&-
-for _ in 1 2 3 4 5; do
-  if ! kill -0 "${CHESS_SSH_PID}" 2>/dev/null; then
+# Second client should match and leave the waiting screen.
+chess2_in="${WORKDIR}/chess2-stdin"
+mkfifo "${chess2_in}"
+ssh_mux_tty chess <"${chess2_in}" >"${WORKDIR}/chess2-ssh.out" 2>"${WORKDIR}/chess2-ssh.err" &
+CHESS2_SSH_PID=$!
+exec {chess2_fd}>"${chess2_in}"
+matched=0
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  if grep -aqE 'YOUR TURN|OPPONENT' "${WORKDIR}/chess-ssh.out" 2>/dev/null \
+    || grep -aqE 'YOUR TURN|OPPONENT' "${WORKDIR}/chess2-ssh.out" 2>/dev/null; then
+    matched=1
     break
   fi
   sleep 1
 done
-if kill -0 "${CHESS_SSH_PID}" 2>/dev/null; then
-  kill -KILL "${CHESS_SSH_PID}" 2>/dev/null || true
+if [[ "${matched}" -ne 1 ]]; then
+  echo "expected two chess clients to match; outs:" >&2
+  sed -n '1,40p' "${WORKDIR}/chess-ssh.out" >&2 || true
+  sed -n '1,40p' "${WORKDIR}/chess2-ssh.out" >&2 || true
+  exec {chess_fd}>&-
+  exec {chess2_fd}>&-
+  dump_debug
+  exit 1
 fi
-wait "${CHESS_SSH_PID}" 2>/dev/null || true
+# Ask both TUIs to quit, then force-close if needed so the mux Releases.
+printf 'q' >&"${chess_fd}" || true
+printf 'q' >&"${chess2_fd}" || true
+exec {chess_fd}>&-
+exec {chess2_fd}>&-
+for pid_var in CHESS_SSH_PID CHESS2_SSH_PID; do
+  pid="${!pid_var}"
+  for _ in 1 2 3 4 5; do
+    if ! kill -0 "${pid}" 2>/dev/null; then
+      break
+    fi
+    sleep 1
+  done
+  if kill -0 "${pid}" 2>/dev/null; then
+    kill -KILL "${pid}" 2>/dev/null || true
+  fi
+  wait "${pid}" 2>/dev/null || true
+done
 CHESS_SSH_PID=""
-echo "chess scaled up under mux routing"
+CHESS2_SSH_PID=""
+echo "chess scaled up and matched two clients under mux routing"
 echo "::endgroup::"
 
 echo "::group::Wait for hello and chess to scale to zero"

@@ -124,6 +124,9 @@ metadata:
     app.kubernetes.io/name: chess
 spec:
   replicas: 0
+  # In-memory matchmaking: never run two pods with a split queue.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: chess

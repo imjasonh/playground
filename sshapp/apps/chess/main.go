@@ -35,6 +35,8 @@ type model struct {
 	isMyTurn    bool
 }
 
+type sessionEndedMsg struct{}
+
 func initialModel() model {
 	return model{
 		game:       NewGame(),
@@ -63,15 +65,29 @@ func (m model) Init() tea.Cmd {
 
 func (m model) listenForUpdates() tea.Cmd {
 	return func() tea.Msg {
-		if m.player != nil && m.player.UpdateChan != nil {
-			return <-m.player.UpdateChan
+		if m.player == nil || m.player.UpdateChan == nil {
+			return sessionEndedMsg{}
 		}
-		return nil
+		ctx := context.Background()
+		if m.player.Session != nil {
+			ctx = m.player.Session.Context()
+		}
+		select {
+		case <-ctx.Done():
+			return sessionEndedMsg{}
+		case update, ok := <-m.player.UpdateChan:
+			if !ok {
+				return sessionEndedMsg{}
+			}
+			return update
+		}
 	}
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case sessionEndedMsg:
+		return m, tea.Quit
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "q":
@@ -121,7 +137,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.validMoves = m.getValidMoves(currentPos)
 						GetGameManager().BroadcastUpdate(m.player.ID, GameUpdate{
 							Type: "select",
-							Data: map[string]interface{}{
+							Data: map[string]any{
 								"position":   currentPos,
 								"validMoves": m.validMoves,
 							},
@@ -137,10 +153,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else if m.game.MakeMove(*m.selected, currentPos) {
 					GetGameManager().BroadcastUpdate(m.player.ID, GameUpdate{
 						Type: "move",
-						Data: map[string]interface{}{
+						Data: map[string]any{
 							"from":      *m.selected,
 							"to":        currentPos,
-							"gameState": m.game,
+							"gameState": m.game.Clone(),
 						},
 					})
 					m.selected = nil
@@ -179,7 +195,7 @@ func (m model) broadcastCursorUpdate() {
 	if m.gameSession != nil {
 		GetGameManager().BroadcastUpdate(m.player.ID, GameUpdate{
 			Type: "cursor",
-			Data: map[string]interface{}{
+			Data: map[string]any{
 				"row": m.cursorRow,
 				"col": m.cursorCol,
 			},
@@ -197,15 +213,16 @@ func (m model) handleGameUpdate(update GameUpdate) (tea.Model, tea.Cmd) {
 		m.gameState = "playing"
 		m.gameSession = GetGameManager().GetGameSession(m.player.ID)
 		if m.gameSession != nil {
-			m.game = m.gameSession.Game
+			// Own a copy so View/MakeMove do not race the opponent's session.
+			m.game = m.gameSession.Game.Clone()
 			m.opponent = m.gameSession.GetOpponent(m.player.ID)
 			m.isMyTurn = m.player.Color == White
 		}
 
 	case "move":
-		if data, ok := update.Data.(map[string]interface{}); ok {
+		if data, ok := update.Data.(map[string]any); ok {
 			if gameState, ok := data["gameState"].(*Game); ok {
-				m.game = gameState
+				m.game = gameState.Clone()
 				m.isMyTurn = true
 				m.selected = nil
 				m.validMoves = make([]Position, 0)
@@ -247,7 +264,7 @@ func (m model) View() tea.View {
 
 	switch m.gameState {
 	case "waiting":
-		s.WriteString("CheSSH\n")
+		s.WriteString("Chess\n")
 		s.WriteString("Waiting for an opponent to connect...\n\n")
 		if m.player != nil {
 			if position := GetGameManager().GetQueuePosition(m.player.ID); position > 0 {
@@ -258,13 +275,13 @@ func (m model) View() tea.View {
 		s.WriteString("Use arrow keys to move cursor, Q to quit\n\n")
 		s.WriteString(m.renderBoardWithInfo())
 	case "opponent_disconnected":
-		s.WriteString("CheSSH\n")
+		s.WriteString("Chess\n")
 		s.WriteString("*** OPPONENT DISCONNECTED; YOU WIN ***\n\n")
 		s.WriteString("Your opponent has left the game.\n")
 		s.WriteString("You can continue exploring the board or press Q to quit.\n\n")
 		s.WriteString(m.renderBoardWithInfo())
 	default:
-		s.WriteString("CheSSH\n")
+		s.WriteString("Chess\n")
 		if m.player != nil && m.opponent != nil {
 			s.WriteString(fmt.Sprintf("You: %s (%s) vs %s (%s)\n",
 				m.player.Name, m.player.Color, m.opponent.Name, m.opponent.Color))
@@ -414,7 +431,7 @@ func main() {
 		log.Fatal("create server", "error", err)
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	log.Info("starting SSH chess server", "addr", addr)
@@ -468,9 +485,8 @@ func teaHandler(s ssh.Session) (tea.Model, []tea.ProgramOption) {
 	go func() {
 		<-s.Context().Done()
 		GetGameManager().RemovePlayer(player.ID)
-		if player.UpdateChan != nil {
-			close(player.UpdateChan)
-		}
+		// Leave UpdateChan open: listenForUpdates selects on session context
+		// instead of ranging a closed channel (busy-loop / send panic).
 	}()
 
 	return m, wishtea.MakeOptions(s)

@@ -147,7 +147,6 @@ func muxMiddleware(catalog registry.Catalog, pool *scaler.Pool, signer gossh.Sig
 				return
 			}
 			_ = sess.Exit(code)
-			next(sess)
 		}
 	}
 }
@@ -225,8 +224,17 @@ func proxySSHSession(clientSess ssh.Session, addr string, signer gossh.Signer, t
 		err = bs.Shell()
 	}
 	// Drain stdout/stderr so a short-lived backend greeting is not lost.
-	<-copyDone
-	<-copyDone
+	// Bound the wait so a stuck pipe cannot hold Acquire forever.
+	drain := time.NewTimer(2 * time.Second)
+	defer drain.Stop()
+	for remaining := 2; remaining > 0; {
+		select {
+		case <-copyDone:
+			remaining--
+		case <-drain.C:
+			remaining = 0
+		}
+	}
 
 	if err == nil {
 		return 0, nil

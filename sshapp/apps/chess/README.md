@@ -1,7 +1,6 @@
-# CheSSH
+# Chess
 
-Multiplayer chess over SSH. Pronounced like "chess-ess-aych", or "chesh" in
-your best Sean Connery impression.
+Multiplayer chess over SSH.
 
 ## Play
 
@@ -12,8 +11,9 @@ ssh alice@ssh.YOUR_DOMAIN chess
 # or bare ssh, then pick chess from the registry menu
 ```
 
-Matchmaking is in-process. Keep Terraform at `replicas = 1` so both players
-land on the same pod.
+Matchmaking is in-process. Keep Terraform at `replicas = 1` and
+`deployment_strategy = "Recreate"` so both players share one pod and rolls
+never briefly run two.
 
 ## Local
 

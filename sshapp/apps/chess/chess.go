@@ -162,6 +162,30 @@ func NewGame() *Game {
 	}
 }
 
+// Clone returns a deep copy so each SSH session can own its board without
+// racing another Bubble Tea program on the same pod.
+func (g *Game) Clone() *Game {
+	if g == nil {
+		return nil
+	}
+	out := &Game{
+		Board:       g.Board,
+		CurrentTurn: g.CurrentTurn,
+		KingMoved:   g.KingMoved,
+		RookMoved:   g.RookMoved,
+	}
+	if len(g.MoveHistory) > 0 {
+		out.MoveHistory = append([]Move(nil), g.MoveHistory...)
+	} else {
+		out.MoveHistory = make([]Move, 0)
+	}
+	if g.EnPassantTarget != nil {
+		p := *g.EnPassantTarget
+		out.EnPassantTarget = &p
+	}
+	return out
+}
+
 func (g *Game) IsValidMove(from, to Position) bool {
 	if !from.Valid() || !to.Valid() {
 		return false

@@ -9,7 +9,7 @@ import (
 	"charm.land/ssh"
 )
 
-// Player represents a connected player
+// Player represents a connected player.
 type Player struct {
 	ID         string
 	Session    ssh.Session
@@ -17,17 +17,17 @@ type Player struct {
 	Name       string
 	GameID     string
 	Connected  bool
-	UpdateChan chan GameUpdate // Channel for sending updates to the player's model
+	UpdateChan chan GameUpdate
 }
 
-// GameUpdate represents an update to broadcast to players
+// GameUpdate is a message for a player's Bubble Tea model.
 type GameUpdate struct {
-	Type       string      // "move", "cursor", "select", "gamestate"
-	Data       interface{} // The actual update data
-	FromPlayer string      // Which player sent the update
+	Type       string // "move", "cursor", "select", "matched", ...
+	Data       any
+	FromPlayer string
 }
 
-// GameSession manages a single game between two players
+// GameSession manages a single game between two players.
 type GameSession struct {
 	ID      string
 	Game    *Game
@@ -52,13 +52,11 @@ func NewGameSession(id string, white, black *Player) *GameSession {
 		cancel:  cancel,
 	}
 
-	// Assign colors and game ID to players
 	white.Color = White
 	white.GameID = id
 	black.Color = Black
 	black.GameID = id
 
-	// Start the update broadcaster
 	go session.handleUpdates()
 
 	return session
@@ -79,19 +77,16 @@ func (gs *GameSession) broadcastUpdate(update GameUpdate) {
 	gs.mu.RLock()
 	defer gs.mu.RUnlock()
 
-	// Send update to both players (if connected) via their update channels
 	if gs.White != nil && gs.White.Connected && gs.White.UpdateChan != nil {
 		select {
 		case gs.White.UpdateChan <- update:
 		default:
-			// Channel full, drop update
 		}
 	}
 	if gs.Black != nil && gs.Black.Connected && gs.Black.UpdateChan != nil {
 		select {
 		case gs.Black.UpdateChan <- update:
 		default:
-			// Channel full, drop update
 		}
 	}
 }
@@ -147,7 +142,6 @@ func (gs *GameSession) Disconnect(playerID string) {
 		remainingPlayer = gs.White
 	}
 
-	// Notify remaining player of opponent disconnect
 	if remainingPlayer != nil && remainingPlayer.Connected && remainingPlayer.UpdateChan != nil {
 		disconnectUpdate := GameUpdate{
 			Type: "opponent_disconnected",
@@ -161,18 +155,18 @@ func (gs *GameSession) Disconnect(playerID string) {
 		}
 	}
 
-	// If both players disconnected, cleanup
 	if (gs.White == nil || !gs.White.Connected) && (gs.Black == nil || !gs.Black.Connected) {
-		gs.cleanup()
+		gs.cleanupLocked()
 	}
 }
 
-func (gs *GameSession) cleanup() {
+// cleanupLocked cancels the session. It does not close Updates — senders
+// select on ctx.Done and a send timeout instead.
+func (gs *GameSession) cleanupLocked() {
 	gs.cancel()
-	close(gs.Updates)
 }
 
-// GameManager handles matchmaking and game coordination
+// GameManager handles matchmaking and game coordination.
 type GameManager struct {
 	playerQueue  []*Player
 	activeGames  map[string]*GameSession
@@ -199,18 +193,13 @@ func (gm *GameManager) AddPlayer(player *Player) {
 	gm.mu.Lock()
 	defer gm.mu.Unlock()
 
-	// Add to queue
 	gm.playerQueue = append(gm.playerQueue, player)
 
-	// Try to match with another player
 	if len(gm.playerQueue) >= 2 {
 		white := gm.playerQueue[0]
 		black := gm.playerQueue[1]
-
-		// Remove from queue
 		gm.playerQueue = gm.playerQueue[2:]
 
-		// Create game
 		gm.gameCounter++
 		gameID := fmt.Sprintf("game_%d", gm.gameCounter)
 
@@ -219,7 +208,6 @@ func (gm *GameManager) AddPlayer(player *Player) {
 		gm.playerToGame[white.ID] = gameID
 		gm.playerToGame[black.ID] = gameID
 
-		// Notify players they've been matched
 		matchUpdate := GameUpdate{
 			Type: "matched",
 			Data: map[string]any{
@@ -231,7 +219,6 @@ func (gm *GameManager) AddPlayer(player *Player) {
 			},
 		}
 
-		// Send match update to both players via their channels
 		if white.UpdateChan != nil {
 			select {
 			case white.UpdateChan <- matchUpdate:
@@ -251,7 +238,6 @@ func (gm *GameManager) RemovePlayer(playerID string) {
 	gm.mu.Lock()
 	defer gm.mu.Unlock()
 
-	// Remove from queue if present
 	for i, player := range gm.playerQueue {
 		if player.ID == playerID {
 			gm.playerQueue = append(gm.playerQueue[:i], gm.playerQueue[i+1:]...)
@@ -259,17 +245,19 @@ func (gm *GameManager) RemovePlayer(playerID string) {
 		}
 	}
 
-	// Handle active game disconnection
 	if gameID, exists := gm.playerToGame[playerID]; exists {
 		if session, gameExists := gm.activeGames[gameID]; gameExists {
 			session.Disconnect(playerID)
 
-			// Clean up if game is over
 			if (session.White == nil || !session.White.Connected) &&
 				(session.Black == nil || !session.Black.Connected) {
 				delete(gm.activeGames, gameID)
-				delete(gm.playerToGame, session.White.ID)
-				delete(gm.playerToGame, session.Black.ID)
+				if session.White != nil {
+					delete(gm.playerToGame, session.White.ID)
+				}
+				if session.Black != nil {
+					delete(gm.playerToGame, session.Black.ID)
+				}
 			}
 		}
 		delete(gm.playerToGame, playerID)
@@ -287,13 +275,15 @@ func (gm *GameManager) GetGameSession(playerID string) *GameSession {
 }
 
 func (gm *GameManager) BroadcastUpdate(playerID string, update GameUpdate) {
-	if session := gm.GetGameSession(playerID); session != nil {
-		update.FromPlayer = playerID
-		select {
-		case session.Updates <- update:
-		case <-time.After(100 * time.Millisecond):
-			// Drop update if channel is full
-		}
+	session := gm.GetGameSession(playerID)
+	if session == nil {
+		return
+	}
+	update.FromPlayer = playerID
+	select {
+	case <-session.ctx.Done():
+	case session.Updates <- update:
+	case <-time.After(100 * time.Millisecond):
 	}
 }
 

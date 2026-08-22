@@ -73,9 +73,10 @@ variable "github_repository" {
 variable "apps" {
   description = "SSH apps to build with ko and deploy. Key is the mux route name (ssh user@ssh.domain <key>)."
   type = map(object({
-    importpath    = string
-    replicas      = optional(number, 1)
-    scale_to_zero = optional(bool, true)
+    importpath          = string
+    replicas            = optional(number, 1)
+    scale_to_zero       = optional(bool, true)
+    deployment_strategy = optional(string, "RollingUpdate")
   }))
   default = {
     hello = {
@@ -83,11 +84,12 @@ variable "apps" {
       replicas      = 1
       scale_to_zero = true
     }
-    # Matchmaking is in-memory; keep a single replica so both players share a pod.
+    # Matchmaking is in-memory; one Recreate pod so the queue is never split.
     chess = {
-      importpath    = "github.com/imjasonh/playground/sshapp/apps/chess"
-      replicas      = 1
-      scale_to_zero = true
+      importpath          = "github.com/imjasonh/playground/sshapp/apps/chess"
+      replicas            = 1
+      scale_to_zero       = true
+      deployment_strategy = "Recreate"
     }
   }
 }
