@@ -57,6 +57,7 @@ sshapp/
 │   ├── route/          # command path / SSHAPP / subsystem → app
 │   ├── scaler/         # Deployment 0↔N via the Kubernetes API
 │   └── session/        # Snapshot Store (Memory + GCS) for app state dumps
+├── e2e/                # KinD mux + hello (CI when sshapp/ changes)
 ├── terraform/
 │   ├── modules/ssh_app/
 │   └── *.tf
@@ -159,6 +160,21 @@ go test ./...
 go run ./apps/hello
 # elsewhere:
 ssh -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null localhost
+```
+
+## KinD e2e
+
+PRs that touch `sshapp/` run a KinD e2e through `test.yml` (via
+`test-go-modules.sh`): create a cluster, `ko build` mux + hello into it, apply
+`e2e/manifests/sshapp.yaml`, then check command-path routing, the registry menu,
+and idle scale-to-zero.
+
+```bash
+cd sshapp
+# Needs Docker, kubectl, and network to install kind/ko if missing.
+SSHAPP_KIND_E2E=1 go test -v -timeout 20m ./e2e/
+# Keep the cluster afterward:
+SSHAPP_KIND_KEEP=1 SSHAPP_KIND_E2E=1 go test -v -timeout 20m ./e2e/
 ```
 
 ## Cost sketch
