@@ -1,4 +1,4 @@
-// Command chessh is a multiplayer chess game over SSH (Wish + Bubble Tea).
+// Command chess is a multiplayer chess game over SSH (Wish + Bubble Tea).
 package main
 
 import (

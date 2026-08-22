@@ -65,7 +65,7 @@ them:
 - **[`pasta/`](pasta/)** — multi-language linters and fixers described in CUE
   over tree-sitter ASTs (Go CLI).
 - **[`sshapp/`](sshapp/)** — Wish SSH apps on GKE Autopilot behind one SSH mux
-  (`hello`, `chessh`; Terraform + `ko_build`).
+  (`hello`, `chess`; Terraform + `ko_build`).
 - **[`web-push/`](web-push/)** — a Web Push application-server backend
   (RFC 8030/8188/8291/8292) for Cloudflare Workers, in Rust.
 - **[`y/`](y/)** — a one-user microblog for Cloudflare Workers, in Rust

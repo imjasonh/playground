@@ -48,8 +48,8 @@ label. Clients need a recent OpenSSH that supports `SetEnv`.
 ```
 sshapp/
 ├── apps/
+│   ├── chess/          # multiplayer chess (Wish + Bubble Tea)
 │   ├── hello/          # example Wish app
-│   ├── chessh/         # multiplayer chess (Wish + Bubble Tea)
 │   ├── mux/            # shared SSH front + scale-to-zero
 │   └── activator/      # optional raw-TCP activator (not used by Terraform)
 ├── internal/
@@ -166,9 +166,9 @@ ssh -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null localhos
 ## KinD e2e
 
 PRs that touch `sshapp/` run a KinD e2e through `test.yml` (via
-`test-go-modules.sh`): create a cluster, `ko build` mux + hello into it, apply
-`e2e/manifests/sshapp.yaml`, then check command-path routing, the registry menu,
-and idle scale-to-zero.
+`test-go-modules.sh`): create a cluster, `ko build` mux + hello + chess into
+it, apply `e2e/manifests/sshapp.yaml`, then check command-path routing for both
+apps, the registry menu, and idle scale-to-zero.
 
 ```bash
 cd sshapp

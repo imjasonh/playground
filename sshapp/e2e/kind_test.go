@@ -1,4 +1,4 @@
-// Package e2e runs a KinD end-to-end check of the sshapp mux and hello app.
+// Package e2e runs a KinD end-to-end check of the sshapp mux, hello, and chess apps.
 //
 // Opt in with SSHAPP_KIND_E2E=1 (CI sets this when the sshapp module changes).
 // Requires Docker, kubectl, and network access to install kind/ko if missing.

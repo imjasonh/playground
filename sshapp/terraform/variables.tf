@@ -84,8 +84,8 @@ variable "apps" {
       scale_to_zero = true
     }
     # Matchmaking is in-memory; keep a single replica so both players share a pod.
-    chessh = {
-      importpath    = "github.com/imjasonh/playground/sshapp/apps/chessh"
+    chess = {
+      importpath    = "github.com/imjasonh/playground/sshapp/apps/chess"
       replicas      = 1
       scale_to_zero = true
     }
