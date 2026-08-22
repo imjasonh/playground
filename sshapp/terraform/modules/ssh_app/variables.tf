@@ -31,7 +31,7 @@ variable "scale_to_zero" {
 }
 
 variable "deployment_strategy" {
-  description = "Kubernetes Deployment strategy. Use Recreate for in-memory multiplayer apps so two pods never share a split queue."
+  description = "Deployment strategy. Use Recreate when matchmaking is in-process so rolls never run two pods."
   type        = string
   default     = "RollingUpdate"
 

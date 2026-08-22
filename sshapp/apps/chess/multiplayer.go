@@ -9,7 +9,6 @@ import (
 	"charm.land/ssh"
 )
 
-// Player represents a connected player.
 type Player struct {
 	ID         string
 	Session    ssh.Session
@@ -20,14 +19,12 @@ type Player struct {
 	UpdateChan chan GameUpdate
 }
 
-// GameUpdate is a message for a player's Bubble Tea model.
 type GameUpdate struct {
-	Type       string // "move", "cursor", "select", "matched", ...
+	Type       string
 	Data       any
 	FromPlayer string
 }
 
-// GameSession manages a single game between two players.
 type GameSession struct {
 	ID      string
 	Game    *Game
@@ -41,8 +38,7 @@ type GameSession struct {
 
 func NewGameSession(id string, white, black *Player) *GameSession {
 	ctx, cancel := context.WithCancel(context.Background())
-
-	session := &GameSession{
+	gs := &GameSession{
 		ID:      id,
 		Game:    NewGame(),
 		White:   white,
@@ -51,63 +47,41 @@ func NewGameSession(id string, white, black *Player) *GameSession {
 		ctx:     ctx,
 		cancel:  cancel,
 	}
-
 	white.Color = White
 	white.GameID = id
 	black.Color = Black
 	black.GameID = id
-
-	go session.handleUpdates()
-
-	return session
+	go gs.fanOut()
+	return gs
 }
 
-func (gs *GameSession) handleUpdates() {
+func (gs *GameSession) fanOut() {
 	for {
 		select {
 		case <-gs.ctx.Done():
 			return
 		case update := <-gs.Updates:
-			gs.broadcastUpdate(update)
+			gs.mu.RLock()
+			trySend(gs.White, update)
+			trySend(gs.Black, update)
+			gs.mu.RUnlock()
 		}
 	}
 }
 
-func (gs *GameSession) broadcastUpdate(update GameUpdate) {
-	gs.mu.RLock()
-	defer gs.mu.RUnlock()
-
-	if gs.White != nil && gs.White.Connected && gs.White.UpdateChan != nil {
-		select {
-		case gs.White.UpdateChan <- update:
-		default:
-		}
+func trySend(p *Player, update GameUpdate) {
+	if p == nil || !p.Connected || p.UpdateChan == nil {
+		return
 	}
-	if gs.Black != nil && gs.Black.Connected && gs.Black.UpdateChan != nil {
-		select {
-		case gs.Black.UpdateChan <- update:
-		default:
-		}
+	select {
+	case p.UpdateChan <- update:
+	default:
 	}
-}
-
-func (gs *GameSession) GetPlayer(playerID string) *Player {
-	gs.mu.RLock()
-	defer gs.mu.RUnlock()
-
-	if gs.White != nil && gs.White.ID == playerID {
-		return gs.White
-	}
-	if gs.Black != nil && gs.Black.ID == playerID {
-		return gs.Black
-	}
-	return nil
 }
 
 func (gs *GameSession) GetOpponent(playerID string) *Player {
 	gs.mu.RLock()
 	defer gs.mu.RUnlock()
-
 	if gs.White != nil && gs.White.ID == playerID {
 		return gs.Black
 	}
@@ -115,73 +89,49 @@ func (gs *GameSession) GetOpponent(playerID string) *Player {
 		return gs.White
 	}
 	return nil
-}
-
-func (gs *GameSession) IsPlayerTurn(playerID string) bool {
-	player := gs.GetPlayer(playerID)
-	if player == nil {
-		return false
-	}
-	return gs.Game.CurrentTurn == player.Color
 }
 
 func (gs *GameSession) Disconnect(playerID string) {
 	gs.mu.Lock()
 	defer gs.mu.Unlock()
 
-	var disconnectedPlayer, remainingPlayer *Player
-
-	if gs.White != nil && gs.White.ID == playerID {
+	var left *Player
+	switch {
+	case gs.White != nil && gs.White.ID == playerID:
 		gs.White.Connected = false
-		disconnectedPlayer = gs.White
-		remainingPlayer = gs.Black
-	}
-	if gs.Black != nil && gs.Black.ID == playerID {
+		left = gs.Black
+	case gs.Black != nil && gs.Black.ID == playerID:
 		gs.Black.Connected = false
-		disconnectedPlayer = gs.Black
-		remainingPlayer = gs.White
+		left = gs.White
 	}
-
-	if remainingPlayer != nil && remainingPlayer.Connected && remainingPlayer.UpdateChan != nil {
-		disconnectUpdate := GameUpdate{
-			Type: "opponent_disconnected",
-			Data: map[string]any{
-				"disconnectedPlayer": disconnectedPlayer.Name,
-			},
-		}
-		select {
-		case remainingPlayer.UpdateChan <- disconnectUpdate:
-		default:
-		}
+	if left != nil && left.Connected {
+		trySend(left, GameUpdate{Type: "opponent_disconnected"})
 	}
-
-	if (gs.White == nil || !gs.White.Connected) && (gs.Black == nil || !gs.Black.Connected) {
-		gs.cleanupLocked()
+	if !playerConnected(gs.White) && !playerConnected(gs.Black) {
+		gs.cancel()
 	}
 }
 
-// cleanupLocked cancels the session. It does not close Updates — senders
-// select on ctx.Done and a send timeout instead.
-func (gs *GameSession) cleanupLocked() {
-	gs.cancel()
+func playerConnected(p *Player) bool {
+	return p != nil && p.Connected
 }
 
-// GameManager handles matchmaking and game coordination.
 type GameManager struct {
+	mu           sync.RWMutex
 	playerQueue  []*Player
 	activeGames  map[string]*GameSession
-	playerToGame map[string]string // playerID -> gameID
-	mu           sync.RWMutex
+	playerToGame map[string]string
 	gameCounter  int
 }
 
-var gameManager *GameManager
-var gameManagerOnce sync.Once
+var (
+	gameManager     *GameManager
+	gameManagerOnce sync.Once
+)
 
 func GetGameManager() *GameManager {
 	gameManagerOnce.Do(func() {
 		gameManager = &GameManager{
-			playerQueue:  make([]*Player, 0),
 			activeGames:  make(map[string]*GameSession),
 			playerToGame: make(map[string]string),
 		}
@@ -194,84 +144,61 @@ func (gm *GameManager) AddPlayer(player *Player) {
 	defer gm.mu.Unlock()
 
 	gm.playerQueue = append(gm.playerQueue, player)
-
-	if len(gm.playerQueue) >= 2 {
-		white := gm.playerQueue[0]
-		black := gm.playerQueue[1]
-		gm.playerQueue = gm.playerQueue[2:]
-
-		gm.gameCounter++
-		gameID := fmt.Sprintf("game_%d", gm.gameCounter)
-
-		session := NewGameSession(gameID, white, black)
-		gm.activeGames[gameID] = session
-		gm.playerToGame[white.ID] = gameID
-		gm.playerToGame[black.ID] = gameID
-
-		matchUpdate := GameUpdate{
-			Type: "matched",
-			Data: map[string]any{
-				"gameID": gameID,
-				"opponent": map[string]string{
-					"white_opponent": black.Name,
-					"black_opponent": white.Name,
-				},
-			},
-		}
-
-		if white.UpdateChan != nil {
-			select {
-			case white.UpdateChan <- matchUpdate:
-			default:
-			}
-		}
-		if black.UpdateChan != nil {
-			select {
-			case black.UpdateChan <- matchUpdate:
-			default:
-			}
-		}
+	if len(gm.playerQueue) < 2 {
+		return
 	}
+	white, black := gm.playerQueue[0], gm.playerQueue[1]
+	gm.playerQueue = gm.playerQueue[2:]
+
+	gm.gameCounter++
+	gameID := fmt.Sprintf("game_%d", gm.gameCounter)
+	session := NewGameSession(gameID, white, black)
+	gm.activeGames[gameID] = session
+	gm.playerToGame[white.ID] = gameID
+	gm.playerToGame[black.ID] = gameID
+
+	matched := GameUpdate{Type: "matched"}
+	trySend(white, matched)
+	trySend(black, matched)
 }
 
 func (gm *GameManager) RemovePlayer(playerID string) {
 	gm.mu.Lock()
 	defer gm.mu.Unlock()
 
-	for i, player := range gm.playerQueue {
-		if player.ID == playerID {
+	for i, p := range gm.playerQueue {
+		if p.ID == playerID {
 			gm.playerQueue = append(gm.playerQueue[:i], gm.playerQueue[i+1:]...)
 			break
 		}
 	}
 
-	if gameID, exists := gm.playerToGame[playerID]; exists {
-		if session, gameExists := gm.activeGames[gameID]; gameExists {
-			session.Disconnect(playerID)
-
-			if (session.White == nil || !session.White.Connected) &&
-				(session.Black == nil || !session.Black.Connected) {
-				delete(gm.activeGames, gameID)
-				if session.White != nil {
-					delete(gm.playerToGame, session.White.ID)
-				}
-				if session.Black != nil {
-					delete(gm.playerToGame, session.Black.ID)
-				}
-			}
-		}
-		delete(gm.playerToGame, playerID)
+	gameID, ok := gm.playerToGame[playerID]
+	if !ok {
+		return
 	}
+	session := gm.activeGames[gameID]
+	if session == nil {
+		delete(gm.playerToGame, playerID)
+		return
+	}
+	session.Disconnect(playerID)
+	if !playerConnected(session.White) && !playerConnected(session.Black) {
+		delete(gm.activeGames, gameID)
+		if session.White != nil {
+			delete(gm.playerToGame, session.White.ID)
+		}
+		if session.Black != nil {
+			delete(gm.playerToGame, session.Black.ID)
+		}
+	}
+	delete(gm.playerToGame, playerID)
 }
 
 func (gm *GameManager) GetGameSession(playerID string) *GameSession {
 	gm.mu.RLock()
 	defer gm.mu.RUnlock()
-
-	if gameID, exists := gm.playerToGame[playerID]; exists {
-		return gm.activeGames[gameID]
-	}
-	return nil
+	return gm.activeGames[gm.playerToGame[playerID]]
 }
 
 func (gm *GameManager) BroadcastUpdate(playerID string, update GameUpdate) {
@@ -290,9 +217,8 @@ func (gm *GameManager) BroadcastUpdate(playerID string, update GameUpdate) {
 func (gm *GameManager) GetQueuePosition(playerID string) int {
 	gm.mu.RLock()
 	defer gm.mu.RUnlock()
-
-	for i, player := range gm.playerQueue {
-		if player.ID == playerID {
+	for i, p := range gm.playerQueue {
+		if p.ID == playerID {
 			return i + 1
 		}
 	}

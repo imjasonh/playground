@@ -84,7 +84,7 @@ variable "apps" {
       replicas      = 1
       scale_to_zero = true
     }
-    # Matchmaking is in-memory; one Recreate pod so the queue is never split.
+    # Matchmaking lives in one process; Recreate avoids a split queue on roll.
     chess = {
       importpath          = "github.com/imjasonh/playground/sshapp/apps/chess"
       replicas            = 1

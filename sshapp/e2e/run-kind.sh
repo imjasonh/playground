@@ -136,6 +136,36 @@ await_scaled_to_zero() {
   return 1
 }
 
+# Open an SSH chess session with a controllable stdin FIFO. Sets nameref outs.
+open_chess_ssh() {
+  local -n _pid=$1 _fd=$2
+  local out=$3 err=$4
+  local fifo="${WORKDIR}/chess-fifo-$$-${RANDOM}"
+  mkfifo "${fifo}"
+  ssh_mux_tty chess <"${fifo}" >"${out}" 2>"${err}" &
+  _pid=$!
+  exec {_fd}>"${fifo}"
+}
+
+close_chess_ssh() {
+  local pid=$1 fd=$2
+  printf 'q' >&"${fd}" || true
+  eval "exec ${fd}>&-"
+  local _
+  for _ in 1 2 3 4 5; do
+    kill -0 "${pid}" 2>/dev/null || break
+    sleep 1
+  done
+  if kill -0 "${pid}" 2>/dev/null; then
+    kill -KILL "${pid}" 2>/dev/null || true
+  fi
+  wait "${pid}" 2>/dev/null || true
+}
+
+strip_ansi() {
+  sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' | tr -d '\r'
+}
+
 mkdir -p "${WORKDIR}"
 need_cmd docker
 need_cmd kubectl

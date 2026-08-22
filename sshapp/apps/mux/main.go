@@ -104,7 +104,7 @@ func main() {
 }
 
 func muxMiddleware(catalog registry.Catalog, pool *scaler.Pool, signer gossh.Signer, warmTimeout time.Duration) wish.Middleware {
-	return func(next ssh.Handler) ssh.Handler {
+	return func(_ ssh.Handler) ssh.Handler {
 		return func(sess ssh.Session) {
 			target, ok := route.FromSession(sess)
 			if !ok {
@@ -210,8 +210,7 @@ func proxySSHSession(clientSess ssh.Session, addr string, signer gossh.Signer, t
 		_, _ = io.Copy(stdin, clientSess)
 		_ = stdin.Close()
 	}()
-	// Long-lived backends (for example chess) keep Shell open after stdin EOF.
-	// Tear them down when the client session ends so the mux can Release and idle.
+	// Close the backend when the client leaves so long-lived apps Release.
 	go func() {
 		<-clientSess.Context().Done()
 		_ = bs.Close()
@@ -223,8 +222,7 @@ func proxySSHSession(clientSess ssh.Session, addr string, signer gossh.Signer, t
 	} else {
 		err = bs.Shell()
 	}
-	// Drain stdout/stderr so a short-lived backend greeting is not lost.
-	// Bound the wait so a stuck pipe cannot hold Acquire forever.
+	// Finish copying greeting bytes, but don't block Acquire forever.
 	drain := time.NewTimer(2 * time.Second)
 	defer drain.Stop()
 	for remaining := 2; remaining > 0; {
