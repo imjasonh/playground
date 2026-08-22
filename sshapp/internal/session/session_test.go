@@ -1,7 +1,6 @@
 package session_test
 
 import (
-	"context"
 	"errors"
 	"testing"
 
@@ -11,7 +10,7 @@ import (
 func TestMemoryStoreRoundTrip(t *testing.T) {
 	t.Parallel()
 	store := session.NewMemoryStore()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	if err := store.Put(ctx, "sess-1", []byte("blob")); err != nil {
 		t.Fatal(err)

@@ -26,11 +26,11 @@ func TestEnsureReadyScalesUpOnce(t *testing.T) {
 		},
 	}
 
-	addr, err := s.EnsureReady(context.Background())
+	addr, err := s.EnsureReady(t.Context())
 	if err != nil || addr != "127.0.0.1:2222" {
 		t.Fatalf("EnsureReady = %q, %v", addr, err)
 	}
-	_, _ = s.EnsureReady(context.Background())
+	_, _ = s.EnsureReady(t.Context())
 	if ups.Load() != 1 {
 		t.Fatalf("ScaleUp called %d times, want 1", ups.Load())
 	}
@@ -53,7 +53,7 @@ func TestIdleScalesDown(t *testing.T) {
 		},
 	}
 
-	if _, err := s.EnsureReady(context.Background()); err != nil {
+	if _, err := s.EnsureReady(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	s.SetActiveConnections(1)

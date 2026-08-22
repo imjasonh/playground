@@ -26,7 +26,9 @@ output "apps" {
       fqdn                        = app.fqdn
       load_balancer_ip            = app.load_balancer_ip
       image_ref                   = app.image_ref
+      activator_image_ref         = app.activator_image_ref
       host_key_fingerprint_sha256 = app.host_key_fingerprint_sha256
+      scale_to_zero               = app.scale_to_zero
       ssh_command                 = "ssh ${app.fqdn}"
     }
   }

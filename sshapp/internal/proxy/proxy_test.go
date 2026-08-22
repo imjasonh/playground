@@ -73,7 +73,7 @@ func TestHoldThenSplice(t *testing.T) {
 	}
 	defer proxyLn.Close()
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	srv := &proxy.Server{Backend: fb, WarmTimeout: 5 * time.Second, DialTimeout: time.Second}
 	go func() { _ = srv.Serve(ctx, proxyLn) }()

@@ -3,6 +3,8 @@ package scaler
 import (
 	"context"
 	"fmt"
+	"net"
+	"strconv"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -97,7 +99,7 @@ func setReplicas(ctx context.Context, client kubernetes.Interface, ns, name stri
 
 func waitReadyAddr(ctx context.Context, client kubernetes.Interface, ns, service string, port int32) (string, error) {
 	var addr string
-	err := wait.PollUntilContextCancel(ctx, 500*time.Millisecond, true, func(ctx context.Context) (bool, error) {
+	if err := wait.PollUntilContextCancel(ctx, 500*time.Millisecond, true, func(ctx context.Context) (bool, error) {
 		eps, err := client.CoreV1().Endpoints(ns).Get(ctx, service, metav1.GetOptions{})
 		if err != nil {
 			return false, nil
@@ -106,10 +108,9 @@ func waitReadyAddr(ctx context.Context, client kubernetes.Interface, ns, service
 		if ip == "" {
 			return false, nil
 		}
-		addr = fmt.Sprintf("%s:%d", ip, port)
+		addr = net.JoinHostPort(ip, strconv.Itoa(int(port)))
 		return true, nil
-	})
-	if err != nil {
+	}); err != nil {
 		return "", fmt.Errorf("wait for endpoints %s/%s: %w", ns, service, err)
 	}
 	return addr, nil
