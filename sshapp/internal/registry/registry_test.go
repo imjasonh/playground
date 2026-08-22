@@ -46,8 +46,7 @@ func TestPickCancel(t *testing.T) {
 func TestPickUnknown(t *testing.T) {
 	t.Parallel()
 	cat := registry.FromNames([]string{"hello"})
-	_, err := cat.Pick(strings.NewReader("nope\n"), io.Discard)
-	if err == nil {
+	if _, err := cat.Pick(strings.NewReader("nope\n"), io.Discard); err == nil {
 		t.Fatal("expected error")
 	}
 }
