@@ -11,7 +11,7 @@ resource "ko_build" "app" {
   # exe.dev can pull without registry credentials.
   repo = "ghcr.io/imjasonh/playground/chessh"
   # Rootful static base so the process can bind the SSH port inside the VM.
-  base_image = "gcr.io/distroless/static:latest"
+  base_image = "cgr.dev/chainguard/latest"
   platforms  = ["linux/amd64"]
   sbom       = "none"
 }
