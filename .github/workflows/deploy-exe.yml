@@ -71,6 +71,7 @@ jobs:
       - name: Mint exe.dev API token
         env:
           EXEDEV_SSH_PRIVATE_KEY: ${{ secrets.EXEDEV_SSH_PRIVATE_KEY }}
+          EXEDEV_SSH_PASSPHRASE: ${{ secrets.EXEDEV_SSH_PASSPHRASE }}
         run: bash .github/scripts/mint-exedev-token.sh
 
       - name: Log in to GHCR

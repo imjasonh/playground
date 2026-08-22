@@ -64,7 +64,8 @@ terraform apply
 
 | Secret | Purpose |
 |--------|---------|
-| `EXEDEV_SSH_PRIVATE_KEY` | OpenSSH private key whose public half is registered on exe.dev; CI mints `EXEDEV_TOKEN` from it |
+| `EXEDEV_SSH_PRIVATE_KEY` | OpenSSH private key whose public half is registered on exe.dev; CI mints `EXEDEV_TOKEN` from it. Prefer an unencrypted key (GitHub encrypts secrets). |
+| `EXEDEV_SSH_PASSPHRASE` | Optional. Passphrase if `EXEDEV_SSH_PRIVATE_KEY` is encrypted. |
 | `CLOUDFLARE_ACCOUNT_ID` | Already used by Worker deploys; R2 S3 endpoint host |
 | `CLOUDFLARE_API_TOKEN` | Creates the state bucket if missing, and is the parent for short-lived R2 S3 credentials (needs R2 Object Read & Write on `playground-terraform-state`) |
 
