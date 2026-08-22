@@ -1,48 +1,34 @@
 # CheSSH
 
-A multiplayer chess game playable via SSH.
+Multiplayer chess over SSH. Pronounced like "chess-ess-aych", or "chesh" in
+your best Sean Connery impression.
 
-> [!IMPORTANT]
-> It's pronounced like _"chess-ess-aych"_, or _"chesh"_ in your best Sean Connery impression.
+## Play
 
-## Play the game
-
-```
-ssh chessh.app.imjasonh.com
-```
-
-![Screenshot of CheSSH gameplay](screenshot.png)
-
-You may need to wait for another player to play against, or join from another terminal if you want to play with yourself.
-
-Players are automatically matched when they connect to the SSH server.
-
-When an opponent disconnects, you win!
-
-## Running locally
+Through the shared sshapp mux:
 
 ```bash
-go run ./ --local
+ssh alice@ssh.YOUR_DOMAIN chessh
+# or bare ssh, then pick chessh from the registry menu
 ```
 
-then
+Matchmaking is in-process. Keep Terraform at `replicas = 1` so both players
+land on the same pod.
+
+## Local
 
 ```bash
-ssh localhost -p 2222
+cd sshapp
+go run ./apps/chessh
+# elsewhere:
+ssh -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null localhost
 ```
 
-## Deploying
+Uses `SSHAPP_ADDR` (default `:2222`) and `SSHAPP_HOST_KEY_PATH` (default
+`.ssh/host_ed25519`), same as the other Wish apps.
 
-```bash
-cd iac/
-terraform init
-terraform apply
-```
+## Deploy
 
-This will create:
-- A container image containing the app's code
-- GCE VM instances running the app container
-- TCP Load Balancer for direct SSH access on port 22
-- Health checks and auto-healing for high availability
-- DNS records pointing to the load balancer
-- SSH host key management via Secret Manager
+Wired in `sshapp/terraform` via `var.apps.chessh`. Host keys and the ClusterIP
+Service come from the shared `ssh_app` module; traffic enters through the mux
+LoadBalancer.

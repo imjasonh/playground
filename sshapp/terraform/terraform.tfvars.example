@@ -25,4 +25,9 @@ domain     = "example.com"
 #     replicas      = 1
 #     scale_to_zero = true
 #   }
+#   chessh = {
+#     importpath    = "github.com/imjasonh/playground/sshapp/apps/chessh"
+#     replicas      = 1 # required: in-memory matchmaking
+#     scale_to_zero = true
+#   }
 # }

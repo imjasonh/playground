@@ -49,6 +49,7 @@ label. Clients need a recent OpenSSH that supports `SetEnv`.
 sshapp/
 ├── apps/
 │   ├── hello/          # example Wish app
+│   ├── chessh/         # multiplayer chess (Wish + Bubble Tea)
 │   ├── mux/            # shared SSH front + scale-to-zero
 │   └── activator/      # optional raw-TCP activator (not used by Terraform)
 ├── internal/

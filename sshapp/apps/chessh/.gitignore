@@ -1,10 +1,2 @@
-chessh
-
-.ssh/
-
-# Terraform artifacts
-*.tfstate
-*.tfstate.backup
-.terraform/
-.terraform.lock.hcl
-*.tfvars
+/.ssh/
+/chessh
