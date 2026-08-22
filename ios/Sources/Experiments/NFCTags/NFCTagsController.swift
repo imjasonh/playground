@@ -68,8 +68,13 @@ final class NFCTagsController: NSObject, ObservableObject {
         cancelSession()
         // NFCTagReaderSession's initializer is failable (nil when NFC is
         // unavailable, e.g. Simulator).
+        // Poll ISO 14443 (NTAG / MiFare) and ISO 15693 only. Do not include
+        // .iso18092 (FeliCa): that option requires
+        // com.apple.developer.nfc.readersession.felica.systemcodes in
+        // Info.plist, and without it the session invalidates immediately with
+        // "Missing required entitlement".
         guard let session = NFCTagReaderSession(
-            pollingOption: [.iso14443, .iso15693, .iso18092],
+            pollingOption: [.iso14443, .iso15693],
             delegate: self,
             queue: nil
         ) else {
