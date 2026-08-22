@@ -8,12 +8,13 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/signal"
-	"strconv"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -35,15 +36,22 @@ func main() {
 		log.Fatal("config", "error", err)
 	}
 
-	catalog := registry.FromNames(cfg.Apps)
+	names := make([]string, 0, len(cfg.Apps))
+	for name := range cfg.Apps {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	catalog := registry.FromNames(names)
 	pool := scaler.NewPool(cfg.Apps, func(app string) (*scaler.DeploymentScaler, error) {
+		spec := cfg.Apps[app]
 		return scaler.NewK8s(scaler.K8sConfig{
 			Namespace:    cfg.Namespace,
 			Deployment:   app,
 			Service:      app,
 			Port:         cfg.BackendPort,
-			WarmReplicas: cfg.WarmReplicas,
+			WarmReplicas: spec.Replicas,
 			IdleAfter:    cfg.IdleAfter,
+			ScaleToZero:  spec.ScaleToZero,
 			Kubeconfig:   cfg.Kubeconfig,
 		})
 	})
@@ -80,7 +88,7 @@ func main() {
 
 	log.Info("mux listening",
 		"addr", cfg.Listen,
-		"apps", strings.Join(cfg.Apps, ","),
+		"apps", strings.Join(names, ","),
 		"idle_after", cfg.IdleAfter.String(),
 	)
 	go func() {
@@ -201,42 +209,28 @@ func newEphemeralSigner() (gossh.Signer, error) {
 }
 
 type muxConfig struct {
-	Listen       string
-	Namespace    string
-	Apps         []string
-	BackendPort  int32
-	WarmReplicas int32
-	IdleAfter    time.Duration
-	WarmTimeout  time.Duration
-	HostKeyPEM   string
-	HostKeyPath  string
-	Kubeconfig   string
+	Listen      string
+	Namespace   string
+	Apps        map[string]scaler.AppSpec
+	BackendPort int32
+	IdleAfter   time.Duration
+	WarmTimeout time.Duration
+	HostKeyPEM  string
+	HostKeyPath string
+	Kubeconfig  string
+}
+
+type appSpecJSON struct {
+	Replicas    int  `json:"replicas"`
+	ScaleToZero bool `json:"scale_to_zero"`
 }
 
 func muxConfigFromEnv() (muxConfig, error) {
-	appsCSV := os.Getenv("SSHAPP_APPS")
-	if appsCSV == "" {
-		return muxConfig{}, errors.New("SSHAPP_APPS is required (comma-separated app names)")
-	}
-	var apps []string
-	for _, a := range strings.Split(appsCSV, ",") {
-		a = strings.TrimSpace(a)
-		if a != "" {
-			apps = append(apps, a)
-		}
-	}
-	if len(apps) == 0 {
-		return muxConfig{}, errors.New("SSHAPP_APPS is empty")
+	apps, err := appsFromEnv()
+	if err != nil {
+		return muxConfig{}, err
 	}
 
-	warm := int32(1)
-	if v := os.Getenv("SSHAPP_WARM_REPLICAS"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil || n < 1 {
-			return muxConfig{}, errors.New("SSHAPP_WARM_REPLICAS must be >= 1")
-		}
-		warm = int32(n)
-	}
 	idle := 5 * time.Minute
 	warmTimeout := 2 * time.Minute
 	if v := os.Getenv("SSHAPP_IDLE_AFTER"); v != "" {
@@ -255,17 +249,58 @@ func muxConfigFromEnv() (muxConfig, error) {
 	}
 
 	return muxConfig{
-		Listen:       envOr("SSHAPP_LISTEN", ":2222"),
-		Namespace:    envOr("SSHAPP_NAMESPACE", "sshapps"),
-		Apps:         apps,
-		BackendPort:  2222,
-		WarmReplicas: warm,
-		IdleAfter:    idle,
-		WarmTimeout:  warmTimeout,
-		HostKeyPEM:   os.Getenv("SSHAPP_HOST_KEY"),
-		HostKeyPath:  envOr("SSHAPP_HOST_KEY_PATH", ".ssh/mux_ed25519"),
-		Kubeconfig:   os.Getenv("KUBECONFIG"),
+		Listen:      envOr("SSHAPP_LISTEN", ":2222"),
+		Namespace:   envOr("SSHAPP_NAMESPACE", "sshapps"),
+		Apps:        apps,
+		BackendPort: 2222,
+		IdleAfter:   idle,
+		WarmTimeout: warmTimeout,
+		HostKeyPEM:  os.Getenv("SSHAPP_HOST_KEY"),
+		HostKeyPath: envOr("SSHAPP_HOST_KEY_PATH", ".ssh/mux_ed25519"),
+		Kubeconfig:  os.Getenv("KUBECONFIG"),
 	}, nil
+}
+
+func appsFromEnv() (map[string]scaler.AppSpec, error) {
+	if raw := os.Getenv("SSHAPP_APP_CONFIG"); raw != "" {
+		var parsed map[string]appSpecJSON
+		if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+			return nil, fmt.Errorf("SSHAPP_APP_CONFIG: %w", err)
+		}
+		if len(parsed) == 0 {
+			return nil, errors.New("SSHAPP_APP_CONFIG is empty")
+		}
+		out := make(map[string]scaler.AppSpec, len(parsed))
+		for name, spec := range parsed {
+			replicas := int32(spec.Replicas)
+			if replicas <= 0 {
+				replicas = 1
+			}
+			out[name] = scaler.AppSpec{
+				Replicas:    replicas,
+				ScaleToZero: spec.ScaleToZero,
+			}
+		}
+		return out, nil
+	}
+
+	// Legacy: comma-separated names, all scale-to-zero with 1 warm replica.
+	appsCSV := os.Getenv("SSHAPP_APPS")
+	if appsCSV == "" {
+		return nil, errors.New("SSHAPP_APP_CONFIG or SSHAPP_APPS is required")
+	}
+	out := make(map[string]scaler.AppSpec)
+	for _, a := range strings.Split(appsCSV, ",") {
+		a = strings.TrimSpace(a)
+		if a == "" {
+			continue
+		}
+		out[a] = scaler.AppSpec{Replicas: 1, ScaleToZero: true}
+	}
+	if len(out) == 0 {
+		return nil, errors.New("SSHAPP_APPS is empty")
+	}
+	return out, nil
 }
 
 func envOr(key, fallback string) string {

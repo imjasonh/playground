@@ -6,7 +6,12 @@ locals {
     "app.kubernetes.io/managed-by" = "terraform"
   }
 
-  mux_apps_csv = join(",", sort(keys(var.apps)))
+  mux_app_config = jsonencode({
+    for name, app in var.apps : name => {
+      replicas      = app.replicas
+      scale_to_zero = app.scale_to_zero
+    }
+  })
 }
 
 resource "tls_private_key" "mux_host" {
@@ -138,18 +143,13 @@ resource "kubernetes_deployment_v1" "mux" {
           }
 
           env {
-            name  = "SSHAPP_APPS"
-            value = local.mux_apps_csv
+            name  = "SSHAPP_APP_CONFIG"
+            value = local.mux_app_config
           }
 
           env {
             name  = "SSHAPP_IDLE_AFTER"
             value = var.mux_idle_after
-          }
-
-          env {
-            name  = "SSHAPP_WARM_REPLICAS"
-            value = tostring(max([for a in values(var.apps) : a.replicas]...))
           }
 
           env {

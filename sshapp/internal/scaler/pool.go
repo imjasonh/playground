@@ -6,21 +6,30 @@ import (
 	"sync"
 )
 
+// AppSpec is per-app scaling config for the mux pool.
+type AppSpec struct {
+	Replicas    int32
+	ScaleToZero bool
+}
+
 // Pool scales many app Deployments and tracks per-app connection counts.
 type Pool struct {
 	mu      sync.Mutex
 	scalers map[string]*DeploymentScaler
 	active  map[string]int
 	newApp  func(app string) (*DeploymentScaler, error)
-	known   map[string]struct{}
+	known   map[string]AppSpec
 }
 
 // NewPool returns a Pool that builds DeploymentScalers via newApp.
 // If apps is non-empty, only those names are allowed.
-func NewPool(apps []string, newApp func(app string) (*DeploymentScaler, error)) *Pool {
-	known := make(map[string]struct{}, len(apps))
-	for _, a := range apps {
-		known[a] = struct{}{}
+func NewPool(apps map[string]AppSpec, newApp func(app string) (*DeploymentScaler, error)) *Pool {
+	known := make(map[string]AppSpec, len(apps))
+	for name, spec := range apps {
+		if spec.Replicas <= 0 {
+			spec.Replicas = 1
+		}
+		known[name] = spec
 	}
 	return &Pool{
 		scalers: make(map[string]*DeploymentScaler),
@@ -70,18 +79,28 @@ func (p *Pool) Release(app string) {
 
 func (p *Pool) scaler(app string) (*DeploymentScaler, error) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	if len(p.known) > 0 {
 		if _, ok := p.known[app]; !ok {
+			p.mu.Unlock()
 			return nil, fmt.Errorf("unknown app %q", app)
 		}
 	}
 	if s, ok := p.scalers[app]; ok {
+		p.mu.Unlock()
 		return s, nil
 	}
+	p.mu.Unlock()
+
+	// Build outside the lock (NewK8s may call the API).
 	s, err := p.newApp(app)
 	if err != nil {
 		return nil, err
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if existing, ok := p.scalers[app]; ok {
+		return existing, nil
 	}
 	p.scalers[app] = s
 	return s, nil

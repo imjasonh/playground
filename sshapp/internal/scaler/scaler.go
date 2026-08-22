@@ -20,11 +20,16 @@ type DeploymentScaler struct {
 
 	WarmReplicas int32
 	IdleAfter    time.Duration
+	// ScaleToZero enables idle scale-down. When false, EnsureReady may still
+	// scale up to WarmReplicas if the Deployment is at zero, but never down.
+	ScaleToZero bool
 
 	mu        sync.Mutex
 	active    int
 	idleTimer *time.Timer
 	scaled    bool
+	// gen bumps on every EnsureReady so a concurrent ScaleDown can detect a race.
+	gen uint64
 }
 
 // EnsureReady implements proxy.Backend.
@@ -38,16 +43,25 @@ func (s *DeploymentScaler) EnsureReady(ctx context.Context) (string, error) {
 		s.idleTimer.Stop()
 		s.idleTimer = nil
 	}
+	s.gen++
 	needScale := !s.scaled
+	if needScale {
+		// Claim warm before releasing the lock so an idle ScaleDown that is
+		// already past its active check still sees a newer gen and re-scales up.
+		s.scaled = true
+	}
+	gen := s.gen
 	s.mu.Unlock()
 
 	if needScale {
 		if err := s.ScaleUp(ctx, s.WarmReplicas); err != nil {
+			s.mu.Lock()
+			if s.gen == gen {
+				s.scaled = false
+			}
+			s.mu.Unlock()
 			return "", fmt.Errorf("scale up: %w", err)
 		}
-		s.mu.Lock()
-		s.scaled = true
-		s.mu.Unlock()
 	}
 	return s.ReadyAddr(ctx)
 }
@@ -64,7 +78,7 @@ func (s *DeploymentScaler) SetActiveConnections(n int) {
 		}
 		return
 	}
-	if !s.scaled {
+	if !s.ScaleToZero || !s.scaled {
 		return
 	}
 	idleAfter := s.IdleAfter
@@ -74,19 +88,45 @@ func (s *DeploymentScaler) SetActiveConnections(n int) {
 	if s.idleTimer != nil {
 		s.idleTimer.Stop()
 	}
+	startGen := s.gen
 	s.idleTimer = time.AfterFunc(idleAfter, func() {
+		s.scaleDownIfIdle(startGen)
+	})
+}
+
+func (s *DeploymentScaler) scaleDownIfIdle(startGen uint64) {
+	s.mu.Lock()
+	if s.active != 0 || !s.ScaleToZero || s.gen != startGen {
+		s.mu.Unlock()
+		return
+	}
+	// Mark cold before the API call so a concurrent EnsureReady will ScaleUp.
+	s.scaled = false
+	gen := s.gen
+	s.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := s.ScaleDown(ctx); err != nil {
 		s.mu.Lock()
-		if s.active != 0 {
-			s.mu.Unlock()
-			return
+		if s.gen == gen {
+			s.scaled = true
 		}
 		s.mu.Unlock()
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		if err := s.ScaleDown(ctx); err == nil {
-			s.mu.Lock()
-			s.scaled = false
-			s.mu.Unlock()
-		}
-	})
+		return
+	}
+
+	s.mu.Lock()
+	raced := s.active != 0 || s.gen != gen
+	if raced {
+		s.scaled = true
+	}
+	s.mu.Unlock()
+	if !raced {
+		return
+	}
+	// A session arrived during ScaleDown; put replicas back.
+	upCtx, upCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer upCancel()
+	_ = s.ScaleUp(upCtx, s.WarmReplicas)
 }

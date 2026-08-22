@@ -107,6 +107,7 @@ func configFromEnv() (activatorConfig, error) {
 			Port:         port,
 			WarmReplicas: warm,
 			IdleAfter:    idle,
+			ScaleToZero:  true,
 			Kubeconfig:   os.Getenv("KUBECONFIG"),
 		},
 		WarmTimeout: warmTimeout,

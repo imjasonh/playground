@@ -24,6 +24,7 @@ type K8sConfig struct {
 	Port         int32
 	WarmReplicas int32
 	IdleAfter    time.Duration
+	ScaleToZero  bool
 	Kubeconfig   string // empty => in-cluster
 }
 
@@ -48,6 +49,7 @@ func NewK8s(cfg K8sConfig) (*DeploymentScaler, error) {
 	s := &DeploymentScaler{
 		WarmReplicas: cfg.WarmReplicas,
 		IdleAfter:    cfg.IdleAfter,
+		ScaleToZero:  cfg.ScaleToZero,
 		ScaleUp: func(ctx context.Context, replicas int32) error {
 			return setReplicas(ctx, client, cfg.Namespace, cfg.Deployment, replicas)
 		},
