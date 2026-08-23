@@ -10,8 +10,10 @@ import FoundationModels
 final class AgentRuntime: ObservableObject {
     @Published var transcript: [AgentTranscriptEntry] = []
     @Published var isRunning = false
-    @Published var modelStatusText = "Checking model…"
-    @Published private(set) var isModelAvailable = false
+    @Published private(set) var modelGate: AgentModelGate = .unsupportedPlatform
+
+    var isModelAvailable: Bool { modelGate.isAvailable }
+    var modelStatusText: String { modelGate.detail }
 
     let context: AgentToolContext
 
@@ -26,20 +28,45 @@ final class AgentRuntime: ObservableObject {
     func refreshModelStatus() {
         #if canImport(FoundationModels)
         if #available(iOS 26.0, *) {
-            let model = SystemLanguageModel.default
-            if model.isAvailable {
-                isModelAvailable = true
-                modelStatusText = "On-device Foundation Model ready"
-                return
-            }
-            isModelAvailable = false
-            modelStatusText = "Requires Apple Intelligence on this device. Enable it in Settings, or try again when the model has finished downloading."
+            modelGate = Self.gate(for: SystemLanguageModel.default.availability)
             return
         }
         #endif
-        isModelAvailable = false
-        modelStatusText = "Requires iOS 26+ with Apple Intelligence. This device or Simulator build cannot run Device Agent."
+        modelGate = .unsupportedPlatform
     }
+
+    /// Primary CTA for the unavailable pane (Settings or check-again).
+    func performModelGateAction(_ action: AgentModelGateAction) async {
+        switch action {
+        case .openAppleIntelligenceSettings:
+            await AgentAppleIntelligenceSettings.open()
+        case .checkAgain:
+            refreshModelStatus()
+            if isModelAvailable {
+                clearTranscript()
+            }
+        }
+    }
+
+    #if canImport(FoundationModels)
+    @available(iOS 26.0, *)
+    private static func gate(for availability: SystemLanguageModel.Availability) -> AgentModelGate {
+        switch availability {
+        case .available:
+            return .available
+        case .unavailable(.deviceNotEligible):
+            return .deviceNotEligible
+        case .unavailable(.appleIntelligenceNotEnabled):
+            return .needsAppleIntelligence
+        case .unavailable(.modelNotReady):
+            return .modelNotReady
+        case .unavailable(let reason):
+            return .other("Apple Intelligence isn’t available (\(String(describing: reason))).")
+        @unknown default:
+            return .other("Apple Intelligence isn’t available on this device.")
+        }
+    }
+    #endif
 
     func clearTranscript() {
         transcript.removeAll()
@@ -74,10 +101,8 @@ final class AgentRuntime: ObservableObject {
     #if canImport(FoundationModels)
     @available(iOS 26.0, *)
     private func runFoundationModels(prompt: String) async throws {
-        let model = SystemLanguageModel.default
-        guard model.isAvailable else {
-            isModelAvailable = false
-            modelStatusText = "Requires Apple Intelligence on this device."
+        refreshModelStatus()
+        guard isModelAvailable else {
             append(.system, text: modelStatusText)
             return
         }

@@ -8,11 +8,28 @@ final class DeviceAgentTests: XCTestCase {
         runtime.refreshModelStatus()
         // Simulator / CI and pre–iOS 26 devices have no Apple Intelligence model.
         XCTAssertFalse(runtime.isModelAvailable)
-        XCTAssertTrue(
-            runtime.modelStatusText.localizedCaseInsensitiveContains("requires")
-                || runtime.modelStatusText.localizedCaseInsensitiveContains("apple intelligence")
-                || runtime.modelStatusText.localizedCaseInsensitiveContains("ios 26")
+        XCTAssertNotEqual(runtime.modelGate, .available)
+        switch runtime.modelGate {
+        case .unsupportedPlatform, .deviceNotEligible, .needsAppleIntelligence, .modelNotReady, .other:
+            break
+        case .available:
+            XCTFail("Expected unavailable gate on this build")
+        }
+        XCTAssertFalse(runtime.modelGate.title.isEmpty)
+        XCTAssertFalse(runtime.modelGate.detail.isEmpty)
+    }
+
+    @MainActor
+    func testModelGateActionsForInstallStates() {
+        XCTAssertEqual(AgentModelGate.needsAppleIntelligence.primaryAction, .openAppleIntelligenceSettings)
+        XCTAssertEqual(AgentModelGate.modelNotReady.primaryAction, .checkAgain)
+        XCTAssertNil(AgentModelGate.deviceNotEligible.primaryAction)
+        XCTAssertNil(AgentModelGate.unsupportedPlatform.primaryAction)
+        XCTAssertEqual(
+            AgentModelGateAction.openAppleIntelligenceSettings.title,
+            "Open Apple Intelligence Settings"
         )
+        XCTAssertEqual(AgentModelGateAction.checkAgain.title, "Check again")
     }
 
     @MainActor

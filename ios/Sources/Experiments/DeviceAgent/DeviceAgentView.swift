@@ -15,6 +15,7 @@ struct DeviceAgentView: View {
     @State private var showSMS = false
     @State private var showMail = false
     @State private var voiceMode = false
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         VStack(spacing: 0) {
@@ -37,9 +38,21 @@ struct DeviceAgentView: View {
         }
         .animation(.easeInOut(duration: 0.2), value: showBrowser)
         .animation(.easeInOut(duration: 0.2), value: voiceMode)
+        .animation(.easeInOut(duration: 0.2), value: runtime.isModelAvailable)
         .onAppear {
             runtime.refreshModelStatus()
             if runtime.isModelAvailable {
+                consumeInboxIfNeeded()
+            }
+        }
+        .onChange(of: scenePhase) { phase in
+            guard phase == .active else { return }
+            let wasAvailable = runtime.isModelAvailable
+            runtime.refreshModelStatus()
+            if runtime.isModelAvailable {
+                if !wasAvailable {
+                    runtime.clearTranscript()
+                }
                 consumeInboxIfNeeded()
             }
         }
@@ -107,27 +120,63 @@ struct DeviceAgentView: View {
     private var unavailablePane: some View {
         VStack(spacing: 16) {
             Spacer()
-            Image(systemName: "cpu")
+            Image(systemName: unavailableSymbol)
                 .font(.system(size: 44))
                 .foregroundStyle(.secondary)
-            Text("Device Agent unavailable")
+                .accessibilityHidden(true)
+            if case .modelNotReady = runtime.modelGate {
+                ProgressView()
+                    .accessibilityIdentifier("deviceAgentModelDownloading")
+            }
+            Text(runtime.modelGate.title)
                 .font(.title3.weight(.semibold))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
                 .accessibilityIdentifier("deviceAgentUnavailableTitle")
-            Text(runtime.modelStatusText)
+            Text(runtime.modelGate.detail)
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 24)
                 .accessibilityIdentifier("deviceAgentUnavailableDetail")
+            if let action = runtime.modelGate.primaryAction {
+                Button(action.title) {
+                    Task {
+                        await runtime.performModelGateAction(action)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("deviceAgentModelGateAction")
+                .padding(.top, 4)
+            }
+            // Secondary Settings link while the model is downloading (download can stall).
+            if case .modelNotReady = runtime.modelGate {
+                Button("Open Apple Intelligence Settings") {
+                    Task { await AgentAppleIntelligenceSettings.open() }
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("deviceAgentOpenIntelligenceSettings")
+            }
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityIdentifier("deviceAgentUnavailable")
     }
 
+    private var unavailableSymbol: String {
+        switch runtime.modelGate {
+        case .needsAppleIntelligence:
+            return "sparkles"
+        case .modelNotReady:
+            return "arrow.down.circle"
+        case .deviceNotEligible, .unsupportedPlatform, .other, .available:
+            return "cpu"
+        }
+    }
+
     private var statusBar: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(runtime.modelStatusText)
+            Text(runtime.modelGate.title)
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .accessibilityIdentifier("deviceAgentModelStatus")
