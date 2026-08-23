@@ -37,12 +37,8 @@ targets:
     platform: iOS
     sources:
       - path: Sources
-        excludes:
-          - Experiments/DeviceAgent/Resources/**
       - path: Shared/T9
       - path: Shared/RideMonitor
-      - path: Sources/Experiments/DeviceAgent/Resources
-        buildPhase: resources
     dependencies:
       - target: T9Keyboard
         embed: true
