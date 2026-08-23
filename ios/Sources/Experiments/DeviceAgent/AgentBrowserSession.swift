@@ -10,11 +10,14 @@ final class AgentBrowserSession: NSObject, ObservableObject {
     @Published private(set) var title: String = ""
     @Published private(set) var isLoading = false
     @Published private(set) var lastError: String?
+    /// Structured action log for conversation export / debugging (not screenshots).
+    @Published private(set) var replay: [AgentBrowserReplayEvent] = []
 
     let webView: WKWebView
 
     private var loadWaiters: [CheckedContinuation<Void, Error>] = []
     private var loadTimeoutTask: Task<Void, Never>?
+    private let maxReplayEvents = 200
 
     override init() {
         let config = WKWebViewConfiguration()
@@ -50,30 +53,62 @@ final class AgentBrowserSession: NSObject, ObservableObject {
                 }
             }
         }
+        record(
+            action: "open",
+            detail: url.absoluteString,
+            url: self.url?.absoluteString ?? url.absoluteString,
+            title: title
+        )
     }
 
     func snapshot(maxTextChars: Int = 3500) async throws -> String {
         try await ensureBridge()
         let capped = max(500, min(maxTextChars, 12_000))
         let raw = try await evaluate("window.__deviceAgent.snapshot(\(capped))")
-        return Self.formatSnapshotPayload(raw)
+        let parsed = Self.parseSnapshotJSON(raw)
+        let formatted = Self.formatSnapshotPayload(raw)
+        record(
+            action: "snapshot",
+            detail: "\(parsed?.elements.count ?? 0) elements",
+            url: parsed?.url ?? url?.absoluteString,
+            title: parsed?.title ?? title,
+            pageText: parsed?.text,
+            elements: parsed?.elements
+        )
+        return formatted
     }
 
     func click(ref: String) async throws -> String {
         try await ensureBridge()
-        let escaped = Self.jsString(ref.trimmingCharacters(in: .whitespacesAndNewlines))
+        let trimmed = ref.trimmingCharacters(in: .whitespacesAndNewlines)
+        let escaped = Self.jsString(trimmed)
         let raw = try await evaluate("window.__deviceAgent.click(\(escaped))")
-        return try Self.requireOK(raw, action: "click")
+        let result = try Self.requireOK(raw, action: "click")
+        record(
+            action: "click",
+            detail: "ref=\(trimmed)",
+            url: url?.absoluteString,
+            title: title
+        )
+        return result
     }
 
     func type(ref: String, text: String, submit: Bool) async throws -> String {
         try await ensureBridge()
-        let refJS = Self.jsString(ref.trimmingCharacters(in: .whitespacesAndNewlines))
+        let trimmedRef = ref.trimmingCharacters(in: .whitespacesAndNewlines)
+        let refJS = Self.jsString(trimmedRef)
         let textJS = Self.jsString(text)
         let raw = try await evaluate(
             "window.__deviceAgent.type(\(refJS), \(textJS), \(submit ? "true" : "false"))"
         )
-        return try Self.requireOK(raw, action: "type")
+        let result = try Self.requireOK(raw, action: "type")
+        record(
+            action: "type",
+            detail: "ref=\(trimmedRef) submit=\(submit) text=\(text.prefix(120))",
+            url: url?.absoluteString,
+            title: title
+        )
+        return result
     }
 
     func goBack() async throws -> String {
@@ -82,8 +117,35 @@ final class AgentBrowserSession: NSObject, ObservableObject {
         }
         isLoading = true
         webView.goBack()
-        // Don't hard-wait; next snapshot will reflect the page.
+        record(action: "back", url: url?.absoluteString, title: title)
         return "Navigated back."
+    }
+
+    func clearReplay() {
+        replay.removeAll()
+    }
+
+    func record(
+        action: String,
+        detail: String? = nil,
+        url: String? = nil,
+        title: String? = nil,
+        pageText: String? = nil,
+        elements: [String]? = nil
+    ) {
+        replay.append(
+            AgentBrowserReplayEvent(
+                action: action,
+                url: url,
+                title: title,
+                detail: detail,
+                pageText: pageText,
+                elements: elements
+            )
+        )
+        if replay.count > maxReplayEvents {
+            replay.removeFirst(replay.count - maxReplayEvents)
+        }
     }
 
     func statusSummary() -> String {
@@ -162,27 +224,100 @@ final class AgentBrowserSession: NSObject, ObservableObject {
         return "'\(escaped)'"
     }
 
-    nonisolated static func formatSnapshotPayload(_ raw: String) -> String {
+    struct ParsedSnapshot: Equatable {
+        var title: String
+        var url: String
+        var elements: [String]
+        var text: String
+    }
+
+    nonisolated static func parseSnapshotJSON(_ raw: String) -> ParsedSnapshot? {
         guard let data = raw.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else {
+            return nil
+        }
+        return ParsedSnapshot(
+            title: json["title"] as? String ?? "",
+            url: json["url"] as? String ?? "",
+            elements: json["elements"] as? [String] ?? [],
+            text: json["text"] as? String ?? ""
+        )
+    }
+
+    nonisolated static func formatSnapshotPayload(_ raw: String) -> String {
+        guard let parsed = parseSnapshotJSON(raw) else {
             return raw
         }
-        let pageTitle = json["title"] as? String ?? ""
-        let pageURL = json["url"] as? String ?? ""
-        let elements = json["elements"] as? [String] ?? []
-        let text = json["text"] as? String ?? ""
         var lines: [String] = [
-            "title: \(pageTitle)",
-            "url: \(pageURL)",
-            "elements (\(elements.count)):",
+            "title: \(parsed.title)",
+            "url: \(parsed.url)",
+            "elements (\(parsed.elements.count)):",
         ]
-        lines.append(contentsOf: elements)
-        if !text.isEmpty {
+        lines.append(contentsOf: parsed.elements)
+        if !parsed.text.isEmpty {
             lines.append("text:")
-            lines.append(text)
+            lines.append(parsed.text)
         }
         return lines.joined(separator: "\n")
+    }
+
+    /// Pull short bullets from scraped page text for the chat transcript.
+    nonisolated static func pageFindingsText(
+        title: String,
+        url: String,
+        pageText: String,
+        limit: Int = 8
+    ) -> String {
+        let bullets = pageFindingsBullets(from: pageText, limit: limit)
+        var lines: [String] = []
+        let heading = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !heading.isEmpty {
+            lines.append("Page · \(heading)")
+        } else if !url.isEmpty {
+            lines.append("Page · \(url)")
+        } else {
+            lines.append("Page")
+        }
+        if bullets.isEmpty {
+            lines.append("• (No readable text scraped — try another page or a follow-up click.)")
+        } else {
+            lines.append(contentsOf: bullets.map { "• \($0)" })
+        }
+        lines.append("Ask a follow-up to dig into this same browser tab.")
+        return lines.joined(separator: "\n")
+    }
+
+    nonisolated static func pageFindingsBullets(from text: String, limit: Int = 8) -> [String] {
+        let normalized = text
+            .replacingOccurrences(of: "\r", with: "\n")
+            .replacingOccurrences(of: #"\t+"#, with: " ", options: .regularExpression)
+        var chunks = normalized
+            .components(separatedBy: CharacterSet(charactersIn: "\n•|"))
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { $0.count >= 20 && $0.count <= 160 }
+
+        if chunks.count < 3 {
+            chunks = normalized
+                .components(separatedBy: ". ")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { $0.count >= 20 && $0.count <= 160 }
+                .map { $0.hasSuffix(".") ? $0 : "\($0)." }
+        }
+
+        var out: [String] = []
+        for chunk in chunks {
+            let key = String(chunk.prefix(36)).lowercased()
+            if out.contains(where: { $0.lowercased().hasPrefix(key) }) { continue }
+            // Skip common chrome / cookie noise.
+            let lower = chunk.lowercased()
+            if lower.contains("cookie") || lower.contains("accept all") || lower.contains("sign in") {
+                continue
+            }
+            out.append(chunk)
+            if out.count >= limit { break }
+        }
+        return out
     }
 
     nonisolated static func requireOK(_ raw: String, action: String) throws -> String {

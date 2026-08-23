@@ -44,6 +44,8 @@ struct AgentTranscriptEntry: Identifiable, Equatable {
         case system
         case permission(domain: String)
         case confirmation(summary: String)
+        /// Visible scrape summary from the in-app browser (bullets for the user).
+        case pageFindings
     }
 
     let id: UUID
@@ -96,7 +98,40 @@ struct AgentTranscriptEntry: Identifiable, Equatable {
         case .system: return "system"
         case .permission: return "permission"
         case .confirmation: return "confirmation"
+        case .pageFindings: return "pageFindings"
         }
+    }
+}
+
+/// One step in a structured browser replay (no screenshots — actions + scraped text).
+struct AgentBrowserReplayEvent: Identifiable, Equatable, Codable {
+    var id: UUID
+    var date: Date
+    var action: String
+    var url: String?
+    var title: String?
+    var detail: String?
+    var pageText: String?
+    var elements: [String]?
+
+    init(
+        id: UUID = UUID(),
+        date: Date = Date(),
+        action: String,
+        url: String? = nil,
+        title: String? = nil,
+        detail: String? = nil,
+        pageText: String? = nil,
+        elements: [String]? = nil
+    ) {
+        self.id = id
+        self.date = date
+        self.action = action
+        self.url = url
+        self.title = title
+        self.detail = detail
+        self.pageText = pageText
+        self.elements = elements
     }
 }
 
@@ -108,6 +143,8 @@ struct AgentConversationDump: Codable, Equatable {
     var modelAvailable: Bool
     var entries: [AgentConversationDumpEntry]
     var toolLog: [AgentConversationDumpToolLog]
+    /// Ordered browser actions for playback / debugging (open, snapshot, click, type, back).
+    var browserReplay: [AgentBrowserReplayEvent]
 }
 
 struct AgentConversationDumpEntry: Codable, Equatable {

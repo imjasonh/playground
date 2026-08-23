@@ -70,6 +70,7 @@ final class AgentRuntime: ObservableObject {
 
     func clearTranscript() {
         transcript.removeAll()
+        context.browser.clearReplay()
         if isModelAvailable {
             appendSystem(AgentToolExecutor.helpText(mode: context.mode))
         }
@@ -129,8 +130,8 @@ final class AgentRuntime: ObservableObject {
         Use tools to act on the phone. Request only what you need.
         For calendar, SMS, and email drafts, tools will ask the user to confirm.
         Prefer listAttachments / readTextAttachment for files the user shared.
-        Use browserOpen for real http(s) URLs in the in-app web view.
-        To drive a page: browserOpen → browserSnapshot → browserClick / browserType (use refs like 1, 2 from the snapshot) → browserSnapshot again.
+        Use the in-app browser for web questions: browserOpen (only if no useful page is open) → browserSnapshot → optional browserClick / browserType → browserSnapshot again.
+        After scraping, answer the user with short bullet points of the relevant facts. Keep the same browser tab for follow-ups unless they ask for a different site.
         Use openURL only when the user wants Safari or another system handler.
         Keep final answers short. Mode is \(context.mode.title).
         """
@@ -185,6 +186,40 @@ final class AgentRuntime: ObservableObject {
                 debugDetail: result
             )
         )
+        if name == "browserSnapshot" {
+            appendPageFindings(fromSnapshotResult: result)
+        }
+    }
+
+    /// Surfaces scraped page bullets in chat; full snapshot stays in the tool result dump.
+    private func appendPageFindings(fromSnapshotResult result: String) {
+        let event = context.browser.replay.last(where: { $0.action == "snapshot" })
+        let title = event?.title
+            ?? context.browser.title
+            ?? ""
+        let url = event?.url
+            ?? context.browser.url?.absoluteString
+            ?? ""
+        let pageText: String
+        if let stored = event?.pageText, !stored.isEmpty {
+            pageText = stored
+        } else if let range = result.range(of: "text:\n") {
+            pageText = String(result[range.upperBound...])
+        } else {
+            pageText = ""
+        }
+        let findings = AgentBrowserSession.pageFindingsText(
+            title: title,
+            url: url,
+            pageText: pageText
+        )
+        transcript.append(
+            AgentTranscriptEntry(
+                kind: .pageFindings,
+                text: findings,
+                debugDetail: result
+            )
+        )
     }
 
     func appendPermission(_ domain: AgentPermissionDomain) {
@@ -215,7 +250,8 @@ final class AgentRuntime: ObservableObject {
             },
             toolLog: context.lastToolLog.map {
                 AgentConversationDumpToolLog(name: $0.name, detail: $0.detail)
-            }
+            },
+            browserReplay: context.browser.replay
         )
     }
 

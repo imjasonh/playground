@@ -134,8 +134,12 @@ Demo Mail web page). Permissions are requested **only when a tool needs them**.
   the app inbox (a Share Extension appex is intentionally not included yet —
   that needs a new Bundle ID + signing bootstrap)
 - **In-app browser:** `browserOpen` loads real http(s) URLs; injected JS bridge
-  supports `browserSnapshot` / `browserClick` / `browserType` / `browserBack` so
-  the model can drive pages and read content back
+  supports `browserSnapshot` / `browserClick` / `browserType` / `browserBack`.
+  Snapshots surface bullet **Page** findings in chat; the tab stays open for
+  follow-ups. Structured browser replay (actions + scraped text, no screenshots)
+  is included in the conversation JSON export. With the browser open, the
+  composer collapses to an Ask follow-up control so the keyboard stays out of
+  the way.
 
 When Apple Intelligence / Foundation Models is available (iOS 26+ device), the
 on-device model chooses tools. If Apple Intelligence is off, the UI offers a

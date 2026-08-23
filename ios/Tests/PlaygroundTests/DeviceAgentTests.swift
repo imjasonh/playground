@@ -167,11 +167,62 @@ final class DeviceAgentTests: XCTestCase {
         XCTAssertEqual(dump.entries.count, runtime.transcript.count)
         let result = try XCTUnwrap(dump.entries.first { $0.kind == "toolResult" })
         XCTAssertEqual(result.debugDetail, "Mom <mom@example.com>")
+        XCTAssertEqual(dump.browserReplay, runtime.context.browser.replay)
         let data = try runtime.conversationDumpJSONData()
         XCTAssertFalse(data.isEmpty)
         let url = try runtime.writeConversationDumpFile()
         defer { try? FileManager.default.removeItem(at: url) }
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+    }
+
+    @MainActor
+    func testPageFindingsBulletsAndReplayRecording() {
+        let bullets = AgentBrowserSession.pageFindingsBullets(
+            from: """
+            NFL Schedule 2026
+            Week 1 opens with the kickoff game on Thursday night.
+            Cookie settings Accept all
+            Standings update after each Sunday slate.
+            """,
+            limit: 5
+        )
+        XCTAssertFalse(bullets.isEmpty)
+        XCTAssertFalse(bullets.contains(where: { $0.lowercased().contains("cookie") }))
+
+        let findings = AgentBrowserSession.pageFindingsText(
+            title: "NFL Schedule",
+            url: "https://www.espn.com/nfl/schedule",
+            pageText: "Week 1 opens Thursday. Divisional races tighten by December."
+        )
+        XCTAssertTrue(findings.contains("Page · NFL Schedule"))
+        XCTAssertTrue(findings.contains("• "))
+        XCTAssertTrue(findings.contains("follow-up"))
+
+        let runtime = AgentRuntime()
+        runtime.context.browser.record(
+            action: "open",
+            detail: "https://example.com",
+            url: "https://example.com",
+            title: "Example"
+        )
+        runtime.context.browser.record(
+            action: "snapshot",
+            detail: "2 elements",
+            url: "https://example.com",
+            title: "Example",
+            pageText: "Hello from the page with enough text to become a bullet point here.",
+            elements: [#"[1] link "Home""#]
+        )
+        runtime.appendToolResult(
+            name: "browserSnapshot",
+            result: "title: Example\nurl: https://example.com\ntext:\nHello from the page with enough text to become a bullet point here."
+        )
+        XCTAssertTrue(runtime.transcript.contains { $0.kind == .pageFindings })
+        let dump = runtime.makeConversationDump()
+        XCTAssertEqual(dump.browserReplay.count, 2)
+        XCTAssertEqual(dump.browserReplay.first?.action, "open")
+        XCTAssertEqual(dump.browserReplay.last?.action, "snapshot")
+        XCTAssertEqual(dump.browserReplay.last?.pageText?.contains("Hello from the page"), true)
     }
 
     @MainActor
