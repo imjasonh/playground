@@ -136,7 +136,7 @@ final class PlaygroundUITests: XCTestCase {
                 || modelStatus.exists
                 || root.exists
         }
-        let ready = XCTNSPredicateExpectation(predicate: marker, object: nil)
+        let ready = XCTNSPredicateExpectation(predicate: marker, object: app)
         let waited = XCTWaiter.wait(for: [ready], timeout: 12)
         XCTAssertEqual(waited, .completed, "Expected unavailable pane or Device Agent chat UI")
 

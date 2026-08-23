@@ -114,6 +114,7 @@ struct DeviceAgentView: View {
                 }
             }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("deviceAgentRoot")
     }
 
