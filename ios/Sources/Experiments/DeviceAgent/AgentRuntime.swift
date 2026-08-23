@@ -117,7 +117,6 @@ final class AgentRuntime: ObservableObject {
 
         let tools = makeFoundationTools()
         let session = LanguageModelSession(tools: tools, instructions: instructions)
-        append(.system, text: "Foundation Model session started with \(tools.count) tools.")
         let response = try await session.respond(to: prompt)
         let text = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
         append(.assistant, text: text.isEmpty ? "(Empty model response.)" : text)
@@ -130,7 +129,8 @@ final class AgentRuntime: ObservableObject {
         Use tools to act on the phone. Request only what you need.
         For calendar, SMS, and email drafts, tools will ask the user to confirm.
         Prefer listAttachments / readTextAttachment for files the user shared.
-        Use browserLoadDemo for the bundled Demo Mail page — do not invent Gmail automation.
+        Use browserOpen to load real http(s) URLs in the in-app web view.
+        Use openURL only when the user wants Safari or another system handler.
         Keep final answers short. Mode is \(context.mode.title).
         """
     }
@@ -145,7 +145,7 @@ final class AgentRuntime: ObservableObject {
             SearchContactsFMTool(runtime: self),
             GetLocationFMTool(runtime: self),
             OpenMapsFMTool(runtime: self),
-            BrowserLoadDemoFMTool(runtime: self),
+            BrowserOpenFMTool(runtime: self),
             BrowserReadFMTool(runtime: self),
         ]
         if context.mode == .act {
@@ -161,20 +161,23 @@ final class AgentRuntime: ObservableObject {
     }
     #endif
 
-    func appendToolCall(name: String, summary: String) {
+    func appendToolCall(name: String, arguments: String) {
+        let detail = arguments.trimmingCharacters(in: .whitespacesAndNewlines)
         transcript.append(
             AgentTranscriptEntry(
-                kind: .toolCall(name: name, summary: summary),
-                text: "→ \(name) \(summary)".trimmingCharacters(in: .whitespaces)
+                kind: .toolCall(name: name),
+                text: "Invoking \(name)…",
+                debugDetail: detail.isEmpty ? nil : detail
             )
         )
     }
 
-    func appendToolResult(name: String, summary: String) {
+    func appendToolResult(name: String, result: String) {
         transcript.append(
             AgentTranscriptEntry(
-                kind: .toolResult(name: name, summary: summary),
-                text: "← \(name): \(summary)"
+                kind: .toolResult(name: name),
+                text: "",
+                debugDetail: result
             )
         )
     }
@@ -186,6 +189,44 @@ final class AgentRuntime: ObservableObject {
                 text: domain.prePrompt
             )
         )
+    }
+
+    /// JSON dump of the full transcript (including hidden tool results) for debugging.
+    func makeConversationDump() -> AgentConversationDump {
+        AgentConversationDump(
+            exportedAt: Date(),
+            mode: context.mode.rawValue,
+            modelGate: modelGate.title,
+            modelAvailable: isModelAvailable,
+            entries: transcript.map { entry in
+                AgentConversationDumpEntry(
+                    id: entry.id.uuidString,
+                    date: entry.date,
+                    kind: entry.kindLabel,
+                    toolName: entry.toolName,
+                    displayText: entry.text,
+                    debugDetail: entry.debugDetail
+                )
+            },
+            toolLog: context.lastToolLog.map {
+                AgentConversationDumpToolLog(name: $0.name, detail: $0.detail)
+            }
+        )
+    }
+
+    func conversationDumpJSONData() throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        return try encoder.encode(makeConversationDump())
+    }
+
+    func writeConversationDumpFile() throws -> URL {
+        let data = try conversationDumpJSONData()
+        let name = "device-agent-\(ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")).json"
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+        try data.write(to: url, options: .atomic)
+        return url
     }
 
     private func appendSystem(_ text: String) {
@@ -215,12 +256,12 @@ private enum AgentFMToolBridge {
             guard let runtime else {
                 throw AgentToolError.unavailable("Device Agent runtime is gone.")
             }
-            runtime.appendToolCall(name: name, summary: summary)
+            runtime.appendToolCall(name: name, arguments: summary)
             if let permission {
                 runtime.appendPermission(permission)
             }
             let result = try await work(runtime.context)
-            runtime.appendToolResult(name: name, summary: String(result.prefix(200)))
+            runtime.appendToolResult(name: name, result: result)
             return result
         }.value
     }
@@ -447,20 +488,20 @@ struct DraftEmailFMTool: Tool {
 }
 
 @available(iOS 26.0, *)
-struct BrowserLoadDemoFMTool: Tool {
+struct BrowserOpenFMTool: Tool {
     weak var runtime: AgentRuntime?
-    let name = "browserLoadDemo"
-    let description = "Load the bundled Demo Mail HTML page into the in-app web view."
+    let name = "browserOpen"
+    let description = "Load a real http(s) URL in the in-app web view (not Safari)."
 
     @Generable
     struct Arguments {
-        @Guide(description: "Unused; pass an empty string")
-        var note: String
+        @Guide(description: "Absolute http or https URL")
+        var url: String
     }
 
     func call(arguments: Arguments) async throws -> String {
-        try await AgentFMToolBridge.run(runtime, name: name) { context in
-            AgentToolExecutor.browserLoadDemo(context: context)
+        try await AgentFMToolBridge.run(runtime, name: name, summary: arguments.url) { context in
+            try AgentToolExecutor.browserOpen(context: context, urlString: arguments.url)
         }
     }
 }

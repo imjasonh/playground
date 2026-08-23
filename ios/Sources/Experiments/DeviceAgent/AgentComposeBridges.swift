@@ -4,6 +4,7 @@ import WebKit
 
 struct AgentBrowserPane: UIViewRepresentable {
     let url: URL?
+    var onTitleChange: ((String) -> Void)?
 
     func makeUIView(context: Context) -> WKWebView {
         let webView = WKWebView()
@@ -30,6 +31,13 @@ struct AgentBrowserPane: UIViewRepresentable {
 
         init(parent: AgentBrowserPane) {
             self.parent = parent
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            let title = webView.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !title.isEmpty {
+                parent.onTitleChange?(title)
+            }
         }
     }
 }

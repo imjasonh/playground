@@ -322,23 +322,19 @@ enum AgentToolExecutor {
         return "Opening Mail composer."
     }
 
-    static func browserLoadDemo(context: AgentToolContext) -> String {
-        guard context.mode == .browse || context.mode == .act else {
-            return "Switch to Browse (or Act) mode to use the in-app browser demo."
+    static func browserOpen(context: AgentToolContext, urlString: String) throws -> String {
+        let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              url.host != nil
+        else {
+            throw AgentToolError.invalidArguments("Need an absolute http(s) URL with a host.")
         }
-        if let url = Bundle.main.url(forResource: "DeviceAgentDemoMail", withExtension: "html") {
-            context.browserURL = url
-            context.browserTitle = "Demo Mail"
-            context.logTool(name: "browserLoadDemo", detail: url.lastPathComponent)
-            return "Loaded bundled Demo Mail page in the in-app browser."
-        }
-        // Fallback: data URL so the tool still works if the resource is missing.
-        let html = DeviceAgentDemoHTML.fallback
-        let encoded = Data(html.utf8).base64EncodedString()
-        context.browserURL = URL(string: "data:text/html;base64,\(encoded)")
-        context.browserTitle = "Demo Mail"
-        context.logTool(name: "browserLoadDemo", detail: "data-url")
-        return "Loaded Demo Mail (inline fallback) in the in-app browser."
+        context.browserURL = url
+        context.browserTitle = url.host ?? url.absoluteString
+        context.logTool(name: "browserOpen", detail: url.absoluteString)
+        return "Loaded \(url.absoluteString) in the in-app browser."
     }
 
     static func browserRead(context: AgentToolContext) -> String {
@@ -350,45 +346,10 @@ enum AgentToolExecutor {
     static func helpText(mode: AgentMode) -> String {
         """
         Device Agent can use tools for attachments, contacts, location, Maps, calendar (with confirm), \
-        SMS/Mail drafts (with confirm), and a bundled browser demo. Mode is \(mode.title). \
-        Permissions are requested only when a tool needs them. Requires Apple Intelligence \
-        (on-device Foundation Models) on this device.
+        SMS/Mail drafts (with confirm), and an in-app browser for real http(s) URLs. \
+        Mode is \(mode.title): Observe is read-only; Act unlocks calendar/SMS/Mail drafts; \
+        Browse prefers the in-app web view. Permissions are requested only when a tool needs them. \
+        Requires Apple Intelligence (on-device Foundation Models) on this device.
         """
     }
-}
-
-enum DeviceAgentDemoHTML {
-    static let fallback = """
-    <!doctype html>
-    <html lang="en">
-    <meta charset="utf-8"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1"/>
-    <title>Demo Mail</title>
-    <style>
-      body{font-family:-apple-system,sans-serif;margin:16px;background:#f4f4f5;color:#111}
-      h1{font-size:1.25rem}
-      label{display:block;margin:.75rem 0 .25rem;font-size:.85rem;color:#555}
-      input,textarea{width:100%;box-sizing:border-box;padding:.6rem;border:1px solid #ccc;border-radius:8px;font:inherit}
-      textarea{min-height:120px}
-      button{margin-top:1rem;padding:.7rem 1rem;border:0;border-radius:10px;background:#0b57d0;color:#fff;font:inherit}
-      .sent{display:none;margin-top:1rem;padding:.75rem;background:#e6f4ea;border-radius:8px}
-    </style>
-    <h1>Demo Mail</h1>
-    <p>First-party page for browser tools — not Gmail.</p>
-    <label>To</label>
-    <input id="to" value="mom@example.com"/>
-    <label>Subject</label>
-    <input id="subject" value="Running late"/>
-    <label>Body</label>
-    <textarea id="body">On my way — ETA soon.</textarea>
-    <button id="send" type="button">Send</button>
-    <div class="sent" id="sent">Queued locally (demo only).</div>
-    <script>
-      document.getElementById('send').onclick=()=>{
-        document.getElementById('sent').style.display='block';
-        document.title='Demo Mail — sent';
-      };
-    </script>
-    </html>
-    """
 }

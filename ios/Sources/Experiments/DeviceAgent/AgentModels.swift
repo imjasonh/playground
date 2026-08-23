@@ -27,9 +27,9 @@ enum AgentMode: String, CaseIterable, Identifiable, Codable {
 
     var detail: String {
         switch self {
-        case .observe: return "Read-only tools"
-        case .act: return "Writes need confirmation"
-        case .browse: return "In-app web demo"
+        case .observe: return "Read-only tools (no drafts or calendar writes)"
+        case .act: return "Calendar / SMS / Mail drafts with confirm"
+        case .browse: return "Same as Observe; prefer in-app browser"
         }
     }
 }
@@ -39,8 +39,8 @@ struct AgentTranscriptEntry: Identifiable, Equatable {
     enum Kind: Equatable {
         case user
         case assistant
-        case toolCall(name: String, summary: String)
-        case toolResult(name: String, summary: String)
+        case toolCall(name: String)
+        case toolResult(name: String)
         case system
         case permission(domain: String)
         case confirmation(summary: String)
@@ -49,14 +49,79 @@ struct AgentTranscriptEntry: Identifiable, Equatable {
     let id: UUID
     let date: Date
     let kind: Kind
+    /// Short text shown in the chat UI.
     let text: String
+    /// Full tool args / results (and similar) for JSON export only.
+    let debugDetail: String?
 
-    init(id: UUID = UUID(), date: Date = Date(), kind: Kind, text: String) {
+    init(
+        id: UUID = UUID(),
+        date: Date = Date(),
+        kind: Kind,
+        text: String,
+        debugDetail: String? = nil
+    ) {
         self.id = id
         self.date = date
         self.kind = kind
         self.text = text
+        self.debugDetail = debugDetail
     }
+
+    /// Tool results stay out of the chat; full payloads live in the dump.
+    var isVisibleInChat: Bool {
+        switch kind {
+        case .toolResult:
+            return false
+        default:
+            return true
+        }
+    }
+
+    var toolName: String? {
+        switch kind {
+        case .toolCall(let name), .toolResult(let name):
+            return name
+        default:
+            return nil
+        }
+    }
+
+    var kindLabel: String {
+        switch kind {
+        case .user: return "user"
+        case .assistant: return "assistant"
+        case .toolCall: return "toolCall"
+        case .toolResult: return "toolResult"
+        case .system: return "system"
+        case .permission: return "permission"
+        case .confirmation: return "confirmation"
+        }
+    }
+}
+
+/// Shareable debug dump of a Device Agent conversation.
+struct AgentConversationDump: Codable, Equatable {
+    var exportedAt: Date
+    var mode: String
+    var modelGate: String
+    var modelAvailable: Bool
+    var entries: [AgentConversationDumpEntry]
+    var toolLog: [AgentConversationDumpToolLog]
+}
+
+struct AgentConversationDumpEntry: Codable, Equatable {
+    var id: String
+    var date: Date
+    var kind: String
+    var toolName: String?
+    var displayText: String
+    var debugDetail: String?
+}
+
+struct AgentConversationDumpToolLog: Codable, Equatable {
+    var name: String
+    var detail: String
 }
 
 /// File staged for the agent (Shortcuts, share handoff, or in-app picker).

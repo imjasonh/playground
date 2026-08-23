@@ -132,4 +132,52 @@ final class DeviceAgentTests: XCTestCase {
         watch.isPaused = true
         XCTAssertFalse(watch.isDue(at: now))
     }
+
+    @MainActor
+    func testConversationDumpIncludesHiddenToolResults() throws {
+        let runtime = AgentRuntime()
+        runtime.appendToolCall(name: "searchContacts", arguments: "Mom")
+        runtime.appendToolResult(name: "searchContacts", result: "Mom <mom@example.com>")
+
+        let visible = runtime.transcript.filter(\.isVisibleInChat)
+        XCTAssertEqual(visible.count, runtime.transcript.filter { $0.kind != .toolResult }.count)
+        XCTAssertTrue(visible.contains { entry in
+            if case .toolCall(let name) = entry.kind {
+                return name == "searchContacts" && entry.text == "Invoking searchContacts…"
+            }
+            return false
+        })
+        XCTAssertFalse(visible.contains { entry in
+            if case .toolResult = entry.kind { return true }
+            return false
+        })
+
+        let dump = runtime.makeConversationDump()
+        XCTAssertEqual(dump.entries.count, runtime.transcript.count)
+        let result = try XCTUnwrap(dump.entries.first { $0.kind == "toolResult" })
+        XCTAssertEqual(result.debugDetail, "Mom <mom@example.com>")
+        let data = try runtime.conversationDumpJSONData()
+        XCTAssertFalse(data.isEmpty)
+        let url = try runtime.writeConversationDumpFile()
+        defer { try? FileManager.default.removeItem(at: url) }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+    }
+
+    @MainActor
+    func testBrowserOpenAcceptsHTTPSAndRejectsDemoSchemes() throws {
+        let context = AgentToolContext()
+        let loaded = try AgentToolExecutor.browserOpen(
+            context: context,
+            urlString: "https://example.com/path"
+        )
+        XCTAssertTrue(loaded.contains("example.com"))
+        XCTAssertEqual(context.browserURL?.host, "example.com")
+
+        XCTAssertThrowsError(
+            try AgentToolExecutor.browserOpen(context: context, urlString: "file:///tmp/x.html")
+        )
+        XCTAssertThrowsError(
+            try AgentToolExecutor.browserOpen(context: context, urlString: "not a url")
+        )
+    }
 }
