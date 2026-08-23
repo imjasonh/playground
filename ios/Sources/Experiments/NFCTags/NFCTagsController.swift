@@ -5,8 +5,13 @@ import Foundation
 /// Drives Core NFC tag sessions for the NFC Tags experiment.
 ///
 /// Uses `NFCTagReaderSession` (not NDEF-only discovery) so blank NTAG / Type 2
-/// tags still surface UID and family the way apps like NFC Tools do. NDEF
-/// read/write runs through the tag's `NFCNDEFTag` interface after connect.
+/// tags still surface UID and family the way apps like NFC Tools do.
+///
+/// NTAG / Ultralight writes go through raw Type 2 page WRITE commands and are
+/// verified with raw READ of user memory. Core NFC `writeNDEF`/`readNDEF` can
+/// report success from a soft/cached view that does not match EEPROM. Non-Type-2
+/// tags still use `writeNDEF`, then a brand-new session must re-read matching
+/// bytes before success is claimed.
 ///
 /// Broad polling (ISO 14443 / 15693 / FeliCa) needs matching Info.plist keys:
 /// `iso7816.select-identifiers` and `felica.systemcodes`. Without those, Core
@@ -26,9 +31,10 @@ final class NFCTagsController: NSObject, ObservableObject {
 
     private var tagSession: NFCTagReaderSession?
     private var pendingWriteMessage: NFCNDEFMessage?
-    /// After a same-session write match, re-poll and require a second read that
-    /// matches these snapshots so a soft/cached success cannot pass as durable.
+    /// Survives session invalidate so a follow-up confirm session can re-read.
     private var pendingDurabilityExpected: [NFCNDEFRecordSnapshot]?
+    /// True while intentionally ending the write session to open a confirm session.
+    private var expectingDurabilityRestart = false
 
     var isNFCAvailable: Bool {
         NFCTagReaderSession.readingAvailable
@@ -63,6 +69,7 @@ final class NFCTagsController: NSObject, ObservableObject {
     }
 
     func cancelSession() {
+        expectingDurabilityRestart = false
         tagSession?.invalidate()
         tagSession = nil
         pendingWriteMessage = nil
@@ -73,12 +80,14 @@ final class NFCTagsController: NSObject, ObservableObject {
     // MARK: - Session
 
     private func beginSession(alertMessage: String) {
-        // Drop any prior session before starting. Its invalidate callback must
-        // not clear the new session; see didInvalidateWithError.
-        cancelSession()
-        // NFCTagReaderSession's initializer is failable (nil when NFC is
-        // unavailable, e.g. Simulator). Poll all tag families NFC Tools-style;
-        // Info.plist must list FeliCa system codes and ISO 7816 AIDs.
+        // Keep durability expectations across an intentional confirm restart.
+        let durability = pendingDurabilityExpected
+        tagSession?.invalidate()
+        tagSession = nil
+        pendingWriteMessage = nil
+        isSessionActive = false
+        pendingDurabilityExpected = durability
+
         guard let session = NFCTagReaderSession(
             pollingOption: [.iso14443, .iso15693, .iso18092],
             delegate: self,
@@ -98,20 +107,25 @@ final class NFCTagsController: NSObject, ObservableObject {
         let trimmed = draft.text.trimmingCharacters(in: .whitespacesAndNewlines)
         switch draft.kind {
         case .text:
-            guard let payload = NFCNDEFPayload.wellKnownTypeTextPayload(
-                string: trimmed,
-                locale: Locale(identifier: "en")
-            ) else {
-                return nil
-            }
-            return NFCNDEFMessage(records: [payload])
+            let payload = NFCNDEFCodec.encodeTextPayload(text: trimmed, languageCode: "en")
+            let record = NFCNDEFPayload(
+                format: .nfcWellKnown,
+                type: Data("T".utf8),
+                identifier: Data(),
+                payload: payload
+            )
+            return NFCNDEFMessage(records: [record])
         case .url:
-            guard let url = URL(string: trimmed),
-                  let payload = NFCNDEFPayload.wellKnownTypeURIPayload(url: url)
-            else {
+            guard let payload = NFCNDEFCodec.encodeURIPayload(urlString: trimmed) else {
                 return nil
             }
-            return NFCNDEFMessage(records: [payload])
+            let record = NFCNDEFPayload(
+                format: .nfcWellKnown,
+                type: Data("U".utf8),
+                identifier: Data(),
+                payload: payload
+            )
+            return NFCNDEFMessage(records: [record])
         }
     }
 
@@ -146,8 +160,30 @@ final class NFCTagsController: NSObject, ObservableObject {
         guard session === tagSession else { return }
         tagSession = nil
         pendingWriteMessage = nil
-        pendingDurabilityExpected = nil
         isSessionActive = false
+        // Leave pendingDurabilityExpected so a confirm session can start.
+    }
+
+    /// Ends the write session and opens a new one that must re-read matching bytes.
+    private func startDurabilityConfirm(
+        expected: [NFCNDEFRecordSnapshot],
+        ending session: NFCTagReaderSession
+    ) {
+        pendingWriteMessage = nil
+        pendingDurabilityExpected = expected
+        expectingDurabilityRestart = true
+        statusMessage = "Remove the tag, then hold it again to confirm the write."
+        session.alertMessage = statusMessage
+        session.invalidate()
+        Task { @MainActor in
+            // Let the system tear down RF before polling again.
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            self.expectingDurabilityRestart = false
+            guard self.pendingDurabilityExpected != nil else { return }
+            self.beginSession(
+                alertMessage: "Hold the tag again to confirm the write stuck."
+            )
+        }
     }
 }
 
@@ -155,6 +191,7 @@ final class NFCTagsController: NSObject, ObservableObject {
 
 private struct DetectedNFCTag {
     var ndefTag: NFCNDEFTag
+    var miFare: NFCMiFareTag?
     var uid: String?
     var family: String
 }
@@ -165,18 +202,21 @@ extension NFCTagsController {
         case .miFare(let miFare):
             return DetectedNFCTag(
                 ndefTag: miFare,
+                miFare: miFare,
                 uid: NFCTagScanFormatter.uidHex(miFare.identifier),
                 family: "ISO 14443 (NTAG / MiFare)"
             )
         case .feliCa(let feliCa):
             return DetectedNFCTag(
                 ndefTag: feliCa,
+                miFare: nil,
                 uid: NFCTagScanFormatter.uidHex(feliCa.currentIDm),
                 family: "FeliCa"
             )
         case .iso15693(let iso15693):
             return DetectedNFCTag(
                 ndefTag: iso15693,
+                miFare: nil,
                 uid: NFCTagScanFormatter.uidHex(iso15693.identifier),
                 family: "ISO 15693"
             )
@@ -186,11 +226,24 @@ extension NFCTagsController {
                 : NFCTagScanFormatter.uidHex(iso7816.identifier)
             return DetectedNFCTag(
                 ndefTag: iso7816,
+                miFare: nil,
                 uid: uid,
                 family: "ISO 7816"
             )
         @unknown default:
             return nil
+        }
+    }
+
+    private func supportsType2Raw(_ miFare: NFCMiFareTag) -> Bool {
+        switch miFare.mifareFamily {
+        case .ultralight, .unknown:
+            // NTAG21x often reports as `.unknown` on iOS.
+            return true
+        case .desfire, .plus:
+            return false
+        @unknown default:
+            return false
         }
     }
 }
@@ -205,32 +258,42 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
         didInvalidateWithError error: Error
     ) {
         Task { @MainActor in
-            // A superseded session must not wipe a newer beginSession().
             self.clearSessionIfCurrent(session)
 
             let nsError = error as NSError
             guard nsError.domain == NFCReaderError.errorDomain else {
-                self.statusMessage = error.localizedDescription
+                if self.pendingDurabilityExpected == nil {
+                    self.statusMessage = error.localizedDescription
+                }
                 return
             }
-            // Expected endings after a successful finish() or user Cancel.
             let benign: Set<Int> = [
                 NFCReaderError.readerSessionInvalidationErrorUserCanceled.rawValue,
                 NFCReaderError.readerSessionInvalidationErrorFirstNDEFTagRead.rawValue,
             ]
             if benign.contains(nsError.code) {
+                // User cancel on the system sheet drops a pending confirm, unless
+                // we invalidated on purpose to open the confirm session.
+                if nsError.code
+                    == NFCReaderError.readerSessionInvalidationErrorUserCanceled.rawValue,
+                    !self.expectingDurabilityRestart
+                {
+                    self.pendingDurabilityExpected = nil
+                }
                 return
             }
-            // invalidate() after a successful finish() can still deliver a
-            // non-benign error; keep write/read outcome status.
             if self.statusMessage.hasPrefix("Wrote")
                 || self.statusMessage.hasPrefix("Write ")
                 || self.statusMessage.hasPrefix("Read ")
                 || self.statusMessage.hasPrefix("Blank ")
+                || self.statusMessage.hasPrefix("Remove the tag")
+                || self.statusMessage.hasPrefix("Hold the tag again")
             {
                 return
             }
-            self.statusMessage = error.localizedDescription
+            if self.pendingDurabilityExpected == nil {
+                self.statusMessage = error.localizedDescription
+            }
         }
     }
 
@@ -395,6 +458,11 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
         to detected: DetectedNFCTag,
         session: NFCTagReaderSession
     ) {
+        if let miFare = detected.miFare, supportsType2Raw(miFare) {
+            writeType2Raw(to: detected, miFare: miFare, session: session)
+            return
+        }
+
         detected.ndefTag.queryNDEFStatus { [weak self] status, capacity, error in
             Task { @MainActor in
                 guard let self, session === self.tagSession else { return }
@@ -428,18 +496,17 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
                             if let writeError {
                                 self.finish(
                                     session: session,
-                                    alert: "Failed to write NDEF: \(writeError.localizedDescription)"
+                                    alert: "Failed to write NDEF: "
+                                        + writeError.localizedDescription
                                 )
                                 return
                             }
-                            // Core NFC can report write success on blank Type 2
-                            // tags without persisting. Confirm with a read-back
-                            // before claiming success; retry once if still blank.
-                            self.verifyWrite(
-                                message,
+                            let expected = self.snapshots(from: message)
+                            self.verifyNDEFThenConfirm(
+                                expected: expected,
                                 on: detected,
                                 session: session,
-                                allowRetry: true
+                                allowRetryWrite: message
                             )
                         }
                     }
@@ -450,12 +517,260 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
         }
     }
 
-    /// Reads the tag after writeNDEF and only then reports success.
-    private func verifyWrite(
-        _ written: NFCNDEFMessage,
+    // MARK: - Type 2 raw write / verify
+
+    private func writeType2Raw(
+        to detected: DetectedNFCTag,
+        miFare: NFCMiFareTag,
+        session: NFCTagReaderSession
+    ) {
+        guard let ndef = Type2NDEF.ndefMessage(for: draft),
+              let expected = Type2NDEF.snapshots(for: draft)
+        else {
+            finish(session: session, alert: "Could not build an NDEF message from that input.")
+            return
+        }
+        let tlv = Type2NDEF.wrapTLV(ndef)
+
+        detected.ndefTag.queryNDEFStatus { [weak self] status, capacity, _ in
+            Task { @MainActor in
+                guard let self, session === self.tagSession else { return }
+                if status == .readOnly {
+                    self.finish(session: session, alert: "Tag is read-only.")
+                    return
+                }
+                let ndefCapacity = capacity > 0 ? capacity : max(tlv.count, 48)
+                if tlv.count > ndefCapacity + 16 {
+                    self.finish(
+                        session: session,
+                        alert: "Message is \(tlv.count) bytes; tag capacity is \(ndefCapacity)."
+                    )
+                    return
+                }
+                self.ensureCapabilityContainer(
+                    miFare: miFare,
+                    ndefCapacity: ndefCapacity,
+                    session: session
+                ) { ccError in
+                    if let ccError {
+                        self.finish(
+                            session: session,
+                            alert: "Failed to format tag: \(ccError.localizedDescription)"
+                        )
+                        return
+                    }
+                    self.writeType2Pages(
+                        miFare: miFare,
+                        tlv: tlv,
+                        session: session
+                    ) { writeError in
+                        if let writeError {
+                            self.finish(
+                                session: session,
+                                alert: "Failed to write tag pages: "
+                                    + writeError.localizedDescription
+                            )
+                            return
+                        }
+                        self.verifyType2Raw(
+                            miFare: miFare,
+                            expectedNDEF: ndef,
+                            session: session
+                        ) { verifyError in
+                            if let verifyError {
+                                self.finish(
+                                    session: session,
+                                    alert: "Write did not stick on chip: "
+                                        + verifyError.localizedDescription
+                                )
+                                return
+                            }
+                            self.startDurabilityConfirm(expected: expected, ending: session)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func ensureCapabilityContainer(
+        miFare: NFCMiFareTag,
+        ndefCapacity: Int,
+        session: NFCTagReaderSession,
+        completion: @escaping (Error?) -> Void
+    ) {
+        miFare.sendMiFareCommand(
+            commandPacket: Type2NDEF.readCommandPacket(page: Type2NDEF.capabilityContainerPage)
+        ) { response, error in
+            Task { @MainActor in
+                guard session === self.tagSession else { return }
+                if let error {
+                    completion(error)
+                    return
+                }
+                guard response.count >= 4 else {
+                    completion(
+                        NSError(
+                            domain: "NFCTags",
+                            code: 1,
+                            userInfo: [
+                                NSLocalizedDescriptionKey: "Short READ response for page 3.",
+                            ]
+                        )
+                    )
+                    return
+                }
+                let page3 = Data(response.prefix(4))
+                if Type2NDEF.hasNDEFCapabilityContainer(page3) {
+                    completion(nil)
+                    return
+                }
+                let cc = Type2NDEF.capabilityContainer(ndefCapacity: ndefCapacity)
+                let bytes = [UInt8](cc)
+                miFare.sendMiFareCommand(
+                    commandPacket: Type2NDEF.writeCommandPacket(
+                        page: Type2NDEF.capabilityContainerPage,
+                        bytes: bytes
+                    )
+                ) { _, writeError in
+                    Task { @MainActor in
+                        guard session === self.tagSession else { return }
+                        completion(writeError)
+                    }
+                }
+            }
+        }
+    }
+
+    private func writeType2Pages(
+        miFare: NFCMiFareTag,
+        tlv: Data,
+        session: NFCTagReaderSession,
+        completion: @escaping (Error?) -> Void
+    ) {
+        let pages = Type2NDEF.pages(from: tlv)
+        var index = 0
+
+        func writeNext() {
+            guard session === self.tagSession else { return }
+            if index >= pages.count {
+                completion(nil)
+                return
+            }
+            let pageNumber = Type2NDEF.ndefTLVStartPage + UInt8(index)
+            let packet = Type2NDEF.writeCommandPacket(page: pageNumber, bytes: pages[index])
+            miFare.sendMiFareCommand(commandPacket: packet) { _, error in
+                Task { @MainActor in
+                    guard session === self.tagSession else { return }
+                    if let error {
+                        completion(error)
+                        return
+                    }
+                    index += 1
+                    writeNext()
+                }
+            }
+        }
+
+        writeNext()
+    }
+
+    private func verifyType2Raw(
+        miFare: NFCMiFareTag,
+        expectedNDEF: Data,
+        session: NFCTagReaderSession,
+        completion: @escaping (Error?) -> Void
+    ) {
+        // Read enough user memory to cover TLV header + message + terminator.
+        let needed = expectedNDEF.count + 8
+        readType2UserMemory(miFare: miFare, byteCount: needed, session: session) { result in
+            switch result {
+            case .failure(let error):
+                completion(error)
+            case .success(let memory):
+                guard let actual = Type2NDEF.extractNDEFMessage(fromUserMemory: memory) else {
+                    completion(
+                        NSError(
+                            domain: "NFCTags",
+                            code: 2,
+                            userInfo: [
+                                NSLocalizedDescriptionKey: "No NDEF TLV found after write.",
+                            ]
+                        )
+                    )
+                    return
+                }
+                guard actual == expectedNDEF else {
+                    completion(
+                        NSError(
+                            domain: "NFCTags",
+                            code: 3,
+                            userInfo: [
+                                NSLocalizedDescriptionKey: "EEPROM bytes do not match what was written.",
+                            ]
+                        )
+                    )
+                    return
+                }
+                completion(nil)
+            }
+        }
+    }
+
+    private func readType2UserMemory(
+        miFare: NFCMiFareTag,
+        byteCount: Int,
+        session: NFCTagReaderSession,
+        completion: @escaping (Result<Data, Error>) -> Void
+    ) {
+        var collected = Data()
+        var page = Type2NDEF.ndefTLVStartPage
+
+        func readNext() {
+            guard session === self.tagSession else { return }
+            if collected.count >= byteCount || page > 220 {
+                completion(.success(collected))
+                return
+            }
+            miFare.sendMiFareCommand(
+                commandPacket: Type2NDEF.readCommandPacket(page: page)
+            ) { response, error in
+                Task { @MainActor in
+                    guard session === self.tagSession else { return }
+                    if let error {
+                        completion(.failure(error))
+                        return
+                    }
+                    guard response.count >= 16 else {
+                        completion(
+                            .failure(
+                                NSError(
+                                    domain: "NFCTags",
+                                    code: 4,
+                                    userInfo: [
+                                        NSLocalizedDescriptionKey: "Short READ response.",
+                                    ]
+                                )
+                            )
+                        )
+                        return
+                    }
+                    collected.append(response.prefix(16))
+                    page += 4
+                    readNext()
+                }
+            }
+        }
+
+        readNext()
+    }
+
+    /// High-level NDEF verify (non-Type-2 path), then new-session confirm.
+    private func verifyNDEFThenConfirm(
+        expected: [NFCNDEFRecordSnapshot],
         on detected: DetectedNFCTag,
         session: NFCTagReaderSession,
-        allowRetry: Bool
+        allowRetryWrite: NFCNDEFMessage?
     ) {
         detected.ndefTag.readNDEF { message, readError in
             Task { @MainActor in
@@ -469,8 +784,8 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
                     return message == nil || message?.records.isEmpty == true
                 }()
 
-                if stillBlank, allowRetry {
-                    detected.ndefTag.writeNDEF(written) { retryError in
+                if stillBlank, let retry = allowRetryWrite {
+                    detected.ndefTag.writeNDEF(retry) { retryError in
                         Task { @MainActor in
                             guard session === self.tagSession else { return }
                             if let retryError {
@@ -481,11 +796,11 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
                                 )
                                 return
                             }
-                            self.verifyWrite(
-                                written,
+                            self.verifyNDEFThenConfirm(
+                                expected: expected,
                                 on: detected,
                                 session: session,
-                                allowRetry: false
+                                allowRetryWrite: nil
                             )
                         }
                     }
@@ -493,33 +808,19 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
                 }
 
                 if let readError {
-                    let nsError = readError as NSError
-                    let emptyNDEF = nsError.domain == NFCReaderError.errorDomain
-                        && NFCTagScanFormatter.isEmptyNDEFErrorCode(nsError.code)
-                    if emptyNDEF {
-                        self.finish(
-                            session: session,
-                            alert: "Write reported success, but the tag is still blank. "
-                                + "Try again, or format the tag once with NFC Tools."
-                        )
-                        return
-                    }
                     self.finish(
                         session: session,
                         alert: "Wrote, but could not verify: \(readError.localizedDescription)"
                     )
                     return
                 }
-                guard let message, !message.records.isEmpty else {
+                guard let message else {
                     self.finish(
                         session: session,
-                        alert: "Write reported success, but the tag is still blank. "
-                            + "Try again, or format the tag once with NFC Tools."
+                        alert: "Write reported success, but the tag is still blank."
                     )
                     return
                 }
-
-                let expected = self.snapshots(from: written)
                 let actual = self.snapshots(from: message)
                 guard NFCNDEFCodec.ndefRecordsMatch(expected, actual) else {
                     self.finish(
@@ -529,20 +830,12 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
                     )
                     return
                 }
-
-                // Same-session match can still be a soft/cached view. Re-poll and
-                // require a second connect/read before claiming durable success.
-                self.pendingWriteMessage = nil
-                self.pendingDurabilityExpected = expected
-                let confirm = "Hold still to confirm the write stuck."
-                session.alertMessage = confirm
-                self.statusMessage = confirm
-                session.restartPolling()
+                self.startDurabilityConfirm(expected: expected, ending: session)
             }
         }
     }
 
-    /// Second read after restartPolling; must match the written snapshots.
+    /// Second session after remove/re-present; must match expected snapshots.
     private func confirmDurability(
         on detected: DetectedNFCTag,
         session: NFCTagReaderSession
@@ -551,6 +844,32 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
             read(from: detected, session: session)
             return
         }
+
+        // Prefer raw EEPROM check on Type 2 when available.
+        if let miFare = detected.miFare,
+           supportsType2Raw(miFare),
+           let ndef = Type2NDEF.ndefMessage(for: draft),
+           NFCNDEFCodec.ndefRecordsMatch(expected, Type2NDEF.snapshots(for: draft) ?? [])
+        {
+            verifyType2Raw(miFare: miFare, expectedNDEF: ndef, session: session) { error in
+                if let error {
+                    self.finish(
+                        session: session,
+                        alert: "Write looked OK, but chip confirm failed: "
+                            + error.localizedDescription
+                    )
+                    return
+                }
+                self.completeDurabilitySuccess(
+                    expected: expected,
+                    detected: detected,
+                    session: session,
+                    byteCount: ndef.count
+                )
+            }
+            return
+        }
+
         detected.ndefTag.readNDEF { message, readError in
             Task { @MainActor in
                 guard session === self.tagSession else { return }
@@ -577,20 +896,39 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
                     )
                     return
                 }
-
-                self.pendingDurabilityExpected = nil
-                let records = self.decode(message)
-                let body = NFCNDEFCodec.summary(for: records)
-                self.lastReadSummary = NFCTagScanFormatter.recordsSummary(
-                    body,
-                    uid: detected.uid,
-                    family: detected.family
-                )
-                self.finish(
+                self.completeDurabilitySuccess(
+                    expected: expected,
+                    detected: detected,
                     session: session,
-                    alert: "Wrote and verified NDEF message (\(message.length) bytes)."
+                    byteCount: message.length
                 )
             }
         }
+    }
+
+    private func completeDurabilitySuccess(
+        expected: [NFCNDEFRecordSnapshot],
+        detected: DetectedNFCTag,
+        session: NFCTagReaderSession,
+        byteCount: Int
+    ) {
+        pendingDurabilityExpected = nil
+        let records = expected.map { snap in
+            NFCNDEFCodec.decodeRecord(
+                typeNameFormatRawValue: snap.typeNameFormatRawValue,
+                type: snap.type,
+                payload: snap.payload
+            )
+        }
+        let body = NFCNDEFCodec.summary(for: records)
+        lastReadSummary = NFCTagScanFormatter.recordsSummary(
+            body,
+            uid: detected.uid,
+            family: detected.family
+        )
+        finish(
+            session: session,
+            alert: "Wrote and verified NDEF message (\(byteCount) bytes)."
+        )
     }
 }
