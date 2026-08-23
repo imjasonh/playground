@@ -7,6 +7,10 @@ import Foundation
 /// Uses `NFCTagReaderSession` (not NDEF-only discovery) so blank NTAG / Type 2
 /// tags still surface UID and family the way apps like NFC Tools do. NDEF
 /// read/write runs through the tag's `NFCNDEFTag` interface after connect.
+///
+/// Broad polling (ISO 14443 / 15693 / FeliCa) needs matching Info.plist keys:
+/// `iso7816.select-identifiers` and `felica.systemcodes`. Without those, Core
+/// NFC invalidates the session with "Missing required entitlement".
 @MainActor
 final class NFCTagsController: NSObject, ObservableObject {
     enum Mode: String {
@@ -67,14 +71,10 @@ final class NFCTagsController: NSObject, ObservableObject {
         // not clear the new session; see didInvalidateWithError.
         cancelSession()
         // NFCTagReaderSession's initializer is failable (nil when NFC is
-        // unavailable, e.g. Simulator).
-        // Poll ISO 14443 (NTAG / MiFare) and ISO 15693 only. Do not include
-        // .iso18092 (FeliCa): that option requires
-        // com.apple.developer.nfc.readersession.felica.systemcodes in
-        // Info.plist, and without it the session invalidates immediately with
-        // "Missing required entitlement".
+        // unavailable, e.g. Simulator). Poll all tag families NFC Tools-style;
+        // Info.plist must list FeliCa system codes and ISO 7816 AIDs.
         guard let session = NFCTagReaderSession(
-            pollingOption: [.iso14443, .iso15693],
+            pollingOption: [.iso14443, .iso15693, .iso18092],
             delegate: self,
             queue: nil
         ) else {

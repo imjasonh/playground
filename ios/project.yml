@@ -107,6 +107,36 @@ targets:
         NSHealthShareUsageDescription: Ride Monitor uses HealthKit so the Apple Watch companion can stay active during a ride and record heart rate, energy, Watch distance, and cycling cadence/speed/power when a sensor is paired. GPS and jolt data stay in the app; the Watch workout is also saved to Health.
         NSHealthUpdateUsageDescription: Ride Monitor uses HealthKit so the Apple Watch companion can stay active during a ride and record heart rate, energy, Watch distance, and cycling cadence/speed/power when a sensor is paired. GPS and jolt data stay in the app; the Watch workout is also saved to Health.
         NFCReaderUsageDescription: NFC Tags reads and writes NDEF text and URL payloads on nearby NFC tags.
+        # NFCTagReaderSession Info.plist keys (not App ID capabilities). Required
+        # when polling ISO 7816 / FeliCa families; missing entries invalidate the
+        # session with "Missing required entitlement". No signing bootstrap.
+        com.apple.developer.nfc.readersession.iso7816.select-identifiers:
+          # NFC Forum Type 4 NDEF Tag Application
+          - D2760000850100
+          - D2760000850101
+          # Common ISO 7816 / smart-card AIDs (passports, payment, transit)
+          - A0000002471001
+          - A0000000031010
+          - A000000003101001
+          - A0000000041010
+          - A0000000042010
+          - A00000006510
+          - A0000001510000
+          - 325041592E5359532E4444463031
+          - 00000000000000
+        com.apple.developer.nfc.readersession.felica.systemcodes:
+          # Discrete FeliCa system codes only (no 0xFF wildcards). Covers common
+          # transit / mobile FeliCa systems so .iso18092 polling can start.
+          - "0003"
+          - "12FC"
+          - "FE00"
+          - "8005"
+          - "8008"
+          - "04D1"
+          - "86A7"
+          - "90B7"
+          - "927A"
+          - "88B4"
         UIBackgroundModes:
           - location
           - audio

@@ -216,19 +216,24 @@ on a TrueDepth front camera — not wired here yet.
 
 ### NFC Tags
 
-Read and write NDEF text or URL records with Core NFC (`NFCTagReaderSession`).
-Scan polls ISO 14443 and ISO 15693 (NTAG / MiFare and vicinity tags), shows UID
-and family, and decodes NDEF when present. Blank NTAG / Type 2 tags (no NDEF
-message yet) count as a successful read instead of the old "does not contain any
-NDEF message" failure; use Write to store a Text or URI record. FeliCa
-(`.iso18092`) is not polled: that option requires
-`com.apple.developer.nfc.readersession.felica.systemcodes` in Info.plist, and
-without it the session fails immediately with "Missing required entitlement".
-Requires the NFC Tag Reading App ID capability
-(`com.apple.developer.nfc.readersession.formats`) and `NFCReaderUsageDescription`.
-That entitlement change on the host Bundle ID needs `needs-ios-bootstrap` so
-match refreshes the App Store profile after merge. Simulator opens the UI but
-cannot scan; use a physical iPhone.
+Read and write NDEF text or URL records with Core NFC (`NFCTagReaderSession`),
+including blank NTAG / Type 2 tags (UID + family, empty NDEF instead of an
+error). Write stores a Text or URI record on writable tags.
+
+Polls ISO 14443, ISO 15693, and FeliCa so chip-level discovery matches apps
+like NFC Tools. That needs the NFC Tag Reading App ID capability
+(`com.apple.developer.nfc.readersession.formats` = `TAG`),
+`NFCReaderUsageDescription`, plus Info.plist lists for
+`iso7816.select-identifiers` and `felica.systemcodes`. Without those lists,
+Core NFC fails immediately with "Missing required entitlement". The App ID
+capability change needs `needs-ios-bootstrap`; the Info.plist lists do not.
+Simulator opens the UI but cannot scan; use a physical iPhone. The screen
+shows the CFBundleVersion build number so TestFlight installs are easy to
+confirm.
+
+Today the UI covers NDEF text/URL read/write and blank-tag identity. Broader
+NFC Tools features (raw pages, lock bits, more record types) can build on the
+same Tag Reader session.
 
 ## Adding an experiment
 

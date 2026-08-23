@@ -151,6 +151,12 @@ struct NFCTagsView: View {
             )
             .font(.caption)
             .foregroundStyle(.secondary)
+            if let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String {
+                Text("Build \(build)")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .accessibilityIdentifier("nfcBuildNumber")
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
