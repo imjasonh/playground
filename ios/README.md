@@ -135,11 +135,13 @@ Demo Mail web page). Permissions are requested **only when a tool needs them**.
   that needs a new Bundle ID + signing bootstrap)
 - **In-app browser:** `browserOpen` loads real http(s) URLs; injected JS bridge
   supports `browserSnapshot` / `browserClick` / `browserType` / `browserBack`.
-  Snapshots surface bullet **Page** findings in chat; the tab stays open for
-  follow-ups. Structured browser replay (actions + scraped text, no screenshots)
-  is included in the conversation JSON export. With the browser open, the
-  composer collapses to an Ask follow-up control so the keyboard stays out of
-  the way.
+  After each snapshot, Foundation Models guided generation extracts
+  question-relevant **From the page** bullets into chat (heuristic fallback if
+  the model call fails). The same bullets are appended to the tool result as
+  `extractedFindings` for the agent turn. The tab stays open for follow-ups.
+  Structured browser replay (actions + scraped text, no screenshots) is included
+  in the conversation JSON export. With the browser open, the composer collapses
+  to an Ask follow-up control so the keyboard stays out of the way.
 
 When Apple Intelligence / Foundation Models is available (iOS 26+ device), the
 on-device model chooses tools. If Apple Intelligence is off, the UI offers a
@@ -147,6 +149,11 @@ button that opens Settings (Apple Intelligence & Siri when the deep link works).
 If the model is still downloading, it shows progress plus **Check again**.
 Unsupported hardware / older OS / Simulator get a plain unavailable pane. There
 is no keyword-planner fallback.
+
+If page extraction quality is weak for a domain, a next step is Apple’s
+Foundation Models **adapter** toolkit (LoRA). Adapters ship as small packages
+and must be retrained when Apple updates the base system model — not wired up
+in this experiment yet.
 
 ### T9 Keyboard
 

@@ -15,6 +15,9 @@ final class AgentRuntime: ObservableObject {
     var isModelAvailable: Bool { modelGate.isAvailable }
     var modelStatusText: String { modelGate.detail }
 
+    /// Latest user prompt — used to keep page findings relevant to the question.
+    var lastUserPrompt: String = ""
+
     let context: AgentToolContext
 
     init(context: AgentToolContext? = nil) {
@@ -90,6 +93,7 @@ final class AgentRuntime: ObservableObject {
         isRunning = true
         defer { isRunning = false }
 
+        lastUserPrompt = trimmed
         append(.user, text: trimmed, sourceNote: source)
 
         do {
@@ -131,8 +135,9 @@ final class AgentRuntime: ObservableObject {
         For calendar, SMS, and email drafts, tools will ask the user to confirm.
         Prefer listAttachments / readTextAttachment for files the user shared.
         Use the in-app browser for web questions: browserOpen (only if no useful page is open) → browserSnapshot → optional browserClick / browserType → browserSnapshot again.
-        Your final reply must be short bullet points that summarize the current web page content relevant to the user question (schedules, scores, names, dates, facts from the page).
-        Do not summarize the chat transcript. Prefer the snapshot headings, list items, and page text. Keep the same browser tab for follow-ups unless they ask for a different site.
+        browserSnapshot returns raw scrape plus extractedFindings (Foundation Model bullets from the page). Prefer those bullets for your answer; dig with click/type only if needed.
+        Your final reply must be short bullet points from the page that answer the user question. Do not summarize the chat transcript.
+        Keep the same browser tab for follow-ups unless they ask for a different site.
         Use openURL only when the user wants Safari or another system handler.
         Keep final answers short. Mode is \(context.mode.title).
         """
@@ -187,20 +192,39 @@ final class AgentRuntime: ObservableObject {
                 debugDetail: result
             )
         )
-        if name == "browserSnapshot" {
-            appendPageFindings(fromSnapshotResult: result)
-        }
     }
 
-    /// Surfaces scraped page bullets in chat; full snapshot stays in the tool result dump.
-    private func appendPageFindings(fromSnapshotResult result: String) {
+    /// Logs the tool result, runs Foundation Model extraction for snapshots, and returns
+    /// an enriched payload the agent session can use (raw scrape + extractedFindings).
+    func appendToolResultAndEnrich(name: String, result: String) async -> String {
+        appendToolResult(name: name, result: result)
+        guard name == "browserSnapshot" else { return result }
+        let bullets = await extractPageFindingsBullets(fromSnapshotResult: result)
         let event = context.browser.replay.last(where: { $0.action == "snapshot" })
-        let title = event?.title
-            ?? context.browser.title
-            ?? ""
-        let url = event?.url
-            ?? context.browser.url?.absoluteString
-            ?? ""
+        let title = event?.title ?? context.browser.title ?? ""
+        let url = event?.url ?? context.browser.url?.absoluteString ?? ""
+        let findings = AgentPageExtractor.formatFindings(title: title, url: url, bullets: bullets)
+        transcript.append(
+            AgentTranscriptEntry(
+                kind: .pageFindings,
+                text: findings,
+                debugDetail: bullets.joined(separator: "\n")
+            )
+        )
+        guard !bullets.isEmpty else { return result }
+        let extracted = bullets.map { "• \($0)" }.joined(separator: "\n")
+        return """
+        \(result)
+
+        extractedFindings (relevant to user question):
+        \(extracted)
+        """
+    }
+
+    private func extractPageFindingsBullets(fromSnapshotResult result: String) async -> [String] {
+        let event = context.browser.replay.last(where: { $0.action == "snapshot" })
+        let title = event?.title ?? context.browser.title ?? ""
+        let url = event?.url ?? context.browser.url?.absoluteString ?? ""
         let pageText: String
         if let stored = event?.pageText, !stored.isEmpty {
             pageText = stored
@@ -209,18 +233,14 @@ final class AgentRuntime: ObservableObject {
         } else {
             pageText = ""
         }
-        let findings = AgentBrowserSession.pageFindingsText(
-            title: title,
-            url: url,
-            pageText: pageText,
-            headings: event?.headings ?? [],
-            listItems: event?.listItems ?? []
-        )
-        transcript.append(
-            AgentTranscriptEntry(
-                kind: .pageFindings,
-                text: findings,
-                debugDetail: result
+        return await AgentPageExtractor.extract(
+            from: AgentPageExtractor.Input(
+                userQuestion: lastUserPrompt,
+                title: title,
+                url: url,
+                headings: event?.headings ?? [],
+                listItems: event?.listItems ?? [],
+                pageText: pageText
             )
         )
     }
@@ -305,8 +325,7 @@ private enum AgentFMToolBridge {
                 runtime.appendPermission(permission)
             }
             let result = try await work(runtime.context)
-            runtime.appendToolResult(name: name, result: result)
-            return result
+            return await runtime.appendToolResultAndEnrich(name: name, result: result)
         }.value
     }
 }

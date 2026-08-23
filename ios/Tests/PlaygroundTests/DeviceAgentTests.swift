@@ -176,7 +176,7 @@ final class DeviceAgentTests: XCTestCase {
     }
 
     @MainActor
-    func testPageFindingsBulletsAndReplayRecording() {
+    func testPageFindingsBulletsAndReplayRecording() async {
         let bullets = AgentBrowserSession.pageFindingsBullets(
             from: """
             NFL Schedule 2026
@@ -209,7 +209,28 @@ final class DeviceAgentTests: XCTestCase {
         XCTAssertEqual(headingFirst.first, "Standings")
         XCTAssertTrue(headingFirst.contains("AFC East leaders"))
 
+        let prompt = AgentPageExtractor.buildPrompt(
+            from: AgentPageExtractor.Input(
+                userQuestion: "What's on the NFL schedule?",
+                title: "NFL Schedule",
+                url: "https://www.espn.com/nfl/schedule",
+                headings: ["Week 1"],
+                listItems: ["Chiefs vs Ravens"],
+                pageText: "Thursday night kickoff"
+            )
+        )
+        XCTAssertTrue(prompt.contains("User question:"))
+        XCTAssertTrue(prompt.contains("NFL schedule"))
+        XCTAssertTrue(prompt.contains("Chiefs vs Ravens"))
+
+        AgentPageExtractor.testBulletsOverride = { input in
+            XCTAssertEqual(input.userQuestion, "Summarize this schedule")
+            return ["Week 1: Chiefs vs Ravens", "Week 2: Bills at Jets"]
+        }
+        defer { AgentPageExtractor.testBulletsOverride = nil }
+
         let runtime = AgentRuntime()
+        runtime.lastUserPrompt = "Summarize this schedule"
         runtime.context.browser.record(
             action: "open",
             detail: "https://example.com",
@@ -222,13 +243,20 @@ final class DeviceAgentTests: XCTestCase {
             url: "https://example.com",
             title: "Example",
             pageText: "Hello from the page with enough text to become a bullet point here.",
-            elements: [#"[1] link "Home""#]
+            elements: [#"[1] link "Home""#],
+            headings: ["Example"],
+            listItems: ["Hello from the page"]
         )
-        runtime.appendToolResult(
+        let enriched = await runtime.appendToolResultAndEnrich(
             name: "browserSnapshot",
             result: "title: Example\nurl: https://example.com\ntext:\nHello from the page with enough text to become a bullet point here."
         )
         XCTAssertTrue(runtime.transcript.contains { $0.kind == .pageFindings })
+        let pageCard = runtime.transcript.first { $0.kind == .pageFindings }?.text ?? ""
+        XCTAssertTrue(pageCard.contains("From the page"))
+        XCTAssertTrue(pageCard.contains("Week 1: Chiefs vs Ravens"))
+        XCTAssertTrue(enriched.contains("extractedFindings"))
+        XCTAssertTrue(enriched.contains("Week 1: Chiefs vs Ravens"))
         let dump = runtime.makeConversationDump()
         XCTAssertEqual(dump.browserReplay.count, 2)
         XCTAssertEqual(dump.browserReplay.first?.action, "open")

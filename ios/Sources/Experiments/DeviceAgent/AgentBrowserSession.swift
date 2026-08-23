@@ -284,7 +284,7 @@ final class AgentBrowserSession: NSObject, ObservableObject {
         return lines.joined(separator: "\n")
     }
 
-    /// Bullets built only from scraped page content (headings / lists / main text) — never chat.
+    /// Pull short bullets from scraped page text for the chat transcript.
     nonisolated static func pageFindingsText(
         title: String,
         url: String,
@@ -299,22 +299,7 @@ final class AgentBrowserSession: NSObject, ObservableObject {
             pageText: pageText,
             limit: limit
         )
-        var lines: [String] = []
-        let heading = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !heading.isEmpty {
-            lines.append("From the page · \(heading)")
-        } else if !url.isEmpty {
-            lines.append("From the page · \(url)")
-        } else {
-            lines.append("From the page")
-        }
-        if bullets.isEmpty {
-            lines.append("• (No readable page content scraped — try another page or click into the content.)")
-        } else {
-            lines.append(contentsOf: bullets.map { "• \($0)" })
-        }
-        lines.append("Ask a follow-up to dig into this same browser tab.")
-        return lines.joined(separator: "\n")
+        return AgentPageExtractor.formatFindings(title: title, url: url, bullets: bullets)
     }
 
     nonisolated static func pageFindingsBullets(
