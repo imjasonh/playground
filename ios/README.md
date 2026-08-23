@@ -216,19 +216,22 @@ on a TrueDepth front camera — not wired here yet.
 
 ### NFC Tags
 
-Read and write NDEF text or URL records with Core NFC (`NFCTagReaderSession`).
-Scan polls ISO 14443 and ISO 15693 (NTAG / MiFare and vicinity tags), shows UID
-and family, and decodes NDEF when present. Blank NTAG / Type 2 tags (no NDEF
-message yet) count as a successful read instead of the old "does not contain any
-NDEF message" failure; use Write to store a Text or URI record. FeliCa
-(`.iso18092`) is not polled: that option requires
-`com.apple.developer.nfc.readersession.felica.systemcodes` in Info.plist, and
-without it the session fails immediately with "Missing required entitlement".
-Requires the NFC Tag Reading App ID capability
-(`com.apple.developer.nfc.readersession.formats`) and `NFCReaderUsageDescription`.
-That entitlement change on the host Bundle ID needs `needs-ios-bootstrap` so
-match refreshes the App Store profile after merge. Simulator opens the UI but
-cannot scan; use a physical iPhone.
+Read and write NDEF text or URL records with Core NFC (`NFCNDEFReaderSession`).
+Blank NTAG / Type 2 tags (no NDEF message yet) count as a successful read
+instead of the old "does not contain any NDEF message" failure; use Write to
+store a Text or URI record. When the tag also exposes a hardware protocol
+(MiFare / ISO 15693 / …), the last-read summary includes UID and family.
+
+Uses `NFCNDEFReaderSession` rather than `NFCTagReaderSession` so the session
+only needs the NFC Tag Reading App ID capability
+(`com.apple.developer.nfc.readersession.formats`) and
+`NFCReaderUsageDescription`. Tag Reader polling options such as FeliCa need
+extra Info.plist keys and otherwise fail immediately with "Missing required
+entitlement". That entitlement change on the host Bundle ID needs
+`needs-ios-bootstrap` so match refreshes the App Store profile after merge.
+Simulator opens the UI but cannot scan; use a physical iPhone. The screen
+shows the CFBundleVersion build number so TestFlight installs are easy to
+confirm.
 
 ## Adding an experiment
 
