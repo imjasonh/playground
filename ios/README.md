@@ -46,6 +46,7 @@ ios/
 | Id | Title | Notes |
 |----|-------|-------|
 | `ride-monitor` | Ride Monitor | In-app; background motion + GPS; Live Activity + Watch companion |
+| `device-agent` | Device Agent | On-device model + JIT tools; Shortcuts; voice; demo browser (no share appex yet) |
 | `t9-keyboard` | T9 Keyboard | In-app demo **and** system keyboard extension |
 | `follow-the-hum` | Follow the Hum | In-app; AirPods spatial hum hunt |
 | `snore-log` | Snore Log | In-app; mic buffer + snore clip logging |
@@ -108,6 +109,25 @@ Past rides can be exported as JSON Lines (`.jsonl`): open a ride for a single
 export, or use **Export all** on the Past rides list to **Save ZIP…** (one
 archive of per-ride `.jsonl` files), save/share one combined JSONL, or share
 through the system share sheet.
+
+### Device Agent
+
+On-device assistant that calls **tools** over phone APIs (Contacts, location,
+Maps, calendar with confirm, SMS/Mail drafts with confirm, inbox files, bundled
+Demo Mail web page). Permissions are requested **only when a tool needs them**.
+
+- **Chat + tool transcript** in the experiment UI; Observe / Act / Browse modes
+- **Voice input** (mic + speech, just-in-time) → editable text → same agent loop
+- **Shortcuts / App Intents:** “Run Device Agent” and “Ask Device Agent” (optional
+  files via `IntentFile`); phrases registered through `AppShortcutsProvider`
+- **Deep link:** `playground://device-agent?prompt=…&mode=act&voice=1`
+- **Files:** attach in-app, pass from Shortcuts, or Open-in / document types into
+  the app inbox (a Share Extension appex is intentionally not included yet —
+  that needs a new Bundle ID + signing bootstrap)
+
+When Apple Intelligence / Foundation Models is available (iOS 26+ device), the
+on-device model chooses tools. Otherwise a keyword planner drives the same
+tools so Simulator and older OS builds still exercise the loop.
 
 ### T9 Keyboard
 

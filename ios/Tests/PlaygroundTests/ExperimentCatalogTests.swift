@@ -55,4 +55,8 @@ final class ExperimentCatalogTests: XCTestCase {
     func testIncludesNFCTags() {
         XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "nfc-tags" })
     }
+
+    func testIncludesDeviceAgent() {
+        XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "device-agent" })
+    }
 }

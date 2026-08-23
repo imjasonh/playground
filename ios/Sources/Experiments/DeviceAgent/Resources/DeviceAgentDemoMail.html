@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Demo Mail</title>
+<style>
+  body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;margin:16px;background:#f4f4f5;color:#111}
+  h1{font-size:1.25rem;margin:0 0 .35rem}
+  p{color:#444;line-height:1.4}
+  label{display:block;margin:.75rem 0 .25rem;font-size:.85rem;color:#555}
+  input,textarea{width:100%;box-sizing:border-box;padding:.65rem;border:1px solid #ccc;border-radius:8px;font:inherit;background:#fff}
+  textarea{min-height:120px}
+  button{margin-top:1rem;padding:.7rem 1rem;border:0;border-radius:10px;background:#0b57d0;color:#fff;font:inherit}
+  .sent{display:none;margin-top:1rem;padding:.75rem;background:#e6f4ea;border-radius:8px}
+</style>
+<h1>Demo Mail</h1>
+<p>First-party page for Device Agent browser tools. Not a real mail service.</p>
+<label for="to">To</label>
+<input id="to" value="mom@example.com"/>
+<label for="subject">Subject</label>
+<input id="subject" value="Running late"/>
+<label for="body">Body</label>
+<textarea id="body">On my way — ETA soon.</textarea>
+<button id="send" type="button">Send</button>
+<div class="sent" id="sent">Queued locally (demo only).</div>
+<script>
+  document.getElementById('send').onclick = function () {
+    document.getElementById('sent').style.display = 'block';
+    document.title = 'Demo Mail — sent';
+  };
+</script>
+</html>

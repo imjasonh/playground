@@ -74,6 +74,10 @@ final class PlaygroundUITests: XCTestCase {
         // Early rows stay on-screen; later ones may sit below the fold once the
         // catalog grows (SwiftUI List also virtualizes off-screen cells).
         XCTAssertTrue(app.staticTexts["Ride Monitor"].exists)
+        XCTAssertTrue(
+            scrollLauncherUntilExists(app.staticTexts["Device Agent"], in: app),
+            "Device Agent should appear in the launcher"
+        )
         XCTAssertTrue(app.staticTexts["T9 Keyboard"].exists)
         XCTAssertTrue(app.staticTexts["Follow the Hum"].exists)
         XCTAssertTrue(app.staticTexts["Snore Log"].exists)
@@ -102,6 +106,21 @@ final class PlaygroundUITests: XCTestCase {
         openExperiment("ride-monitor", title: "Ride Monitor", in: app)
 
         XCTAssertTrue(app.buttons["startRideButton"].waitForExistence(timeout: 8))
+    }
+
+    func testDeviceAgentExperimentOpens() {
+        let app = launchApp()
+
+        openExperiment("device-agent", title: "Device Agent", in: app)
+
+        XCTAssertTrue(app.navigationBars["Device Agent"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.textFields["deviceAgentPromptField"].waitForExistence(timeout: 8)
+            || app.textViews["deviceAgentPromptField"].waitForExistence(timeout: 3)
+            || app.otherElements["deviceAgentPromptField"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["deviceAgentSendButton"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["deviceAgentVoiceModeButton"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["deviceAgentModelStatus"].waitForExistence(timeout: 8)
+            || app.otherElements["deviceAgentModelStatus"].waitForExistence(timeout: 3))
     }
 
     func testT9KeyboardExperimentOpens() {
