@@ -237,9 +237,12 @@ extension NFCTagsController {
 
     private func supportsType2Raw(_ miFare: NFCMiFareTag) -> Bool {
         switch miFare.mifareFamily {
-        case .ultralight, .ultralightC, .unknown:
+        case .ultralight, .unknown:
+            // NTAG21x often reports as `.unknown` on iOS.
             return true
-        default:
+        case .desfire, .plus:
+            return false
+        @unknown default:
             return false
         }
     }
@@ -605,7 +608,7 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
                     completion(error)
                     return
                 }
-                guard let response, response.count >= 4 else {
+                guard response.count >= 4 else {
                     completion(
                         NSError(
                             domain: "NFCTags",
