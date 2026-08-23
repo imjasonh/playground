@@ -544,7 +544,7 @@ struct BrowserSnapshotFMTool: Tool {
 
     func call(arguments: Arguments) async throws -> String {
         let maxChars = arguments.maxTextChars > 0 ? arguments.maxTextChars : 3500
-        try await AgentFMToolBridge.run(runtime, name: name, summary: "max=\(Int(maxChars))") { context in
+        return try await AgentFMToolBridge.run(runtime, name: name, summary: "max=\(Int(maxChars))") { context in
             try await AgentToolExecutor.browserSnapshot(context: context, maxTextChars: maxChars)
         }
     }
