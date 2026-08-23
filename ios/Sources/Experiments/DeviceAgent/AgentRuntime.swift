@@ -4,20 +4,23 @@ import Foundation
 import FoundationModels
 #endif
 
-/// Runs prompts through Foundation Models + tools when available, else the fallback planner.
+/// Runs prompts through on-device Foundation Models + tools. Unavailable without
+/// Apple Intelligence (iOS 26+ with the model ready).
 @MainActor
 final class AgentRuntime: ObservableObject {
     @Published var transcript: [AgentTranscriptEntry] = []
     @Published var isRunning = false
     @Published var modelStatusText = "Checking model…"
-    @Published var usesFoundationModels = false
+    @Published private(set) var isModelAvailable = false
 
     let context: AgentToolContext
 
     init(context: AgentToolContext = AgentToolContext()) {
         self.context = context
         refreshModelStatus()
-        appendSystem(AgentToolExecutor.helpText(mode: context.mode))
+        if isModelAvailable {
+            appendSystem(AgentToolExecutor.helpText(mode: context.mode))
+        }
     }
 
     func refreshModelStatus() {
@@ -25,22 +28,24 @@ final class AgentRuntime: ObservableObject {
         if #available(iOS 26.0, *) {
             let model = SystemLanguageModel.default
             if model.isAvailable {
-                usesFoundationModels = true
+                isModelAvailable = true
                 modelStatusText = "On-device Foundation Model ready"
                 return
             }
-            usesFoundationModels = false
-            modelStatusText = "Apple Intelligence unavailable — using keyword tool planner"
+            isModelAvailable = false
+            modelStatusText = "Requires Apple Intelligence on this device. Enable it in Settings, or try again when the model has finished downloading."
             return
         }
         #endif
-        usesFoundationModels = false
-        modelStatusText = "Needs iOS 26+ for Foundation Models — using keyword tool planner"
+        isModelAvailable = false
+        modelStatusText = "Requires iOS 26+ with Apple Intelligence. This device or Simulator build cannot run Device Agent."
     }
 
     func clearTranscript() {
         transcript.removeAll()
-        appendSystem(AgentToolExecutor.helpText(mode: context.mode))
+        if isModelAvailable {
+            appendSystem(AgentToolExecutor.helpText(mode: context.mode))
+        }
     }
 
     func send(prompt: String, source: AgentRunSource) async {
@@ -48,31 +53,22 @@ final class AgentRuntime: ObservableObject {
         guard !trimmed.isEmpty else { return }
         guard !isRunning else { return }
 
+        refreshModelStatus()
+        guard isModelAvailable else {
+            append(.system, text: modelStatusText)
+            return
+        }
+
         isRunning = true
         defer { isRunning = false }
 
         append(.user, text: trimmed, sourceNote: source)
-        refreshModelStatus()
 
         do {
-            if usesFoundationModels {
-                try await runFoundationModels(prompt: trimmed)
-            } else {
-                try await runFallback(prompt: trimmed)
-            }
+            try await runFoundationModels(prompt: trimmed)
         } catch {
             append(.assistant, text: error.localizedDescription)
         }
-    }
-
-    private func runFallback(prompt: String) async throws {
-        let plan = AgentFallbackPlanner.steps(for: prompt, mode: context.mode)
-        for step in plan.steps {
-            appendToolCall(name: step.tool, summary: prettyArgs(step.args))
-            let result = try await execute(tool: step.tool, args: step.args)
-            appendToolResult(name: step.tool, summary: clip(result))
-        }
-        append(.assistant, text: plan.coda)
     }
 
     #if canImport(FoundationModels)
@@ -80,7 +76,9 @@ final class AgentRuntime: ObservableObject {
     private func runFoundationModels(prompt: String) async throws {
         let model = SystemLanguageModel.default
         guard model.isAvailable else {
-            try await runFallback(prompt: prompt)
+            isModelAvailable = false
+            modelStatusText = "Requires Apple Intelligence on this device."
+            append(.system, text: modelStatusText)
             return
         }
 
@@ -124,59 +122,11 @@ final class AgentRuntime: ObservableObject {
         }
         return tools
     }
-    #endif
-
-    func execute(tool: String, args: [String: String]) async throws -> String {
-        switch tool {
-        case "listAttachments":
-            return AgentToolExecutor.listAttachments(context: context)
-        case "readTextAttachment":
-            return try AgentToolExecutor.readTextAttachment(
-                context: context,
-                filenameQuery: args["filenameQuery"] ?? args["query"] ?? ""
-            )
-        case "getCurrentDateTime":
-            return AgentToolExecutor.getCurrentDateTime()
-        case "openURL":
-            return try AgentToolExecutor.openURL(args["url"] ?? "")
-        case "searchContacts":
-            return try await AgentToolExecutor.searchContacts(
-                context: context,
-                query: args["query"] ?? ""
-            )
-        case "getCurrentLocation":
-            return try await AgentToolExecutor.getCurrentLocation(context: context)
-        case "openMapsDirections":
-            return try AgentToolExecutor.openMapsDirections(query: args["query"] ?? "")
-        case "createCalendarEvent":
-            let hours = Double(args["hoursFromNow"] ?? "2") ?? 2
-            return try await AgentToolExecutor.createCalendarEvent(
-                context: context,
-                title: args["title"] ?? "Event",
-                notes: args["notes"] ?? "",
-                hoursFromNow: hours
-            )
-        case "draftSMS":
-            return try await AgentToolExecutor.draftSMS(
-                context: context,
-                recipients: args["recipients"] ?? "",
-                body: args["body"] ?? ""
-            )
-        case "draftEmail":
-            return try await AgentToolExecutor.draftEmail(
-                context: context,
-                to: args["to"] ?? "",
-                subject: args["subject"] ?? "",
-                body: args["body"] ?? ""
-            )
-        case "browserLoadDemo":
-            return AgentToolExecutor.browserLoadDemo(context: context)
-        case "browserRead":
-            return AgentToolExecutor.browserRead(context: context)
-        default:
-            throw AgentToolError.invalidArguments("Unknown tool \(tool)")
-        }
+    #else
+    private func runFoundationModels(prompt: String) async throws {
+        append(.system, text: modelStatusText)
     }
+    #endif
 
     func appendToolCall(name: String, summary: String) {
         transcript.append(
@@ -216,17 +166,8 @@ final class AgentRuntime: ObservableObject {
         }
         transcript.append(AgentTranscriptEntry(kind: kind, text: body))
     }
-
-    private func prettyArgs(_ args: [String: String]) -> String {
-        guard !args.isEmpty else { return "" }
-        return args.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: " ")
-    }
-
-    private func clip(_ text: String, limit: Int = 280) -> String {
-        if text.count <= limit { return text }
-        return String(text.prefix(limit)) + "…"
-    }
 }
+
 
 #if canImport(FoundationModels)
 @available(iOS 26.0, *)

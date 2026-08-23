@@ -18,26 +18,35 @@ struct DeviceAgentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            statusBar
-            modePicker
-            transcriptList
-            if showBrowser {
-                browserPane
-                    .frame(height: 220)
-                    .transition(.move(edge: .bottom))
+            if runtime.isModelAvailable {
+                statusBar
+                modePicker
+                transcriptList
+                if showBrowser {
+                    browserPane
+                        .frame(height: 220)
+                        .transition(.move(edge: .bottom))
+                }
+                if voiceMode {
+                    voiceBar
+                }
+                composer
+            } else {
+                unavailablePane
             }
-            if voiceMode {
-                voiceBar
-            }
-            composer
         }
         .animation(.easeInOut(duration: 0.2), value: showBrowser)
         .animation(.easeInOut(duration: 0.2), value: voiceMode)
         .onAppear {
-            consumeInboxIfNeeded()
+            runtime.refreshModelStatus()
+            if runtime.isModelAvailable {
+                consumeInboxIfNeeded()
+            }
         }
         .onChange(of: inbox.pendingRun?.id) { _ in
-            consumeInboxIfNeeded()
+            if runtime.isModelAvailable {
+                consumeInboxIfNeeded()
+            }
         }
         .onChange(of: runtime.context.browserURL) { url in
             if url != nil {
@@ -93,6 +102,27 @@ struct DeviceAgentView: View {
             }
         }
         .accessibilityIdentifier("deviceAgentRoot")
+    }
+
+    private var unavailablePane: some View {
+        VStack(spacing: 16) {
+            Spacer()
+            Image(systemName: "cpu")
+                .font(.system(size: 44))
+                .foregroundStyle(.secondary)
+            Text("Device Agent unavailable")
+                .font(.title3.weight(.semibold))
+                .accessibilityIdentifier("deviceAgentUnavailableTitle")
+            Text(runtime.modelStatusText)
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
+                .accessibilityIdentifier("deviceAgentUnavailableDetail")
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityIdentifier("deviceAgentUnavailable")
     }
 
     private var statusBar: some View {

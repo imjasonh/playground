@@ -46,7 +46,7 @@ ios/
 | Id | Title | Notes |
 |----|-------|-------|
 | `ride-monitor` | Ride Monitor | In-app; background motion + GPS; Live Activity + Watch companion |
-| `device-agent` | Device Agent | On-device model + JIT tools; Shortcuts; voice; demo browser (no share appex yet) |
+| `device-agent` | Device Agent | On-device model + JIT tools; Shortcuts; voice; requires Apple Intelligence |
 | `t9-keyboard` | T9 Keyboard | In-app demo **and** system keyboard extension |
 | `follow-the-hum` | Follow the Hum | In-app; AirPods spatial hum hunt |
 | `snore-log` | Snore Log | In-app; mic buffer + snore clip logging |
@@ -126,8 +126,9 @@ Demo Mail web page). Permissions are requested **only when a tool needs them**.
   that needs a new Bundle ID + signing bootstrap)
 
 When Apple Intelligence / Foundation Models is available (iOS 26+ device), the
-on-device model chooses tools. Otherwise a keyword planner drives the same
-tools so Simulator and older OS builds still exercise the loop.
+on-device model chooses tools. Otherwise the experiment shows an unavailable
+state (Simulator and older OS builds check that pane in UI tests). There is no
+keyword-planner fallback.
 
 ### T9 Keyboard
 

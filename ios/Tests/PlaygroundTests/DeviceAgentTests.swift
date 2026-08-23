@@ -2,27 +2,33 @@ import XCTest
 @testable import Playground
 
 final class DeviceAgentTests: XCTestCase {
-    func testFallbackPlannerMapsContactsAndLocation() {
-        let plan = AgentFallbackPlanner.steps(for: "Find contact Mom and where am I", mode: .act)
-        let names = plan.steps.map(\.tool)
-        XCTAssertTrue(names.contains("searchContacts"))
-        XCTAssertTrue(names.contains("getCurrentLocation"))
+    @MainActor
+    func testRuntimeReportsUnavailableWithoutFoundationModels() {
+        let runtime = AgentRuntime()
+        runtime.refreshModelStatus()
+        // Simulator / CI and pre–iOS 26 devices have no Apple Intelligence model.
+        XCTAssertFalse(runtime.isModelAvailable)
+        XCTAssertTrue(
+            runtime.modelStatusText.localizedCaseInsensitiveContains("requires")
+                || runtime.modelStatusText.localizedCaseInsensitiveContains("apple intelligence")
+                || runtime.modelStatusText.localizedCaseInsensitiveContains("ios 26")
+        )
     }
 
-    func testFallbackPlannerMapsAttachments() {
-        let plan = AgentFallbackPlanner.steps(for: "list attachments in the inbox", mode: .observe)
-        XCTAssertEqual(plan.steps.first?.tool, "listAttachments")
-    }
-
-    func testFallbackPlannerHelp() {
-        let plan = AgentFallbackPlanner.steps(for: "help", mode: .browse)
-        XCTAssertTrue(plan.steps.isEmpty)
-        XCTAssertTrue(plan.coda.localizedCaseInsensitiveContains("tool"))
-    }
-
-    func testFallbackPlannerDemoBrowser() {
-        let plan = AgentFallbackPlanner.steps(for: "open demo mail browser", mode: .browse)
-        XCTAssertTrue(plan.steps.map(\.tool).contains("browserLoadDemo"))
+    @MainActor
+    func testSendWhileUnavailableDoesNotRunTools() async {
+        let runtime = AgentRuntime()
+        runtime.refreshModelStatus()
+        XCTAssertFalse(runtime.isModelAvailable)
+        let before = runtime.transcript.count
+        await runtime.send(prompt: "list attachments", source: .chat)
+        XCTAssertGreaterThan(runtime.transcript.count, before)
+        let last = try XCTUnwrap(runtime.transcript.last)
+        XCTAssertEqual(last.kind, .system)
+        XCTAssertFalse(runtime.transcript.contains { entry in
+            if case .toolCall = entry.kind { return true }
+            return false
+        })
     }
 
     func testDeepLinkParsesPrompt() {
@@ -41,6 +47,7 @@ final class DeviceAgentTests: XCTestCase {
         XCTAssertFalse(AgentInbox.shared.handleOpenURL(url))
     }
 
+    @MainActor
     func testSanitizeAndImportRoundTrip() throws {
         let inbox = AgentInbox.shared
         let temp = FileManager.default.temporaryDirectory

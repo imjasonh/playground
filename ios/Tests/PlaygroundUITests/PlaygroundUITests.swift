@@ -114,13 +114,29 @@ final class PlaygroundUITests: XCTestCase {
         openExperiment("device-agent", title: "Device Agent", in: app)
 
         XCTAssertTrue(app.navigationBars["Device Agent"].waitForExistence(timeout: 8))
-        XCTAssertTrue(app.textFields["deviceAgentPromptField"].waitForExistence(timeout: 8)
-            || app.textViews["deviceAgentPromptField"].waitForExistence(timeout: 3)
-            || app.otherElements["deviceAgentPromptField"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.buttons["deviceAgentSendButton"].waitForExistence(timeout: 8))
-        XCTAssertTrue(app.buttons["deviceAgentVoiceModeButton"].waitForExistence(timeout: 8))
-        XCTAssertTrue(app.staticTexts["deviceAgentModelStatus"].waitForExistence(timeout: 8)
-            || app.otherElements["deviceAgentModelStatus"].waitForExistence(timeout: 3))
+        // Simulator / CI has no Apple Intelligence model — UI must show the
+        // blocked state rather than a fake keyword planner.
+        let unavailable = app.otherElements["deviceAgentUnavailable"]
+            .waitForExistence(timeout: 8)
+            || app.staticTexts["deviceAgentUnavailableTitle"].waitForExistence(timeout: 3)
+            || app.staticTexts["Device Agent unavailable"].waitForExistence(timeout: 3)
+        let readyComposer = app.textFields["deviceAgentPromptField"].waitForExistence(timeout: 2)
+            || app.textViews["deviceAgentPromptField"].waitForExistence(timeout: 1)
+        XCTAssertTrue(
+            unavailable || readyComposer,
+            "Expected unavailable pane (Simulator) or composer (Apple Intelligence device)"
+        )
+        if unavailable {
+            XCTAssertTrue(
+                app.staticTexts["deviceAgentUnavailableDetail"].waitForExistence(timeout: 3)
+                    || app.otherElements["deviceAgentUnavailableDetail"].waitForExistence(timeout: 2)
+                    || app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "Apple Intelligence")).firstMatch.exists
+                    || app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "iOS 26")).firstMatch.exists
+            )
+        } else {
+            XCTAssertTrue(app.buttons["deviceAgentSendButton"].waitForExistence(timeout: 8))
+            XCTAssertTrue(app.buttons["deviceAgentVoiceModeButton"].waitForExistence(timeout: 8))
+        }
     }
 
     func testT9KeyboardExperimentOpens() {

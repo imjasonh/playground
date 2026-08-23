@@ -118,7 +118,7 @@ private final class OneShotLocationDelegate: NSObject, CLLocationManagerDelegate
     }
 }
 
-/// Concrete tool implementations shared by Foundation Models wrappers and the fallback planner.
+/// Concrete tool implementations used by Foundation Models tool wrappers.
 @MainActor
 enum AgentToolExecutor {
     static func listAttachments(context: AgentToolContext) -> String {
@@ -341,8 +341,8 @@ enum AgentToolExecutor {
         """
         Device Agent can use tools for attachments, contacts, location, Maps, calendar (with confirm), \
         SMS/Mail drafts (with confirm), and a bundled browser demo. Mode is \(mode.title). \
-        Permissions are requested only when a tool needs them. On devices with Apple Intelligence, \
-        the on-device model chooses tools; otherwise a simple keyword planner runs.
+        Permissions are requested only when a tool needs them. Requires Apple Intelligence \
+        (on-device Foundation Models) on this device.
         """
     }
 }
