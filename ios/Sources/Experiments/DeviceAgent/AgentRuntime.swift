@@ -209,7 +209,7 @@ private enum AgentFMToolBridge {
         name: String,
         summary: String = "",
         permission: AgentPermissionDomain? = nil,
-        work: @MainActor (AgentToolContext) async throws -> String
+        work: @escaping @MainActor (AgentToolContext) async throws -> String
     ) async throws -> String {
         try await Task { @MainActor in
             guard let runtime else {
