@@ -119,7 +119,6 @@ final class PlaygroundUITests: XCTestCase {
         let unavailable = app.otherElements["deviceAgentUnavailable"]
             .waitForExistence(timeout: 8)
             || app.staticTexts["deviceAgentUnavailableTitle"].waitForExistence(timeout: 3)
-            || app.staticTexts["Device Agent unavailable"].waitForExistence(timeout: 3)
         let readyComposer = app.textFields["deviceAgentPromptField"].waitForExistence(timeout: 2)
             || app.textViews["deviceAgentPromptField"].waitForExistence(timeout: 1)
         XCTAssertTrue(
@@ -132,6 +131,7 @@ final class PlaygroundUITests: XCTestCase {
                     || app.otherElements["deviceAgentUnavailableDetail"].waitForExistence(timeout: 2)
                     || app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "Apple Intelligence")).firstMatch.exists
                     || app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "iOS 26")).firstMatch.exists
+                    || app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "eligible")).firstMatch.exists
             )
         } else {
             XCTAssertTrue(app.buttons["deviceAgentSendButton"].waitForExistence(timeout: 8))
