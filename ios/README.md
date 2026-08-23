@@ -126,9 +126,11 @@ Demo Mail web page). Permissions are requested **only when a tool needs them**.
   that needs a new Bundle ID + signing bootstrap)
 
 When Apple Intelligence / Foundation Models is available (iOS 26+ device), the
-on-device model chooses tools. Otherwise the experiment shows an unavailable
-state (Simulator and older OS builds check that pane in UI tests). There is no
-keyword-planner fallback.
+on-device model chooses tools. If Apple Intelligence is off, the UI offers a
+button that opens Settings (Apple Intelligence & Siri when the deep link works).
+If the model is still downloading, it shows progress plus **Check again**.
+Unsupported hardware / older OS / Simulator get a plain unavailable pane. There
+is no keyword-planner fallback.
 
 ### T9 Keyboard
 
