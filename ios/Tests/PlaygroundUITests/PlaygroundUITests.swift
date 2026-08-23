@@ -74,6 +74,10 @@ final class PlaygroundUITests: XCTestCase {
         // Early rows stay on-screen; later ones may sit below the fold once the
         // catalog grows (SwiftUI List also virtualizes off-screen cells).
         XCTAssertTrue(app.staticTexts["Ride Monitor"].exists)
+        XCTAssertTrue(
+            scrollLauncherUntilExists(app.staticTexts["Device Agent"], in: app),
+            "Device Agent should appear in the launcher"
+        )
         XCTAssertTrue(app.staticTexts["T9 Keyboard"].exists)
         XCTAssertTrue(app.staticTexts["Follow the Hum"].exists)
         XCTAssertTrue(app.staticTexts["Snore Log"].exists)
@@ -102,6 +106,53 @@ final class PlaygroundUITests: XCTestCase {
         openExperiment("ride-monitor", title: "Ride Monitor", in: app)
 
         XCTAssertTrue(app.buttons["startRideButton"].waitForExistence(timeout: 8))
+    }
+
+    func testDeviceAgentExperimentOpens() {
+        let app = launchApp()
+
+        openExperiment("device-agent", title: "Device Agent", in: app)
+
+        XCTAssertTrue(app.navigationBars["Device Agent"].waitForExistence(timeout: 8))
+
+        // CI’s iOS 26 Simulator may report Foundation Models available; older
+        // hosts show the unavailable pane. Match any marker in one wait so the
+        // available path isn’t starved by a long unavailable timeout.
+        let unavailable = app.descendants(matching: .any)["deviceAgentUnavailable"]
+        let unavailableTitle = app.descendants(matching: .any)["deviceAgentUnavailableTitle"]
+        let composer = app.descendants(matching: .any)["deviceAgentComposer"]
+        let prompt = app.descendants(matching: .any)["deviceAgentPromptField"]
+        let send = app.buttons["deviceAgentSendButton"]
+        let voice = app.buttons["deviceAgentVoiceModeButton"]
+        let modelStatus = app.descendants(matching: .any)["deviceAgentModelStatus"]
+        let root = app.descendants(matching: .any)["deviceAgentRoot"]
+
+        let marker = NSPredicate { _, _ in
+            unavailable.exists
+                || unavailableTitle.exists
+                || composer.exists
+                || prompt.exists
+                || send.exists
+                || modelStatus.exists
+                || root.exists
+        }
+        let ready = XCTNSPredicateExpectation(predicate: marker, object: app)
+        let waited = XCTWaiter.wait(for: [ready], timeout: 12)
+        XCTAssertEqual(waited, .completed, "Expected unavailable pane or Device Agent chat UI")
+
+        if unavailable.exists || unavailableTitle.exists {
+            XCTAssertTrue(
+                app.descendants(matching: .any)["deviceAgentUnavailableDetail"].waitForExistence(timeout: 3)
+                    || app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "Apple Intelligence")).firstMatch.exists
+                    || app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "iOS 26")).firstMatch.exists
+                    || app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "Foundation")).firstMatch.exists
+            )
+        } else {
+            XCTAssertTrue(
+                send.waitForExistence(timeout: 8) || voice.waitForExistence(timeout: 2) || prompt.exists || composer.exists,
+                "Expected composer controls when the model gate is available"
+            )
+        }
     }
 
     func testT9KeyboardExperimentOpens() {

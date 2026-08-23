@@ -37,8 +37,12 @@ targets:
     platform: iOS
     sources:
       - path: Sources
+        excludes:
+          - Experiments/DeviceAgent/Resources/**
       - path: Shared/T9
       - path: Shared/RideMonitor
+      - path: Sources/Experiments/DeviceAgent/Resources
+        buildPhase: resources
     dependencies:
       - target: T9Keyboard
         embed: true
@@ -99,14 +103,34 @@ targets:
         # entitlement / App ID capability), so these ship to TestFlight without
         # changing signing.
         NSMotionUsageDescription: Ride Monitor uses motion to detect jolts while you ride. Follow the Hum uses AirPods head tracking so the hum stays fixed in the world as you turn your head. Wigglecam uses the motion sensors to require a level landscape hold before capturing a stereo pair.
-        NSLocationWhenInUseUsageDescription: Ride Monitor records where jolts happen. Follow the Hum uses your location and compass to hide a nearby spot and steer you with sound.
+        NSLocationWhenInUseUsageDescription: Ride Monitor records where jolts happen. Follow the Hum uses your location and compass to hide a nearby spot and steer you with sound. Device Agent uses your location only when a location or maps tool runs.
         NSLocationAlwaysAndWhenInUseUsageDescription: Records where jolts and crashes happen and keeps the ride recording while the screen is off.
-        NSMicrophoneUsageDescription: Snore Log listens with the microphone while you sleep and saves short clips when snoring-like sounds are detected.
+        NSMicrophoneUsageDescription: Snore Log listens with the microphone while you sleep and saves short clips when snoring-like sounds are detected. Device Agent uses the microphone only when you start voice input.
+        NSSpeechRecognitionUsageDescription: Device Agent converts voice input to text on-device when you use voice mode. Audio is used for that transcription only.
+        NSContactsUsageDescription: Device Agent looks up names, phone numbers, and emails in Contacts only when a contacts tool runs.
+        NSCalendarsUsageDescription: Device Agent reads or creates calendar events only when you ask it to, and asks you to confirm before creating an event.
+        NSCalendarsFullAccessUsageDescription: Device Agent reads or creates calendar events only when you ask it to, and asks you to confirm before creating an event.
         NSCameraUsageDescription: Z-Camera uses the depth camera to show only the slice of space between the near and far distance sliders. Voxel World uses the camera and ARKit to rebuild the room as colored voxels. Wigglecam uses the rear ultra-wide and wide cameras together to capture a stereo still pair for wigglegrams. Local Lens uses the camera with on-device Vision to label scenes, read text, find animals/faces/eyes, estimate body and hand pose, and scan barcodes — frames stay on this device.
         NSPhotoLibraryAddUsageDescription: Wigglecam saves wigglegram GIFs to your photo library when you tap Save.
         NSHealthShareUsageDescription: Ride Monitor uses HealthKit so the Apple Watch companion can stay active during a ride and record heart rate, energy, Watch distance, and cycling cadence/speed/power when a sensor is paired. GPS and jolt data stay in the app; the Watch workout is also saved to Health.
         NSHealthUpdateUsageDescription: Ride Monitor uses HealthKit so the Apple Watch companion can stay active during a ride and record heart rate, energy, Watch distance, and cycling cadence/speed/power when a sensor is paired. GPS and jolt data stay in the app; the Watch workout is also saved to Health.
         NFCReaderUsageDescription: NFC Tags reads and writes NDEF text and URL payloads on nearby NFC tags.
+        CFBundleURLTypes:
+          - CFBundleURLName: io.github.imjasonh.playground.device-agent
+            CFBundleTypeRole: Editor
+            CFBundleURLSchemes:
+              - playground
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Device Agent Inbox Item
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - public.text
+              - public.plain-text
+              - public.data
+              - public.image
+              - public.pdf
+              - public.utf8-plain-text
         # NFCTagReaderSession Info.plist keys (not App ID capabilities). Required
         # when polling ISO 7816 / FeliCa families; missing entries invalidate the
         # session with "Missing required entitlement". No signing bootstrap.
