@@ -27,8 +27,24 @@ struct NFCNDEFDecodedRecord: Equatable {
     var body: String
 }
 
+/// Raw NDEF record fields used to compare write intent vs read-back.
+struct NFCNDEFRecordSnapshot: Equatable {
+    var typeNameFormatRawValue: UInt8
+    var type: Data
+    var payload: Data
+}
+
 /// Pure NDEF text / URI codec and draft validation (no Core NFC).
 enum NFCNDEFCodec {
+    /// Returns true when both messages have the same record count and each
+    /// record's type name format, type bytes, and payload bytes match.
+    static func ndefRecordsMatch(
+        _ lhs: [NFCNDEFRecordSnapshot],
+        _ rhs: [NFCNDEFRecordSnapshot]
+    ) -> Bool {
+        lhs == rhs
+    }
+
     /// Returns a user-facing error when the draft cannot be written; otherwise `nil`.
     static func validationError(for draft: NFCNDEFWriteDraft) -> String? {
         let trimmed = draft.text.trimmingCharacters(in: .whitespacesAndNewlines)

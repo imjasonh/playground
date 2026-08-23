@@ -26,6 +26,9 @@ final class NFCTagsController: NSObject, ObservableObject {
 
     private var tagSession: NFCTagReaderSession?
     private var pendingWriteMessage: NFCNDEFMessage?
+    /// After a same-session write match, re-poll and require a second read that
+    /// matches these snapshots so a soft/cached success cannot pass as durable.
+    private var pendingDurabilityExpected: [NFCNDEFRecordSnapshot]?
 
     var isNFCAvailable: Bool {
         NFCTagReaderSession.readingAvailable
@@ -37,6 +40,7 @@ final class NFCTagsController: NSObject, ObservableObject {
             return
         }
         pendingWriteMessage = nil
+        pendingDurabilityExpected = nil
         beginSession(alertMessage: "Hold an NFC tag near the top of the iPhone to read it.")
     }
 
@@ -54,6 +58,7 @@ final class NFCTagsController: NSObject, ObservableObject {
             return
         }
         pendingWriteMessage = message
+        pendingDurabilityExpected = nil
         beginSession(alertMessage: "Hold a writable NFC tag near the top of the iPhone.")
     }
 
@@ -61,6 +66,7 @@ final class NFCTagsController: NSObject, ObservableObject {
         tagSession?.invalidate()
         tagSession = nil
         pendingWriteMessage = nil
+        pendingDurabilityExpected = nil
         isSessionActive = false
     }
 
@@ -119,7 +125,18 @@ final class NFCTagsController: NSObject, ObservableObject {
         }
     }
 
+    private func snapshots(from message: NFCNDEFMessage) -> [NFCNDEFRecordSnapshot] {
+        message.records.map { record in
+            NFCNDEFRecordSnapshot(
+                typeNameFormatRawValue: record.typeNameFormat.rawValue,
+                type: record.type,
+                payload: record.payload
+            )
+        }
+    }
+
     private func finish(session: NFCTagReaderSession, alert: String) {
+        pendingDurabilityExpected = nil
         statusMessage = alert
         session.alertMessage = alert
         session.invalidate()
@@ -129,6 +146,7 @@ final class NFCTagsController: NSObject, ObservableObject {
         guard session === tagSession else { return }
         tagSession = nil
         pendingWriteMessage = nil
+        pendingDurabilityExpected = nil
         isSessionActive = false
     }
 }
@@ -249,6 +267,8 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
                 }
                 if let writeMessage = self.pendingWriteMessage {
                     self.write(writeMessage, to: detected, session: session)
+                } else if self.pendingDurabilityExpected != nil {
+                    self.confirmDurability(on: detected, session: session)
                 } else {
                     self.read(from: detected, session: session)
                 }
@@ -497,7 +517,67 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
                     )
                     return
                 }
+
+                let expected = self.snapshots(from: written)
+                let actual = self.snapshots(from: message)
+                guard NFCNDEFCodec.ndefRecordsMatch(expected, actual) else {
+                    self.finish(
+                        session: session,
+                        alert: "Write did not update the tag "
+                            + "(read-back does not match what was written)."
+                    )
+                    return
+                }
+
+                // Same-session match can still be a soft/cached view. Re-poll and
+                // require a second connect/read before claiming durable success.
                 self.pendingWriteMessage = nil
+                self.pendingDurabilityExpected = expected
+                let confirm = "Hold still to confirm the write stuck."
+                session.alertMessage = confirm
+                self.statusMessage = confirm
+                session.restartPolling()
+            }
+        }
+    }
+
+    /// Second read after restartPolling; must match the written snapshots.
+    private func confirmDurability(
+        on detected: DetectedNFCTag,
+        session: NFCTagReaderSession
+    ) {
+        guard let expected = pendingDurabilityExpected else {
+            read(from: detected, session: session)
+            return
+        }
+        detected.ndefTag.readNDEF { message, readError in
+            Task { @MainActor in
+                guard session === self.tagSession else { return }
+                if let readError {
+                    self.finish(
+                        session: session,
+                        alert: "Write looked OK, but confirm failed: "
+                            + readError.localizedDescription
+                    )
+                    return
+                }
+                guard let message else {
+                    self.finish(
+                        session: session,
+                        alert: "Write looked OK, but a second read found no NDEF message."
+                    )
+                    return
+                }
+                let actual = self.snapshots(from: message)
+                guard NFCNDEFCodec.ndefRecordsMatch(expected, actual) else {
+                    self.finish(
+                        session: session,
+                        alert: "Write looked OK, but a second read did not match. Try again."
+                    )
+                    return
+                }
+
+                self.pendingDurabilityExpected = nil
                 let records = self.decode(message)
                 let body = NFCNDEFCodec.summary(for: records)
                 self.lastReadSummary = NFCTagScanFormatter.recordsSummary(
@@ -505,10 +585,9 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
                     uid: detected.uid,
                     family: detected.family
                 )
-                let length = written.length
                 self.finish(
                     session: session,
-                    alert: "Wrote and verified NDEF message (\(length) bytes)."
+                    alert: "Wrote and verified NDEF message (\(message.length) bytes)."
                 )
             }
         }
