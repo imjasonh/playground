@@ -222,8 +222,9 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
                 return
             }
             // invalidate() after a successful finish() can still deliver a
-            // non-benign error; keep the success / blank-tag status.
-            if self.statusMessage.hasPrefix("Wrote ")
+            // non-benign error; keep write/read outcome status.
+            if self.statusMessage.hasPrefix("Wrote")
+                || self.statusMessage.hasPrefix("Write ")
                 || self.statusMessage.hasPrefix("Read ")
                 || self.statusMessage.hasPrefix("Blank ")
             {
