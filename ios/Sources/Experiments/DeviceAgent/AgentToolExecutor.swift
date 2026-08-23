@@ -10,6 +10,7 @@ import UIKit
 final class AgentToolContext: ObservableObject {
     let inbox: AgentInbox
     let permissions: AgentPermissionGate
+    let browser: AgentBrowserSession
 
     @Published var mode: AgentMode = .act
     @Published var browserURL: URL?
@@ -25,16 +26,25 @@ final class AgentToolContext: ObservableObject {
     init() {
         self.inbox = AgentInbox.shared
         self.permissions = AgentPermissionGate.shared
+        self.browser = AgentBrowserSession.shared
     }
 
     init(inbox: AgentInbox) {
         self.inbox = inbox
         self.permissions = AgentPermissionGate.shared
+        self.browser = AgentBrowserSession.shared
     }
 
     init(inbox: AgentInbox, permissions: AgentPermissionGate) {
         self.inbox = inbox
         self.permissions = permissions
+        self.browser = AgentBrowserSession.shared
+    }
+
+    init(inbox: AgentInbox, permissions: AgentPermissionGate, browser: AgentBrowserSession) {
+        self.inbox = inbox
+        self.permissions = permissions
+        self.browser = browser
     }
 
     func logTool(name: String, detail: String) {
@@ -322,7 +332,7 @@ enum AgentToolExecutor {
         return "Opening Mail composer."
     }
 
-    static func browserOpen(context: AgentToolContext, urlString: String) throws -> String {
+    static func browserOpen(context: AgentToolContext, urlString: String) async throws -> String {
         let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: trimmed),
               let scheme = url.scheme?.lowercased(),
@@ -331,22 +341,57 @@ enum AgentToolExecutor {
         else {
             throw AgentToolError.invalidArguments("Need an absolute http(s) URL with a host.")
         }
-        context.browserURL = url
-        context.browserTitle = url.host ?? url.absoluteString
+        try await context.browser.open(url)
+        context.browserURL = context.browser.url ?? url
+        context.browserTitle = context.browser.title
         context.logTool(name: "browserOpen", detail: url.absoluteString)
-        return "Loaded \(url.absoluteString) in the in-app browser."
+        return "Loaded \(context.browser.url?.absoluteString ?? url.absoluteString) in the in-app browser. Call browserSnapshot next."
     }
 
     static func browserRead(context: AgentToolContext) -> String {
-        let title = context.browserTitle.isEmpty ? "(none)" : context.browserTitle
-        let url = context.browserURL?.absoluteString ?? "(no page loaded)"
-        return "Browser title: \(title)\nURL: \(url)"
+        context.browserURL = context.browser.url ?? context.browserURL
+        context.browserTitle = context.browser.title.isEmpty ? context.browserTitle : context.browser.title
+        return context.browser.statusSummary()
+    }
+
+    static func browserSnapshot(context: AgentToolContext, maxTextChars: Double) async throws -> String {
+        let chars = Int(maxTextChars.rounded())
+        let snap = try await context.browser.snapshot(maxTextChars: chars > 0 ? chars : 3500)
+        context.browserURL = context.browser.url ?? context.browserURL
+        context.browserTitle = context.browser.title
+        context.logTool(name: "browserSnapshot", detail: "\(snap.count) chars")
+        return snap
+    }
+
+    static func browserClick(context: AgentToolContext, ref: String) async throws -> String {
+        let result = try await context.browser.click(ref: ref)
+        context.logTool(name: "browserClick", detail: ref)
+        return result
+    }
+
+    static func browserType(
+        context: AgentToolContext,
+        ref: String,
+        text: String,
+        submit: Bool
+    ) async throws -> String {
+        let result = try await context.browser.type(ref: ref, text: text, submit: submit)
+        context.logTool(name: "browserType", detail: "\(ref) submit=\(submit)")
+        return result
+    }
+
+    static func browserBack(context: AgentToolContext) async throws -> String {
+        let result = try await context.browser.goBack()
+        context.browserURL = context.browser.url
+        context.browserTitle = context.browser.title
+        context.logTool(name: "browserBack", detail: context.browser.url?.absoluteString ?? "")
+        return result
     }
 
     static func helpText(mode: AgentMode) -> String {
         """
         Device Agent can use tools for attachments, contacts, location, Maps, calendar (with confirm), \
-        SMS/Mail drafts (with confirm), and an in-app browser for real http(s) URLs. \
+        SMS/Mail drafts (with confirm), and an in-app browser it can drive (open, snapshot, click, type). \
         Mode is \(mode.title): Observe is read-only; Act unlocks calendar/SMS/Mail drafts; \
         Browse prefers the in-app web view. Permissions are requested only when a tool needs them. \
         Requires Apple Intelligence (on-device Foundation Models) on this device.

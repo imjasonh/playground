@@ -133,7 +133,9 @@ Demo Mail web page). Permissions are requested **only when a tool needs them**.
 - **Files:** attach in-app, pass from Shortcuts, or Open-in / document types into
   the app inbox (a Share Extension appex is intentionally not included yet —
   that needs a new Bundle ID + signing bootstrap)
-- **In-app browser:** `browserOpen` loads real http(s) URLs (no demo page)
+- **In-app browser:** `browserOpen` loads real http(s) URLs; injected JS bridge
+  supports `browserSnapshot` / `browserClick` / `browserType` / `browserBack` so
+  the model can drive pages and read content back
 
 When Apple Intelligence / Foundation Models is available (iOS 26+ device), the
 on-device model chooses tools. If Apple Intelligence is off, the UI offers a

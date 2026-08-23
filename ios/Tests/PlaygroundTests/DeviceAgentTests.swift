@@ -164,20 +164,47 @@ final class DeviceAgentTests: XCTestCase {
     }
 
     @MainActor
-    func testBrowserOpenAcceptsHTTPSAndRejectsDemoSchemes() throws {
+    func testBrowserOpenRejectsNonHTTP() async {
         let context = AgentToolContext()
-        let loaded = try AgentToolExecutor.browserOpen(
-            context: context,
-            urlString: "https://example.com/path"
-        )
-        XCTAssertTrue(loaded.contains("example.com"))
-        XCTAssertEqual(context.browserURL?.host, "example.com")
+        do {
+            _ = try await AgentToolExecutor.browserOpen(context: context, urlString: "file:///tmp/x.html")
+            XCTFail("Expected file URL to be rejected")
+        } catch {
+            // expected
+        }
+        do {
+            _ = try await AgentToolExecutor.browserOpen(context: context, urlString: "not a url")
+            XCTFail("Expected invalid URL to be rejected")
+        } catch {
+            // expected
+        }
+    }
 
-        XCTAssertThrowsError(
-            try AgentToolExecutor.browserOpen(context: context, urlString: "file:///tmp/x.html")
-        )
-        XCTAssertThrowsError(
-            try AgentToolExecutor.browserOpen(context: context, urlString: "not a url")
+    func testBrowserSnapshotFormattingAndJSEscape() {
+        let raw = """
+        {"title":"Example","url":"https://example.com/","elements":["[1] link \\"Home\\"","[2] textbox \\"Search\\""],"text":"Welcome"}
+        """
+        let formatted = AgentBrowserSession.formatSnapshotPayload(raw)
+        XCTAssertTrue(formatted.contains("title: Example"))
+        XCTAssertTrue(formatted.contains("url: https://example.com/"))
+        XCTAssertTrue(formatted.contains("[1] link"))
+        XCTAssertTrue(formatted.contains("text:"))
+        XCTAssertTrue(formatted.contains("Welcome"))
+
+        XCTAssertEqual(AgentBrowserSession.jsString("a'b"), "'a\\'b'")
+        XCTAssertTrue(AgentBrowserSession.bridgeJavaScript.contains("__deviceAgent"))
+        XCTAssertTrue(AgentBrowserSession.bridgeJavaScript.contains("snapshot"))
+    }
+
+    @MainActor
+    func testBrowserRequireOKParsesFailure() {
+        XCTAssertThrowsError(try AgentBrowserSession.requireOK(
+            #"{"ok":false,"error":"unknown ref 9"}"#,
+            action: "click"
+        ))
+        XCTAssertEqual(
+            try AgentBrowserSession.requireOK(#"{"ok":true}"#, action: "click"),
+            "click ok"
         )
     }
 }

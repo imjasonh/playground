@@ -72,6 +72,18 @@ struct DeviceAgentView: View {
                 runtime.context.mode = runtime.context.mode == .observe ? .browse : runtime.context.mode
             }
         }
+        .onChange(of: runtime.context.browser.url) { url in
+            if url != nil {
+                showBrowser = true
+                runtime.context.browserURL = url
+                runtime.context.mode = runtime.context.mode == .observe ? .browse : runtime.context.mode
+            }
+        }
+        .onChange(of: runtime.context.browser.title) { title in
+            if !title.isEmpty {
+                runtime.context.browserTitle = title
+            }
+        }
         .onChange(of: runtime.context.pendingSMS) { draft in
             showSMS = draft != nil && MFMessageComposeViewController.canSendText()
         }
@@ -365,17 +377,23 @@ struct DeviceAgentView: View {
     private var browserPane: some View {
         VStack(spacing: 0) {
             HStack {
-                Text(runtime.context.browserTitle.isEmpty ? "Browser" : runtime.context.browserTitle)
+                Text(runtime.context.browser.title.isEmpty
+                    ? (runtime.context.browserTitle.isEmpty ? "Browser" : runtime.context.browserTitle)
+                    : runtime.context.browser.title)
                     .font(.caption.weight(.semibold))
                     .lineLimit(1)
                 Spacer()
+                if runtime.context.browser.isLoading {
+                    ProgressView()
+                        .scaleEffect(0.7)
+                }
                 Button("Close") { showBrowser = false }
                     .font(.caption)
             }
             .padding(.horizontal)
             .padding(.vertical, 6)
-            if runtime.context.browserURL == nil {
-                Text("Ask Device Agent to open an http(s) URL, or it will appear here when a tool loads one.")
+            if runtime.context.browser.url == nil && runtime.context.browserURL == nil {
+                Text("Ask Device Agent to open an http(s) URL. It can snapshot, click, and type in this pane.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -383,9 +401,7 @@ struct DeviceAgentView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(Color(.secondarySystemBackground))
             } else {
-                AgentBrowserPane(url: runtime.context.browserURL) { title in
-                    runtime.context.browserTitle = title
-                }
+                AgentBrowserPane(session: runtime.context.browser)
                     .background(Color(.secondarySystemBackground))
             }
         }

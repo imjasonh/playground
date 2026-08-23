@@ -129,7 +129,8 @@ final class AgentRuntime: ObservableObject {
         Use tools to act on the phone. Request only what you need.
         For calendar, SMS, and email drafts, tools will ask the user to confirm.
         Prefer listAttachments / readTextAttachment for files the user shared.
-        Use browserOpen to load real http(s) URLs in the in-app web view.
+        Use browserOpen for real http(s) URLs in the in-app web view.
+        To drive a page: browserOpen → browserSnapshot → browserClick / browserType (use refs like 1, 2 from the snapshot) → browserSnapshot again.
         Use openURL only when the user wants Safari or another system handler.
         Keep final answers short. Mode is \(context.mode.title).
         """
@@ -147,6 +148,10 @@ final class AgentRuntime: ObservableObject {
             OpenMapsFMTool(runtime: self),
             BrowserOpenFMTool(runtime: self),
             BrowserReadFMTool(runtime: self),
+            BrowserSnapshotFMTool(runtime: self),
+            BrowserClickFMTool(runtime: self),
+            BrowserTypeFMTool(runtime: self),
+            BrowserBackFMTool(runtime: self),
         ]
         if context.mode == .act {
             tools.append(CreateEventFMTool(runtime: self))
@@ -491,7 +496,7 @@ struct DraftEmailFMTool: Tool {
 struct BrowserOpenFMTool: Tool {
     weak var runtime: AgentRuntime?
     let name = "browserOpen"
-    let description = "Load a real http(s) URL in the in-app web view (not Safari)."
+    let description = "Load a real http(s) URL in the in-app web view (not Safari). Then call browserSnapshot."
 
     @Generable
     struct Arguments {
@@ -501,7 +506,7 @@ struct BrowserOpenFMTool: Tool {
 
     func call(arguments: Arguments) async throws -> String {
         try await AgentFMToolBridge.run(runtime, name: name, summary: arguments.url) { context in
-            try AgentToolExecutor.browserOpen(context: context, urlString: arguments.url)
+            try await AgentToolExecutor.browserOpen(context: context, urlString: arguments.url)
         }
     }
 }
@@ -510,7 +515,7 @@ struct BrowserOpenFMTool: Tool {
 struct BrowserReadFMTool: Tool {
     weak var runtime: AgentRuntime?
     let name = "browserRead"
-    let description = "Read the current in-app browser title and URL."
+    let description = "Read the current in-app browser title, URL, and loading state."
 
     @Generable
     struct Arguments {
@@ -521,6 +526,92 @@ struct BrowserReadFMTool: Tool {
     func call(arguments: Arguments) async throws -> String {
         try await AgentFMToolBridge.run(runtime, name: name) { context in
             AgentToolExecutor.browserRead(context: context)
+        }
+    }
+}
+
+@available(iOS 26.0, *)
+struct BrowserSnapshotFMTool: Tool {
+    weak var runtime: AgentRuntime?
+    let name = "browserSnapshot"
+    let description = "Read interactive elements (with numeric refs) and visible text from the in-app browser. Call before click/type."
+
+    @Generable
+    struct Arguments {
+        @Guide(description: "Max visible text characters to return (default 3500)")
+        var maxTextChars: Double
+    }
+
+    func call(arguments: Arguments) async throws -> String {
+        let maxChars = arguments.maxTextChars > 0 ? arguments.maxTextChars : 3500
+        try await AgentFMToolBridge.run(runtime, name: name, summary: "max=\(Int(maxChars))") { context in
+            try await AgentToolExecutor.browserSnapshot(context: context, maxTextChars: maxChars)
+        }
+    }
+}
+
+@available(iOS 26.0, *)
+struct BrowserClickFMTool: Tool {
+    weak var runtime: AgentRuntime?
+    let name = "browserClick"
+    let description = "Click an element by ref from the latest browserSnapshot (for example \"3\")."
+
+    @Generable
+    struct Arguments {
+        @Guide(description: "Numeric ref from browserSnapshot")
+        var ref: String
+    }
+
+    func call(arguments: Arguments) async throws -> String {
+        try await AgentFMToolBridge.run(runtime, name: name, summary: arguments.ref) { context in
+            try await AgentToolExecutor.browserClick(context: context, ref: arguments.ref)
+        }
+    }
+}
+
+@available(iOS 26.0, *)
+struct BrowserTypeFMTool: Tool {
+    weak var runtime: AgentRuntime?
+    let name = "browserType"
+    let description = "Type into an input/textarea by ref from browserSnapshot. Set submit true to press Enter / submit the form."
+
+    @Generable
+    struct Arguments {
+        @Guide(description: "Numeric ref from browserSnapshot")
+        var ref: String
+        @Guide(description: "Text to enter")
+        var text: String
+        @Guide(description: "If true, submit the form or press Enter after typing")
+        var submit: Bool
+    }
+
+    func call(arguments: Arguments) async throws -> String {
+        try await AgentFMToolBridge.run(runtime, name: name, summary: arguments.ref) { context in
+            try await AgentToolExecutor.browserType(
+                context: context,
+                ref: arguments.ref,
+                text: arguments.text,
+                submit: arguments.submit
+            )
+        }
+    }
+}
+
+@available(iOS 26.0, *)
+struct BrowserBackFMTool: Tool {
+    weak var runtime: AgentRuntime?
+    let name = "browserBack"
+    let description = "Go back in the in-app browser history."
+
+    @Generable
+    struct Arguments {
+        @Guide(description: "Unused; pass an empty string")
+        var note: String
+    }
+
+    func call(arguments: Arguments) async throws -> String {
+        try await AgentFMToolBridge.run(runtime, name: name) { context in
+            try await AgentToolExecutor.browserBack(context: context)
         }
     }
 }

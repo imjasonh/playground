@@ -3,42 +3,14 @@ import SwiftUI
 import WebKit
 
 struct AgentBrowserPane: UIViewRepresentable {
-    let url: URL?
-    var onTitleChange: ((String) -> Void)?
+    @ObservedObject var session: AgentBrowserSession
 
     func makeUIView(context: Context) -> WKWebView {
-        let webView = WKWebView()
-        webView.navigationDelegate = context.coordinator
-        return webView
+        session.webView
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
-        context.coordinator.parent = self
-        guard let url else { return }
-        if context.coordinator.loadedURL != url {
-            context.coordinator.loadedURL = url
-            webView.load(URLRequest(url: url))
-        }
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(parent: self)
-    }
-
-    final class Coordinator: NSObject, WKNavigationDelegate {
-        var parent: AgentBrowserPane
-        var loadedURL: URL?
-
-        init(parent: AgentBrowserPane) {
-            self.parent = parent
-        }
-
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            let title = webView.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            if !title.isEmpty {
-                parent.onTitleChange?(title)
-            }
-        }
+        // Navigation is driven by AgentBrowserSession / tools.
     }
 }
 
