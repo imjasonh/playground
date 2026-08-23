@@ -98,4 +98,29 @@ final class NFCNDEFCodecTests: XCTestCase {
     func testSummaryEmpty() {
         XCTAssertEqual(NFCNDEFCodec.summary(for: []), "Tag has no NDEF records.")
     }
+
+    func testNDEFRecordsMatchRequiresIdenticalSnapshots() {
+        let text = NFCNDEFRecordSnapshot(
+            typeNameFormatRawValue: 1,
+            type: Data("T".utf8),
+            payload: NFCNDEFCodec.encodeTextPayload(text: "hello", languageCode: "en")
+        )
+        let otherText = NFCNDEFRecordSnapshot(
+            typeNameFormatRawValue: 1,
+            type: Data("T".utf8),
+            payload: NFCNDEFCodec.encodeTextPayload(text: "other", languageCode: "en")
+        )
+        let url = NFCNDEFRecordSnapshot(
+            typeNameFormatRawValue: 1,
+            type: Data("U".utf8),
+            payload: NFCNDEFCodec.encodeURIPayload(urlString: "https://example.com")!
+        )
+
+        XCTAssertTrue(NFCNDEFCodec.ndefRecordsMatch([text], [text]))
+        XCTAssertFalse(NFCNDEFCodec.ndefRecordsMatch([text], [otherText]))
+        XCTAssertFalse(NFCNDEFCodec.ndefRecordsMatch([text], [url]))
+        XCTAssertFalse(NFCNDEFCodec.ndefRecordsMatch([text], []))
+        XCTAssertFalse(NFCNDEFCodec.ndefRecordsMatch([text], [text, text]))
+        XCTAssertTrue(NFCNDEFCodec.ndefRecordsMatch([], []))
+    }
 }

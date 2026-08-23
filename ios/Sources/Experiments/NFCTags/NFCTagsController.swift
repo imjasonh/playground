@@ -26,6 +26,9 @@ final class NFCTagsController: NSObject, ObservableObject {
 
     private var tagSession: NFCTagReaderSession?
     private var pendingWriteMessage: NFCNDEFMessage?
+    /// After a same-session write match, re-poll and require a second read that
+    /// matches these snapshots so a soft/cached success cannot pass as durable.
+    private var pendingDurabilityExpected: [NFCNDEFRecordSnapshot]?
 
     var isNFCAvailable: Bool {
         NFCTagReaderSession.readingAvailable
@@ -37,6 +40,7 @@ final class NFCTagsController: NSObject, ObservableObject {
             return
         }
         pendingWriteMessage = nil
+        pendingDurabilityExpected = nil
         beginSession(alertMessage: "Hold an NFC tag near the top of the iPhone to read it.")
     }
 
@@ -54,6 +58,7 @@ final class NFCTagsController: NSObject, ObservableObject {
             return
         }
         pendingWriteMessage = message
+        pendingDurabilityExpected = nil
         beginSession(alertMessage: "Hold a writable NFC tag near the top of the iPhone.")
     }
 
@@ -61,6 +66,7 @@ final class NFCTagsController: NSObject, ObservableObject {
         tagSession?.invalidate()
         tagSession = nil
         pendingWriteMessage = nil
+        pendingDurabilityExpected = nil
         isSessionActive = false
     }
 
@@ -119,7 +125,18 @@ final class NFCTagsController: NSObject, ObservableObject {
         }
     }
 
+    private func snapshots(from message: NFCNDEFMessage) -> [NFCNDEFRecordSnapshot] {
+        message.records.map { record in
+            NFCNDEFRecordSnapshot(
+                typeNameFormatRawValue: record.typeNameFormat.rawValue,
+                type: record.type,
+                payload: record.payload
+            )
+        }
+    }
+
     private func finish(session: NFCTagReaderSession, alert: String) {
+        pendingDurabilityExpected = nil
         statusMessage = alert
         session.alertMessage = alert
         session.invalidate()
@@ -129,6 +146,7 @@ final class NFCTagsController: NSObject, ObservableObject {
         guard session === tagSession else { return }
         tagSession = nil
         pendingWriteMessage = nil
+        pendingDurabilityExpected = nil
         isSessionActive = false
     }
 }
@@ -203,6 +221,15 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
             if benign.contains(nsError.code) {
                 return
             }
+            // invalidate() after a successful finish() can still deliver a
+            // non-benign error; keep write/read outcome status.
+            if self.statusMessage.hasPrefix("Wrote")
+                || self.statusMessage.hasPrefix("Write ")
+                || self.statusMessage.hasPrefix("Read ")
+                || self.statusMessage.hasPrefix("Blank ")
+            {
+                return
+            }
             self.statusMessage = error.localizedDescription
         }
     }
@@ -241,6 +268,8 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
                 }
                 if let writeMessage = self.pendingWriteMessage {
                     self.write(writeMessage, to: detected, session: session)
+                } else if self.pendingDurabilityExpected != nil {
+                    self.confirmDurability(on: detected, session: session)
                 } else {
                     self.read(from: detected, session: session)
                 }
@@ -403,16 +432,164 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
                                 )
                                 return
                             }
-                            self.pendingWriteMessage = nil
-                            self.finish(
+                            // Core NFC can report write success on blank Type 2
+                            // tags without persisting. Confirm with a read-back
+                            // before claiming success; retry once if still blank.
+                            self.verifyWrite(
+                                message,
+                                on: detected,
                                 session: session,
-                                alert: "Wrote NDEF message (\(length) bytes)."
+                                allowRetry: true
                             )
                         }
                     }
                 @unknown default:
                     self.finish(session: session, alert: "Unknown NDEF status.")
                 }
+            }
+        }
+    }
+
+    /// Reads the tag after writeNDEF and only then reports success.
+    private func verifyWrite(
+        _ written: NFCNDEFMessage,
+        on detected: DetectedNFCTag,
+        session: NFCTagReaderSession,
+        allowRetry: Bool
+    ) {
+        detected.ndefTag.readNDEF { message, readError in
+            Task { @MainActor in
+                guard session === self.tagSession else { return }
+                let stillBlank: Bool = {
+                    if let readError {
+                        let nsError = readError as NSError
+                        return nsError.domain == NFCReaderError.errorDomain
+                            && NFCTagScanFormatter.isEmptyNDEFErrorCode(nsError.code)
+                    }
+                    return message == nil || message?.records.isEmpty == true
+                }()
+
+                if stillBlank, allowRetry {
+                    detected.ndefTag.writeNDEF(written) { retryError in
+                        Task { @MainActor in
+                            guard session === self.tagSession else { return }
+                            if let retryError {
+                                self.finish(
+                                    session: session,
+                                    alert: "Write did not stick; retry failed: "
+                                        + retryError.localizedDescription
+                                )
+                                return
+                            }
+                            self.verifyWrite(
+                                written,
+                                on: detected,
+                                session: session,
+                                allowRetry: false
+                            )
+                        }
+                    }
+                    return
+                }
+
+                if let readError {
+                    let nsError = readError as NSError
+                    let emptyNDEF = nsError.domain == NFCReaderError.errorDomain
+                        && NFCTagScanFormatter.isEmptyNDEFErrorCode(nsError.code)
+                    if emptyNDEF {
+                        self.finish(
+                            session: session,
+                            alert: "Write reported success, but the tag is still blank. "
+                                + "Try again, or format the tag once with NFC Tools."
+                        )
+                        return
+                    }
+                    self.finish(
+                        session: session,
+                        alert: "Wrote, but could not verify: \(readError.localizedDescription)"
+                    )
+                    return
+                }
+                guard let message, !message.records.isEmpty else {
+                    self.finish(
+                        session: session,
+                        alert: "Write reported success, but the tag is still blank. "
+                            + "Try again, or format the tag once with NFC Tools."
+                    )
+                    return
+                }
+
+                let expected = self.snapshots(from: written)
+                let actual = self.snapshots(from: message)
+                guard NFCNDEFCodec.ndefRecordsMatch(expected, actual) else {
+                    self.finish(
+                        session: session,
+                        alert: "Write did not update the tag "
+                            + "(read-back does not match what was written)."
+                    )
+                    return
+                }
+
+                // Same-session match can still be a soft/cached view. Re-poll and
+                // require a second connect/read before claiming durable success.
+                self.pendingWriteMessage = nil
+                self.pendingDurabilityExpected = expected
+                let confirm = "Hold still to confirm the write stuck."
+                session.alertMessage = confirm
+                self.statusMessage = confirm
+                session.restartPolling()
+            }
+        }
+    }
+
+    /// Second read after restartPolling; must match the written snapshots.
+    private func confirmDurability(
+        on detected: DetectedNFCTag,
+        session: NFCTagReaderSession
+    ) {
+        guard let expected = pendingDurabilityExpected else {
+            read(from: detected, session: session)
+            return
+        }
+        detected.ndefTag.readNDEF { message, readError in
+            Task { @MainActor in
+                guard session === self.tagSession else { return }
+                if let readError {
+                    self.finish(
+                        session: session,
+                        alert: "Write looked OK, but confirm failed: "
+                            + readError.localizedDescription
+                    )
+                    return
+                }
+                guard let message else {
+                    self.finish(
+                        session: session,
+                        alert: "Write looked OK, but a second read found no NDEF message."
+                    )
+                    return
+                }
+                let actual = self.snapshots(from: message)
+                guard NFCNDEFCodec.ndefRecordsMatch(expected, actual) else {
+                    self.finish(
+                        session: session,
+                        alert: "Write looked OK, but a second read did not match. Try again."
+                    )
+                    return
+                }
+
+                self.pendingDurabilityExpected = nil
+                let records = self.decode(message)
+                let body = NFCNDEFCodec.summary(for: records)
+                self.lastReadSummary = NFCTagScanFormatter.recordsSummary(
+                    body,
+                    uid: detected.uid,
+                    family: detected.family
+                )
+                self.finish(
+                    session: session,
+                    alert: "Wrote and verified NDEF message (\(message.length) bytes)."
+                )
             }
         }
     }

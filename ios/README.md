@@ -231,9 +231,11 @@ Simulator opens the UI but cannot scan; use a physical iPhone. The screen
 shows the CFBundleVersion build number so TestFlight installs are easy to
 confirm.
 
-Today the UI covers NDEF text/URL read/write and blank-tag identity. Broader
-NFC Tools features (raw pages, lock bits, more record types) can build on the
-same Tag Reader session.
+Today the UI covers NDEF text/URL read/write and blank-tag identity. Writes are
+verified with a same-session byte match against what was written, one retry if
+the tag is still blank, then a re-poll second read so a soft/cached success
+cannot pass. Broader NFC Tools features (raw pages, lock bits, more record
+types) can build on the same Tag Reader session.
 
 ## Adding an experiment
 
