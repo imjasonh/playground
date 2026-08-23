@@ -59,4 +59,11 @@ final class ExperimentCatalogTests: XCTestCase {
     func testIncludesDeviceAgent() {
         XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "device-agent" })
     }
+
+    func testDeviceAgentIsListedRightUnderRideMonitor() {
+        let ids = ExperimentCatalog.all.map(\.id)
+        let rideIndex = try XCTUnwrap(ids.firstIndex(of: "ride-monitor"))
+        let agentIndex = try XCTUnwrap(ids.firstIndex(of: "device-agent"))
+        XCTAssertEqual(agentIndex, rideIndex + 1)
+    }
 }
