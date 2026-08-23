@@ -15,11 +15,11 @@ final class AgentRuntime: ObservableObject {
 
     let context: AgentToolContext
 
-    init(context: AgentToolContext = AgentToolContext()) {
-        self.context = context
+    init(context: AgentToolContext? = nil) {
+        self.context = context ?? AgentToolContext()
         refreshModelStatus()
         if isModelAvailable {
-            appendSystem(AgentToolExecutor.helpText(mode: context.mode))
+            appendSystem(AgentToolExecutor.helpText(mode: self.context.mode))
         }
     }
 

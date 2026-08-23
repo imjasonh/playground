@@ -22,7 +22,12 @@ final class AgentToolContext: ObservableObject {
     private var confirmationContinuation: CheckedContinuation<Bool, Never>?
     private let locationManager = CLLocationManager()
 
-    init(inbox: AgentInbox = .shared, permissions: AgentPermissionGate = .shared) {
+    init() {
+        self.inbox = AgentInbox.shared
+        self.permissions = AgentPermissionGate.shared
+    }
+
+    init(inbox: AgentInbox, permissions: AgentPermissionGate = AgentPermissionGate.shared) {
         self.inbox = inbox
         self.permissions = permissions
     }
