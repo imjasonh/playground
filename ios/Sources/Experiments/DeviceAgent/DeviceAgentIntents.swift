@@ -1,5 +1,6 @@
 import AppIntents
 import Foundation
+import SwiftUI
 import UniformTypeIdentifiers
 
 /// Shortcut / Siri entry: queue a prompt (and optional files), then open the app.
@@ -117,25 +118,68 @@ struct AskDeviceAgentIntent: AppIntent {
     }
 }
 
+/// Stable Automation / Siri entry: check due watches without a custom prompt.
+struct CheckDeviceAgentWatchesIntent: AppIntent {
+    static var title: LocalizedStringResource = "Check Device Agent watches"
+    static var description = IntentDescription(
+        "Runs due long-running Device Agent watches. Use this action in a repeating Shortcuts Automation."
+    )
+    static var openAppWhenRun = true
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Check Device Agent watches")
+    }
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
+        let store = AgentWatchStore.shared
+        let due = store.recordAutomaticCheck()
+        let prompt = store.makeCheckPrompt(for: due)
+        AgentInbox.shared.enqueue(prompt: prompt, source: .shortcut, mode: .observe)
+        PlaygroundRouter.shared.openDeviceAgent()
+
+        let message: String
+        if due.isEmpty {
+            message = "No watches are due. Recorded an automatic check."
+        } else {
+            message = "Checking \(due.count) due watch(es)."
+        }
+        return .result(value: message, dialog: IntentDialog(stringLiteral: message))
+    }
+}
+
 struct DeviceAgentShortcuts: AppShortcutsProvider {
+    static var shortcutTileColor: ShortcutTileColor = .blue
+
     @AppShortcutsBuilder
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
-            intent: RunDeviceAgentIntent(),
+            intent: CheckDeviceAgentWatchesIntent(),
             phrases: [
-                "Run Device Agent in \(.applicationName)",
-                "Ask \(.applicationName) Device Agent",
+                "Check Device Agent watches in \(.applicationName)",
+                "Check my watches in \(.applicationName)",
+                "Run Device Agent watches in \(.applicationName)",
             ],
-            shortTitle: "Device Agent",
-            systemImageName: "cpu"
+            shortTitle: "Check watches",
+            systemImageName: "clock.arrow.2.circlepath"
         )
         AppShortcut(
             intent: AskDeviceAgentIntent(),
             phrases: [
                 "Ask Device Agent in \(.applicationName)",
+                "Ask \(.applicationName) Device Agent",
             ],
             shortTitle: "Ask Agent",
             systemImageName: "text.bubble"
+        )
+        AppShortcut(
+            intent: RunDeviceAgentIntent(),
+            phrases: [
+                "Run Device Agent in \(.applicationName)",
+                "Open Device Agent in \(.applicationName)",
+            ],
+            shortTitle: "Device Agent",
+            systemImageName: "cpu"
         )
     }
 }

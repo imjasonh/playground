@@ -118,8 +118,12 @@ Demo Mail web page). Permissions are requested **only when a tool needs them**.
 
 - **Chat + tool transcript** in the experiment UI; Observe / Act / Browse modes
 - **Voice input** (mic + speech, just-in-time) → editable text → same agent loop
-- **Shortcuts / App Intents:** “Run Device Agent” and “Ask Device Agent” (optional
-  files via `IntentFile`); phrases registered through `AppShortcutsProvider`
+- **Shortcuts / App Intents / Siri:** “Run Device Agent”, “Ask Device Agent”, and
+  “Check Device Agent watches” (for Automations); App Shortcut phrases + in-app
+  Siri tips
+- **Watches:** long-horizon checklist items; one repeating Shortcuts Automation
+  calls Check watches; the app tracks last wake and nudges if checks look stale
+  (no API to read the user’s Automation list)
 - **Deep link:** `playground://device-agent?prompt=…&mode=act&voice=1`
 - **Files:** attach in-app, pass from Shortcuts, or Open-in / document types into
   the app inbox (a Share Extension appex is intentionally not included yet —

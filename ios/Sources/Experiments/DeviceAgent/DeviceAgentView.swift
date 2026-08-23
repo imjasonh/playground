@@ -1,6 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import MessageUI
+import AppIntents
 
 /// Chat + tool transcript + optional in-app browser for Device Agent.
 struct DeviceAgentView: View {
@@ -8,6 +9,7 @@ struct DeviceAgentView: View {
     @StateObject private var voice = AgentVoiceCapture()
     @ObservedObject private var inbox = AgentInbox.shared
     @ObservedObject private var permissions = AgentPermissionGate.shared
+    @ObservedObject private var watches = AgentWatchStore.shared
 
     @State private var draft = ""
     @State private var showBrowser = false
@@ -15,6 +17,7 @@ struct DeviceAgentView: View {
     @State private var showSMS = false
     @State private var showMail = false
     @State private var voiceMode = false
+    @State private var showWatches = false
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -114,6 +117,11 @@ struct DeviceAgentView: View {
                 }
             }
         }
+        .sheet(isPresented: $showWatches) {
+            NavigationStack {
+                DeviceAgentWatchesView(store: watches)
+            }
+        }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("deviceAgentRoot")
     }
@@ -177,11 +185,39 @@ struct DeviceAgentView: View {
     }
 
     private var statusBar: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(runtime.modelGate.title)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .accessibilityIdentifier("deviceAgentModelStatus")
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(runtime.modelGate.title)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("deviceAgentModelStatus")
+                Spacer()
+                Button {
+                    showWatches = true
+                } label: {
+                    Label("Watches", systemImage: "clock.arrow.2.circlepath")
+                        .font(.footnote.weight(.semibold))
+                }
+                .accessibilityIdentifier("deviceAgentWatchesButton")
+            }
+            if watches.needsAutomationNudge {
+                Button {
+                    showWatches = true
+                } label: {
+                    Text(watches.isAutomaticCheckStale
+                        ? "Automatic checks look stale — recreate your Shortcuts Automation."
+                        : "Set up a repeating Shortcuts Automation so watches can wake Device Agent.")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .multilineTextAlignment(.leading)
+                }
+                .accessibilityIdentifier("deviceAgentAutomationNudge")
+            } else if !watches.watches.isEmpty {
+                Text(watches.lastAutomaticCheckSummary)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("deviceAgentLastAutomaticCheck")
+            }
             if let pre = permissions.prePromptDomain {
                 Text(pre.prePrompt)
                     .font(.footnote)

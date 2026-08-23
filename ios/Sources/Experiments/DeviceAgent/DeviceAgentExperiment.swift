@@ -5,7 +5,7 @@ enum DeviceAgentExperiment {
     static let experiment = Experiment(
         id: "device-agent",
         title: "Device Agent",
-        summary: "On-device model + tools for Contacts, Maps, calendar, drafts, files, and a demo browser. Shortcuts and voice.",
+        summary: "On-device model + tools, Shortcuts/Siri, and scheduled watches via one Automation.",
         icon: "cpu"
     ) {
         DeviceAgentView()

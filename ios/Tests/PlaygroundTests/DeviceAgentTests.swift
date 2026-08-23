@@ -89,4 +89,47 @@ final class DeviceAgentTests: XCTestCase {
             XCTAssertFalse(domain.title.isEmpty)
         }
     }
+
+    @MainActor
+    func testWatchDueAndAutomationNudgeHeuristics() throws {
+        let suiteName = "device-agent-watch-tests-\(UUID().uuidString)"
+        let suite = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { suite.removePersistentDomain(forName: suiteName) }
+        let store = AgentWatchStore(userDefaults: suite)
+
+        XCTAssertFalse(store.needsAutomationNudge)
+        store.addWatch(title: "PR", prompt: "Any new review comments?", intervalHours: 24)
+        XCTAssertTrue(store.needsAutomationNudge)
+        XCTAssertEqual(store.dueWatches().count, 1)
+
+        store.userMarkedAutomationConfigured = true
+        XCTAssertTrue(store.isAutomaticCheckStale)
+        XCTAssertTrue(store.needsAutomationNudge)
+
+        let due = store.recordAutomaticCheck()
+        XCTAssertEqual(due.count, 1)
+        XCTAssertFalse(store.isAutomaticCheckStale)
+        XCTAssertFalse(store.needsAutomationNudge)
+        XCTAssertTrue(store.dueWatches().isEmpty)
+
+        let prompt = store.makeCheckPrompt(for: due)
+        XCTAssertTrue(prompt.contains("PR"))
+        XCTAssertTrue(prompt.contains("review comments"))
+    }
+
+    func testWatchIntervalDueMath() {
+        let now = Date()
+        var watch = AgentWatch(
+            title: "x",
+            prompt: "y",
+            intervalHours: 2,
+            lastCheckedAt: now.addingTimeInterval(-7200),
+            createdAt: now
+        )
+        XCTAssertTrue(watch.isDue(at: now))
+        watch.lastCheckedAt = now.addingTimeInterval(-3600)
+        XCTAssertFalse(watch.isDue(at: now))
+        watch.isPaused = true
+        XCTAssertFalse(watch.isDue(at: now))
+    }
 }
