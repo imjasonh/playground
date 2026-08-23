@@ -3,20 +3,14 @@ import XCTest
 
 final class DeviceAgentTests: XCTestCase {
     @MainActor
-    func testRuntimeReportsUnavailableWithoutFoundationModels() {
+    func testRuntimeReportsModelGate() {
         let runtime = AgentRuntime()
         runtime.refreshModelStatus()
-        // Simulator / CI and pre–iOS 26 devices have no Apple Intelligence model.
-        XCTAssertFalse(runtime.isModelAvailable)
-        XCTAssertNotEqual(runtime.modelGate, .available)
-        switch runtime.modelGate {
-        case .unsupportedPlatform, .deviceNotEligible, .needsAppleIntelligence, .modelNotReady, .other:
-            break
-        case .available:
-            XCTFail("Expected unavailable gate on this build")
-        }
+        // CI’s iOS 26 Simulator may report `.available`; older / ineligible
+        // hosts report an unavailable gate. Either way the copy must be set.
         XCTAssertFalse(runtime.modelGate.title.isEmpty)
         XCTAssertFalse(runtime.modelGate.detail.isEmpty)
+        XCTAssertEqual(runtime.isModelAvailable, runtime.modelGate.isAvailable)
     }
 
     @MainActor
@@ -33,19 +27,21 @@ final class DeviceAgentTests: XCTestCase {
     }
 
     @MainActor
-    func testSendWhileUnavailableDoesNotRunTools() async throws {
+    func testSendDoesNotCrashAndRecordsTranscript() async throws {
         let runtime = AgentRuntime()
         runtime.refreshModelStatus()
-        XCTAssertFalse(runtime.isModelAvailable)
         let before = runtime.transcript.count
         await runtime.send(prompt: "list attachments", source: .chat)
         XCTAssertGreaterThan(runtime.transcript.count, before)
-        let last = try XCTUnwrap(runtime.transcript.last)
-        XCTAssertEqual(last.kind, .system)
-        XCTAssertFalse(runtime.transcript.contains { entry in
-            if case .toolCall = entry.kind { return true }
-            return false
-        })
+
+        if !runtime.isModelAvailable {
+            let last = try XCTUnwrap(runtime.transcript.last)
+            XCTAssertEqual(last.kind, .system)
+            XCTAssertFalse(runtime.transcript.contains { entry in
+                if case .toolCall = entry.kind { return true }
+                return false
+            })
+        }
     }
 
     @MainActor
