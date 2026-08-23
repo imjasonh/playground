@@ -413,11 +413,12 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
                             }
                             // Core NFC can report write success on blank Type 2
                             // tags without persisting. Confirm with a read-back
-                            // before claiming success.
+                            // before claiming success; retry once if still blank.
                             self.verifyWrite(
                                 message,
                                 on: detected,
-                                session: session
+                                session: session,
+                                allowRetry: true
                             )
                         }
                     }
@@ -432,11 +433,44 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
     private func verifyWrite(
         _ written: NFCNDEFMessage,
         on detected: DetectedNFCTag,
-        session: NFCTagReaderSession
+        session: NFCTagReaderSession,
+        allowRetry: Bool
     ) {
         detected.ndefTag.readNDEF { message, readError in
             Task { @MainActor in
                 guard session === self.tagSession else { return }
+                let stillBlank: Bool = {
+                    if let readError {
+                        let nsError = readError as NSError
+                        return nsError.domain == NFCReaderError.errorDomain
+                            && NFCTagScanFormatter.isEmptyNDEFErrorCode(nsError.code)
+                    }
+                    return message == nil || message?.records.isEmpty == true
+                }()
+
+                if stillBlank, allowRetry {
+                    detected.ndefTag.writeNDEF(written) { retryError in
+                        Task { @MainActor in
+                            guard session === self.tagSession else { return }
+                            if let retryError {
+                                self.finish(
+                                    session: session,
+                                    alert: "Write did not stick; retry failed: "
+                                        + retryError.localizedDescription
+                                )
+                                return
+                            }
+                            self.verifyWrite(
+                                written,
+                                on: detected,
+                                session: session,
+                                allowRetry: false
+                            )
+                        }
+                    }
+                    return
+                }
+
                 if let readError {
                     let nsError = readError as NSError
                     let emptyNDEF = nsError.domain == NFCReaderError.errorDomain
